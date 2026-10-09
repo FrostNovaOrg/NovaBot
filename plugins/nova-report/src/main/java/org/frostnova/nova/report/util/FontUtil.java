@@ -13,15 +13,22 @@ import org.springframework.stereotype.Component;
 import java.awt.*;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -68,14 +75,35 @@ public class FontUtil {
     private static final String BUNDLED_SYMBOL_FONT = "内置符号";
 
     /**
-     * 内置字体在临时目录里的解出位置：{@code java.io.tmpdir} 下固定的一个子目录
+     * 内置字体在临时目录里的解出位置：{@code java.io.tmpdir} 下按当前用户分开的一个子目录
      * <p>
      * 按 {@code Font.createFont(int, InputStream)} 读类路径上的字体，JDK 会先把整份字体
      * 另存成临时目录里的一份复制（{@code +~JF} 开头的文件），字体对象活着就一直留着：
      * 每初始化一次就多两三份、十多 MB，进程被强杀就留在那里。先解到这个子目录里、
      * 之后按文件读——{@code createFont(int, File)} 直接用原文件，不再复制——就只有第一份。
+     * <p>
+     * 子目录名带上当前用户，并且只给本人进出：手动前台跑的时候 {@code java.io.tmpdir} 是
+     * 全机共用的 {@code /tmp}，不带用户名的固定名字别的本机用户可以抢先建一个、往里放
+     * 同名文件，或等核对完再把文件换掉，让这里去解析他准备好的字体文件——按流读的旧读法
+     * JDK 用随机名、只给本人读写的临时文件，没有这个口子。
      */
-    private static final String EXTRACTED_FONT_DIRECTORY = "novabot-fonts";
+    private static final String EXTRACTED_FONT_DIRECTORY_PREFIX = "novabot-fonts";
+
+    /**
+     * 组与其他人的全部权限位：解出子目录与解出文件上这些位一个都不许有
+     */
+    private static final Set<PosixFilePermission> GROUP_AND_OTHERS_PERMISSIONS = Set.of(
+            PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE, PosixFilePermission.GROUP_EXECUTE,
+            PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE, PosixFilePermission.OTHERS_EXECUTE);
+
+    /**
+     * 这一进程里各内置字体已解出并核对过的文件
+     * <p>
+     * 每个实例初始化时都要装一遍内置字体；同一份解出并核对过一次之后，之后的初始化直接
+     * 拿记住的这份文件，不再整份读类路径资源、算摘要、逐字节比对。文件后来没了就当没
+     * 记过、重新解一份；读它出错时走 {@link #loadBundledFont} 的退路。
+     */
+    private static final Map<String, Path> EXTRACTED_BUNDLED_FONTS = new ConcurrentHashMap<>();
 
     private final ResourceLoader resourceLoader;
 
@@ -272,8 +300,9 @@ public class FontUtil {
         try {
             return loadFontFile(extractBundledFont(location).toString());
         } catch (Exception e) {
-            // 解不出（目录建不了、写不进、解出的那份读不进）不该连字体一起丢：
-            // 说一句再退回按流读，字体照样装得上，代价是 JDK 又往临时目录复制一份
+            // 解不出（目录建不了、建出的不合用、写不进、解出的那份读不进）不该连字体一起丢：
+            // 记住的这份作废，说一句再退回按流读，字体照样装得上，代价是 JDK 又往临时目录复制一份
+            EXTRACTED_BUNDLED_FONTS.remove(location);
             log.warn("在临时目录解出内置字体 {} 失败, 退回按流加载", location, e);
         }
         try (InputStream fontStream = resourceLoader.getResource(location).getInputStream()) {
@@ -282,39 +311,123 @@ public class FontUtil {
     }
 
     /**
-     * 把类路径上的一份内置字体解到 {@link #EXTRACTED_FONT_DIRECTORY} 里，给出那份文件
+     * 把类路径上的一份内置字体解到 {@link #EXTRACTED_FONT_DIRECTORY_PREFIX} 按用户分开的子目录里，给出那份文件
      * <p>
      * 文件名带内容的摘要：内容不同不会撞名，重启、并发各解各的都落在同一份上；
      * 已在且内容对得上就直接用，不重写。写的时候先落到同目录的临时名、写完再原子改名，
      * 两个进程同时解同一份时，谁也不会把半截文件当成品读。
+     * <p>
+     * 这一进程里解出并核对过一次就记住，之后的初始化直接拿记住的那份。
      */
     private Path extractBundledFont(String location) throws IOException {
+        Path remembered = EXTRACTED_BUNDLED_FONTS.get(location);
+        if (remembered != null && Files.isRegularFile(remembered)) {
+            return remembered;
+        }
+
         byte[] content;
         try (InputStream fontStream = resourceLoader.getResource(location).getInputStream()) {
             content = fontStream.readAllBytes();
         }
         String fileName = extractedFontName(location, content);
-        Path directory = Paths.get(System.getProperty("java.io.tmpdir"), EXTRACTED_FONT_DIRECTORY);
-        Files.createDirectories(directory);
-        Path extracted = directory.resolve(fileName);
-        if (contentAlreadyAt(extracted, content)) {
-            return extracted;
+        Path extracted = extractedFontDirectory().resolve(fileName);
+        if (!contentAlreadyAt(extracted, content)) {
+            writeAtomically(extracted.getParent(), extracted, content);
         }
-        Path staging = Files.createTempFile(directory, fileName, ".part");
-        Files.write(staging, content);
+        EXTRACTED_BUNDLED_FONTS.put(location, extracted);
+        return extracted;
+    }
+
+    /**
+     * 解出子目录的名字：{@code novabot-fonts-<user.name>}，用户名里字母、数字和 {@code - _ .}
+     * 以外的字符换成 {@code _}；两个用户名换完撞上同一个名字时，下面的属主检查会拦住
+     */
+    private static String extractedFontDirectoryName() {
+        String userName = System.getProperty("user.name", "").replaceAll("[^A-Za-z0-9._-]", "_");
+        return userName.isEmpty() ? EXTRACTED_FONT_DIRECTORY_PREFIX : EXTRACTED_FONT_DIRECTORY_PREFIX + "-" + userName;
+    }
+
+    /**
+     * 解出子目录：只有本人进得去的才给。建不成，或已在的属主不是本人、组与其他人还有权限时
+     * 抛出去，让内置字体退回按流读，不往不合用的目录里写任何东西
+     */
+    private static Path extractedFontDirectory() throws IOException {
+        Path directory = Paths.get(System.getProperty("java.io.tmpdir"), extractedFontDirectoryName());
+        if (!posixPermissionsSupported()) {
+            Files.createDirectories(directory);
+            return directory;
+        }
+        if (Files.notExists(directory)) {
+            try {
+                // 权限建目录时就带上：先建成大家可进再收紧，中间有一段谁都进得来
+                Files.createDirectory(directory,
+                        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+                return directory;
+            } catch (FileAlreadyExistsException createdAnyway) {
+                // 这台机器上另一个进程同时建了它：按已在的目录走下面的检查
+            }
+        }
+        if (directoryIsOwnerOnly(directory)) {
+            return directory;
+        }
+        throw new AccessDeniedException(directory.toString(), null, "属主不是本人, 或组与其他人还有权限");
+    }
+
+    /**
+     * 已在的解出子目录只有属主是当前用户、且组与其他人没有任何权限时才可用：
+     * 属主是别人（别的本机用户抢建了这个名字），或权限放开过，都当不可用
+     */
+    private static boolean directoryIsOwnerOnly(Path directory) {
+        PosixFileAttributes attributes;
         try {
-            Files.move(staging, extracted, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException noAtomicRename) {
-            Files.move(staging, extracted, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException raced) {
-            // 改名时正式名已在：对面那份内容对得上就算成，用对面的；对不上另抛出去走退路
-            if (!contentAlreadyAt(extracted, content)) {
-                throw raced;
+            attributes = Files.readAttributes(directory, PosixFileAttributes.class);
+        } catch (IOException | UnsupportedOperationException unreadable) {
+            return false;
+        }
+        return attributes.isDirectory()
+                && System.getProperty("user.name", "").equals(attributes.owner().getName())
+                && Collections.disjoint(attributes.permissions(), GROUP_AND_OTHERS_PERMISSIONS);
+    }
+
+    /**
+     * 临时目录所在的文件系统认不认 POSIX 权限：认才按「只给本人」建目录与文件；
+     * 不认（如 Windows，它的临时目录本来就按用户分开）时不带权限照建
+     */
+    private static boolean posixPermissionsSupported() {
+        try {
+            return Files.getFileStore(Paths.get(System.getProperty("java.io.tmpdir")))
+                    .supportsFileAttributeView(PosixFileAttributeView.class);
+        } catch (Exception unknown) {
+            // 查不出来就当不认：不带权限照建，目录名里带着用户名仍然按用户分开
+            return false;
+        }
+    }
+
+    /**
+     * 先写同目录的临时名、写完再原子改名到正式名；改名撞上已在的正式名时内容对得上就算成，
+     * 不支持原子改名的文件系统退覆盖式改名
+     */
+    private static void writeAtomically(Path directory, Path extracted, byte[] content) throws IOException {
+        String fileName = extracted.getFileName().toString();
+        Path staging = posixPermissionsSupported()
+                ? Files.createTempFile(directory, fileName, ".part",
+                        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+                : Files.createTempFile(directory, fileName, ".part");
+        try {
+            Files.write(staging, content);
+            try {
+                Files.move(staging, extracted, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException noAtomicRename) {
+                Files.move(staging, extracted, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException raced) {
+                // 改名时正式名已在：对面那份内容对得上就算成，用对面的；对不上另抛出去走退路
+                if (!contentAlreadyAt(extracted, content)) {
+                    throw raced;
+                }
             }
         } finally {
             Files.deleteIfExists(staging);
         }
-        return extracted;
     }
 
     /**
