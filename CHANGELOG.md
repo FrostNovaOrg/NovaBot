@@ -4,6 +4,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布]
+
+### 修复
+
+- 升级时没改过的 application.yml、datasource.json 不再被重写，正在运行的旧版本不会因此重读配置、把每个主播的资料再查一遍；先停旧版再起新版的那种升级，不再在停机时刷出一串「补全 uid … 的信息失败」。
+
 ## [5.8.1] - 2026-10-05
 
 ### 变更

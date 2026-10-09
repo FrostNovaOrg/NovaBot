@@ -10,7 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -201,6 +203,32 @@ class VersionedReleaseInstallTest {
         Run run = run(world, "5.7.7", "5.7.9");
 
         assertUpgrade(world, run, kept);
+    }
+
+    @Test
+    @DisplayName("再升级：没改过的 application.yml 与 datasource.json 不重写，修改时间不变")
+    void upgradeLeavesUnchangedConfigUntouched(@TempDir Path dir) throws Exception {
+        // 故障：拷回把修改时间改成了现在，正在跑的旧版本看到 datasource.json「更新了」就重读配置
+        World world = world(dir, "5.7.9");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run first = run(world, "", "");
+        assertEquals(0, first.code, "先装一版应成功。标准错误:\n" + first.stderr + "\n标准输出:\n" + first.stdout);
+        FileTime past = FileTime.from(Instant.parse("2026-01-01T00:00:00Z"));
+        for (String name : List.of("application.yml", "datasource.json")) {
+            Files.setLastModifiedTime(world.install.resolve(name), past);
+        }
+        Map<String, byte[]> kept = readKept(world.install);
+        write(world.pkg.resolve("BUILD-INFO"), "commit=abc\nversion=5.8.0\nbuilt_at=2026-10-03T00:00:00Z\n");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "再升级应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")), "应装上 5.8.0");
+        assertKept(world.install, kept);
+        for (String name : List.of("application.yml", "datasource.json")) {
+            assertEquals(past, Files.getLastModifiedTime(world.install.resolve(name)),
+                    name + " 内容没变，不该被重写");
+            assertTrue(run.stdout.contains("已保留原有的 " + name), "仍应说明保留了 " + name + "。标准输出:\n" + run.stdout);
+        }
     }
 
     @Test
