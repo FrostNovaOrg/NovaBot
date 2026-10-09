@@ -17,6 +17,7 @@ import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
@@ -348,8 +349,10 @@ public class FontUtil {
     }
 
     /**
-     * 解出子目录：只有本人进得去的才给。建不成，或已在的属主不是本人、组与其他人还有权限时
-     * 抛出去，让内置字体退回按流读，不往不合用的目录里写任何东西
+     * 解出子目录：只有本人进得去的才给。建不成，或已在的属主不是本人、组与其他人还有权限，
+     * 或它根本不是个真目录（比如名字被符号链接占了——哪怕链接指到的正是本人另一个只给
+     * 本人进的目录，顺着走一样把字体写进别人挑好的地方）时抛出去，让内置字体退回按流读，
+     * 不往不合用的目录里写任何东西
      */
     private static Path extractedFontDirectory() throws IOException {
         Path directory = Paths.get(System.getProperty("java.io.tmpdir"), extractedFontDirectoryName());
@@ -357,7 +360,8 @@ public class FontUtil {
             Files.createDirectories(directory);
             return directory;
         }
-        if (Files.notExists(directory)) {
+        // 名字在不在按不跟链接查：链接占着名字也算已被占，交给下面的检查去拦
+        if (Files.notExists(directory, LinkOption.NOFOLLOW_LINKS)) {
             try {
                 // 权限建目录时就带上：先建成大家可进再收紧，中间有一段谁都进得来
                 Files.createDirectory(directory,
@@ -375,12 +379,14 @@ public class FontUtil {
 
     /**
      * 已在的解出子目录只有属主是当前用户、且组与其他人没有任何权限时才可用：
-     * 属主是别人（别的本机用户抢建了这个名字），或权限放开过，都当不可用
+     * 属主是别人（别的本机用户抢建了这个名字），或权限放开过，都当不可用。
+     * 属性按不跟符号链接读：链接不是真目录，量到的属主与权限全是它指到的那份的，
+     * 照着它们放行就是把要解析的字体文件顺着链接写出去
      */
     private static boolean directoryIsOwnerOnly(Path directory) {
         PosixFileAttributes attributes;
         try {
-            attributes = Files.readAttributes(directory, PosixFileAttributes.class);
+            attributes = Files.readAttributes(directory, PosixFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         } catch (IOException | UnsupportedOperationException unreadable) {
             return false;
         }

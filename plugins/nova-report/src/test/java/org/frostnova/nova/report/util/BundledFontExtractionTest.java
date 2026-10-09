@@ -51,8 +51,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * 共用的 {@code /tmp}，固定名字谁都能抢建，谁都进得去的目录不能拿来放要解析的字体文件。
  * <p>
  * 这组测试只盯着「解出」这件事：初始化多少次都只解一份、第二次初始化连类路径资源都不再
- * 读、解出的那份内容不对会换成对的、目录不合用或落不下时退回按流读、建出的目录与文件
- * 只有本人可用。「装得上、装上的是哪一款」由 {@link BundledFontsTest} 管。
+ * 读、解出的那份内容不对会换成对的、目录不合用（权限放开过、名字被符号链接占着）或
+ * 落不下时退回按流读、建出的目录与文件只有本人可用。「装得上、装上的是哪一款」由
+ * {@link BundledFontsTest} 管。
  */
 @DisplayName("内置字体在临时目录里的解出")
 class BundledFontExtractionTest {
@@ -143,11 +144,16 @@ class BundledFontExtractionTest {
     }
 
     /**
-     * 连固定子目录一起清掉，给「目录建不成」的那条判据腾出位置
+     * 连固定子目录一起清掉，给「目录建不成」的那条判据腾出位置。
+     * 名字被符号链接占着时只删链接本身，不顺着它去动指向的目录
      */
     private static void removeExtractedDirectory() throws IOException {
-        clearExtractedFonts();
         Path directory = extractedDirectory();
+        if (Files.isSymbolicLink(directory)) {
+            Files.deleteIfExists(directory);
+            return;
+        }
+        clearExtractedFonts();
         if (Files.isDirectory(directory)) {
             List<Path> left = new ArrayList<>();
             try (Stream<Path> files = Files.list(directory)) {
@@ -305,6 +311,50 @@ class BundledFontExtractionTest {
             }
         } finally {
             removeExtractedDirectory();
+        }
+    }
+
+    /**
+     * 解出子目录的名字被一个符号链接占着时——别的本机用户抢建了这个名字，指到本人另一个
+     * 只给本人进的目录——核对不能顺着链接走：顺着走，量到的属主与权限都是指向目录的，
+     * 样样合格，解出的字体就写进别人挑好的地方去了。得当不可用：说一句、退回按流读，
+     * 链接指向的目录里一个文件都不多。
+     */
+    @Test
+    @DisplayName("解出子目录是符号链接时退回按流读，不顺着链接写")
+    void symlinkedExtractionDirectoryIsNotUsed() throws IOException {
+        assumeTrue(posixPermissions(), "临时目录的文件系统不支持 POSIX 权限（如 Windows）, 本条跳过");
+
+        removeExtractedDirectory();
+        Path pointedTo = Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")), "novabot-fonts-target");
+        Files.setPosixFilePermissions(pointedTo, PosixFilePermissions.fromString("rwx------"));
+        Path directory = extractedDirectory();
+        Files.createSymbolicLink(directory, pointedTo);
+
+        try {
+            Font[] loaded = new Font[1];
+            List<String> warnings = logsOf(Level.WARN, () -> {
+                FontUtil util = fontUtil("内置");
+                loaded[0] = util.parseFont("内置").orElse(null);
+                return loaded[0];
+            });
+
+            assertNotNull(loaded[0], "退回了按流读, 字体还装不上");
+            assertEquals("Noto Sans SC", loaded[0].getFamily(Locale.ROOT));
+            assertTrue(warnings.stream().anyMatch(message -> message.contains("NotoSansSC-Regular")),
+                    "链接占了名字得当不可用说一句: " + warnings);
+            try (Stream<Path> files = Files.list(pointedTo)) {
+                List<Path> written = files.toList();
+                assertTrue(written.isEmpty(), "不该顺着符号链接往指向的目录里写任何东西: " + written);
+            }
+        } finally {
+            Files.deleteIfExists(directory);
+            try (Stream<Path> files = Files.list(pointedTo)) {
+                for (Path file : files.toList()) {
+                    Files.deleteIfExists(file);
+                }
+            }
+            Files.deleteIfExists(pointedTo);
         }
     }
 
