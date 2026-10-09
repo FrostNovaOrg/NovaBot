@@ -78,7 +78,7 @@ case "$SERVICE_USER" in
     ''|*[!a-zA-Z0-9_-]*) die "--user 只能包含字母、数字、下划线与连字符，当前为「${SERVICE_USER}」" ;;
 esac
 
-[ "$(uname -s)" = "Linux" ] || die "本脚本仅适用于 Linux。macOS 与 Windows 请参考 README 手动部署"
+[ "$(uname -s)" = "Linux" ] || die "本脚本仅适用于 Linux。macOS 与 Windows 请参考手册第 3 章的手动安装：https://frostnovaorg.github.io/NovaBot/03-install.html"
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
