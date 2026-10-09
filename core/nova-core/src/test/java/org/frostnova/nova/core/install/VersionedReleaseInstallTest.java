@@ -860,6 +860,95 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
+    @DisplayName("系统日志：有 rsyslog 配置目录时写一份丢掉 novabot 消息的规则，并让 rsyslog 重读")
+    void rsyslogRuleWrittenWhenConfigDirExists(@TempDir Path dir) throws Exception {
+        // 故障：journal 与日志文件之外，/var/log/syslog 里又存一份没人读的
+        World world = world(dir, "5.8.0");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Files.createDirectories(world.rsyslog);
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        Path rule = world.rsyslog.resolve("30-novabot.conf");
+        assertTrue(Files.isRegularFile(rule), "应写出 " + rule + "。标准输出:\n" + run.stdout);
+        String body = read(rule);
+        assertTrue(body.lines().anyMatch(line -> line.strip().equals("if $programname == 'novabot' then stop")),
+                "规则应丢掉标识为 novabot 的消息，实际:\n" + body);
+        assertTrue(body.startsWith("#"), "文件头应有注释说清来由，实际:\n" + body);
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertTrue(calls.contains("try-restart rsyslog"), "写了规则应让 rsyslog 重读。systemctl:\n" + calls);
+        assertTrue(run.stdout.contains("系统日志"), "收尾应说明系统日志这一项。标准输出:\n" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("系统日志：规则内容没变时再装不重写，修改时间不变，也不让 rsyslog 重读")
+    void rsyslogRuleUnchangedIsNotRewritten(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Files.createDirectories(world.rsyslog);
+        Run first = run(world, "", "");
+        assertEquals(0, first.code, "先装一版应成功。标准错误:\n" + first.stderr + "\n标准输出:\n" + first.stdout);
+        Path rule = world.rsyslog.resolve("30-novabot.conf");
+        assertTrue(Files.isRegularFile(rule), "第一次应写出 " + rule);
+        FileTime past = FileTime.from(Instant.parse("2026-01-01T00:00:00Z"));
+        Files.setLastModifiedTime(rule, past);
+        Files.deleteIfExists(world.logs.resolve("systemctl.log"));
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "再装应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals(past, Files.getLastModifiedTime(rule), "内容没变，不该重写");
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertFalse(calls.contains("rsyslog"), "没重写就不该让 rsyslog 重读。systemctl:\n" + calls);
+    }
+
+    @Test
+    @DisplayName("系统日志：--keep-syslog 不写规则，先前写的那份删掉并让 rsyslog 重读")
+    void keepSyslogRemovesEarlierRule(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Files.createDirectories(world.rsyslog);
+        Run first = run(world, "", "");
+        assertEquals(0, first.code, "先装一版应成功。标准错误:\n" + first.stderr + "\n标准输出:\n" + first.stdout);
+        Path rule = world.rsyslog.resolve("30-novabot.conf");
+        assertTrue(Files.isRegularFile(rule), "第一次应写出 " + rule);
+        Files.deleteIfExists(world.logs.resolve("systemctl.log"));
+        Run run = run(world, "", "", Map.of(), "--keep-syslog");
+
+        assertEquals(0, run.code, "带 --keep-syslog 应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertFalse(Files.exists(rule), "--keep-syslog 应删掉先前写的那份");
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertTrue(calls.contains("try-restart rsyslog"), "删了规则应让 rsyslog 重读。systemctl:\n" + calls);
+        assertTrue(run.stdout.contains("系统日志"), "收尾应说明系统日志这一项。标准输出:\n" + run.stdout);
+
+        ProcessBuilder help = new ProcessBuilder("bash", repoRoot().resolve("install.sh").toString(), "--help");
+        help.redirectErrorStream(true);
+        Process helped = help.start();
+        String helpOut = new String(helped.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(helped.waitFor(30, TimeUnit.SECONDS), "--help 超时:\n" + helpOut);
+        assertTrue(helpOut.contains("--keep-syslog"), "用法里应有 --keep-syslog:\n" + helpOut);
+    }
+
+    @Test
+    @DisplayName("系统日志：没有 rsyslog 配置目录时不写，安装照常成；--no-service 时也不写")
+    void noRsyslogDirOrNoServiceWritesNothing(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "没有 rsyslog 也应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertFalse(Files.exists(world.rsyslog), "没有 rsyslog 配置目录时不该建它");
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertFalse(calls.contains("rsyslog"), "没有 rsyslog 就不该碰它。systemctl:\n" + calls);
+
+        World noService = world(dir.resolve("no-service"), "5.8.0");
+        writeKept(noService.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Files.createDirectories(noService.rsyslog);
+        Run skipped = run(noService, "", "", Map.of(), "--no-service");
+        assertEquals(0, skipped.code, "--no-service 应装完。标准错误:\n" + skipped.stderr);
+        assertFalse(Files.exists(noService.rsyslog.resolve("30-novabot.conf")), "--no-service 时整段不做");
+    }
+
+    @Test
     @DisplayName("E 支那条起法：版本目录里的 start.sh 自己 cd 回安装目录，java 拿到的是版本目录里的 jar")
     void startScriptInVersionDirLaunchesFromInstallDir(@TempDir Path dir) throws Exception {
         // 工作目录要落在安装目录（锁、配置、日志才不会各拿一份），-jar 要指着版本目录里的那份。
@@ -1294,6 +1383,8 @@ class VersionedReleaseInstallTest {
         world.etc = Files.createDirectories(dir.resolve("etc"));
         world.logs = Files.createDirectories(dir.resolve("logs"));
         world.sbin = Files.createDirectories(dir.resolve("sbin"));
+        // 缺省不建：本机真有 /etc/rsyslog.d 时，各格也不去碰它；要 rsyslog 的格自己建
+        world.rsyslog = world.etc.resolve("rsyslog.d");
         Files.copy(repoRoot().resolve("install.sh"), world.pkg.resolve("install.sh"),
                 StandardCopyOption.REPLACE_EXISTING);
         write(world.pkg.resolve("NovaBot.jar"), "new-jar");
@@ -1381,6 +1472,7 @@ class VersionedReleaseInstallTest {
         builder.environment().put("NOVABOT_STUB_ACTIVE", active);
         builder.environment().put("NOVABOT_STUB_ENABLED", enabled);
         builder.environment().put("NOVABOT_SYSTEM_SBIN_DIR", world.sbin.toString());
+        builder.environment().put("NOVABOT_RSYSLOG_DIR", world.rsyslog.toString());
         extra.forEach(builder.environment()::put);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
         builder.redirectError(world.logs.resolve("stderr.txt").toFile());
@@ -1537,6 +1629,7 @@ class VersionedReleaseInstallTest {
         Path etc;
         Path logs;
         Path sbin;
+        Path rsyslog;
     }
 
     private static final class Run {

@@ -9,6 +9,7 @@
 ### 变更
 
 - 手册与 Dockerfile 里的 Docker 部署示例给容器日志设了上限（合计 100MB），不再无限增长。
+- Linux 一键安装的机器上，NovaBot 的输出不再在系统日志 /var/log/syslog 里多存一份（journal 与程序自己的日志文件里照旧都有）；要保留的，安装时加 `--keep-syslog`。
 
 ### 修复
 
