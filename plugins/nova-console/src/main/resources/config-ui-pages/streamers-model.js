@@ -56,10 +56,19 @@ const SPARK_HEIGHT = 26;
 const DIGITS = /^\d+$/;
 
 /**
+ * 本页在地址栏里的名字（#/streamers 底下才是这一页）
+ *
+ * 认地址的两处（parseStreamersHash 与 isStreamersHash）都指它，不各写一个字符串：
+ * 两处各写的话，哪天只改得动一处，另一处还在按旧名字认
+ */
+const PAGE_KEY = 'streamers';
+
+/**
  * 地址栏 → 这一页此刻该显示哪一块
  *
  * 认不出来的一律退回列表，不留白屏：主播页是从首页、推送页、初始设置第 4 步三个地方
  * 点进来的，其中任何一处把地址拼错，得到的都该是一张能用的列表，而不是一位不存在的主播。
+ * 第一段不是本页名字的也一样退回——别页的地址后两段各是什么，与本页该显示哪一块无关。
  *
  * 🔴 uid 必须是一串数字才认。不校验的话，#/streamers/&lt;平台&gt;/undefined 会被当成
  * 一位真主播拿去问接口，屏幕上于是出现一张空的详情页——它与「这位主播还没播过」长得一样。
@@ -79,6 +88,11 @@ export function parseStreamersHash(hash) {
   const [viewList, viewDetail, viewSession] = STREAMER_VIEWS;
   const state = {view: viewList, platform: '', uid: '', pane: 'overview', start: '',
     page: 1, period: 'week'};
+
+  // 第一段不是本页名字的，后两段是别页的（如 #/push/<uid>/<群号> 的主播与群号）。
+  // 只看第二、三段的话，那样的地址会被读成一位平台与 uid 都对不上的主播——
+  // 屏幕上没有动静（这一页多半不在前台），接口却白挨 404
+  if (path[0] !== PAGE_KEY) return state;
 
   const platform = path[1] || '';
   const uid = path[2] || '';
@@ -110,6 +124,23 @@ export function parseStreamersHash(hash) {
     else if (key === 'period' && PERIODS.some(one => one[0] === value)) state.period = value;
   }
   return state;
+}
+
+/**
+ * 一段地址是不是主播页自己的（第一段是不是本页的名字）
+ *
+ * 宿主刷新各插件页时不分在不在屏幕上，谁的 refresh 都叫一遍（refreshPages）。
+ * 「此刻是不是这一页在台上」只有地址栏说得准，这一页据此先问一句「地址栏
+ * 是不是我的」，不是就不取数——推送页那类三段地址（#/push/&lt;uid&gt;/&lt;群号&gt;）
+ * 的后两段正好像平台与 uid，照着读下去就是平白问出一位不存在的主播。
+ * @param hash location.hash
+ * @return {boolean} 落在本页名下时真
+ */
+export function isStreamersHash(hash) {
+  const raw = String(hash || '').replace(/^#\/?/, '');
+  const cut = raw.indexOf('?');
+  const head = (cut < 0 ? raw : raw.slice(0, cut)).split('/').filter(Boolean)[0];
+  return head === PAGE_KEY;
 }
 
 /**

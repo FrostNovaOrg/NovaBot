@@ -18,9 +18,9 @@
 import {$, api, el, esc, say} from './core.js';
 import {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
-  gapCells, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
-  seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
-  statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
+  gapCells, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
+  reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle, shownMetrics,
+  snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } from './streamers-model.js';
 
 const PAGE_STYLE = `
@@ -137,6 +137,11 @@ export function syncStreamersView() {
 
 /** 进入本页，或在本页里换了地址：按落点取该取的那一份 */
 export function loadStreamers() {
+  // 宿主刷新各插件页（refreshPages）时不分在不在屏幕上，这一页也被叫到。
+  // 地址栏第一段不是本页名字的（正落在推送页那类地址上），取了也用不上——
+  // 照后两段读出一位主播再去问接口，问回来的是一位不存在的人，白挨 404
+  if (!isStreamersHash(location.hash)) return;
+
   syncStreamersView();
   releaseReport();
 
