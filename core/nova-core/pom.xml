@@ -24,6 +24,17 @@
             <artifactId>novacore</artifactId>
         </dependency>
 
+        <!--
+            只在测试里用：测试另起 NovaBot 子进程时经 novacore 测试域里的 ParentBoundMain 启动，
+            测试进程被强杀时子进程跟着退。不进任何交付产物
+        -->
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>novacore</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
         <!-- 累计数据存储。连不连、连哪儿由 TotalDataStorage 在运行期决定：
              未配置 spring.data.redis.host 时程序照常以 JSON 运行，仅累计类查询不可用 -->
         <dependency>

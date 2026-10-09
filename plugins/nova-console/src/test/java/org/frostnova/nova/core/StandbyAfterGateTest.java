@@ -1,5 +1,6 @@
 package org.frostnova.nova.core;
 
+import org.frostnova.nova.core.process.ParentBoundMain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -523,7 +524,7 @@ class StandbyAfterGateTest {
         text.append("-cp\n");
         text.append(bootInfo(dir, shift).toAbsolutePath()).append(java.io.File.pathSeparator)
                 .append(System.getProperty("java.class.path")).append('\n');
-        text.append(NovaCoreApplication.class.getName()).append('\n');
+        text.append(ParentBoundMain.mainLines(NovaCoreApplication.class));
         text.append("--server.address=127.0.0.1\n");
         text.append("--server.port=").append(port).append('\n');
         Files.writeString(args, text.toString(), StandardCharsets.UTF_8);
