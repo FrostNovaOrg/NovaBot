@@ -13,7 +13,13 @@ import org.springframework.stereotype.Component;
 import java.awt.*;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -60,6 +66,16 @@ public class FontUtil {
     private static final Set<Integer> WESTERN_WIDTH_CHARACTERS = Set.of(0x00B7);
 
     private static final String BUNDLED_SYMBOL_FONT = "内置符号";
+
+    /**
+     * 内置字体在临时目录里的解出位置：{@code java.io.tmpdir} 下固定的一个子目录
+     * <p>
+     * 按 {@code Font.createFont(int, InputStream)} 读类路径上的字体，JDK 会先把整份字体
+     * 另存成临时目录里的一份复制（{@code +~JF} 开头的文件），字体对象活着就一直留着：
+     * 每初始化一次就多两三份、十多 MB，进程被强杀就留在那里。先解到这个子目录里、
+     * 之后按文件读——{@code createFont(int, File)} 直接用原文件，不再复制——就只有第一份。
+     */
+    private static final String EXTRACTED_FONT_DIRECTORY = "novabot-fonts";
 
     private final ResourceLoader resourceLoader;
 
@@ -253,9 +269,81 @@ public class FontUtil {
     }
 
     private Font loadBundledFont(String location) throws IOException, FontFormatException {
+        try {
+            return loadFontFile(extractBundledFont(location).toString());
+        } catch (Exception e) {
+            // 解不出（目录建不了、写不进、解出的那份读不进）不该连字体一起丢：
+            // 说一句再退回按流读，字体照样装得上，代价是 JDK 又往临时目录复制一份
+            log.warn("在临时目录解出内置字体 {} 失败, 退回按流加载", location, e);
+        }
         try (InputStream fontStream = resourceLoader.getResource(location).getInputStream()) {
             return atDefaultSize(Font.createFont(Font.TRUETYPE_FONT, fontStream));
         }
+    }
+
+    /**
+     * 把类路径上的一份内置字体解到 {@link #EXTRACTED_FONT_DIRECTORY} 里，给出那份文件
+     * <p>
+     * 文件名带内容的摘要：内容不同不会撞名，重启、并发各解各的都落在同一份上；
+     * 已在且内容对得上就直接用，不重写。写的时候先落到同目录的临时名、写完再原子改名，
+     * 两个进程同时解同一份时，谁也不会把半截文件当成品读。
+     */
+    private Path extractBundledFont(String location) throws IOException {
+        byte[] content;
+        try (InputStream fontStream = resourceLoader.getResource(location).getInputStream()) {
+            content = fontStream.readAllBytes();
+        }
+        String fileName = extractedFontName(location, content);
+        Path directory = Paths.get(System.getProperty("java.io.tmpdir"), EXTRACTED_FONT_DIRECTORY);
+        Files.createDirectories(directory);
+        Path extracted = directory.resolve(fileName);
+        if (contentAlreadyAt(extracted, content)) {
+            return extracted;
+        }
+        Path staging = Files.createTempFile(directory, fileName, ".part");
+        Files.write(staging, content);
+        try {
+            Files.move(staging, extracted, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException noAtomicRename) {
+            Files.move(staging, extracted, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException raced) {
+            // 改名时正式名已在：对面那份内容对得上就算成，用对面的；对不上另抛出去走退路
+            if (!contentAlreadyAt(extracted, content)) {
+                throw raced;
+            }
+        } finally {
+            Files.deleteIfExists(staging);
+        }
+        return extracted;
+    }
+
+    /**
+     * {@code classpath:fonts/NotoSansSC-Regular.ttf} → {@code NotoSansSC-Regular-<内容摘要>.ttf}
+     */
+    private static String extractedFontName(String location, byte[] content) {
+        String resourceName = location.substring(location.lastIndexOf('/') + 1);
+        int extensionAt = resourceName.lastIndexOf('.');
+        return resourceName.substring(0, extensionAt) + "-" + contentDigest(content)
+                + resourceName.substring(extensionAt);
+    }
+
+    /**
+     * 内容摘要取十六进制的前十六位：只在给解出文件起名时用，两份不同内容撞上它的机会小到不算
+     */
+    private static String contentDigest(byte[] content) {
+        byte[] digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256").digest(content);
+        } catch (NoSuchAlgorithmException e) {
+            // 每个Java实现都得有SHA-256，走到这里只是把检查异常收拢掉
+            throw new IllegalStateException("这个Java实现没有SHA-256摘要算法", e);
+        }
+        return HexFormat.of().formatHex(Arrays.copyOf(digest, 8));
+    }
+
+    private static boolean contentAlreadyAt(Path file, byte[] content) throws IOException {
+        return Files.isRegularFile(file) && Files.size(file) == content.length
+                && Arrays.equals(content, Files.readAllBytes(file));
     }
 
     /**
