@@ -71,7 +71,8 @@ class RuntimeStateSurfaceTest {
 
         // 闭集而不是「至少有这几栏」：多一栏也要红。接口面多出一栏没人消费的记录，
         // 与少一栏同样是问题——bindings 正是这么留了一版的
-        assertEquals(List.of("commands", "incomplete", "sessions", "subscriptions", "success", "totalDataAvailable"),
+        assertEquals(List.of("commands", "incomplete", "quietGlobal", "sessions", "subscriptions", "success",
+                        "totalDataAvailable"),
                 state.keySet().stream().sorted().toList());
         assertFalse(state.containsKey("bindings"),
                 "账号绑定整族已停用、界面也早就不渲染它了，这一栏不该还在接口面上");

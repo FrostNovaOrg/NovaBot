@@ -128,7 +128,8 @@ public class NovaMessageSender {
      * @param message 消息
      */
     public void send(Message message) {
-        if (!pushGate.allowed()) {
+        // 按这条消息发往的会话判：会话可以有自己的静音时段或不静音
+        if (!pushGate.allowedFor(message.getPlatform(), message.getNum())) {
             PushGate.Block block = pushGate.blockedBy();
             log.info("{}, 已丢弃消息: [{}] {}: {}", block.getDescription(),
                     message.getType().getStr(), message.getNum(), message.getDisplay());

@@ -12,10 +12,12 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.SessionQuietHoursService;
 import org.frostnova.nova.core.service.StreamerNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +30,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -86,12 +90,20 @@ public class RuntimeStateController {
 
     private final StreamerNames streamerNames;
 
+    private final SessionQuietHoursService quietHours;
+
+    /**
+     * 「此刻在不在这个会话的静音时段里」问它：判定只留闸门里那一份
+     */
+    private final PushGate pushGate;
+
     @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions,
                                   NovaStateStore store, AbstractDataSource dataSource,
                                   RevenueVisibilityService revenueVisibility, LiveDataService liveDataService,
-                                  StreamerNames streamerNames) {
+                                  StreamerNames streamerNames, SessionQuietHoursService quietHours,
+                                  PushGate pushGate) {
         this.dispatcher = dispatcher;
         this.settings = settings;
         this.subscriptions = subscriptions;
@@ -100,6 +112,8 @@ public class RuntimeStateController {
         this.revenueVisibility = revenueVisibility;
         this.liveDataService = liveDataService;
         this.streamerNames = streamerNames;
+        this.quietHours = quietHours;
+        this.pushGate = pushGate;
     }
 
     /**
@@ -119,7 +133,18 @@ public class RuntimeStateController {
         result.put("subscriptions", subscriptionList());
         result.put("incomplete", incompleteList());
         result.put("totalDataAvailable", liveDataService.supportsTotalData());
+        result.put("quietGlobal", quietGlobal());
         return result;
+    }
+
+    /**
+     * 设置页那一项全局静音时段：「跟全局」那一档的摘要要写出它是几点到几点
+     */
+    private JSONObject quietGlobal() {
+        JSONObject json = new JSONObject();
+        json.put("start", pushGate.globalQuietStart());
+        json.put("end", pushGate.globalQuietEnd());
+        return json;
     }
 
     /**
@@ -281,6 +306,110 @@ public class RuntimeStateController {
     }
 
     /**
+     * 设置某个会话的静音时段
+     * <p>
+     * 三档：跟全局（清除记录）、本会话自己的时段、本会话不静音。存完即生效：
+     * 闸门每次推送都现读这一份，不用重启。
+     * <p>
+     * 「自己的时段」的起止必须是 HH:mm，否则拒收：存下一档判定那一侧会忽略的时段，
+     * 页面摘要就会显示一个其实不生效的时段。这里只收判定那一侧一定认得的写法（两位时、两位分），
+     * 手改进状态文件的坏格式照旧由判定那一侧按全局那套规则忽略并 warn。
+     * 起止相同同理：判定那一侧当没设，存下来摘要却显示一段时段，所以也拒收。
+     * @param body 请求体，含 platform、num、mode（follow／custom／off，空即 follow）与 start、end
+     * @return 操作结果
+     */
+    @PostMapping("/quiet")
+    public JSONObject setQuietHours(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+
+        String platform = body.getString("platform");
+        Object rawNum = body.get("num");
+        if (platform == null || rawNum == null) {
+            return fail(result, "缺少参数");
+        }
+        Long num = positiveSessionNum(rawNum);
+        if (num == null) {
+            return fail(result, "会话号「" + rawNum + "」不是正整数");
+        }
+
+        String raw = body.getString("mode");
+        SessionQuietHoursService.Mode mode = SessionQuietHoursService.Mode.of(raw);
+        if (raw != null && !raw.isBlank() && !mode.key().equalsIgnoreCase(raw.trim())) {
+            return fail(result, "认不出的静音档位「" + raw + "」");
+        }
+
+        String start = body.getString("start");
+        String end = body.getString("end");
+        if (mode == SessionQuietHoursService.Mode.CUSTOM
+                && (start == null || start.isBlank() || end == null || end.isBlank())) {
+            return fail(result, "本会话自己的时段要填开始和结束");
+        }
+        if (mode == SessionQuietHoursService.Mode.CUSTOM && !(isQuietTime(start) && isQuietTime(end))) {
+            return fail(result, "时段格式应为 HH:mm（24 小时制，两位时两位分，如 23:00、07:30），收到「"
+                    + start.trim() + "」到「" + end.trim() + "」");
+        }
+        if (mode == SessionQuietHoursService.Mode.CUSTOM && start.trim().equals(end.trim())) {
+            return fail(result, "起止相同（" + start.trim() + "）等于没设；要全天照发选「不静音」，要跟设置页走选「跟全局」");
+        }
+
+        quietHours.set(platform, num, mode, start, end);
+        // 立即落盘，理由同 setRevenueVisibility
+        store.save();
+
+        String phrase = switch (mode) {
+            case FOLLOW -> "已改为跟全局";
+            case CUSTOM -> "已设为 " + start.trim() + "–" + end.trim();
+            case OFF -> "已设为不静音";
+        };
+        log.info("配置界面将会话 {} 的静音时段{}", num, phrase);
+
+        result.put("success", true);
+        result.put("message", num + " 的静音时段" + phrase);
+        return result;
+    }
+
+    /**
+     * 会话号只认正整数：十进制数字串或 JSON 整数
+     * <p>
+     * 不能交给 getLong：它会把 12.5 截成 12、true 读成 1，存到一个没人要的会话上
+     * @param raw 请求体里原样的值
+     * @return 会话号，不是正整数时为 null
+     */
+    private static Long positiveSessionNum(Object raw) {
+        long value;
+        if (raw instanceof Integer || raw instanceof Long || raw instanceof Short || raw instanceof Byte) {
+            value = ((Number) raw).longValue();
+        } else if (raw instanceof String text && text.matches("\\d{1,19}")) {
+            try {
+                value = Long.parseLong(text);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+        return value > 0 ? value : null;
+    }
+
+    /**
+     * 是否为静音时段认得的 HH:mm
+     * @param value 原样的值，两头空白不算
+     * @return 是时返回 true
+     */
+    private static boolean isQuietTime(String value) {
+        String trimmed = value.trim();
+        if (!trimmed.matches("\\d{2}:\\d{2}")) {
+            return false;
+        }
+        try {
+            LocalTime.parse(trimmed);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    /**
      * 移除订阅
      * @param body 请求体，含 platform、num、streamerUid、type，userUid 为空时清空整份名单
      * @return 操作结果
@@ -422,6 +551,10 @@ public class RuntimeStateController {
             sessions.computeIfAbsent(item.platform() + ":" + item.num(),
                     k -> session(item.platform(), item.num(), null, false));
         }
+        for (SessionQuietHoursService.Setting item : quietHours.all()) {
+            sessions.computeIfAbsent(item.platform() + ":" + item.num(),
+                    k -> session(item.platform(), item.num(), null, false));
+        }
 
         disabled.forEach(item -> sessions.get(item.platform() + ":" + item.num())
                 .put("disabled", item.commands()));
@@ -435,6 +568,15 @@ public class RuntimeStateController {
             Boolean explicit = revenueVisibility.explicit(platform, num);
             item.put("revenueVisible", revenueVisibility.isVisible(platform, typeOf(item.getString("type")), num));
             item.put("revenueExplicit", explicit != null);
+
+            // 静音：哪一档、自己的起止，以及此刻在不在这个会话的静音时段里。
+            // 最后这一项问闸门要，不让界面拿起止自己算——判定只该有一份
+            SessionQuietHoursService.Setting quiet = quietHours.get(platform, num);
+            SessionQuietHoursService.Mode mode = quiet == null ? SessionQuietHoursService.Mode.FOLLOW : quiet.mode();
+            item.put("quietMode", mode.key());
+            item.put("quietStart", quiet == null ? null : quiet.start());
+            item.put("quietEnd", quiet == null ? null : quiet.end());
+            item.put("quietActive", pushGate.inQuietHoursFor(platform, num));
         });
 
         List<JSONObject> sorted = new ArrayList<>(sessions.values());

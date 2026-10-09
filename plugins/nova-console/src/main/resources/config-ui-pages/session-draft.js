@@ -1,7 +1,7 @@
 /**
  * 本群设置的改动草稿
  *
- * 金额可见、命令开关、@我订阅的移除与清空：改了先记在这里，按「保存」才发出，
+ * 金额可见、静音时段、命令开关、@我订阅的移除与清空：改了先记在这里，按「保存」才发出，
  * 按「放弃」随推送配置那份草稿一起丢。与上方三段同一条保存纪律。
  *
  * 记的是「想要的那一份」与「服务端那一份」的差，不是「拨了几下」：
@@ -40,6 +40,7 @@ function slotOf(target) {
     drafts.set(key, {
       target: {platform: target.platform, type: target.type, num: target.num},
       revenue: null,
+      quiet: null,
       commands: new Map(),
       subs: new Map(),
     });
@@ -49,7 +50,7 @@ function slotOf(target) {
 
 /** 差没了就把自己从表里拿掉：空壳占着位置会让「还有几处」数出幽灵 */
 function trim(slot) {
-  if (!slot.revenue && !slot.commands.size && !slot.subs.size) {
+  if (!slot.revenue && !slot.quiet && !slot.commands.size && !slot.subs.size) {
     drafts.delete(keyOf(slot.target));
   }
 }
@@ -62,6 +63,7 @@ export function sessionDraftCount() {
   let n = 0;
   for (const slot of drafts.values()) {
     if (slot.revenue) n++;
+    if (slot.quiet) n++;
     for (const d of slot.commands.values()) {
       if (d.to !== d.from) n++;
     }
@@ -88,6 +90,31 @@ export function setRevenueDraft(target, to, from) {
 export function revenueDraft(target) {
   const s = drafts.get(keyOf(target));
   return s && s.revenue ? s.revenue.to : undefined;
+}
+
+/** 两份静音设置是不是同一档：不是自己的时段时，起止不算数 */
+function sameQuiet(a, b) {
+  if (a.mode !== b.mode) return false;
+  return a.mode !== 'custom' || (a.start === b.start && a.end === b.end);
+}
+
+/**
+ * 静音时段的期望设置
+ * @param to 想要的 {mode, start, end}
+ * @param from 服务端那一份 {mode, start, end}
+ */
+export function setQuietDraft(target, to, from) {
+  const s = slotOf(target);
+  const want = {mode: to.mode, start: to.start || '', end: to.end || ''};
+  const was = {mode: from.mode, start: from.start || '', end: from.end || ''};
+  s.quiet = sameQuiet(want, was) ? null : {from: was, to: want};
+  trim(s);
+}
+
+/** 想要的静音设置 {mode, start, end}；没改过则为 undefined */
+export function quietDraft(target) {
+  const s = drafts.get(keyOf(target));
+  return s && s.quiet ? s.quiet.to : undefined;
 }
 
 export function setCommandDraft(target, name, to, from) {
@@ -191,6 +218,19 @@ export function sessionWrites() {
         path: '/state/revenue',
         body: Object.assign({}, base, {visible: wanted.to}),
         done: () => { s.revenue = null; trim(s); },
+      });
+    }
+    if (s.quiet) {
+      const wanted = s.quiet.to;
+      const body = {mode: wanted.mode};
+      if (wanted.mode === 'custom') {
+        body.start = wanted.start;
+        body.end = wanted.end;
+      }
+      writes.push({
+        path: '/state/quiet',
+        body: Object.assign({}, base, body),
+        done: () => { s.quiet = null; trim(s); },
       });
     }
     const disable = [];

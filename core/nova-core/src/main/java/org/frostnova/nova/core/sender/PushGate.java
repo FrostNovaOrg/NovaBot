@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.sender;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.service.SessionQuietHoursService;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -22,13 +23,25 @@ import java.time.format.DateTimeParseException;
 public class PushGate {
     private final NovaCoreProperties properties;
 
-    @Autowired
+    /**
+     * 各会话自己那一档静音；为 null 时每个会话都跟全局
+     */
+    private final SessionQuietHoursService sessions;
+
     public PushGate(NovaCoreProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    public PushGate(NovaCoreProperties properties, SessionQuietHoursService sessions) {
         this.properties = properties;
+        this.sessions = sessions;
     }
 
     /**
-     * 当前是否允许推送
+     * 当前是否允许推送（只按全局那一项判）
+     * <p>
+     * 推往某个会话的消息该用 {@link #allowedFor(String, Long)}：会话可能设了自己的时段或不静音。
      * @return 允许推送时返回 true
      */
     public boolean allowed() {
@@ -36,7 +49,19 @@ public class PushGate {
     }
 
     /**
-     * 判断指定时刻是否允许推送
+     * 当前是否允许往指定会话推送
+     * <p>
+     * 全局开关照旧拦一切；静音按这个会话的那一档判：跟全局、自己的时段、不静音。
+     * @param platform 推送平台
+     * @param num 会话号
+     * @return 允许推送时返回 true
+     */
+    public boolean allowedFor(String platform, Long num) {
+        return allowedAt(LocalTime.now(), platform, num);
+    }
+
+    /**
+     * 判断指定时刻是否允许推送（只按全局那一项判）
      * @param now 时刻
      * @return 允许推送时返回 true
      */
@@ -48,6 +73,62 @@ public class PushGate {
         }
 
         return !inQuietHours(now, push.getQuietStart(), push.getQuietEnd());
+    }
+
+    /**
+     * 判断指定时刻是否允许往指定会话推送
+     * @param now 时刻
+     * @param platform 推送平台
+     * @param num 会话号
+     * @return 允许推送时返回 true
+     */
+    boolean allowedAt(LocalTime now, String platform, Long num) {
+        if (!properties.getPush().isEnabled()) {
+            return false;
+        }
+
+        return !inQuietHoursAt(now, platform, num);
+    }
+
+    /**
+     * 此刻指定会话是否落在它的静音时段内
+     * <p>
+     * 与 {@link #inQuietHours()} 同一份判定，只是起止换成这个会话那一档给的那一对：
+     * 控制台「本群设置」的摘要据此写「静音中」，与推送真被拦下的口径一致。
+     * @param platform 推送平台
+     * @param num 会话号
+     * @return 处于静音时段时返回 true
+     */
+    public boolean inQuietHoursFor(String platform, Long num) {
+        return inQuietHoursAt(LocalTime.now(), platform, num);
+    }
+
+    /**
+     * 会话那一档只决定拿哪一对起止去判，判定本身仍是下面那一份 {@link #inQuietHours(LocalTime, String, String)}
+     */
+    private boolean inQuietHoursAt(LocalTime now, String platform, Long num) {
+        SessionQuietHoursService.Mode mode = SessionQuietHoursService.Mode.FOLLOW;
+        String start = properties.getPush().getQuietStart();
+        String end = properties.getPush().getQuietEnd();
+
+        if (sessions != null && platform != null && num != null) {
+            // 读这一档出任何异常都按跟全局判：抛出去会让这位主播这一次的推送整件发不出去
+            SessionQuietHoursService.Setting setting = null;
+            try {
+                setting = sessions.get(platform, num);
+            } catch (RuntimeException e) {
+                log.warn("读会话 {}:{} 的静音时段出错，按跟全局判: {}", platform, num, e.toString());
+            }
+            if (setting != null && setting.mode() != null) {
+                mode = setting.mode();
+                if (mode == SessionQuietHoursService.Mode.CUSTOM) {
+                    start = setting.start();
+                    end = setting.end();
+                }
+            }
+        }
+
+        return mode != SessionQuietHoursService.Mode.OFF && inQuietHours(now, start, end);
     }
 
     /**
@@ -94,6 +175,24 @@ public class PushGate {
     public boolean inQuietHours() {
         NovaCoreProperties.Push push = properties.getPush();
         return inQuietHours(LocalTime.now(), push.getQuietStart(), push.getQuietEnd());
+    }
+
+    /**
+     * 全局那一项静音时段的开始，原样给出
+     * <p>
+     * 控制台「本群设置」里「跟全局」那一档的摘要要写出全局是几点到几点。
+     * @return 开始，没设时为空
+     */
+    public String globalQuietStart() {
+        return properties.getPush().getQuietStart();
+    }
+
+    /**
+     * 全局那一项静音时段的结束，原样给出
+     * @return 结束，没设时为空
+     */
+    public String globalQuietEnd() {
+        return properties.getPush().getQuietEnd();
     }
 
     /**

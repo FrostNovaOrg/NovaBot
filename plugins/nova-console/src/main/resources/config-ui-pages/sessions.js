@@ -1,5 +1,5 @@
 /**
- * 通道页第 4 段「本群设置」：金额可见、命令、提醒订阅、@全体成员 状态行
+ * 通道页第 4 段「本群设置」：金额可见、静音时段、命令、提醒订阅、@全体成员 状态行
  *
  * 这一段讲的是「这个群此刻听不听话」，与前三段的「往这个群推什么」是同一件事的两面，
  * 因此摆在同一页上——分成两页时，「配好了却不响应」这种情况要在两个入口之间来回对照
@@ -9,7 +9,7 @@
  * 按「放弃」全部还原。从前是「拨一下就发请求」，于是同一页上并存两套相反的规矩，
  * 而「放弃」撤不回这几项。
  *
- * 摘要那四行写什么由 push-model.js 算（见 tools/push-model-check.sh 的各档），
+ * 摘要那几行写什么由 push-model.js 算（见 tools/push-model-check.sh 的各档），
  * 本文件只管把算好的摆上去，以及把改动记进草稿。写盘走 push.js 的 save，
  * 与推送配置那份草稿在同一趟里发出。
  */
@@ -18,9 +18,18 @@ import {$, el, esc, markDirty} from './core.js';
 import {openDrawer} from './push.js';
 import {ask} from './confirm.js';
 import {
-  commandDraft, isClearPending, isUserPendingRemove, revenueDraft, setCommandDraft,
-  setCommandsDraft, setRevenueDraft, setSubscriptionClearDraft, setSubscriptionRemoveDraft,
+  commandDraft, isClearPending, isUserPendingRemove, quietDraft, revenueDraft, setCommandDraft,
+  setCommandsDraft, setQuietDraft, setRevenueDraft, setSubscriptionClearDraft,
+  setSubscriptionRemoveDraft,
 } from './session-draft.js';
+
+/**
+ * 静音时段那一行摊开着的会话
+ *
+ * 那一行要连着点几下（选档、改开始、改结束），而每点一下这一段都整段重画；
+ * 不记住的话，每改一处它就自己收起来一次。
+ */
+const quietOpen = new Set();
 
 /** 本页刚画完的那一次重画：草稿变了要连摘要与开关一起对齐，否则屏幕上留着拨过的空壳 */
 let repaintSession = () => {};
@@ -46,7 +55,7 @@ export function renderIncomplete(entries) {
 }
 
 /**
- * 「本群设置」四行
+ * 「本群设置」那几行
  *
  * 前三行默认折起来：它们各自都要占掉大半屏，四行同时摊开的话，
  * 使用者要翻很久才回得到上面那三段——而那三段才是这一页每天要改的东西。
@@ -61,6 +70,7 @@ export function sessionSettings(host, ctx) {
     sessionSettings(host, ctx);
   };
   revenueRow(host, ctx);
+  quietRow(host, ctx);
   commandRow(host, ctx);
   subscriptionRow(host, ctx);
   atAllRow(host, ctx);
@@ -74,10 +84,18 @@ function refresh() {
 
 /**
  * 一行可折叠的摘要
+ * @param keep 记住摊开与否的那张表与键，可不给：给了才在重画后照原样摊开
  * @return {HTMLElement} 正文容器
  */
-function row(host, title, summary) {
+function row(host, title, summary, keep) {
   const box = el('details', 'crow');
+  if (keep) {
+    box.open = keep.set.has(keep.key);
+    box.addEventListener('toggle', () => {
+      if (box.open) keep.set.add(keep.key);
+      else keep.set.delete(keep.key);
+    });
+  }
   const head = el('summary');
   head.innerHTML = '<span class="cr-t">' + esc(title) + '</span>'
     + '<span class="cr-sum">' + esc(summary) + '</span>';
@@ -119,7 +137,81 @@ function revenueRow(host, ctx) {
     + '只去掉右侧的数字，仍然是在公开排消费。';
 }
 
-// ---- 2 命令 ----
+// ---- 2 静音时段 ----
+
+/** 选「本会话自己的时段」又从没填过时，起止先借全局那一对，全局也没设就给一对常见的 */
+const QUIET_FALLBACK = {start: '23:00', end: '08:00'};
+
+const QUIET_MODES = [
+  {mode: 'follow', label: '跟全局', hint: '用设置页里那一项全局静音时段。没设过的会话都是这一档。'},
+  {mode: 'custom', label: '本会话自己的时段', hint: '这个会话按下面的起止静音，不看全局那一项。可跨零点。'},
+  {mode: 'off', label: '本会话不静音', hint: '全局在静音时，推往这个会话的照发。'},
+];
+
+function quietRow(host, ctx) {
+  const summary = ctx.summary.quiet;
+  const key = ctx.target.platform + ':' + ctx.target.type + ':' + ctx.target.num;
+  const body = row(host, '静音时段', summary.text, {set: quietOpen, key});
+
+  const saved = {mode: summary.mode, start: summary.start, end: summary.end};
+  const wanted = quietDraft(ctx.target) || saved;
+  const global = ctx.quietGlobal || {};
+
+  /** 期望态与服务端那一份比：选过去又选回来的那几下自己会消失 */
+  const put = to => {
+    setQuietDraft(ctx.target, to, saved);
+    refresh();
+  };
+
+  const name = 'quiet-' + key;
+  for (const item of QUIET_MODES) {
+    const line = el('label', 'swrow');
+    const input = el('input');
+    input.type = 'radio';
+    input.name = name;
+    input.checked = wanted.mode === item.mode;
+    input.setAttribute('aria-label', item.label);
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      if (item.mode !== 'custom') {
+        put({mode: item.mode});
+        return;
+      }
+      const start = wanted.start || saved.start || global.start || QUIET_FALLBACK.start;
+      const end = wanted.end || saved.end || global.end || QUIET_FALLBACK.end;
+      put({mode: 'custom', start, end});
+    });
+    line.appendChild(input);
+
+    const text = el('div', 'swtxt');
+    text.innerHTML = '<b>' + esc(item.label) + '</b><p>' + esc(item.hint) + '</p>';
+    line.appendChild(text);
+    body.appendChild(line);
+  }
+
+  const times = el('div', 'swrow');
+  for (const [field, label] of [['start', '静音开始'], ['end', '静音结束']]) {
+    const input = el('input');
+    input.type = 'time';
+    input.value = wanted.mode === 'custom' ? (wanted[field] || '') : '';
+    input.disabled = wanted.mode !== 'custom';
+    input.setAttribute('aria-label', label);
+    input.addEventListener('change', () => {
+      // 时间框清空或半截时不进草稿：存下一对缺了一头的起止，只会得到一档看似设了、其实不生效的记录
+      if (!/^\d{2}:\d{2}$/.test(input.value)) return;
+      put(Object.assign({}, wanted, {mode: 'custom', [field]: input.value}));
+    });
+    times.appendChild(el('span', 'dim')).textContent = label === '静音开始' ? '从' : '到';
+    times.appendChild(input);
+  }
+  body.appendChild(times);
+
+  body.appendChild(el('div', 'note')).textContent =
+    '静音期间推往这个会话的开播、下播、报告、动态与命令回复直接丢弃，不攒着补发，时间线上记「静音丢弃」。'
+    + '起止相同视为没设。设置页的全局推送开关关着时一律不发；告警不受静音影响。';
+}
+
+// ---- 3 命令 ----
 
 function commandRow(host, ctx) {
   const group = Number(ctx.target.type) === 1;
@@ -324,7 +416,7 @@ function batchCommands(ctx, names, disabled) {
   refresh();
 }
 
-// ---- 3 提醒订阅 ----
+// ---- 4 提醒订阅 ----
 
 function subscriptionRow(host, ctx) {
   const summary = ctx.summary.subscription;
@@ -396,7 +488,7 @@ function subscriptionDrawer(ctx) {
   });
 }
 
-// ---- 4 @全体成员：状态行，不是设置 ----
+// ---- 5 @全体成员：状态行，不是设置 ----
 
 function atAllRow(host, ctx) {
   const status = ctx.summary.atAll;

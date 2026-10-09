@@ -15,7 +15,7 @@
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   layoutState, menuKnown, noticeSwitches, previewRequestBody, previewRevenueCaption,
-  pushTree, recentPushes, revenueSummary, savedRevenueVisible,
+  pushTree, quietSummary, recentPushes, revenueSummary, savedRevenueVisible,
   sessionOf, strandedSessions, subscriptionSummary, templateState,
 } from '../plugins/nova-console/src/main/resources/config-ui-pages/push-model.js';
 import {targetOptions} from '../core/nova-core/src/main/resources/config-ui/links-model.js';
@@ -408,6 +408,28 @@ const CASES = [
       '金额配过': '显示金额',
       '订阅': '开播 3 人 · 动态 1 人',
       '别的群不算进来': 2,
+    },
+  },
+  {
+    name: '静音时段摘要',
+    run: () => {
+      const global = {start: '23:00', end: '08:00'};
+      return {
+        '没设过': quietSummary(session(), global).text,
+        '全局也没设': quietSummary(session(), {start: '', end: ''}).text,
+        '自己的时段': quietSummary(session({quietMode: 'custom', quietStart: '12:00', quietEnd: '14:00'}), global).text,
+        '不静音': quietSummary(session({quietMode: 'off'}), global).text,
+        '静音中': quietSummary(session({quietActive: true}), global).text,
+        '认不出的档位按跟全局': quietSummary(session({quietMode: 'sometimes'}), global).mode,
+      };
+    },
+    expect: {
+      '没设过': '跟全局（23:00–08:00）',
+      '全局也没设': '跟全局（设置页没设静音时段）',
+      '自己的时段': '本会话 12:00–14:00',
+      '不静音': '本会话不静音',
+      '静音中': '跟全局（23:00–08:00） · 静音中',
+      '认不出的档位按跟全局': 'follow',
     },
   },
   {

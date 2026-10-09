@@ -218,6 +218,19 @@ public class NovaStateStore {
     }
 
     /**
+     * 某个命名空间在不在、却不是对象（被手改成字符串、数组、数字之类）
+     * <p>
+     * {@link #namespace} 对数组、数字静默给空对象，分不出「没有」与「坏了」，要 warn 的调用方先问这里
+     * @param namespace 命名空间
+     * @return 在且不是对象时返回 true
+     */
+    public boolean isMalformed(@NonNull String namespace) {
+        synchronized (lock) {
+            return cache.containsKey(namespace) && !(cache.get(namespace) instanceof Map);
+        }
+    }
+
+    /**
      * 取得某个命名空间的快照
      * <p>
      * <b>必须是拷贝而不是本体。</b>调用方拿到之后会在锁外遍历 {@code keySet()}，
