@@ -314,6 +314,7 @@ public class RuntimeStateController {
      * 「自己的时段」的起止必须是 HH:mm，否则拒收：存下一档判定那一侧会忽略的时段，
      * 页面摘要就会显示一个其实不生效的时段。这里只收判定那一侧一定认得的写法（两位时、两位分），
      * 手改进状态文件的坏格式照旧由判定那一侧按全局那套规则忽略并 warn。
+     * 起止相同同理：判定那一侧当没设，存下来摘要却显示一段时段，所以也拒收。
      * @param body 请求体，含 platform、num、mode（follow／custom／off，空即 follow）与 start、end
      * @return 操作结果
      */
@@ -322,14 +323,13 @@ public class RuntimeStateController {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long num;
-        try {
-            num = body.getLong("num");
-        } catch (RuntimeException e) {
-            return fail(result, "会话号「" + body.getString("num") + "」不是数字");
-        }
-        if (platform == null || num == null) {
+        Object rawNum = body.get("num");
+        if (platform == null || rawNum == null) {
             return fail(result, "缺少参数");
+        }
+        Long num = positiveSessionNum(rawNum);
+        if (num == null) {
+            return fail(result, "会话号「" + rawNum + "」不是正整数");
         }
 
         String raw = body.getString("mode");
@@ -348,6 +348,9 @@ public class RuntimeStateController {
             return fail(result, "时段格式应为 HH:mm（24 小时制，两位时两位分，如 23:00、07:30），收到「"
                     + start.trim() + "」到「" + end.trim() + "」");
         }
+        if (mode == SessionQuietHoursService.Mode.CUSTOM && start.trim().equals(end.trim())) {
+            return fail(result, "起止相同（" + start.trim() + "）等于没设；要全天照发选「不静音」，要跟设置页走选「跟全局」");
+        }
 
         quietHours.set(platform, num, mode, start, end);
         // 立即落盘，理由同 setRevenueVisibility
@@ -363,6 +366,29 @@ public class RuntimeStateController {
         result.put("success", true);
         result.put("message", num + " 的静音时段" + phrase);
         return result;
+    }
+
+    /**
+     * 会话号只认正整数：十进制数字串或 JSON 整数
+     * <p>
+     * 不能交给 getLong：它会把 12.5 截成 12、true 读成 1，存到一个没人要的会话上
+     * @param raw 请求体里原样的值
+     * @return 会话号，不是正整数时为 null
+     */
+    private static Long positiveSessionNum(Object raw) {
+        long value;
+        if (raw instanceof Integer || raw instanceof Long || raw instanceof Short || raw instanceof Byte) {
+            value = ((Number) raw).longValue();
+        } else if (raw instanceof String text && text.matches("\\d{1,19}")) {
+            try {
+                value = Long.parseLong(text);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+        return value > 0 ? value : null;
     }
 
     /**

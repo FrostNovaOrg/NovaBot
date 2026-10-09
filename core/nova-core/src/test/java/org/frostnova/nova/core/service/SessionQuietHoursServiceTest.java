@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -134,6 +135,75 @@ class SessionQuietHoursServiceTest {
             assertEquals(Mode.FOLLOW, setting.mode(), "第 " + num + " 条");
         }
         assertTrue(service.all().isEmpty(), "读不出的记录不该出现在清单里: " + service.all());
+    }
+
+    @Test
+    @DisplayName("记录不是对象（数字、数组、真假、null、字符串）：每一种都 warn 一句并当跟全局；键根本没有时不 warn")
+    void nonObjectRecordWarns() {
+        Object[] shapes = {42, 12.5, List.of(1, 2), true, false, null, "off"};
+        NovaStateStore store = new NovaStateStore(new NovaCoreProperties());
+        store.write("SessionQuietHours", data -> {
+            for (int i = 0; i < shapes.length; i++) {
+                data.put(PLATFORM + ":" + (i + 1), shapes[i]);
+            }
+        });
+        SessionQuietHoursService service = service(store);
+
+        for (int i = 0; i < shapes.length; i++) {
+            long num = i + 1;
+            Setting[] read = new Setting[1];
+            List<String> warns = captureWarns(() -> read[0] = service.get(PLATFORM, num));
+            assertEquals(Mode.FOLLOW, read[0].mode(), "形状 " + shapes[i]);
+            assertEquals(1, warns.size(), "形状 " + shapes[i] + " 该 warn 一句: " + warns);
+            assertTrue(warns.get(0).contains("读不出，按跟全局处理"), warns.get(0));
+        }
+
+        List<String> absent = captureWarns(() -> assertEquals(Mode.FOLLOW, service.get(PLATFORM, 999L).mode()));
+        assertTrue(absent.isEmpty(), "从没设过的会话不该 warn: " + absent);
+    }
+
+    @Test
+    @DisplayName("整个命名空间坏了（字符串、数组、数字）：all 不抛，warn 一句，当没有任何会话设过")
+    void brokenNamespaceListsNothing() throws Exception {
+        for (String shape : new String[]{"\"oops\"", "[1,2]", "42"}) {
+            Path sub = Files.createDirectories(dir.resolve("case" + Math.abs(shape.hashCode())));
+            Files.writeString(sub.resolve("state.json"), "{\"SessionQuietHours\":" + shape + "}");
+            NovaCoreProperties properties = new NovaCoreProperties();
+            properties.getLive().setLiveDataPath(sub.resolve("live.json").toString());
+            NovaStateStore store = new NovaStateStore(properties);
+            store.onApplicationReadyEvent();
+            try {
+                SessionQuietHoursService service = service(store);
+                List<Setting>[] listed = new List[1];
+                List<String> warns = captureWarns(() -> listed[0] = assertDoesNotThrow(service::all, shape));
+                assertTrue(listed[0].isEmpty(), shape + ": " + listed[0]);
+                assertEquals(1, warns.size(), shape + " 该 warn 一句: " + warns);
+                assertEquals(Mode.FOLLOW, assertDoesNotThrow(() -> service.get(PLATFORM, 1L)).mode(), shape);
+            } finally {
+                store.onContextClosedEvent();
+            }
+        }
+    }
+
+    /**
+     * 摘下服务落下的全部 WARN 原文（格式化后）
+     */
+    private static List<String> captureWarns(Runnable action) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SessionQuietHoursService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return appender.list.stream()
+                    .filter(event -> event.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .toList();
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     private SessionQuietHoursService service(NovaStateStore store) {

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 会话级静音时段
@@ -53,7 +54,8 @@ public class SessionQuietHoursService {
     public Setting get(@NonNull String platform, @NonNull Long num) {
         String key = key(platform, num);
         try {
-            return store.read(NAMESPACE, key, data -> parse(platform, num, data.getJSONObject(key)))
+            // 读到这里键一定在（不在的是从没设过，不 warn）；值不是对象的，getJSONObject 会静默给 null，所以先看形状
+            return store.read(NAMESPACE, key, data -> parse(platform, num, record(key, data.get(key))))
                     .orElseGet(() -> Setting.follow(platform, num));
         } catch (RuntimeException e) {
             log.warn("会话 {} 的静音时段记录读不出，按跟全局处理: {}", key, e.getMessage());
@@ -91,8 +93,14 @@ public class SessionQuietHoursService {
      * @return 各会话的设置，按平台与会话号排序；跟全局的不在其中
      */
     public List<Setting> all() {
-        JSONObject data = store.namespace(NAMESPACE);
         List<Setting> result = new ArrayList<>();
+        // 整段被手改成字符串、数组、数字：当没有任何会话设过，控制台的 /state 照常返回。
+        // 字符串时 namespace 会抛，数组、数字时它静默给空对象，所以先问形状
+        if (store.isMalformed(NAMESPACE)) {
+            log.warn("静音时段的整段记录 {} 不是对象，按没有任何会话设过处理", NAMESPACE);
+            return result;
+        }
+        JSONObject data = store.namespace(NAMESPACE);
 
         for (String key : data.keySet()) {
             // 键为「平台:会话号」，从右侧切一刀即可还原，理由见 RevenueVisibilityService#all
@@ -115,6 +123,20 @@ public class SessionQuietHoursService {
 
         result.sort(Comparator.comparing(Setting::platform).thenComparingLong(Setting::num));
         return result;
+    }
+
+    /**
+     * 取出一条记录；不是对象的（数字、数组、真假、null、字符串）warn 一句并给 null，由 parse 当跟全局
+     */
+    private static JSONObject record(String key, Object raw) {
+        if (raw instanceof JSONObject value) {
+            return value;
+        }
+        if (raw instanceof Map<?, ?> map) {
+            return new JSONObject(map);
+        }
+        log.warn("会话 {} 的静音时段记录读不出，按跟全局处理: 不是对象（{}）", key, raw);
+        return null;
     }
 
     private static Setting parse(String platform, Long num, JSONObject value) {

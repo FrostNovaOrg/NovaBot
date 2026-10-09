@@ -53,6 +53,8 @@ class SessionQuietHoursSurfaceTest {
 
     private RuntimeStateController controller;
 
+    private AbstractDataSource dataSource;
+
     @BeforeEach
     void setUp() {
         properties = new NovaCoreProperties();
@@ -68,12 +70,16 @@ class SessionQuietHoursSurfaceTest {
         user.setPlatform("bilibili");
         user.getTargets().add(target);
 
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
         NovaStateStore store = new NovaStateStore(properties);
         quietHours = new SessionQuietHoursService(store);
-        controller = new RuntimeStateController(
+        controller = controllerOn(store, quietHours);
+    }
+
+    private RuntimeStateController controllerOn(NovaStateStore store, SessionQuietHoursService quiet) {
+        return new RuntimeStateController(
                 mock(CommandDispatcher.class),
                 mock(CommandSettingsService.class),
                 mock(AtSubscriptionService.class),
@@ -82,8 +88,8 @@ class SessionQuietHoursSurfaceTest {
                 new RevenueVisibilityService(store),
                 mock(LiveDataService.class),
                 new StreamerNames(new LiveSessionArchive(properties)),
-                quietHours,
-                new PushGate(properties, quietHours));
+                quiet,
+                new PushGate(properties, quiet));
     }
 
     @Test
@@ -169,6 +175,54 @@ class SessionQuietHoursSurfaceTest {
         assertFalse(result.getBooleanValue("success"));
         assertTrue(result.getString("message").contains("会话号"), result.getString("message"));
         assertTrue(quietHours.all().isEmpty());
+    }
+
+    @Test
+    @DisplayName("会话号只认正整数：小数、真假、负数、0 拒收并说明，不落记录")
+    void rejectsNonPositiveIntegerSession() {
+        for (Object num : new Object[]{"12.5", 12.7, true, false, -5, "-5", 0, "0"}) {
+            JSONObject body = body("off", null, null);
+            body.put("num", num);
+
+            JSONObject result = assertDoesNotThrow(() -> controller.setQuietHours(body), String.valueOf(num));
+            assertFalse(result.getBooleanValue("success"), num + ": " + result);
+            assertTrue(result.getString("message").contains("不是正整数"), num + ": " + result);
+        }
+        assertTrue(quietHours.all().isEmpty(), quietHours.all().toString());
+
+        for (Object num : new Object[]{"30004", 30005, 30006L}) {
+            JSONObject body = body("off", null, null);
+            body.put("num", num);
+            assertTrue(controller.setQuietHours(body).getBooleanValue("success"), String.valueOf(num));
+        }
+        assertEquals(3, quietHours.all().size(), quietHours.all().toString());
+    }
+
+    @Test
+    @DisplayName("自己的时段起止相同：拒收，说明该选不静音或跟全局")
+    void rejectsEqualStartAndEnd() {
+        for (String[] pair : new String[][]{{"00:00", "00:00"}, {"23:00", " 23:00 "}}) {
+            JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1]));
+            assertFalse(result.getBooleanValue("success"), pair[0] + "–" + pair[1] + ": " + result);
+            String message = result.getString("message");
+            assertTrue(message.contains("起止相同") && message.contains("不静音") && message.contains("跟全局"), message);
+        }
+        assertTrue(quietHours.all().isEmpty(), quietHours.all().toString());
+    }
+
+    @Test
+    @DisplayName("状态件里静音时段整段坏了：/state 照常返回，会话按跟全局列出")
+    void stateSurvivesBrokenNamespace() throws Exception {
+        java.nio.file.Files.writeString(dir.resolve("state.json"), "{\"SessionQuietHours\":\"oops\"}");
+        NovaStateStore store = new NovaStateStore(properties);
+        store.onApplicationReadyEvent();
+        try {
+            RuntimeStateController broken = controllerOn(store, new SessionQuietHoursService(store));
+            JSONObject state = assertDoesNotThrow(broken::state);
+            assertEquals("follow", session(state).getString("quietMode"));
+        } finally {
+            store.onContextClosedEvent();
+        }
     }
 
     private JSONObject body(String mode, String start, String end) {
