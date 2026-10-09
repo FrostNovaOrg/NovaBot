@@ -523,7 +523,9 @@ public class BilibiliEventParser {
             "COLLABORATION_LIVE_POPULARITY",
             "COLLABORATION_LIVE_WATCHED",
             "DANMU_MSG_MIRROR",
-            "PK_BATTLE_ENTRANCE");
+            "PK_BATTLE_ENTRANCE",
+            // 2026-10-10 取表：两台 10-03～10-10 连接日志里出现过的新名
+            "ENTRY_EFFECT_MUST_RECEIVE");
 
     /**
      * 收入口径名里不计收入的消息，登记为已知、不计收入、不记未知：与已计事件重复的副本、界面横幅、
@@ -563,6 +565,8 @@ public class BilibiliEventParser {
                 "推给登录账号的弹卡：room_id 不是本房，同一分钟多个房间各收一份、内容全同（2026-09 真连接 10/10），不带送礼人和金额；不是本房收入。");
         table.put("GUARD_NOTICE_PUSH",
                 "账号级推送：只有 delay_second、red_alarm、ruid、url，不带开通人、价格、数量与等级；同一时刻每个房间各来一份、ruid 全同，且不是本产品监听的房间或主播（2026-09-30 真连接 5 房×2 批，10/10）；前后 60 秒内全机没有 GUARD_BUY／USER_TOAST_MSG／USER_TOAST_MSG_V2（0 条）；不是本房收入。");
+        table.put("GIFT_BOARD_RED_DOT",
+                "礼物面板红点提示：data 只有 categoryL1 一个键，不带送礼人、价格、数量、币种、礼物号与等级；同一时刻 5 个房间各来一份、内容全同（2026-10-05 真连接 5/5）；同房前后 60 秒、300 秒内与全机前后 60 秒内都没有 SEND_GIFT／SEND_GIFT_V2／GUARD_BUY／USER_TOAST_MSG／USER_TOAST_MSG_V2／SUPER_CHAT_MESSAGE／COMBO_SEND（0 条）；不是一笔收入。");
         return Collections.unmodifiableMap(table);
     }
 

@@ -279,7 +279,9 @@ class BilibiliEventParserTest {
                     "COLLABORATION_LIVE_POPULARITY",
                     "COLLABORATION_LIVE_WATCHED",
                     "DANMU_MSG_MIRROR",
-                    "PK_BATTLE_ENTRANCE");
+                    "PK_BATTLE_ENTRANCE",
+                    // 2026-10-10 取表：两台 10-03～10-10 连接日志里出现过的新名
+                    "ENTRY_EFFECT_MUST_RECEIVE");
 
             try {
                 for (String cmd : seen) {
@@ -453,7 +455,7 @@ class BilibiliEventParserTest {
         }
 
         @Test
-        @DisplayName("派生不计收入：十五名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰十五名、键序与名单逐位同")
+        @DisplayName("派生不计收入：十六名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰十六名、键序与名单逐位同")
         void derivedNotRevenueCmdsSilentAndExact() {
             List<String> reds = new ArrayList<>();
             List<String> ran = new ArrayList<>();
@@ -472,7 +474,8 @@ class BilibiliEventParserTest {
                     "SUPER_CHAT_ENTRANCE",
                     "GUARD_HONOR_THOUSAND",
                     "GIFT_POPUP",
-                    "GUARD_NOTICE_PUSH");
+                    "GUARD_NOTICE_PUSH",
+                    "GIFT_BOARD_RED_DOT");
 
             try {
                 for (String cmd : derived) {
@@ -516,7 +519,7 @@ class BilibiliEventParserTest {
 
             try {
                 int n = BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.size();
-                assertEquals(15, n, "派生表须恰 15 名，实际 " + n);
+                assertEquals(16, n, "派生表须恰 16 名，实际 " + n);
             } catch (AssertionError e) {
                 reds.add("④ " + e.getMessage());
             }

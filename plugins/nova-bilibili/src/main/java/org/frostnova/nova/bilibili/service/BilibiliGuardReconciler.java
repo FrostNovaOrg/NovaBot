@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  * {@code GUARD_BUY} 的 {@code price} 是<b>挂牌价</b>；toast 的 {@code price} 才是<b>实际成交价</b>。
  * 按挂牌价记会把实际成交高估。
  * <p>
- * 偏偏 {@code GUARD_BUY} <b>恒定先到</b>（25/25，且只差一条消息），所以「先到先得」必然选中
+ * 偏偏 {@code GUARD_BUY} <b>恒定先到</b>，所以「先到先得」必然选中
  * 挂牌价。要拿到实际成交价，只能把 {@code GUARD_BUY} 压住等一等 toast——实测两者相差不超过
  * 1 秒，{@link #DEFAULT_GRACE} 留了足够余量。
  * <p>
