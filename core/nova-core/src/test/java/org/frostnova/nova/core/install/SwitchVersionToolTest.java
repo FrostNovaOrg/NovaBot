@@ -1136,6 +1136,11 @@ class SwitchVersionToolTest {
         builder.environment().put("NOVABOT_PROC_MEMINFO", world.meminfo.toString());
         builder.environment().put("NOVABOT_SYSTEMD_RUN_DIR", world.runDir.toString());
         builder.environment().put("NOVABOT_STATE_DIR", world.stateDir.toString());
+        // 等待时长调到最短：缺省的 10、60、180、120 秒会每条用例都干等满，结论照旧判得出。
+        builder.environment().put("NOVABOT_STAY_ACTIVE_SECONDS", "1");
+        builder.environment().put("NOVABOT_STAY_ACTIVE_RESTART_SECONDS", "1");
+        builder.environment().put("NOVABOT_READY_TIMEOUT_SECONDS", "1");
+        builder.environment().put("NOVABOT_WAITING_TIMEOUT_SECONDS", "1");
         builder.environment().put("NOVABOT_STUB_LOG", world.logs.toString());
         builder.environment().put("NOVABOT_STUB_STATE", world.stubState.toString());
         builder.environment().put("NOVABOT_STUB_ACTIVE", world.active);

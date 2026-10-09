@@ -17,6 +17,12 @@
 #   NOVABOT_SYSTEMD_RUN_DIR     缺省 /run/systemd/system
 #   NOVABOT_STATE_DIR           缺省 <安装目录>/.novabot-switch
 #
+# 可改时长的环境变量（缺省就是原来写死的秒数；只认正整数，给错了照缺省并在标准错误说一句）：
+#   NOVABOT_STAY_ACTIVE_SECONDS           缺省 10  就绪后稳住的秒数
+#   NOVABOT_STAY_ACTIVE_RESTART_SECONDS   缺省 60  没有 handover=1 时普通启动后稳住的秒数
+#   NOVABOT_READY_TIMEOUT_SECONDS         缺省 180 等到 ready 的上限秒数
+#   NOVABOT_WAITING_TIMEOUT_SECONDS       缺省 120 等到门口（waiting）的上限秒数
+#
 set -euo pipefail
 
 say() {
@@ -61,6 +67,30 @@ PROC_LOCKS="${NOVABOT_PROC_LOCKS:-/proc/locks}"
 PROC_MEMINFO="${NOVABOT_PROC_MEMINFO:-/proc/meminfo}"
 RUN_DIR="${NOVABOT_SYSTEMD_RUN_DIR:-/run/systemd/system}"
 STATE_DIR="${NOVABOT_STATE_DIR:-$INSTALL_DIR/.novabot-switch}"
+
+# 时长只认正整数。没设就用缺省；设了不算正整数就照缺省，并在标准错误说一句。
+pick_seconds() {
+    local name="$1"
+    local raw="$2"
+    local fallback="$3"
+    if [ -z "$raw" ]; then
+        printf '%s' "$fallback"
+        return 0
+    fi
+    case "$raw" in
+        *[!0-9]*|0*)
+            printf '%s\n' "${name} 只认正整数，${raw} 不算，这次照缺省 ${fallback} 秒。" >&2
+            printf '%s' "$fallback"
+            return 0
+            ;;
+    esac
+    printf '%s' "$raw"
+}
+
+STAY_ACTIVE_SECONDS=$(pick_seconds NOVABOT_STAY_ACTIVE_SECONDS "${NOVABOT_STAY_ACTIVE_SECONDS:-}" 10)
+STAY_ACTIVE_RESTART_SECONDS=$(pick_seconds NOVABOT_STAY_ACTIVE_RESTART_SECONDS "${NOVABOT_STAY_ACTIVE_RESTART_SECONDS:-}" 60)
+READY_TIMEOUT_SECONDS=$(pick_seconds NOVABOT_READY_TIMEOUT_SECONDS "${NOVABOT_READY_TIMEOUT_SECONDS:-}" 180)
+WAITING_TIMEOUT_SECONDS=$(pick_seconds NOVABOT_WAITING_TIMEOUT_SECONDS "${NOVABOT_WAITING_TIMEOUT_SECONDS:-}" 120)
 
 # 更早的单元名。拆开写，模板正文里不出现「名字加点」那种旧键字面。
 EARLIER_UNIT=starbot
@@ -194,12 +224,13 @@ remove_dropin() {
     rmdir "$dir" 2>/dev/null || true
 }
 
-# 等状态件出现 waiting。0 到了；1 进程没了；2 超过 120 秒；3 没经过 waiting 就 passed/ready；4 安全模式。
+# 等状态件出现 waiting。0 到了；1 进程没了；2 超过 WAITING_TIMEOUT_SECONDS 秒；3 没经过 waiting 就 passed/ready；4 安全模式。
 wait_phase_waiting() {
     local unit="$1"
     local file="$2"
+    local limit="$3"
     local deadline now
-    deadline=$(( $(date +%s) + 120 ))
+    deadline=$(( $(date +%s) + limit ))
     while true; do
         now=$(date +%s)
         read_phase "$file"
@@ -286,13 +317,13 @@ ordinary_start() {
             return 1
         fi
         wait_rc=0
-        wait_phase_ready "$unit" "$file" 180 || wait_rc=$?
+        wait_phase_ready "$unit" "$file" "$READY_TIMEOUT_SECONDS" || wait_rc=$?
         if [ "$wait_rc" -ne 0 ]; then
             remove_dropin "$ver"
             systemctl daemon-reload || true
             return 1
         fi
-        if ! stay_active "$unit" 10 "$file"; then
+        if ! stay_active "$unit" "$STAY_ACTIVE_SECONDS" "$file"; then
             remove_dropin "$ver"
             systemctl daemon-reload || true
             return 1
@@ -308,7 +339,7 @@ ordinary_start() {
         say "启动 $ver 失败。"
         return 1
     fi
-    if ! stay_active "$unit" 60 ""; then
+    if ! stay_active "$unit" "$STAY_ACTIVE_RESTART_SECONDS" ""; then
         return 1
     fi
     return 0
@@ -742,11 +773,11 @@ do_hot() {
         fail_out "启动 $TARGET 失败。"
     fi
     wait_rc=0
-    wait_phase_waiting "$unit" "$file" || wait_rc=$?
+    wait_phase_waiting "$unit" "$file" "$WAITING_TIMEOUT_SECONDS" || wait_rc=$?
     case "$wait_rc" in
         0) ;;
         1) fail_out "$TARGET 在等到门口之前就退出了。" ;;
-        2) fail_out "等 $TARGET 到门口超过 120 秒。" ;;
+        2) fail_out "等 $TARGET 到门口超过 ${WAITING_TIMEOUT_SECONDS} 秒。" ;;
         3) fail_out "$TARGET 没经过等待就往下走了，锁其实空着。" ;;
         4) fail_out "$TARGET 在门口之前进了安全模式。" ;;
         *) fail_out "等 $TARGET 到门口时出了意外。" ;;
@@ -758,16 +789,16 @@ do_hot() {
         fail_out "停掉 $OLD 失败。"
     fi
     wait_rc=0
-    wait_phase_ready "$unit" "$file" 180 || wait_rc=$?
+    wait_phase_ready "$unit" "$file" "$READY_TIMEOUT_SECONDS" || wait_rc=$?
     case "$wait_rc" in
         0) ;;
         1) fail_out "$TARGET 在就绪前退出了。" ;;
-        2) fail_out "等 $TARGET 就绪超过 180 秒。" ;;
+        2) fail_out "等 $TARGET 就绪超过 ${READY_TIMEOUT_SECONDS} 秒。" ;;
         4) fail_out "$TARGET 进了安全模式。" ;;
         *) fail_out "等 $TARGET 就绪时出了意外。" ;;
     esac
     GAP_END=$(date +%s)
-    if ! stay_active "$unit" 10 "$file"; then
+    if ! stay_active "$unit" "$STAY_ACTIVE_SECONDS" "$file"; then
         fail_out "$TARGET 就绪后没有稳住。"
     fi
     TARGET_READY=1
