@@ -215,7 +215,7 @@ java_major() {
     command -v java > /dev/null 2>&1 || { echo 0; return; }
     # 不用 head -1：它读够一行就关闭管道，上游随即 SIGPIPE，pipefail 会把整条管道判为失败。
     # sed 会读完全部输入，只是仅对第一行做替换
-    version="$(java -version 2>&1 | sed -nE '1s/.*version "([0-9]+).*/\1/p')"
+    version="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p')"
     echo "${version:-0}"
 }
 
@@ -236,7 +236,7 @@ find_jdk17() {
         for dir in "$root"/*; do
             [ -x "$dir/bin/java" ] || continue
             [ -x "$dir/bin/javac" ] || continue
-            major="$("$dir/bin/java" -version 2>&1 | sed -nE '1s/.*version "([0-9]+).*/\1/p')"
+            major="$("$dir/bin/java" -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p')"
             [ "$major" = "17" ] || continue
             echo "$dir"
             return 0
@@ -294,9 +294,9 @@ if [ "$NEED_JAVA" = "JDK" ] && [ -z "$BUILD_JAVA_HOME" ] && ! command -v javac >
     command -v javac > /dev/null 2>&1 || die "从源码构建需要 javac，安装 JDK 后仍未找到"
 fi
 if [ -n "$BUILD_JAVA_HOME" ]; then
-    info "构建用的 Java 版本：$("$BUILD_JAVA_HOME/bin/java" -version 2>&1 | sed -n 1p)"
+    info "构建用的 Java 版本：$("$BUILD_JAVA_HOME/bin/java" -version 2>&1 | sed -n '/version "/p')"
 else
-    info "Java 版本：$(java -version 2>&1 | sed -n 1p)"
+    info "Java 版本：$(java -version 2>&1 | sed -n '/version "/p')"
 fi
 
 # 用 grep -c 而非 grep -q：本脚本开了 pipefail，而 grep -q 一匹配到就退出并关闭管道，
@@ -595,7 +595,7 @@ $SUDO mkdir -p "$INSTALL_DIR"
 # cookies.json / cookies.key 不在产物里，cp 不会碰到它们。
 # 凭据也确实不该搬——落到 /tmp 里的可预测路径上，既会被同机其他用户读到，
 # 也会被抢先创建的同名软链劫持；脚本中途失败时它们还会一直留在那里
-KEEP_DIR="$($SUDO mktemp -d)"
+KEEP_DIR="$($SUDO mktemp -d "${TMPDIR:-/tmp}/novabot-keep.XXXXXX")"
 trap '[ -n "${KEEP_DIR:-}" ] && $SUDO rm -rf "$KEEP_DIR" || true' EXIT
 
 for keep in application.yml datasource.json; do

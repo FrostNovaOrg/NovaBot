@@ -134,7 +134,7 @@ echo "产物界面资源尺：$OUT"
 
 # 登记清单（插件格的真源）：一处取来全场共用。取不出来直接红——
 # 清单哑了还往下跑，带页条目的插件格会在空清单上报「清单为空」，没页的却照绿。
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/artifact-ui-check.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 REG="$WORK/pages-reg.tsv"
 if ! bash "$REPO_ROOT/tools/console-page-registry.sh" > "$REG" 2>/dev/null; then

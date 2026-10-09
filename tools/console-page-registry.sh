@@ -40,7 +40,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT" || exit 2
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/console-page-registry.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 # 在册模块目录（每行一个，如 plugins/nova-console）

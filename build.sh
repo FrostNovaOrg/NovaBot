@@ -22,7 +22,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-MAVEN_ARGS=(-B)
+MAVEN_ARGS=(-B ${MAVEN_ARGS:-})
 # ── 陈旧产物：为什么这里恒为 clean ──────────────────────────────────────
 # 🔴 Maven 只往 target/ 里写，从不为「源码里已经没有的东西」做删除。源文件删掉或改名之后，
 #    上一次构建留下的那一份照旧躺在 target/classes 里，照旧被打进 jar，而**包上看不出来**。
@@ -72,7 +72,7 @@ fi
 
 # 不用 head -1：它读够一行就关闭管道，上游 java 随即 SIGPIPE，
 # 而本脚本开了 pipefail，会把整条管道判为失败
-JAVA_MAJOR="$(java -version 2>&1 | sed -nE '1s/.*version "([0-9]+).*/\1/p')"
+JAVA_MAJOR="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p')"
 if [ "${JAVA_MAJOR:-0}" -lt 17 ]; then
     echo "需要 Java 17 或更高版本，当前为 ${JAVA_MAJOR:-未知}" >&2
     exit 1
@@ -289,7 +289,7 @@ fi
 echo "==> [4/9] 打包可运行的 NovaBot"
 # 这一步不带 clean：[2/9] 刚把 core/nova-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
-mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage package
+mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage -DskipTests package
 
 echo "==> [5/9] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
@@ -370,7 +370,7 @@ rm -f "$OUT/template-defaults.json"
 
 # 版本号跟这次构建的其它来源记在一起。取不到就停下，不写空的 version=。
 # 打包那一步用的是同一个 VERSION，不再另取一次。
-VERSION="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"
+VERSION="$(mvn "${MAVEN_ARGS[@]}" -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"
 if [ -z "$VERSION" ]; then
     echo "取不到版本号，未打包。" >&2
     exit 1
