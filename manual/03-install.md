@@ -81,10 +81,11 @@ sudo systemctl start novabot@<版本> && sudo journalctl -u novabot@<版本> -f
 ./build.sh
 docker build -f dist/templates/Dockerfile -t novabot dist/build
 docker run -d --name novabot --restart unless-stopped \
+  --log-opt max-size=20m --log-opt max-file=5 \
   -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot
 ```
 
-三件事必须知道：
+四件事必须知道：
 
 - **卷必须挂在 `/app`。** 配置、登录凭据、推送目标全写在程序的工作目录下；
   挂到 `/app/data` 之类的子目录等于什么都没持久化，容器一重建就得重新扫码登录。
@@ -92,6 +93,9 @@ docker run -d --name novabot --restart unless-stopped \
   决定：例子里的 `-p 127.0.0.1:7827:7827` 只把端口开在宿主机回环上。不要图省事
   改成直接发布到公网。设置页里改监听地址对容器不起作用。
 - **同一个数据卷同时只能有一个容器在跑。** 再起一个会说明一句后退出，不会改动这个卷上的文件。
+- **容器打到标准输出的内容，Docker 自己另存一份，默认没有大小上限。** 程序自己的
+  日志文件照旧写在卷上的 `logs/` 里；`docker logs` 看的是 Docker 另存的那份，示例里的
+  `--log-opt max-size=20m --log-opt max-file=5` 把它限在 100MB 以内。
 
 容器里的目录也不分版本。换镜像会换掉卷上的程序；`plugins-lib/` 里镜像自带的依赖
 每次启动按构件名换新，自己放的留下——细节看[第 13 章　升级与备份](13-upgrade-and-backup.md)。
