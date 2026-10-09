@@ -7,6 +7,7 @@
 # 运行：
 #   docker run -d --name novabot \
 #     --restart unless-stopped \
+#     --log-opt max-size=20m --log-opt max-file=5 \
 #     -v novabot-data:/app \
 #     -p 127.0.0.1:7827:7827 \
 #     novabot
