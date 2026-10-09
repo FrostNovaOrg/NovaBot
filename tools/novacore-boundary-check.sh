@@ -47,7 +47,7 @@ cd "$REPO_ROOT" || exit 2
 CORE_UI="core/nova-core/src/main/resources/config-ui"
 RED=0
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/novacore-boundary.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 # 数一个清单件有几行（空行不计）
