@@ -112,11 +112,19 @@ public class PushGate {
         String end = properties.getPush().getQuietEnd();
 
         if (sessions != null && platform != null && num != null) {
-            SessionQuietHoursService.Setting setting = sessions.get(platform, num);
-            mode = setting.mode();
-            if (mode == SessionQuietHoursService.Mode.CUSTOM) {
-                start = setting.start();
-                end = setting.end();
+            // 读这一档出任何异常都按跟全局判：抛出去会让这位主播这一次的推送整件发不出去
+            SessionQuietHoursService.Setting setting = null;
+            try {
+                setting = sessions.get(platform, num);
+            } catch (RuntimeException e) {
+                log.warn("读会话 {}:{} 的静音时段出错，按跟全局判: {}", platform, num, e.toString());
+            }
+            if (setting != null && setting.mode() != null) {
+                mode = setting.mode();
+                if (mode == SessionQuietHoursService.Mode.CUSTOM) {
+                    start = setting.start();
+                    end = setting.end();
+                }
             }
         }
 

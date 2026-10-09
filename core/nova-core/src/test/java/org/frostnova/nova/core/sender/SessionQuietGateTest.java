@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.sender;
 
+import com.alibaba.fastjson2.JSON;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.SessionQuietHoursService;
@@ -8,8 +9,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 推送闸门按会话判静音
@@ -123,6 +127,33 @@ class SessionQuietGateTest {
 
         sessions.set(PLATFORM, FANS, Mode.OFF, null, null);
         assertTrue(gate.allowedAt(LocalTime.of(2, 0), PLATFORM, FANS));
+    }
+
+    @Test
+    @DisplayName("状态件里这一条读不出：照全局那一项判，不抛")
+    void unreadableRecordFollowsGlobal() {
+        NovaStateStore store = new NovaStateStore(new NovaCoreProperties());
+        store.write("SessionQuietHours", data -> {
+            data.put(PLATFORM + ":" + WORK, "off");
+            data.put(PLATFORM + ":" + FANS, JSON.parseObject("{\"mode\":\"custom\",\"start\":2200,\"end\":[7]}"));
+        });
+        PushGate gate = new PushGate(quiet("23:00", "08:00"), new SessionQuietHoursService(store));
+
+        for (Long num : List.of(WORK, FANS)) {
+            assertFalse(assertDoesNotThrow(() -> gate.allowedAt(LocalTime.of(2, 0), PLATFORM, num)), "全局静音时段内拦 " + num);
+            assertTrue(assertDoesNotThrow(() -> gate.allowedAt(LocalTime.of(12, 0), PLATFORM, num)), "全局时段外放 " + num);
+        }
+    }
+
+    @Test
+    @DisplayName("读会话那一档时出任何异常：闸门兜住，按跟全局判")
+    void sessionLookupFailureFollowsGlobal() {
+        SessionQuietHoursService broken = mock(SessionQuietHoursService.class);
+        when(broken.get(PLATFORM, WORK)).thenThrow(new IllegalStateException("读不出"));
+        PushGate gate = new PushGate(quiet("23:00", "08:00"), broken);
+
+        assertFalse(assertDoesNotThrow(() -> gate.allowedAt(LocalTime.of(2, 0), PLATFORM, WORK)));
+        assertTrue(assertDoesNotThrow(() -> gate.allowedAt(LocalTime.of(12, 0), PLATFORM, WORK)));
     }
 
     private static SessionQuietHoursService sessions() {

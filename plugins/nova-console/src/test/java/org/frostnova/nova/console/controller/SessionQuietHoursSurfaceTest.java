@@ -27,6 +27,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -141,6 +142,32 @@ class SessionQuietHoursSurfaceTest {
     void rejectsIncompleteInput() {
         assertFalse(controller.setQuietHours(body("custom", "23:00", "")).getBooleanValue("success"));
         assertFalse(controller.setQuietHours(body("sometimes", null, null)).getBooleanValue("success"));
+        assertTrue(quietHours.all().isEmpty());
+    }
+
+    @Test
+    @DisplayName("自己的时段起止不是 HH:mm：拒收并说明格式，不落记录")
+    void rejectsMalformedTimes() {
+        for (String[] pair : new String[][]{{"25:00", "07:00"}, {"8点", "07:00"}, {"23:00", "7:00"}, {"23:00", "07:00:00"}}) {
+            JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1]));
+            assertFalse(result.getBooleanValue("success"), pair[0] + "–" + pair[1] + ": " + result);
+            assertTrue(result.getString("message").contains("HH:mm"), result.getString("message"));
+        }
+        assertTrue(quietHours.all().isEmpty(), quietHours.all().toString());
+
+        assertTrue(controller.setQuietHours(body("custom", " 23:00 ", "07:00")).getBooleanValue("success"),
+                "两头空白照旧裁掉");
+    }
+
+    @Test
+    @DisplayName("会话号不是数字：回一句错误说明，不抛")
+    void rejectsNonNumericSession() {
+        JSONObject body = body("off", null, null);
+        body.put("num", "群一");
+
+        JSONObject result = assertDoesNotThrow(() -> controller.setQuietHours(body));
+        assertFalse(result.getBooleanValue("success"));
+        assertTrue(result.getString("message").contains("会话号"), result.getString("message"));
         assertTrue(quietHours.all().isEmpty());
     }
 

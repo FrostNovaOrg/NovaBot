@@ -2,6 +2,7 @@ package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,7 @@ import java.util.Locale;
  * 存法与 {@link RevenueVisibilityService} 一样：状态存储里一个命名空间，键「平台:会话号」，
  * 清除即回到默认（跟全局）。没设过的会话不占记录，行为与这一项出现之前一模一样。
  */
+@Slf4j
 @Service
 public class SessionQuietHoursService {
     /**
@@ -40,14 +42,23 @@ public class SessionQuietHoursService {
 
     /**
      * 读取指定会话的那一档
+     * <p>
+     * 记录读不出（不是对象、档位认不出、字段类型不对）时当跟全局并 warn 一句，不往外抛：
+     * 这里在推送主路径上，抛出去会让这一次推送整件发不出去。手改状态文件、
+     * 降级回旧版遇到新版写的形状，走的都是这条路。
      * @param platform 推送平台
      * @param num 会话号
      * @return 设置，从没设过（或记录认不出）时为跟全局
      */
     public Setting get(@NonNull String platform, @NonNull Long num) {
         String key = key(platform, num);
-        return store.read(NAMESPACE, key, data -> parse(platform, num, data.getJSONObject(key)))
-                .orElseGet(() -> Setting.follow(platform, num));
+        try {
+            return store.read(NAMESPACE, key, data -> parse(platform, num, data.getJSONObject(key)))
+                    .orElseGet(() -> Setting.follow(platform, num));
+        } catch (RuntimeException e) {
+            log.warn("会话 {} 的静音时段记录读不出，按跟全局处理: {}", key, e.getMessage());
+            return Setting.follow(platform, num);
+        }
     }
 
     /**
@@ -110,11 +121,20 @@ public class SessionQuietHoursService {
         if (value == null) {
             return Setting.follow(platform, num);
         }
-        Mode mode = Mode.of(value.getString("mode"));
+        String raw = value.getString("mode");
+        Mode mode = Mode.of(raw);
+        if (mode == Mode.FOLLOW && !Mode.FOLLOW.key().equalsIgnoreCase(String.valueOf(raw).trim())) {
+            log.warn("会话 {}:{} 的静音档位「{}」认不出，按跟全局处理", platform, num, raw);
+        }
         if (mode != Mode.CUSTOM) {
             return new Setting(platform, num, mode, null, null);
         }
-        return new Setting(platform, num, mode, value.getString("start"), value.getString("end"));
+        // 起止不是字符串算记录认不出，回到跟全局；是字符串而格式不对的，交给判定那一侧按全局那套规则忽略
+        if (!(value.get("start") instanceof String start) || !(value.get("end") instanceof String end)) {
+            log.warn("会话 {}:{} 的静音时段起止不是文字，按跟全局处理: {}", platform, num, value);
+            return Setting.follow(platform, num);
+        }
+        return new Setting(platform, num, mode, start, end);
     }
 
     private String key(String platform, Long num) {

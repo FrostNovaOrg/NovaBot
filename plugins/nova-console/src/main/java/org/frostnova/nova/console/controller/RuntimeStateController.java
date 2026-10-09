@@ -30,6 +30,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -309,9 +311,9 @@ public class RuntimeStateController {
      * 三档：跟全局（清除记录）、本会话自己的时段、本会话不静音。存完即生效：
      * 闸门每次推送都现读这一份，不用重启。
      * <p>
-     * 时段格式不在这里卡：规则与全局那一项完全一样，格式不对时判定那一侧忽略并打一句 warn。
-     * 在这里另立一套校验，两边迟早对「什么算合法」答得不一样。只拦「选了自己的时段却没填」——
-     * 那多半是界面上漏传，存下去只会得到一档看起来设了、其实不生效的记录。
+     * 「自己的时段」的起止必须是 HH:mm，否则拒收：存下一档判定那一侧会忽略的时段，
+     * 页面摘要就会显示一个其实不生效的时段。这里只收判定那一侧一定认得的写法（两位时、两位分），
+     * 手改进状态文件的坏格式照旧由判定那一侧按全局那套规则忽略并 warn。
      * @param body 请求体，含 platform、num、mode（follow／custom／off，空即 follow）与 start、end
      * @return 操作结果
      */
@@ -320,7 +322,12 @@ public class RuntimeStateController {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long num = body.getLong("num");
+        Long num;
+        try {
+            num = body.getLong("num");
+        } catch (RuntimeException e) {
+            return fail(result, "会话号「" + body.getString("num") + "」不是数字");
+        }
         if (platform == null || num == null) {
             return fail(result, "缺少参数");
         }
@@ -337,6 +344,10 @@ public class RuntimeStateController {
                 && (start == null || start.isBlank() || end == null || end.isBlank())) {
             return fail(result, "本会话自己的时段要填开始和结束");
         }
+        if (mode == SessionQuietHoursService.Mode.CUSTOM && !(isQuietTime(start) && isQuietTime(end))) {
+            return fail(result, "时段格式应为 HH:mm（24 小时制，两位时两位分，如 23:00、07:30），收到「"
+                    + start.trim() + "」到「" + end.trim() + "」");
+        }
 
         quietHours.set(platform, num, mode, start, end);
         // 立即落盘，理由同 setRevenueVisibility
@@ -352,6 +363,24 @@ public class RuntimeStateController {
         result.put("success", true);
         result.put("message", num + " 的静音时段" + phrase);
         return result;
+    }
+
+    /**
+     * 是否为静音时段认得的 HH:mm
+     * @param value 原样的值，两头空白不算
+     * @return 是时返回 true
+     */
+    private static boolean isQuietTime(String value) {
+        String trimmed = value.trim();
+        if (!trimmed.matches("\\d{2}:\\d{2}")) {
+            return false;
+        }
+        try {
+            LocalTime.parse(trimmed);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     /**

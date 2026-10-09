@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.service;
 
+import com.alibaba.fastjson2.JSON;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.service.SessionQuietHoursService.Mode;
 import org.frostnova.nova.core.service.SessionQuietHoursService.Setting;
@@ -112,6 +113,27 @@ class SessionQuietHoursServiceTest {
         } finally {
             second.onContextClosedEvent();
         }
+    }
+
+    @Test
+    @DisplayName("状态件里这一条读不出（手改坏、或新版写的形状）：当跟全局，不抛")
+    void unreadableRecordFollowsGlobal() {
+        NovaStateStore store = new NovaStateStore(new NovaCoreProperties());
+        store.write("SessionQuietHours", data -> {
+            data.put(PLATFORM + ":1", "off");
+            data.put(PLATFORM + ":2", 42);
+            data.put(PLATFORM + ":3", List.of("custom", "22:00", "07:00"));
+            data.put(PLATFORM + ":4", JSON.parseObject("{\"mode\":\"someday\"}"));
+            data.put(PLATFORM + ":5", JSON.parseObject("{\"mode\":{\"kind\":\"custom\"}}"));
+        });
+        SessionQuietHoursService service = service(store);
+
+        for (long num = 1; num <= 5; num++) {
+            long current = num;
+            Setting setting = assertDoesNotThrow(() -> service.get(PLATFORM, current), "第 " + num + " 条");
+            assertEquals(Mode.FOLLOW, setting.mode(), "第 " + num + " 条");
+        }
+        assertTrue(service.all().isEmpty(), "读不出的记录不该出现在清单里: " + service.all());
     }
 
     private SessionQuietHoursService service(NovaStateStore store) {
