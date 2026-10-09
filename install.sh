@@ -10,6 +10,7 @@
 #   ./install.sh --no-service           跳过 systemd 服务创建
 #   ./install.sh --no-switch            只装、不换（有别的实例在跑时不自动换到本版）
 #   ./install.sh --no-packages          不经包管理器装任何东西（缺 Java 17 就停下，缺字体只提醒）
+#   ./install.sh --keep-syslog          系统日志（rsyslog）里照旧多记一份 NovaBot 的输出
 #
 # 安装目录若还是旧的扁平布局（程序在根上），先把旧程序搬进 releases/旧版本号/ 再装。
 #
@@ -24,6 +25,7 @@ PORT="7827"
 CREATE_SERVICE="yes"
 NO_SWITCH="no"
 NO_PACKAGES="no"
+KEEP_SYSLOG="no"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -43,6 +45,7 @@ while [ $# -gt 0 ]; do
         --no-service) CREATE_SERVICE="no"; shift ;;
         --no-switch)  NO_SWITCH="yes"; shift ;;
         --no-packages) NO_PACKAGES="yes"; shift ;;
+        --keep-syslog) KEEP_SYSLOG="yes"; shift ;;
         -h|--help)    usage; exit 0 ;;
         *)            die "未知参数: $1（可用 --help 查看用法）" ;;
     esac
@@ -744,6 +747,48 @@ SWITCH_TOOL="$SYSTEM_SBIN_DIR/novabot-switch-version"
 SWITCH_PLAN="no-service"
 SWITCH_RC=0
 
+# 服务的输出已进 journal 与程序自己的日志文件，rsyslog 从 journal 收下再写进 /var/log/syslog 的那份没人读。
+# 缺省 /etc/rsyslog.d，测试替身用 NOVABOT_RSYSLOG_DIR 改位置；没有这个目录就当机器上没有 rsyslog。
+RSYSLOG_DIR="${NOVABOT_RSYSLOG_DIR:-/etc/rsyslog.d}"
+RSYSLOG_RULE="$RSYSLOG_DIR/30-novabot.conf"
+RSYSLOG_MARK="# 由 NovaBot 安装脚本 install.sh 写入"
+RSYSLOG_CONTENT="${RSYSLOG_MARK}：NovaBot 的输出已在 journal 与它自己的日志文件里，这里不再多存一份到系统日志。
+# 要恢复：删掉本文件后 systemctl restart rsyslog，或重新安装时加 --keep-syslog。
+if \$programname == 'novabot' then stop"
+# 收尾那一句：written 写了或已是这份、removed 删了先前那份、kept --keep-syslog 且没有要删的、
+# absent 没有 rsyslog、空 没建服务
+SYSLOG_RESULT=""
+
+reload_rsyslog() {
+    # try-restart：rsyslog 没在跑就不起它。失败不拦安装
+    $SUDO systemctl try-restart rsyslog > /dev/null 2>&1 \
+        || warn "没能让 rsyslog 重新读配置，可稍后自己执行 sudo systemctl restart rsyslog"
+}
+
+configure_syslog() {
+    if [ ! -d "$RSYSLOG_DIR" ]; then
+        SYSLOG_RESULT="absent"
+        return 0
+    fi
+    if [ "$KEEP_SYSLOG" = "yes" ]; then
+        SYSLOG_RESULT="kept"
+        if [ -f "$RSYSLOG_RULE" ] && $SUDO grep -qF "$RSYSLOG_MARK" "$RSYSLOG_RULE"; then
+            $SUDO rm -f "$RSYSLOG_RULE"
+            SYSLOG_RESULT="removed"
+            reload_rsyslog
+        fi
+        return 0
+    fi
+    SYSLOG_RESULT="written"
+    # 内容相同就不重写，也不让 rsyslog 重读
+    if [ -f "$RSYSLOG_RULE" ] && [ "$($SUDO cat "$RSYSLOG_RULE")" = "$RSYSLOG_CONTENT" ]; then
+        return 0
+    fi
+    printf '%s\n' "$RSYSLOG_CONTENT" | $SUDO tee "$RSYSLOG_RULE" > /dev/null
+    $SUDO chmod 0644 "$RSYSLOG_RULE"
+    reload_rsyslog
+}
+
 # 5.x 的 novabot.service、更早的 starbot.service。只关开机自启，不停正在跑的。
 # 不在跑的删单元文件；在跑的留着，等用户自己停，下次再跑、它已不在跑时再删。
 # 覆盖设置目录不删，新单元不沿用。
@@ -785,6 +830,7 @@ if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
     $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
         "$SOURCE_DIR/novabot@.service" | $SUDO tee /etc/systemd/system/novabot@.service > /dev/null
     $SUDO systemctl daemon-reload
+    configure_syslog
 
     [ -f "$SOURCE_DIR/tools/switch-version.sh" ] || die "缺少 $SOURCE_DIR/tools/switch-version.sh"
     $SUDO mkdir -p "$SYSTEM_SBIN_DIR"
@@ -959,6 +1005,16 @@ fi
 if [ -n "$LEGACY_DROPINS" ]; then
     printf '\n  新单元不沿用这些覆盖设置：\n%s' "$LEGACY_DROPINS"
 fi
+case "$SYSLOG_RESULT" in
+    written)
+        printf '\n  系统日志里不再多记一份 NovaBot 的输出（规则在 %s；要保留，重装时加 --keep-syslog）\n' "$RSYSLOG_RULE" ;;
+    removed)
+        printf '\n  系统日志里照旧记 NovaBot 的输出：已删掉先前写的 %s\n' "$RSYSLOG_RULE" ;;
+    kept)
+        printf '\n  系统日志里照旧记 NovaBot 的输出（--keep-syslog）\n' ;;
+    absent)
+        printf '\n  机器上没有 rsyslog（%s 不在），系统日志这一项跳过\n' "$RSYSLOG_DIR" ;;
+esac
 if [ "$SWITCH_PLAN" = "no-service" ]; then
     # 没有 systemd，启动输出就是日志
     BROWSER_STEP=2
