@@ -214,7 +214,7 @@ java_major() {
     local version
     command -v java > /dev/null 2>&1 || { echo 0; return; }
     # 不用 head -1：它读够一行就关闭管道，上游随即 SIGPIPE，pipefail 会把整条管道判为失败。
-    # sed 会读完全部输入，只是仅对第一行做替换
+    # sed 会读完全部输入，只对带 version " 的那一行做替换并打印
     version="$(java -version 2>&1 | sed -nE 's/.*version "([0-9]+).*/\1/p')"
     echo "${version:-0}"
 }
@@ -673,9 +673,13 @@ for dir in "$INSTALL_DIR"/releases/*; do
     $SUDO rm -rf "$dir"
 done
 
+# 内容没变就不拷回：拷回会把修改时间改成现在，正在跑的旧版本看到 datasource.json「更新了」
+# 就重读配置、去平台把每个主播的资料再补全一遍，赶上停机时还会刷出一串补全失败
 for keep in application.yml datasource.json; do
     if [ -f "$KEEP_DIR/$keep" ]; then
-        $SUDO cp "$KEEP_DIR/$keep" "$INSTALL_DIR/$keep"
+        if [ ! -f "$INSTALL_DIR/$keep" ] || ! $SUDO cmp -s "$KEEP_DIR/$keep" "$INSTALL_DIR/$keep"; then
+            $SUDO cp "$KEEP_DIR/$keep" "$INSTALL_DIR/$keep"
+        fi
         info "已保留原有的 $keep"
     fi
 done
