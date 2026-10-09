@@ -8,6 +8,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
@@ -28,7 +29,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -51,9 +57,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * 共用的 {@code /tmp}，固定名字谁都能抢建，谁都进得去的目录不能拿来放要解析的字体文件。
  * <p>
  * 这组测试只盯着「解出」这件事：初始化多少次都只解一份、第二次初始化连类路径资源都不再
- * 读、解出的那份内容不对会换成对的、目录不合用（权限放开过、名字被符号链接占着）或
- * 落不下时退回按流读、建出的目录与文件只有本人可用。「装得上、装上的是哪一款」由
- * {@link BundledFontsTest} 管。
+ * 读、解出的那份内容不对会换成对的、写的时候正式名要么不在要么已完整（先落临时名、写完
+ * 再原子改名）、目录不合用（权限放开过、名字被符号链接占着）或落不下时退回按流读、建出
+ * 的目录与文件只有本人可用。「装得上、装上的是哪一款」由 {@link BundledFontsTest} 管。
  */
 @DisplayName("内置字体在临时目录里的解出")
 class BundledFontExtractionTest {
@@ -407,6 +413,77 @@ class BundledFontExtractionTest {
         assertEquals(Map.of(), counting.askedLocations,
                 "第二次初始化不该再向类路径要内置字体的资源: " + counting.askedLocations);
         assertEquals(1, extractedFamily("NotoSansSC-Regular").size(), "解出的还是那一份, 没多出新文件");
+    }
+
+    /**
+     * 解出文件得先落到同目录的临时名、写完再原子改名到正式名：换版时新旧两个进程前后脚
+     * 起来，一个正往正式名写、另一个这时去读正式名，读到半截就把坏文件当好的。这条判据
+     * 盯住正式名：写的整个过程里，它要么不在，要么已经是完整的一份，「在但不完整」一次
+     * 都不许出现。
+     * <p>
+     * 量法：每轮先把正式名删掉（整个写的过程于是都落在盯的范围里），再把一份 32 MB 的
+     * 字节交给 {@code FontUtil.writeAtomically} 写进去——份量够大，写的时间才拉得够长——
+     * 来回 5 轮；另一条线程不停地看正式名在不在、在的话多大，每看一眼记一次「看过」，
+     * 开写之前先等它看过第一眼。写完之后正式名得在、大小与内容都对，同目录里也不剩写
+     * 一半的临时名。正确的写法里正式名只经原子改名出现、一出现就完整，这条不靠碰时序
+     * 就该绿；直接往正式名写时，落笔那一刻它就在、却还没长到位，那一眼看到的就是半截。
+     */
+    @Test
+    @DisplayName("写解出文件时正式名要么不在、要么已是完整的一份")
+    void finalNameIsNeverHalfWritten(@TempDir Path scratch) throws Exception {
+        byte[] content = new byte[32 * 1024 * 1024];
+        new Random(0x5EEDL).nextBytes(content);
+        Path target = scratch.resolve("stress-0123456789abcdef.ttf");
+
+        int rounds = 5;
+        AtomicLong looks = new AtomicLong();
+        List<String> roundsCaughtHalfWritten = new ArrayList<>();
+        for (int round = 1; round <= rounds; round++) {
+            Files.deleteIfExists(target);
+
+            CountDownLatch firstLook = new CountDownLatch(1);
+            AtomicBoolean stop = new AtomicBoolean(false);
+            List<String> halfWrittenSizes = new CopyOnWriteArrayList<>();
+            Thread watcher = new Thread(() -> {
+                while (!stop.get()) {
+                    looks.incrementAndGet();
+                    try {
+                        if (Files.exists(target)) {
+                            long size = Files.size(target);
+                            if (size != content.length && halfWrittenSizes.size() < 4) {
+                                halfWrittenSizes.add(size + "/" + content.length + " 字节");
+                            }
+                        }
+                    } catch (IOException nameVanished) {
+                        // 正好在「在不在」与「多大」的缝里没了：当这一眼没看见
+                    }
+                    firstLook.countDown();
+                }
+            }, "extracted-name-watcher");
+            watcher.start();
+            try {
+                firstLook.await();
+                FontUtil.writeAtomically(scratch, target, content);
+            } finally {
+                stop.set(true);
+                watcher.join();
+            }
+
+            if (!halfWrittenSizes.isEmpty()) {
+                roundsCaughtHalfWritten.add("第" + round + "轮 " + halfWrittenSizes);
+            }
+            assertEquals(content.length, Files.size(target), "写完之后正式名得是完整的一份");
+            assertArrayEquals(content, Files.readAllBytes(target), "写完之后正式名的内容得一字不差");
+            try (Stream<Path> files = Files.list(scratch)) {
+                List<Path> left = files.sorted().toList();
+                assertEquals(List.of(target), left, "写完之后同目录里只该剩正式名, 不留写一半的临时名: " + left);
+            }
+        }
+
+        assertTrue(looks.get() > 0, "锚: 盯的一方一眼都没看过正式名, 上面的判据量了个寂寞");
+        assertTrue(roundsCaughtHalfWritten.isEmpty(),
+                rounds + " 轮里 " + roundsCaughtHalfWritten.size()
+                        + " 轮盯到正式名处于半截状态: " + roundsCaughtHalfWritten);
     }
 
     /**

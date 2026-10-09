@@ -412,8 +412,11 @@ public class FontUtil {
     /**
      * 先写同目录的临时名、写完再原子改名到正式名；改名撞上已在的正式名时内容对得上就算成，
      * 不支持原子改名的文件系统退覆盖式改名
+     * <p>
+     * 包内可见（而非 private）是为了让同包的测试直接调它，守住「正式名要么不在、要么已是
+     * 完整的一份」这一条
      */
-    private static void writeAtomically(Path directory, Path extracted, byte[] content) throws IOException {
+    static void writeAtomically(Path directory, Path extracted, byte[] content) throws IOException {
         String fileName = extracted.getFileName().toString();
         Path staging = posixPermissionsSupported()
                 ? Files.createTempFile(directory, fileName, ".part",
