@@ -4,7 +4,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormatSymbols;
 import java.time.Instant;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -109,6 +111,58 @@ class TotpGeneratorTest {
     @DisplayName("每次生成的密钥都应不同")
     void secretsAreRandom() {
         assertNotEquals(TotpGenerator.generateSecret(), TotpGenerator.generateSecret());
+    }
+
+    /**
+     * 系统区域设成阿拉伯语一类时，验证码仍应是 0-9 的 ASCII 数字串。
+     * <p>
+     * 用户在验证器 App 里输的码永远是 0-9；区域的默认数字若跟着进了验证码，
+     * 两边永远对不上，且用户看到的只是「验证码错误」——查到系统区域那层之前毫无头绪。
+     * <p>
+     * 🔴 改默认区域的格子必须在 finally 里还原，别影响同一 JVM 里的其他测试。
+     */
+    @Test
+    @DisplayName("系统的默认数字不是 0-9 的区域下，验证码仍是 ASCII 数字且与官方向量一致")
+    void codeStaysAsciiDigitsUnderLocaleWithNonAsciiDigits() {
+        Locale original = Locale.getDefault();
+        Locale arabic = Locale.forLanguageTag("ar");
+        Locale.setDefault(arabic);
+        try {
+            // 前提：这个区域的零字符确实不是 ASCII 的 '0'，不成立的话本格量不到那个毛病
+            assertNotEquals('0', DecimalFormatSymbols.getInstance(arabic).getZeroDigit());
+
+            String code = TotpGenerator.generate(RFC_KEY, 59L / 30);
+            assertTrue(code.chars().allMatch(c -> c >= '0' && c <= '9'),
+                    "验证码必须是 0-9 的 ASCII 数字串, 实得: " + code);
+            assertEquals("287082", code);
+        } finally {
+            Locale.setDefault(original);
+        }
+    }
+
+    /**
+     * 系统区域设成土耳其语时，手填的小写密钥（含 i）应与大写的解出同一个码。
+     * <p>
+     * 土耳其语区域下 {@code toUpperCase()} 会把小写 i 转成带点的大写 İ，
+     * 它不在 Base32 字母表里——含 i 的小写密钥就此解不出来，用户看到的只是「密钥不对」。
+     */
+    @Test
+    @DisplayName("土耳其语区域下，小写且含 i 的密钥与大写的解出同一个码")
+    void lowercaseSecretWithTurkishIDecodesLikeUppercase() {
+        Locale original = Locale.getDefault();
+        Locale.setDefault(Locale.forLanguageTag("tr"));
+        try {
+            // 前提：土耳其语区域下小写 i 的大写确实不是 ASCII 的 I
+            assertEquals("İ", "i".toUpperCase());
+
+            // RFC 6238 那把密钥的 Base32 恰好不含 I，这里用 RFC 4648 的向量（上面的回环用例
+            // 也在用）：它含 i，且明显是测试用的值
+            Instant now = Instant.parse("2026-08-06T12:00:00Z");
+            assertEquals(TotpGenerator.currentCode("MZXW6YTBOI", now),
+                    TotpGenerator.currentCode("mzxw6ytboi", now));
+        } finally {
+            Locale.setDefault(original);
+        }
     }
 
     @Test

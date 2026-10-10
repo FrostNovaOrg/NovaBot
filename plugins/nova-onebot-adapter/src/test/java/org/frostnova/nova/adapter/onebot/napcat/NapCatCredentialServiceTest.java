@@ -1,15 +1,22 @@
 package org.frostnova.nova.adapter.onebot.napcat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
+import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +26,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -40,6 +48,15 @@ class NapCatCredentialServiceTest {
      * <b>用被测实现自己算一遍再断言，等于什么都没测</b>——那种测试在算法写错时同样是绿的。
      */
     private static final String HASH_OF_TEST = "5a0bb1dce4f71e9780db03560ce68b765bc524ee2ca7653df2633de291e68aca";
+
+    /**
+     * RFC 6238 附录 B 那把测试密钥的 Base32，把一位换成了字母表之外的字符——
+     * 手抄密钥错一位就是这个形状
+     */
+    private static final String SECRET_WITH_TYPO = "GEZDGNBVGY3TQOJQ1EZDGNBVGY3TQOJQ";
+
+    /** 上面那格里错出来的字符：Base32 字母表里没有它（字母表只收 2-7） */
+    private static final char TYPO = '1';
 
     private OneBotAdapterPluginProperties.NapCat props(String token, String hash, String secret) {
         OneBotAdapterPluginProperties.NapCat p = new OneBotAdapterPluginProperties.NapCat();
@@ -292,6 +309,62 @@ class NapCatCredentialServiceTest {
 
             assertNotNull(service.credential());
             assertTrue(service.credential().isEmpty());
+        }
+
+        /**
+         * 2FA 密钥手抄错一位（混进 Base32 字母表之外的字符）时，签发要按 FAILED 结局返回，
+         * 不能把异常一路抛出去。抛出去的话引导页只拿到一个服务器错误，
+         * 「无法替你登录 NapCat，请检查凭据配置」那句该去改配置的提示一句都走不到。
+         */
+        @Test
+        @DisplayName("2FA 密钥含非法字符时按 FAILED 结局返回，不抛异常")
+        void invalidTotpSecretFailsTheIssueInsteadOfThrowing() {
+            Recorder recorder = new Recorder(ok("credential-1"));
+            NapCatCredentialService service = new NapCatCredentialService(
+                    props("", HASH_OF_TEST, SECRET_WITH_TYPO), mock(ConfigurationFileService.class), recorder.template);
+
+            NapCatCredentialService.Issued issued = service.issue(true);
+
+            assertEquals(NapCatCredentialService.Outcome.FAILED, issued.outcome());
+            assertTrue(issued.asOptional().isEmpty());
+            assertTrue(recorder.bodies.isEmpty(), "密钥都算不出码，不该把请求发去 NapCat");
+        }
+
+        /**
+         * 上一格的场景里，抛出的与记下的消息都不许带密钥的任何一个字符——
+         * 密钥本身就是凭据，报错文本里带上它等于把凭据打进日志。
+         */
+        @Test
+        @DisplayName("密钥非法时报错与告警都不带密钥的字符，且说清是哪个配置项")
+        void invalidSecretMessagesCarryNoSecretCharacter() {
+            // 上一格场景里真正抛异常的正是 mint() 里那一句 currentCode，先量它抛的消息
+            IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                    () -> TotpGenerator.currentCode(SECRET_WITH_TYPO, Instant.parse("2026-08-06T12:00:00Z")));
+            assertFalse(thrown.getMessage().contains(String.valueOf(TYPO)),
+                    "异常消息不该带出密钥里那个非法字符: " + thrown.getMessage());
+
+            Logger logger = (Logger) LoggerFactory.getLogger(NapCatCredentialService.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                NapCatCredentialService service = new NapCatCredentialService(
+                        props("", HASH_OF_TEST, SECRET_WITH_TYPO), mock(ConfigurationFileService.class),
+                        mock(RestTemplate.class));
+                service.issue(true);
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            List<String> warns = appender.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+            assertFalse(warns.isEmpty(), "应有一句 warn 说清是两步验证密钥配错了");
+            assertTrue(warns.stream().anyMatch(line -> line.contains(NapCatCredentialService.TOTP_SECRET_PROPERTY)),
+                    "warn 应写出配置项名, 实得: " + warns);
+            assertTrue(warns.stream().noneMatch(line -> line.contains(String.valueOf(TYPO))),
+                    "warn 不该带出密钥里那个非法字符, 实得: " + warns);
         }
     }
 

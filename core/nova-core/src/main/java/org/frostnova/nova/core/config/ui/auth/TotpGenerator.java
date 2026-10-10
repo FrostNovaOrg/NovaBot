@@ -7,6 +7,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Locale;
 
 /**
  * 基于时间的一次性口令（RFC 6238）
@@ -173,7 +174,8 @@ public final class TotpGenerator {
                     | ((hash[offset + 2] & 0xFF) << 8)
                     | (hash[offset + 3] & 0xFF);
 
-            return String.format("%0" + DIGITS + "d", binary % (int) Math.pow(10, DIGITS));
+            // Locale.ROOT：验证器 App 那头只认 0-9，跟着系统区域换成别的数字后两边永远对不上
+            return String.format(Locale.ROOT, "%0" + DIGITS + "d", binary % (int) Math.pow(10, DIGITS));
         } catch (Exception e) {
             throw new IllegalStateException("当前 JRE 不支持 " + ALGORITHM + "，无法校验两步验证码", e);
         }
@@ -213,7 +215,9 @@ public final class TotpGenerator {
     }
 
     static byte[] base32Decode(String text) {
-        String normalized = text.trim().replace("=", "").replaceAll("\\s", "").toUpperCase();
+        // Locale.ROOT：土耳其语一类区域下 toUpperCase 会把 i 转成带点的 İ，
+        // 它不在字母表里，手填的小写密钥含 i 就解不出来
+        String normalized = text.trim().replace("=", "").replaceAll("\\s", "").toUpperCase(Locale.ROOT);
         int buffer = 0;
         int bits = 0;
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
@@ -221,7 +225,8 @@ public final class TotpGenerator {
         for (char c : normalized.toCharArray()) {
             int index = BASE32.indexOf(c);
             if (index < 0) {
-                throw new IllegalArgumentException("不是合法的 Base32 字符: " + c);
+                // 不带出那个字符：密钥本身就是凭据，报错文本里不抄它
+                throw new IllegalArgumentException("密钥不是合法的 Base32");
             }
             buffer = (buffer << 5) | index;
             bits += 5;
