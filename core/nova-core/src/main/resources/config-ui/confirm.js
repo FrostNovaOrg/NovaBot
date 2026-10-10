@@ -89,7 +89,8 @@ export function keepTabInside(box, ev) {
   ev.preventDefault();
   const at = items.indexOf(document.activeElement);
   let next;
-  if (at < 0) next = items[0];
+  // 焦点在圈外时照浏览器原生的走法：Tab 进到第一个，Shift+Tab 进到最后一个
+  if (at < 0) next = ev.shiftKey ? items[items.length - 1] : items[0];
   else if (ev.shiftKey) next = at > 0 ? items[at - 1] : items[items.length - 1];
   else next = at + 1 < items.length ? items[at + 1] : items[0];
   next.focus();

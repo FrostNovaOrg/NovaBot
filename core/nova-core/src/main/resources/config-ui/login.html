@@ -23,9 +23,9 @@
        三态结构同样照 app.css：亮色 :root、跟系统的暗色（排除手动浅色）、手动暗色、手动浅色。 */
     :root{
       color-scheme:light dark;
-      --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6E6A86;
-      --accent:#7A4DFF; --accent2:#E0479E; --warn:#F2A93B; --err:#EF4A5C;
-      --soft:rgba(122,77,255,.08); --warnsoft:rgba(242,169,59,.14);
+      --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6A6682;
+      --accent:#7A4DFF; --accent2:#E0479E; --warn:#8E5909; --err:#CA1226;
+      --soft:rgba(122,77,255,.08); --warnsoft:rgba(142,89,9,.10);
       --shadow:0 1px 2px rgba(28,26,46,.04), 0 8px 24px rgba(28,26,46,.06);
       --on-accent:#FFFFFF;
       --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
@@ -34,7 +34,7 @@
     }
     @media (prefers-color-scheme:dark){
       :root:not([data-theme="light"]){
-        --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
+        --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#A5A0BF;
         --accent:#A38BFF; --accent2:#F06AB8; --warn:#F7BC5B; --err:#FF6B7A;
         --soft:rgba(163,139,255,.14); --warnsoft:rgba(247,188,91,.16);
         --shadow:0 0 0 1px rgba(255,255,255,.05);
@@ -43,7 +43,7 @@
     }
     :root[data-theme="dark"]{
       color-scheme:dark;
-      --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
+      --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#A5A0BF;
       --accent:#A38BFF; --accent2:#F06AB8; --warn:#F7BC5B; --err:#FF6B7A;
       --soft:rgba(163,139,255,.14); --warnsoft:rgba(247,188,91,.16);
       --shadow:0 0 0 1px rgba(255,255,255,.05);
@@ -367,14 +367,15 @@
    *
    * 服务端只回「密码或验证码不正确」、不说是哪一格错（见 ConfigUiAuthService 里
    * 不分开说的理由），界面不替它分：两格一起标，由人自己看是哪个敲错了。
-   * 通行密钥失败与连不上服务器都不是输错，不走这里。
-   * 再提交或改走通行密钥时传 false，随提示清空一并撤掉。
+   * 只在回话说这一趟密码或动态码被拒时标；已经被锁、服务器正忙、通行密钥失败、
+   * 连不上服务器都没核过密码，不走这里。
+   * 再提交或改走通行密钥时传 false，随提示清空一并撤掉：两格不论在不在页上都撤，
+   * 藏起来的那一格留着标记，再显示时一上来就是「无效」。
    */
   function markInvalidCredentials(on) {
-    const fields = [$('#password')];
-    if (!$('#code-field').classList.contains('hidden')) fields.push($('#code'));
-    fields.forEach(field => {
-      if (on) {
+    const codeShown = !$('#code-field').classList.contains('hidden');
+    [$('#password'), $('#code')].forEach(field => {
+      if (on && (field.id === 'password' || codeShown)) {
         field.setAttribute('aria-invalid', 'true');
         field.setAttribute('aria-describedby', 'msg');
       } else {
@@ -559,7 +560,9 @@
       tick();
 
       $('#msg').textContent = data.message || '登录失败';
-      markInvalidCredentials(true);
+      // 来路以服务端说的为准，不比对提示文字，也不看 lockedSeconds：第 N 次输错正好锁上的那一趟
+      // 也是密码被拒，而它的 lockedSeconds 已经大于 0
+      if (data.credentialsRejected === true) markInvalidCredentials(true);
       $('#password').value = '';
       paint();
       if (!$('#password').disabled) $('#password').focus();

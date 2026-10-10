@@ -9,6 +9,8 @@
  * 本尺在假 DOM 上<b>真跑</b> confirm.js，pressKey 按 settings-agreement-modal-fixture
  * 的做法驱动 keydown，并能带上 Shift。带输入栏那一形（输入栏、取消、确认）与
  * 长文那一形（只有关闭；藏起来的取消不算进圈）各转一圈，首尾相接。
+ * 圈法本身另量三格：藏起来的那一层里的控件、禁用的控件不进圈；焦点在圈外时
+ * Tab 落第一个、Shift+Tab 落最后一个。
  *
  * 各段各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 由 ConfirmFocusCycleTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
@@ -273,10 +275,12 @@ async function settle() {
 
 let ask = null;
 let showDoc = null;
+let keepTabInside = null;
 try {
   const confirm = await import(join(ui, 'confirm.js'));
   ask = confirm.ask;
   showDoc = confirm.showDoc;
+  keepTabInside = confirm.keepTabInside;
 } catch (err) {
   failures.push('载入 confirm.js 就抛了：' + err.message);
 }
@@ -357,6 +361,90 @@ await section('长文那一形 Tab 出不去', async () => {
   ev = pressKey('Tab');
   eq(ev.prevented, false, '弹层关掉后不再拦 Tab');
   await pending;
+});
+
+// —— 下面三段直接量圈法 keepTabInside：哪些控件进圈、圈外按 Tab 落在哪 ——
+
+/** 搭一个圈：children 里每项是 [标签, 设置] 或 [标签, 设置, 子项] */
+function build(spec) {
+  const node = new MiniNode(spec[0]);
+  Object.assign(node, spec[1] || {});
+  for (const child of spec[2] || []) node.appendChild(build(child));
+  return node;
+}
+
+function tabIn(box, shift) {
+  const ev = {key: 'Tab', shiftKey: !!shift, prevented: false, preventDefault() { this.prevented = true; }};
+  keepTabInside(box, ev);
+  return ev;
+}
+
+// ---- (c) 上一层藏起来了，下面的控件还在：不进圈 ----
+// 抓的故障：弹层里藏起一整块（比如收起的一段输入栏），只查控件自身的 hidden 的话，
+// 块里的按钮仍进圈，按 Tab 焦点落到看不见的控件上，人不知道焦点去哪了。
+
+await section('藏起来的那一层里的控件不进圈', async () => {
+  if (typeof keepTabInside !== 'function') throw new Error('keepTabInside 没载入');
+  const box = build(['div', {}, [
+    ['div', {hidden: true}, [['button', {id: 'gone'}]]],
+    ['button', {id: 'a'}],
+    ['button', {id: 'b'}],
+  ]]);
+  const [, a, b] = box.children;
+  a.focus();
+  tabIn(box);
+  eq(currentFocus, b, '第一个看得见的控件上按 Tab 到第二个');
+  tabIn(box);
+  eq(currentFocus, a, '末位上按 Tab 回到第一个看得见的，跳过藏起来那一层里的按钮');
+  tabIn(box, true);
+  eq(currentFocus, b, '首位上按 Shift+Tab 到末位，不落到藏起来的按钮上');
+});
+
+// ---- (d) 禁用的控件不进圈 ----
+// 抓的故障：禁用的按钮进了圈，Tab 停到一颗按不动的按钮上，读屏念「不可用」，像是弹层坏了。
+
+await section('禁用的控件不进圈', async () => {
+  if (typeof keepTabInside !== 'function') throw new Error('keepTabInside 没载入');
+  const box = build(['div', {}, [
+    ['button', {id: 'a'}],
+    ['button', {id: 'off', disabled: true}],
+    ['button', {id: 'b'}],
+  ]]);
+  const [a, , b] = box.children;
+  a.focus();
+  tabIn(box);
+  eq(currentFocus, b, '第一个上按 Tab 跳过禁用的那颗，到第二颗能按的');
+  tabIn(box, true);
+  eq(currentFocus, a, '回按 Shift+Tab 也跳过禁用的那颗');
+});
+
+// ---- (e) 焦点在圈外：Tab 落第一个，Shift+Tab 落最后一个 ----
+// 抓的故障：焦点不在弹层的控件上时（比如刚点了弹层的空白处），按 Shift+Tab 却落到第一个，
+// 和浏览器原生「往回走到最后一个」相反，只用键盘的人要多绕一圈。
+
+await section('焦点在圈外时 Tab 落首位、Shift+Tab 落末位', async () => {
+  if (typeof keepTabInside !== 'function') throw new Error('keepTabInside 没载入');
+  const box = build(['div', {}, [
+    ['input', {id: 'a'}],
+    ['button', {id: 'b'}],
+    ['button', {id: 'c'}],
+  ]]);
+  const [a, , c] = box.children;
+  const outside = new MiniNode('button');
+
+  outside.focus();
+  let ev = tabIn(box);
+  eq(ev.prevented, true, '圈外按 Tab 也被拦下');
+  eq(currentFocus, a, '圈外按 Tab 落到第一个');
+
+  outside.focus();
+  ev = tabIn(box, true);
+  eq(ev.prevented, true, '圈外按 Shift+Tab 也被拦下');
+  eq(currentFocus, c, '圈外按 Shift+Tab 落到最后一个，跟浏览器原生一样');
+
+  currentFocus = null;
+  tabIn(box, true);
+  eq(currentFocus, c, '焦点不在任何控件上时，Shift+Tab 也落到最后一个');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

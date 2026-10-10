@@ -19,11 +19,14 @@ import java.io.IOException;
  */
 @DisplayName("确认弹层内循环焦点")
 class ConfirmFocusCycleTest {
-    private static final String FIXTURE = FrontendFixture.fixture("confirm-focus-cycle-fixture.mjs");
+    /**
+     * 夹具按模块内相对位置认（{@link FrontendFixture#runFromModule}），不写死模块目录名
+     */
+    private static final String FIXTURE = "src/test/resources/frontend/confirm-focus-cycle-fixture.mjs";
 
     @Test
     @DisplayName("弹层开着时 Tab／Shift+Tab 首尾循环，焦点不出弹层；关掉后不再拦")
     void tabStaysInsideTheOpenDialog() throws IOException, InterruptedException {
-        FrontendFixture.run(FIXTURE, "确认弹层内循环焦点");
+        FrontendFixture.runFromModule(FIXTURE, "确认弹层内循环焦点");
     }
 }

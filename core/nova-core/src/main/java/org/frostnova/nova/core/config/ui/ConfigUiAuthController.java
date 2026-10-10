@@ -792,6 +792,9 @@ public class ConfigUiAuthController {
                 // 现算而不是拿 outcome.retryAfter()——刚好第 N 次失败时那一位还是零，
                 // 而此刻锁定已经生效了
                 result.put("lockedSeconds", remainingLockSeconds(request));
+                // 这一趟是不是口令或验证码被拒。界面只在被拒时把输入框标成输错：
+                // 已被锁、服务器正忙时没核口令，标了会让人以为自己输错了
+                result.put("credentialsRejected", outcome.credentialsRejected());
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
             }
 
