@@ -1979,6 +1979,14 @@ public class ConfigUiController {
         // 注意该值不含 VM Thread、编译器线程等 JVM 内部原生线程，因此会小于线程转储的条目数。
         runtimeInfo.put("threads", ManagementFactory.getThreadMXBean().getThreadCount());
         runtimeInfo.put("processors", runtime.availableProcessors());
+        // 数据目录所在盘还剩多少。档位在服务端判好再发（diskFreeMb 与 diskLevel）：
+        // 阈值只养这一份，界面照着画。量不到时两个键都不发（缺席即没有），
+        // 那一格写「—」——发 0 会读成「盘已满」，发编出来的数更糟
+        long diskUsable = usableSpaceBytes();
+        if (diskUsable >= 0) {
+            runtimeInfo.put("diskFreeMb", diskUsable / 1024 / 1024);
+            runtimeInfo.put("diskLevel", diskLevel(diskUsable));
+        }
 
         result.put("users", users);
         result.put("runtime", runtimeInfo);
@@ -2025,6 +2033,44 @@ public class ConfigUiController {
         result.put("queue", queue());
         result.put("alerts", alerts());
         return result;
+    }
+
+    /**
+     * 数据目录所在盘的可用字节数
+     * <p>
+     * 「磁盘剩余」那一行量的是数据目录那块盘：数据与日志都写在它上面，别处再空也帮不上。
+     * 目录按定位直播数据的那一份算（与运行状态、报告同一处）。首启时它可能还没建，
+     * 上溯到最近的已存在祖先去问那块盘——不然最该看见这一行的新机器上它永远是「—」。
+     * 取不到时给 -1：那是「量不到」的记号，不是 0。包私有给测试留一道缝，
+     * 捏造的读数从这里喂，两档阈值才量得全。
+     */
+    long usableSpaceBytes() {
+        try {
+            Path parent = Path.of(properties.getLive().getLiveDataPath()).toAbsolutePath().getParent();
+            while (parent != null && !Files.exists(parent)) {
+                parent = parent.getParent();
+            }
+            return parent == null ? -1 : Files.getFileStore(parent).getUsableSpace();
+        } catch (Exception e) {
+            // 一块盘取不到不该让整份运行状态陪葬：堆内存那几行与此无关
+            return -1;
+        }
+    }
+
+    /**
+     * 磁盘剩余的两档：不足 2GB 黄、不足 500MB 红，压线的那个字节留在高一档
+     * <p>
+     * 阈值取的是「还够不够再写几场直播的数据与日志」：一场的弹幕原文与事件流水
+     * 合计以百 MB 计，只剩两三场余量时使用者就该去清盘了。
+     */
+    static String diskLevel(long usableBytes) {
+        if (usableBytes < 500L * 1024 * 1024) {
+            return "err";
+        }
+        if (usableBytes < 2L * 1024 * 1024 * 1024) {
+            return "warn";
+        }
+        return "ok";
     }
 
     /**

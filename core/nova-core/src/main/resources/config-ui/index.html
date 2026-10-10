@@ -40,33 +40,42 @@
       <a href="#/settings" data-page="settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"/></svg>设置</a>
     </nav>
     <!--
-      运行三行。摆在侧栏而不是首页上：堆内存、线程数这类数字是「这台机器还撑得住吗」，
+      运行四行。摆在侧栏而不是首页上：堆内存、线程数这类数字是「这台机器还撑得住吗」，
       与首页要回答的「现在好不好」不是同一个问题——放进首页会与链路、探针抢位置，
-      而它们恰恰是不需要每次都读的那种数字。
+      而它们恰恰是不需要每次都读的那种数字。磁盘剩余量的是数据目录那块盘：
+      数据与日志都写在它上面，写不进去的那一刻推送记录与报告才开始丢。
     -->
     <div class="runbox">
       <div class="rb-t">运行</div>
       <div class="rb-r"><span>堆内存</span><b id="run-mem">—</b></div>
       <div class="rb-r"><span>线程</span><b id="run-threads">—</b></div>
       <div class="rb-r"><span>监听主播</span><b id="run-streamers">—</b></div>
+      <div class="rb-r"><span>磁盘剩余</span><b id="run-disk">—</b></div>
     </div>
     <!--
-      使用说明不进上面那条导航：它不是一页，点了去手册网站。
-      放进导航的话，切页时会被当成又一条路由去点亮，而它没有页可亮。
-      地址按当前页由脚本改；脚本还没跑时这不是一个能点的链接。
+      侧栏底部两枚按钮：使用说明与源码。都按外链处理（新开一页、不带本页窗口与来源），
+      地址由脚本给：脚本还没跑时它们不是能点的链接。源码那枚的图标是 GitHub 的
+      官方标（Octicons mark-github，MIT），内嵌在页面里，运行时不向网上取任何东西。
     -->
-    <a id="side-manual" class="side-manual" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">使用说明</a>
-    <!--
-      版本位与新版药丸。版本值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
-      从源码直接跑（未经打包）时那个字段是空串，此处只显示产品名。
-      在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。
-      药丸有没有由同一份回包里的 update 块决定（缺席即没有）：检查器判「该提示」才有它，
-      首装机器服务器不下发那一块。点开的小面板内容由脚本按那份块现画，不写死在这里。
-    -->
-    <div class="verline">
-      <span id="side-version">NovaBot</span>
-      <button type="button" class="nv-pill acc" id="side-update" style="display:none"></button>
-      <div id="update-pop" style="display:none"></div>
+    <div class="side-foot">
+      <!--
+        使用说明不进上面那条导航：它不是一页，点了去手册网站。
+        放进导航的话，切页时会被当成又一条路由去点亮，而它没有页可亮。
+        地址按当前页由脚本改。
+      -->
+      <a id="side-manual" class="side-link" title="打开使用说明（手册网站）" aria-label="打开使用说明（手册网站）" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 3.6C6.6 2.5 4.5 2.4 2.5 3.2v8.9c2-.8 4.1-.7 5.5.3 1.4-1 3.5-1.1 5.5-.3V3.2c-2-.8-4.1-.7-5.5.4z"/><path d="M8 3.6v8.8"/></svg>使用说明</a>
+      <!--
+        版本位与新版药丸。版本值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
+        从源码直接跑（未经打包）时那个字段是空串，此处只显示产品名。
+        在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。
+        药丸有没有由同一份回包里的 update 块决定（缺席即没有）：检查器判「该提示」才有它，
+        首装机器服务器不下发那一块。点开的小面板内容由脚本按那份块现画，不写死在这里。
+      -->
+      <div class="verline">
+        <a id="side-source" class="side-link" title="在 GitHub 上查看源码" aria-label="在 GitHub 上查看源码" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span id="side-version">NovaBot</span></a>
+        <button type="button" class="nv-pill acc" id="side-update" style="display:none"></button>
+        <div id="update-pop" style="display:none"></div>
+      </div>
     </div>
     <!-- 未启用口令登录时没有「退出」可言，由脚本按登录状态决定是否显示 -->
     <div id="auth-actions" style="display:none">

@@ -268,9 +268,13 @@ export async function refreshHome() {
  *
  * 值由运行状态下发。没有这个字段时只显示产品名，不在界面里写死一个版本号——
  * 写死的那个与产物脱节的那一天不会有任何提示，而使用者正是照着它去判断该不该换 jar。
+ * 版本文字连同 GitHub 官方标是一枚去源码仓库的按钮，地址取自 {@link SOURCE_URL}
+ * 那一份（AGPL-3.0 下这是使用者取得源码的入口），不在这里另抄。
  * @param version 当前版本，没有则不显示
  */
 function renderVersion(version) {
+  const source = $('#side-source');
+  if (source) source.href = SOURCE_URL;
   $('#side-version').textContent = version ? 'NovaBot ' + version : 'NovaBot';
   renderAbout(version);
 }
@@ -322,6 +326,8 @@ export function renderStatus(data) {
   // 上限一并显示：只报「监听 10 位」看不出这已经是顶格，再加主播时才发现加不进去
   $('#run-streamers').textContent = (data.users || []).length
     + (data.streamerLimit ? ' / ' + data.streamerLimit : '');
+  // 磁盘剩余：量不到时整块缺席，那一格是「—」而不是 0
+  renderDiskRow($('#run-disk'), runtime);
 
   // 保存过、仍等着重启的那几项。只在这里记一次：底部改动条按它写「M 处改动需重启生效」，
   // 而它的寿命是「到下次重启为止」——每次拿到新的运行状态都该跟着更新，
@@ -331,6 +337,25 @@ export function renderStatus(data) {
 
   // 平台相关的那几块归各平台页自己渲染：这里既不知道装了哪些页，也不知道页里有哪些元素
   pageStatus(data);
+}
+
+/**
+ * 运行栏「磁盘剩余」那一行
+ *
+ * 数值与档位都由 runtime 块给（diskFreeMb、diskLevel，量不到时整块缺席）：
+ * 阈值在服务端判，浏览器不另养一份——两处各判各的迟早说两种话。
+ * 档位不是 ok 时那一格要变色并带悬停说明：磁盘快满这件事没有别的征兆，
+ * 写不进去的那一刻推送记录与报告才开始丢，那时已经晚了。
+ * @param el 那一格的值位
+ * @param runtime /api/status 回包里的 runtime 块
+ */
+function renderDiskRow(el, runtime) {
+  const mb = runtime.diskFreeMb;
+  el.textContent = mb == null ? '—' : (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB');
+  const level = runtime.diskLevel;
+  el.className = level === 'err' ? 'err' : level === 'warn' ? 'warn' : '';
+  el.title = level === 'err' || level === 'warn'
+    ? '磁盘快满了：数据和日志写不进去时，推送记录和报告会丢' : '';
 }
 
 // 命令开关、订阅名单与「哪几条推送配置没填完」那三块随推送页改版挪去了通道页的

@@ -57,6 +57,16 @@ final class FrontendFixture {
     }
 
     /**
+     * 夹具按<b>模块内相对位置</b>认（{@code src/test/resources/frontend/…}，测试跑起来时
+     * 工作目录就是本模块）。新写的壳走这一支、不写死模块目录名：写死目录名的旧写法
+     * 只减不增，新壳不再添一件。
+     */
+    static void runFromModule(String fixtureInModule, String what) throws IOException, InterruptedException {
+        // Path.resolve 收到绝对路径时原样返回，正好照旧走 run 那一套
+        run(Path.of(fixtureInModule).toAbsolutePath().toString(), what);
+    }
+
+    /**
      * 跑一份夹具，退码非 0 即判红
      * @param fixture 夹具在仓库里的相对路径
      * @param what 这一组判定叫什么，进红时那句话与构建日志
