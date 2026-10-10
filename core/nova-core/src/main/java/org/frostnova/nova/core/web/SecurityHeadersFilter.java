@@ -84,11 +84,22 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         response.setHeader(CONTENT_TYPE_OPTIONS, NOSNIFF);
         response.setHeader(FRAME_OPTIONS, SAMEORIGIN);
 
-        if (isSensitive(request.getRequestURI())) {
+        if (isSensitive(path(request))) {
             response.setHeader(HttpHeaders.CACHE_CONTROL, NO_STORE);
         }
 
         chain.doFilter(request, response);
+    }
+
+    /**
+     * 取出相对于应用上下文的请求路径
+     * <p>
+     * 配了 {@code server.servlet.context-path} 时请求路径前面多一截前缀，不去掉的话名单里一个也匹配不上
+     */
+    private String path(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String context = request.getContextPath();
+        return context != null && !context.isEmpty() && uri.startsWith(context) ? uri.substring(context.length()) : uri;
     }
 
     /**

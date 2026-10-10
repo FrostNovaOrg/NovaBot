@@ -288,6 +288,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private void filterWithToken(HttpServletRequest request, HttpServletResponse response, FilterChain chain, String clientIp)
             throws ServletException, IOException {
+        // 令牌会随 Cookie 自动附上，而 SameSite 按站点划分、不按端口：同一台机器上另一个端口的页面
+        // 发来的写请求照样带着它。所以写请求与口令形态一样，先核来源
+        if (!SAFE_METHODS.contains(request.getMethod()) && !sameOrigin(request)) {
+            log.warn("配置界面拒绝了来自 {} 的跨站请求, Origin: {}", clientIp, request.getHeader(HttpHeaders.ORIGIN));
+            reject(request, response, HttpStatus.FORBIDDEN, "请求来源不正确");
+            return;
+        }
+
         String presented = extractToken(request);
         if (!SecureToken.verify(token, presented)) {
             log.warn("配置界面拒绝了来自 {} 的访问: 令牌校验失败", clientIp);
@@ -307,7 +315,8 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             // 不带 Secure 的话，同域名下只要有一次明文请求，浏览器就会把令牌随它送出去
             cookie.setSecure(request.isSecure());
             // 令牌存在 Cookie 里，浏览器就会把它自动附到跨站请求上。这一形态没有 CSRF 令牌可查，
-            // 只能靠 SameSite 把跨站请求整个挡掉——现代浏览器的默认值已是 Lax，这里显式写死不指望默认
+            // 靠 SameSite 挡掉别的站点——现代浏览器的默认值已是 Lax，这里显式写死不指望默认。
+            // SameSite 不分端口，同机另一端口的页面仍带得上它，那一种由方法开头的来源核对挡住
             cookie.setAttribute("SameSite", "Strict");
             response.addCookie(cookie);
 

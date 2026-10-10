@@ -96,6 +96,44 @@ class SecurityHeadersFilterTest {
         assertEquals("no-store", through("/nova/readonly-token").getHeader(HttpHeaders.CACHE_CONTROL));
     }
 
+    private MockHttpServletResponse through(String contextPath, String path) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+        request.setContextPath(contextPath);
+        request.setRequestURI(path);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new SecurityHeadersFilter(PREFIXES).doFilter(request, response, new MockFilterChain());
+
+        return response;
+    }
+
+    /**
+     * 配了部署前缀之后，控制台的响应照样不许被存下来
+     * <p>
+     * 抓的用户故障：改了 {@code server.servlet.context-path} 的人，请求路径前面多了一截前缀，
+     * 名单里的前缀一个也匹配不上，配置页和凭据页被浏览器或中间代理缓存下来。
+     * <p>
+     * 前缀取 {@code /bot} 而不是 {@code /nova}：{@code /nova} 本身就在名单里，
+     * 不去前缀也会被它顺带匹配上，这一格就抓不到毛病了。
+     */
+    @Test
+    @DisplayName("🔴 配了部署前缀时，控制台的响应照样带 no-store")
+    void sensitiveNamespacesAreNotStoredUnderContextPath() throws Exception {
+        assertEquals("no-store", through("/bot", "/bot/config/api/values").getHeader(HttpHeaders.CACHE_CONTROL));
+        assertEquals("no-store", through("/bot", "/bot/config").getHeader(HttpHeaders.CACHE_CONTROL));
+        assertNull(through("/bot", "/bot/onebot/send").getHeader(HttpHeaders.CACHE_CONTROL));
+    }
+
+    /**
+     * 对照：没配前缀时行为不变
+     */
+    @Test
+    @DisplayName("没配部署前缀时，名单内带 no-store、名单外不带")
+    void noContextPathKeepsBehaviour() throws Exception {
+        assertEquals("no-store", through("", "/config/api/values").getHeader(HttpHeaders.CACHE_CONTROL));
+        assertNull(through("", "/onebot/send").getHeader(HttpHeaders.CACHE_CONTROL));
+    }
+
     /**
      * 反面：no-store 不是无条件加的
      * <p>
