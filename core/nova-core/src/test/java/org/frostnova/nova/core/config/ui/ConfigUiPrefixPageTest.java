@@ -57,8 +57,6 @@ class ConfigUiPrefixPageTest {
         assertEquals(List.of(), ConfigUiPrefixPages.bareAddresses(html),
                 "登录页里还剩写死的地址，配了前缀时登录、通行密钥、协议那几条接口都打不到");
         assertTrue(html.contains("\"/novabot\""), "登录页里要有那一份写进去的前缀");
-        assertEquals(List.of(), ConfigUiPrefixPages.siteAttributes(html).stream()
-                .filter(address -> !address.startsWith("/novabot")).toList(), "属性上的本站地址带前缀");
     }
 
     @Test

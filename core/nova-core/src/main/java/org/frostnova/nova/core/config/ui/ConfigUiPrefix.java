@@ -108,7 +108,7 @@ public final class ConfigUiPrefix {
                 case '"' -> out.append("\\\"");
                 case '\'' -> out.append("\\'");
                 default -> {
-                    if (c < 0x20 || c == '<' || c == '>' || c == '&' || c == ' ' || c == ' ') {
+                    if (c < 0x20 || c == '<' || c == '>' || c == '&' || c == '\u2028' || c == '\u2029') {
                         out.append(String.format("\\u%04x", (int) c));
                     } else {
                         out.append(c);

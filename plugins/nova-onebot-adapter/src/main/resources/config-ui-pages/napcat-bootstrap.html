@@ -74,11 +74,18 @@
   const $ = s => document.querySelector(s);
   const step = text => { $('#steps').textContent = text; };
 
+  // 提示里可能带服务端回的原话，只按文字放，不拼进标记
   function fail(text) {
     $('#title').textContent = '没能替你登录 NapCat';
-    $('#msg').className = 'err';
-    $('#msg').innerHTML = text + '<br><br><a>返回 NovaBot 控制台</a>';
-    $('#msg a').href = CONSOLE;
+    const msg = $('#msg');
+    msg.className = 'err';
+    msg.textContent = text;
+    const back = document.createElement('a');
+    back.href = CONSOLE;
+    back.textContent = '返回 NovaBot 控制台';
+    msg.appendChild(document.createElement('br'));
+    msg.appendChild(document.createElement('br'));
+    msg.appendChild(back);
     $('#steps').textContent = '';
   }
 
