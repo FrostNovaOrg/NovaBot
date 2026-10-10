@@ -21,8 +21,8 @@ import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
-  previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, revenueSummary,
-  savedRevenueVisible,
+  previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
+  revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
@@ -297,6 +297,9 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 .rep-txt>p{margin:2px 0 0;font-size:13px;color:var(--dim)}
 /* 当前金额设定下不出图的那几行：整行淡下去，原因那一行照旧读得清 */
 .rep-row.rev-off{opacity:.6}
+/* 跟着上一项开关走的子项：缩进挂在那一项下面，那一项关着时同样淡下去 */
+.rep-row.rep-sub{padding-left:26px}
+.rep-row.parent-off{opacity:.6}
 .rep-txt>.rep-why{font-size:12.5px}
 .rep-n{width:78px;flex:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:4px 8px;font-size:14px;font-family:inherit;background:var(--surface);color:var(--text)}
@@ -1343,9 +1346,7 @@ function sectionLayout(host, target, session) {
       body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
     const message = messageOf(target, handler);
     if (message) {
-      const params = Object.assign({}, message.params || {});
-      for (const option of handler.options || []) delete params[option.key];
-      message.params = params;
+      message.params = restoredLayoutParams(message.params, handler);
     }
     markDirty();
     renderStreamers();

@@ -62,8 +62,60 @@ public class BilibiliLiveReportOptions {
 
     /**
      * 是否展示数据卡片栅格
+     * <p>
+     * 这是十张卡的总开关：关着时下面各张的开关都不起作用；开着而十张都关了，这一块同样不画。
      */
     private boolean cards = true;
+
+    /**
+     * 是否画流水卡（隐藏金额时改写付费人数）
+     */
+    private boolean cardRevenue = true;
+
+    /**
+     * 是否画弹幕卡。这一张原本 0 条也画，关掉就不画
+     */
+    private boolean cardDanmu = true;
+
+    /**
+     * 是否画点赞卡
+     */
+    private boolean cardLike = true;
+
+    /**
+     * 是否画进入直播间卡
+     */
+    private boolean cardEnter = true;
+
+    /**
+     * 是否画新增关注卡
+     */
+    private boolean cardFollow = true;
+
+    /**
+     * 是否画醒目留言卡（隐藏金额时只写条数）
+     */
+    private boolean cardSuperChat = true;
+
+    /**
+     * 是否画大航海卡（隐藏金额时只写人次）
+     */
+    private boolean cardGuard = true;
+
+    /**
+     * 是否画盲盒卡（隐藏金额时只写个数）
+     */
+    private boolean cardBox = true;
+
+    /**
+     * 是否画免费礼物卡
+     */
+    private boolean cardFreeGift = true;
+
+    /**
+     * 是否画分享卡
+     */
+    private boolean cardShare = true;
 
     /**
      * 弹幕排行榜展示前多少名，0 为不展示
@@ -162,7 +214,8 @@ public class BilibiliLiveReportOptions {
      * 版式项一览：key、人话名、一句话说明、类型、默认值、取值范围、随金额
      * <p>
      * 顺序即界面上的顺序：先是整块的开关，后是几张排行榜——按使用者读报告时
-     * 从上往下的次序排，而不是按字段在类里的先后。
+     * 从上往下的次序排，而不是按字段在类里的先后。数据卡片下面那十项按图上卡片的顺序排，
+     * 挂在 {@code cards} 下面（{@link HandlerOption#parentKey()}）：界面把它们缩进列出，总开关关着时灰掉。
      * <p>
      * ⚠️ <b>这张表与上面的字段必须一一对应</b>，由
      * {@code BilibiliLiveReportLayoutOptionsTest} 两个方向现算：表里有的键 {@link #of} 都真的读，
@@ -177,9 +230,34 @@ public class BilibiliLiveReportOptions {
      */
     private static final List<HandlerOption> LAYOUT_OPTIONS = List.of(
             HandlerOption.bool("cover", "直播间封面", "报告顶部的封面横幅", DEFAULTS.cover),
-            revenue(HandlerOption.bool("cards", "数据卡片", "弹幕、流水、点赞等概览卡片", DEFAULTS.cards),
+            revenue(HandlerOption.bool("cards", "数据卡片",
+                    "弹幕、流水、点赞等概览卡片。下面一张都不选，这一块就不画", DEFAULTS.cards),
                     HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
                     "隐藏金额的会话里流水卡改写付费人数，不带金额"),
+            revenue(HandlerOption.bool("card_revenue", "流水", "本场流水总额与付费人数，为 0 不画", DEFAULTS.cardRevenue),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里改写付费人数，不带金额").under("cards"),
+            HandlerOption.bool("card_danmu", "弹幕", "本场弹幕条数与发弹幕的人数，0 条也画", DEFAULTS.cardDanmu)
+                    .under("cards"),
+            HandlerOption.bool("card_like", "点赞", "本场点赞数，为 0 不画", DEFAULTS.cardLike).under("cards"),
+            HandlerOption.bool("card_enter", "进入直播间", "本场进过直播间的人数，为 0 不画", DEFAULTS.cardEnter)
+                    .under("cards"),
+            HandlerOption.bool("card_follow", "新增关注", "本场新增的关注数，为 0 不画", DEFAULTS.cardFollow)
+                    .under("cards"),
+            revenue(HandlerOption.bool("card_super_chat", "醒目留言", "本场醒目留言条数与金额，为 0 不画",
+                    DEFAULTS.cardSuperChat),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里只写条数，不带金额").under("cards"),
+            revenue(HandlerOption.bool("card_guard", "大航海", "本场上舰人次与金额，分得清时写新开与续费，为 0 不画", DEFAULTS.cardGuard),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里只写人次，不带金额").under("cards"),
+            revenue(HandlerOption.bool("card_box", "盲盒", "本场开出的盲盒个数与盈亏，为 0 不画", DEFAULTS.cardBox),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里只写个数，不写盈亏").under("cards"),
+            HandlerOption.bool("card_free_gift", "免费礼物", "本场收到的免费礼物个数，为 0 不画", DEFAULTS.cardFreeGift)
+                    .under("cards"),
+            HandlerOption.bool("card_share", "分享", "本场直播间被分享的次数，为 0 不画", DEFAULTS.cardShare)
+                    .under("cards"),
             HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团与大航海人数的涨幅，每次出报告要多打三个接口", DEFAULTS.fansChange),
             revenue(HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、流水等随时间的变化曲线", DEFAULTS.interactionCurve),
                     HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
@@ -216,12 +294,12 @@ public class BilibiliLiveReportOptions {
                     "隐藏金额的会话里只写个数，不写盈亏"));
 
     /**
-     * 给一项标上随金额：只在上面那张表里用，复制其余七栏、换掉随金额两栏
+     * 给一项标上随金额：只在上面那张表里用，复制其余各栏、换掉随金额两栏
      */
     private static HandlerOption revenue(HandlerOption option,
                                          HandlerOption.RevenueVisibility visibility, String note) {
         return new HandlerOption(option.key(), option.label(), option.description(), option.type(),
-                option.defaultValue(), option.min(), option.max(), visibility, note);
+                option.defaultValue(), option.min(), option.max(), visibility, note, option.parentKey());
     }
 
     /**
@@ -251,6 +329,17 @@ public class BilibiliLiveReportOptions {
 
         options.cover = bool(params, "cover", options.cover);
         options.cards = bool(params, "cards", options.cards);
+        // 十张卡各自的开关：老配置里没有这些键，缺省都是开，报告与加开关之前一样
+        options.cardRevenue = bool(params, "card_revenue", options.cardRevenue);
+        options.cardDanmu = bool(params, "card_danmu", options.cardDanmu);
+        options.cardLike = bool(params, "card_like", options.cardLike);
+        options.cardEnter = bool(params, "card_enter", options.cardEnter);
+        options.cardFollow = bool(params, "card_follow", options.cardFollow);
+        options.cardSuperChat = bool(params, "card_super_chat", options.cardSuperChat);
+        options.cardGuard = bool(params, "card_guard", options.cardGuard);
+        options.cardBox = bool(params, "card_box", options.cardBox);
+        options.cardFreeGift = bool(params, "card_free_gift", options.cardFreeGift);
+        options.cardShare = bool(params, "card_share", options.cardShare);
         options.danmuRanking = ranking(params, "danmu_ranking", options.danmuRanking);
         options.giftRanking = ranking(params, "gift_ranking", options.giftRanking);
         options.superChatRanking = ranking(params, "super_chat_ranking", options.superChatRanking);

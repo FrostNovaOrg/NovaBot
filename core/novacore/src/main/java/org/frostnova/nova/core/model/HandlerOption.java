@@ -20,10 +20,14 @@ package org.frostnova.nova.core.model;
  * @param revenueVisibility 这一项随会话的金额可见性怎么走，缺省为 {@link RevenueVisibility#UNRELATED}；
  *                          界面据此在当前设定下不出图的项上灰掉并写原因。第三方插件不标即无关
  * @param revenueNote 随金额的那句人话原因，给在灰掉的项旁边看；未标随金额的项可为 null
+ * @param parentKey 这一项跟着哪一项开关走（那一项的 key），可为 null。界面把它缩进列在那一项下面，
+ *                  那一项关着时它灰掉、存着的值不动。只是界面上的归属：这一项真正起不起作用，
+ *                  仍由处理器自己按两项的取值决定
  */
 public record HandlerOption(String key, String label, String description, Type type,
                             Object defaultValue, Integer min, Integer max,
-                            RevenueVisibility revenueVisibility, String revenueNote) {
+                            RevenueVisibility revenueVisibility, String revenueNote,
+                            String parentKey) {
     /**
      * 旧构造：七个栏都在、随金额两栏取缺省
      * <p>
@@ -33,6 +37,27 @@ public record HandlerOption(String key, String label, String description, Type t
     public HandlerOption(String key, String label, String description, Type type,
                          Object defaultValue, Integer min, Integer max) {
         this(key, label, description, type, defaultValue, min, max, RevenueVisibility.UNRELATED, null);
+    }
+
+    /**
+     * 九栏构造：带随金额两栏、不跟着别的项
+     * <p>
+     * 加 {@code parentKey} 之前这就是全栏构造，按九栏写的调用照旧能编、照旧是顶层项。
+     */
+    public HandlerOption(String key, String label, String description, Type type,
+                         Object defaultValue, Integer min, Integer max,
+                         RevenueVisibility revenueVisibility, String revenueNote) {
+        this(key, label, description, type, defaultValue, min, max, revenueVisibility, revenueNote, null);
+    }
+
+    /**
+     * 同一项挂到另一项下面：其余各栏照抄，只换 {@code parentKey}
+     * @param parent 跟着走的那一项的 key
+     * @return 新的一项
+     */
+    public HandlerOption under(String parent) {
+        return new HandlerOption(key, label, description, type, defaultValue, min, max,
+                revenueVisibility, revenueNote, parent);
     }
 
     /**

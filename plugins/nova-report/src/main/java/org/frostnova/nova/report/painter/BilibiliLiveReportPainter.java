@@ -497,6 +497,9 @@ public class BilibiliLiveReportPainter {
      * 文字版<b>不追求版式对等</b>，只保证一件事：这一场的关键数字送到了。
      * 金额可见性照 {@code options} 走——降级不是放宽口径的理由，
      * 该给大群看的仍然不带金额。
+     * <p>
+     * 数据卡片的总开关与各张卡的开关这里都不看：图画不出来时送达的是这一场的关键数字，
+     * 按版式删掉其中几项，主播拿到的就只剩半份数，还分不清是没数据还是被关了。
      * @param platform 直播平台
      * @param source 主播信息
      * @param options 版式选项，此处只用到金额可见性
@@ -762,9 +765,15 @@ public class BilibiliLiveReportPainter {
      * 不展示金额时这些卡片不是消失，而是换一种说法：流水讲「多少人付费互动」、
      * 醒目留言讲「多少条」、盲盒讲「开了多少个」。互动的热闹程度照样看得见，
      * 只是不带走具体数额——那正是想给大群看的部分。
+     * <p>
+     * 一张都不剩（各张开关全关，或开着的全为 0）时整块不画：画坊位置不动，
+     * 不留空框，也不加卡片块下面那 8 像素间距。
      */
     private void drawCards(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         List<Card> cards = buildCards(painter, platform, uid, options);
+        if (cards.isEmpty()) {
+            return;
+        }
 
         int startY = painter.getY();
         for (int i = 0; i < cards.size(); i++) {
@@ -780,7 +789,7 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 本场数据卡片列表。为零的条目不入列。
+     * 本场数据卡片列表。开关关着的不入列，开着的再照旧看为零不入列（弹幕一张开着时 0 条也入列）。
      * <p>
      * 要画坊进来是因为大航海卡副行要量宽度决定舍不舍金额（见 {@link #guardPurchaseCard}）。
      */
@@ -805,35 +814,37 @@ public class BilibiliLiveReportPainter {
         List<Card> cards = new ArrayList<>();
         // 流水放第一格：整场报告最要紧的一个数，第一眼要落在它上；隐藏金额的
         // 「付费互动」那形也是同一个位置——想给人看的热闹不因为不露金额而挪后
-        if (revenueTotal > 0 || revenueUsers > 0) {
+        if (options.isCardRevenue() && (revenueTotal > 0 || revenueUsers > 0)) {
             cards.add(revenue
                     ? new Card("¥" + yuan(revenueTotal), "流水 · " + revenueUsers + " 人")
                     : new Card(revenueUsers + " 人", "付费互动"));
         }
-        cards.add(new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
-        if (likeTotal > 0) {
+        if (options.isCardDanmu()) {
+            cards.add(new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
+        }
+        if (options.isCardLike() && likeTotal > 0) {
             cards.add(new Card(String.valueOf(likeTotal), "点赞"));
         }
-        if (enterUsers > 0) {
+        if (options.isCardEnter() && enterUsers > 0) {
             cards.add(new Card(enterUsers + " 人", "进入直播间"));
         }
-        if (follow > 0) {
+        if (options.isCardFollow() && follow > 0) {
             cards.add(new Card("+" + follow, "新增关注"));
         }
-        if (superChat > 0) {
+        if (options.isCardSuperChat() && superChat > 0) {
             cards.add(new Card(superChat + " 条", revenue ? "醒目留言 · ¥" + yuan(superChatValue) : "醒目留言"));
         }
-        if (guardPurchases > 0) {
+        if (options.isCardGuard() && guardPurchases > 0) {
             cards.add(guardPurchaseCard(painter, platform, uid, guardPurchases, revenue));
         }
-        if (box > 0) {
+        if (options.isCardBox() && box > 0) {
             cards.add(new Card(box + " 个",
                     revenue ? "盲盒 · " + boxText(boxProfit) : "盲盒"));
         }
-        if (freeGift > 0) {
+        if (options.isCardFreeGift() && freeGift > 0) {
             cards.add(new Card(freeGift + " 个", "免费礼物"));
         }
-        if (share > 0) {
+        if (options.isCardShare() && share > 0) {
             cards.add(new Card(share + " 次", "分享"));
         }
         return cards;

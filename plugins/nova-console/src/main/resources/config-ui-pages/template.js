@@ -577,6 +577,10 @@ export function buildTemplateEditor(host, options) {
  * 图上永远没有这一榜，还以为是坏了。灰不灰读 opts.revenueVisible 现算的值
  * （会话存的设定＋草稿），草稿里拨了当场跟着变；存着的值不清不改。
  * <p>
+ * 带 parentKey 的项（处理器自报「跟着哪一项开关走」）缩进列在那一项下面；那一项关着
+ * 或灰着时它们一并灰掉、写一句为什么，存着的值同样不清不改，打开就亮回来。
+ * 不带这一栏的项照旧按清单顺序平铺。
+ * <p>
  * ℹ️ 服务端另有一支 {@code /api/report/layout-options} 给同一张表。<b>这里不调它</b>——
  * 同一张表从两个口进来，两个口的字段名还不一样（那边是 {@code default}，
  * 这边是 {@code defaultValue}），而「这一项改过没有」在别处是按后者判的。
@@ -638,6 +642,32 @@ export function buildLayoutEditor(host, options) {
     return note + '。' + how + '。';
   }
 
+  /**
+   * 画的顺序：顶层项照清单顺序，跟着某一项走的紧跟在那一项后面
+   *
+   * parentKey 指向清单里没有的键时按顶层项放，不让它从界面上消失。
+   * @return {Array<{option: object, parent: object|null}>}
+   */
+  function ordered() {
+    const keys = new Set(items.map(option => option.key));
+    const out = [];
+    const seen = new Set();
+    const visit = (option, parent) => {
+      if (seen.has(option)) return;
+      seen.add(option);
+      out.push({option, parent});
+      for (const child of items) {
+        if (child.parentKey === option.key) visit(child, option);
+      }
+    };
+    for (const option of items) {
+      if (!option.parentKey || !keys.has(option.parentKey)) visit(option, null);
+    }
+    // 互相指着的那几项走不到：照顶层补上
+    for (const option of items) visit(option, null);
+    return out;
+  }
+
   function change(option, value) {
     const params = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
     params[option.key] = value;
@@ -648,14 +678,21 @@ export function buildLayoutEditor(host, options) {
   function paint() {
     const visible = typeof opts.revenueVisible === 'function' ? opts.revenueVisible() : undefined;
     controls.innerHTML = '';
-    for (const option of items) {
+    // 各项此刻起不起作用，按 key 记下：子项看它跟着的那一项关没关、灰没灰
+    const inert = new Map();
+    for (const {option, parent} of ordered()) {
       const state = revenueState(option, visible);
       const off = state === 'off';
-      const row = el('div', 'rep-row' + (off ? ' rev-off' : ''));
+      // 跟着的那一项关着或灰着：这一项不起作用，灰掉，存着的值不动
+      const parentOff = !!parent && (inert.get(parent.key) || !valueOf(parent));
+      inert.set(option.key, off || parentOff);
+      const row = el('div', 'rep-row' + (parent ? ' rep-sub' : '') + (off ? ' rev-off' : '')
+        + (parentOff ? ' parent-off' : ''));
+      const locked = !opts.editable || off || parentOff;
       if (String(option.type).toUpperCase() === 'BOOLEAN') {
         const label = el('label', 'switch');
         label.innerHTML = '<input type="checkbox"' + (valueOf(option) ? ' checked' : '')
-          + (!opts.editable || off ? ' disabled' : '') + '>';
+          + (locked ? ' disabled' : '') + '>';
         const input = label.querySelector('input');
         input.setAttribute('aria-label', option.label || option.key);
         input.addEventListener('change', event => change(option, event.target.checked));
@@ -669,7 +706,7 @@ export function buildLayoutEditor(host, options) {
         input.setAttribute('aria-label', option.label || option.key);
         // 灰掉时锁的不只是样式：能拨却不起作用的开关，比锁着的更费解。
         // 存着的值不清不改，亮回来还是原来那个数
-        input.disabled = !opts.editable || !!off;
+        input.disabled = locked;
         input.addEventListener('change', event => change(option, Number(event.target.value)));
         row.appendChild(input);
       }
@@ -680,6 +717,9 @@ export function buildLayoutEditor(host, options) {
       if (off) {
         // 原因与去哪儿改写在灰掉的那行里：不写的话，「配了不出图」与「坏了」长得一样
         text.appendChild(el('p', 'rep-why')).textContent = whyText(option);
+      } else if (parentOff) {
+        text.appendChild(el('p', 'rep-why')).textContent =
+          '「' + (parent.label || parent.key) + '」关着，这一项不起作用；打开后照这里的设定画。';
       } else if (state === 'styled') {
         // 变样的那三项不灰：它们照出，只是换了不带钱的说法——灰掉反而让人以为配不了
         text.appendChild(el('p', 'rep-why')).textContent = option.revenueNote || '';

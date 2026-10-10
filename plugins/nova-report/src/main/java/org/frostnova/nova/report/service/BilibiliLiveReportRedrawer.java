@@ -79,6 +79,8 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
         try {
             BilibiliLiveReportReplayPainter painter = new BilibiliLiveReportReplayPainter(
                     factory, api, fontUtil, properties, roomInfoHistory, detail, images);
+            // 全默认版式，数据卡片各张的开关不看：重画的这一场不属于哪个推送目标，
+            // 没有哪一份版式算它的；按某个群挑过的卡来画，看的人会以为那几项这场没有数据
             return painter.render(new BilibiliLiveReportOptions());
         } catch (Exception e) {
             log.error("重新绘制 {} 的历史报告失败", detail.uname(), e);

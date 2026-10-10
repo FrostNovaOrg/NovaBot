@@ -245,6 +245,21 @@ export function templateState(target, handlers) {
 }
 
 /**
+ * 版式「恢复默认」之后的推送参数：处理器自报的每一个版式项都从参数里删掉，其余键照留
+ *
+ * 一项一个键，删掉就回到默认、此后跟着默认走；后加的版式项只要在 options 里，就一并删到。
+ * 不改动传进来的那一份。
+ * @param params 这个通道现存的参数，可为空
+ * @param handler /api/handlers 里的那一项
+ * @return {object} 新的一份参数
+ */
+export function restoredLayoutParams(params, handler) {
+  const out = Object.assign({}, params || {});
+  for (const option of (handler || {}).options || []) delete out[option.key];
+  return out;
+}
+
+/**
  * 这个通道的报告版式是默认的还是自定义的
  *
  * 「哪一类通知有版式」由处理器自报（options 非空），界面不认得「下播报告」这四个字。

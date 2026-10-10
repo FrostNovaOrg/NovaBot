@@ -88,6 +88,9 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
 
     /**
      * 该主播推到本会话、且开着的报告推送参数；没有这条推送时为空，走默认版式
+     * <p>
+     * 没有推送就没有这个会话自己的版式可依，数据卡片各张的开关也就不看、十张按默认全开：
+     * 拿别的会话存的开关来画，等于把那个群挑卡的口味搬到了这里。
      */
     private JSONObject reportParams(CommandContext context, PushUser streamer) {
         return streamer.getTargets().stream()
