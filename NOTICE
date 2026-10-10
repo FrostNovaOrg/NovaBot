@@ -90,6 +90,12 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
   core/nova-core/src/main/resources/config-ui/index.html
     本项目自有实现，随本项目遵循 AGPL-3.0。
 
+  core/nova-core/src/main/resources/config-ui/index.html 内嵌的 GitHub 标
+    Octicons mark-github 16px
+    Copyright (c) GitHub, Inc.
+    以 MIT 授权（https://github.com/primer/octicons）。
+    该一枚图形以内嵌 SVG 随页面进入构建产物，运行时不向网上取任何东西。
+
 --------------------------------------------------------------------------
 协议资料的参考来源
 --------------------------------------------------------------------------
