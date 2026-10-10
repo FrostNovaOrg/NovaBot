@@ -256,10 +256,18 @@ function callPage(page, hook, ...args) {
 }
 
 /**
- * 让各插件页重取自己的数据
+ * 让各插件页画一遍自己那一页；带上页标识就只画那一页
+ *
+ * 经 callPage 去调每一页的 refresh：钩子里跑的是插件的代码，抛出来只算它那一页出事。
+ * 只画一个用在「放弃」那条路上：那条路只让这一页自己重取，重画也只该动它自己，
+ * 别的页手上有没存的改动，不该由这条路惊动。
+ * @param {string} [id] 页标识，与 store.tab 同一个值；不带即每一页各画一遍
  */
-export function refreshPages() {
-  pages.forEach(page => callPage(page, 'refresh'));
+export function refreshPages(id) {
+  pages.forEach(page => {
+    if (id && page.meta.id !== id) return;
+    callPage(page, 'refresh');
+  });
 }
 
 /**
@@ -299,7 +307,13 @@ function applyConnectionVocab() {
   }
 }
 
-export async function load() {
+/**
+ * 整体载入：设置值重取、设置页草稿清零，各供数方那一份按 how 圈着取
+ *
+ * @param {{keepDrafts?: boolean}} [how] 传给 reloadChangeSources：保存、放弃只动当前那一页时
+ *         带 {keepDrafts: true}，别页此刻有没存改动的留着不重取。初次载入不带，全部取
+ */
+export async function load(how) {
   say('载入中…');
   try {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
@@ -322,8 +336,9 @@ export async function load() {
     focusCard(here.name, here.card);
 
     // 各供数方那一份与这一趟并行取：它们要赶在下面 refreshPages 之前进来，
-    // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍
-    const sources = reloadChangeSources();
+    // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍。
+    // how 由调用方圈：保存、放弃只动当前那一页时，别页有草稿的那几位不跟着重取
+    const sources = reloadChangeSources(how);
     const [st, h, p] = await Promise.all([
       api('/status'), api('/handlers'), api('/platforms')]);
     // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus

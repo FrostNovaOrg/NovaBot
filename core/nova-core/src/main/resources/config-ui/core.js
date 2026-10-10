@@ -171,13 +171,23 @@ export function currentChangeSource() {
  * 一位抛出来只算它自己那一份没取到：不拦的话，整体载入会跟着一起失败，
  * 屏幕上只剩一句与出事那一页毫无关系的「载入失败」，而其余各页本来都取到了。
  *
+ * 取哪几位由 how 圈，不圈即全部。保存与放弃只动当前那一页的草稿，别页此刻报着
+ * 没存改动的一位也不重取——重取就是拿磁盘上的现值把它还没存的草稿盖掉，
+ * 而屏幕上不会有任何提示。初次载入不圈（那时谁也没有草稿），每一页照旧各取一份。
+ *
  * 回值答的是「状态栏还能不能替它们清掉」：某一位取回来的东西有问题时，
  * 那句话由它自己说（只有它知道该说什么），而调用方随后那句 say('') 会把刚写上去的话抹掉。
+ * @param {{keepDrafts?: boolean, only?: string}} [how] keepDrafts：报着没存改动的那几位不重取，
+ *         草稿原样留着；only：只重取这一个页标识的那一位，别的不动
  * @return {Promise<boolean>} 没有任何一位在状态栏上写过话
  */
-export async function reloadChangeSources() {
+export async function reloadChangeSources(how) {
+  const keepDrafts = !!(how && how.keepDrafts);
+  const only = how && how.only;
   let quiet = true;
-  for (const source of changeSources.values()) {
+  for (const [id, source] of changeSources) {
+    if (only && id !== only) continue;
+    if (keepDrafts && source.changeCount() > 0) continue;
     try {
       if (await source.reload?.() === false) quiet = false;
     } catch (e) {
