@@ -1397,6 +1397,13 @@ public class ConfigurationFileService implements SmartLifecycle {
      * 被删的若是元素首行（带 {@code -} 的那一行），短横顶到剩下的第一字段上，
      * 免得列表在这一处断开。一项的字段删尽则去掉整项，不留 {@code - {}} 或
      * 只有短横的空壳；若这是列表里最后一项，列表写成 {@code []}。
+     * <p>
+     * 元素已存在时，字段表里有、元素里却没有的键也写得进去：第一次保存时留空的 Token
+     * 文件里从没有过那一行，后来才填上的如果插不进去，保存时连接已按新值当场接上、
+     * 界面提示已保存，重启后却读不到。这样的键插进这条元素<b>自己的范围</b>里，
+     * 缩进与元素的其他字段对齐（都挤在短横那一行上时对到字段那一列），
+     * 插在元素末尾空行、注释的前面，不让新行挂着别人的说明、落到别人的名下。
+     * 值为空的仍不插（不留空值行），与建新元素时空值不写是同一条规则。
      *
      * <h2>列表还是空的时候，建出第一个元素来</h2>
      * 🔴 发行包不再带 application.yml，第一次保存时由 {@link #createIfAbsent()} 按配置面渲染一份，
@@ -1407,8 +1414,8 @@ public class ConfigurationFileService implements SmartLifecycle {
      * @param listPath 列表的完整路径，由适配器申报
      * @param index 元素下标，从 0 开始
      * @param fields 待修改的字段名到取值，字段名为元素内部的键；建新元素时即为元素全文
-     * @return 实际改动的字段数。建新元素时空值字段不写进文件、也不计入这个数，
-     *         因此返回值可以小于 {@code fields.size()}
+     * @return 实际改动的字段数：改值、删字段、新插的字段各算一个。建新元素时空值字段不写进文件、
+     *         也不计入这个数，因此返回值可以小于 {@code fields.size()}
      * @throws IOException 读写失败时抛出
      */
     public synchronized int writeListItemFields(String listPath, int index, Map<String, String> fields) throws IOException {
@@ -1444,6 +1451,7 @@ public class ConfigurationFileService implements SmartLifecycle {
 
         int changed = 0;
         List<Integer> remove = new ArrayList<>();
+        Set<String> present = new LinkedHashSet<>();
         boolean dashGoes = false;
         String dashIndent = null;
 
@@ -1462,6 +1470,7 @@ public class ConfigurationFileService implements SmartLifecycle {
             if (!fields.containsKey(key)) {
                 continue;
             }
+            present.add(key);
 
             String value = fields.get(key);
             if (value == null || value.isBlank()) {
@@ -1480,6 +1489,28 @@ public class ConfigurationFileService implements SmartLifecycle {
                 lines.set(i, replaced);
                 changed++;
             }
+        }
+
+        // 字段表里有、元素里却没有的键（第一次没填、后来才填上的 Token 就是这一路丢的：
+        // 保存时连接已按新值当场接上，重启后文件里却读不到）插进这条元素里
+        String fieldIndent = " ".repeat(listItemFieldIndent(lines, location));
+        int insertAt = listItemFieldInsertionIndex(lines, location);
+        List<String> inserted = new ArrayList<>();
+        for (Map.Entry<String, String> field : fields.entrySet()) {
+            String value = field.getValue();
+            if (value == null || value.isBlank() || present.contains(field.getKey())) {
+                // 值为空、元素里也没有这个键：不插空值行，与建新元素时空值不写是同一条规则
+                continue;
+            }
+            inserted.add(fieldIndent + field.getKey() + ": " + render(value));
+        }
+        if (!inserted.isEmpty()) {
+            // 插入点在元素最后一个有字的行之后，待删的行都是那样的行、都在它前面，行号不受影响；
+            // 元素的结束行却整体后移了，后面几段都按插过之后的文件走
+            lines.addAll(insertAt, inserted);
+            location = new ListLocation(location.keyLine(), location.keyIndent(),
+                    location.start(), location.end() + inserted.size());
+            changed += inserted.size();
         }
 
         boolean anyKept = false;
@@ -1533,6 +1564,47 @@ public class ConfigurationFileService implements SmartLifecycle {
         }
 
         return changed;
+    }
+
+    /**
+     * 元素里新插的字段行该缩进几格
+     * <p>
+     * 有并排的字段行时与它们对齐；字段都挤在短横那一行上时对到<b>字段那一列</b>——
+     * {@code - name: x} 里 name 的那一列，不是短横本身：对到短横上的话那一行读不回这条元素，
+     * 整份文件解析不了。
+     */
+    private int listItemFieldIndent(List<String> lines, ListLocation location) {
+        for (int i = location.start() + 1; i < location.end(); i++) {
+            String raw = lines.get(i);
+            if (raw.isBlank() || raw.strip().startsWith("#")) {
+                continue;
+            }
+            return indentOf(raw);
+        }
+        String dashLine = lines.get(location.start());
+        int at = dashLine.indexOf('-') + 1;
+        while (at < dashLine.length() && Character.isWhitespace(dashLine.charAt(at))) {
+            at++;
+        }
+        return at < dashLine.length() ? at : dashLine.indexOf('-') + INDENT;
+    }
+
+    /**
+     * 元素里新插的字段行插到哪个下标：这条元素自己范围内最后一个有字的行之后
+     * <p>
+     * 元素末尾跟着的空行、注释多半是给后面的内容（下一条元素、上一层的键）的，
+     * 插到它们后面，新行就挂着别人的说明；更不能插出元素的边界，
+     * 那样字段会落到下一条元素或上一层去。
+     */
+    private int listItemFieldInsertionIndex(List<String> lines, ListLocation location) {
+        for (int i = location.end() - 1; i > location.start(); i--) {
+            String raw = lines.get(i);
+            if (raw.isBlank() || raw.strip().startsWith("#")) {
+                continue;
+            }
+            return i + 1;
+        }
+        return location.start() + 1;
     }
 
     /**
