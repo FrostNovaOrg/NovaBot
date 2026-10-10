@@ -211,7 +211,7 @@
     </form>
   </details>
 
-  <div class="msg" id="msg"></div>
+  <div class="msg" id="msg" role="alert"></div>
 
   <div class="links">
     <button type="button" class="lnk" id="forgot">忘记密码？</button>
@@ -362,9 +362,32 @@
       .catch(() => {});
   }
 
+  /**
+   * 密码登录被拒：把密码与（在页上的）动态码格标成无效，失败说明挂到格上
+   *
+   * 服务端只回「密码或验证码不正确」、不说是哪一格错（见 ConfigUiAuthService 里
+   * 不分开说的理由），界面不替它分：两格一起标，由人自己看是哪个敲错了。
+   * 通行密钥失败与连不上服务器都不是输错，不走这里。
+   * 再提交或改走通行密钥时传 false，随提示清空一并撤掉。
+   */
+  function markInvalidCredentials(on) {
+    const fields = [$('#password')];
+    if (!$('#code-field').classList.contains('hidden')) fields.push($('#code'));
+    fields.forEach(field => {
+      if (on) {
+        field.setAttribute('aria-invalid', 'true');
+        field.setAttribute('aria-describedby', 'msg');
+      } else {
+        field.removeAttribute('aria-invalid');
+        field.removeAttribute('aria-describedby');
+      }
+    });
+  }
+
   async function loginWithPasskey() {
     $('#passkey').disabled = true;
     $('#msg').textContent = '';
+    markInvalidCredentials(false);
 
     try {
       // 这一趟要的是一个新挑战：上面那一趟只用来判断「要不要摆这个按钮」，
@@ -513,6 +536,7 @@
     e.preventDefault();
     $('#submit').disabled = true;
     $('#msg').textContent = '';
+    markInvalidCredentials(false);
 
     try {
       const r = await fetch('/config/api/auth/login', {
@@ -535,6 +559,7 @@
       tick();
 
       $('#msg').textContent = data.message || '登录失败';
+      markInvalidCredentials(true);
       $('#password').value = '';
       paint();
       if (!$('#password').disabled) $('#password').focus();

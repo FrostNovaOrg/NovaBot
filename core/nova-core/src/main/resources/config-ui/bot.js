@@ -5,13 +5,15 @@
 import {$, api, term} from './core.js';
 
 // 同一文档里不能有两个相同 id，因此按前缀生成 DOM，逻辑仍只写一份。
+// label 的 for 接上各框的 id：点标签定位得到框，读屏也念得出框的名字——
+// 两个 Token 框的 placeholder 一字不差，没有 for 时听读屏分不出停在哪一个上。
 export function botFormHtml(p) {
-  return '<div class="row"><label>地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
-    + '<div class="row"><label>HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
-    + '<div class="row"><label>HTTP Token</label><input id="' + p + '-htoken" placeholder="与 '
+  return '<div class="row"><label for="' + p + '-addr">地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
+    + '<div class="row"><label for="' + p + '-hport">HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
+    + '<div class="row"><label for="' + p + '-htoken">HTTP Token</label><input id="' + p + '-htoken" placeholder="与 '
     + term('bot.family', '机器人程序') + '中配置的一致"></div>'
-    + '<div class="row"><label>WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
-    + '<div class="row"><label>WS Token</label><input id="' + p + '-wtoken" placeholder="与 '
+    + '<div class="row"><label for="' + p + '-wport">WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
+    + '<div class="row"><label for="' + p + '-wtoken">WS Token</label><input id="' + p + '-wtoken" placeholder="与 '
     + term('bot.family', '机器人程序') + '中配置的一致"></div>'
     + '<div class="row"><button id="' + p + '-test" type="button">测试连接</button>'
     + '<button id="' + p + '-save" type="button" disabled>保存</button></div>'
