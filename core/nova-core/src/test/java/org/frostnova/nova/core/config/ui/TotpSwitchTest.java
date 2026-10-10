@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +50,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TotpSwitchTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是开关的判定与会话的收放，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
 
     private static final String TEMPLATE = """
@@ -78,7 +82,7 @@ class TotpSwitchTest {
 
         NovaCoreProperties properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 
@@ -349,7 +353,7 @@ class TotpSwitchTest {
     void totpSwitchWritesThePublicKeys() throws Exception {
         NovaCoreProperties properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 

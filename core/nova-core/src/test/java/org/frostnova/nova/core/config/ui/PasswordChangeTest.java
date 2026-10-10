@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.PasswordHash;
 import org.frostnova.nova.core.util.IpMatcher;
 import jakarta.servlet.http.Cookie;
@@ -56,6 +57,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PasswordChangeTest {
     private static final String OLD = "correct horse battery staple";
 
+    /**
+     * 起动台面时填的旧口令哈希，只迭代 1 次：这一组量的是改口令的判定与会话的收放，
+     * 不是哈希多慢，见 {@link LowIterationPasswordHash}。改完存下去的新口令仍走正式的哈希。
+     */
+    private static final String OLD_HASH = LowIterationPasswordHash.of(OLD);
+
     private static final String NEW = "another horse another staple";
 
     private static final String TOKEN = "operator-token-for-password-change-test";
@@ -88,7 +95,7 @@ class PasswordChangeTest {
 
         properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(OLD);
+        auth.setPassword(OLD_HASH);
         auth.setTotp(false);
 
         authService = new ConfigUiAuthService(auth,

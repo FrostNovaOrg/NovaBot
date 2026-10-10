@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import jakarta.servlet.http.Cookie;
@@ -44,6 +45,9 @@ import static org.mockito.Mockito.when;
 class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
     private static final String OLD_PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是通用写口不越权改认证项，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String OLD_PASSWORD_HASH = LowIterationPasswordHash.of(OLD_PASSWORD);
+
     private static final String NEW_PASSWORD = "another horse another staple";
 
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
@@ -80,7 +84,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
 
         NovaCoreProperties properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(OLD_PASSWORD);
+        auth.setPassword(OLD_PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 

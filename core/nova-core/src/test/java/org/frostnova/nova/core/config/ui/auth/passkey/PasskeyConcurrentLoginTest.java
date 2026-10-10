@@ -44,7 +44,7 @@ class PasskeyConcurrentLoginTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PasskeyTestSupport.PASSWORD);
+        auth.setPassword(PasskeyTestSupport.PASSWORD_HASH);
         auth.setTotp(false);
 
         CyclicBarrier beforeUpdate = new CyclicBarrier(2);

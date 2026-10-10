@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,6 +41,9 @@ import static org.mockito.Mockito.when;
 @DisplayName("通用保存只收设置页认得的键：认证项按规范名拦截，键名拒结构字符")
 class GenericConfigSaveOnlyAcceptsRegisteredKeysTest {
     private static final String OLD_PASSWORD = "correct horse battery staple";
+
+    /** 这一组量的是通用写口拦什么键，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String OLD_PASSWORD_HASH = LowIterationPasswordHash.of(OLD_PASSWORD);
 
     private static final String NEW_PASSWORD = "another horse another staple";
 
@@ -82,7 +86,7 @@ class GenericConfigSaveOnlyAcceptsRegisteredKeysTest {
 
         NovaCoreProperties properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(OLD_PASSWORD);
+        auth.setPassword(OLD_PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 

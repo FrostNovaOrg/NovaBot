@@ -6,7 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
-import org.frostnova.nova.core.config.ui.auth.PasswordHash;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,13 +35,13 @@ class AuthStateSurfaceTest {
     private static final String PASSWORD = "correct horse battery staple";
 
     /**
-     * 口令哈希只算一次
+     * 口令哈希只算一次，且只迭代 1 次
      * <p>
-     * 每个用例各构造一次登录服务，而构造时会把明文口令当场哈希一遍——PBKDF2 一次就是几秒，
-     * 六个用例白白多花半分钟，而这一格量的根本不是哈希。填哈希串进去时启动那一步原样接受，
-     * 与生产里「配置文件中已经是哈希」的那一形态走的是同一条路。
+     * 每个用例各构造一次登录服务，而登录校验每趟都要真算一遍哈希——PBKDF2 一次就是几百毫秒，
+     * 这一格量的却根本不是哈希。填哈希串进去时启动那一步原样接受，
+     * 与生产里「配置文件中已经是哈希」的那一形态走的是同一条路，见 {@link LowIterationPasswordHash}。
      */
-    private static final String HASHED = PasswordHash.hash(PASSWORD.toCharArray());
+    private static final String HASHED = LowIterationPasswordHash.of(PASSWORD);
 
     private ConfigUiAuthService authService;
     private ConfigUiAuthController controller;

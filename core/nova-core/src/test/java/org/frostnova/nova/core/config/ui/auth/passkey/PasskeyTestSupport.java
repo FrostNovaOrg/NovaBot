@@ -8,6 +8,7 @@ import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,6 +26,12 @@ import java.time.Duration;
  */
 abstract class PasskeyTestSupport {
     static final String PASSWORD = "correct horse battery staple";
+
+    /**
+     * 台面配置里填的口令哈希，只迭代 1 次：这一组量的是钥匙那条路，口令只是进门用的，
+     * 见 {@link LowIterationPasswordHash}
+     */
+    static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
 
     /**
      * 判据里这套面板的地址。rpId 不带端口、origin 带——这一对差别本身就是被测的一部分
@@ -57,7 +64,7 @@ abstract class PasskeyTestSupport {
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
 
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         // 二次验证与本组无关，且通行密钥这条路本来就不经它——开着只会让台面多一个变量
         auth.setTotp(false);
 

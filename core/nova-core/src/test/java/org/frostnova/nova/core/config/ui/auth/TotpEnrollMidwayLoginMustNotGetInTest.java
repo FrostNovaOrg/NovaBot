@@ -31,6 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TotpEnrollMidwayLoginMustNotGetInTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是绑定那几步的次序，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     /**
      * 判据自己的时钟，停着不走，要下一格自己拨：不靠真实窗口，也不量这台机器有多快
      */
@@ -70,7 +73,7 @@ class TotpEnrollMidwayLoginMustNotGetInTest {
 
     private ConfigUiAuthService service() {
         NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
-        properties.setPassword(PASSWORD);
+        properties.setPassword(PASSWORD_HASH);
         properties.setTotp(true);
         properties.setTotpSecret(null);
         return new ConfigUiAuthService(properties,

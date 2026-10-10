@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.util.IpMatcher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,9 @@ class ConfigUiPublicApiTest {
 
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是过滤器那张名单，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     /**
      * 公开口那几条。过滤器里的集合是私有的，这里按路径字面量对着量——
      * 多一条或少一条，功能上常常看不出来。
@@ -50,7 +54,7 @@ class ConfigUiPublicApiTest {
 
     private ConfigUiSecurityFilter passwordFormFilter() {
         NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(false);
 
         ConfigUiAuthService authService = new ConfigUiAuthService(auth,

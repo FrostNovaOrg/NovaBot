@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.util.IpMatcher;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.DisplayName;
@@ -36,9 +37,12 @@ class OperatorTokenSwitchTest {
 
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是令牌通道的开关，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private ConfigUiAuthService authService() {
         NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
-        properties.setPassword(PASSWORD);
+        properties.setPassword(PASSWORD_HASH);
         properties.setTotp(false);
         return new ConfigUiAuthService(properties,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),

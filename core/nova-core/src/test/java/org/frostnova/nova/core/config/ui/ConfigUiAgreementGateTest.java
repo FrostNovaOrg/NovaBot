@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.util.IpMatcher;
 import jakarta.servlet.Servlet;
 import jakarta.servlet.http.Cookie;
@@ -69,6 +70,9 @@ class ConfigUiAgreementGateTest {
 
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是协议那道闸，口令只是进门的台面，哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     /**
      * 协议文案的 SHA-256
      * <p>
@@ -113,7 +117,7 @@ class ConfigUiAgreementGateTest {
         fileService = new ConfigurationFileService(config);
 
         properties = new NovaCoreProperties();
-        properties.getConfigUi().getAuth().setPassword(PASSWORD);
+        properties.getConfigUi().getAuth().setPassword(PASSWORD_HASH);
         // 二次验证与本组用例无关，开着只会让每条登录都要多准备一个验证码
         properties.getConfigUi().getAuth().setTotp(false);
 

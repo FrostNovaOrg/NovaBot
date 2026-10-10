@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyStore;
 import org.frostnova.nova.core.service.NovaStateStore;
@@ -41,6 +42,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SensitiveReauthTest {
     private static final String OLD = "correct horse battery staple";
 
+    /** 这一组量的是再核密码的判定与计次，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String OLD_HASH = LowIterationPasswordHash.of(OLD);
+
     private static final String HOST = "localhost:7827";
 
     private static final String TEMPLATE = """
@@ -69,7 +73,7 @@ class SensitiveReauthTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(OLD);
+        auth.setPassword(OLD_HASH);
         auth.setTotp(false);
 
         authService = new ConfigUiAuthService(auth,

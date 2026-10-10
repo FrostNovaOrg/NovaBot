@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,9 @@ import static org.mockito.Mockito.when;
 @DisplayName("代签发只读口令端点")
 class ReadOnlyTokenControllerTest {
     private static final String PASSWORD = "correct horse battery staple";
+
+    /** 配置里存的口令换成只迭代 1 次的哈希，省下每次登录前的重复推导，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
 
     private static final String IP = "1.2.3.4";
 
@@ -96,7 +100,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("尺子先过阳性对照：密码对就能换到口令")
     void issuesTokenForCorrectPassword() {
-        ResponseEntity<String> response = post(controller(PASSWORD, ""), body(PASSWORD, "VRDash 面板"));
+        ResponseEntity<String> response = post(controller(PASSWORD_HASH, ""), body(PASSWORD, "VRDash 面板"));
 
         assertEquals(200, response.getStatusCode().value(),
                 "阳性对照：这一条不过，下面那些「拒绝」就说明不了任何事");
@@ -110,7 +114,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("🔴 响应里绝不能有 Set-Cookie")
     void neverIssuesASession() {
-        ResponseEntity<String> response = post(controller(PASSWORD, ""), body(PASSWORD, "VRDash 面板"));
+        ResponseEntity<String> response = post(controller(PASSWORD_HASH, ""), body(PASSWORD, "VRDash 面板"));
 
         // 有 Cookie 就意味着只读通道被升级成了完整控制台权限，
         // 而这种错在功能上完全看不出来——口令照样能用。对侧也会主动检查这一位
@@ -121,7 +125,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("🔴 expiresAt 必须作为一个值为 null 的字段出现在响应体里")
     void keepsExpiresAtFieldEvenWhenNull() {
-        ResponseEntity<String> response = post(controller(PASSWORD, ""), body(PASSWORD, null));
+        ResponseEntity<String> response = post(controller(PASSWORD_HASH, ""), body(PASSWORD, null));
 
         // 默认序列化会把 null 字段整个丢掉。字段缺席与「值为 null」对客户端不是一回事：
         // 对侧那条「口令过期了」的分支靠它活着，字段没了那条分支就等着主播来撞第一次
@@ -132,7 +136,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("不填 label 时兜底，不是报错")
     void fallsBackToDefaultLabel() {
-        post(controller(PASSWORD, ""), body(PASSWORD, null));
+        post(controller(PASSWORD_HASH, ""), body(PASSWORD, null));
 
         // 对侧会给「VRDash 面板」这类中性默认值，正常走不到这里；
         // 兜底是对侧改错时的安全网——没有标签就只能一次全撤
@@ -142,7 +146,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("密码不对回 bad_credentials，且不留下半把口令")
     void rejectsWrongPassword() {
-        ResponseEntity<String> response = post(controller(PASSWORD, ""), body("wrong", "VRDash 面板"));
+        ResponseEntity<String> response = post(controller(PASSWORD_HASH, ""), body("wrong", "VRDash 面板"));
 
         assertEquals(401, response.getStatusCode().value());
         assertEquals("bad_credentials", JSONObject.parseObject(response.getBody()).getString("reason"));
@@ -178,7 +182,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("🔴 锁定必须与「密码不对」分得开")
     void reportsLockoutSeparately() {
-        ReadOnlyTokenController controller = controller(PASSWORD, "");
+        ReadOnlyTokenController controller = controller(PASSWORD_HASH, "");
         NovaCoreProperties.ConfigUi.Auth defaults = new NovaCoreProperties.ConfigUi.Auth();
 
         for (int i = 0; i < defaults.getMaxFailures(); i++) {
@@ -199,7 +203,7 @@ class ReadOnlyTokenControllerTest {
     @Test
     @DisplayName("并发闸门拦下时回 busy，与锁定不是一回事")
     void reportsBusySeparately() {
-        ReadOnlyTokenController controller = controller(PASSWORD, "");
+        ReadOnlyTokenController controller = controller(PASSWORD_HASH, "");
 
         // 把校验名额占满：这是瞬时拥塞，重试就好，与「你被锁了」要分开说
         assertTrue(throttle.tryAcquireSlot());
@@ -219,12 +223,12 @@ class ReadOnlyTokenControllerTest {
         JSONObject sameRequest = body(PASSWORD, "VRDash 面板");
 
         // 对照组：没开两步验证时，同一个「不带 code」的请求是能过的
-        assertEquals(200, post(controller(PASSWORD, ""), sameRequest).getStatusCode().value(),
+        assertEquals(200, post(controller(PASSWORD_HASH, ""), sameRequest).getStatusCode().value(),
                 "对照组不通过的话，下面那条拒绝就可能是别的原因造成的");
 
         // 实验组：只改「有没有绑验证器」这一个变量
         ResponseEntity<String> response =
-                post(controller(PASSWORD, TotpGenerator.generateSecret()), body(PASSWORD, "VRDash 面板"));
+                post(controller(PASSWORD_HASH, TotpGenerator.generateSecret()), body(PASSWORD, "VRDash 面板"));
 
         assertEquals(401, response.getStatusCode().value());
         assertEquals("bad_credentials", JSONObject.parseObject(response.getBody()).getString("reason"),
@@ -242,7 +246,7 @@ class ReadOnlyTokenControllerTest {
         EventStreamTokenService brokenTokens = new EventStreamTokenService(properties.getLive());
 
         NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         ConfigUiAuthService service = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
@@ -274,17 +278,17 @@ class ReadOnlyTokenControllerTest {
     void everyFailureCarriesReasonAndMessage() throws Exception {
         List<String> bad = new ArrayList<>();
 
-        refuseAndCheck(controller(PASSWORD, ""), body("wrong", "面板"), 401, "bad_credentials", bad);
+        refuseAndCheck(controller(PASSWORD_HASH, ""), body("wrong", "面板"), 401, "bad_credentials", bad);
         refuseAndCheck(controller("", ""), body("whatever", "面板"), 400, "auth_disabled", bad);
 
-        ReadOnlyTokenController locked = controller(PASSWORD, "");
+        ReadOnlyTokenController locked = controller(PASSWORD_HASH, "");
         NovaCoreProperties.ConfigUi.Auth defaults = new NovaCoreProperties.ConfigUi.Auth();
         for (int i = 0; i < defaults.getMaxFailures(); i++) {
             post(locked, body("wrong", "面板"));
         }
         refuseAndCheck(locked, body(PASSWORD, "面板"), 429, "locked_out", bad);
 
-        ReadOnlyTokenController saturated = controller(PASSWORD, "");
+        ReadOnlyTokenController saturated = controller(PASSWORD_HASH, "");
         assertTrue(throttle.tryAcquireSlot());
         assertTrue(throttle.tryAcquireSlot());
         refuseAndCheck(saturated, body(PASSWORD, "面板"), 503, "busy", bad);
@@ -321,7 +325,7 @@ class ReadOnlyTokenControllerTest {
 
     private ConfigUiAuthService passwordOnlyService() {
         NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         return new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);

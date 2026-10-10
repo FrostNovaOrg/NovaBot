@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SensitiveReauthEnrollTest {
     private static final String OLD = "correct horse battery staple";
 
+    /** 这一组量的是再核密码的判定，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String OLD_HASH = LowIterationPasswordHash.of(OLD);
+
     private static final String TEMPLATE = """
             novabot:
               core:
@@ -63,7 +67,7 @@ class SensitiveReauthEnrollTest {
 
         NovaCoreProperties properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(OLD);
+        auth.setPassword(OLD_HASH);
         auth.setTotp(false);
 
         authService = new ConfigUiAuthService(auth,

@@ -29,6 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TotpCodeMustNotSurviveRestartTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是时间步的消费，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 
     private static final Instant NOW = Instant.parse("2026-09-28T12:00:00Z");
@@ -42,7 +45,7 @@ class TotpCodeMustNotSurviveRestartTest {
 
     private ConfigUiAuthService service() {
         NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
-        properties.setPassword(PASSWORD);
+        properties.setPassword(PASSWORD_HASH);
         properties.setTotp(true);
         properties.setTotpSecret(SECRET);
 

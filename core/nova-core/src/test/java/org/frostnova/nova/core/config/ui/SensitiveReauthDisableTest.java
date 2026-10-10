@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +39,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("关二次验证前再核密码，登录用过的验证码不能再拿来关")
 class SensitiveReauthDisableTest {
     private static final String PASSWORD = "correct horse battery staple";
+
+    /** 这一组量的是码的重复使用，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
 
     private static final String TEMPLATE = """
@@ -66,7 +71,7 @@ class SensitiveReauthDisableTest {
 
         NovaCoreProperties properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 

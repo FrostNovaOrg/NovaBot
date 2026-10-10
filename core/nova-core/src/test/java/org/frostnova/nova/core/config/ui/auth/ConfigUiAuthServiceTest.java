@@ -42,6 +42,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ConfigUiAuthServiceTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /**
+     * 准备阶段填进配置的那份口令哈希，只迭代 1 次：这一组量的是登录判定，
+     * 不是哈希多慢，见 {@link LowIterationPasswordHash}
+     */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String IP = "1.2.3.4";
 
     private ConfigUiAuthService service(String password, String totpSecret) {
@@ -79,7 +85,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("配置里也可以写哈希串")
     void acceptsHashedPassword() {
-        ConfigUiAuthService service = service(PasswordHash.hash(PASSWORD.toCharArray()), "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
 
         assertTrue(service.login(PASSWORD.toCharArray(), null, IP).success());
     }
@@ -87,7 +93,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("口令错误时登录失败")
     void rejectsWrongPassword() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
 
         assertFalse(service.login("猜的".toCharArray(), null, IP).success());
     }
@@ -95,7 +101,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("登录成功签发的会话可以校验通过")
     void issuesUsableSession() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
         ConfigUiSession session = service.login(PASSWORD.toCharArray(), null, IP).session();
 
         assertTrue(service.validate(session.getId()).isPresent());
@@ -108,7 +114,7 @@ class ConfigUiAuthServiceTest {
     @DisplayName("启用二次验证后，口令对了但验证码不对也进不来")
     void requiresTotpWhenConfigured() {
         String secret = TotpGenerator.generateSecret();
-        ConfigUiAuthService service = service(PASSWORD, secret);
+        ConfigUiAuthService service = service(PASSWORD_HASH, secret);
 
         assertTrue(service.totpRequired());
         assertFalse(service.login(PASSWORD.toCharArray(), "000000", IP).success(),
@@ -120,7 +126,7 @@ class ConfigUiAuthServiceTest {
     @DisplayName("口令与验证码都正确时通过")
     void acceptsValidTotp() {
         String secret = TotpGenerator.generateSecret();
-        ConfigUiAuthService service = service(PASSWORD, secret);
+        ConfigUiAuthService service = service(PASSWORD_HASH, secret);
         Instant now = Instant.now();
         // 用下一格的码：服务构造时就把当格标成用过了（重启前用过的码不能再用），
         // 当格的码根本走不到认中那步；校验窗口前后各容一格，下一格的码此刻照样认得出
@@ -133,7 +139,7 @@ class ConfigUiAuthServiceTest {
     @DisplayName("口令错与验证码错的提示必须一模一样")
     void failureMessageDoesNotLeakWhichPartWasWrong() {
         String secret = TotpGenerator.generateSecret();
-        ConfigUiAuthService service = service(PASSWORD, secret);
+        ConfigUiAuthService service = service(PASSWORD_HASH, secret);
         Instant now = Instant.now();
         // 同上：取下一格，让这一枚是「口令对就登得进」的码，量的才是口令错那一半
         String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), now.getEpochSecond() / 30 + 1);
@@ -148,7 +154,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("设了口令却没绑验证器时，应提示去绑而不是把人拦在外面")
     void promptsForEnrollmentWhenSecretMissing() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
 
         assertTrue(service.totpPending(), "默认要求二次验证，没绑就该提示");
         assertFalse(service.totpRequired(), "还没绑，登录时无从校验验证码");
@@ -159,7 +165,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("绑定确认要校验验证码，通过后登录才开始要验证码")
     void enrollmentActivatesTotp() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
         ConfigUiSession session = service.issueForPassword(IP);
         String secret = service.issuePendingSecret(session);
 
@@ -182,7 +188,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("偷得会话的人先打开绑定读走的密钥，主人之后打开绑定拿到的不是同一把")
     void stolenSessionFirstReadSecretIsNotTheMasters() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
         ConfigUiSession shared = service.issueForPassword(IP);
 
         // 同一把会话（偷到 Cookie 就是同一把）先后各开一次绑定：先开的那次回包里的密钥
@@ -197,7 +203,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("主人刷新过页面，照先扫的那张码仍能绑定，绑上的就是那一把")
     void firstScannedCodeStillBindsAfterRefresh() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
         ConfigUiSession session = service.issueForPassword(IP);
         String first = service.issuePendingSecret(session);
         service.issuePendingSecret(session); // 刷新页面又签了一把
@@ -220,7 +226,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("同一会话连开 4 次绑定，最早那把不再认")
     void oldestPendingSecretIsEvictedAfterThree() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
         ConfigUiSession session = service.issueForPassword(IP);
         String oldest = service.issuePendingSecret(session);
         service.issuePendingSecret(session);
@@ -236,7 +242,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("别的会话签发的待绑密钥不认")
     void otherSessionsPendingSecretIsNotAccepted() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
         ConfigUiSession mine = service.issueForPassword("10.0.0.1");
         ConfigUiSession theirs = service.issueForPassword("10.0.0.2");
         String mineSecret = service.issuePendingSecret(mine);
@@ -251,7 +257,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("显式关掉二次验证后既不提示也不校验")
     void totpCanBeTurnedOff() {
-        ConfigUiAuthService service = service(PASSWORD, "", false);
+        ConfigUiAuthService service = service(PASSWORD_HASH, "", false);
 
         assertFalse(service.totpPending());
         assertFalse(service.totpRequired());
@@ -262,7 +268,7 @@ class ConfigUiAuthServiceTest {
     @DisplayName("关掉二次验证时，即使配置里还留着密钥也不再校验")
     void turningOffIgnoresExistingSecret() {
         // 否则「关掉了却还要输验证码」，而验证器可能早就被删了
-        ConfigUiAuthService service = service(PASSWORD, TotpGenerator.generateSecret(), false);
+        ConfigUiAuthService service = service(PASSWORD_HASH, TotpGenerator.generateSecret(), false);
 
         assertFalse(service.totpRequired());
         assertTrue(service.login(PASSWORD.toCharArray(), null, IP).success());
@@ -271,7 +277,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("运维通道签发的会话与登录得来的一样可用")
     void operatorSessionIsUsable() {
-        ConfigUiAuthService service = service(PASSWORD, TotpGenerator.generateSecret());
+        ConfigUiAuthService service = service(PASSWORD_HASH, TotpGenerator.generateSecret());
         ConfigUiSession session = service.issueForOperator("127.0.0.1");
 
         assertTrue(service.validate(session.getId()).isPresent(),
@@ -281,7 +287,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("连续失败到阈值后即使口令正确也被挡在门外")
     void lockedOutAfterRepeatedFailures() {
-        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiAuthService service = service(PASSWORD_HASH, "");
 
         for (int i = 0; i < 5; i++) {
             service.login("猜的".toCharArray(), null, IP);
@@ -315,7 +321,7 @@ class ConfigUiAuthServiceTest {
      */
     private ConfigUiAuthService serviceSharingThrottle() {
         NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
-        properties.setPassword(PASSWORD);
+        properties.setPassword(PASSWORD_HASH);
         properties.setTotp(false);
 
         throttle = new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15));
@@ -419,7 +425,7 @@ class ConfigUiAuthServiceTest {
     @Test
     @DisplayName("🔴 改口令核对旧口令先记次再比对：次数已被并发打满的会话，再来一趟对的口令也不比对、直接注销")
     void currentPasswordChecksAreCountedBeforeVerifying() {
-        ConfigUiAuthService service = service(PASSWORD, "", false);
+        ConfigUiAuthService service = service(PASSWORD_HASH, "", false);
         ConfigUiSession session = service.issueForPassword(IP);
 
         // 模拟同一时刻并发打进来的几趟：都已记上次数，还没比完

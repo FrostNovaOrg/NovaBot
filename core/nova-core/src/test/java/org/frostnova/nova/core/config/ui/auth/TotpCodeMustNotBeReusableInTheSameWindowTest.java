@@ -34,6 +34,9 @@ import static org.mockito.Mockito.when;
 class TotpCodeMustNotBeReusableInTheSameWindowTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是动态码能不能重用，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 
     private static final Instant NOW = Instant.parse("2026-09-04T12:00:00Z");
@@ -50,7 +53,7 @@ class TotpCodeMustNotBeReusableInTheSameWindowTest {
     @BeforeEach
     void setUp() {
         NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
-        properties.setPassword(PASSWORD);
+        properties.setPassword(PASSWORD_HASH);
         properties.setTotp(true);
         properties.setTotpSecret(SECRET);
 
