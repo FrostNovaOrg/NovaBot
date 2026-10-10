@@ -33,6 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LockoutMinutesNoticeTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是提示里的分钟数，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String IP = "203.0.113.64";
 
     private static final Instant START = Instant.parse("2026-09-23T12:00:00Z");
@@ -48,7 +51,7 @@ class LockoutMinutesNoticeTest {
      */
     private ConfigUiAuthService justLocked(NovaCoreProperties properties) {
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret("JBSWY3DPEHPK3PXP");
 

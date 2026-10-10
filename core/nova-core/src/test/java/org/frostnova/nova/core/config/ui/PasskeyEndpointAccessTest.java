@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.util.IpMatcher;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,9 @@ class PasskeyEndpointAccessTest {
 
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是过滤器那张名单，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private ConfigUiAuthService authService;
 
     private ConfigUiSecurityFilter filter;
@@ -42,7 +46,7 @@ class PasskeyEndpointAccessTest {
     @BeforeEach
     void setUp() {
         NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(false);
 
         authService = new ConfigUiAuthService(auth,

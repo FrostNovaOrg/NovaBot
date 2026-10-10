@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TotpEnrollFailureStatusTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是回码，口令哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
 
     @TempDir
@@ -74,7 +78,7 @@ class TotpEnrollFailureStatusTest {
                 """.formatted(PASSWORD), StandardCharsets.UTF_8);
         fileService = new ConfigurationFileService(config);
         properties = new NovaCoreProperties();
-        properties.getConfigUi().getAuth().setPassword(PASSWORD);
+        properties.getConfigUi().getAuth().setPassword(PASSWORD_HASH);
         properties.getConfigUi().getAuth().setTotp(false);
 
         authService = new ConfigUiAuthService(properties.getConfigUi().getAuth(),
@@ -123,7 +127,7 @@ class TotpEnrollFailureStatusTest {
                         totp-secret: %s
                 """.formatted(PASSWORD, SECRET), StandardCharsets.UTF_8);
         NovaCoreProperties bound = new NovaCoreProperties();
-        bound.getConfigUi().getAuth().setPassword(PASSWORD);
+        bound.getConfigUi().getAuth().setPassword(PASSWORD_HASH);
         bound.getConfigUi().getAuth().setTotp(true);
         bound.getConfigUi().getAuth().setTotpSecret(SECRET);
         ConfigUiAuthService boundAuth = new ConfigUiAuthService(bound.getConfigUi().getAuth(),

@@ -16,6 +16,7 @@ import java.security.spec.ECGenParameterSpec;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 判据用的认证器：拿 JDK 自己造一把「手机上的通行密钥」
@@ -59,9 +60,16 @@ final class TestAuthenticator {
 
     private final byte[] credentialId;
 
+    /**
+     * 每种算法共用一把钥匙：RSA-2048 那把要真算素数，反复生成只拖时间；
+     * 同一算法的认证器本来就共用同一个凭据号，服务端从未靠钥匙区分过它们，
+     * 换钥匙、共用钥匙都不改变任何一条的判定。
+     */
+    private static final Map<Integer, KeyPair> SHARED_KEY_PAIRS = new ConcurrentHashMap<>();
+
     TestAuthenticator(int algorithm) {
         this.algorithm = algorithm;
-        this.keyPair = generate(algorithm);
+        this.keyPair = SHARED_KEY_PAIRS.computeIfAbsent(algorithm, TestAuthenticator::generate);
         this.credentialId = new byte[]{1, 2, 3, 4, 5, 6, 7, 8, (byte) algorithm};
     }
 

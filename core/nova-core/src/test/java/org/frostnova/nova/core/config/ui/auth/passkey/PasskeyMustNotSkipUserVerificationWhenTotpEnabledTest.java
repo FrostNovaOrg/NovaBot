@@ -8,6 +8,7 @@ import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
     private static final String PASSWORD = "correct horse battery staple";
 
+    /** 这一组量的是标志位，口令只是进门的台面，哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
+    private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
+
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
 
     private static final String HOST = "localhost:7827";
@@ -61,7 +65,7 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
 
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        auth.setPassword(PASSWORD_HASH);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 
