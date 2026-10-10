@@ -127,6 +127,10 @@ class BilibiliLiveReportLayoutOptionsTest {
 
             String field = camelCase(option.key());
             Object actual = read(parsed, field);
+            if (option.type() == HandlerOption.Type.ORDER && actual instanceof List<?> list) {
+                // 顺序项存的是逗号串、字段里是读好的那一串键
+                actual = list.stream().map(String::valueOf).collect(Collectors.joining(","));
+            }
 
             assertEquals(other, actual, "版式项 " + option.key() + " 喂了 " + other
                     + " 却没改动字段 " + field + "（读到 " + actual + "）——"
@@ -168,6 +172,12 @@ class BilibiliLiveReportLayoutOptionsTest {
     private static Object otherThanDefault(HandlerOption option) {
         if (option.type() == HandlerOption.Type.BOOLEAN) {
             return !((Boolean) option.defaultValue());
+        }
+        if (option.type() == HandlerOption.Type.ORDER) {
+            // 倒过来排：每个键仍恰好一次，读回来原样不动
+            List<String> keys = new java.util.ArrayList<>(List.of(((String) option.defaultValue()).split(",")));
+            java.util.Collections.reverse(keys);
+            return String.join(",", keys);
         }
 
         int defaultValue = (Integer) option.defaultValue();

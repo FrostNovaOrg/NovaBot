@@ -1,0 +1,660 @@
+/**
+ * 版式区里的数据卡片：报告区与「没放进报告的」两区小块
+ *
+ * 用户那头的故障：主播想给某个群只放几张卡，比如只要流水、弹幕、大航海，不要点赞、
+ * 进入直播间、分享，以前只能把「数据卡片」整块开或整块关。现在「数据卡片」下面是两区小块：
+ * 上面「报告里的卡片」按报告上的先后排，拖着换位、× 拿掉；下面「没放进报告的」点一下放回末尾，
+ * 也能拖回想要的位置。在报告区＝那张卡的开关开着，报告区里的先后＝存着的顺序。
+ *
+ * 各格抓的故障写在各格开头。
+ *
+ * 本尺真跑整条通道页：push.js 的 renderStreamers、template.js 的两个编辑器、
+ * push-model.js 的判法都是产品码。版式项清单不手抄，由 PushCardSwitchesTest 把
+ * 下播报告真正的那张表照 /api/handlers 的序列化经环境变量 LAYOUT_OPTIONS 交进来。
+ *
+ * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
+ */
+
+import {register} from 'node:module';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+// 插件页引宿主模块写的是 './core.js' 这样的相对名，node 上得先把它指回核心那一份
+register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
+
+const pages = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui-pages');
+
+const failures = [];
+let checks = 0;
+
+async function ask(name, fn) {
+  checks++;
+  try {
+    await fn();
+  } catch (err) {
+    const stack = String(err && err.stack ? err.stack : '');
+    const frame = stack.split('\n').find(line => line.includes('push-card-switches-fixture.mjs')) || '';
+    const where = frame.replace(/^\s*at\s+/, '').trim();
+    failures.push(name + '：' + (err && err.message ? err.message : String(err)) + (where ? ' [' + where + ']' : ''));
+  }
+}
+
+function same(got, want, what) {
+  const a = JSON.stringify(got);
+  const b = JSON.stringify(want);
+  if (a !== b) {
+    throw new Error(what + ' 得到 ' + a + '，应为 ' + b);
+  }
+}
+
+// —— 假 DOM ——
+
+class MiniNode {
+  constructor(tagName) {
+    this.tagName = String(tagName || '').toLowerCase();
+    this.children = [];
+    this.parentNode = null;
+    this.className = '';
+    this.id = '';
+    this._text = '';
+    this._html = '';
+    this.attributes = {};
+    this.dataset = {};
+    this.style = {};
+    this.listeners = {};
+    this.disabled = false;
+    this.checked = false;
+    this.hidden = false;
+    this.draggable = false;
+    this.title = '';
+    this.type = '';
+    this.value = '';
+    const self = this;
+    this.classList = {
+      add: name => { if (!self.classList.contains(name)) self.className = (self.className + ' ' + name).trim(); },
+      remove: name => {
+        self.className = String(self.className || '').split(/\s+/).filter(item => item && item !== name).join(' ');
+      },
+      contains: name => String(self.className || '').split(/\s+/).includes(name),
+      toggle: (name, on) => {
+        const want = on === undefined ? !self.classList.contains(name) : !!on;
+        if (want) self.classList.add(name); else self.classList.remove(name);
+        return want;
+      },
+    };
+  }
+  get nodeType() { return this.tagName === '#text' ? 3 : 1; }
+  get nodeValue() { return this._text; }
+  get childNodes() { return this.children; }
+  get textContent() { return this._text; }
+  set textContent(v) {
+    this._text = String(v ?? '');
+    // 与浏览器一样换成一个文字子节点：消息正文读回块表时走的是子节点
+    if (this.tagName === '#text') return;
+    this.children = [];
+    if (this._text) {
+      const text = new MiniNode('#text');
+      text._text = this._text;
+      this.appendChild(text);
+    }
+  }
+  get innerHTML() { return this._html; }
+  set innerHTML(html) {
+    this._html = String(html ?? '');
+    this.children = [];
+    // 只把 <input …> 立成真节点：开关与数字框要从 label 里取回来拨
+    const re = /<input\b([^>]*)>/gi;
+    let match;
+    while ((match = re.exec(this._html))) {
+      const input = new MiniNode('input');
+      const attrs = match[1];
+      const typeMatch = /type\s*=\s*"([^"]*)"/i.exec(attrs);
+      if (typeMatch) input.type = typeMatch[1];
+      if (/\bchecked\b/i.test(attrs)) input.checked = true;
+      if (/\bdisabled\b/i.test(attrs)) input.disabled = true;
+      const ariaMatch = /aria-label\s*=\s*"([^"]*)"/i.exec(attrs);
+      if (ariaMatch) input.attributes['aria-label'] = ariaMatch[1];
+      this.appendChild(input);
+    }
+  }
+  appendChild(child) {
+    child.parentNode = this;
+    this.children.push(child);
+    return child;
+  }
+  append(...items) {
+    for (const item of items) {
+      if (typeof item === 'string') {
+        const text = new MiniNode('#text');
+        text.textContent = item;
+        this.appendChild(text);
+      } else {
+        this.appendChild(item);
+      }
+    }
+  }
+  remove() {
+    if (!this.parentNode) return;
+    const list = this.parentNode.children;
+    const index = list.indexOf(this);
+    if (index >= 0) list.splice(index, 1);
+    this.parentNode = null;
+  }
+  contains(node) {
+    for (let at = node; at; at = at.parentNode) if (at === this) return true;
+    return false;
+  }
+  closest(selector) {
+    for (let at = this; at; at = at.parentNode) if (matches(at, String(selector).trim())) return at;
+    return null;
+  }
+  getBoundingClientRect() { return {left: 0, top: 0, width: 100, height: 20}; }
+  querySelector(selector) { return findAll(this, selector)[0] || null; }
+  querySelectorAll(selector) { return findAll(this, selector); }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+    if (name === 'id') this.id = String(value);
+    if (name === 'class') this.className = String(value);
+  }
+  getAttribute(name) {
+    if (name === 'id' && this.id) return this.id;
+    if (name === 'class' && this.className) return this.className;
+    return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
+  }
+  addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
+  removeEventListener(type, fn) {
+    const list = this.listeners[type] || [];
+    const index = list.indexOf(fn);
+    if (index >= 0) list.splice(index, 1);
+  }
+  dispatchEvent(event) {
+    const list = (this.listeners[event.type] || []).slice();
+    for (const fn of list) fn.call(this, event);
+    return true;
+  }
+  click() { this.dispatchEvent(fakeEvent('click', this)); }
+  focus() { globalThis.document.activeElement = this; }
+}
+
+function findAll(root, selector) {
+  const sel = String(selector).trim();
+  const out = [];
+  const walk = node => {
+    if (matches(node, sel)) out.push(node);
+    for (const child of node.children || []) walk(child);
+  };
+  walk(root);
+  return out;
+}
+
+function matches(node, sel) {
+  if (sel.startsWith('#')) return node.id === sel.slice(1);
+  if (sel.startsWith('.')) return String(node.className || '').split(/\s+/).includes(sel.slice(1));
+  const data = /^\[data-([a-z]+)]$/.exec(sel);
+  if (data) return !!(node.dataset && node.dataset[data[1]]);
+  return node.tagName === sel.toLowerCase();
+}
+
+/** 一个事件：记下有没有被 preventDefault，拖放的带一份 dataTransfer */
+function fakeEvent(type, target, extra) {
+  return Object.assign({
+    type, target, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() {},
+    dataTransfer: {effectAllowed: '', dropEffect: '', setData() {}, getData: () => ''},
+  }, extra || {});
+}
+
+const byId = new Map();
+
+function idNode(id) {
+  if (!byId.has(id)) {
+    const node = new MiniNode('div');
+    node.id = id;
+    byId.set(id, node);
+  }
+  return byId.get(id);
+}
+
+const htmlClasses = new Set();
+
+globalThis.document = {
+  querySelector: selector => {
+    const sel = String(selector);
+    return sel.startsWith('#') ? idNode(sel.slice(1)) : null;
+  },
+  createElement: tag => new MiniNode(tag),
+  createTextNode: text => {
+    const node = new MiniNode('#text');
+    node.textContent = text;
+    return node;
+  },
+  addEventListener() {},
+  removeEventListener() {},
+  body: idNode('body'),
+  activeElement: null,
+  documentElement: {
+    classList: {
+      toggle: (name, on) => { if (on) htmlClasses.add(name); else htmlClasses.delete(name); },
+      contains: name => htmlClasses.has(name),
+    },
+  },
+};
+
+// 模板编辑器拒收一块时弹 alert；这里记下来，弹了就是收了不该收的东西
+const alerts = [];
+globalThis.window = {alert: text => alerts.push(String(text)), getSelection: () => null};
+
+globalThis.location = {hash: '', href: '', replace() {}, reload() {}};
+
+// 预览图在浏览器里经 createObjectURL 变成 img 的 src，node 上没有这一对
+let blobSeq = 0;
+globalThis.URL.createObjectURL = () => 'blob:preview-' + (++blobSeq);
+globalThis.URL.revokeObjectURL = () => {};
+
+// —— 假接口 ——
+
+const mock = {requests: []};
+
+globalThis.fetch = (path, opt) => {
+  const method = ((opt || {}).method || 'GET').toUpperCase();
+  const body = (opt || {}).body;
+  mock.requests.push({path: String(path), method, body});
+  const url = String(path);
+
+  if (method === 'GET') {
+    if (url.endsWith('/push-history')) {
+      return Promise.resolve({status: 200, json: () => Promise.resolve({records: []})});
+    }
+    return Promise.resolve({status: 200, json: () => Promise.resolve({})});
+  }
+
+  if (url.endsWith('/config/api/report/preview')) {
+    return Promise.resolve({ok: true, blob: () => Promise.resolve('preview-bytes')});
+  }
+  return Promise.resolve({status: 200, json: () => Promise.resolve({success: true, message: '已保存'})});
+};
+
+// —— /api/handlers 的形态：下播报告真正的那张版式表 ——
+
+const HANDLER = 'org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler';
+
+let OPTIONS = [];
+try {
+  OPTIONS = JSON.parse(process.env.LAYOUT_OPTIONS || '[]');
+} catch (err) {
+  failures.push('LAYOUT_OPTIONS 读不成 JSON：' + err.message);
+}
+
+const CARD_LABELS = ['流水', '弹幕', '点赞', '进入直播间', '新增关注', '醒目留言', '大航海', '盲盒', '免费礼物', '分享'];
+const CARD_KEYS = ['card_revenue', 'card_danmu', 'card_like', 'card_enter', 'card_follow',
+  'card_super_chat', 'card_guard', 'card_box', 'card_free_gift', 'card_share'];
+const KEY_OF = Object.fromEntries(CARD_LABELS.map((label, i) => [label, CARD_KEYS[i]]));
+const LABEL_OF = Object.fromEntries(CARD_KEYS.map((key, i) => [key, CARD_LABELS[i]]));
+const DEFAULT_ORDER = CARD_KEYS.join(',');
+
+const TARGET = {platform: 'qq-onebot', type: 1, num: 12345};
+
+const SESSION = {
+  platform: 'qq-onebot', num: 12345, type: 1,
+  disabled: [], menuHidden: [], menuNotes: {},
+  revenueVisible: true, revenueExplicit: true,
+  streamers: ['甲'],
+};
+
+// —— 载入产品码 ——
+
+let push = null;
+let model = null;
+let editors = null;
+let store = null;
+try {
+  push = await import(join(pages, 'push.js'));
+  model = await import(join(pages, 'push-model.js'));
+  editors = await import(join(pages, 'template.js'));
+  store = (await import('./store.js')).store;
+} catch (err) {
+  failures.push('载入产品码就抛了：' + err.message);
+}
+
+const page = () => idNode('push-right');
+const allNodes = scope => {
+  const out = [];
+  const walk = node => {
+    out.push(node);
+    for (const child of node.children || []) walk(child);
+  };
+  walk(scope);
+  return out;
+};
+const layoutInput = label => allNodes(page())
+  .find(node => node.tagName === 'input' && node.getAttribute('aria-label') === label) || null;
+const layoutRows = () => allNodes(page()).filter(node => String(node.className || '').split(/\s+/).includes('rep-row'));
+const rowLabel = row => {
+  const input = allNodes(row).find(node => node.tagName === 'input');
+  return input ? input.getAttribute('aria-label') : null;
+};
+const hasClass = (node, name) => String((node || {}).className || '').split(/\s+/).includes(name);
+const stateLine = () => allNodes(page()).find(node => node.tagName === 'span'
+  && String(node.innerHTML).includes('本通道用的是') && String(node.innerHTML).includes('版式'));
+const message = () => push.pushEntries()[0].targets[0].messages[0];
+const textOf = scope => allNodes(scope).map(node => node.textContent || '').join(' ');
+
+// —— 两区小块 ——
+
+const ON = 'rep-zone-on';
+const OFF = 'rep-zone-off';
+const ZONE_NAME = {[ON]: '报告里的卡片', [OFF]: '没放进报告的'};
+
+/** 某一区；scope 缺省为通道页 */
+function zone(which, scope) {
+  const node = allNodes(scope || page()).find(item => hasClass(item, which));
+  if (!node) throw new Error('版式区没有「' + ZONE_NAME[which] + '」那一区（改前无此功能）');
+  return node;
+}
+
+const chipsIn = (which, scope) => allNodes(zone(which, scope)).filter(node => hasClass(node, 'rep-chip'));
+const labelsIn = (which, scope) => chipsIn(which, scope).map(node => LABEL_OF[node.dataset.card] || node.dataset.card);
+
+function chip(which, label, scope) {
+  const node = chipsIn(which, scope).find(item => item.dataset.card === KEY_OF[label]);
+  if (!node) throw new Error('「' + ZONE_NAME[which] + '」里没有「' + label + '」');
+  return node;
+}
+
+function killButton(label, scope) {
+  const node = allNodes(scope || page())
+    .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '拿掉：' + label);
+  if (!node) throw new Error('找不到「拿掉：' + label + '」（改前无此功能）');
+  return node;
+}
+
+/** 把一枚小块拖到另一枚的左半边（before）或右半边（after），或拖到一区的空白处 */
+function dragTo(from, to, side) {
+  from.dispatchEvent(fakeEvent('dragstart', from));
+  const area = to.closest('.rep-zone') || to.closest('.tpl-c-body') || to;
+  const clientX = side === 'after' ? 90 : 10;
+  const over = fakeEvent('dragover', to, {clientX});
+  area.dispatchEvent(over);
+  const drop = fakeEvent('drop', to, {clientX});
+  area.dispatchEvent(drop);
+  from.dispatchEvent(fakeEvent('dragend', from));
+  return {over, drop};
+}
+
+function press(node, key) {
+  const event = fakeEvent('keydown', node, {key});
+  node.dispatchEvent(event);
+  return event;
+}
+
+const focused = () => {
+  const node = document.activeElement;
+  if (!node) return '无';
+  return (node.dataset && node.dataset.card ? (hasClass(node.parentNode, ON) ? '报告区·' : '下面·')
+    + LABEL_OF[node.dataset.card] : '') || node.getAttribute('aria-label') || node.tagName;
+};
+
+function expectState(word, what) {
+  const line = stateLine();
+  if (!line || !String(line.innerHTML).includes(word)) {
+    throw new Error(what + '，状态行该是「' + word + '」：' + (line ? line.innerHTML : '没找到'));
+  }
+}
+
+async function settle() {
+  for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
+}
+
+async function paintPage(params) {
+  mock.requests.length = 0;
+  push.setPushEntries([{
+    platform: 'bilibili', uid: 1, _uname: '甲', enabled: true,
+    targets: [{
+      platform: TARGET.platform, type: 1, num: TARGET.num, enabled: true,
+      messages: [{handler: HANDLER, params: Object.assign({}, params)}],
+    }],
+  }]);
+  push.setRuntimeState({sessions: [SESSION], commands: [], subscriptions: [], incomplete: []});
+  push.showPush('1', String(TARGET.num));
+  push.renderStreamers();
+  await settle();
+}
+
+if (push && store) {
+  store.handlerList = [{
+    className: HANDLER,
+    aliases: [],
+    displayName: '下播报告',
+    description: '下播时把整场报告画成一张图',
+    platform: 'bilibili',
+    placeholders: [],
+    attachments: [],
+    defaultParams: {},
+    factoryParams: {},
+    options: OPTIONS,
+  }];
+}
+
+await ask('① 十张卡在版式表里跟着数据卡片；界面上紧跟「数据卡片」那一行，是一枚枚小块而不是一行行开关', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  const children = OPTIONS.filter(option => option.parentKey === 'cards').map(option => option.label);
+  same(children, CARD_LABELS, '版式表里跟着「数据卡片」的项');
+
+  await paintPage({});
+  const controls = allNodes(page()).find(node => node.id === 'rep-options');
+  const rows = controls.children;
+  const at = rows.findIndex(row => rowLabel(row) === '数据卡片');
+  if (at < 0) throw new Error('版式区没有「数据卡片」这一行');
+  const board = rows[at + 1];
+  if (!hasClass(board, 'rep-board')) throw new Error('「数据卡片」下面一行不是两区小块（改前无此功能）');
+  if (!hasClass(board, 'rep-sub')) throw new Error('两区小块没缩进在「数据卡片」下面');
+  same(labelsIn(ON), CARD_LABELS, '报告区里的小块');
+  same(labelsIn(OFF), [], '下面那区的小块');
+  same(CARD_LABELS.filter(label => layoutInput(label)), [], '还画成一行行开关的卡');
+  same(rowLabel(rows[at + 2]), '本场变化', '小块之后那一行');
+});
+
+await ask('② 恢复默认：十张卡的键与顺序键一并删掉，不认得的键照留', async () => {
+  if (!model) throw new Error('产品码没载入，无从量起');
+  const handler = store.handlerList[0];
+  const params = {message: '{report}', cards: false, card_like: false, card_share: false, card_revenue: false,
+    card_order: 'card_share,card_like'};
+  const restored = model.restoredLayoutParams(params, handler);
+  same(restored, {message: '{report}'}, '恢复默认之后的参数');
+  same(params.card_like, false, '恢复默认不该改动传进来的那一份');
+});
+
+await ask('③ 拿掉任一张卡：状态行当场变成「自定义版式」', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  expectState('默认版式', '全默认时');
+  killButton('分享').click();
+  await settle();
+  same(message().params.card_share, false, '拿掉「分享」后的存值');
+  expectState('自定义版式', '拿掉了「分享」后');
+});
+
+// 故障：拖一枚到另一枚前面，存下去的顺序或界面上的顺序没变；拖回原位却记成了改动
+await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原位不算改动', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  const {over} = dragTo(chip(ON, '分享'), chip(ON, '流水'), 'before');
+  if (!over.defaultPrevented) throw new Error('报告区不收报告区里拖起来的小块');
+  same(message().params.card_order, ['card_share', ...CARD_KEYS.slice(0, 9)].join(','), '把「分享」拖到「流水」前面之后存下去的顺序');
+  same(labelsIn(ON), ['分享', ...CARD_LABELS.slice(0, 9)], '把「分享」拖到「流水」前面之后界面上的顺序');
+  expectState('自定义版式', '调了顺序后');
+
+  dragTo(chip(ON, '分享'), chip(ON, '免费礼物'), 'after');
+  same(message().params.card_order, DEFAULT_ORDER, '拖回原位之后存下去的顺序');
+  same(labelsIn(ON), CARD_LABELS, '拖回原位之后界面上的顺序');
+  expectState('默认版式', '拖回原位后');
+
+  await paintPage({});
+  dragTo(chip(ON, '弹幕'), chip(ON, '流水'), 'after');
+  dragTo(chip(ON, '弹幕'), chip(ON, '点赞'), 'before');
+  dragTo(chip(ON, '弹幕'), chip(ON, '弹幕'), 'after');
+  same(Object.keys(message().params), [], '原地拖了三下之后的参数（不该写进任何键）');
+});
+
+// 故障：点 × 以后那张卡的开关没存成关、或小块没到下面那区；点下面那区的小块没回到报告区末尾、或开关没存成开
+await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放回末尾存成开；拖回来落在放下的位置；空着时各写一句', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  same(textOf(zone(OFF)).includes('都在报告里'), true, '下面那区空着时写「都在报告里」');
+  killButton('点赞').click();
+  await settle();
+  same(message().params.card_like, false, '点「拿掉：点赞」之后的存值');
+  same(labelsIn(ON), CARD_LABELS.filter(label => label !== '点赞'), '拿掉「点赞」之后报告区');
+  same(labelsIn(OFF), ['点赞'], '拿掉「点赞」之后下面那区');
+
+  chip(OFF, '点赞').click();
+  await settle();
+  same(message().params.card_like, true, '点下面那区的「点赞」之后的存值');
+  same(labelsIn(ON), [...CARD_LABELS.filter(label => label !== '点赞'), '点赞'], '放回「点赞」之后报告区');
+  same(labelsIn(OFF), [], '放回「点赞」之后下面那区');
+  same(message().params.card_order.split(',').pop(), 'card_like', '放回之后存着的顺序的最后一项');
+
+  await paintPage({card_like: false, card_share: false});
+  const {over} = dragTo(chip(OFF, '分享'), chip(ON, '弹幕'), 'before');
+  if (!over.defaultPrevented) throw new Error('报告区不收下面那区拖来的小块');
+  same(message().params.card_share, true, '把「分享」拖进报告区之后的存值');
+  same(labelsIn(ON), ['流水', '分享', '弹幕', ...CARD_LABELS.slice(3, 9)], '把「分享」拖到「弹幕」前面之后报告区');
+  same(labelsIn(OFF), ['点赞'], '把「分享」拖进报告区之后下面那区');
+
+  dragTo(chip(ON, '流水'), zone(OFF), 'after');
+  same(message().params.card_revenue, false, '把「流水」拖进下面那区之后的存值');
+
+  await paintPage(Object.fromEntries(CARD_KEYS.map(key => [key, false])));
+  same(labelsIn(ON), [], '十张全拿掉之后报告区');
+  same(textOf(zone(ON)).includes('一张都没放，这一块不画'), true, '报告区空着时那一句');
+});
+
+// 故障：拖不了的人用键盘做不完：方向键挪不了位、Delete 拿不掉、回车放不回，或动完焦点丢了
+await ask('⑥ 键盘：Tab 走得到，左右方向键挪位，Delete／Backspace 拿掉，回车／空格放回；焦点落在刚动过的那一枚', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  const first = chip(ON, '流水');
+  same(first.tabIndex, 0, '报告区小块的 tabIndex');
+  const name = first.getAttribute('aria-label') || '';
+  for (const word of ['流水', '第 1 张', '方向键', 'Delete']) {
+    if (!name.includes(word)) throw new Error('「流水」的读屏名里没有「' + word + '」：' + name);
+  }
+
+  press(first, 'ArrowRight');
+  await settle();
+  same(labelsIn(ON).slice(0, 2), ['弹幕', '流水'], '对「流水」按右方向键之后前两枚');
+  same(message().params.card_order.split(',').slice(0, 2), ['card_danmu', 'card_revenue'], '右移之后存下去的顺序');
+  same(focused(), '报告区·流水', '右移之后焦点');
+  press(document.activeElement, 'ArrowLeft');
+  await settle();
+  same(labelsIn(ON).slice(0, 2), ['流水', '弹幕'], '再按左方向键之后前两枚');
+  same(focused(), '报告区·流水', '左移之后焦点');
+
+  press(document.activeElement, 'Delete');
+  await settle();
+  same(message().params.card_revenue, false, '按 Delete 之后「流水」的存值');
+  same(focused(), '下面·流水', '按 Delete 之后焦点');
+  const back = chip(OFF, '流水');
+  same(back.tabIndex, 0, '下面那区小块的 tabIndex');
+  if (!(back.getAttribute('aria-label') || '').includes('流水')) throw new Error('下面那区「流水」的读屏名里没有卡名');
+
+  press(document.activeElement, 'Enter');
+  await settle();
+  same(message().params.card_revenue, true, '按回车之后「流水」的存值');
+  same(labelsIn(ON).pop(), '流水', '按回车之后报告区最后一枚');
+  same(focused(), '报告区·流水', '按回车之后焦点');
+
+  press(chip(ON, '弹幕'), 'Backspace');
+  await settle();
+  same(message().params.card_danmu, false, '按 Backspace 之后「弹幕」的存值');
+  same(focused(), '下面·弹幕', '按 Backspace 之后焦点');
+  press(document.activeElement, ' ');
+  await settle();
+  same(message().params.card_danmu, true, '按空格之后「弹幕」的存值');
+  same(focused(), '报告区·弹幕', '按空格之后焦点');
+});
+
+// 故障：总开关关着、或这一页不可编辑时，小块照样能拖、× 和放回照样起作用，存着的值被改了
+await ask('⑦ 锁着：总开关关着或页不可编辑时，拖、×、放回、按键都不起作用，存着的值不动，写明为什么', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  const stored = [...CARD_KEYS].reverse().join(',');
+  await paintPage({cards: false, card_like: false, card_order: stored});
+  const before = JSON.stringify(message().params);
+  same(labelsIn(ON), [...CARD_LABELS].reverse().filter(label => label !== '点赞'), '总开关关着时报告区照存着的顺序列出');
+  same(chipsIn(ON).filter(node => node.draggable).length, 0, '总开关关着时拖得动的小块');
+  same(CARD_LABELS.filter(label => label !== '点赞' && !killButton(label).disabled), [], '总开关关着时可点的 ×');
+  same(chip(OFF, '点赞').getAttribute('aria-disabled'), 'true', '总开关关着时下面那区小块的 aria-disabled');
+  if (!textOf(page()).includes('「数据卡片」关着')) throw new Error('锁着时没写为什么');
+
+  killButton('分享').click();
+  chip(OFF, '点赞').click();
+  press(chip(ON, '分享'), 'Delete');
+  press(chip(ON, '分享'), 'ArrowLeft');
+  press(chip(OFF, '点赞'), 'Enter');
+  dragTo(chip(ON, '流水'), chip(ON, '分享'), 'before');
+  dragTo(chip(OFF, '点赞'), chip(ON, '分享'), 'before');
+  await settle();
+  same(JSON.stringify(message().params), before, '总开关关着时动过一圈之后的存值');
+
+  const params = {card_like: false};
+  let calls = 0;
+  const host = new MiniNode('div');
+  editors.buildLayoutEditor(host, {
+    editable: false, items: OPTIONS, lockedNote: '这一页只能看',
+    paramsOf: () => params, onChange: () => { calls++; }, render: () => Promise.resolve(null),
+  });
+  same(chipsIn(ON, host).filter(node => node.draggable).length, 0, '页不可编辑时拖得动的小块');
+  killButton('分享', host).click();
+  chip(OFF, '点赞', host).click();
+  press(chip(ON, '分享', host), 'Delete');
+  press(chip(OFF, '点赞', host), 'Enter');
+  dragTo(chip(ON, '流水', host), chip(ON, '分享', host), 'before');
+  same(calls, 0, '页不可编辑时动过一圈之后写回的次数');
+});
+
+// 故障：两个编辑器共用一个「正在拖什么」，卡片小块拖进消息正文被当成占位符插进去，占位符拖进卡片区被收下
+await ask('⑧ 两个编辑器不串：卡片小块拖进消息正文、占位符拖进卡片区都什么都不做；模板编辑器原有的拖放照旧', async () => {
+  if (!editors) throw new Error('产品码没载入，无从量起');
+  alerts.length = 0;
+  const tplHost = new MiniNode('div');
+  const tplHandler = {className: 'demo', displayName: '开播通知', placeholders: ['{uname}', '{title}'],
+    attachments: [], defaultParams: {message: '开播了'}};
+  let tplParams = {};
+  const tplWrites = [];
+  editors.buildTemplateEditor(tplHost, {
+    handlers: [tplHandler], editable: true, paramsOf: () => tplParams,
+    onChange: (handler, params) => { tplWrites.push(params); tplParams = params; },
+  });
+  const repHost = new MiniNode('div');
+  const repParams = {};
+  let repWrites = 0;
+  editors.buildLayoutEditor(repHost, {
+    editable: true, items: OPTIONS, paramsOf: () => repParams,
+    onChange: () => { repWrites++; }, render: () => Promise.resolve(null),
+  });
+  const body = () => allNodes(tplHost).find(node => hasClass(node, 'tpl-c-body'));
+  const paletteButton = key => allNodes(tplHost).find(node => hasClass(node, 'tpl-blk') && node.textContent === key);
+
+  const card = chip(ON, '分享', repHost);
+  const into = dragTo(card, body(), 'after');
+  same(tplWrites.length, 0, '卡片小块拖进消息正文之后模板写回的次数');
+  same(alerts, [], '卡片小块拖进消息正文之后弹出的话');
+  if (!into.drop.defaultPrevented) throw new Error('卡片小块落进消息正文时没拦住浏览器自己往正文里插东西');
+
+  const onto = dragTo(paletteButton('title'), chip(ON, '流水', repHost), 'before');
+  if (onto.over.defaultPrevented) throw new Error('报告区对拖来的占位符显示可以放下');
+  const below = dragTo(paletteButton('title'), zone(OFF, repHost), 'after');
+  if (below.over.defaultPrevented) throw new Error('下面那区对拖来的占位符显示可以放下');
+  same(repWrites, 0, '占位符拖进卡片区之后版式写回的次数');
+  same(labelsIn(ON, repHost), CARD_LABELS, '占位符拖进卡片区之后报告区');
+
+  const {over} = dragTo(paletteButton('uname'), body(), 'after');
+  if (!over.defaultPrevented) throw new Error('消息正文不再收调色板上拖来的占位符');
+  same(tplWrites.length, 1, '占位符拖进消息正文之后模板写回的次数');
+  same(tplWrites[0].message, '开播了{uname}', '占位符拖进消息正文之后的模板');
+});
+
+console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
+for (const line of failures) console.log('  红：' + line);
+process.exit(failures.length ? 1 : 0);

@@ -21,8 +21,8 @@ import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
-  previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, revenueSummary,
-  savedRevenueVisible,
+  previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
+  revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
@@ -297,6 +297,29 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 .rep-txt>p{margin:2px 0 0;font-size:13px;color:var(--dim)}
 /* 当前金额设定下不出图的那几行：整行淡下去，原因那一行照旧读得清 */
 .rep-row.rev-off{opacity:.6}
+/* 跟着上一项开关走的子项：缩进挂在那一项下面，那一项关着时同样淡下去 */
+.rep-row.rep-sub{padding-left:26px}
+.rep-row.parent-off{opacity:.6}
+/* 可排先后的那几项：上面报告区的小块照占位符药丸，下面没放进报告的照调色板 */
+.rep-board{padding:7px 0 7px 26px;border-top:1px solid var(--line)}
+.rep-board>.rep-zone-t{margin:4px 0}
+.rep-zone{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:34px;padding:6px 8px;
+  border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground)}
+.rep-zone.over{border-color:var(--accent);background:var(--soft)}
+.rep-zone-off{background:var(--soft);border-color:var(--softline)}
+.rep-chip{display:inline-flex;align-items:center;gap:3px;border-radius:var(--r-pill);padding:2px 4px 2px 10px;
+  font-size:13px;background:var(--soft);border:1px solid var(--softline);color:var(--accent);
+  cursor:grab;user-select:none}
+.rep-chip-off{background:var(--surface);padding:2px 10px;cursor:pointer}
+.rep-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.rep-chip.rev-off{opacity:.6}
+.rep-chip-m{font-size:11px;opacity:.75}
+.rep-chip-x{background:none;border:none;color:inherit;cursor:pointer;font-size:14px;padding:0 4px;
+  min-width:22px;min-height:22px;line-height:1;opacity:.55;font-family:inherit}
+.rep-chip-x:hover:not(:disabled){opacity:1;color:var(--err)}
+.rep-board.locked .rep-zone{opacity:.6}
+.rep-board.locked .rep-chip{cursor:not-allowed}
+.rep-board>.rep-why{margin:6px 0 0;font-size:12.5px;color:var(--dim)}
 .rep-txt>.rep-why{font-size:12.5px}
 .rep-n{width:78px;flex:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:4px 8px;font-size:14px;font-family:inherit;background:var(--surface);color:var(--text)}
@@ -1343,9 +1366,7 @@ function sectionLayout(host, target, session) {
       body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
     const message = messageOf(target, handler);
     if (message) {
-      const params = Object.assign({}, message.params || {});
-      for (const option of handler.options || []) delete params[option.key];
-      message.params = params;
+      message.params = restoredLayoutParams(message.params, handler);
     }
     markDirty();
     renderStreamers();

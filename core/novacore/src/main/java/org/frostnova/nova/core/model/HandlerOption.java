@@ -1,5 +1,10 @@
 package org.frostnova.nova.core.model;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * 推送处理器的可配置项
  * <p>
@@ -13,17 +18,21 @@ package org.frostnova.nova.core.model;
  * @param key 参数名，即 {@code params} 中的键
  * @param label 界面上的名称
  * @param description 一句话说明，可为空
- * @param type 取值类型，决定界面渲染成开关还是数字框
+ * @param type 取值类型，决定界面渲染成开关、数字框，或是把别的几个开关画成可拖着排先后的小块
  * @param defaultValue 默认值，界面据此显示初始状态；使用者没改过的参数不会写进配置文件
  * @param min 数字型的下限，非数字型可为 null
  * @param max 数字型的上限，非数字型可为 null
  * @param revenueVisibility 这一项随会话的金额可见性怎么走，缺省为 {@link RevenueVisibility#UNRELATED}；
  *                          界面据此在当前设定下不出图的项上灰掉并写原因。第三方插件不标即无关
  * @param revenueNote 随金额的那句人话原因，给在灰掉的项旁边看；未标随金额的项可为 null
+ * @param parentKey 这一项跟着哪一项开关走（那一项的 key），可为 null。界面把它缩进列在那一项下面，
+ *                  那一项关着时它灰掉、存着的值不动。只是界面上的归属：这一项真正起不起作用，
+ *                  仍由处理器自己按两项的取值决定
  */
 public record HandlerOption(String key, String label, String description, Type type,
                             Object defaultValue, Integer min, Integer max,
-                            RevenueVisibility revenueVisibility, String revenueNote) {
+                            RevenueVisibility revenueVisibility, String revenueNote,
+                            String parentKey) {
     /**
      * 旧构造：七个栏都在、随金额两栏取缺省
      * <p>
@@ -33,6 +42,27 @@ public record HandlerOption(String key, String label, String description, Type t
     public HandlerOption(String key, String label, String description, Type type,
                          Object defaultValue, Integer min, Integer max) {
         this(key, label, description, type, defaultValue, min, max, RevenueVisibility.UNRELATED, null);
+    }
+
+    /**
+     * 九栏构造：带随金额两栏、不跟着别的项
+     * <p>
+     * 加 {@code parentKey} 之前这就是全栏构造，按九栏写的调用照旧能编、照旧是顶层项。
+     */
+    public HandlerOption(String key, String label, String description, Type type,
+                         Object defaultValue, Integer min, Integer max,
+                         RevenueVisibility revenueVisibility, String revenueNote) {
+        this(key, label, description, type, defaultValue, min, max, revenueVisibility, revenueNote, null);
+    }
+
+    /**
+     * 同一项挂到另一项下面：其余各栏照抄，只换 {@code parentKey}
+     * @param parent 跟着走的那一项的 key
+     * @return 新的一项
+     */
+    public HandlerOption under(String parent) {
+        return new HandlerOption(key, label, description, type, defaultValue, min, max,
+                revenueVisibility, revenueNote, parent);
     }
 
     /**
@@ -51,6 +81,50 @@ public record HandlerOption(String key, String label, String description, Type t
     }
 
     /**
+     * 构造一个顺序项：给清单里另外几项排先后
+     * <p>
+     * 存的值是那几项的 key 用逗号连起来，默认值就是 {@code keys} 的原样顺序。
+     * 界面不为它单画一行，而是把它点名的那几个开关画成两区小块：上面一区是开着的，
+     * 按存着的顺序排、拖着换位；下面一区是关着的，放回时开关跟着打开。
+     * 每动一下把整串写回这一个键——因此默认值也是哪几项能排的唯一出处。
+     * @param keys 能排的那几个开关的 key，按默认顺序
+     */
+    public static HandlerOption order(String key, String label, String description, List<String> keys) {
+        return new HandlerOption(key, label, description, Type.ORDER, String.join(",", keys), null, null);
+    }
+
+    /**
+     * 顺序项存着的值读成完整的一串 key
+     * <p>
+     * 存着的串可能是老版本写的、也可能被手改过：不认识的 key 跳过，重复的只算第一次，
+     * 缺了的按默认顺序补在后面——后加的项不会因为老顺序里没有它就不见了。
+     * 读不出时（null、空串、不是串）整串按默认。
+     * @param stored 参数里存着的值，可为 null
+     * @return 默认值里每个 key 恰好一次，按存着的先后排
+     */
+    public List<String> orderOf(Object stored) {
+        List<String> known = splitKeys(defaultValue);
+        Set<String> out = new LinkedHashSet<>();
+        for (String item : splitKeys(stored)) {
+            if (known.contains(item)) {
+                out.add(item);
+            }
+        }
+        out.addAll(known);
+        return List.copyOf(out);
+    }
+
+    private static List<String> splitKeys(Object value) {
+        if (!(value instanceof String text)) {
+            return List.of();
+        }
+        return Arrays.stream(text.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .toList();
+    }
+
+    /**
      * 参数的取值类型
      */
     public enum Type {
@@ -62,7 +136,13 @@ public record HandlerOption(String key, String label, String description, Type t
         /**
          * 整数，界面渲染为带上下限的数字框
          */
-        INTEGER
+        INTEGER,
+
+        /**
+         * 另外几个开关的先后：值是逗号连起来的 key，界面把那几个开关画成可拖着排的小块，不单画一行。
+         * 见 {@link #order}
+         */
+        ORDER
     }
 
     /**

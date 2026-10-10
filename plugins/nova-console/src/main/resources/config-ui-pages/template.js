@@ -27,6 +27,17 @@ import {
 let drag = null;
 
 /**
+ * 模板编辑器自己的那几种拖法：调色板上新拖出来的块、正文里挪的块、整张卡
+ *
+ * 版式编辑器的卡片小块也记在 drag 上（kind 为 'report-card'）。消息正文只认这几种，
+ * 别的一概不收——不然卡片小块拖进正文，会被当成一个占位符插进去。
+ */
+const TEMPLATE_DRAGS = ['new', 'move', 'card'];
+
+/** 正在拖的是别的编辑器里的东西 */
+const foreignDrag = () => !!drag && !TEMPLATE_DRAGS.includes(drag.kind);
+
+/**
  * 建一个模板编辑器
  * @param host 挂在哪
  * @param options 见下：
@@ -318,6 +329,12 @@ export function buildTemplateEditor(host, options) {
     body.addEventListener('keyup', () => rememberCaret(body, cardIndex));
     body.addEventListener('mouseup', () => rememberCaret(body, cardIndex));
     body.addEventListener('dragover', event => {
+      if (foreignDrag()) {
+        // 可编辑的正文默认收任何拖来的东西：明说不收，光标才显示放不下
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'none';
+        return;
+      }
       if (!drag || drag.kind === 'card' || !opts.editable) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = drag.kind === 'new' ? 'copy' : 'move';
@@ -413,6 +430,12 @@ export function buildTemplateEditor(host, options) {
    * 发出去的消息一切正常。这一条由 dropIndex 判，本函数只负责问它。
    */
   function onDrop(event, body, cardIndex) {
+    if (foreignDrag()) {
+      // 拦下浏览器自己往正文里插东西，什么都不收
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (!drag || drag.kind === 'card' || !opts.editable) return;
     event.preventDefault();
     event.stopPropagation();
@@ -565,6 +588,26 @@ export function buildTemplateEditor(host, options) {
 }
 
 /**
+ * 顺序项存着的值读成完整的一串 key
+ *
+ * 与处理器那一侧（HandlerOption.orderOf）同一个读法：不认识的跳过，重复的只算第一次，
+ * 缺了的按默认顺序补在后面。默认值就是哪几项能排的唯一出处。
+ * @param stored 参数里存着的值，可为空
+ * @param defaultValue 顺序项的默认值，逗号连起来的 key
+ * @return {string[]} 默认值里每个 key 恰好一次，按存着的先后排
+ */
+export function normalizedOrder(stored, defaultValue) {
+  const split = value => typeof value === 'string'
+    ? value.split(',').map(item => item.trim()).filter(Boolean) : [];
+  const known = split(defaultValue);
+  const out = [];
+  for (const key of split(stored).concat(known)) {
+    if (known.includes(key) && !out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
+/**
  * 「报告长什么样」：左边一排版式开关，右边照着开关画出来的那张图
  *
  * 版式项清单取自处理器自报的那一张（{@code /api/handlers} 的 options），
@@ -576,6 +619,13 @@ export function buildTemplateEditor(host, options) {
  * 只变样的项不灰、加一句说明——不然使用者把「流水排行」调成前 10 名，
  * 图上永远没有这一榜，还以为是坏了。灰不灰读 opts.revenueVisible 现算的值
  * （会话存的设定＋草稿），草稿里拨了当场跟着变；存着的值不清不改。
+ * <p>
+ * 带 parentKey 的项（处理器自报「跟着哪一项开关走」）缩进列在那一项下面；那一项关着
+ * 或灰着时它们一并灰掉、写一句为什么，存着的值同样不清不改，打开就亮回来。
+ * 不带这一栏的项照旧按清单顺序平铺。
+ * <p>
+ * 处理器还可以报一个顺序项（type ORDER）：它点名的那几个开关不画成一行行，而画成两区小块
+ * （见 boardNode）——在报告区＝开着，报告区里的先后＝顺序项的值。没有顺序项的处理器界面不变。
  * <p>
  * ℹ️ 服务端另有一支 {@code /api/report/layout-options} 给同一张表。<b>这里不调它</b>——
  * 同一张表从两个口进来，两个口的字段名还不一样（那边是 {@code default}，
@@ -608,6 +658,10 @@ export function buildLayoutEditor(host, options) {
   host.appendChild(box);
 
   const items = opts.items || [];
+  // 顺序项（type ORDER）不单画一行：它点名的那几个开关画成两区小块（见 boardNode）
+  const isOrder = option => String(option.type).toUpperCase() === 'ORDER';
+  const orders = items.filter(isOrder);
+  const rowItems = items.filter(option => !isOrder(option));
 
   function valueOf(option) {
     const params = (opts.paramsOf ? opts.paramsOf() : null) || {};
@@ -638,6 +692,250 @@ export function buildLayoutEditor(host, options) {
     return note + '。' + how + '。';
   }
 
+  /**
+   * 画的顺序：顶层项照清单顺序，跟着某一项走的紧跟在那一项后面
+   *
+   * parentKey 指向清单里没有的键时按顶层项放，不让它从界面上消失。
+   * @return {Array<{option: object, parent: object|null}>}
+   */
+  function ordered() {
+    const keys = new Set(rowItems.map(option => option.key));
+    const out = [];
+    const seen = new Set();
+    const visit = (option, parent) => {
+      if (seen.has(option)) return;
+      seen.add(option);
+      out.push({option, parent});
+      for (const child of rowItems) {
+        if (child.parentKey === option.key) visit(child, option);
+      }
+    };
+    for (const option of rowItems) {
+      if (!option.parentKey || !keys.has(option.parentKey)) visit(option, null);
+    }
+    // 互相指着的那几项走不到：照顶层补上
+    for (const option of rowItems) visit(option, null);
+    return out;
+  }
+
+  /** 顺序项点名的、清单里真有的开关项：它们画成小块，在报告区＝开着 */
+  function membersOf(order) {
+    const named = normalizedOrder(order.defaultValue, order.defaultValue);
+    return rowItems.filter(option => named.includes(option.key)
+      && String(option.type).toUpperCase() === 'BOOLEAN');
+  }
+
+  /** 这个顺序项眼下的完整顺序，只留画成小块的那几项 */
+  function currentOrder(order) {
+    const present = new Set(membersOf(order).map(option => option.key));
+    return normalizedOrder(valueOf(order), order.defaultValue).filter(key => present.has(key));
+  }
+
+  /**
+   * 整串顺序上把 key 挪到 target 前面或后面；target 为 null 时挪到末尾
+   *
+   * 挪的是存着的整串（关着的也在里面），不只是报告区看得见的那几枚：
+   * 关着的卡留在它原来的位置上，放回时才另说。
+   */
+  function placed(sequence, key, target, after) {
+    if (target === key) return sequence;
+    const out = sequence.filter(item => item !== key);
+    const at = target === null || !out.includes(target) ? out.length : out.indexOf(target) + (after ? 1 : 0);
+    out.splice(at, 0, key);
+    return out;
+  }
+
+  /**
+   * 小块上的一次操作：顺序与那张卡的开关一起写回，一次 onChange
+   *
+   * 写回的是读好的整串：残缺的老值在第一次动的时候就补齐了。两样都与此刻一样时（原地拖、
+   * 拖回同一格）什么都不写——写一份一模一样的值，状态行照样不变，可草稿会平白记一次改动。
+   * 重画之后焦点落在这张卡此刻所在那一区的那一枚上。
+   * @param on 开关写成什么；undefined 为不动
+   * @param zone 'on' 或 'off'：重画后焦点落在哪一区
+   */
+  function act(order, key, sequence, on, zone) {
+    const option = membersOf(order).find(item => item.key === key);
+    if (!option) return;
+    const params = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
+    let touched = false;
+    const joined = sequence.join(',');
+    if (joined !== normalizedOrder(valueOf(order), order.defaultValue).join(',')) {
+      params[order.key] = joined;
+      touched = true;
+    }
+    if (on !== undefined && !!valueOf(option) !== on) {
+      params[option.key] = on;
+      touched = true;
+    }
+    if (!touched) return;
+    if (opts.onChange) opts.onChange(params);
+    paint();
+    const node = chipNodes.get(zone + ':' + key);
+    if (node) node.focus();
+  }
+
+  /** 这一次重画出来的小块，按「区:key」记下：动完之后要把焦点放回去 */
+  const chipNodes = new Map();
+
+  /** 本编辑器的记号：两个编辑器共用模块上的 drag，只收自己这里拖起来的小块 */
+  const owner = {};
+
+  /**
+   * 顺序项画成两区小块：上面「报告里的卡片」，下面「没放进报告的」
+   *
+   * 在报告区＝那张卡的开关开着，报告区里的先后＝顺序项存着的先后。上面的拖着换位、× 拿掉
+   * （键盘：左右方向键挪一格、Delete／Backspace 拿掉）；下面的点一下放回末尾（键盘：回车／空格），
+   * 或拖进报告区落在放下的位置。锁着时（页不可编辑、跟着的那一项关着）两区都拖不动、点不动，
+   * 存着的值不动。原来每一行写着的说明放进悬停提示，隐藏金额时换说法的那几枚带一个 ¥。
+   * @param order 顺序项
+   * @param why 锁着的原因，null 为没锁
+   * @param visible 当前的金额可见性，给 revenueState
+   */
+  function boardNode(order, why, visible) {
+    const locked = why !== null;
+    const members = membersOf(order);
+    const optionOf = key => members.find(option => option.key === key);
+    const sequence = normalizedOrder(valueOf(order), order.defaultValue);
+    const shown = currentOrder(order);
+    const onKeys = shown.filter(key => valueOf(optionOf(key)));
+    const offKeys = shown.filter(key => !valueOf(optionOf(key)));
+    const nameOf = key => optionOf(key).label || key;
+
+    const board = el('div', 'rep-board rep-sub' + (locked ? ' locked' : ''));
+    // 只收本编辑器这一组拖起来的小块：占位符、别处的小块都不带这两样。
+    // 锁着时小块拖不起来（见 dragstart），这里不再另判一道
+    const accepts = () => !!drag && drag.owner === owner && drag.order === order.key;
+
+    /** 一枚小块的公共部分：卡名、¥ 记号、悬停说明、拖起来 */
+    const chipNode = (key, zone) => {
+      const option = optionOf(key);
+      const state = revenueState(option, visible);
+      const node = el('span', 'rep-chip' + (zone === 'off' ? ' rep-chip-off' : '')
+        + (state === 'off' ? ' rev-off' : ''));
+      node.dataset.card = key;
+      node.tabIndex = 0;
+      node.appendChild(document.createTextNode(nameOf(key)));
+      const tips = [option.description || ''];
+      if (state === 'styled') {
+        const mark = el('span', 'rep-chip-m');
+        mark.textContent = '¥';
+        mark.setAttribute('aria-hidden', 'true');
+        node.appendChild(mark);
+        tips.push(option.revenueNote || '');
+      } else if (state === 'off') {
+        tips.push(whyText(option));
+      }
+      if (locked) tips.push(why);
+      node.title = tips.filter(Boolean).join('\n');
+      node.draggable = !locked;
+      node.addEventListener('dragstart', event => {
+        if (locked) {
+          event.preventDefault();
+          return;
+        }
+        drag = {kind: 'report-card', owner, order: order.key, key};
+        event.dataTransfer.effectAllowed = 'move';
+        event.stopPropagation();
+      });
+      node.addEventListener('dragend', () => { drag = null; });
+      chipNodes.set(zone + ':' + key, node);
+      return node;
+    };
+
+    /** 一区：标题、小块、空着时那一句；放下时由 onDrop 决定落在哪 */
+    const zoneNode = (zone, title, keys, empty, onDrop) => {
+      board.appendChild(el('p', 'rep-zone-t xs dim')).textContent = title;
+      const area = el('div', 'rep-zone rep-zone-' + zone);
+      area.setAttribute('role', 'list');
+      area.setAttribute('aria-label', title.split(' · ')[0]);
+      area.addEventListener('dragover', event => {
+        if (!accepts()) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        area.classList.add('over');
+      });
+      area.addEventListener('dragleave', () => area.classList.remove('over'));
+      area.addEventListener('drop', event => {
+        if (!accepts()) return;
+        event.preventDefault();
+        area.classList.remove('over');
+        const moving = drag.key;
+        drag = null;
+        // 落在一枚上：左半边落它前面、右半边落它后面，与消息正文里拖占位符一个直觉
+        const hit = event.target && event.target.closest ? event.target.closest('.rep-chip') : null;
+        if (hit && area.contains(hit)) {
+          const box = hit.getBoundingClientRect();
+          onDrop(moving, hit.dataset.card, event.clientX > box.left + box.width / 2);
+        } else {
+          onDrop(moving, null, false);
+        }
+      });
+      if (!keys.length) area.appendChild(el('span', 'rep-zone-empty xs dim')).textContent = empty;
+      board.appendChild(area);
+      return area;
+    };
+
+    const onArea = zoneNode('on', '报告里的卡片 · 拖着排先后，× 拿掉', onKeys, '一张都没放，这一块不画',
+      (key, target, after) => act(order, key, placed(sequence, key, target, after), true, 'on'));
+    onKeys.forEach((key, index) => {
+      const node = chipNode(key, 'on');
+      node.setAttribute('role', 'listitem');
+      node.setAttribute('aria-label', nameOf(key) + '，报告里第 ' + (index + 1) + ' 张，共 ' + onKeys.length + ' 张。'
+        + (locked ? why : '左右方向键挪位置，Delete 拿掉，也可以拖'));
+      const kill = el('button', 'rep-chip-x');
+      kill.type = 'button';
+      kill.textContent = '×';
+      // 键盘走 Delete，不在 Tab 上多停一站；读屏的浏览模式与手机点按照样够得着
+      kill.tabIndex = -1;
+      kill.setAttribute('aria-label', '拿掉：' + nameOf(key));
+      kill.disabled = locked;
+      kill.addEventListener('click', event => {
+        event.stopPropagation();
+        if (!locked) act(order, key, sequence, false, 'off');
+      });
+      node.appendChild(kill);
+      node.addEventListener('keydown', event => {
+        if (locked) return;
+        const step = {ArrowLeft: -1, ArrowRight: 1}[event.key];
+        if (step) {
+          event.preventDefault();
+          const next = onKeys[index + step];
+          if (next !== undefined) act(order, key, placed(sequence, key, next, step > 0), undefined, 'on');
+        } else if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault();
+          act(order, key, sequence, false, 'off');
+        }
+      });
+      onArea.appendChild(node);
+    });
+
+    const offArea = zoneNode('off', '没放进报告的 · 点一下放回末尾，或拖进上面', offKeys, '都在报告里',
+      key => act(order, key, sequence, false, 'off'));
+    for (const key of offKeys) {
+      const node = chipNode(key, 'off');
+      node.setAttribute('role', 'button');
+      node.setAttribute('aria-label', '放回报告：' + nameOf(key) + '。' + (locked ? why : '回车或空格放到末尾，也可以拖进上面'));
+      if (locked) node.setAttribute('aria-disabled', 'true');
+      // 放回排到末尾：整串里挪到最后，报告区里也就是最后一张
+      const putBack = () => { if (!locked) act(order, key, placed(sequence, key, null, false), true, 'on'); };
+      node.addEventListener('click', putBack);
+      node.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        putBack();
+      });
+      offArea.appendChild(node);
+    }
+
+    if (members.some(option => revenueState(option, visible) === 'styled')) {
+      board.appendChild(el('p', 'rep-why xs dim')).textContent =
+        '带 ¥ 的几张在隐藏金额的会话里换成不带钱的说法；鼠标停在小块上看它画什么。';
+    }
+    if (locked) board.appendChild(el('p', 'rep-why')).textContent = why;
+    return board;
+  }
+
   function change(option, value) {
     const params = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
     params[option.key] = value;
@@ -648,14 +946,34 @@ export function buildLayoutEditor(host, options) {
   function paint() {
     const visible = typeof opts.revenueVisible === 'function' ? opts.revenueVisible() : undefined;
     controls.innerHTML = '';
-    for (const option of items) {
+    chipNodes.clear();
+    // 各项此刻起不起作用，按 key 记下：子项看它跟着的那一项关没关、灰没灰
+    const inert = new Map();
+    const boards = new Set();
+    for (const {option, parent} of ordered()) {
       const state = revenueState(option, visible);
       const off = state === 'off';
-      const row = el('div', 'rep-row' + (off ? ' rev-off' : ''));
+      // 跟着的那一项关着或灰着：这一项不起作用，灰掉，存着的值不动
+      const parentOff = !!parent && (inert.get(parent.key) || !valueOf(parent));
+      inert.set(option.key, off || parentOff);
+      // 顺序项点名的开关不画成一行：在头一枚的位置画一次两区小块，锁不锁按头一枚跟着的那一项
+      const order = orders.find(item => membersOf(item).includes(option));
+      if (order) {
+        if (boards.has(order)) continue;
+        boards.add(order);
+        const why = !opts.editable ? (opts.lockedNote || '这一页改不了。')
+          : parentOff ? '「' + (parent.label || parent.key) + '」关着，这几张不起作用；打开后照这里的设定画。'
+            : null;
+        controls.appendChild(boardNode(order, why, visible));
+        continue;
+      }
+      const row = el('div', 'rep-row' + (parent ? ' rep-sub' : '') + (off ? ' rev-off' : '')
+        + (parentOff ? ' parent-off' : ''));
+      const locked = !opts.editable || off || parentOff;
       if (String(option.type).toUpperCase() === 'BOOLEAN') {
         const label = el('label', 'switch');
         label.innerHTML = '<input type="checkbox"' + (valueOf(option) ? ' checked' : '')
-          + (!opts.editable || off ? ' disabled' : '') + '>';
+          + (locked ? ' disabled' : '') + '>';
         const input = label.querySelector('input');
         input.setAttribute('aria-label', option.label || option.key);
         input.addEventListener('change', event => change(option, event.target.checked));
@@ -669,7 +987,7 @@ export function buildLayoutEditor(host, options) {
         input.setAttribute('aria-label', option.label || option.key);
         // 灰掉时锁的不只是样式：能拨却不起作用的开关，比锁着的更费解。
         // 存着的值不清不改，亮回来还是原来那个数
-        input.disabled = !opts.editable || !!off;
+        input.disabled = locked;
         input.addEventListener('change', event => change(option, Number(event.target.value)));
         row.appendChild(input);
       }
@@ -680,6 +998,9 @@ export function buildLayoutEditor(host, options) {
       if (off) {
         // 原因与去哪儿改写在灰掉的那行里：不写的话，「配了不出图」与「坏了」长得一样
         text.appendChild(el('p', 'rep-why')).textContent = whyText(option);
+      } else if (parentOff) {
+        text.appendChild(el('p', 'rep-why')).textContent =
+          '「' + (parent.label || parent.key) + '」关着，这一项不起作用；打开后照这里的设定画。';
       } else if (state === 'styled') {
         // 变样的那三项不灰：它们照出，只是换了不带钱的说法——灰掉反而让人以为配不了
         text.appendChild(el('p', 'rep-why')).textContent = option.revenueNote || '';
