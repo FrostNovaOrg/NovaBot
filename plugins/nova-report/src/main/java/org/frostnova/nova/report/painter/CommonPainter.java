@@ -898,9 +898,16 @@ public class CommonPainter {
         // 不添信息。字号取脚注档（比正文小一档）：这一行是出处不是内容，正文档的宽度
         // 在 900 宽的图上几乎顶到左边——去掉协议头与开头两个词仍不够，得连字号一起降。
         // 整行与其余版权信息同为浅灰，不用链接色：那会让人以为点得动
-        drawTextRightWithStyle(List.of(new TextWithStyle(
-                "NovaBot v" + buildProperties.getVersion() + " · " + REPOSITORY,
-                TIP_FONT_SIZE, Color.LIGHT_GRAY, Font.PLAIN)), marginRight);
+        //
+        // 字的左边画 NovaBot 图标。在字之后画：画布若因这一行加高过，图标落在加高后的那一张上。
+        // 各图左右边距相同，图标会越过左边距时（版本号长到一定程度，窄图上）只画字
+        int top = this.xy.y;
+        drawTextRightWithStyle(List.of(copyrightLine()), marginRight);
+        Pair<Integer, Integer> lineSize = copyrightLineWidthAndMarkSize();
+        int markX = this.width - marginRight - lineSize.getFirst();
+        if (markX >= marginRight) {
+            NovaBotMark.paint(this.draw, markX, top, lineSize.getSecond());
+        }
 
         for (List<TextWithStyle> line : extraMiddle) {
             drawTextRightWithStyle(line, marginRight);
@@ -915,6 +922,30 @@ public class CommonPainter {
         }
 
         return this;
+    }
+
+    /**
+     * 版权行的那一行字
+     */
+    private TextWithStyle copyrightLine() {
+        return new TextWithStyle("NovaBot v" + buildProperties.getVersion() + " · " + REPOSITORY,
+                TIP_FONT_SIZE, Color.LIGHT_GRAY, Font.PLAIN);
+    }
+
+    /**
+     * 版权行连同左边图标占的宽度，与图标边长
+     * <p>
+     * 图标边长取这一行实测的字高，不写死：换了字体或字号它跟着变。
+     * 与字隔开四分之一个字高。只画图形不画字：这一行里已经写着「NovaBot」。
+     * <p>
+     * 包内可见：最窄那种图上整行越没越过左边距，判据要直接量这个数
+     *
+     * @return 整行宽度，图标边长
+     */
+    Pair<Integer, Integer> copyrightLineWidthAndMarkSize() {
+        Pair<Integer, Integer> size = getStringWidthAndHeight(copyrightLine());
+        int markSize = size.getSecond();
+        return Pair.of(markSize + markSize / 4 + size.getFirst(), markSize);
     }
 
     /**

@@ -52,7 +52,7 @@ final class WordCloudLayout {
         Map<String,Integer> merged=new TreeMap<>();
         if(words!=null) for(Word w:words) {
             if(w==null || w.text()==null || w.text().isBlank() || w.count()<=0) continue;
-            String text=w.text().strip();
+            String text=UserText.singleLine(w.text());
             merged.merge(text,w.count(),(a,b)->(int)Math.min(Integer.MAX_VALUE,(long)a+b));
         }
         List<Word> sorted = new ArrayList<>();

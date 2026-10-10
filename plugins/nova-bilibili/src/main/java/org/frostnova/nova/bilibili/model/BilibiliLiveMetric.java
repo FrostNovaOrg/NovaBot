@@ -115,9 +115,9 @@ public final class BilibiliLiveMetric {
     public static final String REVENUE_USERS = "revenue_users";
 
     /**
-     * 流水排行的口径说明，展示在榜单下方
+     * 流水排行的口径说明，展示在排行榜命令出的榜单下方
      * <p>
-     * 与 {@link #GIFT_RANKING_NOTE} 同一条理由：报告图与排行榜命令读的是同一份文本。
+     * 下播报告里不画这句：报告不解释数是怎么算的。
      * 「不是观众实付」那句沿礼物榜的话——背包礼物与盲盒开出物按主播收到的价值计。
      */
     public static final String REVENUE_RANKING_NOTE =

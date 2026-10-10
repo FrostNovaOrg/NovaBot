@@ -1105,7 +1105,7 @@ public class BilibiliLiveReportPainter {
         curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
                 peak -> Math.round(peak) + " 人看过"));
         curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
-                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径"));
+                peak -> Math.round(peak) + " 人", true));
         return curves;
     }
 
@@ -1235,15 +1235,7 @@ public class BilibiliLiveReportPainter {
         }
         painter.drawTextWithStyle(title, new Point(MARGIN, top));
 
-        int heading = 34;
-        if (curve.caption() != null && !curve.caption().isBlank()) {
-            painter.drawTextWithStyle(
-                    List.of(new TextWithStyle(curve.caption(), 20, COLOR_TIP, Font.PLAIN)),
-                    new Point(MARGIN, top + 28));
-            heading = 52;
-        }
-
-        int chartTop = top + heading;
+        int chartTop = top + 34;
         int baseline = chartTop + CURVE_HEIGHT;
 
         // 按「有没有采到」把列切成一段一段：采到的画面积或折线，没采到的画斜纹
@@ -1942,8 +1934,12 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 流水排行。有分人流水表按它排；没有的旧场次（回放、补出报告）按礼物＋醒目留言的
-     * 分人数据排，并把口径写明——上舰那一截旧数据里没有，硬编一个数进来才是出错。
+     * 分人数据排，并写明这一场少算了上舰——上舰那一截旧数据里没有，硬编一个数进来才是出错。
      * 合成那份在 {@link RevenueRankings}，与排行榜命令共用
+     * <p>
+     * 有分人流水表的场次不写口径说明（{@link BilibiliLiveMetric#REVENUE_RANKING_NOTE}）：
+     * 报告里不解释数是怎么算的，那句只留给群里的排行榜命令。回落那句不是解释口径，
+     * 是告诉人这一场的数不全，所以留着
      */
     private void drawRevenueRanking(CommonPainter painter, String platform, Long uid, int limit) {
         if (limit <= 0) {
@@ -1951,7 +1947,7 @@ public class BilibiliLiveReportPainter {
         }
         List<UserScore> ranking = revenueRanking(platform, uid, limit);
         String note = hasRevenueUserData(platform, uid)
-                ? BilibiliLiveMetric.REVENUE_RANKING_NOTE
+                ? null
                 : BilibiliLiveMetric.REVENUE_RANKING_FALLBACK_NOTE;
         drawRankingRows(painter, "流水排行", ranking, score -> "¥" + yuan(score), note);
     }
@@ -2140,9 +2136,11 @@ public class BilibiliLiveReportPainter {
             if (count == 0) {
                 count = own.size();
             }
-            // 多条按时间接起来（原文记录本身就是按时间追加的），句与句之间用「／」隔开
+            // 多条按时间接起来（原文记录本身就是按时间追加的），句与句之间用「／」隔开。
+            // 每条先收成一行：名单给原文只留一行，原文里的换行会把后半句压到下一位身上
             String joined = own.stream()
                     .map(DanmuRecord::text)
+                    .map(UserText::singleLine)
                     .filter(text -> text != null && !text.isBlank())
                     .reduce((left, right) -> left + "／" + right)
                     .orElse("");
@@ -2225,7 +2223,7 @@ public class BilibiliLiveReportPainter {
 
     private int nicknameWidth(CommonPainter painter, String name) {
         return painter.getStringWidthAndHeight(
-                new TextWithStyle(name == null ? "" : name, ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
+                new TextWithStyle(name == null ? "" : UserText.singleLine(name), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
     }
 
     private int badgeWidth(CommonPainter painter, GuardMember member) {
@@ -2233,7 +2231,7 @@ public class BilibiliLiveReportPainter {
         if (medal == null) {
             return GUARD_ICON_SIZE;
         }
-        int nameWidth = medalTextWidth(painter, medal.name(), Font.PLAIN);
+        int nameWidth = medalTextWidth(painter, UserText.singleLine(medal.name()), Font.PLAIN);
         int levelWidth = medalTextWidth(painter, Integer.toString(medal.level()), Font.BOLD);
         return GUARD_ICON_SIZE + 2 + nameWidth + 4 + levelWidth + 8;
     }
@@ -2257,7 +2255,7 @@ public class BilibiliLiveReportPainter {
         int nameMax = slotWidth - badge.getWidth() - ROSTER_NAME_GAP
                 - (marked ? ROSTER_TAG_GAP + ROSTER_TAG_WIDTH : 0);
         TextWithStyle name = new TextWithStyle(
-                member.name() == null ? "" : member.name(), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN);
+                member.name() == null ? "" : UserText.singleLine(member.name()), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN);
         name.setText(painter.truncateToWidth(name, Math.max(0, nameMax)));
         painter.drawTextWithStyle(List.of(name), new Point(x + badge.getWidth() + ROSTER_NAME_GAP, y + 6));
 
@@ -2365,7 +2363,7 @@ public class BilibiliLiveReportPainter {
         graphics.draw(bar);
 
         int textX = GUARD_ICON_SIZE + 2;
-        textX = drawMedalText(graphics, medal.name(), textX, barY, Font.PLAIN, medal.text());
+        textX = drawMedalText(graphics, UserText.singleLine(medal.name()), textX, barY, Font.PLAIN, medal.text());
         drawMedalText(graphics, Integer.toString(medal.level()), textX + 4, barY, Font.BOLD, medal.text());
 
         int iconY = (height - GUARD_ICON_SIZE) / 2;
@@ -2609,7 +2607,7 @@ public class BilibiliLiveReportPainter {
      * {@code substring} 会把 emoji 劈成半个代理项，而昵称里 emoji 很常见。
      */
     private String truncate(CommonPainter painter, String name) {
-        return painter.truncateToWidth(new TextWithStyle(name, 24, COLOR_TEXT, Font.PLAIN), NAME_MAX_WIDTH);
+        return painter.truncateToWidth(new TextWithStyle(UserText.singleLine(name), 24, COLOR_TEXT, Font.PLAIN), NAME_MAX_WIDTH);
     }
 
     /**
@@ -3259,23 +3257,22 @@ public class BilibiliLiveReportPainter {
      * @param color 面积或折线配色
      * @param peakText 峰值文案，为 null 时不标峰值（金额曲线在不展示金额的会话里即为此情形）
      * @param polyline true 时画折线（不填充），false 时画面积
-     * @param caption 标题下一行小字，null 则不画
      * @param series 合成曲线自带的时序；按指标取数的那几条为 null
      */
     record Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
-                 boolean polyline, String caption, Map<Long, Double> series) {
+                 boolean polyline, Map<Long, Double> series) {
         private Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
-            this(title, metric, color, peakText, false, null, null);
+            this(title, metric, color, peakText, false, null);
         }
 
         private Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
-                      boolean polyline, String caption) {
-            this(title, metric, color, peakText, polyline, caption, null);
+                      boolean polyline) {
+            this(title, metric, color, peakText, polyline, null);
         }
 
         private Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
                       Map<Long, Double> series) {
-            this(title, metric, color, peakText, false, null, series);
+            this(title, metric, color, peakText, false, series);
         }
     }
 }
