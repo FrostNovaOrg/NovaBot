@@ -310,6 +310,37 @@ eq(spotFromDom(nestedBody, outerPill, 0).index, 0, '外层药丸是第 0 格');
 eq(spotFromDom(nestedBody, innerPill, 0).index, 1,
   '内层药丸是第 1 格——读回的块表里它也在第 1 格，两边数出的块序一致');
 
+// ---------- 十一、光标停在正文本身时的落点 ----------
+// 抓的是「插进来的块歪了几个字」：光标停在两个孩子之间、后一个是文字时，
+// 偏移数的是第几个孩子，不是第几个字；落点应是那段文字的第 0 个字
+const gapBody = domEl('div', null, [domText('前面'), domPill('{uname}', false), domText('后面的字')]);
+eq(spotFromDom(gapBody, gapBody, 2), {index: 2, offset: 0, onPill: false},
+  '光标在药丸与后一段文字之间：落在那段文字的第 0 个字，不按「第 2 个孩子」往后挪 2 个字');
+const splitBody = domEl('div', null, [domText('甲乙'), domText('丙丁')]);
+eq(spotFromDom(splitBody, splitBody, 1), {index: 0, offset: 2, onPill: false},
+  '同一块的两个文字节点之间：落在后一段的第 0 个字，即这一块的第 2 个字');
+
+// 抓的是「块被插到最后」：光标停在换行前，落点是换行前面，不跑到所有块之后
+const brBody = domEl('div', null, [domText('甲乙'), domEl('br'), domText('丙')]);
+eq(spotFromDom(brBody, brBody, 1), {index: 0, offset: 2, onPill: false},
+  '光标在换行前：落在这一块已数到的第 2 个字，不落到末尾');
+const pillBrBody = domEl('div', null, [domPill('{uname}', false), domText('甲'), domEl('br'), domText('乙')]);
+eq(spotFromDom(pillBrBody, pillBrBody, 2), {index: 1, offset: 1, onPill: false},
+  '药丸后面那一块里的换行前：落在第 1 块第 1 个字');
+
+// 守住：光标在文字中间、在块上、在空卡片上，落点与原先一样
+eq(spotFromDom(gapBody, gapBody.childNodes[2], 3), {index: 2, offset: 3, onPill: false},
+  '光标在文字中间：仍是这一块的第 3 个字');
+eq(spotFromDom(gapBody, gapBody, 1), {index: 1, offset: 0, onPill: true},
+  '光标在药丸前（容器是正文）：仍落在药丸那一格');
+eq(spotFromDom(gapBody, gapBody.childNodes[1], 0), {index: 1, offset: 0, onPill: true},
+  '光标在药丸上：仍落在药丸那一格');
+const emptyBody = domEl('div', null, []);
+eq(spotFromDom(emptyBody, emptyBody, 0), {index: 0, offset: 0, onPill: false},
+  '空卡片：落在第 0 格');
+eq(spotFromDom(gapBody, gapBody, 3), {index: 3, offset: 0, onPill: false},
+  '光标在所有孩子之后：仍落在所有块之后');
+
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
