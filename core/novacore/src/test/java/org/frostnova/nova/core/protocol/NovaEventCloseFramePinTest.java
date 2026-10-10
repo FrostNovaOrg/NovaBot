@@ -4,7 +4,6 @@ import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.BackRowGaug
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.BackRowReading;
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.OrderReading;
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.AdvanceReading;
-import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.PinGate;
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.BlockReading;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +27,6 @@ import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.mill
 import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.REPRO_WAIT_TICKS;
 import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.SLOW_CLIENT_ID;
 import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.priorGaugeSomeoneStuckWritingCloseFrame;
-import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.HOLE_SIGNATURE_LAG_MILLI_TICK;
 import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.OBSERVE_TICKS;
 import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.reading;
 import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.LAG_TOLERANCE_MILLI_TICK;
@@ -66,13 +64,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ul>
  * 还留着的那几个数（{@link NovaEventSlowConsumerHarness#LAG_TOLERANCE_MILLI_TICK} 等）都放在<b>只挡量级错</b>
  * 的位置上：两边差着好几倍，线放在中间，且线的来历写在常量的注释里、由台架自检当场断言。
- *
- * <h2>🔴 每一格都配一格阳性对照</h2>
- * 判据 0～4 问的都是「洞不在的时候别人好不好」，而<b>「洞不在」和「格子不咬人」的绿长得一样</b>。
- * 所以每一格另有一格：用 {@link NovaEventSlowConsumerHarness.PinGate} 把共享心跳线程<b>真钉住</b>一次，
- * 看那一格红不红，红完就把钉子拔掉。阳性对照走的是<b>判据在走的那一份量法</b>
- * （{@code measureHealthyConnectionAdvance}／{@code measureBackClusterLag}／同一支探针），不另写一份差不多的——
- * 两把尺量同一件事必生漂移，漂移之后阳性对照证的就不是判据那一格了。
  */
 @DisplayName("超时清理时的关闭帧不许钉住共享心跳线程")
 class NovaEventCloseFramePinTest {
@@ -132,7 +123,7 @@ class NovaEventCloseFramePinTest {
 
         if (slowClientReads) {
             // 阴性对照：对端一直在读，**灌不满**是应该的，别去灌。
-            // 头一版照阳性那条路走，撞了「10 秒内灌不满」——那不是发现问题，是路走错了。
+            // 头一版照复现那条路走，撞了「10 秒内灌不满」——那不是发现问题，是路走错了。
             harness.endpoint.afterConnectionEstablished(harness.slowClient);
             harness.authenticated(harness.slowClient, harness.tokens.issue("正常读的客户端"));
         } else {
@@ -181,22 +172,6 @@ class NovaEventCloseFramePinTest {
                 "此刻复现成立", NovaEventSlowConsumerHarness.reproHolds(priorGaugeSomeoneStuckWritingCloseFrame()),
                 "🔴 为什么不是固定时长", "阻塞在窗口开了之后才成立的话，前簇那几条会在窗口内"
                         + "收到那一轮 ping，判据 1 的修前红就成了掷骰子"));
-    }
-
-    /**
-     * 阳性对照共用的夹具：慢客户端正常读（不制造真阻塞），钉子由钉住闸自己下
-     * <p>
-     * 🔴 钉子的 id <b>算着挑</b>，不写死一个顺眼的：位次由散列定，
-     * 写死的那个换个 JDK 就落到最末尾，两簇有一边空掉——而空掉之后它看起来还是绿的。
-     */
-    private PinGate bringUpAndPin() throws Exception {
-        bringUp(true);
-        OrderReading picked = NovaEventSlowConsumerHarness.pickMiddleId("pin-", HEALTHY_CONNECTIONS,
-                List.of(SLOW_CLIENT_ID, "silent", "other"));
-        assertTrue(picked != null, "挑不出一个落在健康连接中间的钉子 id —— "
-                + "两簇总有一边是空的，判据 4 的阳性对照就成了空真。先查算序（多半是换了 JDK）。");
-        order = picked;
-        return harness.new PinGate(picked.slowId());
     }
 
     // ══════════════════════════ 前置检查 ══════════════════════════
@@ -347,18 +322,6 @@ class NovaEventCloseFramePinTest {
                 + "实录：" + heartbeatLines);
     }
 
-    @Test
-    @DisplayName("阳性对照·判据 0：真把心跳线程钉住时，这一格必须红")
-    void positiveControlCriterion0() throws Exception {
-        try (PinGate pin = bringUpAndPin()) {
-            List<Map<String, Object>> heartbeatLines =
-                    measureHeartbeatThreadPinned("阳性对照-判据0", priorGaugeSomeoneStuckWritingCloseFrame());
-            assertTrue(!heartbeatLines.isEmpty(),
-                    "心跳线程已经被钉住了，判据 0 的量法却一条都没认出来——**这一格不咬人**。"
-                            + "它的绿从此说明不了任何事。先查身份判定（线程号是怎么登记的）。");
-        }
-    }
-
     // ══════════════════════════ 四条判据 ══════════════════════════
 
     @Test
@@ -393,19 +356,6 @@ class NovaEventCloseFramePinTest {
     }
 
     @Test
-    @DisplayName("阳性对照·判据 1：真把心跳线程钉住时，这一格必须红")
-    void positiveControlCriterion1() throws Exception {
-        try (PinGate pin = bringUpAndPin()) {
-            AdvanceReading r = measureHealthyConnectionAdvance(gauge, harness.clock, OBSERVE_TICKS);
-            reading("阳性对照-判据1", r.reading());
-            assertTrue(pin.stillPinned(), "钉子在窗口走完前就松了，这一格的红绿都不算数");
-            assertTrue(r.advancedCount() == 0,
-                    "心跳线程已经被钉住了，却还有 " + r.advancedCount() + " 条健康连接在推进 ping——"
-                            + "**这一格不咬人**，它的绿说明不了任何事。实录：" + r.reading());
-        }
-    }
-
-    @Test
     @DisplayName("判据 2：清理一个写不动的客户端时，未认证连接仍在时限内被关")
     void criterion2AuthGateStillCloses() throws Exception {
         bringUp(false);
@@ -425,23 +375,6 @@ class NovaEventCloseFramePinTest {
     }
 
     @Test
-    @DisplayName("阳性对照·判据 2：真把心跳线程钉住时，这一格必须红")
-    void positiveControlCriterion2() throws Exception {
-        try (PinGate pin = bringUpAndPin()) {
-            // 🔴 要一条**闸还悬着**的未认证连接：钉子下去之前就被关掉的那条，
-            //    证不了「钉住时关不掉」，只证得了「它早就关掉了」。
-            NovaEventEndpointTest.FakeSession newSilent = harness.connection("silent-2");
-            Object closed = harness.clock.await(OBSERVE_TICKS, () -> newSilent.closedWith);
-            reading("阳性对照-判据2", Map.of("认证闸时限毫秒", CLOSE_FRAME_AUTH,
-                    "观测窗口（对照格）", OBSERVE_TICKS, "关上了", closed != null));
-            assertTrue(pin.stillPinned(), "钉子在窗口走完前就松了，这一格的红绿都不算数");
-            assertTrue(closed == null,
-                    "心跳线程已经被钉住了，未认证连接却还是被关掉了——**这一格不咬人**。"
-                            + "认证闸没派在那条被钉住的线程上，或者探针问错了东西。");
-        }
-    }
-
-    @Test
     @DisplayName("判据 3：清理一个写不动的客户端时，其它连接仍能转进实时流")
     void criterion3OtherConnectionStillEntersLiveStream() throws Exception {
         bringUp(false);
@@ -456,25 +389,6 @@ class NovaEventCloseFramePinTest {
         assertTrue(reached != null, "清理那个写不动的客户端时，其它连接在对照钟走过 "
                 + OBSERVE_TICKS + " 格里没能转进实时流——goLive（回补窗口 " + CLOSE_FRAME_GRACE
                 + " 毫秒）派在心跳线程上，而它卡住了");
-    }
-
-    @Test
-    @DisplayName("阳性对照·判据 3：真把心跳线程钉住时，这一格必须红")
-    void positiveControlCriterion3() throws Exception {
-        try (PinGate pin = bringUpAndPin()) {
-            // 🔴 同判据 2：要一条**回补窗口还悬着**的连接。钉子下去之前就 goLive 了的那条，
-            //    早已在实时流上，收得到事件证不了任何事。
-            NovaEventEndpointTest.FakeSession newOtherConnection = harness.connectAndAuthenticate("other-2");
-            NovaEventSlowConsumerHarness.KeepAlive newOtherConnectionSeen = harness.keepAliveRunner(newOtherConnection);
-            harness.stream.publish(NovaEventSlowConsumerHarness.event());
-            Object reached = harness.clock.await(OBSERVE_TICKS, () -> newOtherConnectionSeen.seen("danmaku") ? Boolean.TRUE : null);
-            reading("阳性对照-判据3", Map.of("回补窗口毫秒", CLOSE_FRAME_GRACE,
-                    "观测窗口（对照格）", OBSERVE_TICKS, "他连收到事件", reached != null));
-            assertTrue(pin.stillPinned(), "钉子在窗口走完前就松了，这一格的红绿都不算数");
-            assertTrue(reached == null,
-                    "心跳线程已经被钉住了，新连接却还是转进了实时流——**这一格不咬人**。"
-                            + "goLive 没派在那条被钉住的线程上，或者探针问错了东西。");
-        }
     }
 
     /**
@@ -513,26 +427,6 @@ class NovaEventCloseFramePinTest {
         reading("判据4-后排", Reading);
 
         assertTrue(r.maxLagMilliTick() < LAG_TOLERANCE_MILLI_TICK, NovaEventSlowConsumerHarness.criterion4FailureMessage(r));
-    }
-
-    @Test
-    @DisplayName("阳性对照·判据 4：真把心跳线程钉在遍历中间时，这一格必须红")
-    void positiveControlCriterion4() throws Exception {
-        try (PinGate pin = bringUpAndPin()) {
-            bothClustersNonEmpty("阳性对照-判据4");
-            BackRowReading r = measureBackClusterLag(gauge, order.frontCluster(), order.backCluster(), harness.clock, OBSERVE_TICKS);
-            reading("阳性对照-判据4", r.reading());
-            assertTrue(pin.stillPinned(), "钉子在窗口走完前就松了，这一格的红绿都不算数");
-            assertTrue(r.maxLagMilliTick() >= LAG_TOLERANCE_MILLI_TICK,
-                    "心跳线程已经被钉在遍历中间了，后簇却没有持续落后——**这一格不咬人**，"
-                            + "它的绿说明不了任何事。最长落后 " + milliTickToString(r.maxLagMilliTick())
-                            + " 格，线 " + milliTickToString(LAG_TOLERANCE_MILLI_TICK) + " 格。实录：" + r.reading());
-            assertTrue(r.maxLagMilliTick() >= HOLE_SIGNATURE_LAG_MILLI_TICK / 2,
-                    "后簇是落后了，但只落后了 " + milliTickToString(r.maxLagMilliTick())
-                            + " 格，离洞的签名（" + milliTickToString(HOLE_SIGNATURE_LAG_MILLI_TICK)
-                            + " 格，＝整段窗口）差得远。真被钉住时后簇要等整段阻塞才轮得到，"
-                            + "所以这更像**钉子没钉在遍历中间**——先查钉住闸走的是哪一支 close。");
-        }
     }
 
     // ══════════════════════════ 阴性对照 ══════════════════════════

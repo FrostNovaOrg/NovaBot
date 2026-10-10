@@ -116,10 +116,6 @@ class NovaEventSlowConsumerTest {
          * <p>
          * 默认 {@link NovaEventSlowConsumerHarness#CLOSE_FRAME_BYTES}——协议里关闭帧载荷的上限，
          * <b>量的东西要和要防的东西同尺寸</b>。
-         * <p>
-         * 🔴 阳性对照那把钉子要它<b>大得多</b>：125 字节会被内核随时间放大的接收缓冲吃掉，
-         * 于是钉子在两三秒后自己松开——而<b>松开的钉子和「格子不咬人」长得一模一样</b>。
-         * 写一个对端永远吞不下的数，这把钉子就只由我们自己拔（关掉对端 socket）。
          */
         private final int closeWriteBytes;
 

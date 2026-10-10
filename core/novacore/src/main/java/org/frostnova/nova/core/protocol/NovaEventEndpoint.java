@@ -312,7 +312,8 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 return;
             }
             log.info("事件流客户端 {} 连上后 {} 毫秒内未发认证帧, 已断开", session.getId(), timings.authTimeout());
-            close(CloseStatus.POLICY_VIOLATION.withReason("未在时限内认证"));
+            // 跑在共享心跳线程上：关闭帧是阻塞写，交给发送线程池，见 closeAsync
+            closeAsync(CloseStatus.POLICY_VIOLATION.withReason("未在时限内认证"));
         }
 
         /**
@@ -379,14 +380,17 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         }
 
         /**
-         * 入队一条消息，队列满就地断开
+         * 入队一条消息，队列满就断开
          * <p>
          * <b>只入队，不发送。</b> 调用方是心跳线程或入站线程，不持事件流的锁；
          * 事件流锁里的那一路走 {@link #onFrame}。
+         * <p>
+         * 队列满时断开同样走 {@link #closeAsync}：心跳线程给每条连接发 ping 走的就是这里，
+         * 就地写关闭帧的话，一条写不动的连接会让这一轮心跳停住，排在后面的连接收不到 ping。
          */
         private void send(String json) {
             if (!enqueue(json)) {
-                close(CloseStatus.SERVICE_OVERLOAD.withReason("客户端消费过慢"));
+                closeAsync(CloseStatus.SERVICE_OVERLOAD.withReason("客户端消费过慢"));
             }
         }
 

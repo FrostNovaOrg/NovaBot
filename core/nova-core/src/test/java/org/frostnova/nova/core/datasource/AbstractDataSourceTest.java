@@ -300,6 +300,55 @@ class AbstractDataSourceTest {
     }
 
     @Test
+    @DisplayName("已达上限时一次更新里停用一位、加上一位, 新的那位应被加载")
+    void shouldSwapStreamerWhenAtLimit() {
+        // 使用者故障：监控满了的用户在配置里停用一位、加上新的一位，保存后新主播没被加载，
+        // 旧的也撤了，只剩少一位在监控，日志里还写「超出上限」，重启以后才正常
+        List<PushUser> ten = new ArrayList<>();
+        for (long uid = 1; uid <= 10; uid++) {
+            ten.add(user(uid, true));
+        }
+        dataSource.add(ten);
+
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AbstractDataSource.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            dataSource.update(new ArrayList<>(List.of(user(3L, false), user(11L, true))));
+
+            assertEquals(10, dataSource.getAllUsers().size(), "换人之后应正好满额");
+            assertTrue(dataSource.getUser(PLATFORM, 11L).isPresent(), "新加的那位应被加载");
+            assertTrue(dataSource.getUser(PLATFORM, 3L).isEmpty(), "停用的那位应被撤掉");
+
+            List<String> overLimit = appender.list.stream()
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.contains("超出上限"))
+                    .toList();
+            assertTrue(overLimit.isEmpty(), "换人不该记「超出上限」: " + overLimit);
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("未达上限时一次更新里停用一位、加上两位, 照旧增删")
+    void shouldAddAndRemoveInOneUpdateBelowLimit() {
+        dataSource.add(new ArrayList<>(List.of(user(1L, true), user(2L, true), user(3L, true))));
+
+        dataSource.update(new ArrayList<>(List.of(user(2L, false), user(4L, true), user(5L, true))));
+
+        assertEquals(4, dataSource.getAllUsers().size());
+        assertTrue(dataSource.getUser(PLATFORM, 2L).isEmpty(), "停用的那位应被撤掉");
+        assertTrue(dataSource.getUser(PLATFORM, 4L).isPresent(), "新加的应被加载");
+        assertTrue(dataSource.getUser(PLATFORM, 5L).isPresent(), "新加的应被加载");
+        assertEquals(6, dataSource.remainingCapacity());
+    }
+
+    @Test
     @DisplayName("剩余名额应随已监控的主播数递减到零")
     void shouldReportRemainingCapacity() {
         assertEquals(10, dataSource.remainingCapacity(), "空数据源应有满额的名额");
