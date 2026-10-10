@@ -4,6 +4,7 @@
 # 搜索、只看改过、危险项围栏，全是纯函数
 # （config-ui/settings-model.js，不碰 DOM）。本尺喂它几份字段表条目对答案，
 # 并顺带把这一页那几个前端模块过一遍语法。
+# 开关值那份行为夹具在测试 SettingsValuesCheckTest 里跑，本尺不再跑一遍。
 #
 # 🔴 用 `node --input-type=module --check < 文件` 而不是 `node --check 文件`：
 #    后者对含 import 的 .js 一律返 0（Node v22 实测），也就是说那一格从来没能红过——
@@ -49,11 +50,6 @@ done
 
 # —— 各档 ——
 node tools/settings-model-check.mjs
-if [ $? -ne 0 ]; then
-    RED=1
-fi
-
-node tools/settings-values-check.mjs
 if [ $? -ne 0 ]; then
     RED=1
 fi
