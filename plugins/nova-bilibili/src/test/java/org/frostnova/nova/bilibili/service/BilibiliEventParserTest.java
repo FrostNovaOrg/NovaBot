@@ -2334,7 +2334,8 @@ class BilibiliEventParserTest {
         assertEquals(32251L, event.getRandomGiftInfo().getId(), "randomGiftInfo 应为投入的盲盒");
         assertEquals(31036L, event.getGiftInfo().getId(), "giftInfo 应为开出的礼物");
         assertEquals(6.0, event.getPrice(), "投入 3 个单价 2 元的盲盒应为 6 元");
-        assertEquals(3.0, event.getProfit() == null ? 3.0 : 3.0);
+        // 盈亏 = 开出的价值 - 投入的盒价 = 1000/1000 元 × 3 - 2000/1000 元 × 3 = 3.0 - 6.0 = -3.0
+        assertEquals(-3.0, event.getProfit(), 0.0001, "开出 3 元、投入 6 元，盈亏应为 -3 元");
     }
 
     @Test
