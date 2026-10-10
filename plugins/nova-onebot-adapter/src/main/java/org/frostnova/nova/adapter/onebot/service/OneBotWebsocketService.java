@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * OneBot Websocket 服务
@@ -43,6 +44,11 @@ public class OneBotWebsocketService {
      * 存活检测的执行周期
      */
     private static final Duration CHECK_INTERVAL = Duration.ofSeconds(30);
+
+    /**
+     * 连着的会话出错或断开之后，等多久再试第一次
+     */
+    private static final Duration RECONNECT_DELAY = Duration.ofSeconds(1);
 
     /**
      * 一条消息的全部分片拼起来最多多少个字符
@@ -139,7 +145,7 @@ public class OneBotWebsocketService {
 
         Connection connection = new Connection(sender);
         connections.put(sender.getName(), connection);
-        connect(connection);
+        reconnect(connection, Duration.ZERO);
     }
 
     /**
@@ -158,6 +164,10 @@ public class OneBotWebsocketService {
 
         previous.retired = true;
         stopDetect(previous);
+        ScheduledFuture<?> retry = previous.retryTask;
+        if (retry != null) {
+            retry.cancel(false);
+        }
 
         WebSocketSession session = previous.session;
         if (session != null && session.isOpen()) {
@@ -170,100 +180,141 @@ public class OneBotWebsocketService {
     }
 
     /**
-     * 连接到 OneBot Websocket 服务
+     * 这一代连接唯一的重连入口
+     * <p>
+     * 首次连接、传输出错、连接关闭都走这里。断线时出错与关闭两个回调常常先后都来，
+     * 各起一段重连的话会连出两条会话：同一条消息处理两遍，而 {@link #stop} 只关得掉其中一条。
+     * 所以已有一段重连排着或正在试时，再来的请求直接忽略；连上之后才复位
+     * （见 {@link OneBotWebSocketHandler#afterConnectionEstablished}）。
+     * @param connection 这一代连接
+     * @param delay 等多久再试第一次
+     * @return 这次请求有没有起一段新的重连；已有一段在跑、或这一代已作废时为 {@code false}
+     */
+    private boolean reconnect(Connection connection, Duration delay) {
+        if (connection.retired) {
+            return false;
+        }
+        Outage outage = new Outage();
+        if (!connection.outage.compareAndSet(null, outage)) {
+            return false;
+        }
+        scheduleAttempt(connection, outage, delay);
+        return true;
+    }
+
+    /**
+     * 到点提交一次试连
+     * <p>
+     * 退避等待交给调度器，不在线程池里睡：池是各个推送平台共用的，消息的解析与分发、
+     * 存活检测、HTTP 体检都在里面排队。连不上的平台若占着池线程睡退避，
+     * 两个这样的平台就能把默认的两个核心线程占满，别的平台的消息只能一直排着。
+     */
+    private void scheduleAttempt(Connection connection, Outage outage, Duration delay) {
+        Runnable submit = () -> executor.submit(() -> attempt(connection, outage));
+        if (delay.isZero()) {
+            submit.run();
+            return;
+        }
+        try {
+            connection.retryTask = taskScheduler.schedule(submit, Instant.now().plus(delay));
+        } catch (RejectedExecutionException e) {
+            // 调度器已关，进程在退出
+            log.info("已停止重连 {} 的 OneBot Websocket 服务", connection.sender.getName());
+        }
+    }
+
+    /**
+     * 试连一次 OneBot Websocket 服务，失败就按退避排下一次
+     * <p>
+     * 一次试连占着池线程最多到握手超时为止（见 {@link OneBotWebSocketHandler#awaitConnection}）。
      * <p>
      * 连不上的时候日志要按量级合并：退避封顶 60 秒之后重连是每分钟一轮，每轮照打
      * 「准备连接」「连接地址」加一行失败，一小时就是一百八十多行同样的话，
      * 而排障真正要的只有「现在连不上」和「什么时候恢复的」。
      * 合并口径见 {@link #shouldLogRetryFailure}。
      * @param connection 这一代连接
+     * @param outage 这一段重连
      */
-    private void connect(Connection connection) {
+    private void attempt(Connection connection, Outage outage) {
         OneBotSender sender = connection.sender;
-        executor.submit(() -> {
-            int retryCount = 0;
-            int retryInterval = 1;
-            // 这一段重连从什么时候起断着。连上了要说得出断了多久
-            Instant downSince = Instant.now();
-            // 连接地址每轮都是同一个，只在第一次占一行
-            boolean addressLogged = false;
-            // 不可用那条的堆栈只在第一次带；后面每轮都带整段栈，是刷屏的另一半
-            boolean failureStackLogged = false;
-            // 退避里每趟都是同一个地址，拼一次，日志行与 URI 共用
-            String url = OneBotEndpointAddresses.websocketUrl(sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
-            while (!connection.retired) {
-                log.debug("准备连接 {} 的 OneBot Websocket 服务", sender.getName());
-                if (!addressLogged) {
-                    log.info("{} 的 OneBot Websocket 连接地址: {}/", sender.getName(), url);
-                    addressLogged = true;
-                }
+        if (connection.retired) {
+            log.info("已停止重连 {} 的 OneBot Websocket 服务", sender.getName());
+            return;
+        }
 
-                CompletableFuture<WebSocketSession> sessionFuture = null;
-                try {
-                    WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-                    headers.add("Authorization", "Bearer " + sender.getOneBotWebsocketToken());
+        // 退避里每趟都是同一个地址，日志行与 URI 共用
+        String url = OneBotEndpointAddresses.websocketUrl(sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
+        log.debug("准备连接 {} 的 OneBot Websocket 服务", sender.getName());
+        if (!outage.addressLogged) {
+            log.info("{} 的 OneBot Websocket 连接地址: {}/", sender.getName(), url);
+            outage.addressLogged = true;
+        }
 
-                    WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-                    container.setDefaultMaxTextMessageBufferSize(MAX_MESSAGE_CHARS);
-                    StandardWebSocketClient webSocketClient = new StandardWebSocketClient(container);
-                    OneBotWebSocketHandler handler = new OneBotWebSocketHandler(this, connection);
-                    sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
+        CompletableFuture<WebSocketSession> sessionFuture = null;
+        try {
+            WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+            headers.add("Authorization", "Bearer " + sender.getOneBotWebsocketToken());
 
-                    if (handler.awaitConnection()) {
-                        sessionFuture.get();
-                        // 第一次就连上说明没断过，谈不上「恢复」
-                        if (retryCount > 0) {
-                            log.info("{} 的 OneBot Websocket 连接已恢复: 中断了 {}, 重试 {} 次后连上",
-                                    sender.getName(), formatSilence(Duration.between(downSince, Instant.now())), retryCount);
-                        }
-                        break;
-                    } else {
-                        throw new TimeoutException();
-                    }
-                } catch (Exception e) {
-                    if (connection.retired) {
-                        log.info("已停止重连 {} 的 OneBot Websocket 服务", sender.getName());
-                        break;
-                    }
+            WebSocketContainer container = ContainerProvider.getWebSocketContainer();
+            container.setDefaultMaxTextMessageBufferSize(MAX_MESSAGE_CHARS);
+            StandardWebSocketClient webSocketClient = new StandardWebSocketClient(container);
+            OneBotWebSocketHandler handler = new OneBotWebSocketHandler(this, connection);
+            sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
 
-                    retryCount++;
-                    retryInterval = Math.min(retryInterval * 2, 60);
-                    String elapsed = formatSilence(Duration.between(downSince, Instant.now()));
-
-                    if (e instanceof TimeoutException) {
-                        if (shouldLogRetryFailure(retryCount)) {
-                            log.warn("连接 {} 的 OneBot Websocket 服务超时, 已连续失败 {} 次、持续 {}, 将在 {} 秒后进行第 {} 次重试",
-                                    sender.getName(), retryCount, elapsed, retryInterval, retryCount);
-                        }
-                        state.websocketDisconnected(sender.getName(), "连接超时，正在重试（第 " + retryCount + " 次）");
-                        // 该 Future 的任务就运行在当前线程上，以 true 取消会把自己的中断标志置位，
-                        // 使随后的退避等待立刻抛出 InterruptedException，退化为满核空转的重试循环
-                        sessionFuture.cancel(false);
-                    } else {
-                        String message = "{} 的 OneBot Websocket 服务不可用, 请检查配置和服务状态, 已连续失败 {} 次、持续 {}, 将在 {} 秒后进行第 {} 次重试";
-                        if (shouldLogRetryFailure(retryCount)) {
-                            if (failureStackLogged) {
-                                log.error(message, sender.getName(), retryCount, elapsed, retryInterval, retryCount);
-                            } else {
-                                log.error(message, sender.getName(), retryCount, elapsed, retryInterval, retryCount, e);
-                                failureStackLogged = true;
-                            }
-                        }
-                        state.websocketDisconnected(sender.getName(), "连接失败，正在重试（第 " + retryCount + " 次）: " + e.getMessage());
-                    }
-
-                    try {
-                        Thread.sleep(retryInterval * 1000L);
-                    } catch (InterruptedException ex) {
-                        // 收到中断即视为要求停止重连：恢复中断标志后退出循环。
-                        // 若仅恢复标志而继续循环，下一次等待会立即再次抛出，导致线程持续空转
-                        Thread.currentThread().interrupt();
-                        log.info("已停止重连 {} 的 OneBot Websocket 服务", sender.getName());
-                        break;
-                    }
-                }
+            if (!handler.awaitConnection()) {
+                throw new TimeoutException();
             }
-        });
+            sessionFuture.get();
+            // 第一次就连上说明没断过，谈不上「恢复」
+            if (outage.failures > 0) {
+                log.info("{} 的 OneBot Websocket 连接已恢复: 中断了 {}, 重试 {} 次后连上",
+                        sender.getName(), formatSilence(Duration.between(outage.since, Instant.now())), outage.failures);
+            }
+        } catch (Exception e) {
+            if (connection.retired || Thread.currentThread().isInterrupted() || e instanceof InterruptedException) {
+                // 中断即视为要求停止重连（线程池正在关闭）：恢复中断标志，不再排下一次
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                log.info("已停止重连 {} 的 OneBot Websocket 服务", sender.getName());
+                return;
+            }
+            if (connection.outage.get() != outage) {
+                // 这一段已经连上过（握手成功之后才出的错），不再往下排
+                return;
+            }
+
+            int retryCount = ++outage.failures;
+            outage.interval = Math.min(outage.interval * 2, 60);
+            int retryInterval = outage.interval;
+            String elapsed = formatSilence(Duration.between(outage.since, Instant.now()));
+
+            if (e instanceof TimeoutException) {
+                if (shouldLogRetryFailure(retryCount)) {
+                    log.warn("连接 {} 的 OneBot Websocket 服务超时, 已连续失败 {} 次、持续 {}, 将在 {} 秒后进行第 {} 次重试",
+                            sender.getName(), retryCount, elapsed, retryInterval, retryCount);
+                }
+                state.websocketDisconnected(sender.getName(), "连接超时，正在重试（第 " + retryCount + " 次）");
+                // 以 false 取消：握手跑在客户端自己的线程上，这个 Future 是 CompletableFuture，
+                // 传 true 也不会去中断谁。早先写 false 是怕把当前线程的中断标志置位、
+                // 让随后的退避等待立刻抛出而空转；如今退避不在这个线程上等，那一条已不成立，
+                // 但池线程会接着去跑别的平台的活，不该在它身上留任何中断标志，所以仍写 false
+                sessionFuture.cancel(false);
+            } else {
+                String message = "{} 的 OneBot Websocket 服务不可用, 请检查配置和服务状态, 已连续失败 {} 次、持续 {}, 将在 {} 秒后进行第 {} 次重试";
+                if (shouldLogRetryFailure(retryCount)) {
+                    if (outage.failureStackLogged) {
+                        log.error(message, sender.getName(), retryCount, elapsed, retryInterval, retryCount);
+                    } else {
+                        log.error(message, sender.getName(), retryCount, elapsed, retryInterval, retryCount, e);
+                        outage.failureStackLogged = true;
+                    }
+                }
+                state.websocketDisconnected(sender.getName(), "连接失败，正在重试（第 " + retryCount + " 次）: " + e.getMessage());
+            }
+
+            scheduleAttempt(connection, outage, Duration.ofSeconds(retryInterval));
+        }
     }
 
     /**
@@ -307,6 +358,19 @@ public class OneBotWebsocketService {
     }
 
     /**
+     * 在这个推送平台当前那一代连接上造一个处理器，像是这一代新连出来的一条会话
+     * <p>
+     * 与 {@link #handlerFor} 的分别在于它挂在 {@link #start} 起的那一代上：
+     * 判据要量的「停掉之后」「重连几条」，都是这一代上的事。
+     * @param platformName 推送平台名
+     * @return 处理器；这个平台眼下没有连接时为 {@code null}
+     */
+    WebSocketHandler handlerOf(String platformName) {
+        Connection connection = connections.get(platformName);
+        return connection == null ? null : new OneBotWebSocketHandler(this, connection);
+    }
+
+    /**
      * 一个推送平台的一代 Websocket 连接
      * <p>
      * 断旧连新时整代作废：连接本身、正在退避的重试循环、存活检测任务都挂在这上面。
@@ -322,9 +386,56 @@ public class OneBotWebsocketService {
 
         private volatile ScheduledFuture<?> detectTask;
 
+        /**
+         * 存活检测是哪条会话挂的。旧会话的关闭回调只停它自己挂的那个
+         */
+        private volatile OneBotWebSocketHandler detectOwner;
+
+        /**
+         * 眼下连着的那条会话的处理器。换成了新会话之后，旧会话晚到的出错、关闭回调一概不理
+         */
+        private volatile OneBotWebSocketHandler handler;
+
+        /**
+         * 正在跑的那一段重连；为空即没在重连。见 {@link #reconnect}
+         */
+        private final AtomicReference<Outage> outage = new AtomicReference<>();
+
+        /**
+         * 排着的下一次试连，作废时一并取消
+         */
+        private volatile ScheduledFuture<?> retryTask;
+
         private Connection(OneBotSender sender) {
             this.sender = sender;
         }
+    }
+
+    /**
+     * 一段重连：从断开到连上之间的那些试连
+     * <p>
+     * 同一段里的试连一次接一次排着，不会同时跑，所以这几个计数不用加锁；
+     * 一次试连与下一次之间隔着调度器与线程池的提交，前一次写下的这一次看得见。
+     */
+    private static final class Outage {
+        /**
+         * 这一段从什么时候起断着。连上了要说得出断了多久
+         */
+        private final Instant since = Instant.now();
+
+        private int failures;
+
+        private int interval = 1;
+
+        /**
+         * 连接地址每轮都是同一个，只在第一次占一行
+         */
+        private boolean addressLogged;
+
+        /**
+         * 不可用那条的堆栈只在第一次带；后面每轮都带整段栈，是刷屏的另一半
+         */
+        private boolean failureStackLogged;
     }
 
     /**
@@ -338,28 +449,34 @@ public class OneBotWebsocketService {
     private void startDetect(OneBotWebSocketHandler handler) {
         Connection connection = handler.connection;
         String platformName = connection.sender.getName();
-        stopDetect(connection);
-
         Duration timeout = Duration.ofSeconds(properties.getDetect().getWebsocketSilenceTimeout());
 
-        connection.detectTask = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
+        // 与 stop 里的作废、关闭回调里的停检测互斥：作废之后不能再挂上一个没人停的检测
+        synchronized (connection) {
             if (connection.retired) {
                 return;
             }
-
-            OneBotLivenessTracker.Verdict verdict = handler.liveness.evaluate(Instant.now(), timeout);
-
-            switch (verdict.state()) {
-                case ALIVE -> state.websocketConnected(platformName);
-                case SILENT -> {
-                    String silence = formatSilence(verdict.silence());
-                    log.warn("推送平台 {} 的 OneBot Websocket 已 {} 未收到任何数据帧（含心跳）, 连接很可能已失效", platformName, silence);
-                    // 告警统一由健康探针与 HealthAlertMonitor 发出，此处只记录状态
-                    state.websocketDisconnected(platformName, "已 " + silence + " 未收到任何数据帧（含心跳）");
+            stopDetect(connection);
+            connection.detectOwner = handler;
+            connection.detectTask = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
+                if (connection.retired) {
+                    return;
                 }
-                case NO_HEARTBEAT -> warnNoHeartbeat(platformName);
-            }
-        }), Instant.now().plus(CHECK_INTERVAL), CHECK_INTERVAL);
+
+                OneBotLivenessTracker.Verdict verdict = handler.liveness.evaluate(Instant.now(), timeout);
+
+                switch (verdict.state()) {
+                    case ALIVE -> state.websocketConnected(platformName);
+                    case SILENT -> {
+                        String silence = formatSilence(verdict.silence());
+                        log.warn("推送平台 {} 的 OneBot Websocket 已 {} 未收到任何数据帧（含心跳）, 连接很可能已失效", platformName, silence);
+                        // 告警统一由健康探针与 HealthAlertMonitor 发出，此处只记录状态
+                        state.websocketDisconnected(platformName, "已 " + silence + " 未收到任何数据帧（含心跳）");
+                    }
+                    case NO_HEARTBEAT -> warnNoHeartbeat(platformName);
+                }
+            }), Instant.now().plus(CHECK_INTERVAL), CHECK_INTERVAL);
+        }
     }
 
     /**
@@ -373,10 +490,26 @@ public class OneBotWebsocketService {
      * @param connection 这一代连接
      */
     private void stopDetect(Connection connection) {
-        ScheduledFuture<?> previous = connection.detectTask;
-        if (previous != null) {
+        stopDetect(connection, null);
+    }
+
+    /**
+     * 停止某一代连接上由某条会话挂的存活检测
+     * <p>
+     * 同一代里重连出的新会话会重新挂一个检测。旧会话的关闭回调常常晚于新会话挂好检测才到，
+     * 这时它不能去停新会话的那一个：停了的话新会话此后再也不检测，界面上却一切正常。
+     * @param connection 这一代连接
+     * @param owner 只停这条会话挂的；为 {@code null} 时不论是谁挂的都停
+     */
+    private void stopDetect(Connection connection, OneBotWebSocketHandler owner) {
+        synchronized (connection) {
+            ScheduledFuture<?> previous = connection.detectTask;
+            if (previous == null || (owner != null && connection.detectOwner != owner)) {
+                return;
+            }
             previous.cancel(false);
             connection.detectTask = null;
+            connection.detectOwner = null;
         }
     }
 
@@ -490,6 +623,9 @@ public class OneBotWebsocketService {
                 }
             }
 
+            connection.handler = this;
+            // 连上了，这一段重连到此为止；之后再断才起下一段
+            connection.outage.set(null);
             service.state.websocketConnected(sender.getName());
             // 连上那一刻就补做一次体检，不等下一个周期：刚扫码登录完的人
             // 看着没变的旧读数，会以为扫码没成
@@ -536,6 +672,11 @@ public class OneBotWebsocketService {
                         messageBuffer.setLength(0);
 
                         executor.submit(() -> {
+                            // 排队期间这一代可能已被换掉或停用：那之后它的消息一概不处理，
+                            // 否则旧连接里排着的一条会被当成指令执行，或把新连接的状态改掉
+                            if (connection.retired) {
+                                return;
+                            }
                             try {
                                 JSONObject rawMessage = JSON.parseObject(fullMessage);
                                 if (tokenVerify == null) {
@@ -660,6 +801,9 @@ public class OneBotWebsocketService {
                 // 字段缺失只说明这个实现不上报，不能据此断定账号掉线
                 return;
             }
+            if (connection.retired) {
+                return;
+            }
 
             if (online) {
                 service.state.accountOnline(sender.getName(), "在线");
@@ -676,6 +820,9 @@ public class OneBotWebsocketService {
          * @param rawMessage 通知消息
          */
         private void handleBotOffline(JSONObject rawMessage) {
+            if (connection.retired) {
+                return;
+            }
             String reason = rawMessage.getString("reason");
             String detail = StringUtil.isBlank(reason) ? "QQ 账号已掉线" : "QQ 账号已掉线（" + reason + "）";
             log.warn("{} 的 QQ 账号被踢下线: {}", sender.getName(), detail);
@@ -689,22 +836,16 @@ public class OneBotWebsocketService {
          */
         @Override
         public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
-            if (connection.retired) {
+            // 这一代已换上了新会话时，旧会话晚到的回调不再起重连
+            if (connection.retired || connection.handler != this) {
                 return;
             }
 
-            executor.submit(() -> {
+            if (service.reconnect(connection, RECONNECT_DELAY)) {
                 log.warn("与 {} 的 Websocket 连接异常, 将在 1 秒后重新连接", sender.getName(), exception);
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("重新连接 {} 的 Websocket 时中断", sender.getName(), e);
-                }
-                if (!connection.retired) {
-                    service.connect(connection);
-                }
-            });
+            } else {
+                log.warn("与 {} 的 Websocket 连接异常, 已在重连", sender.getName(), exception);
+            }
         }
 
         /**
@@ -714,12 +855,14 @@ public class OneBotWebsocketService {
          */
         @Override
         public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus closeStatus) {
-            // 存活检测认的是这个连接的计时器，连接没了就得停，否则它会拿旧数据把状态改回「已连接」
-            service.stopDetect(connection);
+            // 存活检测认的是这个连接的计时器，连接没了就得停，否则它会拿旧数据把状态改回「已连接」。
+            // 只停这条会话自己挂的：同一代里重连出的新会话可能已经挂好了它的那一个
+            service.stopDetect(connection, this);
 
             // 这一代是被主动换掉的：既不重连，也不写连接状态。写了的话，
-            // 一条已经作废的连接会拿它的死讯覆盖新连接刚记下的「已连接」
-            if (connectTimeout || connection.retired) {
+            // 一条已经作废的连接会拿它的死讯覆盖新连接刚记下的「已连接」。
+            // 同一代里已换上新会话时同理，旧会话晚到的关闭回调什么也不做
+            if (connectTimeout || connection.retired || connection.handler != this) {
                 return;
             }
 
@@ -731,18 +874,9 @@ public class OneBotWebsocketService {
             service.state.websocketDisconnected(sender.getName(),
                     "连接断开（" + closeStatus.getCode() + "），正在重连");
 
-            executor.submit(() -> {
+            if (service.reconnect(connection, RECONNECT_DELAY)) {
                 log.warn("与 {} 的 Websocket 连接断开 ({}: {}), 将在 1 秒后重新连接", sender.getName(), closeStatus.getCode(), closeStatus.getReason());
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("重新连接 {} 的 Websocket 时中断", sender.getName(), e);
-                }
-                if (!connection.retired) {
-                    service.connect(connection);
-                }
-            });
+            }
         }
 
         /**
