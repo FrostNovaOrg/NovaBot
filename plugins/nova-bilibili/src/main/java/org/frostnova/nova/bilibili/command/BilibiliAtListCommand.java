@@ -221,7 +221,7 @@ public class BilibiliAtListCommand extends BilibiliAtCommand {
     private List<Row> rows(CommandContext context, PushUser streamer) {
         List<Row> rows = new ArrayList<>();
         for (BilibiliAtNoticeKind kind : kinds(context)) {
-            if (settings.isDisabled(context.getPlatform(), context.getNum(), listKey(kind))) {
+            if (settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), listKey(kind))) {
                 continue;
             }
             // 配成 @全体成员的那一类没有「单独订阅」这回事，说清而不是列一张空名单

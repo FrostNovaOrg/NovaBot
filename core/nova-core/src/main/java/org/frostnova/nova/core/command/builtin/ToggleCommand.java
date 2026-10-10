@@ -106,8 +106,8 @@ public abstract class ToggleCommand implements NovaCommand {
         boolean changed = false;
         for (String key : keys) {
             boolean one = enabling()
-                    ? settings.enable(context.getPlatform(), context.getNum(), key)
-                    : settings.disable(context.getPlatform(), context.getNum(), key);
+                    ? settings.enable(context.getPlatform(), context.getType(), context.getNum(), key)
+                    : settings.disable(context.getPlatform(), context.getType(), context.getNum(), key);
             changed |= one;
         }
 

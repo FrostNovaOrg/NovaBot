@@ -151,7 +151,7 @@ class BilibiliLiveReportPushHandlerTest {
         assertFalse(options.getValue().isShowRevenue(), "群聊默认不该带金额");
 
         // 同一份推送参数，改会话设置后应当跟着变
-        revenueVisibility.set("qq-onebot", 30003L, true);
+        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 30003L, true);
         handler.handle(event(), pushMessage());
         verify(painter, times(2)).paint(anyString(), any(), options.capture());
         assertTrue(options.getValue().isShowRevenue(), "放开后应带金额");

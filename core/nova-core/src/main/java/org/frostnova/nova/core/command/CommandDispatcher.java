@@ -225,7 +225,7 @@ public class CommandDispatcher {
             List<String> keys = command.usageKeys(new CommandContext(event.getPlatform(), type,
                     event.getNum(), event.getSenderUid(), typedName, List.copyOf(parts), event.getText()));
             if (!keys.isEmpty() && keys.stream()
-                    .allMatch(key -> settings.isDisabled(event.getPlatform(), event.getNum(), key))) {
+                    .allMatch(key -> settings.isDisabled(event.getPlatform(), type, event.getNum(), key))) {
                 // 关掉的命令也要回一句：沉默与「机器人坏了」在使用者眼里长得一样。
                 // 「在哪儿」与命令自己说不出主播时那一句同一处取词，见 CommandContext#here
                 reply(event, type, CommandContext.here(type) + "已关闭" + CommandContext.quoted(keys) + "命令");

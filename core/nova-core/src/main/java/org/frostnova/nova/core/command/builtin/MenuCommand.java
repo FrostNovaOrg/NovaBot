@@ -94,7 +94,7 @@ public class MenuCommand implements NovaCommand {
             if (command.disableable()) {
                 List<String> usable = usableKeys(command, context);
                 if (!usable.isEmpty() && usable.stream().allMatch(key ->
-                        settings.isDisabled(context.getPlatform(), context.getNum(), key))) {
+                        settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), key))) {
                     continue;
                 }
             }

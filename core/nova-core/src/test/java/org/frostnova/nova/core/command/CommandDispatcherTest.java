@@ -106,7 +106,7 @@ class CommandDispatcherTest {
     @Test
     @DisplayName("被禁用的命令不应执行，但要说明它被关了")
     void skipsDisabledCommand() {
-        settings.disable(PLATFORM, GROUP, "测试命令");
+        settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "测试命令");
 
         dispatcher.onRemoteMessage(event(GROUP, "测试命令"));
 

@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.controller;
 
+import org.frostnova.nova.core.enums.PushTargetType;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
@@ -181,7 +182,7 @@ class BilibiliReportLayoutControllerTest {
     @Test
     @DisplayName("🔴 通道金额改为可见后，预览跟着画金额")
     void previewShowsRevenueWhenChannelShowsIt() {
-        revenueVisibility.set("qq-onebot", 10000003L, true);
+        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 10000003L, true);
 
         JSONObject body = new JSONObject();
         body.put("platform", "qq-onebot");
@@ -218,7 +219,7 @@ class BilibiliReportLayoutControllerTest {
     @DisplayName("🔴 预览带草稿的金额设定：只管这一张，不改存着的设定")
     void previewHonorsDraftRevenueVisible() {
         // 会话存的是隐藏；草稿里拨成了显示——这一张按显示画
-        revenueVisibility.set("qq-onebot", 10000003L, false);
+        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 10000003L, false);
         JSONObject body = new JSONObject();
         body.put("platform", "qq-onebot");
         body.put("type", 1);
@@ -244,7 +245,7 @@ class BilibiliReportLayoutControllerTest {
     @Test
     @DisplayName("🔴 草稿拨成隐藏也一样：会话存的是显示，这一张按隐藏画")
     void previewHonorsDraftRevenueHidden() {
-        revenueVisibility.set("qq-onebot", 10000003L, true);
+        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 10000003L, true);
         JSONObject body = new JSONObject();
         body.put("platform", "qq-onebot");
         body.put("type", 1);

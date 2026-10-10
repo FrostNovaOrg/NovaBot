@@ -21,14 +21,27 @@ import {AT_MODE_KEY} from './template-model.js';
 /**
  * 认一个会话用的键
  *
- * 与后端认会话用的是同一把键（推送平台 + 号，见 RuntimeStateController#sessions）。
- * 两边各用各的键会在同一个号同时是群号与好友号时分叉，而那时屏幕上一切正常。
+ * 与后端认会话用的是同一把键（推送平台 + 类型码 + 号，见 RuntimeStateController#sessions）。
+ * 同一个号可以既是群号又是好友号，两者各有各的设置，只按号认会把一边的设置显示到另一边。
  * @param platform 推送平台
+ * @param type 类型码，1 群 0 好友
  * @param num 群号或账号
  * @return {string} 键
  */
-export function sessionKey(platform, num) {
-  return platform + ':' + num;
+export function sessionKey(platform, type, num) {
+  return platform + ':' + Number(type) + ':' + num;
+}
+
+/**
+ * 这一行会话是不是那个平台、那个号、那种类型
+ *
+ * 会话行带着 typeCode（/api/state 给的）。没带的是只有平台与号的旧形状，那时不按类型挑；
+ * 没给 type 的问法同样只按平台与号认。
+ */
+function sameSession(item, platform, num, type) {
+  if (!item || item.platform !== platform || String(item.num) !== String(num)) return false;
+  if (type === undefined || type === null || item.typeCode === undefined || item.typeCode === null) return true;
+  return Number(item.typeCode) === Number(type);
 }
 
 /**
@@ -38,19 +51,19 @@ export function sessionKey(platform, num) {
  * @return {string} 键
  */
 export function channelKey(user, target) {
-  return user.platform + '/' + user.uid + '/' + sessionKey(target.platform, target.num);
+  return user.platform + '/' + user.uid + '/' + sessionKey(target.platform, target.type, target.num);
 }
 
 /**
- * 按键取会话
+ * 按平台、号与类型取会话
  * @param sessions /api/state 的 sessions
  * @param platform 推送平台
  * @param num 群号或账号
+ * @param type 类型码，1 群 0 好友
  * @return 会话，没有则为 null
  */
-export function sessionOf(sessions, platform, num) {
-  const key = sessionKey(platform, num);
-  return (sessions || []).find(item => sessionKey(item.platform, item.num) === key) || null;
+export function sessionOf(sessions, platform, num, type) {
+  return (sessions || []).find(item => sameSession(item, platform, num, type)) || null;
 }
 
 /**
@@ -317,7 +330,7 @@ export function pushTree(users, sessions, handlers, directory) {
     // 而「配了半天群里没动静」正是这么来的
     collectOnly: ((user.targets) || []).length === 0,
     channels: ((user.targets) || []).map(target => {
-      const session = sessionOf(sessions, target.platform, target.num);
+      const session = sessionOf(sessions, target.platform, target.num, target.type);
       const switches = noticeSwitches(user, target, handlers);
       return {
         num: target.num,
@@ -345,7 +358,7 @@ export function channelIndex(users, sessions, handlers, directory) {
   const rows = [];
   for (const user of users || []) {
     for (const target of (user.targets) || []) {
-      const session = sessionOf(sessions, target.platform, target.num);
+      const session = sessionOf(sessions, target.platform, target.num, target.type);
       const switches = noticeSwitches(user, target, handlers);
       rows.push({
         uid: user.uid,
@@ -373,15 +386,15 @@ export function channelIndex(users, sessions, handlers, directory) {
  * @return 每个残留会话一行
  */
 export function strandedSessions(users, sessions) {
-  const used = new Set();
+  const targets = [];
   for (const user of users || []) {
-    for (const target of (user.targets) || []) used.add(sessionKey(target.platform, target.num));
+    for (const target of (user.targets) || []) targets.push(target);
   }
 
   return (sessions || [])
-    .filter(item => !used.has(sessionKey(item.platform, item.num)))
+    .filter(item => !targets.some(target => sameSession(item, target.platform, target.num, target.type)))
     .map(item => ({
-      platform: item.platform, num: item.num,
+      platform: item.platform, num: item.num, type: item.type || null, typeCode: item.typeCode,
       disabled: item.disabled || [],
       revenueExplicit: !!item.revenueExplicit,
       quietExplicit: !!item.quietMode && item.quietMode !== 'follow',

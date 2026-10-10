@@ -795,7 +795,7 @@ function renderStranded(host) {
   for (const row of rows) {
     const line = el('div', 'strand');
     const text = el('span');
-    text.textContent = row.platform + ' · ' + row.num
+    text.textContent = row.platform + ' · ' + (row.type ? row.type + ' ' : '') + row.num
       + (row.disabled.length ? ' · 关着 ' + row.disabled.length + ' 条命令（'
         + row.disabled.join('、') + '）' : ' · 命令没有被关过')
       + (row.revenueExplicit ? ' · 金额可见性配过' : '')
@@ -806,7 +806,7 @@ function renderStranded(host) {
       const fix = el('button', 'ghost');
       fix.type = 'button';
       fix.textContent = '恢复这几条';
-      fix.addEventListener('click', () => restoreCommands(row.platform, row.num, row.disabled));
+      fix.addEventListener('click', () => restoreCommands(row.platform, row.typeCode, row.num, row.disabled));
       line.appendChild(fix);
     }
     box.appendChild(line);
@@ -961,7 +961,7 @@ function renderAdoption(host, handlers) {
 /** 把几个通道写成一句话，取的是屏幕上那个名字而不是号 */
 function describe(rows) {
   return rows.map(row => {
-    const session = sessionOf(runtime.sessions, row.platform, row.num);
+    const session = sessionOf(runtime.sessions, row.platform, row.num, row.type);
     return channelName(session, row, directory);
   }).join('、');
 }
@@ -1032,7 +1032,7 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = sessionOf(runtime.sessions, target.platform, target.num);
+  const session = sessionOf(runtime.sessions, target.platform, target.num, target.type);
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1074,7 +1074,7 @@ function channelRow(user, target) {
 // ---- 通道级：四段 ----
 
 function renderChannelLevel(host, user, target) {
-  const session = sessionOf(runtime.sessions, target.platform, target.num);
+  const session = sessionOf(runtime.sessions, target.platform, target.num, target.type);
   const name = channelName(session, target, directory);
 
   const head = card(host, null, null);
@@ -1983,14 +1983,15 @@ export async function decoratePushData() {
 /**
  * 把被群管理员关掉的命令一起改回来
  * @param platform 推送平台
+ * @param type 会话类型码，1 群 0 好友：同号的群与好友各有各的命令开关
  * @param num 会话号
  * @param names 命令名
  */
-export async function restoreCommands(platform, num, names) {
+export async function restoreCommands(platform, type, num, names) {
   try {
     const res = await api('/state/commands', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({platform, num, commands: names, disabled: false}),
+      body: JSON.stringify({platform, type: Number(type), num, commands: names, disabled: false}),
     });
     say(res.message || (res.success ? '已恢复' : '操作失败'), res.success ? 'ok' : 'err');
     if (res.success) await loadPushPage();
