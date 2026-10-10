@@ -8,7 +8,7 @@
 # A sample that must fail both checks is fed to the same matchers first.
 # If that sample is not flagged, this script exits 2 (it cannot tell red
 # from green). Exit 0 = clean fixtures, 1 = hits printed as file:line.
-# Not wired into the build.
+# Called by the build at step 8; it can also be run on its own.
 
 set -uo pipefail
 
