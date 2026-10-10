@@ -6,6 +6,8 @@
  * 取不到这份数据时就退回那种数法：这一页里的失败仍显示，普通记录仍补上。
  * 原来三趟里任何一趟出错，整页仍报载入失败，这一点不改。
  * 那一趟正常回来时，短条仍用它带回来的失败，不退回这一页。
+ * overview.js 交不出 refreshHome（被改名或删掉）时记一格红，不空转：
+ * 空转的话这一组一格也没量，读起来却像全绿。
  *
  * 由 HomeProblemsFetchFailureTest 拉起。退码 0 ＝ 全绿。
  */
@@ -164,13 +166,14 @@ function clearScreen() {
 register(new URL('./home-problems-fetch-failure-loader.mjs', import.meta.url));
 
 let refreshHome = null;
+let loadErr = null;
 try {
   refreshHome = (await import('../../../main/resources/config-ui/overview.js')).refreshHome;
 } catch (err) {
-  failures.push('载入首页脚本就抛了：' + (err && err.stack ? err.stack : err));
+  loadErr = err;
 }
 
-if (refreshHome) {
+if (typeof refreshHome === 'function') {
   mode = 'problems-down';
   hits.problems = 0;
   clearScreen();
@@ -204,6 +207,12 @@ if (refreshHome) {
   eq(back, null, '原来三趟里登录那一趟出错时，首页不把这一趟当成取到了');
   has(node('#status-text').textContent, '载入首页失败', '原来三趟里登录那一趟出错时，仍报整页载入失败');
   eq(node('#home-timeline').innerHTML, '尚未重画', '原来三趟出错时首页不重画');
+} else {
+  // refreshHome 被改名或删掉后，上面那些格一格也跑不起来。
+  // 记一格红并带上导入错误的原文，别让「一格没跑」混成绿
+  eq(typeof refreshHome, 'function', '首页脚本要给出 refreshHome（'
+    + (loadErr ? '导入就抛了：' + (loadErr.stack || loadErr)
+      : '导入没抛，但导出里没有 refreshHome') + '）');
 }
 
 console.log('跑了 ' + checks + ' 格');
