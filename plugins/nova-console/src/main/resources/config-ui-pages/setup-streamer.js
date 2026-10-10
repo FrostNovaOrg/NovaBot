@@ -120,11 +120,19 @@ export function render(host, ctx) {
 
   // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
   // 与推送页「添加主播」那个面板同一条规矩（见 push.js 的 addStreamer）
-  const known = store.platforms || [];
-  if (!known.length) {
+  if (store.platforms == null) {
+    // 清单还在路上：说「正在载入」，别说「没装插件」——首屏进向导时这一步先画、
+    // /platforms 后到，说错了的话使用者会去装一个其实已经装了的插件。
+    // 回话那块跟着画出来：清单没到时「下一步」拦人，理由要写在这里
+    host.appendChild(note('', '正在载入直播平台清单…'));
+    host.appendChild(result);
+    return;
+  }
+  if (!store.platforms.length) {
     host.appendChild(note('warn', '没有装任何直播平台插件，加不了主播。'));
     return;
   }
+  const known = store.platforms;
 
   let chosen = (draft.streamer && draft.streamer.platform) || known[0];
   const found = el('div');
@@ -286,7 +294,13 @@ export async function done(ctx) {
  */
 export async function next(ctx) {
   seen = ctx || seen;
-  if (!(store.platforms || []).length) {
+  if (store.platforms == null) {
+    // 清单还没到：既不放行也不当没装——放行的话这一步什么都没存就过了，
+    // 当没装的话装着插件的人会被白白放去配下一步。拦下并说清在等什么
+    stop('直播平台清单还在载入，稍等一下再试');
+    return false;
+  }
+  if (!store.platforms.length) {
     // 一个直播平台插件都没装：这一步没得做，不该拦着人往下走
     return true;
   }

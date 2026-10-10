@@ -164,6 +164,13 @@ const documentElement = {
   boxHeight() {
     return layout.page;
   },
+  // syncSideHeight 要往根上写 --side-h（窄屏顶栏的实测高度，样式那边吸顶用）。
+  // 这里只收不判：吸顶那一半是纯样式叠层，合进以后由真浏览器量，不在本夹具
+  style: {
+    setProperty(name, value) {
+      this[name] = value;
+    },
+  },
 };
 const body = {
   get scrollHeight() {
@@ -296,11 +303,20 @@ const stopWatchingGroups = loadFn(src, 'function stopWatchingGroups(',
   ['window', 'cancelAnimationFrame'], [fakeWindow, cancelAnimationFrame]);
 const headerHeight = loadFn(src, 'function headerHeight(', [], []);
 const pageHeight = loadFn(src, 'function pageHeight(', ['document'], [fakeDocument]);
+// watchCurrentGroup 顺手还会量一次窄屏顶栏的高度（syncSideHeight）。改前还没有
+// 这一句，槽位先占上、给 null：那一半的量法在真浏览器里，本夹具不判它
+let syncSideHeight = null;
+try {
+  syncSideHeight = loadFn(src, 'function syncSideHeight(', ['$', 'document'],
+    [sel => (sel === '#side' ? {offsetHeight: 64} : null), fakeDocument]);
+} catch (e) {
+  syncSideHeight = null;
+}
 const watchCurrentGroup = loadFn(src, 'function watchCurrentGroup(',
   ['stopWatchingGroups', 'document', 'window', 'IntersectionObserver', 'ResizeObserver',
-    'requestAnimationFrame', 'currentGroupId', 'headerHeight', 'pageHeight'],
+    'requestAnimationFrame', 'currentGroupId', 'headerHeight', 'pageHeight', 'syncSideHeight'],
   [stopWatchingGroups, fakeDocument, fakeWindow, IntersectionObserver, ResizeObserver,
-    requestAnimationFrame, currentGroupId, headerHeight, pageHeight]);
+    requestAnimationFrame, currentGroupId, headerHeight, pageHeight, syncSideHeight]);
 
 /** 左边导航此刻亮着哪一组 */
 function highlight() {

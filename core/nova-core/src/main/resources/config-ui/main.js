@@ -14,7 +14,7 @@ import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
   from './settings.js';
-import {openSetup, stopSetupPolling} from './setup.js';
+import {notePlatformsArrived, openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
 import {ask} from './confirm.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
@@ -72,6 +72,8 @@ const topPageIds = new Set();
  * 核心不认识任何一个具体平台，也就无从判断某一页该摆在哪儿。
  * 与插件之间的约定一个字未改：仍是清单里的 id/displayName/script，
  * 加上脚本导出的 render/refresh/status ——它们不知道自己被挂在哪里。
+ * refresh 调的时机不止一处：进页、整体载入、设置页存完之后的重取都会来一遍
+ * （有草稿的页也会被调到），refresh 得按内存里那份状态重画并留住草稿。
  */
 async function mountPages() {
   let list = [];
@@ -246,12 +248,16 @@ function mountHomeCard(meta) {
  * 钩子里跑的是插件的代码。不拦在这里的话，一页抛出去会当场中断整轮遍历——
  * 排在它后面的页就都不再刷新，而调用方那一趟整体载入也跟着失败，
  * 屏幕上只剩一句与出事那一页毫无关系的「载入失败」。
+ * @return {boolean} 这个钩子成没成。成了是 true；抛了是 false，
+ *         那句「页出错」已经写在状态栏上，调用方别再拿自己的话盖它
  */
 function callPage(page, hook, ...args) {
   try {
     page.module[hook]?.(...args);
+    return true;
   } catch (e) {
     say(page.meta.displayName + ' 页出错：' + e.message, 'err');
+    return false;
   }
 }
 
@@ -261,13 +267,20 @@ function callPage(page, hook, ...args) {
  * 经 callPage 去调每一页的 refresh：钩子里跑的是插件的代码，抛出来只算它那一页出事。
  * 只画一个用在「放弃」那条路上：那条路只让这一页自己重取，重画也只该动它自己，
  * 别的页手上有没存的改动，不该由这条路惊动。
+ *
+ * 调的时机不止一处：进页、整体载入、设置页存完之后的重取都会来一遍——有草稿的页
+ * 也会被调到。因此 refresh 得按内存里那份状态重画并留住草稿，不能按「刚重取过」想当然
+ * （这一条也写在 mountPages 的说明里，插件页的作者两处都看得到）。
  * @param {string} [id] 页标识，与 store.tab 同一个值；不带即每一页各画一遍
+ * @return {boolean} 每一页都画成了没有。有哪一页抛了就是 false
  */
 export function refreshPages(id) {
+  let ok = true;
   pages.forEach(page => {
     if (id && page.meta.id !== id) return;
-    callPage(page, 'refresh');
+    if (!callPage(page, 'refresh')) ok = false;
   });
+  return ok;
 }
 
 /**
@@ -310,8 +323,10 @@ function applyConnectionVocab() {
 /**
  * 整体载入：设置值重取、设置页草稿清零，各供数方那一份按 how 圈着取
  *
- * @param {{keepDrafts?: boolean}} [how] 传给 reloadChangeSources：保存、放弃只动当前那一页时
- *         带 {keepDrafts: true}，别页此刻有没存改动的留着不重取。初次载入不带，全部取
+ * @param {{keepDrafts?: boolean, sentDrafts?: Object}} [how] keepDrafts 传给 reloadChangeSources：
+ *         保存、放弃只动当前那一页时带 {keepDrafts: true}，别页此刻有没存改动的留着不重取。
+ *         初次载入不带，全部取。sentDrafts 是设置页保存那一趟真发出去的草稿：
+ *         回包之前又被改的项没随那一趟存上，照旧算没保存的改动（见下面对账的那几行）
  */
 export async function load(how) {
   say('载入中…');
@@ -330,7 +345,17 @@ export async function load(how) {
     store.legacy = v.legacy || {};
     store.locked = v.locked || {};
     store.fontTables = v.fontTables || {};
-    store.dirty = {};
+    // 设置页保存那一趟会把它真发出去的那份草稿带进来（sentDrafts）：此刻的草稿与那份
+    // 逐项对账——对得上的已经存上、清掉；对不上的（发出之后又改的）没存上，照旧算
+    // 没保存的改动，重画出来、下次保存再发。不带这一位（初次载入、放弃）时草稿照旧整个清零
+    const sentDrafts = how && how.sentDrafts;
+    const kept = {};
+    if (sentDrafts) {
+      for (const name of Object.keys(store.dirty)) {
+        if (store.dirty[name] !== sentDrafts[name]) kept[name] = store.dirty[name];
+      }
+    }
+    store.dirty = kept;
     renderGeneral();
     const here = parseHash();
     focusCard(here.name, here.card);
@@ -349,6 +374,9 @@ export async function load(how) {
     store.senderList = st.senders || [];
     // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主
     store.platforms = p.platforms || [];
+    // 清单到了叫向导一声：首屏先画向导、后取清单，停在插件步上的人要先看到
+    // 「正在载入」，清单一到这一步自己补上（不叫的话要等他自己翻一步再翻回来）
+    notePlatformsArrived();
     // 某一位取回来的东西有问题时那句话由它自己说，这里只记一位「别替它清状态栏」：
     // 末尾那句 say('') 会把状态栏清空，不记的话那条提示刚显示就被自己抹掉
     const quiet = await sources;

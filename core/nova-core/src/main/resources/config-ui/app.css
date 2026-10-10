@@ -296,7 +296,10 @@ html.nobar #main{padding-bottom:20px}
 .grpnav .sep{font-size:12px;color:var(--dim);padding:8px 9px 2px}
 @media (max-width:959px){
   .setwrap{display:block}
-  .grpnav{flex-direction:row;flex-wrap:wrap;gap:7px}
+  /* 窄屏上顶栏先吸在视口顶上（#side，z-index 更高），目录再吸时要垫在它底下：
+     top 取 --side-h（settings.js 量出来的实测高度），不是写死的数——顶栏里的内容
+     会折行，换台设备、改一下字号高度就变。宽屏那一档 top:0 不动，没人引用这个变量 */
+  .grpnav{top:var(--side-h,0);flex-direction:row;flex-wrap:wrap;gap:7px}
   .grpnav .pill{justify-content:center}
   .grpnav .sep{flex-basis:100%;padding:4px 0 0}
 }
