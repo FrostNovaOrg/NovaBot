@@ -122,6 +122,8 @@ class UnfilledDatasourceEntryTest {
             for (String key : List.of("quietMode", "quietStart", "quietEnd", "quietActive")) {
                 sessions.getJSONObject(i).remove(key);
             }
+            // 会话类型码一栏，同样只摘名
+            sessions.getJSONObject(i).remove("typeCode");
         }
 
         assertEquals(FILLED_STATE_BEFORE, rest.toJSONString(),

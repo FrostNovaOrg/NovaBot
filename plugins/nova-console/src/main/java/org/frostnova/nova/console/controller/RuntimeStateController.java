@@ -149,11 +149,11 @@ public class RuntimeStateController {
 
     /**
      * 开关某个会话中的命令
-     * @param body 请求体，含 platform、num、command 与 disabled
-     * @return 操作结果
+     * @param body 请求体，含 platform、type（0 好友、1 群）、num、command 与 disabled
+     * @return 操作结果；type 缺了或认不出时回 400
      */
     @PostMapping("/command")
-    public JSONObject toggleCommand(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> toggleCommand(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
@@ -161,7 +161,11 @@ public class RuntimeStateController {
         String name = body.getString("command");
         boolean disabled = Boolean.TRUE.equals(body.getBoolean("disabled"));
         if (platform == null || num == null || name == null) {
-            return fail(result, "缺少参数");
+            return ok(fail(result, "缺少参数"));
+        }
+        PushTargetType type = sessionType(body.get("type"));
+        if (type == null) {
+            return badType(result, body.get("type"));
         }
 
         // 只有「禁用」才校验命令存在与否。启用等同于删掉一条记录，对已改名或已删除的
@@ -169,13 +173,13 @@ public class RuntimeStateController {
         if (disabled) {
             Optional<NovaCommand> command = find(name);
             if (command.isEmpty()) {
-                return fail(result, "未找到命令「" + name + "」");
+                return ok(fail(result, "未找到命令「" + name + "」"));
             }
 
             // 「菜单」「启用命令」不可禁用：关掉之后群里就再没有把它开回来的入口了。
             // 界面上这类命令的开关是锁死的，此处仍要拦——接口不能只靠界面自律
             if (!command.get().disableable()) {
-                return fail(result, "「" + name + "」不可禁用，否则群里将无法再启用其他命令");
+                return ok(fail(result, "「" + name + "」不可禁用，否则群里将无法再启用其他命令"));
             }
         }
 
@@ -183,20 +187,20 @@ public class RuntimeStateController {
         boolean changed = false;
         for (String key : keys) {
             boolean done = disabled
-                    ? settings.disable(platform, num, key)
-                    : settings.enable(platform, num, key);
+                    ? settings.disable(platform, type, num, key)
+                    : settings.enable(platform, type, num, key);
             changed = changed || done;
         }
         if (changed) {
             // 立即落盘。状态存储平时靠定时保存，而这里的改动来自人的一次明确操作，
             // 若此刻进程被杀掉，使用者会认为「我明明关了」
             store.save();
-            log.info("配置界面{}了会话 {} 中的用法 {}", disabled ? "禁用" : "启用", num, keys);
+            log.info("配置界面{}了会话 {} 中的用法 {}", disabled ? "禁用" : "启用", describe(type, num), keys);
         }
 
         result.put("success", true);
-        result.put("message", brackets(keys) + "已在 " + num + " " + (disabled ? "禁用" : "启用"));
-        return result;
+        result.put("message", brackets(keys) + "已在" + describe(type, num) + " " + (disabled ? "禁用" : "启用"));
+        return ok(result);
     }
 
     /**
@@ -208,11 +212,11 @@ public class RuntimeStateController {
      * <p>
      * <b>先全查再全改</b>：名单里只要有一条禁不得，整批都不动。改了一半再报错，
      * 等于让人从一个自己没选过的状态往回收拾。
-     * @param body 请求体，含 platform、num、commands 与 disabled
-     * @return 操作结果
+     * @param body 请求体，含 platform、type（0 好友、1 群）、num、commands 与 disabled
+     * @return 操作结果；type 缺了或认不出时回 400
      */
     @PostMapping("/commands")
-    public JSONObject toggleCommands(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> toggleCommands(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
@@ -220,19 +224,23 @@ public class RuntimeStateController {
         JSONArray names = body.getJSONArray("commands");
         Boolean disabled = body.getBoolean("disabled");
         if (platform == null || num == null || names == null || disabled == null) {
-            return fail(result, "缺少参数");
+            return ok(fail(result, "缺少参数"));
+        }
+        PushTargetType type = sessionType(body.get("type"));
+        if (type == null) {
+            return badType(result, body.get("type"));
         }
         if (names.isEmpty()) {
             // 空名单不当作「都办完了」：调用方多半是把要改的那几条算丢了，
             // 而回一句「已改 0 条」与真的改完在界面上长得一样
-            return fail(result, "没有指定要改的命令");
+            return ok(fail(result, "没有指定要改的命令"));
         }
 
         List<String> wanted = new ArrayList<>();
         for (int i = 0; i < names.size(); i++) {
             String name = names.getString(i);
             if (name == null || name.isBlank()) {
-                return fail(result, "命令名不能为空");
+                return ok(fail(result, "命令名不能为空"));
             }
             wanted.add(name);
         }
@@ -241,10 +249,10 @@ public class RuntimeStateController {
             for (String name : wanted) {
                 Optional<NovaCommand> command = find(name);
                 if (command.isEmpty()) {
-                    return fail(result, "未找到命令「" + name + "」，整批未改");
+                    return ok(fail(result, "未找到命令「" + name + "」，整批未改"));
                 }
                 if (!command.get().disableable()) {
-                    return fail(result, "「" + name + "」不可禁用，否则群里将无法再启用其他命令，整批未改");
+                    return ok(fail(result, "「" + name + "」不可禁用，否则群里将无法再启用其他命令，整批未改"));
                 }
             }
         }
@@ -255,8 +263,8 @@ public class RuntimeStateController {
             boolean any = false;
             for (String key : ledgerKeys(name, Boolean.TRUE.equals(disabled))) {
                 boolean done = Boolean.TRUE.equals(disabled)
-                        ? settings.disable(platform, num, key)
-                        : settings.enable(platform, num, key);
+                        ? settings.disable(platform, type, num, key)
+                        : settings.enable(platform, type, num, key);
                 any = any || done;
             }
             if (any) {
@@ -266,14 +274,15 @@ public class RuntimeStateController {
         if (changed > 0) {
             // 立即落盘，理由同 toggleCommand
             store.save();
-            log.info("配置界面成批{}了会话 {} 中的 {} 条命令", Boolean.TRUE.equals(disabled) ? "禁用" : "启用", num, changed);
+            log.info("配置界面成批{}了会话 {} 中的 {} 条命令", Boolean.TRUE.equals(disabled) ? "禁用" : "启用",
+                    describe(type, num), changed);
         }
 
         result.put("success", true);
         result.put("changed", changed);
-        result.put("message", "已在 " + num + (Boolean.TRUE.equals(disabled) ? " 禁用 " : " 启用 ")
+        result.put("message", "已在" + describe(type, num) + (Boolean.TRUE.equals(disabled) ? " 禁用 " : " 启用 ")
                 + changed + " 条命令");
-        return result;
+        return ok(result);
     }
 
     /**
@@ -281,28 +290,33 @@ public class RuntimeStateController {
      * <p>
      * 与命令开关不同，这一项<b>只能在这里改</b>：让群里的人自己把金额打开，
      * 等于这道设置形同虚设。
-     * @param body 请求体，含 platform、num 与 visible；visible 为 null 表示恢复默认
-     * @return 操作结果
+     * @param body 请求体，含 platform、type（0 好友、1 群）、num 与 visible；visible 为 null 表示恢复默认
+     * @return 操作结果；type 缺了或认不出时回 400
      */
     @PostMapping("/revenue")
-    public JSONObject setRevenueVisibility(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> setRevenueVisibility(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
         Long num = body.getLong("num");
         if (platform == null || num == null) {
-            return fail(result, "缺少参数");
+            return ok(fail(result, "缺少参数"));
+        }
+        PushTargetType type = sessionType(body.get("type"));
+        if (type == null) {
+            return badType(result, body.get("type"));
         }
 
         Boolean visible = body.getBoolean("visible");
-        revenueVisibility.set(platform, num, visible);
+        revenueVisibility.set(platform, type, num, visible);
         // 立即落盘：这是人的一次明确操作，进程此刻被杀掉会让人以为「我明明关了」
         store.save();
-        log.info("配置界面将会话 {} 的金额可见性设为 {}", num, visible == null ? "默认" : visible);
+        log.info("配置界面将会话 {} 的金额可见性设为 {}", describe(type, num), visible == null ? "默认" : visible);
 
         result.put("success", true);
-        result.put("message", num + " 的金额" + (visible == null ? "已恢复默认" : visible ? "已设为可见" : "已隐藏"));
-        return result;
+        result.put("message", describe(type, num) + " 的金额"
+                + (visible == null ? "已恢复默认" : visible ? "已设为可见" : "已隐藏"));
+        return ok(result);
     }
 
     /**
@@ -315,44 +329,48 @@ public class RuntimeStateController {
      * 页面摘要就会显示一个其实不生效的时段。这里只收判定那一侧一定认得的写法（两位时、两位分），
      * 手改进状态文件的坏格式照旧由判定那一侧按全局那套规则忽略并 warn。
      * 起止相同同理：判定那一侧当没设，存下来摘要却显示一段时段，所以也拒收。
-     * @param body 请求体，含 platform、num、mode（follow／custom／off，空即 follow）与 start、end
-     * @return 操作结果
+     * @param body 请求体，含 platform、type（0 好友、1 群）、num、mode（follow／custom／off，空即 follow）与 start、end
+     * @return 操作结果；type 缺了或认不出时回 400
      */
     @PostMapping("/quiet")
-    public JSONObject setQuietHours(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> setQuietHours(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
         Object rawNum = body.get("num");
         if (platform == null || rawNum == null) {
-            return fail(result, "缺少参数");
+            return ok(fail(result, "缺少参数"));
         }
         Long num = positiveSessionNum(rawNum);
         if (num == null) {
-            return fail(result, "会话号「" + rawNum + "」不是正整数");
+            return ok(fail(result, "会话号「" + rawNum + "」不是正整数"));
+        }
+        PushTargetType type = sessionType(body.get("type"));
+        if (type == null) {
+            return badType(result, body.get("type"));
         }
 
         String raw = body.getString("mode");
         SessionQuietHoursService.Mode mode = SessionQuietHoursService.Mode.of(raw);
         if (raw != null && !raw.isBlank() && !mode.key().equalsIgnoreCase(raw.trim())) {
-            return fail(result, "认不出的静音档位「" + raw + "」");
+            return ok(fail(result, "认不出的静音档位「" + raw + "」"));
         }
 
         String start = body.getString("start");
         String end = body.getString("end");
         if (mode == SessionQuietHoursService.Mode.CUSTOM
                 && (start == null || start.isBlank() || end == null || end.isBlank())) {
-            return fail(result, "本会话自己的时段要填开始和结束");
+            return ok(fail(result, "本会话自己的时段要填开始和结束"));
         }
         if (mode == SessionQuietHoursService.Mode.CUSTOM && !(isQuietTime(start) && isQuietTime(end))) {
-            return fail(result, "时段格式应为 HH:mm（24 小时制，两位时两位分，如 23:00、07:30），收到「"
-                    + start.trim() + "」到「" + end.trim() + "」");
+            return ok(fail(result, "时段格式应为 HH:mm（24 小时制，两位时两位分，如 23:00、07:30），收到「"
+                    + start.trim() + "」到「" + end.trim() + "」"));
         }
         if (mode == SessionQuietHoursService.Mode.CUSTOM && start.trim().equals(end.trim())) {
-            return fail(result, "起止相同（" + start.trim() + "）等于没设；要全天照发选「不静音」，要跟设置页走选「跟全局」");
+            return ok(fail(result, "起止相同（" + start.trim() + "）等于没设；要全天照发选「不静音」，要跟设置页走选「跟全局」"));
         }
 
-        quietHours.set(platform, num, mode, start, end);
+        quietHours.set(platform, type, num, mode, start, end);
         // 立即落盘，理由同 setRevenueVisibility
         store.save();
 
@@ -361,11 +379,52 @@ public class RuntimeStateController {
             case CUSTOM -> "已设为 " + start.trim() + "–" + end.trim();
             case OFF -> "已设为不静音";
         };
-        log.info("配置界面将会话 {} 的静音时段{}", num, phrase);
+        log.info("配置界面将会话 {} 的静音时段{}", describe(type, num), phrase);
 
         result.put("success", true);
-        result.put("message", num + " 的静音时段" + phrase);
-        return result;
+        result.put("message", describe(type, num) + " 的静音时段" + phrase);
+        return ok(result);
+    }
+
+    /**
+     * 请求体里的会话类型：只认整数 0（好友）与 1（群）
+     * <p>
+     * 不猜：同一个号可能既是群又是好友，缺了类型就不知道改的是哪一边。
+     * @param raw 请求体里原样的值
+     * @return 会话类型，缺了或认不出时为 null
+     */
+    private static PushTargetType sessionType(Object raw) {
+        if (!(raw instanceof Integer || raw instanceof Long || raw instanceof Short || raw instanceof Byte)) {
+            return null;
+        }
+        long code = ((Number) raw).longValue();
+        if (code == PushTargetType.FRIEND.getCode()) {
+            return PushTargetType.FRIEND;
+        }
+        if (code == PushTargetType.GROUP.getCode()) {
+            return PushTargetType.GROUP;
+        }
+        return null;
+    }
+
+    private ResponseEntity<JSONObject> badType(JSONObject result, Object raw) {
+        String message = raw == null
+                ? "缺少会话类型 type：" + PushTargetType.FRIEND.getCode() + " 为好友、"
+                        + PushTargetType.GROUP.getCode() + " 为群"
+                : "会话类型 type 只能是 " + PushTargetType.FRIEND.getCode() + "（好友）或 "
+                        + PushTargetType.GROUP.getCode() + "（群），收到的是「" + raw + "」";
+        return ResponseEntity.badRequest().body(fail(result, message));
+    }
+
+    private static ResponseEntity<JSONObject> ok(JSONObject result) {
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 回话与日志里的会话说法，如「群 12345」
+     */
+    private static String describe(PushTargetType type, Long num) {
+        return type.getStr() + " " + num;
     }
 
     /**
@@ -523,6 +582,8 @@ public class RuntimeStateController {
      * <p>
      * 取「已配置推送的会话」与「状态文件里出现过的会话」之并集。只取前者会漏掉从推送配置里
      * 删掉、但状态仍残留的群——那些残留正是最需要被看见的：命令仍是关着的，一旦重新配置推送就立刻生效。
+     * <p>
+     * 按「平台 + 会话类型 + 号」分行：同号的群与好友各有各的设置，各占一行。
      */
     private JSONArray sessions() {
         Map<String, JSONObject> sessions = new LinkedHashMap<>();
@@ -530,7 +591,7 @@ public class RuntimeStateController {
 
         for (PushUser user : dataSource.getAllUsers()) {
             for (PushTarget target : user.getTargets()) {
-                String key = target.getPlatform() + ":" + target.getNum();
+                String key = rowKey(target.getPlatform(), target.getType(), target.getNum());
                 sessions.computeIfAbsent(key, k -> session(target.getPlatform(), target.getNum(),
                         target.getType(), true));
                 streamers.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(displayName(user));
@@ -539,24 +600,25 @@ public class RuntimeStateController {
 
         List<CommandSettingsService.Disabled> disabled = settings.all();
         for (CommandSettingsService.Disabled item : disabled) {
-            sessions.computeIfAbsent(item.platform() + ":" + item.num(),
-                    k -> session(item.platform(), item.num(), null, false));
+            sessions.computeIfAbsent(rowKey(item.platform(), item.type(), item.num()),
+                    k -> session(item.platform(), item.num(), item.type(), false));
         }
+        // 「@我」订阅只能在群里办，名单的键里没有会话类型，残留的按群算
         for (AtSubscriptionService.Subscription item : subscriptions.all()) {
-            sessions.computeIfAbsent(item.platform() + ":" + item.num(),
-                    k -> session(item.platform(), item.num(), null, false));
+            sessions.computeIfAbsent(rowKey(item.platform(), PushTargetType.GROUP, item.num()),
+                    k -> session(item.platform(), item.num(), PushTargetType.GROUP, false));
         }
 
         for (RevenueVisibilityService.Setting item : revenueVisibility.all()) {
-            sessions.computeIfAbsent(item.platform() + ":" + item.num(),
-                    k -> session(item.platform(), item.num(), null, false));
+            sessions.computeIfAbsent(rowKey(item.platform(), item.type(), item.num()),
+                    k -> session(item.platform(), item.num(), item.type(), false));
         }
         for (SessionQuietHoursService.Setting item : quietHours.all()) {
-            sessions.computeIfAbsent(item.platform() + ":" + item.num(),
-                    k -> session(item.platform(), item.num(), null, false));
+            sessions.computeIfAbsent(rowKey(item.platform(), item.type(), item.num()),
+                    k -> session(item.platform(), item.num(), item.type(), false));
         }
 
-        disabled.forEach(item -> sessions.get(item.platform() + ":" + item.num())
+        disabled.forEach(item -> sessions.get(rowKey(item.platform(), item.type(), item.num()))
                 .put("disabled", item.commands()));
         streamers.forEach((key, names) -> sessions.get(key).put("streamers", names));
 
@@ -565,23 +627,25 @@ public class RuntimeStateController {
         sessions.forEach((key, item) -> {
             String platform = item.getString("platform");
             Long num = item.getLong("num");
-            Boolean explicit = revenueVisibility.explicit(platform, num);
-            item.put("revenueVisible", revenueVisibility.isVisible(platform, typeOf(item.getString("type")), num));
+            PushTargetType type = PushTargetType.of(item.getIntValue("typeCode"));
+            Boolean explicit = revenueVisibility.explicit(platform, type, num);
+            item.put("revenueVisible", revenueVisibility.isVisible(platform, type, num));
             item.put("revenueExplicit", explicit != null);
 
             // 静音：哪一档、自己的起止，以及此刻在不在这个会话的静音时段里。
             // 最后这一项问闸门要，不让界面拿起止自己算——判定只该有一份
-            SessionQuietHoursService.Setting quiet = quietHours.get(platform, num);
+            SessionQuietHoursService.Setting quiet = quietHours.get(platform, type, num);
             SessionQuietHoursService.Mode mode = quiet == null ? SessionQuietHoursService.Mode.FOLLOW : quiet.mode();
             item.put("quietMode", mode.key());
             item.put("quietStart", quiet == null ? null : quiet.start());
             item.put("quietEnd", quiet == null ? null : quiet.end());
-            item.put("quietActive", pushGate.inQuietHoursFor(platform, num));
+            item.put("quietActive", pushGate.inQuietHoursFor(platform, type, num));
         });
 
         List<JSONObject> sorted = new ArrayList<>(sessions.values());
         sorted.sort(Comparator.comparing((JSONObject item) -> item.getString("platform"))
-                .thenComparing(item -> item.getLongValue("num")));
+                .thenComparing(item -> item.getLongValue("num"))
+                .thenComparing(item -> -item.getIntValue("typeCode")));
 
         JSONArray items = new JSONArray();
         items.addAll(sorted);
@@ -589,19 +653,14 @@ public class RuntimeStateController {
     }
 
     /**
-     * 会话清单里的 type 存的是给人看的中文（「群」「好友」），还原成枚举再交给可见性服务。
-     * 状态文件里残留的会话取不到类型，此时按群聊处理——不确定就按更保守的那一边。
+     * 会话清单里认一行用的键：「平台:类型码:号」，类型缺失按未知算
      */
-    private static PushTargetType typeOf(String label) {
-        if (label == null) {
-            return null;
-        }
-        for (PushTargetType candidate : PushTargetType.values()) {
-            if (candidate.getStr().equals(label)) {
-                return candidate;
-            }
-        }
-        return null;
+    private static String rowKey(String platform, PushTargetType type, Long num) {
+        return platform + ":" + typeCode(type) + ":" + num;
+    }
+
+    private static int typeCode(PushTargetType type) {
+        return (type == null ? PushTargetType.UNKNOWN : type).getCode();
     }
 
     private JSONObject session(String platform, Long num, PushTargetType type, boolean configured) {
@@ -609,6 +668,7 @@ public class RuntimeStateController {
         item.put("platform", platform);
         item.put("num", num);
         item.put("type", type == null ? null : type.getStr());
+        item.put("typeCode", typeCode(type));
         item.put("configured", configured);
         item.put("streamers", List.of());
         item.put("disabled", List.of());
@@ -626,8 +686,8 @@ public class RuntimeStateController {
      * 这条规则在命令那一侧只有一份实现（{@code availableIn}），抄一份到界面上之后，
      * 改了那一份的那天控制台仍按旧规矩画，而两边的代码看起来都对。
      * <p>
-     * 类型未知的会话（推送配置里已经没有、只在状态文件里留着的那些）返回 {@code null} 而不是空表：
-     * 它没有会话类型，构不出上下文，答不了这个问题。空表会被读成「一条都不藏」——
+     * 类型未知的会话（推送配置里那条目标没写类型）返回 {@code null} 而不是空表：
+     * 它没有会话类型，构不出上下文，答不了这个问题。只在状态文件里留着的会话键里带着类型，照类型答。空表会被读成「一条都不藏」——
      * 而<b>答不了与都列着长得一样</b>正是要避免的。
      * @param platform 推送平台
      * @param num 会话号

@@ -98,7 +98,7 @@ public class MenuCommandTest {
     @Test
     @DisplayName("被禁用的命令不应出现，其分类若因此空了也不应留下空标题")
     void hidesDisabledCommandsAndEmptyCategories() {
-        settings.disable(PLATFORM, GROUP, "开播@我");
+        settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "开播@我");
 
         String text = menu.execute(context()).content();
 

@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.sender;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.service.SessionQuietHoursService;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.lang.StringUtil;
@@ -41,7 +42,7 @@ public class PushGate {
     /**
      * 当前是否允许推送（只按全局那一项判）
      * <p>
-     * 推往某个会话的消息该用 {@link #allowedFor(String, Long)}：会话可能设了自己的时段或不静音。
+     * 推往某个会话的消息该用 {@link #allowedFor(String, PushTargetType, Long)}：会话可能设了自己的时段或不静音。
      * @return 允许推送时返回 true
      */
     public boolean allowed() {
@@ -53,11 +54,12 @@ public class PushGate {
      * <p>
      * 全局开关照旧拦一切；静音按这个会话的那一档判：跟全局、自己的时段、不静音。
      * @param platform 推送平台
+     * @param type 会话类型：同号的群与好友各有各的那一档
      * @param num 会话号
      * @return 允许推送时返回 true
      */
-    public boolean allowedFor(String platform, Long num) {
-        return allowedAt(LocalTime.now(), platform, num);
+    public boolean allowedFor(String platform, PushTargetType type, Long num) {
+        return allowedAt(LocalTime.now(), platform, type, num);
     }
 
     /**
@@ -79,15 +81,16 @@ public class PushGate {
      * 判断指定时刻是否允许往指定会话推送
      * @param now 时刻
      * @param platform 推送平台
+     * @param type 会话类型
      * @param num 会话号
      * @return 允许推送时返回 true
      */
-    boolean allowedAt(LocalTime now, String platform, Long num) {
+    boolean allowedAt(LocalTime now, String platform, PushTargetType type, Long num) {
         if (!properties.getPush().isEnabled()) {
             return false;
         }
 
-        return !inQuietHoursAt(now, platform, num);
+        return !inQuietHoursAt(now, platform, type, num);
     }
 
     /**
@@ -96,17 +99,18 @@ public class PushGate {
      * 与 {@link #inQuietHours()} 同一份判定，只是起止换成这个会话那一档给的那一对：
      * 控制台「本群设置」的摘要据此写「静音中」，与推送真被拦下的口径一致。
      * @param platform 推送平台
+     * @param type 会话类型
      * @param num 会话号
      * @return 处于静音时段时返回 true
      */
-    public boolean inQuietHoursFor(String platform, Long num) {
-        return inQuietHoursAt(LocalTime.now(), platform, num);
+    public boolean inQuietHoursFor(String platform, PushTargetType type, Long num) {
+        return inQuietHoursAt(LocalTime.now(), platform, type, num);
     }
 
     /**
      * 会话那一档只决定拿哪一对起止去判，判定本身仍是下面那一份 {@link #inQuietHours(LocalTime, String, String)}
      */
-    private boolean inQuietHoursAt(LocalTime now, String platform, Long num) {
+    private boolean inQuietHoursAt(LocalTime now, String platform, PushTargetType type, Long num) {
         SessionQuietHoursService.Mode mode = SessionQuietHoursService.Mode.FOLLOW;
         String start = properties.getPush().getQuietStart();
         String end = properties.getPush().getQuietEnd();
@@ -115,9 +119,9 @@ public class PushGate {
             // 读这一档出任何异常都按跟全局判：抛出去会让这位主播这一次的推送整件发不出去
             SessionQuietHoursService.Setting setting = null;
             try {
-                setting = sessions.get(platform, num);
+                setting = sessions.get(platform, type, num);
             } catch (RuntimeException e) {
-                log.warn("读会话 {}:{} 的静音时段出错，按跟全局判: {}", platform, num, e.toString());
+                log.warn("读会话 {}:{}:{} 的静音时段出错，按跟全局判: {}", platform, type, num, e.toString());
             }
             if (setting != null && setting.mode() != null) {
                 mode = setting.mode();

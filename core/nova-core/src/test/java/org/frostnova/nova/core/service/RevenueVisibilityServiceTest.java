@@ -48,27 +48,58 @@ class RevenueVisibilityServiceTest {
     @Test
     @DisplayName("显式设置应覆盖默认值，两个方向都要能覆盖")
     void explicitSettingOverridesDefault() {
-        service.set(PLATFORM, 10000003L, true);
+        service.set(PLATFORM, PushTargetType.GROUP, 10000003L, true);
         assertTrue(service.isVisible(PLATFORM, PushTargetType.GROUP, 10000003L));
 
-        service.set(PLATFORM, 2000000002L, false);
+        service.set(PLATFORM, PushTargetType.FRIEND, 2000000002L, false);
         assertFalse(service.isVisible(PLATFORM, PushTargetType.FRIEND, 2000000002L));
+    }
+
+    @Test
+    @DisplayName("同一平台同一个号：给好友设的不影响群，给群设的不影响好友")
+    void sameNumberGroupAndFriendAreSeparate() {
+        // 用户故障：控制台给好友设了金额可见，同号群的下播报告和金额查询也露出收益
+        service.set(PLATFORM, PushTargetType.FRIEND, 123456L, true);
+        assertTrue(service.isVisible(PLATFORM, PushTargetType.FRIEND, 123456L));
+        assertFalse(service.isVisible(PLATFORM, PushTargetType.GROUP, 123456L), "好友那边的设置露到了同号群");
+        assertNull(service.explicit(PLATFORM, PushTargetType.GROUP, 123456L));
+
+        service.set(PLATFORM, PushTargetType.GROUP, 654321L, false);
+        service.set(PLATFORM, PushTargetType.FRIEND, 654321L, null);
+        assertFalse(service.isVisible(PLATFORM, PushTargetType.GROUP, 654321L));
+        assertTrue(service.isVisible(PLATFORM, PushTargetType.FRIEND, 654321L), "群那边的设置套到了同号好友");
+
+        service.set(PLATFORM, PushTargetType.GROUP, 123456L, true);
+        service.set(PLATFORM, PushTargetType.FRIEND, 123456L, false);
+        assertTrue(service.isVisible(PLATFORM, PushTargetType.GROUP, 123456L));
+        assertFalse(service.isVisible(PLATFORM, PushTargetType.FRIEND, 123456L));
+        assertEquals(List.of(PushTargetType.FRIEND, PushTargetType.GROUP), service.all().stream()
+                .filter(item -> item.num() == 123456L).map(RevenueVisibilityService.Setting::type).sorted().toList());
+    }
+
+    @Test
+    @DisplayName("会话类型未知时读不到任何显式设置，写入直接报错")
+    void unknownTypeHasNoExplicitSetting() {
+        service.set(PLATFORM, PushTargetType.GROUP, 1L, true);
+        assertNull(service.explicit(PLATFORM, PushTargetType.UNKNOWN, 1L));
+        assertNull(service.explicit(PLATFORM, null, 1L));
+        assertThrows(IllegalArgumentException.class, () -> service.set(PLATFORM, PushTargetType.UNKNOWN, 1L, true));
     }
 
     @Test
     @DisplayName("传 null 应清除设置并回到默认值")
     void clearingRestoresDefault() {
-        service.set(PLATFORM, 10000003L, true);
-        service.set(PLATFORM, 10000003L, null);
+        service.set(PLATFORM, PushTargetType.GROUP, 10000003L, true);
+        service.set(PLATFORM, PushTargetType.GROUP, 10000003L, null);
 
-        assertNull(service.explicit(PLATFORM, 10000003L));
+        assertNull(service.explicit(PLATFORM, PushTargetType.GROUP, 10000003L));
         assertFalse(service.isVisible(PLATFORM, PushTargetType.GROUP, 10000003L));
     }
 
     @Test
     @DisplayName("设置只作用于指定会话")
     void settingIsPerSession() {
-        service.set(PLATFORM, 10000003L, true);
+        service.set(PLATFORM, PushTargetType.GROUP, 10000003L, true);
 
         assertTrue(service.isVisible(PLATFORM, PushTargetType.GROUP, 10000003L));
         assertFalse(service.isVisible(PLATFORM, PushTargetType.GROUP, 10000001L));
@@ -78,8 +109,8 @@ class RevenueVisibilityServiceTest {
     @Test
     @DisplayName("清单只列显式设置过的会话")
     void listsOnlyExplicitSettings() {
-        service.set(PLATFORM, 10000001L, true);
-        service.set(PLATFORM, 10000003L, false);
+        service.set(PLATFORM, PushTargetType.GROUP, 10000001L, true);
+        service.set(PLATFORM, PushTargetType.GROUP, 10000003L, false);
         // 从未设置过的会话即便被查询过，也不该出现在清单里
         service.isVisible(PLATFORM, PushTargetType.GROUP, 123L);
 
@@ -95,7 +126,7 @@ class RevenueVisibilityServiceTest {
     @Test
     @DisplayName("平台名含连字符时仍能正确还原会话")
     void parsesPlatformWithHyphen() {
-        service.set("qq-onebot", 10000003L, true);
+        service.set("qq-onebot", PushTargetType.GROUP, 10000003L, true);
 
         List<RevenueVisibilityService.Setting> all = service.all();
 

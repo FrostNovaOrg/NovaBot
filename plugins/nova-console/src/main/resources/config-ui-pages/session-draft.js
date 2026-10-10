@@ -215,7 +215,8 @@ export function isClearPending(target, streamerUid, type) {
 export function sessionWrites() {
   const writes = [];
   for (const s of drafts.values()) {
-    const base = {platform: s.target.platform, num: s.target.num};
+    // 带上类型码：同一个号可以既是群又是好友，只带号的话后端分不出改的是哪一边
+    const base = {platform: s.target.platform, type: Number(s.target.type), num: s.target.num};
     if (s.revenue) {
       const sent = s.revenue;
       writes.push({

@@ -153,7 +153,7 @@ class ConsoleCommandSwitchTest {
         // 关之前先看一眼：名单是真出来了的，否则「没回名单」与「本来就没配人」分不开
         assertTrue(feed("@名单").contains(UNKNOWN_NAME), feed("@名单"));
 
-        JSONObject off = controller.toggleCommand(toggle("@名单", true));
+        JSONObject off = controller.toggleCommand(toggle("@名单", true)).getBody();
         assertTrue(off.getBooleanValue("success"), off.toJSONString());
 
         for (String spelling : List.of("@名单", "@名单 开播", "@名单 动态")) {
@@ -168,11 +168,11 @@ class ConsoleCommandSwitchTest {
     void consoleCanTurnOffTheCumulativeHalf() {
         // 「直播间总数据」与「直播间数据 总」说的是同一种用法，两种问法都得关得掉
         for (String spelling : List.of("直播间总数据", "直播间数据 总")) {
-            JSONObject off = controller.toggleCommand(toggle(spelling, true));
+            JSONObject off = controller.toggleCommand(toggle(spelling, true)).getBody();
             assertTrue(off.getBooleanValue("success"), spelling + " 关不掉累计那一半：" + off.toJSONString());
         }
         for (String spelling : List.of("总数据排行榜", "数据排行榜 总")) {
-            JSONObject off = controller.toggleCommand(toggle(spelling, true));
+            JSONObject off = controller.toggleCommand(toggle(spelling, true)).getBody();
             assertTrue(off.getBooleanValue("success"), spelling + " 关不掉累计那一半：" + off.toJSONString());
         }
 
@@ -205,17 +205,17 @@ class ConsoleCommandSwitchTest {
     @Test
     @DisplayName("接口先关「@名单」再开，两格都开回来，群里「@名单」照样应答")
     void apiReopensEveryCellWhenOneNameCoversSeveral() {
-        JSONObject off = controller.toggleCommand(toggle("@名单", true));
+        JSONObject off = controller.toggleCommand(toggle("@名单", true)).getBody();
         assertTrue(off.getBooleanValue("success"), off.toJSONString());
-        assertTrue(settings.isDisabled(PLATFORM, GROUP, "开播@名单"), "先把开播那一格关上");
-        assertTrue(settings.isDisabled(PLATFORM, GROUP, "动态@名单"), "先把动态那一格关上");
+        assertTrue(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "开播@名单"), "先把开播那一格关上");
+        assertTrue(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "动态@名单"), "先把动态那一格关上");
 
-        JSONObject on = controller.toggleCommand(toggle("@名单", false));
+        JSONObject on = controller.toggleCommand(toggle("@名单", false)).getBody();
         assertTrue(on.getBooleanValue("success"), on.toJSONString());
         String message = on.getString("message");
-        assertFalse(settings.isDisabled(PLATFORM, GROUP, "开播@名单"),
+        assertFalse(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "开播@名单"),
                 "开播那一格该开回来，回话却是：" + message);
-        assertFalse(settings.isDisabled(PLATFORM, GROUP, "动态@名单"),
+        assertFalse(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "动态@名单"),
                 "动态那一格该开回来，回话却是：" + message);
         assertTrue(message.contains("开播@名单") && message.contains("动态@名单"),
                 "回话该写明开了哪几格：" + message);
@@ -230,6 +230,7 @@ class ConsoleCommandSwitchTest {
     private JSONObject toggle(String command, boolean disabled) {
         return new JSONObject()
                 .fluentPut("platform", PLATFORM)
+                .fluentPut("type", PushTargetType.GROUP.getCode())
                 .fluentPut("num", GROUP)
                 .fluentPut("command", command)
                 .fluentPut("disabled", disabled);

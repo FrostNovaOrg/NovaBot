@@ -92,7 +92,7 @@ class SessionQuietDispatchTest {
     @DisplayName("同一位主播推两个群、其中一个落在自己的静音时段里：只丢那一个，另一个照发，丢弃记 1 个会话")
     void dropsOnlyTheMutedSession() {
         SessionQuietHoursService sessions = sessions();
-        sessions.set(PLATFORM, MUTED, Mode.CUSTOM, aroundNow()[0], aroundNow()[1]);
+        sessions.set(PLATFORM, PushTargetType.GROUP, MUTED, Mode.CUSTOM, aroundNow()[0], aroundNow()[1]);
 
         Capture capture = new Capture();
         RecordingHandler handler = new RecordingHandler();
@@ -114,7 +114,7 @@ class SessionQuietDispatchTest {
     @DisplayName("全局静音中、一个群设了「不静音」：那个群照发，另一个被丢")
     void offSessionPassesDuringGlobalQuiet() {
         SessionQuietHoursService sessions = sessions();
-        sessions.set(PLATFORM, OPEN, Mode.OFF, null, null);
+        sessions.set(PLATFORM, PushTargetType.GROUP, OPEN, Mode.OFF, null, null);
 
         Capture capture = new Capture();
         RecordingHandler handler = new RecordingHandler();
@@ -132,7 +132,7 @@ class SessionQuietDispatchTest {
     @DisplayName("全局开关关着：两个群都丢，记「暂停丢弃」2 个会话（与现行同）")
     void masterSwitchStillDropsAll() {
         SessionQuietHoursService sessions = sessions();
-        sessions.set(PLATFORM, OPEN, Mode.OFF, null, null);
+        sessions.set(PLATFORM, PushTargetType.GROUP, OPEN, Mode.OFF, null, null);
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setEnabled(false);
 
@@ -153,7 +153,7 @@ class SessionQuietDispatchTest {
     @DisplayName("命令回复发往正在静音的会话：那条被丢并逐条记时间线，发往别的会话的不记丢弃")
     void commandReplyToMutedSessionIsDropped() {
         SessionQuietHoursService sessions = sessions();
-        sessions.set(PLATFORM, MUTED, Mode.CUSTOM, aroundNow()[0], aroundNow()[1]);
+        sessions.set(PLATFORM, PushTargetType.GROUP, MUTED, Mode.CUSTOM, aroundNow()[0], aroundNow()[1]);
 
         Capture capture = new Capture();
         NovaMessageSender sender = sender(new PushGate(new NovaCoreProperties(), sessions), capture);

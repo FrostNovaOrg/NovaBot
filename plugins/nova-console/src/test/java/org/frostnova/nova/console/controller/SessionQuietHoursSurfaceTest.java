@@ -109,7 +109,7 @@ class SessionQuietHoursSurfaceTest {
     @Test
     @DisplayName("设成自己的时段：读回起止，此刻落在时段里时 quietActive 为真")
     void customRoundTripsAndReportsActive() {
-        JSONObject result = controller.setQuietHours(body("custom", aroundNow()[0], aroundNow()[1]));
+        JSONObject result = controller.setQuietHours(body("custom", aroundNow()[0], aroundNow()[1])).getBody();
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
 
         JSONObject session = session(controller.state());
@@ -126,7 +126,7 @@ class SessionQuietHoursSurfaceTest {
         properties.getPush().setQuietEnd(aroundNow()[1]);
         assertTrue(session(controller.state()).getBooleanValue("quietActive"), "前置：跟全局时此刻在静音");
 
-        controller.setQuietHours(body("off", null, null));
+        controller.setQuietHours(body("off", null, null)).getBody();
 
         JSONObject session = session(controller.state());
         assertEquals("off", session.getString("quietMode"));
@@ -136,8 +136,8 @@ class SessionQuietHoursSurfaceTest {
     @Test
     @DisplayName("改回跟全局即清除记录")
     void followClears() {
-        controller.setQuietHours(body("off", null, null));
-        controller.setQuietHours(body("follow", null, null));
+        controller.setQuietHours(body("off", null, null)).getBody();
+        controller.setQuietHours(body("follow", null, null)).getBody();
 
         assertEquals("follow", session(controller.state()).getString("quietMode"));
         assertTrue(quietHours.all().isEmpty());
@@ -146,8 +146,8 @@ class SessionQuietHoursSurfaceTest {
     @Test
     @DisplayName("选了自己的时段却没填起止、或档位认不出：拒收，不落记录")
     void rejectsIncompleteInput() {
-        assertFalse(controller.setQuietHours(body("custom", "23:00", "")).getBooleanValue("success"));
-        assertFalse(controller.setQuietHours(body("sometimes", null, null)).getBooleanValue("success"));
+        assertFalse(controller.setQuietHours(body("custom", "23:00", "")).getBody().getBooleanValue("success"));
+        assertFalse(controller.setQuietHours(body("sometimes", null, null)).getBody().getBooleanValue("success"));
         assertTrue(quietHours.all().isEmpty());
     }
 
@@ -155,13 +155,13 @@ class SessionQuietHoursSurfaceTest {
     @DisplayName("自己的时段起止不是 HH:mm：拒收并说明格式，不落记录")
     void rejectsMalformedTimes() {
         for (String[] pair : new String[][]{{"25:00", "07:00"}, {"8点", "07:00"}, {"23:00", "7:00"}, {"23:00", "07:00:00"}}) {
-            JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1]));
+            JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1])).getBody();
             assertFalse(result.getBooleanValue("success"), pair[0] + "–" + pair[1] + ": " + result);
             assertTrue(result.getString("message").contains("HH:mm"), result.getString("message"));
         }
         assertTrue(quietHours.all().isEmpty(), quietHours.all().toString());
 
-        assertTrue(controller.setQuietHours(body("custom", " 23:00 ", "07:00")).getBooleanValue("success"),
+        assertTrue(controller.setQuietHours(body("custom", " 23:00 ", "07:00")).getBody().getBooleanValue("success"),
                 "两头空白照旧裁掉");
     }
 
@@ -171,7 +171,7 @@ class SessionQuietHoursSurfaceTest {
         JSONObject body = body("off", null, null);
         body.put("num", "群一");
 
-        JSONObject result = assertDoesNotThrow(() -> controller.setQuietHours(body));
+        JSONObject result = assertDoesNotThrow(() -> controller.setQuietHours(body).getBody());
         assertFalse(result.getBooleanValue("success"));
         assertTrue(result.getString("message").contains("会话号"), result.getString("message"));
         assertTrue(quietHours.all().isEmpty());
@@ -184,7 +184,7 @@ class SessionQuietHoursSurfaceTest {
             JSONObject body = body("off", null, null);
             body.put("num", num);
 
-            JSONObject result = assertDoesNotThrow(() -> controller.setQuietHours(body), String.valueOf(num));
+            JSONObject result = assertDoesNotThrow(() -> controller.setQuietHours(body).getBody(), String.valueOf(num));
             assertFalse(result.getBooleanValue("success"), num + ": " + result);
             assertTrue(result.getString("message").contains("不是正整数"), num + ": " + result);
         }
@@ -193,7 +193,7 @@ class SessionQuietHoursSurfaceTest {
         for (Object num : new Object[]{"30004", 30005, 30006L}) {
             JSONObject body = body("off", null, null);
             body.put("num", num);
-            assertTrue(controller.setQuietHours(body).getBooleanValue("success"), String.valueOf(num));
+            assertTrue(controller.setQuietHours(body).getBody().getBooleanValue("success"), String.valueOf(num));
         }
         assertEquals(3, quietHours.all().size(), quietHours.all().toString());
     }
@@ -202,7 +202,7 @@ class SessionQuietHoursSurfaceTest {
     @DisplayName("自己的时段起止相同：拒收，说明该选不静音或跟全局")
     void rejectsEqualStartAndEnd() {
         for (String[] pair : new String[][]{{"00:00", "00:00"}, {"23:00", " 23:00 "}}) {
-            JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1]));
+            JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1])).getBody();
             assertFalse(result.getBooleanValue("success"), pair[0] + "–" + pair[1] + ": " + result);
             String message = result.getString("message");
             assertTrue(message.contains("起止相同") && message.contains("不静音") && message.contains("跟全局"), message);
@@ -228,6 +228,7 @@ class SessionQuietHoursSurfaceTest {
     private JSONObject body(String mode, String start, String end) {
         JSONObject body = new JSONObject();
         body.put("platform", PLATFORM);
+        body.put("type", PushTargetType.GROUP.getCode());
         body.put("num", GROUP);
         body.put("mode", mode);
         body.put("start", start);

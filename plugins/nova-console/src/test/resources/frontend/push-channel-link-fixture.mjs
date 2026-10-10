@@ -273,14 +273,20 @@ globalThis.fetch = (path, opt) => {
 };
 
 /**
- * 会话行按「平台:号」合一行，同号的群与好友共用——这正是它分不出谁是谁的原因。
- * 这里不给 type 一栏，类型那一枚药丸才按通道自己的类型码退成「群聊」／「私聊」。
+ * 会话行按「平台:类型:号」分开，同号的群与好友各一行，与后端 /api/state 给的形状一致。
+ * 两行的设置故意不同：群里关了一条命令、金额配过；好友什么都没动。
  */
 function sessionsList() {
   return [{
-    platform: PLATFORM, num: GROUP_NUM,
-    disabled: [], menuHidden: [], menuNotes: {},
+    platform: PLATFORM, num: GROUP_NUM, type: '群', typeCode: 1,
+    disabled: ['直播报告'], menuHidden: [], menuNotes: {},
     revenueVisible: false, revenueExplicit: true,
+    quietMode: 'follow', quietStart: null, quietEnd: null, quietActive: false,
+    streamers: ['甲'],
+  }, {
+    platform: PLATFORM, num: FRIEND_NUM, type: '好友', typeCode: 0,
+    disabled: [], menuHidden: [], menuNotes: {},
+    revenueVisible: true, revenueExplicit: false,
     quietMode: 'follow', quietStart: null, quietEnd: null, quietActive: false,
     streamers: ['甲'],
   }];
@@ -302,9 +308,13 @@ function datasourceBody() {
 
 let push = null;
 let store = null;
+let model = null;
+let drafts = null;
 try {
   push = await import(join(pages, 'push.js'));
   store = (await import('./store.js')).store;
+  model = await import(join(pages, 'push-model.js'));
+  drafts = await import(join(pages, 'session-draft.js'));
 } catch (err) {
   failures.push('载入 push.js 就抛了：' + err.message);
 }
@@ -415,7 +425,7 @@ await ask('① 同号的群与好友：点左树上好友那一行，右栏开�
   same({
     '地址里带上了类型与平台': String(globalThis.location.hash).includes('|0|' + FRIEND_NUM),
     '右栏标题是好友那一个': headName(),
-    '标题旁的类型是私聊': headTypePill(),
+    '标题旁的类型是好友': headTypePill(),
     '号那一行写着用户号': headIdLine().includes('用户号'),
     '左树高亮在好友那一行': onName,
     '窄屏下拉也停在好友那个选项': navValue().includes('|0|' + FRIEND_NUM),
@@ -423,7 +433,7 @@ await ask('① 同号的群与好友：点左树上好友那一行，右栏开�
   }, {
     '地址里带上了类型与平台': true,
     '右栏标题是好友那一个': '小明',
-    '标题旁的类型是私聊': '私聊',
+    '标题旁的类型是好友': '好友',
     '号那一行写着用户号': true,
     '左树高亮在好友那一行': '小明',
     '窄屏下拉也停在好友那个选项': true,
@@ -471,13 +481,13 @@ await ask('③ 点左树上群那一行：右栏开的是群那个，两行互�
   same({
     '地址里带上了类型与平台': String(globalThis.location.hash).includes('|1|' + GROUP_NUM),
     '右栏标题是群那一个': headName(),
-    '标题旁的类型是群聊': headTypePill(),
+    '标题旁的类型是群': headTypePill(),
     '号那一行写着群号': headIdLine().includes('群号'),
     '左树高亮在群那一行': onName,
   }, {
     '地址里带上了类型与平台': true,
     '右栏标题是群那一个': '技术群',
-    '标题旁的类型是群聊': '群聊',
+    '标题旁的类型是群': '群',
     '号那一行写着群号': true,
     '左树高亮在群那一行': '技术群',
   }, '点群那一行');
@@ -499,6 +509,55 @@ await ask('④ 旧地址只带号的照样打开（按号取第一个），书�
     '下拉有停': true,
     '号那一行写着群号': true,
   }, '旧地址');
+});
+
+await ask('⑤ 同号的群与好友在会话列表里是两行：各自的命令开关与金额设置不串', async () => {
+  // 用户故障：群里关了一条命令，同号好友的通道上也显示关着；好友那边配的也算到群头上
+  if (!model) throw new Error('push-model.js 没载入，无从量起');
+  const sessions = sessionsList();
+  const users = JSON.parse(datasourceBody());
+  const tree = model.pushTree(users, sessions, store.handlerList, {});
+  const channels = tree[0].channels;
+  const group = channels.find(item => item.type === 1);
+  const friend = channels.find(item => item.type === 0);
+  same({
+    '群通道关着几条': group.commandsOff,
+    '好友通道关着几条': friend.commandsOff,
+    '群取到的会话': (model.sessionOf(sessions, PLATFORM, GROUP_NUM, 1) || {}).typeCode,
+    '好友取到的会话': (model.sessionOf(sessions, PLATFORM, FRIEND_NUM, 0) || {}).typeCode,
+    '两行都算在用、没有残留': model.strandedSessions(users, sessions).length,
+  }, {
+    '群通道关着几条': 1,
+    '好友通道关着几条': 0,
+    '群取到的会话': 1,
+    '好友取到的会话': 0,
+    '两行都算在用、没有残留': 0,
+  }, '会话行');
+});
+
+await ask('⑥ 保存本群设置与「恢复这几条」：请求体都带着会话类型码', async () => {
+  // 用户故障：控制台只发平台与号，后端分不出改的是群还是同号的好友
+  if (!drafts || !push) throw new Error('session-draft.js 或 push.js 没载入，无从量起');
+  drafts.clearSessionDrafts();
+  drafts.setRevenueDraft({platform: PLATFORM, type: 0, num: FRIEND_NUM}, true, false);
+  drafts.setQuietDraft({platform: PLATFORM, type: 0, num: FRIEND_NUM}, {mode: 'off'}, {mode: 'follow'});
+  drafts.setCommandDraft({platform: PLATFORM, type: 1, num: GROUP_NUM}, '直播报告', false, true);
+  const writes = drafts.sessionWrites().map(item => item.path + ' ' + item.body.type);
+  drafts.clearSessionDrafts();
+
+  mock.requests.length = 0;
+  await push.restoreCommands(PLATFORM, 1, GROUP_NUM, ['直播报告']);
+  const sent = mock.requests.filter(item => item.method === 'POST' && item.path.endsWith('/state/commands'))
+    .map(item => JSON.parse(item.body));
+  same({
+    '草稿写出的几笔': writes.sort(),
+    '恢复那一笔的类型': sent.map(item => item.type),
+    '恢复那一笔的号': sent.map(item => item.num),
+  }, {
+    '草稿写出的几笔': ['/state/commands 1', '/state/quiet 0', '/state/revenue 0'],
+    '恢复那一笔的类型': [1],
+    '恢复那一笔的号': [GROUP_NUM],
+  }, '请求体');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

@@ -100,8 +100,8 @@ class ChannelSettingsSurfaceTest {
         when(dataSource.getIncompleteEntries()).thenReturn(List.of());
 
         when(settings.all()).thenReturn(List.of());
-        when(settings.disable(anyString(), any(), anyString())).thenReturn(true);
-        when(settings.enable(anyString(), any(), anyString())).thenReturn(true);
+        when(settings.disable(anyString(), any(), any(), anyString())).thenReturn(true);
+        when(settings.enable(anyString(), any(), any(), anyString())).thenReturn(true);
     }
 
     // ── 读：菜单口径 ────────────────────────────────────────────────────
@@ -171,19 +171,20 @@ class ChannelSettingsSurfaceTest {
     }
 
     @Test
-    @DisplayName("阴：类型未知的会话答不了菜单口径，那一栏是空的而不是一个空表")
-    void strandedSessionAnswersNothingRatherThanEmpty() {
-        // 推送配置里已经没有这个会话，只在状态文件里留着：没有会话类型，构不出上下文。
-        // 🔴 回一个空表会被读成「一条都不藏」——答不了与都列着在 `|| []` 底下长得一模一样
+    @DisplayName("只在状态文件里留着的会话也带着自己的类型：照类型显示、照类型答菜单口径")
+    void strandedSessionKnowsItsType() {
+        // 推送配置里已经没有这个会话，只在状态文件里留着；键里带着会话类型，控制台照类型显示
         when(settings.all()).thenReturn(List.of(
-                new CommandSettingsService.Disabled(PLATFORM, 777L, List.of("直播报告"))));
+                new CommandSettingsService.Disabled(PLATFORM, PushTargetType.GROUP, 777L, List.of("直播报告"))));
 
         JSONObject stranded = sessions().stream()
                 .filter(item -> item.getLongValue("num") == 777L)
                 .findFirst().orElse(null);
         assertNotNull(stranded, "状态文件里残留的会话没有出现在清单里");
-        assertNull(stranded.get("menuHidden"),
-                "答不了的时候给了一个空表，那与「一条都不藏」在界面上分不出来: " + stranded);
+        assertEquals("群", stranded.getString("type"), stranded.toString());
+        assertEquals(PushTargetType.GROUP.getCode(), stranded.getIntValue("typeCode"), stranded.toString());
+        assertNotNull(stranded.get("menuHidden"), "有了类型就答得上菜单口径: " + stranded);
+        assertEquals(List.of("直播报告"), stranded.getJSONArray("disabled"), stranded.toString());
     }
 
     // ── 写：成批开关 ────────────────────────────────────────────────────
@@ -191,34 +192,34 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("阳：成批启用照数改，并逐条落到命令开关服务上")
     void batchEnableChangesEveryNamedCommand() {
-        JSONObject result = controller.toggleCommands(body(List.of("直播报告", "数据排行榜"), false));
+        JSONObject result = controller.toggleCommands(body(List.of("直播报告", "数据排行榜"), false)).getBody();
 
         assertTrue(result.getBooleanValue("success"), result.toString());
         assertEquals(2, result.getIntValue("changed"), result.toString());
-        verify(settings).enable(PLATFORM, GROUP_NUM, "直播报告");
-        verify(settings).enable(PLATFORM, GROUP_NUM, "数据排行榜");
-        verify(settings, never()).disable(anyString(), any(), anyString());
+        verify(settings).enable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, "直播报告");
+        verify(settings).enable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, "数据排行榜");
+        verify(settings, never()).disable(anyString(), any(), any(), anyString());
     }
 
     @Test
     @DisplayName("阴：名单里有一条禁不得时整批都不动")
     void batchDisableRejectsWholeBatchWhenOneIsLocked() {
-        JSONObject result = controller.toggleCommands(body(List.of("直播报告", LOCKED), true));
+        JSONObject result = controller.toggleCommands(body(List.of("直播报告", LOCKED), true)).getBody();
 
         assertFalse(result.getBooleanValue("success"), result.toString());
         assertTrue(result.getString("message").contains("整批未改"), result.toString());
         // 🔴 关键在这一句：排在它前面的那一条也没有被改掉。改了一半再报错，
         // 等于让人从一个自己没选过的状态往回收拾
-        verify(settings, never()).disable(anyString(), any(), anyString());
+        verify(settings, never()).disable(anyString(), any(), any(), anyString());
     }
 
     @Test
     @DisplayName("阴：名单里有一条根本不存在时整批都不动")
     void batchDisableRejectsUnknownCommand() {
-        JSONObject result = controller.toggleCommands(body(List.of("直播报告", "并没有这条"), true));
+        JSONObject result = controller.toggleCommands(body(List.of("直播报告", "并没有这条"), true)).getBody();
 
         assertFalse(result.getBooleanValue("success"), result.toString());
-        verify(settings, never()).disable(anyString(), any(), anyString());
+        verify(settings, never()).disable(anyString(), any(), any(), anyString());
     }
 
     @Test
@@ -232,11 +233,11 @@ class ChannelSettingsSurfaceTest {
         JSONObject blank = body(new ArrayList<>(List.of("")), false);
 
         for (JSONObject request : List.of(noNum, noFlag, empty, blank)) {
-            JSONObject result = controller.toggleCommands(request);
+            JSONObject result = controller.toggleCommands(request).getBody();
             assertFalse(result.getBooleanValue("success"), request + " 该被拒: " + result);
         }
-        verify(settings, never()).enable(anyString(), any(), anyString());
-        verify(settings, never()).disable(anyString(), any(), anyString());
+        verify(settings, never()).enable(anyString(), any(), any(), anyString());
+        verify(settings, never()).disable(anyString(), any(), any(), anyString());
     }
 
     @Test
@@ -246,12 +247,12 @@ class ChannelSettingsSurfaceTest {
                 dependency(org.frostnova.nova.core.service.NovaStateStore.class);
         assertNotNull(store, "控制器没接状态存储，落盘那一步无从量起");
 
-        when(settings.enable(anyString(), any(), eq("直播报告"))).thenReturn(false);
-        controller.toggleCommands(body(List.of("直播报告"), false));
+        when(settings.enable(anyString(), any(), any(), eq("直播报告"))).thenReturn(false);
+        controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
         verify(store, never()).save();
 
-        when(settings.enable(anyString(), any(), eq("直播报告"))).thenReturn(true);
-        controller.toggleCommands(body(List.of("直播报告"), false));
+        when(settings.enable(anyString(), any(), any(), eq("直播报告"))).thenReturn(true);
+        controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
         verify(store, times(1)).save();
     }
 
@@ -260,6 +261,7 @@ class ChannelSettingsSurfaceTest {
     private JSONObject body(List<String> names, boolean disabled) {
         JSONObject request = new JSONObject();
         request.put("platform", PLATFORM);
+        request.put("type", PushTargetType.GROUP.getCode());
         request.put("num", GROUP_NUM);
         request.put("commands", new JSONArray(names.toArray()));
         request.put("disabled", disabled);

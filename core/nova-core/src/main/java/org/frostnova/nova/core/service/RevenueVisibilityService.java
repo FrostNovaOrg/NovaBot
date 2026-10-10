@@ -24,16 +24,15 @@ import java.util.ArrayList;
  * <b>默认私聊可见、群聊隐藏。</b>没配过的群按隐藏处理，是因为反过来的默认值一旦错了，
  * 错误的形式是「已经发出去了」，没有补救手段。
  * <p>
- * 会话的身份沿用「平台 + 会话号」，与命令开关、控制台的会话列表一致。
- * 理论上同一平台下群号与账号相同会撞在一起，但整个控制台的会话概念都是这么定义的，
- * 此处再引入第二套键会让同一行既可编辑又编辑不到。
+ * 会话的身份是「平台 + 会话类型 + 会话号」（见 {@link SessionKey}）：同一平台下群号与好友账号撞号时，
+ * 给好友开的金额不能露到同号的群里。
  */
 @Service
 public class RevenueVisibilityService {
     /**
      * 状态存储中的命名空间
      */
-    private static final String NAMESPACE = "RevenueVisibility";
+    public static final String NAMESPACE = "RevenueVisibility";
 
     private final NovaStateStore store;
 
@@ -50,33 +49,39 @@ public class RevenueVisibilityService {
      * @return 是否可见
      */
     public boolean isVisible(@NonNull String platform, PushTargetType type, @NonNull Long num) {
-        Boolean explicit = explicit(platform, num);
+        Boolean explicit = explicit(platform, type, num);
         return explicit == null ? defaultFor(type) : explicit;
     }
 
     /**
      * 读取显式设置
      * @param platform 推送平台
+     * @param type 会话类型，不是群或好友时一律当没设过
      * @param num 会话号
      * @return 显式设置的值，从未设置过时为 null
      */
-    public Boolean explicit(@NonNull String platform, @NonNull Long num) {
-        return store.read(NAMESPACE, key(platform, num), data -> data.getBoolean(key(platform, num)))
-                .orElse(null);
+    public Boolean explicit(@NonNull String platform, PushTargetType type, @NonNull Long num) {
+        String key = SessionKey.of(platform, type, num);
+        if (key == null) {
+            return null;
+        }
+        return store.read(NAMESPACE, key, data -> data.getBoolean(key)).orElse(null);
     }
 
     /**
      * 设置指定会话的金额可见性
      * @param platform 推送平台
+     * @param type 会话类型，只能是群或好友
      * @param num 会话号
      * @param visible 是否可见，传 null 表示清除设置、回到按会话类型取的默认值
      */
-    public void set(@NonNull String platform, @NonNull Long num, Boolean visible) {
+    public void set(@NonNull String platform, PushTargetType type, @NonNull Long num, Boolean visible) {
+        String key = SessionKey.require(platform, type, num);
         store.write(NAMESPACE, data -> {
             if (visible == null) {
-                data.remove(key(platform, num));
+                data.remove(key);
             } else {
-                data.put(key(platform, num), visible);
+                data.put(key, visible);
             }
         });
     }
@@ -86,17 +91,16 @@ public class RevenueVisibilityService {
      * <p>
      * 只列显式设置：把按默认值处理的会话也列出来，就分不清「配过」与「碰巧默认是这样」，
      * 而这两者在改了默认值之后会走向不同的结果。
-     * @return 各会话的设置，按平台与会话号排序
+     * @return 各会话的设置，按平台、会话号与会话类型排序
      */
     public List<Setting> all() {
         JSONObject data = store.namespace(NAMESPACE);
         List<Setting> result = new ArrayList<>();
 
         for (String key : data.keySet()) {
-            // 键为「平台:会话号」。平台名可能含连字符但不含冒号，
-            // 会话号必为数字，因此从右侧切一刀即可还原
-            int split = key.lastIndexOf(':');
-            if (split <= 0) {
+            // 旧键「平台:会话号」与迁移标记都还原不出会话，跳过
+            SessionKey.Parsed parsed = SessionKey.parse(key);
+            if (parsed == null) {
                 continue;
             }
 
@@ -105,13 +109,14 @@ public class RevenueVisibilityService {
                 if (visible == null) {
                     continue;
                 }
-                result.add(new Setting(key.substring(0, split), Long.parseLong(key.substring(split + 1)), visible));
+                result.add(new Setting(parsed.platform(), parsed.type(), parsed.num(), visible));
             } catch (Exception ignored) {
-                // 手工编辑状态文件时可能混入非法键，跳过即可
+                // 手工编辑状态文件时可能混入非法值，跳过即可
             }
         }
 
-        result.sort(Comparator.comparing(Setting::platform).thenComparingLong(Setting::num));
+        result.sort(Comparator.comparing(Setting::platform).thenComparingLong(Setting::num)
+                .thenComparing(Setting::type));
         return result;
     }
 
@@ -122,17 +127,14 @@ public class RevenueVisibilityService {
         return type == PushTargetType.FRIEND;
     }
 
-    private String key(String platform, Long num) {
-        return platform + ":" + num;
-    }
-
     /**
      * 某个会话的金额可见性设置
      *
      * @param platform 推送平台
+     * @param type 会话类型
      * @param num 会话号
      * @param visible 是否可见
      */
-    public record Setting(String platform, Long num, boolean visible) {
+    public record Setting(String platform, PushTargetType type, Long num, boolean visible) {
     }
 }

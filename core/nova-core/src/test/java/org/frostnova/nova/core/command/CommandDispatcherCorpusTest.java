@@ -192,7 +192,8 @@ class CommandDispatcherCorpusTest {
         Fixture fixture = new Fixture();
         if (corpus.disabled() != null) {
             for (Msg input : corpus.inputs()) {
-                fixture.settings.disable(PLATFORM, input.num(), corpus.disabled());
+                fixture.settings.disable(PLATFORM,
+                        input.group() ? PushTargetType.GROUP : PushTargetType.FRIEND, input.num(), corpus.disabled());
             }
         }
 
