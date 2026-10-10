@@ -331,7 +331,18 @@ public class NapCatCredentialService implements SmartLifecycle {
         if (totpSecret != null) {
             // 字段名是 totpCode。NapCat 那边缺 hash 时报的是「token is empty」——
             // 字段叫 hash、报错说 token，按报错去猜字段名会永远猜错
-            body.put("totpCode", TotpGenerator.currentCode(totpSecret, Instant.now()));
+            String totpCode;
+            try {
+                totpCode = TotpGenerator.currentCode(totpSecret, Instant.now());
+            } catch (IllegalArgumentException e) {
+                // 密钥里混进了 Base32 字母表之外的字符（多半是手抄错一位）。
+                // 按 FAILED 收场，引导页才会说「去检查配置」而不是报服务器错误。
+                // 只写出配置项名，不带密钥的任何字符——它是凭据
+                log.warn("{} 不是合法的 Base32, 算不出验证码, 请对照验证器 App 里的密钥改配置",
+                        TOTP_SECRET_PROPERTY);
+                return Optional.empty();
+            }
+            body.put("totpCode", totpCode);
         }
 
         HttpHeaders headers = new HttpHeaders();
