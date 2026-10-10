@@ -50,7 +50,11 @@ class NapCatQueryTokenBanTest {
     private List<Path> sources() {
         Path root = repositoryRoot();
         List<Path> out = new ArrayList<>();
-        for (String dir : List.of("core/nova-core/src/main/java", "core/nova-core/src/main/resources/config-ui")) {
+        for (String dir : List.of(
+                "core/nova-core/src/main/java",
+                "core/nova-core/src/main/resources/config-ui",
+                "plugins/nova-onebot-adapter/src/main/java",
+                "plugins/nova-onebot-adapter/src/main/resources/config-ui-pages")) {
             Path base = root.resolve(dir);
             if (!Files.isDirectory(base)) {
                 continue;
