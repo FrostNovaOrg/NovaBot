@@ -154,6 +154,11 @@ class MiniNode {
   click() {
     this.dispatchEvent({type: 'click', target: this, stopPropagation() {}});
   }
+
+  // 面板打开时会把焦点放进去
+  focus() {
+    globalThis.document.activeElement = this;
+  }
 }
 
 function findAll(root, selector) {

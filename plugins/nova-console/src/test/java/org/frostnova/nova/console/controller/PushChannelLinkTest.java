@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 右栏开的是群那一个；窄屏下拉里选好友，开的也是群。一览表与通道行的「打开」同样只按号认。
  * <p>
  * 夹具真跑：假 DOM 与假 fetch 之外，左树点击、地址栏路由、右区重画走的都是产品码那一份；
- * 顺带量旧地址 #/push/&lt;uid&gt;/&lt;号&gt; 照样能打开。
+ * 顺带量旧地址 #/push/&lt;uid&gt;/&lt;号&gt; 照样能打开，以及主播那一页的「打开 … 的数据 →」指到这位主播。
  * <p>
  * 「由 JUnit 拉起 node、找不到 node 时红而不是跳过」这两条规矩见 {@link FrontendFixture}；
  * 这里没直接用它的 run，是因为要多透传一个参数：量一份改过的拷贝时以

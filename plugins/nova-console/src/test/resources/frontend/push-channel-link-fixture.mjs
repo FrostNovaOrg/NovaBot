@@ -9,7 +9,8 @@
  *
  * 本尺真跑：假 DOM 与假 fetch 之外，左树点击、地址栏路由、右区重画走的都是产品码那一份。
  * 只 includes 一段字样是不行的：地址里多写一截类型照样能被按号那段查重。
- * 另量旧地址 #/push/<uid>/<号> 照样能打开（按号取第一个），书签与手册里的例子不受影响。
+ * 另量旧地址 #/push/<uid>/<号> 照样能打开（按号取第一个），书签与手册里的例子不受影响；
+ * 顺带量主播那一页的「打开 … 的数据 →」指到这位主播，不落到整个主播列表（⑦）。
  *
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 量程：不带参数即源码树里那一份；带一份 config-ui-pages 拷贝的绝对路径即量那份拷贝
@@ -310,8 +311,10 @@ let push = null;
 let store = null;
 let model = null;
 let drafts = null;
+let streamersModel = null;
 try {
   push = await import(join(pages, 'push.js'));
+  streamersModel = await import(join(pages, 'streamers-model.js'));
   store = (await import('./store.js')).store;
   model = await import(join(pages, 'push-model.js'));
   drafts = await import(join(pages, 'session-draft.js'));
@@ -558,6 +561,22 @@ await ask('⑥ 保存本群设置与「恢复这几条」：请求体都带着�
     '恢复那一笔的类型': [1],
     '恢复那一笔的号': [GROUP_NUM],
   }, '请求体');
+});
+
+// 故障：点「打开 甲 的数据 →」落到整个主播列表，还得在列表里再找一遍这位主播
+await ask('⑦ 主播那一页的「打开 … 的数据 →」指到这位主播的详情', async () => {
+  if (!push || !streamersModel) throw new Error('push.js 或 streamers-model.js 没载入，无从量起');
+  await openHash('#/push/1');
+  const link = allNodes(idNode('push-right'))
+    .find(node => node.tagName === 'a' && /^打开 .* 的数据 →$/.test(node.textContent));
+  if (!link) throw new Error('主播那一页没有「打开 … 的数据 →」');
+  same({
+    '链接的地址': link.href,
+    '与主播页拼地址的那一份一致': link.href === streamersModel.detailHash('bilibili', 1),
+  }, {
+    '链接的地址': '#/streamers/bilibili/1',
+    '与主播页拼地址的那一份一致': true,
+  }, '「打开 甲 的数据 →」');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

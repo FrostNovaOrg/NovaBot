@@ -6,7 +6,8 @@
  * 上面「报告里的卡片」按报告上的先后排，拖着换位、× 拿掉；下面「没放进报告的」点一下放回末尾，
  * 也能拖回想要的位置。在报告区＝那张卡的开关开着，报告区里的先后＝存着的顺序。
  *
- * 各格抓的故障写在各格开头。
+ * 各格抓的故障写在各格开头。⑩ 量的是四处拖起来的地方都给 dataTransfer 塞了一样东西：
+ * Firefox 不见 setData 就不起拖，点和键盘不受影响，所以这一样只有在 Firefox 里才看得出缺。
  *
  * 本尺真跑整条通道页：push.js 的 renderStreamers、template.js 的两个编辑器、
  * push-model.js 的判法都是产品码。版式项清单不手抄，由 PushCardSwitchesTest 把
@@ -195,13 +196,18 @@ function matches(node, sel) {
   return node.tagName === sel.toLowerCase();
 }
 
-/** 一个事件：记下有没有被 preventDefault，拖放的带一份 dataTransfer */
+/** 一个事件：记下有没有被 preventDefault，拖放的带一份 dataTransfer，setData 的每一次调用记在 calls 上 */
 function fakeEvent(type, target, extra) {
+  const calls = [];
   return Object.assign({
     type, target, defaultPrevented: false,
     preventDefault() { this.defaultPrevented = true; },
     stopPropagation() {},
-    dataTransfer: {effectAllowed: '', dropEffect: '', setData() {}, getData: () => ''},
+    dataTransfer: {
+      effectAllowed: '', dropEffect: '', calls,
+      setData(kind, value) { calls.push([String(kind), String(value)]); },
+      getData: () => '',
+    },
   }, extra || {});
 }
 
@@ -349,7 +355,7 @@ const ZONE_NAME = {[ON]: '报告里的卡片', [OFF]: '没放进报告的'};
 /** 某一区；scope 缺省为通道页 */
 function zone(which, scope) {
   const node = allNodes(scope || page()).find(item => hasClass(item, which));
-  if (!node) throw new Error('版式区没有「' + ZONE_NAME[which] + '」那一区（改前无此功能）');
+  if (!node) throw new Error('版式区没有「' + ZONE_NAME[which] + '」那一区');
   return node;
 }
 
@@ -365,7 +371,7 @@ function chip(which, label, scope) {
 function killButton(label, scope) {
   const node = allNodes(scope || page())
     .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '拿掉：' + label);
-  if (!node) throw new Error('找不到「拿掉：' + label + '」（改前无此功能）');
+  if (!node) throw new Error('版式区没有「拿掉：' + label + '」按钮');
   return node;
 }
 
@@ -406,13 +412,17 @@ async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
 }
 
+/**
+ * 把通道页画出来。params 为 null 时消息上不带 params 这一键：
+ * 刚加的通道就是这样，[{handler}]，一个参数都没存过
+ */
 async function paintPage(params) {
   mock.requests.length = 0;
   push.setPushEntries([{
     platform: 'bilibili', uid: 1, _uname: '甲', enabled: true,
     targets: [{
       platform: TARGET.platform, type: 1, num: TARGET.num, enabled: true,
-      messages: [{handler: HANDLER, params: Object.assign({}, params)}],
+      messages: [params === null ? {handler: HANDLER} : {handler: HANDLER, params: Object.assign({}, params)}],
     }],
   }]);
   push.setRuntimeState({sessions: [SESSION], commands: [], subscriptions: [], incomplete: []});
@@ -447,7 +457,7 @@ await ask('① 十张卡在版式表里跟着数据卡片；界面上紧跟「�
   const at = rows.findIndex(row => rowLabel(row) === '数据卡片');
   if (at < 0) throw new Error('版式区没有「数据卡片」这一行');
   const board = rows[at + 1];
-  if (!hasClass(board, 'rep-board')) throw new Error('「数据卡片」下面一行不是两区小块（改前无此功能）');
+  if (!hasClass(board, 'rep-board')) throw new Error('「数据卡片」下面一行不是两区小块');
   if (!hasClass(board, 'rep-sub')) throw new Error('两区小块没缩进在「数据卡片」下面');
   same(labelsIn(ON), CARD_LABELS, '报告区里的小块');
   same(labelsIn(OFF), [], '下面那区的小块');
@@ -495,6 +505,14 @@ await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原�
   dragTo(chip(ON, '弹幕'), chip(ON, '点赞'), 'before');
   dragTo(chip(ON, '弹幕'), chip(ON, '弹幕'), 'after');
   same(Object.keys(message().params), [], '原地拖了三下之后的参数（不该写进任何键）');
+
+  // 刚加的通道一个参数都没存过：原地拖几下，改动条上不该冒出一处没存的改动
+  await paintPage(null);
+  push.markPushSaved();
+  dragTo(chip(ON, '弹幕'), chip(ON, '流水'), 'after');
+  dragTo(chip(ON, '弹幕'), chip(ON, '点赞'), 'before');
+  dragTo(chip(ON, '弹幕'), chip(ON, '弹幕'), 'after');
+  same(push.changeCount(), 0, '没存过参数的通道上原地拖了三下之后的改动数');
 });
 
 // 故障：点 × 以后那张卡的开关没存成关、或小块没到下面那区；点下面那区的小块没回到报告区末尾、或开关没存成开
@@ -653,6 +671,59 @@ await ask('⑧ 两个编辑器不串：卡片小块拖进消息正文、占位�
   if (!over.defaultPrevented) throw new Error('消息正文不再收调色板上拖来的占位符');
   same(tplWrites.length, 1, '占位符拖进消息正文之后模板写回的次数');
   same(tplWrites[0].message, '开播了{uname}', '占位符拖进消息正文之后的模板');
+});
+
+// 故障：存着的顺序是旧版本留下的（少了后来加的卡）或手改过（带着一个不认得的键），
+// 小块画乱了、少画了卡、把认不得的键画成一枚空名的小块，或者整块画不出来
+await ask('⑨ 存着的顺序缺了几张、带着认不得的键：认得的照存的先后，缺的按默认顺序补在后面，认不得的不画', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  alerts.length = 0;
+  const stored = 'card_share,card_bogus,card_danmu';
+  await paintPage({card_order: stored});
+  same(labelsIn(ON), ['分享', '弹幕', '流水', '点赞', '进入直播间', '新增关注', '醒目留言', '大航海', '盲盒', '免费礼物'],
+    '报告区');
+  same(labelsIn(OFF), [], '下面那区');
+  same([...chipsIn(ON), ...chipsIn(OFF)].filter(node => !CARD_KEYS.includes(node.dataset.card)).length, 0,
+    '画成小块的认不得的键');
+  same(alerts, [], '弹出的话');
+  same(message().params.card_order, stored, '光是画出来，存着的值不动');
+});
+
+// 故障：Firefox 里拖不动模板里的块与数据卡片的小块（它不见 setData 就不起拖）；
+// 或者塞的是 text/plain，拖过别的输入框时被当成文字收进去，拖整张卡时那串字被插进正文
+await ask('⑩ 四处拖起来的地方都调了 setData，用自定义类型，没有一处用 text/plain', async () => {
+  if (!editors) throw new Error('产品码没载入，无从量起');
+  const tplHost = new MiniNode('div');
+  editors.buildTemplateEditor(tplHost, {
+    handlers: [{className: 'demo', displayName: '开播通知', placeholders: ['{uname}', '{title}'],
+      attachments: [], defaultParams: {message: '开播了{uname}'}}],
+    editable: true, paramsOf: () => ({}), onChange: () => {},
+  });
+  const repHost = new MiniNode('div');
+  editors.buildLayoutEditor(repHost, {
+    editable: true, items: OPTIONS, paramsOf: () => ({}), onChange: () => {}, render: () => Promise.resolve(null),
+  });
+  const find = (host, cls, what) => {
+    const node = allNodes(host).find(item => hasClass(item, cls));
+    if (!node) throw new Error('编辑器里没有' + what);
+    return node;
+  };
+  const sources = {
+    '调色板上的块': find(tplHost, 'tpl-blk', '调色板上的块'),
+    '整张卡的把手': find(tplHost, 'tpl-c-h', '整张卡的把手'),
+    '正文里的块': find(tplHost, 'tpl-pill', '正文里的块'),
+    '数据卡片的小块': chip(ON, '流水', repHost),
+  };
+  const got = {};
+  for (const [what, node] of Object.entries(sources)) {
+    const start = fakeEvent('dragstart', node);
+    node.dispatchEvent(start);
+    node.dispatchEvent(fakeEvent('dragend', node));
+    got[what] = start.dataTransfer.calls.map(call => call[0]);
+  }
+  const want = Object.fromEntries(Object.keys(sources).map(what => [what, ['application/x-nova-drag']]));
+  same(got, want, '各处 dragstart 里 setData 用的类型');
+  same(Object.values(got).flat().filter(kind => kind.startsWith('text/')).length, 0, '用了 text/ 类型的次数');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
