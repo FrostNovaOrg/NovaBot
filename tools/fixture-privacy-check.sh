@@ -2,8 +2,9 @@
 # Scan each module's src/test tree (including resources) for two shapes:
 # ① hdslb.com/bfs/face/ followed by a 40-hex hash — the hash must be listed
 #    in tools/fixture-privacy-allow.txt
-# ② mailbox-shaped strings — the domain must end with example.com,
-#    example.org, example.net, .invalid, .test, or .example
+# ② mailbox-shaped strings — the domain must be example.com, example.org,
+#    or example.net (or a subdomain of one), or end with .invalid, .test,
+#    or .example
 #
 # A sample that must fail both checks is fed to the same matchers first.
 # If that sample is not flagged, this script exits 2 (it cannot tell red
@@ -26,7 +27,7 @@ EMAIL_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 
 domain_reserved() {
     case "$1" in
-        *example.com|*example.org|*example.net|*.invalid|*.test|*.example) return 0 ;;
+        example.com|*.example.com|example.org|*.example.org|example.net|*.example.net|*.invalid|*.test|*.example) return 0 ;;
         *) return 1 ;;
     esac
 }
