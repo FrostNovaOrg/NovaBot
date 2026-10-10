@@ -9,6 +9,8 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.Lifecycle;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
@@ -124,6 +126,16 @@ public class RedisTotalDataStore {
      * 把本场数据并入累计
      * <p>
      * 逐项累加而非整体覆盖：同一主播的累计量由历次直播叠加而成。
+     * <p>
+     * <b>整场的全部写入放进同一个 MULTI/EXEC 事务</b>：要么全部生效，要么一条也不生效。
+     * 调用方只有在整场并成时才记「已并过」，而并入途中 Redis 断一下并不罕见——
+     * 不装进事务的话，已经写进去的前几项不会被记成已并过，重并时它们被多算一遍且改不回来。
+     * EXEC 之前出错（连接断开、命令排队时被拒）时，服务端丢掉整批，Redis 里一项也不留；
+     * 本方法返回 false，之后的重并并的就是完整的一场。
+     * <p>
+     * 有两种情况会多算，都不处理。一是 EXEC 已经到达 Redis、回包在网络上传丢了：事务其实已提交，
+     * 本方法却只能报失败。二是 EXEC 已经执行、但其中某条命令执行时报错（例如键被写成了别的类型）：
+     * Redis 不回滚，其余各项已经生效，本方法照样返回 false，重并会把生效的那部分多算一遍。
      * @param platform 直播平台
      * @param uid 主播 UID
      * @param snapshot 本场数据快照
@@ -131,30 +143,43 @@ public class RedisTotalDataStore {
      */
     public boolean merge(@NonNull String platform, @NonNull Long uid, @NonNull LiveSnapshot snapshot) {
         try {
-            for (Map.Entry<String, Double> entry : snapshot.metrics().entrySet()) {
-                redis.opsForHash().increment(totalKey(platform, uid), entry.getKey(), entry.getValue());
-            }
+            redis.execute(new SessionCallback<>() {
+                @Override
+                public <K, V> Object execute(RedisOperations<K, V> operations) {
+                    // SessionCallback 的回调方法是泛型的，进来时认不出键值类型；
+                    // 模板是 StringRedisTemplate，这里只转一次型，后面全部照字符串键值用
+                    @SuppressWarnings("unchecked") RedisOperations<String, String> ops =
+                            (RedisOperations<String, String>) (RedisOperations<?, ?>) operations;
 
-            for (Map.Entry<String, Map<Long, Double>> byMetric : snapshot.userMetrics().entrySet()) {
-                String key = totalUserKey(platform, uid, byMetric.getKey());
-                for (Map.Entry<Long, Double> entry : byMetric.getValue().entrySet()) {
-                    redis.opsForZSet().incrementScore(key, String.valueOf(entry.getKey()), entry.getValue());
+                    ops.multi();
+                    for (Map.Entry<String, Double> entry : snapshot.metrics().entrySet()) {
+                        ops.opsForHash().increment(totalKey(platform, uid), entry.getKey(), entry.getValue());
+                    }
+
+                    for (Map.Entry<String, Map<Long, Double>> byMetric : snapshot.userMetrics().entrySet()) {
+                        String key = totalUserKey(platform, uid, byMetric.getKey());
+                        for (Map.Entry<Long, Double> entry : byMetric.getValue().entrySet()) {
+                            ops.opsForZSet().incrementScore(key, String.valueOf(entry.getKey()), entry.getValue());
+                        }
+                    }
+
+                    Map<Long, String> names = snapshot.userNames();
+                    if (!names.isEmpty()) {
+                        Map<String, String> byUid = new HashMap<>();
+                        names.forEach((userUid, name) -> byUid.put(String.valueOf(userUid), name));
+                        ops.opsForHash().putAll(nameKey(platform, uid), byUid);
+                    }
+
+                    Map<Long, String> faces = snapshot.userFaces();
+                    if (!faces.isEmpty()) {
+                        Map<String, String> byUid = new HashMap<>();
+                        faces.forEach((userUid, face) -> byUid.put(String.valueOf(userUid), face));
+                        ops.opsForHash().putAll(faceKey(platform, uid), byUid);
+                    }
+
+                    return ops.exec();
                 }
-            }
-
-            Map<Long, String> names = snapshot.userNames();
-            if (!names.isEmpty()) {
-                Map<String, String> byUid = new HashMap<>();
-                names.forEach((userUid, name) -> byUid.put(String.valueOf(userUid), name));
-                redis.opsForHash().putAll(nameKey(platform, uid), byUid);
-            }
-
-            Map<Long, String> faces = snapshot.userFaces();
-            if (!faces.isEmpty()) {
-                Map<String, String> byUid = new HashMap<>();
-                faces.forEach((userUid, face) -> byUid.put(String.valueOf(userUid), face));
-                redis.opsForHash().putAll(faceKey(platform, uid), byUid);
-            }
+            });
 
             log.info("主播 {} 的本场数据已并入累计", uid);
             return true;
