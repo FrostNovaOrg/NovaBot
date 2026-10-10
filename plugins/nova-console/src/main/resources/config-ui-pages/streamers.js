@@ -638,6 +638,7 @@ function pageLink(label, page) {
  *
  * 整行可点：点进去是那一场的报告。用 tr 上挂事件而不是把每一格都做成链接——
  * 一行八格各套一个 a，键盘走一遍要按八次，而它们指的是同一处。
+ * 开播时间那一格是一个真链接，指向同一处：只用键盘的人 Tab 一行停一下，回车打开。
  * @param items 本页场次
  * @param metrics 指标说明
  * @return {HTMLElement} 表格那一块
@@ -666,10 +667,11 @@ function sessionTable(items, metrics) {
     const peak = peakOf ? peakCell(item, peakOf.key) : null;
     const {title, changed} = sessionTitle(item);
 
+    const hash = sessionHash(item.platform, item.uid, item.startTime);
     const row = document.createElement('tr');
     if (item.interrupted) row.className = 'empty-row';
     row.style.cursor = 'pointer';
-    row.innerHTML = '<td class="n">' + esc(fmtTime(item.startTime)) + '</td>'
+    row.innerHTML = '<td class="n"><a href="' + esc(hash) + '">' + esc(fmtTime(item.startTime)) + '</a></td>'
       + '<td class="n"' + (gaps.title ? ' title="' + esc(gaps.title) + '"' : '') + '>'
       + esc(fmtDuration(item.durationSeconds)) + (gaps.any ? ' ⚠' : '') + '</td>'
       + shown.map(one => '<td class="n">'
@@ -679,8 +681,11 @@ function sessionTable(items, metrics) {
       + '<td title="' + esc(title) + '">'
       + esc((title.length > 18 ? title.slice(0, 18) + '…' : title) + changed) + '</td>'
       + '<td>' + esc(item.interrupted ? item.endReasonText : '正常') + '</td>';
-    row.addEventListener('click',
-      () => { location.hash = sessionHash(item.platform, item.uid, item.startTime); });
+    // 点在链接上时由链接自己去：新标签页打开那几种点法不该再把这一页也带走
+    row.addEventListener('click', event => {
+      if (event.target && event.target.closest && event.target.closest('a')) return;
+      location.hash = hash;
+    });
     body.appendChild(row);
   }
 

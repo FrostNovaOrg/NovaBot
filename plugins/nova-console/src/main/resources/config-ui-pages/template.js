@@ -23,8 +23,31 @@ import {
  *
  * 摆在模块这一层而不是随事件传：HTML5 拖放只捎得动字符串，而我们要捎的是
  * 「哪一张卡的第几块」。把它塞进 dataTransfer 再解析回来，等于给同一件事发明第二种表示。
+ * 每处 dragstart 照样调一次 setData（见 startDrag），那只为让 Firefox 起拖，里面不装东西。
  */
 let drag = null;
+
+/**
+ * 拖起来时往 dataTransfer 里塞的类型
+ *
+ * 自定义类型而不是 text/plain：页上别的输入框会把 text/plain 当文字收进去，
+ * 拖整张卡时消息正文不拦，那串字会被插进正文里。
+ */
+const DRAG_TYPE = 'application/x-nova-drag';
+
+/**
+ * 记下这一下拖的是什么，并让浏览器起拖
+ *
+ * Firefox 不见 setData 就不起拖，模板里的块与数据卡片的小块在那里就拖不动；点和键盘不受影响。
+ * @param event dragstart 事件
+ * @param what 记到 drag 上的那一份
+ * @param effect effectAllowed
+ */
+function startDrag(event, what, effect) {
+  drag = what;
+  event.dataTransfer.effectAllowed = effect;
+  event.dataTransfer.setData(DRAG_TYPE, '');
+}
 
 /**
  * 模板编辑器自己的那几种拖法：调色板上新拖出来的块、正文里挪的块、整张卡
@@ -192,10 +215,7 @@ export function buildTemplateEditor(host, options) {
       button.title = opts.editable ? (used || '点一下插到光标处，或拖进卡里') : (opts.lockedNote || '');
       button.draggable = opts.editable && !used;
       button.addEventListener('click', () => insertHere(key));
-      button.addEventListener('dragstart', event => {
-        drag = {kind: 'new', key};
-        event.dataTransfer.effectAllowed = 'copy';
-      });
+      button.addEventListener('dragstart', event => startDrag(event, {kind: 'new', key}, 'copy'));
       button.addEventListener('dragend', () => { drag = null; });
       palette.appendChild(button);
     }
@@ -244,10 +264,7 @@ export function buildTemplateEditor(host, options) {
     handle.textContent = '⋮⋮';
     handle.title = '拖动排序';
     handle.draggable = opts.editable;
-    handle.addEventListener('dragstart', event => {
-      drag = {kind: 'card', card: index};
-      event.dataTransfer.effectAllowed = 'move';
-    });
+    handle.addEventListener('dragstart', event => startDrag(event, {kind: 'card', card: index}, 'move'));
     handle.addEventListener('dragend', () => { drag = null; });
     side.appendChild(handle);
 
@@ -372,9 +389,8 @@ export function buildTemplateEditor(host, options) {
     pill.addEventListener('dragstart', event => {
       // 拖起来的那一刻才算它此刻在第几格：渲染时算好的序号，在打过字之后已经对不上
       const body = pill.closest('.tpl-c-body');
-      drag = {kind: 'move', key: block.key,
-        from: {card: cardIndex, index: spotFromDom(body, pill, 0).index}};
-      event.dataTransfer.effectAllowed = 'move';
+      startDrag(event, {kind: 'move', key: block.key,
+        from: {card: cardIndex, index: spotFromDom(body, pill, 0).index}}, 'move');
       event.stopPropagation();
     });
     pill.addEventListener('dragend', () => { drag = null; });
@@ -834,8 +850,7 @@ export function buildLayoutEditor(host, options) {
           event.preventDefault();
           return;
         }
-        drag = {kind: 'report-card', owner, order: order.key, key};
-        event.dataTransfer.effectAllowed = 'move';
+        startDrag(event, {kind: 'report-card', owner, order: order.key, key}, 'move');
         event.stopPropagation();
       });
       node.addEventListener('dragend', () => { drag = null; });

@@ -15,7 +15,7 @@
  * 与「发一条试试」「初始设置第 4 步」是同一份判法。
  */
 
-import {ask} from './confirm.js';
+import {ask, keepTabInside} from './confirm.js';
 import {$, api, el, esc, markDirty, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
@@ -30,6 +30,7 @@ import {
   clearSessionDrafts, onRevenueDraftChange, revenueDraft, sessionDraftCount, sessionWrites,
 } from './session-draft.js';
 import {store} from './store.js';
+import {detailHash} from './streamers-model.js';
 import {buildLayoutEditor, buildTemplateEditor} from './template.js';
 import {restoreDefaults, templateAdoption} from './template-model.js';
 
@@ -91,7 +92,6 @@ const PAGE_STYLE = `
 .sh-nm{font-size:18px;font-weight:600}
 .sh-id{color:var(--dim);font-size:13.5px}
 .sh-side{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-button.danger:hover{border-color:var(--err);color:var(--err)}
 /* 通道行 */
 .rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;
   border-top:1px solid var(--line)}
@@ -352,7 +352,7 @@ function ensureDrawer() {
   const wrap = document.createElement('div');
   wrap.innerHTML = `
 <div class="drawer" id="push-drawer" hidden>
-  <div class="dw" role="dialog" aria-modal="true" aria-labelledby="push-drawer-title">
+  <div class="dw" role="dialog" aria-modal="true" aria-labelledby="push-drawer-title" tabindex="-1">
     <div class="dw-hd">
       <h3 id="push-drawer-title">面板</h3>
       <button class="ghost" type="button" id="push-drawer-close">关闭</button>
@@ -435,6 +435,16 @@ function bindShell() {
   $('#push-drawer-close').addEventListener('click', closeDrawer);
   $('#push-drawer').addEventListener('click', event => {
     if (event.target === $('#push-drawer')) closeDrawer();
+  });
+  // aria-modal 只拦得住读屏：Esc 与 Tab 得自己接。听在面板上而不是整页上，
+  // 面板之上再弹的确认框按 Esc 只关它自己
+  $('#push-drawer').addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeDrawer();
+    } else if (event.key === 'Tab') {
+      keepTabInside($('#push-drawer'), event);
+    }
   });
 }
 
@@ -1049,7 +1059,7 @@ function renderStreamerLevel(host, user) {
 
   const data = card(host, '这位主播的数据', '场次、趋势，还有每一场的详细报告，都在主播页。');
   const link = el('a', 'lnkbtn');
-  link.href = '#/streamers';
+  link.href = detailHash(user.platform, user.uid);
   link.textContent = '打开 ' + streamerName(user) + ' 的数据 →';
   data.appendChild(link);
 }
@@ -1487,24 +1497,43 @@ function sectionSession(host, user, target, session) {
 
 // ============ 抽屉 ============
 
+/** 打开面板时焦点所在的那个控件：关掉时焦点还给它 */
+let drawerOpener = null;
+
 /**
  * 摊开一个只问一件事的面板
+ *
+ * 先显示、再把焦点放到正文里第一个控件上：面板还藏着时聚焦会落空，焦点留在打开它的按钮上。
+ * 面板开着时再摊一份（如「刷新」名单）只换内容，打开它的仍是最早那一个。
  * @param title 标题
  * @param lead 一句说明
  * @param build 往面板正文里建内容
  */
 export function openDrawer(title, lead, build) {
+  const drawer = $('#push-drawer');
+  if (drawer.hidden) drawerOpener = document.activeElement;
   $('#push-drawer-title').textContent = title;
   $('#push-drawer-lead').textContent = lead || '';
   const body = $('#push-drawer-body');
   body.innerHTML = '';
   build(body);
-  $('#push-drawer').hidden = false;
+  drawer.hidden = false;
+  const first = body.querySelector('input, select, textarea, button, a[href]') || $('#push-drawer-close');
+  first.focus();
 }
 
+/**
+ * 收起面板。×、点遮罩、Esc、办完自动关都走这里，焦点还给打开它的那个控件；
+ * 那个控件已随重画不在页上了就不管
+ */
 export function closeDrawer() {
-  $('#push-drawer').hidden = true;
+  const drawer = $('#push-drawer');
+  const wasOpen = !drawer.hidden;
+  drawer.hidden = true;
   $('#push-drawer-body').innerHTML = '';
+  const opener = drawerOpener;
+  drawerOpener = null;
+  if (wasOpen && opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
 }
 
 /**
@@ -1666,7 +1695,6 @@ export function addStreamer() {
     const submit = () => lookupStreamer(platformNames, input, go, out);
     go.addEventListener('click', submit);
     input.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
-    input.focus();
   });
 }
 

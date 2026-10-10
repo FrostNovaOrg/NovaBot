@@ -25,8 +25,9 @@
      --on-accent 压在强调色填充上的字。暗色下强调色变浅，白字对比度不够，改用页底色。
      --on-err  压在错误色填充上的字（危险按钮），道理同 --on-accent。
      --accent-text 强调色拿来写字、又落在页底或淡底上时用的那一档：比 --accent 深一点，
-               品牌渐变与主按钮照旧用 --accent。 */
-  --paper:#FFFFFF; --on-accent:#FFFFFF; --on-err:#FFFFFF; --accent-text:#6D3CFF;
+               品牌渐变与主按钮照旧用 --accent。
+     --on-status 压在成功色、警告色填充上的字（向导的步骤徽章），道理同 --on-accent。 */
+  --paper:#FFFFFF; --on-accent:#FFFFFF; --on-err:#FFFFFF; --accent-text:#6D3CFF; --on-status:#FFFFFF;
   /* 盖在整页上的那层。亮色下压得轻些、暗色下压得重些：暗色本来就暗，
      用同一个值的话底下那一页几乎还是清清楚楚，看起来像面板浮在没被挡住的页面上 */
   --overlay:rgba(28,26,46,.32);
@@ -49,7 +50,7 @@
     --cloud3:#C4B5FF;
     --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
     --c-guard:#4CC9F0; --c-view:#9B96B5;
-    --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF;
+    --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF; --on-status:#14121F;
   --overlay:rgba(10,8,18,.58);
   }
 }
@@ -66,7 +67,7 @@
   --cloud3:#C4B5FF;
   --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
   --c-guard:#4CC9F0; --c-view:#9B96B5;
-  --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF;
+  --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF; --on-status:#14121F;
   --overlay:rgba(10,8,18,.58);
 }
 :root[data-theme="light"]{color-scheme:light}
@@ -86,7 +87,7 @@
 .nv-pill.ok{border-color:var(--ok);color:var(--ok);background:var(--oksoft)}
 .nv-pill.warn{border-color:var(--warn);color:var(--warn);background:var(--warnsoft)}
 .nv-pill.err{border-color:var(--err);color:var(--err);background:var(--errsoft)}
-.nv-pill.acc{border-color:var(--softline);color:var(--accent);background:var(--soft)}
+.nv-pill.acc{border-color:var(--softline);color:var(--accent-text);background:var(--soft)}
 .nv-soft{background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
 
 *{box-sizing:border-box}
@@ -178,7 +179,7 @@ body{margin:0;background:var(--ground);color:var(--text);
 /* 插件带来的页：设置页「高级」里一次只显示选中的那一张 */
 .pgpage{display:none}
 .pgpage.on{display:block}
-#page-tabs button.on{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+#page-tabs button.on{border-color:var(--accent);color:var(--accent-text);background:var(--soft)}
 /* 初始设置页是独立版式：不显示侧栏与底部保存栏。
    还没上锁的机器走的就是这条路，此时「退出登录」无从谈起 */
 html.chromeless #side,html.chromeless #changebar{display:none}
@@ -207,8 +208,8 @@ html.nobar #main{padding-bottom:20px}
 .su-badge{flex:none;width:20px;height:20px;border-radius:50%;display:inline-flex;
   align-items:center;justify-content:center;font-size:12.5px;line-height:1;
   background:var(--ground);color:var(--dim);border:1px solid var(--line)}
-.su-badge.done{background:var(--ok);color:var(--paper);border-color:transparent}
-.su-badge.warn{background:var(--warn);color:var(--paper);border-color:transparent}
+.su-badge.done{background:var(--ok);color:var(--on-status);border-color:transparent}
+.su-badge.warn{background:var(--warn);color:var(--on-status);border-color:transparent}
 .su-badge.current{background:var(--accent);color:var(--on-accent);border-color:transparent}
 .su-panel{min-width:0}
 .su-h{font-size:16px;font-weight:600;margin-bottom:4px}

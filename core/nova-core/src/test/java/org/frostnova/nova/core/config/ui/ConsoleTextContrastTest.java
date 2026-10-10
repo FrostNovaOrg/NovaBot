@@ -56,7 +56,11 @@ class ConsoleTextContrastTest {
             new Spot("错误行的日志辅助字", ".tl-hd .tl-x", List.of("surface", "errsoft")),
             new Spot("警告行的日志辅助字", ".tl-hd .tl-x", List.of("surface", "warnsoft")),
             new Spot("错误行的「在工程日志里看」", ".tl-go", List.of("surface", "errsoft")),
-            new Spot("警告行的「在工程日志里看」", ".tl-go", List.of("surface", "warnsoft")));
+            new Spot("警告行的「在工程日志里看」", ".tl-go", List.of("surface", "warnsoft")),
+            new Spot("顶部分页的选中项", "#page-tabs button.on", List.of("surface")),
+            new Spot("侧栏「有新版」按钮", ".nv-pill.acc", List.of("ground")),
+            new Spot("首次设置向导已完成的步骤徽章", ".su-badge.done", List.of("surface")),
+            new Spot("首次设置向导要留意的步骤徽章", ".su-badge.warn", List.of("surface")));
 
     private static final List<Spot> LOGIN = List.of(
             new Spot("登录错误字", ".msg", List.of("surface")));
