@@ -92,6 +92,8 @@ class BilibiliAtListCommandTest {
         CommandReply reply = command(dataSource, subscriptions, broken)
                 .execute(context("@名单"));
 
+        // 号的断言放在最前：后面两句失败时会把整段回复打出来
+        assertNoSubscriberUid(reply.content());
         assertTrue(reply.content().contains("（昵称未知）"), reply.content());
         assertFalse(reply.content().contains("" + STREAMER), "名字取不到也不是把账号写出去的理由：" + reply.content());
     }
@@ -108,11 +110,28 @@ class BilibiliAtListCommandTest {
         CommandReply reply = command(dataSource, subscriptions, broken)
                 .execute(context("@名单"));
 
+        // 号的断言放在最前：后面两句失败时会把整段回复打出来
+        assertNoSubscriberUid(reply.content());
         assertTrue(reply.content().contains("（昵称未知）"), reply.content());
         assertFalse(reply.content().contains("" + STREAMER), "名字取不到也不是把账号写出去的理由：" + reply.content());
     }
 
     // ── 夹具 ────────────────────────────────────────────────────────────
+
+    /**
+     * 回复里一个订阅者的号都不能有
+     * <p>
+     * 失败时只报是第几个号、号有几位，不把号本身打进日志。
+     */
+    private static void assertNoSubscriberUid(String content) {
+        List<Long> everyone = new ArrayList<>(uids(0));
+        everyone.addAll(uids(PER_KIND));
+        for (int i = 0; i < everyone.size(); i++) {
+            String uid = String.valueOf(everyone.get(i));
+            assertFalse(content.contains(uid),
+                    "名字取不到时第 " + (i + 1) + " 个订阅者的号（" + uid.length() + " 位）被写进了回复");
+        }
+    }
 
     /**
      * 取名字的服务被问了几次
@@ -159,10 +178,16 @@ class BilibiliAtListCommandTest {
         return subscriptions;
     }
 
+    /**
+     * 订阅者的假号从这里起：十位数，与回复里的人数、序号、时间都撞不上，
+     * 「回复里没有这个号」这句断言才有意义
+     */
+    private static final long SUBSCRIBER_BASE = 7_310_000_000L;
+
     private static List<Long> uids(int from) {
         List<Long> uids = new ArrayList<>();
         for (int i = 0; i < PER_KIND; i++) {
-            uids.add((long) (from + i + 1));
+            uids.add(SUBSCRIBER_BASE + from + i + 1);
         }
         return uids;
     }
