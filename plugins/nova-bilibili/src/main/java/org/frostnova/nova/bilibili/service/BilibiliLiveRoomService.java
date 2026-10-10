@@ -107,6 +107,12 @@ public class BilibiliLiveRoomService {
     private final Set<Long> startupWaveRooms = ConcurrentHashMap.newKeySet();
 
     /**
+     * 最近一次 sync 定下的目标房间号。排在闸门里的首连放行时拿它核对，
+     * 这期间被删掉或停用的主播不再连。
+     */
+    private volatile Set<Long> targetRooms = Set.of();
+
+    /**
      * 全部直播间共享的长连接客户端
      * <p>
      * 每个 StandardWebSocketClient 实例都会持有独立的 WebSocket 容器与线程池，
@@ -173,6 +179,7 @@ public class BilibiliLiveRoomService {
         Set<Up> targets = candidates.stream()
                 .limit(MonitorLimit.MAX_STREAMERS)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+        targetRooms = targets.stream().map(Up::getRoomId).collect(Collectors.toUnmodifiableSet());
 
         // 被开关挡掉的房间要说出来。否则「我加了主播却什么都没发生」在日志里
         // 没有任何痕迹——纯监听房间（没有推送目标，只为把事件送进事件输出）
@@ -265,6 +272,12 @@ public class BilibiliLiveRoomService {
         if (!acceptingConnectors.get()) {
             startupWaveRooms.remove(up.getRoomId());
             log.debug("退出中, 放弃连接直播间 {} (UID: {})", up.getRoomId(), up.getUid());
+            return;
+        }
+        // 排队期间这位已被删掉或停用：不再连，也不占名额。已在管理中的照旧放行
+        if (!connectors.containsKey(up.getRoomId()) && !targetRooms.contains(up.getRoomId())) {
+            startupWaveRooms.remove(up.getRoomId());
+            log.debug("直播间 {} (UID: {}) 已不在监控名单中, 放弃连接", up.getRoomId(), up.getUid());
             return;
         }
         // 兜底。正常路径上 sync 已经截过一道，这里挡的是它拦不住的那一种：
