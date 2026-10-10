@@ -18,7 +18,11 @@ export function botFormHtml(p) {
     + '<div class="out" id="' + p + '-out"></div>';
 }
 
+// 每张表单的参数改过几次。测试回包时与发出时的次数不同，说明那次测的不是此刻的参数
+const botFormEdits = {};
+
 function invalidateBotForm(p) {
+  botFormEdits[p] = (botFormEdits[p] || 0) + 1;
   $('#' + p + '-save').disabled = true;
   $('#' + p + '-out').textContent = '参数改了，请重新测试连接';
   $('#' + p + '-out').className = 'out';
@@ -57,6 +61,9 @@ async function testBotConnection(p) {
   $('#' + p + '-test').disabled = true;
   out.className = 'out';
   out.textContent = '测试中…';
+  const edits = botFormEdits[p] || 0;
+  // 等回包期间参数改过：这次结果作废，保存保持禁用，提示留着「请重新测试连接」
+  const stale = () => (botFormEdits[p] || 0) !== edits;
 
   try {
     const res = await api('/setup/test-bot', {
@@ -69,13 +76,17 @@ async function testBotConnection(p) {
       })
     });
 
-    out.className = 'out ' + (res.success ? 'ok' : 'err');
-    out.textContent = res.message + (res.advice ? '\n' + res.advice : '');
-    // 只有连通了才允许保存：把错误配置写进文件毫无意义
-    $('#' + p + '-save').disabled = !res.success;
+    if (!stale()) {
+      out.className = 'out ' + (res.success ? 'ok' : 'err');
+      out.textContent = res.message + (res.advice ? '\n' + res.advice : '');
+      // 只有连通了才允许保存：把错误配置写进文件毫无意义
+      $('#' + p + '-save').disabled = !res.success;
+    }
   } catch (e) {
-    out.className = 'out err';
-    out.textContent = '测试失败：' + e.message;
+    if (!stale()) {
+      out.className = 'out err';
+      out.textContent = '测试失败：' + e.message;
+    }
     $('#' + p + '-save').disabled = true;
   }
 

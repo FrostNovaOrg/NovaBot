@@ -6,6 +6,7 @@ import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.adapter.onebot.service.OneBotConnectionManager;
 import org.frostnova.nova.core.account.BotConnectionTester;
+import org.frostnova.nova.core.lang.StringUtil;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,6 +67,18 @@ public class OneBotConnectionTester implements BotConnectionTester {
         sender.setOneBotHttpPort(httpPort);
         sender.setOneBotHttpToken(httpToken);
 
+        // HTTP Token 留空与保存一侧同义，即「保持原值」：地址与已存那一台相同时用已存的去测，
+        // 测的正是存下去会用的那一份。地址不同则照空的测，已存的凭据不发到没确认过的机器上
+        OneBotSender saved = properties.getSenders().stream().findFirst().orElse(null);
+        boolean savedTokenWithheld = false;
+        if (saved != null && StringUtil.isBlank(httpToken)) {
+            if (sameAddress(address, saved.getOneBotAddress())) {
+                sender.setOneBotHttpToken(saved.getOneBotHttpToken());
+            } else {
+                savedTokenWithheld = StringUtil.isNotBlank(saved.getOneBotHttpToken());
+            }
+        }
+
         try {
             JSONObject version = http.getVersionInfo(sender, new JSONObject());
             JSONObject login = http.getLoginInfo(sender, new JSONObject());
@@ -73,6 +86,10 @@ public class OneBotConnectionTester implements BotConnectionTester {
             return Result.ok("连接正常，实现版本 v" + version.getString("app_version")
                     + "，登录账号 " + login.getString("nickname") + "(" + login.getLong("user_id") + ")");
         } catch (HttpClientErrorException.Forbidden e) {
+            if (savedTokenWithheld) {
+                return Result.failed("Token 校验未通过",
+                        "地址换了，留空的 Token 不会沿用已存的，请把 HTTP Token 填上再测");
+            }
             return Result.failed("Token 校验未通过",
                     "HTTP Token 与 OneBot 实现中配置的不一致，请核对两侧的 token 是否完全相同");
         } catch (HttpClientErrorException.NotFound e) {
@@ -87,5 +104,9 @@ public class OneBotConnectionTester implements BotConnectionTester {
             return Result.failed("连接测试失败：" + e.getMessage(),
                     "请检查地址、端口与 Token 配置，并确认 OneBot 实现处于运行状态");
         }
+    }
+
+    private static boolean sameAddress(String tested, String saved) {
+        return tested != null && saved != null && tested.trim().equals(saved.trim());
     }
 }
