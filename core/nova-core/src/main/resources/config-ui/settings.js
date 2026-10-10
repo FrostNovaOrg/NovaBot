@@ -8,7 +8,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, markDirty, saveTarget, say, switchControl} from './core.js';
+import {$, api, el, esc, markDirty, reloadChangeSources, saveTarget, say, switchControl} from './core.js';
 import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards} from './settings-alert.js';
@@ -800,8 +800,9 @@ export async function save() {
     // 保存成功就整体重取一遍，草稿态与「还欠一次重启」都由那一趟自己算。
     // 在这里按 store.dirty 顺手把新值抄进 store.values 是不行的：真正落盘的是哪几项
     // 只有服务端知道（送上来但值没变的项不会写，机密项送的是占位值也不会写），
-    // 抄错的那几项此后会一直以为自己是「已保存的值」，而屏幕上看不出任何异常
-    if (res.success) await load();
+    // 抄错的那几项此后会一直以为自己是「已保存的值」，而屏幕上看不出任何异常。
+    // keepDrafts：这趟只清设置页自己的草稿，别页此刻有没存改动的不重取、草稿留着
+    if (res.success) await load({keepDrafts: true});
 
     showIssues(res.issues);
     say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
@@ -813,17 +814,30 @@ export async function save() {
 }
 
 /**
- * 丢掉改过还没保存的内容，回到上一次保存时的样子
+ * 丢掉当前这一页改过还没保存的内容，回到上一次保存时的样子
  *
- * 走的是整体重载而不是「把改动逐项撤回」：撤回要为每种草稿态各写一套还原逻辑，
+ * 只动这一页：别的页此刻有没存改动的，草稿原样留着——保存与放弃都是对一页做的，
+ * 连带把别页没存的改动一起丢掉时，屏幕上不会有任何提示，而那几处再也找不回来。
+ *
+ * 设置页走的是整体重载而不是「把改动逐项撤回」：撤回要为每种草稿态各写一套还原逻辑，
  * 而每加一种草稿态就多一处会漏掉的地方；重载则是把服务端的现值重新取一遍，
  * 漏不掉任何一处。代价是一次往返，放弃改动本就不是高频动作。
+ * 插件页只让那一页自己重取：它的草稿长什么样、怎么丢只有它自己知道，而 store.dirty
+ * 是设置页的草稿，那条路不能走整体载入（那一趟会把它一起清零）。
  */
 export async function discard() {
-  if (!await ask({title: '放弃这些改动？',
-    body: '改过还没保存的内容会全部回到上一次保存时的样子。'})) return;
+  const target = saveTarget();
+  if (!await ask({title: '放弃这一页的改动？',
+    body: '这一页改过还没保存的内容会回到上一次保存时的样子。'})) return;
+  if (target && target !== 'values') {
+    // 它的 reload 回 false 时，状态栏上那句话是它自己写上去的，这里不能再盖一句上去
+    const quiet = await reloadChangeSources({only: target});
+    markDirty();
+    if (quiet) say('已放弃这一页的改动');
+    return;
+  }
   // 草稿态由 load 自己清。在这里先清一遍的话，重载失败时屏幕上还留着改过的值，
   // 而计数已经归零——看起来像「改动被保存了」
-  await load();
-  say('已放弃全部改动');
+  await load({keepDrafts: true});
+  say('已放弃这一页的改动');
 }

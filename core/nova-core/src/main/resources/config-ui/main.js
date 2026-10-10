@@ -299,7 +299,13 @@ function applyConnectionVocab() {
   }
 }
 
-export async function load() {
+/**
+ * 整体载入：设置值重取、设置页草稿清零，各供数方那一份按 how 圈着取
+ *
+ * @param {{keepDrafts?: boolean}} [how] 传给 reloadChangeSources：保存、放弃只动当前那一页时
+ *         带 {keepDrafts: true}，别页此刻有没存改动的留着不重取。初次载入不带，全部取
+ */
+export async function load(how) {
   say('载入中…');
   try {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
@@ -322,8 +328,9 @@ export async function load() {
     focusCard(here.name, here.card);
 
     // 各供数方那一份与这一趟并行取：它们要赶在下面 refreshPages 之前进来，
-    // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍
-    const sources = reloadChangeSources();
+    // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍。
+    // how 由调用方圈：保存、放弃只动当前那一页时，别页有草稿的那几位不跟着重取
+    const sources = reloadChangeSources(how);
     const [st, h, p] = await Promise.all([
       api('/status'), api('/handlers'), api('/platforms')]);
     // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus
