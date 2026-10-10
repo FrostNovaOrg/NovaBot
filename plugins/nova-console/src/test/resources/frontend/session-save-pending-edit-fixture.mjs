@@ -11,6 +11,10 @@
  * 回包放不放行由本尺攥着。只 includes 一段字样是不行的：清错草稿照样写着「已保存」。
  * 假接口把 /state/ 的写口真的记进自己那份状态：不记的话重取会把档位拨回原样，量不出差别。
  *
+ * 另一种故障：收入可见、静音时段、命令开关点了保存，回包前又改回载入时的值。
+ * 服务端存的是发出去的那一份，屏上却没了改动提示，「改回去」悄悄丢了（②③④）。
+ * 回包前改成第三个值的照旧留着（①⑤）。
+ *
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 量程：不带参数即源码树里那一份；带一份 config-ui-pages 拷贝的绝对路径即量那份拷贝
  * （量一份改过的拷贝时用：拷贝里动了手脚的产品码）。由 SessionSavePendingEditTest 拉起。
@@ -220,13 +224,13 @@ globalThis.document = {
 
 globalThis.location = {hash: '', href: '', replace() {}, reload() {}};
 
-// —— 假接口：写口真的记进自己那份状态，POST /state/quiet 可以攥着不回 ——
+// —— 假接口：写口真的记进自己那份状态，POST /state/ 的回包可以攥着不回 ——
 
 const mock = {requests: []};
 
-/** 攥着的 POST /state/quiet 回包，按放行才回 */
-let holdQuiet = false;
-const quietWaiters = [];
+/** 攥着的 POST /state/… 回包，按放行才回 */
+let holdState = false;
+const stateWaiters = [];
 
 const TARGET = {platform: 'q', type: 1, num: 12345};
 
@@ -246,6 +250,18 @@ function applyStateWrite(path, body) {
     session.quietStart = data.mode === 'custom' ? data.start : null;
     session.quietEnd = data.mode === 'custom' ? data.end : null;
     session.quietActive = false;
+  }
+  if (path.endsWith('/state/revenue')) {
+    session.revenueVisible = !!data.visible;
+    session.revenueExplicit = true;
+  }
+  if (path.endsWith('/state/commands')) {
+    const off = new Set(session.disabled);
+    for (const name of data.commands || []) {
+      if (data.disabled) off.add(name);
+      else off.delete(name);
+    }
+    session.disabled = [...off];
   }
 }
 
@@ -275,24 +291,28 @@ globalThis.fetch = (path, opt) => {
     return ok({});
   }
 
-  if (url.endsWith('/state/quiet')) {
+  if (url.includes('/state/')) {
     const reply = {success: true, message: '已保存'};
     const land = () => {
       applyStateWrite(url, body);
       return Promise.resolve({status: 200, json: () => Promise.resolve(reply)});
     };
-    if (holdQuiet) return new Promise(resolve => quietWaiters.push(() => resolve(land())));
+    if (holdState) return new Promise(resolve => stateWaiters.push(() => resolve(land())));
     return land();
   }
   return ok({success: true, message: '已保存'});
 };
 
-function releaseQuiet() {
-  while (quietWaiters.length) quietWaiters.shift()();
+function releaseState() {
+  while (stateWaiters.length) stateWaiters.shift()();
+}
+
+function postsTo(tail) {
+  return mock.requests.filter(item => item.method === 'POST' && item.path.endsWith(tail));
 }
 
 function quietPosts() {
-  return mock.requests.filter(item => item.method === 'POST' && item.path.endsWith('/state/quiet'));
+  return postsTo('/state/quiet');
 }
 
 // —— 载入产品码 ——
@@ -300,10 +320,12 @@ function quietPosts() {
 let sessions = null;
 let push = null;
 let model = null;
+let drafts = null;
 try {
   push = await import(join(pages, 'push.js'));
   model = await import(join(pages, 'push-model.js'));
   sessions = await import(join(pages, 'sessions.js'));
+  drafts = await import(join(pages, 'session-draft.js'));
 } catch (err) {
   failures.push('载入 sessions.js／push.js 就抛了：' + err.message);
 }
@@ -376,11 +398,13 @@ async function settle() {
 
 /** 回到「刚打开这一段」：服务端是「跟全局」，草稿清空 */
 async function fresh() {
-  holdQuiet = false;
-  quietWaiters.length = 0;
+  holdState = false;
+  stateWaiters.length = 0;
   mock.state.sessions[0].quietMode = 'follow';
   mock.state.sessions[0].quietStart = null;
   mock.state.sessions[0].quietEnd = null;
+  mock.state.sessions[0].revenueVisible = false;
+  mock.state.sessions[0].disabled = [];
   mock.requests.length = 0;
   if (push) {
     await push.reload();
@@ -402,7 +426,7 @@ await ask('① 静音从「跟全局」改成「不静音」、点保存，回�
   }
 
   // 点保存，接口攥着不回——回包之前的那段窗口
-  holdQuiet = true;
+  holdState = true;
   const saving = push.save();
   await settle();
   if (!quietPosts().length) throw new Error('点下保存就该把静音写出去，实测一条都没发');
@@ -423,8 +447,8 @@ await ask('① 静音从「跟全局」改成「不静音」、点保存，回�
   await settle();
 
   // 回包放行
-  holdQuiet = false;
-  releaseQuiet();
+  holdState = false;
+  releaseState();
   await saving;
   await settle();
 
@@ -450,6 +474,112 @@ await ask('① 静音从「跟全局」改成「不静音」、点保存，回�
     '再点保存发了几下': 1,
     '发出去的档位': {mode: 'custom', start: '22:00', end: '07:00'},
   }, '回包前又改');
+});
+
+/**
+ * 点保存、回包之前把这一项改回载入时的值，再放行回包，量存完以后屏上那一份
+ * @param change 改成要存的那一档
+ * @param revert 改回载入时那一档
+ * @param wanted 存完以后草稿里该有的那一档（即改回的那个值）
+ * @param current 取草稿里此刻那一档
+ * @param tail 这一项写口的路径尾
+ */
+async function revertDuringSave(change, revert, wanted, current, tail) {
+  await fresh();
+  await change();
+  await settle();
+  if (push.changeCount() !== 1) {
+    throw new Error('改完一项该算 1 处，实测 ' + push.changeCount());
+  }
+
+  holdState = true;
+  const saving = push.save();
+  await settle();
+  if (postsTo(tail).length !== 1) throw new Error('点下保存就该发出一笔 ' + tail + '，实测 ' + postsTo(tail).length);
+
+  await revert();
+  await settle();
+
+  holdState = false;
+  releaseState();
+  await saving;
+  await settle();
+
+  const after = {'改动条': push.changeCount(), '草稿里那一档': current()};
+
+  // 再点保存：改回的那个值要真的发出去，服务端回到载入时那一档
+  mock.requests.length = 0;
+  await push.save();
+  await settle();
+
+  same({
+    after,
+    '再点保存发了几下': postsTo(tail).length,
+    '存完改动条': push.changeCount(),
+  }, {
+    after: {'改动条': 1, '草稿里那一档': wanted},
+    '再点保存发了几下': 1,
+    '存完改动条': 0,
+  }, '回包前改回原值');
+}
+
+// 用户故障：收入可见原来关着，打开、点保存，回包前又关上；存完服务端是开着的，屏上却没有改动提示
+await ask('② 收入可见：保存途中改回原值，存完它仍是草稿、值是改回的那个，改动条 1 处', async () => {
+  if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
+  const flip = on => {
+    const input = inputByLabel(host, '直播收益等金额');
+    if (!input) throw new Error('没找到金额可见那个开关');
+    input.checked = on;
+    input.dispatchEvent({type: 'change', target: input});
+  };
+  await revertDuringSave(() => flip(true), () => flip(false), false,
+    () => drafts.revenueDraft(TARGET), '/state/revenue');
+  same(sessionOf(mock.state).revenueVisible, false, '服务端最后的金额可见');
+});
+
+// 用户故障：静音从「跟全局」改成「不静音」、点保存，回包前又改回「跟全局」；存完服务端是不静音，屏上没有改动提示
+await ask('③ 静音时段：保存途中改回原值，存完它仍是草稿、值是改回的那个，改动条 1 处', async () => {
+  if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
+  await revertDuringSave(
+    () => choose(inputByLabel(host, '本会话不静音'), '本会话不静音'),
+    () => choose(inputByLabel(host, '跟全局'), '跟全局'),
+    {mode: 'follow', start: '', end: ''},
+    () => drafts.quietDraft(TARGET), '/state/quiet');
+  same(sessionOf(mock.state).quietMode, 'follow', '服务端最后的静音档位');
+});
+
+// 用户故障：关掉一条命令、点保存，回包前又打开；存完服务端那条是关着的，屏上没有改动提示
+await ask('④ 命令开关：保存途中改回原值，存完它仍是草稿、值是改回的那个，改动条 1 处', async () => {
+  if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
+  // 命令开关那一行与本页拨开关走的是同一个 setter，from 取服务端那一份（此处没禁用）
+  await revertDuringSave(
+    () => drafts.setCommandDraft(TARGET, '直播报告', true, false),
+    () => drafts.setCommandDraft(TARGET, '直播报告', false, false),
+    false,
+    () => drafts.commandDraft(TARGET, '直播报告'), '/state/commands');
+  same(sessionOf(mock.state).disabled, [], '服务端最后禁用的命令');
+});
+
+// 用户故障：回包前又改成的第三档在回包时被当成已存清掉（①走的是点选那条路，这一格直接调草稿的 setter）
+await ask('⑤ 保存途中改成第三个值：照旧留新值', async () => {
+  if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
+  await fresh();
+  drafts.setQuietDraft(TARGET, {mode: 'off'}, {mode: 'follow'});
+  holdState = true;
+  const saving = push.save();
+  await settle();
+  drafts.setQuietDraft(TARGET, {mode: 'custom', start: '21:00', end: '06:00'}, {mode: 'follow'});
+  holdState = false;
+  releaseState();
+  await saving;
+  await settle();
+  same({
+    '改动条': push.changeCount(),
+    '草稿里那一档': drafts.quietDraft(TARGET),
+  }, {
+    '改动条': 1,
+    '草稿里那一档': {mode: 'custom', start: '21:00', end: '06:00'},
+  }, '回包前改成第三档');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

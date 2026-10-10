@@ -492,6 +492,9 @@ export const STREAMER_INPUT_HINT = 'uid、直播间号，或粘贴空间／直�
  */
 let picked = {uid: '', num: '', type: null, platform: ''};
 
+/** 地址里的通道没找到、刚退回的那位主播的 uid；下一次重画落到那一级时说一声，重画一次即清 */
+let lostChannelOf = '';
+
 /** 树上展开了哪几位主播。收起状态不进地址栏——它是「翻到哪儿了」，不是「在看哪一个」 */
 const expanded = new Set();
 
@@ -505,9 +508,18 @@ function channelTail(item) {
   return item.platform + '|' + Number(item.type) + '|' + item.num;
 }
 
-/** 地址里那一截通道身份：三段即「平台|类型码|号」，只有一段是旧地址的裸号 */
+/**
+ * 地址里那一截通道身份：三段即「平台|类型码|号」，只有一段是旧地址的裸号
+ *
+ * 先解码再认：聊天软件转发、手工复制时「|」常被转成 %7C。解不开的（坏的 % 序列）照原样认。
+ */
 function parseChannelTail(tail) {
-  const raw = String(tail || '');
+  let raw = String(tail || '');
+  try {
+    raw = decodeURIComponent(raw);
+  } catch (e) {
+    // 照原样认
+  }
   const parts = raw.split('|');
   if (parts.length === 3 && parts[0] !== '' && parts[1] !== '' && parts[2] !== '') {
     return {platform: parts[0], type: Number(parts[1]), num: parts[2]};
@@ -735,6 +747,8 @@ function paintRight() {
   // 旧的那屏连着版式编辑器一起作废。金额草稿的重画监听是单槽位，不在这里摘掉的话，
   // 切走（含切到没有版式区的通道）后拨金额开关，已离开的编辑器还会按旧通道白发一次预览
   onRevenueDraftChange(null);
+  const lost = lostChannelOf;
+  lostChannelOf = '';
 
   if (picked.uid === 'default') {
     renderDefaultTemplates(host);
@@ -748,13 +762,17 @@ function paintRight() {
   }
 
   if (!picked.num) {
+    if (lost === String(user.uid)) say('地址里的那个通道没找到（可能已经删掉），已回到这位主播');
     renderStreamerLevel(host, user);
     return;
   }
 
   const target = pickChannel(user.targets || []);
   if (!target) {
-    // 通道刚被删掉、或地址是抄来的：退到这位主播那一级，不留一屏空白
+    // 通道刚被删掉、或地址是抄来的：退到这位主播那一级，不留一屏空白。
+    // 为什么落在这儿等改了地址、重画到主播那一级时再说：刚打开控制台时宿主载入完会清一次
+    // 状态栏，在这里当场说的话会被那一下抹掉
+    lostChannelOf = String(user.uid);
     location.replace('#/push/' + user.uid);
     return;
   }
