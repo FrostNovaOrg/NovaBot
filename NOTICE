@@ -95,7 +95,9 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
     Octicons mark-github 16px
     Copyright (c) GitHub, Inc.
     以 MIT 授权（https://github.com/primer/octicons）。
-    该一枚图形以内嵌 SVG 随页面进入构建产物，运行时不向网上取任何东西。
+    GitHub 标志是 GitHub, Inc. 的商标，这里只用作指向本项目 GitHub 仓库的链接，
+    按 GitHub 的标志使用规范（https://github.com/logos）使用。
+    该图形以内嵌 SVG 随页面进入构建产物，运行时不联网获取。
 
 --------------------------------------------------------------------------
 协议资料的参考来源
