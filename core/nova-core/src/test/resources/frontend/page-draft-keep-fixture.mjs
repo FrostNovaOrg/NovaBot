@@ -5,14 +5,16 @@
  * 反过来，设置页改了几项没存，去推送页点「放弃」，设置页那几项也一起没了——两条路都走
  * 整体载入，而整体载入会清掉设置页草稿、并让每一页重取（重取就是拿磁盘上的现值盖掉草稿）。
  *
- * 这把尺真走保存、放弃那两条路：把 settings.js 的 save／discard 与 main.js 的 load
- * 按花括号配平切出函数体来跑，供数方那一套（登记、改动数、重取）用的是真 core.js，
- * 草稿账用的是真 store.js。断言的是假供数方的 reload 被调了几次、草稿还在不在。
+ * 这把尺真走保存、放弃那两条路：把 settings.js 的 save／discard 与 main.js 的
+ * load／callPage／refreshPages 按花括号配平切出函数体来跑，供数方那一套（登记、
+ * 改动数、重取）用的是真 core.js，草稿账用的是真 store.js。断言的是假供数方的
+ * reload／refresh 被调了几次、草稿还在不在。
  *
- * 六格：①设置页保存不丢别页草稿；②设置页放弃不丢别页草稿；③插件页放弃不丢设置页草稿
+ * 七格：①设置页保存不丢别页草稿；②设置页放弃不丢别页草稿；③插件页放弃不丢设置页草稿
  * （也不丢别页草稿）；④对照——没改动的页照旧重取、初次载入每页都取；⑤放弃的确认框与
- * 提示只说这一页，不说「全部」；⑥插件页放弃时它自己写在状态栏上的话不被抹掉。
- * ①②③⑤⑥ 先红后绿，④改前本来就绿。
+ * 提示只说这一页，不说「全部」；⑥插件页放弃时它自己写在状态栏上的话不被抹掉；
+ * ⑦插件页放弃后这一页要按新取回的数据重画一次，别的页不画。
+ * ①②③⑤⑥⑦ 先红后绿，④改前本来就绿。
  *
  * 由 PageDraftKeepTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -84,17 +86,20 @@ function bracedFrom(text, marker) {
 }
 
 /**
- * 切出 async 函数的函数体，包成异步函数交回调用方自己跑
+ * 切出函数的函数体，包成函数交回调用方自己跑
  *
  * 形参槽照旧注入；formals 是被切那个函数自己的形参名（load 收一个 how），
  * 少了它，调用方传进来的那份「怎么取」在体里是个找不到的名。
+ * sync 为真时包同步的：save／discard／load 是 async 的，而 callPage／refreshPages
+ * 这类随手就调、没人 await 的包成 async 也能跑，只是那在赌它体内没有 await。
  */
-function loadAsyncFn(text, marker, params, args, formals) {
+function loadFn(text, marker, params, args, formals, sync) {
   const body = bracedFrom(text, marker);
   if (!body) throw new Error('no ' + marker);
   const open = body.indexOf('{');
   const inner = body.slice(open + 1, body.lastIndexOf('}'));
-  return new Function(...params, 'return async (' + (formals || '') + ') => {' + inner + '}')(...args);
+  return new Function(...params, 'return ' + (sync ? '' : 'async ')
+    + '(' + (formals || '') + ') => {' + inner + '}')(...args);
 }
 
 // —— 真 core.js／真 store.js：供数方登记、改动数、重取那一套不另抄一份 ——
@@ -162,43 +167,61 @@ const askStub = async (q) => {
   return true;
 };
 
+// —— 宿主那份页清单与调页钩子：也从 main.js 切，重画要经 callPage 调页上的 refresh 才算数 ——
+
+const pages = [];
+
+let callPage = null;
+let refreshPages = null;
+try {
+  callPage = loadFn(src('main.js'), 'function callPage(',
+    ['say'], [core.say], 'page, hook, ...args', true);
+  refreshPages = loadFn(src('main.js'), 'function refreshPages(',
+    ['pages', 'callPage'], [pages, callPage], 'id', true);
+} catch (err) {
+  failures.push('切 callPage／refreshPages 就抛了：' + err.message);
+}
+
 // —— 切出产品那三个函数，按名字喂进上面这些桩；供数方那一套喂真的 ——
 
 let save = null;
 let discard = null;
 let load = null;
 try {
-  load = loadAsyncFn(src('main.js'), 'function load(',
+  load = loadFn(src('main.js'), 'function load(',
     ['say', 'api', 'store', 'renderGeneral', 'parseHash', 'focusCard', 'reloadChangeSources',
       'renderStatus', 'renderConfigPath', 'refreshPages', 'refreshHome', 'fillBotForms',
       'applyConnectionVocab', 'markDirty'],
     [core.say, api, store, noop, parseHash, noop, core.reloadChangeSources,
       noop, noop, noop, noop, noop, noop, core.markDirty],
     'how');
-  save = loadAsyncFn(src('settings.js'), 'function save(',
+  save = loadFn(src('settings.js'), 'function save(',
     ['saveTarget', '$', 'api', 'showIssues', 'say', 'store', 'load', 'markDirty'],
     [core.saveTarget, node, api, noop, core.say, store, load, core.markDirty]);
-  discard = loadAsyncFn(src('settings.js'), 'function discard(',
-    ['ask', 'load', 'say', 'saveTarget', 'reloadChangeSources', 'markDirty'],
-    [askStub, load, core.say, core.saveTarget, core.reloadChangeSources, core.markDirty]);
+  discard = loadFn(src('settings.js'), 'function discard(',
+    ['ask', 'load', 'say', 'saveTarget', 'reloadChangeSources', 'refreshPages', 'markDirty'],
+    [askStub, load, core.say, core.saveTarget, core.reloadChangeSources, refreshPages, core.markDirty]);
 } catch (err) {
   failures.push('切 save／discard／load 就抛了：' + err.message);
 }
 
 /**
- * 登记一页假的供数方：草稿若干处，reload 被调几次记在账上
+ * 登记一页假的供数方：草稿若干处，reload／refresh 被调几次记在账上
  *
  * reload 走的是插件页那份契约：自己把自己那一页重取一遍，顺带丢掉自己的草稿。
+ * 页清单那一份同时挂上 refresh 钩子：⑦ 要数的是「重取之后这一页重画了没有」，
+ * 两个钩子谁先谁后也记下——先画后取的话，画上去的还是旧数据。
  * quiet 那一档是「取回来的东西有问题、话已经写在状态栏上了」——回 false 让调用方别再盖话。
  */
 function fakePage(id, opts) {
-  const state = {reloaded: 0, draft: (opts && opts.draft) || 0};
+  const state = {reloaded: 0, refreshed: 0, draft: (opts && opts.draft) || 0, order: []};
   core.registerChangeSource(id, {
     displayName: id,
     changeCount: () => state.draft,
     save: () => {},
     reload: () => {
       state.reloaded++;
+      state.order.push('reload');
       if (opts && opts.quiet) {
         core.say(opts.message || (id + '：这一页自己的话'), 'err');
         return false;
@@ -206,14 +229,19 @@ function fakePage(id, opts) {
       state.draft = 0;
     },
   });
+  pages.push({
+    meta: {id, displayName: id},
+    module: {refresh: () => { state.refreshed++; state.order.push('refresh'); }},
+  });
   return state;
 }
 
-/** 开一格之前的账：设置页草稿、当前页、发出的请求、状态栏都归零 */
+/** 开一格之前的账：设置页草稿、当前页、页清单、发出的请求、状态栏都归零 */
 function reset(tab, dirty) {
   store.tab = tab;
   store.dirty = Object.assign({}, dirty || {});
   store.restartPending = [];
+  pages.length = 0;
   sent.length = 0;
   asked.length = 0;
   node('#status-text').textContent = '';
@@ -352,6 +380,34 @@ try {
 ask('⑥ 插件页放弃时，它自己写在状态栏上的话不被抹掉', () => {
   const want = JSON.stringify({'状态栏上的话': '推送己：这份数据取回来有问题'});
   if (cell6 !== want) throw new Error('得到 ' + cell6 + '，应为 ' + want);
+});
+
+// ---------- ⑦ 插件页放弃后这一页要按新取回的数据重画 ----------
+// 病：在推送页关掉某一路的推送（或改一项本群设置），点「放弃」并确认。改动条消失了，
+// 状态栏也写着放弃了，可屏幕上还是改过的样子；接着在这屏上再改，改的是画屏那一刻的旧对象，
+// 改动条不计数、保存也存不进去，要切到别页再切回来才恢复正常——重取只换了数据，
+// 没人叫这一页重画，屏上的控件还连着旧对象
+let cell7 = '没跑';
+try {
+  reset('推送庚', {});
+  const self = fakePage('推送庚', {draft: 1});
+  const other = fakePage('推送辛', {draft: 1});
+  await discard();
+  cell7 = JSON.stringify({
+    '这一页的 reload 调了几次': self.reloaded,
+    '这一页的 refresh 调了几次': self.refreshed,
+    '先重取后重画': self.order.join('>') === 'reload>refresh',
+    '另一页的 refresh 调了几次': other.refreshed,
+  });
+} catch (e) {
+  cell7 = 'error:' + e.message;
+}
+ask('⑦ 插件页放弃后这一页按新数据重画一次，别的页不画', () => {
+  const want = JSON.stringify({
+    '这一页的 reload 调了几次': 1, '这一页的 refresh 调了几次': 1,
+    '先重取后重画': true, '另一页的 refresh 调了几次': 0,
+  });
+  if (cell7 !== want) throw new Error('得到 ' + cell7 + '，应为 ' + want);
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

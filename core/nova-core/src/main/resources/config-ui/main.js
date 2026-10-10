@@ -256,10 +256,18 @@ function callPage(page, hook, ...args) {
 }
 
 /**
- * 让各插件页重取自己的数据
+ * 让各插件页画一遍自己那一页；带上页标识就只画那一页
+ *
+ * 经 callPage 去调每一页的 refresh：钩子里跑的是插件的代码，抛出来只算它那一页出事。
+ * 只画一个用在「放弃」那条路上：那条路只让这一页自己重取，重画也只该动它自己，
+ * 别的页手上有没存的改动，不该由这条路惊动。
+ * @param {string} [id] 页标识，与 store.tab 同一个值；不带即每一页各画一遍
  */
-export function refreshPages() {
-  pages.forEach(page => callPage(page, 'refresh'));
+export function refreshPages(id) {
+  pages.forEach(page => {
+    if (id && page.meta.id !== id) return;
+    callPage(page, 'refresh');
+  });
 }
 
 /**

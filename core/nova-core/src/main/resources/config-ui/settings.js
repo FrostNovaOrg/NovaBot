@@ -9,7 +9,7 @@
 
 import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, reloadChangeSources, saveTarget, say, switchControl} from './core.js';
-import {load} from './main.js';
+import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
@@ -822,8 +822,9 @@ export async function save() {
  * 设置页走的是整体重载而不是「把改动逐项撤回」：撤回要为每种草稿态各写一套还原逻辑，
  * 而每加一种草稿态就多一处会漏掉的地方；重载则是把服务端的现值重新取一遍，
  * 漏不掉任何一处。代价是一次往返，放弃改动本就不是高频动作。
- * 插件页只让那一页自己重取：它的草稿长什么样、怎么丢只有它自己知道，而 store.dirty
- * 是设置页的草稿，那条路不能走整体载入（那一趟会把它一起清零）。
+ * 插件页只让那一页自己重取、再按新取回的数据重画一次：它的草稿长什么样、怎么丢只有它
+ * 自己知道，而 store.dirty 是设置页的草稿，那条路不能走整体载入（那一趟会把它一起清零）。
+ * 只换数据不重画的话，屏上的控件还连着画屏那一刻的旧对象，接着在这屏上改的都是旧的。
  */
 export async function discard() {
   const target = saveTarget();
@@ -832,6 +833,9 @@ export async function discard() {
   if (target && target !== 'values') {
     // 它的 reload 回 false 时，状态栏上那句话是它自己写上去的，这里不能再盖一句上去
     const quiet = await reloadChangeSources({only: target});
+    // 重取完让这一页自己重画一次，回 false 也画（那时取数出了事，屏上仍该是新数据）。
+    // 只画这一页，而它重画不写状态栏，上面那句话照旧留着
+    refreshPages(target);
     markDirty();
     if (quiet) say('已放弃这一页的改动');
     return;

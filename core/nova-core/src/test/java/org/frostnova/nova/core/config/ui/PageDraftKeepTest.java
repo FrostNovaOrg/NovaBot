@@ -12,8 +12,10 @@ import java.io.IOException;
  * 反过来，设置页改了几项没存，去推送页点「放弃」，设置页那几项也一起没了。两条路都走整体载入，
  * 而整体载入会清掉设置页草稿、并让每一页重取——重取就是拿磁盘上的现值盖掉草稿。
  * <p>
- * 夹具真走保存、放弃那两条路（切出 save／discard／load 的函数体来跑，供数方那一套用真 core.js），
- * 用假供数方数 reload 被调了几次、看草稿还在不在。④ 是垫底的对照：留草稿那一手收得太宽时它先红。
+ * 夹具真走保存、放弃那两条路（切出 save／discard／load／callPage／refreshPages 的函数体来跑，
+ * 供数方那一套用真 core.js），用假供数方数 reload／refresh 被调了几次、看草稿还在不在。
+ * ④ 是垫底的对照：留草稿那一手收得太宽时它先红。⑦ 抓的是插件页放弃后不重画——改动条没了，
+ * 屏上却还是改过的样子，接着改的是旧对象。
  * <p>
  * 「由 JUnit 拉起 node、找不到 node 时红而不是跳过」这两条规矩见 {@link FrontendFixture}。
  */
@@ -22,7 +24,7 @@ class PageDraftKeepTest {
     private static final String FIXTURE = FrontendFixture.fixture("page-draft-keep-fixture.mjs");
 
     @Test
-    @DisplayName("设置页保存与放弃不丢别页草稿，插件页放弃不丢设置页草稿；没改动的照旧重取")
+    @DisplayName("设置页保存与放弃不丢别页草稿，插件页放弃不丢设置页草稿且放弃后重画这一页")
     void pageDraftsSurviveOtherPagesSaveOrDiscard() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "各页草稿互不连带");
     }
