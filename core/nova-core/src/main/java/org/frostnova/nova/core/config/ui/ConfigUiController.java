@@ -1787,7 +1787,7 @@ public class ConfigUiController {
             } else if (failure != null) {
                 result.put("message", "发送失败：" + failure.getString("message"));
                 result.put("advice", "常见原因：目标号填错、机器人不在该群、机器人程序未启动、Token 不匹配。"
-                        + "可对照「运行状态」页的机器人连接项排查");
+                        + "可到「连接」页的「机器人」卡查看连接状态");
             } else {
                 result.put("message", "消息全部被跳过，未实际发出");
                 result.put("advice", "可能是推送被拦截器取消，或消息只含 @全体成员 而机器人没有该权限。"

@@ -6,8 +6,8 @@
  * 带 fields 时确认返回各栏的值，取消返回 null。
  *
  * 协议这类要通读的长文走 showDoc()：同一只弹层换成可滚全文＋一颗「关闭」。
- * Esc＝取消、关掉以后把焦点还回刚才那颗按钮：原生 confirm() 由浏览器代劳，
- * 自绘之后这两件事必须自己守，否则键盘和读屏都回不到原点。
+ * Esc＝取消、Tab 圈在弹层里、关掉以后把焦点还回刚才那颗按钮：原生 confirm() 由浏览器代劳，
+ * 自绘之后这几件事必须自己守，否则键盘和读屏都回不到原点。
  */
 
 import {el} from './core.js';
@@ -51,9 +51,48 @@ function ensure() {
 
 function onKey(ev) {
   if (state.status !== 'open') return;
-  if (ev.key !== 'Escape') return;
+  if (ev.key === 'Escape') {
+    ev.preventDefault();
+    finish(false);
+    return;
+  }
+  if (ev.key === 'Tab') keepTabInside(root.querySelector('.ask-card'), ev);
+}
+
+/**
+ * box 里按文档序能吃 Tab 的控件：藏起来的（长文那一形的取消钮）与禁用的不算
+ */
+function tabbablesIn(box) {
+  const out = [];
+  const walk = node => {
+    if (node.hidden || node.disabled) return;
+    const tag = String(node.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'button' || tag === 'select' || tag === 'textarea'
+      || (tag === 'a' && node.getAttribute('href') != null)) out.push(node);
+    for (const child of Array.from(node.children || [])) walk(child);
+  };
+  for (const child of Array.from(box.children || [])) walk(child);
+  return out;
+}
+
+/**
+ * 把这一下 Tab 圈在 box 里：最后一个控件上再按 Tab 回到第一个，第一个上按
+ * Shift+Tab 回到最后一个。aria-modal 只拦得住读屏，键盘上的 Tab 浏览器照旧
+ * 放行，不圈的话焦点会走到弹层后面的页面上。
+ * 独立成可导出的小函数：推送页的抽屉要的是同一套圈法，不该各写一份。
+ * @param box 圈的范围，即对话框或抽屉的根
+ * @param ev keydown 事件
+ */
+export function keepTabInside(box, ev) {
+  const items = tabbablesIn(box);
+  if (items.length === 0) return;
   ev.preventDefault();
-  finish(false);
+  const at = items.indexOf(document.activeElement);
+  let next;
+  if (at < 0) next = items[0];
+  else if (ev.shiftKey) next = at > 0 ? items[at - 1] : items[items.length - 1];
+  else next = at + 1 < items.length ? items[at + 1] : items[0];
+  next.focus();
 }
 
 function paint() {
