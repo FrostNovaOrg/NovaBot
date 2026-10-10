@@ -10,6 +10,7 @@ import javax.crypto.spec.PSource;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
 import java.security.spec.MGF1ParameterSpec;
 import java.util.HexFormat;
 import java.util.List;
@@ -52,44 +53,35 @@ class BilibiliCookieRefreshUtilTest {
     void shouldUseSha256ForMgf1() throws Exception {
         // 官方页面用 WebCrypto 的 RSA-OAEP，其 MGF1 摘要跟随 hash 参数，即 SHA-256；
         // 而 JDK 的 OAEPWithSHA-256AndMGF1Padding 在不传参数时 MGF1 用的是 SHA-1。
-        // 用一对本地密钥走一遍加解密，即可在离线条件下验证参数确实是 SHA-256。
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(1024);
-        KeyPair keyPair = generator.generateKeyPair();
+        // 用本地密钥对调产品的加密入口，再按官方参数独立解密，即可离线验证产品用的确实是 SHA-256。
+        KeyPair keyPair = generateKeyPair();
+        long timestamp = 1684466082562L;
+        byte[] cipherText = HexFormat.of().parseHex(
+                BilibiliCookieRefreshUtil.correspondPath(timestamp, keyPair.getPublic()));
 
-        Cipher encrypt = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        encrypt.init(Cipher.ENCRYPT_MODE, keyPair.getPublic(), BilibiliCookieRefreshUtil.oaepParameterSpec());
-        byte[] cipherText = encrypt.doFinal("refresh_1684466082562".getBytes(StandardCharsets.UTF_8));
-
-        Cipher decrypt = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        decrypt.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(),
-                new OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT));
-        assertEquals("refresh_1684466082562",
-                new String(decrypt.doFinal(cipherText), StandardCharsets.UTF_8));
+        assertEquals("refresh_" + timestamp,
+                new String(decrypt(keyPair, MGF1ParameterSpec.SHA256, cipherText), StandardCharsets.UTF_8));
 
         // 反过来用 MGF1-SHA1 解密必须失败，否则说明上面那次成功只是「两边都错得一样」
-        Cipher wrong = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        wrong.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(),
-                new OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT));
-        assertThrows(Exception.class, () -> wrong.doFinal(cipherText),
+        assertThrows(Exception.class, () -> decrypt(keyPair, MGF1ParameterSpec.SHA1, cipherText),
                 "MGF1 摘要不同却能解开, 说明参数未真正生效");
     }
 
     @Test
-    @DisplayName("加密的明文应为 refresh_ 加上服务端时间戳")
+    @DisplayName("加密的明文应为 refresh_ 加上传入的时间戳")
     void shouldEncryptRefreshPrefixedTimestamp() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(1024);
-        KeyPair keyPair = generator.generateKeyPair();
+        KeyPair keyPair = generateKeyPair();
+        // 取一个远离当前时间的值，产品若改用本机时钟会立刻对不上
+        long timestamp = 1700000000000L;
 
-        Cipher encrypt = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        encrypt.init(Cipher.ENCRYPT_MODE, keyPair.getPublic(), BilibiliCookieRefreshUtil.oaepParameterSpec());
+        String path = BilibiliCookieRefreshUtil.correspondPath(timestamp, keyPair.getPublic());
 
-        Cipher decrypt = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
-        decrypt.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(), BilibiliCookieRefreshUtil.oaepParameterSpec());
+        assertTrue(path.matches("[0-9a-f]+"), "应为小写十六进制: " + path);
+        int modulusBytes = (((RSAPublicKey) keyPair.getPublic()).getModulus().bitLength() + 7) / 8;
+        assertEquals(modulusBytes * 2, path.length(), "密文长度应与密钥长度一致");
 
-        byte[] plain = decrypt.doFinal(encrypt.doFinal("refresh_1700000000000".getBytes(StandardCharsets.UTF_8)));
-        assertEquals("refresh_1700000000000", new String(plain, StandardCharsets.UTF_8));
+        byte[] plain = decrypt(keyPair, MGF1ParameterSpec.SHA256, HexFormat.of().parseHex(path));
+        assertEquals("refresh_" + timestamp, new String(plain, StandardCharsets.UTF_8));
     }
 
     @Test
@@ -161,5 +153,26 @@ class BilibiliCookieRefreshUtilTest {
     void shouldProduceDecodableHex() {
         byte[] decoded = HexFormat.of().parseHex(BilibiliCookieRefreshUtil.correspondPath(1684466082562L));
         assertEquals(128, decoded.length);
+    }
+
+    /**
+     * 现生成一对 RSA 密钥，只留在内存里
+     */
+    private static KeyPair generateKeyPair() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    /**
+     * 按官方页面的参数解密：OAEP、SHA-256、MGF1 摘要由调用方指定、默认 label
+     * <p>
+     * 参数在这里独立写明，不取自产品，否则产品写错时两边会错得一样。
+     */
+    private static byte[] decrypt(KeyPair keyPair, MGF1ParameterSpec mgf1, byte[] cipherText) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPPadding");
+        cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate(),
+                new OAEPParameterSpec("SHA-256", "MGF1", mgf1, PSource.PSpecified.DEFAULT));
+        return cipher.doFinal(cipherText);
     }
 }
