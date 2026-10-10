@@ -13,7 +13,9 @@ import org.springframework.boot.info.BuildProperties;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -101,17 +103,29 @@ class UpdateCheckServiceTest {
         assertTrue(service.pendingUpdate().isEmpty());
     }
 
+    /**
+     * 开关关着时取数口连一次都不该被调
+     * <p>
+     * 桩记下调用次数、回一个比当前新的版本：开关判断一旦被忽略，桩会被调到、也会出待提示，
+     * 两条断言都会红。桩不能靠抛错来记这次调用——取数那步抛的异常会被当成取不到吃掉，
+     * 抛了也看不出来，这一格会替漏掉开关的改动一直绿着。
+     */
     @Test
-    @DisplayName("功能关着：不取也不提示")
+    @DisplayName("功能关着：一次都不去取，也不提示")
     void disabledCheckDoesNothing() {
         properties.getConfigUi().getUpdate().setEnabled(false);
+        AtomicInteger fetches = new AtomicInteger();
+        UpdateCheckService.SourceClient newer = release("v5.1.0", "修了开播误报");
         UpdateCheckService service = service(buildOf("5.0.0"), url -> {
-            throw new IllegalStateException("关着就不该来取");
+            fetches.incrementAndGet();
+            return newer.fetch(url);
         });
 
         service.checkNow();
 
-        assertTrue(service.pendingUpdate().isEmpty());
+        assertAll(
+                () -> assertEquals(0, fetches.get(), "开关关着就不该去取版本"),
+                () -> assertTrue(service.pendingUpdate().isEmpty(), "没取过就没有可提示的新版"));
     }
 
     @Test
