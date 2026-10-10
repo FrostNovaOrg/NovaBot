@@ -17,11 +17,14 @@ import java.io.IOException;
  */
 @DisplayName("连接页机器人表单的输入框名字")
 class BotFormLabelsTest {
-    private static final String FIXTURE = FrontendFixture.fixture("bot-form-labels-fixture.mjs");
+    /**
+     * 夹具按模块内相对位置认（{@link FrontendFixture#runFromModule}），不写死模块目录名
+     */
+    private static final String FIXTURE = "src/test/resources/frontend/bot-form-labels-fixture.mjs";
 
     @Test
     @DisplayName("五个输入框各有 label[for] 对上 id，标签文字互不相同，id 不改")
     void eachBotInputHasItsOwnLabel() throws IOException, InterruptedException {
-        FrontendFixture.run(FIXTURE, "连接页机器人表单的输入框名字");
+        FrontendFixture.runFromModule(FIXTURE, "连接页机器人表单的输入框名字");
     }
 }

@@ -111,7 +111,8 @@ class TestMessageAdviceTest {
         String advice = result.getString("advice");
         assertNotNull(advice, "失败这一档要给排查提示");
         assertFalse(advice.contains("运行状态"), "导航里没有这一页，提它等于指一条死路: " + advice);
-        assertTrue(advice.contains("连接"), "提示要指到连接页: " + advice);
+        // 只查「连接」两个字分不开新旧句：旧句「机器人连接项」里也有这两个字
+        assertTrue(advice.contains("「连接」页"), "提示要指到连接页: " + advice);
         assertTrue(advice.contains("机器人"), "提示要指到连接页的机器人卡: " + advice);
         assertFalse(advice.contains("本页"), "这句话也在首次设置向导里显示，不能写只有站在连接页上才讲得通的词: " + advice);
         assertFalse(advice.contains("上方"), "同上，向导里没有「上方」那张卡: " + advice);

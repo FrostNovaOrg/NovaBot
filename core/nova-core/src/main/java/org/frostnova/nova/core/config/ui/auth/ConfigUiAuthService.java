@@ -1059,27 +1059,30 @@ public class ConfigUiAuthService implements SmartLifecycle {
      * @param session 登录成功时的会话
      * @param message 失败原因，成功时为 null
      * @param retryAfter 需要等待的时长，未处于锁定时为 {@link Duration#ZERO}
+     * @param credentialsRejected 这一趟核过口令与验证码且不对。已被锁、服务器正忙时没核，为 false；
+     *                            第 N 次输错正好锁上的那一趟核过，为 true。不说是哪一样不对
      */
-    public record LoginResult(ConfigUiSession session, String message, Duration retryAfter) {
+    public record LoginResult(ConfigUiSession session, String message, Duration retryAfter,
+                              boolean credentialsRejected) {
         public boolean success() {
             return session != null;
         }
 
         static LoginResult success(ConfigUiSession session) {
-            return new LoginResult(session, null, Duration.ZERO);
+            return new LoginResult(session, null, Duration.ZERO, false);
         }
 
         static LoginResult failure() {
-            return new LoginResult(null, INVALID, Duration.ZERO);
+            return new LoginResult(null, INVALID, Duration.ZERO, true);
         }
 
         static LoginResult lockedOut(Duration remaining) {
             long minutes = LockoutMinutes.toShow(remaining);
-            return new LoginResult(null, "登录失败次数过多，请在 " + minutes + " 分钟后重试", remaining);
+            return new LoginResult(null, "登录失败次数过多，请在 " + minutes + " 分钟后重试", remaining, false);
         }
 
         static LoginResult busy() {
-            return new LoginResult(null, "服务器正忙，请稍后重试", BUSY_RETRY_AFTER);
+            return new LoginResult(null, "服务器正忙，请稍后重试", BUSY_RETRY_AFTER, false);
         }
     }
 }

@@ -7,8 +7,9 @@
  *   密码框不带 aria-invalid、错误说明也没挂到框上（aria-describedby）时，
  *   读屏只念「密码 编辑框」，不念它错了、错在哪句话上。
  * 服务端被拒故意只回「密码或验证码不正确」、不说是哪一格（见 ConfigUiAuthService），
- * 界面也不替它分：两格一起标。通行密钥失败与连不上服务器不是输错，不标；
- * 再提交或改走通行密钥时，提示清空，标记也一并撤掉。
+ * 界面也不替它分：两格一起标。只有回话说密码或动态码被拒（credentialsRejected）才标：
+ * 已经被锁、服务器正忙、通行密钥失败与连不上服务器都不是输错，不标；
+ * 再提交或改走通行密钥时，提示清空，标记也一并撤掉，动态码格藏着也撤。
  *
  * 本尺把 login.html 当文本读进来（照 login-reveal-wiring-fixture 的做法），
  * 切出标记函数与提交、通行密钥两支真执行。由 LoginFailureLiveTest 拉起。
@@ -115,8 +116,12 @@ function pageNodes() {
   return {$, byId};
 }
 
-// 提交那一支按这几档回：被拒／连不上／悬着（只让提交开头那段同步跑完）
-const rejected = () => Promise.resolve({ok: true, json: () => Promise.resolve({success: false, message: '密码或验证码不正确', lockedSeconds: 0})});
+// 提交那一支按这几档回：被拒／被拒且这一趟锁上／已被锁／正忙／连不上／悬着（只让提交开头那段同步跑完）
+const answer = body => () => Promise.resolve({ok: true, json: () => Promise.resolve(body)});
+const rejected = answer({success: false, message: '密码或验证码不正确', lockedSeconds: 0, credentialsRejected: true});
+const rejectedAndLocked = answer({success: false, message: '密码或验证码不正确', lockedSeconds: 900, credentialsRejected: true});
+const lockedOut = answer({success: false, message: '登录失败次数过多，请在 15 分钟后重试', lockedSeconds: 900, credentialsRejected: false});
+const busy = answer({success: false, message: '服务器正忙，请稍后重试', lockedSeconds: 0, credentialsRejected: false});
 const unreachable = () => Promise.reject(new Error('断网'));
 const pending = () => new Promise(() => {});
 
@@ -232,6 +237,58 @@ await section('改走通行密钥撤掉标记', async () => {
   await new Promise(resolve => setTimeout(resolve, 0));
   eq(ctx.byId.msg.textContent, '', '点通行密钥时提示清空');
   eq(marksOn(ctx.byId.password), false, '提示清空时标记一并撤掉');
+});
+
+// ---- (f) 第 N 次输错、这一趟正好锁上：仍是密码被拒，照样标 ----
+// 抓的故障：拿 lockedSeconds 分来路，把锁上的那一趟当成「被锁」不标，读屏不念刚才输错了
+
+await section('输错且这一趟锁上仍标', async () => {
+  const ctx = pageNodes();
+  await buildSubmit(rejectedAndLocked, ctx)(submitEvent);
+  eq(marksOn(ctx.byId.password), true, '这一趟核过密码且不对，密码框带 aria-invalid');
+});
+
+// ---- (g) 已经被锁、服务器正忙：这一趟没核密码，不标 ----
+// 抓的故障：凡失败都标，服务器正忙时读屏也把密码框念成「无效」，人以为自己密码错了
+
+await section('已经被锁不标', async () => {
+  const ctx = pageNodes();
+  ctx.$('code-field').className = '';
+  await buildSubmit(lockedOut, ctx)(submitEvent);
+  eq(ctx.byId.msg.textContent, '登录失败次数过多，请在 15 分钟后重试', '被锁的那句话上了屏');
+  eq(ctx.byId.password.attrs['aria-invalid'] === 'true', false, '被锁时没核密码，密码框不带 aria-invalid');
+  eq(ctx.byId.code.attrs['aria-invalid'] === 'true', false, '被锁时动态码格也不带 aria-invalid');
+});
+
+await section('服务器正忙不标', async () => {
+  const ctx = pageNodes();
+  ctx.$('code-field').className = '';
+  await buildSubmit(busy, ctx)(submitEvent);
+  eq(ctx.byId.msg.textContent, '服务器正忙，请稍后重试', '正忙的那句话上了屏');
+  eq(ctx.byId.password.attrs['aria-invalid'] === 'true', false, '正忙时没核密码，密码框不带 aria-invalid');
+  eq(ctx.byId.code.attrs['aria-invalid'] === 'true', false, '正忙时动态码格也不带 aria-invalid');
+});
+
+// ---- (h) 动态码格标上之后被藏起来，再撤：两格都撤 ----
+// 抓的故障：撤标记只撤看得见的格，动态码格藏起来以后标记留在上面，再显示时一上来就念「无效」
+
+await section('动态码格藏起来以后再撤', async () => {
+  const ctx = pageNodes();
+  ctx.$('code-field').className = '';
+  const fetchCtl = dispatchFetch();
+  const handler = buildSubmit(fetchCtl, ctx);
+  await handler(submitEvent);
+  if (marksOn(ctx.byId.code) !== true) {
+    eq(marksOn(ctx.byId.code), true, '前提：动态码在页上时被拒已标错');
+    return;
+  }
+  ctx.$('code-field').className = 'hidden';
+  fetchCtl.set(pending);
+  handler(submitEvent);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  eq(marksOn(ctx.byId.password), false, '再提交时密码框的标记撤掉');
+  eq(ctx.byId.code.attrs['aria-invalid'] === 'true', false, '动态码格藏着也撤掉 aria-invalid');
+  eq(ctx.byId.code.attrs['aria-describedby'] === 'msg', false, '动态码格藏着也撤掉 aria-describedby');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
