@@ -418,6 +418,8 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        // save 的成败现在要被看在眼里：mock 默认返回 false（存盘失败），成功路径的用例须显式打桩为存得上
+        when(store.save(any())).thenReturn(true);
         when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
@@ -500,6 +502,8 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(refreshableCookies()));
+        // 打桩理由同上：这格讲的是存盘成功的路径
+        when(store.save(any())).thenReturn(true);
         when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);

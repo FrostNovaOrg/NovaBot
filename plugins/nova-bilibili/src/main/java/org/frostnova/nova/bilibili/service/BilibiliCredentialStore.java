@@ -110,8 +110,10 @@ public class BilibiliCredentialStore {
     /**
      * 保存登录凭据
      * @param cookies 登录凭据
+     * @return 是否已写入磁盘。失败时记一条 error 并返回 false，盘上原有内容分毫不动，
+     *         调用方据此决定能否继续走「不可回退」的后续步骤（如作废旧凭据）
      */
-    public void save(@NonNull Cookies cookies) {
+    public boolean save(@NonNull Cookies cookies) {
         try {
             if (properties.isEncrypt()) {
                 writeSecurely(cookiePath, encrypt(cookies));
@@ -119,8 +121,10 @@ public class BilibiliCredentialStore {
                 log.warn("登录凭据加密存储已关闭, {} 将以明文保存; 该文件等同于账号密码, 请自行确保其访问权限", cookiePath);
                 writeSecurely(cookiePath, toJson(cookies).toJSONString());
             }
+            return true;
         } catch (Exception e) {
             log.error("保存登录凭据至 {} 失败", cookiePath, e);
+            return false;
         }
     }
 
@@ -136,19 +140,22 @@ public class BilibiliCredentialStore {
     }
 
     /**
-     * 将明文凭据迁移为加密存储，并把原文件改名备份
+     * 将明文凭据迁移为加密存储，并把原明文内容另存一份备份
+     * <p>
+     * 顺序是先复制出备份、再原地写入加密件。写加密件本身是「先写临时件再换名」，失败时不动原件，
+     * 因此任何一步失败，主文件仍是原来那份能读的明文，下次启动 load 时会再次尝试迁移。
      * @param cookies 凭据
      */
     private void migrateToEncrypted(Cookies cookies) {
         try {
             Path backup = cookiePath.resolveSibling(cookiePath.getFileName() + ".plain.bak");
-            Files.move(cookiePath, backup, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(cookiePath, backup, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             restrictPermissions(backup);
 
             writeSecurely(cookiePath, encrypt(cookies));
             log.info("已将登录凭据迁移为加密存储, 原明文文件备份为 {}; 确认运行正常后请手动删除该备份", backup);
         } catch (Exception e) {
-            log.error("迁移登录凭据为加密存储失败, 凭据仍以明文保存", e);
+            log.error("迁移登录凭据为加密存储失败, 主文件仍为明文, 下次启动时会再次尝试", e);
         }
     }
 
