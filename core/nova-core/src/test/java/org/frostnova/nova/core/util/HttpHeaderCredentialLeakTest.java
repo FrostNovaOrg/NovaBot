@@ -71,7 +71,24 @@ class HttpHeaderCredentialLeakTest {
      */
     private static final String OK_VALUE = "Bearer " + FAKE_TOKEN;
 
+    /**
+     * 带制表符的好头值：制表符放得进请求头
+     */
+    private static final String OK_VALUE_TAB = "Bearer\t" + FAKE_TOKEN;
+
+    /**
+     * 带 Latin-1 字符的好头值：两头 0x80 与 0xFF，值里还有 é（0xE9）
+     */
+    private static final String OK_VALUE_LATIN1 = "\u0080Bearer " + FAKE_TOKEN + " \u00e9\u00ff";
+
     private static final String HEADER = "Authorization";
+
+    /**
+     * Cookie 请求头：B 站取图那一路交进来的就是这个头，值本身就是登录凭据
+     */
+    private static final String COOKIE_HEADER = "Cookie";
+
+    private static final String COOKIE_VALUE = "SESSDATA=" + FAKE_TOKEN;
 
     private static final String URL = "http://127.0.0.1:1/probe";
 
@@ -177,14 +194,14 @@ class HttpHeaderCredentialLeakTest {
      * 真实失败里这种情况很常见——客户端把触发失败的头值裹进报错原文，起因里再带一遍。
      * 抛的是读写失败那一类，模板会照常把它包成「I/O error on …」，与真实的连接失败同形
      */
-    private static ClientHttpRequestFactory failingFactory(AtomicInteger createCalls) {
+    private static ClientHttpRequestFactory failingFactory(String headerName, AtomicInteger createCalls) {
         return (uri, method) -> {
             createCalls.incrementAndGet();
             return new MockClientHttpRequest(method, uri) {
                 @Override
                 protected ClientHttpResponse executeInternal() throws IOException {
-                    String seen = String.valueOf(getHeaders().getFirst(HEADER));
-                    throw new IOException("桩请求失败, 见 " + HEADER + "=" + seen,
+                    String seen = String.valueOf(getHeaders().getFirst(headerName));
+                    throw new IOException("桩请求失败, 见 " + headerName + "=" + seen,
                             new IllegalStateException("起因里也带一遍 " + seen));
                 }
             };
@@ -253,7 +270,7 @@ class HttpHeaderCredentialLeakTest {
     @DisplayName("失败行把调用方的头值整段换成掩码——开着网络日志排障时正是常失败的时刻")
     void failureLineMasksCallerHeaderValues(String label, Way way) {
         AtomicInteger createCalls = new AtomicInteger();
-        HttpUtil http = httpUtil(new RestTemplate(failingFactory(createCalls)), true);
+        HttpUtil http = httpUtil(new RestTemplate(failingFactory(HEADER, createCalls)), true);
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put(HEADER, OK_VALUE);
 
@@ -267,31 +284,56 @@ class HttpHeaderCredentialLeakTest {
                 label + " 看不出是哪个请求:\n" + rendered);
     }
 
-    @Test
+    /**
+     * 放得进请求头的几样值，名字跟着断言消息走
+     */
+    private static Map<String, String> goodValues() {
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("纯英文", OK_VALUE);
+        values.put("带制表符", OK_VALUE_TAB);
+        values.put("带 Latin-1 字符", OK_VALUE_LATIN1);
+        return values;
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("ways")
     @DisplayName("正常头值照常发出、照常记日志，不被误拦")
-    void goodHeaderValueStillGoesOut() {
-        Map<String, String> sent = new LinkedHashMap<>();
-        AtomicInteger createCalls = new AtomicInteger();
-        HttpUtil http = httpUtil(new RestTemplate(recordingFactory(sent, createCalls)), true);
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put(HEADER, OK_VALUE);
+    void goodHeaderValueStillGoesOut(String label, Way way) {
+        for (Map.Entry<String, String> good : goodValues().entrySet()) {
+            String what = label + " / " + good.getKey();
+            String value = good.getValue();
+            Map<String, String> sent = new LinkedHashMap<>();
+            AtomicInteger createCalls = new AtomicInteger();
+            HttpUtil http = httpUtil(new RestTemplate(recordingFactory(sent, createCalls)), true);
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put(HEADER, value);
 
-        String rendered = captureNetworkLog(() -> http.get(URL, headers));
+            String rendered = captureNetworkLog(() -> way.send(http, URL, headers));
 
-        assertEquals(OK_VALUE, sent.get(HEADER), "正常头值被改掉了");
-        assertEquals(1, createCalls.get(), "请求没发出去");
-        assertTrue(rendered.contains("GET ->"), "发出那一行没写出来:\n" + rendered);
-        assertTrue(rendered.contains("GET <- [200]"), "成功那一行没写出来:\n" + rendered);
-        assertTrue(rendered.contains("/probe"), "普通请求的路径是排障要看的，不该跟着没了:\n" + rendered);
+            assertEquals(value, sent.get(HEADER), what + " 正常头值被改掉了");
+            assertEquals(1, createCalls.get(), what + " 请求没发出去");
+            assertTrue(rendered.contains("GET ->") || rendered.contains("POST ->"),
+                    what + " 发出那一行没写出来:\n" + rendered);
+            // 成功那一行只有字符串地址那两条路写
+            if (way == Way.PLAIN_STRING || way == Way.CREDENTIAL_STRING) {
+                assertTrue(rendered.contains("<- [200]"), what + " 成功那一行没写出来:\n" + rendered);
+            }
+            // 地址本身是凭据时只记主机名，路径那一支故意不落盘
+            if (way == Way.PLAIN_STRING || way == Way.PLAIN_URI) {
+                assertTrue(rendered.contains("/probe"), what + " 普通请求的路径是排障要看的，不该跟着没了:\n" + rendered);
+            } else {
+                assertTrue(rendered.contains("127.0.0.1"), what + " 看不出是哪台主机:\n" + rendered);
+            }
+        }
     }
 
     @Test
     @DisplayName("取图失败时，日志里的异常同样不带调用方的头值——这一路的调用方交进来的是 Cookie")
     void imageFetchLogMasksCallerHeaderValues() {
         AtomicInteger createCalls = new AtomicInteger();
-        HttpUtil http = httpUtil(new RestTemplate(failingFactory(createCalls)), false);
+        HttpUtil http = httpUtil(new RestTemplate(failingFactory(COOKIE_HEADER, createCalls)), false);
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put(HEADER, OK_VALUE);
+        headers.put(COOKIE_HEADER, COOKIE_VALUE);
 
         String rendered = captureLog(HttpUtil.class.getName(),
                 () -> http.getBufferedImage(URL, headers));
