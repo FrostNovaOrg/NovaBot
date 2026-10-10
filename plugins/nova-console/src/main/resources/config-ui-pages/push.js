@@ -56,9 +56,12 @@ const PAGE_STYLE = `
 .tnode .caret{width:14px;flex:none;color:var(--dim);font-size:11px}
 .tnode .tn-ico{flex:none;width:18px;height:18px;border-radius:var(--r-ctl);background:var(--soft);
   color:var(--dim);font-size:11.5px;display:inline-flex;align-items:center;justify-content:center}
-.tnode .tn-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* 记号挤成一竖排会把整行撑高，树上一行一行地错开就看不出层级了 */
-.tnode .tn-marks{flex:none;display:flex;gap:4px;max-width:96px;overflow:hidden}
+.tnode .tn-nm{flex:1 1 5em;min-width:5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 名字和小标装进同一个行盒，放不下时整组小标换到名字下面一行，左边与名字对齐；
+   一颗小标里的字始终排成一行，不折行，也不裁掉半颗 */
+.tnode .tn-body{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.tnode .tn-marks{flex:none;display:flex;flex-wrap:wrap;gap:4px}
+.tn-marks .nv-pill{flex:none;white-space:nowrap;padding:1px 6px}
 .tempty{padding:6px 8px 6px 24px;font-size:13px;color:var(--dim)}
 .pnarrow{display:none;margin-bottom:12px}
 .pnarrow label{display:block;font-size:13.5px;color:var(--dim);margin-bottom:4px}
@@ -597,14 +600,16 @@ function streamerNode(streamer) {
   });
   node.appendChild(caret);
 
+  const body = el('span', 'tn-body');
   const name = el('span', 'tn-nm');
   name.textContent = streamer.name;
-  node.appendChild(name);
+  body.appendChild(name);
 
   const marks = el('span', 'tn-marks');
   if (!streamer.enabled) marks.appendChild(pill('已停用'));
   else if (streamer.collectOnly) marks.appendChild(pill('只采集，不推送'));
-  node.appendChild(marks);
+  body.appendChild(marks);
+  node.appendChild(body);
 
   node.addEventListener('click', () => { location.hash = '#/push/' + streamer.uid; });
   return node;
@@ -620,14 +625,16 @@ function channelNode(streamer, channel) {
   icon.textContent = channel.type === 1 ? '群' : '友';
   node.appendChild(icon);
 
+  const body = el('span', 'tn-body');
   const name = el('span', 'tn-nm');
   name.textContent = channel.name;
-  node.appendChild(name);
+  body.appendChild(name);
 
   const marks = el('span', 'tn-marks');
   if (channel.noticesOff) marks.appendChild(pill(channel.noticesOff + ' 类关着'));
   if (channel.commandsOff) marks.appendChild(pill(channel.commandsOff + ' 条命令被关', 'err'));
-  node.appendChild(marks);
+  body.appendChild(marks);
+  node.appendChild(body);
 
   node.addEventListener('click', () => {
     location.hash = '#/push/' + streamer.uid + '/' + channel.num;

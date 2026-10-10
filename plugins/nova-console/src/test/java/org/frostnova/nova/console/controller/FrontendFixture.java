@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,12 +44,27 @@ final class FrontendFixture {
         runAbsolute(Path.of(fixtureInModule).toAbsolutePath(), what);
     }
 
+    /**
+     * 夹具要另读一份不在本模块里的量程时走这一支：那份的绝对路径经环境变量交给 node 子进程。
+     * 别的入口不带环境变量，照旧。
+     */
+    static void runFromModule(String fixtureInModule, String what, Map<String, String> env)
+            throws IOException, InterruptedException {
+        runAbsolute(Path.of(fixtureInModule).toAbsolutePath(), what, env);
+    }
+
     private static void runAbsolute(Path path, String what) throws IOException, InterruptedException {
+        runAbsolute(path, what, Map.of());
+    }
+
+    private static void runAbsolute(Path path, String what, Map<String, String> env)
+            throws IOException, InterruptedException {
         assertTrue(Files.exists(path), "夹具不见了，这一格此刻什么也没量: " + path);
 
         ProcessBuilder builder = new ProcessBuilder("node", path.toString());
         builder.directory(repoRoot().toFile());
         builder.redirectErrorStream(true);
+        builder.environment().putAll(env);
 
         Process process;
         try {
