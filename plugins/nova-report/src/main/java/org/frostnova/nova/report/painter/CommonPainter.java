@@ -14,6 +14,7 @@ import org.springframework.util.CollectionUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
+import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -903,10 +904,10 @@ public class CommonPainter {
         // 各图左右边距相同，图标会越过左边距时（版本号长到一定程度，窄图上）只画字
         int top = this.xy.y;
         drawTextRightWithStyle(List.of(copyrightLine()), marginRight);
-        Pair<Integer, Integer> lineSize = copyrightLineWidthAndMarkSize();
-        int markX = this.width - marginRight - lineSize.getFirst();
-        if (markX >= marginRight) {
-            NovaBotMark.paint(this.draw, markX, top, lineSize.getSecond());
+        CopyrightLine layout = copyrightLineLayout();
+        int textX = this.width - marginRight - layout.textWidth();
+        if (this.width - marginRight - layout.width() >= marginRight) {
+            NovaBotMark.paint(this.draw, textX + layout.markRight(), top + layout.capTop(), layout.capHeight());
         }
 
         for (List<TextWithStyle> line : extraMiddle) {
@@ -933,19 +934,44 @@ public class CommonPainter {
     }
 
     /**
-     * 版权行连同左边图标占的宽度，与图标边长
+     * 版权行的排版：整行（连同左边图标）的宽，字的宽，图标气泡相对字的位置与高
+     *
+     * @param width 整行宽度，从图标左沿到字的右沿
+     * @param textWidth 字的宽度
+     * @param markRight 气泡右沿，相对字的左沿
+     * @param capTop 大写 N 字迹的上沿，相对这一行的上沿
+     * @param capHeight 大写 N 字迹的高，即 N 顶到基线，也是气泡本体的高
+     */
+    record CopyrightLine(int width, int textWidth, int markRight, int capTop, int capHeight) {
+    }
+
+    /**
+     * 版权行的排版
      * <p>
-     * 图标边长取这一行实测的字高，不写死：换了字体或字号它跟着变。
-     * 与字隔开四分之一个字高。只画图形不画字：这一行里已经写着「NovaBot」。
+     * 气泡本体（不含尾巴）上沿对齐字里大写 N 的顶，下沿对齐基线，尾巴像下伸部那样落到基线以下。
+     * N 的高从画这一行的同一个字体量字形的可见外框：行高含行距、ascent 含重音符的余量，
+     * 拿它们定大小，图标会比字大一截、还偏上。气泡右沿与 N 左沿隔 N 高的 0.4 倍。
+     * 只画图形不画字：这一行里已经写着「NovaBot」。
      * <p>
      * 包内可见：最窄那种图上整行越没越过左边距，判据要直接量这个数
-     *
-     * @return 整行宽度，图标边长
      */
-    Pair<Integer, Integer> copyrightLineWidthAndMarkSize() {
-        Pair<Integer, Integer> size = getStringWidthAndHeight(copyrightLine());
-        int markSize = size.getSecond();
-        return Pair.of(markSize + markSize / 4 + size.getFirst(), markSize);
+    CopyrightLine copyrightLineLayout() {
+        TextWithStyle text = copyrightLine();
+        int textWidth = getStringWidthAndHeight(text).getFirst();
+
+        // 与 drawTextWithStyle 落笔同一套：N 用逐字挑出的字体，基线按表里第一个字体的 ascent
+        String cap = "N";
+        Font capFont = fontUtil.findFontForCharacter(cap.codePointAt(0)).deriveFont(text.getStyle(), text.getSize());
+        Rectangle2D capBounds = capFont.createGlyphVector(this.draw.getFontRenderContext(), cap).getVisualBounds();
+        int ascent = this.draw.getFontMetrics(fontUtil.primaryFont().deriveFont(text.getStyle(), text.getSize())).getAscent();
+
+        // 上下沿落在整像素上：字的基线本来就在整像素上，气泡边若落在半格里，
+        // 抗锯齿会在上下各多出一行淡色，看上去比字高
+        int capTop = (int) Math.round(ascent + capBounds.getY());
+        int capHeight = ascent - capTop;
+        int markRight = (int) Math.round(capBounds.getX() - capHeight * 0.4);
+        int width = textWidth + (int) Math.ceil(NovaBotMark.width(capHeight) - markRight);
+        return new CopyrightLine(width, textWidth, markRight, capTop, capHeight);
     }
 
     /**

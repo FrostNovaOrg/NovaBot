@@ -20,8 +20,14 @@ import java.awt.geom.Rectangle2D;
  * 改了那份 SVG，这里要一起改。
  */
 final class NovaBotMark {
-    /** viewBox 的边长 */
-    private static final double VIEW_BOX = 64;
+    /** 气泡本体（不含尾巴）在 viewBox 里的外框，取自下面那条路径；尾巴伸到 y = 55.9 */
+    private static final double BUBBLE_LEFT = 4;
+
+    private static final double BUBBLE_RIGHT = 60;
+
+    private static final double BUBBLE_TOP = 4;
+
+    private static final double BUBBLE_BOTTOM = 46;
 
     private static final Color GRADIENT_START = new Color(0x7C, 0x5C, 0xFF);
 
@@ -40,23 +46,24 @@ final class NovaBotMark {
     }
 
     /**
-     * 把图标画成 size×size 的一块（viewBox 是正方形，按原比例缩放）
+     * 按气泡本体（不含尾巴）定位画图标，按原比例缩放：尾巴落在气泡下沿以下
      *
      * @param graphics 画笔，画完原样不动
-     * @param x 左上角 x
-     * @param y 左上角 y
-     * @param size 边长，像素
+     * @param bubbleRight 气泡右沿 x
+     * @param bubbleTop 气泡上沿 y
+     * @param bubbleHeight 气泡本体的高，像素
      */
-    static void paint(Graphics2D graphics, int x, int y, int size) {
-        if (size <= 0) {
+    static void paint(Graphics2D graphics, double bubbleRight, double bubbleTop, double bubbleHeight) {
+        if (bubbleHeight <= 0) {
             return;
         }
+        double scale = bubbleHeight / (BUBBLE_BOTTOM - BUBBLE_TOP);
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-            g.translate(x, y);
-            g.scale(size / VIEW_BOX, size / VIEW_BOX);
+            g.translate(bubbleRight - BUBBLE_RIGHT * scale, bubbleTop - BUBBLE_TOP * scale);
+            g.scale(scale, scale);
 
             g.setPaint(bubbleGradient());
             g.fill(BUBBLE);
@@ -68,6 +75,13 @@ final class NovaBotMark {
         } finally {
             g.dispose();
         }
+    }
+
+    /**
+     * 气泡本体高为 bubbleHeight 时图标占的宽（气泡左沿到右沿，尾巴不出这个范围）
+     */
+    static double width(double bubbleHeight) {
+        return bubbleHeight * (BUBBLE_RIGHT - BUBBLE_LEFT) / (BUBBLE_BOTTOM - BUBBLE_TOP);
     }
 
     /**

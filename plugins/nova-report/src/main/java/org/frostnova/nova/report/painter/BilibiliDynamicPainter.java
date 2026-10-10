@@ -155,7 +155,7 @@ public class BilibiliDynamicPainter {
                 .map(face -> ImageUtil.maskToCircle(ImageUtil.resize(face, AVATAR_SIZE, AVATAR_SIZE)))
                 .ifPresent(face -> painter.drawImage(face, new Point(MARGIN, top)));
 
-        painter.drawSection(dynamic.getAuthorName().orElse("未知用户"), COLOR_NAME, new Point(textX, top + 8));
+        painter.drawSection(UserText.singleLine(dynamic.getAuthorName().orElse("未知用户")), COLOR_NAME, new Point(textX, top + 8));
         painter.drawTip(dynamic.getPublishTime().map(TIME_FORMATTER::format).orElse(""), COLOR_TIP, new Point(textX, top + 58));
 
         painter.setPos(MARGIN, top + AVATAR_SIZE + 20);
@@ -348,7 +348,7 @@ public class BilibiliDynamicPainter {
 
         CommonPainter box = factory.create(boxWidth, INITIAL_HEIGHT, true);
         box.setPos(padding, padding);
-        box.drawText("@" + origin.getAuthorName().orElse("未知用户"), COLOR_TIP);
+        box.drawText("@" + UserText.singleLine(origin.getAuthorName().orElse("未知用户")), COLOR_TIP);
         box.movePos(0, 8);
         drawContent(box, origin, boxWidth - padding * 2);
         box.movePos(0, padding);

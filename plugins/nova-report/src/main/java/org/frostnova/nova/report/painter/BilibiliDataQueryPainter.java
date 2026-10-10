@@ -306,7 +306,8 @@ public class BilibiliDataQueryPainter {
         // 标题在数据命令里是主播昵称，用户自己起的名字里可能带换行
         painter.drawSection(UserText.singleLine(header.title()), COLOR_NAME, new Point(textX, top + 6));
         if (StringUtil.isNotBlank(header.subtitle())) {
-            painter.drawTip(header.subtitle(), COLOR_TIP, new Point(textX, top + 54));
+            // 排行榜的副标题里嵌着主播昵称（「本场数据 · 某某的直播间」）
+            painter.drawTip(UserText.singleLine(header.subtitle()), COLOR_TIP, new Point(textX, top + 54));
         }
 
         painter.setPos(MARGIN, top + headerBlockHeight(face != null));
