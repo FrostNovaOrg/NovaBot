@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.onebot.health;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.adapter.onebot.service.OneBotConnectionManager;
@@ -11,6 +12,7 @@ import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.util.Optional;
@@ -19,7 +21,7 @@ import java.util.Optional;
  * OneBot 连接测试
  * <p>
  * 用一次真实的接口调用验证连接信息，并按失败类型给出针对性建议：
- * 「连不上」「Token 不对」「端口填错」的修复方式完全不同，笼统报「连接失败」帮不上忙。
+ * 「连不上」「Token 不对」「端口填错」「实现回了错误码」「实现内部出错」的修复方式完全不同，笼统报「连接失败」帮不上忙。
  * 测通并存下来之后当场把连接接上，那一步交给 {@link OneBotConnectionManager}。
  */
 @Slf4j
@@ -94,10 +96,16 @@ public class OneBotConnectionTester implements BotConnectionTester {
 
             return Result.ok("连接正常，实现版本 v" + version.getString("app_version")
                     + "，登录账号 " + login.getString("nickname") + "(" + login.getLong("user_id") + ")");
-        } catch (HttpClientErrorException.Forbidden e) {
+        } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden e) {
             if (savedTokenWithheld) {
                 return Result.failed("Token 校验未通过",
                         "地址换了，留空的 Token 不会沿用已存的，请把 HTTP Token 填上再测");
+            }
+            // OneBot 11 规定：没带 access_token 回 401，带错了回 403。
+            // 401 且这趟没送 Token，就是实现那边配了 Token 而这边没填
+            if (StringUtil.isBlank(token) && e instanceof HttpClientErrorException.Unauthorized) {
+                return Result.failed("OneBot 实现要求 HTTP Token，这边没有填",
+                        "请把 OneBot 实现里配置的那个 Token 填上再测");
             }
             return Result.failed("Token 校验未通过",
                     "HTTP Token 与 OneBot 实现中配置的不一致，请核对两侧的 token 是否完全相同");
@@ -105,9 +113,24 @@ public class OneBotConnectionTester implements BotConnectionTester {
             // 端口通了但路径不对，多半是把 Websocket 端口填成了 HTTP 端口
             return Result.failed("端口可连接，但接口不存在",
                     "该端口很可能不是 OneBot 的 HTTP 服务端口，请确认填的不是 Websocket 端口");
+        } catch (OneBotApiException e) {
+            // 实现通了 Token 这关，但回包 retcode 非 0。说明只用实现给的 msg，
+            // 不用 getMessage()——那里把请求参数整个拼了进去；msg 也会原样带着 Token（实现把它
+            // 回显进错误说明），先遮掉再进回包
+            String detail = "OneBot 实现回了错误（错误码 " + e.getCode() + "）";
+            if (StringUtil.isNotBlank(e.getMsg())) {
+                detail += "：" + masked(e.getMsg(), token);
+            }
+            return Result.failed(detail,
+                    "请到 OneBot 实现里看 QQ 账号的登录状态，以及它自己打印的日志");
+        } catch (HttpServerErrorException e) {
+            // 请求送到了，是实现自己处理时出错
+            return Result.failed("OneBot 实现内部出错（HTTP " + e.getStatusCode().value() + "）",
+                    "请查看 OneBot 实现自己的日志，必要时把它重启");
         } catch (ResourceAccessException e) {
             return Result.failed("无法建立连接",
-                    "请确认 NapCat 等 OneBot 实现已启动，且地址与 HTTP 端口填写正确");
+                    "请确认 NapCat 等 OneBot 实现已启动，且地址与 HTTP 端口填写正确；"
+                            + "用 NapCat 时，它没登录（停在扫码页）也不开端口，先看它是否在等扫码");
         } catch (Exception e) {
             // 异常消息可能带着请求头，回包只给类别，日志里先遮盖这次发出去的 Token
             log.debug("测试 OneBot 连接失败: {}", masked(e.getMessage(), token));
