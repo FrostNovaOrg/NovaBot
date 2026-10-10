@@ -14,6 +14,7 @@
  * 另一种故障：收入可见、静音时段、命令开关点了保存，回包前又改回载入时的值。
  * 服务端存的是发出去的那一份，屏上却没了改动提示，「改回去」悄悄丢了（②③④）。
  * 回包前改成第三个值的照旧留着（①⑤）。
+ * 回包前点了「放弃」的，回包后不补记（⑥）。
  *
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 量程：不带参数即源码树里那一份；带一份 config-ui-pages 拷贝的绝对路径即量那份拷贝
@@ -580,6 +581,38 @@ await ask('⑤ 保存途中改成第三个值：照旧留新值', async () => {
     '改动条': 1,
     '草稿里那一档': {mode: 'custom', start: '21:00', end: '06:00'},
   }, '回包前改成第三档');
+});
+
+// 用户故障：保存途中点了「放弃」，回包后凭空冒出一条改动
+await ask('⑥ 保存途中点了放弃：回包后不补记，改动条 0，再点保存不发请求', async () => {
+  if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
+  await fresh();
+  drafts.setRevenueDraft(TARGET, true, false);
+  holdState = true;
+  const saving = push.save();
+  await settle();
+  if (postsTo('/state/revenue').length !== 1) throw new Error('点下保存就该发出一笔 /state/revenue');
+
+  // 宿主的「放弃改动」走的是本页的 reload：整份草稿清掉
+  await push.reload();
+  await settle();
+
+  holdState = false;
+  releaseState();
+  await saving;
+  await settle();
+
+  const after = {'改动条': push.changeCount(), '草稿里那一档': drafts.revenueDraft(TARGET) ?? null};
+  mock.requests.length = 0;
+  await push.save();
+  await settle();
+  same({
+    after,
+    '再点保存发了几下': mock.requests.filter(item => item.method === 'POST').length,
+  }, {
+    after: {'改动条': 0, '草稿里那一档': null},
+    '再点保存发了几下': 0,
+  }, '保存途中放弃');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
