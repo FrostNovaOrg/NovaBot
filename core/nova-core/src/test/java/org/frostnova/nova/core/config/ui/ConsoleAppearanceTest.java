@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>窄屏横条里没有退出入口 → 手机上退不出登录；</li>
  *   <li>窄屏退出块与导航同排 → 手机上导航被挤得点不到；</li>
  *   <li>「界面」三钮与下方设置项左缩进不一致 → 按钮贴边；</li>
- *   <li>去顶栏后滚动定位仍让出 54px → 点目录后组标题错位。</li>
+ *   <li>点目录的落点让出不该让的位 → 宽屏上组标题停偏；让位量写死 → 换台设备、改一下字号又不准。</li>
  * </ul>
  * 「顶栏没了」「字号变了」不立测试——改后恒绿，抓不到将来的故障。
  */
@@ -93,33 +93,49 @@ class ConsoleAppearanceTest {
     }
 
     /**
-     * 去顶栏后点目录不再停错位置
+     * 点目录后组标题停在该停的位置
      * <p>
-     * 故障：点设置目录后组标题停的位置偏一段顶栏让位量（旧值 54px）。
-     * 让位量只要不是 0，落点就偏那么远。「读到值就用、拿 || 0 兜底」挡不住它：
-     * 值是 54 时 || 0 根本不触发，54 原样进了减法。所以这里不认兜底写法，
-     * 只认三件事实——落点只加不减、页头高度只能是常数 0、高度令牌不许是正数。
-     * 三件各盯一条会把让位量减回去的写法，其中一条变了这一格就红。
+     * 故障：点设置目录后组标题停的位置偏一段让位量。宽屏上没有任何吸顶的元素，
+     * 让位量只要不是 0，落点就偏那么远；窄屏上顶栏与组目录都吸在视口顶上，
+     * 要让的只能是它们<b>量出来</b>的高度——写死一个数，换台设备、改一下字号
+     * 就又不准（旧顶栏那个 54px 正是这么来的）。所以这里只认三件事实——
+     * 窄屏那道门之前的代码里没有减号、门之后的让位量必须量过 DOM、
+     * 旧的页头高度不许复活（headerHeight 只能是常数 0、--head-h 不许是正数）。
+     * 三件各盯一条会把落点弄偏的写法，其中一条变了这一格就红。
      */
     @Test
-    @DisplayName("滚动定位不再让出已撤顶栏的位")
-    void scrollOffsetIgnoresRemovedHeader() throws IOException {
+    @DisplayName("点目录的落点：宽屏不让位，窄屏只让量出来的高度")
+    void scrollOffsetYieldsOnlyMeasuredStickyHeights() throws IOException {
         String css = read("app.css");
         String settings = read("settings.js");
         List<String> bad = new ArrayList<>();
 
-        // 1) 落点只加不减：focusGroup 里出现减号，减掉的就只可能是让位量
+        // 1) 宽屏那条路不许让位：窄屏那道门（matchMedia）之前的代码里出现减号，
+        //    减掉的就只可能是让位量——宽屏上没有任何吸顶的元素
         //    （data-grp 这类字符串里的连字符不算，先把字符串与注释剥掉再看）
         int fnStart = settings.indexOf("function focusGroup");
         assertTrue(fnStart >= 0, "settings.js 里找不到 focusGroup，这一格此刻什么也没量");
-        String focusBody = fnBody(settings, fnStart);
+        String focusBody = codeOnly(fnBody(settings, fnStart));
         assertTrue(focusBody.contains("scrollTo") && focusBody.contains("getBoundingClientRect().top"),
                 "focusGroup 不再是「滚到组标题」那条路，这一格的射程要重定: " + focusBody.strip());
-        if (codeOnly(focusBody).contains("-")) {
-            bad.add("focusGroup 的落点里有减号，会把顶栏让位量减回去: " + focusBody.strip());
+        int gate = focusBody.indexOf("matchMedia");
+        assertTrue(gate >= 0, "focusGroup 里没有窄屏那道门（matchMedia），"
+                + "窄屏上吸顶的顶栏与目录会把滚到的组标题盖住: " + focusBody.strip());
+        if (focusBody.substring(0, gate).contains("-")) {
+            bad.add("窄屏那道门之前就有减号，宽屏的落点会被让位量偏开: " + focusBody.substring(0, gate).strip());
         }
 
-        // 2) 页头高度只能是常数 0：量 DOM、读令牌、返回正数都算还在让位
+        // 2) 窄屏让的量必须是量出来的：门之后得量 DOM（offsetHeight）；
+        //    落点里减号后面跟着数字即写死的让位量，一处都不许有
+        String afterGate = focusBody.substring(gate);
+        if (!afterGate.contains("offsetHeight")) {
+            bad.add("窄屏的让位量没有量 DOM（offsetHeight），写死的数换个字号、换台设备就不准: " + afterGate.strip());
+        }
+        if (Pattern.compile("-\\s*\\d").matcher(focusBody).find()) {
+            bad.add("落点里有写死的让位量（减号后面是数字），量出来的才跟得住会折行的顶栏: " + focusBody.strip());
+        }
+
+        // 3) 旧的页头高度不许复活：量 DOM、读令牌、返回正数都算让位量回来了
         int hStart = settings.indexOf("function headerHeight");
         if (hStart >= 0) {
             String hBody = codeOnly(fnBody(settings, hStart));
@@ -133,7 +149,7 @@ class ConsoleAppearanceTest {
             }
         }
 
-        // 3) 高度令牌不许再是正数：写回 54px 即红，读到它的每一处都跟着偏
+        // 4) 高度令牌不许再是正数：写回 54px 即红，读到它的每一处都跟着偏
         Matcher token = Pattern.compile("--head-h\\s*:\\s*(\\d+(?:\\.\\d+)?)px").matcher(css);
         while (token.find()) {
             if (Double.parseDouble(token.group(1)) != 0) {
@@ -141,7 +157,7 @@ class ConsoleAppearanceTest {
             }
         }
 
-        assertTrue(bad.isEmpty(), "滚动定位还在给已撤的顶栏让位:\n  " + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "点目录的落点会让错位:\n  " + String.join("\n  ", bad));
     }
 
     /**

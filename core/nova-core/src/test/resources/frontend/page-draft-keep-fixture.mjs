@@ -8,13 +8,17 @@
  * 这把尺真走保存、放弃那两条路：把 settings.js 的 save／discard 与 main.js 的
  * load／callPage／refreshPages 按花括号配平切出函数体来跑，供数方那一套（登记、
  * 改动数、重取）用的是真 core.js，草稿账用的是真 store.js。断言的是假供数方的
- * reload／refresh 被调了几次、草稿还在不在。
+ * reload／refresh 被调了几次、草稿还在不在。重画那一步走的是切出来的真 refreshPages，
+ * 不是空转的桩——「设置页存完之后每一页（带着草稿的也在内）都会被叫一遍 refresh，
+ * refresh 得按内存里那份重画、草稿留住」这条约定就量在这里。
  *
- * 七格：①设置页保存不丢别页草稿；②设置页放弃不丢别页草稿；③插件页放弃不丢设置页草稿
+ * 九格：①设置页保存不丢别页草稿；②设置页放弃不丢别页草稿；③插件页放弃不丢设置页草稿
  * （也不丢别页草稿）；④对照——没改动的页照旧重取、初次载入每页都取；⑤放弃的确认框与
  * 提示只说这一页，不说「全部」；⑥插件页放弃时它自己写在状态栏上的话不被抹掉；
- * ⑦插件页放弃后这一页要按新取回的数据重画一次，别的页不画。
- * ①②③⑤⑥⑦ 先红后绿，④改前本来就绿。
+ * ⑦插件页放弃后这一页要按新取回的数据重画一次，别的页不画；⑧对照——设置页存完那一趟
+ * 连别页带着草稿的也重画一遍，草稿不丢、也不重取；⑨插件页放弃时它自己重画砸了：
+ * 状态栏上那句「页出错」不被事后的「已放弃」盖掉。
+ * ①②③⑤⑥⑦⑨ 先红后绿，④⑧改前本来就绿。
  *
  * 由 PageDraftKeepTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -191,9 +195,9 @@ try {
   load = loadFn(src('main.js'), 'function load(',
     ['say', 'api', 'store', 'renderGeneral', 'parseHash', 'focusCard', 'reloadChangeSources',
       'renderStatus', 'renderConfigPath', 'refreshPages', 'refreshHome', 'fillBotForms',
-      'applyConnectionVocab', 'markDirty'],
+      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived'],
     [core.say, api, store, noop, parseHash, noop, core.reloadChangeSources,
-      noop, noop, noop, noop, noop, noop, core.markDirty],
+      noop, noop, refreshPages, noop, noop, noop, core.markDirty, noop],
     'how');
   save = loadFn(src('settings.js'), 'function save(',
     ['saveTarget', '$', 'api', 'showIssues', 'say', 'store', 'load', 'markDirty'],
@@ -212,6 +216,7 @@ try {
  * 页清单那一份同时挂上 refresh 钩子：⑦ 要数的是「重取之后这一页重画了没有」，
  * 两个钩子谁先谁后也记下——先画后取的话，画上去的还是旧数据。
  * quiet 那一档是「取回来的东西有问题、话已经写在状态栏上了」——回 false 让调用方别再盖话。
+ * crash 那一档是「重画自己砸了」：⑨ 量的是那句话留没留住。
  */
 function fakePage(id, opts) {
   const state = {reloaded: 0, refreshed: 0, draft: (opts && opts.draft) || 0, order: []};
@@ -231,7 +236,11 @@ function fakePage(id, opts) {
   });
   pages.push({
     meta: {id, displayName: id},
-    module: {refresh: () => { state.refreshed++; state.order.push('refresh'); }},
+    module: {refresh: () => {
+      if (opts && opts.crash) throw new Error('重画不出来');
+      state.refreshed++;
+      state.order.push('refresh');
+    }},
   });
   return state;
 }
@@ -408,6 +417,47 @@ ask('⑦ 插件页放弃后这一页按新数据重画一次，别的页不画',
     '先重取后重画': true, '另一页的 refresh 调了几次': 0,
   });
   if (cell7 !== want) throw new Error('得到 ' + cell7 + '，应为 ' + want);
+});
+
+// ---------- ⑧ 对照：设置页存完那一趟，带着草稿的别页也被重画一遍 ----------
+// 「refresh 调的时机不止一处」这条约定的量法：进页、整体载入、设置页存完之后的
+// 重取都会来一遍——有草稿的页也会被调到，refresh 得按内存里那份状态重画并留住草稿。
+// 重取那条路（reload）在保存时是圈着的：有草稿不重取，重取会把草稿盖掉
+let cell8 = '没跑';
+try {
+  reset('settings', {'demo.key': '2'});
+  const push = fakePage('推送壬', {draft: 2});
+  await save();
+  cell8 = JSON.stringify({
+    '保存后那一页重画了几次': push.refreshed,
+    '那一页的草稿还在吗': push.draft,
+    '那一页有没有被重取': push.reloaded,
+  });
+} catch (e) {
+  cell8 = 'error:' + e.message;
+}
+ask('⑧ 对照：设置页存完那一趟，带着草稿的别页也重画一遍，草稿不丢、也不重取', () => {
+  const want = JSON.stringify({
+    '保存后那一页重画了几次': 1, '那一页的草稿还在吗': 2, '那一页有没有被重取': 0,
+  });
+  if (cell8 !== want) throw new Error('得到 ' + cell8 + '，应为 ' + want);
+});
+
+// ---------- ⑨ 插件页放弃时它自己重画砸了：那句「页出错」不被「已放弃」盖掉 ----------
+// 病：重画砸了，callPage 把「推送癸 页出错：…」写上状态栏；紧接着那句「已放弃这一页
+// 的改动」又盖了上来——出事的那句话还没等人看见就没了，而重画恰恰是在这一趟里砸的
+let cell9 = '没跑';
+try {
+  reset('推送癸', {});
+  fakePage('推送癸', {draft: 1, crash: true});
+  await discard();
+  cell9 = JSON.stringify({'状态栏上的话': node('#status-text').textContent});
+} catch (e) {
+  cell9 = 'error:' + e.message;
+}
+ask('⑨ 插件页放弃时它自己重画砸了，「页出错」那句话留在状态栏上', () => {
+  const want = JSON.stringify({'状态栏上的话': '推送癸 页出错：重画不出来'});
+  if (cell9 !== want) throw new Error('得到 ' + cell9 + '，应为 ' + want);
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

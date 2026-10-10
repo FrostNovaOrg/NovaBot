@@ -842,6 +842,21 @@ function schedulePoll(accounts) {
   }, 3000);
 }
 
+/**
+ * 平台清单到了：若正停在插件步上，重画一次
+ *
+ * 首屏那趟整体载入先画向导、后取 /platforms（宿主 mountPages 完才 load），停在
+ * 「第一位主播」那一步的人会先看到一句与实情不符的话。清单一到这就翻案。
+ * 只重画插件步：内置那几步不读平台清单。人已经翻到别的步、或已走完时不动——
+ * 与 schedulePoll 同一条规矩。
+ */
+export function notePlatformsArrived() {
+  if (finished) return;
+  const step = steps[current];
+  if (!step || !step.plugin) return;
+  render();
+}
+
 // ============ 推送目标名单 ============
 
 /**

@@ -69,7 +69,8 @@ export function stopWatchingGroups() {
  * 组目录与首页那条「告警有死角」待办走的是同一条路。
  * 点了条目却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
  * 目标若在高级折页里，先打开折页再滚——折着的时候滚到位也看不见。
- * 落点让出页头偏移：scrollIntoView 的 start 会把标题送到视口顶，若上方有粘性元素会被盖住。
+ * 落点让出吸在视口顶上的那几块：窄屏上顶栏与组目录都吸顶，不让出的话滚到位的
+ * 组标题正好被它们盖住，看起来像「点了没反应」；宽屏上没有吸顶元素，落点不偏。
  * @param id 组标识，与 schema 里的 group 一致；高级折页本身传 adv
  */
 export function focusGroup(id) {
@@ -80,7 +81,15 @@ export function focusGroup(id) {
   if (target) {
     if (adv && adv.contains(target)) adv.open = true;
     target.classList.remove('hide');
-    const top = window.scrollY + target.getBoundingClientRect().top;
+    // 窄屏上让出顶栏与目录的实测高度。959px 与 app.css 的窄屏断点同一处，两边各写
+    // 一个数的话，改了一处没改另一处，宽屏上会白让一段，窄屏上照旧盖住
+    let above = 0;
+    if (window.matchMedia('(max-width:959px)').matches) {
+      const side = $('#side');
+      const nav = $('#grp-nav');
+      above = (side ? side.offsetHeight : 0) + (nav ? nav.offsetHeight : 0);
+    }
+    const top = window.scrollY + target.getBoundingClientRect().top - above;
     window.scrollTo(0, Math.max(0, top));
   }
 }
@@ -592,6 +601,20 @@ function headerHeight() {
 }
 
 /**
+ * 量一次窄屏顶栏的高度，交给样式那边的 --side-h
+ *
+ * 顶栏里的内容会折行（退出块单独一行），高度不是定数，写死一个数的话，
+ * 换台设备、改一下字号，目录又会被盖回去。宽屏上量了也没人用（.grpnav 的
+ * top 只在窄屏那一档里引用它），因此不用分档。跟着 watchCurrentGroup 走：
+ * 设置页每次重画、窗口每次改大小都会重挂一遍，顶栏高度变了自然跟上
+ */
+function syncSideHeight() {
+  const side = $('#side');
+  if (!side) return;
+  document.documentElement.style.setProperty('--side-h', side.offsetHeight + 'px');
+}
+
+/**
  * 文档此刻有多高。用来判断页面还能不能往下滚、有没有真滚到最底。
  * @return {number} 像素
  */
@@ -656,8 +679,13 @@ function watchCurrentGroup() {
 
   groupScroll = schedule;
   window.addEventListener('scroll', groupScroll, {passive: true});
-  groupResize = schedule;
+  // 窗口改了大小顶栏可能折行变高，先量一次再判高亮
+  groupResize = () => {
+    syncSideHeight();
+    schedule();
+  };
   window.addEventListener('resize', groupResize);
+  syncSideHeight();
   schedule();
 }
 
@@ -791,18 +819,23 @@ export async function save() {
   say('保存中…');
 
   try {
+    // 发出去的是此刻这一份。回包之前使用者可能又改了几项：那几项没随这一趟发出去，
+    // 不能被回包后的重取当成已存——快照交给 load 逐项对账，见 load 里的 sentDrafts
+    const sent = Object.assign({}, store.dirty);
     const res = await api('/values', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(store.dirty)
+      body: JSON.stringify(sent)
     });
 
     // 保存成功就整体重取一遍，草稿态与「还欠一次重启」都由那一趟自己算。
     // 在这里按 store.dirty 顺手把新值抄进 store.values 是不行的：真正落盘的是哪几项
     // 只有服务端知道（送上来但值没变的项不会写，机密项送的是占位值也不会写），
     // 抄错的那几项此后会一直以为自己是「已保存的值」，而屏幕上看不出任何异常。
-    // keepDrafts：这趟只清设置页自己的草稿，别页此刻有没存改动的不重取、草稿留着
-    if (res.success) await load({keepDrafts: true});
+    // keepDrafts：这趟只清设置页自己的草稿，别页此刻有没存改动的不重取、草稿留着。
+    // sentDrafts：真发出去的那一份——load 拿它与回包前又被改的草稿逐项对账，
+    // 对不上的照旧算没保存的改动（与推送页 markPushSaved 同一条规矩）
+    if (res.success) await load({keepDrafts: true, sentDrafts: sent});
 
     showIssues(res.issues);
     say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
@@ -835,9 +868,10 @@ export async function discard() {
     const quiet = await reloadChangeSources({only: target});
     // 重取完让这一页自己重画一次，回 false 也画（那时取数出了事，屏上仍该是新数据）。
     // 只画这一页，而它重画不写状态栏，上面那句话照旧留着
-    refreshPages(target);
+    const repainted = refreshPages(target);
     markDirty();
-    if (quiet) say('已放弃这一页的改动');
+    // 重画自己也出了事时，状态栏上已是那句「页出错」，也不该被下面这句盖掉
+    if (quiet && repainted) say('已放弃这一页的改动');
     return;
   }
   // 草稿态由 load 自己清。在这里先清一遍的话，重载失败时屏幕上还留着改过的值，
