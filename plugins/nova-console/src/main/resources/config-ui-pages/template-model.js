@@ -3,7 +3,8 @@
  *
  * 存在配置里的模板是<b>一整串文字</b>（`{uname} 正在直播 {title}\n{url}{cover}`），
  * 而屏幕上它是一张张卡片、一枚枚可拖的药丸。两种形态之间的换算、以及「哪些块能放在哪」
- * 那几条规矩，全在这一份里——它不碰 DOM、不发请求，因此可以喂值直接跑
+ * 那几条规矩，全在这一份里——它不碰真页面、不发请求（读节点只认 nodeType、nodeValue、
+ * tagName、dataset、classList、childNodes 这几样），因此可以喂值直接跑
  * （src/test/resources/frontend/template-model-fixture.mjs）。
  *
  * 🔴 <b>这一份里没有任何一个平台名、也没有任何一条通知的名字，更没有一张写死的占位符表。</b>
@@ -214,6 +215,146 @@ function flatten(blocks, out) {
     // 使用者会发现自己写的东西少了一截，而没有任何提示
     flatten(block.blocks, out);
   }
+}
+
+// ============ 屏幕上的节点 → 块表 ============
+
+/**
+ * 按屏幕上一张卡的次序走一遍节点
+ *
+ * 🔴 读回块表（blocksFromDom）与数位置（spotFromDom）<b>共用这一条路</b>：
+ * 那边怎么数出块表，这边就怎么数出位置。各走各的话（比如那边收块名文字、这边不收），
+ * 同一个位置会算出两个答案——而插错一格在屏幕上看起来只是「拖歪了」。
+ * <p>
+ * 走法只认 nodeType、nodeValue、tagName、dataset、classList、childNodes 这几样，
+ * 因此喂得进夹具，不必开浏览器。<br> 当一个字；药丸是一块，走进它<b>只提里面套着的药丸</b>：
+ * 药丸自己的块名与删除按钮是样子，不是使用者写的内容，收进文字就成了
+ * 「打字后模板多出一段块名」——右边预览当场多出这段字，存下来的通知也带着它。
+ * @param root 卡的正文
+ * @param visit (kind, node) => boolean；kind 为 'text' | 'br' | 'pill'，返回 true 则停
+ */
+function walkCardDom(root, visit) {
+  /** 药丸里只提套着的药丸：块名文字与删除按钮都不是内容 */
+  const hoist = node => {
+    for (const child of node.childNodes || []) {
+      if (!child || child.nodeType !== 1) continue;
+      if (child.dataset && child.dataset.k) {
+        // 块里套着块时把内层提到外层：丢掉的话，使用者写的东西会少一截而没有任何提示
+        if (visit('pill', child) || hoist(child)) return true;
+        continue;
+      }
+      if (hoist(child)) return true;
+    }
+    return false;
+  };
+
+  const walk = node => {
+    for (const child of node.childNodes || []) {
+      if (!child) continue;
+      if (child.nodeType === 3) {
+        if (visit('text', child)) return true;
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      if (child.tagName === 'BR') {
+        if (visit('br', child)) return true;
+        continue;
+      }
+      if (child.dataset && child.dataset.k) {
+        if (visit('pill', child) || hoist(child)) return true;
+        continue;
+      }
+      if (child.classList && child.classList.contains('tpl-x')) continue;
+      if (walk(child)) return true;
+    }
+    return false;
+  };
+
+  walk(root);
+}
+
+/**
+ * 把屏幕上那一张卡读回块表
+ *
+ * 走的是 DOM 而不是渲染时写下的那个序号：输入法、粘贴、撤销都会在块之间造出新的文字节点，
+ * 序号那时已经对不上了。药丸认 data-k，其余一律当文字——包括浏览器自己插进来的 <br>。
+ * @param root 卡的正文
+ * @param spec 见 blockSpec
+ * @return 块表，形如 [{kind: 'text', ...}, {kind: 'ph', ...}]
+ */
+export function blocksFromDom(root, spec) {
+  const blocks = [];
+  let buffer = '';
+  walkCardDom(root, (kind, node) => {
+    if (kind === 'text') {
+      buffer += node.nodeValue;
+    } else if (kind === 'br') {
+      buffer += '\n';
+    } else {
+      if (buffer) {
+        blocks.push(textBlock(buffer));
+        buffer = '';
+      }
+      blocks.push(placeholderBlock(node.dataset.k, spec));
+    }
+    return false;
+  });
+  if (buffer) blocks.push(textBlock(buffer));
+  return blocks;
+}
+
+/**
+ * 一个 DOM 位置落在块表的第几格
+ *
+ * 🔴 与 blocksFromDom 走 walkCardDom <b>同一条路</b>：那边怎么数出块表，这边就怎么数出位置。
+ * 各走各的话（比如这边认渲染时写下的序号），输入法、粘贴、撤销在块之间造出新的文字节点
+ * 之后，同一个位置会算出两个答案——而插错一格在屏幕上看起来只是「拖歪了」。
+ * @param root 卡的正文
+ * @param container 位置所在的节点
+ * @param offset 节点内的偏移
+ * @return {{index: number, offset: number, onPill: boolean}} 落在第几块的第几个字
+ */
+export function spotFromDom(root, container, offset) {
+  // 光标停在正文本身（两个节点之间）时，容器是 root、偏移是第几个孩子。
+  // 换成那个孩子来找，落点才是「它前面」；没有那个孩子就是「所有块之后」
+  const target = container === root ? (root.childNodes || [])[offset] : container;
+
+  let index = 0;
+  let chars = 0;
+  let pending = false;
+  let answer = null;
+
+  walkCardDom(root, (kind, node) => {
+    if (kind === 'text') {
+      if (node === target) {
+        answer = {index, offset: chars + offset, onPill: false};
+        return true;
+      }
+      chars += node.nodeValue.length;
+      if (node.nodeValue.length) pending = true;
+      return false;
+    }
+    if (kind === 'br') {
+      chars += 1;
+      pending = true;
+      return false;
+    }
+    if (pending) {
+      index += 1;
+      chars = 0;
+      pending = false;
+    }
+    if (node === target) {
+      answer = {index, offset: 0, onPill: true};
+      return true;
+    }
+    index += 1;
+    return false;
+  });
+
+  // 找不到时（容器是块里某个我们不认得的节点）当作末尾，不猜一个中间位置：
+  // 猜错的那一次会把块插到句子中间，而屏幕上看起来只是「拖歪了」
+  return answer || {index: pending ? index + 1 : index, offset: 0, onPill: false};
 }
 
 // ============ 卡的增删与排序 ============

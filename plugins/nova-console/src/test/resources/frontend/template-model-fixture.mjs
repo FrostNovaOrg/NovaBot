@@ -14,9 +14,9 @@
 
 import {
   AT_MODES, addCard, applyEdit, atModeOf, atPlan, blockLabel, blockRefusal, blockSpec, cardHasAttachment,
-  dropIndex, editableKeys, insertBlock, isAttachment, isDefault, moveBlock, moveCard,
+  blocksFromDom, dropIndex, editableKeys, insertBlock, isAttachment, isDefault, moveBlock, moveCard,
   normalizeCards, parseTemplate, placeholderBlock, previewBubbles, removeBlock, removeCard,
-  restoreDefaults, splitText, templateAdoption, textBlock, toTemplateText, usesBlock,
+  restoreDefaults, splitText, spotFromDom, templateAdoption, textBlock, toTemplateText, usesBlock,
 } from '../../../main/resources/config-ui-pages/template-model.js';
 
 const failures = [];
@@ -248,6 +248,67 @@ eq(adoption.following.concat(adoption.custom).map(row => row.num).includes(3), f
 eq(adoption.following.concat(adoption.custom).map(row => row.num).includes(4), false,
   '别的通知不算进来');
 eq(templateAdoption(null, HANDLER), {following: [], custom: []}, '一个主播也没配时两边都是空的');
+
+// ---------- 十、屏幕读回块表：药丸上的名字不是内容 ----------
+// 这一节奔着那个毛病去：在带占位符的卡片里随便打一个字，块表就变成
+// {uname}uname 正在直播——药丸上写的块名被当成使用者写的内容收了进去。
+// 右边预览当场多出这段字；存下来的通知也带着它；每重画一次（删块、拖块之后，
+// 或重新打开），多出来的字就成了正文，下次读回再多一段。
+
+/** 造一个文字节点。走法只认 nodeType 与 nodeValue */
+function domText(value) {
+  return {nodeType: 3, nodeValue: String(value == null ? '' : value)};
+}
+
+/** 造一个元素节点。走法只认 tagName、dataset、classList、childNodes */
+function domEl(tag, className, children, data) {
+  const names = String(className || '').split(/\s+/).filter(Boolean);
+  return {
+    nodeType: 1,
+    tagName: String(tag).toUpperCase(),
+    dataset: Object.assign({}, data),
+    classList: {contains: name => names.includes(name)},
+    childNodes: (children || []).slice(),
+  };
+}
+
+/** 照 pillNode 的真实构造摆一枚药丸：一块块名文字，加一个删除按钮 */
+function domPill(key, attachment) {
+  return domEl('span', attachment ? 'tpl-att' : 'tpl-pill', [
+    domText((attachment ? '▤ ' : '') + blockLabel(key)),
+    domEl('button', 'tpl-x', [domText('×')]),
+  ], {k: key});
+}
+
+// 抓的是「打字后模板多出块名」：药丸后面接一段字，读回来只有占位块和那段字
+const typedBody = domEl('div', null, [domPill('{uname}', false), domText(' 正在直播')]);
+eq(sketch([{blocks: blocksFromDom(typedBody, SPEC)}]), '〔uname〕 正在直播',
+  '药丸后面接一段字：块表里只有占位块和那段字，块名没有被写进模板');
+
+// 同一个毛病的附件药丸：块名前多一个「▤ 」，它同样不是使用者写的内容
+const attachedBody = domEl('div', null, [domPill('{cover}', true), domText(' 是封面')]);
+eq(sketch([{blocks: blocksFromDom(attachedBody, SPEC)}]), '〔cover〕 是封面',
+  '附件药丸后面接一段字：「▤ cover」没有被写进模板');
+
+// 抓的是「块里套着块时内层被丢掉」：两枚都读出来、拍平，块名一个也不进文字
+const innerPill = domPill('{title}', false);
+const outerPill = domEl('span', 'tpl-pill', [
+  domText('uname'), innerPill, domEl('button', 'tpl-x', [domText('×')]),
+], {k: '{uname}'});
+const nestedBody = domEl('div', null, [outerPill, domText(' 开播')]);
+eq(sketch([{blocks: blocksFromDom(nestedBody, SPEC)}]), '〔uname〕〔title〕 开播',
+  '药丸里套着药丸：两枚都读出来、拍平，块名一个也没进文字');
+
+// 位置数出的块序要与读回的块表对得上：两处共用同一条走法，各数各的会把块插到两处
+const typedPill = typedBody.childNodes[0];
+const typedTail = typedBody.childNodes[1];
+eq(spotFromDom(typedBody, typedPill, 0), {index: 0, offset: 0, onPill: true},
+  '药丸本身落在第 0 格，与读回的第 0 块对得上');
+eq(spotFromDom(typedBody, typedTail, 3), {index: 1, offset: 3, onPill: false},
+  '药丸后面的字落在第 1 格第 3 个字，与读回的第 1 块对得上');
+eq(spotFromDom(nestedBody, outerPill, 0).index, 0, '外层药丸是第 0 格');
+eq(spotFromDom(nestedBody, innerPill, 0).index, 1,
+  '内层药丸是第 1 格——读回的块表里它也在第 1 格，两边数出的块序一致');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

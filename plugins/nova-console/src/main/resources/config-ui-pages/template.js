@@ -2,7 +2,7 @@
  * 模板编辑器：左边一张张消息卡，右边实时画成 QQ 气泡
  *
  * 本文件只管把 template-model.js 算好的东西摆上屏幕，再把屏幕上的编辑动作翻回块表。
- * 换算、「块不可嵌套」、一张卡放几个附件、@ 那一档三选一、以及预览里 @ 落在哪，
+ * 换算、屏幕读回块表、「块不可嵌套」、一张卡放几个附件、@ 那一档三选一、以及预览里 @ 落在哪，
  * 一律在那边判——判断留在这里的话，那几档就只能靠人打开页面拖着试，
  * 而其中好几档（机器人不是管理员、模板里手写了 @、块拖进块）手点点不出来。
  *
@@ -13,9 +13,9 @@
 import {el, esc} from './core.js';
 import {
   AT_MODES, addCard, applyEdit, atModeInfo, atModeOf, atPlan, blockLabel, blockRefusal,
-  blockSpec, dropIndex, insertBlock, isAttachment, moveBlock, moveCard, normalizeCards,
-  parseTemplate, placeholderBlock, previewBubbles, removeCard, splitText, textBlock,
-  toTemplateText,
+  blockSpec, blocksFromDom, dropIndex, insertBlock, isAttachment, moveBlock, moveCard,
+  normalizeCards, parseTemplate, placeholderBlock, previewBubbles, removeCard, splitText,
+  spotFromDom, textBlock, toTemplateText,
 } from './template-model.js';
 
 /**
@@ -356,7 +356,7 @@ export function buildTemplateEditor(host, options) {
       // 拖起来的那一刻才算它此刻在第几格：渲染时算好的序号，在打过字之后已经对不上
       const body = pill.closest('.tpl-c-body');
       drag = {kind: 'move', key: block.key,
-        from: {card: cardIndex, index: spotOf(body, pill, 0).index}};
+        from: {card: cardIndex, index: spotFromDom(body, pill, 0).index}};
       event.dataTransfer.effectAllowed = 'move';
       event.stopPropagation();
     });
@@ -401,76 +401,8 @@ export function buildTemplateEditor(host, options) {
     if (!selection || !selection.rangeCount) return;
     const range = selection.getRangeAt(0);
     if (!body.contains(range.startContainer)) return;
-    const spot = spotOf(body, range.startContainer, range.startOffset);
+    const spot = spotFromDom(body, range.startContainer, range.startOffset);
     if (spot) state.caret = {card: cardIndex, index: spot.index, offset: spot.offset};
-  }
-
-  /**
-   * 一个 DOM 位置落在块表的第几格
-   *
-   * 🔴 走的是与 {@link readBody} <b>同一条路</b>：那边怎么数出块表，这边就怎么数出位置。
-   * 各走各的话（比如这边认渲染时写下的序号），输入法、粘贴、撤销在块之间造出新的文字节点
-   * 之后，同一个位置会算出两个答案——而插错一格在屏幕上看起来只是「拖歪了」。
-   * @param body 卡的正文
-   * @param container 位置所在的节点
-   * @param offset 节点内的偏移
-   * @return {{index: number, offset: number, onPill: boolean}} 落不到时为 null
-   */
-  function spotOf(body, container, offset) {
-    let index = 0;
-    let chars = 0;
-    let pending = false;
-    let answer = null;
-
-    const walk = node => {
-      for (const child of node.childNodes) {
-        if (answer) return;
-        if (child.nodeType === 3) {
-          if (child === container) {
-            answer = {index, offset: chars + offset, onPill: false};
-            return;
-          }
-          chars += child.nodeValue.length;
-          if (child.nodeValue.length) pending = true;
-          continue;
-        }
-        if (child.nodeType !== 1) continue;
-        if (child.tagName === 'BR') {
-          chars += 1;
-          pending = true;
-          continue;
-        }
-        if (child.dataset && child.dataset.k) {
-          if (pending) {
-            index += 1;
-            chars = 0;
-            pending = false;
-          }
-          if (child === container) {
-            answer = {index, offset: 0, onPill: true};
-            return;
-          }
-          index += 1;
-          continue;
-        }
-        if (child.classList && child.classList.contains('tpl-x')) continue;
-        walk(child);
-      }
-    };
-
-    // 光标停在正文本身（两个节点之间）时，容器是 body、偏移是第几个孩子。
-    // 换成那个孩子来找，落点才是「它前面」；没有那个孩子就是「所有块之后」
-    const target = container === body ? body.childNodes[offset] : container;
-    if (!target) {
-      walk(body);
-      return {index: pending ? index + 1 : index, offset: 0, onPill: false};
-    }
-
-    container = target;
-    walk(body);
-    // 找不到时（容器是块里某个我们不认得的节点）当作末尾，不猜一个中间位置：
-    // 猜错的那一次会把块插到句子中间，而屏幕上看起来只是「拖歪了」
-    return answer || {index: pending ? index + 1 : index, offset: 0, onPill: false};
   }
 
   /**
@@ -530,6 +462,7 @@ export function buildTemplateEditor(host, options) {
    *
    * 压在一枚药丸上时只答「它前面」或「它后面」：左半边落前面、右半边落后面，
    * 与文字编辑里插入光标的直觉一致，也正是这一条让「块拖进块」再也发生不了。
+   * 落第几格由 spotFromDom 数——与 readBody 同一条走法，各数各的会把块插到两处。
    * @return {{index: number, offset: number, split: boolean}} 落不到时为 null
    */
   function spotFromPoint(body, event) {
@@ -537,7 +470,7 @@ export function buildTemplateEditor(host, options) {
     if (node && node.nodeType === 3) node = node.parentNode;
     const pill = node && node.closest ? node.closest('[data-k]') : null;
     if (pill && body.contains(pill)) {
-      const spot = spotOf(body, pill, 0);
+      const spot = spotFromDom(body, pill, 0);
       const box = pill.getBoundingClientRect();
       return {index: dropIndex(spot.index, event.clientX > box.left + box.width / 2),
         offset: 0, split: false};
@@ -545,7 +478,7 @@ export function buildTemplateEditor(host, options) {
 
     const range = caretRangeFrom(event.clientX, event.clientY);
     if (!range || !body.contains(range.startContainer)) return null;
-    const spot = spotOf(body, range.startContainer, range.startOffset);
+    const spot = spotFromDom(body, range.startContainer, range.startOffset);
     return spot ? {index: spot.index, offset: spot.offset, split: !spot.onPill} : null;
   }
 
@@ -566,40 +499,11 @@ export function buildTemplateEditor(host, options) {
   /**
    * 把屏幕上那一张卡读回块表
    *
-   * 走的是 DOM 而不是那份 dataset 序号：输入法、粘贴、撤销都会在块之间造出新的文字节点，
-   * 序号那时已经对不上了。药丸认 data-k，其余一律当文字——包括浏览器自己插进来的 <br>。
+   * 节点怎么翻成块在 template-model.js（blocksFromDom）：那条走法要与 spotFromDom 数位置的
+   * 一条路，摆在这里的话两处迟早各走各的。
    */
   function readBody(body, cards, cardIndex) {
-    const blocks = [];
-    let buffer = '';
-    const walk = node => {
-      for (const child of node.childNodes) {
-        if (child.nodeType === 3) {
-          buffer += child.nodeValue;
-          continue;
-        }
-        if (child.nodeType !== 1) continue;
-        if (child.tagName === 'BR') {
-          buffer += '\n';
-          continue;
-        }
-        if (child.dataset && child.dataset.k) {
-          if (buffer) {
-            blocks.push(textBlock(buffer));
-            buffer = '';
-          }
-          blocks.push(placeholderBlock(child.dataset.k, state.spec));
-          // 块里套着块时把内层提到外层：丢掉的话，使用者写的东西会少一截而没有任何提示
-          walk(child);
-          continue;
-        }
-        if (child.classList && child.classList.contains('tpl-x')) continue;
-        walk(child);
-      }
-    };
-    walk(body);
-    if (buffer) blocks.push(textBlock(buffer));
-
+    const blocks = blocksFromDom(body, state.spec);
     return normalizeCards((cards || []).map((card, index) =>
       index === cardIndex ? {blocks} : card));
   }
