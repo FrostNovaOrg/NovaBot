@@ -3,10 +3,12 @@ package org.frostnova.nova.core.config.ui.auth.passkey;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPasskeyController;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 
 import java.io.IOException;
@@ -16,6 +18,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -71,6 +74,28 @@ class PasskeyStateWriteFailureTest extends PasskeyTestSupport {
     }
 
     @Test
+    @DisplayName("丢了手机去删它的钥匙而状态文件写不进：手机上已经登着的控制台照样被退出")
+    void deleteThatCannotBePersistedStillRevokesItsSessions() throws IOException {
+        TestAuthenticator lostPhone = new TestAuthenticator(TestAuthenticator.ES256);
+        TestAuthenticator laptop = new TestAuthenticator(TestAuthenticator.EDDSA);
+        register(lostPhone, "丢了的手机", 3);
+        register(laptop, "电脑", 3);
+        String lostPhoneSession = passkeyLogin(lostPhone, 4);
+
+        blockStateFile();
+        ResponseEntity<JSONObject> deleted = controller.delete(lostPhone.credentialId(), request());
+
+        // 用户故障：钥匙停用了，手机上已经登着的控制台却还能继续用
+        JSONObject body = deleted.getBody();
+        assertFalse(body.getBooleanValue("success"), body.toJSONString());
+        assertTrue(authService.validate(lostPhoneSession).isEmpty(),
+                "删除没存上盘时，用这把钥匙登录的会话没有注销：丢了的手机还登着控制台");
+        assertTrue(authService.validate(sessionId).isPresent(), "发起删除的会话被顺手踢掉了");
+        assertTrue(body.getString("message").contains("1 个会话已退出"),
+                "提示没说用它登录的会话已退出: " + body.getString("message"));
+    }
+
+    @Test
     @DisplayName("删钥时写不进、之后磁盘恢复并保存一次：重启后钥匙不在了")
     void deleteIsPersistedOnceTheDiskRecovers() throws IOException {
         TestAuthenticator lostPhone = new TestAuthenticator(TestAuthenticator.ES256);
@@ -107,6 +132,26 @@ class PasskeyStateWriteFailureTest extends PasskeyTestSupport {
         assertFalse(result.getBooleanValue("success"), result.toJSONString());
         assertTrue(store.find(laptop.credentialId()).isEmpty(), "没存上盘的钥匙留在了内存里，重启前后不一致");
         assertTrue(reopenFromDisk().find(laptop.credentialId()).isEmpty(), "没存上盘的钥匙出现在了盘上");
+    }
+
+    /**
+     * 拿一把通行密钥登一次，回包 Set-Cookie 里那枚就是新会话
+     */
+    private String passkeyLogin(TestAuthenticator authenticator, long signCount) {
+        ResponseEntity<JSONObject> response = controller.loginVerify(
+                authenticator.assertion(loginChallenge(), ORIGIN, RP_ID, signCount), request());
+        assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
+
+        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertNotNull(setCookie, "登录成功却没交回会话 Cookie");
+        String prefix = ConfigUiSecurityFilter.SESSION_COOKIE + "=";
+        for (String part : setCookie.split(";")) {
+            String piece = part.strip();
+            if (piece.startsWith(prefix)) {
+                return piece.substring(prefix.length());
+            }
+        }
+        throw new AssertionError("登录回包里没有会话 Cookie: " + setCookie);
     }
 
     /**
