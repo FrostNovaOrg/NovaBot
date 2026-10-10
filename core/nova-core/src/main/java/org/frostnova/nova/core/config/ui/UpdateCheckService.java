@@ -14,6 +14,8 @@ import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -163,8 +165,34 @@ public class UpdateCheckService {
 
         latestVersion = tag;
         latestNotes = notesOf(release.getString("body"));
-        latestUrl = Optional.ofNullable(release.getString("html_url")).orElse("");
+        latestUrl = webUrlOrEmpty(release.getString("html_url"));
         log.debug("新版检查完成, 当前 {} 最新 {}", current, tag);
+    }
+
+    /**
+     * 说明地址只收能解析成绝对地址、协议是 http 或 https 的，否则返回空串
+     * <p>
+     * 地址会被控制台画成链接。来源被换成别人的镜像或发布页被篡改时，它可能是一段
+     * {@code javascript:} 脚本，点下去就在已登录的控制台里跑。地址本身不进日志。
+     * @param raw 来源回包里的 html_url
+     * @return 可以交给页面的地址，或空串
+     */
+    static String webUrlOrEmpty(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = new URI(raw);
+            String scheme = uri.getScheme();
+            if (uri.isAbsolute() && uri.getHost() != null
+                    && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                return raw;
+            }
+        } catch (URISyntaxException ignored) {
+            // 解析不了与协议不对同样对待
+        }
+        log.debug("新版说明地址不是 http(s)，不提供链接");
+        return "";
     }
 
     /**

@@ -109,7 +109,7 @@ function renderTodos(model) {
       '<div class="todo">'
       + '<span class="tb' + (item.soft ? ' soft' : '') + '">' + (item.soft ? 'i' : '!') + '</span>'
       + '<span class="tt"><b>' + esc(item.title) + '</b><p>' + esc(item.body) + '</p></span>'
-      + '<a href="' + esc(item.href) + '">' + esc(item.action) + '</a>'
+      + (item.href ? '<a href="' + esc(item.href) + '"' + extAttrs(item.href) + '>' + esc(item.action) + '</a>' : '')
       + '</div>').join('')
     + '</div>';
 }
@@ -405,13 +405,15 @@ function renderUpdate(update) {
   // onclick 是赋值不是叠加，重画多少次都只有一份监听；addEventListener 会一份份摞上去
   pill.onclick = toggleUpdatePop;
 
+  // 说明地址来自新版来源的回包：不是 http(s) 的不画成链接，免得一段 javascript: 在控制台里被点开
+  const notesLink = extAttrs(update.url);
   pop.innerHTML = '<div class="up-head">新版 ' + esc(update.latestVersion) + '</div>'
     + '<div class="up-notes">'
     + (update.notes || []).map(line => '<p>' + esc(line) + '</p>').join('')
     + '</div>'
     + '<p class="up-note">控制台不做在线更新：到服务器上换 jar 重启就是了。</p>'
     + '<div class="up-actions">'
-    + '<a href="' + esc(update.url) + '"' + extAttrs(update.url) + '>看完整更新说明 ↗</a>'
+    + (notesLink ? '<a href="' + esc(update.url) + '"' + notesLink + '>看完整更新说明 ↗</a>' : '')
     + '<button type="button" id="update-skip">知道了，这版先不提醒</button>'
     + '</div>';
 

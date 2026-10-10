@@ -171,15 +171,48 @@ class UpdateCheckServiceTest {
         assertTrue(service.pendingUpdate().isPresent(), "没记下，提示照旧");
     }
 
+    /**
+     * 来源被换成别人的镜像、或发布页被篡改时，说明地址可能写成一段脚本。
+     * 原样交给控制台的话，管理员点「看完整说明」，那段脚本就在已登录的控制台里跑。
+     */
+    @Test
+    @DisplayName("说明地址是 javascript: 一类：不交出链接，版本照常提示")
+    void scriptUrlIsDropped() {
+        for (String url : List.of("javascript:alert(1)", "JaVaScRiPt:alert(1)")) {
+            UpdateCheckService service = service(buildOf("5.0.0"), release("v5.1.0", "内容", url));
+
+            service.checkNow();
+
+            var update = service.pendingUpdate();
+            assertTrue(update.isPresent(), "地址不能用不影响「有新版」这件事: " + url);
+            assertEquals("v5.1.0", update.get().version());
+            assertEquals("", update.get().url(), "不是 http(s) 的说明地址不该交给页面: " + url);
+        }
+    }
+
+    @Test
+    @DisplayName("说明地址协议大小写混写的 https：照常交出")
+    void mixedCaseHttpsUrlIsKept() {
+        UpdateCheckService service = service(buildOf("5.0.0"), release("v5.1.0", "内容", "HTTPS://example.invalid/r"));
+
+        service.checkNow();
+
+        assertEquals("HTTPS://example.invalid/r", service.pendingUpdate().orElseThrow().url());
+    }
+
     private UpdateCheckService service(ObjectProvider<BuildProperties> build, UpdateCheckService.SourceClient source) {
         return new UpdateCheckService(properties, state, build, source);
     }
 
     private static UpdateCheckService.SourceClient release(String tag, String body) {
+        return release(tag, body, "https://example.invalid/release");
+    }
+
+    private static UpdateCheckService.SourceClient release(String tag, String body, String htmlUrl) {
         JSONObject json = new JSONObject();
         json.put("tag_name", tag);
         json.put("body", body);
-        json.put("html_url", "https://example.invalid/release");
+        json.put("html_url", htmlUrl);
         return url -> json;
     }
 

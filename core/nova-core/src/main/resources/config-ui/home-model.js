@@ -16,6 +16,8 @@
  * 说明取自探针自己给的那句话。写死一个平台名，这一页就替一件可能没装的东西说了话。
  */
 
+import {extAttrs} from './manual-link.js';
+
 /** 同义 core.js 的 term：有键用词，无键用中性兜底。模型不读全局。 */
 function word(terms, key, fallback) {
   return (terms && terms[key]) || fallback;
@@ -423,6 +425,7 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
 
   // 有新版。排在最后：它是软的——不升级机器照常跑，不该把「重新登录 NapCat」这类
   // 不动就一直不好的事压下去。href 指向站外说明，渲染那一侧按 http 开头给它新开一页。
+  // 地址不是 http(s) 时 href 留空、不出链接：它来自新版来源的回包，可能是一段 javascript:。
   // 首装机器到不了这里：服务器对配置文件还没建立的机器不下发 update 块，
   // 而 fresh 那一支在更前面就整段返回了
   if (status.update) {
@@ -430,7 +433,7 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
       key: 'update',
       title: '有新版 ' + status.update.latestVersion,
       body: '控制台不做在线更新：到服务器上换 jar 重启就是了。',
-      action: '看完整说明', href: status.update.url, soft: true,
+      action: '看完整说明', href: extAttrs(status.update.url) ? status.update.url : '', soft: true,
     });
   }
 
