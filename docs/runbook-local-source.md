@@ -31,7 +31,8 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # macOS，Linux 按自己的路�
 
 ## 2. 配置
 
-把 `dist/build/` 整个拷到一个工作目录，然后改 `application.yml` 三处：
+把 `dist/build/` 整个拷到一个工作目录。包里不带 `application.yml`，在工作目录里新建一个：
+把下面这段存成 `application.yml`，或者从 `application.example.yml` 复制一份再改这三处：
 
 ```yaml
 server:
@@ -47,7 +48,7 @@ novabot:
       path: /nova/events
 ```
 
-`datasource.json` 填一个房间的**主播 uid**（不是房间号）：
+`datasource.json` 包里也不带，在工作目录里自己新建，填一个房间的**主播 uid**（不是房间号）：
 
 ```json
 [{"uid": <主播uid>, "platform": "bilibili", "targets": []}]
@@ -124,7 +125,9 @@ ws://127.0.0.1:7830/nova/events
 `isAdmin` 的真实含义等）。**排查问题前先读它**。
 
 想回补就在 **2 秒内**发 `resume`；不发的话服务端到点自动转入实时流。
-迟到的 `resume` 会收到一份新的 `hello`，按它重来即可。
+迟到的 `resume` 会收到一份新的 `hello`：采纳新的 `lastSeq`，记一次补不回来的断档；
+同一条连接上不要再发 `resume`，否则会来回打转。各种情形见
+[协议文档的 `resume` 一节](protocol.md#45-resume三种情形客户端要能区分)。
 
 一个 30 行的最小客户端：
 

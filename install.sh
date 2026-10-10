@@ -594,19 +594,6 @@ fi
 
 $SUDO mkdir -p "$INSTALL_DIR"
 
-# 升级时保留既有配置。只需搬走会被构建产物覆盖的那两个文件：
-# cookies.json / cookies.key 不在产物里，cp 不会碰到它们。
-# 凭据也确实不该搬——落到 /tmp 里的可预测路径上，既会被同机其他用户读到，
-# 也会被抢先创建的同名软链劫持；脚本中途失败时它们还会一直留在那里
-KEEP_DIR="$($SUDO mktemp -d "${TMPDIR:-/tmp}/novabot-keep.XXXXXX")"
-trap '[ -n "${KEEP_DIR:-}" ] && $SUDO rm -rf "$KEEP_DIR" || true' EXIT
-
-for keep in application.yml datasource.json; do
-    if [ -f "$INSTALL_DIR/$keep" ]; then
-        $SUDO cp "$INSTALL_DIR/$keep" "$KEEP_DIR/$keep"
-    fi
-done
-
 # 装之前先记下上一版，以及正在跑的那些版。装完只留：这一版、上一版、正在跑的。
 # 更旧的删掉。正在跑的那一版不在「上一版」里也留着，不然正在用的程序会被卸掉。
 FRESH=yes
@@ -676,13 +663,10 @@ for dir in "$INSTALL_DIR"/releases/*; do
     $SUDO rm -rf "$dir"
 done
 
-# 内容没变就不拷回：拷回会把修改时间改成现在，正在跑的旧版本看到 datasource.json「更新了」
-# 就重读配置、去平台把每个主播的资料再补全一遍，赶上停机时还会刷出一串补全失败
+# 根上的 application.yml、datasource.json 不在包里，上面哪一步都不写它们，原样留着。
+# 旧版本还在跑时，装的这段时间里存下的设置也就留着
 for keep in application.yml datasource.json; do
-    if [ -f "$KEEP_DIR/$keep" ]; then
-        if [ ! -f "$INSTALL_DIR/$keep" ] || ! $SUDO cmp -s "$KEEP_DIR/$keep" "$INSTALL_DIR/$keep"; then
-            $SUDO cp "$KEEP_DIR/$keep" "$INSTALL_DIR/$keep"
-        fi
+    if [ -f "$INSTALL_DIR/$keep" ]; then
         info "已保留原有的 $keep"
     fi
 done
