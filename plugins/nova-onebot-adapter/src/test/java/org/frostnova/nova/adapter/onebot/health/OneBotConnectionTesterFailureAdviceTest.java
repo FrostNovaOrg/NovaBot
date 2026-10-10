@@ -30,8 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 这几种失败从前都落进「连接测试失败：英文类名」那一句，使用者看不出该去改哪里：
  * <ul>
  *   <li>OneBot 11 规定没带 access_token 回 401——实现配了 Token 而页面留空时就是它；</li>
- *   <li>实现照 OneBot 11 用 401 表示送来的 Token 不对；</li>
- *   <li>实现回包 retcode 非 0（如 QQ 账号掉线）抛 {@link OneBotApiException}，
+ *   <li>有的实现不分 401 和 403，送来的 Token 不对时也回 401；</li>
+ *   <li>实现回包 retcode 非 0 抛 {@link OneBotApiException}，
  *       它自带的 getMessage 把请求参数整个拼进去，实现给的说明也可能原样带着 Token；</li>
  *   <li>实现自己回 5xx。</li>
  * </ul>
@@ -83,6 +83,7 @@ class OneBotConnectionTesterFailureAdviceTest {
     @Test
     @DisplayName("实现要求 Token 而页面留空（回 401）：说明要求 Token、这边没填")
     void unauthorizedWithBlankTokenSaysTokenRequired() {
+        // 用户故障：实现那边配了 HTTP Token，页面上没填，从前只见「Unauthorized」
         HttpClientErrorException unauthorized = HttpClientErrorException.create(
                 HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, new byte[0], null);
 
@@ -98,6 +99,7 @@ class OneBotConnectionTesterFailureAdviceTest {
     @Test
     @DisplayName("送了 Token 实现仍回 401：照 Token 不一致来说，不再只回类名")
     void unauthorizedWithTypedTokenSaysTokenMismatch() {
+        // 用户故障：两侧 Token 不一致，有的实现不分 401 和 403，从前只见「Unauthorized」
         HttpClientErrorException unauthorized = HttpClientErrorException.create(
                 HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, new byte[0], null);
 
@@ -112,6 +114,7 @@ class OneBotConnectionTesterFailureAdviceTest {
     @Test
     @DisplayName("地址换了、Token 留空又回 401：仍照「留空不沿用已存的」那句")
     void unauthorizedWithheldTokenKeepsWithheldAdvice() {
+        // 用户故障：换了地址又把 Token 留空，已存的凭据不发去没确认过的机器，要被告知重新填
         saveConfigured();
         HttpClientErrorException unauthorized = HttpClientErrorException.create(
                 HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, new byte[0], null);
@@ -126,8 +129,27 @@ class OneBotConnectionTesterFailureAdviceTest {
     }
 
     @Test
-    @DisplayName("实现回错误码（如账号掉线）：写明错误码与说明，Token 与请求参数都不进回包")
+    @DisplayName("同一地址、Token 留空沿用已存又回 401：说 Token 不一致，不说这边没有填")
+    void unauthorizedWithInheritedTokenSaysMismatchNotMissing() {
+        // 用户故障：Token 明明存着（留空沿用已存的），却被提示这边没有填
+        saveConfigured();
+        HttpClientErrorException unauthorized = HttpClientErrorException.create(
+                HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, new byte[0], null);
+
+        BotConnectionTester.Result result = tester(throwing(unauthorized))
+                .test(SAVED_ADDRESS, 3000, "");
+
+        assertFalse(result.ok());
+        assertEquals("Token 校验未通过", result.detail());
+        assertTrue(result.advice().contains("不一致"), result.advice());
+        assertFalse(result.detail().contains("没有填"), result.detail());
+        assertFalse(result.advice().contains("没有填"), result.advice());
+    }
+
+    @Test
+    @DisplayName("实现回包 retcode 非 0：写明错误码与说明，Token 与请求参数都不进回包")
     void apiExceptionReportsCodeWithoutEchoingTokenOrParams() {
+        // 用户故障：实现回包 retcode 非 0，从前只见「OneBotApiException」，说明里还可能带着 Token
         String typedToken = "fake-typed-token-9f3kxq";
         JSONObject params = new JSONObject().fluentPut("no_such_group", "fake-param-should-not-appear");
         // 实现给的说明里原样带着送过去的 Token：拼进回包就是把它显示在页面上
@@ -142,14 +164,16 @@ class OneBotConnectionTesterFailureAdviceTest {
         // 说明保留（遮盖不是删掉），实现给的提示对排障有用
         assertTrue(result.detail().contains("账号已掉线"), result.detail());
         assertTrue(result.detail().contains("******"), result.detail());
-        assertTrue(result.advice().contains("登录状态"), result.advice());
+        assertTrue(result.advice().contains("错误说明"), result.advice());
         assertTrue(result.advice().contains("日志"), result.advice());
+        assertFalse(result.advice().contains("登录状态"), result.advice());
         assertNothingEchoed(result, typedToken, "fake-param-should-not-appear");
     }
 
     @Test
     @DisplayName("实现给的说明为空：只写错误码，不落一个孤零零的冒号")
     void apiExceptionWithoutMsgReportsCodeOnly() {
+        // 用户故障：实现只给错误码不给说明，提示不能落一个孤零零的冒号
         OneBotApiException apiError = new OneBotApiException("/get_version_info", new JSONObject(),
                 1200, "  ");
 
@@ -164,6 +188,7 @@ class OneBotConnectionTesterFailureAdviceTest {
     @Test
     @DisplayName("实现自己回 5xx：说明实现内部出错、带上 HTTP 状态码")
     void serverErrorSaysImplementationItselfBroke() {
+        // 用户故障：实现自己内部出错（5xx），从前只见「InternalServerError」
         HttpServerErrorException serverError = HttpServerErrorException.create(
                 HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", HttpHeaders.EMPTY, new byte[0], null);
 
@@ -180,6 +205,7 @@ class OneBotConnectionTesterFailureAdviceTest {
     @Test
     @DisplayName("连不上：提一句 NapCat 停在扫码页时也不开端口")
     void unreachableAdviceMentionsNapCatQrWait() {
+        // 用户故障：实现没开端口——用 NapCat 时停在扫码页也不开，看着像地址填错
         ResourceAccessException unreachable = new ResourceAccessException("Connection refused");
 
         BotConnectionTester.Result result = tester(throwing(unreachable))

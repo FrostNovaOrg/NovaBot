@@ -122,7 +122,7 @@ public class OneBotConnectionTester implements BotConnectionTester {
                 detail += "：" + masked(e.getMsg(), token);
             }
             return Result.failed(detail,
-                    "请到 OneBot 实现里看 QQ 账号的登录状态，以及它自己打印的日志");
+                    "请按上面的错误说明，到 OneBot 实现自己打印的日志里查原因");
         } catch (HttpServerErrorException e) {
             // 请求送到了，是实现自己处理时出错
             return Result.failed("OneBot 实现内部出错（HTTP " + e.getStatusCode().value() + "）",
