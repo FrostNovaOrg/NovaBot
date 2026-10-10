@@ -2,6 +2,7 @@ package org.frostnova.nova.core.util;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -11,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 把地址整段缩成主机名，供落日志与对外报错前调用
+ * 把地址整段缩成主机名、把点名的字面整段换成掩码，供落日志与对外报错前调用
  *
  * <h2>为什么需要它</h2>
  * 有些投递地址把凭据拼在<b>路径</b>里：Bark 是 {@code https://api.day.app/推送密钥}、
@@ -34,6 +35,12 @@ public final class UrlRedactor {
             "https?://[^\\s\"'()<>，。；、）】》]+", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern SCHEME = Pattern.compile("^https?://", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 换掉点名字面时留下的痕迹。<b>整段换、不留原值的任何一段</b>——
+     * 请求头的值整串就是凭据（Authorization 一类），留半段等于没抹
+     */
+    private static final String MASK = "***";
 
     private UrlRedactor() {
     }
@@ -66,10 +73,28 @@ public final class UrlRedactor {
      * @return 剥掉地址后的印文
      */
     public static String redact(String text, String... knownAddresses) {
+        return redact(text, knownAddresses, null);
+    }
+
+    /**
+     * 同 {@link #redact(String, String...)}，另把点名的字面整段换成掩码
+     * <p>
+     * 请求头的值整串就是凭据（Authorization 一类），而失败原文未必只有地址会带凭据：
+     * 头值里混进客户端不收的字符时，拒发的报错原文里带着<b>整串头值</b>。
+     * 这类字面走不了「换主机名」那手：值里没有 {@code /?#@:} 时 {@link #hostOf} 回的
+     * 就是值本身，值里有那几个字符时换出来的是值的一段——两者都留着值的片段。
+     * 要求是不留任何一段，所以整段换成掩码。空项跳过，长的先换，与地址同一道手续。
+     *
+     * @param text 印文
+     * @param knownAddresses 这一次请求真正用到的地址（可空、可含 null 项）
+     * @param maskedLiterals 要整段换成掩码的字面，如这次配置的请求头的值（可空、可含 null 项）
+     * @return 剥掉后的印文
+     */
+    public static String redact(String text, String[] knownAddresses, Collection<String> maskedLiterals) {
         if (text == null) {
             return null;
         }
-        String stripped = replaceKnownAddresses(text, knownAddresses);
+        String stripped = replaceKnownLiterals(text, knownAddresses, maskedLiterals);
         Matcher matcher = URL.matcher(stripped);
         StringBuilder out = new StringBuilder(stripped.length());
         while (matcher.find()) {
@@ -97,46 +122,65 @@ public final class UrlRedactor {
      * 每层印文先按字面把它换成主机名，再走原剥法
      */
     public static Throwable redact(Throwable throwable, String... knownAddresses) {
-        return redact(throwable, Collections.newSetFromMap(new IdentityHashMap<>()), knownAddresses);
+        return redact(throwable, knownAddresses, null);
+    }
+
+    /**
+     * 同 {@link #redact(Throwable, String...)}，另把点名的字面整段换成掩码：
+     * 起因链每一层的印文都过同一道手续
+     */
+    public static Throwable redact(Throwable throwable, String[] knownAddresses, Collection<String> maskedLiterals) {
+        return redact(throwable, Collections.newSetFromMap(new IdentityHashMap<>()), knownAddresses, maskedLiterals);
     }
 
     /**
      * 记着这条链上已经走过的异常（按对象身份认），走到见过的对象就截断
      */
-    private static Throwable redact(Throwable throwable, Set<Throwable> seen, String[] knownAddresses) {
+    private static Throwable redact(Throwable throwable, Set<Throwable> seen,
+                                    String[] knownAddresses, Collection<String> maskedLiterals) {
         if (throwable == null) {
             return null;
         }
         if (!seen.add(throwable)) {
             return null;
         }
-        Stripped copy = new Stripped(redact(throwable.toString(), knownAddresses),
-                redact(throwable.getCause(), seen, knownAddresses));
+        Stripped copy = new Stripped(redact(throwable.toString(), knownAddresses, maskedLiterals),
+                redact(throwable.getCause(), seen, knownAddresses, maskedLiterals));
         copy.setStackTrace(throwable.getStackTrace());
         return copy;
     }
 
     /**
-     * 已知地址按字面换成主机名：换完才轮到正则
+     * 已知地址按字面换成主机名、点名的字面整段换成掩码：换完才轮到正则
      * <p>
-     * 每条地址的几种写法一并算上、长的先换；单条或整组为空时原样交回
+     * 每条地址的几种写法一并算上、长的先换；两样都为空时原样交回
      */
-    private static String replaceKnownAddresses(String text, String[] knownAddresses) {
-        if (knownAddresses == null || knownAddresses.length == 0) {
-            return text;
-        }
+    private static String replaceKnownLiterals(String text, String[] knownAddresses, Collection<String> maskedLiterals) {
         List<String[]> forms = new ArrayList<>();
-        for (String address : knownAddresses) {
-            if (address == null || address.isEmpty()) {
-                continue;
+        if (knownAddresses != null) {
+            for (String address : knownAddresses) {
+                if (address == null || address.isEmpty()) {
+                    continue;
+                }
+                String host = hostOf(address);
+                if (host.isEmpty()) {
+                    continue;
+                }
+                for (String form : renderingsOf(address)) {
+                    forms.add(new String[]{form, host});
+                }
             }
-            String host = hostOf(address);
-            if (host.isEmpty()) {
-                continue;
+        }
+        if (maskedLiterals != null) {
+            for (String literal : maskedLiterals) {
+                if (literal == null || literal.isEmpty()) {
+                    continue;
+                }
+                forms.add(new String[]{literal, MASK});
             }
-            for (String form : renderingsOf(address)) {
-                forms.add(new String[]{form, host});
-            }
+        }
+        if (forms.isEmpty()) {
+            return text;
         }
         forms.sort((a, b) -> b[0].length() - a[0].length());
         String out = text;
