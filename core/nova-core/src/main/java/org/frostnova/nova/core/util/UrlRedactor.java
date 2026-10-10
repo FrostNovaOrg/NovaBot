@@ -151,6 +151,21 @@ public final class UrlRedactor {
     }
 
     /**
+     * 只把点名的字面整段换成掩码，不动地址里的任何一段
+     * <p>
+     * 走 {@link UrlMasker} 打码的那一路同样要按字面换掉请求头的值，而它管的是查询串、
+     * 对整段字面无从下手。换法只留一份实现——两份就是两条会各自漂走的判法，
+     * 漂走的那条正好变成漏的那条，所以 {@link UrlMasker} 复用这一道手续。
+     *
+     * @param text 印文，可为 null
+     * @param maskedLiterals 要整段换成掩码的字面（可空、可含 null 项）
+     * @return 换掉后的印文
+     */
+    public static String maskLiterals(String text, Collection<String> maskedLiterals) {
+        return replaceKnownLiterals(text, null, maskedLiterals);
+    }
+
+    /**
      * 已知地址按字面换成主机名、点名的字面整段换成掩码：换完才轮到正则
      * <p>
      * 每条地址的几种写法一并算上、长的先换；两样都为空时原样交回
