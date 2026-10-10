@@ -260,7 +260,9 @@ class HomeStatusFieldsTest {
         // 缺键与 0 在浏览器里长得一样（都取到 undefined 之后被当成 0），
         // 而「没有这个字段」意味着某次改动把它整个丢了——那时卡上再也不会写积压
         assertNotNull(queue, "队列这一块必须在，哪怕是空的");
+        assertTrue(queue.containsKey("pending"), "pending 键要在，值为 0 也不例外");
         assertEquals(0, queue.getIntValue("pending"));
+        assertTrue(queue.containsKey("dropped"), "dropped 键要在，值为 0 也不例外");
         assertEquals(0L, queue.getLongValue("dropped"));
     }
 
@@ -355,7 +357,9 @@ class HomeStatusFieldsTest {
     void todayCountsDefaultToZero() {
         JSONObject today = controller().status().getJSONObject("today");
 
+        assertTrue(today.containsKey("sent"), "sent 键要在，值为 0 也不例外");
         assertEquals(0, today.getIntValue("sent"), "缺键会被读成「取不到」，而 0 说的是「真的一条都没有」");
+        assertTrue(today.containsKey("failed"), "failed 键要在，值为 0 也不例外");
         assertEquals(0, today.getIntValue("failed"));
     }
 

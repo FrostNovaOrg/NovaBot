@@ -2,8 +2,8 @@
  * 告警卡收件人栏按通道申报渲染
  *
  * 空／缺 channels 时核心九键、只画 Webhook 与邮件两张卡。
- * 桩通道申报三键时十二键、三张卡，选名单后草稿落到桩键——
- * 若 setValue 仍写死适配器键名，末格红。
+ * 桩通道申报三键时十二键、三张卡，选名单后草稿落到桩键、值也各归各的键——
+ * 若 setValue 仍写死适配器键名、或拆「平台|类型|号码」时对调了两格，末格红。
  *
  * 切段按花括号配平截到块尾后真执行，不是只 includes。
  * 由 SettingsAlertRecipientTest 拉起。量的是源码树里那一份。
@@ -240,11 +240,16 @@ try {
   for (const fn of select.listeners.change || []) fn();
   const dirtyKeys = Object.keys(store.dirty).sort();
   const stubKeys = STUB.recipient.map(f => f.key).sort();
-  q4 = dirtyKeys.length === 3 && dirtyKeys.every((k, i) => k === stubKeys[i]);
+  // 值也要对：只比键名的话，拆「平台|类型|号码」时对调两格，键名一个没变，
+  // 存下的接收人却不是人选的那个，告警悄悄发不到人
+  q4 = dirtyKeys.length === 3 && dirtyKeys.every((k, i) => k === stubKeys[i])
+    && store.dirty['plug.alert.platform'] === 'bot-a'
+    && store.dirty['plug.alert.type'] === '1'
+    && store.dirty['plug.alert.num'] === '1001';
 } catch (e) {
   q4 = 'error:' + e.message;
 }
-eq(q4, true, '④ select 变更后 store.dirty 落的三键＝桩键');
+eq(q4, true, '④ select 变更后 store.dirty 落的三键＝桩键，值＝bot-a、1、1001');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

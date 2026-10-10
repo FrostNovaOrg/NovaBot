@@ -4,6 +4,12 @@
  * uid 查不到或已经在名单里时若提前 return、不把按钮解开，
  * 只能关掉抽屉重开才能再查。切段按花括号配平截到块尾后真执行，不是只 includes。
  *
+ * 三格各认自己那一支：①认「回失败」（out 写的是回包里的 message）、
+ * ②认「已在列表」（out 出「已经在列表里了」）、③认真抛的错（out 带着抛进去的那句话）。
+ * 只看按钮解没解开的话，哪一支都没走到、落进异常兜底，也照样绿。
+ * lookupStreamer 读的是模块里那份 pushData，重建出的函数作用域在全局读不到它，
+ * 得当参数递进去，「已在列表」那一支才走得通。
+ *
  * 由 PushLookupUnlockTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
@@ -77,13 +83,13 @@ function lookupFnSrc() {
   return bracedFrom(src.slice(start), 'async function');
 }
 
-function loadLookup(api, el, esc, store) {
+function loadLookup(api, el, esc, pushData) {
   const body = lookupFnSrc();
   if (!body) throw new Error('no function');
   const named = body.match(/^async function\s+([A-Za-z_$][\w$]*)/);
   if (!named) throw new Error('no function name');
-  return new Function('api', 'el', 'esc', 'store', body + '\nreturn ' + named[1] + ';')(
-    api, el, esc, store);
+  return new Function('api', 'el', 'esc', 'pushData', body + '\nreturn ' + named[1] + ';')(
+    api, el, esc, pushData);
 }
 
 function fakeEl() {
@@ -97,12 +103,15 @@ async function runLookup(apiImpl, pushData) {
   const go = {disabled: false};
   const out = {textContent: '', innerHTML: ''};
   const input = {value: '1'};
-  const store = {pushData};
-  const fn = loadLookup(apiImpl, fakeEl, String, store);
+  const fn = loadLookup(apiImpl, fakeEl, String, pushData);
   await fn(['bilibili'], input, go, out);
   return {go, out};
 }
 
+/**
+ * 切不出整个函数时的退路：按源码文本看 finally 段里有没有解锁。
+ * 它分不出哪一支没解锁，只在真执行不了时才轮到它。
+ */
 function finallyHasUnlock(body) {
   const block = bracedFrom(body, 'finally');
   return block.includes('go.disabled = false');
@@ -111,41 +120,42 @@ function finallyHasUnlock(body) {
 const body = lookupFnSrc();
 const fallback = body ? '' : 'finally 段内含 go.disabled = false';
 
-// ① api 回失败 → 按钮解开
+// ① api 回失败 → 按钮解开，且 out 写的是回包里的 message（走了「回失败」这一支）
 let q1 = 'missing';
 try {
   if (!body) {
     q1 = finallyHasUnlock(src);
   } else {
-    const {go} = await runLookup(async () => ({success: false, message: 'x'}), []);
-    q1 = go.disabled === false;
+    const {go, out} = await runLookup(async () => ({success: false, message: 'x'}), []);
+    q1 = go.disabled === false && out.textContent === 'x';
   }
 } catch (e) {
   q1 = 'error:' + e.message;
 }
 eq(q1, true, body
-  ? '① api 回 {success:false,message:x} → go.disabled===false'
+  ? '① api 回 {success:false,message:x} → go.disabled===false 且 out 写回包的 message'
   : '① 切不出整块，退 ' + fallback);
 
-// ② 已在列表 → 按钮解开
+// ② 已在列表 → 按钮解开，且 out 出「已经在列表里了」（走了「已在列表」这一支）
 let q2 = 'missing';
 try {
   if (!body) {
     q2 = finallyHasUnlock(src);
   } else {
-    const {go} = await runLookup(
+    const {go, out} = await runLookup(
       async () => ({success: true, uid: 1, uname: 'a'}),
       [{uid: 1}]);
-    q2 = go.disabled === false;
+    q2 = go.disabled === false && String(out.textContent).includes('已经在列表里了');
   }
 } catch (e) {
   q2 = 'error:' + e.message;
 }
 eq(q2, true, body
-  ? '② api 回已在列表的主播 → go.disabled===false'
+  ? '② api 回已在列表的主播 → go.disabled===false 且 out 含已经在列表里了'
   : '② 切不出整块，退 ' + fallback);
 
-// ③ 阳性对照：api 抛错 → 按钮解开且 out 含「查询失败」
+// ③ 阳性对照：api 抛错 → 按钮解开且 out 含「查询失败」，还带着抛进去的那句话，
+//    证明接住的是这一回真抛的错，不是重建环境里缺了哪个名字
 let q3 = 'missing';
 try {
   if (!body) {
@@ -154,13 +164,14 @@ try {
     const {go, out} = await runLookup(async () => {
       throw new Error('boom');
     }, []);
-    q3 = go.disabled === false && String(out.textContent).includes('查询失败');
+    q3 = go.disabled === false && String(out.textContent).includes('查询失败')
+      && String(out.textContent).includes('boom');
   }
 } catch (e) {
   q3 = 'error:' + e.message;
 }
 eq(q3, true, body
-  ? '③ api 抛错 → go.disabled===false 且 out 含查询失败'
+  ? '③ api 抛错 → go.disabled===false 且 out 含查询失败与 boom'
   : '③ 切不出整块，退 ' + fallback);
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
