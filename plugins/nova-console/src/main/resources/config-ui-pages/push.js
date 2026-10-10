@@ -405,7 +405,8 @@ function bindShell() {
     if (!value) { location.hash = '#/push'; return; }
     if (value === 'default') { location.hash = '#/push/default'; return; }
     const parts = value.split(':');
-    location.hash = parts[0] === 's' ? '#/push/' + parts[1] : '#/push/' + parts[1] + '/' + parts[2];
+    // 尾段原样接回去：通道身份里带着平台名，别按冒号截断
+    location.hash = parts[0] === 's' ? '#/push/' + parts[1] : '#/push/' + parts[1] + '/' + parts.slice(2).join(':');
   });
   $('#push-add-streamer').addEventListener('click', addStreamer);
   $('#push-drawer-close').addEventListener('click', closeDrawer);
@@ -452,21 +453,61 @@ let options = [];
 /** 加主播格子上的提示，与空着按下时那句共用：两处各写一份就会各说各的 */
 export const STREAMER_INPUT_HINT = 'uid、直播间号，或粘贴空间／直播间链接';
 
-/** 地址栏定的选中项：主播 uid 与通道号，两者皆空即通道一览 */
-let picked = {uid: '', num: ''};
+/**
+ * 地址栏定的选中项：主播 uid 与通道身份。
+ * 身份三样齐全时认全三样；只有号（旧地址）时按号取第一个
+ */
+let picked = {uid: '', num: '', type: null, platform: ''};
 
 /** 树上展开了哪几位主播。收起状态不进地址栏——它是「翻到哪儿了」，不是「在看哪一个」 */
 const expanded = new Set();
+
+/**
+ * 通道在地址里怎么写
+ *
+ * 与加通道去重、名单键是同一把尺：「平台|类型码|号」。三样齐了才认得出同一个号下
+ * 并存的群与好友——只带号的地址分不出它们，谁排在前面就开谁。
+ */
+function channelTail(item) {
+  return item.platform + '|' + Number(item.type) + '|' + item.num;
+}
+
+/** 地址里那一截通道身份：三段即「平台|类型码|号」，只有一段是旧地址的裸号 */
+function parseChannelTail(tail) {
+  const raw = String(tail || '');
+  const parts = raw.split('|');
+  if (parts.length === 3 && parts[0] !== '' && parts[1] !== '' && parts[2] !== '') {
+    return {platform: parts[0], type: Number(parts[1]), num: parts[2]};
+  }
+  return {platform: '', type: null, num: raw};
+}
+
+/**
+ * 地址定的那一个通道
+ *
+ * 身份三样齐了只认全三样的那一个；只有号（旧地址、书签、手册里的例子）时按号取第一个。
+ * 全三样都对不上时返回 null，不退回按号找：那个号下若是另一个类型，开它比不开更错。
+ */
+function pickChannel(list) {
+  const items = list || [];
+  if (picked.type !== null && picked.platform) {
+    return items.find(item => String(item.platform) === String(picked.platform)
+      && Number(item.type) === picked.type
+      && String(item.num) === String(picked.num)) || null;
+  }
+  return items.find(item => String(item.num) === String(picked.num)) || null;
+}
 
 /**
  * 切到某一个落点
  *
  * 只认地址栏、不认「谁点了哪一行」：刷新、收藏、后退三种进法走的都是这一条路。
  * @param uid 主播 uid，或 default（默认模板），空串为通道一览
- * @param num 通道号，空串为主播级
+ * @param tail 通道身份（「平台|类型码|号」，或旧地址的裸号），空串为主播级
  */
-export function showPush(uid, num) {
-  picked = {uid: uid || '', num: num || ''};
+export function showPush(uid, tail) {
+  const id = parseChannelTail(tail);
+  picked = {uid: uid || '', num: id.num || '', type: id.type, platform: id.platform};
   if (picked.uid && picked.uid !== 'default') expanded.add(String(picked.uid));
   renderStreamers();
 }
@@ -566,14 +607,17 @@ function paintTree() {
       }
     }
     for (const channel of streamer.channels) {
-      nav.appendChild(navOption('c:' + streamer.uid + ':' + channel.num, '　└ ' + channel.name));
+      nav.appendChild(navOption('c:' + streamer.uid + ':' + channelTail(channel), '　└ ' + channel.name));
     }
 
     host.appendChild(group);
   }
 
+  // 选中项对上的是树上那一行的写法：旧地址要靠这一下才在下拉里停得住
+  const current = tree.find(item => String(item.uid) === String(picked.uid));
+  const onChannel = current ? pickChannel(current.channels) : null;
   nav.value = picked.uid === 'default' ? 'default'
-    : picked.uid ? (picked.num ? 'c:' + picked.uid + ':' + picked.num : 's:' + picked.uid) : '';
+    : picked.uid ? (onChannel ? 'c:' + picked.uid + ':' + channelTail(onChannel) : 's:' + picked.uid) : '';
 }
 
 function navOption(value, text) {
@@ -616,7 +660,9 @@ function streamerNode(streamer) {
 }
 
 function channelNode(streamer, channel) {
-  const on = String(streamer.uid) === String(picked.uid) && String(channel.num) === String(picked.num);
+  // 高亮认的是「pickChannel 选中的就是这一行」：同一号的群与好友都长得像，
+  // 只比号的话两行会一起亮，或者按谁排在前面亮错那行
+  const on = String(streamer.uid) === String(picked.uid) && pickChannel(streamer.channels) === channel;
   const node = el('button', 'tnode tchan' + (on ? ' on' : ''));
   node.type = 'button';
   if (on) node.setAttribute('aria-current', 'true');
@@ -637,7 +683,7 @@ function channelNode(streamer, channel) {
   node.appendChild(body);
 
   node.addEventListener('click', () => {
-    location.hash = '#/push/' + streamer.uid + '/' + channel.num;
+    location.hash = '#/push/' + streamer.uid + '/' + channelTail(channel);
   });
   return node;
 }
@@ -673,7 +719,7 @@ function paintRight() {
     return;
   }
 
-  const target = (user.targets || []).find(item => String(item.num) === String(picked.num));
+  const target = pickChannel(user.targets || []);
   if (!target) {
     // 通道刚被删掉、或地址是抄来的：退到这位主播那一级，不留一屏空白
     location.replace('#/push/' + user.uid);
@@ -723,7 +769,7 @@ function renderIndex(host) {
         + '<td class="n">' + esc(row.num) + '</td>'
         + '<td>' + (row.on.length ? esc(row.on.join('、')) : '全关') + '</td>'
         + '<td>' + (row.custom ? '自定义' : '默认') + '</td>'
-        + '<td><a href="#/push/' + esc(row.uid) + '/' + esc(row.num) + '">打开</a></td></tr>').join('')
+        + '<td><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row)) + '">打开</a></td></tr>').join('')
       + '</tbody>';
     wrap.appendChild(table);
     box.appendChild(wrap);
@@ -993,7 +1039,7 @@ function channelRow(user, target) {
   const main = el('div', 'rc-main');
   const title = el('div', 'rc-nm');
   const link = el('a');
-  link.href = '#/push/' + user.uid + '/' + target.num;
+  link.href = '#/push/' + user.uid + '/' + channelTail(target);
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
@@ -1017,7 +1063,7 @@ function channelRow(user, target) {
   const side = el('div', 'rc-side');
   side.appendChild(pill(templateState(target, store.handlerList).custom ? '模板：自定义' : '模板：默认'));
   const open = el('a', 'lnkbtn');
-  open.href = '#/push/' + user.uid + '/' + target.num;
+  open.href = '#/push/' + user.uid + '/' + channelTail(target);
   open.textContent = '打开';
   side.appendChild(open);
   row.appendChild(side);
@@ -1545,7 +1591,7 @@ function addChannel(user) {
       });
       markDirty();
       say('已添加通道，保存后生效', 'ok');
-      location.hash = '#/push/' + user.uid + '/' + hit.num;
+      location.hash = '#/push/' + user.uid + '/' + channelTail(hit);
       renderStreamers();
     },
   });
@@ -1682,13 +1728,16 @@ export function setPushEntries(list) {
 }
 
 /**
- * 把快照对齐到此刻这一份
+ * 把快照对齐到某一份数
  *
  * 本页之外还有人往 /datasource 写（向导第一位主播那一步）。写完不对齐的话，
- * 改动条会一直说「还有 1 处没保存」——而它已经存下去了。
+ * 改动条会一直说「还有 1 处没保存」——而它已经存下去了。那一路不传参，对齐到此刻这一份。
+ * 本页保存时传的是「真发出去的那一份」：回包之前又改的东西不该被算成已存，
+ * 要留在改动条上，下次保存再发出去。
+ * @param [snapshot] 发下去的那一份数；不给即此刻这一份
  */
-export function markPushSaved() {
-  pushSaved = serializePush();
+export function markPushSaved(snapshot) {
+  pushSaved = snapshot === undefined ? serializePush() : snapshot;
 }
 
 // 下划线开头的字段仅供界面展示（昵称、头像等），既不写进配置文件，也不该算作改动
@@ -1803,13 +1852,16 @@ export async function save() {
   if (pushChangeCount() > 0) {
     pushTried = true;
     try {
+      // 快照对齐到「真发出去的那一份」，不是回包那一刻的最新一份：
+      // 挂着的那段时间里又改的东西留在改动条上，下次保存再发，不会被当成已经存过了
+      const sent = serializePush();
       const res = await api('/datasource', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content: serializePush()}),
+        body: JSON.stringify({content: sent}),
       });
       if (res.success) {
-        markPushSaved();
+        markPushSaved(sent);
         pushMsg = res.message || '已保存';
       } else {
         pushOk = false;
