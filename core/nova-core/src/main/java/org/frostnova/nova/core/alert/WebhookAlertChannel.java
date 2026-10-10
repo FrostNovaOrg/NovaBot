@@ -81,6 +81,20 @@ public class WebhookAlertChannel implements AlertChannel {
 
         Map<String, String> headers = new LinkedHashMap<>(alert.getWebhookHeaders());
 
+        // 请求头的值发送前先查一遍：值里混进回车换行或别的控制字符时 HTTP 客户端会拒发，
+        // 而拒发的报错原文里带着整串头值——Authorization 一类的头，值本身就是密钥。
+        // 判法与 JDK 对请求头值的拒收对齐（实测这一版 java.net.http 的取舍，见 helper）。
+        // 与地址那两道检查同理放在网络 try 之外抛：进了 try 会被出口收口换成
+        // 「发送失败（异常名）」，「哪个头写得不对」这一句就到不了使用者眼前。
+        // 往外那句写头名不写值：头名不是凭据，值是
+        for (Map.Entry<String, String> header : headers.entrySet()) {
+            if (hasRejectedHeaderValueChar(header.getValue())) {
+                throw new IllegalStateException(
+                        report(reportedHost(url), "请求头 " + header.getKey() + " 的值里有换行或控制字符"),
+                        new IllegalArgumentException("Webhook 请求头的值里混进了换行或控制字符"));
+            }
+        }
+
         // GET 的地址先单独拼好、单独解析：地址里混进 "、<> 这类 URI 不收的字符时 URI.create 会抛，
         // 报错原文带着整条地址，而剥地址的正则（UrlRedactor）同样在这几个字符上停——
         // 字符后面那段（正是推送密钥待的地方）会原样留在工程日志里。
@@ -123,7 +137,11 @@ public class WebhookAlertChannel implements AlertChannel {
             // 都会照原样交出去，密钥就从那里露。起因链也逐层换过：工程日志会打出整条链，
             // 起因里带地址也算漏。带上这一次用到的地址：正则在 ' ( 全角， 这类字符上会停，
             // 停下那段里的密钥只能靠按字面换掉整条地址拿掉。
-            throw new IllegalStateException(report(host, reasonOf(e)), UrlRedactor.redact(e, knownAddresses));
+            // 请求头的值一并按字面换掉：值本身就是密钥，而失败原文未必只有地址会带它
+            // （客户端拒收头值时报错原文里带着整串值）。发送前那一查挡的是拒发那一支，
+            // 这里是第二道保险，防将来别的失败把头值带进原文
+            throw new IllegalStateException(report(host, reasonOf(e)),
+                    UrlRedactor.redact(e, knownAddresses, headers.values()));
         }
         check(status, host);
     }
@@ -240,6 +258,30 @@ public class WebhookAlertChannel implements AlertChannel {
     private static boolean hasWhitespace(String url) {
         for (int i = 0; i < url.length(); i++) {
             if (Character.isWhitespace(url.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 请求头的值里有没有 HTTP 客户端不收的字符
+     * <p>
+     * 判法与 JDK 对请求头值的拒收对齐（实测这一版 {@code java.net.http} 的取舍）：
+     * 制表符、0x20–0x7E 与 Latin-1 的 0x80–0xFF 收；其余控制字符（含回车、换行）、
+     * 0x7F 与超出 Latin-1 的一律拒。客户端拒收时报错原文里带着整串值，
+     * 所以不收的那几类要在发送前就地拦下；值本身一个字不往外带
+     */
+    private static boolean hasRejectedHeaderValueChar(String value) {
+        if (value == null) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\t') {
+                continue;
+            }
+            if (c < 0x20 || c == 0x7f || c > 0xff) {
                 return true;
             }
         }
