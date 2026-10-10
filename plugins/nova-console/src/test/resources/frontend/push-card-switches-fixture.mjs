@@ -1,15 +1,14 @@
 /**
- * 版式区里的数据卡片逐张开关
+ * 版式区里的数据卡片：报告区与「没放进报告的」两区小块
  *
  * 用户那头的故障：主播想给某个群只放几张卡，比如只要流水、弹幕、大航海，不要点赞、
- * 进入直播间、分享，以前只能把「数据卡片」整块开或整块关。现在十张卡各有一个开关，
- * 挂在「数据卡片」下面：缩进列出，总开关关着时灰掉、存着的值不动，打开就亮回来；
- * 恢复默认把这些键一并删掉；改了任一张，状态行就说「自定义版式」。
+ * 进入直播间、分享，以前只能把「数据卡片」整块开或整块关。现在「数据卡片」下面是两区小块：
+ * 上面「报告里的卡片」按报告上的先后排，拖着换位、× 拿掉；下面「没放进报告的」点一下放回末尾，
+ * 也能拖回想要的位置。在报告区＝那张卡的开关开着，报告区里的先后＝存着的顺序。
  *
- * 顺序那几格抓的故障：点了上移、下移以后存下去的参数没变、界面上的顺序没变、焦点丢了；
- * 只调了顺序，通道上仍显示默认版式；恢复默认以后顺序没回去。
+ * 各格抓的故障写在各格开头。
  *
- * 本尺真跑整条通道页：push.js 的 renderStreamers、template.js 的版式编辑器、
+ * 本尺真跑整条通道页：push.js 的 renderStreamers、template.js 的两个编辑器、
  * push-model.js 的判法都是产品码。版式项清单不手抄，由 PushCardSwitchesTest 把
  * 下播报告真正的那张表照 /api/handlers 的序列化经环境变量 LAYOUT_OPTIONS 交进来。
  *
@@ -60,17 +59,45 @@ class MiniNode {
     this._text = '';
     this._html = '';
     this.attributes = {};
+    this.dataset = {};
     this.style = {};
     this.listeners = {};
     this.disabled = false;
     this.checked = false;
     this.hidden = false;
+    this.draggable = false;
     this.title = '';
     this.type = '';
     this.value = '';
+    const self = this;
+    this.classList = {
+      add: name => { if (!self.classList.contains(name)) self.className = (self.className + ' ' + name).trim(); },
+      remove: name => {
+        self.className = String(self.className || '').split(/\s+/).filter(item => item && item !== name).join(' ');
+      },
+      contains: name => String(self.className || '').split(/\s+/).includes(name),
+      toggle: (name, on) => {
+        const want = on === undefined ? !self.classList.contains(name) : !!on;
+        if (want) self.classList.add(name); else self.classList.remove(name);
+        return want;
+      },
+    };
   }
+  get nodeType() { return this.tagName === '#text' ? 3 : 1; }
+  get nodeValue() { return this._text; }
+  get childNodes() { return this.children; }
   get textContent() { return this._text; }
-  set textContent(v) { this._text = String(v ?? ''); }
+  set textContent(v) {
+    this._text = String(v ?? '');
+    // 与浏览器一样换成一个文字子节点：消息正文读回块表时走的是子节点
+    if (this.tagName === '#text') return;
+    this.children = [];
+    if (this._text) {
+      const text = new MiniNode('#text');
+      text._text = this._text;
+      this.appendChild(text);
+    }
+  }
   get innerHTML() { return this._html; }
   set innerHTML(html) {
     this._html = String(html ?? '');
@@ -106,6 +133,22 @@ class MiniNode {
       }
     }
   }
+  remove() {
+    if (!this.parentNode) return;
+    const list = this.parentNode.children;
+    const index = list.indexOf(this);
+    if (index >= 0) list.splice(index, 1);
+    this.parentNode = null;
+  }
+  contains(node) {
+    for (let at = node; at; at = at.parentNode) if (at === this) return true;
+    return false;
+  }
+  closest(selector) {
+    for (let at = this; at; at = at.parentNode) if (matches(at, String(selector).trim())) return at;
+    return null;
+  }
+  getBoundingClientRect() { return {left: 0, top: 0, width: 100, height: 20}; }
   querySelector(selector) { return findAll(this, selector)[0] || null; }
   querySelectorAll(selector) { return findAll(this, selector); }
   setAttribute(name, value) {
@@ -129,7 +172,7 @@ class MiniNode {
     for (const fn of list) fn.call(this, event);
     return true;
   }
-  click() { this.dispatchEvent({type: 'click', target: this, stopPropagation() {}}); }
+  click() { this.dispatchEvent(fakeEvent('click', this)); }
   focus() { globalThis.document.activeElement = this; }
 }
 
@@ -147,7 +190,19 @@ function findAll(root, selector) {
 function matches(node, sel) {
   if (sel.startsWith('#')) return node.id === sel.slice(1);
   if (sel.startsWith('.')) return String(node.className || '').split(/\s+/).includes(sel.slice(1));
+  const data = /^\[data-([a-z]+)]$/.exec(sel);
+  if (data) return !!(node.dataset && node.dataset[data[1]]);
   return node.tagName === sel.toLowerCase();
+}
+
+/** 一个事件：记下有没有被 preventDefault，拖放的带一份 dataTransfer */
+function fakeEvent(type, target, extra) {
+  return Object.assign({
+    type, target, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() {},
+    dataTransfer: {effectAllowed: '', dropEffect: '', setData() {}, getData: () => ''},
+  }, extra || {});
 }
 
 const byId = new Map();
@@ -185,6 +240,10 @@ globalThis.document = {
     },
   },
 };
+
+// 模板编辑器拒收一块时弹 alert；这里记下来，弹了就是收了不该收的东西
+const alerts = [];
+globalThis.window = {alert: text => alerts.push(String(text)), getSelection: () => null};
 
 globalThis.location = {hash: '', href: '', replace() {}, reload() {}};
 
@@ -228,6 +287,11 @@ try {
 }
 
 const CARD_LABELS = ['流水', '弹幕', '点赞', '进入直播间', '新增关注', '醒目留言', '大航海', '盲盒', '免费礼物', '分享'];
+const CARD_KEYS = ['card_revenue', 'card_danmu', 'card_like', 'card_enter', 'card_follow',
+  'card_super_chat', 'card_guard', 'card_box', 'card_free_gift', 'card_share'];
+const KEY_OF = Object.fromEntries(CARD_LABELS.map((label, i) => [label, CARD_KEYS[i]]));
+const LABEL_OF = Object.fromEntries(CARD_KEYS.map((key, i) => [key, CARD_LABELS[i]]));
+const DEFAULT_ORDER = CARD_KEYS.join(',');
 
 const TARGET = {platform: 'qq-onebot', type: 1, num: 12345};
 
@@ -242,10 +306,12 @@ const SESSION = {
 
 let push = null;
 let model = null;
+let editors = null;
 let store = null;
 try {
   push = await import(join(pages, 'push.js'));
   model = await import(join(pages, 'push-model.js'));
+  editors = await import(join(pages, 'template.js'));
   store = (await import('./store.js')).store;
 } catch (err) {
   failures.push('载入产品码就抛了：' + err.message);
@@ -272,14 +338,72 @@ const hasClass = (node, name) => String((node || {}).className || '').split(/\s+
 const stateLine = () => allNodes(page()).find(node => node.tagName === 'span'
   && String(node.innerHTML).includes('本通道用的是') && String(node.innerHTML).includes('版式'));
 const message = () => push.pushEntries()[0].targets[0].messages[0];
+const textOf = scope => allNodes(scope).map(node => node.textContent || '').join(' ');
+
+// —— 两区小块 ——
+
+const ON = 'rep-zone-on';
+const OFF = 'rep-zone-off';
+const ZONE_NAME = {[ON]: '报告里的卡片', [OFF]: '没放进报告的'};
+
+/** 某一区；scope 缺省为通道页 */
+function zone(which, scope) {
+  const node = allNodes(scope || page()).find(item => hasClass(item, which));
+  if (!node) throw new Error('版式区没有「' + ZONE_NAME[which] + '」那一区（改前无此功能）');
+  return node;
+}
+
+const chipsIn = (which, scope) => allNodes(zone(which, scope)).filter(node => hasClass(node, 'rep-chip'));
+const labelsIn = (which, scope) => chipsIn(which, scope).map(node => LABEL_OF[node.dataset.card] || node.dataset.card);
+
+function chip(which, label, scope) {
+  const node = chipsIn(which, scope).find(item => item.dataset.card === KEY_OF[label]);
+  if (!node) throw new Error('「' + ZONE_NAME[which] + '」里没有「' + label + '」');
+  return node;
+}
+
+function killButton(label, scope) {
+  const node = allNodes(scope || page())
+    .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '拿掉：' + label);
+  if (!node) throw new Error('找不到「拿掉：' + label + '」（改前无此功能）');
+  return node;
+}
+
+/** 把一枚小块拖到另一枚的左半边（before）或右半边（after），或拖到一区的空白处 */
+function dragTo(from, to, side) {
+  from.dispatchEvent(fakeEvent('dragstart', from));
+  const area = to.closest('.rep-zone') || to.closest('.tpl-c-body') || to;
+  const clientX = side === 'after' ? 90 : 10;
+  const over = fakeEvent('dragover', to, {clientX});
+  area.dispatchEvent(over);
+  const drop = fakeEvent('drop', to, {clientX});
+  area.dispatchEvent(drop);
+  from.dispatchEvent(fakeEvent('dragend', from));
+  return {over, drop};
+}
+
+function press(node, key) {
+  const event = fakeEvent('keydown', node, {key});
+  node.dispatchEvent(event);
+  return event;
+}
+
+const focused = () => {
+  const node = document.activeElement;
+  if (!node) return '无';
+  return (node.dataset && node.dataset.card ? (hasClass(node.parentNode, ON) ? '报告区·' : '下面·')
+    + LABEL_OF[node.dataset.card] : '') || node.getAttribute('aria-label') || node.tagName;
+};
+
+function expectState(word, what) {
+  const line = stateLine();
+  if (!line || !String(line.innerHTML).includes(word)) {
+    throw new Error(what + '，状态行该是「' + word + '」：' + (line ? line.innerHTML : '没找到'));
+  }
+}
 
 async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
-}
-
-function flip(input) {
-  input.checked = !input.checked;
-  input.dispatchEvent({type: 'change', target: input});
 }
 
 async function paintPage(params) {
@@ -312,174 +436,223 @@ if (push && store) {
   }];
 }
 
-await ask('① 十张卡在版式表里、紧跟数据卡片、按图上的顺序缩进列出', async () => {
+await ask('① 十张卡在版式表里跟着数据卡片；界面上紧跟「数据卡片」那一行，是一枚枚小块而不是一行行开关', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   const children = OPTIONS.filter(option => option.parentKey === 'cards').map(option => option.label);
-  same(children, CARD_LABELS, '版式表里跟着「数据卡片」的项（改前无此功能）');
+  same(children, CARD_LABELS, '版式表里跟着「数据卡片」的项');
 
   await paintPage({});
-  const labels = layoutRows().map(rowLabel);
-  const at = labels.indexOf('数据卡片');
+  const controls = allNodes(page()).find(node => node.id === 'rep-options');
+  const rows = controls.children;
+  const at = rows.findIndex(row => rowLabel(row) === '数据卡片');
   if (at < 0) throw new Error('版式区没有「数据卡片」这一行');
-  same(labels.slice(at + 1, at + 1 + CARD_LABELS.length), CARD_LABELS, '数据卡片下面那几行');
-  const rows = layoutRows();
-  const notIndented = CARD_LABELS.filter((label, i) => !hasClass(rows[at + 1 + i], 'rep-sub'));
-  same(notIndented, [], '没缩进的卡片行');
-  if (hasClass(rows[at], 'rep-sub')) throw new Error('「数据卡片」本身不该缩进');
-  const after = rows[at + 1 + CARD_LABELS.length];
-  if (after && hasClass(after, 'rep-sub')) throw new Error('卡片之后的「' + rowLabel(after) + '」不该缩进');
+  const board = rows[at + 1];
+  if (!hasClass(board, 'rep-board')) throw new Error('「数据卡片」下面一行不是两区小块（改前无此功能）');
+  if (!hasClass(board, 'rep-sub')) throw new Error('两区小块没缩进在「数据卡片」下面');
+  same(labelsIn(ON), CARD_LABELS, '报告区里的小块');
+  same(labelsIn(OFF), [], '下面那区的小块');
+  same(CARD_LABELS.filter(label => layoutInput(label)), [], '还画成一行行开关的卡');
+  same(rowLabel(rows[at + 2]), '本场变化', '小块之后那一行');
 });
 
-await ask('② 总开关关着：十张卡灰掉、存着的值不动；打开后亮回来，原来的值还在', async () => {
-  if (!push) throw new Error('产品码没载入，无从量起');
-  await paintPage({cards: false, card_like: false});
-  const live = CARD_LABELS.filter(label => {
-    const input = layoutInput(label);
-    return !input || input.disabled !== true;
-  });
-  same(live, [], '总开关关着时仍可点的卡片开关（改前无此功能）');
-  const like = layoutInput('点赞');
-  if (like.checked !== false) throw new Error('灰着的「点赞」没照存着的值显示成关');
-  same(message().params.card_like, false, '灰着时「点赞」的存值');
-
-  flip(layoutInput('数据卡片'));
-  await settle();
-  const still = CARD_LABELS.filter(label => {
-    const input = layoutInput(label);
-    return !input || input.disabled !== false;
-  });
-  same(still, [], '打开总开关后仍灰着的卡片开关');
-  if (layoutInput('点赞').checked !== false) throw new Error('亮回来之后「点赞」不再是原来的关');
-  if (layoutInput('分享').checked !== true) throw new Error('亮回来之后「分享」不再是默认的开');
-  same(message().params.card_like, false, '亮回来之后「点赞」的存值');
-});
-
-await ask('③ 恢复默认：十张卡的键一并删掉，不认得的键照留', async () => {
+await ask('② 恢复默认：十张卡的键与顺序键一并删掉，不认得的键照留', async () => {
   if (!model) throw new Error('产品码没载入，无从量起');
-  if (typeof model.restoredLayoutParams !== 'function') {
-    throw new Error('push-model.js 没有 restoredLayoutParams（改前恢复默认的删法写在按钮里，无从单独量）');
-  }
   const handler = store.handlerList[0];
-  const params = {message: '{report}', cards: false, card_like: false, card_share: false, card_revenue: false};
+  const params = {message: '{report}', cards: false, card_like: false, card_share: false, card_revenue: false,
+    card_order: 'card_share,card_like'};
   const restored = model.restoredLayoutParams(params, handler);
   same(restored, {message: '{report}'}, '恢复默认之后的参数');
   same(params.card_like, false, '恢复默认不该改动传进来的那一份');
 });
 
-await ask('④ 改任一张卡：状态行当场变成「自定义版式」', async () => {
+await ask('③ 拿掉任一张卡：状态行当场变成「自定义版式」', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   await paintPage({});
-  const before = stateLine();
-  if (!before || !String(before.innerHTML).includes('默认版式')) {
-    throw new Error('全默认时状态行该是「默认版式」：' + (before ? before.innerHTML : '没找到'));
-  }
-  const share = layoutInput('分享');
-  if (!share) throw new Error('版式区没有「分享」这一项（改前无此功能）');
-  flip(share);
+  expectState('默认版式', '全默认时');
+  killButton('分享').click();
   await settle();
-  same(message().params.card_share, false, '拨掉「分享」后的存值');
-  const after = stateLine();
-  if (!after || !String(after.innerHTML).includes('自定义版式')) {
-    throw new Error('改了「分享」后状态行该是「自定义版式」：' + (after ? after.innerHTML : '没找到'));
-  }
+  same(message().params.card_share, false, '拿掉「分享」后的存值');
+  expectState('自定义版式', '拿掉了「分享」后');
 });
 
-// —— 卡片顺序 ——
-
-const CARD_KEYS = ['card_revenue', 'card_danmu', 'card_like', 'card_enter', 'card_follow',
-  'card_super_chat', 'card_guard', 'card_box', 'card_free_gift', 'card_share'];
-
-const moveButton = name => allNodes(page())
-  .find(node => node.tagName === 'button' && node.getAttribute('aria-label') === name) || null;
-
-/** 版式区里「数据卡片」下面那几行，按界面上的先后读出卡名 */
-function cardRowLabels() {
-  const rows = layoutRows();
-  const at = rows.map(rowLabel).indexOf('数据卡片');
-  if (at < 0) throw new Error('版式区没有「数据卡片」这一行');
-  const out = [];
-  for (let i = at + 1; i < rows.length && hasClass(rows[i], 'rep-sub'); i++) out.push(rowLabel(rows[i]));
-  return out;
-}
-
-await ask('⑤ 上移下移：换位、存进参数、界面重排，焦点跟着移走的那一项；头尾的按钮不可点', async () => {
+// 故障：拖一枚到另一枚前面，存下去的顺序或界面上的顺序没变；拖回原位却记成了改动
+await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原位不算改动', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   await paintPage({});
-  const absent = CARD_LABELS.flatMap(label => ['上移：' + label, '下移：' + label]).filter(name => !moveButton(name));
-  same(absent, [], '版式区里找不到的上移下移按钮（改前无此功能）');
-  same(moveButton('上移：流水').disabled, true, '第一项的「上移」可不可点');
-  same(moveButton('下移：分享').disabled, true, '最后一项的「下移」可不可点');
-  const live = CARD_LABELS.flatMap(label => ['上移：' + label, '下移：' + label])
-    .filter(name => name !== '上移：流水' && name !== '下移：分享' && moveButton(name).disabled);
-  same(live, [], '中间那些不该锁着的按钮');
+  const {over} = dragTo(chip(ON, '分享'), chip(ON, '流水'), 'before');
+  if (!over.defaultPrevented) throw new Error('报告区不收报告区里拖起来的小块');
+  same(message().params.card_order, ['card_share', ...CARD_KEYS.slice(0, 9)].join(','), '把「分享」拖到「流水」前面之后存下去的顺序');
+  same(labelsIn(ON), ['分享', ...CARD_LABELS.slice(0, 9)], '把「分享」拖到「流水」前面之后界面上的顺序');
+  expectState('自定义版式', '调了顺序后');
 
-  moveButton('下移：流水').click();
-  await settle();
-  same(message().params.card_order, ['card_danmu', 'card_revenue', ...CARD_KEYS.slice(2)].join(','),
-    '下移「流水」之后存下去的顺序');
-  same(cardRowLabels(), ['弹幕', '流水', ...CARD_LABELS.slice(2)], '下移「流水」之后界面上的顺序');
-  if (document.activeElement !== moveButton('下移：流水')) {
-    throw new Error('下移之后焦点没留在「下移：流水」上：' + (document.activeElement
-      ? document.activeElement.getAttribute('aria-label') : '无'));
-  }
+  dragTo(chip(ON, '分享'), chip(ON, '免费礼物'), 'after');
+  same(message().params.card_order, DEFAULT_ORDER, '拖回原位之后存下去的顺序');
+  same(labelsIn(ON), CARD_LABELS, '拖回原位之后界面上的顺序');
+  expectState('默认版式', '拖回原位后');
 
-  // 连按：焦点一直在同一个按钮上，就一直往下移；移到底那一下，焦点落到「上移：流水」
-  for (let i = 0; i < CARD_LABELS.length - 2; i++) document.activeElement.click();
-  await settle();
-  same(cardRowLabels(), [...CARD_LABELS.slice(1), '流水'], '连按「下移：流水」到底之后界面上的顺序');
-  same(message().params.card_order, [...CARD_KEYS.slice(1), 'card_revenue'].join(','), '移到底之后存下去的顺序');
-  same(moveButton('下移：流水').disabled, true, '移到最后之后「下移：流水」可不可点');
-  if (document.activeElement !== moveButton('上移：流水')) {
-    throw new Error('移到底之后焦点该落到「上移：流水」：' + (document.activeElement
-      ? document.activeElement.getAttribute('aria-label') : '无'));
-  }
-
-  moveButton('上移：分享').click();
-  await settle();
-  same(cardRowLabels().slice(-3), ['分享', '免费礼物', '流水'], '上移「分享」之后末尾三行');
+  await paintPage({});
+  dragTo(chip(ON, '弹幕'), chip(ON, '流水'), 'after');
+  dragTo(chip(ON, '弹幕'), chip(ON, '点赞'), 'before');
+  dragTo(chip(ON, '弹幕'), chip(ON, '弹幕'), 'after');
+  same(Object.keys(message().params), [], '原地拖了三下之后的参数（不该写进任何键）');
 });
 
-await ask('⑥ 关着的卡也能调位置；总开关关着时上移下移一起锁住、存着的顺序不动', async () => {
+// 故障：点 × 以后那张卡的开关没存成关、或小块没到下面那区；点下面那区的小块没回到报告区末尾、或开关没存成开
+await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放回末尾存成开；拖回来落在放下的位置；空着时各写一句', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
-  await paintPage({card_like: false});
-  const like = moveButton('上移：点赞');
-  if (!like) throw new Error('版式区没有「上移：点赞」（改前无此功能）');
-  same(like.disabled, false, '关着的「点赞」的上移可不可点');
-  like.click();
+  await paintPage({});
+  same(textOf(zone(OFF)).includes('都在报告里'), true, '下面那区空着时写「都在报告里」');
+  killButton('点赞').click();
   await settle();
-  same(cardRowLabels().slice(0, 3), ['流水', '点赞', '弹幕'], '上移关着的「点赞」之后前三行');
+  same(message().params.card_like, false, '点「拿掉：点赞」之后的存值');
+  same(labelsIn(ON), CARD_LABELS.filter(label => label !== '点赞'), '拿掉「点赞」之后报告区');
+  same(labelsIn(OFF), ['点赞'], '拿掉「点赞」之后下面那区');
 
+  chip(OFF, '点赞').click();
+  await settle();
+  same(message().params.card_like, true, '点下面那区的「点赞」之后的存值');
+  same(labelsIn(ON), [...CARD_LABELS.filter(label => label !== '点赞'), '点赞'], '放回「点赞」之后报告区');
+  same(labelsIn(OFF), [], '放回「点赞」之后下面那区');
+  same(message().params.card_order.split(',').pop(), 'card_like', '放回之后存着的顺序的最后一项');
+
+  await paintPage({card_like: false, card_share: false});
+  const {over} = dragTo(chip(OFF, '分享'), chip(ON, '弹幕'), 'before');
+  if (!over.defaultPrevented) throw new Error('报告区不收下面那区拖来的小块');
+  same(message().params.card_share, true, '把「分享」拖进报告区之后的存值');
+  same(labelsIn(ON), ['流水', '分享', '弹幕', ...CARD_LABELS.slice(3, 9)], '把「分享」拖到「弹幕」前面之后报告区');
+  same(labelsIn(OFF), ['点赞'], '把「分享」拖进报告区之后下面那区');
+
+  dragTo(chip(ON, '流水'), zone(OFF), 'after');
+  same(message().params.card_revenue, false, '把「流水」拖进下面那区之后的存值');
+
+  await paintPage(Object.fromEntries(CARD_KEYS.map(key => [key, false])));
+  same(labelsIn(ON), [], '十张全拿掉之后报告区');
+  same(textOf(zone(ON)).includes('一张都没放，这一块不画'), true, '报告区空着时那一句');
+});
+
+// 故障：拖不了的人用键盘做不完：方向键挪不了位、Delete 拿不掉、回车放不回，或动完焦点丢了
+await ask('⑥ 键盘：Tab 走得到，左右方向键挪位，Delete／Backspace 拿掉，回车／空格放回；焦点落在刚动过的那一枚', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  const first = chip(ON, '流水');
+  same(first.tabIndex, 0, '报告区小块的 tabIndex');
+  const name = first.getAttribute('aria-label') || '';
+  for (const word of ['流水', '第 1 张', '方向键', 'Delete']) {
+    if (!name.includes(word)) throw new Error('「流水」的读屏名里没有「' + word + '」：' + name);
+  }
+
+  press(first, 'ArrowRight');
+  await settle();
+  same(labelsIn(ON).slice(0, 2), ['弹幕', '流水'], '对「流水」按右方向键之后前两枚');
+  same(message().params.card_order.split(',').slice(0, 2), ['card_danmu', 'card_revenue'], '右移之后存下去的顺序');
+  same(focused(), '报告区·流水', '右移之后焦点');
+  press(document.activeElement, 'ArrowLeft');
+  await settle();
+  same(labelsIn(ON).slice(0, 2), ['流水', '弹幕'], '再按左方向键之后前两枚');
+  same(focused(), '报告区·流水', '左移之后焦点');
+
+  press(document.activeElement, 'Delete');
+  await settle();
+  same(message().params.card_revenue, false, '按 Delete 之后「流水」的存值');
+  same(focused(), '下面·流水', '按 Delete 之后焦点');
+  const back = chip(OFF, '流水');
+  same(back.tabIndex, 0, '下面那区小块的 tabIndex');
+  if (!(back.getAttribute('aria-label') || '').includes('流水')) throw new Error('下面那区「流水」的读屏名里没有卡名');
+
+  press(document.activeElement, 'Enter');
+  await settle();
+  same(message().params.card_revenue, true, '按回车之后「流水」的存值');
+  same(labelsIn(ON).pop(), '流水', '按回车之后报告区最后一枚');
+  same(focused(), '报告区·流水', '按回车之后焦点');
+
+  press(chip(ON, '弹幕'), 'Backspace');
+  await settle();
+  same(message().params.card_danmu, false, '按 Backspace 之后「弹幕」的存值');
+  same(focused(), '下面·弹幕', '按 Backspace 之后焦点');
+  press(document.activeElement, ' ');
+  await settle();
+  same(message().params.card_danmu, true, '按空格之后「弹幕」的存值');
+  same(focused(), '报告区·弹幕', '按空格之后焦点');
+});
+
+// 故障：总开关关着、或这一页不可编辑时，小块照样能拖、× 和放回照样起作用，存着的值被改了
+await ask('⑦ 锁着：总开关关着或页不可编辑时，拖、×、放回、按键都不起作用，存着的值不动，写明为什么', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
   const stored = [...CARD_KEYS].reverse().join(',');
-  await paintPage({cards: false, card_order: stored});
-  same(cardRowLabels(), [...CARD_LABELS].reverse(), '总开关关着时界面照存着的顺序列出');
-  const unlocked = CARD_LABELS.flatMap(label => ['上移：' + label, '下移：' + label])
-    .filter(name => !moveButton(name) || moveButton(name).disabled !== true);
-  same(unlocked, [], '总开关关着时仍可点的上移下移');
-  same(message().params.card_order, stored, '总开关关着时存着的顺序');
+  await paintPage({cards: false, card_like: false, card_order: stored});
+  const before = JSON.stringify(message().params);
+  same(labelsIn(ON), [...CARD_LABELS].reverse().filter(label => label !== '点赞'), '总开关关着时报告区照存着的顺序列出');
+  same(chipsIn(ON).filter(node => node.draggable).length, 0, '总开关关着时拖得动的小块');
+  same(CARD_LABELS.filter(label => label !== '点赞' && !killButton(label).disabled), [], '总开关关着时可点的 ×');
+  same(chip(OFF, '点赞').getAttribute('aria-disabled'), 'true', '总开关关着时下面那区小块的 aria-disabled');
+  if (!textOf(page()).includes('「数据卡片」关着')) throw new Error('锁着时没写为什么');
+
+  killButton('分享').click();
+  chip(OFF, '点赞').click();
+  press(chip(ON, '分享'), 'Delete');
+  press(chip(ON, '分享'), 'ArrowLeft');
+  press(chip(OFF, '点赞'), 'Enter');
+  dragTo(chip(ON, '流水'), chip(ON, '分享'), 'before');
+  dragTo(chip(OFF, '点赞'), chip(ON, '分享'), 'before');
+  await settle();
+  same(JSON.stringify(message().params), before, '总开关关着时动过一圈之后的存值');
+
+  const params = {card_like: false};
+  let calls = 0;
+  const host = new MiniNode('div');
+  editors.buildLayoutEditor(host, {
+    editable: false, items: OPTIONS, lockedNote: '这一页只能看',
+    paramsOf: () => params, onChange: () => { calls++; }, render: () => Promise.resolve(null),
+  });
+  same(chipsIn(ON, host).filter(node => node.draggable).length, 0, '页不可编辑时拖得动的小块');
+  killButton('分享', host).click();
+  chip(OFF, '点赞', host).click();
+  press(chip(ON, '分享', host), 'Delete');
+  press(chip(OFF, '点赞', host), 'Enter');
+  dragTo(chip(ON, '流水', host), chip(ON, '分享', host), 'before');
+  same(calls, 0, '页不可编辑时动过一圈之后写回的次数');
 });
 
-await ask('⑦ 只调了顺序也算自定义；调回原样就回到默认；恢复默认把顺序一起删掉', async () => {
-  if (!push) throw new Error('产品码没载入，无从量起');
-  await paintPage({});
-  const down = moveButton('下移：弹幕');
-  if (!down) throw new Error('版式区没有「下移：弹幕」（改前无此功能）');
-  down.click();
-  await settle();
-  const custom = stateLine();
-  if (!custom || !String(custom.innerHTML).includes('自定义版式')) {
-    throw new Error('只调了顺序，状态行该是「自定义版式」：' + (custom ? custom.innerHTML : '没找到'));
-  }
-  moveButton('上移：弹幕').click();
-  await settle();
-  const back = stateLine();
-  if (!back || !String(back.innerHTML).includes('默认版式')) {
-    throw new Error('顺序调回原样，状态行该回到「默认版式」：' + (back ? back.innerHTML : '没找到')
-      + '；存着的是 ' + message().params.card_order);
-  }
+// 故障：两个编辑器共用一个「正在拖什么」，卡片小块拖进消息正文被当成占位符插进去，占位符拖进卡片区被收下
+await ask('⑧ 两个编辑器不串：卡片小块拖进消息正文、占位符拖进卡片区都什么都不做；模板编辑器原有的拖放照旧', async () => {
+  if (!editors) throw new Error('产品码没载入，无从量起');
+  alerts.length = 0;
+  const tplHost = new MiniNode('div');
+  const tplHandler = {className: 'demo', displayName: '开播通知', placeholders: ['{uname}', '{title}'],
+    attachments: [], defaultParams: {message: '开播了'}};
+  let tplParams = {};
+  const tplWrites = [];
+  editors.buildTemplateEditor(tplHost, {
+    handlers: [tplHandler], editable: true, paramsOf: () => tplParams,
+    onChange: (handler, params) => { tplWrites.push(params); tplParams = params; },
+  });
+  const repHost = new MiniNode('div');
+  const repParams = {};
+  let repWrites = 0;
+  editors.buildLayoutEditor(repHost, {
+    editable: true, items: OPTIONS, paramsOf: () => repParams,
+    onChange: () => { repWrites++; }, render: () => Promise.resolve(null),
+  });
+  const body = () => allNodes(tplHost).find(node => hasClass(node, 'tpl-c-body'));
+  const paletteButton = key => allNodes(tplHost).find(node => hasClass(node, 'tpl-blk') && node.textContent === key);
 
-  const handler = store.handlerList[0];
-  const restored = model.restoredLayoutParams({message: '{report}', card_order: 'card_share,card_like'}, handler);
-  same(restored, {message: '{report}'}, '恢复默认之后的参数（顺序键该一起删掉）');
+  const card = chip(ON, '分享', repHost);
+  const into = dragTo(card, body(), 'after');
+  same(tplWrites.length, 0, '卡片小块拖进消息正文之后模板写回的次数');
+  same(alerts, [], '卡片小块拖进消息正文之后弹出的话');
+  if (!into.drop.defaultPrevented) throw new Error('卡片小块落进消息正文时没拦住浏览器自己往正文里插东西');
+
+  const onto = dragTo(paletteButton('title'), chip(ON, '流水', repHost), 'before');
+  if (onto.over.defaultPrevented) throw new Error('报告区对拖来的占位符显示可以放下');
+  const below = dragTo(paletteButton('title'), zone(OFF, repHost), 'after');
+  if (below.over.defaultPrevented) throw new Error('下面那区对拖来的占位符显示可以放下');
+  same(repWrites, 0, '占位符拖进卡片区之后版式写回的次数');
+  same(labelsIn(ON, repHost), CARD_LABELS, '占位符拖进卡片区之后报告区');
+
+  const {over} = dragTo(paletteButton('uname'), body(), 'after');
+  if (!over.defaultPrevented) throw new Error('消息正文不再收调色板上拖来的占位符');
+  same(tplWrites.length, 1, '占位符拖进消息正文之后模板写回的次数');
+  same(tplWrites[0].message, '开播了{uname}', '占位符拖进消息正文之后的模板');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

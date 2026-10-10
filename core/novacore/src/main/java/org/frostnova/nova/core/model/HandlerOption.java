@@ -18,7 +18,7 @@ import java.util.Set;
  * @param key 参数名，即 {@code params} 中的键
  * @param label 界面上的名称
  * @param description 一句话说明，可为空
- * @param type 取值类型，决定界面渲染成开关、数字框，或是给别的几项排先后的上移下移按钮
+ * @param type 取值类型，决定界面渲染成开关、数字框，或是把别的几个开关画成可拖着排先后的小块
  * @param defaultValue 默认值，界面据此显示初始状态；使用者没改过的参数不会写进配置文件
  * @param min 数字型的下限，非数字型可为 null
  * @param max 数字型的上限，非数字型可为 null
@@ -84,9 +84,10 @@ public record HandlerOption(String key, String label, String description, Type t
      * 构造一个顺序项：给清单里另外几项排先后
      * <p>
      * 存的值是那几项的 key 用逗号连起来，默认值就是 {@code keys} 的原样顺序。
-     * 界面不为它单画一行，而是把它点名的那几项按存着的顺序列出、各带「上移」「下移」，
-     * 移动后把整串写回这一个键——因此默认值也是哪几项能排的唯一出处。
-     * @param keys 能排的那几项的 key，按默认顺序
+     * 界面不为它单画一行，而是把它点名的那几个开关画成两区小块：上面一区是开着的，
+     * 按存着的顺序排、拖着换位；下面一区是关着的，放回时开关跟着打开。
+     * 每动一下把整串写回这一个键——因此默认值也是哪几项能排的唯一出处。
+     * @param keys 能排的那几个开关的 key，按默认顺序
      */
     public static HandlerOption order(String key, String label, String description, List<String> keys) {
         return new HandlerOption(key, label, description, Type.ORDER, String.join(",", keys), null, null);
@@ -138,7 +139,7 @@ public record HandlerOption(String key, String label, String description, Type t
         INTEGER,
 
         /**
-         * 另外几项的先后：值是逗号连起来的 key，界面在那几项上画「上移」「下移」，不单画一行。
+         * 另外几个开关的先后：值是逗号连起来的 key，界面把那几个开关画成可拖着排的小块，不单画一行。
          * 见 {@link #order}
          */
         ORDER

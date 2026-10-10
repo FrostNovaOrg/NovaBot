@@ -236,9 +236,9 @@ public class BilibiliLiveReportOptions {
      * <p>
      * 顺序即界面上的顺序：先是整块的开关，后是几张排行榜——按使用者读报告时
      * 从上往下的次序排，而不是按字段在类里的先后。数据卡片下面那十项按图上卡片的默认顺序排，
-     * 挂在 {@code cards} 下面（{@link HandlerOption#parentKey()}）：界面把它们缩进列出，总开关关着时灰掉。
+     * 挂在 {@code cards} 下面（{@link HandlerOption#parentKey()}），总开关关着时界面上一并锁住。
      * 紧随其后的 {@code card_order} 是那十项的先后（{@link HandlerOption.Type#ORDER}）：界面不单画它，
-     * 而是按它的值给那十项排位、各带上移下移。
+     * 而是把那十项画成两区小块，开着的按它的值排在上面一区，关着的在下面一区。
      * <p>
      * ⚠️ <b>这张表与上面的字段必须一一对应</b>，由
      * {@code BilibiliLiveReportLayoutOptionsTest} 两个方向现算：表里有的键 {@link #of} 都真的读，
