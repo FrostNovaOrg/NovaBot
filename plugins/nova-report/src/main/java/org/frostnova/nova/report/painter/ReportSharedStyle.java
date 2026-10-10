@@ -111,7 +111,7 @@ public final class ReportSharedStyle {
      */
     public static String unameWithin(CommonPainter painter, String uname, int textX) {
         return painter.truncateToWidth(
-                new TextWithStyle(Optional.ofNullable(uname).orElse("未知主播"),
+                new TextWithStyle(Optional.ofNullable(UserText.singleLine(uname)).orElse("未知主播"),
                         CommonPainter.SECTION_FONT_SIZE, COLOR_NAME, Font.BOLD),
                 WIDTH - MARGIN - textX);
     }

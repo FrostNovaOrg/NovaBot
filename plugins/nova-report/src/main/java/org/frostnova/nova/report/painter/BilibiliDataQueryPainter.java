@@ -303,9 +303,11 @@ public class BilibiliDataQueryPainter {
             textX = MARGIN + AVATAR_SIZE + 22;
         }
 
-        painter.drawSection(header.title(), COLOR_NAME, new Point(textX, top + 6));
+        // 标题在数据命令里是主播昵称，用户自己起的名字里可能带换行
+        painter.drawSection(UserText.singleLine(header.title()), COLOR_NAME, new Point(textX, top + 6));
         if (StringUtil.isNotBlank(header.subtitle())) {
-            painter.drawTip(header.subtitle(), COLOR_TIP, new Point(textX, top + 54));
+            // 排行榜的副标题里嵌着主播昵称（「本场数据 · 某某的直播间」）
+            painter.drawTip(UserText.singleLine(header.subtitle()), COLOR_TIP, new Point(textX, top + 54));
         }
 
         painter.setPos(MARGIN, top + headerBlockHeight(face != null));
@@ -738,7 +740,7 @@ public class BilibiliDataQueryPainter {
      * 顺带解决 {@code substring} 把 emoji 劈成半个代理项的问题——昵称里 emoji 很常见
      */
     private String truncate(CommonPainter painter, String name, int nameMaxWidth) {
-        return painter.truncateToWidth(new TextWithStyle(name, 24, COLOR_TEXT, Font.PLAIN), nameMaxWidth);
+        return painter.truncateToWidth(new TextWithStyle(UserText.singleLine(name), 24, COLOR_TEXT, Font.PLAIN), nameMaxWidth);
     }
 
     /**

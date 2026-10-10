@@ -188,7 +188,8 @@ public class BilibiliOfflineRewardDigestPainter {
      */
     static List<String> bodyLines(BilibiliOfflineRewardDigestEvent.Contribution person, boolean showRevenue) {
         List<String> lines = new ArrayList<>();
-        lines.add(StringUtil.isBlank(person.getUname()) ? String.valueOf(person.getUid()) : person.getUname());
+        lines.add(StringUtil.isBlank(UserText.singleLine(person.getUname()))
+                ? String.valueOf(person.getUid()) : UserText.singleLine(person.getUname()));
 
         if (person.getGuardLevel() != null) {
             String text = guardVerb(person.getOperateType()) + guardLevelName(person.getGuardLevel());
