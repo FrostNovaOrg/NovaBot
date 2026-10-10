@@ -581,9 +581,14 @@ public class NovaMessageSender {
             log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
             // 先试去掉图片再发一次文字。文字送到了就按送达算：写下那条文字的编号，跑成功回调。
-            // 失败回调只在文字也没送到时才跑，避免群里已经有这条文字，却被记成没发出去
-            delivered = fallbackWithoutImages(sender, headers, params, message, result);
-            if (!delivered) {
+            // 失败回调只在文字也没送到时才跑，避免群里已经有这条文字，却被记成没发出去。
+            // 文字送达不明的那一支同样不当没发出去，回调已在降级那一路跑成送达不明
+            FallbackOutcome fallback = fallbackWithoutImages(sender, headers, params, message, result);
+            delivered = fallback == FallbackOutcome.DELIVERED;
+            if (fallback == FallbackOutcome.UNCERTAIN) {
+                // 与首次投递的送达不明同一处理：额度不退——那条纯文字可能已经带着 @ 进了群
+                chargedOn.set(null);
+            } else if (!delivered) {
                 message.setFailureReason(result.getString("message"));
                 runEach(message.markFailed(), message, "发送失败");
             }
@@ -635,26 +640,27 @@ public class NovaMessageSender {
      * <p>
      * 降级<b>只发一次、不走 {@link #postWithRetry} 的重试</b>，
      * 于是最坏情形是「原内容 N 次 + 纯文字 1 次」而不是 2N 次。
-     * @return 纯文字是否送达
+     *
+     * @return 纯文字的投递结果：送达／送达不明／没送达
      */
-    private boolean fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
-                                          Message message, JSONObject failure) {
+    private FallbackOutcome fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
+                                                  Message message, JSONObject failure) {
         if (!MessagePlaceholders.containsImage(message.getContent())) {
-            return false;
+            return FallbackOutcome.FAILED;
         }
 
         String deliveredId = failure.getString("id");
         if (StringUtil.isNotBlank(deliveredId)) {
             log.warn("推送含图片的消息失败, 但响应带着消息 id {}, 无法排除其实已送达, 不重发纯文字: [{}]: {}",
                     deliveredId, message.getSequence(), message.getDisplay());
-            return false;
+            return FallbackOutcome.FAILED;
         }
 
         String textOnly = MessagePlaceholders.stripImages(message.getContent()).trim();
         if (StringUtil.isBlank(textOnly)) {
             // 这一条是设计如此，不是异常：开播模板的第二条本就只有封面
             log.debug("消息只含图片段, 剥除后无内容可发, 不重发: [{}]", message.getSequence());
-            return false;
+            return FallbackOutcome.FAILED;
         }
 
         Map<String, Object> textParams = new LinkedHashMap<>(params);
@@ -674,6 +680,8 @@ public class NovaMessageSender {
         // 静默降级是看不见的谎言：三种结局各出一行，
         // 且都要说清「图没送到」，并带上原始失败原因——降级不能掩盖根因
         boolean textDelivered = result != null && Integer.valueOf(0).equals(result.getInteger("code"));
+        boolean textUncertain = !textDelivered && result != null
+                && Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN));
         if (textDelivered) {
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
             log.warn("推送含图片的消息失败, 已剥除图片段重发纯文字并送达（图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}",
@@ -689,13 +697,44 @@ public class NovaMessageSender {
                     log.error("执行图片降级回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
                 }
             }
+            return FallbackOutcome.DELIVERED;
+        } else if (textUncertain) {
+            // 与首次投递的送达不明同一处理：这条纯文字可能已经进群，重发就是两条；
+            // 也不当没发出去——额度不退、不记进失败，跑送达不明回调而不是失败回调，
+            // 失败回调会让上层按「发不出去」入重投，群里就多一条一样的
+            String reason = result.getString("message");
+            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), reason, elapsedMillis);
+            log.warn("剥除图片段后重发的纯文字送达不明（图片未送达, 不重发）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}；重发送达不明: {}",
+                    sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
+                    textOnly, failure.getString("message"), reason);
+            message.setFailureReason(reason);
+            runEach(message.markUncertain(), message, "送达不明");
+            return FallbackOutcome.UNCERTAIN;
         } else {
             String reason = result == null ? "推送接口未返回任何内容" : result.getString("message");
             log.warn("剥除图片段后重发仍然失败, 本条消息完全未送达: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}；重发失败: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"), reason);
+            return FallbackOutcome.FAILED;
         }
-        return textDelivered;
+    }
+
+    /**
+     * 剥图重发那一路的结局，与首次投递同样分三种
+     */
+    private enum FallbackOutcome {
+        /**
+         * 纯文字已送达
+         */
+        DELIVERED,
+        /**
+         * 纯文字送达不明：请求已交出去、没等到回包，可能已经进群
+         */
+        UNCERTAIN,
+        /**
+         * 纯文字没送达（或压根没重发）
+         */
+        FAILED
     }
 
     /**

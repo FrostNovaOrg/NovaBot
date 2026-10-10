@@ -80,7 +80,13 @@ public class HealthAlertMonitor {
 
         if (status.level() == HealthStatus.Level.OK) {
             if (previous != null && previous != HealthStatus.Level.OK) {
-                alertService.resolve(key);
+                // 收敛记录按级别各留一份，恢复时得全部清掉：漏掉哪一份，
+                // 恢复后再变回那个级别就会被旧记录压掉，错过第二次告警
+                for (HealthStatus.Level level : HealthStatus.Level.values()) {
+                    if (level != HealthStatus.Level.OK) {
+                        alertService.resolve(alertKey(key, level));
+                    }
+                }
                 alertService.alert(key + ":恢复", "NovaBot 状态恢复：" + key, status.summary());
                 record(probe, status, previous);
             }
@@ -96,9 +102,21 @@ public class HealthAlertMonitor {
         String content = status.summary()
                 + (status.advice().isBlank() ? "" : "\n处理建议：" + status.advice());
 
-        alertService.alert(key, subject, content);
+        alertService.alert(alertKey(key, status.level()), subject, content);
         log.warn("{} - {}", subject, status.summary());
         record(probe, status, previous);
+    }
+
+    /**
+     * 告警用的收敛键：探针名带上级别
+     * <p>
+     * 不带级别时，「降级」与「不可用」共用一份收敛记录：先降级、收敛期内又恶化为不可用的
+     * 那一条会被前一条降级压掉——而「彻底挂了」恰恰是最该叫到人的一条，且之后级别不再变化，
+     * 收敛期过了也不会补发。带上级别后，降级与不可用各算一个问题，恶化必达；
+     * 在两个级别之间来回抖时仍受收敛管束：每个级别在收敛期内只发一次。
+     */
+    private static String alertKey(String probeName, HealthStatus.Level level) {
+        return probeName + ":" + level.name();
     }
 
     /**

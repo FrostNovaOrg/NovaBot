@@ -832,5 +832,99 @@ class NovaMessageSenderTest {
             assertFalse(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{image_url="),
                     "重发那条不该再带图片段");
         }
+
+        /**
+         * 抓的故障：含图消息发送失败后剥图重发纯文字，那一条纯文字送达不明（请求已送出、
+         * 等回包超时）。它可能已经进群，却被当成没发出去：失败回调让上层再推一次，群里多一条；
+         * @全体成员 的当天额度被退回，本地记数可能超过上限。
+         * <p>
+         * 应与首次投递的送达不明同一处理：额度不退、不记进失败、跑送达不明回调而不是失败回调。
+         */
+        @org.junit.jupiter.api.Nested
+        @DisplayName("剥图重发的纯文字送达不明")
+        class FallbackTextUncertain {
+
+            @Test
+            @DisplayName("不退额度、不跑失败回调，跑送达不明回调")
+            void uncertainFallbackIsNotFailure() {
+                HttpUtil http = mock(HttpUtil.class);
+                when(http.postJson(anyString(), any(), any()))
+                        .thenReturn(generalError())
+                        .thenReturn(deliveryUnknown());
+
+                AtomicInteger failed = new AtomicInteger();
+                AtomicInteger uncertain = new AtomicInteger();
+                Message message = atAllWithCover();
+                message.addOnFailureCallback(failed::incrementAndGet);
+                message.addOnUncertainCallback(uncertain::incrementAndGet);
+
+                sender(http).sendNow(message);
+
+                ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+                verify(http, times(2)).postJson(anyString(), any(), captor.capture());
+                assertFalse(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{image_url="),
+                        "前置: 第二次投递应是剥图后的纯文字；实际: " + captor.getAllValues());
+                assertEquals(0, failed.get(),
+                        "纯文字可能已经进群，跑了失败回调上层就会再推一次，群里多一条");
+                assertEquals(1, uncertain.get(), "该跑送达不明回调，让上层按「说不准」而不是「没发出去」处理");
+            }
+
+            @Test
+            @DisplayName("@全体成员 额度不退——那条纯文字可能已经带着 @ 进了群")
+            void uncertainFallbackKeepsAtAllQuota() {
+                NovaCoreProperties properties = new NovaCoreProperties();
+                properties.getPush().setAtAllDailyLimit(1);
+
+                HttpUtil http = mock(HttpUtil.class);
+                when(http.postJson(anyString(), any(), any()))
+                        .thenReturn(generalError())
+                        .thenReturn(deliveryUnknown())
+                        .thenReturn(new JSONObject().fluentPut("code", 0).fluentPut("id", "3"));
+
+                NovaMessageSender sender = sender(http, properties);
+                sender.sendNow(atAllWithCover());
+                sender.sendNow(inlineAtAll());
+
+                ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+                verify(http, times(3)).postJson(anyString(), any(), captor.capture());
+                assertFalse(String.valueOf(captor.getAllValues().get(2).get("content")).contains("{at=all}"),
+                        "额度退了的话本地记数会超过上限；第二条不该再 @: " + captor.getAllValues());
+            }
+
+            @Test
+            @DisplayName("日志说清是剥图重发的纯文字送达不明、图片未送达，并带上原始失败原因")
+            void uncertainFallbackLogCarriesImageLossAndRootCause() {
+                // 降级不能掩盖根因，送达不明也不能：只说「没等到回包」而不说图没送到、
+                // 为什么剥的图，看日志的人拼不出刚才群里可能发生了什么
+                ch.qos.logback.classic.Logger logger =
+                        (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(NovaMessageSender.class);
+                ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                        new ch.qos.logback.core.read.ListAppender<>();
+                appender.start();
+                logger.addAppender(appender);
+
+                try {
+                    HttpUtil http = mock(HttpUtil.class);
+                    when(http.postJson(anyString(), any(), any()))
+                            .thenReturn(generalError())
+                            .thenReturn(deliveryUnknown());
+
+                    sender(http).sendNow(atAllWithCover());
+
+                    String line = appender.list.stream()
+                            .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                            .filter(m -> m.contains("剥除图片段后重发"))
+                            .findFirst()
+                            .orElse(null);
+
+                    assertNotNull(line, "剥图重发必须留下一行日志，实际日志: " + appender.list);
+                    assertTrue(line.contains("送达不明"), "要说清是纯文字送达不明: " + line);
+                    assertTrue(line.contains("图片未送达"), "必须显式写明图没送到: " + line);
+                    assertTrue(line.contains("OneBot HTTP 发送消息异常"), "必须带上原始失败原因: " + line);
+                } finally {
+                    logger.detachAppender(appender);
+                }
+            }
+        }
     }
 }
