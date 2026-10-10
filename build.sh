@@ -8,7 +8,7 @@
 #
 # 用法:
 #   ./build.sh              构建并运行测试，产物输出至 dist/build
-#   ./build.sh --skip-tests 跳过测试与 NovaCore 边界检查
+#   ./build.sh --skip-tests 跳过测试、NovaCore 边界检查、界面视图模型与备份脚本检查（不需要 node 与 rsync）
 #   ./build.sh --no-smoke   跳过收尾的起动冒烟。何时用：机器上没有可运行的 JDK（只出包不试起），
 #                           或 CI 里把冒烟拆成单独一步、build.sh 只管出产物时
 #   ./build.sh --clean      已是默认行为，保留只为兼容旧命令行（见下方「陈旧产物」一段）
@@ -256,7 +256,7 @@ echo "==> [2/9] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
 # ── [3/9] NovaCore 边界检查 ─────────────────────────────────────────────
-# 尺在 tools/novacore-boundary-check.sh：十三格，只 grep/find，不 build、不联网，
+# 尺在 tools/novacore-boundary-check.sh：各格只 grep/find，不 build、不联网，
 # 任一格红退码非 0。它答的是「拆仓／拆模块那条边界还在不在」：核心没引用插件、
 # 事件协议在核心、配置键不带平台名等。此前只靠人手跑，已有漏跑的前例。
 # 放在跑测试这一段：它与测试同属「源码还没被证明对」的前置闸，--skip-tests 的
@@ -417,38 +417,58 @@ bash "$ROOT/tools/artifact-entry-check.sh" "$OUT"
 # 而「人手跑过」和「没跑」在构建日志上长得一样。任一红即本构建红。
 # 本树已有主播页那一把，名单十三把（首页／推送／连接／主播／日志／初始设置／模板／今日卡／
 # 设置／登录／告警／确认／只读口令）。
+# 名单之后单跑向导插件步那一把：它量的是 setup.js／main.js 的接线，不是视图模型，
+# 名字也不是 *-model-check.sh，因此不进 MODEL_CHECKERS（测试按这个名字形状读那份名单）。
+# 与第 3 步同理只在跑测试时跑：这几把都要 node，--skip-tests 的一键安装不该因为
+# 机器上没装 node 而停在这里。
 echo
-echo "==> [7/9] 校验界面视图模型"
-MODEL_CHECKERS=(
-    home-model-check.sh
-    push-model-check.sh
-    links-model-check.sh
-    streamers-model-check.sh
-    log-model-check.sh
-    setup-model-check.sh
-    template-model-check.sh
-    today-model-check.sh
-    settings-model-check.sh
-    login-model-check.sh
-    alert-model-check.sh
-    confirm-model-check.sh
-    tokens-model-check.sh
-)
-for checker in "${MODEL_CHECKERS[@]}"; do
-    bash "$ROOT/tools/$checker"
-done
+if [ "$TESTS" = "1" ]; then
+    echo "==> [7/9] 校验界面视图模型"
+    MODEL_CHECKERS=(
+        home-model-check.sh
+        push-model-check.sh
+        links-model-check.sh
+        streamers-model-check.sh
+        log-model-check.sh
+        setup-model-check.sh
+        template-model-check.sh
+        today-model-check.sh
+        settings-model-check.sh
+        login-model-check.sh
+        alert-model-check.sh
+        confirm-model-check.sh
+        tokens-model-check.sh
+    )
+    for checker in "${MODEL_CHECKERS[@]}"; do
+        bash "$ROOT/tools/$checker"
+    done
+    bash "$ROOT/tools/setup-plugin-step-fixture.sh"
+else
+    echo "==> [7/9] 校验界面视图模型：已按 --skip-tests 跳过"
+fi
 
-# ── [8/9] 测试夹具隐私 ──────────────────────────────────────────────────
-# 尺已经在 tools/ 里，但只靠人手跑时，「跑过」和「没跑」在构建日志上长得一样。
-# 接进构建：退码非 0 即本构建红。它扫的是源码树 src/test（头像哈希须在允许名单、
-# 邮箱须用保留域），不依赖产物，放在打包前后皆可——按现有顺序放在冒烟之前。
-# 这一步不被 --no-smoke 跳过：冒烟量的是「包起不起得来」，夹具隐私是另一件事。
+# ── [8/9] 测试夹具隐私与备份脚本 ────────────────────────────────────────
+# 两把尺都已经在 tools/ 里，但只靠人手跑时，「跑过」和「没跑」在构建日志上长得一样。
+# 接进构建：任一退码非 0 即本构建红。两把量的都是源码树里的东西，不依赖产物，
+# 放在打包前后皆可——按现有顺序放在冒烟之前。都不被 --no-smoke 跳过：
+# 冒烟量的是「包起不起得来」，这两件是另外的事。
+#   fixture-privacy-check.sh 扫源码树 src/test：头像哈希须在允许名单、邮箱须用保留域。
+#   data-backup-check.sh 拿临时目录真跑一遍发行包里的 tools/data-backup.sh，并对模板里
+#     的 service／timer。它要本机有 rsync，因此只在跑测试时跑：--skip-tests 的一键安装
+#     装在使用者机器上，那里可能没装 rsync，不该因此停在这里。
 echo
-echo "==> [8/9] 校验测试夹具隐私"
+if [ "$TESTS" = "1" ]; then
+    echo "==> [8/9] 校验测试夹具隐私与备份脚本"
+else
+    echo "==> [8/9] 校验测试夹具隐私（备份脚本检查已按 --skip-tests 跳过）"
+fi
 bash "$ROOT/tools/fixture-privacy-check.sh"
+if [ "$TESTS" = "1" ]; then
+    bash "$ROOT/tools/data-backup-check.sh"
+fi
 
 # ── [9/9] 起动冒烟 ──────────────────────────────────────────────────────
-# 上面八步答的是「编译过、测过、边界在、包里的文件都出自源码、视图模型对得上、测试夹具隐私过了」；这一步答的是另一句：
+# 上面八步答的是「编译过、测过、边界在、包里的文件都出自源码、视图模型对得上、测试夹具隐私过了、备份脚本对得上」；这一步答的是另一句：
 # 这堆 jar 摆在一起，在一台没有任何配置文件的机器上，起不起得来。
 # 单元测试里每个类都是自己 new 出来的，谁也不经过容器；容器到启动那一刻才第一次
 # 按类型去凑构造参数，凑不齐当场退出——所以「整测全绿而包起不来」在结构上可能，

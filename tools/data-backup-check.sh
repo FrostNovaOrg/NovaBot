@@ -52,9 +52,12 @@ fi
 # ② 再跑一次：有「备份完成」，且 --stats 传输文件数 0（或极小）
 out2=""
 if out2="$(backup "$SRC" "$DST" 2>&1)"; then
+    # 取冒号后的数，不按段号取：rsync 3.x 写「Number of regular files transferred: N」，
+    # 旧版与 openrsync 写「Number of files transferred: N」，数字所在的段号不同。
     xfer="$(printf '%s\n' "$out2" | awk '
-        /Number of regular files transferred:/ { print $5; exit }
-        /Number of files transferred:/ { print $5; exit }
+        /Number of (regular )?files transferred:/ {
+            v = $0; sub(/.*transferred:[ \t]*/, "", v); gsub(/[^0-9].*/, "", v); print v; exit
+        }
     ')"
     xfer="${xfer:-99}"
     case "$out2" in
