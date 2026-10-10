@@ -243,7 +243,12 @@ public class PasskeyService {
                     PasskeyBytes.encode(authData.getCredentialPublicKey().getPublicKey().getEncoded()),
                     authData.getCredentialPublicKey().getAlgorithm(),
                     authData.getSignCount(), now, null);
-            store.save(credential);
+            if (!store.save(credential)) {
+                log.error("配置界面登记通行密钥「{}」时运行状态没能写进磁盘, 未登记", name);
+                result.put("success", false);
+                result.put("message", "没能写进磁盘，这把通行密钥没有登记上。请按日志里的原因排查存盘问题后重新登记");
+                return result;
+            }
 
             log.info("配置界面已登记一把通行密钥: {}", name);
             result.put("success", true);
@@ -391,19 +396,26 @@ public class PasskeyService {
      * <p>
      * 删完钥匙再把会话一并作废：手机丢了，主人删掉手机那把钥匙，手机上已经登着的控制台
      * 必须当即进不来——不然删了也白删。
+     * <p>
+     * 删除没能写进磁盘时会话照样注销：钥匙在本次运行里已经停用，结果里如实报没存上盘。
      * @param id 凭据 ID
      * @param keepSessionId 发起删除的会话标识，留下；认不出时传 null
      * @return 删除结果
      */
     public PasskeyDeletion delete(String id, String keepSessionId) {
-        boolean removed = store.remove(id);
-        if (!removed) {
-            return new PasskeyDeletion(false, 0);
+        PasskeyStore.Removal outcome = store.revoke(id);
+        if (outcome == PasskeyStore.Removal.ABSENT) {
+            return new PasskeyDeletion(outcome, 0);
         }
 
         int revokedSessions = authService.logoutPasskeySessions(id, keepSessionId);
-        log.info("配置界面已删除一把通行密钥: {}, 连带注销会话 {} 把", id, revokedSessions);
-        return new PasskeyDeletion(true, revokedSessions);
+        if (outcome == PasskeyStore.Removal.NOT_PERSISTED) {
+            log.error("配置界面已停用一把通行密钥: {}, 连带注销会话 {} 把, 但删除没能写进磁盘, 重启后它会恢复可用",
+                    id, revokedSessions);
+        } else {
+            log.info("配置界面已删除一把通行密钥: {}, 连带注销会话 {} 把", id, revokedSessions);
+        }
+        return new PasskeyDeletion(outcome, revokedSessions);
     }
 
     /**
@@ -557,9 +569,9 @@ public class PasskeyService {
 
     /**
      * 删一把钥匙的结果
-     * @param removed 原本是否存在
+     * @param outcome 已删除、本来没有，或已停用但没存上盘
      * @param revokedSessions 连带注销的会话数
      */
-    public record PasskeyDeletion(boolean removed, int revokedSessions) {
+    public record PasskeyDeletion(PasskeyStore.Removal outcome, int revokedSessions) {
     }
 }
