@@ -67,9 +67,28 @@ public class BilibiliCookieRefreshUtil {
      * @return CorrespondPath
      */
     public static String correspondPath(long timestampMillis) {
+        PublicKey key;
+        try {
+            key = publicKey();
+        } catch (Exception e) {
+            throw new IllegalStateException("生成 CorrespondPath 失败", e);
+        }
+        return correspondPath(timestampMillis, key);
+    }
+
+    /**
+     * 用指定公钥生成 CorrespondPath
+     * <p>
+     * 与 {@link #correspondPath(long)} 走同一条加密路径，只是公钥由调用方传入，
+     * 测试可以用自己生成的密钥对解密产物，核对明文与填充参数。
+     * @param timestampMillis 毫秒时间戳
+     * @param key RSA 公钥
+     * @return CorrespondPath
+     */
+    static String correspondPath(long timestampMillis, PublicKey key) {
         try {
             Cipher cipher = Cipher.getInstance(CIPHER_ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, publicKey(), oaepParameterSpec());
+            cipher.init(Cipher.ENCRYPT_MODE, key, oaepParameterSpec());
 
             byte[] encrypted = cipher.doFinal(("refresh_" + timestampMillis).getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(encrypted);
