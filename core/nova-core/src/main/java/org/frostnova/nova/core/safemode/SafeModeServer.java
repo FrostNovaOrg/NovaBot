@@ -143,9 +143,16 @@ public class SafeModeServer {
 
     /**
      * 保存配置
+     * <p>
+     * 超过上限的正文整段拒收：截下来的前半段碰巧还是合法 YAML 时照存，尾部的设置会悄悄丢掉，
+     * 截断点还可能切在多字节字符中间。
      */
     private void save(HttpExchange exchange) throws IOException {
         String content = readBody(exchange);
+        if (content == null) {
+            respond(exchange, 200, "text/html; charset=utf-8", page(null, "配置太大（超过 1 MiB），没有保存"));
+            return;
+        }
         respond(exchange, 200, "text/html; charset=utf-8", handleSaveBody(content));
     }
 
@@ -230,12 +237,15 @@ public class SafeModeServer {
     }
 
     /**
-     * 读取请求体
+     * 读取请求体；超过上限时返回 {@code null}，由调用处拒存
+     * <p>
+     * 判超限要多读一字节：在上限处截停的话，超限的正文只收到前半段，
+     * 碰巧是合法 YAML 时会照存，尾部的设置悄悄丢掉。
      */
     private String readBody(HttpExchange exchange) throws IOException {
         try (InputStream in = exchange.getRequestBody()) {
-            byte[] bytes = in.readNBytes(MAX_BODY_BYTES);
-            return new String(bytes, StandardCharsets.UTF_8);
+            byte[] bytes = in.readNBytes(MAX_BODY_BYTES + 1);
+            return bytes.length > MAX_BODY_BYTES ? null : new String(bytes, StandardCharsets.UTF_8);
         }
     }
 
@@ -291,7 +301,9 @@ public class SafeModeServer {
                 // 表单默认以 URL 编码提交，配置内容里的换行与特殊字符会被改写，因此直接提交原始文本
                 .append("document.querySelector('form').addEventListener('submit',function(e){e.preventDefault();")
                 .append("fetch(this.action,{method:'POST',body:document.querySelector('textarea').value})")
-                .append(".then(r=>r.text()).then(t=>document.open()||document.write(t)||document.close());});")
+                // 应答要整页替换当前页：open 清页、write 写入、close 收尾。三步不能用 || 连——
+                // document.open() 返回文档对象（真值），链到它就短路，write 永远不执行，页面只剩空白
+                .append(".then(r=>r.text()).then(t=>{document.open();document.write(t);document.close();});});")
                 .append("</script></body></html>");
 
         return html.toString();
