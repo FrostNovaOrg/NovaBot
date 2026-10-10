@@ -136,7 +136,9 @@ public class HttpUtil {
             networkLogger.info("{} -> {}{}", method.name(), safe, decision.suffix());
         }
 
+        Collection<String> headerValues = maskableHeaderValues(httpEntity.getHeaders());
         try {
+            checkHeaderValue(httpEntity);
             return restTemplate.exchange(uri, method, httpEntity, responseType);
         } catch (Exception e) {
             // 失败一律放行，不看抑制决定：抑制的目的就是让异常显出来
@@ -146,8 +148,8 @@ public class HttpUtil {
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
                 // 已知地址带 URI 两形：地址里的非 ASCII 字符进 URI 后有两种写法
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        failureMessage(e, addressIsCredential, uri.toString(), uri.toASCIIString()),
-                        cost, safe, failureThrowable(e, addressIsCredential, uri.toString(), uri.toASCIIString()));
+                        failureMessage(e, addressIsCredential, headerValues, uri.toString(), uri.toASCIIString()),
+                        cost, safe, failureThrowable(e, addressIsCredential, headerValues, uri.toString(), uri.toASCIIString()));
             }
             throw e;
         }
@@ -165,8 +167,10 @@ public class HttpUtil {
             networkLogger.info("{} -> {}{}", method.name(), safe, decision.suffix());
         }
 
+        Collection<String> headerValues = maskableHeaderValues(httpEntity.getHeaders());
         ResponseEntity<T> response = null;
         try {
+            checkHeaderValue(httpEntity);
             response = template.exchange(url, method, httpEntity, responseType);
             return response;
         } catch (Exception e) {
@@ -178,8 +182,8 @@ public class HttpUtil {
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
                 // 已知地址就是这一趟用的那条（调用处手上有的形）
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        failureMessage(e, addressIsCredential, url),
-                        cost, safe, failureThrowable(e, addressIsCredential, url));
+                        failureMessage(e, addressIsCredential, headerValues, url),
+                        cost, safe, failureThrowable(e, addressIsCredential, headerValues, url));
             }
             throw e;
         } finally {
@@ -224,18 +228,108 @@ public class HttpUtil {
      * {@code knownAddresses} 是这一次请求真正用到的地址：地址本身是凭据时，
      * 剥法除正则外还按字面把它换成主机名——正则在 {@code '} {@code (} 全角{@code ，}
      * 这类字符上停，停下那段里的密钥只能靠字面换掉整条地址拿掉
+     * <p>
+     * {@code headerValues} 是这一趟调用方交进来的请求头的值，同样按字面整段换成掩码：
+     * 头值整串就是凭据（Authorization、Cookie 一类），而失败原文未必只有地址会带它
      */
-    private static String failureMessage(Exception e, AddressIsCredential addressIsCredential, String... knownAddresses) {
+    private static String failureMessage(Exception e, AddressIsCredential addressIsCredential,
+                                         Collection<String> headerValues, String... knownAddresses) {
         return addressIsCredential == AddressIsCredential.YES
-                ? UrlRedactor.redact(e.getMessage(), knownAddresses) : UrlMasker.mask(e.getMessage());
+                ? UrlRedactor.redact(e.getMessage(), knownAddresses, headerValues)
+                : UrlMasker.mask(e.getMessage(), headerValues);
     }
 
     /**
-     * 失败行末参的异常副本：栈迹首行是 {@code toString()}，message 里的地址同样按同一层记法处理
+     * 失败行末参的异常副本：栈迹首行是 {@code toString()}，message 里的地址与头值同样按同一层记法处理
      */
-    private static Throwable failureThrowable(Exception e, AddressIsCredential addressIsCredential, String... knownAddresses) {
+    private static Throwable failureThrowable(Exception e, AddressIsCredential addressIsCredential,
+                                              Collection<String> headerValues, String... knownAddresses) {
         return addressIsCredential == AddressIsCredential.YES
-                ? UrlRedactor.redact(e, knownAddresses) : UrlMasker.sanitize(e);
+                ? UrlRedactor.redact(e, knownAddresses, headerValues)
+                : UrlMasker.sanitize(e, headerValues);
+    }
+
+    /**
+     * 请求头的值里有没有 HTTP 客户端不收的字符，发出之前先查一遍
+     * <p>
+     * 判法与 JDK 对请求头值的拒收对齐（实测这一版 {@code java.net.http} 的取舍）：
+     * 制表符、0x20–0x7E 与 Latin-1 的 0x80–0xFF 收；其余控制字符（含回车、换行）、
+     * 0x7F 与超出 Latin-1 的一律拒。客户端是在组请求那一步拒的，拒收的报错原文里带着
+     * <b>整串头值</b>——凭据粘贴时带上行尾换行，日志、健康页、投递结果就整串带上凭据。
+     * <p>
+     * 所以在交出去之前就地拦下。往回调用方的那句只写头名、不写值：头名不是凭据，值是。
+     * 异常类型与客户端拒收时的那一种相同（{@link IllegalArgumentException}），
+     * 调用方按类型分的支因此不变；也不挂起因——带网络类的起因会被当成「没送到」去重试。
+     */
+    private static void checkHeaderValue(HttpEntity<?> httpEntity) {
+        for (Map.Entry<String, List<String>> header : httpEntity.getHeaders().headerSet()) {
+            for (String value : header.getValue()) {
+                if (hasRejectedHeaderValueChar(value)) {
+                    throw new IllegalArgumentException("请求头 " + header.getKey()
+                            + " 的值里有请求头放不下的字符（例如换行、控制字符、中文或全角字符）");
+                }
+            }
+        }
+    }
+
+    /**
+     * 请求头的值里有没有 HTTP 客户端不收的字符
+     * <p>
+     * 与 {@code WebhookAlertChannel} 里发送前那一查同一套取舍，那边的报错带着自己的上下文、留着
+     */
+    private static boolean hasRejectedHeaderValueChar(String value) {
+        if (value == null) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\t') {
+                continue;
+            }
+            if (c < 0x20 || c == 0x7f || c > 0xff) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 这一趟调用方交进来的请求头的值，落日志前按字面整段换成掩码用
+     * <p>
+     * 值本身就是凭据（Authorization、Cookie 一类），而失败原文未必只有地址会带它。
+     * HttpUtil 自己加的 Content-Type、Accept 不是凭据，遮了反而碍着排障，不算在内。
+     * 空值跳过，与地址那道手续同一套
+     */
+    private static Collection<String> maskableHeaderValues(HttpHeaders headers) {
+        List<String> values = new ArrayList<>();
+        for (Map.Entry<String, List<String>> header : headers.headerSet()) {
+            if (!maskableHeaderName(header.getKey())) {
+                continue;
+            }
+            for (String value : header.getValue()) {
+                if (value != null && !value.isEmpty()) {
+                    values.add(value);
+                }
+            }
+        }
+        return values;
+    }
+
+    /**
+     * 同上，收的是调用方交头进来那一层的 {@code Map}（取图那一路手上有的形）
+     */
+    private static Collection<String> maskableHeaderValues(Map<String, String> headers) {
+        List<String> values = new ArrayList<>();
+        for (Map.Entry<String, String> header : headers.entrySet()) {
+            if (maskableHeaderName(header.getKey()) && header.getValue() != null && !header.getValue().isEmpty()) {
+                values.add(header.getValue());
+            }
+        }
+        return values;
+    }
+
+    private static boolean maskableHeaderName(String name) {
+        return !"Content-Type".equalsIgnoreCase(name) && !"Accept".equalsIgnoreCase(name);
     }
 
     /**
@@ -453,7 +547,9 @@ public class HttpUtil {
                 return Optional.ofNullable(ImageIO.read(input));
             }
         } catch (Exception e) {
-            log.error("从 {} 读取图片异常", url, e);
+            // 末参同样是打码副本：取图这一路的调用方交进来的请求头里有 Cookie 一类的凭据，
+            // 而失败原文未必不带它。原样交进去的话，栈迹首行就是未打码的 message
+            log.error("从 {} 读取图片异常", url, UrlMasker.sanitize(e, maskableHeaderValues(headers)));
         }
 
         return Optional.empty();

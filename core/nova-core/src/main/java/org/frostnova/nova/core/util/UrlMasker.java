@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.util;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
@@ -87,13 +88,29 @@ public final class UrlMasker {
      * @return 打码后的副本；null 原样返回
      */
     public static Throwable sanitize(Throwable throwable) {
-        return sanitize(throwable, Collections.newSetFromMap(new IdentityHashMap<>()));
+        return sanitize(throwable, (Collection<String>) null);
+    }
+
+    /**
+     * 同 {@link #sanitize(Throwable)}，另把点名的字面整段换成掩码
+     * <p>
+     * 请求头的值整串就是凭据（Authorization、Cookie 一类），而失败原文未必只有地址会带它：
+     * 值里混进客户端不收的字符时，拒发的报错原文里带着<b>整串头值</b>。
+     * 这类字面走不了查询串那一手，整段换成掩码。空项跳过，长的先换，
+     * 与地址同一道手续——那道手续在 {@link UrlRedactor}，这里复用，不另起一套。
+     *
+     * @param throwable 原异常，可为 null
+     * @param maskedLiterals 要整段换成掩码的字面，如这次调用方交进来的请求头的值（可空、可含 null 项）
+     * @return 打码后的副本；null 原样返回
+     */
+    public static Throwable sanitize(Throwable throwable, Collection<String> maskedLiterals) {
+        return sanitize(throwable, Collections.newSetFromMap(new IdentityHashMap<>()), maskedLiterals);
     }
 
     /**
      * 记着这条链上已经走过的异常（按对象身份认），走到见过的对象就截断
      */
-    private static Throwable sanitize(Throwable throwable, Set<Throwable> seen) {
+    private static Throwable sanitize(Throwable throwable, Set<Throwable> seen, Collection<String> maskedLiterals) {
         if (throwable == null) {
             return null;
         }
@@ -101,7 +118,8 @@ public final class UrlMasker {
             return null;
         }
 
-        Sanitized copy = new Sanitized(mask(throwable.toString()), sanitize(throwable.getCause(), seen));
+        Sanitized copy = new Sanitized(mask(throwable.toString(), maskedLiterals),
+                sanitize(throwable.getCause(), seen, maskedLiterals));
         copy.setStackTrace(throwable.getStackTrace());
         return copy;
     }
@@ -128,12 +146,27 @@ public final class UrlMasker {
     }
 
     public static String mask(String text) {
+        return mask(text, (Collection<String>) null);
+    }
+
+    /**
+     * 打码查询串里的凭据参数，并把点名的字面整段换成掩码
+     * <p>
+     * 整段字面那道在先：头值本身就是凭据，先按字面整段换掉，
+     * 免得它长得像查询参数时只换掉一半、剩下的片段照样漏。空项跳过，长的先换。
+     *
+     * @param text 原文，可为 null
+     * @param maskedLiterals 要整段换成掩码的字面（可空、可含 null 项）
+     * @return 打码后的文本；null 原样返回
+     */
+    public static String mask(String text, Collection<String> maskedLiterals) {
         if (text == null || text.isEmpty()) {
             return text;
         }
 
-        Matcher matcher = QUERY_PARAM.matcher(text);
-        StringBuilder out = new StringBuilder(text.length());
+        String stripped = UrlRedactor.maskLiterals(text, maskedLiterals);
+        Matcher matcher = QUERY_PARAM.matcher(stripped);
+        StringBuilder out = new StringBuilder(stripped.length());
         while (matcher.find()) {
             String replacement = SECRET_KEYS.contains(matcher.group(2).toLowerCase())
                     ? matcher.group(1) + matcher.group(2) + "=" + MASK
