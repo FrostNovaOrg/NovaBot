@@ -206,6 +206,10 @@ export function isClearPending(target, streamerUid, type) {
  *
  * 每一笔自带 done()：那一笔真写成功了才清掉自己那一截草稿。
  * 写失败的那一笔留着，下次保存再发；成功过的不会重发。
+ *
+ * 清的是「发出去的那一份」，不是槽位里此刻这一份：请求挂着的那段时间里又改出来的
+ * 新草稿是另一件东西，得留着下次保存再发。判法是草稿对象的身份——每一处 setter
+ * 换的都是一份新对象，换过的就不再是发出去的那一个。
  * @return {Array<{path: string, body: object, done: function, ask?: object}>}
  */
 export function sessionWrites() {
@@ -213,15 +217,16 @@ export function sessionWrites() {
   for (const s of drafts.values()) {
     const base = {platform: s.target.platform, num: s.target.num};
     if (s.revenue) {
-      const wanted = s.revenue;
+      const sent = s.revenue;
       writes.push({
         path: '/state/revenue',
-        body: Object.assign({}, base, {visible: wanted.to}),
-        done: () => { s.revenue = null; trim(s); },
+        body: Object.assign({}, base, {visible: sent.to}),
+        done: () => { if (s.revenue === sent) s.revenue = null; trim(s); },
       });
     }
     if (s.quiet) {
-      const wanted = s.quiet.to;
+      const sent = s.quiet;
+      const wanted = sent.to;
       const body = {mode: wanted.mode};
       if (wanted.mode === 'custom') {
         body.start = wanted.start;
@@ -230,7 +235,7 @@ export function sessionWrites() {
       writes.push({
         path: '/state/quiet',
         body: Object.assign({}, base, body),
-        done: () => { s.quiet = null; trim(s); },
+        done: () => { if (s.quiet === sent) s.quiet = null; trim(s); },
       });
     }
     const disable = [];
@@ -240,12 +245,21 @@ export function sessionWrites() {
       if (d.to) disable.push(name);
       else enable.push(name);
     }
+    const keepOnlyUnchanged = names => {
+      const sent = new Map(names.map(name => [name, s.commands.get(name)]));
+      return () => {
+        for (const name of names) {
+          if (s.commands.get(name) === sent.get(name)) s.commands.delete(name);
+        }
+        trim(s);
+      };
+    };
     if (disable.length) {
       const names = disable.slice();
       writes.push({
         path: '/state/commands',
         body: Object.assign({}, base, {commands: names, disabled: true}),
-        done: () => { for (const name of names) s.commands.delete(name); trim(s); },
+        done: keepOnlyUnchanged(names),
       });
     }
     if (enable.length) {
@@ -253,17 +267,18 @@ export function sessionWrites() {
       writes.push({
         path: '/state/commands',
         body: Object.assign({}, base, {commands: names, disabled: false}),
-        done: () => { for (const name of names) s.commands.delete(name); trim(s); },
+        done: keepOnlyUnchanged(names),
       });
     }
     for (const [k, d] of [...s.subs]) {
       if (d.clear) {
         const key = k;
+        const sent = d;
         writes.push({
           path: '/state/subscription',
-          body: Object.assign({}, base, {streamerUid: d.streamerUid, type: d.type, userUid: null}),
-          done: () => { s.subs.delete(key); trim(s); },
-          ask: d.ask || undefined,
+          body: Object.assign({}, base, {streamerUid: sent.streamerUid, type: sent.type, userUid: null}),
+          done: () => { if (s.subs.get(key) === sent) s.subs.delete(key); trim(s); },
+          ask: sent.ask || undefined,
         });
       } else {
         for (const uid of [...d.removed]) {
