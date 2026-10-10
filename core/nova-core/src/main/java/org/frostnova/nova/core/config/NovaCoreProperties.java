@@ -150,7 +150,7 @@ public class NovaCoreProperties {
         private boolean enabled = false;
 
         /**
-         * 单条命令的最长执行时间，单位：秒，超时后强制结束。
+         * 单条命令的最长执行时间，单位：秒，超时后强制结束命令本身；它拉起的程序不受影响，会继续运行。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发 · 超时")

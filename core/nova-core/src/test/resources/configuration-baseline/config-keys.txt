@@ -35,7 +35,7 @@ novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出�
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令。
 novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
 novabot.core.exec.rules|java.util.List<org.frostnova.nova.core.config.NovaCoreProperties$ExecRule>|<null>|事件触发外部命令的规则列表。
-novabot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束。
+novabot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束命令本身；它拉起的程序不受影响，会继续运行。
 novabot.core.live.auto-save-live-data-interval|java.lang.Integer|300|自动保存直播数据的间隔，单位：秒，仅使用默认直播数据服务时生效。
 novabot.core.live.detail-retention-days|java.lang.Integer|0|每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留。
 novabot.core.live.live-data-path|java.lang.String|data.json|直播数据文件路径，仅使用默认直播数据服务时生效。

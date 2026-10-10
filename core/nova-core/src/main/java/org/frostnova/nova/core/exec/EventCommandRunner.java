@@ -39,7 +39,7 @@ import java.util.concurrent.TimeoutException;
  * <h2>其余几条约束</h2>
  * <ul>
  *     <li><b>默认关闭。</b>这是个能执行任意程序的口子，得由使用者明确打开。</li>
- *     <li><b>有超时。</b>脚本卡住不会拖住任何东西，到点就杀。</li>
+ *     <li><b>有超时。</b>脚本卡住不会拖住任何东西，到点结束的是命令本身；它拉起的程序不受影响，会继续运行。</li>
  *     <li><b>有并发上限。</b>弹幕这类事件一秒能来几十条，没有上限的话一次刷屏
  *         就等于一次 fork 炸弹。超限直接丢弃并留下日志，而不是排成一条越积越长的队——
  *         等到十分钟后才执行的「开播时启动录播」没有任何意义。</li>
@@ -197,7 +197,7 @@ public class EventCommandRunner {
             if (!process.waitFor(timeout, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 pending.cancel(true);
-                log.warn("事件命令 {} 超过 {} 秒未结束, 已强制结束", command.get(0), timeout);
+                log.warn("事件命令 {} 超过 {} 秒未结束, 已强制结束命令本身; 它拉起的程序不受影响, 会继续运行", command.get(0), timeout);
                 return;
             }
 
