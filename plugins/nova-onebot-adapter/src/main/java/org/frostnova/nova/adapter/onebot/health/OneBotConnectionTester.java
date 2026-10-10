@@ -79,6 +79,15 @@ public class OneBotConnectionTester implements BotConnectionTester {
             }
         }
 
+        // 头值里放不下的字符会让 HTTP 客户端在建请求时抛异常，消息原样带着整段头值，
+        // 在这里先拦下，Token 一个字也不进回包和日志
+        String token = sender.getOneBotHttpToken();
+        if (!fitsInHeader(token)) {
+            log.debug("测试 OneBot 连接未发出：HTTP Token 里有请求头放不下的字符");
+            return Result.failed("HTTP Token 里有请求头放不下的字符（例如换行、中文或全角字符）",
+                    "请检查配置文件里的 HTTP Token，或在页面上重新填写后再测");
+        }
+
         try {
             JSONObject version = http.getVersionInfo(sender, new JSONObject());
             JSONObject login = http.getLoginInfo(sender, new JSONObject());
@@ -100,10 +109,36 @@ public class OneBotConnectionTester implements BotConnectionTester {
             return Result.failed("无法建立连接",
                     "请确认 NapCat 等 OneBot 实现已启动，且地址与 HTTP 端口填写正确");
         } catch (Exception e) {
-            log.debug("测试 OneBot 连接失败: {}", e.getMessage());
-            return Result.failed("连接测试失败：" + e.getMessage(),
+            // 异常消息可能带着请求头，回包只给类别，日志里先遮盖这次发出去的 Token
+            log.debug("测试 OneBot 连接失败: {}", masked(e.getMessage(), token));
+            return Result.failed("连接测试失败：" + e.getClass().getSimpleName(),
                     "请检查地址、端口与 Token 配置，并确认 OneBot 实现处于运行状态");
         }
+    }
+
+    /**
+     * 与 JDK HttpClient 的头值校验同一套：只收制表符、空格、可见 ASCII（0x21-0x7E）与 0x80-0xFF；
+     * 其余控制字符、DEL 与 0xFF 以上的字一律不收
+     */
+    private static boolean fitsInHeader(String token) {
+        if (token == null) {
+            return true;
+        }
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            boolean fits = c == '\t' || c == ' ' || (c >= 0x21 && c <= 0x7E) || (c >= 0x80 && c <= 0xFF);
+            if (!fits) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String masked(String message, String token) {
+        if (message == null || token == null || token.isEmpty()) {
+            return message;
+        }
+        return message.replace(token, "******");
     }
 
     private static boolean sameAddress(String tested, String saved) {
