@@ -33,6 +33,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * OneBot 掉线时把名单清空，界面上会变成「一个群都没有」——那与「机器人真的不在任何群里」
  * 长得一模一样，而两者该做的事完全相反。因此拉取失败时旧表原样留着，
  * 另外标明它是什么时候取的、以及现在已经取不到了，由界面照实告诉使用者。
+ * <b>回包里没有数据时同样算取不到</b>：那不是「一个群都没有」，空数组才是。
+ *
+ * <h2>换号之后名单要作废</h2>
+ * 缓存按平台名存，而同一个平台可以换一个 QQ 号登录。保存连接之后旧号的群和好友
+ * 还会在缓存里待满十分钟，挑了也推不出去，因此由 {@code OneBotConnectionManager}
+ * 在接上连接那一刻按平台名清掉（{@link #invalidate}）。
  */
 @Slf4j
 @NovaComponent
@@ -148,10 +154,22 @@ public class OneBotTargetDirectory {
     }
 
     /**
+     * 作废某个推送平台的名单，下次取时现拉
+     * <p>
+     * 保存连接就是「这条连接可能换人了」的那一刻。不清的话，换了登录的 QQ 号之后
+     * 十分钟内挑到的还是旧号的群和好友，选了也推不出去。
+     * @param platformName 推送平台名
+     */
+    public void invalidate(String platformName) {
+        snapshots.remove(platformName);
+    }
+
+    /**
      * 向 OneBot 要一份名单
      * <p>
      * 群与好友<b>一起成一起败</b>：两张表是同一份名单的两半，只成了一半时若各记各的时刻，
-     * 表级的「什么时候取的」就没有答案了。
+     * 表级的「什么时候取的」就没有答案了。回包里缺一张表时同样算这趟失败——
+     * 那不是「一个都没有」，把 null 当空表记成新鲜名单，上一次取到的会被空表盖掉。
      * @param sender 推送平台信息
      * @param previous 上一份名单，从未取成过时为 null
      * @return 新的名单；拉取失败时是一份保留了旧内容的名单
@@ -162,6 +180,11 @@ public class OneBotTargetDirectory {
         try {
             JSONArray groups = http.getGroupList(sender, new JSONObject());
             JSONArray friends = http.getFriendList(sender, new JSONObject());
+            if (groups == null || friends == null) {
+                throw new IllegalStateException(groups == null && friends == null
+                        ? "群列表与好友列表都没返回"
+                        : groups == null ? "群列表没返回" : "好友列表没返回");
+            }
 
             List<Group> groupRows = toGroups(sender, groups);
             List<Friend> friendRows = toFriends(sender, friends);

@@ -29,8 +29,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * 判据用的是群内角色而非 {@code get_group_at_all_remain} 的 {@code can_at_all}——
  * 后者实测在无权限的群里同样返回 {@code true}，它报的是额度不是权限。
  * <p>
- * 查不出角色时**放行**：宁可保持原有行为，也不要因为一次接口抖动就悄悄吞掉
- * 使用者明确配置过的 @全体成员。
+ * <b>只有明确拿到角色时才下结论</b>：owner、admin 允许，member 不允许。
+ * 其余情况（查不到成员、没有 role、role 不认识、取不到登录账号、接口出错）
+ * 一律放行，<b>且不写缓存</b>，下次推送再查。放行若也记上三十分钟，
+ * 这期间机器人被撤了管理员也照样 @全体；反过来，把「查不出」当成「没有权限」
+ * 又会把使用者明确配置过的 @全体成员悄悄吞掉，同样长达三十分钟。
  */
 @Slf4j
 @NovaComponent
@@ -52,8 +55,9 @@ public class OneBotAtAllPermissionService implements AtAllPermissionResolver {
     /**
      * 「平台:群号」到判定结果的缓存
      * <p>
-     * 条目数至多等于配置过的群数，是个很小的量，因此不引入缓存库，
-     * 自带过期时间的 map 足够——为几行逻辑给插件模块加一个依赖不划算。
+     * 只收<strong>明确拿到角色</strong>之后的结论；查不出的那些一次都没进来过，
+     * 下次推送会重新问一遍。条目数至多等于配置过的群数，是个很小的量，
+     * 因此不引入缓存库，自带过期时间的 map 足够——为几行逻辑给插件模块加一个依赖不划算。
      */
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
@@ -83,7 +87,7 @@ public class OneBotAtAllPermissionService implements AtAllPermissionResolver {
      * 判断机器人在指定群里能否 @全体成员
      * @param sender 推送平台信息
      * @param groupId 群号
-     * @return 是否允许；查不出时按允许处理
+     * @return 是否允许；查不出时按允许处理，且不写缓存
      */
     public boolean canAtAll(@NonNull OneBotSender sender, @NonNull Long groupId) {
         String key = sender.getName() + ":" + groupId;
@@ -92,7 +96,12 @@ public class OneBotAtAllPermissionService implements AtAllPermissionResolver {
             return cached.allowed();
         }
 
-        boolean allowed = resolve(sender, groupId);
+        Boolean allowed = resolve(sender, groupId);
+        if (allowed == null) {
+            // 查不出就放行，而且不写缓存：下次推送再查，别把一次「不知道」
+            // 变成三十分钟的结论——无论那个结论是允许还是不允许
+            return true;
+        }
         cache.put(key, new Cached(allowed, Instant.now()));
         return allowed;
     }
@@ -108,13 +117,14 @@ public class OneBotAtAllPermissionService implements AtAllPermissionResolver {
 
     /**
      * 查询机器人在群里的角色并据此判定
+     * @return 是否允许；<b>查不出时为 null</b>，调用方放行且不写缓存
      */
-    private boolean resolve(OneBotSender sender, Long groupId) {
+    private Boolean resolve(OneBotSender sender, Long groupId) {
         try {
             Long selfId = selfId(sender);
             if (selfId == null) {
                 log.debug("未能取得 {} 的登录账号, @全体成员 权限判定放行", sender.getName());
-                return true;
+                return null;
             }
 
             JSONObject params = new JSONObject()
@@ -123,16 +133,21 @@ public class OneBotAtAllPermissionService implements AtAllPermissionResolver {
             JSONObject member = http.getGroupMemberInfo(sender, params);
             String role = member == null ? null : member.getString("role");
 
-            boolean allowed = "owner".equalsIgnoreCase(role) || "admin".equalsIgnoreCase(role);
-            if (!allowed) {
+            if ("owner".equalsIgnoreCase(role) || "admin".equalsIgnoreCase(role)) {
+                return true;
+            }
+            if ("member".equalsIgnoreCase(role)) {
                 log.info("机器人在群 {} 中的角色为 {}, 没有 @全体成员 的权限, 相关占位符将被移除。" +
                         "绕过权限强行 @ 全体有风控风险, 如确需使用请先把机器人设为群管理员", groupId, role);
+                return false;
             }
-            return allowed;
+            // 没有 role、role 不认识、整个成员信息都没回来：这是「不知道」，不是「没有权限」
+            log.debug("未能确定机器人在群 {} 的角色({}), @全体成员 权限判定放行", groupId, role);
+            return null;
         } catch (Exception e) {
             // 接口抖动不该悄悄吞掉使用者明确配置过的 @全体成员
             log.warn("查询机器人在群 {} 的角色失败, @全体成员 权限判定放行: {}", groupId, e.getMessage());
-            return true;
+            return null;
         }
     }
 

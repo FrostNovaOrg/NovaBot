@@ -8,6 +8,7 @@ import org.frostnova.nova.core.account.BotConnectionTester;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.LinkedHashMap;
@@ -22,10 +23,11 @@ import java.util.Map;
  * <b>启动那条路走的也是它</b>。
  *
  * <h2>为什么要有这么一个统筹的地方</h2>
- * 接上一条连接不是一件事，是四件：推送接口要挂上去（否则核心投递不出去）、
- * HTTP 要体检一次并挂上定期检测、Websocket 要连、以及这些之前得先有一个
- * {@link OneBotSender} 存在。它们分散在三个类里，各自都只答自己那一段；
- * 谁来保证四件事按顺序发生、且只发生一次，得有个地方写下来。
+ * 接上一条连接不是一件事，是五件：推送接口要挂上去（否则核心投递不出去）、
+ * HTTP 要体检一次并挂上定期检测、Websocket 要连、推送目标名单要作废（换过登录的
+ * QQ 号之后，旧号的群和好友还在缓存里，挑了也推不出去）、以及这些之前得先有一个
+ * {@link OneBotSender} 存在。它们分散在几个类里，各自都只答自己那一段；
+ * 谁来保证这几件事按顺序发生、且只发生一次，得有个地方写下来。
  */
 @Slf4j
 @NovaComponent
@@ -63,15 +65,24 @@ public class OneBotConnectionManager {
 
     private final OneBotConnectionState state;
 
+    /**
+     * 推送目标名单
+     * <p>
+     * 照仓里的做法经 {@link ObjectProvider} 取：这两件之间不立硬依赖，
+     * 以后谁反过来要用谁时也形不成循环
+     */
+    private final ObjectProvider<OneBotTargetDirectory> targetDirectory;
+
     @Autowired
     public OneBotConnectionManager(OneBotAdapterPluginProperties properties, OneBotController controller,
                                    OneBotWebsocketService websocketService, OneBotHttpService httpService,
-                                   OneBotConnectionState state) {
+                                   OneBotConnectionState state, ObjectProvider<OneBotTargetDirectory> targetDirectory) {
         this.properties = properties;
         this.controller = controller;
         this.websocketService = websocketService;
         this.httpService = httpService;
         this.state = state;
+        this.targetDirectory = targetDirectory;
     }
 
     /**
@@ -117,6 +128,12 @@ public class OneBotConnectionManager {
         // 才会有消息进来，而 HTTP 这一趟是同步的往返，先做它会让整个保存动作多等一个往返
         websocketService.start(sender);
         httpService.check(sender);
+
+        // 换过登录的 QQ 号时，推送目标名单还是旧号的。作废它，下次挑目标时现取
+        OneBotTargetDirectory targets = targetDirectory.getIfAvailable();
+        if (targets != null) {
+            targets.invalidate(sender.getName());
+        }
 
         return new BotConnectionTester.Applied(true, describe(sender.getName()), configuration);
     }

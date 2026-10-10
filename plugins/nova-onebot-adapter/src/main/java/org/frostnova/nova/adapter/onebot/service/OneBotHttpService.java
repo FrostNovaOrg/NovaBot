@@ -122,11 +122,12 @@ public class OneBotHttpService {
             JSONObject loginInfo = http.getLoginInfo(sender, new JSONObject());
             log.info("{} 当前登录账号: {}({})", senderName, loginInfo.getString("nickname"), loginInfo.getLong("user_id"));
 
-            state.httpOk(senderName, "v" + versionInfo.getString("app_version")
+            JSONObject status = http.getStatus(sender, new JSONObject());
+            recordServiceHealth(senderName, status, "v" + versionInfo.getString("app_version")
                     + "，登录账号 " + loginInfo.getString("nickname") + "(" + loginInfo.getLong("user_id") + ")");
             // 账号在不在线看 get_status 的 online，与定时体检同一个口径：
             // 只看取不取得到登录信息的话，被踢下线后一重连就会被误判回在线
-            recordAccountFromStatus(senderName, http.getStatus(sender, new JSONObject()));
+            recordAccountFromStatus(senderName, status);
         } catch (HttpClientErrorException.Forbidden e) {
             log.error("{} 的 OneBot HTTP Token 配置不正确, 将无法推送消息, 请检查 Token 配置", senderName, e);
             state.httpFailed(senderName, OneBotConnectionState.Kind.TOKEN_INVALID, "Token 不正确");
@@ -352,13 +353,7 @@ public class OneBotHttpService {
             try {
                 JSONObject status = http.getStatus(sender, new JSONObject());
 
-                // good 是「实现自身跑得好不好」，online 是「QQ 账号还在不在线」，分开记：
-                // 两者的处理方式完全不同，前者重启服务，后者要重新扫码登录
-                if (Boolean.TRUE.equals(status.getBoolean("good"))) {
-                    state.httpOk(sender.getName(), "服务正常");
-                } else {
-                    state.httpFailed(sender.getName(), OneBotConnectionState.Kind.SERVICE_ABNORMAL, "实现自身状态异常");
-                }
+                recordServiceHealth(sender.getName(), status, "服务正常");
                 recordAccountFromStatus(sender.getName(), status);
             } catch (HttpClientErrorException.Forbidden e) {
                 // Token 不对不是连不上：分不清的话，连上之后会被这里盖成「连不上」
@@ -386,6 +381,25 @@ public class OneBotHttpService {
         ScheduledFuture<?> previous = detectTasks.remove(platformName);
         if (previous != null) {
             previous.cancel(false);
+        }
+    }
+
+    /**
+     * 实现自身跑得好不好照 {@code get_status} 的 good 判，体检与定时检测同一个口径
+     * <p>
+     * 两处各写一份判法的话迟早分家：曾经体检那条路没看 good，启动、保存连接或重连
+     * 那一刻就只记「HTTP 正常」，要等下一轮定期体检才翻回异常，关掉定期检测则一直显示正常。
+     * @param senderName 推送平台名
+     * @param status {@code get_status} 的返回
+     * @param okDetail 一切正常时那句话，体检那条路带版本与登录账号
+     */
+    private void recordServiceHealth(String senderName, JSONObject status, String okDetail) {
+        // good 是「实现自身跑得好不好」，online 是「QQ 账号还在不在线」，分开记：
+        // 两者的处理方式完全不同，前者重启服务，后者要重新扫码登录
+        if (Boolean.TRUE.equals(status.getBoolean("good"))) {
+            state.httpOk(senderName, okDetail);
+        } else {
+            state.httpFailed(senderName, OneBotConnectionState.Kind.SERVICE_ABNORMAL, "实现自身状态异常");
         }
     }
 
