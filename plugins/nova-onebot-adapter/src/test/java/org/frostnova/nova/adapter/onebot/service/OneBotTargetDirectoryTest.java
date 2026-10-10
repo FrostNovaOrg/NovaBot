@@ -256,6 +256,65 @@ class OneBotTargetDirectoryTest {
         assertEquals("连不上 OneBot", stale.message());
     }
 
+    /**
+     * 🔴 回包里没有 data 时接口返回 null，而 null 被当成空表记成一份新鲜名单，
+     * 上一次取到的群被「一个群都没有」盖掉。空数组才是真的一个群都没有。
+     */
+    @Test
+    @DisplayName("⚠️ 群列表没返回时保留旧表, 标成取不到最新, 原因写明群列表")
+    void missingGroupListKeepsPreviousTable() {
+        oneBotReturnsTwoOfEach();
+
+        OneBotTargetDirectory.Snapshot good = only(false);
+
+        when(http.getGroupList(any(), any())).thenReturn(null);
+        clock.forward(OneBotTargetDirectory.TTL.plusSeconds(1));
+
+        OneBotTargetDirectory.Snapshot stale = only(false);
+
+        assertEquals(2, stale.groups().size(), "上一次的名单必须留着: " + stale);
+        assertEquals(2, stale.friends().size());
+        assertTrue(stale.stale(), "没拿到数据就该标成取不到最新: " + stale);
+        assertTrue(stale.message().contains("群列表"), "原因要写明是哪一张表没返回: " + stale.message());
+        assertEquals(good.fetchedAt(), stale.fetchedAt(), "取回时刻跟着数据走");
+    }
+
+    @Test
+    @DisplayName("⚠️ 好友列表没返回时保留旧表, 原因写明好友列表")
+    void missingFriendListKeepsPreviousTable() {
+        oneBotReturnsTwoOfEach();
+
+        OneBotTargetDirectory.Snapshot good = only(false);
+
+        when(http.getFriendList(any(), any())).thenReturn(null);
+        clock.forward(OneBotTargetDirectory.TTL.plusSeconds(1));
+
+        OneBotTargetDirectory.Snapshot stale = only(false);
+
+        assertEquals(2, stale.groups().size(), "上一次的名单必须留着: " + stale);
+        assertTrue(stale.stale(), "没拿到数据就该标成取不到最新: " + stale);
+        assertTrue(stale.message().contains("好友列表"), "原因要写明是哪一张表没返回: " + stale.message());
+        assertEquals(good.fetchedAt(), stale.fetchedAt(), "取回时刻跟着数据走");
+    }
+
+    /**
+     * 空数组是真的一个群都没有，与「没返回」是两件事，这是上面的对照。
+     */
+    @Test
+    @DisplayName("阴性对照：群列表回空数组时照旧当空表, 不标取不到")
+    void emptyGroupListIsRealEmpty() {
+        when(http.getLoginInfo(any(), any())).thenReturn(JSON.parseObject("{\"user_id\":10000001}"));
+        when(http.getGroupList(any(), any())).thenReturn(new JSONArray());
+        when(http.getFriendList(any(), any())).thenReturn(friendRows());
+
+        OneBotTargetDirectory.Snapshot snapshot = only(false);
+
+        assertTrue(snapshot.groups().isEmpty(), "真的一个群都没有就该是空表: " + snapshot);
+        assertEquals(2, snapshot.friends().size(), "好友照出");
+        assertFalse(snapshot.stale(), "空数组是取到了的");
+        assertNull(snapshot.message(), "一切正常时不该有原因: " + snapshot);
+    }
+
     @Test
     @DisplayName("一次都没取成过时给空表并标记过期")
     void neverFetchedYieldsEmptyStaleTable() {

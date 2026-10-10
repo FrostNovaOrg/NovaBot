@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.server.WebServer;
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -135,7 +136,8 @@ class OneBotRuntimeConnectionTest {
                 mock(RequestMappingHandlerMapping.class), properties, senderService, httpService,
                 new PushApiTokenStore());
 
-        manager = new OneBotConnectionManager(properties, controller, websocketService, httpService, state);
+        manager = new OneBotConnectionManager(properties, controller, websocketService, httpService, state,
+                providerOf(directory));
     }
 
     @AfterEach
@@ -303,5 +305,15 @@ class OneBotRuntimeConnectionTest {
 
         assertFalse(applied.live(), "没有 HTTP Token 就挂不上推送接口，这条连接算不得接上了");
         assertFalse(applied.configuration().isEmpty(), "接不上也得把这条元素写下来，否则改了的那几项一并丢失");
+    }
+
+    /**
+     * 连接管理器经 ObjectProvider 取名单，这里照那个形状递上真的那份
+     */
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<OneBotTargetDirectory> providerOf(OneBotTargetDirectory directory) {
+        ObjectProvider<OneBotTargetDirectory> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(directory);
+        return provider;
     }
 }
