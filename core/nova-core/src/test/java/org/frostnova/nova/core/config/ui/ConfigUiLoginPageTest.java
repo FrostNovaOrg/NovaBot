@@ -30,7 +30,7 @@ class ConfigUiLoginPageTest {
     @Test
     @DisplayName("真发出去的那张页面里带着判定脚本，且占位不留残迹")
     void realPageCarriesTheModel() throws IOException {
-        String html = ConfigUiLoginPage.html();
+        String html = ConfigUiLoginPage.html("");
 
         assertTrue(html.contains("export function loginView"),
                 "拼好的登录页里应当带着 loginView，缺了它页面上点什么都不动");
@@ -53,7 +53,7 @@ class ConfigUiLoginPageTest {
     @Test
     @DisplayName("拼好的登录页带着锁定控件表")
     void realPageCarriesControlState() throws IOException {
-        String html = ConfigUiLoginPage.html();
+        String html = ConfigUiLoginPage.html("");
         assertTrue(html.contains("export function loginControlState"),
                 "锁定时禁哪几颗由 loginControlState 算，缺了它 paint 遍历无从问起");
         assertTrue(html.contains("'password-reveal'"),
@@ -81,7 +81,7 @@ class ConfigUiLoginPageTest {
     @Test
     @DisplayName("拼好的那段 module 脚本过得了 node --check")
     void composedScriptParses() throws IOException, InterruptedException {
-        String html = ConfigUiLoginPage.html();
+        String html = ConfigUiLoginPage.html("");
 
         int start = html.indexOf("<script type=\"module\">");
         assertTrue(start >= 0, "登录页里应当有一段 module 脚本");

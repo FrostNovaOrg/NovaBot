@@ -245,6 +245,11 @@
 
   //@@login-model@@
 
+  // 部署前缀（server.servlet.context-path），没配时为空串。服务端吐页时按脚本字符串写进来，
+  // 这张页面不加载 core.js，本站地址一律经下面这两个值拼
+  const PREFIX = "{{nova-prefix:js}}";
+  const CONSOLE = `${PREFIX}/config`;
+
   const $ = s => document.querySelector(s);
   const show = s => $(s).classList.remove('hidden');
   const hide = s => $(s).classList.add('hidden');
@@ -278,12 +283,12 @@
   /**
    * 登录成功后进控制台
    *
-   * 落点交给 landing 算：地址栏此刻可能已经就是 '/config'＋同一个片段——
+   * 落点交给 landing 算：地址栏此刻可能已经就是控制台地址＋同一个片段——
    * 安全过滤器是把登录页原地吐在 /config 上的，replace 落在同一条地址上只做片段导航、
    * 页面不重取，登录成功了也停在登录页，只有刷新才进得去。那一档要走整页重载。
    */
   function enterConsole() {
-    const target = landing(location.href, location.hash);
+    const target = landing(location.href, location.hash, CONSOLE);
     if (target.reload) location.reload();
     else location.replace(target.url);
   }
@@ -356,7 +361,7 @@
   function offerPasskey() {
     if (typeof window.PublicKeyCredential !== 'function') return;
 
-    fetch('/config/api/auth/passkey/login/options', {method: 'POST'})
+    fetch(CONSOLE + '/api/auth/passkey/login/options', {method: 'POST'})
       .then(r => r.json())
       .then(options => { if (options.success) { hasPasskey = true; paint(); } })
       .catch(() => {});
@@ -393,7 +398,7 @@
     try {
       // 这一趟要的是一个新挑战：上面那一趟只用来判断「要不要摆这个按钮」，
       // 它发出去的那个挑战早已作废（挑战是一次性的）
-      const options = await fetch('/config/api/auth/passkey/login/options', {method: 'POST'}).then(r => r.json());
+      const options = await fetch(CONSOLE + '/api/auth/passkey/login/options', {method: 'POST'}).then(r => r.json());
       if (!options.success) {
         $('#msg').textContent = options.message || '这台机器还没有登记过通行密钥';
         return;
@@ -409,7 +414,7 @@
         },
       });
 
-      const r = await fetch('/config/api/auth/passkey/login/verify', {
+      const r = await fetch(CONSOLE + '/api/auth/passkey/login/verify', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -443,7 +448,7 @@
 
     // 文案只有服务端那一份。在这里再抄一遍的话，改了文件而没改页面，
     // 使用者同意的与文件里写的就不是同一份东西了，而且从界面上完全看不出来
-    fetch('/config/api/auth/agreement')
+    fetch(CONSOLE + '/api/auth/agreement')
       .then(r => r.json())
       .then(data => {
         // textContent 而非 innerHTML：文案是文字，不该被当成标记解释
@@ -478,7 +483,7 @@
     enterConsole();
   }
 
-  fetch('/config/api/auth/state')
+  fetch(CONSOLE + '/api/auth/state')
     .then(r => r.json())
     .then(apply)
     // 状态问不到时把口令表单摆出来：这样人至少看得见「无法连接到服务器」，
@@ -504,7 +509,7 @@
     // 令牌走地址栏参数：安全过滤器认的就是这一处（以及 Authorization 头），
     // 它<b>不认 Cookie</b>——认了的话这条通道也就成了一个跨站伪造面。
     // 换到会话之后浏览器照常走会话那一套，地址栏里的令牌不必再出现第二次
-    location.href = '/config?token=' + encodeURIComponent(value);
+    location.href = CONSOLE + '?token=' + encodeURIComponent(value);
   });
 
   $('#accept').addEventListener('click', async () => {
@@ -512,7 +517,7 @@
     $('#agreement-msg').textContent = '';
 
     try {
-      const r = await fetch('/config/api/auth/agreement/accept', {
+      const r = await fetch(CONSOLE + '/api/auth/agreement/accept', {
         method: 'POST',
         headers: csrfToken ? {'X-CSRF-Token': csrfToken} : {}
       });
@@ -540,7 +545,7 @@
     markInvalidCredentials(false);
 
     try {
-      const r = await fetch('/config/api/auth/login', {
+      const r = await fetch(CONSOLE + '/api/auth/login', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({password: $('#password').value, code: $('#code').value})

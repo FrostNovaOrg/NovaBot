@@ -15,7 +15,7 @@
  * 从地址栏直接进某一场与点一行进去会渲染出两种结果。
  */
 
-import {$, api, el, esc, say} from './core.js';
+import {$, api, CONSOLE, el, esc, say} from './core.js';
 import {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   gapCells, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
@@ -835,7 +835,7 @@ async function loadSession() {
 
   let response;
   try {
-    response = await fetch('/config/api' + reportPath(where.platform, where.uid, where.start));
+    response = await fetch(CONSOLE + '/api' + reportPath(where.platform, where.uid, where.start));
   } catch (e) {
     paint(body, reportView('missing', '取这一场的报告图失败：' + e.message));
     return;

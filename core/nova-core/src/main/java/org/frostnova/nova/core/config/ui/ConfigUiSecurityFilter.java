@@ -265,7 +265,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private String sessionCookie(String value, HttpServletRequest request) {
         return "%s=%s; Path=%s; HttpOnly; SameSite=Strict%s".formatted(
-                SESSION_COOKIE, value, ConfigUiController.BASE_PATH, request.isSecure() ? "; Secure" : "");
+                SESSION_COOKIE, value, ConfigUiPrefix.consolePath(request), request.isSecure() ? "; Secure" : "");
     }
 
     /**
@@ -309,8 +309,9 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         if (request.getParameter("token") != null) {
             Cookie cookie = new Cookie(TOKEN_COOKIE, token);
             cookie.setHttpOnly(true);
-            // 路径缩到 /config：令牌只在配置界面里用得着，写「/」的话同一台机器上别的路径也收得到它
-            cookie.setPath(ConfigUiController.BASE_PATH);
+            // 路径缩到 /config：令牌只在配置界面里用得着，写「/」的话同一台机器上别的路径也收得到它。
+            // 配了部署前缀时是「前缀 + /config」，前缀只取本程序的配置，见 ConfigUiPrefix
+            cookie.setPath(ConfigUiPrefix.consolePath(request));
             // 走 https 时带上 Secure，跟着 request.isSecure()，与会话 Cookie 同一个判法：
             // 不带 Secure 的话，同域名下只要有一次明文请求，浏览器就会把令牌随它送出去
             cookie.setSecure(request.isSecure());
@@ -352,7 +353,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             return;
         }
 
-        loginPage(response);
+        loginPage(request, response);
     }
 
     /**
@@ -365,7 +366,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private void agreementNotAccepted(HttpServletRequest request, HttpServletResponse response) throws IOException {
         if (isHome(request)) {
-            loginPage(response);
+            loginPage(request, response);
             return;
         }
 
@@ -386,11 +387,11 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 页面上那几个判定（摆什么、折什么、禁什么）由 {@link ConfigUiLoginPage} 拼进来，
      * 见那里的说明：这张页面不取任何外部资源，而那段判定又不该在页面里再抄一份。
      */
-    private void loginPage(HttpServletResponse response) throws IOException {
+    private void loginPage(HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setStatus(HttpStatus.OK.value());
         response.setContentType(MediaType.TEXT_HTML_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.getWriter().write(ConfigUiLoginPage.html());
+        response.getWriter().write(ConfigUiLoginPage.html(ConfigUiPrefix.of(request)));
     }
 
     /**

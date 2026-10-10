@@ -10,7 +10,7 @@
  */
 
 import {ask, showDoc} from './confirm.js';
-import {$, api, el, esc, phrase, say, switchControl} from './core.js';
+import {$, api, CONSOLE, el, esc, phrase, say, switchControl} from './core.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
 import {store} from './store.js';
@@ -594,7 +594,7 @@ async function revokeAgreement(button, result) {
     if (res.success) {
       // 撤回之后这一页什么也读不到了（协议闸把控制台整个关上）。整页回到面板地址，
       // 由服务端给出该给的那一屏——留在原地只会看见一片接连失败的请求
-      location.assign('/config');
+      location.assign(CONSOLE);
       return;
     }
     report(result, res);

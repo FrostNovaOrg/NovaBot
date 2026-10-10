@@ -4,6 +4,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布]
+
+### 修复
+
+- 配了部署路径前缀（`server.servlet.context-path`）时，控制台可以正常登录，页面和接口都走对路径；以前会登录后又回到登录页，样式和脚本也取不到。NapCat 入口同样带上前缀。
+
 ## [5.9.0] - 2026-10-11
 
 ### 新增

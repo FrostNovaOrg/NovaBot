@@ -39,6 +39,7 @@ import org.frostnova.nova.core.timeline.TimelineStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.QrCodeUtil;
 import org.frostnova.nova.core.lang.StringUtil;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
@@ -812,15 +813,19 @@ public class ConfigUiController {
 
     /**
      * 配置界面页面
+     * <p>
+     * 页面里的地址按部署前缀写好再吐，前缀只取本程序的配置，见 {@link ConfigUiPrefix}
+     * @param request 请求，只用来取 servlet 上下文
      * @return 页面内容
      * @throws IOException 读取页面资源失败时抛出
      */
     @GetMapping(produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> page() throws IOException {
+    public ResponseEntity<String> page(HttpServletRequest request) throws IOException {
         try (var stream = new ClassPathResource("config-ui/index.html").getInputStream()) {
             return ResponseEntity.ok()
                     .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
-                    .body(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                    .body(ConfigUiPrefix.render(new String(stream.readAllBytes(), StandardCharsets.UTF_8),
+                            ConfigUiPrefix.of(request)));
         }
     }
 

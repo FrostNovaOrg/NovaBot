@@ -150,8 +150,8 @@ function runner(answer) {
     box.said = res;
   };
   const location = {assign: to => jumps.push(to)};
-  const fn = new Function('ask', 'api', 'report', 'location',
-    revokeSrc + '\nreturn revokeAgreement;')(ask, api, report, location);
+  const fn = new Function('ask', 'api', 'report', 'location', 'CONSOLE',
+    revokeSrc + '\nreturn revokeAgreement;')(ask, api, report, location, '/config');
 
   return {fn, asks, calls, jumps};
 }

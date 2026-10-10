@@ -867,13 +867,15 @@ public class ConfigUiAuthController {
      * {@code Secure} 跟随当前连接是否为 https：面板部署在反向代理之后时，
      * 需要配置 {@code server.forward-headers-strategy}，否则这里看到的永远是明文连接，
      * Cookie 就不会带上 {@code Secure}。
+     * <p>
+     * Path 是「部署前缀 + {@code /config}」，前缀只取本程序的配置，见 {@link ConfigUiPrefix}。
      */
     private ResponseCookie sessionCookie(String value, HttpServletRequest request) {
         return ResponseCookie.from(ConfigUiSecurityFilter.SESSION_COOKIE, value)
                 .httpOnly(true)
                 .secure(request.isSecure())
                 .sameSite("Strict")
-                .path(ConfigUiController.BASE_PATH)
+                .path(ConfigUiPrefix.consolePath(request))
                 .maxAge(Duration.ofHours(Math.max(1, properties.getSessionHours())))
                 .build();
     }
@@ -883,7 +885,7 @@ public class ConfigUiAuthController {
                 .httpOnly(true)
                 .secure(request.isSecure())
                 .sameSite("Strict")
-                .path(ConfigUiController.BASE_PATH)
+                .path(ConfigUiPrefix.consolePath(request))
                 .maxAge(0)
                 .build();
     }

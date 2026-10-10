@@ -16,7 +16,7 @@
  */
 
 import {ask, keepTabInside} from './confirm.js';
-import {$, api, el, esc, markDirty, say, term} from './core.js';
+import {$, api, CONSOLE, el, esc, markDirty, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
@@ -1444,7 +1444,7 @@ function layoutPreviewRenderer(target, revenueVisible) {
   let url = null;
   return async params => {
     try {
-      const res = await fetch('/config/api/report/preview', {
+      const res = await fetch(CONSOLE + '/api/report/preview', {
         method: 'POST',
         headers: Object.assign({'Content-Type': 'application/json'},
           store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),

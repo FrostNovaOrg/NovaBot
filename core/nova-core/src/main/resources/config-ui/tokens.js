@@ -11,7 +11,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, esc, say} from './core.js';
+import {$, api, esc, PREFIX, say} from './core.js';
 import {refreshLinks} from './links.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {store} from './store.js';
@@ -104,7 +104,7 @@ async function issue() {
   button.disabled = true;
   fail('');
   try {
-    const response = await fetch('/nova/readonly-token', {
+    const response = await fetch(PREFIX + '/nova/readonly-token', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     const data = await response.json().catch(() => ({}));

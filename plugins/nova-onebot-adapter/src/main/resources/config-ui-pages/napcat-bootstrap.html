@@ -54,16 +54,22 @@
 <iframe id="frame" title="NapCat WebUI"></iframe>
 <div id="banner"><button type="button" id="banner-close">知道了</button><span id="banner-text"></span></div>
 
-<script src="/config/napcat-bootstrap/napcat-resume.js"></script>
+<script src="{{nova-prefix}}/config/napcat-bootstrap/napcat-resume.js"></script>
 
 <script>
+  // 部署前缀（server.servlet.context-path），没配时为空串。服务端吐页时按脚本字符串写进来，
+  // 这张页面不加载 core.js，本站地址一律经下面这两个值拼。
+  // NapCat WebUI 那条反代规则在配了前缀时由使用者写成「前缀 + /config/napcat/」
+  const PREFIX = "{{nova-prefix:js}}";
+  const CONSOLE = `${PREFIX}/config`;
+
   // NapCat WebUI 的 localStorage 键名。它那边的常量表里就叫 token，
   // 存的是 Credential（登录响应的那个字段），且是 JSON 编码过的字符串——
   // 它的请求拦截器读出来后会 JSON.parse 再放进 Authorization: Bearer。
   // 🔴 少了 JSON.stringify 这一层，存进去的裸串会被 parse 成异常，
   //    症状是「明明写进去了却还是要登录」
   const KEY = 'token';
-  const WEBUI = '/config/napcat/webui/';
+  const WEBUI = CONSOLE + '/napcat/webui/';
 
   const $ = s => document.querySelector(s);
   const step = text => { $('#steps').textContent = text; };
@@ -71,12 +77,13 @@
   function fail(text) {
     $('#title').textContent = '没能替你登录 NapCat';
     $('#msg').className = 'err';
-    $('#msg').innerHTML = text + '<br><br><a href="/config">返回 NovaBot 控制台</a>';
+    $('#msg').innerHTML = text + '<br><br><a>返回 NovaBot 控制台</a>';
+    $('#msg a').href = CONSOLE;
     $('#steps').textContent = '';
   }
 
   async function mint(csrf, renew) {
-    const res = await fetch('/config/api/napcat/credential' + (renew ? '?renew=true' : ''), {
+    const res = await fetch(CONSOLE + '/api/napcat/credential' + (renew ? '?renew=true' : ''), {
       method: 'POST', headers: {'X-CSRF-Token': csrf}
     });
     return res.json();
@@ -87,7 +94,7 @@
   //    而过期的表现是跳过去之后被弹回它自己的登录页——那时候使用者只会以为配置错了
   async function accepted(credential) {
     try {
-      const res = await fetch('/config/napcat/api/auth/check', {
+      const res = await fetch(CONSOLE + '/napcat/api/auth/check', {
         method: 'POST', headers: {'Authorization': 'Bearer ' + credential}
       });
       const data = await res.json();
@@ -129,7 +136,7 @@
   (async () => {
     let csrf = '';
     try {
-      const state = await (await fetch('/config/api/auth/state')).json();
+      const state = await (await fetch(CONSOLE + '/api/auth/state')).json();
       csrf = state.csrfToken || '';
     } catch (e) {
       fail('连不上 NovaBot 控制台。');

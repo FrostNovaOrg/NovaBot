@@ -2,7 +2,9 @@ package org.frostnova.nova.adapter.onebot.napcat;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.ConfigUiPrefix;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
@@ -35,6 +37,9 @@ import java.nio.charset.StandardCharsets;
  * 因此 {@code /config/napcat-bootstrap} 落不进它、会回到本进程；
  * 又因为它以 {@code /config} 开头，控制台开着时落在安全过滤器的保护范围内——
  * 不必也不该另建一套鉴权。
+ * <p>
+ * 配了部署前缀（{@code server.servlet.context-path}）时，那条反代规则由使用者写成
+ * {@code <前缀>/config/napcat/}；下发的入口与引导页里的地址按本程序配的前缀带上它，见 {@link ConfigUiPrefix}。
  *
  * <h2>为什么还要挂开关条件</h2>
  * 那道门只在控制台开着时在。开关一关，过滤器跟注册器一起不装配，而这个会发凭据的
@@ -63,12 +68,13 @@ public class NapCatBootstrapController {
      * <p>
      * 界面据此决定要不要显示入口。<b>没配好时不显示，而不是显示了点进去报错</b>——
      * 一个点了才知道不能用的按钮，比没有那个按钮更费解。
-     * 回包多给 {@code href}，指向 {@link #PAGE_PATH}。
+     * 回包多给 {@code href}，指向 {@link #PAGE_PATH}，配了部署前缀时带上它。
+     * @param request 请求，只用来取 servlet 上下文
      */
     @GetMapping(value = CONSOLE_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
-    public JSONObject console() {
+    public JSONObject console(HttpServletRequest request) {
         JSONObject result = stateBody();
-        result.put("href", PAGE_PATH);
+        result.put("href", ConfigUiPrefix.of(request) + PAGE_PATH);
         return result;
     }
 
@@ -81,13 +87,17 @@ public class NapCatBootstrapController {
 
     /**
      * 引导页
+     * <p>
+     * 页面里的地址按部署前缀写好再吐，前缀只取本程序的配置
+     * @param request 请求，只用来取 servlet 上下文
      */
     @GetMapping(value = PAGE_PATH, produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> page() throws IOException {
+    public ResponseEntity<String> page(HttpServletRequest request) throws IOException {
         try (var stream = new ClassPathResource("config-ui-pages/napcat-bootstrap.html").getInputStream()) {
             return ResponseEntity.ok()
                     .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
-                    .body(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                    .body(ConfigUiPrefix.render(new String(stream.readAllBytes(), StandardCharsets.UTF_8),
+                            ConfigUiPrefix.of(request)));
         }
     }
 
