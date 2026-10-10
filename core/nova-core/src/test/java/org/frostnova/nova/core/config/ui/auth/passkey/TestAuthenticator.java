@@ -61,16 +61,24 @@ final class TestAuthenticator {
     private final byte[] credentialId;
 
     /**
-     * 每种算法共用一把钥匙：RSA-2048 那把要真算素数，反复生成只拖时间；
-     * 同一算法的认证器本来就共用同一个凭据号，服务端从未靠钥匙区分过它们，
-     * 换钥匙、共用钥匙都不改变任何一条的判定。
+     * 每种算法共用一把钥匙：RSA-2048 那把要真算素数，反复生成只拖时间。
+     * 服务端靠凭据号认钥匙，不看钥匙本身；凭据号末字节默认取算法值，
+     * 要同一算法的两把各有各的凭据号就换一个末字节，见 {@link #TestAuthenticator(int, byte)}。
      */
     private static final Map<Integer, KeyPair> SHARED_KEY_PAIRS = new ConcurrentHashMap<>();
 
     TestAuthenticator(int algorithm) {
+        this(algorithm, (byte) algorithm);
+    }
+
+    /**
+     * 造一把凭据号指定的认证器：同一算法的两把钥匙要各有各的凭据号时用它
+     * @param credentialIdTail 凭据号的末字节，换一个值就换一个凭据号
+     */
+    TestAuthenticator(int algorithm, byte credentialIdTail) {
         this.algorithm = algorithm;
         this.keyPair = SHARED_KEY_PAIRS.computeIfAbsent(algorithm, TestAuthenticator::generate);
-        this.credentialId = new byte[]{1, 2, 3, 4, 5, 6, 7, 8, (byte) algorithm};
+        this.credentialId = new byte[]{1, 2, 3, 4, 5, 6, 7, 8, credentialIdTail};
     }
 
     String credentialId() {

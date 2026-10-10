@@ -72,13 +72,24 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
         assertTrue(first.getBooleanValue("success"), "同一个挑战第一次用该成功: " + first.getString("message"));
 
         // 换一把新钥匙、拿同一个挑战再来一次：挑战若不是一次性的，这一趟会成功，
-        // 而那意味着截获过一次响应的人可以拿它反复登记新钥匙
-        TestAuthenticator replay = new TestAuthenticator(TestAuthenticator.ES256);
+        // 而那意味着截获过一次响应的人可以拿它反复登记新钥匙。
+        // 凭据号要和第一把不同：两把一个凭据号的话，这一趟会被当成重复登记拒掉，
+        // 那与挑战是不是一次性的毫无关系
+        TestAuthenticator replay = new TestAuthenticator(TestAuthenticator.ES256, (byte) 9);
         JSONObject second = controller.registerVerify(
                 replay.register(challenge, ORIGIN, RP_ID, "第二把", 0), request());
 
         assertFalse(second.getBooleanValue("success"), "用过的挑战不该再认");
-        assertEquals(1, controller.list(request()).getJSONArray("passkeys").size());
+        assertEquals(1, controller.list(request()).getJSONArray("passkeys").size(), "被拒的那一把不该落进列表");
+
+        // 阳性对照：发一个新挑战让第二把再登记一次，这次要收得下。少了这一条，
+        // 一个把登记通通拒掉的实现也能让上面那条阴性判据全绿
+        JSONObject next = registerOptions();
+        JSONObject accepted = controller.registerVerify(
+                replay.register(next.getString("challenge"), ORIGIN, RP_ID, "第二把", 0), request());
+        assertTrue(accepted.getBooleanValue("success"), "换一个新挑战就该收下, 先前那趟只因挑战用过才被拒: "
+                + accepted.getString("message"));
+        assertEquals(2, controller.list(request()).getJSONArray("passkeys").size(), "阳性对照那一把该落进列表");
     }
 
     @Test
