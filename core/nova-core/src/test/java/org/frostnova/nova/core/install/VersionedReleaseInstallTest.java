@@ -162,6 +162,15 @@ class VersionedReleaseInstallTest {
                 return unit
 
             if "is-active" in args:
+                # 给了目录就当作正在跑的旧版本这时存了设置：往安装目录根上写进新内容。
+                # 只在头一回被问到时存一次：收尾时还会再问，那时再写就把拷回盖掉的又写了回来
+                saved = os.environ.get("NOVABOT_STUB_SAVE_INTO", "")
+                once = os.path.join(log, "saved-during-install")
+                if saved and not os.path.exists(once):
+                    open(once, "w").close()
+                    for name in ("application.yml", "datasource.json"):
+                        with open(os.path.join(saved, name), "w", encoding="utf-8") as out:
+                            out.write("saved-during-install " + name)
                 target = args[-1]
                 if version_of(target) in listed("NOVABOT_STUB_ACTIVE") or bare(target) in listed("NOVABOT_STUB_ACTIVE"):
                     sys.exit(0)
@@ -227,6 +236,29 @@ class VersionedReleaseInstallTest {
         for (String name : List.of("application.yml", "datasource.json")) {
             assertEquals(past, Files.getLastModifiedTime(world.install.resolve(name)),
                     name + " 内容没变，不该被重写");
+            assertTrue(run.stdout.contains("已保留原有的 " + name), "仍应说明保留了 " + name + "。标准输出:\n" + run.stdout);
+        }
+    }
+
+    @Test
+    @DisplayName("再升级：装的过程中旧版本存了设置，装完留下的是新存的那份")
+    void upgradeKeepsSettingsSavedDuringInstall(@TempDir Path dir) throws Exception {
+        // 故障：装之前取了快照、装完拷回，把旧版本在装的这几秒里存下的设置盖回了旧的
+        World world = world(dir, "5.7.9");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run first = run(world, "", "");
+        assertEquals(0, first.code, "先装一版应成功。标准错误:\n" + first.stderr + "\n标准输出:\n" + first.stdout);
+        write(world.pkg.resolve("BUILD-INFO"), "commit=abc\nversion=5.8.0\nbuilt_at=2026-10-03T00:00:00Z\n");
+        // 安装脚本问 5.7.9 在不在跑时，替身往根上写进新设置
+        Run run = run(world, "", "", Map.of("NOVABOT_STUB_SAVE_INTO", world.install.toString()));
+
+        assertEquals(0, run.code, "再升级应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertTrue(read(world.logs.resolve("systemctl.log")).contains("is-active --quiet novabot@5.7.9"),
+                "替身得在装的过程中被问到，这一格才量得到。systemctl:\n" + read(world.logs.resolve("systemctl.log")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")), "应装上 5.8.0");
+        for (String name : List.of("application.yml", "datasource.json")) {
+            assertEquals("saved-during-install " + name, read(world.install.resolve(name)),
+                    name + " 应是装的过程中新存的那份，不该被盖回装之前的");
             assertTrue(run.stdout.contains("已保留原有的 " + name), "仍应说明保留了 " + name + "。标准输出:\n" + run.stdout);
         }
     }
