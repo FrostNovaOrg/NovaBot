@@ -287,6 +287,10 @@ class ShutdownWhileConnectingTest {
         Method connect = BilibiliLiveRoomService.class.getDeclaredMethod("connect", Up.class);
         connect.setAccessible(true);
         Up first = new Up(firstRoom, "首连", firstRoom);
+        // 这里绕过 sync 直接建连，名单要照 sync 那样记上，否则建连会当它已被删掉而放弃
+        Field targets = BilibiliLiveRoomService.class.getDeclaredField("targetRooms");
+        targets.setAccessible(true);
+        targets.set(rooms, java.util.Set.of(MANAGED_ROOM, firstRoom));
         Future<?> connecting = pool.submit(() -> {
             try {
                 connect.invoke(rooms, first);

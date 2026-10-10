@@ -110,9 +110,13 @@ class BilibiliLiveRoomServiceTest {
         }
     }
 
+    /**
+     * 抓的故障：热重载整批换了主播，上一批还压在闸门里的建连任务先放行，把名额占满，
+     * 新名单上的十位一位都连不上，要等下一次重载。
+     */
     @Test
-    @DisplayName("名额已满时新直播间被拒连, 已在管理中的直播间重连不受影响")
-    void connectShouldRefuseNewRoomWhenFull() {
+    @DisplayName("热重载整批换人时以新名单为准, 已在管理中的直播间重连不受影响")
+    void connectShouldFollowLatestTargetsWhenWholeBatchReplaced() {
         TaskScheduler scheduler = mock(TaskScheduler.class);
         BilibiliLiveRoomService service = service(scheduler);
 
@@ -120,9 +124,6 @@ class BilibiliLiveRoomServiceTest {
         when(first.getUsers(anyString())).thenReturn(users(1, 10));
         service.sync(first);
 
-        // 热重载换了一批主播，而上一批的建连任务还压在闸门里没放行。
-        // 两次同步各自都没超过上限，只有等它们一起执行时才撞上名额——
-        // 这正是 sync 那道闸拦不住、只能由 connect 兜底的那一种
         AbstractDataSource second = mock(AbstractDataSource.class);
         when(second.getUsers(anyString())).thenReturn(users(11, 10));
         service.sync(second);
@@ -132,16 +133,77 @@ class BilibiliLiveRoomServiceTest {
 
         queued.forEach(Runnable::run);
 
-        assertEquals(10, service.getManagedRoomCount(), "兜底必须挡住后到的那十间");
-        assertTrue(service.getStatus(1001L).isPresent(), "先占到名额的直播间应留在管理中");
-        assertTrue(service.getStatus(1011L).isEmpty(), "名额已满时后到的直播间不应被接管");
+        assertEquals(10, service.getManagedRoomCount());
+        assertTrue(service.getStatus(1001L).isEmpty(), "已从名单里换掉的直播间不应被接管");
+        assertTrue(service.getStatus(1011L).isPresent(), "新名单上的直播间应被接管");
 
-        // 重连走的正是同一条 connect 路径。若上限把它一并挡住，
-        // 满员时任何一间断线都再也连不回来，而日志里只会说「已达上限」
-        queued.get(0).run();
+        // 已在管理中的房间放行，满员时它再走一遍建连不该被上限挡下
+        queued.get(10).run();
 
-        assertTrue(service.getStatus(1001L).isPresent(), "已在管理中的直播间重连不该被上限挡下");
-        assertEquals(10, service.getManagedRoomCount(), "重连不应改变管理中的直播间数");
+        assertTrue(service.getStatus(1011L).isPresent(), "已在管理中的直播间不该被上限挡下");
+        assertEquals(10, service.getManagedRoomCount(), "不应改变管理中的直播间数");
+    }
+
+    /**
+     * 抓的故障：启动或改配置后几秒内又删掉一位主播，他的首连还在闸门里排着，
+     * 放行后照样连上、继续采集，直到下一次同步才断开。
+     */
+    @Test
+    @DisplayName("⚠️ 首连还在闸门里排队时这位被删掉, 放行后不建连")
+    void queuedConnectOfRemovedStreamerIsDropped() throws Exception {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        List<Long> connectOrder = new ArrayList<>();
+        BilibiliLiveRoomService service = service(scheduler, new NovaBilibiliProperties(),
+                recordingApi(connectOrder), nobodyLiveOnAccount());
+
+        AbstractDataSource first = mock(AbstractDataSource.class);
+        when(first.getUsers(anyString())).thenReturn(users(1, 2));
+        service.sync(first);
+
+        AbstractDataSource later = mock(AbstractDataSource.class);
+        when(later.getUsers(anyString())).thenReturn(users(1, 1));
+        service.sync(later);
+
+        runQueued(scheduler);
+
+        assertTrue(service.getStatus(1002L).isEmpty(), "已删掉的主播不应被接管");
+        assertFalse(connectOrder.contains(1002L), "已删掉的主播不应去建连，实际建连 " + connectOrder);
+        assertTrue(service.getStatus(1001L).isPresent(), "留下的主播照常接管");
+        assertTrue(startupWaveRooms(service).isEmpty(),
+                "放弃的那位不该留着启动那一波的记号，实际 " + startupWaveRooms(service));
+    }
+
+    /**
+     * 抓的故障：名额刚好满时删一位、加一位，已删那位还在排队的首连先放行占了名额，
+     * 新加的那位被报「已达上限」，一直连不上。
+     */
+    @Test
+    @DisplayName("⚠️ 名额刚好满时删一位加一位, 新加的那位能连上")
+    void swapOneWhenFullConnectsTheNewcomer() {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliLiveRoomService service = service(scheduler);
+
+        AbstractDataSource first = mock(AbstractDataSource.class);
+        when(first.getUsers(anyString())).thenReturn(users(1, 10));
+        service.sync(first);
+
+        // 删掉 uid 1，加上 uid 11
+        AbstractDataSource later = mock(AbstractDataSource.class);
+        when(later.getUsers(anyString())).thenReturn(users(2, 10));
+        service.sync(later);
+
+        runQueued(scheduler);
+
+        assertTrue(service.getStatus(1011L).isPresent(), "新加的那位应被接管，不该被已删那位的旧任务占掉名额");
+        assertTrue(service.getStatus(1001L).isEmpty(), "已删的那位不应被接管");
+        assertEquals(10, service.getManagedRoomCount());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<Long> startupWaveRooms(BilibiliLiveRoomService service) throws Exception {
+        Field field = BilibiliLiveRoomService.class.getDeclaredField("startupWaveRooms");
+        field.setAccessible(true);
+        return (java.util.Set<Long>) field.get(service);
     }
 
     @Test

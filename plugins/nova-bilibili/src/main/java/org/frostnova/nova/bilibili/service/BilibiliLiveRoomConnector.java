@@ -194,6 +194,14 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     private volatile WebSocketSession session;
 
+    /**
+     * 最近一次建立的会话
+     * <p>
+     * 与 {@link #session} 不同，关会话时不清空。重连后旧会话的关闭回调可能晚于新会话建立才到，
+     * 靠它认出那是旧会话，不让它停掉新会话的心跳、改状态或再排一次重连。
+     */
+    private volatile WebSocketSession latestSession;
+
     private volatile ScheduledFuture<?> heartbeatTask;
 
     /**
@@ -484,6 +492,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                 // 这里不再另加时限。底层客户端是 tomcat-embed-websocket，
                 // 每一步 IO 自带限时，常量 org.apache.tomcat.websocket.Constants.IO_TIMEOUT_MS_DEFAULT。
                 this.session = client.execute(this, headers, URI.create(address.toWebSocketUrl())).get();
+                this.latestSession = this.session;
                 if (stopIfClosing()) {
                     return;
                 }
@@ -722,6 +731,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         // 轻则给一条刚建好的连接白排一次重连，重则 closeSession() 正好赶上赋值完成，
         // 把这条好连接直接掐掉。回调参数里的 session 就是权威的那一个，用它没有窗口。
         this.session = session;
+        this.latestSession = session;
         if (closed.get() || !acceptingConnectors.get()) {
             if (!closed.get()) {
                 sealIntake();
@@ -1033,11 +1043,25 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     @Override
     public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
         log.debug("直播间 {} 连接异常: {}", source.getRoomId(), exception.getMessage());
+        if (isSuperseded(session)) {
+            return;
+        }
         status = ConnectStatus.ERROR;
     }
 
     @Override
     public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus closeStatus) {
+        // 新会话已经建立后才到的旧会话回调：只收它自己的那笔「本端关的」记录。
+        // 心跳、计数、状态、断线事件与重连都属于新会话，不动
+        if (isSuperseded(session)) {
+            if (session.equals(closedByUsSession)) {
+                closedByUsSession = null;
+            }
+            log.debug("直播间 {} 的旧连接已关闭 ({}), 当前连接不受影响",
+                    source.getRoomId(), closeStatus.getCode());
+            return;
+        }
+
         cancelHeartbeat();
 
         // 断线后清空判定历史：跨连接累计会把重连前后的窗口混在一起
@@ -1086,6 +1110,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
         publisher.publishEvent(new BilibiliDisconnectedEvent(source));
         scheduleReconnect();
+    }
+
+    /**
+     * 回调来自的会话是否已被后来建立的会话顶替
+     * <p>
+     * 一条会话都还没建立过时不算顶替。
+     */
+    private boolean isSuperseded(WebSocketSession callbackSession) {
+        WebSocketSession latest = latestSession;
+        return latest != null && latest != callbackSession;
     }
 
     /**
