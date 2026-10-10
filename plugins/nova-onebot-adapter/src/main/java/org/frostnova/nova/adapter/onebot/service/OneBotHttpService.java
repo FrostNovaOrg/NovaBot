@@ -389,15 +389,28 @@ public class OneBotHttpService {
      * <p>
      * 两处各写一份判法的话迟早分家：曾经体检那条路没看 good，启动、保存连接或重连
      * 那一刻就只记「HTTP 正常」，要等下一轮定期体检才翻回异常，关掉定期检测则一直显示正常。
+     * <p>
+     * good 为 false 不一定是实现坏了：OneBot 11 里 good 含「QQ 在线」，账号掉线时实现
+     * 照规范回 good=false、online=false——那时接口照常调得通，掉线由账号那一栏记，
+     * HTTP 记正常，健康页才走得到「重新扫码登录」那条建议。good 没报、回包没有 data
+     * 同样只是「取不到」，不是「坏了」：版本与登录信息都取得到，说它异常或连不上
+     * 都是引人误查。
      * @param senderName 推送平台名
-     * @param status {@code get_status} 的返回
+     * @param status {@code get_status} 的返回，回包没有 data 时为 null
      * @param okDetail 一切正常时那句话，体检那条路带版本与登录账号
      */
     private void recordServiceHealth(String senderName, JSONObject status, String okDetail) {
         // good 是「实现自身跑得好不好」，online 是「QQ 账号还在不在线」，分开记：
         // 两者的处理方式完全不同，前者重启服务，后者要重新扫码登录
-        if (Boolean.TRUE.equals(status.getBoolean("good"))) {
+        if (status == null) {
+            state.httpOk(senderName, "该 OneBot 实现的状态查询没有返回内容");
+        } else if (status.getBoolean("good") == null) {
+            // 并非所有实现都上报该字段，取不到时不要臆断成异常
+            state.httpOk(senderName, "该 OneBot 实现未上报整体状态");
+        } else if (Boolean.TRUE.equals(status.getBoolean("good"))) {
             state.httpOk(senderName, okDetail);
+        } else if (Boolean.FALSE.equals(status.getBoolean("online"))) {
+            state.httpOk(senderName, "接口正常，QQ 账号已掉线");
         } else {
             state.httpFailed(senderName, OneBotConnectionState.Kind.SERVICE_ABNORMAL, "实现自身状态异常");
         }
@@ -408,9 +421,13 @@ public class OneBotHttpService {
      * <p>
      * 只看取不取得到登录信息的话，被踢下线后一重连就会被误判回在线
      * @param senderName 推送平台名
-     * @param status {@code get_status} 的返回
+     * @param status {@code get_status} 的返回，回包没有 data 时为 null
      */
     private void recordAccountFromStatus(String senderName, JSONObject status) {
+        if (status == null) {
+            state.accountUnknown(senderName, "该 OneBot 实现的状态查询没有返回内容");
+            return;
+        }
         Boolean online = status.getBoolean("online");
         if (online == null) {
             // 并非所有实现都上报该字段，取不到时不要臆断成掉线
