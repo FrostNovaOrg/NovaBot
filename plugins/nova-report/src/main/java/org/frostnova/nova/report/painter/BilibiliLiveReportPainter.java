@@ -53,6 +53,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -498,7 +499,7 @@ public class BilibiliLiveReportPainter {
      * 金额可见性照 {@code options} 走——降级不是放宽口径的理由，
      * 该给大群看的仍然不带金额。
      * <p>
-     * 数据卡片的总开关与各张卡的开关这里都不看：图画不出来时送达的是这一场的关键数字，
+     * 数据卡片的总开关与各张卡的开关这里都不看，卡片顺序也一样：图画不出来时送达的是这一场的关键数字，
      * 按版式删掉其中几项，主播拿到的就只剩半份数，还分不清是没数据还是被关了。
      * @param platform 直播平台
      * @param source 主播信息
@@ -791,6 +792,9 @@ public class BilibiliLiveReportPainter {
     /**
      * 本场数据卡片列表。开关关着的不入列，开着的再照旧看为零不入列（弹幕一张开着时 0 条也入列）。
      * <p>
+     * 入列的卡按 {@link BilibiliLiveReportOptions#getCardOrder()} 排：那是十张卡的键，每个恰好一次，
+     * 没入列的那几张跳过，后面的往前补位。
+     * <p>
      * 要画坊进来是因为大航海卡副行要量宽度决定舍不舍金额（见 {@link #guardPurchaseCard}）。
      */
     List<Card> buildCards(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
@@ -811,41 +815,50 @@ public class BilibiliLiveReportPainter {
 
         boolean revenue = options.isShowRevenue();
 
-        List<Card> cards = new ArrayList<>();
-        // 流水放第一格：整场报告最要紧的一个数，第一眼要落在它上；隐藏金额的
-        // 「付费互动」那形也是同一个位置——想给人看的热闹不因为不露金额而挪后
+        // 键是版式里各张卡的开关键，与 card_order 里存的是同一套
+        Map<String, Card> drawn = new HashMap<>();
+        // 隐藏金额时流水卡换成「付费互动」，占的仍是流水那一格：想给人看的热闹不因为不露金额而挪位
         if (options.isCardRevenue() && (revenueTotal > 0 || revenueUsers > 0)) {
-            cards.add(revenue
+            drawn.put("card_revenue", revenue
                     ? new Card("¥" + yuan(revenueTotal), "流水 · " + revenueUsers + " 人")
                     : new Card(revenueUsers + " 人", "付费互动"));
         }
         if (options.isCardDanmu()) {
-            cards.add(new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
+            drawn.put("card_danmu", new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
         }
         if (options.isCardLike() && likeTotal > 0) {
-            cards.add(new Card(String.valueOf(likeTotal), "点赞"));
+            drawn.put("card_like", new Card(String.valueOf(likeTotal), "点赞"));
         }
         if (options.isCardEnter() && enterUsers > 0) {
-            cards.add(new Card(enterUsers + " 人", "进入直播间"));
+            drawn.put("card_enter", new Card(enterUsers + " 人", "进入直播间"));
         }
         if (options.isCardFollow() && follow > 0) {
-            cards.add(new Card("+" + follow, "新增关注"));
+            drawn.put("card_follow", new Card("+" + follow, "新增关注"));
         }
         if (options.isCardSuperChat() && superChat > 0) {
-            cards.add(new Card(superChat + " 条", revenue ? "醒目留言 · ¥" + yuan(superChatValue) : "醒目留言"));
+            drawn.put("card_super_chat", new Card(superChat + " 条",
+                    revenue ? "醒目留言 · ¥" + yuan(superChatValue) : "醒目留言"));
         }
         if (options.isCardGuard() && guardPurchases > 0) {
-            cards.add(guardPurchaseCard(painter, platform, uid, guardPurchases, revenue));
+            drawn.put("card_guard", guardPurchaseCard(painter, platform, uid, guardPurchases, revenue));
         }
         if (options.isCardBox() && box > 0) {
-            cards.add(new Card(box + " 个",
+            drawn.put("card_box", new Card(box + " 个",
                     revenue ? "盲盒 · " + boxText(boxProfit) : "盲盒"));
         }
         if (options.isCardFreeGift() && freeGift > 0) {
-            cards.add(new Card(freeGift + " 个", "免费礼物"));
+            drawn.put("card_free_gift", new Card(freeGift + " 个", "免费礼物"));
         }
         if (options.isCardShare() && share > 0) {
-            cards.add(new Card(share + " 次", "分享"));
+            drawn.put("card_share", new Card(share + " 次", "分享"));
+        }
+
+        List<Card> cards = new ArrayList<>();
+        for (String key : options.getCardOrder()) {
+            Card card = drawn.get(key);
+            if (card != null) {
+                cards.add(card);
+            }
         }
         return cards;
     }

@@ -120,6 +120,9 @@ class BilibiliReportLayoutControllerTest {
                 integers++;
                 assertNotNull(item.get("min"), item.getString("key") + " 是数字项却没有下限");
                 assertNotNull(item.get("max"), item.getString("key") + " 是数字项却没有上限");
+            } else if ("order".equals(type)) {
+                assertNull(item.get("min"), item.getString("key") + " 是顺序项却带着下限");
+                assertNull(item.get("max"), item.getString("key") + " 是顺序项却带着上限");
             } else {
                 throw new AssertionError("没见过的类型名: " + type + "（" + item.getString("key") + "）");
             }

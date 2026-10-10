@@ -267,4 +267,50 @@ class BilibiliLiveReportCardSwitchesTest {
         assertEquals(ALL_TEN, kinds(legacy, true));
         assertEquals(ALL_TEN, kinds(null, true));
     }
+
+    @Test
+    @DisplayName("调了顺序：卡片照存着的顺序排，关掉的和为 0 的跳过、后面的往前补")
+    void cardsFollowStoredOrder() {
+        // 用户故障：主播在控制台把分享、大航海调到前面，报告上的卡片还按老顺序画
+        Long uid = STREAMER.getUid();
+        JSONObject params = new JSONObject();
+        params.put("card_order", "card_share,card_guard,card_like,card_danmu,card_revenue,card_enter,"
+                + "card_follow,card_super_chat,card_box,card_free_gift");
+
+        // 大航海关着、点赞这场为 0：两张都跳过，后面的往前补位
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.SHARE_COUNT, 6);
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.GIFT_VALUE, 30);
+        liveDataService.incrementLiveUserMetric(PLATFORM, uid, REVENUE_USERS, 1L, 30);
+        params.put("card_guard", false);
+        assertEquals(List.of("分享", "弹幕", "流水"), kinds(params, true), "关掉的、为 0 的卡没跳过，或后面的卡没往前补");
+
+        feedAllTen();
+        params.put("card_guard", true);
+        assertEquals(List.of("分享", "大航海", "点赞", "弹幕", "流水", "进入直播间", "新增关注", "醒目留言", "盲盒", "免费礼物"),
+                kinds(params, true), "卡片没照存着的顺序排");
+    }
+
+    @Test
+    @DisplayName("存着的顺序残缺或过时：缺的按默认顺序补在后面，不认识的跳过，重复的只算第一次")
+    void brokenStoredOrderStillDrawsEveryCard() {
+        // 用户故障：老版本存下的顺序里没有后加的卡、手改过的配置带着错字或重复，报告少画了卡、多画了卡或者报错
+        feedAllTen();
+
+        JSONObject missing = new JSONObject();
+        missing.put("card_order", "card_share,card_like");
+        assertEquals(List.of("分享", "点赞", "流水", "弹幕", "进入直播间", "新增关注", "醒目留言", "大航海", "盲盒", "免费礼物"),
+                kinds(missing, true), "缺卡：没列出的卡该按默认顺序补在后面");
+
+        JSONObject unknown = new JSONObject();
+        unknown.put("card_order", "card_nope,card_share, ,card_revenue,card_danmu,card_like,card_enter,"
+                + "card_follow,card_super_chat,card_guard,card_box,card_free_gift");
+        assertEquals(List.of("分享", "流水", "弹幕", "点赞", "进入直播间", "新增关注", "醒目留言", "大航海", "盲盒", "免费礼物"),
+                kinds(unknown, true), "带不认识的键：该跳过它，其余照排");
+
+        JSONObject repeated = new JSONObject();
+        repeated.put("card_order", "card_share,card_danmu,card_share,card_danmu");
+        assertEquals(List.of("分享", "弹幕", "流水", "点赞", "进入直播间", "新增关注", "醒目留言", "大航海", "盲盒", "免费礼物"),
+                kinds(repeated, true), "有重复：只算第一次，卡不该画两遍");
+    }
 }

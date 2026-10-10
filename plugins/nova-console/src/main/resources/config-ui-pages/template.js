@@ -565,6 +565,26 @@ export function buildTemplateEditor(host, options) {
 }
 
 /**
+ * 顺序项存着的值读成完整的一串 key
+ *
+ * 与处理器那一侧（HandlerOption.orderOf）同一个读法：不认识的跳过，重复的只算第一次，
+ * 缺了的按默认顺序补在后面。默认值就是哪几项能排的唯一出处。
+ * @param stored 参数里存着的值，可为空
+ * @param defaultValue 顺序项的默认值，逗号连起来的 key
+ * @return {string[]} 默认值里每个 key 恰好一次，按存着的先后排
+ */
+export function normalizedOrder(stored, defaultValue) {
+  const split = value => typeof value === 'string'
+    ? value.split(',').map(item => item.trim()).filter(Boolean) : [];
+  const known = split(defaultValue);
+  const out = [];
+  for (const key of split(stored).concat(known)) {
+    if (known.includes(key) && !out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
+/**
  * 「报告长什么样」：左边一排版式开关，右边照着开关画出来的那张图
  *
  * 版式项清单取自处理器自报的那一张（{@code /api/handlers} 的 options），
@@ -612,6 +632,10 @@ export function buildLayoutEditor(host, options) {
   host.appendChild(box);
 
   const items = opts.items || [];
+  // 顺序项（type ORDER）不单画一行：它点名的那几项按它的值排位，各带上移下移
+  const isOrder = option => String(option.type).toUpperCase() === 'ORDER';
+  const orders = items.filter(isOrder);
+  const rowItems = items.filter(option => !isOrder(option));
 
   function valueOf(option) {
     const params = (opts.paramsOf ? opts.paramsOf() : null) || {};
@@ -649,23 +673,76 @@ export function buildLayoutEditor(host, options) {
    * @return {Array<{option: object, parent: object|null}>}
    */
   function ordered() {
-    const keys = new Set(items.map(option => option.key));
+    const keys = new Set(rowItems.map(option => option.key));
     const out = [];
     const seen = new Set();
     const visit = (option, parent) => {
       if (seen.has(option)) return;
       seen.add(option);
       out.push({option, parent});
-      for (const child of items) {
+      for (const child of rowItems) {
         if (child.parentKey === option.key) visit(child, option);
       }
     };
-    for (const option of items) {
+    for (const option of rowItems) {
       if (!option.parentKey || !keys.has(option.parentKey)) visit(option, null);
     }
     // 互相指着的那几项走不到：照顶层补上
-    for (const option of items) visit(option, null);
+    for (const option of rowItems) visit(option, null);
+    // 顺序项点名的那几行在原来那几个位置之间按存着的先后重排，别的行不挪
+    for (const order of orders) {
+      const sequence = currentOrder(order);
+      const slots = [];
+      out.forEach((entry, index) => { if (sequence.includes(entry.option.key)) slots.push(index); });
+      const moved = slots.map(index => out[index])
+        .sort((a, b) => sequence.indexOf(a.option.key) - sequence.indexOf(b.option.key));
+      slots.forEach((slot, n) => { out[slot] = moved[n]; });
+    }
     return out;
+  }
+
+  /** 这个顺序项眼下的完整顺序，只留清单里真有的那几行 */
+  function currentOrder(order) {
+    const present = new Set(rowItems.map(option => option.key));
+    return normalizedOrder(valueOf(order), order.defaultValue).filter(key => present.has(key));
+  }
+
+  /**
+   * 把一项和相邻那一项换位，整串写回顺序项那一个键
+   *
+   * 写回的是读好的整串：残缺的老值在第一次移动时就补齐了。重画之后焦点留在同一项的同一个按钮上，
+   * 连按就一直移；移到头那个按钮不可点了，焦点落到同一项的另一个按钮上。
+   */
+  function move(order, key, step) {
+    const sequence = normalizedOrder(valueOf(order), order.defaultValue);
+    const visible = currentOrder(order);
+    const at = visible.indexOf(key);
+    const other = visible[at + step];
+    if (at < 0 || other === undefined) return;
+    const i = sequence.indexOf(key);
+    const j = sequence.indexOf(other);
+    sequence[i] = other;
+    sequence[j] = key;
+    change(order, sequence.join(','));
+    const pair = moveButtons.get(key);
+    if (!pair) return;
+    const same = step < 0 ? pair.up : pair.down;
+    const twin = step < 0 ? pair.down : pair.up;
+    (same.disabled ? twin : same).focus();
+  }
+
+  /** 每一行的上移下移按钮，按 key 记下：重画之后要把焦点放回去 */
+  const moveButtons = new Map();
+
+  function moveButton(text, name, disabled, onClick) {
+    const button = el('button', 'rep-mv');
+    button.type = 'button';
+    button.textContent = text;
+    button.title = name;
+    button.setAttribute('aria-label', name);
+    button.disabled = disabled;
+    button.addEventListener('click', onClick);
+    return button;
   }
 
   function change(option, value) {
@@ -678,6 +755,7 @@ export function buildLayoutEditor(host, options) {
   function paint() {
     const visible = typeof opts.revenueVisible === 'function' ? opts.revenueVisible() : undefined;
     controls.innerHTML = '';
+    moveButtons.clear();
     // 各项此刻起不起作用，按 key 记下：子项看它跟着的那一项关没关、灰没灰
     const inert = new Map();
     for (const {option, parent} of ordered()) {
@@ -725,6 +803,22 @@ export function buildLayoutEditor(host, options) {
         text.appendChild(el('p', 'rep-why')).textContent = option.revenueNote || '';
       }
       row.appendChild(text);
+
+      const order = orders.find(item => currentOrder(item).includes(option.key));
+      if (order) {
+        // 关着的那一项也能挪位置；锁住的条件与开关同一个：页不可编辑、跟着的那一项关着
+        const sequence = currentOrder(order);
+        const at = sequence.indexOf(option.key);
+        const name = option.label || option.key;
+        const box = el('div', 'rep-move');
+        const up = moveButton('↑', '上移：' + name, locked || at === 0, () => move(order, option.key, -1));
+        const down = moveButton('↓', '下移：' + name, locked || at === sequence.length - 1,
+          () => move(order, option.key, 1));
+        box.appendChild(up);
+        box.appendChild(down);
+        row.appendChild(box);
+        moveButtons.set(option.key, {up, down});
+      }
       controls.appendChild(row);
     }
     if (!opts.editable && opts.lockedNote) {

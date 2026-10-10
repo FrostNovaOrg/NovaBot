@@ -300,6 +300,11 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 /* 跟着上一项开关走的子项：缩进挂在那一项下面，那一项关着时同样淡下去 */
 .rep-row.rep-sub{padding-left:26px}
 .rep-row.parent-off{opacity:.6}
+/* 可排先后的那几行右端的上移下移 */
+.rep-move{margin-left:auto;display:flex;gap:4px;flex:none}
+.rep-mv{width:28px;height:28px;padding:0;border:1px solid var(--line);border-radius:var(--r-ctl);
+  background:var(--surface);color:var(--text);font-size:14px;font-family:inherit;cursor:pointer}
+.rep-mv:disabled{opacity:.4;cursor:not-allowed}
 .rep-txt>.rep-why{font-size:12.5px}
 .rep-n{width:78px;flex:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:4px 8px;font-size:14px;font-family:inherit;background:var(--surface);color:var(--text)}

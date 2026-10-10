@@ -1,5 +1,10 @@
 package org.frostnova.nova.core.model;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * 推送处理器的可配置项
  * <p>
@@ -13,7 +18,7 @@ package org.frostnova.nova.core.model;
  * @param key 参数名，即 {@code params} 中的键
  * @param label 界面上的名称
  * @param description 一句话说明，可为空
- * @param type 取值类型，决定界面渲染成开关还是数字框
+ * @param type 取值类型，决定界面渲染成开关、数字框，或是给别的几项排先后的上移下移按钮
  * @param defaultValue 默认值，界面据此显示初始状态；使用者没改过的参数不会写进配置文件
  * @param min 数字型的下限，非数字型可为 null
  * @param max 数字型的上限，非数字型可为 null
@@ -76,6 +81,49 @@ public record HandlerOption(String key, String label, String description, Type t
     }
 
     /**
+     * 构造一个顺序项：给清单里另外几项排先后
+     * <p>
+     * 存的值是那几项的 key 用逗号连起来，默认值就是 {@code keys} 的原样顺序。
+     * 界面不为它单画一行，而是把它点名的那几项按存着的顺序列出、各带「上移」「下移」，
+     * 移动后把整串写回这一个键——因此默认值也是哪几项能排的唯一出处。
+     * @param keys 能排的那几项的 key，按默认顺序
+     */
+    public static HandlerOption order(String key, String label, String description, List<String> keys) {
+        return new HandlerOption(key, label, description, Type.ORDER, String.join(",", keys), null, null);
+    }
+
+    /**
+     * 顺序项存着的值读成完整的一串 key
+     * <p>
+     * 存着的串可能是老版本写的、也可能被手改过：不认识的 key 跳过，重复的只算第一次，
+     * 缺了的按默认顺序补在后面——后加的项不会因为老顺序里没有它就不见了。
+     * 读不出时（null、空串、不是串）整串按默认。
+     * @param stored 参数里存着的值，可为 null
+     * @return 默认值里每个 key 恰好一次，按存着的先后排
+     */
+    public List<String> orderOf(Object stored) {
+        List<String> known = splitKeys(defaultValue);
+        Set<String> out = new LinkedHashSet<>();
+        for (String item : splitKeys(stored)) {
+            if (known.contains(item)) {
+                out.add(item);
+            }
+        }
+        out.addAll(known);
+        return List.copyOf(out);
+    }
+
+    private static List<String> splitKeys(Object value) {
+        if (!(value instanceof String text)) {
+            return List.of();
+        }
+        return Arrays.stream(text.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .toList();
+    }
+
+    /**
      * 参数的取值类型
      */
     public enum Type {
@@ -87,7 +135,13 @@ public record HandlerOption(String key, String label, String description, Type t
         /**
          * 整数，界面渲染为带上下限的数字框
          */
-        INTEGER
+        INTEGER,
+
+        /**
+         * 另外几项的先后：值是逗号连起来的 key，界面在那几项上画「上移」「下移」，不单画一行。
+         * 见 {@link #order}
+         */
+        ORDER
     }
 
     /**

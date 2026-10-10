@@ -56,6 +56,13 @@ public class BilibiliLiveReportOptions {
     private static final int DEFAULT_GUARD_LIST_ALL = 30;
 
     /**
+     * 十张数据卡片各自的开关键，按默认顺序：流水放第一格，是整场报告最要紧的一个数
+     */
+    private static final List<String> CARD_KEYS = List.of(
+            "card_revenue", "card_danmu", "card_like", "card_enter", "card_follow",
+            "card_super_chat", "card_guard", "card_box", "card_free_gift", "card_share");
+
+    /**
      * 是否展示直播间封面横幅
      */
     private boolean cover = true;
@@ -116,6 +123,14 @@ public class BilibiliLiveReportOptions {
      * 是否画分享卡
      */
     private boolean cardShare = true;
+
+    /**
+     * 十张卡的先后，是上面十个开关的键，每个恰好一次
+     * <p>
+     * 存在 {@code card_order} 里，逗号连起来；读法见 {@link HandlerOption#orderOf}：
+     * 老配置没有这个键时就是默认顺序，残缺的串按默认顺序补齐。
+     */
+    private List<String> cardOrder = CARD_KEYS;
 
     /**
      * 弹幕排行榜展示前多少名，0 为不展示
@@ -211,11 +226,19 @@ public class BilibiliLiveReportOptions {
     private static final BilibiliLiveReportOptions DEFAULTS = new BilibiliLiveReportOptions();
 
     /**
+     * 十张卡的先后。默认值由 {@link #DEFAULTS} 读出，与下面那张表里十张卡的键是同一份
+     */
+    private static final HandlerOption CARD_ORDER = HandlerOption.order("card_order", "数据卡片顺序",
+            "十张卡从左到右、从上到下的先后；关着的和为 0 的跳过，后面的往前补", DEFAULTS.cardOrder);
+
+    /**
      * 版式项一览：key、人话名、一句话说明、类型、默认值、取值范围、随金额
      * <p>
      * 顺序即界面上的顺序：先是整块的开关，后是几张排行榜——按使用者读报告时
-     * 从上往下的次序排，而不是按字段在类里的先后。数据卡片下面那十项按图上卡片的顺序排，
+     * 从上往下的次序排，而不是按字段在类里的先后。数据卡片下面那十项按图上卡片的默认顺序排，
      * 挂在 {@code cards} 下面（{@link HandlerOption#parentKey()}）：界面把它们缩进列出，总开关关着时灰掉。
+     * 紧随其后的 {@code card_order} 是那十项的先后（{@link HandlerOption.Type#ORDER}）：界面不单画它，
+     * 而是按它的值给那十项排位、各带上移下移。
      * <p>
      * ⚠️ <b>这张表与上面的字段必须一一对应</b>，由
      * {@code BilibiliLiveReportLayoutOptionsTest} 两个方向现算：表里有的键 {@link #of} 都真的读，
@@ -258,6 +281,7 @@ public class BilibiliLiveReportOptions {
                     .under("cards"),
             HandlerOption.bool("card_share", "分享", "本场直播间被分享的次数，为 0 不画", DEFAULTS.cardShare)
                     .under("cards"),
+            CARD_ORDER,
             HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团与大航海人数的涨幅，每次出报告要多打三个接口", DEFAULTS.fansChange),
             revenue(HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、流水等随时间的变化曲线", DEFAULTS.interactionCurve),
                     HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
@@ -340,6 +364,7 @@ public class BilibiliLiveReportOptions {
         options.cardBox = bool(params, "card_box", options.cardBox);
         options.cardFreeGift = bool(params, "card_free_gift", options.cardFreeGift);
         options.cardShare = bool(params, "card_share", options.cardShare);
+        options.cardOrder = CARD_ORDER.orderOf(params.get(CARD_ORDER.key()));
         options.danmuRanking = ranking(params, "danmu_ranking", options.danmuRanking);
         options.giftRanking = ranking(params, "gift_ranking", options.giftRanking);
         options.superChatRanking = ranking(params, "super_chat_ranking", options.superChatRanking);

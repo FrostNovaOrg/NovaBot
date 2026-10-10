@@ -6,6 +6,9 @@
  * 挂在「数据卡片」下面：缩进列出，总开关关着时灰掉、存着的值不动，打开就亮回来；
  * 恢复默认把这些键一并删掉；改了任一张，状态行就说「自定义版式」。
  *
+ * 顺序那几格抓的故障：点了上移、下移以后存下去的参数没变、界面上的顺序没变、焦点丢了；
+ * 只调了顺序，通道上仍显示默认版式；恢复默认以后顺序没回去。
+ *
  * 本尺真跑整条通道页：push.js 的 renderStreamers、template.js 的版式编辑器、
  * push-model.js 的判法都是产品码。版式项清单不手抄，由 PushCardSwitchesTest 把
  * 下播报告真正的那张表照 /api/handlers 的序列化经环境变量 LAYOUT_OPTIONS 交进来。
@@ -127,6 +130,7 @@ class MiniNode {
     return true;
   }
   click() { this.dispatchEvent({type: 'click', target: this, stopPropagation() {}}); }
+  focus() { globalThis.document.activeElement = this; }
 }
 
 function findAll(root, selector) {
@@ -378,6 +382,104 @@ await ask('④ 改任一张卡：状态行当场变成「自定义版式」', as
   if (!after || !String(after.innerHTML).includes('自定义版式')) {
     throw new Error('改了「分享」后状态行该是「自定义版式」：' + (after ? after.innerHTML : '没找到'));
   }
+});
+
+// —— 卡片顺序 ——
+
+const CARD_KEYS = ['card_revenue', 'card_danmu', 'card_like', 'card_enter', 'card_follow',
+  'card_super_chat', 'card_guard', 'card_box', 'card_free_gift', 'card_share'];
+
+const moveButton = name => allNodes(page())
+  .find(node => node.tagName === 'button' && node.getAttribute('aria-label') === name) || null;
+
+/** 版式区里「数据卡片」下面那几行，按界面上的先后读出卡名 */
+function cardRowLabels() {
+  const rows = layoutRows();
+  const at = rows.map(rowLabel).indexOf('数据卡片');
+  if (at < 0) throw new Error('版式区没有「数据卡片」这一行');
+  const out = [];
+  for (let i = at + 1; i < rows.length && hasClass(rows[i], 'rep-sub'); i++) out.push(rowLabel(rows[i]));
+  return out;
+}
+
+await ask('⑤ 上移下移：换位、存进参数、界面重排，焦点跟着移走的那一项；头尾的按钮不可点', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  const absent = CARD_LABELS.flatMap(label => ['上移：' + label, '下移：' + label]).filter(name => !moveButton(name));
+  same(absent, [], '版式区里找不到的上移下移按钮（改前无此功能）');
+  same(moveButton('上移：流水').disabled, true, '第一项的「上移」可不可点');
+  same(moveButton('下移：分享').disabled, true, '最后一项的「下移」可不可点');
+  const live = CARD_LABELS.flatMap(label => ['上移：' + label, '下移：' + label])
+    .filter(name => name !== '上移：流水' && name !== '下移：分享' && moveButton(name).disabled);
+  same(live, [], '中间那些不该锁着的按钮');
+
+  moveButton('下移：流水').click();
+  await settle();
+  same(message().params.card_order, ['card_danmu', 'card_revenue', ...CARD_KEYS.slice(2)].join(','),
+    '下移「流水」之后存下去的顺序');
+  same(cardRowLabels(), ['弹幕', '流水', ...CARD_LABELS.slice(2)], '下移「流水」之后界面上的顺序');
+  if (document.activeElement !== moveButton('下移：流水')) {
+    throw new Error('下移之后焦点没留在「下移：流水」上：' + (document.activeElement
+      ? document.activeElement.getAttribute('aria-label') : '无'));
+  }
+
+  // 连按：焦点一直在同一个按钮上，就一直往下移；移到底那一下，焦点落到「上移：流水」
+  for (let i = 0; i < CARD_LABELS.length - 2; i++) document.activeElement.click();
+  await settle();
+  same(cardRowLabels(), [...CARD_LABELS.slice(1), '流水'], '连按「下移：流水」到底之后界面上的顺序');
+  same(message().params.card_order, [...CARD_KEYS.slice(1), 'card_revenue'].join(','), '移到底之后存下去的顺序');
+  same(moveButton('下移：流水').disabled, true, '移到最后之后「下移：流水」可不可点');
+  if (document.activeElement !== moveButton('上移：流水')) {
+    throw new Error('移到底之后焦点该落到「上移：流水」：' + (document.activeElement
+      ? document.activeElement.getAttribute('aria-label') : '无'));
+  }
+
+  moveButton('上移：分享').click();
+  await settle();
+  same(cardRowLabels().slice(-3), ['分享', '免费礼物', '流水'], '上移「分享」之后末尾三行');
+});
+
+await ask('⑥ 关着的卡也能调位置；总开关关着时上移下移一起锁住、存着的顺序不动', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({card_like: false});
+  const like = moveButton('上移：点赞');
+  if (!like) throw new Error('版式区没有「上移：点赞」（改前无此功能）');
+  same(like.disabled, false, '关着的「点赞」的上移可不可点');
+  like.click();
+  await settle();
+  same(cardRowLabels().slice(0, 3), ['流水', '点赞', '弹幕'], '上移关着的「点赞」之后前三行');
+
+  const stored = [...CARD_KEYS].reverse().join(',');
+  await paintPage({cards: false, card_order: stored});
+  same(cardRowLabels(), [...CARD_LABELS].reverse(), '总开关关着时界面照存着的顺序列出');
+  const unlocked = CARD_LABELS.flatMap(label => ['上移：' + label, '下移：' + label])
+    .filter(name => !moveButton(name) || moveButton(name).disabled !== true);
+  same(unlocked, [], '总开关关着时仍可点的上移下移');
+  same(message().params.card_order, stored, '总开关关着时存着的顺序');
+});
+
+await ask('⑦ 只调了顺序也算自定义；调回原样就回到默认；恢复默认把顺序一起删掉', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({});
+  const down = moveButton('下移：弹幕');
+  if (!down) throw new Error('版式区没有「下移：弹幕」（改前无此功能）');
+  down.click();
+  await settle();
+  const custom = stateLine();
+  if (!custom || !String(custom.innerHTML).includes('自定义版式')) {
+    throw new Error('只调了顺序，状态行该是「自定义版式」：' + (custom ? custom.innerHTML : '没找到'));
+  }
+  moveButton('上移：弹幕').click();
+  await settle();
+  const back = stateLine();
+  if (!back || !String(back.innerHTML).includes('默认版式')) {
+    throw new Error('顺序调回原样，状态行该回到「默认版式」：' + (back ? back.innerHTML : '没找到')
+      + '；存着的是 ' + message().params.card_order);
+  }
+
+  const handler = store.handlerList[0];
+  const restored = model.restoredLayoutParams({message: '{report}', card_order: 'card_share,card_like'}, handler);
+  same(restored, {message: '{report}'}, '恢复默认之后的参数（顺序键该一起删掉）');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
