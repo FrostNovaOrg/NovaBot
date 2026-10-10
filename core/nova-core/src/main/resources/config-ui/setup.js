@@ -38,7 +38,7 @@ import {store} from './store.js';
  * 连接参数也记在这里：换一步再回来时那几格得还在，重画一遍会把没存下的 Token 抹掉。
  */
 const draft = {
-  locked: false, botOk: false, accountsReady: false, anonymousConfirmed: false,
+  locked: false, botOk: false, botEdits: 0, accountsReady: false, anonymousConfirmed: false,
   targets: [], sent: false,
   bot: {address: '127.0.0.1', httpPort: '3000', wsPort: '3001', httpToken: '', wsToken: ''},
 };
@@ -646,8 +646,10 @@ function passkeyBlock(host) {
 
 // ============ 第 2 步：连上 QQ 机器人 ============
 
+// botEdits 记参数改过几次：测试回包时与发出时的次数不同，说明那次测的不是此刻的参数
 function invalidateBot(draft) {
   draft.botOk = false;
+  draft.botEdits = (draft.botEdits || 0) + 1;
   return draft;
 }
 
@@ -682,6 +684,9 @@ function stepBot(host) {
     result.textContent = '测试中…';
     result.className = 'su-r';
     draft.botOk = false;
+    const edits = draft.botEdits || 0;
+    // 等回包期间参数改过：这次结果作废，不置测通、不自动保存，提示留着「请重新测试连接」
+    const stale = () => (draft.botEdits || 0) !== edits;
 
     try {
       const res = await api('/setup/test-bot', {
@@ -695,16 +700,18 @@ function stepBot(host) {
       });
       // 通过时回显版本与昵称、号；四种失败各一句话——两者都由服务端那一侧给。
       // 界面再写一份的话，两边分叉时屏幕上的话与真正发生的事对不上
-      report(result, {success: res.success, message: res.message + (res.advice ? '\n' + res.advice : '')});
-      if (res.success) {
-        draft.botOk = true;
-        await saveBot(result);
-        // 存下来的那一刻连接就接上了，「推到哪」要的名单随之有了着落。
-        // 重问一遍，进度条与后面几步据此算，不必等到刷新页面
-        await refreshFacts();
+      if (!stale()) {
+        report(result, {success: res.success, message: res.message + (res.advice ? '\n' + res.advice : '')});
+        if (res.success) {
+          draft.botOk = true;
+          await saveBot(result);
+          // 存下来的那一刻连接就接上了，「推到哪」要的名单随之有了着落。
+          // 重问一遍，进度条与后面几步据此算，不必等到刷新页面
+          await refreshFacts();
+        }
       }
     } catch (e) {
-      report(result, {success: false, message: '测试失败：' + e.message});
+      if (!stale()) report(result, {success: false, message: '测试失败：' + e.message});
     }
 
     test.disabled = false;
