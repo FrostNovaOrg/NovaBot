@@ -145,6 +145,9 @@ novabot:
   - `state.json`：群成员的 QQ 号与其绑定的哔哩哔哩 uid
   - `data.json` 与 `sessions.jsonl`：观众 uid 与昵称、按场的观众名单
   - `timeline/`：事件时间线，含主播名与推送目标的群号／QQ 号
+  - `details/`：每场的弹幕原文与发言人、排行名单、大航海名单，含观众 uid 与昵称
+
+  上面这些文件旁边，名字后面多了 `.bad-` 加时间或 `.tmp` 的同名件，内容和原件一样，也要一并删掉。
 - 关闭不需要的调试日志：`live-room-raw-message-log` 与 `dynamic-raw-message-log` 会把原始消息完整写入日志
 
 ### 关于观众数据
