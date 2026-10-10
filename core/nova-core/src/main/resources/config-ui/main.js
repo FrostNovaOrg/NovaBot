@@ -12,6 +12,7 @@ import {loadLog, stopFollow, syncLogView} from './log.js';
 import {manualHref} from './manual-link.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
+import {CLEAR, defaultValue} from './settings-model.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
   from './settings.js';
 import {notePlatformsArrived, openSetup, stopSetupPolling} from './setup.js';
@@ -327,9 +328,12 @@ function applyConnectionVocab() {
  *         保存、放弃只动当前那一页时带 {keepDrafts: true}，别页此刻有没存改动的留着不重取。
  *         初次载入不带，全部取。sentDrafts 是设置页保存那一趟真发出去的草稿：
  *         回包之前又被改的项没随那一趟存上，照旧算没保存的改动（见下面对账的那几行）
+ * @return {string} 对账有话要交代时的那句话（机密项在保存途中改回了留空，还原不出来），
+ *         交给调用方去说：保存那一趟末尾还要说一句「已保存」，在这里写状态栏会被它盖掉。没话时为空串
  */
 export async function load(how) {
   say('载入中…');
+  const notes = [];
   try {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
     store.schema = s.groups || [];
@@ -340,6 +344,9 @@ export async function load(how) {
     for (const g of store.schema) {
       for (const f of g.fields) store.effects[f.name] = f.effect;
     }
+    // 发出之前这台机器上已经存下的值：下面对账「发出之后又改回原值」要按它还原。
+    // 必须赶在 store.values 换掉之前取，换掉之后取到的已经是发出去的那一份
+    const priorValues = store.values || {};
     store.values = v.values || {};
     // 哪几项是按旧位置生效的，要跟着值一起进来：值与它的出处分开取，两次之间配置一变就对不上了
     store.legacy = v.legacy || {};
@@ -354,6 +361,34 @@ export async function load(how) {
       for (const name of Object.keys(store.dirty)) {
         if (store.dirty[name] !== sentDrafts[name]) kept[name] = store.dirty[name];
       }
+      // 发出去的这几项此刻草稿里没有的，是使用者在回包之前改回了发出前的值（或者撤回了清除）：
+      // 服务端此刻存的是发出去的那一份，那一下改回去的不算数，发出前的值要重新算作草稿——
+      // 留进 kept、改动条照常数它、屏上画成它、下次保存把它发出去
+      const fieldNamed = name => {
+        for (const g of store.schema) {
+          for (const f of g.fields) if (f.name === name) return f;
+        }
+        for (const f of store.ungrouped) if (f.name === name) return f;
+        return null;
+      };
+      for (const name of Object.keys(sentDrafts)) {
+        // 草稿里还挂着值的（回包前改成第三个值）是本人刚敲进去的，不在这条对账的范围里
+        if (store.dirty[name] !== undefined) continue;
+        const field = fieldNamed(name);
+        // 机密项改回留空是另一回事：留空＝没动，可发出去的那个值已经存上了。
+        // 旧值界面手里根本没有（后端只给遮罩），还原不出来——不留草稿，只说清存上的是哪一份
+        if (field && field.sensitive && sentDrafts[name] !== CLEAR) {
+          notes.push('「' + (field.label || name) + '」在保存途中改回了留空，存上的是刚才发出去的那一份；'
+            + '要换回原来的，请重新填写。');
+          continue;
+        }
+        // 还原成发出前的值：已存的值原样，没存过时按默认值。与 settings.js 里 valuesOf
+        // 那把尺同口径——对不上的话，还原出来的草稿与那一行原来显示的字就不一样
+        kept[name] = priorValues[name] !== undefined && priorValues[name] !== null
+          ? String(priorValues[name])
+          : (field && field.defaultValue !== null && field.defaultValue !== undefined
+            ? defaultValue(field) : '');
+      }
     }
     store.dirty = kept;
     renderGeneral();
@@ -364,19 +399,29 @@ export async function load(how) {
     // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍。
     // how 由调用方圈：保存、放弃只动当前那一页时，别页有草稿的那几位不跟着重取
     const sources = reloadChangeSources(how);
-    const [st, h, p] = await Promise.all([
-      api('/status'), api('/handlers'), api('/platforms')]);
+    // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主。
+    // 这一趟自己记成败、完了就叫向导一声，不与 /status、/handlers 合成一批批结果：
+    // 合成一批时别处一失败整批都废，清单其实到了也没人接，向导那一步就一直「正在载入」；
+    // 取失败也要叫一声，那一步好把话换成「没取到、可以怎么办」（见 setup-streamer.js）
+    const platforms = api('/platforms').then(
+      p => {
+        store.platforms = p.platforms || [];
+        // 这一趟成了，上一趟的「没取到」到此为止
+        store.platformsError = '';
+        notePlatformsArrived();
+      },
+      e => {
+        store.platformsError = e.message;
+        notePlatformsArrived();
+      });
+    // platforms 那一位只跟着等它办完：成与败都已在上面记下并叫过向导了
+    const [st, h] = await Promise.all([api('/status'), api('/handlers'), platforms]);
     // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus
     renderStatus(st);
     renderConfigPath(st.configPath);
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
-    // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主
-    store.platforms = p.platforms || [];
-    // 清单到了叫向导一声：首屏先画向导、后取清单，停在插件步上的人要先看到
-    // 「正在载入」，清单一到这一步自己补上（不叫的话要等他自己翻一步再翻回来）
-    notePlatformsArrived();
     // 某一位取回来的东西有问题时那句话由它自己说，这里只记一位「别替它清状态栏」：
     // 末尾那句 say('') 会把状态栏清空，不记的话那条提示刚显示就被自己抹掉
     const quiet = await sources;
@@ -399,6 +444,7 @@ export async function load(how) {
     say('载入失败：' + e.message, 'err');
   }
   markDirty();
+  return notes.join(' ');
 }
 
 /**

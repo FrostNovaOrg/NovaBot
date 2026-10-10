@@ -669,12 +669,20 @@ function watchCurrentGroup() {
 
   const host = document.getElementById('groups');
   if (host && typeof ResizeObserver === 'function') {
-    groupSizer = new ResizeObserver(() => schedule());
+    groupSizer = new ResizeObserver(() => {
+      // 顶栏自己长高变矮（更新按钮、退出块落地，或折行）时先把 --side-h 量准再判高亮：
+      // 那种时候窗口没改大小，原来那条路（resize）不走，窄屏目录的吸顶位置就停在旧高度上
+      syncSideHeight();
+      schedule();
+    });
     groupSizer.observe(host);
     // #groups 以外的内容（页面上方的提示条、页底那块）变高变矮时整页高度跟着变，而
     // 「滚到最底就亮最后一组」读的正是整页高度——不看着它就不重判。看 body 这一层：
     // 页面内容都长在它里面，它的盒子高度跟着内容变；整页高度的读数仍由 pageHeight() 取。
     groupSizer.observe(document.body);
+    // 窄屏顶栏也是自长的一层：内容落地、折行都会改它的高度，变了就得重量 --side-h
+    const side = document.getElementById('side');
+    if (side) groupSizer.observe(side);
   }
 
   groupScroll = schedule;
@@ -834,11 +842,14 @@ export async function save() {
     // 抄错的那几项此后会一直以为自己是「已保存的值」，而屏幕上看不出任何异常。
     // keepDrafts：这趟只清设置页自己的草稿，别页此刻有没存改动的不重取、草稿留着。
     // sentDrafts：真发出去的那一份——load 拿它与回包前又被改的草稿逐项对账，
-    // 对不上的照旧算没保存的改动（与推送页 markPushSaved 同一条规矩）
-    if (res.success) await load({keepDrafts: true, sentDrafts: sent});
+    // 对不上的照旧算没保存的改动（与推送页 markPushSaved 同一条规矩）。
+    // 对账有话要交代时（机密项在保存途中改回了留空，旧值还原不出来）由它带回来在这里说：
+    // 那句话比「已保存」更要紧，说早了会被下面这句盖掉
+    const note = res.success ? await load({keepDrafts: true, sentDrafts: sent}) : '';
 
     showIssues(res.issues);
-    say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
+    say(note || res.message || (res.success ? '已保存' : '保存失败'),
+      note ? 'err' : (res.success ? 'ok' : 'err'));
   } catch (e) {
     say('保存失败：' + e.message, 'err');
   }

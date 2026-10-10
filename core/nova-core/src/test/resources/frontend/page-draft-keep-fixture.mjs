@@ -26,6 +26,7 @@
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {CLEAR, defaultValue} from '../../../main/resources/config-ui/settings-model.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 
@@ -195,9 +196,9 @@ try {
   load = loadFn(src('main.js'), 'function load(',
     ['say', 'api', 'store', 'renderGeneral', 'parseHash', 'focusCard', 'reloadChangeSources',
       'renderStatus', 'renderConfigPath', 'refreshPages', 'refreshHome', 'fillBotForms',
-      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived'],
+      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived', 'CLEAR', 'defaultValue'],
     [core.say, api, store, noop, parseHash, noop, core.reloadChangeSources,
-      noop, noop, refreshPages, noop, noop, noop, core.markDirty, noop],
+      noop, noop, refreshPages, noop, noop, noop, core.markDirty, noop, CLEAR, defaultValue],
     'how');
   save = loadFn(src('settings.js'), 'function save(',
     ['saveTarget', '$', 'api', 'showIssues', 'say', 'store', 'load', 'markDirty'],
