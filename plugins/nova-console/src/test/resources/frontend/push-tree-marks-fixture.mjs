@@ -7,8 +7,9 @@
  * 这几条规矩在样式里成不成立，顺带算出演示那两颗换行后并排放不放得下。
  *
  * 一颗字宽取 -apple-system（SF）与苹方在 12.5px 下的字面宽：中文字宽 = 字号，
- * 数字与空格按 SF 量出来的数。小标描边 1px 在核心的 app.css 里，这里一并读。
- * 由 PushTreeMarksTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
+ * 数字与空格按 SF 量出来的数。小标描边在核心的 app.css 里，那份不在本模块，绝对路径
+ * 由壳经环境变量 APP_CSS 递进来；递不到、读不出就红，不跳过。
+ * 由 PushTreeMarksTest 拉起。push.js 量的是源码树里那一份，不是构建产物里的副本。
  */
 
 import {readFileSync} from 'node:fs';
@@ -18,8 +19,16 @@ import {fileURLToPath} from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = join(here, '../../../main/resources/config-ui-pages');
 const src = readFileSync(join(ui, 'push.js'), 'utf8');
-const coreCss = readFileSync(
-  join(here, '../../../../../../core/nova-core/src/main/resources/config-ui/app.css'), 'utf8');
+
+const coreCssPath = process.env.APP_CSS || '';
+let coreCss;
+try {
+  coreCss = readFileSync(coreCssPath, 'utf8');
+} catch {
+  console.log('跑了 1 格，红 1 格');
+  console.log('  红：核心的 app.css 取不到（环境变量 APP_CSS 指着 ' + (coreCssPath || '空') + '）');
+  process.exit(1);
+}
 
 const failures = [];
 let checks = 0;
