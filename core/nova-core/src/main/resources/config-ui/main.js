@@ -403,7 +403,7 @@ export async function load(how) {
     // 这一趟自己记成败、完了就叫向导一声，不与 /status、/handlers 合成一批批结果：
     // 合成一批时别处一失败整批都废，清单其实到了也没人接，向导那一步就一直「正在载入」；
     // 取失败也要叫一声，那一步好把话换成「没取到、可以怎么办」（见 setup-streamer.js）
-    const platforms = api('/platforms').then(
+    const platformsLoad = api('/platforms').then(
       p => {
         store.platforms = p.platforms || [];
         // 这一趟成了，上一趟的「没取到」到此为止
@@ -415,7 +415,7 @@ export async function load(how) {
         notePlatformsArrived();
       });
     // platforms 那一位只跟着等它办完：成与败都已在上面记下并叫过向导了
-    const [st, h] = await Promise.all([api('/status'), api('/handlers'), platforms]);
+    const [st, h] = await Promise.all([api('/status'), api('/handlers'), platformsLoad]);
     // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus
     renderStatus(st);
     renderConfigPath(st.configPath);
