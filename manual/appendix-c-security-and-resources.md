@@ -19,8 +19,22 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 
 **`cookies.json` 等同于哔哩哔哩账号的完整控制权**，默认加密存储，密钥在 `cookies.key`。
 两个文件都要妥善保管，也都不要提交到任何仓库；权限定期核对仍是 `600`。
-打包日志或工作目录发给他人前，先移除 `cookies.json`、`cookies.key`、`datasource.json`
-与 `state.json`——最后一份里有群成员的 QQ 号与其绑定的哔哩哔哩 uid。
+向他人求助时，最稳妥的做法是只发日志，不发整个工作目录。非发目录不可时，先删掉这些——
+工作目录里的：
+
+- `application.yml` 与它保存时留下的备份（`application.yml.yyyyMMdd-HHmmss.bak` 这类名字）：
+  里面有控制台访问令牌、两步验证密钥、OneBot 与推送接口的令牌、邮件授权码这类凭据
+- `cookies.json`、`cookies.key` 与 `cookies.json.plain.bak`（明文凭据迁移为加密存储时留下的备份）
+- `datasource.json`：写着推送到哪些群、哪些 QQ
+
+以及数据目录里的（没挪过数据目录的话，它与工作目录是同一个）：
+
+- `state.json`：群成员的 QQ 号与其绑定的哔哩哔哩 uid
+- `data.json` 与 `sessions.jsonl`：观众 uid 与昵称、按场的观众名单
+- `timeline/`：事件时间线，含主播名与推送目标的群号／QQ 号
+- `details/`：每场的弹幕原文与发言人、排行名单、大航海名单，含观众 uid 与昵称
+
+上面这些文件旁边，名字后面多了 `.bad-` 加时间或 `.tmp` 的同名件，内容和原件一样，也要一并删掉。
 
 **`novabot.core.exec` 能执行任意程序，默认关闭。** 打开前请确认清楚要跑的是什么；
 命令以参数数组执行而非交给 shell，因此昵称、弹幕内容逃不出参数去
