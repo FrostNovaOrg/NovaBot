@@ -290,15 +290,26 @@ public class NovaStateStore {
      * @param namespace 命名空间
      */
     public void remove(@NonNull String namespace) {
+        tryRemove(namespace);
+    }
+
+    /**
+     * 删除一个命名空间并立即落盘，报告是否写进了磁盘
+     * <p>
+     * 与 {@link #remove} 同一件事，多交回一个结果。磁盘写不进时内存里照样已经删掉。
+     * @param namespace 命名空间
+     * @return 写进了磁盘，或段本来就不在、无须写盘时为 true；本轮停写或写盘出错时为 false
+     */
+    public boolean tryRemove(@NonNull String namespace) {
         synchronized (writeLock) {
             String content;
             synchronized (lock) {
                 if (cache.remove(namespace) == null) {
-                    return;
+                    return true;
                 }
                 content = cache.toJSONString();
             }
-            write(content);
+            return write(content);
         }
     }
 
@@ -306,16 +317,26 @@ public class NovaStateStore {
      * 立即落盘
      */
     public void save() {
+        trySave();
+    }
+
+    /**
+     * 立即落盘，报告是否写进了磁盘
+     * <p>
+     * 与 {@link #save} 同一件事，多交回一个结果。写不进时内存不动，之后的自动保存照常再试。
+     * @return 写进了磁盘，或从没写过东西、无须写盘时为 true；本轮停写或写盘出错时为 false
+     */
+    public boolean trySave() {
         synchronized (writeLock) {
             String content;
             synchronized (lock) {
                 if (cache.isEmpty()) {
                     // 从没写过东西的机器上不该凭空多出一个只有 {} 的文件
-                    return;
+                    return true;
                 }
                 content = cache.toJSONString();
             }
-            write(content);
+            return write(content);
         }
     }
 
@@ -336,16 +357,19 @@ public class NovaStateStore {
      * 把序列化好的内容写进状态文件
      * <p>
      * 序列化在调用方的锁内、写盘在锁外：磁盘慢时不应阻塞消息线程上的订阅写入
+     * @return 是否写进了磁盘
      */
-    private void write(String content) {
+    private boolean write(String content) {
         if (diskSuspended) {
             noteSkippedSave();
-            return;
+            return false;
         }
         try {
             DurableFiles.replace(path(), content);
+            return true;
         } catch (Exception e) {
             log.error("保存运行状态至 {} 异常", path(), e);
+            return false;
         }
     }
 

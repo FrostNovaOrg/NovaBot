@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyRelyingParty;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
+import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyStore;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -160,10 +161,20 @@ public class ConfigUiPasskeyController {
         JSONObject result = new JSONObject();
 
         PasskeyService.PasskeyDeletion deletion = passkeyService.delete(id, sessionId(request));
-        if (!deletion.removed()) {
+        if (deletion.outcome() == PasskeyStore.Removal.ABSENT) {
             result.put("success", false);
             result.put("message", "这把通行密钥已经不在了，可能刚在别处删过");
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
+        }
+
+        if (deletion.outcome() == PasskeyStore.Removal.NOT_PERSISTED) {
+            // 不报「已删除」：盘上那份还带着这把钥匙，重启后它会恢复可用
+            result.put("success", false);
+            result.put("message", "这把通行密钥已在本次运行中停用"
+                    + (deletion.revokedSessions() > 0
+                            ? "，用它登录的其他 " + deletion.revokedSessions() + " 个会话已退出" : "")
+                    + "，但没能写进磁盘。磁盘恢复后，下一次自动保存会补上；在那之前重启，这把钥匙会恢复可用。原因见日志");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
 
         result.put("success", true);

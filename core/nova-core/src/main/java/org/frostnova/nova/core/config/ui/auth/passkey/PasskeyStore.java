@@ -97,11 +97,18 @@ public class PasskeyStore {
      * <p>
      * 只给登记用。登录更新计数器走 {@link #updateIfSignCount}：
      * 无条件覆盖会把「已经删掉」或「别人刚用过」的那一份写回去。
+     * <p>
+     * 写不进磁盘时内存里也不留这一把：留着的话它只活到重启，浏览器那边却以为登记成了。
      * @param credential 凭据
+     * @return 是否写进了磁盘
      */
-    public void save(PasskeyCredential credential) {
+    public boolean save(PasskeyCredential credential) {
         state.write(NAMESPACE, namespace -> namespace.put(credential.id(), toJson(credential)));
-        state.save();
+        if (state.trySave()) {
+            return true;
+        }
+        state.write(NAMESPACE, namespace -> namespace.remove(credential.id()));
+        return false;
     }
 
     /**
@@ -140,17 +147,41 @@ public class PasskeyStore {
      * @return 原本是否存在
      */
     public boolean remove(String id) {
+        return revoke(id) != Removal.ABSENT;
+    }
+
+    /**
+     * 删掉一把钥匙，仅当它此刻还在，并报告删除有没有写进磁盘
+     * <p>
+     * 写不进磁盘时内存里照样删掉，不放回去：本次运行里这把钥匙当即登不了。
+     * 磁盘恢复后下一次自动保存会把删除补上。
+     * @param id 凭据 ID
+     * @return 删除结果
+     */
+    public Removal revoke(String id) {
         if (id == null || id.isBlank()) {
-            return false;
+            return Removal.ABSENT;
         }
 
         boolean[] existed = {false};
         state.write(NAMESPACE, namespace -> existed[0] = namespace.remove(id) != null);
-        if (existed[0]) {
-            state.save();
+        if (!existed[0]) {
+            return Removal.ABSENT;
         }
 
-        return existed[0];
+        return state.trySave() ? Removal.REMOVED : Removal.NOT_PERSISTED;
+    }
+
+    /**
+     * 删一把钥匙的结果
+     */
+    public enum Removal {
+        /** 已删除并写进磁盘 */
+        REMOVED,
+        /** 本来就没有这一把 */
+        ABSENT,
+        /** 本次运行里已停用，但没能写进磁盘，重启后会恢复可用 */
+        NOT_PERSISTED
     }
 
     private JSONObject toJson(PasskeyCredential credential) {
