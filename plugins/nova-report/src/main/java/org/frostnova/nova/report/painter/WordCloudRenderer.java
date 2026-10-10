@@ -12,9 +12,9 @@ import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 词云的字体测量与绘制
@@ -34,7 +34,10 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
      */
     private final Graphics2D scratch;
 
-    private final Map<Long, Font> fontCache = new HashMap<>();
+    /**
+     * 渲染器全局共用一个，两份报告同时排版时会并发往这里放字体
+     */
+    private final Map<Long, Font> fontCache = new ConcurrentHashMap<>();
 
     WordCloudRenderer(FontUtil fontUtil) {
         this.fontUtil = fontUtil;

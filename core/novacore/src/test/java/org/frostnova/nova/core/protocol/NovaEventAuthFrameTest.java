@@ -281,6 +281,11 @@ class NovaEventAuthFrameTest {
 
         closeUnauthenticated(client);
 
+        // 关闭帧由发送线程池写，等它写出去
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3);
+        while (session.closedWith == null && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
         assertNotNull(session.closedWith, "逾期就该关掉");
         assertEquals(0, session.sentCount(),
                 "关闭帧之外，这条连接自始至终不该收到任何下行帧");

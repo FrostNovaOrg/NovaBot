@@ -187,10 +187,11 @@ public abstract class AbstractDataSource {
             }
         }
 
-        add(adds);
+        // 先撤后加：已满额时同一次更新里停用一位、加上一位，先加的话新的那位会因为没名额被拒
         for (PushUser user : removes) {
             remove(user);
         }
+        add(adds);
 
         updates.removeIf(user -> !user.getEnabled());
         for (PushUser user: updates) {
