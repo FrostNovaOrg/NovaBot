@@ -422,9 +422,10 @@ public class BilibiliAccountService {
      * TV 端凭据的 oauth2 续期
      * <p>
      * 令牌默认有效 180 天，在到期前一段时间提前续期即可，无须每次复检都请求接口。
-     * 与 Web 端续期一样遵循「验证通过再落盘」的顺序，中途失败不会让账号失去可用凭据。
+     * 与 Web 端续期一样遵循「验证通过再落盘」的顺序，中途失败不会让账号失去可用凭据；
+     * 唯独落盘这一步失败时不回退——平台侧已换发，回退可能当场掉线，新令牌留在内存里接着用。
      * @param current 当前凭据
-     * @return 是否完成了一次续期
+     * @return 是否完成了一次续期（含成功落盘）
      */
     private boolean refreshAppTokenIfNeeded(Cookies current) {
         Long expiresAt = current.getAccessTokenExpiresAt();
@@ -454,7 +455,14 @@ public class BilibiliAccountService {
             return false;
         }
 
-        store.save(refreshed);
+        if (!store.save(refreshed)) {
+            // 平台侧已换发新令牌，旧令牌还能不能用无从得知：回退可能当场掉线，所以不回退，
+            // 新令牌留在内存里接着用。但盘上仍是旧令牌，重启后要重新扫码。
+            // 返回 false（本次续期未完成）而不当成失败去退避：内存里的新令牌尚未到期，
+            // 下次检查自然跳过，不会形成紧循环；重启后 load 回旧令牌，到窗口自然会再续
+            log.error("登录令牌续期的新令牌存盘失败, 重启后可能要重新扫码");
+            return false;
+        }
         log.info("登录令牌续期完成");
         return true;
     }
@@ -492,7 +500,13 @@ public class BilibiliAccountService {
         }
 
         // 先落盘再作废旧凭据：反过来的话，一旦此刻进程退出，新凭据没存下、旧凭据又已失效，只能重新扫码
-        store.save(refreshed);
+        if (!store.save(refreshed)) {
+            // 新凭据没存上盘。此刻不能作废旧凭据——盘上留的只有旧凭据，作废了它，重启后就掉登录。
+            // 换回旧凭据继续用，内存与盘上一致，都是还有效的旧凭据；下次维护再试整个续期
+            api.setCookies(current);
+            log.error("Cookie 续期的新凭据存盘失败, 未作废旧凭据, 已回退至原凭据继续使用");
+            return false;
+        }
 
         try {
             api.confirmCookieRefresh(oldRefreshToken);
@@ -710,7 +724,10 @@ public class BilibiliAccountService {
             }
 
             Cookies logged = api.getCookies();
-            store.save(logged);
+            if (!store.save(logged)) {
+                // 登录照常：凭据已在内存里，本次进程内一切可用。只是盘上没有，重启后要重新扫码
+                log.error("登录凭据存盘失败, 重启后要重新扫码");
+            }
             this.pendingQrCodeContent = null;
             this.loginUid = api.getLoginUid();
             this.loggedIn = true;
