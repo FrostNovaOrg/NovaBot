@@ -28,8 +28,8 @@ class CopyrightMarkTest {
 
     private static final int MARGIN = 35;
 
-    /** 眼下发布的版本号 */
-    private static final String CURRENT_VERSION = "5.8.1";
+    /** 排版样本：与发布版本号同形（x.y.z，各一位）、等长，量的是排版，不随发版改 */
+    private static final String SAMPLE_VERSION = "5.9.0";
 
     @BeforeAll
     static void headless() {
@@ -37,12 +37,12 @@ class CopyrightMarkTest {
     }
 
     @Test
-    @DisplayName("🔴 最窄那种图上，眼下这一版的图标加字整行不越过左边距")
+    @DisplayName("🔴 最窄那种图上，样本版本号的图标加字整行不越过左边距")
     void lineFitsInsideTheNarrowestImage() {
-        CommonPainter painter = painter(CURRENT_VERSION, NARROWEST_WIDTH);
+        CommonPainter painter = painter(SAMPLE_VERSION, NARROWEST_WIDTH);
         CommonPainter.CopyrightLine line = painter.copyrightLineLayout();
         int left = NARROWEST_WIDTH - MARGIN - line.width();
-        System.out.println("版本 " + CURRENT_VERSION + "：整行宽 " + line.width() + "，" + line
+        System.out.println("版本 " + SAMPLE_VERSION + "：整行宽 " + line.width() + "，" + line
                 + "，左沿 x=" + left + "，左边距 " + MARGIN);
         assertTrue(left >= MARGIN, "版权行越过左边距：左沿 x=" + left);
     }
@@ -50,8 +50,8 @@ class CopyrightMarkTest {
     @Test
     @DisplayName("🔴 成图上：字的左边有图标，左边距以内没有一个可见像素")
     void markIsPaintedLeftOfTheTextAndInsideTheMargin() {
-        Reading reading = read(CURRENT_VERSION);
-        System.out.println("版本 " + CURRENT_VERSION + "：" + reading);
+        Reading reading = read(SAMPLE_VERSION);
+        System.out.println("版本 " + SAMPLE_VERSION + "：" + reading);
 
         assertEquals(0, reading.strayLeft, "左边距以内画上了东西");
         assertTrue(reading.colored > 0 && reading.markRight < reading.nLeft, "字的左边没有图标：" + reading);
@@ -66,8 +66,8 @@ class CopyrightMarkTest {
     @Test
     @DisplayName("🔴 成图上：图标上沿对齐 N 顶，外框高是 N 高 × 51.9/42")
     void markIsSizedAndAlignedToTheCapitalN() {
-        Reading reading = read(CURRENT_VERSION);
-        System.out.println("版本 " + CURRENT_VERSION + "：" + reading);
+        Reading reading = read(SAMPLE_VERSION);
+        System.out.println("版本 " + SAMPLE_VERSION + "：" + reading);
 
         int markHeight = reading.maxY - reading.minY + 1;
         double expected = reading.nHeight() * 51.9 / 42;
@@ -85,7 +85,7 @@ class CopyrightMarkTest {
     @Test
     @DisplayName("🔴 版本号长到放不下图标时只画字，不越过左边距")
     void markIsDroppedWhenItWouldCrossTheMargin() {
-        // 这一串比眼下的版本号多四个字，量过放不下图标（多三个字的 10.10.10 还放得下）；
+        // 这一串比样本版本号多四个字，量过放不下图标（多三个字的 10.10.10 还放得下）；
         // 先证它真放不下，下面的「没画」才有意义
         String longVersion = "10.10.100";
         CommonPainter.CopyrightLine line = painter(longVersion, NARROWEST_WIDTH).copyrightLineLayout();
