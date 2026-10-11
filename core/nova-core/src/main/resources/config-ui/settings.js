@@ -71,6 +71,8 @@ export function stopWatchingGroups() {
  * 目标若在高级折页里，先打开折页再滚——折着的时候滚到位也看不见。
  * 落点让出吸在视口顶上的那几块：窄屏上顶栏与组目录都吸顶，不让出的话滚到位的
  * 组标题正好被它们盖住，看起来像「点了没反应」；宽屏上没有吸顶元素，落点不偏。
+ * 让出多少与「哪一组算当前」共用 headerHeight 量出来的那一个数：两处各算各的，
+ * 窄屏上点某一组会亮上一组，或滚到位的组标题正好被盖住。
  * @param id 组标识，与 schema 里的 group 一致；高级折页本身传 adv
  */
 export function focusGroup(id) {
@@ -81,14 +83,7 @@ export function focusGroup(id) {
   if (target) {
     if (adv && adv.contains(target)) adv.open = true;
     target.classList.remove('hide');
-    // 窄屏上让出顶栏与目录的实测高度。959px 与 app.css 的窄屏断点同一处，两边各写
-    // 一个数的话，改了一处没改另一处，宽屏上会白让一段，窄屏上照旧盖住
-    let above = 0;
-    if (window.matchMedia('(max-width:959px)').matches) {
-      const side = $('#side');
-      const nav = $('#grp-nav');
-      above = (side ? side.offsetHeight : 0) + (nav ? nav.offsetHeight : 0);
-    }
+    const above = headerHeight();
     const top = window.scrollY + target.getBoundingClientRect().top - above;
     window.scrollTo(0, Math.max(0, top));
   }
@@ -593,11 +588,21 @@ export function renderGeneral() {
 }
 
 /**
- * 页头偏移。顶栏已去，固定返回 0。
+ * 吸在视口顶上的那几块有多高：窄屏上顶栏与组目录都吸顶，宽屏上没有吸顶元素
+ *
+ * 只有这一处量。点目录的落点（focusGroup）与「哪一组算当前」（watchCurrentGroup
+ * 交给 currentGroupId 的那一位）都取它：两处各算各的话，窄屏上点任何一组都差一组——
+ * 落点让了顶栏加目录，判「看得见」却让了 0，上一组的尾巴还压在底下就被当成看得见。
+ * 顶栏里的内容会折行，高度不是定数，写死一个数换个设备、改一下字号就不准。
+ * 959px 与 app.css 的窄屏断点同一处，两边各写一个数的话，改了一处没改另一处，
+ * 宽屏上会白让一段，窄屏上照旧盖住。
  * @return {number} 像素
  */
 function headerHeight() {
-  return 0;
+  if (!window.matchMedia('(max-width:959px)').matches) return 0;
+  const side = $('#side');
+  const nav = $('#grp-nav');
+  return (side ? side.offsetHeight : 0) + (nav ? nav.offsetHeight : 0);
 }
 
 /**
@@ -882,11 +887,11 @@ export async function discard() {
     const repainted = refreshPages(target);
     markDirty();
     // 重画自己也出了事时，状态栏上已是那句「页出错」，也不该被下面这句盖掉
-    if (quiet && repainted) say('已放弃这一页的改动');
+    if (quiet && repainted) say('已放弃这一页的改动', 'ok');
     return;
   }
   // 草稿态由 load 自己清。在这里先清一遍的话，重载失败时屏幕上还留着改过的值，
   // 而计数已经归零——看起来像「改动被保存了」
   await load({keepDrafts: true});
-  say('已放弃这一页的改动');
+  say('已放弃这一页的改动', 'ok');
 }

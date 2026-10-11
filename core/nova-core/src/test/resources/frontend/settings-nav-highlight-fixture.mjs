@@ -95,6 +95,9 @@ const layout = {
   groupsHeight: 1100,
   // 窄屏顶栏（#side）此刻的高：内容落地、折行都会改它，量出来的数进 --side-h
   sideHeight: 64,
+  // 窄屏吸顶的组目录（#grp-nav）此刻的高。它与顶栏一起构成「吸在视口顶上那几块」，
+  // 判「哪一组算当前」时一并让开
+  navHeight: 40,
   groups: [
     {id: 'g1', top: 200, bottom: 600},
     {id: 'g2', top: 600, bottom: 1000},
@@ -172,6 +175,18 @@ const sideHost = {
     return layout.sideHeight;
   },
 };
+// 窄屏吸顶的组目录：与顶栏同为吸在视口顶上的那几块
+const navHost = {
+  tag: 'div',
+  id: 'grp-nav',
+  get offsetHeight() {
+    return layout.navHeight;
+  },
+  boxHeight() {
+    return layout.navHeight;
+  },
+};
+const fake$ = sel => (sel === '#side' ? sideHost : sel === '#grp-nav' ? navHost : null);
 const documentElement = {
   get scrollHeight() {
     return layout.page;
@@ -219,6 +234,8 @@ const fakeWindow = {
   get innerHeight() {
     return layout.viewport;
   },
+  // 本尺的场景是窄屏（顶栏与目录都吸顶），headerHeight 量屏走这一支
+  matchMedia: () => ({matches: true}),
   addEventListener(type, fn) {
     const list = winListeners.get(type) || [];
     list.push(fn);
@@ -319,14 +336,15 @@ globalThis.groupResize = null;
 
 const stopWatchingGroups = loadFn(src, 'function stopWatchingGroups(',
   ['window', 'cancelAnimationFrame'], [fakeWindow, cancelAnimationFrame]);
-const headerHeight = loadFn(src, 'function headerHeight(', [], []);
+const headerHeight = loadFn(src, 'function headerHeight(',
+  ['window', '$'], [fakeWindow, fake$]);
 const pageHeight = loadFn(src, 'function pageHeight(', ['document'], [fakeDocument]);
 // watchCurrentGroup 顺手还会量一次窄屏顶栏的高度（syncSideHeight）。改前还没有
 // 这一句，槽位先占上、给 null
 let syncSideHeight = null;
 try {
   syncSideHeight = loadFn(src, 'function syncSideHeight(', ['$', 'document'],
-    [sel => (sel === '#side' ? sideHost : null), fakeDocument]);
+    [fake$, fakeDocument]);
 } catch (e) {
   syncSideHeight = null;
 }

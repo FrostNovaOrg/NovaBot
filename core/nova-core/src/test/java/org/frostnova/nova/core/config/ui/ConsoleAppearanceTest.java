@@ -21,7 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>窄屏横条里没有退出入口 → 手机上退不出登录；</li>
  *   <li>窄屏退出块与导航同排 → 手机上导航被挤得点不到；</li>
  *   <li>「界面」三钮与下方设置项左缩进不一致 → 按钮贴边；</li>
- *   <li>点目录的落点让出不该让的位 → 宽屏上组标题停偏；让位量写死 → 换台设备、改一下字号又不准。</li>
+ *   <li>点目录的落点让出不该让的位 → 宽屏上组标题停偏；让位量写死 → 换台设备、改一下字号又不准；</li>
+ *   <li>落点与高亮各量各的吸顶高度 → 窄屏上点某一组亮的是上一组。</li>
  * </ul>
  * 「顶栏没了」「字号变了」不立测试——改后恒绿，抓不到将来的故障。
  */
@@ -98,10 +99,12 @@ class ConsoleAppearanceTest {
      * 故障：点设置目录后组标题停的位置偏一段让位量。宽屏上没有任何吸顶的元素，
      * 让位量只要不是 0，落点就偏那么远；窄屏上顶栏与组目录都吸在视口顶上，
      * 要让的只能是它们<b>量出来</b>的高度——写死一个数，换台设备、改一下字号
-     * 就又不准（旧顶栏那个 54px 正是这么来的）。所以这里只认三件事实——
+     * 就又不准（旧顶栏那个 54px 正是这么来的）。落点与「哪一组算当前」还得取
+     * 同一个数：各量各的，窄屏上点某一组亮的是上一组。所以这里只认四件事实——
+     * 量高度只有 headerHeight 一处（focusGroup 取它，不自个儿量）、
      * 窄屏那道门之前的代码里没有减号、门之后的让位量必须量过 DOM、
-     * 旧的页头高度不许复活（headerHeight 只能是常数 0、--head-h 不许是正数）。
-     * 三件各盯一条会把落点弄偏的写法，其中一条变了这一格就红。
+     * 旧的页头高度不许复活（不许量 --head-h、不许返回写死的正数，--head-h 不许是正数）。
+     * 四件各盯一条会把落点弄偏的写法，其中一条变了这一格就红。
      */
     @Test
     @DisplayName("点目录的落点：宽屏不让位，窄屏只让量出来的高度")
@@ -110,43 +113,53 @@ class ConsoleAppearanceTest {
         String settings = read("settings.js");
         List<String> bad = new ArrayList<>();
 
+        // 0) 量高度只有 headerHeight 一处：落点与高亮都取它。focusGroup 里再量一份
+        //    （offsetHeight）或再守一道断点（matchMedia／max-width），又是两处口径
+        int fnStart = settings.indexOf("function focusGroup");
+        assertTrue(fnStart >= 0, "settings.js 里找不到 focusGroup，这一格此刻什么也没量");
+        String focusRaw = fnBody(settings, fnStart);
+        String focusBody = codeOnly(focusRaw);
+        assertTrue(focusBody.contains("scrollTo") && focusBody.contains("getBoundingClientRect().top"),
+                "focusGroup 不再是「滚到组标题」那条路，这一格的射程要重定: " + focusBody.strip());
+        if (!focusBody.contains("headerHeight")) {
+            bad.add("focusGroup 没有取 headerHeight 量出来的数，落点与高亮又是两处口径: " + focusBody.strip());
+        }
+        if (focusRaw.contains("offsetHeight") || focusRaw.contains("matchMedia") || focusRaw.contains("max-width")) {
+            bad.add("focusGroup 里自个儿量高度／守断点了，量高度只该有 headerHeight 一处: " + focusRaw.strip());
+        }
+
         // 1) 宽屏那条路不许让位：窄屏那道门（matchMedia）之前的代码里出现减号，
         //    减掉的就只可能是让位量——宽屏上没有任何吸顶的元素
         //    （data-grp 这类字符串里的连字符不算，先把字符串与注释剥掉再看）
-        int fnStart = settings.indexOf("function focusGroup");
-        assertTrue(fnStart >= 0, "settings.js 里找不到 focusGroup，这一格此刻什么也没量");
-        String focusBody = codeOnly(fnBody(settings, fnStart));
-        assertTrue(focusBody.contains("scrollTo") && focusBody.contains("getBoundingClientRect().top"),
-                "focusGroup 不再是「滚到组标题」那条路，这一格的射程要重定: " + focusBody.strip());
-        int gate = focusBody.indexOf("matchMedia");
-        assertTrue(gate >= 0, "focusGroup 里没有窄屏那道门（matchMedia），"
-                + "窄屏上吸顶的顶栏与目录会把滚到的组标题盖住: " + focusBody.strip());
-        if (focusBody.substring(0, gate).contains("-")) {
-            bad.add("窄屏那道门之前就有减号，宽屏的落点会被让位量偏开: " + focusBody.substring(0, gate).strip());
+        int hStart = settings.indexOf("function headerHeight");
+        assertTrue(hStart >= 0, "settings.js 里找不到 headerHeight，这一格此刻什么也没量");
+        String hBody = codeOnly(fnBody(settings, hStart));
+        int gate = hBody.indexOf("matchMedia");
+        assertTrue(gate >= 0, "headerHeight 里没有窄屏那道门（matchMedia），"
+                + "宽屏上会让出一段、组标题停偏: " + hBody.strip());
+        if (hBody.substring(0, gate).contains("-")) {
+            bad.add("窄屏那道门之前就有减号，宽屏的落点会被让位量偏开: " + hBody.substring(0, gate).strip());
         }
 
         // 2) 窄屏让的量必须是量出来的：门之后得量 DOM（offsetHeight）；
         //    落点里减号后面跟着数字即写死的让位量，一处都不许有
-        String afterGate = focusBody.substring(gate);
+        String afterGate = hBody.substring(gate);
         if (!afterGate.contains("offsetHeight")) {
             bad.add("窄屏的让位量没有量 DOM（offsetHeight），写死的数换个字号、换台设备就不准: " + afterGate.strip());
         }
-        if (Pattern.compile("-\\s*\\d").matcher(focusBody).find()) {
-            bad.add("落点里有写死的让位量（减号后面是数字），量出来的才跟得住会折行的顶栏: " + focusBody.strip());
+        if (Pattern.compile("-\\s*\\d").matcher(hBody).find()
+                || Pattern.compile("-\\s*\\d").matcher(focusBody).find()) {
+            bad.add("落点里有写死的让位量（减号后面是数字），量出来的才跟得住会折行的顶栏: " + hBody.strip());
         }
 
-        // 3) 旧的页头高度不许复活：量 DOM、读令牌、返回正数都算让位量回来了
-        int hStart = settings.indexOf("function headerHeight");
-        if (hStart >= 0) {
-            String hBody = codeOnly(fnBody(settings, hStart));
-            for (String measured : new String[]{"--head-h", "getComputedStyle", "getPropertyValue", "getBoundingClientRect", "querySelector"}) {
-                if (hBody.contains(measured)) {
-                    bad.add("headerHeight() 还在量「" + measured + "」，顶栏已去不该再产出让位量: " + hBody.strip());
-                }
+        // 3) 旧的页头高度不许复活：量 --head-h、读令牌、返回写死的正数都算让位量写死了
+        for (String measured : new String[]{"--head-h", "getComputedStyle", "getPropertyValue", "getBoundingClientRect", "querySelector"}) {
+            if (hBody.contains(measured)) {
+                bad.add("headerHeight() 还在量「" + measured + "」，让位量只能量吸顶那两块的实测高度: " + hBody.strip());
             }
-            if (Pattern.compile("return\\s+[1-9]").matcher(hBody).find()) {
-                bad.add("headerHeight() 会返回正数，滚动定位就偏这么多: " + hBody.strip());
-            }
+        }
+        if (Pattern.compile("return\\s+[1-9]").matcher(hBody).find()) {
+            bad.add("headerHeight() 返回写死的正数，换台设备、改一下字号就不准: " + hBody.strip());
         }
 
         // 4) 高度令牌不许再是正数：写回 54px 即红，读到它的每一处都跟着偏

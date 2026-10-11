@@ -6,9 +6,11 @@
  * 看起来像「点了没反应」。宽屏上没有吸顶元素，落点本就不偏。
  *
  * 这把尺把 settings.js 的 focusGroup 按花括号配平切出函数体来真执行，$／document／
- * window 换成桩：顶栏与目录各报一个可拨的实测高度，scrollTo 记账。第五格不跑函数，
- * 量的是两处各写的一个数：focusGroup 里的断点必须与 app.css 用着的断点同一处——
- * 各写各的话，改了一处没改另一处，宽屏上会白让一段，窄屏上照旧盖住。
+ * window 换成桩：顶栏与目录各报一个可拨的实测高度，scrollTo 记账。让出多少由
+ * headerHeight 量（落点与高亮共用那一个数），它一并切出来喂给 focusGroup。
+ * 第五格不跑函数，量的是两处各写的一个数：量高度那处的断点必须与 app.css 用着的
+ * 断点同一处——各写各的话，改了一处没改另一处，宽屏上会白让一段，窄屏上照旧盖住；
+ * focusGroup 里再写一份断点或自个儿量高度，又是两处口径。
  *
  * 五格：①窄屏：落点扣掉顶栏与目录的实测高度；③同一屏换个设备高度（顶栏会折行，
  * 高度不是定数）：扣的是新量出来的那份，不是写死的数；④扣完成负数时按 0 兜住；
@@ -79,6 +81,8 @@ function bracedFrom(text, marker) {
 const settingsSrc = readFileSync(join(ui, 'settings.js'), 'utf8');
 const focusDecl = bracedFrom(settingsSrc, 'export function focusGroup').replace(/^export /, '');
 if (!focusDecl) failures.push('focusGroup 切不出来');
+const measureDecl = bracedFrom(settingsSrc, 'function headerHeight(');
+if (!measureDecl) failures.push('headerHeight 切不出来');
 
 // —— 桩：顶栏与目录各报一个可拨的高度，matchMedia 一拨就换档 ——
 
@@ -101,8 +105,11 @@ const fakeWindow = {
 
 let focusGroup = null;
 try {
-  focusGroup = new Function('$', 'document', 'window',
-    focusDecl + '\nreturn focusGroup;')(fake$, fakeDocument, fakeWindow);
+  // 落点让出多少由 headerHeight 量，它与高亮共用那一个数；这里一并切出来喂给 focusGroup
+  const headerHeight = new Function('$', 'document', 'window',
+    measureDecl + '\nreturn headerHeight;')(fake$, fakeDocument, fakeWindow);
+  focusGroup = new Function('$', 'document', 'window', 'headerHeight',
+    focusDecl + '\nreturn focusGroup;')(fake$, fakeDocument, fakeWindow, headerHeight);
 } catch (err) {
   failures.push('烘 focusGroup 就抛了：' + err.message);
 }
@@ -138,19 +145,23 @@ eq(jump(true, 100, 300, 90, 25), [[0, 285]],
 eq(jump(true, 0, 10, 60, 40), [[0, 0]],
   '④ 窄屏上目标本来就贴着顶：扣完成负数，按 0 兜住，不往回倒');
 
-// ---------- ⑤ focusGroup 的断点与 app.css 同一处 ----------
-// 两边各写一个数的话，改了一处没改另一处：宽屏上白让一段，窄屏上照旧盖住
-const focusSource = focusDecl || '';
-const focusBreak = focusSource.match(/max-width:\s*(\d+)px/);
+// ---------- ⑤ 断点与 app.css 同一处，且只有量高度那一处写着 ----------
+// 两边各写一个数的话，改了一处没改另一处：宽屏上白让一段，窄屏上照旧盖住。
+// 落点与高亮共用 headerHeight 量出来的数，断点因此也只该在它那一带
+const measureSource = measureDecl || '';
+const measureBreak = measureSource.match(/max-width:\s*(\d+)px/);
+const focusOwn = (focusDecl || '').match(/max-width:\s*\d+px|offsetHeight/);
 const cssBreaks = [...readFileSync(join(ui, 'app.css'), 'utf8')
   .matchAll(/@media\s*\(max-width:\s*(\d+)px\)/g)].map(m => m[1]);
 eq({
-  'focusGroup 写了断点吗': focusBreak ? focusBreak[1] : '(没写)',
-  '样式表里有这个断点吗': focusBreak ? cssBreaks.includes(focusBreak[1]) : false,
+  '量高度那处写了断点吗': measureBreak ? measureBreak[1] : '(没写)',
+  '样式表里有这个断点吗': measureBreak ? cssBreaks.includes(measureBreak[1]) : false,
+  'focusGroup 里还自个儿量吗': focusOwn ? focusOwn[0] : '(没有)',
 }, {
-  'focusGroup 写了断点吗': '959',
+  '量高度那处写了断点吗': '959',
   '样式表里有这个断点吗': true,
-}, '⑤ focusGroup 量屏用的断点与 app.css 的窄屏断点同一处');
+  'focusGroup 里还自个儿量吗': '(没有)',
+}, '⑤ 量屏用的断点与 app.css 的窄屏断点同一处，且只有量高度那一处写着');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
