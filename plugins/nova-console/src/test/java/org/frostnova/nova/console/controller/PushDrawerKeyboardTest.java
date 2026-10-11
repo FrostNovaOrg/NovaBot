@@ -17,7 +17,7 @@ import java.io.IOException;
 class PushDrawerKeyboardTest {
 
     @Test
-    @DisplayName("打开即可打字，Esc 能关，Tab 圈在面板里，关掉后焦点回到按钮")
+    @DisplayName("打开即可打字，Esc 能关，Tab 圈在面板里，关掉或加完主播后焦点回到按钮")
     void addStreamerDrawerWorksFromKeyboard() throws IOException, InterruptedException {
         FrontendFixture.runFromModule("src/test/resources/frontend/push-drawer-keyboard-fixture.mjs",
                 "添加主播面板的键盘操作");

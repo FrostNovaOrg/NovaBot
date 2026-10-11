@@ -6,6 +6,7 @@
  * 切出 stepBot 与它用到的草稿、对盘那几个函数真执行：点「测试连接」、让测试回包、
  * 保存挂着时改格子、再让保存回包，然后照 openSetup 的顺序重进一次。
  * 对照：保存回来之前没改，回包后照旧算与盘上一致，重进时采既成事实。
+ * 保存没存下（回包说失败、请求抛错）时，发出去的那份也不算与盘上一致。
  *
  * 由 SetupBotSaveRaceTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -105,6 +106,7 @@ function loadStep() {
   const inputs = {};
   const calls = [];
   let release = null;
+  let fail = null;
   const deps = {
     seen: {status: {senders: [{}]}},
     el: (tag, cls) => {
@@ -130,7 +132,10 @@ function loadStep() {
     api: async (path, opts) => {
       calls.push({path, body: opts && opts.body ? JSON.parse(opts.body) : null});
       if (path === '/setup/bot') {
-        return new Promise(resolve => { release = resolve; });
+        return new Promise((resolve, reject) => {
+          release = resolve;
+          fail = reject;
+        });
       }
       return {success: true, message: '连接正常', advice: ''};
     },
@@ -141,7 +146,7 @@ function loadStep() {
     ...names.map(n => deps[n]));
   run.stepBot(fakeEl());
   const test = made.find(node => node.id === 'setup-test-bot');
-  return {run, draft: run.draft, inputs, calls, test, answerSave: res => release(res)};
+  return {run, draft: run.draft, inputs, calls, test, answerSave: res => release(res), failSave: err => fail(err)};
 }
 
 function click(node) {
@@ -214,6 +219,40 @@ eq(calm, {
   afterSave: {matches: true, botOk: true},
   reentered: {httpToken: '', wsToken: '', botOk: true},
 }, '② 对照：保存回包前没改，回包后与盘上一致，重进时照旧算已接上');
+
+/** 照 ① 的走法存一次，保存那一趟由 settle 了结；量回包后与重进后的草稿 */
+async function failedSave(settle) {
+  try {
+    const page = loadStep();
+    const {pending} = await startSave(page);
+    if (!page.calls.some(c => c.path === '/setup/bot')) return 'save-not-sent';
+    settle(page);
+    await pending;
+    const afterSave = {matches: page.run.botDraftMatchesSaved(page.draft), botOk: page.draft.botOk};
+    reenter(page.run);
+    return {
+      afterSave,
+      reentered: {httpToken: page.draft.bot.httpToken, wsToken: page.draft.bot.wsToken, botOk: page.draft.botOk},
+    };
+  } catch (e) {
+    return 'error:' + e.message;
+  }
+}
+
+const UNSAVED = {
+  afterSave: {matches: false, botOk: false},
+  reentered: {httpToken: 'tok-a', wsToken: 'ws-a', botOk: false},
+};
+
+// ③ 用户故障：测通之后自动保存没存下（服务端回失败），向导却把这套参数当成已存；
+// 重进时刚填的参数被盘上旧的盖掉、两个 Token 清空，盘上旧的那套若是通的，这一步还显示已接上
+eq(await failedSave(page => page.answerSave({success: false, message: '写不进配置文件'})), UNSAVED,
+  '③ 保存回包说失败：不算与盘上一致，botOk 为假；重进时 Token 仍是刚填的，「已接上」不翻回真');
+
+// ④ 用户故障：测通之后自动保存没存下（请求出错），向导却把这套参数当成已存；
+// 重进时刚填的参数被盘上旧的盖掉、两个 Token 清空，盘上旧的那套若是通的，这一步还显示已接上
+eq(await failedSave(page => page.failSave(new Error('网络断了'))), UNSAVED,
+  '④ 保存请求抛错：不算与盘上一致，botOk 为假；重进时 Token 仍是刚填的，「已接上」不翻回真');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

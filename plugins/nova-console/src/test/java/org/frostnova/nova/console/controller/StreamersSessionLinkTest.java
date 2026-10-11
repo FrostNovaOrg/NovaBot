@@ -18,7 +18,7 @@ import java.io.IOException;
 class StreamersSessionLinkTest {
 
     @Test
-    @DisplayName("每一行都有一个指向这一场的链接，整行点照旧能用")
+    @DisplayName("每一行都有一个指向这一场的链接，整行点照旧能用，点在链接上整行不另跳")
     void everySessionRowHasALink() throws IOException, InterruptedException {
         FrontendFixture.runFromModule("src/test/resources/frontend/streamers-session-link-fixture.mjs",
                 "场次行的链接");

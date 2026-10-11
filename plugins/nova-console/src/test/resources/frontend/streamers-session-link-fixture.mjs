@@ -156,6 +156,19 @@ await ask('② 对照：整行点一下照旧跳到这一场', () => {
   same(reached, want(), '点整行之后的地址');
 });
 
+// 故障：在主播页场次表里按住 Ctrl（Mac 上 ⌘）点开播时间，想在新标签页打开那一场，结果这一页也跟着跳走了
+await ask('③ 点在行里的链接上时，整行的点击不改地址，交给链接自己去', () => {
+  if (!page || !model) throw new Error('主播页没载进来，这一格量不了');
+  if (rows.length !== STARTS.length) throw new Error('该画 ' + STARTS.length + ' 行，画了 ' + rows.length + ' 行');
+  const reached = rows.map(row => {
+    globalThis.location.hash = '';
+    const link = {tagName: 'a', closest: sel => (sel === 'a' ? link : null)};
+    for (const fn of row.listeners.click || []) fn({target: link});
+    return globalThis.location.hash;
+  });
+  same(reached, STARTS.map(() => ''), '点在链接上之后的地址');
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);
