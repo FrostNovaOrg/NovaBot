@@ -785,7 +785,7 @@ export function buildLayoutEditor(host, options) {
    * 值没回到那一刻却落在默认值上时删掉键：删掉之后这个通道跟着默认走，与「恢复默认」
    * 按钮同一条规矩（见 push-model.js 的 restoredLayoutParams）。
    * @param params 正在改的那一份参数
-   * @param option 这一项（顺序项或小块的开关）
+   * @param option 这一项（顺序项、小块的开关或平铺的那一行）
    * @param value 这一刻该记的值（顺序项是逗号连起来的整串）
    * @param before 动它之前那一刻的值，同一把尺
    */
@@ -996,9 +996,10 @@ export function buildLayoutEditor(host, options) {
     return board;
   }
 
+  /** 平铺那一行的开关或数字改了一下：写回与小块同一条规矩（见 setBack） */
   function change(option, value) {
     const params = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
-    params[option.key] = value;
+    setBack(params, option, value, beforeValueOf(option));
     if (opts.onChange) opts.onChange(params);
     paint();
   }
