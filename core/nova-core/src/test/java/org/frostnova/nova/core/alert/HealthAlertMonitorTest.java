@@ -187,7 +187,7 @@ class HealthAlertMonitorTest {
 
     @Test
     @DisplayName("同级别新增异常成员的提醒包含成员、当前情况和处理建议")
-    void additionalMemberAlertIncludesCurrentSummary() {
+    void additionalMemberAlertIncludesMemberCondition() {
         probe.next = degradedMembers("A");
         monitor.check();
         assertEquals(1, received.size());
@@ -197,7 +197,21 @@ class HealthAlertMonitorTest {
 
         assertEquals(2, received.size());
         assertEquals("NovaBot 异常告警：测试探针\n新增异常成员：B（2）\n"
-                        + probe.next.summary() + "\n处理建议：" + probe.next.advice(),
+                        + "目前共 2 间连续多分钟没收到弹幕礼物、进房照常\n处理建议：" + probe.next.advice(),
+                received.get(1));
+        assertFalse(received.get(1).contains("A（1）"));
+    }
+
+    @Test
+    void additionalMemberAlertWithoutConditionDoesNotUseSummary() {
+        probe.next = degradedMembers("A");
+        monitor.check();
+        HealthStatus next = degradedMembers("A", "B");
+        probe.next = new HealthStatus(next.level(), next.summary(), next.advice(), next.reason(), next.members());
+        monitor.check();
+
+        assertEquals(2, received.size());
+        assertEquals("NovaBot 异常告警：测试探针\n新增异常成员：B（2）\n处理建议：请检查连接",
                 received.get(1));
     }
 
@@ -336,6 +350,8 @@ class HealthAlertMonitorTest {
             members.put(id, name + "（" + id + "）");
         }
         return new HealthStatus(HealthStatus.Level.DEGRADED,
-                "连续多分钟没收到弹幕礼物", "请检查连接", "", members);
+                "连续多分钟没收到弹幕礼物、进房照常：" + String.join("、", members.values()),
+                "请检查连接", "", members,
+                "目前共 " + members.size() + " 间连续多分钟没收到弹幕礼物、进房照常");
     }
 }

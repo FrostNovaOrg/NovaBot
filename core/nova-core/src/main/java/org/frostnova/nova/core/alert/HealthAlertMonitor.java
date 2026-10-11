@@ -112,7 +112,9 @@ public class HealthAlertMonitor {
             if (!added.isEmpty()) {
                 String subject = "NovaBot 异常告警：" + key;
                 alertService.alertMembers(added, subject,
-                        names -> content(memberSummary(names) + "\n" + status.summary(), status.advice()));
+                        names -> content(memberSummary(names)
+                                + (status.memberCondition().isBlank() ? "" : "\n" + status.memberCondition()),
+                                status.advice()));
                 String summary = memberSummary(added.values());
                 log.warn("{} - {}", subject, summary);
                 record(probe, new HealthStatus(status.level(), summary, status.advice()), previous);
