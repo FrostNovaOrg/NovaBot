@@ -19,7 +19,7 @@ class SetupBotSaveRaceTest {
     private static final String FIXTURE = FrontendFixture.fixture("setup-bot-save-race-fixture.mjs");
 
     @Test
-    @DisplayName("保存回包前改 Token：不算与盘上一致、重进不被盖掉；没改：照旧算已存")
+    @DisplayName("保存回包前改 Token：不算与盘上一致、重进不被盖掉；没改：照旧算已存；没存下：不算已存")
     void editDuringSaveIsNotRememberedAsSaved() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "初始设置自动保存回包前改的参数不算已存");
     }

@@ -371,6 +371,40 @@ await ask('⑥ 面板里第一个控件禁用或藏起来时，焦点落到第�
   push.closeDrawer();
 });
 
+// 故障：点了「就是它，加进来」面板还开着，挡着下面刚加进来的主播；再点一次，同一位主播进了名单两份
+await ask('⑦ 点「就是它，加进来」后面板自己关，焦点回到「＋ 添加主播」，名单里多了这一位', async () => {
+  const uid = 7130042;
+  const before = push ? push.pushEntries().filter(item => Number(item.uid) === uid).length : -1;
+  openAddStreamer();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = url => Promise.resolve({
+    status: 200,
+    json: () => Promise.resolve(String(url).endsWith('/streamer/lookup')
+      ? {success: true, uid, uname: '桩主播', roomId: 880011, face: ''}
+      : {}),
+  });
+  try {
+    const body = idNode('push-drawer-body');
+    findAll(body, '#add-uid')[0].value = String(uid);
+    findAll(body, '#add-streamer')[0].click();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const add = findAll(idNode('push-drawer-body'), 'button').find(node => node.textContent === '就是它，加进来');
+  if (!add) throw new Error('「找一下」之后没画出「就是它，加进来」');
+  add.click();
+  same({
+    '面板藏起': drawer.hidden,
+    '焦点停在': focused(),
+    '名单里这一位': push.pushEntries().filter(item => Number(item.uid) === uid).length - before,
+  }, {
+    '面板藏起': true,
+    '焦点停在': '#push-add-streamer',
+    '名单里这一位': 1,
+  }, '点「就是它，加进来」之后');
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);
