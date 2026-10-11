@@ -185,6 +185,22 @@ class HealthAlertMonitorTest {
         assertEquals("DEGRADED", events.get(0).detail().get("to"));
     }
 
+    @Test
+    @DisplayName("同级别新增异常成员的提醒包含成员、当前情况和处理建议")
+    void additionalMemberAlertIncludesCurrentSummary() {
+        probe.next = degradedMembers("A");
+        monitor.check();
+        assertEquals(1, received.size());
+
+        probe.next = degradedMembers("A", "B");
+        monitor.check();
+
+        assertEquals(2, received.size());
+        assertEquals("NovaBot 异常告警：测试探针\n新增异常成员：B（2）\n"
+                        + probe.next.summary() + "\n处理建议：" + probe.next.advice(),
+                received.get(1));
+    }
+
     // 抓的故障：部分房间恢复后又有新房间异常，仍被相同级别挡掉。
     @Test
     void memberRemovalIsSilentButNextAdditionAlerts() {
@@ -320,6 +336,6 @@ class HealthAlertMonitorTest {
             members.put(id, name + "（" + id + "）");
         }
         return new HealthStatus(HealthStatus.Level.DEGRADED,
-                "连接异常：" + String.join("、", members.values()), "请检查连接", "", members);
+                "连续多分钟没收到弹幕礼物", "请检查连接", "", members);
     }
 }
