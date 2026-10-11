@@ -1941,48 +1941,6 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 根据 uid 获取昵称
-     * @param uid uid
-     * @return 昵称
-     */
-    public Optional<String> getUnameByUid(@NonNull Long uid) {
-        try {
-            return Optional.ofNullable(getUpInfoByUid(uid).getUname());
-        } catch (Exception e) {
-            log.debug("获取 uid {} 的昵称失败: {}", uid, e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * 根据 uid 获取直播间号
-     * @param uid uid
-     * @return 直播间号
-     */
-    public Optional<Long> getRoomIdByUid(@NonNull Long uid) {
-        try {
-            return Optional.ofNullable(getUpInfoByUid(uid).getRoomId());
-        } catch (Exception e) {
-            log.debug("获取 uid {} 的直播间号失败: {}", uid, e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * 根据 uid 获取头像地址
-     * @param uid uid
-     * @return 头像地址
-     */
-    public Optional<String> getFaceByUid(@NonNull Long uid) {
-        try {
-            return Optional.ofNullable(getUpInfoByUid(uid).getFace());
-        } catch (Exception e) {
-            log.debug("获取 uid {} 的头像失败: {}", uid, e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    /**
      * 记录 HTTP 层的风控状态码
      * <p>
      * <b>按响应状态码判定，不要按日志文本 grep</b>——日志时间戳里的 {@code .412} 会大量误匹配。

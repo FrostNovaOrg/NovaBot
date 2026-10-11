@@ -10,6 +10,7 @@
 
 - 仓库首页多了英文说明，中文和英文两份顶上可以互相切换。
 - 安全说明补上：放在反向代理后面时，代理要把浏览器发来的 Host 原样送下去，不然控制台的登录和保存会被拒（「请求来源不正确」）；关于自带反代模板写法的说法也改正了。
+- 删掉了几个仓里没人调用的公开方法：网络工具 `org.frostnova.nova.core.util.HttpUtil` 的 23 个异步方法（`asyncGet`、`asyncGetJson`、`asyncGetBytes` 与全部 `asyncPost…`，以及只带地址的 `asyncGetBufferedImage(String)`；带请求头的 `asyncGetBufferedImage(String, Map)` 还在）；B 站接口工具 `org.frostnova.nova.bilibili.util.BilibiliApiUtil` 的 `getUnameByUid`、`getRoomIdByUid`、`getFaceByUid`；核心工具 `org.frostnova.nova.core.lang` 里的 `CollectionUtil.splitCollection`、`StringUtil.isNotEmpty` 和 `MathUtil.add` 的两个重载。只有自己写插件、代码里直接调用了这些方法的人才受影响：异步方法改用去掉 `async` 的同名同步方法（如 `asyncGet` → `get`、`asyncPostJson` → `postJson`，参数不变），要异步就自己放进线程池；B 站那三个改用 `getUpInfoByUid(uid)` 返回的对象取 `getUname()`、`getRoomId()`、`getFace()`：原方法出错或查不到时都回空，现在请求失败会抛异常，没有直播间时 `getRoomId()` 是 `null`，接口没给数据时三样都是 `null`，要自己接住异常并判空；`isNotEmpty` 改用 `!StringUtil.isEmpty(...)`；`MathUtil.add` 改用 `BigDecimal` 相加（原先两个参数的那个四舍五入到两位小数）；`splitCollection` 自己按大小切。配置项与行为都没变。
 
 ### 修复
 
