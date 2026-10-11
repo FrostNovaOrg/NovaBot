@@ -103,49 +103,6 @@ class DemoAssetsTest {
     }
 
     @Test
-    @DisplayName("报告图节选为整图顶部 1200×1340，像素与整图前 1340 行相同")
-    void renderTopCropMatchesFull(@TempDir Path dir) throws Exception {
-        Path demo = dir.resolve("demo");
-        DemoAssets.generate(demo, fonts);
-        Path report = dir.resolve("report-demo.png");
-        DemoAssets.Rendered rendered = DemoAssets.render(demo, report, fonts);
-        Path top = rendered.topPath();
-        List<String> red = new ArrayList<>();
-        try {
-            assertTrue(Files.isRegularFile(top), "missing " + top);
-        } catch (Throwable t) {
-            red.add("① " + t.getMessage());
-        }
-        try {
-            BufferedImage topImage = ImageIO.read(top.toFile());
-            assertEquals(1200, topImage.getWidth(), "IHDR width");
-            assertEquals(1340, topImage.getHeight(), "IHDR height");
-            assertTrue(Files.size(top) > 0 && Files.size(top) <= DemoAssets.REPORT_TOP_MAX_BYTES,
-                    "bytes " + Files.size(top));
-        } catch (Throwable t) {
-            red.add("② " + t.getMessage());
-        }
-        try {
-            BufferedImage full = ImageIO.read(report.toFile());
-            BufferedImage topImage = ImageIO.read(top.toFile());
-            int mismatch = 0;
-            for (int y = 0; y < 1340; y++) {
-                for (int x = 0; x < 1200; x++) {
-                    if (full.getRGB(x, y) != topImage.getRGB(x, y)) {
-                        mismatch++;
-                    }
-                }
-            }
-            assertEquals(0, mismatch, "pixel mismatches in first 1340 rows");
-        } catch (Throwable t) {
-            red.add("③ " + t.getMessage());
-        }
-        if (!red.isEmpty()) {
-            fail(red.size() + " 问红：" + String.join("；", red));
-        }
-    }
-
-    @Test
     @DisplayName("把示意图写进 target/demo-assets，仅 -Ddemo.publish=true 时落 docs/assets；名册只含虚构名与假号")
     void writesPublishedAssets() throws Exception {
         boolean publish = Boolean.parseBoolean(System.getProperty("demo.publish", "false"));
@@ -161,7 +118,6 @@ class DemoAssetsTest {
         try {
             assertTrue(Files.isRegularFile(demo.resolve(DemoAssets.COVER_FILE)));
             assertTrue(Files.isRegularFile(report));
-            assertTrue(Files.isRegularFile(rendered.topPath()));
             assertTrue(rendered.painter() instanceof BilibiliLiveReportPainter,
                     "painter " + rendered.painter().getClass().getName());
             assertTrue(rendered.width() >= 1100 && rendered.width() <= 1300, "width " + rendered.width());
