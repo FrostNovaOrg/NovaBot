@@ -107,7 +107,7 @@ public class BilibiliLiveRoomService {
     private final Set<Long> startupWaveRooms = ConcurrentHashMap.newKeySet();
 
     /**
-     * 首次 sync 时已启用但房间号待补全的主播 UID，补全后排进启动那一波，用过即摘。
+     * 首次 sync 时已启用但房间号待补全的主播 UID，只在仍启用且房间号待补全时保留。
      */
     private final Set<Long> pendingStartupUids = ConcurrentHashMap.newKeySet();
 
@@ -240,6 +240,11 @@ public class BilibiliLiveRoomService {
             }
             connectGate.submit(() -> connect(up));
         }
+
+        pendingStartupUids.retainAll(enabled.stream()
+                .filter(user -> user.getRoomId() == null)
+                .map(PushUser::getUid)
+                .collect(Collectors.toSet()));
 
         if (properties.getLive().isAutoDetectLiveRoomRisk() && riskDetectionStarted.compareAndSet(false, true)) {
             scheduler.scheduleAtFixedRate(this::detectRisk,
