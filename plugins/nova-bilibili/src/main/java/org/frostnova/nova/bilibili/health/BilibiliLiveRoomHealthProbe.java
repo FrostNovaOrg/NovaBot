@@ -9,6 +9,7 @@ import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -73,8 +74,13 @@ public class BilibiliLiveRoomHealthProbe implements HealthProbe {
         // 只说观测、不说成因：这里分不清没人说话、画面卡住与平台没下发。
         List<LiveStreamerInfo> quiet = liveRoomService.sourcesWithStatus(ConnectStatus.RISK);
         if (!quiet.isEmpty()) {
-            return HealthStatus.degraded(summary + "，其中 " + quiet.size()
-                    + " 间连续多分钟没收到弹幕礼物、进房照常：" + nameList(quiet), ADVICE);
+            Map<String, String> members = new LinkedHashMap<>();
+            for (LiveStreamerInfo room : quiet) {
+                String id = room.getRoomId().toString();
+                members.put(id, displayName(room));
+            }
+            return new HealthStatus(HealthStatus.Level.DEGRADED, summary + "，其中 " + quiet.size()
+                    + " 间连续多分钟没收到弹幕礼物、进房照常：" + nameList(quiet), ADVICE, "", members);
         }
 
         if (connected < managed) {
@@ -95,18 +101,21 @@ public class BilibiliLiveRoomHealthProbe implements HealthProbe {
             if (i > 0) {
                 text.append('、');
             }
-            LiveStreamerInfo one = rooms.get(i);
-            String name = one.getUname();
-            if (name == null || name.isBlank()) {
-                name = "未命名";
-            }
-            String room = one.getRoomId() == null ? "未知房间" : Long.toString(one.getRoomId());
-            text.append(name).append('（').append(room).append('）');
+            text.append(displayName(rooms.get(i)));
         }
         int rest = rooms.size() - shown;
         if (rest > 0) {
             text.append("，等 ").append(rest).append(" 个");
         }
         return text.toString();
+    }
+
+    private static String displayName(LiveStreamerInfo one) {
+        String name = one.getUname();
+        if (name == null || name.isBlank()) {
+            name = "未命名";
+        }
+        String room = one.getRoomId() == null ? "未知房间" : Long.toString(one.getRoomId());
+        return name + '（' + room + '）';
     }
 }

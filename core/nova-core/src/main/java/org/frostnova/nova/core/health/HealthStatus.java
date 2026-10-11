@@ -1,5 +1,9 @@
 package org.frostnova.nova.core.health;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * 健康状况
  *
@@ -9,8 +13,15 @@ package org.frostnova.nova.core.health;
  *               而不是只说「异常」——排障成本高正是本项目最主要的可用性短板
  * @param reason 给界面选待办标题用的原因码，空串表示没有结构化原因。
  *               取值 {@code unconfigured}／{@code unreachable}／{@code account}，由探针填写
+ * @param members 本次检查中的异常成员，键为稳定标识，值为可点名的文字；默认空表
  */
-public record HealthStatus(Level level, String summary, String advice, String reason) {
+public record HealthStatus(Level level, String summary, String advice, String reason,
+                           Map<String, String> members) {
+    /** 保留不提供成员的构造方式。 */
+    public HealthStatus(Level level, String summary, String advice, String reason) {
+        this(level, summary, advice, reason, Map.of());
+    }
+
     /**
      * 不带原因码的构造：既有三参调用点不必改
      * @param level 严重程度
@@ -22,6 +33,8 @@ public record HealthStatus(Level level, String summary, String advice, String re
     }
 
     public HealthStatus {
+        members = members == null || members.isEmpty() ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(members));
         if (advice == null) {
             advice = "";
         }
