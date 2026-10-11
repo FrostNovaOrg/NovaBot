@@ -620,37 +620,7 @@ public class ConfigUiController {
      * @return 空的 ObjectProvider
      */
     private static ObjectProvider<ConfigurationGroupContributor> noGroupContributors() {
-        return new ObjectProvider<>() {
-            @Override
-            public ConfigurationGroupContributor getObject() {
-                throw new NoSuchBeanDefinitionException(ConfigurationGroupContributor.class);
-            }
-
-            @Override
-            public ConfigurationGroupContributor getObject(Object... args) {
-                throw new NoSuchBeanDefinitionException(ConfigurationGroupContributor.class);
-            }
-
-            @Override
-            public ConfigurationGroupContributor getIfAvailable() {
-                return null;
-            }
-
-            @Override
-            public ConfigurationGroupContributor getIfUnique() {
-                return null;
-            }
-
-            @Override
-            public Stream<ConfigurationGroupContributor> stream() {
-                return Stream.empty();
-            }
-
-            @Override
-            public Stream<ConfigurationGroupContributor> orderedStream() {
-                return Stream.empty();
-            }
-        };
+        return emptyProvider(ConfigurationGroupContributor.class);
     }
 
     /**
@@ -658,37 +628,7 @@ public class ConfigUiController {
      * @return 空的 ObjectProvider
      */
     private static ObjectProvider<ConsoleVocabulary> noVocabularies() {
-        return new ObjectProvider<>() {
-            @Override
-            public ConsoleVocabulary getObject() {
-                throw new NoSuchBeanDefinitionException(ConsoleVocabulary.class);
-            }
-
-            @Override
-            public ConsoleVocabulary getObject(Object... args) {
-                throw new NoSuchBeanDefinitionException(ConsoleVocabulary.class);
-            }
-
-            @Override
-            public ConsoleVocabulary getIfAvailable() {
-                return null;
-            }
-
-            @Override
-            public ConsoleVocabulary getIfUnique() {
-                return null;
-            }
-
-            @Override
-            public Stream<ConsoleVocabulary> stream() {
-                return Stream.empty();
-            }
-
-            @Override
-            public Stream<ConsoleVocabulary> orderedStream() {
-                return Stream.empty();
-            }
-        };
+        return emptyProvider(ConsoleVocabulary.class);
     }
 
     /**
@@ -696,37 +636,7 @@ public class ConfigUiController {
      * @return 空的 ObjectProvider
      */
     private static ObjectProvider<BotConnectionContributor> noBotConnectionContributors() {
-        return new ObjectProvider<>() {
-            @Override
-            public BotConnectionContributor getObject() {
-                throw new NoSuchBeanDefinitionException(BotConnectionContributor.class);
-            }
-
-            @Override
-            public BotConnectionContributor getObject(Object... args) {
-                throw new NoSuchBeanDefinitionException(BotConnectionContributor.class);
-            }
-
-            @Override
-            public BotConnectionContributor getIfAvailable() {
-                return null;
-            }
-
-            @Override
-            public BotConnectionContributor getIfUnique() {
-                return null;
-            }
-
-            @Override
-            public Stream<BotConnectionContributor> stream() {
-                return Stream.empty();
-            }
-
-            @Override
-            public Stream<BotConnectionContributor> orderedStream() {
-                return Stream.empty();
-            }
-        };
+        return emptyProvider(BotConnectionContributor.class);
     }
 
     /**
@@ -734,37 +644,7 @@ public class ConfigUiController {
      * @return 空的 ObjectProvider
      */
     private static ObjectProvider<ConfigurationKeyAliasContributor> noAliasContributors() {
-        return new ObjectProvider<>() {
-            @Override
-            public ConfigurationKeyAliasContributor getObject() {
-                throw new NoSuchBeanDefinitionException(ConfigurationKeyAliasContributor.class);
-            }
-
-            @Override
-            public ConfigurationKeyAliasContributor getObject(Object... args) {
-                throw new NoSuchBeanDefinitionException(ConfigurationKeyAliasContributor.class);
-            }
-
-            @Override
-            public ConfigurationKeyAliasContributor getIfAvailable() {
-                return null;
-            }
-
-            @Override
-            public ConfigurationKeyAliasContributor getIfUnique() {
-                return null;
-            }
-
-            @Override
-            public Stream<ConfigurationKeyAliasContributor> stream() {
-                return Stream.empty();
-            }
-
-            @Override
-            public Stream<ConfigurationKeyAliasContributor> orderedStream() {
-                return Stream.empty();
-            }
-        };
+        return emptyProvider(ConfigurationKeyAliasContributor.class);
     }
 
     /**
@@ -778,34 +658,38 @@ public class ConfigUiController {
     }
 
     private static ObjectProvider<AlertChannel> noAlertChannels() {
+        return emptyProvider(AlertChannel.class);
+    }
+
+    private static <T> ObjectProvider<T> emptyProvider(Class<T> type) {
         return new ObjectProvider<>() {
             @Override
-            public AlertChannel getObject() {
-                throw new NoSuchBeanDefinitionException(AlertChannel.class);
+            public T getObject() {
+                throw new NoSuchBeanDefinitionException(type);
             }
 
             @Override
-            public AlertChannel getObject(Object... args) {
-                throw new NoSuchBeanDefinitionException(AlertChannel.class);
+            public T getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(type);
             }
 
             @Override
-            public AlertChannel getIfAvailable() {
+            public T getIfAvailable() {
                 return null;
             }
 
             @Override
-            public AlertChannel getIfUnique() {
+            public T getIfUnique() {
                 return null;
             }
 
             @Override
-            public Stream<AlertChannel> stream() {
+            public Stream<T> stream() {
                 return Stream.empty();
             }
 
             @Override
-            public Stream<AlertChannel> orderedStream() {
+            public Stream<T> orderedStream() {
                 return Stream.empty();
             }
         };
