@@ -11,7 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -48,6 +51,9 @@ public class HealthAlertMonitor {
      */
     private final Map<String, HealthStatus.Level> lastLevels = new ConcurrentHashMap<>();
 
+    /** 各探针上一次检查中的异常成员标识。 */
+    private final Map<String, Set<String>> lastMembers = new ConcurrentHashMap<>();
+
     @Autowired
     public HealthAlertMonitor(ObjectProvider<HealthProbe> probes, AlertService alertService,
                               TimelineWriter timeline) {
@@ -77,8 +83,10 @@ public class HealthAlertMonitor {
         HealthStatus status = probe.check();
         String key = probe.name();
         HealthStatus.Level previous = lastLevels.put(key, status.level());
+        Set<String> previousMembers = lastMembers.put(key, status.members().keySet());
 
         if (status.level() == HealthStatus.Level.OK) {
+            lastMembers.remove(key);
             if (previous != null && previous != HealthStatus.Level.OK) {
                 // 收敛记录按级别各留一份，恢复时得全部清掉：漏掉哪一份，
                 // 恢复后再变回那个级别就会被旧记录压掉，错过第二次告警
@@ -95,16 +103,52 @@ public class HealthAlertMonitor {
 
         // 首次检查即为异常，或状态由正常转为异常、由降级恶化为不可用，均应告警
         if (previous == status.level()) {
+            Map<String, String> added = new LinkedHashMap<>();
+            status.members().forEach((id, name) -> {
+                if (previousMembers == null || !previousMembers.contains(id)) {
+                    added.put(memberKey(key, id), name);
+                }
+            });
+            if (!added.isEmpty()) {
+                String subject = "NovaBot 异常告警：" + key;
+                alertService.alertMembers(added, subject,
+                        names -> content(memberSummary(names), status.advice()));
+                String summary = memberSummary(added.values());
+                log.warn("{} - {}", subject, summary);
+                record(probe, new HealthStatus(status.level(), summary, status.advice()), previous);
+            }
             return;
         }
 
+        if (previous == HealthStatus.Level.OK) {
+            // 新一轮异常要配对新一条恢复通知，不能沿用上一轮的恢复收敛记录。
+            alertService.resolve(key + ":恢复");
+        }
+
         String subject = "NovaBot 异常告警：" + key;
-        String content = status.summary()
-                + (status.advice().isBlank() ? "" : "\n处理建议：" + status.advice());
+        String content = content(status.summary(), status.advice());
 
         alertService.alert(alertKey(key, status.level()), subject, content);
+        if (!status.members().isEmpty()) {
+            alertService.rememberMembers(status.members().keySet().stream()
+                    .map(id -> memberKey(key, id)).toList());
+        }
         log.warn("{} - {}", subject, status.summary());
         record(probe, status, previous);
+    }
+
+    private static String content(String summary, String advice) {
+        return summary + (advice.isBlank() ? "" : "\n处理建议：" + advice);
+    }
+
+    private static String memberKey(String probeName, String id) {
+        return probeName + ":member:" + id;
+    }
+
+    private static String memberSummary(Collection<String> names) {
+        String text = "新增异常成员：" + String.join("、", names.stream().limit(5).toList());
+        int rest = names.size() - 5;
+        return rest > 0 ? text + "，等 " + rest + " 个" : text;
     }
 
     /**

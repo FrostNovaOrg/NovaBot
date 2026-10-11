@@ -21,6 +21,7 @@ import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -83,6 +84,28 @@ class BilibiliLiveRoomHealthProbeTest {
         assertTrue(summary.contains("戊"), summary);
         assertTrue(summary.contains("等 1 个"), summary);
         assertFalse(summary.contains("己"), summary);
+    }
+
+    // 抓的故障：两间同时异常时没有稳定成员标识，监控器无法识别新增房间。
+    @Test
+    void riskMembersMatchRoomsFromTheCheck() throws Exception {
+        HealthStatus status = probeWith(
+                room("星见", 1001L, ConnectStatus.RISK),
+                room("月见", 1002L, ConnectStatus.RISK),
+                room("日见", 1003L, ConnectStatus.CONNECTED)).check();
+        assertEquals(HealthStatus.Level.DEGRADED, status.level());
+        assertEquals(Map.of("1001", "星见（1001）", "1002", "月见（1002）"), status.members());
+    }
+
+    // 抓的故障：没有房间异常时仍残留成员，导致误报新增主播。
+    @Test
+    void noRiskHasNoMembers() throws Exception {
+        HealthStatus connected = probeWith(room("星见", 1001L, ConnectStatus.CONNECTED)).check();
+        HealthStatus connecting = probeWith(room("月见", 1002L, ConnectStatus.CONNECTING)).check();
+        assertEquals(HealthStatus.Level.OK, connected.level());
+        assertTrue(connected.members().isEmpty());
+        assertEquals(HealthStatus.Level.DEGRADED, connecting.level());
+        assertTrue(connecting.members().isEmpty());
     }
 
     private static BilibiliLiveRoomHealthProbe probeWith(BilibiliLiveRoomConnector... connectors) throws Exception {

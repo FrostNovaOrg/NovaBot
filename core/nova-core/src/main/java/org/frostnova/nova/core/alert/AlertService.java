@@ -16,10 +16,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -198,6 +201,34 @@ public class AlertService {
             return;
         }
 
+        send(key, subject, content);
+    }
+
+    /** 同一条通知中的成员分别收敛，正文只列仍需提醒的成员。 */
+    void alertMembers(Map<String, String> members, String subject,
+                      Function<Collection<String>, String> content) {
+        if (!properties.getAlert().isEnabled()) {
+            return;
+        }
+        Map<String, String> eligible = new LinkedHashMap<>();
+        members.forEach((key, name) -> {
+            if (shouldSend(key)) {
+                eligible.put(key, name);
+            }
+        });
+        if (!eligible.isEmpty()) {
+            send(String.join(",", eligible.keySet()), subject, content.apply(eligible.values()));
+        }
+    }
+
+    /** 级别告警已点名的成员也纳入逐成员收敛。 */
+    void rememberMembers(Collection<String> keys) {
+        if (properties.getAlert().isEnabled()) {
+            keys.forEach(this::shouldSend);
+        }
+    }
+
+    private void send(String key, String subject, String content) {
         Instant now = Instant.now();
         Delivery delivery = deliver(new PendingAlert(key, subject, content, now, 0), content);
 

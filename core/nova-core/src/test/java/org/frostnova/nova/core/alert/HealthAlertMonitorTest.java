@@ -4,6 +4,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,9 +12,12 @@ import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -30,6 +34,8 @@ class HealthAlertMonitorTest {
 
     private final List<String> received = new ArrayList<>();
 
+    private final List<TimelineEvent> events = new ArrayList<>();
+
     private ScriptedProbe probe;
 
     private HealthAlertMonitor monitor;
@@ -42,6 +48,7 @@ class HealthAlertMonitorTest {
         // 断言才是在量「收敛压没压掉」，而不是量窗口过没过
         properties.getAlert().setConvergenceInterval(86400);
         received.clear();
+        events.clear();
 
         probe = new ScriptedProbe();
 
@@ -73,7 +80,7 @@ class HealthAlertMonitorTest {
         when(channels.orderedStream()).thenAnswer(invocation -> List.of(channel).stream());
 
         AlertService alertService = new AlertService(properties, channels, TimelineWriter.NONE);
-        monitor = new HealthAlertMonitor(probes, alertService, TimelineWriter.NONE);
+        monitor = new HealthAlertMonitor(probes, alertService, events::add);
     }
 
     /**
@@ -154,5 +161,165 @@ class HealthAlertMonitorTest {
 
         assertEquals(1, alertsContaining("又一次连续失败"),
                 "恢复后再坏必须照常告警，不被恢复前的收敛记录压掉；实际: " + received);
+    }
+
+    // 抓的故障：已有一间异常时第二间异常，同级告警漏掉新主播。
+    @Test
+    void sameLevelAlertsOnlyNewMember() {
+        probe.next = degradedMembers("A");
+        monitor.check();
+        received.clear();
+        events.clear();
+
+        probe.next = degradedMembers("A", "B");
+        monitor.check();
+
+        assertEquals(1, received.size());
+        assertTrue(received.get(0).contains("B（2）"));
+        assertFalse(received.get(0).contains("A（1）"));
+        assertTrue(received.get(0).contains("处理建议：请检查连接"));
+        assertEquals(1, events.size());
+        assertTrue(events.get(0).text().contains("B（2）"));
+        assertFalse(events.get(0).text().contains("A（1）"));
+        assertEquals("DEGRADED", events.get(0).detail().get("from"));
+        assertEquals("DEGRADED", events.get(0).detail().get("to"));
+    }
+
+    // 抓的故障：部分房间恢复后又有新房间异常，仍被相同级别挡掉。
+    @Test
+    void memberRemovalIsSilentButNextAdditionAlerts() {
+        probe.next = degradedMembers("A", "B");
+        monitor.check();
+        received.clear();
+        events.clear();
+
+        probe.next = degradedMembers("B");
+        monitor.check();
+        assertTrue(received.isEmpty());
+        assertTrue(events.isEmpty());
+
+        probe.next = degradedMembers("B", "C");
+        monitor.check();
+        assertEquals(1, received.size());
+        assertTrue(received.get(0).contains("C（3）"));
+        assertFalse(received.get(0).contains("B（2）"));
+        assertFalse(received.get(0).contains("A（1）"));
+        assertEquals(1, events.size());
+    }
+
+    // 抓的故障：没有成员信息的其他探针，仅摘要变化就反复提醒。
+    @Test
+    void summaryChangeWithoutMembersIsSilent() {
+        probe.next = HealthStatus.degraded("连接尚未就绪", "请检查连接");
+        monitor.check();
+        received.clear();
+        events.clear();
+        probe.next = HealthStatus.degraded("部分连接已就绪", "请检查连接");
+        monitor.check();
+        assertTrue(received.isEmpty());
+        assertTrue(events.isEmpty());
+        assertTrue(probe.next.members().isEmpty());
+    }
+
+    // 抓的故障：一小时内再坏再好，第二次恢复被恢复收敛键吞掉。
+    @Test
+    void everyRecoveryWithinAnHourAlerts() {
+        properties.getAlert().setConvergenceInterval(3600);
+        monitor.check();
+        for (int i = 0; i < 2; i++) {
+            probe.next = HealthStatus.degraded("连接异常", "请检查连接");
+            monitor.check();
+            probe.next = HealthStatus.ok("一切正常");
+            monitor.check();
+        }
+        assertEquals(2, alertsContaining("连接异常"));
+        assertEquals(2, alertsContaining("NovaBot 状态恢复"));
+        assertEquals(4, received.size());
+        assertEquals(4, events.size());
+    }
+
+    // 抓的故障：按整批成员收敛时，旧房间会压掉别的新房间或被重复点名。
+    @Test
+    void membersConvergeIndividuallyAndBatchIntoOneAlert() {
+        properties.getAlert().setConvergenceInterval(3600);
+        probe.next = degradedMembers("A");
+        monitor.check();
+        probe.next = degradedMembers("A", "B", "C");
+        monitor.check();
+        assertEquals(2, received.size());
+        assertTrue(received.get(1).contains("B（2）"));
+        assertTrue(received.get(1).contains("C（3）"));
+        assertFalse(received.get(1).contains("A（1）"));
+
+        probe.next = degradedMembers("C");
+        monitor.check();
+        probe.next = degradedMembers("A", "B", "C", "D");
+        monitor.check();
+        assertEquals(3, received.size());
+        assertTrue(received.get(2).contains("D（4）"));
+        assertFalse(received.get(2).contains("A（1）"));
+        assertFalse(received.get(2).contains("B（2）"));
+        assertFalse(received.get(2).contains("C（3）"));
+    }
+
+    // 抓的故障：尚未连接已是降级时，首间房间出现无弹幕礼物也没有提醒。
+    @Test
+    void riskMemberAfterConnectionDegradedStillAlerts() {
+        probe.next = HealthStatus.degraded("部分连接尚未就绪", "请检查连接");
+        monitor.check();
+        probe.next = degradedMembers("A");
+        monitor.check();
+        assertEquals(2, received.size());
+        assertTrue(received.get(1).contains("A（1）"));
+        probe.next = new HealthStatus(HealthStatus.Level.DEGRADED,
+                "主播已更名", "请检查连接", "", Map.of("1", "新名字（1）"));
+        monitor.check();
+        assertEquals(2, received.size(), "房间标识未变，改名不应被认成新增房间");
+    }
+
+    // 抓的故障：新增六间房间时正文点名过多，或漏掉其余房间数量。
+    @Test
+    void additionalAlertNamesAtMostFiveMembers() {
+        probe.next = degradedMembers("A");
+        monitor.check();
+        probe.next = degradedMembers("A", "B", "C", "D", "E", "F", "G");
+        monitor.check();
+        assertEquals(2, received.size());
+        String text = received.get(1);
+        assertTrue(text.contains("B（2）"));
+        assertTrue(text.contains("F（6）"));
+        assertTrue(text.contains("等 1 个"));
+        assertFalse(text.contains("A（1）"));
+        assertFalse(text.contains("G（7）"));
+    }
+
+    // 抓的故障：全部恢复后仍记着旧成员，影响下一轮异常与恢复通知。
+    @Test
+    void allMembersRecoverAndNextEpisodeAlertsNormally() {
+        monitor.check();
+        probe.next = degradedMembers("A");
+        monitor.check();
+        probe.next = HealthStatus.ok("一切正常");
+        monitor.check();
+        probe.next = degradedMembers("A");
+        monitor.check();
+        probe.next = degradedMembers("A", "B");
+        monitor.check();
+        probe.next = HealthStatus.ok("一切正常");
+        monitor.check();
+        assertEquals(5, received.size());
+        assertEquals(2, alertsContaining("NovaBot 状态恢复"));
+        assertTrue(received.get(3).contains("B（2）"));
+        assertFalse(received.get(3).contains("A（1）"));
+    }
+
+    private static HealthStatus degradedMembers(String... names) {
+        Map<String, String> members = new LinkedHashMap<>();
+        for (String name : names) {
+            String id = Integer.toString(name.charAt(0) - 'A' + 1);
+            members.put(id, name + "（" + id + "）");
+        }
+        return new HealthStatus(HealthStatus.Level.DEGRADED,
+                "连接异常：" + String.join("、", members.values()), "请检查连接", "", members);
     }
 }
