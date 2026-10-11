@@ -55,6 +55,17 @@ function note(kind, text) {
   return box;
 }
 
+/**
+ * 平台清单没取到时那句话
+ *
+ * 画出来的与「下一步」拦人时说的是同一句：两处各写一份的话，看到的提示与拦下来的理由
+ * 会慢慢对不上，而屏幕上不会有任何异常
+ * @param reason 没取到的原因
+ */
+function platformsFailedText(reason) {
+  return '直播平台清单没取到：' + reason + '。刷新页面再试，或者点「先不加主播」先跳过。';
+}
+
 function report(box, res) {
   box.textContent = res.message || (res.success ? '好了' : '没能办成');
   box.className = 'su-r ' + (res.success ? 'ok' : 'err');
@@ -123,8 +134,11 @@ export function render(host, ctx) {
   if (store.platforms == null) {
     // 清单还在路上：说「正在载入」，别说「没装插件」——首屏进向导时这一步先画、
     // /platforms 后到，说错了的话使用者会去装一个其实已经装了的插件。
+    // 取失败时话要换成「没取到、可以怎么办」：挂在「正在载入」上的人会一直等下去。
     // 回话那块跟着画出来：清单没到时「下一步」拦人，理由要写在这里
-    host.appendChild(note('', '正在载入直播平台清单…'));
+    host.appendChild(store.platformsError
+      ? note('warn', platformsFailedText(store.platformsError))
+      : note('', '正在载入直播平台清单…'));
     host.appendChild(result);
     return;
   }
@@ -297,7 +311,9 @@ export async function next(ctx) {
   if (store.platforms == null) {
     // 清单还没到：既不放行也不当没装——放行的话这一步什么都没存就过了，
     // 当没装的话装着插件的人会被白白放去配下一步。拦下并说清在等什么
-    stop('直播平台清单还在载入，稍等一下再试');
+    //（取失败时说「没取到、可以怎么办」，与画出来的那一句同一句）
+    stop(store.platformsError ? platformsFailedText(store.platformsError)
+      : '直播平台清单还在载入，稍等一下再试');
     return false;
   }
   if (!store.platforms.length) {

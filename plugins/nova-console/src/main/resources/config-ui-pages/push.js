@@ -1519,9 +1519,25 @@ function sectionSession(host, user, target, session) {
 let drawerOpener = null;
 
 /**
+ * 面板正文里头一个能用的控件
+ *
+ * 禁用的、藏着的跳过：焦点落到它们身上等于没落，只用键盘的人还是要先按好几下 Tab
+ * 才摸得到能用的那一个。一个能用的都没有时由调用方回落到关闭钮
+ * @param body 面板正文
+ * @return {Element|null} 头一个能用的控件
+ */
+function firstUsable(body) {
+  for (const node of body.querySelectorAll('input, select, textarea, button, a[href]')) {
+    if (node.disabled || node.hidden || (node.style && node.style.display === 'none')) continue;
+    return node;
+  }
+  return null;
+}
+
+/**
  * 摊开一个只问一件事的面板
  *
- * 先显示、再把焦点放到正文里第一个控件上：面板还藏着时聚焦会落空，焦点留在打开它的按钮上。
+ * 先显示、再把焦点放到正文里第一个能用的控件上：面板还藏着时聚焦会落空，焦点留在打开它的按钮上。
  * 面板开着时再摊一份（如「刷新」名单）只换内容，打开它的仍是最早那一个。
  * @param title 标题
  * @param lead 一句说明
@@ -1536,7 +1552,7 @@ export function openDrawer(title, lead, build) {
   body.innerHTML = '';
   build(body);
   drawer.hidden = false;
-  const first = body.querySelector('input, select, textarea, button, a[href]') || $('#push-drawer-close');
+  const first = firstUsable(body) || $('#push-drawer-close');
   first.focus();
 }
 

@@ -15,12 +15,16 @@
  * ⑥再取一趟再叫一声（重复通知不碍事，照画就是）。①—⑥改前全红：那会儿
  * notePlatformsArrived 还不存在，load 里也没有这一声。
  *
+ * ⑦量的是清单那一趟取失败：记下原因、清单保持没到，也照样叫这一声——
+ * 向导那一步要靠它把「正在载入」换成「没取到、可以怎么办」。这一格先红后绿。
+ *
  * 由 SetupPlatformsLateTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {CLEAR, defaultValue} from '../../../main/resources/config-ui/settings-model.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 
@@ -141,12 +145,17 @@ const noteSpy = () => {
 };
 
 const mainSrc = readFileSync(join(ui, 'main.js'), 'utf8');
+// 平台清单那一趟的成与败由各格自己定：失败时 load 要记下原因、照样叫向导一声
+let platformsFails = '';
 async function api(path) {
   if (path === '/schema') return {groups: [], ungrouped: []};
   if (path === '/values') return {values: {}, legacy: {}, locked: {}, fontTables: {}};
   if (path === '/status') return {configPath: '', senders: []};
   if (path === '/handlers') return {handlers: []};
-  if (path === '/platforms') return {platforms: ['bilibili']};
+  if (path === '/platforms') {
+    if (platformsFails) throw new Error(platformsFails);
+    return {platforms: ['bilibili']};
+  }
   if (path === '/vocab') return {terms: {}};
   if (path === '/alert/channels') return {channels: []};
   return {};
@@ -158,9 +167,9 @@ try {
   load = loadAsyncFn(mainSrc, 'function load(',
     ['say', 'api', 'store', 'renderGeneral', 'parseHash', 'focusCard', 'reloadChangeSources',
       'renderStatus', 'renderConfigPath', 'refreshPages', 'refreshHome', 'fillBotForms',
-      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived'],
+      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived', 'CLEAR', 'defaultValue'],
     [noop, api, store, noop, () => ({name: '', card: ''}), noop, async () => true,
-      noop, noop, noop, noop, noop, noop, noop, noteSpy],
+      noop, noop, noop, noop, noop, noop, noop, noteSpy, CLEAR, defaultValue],
     'how');
 } catch (err) {
   failures.push('切 load 就抛了：' + err.message);
@@ -193,6 +202,32 @@ try {
   cell6 = 'error:' + e.message;
 }
 eq(JSON.parse(cell6), {'两趟一共通知了几次': 2}, '⑥ 再取一趟再叫一声，向导照画就是');
+
+// ---------- ⑦ 清单那一趟取失败：记下原因、照样叫这一声 ----------
+// 病：/platforms 那一趟失败时整批载入全废，向导那一步没人叫、停在「正在载入」——
+// 清单没取到这件事没人告诉他，也不知道可以刷新再试或先跳过
+let cell7 = '没跑';
+try {
+  platformsFails = '网络不通';
+  notified = 0;
+  platformsAtCall.length = 0;
+  store.platforms = null;
+  store.platformsError = '';
+  if (load) await load();
+  cell7 = JSON.stringify({
+    '叫了这一声吗': notified,
+    '清单还是没到吗': store.platforms === null ? '(没到)' : store.platforms,
+    '记下的原因是': store.platformsError,
+  });
+  platformsFails = '';
+} catch (e) {
+  cell7 = 'error:' + e.message;
+}
+eq(JSON.parse(cell7), {
+  '叫了这一声吗': 1,
+  '清单还是没到吗': '(没到)',
+  '记下的原因是': '网络不通',
+}, '⑦ 清单那一趟取失败：记下原因、清单保持没到，也照样叫这一声');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

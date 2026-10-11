@@ -15,6 +15,9 @@
  * 有货照旧画平台下拉、空清单照旧放行、没人时照旧拦「先填」。①④先红后绿，
  * ②③⑤⑥改前本来就是绿。
  *
+ * ⑦量的是清单取失败那一档：说清「没取到、可以怎么办」，不再说「正在载入」，
+ * 「下一步」拦下用的是同一句。这一格先红后绿。
+ *
  * 由 SetupStreamerPlatformsTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
@@ -126,19 +129,31 @@ try {
     [el, draft, () => el('div')]);
   const stop = cutFn('function stop(', [], []);
   const saveStreamerCalls = [];
+  // 清单没取到时那一句由产品码自己拼，画出来的与「下一步」拦人时说的是同一句。
+  // 改前还没有这个小件，槽位先占上、给 null
+  let platformsFailedText = null;
+  try {
+    platformsFailedText = cutFn('function platformsFailedText(', [], []);
+  } catch (e) {
+    platformsFailedText = null;
+  }
   render = cutFn('export function render(',
-    ['el', 'esc', 'note', 'field', 'STREAMER_INPUT_HINT', 'store', 'draft', 'paintFound', 'loadOptions'],
-    [el, esc, note, field, STREAMER_INPUT_HINT, store, draft, paintFound, async () => {}]);
+    ['el', 'esc', 'note', 'field', 'STREAMER_INPUT_HINT', 'store', 'draft', 'paintFound', 'loadOptions',
+      'platformsFailedText'],
+    [el, esc, note, field, STREAMER_INPUT_HINT, store, draft, paintFound, async () => {},
+      platformsFailedText]);
   next = cutFn('export async function next(',
-    ['store', 'draft', 'STREAMER_INPUT_HINT', 'stop', 'saveStreamer'],
-    [store, draft, STREAMER_INPUT_HINT, stop, () => { saveStreamerCalls.push(1); return true; }]);
+    ['store', 'draft', 'STREAMER_INPUT_HINT', 'stop', 'saveStreamer', 'platformsFailedText'],
+    [store, draft, STREAMER_INPUT_HINT, stop, () => { saveStreamerCalls.push(1); return true; },
+      platformsFailedText]);
 } catch (err) {
   failures.push('切 render／next 就抛了：' + err.message);
 }
 
-/** 开一格：平台清单换成 platforms，回话块、草稿都归位 */
-function openCell(platforms) {
+/** 开一格：平台清单换成 platforms（没取到时带上原因），回话块、草稿都归位 */
+function openCell(platforms, platformsError) {
   store.platforms = platforms;
+  store.platformsError = platformsError || '';
   draft.streamer = null;
   draft.targets = [];
   globalThis.result = null;
@@ -262,6 +277,36 @@ eq(JSON.parse(cell6), {
   '放行了吗': false,
   '说的是先填吗': true,
 }, '⑥ 对照：有平台但没查到人，照旧拦下并说「先填」');
+
+// ---------- ⑦ 清单没取到：说清没取到与出路，「下一步」拦下说的是同一句 ----------
+// 病：/platforms 那一趟失败时这一步还挂着「正在载入直播平台清单…」，人一直等下去，
+// 不知道可以刷新页面再试、或者点「先不加主播」先跳过。「下一步」也只说「还在载入」
+let cell7 = '没跑';
+try {
+  const host = openCell(null, '网络不通');
+  render(host, {});
+  const note = platformNote(host);
+  const passed = await next();
+  cell7 = JSON.stringify({
+    '画的那句话是什么': note ? note.textContent : '(没有)',
+    '当警告说吗': note ? String(note.className).includes('warn') : null,
+    '还在说正在载入吗': note ? note.textContent.includes('正在载入') : null,
+    '放行了吗': passed,
+    '回话说什么': globalThis.result ? globalThis.result.textContent : '(没有回话块)',
+    '两处说的是同一句吗': note && globalThis.result
+      ? note.textContent === globalThis.result.textContent : null,
+  });
+} catch (e) {
+  cell7 = 'error:' + e.message;
+}
+eq(JSON.parse(cell7), {
+  '画的那句话是什么': '直播平台清单没取到：网络不通。刷新页面再试，或者点「先不加主播」先跳过。',
+  '当警告说吗': true,
+  '还在说正在载入吗': false,
+  '放行了吗': false,
+  '回话说什么': '直播平台清单没取到：网络不通。刷新页面再试，或者点「先不加主播」先跳过。',
+  '两处说的是同一句吗': true,
+}, '⑦ 清单没取到：说清没取到与出路，「下一步」拦下说的是同一句');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
