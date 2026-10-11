@@ -22,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 「本会话自己的时段」。回包一到改动条说存好了，再点保存也不发后面那一档。
  * 它从没进过状态文件，刷新页面就退回「跟全局」。
  * <p>
+ * 另一种：收入可见、静音时段、命令开关点了保存，回包前又改回载入时的值。服务端存的是
+ * 发出去的那一份，屏上却没了改动提示，「改回去」悄悄丢了。
+ * <p>
  * 夹具真跑：假 DOM 与假 fetch 之外，静音那几档的点选与 save 用的都是产品码那一份，
  * 回包放不放行由夹具攥着。假接口把 /state/ 的写口真的记进自己那份状态。
  * <p>
@@ -34,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class SessionSavePendingEditTest {
 
     @Test
-    @DisplayName("回包之前又改静音档位：这一档还在，下次保存发出去")
+    @DisplayName("回包之前又改的档位、改回的原值：都还是草稿，下次保存发出去")
     void quietEditDuringSaveStaysUnsaved() throws IOException, InterruptedException {
         Path fixture = Path.of("src", "test", "resources", "frontend",
                 "session-save-pending-edit-fixture.mjs").toAbsolutePath();
