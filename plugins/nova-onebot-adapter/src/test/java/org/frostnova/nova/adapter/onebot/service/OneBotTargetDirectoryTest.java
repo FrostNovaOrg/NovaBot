@@ -15,10 +15,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -229,6 +236,47 @@ class OneBotTargetDirectoryTest {
         only(true);
 
         verify(http, times(2)).getGroupList(any(), any());
+    }
+
+    @Test
+    @DisplayName("换号不等待在途拉取, 旧号回包不写回缓存")
+    void invalidationDuringFetchDoesNotCacheOldAccount() throws Exception {
+        CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        when(http.getGroupList(any(), any())).thenAnswer(invocation -> {
+            fetchStarted.countDown();
+            assertTrue(releaseFetch.await(10, TimeUnit.SECONDS), "旧号拉取应被放行");
+            return groupRows();
+        }).thenReturn(JSON.parseArray("[{\"group_id\":20000002,\"group_name\":\"新号的群\"}]"));
+        when(http.getFriendList(any(), any())).thenReturn(friendRows(),
+                JSON.parseArray("[{\"user_id\":20000004,\"nickname\":\"新号的好友\"}]"));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<OneBotTargetDirectory.Snapshot> inFlight = executor.submit(() -> only(false));
+            assertTrue(fetchStarted.await(5, TimeUnit.SECONDS), "先等旧号拉取开始");
+
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> directory.invalidate(SENDER),
+                    "作废缓存不能等待尚未放行的拉取");
+            releaseFetch.countDown();
+
+            OneBotTargetDirectory.Snapshot old = inFlight.get(5, TimeUnit.SECONDS);
+            assertEquals(10000002L, old.groups().get(0).num(), "原调用方仍能拿到旧号回包");
+            assertEquals(10000004L, old.friends().get(0).num());
+
+            OneBotTargetDirectory.Snapshot fresh = only(false);
+            verify(http, times(2)).getGroupList(any(), any());
+            verify(http, times(2)).getFriendList(any(), any());
+            assertEquals(20000002L, fresh.groups().get(0).num(), "换号后首次查询必须现拉新号名单");
+            assertEquals(20000004L, fresh.friends().get(0).num());
+            assertSame(fresh, only(false), "新号名单照常缓存");
+            verify(http, times(2)).getGroupList(any(), any());
+            verify(http, times(2)).getFriendList(any(), any());
+        } finally {
+            releaseFetch.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "拉取线程应已结束");
+        }
     }
 
     /**

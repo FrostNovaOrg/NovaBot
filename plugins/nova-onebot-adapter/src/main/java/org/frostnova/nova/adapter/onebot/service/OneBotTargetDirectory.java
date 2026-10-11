@@ -60,9 +60,11 @@ public class OneBotTargetDirectory {
     private final Clock clock;
 
     /**
-     * 推送平台名到该平台名单的映射
+     * 推送平台名到该平台缓存状态的映射，作废时保留代数以识别旧号的在途拉取
      */
-    private final Map<String, Snapshot> snapshots = new ConcurrentHashMap<>();
+    private final Map<String, CacheEntry> snapshots = new ConcurrentHashMap<>();
+
+    private record CacheEntry(long generation, Snapshot snapshot) {}
 
     @Autowired
     public OneBotTargetDirectory(OneBotHttpAdapter http, OneBotHttpService httpService, OneBotAdapterPluginProperties properties) {
@@ -143,13 +145,15 @@ public class OneBotTargetDirectory {
      * 会各自向 OneBot 发一整轮，而它们要的是同一份名单。
      */
     private synchronized Snapshot snapshotOf(OneBotSender sender, boolean force) {
-        Snapshot current = snapshots.get(sender.getName());
+        CacheEntry cached = snapshots.computeIfAbsent(sender.getName(), name -> new CacheEntry(0, null));
+        Snapshot current = cached.snapshot();
         if (!force && current != null && clock.instant().isBefore(current.attemptedAt().plus(TTL))) {
             return current;
         }
 
         Snapshot fresh = fetch(sender, current);
-        snapshots.put(sender.getName(), fresh);
+        // 比对与写回是同一个原子操作：换号已推进代数时，这趟回包只交给原调用方。
+        snapshots.replace(sender.getName(), cached, new CacheEntry(cached.generation(), fresh));
         return fresh;
     }
 
@@ -161,7 +165,9 @@ public class OneBotTargetDirectory {
      * @param platformName 推送平台名
      */
     public void invalidate(String platformName) {
-        snapshots.remove(platformName);
+        // 不取得拉取所持的锁；只更新缓存状态，保存连接不会等网络回包。
+        snapshots.compute(platformName, (name, cached) ->
+                new CacheEntry(cached == null ? 1 : cached.generation() + 1, null));
     }
 
     /**
