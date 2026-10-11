@@ -10,7 +10,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.SimpleCommandLinePropertySource;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
@@ -18,7 +31,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -60,13 +75,132 @@ class NapCatTokenWriteBackComparisonTest {
         fileService = new ConfigurationFileService(config);
     }
 
-    private NapCatCredentialService service(String token) {
+    private StandardEnvironment fileEnvironment() throws IOException {
+        StandardEnvironment environment = new StandardEnvironment();
+        new YamlPropertySourceLoader().load("mainConfiguration", new FileSystemResource(config))
+                .forEach(environment.getPropertySources()::addLast);
+        ConfigurationPropertySources.attach(environment);
+        return environment;
+    }
+
+    private NapCatCredentialService service(String token) throws IOException {
         OneBotAdapterPluginProperties.NapCat properties = new OneBotAdapterPluginProperties.NapCat();
         properties.setToken(token);
         properties.setTokenHash("");
         properties.setTotpSecret("");
         properties.setAddress("http://127.0.0.1:6099");
-        return new NapCatCredentialService(properties, fileService, mock(RestTemplate.class));
+        NapCatCredentialService service = new NapCatCredentialService(properties, fileService, mock(RestTemplate.class));
+        service.setEnvironment(fileEnvironment());
+        return service;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "old-file-token-392", "external-token-842"})
+    @DisplayName("环境变量令牌启动时不提示改写法或候命期间被改过，也不改配置文件")
+    void environmentTokenDoesNotWarnOrWriteBack(String fileToken) throws IOException {
+        // 用户故障：从环境变量给令牌时，启动日志不得叫人改写法，也不得说「候命期间被改过」，配置文件不得被改动。
+        String token = "external-token-842";
+        Files.writeString(config, fileToken.isEmpty() ? "novabot: {}\n" : """
+                novabot:
+                  adapter:
+                    onebot:
+                      napcat:
+                        token: %s
+                """.formatted(fileToken), StandardCharsets.UTF_8);
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new SystemEnvironmentPropertySource("systemEnvironment",
+                Map.of("NOVABOT_ADAPTER_ONEBOT_NAPCAT_TOKEN", token)));
+        new YamlPropertySourceLoader().load("mainConfiguration", new FileSystemResource(config))
+                .forEach(environment.getPropertySources()::addLast);
+        OneBotAdapterPluginProperties.NapCat properties = new Binder(ConfigurationPropertySources.get(environment))
+                .bind("novabot.adapter.onebot.napcat", OneBotAdapterPluginProperties.NapCat.class).get();
+
+        Logger logger = (Logger) LoggerFactory.getLogger(NapCatCredentialService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try (GenericApplicationContext context = new GenericApplicationContext()) {
+            context.setEnvironment(environment);
+            context.registerBean(NapCatCredentialService.class,
+                    () -> new NapCatCredentialService(properties, fileService, mock(RestTemplate.class)));
+            context.refresh();
+            assertTrue(context.getBean(NapCatCredentialService.class).isConfigured());
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        List<String> messages = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertAll(
+                () -> assertTrue(messages.stream().noneMatch(line -> line.contains("按标准写法找不到")),
+                        "环境变量令牌不应提示改写法"),
+                () -> assertTrue(messages.stream().noneMatch(line -> line.contains("候命期间被改过")),
+                        "环境变量令牌不应说成候命期间被改过"),
+                () -> assertEquals(before, Files.readString(config, StandardCharsets.UTF_8)),
+                () -> assertTrue(appender.list.stream().anyMatch(event -> event.getLevel() == Level.INFO
+                        && event.getFormattedMessage().contains("NapCat 的 token 来自环境变量或命令行")
+                        && event.getFormattedMessage().contains("不写回配置文件"))),
+                () -> assertTrue(messages.stream().noneMatch(line -> line.contains(token)
+                        || line.matches(".*[0-9a-f]{64}.*") || (!fileToken.isEmpty() && line.contains(fileToken))),
+                        "日志不得包含令牌或哈希"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"commandLine", "unknown", "otherFile", "empty", "opaque", "null", "broken"})
+    @DisplayName("命令行及无法确认的来源不写回，也不泄露令牌或误报文件被改过")
+    void externalOrUnknownSourceDoesNotWriteBack(String sourceKind) throws IOException {
+        // 用户故障：外部令牌或来源认不准时，启动日志不得叫人改写法，也不得说「候命期间被改过」，配置文件不得被改动。
+        String token = "external-token-842";
+        Files.writeString(config, """
+                novabot:
+                  adapter:
+                    onebot:
+                      napcat:
+                        token: external-token-842
+                """, StandardCharsets.UTF_8);
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+        StandardEnvironment configurable = fileEnvironment();
+        switch (sourceKind) {
+            case "commandLine" -> configurable.getPropertySources().addFirst(
+                    new SimpleCommandLinePropertySource("--" + NapCatCredentialService.TOKEN_PROPERTY + "=" + token));
+            case "unknown" -> configurable.getPropertySources().addFirst(new MapPropertySource("unknownSource",
+                    Map.of(NapCatCredentialService.TOKEN_PROPERTY, token)));
+            case "otherFile" -> {
+                Path other = dir.resolve("other/application.yml");
+                Files.createDirectories(other.getParent());
+                Files.writeString(other, before, StandardCharsets.UTF_8);
+                new YamlPropertySourceLoader().load("otherConfiguration", new FileSystemResource(other))
+                        .forEach(configurable.getPropertySources()::addFirst);
+            }
+            case "empty" -> configurable.getPropertySources().remove("mainConfiguration");
+            case "broken" -> configurable.getPropertySources().addFirst(new PropertySource<>("brokenSource") {
+                @Override
+                public Object getProperty(String name) {
+                    throw new IllegalStateException(token);
+                }
+            });
+            default -> { }
+        }
+        Environment environment = "null".equals(sourceKind) ? null
+                : "opaque".equals(sourceKind) ? mock(Environment.class) : configurable;
+        NapCatCredentialService service = service(token);
+        service.setEnvironment(environment);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(NapCatCredentialService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            service.start();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8));
+        assertEquals(List.of("NapCat 的 token 来自环境变量或命令行等其他配置来源，不写回配置文件"),
+                appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
+        assertTrue(appender.list.stream().allMatch(event -> event.getLevel() == Level.INFO));
     }
 
     @Test

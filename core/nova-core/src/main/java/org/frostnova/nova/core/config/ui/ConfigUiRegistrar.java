@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.Duration;
@@ -99,8 +100,9 @@ public class ConfigUiRegistrar {
      */
     @Bean
     public ConfigUiAuthService configUiAuthService(ConfigUiSessionStore sessionStore, LoginThrottle throttle,
-                                                  ConfigurationFileService fileService) {
-        return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle, fileService);
+                                                  ConfigurationFileService fileService, Environment environment) {
+        return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle, fileService,
+                environment);
     }
 
     /**

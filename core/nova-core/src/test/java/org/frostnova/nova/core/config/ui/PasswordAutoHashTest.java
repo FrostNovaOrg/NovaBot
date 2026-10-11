@@ -13,7 +13,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.SimpleCommandLinePropertySource;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
+import org.springframework.core.io.FileSystemResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,10 +39,12 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
 
 /**
  * 明文口令自动哈希落盘的测试
@@ -66,14 +81,22 @@ class PasswordAutoHashTest {
         return fileService.read().get(ConfigUiAuthService.PASSWORD_PROPERTY);
     }
 
-    private ConfigUiAuthService service(String password) {
+    private StandardEnvironment fileEnvironment() throws IOException {
+        StandardEnvironment environment = new StandardEnvironment();
+        new YamlPropertySourceLoader().load("mainConfiguration", new FileSystemResource(config))
+                .forEach(environment.getPropertySources()::addLast);
+        ConfigurationPropertySources.attach(environment);
+        return environment;
+    }
+
+    private ConfigUiAuthService service(String password) throws IOException {
         NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword(password);
         properties.setTotp(false);
 
         ConfigUiAuthService service = new ConfigUiAuthService(properties,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
-                new LoginThrottle(5, Duration.ofMinutes(15)), fileService);
+                new LoginThrottle(5, Duration.ofMinutes(15)), fileService, fileEnvironment());
         service.start();
         return service;
     }
@@ -237,6 +260,110 @@ class PasswordAutoHashTest {
         assertEquals("宽松键的口令", fileService.read().get("novabot.core.configUi.auth.password"),
                 "宽松写法那一行要原样留着");
         assertNull(stored(), "标准写法那一项不该多出来（没写回）");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "旧文件口令", "external-password-842"})
+    @DisplayName("环境变量口令启动时不提示改写法或候命期间被改过，也不改配置文件")
+    void environmentPasswordDoesNotWarnOrWriteBack(String filePassword) throws IOException {
+        // 用户故障：从环境变量给口令时，启动日志不得叫人改写法，也不得说「候命期间被改过」，配置文件不得被改动。
+        String password = "external-password-842";
+        Files.writeString(config, filePassword.isEmpty() ? "novabot: {}\n"
+                : TEMPLATE.replace("我的口令", filePassword), StandardCharsets.UTF_8);
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new SystemEnvironmentPropertySource("systemEnvironment",
+                Map.of("NOVABOT_CORE_CONFIGUI_AUTH_PASSWORD", password)));
+        new YamlPropertySourceLoader().load("mainConfiguration", new FileSystemResource(config))
+                .forEach(environment.getPropertySources()::addLast);
+        NovaCoreProperties.ConfigUi.Auth properties = new Binder(ConfigurationPropertySources.get(environment))
+                .bind("novabot.core.config-ui.auth", NovaCoreProperties.ConfigUi.Auth.class).get();
+        properties.setTotp(false);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ConfigUiAuthService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try (GenericApplicationContext context = new GenericApplicationContext()) {
+            context.setEnvironment(environment);
+            context.registerBean(ConfigUiAuthService.class, () -> new ConfigUiAuthService(properties,
+                    new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                    new LoginThrottle(5, Duration.ofMinutes(15)), fileService));
+            context.refresh();
+            assertTrue(context.getBean(ConfigUiAuthService.class)
+                    .login(password.toCharArray(), null, "1.2.3.4").success());
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        List<String> messages = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertAll(
+                () -> assertTrue(messages.stream().noneMatch(line -> line.contains("按标准写法找不到")),
+                        "环境变量口令不应提示改写法"),
+                () -> assertTrue(messages.stream().noneMatch(line -> line.contains("候命期间被改过")),
+                        "环境变量口令不应说成候命期间被改过"),
+                () -> assertEquals(before, Files.readString(config, StandardCharsets.UTF_8)),
+                () -> assertTrue(appender.list.stream().anyMatch(event -> event.getLevel() == Level.INFO
+                        && event.getFormattedMessage().contains("登录口令来自环境变量或命令行")
+                        && event.getFormattedMessage().contains("不写回配置文件"))),
+                () -> assertTrue(messages.stream().noneMatch(line -> line.contains(password)
+                        || line.contains("pbkdf2") || (!filePassword.isEmpty() && line.contains(filePassword))),
+                        "日志不得包含口令或哈希"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"commandLine", "unknown", "otherFile", "empty", "opaque", "null", "broken"})
+    @DisplayName("命令行及无法确认的来源不写回，也不泄露口令或误报文件被改过")
+    void externalOrUnknownSourceDoesNotWriteBack(String sourceKind) throws IOException {
+        // 用户故障：外部口令或来源认不准时，启动日志不得叫人改写法，也不得说「候命期间被改过」，配置文件不得被改动。
+        String password = "我的口令";
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+        StandardEnvironment configurable = fileEnvironment();
+        switch (sourceKind) {
+            case "commandLine" -> configurable.getPropertySources().addFirst(
+                    new SimpleCommandLinePropertySource("--" + ConfigUiAuthService.PASSWORD_PROPERTY + "=" + password));
+            case "unknown" -> configurable.getPropertySources().addFirst(new MapPropertySource("unknownSource",
+                    Map.of(ConfigUiAuthService.PASSWORD_PROPERTY, password)));
+            case "otherFile" -> {
+                Path other = dir.resolve("other/application.yml");
+                Files.createDirectories(other.getParent());
+                Files.writeString(other, before, StandardCharsets.UTF_8);
+                new YamlPropertySourceLoader().load("otherConfiguration", new FileSystemResource(other))
+                        .forEach(configurable.getPropertySources()::addFirst);
+            }
+            case "empty" -> configurable.getPropertySources().remove("mainConfiguration");
+            case "broken" -> configurable.getPropertySources().addFirst(new PropertySource<>("brokenSource") {
+                @Override
+                public Object getProperty(String name) {
+                    throw new IllegalStateException(password);
+                }
+            });
+            default -> { }
+        }
+        Environment environment = "null".equals(sourceKind) ? null
+                : "opaque".equals(sourceKind) ? mock(Environment.class) : configurable;
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
+        properties.setPassword(password);
+        properties.setTotp(false);
+        ConfigUiAuthService service = new ConfigUiAuthService(properties,
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                new LoginThrottle(5, Duration.ofMinutes(15)), fileService, environment);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ConfigUiAuthService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            service.start();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8));
+        assertEquals(List.of("配置界面的登录口令来自环境变量或命令行等其他配置来源，不写回配置文件"),
+                appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
+        assertTrue(appender.list.stream().allMatch(event -> event.getLevel() == Level.INFO));
     }
 
     @Test
