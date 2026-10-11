@@ -97,7 +97,7 @@ public class BilibiliLiveRoomService {
     private final AtomicBoolean acceptingConnectors = new AtomicBoolean(true);
 
     /**
-     * 本进程的 sync 还没跑过。第一次跑时排进闸门的房间才算启动那一波。
+     * 本进程的 sync 还没跑过。第一次跑时房间号待补全的主播也算启动那一波。
      */
     private final AtomicBoolean firstSync = new AtomicBoolean(true);
 
@@ -105,6 +105,11 @@ public class BilibiliLiveRoomService {
      * 启动那一波的房间号。建连时交给连接器，用过即摘。
      */
     private final Set<Long> startupWaveRooms = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 首次 sync 时已启用但房间号待补全的主播 UID，只在仍启用且房间号待补全时保留。
+     */
+    private final Set<Long> pendingStartupUids = ConcurrentHashMap.newKeySet();
 
     /**
      * 最近一次 sync 定下的目标房间号。排在闸门里的首连放行时拿它核对，
@@ -157,6 +162,12 @@ public class BilibiliLiveRoomService {
         List<PushUser> enabled = dataSource.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .toList();
+        if (startupWave) {
+            enabled.stream()
+                    .filter(user -> user.getRoomId() == null)
+                    .map(PushUser::getUid)
+                    .forEach(pendingStartupUids::add);
+        }
 
         // 按数据源给出的先后排好再截。原先收进无序的 HashSet，超员时「留下哪几间」
         // 每次启动都可能不同，而使用者看到的是「同一份配置，今天连的和昨天不是同一批」
@@ -223,12 +234,17 @@ public class BilibiliLiveRoomService {
 
             // 交给全局闸门排队。这里不再自己累加延迟：首连若走自己的时间轴，
             // 就会和正在退避重连的房间撞在一起，多房间同时断线时叠成请求洪峰。
-            // 只有本进程第一次 sync 排进去的才算启动那一波；热重载再进来的不算。
-            if (startupWave) {
+            // 首次 sync 房间号待补全的也算启动那一波；热重载新加的主播不算。
+            if (startupWave || pendingStartupUids.remove(up.getUid())) {
                 startupWaveRooms.add(up.getRoomId());
             }
             connectGate.submit(() -> connect(up));
         }
+
+        pendingStartupUids.retainAll(enabled.stream()
+                .filter(user -> user.getRoomId() == null)
+                .map(PushUser::getUid)
+                .collect(Collectors.toSet()));
 
         if (properties.getLive().isAutoDetectLiveRoomRisk() && riskDetectionStarted.compareAndSet(false, true)) {
             scheduler.scheduleAtFixedRate(this::detectRisk,

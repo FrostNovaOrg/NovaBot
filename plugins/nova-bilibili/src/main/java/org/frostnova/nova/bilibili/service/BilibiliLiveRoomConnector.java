@@ -418,7 +418,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     }
 
     /**
-     * @param startupWave 本进程第一次同步时排进闸门的那一批为 true；热重载新加的为 false
+     * @param startupWave 首次同步排进闸门，或首次同步起一直启用且待补房间号、补全当次即排进闸门的为 true；其余为 false
      */
     public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
                                      @NonNull BilibiliApiUtil api,

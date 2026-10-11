@@ -274,6 +274,124 @@ class BilibiliLiveRoomServiceTest {
     }
 
     /**
+     * 抓的故障：重启时房间号要后台补全的在播主播，下播报告和控制台少算了
+     * 从进程就绪到首连认证成功的停机缺口。这段应跟停机成因，不算本房断线。
+     */
+    @Test
+    @DisplayName("启动时房间号为空，补全后首连仍算启动那一波")
+    void startupRoomResolvedLaterIsStartupWave() throws Exception {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliLiveRoomService service = service(scheduler, new NovaBilibiliProperties(),
+                mock(BilibiliApiUtil.class), liveOnAccount(1L));
+        PushUser user = users(1, 1).get(0);
+        user.setRoomId(null);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(List.of(user));
+
+        service.sync(dataSource);
+        service.sync(dataSource);
+        assertTrue(queuedConnects(scheduler).isEmpty(), "房间号尚未补全时不应排队建连");
+
+        user.setRoomId(1001L);
+        service.sync(dataSource);
+        runQueued(scheduler);
+
+        assertTrue(startupWaveOf(service, 1001L),
+                "启动时待补房间号的主播，补全后首连应按停机成因补上缺口");
+
+        service.disconnect(1001L);
+        service.sync(dataSource);
+        runQueued(scheduler);
+        assertFalse(startupWaveOf(service, 1001L), "启动记号用过即移出，重新建连接器不再补停机尾巴");
+    }
+
+    /**
+     * 抓的故障：热重载新加的主播也要后台补房间号时，下播报告和控制台
+     * 误把加入前的时间算成程序停机缺口；只有重启时已启用的主播才补这段尾巴。
+     */
+    @Test
+    @DisplayName("热重载新加的主播房间号补全后首连不算启动那一波")
+    void hotReloadRoomResolvedLaterIsNotStartupWave() throws Exception {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliLiveRoomService service = service(scheduler);
+        service.sync(emptyDataSource());
+
+        PushUser user = users(1, 1).get(0);
+        user.setRoomId(null);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(List.of(user));
+        service.sync(dataSource);
+        assertTrue(queuedConnects(scheduler).isEmpty(), "房间号尚未补全时不应排队建连");
+
+        user.setRoomId(1001L);
+        service.sync(dataSource);
+        runQueued(scheduler);
+
+        assertFalse(startupWaveOf(service, 1001L),
+                "热重载新加的主播即使房号要补全，也不应补从重启到首连的停机缺口");
+    }
+
+    /**
+     * 抓的故障：启动时房间号为空的主播，使用者自己删掉又加回的那段时间，
+     * 被算进下播报告的采集缺口和控制台的「因程序停机未采集」。
+     */
+    @Test
+    @DisplayName("启动时房间号为空，删掉再加回后首连不算启动那一波")
+    void removedPendingStartupRoomIsNotStartupWaveWhenReadded() throws Exception {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliLiveRoomService service = service(scheduler);
+        PushUser user = users(1, 1).get(0);
+        user.setRoomId(null);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(List.of(user));
+        service.sync(dataSource);
+        assertTrue(queuedConnects(scheduler).isEmpty(), "房间号尚未补全时不应排队建连");
+
+        service.sync(emptyDataSource());
+
+        user.setRoomId(1001L);
+        service.sync(dataSource);
+        runQueued(scheduler);
+
+        assertFalse(startupWaveOf(service, 1001L),
+                "使用者自己删掉又加回的时间，不应算成程序停机未采集");
+    }
+
+    /**
+     * 抓的故障：启动时房间号为空的主播，拿到号时名额已满，后来腾出名额才连上，
+     * 没连的那段时间被算进下播报告的采集缺口和控制台的「因程序停机未采集」。
+     */
+    @Test
+    @DisplayName("启动时房间号为空，补全时名额已满，腾出名额后首连不算启动那一波")
+    void resolvedPendingStartupRoomAtCapacityIsNotStartupWaveLater() throws Exception {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliLiveRoomService service = service(scheduler);
+        List<PushUser> users = users(1, 11);
+        PushUser pending = users.get(10);
+        pending.setRoomId(null);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(users);
+        service.sync(dataSource);
+        runQueued(scheduler);
+        assertEquals(10, service.getManagedRoomCount(), "其余十位应已占满名额");
+
+        pending.setRoomId(1011L);
+        int queuedBeforeResolution = queuedConnects(scheduler).size();
+        service.sync(dataSource);
+        assertEquals(queuedBeforeResolution, queuedConnects(scheduler).size(),
+                "名额满时不应为刚补全房间号的主播排队建连");
+        assertTrue(service.getStatus(1011L).isEmpty(), "名额满时不应接管第十一位主播");
+
+        when(dataSource.getUsers(anyString())).thenReturn(users.subList(1, 11));
+        service.sync(dataSource);
+        runQueued(scheduler);
+
+        assertEquals(10, service.getManagedRoomCount(), "腾出名额后应接管第十一位主播");
+        assertFalse(startupWaveOf(service, 1011L),
+                "名额满而没连的时间，不应算成程序停机未采集");
+    }
+
+    /**
      * 取出排进闸门等待放行的建连任务
      * <p>
      * 调度器是桩，任务不会自己跑，因此先收下来再由用例决定何时执行。
