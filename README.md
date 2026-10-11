@@ -8,6 +8,7 @@
 
 <p><sub>Bilibili live &amp; feed notifier for QQ via OneBot, with a web console and post-stream report images.</sub></p>
 
+<p>简体中文 · <a href="README.en.md">English</a></p>
 <p>
 <a href="https://github.com/FrostNovaOrg/NovaBot/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/FrostNovaOrg/NovaBot/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
 <a href="https://github.com/FrostNovaOrg/NovaBot/releases"><img src="https://img.shields.io/github/v/release/FrostNovaOrg/NovaBot?style=flat-square&color=7C5CFF&label=release" alt="Release"></a>
