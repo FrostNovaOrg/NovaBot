@@ -398,8 +398,9 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 判断请求是否来自本站页面
      * <p>
      * 优先看 {@code Origin}，没有时退回 {@code Referer}。两者都没有时放行——
-     * 有些浏览器在同源导航中确实不发这两个头，而真正的防线是 CSRF 令牌，
-     * 这一层只是提前挡掉明显的跨站请求。
+     * 有些浏览器在同源导航中确实不发这两个头。这一层之后的防线因登录方式而异：
+     * 口令登录后面还有 CSRF 令牌；访问令牌登录没有 CSRF 令牌，别的站点靠 Cookie 的
+     * SameSite 挡，同机另一端口的页面靠的就是这一层来源核对。
      */
     private boolean sameOrigin(HttpServletRequest request) {
         String origin = Optional.ofNullable(request.getHeader(HttpHeaders.ORIGIN))

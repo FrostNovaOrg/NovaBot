@@ -329,6 +329,48 @@ await ask('⑤ 打开它的那个按钮已经不在页上了，关掉时就不�
     {'面板藏起': true, '去聚焦过已不在页上的按钮': false}, '按钮没了之后关面板');
 });
 
+// 故障：面板里第一个控件是禁用的或藏起来的，焦点落上去等于没落，
+// 只用键盘的人还是要先按好几下 Tab 才摸得到能用的那一个
+await ask('⑥ 面板里第一个控件禁用或藏起来时，焦点落到第一个能用的控件上', async () => {
+  if (!push) throw new Error('push.js 没载入，无从量起');
+
+  push.openDrawer('给某位主播添加通道', '', body => {
+    const dead = body.appendChild(new MiniNode('input'));
+    dead.type = 'text';
+    dead.id = 'demo-dead';
+    dead.disabled = true;
+    const ghost = body.appendChild(new MiniNode('input'));
+    ghost.type = 'text';
+    ghost.id = 'demo-ghost';
+    ghost.hidden = true;
+    const tucked = body.appendChild(new MiniNode('input'));
+    tucked.type = 'text';
+    tucked.id = 'demo-tucked';
+    tucked.style.display = 'none';
+    const usable = body.appendChild(new MiniNode('input'));
+    usable.type = 'text';
+    usable.id = 'demo-usable';
+  });
+  const skipped = focused();
+  push.closeDrawer();
+
+  push.openDrawer('给某位主播添加通道', '', body => {
+    const dead = body.appendChild(new MiniNode('button'));
+    dead.id = 'demo-only-dead';
+    dead.disabled = true;
+  });
+  const allDead = focused();
+
+  same({
+    '头一个能用的控件': skipped,
+    '一个能用的都没有时': allDead,
+  }, {
+    '头一个能用的控件': '#demo-usable',
+    '一个能用的都没有时': '#push-drawer-close',
+  }, '面板里第一个控件不能用时的焦点');
+  push.closeDrawer();
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

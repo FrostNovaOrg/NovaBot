@@ -11,9 +11,15 @@
  * 函数体来跑，供数方那一套（改动条计数、重取）用真 core.js，草稿账用真 store.js。
  * 回包放不放行由夹具攥着——真机上凑齐「回包之前又改」那个窗口要试很多回。
  *
- * 四格：①回包前改了另一项：那一项照旧算没存，已发的那项清掉；②回包前把同一项
+ * 八格：①回包前改了另一项：那一项照旧算没存，已发的那项清掉；②回包前把同一项
  * 改成别的值：留新值；③回包前把同一项改回发出的值：这一项算存上了；④对照——
  * 途中什么都没改：草稿清零、值取回新的。①②先红后绿，③④改前本来就绿。
+ *
+ * ⑤—⑧量的是「发出之后又改回原值」那一条对账：服务端此刻存的是发出去的那一份，
+ * 改回去的那一下不能被当成已经存上。⑤普通项改回发出前的值：仍是草稿、值是改回的那个、
+ * 改动条数 1；⑥挂着清除时点「撤回清除」：同上，值是发出前那一位；⑦机密项改回留空：
+ * 留空＝没动、旧值还原不出来，不留草稿，状态栏说清存上的是哪一份；⑧改成第三个值：
+ * 留新值（守着现在的行为）。⑤⑥⑦先红后绿，⑧改前本来就绿。
  *
  * 由 SettingsSavePendingTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -21,6 +27,7 @@
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {CLEAR, MASK, defaultValue} from '../../../main/resources/config-ui/settings-model.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 
@@ -136,13 +143,21 @@ let pendingPost = null;
 async function api(path, opt) {
   if (path === '/values' && opt && opt.method === 'POST') {
     postBodies.push(JSON.parse(opt.body));
-    // 服务端按送来的那份落盘；此后 /values 读回的就是它
+    // 服务端按送来的那份落盘；此后 /values 读回的就是它。清除标记是删键，不是存值
     for (const [key, value] of Object.entries(postBodies[postBodies.length - 1])) {
-      serverValues[key] = value;
+      if (value === CLEAR) delete serverValues[key];
+      else serverValues[key] = value;
     }
     return await new Promise(resolve => { pendingPost = resolve; });
   }
-  if (path === '/schema') return {groups: [], ungrouped: []};
+  if (path === '/schema') return {
+    groups: [{fields: [
+      {name: 'demo.a', label: '示例甲'},
+      {name: 'demo.b', label: '示例乙'},
+      {name: 'demo.secret', label: '示例口令', sensitive: true},
+    ]}],
+    ungrouped: [],
+  };
   if (path === '/values') return {values: Object.assign({}, serverValues), legacy: {}, locked: {}, fontTables: {}};
   if (path === '/status') return {configPath: '/tmp/demo.yml', senders: []};
   if (path === '/handlers') return {handlers: []};
@@ -166,9 +181,9 @@ try {
   const load = loadAsyncFn(readFileSync(join(ui, 'main.js'), 'utf8'), 'function load(',
     ['say', 'api', 'store', 'renderGeneral', 'parseHash', 'focusCard', 'reloadChangeSources',
       'renderStatus', 'renderConfigPath', 'refreshPages', 'refreshHome', 'fillBotForms',
-      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived'],
+      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived', 'CLEAR', 'defaultValue'],
     [core.say, api, store, renderGeneral, parseHash, noop, core.reloadChangeSources,
-      noop, noop, noop, noop, noop, noop, core.markDirty, noop],
+      noop, noop, noop, noop, noop, noop, core.markDirty, noop, CLEAR, defaultValue],
     'how');
   save = loadAsyncFn(readFileSync(join(ui, 'settings.js'), 'utf8'), 'function save(',
     ['saveTarget', '$', 'api', 'showIssues', 'say', 'store', 'load', 'markDirty'],
@@ -182,7 +197,9 @@ function reset(dirty) {
   store.tab = 'settings';
   store.dirty = Object.assign({}, dirty || {});
   store.restartPending = [];
-  serverValues = {'demo.a': '1', 'demo.b': '1'};
+  serverValues = {'demo.a': '1', 'demo.b': '1', 'demo.secret': MASK};
+  // 发出之前屏幕上那份「已保存」：对账要按它把「改回原值」那一手还原成草稿
+  store.values = {'demo.a': '1', 'demo.b': '1', 'demo.secret': MASK};
   postBodies = [];
   pendingPost = null;
   renderSnaps.length = 0;
@@ -291,6 +308,113 @@ eq(JSON.parse(cell4), {
   '改动条还剩几处': 0,
   '取回的已保存值': '2',
 }, '④ 对照：途中什么都没改，草稿清零、值取回新存的');
+
+// ---------- ⑤ 保存途中把普通项改回发出前的值 ----------
+// 病：A 原来是 1，改成 2 点保存，回包之前又改回 1——这一下等于「没改」，草稿被对账
+// 清掉，可服务端此刻存的是 2。屏幕上显示 1（服务端其实不是），改动条归零，
+// 再点保存什么也不发，而 A 一直停在 2
+let cell5 = '没跑';
+try {
+  reset({'demo.a': '2'});
+  await saveWith(() => { delete store.dirty['demo.a']; });
+  cell5 = JSON.stringify({
+    '发出去的是哪几项': postBodies[0],
+    '改动条还剩几处': Object.keys(store.dirty).length,
+    '还挂着的是哪一项': store.dirty['demo.a'] === undefined ? '(没了)' : store.dirty['demo.a'],
+    '重画时屏幕上还挂着': renderSnaps[renderSnaps.length - 1].dirty,
+    '取回的已保存值': store.values['demo.a'],
+    '状态栏上的话': node('#status-text').textContent,
+  });
+} catch (e) {
+  cell5 = 'error:' + e.message;
+}
+eq(JSON.parse(cell5), {
+  '发出去的是哪几项': {'demo.a': '2'},
+  '改动条还剩几处': 1,
+  '还挂着的是哪一项': '1',
+  '重画时屏幕上还挂着': {'demo.a': '1'},
+  '取回的已保存值': '2',
+  '状态栏上的话': '已保存',
+}, '⑤ 保存途中把普通项改回发出前的值：保存完它仍是草稿，值是改回的那个，改动条数 1');
+
+// ---------- ⑥ 保存途中撤回清除 ----------
+// 病：口令挂着清除点保存，回包之前点「撤回清除」——那一下把草稿删了，对账当它已经
+// 存上。可发出去的是清除标记，口令已经删了；界面上写着原来的遮罩，再点保存什么也不发
+let cell6 = '没跑';
+try {
+  reset({'demo.secret': CLEAR});
+  await saveWith(() => { delete store.dirty['demo.secret']; });
+  cell6 = JSON.stringify({
+    '发出去的是哪几项': postBodies[0],
+    '改动条还剩几处': Object.keys(store.dirty).length,
+    '还挂着的是哪一项': store.dirty['demo.secret'] === undefined ? '(没了)' : store.dirty['demo.secret'],
+    '重画时屏幕上还挂着': renderSnaps[renderSnaps.length - 1].dirty,
+    '状态栏上的话': node('#status-text').textContent,
+  });
+} catch (e) {
+  cell6 = 'error:' + e.message;
+}
+eq(JSON.parse(cell6), {
+  '发出去的是哪几项': {'demo.secret': CLEAR},
+  '改动条还剩几处': 1,
+  '还挂着的是哪一项': MASK,
+  '重画时屏幕上还挂着': {'demo.secret': MASK},
+  '状态栏上的话': '已保存',
+}, '⑥ 保存途中撤回清除：保存完它仍是草稿，值是改回的那个，改动条数 1');
+
+// ---------- ⑦ 保存途中把机密项改回留空 ----------
+// 病：口令改成新值点保存，回包之前把框清空（留空＝没动）——草稿被删，对账当它已经
+// 存上。旧值界面手里根本没有，还原不出来：不留草稿可以，但得说清存上的是哪一份，
+// 否则那个人会以为存上去的是原来的口令
+let cell7 = '没跑';
+try {
+  reset({'demo.secret': 'new-token'});
+  await saveWith(() => { delete store.dirty['demo.secret']; });
+  cell7 = JSON.stringify({
+    '发出去的是哪几项': postBodies[0],
+    '改动条还剩几处': Object.keys(store.dirty).length,
+    '这一项此刻算什么': store.dirty['demo.secret'] === undefined ? '(没了)' : store.dirty['demo.secret'],
+    '取回的已保存值': store.values['demo.secret'],
+    '状态栏上的话': node('#status-text').textContent,
+  });
+} catch (e) {
+  cell7 = 'error:' + e.message;
+}
+eq(JSON.parse(cell7), {
+  '发出去的是哪几项': {'demo.secret': 'new-token'},
+  '改动条还剩几处': 0,
+  '这一项此刻算什么': '(没了)',
+  '取回的已保存值': 'new-token',
+  '状态栏上的话': '「示例口令」在保存途中改回了留空，存上的是刚才发出去的那一份；要换回原来的，请重新填写。',
+}, '⑦ 保存途中把机密项改回留空：不留草稿，状态栏说清存上的是哪一份');
+
+// ---------- ⑧ 保存途中改成第三个值 ----------
+// 垫底的一格，守着现在的行为：发出 2、回包前改成 9，留的是 9。
+// 还原那一手收得不对（草稿里还挂着值的也去还原）时，它先红
+let cell8 = '没跑';
+try {
+  reset({'demo.a': '2'});
+  await saveWith(() => { store.dirty['demo.a'] = '9'; });
+  cell8 = JSON.stringify({
+    '发出去的是哪几项': postBodies[0],
+    '改动条还剩几处': Object.keys(store.dirty).length,
+    '这一项此刻算什么': store.dirty['demo.a'] === undefined ? '(没了)' : store.dirty['demo.a'],
+    '重画时屏幕上显示': renderSnaps[renderSnaps.length - 1].dirty['demo.a'] === undefined
+      ? '(服务端的值)' : renderSnaps[renderSnaps.length - 1].dirty['demo.a'],
+    '取回的已保存值': store.values['demo.a'],
+    '状态栏上的话': node('#status-text').textContent,
+  });
+} catch (e) {
+  cell8 = 'error:' + e.message;
+}
+eq(JSON.parse(cell8), {
+  '发出去的是哪几项': {'demo.a': '2'},
+  '改动条还剩几处': 1,
+  '这一项此刻算什么': '9',
+  '重画时屏幕上显示': '9',
+  '取回的已保存值': '2',
+  '状态栏上的话': '已保存',
+}, '⑧ 保存途中改成第三个值：留新值，取回的是真发出去的那份');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

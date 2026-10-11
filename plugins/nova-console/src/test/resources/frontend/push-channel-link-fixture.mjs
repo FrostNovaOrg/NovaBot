@@ -11,6 +11,8 @@
  * 只 includes 一段字样是不行的：地址里多写一截类型照样能被按号那段查重。
  * 另量旧地址 #/push/<uid>/<号> 照样能打开（按号取第一个），书签与手册里的例子不受影响；
  * 顺带量主播那一页的「打开 … 的数据 →」指到这位主播，不落到整个主播列表（⑦）。
+ * 另量聊天软件转来的地址里「|」被转成 %7C 时照样打开那条通道（⑧）、坏的 % 序列不报错（⑨）、
+ * 地址里的通道找不到时退回这位主播并在状态栏说一声（⑩）。
  *
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 量程：不带参数即源码树里那一份；带一份 config-ui-pages 拷贝的绝对路径即量那份拷贝
@@ -577,6 +579,56 @@ await ask('⑦ 主播那一页的「打开 … 的数据 →」指到这位主�
     '链接的地址': '#/streamers/bilibili/1',
     '与主播页拼地址的那一份一致': true,
   }, '「打开 甲 的数据 →」');
+});
+
+/** 状态栏此刻那句话 */
+function statusText() {
+  return idNode('status-text').textContent;
+}
+
+// 用户故障：点开别人从聊天软件转来的通道链接，「|」被转成了 %7C，落到了主播一级
+await ask('⑧ 地址里的「|」被转成 %7C：打开后落到那条通道', async () => {
+  if (!push) throw new Error('push.js 没载入，无从量起');
+  await openHash('#/push/1/' + PLATFORM + '%7C0%7C' + FRIEND_NUM);
+  same({
+    '地址没被改走': String(globalThis.location.hash),
+    '右栏标题是好友那一个': headName(),
+    '标题旁的类型是好友': headTypePill(),
+    '左树高亮在好友那一行': treeRowName(highlightedTreeNode()),
+  }, {
+    '地址没被改走': '#/push/1/' + PLATFORM + '%7C0%7C' + FRIEND_NUM,
+    '右栏标题是好友那一个': '小明',
+    '标题旁的类型是好友': '好友',
+    '左树高亮在好友那一行': '小明',
+  }, '转义过的通道地址');
+});
+
+// 用户故障：地址里带着坏掉的 % 序列，整页报错打不开
+await ask('⑨ 地址里带坏的 % 序列：不报错，照旧退到主播一级', async () => {
+  if (!push) throw new Error('push.js 没载入，无从量起');
+  await openHash('#/push/1/' + PLATFORM + '%E0%A4%A');
+  same(String(globalThis.location.hash), '#/push/1', '退到的地址');
+});
+
+// 用户故障：点进一个通道链接，落在主播一级，不知道为什么
+await ask('⑩ 通道没找到：退到主播一级，状态栏说一声', async () => {
+  if (!push) throw new Error('push.js 没载入，无从量起');
+  idNode('status-text').textContent = '';
+  await openHash('#/push/1/' + PLATFORM + '|1|999999');
+  // 刚打开控制台时宿主载入完会清一次状态栏；随后改过的地址触发 hashchange，宿主再走一遍路由
+  idNode('status-text').textContent = '';
+  push.refresh();
+  await settle();
+  const said = statusText();
+  same({
+    '退到的地址': String(globalThis.location.hash),
+    '状态栏说了没找到': said.includes('没找到'),
+    '状态栏说了回到这位主播': said.includes('回到这位主播'),
+  }, {
+    '退到的地址': '#/push/1',
+    '状态栏说了没找到': true,
+    '状态栏说了回到这位主播': true,
+  }, '通道没找到（状态栏：「' + said + '」）');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

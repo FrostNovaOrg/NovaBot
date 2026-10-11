@@ -90,6 +90,7 @@ function fakeEl(cls) {
 function loadStep() {
   const pieces = [
     bracedFrom(setupSrc, 'const draft'),
+    bracedFrom(setupSrc, 'function botSnapshot'),
     bracedFrom(setupSrc, 'function invalidateBot'),
     bracedFrom(setupSrc, 'function stepBot'),
   ];
@@ -117,7 +118,6 @@ function loadStep() {
     foot: () => {},
     syncFoot: () => {},
     refreshFacts: async () => {},
-    rememberBotDraft: draft => draft,
     report: (box, res) => {
       box.textContent = res.message;
       box.className = 'su-r ' + (res.success ? 'ok' : 'err');

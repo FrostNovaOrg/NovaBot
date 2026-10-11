@@ -113,7 +113,7 @@ function botDraftMatchesSaved(draft) {
 }
 
 /**
- * 把此刻草稿记成「与盘上一致」。测通存下或从盘上回填之后走这里。
+ * 把此刻草稿记成「与盘上一致」。从盘上回填之后走这里；测通存下记的是发出去的那一份，见 saveBot。
  */
 function rememberBotDraft(draft) {
   draft.botSynced = botSnapshot(draft.bot);
@@ -735,6 +735,8 @@ function stepBot(host) {
    * 表现是接下来的两步一直取不到名单，而使用者以为这一步已经过了
    */
   async function saveBot(box) {
+    // 记下发出去的那一份：回包前又改过的参数不算已存，重进时不能被盘上的盖掉
+    const sent = botSnapshot(at);
     try {
       const res = await api('/setup/bot', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -749,7 +751,7 @@ function stepBot(host) {
       if (!res.success) {
         draft.botOk = false;
       } else {
-        rememberBotDraft(draft);
+        draft.botSynced = sent;
       }
     } catch (e) {
       report(box, {success: false, message: '连接是通的，但没能存下来：' + e.message});

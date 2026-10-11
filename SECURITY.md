@@ -181,6 +181,18 @@ novabot:
 **只有在请求确实全部经过可信代理时才可开启。** 直接暴露的服务开启此项等同于让 IP 白名单失效——
 任何人都能伪造 `X-Forwarded-For`。
 
+**反代要把浏览器发来的 `Host` 原样送到本程序。** 配置控制台的写请求会先核来源：
+拿浏览器带来的 `Origin`（没有时看 `Referer`）里的「主机[:端口]」与本程序收到的 `Host` 比，
+对不上就回 403「请求来源不正确」。反代若把 `Host` 换成了上游地址（Nginx 的 `proxy_pass`
+不另写 `Host` 时就是这样），写请求一律被拒：用口令登录的连登录都过不去，
+用访问令牌的打得开页面，保存全被拒。Nginx 这样写：
+
+```nginx
+proxy_set_header Host $http_host;
+```
+
+不用 `$host`：它不带端口，站点不在默认端口上时与 `Origin` 里的「主机:端口」对不上。
+
 **开启后取的是 `X-Forwarded-For` 里最右侧的那一段，不是最左侧。** 这个头是追加式的：
 客户端自己带一个 `X-Forwarded-For: 1.2.3.4` 过来，反代（例如 nginx 的
 `$proxy_add_x_forwarded_for`）把真实对端接在后面，上游收到的是 `1.2.3.4, <真实对端>`。
@@ -202,9 +214,11 @@ novabot:
 这个组合下的兜底是**密码校验的全局速率上限**（每分钟 20 次，见 `LoginThrottle`）——
 它按 IP 计数管不着的那条路，正是全局桶存在的理由。
 
-**本仓库提供的反代模板一律覆写该头**（`proxy_set_header X-Forwarded-For $remote_addr;`），
-不用 `$proxy_add_x_forwarded_for`。覆写之后头里只有一段，最左＝最右＝真实对端，
-上面那个组合就不成立——**模板这么写不是随手写的，改它之前请先读完这一段**。
+**本仓库提供的反代模板（`dist/templates/Caddyfile`）不让客户端自带的 `X-Forwarded-For` 送到本程序**：
+事件流那条把该头删掉，代签发那条由 Caddy 换成真实对端。自己写 Nginx 配置时，
+用 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写，不用 `$proxy_add_x_forwarded_for`。
+覆写之后头里只有一段，最左＝最右＝真实对端，上面那个组合就不成立——
+**模板这么写不是随手写的，改它之前请先读完这一段**。
 
 本程序没有自己解析并覆盖 `getRemoteAddr()`：那样做的失败方向是把正常用户挡在门外，
 代价大于收益。若你的部署确实是追加式反代，请改成覆写，或不要开 `forward-headers-strategy`。

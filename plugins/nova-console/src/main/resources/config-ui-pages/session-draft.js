@@ -13,6 +13,9 @@
 
 const drafts = new Map();
 
+/** 整份草稿被丢过几次（放弃、重新载入）：回包时用来认出发出之后那份已经整个作废了 */
+let generation = 0;
+
 /**
  * 金额草稿变了要跟着重画的那一份
  *
@@ -77,6 +80,7 @@ export function sessionDraftCount() {
 
 export function clearSessionDrafts() {
   drafts.clear();
+  generation++;
 }
 
 export function setRevenueDraft(target, to, from) {
@@ -207,13 +211,21 @@ export function isClearPending(target, streamerUid, type) {
  * 每一笔自带 done()：那一笔真写成功了才清掉自己那一截草稿。
  * 写失败的那一笔留着，下次保存再发；成功过的不会重发。
  *
- * 清的是「发出去的那一份」，不是槽位里此刻这一份：请求挂着的那段时间里又改出来的
- * 新草稿是另一件东西，得留着下次保存再发。判法是草稿对象的身份——每一处 setter
- * 换的都是一份新对象，换过的就不再是发出去的那一个。
+ * 收入可见、静音时段、命令开关这三类，回包时拿槽位里此刻那一份与发出去的那一份对账：
+ * - 此刻没有草稿：发出之后又改回了载入时的值（setter 拿载入时那份当 from，改回即删）。
+ *   服务端此刻是发出去的那个值，改回的那个值得重新记成草稿，from 是发出去的值、to 是原值，
+ *   下次保存把它发出去；
+ * - 此刻的草稿想要的与发出去的相同：已经存上了，清掉；
+ * - 此刻的草稿想要第三个值：留着，下次保存再发。
+ * 发出之后整份草稿被放弃过（重新载入）的，不再补记。
+ * 订阅那两类不对账：发出去的移除已经办了，撤不回来。
  * @return {Array<{path: string, body: object, done: function, ask?: object}>}
  */
 export function sessionWrites() {
   const writes = [];
+  const born = generation;
+  /** 此刻那个槽位；发出之后整份草稿被放弃过即为 undefined，不再补记 */
+  const live = target => (born === generation ? slotOf(target) : undefined);
   for (const s of drafts.values()) {
     // 带上类型码：同一个号可以既是群又是好友，只带号的话后端分不出改的是哪一边
     const base = {platform: s.target.platform, type: Number(s.target.type), num: s.target.num};
@@ -222,7 +234,13 @@ export function sessionWrites() {
       writes.push({
         path: '/state/revenue',
         body: Object.assign({}, base, {visible: sent.to}),
-        done: () => { if (s.revenue === sent) s.revenue = null; trim(s); },
+        done: () => {
+          const cur = live(s.target);
+          if (!cur) return;
+          if (!cur.revenue) cur.revenue = {from: sent.to, to: sent.from};
+          else if (cur.revenue.to === sent.to) cur.revenue = null;
+          trim(cur);
+        },
       });
     }
     if (s.quiet) {
@@ -236,7 +254,13 @@ export function sessionWrites() {
       writes.push({
         path: '/state/quiet',
         body: Object.assign({}, base, body),
-        done: () => { if (s.quiet === sent) s.quiet = null; trim(s); },
+        done: () => {
+          const cur = live(s.target);
+          if (!cur) return;
+          if (!cur.quiet) cur.quiet = {from: sent.to, to: sent.from};
+          else if (sameQuiet(cur.quiet.to, sent.to)) cur.quiet = null;
+          trim(cur);
+        },
       });
     }
     const disable = [];
@@ -246,13 +270,18 @@ export function sessionWrites() {
       if (d.to) disable.push(name);
       else enable.push(name);
     }
-    const keepOnlyUnchanged = names => {
+    const settleCommands = names => {
       const sent = new Map(names.map(name => [name, s.commands.get(name)]));
       return () => {
+        const cur = live(s.target);
+        if (!cur) return;
         for (const name of names) {
-          if (s.commands.get(name) === sent.get(name)) s.commands.delete(name);
+          const was = sent.get(name);
+          const now = cur.commands.get(name);
+          if (!now) cur.commands.set(name, {from: was.to, to: was.from});
+          else if (now.to === was.to) cur.commands.delete(name);
         }
-        trim(s);
+        trim(cur);
       };
     };
     if (disable.length) {
@@ -260,7 +289,7 @@ export function sessionWrites() {
       writes.push({
         path: '/state/commands',
         body: Object.assign({}, base, {commands: names, disabled: true}),
-        done: keepOnlyUnchanged(names),
+        done: settleCommands(names),
       });
     }
     if (enable.length) {
@@ -268,7 +297,7 @@ export function sessionWrites() {
       writes.push({
         path: '/state/commands',
         body: Object.assign({}, base, {commands: names, disabled: false}),
-        done: keepOnlyUnchanged(names),
+        done: settleCommands(names),
       });
     }
     for (const [k, d] of [...s.subs]) {

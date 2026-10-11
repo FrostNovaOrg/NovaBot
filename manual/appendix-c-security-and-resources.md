@@ -100,10 +100,13 @@ novabot:
         trust-proxy: true
 ```
 
+反代还要把浏览器发来的 `Host` 原样送下来，不然控制台的登录或保存会被拒（「请求来源不正确」），
+写法见 SECURITY.md 的「关于反向代理」一节。
+
 **只有在请求确实全部经过可信代理时才可开启**——直接暴露的服务开这一项，
 等于让 IP 白名单可以被一个请求头绕过。开启后取的是 `X-Forwarded-For` 里
-**最右侧**的那一段（最左侧完全由客户端说了算）。本仓库提供的反代模板一律用
-`proxy_set_header X-Forwarded-For $remote_addr;` 覆写该头，改它之前请先读
+**最右侧**的那一段（最左侧完全由客户端说了算）。本仓库的反代模板不让客户端自带的该头送下来，
+自己写 Nginx 时用 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写，改它之前请先读
 [SECURITY.md](https://github.com/FrostNovaOrg/NovaBot/blob/main/SECURITY.md) 的
 「关于反向代理」一节。
 

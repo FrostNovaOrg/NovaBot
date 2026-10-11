@@ -5,8 +5,9 @@
  * 左边导航还亮着先前那一组——「已经滚到最底就亮最后一组」那条判定读的是整页高度，
  * 整页高度变了却不重判，亮着的那一组是按旧高度算出来的。
  *
- * 三格：① #groups 以外的内容变高、不滚动，高亮跟着重判；阳性对照（桩真跑得起来、
- * 亮得出一组）；拆页收尾（观察器断得干净，页面切走不留着空转）。
+ * 四格：① #groups 以外的内容变高、不滚动，高亮跟着重判；②顶栏长高时 --side-h 跟着
+ * 重量（窄屏吸顶的目录按它让开，值停在旧高度上时目录被顶栏盖住）；阳性对照（桩真跑
+ * 得起来、亮得出一组）；拆页收尾（观察器断得干净，页面切走不留着空转）。
  *
  * 场景的数：视口高 800、已滚到 500、页面高 1300（正好在最底），三个组 200-600、
  * 600-1000、1000-1300 全在视口 [500,1300] 里。提示条长高 100 后三个组整体下移 100、
@@ -14,6 +15,7 @@
  * 按现有判定，提示条出现前亮最后一组 g3，出现后该亮看得见的最上面那组 g1。
  *
  * 由 SettingsNavHighlightTest 拉起。量的是源码树里 settings.js 那一份，不是构建产物里的副本。
+ * 顶栏的高度在这里是桩上的一个数：真布局（折行、字号、机型）要浏览器才量得出来。
  */
 
 import {readFileSync} from 'node:fs';
@@ -91,6 +93,8 @@ const layout = {
   page: 1300,
   groupsTop: 200,
   groupsHeight: 1100,
+  // 窄屏顶栏（#side）此刻的高：内容落地、折行都会改它，量出来的数进 --side-h
+  sideHeight: 64,
   groups: [
     {id: 'g1', top: 200, bottom: 600},
     {id: 'g2', top: 600, bottom: 1000},
@@ -157,6 +161,17 @@ const groupsHost = {
     return layout.groupsHeight;
   },
 };
+// 窄屏顶栏：高度随内容变，一变 --side-h 就得重新量
+const sideHost = {
+  tag: 'div',
+  id: 'side',
+  get offsetHeight() {
+    return layout.sideHeight;
+  },
+  boxHeight() {
+    return layout.sideHeight;
+  },
+};
 const documentElement = {
   get scrollHeight() {
     return layout.page;
@@ -164,8 +179,9 @@ const documentElement = {
   boxHeight() {
     return layout.page;
   },
-  // syncSideHeight 要往根上写 --side-h（窄屏顶栏的实测高度，样式那边吸顶用）。
-  // 这里只收不判：吸顶那一半是纯样式叠层，合进以后由真浏览器量，不在本夹具
+  // syncSideHeight 往根上写 --side-h（窄屏顶栏的实测高度，样式那边吸顶用）。
+  // 吸顶那一段是纯样式叠层，真布局（折行、字号）要浏览器才量得出来；
+  // 这里判的是「顶栏一变高，这个数有没有跟着重量」
   style: {
     setProperty(name, value) {
       this[name] = value;
@@ -184,7 +200,9 @@ const fakeDocument = {
   documentElement,
   body,
   getElementById(id) {
-    return id === 'groups' ? groupsHost : null;
+    if (id === 'groups') return groupsHost;
+    if (id === 'side') return sideHost;
+    return null;
   },
   querySelectorAll(selector) {
     if (selector === '.setgrp[data-grp]') return sections;
@@ -304,11 +322,11 @@ const stopWatchingGroups = loadFn(src, 'function stopWatchingGroups(',
 const headerHeight = loadFn(src, 'function headerHeight(', [], []);
 const pageHeight = loadFn(src, 'function pageHeight(', ['document'], [fakeDocument]);
 // watchCurrentGroup 顺手还会量一次窄屏顶栏的高度（syncSideHeight）。改前还没有
-// 这一句，槽位先占上、给 null：那一半的量法在真浏览器里，本夹具不判它
+// 这一句，槽位先占上、给 null
 let syncSideHeight = null;
 try {
   syncSideHeight = loadFn(src, 'function syncSideHeight(', ['$', 'document'],
-    [sel => (sel === '#side' ? {offsetHeight: 64} : null), fakeDocument]);
+    [sel => (sel === '#side' ? sideHost : null), fakeDocument]);
 } catch (e) {
   syncSideHeight = null;
 }
@@ -329,16 +347,25 @@ function highlight() {
 // ---------- 走一遍 ----------
 let initial = 'missing';
 let afterBanner = 'missing';
+let sideAtMount = 'missing';
+let afterSideGrew = 'missing';
 let teardown = 'missing';
 try {
   watchCurrentGroup();
   flushRaf();
   initial = highlight();
+  sideAtMount = documentElement.style['--side-h'];
 
   bannerAppears();
   notifyResizeObservers();
   flushRaf();
   afterBanner = highlight();
+
+  // 顶栏长高（更新按钮、退出块落地，或折行）：窗口没改大小，走的不是 resize 那条路
+  layout.sideHeight = 96;
+  notifyResizeObservers();
+  flushRaf();
+  afterSideGrew = documentElement.style['--side-h'];
 
   stopWatchingGroups();
   const roLeft = roInstances.filter(inst => !inst.disconnected).length;
@@ -350,6 +377,8 @@ try {
 } catch (e) {
   initial = 'error:' + e.message;
   afterBanner = 'error:' + e.message;
+  sideAtMount = 'error:' + e.message;
+  afterSideGrew = 'error:' + e.message;
   teardown = 'error:' + e.message;
 }
 
@@ -359,6 +388,13 @@ eq(initial, 'g3', '阳性对照：滚到最底时亮最后一组');
 // ---------- ① #groups 以外的内容变高、不滚动，高亮跟着重判 ----------
 // 病：提示条出现或收起、页面一格没滚，左边导航还亮着先前那一组
 eq(afterBanner, 'g1', '① #groups 以外的内容变高、页面没滚动，高亮跟着重判');
+
+// ---------- ② 顶栏长高时 --side-h 跟着重量 ----------
+// 病：窄屏上顶栏一变高（按钮落地、折行），目录吸顶的位置还停在旧高度上，被顶栏盖住。
+// 量的是「顶栏变高有没有人重新量」——真布局（折行几行、字号）要浏览器才量得出来
+eq(JSON.stringify({'挂上时量的': sideAtMount, '顶栏长高之后量的': afterSideGrew}),
+  JSON.stringify({'挂上时量的': '64px', '顶栏长高之后量的': '96px'}),
+  '② 顶栏长高（窗口没改大小）时 --side-h 跟着重量，目录照旧让开');
 
 // 拆页收尾：观察器断得干净（页面切走不留着空转）
 eq(teardown, true, '拆页时观察器断得干净');

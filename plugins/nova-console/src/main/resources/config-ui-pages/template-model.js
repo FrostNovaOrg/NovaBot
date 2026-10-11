@@ -327,7 +327,8 @@ export function spotFromDom(root, container, offset) {
   walkCardDom(root, (kind, node) => {
     if (kind === 'text') {
       if (node === target) {
-        answer = {index, offset: chars + offset, onPill: false};
+        // 容器是 root 时 offset 数的是第几个孩子，落点是这段文字的第 0 个字
+        answer = {index, offset: container === root ? chars : chars + offset, onPill: false};
         return true;
       }
       chars += node.nodeValue.length;
@@ -335,6 +336,11 @@ export function spotFromDom(root, container, offset) {
       return false;
     }
     if (kind === 'br') {
+      // 光标停在换行前：落在它前面，即这一块此刻已数到的字数
+      if (node === target) {
+        answer = {index, offset: chars, onPill: false};
+        return true;
+      }
       chars += 1;
       pending = true;
       return false;
