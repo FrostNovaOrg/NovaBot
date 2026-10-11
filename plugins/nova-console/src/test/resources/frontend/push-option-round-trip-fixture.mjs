@@ -7,6 +7,8 @@
  * 原样时交回来的 params 空了，照写 message.params = {} 的话与快照里没有这一键仍差一截；
  * 二是版式区里数据卡片以外的选项写回时只写值不看形状，快照里本来没存这个键（跟着默认走）
  * 的通道改了又改回原值，参数里多出一个原样值的键。
+ * 新建的通道改了一项再点「恢复默认」是同一种故障：屏上已回到默认，改动条还显示有一处
+ * 没保存——两处「恢复默认」写回时照写 message.params，哪怕写回的是空对象。
  *
  * 改动条按整段 JSON 与快照比（见 push.js 的 changeCount）：键的形状与快照对不上就是一处
  * 改动——多一个键、少一个键都算。「回到原样」得连键的形状一起回到原样：快照里没这个键的，
@@ -106,6 +108,23 @@ class MiniNode {
   set innerHTML(html) {
     this._html = String(html ?? '');
     this.children = [];
+    // 确认弹层：标题、正文、各区与两颗按钮都立成节点（平铺在弹层下），「确认」要点得到
+    if (this._html.includes('ask-card')) {
+      const tags = /<([a-z0-9]+)\b([^>]*)>/gi;
+      let tag;
+      while ((tag = tags.exec(this._html))) {
+        const node = new MiniNode(tag[1]);
+        const classMatch = /class\s*=\s*"([^"]*)"/i.exec(tag[2]);
+        if (classMatch) node.className = classMatch[1];
+        const actMatch = /data-act\s*=\s*"([^"]*)"/i.exec(tag[2]);
+        if (actMatch) {
+          node.dataset.act = actMatch[1];
+          node.attributes['data-act'] = actMatch[1];
+        }
+        this.appendChild(node);
+      }
+      return;
+    }
     // 只把 <input …> 立成真节点：开关与数字框要从 label 里取回来拨
     const re = /<input\b([^>]*)>/gi;
     let match;
@@ -194,6 +213,8 @@ function findAll(root, selector) {
 function matches(node, sel) {
   if (sel.startsWith('#')) return node.id === sel.slice(1);
   if (sel.startsWith('.')) return String(node.className || '').split(/\s+/).includes(sel.slice(1));
+  const dataValue = /^\[data-([a-z]+)="([^"]*)"]$/.exec(sel);
+  if (dataValue) return !!node.dataset && node.dataset[dataValue[1]] === dataValue[2];
   const data = /^\[data-([a-z]+)]$/.exec(sel);
   if (data) return !!(node.dataset && node.dataset[data[1]]);
   return node.tagName === sel.toLowerCase();
@@ -368,6 +389,27 @@ function pickAt(mode) {
   node.dispatchEvent(fakeEvent('change', node));
 }
 
+/**
+ * 点某一段露着的「恢复默认」，再在确认弹层上点「确认」。layout 为真点段 3（报告版式），
+ * 否则点段 2（文字模板）：两段的状态行同形，按状态行里说没说「版式」分。改一下画一遍，取最新的
+ */
+async function restoreDefault(layout) {
+  const node = allNodes(page())
+    .filter(item => item.tagName === 'button' && item.textContent === '恢复默认' && !item.hidden)
+    .filter(item => String(((item.parentNode || {}).children || [])[0].innerHTML).includes('版式') === !!layout)
+    .at(-1);
+  if (!node) throw new Error((layout ? '段 3' : '段 2') + '没有露着的「恢复默认」');
+  node.click();
+  await settle();
+  const dialog = allNodes(document.body).find(item => hasClass(item, 'ask'));
+  if (!dialog || dialog.hidden) throw new Error('点了「恢复默认」没有弹出确认');
+  const yes = allNodes(dialog).find(item => item.dataset.act === 'yes');
+  dialog.dispatchEvent(fakeEvent('click', yes));
+  await settle();
+}
+
+const hasParams = message => Object.prototype.hasOwnProperty.call(message, 'params');
+
 // —— 两区小块 ——
 
 const ON = 'rep-zone-on';
@@ -409,9 +451,10 @@ async function settle() {
 /**
  * 把通道页画出来。params 为 null 时报告那条消息上不带 params 这一键：
  * 刚加的通道就是这样，[{handler}]，一个参数都没存过。文字模板那条消息一律如此——
- * 向导建出来的通道，每条消息都是光秃秃的一条 {handler}
+ * 向导建出来的通道，每条消息都是光秃秃的一条 {handler}。给了 textParams 的，文字模板那条
+ * 消息带上这一份 params
  */
-async function paintPage(params) {
+async function paintPage(params, textParams) {
   mock.requests.length = 0;
   push.setPushEntries([{
     platform: 'bilibili', uid: 1, _uname: '甲', enabled: true,
@@ -419,7 +462,8 @@ async function paintPage(params) {
       platform: TARGET.platform, type: 1, num: TARGET.num, enabled: true,
       messages: [
         params === null ? {handler: REPORT_HANDLER} : {handler: REPORT_HANDLER, params: Object.assign({}, params)},
-        {handler: TEXT_HANDLER},
+        textParams === undefined
+          ? {handler: TEXT_HANDLER} : {handler: TEXT_HANDLER, params: Object.assign({}, textParams)},
       ],
     }],
   }]);
@@ -562,6 +606,67 @@ await ask('③ 守住：真改一处记 1', async () => {
   await settle();
   same(push.changeCount(), 1, '真把 @ 换成「@全体成员」之后的改动数');
   same(textMessage().params.at_mode, 'all', '真把 @ 换成「@全体成员」之后存着的值');
+  same(alerts, [], '弹出的话');
+});
+
+// 故障：新建的通道，段 3 版式里改一项再点「恢复默认」——屏上已回到默认版式，改动条却还写着
+// 「1 处改动」：恢复默认写回了一份空的 params，与快照里没有这一键差一截
+await ask('④ 新建的通道：段 3 改一项再点恢复默认，改动条 0、params 键不在', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage(null);
+  push.markPushSaved();
+  flip(ROW_BOOL.label, false);
+  await settle();
+  same(push.changeCount(), 1, '「' + ROW_BOOL.label + '」关掉之后的改动数');
+  await restoreDefault(true);
+  same(push.changeCount(), 0, '恢复默认之后的改动数');
+  same(hasParams(reportMessage()), false, '恢复默认之后报告那条消息的 params 键');
+});
+
+// 故障：同上，段 2 文字模板里把 @ 档换一档再点「恢复默认」
+await ask('⑤ 新建的通道：段 2 改一项再点恢复默认，改动条 0、params 键不在', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage(null);
+  push.markPushSaved();
+  pickAt('all');
+  await settle();
+  same(push.changeCount(), 1, '@ 换成「@全体成员」之后的改动数');
+  await restoreDefault(false);
+  same(push.changeCount(), 0, '恢复默认之后的改动数');
+  same(hasParams(textMessage()), false, '恢复默认之后文字模板那条消息的 params 键');
+});
+
+// 故障：改过头——快照里显式存着 params（哪怕是空对象）的，恢复默认后键被删掉，改动条反倒记一处；
+// 或恢复默认前后真有差别的，被抹成 0
+await ask('⑥ 守住：快照显式存着 params 的照旧写回、改动条 0；恢复前后真有差别的照样记改动', async () => {
+  if (!push) throw new Error('产品码没载入，无从量起');
+  await paintPage({}, {});
+  push.markPushSaved();
+  flip(ROW_BOOL.label, false);
+  await settle();
+  await restoreDefault(true);
+  same(push.changeCount(), 0, '快照存着空 params 时，段 3 恢复默认之后的改动数');
+  same(reportMessage().params, {}, '快照存着空 params 时，段 3 恢复默认之后报告那条消息的 params');
+
+  await paintPage({}, {});
+  push.markPushSaved();
+  pickAt('all');
+  await settle();
+  await restoreDefault(false);
+  same(push.changeCount(), 0, '快照存着空 params 时，段 2 恢复默认之后的改动数');
+  same(textMessage().params, {}, '快照存着空 params 时，段 2 恢复默认之后文字模板那条消息的 params');
+
+  await paintPage({[ROW_BOOL.key]: false});
+  push.markPushSaved();
+  await restoreDefault(true);
+  same(push.changeCount(), 1, '快照存着关掉的「' + ROW_BOOL.label + '」时，段 3 恢复默认之后的改动数');
+  same(reportMessage().params, {}, '快照存着关掉的「' + ROW_BOOL.label + '」时，段 3 恢复默认之后的 params');
+
+  await paintPage(null, {at_mode: 'all'});
+  push.markPushSaved();
+  await restoreDefault(false);
+  same(push.changeCount(), 1, '快照存着「@全体成员」时，段 2 恢复默认之后的改动数');
+  same(textMessage().params, {}, '快照存着「@全体成员」时，段 2 恢复默认之后的 params');
   same(alerts, [], '弹出的话');
 });
 

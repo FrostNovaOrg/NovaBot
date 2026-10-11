@@ -22,7 +22,7 @@ class PushOptionRoundTripTest {
     private static final Path FIXTURE = Path.of("src", "test", "resources", "frontend", "push-option-round-trip-fixture.mjs");
 
     @Test
-    @DisplayName("新建通道的卡片与 @ 档、平铺选项改回原值改动条 0，真改照旧记 1")
+    @DisplayName("新建通道的卡片与 @ 档、平铺选项改回原值或恢复默认后改动条 0，真改照旧记 1")
     void optionRoundTripBackToWhereItWasCountsNothing() throws IOException, InterruptedException {
         FrontendFixture.runFromModule(FIXTURE.toString(), "版式选项改回原值不记改动",
                 Map.of("LAYOUT_OPTIONS", JSON.toJSONString(BilibiliLiveReportOptions.layoutOptions())));
