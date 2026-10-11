@@ -361,6 +361,33 @@ class BilibiliLiveRoomConnectorTest {
             }
 
             @Test
+            @DisplayName("默认三个六十秒窗口：两百秒前按安静处理，一百七十秒前仍告警")
+            void webHistoryUsesRecentThreeMinuteWindow() {
+                // 用户故障：判定起点算错，把几分钟前的旧弹幕当成新弹幕，冷门房间被误报平台未下发。
+                assertEquals(3, WINDOWS);
+                assertEquals(60, new NovaBilibiliProperties().getLive().getAutoDetectLiveRoomRiskInterval());
+                BilibiliConnectorHarness quietRoom = reconnectedRoom();
+                when(api(quietRoom).getLiveRoomLatestDanmus(ROOM_ID))
+                        .thenAnswer(invocation -> List.of(danmuAt(Instant.now().minusSeconds(200))));
+
+                assertFalse(stall(quietRoom, WINDOWS));
+                assertEquals(ConnectStatus.CONNECTED, quietRoom.connector().getStatus());
+                assertTrue(logged(Level.INFO, "网页上这段时间也没有新弹幕，按房间安静处理"));
+                assertFalse(logged(Level.WARN, "重连后仍然没收到弹幕礼物"));
+                verify(api(quietRoom), times(1)).getLiveRoomLatestDanmus(ROOM_ID);
+
+                BilibiliConnectorHarness activeRoom = reconnectedRoom();
+                when(api(activeRoom).getLiveRoomLatestDanmus(ROOM_ID))
+                        .thenAnswer(invocation -> List.of(danmuAt(Instant.now().minusSeconds(170))));
+
+                assertTrue(stall(activeRoom, WINDOWS));
+                assertEquals(ConnectStatus.RISK, activeRoom.connector().getStatus());
+                assertTrue(logged(Level.WARN, "网页上这段时间有 1 条新弹幕，像是平台没把弹幕下发到这条连接"));
+                assertFalse(logged(Level.INFO, "按房间安静处理"));
+                verify(api(activeRoom), times(1)).getLiveRoomLatestDanmus(ROOM_ID);
+            }
+
+            @Test
             @DisplayName("网页查询异常：照旧判定")
             void failedWebQueryStillJudgesRisk() {
                 // 用户故障：查不到网页时，把真断流当成安静放过去。

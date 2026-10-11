@@ -2261,9 +2261,8 @@ public class BilibiliApiUtil {
     public List<Danmu> getLiveRoomLatestDanmus(@NonNull Long roomId) {
         JSONObject data = requestBilibiliApi(DANMU_HISTORY_API + roomId);
 
-        JSONArray room = data.getJSONArray("room");
-        if (room == null) {
-            return List.of();
+        if (!(data.get("room") instanceof JSONArray room)) {
+            throw new RequestFailedException("历史弹幕响应缺少有效的 room 数组");
         }
 
         List<Danmu> danmus = new ArrayList<>(room.size());
