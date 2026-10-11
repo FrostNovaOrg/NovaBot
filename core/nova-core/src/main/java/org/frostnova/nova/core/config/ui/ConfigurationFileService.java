@@ -2809,30 +2809,6 @@ public class ConfigurationFileService implements SmartLifecycle {
     }
 
     /**
-     * 行内名单里，能认成别名记号的片段全都加了引号：星号可以在项的开头，
-     * 也可以在引号里、空格的后面。那是普通文字，不是别名。
-     * 没有这种项时返回 false，名单原有的说明不动。
-     */
-    private boolean starOnlyInsideQuotes(List<String> lines, Line line) {
-        List<String> items = rawFlowItems(lines, line);
-        if (items == null) {
-            return false;
-        }
-        boolean sawQuotedStar = false;
-        for (String item : items) {
-            boolean quoted = item.charAt(0) == '"' || item.charAt(0) == '\'';
-            if (aliasToken(quoted ? unquote(item) : item).isEmpty()) {
-                continue;
-            }
-            if (!quoted) {
-                return false;
-            }
-            sawQuotedStar = true;
-        }
-        return sawQuotedStar;
-    }
-
-    /**
      * 这一行已按名单收下，且收下的各项与启动读到的名单逐项相同。
      * 嵌套名单、项上的锚点或标签收下来的文字和程序读到的对不上，不能当普通名单放开。
      */

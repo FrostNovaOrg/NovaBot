@@ -80,11 +80,6 @@ public class BilibiliAccountService {
      */
     private static final Duration APP_TOKEN_REFRESH_AHEAD = Duration.ofDays(30);
 
-    /**
-     * TV 端扫码登录方式的配置取值
-     */
-    private static final String LOGIN_MODE_TV = "tv";
-
     private final BilibiliApiUtil api;
 
     private final BilibiliCredentialStore store;
