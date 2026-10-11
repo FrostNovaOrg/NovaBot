@@ -686,6 +686,19 @@ export function buildLayoutEditor(host, options) {
   }
 
   /**
+   * 这一份编辑器打开时存着的那一份参数
+   *
+   * 小块动完回到这一刻时，键的形状也得回到这一刻（见 setBack）
+   */
+  const beforeEdit = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
+
+  /** 动它之前那一刻的取值：没存过时与 valueOf 同一条规矩取默认 */
+  function beforeValueOf(option) {
+    const stored = beforeEdit[option.key];
+    return stored === undefined || stored === null ? option.defaultValue : stored;
+  }
+
+  /**
    * 这一项在当前的金额设定下怎么走
    *
    * @return {string|null} 'off'＝不出图，灰掉并写原因；'styled'＝照出但变样，加一句说明；
@@ -762,9 +775,39 @@ export function buildLayoutEditor(host, options) {
   }
 
   /**
+   * 这一键动完之后怎么落回参数
+   *
+   * 值回到「动它之前」那一刻时，键的形状也回到那一刻：那一刻没这个键的删掉、显式存着的
+   * 照原样写回。只写值不看形状的话，走默认（没存过这个键）的通道动两下回来会多出一个键，
+   * 改动条上平白多出一处；反过来一律删键的话，显式存着等于默认值的那一份又会少一个键，
+   * 同样多记一处。改动条按整段 JSON 与快照比，形状对不上就是一处改动。
+   *
+   * 值没回到那一刻却落在默认值上时删掉键：删掉之后这个通道跟着默认走，与「恢复默认」
+   * 按钮同一条规矩（见 push-model.js 的 restoredLayoutParams）。
+   * @param params 正在改的那一份参数
+   * @param option 这一项（顺序项或小块的开关）
+   * @param value 这一刻该记的值（顺序项是逗号连起来的整串）
+   * @param before 动它之前那一刻的值，同一把尺
+   */
+  function setBack(params, option, value, before) {
+    if (value === before) {
+      const stored = beforeEdit[option.key];
+      if (stored === undefined || stored === null) delete params[option.key];
+      else params[option.key] = stored;
+      return;
+    }
+    if (String(value) === String(option.defaultValue)) {
+      delete params[option.key];
+      return;
+    }
+    params[option.key] = value;
+  }
+
+  /**
    * 小块上的一次操作：顺序与那张卡的开关一起写回，一次 onChange
    *
-   * 写回的是读好的整串：残缺的老值在第一次动的时候就补齐了。两样都与此刻一样时（原地拖、
+   * 写回的是读好的整串：残缺的老值在真改动顺序时就补齐了。值回到动它之前那一刻时，
+   * 键的形状也一并回到那一刻（见 setBack）。两样都与此刻一样时（原地拖、
    * 拖回同一格）什么都不写——写一份一模一样的值，状态行照样不变，可草稿会平白记一次改动。
    * 重画之后焦点落在这张卡此刻所在那一区的那一枚上。
    * @param on 开关写成什么；undefined 为不动
@@ -776,12 +819,14 @@ export function buildLayoutEditor(host, options) {
     const params = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
     let touched = false;
     const joined = sequence.join(',');
-    if (joined !== normalizedOrder(valueOf(order), order.defaultValue).join(',')) {
-      params[order.key] = joined;
+    const nowOrder = normalizedOrder(valueOf(order), order.defaultValue).join(',');
+    if (joined !== nowOrder) {
+      setBack(params, order, joined,
+        normalizedOrder(beforeValueOf(order), order.defaultValue).join(','));
       touched = true;
     }
     if (on !== undefined && !!valueOf(option) !== on) {
-      params[option.key] = on;
+      setBack(params, option, on, !!beforeValueOf(option));
       touched = true;
     }
     if (!touched) return;
