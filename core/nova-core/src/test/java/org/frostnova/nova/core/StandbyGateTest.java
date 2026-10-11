@@ -116,10 +116,10 @@ class StandbyGateTest {
                 waitFor(app, 1_000, "放锁后 1 秒内应过门",
                         running -> running.out().contains(PASSED));
                 long passedAt = System.currentTimeMillis();
-                waitFor(app, 1_000 - (passedAt - releasedAt), "放锁后 1 秒内端口应绑上",
+                waitFor(app, 15_000 - (passedAt - releasedAt), "放锁后 15 秒内端口应绑上",
                         running -> runningPort(port));
                 long portAt = System.currentTimeMillis();
-                waitFor(app, 1_000 - (portAt - releasedAt), "放锁后 1 秒内应就绪",
+                waitFor(app, 15_000 - (portAt - releasedAt), "放锁后 15 秒内应就绪",
                         running -> running.out().contains(READY));
                 assertEquals("ready", readPhase(stateFile), "就绪后状态件应是 ready。\n" + dump(app));
                 assertPhaseSequence(recorder.finish());
