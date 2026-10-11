@@ -1355,7 +1355,13 @@ function sectionTemplate(host, user, target, session) {
     onChange: (handler, params) => {
       const message = messageOf(target, handler);
       if (!message) return;
-      message.params = params;
+      // 改完 params 空了、而快照里这条消息本来就没有 params 这一键的，把键也删掉，回到
+      // 原来的形状——不然改动条会平白多记一处（见 savedMessageHasParams）
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
       markDirty();
       syncState();
     },
@@ -1430,7 +1436,13 @@ function sectionLayout(host, target, session) {
     onChange: params => {
       const message = messageOf(target, handler);
       if (!message) return;
-      message.params = params;
+      // 与段 2 同一条规矩：改完 params 空了、而快照里这条消息本来就没有 params 这一键的，
+      // 把键也删掉，回到原来的形状（见 savedMessageHasParams）
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
       markDirty();
       syncState();
     },
@@ -1836,6 +1848,41 @@ function dropDisplayOnly(key, value) {
  */
 export function serializePush() {
   return JSON.stringify(pushData, dropDisplayOnly, 2);
+}
+
+/**
+ * 快照里这条通道消息上原本有没有 params 这一键
+ *
+ * 向导刚建出来的通道，消息就是一条 {handler}，一个参数都没存过。编辑器改完又改回原样时
+ * 交回来的 params 空了：照写 message.params = {} 的话，与快照里没有这一键仍差一截——
+ * 改动条按整段 JSON 与快照比（见 pushChangeCount），多这一个空键就多记一处；反过来
+ * 一律删键的话，快照里显式存着 params（哪怕是空对象）的那份又少一个键，同样多记一处。
+ * 所以照快照论。
+ * @param target 推送目标
+ * @param handler 处理器；主名与旧名都认，与 messageOf 同一把尺
+ * @return {boolean} 有则为 true。快照解析不了、找不到这条消息时按有算：删键是替人改形状，
+ *         拿不准时不动
+ */
+function savedMessageHasParams(target, handler) {
+  const names = handlerNames(handler);
+  const owner = (pushData || []).find(user => (user.targets || []).includes(target)) || {};
+  let saved;
+  try {
+    saved = JSON.parse(pushSaved || '[]');
+  } catch (e) {
+    return true;
+  }
+  for (const user of saved || []) {
+    if (String(user.platform) !== String(owner.platform)
+      || String(user.uid) !== String(owner.uid)) continue;
+    for (const item of ((user.targets) || [])) {
+      if (item.platform !== target.platform || Number(item.type) !== Number(target.type)
+        || String(item.num) !== String(target.num)) continue;
+      const message = ((item.messages) || []).find(one => names.includes(one.handler));
+      return !message || 'params' in message;
+    }
+  }
+  return true;
 }
 
 /**
