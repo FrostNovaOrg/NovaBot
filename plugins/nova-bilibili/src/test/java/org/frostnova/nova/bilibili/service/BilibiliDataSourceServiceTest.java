@@ -231,6 +231,7 @@ class BilibiliDataSourceServiceTest {
     @Test
     @DisplayName("缓存里有房间号的主播, 启动填上就能连, 不等补全")
     void cacheFilledStreamersConnectImmediately(@TempDir Path dir) throws Exception {
+        // 启动时缓存里已有房间号的主播，不等接口补全回来就能先连直播间。
         NovaStateStore store = newStore(dir);
         store.write("StreamerProfile", data -> {
             JSONObject profile = new JSONObject();
@@ -240,18 +241,24 @@ class BilibiliDataSourceServiceTest {
             data.put("bilibili:20001", profile);
         });
 
+        CountDownLatch allowApiReturn = new CountDownLatch(1);
         CountDownLatch apiDone = new CountDownLatch(1);
         when(api.getUpInfoByUid(anyLong())).thenAnswer(invocation -> {
+            allowApiReturn.await(3, TimeUnit.SECONDS);
             apiDone.countDown();
             return new Up(invocation.getArgument(0), "接口名字", 40001L, "https://example.invalid/api.jpg", 1L);
         });
 
         PushUser user = filled(20001L, null, null, null);
-        new BilibiliDataSourceService(api, null, store).completePushUsers(List.of(user));
+        try {
+            new BilibiliDataSourceService(api, null, store).completePushUsers(List.of(user));
 
-        assertEquals(30001L, user.getRoomId(), "缓存里的房间号启动填上就能连, 不等补全");
-        assertEquals("主播甲", user.getUname(), "缓存里的昵称填上");
-        assertEquals("https://example.invalid/a.jpg", user.getFace(), "缓存里的头像填上");
+            assertEquals(30001L, user.getRoomId(), "缓存里的房间号启动填上就能连, 不等补全");
+            assertEquals("主播甲", user.getUname(), "缓存里的昵称填上");
+            assertEquals("https://example.invalid/a.jpg", user.getFace(), "缓存里的头像填上");
+        } finally {
+            allowApiReturn.countDown();
+        }
 
         assertTrue(apiDone.await(2, TimeUnit.SECONDS), "后台补全该把接口打完");
     }
