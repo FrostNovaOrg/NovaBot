@@ -1304,7 +1304,14 @@ function sectionTemplate(host, user, target, session) {
       // 而屏幕上这个通道已经写着「默认模板」
       const handler = handlerOf(message, store.handlerList);
       if (!handler || !(handler.placeholders || []).length) continue;
-      message.params = restoreDefaults(message.params, handler);
+      // 与编辑器的 onChange 同一条规矩：恢复完空了、而快照里这条消息本来就没有 params 这一键的，
+      // 把键也删掉（见 savedMessageHasParams）
+      const params = restoreDefaults(message.params, handler);
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
     }
     markDirty();
     renderStreamers();
@@ -1400,7 +1407,13 @@ function sectionLayout(host, target, session) {
       body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
     const message = messageOf(target, handler);
     if (message) {
-      message.params = restoredLayoutParams(message.params, handler);
+      // 与段 2 的「恢复默认」同理（见 savedMessageHasParams）
+      const params = restoredLayoutParams(message.params, handler);
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
     }
     markDirty();
     renderStreamers();
