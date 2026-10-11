@@ -1,5 +1,9 @@
 package org.frostnova.nova.bilibili.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
@@ -8,17 +12,24 @@ import org.frostnova.nova.bilibili.health.BilibiliDisconnectCause;
 import org.frostnova.nova.bilibili.health.BilibiliDisconnectDigest;
 import org.frostnova.nova.bilibili.health.BilibiliLiveRoomHealthProbe;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.bilibili.model.Danmu;
+import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Field;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +46,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 直播间连接器测试
@@ -264,6 +276,165 @@ class BilibiliLiveRoomConnectorTest {
             return judged;
         }
 
+        private BilibiliApiUtil api(BilibiliConnectorHarness harness) {
+            return (BilibiliApiUtil) ReflectionTestUtils.getField(harness.connector(), "api");
+        }
+
+        private Danmu danmuAt(Instant timestamp) {
+            Danmu danmu = new Danmu();
+            danmu.setTimestamp(timestamp);
+            return danmu;
+        }
+
+        private void stubWebActivity(BilibiliConnectorHarness harness) {
+            when(api(harness).getLiveRoomLatestDanmus(ROOM_ID))
+                    .thenAnswer(invocation -> List.of(danmuAt(Instant.now())));
+        }
+
+        @Nested
+        @DisplayName("重连后的网页弹幕证据")
+        class WebHistory {
+            private final Logger logger = (Logger) LoggerFactory.getLogger(BilibiliLiveRoomConnector.class);
+            private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            private Level previousLevel;
+
+            @BeforeEach
+            void captureLogs() {
+                previousLevel = logger.getLevel();
+                logger.setLevel(Level.DEBUG);
+                appender.start();
+                logger.addAppender(appender);
+            }
+
+            @AfterEach
+            void releaseLogs() {
+                logger.detachAppender(appender);
+                appender.stop();
+                logger.setLevel(previousLevel);
+            }
+
+            private BilibiliConnectorHarness reconnectedRoom() {
+                BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+                harness.connect();
+                assertFalse(stall(harness, WINDOWS), "第一次判到仍只重连");
+                verify(api(harness), never()).getLiveRoomLatestDanmus(anyLong());
+                harness.fireConnectionClosed(1000);
+                harness.runQueuedReconnects();
+                appender.list.clear();
+                return harness;
+            }
+
+            private boolean logged(Level level, String text) {
+                return appender.list.stream().anyMatch(event -> event.getLevel() == level
+                        && event.getFormattedMessage().contains(text));
+            }
+
+            @Test
+            @DisplayName("网页有新弹幕：照旧判定并告警")
+            void recentWebDanmusStillJudgeRisk() {
+                // 用户故障：平台真没下发时，告警被这一查吞掉。
+                BilibiliConnectorHarness harness = reconnectedRoom();
+                when(api(harness).getLiveRoomLatestDanmus(ROOM_ID)).thenReturn(List.of(
+                        danmuAt(Instant.EPOCH), danmuAt(Instant.now().minusSeconds(1)), danmuAt(Instant.now())));
+
+                assertTrue(stall(harness, WINDOWS));
+                assertEquals(ConnectStatus.RISK, harness.connector().getStatus());
+                assertTrue(logged(Level.WARN, "重连后仍然没收到弹幕礼物"));
+                assertTrue(logged(Level.WARN, "网页上这段时间有 2 条新弹幕，像是平台没把弹幕下发到这条连接"));
+                assertTrue(logged(Level.WARN, "业务消息（弹幕/礼物/醒目留言）0 条"));
+                verify(api(harness), times(1)).getLiveRoomLatestDanmus(ROOM_ID);
+            }
+
+            @Test
+            @DisplayName("网页只有旧弹幕：按安静处理")
+            void quietWebHistoryDoesNotJudgeRisk() {
+                // 用户故障：冷门房间没人说话，被标成连续多分钟收不到弹幕，健康栏降级、发告警。
+                BilibiliConnectorHarness harness = reconnectedRoom();
+                when(api(harness).getLiveRoomLatestDanmus(ROOM_ID))
+                        .thenReturn(List.of(danmuAt(Instant.EPOCH)));
+
+                assertFalse(stall(harness, WINDOWS));
+                assertEquals(ConnectStatus.CONNECTED, harness.connector().getStatus());
+                assertTrue(logged(Level.INFO, "网页上这段时间也没有新弹幕，按房间安静处理"));
+                verify(api(harness), times(1)).getLiveRoomLatestDanmus(ROOM_ID);
+                assertEquals(0, harness.queuedReconnects(), "这一段断流已经重连过，不该再重连");
+            }
+
+            @Test
+            @DisplayName("网页查询异常：照旧判定")
+            void failedWebQueryStillJudgesRisk() {
+                // 用户故障：查不到网页时，把真断流当成安静放过去。
+                BilibiliConnectorHarness harness = reconnectedRoom();
+                when(api(harness).getLiveRoomLatestDanmus(ROOM_ID))
+                        .thenThrow(new IllegalStateException("private-response-body"));
+
+                assertTrue(stall(harness, WINDOWS));
+                assertEquals(ConnectStatus.RISK, harness.connector().getStatus());
+                assertTrue(logged(Level.WARN, "重连后仍然没收到弹幕礼物: "));
+                assertTrue(logged(Level.DEBUG, "网页弹幕查询失败: IllegalStateException"));
+                assertFalse(logged(Level.DEBUG, "private-response-body"));
+                verify(api(harness), times(1)).getLiveRoomLatestDanmus(ROOM_ID);
+
+                BilibiliConnectorHarness missingRoom = reconnectedRoom();
+                missingRoom.connector().getSource().setRoomId(null);
+                assertTrue(stall(missingRoom, WINDOWS));
+                assertEquals(ConnectStatus.RISK, missingRoom.connector().getStatus());
+                assertTrue(logged(Level.DEBUG, "网页弹幕查询失败: 缺少房间号"));
+                assertTrue(logged(Level.WARN, "重连后仍然没收到弹幕礼物: "));
+                verify(api(missingRoom), never()).getLiveRoomLatestDanmus(any());
+            }
+
+            @Test
+            @DisplayName("安静后的十分钟内：不重复查网页")
+            void quietRoomSkipsWebQueryDuringCooldown() {
+                // 用户故障：安静的房间每隔几分钟就去查一次网页，请求多了招来平台限制。
+                BilibiliConnectorHarness harness = reconnectedRoom();
+                when(api(harness).getLiveRoomLatestDanmus(ROOM_ID)).thenReturn(List.of());
+
+                assertFalse(stall(harness, WINDOWS));
+                appender.list.clear();
+                assertFalse(stall(harness, WINDOWS - 1));
+                assertTrue(appender.list.isEmpty(), "判据应从零重新攒，还没攒满时不应再处理");
+                assertFalse(stall(harness, 1));
+                assertEquals(ConnectStatus.CONNECTED, harness.connector().getStatus());
+                assertTrue(logged(Level.DEBUG, "按房间安静处理"));
+                assertFalse(logged(Level.INFO, "按房间安静处理"));
+                verify(api(harness), times(1)).getLiveRoomLatestDanmus(ROOM_ID);
+                assertEquals(0, harness.queuedReconnects());
+
+                // 十分钟到期后重新查网页，新弹幕仍须触发原来的告警。
+                ReflectionTestUtils.setField(harness.connector(), "quietUntil", System.currentTimeMillis() - 1);
+                stubWebActivity(harness);
+                assertTrue(stall(harness, WINDOWS));
+                assertEquals(ConnectStatus.RISK, harness.connector().getStatus());
+                verify(api(harness), times(2)).getLiveRoomLatestDanmus(ROOM_ID);
+
+                // RISK 中业务恢复也清掉冷却，下一段仍然先重连。
+                harness.receive("DANMU_MSG");
+                assertFalse(harness.connector().detectRisk());
+                assertEquals(ConnectStatus.CONNECTED, harness.connector().getStatus());
+                assertEquals(0L, ReflectionTestUtils.getField(harness.connector(), "quietUntil"));
+                assertFalse(stall(harness, WINDOWS));
+                harness.fireConnectionClosed(1000);
+                harness.runQueuedReconnects();
+
+                // 已连接的安静房间收到业务消息，同样清掉冷却与重连次数。
+                when(api(harness).getLiveRoomLatestDanmus(ROOM_ID)).thenReturn(List.of());
+                assertFalse(stall(harness, WINDOWS));
+                assertTrue((long) ReflectionTestUtils.getField(harness.connector(), "quietUntil")
+                        > System.currentTimeMillis());
+                harness.receive("SEND_GIFT_V2");
+                assertFalse(harness.connector().detectRisk());
+                assertEquals(0L, ReflectionTestUtils.getField(harness.connector(), "quietUntil"));
+                assertFalse(stall(harness, WINDOWS));
+                harness.fireConnectionClosed(1000);
+                harness.runQueuedReconnects();
+                stubWebActivity(harness);
+                assertTrue(stall(harness, WINDOWS));
+                verify(api(harness), times(4)).getLiveRoomLatestDanmus(ROOM_ID);
+            }
+        }
+
         @Test
         @DisplayName("⚠️ 第一次攒满断流只重连，不判定")
         void firstStallOnlyReconnects() {
@@ -286,6 +457,7 @@ class BilibiliLiveRoomConnectorTest {
         @DisplayName("重连之后仍然断流才判定")
         void judgesOnlyAfterReconnectFails() {
             BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            stubWebActivity(harness);
             harness.connect();
 
             assertFalse(stall(harness, WINDOWS), "第一段只重连");
@@ -350,6 +522,7 @@ class BilibiliLiveRoomConnectorTest {
         @DisplayName("COMBO_SEND 不算业务消息：只靠连击汇总的窗不算恢复")
         void comboSendDoesNotCountAsBusinessMessage() {
             BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            stubWebActivity(harness);
             harness.connect();
 
             assertFalse(stall(harness, WINDOWS), "第一段只重连");
@@ -417,6 +590,7 @@ class BilibiliLiveRoomConnectorTest {
             degraded.runQueuedReconnects();
             assertTrue(degradedStall(degraded, WINDOWS), "重连后业务仍然全在解析失败，这次要判定");
             assertEquals(ConnectStatus.RISK, degraded.connector().getStatus());
+            verify(api(degraded), never()).getLiveRoomLatestDanmus(anyLong());
 
             try {
                 verify(degraded.getLiveDataService()).recordRoomOutage(
@@ -430,6 +604,7 @@ class BilibiliLiveRoomConnectorTest {
                 // 阴性对照：普通断流（解析一切正常）判定的缺口，成因绝不许是 PARSE_DEGRADED——
                 // 这一项一旦写歪，报告里的「断流」与「解析降级」两栏就再也分不开了
                 BilibiliConnectorHarness normal = new BilibiliConnectorHarness().living();
+                stubWebActivity(normal);
                 normal.connect();
                 assertFalse(stall(normal, WINDOWS));
                 normal.fireConnectionClosed(1000);
@@ -452,6 +627,7 @@ class BilibiliLiveRoomConnectorTest {
         @DisplayName("判成这种状态后来一条弹幕：状态回到已连接，探针回到正常")
         void businessMessageAfterJudgmentRestoresConnectedAndProbe() throws Exception {
             BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            stubWebActivity(harness);
             harness.connect();
 
             assertFalse(stall(harness, WINDOWS), "第一段只重连");

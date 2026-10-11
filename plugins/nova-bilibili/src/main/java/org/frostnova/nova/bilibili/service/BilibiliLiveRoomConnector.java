@@ -971,6 +971,9 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         }
     }
 
+    /** 网页确认安静后的冷却截止时间，只在单线程调度的 detectRisk 中读写。 */
+    private long quietUntil;
+
     /**
      * 执行一次风控检测，并重置计数窗口
      * @return 是否判定为风控
@@ -986,6 +989,10 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         BilibiliLiveRoomRiskDetector.Window window = new BilibiliLiveRoomRiskDetector.Window(
                 totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0),
                 parseFailedMessages.getAndSet(0), stateGate.isLiving(source.getUid()));
+
+        if (window.business() > 0) {
+            quietUntil = 0;
+        }
 
         if (status == ConnectStatus.RISK) {
             if (window.business() > 0) {
@@ -1018,11 +1025,46 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                 return false;
             }
 
-            // 重连之后仍然没有弹幕礼物，才记成这一状态。只陈述观测到了什么，不断言原因——
-            // 从这里分不清是平台没下发、协议变更导致业务消息解析不出来、
-            // 还是主播那边确实没人说话但有人进出
-            log.warn("{}（{}）重连后仍然没收到弹幕礼物: {}",
-                    sourceLabel(), source.getRoomId(), judgment.observation());
+            long recentDanmus = -1;
+            // 解析降级已有收到消息的证据；普通断流再看网页，分清房间安静与未下发。
+            if (!judgment.parseDegraded()) {
+                long now = System.currentTimeMillis();
+                if (now < quietUntil) {
+                    log.debug("{}（{}）网页确认安静后的十分钟内，按房间安静处理: {}",
+                            sourceLabel(), source.getRoomId(), judgment.observation());
+                    riskDetector.reset();
+                    return false;
+                }
+                Long roomId = source.getRoomId();
+                if (roomId == null) {
+                    log.debug("{} 网页弹幕查询失败: 缺少房间号", sourceLabel());
+                } else {
+                    try {
+                        long windowMillis = Duration.ofSeconds(
+                                Math.max(10, properties.getLive().getAutoDetectLiveRoomRiskInterval())).toMillis();
+                        Instant since = Instant.ofEpochMilli(now - (long) riskWindows * windowMillis);
+                        recentDanmus = api.getLiveRoomLatestDanmus(roomId).stream()
+                                .filter(danmu -> danmu.getTimestamp().isAfter(since)).count();
+                    } catch (Exception e) {
+                        log.debug("{}（{}）网页弹幕查询失败: {}",
+                                sourceLabel(), roomId, e.getClass().getSimpleName());
+                    }
+                }
+                if (recentDanmus == 0) {
+                    quietUntil = System.currentTimeMillis() + Duration.ofMinutes(10).toMillis();
+                    log.info("{}（{}）连续多个窗口没收到弹幕礼物，网页上这段时间也没有新弹幕，按房间安静处理: {}",
+                            sourceLabel(), source.getRoomId(), judgment.observation());
+                    riskDetector.reset();
+                    return false;
+                }
+            }
+            if (recentDanmus > 0) {
+                log.warn("{}（{}）重连后仍然没收到弹幕礼物，网页上这段时间有 {} 条新弹幕，像是平台没把弹幕下发到这条连接: {}",
+                        sourceLabel(), source.getRoomId(), recentDanmus, judgment.observation());
+            } else {
+                log.warn("{}（{}）重连后仍然没收到弹幕礼物: {}",
+                        sourceLabel(), source.getRoomId(), judgment.observation());
+            }
             status = ConnectStatus.RISK;
 
             // 业务为零且确有解析失败：这一段采集缺口的成因是解析降级，与断流分开记。
