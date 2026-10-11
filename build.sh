@@ -252,8 +252,102 @@ mvn "${MAVEN_ARGS[@]}" -f build-tools/nova-plugin-processor/pom.xml ${CLEAN} ins
 #   install profile —— 普通库 jar，供各插件模块编译期依赖
 #   package profile —— Spring Boot 重打包后的可运行 jar，类位于 BOOT-INF/classes
 # 后者无法作为依赖被下游模块解析，因此必须先以 install 形态构建整个工程，最后再单独打发行包。
+#
+# 这一步分两段：先装好全部模块、不跑测试，再把各模块的测试分几组同时跑。
+# 一条 install 走到底时，一个模块的测试跑完下一个模块才开始编译，
+# report、console 的测试都得排在 nova-core 的测试后面。
+#
+# 第一段用 -DskipTests 而不是 -Dmaven.test.skip：后者连测试也不编，novacore 的 test-jar
+# 就打不出来，而 nova-core、bilibili、console 的测试要用它。
+# 这一段里 surefire 照样会印出 default-test 那一行和一句 Tests are skipped.，滤掉这两行：
+# 这一步的日志里，default-test 那一行只该出现在真跑了测试的地方，一个模块一次。
+# 只滤标准输出，退码由 pipefail 带出 mvn 的。
 echo "==> [2/9] 构建全部模块（库形态）"
-mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
+mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} -DskipTests install \
+    | grep --line-buffered -v -E '^\[INFO\] (--- surefire:[^ ]+ \(default-test\) @ [^ ]+ ---|Tests are skipped\.)$'
+
+# 第二段只跑测试：直接调 surefire 的 default-test，不走生命周期。
+# 别的模块的测试会读 target/classes、target/plugin.json、target/*.jar（插件自报清单、
+# 配置一致性、配置说明那几处）；同时跑的另一组要是再走一遍 resources、编译或打包，
+# 这边读到的就是写到一半的东西。测试进程挂的 Mockito 代理路径来自
+# dependency:properties（根 pom 的 test-dependency-paths），所以先调它一次。
+#
+# 分组按各模块测试耗时排，让最慢的一组尽量短：nova-core 单独一组（约三分钟，最长的一组）；
+# bilibili 与 report 一组（report 依赖 bilibili，两者合计约两分半）；其余四个一组（约一分半）。
+# 组内各模块按 reactor 的依赖顺序先后跑。
+#
+# 每组用自己的 java.io.tmpdir：report 的字体测试数临时目录里解出的字体文件与 JDK 的
+# +~JF 字体副本，几组共用一个临时目录时会数到别组进程产的。这几个目录建在系统临时目录下，
+# 不放进仓库：有测试往上找 .git 来认「在不在工作树里跑」，临时目录落在仓库里会被认错。
+# 后台任务开 set -m：不开时脚本里的后台进程忽略 SIGINT，这个忽略会一路传到测试拉起的
+# 子进程上，量「按 Ctrl-C 打断」的测试就收不到那个信号。
+# 各组先写自己的日志，全部跑完后按固定顺序整份印出，不交错；任一组退码非 0，本构建停在这里。
+if [ "$TESTS" = "1" ]; then
+    TEST_GROUP_DIR="$ROOT/target/test-groups"
+    TEST_GROUPS=(
+        "nova-core|core/nova-core"
+        "bilibili-report|plugins/nova-bilibili,plugins/nova-report"
+        "others|core/novacore,plugins/nova-onebot-adapter,plugins/nova-onebot-adapter-napcat-extension,plugins/nova-console"
+    )
+    TEST_TMP_BASE="${TMPDIR:-/tmp}"
+    # argLine 按空白切参数，临时目录的路径里不能带空白
+    case "$TEST_TMP_BASE" in
+        *[[:space:]]*) TEST_TMP_BASE=/tmp ;;
+    esac
+    rm -rf "$TEST_GROUP_DIR"
+    TEST_GROUP_PIDS=()
+    TEST_GROUP_TMPS=()
+    # 后台的组各在自己的进程组里，Ctrl-C 只到本脚本：中断时按进程组把各组连同测试进程一并停掉
+    trap 'for pid in ${TEST_GROUP_PIDS[@]+"${TEST_GROUP_PIDS[@]}"}; do kill -- "-$pid" 2>/dev/null; done; exit 130' INT TERM
+    set -m
+    for group in "${TEST_GROUPS[@]}"; do
+        group_dir="$TEST_GROUP_DIR/${group%%|*}"
+        group_tmp="$(mktemp -d "$TEST_TMP_BASE/novabot-test-${group%%|*}-XXXXXX")"
+        TEST_GROUP_TMPS+=("$group_tmp")
+        mkdir -p "$group_dir"
+        # mvn 在组内前台跑：子 shell 里不再有 set -m，再套一层后台又会把 SIGINT 忽略掉
+        (
+            started=$SECONDS
+            rc=0
+            mvn "${MAVEN_ARGS[@]}" -Pinstall -pl "${group#*|}" \
+                -DargLine="-Djava.io.tmpdir=$group_tmp" \
+                dependency:properties@test-dependency-paths surefire:test@default-test \
+                < /dev/null > "$group_dir/build.log" 2>&1 || rc=$?
+            echo "$((SECONDS - started))" > "$group_dir/seconds"
+            exit "$rc"
+        ) &
+        TEST_GROUP_PIDS+=("$!")
+    done
+    set +m
+
+    TEST_GROUP_RCS=()
+    for pid in "${TEST_GROUP_PIDS[@]}"; do
+        rc=0
+        wait "$pid" || rc=$?
+        TEST_GROUP_RCS+=("$rc")
+    done
+    trap - INT TERM
+    rm -rf "${TEST_GROUP_TMPS[@]}"
+
+    for group in "${TEST_GROUPS[@]}"; do
+        cat "$TEST_GROUP_DIR/${group%%|*}/build.log"
+    done
+    echo
+    TEST_GROUPS_FAILED=""
+    for i in "${!TEST_GROUPS[@]}"; do
+        group_name="${TEST_GROUPS[$i]%%|*}"
+        group_seconds="$(cat "$TEST_GROUP_DIR/$group_name/seconds" 2>/dev/null || echo '?')"
+        echo "    测试组 ${group_name}（${TEST_GROUPS[$i]#*|}）：${group_seconds} 秒，退码 ${TEST_GROUP_RCS[$i]}"
+        if [ "${TEST_GROUP_RCS[$i]}" -ne 0 ]; then
+            TEST_GROUPS_FAILED="${TEST_GROUPS_FAILED} ${group_name}"
+        fi
+    done
+    if [ -n "$TEST_GROUPS_FAILED" ]; then
+        echo "" >&2
+        echo "测试未过的组：${TEST_GROUPS_FAILED}（日志已在上面整份印出）" >&2
+        exit 1
+    fi
+fi
 
 # ── [3/9] NovaCore 边界检查 ─────────────────────────────────────────────
 # 尺在 tools/novacore-boundary-check.sh：各格只 grep/find，不 build、不联网，
@@ -418,7 +512,7 @@ bash "$ROOT/tools/artifact-entry-check.sh" "$OUT"
 # 本树已有主播页那一把，名单十三把（首页／推送／连接／主播／日志／初始设置／模板／今日卡／
 # 设置／登录／告警／确认／只读口令）。
 # 名单之后单跑向导插件步那一把：它量的是 setup.js／main.js 的接线，不是视图模型，
-# 名字也不是 *-model-check.sh，因此不进 MODEL_CHECKERS（测试按这个名字形状读那份名单）。
+# 名字也不是 *-model-check.sh，因此不进 MODEL_CHECKERS（这份名单只收视图模型的尺）。
 # 与第 3 步同理只在跑测试时跑：这几把都要 node，--skip-tests 的一键安装不该因为
 # 机器上没装 node 而停在这里。
 echo
