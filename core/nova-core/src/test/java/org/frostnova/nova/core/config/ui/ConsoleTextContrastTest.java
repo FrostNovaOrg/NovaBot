@@ -21,11 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 控制台与登录页上状态字、错误字、危险按钮字的对比度
  * <p>
  * 抓的故障：有人改了色表，浅色或暗色主题下「重启生效」「立即生效」这类状态字、
- * 登录错误字、危险按钮上的字、淡底上的选中项与辅助字又看不清了（不到 WCAG 的 4.5:1）。
+ * 登录错误字、危险按钮上的字、淡底上的选中项与辅助字又看不清了（不到 WCAG 的 4.5:1）；
+ * 日志页上今天没有条目的分类小标签，字看不清。
  * <p>
  * 读 app.css 与 login.html 的三块色表（浅色、跟随系统的暗色、手动暗色），字色与底色
  * 都从组件规则里现取 {@code color:var(--x)}、{@code background:var(--y)}，
  * 半透明底按 alpha 叠在下面那层上再算。规则改引了别的色，量的也跟着是新引的那个。
+ * 规则里写了 opacity 的算量不出：它把字和底一起淡掉，色表里的字色已不是画出来的那个。
  */
 @DisplayName("控制台文字对比度")
 class ConsoleTextContrastTest {
@@ -52,6 +54,7 @@ class ConsoleTextContrastTest {
             new Spot("设置分类选中项", ".grpnav .cur", List.of("ground")),
             new Spot("主题选中项", ".themechoice .pill.cur", List.of("surface")),
             new Spot("日志筛选选中项", ".lgpill[aria-pressed=\"true\"]", List.of("surface")),
+            new Spot("日志页今天没有条目的分类小标签", ".lgpill.dim", List.of("surface")),
             new Spot("连接页「去设置页改」", ".lc-note .lc-go", List.of("ground")),
             new Spot("错误行的日志辅助字", ".tl-hd .tl-x", List.of("surface", "errsoft")),
             new Spot("警告行的日志辅助字", ".tl-hd .tl-x", List.of("surface", "warnsoft")),
@@ -73,6 +76,8 @@ class ConsoleTextContrastTest {
             "rgba\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*([0-9.]+)\\s*\\)");
 
     private static final Pattern COLOR = Pattern.compile("(?<![-\\w])color\\s*:\\s*var\\(--([a-z0-9-]+)\\)");
+
+    private static final Pattern OPACITY = Pattern.compile("(?<![-\\w])opacity\\s*:");
 
     private static final Pattern BACKGROUND = Pattern.compile(
             "(?<![-\\w])background\\s*:\\s*var\\(--([a-z0-9-]+)\\)\\s*[;}]");
@@ -98,6 +103,10 @@ class ConsoleTextContrastTest {
             String body = rule(text, spot.selector());
             if (body == null) {
                 bad.add(file + " 找不到规则 " + spot.selector() + "（" + spot.what() + "）");
+                continue;
+            }
+            if (OPACITY.matcher(body).find()) {
+                bad.add(file + " " + spot.selector() + " 用 opacity 变淡，字和底一起淡掉，量不出字色（" + spot.what() + "）");
                 continue;
             }
             Matcher fg = COLOR.matcher(body);
