@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -345,6 +346,72 @@ class StreamerApiTest {
     }
 
     // ---------------------------------------------------------------- 详情
+
+    /**
+     * 同一批场次，运营分析页和主播详情页列出的指标或桶字段对不上
+     */
+    @Test
+    @DisplayName("同一批场次，运营分析页和主播详情页列出的指标或桶字段对不上")
+    @SuppressWarnings("unchecked")
+    void analyticsAndStreamerDetailShareMetricDescriptionsAndBuckets() {
+        LiveMetricCatalog catalog = new LiveMetricCatalog() {
+            @Override
+            public String platform() {
+                return "bilibili";
+            }
+
+            @Override
+            public List<Metric> metrics() {
+                return List.of(Metric.count("danmu_count", "弹幕", "条"),
+                        Metric.money("gift_value", "礼物"));
+            }
+        };
+        ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
+        when(catalogs.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(catalog, catalog()));
+        ObjectProvider<LiveReportRedrawer> redrawers = mock(ObjectProvider.class);
+        when(redrawers.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        AnalyticsController analytics = new AnalyticsController(archive, catalogs);
+        StreamerController streamers = new StreamerController(dataSource, new StreamerDirectory(properties),
+                liveDataService, archive, snapshots, details, catalogs, redrawers);
+
+        for (int daysAgo : List.of(40, 1)) {
+            long start = todayStart - daysAgo * DAY;
+            archive.append(new LiveSession("bilibili", 1001L, "主播甲", 10010L,
+                    start, start + 3600_000L, 3600,
+                    Map.of("danmu_count", 106.0, "gift_value", 2.5), Map.of("danmu", 3)));
+        }
+        archive.append(session(1002L, "主播乙", todayStart - DAY, 1800));
+
+        for (String period : List.of("week", "month")) {
+            JSONObject analysis = analytics.analytics(period, 1001L, 0);
+            ResponseEntity<JSONObject> response = streamers.streamer("bilibili", 1001L, period, 1, 0);
+            assertEquals(200, response.getStatusCode().value());
+            JSONObject detail = response.getBody();
+            assertNotNull(detail);
+            JSONObject trend = detail.getJSONObject("trend");
+            JSONArray metrics = analysis.getJSONArray("metrics");
+            assertEquals(2, metrics.size());
+            assertEquals(Set.of("key", "name", "unit", "money"), metrics.getJSONObject(0).keySet());
+            assertEquals(List.of("danmu_count", "gift_value"),
+                    metrics.stream().map(one -> ((JSONObject) one).getString("key")).toList());
+            assertTrue(metrics.getJSONObject(1).getBooleanValue("money"));
+            assertEquals(metrics, trend.getJSONArray("metrics"), "两页的指标描述应逐项相同");
+            assertEquals(metrics, detail.getJSONObject("sessions").getJSONArray("metrics"));
+            assertEquals(analysis.getJSONArray("buckets"), trend.getJSONArray("buckets"),
+                    "两页的桶应包含相同字段与数值");
+            JSONArray buckets = trend.getJSONArray("buckets");
+            assertTrue(buckets.size() >= 2);
+            for (int i = 0; i < buckets.size(); i++) {
+                assertEquals(Set.of("label", "start", "end", "sessions", "durationSeconds", "metrics", "userTimes"),
+                        buckets.getJSONObject(i).keySet());
+            }
+            JSONObject latest = buckets.getJSONObject(buckets.size() - 1);
+            assertEquals(1, latest.getIntValue("sessions"));
+            assertEquals(3600, latest.getLongValue("durationSeconds"));
+            assertEquals(2.5, latest.getJSONObject("metrics").getDoubleValue("gift_value"));
+            assertEquals(3, latest.getJSONObject("userTimes").getLongValue("danmu"));
+        }
+    }
 
     @Test
     @DisplayName("详情三段都是实值：概况、场次、趋势")
