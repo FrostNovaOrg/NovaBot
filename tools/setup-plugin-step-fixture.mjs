@@ -66,10 +66,14 @@ ask('① setup.js 不含 SETUP_STEPS[ 与 SETUP_STEPS.length', () => {
   }
 });
 
-ask('② setup.js 含 /config/assets/ 与 withPluginSteps(', () => {
+ask("② setup.js 含 CONSOLE + '/assets/' 与 withPluginSteps(", () => {
   const text = src('setup.js');
-  if (!text.includes("'/config/assets/'")) {
-    throw new Error("缺少 '/config/assets/'");
+  // 插件步脚本的地址从带部署前缀的控制台根拼；写死 /config 的话，配了前缀的部署取不到脚本
+  if (!text.includes("CONSOLE + '/assets/'")) {
+    throw new Error("缺少 CONSOLE + '/assets/'");
+  }
+  if (text.includes("'/config/assets/'")) {
+    throw new Error("仍写死 '/config/assets/'，配了部署前缀时插件步脚本取不到");
   }
   if (!text.includes('withPluginSteps(')) {
     throw new Error('缺少 withPluginSteps(');
