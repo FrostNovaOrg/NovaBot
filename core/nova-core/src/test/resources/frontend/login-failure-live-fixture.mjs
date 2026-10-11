@@ -139,8 +139,8 @@ const passkeySrc = bracedFrom(login, 'async function loginWithPasskey');
 function buildSubmit(fetchImpl, ctx) {
   if (!submitSrc) throw new Error('切不出提交那一支');
   // 配平截到箭头函数体那只 } 为止，addEventListener( 的另一半括号在这里补上
-  new Function('$', 'fetch', 'paint', 'tick', 'lockedSeconds',
-    (markSrc ? markSrc + '\n' : '') + submitSrc + ');')(ctx.$, fetchImpl, () => {}, () => {}, 0);
+  new Function('$', 'fetch', 'paint', 'tick', 'lockedSeconds', 'CONSOLE',
+    (markSrc ? markSrc + '\n' : '') + submitSrc + ');')(ctx.$, fetchImpl, () => {}, () => {}, 0, '/config');
   const handler = (ctx.byId.form.listeners.submit || [])[0];
   if (!handler) throw new Error('提交支没挂上');
   return handler;
@@ -149,9 +149,9 @@ function buildSubmit(fetchImpl, ctx) {
 function buildPasskey(fetchImpl, ctx) {
   if (!passkeySrc) throw new Error('切不出通行密钥那一支');
   // loginWithPasskey 是声明不挂监听，求值后把函数本身交回来
-  return new Function('$', 'fetch', 'paint', 'toBuffer', 'toBase64Url', 'enterConsole',
+  return new Function('$', 'fetch', 'paint', 'toBuffer', 'toBase64Url', 'enterConsole', 'CONSOLE',
     (markSrc ? markSrc + '\n' : '') + passkeySrc + '\nreturn loginWithPasskey;')(
-    ctx.$, fetchImpl, () => {}, () => {}, () => '', () => {});
+    ctx.$, fetchImpl, () => {}, () => {}, () => '', () => {}, '/config');
 }
 
 const submitEvent = {preventDefault() {}};

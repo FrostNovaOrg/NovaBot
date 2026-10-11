@@ -110,6 +110,23 @@ novabot:
 [SECURITY.md](https://github.com/FrostNovaOrg/NovaBot/blob/main/SECURITY.md) 的
 「关于反向代理」一节。
 
+### 挂在路径前缀下
+
+要把控制台挂在某个路径前缀下（例如 `https://example.com/novabot/config`），
+把 Spring 的 `server.servlet.context-path` 设成那个前缀：
+
+```yaml
+server:
+  servlet:
+    context-path: /novabot
+```
+
+- 反代**原样转发路径**，不剥前缀：`/novabot/` 下的请求照原路径转给 NovaBot。
+  页面、接口、登录 Cookie 都按这个前缀写，地址对不上时登录后会又回到登录页。
+- NapCat WebUI 那条反代规则跟着带前缀，写成 `/novabot/config/napcat/`（即「前缀 + `/config/napcat/`」）。
+- 反代剥掉前缀再转发、靠 `X-Forwarded-Prefix` 告诉 NovaBot 前缀的那种部署**不支持**：
+  NovaBot 只认自己配置里的前缀，不认请求头里的。
+
 ## 资源占用
 
 一句话：**按带负载的稳态峰值（约 896 MB）规划机器内存**。这个数是测过的那个场景里的峰值，不是上界；约 476 MB 只是同条件下较短时段的稳态常驻，按它去备会不够。512 MB 的机器不够用；

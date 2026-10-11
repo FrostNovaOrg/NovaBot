@@ -1696,10 +1696,10 @@ class ConfigUiFrontendTest {
      * 报告版式那张图的来路
      * <p>
      * 单列一条而不是并进上面那张表：它不经 {@code api()}（那一支解 JSON，而这里回的是 PNG），
-     * 因此写的是完整路径。少了它，「报告长什么样」那一段就只剩一排开关，
+     * 因此自己经控制台根路径 {@code CONSOLE} 拼出完整路径。少了它，「报告长什么样」那一段就只剩一排开关，
      * 而所见即所得的全部意义正是那张图。
      */
-    private static final String REPORT_PREVIEW_PATH = "/config/api/report/preview";
+    private static final String REPORT_PREVIEW_PATH = "/api/report/preview";
 
     /**
      * 「本群设置」那一段要写的端点，闭集
@@ -1914,7 +1914,7 @@ class ConfigUiFrontendTest {
                 bad.add(PUSH_VIEW + " 没有调用 " + endpoint + "，那一块此刻空着而不说为什么");
             }
         }
-        if (!view.contains("'" + REPORT_PREVIEW_PATH + "'")) {
+        if (!view.contains("CONSOLE + '" + REPORT_PREVIEW_PATH + "'")) {
             bad.add(PUSH_VIEW + " 没有调用 " + REPORT_PREVIEW_PATH
                     + "，「报告长什么样」那一段就只剩一排开关，而所见即所得的意义正是那张图");
         }

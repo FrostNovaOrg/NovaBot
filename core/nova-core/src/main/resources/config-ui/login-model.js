@@ -101,10 +101,11 @@ export function loginControlState(view) {
  * 目标不带片段时 replace 本就是整页导航，照常走。
  * @param href 当前的完整地址（location.href）
  * @param hash 当前的片段（location.hash），形如 '#/settings' 或空串
+ * @param home 控制台的地址，即「部署前缀 + /config」，由页面按服务端写进来的前缀给出
  * @return {{reload: boolean, url: string}} reload 为真时须整页重载，否则 replace 到 url
  */
-export function landing(href, hash) {
-  const url = '/config' + hash;
+export function landing(href, hash, home) {
+  const url = home + hash;
   // 「与当前同址」按解析后的完整地址比：query（令牌那一趟留下的）与片段都算数。
   // 同址还要带片段才须重载——不带片段的 replace 本就是整页导航，重载反而多走一趟
   const reload = hash !== '' && new URL(url, href).href === href;

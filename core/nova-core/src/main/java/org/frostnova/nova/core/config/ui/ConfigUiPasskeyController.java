@@ -196,7 +196,7 @@ public class ConfigUiPasskeyController {
                 .httpOnly(true)
                 .secure(request.isSecure())
                 .sameSite("Strict")
-                .path(ConfigUiController.BASE_PATH)
+                .path(ConfigUiPrefix.consolePath(request))
                 .maxAge(Duration.ofHours(Math.max(1, properties.getSessionHours())))
                 .build();
     }

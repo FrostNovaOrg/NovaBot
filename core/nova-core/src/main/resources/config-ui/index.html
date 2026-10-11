@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 部署前缀（server.servlet.context-path），没配时为空。服务端吐页时写进来，core.js 从这里取 -->
+<meta name="nova-prefix" content="{{nova-prefix}}">
 <title>NovaBot 控制台</title>
 <script>
   // 界面主题偏好记在本浏览器里。首帧前设好 data-theme，免得先按系统色闪一下再切。
@@ -14,8 +16,8 @@
     }
   } catch (e) {}
 </script>
-<link rel="icon" href="/config/assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/config/assets/app.css">
+<link rel="icon" href="{{nova-prefix}}/config/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{nova-prefix}}/config/assets/app.css">
 </head>
 <body>
 <div id="app">
@@ -30,7 +32,7 @@
   -->
   <aside id="side">
     <div class="brand">
-      <div class="brand-mark"><img src="/config/assets/icon.svg" alt="NovaBot"></div>
+      <div class="brand-mark"><img src="{{nova-prefix}}/config/assets/icon.svg" alt="NovaBot"></div>
       <div class="brand-name">NovaBot</div>
     </div>
     <nav class="nav" id="nav">
@@ -459,6 +461,6 @@
   改成一堆 <script> 时那份顺序是隐性约定：谁依赖谁只存在于人的记忆里，插错一行就是 undefined。
   模块化没有引入构建步骤——浏览器原生支持，改完刷新即可。
 -->
-<script type="module" src="/config/assets/main.js"></script>
+<script type="module" src="{{nova-prefix}}/config/assets/main.js"></script>
 </body>
 </html>

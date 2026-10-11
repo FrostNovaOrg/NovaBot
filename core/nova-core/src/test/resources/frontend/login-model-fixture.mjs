@@ -109,9 +109,9 @@ for (const id of CONTROL_IDS) eq(freeControls[id], false, '未锁定时 ' + id +
 // 登录成功后要去的地方。安全过滤器把登录页原地吐在 /config 上（地址栏不变），
 // 因此「当前已经是那个地址、只是带个片段」时，replace 落在同址上只做片段导航，
 // 页面不重取，人进不了控制台——那一档要改成整页重载。
-eq(landing('http://h/config#/settings', '#/settings').reload, true, '同址带片段：replace 只做片段导航，须改重载');
-eq(landing('http://h/config', ''), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
-eq(landing('http://h/config?token=x', '').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
+eq(landing('http://h/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
+eq(landing('http://h/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
+eq(landing('http://h/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

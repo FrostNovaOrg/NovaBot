@@ -4,8 +4,8 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, currentChangeSource, el, esc, markDirty, phrase, registerChangeSource, reloadChangeSources, say, term}
-  from './core.js';
+import {$, api, CONSOLE, currentChangeSource, el, esc, markDirty, phrase, registerChangeSource, reloadChangeSources, say,
+  term} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
@@ -99,7 +99,7 @@ async function mountPages() {
     if (!container) continue;
 
     try {
-      const module = await import('/config/assets/' + meta.script);
+      const module = await import(CONSOLE + '/assets/' + meta.script);
       const page = {meta, module};
       pages.push(page);
       registerPageChangeSource(page);

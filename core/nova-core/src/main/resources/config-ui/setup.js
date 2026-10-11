@@ -19,7 +19,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
+import {$, api, CONSOLE, el, esc, markDirty, phrase, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerBlockedReason, registerPasskey} from './passkeys.js';
 import {setAuthState} from './settings-auth.js';
@@ -159,7 +159,7 @@ async function loadPluginModules(list) {
   const mods = {};
   for (const meta of list) {
     try {
-      mods[meta.id] = await import('/config/assets/' + meta.script);
+      mods[meta.id] = await import(CONSOLE + '/assets/' + meta.script);
     } catch (e) {
       mods[meta.id] = null;
     }

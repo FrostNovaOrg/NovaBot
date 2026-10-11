@@ -5,7 +5,7 @@
  * 哪一段该是什么颜色，一律在那边判——判断留在这里的话，八档对照就只能靠人点开页面看。
  */
 
-import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
+import {$, api, clock, CONSOLE, el, esc, markDirty, say, today} from './core.js';
 import {extAttrs} from './manual-link.js';
 import {homeModel, stationHref} from './home-model.js';
 import {considerSetupRedirect, pageStatus, refreshPages} from './main.js';
@@ -201,7 +201,7 @@ async function pluginFacts(status, login) {
   const ctx = {status: status || {}, login: login || {}, api};
   for (const meta of pages) {
     try {
-      const mod = await import('/config/assets/' + meta.script);
+      const mod = await import(CONSOLE + '/assets/' + meta.script);
       pluginDone[meta.id] = !!(typeof mod.done === 'function' && await mod.done(ctx));
     } catch (e) {
       pluginDone[meta.id] = false;

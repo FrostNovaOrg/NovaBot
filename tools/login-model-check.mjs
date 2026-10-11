@@ -48,9 +48,16 @@ eq(lockText(60).includes('输对'), true, '文案说明锁定期内输对也会�
 eq(lockText(7) === lockText(8), false, '不同剩余时长给出不同文案');
 
 // —— 档四：落点 ——
-eq(landing('http://h/config#/settings', '#/settings').reload, true, '同址带片段：replace 只做片段导航，须改重载');
-eq(landing('http://h/config', ''), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
-eq(landing('http://h/config?token=x', '').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
+eq(landing('http://h/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
+eq(landing('http://h/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
+eq(landing('http://h/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
+// 配了部署前缀：落点是带前缀的控制台根，不落回裸的 /config
+eq(landing('http://h/novabot/config#/settings', '#/settings', '/novabot/config'),
+  {reload: true, url: '/novabot/config#/settings'}, '带前缀同址带片段：落点带前缀，须改重载');
+eq(landing('http://h/novabot/config', '', '/novabot/config'),
+  {reload: false, url: '/novabot/config'}, '带前缀无片段：落点是 /novabot/config，不重载');
+eq(landing('http://h/config#/settings', '#/settings', '/novabot/config'),
+  {reload: false, url: '/novabot/config#/settings'}, '现址没前缀而控制台带前缀：不算同址，照常整页导航');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

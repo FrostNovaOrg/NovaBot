@@ -39,7 +39,8 @@ final class ConfigUiLoginPage {
     private static final String REVEAL_RESOURCE = "config-ui/password-reveal.js";
 
     /**
-     * 拼好的页面。类路径资源在运行期不会变，因此只拼一次
+     * 拼好的页面，前缀的占位还在。类路径资源在运行期不会变，因此只拼一次；
+     * 前缀每次吐页时按本程序配的那一份写进去，见 {@link ConfigUiPrefix}
      */
     private static volatile String composed;
 
@@ -48,10 +49,15 @@ final class ConfigUiLoginPage {
 
     /**
      * 取拼好的登录页
+     * @param prefix 部署前缀，取自 {@link ConfigUiPrefix#of(jakarta.servlet.ServletContext)}，没配时为空串
      * @return 完整 HTML
      * @throws IOException 读取资源失败时抛出
      */
-    static String html() throws IOException {
+    static String html(String prefix) throws IOException {
+        return ConfigUiPrefix.render(template(), prefix);
+    }
+
+    private static String template() throws IOException {
         String cached = composed;
         if (cached == null) {
             synchronized (ConfigUiLoginPage.class) {

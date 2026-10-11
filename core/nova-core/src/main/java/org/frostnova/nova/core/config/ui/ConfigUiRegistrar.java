@@ -10,6 +10,7 @@ import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.util.IpMatcher;
 import org.frostnova.nova.core.lang.SecureToken;
 import org.frostnova.nova.core.lang.StringUtil;
+import jakarta.servlet.ServletContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.time.Duration;
 
@@ -151,16 +153,20 @@ public class ConfigUiRegistrar {
                 ? "127.0.0.1"
                 : "本机地址";
 
+        // 启动时没有请求，部署前缀从 servlet 上下文自己的配置取，见 ConfigUiPrefix
+        ServletContext servletContext = webContext instanceof WebApplicationContext web ? web.getServletContext() : null;
+        String console = ConfigUiPrefix.of(servletContext) + ConfigUiController.BASE_PATH;
+
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         if (!StringUtil.isBlank(auth.getPassword())) {
-            log.info("配置界面已启动: http://{}:{}{}", address, port, ConfigUiController.BASE_PATH);
+            log.info("配置界面已启动: http://{}:{}{}", address, port, console);
             log.info("已启用口令登录{}", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");
 
             if (auth.isOperatorToken()) {
                 // 显式打开了才走到这里。这一行必须打出来——否则「运维通道」只存在于代码里，
                 // 开了它的人也拿不到令牌，那就成了一个只有坏处没有好处的开关
                 log.info("忘记口令时可用以下地址直接进入（该地址等同于口令，请勿分享）:");
-                log.info("  http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
+                log.info("  http://{}:{}{}?token={}", address, port, console, token);
                 log.info("  ⚠️ 该地址绕过二次验证, 且会进反向代理的访问日志。"
                         + "用完之后把 novabot.core.config-ui.auth.operator-token 改回 false");
             } else {
@@ -174,7 +180,7 @@ public class ConfigUiRegistrar {
             return;
         }
 
-        log.info("配置界面已启动: http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
+        log.info("配置界面已启动: http://{}:{}{}?token={}", address, port, console, token);
         log.info("该地址包含访问令牌, 请勿分享。令牌未在配置文件中显式设置时, 每次启动都会重新生成");
 
         // 白名单与口令分处两处配置，放开了前者却忘了后者是最容易犯的错，而它的后果是面板对全网敞开

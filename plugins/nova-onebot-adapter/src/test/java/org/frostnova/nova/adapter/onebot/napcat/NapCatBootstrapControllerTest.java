@@ -4,7 +4,9 @@ import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 
 import java.nio.file.Files;
@@ -112,7 +114,7 @@ class NapCatBootstrapControllerTest {
         List<String> red = new ArrayList<>();
         try {
             ResponseEntity<String> response = controllerReturning(
-                    NapCatCredentialService.Outcome.OK).page();
+                    NapCatCredentialService.Outcome.OK).page(new MockHttpServletRequest());
             String html = response.getBody() == null ? "" : response.getBody();
             String src = "src=\"" + NapCatBootstrapController.PAGE_PATH + "/napcat-resume.js\"";
             try {
@@ -177,13 +179,14 @@ class NapCatBootstrapControllerTest {
     void consolePathReturnsHref() throws Exception {
         NapCatCredentialService credentials = mock(NapCatCredentialService.class);
         when(credentials.isConfigured()).thenReturn(true);
-        JSONObject body = new NapCatBootstrapController(credentials).console();
+        JSONObject body = new NapCatBootstrapController(credentials).console(new MockHttpServletRequest());
 
         assertEquals(Boolean.TRUE, body.getBoolean("success"));
         assertEquals(Boolean.TRUE, body.getBoolean("configured"));
         assertEquals(NapCatBootstrapController.PAGE_PATH, body.getString("href"));
 
-        GetMapping mapping = NapCatBootstrapController.class.getMethod("console").getAnnotation(GetMapping.class);
+        GetMapping mapping = NapCatBootstrapController.class.getMethod("console", HttpServletRequest.class)
+                .getAnnotation(GetMapping.class);
         assertTrue(List.of(mapping.value()).contains(NapCatBootstrapController.CONSOLE_PATH));
     }
 
@@ -192,13 +195,14 @@ class NapCatBootstrapControllerTest {
     void legacyStatePathGone() throws Exception {
         NapCatCredentialService credentials = mock(NapCatCredentialService.class);
         when(credentials.isConfigured()).thenReturn(true);
-        JSONObject body = new NapCatBootstrapController(credentials).console();
+        JSONObject body = new NapCatBootstrapController(credentials).console(new MockHttpServletRequest());
 
         assertEquals(Boolean.TRUE, body.getBoolean("success"));
         assertEquals(Boolean.TRUE, body.getBoolean("configured"));
         assertEquals(NapCatBootstrapController.PAGE_PATH, body.getString("href"));
 
-        GetMapping mapping = NapCatBootstrapController.class.getMethod("console").getAnnotation(GetMapping.class);
+        GetMapping mapping = NapCatBootstrapController.class.getMethod("console", HttpServletRequest.class)
+                .getAnnotation(GetMapping.class);
         assertEquals(List.of(NapCatBootstrapController.CONSOLE_PATH), List.of(mapping.value()),
                 "console 只挂通用路");
 

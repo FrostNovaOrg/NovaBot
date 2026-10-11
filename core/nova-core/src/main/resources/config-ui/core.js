@@ -5,6 +5,25 @@
 
 import {store} from './store.js';
 
+/**
+ * 部署前缀（server.servlet.context-path），没配时为空串
+ *
+ * 服务端吐控制台页时写进 <meta name="nova-prefix">。本站地址一律经它拼，
+ * 写死 /config 起头的地址在配了前缀的部署上会打到没前缀的路径上。
+ * 没有 document（node 里载入）或页面上没有那个 meta 时按没配算。
+ */
+export const PREFIX = readPrefix();
+
+/** 控制台在浏览器眼里的根路径，即「前缀 + /config」 */
+export const CONSOLE = `${PREFIX}/config`;
+
+function readPrefix() {
+  const meta = typeof document !== 'undefined' && typeof document.querySelector === 'function'
+    ? document.querySelector('meta[name="nova-prefix"]')
+    : null;
+  return meta && typeof meta.content === 'string' ? meta.content : '';
+}
+
 // 登录后由 /auth/state 下发。未启用口令登录时一直是空串，后端也不会校验
 
 /**
@@ -18,7 +37,7 @@ export const api = (p, o) => {
   if (opt.method && opt.method.toUpperCase() !== 'GET' && store.csrfToken) {
     opt.headers = Object.assign({}, opt.headers, {'X-CSRF-Token': store.csrfToken});
   }
-  return fetch('/config/api' + p, opt).then(r => {
+  return fetch(CONSOLE + '/api' + p, opt).then(r => {
     if (r.status === 401) {
       location.reload();
       return new Promise(() => {});
