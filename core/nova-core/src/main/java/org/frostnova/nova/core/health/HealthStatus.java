@@ -14,9 +14,16 @@ import java.util.Map;
  * @param reason 给界面选待办标题用的原因码，空串表示没有结构化原因。
  *               取值 {@code unconfigured}／{@code unreachable}／{@code account}，由探针填写
  * @param members 本次检查中的异常成员，键为稳定标识，值为可点名的文字；默认空表
+ * @param memberCondition 交成员时说明这些成员是什么情况的一句描述，不带名单；默认空串
  */
 public record HealthStatus(Level level, String summary, String advice, String reason,
-                           Map<String, String> members) {
+                           Map<String, String> members, String memberCondition) {
+    /** 保留不提供成员情况描述的构造方式。 */
+    public HealthStatus(Level level, String summary, String advice, String reason,
+                        Map<String, String> members) {
+        this(level, summary, advice, reason, members, "");
+    }
+
     /** 保留不提供成员的构造方式。 */
     public HealthStatus(Level level, String summary, String advice, String reason) {
         this(level, summary, advice, reason, Map.of());
@@ -40,6 +47,9 @@ public record HealthStatus(Level level, String summary, String advice, String re
         }
         if (reason == null) {
             reason = "";
+        }
+        if (memberCondition == null) {
+            memberCondition = "";
         }
     }
 

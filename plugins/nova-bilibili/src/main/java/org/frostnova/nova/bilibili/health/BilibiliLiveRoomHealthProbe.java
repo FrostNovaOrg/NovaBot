@@ -80,7 +80,8 @@ public class BilibiliLiveRoomHealthProbe implements HealthProbe {
                 members.put(id, displayName(room));
             }
             return new HealthStatus(HealthStatus.Level.DEGRADED, summary + "，其中 " + quiet.size()
-                    + " 间连续多分钟没收到弹幕礼物、进房照常：" + nameList(quiet), ADVICE, "", members);
+                    + " 间连续多分钟没收到弹幕礼物、进房照常：" + nameList(quiet), ADVICE, "", members,
+                    "目前共 " + quiet.size() + " 间连续多分钟没收到弹幕礼物、进房照常");
         }
 
         if (connected < managed) {

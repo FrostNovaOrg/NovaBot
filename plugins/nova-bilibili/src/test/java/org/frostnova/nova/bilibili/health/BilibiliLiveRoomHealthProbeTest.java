@@ -49,6 +49,21 @@ class BilibiliLiveRoomHealthProbeTest {
         assertTrue(summary.contains("1002"), "摘要要点出第二间房间号，实际 " + summary);
     }
 
+    @Test
+    void memberConditionCountsRoomsWithoutNamingThem() throws Exception {
+        HealthStatus status = probeWith(
+                room("星见", 1001L, ConnectStatus.RISK),
+                room("月见", 1002L, ConnectStatus.RISK)).check();
+        String condition = status.memberCondition();
+
+        assertEquals("目前共 2 间连续多分钟没收到弹幕礼物、进房照常", condition);
+        for (String member : status.members().values()) {
+            assertFalse(condition.contains(member), condition);
+        }
+        assertFalse(condition.contains("星见"), condition);
+        assertFalse(condition.contains("月见"), condition);
+    }
+
     /**
      * 抓的故障：自检把「没人说话或画面卡住」说成账号受限、让人改用其他账号。
      */
@@ -56,7 +71,7 @@ class BilibiliLiveRoomHealthProbeTest {
     @DisplayName("摘要与处理建议只说看到了什么")
     void summaryAndAdviceDoNotClaimRestriction() throws Exception {
         HealthStatus status = probeWith(room("星见", 1001L, ConnectStatus.RISK)).check();
-        String text = status.summary() + "\n" + status.advice();
+        String text = status.summary() + "\n" + status.advice() + "\n" + status.memberCondition();
 
         assertFalse(text.contains("风控"), text);
         assertFalse(text.contains("断流"), text);
