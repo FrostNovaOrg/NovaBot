@@ -3,10 +3,13 @@ package org.frostnova.nova.adapter.onebot.napcat;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.protocol.StandbyPhases;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.EnvironmentAware;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -49,7 +52,7 @@ import java.util.function.Supplier;
  * NovaBot 不必再造第二份副本。<b>一个从未持有过的值是最干净的状态。</b>
  */
 @Slf4j
-public class NapCatCredentialService implements SmartLifecycle {
+public class NapCatCredentialService implements SmartLifecycle, EnvironmentAware {
     /**
      * 换算登录哈希时拼在 token 后面的那一段
      * <p>
@@ -120,6 +123,10 @@ public class NapCatCredentialService implements SmartLifecycle {
 
     private final ConfigurationFileService fileService;
 
+    private Environment environment;
+
+    private boolean environmentSupplied;
+
     private final String baseUrl;
 
     /**
@@ -167,9 +174,18 @@ public class NapCatCredentialService implements SmartLifecycle {
      */
     private final NapCatRouteWitness routeWitness;
 
+    /**
+     * 独立构造时约定配置来自主文件；由容器管理时会注入实际环境并核对来源。
+     */
     public NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
                                    ConfigurationFileService fileService, RestTemplate restTemplate) {
         this(properties, fileService, restTemplate, Instant::now);
+    }
+
+    @Override
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
+        this.environmentSupplied = true;
     }
 
     NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
@@ -450,6 +466,11 @@ public class NapCatCredentialService implements SmartLifecycle {
      * 这次写回不留备份：旧值正是刚换掉的明文，备份会把它又抄一份放进同一个目录。
      */
     private void persistPlaintext(String plain, String hashed) {
+        if (environmentSupplied
+                && !ConfigUiAuthService.isMainConfigurationSource(environment, fileService, TOKEN_PROPERTY)) {
+            log.info("NapCat 的 token 来自环境变量或命令行等其他配置来源，不写回配置文件");
+            return;
+        }
         if (fileService == null) {
             log.warn("NapCat 的 token 仍以明文保存在配置文件中");
             return;

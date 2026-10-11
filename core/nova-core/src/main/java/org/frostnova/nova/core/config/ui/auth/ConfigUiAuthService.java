@@ -5,8 +5,20 @@ import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.ConfigurationKeyAliases;
 import org.frostnova.nova.core.protocol.StandbyPhases;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.properties.source.ConfigurationProperty;
+import org.springframework.boot.context.properties.source.ConfigurationPropertyName;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySource;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.origin.Origin;
+import org.springframework.boot.origin.PropertySourceOrigin;
+import org.springframework.boot.origin.TextResourceOrigin;
+import org.springframework.context.EnvironmentAware;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.PropertySource;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -25,7 +37,7 @@ import java.util.function.Supplier;
  * 而会话有期限、可注销、可因改口令而全部失效，令牌这三样都做不到。
  */
 @Slf4j
-public class ConfigUiAuthService implements SmartLifecycle {
+public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     /**
      * 失败提示一律用这一句
      * <p>
@@ -185,6 +197,10 @@ public class ConfigUiAuthService implements SmartLifecycle {
      */
     private final ConfigurationFileService fileService;
 
+    private Environment environment;
+
+    private boolean environmentSupplied;
+
     /**
      * 口令哈希，未启用口令登录时为 null
      * <p>
@@ -247,9 +263,25 @@ public class ConfigUiAuthService implements SmartLifecycle {
      */
     private final Supplier<Instant> clock;
 
+    /**
+     * 独立构造时约定配置来自主文件；由容器管理时会注入实际环境并核对来源。
+     */
     public ConfigUiAuthService(NovaCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
                                LoginThrottle throttle, ConfigurationFileService fileService) {
         this(properties, sessions, throttle, fileService, Instant::now);
+    }
+
+    public ConfigUiAuthService(NovaCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
+                               LoginThrottle throttle, ConfigurationFileService fileService,
+                               Environment environment) {
+        this(properties, sessions, throttle, fileService);
+        setEnvironment(environment);
+    }
+
+    @Override
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
+        this.environmentSupplied = true;
     }
 
     ConfigUiAuthService(NovaCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
@@ -963,6 +995,10 @@ public class ConfigUiAuthService implements SmartLifecycle {
      * @param hashed 要写回的哈希
      */
     private void persistHash(String plaintext, String hashed) {
+        if (environmentSupplied && !isMainConfigurationSource(environment, fileService, PASSWORD_PROPERTY)) {
+            log.info("配置界面的登录口令来自环境变量或命令行等其他配置来源，不写回配置文件");
+            return;
+        }
         if (fileService == null) {
             log.warn("配置界面的登录口令仍以明文保存在配置文件中");
             return;
@@ -985,6 +1021,46 @@ public class ConfigUiAuthService implements SmartLifecycle {
         } catch (Exception e) {
             log.warn("配置界面的登录口令未能改为哈希保存, 文件中仍是明文: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 按绑定优先级找到实际生效的一项，只允许有主配置文件完整路径的来源写回。
+     * 来源无法确认或无法读取时不写回，不记录来源的值或异常内容。
+     * @param environment 绑定配置时使用的环境
+     * @param fileService 主配置文件服务
+     * @param key 标准配置键
+     * @return 实际生效的一项明确来自主配置文件时为 true
+     */
+    public static boolean isMainConfigurationSource(Environment environment,
+                                                    ConfigurationFileService fileService, String key) {
+        if (!(environment instanceof ConfigurableEnvironment) || fileService == null) {
+            return false;
+        }
+        try {
+            ConfigurationPropertyName name = ConfigurationPropertyName.of(key);
+            for (ConfigurationPropertySource source : ConfigurationPropertySources.get(environment)) {
+                // 绑定适配器可能吞掉来源读取异常；先查原来源，避免错误地落到后面的文件来源。
+                if (source.getUnderlyingSource() instanceof PropertySource<?> underlying) {
+                    underlying.getProperty(key);
+                }
+                ConfigurationProperty property = source.getConfigurationProperty(name);
+                if (property == null) {
+                    continue;
+                }
+                Origin origin = property.getOrigin();
+                if (origin instanceof PropertySourceOrigin sourceOrigin) {
+                    origin = sourceOrigin.getOrigin();
+                }
+                if (!(origin instanceof TextResourceOrigin textOrigin)) {
+                    return false;
+                }
+                return textOrigin.getResource().getFile().toPath().toAbsolutePath().normalize()
+                        .equals(Path.of(fileService.describeConfigPath()));
+            }
+        } catch (Exception ignored) {
+            return false;
+        }
+        return false;
     }
 
     /**
