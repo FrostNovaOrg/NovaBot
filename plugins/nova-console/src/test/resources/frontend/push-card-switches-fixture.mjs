@@ -496,7 +496,7 @@ await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原�
   expectState('自定义版式', '调了顺序后');
 
   dragTo(chip(ON, '分享'), chip(ON, '免费礼物'), 'after');
-  same(message().params.card_order, DEFAULT_ORDER, '拖回原位之后存下去的顺序');
+  same(Object.keys(message().params), [], '拖回原位之后存下去的参数（顺序键回到没存过的样子）');
   same(labelsIn(ON), CARD_LABELS, '拖回原位之后界面上的顺序');
   expectState('默认版式', '拖回原位后');
 
@@ -515,8 +515,8 @@ await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原�
   same(push.changeCount(), 0, '没存过参数的通道上原地拖了三下之后的改动数');
 });
 
-// 故障：点 × 以后那张卡的开关没存成关、或小块没到下面那区；点下面那区的小块没回到报告区末尾、或开关没存成开
-await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放回末尾存成开；拖回来落在放下的位置；空着时各写一句', async () => {
+// 故障：点 × 以后那张卡的开关没存成关、或小块没到下面那区；点下面那区的小块没回到报告区末尾、或放回后开关没开着
+await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放回末尾，开关开着；拖回来落在放下的位置；空着时各写一句', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   await paintPage({});
   same(textOf(zone(OFF)).includes('都在报告里'), true, '下面那区空着时写「都在报告里」');
@@ -528,7 +528,8 @@ await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放�
 
   chip(OFF, '点赞').click();
   await settle();
-  same(message().params.card_like, true, '点下面那区的「点赞」之后的存值');
+  same(Object.prototype.hasOwnProperty.call(message().params, 'card_like'), false,
+    '点下面那区的「点赞」之后的开关键（回到没存过的样子：跟着默认，开着）');
   same(labelsIn(ON), [...CARD_LABELS.filter(label => label !== '点赞'), '点赞'], '放回「点赞」之后报告区');
   same(labelsIn(OFF), [], '放回「点赞」之后下面那区');
   same(message().params.card_order.split(',').pop(), 'card_like', '放回之后存着的顺序的最后一项');
@@ -536,7 +537,8 @@ await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放�
   await paintPage({card_like: false, card_share: false});
   const {over} = dragTo(chip(OFF, '分享'), chip(ON, '弹幕'), 'before');
   if (!over.defaultPrevented) throw new Error('报告区不收下面那区拖来的小块');
-  same(message().params.card_share, true, '把「分享」拖进报告区之后的存值');
+  same(Object.prototype.hasOwnProperty.call(message().params, 'card_share'), false,
+    '把「分享」拖进报告区之后的开关键（开着＝跟着默认，不再钉住）');
   same(labelsIn(ON), ['流水', '分享', '弹幕', ...CARD_LABELS.slice(3, 9)], '把「分享」拖到「弹幕」前面之后报告区');
   same(labelsIn(OFF), ['点赞'], '把「分享」拖进报告区之后下面那区');
 
@@ -579,7 +581,8 @@ await ask('⑥ 键盘：Tab 走得到，左右方向键挪位，Delete／Backspa
 
   press(document.activeElement, 'Enter');
   await settle();
-  same(message().params.card_revenue, true, '按回车之后「流水」的存值');
+  same(Object.prototype.hasOwnProperty.call(message().params, 'card_revenue'), false,
+    '按回车之后「流水」的开关键（回到没存过的样子：跟着默认，开着）');
   same(labelsIn(ON).pop(), '流水', '按回车之后报告区最后一枚');
   same(focused(), '报告区·流水', '按回车之后焦点');
 
@@ -589,7 +592,8 @@ await ask('⑥ 键盘：Tab 走得到，左右方向键挪位，Delete／Backspa
   same(focused(), '下面·弹幕', '按 Backspace 之后焦点');
   press(document.activeElement, ' ');
   await settle();
-  same(message().params.card_danmu, true, '按空格之后「弹幕」的存值');
+  same(Object.prototype.hasOwnProperty.call(message().params, 'card_danmu'), false,
+    '按空格之后「弹幕」的开关键（回到没存过的样子：跟着默认，开着）');
   same(focused(), '报告区·弹幕', '按空格之后焦点');
 });
 
