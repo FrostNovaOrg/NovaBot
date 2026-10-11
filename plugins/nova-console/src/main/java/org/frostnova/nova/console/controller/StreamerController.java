@@ -516,18 +516,7 @@ public class StreamerController {
             buckets = buckets.subList(buckets.size() - DEFAULT_TREND_LIMIT, buckets.size());
         }
 
-        JSONArray items = new JSONArray();
-        for (LiveSessionAnalytics.Bucket bucket : buckets) {
-            JSONObject item = new JSONObject();
-            item.put("label", bucket.label());
-            item.put("start", bucket.start());
-            item.put("end", bucket.end());
-            item.put("sessions", bucket.sessions());
-            item.put("durationSeconds", bucket.durationSeconds());
-            item.put("metrics", bucket.metrics());
-            item.put("userTimes", bucket.userTimes());
-            items.add(item);
-        }
+        JSONArray items = LiveAnalyticsJson.toJson(buckets);
 
         JSONObject json = new JSONObject();
         json.put("period", parsed.name().toLowerCase(java.util.Locale.ROOT));
@@ -627,19 +616,7 @@ public class StreamerController {
      * 所选场次涉及平台的可累加指标，取法与运营分析一致
      */
     private List<LiveMetricCatalog.Metric> metricsOf(List<LiveSession> sessions) {
-        Set<String> platforms = new LinkedHashSet<>();
-        sessions.forEach(session -> platforms.add(session.platform()));
-
-        List<LiveMetricCatalog.Metric> result = new ArrayList<>();
-        for (String platform : platforms) {
-            catalogs.orderedStream()
-                    .filter(catalog -> catalog.platform().equals(platform))
-                    .findFirst()
-                    .map(LiveMetricCatalog::metrics)
-                    .ifPresentOrElse(result::addAll,
-                            () -> log.debug("未找到平台 {} 的指标说明, 该平台的场次只统计场次数与时长", platform));
-        }
-        return result;
+        return LiveAnalyticsJson.metricsOf(sessions, catalogs, log);
     }
 
     /**
@@ -662,16 +639,7 @@ public class StreamerController {
     }
 
     private JSONArray describe(List<LiveMetricCatalog.Metric> metrics) {
-        JSONArray items = new JSONArray();
-        for (LiveMetricCatalog.Metric metric : metrics) {
-            JSONObject item = new JSONObject();
-            item.put("key", metric.key());
-            item.put("name", metric.name());
-            item.put("unit", metric.unit());
-            item.put("money", metric.money());
-            items.add(item);
-        }
-        return items;
+        return LiveAnalyticsJson.describe(metrics);
     }
 
     /**

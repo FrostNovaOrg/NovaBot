@@ -213,51 +213,14 @@ public class AnalyticsController {
      * 所选场次涉及平台的可累加指标
      */
     private List<LiveMetricCatalog.Metric> metricsOf(List<LiveSession> sessions) {
-        Set<String> platforms = new LinkedHashSet<>();
-        sessions.forEach(session -> platforms.add(session.platform()));
-
-        List<LiveMetricCatalog.Metric> result = new ArrayList<>();
-        for (String platform : platforms) {
-            catalogs.orderedStream()
-                    .filter(catalog -> catalog.platform().equals(platform))
-                    .findFirst()
-                    .map(LiveMetricCatalog::metrics)
-                    .ifPresentOrElse(result::addAll,
-                            () -> log.debug("未找到平台 {} 的指标说明, 该平台的场次只统计场次数与时长", platform));
-        }
-        return result;
+        return LiveAnalyticsJson.metricsOf(sessions, catalogs, log);
     }
 
     private JSONArray describe(List<LiveMetricCatalog.Metric> metrics) {
-        JSONArray items = new JSONArray();
-
-        for (LiveMetricCatalog.Metric metric : metrics) {
-            JSONObject item = new JSONObject();
-            item.put("key", metric.key());
-            item.put("name", metric.name());
-            item.put("unit", metric.unit());
-            item.put("money", metric.money());
-            items.add(item);
-        }
-
-        return items;
+        return LiveAnalyticsJson.describe(metrics);
     }
 
     private JSONArray toJson(List<LiveSessionAnalytics.Bucket> buckets) {
-        JSONArray items = new JSONArray();
-
-        for (LiveSessionAnalytics.Bucket bucket : buckets) {
-            JSONObject item = new JSONObject();
-            item.put("label", bucket.label());
-            item.put("start", bucket.start());
-            item.put("end", bucket.end());
-            item.put("sessions", bucket.sessions());
-            item.put("durationSeconds", bucket.durationSeconds());
-            item.put("metrics", bucket.metrics());
-            item.put("userTimes", bucket.userTimes());
-            items.add(item);
-        }
-
-        return items;
+        return LiveAnalyticsJson.toJson(buckets);
     }
 }
