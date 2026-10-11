@@ -69,9 +69,7 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
     须去掉或换掉程序里用到的 NovaBot 标识（AGPL-3.0 第 7 条 e 款：不授予商标权）。
 
   docs/assets/social-preview.{svg,png}
-  docs/assets/screenshot-console.png
   docs/assets/report-demo.png
-  docs/assets/report-demo-top.png
   docs/assets/report-showcase.png
   docs/assets/console-showcase.png
   docs/assets/demo/avatar-a.png
@@ -80,7 +78,7 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
   docs/assets/demo/cover.png
   docs/assets/demo/roster.txt
     演示与说明用图。social-preview 为本项目原创；报告图、demo/ 下头像、封面与名册
-    为固定种子合成的虚构素材；screenshot-console 为本机匿名演示实例的控制台首页截图。
+    为固定种子合成的虚构素材。
     report-showcase 由 report-demo.png 切栏拼成，同为固定种子合成的虚构数据；
     console-showcase 由用户手册截图 manual/images/06-template-editor.png 与
     09-trend-month.png 拼成，二者为本机匿名演示实例载入示例数据后的控制台截图。

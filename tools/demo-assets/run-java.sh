@@ -5,7 +5,7 @@
 # Invokes DemoAssetsTest via the reactor and publishes into docs/assets/
 # (-Ddemo.publish=true). Without that flag, tests write target/demo-assets/
 # and leave the working tree clean. generate and render both refresh
-# docs/assets/demo plus report-demo.png and report-demo-top.png —
+# docs/assets/demo plus report-demo.png —
 # the report needs the avatars sitting next to it.
 set -euo pipefail
 
