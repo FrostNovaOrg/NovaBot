@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.LowIterationPasswordHash;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,7 +40,8 @@ class LoginCredentialsRejectedTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        auth.setPassword(PASSWORD);
+        // 这一组量的是回话里「被拒」一位，口令哈希只迭代 1 次，见 LowIterationPasswordHash
+        auth.setPassword(LowIterationPasswordHash.of(PASSWORD));
         throttle = new LoginThrottle(auth.getMaxFailures(),
                 Duration.ofMinutes(Math.max(1, auth.getLockoutMinutes())));
         ConfigUiAuthService service = new ConfigUiAuthService(auth,
