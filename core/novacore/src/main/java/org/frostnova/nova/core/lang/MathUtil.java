@@ -8,31 +8,6 @@ import java.math.RoundingMode;
  */
 public class MathUtil {
     /**
-     * 加法计算，四舍五入后保留两位小数
-     * @param a 被加数
-     * @param b 加数
-     * @return 和
-     */
-    public static double add(double a, double b) {
-        return add(a, b, 2);
-    }
-
-    /**
-     * 加法计算，四舍五入后保留指定位数
-     * @param a 被加数
-     * @param b 加数
-     * @param scale 保留小数位数
-     * @return 和
-     */
-    public static double add(double a, double b, int scale) {
-        return BigDecimal.valueOf(a)
-                .add(BigDecimal.valueOf(b))
-                .setScale(scale, RoundingMode.HALF_UP)
-                .stripTrailingZeros()
-                .doubleValue();
-    }
-
-    /**
      * 减法计算，四舍五入后保留指定位数
      * @param a 被减数
      * @param b 减数

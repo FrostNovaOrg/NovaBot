@@ -14,15 +14,6 @@ public class StringUtil {
     }
 
     /**
-     * 检查字符串是否不为空
-     * @param str 要检查的字符串
-     * @return 字符串是否不为空
-     */
-    public static boolean isNotEmpty(String str) {
-        return !isEmpty(str);
-    }
-
-    /**
      * 检查字符串是否为空或空白
      * @param str 要检查的字符串
      * @return 字符串是否为空或空白
