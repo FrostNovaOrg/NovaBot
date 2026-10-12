@@ -1,12 +1,15 @@
 /**
  * 侧栏「使用说明」打开哪一章，以及站外链接怎么开
  *
- * 站点网址只写在这里。页面上再抄一份的话，改站点时会漏掉一处，
- * 漏掉的那一处仍把本页地址带去别的网站——控制台地址里常有访问令牌。
+ * 手册是随程序自带的那一份，从控制台底下的只读出口取（登录后可看，不需要外网），
+ * 与别的本站地址一样带上部署前缀：前缀取 core.js 从 <meta name="nova-prefix">
+ * 读出来的那一个常量，不在这里再读一次。
  */
 
-/** 用户手册网站。每章一个 html，目录页是 index.html */
-export const MANUAL_SITE = 'https://frostnovaorg.github.io/NovaBot/';
+import {CONSOLE} from './core.js';
+
+/** 手册出口。包里没带手册时，这一头会自己退到 GitHub Pages 上同一章 */
+const MANUAL_ROOT = `${CONSOLE}/manual/`;
 
 /**
  * 页名 → 章文件
@@ -26,7 +29,7 @@ const CHAPTER = {
 };
 
 /**
- * 按地址栏算出手册网址
+ * 按地址栏算出手册地址
  *
  * 认的是地址栏原文，不认「认不出的路由被画成首页」之后的那个名字：
  * 画成首页、说明却打开首页那一章，点进去就不是这一页的章。
@@ -40,8 +43,8 @@ export function manualHref(hash) {
   const path = cut < 0 ? raw : raw.slice(0, cut);
   const parts = path.split('/').filter(Boolean);
   const name = parts[0] || 'home';
-  if (name === 'settings' && parts[1]) return MANUAL_SITE + 'index.html';
-  return MANUAL_SITE + (CHAPTER[name] || 'index.html');
+  if (name === 'settings' && parts[1]) return MANUAL_ROOT + 'index.html';
+  return MANUAL_ROOT + (CHAPTER[name] || 'index.html');
 }
 
 /**

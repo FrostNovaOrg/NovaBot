@@ -342,7 +342,7 @@ const rowLabel = row => {
 };
 const hasClass = (node, name) => String((node || {}).className || '').split(/\s+/).includes(name);
 const stateLine = () => allNodes(page()).find(node => node.tagName === 'span'
-  && String(node.innerHTML).includes('本通道用的是') && String(node.innerHTML).includes('版式'));
+  && String(node.innerHTML).includes('当前版式'));
 const message = () => push.pushEntries()[0].targets[0].messages[0];
 const textOf = scope => allNodes(scope).map(node => node.textContent || '').join(' ');
 
@@ -359,7 +359,8 @@ function zone(which, scope) {
   return node;
 }
 
-const chipsIn = (which, scope) => allNodes(zone(which, scope)).filter(node => hasClass(node, 'rep-chip'));
+const chipsIn = (which, scope) => allNodes(scope || page()).filter(node => hasClass(node, 'rep-chip')
+  && hasClass(node.parentNode, which));
 const labelsIn = (which, scope) => chipsIn(which, scope).map(node => LABEL_OF[node.dataset.card] || node.dataset.card);
 
 function chip(which, label, scope) {
@@ -478,11 +479,11 @@ await ask('② 恢复默认：十张卡的键与顺序键一并删掉，不认�
 await ask('③ 拿掉任一张卡：状态行当场变成「自定义版式」', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   await paintPage({});
-  expectState('默认版式', '全默认时');
+  expectState('默认', '全默认时');
   killButton('分享').click();
   await settle();
   same(message().params.card_share, false, '拿掉「分享」后的存值');
-  expectState('自定义版式', '拿掉了「分享」后');
+  expectState('自定义', '拿掉了「分享」后');
 });
 
 // 故障：拖一枚到另一枚前面，存下去的顺序或界面上的顺序没变；拖回原位却记成了改动
@@ -493,12 +494,12 @@ await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原�
   if (!over.defaultPrevented) throw new Error('报告区不收报告区里拖起来的小块');
   same(message().params.card_order, ['card_share', ...CARD_KEYS.slice(0, 9)].join(','), '把「分享」拖到「流水」前面之后存下去的顺序');
   same(labelsIn(ON), ['分享', ...CARD_LABELS.slice(0, 9)], '把「分享」拖到「流水」前面之后界面上的顺序');
-  expectState('自定义版式', '调了顺序后');
+  expectState('自定义', '调了顺序后');
 
   dragTo(chip(ON, '分享'), chip(ON, '免费礼物'), 'after');
   same(Object.keys(message().params), [], '拖回原位之后存下去的参数（顺序键回到没存过的样子）');
   same(labelsIn(ON), CARD_LABELS, '拖回原位之后界面上的顺序');
-  expectState('默认版式', '拖回原位后');
+  expectState('默认', '拖回原位后');
 
   await paintPage({});
   dragTo(chip(ON, '弹幕'), chip(ON, '流水'), 'after');
@@ -519,7 +520,7 @@ await ask('④ 拖着换位：顺序存进参数、界面跟着排；拖回原�
 await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放回末尾，开关开着；拖回来落在放下的位置；空着时各写一句', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   await paintPage({});
-  same(textOf(zone(OFF)).includes('都在报告里'), true, '下面那区空着时写「都在报告里」');
+  same(allNodes(page()).some(node => hasClass(node, OFF)), false, '备选为空时不占位');
   killButton('点赞').click();
   await settle();
   same(message().params.card_like, false, '点「拿掉：点赞」之后的存值');
@@ -649,7 +650,7 @@ await ask('⑧ 两个编辑器不串：卡片小块拖进消息正文、占位�
     onChange: (handler, params) => { tplWrites.push(params); tplParams = params; },
   });
   const repHost = new MiniNode('div');
-  const repParams = {};
+  const repParams = {card_danmu: false};
   let repWrites = 0;
   editors.buildLayoutEditor(repHost, {
     editable: true, items: OPTIONS, paramsOf: () => repParams,
@@ -669,7 +670,7 @@ await ask('⑧ 两个编辑器不串：卡片小块拖进消息正文、占位�
   const below = dragTo(paletteButton('title'), zone(OFF, repHost), 'after');
   if (below.over.defaultPrevented) throw new Error('下面那区对拖来的占位符显示可以放下');
   same(repWrites, 0, '占位符拖进卡片区之后版式写回的次数');
-  same(labelsIn(ON, repHost), CARD_LABELS, '占位符拖进卡片区之后报告区');
+  same(labelsIn(ON, repHost), CARD_LABELS.filter(label => label !== '弹幕'), '占位符拖进卡片区之后报告区');
 
   const {over} = dragTo(paletteButton('uname'), body(), 'after');
   if (!over.defaultPrevented) throw new Error('消息正文不再收调色板上拖来的占位符');
@@ -728,6 +729,144 @@ await ask('⑩ 四处拖起来的地方都调了 setData，用自定义类型，
   const want = Object.fromEntries(Object.keys(sources).map(what => [what, ['application/x-nova-drag']]));
   same(got, want, '各处 dragstart 里 setData 用的类型');
   same(Object.values(got).flat().filter(kind => kind.startsWith('text/')).length, 0, '用了 text/ 类型的次数');
+});
+
+// 全部卡片启用时，空的备选框不应占位；拿掉后仍给触屏用户保留操作说明。
+await ask('备选区按需出现且说明可见', async () => {
+  await paintPage({});
+  same(allNodes(page()).filter(node => hasClass(node, OFF)).length, 0, '全部放入时的备选区数');
+  killButton('点赞').click();
+  await settle();
+  same(labelsIn(OFF), ['点赞'], '拿掉后出现的备选卡片');
+  same(textOf(page()).includes('点一下放回末尾，或拖进上面'), true, '备选区的可见操作说明');
+  chip(OFF, '点赞').click();
+  await settle();
+  same(allNodes(page()).filter(node => hasClass(node, OFF)).length, 0, '最后一项放回后备选区消失');
+});
+
+// 显示名与提醒入口走真实编辑器，载入不写回，触屏按钮和键盘均可定位。
+await ask('中文药丸与@入口按能力和权限显示', async () => {
+  const find = (scope, cls) => {
+    const node = allNodes(scope).find(item => hasClass(item, cls));
+    if (!node) throw new Error('没有 ' + cls);
+    return node;
+  };
+  const handler = {className: 'demo', placeholders: ['{uname}', '{at}', '{at=all}', '{next}'],
+    placeholderLabels: {'{uname}': '主播昵称'}, defaultParams: {message: '第一条{next}前后'}};
+  const host = new MiniNode('div');
+  let params = {};
+  let writes = 0;
+  editors.buildTemplateEditor(host, {handlers: [handler], editable: true,
+    context: {isGroup: true, admin: null}, paramsOf: () => params,
+    onChange: (_, value) => { params = value; writes++; }});
+  same(writes, 0, '打开编辑器不能写回');
+  same(find(host, 'tpl-blk', '中文变量').textContent, '主播昵称', '调色板中文名');
+  same(allNodes(host).some(node => node.id === 'tpl-note'), false, '常驻教学段已移除');
+  const bodies = () => allNodes(host).filter(node => hasClass(node, 'tpl-c-body'));
+  const insert = () => find(host, 'tpl-at-insert', '插入到这里');
+  const targetText = bodies()[1].children[0].children[0];
+  window.getSelection = () => ({rangeCount: 1, getRangeAt: () => ({startContainer: targetText, startOffset: 1})});
+  bodies()[1].dispatchEvent(fakeEvent('mouseup', bodies()[1]));
+  window.getSelection = () => null;
+  insert().click();
+  same(params.message, '第一条{next}前{at}后', '按钮在第二条光标处定位');
+  const pill = () => allNodes(host).find(node => node.dataset.k === '{at}');
+  press(pill(), 'ArrowLeft');
+  same(params.message, '第一条{next}{at}前后', '方向键挪提醒');
+  const select = host.querySelector('#tpl-at');
+  select.value = 'all_or_subscribers';
+  select.dispatchEvent(fakeEvent('change', select));
+  same(params.message, '第一条{next}{at=all}前后', '切模式同步已有提醒');
+  dragTo(find(host, 'tpl-at-handle'), bodies()[0], 'after');
+  same(params.message, '第一条{at=all}{next}前后', '拖柄挪到第一条');
+  const dragText = bodies()[1].children[0].children[0];
+  document.caretRangeFromPoint = () => ({startContainer: dragText, startOffset: 1});
+  dragTo(find(host, 'tpl-at-handle'), bodies()[1], 'after');
+  delete document.caretRangeFromPoint;
+  same(params.message, '第一条{next}前{at=all}后', '再次拖进第二条句中只保留一份');
+
+  const unsupported = new MiniNode('div');
+  editors.buildTemplateEditor(unsupported, {handlers: [{...handler, placeholders: ['{uname}', '{at=all}']}],
+    editable: true, context: {isGroup: true, admin: false},
+    paramsOf: () => ({message: '前{at=all}后', at_mode: 'all'})});
+  same(textOf(unsupported).includes('会被摘掉'), true, '已确定非管理员时提示');
+  const picker = unsupported.querySelector('#tpl-at');
+  same(picker.children.map(node => node.disabled), [false, false, false], '三档提醒方式都能选择');
+  same(allNodes(unsupported).filter(node => hasClass(node, 'tpl-preview-note')).length, 1, '只画实际降级说明');
+});
+
+function reminderEditor(placeholders, context, initial = {}) {
+  const host = new MiniNode('div');
+  let params = {...initial};
+  const handler = {className: 'demo', placeholders, defaultParams: {message: '前后'}};
+  editors.buildTemplateEditor(host, {handlers: [handler], editable: true, context,
+    paramsOf: () => params, onChange: (_, value) => { params = value; }});
+  return {host, params: () => params, choose(mode) {
+    const picker = host.querySelector('#tpl-at');
+    picker.value = mode;
+    picker.dispatchEvent(fakeEvent('change', picker));
+    same(host.querySelector('#tpl-at').value, mode, '下拉当前提醒方式');
+    same(params.at_mode || 'subscribers', mode, '保存的提醒方式');
+  }};
+}
+
+// 下播默认不提醒订阅成员，但选全体后仍应能切回默认档。
+await ask('下播提醒方式选全体后能切回订阅档', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
+  editor.choose('all');
+  editor.choose('subscribers');
+});
+
+// 非管理员也能保留全体失败后提醒订阅成员的选择，权限只影响提示和预览。
+await ask('非管理员提醒方式能切回全体失败转订阅档', async () => {
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: false},
+    {at_mode: 'all_or_subscribers'});
+  editor.choose('subscribers');
+  editor.choose('all_or_subscribers');
+});
+
+// 界面切回订阅档后，正文不能留下会使发送端仍提醒全体的旧块。
+await ask('下播切回订阅档移除已定位的全体块', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
+  editor.choose('all');
+  allNodes(editor.host).find(node => hasClass(node, 'tpl-at-insert')).click();
+  same(editor.params().message, '前后{at=all}', '已经定位全体块');
+  editor.choose('subscribers');
+  same(editor.params().message || '前后', '前后', '切回后不留全体块');
+  same(allNodes(editor.host).filter(node => node.dataset.k === '{at=all}').length, 0, '正文全体块数');
+});
+
+// 默认不提醒的通知不应常显报错；只有用户尝试放入不支持的块时才提示。
+await ask('无订阅能力默认不常显警告，定位被拒时才提示', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
+  same(textOf(editor.host).includes('这类通知不支持 @订阅的人。'), false, '默认页面无订阅警告');
+  // 即使绕过禁用按钮派发点击，产品的定位判定仍必须拒收并解释原因。
+  const alerts = [];
+  const originalAlert = window.alert;
+  window.alert = message => alerts.push(message);
+  try {
+    const insert = allNodes(editor.host).find(node => hasClass(node, 'tpl-at-insert'));
+    insert.dispatchEvent(fakeEvent('click', insert));
+    same(alerts, ['这类通知不支持 @订阅的人。'], '尝试定位时提示');
+    same(editor.params(), {}, '拒收不写回');
+  } finally {
+    window.alert = originalAlert;
+  }
+});
+
+// 触屏用户看不到悬停提示，三档原有说明都应在下拉旁直接可读。
+await ask('三档提醒说明常显在下拉旁', async () => {
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: null});
+  const notes = {
+    subscribers: '只 @ 在本群发过「开播@我」这类命令的人。',
+    all: '机器人不是管理员、或额度用完时会被摘掉，通知照发。',
+    all_or_subscribers: '被摘掉的那一次改 @ 订阅名单。',
+  };
+  for (const [mode, note] of Object.entries(notes)) {
+    editor.choose(mode);
+    const row = allNodes(editor.host).find(node => hasClass(node, 'tpl-at'));
+    same(textOf(row).includes(note), true, '下拉旁常显 ' + mode + ' 说明');
+  }
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

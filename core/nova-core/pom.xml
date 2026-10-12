@@ -230,6 +230,20 @@
                                                 <exclude>application-dev.yml</exclude>
                                             </excludes>
                                         </resource>
+                                        <!--
+                                            随包手册：manual/build.py 的产物，控制台的「使用说明」从
+                                            config-ui-manual/ 这一出口发它。可选资源目录——目录不在时
+                                            resources 目标只是少拷一块，不失败：只跑 mvn 的开发构建
+                                            不要求装 python，那时控制台把「使用说明」退到站上那份手册。
+                                            目录名刻意不叫 config-ui/manual：产物校验按
+                                            「jar 内 config-ui 条目 ⊆ 源码 config-ui 目录」判，
+                                            手册的源不在那里，混进那个前缀会被当成来路不明。
+                                            不进 install 形态：插件编译用不上它，库 jar 不必变大。
+                                        -->
+                                        <resource>
+                                            <directory>${project.basedir}/../../manual/dist</directory>
+                                            <targetPath>config-ui-manual</targetPath>
+                                        </resource>
                                     </resources>
                                 </configuration>
                             </execution>

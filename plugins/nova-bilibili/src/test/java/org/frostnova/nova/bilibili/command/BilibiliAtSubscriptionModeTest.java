@@ -81,6 +81,30 @@ class BilibiliAtSubscriptionModeTest {
         }
     }
 
+    @Test
+    @DisplayName("订了一位没往本群推这类通知的主播，回复得说清现在收不到，不再说会 @ 你")
+    void subscriptionWhenNothingIsPushedHere() {
+        // 主播甲推到本群，但这两类通知的那几条推送都关着，群里一条也收不到；照旧回「会 @ 你」就是假话
+        PushUser silent = streamer(ALL_UID, "主播甲", AtMode.SUBSCRIBERS);
+        silent.getTargets().get(0).getMessages().forEach(message -> message.setEnabled(false));
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(silent));
+        AtSubscriptionService subscriptions = new AtSubscriptionService(new NovaStateStore(new NovaCoreProperties()));
+        BilibiliStreamerChoice choice = mock(BilibiliStreamerChoice.class);
+        CommandSettingsService settings = mock(CommandSettingsService.class);
+
+        for (BilibiliAtSubscribeCommand command : List.of(
+                new BilibiliLiveAtMeCommand(dataSource, choice, subscriptions, settings),
+                new BilibiliDynamicAtMeCommand(dataSource, choice, subscriptions, settings))) {
+            String type = command.noticeKind().type();
+            String reply = command.execute(context(command.name(), "主播甲")).content();
+            assertTrue(reply.contains("没推到本群"),
+                    "回复得点明这类通知现在没推到本群，否则群友以为订上就能收到；实际回复是「" + reply + "」");
+            assertEquals(List.of(SENDER), subscriptions.list(PLATFORM, GROUP, ALL_UID, type),
+                    "照样订上，等管理员开了推送就用得上");
+        }
+    }
+
     private static CommandContext context(String command, String... args) {
         return new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, SENDER, command, List.of(args), command);
     }

@@ -2,6 +2,11 @@ package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
+import org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler;
+import org.frostnova.nova.report.handler.BilibiliDynamicPushHandler;
+import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
+import org.frostnova.nova.report.handler.BilibiliOfflineRewardDigestPushHandler;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
@@ -27,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.when;
 
 /**
@@ -156,8 +162,39 @@ class PushHandlerAliasSurfaceTest {
         }
     }
 
+    @Test
+    @DisplayName("处理器中文名随清单下发，未命名插件仍有空表")
+    void placeholderLabelsComeFromHandler() {
+        JSONObject body = handlers(service());
+        assertEquals(Map.of("{custom}", "自定义内容"),
+                itemOf(body, Moved.class.getName()).getJSONObject("placeholderLabels"),
+                "占位符中文名没有从处理器传到编辑器");
+        assertEquals(Map.of(), itemOf(body, Stayed.class.getName()).getJSONObject("placeholderLabels"),
+                "未声明名字的插件应返回空表");
+        for (Class<? extends NovaEventHandler> type : List.of(BilibiliLiveOnPushHandler.class,
+                BilibiliLiveOffPushHandler.class, BilibiliDynamicPushHandler.class,
+                BilibiliLiveReportPushHandler.class, BilibiliOfflineRewardDigestPushHandler.class)) {
+            NovaEventHandler handler = mock(type, CALLS_REAL_METHODS);
+            assertEquals(new java.util.HashSet<>(handler.placeholders()), handler.placeholderLabels().keySet(),
+                    type.getSimpleName() + " 的占位符名字不完整");
+        }
+        assertEquals("动态链接", mock(BilibiliDynamicPushHandler.class, CALLS_REAL_METHODS)
+                .placeholderLabels().get("{url}"));
+        assertEquals("逐人打赏明细", mock(BilibiliOfflineRewardDigestPushHandler.class, CALLS_REAL_METHODS)
+                .placeholderLabels().get("{list}"));
+        assertEquals("打赏播报图", mock(BilibiliOfflineRewardDigestPushHandler.class, CALLS_REAL_METHODS)
+                .placeholderLabels().get("{picture}"));
+        assertEquals("本场直播时长", mock(BilibiliLiveOffPushHandler.class, CALLS_REAL_METHODS)
+                .placeholderLabels().get("{time}"));
+    }
+
     /** 搬过两次家 */
     private static final class Moved extends FakeHandler {
+        @Override
+        public Map<String, String> placeholderLabels() {
+            return Map.of("{custom}", "自定义内容");
+        }
+
         @Override
         public List<String> legacyClassNames() {
             return List.of(LEGACY_MOVED_OLDER, LEGACY_MOVED);

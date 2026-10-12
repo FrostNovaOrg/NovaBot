@@ -333,6 +333,18 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     }
 
     @Override
+    public Map<String, String> placeholderLabels() {
+        return Map.of(
+                "{uname}", "主播昵称",
+                "{action}", "动态动作",
+                "{url}", "动态链接",
+                "{picture}", "动态图片",
+                "{at}", "@订阅的人",
+                "{next}", "另起一条消息",
+                "{at=all}", "@全体成员");
+    }
+
+    @Override
     public List<String> placeholders() {
         return List.of("{uname}", "{action}", "{url}", "{picture}", "{at}", "{next}", "{at=all}");
     }

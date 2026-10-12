@@ -1771,7 +1771,7 @@ class ConfigUiFrontendTest {
      * 以及报告版式的开关与那张图。
      */
     private static final List<String> TEMPLATE_CONTROLS = List.of(
-            "tpl-tabs", "tpl-note", "tpl-palette", "tpl-cards", "tpl-at", "tpl-raw",
+            "tpl-tabs", "tpl-palette", "tpl-cards", "tpl-at", "tpl-raw",
             "tpl-preview", "tpl-count", "rep-options", "rep-preview");
 
     /**

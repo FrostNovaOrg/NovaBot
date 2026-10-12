@@ -68,6 +68,7 @@ function fakeElement(tag) {
   // （开关那一行的复选框）按选择器记节点：同一个选择器给同一个节点，
   // 挂上去的事件才找得回来
   node.querySelector = sel => node.found[sel] || (node.found[sel] = fakeElement('input'));
+  node.focus = () => {};
   node.classList = {toggle() {}, add() {}, remove() {}, contains() { return false; }};
   return node;
 }
@@ -98,7 +99,7 @@ const REPORT = 'x.Report';
 const HANDLERS = [
   {
     className: LIVE, displayName: '开播通知', description: '开播时推送', platform: PLATFORM,
-    aliases: [], placeholders: ['{uname}', '{title}'], options: [],
+    aliases: [], placeholders: ['{uname}', '{title}', '{at}', '{at=all}'], options: [],
     defaultParams: {message: '{uname} 开播了'},
   },
   {
@@ -160,11 +161,11 @@ function section(mark) {
 }
 
 const tpl = () => section('消息长什么样');
-const lay = () => section('下播报告长什么样');
+const lay = () => section('下播报告版式');
 
 /** 状态行上「本通道用的是」那一句 */
 const stateLabel = box =>
-  all(box, item => item.tagName === 'span' && String(item.innerHTML).includes('本通道用的是'))[0];
+  all(box, item => item.tagName === 'span' && (String(item.innerHTML).includes('本通道用的是') || String(item.innerHTML).includes('当前版式')))[0];
 
 /** 「恢复默认」出现没有：得有这颗按钮，且没藏着 */
 const restoreVisible = box =>
@@ -245,9 +246,9 @@ await ask('⑤ 未改动时状态行旁有小字：直接改就行，改过随�
   const note3 = freeNote(lay());
   same({
     '段 2 有': !!note2 && !note2.hidden,
-    '段 3 有': !!note3 && !note3.hidden,
-    '段 3 说的是版式': !!note3 && note3.textContent.includes('默认版式'),
-  }, {'段 2 有': true, '段 3 有': true, '段 3 说的是版式': true}, '未改动的小字');
+    '段 3 无说明': !note3,
+    '段 3 说的是版式': stateLabel(lay()).innerHTML.includes('当前版式：<b>默认</b>'),
+  }, {'段 2 有': true, '段 3 无说明': true, '段 3 说的是版式': true}, '未改动的小字');
 });
 
 // ---- 改一项：「恢复默认」当场出现 ----
@@ -269,8 +270,8 @@ await ask('⑦ 段 3 改一项（版式开关拨一下）→「恢复默认」�
   const note = freeNote(lay());
   same({
     '恢复默认出现': restoreVisible(lay()),
-    '状态行说自定义版式': !!label && label.innerHTML.includes('自定义版式'),
-    '小字收起': note ? note.hidden : false,
+    '状态行说自定义版式': !!label && label.innerHTML.includes('当前版式：<b>自定义</b>'),
+    '小字收起': !note,
   }, {'恢复默认出现': true, '状态行说自定义版式': true, '小字收起': true}, '段 3 改后');
 });
 
@@ -289,8 +290,8 @@ await ask('⑧ 改回默认值：两段「恢复默认」都收起、状态行�
     '段 2 收起': !restoreVisible(tpl()),
     '段 3 收起': !restoreVisible(lay()),
     '段 2 回默认': !!label2 && label2.innerHTML.includes('默认模板'),
-    '段 3 回默认': !!label3 && label3.innerHTML.includes('默认版式'),
-    '两段小字回来': !!note2 && !note2.hidden && !!note3 && !note3.hidden,
+    '段 3 回默认': !!label3 && label3.innerHTML.includes('当前版式：<b>默认</b>'),
+    '两段小字回来': !!note2 && !note2.hidden && !note3,
   }, {
     '段 2 收起': true, '段 3 收起': true, '段 2 回默认': true,
     '段 3 回默认': true, '两段小字回来': true,

@@ -17,13 +17,9 @@
  * 「这里分条」这件事本身，而那件事在屏幕上由「另起一张卡」表达。于是编辑器里
  * 再没有 {next} 这个东西可拖、可删、可放错地方，而配置文件仍然照旧。
  *
- * <h2>@ 块为什么不在卡里</h2>
- * 「@ 谁」存的是推送参数 at_mode（见 AtMode），不是模板里的一段文字：程序在发送时
- * 把 @ 拼到正文最前面。因此 @ 块在编辑器里是<b>钉在第一张卡开头</b>的一枚药丸，
- * 不能拖走也不能删——三档是个闭集，里面没有「不 @」这一档
- * （「@订阅的人」那一档在无人订阅时本来就什么也不 @）。
- * 老模板里手写的 {at} / {at=all} 仍会原样显示成普通药丸，另附一句说明：
- * 程序见模板里已经有了就不再补，两处各写一套的话群里会被 @ 两遍。
+ * <h2>@ 模式与位置</h2>
+ * 模式仍存为 at_mode 的三个既有取值。没有显式 @ 块时，发送端在开头补上；
+ * 定位沿用 {at}/{at=all}，不增加存储格式。旧模板载入时保留原文，主动定位才合并 @ 块。
  */
 
 // 「配置里这一条是不是这一类通知」只有 push-model 那一份判法：处理器搬过包之后，
@@ -59,7 +55,7 @@ const AT_ALL_KEY = 'at_all';
 export const NEXT = '{next}';
 
 /**
- * 模板里手写 @ 的两种写法。它们进不了调色板，只在老模板里被认出来
+ * 显式提醒沿用的两种写法，由调色板的模式胶囊统一创建
  */
 export const AT_LITERALS = [ '{at}', '{at=all}' ];
 
@@ -81,12 +77,13 @@ export function blockSpec(handler) {
   const all = ((handler || {}).placeholders) || [];
   const attachments = ((handler || {}).attachments) || [];
   // 调色板上不摆 {next}（分条改由「再加一张卡」表达）与两种手写 @（改由 @ 块表达）。
-  // 摆上去的话，拖一个 {at} 进来会让这条通知在群里被 @ 两遍，而屏幕上两处看着都对
+  // @ 胶囊统一定位，避免创建多个独立提醒
   const hidden = [NEXT].concat(AT_LITERALS);
   return {
     keys: all.filter(item => !hidden.includes(item)),
     attachments: attachments.filter(item => all.includes(item)),
     all,
+    labels: ((handler || {}).placeholderLabels) || {},
   };
 }
 
@@ -100,16 +97,45 @@ export function isAttachment(key, spec) {
   return ((spec || {}).attachments || []).includes(key);
 }
 
-/**
- * 药丸上写什么：占位符去掉花括号
- *
- * 不另建一张「占位符 → 中文名」的表：那张表只能由核心来写，而占位符是各处理器自己的东西，
- * 第三方插件带来的那些在表里一个也没有，届时屏幕上会是一枚没有名字的空药丸。
- * @param key 占位符
- * @return {string} 药丸上的字
- */
-export function blockLabel(key) {
-  return String(key || '').replace(/^\{/, '').replace(/}$/, '');
+/** 显示名称由处理器声明；无名称时去掉花括号，存储仍使用原占位符。 */
+export function blockLabel(key, spec) {
+  return ((spec || {}).labels || {})[key] || String(key || '').replace(/^\{/, '').replace(/}$/, '');
+}
+
+/** 两个全体模式都沿用 {at=all}，退路由 at_mode 决定。 */
+export function atLiteralOf(mode) {
+  return mode === 'subscribers' ? AT_LITERALS[0] : AT_LITERALS[1];
+}
+
+/** 仅主动切换模式时调整已放置的提醒，不在载入或绘制时调用。 */
+export function changeAtBlocks(cards, mode, spec) {
+  const key = atLiteralOf(mode);
+  const supported = ((spec || {}).all || []).includes(key);
+  let kept = false;
+  return normalizeCards((cards || []).map(card => ({blocks: (card.blocks || []).flatMap(block => {
+    if (block.kind !== 'ph' || !AT_LITERALS.includes(block.key)) return [block];
+    if (!supported || kept) return [];
+    kept = true;
+    return [placeholderBlock(key, spec)];
+  })})));
+}
+
+/** 再放一次是挪位置；移除旧位置后修正目标索引，保持一个显式提醒。 */
+export function placeAtBlock(cards, mode, spot, spec) {
+  const key = atLiteralOf(mode);
+  if (!((spec || {}).all || []).includes(key)) {
+    return {cards, refused: mode === 'subscribers'
+      ? '这类通知不支持 @订阅的人。' : '这类通知不支持定位 @全体成员。'};
+  }
+  if (!(cards || [])[spot.card]) return {cards, refused: '请选择一条消息。'};
+  let removedBefore = 0;
+  const cleaned = (cards || []).map((card, cardIndex) => ({blocks: (card.blocks || []).filter((block, index) => {
+    const remove = block.kind === 'ph' && AT_LITERALS.includes(block.key);
+    if (remove && cardIndex === spot.card && index < spot.index) removedBefore++;
+    return !remove;
+  })}));
+  return {cards: insertBlock(cleaned, {card: spot.card, index: Math.max(0, spot.index - removedBefore)},
+    placeholderBlock(key, spec)), refused: ''};
 }
 
 /**
@@ -543,7 +569,7 @@ export function blockRefusal(cards, cardIndex, key, spec, movingFrom) {
   if (movingFrom === undefined || movingFrom === null) movingFrom = -1;
 
   if (movingFrom < 0 && usesBlock(cards, key)) {
-    return '这份模板里已经有一个「' + blockLabel(key) + '」了。同一份内容发两遍，群里就是两张一样的图。';
+    return '这份模板里已经有一个「' + blockLabel(key, spec) + '」了。同一份内容发两遍，群里就是两张一样的图。';
   }
   if (cardHasAttachment(cards, cardIndex) && movingFrom !== cardIndex) {
     return '一张卡最多放一个附件块。想再放一个，就再加一张卡。';
@@ -613,7 +639,8 @@ export function atPlan(cards, mode, context, terms) {
 
   if (mode === 'subscribers') {
     return {
-      prepend: hasAt ? 'none' : 'subscribers', inline, dropped: false, fallback: false,
+      prepend: hasAt || (context || {}).supportsSubscribers === false || (context || {}).isGroup === false
+        ? 'none' : 'subscribers', inline, dropped: false, fallback: false,
       note: hasAt
         ? '模板里自己写了 {at}，@ 就落在那个位置，程序不再往正文前面补一份。'
         : '@ 的是本会话里订阅过这类提醒的人；没有人订阅时这一段不出现。',
@@ -630,7 +657,7 @@ export function atPlan(cards, mode, context, terms) {
   // admin 为 null＝名单取不到（OneBot 掉线时就是这样）。此时不画划掉线：
   // 画了等于断言「会被摘掉」，而那时我们其实什么也不知道
   const dropped = admin === false;
-  const fallback = mode === 'all_or_subscribers' && !hasAt;
+  const fallback = mode === 'all_or_subscribers' && !hasAt && (context || {}).supportsSubscribers !== false;
   return {
     prepend: hasAtAll ? 'none' : 'all', inline, dropped, fallback,
     note: (hasAtAll ? '模板里自己写了 {at=all}，程序不再往正文前面补一份。' : '')
@@ -656,29 +683,39 @@ export function atPlan(cards, mode, context, terms) {
  * @param context 见 atPlan
  * @return 每条消息一项：{at, atDropped, parts, images}
  */
-export function previewBubbles(cards, mode, context, terms) {
+export function previewBubbles(cards, mode, context, terms, spec) {
   const plan = atPlan(cards, mode, context, terms);
   const bubbles = [];
 
   (cards || []).forEach((card, index) => {
     const parts = [];
     const images = [];
+    let inlineDropped = false;
     for (const block of ((card || {}).blocks || [])) {
       if (block.kind === 'text') {
         if (block.text !== '') parts.push({kind: 'text', text: block.text});
+      } else if (AT_LITERALS.includes(block.key)) {
+        const all = block.key === '{at=all}';
+        const unavailable = all && ((context || {}).isGroup === false || (context || {}).admin === false);
+        inlineDropped ||= unavailable;
+        if (unavailable && !plan.fallback) continue;
+        if (!all && ((context || {}).supportsSubscribers === false || (context || {}).isGroup === false)) continue;
+        parts.push({kind: 'at', at: all && !unavailable ? 'all' : 'subscribers', key: block.key});
       } else if (block.attachment) {
-        images.push(blockLabel(block.key));
+        images.push(blockLabel(block.key, spec));
       } else {
-        parts.push({kind: 'ph', label: blockLabel(block.key), key: block.key});
+        parts.push({kind: 'ph', label: blockLabel(block.key, spec), key: block.key});
       }
     }
 
     // @ 只拼在第一条上，与发送那一侧一致：withAtBlock 补的是整串内容的开头，
     // 而分条是之后才按 {next} 切的
-    const at = index === 0 && plan.prepend !== 'none' ? plan.prepend : '';
+    let at = index === 0 && plan.prepend !== 'none' ? plan.prepend : '';
+    const atDropped = at === 'all' && plan.dropped;
+    if (atDropped) at = plan.fallback ? 'subscribers' : '';
     // 整条空着就不画：一条什么都没有的消息发不出去，画出来会让人以为群里会收到一条空白
     if (!at && !parts.length && !images.length) return;
-    bubbles.push({at, atDropped: !!at && at === 'all' && plan.dropped, parts, images});
+    bubbles.push({at, atDropped: atDropped || inlineDropped, parts, images});
   });
 
   return bubbles;

@@ -493,7 +493,7 @@ if (push && store) {
       displayName: '开播通知',
       description: '开播时往群里说一声',
       platform: 'bilibili',
-      placeholders: ['{uname}', '{title}'],
+      placeholders: ['{uname}', '{title}', '{at}', '{at=all}'],
       attachments: [],
       defaultParams: {message: '开播了'},
       factoryParams: {message: '开播了'},

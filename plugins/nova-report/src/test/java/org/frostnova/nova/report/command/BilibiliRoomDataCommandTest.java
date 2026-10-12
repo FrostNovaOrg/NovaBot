@@ -19,7 +19,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -75,25 +74,30 @@ class BilibiliRoomDataCommandTest {
         assertEquals("直播时长 1 分 30 秒", fixture.capturedFootnote());
     }
 
+    /**
+     * 用户会看到的错：显示金额的群里查直播间数据，盲盒卡大字还是「10 个」，赚了亏了要去小字里找。
+     * 大字要跟盲盒盈亏榜一个写法（零不带号、正负带号），小字写「盲盒盈亏 · N 个」。
+     */
     @Test
-    @DisplayName("盲盒盈亏三分：零持平、正盈利、负亏损")
-    void boxCardShowsBreakEvenProfitAndLoss() {
+    @DisplayName("显示金额时盲盒卡大字写盈亏、小字写「盲盒盈亏 · N 个」")
+    void boxCardLeadsWithProfitWhenRevenueShown() {
         assertAll(
-                () -> {
-                    String label = boxLabel(0);
-                    assertEquals("盲盒 · 持平", label);
-                    assertFalse(label.contains("¥"), label);
-                },
-                () -> {
-                    String label = boxLabel(150);
-                    assertTrue(label.contains("盈利"), label);
-                    assertTrue(label.contains("150"), label);
-                },
-                () -> {
-                    String label = boxLabel(-150);
-                    assertTrue(label.contains("亏损"), label);
-                    assertTrue(label.contains("150"), label);
-                }
+                () -> assertEquals(List.of("¥0", "盲盒盈亏 · 10 个"), boxCard(0, true)),
+                () -> assertEquals(List.of("+¥150", "盲盒盈亏 · 10 个"), boxCard(150, true)),
+                () -> assertEquals(List.of("-¥18.4", "盲盒盈亏 · 10 个"), boxCard(-18.4, true))
+        );
+    }
+
+    /**
+     * 用户会看到的错：隐藏金额的群里查直播间数据，盲盒卡上露出赚了或亏了多少钱。
+     */
+    @Test
+    @DisplayName("隐藏金额时盲盒卡大字写个数、小字只写「盲盒」，整张卡没有「¥」")
+    void boxCardHidesProfitWhenRevenueHidden() {
+        List<String> card = boxCard(-18.4, false);
+        assertAll(
+                () -> assertEquals(List.of("10 个", "盲盒"), card),
+                () -> assertTrue(card.stream().noneMatch(text -> text.contains("¥")), card.toString())
         );
     }
 
@@ -109,10 +113,14 @@ class BilibiliRoomDataCommandTest {
         assertEquals("弹幕 · 4 人参与", danmuCardLabel(15, 4));
     }
 
-    private static String boxLabel(double boxProfit) {
-        Fixture fixture = new Fixture(false, 1_700_000_000_000L, 1_700_000_090_000L, boxProfit);
+    /**
+     * 盲盒 10 个（其余指标桩都回 10），盈亏按用例给；取出盲盒卡的大字与小字。
+     */
+    private static List<String> boxCard(double boxProfit, boolean showRevenue) {
+        Fixture fixture = new Fixture(false, 1_700_000_000_000L, 1_700_000_090_000L, boxProfit, showRevenue);
         fixture.command.execute(context());
-        return fixture.capturedBoxLabel();
+        BilibiliDataQueryPainter.DataCard card = fixture.capturedBoxCard();
+        return List.of(card.value(), card.label());
     }
 
     /**
@@ -186,10 +194,10 @@ class BilibiliRoomDataCommandTest {
         private final BilibiliRoomDataCommand command;
 
         Fixture(boolean living, long start, Long end) {
-            this(living, start, end, 10.0);
+            this(living, start, end, 10.0, true);
         }
 
-        Fixture(boolean living, long start, Long end, double boxProfit) {
+        Fixture(boolean living, long start, Long end, double boxProfit, boolean showRevenue) {
             AbstractDataSource dataSource = mock(AbstractDataSource.class);
             when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer()));
 
@@ -207,7 +215,7 @@ class BilibiliRoomDataCommandTest {
             when(painter.paintCards(any(), any(), nullable(String.class))).thenReturn(Optional.of("QUJD"));
 
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-            when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+            when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(showRevenue);
 
             command = new BilibiliRoomDataCommand(dataSource, mock(BilibiliStreamerChoice.class),
                     liveDataService, painter, revenueVisibility);
@@ -219,14 +227,14 @@ class BilibiliRoomDataCommandTest {
             return footnote.getValue();
         }
 
-        String capturedBoxLabel() {
+        BilibiliDataQueryPainter.DataCard capturedBoxCard() {
             @SuppressWarnings("unchecked")
             ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards =
                     ArgumentCaptor.forClass(List.class);
             verify(painter).paintCards(any(), cards.capture(), nullable(String.class));
             for (BilibiliDataQueryPainter.DataCard card : cards.getValue()) {
                 if (card.label().startsWith("盲盒")) {
-                    return card.label();
+                    return card;
                 }
             }
             throw new AssertionError("no box card");

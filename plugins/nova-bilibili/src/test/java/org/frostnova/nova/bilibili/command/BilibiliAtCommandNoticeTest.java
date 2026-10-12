@@ -7,6 +7,7 @@ import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.AtSubscriptionService;
@@ -121,7 +122,10 @@ class BilibiliAtCommandNoticeTest {
         target.setPlatform(PLATFORM);
         target.setType(PushTargetType.GROUP);
         target.setNum(GROUP);
-        target.setMessages(new ArrayList<>());
+        // 本群推着开播通知（按订阅名单 @ 的默认那一档），订阅才走「会 @ 你」那一句
+        PushMessage message = new PushMessage();
+        message.setHandler(BilibiliAtNoticeKind.LIVE.handlerName());
+        target.setMessages(new ArrayList<>(List.of(message)));
 
         PushUser user = new PushUser();
         user.setUid(uid);

@@ -165,6 +165,15 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
     }
 
     /**
+     * 盲盒盈亏金额：正数带加号、负数带减号、零不带号。盈亏榜与直播间数据的盲盒卡共用
+     */
+    protected static String profitLabel(double score) {
+        if (score > 0) return "+¥" + yuan(score);
+        if (score < 0) return "-¥" + yuan(-score);
+        return "¥" + yuan(0);
+    }
+
+    /**
      * 名次的展示文案，未上榜时为空串
      */
     protected String rankText(int rank) {

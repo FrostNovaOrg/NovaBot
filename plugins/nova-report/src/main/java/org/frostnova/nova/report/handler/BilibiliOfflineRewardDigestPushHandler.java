@@ -152,6 +152,17 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
     }
 
     @Override
+    public Map<String, String> placeholderLabels() {
+        return Map.of(
+                "{uname}", "主播昵称",
+                "{list}", "逐人打赏明细",
+                "{url}", "直播间链接",
+                "{picture}", "打赏播报图",
+                "{next}", "另起一条消息",
+                "{at=all}", "@全体成员");
+    }
+
+    @Override
     public List<String> placeholders() {
         return List.of("{uname}", "{list}", "{url}", "{picture}", "{next}", "{at=all}");
     }

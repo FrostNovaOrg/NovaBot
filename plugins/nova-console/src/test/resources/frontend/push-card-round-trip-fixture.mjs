@@ -344,7 +344,7 @@ const rowLabel = row => {
 };
 const hasClass = (node, name) => String((node || {}).className || '').split(/\s+/).includes(name);
 const stateLine = () => allNodes(page()).find(node => node.tagName === 'span'
-  && String(node.innerHTML).includes('本通道用的是') && String(node.innerHTML).includes('版式'));
+  && String(node.innerHTML).includes('当前版式'));
 const message = () => push.pushEntries()[0].targets[0].messages[0];
 const textOf = scope => allNodes(scope).map(node => node.textContent || '').join(' ');
 
@@ -361,7 +361,8 @@ function zone(which, scope) {
   return node;
 }
 
-const chipsIn = (which, scope) => allNodes(zone(which, scope)).filter(node => hasClass(node, 'rep-chip'));
+const chipsIn = (which, scope) => allNodes(scope || page()).filter(node => hasClass(node, 'rep-chip')
+  && hasClass(node.parentNode, which));
 const labelsIn = (which, scope) => chipsIn(which, scope).map(node => LABEL_OF[node.dataset.card] || node.dataset.card);
 
 function chip(which, label, scope) {
@@ -465,7 +466,7 @@ await ask('① 走默认版式的通道分两下回到原样：改动条 0', asy
   same(push.changeCount(), 0, '再点回原位之后的改动数');
   same(labelsIn(ON), CARD_LABELS, '再点回原位之后报告区');
   same(Object.keys(message().params), [], '再点回原位之后的参数');
-  expectState('默认版式', '分两下回到原样之后');
+  expectState('默认', '分两下回到原样之后');
 
   // 拖走、再拖回原处：两下做完，顺序键也得回到没存过的样子
   await paintPage({});
@@ -479,7 +480,7 @@ await ask('① 走默认版式的通道分两下回到原样：改动条 0', asy
   same(push.changeCount(), 0, '再拖回原处之后的改动数');
   same(labelsIn(ON), CARD_LABELS, '再拖回原处之后报告区');
   same(Object.keys(message().params), [], '再拖回原处之后的参数');
-  expectState('默认版式', '拖回原处之后');
+  expectState('默认', '拖回原处之后');
 });
 
 // 故障：快照里显式存着等于默认值的键时，同样分两下回到原样，改动条还写着一处改动——
@@ -534,14 +535,14 @@ await ask('③ 守住：真改了顺序或拿掉一张卡，改动条 1', async 
   dragTo(chip(ON, '流水'), chip(ON, '分享'), 'after');
   await settle();
   same(push.changeCount(), 1, '把「流水」拖到末尾之后的改动数');
-  expectState('自定义版式', '真改了顺序后');
+  expectState('自定义', '真改了顺序后');
 
   await paintPage({card_order: DEFAULT_ORDER});
   push.markPushSaved();
   killButton('分享').click();
   await settle();
   same(push.changeCount(), 1, '拿掉「分享」之后的改动数');
-  expectState('自定义版式', '真拿掉一张卡后');
+  expectState('自定义', '真拿掉一张卡后');
 
   await paintPage({card_share: true});
   push.markPushSaved();
@@ -559,7 +560,7 @@ await ask('④ 守住：一下拖完放回原位，照旧不记', async () => {
   await settle();
   same(push.changeCount(), 0, '一下拖完放回原位之后的改动数');
   same(Object.keys(message().params), [], '一下拖完放回原位之后的参数');
-  expectState('默认版式', '一下拖完放回原位之后');
+  expectState('默认', '一下拖完放回原位之后');
 
   await paintPage({card_order: DEFAULT_ORDER});
   push.markPushSaved();

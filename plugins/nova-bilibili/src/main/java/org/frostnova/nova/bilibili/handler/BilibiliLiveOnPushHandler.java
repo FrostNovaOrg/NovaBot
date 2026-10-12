@@ -179,6 +179,18 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
     }
 
     @Override
+    public Map<String, String> placeholderLabels() {
+        return Map.of(
+                "{uname}", "主播昵称",
+                "{title}", "直播标题",
+                "{cover}", "直播间封面",
+                "{url}", "直播间链接",
+                "{at}", "@订阅的人",
+                "{next}", "另起一条消息",
+                "{at=all}", "@全体成员");
+    }
+
+    @Override
     public List<String> placeholders() {
         return List.of("{uname}", "{title}", "{cover}", "{url}", "{at}", "{next}", "{at=all}");
     }

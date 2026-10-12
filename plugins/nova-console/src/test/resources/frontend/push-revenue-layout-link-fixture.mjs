@@ -425,8 +425,8 @@ await ask('④ 灰掉的那些格：存着的值不动，「自定义」的判�
   const message = push.pushEntries()[0].targets[0].messages[0];
   same(message.params.gift_ranking, 10, '灰着又亮过的流水排行存值');
   const stateLine = allNodes(page()).find(node => node.tagName === 'span'
-    && String(node.innerHTML).includes('本通道用的是') && String(node.innerHTML).includes('版式'));
-  if (!stateLine || !String(stateLine.innerHTML).includes('自定义版式')) {
+    && String(node.innerHTML).includes('当前版式'));
+  if (!stateLine || !String(stateLine.innerHTML).includes('自定义')) {
     throw new Error('版式状态行该仍是「自定义版式」：' + (stateLine ? stateLine.innerHTML : '没找到'));
   }
 });

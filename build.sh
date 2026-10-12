@@ -381,6 +381,30 @@ else
 fi
 
 echo "==> [4/9] 打包可运行的 NovaBot"
+# 先生成随包手册：控制台的「使用说明」打开的是打进包里的那一份（站内、登录后可看、
+# 跟所装版本走），下面那条 mvn 会把 manual/dist 拷进 jar 的 config-ui-manual/ 下。
+# build.py 自带全站断链检查，手册里链坏了这里就红，不带出残缺的站；找得到 python3
+# 而 build.py 报错时同样停在这里，不放过。
+#
+# python3 只是这一步的要件，不是构建的前提：手册第 3 章列的前提只有 JDK 17 与 Maven，
+# install.sh 也不装 python3。所以先把上一次留下的 manual/dist 清掉——不清的话，没有
+# python3 的这次构建会把一份旧手册原样打进包，包上分不出它是旧的——然后分三种：
+#   找得到 python3：生成手册，照常往下；
+#   找不到、且不带 --package：印一行说明后照常构建，不停。包里不带手册，控制台的
+#     「使用说明」退到站上那份，装上 python3 再构建就会带上；
+#   找不到、且带 --package：发布包必须带手册，这里就停——不是等到收尾数 tar 条目数
+#     那一步才炸出一句 command not found，把原因说在前头。
+rm -rf "$ROOT/manual/dist"
+if command -v python3 > /dev/null 2>&1; then
+    python3 manual/build.py
+elif [ -n "$PACKAGE" ]; then
+    echo "未找到 python3：打发布包需要它生成随包手册（默认构建不需要，控制台的「使用说明」会转到线上手册），已停止。" >&2
+    echo "装上 python3 再跑一次即可。" >&2
+    exit 1
+else
+    echo "    未找到 python3：这次构建不带随包手册，控制台的「使用说明」会转到线上手册（装上 python3 再构建就会带上）。"
+fi
+
 # 这一步不带 clean：[2/9] 刚把 core/nova-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
 mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage -DskipTests package
