@@ -517,7 +517,8 @@ await ask('④ 旧地址只带号的照样打开（按号取第一个），书�
 });
 
 await ask('⑤ 同号的群与好友在会话列表里是两行：各自的命令开关与金额设置不串', async () => {
-  // 用户故障：群里关了一条命令，同号好友的通道上也显示关着；好友那边配的也算到群头上
+  // 用户故障：群里关了一条命令，同号好友的通道上也显示关着；好友那边配的也算到群头上。
+  // 那两枚计数小标已经删了，「不串」落在每一行各取各的会话上
   if (!model) throw new Error('push-model.js 没载入，无从量起');
   const sessions = sessionsList();
   const users = JSON.parse(datasourceBody());
@@ -526,14 +527,14 @@ await ask('⑤ 同号的群与好友在会话列表里是两行：各自的命�
   const group = channels.find(item => item.type === 1);
   const friend = channels.find(item => item.type === 0);
   same({
-    '群通道关着几条': group.commandsOff,
-    '好友通道关着几条': friend.commandsOff,
+    '群那一行认到的是群': group.typeName,
+    '好友那一行认到的是好友': friend.typeName,
     '群取到的会话': (model.sessionOf(sessions, PLATFORM, GROUP_NUM, 1) || {}).typeCode,
     '好友取到的会话': (model.sessionOf(sessions, PLATFORM, FRIEND_NUM, 0) || {}).typeCode,
     '两行都算在用、没有残留': model.strandedSessions(users, sessions).length,
   }, {
-    '群通道关着几条': 1,
-    '好友通道关着几条': 0,
+    '群那一行认到的是群': '群',
+    '好友那一行认到的是好友': '好友',
     '群取到的会话': 1,
     '好友取到的会话': 0,
     '两行都算在用、没有残留': 0,

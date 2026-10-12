@@ -277,16 +277,14 @@ const CASES = [
         platform: SENDER, type: 1, num: 12345, enabled: true,
         messages: messages().filter(item => item.handler !== 'LiveReport'),
       }]});
-      const tree = pushTree([u], [session()], HANDLERS, DIRECTORY);
       const switches = noticeSwitches(u, u.targets[0], HANDLERS);
       return {
         '出这一段': layoutState(u.targets[0], HANDLERS).present ? '出' : '不出',
-        '关着几类': tree[0].channels[0].noticesOff,
         '开关行数': switches.length,
         '带版式的': switches.filter(item => item.hasLayout).map(item => item.displayName).join('、'),
       };
     },
-    expect: {'出这一段': '不出', '关着几类': 1, '开关行数': 4, '带版式的': '下播报告'},
+    expect: {'出这一段': '不出', '开关行数': 4, '带版式的': '下播报告'},
   },
   {
     name: '群名取不到',
