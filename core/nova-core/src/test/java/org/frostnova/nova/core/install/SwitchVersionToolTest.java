@@ -1130,6 +1130,8 @@ class SwitchVersionToolTest {
         }
         argv.add(target);
         ProcessBuilder builder = new ProcessBuilder(argv);
+        builder.directory(world.logs.getParent().toFile());
+        builder.environment().put("TMPDIR", world.logs.getParent().toString());
         builder.environment().put("PATH", world.bin + ":/usr/bin:/bin");
         builder.environment().put("NOVABOT_INSTALL_DIR", world.install.toString());
         builder.environment().put("NOVABOT_PROC_LOCKS", world.locks.toString());
