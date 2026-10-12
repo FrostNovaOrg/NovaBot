@@ -102,7 +102,7 @@ public class ConfigUiSetupController {
         stateStore.write(NAMESPACE, data -> data.put(TEST_SENT_KEY, at));
         // 当场落盘，理由同 rerun：这是使用者按下按钮之后立刻要跳走的一件事
         stateStore.save();
-        log.info("配置界面: 初始设置第五步已确认收到, 时间 {}", at);
+        log.info("配置界面: 设置引导第五步已确认收到, 时间 {}", at);
 
         JSONObject result = new JSONObject();
         result.put("success", true);
@@ -128,7 +128,7 @@ public class ConfigUiSetupController {
         // 当场落盘而不是等下一次定时保存：这是使用者按下按钮之后立刻要跳走的一件事，
         // 中间进程若停了，他回来看到的是「按了没反应」
         stateStore.save();
-        log.info("配置界面: 已标记重新跑一遍初始设置, 时间 {}", at);
+        log.info("配置界面: 已标记重新走一遍设置引导, 时间 {}", at);
 
         JSONObject result = new JSONObject();
         result.put("success", true);
