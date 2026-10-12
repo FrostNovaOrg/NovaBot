@@ -745,7 +745,7 @@ await ask('备选区按需出现且说明可见', async () => {
 });
 
 // 故障：中文块名、光标插入、跨消息拖动或卡内键盘挪位失效，打开时误写回。
-// 故障：变量仍显示占位符原文、@ 块不能按光标定位或拖动，或下播权限提示不符。
+// 故障：变量仍显示占位符原文、@ 块不能按光标定位或拖动，或仅全体类权限提示不符。
 await ask('中文药丸与@入口按能力和权限显示', async () => {
   const find = (scope, cls) => {
     const node = allNodes(scope).find(item => hasClass(item, cls));
@@ -813,8 +813,8 @@ function reminderEditor(placeholders, context, initial = {}, editable = true) {
   }};
 }
 
-// 下播默认不提醒订阅成员，但选全体后仍应能切回默认档。
-await ask('下播提醒方式选全体后能切回订阅档', async () => {
+// 仅全体类默认不提醒订阅成员，但选全体后仍应能切回默认档。
+await ask('仅全体类提醒方式选全体后能切回订阅档', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
   editor.choose('all');
   editor.choose('subscribers');
@@ -840,7 +840,7 @@ await ask('全体提醒按群权限变灰，已选值和存值保留', async () 
 });
 
 // 界面切回订阅档后，正文不能留下会使发送端仍提醒全体的旧块。
-await ask('下播切回订阅档移除已定位的全体块', async () => {
+await ask('仅全体类切回订阅档移除已定位的全体块', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
   editor.choose('all');
   editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk').click();
@@ -850,11 +850,11 @@ await ask('下播切回订阅档移除已定位的全体块', async () => {
   same(allNodes(editor.host).filter(node => node.dataset.k === '{at=all}').length, 0, '正文全体块数');
 });
 
-// 故障：下播下拉仍列没有意义的订阅提醒和降级档，或不提醒时仍显示块与说明。
-await ask('下播只有不提醒与全体两项', async () => {
+// 故障：仅全体类下拉仍列没有意义的订阅提醒和降级档，或不提醒时仍显示块与说明。
+await ask('仅全体类只有不提醒与全体两项', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: true});
   same(editor.host.querySelector('#tpl-at').children.map(node => [node.value, node.textContent]),
-    [['subscribers', '不 @ 人'], ['all', '@全体成员']], '下播可选项');
+    [['subscribers', '不 @ 人'], ['all', '@全体成员']], '仅全体类可选项');
   same(!!editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk'), false, '不提醒时无 @ 块');
   same(!!editor.host.querySelector('.tpl-at-note'), false, '不提醒时无说明');
   editor.choose('all');
@@ -879,11 +879,11 @@ await ask('@ 谁独立在可用块上方，块留在可用块里', async () => {
   same(!!editor.host.querySelector('.tpl-at-capsule'), false, '下拉不套块状外壳');
 });
 
-// 故障：下播只有一档全体提醒，禁用提示仍说有两档。
-await ask('下播非管理员提示只说全体一档', async () => {
+// 故障：仅全体类只有一档全体提醒，禁用提示仍说有两档。
+await ask('仅全体类非管理员提示只说全体一档', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: false});
   const warning = editor.host.querySelector('.tpl-at-warning');
-  same(warning.textContent, '机器人不是本群管理员，@全体成员 选不了。', '下播禁用原因');
+  same(warning.textContent, '机器人不是本群管理员，@全体成员 选不了。', '仅全体类禁用原因');
   same(warning.parentNode === editor.host.querySelector('.tpl-at'), true, '提示跟随下拉行');
   same(editor.host.querySelector('#tpl-at').children.map(node => node.disabled), [false, true], '全体档禁用');
   const privateEditor = reminderEditor(['{at=all}'], {isGroup: false, admin: true});
@@ -928,8 +928,8 @@ await ask('@ 块点击插入光标处，再点只挪位置', async () => {
     '全模板只有一个 @ 药丸');
 });
 
-// 故障：打开旧下播降级档时，显示错误或悄悄把保存的值改成全体档。
-await ask('下播旧降级档显示全体且保留存值', async () => {
+// 故障：打开旧仅全体类降级档时，显示错误或悄悄把保存的值改成全体档。
+await ask('仅全体类旧降级档显示全体且保留存值', async () => {
   const initial = {at_mode: 'all_or_subscribers', message: '前{at=all}后'};
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: true}, initial);
   same(editor.host.querySelector('#tpl-at').value, 'all', '旧降级档显示全体');
@@ -954,6 +954,45 @@ await ask('三档提醒说明常显在下拉旁', async () => {
     const row = allNodes(editor.host).find(node => hasClass(node, 'tpl-at'));
     same(textOf(row).includes(note), true, '下拉旁常显 ' + mode + ' 说明');
   }
+});
+
+// 故障：下播类仍显示提醒控件或权限提示。
+await ask('下播类没有提醒行和块', async () => {
+  for (const context of [{isGroup: true, admin: true}, {isGroup: true, admin: false}, {isGroup: false, admin: true}]) {
+    const editor = reminderEditor(['{uname}', '{next}'], context, {at_mode: 'all'});
+    same(!!editor.host.querySelector('#tpl-at'), false, '下播无提醒下拉');
+    same(!!editor.host.querySelector('.tpl-at'), false, '下播无提醒行');
+    same(!!editor.host.querySelector('.tpl-at-warning'), false, '下播无权限提示');
+    same(!!editor.host.querySelector('.tpl-at-note'), false, '下播无提醒说明');
+    same(editor.host.querySelector('.tpl-pal').querySelectorAll('.tpl-blk').map(node => node.textContent), ['uname'], '只有普通块');
+  }
+});
+
+// 故障：旧下播模板仍展示 @、预览仍提醒，或打开时改了存值。
+await ask('下播旧提醒不展示且打开保留存值', async () => {
+  for (const mode of ['all', 'all_or_subscribers']) {
+    const initial = {at_mode: mode, message: '{at=all}{next}前{at}后{at=all}'};
+    const editor = reminderEditor(['{uname}', '{next}'], {isGroup: true, admin: true}, initial);
+    same(editor.params(), initial, '打开时存值不变');
+    same(textOf(editor.host.querySelector('.tpl-cards')).includes('{at'), false, '正文不显示旧提醒');
+    same(allNodes(editor.host).some(node => ['{at}', '{at=all}'].includes(node.dataset.k)), false, '旧提醒不画成块');
+    same(textOf(editor.host.querySelector('.tpl-pv')).includes('@'), false, '预览无提醒');
+    same(!!editor.host.querySelector('.tpl-preview-note'), false, '预览无提醒说明');
+  }
+});
+
+// 故障：用户保存下播模板后，旧提醒仍留在文字里或旧档被改掉。
+await ask('下播编辑保存去掉旧提醒且保留档值', async () => {
+  const editor = reminderEditor(['{uname}', '{next}'], {isGroup: true, admin: true},
+    {at_mode: 'all_or_subscribers', message: '{at=all}{next}前{at}后{at=all}'});
+  editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk').click();
+  same(editor.params().message.includes('{at'), false, '保存移除旧提醒');
+  same(editor.params().at_mode, 'all_or_subscribers', '正文编辑保留旧档');
+  const body = editor.host.querySelector('.tpl-c-body');
+  body.innerHTML = '';
+  body.appendChild(document.createTextNode('新{at}正文{at=all}'));
+  body.dispatchEvent(fakeEvent('input', body));
+  same(editor.params().message.includes('{at'), false, '新输入的提醒也在保存时移除');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

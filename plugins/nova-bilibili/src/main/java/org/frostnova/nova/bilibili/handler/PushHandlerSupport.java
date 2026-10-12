@@ -162,6 +162,18 @@ public final class PushHandlerSupport {
         messages.forEach(sender::send);
     }
 
+    /** 移除提醒占位符，并跳过清理后为空白的消息段。 */
+    public static String withoutAtBlocks(String content) {
+        List<String> kept = new ArrayList<>();
+        for (String part : content.split("\\{next}", -1)) {
+            String cleaned = part.replace(AT_ALL, "").replace(AT_SUBSCRIBERS, "");
+            if (StringUtil.isNotBlank(cleaned)) {
+                kept.add(cleaned);
+            }
+        }
+        return String.join(NEXT, kept);
+    }
+
     /**
      * 按 @ 模式在消息开头补上 @ 块
      * <p>

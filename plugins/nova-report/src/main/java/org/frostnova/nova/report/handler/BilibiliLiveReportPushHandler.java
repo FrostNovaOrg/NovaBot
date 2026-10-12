@@ -13,7 +13,6 @@ import org.frostnova.nova.core.model.HandlerOption;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
-import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
@@ -92,9 +91,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{report}", report);
 
-        // 与下播通知同理：报告没有订阅名单这回事，订阅串给空串
-        PushHandlerSupport.send(sender, target,
-                PushHandlerSupport.withAtBlock(AtMode.of(params), target, template, content, ""));
+        PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
     }
 
     @Override
@@ -160,12 +157,11 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 "{uname}", "主播昵称",
                 "{report}", "直播报告",
                 "{url}", "直播间链接",
-                "{next}", "另起一条消息",
-                "{at=all}", "@全体成员");
+                "{next}", "另起一条消息");
     }
 
     @Override
     public List<String> placeholders() {
-        return List.of("{uname}", "{report}", "{url}", "{next}", "{at=all}");
+        return List.of("{uname}", "{report}", "{url}", "{next}");
     }
 }

@@ -10,7 +10,6 @@ import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
-import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
@@ -97,9 +96,7 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{picture}", picture);
 
-        // 与下播通知同理：这类播报没有订阅名单这回事，订阅串给空串
-        PushHandlerSupport.send(sender, target,
-                PushHandlerSupport.withAtBlock(AtMode.of(params), target, template, content, ""));
+        PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
     }
 
     @Override
@@ -158,13 +155,12 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
                 "{list}", "逐人打赏明细",
                 "{url}", "直播间链接",
                 "{picture}", "打赏播报图",
-                "{next}", "另起一条消息",
-                "{at=all}", "@全体成员");
+                "{next}", "另起一条消息");
     }
 
     @Override
     public List<String> placeholders() {
-        return List.of("{uname}", "{list}", "{url}", "{picture}", "{next}", "{at=all}");
+        return List.of("{uname}", "{list}", "{url}", "{picture}", "{next}");
     }
 
     /**

@@ -16,7 +16,7 @@ import {
   atPlan, blockLabel, blockRefusal,
   blockSpec, blocksFromDom, changeAtBlocks, dropIndex, insertBlock, isAttachment, moveBlock, moveCard, placeAtBlock,
   normalizeCards, parseTemplate, placeholderBlock, previewBubbles, removeCard, splitText,
-  spotFromDom, textBlock, toTemplateText,
+  spotFromDom, supportsAt, textBlock, toTemplateText,
 } from './template-model.js';
 
 /**
@@ -155,9 +155,18 @@ export function buildTemplateEditor(host, options) {
    */
   function commit() {
     if (!opts.onChange) return;
-    opts.onChange(state.handler, applyEdit(
-      opts.paramsOf ? opts.paramsOf(state.handler) : null,
-      baseOf(state.handler), state.cards, state.atMode));
+    const params = (opts.paramsOf ? opts.paramsOf(state.handler) : null) || {};
+    if (!supportsAt(state.spec)) {
+      state.cards = normalizeCards(parseTemplate(toTemplateText(state.cards), state.spec));
+    }
+    const next = applyEdit(params, baseOf(state.handler), state.cards, state.atMode);
+    if (!supportsAt(state.spec)) {
+      for (const key of ['at_mode', 'at_all']) {
+        if (Object.hasOwn(params, key)) next[key] = params[key];
+        else delete next[key];
+      }
+    }
+    opts.onChange(state.handler, next);
   }
 
   /** 这一份编辑器拿谁当「默认」：通道拿本机此刻的默认，默认模板那一页拿出厂默认 */
@@ -186,7 +195,7 @@ export function buildTemplateEditor(host, options) {
   }
 
   function previewContext() {
-    return {...(opts.context || {}), supportsSubscribers: state.spec.all.includes('{at}')};
+    return {...(opts.context || {}), supportsAt: supportsAt(state.spec), supportsSubscribers: state.spec.all.includes('{at}')};
   }
 
   // ---- 调色板 ----
@@ -210,7 +219,7 @@ export function buildTemplateEditor(host, options) {
       palette.appendChild(button);
     }
     atControls.innerHTML = '';
-    atControls.appendChild(atNode());
+    if (supportsAt(state.spec)) atControls.appendChild(atNode());
   }
 
   /** 点一下调色板：插到最后一次落过光标的地方，没落过就贴到第一张卡末尾 */

@@ -10,7 +10,6 @@ import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
-import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.StreamerNames;
@@ -65,10 +64,7 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId());
 
-        // 下播通知没有「@ 订阅的人」这回事（订阅只分开播与动态两类），因此订阅串给空串：
-        // 三选一里剩下的那一档等价于旧的 at_all 开关，取值仍从旧键来
-        PushHandlerSupport.send(sender, target,
-                PushHandlerSupport.withAtBlock(AtMode.of(params), target, template, content, ""));
+        PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
     }
 
     /**
@@ -121,12 +117,11 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
                 "{uname}", "主播昵称",
                 "{time}", "本场直播时长",
                 "{url}", "直播间链接",
-                "{next}", "另起一条消息",
-                "{at=all}", "@全体成员");
+                "{next}", "另起一条消息");
     }
 
     @Override
     public List<String> placeholders() {
-        return List.of("{uname}", "{time}", "{url}", "{next}", "{at=all}");
+        return List.of("{uname}", "{time}", "{url}", "{next}");
     }
 }

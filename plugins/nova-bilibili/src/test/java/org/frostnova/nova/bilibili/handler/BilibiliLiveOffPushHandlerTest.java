@@ -12,11 +12,14 @@ import org.frostnova.nova.core.service.LiveDataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -85,6 +88,31 @@ class BilibiliLiveOffPushHandlerTest {
     /**
      * 构造下播事件
      */
+    // 故障：下播仍提醒全体，或去掉旧提醒后多发一条空消息。
+    @ParameterizedTest
+    @CsvSource({
+            "all,正文", "all_or_subscribers,正文",
+            "all,{at=all}{next}正文", "all_or_subscribers,{at=all}{next}正文",
+            "all,前{at}正文{at=all}后", "all_or_subscribers,前{at}正文{at=all}后",
+            "all,{at}{next} {at=all} {next}正文{next}{at}",
+            "all_or_subscribers,{at}{next} {at=all} {next}正文{next}{at}"
+    })
+    @DisplayName("下播旧提醒与空段不发送")
+    void ignoresLegacyMentions(String mode, String template) {
+        when(liveDataService.getLiveStartTime(anyString(), anyLong())).thenReturn(Optional.empty());
+        when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
+        PushMessage message = pushMessage();
+        message.getParamsJsonObject().put("at_mode", mode);
+        message.getParamsJsonObject().put("message", template);
+        handler.handle(event(), message);
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(captor.capture());
+        assertEquals(template.contains("前") ? "前正文后" : "正文", captor.getValue().getContent(), "下播不提醒且不发空段");
+        assertFalse(handler.placeholders().contains("{at=all}"));
+        assertFalse(handler.placeholderLabels().containsKey("{at=all}"));
+        assertEquals(mode, message.getParamsJsonObject().getString("at_mode"), "存值不变");
+    }
+
     private BilibiliLiveOffEvent event() {
         return new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L, "主播甲", 20002L));
     }
