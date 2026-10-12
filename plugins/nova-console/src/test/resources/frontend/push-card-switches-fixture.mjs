@@ -763,7 +763,7 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
   same(find(host, 'tpl-blk', '中文变量').textContent, '主播昵称', '调色板中文名');
   same(allNodes(host).some(node => node.id === 'tpl-note'), false, '常驻教学段已移除');
   const bodies = () => allNodes(host).filter(node => hasClass(node, 'tpl-c-body'));
-  const insert = () => find(host, 'tpl-at-insert', '插入到这里');
+  const insert = () => find(host, 'tpl-at-insert', '插到光标处');
   const targetText = bodies()[1].children[0].children[0];
   window.getSelection = () => ({rangeCount: 1, getRangeAt: () => ({startContainer: targetText, startOffset: 1})});
   bodies()[1].dispatchEvent(fakeEvent('mouseup', bodies()[1]));
@@ -847,22 +847,32 @@ await ask('下播切回订阅档移除已定位的全体块', async () => {
   same(allNodes(editor.host).filter(node => node.dataset.k === '{at=all}').length, 0, '正文全体块数');
 });
 
-// 默认不提醒的通知不应常显报错；只有用户尝试放入不支持的块时才提示。
-await ask('无订阅能力默认不常显警告，定位被拒时才提示', async () => {
-  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
-  same(textOf(editor.host).includes('这类通知不支持 @订阅的人。'), false, '默认页面无订阅警告');
-  // 即使绕过禁用按钮派发点击，产品的定位判定仍必须拒收并解释原因。
-  const alerts = [];
-  const originalAlert = window.alert;
-  window.alert = message => alerts.push(message);
-  try {
-    const insert = allNodes(editor.host).find(node => hasClass(node, 'tpl-at-insert'));
-    insert.dispatchEvent(fakeEvent('click', insert));
-    same(alerts, ['这类通知不支持 @订阅的人。'], '尝试定位时提示');
-    same(editor.params(), {}, '拒收不写回');
-  } finally {
-    window.alert = originalAlert;
-  }
+// 故障：下播选订阅档仍摆着拖不动、点不了的控件，又看不出为什么。
+await ask('下播订阅档隐藏定位控件并说明不提醒', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: false});
+  same(allNodes(editor.host).filter(node => hasClass(node, 'tpl-at-handle')
+    || hasClass(node, 'tpl-at-insert')).length, 0, '不可放入的定位控件数');
+  same(editor.host.querySelector('.tpl-at-note').textContent,
+    '这类通知没有订阅名单，选这档就是不 @ 人。', '订阅档可见说明');
+  same(editor.params(), {}, '打开时存值不变');
+});
+
+// 故障：开播订阅档的定位入口消失或禁用，按钮仍写含糊的「这里」。
+await ask('有订阅名单时定位控件可用且写明光标', async () => {
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: true});
+  const handle = editor.host.querySelector('.tpl-at-handle');
+  const insert = editor.host.querySelector('.tpl-at-insert');
+  same(!!handle && !handle.disabled && handle.draggable, true, '拖柄存在且可拖');
+  same(!!insert && !insert.disabled, true, '插入按钮存在且可用');
+  same(insert.textContent, '插到光标处', '插入按钮文字');
+});
+
+// 故障：下播全体降级档仍声称会提醒不存在的订阅名单。
+await ask('下播全体降级档说明那一次不提醒', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: true},
+    {at_mode: 'all_or_subscribers'});
+  same(editor.host.querySelector('.tpl-at-note').textContent,
+    '被摘掉的那一次不 @ 人：这类通知没有订阅名单。', '降级档可见说明');
 });
 
 // 触屏用户看不到悬停提示，三档原有说明都应在下拉旁直接可读。
