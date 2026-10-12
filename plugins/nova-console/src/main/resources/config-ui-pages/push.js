@@ -279,25 +279,19 @@ const PAGE_STYLE = `
   border-radius:var(--r-ctl);padding:7px;cursor:pointer;font-size:13.5px;font-family:inherit}
 .tpl-add:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .tpl-add:disabled{opacity:.5;cursor:not-allowed}
-/* 提醒模式与位置：原生下拉选人，旁边的块点按或拖动定位 */
-.tpl-at{display:flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:100%;font-size:13px}
-.tpl-at-note{flex-basis:100%;line-height:1.6}
-.tpl-at-capsule{display:flex;align-items:stretch;min-width:0;border:1px solid var(--softline);
-  border-radius:var(--r-pill);background:var(--surface);overflow:hidden}
-.tpl-at-s{width:auto;min-width:0;max-width:100%;border:0;border-radius:0;
-  background:var(--surface);color:var(--accent-text);padding:6px 32px 6px 5px;font:inherit}
-.tpl-at-capsule:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+/* 提醒方式在可用块上方，位置由可用块中的 @ 块选择 */
+.tpl-at{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px;max-width:100%;font-size:13px}
+.tpl-at-note{line-height:1.6}
+.tpl-at-s{width:auto;min-width:0;max-width:100%;padding:6px 9px;border:1px solid var(--line);
+  border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font:inherit}
 .tpl-at-warning{flex:1 0 100%;margin:3px 0 0;color:var(--warn);line-height:1.6}
 .tpl-preview-note{margin:8px 0 0;line-height:1.6}
 .template-diff{font-size:13px;margin:6px 0}
 @media(pointer:coarse){
-  .tpl-at-s,.tpl-at>.tpl-blk{min-height:42px}
+  .tpl-at-s{min-height:42px}
 }
 @media(max-width:520px){
-  .tpl-pal>.tpl-at{flex-basis:100%}
-  .tpl-at-capsule{flex:1 1 auto}
-  .tpl-at>.tpl-blk{flex:none}
-  .tpl-at-s{flex:1 1 auto;font-size:12.5px}
+  .tpl-at-s{font-size:12.5px}
 }
 /* 文本形式：给老使用者对照，只能看 */
 .tpl-raw{margin-top:10px;font-size:13.5px;color:var(--dim)}

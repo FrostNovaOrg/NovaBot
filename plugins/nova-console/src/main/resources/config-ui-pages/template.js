@@ -95,6 +95,8 @@ export function buildTemplateEditor(host, options) {
 
   const wrap = el('div', 'tpl-wrap');
   const left = el('div', 'tpl-left');
+  const atControls = el('div', 'tpl-at-controls');
+  left.appendChild(atControls);
   const palette = el('div', 'tpl-pal');
   palette.id = 'tpl-palette';
   left.appendChild(palette);
@@ -207,13 +209,8 @@ export function buildTemplateEditor(host, options) {
       button.addEventListener('dragend', () => { drag = null; });
       palette.appendChild(button);
     }
-    palette.appendChild(atNode());
-    const ctx = previewContext();
-    if (ctx.admin === false || ctx.isGroup === false) {
-      palette.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
-        ? '私聊没有 @全体成员。'
-        : '机器人不是本群管理员，@全体成员 两档选不了。';
-    }
+    atControls.innerHTML = '';
+    atControls.appendChild(atNode());
   }
 
   /** 点一下调色板：插到最后一次落过光标的地方，没落过就贴到第一张卡末尾 */
@@ -427,38 +424,41 @@ export function buildTemplateEditor(host, options) {
   /** 模式选择与位置独立；按钮可用键盘或触屏定位。 */
   function atNode() {
     const row = el('div', 'tpl-at');
-    const capsule = el('div', 'tpl-at-capsule');
+    const subscribers = state.spec.all.includes('{at}');
+    const displayMode = !subscribers && state.atMode === 'all_or_subscribers' ? 'all' : state.atMode;
+    const label = el('label');
+    label.setAttribute('for', 'tpl-at');
+    label.textContent = '@ 谁：';
+    row.appendChild(label);
     const supported = state.spec.all.includes(atLiteralOf(state.atMode));
     const positionable = !!opts.editable && supported;
-    const note = !supported && state.atMode === 'subscribers'
-      ? '这类通知没有订阅名单，选这档就是不 @ 人。'
-      : state.atMode === 'all_or_subscribers' && !state.spec.all.includes('{at}')
-        ? '被摘掉的那一次不 @ 人：这类通知没有订阅名单。'
-        : atModeInfo(state.atMode).note;
+    const note = !subscribers && displayMode === 'subscribers' ? '' : atModeInfo(displayMode).note;
     const select = el('select', 'tpl-at-s');
     select.id = 'tpl-at';
     select.disabled = !opts.editable;
     select.setAttribute('aria-label', '选择提醒方式');
     select.title = note;
     const ctx = previewContext();
-    for (const mode of AT_MODES) {
+    const modes = subscribers ? AT_MODES : [
+      {...AT_MODES[0], label: '不 @ 人'}, AT_MODES[1],
+    ];
+    for (const mode of modes) {
       const option = el('option');
       option.value = mode.key;
       option.textContent = mode.label;
       option.disabled = mode.key !== 'subscribers' && (ctx.admin === false || ctx.isGroup === false);
-      if (mode.key === state.atMode) option.selected = true;
+      if (mode.key === displayMode) option.selected = true;
       select.appendChild(option);
     }
-    select.value = state.atMode;
+    select.value = displayMode;
     select.addEventListener('change', event => {
       state.atMode = event.target.value;
       state.cards = changeAtBlocks(state.cards, state.atMode, state.spec);
       commit();
       paint();
-      palette.querySelector('#tpl-at')?.focus();
+      atControls.querySelector('#tpl-at')?.focus();
     });
-    capsule.appendChild(select);
-    row.appendChild(capsule);
+    row.appendChild(select);
     if (supported) {
       const block = el('button', 'tpl-blk');
       block.type = 'button';
@@ -472,9 +472,15 @@ export function buildTemplateEditor(host, options) {
         else event.preventDefault();
       });
       block.addEventListener('dragend', () => { drag = null; });
-      row.appendChild(block);
+      palette.appendChild(block);
     }
-    row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
+    if (note) row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
+    if (ctx.admin === false || ctx.isGroup === false) {
+      row.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
+        ? '私聊没有 @全体成员。'
+        : subscribers ? '机器人不是本群管理员，@全体成员 两档选不了。'
+          : '机器人不是本群管理员，@全体成员 选不了。';
+    }
     return row;
   }
 
