@@ -14,6 +14,8 @@
  * ⑥小数秒的位数与服务端一样（LocalTime.parse 至多 9 位，小数点后不带数字也收）：存着
  * 23:59:59.1234567890（10 位）时框里空着、行里说认不出，因为服务端也认不出、静音整段不生效；
  * 9 位的、只带小数点的照常显示 23:59。
+ * ⑦时刻两端带全角空格、不换行空格或 U+2003 时不能显示有效，因为服务端认不出；
+ * 普通空格和编码不大于 U+0020 的字符照服务端去掉，仍显示有效时刻。
  *
  * 由 SettingsQuietTimeTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -211,6 +213,20 @@ guard('⑥', () => {
   const dot = build('23:59:59.').row;
   eq({value: inputOf(dot).value, note: noteShown(dot)}, {value: '23:59', note: false},
     '⑥ 存着 23:59:59.（小数点后一位不带，服务端照收）：照常显示 23:59，不说认不出');
+});
+
+// ---------- ⑦ 首尾空白与服务端一样 ----------
+guard('⑦', () => {
+  for (const saved of ['\u300008:00\u3000', '\u00a008:00', '\u200308:00\u2003']) {
+    const {row} = build(saved);
+    eq({value: inputOf(row).value, note: noteShown(row)}, {value: '', note: true},
+      '⑦ 存着 ' + JSON.stringify(saved) + '（服务端不去掉这些空白）：框里空着，行里说认不出');
+  }
+  for (const saved of [' 08:00 ', '\u000008:00\u0020', '\t08:00\r\n']) {
+    const {row} = build(saved);
+    eq({value: inputOf(row).value, note: noteShown(row)}, {value: '08:00', note: false},
+      '⑦ 存着 ' + JSON.stringify(saved) + '（服务端去掉首尾编码不大于 U+0020 的字符）：照常显示 08:00');
+  }
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

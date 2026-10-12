@@ -318,7 +318,8 @@ const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{0,9})?)?$/;
  * @return {{text: string, unreadable: boolean}} text 是交给时间框的 HH:mm（或空串）
  */
 export function timeOfDay(value) {
-  const raw = String(value ?? '').trim();
+  // 与服务端 Java trim() 一致：只去掉首尾编码不大于 U+0020 的字符。
+  const raw = String(value ?? '').replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '');
   if (!raw) return {text: '', unreadable: false};
   if (!TIME_OF_DAY.test(raw)) return {text: '', unreadable: true};
   return {text: raw.slice(0, 5), unreadable: false};
