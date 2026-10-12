@@ -2,6 +2,7 @@ package org.frostnova.nova.report.painter;
 
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
@@ -13,7 +14,9 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
 
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,8 +26,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -39,6 +44,14 @@ import static org.mockito.Mockito.when;
 class BilibiliDataQueryPainterTest {
     private BilibiliDataQueryPainter painter;
 
+    private BuildProperties build;
+
+    private NovaCoreProperties coreProperties;
+
+    private FontUtil fontUtil;
+
+    private BilibiliApiUtil api;
+
     @BeforeAll
     static void headless() {
         System.setProperty("java.awt.headless", "true");
@@ -46,10 +59,10 @@ class BilibiliDataQueryPainterTest {
 
     @BeforeEach
     void setUp() {
-        NovaCoreProperties coreProperties = new NovaCoreProperties();
+        coreProperties = new NovaCoreProperties();
         coreProperties.getPaint().getFonts().add("内置");
 
-        FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
+        fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
         fontUtil.init();
 
         Properties buildInfo = new Properties();
@@ -58,8 +71,8 @@ class BilibiliDataQueryPainterTest {
         buildInfo.setProperty("artifact", "nova-core");
         buildInfo.setProperty("name", "NovaBot");
 
-        NovaCommonPainterFactory factory =
-                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        build = new BuildProperties(buildInfo);
+        NovaCommonPainterFactory factory = new NovaCommonPainterFactory(build, coreProperties, fontUtil);
 
         BufferedImage placeholder = new BufferedImage(200, 200, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = placeholder.createGraphics();
@@ -67,7 +80,7 @@ class BilibiliDataQueryPainterTest {
         graphics.fillRect(0, 0, 200, 200);
         graphics.dispose();
 
-        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        api = mock(BilibiliApiUtil.class);
         when(api.getBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
         when(api.fetchBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
 
@@ -140,6 +153,71 @@ class BilibiliDataQueryPainterTest {
 
         assertTrue(base64.isPresent());
         dump("ranking-awkward", base64.get());
+    }
+
+    /**
+     * 用户会看到的错：盲盒卡大字改写金额后，位数一多就伸出卡片、压到隔壁那张卡上。
+     * 「-¥12345.6」要整串画出；长到放不下的照报告卡片的办法截短，也不许出卡片。
+     * <p>
+     * 卡片的位置从圆角矩形里收下来（宽 219、高 104 的就是一张数据卡），
+     * 大字从按坐标画的 32 号粗体字里收下来，宽度用同一支画笔量。
+     */
+    @Test
+    @DisplayName("盲盒卡大字写长金额：-¥12345.6 整串画出，放不下的截短也不出卡片")
+    void longProfitValueStaysInsideCard() {
+        List<int[]> boxes = new ArrayList<>();
+        List<Object[]> values = new ArrayList<>();
+        NovaCommonPainterFactory recording = new NovaCommonPainterFactory(build, coreProperties, fontUtil) {
+            @Override
+            public CommonPainter create(int width, int height, boolean autoExpand) {
+                return new CommonPainter(build, coreProperties, fontUtil, width, height, autoExpand) {
+                    @Override
+                    public CommonPainter drawRoundedRectangle(int x, int y, int width, int height, int radius,
+                                                              Color color) {
+                        if (width == 219 && height == 104) {
+                            boxes.add(new int[]{x, width});
+                        }
+                        return super.drawRoundedRectangle(x, y, width, height, radius, color);
+                    }
+
+                    @Override
+                    public CommonPainter drawTextWithStyle(List<TextWithStyle> texts, Point drawLocation) {
+                        TextWithStyle first = texts.isEmpty() ? null : texts.get(0);
+                        if (first != null && drawLocation != null && first.getSize() == 32
+                                && first.getStyle() == Font.BOLD) {
+                            values.add(new Object[]{first.getText(), drawLocation.x,
+                                    getStringWidthAndHeight(first).getFirst()});
+                        }
+                        return super.drawTextWithStyle(texts, drawLocation);
+                    }
+                };
+            }
+        };
+
+        Optional<String> base64 = new BilibiliDataQueryPainter(recording, api).paintCards(
+                new BilibiliDataQueryPainter.Header("测试主播", "本场数据", null),
+                List.of(new BilibiliDataQueryPainter.DataCard("-¥12345.6", "盲盒盈亏 · 31 个"),
+                        new BilibiliDataQueryPainter.DataCard("-¥123456789.5", "盲盒盈亏 · 31 个")),
+                null);
+
+        assertTrue(base64.isPresent());
+        assertEquals(2, boxes.size(), "应画两张数据卡");
+        assertEquals(2, values.size(), "应画两行大字");
+        List<String> red = new ArrayList<>();
+        if (!"-¥12345.6".equals(values.get(0)[0])) {
+            red.add("「-¥12345.6」该整串画出，实际画的是「" + values.get(0)[0] + "」");
+        }
+        for (int i = 0; i < 2; i++) {
+            int right = (int) values.get(i)[1] + (int) values.get(i)[2];
+            int cardRight = boxes.get(i)[0] + boxes.get(i)[1];
+            if (right > cardRight) {
+                red.add("第 " + (i + 1) + " 张卡大字「" + values.get(i)[0] + "」右缘到 x=" + right
+                        + "，卡片右缘在 x=" + cardRight);
+            }
+        }
+        if (!red.isEmpty()) {
+            fail(String.join("；", red));
+        }
     }
 
     /**

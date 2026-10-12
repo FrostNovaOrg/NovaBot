@@ -126,13 +126,14 @@ class BilibiliLiveReportCardSwitchesTest {
     }
 
     /**
-     * 卡片按画出的顺序读成「流水、弹幕……」
+     * 卡片按画出的顺序读成「流水、弹幕……」。盲盒卡显示金额时小字写「盲盒盈亏 · N 个」，也读成「盲盒」
      */
     private List<String> kinds(JSONObject params, boolean showRevenue) {
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenue);
         CommonPainter canvas = factory.create(800, 600, true);
         return painter.buildCards(canvas, PLATFORM, STREAMER.getUid(), options).stream()
                 .map(card -> card.label().split(" · ")[0])
+                .map(kind -> kind.equals("盲盒盈亏") ? "盲盒" : kind)
                 .toList();
     }
 

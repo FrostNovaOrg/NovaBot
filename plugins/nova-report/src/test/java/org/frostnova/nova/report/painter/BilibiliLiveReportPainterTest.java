@@ -157,25 +157,30 @@ class BilibiliLiveReportPainterTest {
         dump("empty", base64.get());
     }
 
+    /**
+     * 用户会看到的错：显示金额时盲盒卡大字还是「3 个」，赚了亏了要去小字里找。
+     * 大字要跟盲盒盈亏榜一个写法（零不带号、正负带号），小字写「盲盒盈亏 · N 个」。
+     */
     @Test
-    @DisplayName("盲盒盈亏三分：零持平、正盈利、负亏损")
-    void boxCardShowsBreakEvenProfitAndLoss() {
+    @DisplayName("显示金额时盲盒卡大字写盈亏、小字写「盲盒盈亏 · N 个」")
+    void boxCardLeadsWithProfitWhenRevenueShown() {
         assertAll(
-                () -> {
-                    String label = boxLabel(0);
-                    assertEquals("盲盒 · 持平", label);
-                    assertFalse(label.contains("¥"), label);
-                },
-                () -> {
-                    String label = boxLabel(150);
-                    assertTrue(label.contains("盈利"), label);
-                    assertTrue(label.contains("150"), label);
-                },
-                () -> {
-                    String label = boxLabel(-150);
-                    assertTrue(label.contains("亏损"), label);
-                    assertTrue(label.contains("150"), label);
-                }
+                () -> assertEquals(List.of("¥0", "盲盒盈亏 · 3 个"), boxCard(0, true)),
+                () -> assertEquals(List.of("+¥150", "盲盒盈亏 · 3 个"), boxCard(150, true)),
+                () -> assertEquals(List.of("-¥18.4", "盲盒盈亏 · 3 个"), boxCard(-18.4, true))
+        );
+    }
+
+    /**
+     * 用户会看到的错：隐藏金额的群里，盲盒卡上露出赚了或亏了多少钱。
+     */
+    @Test
+    @DisplayName("隐藏金额时盲盒卡大字写个数、小字只写「盲盒」，整张卡没有「¥」")
+    void boxCardHidesProfitWhenRevenueHidden() {
+        List<String> card = boxCard(-18.4, false);
+        assertAll(
+                () -> assertEquals(List.of("3 个", "盲盒"), card),
+                () -> assertTrue(card.stream().noneMatch(text -> text.contains("¥")), card.toString())
         );
     }
 
@@ -228,19 +233,19 @@ class BilibiliLiveReportPainterTest {
     }
 
     /**
-     * 只喂盲盒数量与盈亏，从建卡结果里取出盲盒卡文案。
+     * 只喂 3 个盲盒与盈亏，从建卡结果里取出盲盒卡的大字与小字。
      */
-    private String boxLabel(double boxProfit) {
+    private List<String> boxCard(double boxProfit, boolean showRevenue) {
         DefaultLiveDataService data = new DefaultLiveDataService(new NovaCoreProperties());
         data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_COUNT, 3);
         data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT, boxProfit);
         BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
                 factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
         return reportPainter.buildCards(factory.create(ReportSharedStyle.WIDTH, 1600, true),
-                        PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
+                        PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, showRevenue))
                 .stream()
-                .map(BilibiliLiveReportPainter.Card::label)
-                .filter(label -> label.startsWith("盲盒"))
+                .filter(card -> card.label().startsWith("盲盒"))
+                .map(card -> List.of(card.value(), card.label()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("没有盲盒卡"));
     }

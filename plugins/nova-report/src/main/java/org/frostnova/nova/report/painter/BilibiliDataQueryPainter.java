@@ -76,6 +76,11 @@ public class BilibiliDataQueryPainter {
 
     private static final int CARD_RADIUS = 16;
 
+    /**
+     * 卡片内文字距卡片左右两边的留白
+     */
+    private static final int CARD_TEXT_INSET = 18;
+
     private static final int RANKING_ROW_HEIGHT = 44;
 
     private static final int RANKING_BAR_HEIGHT = 14;
@@ -333,10 +338,14 @@ public class BilibiliDataQueryPainter {
             int y = startY + (i / CARD_COLUMNS) * (CARD_HEIGHT + CARD_GAP);
 
             painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-            painter.drawTextWithStyle(List.of(new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD)),
-                    new Point(x + 18, y + 14));
-            painter.drawTextWithStyle(List.of(new TextWithStyle(card.label(), 20, COLOR_TIP, Font.PLAIN)),
-                    new Point(x + 18, y + 62));
+            // 同报告卡片：放不下的截短，不让字伸出卡片压到隔壁那张上（盲盒卡大字是金额，位数没有上限）
+            int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
+            TextWithStyle value = new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD);
+            value.setText(painter.truncateToWidth(value, usable));
+            painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 14));
+            TextWithStyle label = new TextWithStyle(card.label(), 20, COLOR_TIP, Font.PLAIN);
+            label.setText(painter.truncateToWidth(label, usable));
+            painter.drawTextWithStyle(List.of(label), new Point(x + CARD_TEXT_INSET, y + 62));
         }
 
         int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;

@@ -847,9 +847,11 @@ public class BilibiliLiveReportPainter {
         if (options.isCardGuard() && guardPurchases > 0) {
             drawn.put("card_guard", guardPurchaseCard(painter, platform, uid, guardPurchases, revenue));
         }
+        // 显示金额时大字写盈亏（与盲盒盈亏榜同一写法），个数退到小字；隐藏金额时只写个数
         if (options.isCardBox() && box > 0) {
-            drawn.put("card_box", new Card(box + " 个",
-                    revenue ? "盲盒 · " + boxText(boxProfit) : "盲盒"));
+            drawn.put("card_box", revenue
+                    ? new Card(profitLabel(boxProfit), "盲盒盈亏 · " + box + " 个")
+                    : new Card(box + " 个", "盲盒"));
         }
         if (options.isCardFreeGift() && freeGift > 0) {
             drawn.put("card_free_gift", new Card(freeGift + " 个", "免费礼物"));
@@ -945,19 +947,6 @@ public class BilibiliLiveReportPainter {
     private boolean cardLabelFits(CommonPainter painter, String label) {
         int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
         return painter.getStringWidthAndHeight(new TextWithStyle(label, 22, COLOR_TIP, Font.PLAIN)).getFirst() <= usable;
-    }
-
-    /**
-     * 盲盒盈亏文案：正盈利、负亏损、零持平（不带金额）。
-     */
-    private String boxText(double boxProfit) {
-        if (boxProfit > 0) {
-            return "盈利 ¥" + yuan(boxProfit);
-        }
-        if (boxProfit < 0) {
-            return "亏损 ¥" + yuan(Math.abs(boxProfit));
-        }
-        return "持平";
     }
 
     /**
@@ -3038,7 +3027,7 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 盲盒盈亏榜金额：正数带加号、负数带减号、零无方向不带号。
+     * 盲盒盈亏金额：正数带加号、负数带减号、零无方向不带号。盈亏榜与数据卡里的盲盒那张共用
      */
     static String profitLabel(double score) {
         if (score == 0) {

@@ -274,7 +274,7 @@ public class BilibiliLiveReportOptions {
             revenue(HandlerOption.bool("card_guard", "大航海", "本场上舰人次与金额，分得清时写新开与续费，为 0 不画", DEFAULTS.cardGuard),
                     HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
                     "隐藏金额的会话里只写人次，不带金额").under("cards"),
-            revenue(HandlerOption.bool("card_box", "盲盒", "本场开出的盲盒个数与盈亏，为 0 不画", DEFAULTS.cardBox),
+            revenue(HandlerOption.bool("card_box", "盲盒", "本场盲盒盈亏与开出个数，没开盲盒不画", DEFAULTS.cardBox),
                     HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
                     "隐藏金额的会话里只写个数，不写盈亏").under("cards"),
             HandlerOption.bool("card_free_gift", "免费礼物", "本场收到的免费礼物个数，为 0 不画", DEFAULTS.cardFreeGift)
