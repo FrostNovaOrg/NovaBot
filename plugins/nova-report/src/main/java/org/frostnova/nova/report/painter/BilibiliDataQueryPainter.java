@@ -77,7 +77,7 @@ public class BilibiliDataQueryPainter {
     private static final int CARD_RADIUS = 16;
 
     /**
-     * 卡片内文字距卡片左右两边的留白
+     * 卡片内文字距卡片左边的留白
      */
     private static final int CARD_TEXT_INSET = 18;
 
@@ -338,8 +338,9 @@ public class BilibiliDataQueryPainter {
             int y = startY + (i / CARD_COLUMNS) * (CARD_HEIGHT + CARD_GAP);
 
             painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-            // 同报告卡片：放不下的截短，不让字伸出卡片压到隔壁那张上（盲盒卡大字是金额，位数没有上限）
-            int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
+            // 同报告卡片：放不下的截短，不让字伸出卡片压到隔壁那张上（盲盒卡大字是金额，位数没有上限）。
+            // 可用宽是文字起点到卡片右缘：再扣一份右留白会把放得下的字也截掉（「弹幕 · 1234567 人参与」宽 195，这里有 201）
+            int usable = CARD_WIDTH - CARD_TEXT_INSET;
             TextWithStyle value = new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD);
             value.setText(painter.truncateToWidth(value, usable));
             painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 14));
