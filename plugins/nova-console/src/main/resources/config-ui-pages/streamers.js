@@ -62,8 +62,6 @@ export function render(section) {
   ensureStyle();
   section.innerHTML = `
     <div id="sv-list">
-      <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
-        点一位主播看他的概况、场次与趋势；点一场看那一场的报告。</p>
       <div class="nv-card hcard">
         <h3>全部主播 <span class="h-note" id="st-window"></span></h3>
         <div class="stats" id="st-all"></div>

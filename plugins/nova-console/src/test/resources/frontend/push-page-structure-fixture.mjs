@@ -143,6 +143,7 @@ class MiniNode {
     for (const fn of list) fn.call(this, event);
     return true;
   }
+  focus() { globalThis.document.activeElement = this; }
   click() { this.dispatchEvent({type: 'click', target: this, stopPropagation() {}}); }
 }
 
@@ -275,9 +276,9 @@ globalThis.fetch = (path, opt) => {
     if (url.includes('/push-history')) return ok({records: RECORDS});
     if (url.includes('/at-all/quota')) return ok({bots: [], sessions: []});
     if (url.includes('/bot/targets?type=group')) {
-      return ok({items: [{sender: PLATFORM, num: GROUP_NUM, name: '技术群', memberCount: 30, admin: true}]});
+      return ok({items: [{sender: PLATFORM, num: GROUP_NUM, name: '技术群', memberCount: 30, admin: true}, {sender: PLATFORM, num: 987654, name: '新群'}]});
     }
-    if (url.includes('/bot/targets?type=friend')) return ok({items: []});
+    if (url.includes('/bot/targets?type=friend')) return ok({items: [{sender: PLATFORM, num: GROUP_NUM, name: '好友'}]});
     return ok({});
   }
   return ok({success: true, message: '已保存'});
@@ -382,6 +383,22 @@ await ask('③ 群／好友那一行不再挂「N 类关着」「N 条命令被�
     '「已停用」那颗小标': true,
     '「只采集，不推送」那颗小标': true,
   }, '左树小标');
+});
+
+// 故障：添加通道时看不出群已经在推谁，也不知道群设置由多位主播共用。
+await ask('添加通道写明群设置共用并列出其他主播', async () => {
+  push.showPush('3', '');
+  push.renderStreamers();
+  const add = rightPane().find(node => node.textContent === '＋ 添加通道');
+  if (!add) throw new Error('没有添加通道按钮');
+  add.click();
+  const rows = allNodes(idNode('push-drawer-body')).filter(node => classesOf(node).includes('dwrow'));
+  same(rows[0].innerHTML.includes(' · 已在推 甲、乙'), true, '已有推送的群列出主播');
+  same(rows[1].innerHTML.includes('已在推'), false, '没人推的群不写主播');
+  same(rows[2].innerHTML.includes('已在推'), false, '好友不写主播');
+  same(idNode('push-drawer-lead').textContent.includes('群的设置（金额显示、静音、命令开关等）由推到这个群的所有主播共用。'),
+    true, '添加前的共用说明');
+  push.closeDrawer();
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
