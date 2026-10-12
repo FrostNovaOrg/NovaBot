@@ -153,9 +153,15 @@ class BilibiliAtCommandHereTest {
             }
         }
 
+        /**
+         * 留一条通知推送，但不配 @ 模式：即按订阅名单 @ 的默认那一档
+         */
         void clearModes() {
             for (PushTarget target : streamer.getTargets()) {
                 target.getMessages().clear();
+                PushMessage message = new PushMessage();
+                message.setHandler(BilibiliAtNoticeKind.LIVE.handlerName());
+                target.getMessages().add(message);
             }
         }
 
