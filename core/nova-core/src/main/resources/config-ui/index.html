@@ -346,7 +346,6 @@
   <!-- ============ 设置 #/settings ============ -->
   <section class="page" id="page-settings">
     <div id="settings">
-      <p class="hint">按你要办的事分组，常用的在上面、工程用的折在页底。每一项都标了改完什么时候生效。</p>
       <!--
         搜索、显示键名、只看改过的。三样都只改可见性，不重绘——
         使用者常常是一边改一边搜下一项，重绘会把正在编辑的那一格丢掉。
@@ -355,6 +354,9 @@
         <input type="search" id="set-search" placeholder="搜设置，例如：静音" aria-label="搜设置">
         <label class="switch"><input type="checkbox" id="show-keys"><span>显示键名</span></label>
         <label class="switch"><input type="checkbox" id="only-changed"><span>只看改过的</span></label>
+        <!-- 高级默认收着。开合只改可见性、不重绘，理由同上 -->
+        <button type="button" class="ghost settings-advanced-toggle" id="show-advanced"
+                aria-controls="adv-groups" aria-expanded="false">显示高级选项</button>
         <span class="dim" id="set-count"></span>
       </div>
       <!--

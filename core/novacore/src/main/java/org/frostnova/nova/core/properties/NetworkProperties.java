@@ -21,6 +21,7 @@ public class NetworkProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络请求 · 连接超时")
+    @ConfigSummary(value = "", details = false)
     private int connectTimeout = 10;
 
     /**
@@ -28,5 +29,6 @@ public class NetworkProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络请求 · 读取超时")
+    @ConfigSummary(value = "", details = false)
     private int readTimeout = 60;
 }

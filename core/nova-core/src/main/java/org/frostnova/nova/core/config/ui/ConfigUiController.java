@@ -3,7 +3,8 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.properties.ConfigEffect;
-import org.frostnova.nova.core.config.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigFormat;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
@@ -873,7 +874,8 @@ public class ConfigUiController {
      * <p>
      * 分组不再按配置键的前缀自动切（那样切出来的是<b>程序的结构</b>，二十余组，
      * 使用者要办一件事得先猜它归哪个类管），而是按 {@link ConfigurationGroups} 那张表
-     * 落到「要办的事」上：常用六组在前，工程用的两组标了 {@code advanced}、由界面折到页底。
+     * 落到「要办的事」上：常用六组在前，工程用的两组标了 {@code advanced}、整组算高级；
+     * 其余组里每一项另带 {@code level}，界面据此把标了高级的项也收进高级。
      * 一条前缀也匹配不上的配置项<b>不会被塞进任何一组</b>——它的 {@code group} 为空，
      * 构建期那道判据会点名，而不是让它安静地待在一个「其他」里。
      * @return 按分组组织的字段表
@@ -882,6 +884,8 @@ public class ConfigUiController {
     public JSONObject schema() {
         Map<String, ConfigLevel.Level> levels = levelResolver.getLevels();
         Map<String, String> labels = labelResolver.getLabels();
+        Map<String, ConfigurationLabelResolver.Summary> summaries = labelResolver.getSummaries();
+        Map<String, ConfigFormat.Format> formats = labelResolver.getFormats();
         Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
         Map<String, ConfigurationDangerResolver.Danger> dangers = dangerResolver.getDangers();
 
@@ -901,6 +905,14 @@ public class ConfigUiController {
                     field.name().substring(field.name().lastIndexOf('.') + 1)));
             item.put("widget", field.widget());
             item.put("description", field.description());
+            // 标了短说明的项：行内只摆这一句，整段说明（details 为真时）进问号。
+            // 没标的两栏都是 null，界面照旧在行内摆整段——插件不标也不少一个字
+            ConfigurationLabelResolver.Summary summary = summaries.get(field.name());
+            item.put("summary", summary == null ? null : summary.text());
+            item.put("help", summary == null || !summary.details() ? null : field.description());
+            // 值的种类（一天里的时刻、文件位置）。界面据此换控件或换字体，不另记一张键名表
+            ConfigFormat.Format format = formats.get(field.name());
+            item.put("format", format == null ? null : format.name());
             item.put("unit", unitOf(field.description()));
             item.put("defaultValue", field.defaultValue());
             // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀

@@ -1,7 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.properties.ConfigEffect;
-import org.frostnova.nova.core.config.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

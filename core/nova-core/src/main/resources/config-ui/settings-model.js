@@ -236,3 +236,103 @@ export function currentGroupId(groups, viewportTop, viewportHeight, headerHeight
   }
   return chosen;
 }
+
+/**
+ * 把服务端那张组表分成常用与高级两半
+ *
+ * 分法只认服务端：组标了 advanced 的整组进高级；其余组里 level 为 ADVANCED 的项进高级，
+ * 另起一组「某组 · 高级」，BASIC／COMMON 留在常用。界面上不另记一张写着键名的名单——
+ * 那张名单只能由核心来写，插件新加的键会落在名单外，而落错了不会有任何提示。
+ *
+ * 由卡片摆的项（告警的三张卡、登录与安全的几张卡）跟着卡走：卡挂在常用那一组上，
+ * 这几项要是按级别算进高级，行里摘掉了、数目却记在高级那边，两边对不上。
+ * 旧后端没给 level 的项按常用摆：把它们藏起来，比多露几项更难察觉。
+ * 「整组都要重启」那枚牌子按拆出来的两半各自重算，服务端算的是整组。
+ * @param groups 组表，来自 /api/schema 的 groups；不改动它
+ * @param carded (组标识, 配置键) => 这一项是否由卡片摆，可不传
+ * @return {{common: Array, advanced: Array}} 两半，各按组表原来的顺序
+ */
+export function arrangeGroups(groups, carded) {
+  const common = [];
+  const advanced = [];
+  const held = typeof carded === 'function' ? carded : () => false;
+  const part = (group, fields, extra) => Object.assign({}, group, {
+    fields,
+    allRestart: fields.length > 0 && fields.every(field => field.effect !== 'IMMEDIATE'),
+  }, extra);
+  for (const group of groups || []) {
+    const fields = group.fields || [];
+    if (group.advanced) {
+      advanced.push(part(group, fields.slice(), {}));
+      continue;
+    }
+    const basic = [];
+    const extra = [];
+    for (const field of fields) {
+      const high = field.level === 'ADVANCED' && !held(group.group, field.name);
+      (high ? extra : basic).push(field);
+    }
+    if (basic.length) common.push(part(group, basic, {}));
+    if (extra.length) {
+      advanced.push(part(group, extra, {
+        group: group.group + '-advanced', title: group.title + ' · 高级', advanced: true, base: group.group,
+      }));
+    }
+  }
+  return {common, advanced};
+}
+
+/**
+ * 高级那一块此刻该不该摆出来
+ *
+ * 收起是默认。三种情况要摆出来：使用者点了「显示高级选项」或从别处点名跳进高级里的某一组
+ * （chosen）；搜索／只看改过命中了高级里的项（搜到了却收着，与没搜到长得一样）——
+ * 除非使用者就在这一次筛选上亲手收起过它（dismissed）。高级里一项都不剩时不摆。
+ * @param state.matches 高级里此刻没被筛掉的项数
+ * @param state.filtering 是否正在搜索或只看改过
+ * @param state.chosen 是否选了显示
+ * @param state.dismissed 是否在这一次筛选上亲手收起过
+ * @return {boolean}
+ */
+export function advancedShown(state) {
+  const s = state || {};
+  if (!(s.matches > 0)) return false;
+  if (s.chosen) return true;
+  return !!s.filtering && !s.dismissed;
+}
+
+/**
+ * 时刻：两位小时、两位分钟，可带秒，秒后可带小数点与至多 9 位小数，与服务端 LocalTime.parse 收的写法同一路。
+ * 小数位数不能放宽：第 10 位起服务端就认不出、整段静音按没设处理，这里放过去的话框里显示成有效的时刻，
+ * 可它并不生效。小数点后一位不带（23:59:59.）服务端照收，这里也照收
+ */
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{0,9})?)?$/;
+
+/**
+ * 时刻项的框里显示什么
+ *
+ * 时间框只认补零的 HH:mm。配置文件里存着它认不出的值（不补零的 8:00、写错的字）时，
+ * 框会显示成空——可那一项并不是空的：服务端读到它也认不出，整段静音按没设处理。
+ * 因此这里把「认不出」单独报出来，让界面说一句，而不是让人以为本来就没填。
+ * @param value 已保存的值或草稿
+ * @return {{text: string, unreadable: boolean}} text 是交给时间框的 HH:mm（或空串）
+ */
+export function timeOfDay(value) {
+  // 与服务端 Java trim() 一致：只去掉首尾编码不大于 U+0020 的字符。
+  const raw = String(value ?? '').replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '');
+  if (!raw) return {text: '', unreadable: false};
+  if (!TIME_OF_DAY.test(raw)) return {text: '', unreadable: true};
+  return {text: raw.slice(0, 5), unreadable: false};
+}
+
+/**
+ * 时间框里的值交出去之前收成 HH:mm
+ *
+ * 浏览器给的可能带秒（step 不是 60 时），服务端要的是 HH:mm 或空串。认不出的一律当空：
+ * 空串的意思是「停用静音」，与服务端遇到坏值时的做法一致，不会把坏值写进配置文件。
+ * @param value 时间框的 value
+ * @return {string} HH:mm 或空串
+ */
+export function timeOfDayValue(value) {
+  return timeOfDay(value).text;
+}

@@ -49,6 +49,41 @@ class ConfigurationSchemaLabelTest {
         }
     }
 
+    /**
+     * 抓的用户故障：常用的整组掉进高级（新标注没进 schema、或核心那几节的级别落了空），
+     * 行内短说明与问号里的整段说明对不上号，静音时段认不出是时刻、只能手敲。
+     * 没标短说明的项两栏都是 null，界面照旧在行内摆整段说明——插件不标也不少字。
+     */
+    @Test
+    @DisplayName("schema 带出级别、短说明、问号里的整段说明与值的种类；没标的为 null")
+    void schemaExposesLevelSummaryAndFormat() throws IOException {
+        try (AnnotationConfigApplicationContext context = context()) {
+            JSONObject schema = controller(context, new ConfigurationMetadataService()).schema();
+
+            JSONObject quietStart = field(schema, "novabot.core.push.quiet-start");
+            assertEquals("COMMON", quietStart.getString("level"));
+            assertEquals("TIME_OF_DAY", quietStart.getString("format"));
+            assertEquals(quietStart.getString("description"), quietStart.getString("help"),
+                    "问号里放的就是整段说明");
+
+            JSONObject queue = field(schema, "novabot.core.alert.retry-queue-size");
+            assertEquals("ADVANCED", queue.getString("level"));
+            assertEquals("队列满后丢弃最旧的告警，并记录日志。", queue.getString("summary"));
+            assertNull(queue.get("help"), "标了不给问号的，help 为 null");
+
+            // 核心那一节（直播数据）的字段同样标得上级别：常用的留在常用，路径进高级
+            assertEquals("COMMON", field(schema, "novabot.core.live.save-live-data").getString("level"));
+            JSONObject dataPath = field(schema, "novabot.core.live.live-data-path");
+            assertEquals("ADVANCED", dataPath.getString("level"));
+            assertEquals("PATH", dataPath.getString("format"));
+
+            JSONObject port = field(schema, "server.port");
+            assertNull(port.get("summary"), "没标短说明：summary 为 null，界面照旧摆整段说明");
+            assertNull(port.get("help"));
+            assertNull(port.get("format"));
+        }
+    }
+
     @Test
     @DisplayName("插件项的中文名与单位原样进 schema（名字来路由插件模块自证）")
     void pluginLabelAndUnitPassThroughSchema() throws IOException {

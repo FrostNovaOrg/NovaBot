@@ -1,6 +1,6 @@
 package org.frostnova.nova.adapter.onebot.model;
 
-import org.frostnova.nova.core.config.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import lombok.Getter;
 import lombok.Setter;
 

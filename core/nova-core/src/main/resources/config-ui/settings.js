@@ -1,29 +1,44 @@
 /**
- * 设置页：按「要办的事」分的八组、搜索与筛选、危险项围栏、保存与放弃
+ * 设置页：按「要办的事」分的八组、常用与高级、搜索与筛选、危险项围栏、保存与放弃
  *
  * 这一页此前是按配置键的前缀自动分组的，二十余组，组名叫「核心 · 网络线程」这类东西。
  * 那是照程序结构摆的：使用者要办一件事（「让它别在半夜发消息」），得先猜这件事
  * 在代码里归哪个类管。现在组由服务端那张表给（见 ConfigurationGroups），
- * 常用六组在上、工程用的两组折到页底，每一项旁边标着改完什么时候生效。
+ * 每一项按服务端标的级别分进常用或高级：高级默认收着，由页头的钮显示；
+ * 每一项旁边标着改完什么时候生效，行内只留一句短说明，整段说明在问号里。
  */
 
 import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, reloadChangeSources, saveTarget, say, switchControl} from './core.js';
 import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
-import {alertCards, cardFields, filterCards} from './settings-alert.js';
+import {alertCards, cardFields, filterCards, openCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
-import {CLEAR, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf, isChanged, isDangerous,
-  dangerOf, isVisible, secretDraft}
+import {CLEAR, advancedShown, arrangeGroups, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf,
+  isChanged, isDangerous, dangerOf, isVisible, secretDraft, timeOfDay, timeOfDayValue}
   from './settings-model.js';
 import {store} from './store.js';
-import {applyTheme, readTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT} from './theme.js';
+import {applyTheme, readTheme, subscribeTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT} from './theme.js';
 
 /** 告警那一组的标识，它要额外接三张卡 */
 const ALERT_GROUP = 'alert';
 
 /** 登录与安全那一组的标识，它要额外接四张卡 */
 const AUTH_GROUP = 'auth';
+
+/**
+ * 高级那一块的开合
+ *
+ * 默认收起。advancedChosen：使用者点了「显示高级选项」，或从别处点名跳进了高级里的一组；
+ * advancedDismissed：使用者在某一次搜索上亲手收起过——记的是那一次搜索本身，换了搜索词就作废，
+ * 否则搜到了高级里的项、却因为上一次收起过而一直收着，与没搜到长得一样。
+ * 重画（保存、放弃）不动这两样：改到一半的人不该因为一次保存就被收回去。
+ */
+let advancedChosen = false;
+let advancedDismissed = null;
+
+/** 这一次画出来的两半，计数与开合要用 */
+let arranged = {common: [], advanced: []};
 
 /**
  * 滚动观察器：标出目录里当前这一组。重绘时拆掉再建，免得旧节点还挂着。
@@ -68,25 +83,47 @@ export function stopWatchingGroups() {
  *
  * 组目录与首页那条「告警有死角」待办走的是同一条路。
  * 点了条目却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
- * 目标若在高级折页里，先打开折页再滚——折着的时候滚到位也看不见。
+ * 目标若在收起的高级里，先把高级摆出来再量再滚——收着的时候它没有高度，滚到位也看不见。
+ * 从别处点名跳来（open 为真）时，那一组里的卡一并展开：首页说「告警有死角，去配」，
+ * 落到一排收着的卡上，看起来像点了没反应。组目录点过去只滚，不动卡的开合。
  * 落点让出吸在视口顶上的那几块：窄屏上顶栏与组目录都吸顶，不让出的话滚到位的
  * 组标题正好被它们盖住，看起来像「点了没反应」；宽屏上没有吸顶元素，落点不偏。
  * 让出多少与「哪一组算当前」共用 headerHeight 量出来的那一个数：两处各算各的，
  * 窄屏上点某一组会亮上一组，或滚到位的组标题正好被盖住。
- * @param id 组标识，与 schema 里的 group 一致；高级折页本身传 adv
+ * 从别的页点名跳来（fresh 为真）时，先把上一回留下的搜索词与「只看改过」清掉、按无筛选重筛一遍：
+ * 先搜过 quiet 再回首页点「去配」，旧搜索还挂着的话，目标那一组的行、卡和整块高级照旧被筛掉，
+ * 只揭掉组的 hide 落到的是一片空白。保存、放弃后的重画也会按地址栏再走一遍这里，那时不清：
+ * 正在搜着的人不该因为点了一下保存就丢了搜索词。
+ * @param id 组标识，与 schema 里的 group 一致；高级里拆出来的那半组带 -advanced，整块高级传 adv
+ * @param open 从别处点名跳来时为真：展开那一组里的卡
+ * @param fresh 从别的页点名跳来（地址栏换了）时为真：先清掉搜索与「只看改过」
  */
-export function focusGroup(id) {
+export function focusGroup(id, open, fresh) {
   if (!id) return;
+  if (fresh) clearFilters();
   const adv = $('#adv-groups');
-  if (id === 'adv' && adv) adv.open = true;
-  const target = document.querySelector('[data-grp="' + id + '"]');
+  const target = id === 'adv' ? adv : document.querySelector('[data-grp="' + id + '"]');
   if (target) {
-    if (adv && adv.contains(target)) adv.open = true;
+    if (adv && adv.contains(target) && adv.classList.contains('hide')) showAdvanced();
     target.classList.remove('hide');
+    if (open) openCards(target);
     const above = headerHeight();
     const top = window.scrollY + target.getBoundingClientRect().top - above;
     window.scrollTo(0, Math.max(0, top));
   }
+}
+
+/**
+ * 清掉搜索词与「只看改过」，按无筛选重筛一遍
+ *
+ * 只改框里的值不会触发它们的监听，因此这里自己筛：不筛的话框是空的，行却还按旧搜索藏着。
+ */
+function clearFilters() {
+  const search = $('#set-search');
+  const onlyChanged = $('#only-changed');
+  if (search) search.value = '';
+  if (onlyChanged) onlyChanged.checked = false;
+  filterSettings();
 }
 
 /**
@@ -108,6 +145,126 @@ function valuesOf(field) {
   // 而筛选那一问仍按原始草稿答——清除态算改过，不能因为显示成了空就把它筛掉
   const shown = field.sensitive ? secretDraft(draft, saved) : {text: current, cleared: false};
   return {saved, current, text: shown.text, cleared: shown.cleared};
+}
+
+/**
+ * 问号浮层：整段说明放在这里，行内只留一句短说明
+ *
+ * 一页只有一块浮层，挂在 body 上：挂在行里会被组卡片的 overflow:hidden 裁掉一截。
+ * 键盘：问号是个真按钮，Tab 停得到，聚焦即打开、Esc 关上；读屏：开着的时候问号的
+ * aria-describedby 指向浮层，念完名字接着念说明；触屏：点一下开、再点或点别处关。
+ * 鼠标悬停也开，点一下钉住，钉住后移开不关。
+ */
+let helpPanel = null;
+let helpButton = null;
+let helpPinned = false;
+let helpCloseTimer = 0;
+
+/**
+ * 关上问号浮层
+ */
+function closeHelp() {
+  clearTimeout(helpCloseTimer);
+  helpCloseTimer = 0;
+  if (helpButton) {
+    helpButton.setAttribute('aria-expanded', 'false');
+    helpButton.removeAttribute('aria-describedby');
+  }
+  helpButton = null;
+  helpPinned = false;
+  if (helpPanel) helpPanel.hidden = true;
+}
+
+/**
+ * 把浮层摆到问号旁边：下面放得下放下面，放不下翻到上面，左右不出视口。
+ * 问号滚出视口或已不在页面上（重画过）就关掉
+ */
+function placeHelp() {
+  if (!helpButton || !helpPanel || helpPanel.hidden) return;
+  const rect = helpButton.getBoundingClientRect();
+  if (!helpButton.isConnected || rect.bottom < 0 || rect.top > window.innerHeight) {
+    closeHelp();
+    return;
+  }
+  const inset = 12;
+  const left = Math.max(inset, Math.min(rect.left, window.innerWidth - helpPanel.offsetWidth - inset));
+  const below = rect.bottom + 8;
+  const top = below + helpPanel.offsetHeight <= window.innerHeight - inset
+    ? below : Math.max(inset, rect.top - helpPanel.offsetHeight - 8);
+  helpPanel.style.left = left + 'px';
+  helpPanel.style.top = top + 'px';
+}
+
+/**
+ * 取那一块浮层，第一次用时建出来并挂上关闭的几条路
+ * @return {HTMLElement}
+ */
+function ensureHelpPanel() {
+  if (helpPanel) return helpPanel;
+  helpPanel = el('div', 'settings-help-popover');
+  helpPanel.id = 'settings-help-popover';
+  helpPanel.setAttribute('role', 'tooltip');
+  helpPanel.hidden = true;
+  document.body.appendChild(helpPanel);
+  helpPanel.addEventListener('mouseenter', () => clearTimeout(helpCloseTimer));
+  helpPanel.addEventListener('mouseleave', () => {
+    if (!helpPinned && document.activeElement !== helpButton) closeHelp();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (helpButton && !helpButton.contains(event.target) && !helpPanel.contains(event.target)) closeHelp();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && helpButton) {
+      event.preventDefault();
+      closeHelp();
+    }
+  });
+  window.addEventListener('scroll', placeHelp, {capture: true, passive: true});
+  window.addEventListener('resize', placeHelp);
+  window.addEventListener('hashchange', closeHelp);
+  return helpPanel;
+}
+
+/**
+ * 一项旁边的问号
+ * @param label 这一项的名字，读屏念「某某：查看说明」
+ * @param text 整段说明
+ * @return {HTMLButtonElement}
+ */
+function buildHelp(label, text) {
+  const panel = ensureHelpPanel();
+  const button = el('button', 'settings-help');
+  button.type = 'button';
+  button.textContent = '?';
+  button.setAttribute('aria-label', label + '：查看说明');
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-controls', panel.id);
+  const open = pinned => {
+    clearTimeout(helpCloseTimer);
+    if (helpButton !== button) closeHelp();
+    helpButton = button;
+    helpPinned = pinned || helpPinned;
+    panel.textContent = text;
+    panel.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    button.setAttribute('aria-describedby', panel.id);
+    placeHelp();
+  };
+  button.addEventListener('mouseenter', () => {
+    if (!helpPinned || helpButton === button) open(false);
+  });
+  button.addEventListener('mouseleave', () => {
+    if (!helpPinned && document.activeElement !== button) helpCloseTimer = setTimeout(closeHelp, 160);
+  });
+  button.addEventListener('focus', () => open(false));
+  button.addEventListener('blur', () => {
+    if (!helpPinned && helpButton === button) closeHelp();
+  });
+  button.addEventListener('click', () => {
+    if (helpButton === button && helpPinned) closeHelp();
+    else open(true);
+  });
+  return button;
 }
 
 /**
@@ -157,8 +314,21 @@ function buildControl(field, value, cell) {
     return input;
   }
 
+  if (field.format === 'TIME_OF_DAY') {
+    // 一天里的时刻：给时间框，不让人手敲「HH:mm」。框只认补零的写法，
+    // 配置文件里认不出的旧值在这里显示成空，由 buildRow 那一句说清楚
+    const input = el('input');
+    input.type = 'time';
+    input.step = '60';
+    input.value = timeOfDay(value).text;
+    cell.appendChild(input);
+    return input;
+  }
+
   const input = el('input');
   input.type = (field.widget === 'integer' || field.widget === 'number') ? 'number' : 'text';
+  // 文件位置用等宽字：l 与 1、O 与 0 认得出来。认法看服务端给的 format，机密与否不在这里判
+  if (field.format === 'PATH') input.classList.add('setting-path');
   input.value = value;
   cell.appendChild(input);
   return input;
@@ -186,14 +356,19 @@ function buildRow(field, groupAllRestart) {
   const label = el('b');
   label.textContent = field.label;
   head.appendChild(label);
+  // 服务端给了短说明的项：行内只摆那一句（改之前就得知道的后果或填写约束），
+  // 整段说明进问号。没给的（插件没标、旧后端）照旧在行内摆整段，一个字也不少
+  const summary = typeof field.summary === 'string' ? field.summary : null;
+  if (summary !== null && field.help) head.appendChild(buildHelp(field.label, field.help));
   const dot = el('span', 'chgdot hide');
   dot.textContent = '已改';
   head.appendChild(dot);
   meta.appendChild(head);
 
-  if (field.description) {
+  const inline = summary === null ? field.description : summary;
+  if (inline) {
     const desc = el('div', 'desc');
-    desc.textContent = field.description;
+    desc.textContent = inline;
     meta.appendChild(desc);
   }
 
@@ -283,7 +458,10 @@ function buildRow(field, groupAllRestart) {
   if (!input) return row;
 
   input.setAttribute('aria-label', field.label);
-  const read = () => field.widget === 'boolean' ? String(input.checked) : input.value;
+  const timed = field.format === 'TIME_OF_DAY';
+  // 时间框交出去之前收成 HH:mm：服务端只认这一种写法（或空串＝停用）
+  const read = () => field.widget === 'boolean' ? String(input.checked)
+    : (timed ? timeOfDayValue(input.value) : input.value);
   const write = value => {
     if (field.widget === 'boolean') {
       input.checked = String(value) === 'true';
@@ -296,6 +474,20 @@ function buildRow(field, groupAllRestart) {
   // 「改过没有」有两个互不相同的问法，界面上也是两套记号：
   // 与默认值不同（那个「已改」的点，答的是这台机器偏离了出厂设定），
   // 与已保存的值不同（进 store.dirty，由底部改动条统计，答的是还有什么没落盘）
+  // 时刻项：配置文件里存着时间框认不出的值（不补零的 8:00 这类）时，框是空的，
+  // 可那一项并不是空的——服务端读到它也认不出，整段静音按没设处理。说一句，
+  // 免得人以为本来就没填。动过这一格（改了或清空）之后，文件里那一份就要被换掉了，不再说
+  let timeNote = () => {};
+  if (timed) {
+    const note = el('div', 'dflt timenote hide');
+    cell.appendChild(note);
+    timeNote = () => {
+      const odd = store.dirty[field.name] === undefined && timeOfDay(saved).unreadable;
+      note.textContent = odd ? '配置文件里的值「' + saved + '」认不出（要写成 08:00 这样），现在不生效。' : '';
+      note.classList.toggle('hide', !odd);
+    };
+  }
+
   const paint = () => {
     const changed = isChanged(field, read());
     dot.classList.toggle('hide', !changed);
@@ -303,6 +495,7 @@ function buildRow(field, groupAllRestart) {
     row.dataset.changed = changed ? '1' : '0';
     row.classList.toggle('changed', store.dirty[field.name] !== undefined);
     fontNotes(read());
+    timeNote();
   };
 
   // 机密项不给「恢复默认」：它的默认值多半是空，而按下去等于把口令清掉——
@@ -399,6 +592,16 @@ function buildRow(field, groupAllRestart) {
   input.addEventListener('change', onChange);
   // 文本类控件要边打边记，否则改动条要等失焦才动
   if (field.widget !== 'boolean') input.addEventListener('input', onChange);
+  // 时间框自己清不干净（各家浏览器的清除钮不一样，有的没有），旁边给一个。
+  // 清空交的是空串：任一端空就停用静音，与服务端的规则一致
+  if (timed) {
+    const clear = el('button', 'lnkbtn time-clear');
+    clear.type = 'button';
+    clear.textContent = '清空';
+    clear.setAttribute('aria-label', '清空' + field.label);
+    clear.addEventListener('click', () => { write(''); record(); });
+    cell.appendChild(clear);
+  }
   paint();
   return row;
 }
@@ -437,17 +640,32 @@ function buildThemeGroup() {
     const btn = el('button', 'pill' + (value === current ? ' cur' : ''));
     btn.type = 'button';
     btn.setAttribute('data-theme-choice', value);
+    btn.setAttribute('aria-pressed', String(value === current));
     btn.textContent = label;
-    btn.addEventListener('click', () => {
-      applyTheme(value);
-      for (const other of row.querySelectorAll('.pill')) other.classList.remove('cur');
-      btn.classList.add('cur');
-    });
+    // 钮的亮暗由 markThemeChoice 改：本页点的与另一个标签换的走同一条路
+    btn.addEventListener('click', () => applyTheme(value));
     row.appendChild(btn);
   }
   box.appendChild(row);
   return box;
 }
+
+/**
+ * 主题换了：只改那三颗钮的亮暗
+ *
+ * 本页点钮与另一个标签换主题都走这里（见 theme.js 的 subscribeTheme）。
+ * <b>不重画设置页</b>：另一个标签里点一下，这边正填着、还没保存的那一格和焦点都得原样留着。
+ * @param value 新的主题
+ */
+function markThemeChoice(value) {
+  for (const btn of document.querySelectorAll('[data-theme-choice]')) {
+    const on = btn.getAttribute('data-theme-choice') === value;
+    btn.classList.toggle('cur', on);
+    btn.setAttribute('aria-pressed', String(on));
+  }
+}
+
+subscribeTheme(markThemeChoice);
 
 /**
  * 建出一组
@@ -457,6 +675,8 @@ function buildThemeGroup() {
 function buildGroup(group) {
   const box = el('div', 'group setgrp');
   box.dataset.grp = group.group;
+  // 从常用组里拆出来的「某组 · 高级」：哪几项由卡片摆，按原来那一组认
+  const base = group.base || group.group;
 
   const title = el('h2');
   const name = el('span');
@@ -478,10 +698,10 @@ function buildGroup(group) {
 
   for (const field of group.fields) {
     // 告警那几项由三张卡自己摆，不再在这里出一遍
-    if (group.group === ALERT_GROUP && cardFields().has(field.name)) continue;
+    if (base === ALERT_GROUP && cardFields().has(field.name)) continue;
     // 口令、二次验证开关与它的密钥同理：这三项改的时候各有一道门要过
     // （旧口令、现在的验证码、先绑定），摊成普通行的话那三道门就只剩「填格子按保存」
-    if (group.group === AUTH_GROUP && AUTH_CARD_FIELDS.has(field.name)) continue;
+    if (base === AUTH_GROUP && AUTH_CARD_FIELDS.has(field.name)) continue;
     box.appendChild(buildRow(field, group.allRestart));
   }
 
@@ -532,6 +752,10 @@ function buildNavLink(group) {
 
 /**
  * 组目录：常用一段，有高级则加「高级」分隔再列高级各组
+ *
+ * 高级收着的时候，高级那一段照样列着：点进去由 focusGroup 先把高级摆出来再滚，
+ * 与改版前「点高级里的组会先打开折页」是同一回事。常用组里拆出来的「某组 · 高级」
+ * 也列在这一段，按组表的先后与整组高级的那几组排在一起。
  * @param groups 常用组
  * @param advanced 高级组
  */
@@ -555,12 +779,16 @@ function buildNav(groups, advanced) {
  * 画整个设置页
  */
 export function renderGeneral() {
+  closeHelp();
   stopWatchingGroups();
   const box = $('#groups');
   box.innerHTML = '';
 
-  const common = store.schema.filter(g => !g.advanced);
-  const advanced = store.schema.filter(g => g.advanced);
+  // 常用／高级按服务端给每一项标的级别分，界面上不另记名单（见 arrangeGroups）。
+  // 由卡片摆的项跟着卡留在常用那一组上
+  arranged = arrangeGroups(store.schema, (group, name) =>
+    (group === ALERT_GROUP && cardFields().has(name)) || (group === AUTH_GROUP && AUTH_CARD_FIELDS.has(name)));
+  const {common, advanced} = arranged;
 
   // 界面组排最上：纯前端偏好，不是这台机器的配置
   box.appendChild(buildThemeGroup());
@@ -570,20 +798,48 @@ export function renderGeneral() {
 
   for (const group of common) box.appendChild(buildGroup(group));
 
+  // 高级默认收着，由页头「显示高级选项」摆出来。收着就是整块不显示，不是一道折页：
+  // 折页的标题横在页底，人会以为那就是全部
   if (advanced.length) {
-    const details = el('details', 'adv');
-    details.id = 'adv-groups';
-    const summary = el('summary');
-    const count = advanced.reduce((n, g) => n + g.fields.length, 0);
-    summary.textContent = '高级 · 工程用（' + count + ' 项，出问题时才动）';
-    details.appendChild(summary);
-    const inner = el('div', 'inner');
-    for (const group of advanced) inner.appendChild(buildGroup(group));
-    details.appendChild(inner);
-    box.appendChild(details);
+    const region = el('section', 'settings-advanced hide');
+    region.id = 'adv-groups';
+    region.setAttribute('aria-label', '高级选项');
+    for (const group of advanced) region.appendChild(buildGroup(group));
+    box.appendChild(region);
   }
 
   buildNav(common, advanced);
+  filterSettings();
+}
+
+/**
+ * 这一次搜索是哪一次：搜索词加「只看改过」。亲手收起高级时记下它，换了就作废
+ * @return {string}
+ */
+function filterKey() {
+  return JSON.stringify([String($('#set-search').value).trim(), $('#only-changed').checked]);
+}
+
+/**
+ * 把高级摆出来：从别处点名跳进高级里的一组时走这里
+ */
+function showAdvanced() {
+  advancedChosen = true;
+  advancedDismissed = null;
+  filterSettings();
+}
+
+/**
+ * 页头那颗「显示高级选项／隐藏高级选项」
+ *
+ * 搜索把高级自动摆出来的时候，点它是收起：记下这一次搜索，同一次搜索上不再自动摆出来，
+ * 改了搜索词再重新算。
+ */
+export function toggleAdvanced() {
+  const region = $('#adv-groups');
+  const visible = !!region && !region.classList.contains('hide');
+  advancedChosen = !visible;
+  advancedDismissed = visible ? filterKey() : null;
   filterSettings();
 }
 
@@ -705,9 +961,10 @@ function watchCurrentGroup() {
 /**
  * 按搜索词与「只看改过的」筛一遍
  *
- * 折起来的地方有命中就自动展开：搜到了却在一个收起的折页里，与没搜到长得一样。
+ * 收起的地方有命中就自动摆出来：搜到了却收着，与没搜到长得一样。
  */
 export function filterSettings() {
+  closeHelp();
   const query = $('#set-search').value;
   const onlyChanged = $('#only-changed').checked;
   const filtering = !!String(query).trim() || onlyChanged;
@@ -739,31 +996,37 @@ export function filterSettings() {
     group.classList.toggle('hide', any === 0);
   }
 
-  const details = $('#adv-groups');
-  if (details) {
-    const any = details.querySelectorAll('.setitem:not(.hide), .alcard:not(.hide)').length;
-    details.classList.toggle('hide', any === 0);
-    if (filtering && any) details.open = true;
+  const region = $('#adv-groups');
+  const matches = region ? region.querySelectorAll('.setitem:not(.hide), .alcard:not(.hide)').length : 0;
+  if (!filtering) advancedDismissed = null;
+  const advancedVisible = advancedShown({matches, filtering, chosen: advancedChosen,
+    dismissed: filtering && advancedDismissed === filterKey()});
+  if (region) region.classList.toggle('hide', !advancedVisible);
+  const toggle = $('#show-advanced');
+  if (toggle) {
+    toggle.textContent = advancedVisible ? '隐藏高级选项' : '显示高级选项';
+    toggle.setAttribute('aria-expanded', String(advancedVisible));
+    toggle.classList.toggle('hide', !arranged.advanced.length);
   }
 
-  // 目录跟着组走：一组被筛没了，左边还留着那条会点进去什么也不发生
+  // 目录跟着组走：一组被筛没了，左边还留着那条会点进去什么也不发生。
+  // 高级收着不算被筛没：那几条照样列着，点进去会先把高级摆出来
+  let advancedLinks = 0;
   for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
     const id = link.getAttribute('data-grp-link');
     const group = document.querySelector('.setgrp[data-grp="' + id + '"]');
-    link.classList.toggle('hide', !group || group.classList.contains('hide'));
+    const gone = !group || group.classList.contains('hide');
+    link.classList.toggle('hide', gone);
+    if (!gone && region && region.contains(group)) advancedLinks++;
   }
   const sep = document.querySelector('#grp-nav .sep');
-  if (sep) {
-    const advBox = $('#adv-groups');
-    sep.classList.toggle('hide', !advBox || advBox.classList.contains('hide'));
-  }
+  if (sep) sep.classList.toggle('hide', advancedLinks === 0);
   watchCurrentGroup();
 
-  const commonCount = store.schema.filter(g => !g.advanced).reduce((n, g) => n + g.fields.length, 0);
-  const advancedCount = store.schema.filter(g => g.advanced).reduce((n, g) => n + g.fields.length, 0);
+  const count = groups => groups.reduce((n, g) => n + g.fields.length, 0);
   $('#set-count').textContent = filtering
-    ? '匹配 ' + shown + ' 项'
-    : '常用 ' + commonCount + ' 项 · 高级 ' + advancedCount + ' 项';
+    ? '匹配 ' + shown + ' 项' + (matches && !advancedVisible ? '（含收起的高级项 ' + matches + ' 项）' : '')
+    : '常用 ' + count(arranged.common) + ' 项 · 高级 ' + count(arranged.advanced) + ' 项';
 }
 
 /**

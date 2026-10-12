@@ -1,6 +1,6 @@
 package org.frostnova.nova.core.config.ui;
 
-import org.frostnova.nova.core.config.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;

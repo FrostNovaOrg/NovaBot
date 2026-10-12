@@ -5,6 +5,9 @@ import org.frostnova.nova.core.model.Sender;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
+import org.frostnova.nova.core.properties.ConfigSummary;
+import org.frostnova.nova.core.properties.ConfigFormat;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import org.frostnova.nova.core.properties.DatasourceProperties;
 import org.frostnova.nova.core.properties.LiveProperties;
 import org.frostnova.nova.core.properties.LogProperties;
@@ -124,6 +127,7 @@ public class NovaCoreProperties {
         // 两周之前「某条推送失败过」已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("事件时间线保留天数")
+        @ConfigSummary("含当天；0 或负数不自动清理。")
         private int retentionDays = 14;
     }
 
@@ -147,6 +151,7 @@ public class NovaCoreProperties {
                 consequence = "这是能执行任意程序的口子：规则里写的程序会以本程序的身份运行，"
                         + "拿得到它拿得到的一切。")
         @ConfigLabel("外部程序触发")
+        @ConfigSummary(value = "", details = false)
         private boolean enabled = false;
 
         /**
@@ -154,6 +159,7 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发 · 超时")
+        @ConfigSummary("超时结束命令本身；其启动的子程序可能继续运行。")
         private int timeout = 30;
 
         /**
@@ -161,6 +167,7 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发 · 并发上限")
+        @ConfigSummary("超过并发上限的命令直接丢弃。")
         private int maxConcurrent = 4;
 
         /**
@@ -215,6 +222,7 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("超级管理员")
+        @ConfigSummary("每行一个账号；权限跨群生效。")
         private List<Long> admins = new ArrayList<>();
     }
 
@@ -232,6 +240,7 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("全局推送开关")
+        @ConfigSummary(value = "关闭后机器人发的消息全停；邮件与 Webhook 告警照发。", details = false)
         private boolean enabled = true;
 
         /**
@@ -242,6 +251,7 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("首次推送用法提示")
+        @ConfigSummary(value = "", details = false)
         private boolean firstPushTip = true;
 
         /**
@@ -252,6 +262,7 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("@全体成员 每日上限 · 账号")
+        @ConfigSummary("0 或负数不限；额度由账号的全部会话共享。")
         private int atAllDailyLimit = 10;
 
         /**
@@ -259,19 +270,22 @@ public class NovaCoreProperties {
          */
         // 群的额度由群里所有有权限的人共用，机器人只是其中之一。默认 20 与平台实测值一致，
         // 本项是第二道保险。
-        @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("@全体成员 每日上限 · 单群")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary("0 或负数不限；仍受账号总额度限制。")
         private int atAllSessionDailyLimit = 20;
 
         /**
-         * 静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
+         * 静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用全局静音，单独设了静音时段的会话照它自己的来。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
          */
         // 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力。
         // 之所以能即时生效：PushGate 每条推送都现读一次起止时刻
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("静音时段 · 开始")
+        @ConfigSummary("任一端留空即停用全局静音（单独设了静音的会话照旧）；告警照常发送。")
+        @ConfigFormat(ConfigFormat.Format.TIME_OF_DAY)
         private String quietStart = "";
 
         /**
@@ -280,6 +294,8 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("静音时段 · 结束")
+        @ConfigSummary("支持跨零点。")
+        @ConfigFormat(ConfigFormat.Format.TIME_OF_DAY)
         private String quietEnd = "";
     }
 
@@ -290,11 +306,12 @@ public class NovaCoreProperties {
     @Setter
     public static class Alert {
         /**
-         * 是否启用告警。关闭后登录失效、连接中断这类问题只写日志，不会主动通知。
+         * 是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("启用告警")
+        @ConfigSummary(value = "关闭后出故障、被切流或封禁都不再主动通知。", details = false)
         private boolean enabled = true;
 
         /**
@@ -302,6 +319,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("同一问题最短间隔")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary(value = "", details = false)
         private int convergenceInterval = 3600;
 
         /**
@@ -319,6 +338,7 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 请求方式")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private String webhookMethod = "POST";
 
         /**
@@ -327,6 +347,8 @@ public class NovaCoreProperties {
         // 钉钉与飞书用嵌套结构，自建接口各有各的约定，因此做成可配置而非写死。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 标题字段名")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary(value = "", details = false)
         private String webhookTitleField = "title";
 
         /**
@@ -334,6 +356,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 内容字段名")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary(value = "", details = false)
         private String webhookContentField = "content";
 
         /**
@@ -341,6 +365,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 附加请求头")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("界面上改不了：在配置文件里一行写一个，如 Authorization: Bearer xxx。")
         private final java.util.Map<String, String> webhookHeaders = new java.util.LinkedHashMap<>();
 
         /**
@@ -350,6 +376,8 @@ public class NovaCoreProperties {
         // 此前没有下文——「没收到告警」于是被读成「没出事」。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重投 · 间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 表示关闭失败重投。")
         private int retryInterval = 60;
 
         /**
@@ -358,6 +386,8 @@ public class NovaCoreProperties {
         // 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重投 · 队列容量")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "队列满后丢弃最旧的告警，并记录日志。", details = false)
         private int retryQueueSize = 50;
 
         /**
@@ -365,6 +395,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重投 · 最多次数")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "超过上限后停止重投并记录日志。", details = false)
         private int retryMaxAttempts = 10;
     }
 
@@ -374,6 +406,7 @@ public class NovaCoreProperties {
     @Getter
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("内置推送平台")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     private final List<Sender> sender = new ArrayList<>();
 
     /**
@@ -386,17 +419,20 @@ public class NovaCoreProperties {
         /**
          * 是否启用配置界面。
          */
-        @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("控制台总开关")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "关闭后无法访问控制台。", details = false)
         private boolean enabled = true;
 
         /**
-         * 配置界面访问令牌。留空时每次启动自动生成一个随机令牌并打进日志；需要从其他机器访问时在这里填一个随机串。
+         * 配置界面访问令牌。留空时每次启动自动生成一个随机令牌；没设登录密码时，带令牌的访问地址打在启动日志里。需要从其他机器访问时在这里填一个随机串。
          */
         // 配合默认仅监听回环地址，单机部署无需任何配置即可安全使用。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("控制台访问令牌")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("留空则每次启动随机生成；没设登录密码时在启动日志里能看到。")
         private String token = "";
 
         /**
@@ -405,14 +441,17 @@ public class NovaCoreProperties {
         // 配置界面可修改推送目标并读取运行状态，权限高于推送接口。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("允许访问的来源 IP")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("支持 IP 与 CIDR 网段；默认仅允许本机。")
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
          * 配置文件备份保留份数，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
          */
-        @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("备份保留份数")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("1–100 份；超过上限时删除最旧的备份。")
         private int backupKeep = 10;
 
         /**
@@ -466,6 +505,8 @@ public class NovaCoreProperties {
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("检查新版")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
+            @ConfigSummary("只检查与提醒，不会自动更新程序。")
             private boolean enabled = true;
 
             /**
@@ -475,6 +516,8 @@ public class NovaCoreProperties {
             // 取回的东西认不出来时也静默跳过——「查不到新版」不该变成控制台上的一条故障。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("检查新版 · 来源地址")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("")
             private String source = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest";
         }
 
@@ -496,6 +539,7 @@ public class NovaCoreProperties {
             // 协议文案改版时版本号加一，此处记着的旧版本即刻失效——否则改了文案等于没改，没有人会再看到它。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("协议同意 · 版本号")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
             private int acceptedVersion = 0;
 
             /**
@@ -504,6 +548,7 @@ public class NovaCoreProperties {
             // 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("协议同意 · 时间")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
             private String acceptedAt = "";
 
             /**
@@ -513,6 +558,7 @@ public class NovaCoreProperties {
             // 能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("协议同意 · 通道")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
             private String acceptedBy = "";
         }
 
@@ -532,6 +578,7 @@ public class NovaCoreProperties {
             // 界面说已上锁而门还开着。
             @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("控制台密码")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
             private String password = "";
 
             /**
@@ -543,6 +590,7 @@ public class NovaCoreProperties {
             // 有两种说法。
             @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("二次验证")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
             private boolean totp = true;
 
             /**
@@ -550,6 +598,7 @@ public class NovaCoreProperties {
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("二次验证密钥")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
             private String totpSecret = "";
 
             /**
@@ -568,6 +617,8 @@ public class NovaCoreProperties {
                     consequence = "开着等于留一道能绕过密码与二次验证的后门。它是给「忘了密码进不来」"
                             + "那一次用的，确认新密码可用之后就该关掉。")
             @ConfigLabel("「忘记密码」启动令牌通道")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("开启后可凭启动令牌绕过密码与二次验证；仅建议临时使用。")
             private boolean operatorToken = false;
 
             /**
@@ -576,6 +627,8 @@ public class NovaCoreProperties {
             // 它约束的是「会话 Cookie 一旦泄漏还能被用多久」。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("会话有效期")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
+            @ConfigSummary(value = "从登录时间起算，到期需重新登录。", details = false)
             private int sessionHours = 168;
 
             /**
@@ -584,6 +637,8 @@ public class NovaCoreProperties {
             // 管的是在别人的设备上登录后忘记退出这类情形。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("闲置多久自动退出")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
+            @ConfigSummary(value = "", details = false)
             private int idleHours = 12;
 
             /**
@@ -591,6 +646,8 @@ public class NovaCoreProperties {
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("连续失败多少次锁定")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary(value = "", details = false)
             private int maxFailures = 5;
 
             /**
@@ -598,6 +655,8 @@ public class NovaCoreProperties {
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("首次锁定时长")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary(value = "反复触发锁定时，时长逐次翻倍。", details = false)
             private int lockoutMinutes = 15;
         }
     }
@@ -609,10 +668,12 @@ public class NovaCoreProperties {
     @Setter
     public static class Paint {
         /**
-         * 绘图字体列表，可填字体名称或字体文件路径。
+         * 绘图字体列表，每行一个：系统里的字体名，或以 .ttf 结尾的字体文件路径；靠前的优先。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("成图字体")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary("每行一个字体名或 .ttf 文件路径，靠前的优先。")
         private List<String> fonts = new ArrayList<>();
 
         /**
@@ -620,6 +681,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("画布扩展步长")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("")
         private int autoExpandHeight = 5000;
 
         /**
@@ -627,6 +690,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("成图底部附加版权")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary(value = "", details = false)
         private List<TextWithStyle> extraCopyrights = new ArrayList<>();
 
         /**
@@ -664,6 +729,8 @@ public class NovaCoreProperties {
         // 改了配置对象也换不掉它
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("邮件告警 · 收件邮箱")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary(value = "", details = false)
         private String defaultTo;
     }
 

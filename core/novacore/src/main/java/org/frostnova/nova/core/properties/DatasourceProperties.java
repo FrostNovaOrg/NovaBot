@@ -18,10 +18,12 @@ import lombok.Setter;
 @Setter
 public class DatasourceProperties {
     /**
-     * JSON 文件路径，仅使用 JSON 数据源时生效。
+     * 推送配置（JSON 文件）的路径；控制台读写的也是这个文件。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("数据源文件 · 路径")
+    @ConfigSummary(value = "推送配置文件的位置；控制台读写的也是它。", details = false)
+    @ConfigFormat(ConfigFormat.Format.PATH)
     private String jsonPath = "datasource.json";
 
     /**
@@ -29,5 +31,6 @@ public class DatasourceProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("数据源文件 · 自动重载")
+    @ConfigSummary(value = "关闭后推送配置的改动（含控制台保存）要重启才生效。", details = false)
     private boolean jsonAutoReload = true;
 }

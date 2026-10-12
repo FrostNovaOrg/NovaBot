@@ -287,13 +287,20 @@ html.nobar #main{padding-bottom:20px}
   padding:1px 6px;border-radius:var(--r-ctl);font-family:var(--mono)}
 .field .desc{color:var(--dim);font-size:13.5px;margin-top:3px;white-space:pre-line}
 .field .dflt{color:var(--dim);font-size:12.5px;margin-top:3px}
+/* 时刻项：配置文件里的值认不出时那一句，跟「已存值没生效」同一个分量，用警示色 */
+.field .timenote{color:var(--warn)}
 /* 按旧位置生效的配置项：不是错误，但必须看得见，否则值与文件里的行对不上 */
 .field .legacy{color:var(--err);font-size:12.5px;margin-top:4px;line-height:1.5}
-.field input[type=text],.field input[type=number],.field textarea{width:100%;padding:6px 9px;
+.field input[type=text],.field input[type=number],.field input[type=time],.field textarea{width:100%;padding:6px 9px;
   border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);
   font-family:inherit;font-size:14px}
 .field textarea{min-height:60px;font-family:var(--mono);resize:vertical}
 .field input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
+/* 静音时段这类时刻项：时间框，数字等宽免得改一位整行抽动；旁边「清空」另起一行 */
+.field input[type=time]{min-height:34px;font-variant-numeric:tabular-nums}
+.field .time-clear{display:block;margin-top:6px}
+/* 文件位置：等宽字，l 与 1、O 与 0 认得出来 */
+.field .setting-path{font-family:var(--mono);font-size:13.5px}
 .field.changed{background:var(--soft)}
 .readonly{color:var(--dim);font-size:13.5px;padding:6px 0;font-style:italic}
 /* 手写成界面改不了的项：值原样摆出，换行照留、长串折行 */
@@ -306,6 +313,9 @@ html.nobar #main{padding-bottom:20px}
   border-radius:var(--r-ctl);background:var(--surface);color:var(--text);font-family:inherit;font-size:14px}
 .setbar input[type=search]:focus{outline:none;border-color:var(--accent)}
 .setbar .dim{margin-left:auto;color:var(--dim);font-variant-numeric:tabular-nums}
+.setbar .settings-advanced-toggle{padding:6px 12px;font-size:13.5px;white-space:nowrap}
+/* 高级那一块：收着时整块不显示（.hide），摆出来时紧接着常用各组往下排 */
+.settings-advanced{min-width:0}
 /* 两栏：左目录、右各组。目录自己矮、sticky 贴在顶上，翻到第五组时第一组还在 */
 .setwrap{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:start}
 .grpnav{position:sticky;top:0;z-index:5;display:flex;flex-direction:column;flex-wrap:nowrap;gap:4px;
@@ -330,6 +340,22 @@ html.nobar #main{padding-bottom:20px}
 .card-desc{padding:10px 16px 0;font-size:13.5px;color:var(--dim);line-height:1.6}
 .si-hd{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .si-hd b{font-size:14.5px;font-weight:600}
+/* 问号：整段说明在它后面。行内只留一句短说明 */
+.settings-help{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:22px;height:22px;padding:0;border:1px solid var(--line);border-radius:50%;
+  background:transparent;color:var(--dim);font-family:inherit;font-size:12px;font-weight:600;
+  line-height:1;cursor:help}
+.settings-help:hover,.settings-help[aria-expanded="true"]{color:var(--accent);border-color:var(--accent);
+  background:var(--soft)}
+.settings-help:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* 浮层挂在 body 上，不被组卡片的 overflow:hidden 裁掉 */
+.settings-help-popover{position:fixed;z-index:1200;width:min(360px,calc(100vw - 24px));
+  max-height:calc(100vh - 24px);overflow:auto;box-sizing:border-box;padding:12px 14px;
+  border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface);color:var(--text);
+  box-shadow:var(--shadow);font-size:13px;line-height:1.65;white-space:pre-line;overflow-wrap:anywhere}
+.settings-help-popover[hidden]{display:none}
+/* 触屏上手指比鼠标粗，问号放大一档 */
+@media (pointer:coarse){.settings-help{width:28px;height:28px;cursor:pointer}}
 /* 「已改」＝与默认值不同。它与「改了还没保存」（.field.changed 那层底色）是两件事 */
 .chgdot{font-size:12px;color:var(--accent);border:1px solid var(--accent);border-radius:var(--r-pill);
   padding:0 6px;line-height:16px}
@@ -366,7 +392,8 @@ html.showkeys .keyname{display:block}
 .group.ungrouped>h2{background:var(--warnsoft)}
 
 /* ---------- 告警：三张卡 ---------- */
-.alcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;padding:14px 16px}
+/* 卡默认收起，一张一行：收着时只剩标题与状态药丸，点开那张才摊开 */
+.alcards{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
 .alcard{background:var(--ground);border:1px solid var(--line);border-radius:var(--r-card);
   padding:12px 14px;display:flex;flex-direction:column}
 .al-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -388,6 +415,17 @@ html.showkeys .keyname{display:block}
 .al-r.ok{color:var(--ok)}
 .al-r.err{color:var(--err)}
 .al-r.warn{color:var(--warn)}
+/* 折叠卡：原生 details，键盘、读屏、触屏都由浏览器管。标题行整行可点，左边一枚三角 */
+details.al-fold{display:block;padding:0;overflow:hidden}
+details.al-fold>.al-h{padding:12px 14px;min-height:44px;box-sizing:border-box;cursor:pointer;list-style:none}
+details.al-fold>.al-h::-webkit-details-marker{display:none}
+details.al-fold>.al-h::before{content:"▸";color:var(--dim);flex:0 0 10px;display:inline-block}
+details.al-fold[open]>.al-h::before{transform:rotate(90deg)}
+details.al-fold>.al-h:hover{background:var(--soft)}
+details.al-fold>.al-h:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+details.al-fold[open]>.al-h{border-bottom:1px solid var(--line)}
+details.al-fold>.al-content{padding:0 14px}
+details.al-fold>.al-f{padding:0 14px 14px}
 /* ---------- 登录与安全：与其他设置同一套横行 ---------- */
 #auth-cards .tblwrap,#auth-cards .totp-flow,#auth-cards .al-r{grid-column:1/-1}
 /* 平时空着的整行不占行距：格子的行距会把空块也算进去 */

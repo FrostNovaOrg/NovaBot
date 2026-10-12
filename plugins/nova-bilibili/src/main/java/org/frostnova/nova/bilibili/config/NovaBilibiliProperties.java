@@ -3,7 +3,9 @@ package org.frostnova.nova.bilibili.config;
 import org.frostnova.nova.core.config.ConfigDanger;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
-import org.frostnova.nova.core.config.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigSummary;
+import org.frostnova.nova.core.properties.ConfigFormat;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.Getter;
 import lombok.Setter;
@@ -47,6 +49,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站线程池 · 核心线程数")
+        @ConfigSummary(value = "", details = false)
         private int corePoolSize = 4;
 
         /**
@@ -54,6 +57,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站线程池 · 最大线程数")
+        @ConfigSummary(value = "", details = false)
         private int maxPoolSize = 32;
 
         /**
@@ -61,6 +65,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站线程池 · 队列容量")
+        @ConfigSummary(value = "", details = false)
         private int queueCapacity = 256;
 
         /**
@@ -68,6 +73,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站线程池 · 空闲存活")
+        @ConfigSummary(value = "", details = false)
         private int keepAliveSeconds = 300;
     }
 
@@ -82,6 +88,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("直播间原始消息调试日志")
+        @ConfigSummary(value = "", details = false)
         private boolean liveRoomRawMessageLog = false;
 
         /**
@@ -89,6 +96,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("动态接口原始响应调试日志")
+        @ConfigSummary(value = "", details = false)
         private boolean dynamicRawMessageLog = false;
 
         /**
@@ -99,6 +107,7 @@ public class NovaBilibiliProperties {
         // 不同。默认关闭；取证结束即关闭并清理日志，探针行里的 id/rid 按关联信息处置。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("动态去重探针")
+        @ConfigSummary("开启后每轮把每条动态的编号都写进日志，用完关掉。")
         private boolean dynamicDedupProbe = false;
     }
 
@@ -116,6 +125,7 @@ public class NovaBilibiliProperties {
         // 已是 150，生产按模板部署，实际发出去的一直是落后三年的那个。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · User-Agent")
+        @ConfigSummary("")
         private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
@@ -123,6 +133,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 最多重试次数")
+        @ConfigSummary("仅用于临时失败；触发风控后改为等待冷却。")
         private int apiRetryMaxTimes = 3;
 
         /**
@@ -130,6 +141,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 重试间隔")
+        @ConfigSummary("仅控制当次请求重试；不影响风控冷却。")
         private int apiRetryInterval = 3000;
     }
 
@@ -140,7 +152,7 @@ public class NovaBilibiliProperties {
     @Setter
     public static class Account {
         /**
-         * 匿名模式：完全不使用登录凭据，不弹二维码、不做复检续期。直播采集照常，动态推送与自动关注不可用。匿名拿到的数据不完整：部分房间弹幕大量缺失，发送者编号被抹掉、昵称只留首字。
+         * 匿名模式：完全不使用登录凭据，不弹二维码、不做复检续期。直播采集照常，动态推送与自动关注不可用。匿名拿到的数据不完整：个人主播的直播间弹幕大多收不到（实测约一成），收到的发送者编号被抹掉、昵称只留首字。
          */
         // 实测结论而不是推测：同一房间同一时段匿名连接的弹幕到达率低至 4.3%；拿得到的
         // 弹幕里 uid 一律抹成 0，且按消息类型来——同一条连接上点赞消息仍带完整 uid。
@@ -152,6 +164,7 @@ public class NovaBilibiliProperties {
                 consequence = "个人主播的直播间只能拿到约一成弹幕，发送者会被抹成匿名，报告会明显缩水；"
                         + "动态推送与自动关注不可用。")
         @ConfigLabel("匿名模式")
+        @ConfigSummary("动态推送与自动关注不可用；弹幕大多收不到，收到的也看不出是谁发的。")
         private boolean anonymous = false;
 
         /**
@@ -159,6 +172,9 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 存储文件")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "", details = false)
+        @ConfigFormat(ConfigFormat.Format.PATH)
         private String cookiePath = "cookies.json";
 
         /**
@@ -167,23 +183,29 @@ public class NovaBilibiliProperties {
         // 明文落盘意味着任何能读到该文件的进程或备份都能直接接管账号。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 加密存储")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary("关闭后凭据不再加密保存。")
         private boolean encrypt = true;
 
         /**
-         * 加密密钥的存储文件路径，只在启用加密存储时生效；与密文分开存放，便于放到管得更严的地方。
+         * 加密密钥的存储文件路径；与密文分开存放，便于放到管得更严的地方。已经加密存下的凭据靠它解开，即使后来关了加密存储也一样：密钥丢了只能重新扫码登录。
          */
         // 也可替换为由外部密钥管理服务注入。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 密钥文件")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("密钥丢了，已加密的凭据就得重新扫码登录。")
+        @ConfigFormat(ConfigFormat.Format.PATH)
         private String keyPath = "cookies.key";
 
         /**
          * 登录态复检间隔，单位：秒，0 或负数关闭复检。凭据可能悄悄过期，定期复检把它变成显式告警；默认十分钟一次。
          */
         // 凭据失效后动态推送会静默停摆。复检本身只是一次轻量接口调用，开销可忽略。
-        @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 复检间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 或负数关闭复检，也会停止自动续期。")
         private int verifyInterval = 600;
 
         /**
@@ -194,6 +216,8 @@ public class NovaBilibiliProperties {
         // 几天：退避是为了不在故障期间空转，不是为了放弃。设为小于复检间隔同样关闭退避。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 退避上限")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 表示不退避。")
         private int maintenanceBackoffCap = 3600;
 
         /**
@@ -205,6 +229,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 自动续期")
+        @ConfigSummary("关闭后凭据到期需重新扫码；复检关闭时也不会续期。")
         private boolean autoRefreshCookie = true;
 
         /**
@@ -215,6 +240,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("扫码登录方式")
+        @ConfigSummary("tv 支持自动续期；web 到期需重新扫码。")
         private String qrCodeLoginMode = "tv";
     }
 
@@ -230,16 +256,18 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("连直播间长连接")
+        @ConfigSummary("关闭后需启用备用推送，才能检测开播。")
         private boolean enableConnectLiveRoom = true;
 
         /**
-         * 只连配了直播推送的房间。开启后「纯监听房间」（配了主播、不配推送的那种）会被整个跳过，表现是加了主播却什么都没发生，跳过时会在日志里列出来。
+         * 只连配了直播推送的房间。开启后「纯监听房间」（配了主播、不配推送的那种）不建长连接，弹幕礼物不采集，表现是加了主播却什么都没收到，跳过时会在日志里列出来；备用直播推送照常查它们开没开播。
          */
         // 默认关闭，即每个启用的主播都连。只在连接数受限、又确实只关心推送的场景下才开。
         // 纯监听房间只把事件送进事件输出或累计数据，一条消息都不发。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("只连有推送的直播间")
+        @ConfigSummary("开启后不连没配直播类推送的房间，它们的弹幕礼物不采集。")
         private boolean onlyConnectNecessaryRooms = false;
 
         /**
@@ -247,6 +275,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("直播间连接间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "连接过快可能触发平台风控。", details = false)
         private int liveRoomConnectInterval = 1000;
 
         /**
@@ -254,6 +284,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("直播间重连间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "", details = false)
         private int liveRoomReconnectInterval = 1000;
 
         /**
@@ -263,6 +295,8 @@ public class NovaBilibiliProperties {
         // 32 MB 连续字节数组，在小内存机器上防御上限自己就可能是那根稻草。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("数据包解压 · 字节上限")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 或负数使用默认值 32 MB。")
         private int maxDecompressedBytes = 32 * 1024 * 1024;
 
         /**
@@ -270,6 +304,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("数据包解压 · 最大层数")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 或负数使用默认值 3。")
         private int maxDecodeNestingDepth = 3;
 
         /**
@@ -280,6 +316,8 @@ public class NovaBilibiliProperties {
         // 方式相反。没有断线的窗口不打日志。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("断线摘要汇总窗口")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 表示关闭摘要；逐次断线仅记入调试日志。")
         private int disconnectDigestInterval = 600;
 
         /**
@@ -287,6 +325,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("礼物表缓存时长")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "", details = false)
         private int giftCacheExpire = 3600;
 
         /**
@@ -294,6 +334,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("自动补全事件信息")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("开启后会增加接口请求。")
         private boolean completeEvent = false;
 
         /**
@@ -301,6 +343,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("长时间无弹幕礼物")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("")
         private boolean autoDetectLiveRoomRisk = true;
 
         /**
@@ -308,10 +352,12 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("长时间无弹幕礼物 · 周期")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "", details = false)
         private int autoDetectLiveRoomRiskInterval = 60;
 
         /**
-         * 连续多少个检查窗口没收到弹幕礼物才提醒；与检查周期相乘是持续时长（默认 3 分钟），调小会把短暂安静误当成异常。
+         * 连续多少个检查周期在播、有人进出却没收到一条弹幕礼物，才算异常；调小会把短暂安静误当成异常。算作异常也不马上提醒：先重连一次，重连后从零重新数满这么多个周期，仍然没有才往下判；接着去网页上查同一段时间（周期乘窗口数）有没有新弹幕，网页上也没有就按房间安静处理、之后十分钟里不再判，网页上有或者查不到，才在首页自检与日志里提醒；收到的消息解析不出时不查网页，直接提醒。所以从房间安静到提醒，至少要数满两轮再加一次重连，不是周期与窗口数相乘那么长。
          */
         // 本项取代了原先的 auto-detect-live-room-risk-ratio（进房消息占比阈值）。
         // 那个判据 2026-08-07 被实测证伪：热门房间人来人往、进房消息天然刷屏，
@@ -319,6 +365,8 @@ public class NovaBilibiliProperties {
         // 对独立基准的到达率 93.3%。「进房占比高」与「收不到业务消息」是两回事。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("长时间无弹幕礼物 · 判定窗口数")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("连续这么多个周期没有弹幕礼物才算异常；调小容易误报。")
         private int autoDetectLiveRoomRiskWindows = 3;
 
         /**
@@ -327,14 +375,16 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("备用直播推送")
+        @ConfigSummary("")
         private boolean backupLivePush = true;
 
         /**
          * 备用直播推送的检测间隔，单位：秒。
          */
-        @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("备用推送检测间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "", details = false)
         private int backupLivePushInterval = 10;
 
         /**
@@ -342,9 +392,10 @@ public class NovaBilibiliProperties {
          */
         // 粉丝数在不播的日子里照样在变，而本场数据只覆盖直播期间——没有这份留档，
         // 「本周涨了多少粉」只能答成「每场开播时分别是多少」。一年不到 2 MB。
-        @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("主播基础数据留档间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("0 表示关闭留档。")
         private int snapshotInterval = 6;
 
         /**
@@ -354,15 +405,18 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("报告自定义标识图片")
+        @ConfigSummary("填写图片路径；留空不显示。")
+        @ConfigFormat(ConfigFormat.Format.PATH)
         private String reportLogoPath = "";
 
         /**
-         * 词云不计这些用户的弹幕，每行一个用户编号；欢迎、感谢机器人刷屏的词就不进词云，弹幕原文照常保存。保存后立刻生效。
+         * 词云不计这些用户的弹幕，每行一个用户编号（纯数字）；欢迎、感谢机器人刷屏的词就不进词云，弹幕原文照常保存。要按弹幕原文重算，没存下原文或读不出的场次排除不了，照旧按存下的词频画。保存后立刻生效。
          */
         // 已经结束的场次重新画报告也会按这份名单来。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("词云不计这些用户")
+        @ConfigSummary("每行一个用户编号（纯数字）；只排除词云统计，缺弹幕原文的场次排除不了。")
         private List<String> wordCloudExcludeUids = new ArrayList<>();
 
         /**
@@ -372,6 +426,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("词云不显示这些词")
+        @ConfigSummary("每行一个；包含该词的词均不显示，弹幕原文仍保存。")
         private List<String> wordCloudBlockWords = new ArrayList<>();
     }
 
@@ -390,6 +445,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("自动关注被监听的主播")
+        @ConfigSummary("会更改登录账号的关注列表。")
         private boolean autoFollow = true;
 
         /**
@@ -397,6 +453,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("自动关注间隔")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary(value = "", details = false)
         private int autoFollowInterval = 30;
 
         /**
@@ -405,6 +463,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("动态轮询间隔")
+        @ConfigSummary(value = "", details = false)
         private int apiRequestInterval = 10;
 
         /**
@@ -415,6 +474,8 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("动态自定义标识图片")
+        @ConfigSummary("填写图片路径；留空不显示。")
+        @ConfigFormat(ConfigFormat.Format.PATH)
         private String logoPath = "";
 
         /**
@@ -422,6 +483,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("动态图片自动存盘")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary(value = "", details = false)
         private boolean autoSaveImage = false;
 
         /**
@@ -430,6 +493,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("动态补推时限")
+        @ConfigSummary(value = "超过时限的历史动态不补推。", details = false)
         private int pushMinutes = 1440;
 
         /**
@@ -439,6 +503,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("动态屏蔽词")
+        @ConfigSummary("每行一个；命中任一词的动态不推送。")
         private List<String> blockWords = new ArrayList<>();
 
         /**
@@ -450,6 +515,8 @@ public class NovaBilibiliProperties {
         // 再也收不到他的开播消息了。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("推送开播动态")
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigSummary("与开播推送同时启用时，同一群可能收到重复通知。")
         private boolean pushLiveDynamic = false;
     }
 
@@ -476,6 +543,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel(TOP_N_LABEL)
+        @ConfigSummary("实际名次数还受图片高度限制。")
         private int topN = 50;
 
         /**
@@ -485,6 +553,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel(HEIGHT_LIMIT_LABEL)
+        @ConfigSummary("装不下的名次不画，记作「其余 N 名未列出」。")
         private int heightLimit = 10000;
     }
 }

@@ -5,6 +5,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.support.StaticApplicationContext;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -130,20 +132,64 @@ class SettingDescriptionPlainTest {
     }
 
     @Test
-    @DisplayName("说明不超过 90 字")
-    void rawDescriptionsStayShort() throws IOException {
+    @DisplayName("行内说明不超过 90 字，仅在问号浮层里的整段说明不超过 300 字")
+    void rawDescriptionsStayShort() throws ReflectiveOperationException, IOException {
+        // 防止行内一句说明占满半屏；可滚动的问号浮层允许较长的原理与例子。
         ConfigurationMetadataService service = new ConfigurationMetadataService();
+        Map<String, ConfigurationLabelResolver.Summary> summaries = summaries();
         List<String> hits = new ArrayList<>();
         for (Map.Entry<String, String> entry : raw(service).entrySet()) {
-            String text = entry.getValue();
-            if (text == null || text.isBlank()) {
-                continue;
-            }
-            if (text.length() > 90) {
-                hits.add(entry.getKey() + " " + text.length() + " 字");
+            ConfigurationLabelResolver.Summary summary = summaries.get(entry.getKey());
+            String inline = summary == null ? entry.getValue() : summary.text();
+            checkLength(hits, entry.getKey(), "行内说明", inline, 90);
+            if (summary != null) {
+                // 不带问号的源文仍守原来的 90 字限制。
+                checkLength(hits, entry.getKey(), summary.details() ? "问号浮层说明" : "不带问号的整段说明",
+                        entry.getValue(), summary.details() ? 300 : 90);
             }
         }
-        assertTrue(hits.isEmpty(), "这些说明超过 90 字，一条说明要占满半屏:\n" + String.join("\n", hits));
+        assertTrue(hits.isEmpty(), "说明过长（行内最多 90 字，问号浮层最多 300 字，不带问号的整段最多 90 字）:\n"
+                + String.join("\n", hits));
+    }
+
+    private static void checkLength(List<String> hits, String name, String location, String text, int limit) {
+        if (text != null && text.length() > limit) {
+            hits.add(name + " " + location + " " + text.length() + " 字（上限 " + limit + " 字）");
+        }
+    }
+
+    /** 从各模块元数据发现配置类，让短说明与设置页使用同一个注解解析器。 */
+    private static Map<String, ConfigurationLabelResolver.Summary> summaries()
+            throws IOException, ReflectiveOperationException {
+        Path root = repoRoot();
+        try (StaticApplicationContext context = new StaticApplicationContext()) {
+            for (String module : modulesFromPom(root)) {
+                Path metadata = root.resolve(module).resolve("target/classes/META-INF/spring-configuration-metadata.json");
+                if (!Files.exists(metadata)) {
+                    continue;
+                }
+                JSONArray groups = JSON.parseObject(Files.readString(metadata, StandardCharsets.UTF_8))
+                        .getJSONArray("groups");
+                if (groups == null) {
+                    continue;
+                }
+                for (int i = 0; i < groups.size(); i++) {
+                    String sourceType = groups.getJSONObject(i).getString("sourceType");
+                    if (sourceType == null || context.containsBean(sourceType)) {
+                        continue;
+                    }
+                    Class<?> type = Class.forName(sourceType);
+                    if (type.isAnnotationPresent(ConfigurationProperties.class)) {
+                        var constructor = type.getDeclaredConstructor();
+                        constructor.setAccessible(true);
+                        context.getBeanFactory().registerSingleton(sourceType, constructor.newInstance());
+                    }
+                }
+            }
+            Map<String, ConfigurationLabelResolver.Summary> result = new ConfigurationLabelResolver(context).getSummaries();
+            assertTrue(result.size() >= 100, "读到的短说明太少，未覆盖设置页：" + result.size());
+            return result;
+        }
     }
 
     /**

@@ -1,4 +1,4 @@
-package org.frostnova.nova.core.config;
+package org.frostnova.nova.core.properties;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -14,6 +14,12 @@ import java.lang.annotation.Target;
  * 标注在 {@code @ConfigurationProperties} 类的字段上，由配置界面在运行期读取。
  * 未标注的配置项按 {@link Level#ADVANCED} 处理：新增配置项默认收进高级区，
  * 需要展示到前台时再显式标注，避免常用区随时间推移不断膨胀。
+ * 设置页据此逐项分：标成高级的收在页头「显示高级选项」后面，其余留在常用里；
+ * 界面上没有另一张名单，插件新加的键标什么就落在哪儿。
+ * <p>
+ * 本注解在核心模块里，与 {@link ConfigEffect}、{@link ConfigLabel} 同处：
+ * 它也要标到本模块那几节配置的字段上（直播数据那一节有常用项也有高级项），
+ * 放在运行壳那一侧的话，核心就得反过来引用壳。
  * <p>
  * <b>已知限制</b>：列表元素内部的字段（如适配器申报的连接列表中的各项）
  * 不会出现在「设置」页的表单里——这类结构无法用简单控件表达，界面统一标记为只读并引导至

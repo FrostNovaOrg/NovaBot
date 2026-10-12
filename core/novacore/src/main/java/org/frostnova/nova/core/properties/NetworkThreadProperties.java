@@ -18,6 +18,7 @@ public class NetworkThreadProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 核心线程数")
+    @ConfigSummary(value = "", details = false)
     private int corePoolSize = 4;
 
     /**
@@ -25,6 +26,7 @@ public class NetworkThreadProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 最大线程数")
+    @ConfigSummary(value = "", details = false)
     private int maxPoolSize = 24;
 
     /**
@@ -32,6 +34,7 @@ public class NetworkThreadProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 队列容量")
+    @ConfigSummary(value = "", details = false)
     private int queueCapacity = 64;
 
     /**
@@ -39,5 +42,6 @@ public class NetworkThreadProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 空闲存活")
+    @ConfigSummary(value = "", details = false)
     private int keepAliveSeconds = 60;
 }

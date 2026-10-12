@@ -65,6 +65,15 @@ const MAIL_PRESETS = {
 const CUSTOM = '自定义';
 
 /**
+ * 每张卡开着还是收着：使用者点开、点收的那一下，以及从首页点名跳来时展开的
+ *
+ * 卡默认收起，标题行上的药丸先回答「这一路配好了没有」。记在这里而不是只看 DOM：
+ * 保存之后设置页整体重画，卡是新建的，不按这张表就全收回去了，正在配的那张也一样。
+ * 搜索临时展开不写进来，清空搜索就回到这里记着的样子。只活在这一次打开的控制台里。
+ */
+const cardOpen = new Map();
+
+/**
  * 没写进配置文件时，这一栏显示成程序实际会用的那一位
  *
  * 只有「提交方式」有这一条退路：发送时不是 GET 就一律按 POST 发，空着也是 POST，
@@ -306,23 +315,31 @@ function presetField(box, options) {
  * @return {{card: HTMLElement, head: HTMLElement, body: HTMLElement, pill: HTMLElement}} 各部位
  */
 function shell(id, title, desc) {
-  const card = el('div', 'alcard');
+  // 原生折叠：键盘（Enter／空格）、读屏（念出展开与否）、触屏都由浏览器管，不另写一套
+  // 开合不在这里定：画完整页后 filterCards 会按开合表把每张卡摆回去（重画后也一样）
+  const card = el('details', 'alcard al-fold');
   card.dataset.channel = id;
 
-  const head = el('div', 'al-h');
+  const head = el('summary', 'al-h');
   const name = el('b');
   name.textContent = title;
   const pill = el('span', 'pill');
   pill.textContent = '未配置';
   head.append(name, pill);
   card.appendChild(head);
+  // 点标题（键盘按下去也是一次 click）记下使用者要的那一态。浏览器随后才切 open，
+  // 所以此刻取反就是点完的样子
+  head.addEventListener('click', () => cardOpen.set(id, !card.open));
+
+  const content = el('div', 'al-content');
+  card.appendChild(content);
 
   const note = el('p', 'al-d');
   note.textContent = desc;
-  card.appendChild(note);
+  content.appendChild(note);
 
   const body = el('div', 'al-b');
-  card.appendChild(body);
+  content.appendChild(body);
 
   const foot = el('div', 'al-f');
   // 结果在按钮上方：字一长若折到按钮下面，这一张卡的按钮会被顶上去，三张卡不再齐平
@@ -759,9 +776,25 @@ export function alertCards() {
 }
 
 /**
+ * 展开某一块里的全部告警卡，并记成使用者要开着
+ *
+ * 从首页「告警有死角 → 去配」跳来时走这里：落到一排收着的卡上，看起来像点了没反应。
+ * 记进开合表，保存后重画也照旧开着。
+ * @param root 要展开的那一块（通常是告警那一组）
+ */
+export function openCards(root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  for (const card of root.querySelectorAll('.alcard')) {
+    if (card.dataset && card.dataset.channel) cardOpen.set(card.dataset.channel, true);
+    card.open = true;
+  }
+}
+
+/**
  * 搜索与「只看改过的」也要能筛到卡片
  *
  * 卡片里装的同样是配置项。搜「邮箱」时只剩一张邮件卡，比三张卡原样立着有用得多。
+ * 筛出来的卡展开：搜到了却收着，与没搜到长得一样。不筛的时候回到开合表里记着的样子。
  * @param query 搜索词
  * @param onlyChanged 是否只看改过的
  * @return {number} 显示出来的卡片里一共有几项配置
@@ -780,6 +813,7 @@ export function filterCards(query, onlyChanged) {
       || (store.values[k] !== undefined && String(store.values[k]) !== ''));
     const hit = (!q || text.includes(q)) && (!onlyChanged || changed);
     card.classList.toggle('hide', !hit);
+    if (hit) card.open = !!q || onlyChanged || cardOpen.get(card.dataset.channel) === true;
     if (hit) shown += keys.length;
   }
 
