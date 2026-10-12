@@ -695,7 +695,7 @@ else
     EFFECTIVE_PORT=7827
     if [ "$PORT" != "$EFFECTIVE_PORT" ]; then
         warn "--port $PORT 这次没有落到任何地方：全新安装还没有 application.yml（它由程序首次保存设置时生成）。
-     先按默认的 $EFFECTIVE_PORT 起，进控制台走完初始设置后在「设置 → 服务端口」里改；
+     先按默认的 $EFFECTIVE_PORT 起，进控制台走完设置引导后在「设置 → 服务端口」里改；
      想在启动前就定下来，用 JAVA_OPTS=\"-Dserver.port=$PORT\" 起 start.sh"
     fi
 fi

@@ -596,7 +596,7 @@ public class ConfigUiAuthController {
 
         if (!authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "这台机器还没设过密码，请到初始设置里上锁");
+            result.put("message", "这台机器还没设过密码，请到设置引导里上锁");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -628,7 +628,7 @@ public class ConfigUiAuthController {
 
         if (!authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "这台机器还没设过密码，请到初始设置里上锁");
+            result.put("message", "这台机器还没设过密码，请到设置引导里上锁");
             return ResponseEntity.badRequest().body(result);
         }
 

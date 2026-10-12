@@ -269,8 +269,8 @@ function banner(status, chain, fresh) {
   if (fresh) {
     return {
       kind: 'setup', level: 'warn',
-      text: '还没配置完 · 初始设置走完，就能收到第一条推送',
-      action: {text: '去初始设置', href: '#/setup'},
+      text: '还没配置完 · 设置引导走完，就能收到第一条推送',
+      action: {text: '去设置引导', href: '#/setup'},
     };
   }
 
@@ -367,7 +367,7 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
     const done = setupDone(status, login, pages, pluginDone);
     return [{
       key: 'setup',
-      title: '初始设置还没完成 · ' + table.length + ' 步里完成了 ' + done + ' 步',
+      title: '设置引导还没走完 · ' + table.length + ' 步里完成了 ' + done + ' 步',
       // 这一行按步骤表现拼，不写死一串步名：装了插件的机器上会多出几步
       // （「第一位主播，推到哪」就是其中一步），写死的那份会漏掉它们，
       // 而漏掉的表现是使用者照着这行字走完却发现进度条还差一格。

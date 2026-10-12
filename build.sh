@@ -622,5 +622,5 @@ fi
 
 echo
 echo "构建完成，产物位于 dist/build"
-echo "直接起就行，不必先写配置：起来之后打开控制台按初始设置走一遍，"
+echo "直接起就行，不必先写配置：起来之后打开控制台按设置引导走一遍，"
 echo "程序会自己写出 application.yml 与 datasource.json（想先手写就照 application.example.yml 抄）"
