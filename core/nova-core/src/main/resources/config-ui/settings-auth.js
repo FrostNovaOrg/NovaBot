@@ -1,5 +1,5 @@
 /**
- * 「登录与安全」那一组：改密码、二次验证开关、通行密钥、重新跑一遍初始设置
+ * 「登录与安全」那一组：改密码、二次验证开关、通行密钥、设置引导
  *
  * 这一组里有三个配置键<b>不走普通的设置保存</b>（密码、二次验证开关、二次验证密钥）：
  * 它们改的时候要先过一道门——改密码要旧密码，关二次验证要现在的验证码，开二次验证
@@ -154,7 +154,7 @@ function passwordCard() {
   const box = authRow('auth-password', '密码',
     operator
       ? '你是用启动令牌进来的，直接设一个新密码即可。设完密码后通道会自动关掉。'
-      : '改完当场生效，别处已经登录的会话会一并注销，当前这一个留着。');
+      : '修改后其他设备退出登录，当前设备保留。');
   keyLine(box.meta, 'novabot.core.config-ui.auth.password');
 
   const button = el('button', 'ghost');
@@ -227,9 +227,7 @@ function passwordCard() {
  */
 function totpCard() {
   const box = authRow('auth-totp', '二次验证',
-    '只管密码登录这条路。用通行密钥登录不经过这一步——私钥一直在你自己的设备上，'
-    + '而设备在签名之前已经问过一次指纹或面容了。'
-    + '绑上验证器这一档才算开着；还没绑的时候，拨开这个开关就是去绑。');
+    '密码登录时增加动态验证码。启用前需绑定验证器；通行密钥登录不受影响。');
   box.cell.className = 'boolcell';
   const first = totpSwitchView(authState);
   const {label, input, text} = switchControl('totp-switch', first.on, '二次验证');
@@ -425,9 +423,7 @@ async function renderTotpSetup() {
  */
 function passkeyCard() {
   const box = authRow('auth-passkey', '通行密钥',
-    '登记之后，登录时按一下指纹或面容即可，不用再输动态验证码——'
-    + '私钥一直在你自己的设备上，这台机器只存得下一把开不了门的公钥。'
-    + '通行密钥认的是当前访问地址，换了地址（如从局域网换成域名）要重新登记。');
+    '使用指纹、面容或设备解锁登录。更换控制台访问地址后需重新登记。');
 
   const add = el('button', 'ghost');
   add.type = 'button';
@@ -449,29 +445,29 @@ function passkeyCard() {
 }
 
 /**
- * 重新跑一遍初始设置
+ * 设置引导：从第一步起再走一遍初始那几步
  *
  * 只落一个标记再跳过去，<b>不清任何东西</b>：使用者按这个按钮是想再走一遍流程，
  * 不是想把机器人清空。确认框里写的也是这个意思。
  */
 function rerunCard() {
-  const box = authRow('auth-rerun', '重新跑一遍初始设置',
+  const box = authRow('auth-rerun', '设置引导',
     // 第 3 步在定稿里写的是平台名。核心界面不出现平台名（格1 契约），
     // 而装了哪个直播平台是运行期才知道的事——写死一个，没装它的人会看见一步他走不到的流程
-    '五步：上锁、连机器人、登录直播平台、加主播、发一条试试。已经配好的东西不会被清掉。');
+    '检查或调整连接、登录与推送配置。已配置的项目会自动填入。');
 
   const button = el('button', 'ghost');
   button.type = 'button';
   button.id = 'setup-rerun';
-  button.textContent = '重新跑一遍';
+  button.textContent = '打开设置引导';
   box.cell.appendChild(button);
 
   const result = el('div', 'al-r');
   box.row.appendChild(result);
 
   button.addEventListener('click', async () => {
-    if (!await ask({title: '要走吗？',
-      body: '会从第一步开始走一遍，已经配好的东西不会被清掉。'})) return;
+    if (!await ask({title: '打开设置引导？',
+      body: '将从第一步开始检查。现有配置会保留；勾选表示已配置，并不代表本次已重新验证。'})) return;
 
     button.disabled = true;
     try {
@@ -504,9 +500,9 @@ function agreementTime(value) {
 
 /** 同意记录里那个通道名的人话版。认不出来的原样显示，不猜 */
 function channelText(wire) {
-  if (wire === 'password') return '输密码登录之后';
-  if (wire === 'operator-token') return '凭启动令牌进来之后';
-  if (wire === 'passkey') return '用通行密钥登录之后';
+  if (wire === 'password') return '密码登录';
+  if (wire === 'operator-token') return '启动令牌';
+  if (wire === 'passkey') return '通行密钥';
   return wire;
 }
 
@@ -522,7 +518,7 @@ function acceptedLine() {
   const by = store.values[AGREEMENT_BY_KEY];
 
   if (!version || !at || !by) return '这台机器上还没有完整的同意记录。';
-  return '已同意第 ' + version + ' 版，时间 ' + agreementTime(at) + '，' + channelText(by) + '点的。';
+  return '已同意第 ' + version + ' 版 · ' + agreementTime(at) + ' · 确认方式：' + channelText(by);
 }
 
 /**
@@ -539,8 +535,8 @@ function acceptedLine() {
  */
 function agreementCard() {
   const box = authRow('auth-agreement', '使用协议',
-    '进控制台之前要先同意的那一份。撤回之后这台机器回到未签协议的状态：'
-    + '所有人都要重新同意一次才进得来。');
+    '撤回后，所有用户需重新同意协议才能进入控制台。');
+  box.cell.className = 'agreement-actions';
   keyLine(box.meta, AGREEMENT_VERSION_KEY);
   keyLine(box.meta, AGREEMENT_TIME_KEY);
   keyLine(box.meta, AGREEMENT_BY_KEY);

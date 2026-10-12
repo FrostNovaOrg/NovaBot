@@ -164,7 +164,7 @@
   <!--
     两半共用一个页容器：时间线（#/log）与它的子页工程日志（#/log/eng）。
     子页不另立一个 .page 容器，因为它不是第七页——侧栏上没有它的入口，
-    它只从这一页右上角进得去，回来也只回得到这一页。
+    它只从这一页日期条右端那个入口进得去，回来也只回得到这一页。
 
     地址形态：#/log ｜ #/log/<日期> ｜ #/log/eng，筛选一律写在查询串里
     （only=problem、type、streamer、chan、q），因此筛完的画面能收藏、能贴给别人。
@@ -173,14 +173,11 @@
   -->
   <section class="page" id="page-log">
     <div id="log">
-      <div class="loghead">
-        <p class="hint">一条按天翻的时间线：几点、发生了什么、成没成、没成为什么、该做什么。
-          给人看的，不是程序日志。</p>
-        <a class="daystep" id="log-eng-open" href="#/log/eng">工程日志 →</a>
-      </div>
-
       <div class="nv-card hcard">
-        <div class="backups" id="log-daybar"></div>
+        <div class="log-toolbar">
+          <div class="backups" id="log-daybar"></div>
+          <a class="daystep" id="log-eng-open" href="#/log/eng">工程日志 →</a>
+        </div>
 
         <label class="switch"><input type="checkbox" id="log-only">
           <span>只看问题 · 失败、告警，还有降级发出去的那几条</span></label>
@@ -271,8 +268,6 @@
   -->
   <section class="page" id="page-links">
     <div id="bot">
-      <p class="hint">这台机器与外面的三条连接。哪一段断了，这一页上就只有那一张卡是黄的或红的。</p>
-
       <!--
         直播平台的卡由插件登记进来，装了哪个平台是运行期才知道的事。
         卡壳（标题、灯、那句状态说明）由核心按运行状态画，卡里的内容由插件自己填——
@@ -419,16 +414,16 @@
   <section class="page" id="page-setup">
     <div class="nv-card" id="setup-shell">
       <div class="su-top">
-        <h2>初始设置</h2>
+        <h2>设置引导</h2>
         <!--
           「稍后再说」放行进首页。首页上那条待办会一直挂着「5 步里完成了 N 步」，
           因此这不是一条把人放跑的出口，只是不把他锁在这一页上。
         -->
         <a class="lnkbtn" id="setup-later" href="#/home">稍后再说</a>
       </div>
-      <p class="hint">五步走完就能收到第一条推送。每一步做完当场生效，随时可以回上一步改。</p>
+      <p class="hint">按步骤检查安全、连接与推送配置。</p>
       <div class="su-body">
-        <nav class="su-rail" id="setup-steps" aria-label="初始设置五步"></nav>
+        <nav class="su-rail" id="setup-steps" aria-label="设置引导步骤"></nav>
         <div class="su-panel" id="setup-main">载入中…</div>
       </div>
     </div>
