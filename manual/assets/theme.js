@@ -1,56 +1,43 @@
-// 顶栏三档：深色、浅色、跟随系统。选择记在 localStorage 的 novabot-manual-theme。
-// 读不到，或存的不是这三档，按跟随系统。写不进时这一页仍显示刚点的那档，下次打开再按跟随系统。出错不往外抛。
-// 跟随系统时，系统深浅变化，页面跟着变。
+// 顶栏三档：深色、浅色、跟随系统，与控制台共用 novabot-theme。
+// 只存 light / dark，跟随系统删除键且不设 data-theme，由 CSS 媒体查询换色。
+// 存储出错不挡本页换色；另一个标签页改了选择，本页跟着变。
 (function () {
   "use strict";
 
-  var KEY = "novabot-manual-theme";
+  var KEY = "novabot-theme";
   var ORDER = ["dark", "light", "system"];
 
   function readMode() {
     try {
       var saved = localStorage.getItem(KEY);
-      if (saved === "dark" || saved === "light" || saved === "system") return saved;
+      if (saved === "dark" || saved === "light") return saved;
     } catch (e) {}
     return "system";
   }
 
   function writeMode(mode) {
     try {
-      localStorage.setItem(KEY, mode);
+      if (mode === "system") localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, mode);
       return true;
     } catch (e) {
       return false;
     }
   }
 
-  function systemDark() {
-    return !!(window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-  }
-
   function apply(mode) {
-    var dark = mode === "dark" || (mode === "system" && systemDark());
     var root = document.documentElement;
-    root.setAttribute("data-theme", dark ? "dark" : "light");
+    if (mode === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", mode);
     root.setAttribute("data-mode", mode);
   }
 
   apply(readMode());
 
-  if (window.matchMedia) {
-    var mq = window.matchMedia("(prefers-color-scheme: dark)");
-    var onScheme = function () {
-      if (document.documentElement.getAttribute("data-mode") === "system") apply("system");
-    };
-    if (mq.addEventListener) mq.addEventListener("change", onScheme);
-    else if (mq.addListener) mq.addListener(onScheme);
-  }
-
   var btn = document.querySelector("button.theme");
-  if (!btn) return;
 
   function setHint(mode) {
+    if (!btn) return;
     var el = btn.querySelector(".opt-" + mode);
     var text = el && el.getAttribute("data-hint");
     if (!text) return;
@@ -60,6 +47,14 @@
 
   setHint(document.documentElement.getAttribute("data-mode") || "system");
 
+  window.addEventListener("storage", function (event) {
+    if (!event || (event.key !== KEY && event.key !== null)) return;
+    var mode = readMode();
+    apply(mode);
+    setHint(mode);
+  });
+
+  if (!btn) return;
   btn.addEventListener("click", function () {
     var cur = document.documentElement.getAttribute("data-mode") || "system";
     var i = ORDER.indexOf(cur);
