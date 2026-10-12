@@ -744,7 +744,7 @@ await ask('备选区按需出现且说明可见', async () => {
   same(allNodes(page()).filter(node => hasClass(node, OFF)).length, 0, '最后一项放回后备选区消失');
 });
 
-// 显示名与提醒入口走真实编辑器，载入不写回，触屏按钮和键盘均可定位。
+// 故障：中文块名、光标插入、跨消息拖动或卡内键盘挪位失效，打开时误写回。
 await ask('中文药丸与@入口按能力和权限显示', async () => {
   const find = (scope, cls) => {
     const node = allNodes(scope).find(item => hasClass(item, cls));
@@ -763,13 +763,13 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
   same(find(host, 'tpl-blk', '中文变量').textContent, '主播昵称', '调色板中文名');
   same(allNodes(host).some(node => node.id === 'tpl-note'), false, '常驻教学段已移除');
   const bodies = () => allNodes(host).filter(node => hasClass(node, 'tpl-c-body'));
-  const insert = () => find(host, 'tpl-at-insert', '插到光标处');
+  const insert = () => host.querySelector('.tpl-at').querySelector('.tpl-blk');
   const targetText = bodies()[1].children[0].children[0];
   window.getSelection = () => ({rangeCount: 1, getRangeAt: () => ({startContainer: targetText, startOffset: 1})});
   bodies()[1].dispatchEvent(fakeEvent('mouseup', bodies()[1]));
   window.getSelection = () => null;
   insert().click();
-  same(params.message, '第一条{next}前{at}后', '按钮在第二条光标处定位');
+  same(params.message, '第一条{next}前{at}后', '@ 块在第二条光标处定位');
   const pill = () => allNodes(host).find(node => node.dataset.k === '{at}');
   press(pill(), 'ArrowLeft');
   same(params.message, '第一条{next}{at}前后', '方向键挪提醒');
@@ -777,11 +777,11 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
   select.value = 'all_or_subscribers';
   select.dispatchEvent(fakeEvent('change', select));
   same(params.message, '第一条{next}{at=all}前后', '切模式同步已有提醒');
-  dragTo(find(host, 'tpl-at-handle'), bodies()[0], 'after');
-  same(params.message, '第一条{at=all}{next}前后', '拖柄挪到第一条');
+  dragTo(insert(), bodies()[0], 'after');
+  same(params.message, '第一条{at=all}{next}前后', '@ 块拖到第一条');
   const dragText = bodies()[1].children[0].children[0];
   document.caretRangeFromPoint = () => ({startContainer: dragText, startOffset: 1});
-  dragTo(find(host, 'tpl-at-handle'), bodies()[1], 'after');
+  dragTo(insert(), bodies()[1], 'after');
   delete document.caretRangeFromPoint;
   same(params.message, '第一条{next}前{at=all}后', '再次拖进第二条句中只保留一份');
 
@@ -795,11 +795,13 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
   same(allNodes(unsupported).filter(node => hasClass(node, 'tpl-preview-note')).length, 1, '只画实际降级说明');
 });
 
-function reminderEditor(placeholders, context, initial = {}) {
+function reminderEditor(placeholders, context, initial = {}, editable = true) {
   const host = new MiniNode('div');
   let params = {...initial};
-  const handler = {className: 'demo', placeholders, defaultParams: {message: '前后'}};
-  editors.buildTemplateEditor(host, {handlers: [handler], editable: true, context,
+  const handler = {className: 'demo', placeholders,
+    placeholderLabels: {'{at}': '@订阅的人', '{at=all}': '@全体成员'},
+    defaultParams: {message: '前后'}};
+  editors.buildTemplateEditor(host, {handlers: [handler], editable, context,
     paramsOf: () => params, onChange: (_, value) => { params = value; }});
   return {host, params: () => params, choose(mode) {
     const picker = host.querySelector('#tpl-at');
@@ -840,7 +842,7 @@ await ask('全体提醒按群权限变灰，已选值和存值保留', async () 
 await ask('下播切回订阅档移除已定位的全体块', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
   editor.choose('all');
-  allNodes(editor.host).find(node => hasClass(node, 'tpl-at-insert')).click();
+  editor.host.querySelector('.tpl-at').querySelector('.tpl-blk').click();
   same(editor.params().message, '前后{at=all}', '已经定位全体块');
   editor.choose('subscribers');
   same(editor.params().message || '前后', '前后', '切回后不留全体块');
@@ -850,21 +852,48 @@ await ask('下播切回订阅档移除已定位的全体块', async () => {
 // 故障：下播选订阅档仍摆着拖不动、点不了的控件，又看不出为什么。
 await ask('下播订阅档隐藏定位控件并说明不提醒', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: false});
-  same(allNodes(editor.host).filter(node => hasClass(node, 'tpl-at-handle')
-    || hasClass(node, 'tpl-at-insert')).length, 0, '不可放入的定位控件数');
+  same(!!editor.host.querySelector('.tpl-at').querySelector('.tpl-blk'), false, '不可放入的 @ 块');
   same(editor.host.querySelector('.tpl-at-note').textContent,
     '这类通知没有订阅名单，选这档就是不 @ 人。', '订阅档可见说明');
   same(editor.params(), {}, '打开时存值不变');
 });
 
-// 故障：开播订阅档的定位入口消失或禁用，按钮仍写含糊的「这里」。
+// 故障：可用的 @ 块消失、不可操作，或名称和操作提示与其他块不一致。
 await ask('有订阅名单时定位控件可用且写明光标', async () => {
   const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: true});
-  const handle = editor.host.querySelector('.tpl-at-handle');
-  const insert = editor.host.querySelector('.tpl-at-insert');
-  same(!!handle && !handle.disabled && handle.draggable, true, '拖柄存在且可拖');
-  same(!!insert && !insert.disabled, true, '插入按钮存在且可用');
-  same(insert.textContent, '插到光标处', '插入按钮文字');
+  const block = editor.host.querySelector('.tpl-at').querySelector('.tpl-blk');
+  same(!!block && !block.disabled && block.draggable, true, '@ 块存在且可点击拖动');
+  same(block.tagName, 'button', '@ 块使用可 Tab 和回车操作的原生按钮');
+  same(block.textContent, '@订阅的人', '@ 块名称');
+  same(block.title, '点一下插到光标处，或拖进卡里', '@ 块操作提示');
+  editor.choose('all');
+  same(editor.host.querySelector('.tpl-at').querySelector('.tpl-blk').textContent,
+    '@全体成员', '全体档 @ 块名称');
+  const locked = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: true}, {}, false);
+  const lockedBlock = locked.host.querySelector('.tpl-at').querySelector('.tpl-blk');
+  same(lockedBlock.disabled && !lockedBlock.draggable, true, '锁住时 @ 块禁用且不可拖');
+  lockedBlock.click();
+  same(locked.params(), {}, '锁住时不能插入');
+});
+
+// 故障：@ 块点了不进消息，或点第二次多出一个 @。
+await ask('@ 块点击插入光标处，再点只挪位置', async () => {
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: true});
+  const clickAt = offset => {
+    const body = editor.host.querySelector('.tpl-c-body');
+    const text = body.children[0].children[0];
+    window.getSelection = () => ({rangeCount: 1,
+      getRangeAt: () => ({startContainer: text, startOffset: offset})});
+    body.dispatchEvent(fakeEvent('mouseup', body));
+    window.getSelection = () => null;
+    editor.host.querySelector('.tpl-at').querySelector('.tpl-blk').click();
+  };
+  clickAt(1);
+  same(editor.params().message, '前{at}后', '首次点击在光标处插入');
+  clickAt(0);
+  same(editor.params().message, '{at}前后', '再次点击挪到新光标');
+  same(allNodes(editor.host).filter(node => node.dataset.k === '{at}').length, 1,
+    '全模板只有一个 @ 药丸');
 });
 
 // 故障：下播全体降级档仍声称会提醒不存在的订阅名单。
