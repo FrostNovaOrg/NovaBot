@@ -48,6 +48,27 @@ final class ConfigUiPrefixPages {
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
     }
 
+    static MockHttpServletResponse trailingSlash(String configured, String onRequest, boolean loggedIn)
+            throws Exception {
+        var authService = ConfigUiPrefixCookieTest.passwordAuth();
+        ConfigUiSecurityFilter filter = new ConfigUiSecurityFilter("operator-token-for-test-0123456789",
+                new IpMatcher(List.of("0.0.0.0/0", "::/0")), authService,
+                new NovaCoreProperties.ConfigUi.Auth(),
+                ConfigUiPrefixCookieTest.accepted(ConfigUiSession.Channel.PASSWORD));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller()).addFilters(filter).build();
+        return mvc.perform(get(ConfigUiController.BASE_PATH + "/").with(request -> {
+                    ((MockServletContext) request.getServletContext()).setContextPath(configured);
+                    request.setContextPath(onRequest);
+                    request.setRequestURI(onRequest + ConfigUiController.BASE_PATH + "/");
+                    if (loggedIn) {
+                        request.setCookies(new jakarta.servlet.http.Cookie(ConfigUiSecurityFilter.SESSION_COOKIE,
+                                authService.issueForPassword(request.getRemoteAddr()).getId()));
+                    }
+                    return request;
+                }))
+                .andReturn().getResponse();
+    }
+
     /**
      * 登录页：口令形态下没带会话访问控制台首页，由安全过滤器原地吐出
      */
