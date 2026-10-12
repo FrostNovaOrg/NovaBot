@@ -9,9 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.util.Locale;
 
 /**
  * 把占位符写法翻译成 OneBot 认得的消息段
@@ -21,12 +18,12 @@ import java.util.Locale;
  *     <li>{at=all}: @全体成员</li>
  *     <li>{at=123456}: @指定成员</li>
  *     <li>{image_url=https://example.com/image.jpg}: 网络图片</li>
- *     <li>{image_path=/opt/image.jpg}: 本地图片</li>
  *     <li>{image_base64=...}: Base64 图片</li>
  * </ul>
  * <p>
- * @ 与三种图片的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址或路径
- * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS，路径须为本机绝对图片路径且不含 {@code ..}。
+ * @、图片与旧路径写法的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址
+ * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS。
+ * 本地图片写法不再支持，非空值原样留成文本，请改用 Base64 图片。
  */
 @Slf4j
 @Component
@@ -95,7 +92,9 @@ public class OneBotMessageConverter {
             addImage(elements, placeholder, value, "", isHttpUrl(value));
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_PATH_PREFIX)) {
             String value = valueOf(placeholder, MessagePlaceholders.IMAGE_PATH_PREFIX);
-            addImage(elements, placeholder, value, "file://", isImagePath(value));
+            if (StringUtil.isNotBlank(value)) {
+                elements.add(element("text", "text", placeholder));
+            }
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_BASE64_PREFIX)) {
             addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_BASE64_PREFIX), "base64://");
         } else {
@@ -124,24 +123,6 @@ public class OneBotMessageConverter {
         }
     }
 
-    private boolean isImagePath(String value) {
-        if (value.contains("..") || !value.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpg|jpeg|gif|webp|bmp)")) {
-            return false;
-        }
-        // 文件由机器人端读取，只接受本机 Unix 路径或带盘符的 Windows 路径。
-        boolean unixAbsolute = value.startsWith("/") && !value.startsWith("//");
-        boolean windowsAbsolute = value.matches("^[A-Za-z]:[\\\\/].*");
-        if (!unixAbsolute && !windowsAbsolute) {
-            return false;
-        }
-        try {
-            Path.of(value);
-            return true;
-        } catch (InvalidPathException e) {
-            return false;
-        }
-    }
-
     /**
      * 取出占位符等号后面那一段
      * <p>
@@ -157,7 +138,7 @@ public class OneBotMessageConverter {
      * <p>
      * 空值整段丢掉而不是留成文本：使用者的模板里留了个没填的位置，
      * 把 <code>{at=}</code> 原样发进群里只会让人以为机器人坏了
-     * @param scheme 值的前缀，OneBot 靠它分辨本地文件与 Base64；没有前缀时传空串
+     * @param scheme 值的前缀，Base64 图片使用 base64://；没有前缀时传空串
      */
     private void addIfPresent(JSONArray elements, String type, String dataKey, String value, String scheme) {
         if (StringUtil.isNotBlank(value)) {

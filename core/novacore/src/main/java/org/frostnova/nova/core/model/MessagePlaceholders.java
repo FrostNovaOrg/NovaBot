@@ -46,8 +46,10 @@ public final class MessagePlaceholders {
     public static final String IMAGE_URL_PREFIX = "{image_url=";
 
     /**
-     * 本地图片
+     * 旧本地图片前缀，仅为插件源码兼容保留。
+     * @deprecated 转换器不再支持本地图片写法，请改用 {@link #IMAGE_BASE64_PREFIX}。
      */
+    @Deprecated
     public static final String IMAGE_PATH_PREFIX = "{image_path=";
 
     /**

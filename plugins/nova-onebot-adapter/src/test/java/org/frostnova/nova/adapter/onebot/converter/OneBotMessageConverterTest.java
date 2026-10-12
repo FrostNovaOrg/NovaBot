@@ -53,14 +53,30 @@ class OneBotMessageConverterTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {
             "/opt/a.png", "/opt/a.jpg", "/opt/a.jpeg", "/opt/a.gif", "/opt/a.webp", "/opt/a.bmp", "/opt/a.PNG",
-            "C:\\images\\a.png", "C:/images/a.png"
+            "C:\\images\\a.png", "C:/images/a.png", "C:\\a.png"
     })
-    @DisplayName("合法绝对图片路径仍转换为图片段")
-    void validImagePathStillWorks(String path) {
-        JSONArray segments = converter.convert("{image_path=" + path + "}");
+    @DisplayName("本机图片路径只显示原文，不让机器人读取本机文件")
+    void localImagePathStaysText(String path) {
+        String placeholder = "{image_path=" + path + "}";
+        JSONArray segments = converter.convert(placeholder);
         assertEquals(1, segments.size());
-        assertEquals("image", segments.getJSONObject(0).getString("type"));
-        assertEquals("file://" + path, segments.getJSONObject(0).getJSONObject("data").getString("file"));
+        assertEquals("text", segments.getJSONObject(0).getString("type"));
+        assertEquals(placeholder, segments.getJSONObject(0).getJSONObject("data").getString("text"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "/\\server\\share\\a.png", "/\\\\server\\share\\a.png", "/\\?\\UNC\\h\\s\\a.png",
+            "/%5C%5Cserver/share/a.png", "/%2F%2Fhost/share/a.png", "/a/%2E%2E/b.png",
+            "file:///opt/a.png", " /opt/a.png", "/opt/a.png "
+    })
+    @DisplayName("混用斜杠、编码及其他图片路径只显示原文，不让机器人读取文件")
+    void otherImagePathStaysText(String path) {
+        String placeholder = "{image_path=" + path + "}";
+        JSONArray segments = converter.convert(placeholder);
+        assertEquals(1, segments.size());
+        assertEquals("text", segments.getJSONObject(0).getString("type"));
+        assertEquals(placeholder, segments.getJSONObject(0).getJSONObject("data").getString("text"));
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -145,7 +161,7 @@ class OneBotMessageConverterTest {
     }
 
     @Nested
-    @DisplayName("三种图片")
+    @DisplayName("图片与旧路径写法")
     class Image {
         @Test
         @DisplayName("网络图片直接用 URL 当 file")
@@ -155,9 +171,9 @@ class OneBotMessageConverterTest {
         }
 
         @Test
-        @DisplayName("本地图片补 file:// 前缀")
+        @DisplayName("本地图片写法原样显示文字，不生成读取文件的图片段")
         void pathImage() {
-            assertEquals("[{\"type\":\"image\",\"data\":{\"file\":\"file:///opt/a.jpg\"}}]",
+            assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"{image_path=/opt/a.jpg}\"}}]",
                     convert("{image_path=/opt/a.jpg}"));
         }
 
