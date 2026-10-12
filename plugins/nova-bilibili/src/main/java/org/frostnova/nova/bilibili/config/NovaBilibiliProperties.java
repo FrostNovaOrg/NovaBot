@@ -45,36 +45,13 @@ public class NovaBilibiliProperties {
     @Setter
     public static class BilibiliThread {
         /**
-         * 线程池核心线程数。
+         * B 站定时任务共用的调度线程数，直播间心跳、重连、动态轮询与备用直播推送都在这些线程上运行。小于 2 按 2 算。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("B站线程池 · 核心线程数")
-        @ConfigSummary(value = "", details = false)
+        @ConfigLabel("B站定时任务 · 调度线程数")
+        @ConfigSummary("直播间心跳、重连、动态轮询与备用直播推送共用；小于 2 按 2 算。")
         private int corePoolSize = 4;
 
-        /**
-         * 线程池最大线程数。
-         */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("B站线程池 · 最大线程数")
-        @ConfigSummary(value = "", details = false)
-        private int maxPoolSize = 32;
-
-        /**
-         * 线程池任务队列容量。
-         */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("B站线程池 · 队列容量")
-        @ConfigSummary(value = "", details = false)
-        private int queueCapacity = 256;
-
-        /**
-         * 非核心线程存活时间，单位：秒。
-         */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("B站线程池 · 空闲存活")
-        @ConfigSummary(value = "", details = false)
-        private int keepAliveSeconds = 300;
     }
 
     /**
