@@ -465,8 +465,11 @@ tr:last-child td{border-bottom:none}
 .backups select{background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 9px;font-size:13.5px}
 /* 下拉框一律用自画的箭头，浅色、深色两档各配一色，见色表里的 --select-chevron。
-   右侧给箭头留出位置，选项文字再长也不压到箭头上 */
-#app select{appearance:none;-webkit-appearance:none;background-image:var(--select-chevron);
+   右侧给箭头留出位置，选项文字再长也不压到箭头上。
+   认 body 而不只认 #app：推送页的抽屉、确认框为了盖住整页挂在 body 上，只认 #app 的话它们里面的
+   下拉框还是浏览器原生的箭头。:is() 按括号里最重的 #app 计权重，各处 .xx select{background:…;padding:…}
+   这类简写（推送页抽屉里那条就是）盖不掉箭头与右侧留位；登录页不载这份样式，不受影响 */
+:is(#app,body) select{appearance:none;-webkit-appearance:none;background-image:var(--select-chevron);
   background-repeat:no-repeat;background-position:right 12px center;background-size:12px 8px;padding-right:34px}
 .backups button{background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 12px;font-size:13.5px;cursor:pointer}

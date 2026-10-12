@@ -125,16 +125,19 @@ const stop = reason => ({ok: false, reason});
  * 打勾会让人以为登录成功了。
  * 勾底下那行小字写「已配置」（试发那一步写「有试发记录」）而不写「完成」：
  * 勾读的是盘上已有的配置，不是这一趟刚验过，从设置引导重走时尤其容易被读成后者。
+ * 「有试发记录」只在 sent 确为 true 时写：回包里不知道试没试发过时，末步那个勾是照前几步推断的
+ * （见 home-model.js 的 setupSteps），那时写「有试发记录」等于断言一份没人记下过的记录。
  * @param facts {@link stepFacts} 的结果
  * @param skips 每一步被跳过的方式，'' / 'skip' / 'anon'
  * @param current 正在做第几步
  * @param steps 步骤表，缺省 {@link SETUP_STEPS}
+ * @param sent 服务端记着的试发事实；不知道时传 null
  * @return {{state: string, note: string}[]} 每步的记号与那行小字
  */
-export function railMarks(facts, skips, current, steps) {
+export function railMarks(facts, skips, current, steps, sent) {
   return (steps || SETUP_STEPS).map((step, i) => {
     if ((skips || [])[i] === 'anon') return {state: 'warn', note: '免登录模式'};
-    if ((facts || [])[i]) return {state: 'done', note: step.key === 'test' ? '有试发记录' : '已配置'};
+    if ((facts || [])[i]) return {state: 'done', note: step.key === 'test' && sent === true ? '有试发记录' : '已配置'};
     if ((skips || [])[i]) return {state: 'skip', note: '跳过了'};
     if (i === current) return {state: 'current', note: '正在做'};
     return {state: 'idle', note: ''};
