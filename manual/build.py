@@ -657,6 +657,8 @@ def main():
     node = shutil.which("node")
     if node:
         tests = sorted((MANUAL / "tests").rglob("*.test.mjs"))
+        if not tests:
+            sys.exit("自检失败: manual/tests 里没有手册测试件")
         result = subprocess.run(
             [node, "--test", *map(str, tests)], cwd=MANUAL.parent,
             env={**os.environ, "MANUAL_TEST_PYTHON": sys.executable})
