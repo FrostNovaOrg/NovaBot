@@ -5,6 +5,7 @@ import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 
 import java.util.List;
@@ -113,6 +114,13 @@ public abstract class BilibiliAtSubscribeCommand extends BilibiliAtCommand {
             return CommandReply.of(cancelOnly
                     ? "已取消，" + nameOf(streamer) + typeName() + "时不再 @ 你"
                     : "已取消，" + nameOf(streamer) + typeName() + "时不再 @ 你。再发「" + name() + "」可订回来");
+        }
+
+        // 只在加入名单前检查点名主播的配置；退订与查看名单沿用原有行为。
+        List<AtMode> modes = modesOf(context, noticeKind(), streamer);
+        if (!modes.isEmpty() && modes.stream().allMatch(mode -> mode == AtMode.ALL)) {
+            return CommandReply.of(context.here() + "，" + nameOf(streamer) + "的" + typeName()
+                    + "通知会 @全体成员，单独订阅也不会被单独 @，不用单独订阅");
         }
 
         AtSubscriptionService.Result result = subscriptions.subscribe(platform, num, uid, type, sender);

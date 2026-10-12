@@ -88,8 +88,10 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
 
         AtMode mode = AtMode.of(params);
         String template = params.getString("message");
-        String subscriberAt = PushHandlerSupport.atSubscribers(subscriptions.list(
-                target.getPlatform(), target.getNum(), event.getSource().getUid(), "live"));
+        String subscriberAt = target.getType() == PushTargetType.GROUP
+                ? PushHandlerSupport.atSubscribers(subscriptions.list(
+                        target.getPlatform(), target.getNum(), event.getSource().getUid(), "live"))
+                : "";
 
         String content = template
                 .replace("{uname}", uname)
