@@ -25,6 +25,10 @@
 # 请求成功、内容却来自根本没登记过的一份，**看起来完全正常**——那才是要一把尺来量的。
 # 两个例外按「缺少也红」判：核心界面与随包手册整块缺席不是 404 一页的事，是打进包的
 # 那条链断了，包看上去却一切正常——那种静默正是这一格要拦的。
+# 随包手册另有一个不红的缺席形态：这次构建压根没生成手册（build.sh 在机器上没有
+# python3 且非发布包时会清掉 manual/dist 并跳过，见 build.sh [4/9]）——按清单侧
+# 「manual/dist 在不在」分得清「没走这条链」与「链断了」：前者说清这次没带、不红；
+# 后者（生成过而包里一项没有）照红。
 #
 # 空集也要报数：一把「子集」尺在被量清单为空时永远是绿的。因此每一格都把两侧条目数印出来，
 # 并且：核心那一格若一个界面资源都没有，直接判红（「界面丢光了」不能读成「干净」）；
@@ -88,9 +92,12 @@ find_module_dir() {
 #   $4 这一格叫什么   $5 清单的叫法（源码／登记／生成）——读数与多出报文里用它
 #   $6 可选：jar 内一项都没有时那句「这不是干净是丢了」怎么说（核心界面与随包手册
 #        都不该有缺席的形态：缺席说明打进包的那条链断了，而不是这一块本来就不该在）
+#   $7 可选：清单整个不在、jar 里也一项没有时印这句、不判红（随包手册专用：这次
+#        构建没生成手册是按规矩跳过，不是链断了，见尺头注释）
 check_one() {
     local jar="$1" prefix="$2" list="$3" label="$4" word="$5"
     local missing_word="${6:-}"
+    local absent_ok="${7:-}"
     local entries rel extra=0 count=0 list_count=0
 
     if [ ! -f "$jar" ]; then
@@ -128,11 +135,17 @@ check_one() {
     done <<< "$entries"
 
     if [ "$count" -gt 0 ] && [ "$list_count" -eq 0 ]; then
-        echo "  $label 红 ${word}清单为空 —— jar 里有${count}项，清单里一个名字都没有 $(basename "$jar")"
+        if [ -n "$absent_ok" ]; then
+            echo "  $label 红 jar内${count}项 —— 清单整个不在，包里却有这一块的条目（上一次构建的残留） $(basename "$jar")"
+        else
+            echo "  $label 红 ${word}清单为空 —— jar 里有${count}项，清单里一个名字都没有 $(basename "$jar")"
+        fi
         RED=1
     elif [ "$extra" -gt 0 ]; then
         echo "  $label 红 jar内${count}项 ${word}${list_count}项 多出${extra}项 $(basename "$jar")"
         RED=1
+    elif [ "$count" -eq 0 ] && [ "$list_count" -eq 0 ] && [ -n "$absent_ok" ]; then
+        echo "  $label —— jar内0项：${absent_ok}"
     elif [ "$count" -eq 0 ] && [ -n "$missing_word" ]; then
         echo "  $label 红 jar内0项 —— ${missing_word}，这不是干净是丢了 $(basename "$jar")"
         RED=1
@@ -176,13 +189,16 @@ check_one "$OUT/NovaBot.jar" "$CORE_UI_IN_JAR" "$core_list" "核心界面" 源�
 # 随包手册格：jar 内 config-ui-manual ⊆ manual/dist。真源是 build.py 刚生成的这一份
 # （生成与打包同在 [4/9]，量到这里它必然在）；手册打进包是本链的结构而非可选，
 # 一项都没有即红——那时控制台的「使用说明」会静默退到站上那份，版本对不上的老毛病
-# 就是从这里回来的。
+# 就是从这里回来的。例外见尺头注释：manual/dist 整个不在＝这次构建没生成手册，
+# jar 里也一项没有时不红、说清这次没带；jar 里却有手册条目则是上一次构建的残留，照红。
 manual_list="$WORK/manual-dist.list"
 : > "$manual_list"
 if [ -d "$MANUAL_SRC" ]; then
     find "$MANUAL_SRC" -type f | sed "s|^$MANUAL_SRC/||" | sort > "$manual_list"
 fi
-check_one "$OUT/NovaBot.jar" "$MANUAL_IN_JAR" "$manual_list" "随包手册" 生成 "随包手册一个都没打进包"
+check_one "$OUT/NovaBot.jar" "$MANUAL_IN_JAR" "$manual_list" "随包手册" 生成 \
+    "随包手册一个都没打进包" \
+    "这次没带手册（manual/dist 不在：没装 python3 的构建与只跑 mvn 的构建都不生成它），控制台的「使用说明」会转到线上手册"
 
 # 插件那一侧按目录里实际有哪些 jar 来量，不写死任何一个插件的名字：
 # 写死一个，这把尺守的就只是那一个插件，下一个插件带着脏条目进包照样是绿的。
