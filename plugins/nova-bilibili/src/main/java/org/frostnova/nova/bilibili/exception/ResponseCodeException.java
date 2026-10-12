@@ -12,8 +12,12 @@ public class ResponseCodeException extends RuntimeException {
      */
     private final int code;
 
+    /** B 站返回的原始说明，不含异常格式前缀。 */
+    private final String responseMessage;
+
     public ResponseCodeException(int code, String message) {
         super("接口返回错误代码 " + code + ": " + message);
         this.code = code;
+        this.responseMessage = message;
     }
 }
