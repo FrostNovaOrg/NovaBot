@@ -76,6 +76,11 @@ public class BilibiliDataQueryPainter {
 
     private static final int CARD_RADIUS = 16;
 
+    /**
+     * 卡片内文字距卡片左边的留白；截短的那行右边也留这么宽
+     */
+    private static final int CARD_TEXT_INSET = 18;
+
     private static final int RANKING_ROW_HEIGHT = 44;
 
     private static final int RANKING_BAR_HEIGHT = 14;
@@ -107,6 +112,11 @@ public class BilibiliDataQueryPainter {
     private static final Color COLOR_TEXT = new Color(51, 51, 51);
 
     private static final Color COLOR_CARD = new Color(246, 247, 249);
+
+    /**
+     * 盈亏榜里亏了的那几行比例条的颜色，与下播报告同一个绿
+     */
+    private static final Color COLOR_LOSS = new Color(110, 199, 122);
 
     private final NovaCommonPainterFactory factory;
 
@@ -328,14 +338,32 @@ public class BilibiliDataQueryPainter {
             int y = startY + (i / CARD_COLUMNS) * (CARD_HEIGHT + CARD_GAP);
 
             painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-            painter.drawTextWithStyle(List.of(new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD)),
-                    new Point(x + 18, y + 14));
-            painter.drawTextWithStyle(List.of(new TextWithStyle(card.label(), 20, COLOR_TIP, Font.PLAIN)),
-                    new Point(x + 18, y + 62));
+            TextWithStyle value = new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD);
+            value.setText(fitCardText(painter, value));
+            painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 14));
+            TextWithStyle label = new TextWithStyle(card.label(), 20, COLOR_TIP, Font.PLAIN);
+            label.setText(fitCardText(painter, label));
+            painter.drawTextWithStyle(List.of(label), new Point(x + CARD_TEXT_INSET, y + 62));
         }
 
         int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;
         painter.setPos(MARGIN, startY + rows * (CARD_HEIGHT + CARD_GAP) + 4);
+    }
+
+    /**
+     * 卡片里的一行字：放得进卡片就整串画，放不进才截短（盲盒卡大字是金额，位数没有上限）
+     * <p>
+     * 两道宽不一样。放不放得下按文字起点到卡片右缘算（201px）：再扣一份右留白，
+     * 「弹幕 · 1234567 人参与」（宽 195）这种放得下的字也会被截掉。
+     * 截短时则同报告卡片，截到左右各留 {@link #CARD_TEXT_INSET}（183px），
+     * 不然带着「…」的那行顶到卡片右边，看着像被切掉一截。
+     */
+    private static String fitCardText(CommonPainter painter, TextWithStyle text) {
+        String whole = painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET);
+        if (Objects.equals(whole, text.getText())) {
+            return whole;
+        }
+        return painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET * 2);
     }
 
     /**
@@ -415,12 +443,13 @@ public class BilibiliDataQueryPainter {
         int barWidth = CONTENT_WIDTH - BAR_X - 140;
         painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
 
-        // 盈亏榜可能出现负分或榜首为 0，按绝对值取比例并留一段最小可见长度
+        // 盈亏榜可能出现负分或榜首为 0，按绝对值取比例并留一段最小可见长度。
+        // 长短不分赚亏，颜色分：亏了的画绿，与下播报告一致
         double ratio = topScore == 0 ? 0 : Math.abs(user.score()) / Math.abs(topScore);
         int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
         if (filled > 0) {
             painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
-                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? COLOR_LOSS : rankColor(rank));
         }
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(scoreText.apply(user.score()), 24, COLOR_TEXT, Font.PLAIN)),

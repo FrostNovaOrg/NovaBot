@@ -294,6 +294,11 @@ public class BilibiliLiveReportPainter {
     private static final Color COLOR_CURVE_WATCHED = new Color(110, 199, 122);
 
     /**
+     * 盈亏榜里亏了的那几行比例条的颜色：照「红涨绿跌」用绿，取看过人数曲线那个绿
+     */
+    private static final Color COLOR_LOSS = COLOR_CURVE_WATCHED;
+
+    /**
      * 在线人数折线的配色。包内可见：像素判据要靠它认出折线而不是面积
      */
     static final Color COLOR_CURVE_ONLINE = new Color(255, 99, 132);
@@ -842,9 +847,11 @@ public class BilibiliLiveReportPainter {
         if (options.isCardGuard() && guardPurchases > 0) {
             drawn.put("card_guard", guardPurchaseCard(painter, platform, uid, guardPurchases, revenue));
         }
+        // 显示金额时大字写盈亏（与盲盒盈亏榜同一写法），个数退到小字；隐藏金额时只写个数
         if (options.isCardBox() && box > 0) {
-            drawn.put("card_box", new Card(box + " 个",
-                    revenue ? "盲盒 · " + boxText(boxProfit) : "盲盒"));
+            drawn.put("card_box", revenue
+                    ? new Card(profitLabel(boxProfit), "盲盒盈亏 · " + box + " 个")
+                    : new Card(box + " 个", "盲盒"));
         }
         if (options.isCardFreeGift() && freeGift > 0) {
             drawn.put("card_free_gift", new Card(freeGift + " 个", "免费礼物"));
@@ -940,19 +947,6 @@ public class BilibiliLiveReportPainter {
     private boolean cardLabelFits(CommonPainter painter, String label) {
         int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
         return painter.getStringWidthAndHeight(new TextWithStyle(label, 22, COLOR_TIP, Font.PLAIN)).getFirst() <= usable;
-    }
-
-    /**
-     * 盲盒盈亏文案：正盈利、负亏损、零持平（不带金额）。
-     */
-    private String boxText(double boxProfit) {
-        if (boxProfit > 0) {
-            return "盈利 ¥" + yuan(boxProfit);
-        }
-        if (boxProfit < 0) {
-            return "亏损 ¥" + yuan(Math.abs(boxProfit));
-        }
-        return "持平";
     }
 
     /**
@@ -2521,12 +2515,13 @@ public class BilibiliLiveReportPainter {
         int barWidth = Math.max(RANKING_BAR_HEIGHT, CONTENT_WIDTH - 300 - scoreSlot);
         painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
 
-        // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度
+        // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度。
+        // 长短不分赚亏，颜色分：亏了的画绿，否则一眼看去亏得多的像是排得高
         double ratio = topScore == 0 ? 0 : Math.abs(user.score()) / Math.abs(topScore);
         int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
         if (filled > 0) {
             painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
-                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? COLOR_LOSS : rankColor(rank));
         }
 
         // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：位数多的长文案
@@ -3032,7 +3027,7 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 盲盒盈亏榜金额：正数带加号、负数带减号、零无方向不带号。
+     * 盲盒盈亏金额：正数带加号、负数带减号、零无方向不带号。盈亏榜与数据卡里的盲盒那张共用
      */
     static String profitLabel(double score) {
         if (score == 0) {
