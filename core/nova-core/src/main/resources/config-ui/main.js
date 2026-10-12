@@ -335,7 +335,11 @@ export async function load(how) {
   say('载入中…');
   const notes = [];
   try {
-    const [s, v] = await Promise.all([api('/schema'), api('/values')]);
+    const [s, v, channels] = await Promise.all([
+      api('/schema'), api('/values'),
+      api('/alert/channels').catch(() => ({channels: []})),
+    ]);
+    store.alertChannels = channels.channels || [];
     store.schema = s.groups || [];
     // 归不了组的那几项单独收着，由设置页摆在最上面一块里，见 store.ungrouped
     store.ungrouped = s.ungrouped || [];
@@ -391,8 +395,8 @@ export async function load(how) {
       }
     }
     store.dirty = kept;
-    renderGeneral();
     const here = parseHash();
+    renderGeneral();
     focusCard(here.name, here.card);
 
     // 各供数方那一份与这一趟并行取：它们要赶在下面 refreshPages 之前进来，
@@ -427,10 +431,8 @@ export async function load(how) {
     const quiet = await sources;
     try {
       store.vocab = (await api('/vocab')).terms || {};
-      store.alertChannels = (await api('/alert/channels')).channels || [];
     } catch (e) {
       store.vocab = {};
-      store.alertChannels = [];
     }
     applyConnectionVocab();
     refreshPages();

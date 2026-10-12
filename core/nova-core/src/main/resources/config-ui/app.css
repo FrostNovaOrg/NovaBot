@@ -220,7 +220,7 @@ html.nobar #main{padding-bottom:20px}
 .field input[type=time]{min-height:34px;font-variant-numeric:tabular-nums}
 .field .time-clear{display:block;margin-top:6px}
 /* 文件位置：等宽字，l 与 1、O 与 0 认得出来 */
-.field .setting-path{font-family:var(--mono);font-size:13.5px}
+.field input.setting-path{font-family:var(--mono);font-size:13.5px}
 .field.changed{background:var(--soft)}
 .readonly{color:var(--dim);font-size:13.5px;padding:6px 0;font-style:italic}
 /* 手写成界面改不了的项：值原样摆出，换行照留、长串折行 */
