@@ -197,6 +197,7 @@ class BilibiliLiveReportPushHandlerTest {
     // 故障：下播仍提醒全体，或去掉旧提醒后多发一条空消息。
     @ParameterizedTest
     @CsvSource({
+            "all,{at=123 }{next}正文", "all_or_subscribers,前{at=abc}正文后",
             "all,{at=123}{next}正文{at=456}", "all_or_subscribers,前{at=123}正文{at=456}后",
             "all,正文", "all_or_subscribers,正文",
             "all,{at=all}{next}正文", "all_or_subscribers,{at=all}{next}正文",

@@ -170,7 +170,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         BilibiliDataQueryPainter.Header header = new BilibiliDataQueryPainter.Header(
                 board.title + "排行榜",
-                scope.getLabel() + "数据 · " + nameOf(streamer) + "的直播间",
+                scope.getLabel() + "数据 · " + rawNameOf(streamer) + "的直播间",
                 streamer.getFace());
 
         int heightLimit = properties.getRanking().getHeightLimit();

@@ -242,20 +242,25 @@ class BilibiliStreamerChoiceCorpusTest {
         assertEquals(1, org.frostnova.nova.core.model.Message.create(PLATFORM, PushTargetType.GROUP, GROUP, content).size());
     }
 
-    @Test
-    @DisplayName("候选清单、追问例句和匹配成功的主播名只显示文字，原名仍能点中")
-    void streamerNamesStayText() {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @DisplayName("候选清单中的花括号名字只显示文字，照清单或原名输入都能点中")
+    void streamerNamesStayText(boolean archived) {
         PushUser first = streamer(1);
         first.setUname("{at=all}{next}{image_path=/opt/a.png}");
         PushUser second = streamer(2);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(first, second));
         LiveDataService liveData = mock(LiveDataService.class);
-        NovaCoreProperties properties = new NovaCoreProperties();
-        properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
-        ProbeCommand command = new ProbeCommand(dataSource,
-                new BilibiliStreamerChoice(liveData, new LiveSessionArchive(properties)));
-        for (String keyword : List.of("", "没有这位", first.getUname())) {
+        String originalName = first.getUname();
+        LiveSessionArchive archive = mock(LiveSessionArchive.class);
+        if (archived) {
+            first.setUname(null);
+            when(archive.latestUname("bilibili", first.getUid())).thenReturn(Optional.of(originalName));
+        }
+        ProbeCommand command = new ProbeCommand(dataSource, new BilibiliStreamerChoice(liveData, archive));
+        String displayedName = "｛at=all｝｛next｝｛image_path=/opt/a.png｝";
+        for (String keyword : List.of("", "没有这位", originalName, displayedName, "｛at=all｝")) {
             String content = command.execute(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
                     command.name(), keyword.isEmpty() ? List.of() : List.of(keyword), "")).content();
             var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
@@ -264,8 +269,10 @@ class BilibiliStreamerChoiceCorpusTest {
                 assertEquals("text", segments.getJSONObject(i).getString("type"), content);
             }
             assertTrue(content.contains("｛at=all｝｛next｝｛image_path=/opt/a.png｝"), content);
-            if (keyword.equals(first.getUname())) {
-                assertTrue(content.startsWith("已出图："), content);
+            if (List.of(originalName, displayedName, "｛at=all｝").contains(keyword)) {
+                String notice = archived ? "本次用的是：" + displayedName
+                        + "（TA 的昵称没查回来，按最近一场的昵称认的）\n" : "";
+                assertEquals(notice + "已出图：" + displayedName, content);
             }
         }
     }

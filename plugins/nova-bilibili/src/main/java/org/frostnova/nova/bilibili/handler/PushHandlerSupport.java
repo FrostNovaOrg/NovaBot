@@ -167,7 +167,7 @@ public final class PushHandlerSupport {
     public static String withoutAtBlocks(String content) {
         List<String> kept = new ArrayList<>();
         for (String part : content.split("\\{next}", -1)) {
-            String cleaned = part.replace(AT_ALL, "").replace(AT_SUBSCRIBERS, "").replaceAll("\\{at=[0-9]+}", "");
+            String cleaned = part.replace(AT_ALL, "").replace(AT_SUBSCRIBERS, "").replaceAll("\\{at=[^}]*}", "");
             if (StringUtil.isNotBlank(cleaned)) {
                 kept.add(cleaned);
             }

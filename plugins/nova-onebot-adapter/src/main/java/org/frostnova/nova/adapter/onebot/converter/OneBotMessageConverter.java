@@ -25,8 +25,8 @@ import java.util.Locale;
  *     <li>{image_base64=...}: Base64 图片</li>
  * </ul>
  * <p>
- * @ 与 Base64 图片的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址或路径
- * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS，路径须为绝对图片路径且不含 {@code ..}。
+ * @ 与三种图片的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址或路径
+ * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS，路径须为本机绝对图片路径且不含 {@code ..}。
  */
 @Slf4j
 @Component
@@ -104,6 +104,9 @@ public class OneBotMessageConverter {
     }
 
     private void addImage(JSONArray elements, String placeholder, String value, String scheme, boolean valid) {
+        if (StringUtil.isBlank(value)) {
+            return;
+        }
         if (valid) {
             addIfPresent(elements, "image", "file", value, scheme);
         } else {
@@ -125,10 +128,15 @@ public class OneBotMessageConverter {
         if (value.contains("..") || !value.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpg|jpeg|gif|webp|bmp)")) {
             return false;
         }
+        // 文件由机器人端读取，只接受本机 Unix 路径或带盘符的 Windows 路径。
+        boolean unixAbsolute = value.startsWith("/") && !value.startsWith("//");
+        boolean windowsAbsolute = value.matches("^[A-Za-z]:[\\\\/].*");
+        if (!unixAbsolute && !windowsAbsolute) {
+            return false;
+        }
         try {
-            // 文件由机器人端读取，兼容 Unix 与 Windows 的绝对路径。
-            return Path.of(value).isAbsolute() || value.matches("^[A-Za-z]:[\\\\/].*")
-                    || value.matches("^\\\\\\\\[^\\\\]+\\\\[^\\\\]+\\\\.+");
+            Path.of(value);
+            return true;
         } catch (InvalidPathException e) {
             return false;
         }
