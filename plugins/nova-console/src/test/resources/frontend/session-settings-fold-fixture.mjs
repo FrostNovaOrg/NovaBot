@@ -76,6 +76,7 @@ class MiniNode {
     this._html = String(html ?? '');
     for (const child of this.children) detach(child);
     this.children = [];
+    queueMicrotask(() => { for (const observer of observers) observer(); });
     // 只把 <input …> 立成真节点：本页会往 label 里塞一个复选框再取回来。
     // 旁的字串（组名、旁注这些）仍留在 innerHTML 里，按字串认
     const re = /<input\b([^>]*)>/gi;
@@ -186,6 +187,17 @@ function idNode(id) {
 
 const htmlClasses = new Set();
 const docListeners = {};
+const observers = [];
+globalThis.MutationObserver = class {
+  constructor(callback) { this.callback = callback; }
+  observe() { observers.push(this.callback); }
+};
+const windowListeners = {};
+globalThis.window = {
+  innerWidth: 390, innerHeight: 780,
+  addEventListener(type, fn) { (windowListeners[type] ||= []).push(fn); },
+  dispatch(type) { for (const fn of windowListeners[type] || []) fn(); },
+};
 
 globalThis.document = {
   querySelector: selector => {
@@ -273,8 +285,7 @@ function sessionOf(target) {
   };
 }
 
-function paint(target) {
-  const host = idNode('session-host-' + target.num);
+function paint(target, host = idNode('session-host-' + target.num)) {
   host.innerHTML = '';
   if (sessions) sessions.sessionSettings(host, ctxOf(target, sessionOf(target)));
   return host;
@@ -420,6 +431,10 @@ await ask('④ 各行问号说明：键盘开得了关得了，读屏念得出',
   opened['浮层看得见'] = !!(panel && !panel.hidden);
   opened['读屏名字指着这块浮层'] = !!(panel && button.getAttribute('aria-describedby') === panel.getAttribute('id'));
 
+  button.blur();
+  same(button.getAttribute('aria-expanded'), 'false', '未钉住时失焦收起');
+  button.focus();
+
   // Escape 关掉
   globalThis.document.dispatchDoc('keydown', {
     key: 'Escape', target: button, preventDefault() {},
@@ -473,6 +488,84 @@ await ask('⑤ 各行问号说明：手机上点一下开、再点一下关', as
     '再点一下收起': true,
     '再点一下浮层藏起来了': true,
   }, '问号说明·点按');
+});
+
+// 切换通道或重新绘制后，旧按钮与说明应一起退出。
+await ask('⑥ 钉住的问号说明，换通道或重画后收起', async () => {
+  for (const target of [GROUP_B, GROUP_A]) {
+    const host = paint(GROUP_A);
+    const button = helpOf(host, '金额可见');
+    button.click();
+    const panel = tipPanels()[0];
+    paint(target, host);
+    await Promise.resolve();
+    same([panel.hidden, button.getAttribute('aria-expanded'), button.getAttribute('aria-describedby')],
+      [true, 'false', null], '通道重画后的说明');
+  }
+});
+
+// 触屏没有 Esc；点击说明内部应能继续阅读，点击外部应能关闭。
+await ask('⑦ 钉住后点说明内保留，点别处收起', async () => {
+  const button = helpOf(paint(GROUP_A), '静音时段');
+  button.click();
+  const panel = tipPanels()[0];
+  const child = new MiniNode('span');
+  panel.appendChild(child);
+  for (const target of [button, child]) {
+    document.dispatchDoc('pointerdown', {target});
+    same(panel.hidden, false, '说明内与问号上的点按');
+  }
+  document.dispatchDoc('pointerdown', {target: document.body});
+  same([panel.hidden, button.getAttribute('aria-expanded'), button.getAttribute('aria-describedby')],
+    [true, 'false', null], '点别处后的说明');
+});
+
+// 页面路由变化后，上一页的说明不应继续悬在屏幕上。
+await ask('⑧ 换页后问号说明收起', async () => {
+  const button = helpOf(paint(GROUP_A), '金额可见');
+  button.click();
+  const panel = tipPanels()[0];
+  window.dispatch('hashchange');
+  same([panel.hidden, button.getAttribute('aria-expanded')], [true, 'false'], '换页后的说明');
+});
+
+// 滚动与窗口缩放后说明仍贴着按钮，按钮出屏或被移除时说明应关闭。
+await ask('⑨ 滚动与缩放时说明跟随，出屏或移除时收起', async () => {
+  const host = paint(GROUP_A);
+  const button = helpOf(host, '金额可见');
+  let rect = {top: 100, bottom: 122, left: 40, right: 62};
+  button.getBoundingClientRect = () => rect;
+  button.click();
+  const panel = tipPanels()[0];
+  panel.offsetWidth = 280;
+  panel.offsetHeight = 100;
+  const initialTop = panel.style.top;
+  rect = {top: 200, bottom: 222, left: 50, right: 72};
+  window.dispatch('scroll');
+  same([panel.hidden, panel.style.top !== initialTop], [false, true], '滚动后跟随');
+  rect = {top: 720, bottom: 742, left: 370, right: 392};
+  window.dispatch('resize');
+  same([parseFloat(panel.style.top) < rect.top, parseFloat(panel.style.left) + panel.offsetWidth <= window.innerWidth],
+    [true, true], '缩放后不出视口');
+  rect = {top: -30, bottom: -8, left: 40, right: 62};
+  window.dispatch('scroll');
+  same([panel.hidden, button.getAttribute('aria-expanded')], [true, 'false'], '按钮出屏后');
+  rect = {top: 100, bottom: 122, left: 40, right: 62};
+  button.click();
+  host.innerHTML = '';
+  await Promise.resolve();
+  same([panel.hidden, button.getAttribute('aria-expanded')], [true, 'false'], '按钮移除后');
+});
+
+// 问号应解释隐藏整榜的理由，开关下面的后果仍保留且不在说明里重复。
+await ask('⑩ 金额说明只讲理由，开关下保留后果', async () => {
+  const host = paint(GROUP_A);
+  helpOf(host, '金额可见').click();
+  same(tipPanels()[0].textContent,
+    '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，只去掉右侧的数字，仍然是在公开排消费。', '金额问号文字');
+  same(allNodes(rowOf(host, '金额可见')).some(node => node.innerHTML.includes(
+    '关掉后，下播报告不显示收益、卡片改用人数与条数、礼物与醒目留言榜整榜不出；数据查询命令同样不再回金额。')),
+    true, '开关下的后果说明');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
