@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.painter;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.enums.GuardOperateType;
 import org.frostnova.nova.bilibili.event.live.BilibiliOfflineRewardDigestEvent;
@@ -155,7 +156,7 @@ public class BilibiliOfflineRewardDigestPainter {
      */
     private String renderPerson(BilibiliOfflineRewardDigestEvent.Contribution person, boolean showRevenue) {
         List<String> lines = bodyLines(person, showRevenue);
-        return lines.get(0) + " " + String.join("，", lines.subList(1, lines.size()));
+        return MessagePlaceholders.escapeExternalText(lines.get(0) + " " + String.join("，", lines.subList(1, lines.size())));
     }
 
     /**

@@ -106,6 +106,30 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     }
 
     @Test
+    @DisplayName("打赏昵称、礼物名与文字退路里的占位符只显示文字")
+    void sourcePlaceholdersStayText() {
+        BilibiliOfflineRewardDigestPushHandler failing = failingPainterHandler();
+        PushMessage message = pushMessage();
+        message.getParamsJsonObject().put("message", "{uname}|{list}|{picture}");
+        BilibiliOfflineRewardDigestEvent event = new BilibiliOfflineRewardDigestEvent(
+                new LiveStreamerInfo(STREAMER_UID, "{at=all}{picture}", ROOM_ID),
+                List.of(guardPerson("{at=123}{uname}", 3, GuardOperateType.ACTIVATION, 198.0),
+                        giftPerson("{next}", "{image_path=/opt/a.png}{picture}", 1, 1.0)));
+        failing.handle(event, message);
+        List<String> sent = sentContents();
+        assertEquals(1, sent.size(), "打赏文字不能拆条");
+        String content = sent.get(0);
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertTrue(content.startsWith("｛at=all｝｛picture｝|｛at=123｝｛uname｝"), content);
+        assertTrue(content.contains("｛next｝ 送了 ｛image_path=/opt/a.png｝｛picture｝×1"), content);
+        assertTrue(content.contains("感谢 ｛at=123｝｛uname｝"), content);
+    }
+
+    @Test
     @DisplayName("默认模板只发一张图，群里不再收到文字感谢")
     void sendsImageByDefault() {
         // 抓的用户故障：群里收到的是一条文字感谢，没有图——默认模板换成只放图
@@ -299,6 +323,8 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     // 故障：下播仍提醒全体，或去掉旧提醒后多发一条空消息。
     @ParameterizedTest
     @CsvSource({
+            "all,{at=123 }{next}正文", "all_or_subscribers,前{at=abc}正文后",
+            "all,{at=123}{next}正文{at=456}", "all_or_subscribers,前{at=123}正文{at=456}后",
             "all,正文", "all_or_subscribers,正文",
             "all,{at=all}{next}正文", "all_or_subscribers,{at=all}{next}正文",
             "all,前{at}正文{at=all}后", "all_or_subscribers,前{at}正文{at=all}后",

@@ -93,6 +93,21 @@ class BilibiliRankingCommandTest {
     }
 
     @Test
+    @DisplayName("主播名带花括号时，排行榜图仍使用原名")
+    void rankingKeepsOriginalStreamerName() {
+        String uname = "主播{名字}";
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, uname)));
+        withRanking(3);
+
+        command.execute(context("弹幕"));
+
+        ArgumentCaptor<BilibiliDataQueryPainter.Header> header =
+                ArgumentCaptor.forClass(BilibiliDataQueryPainter.Header.class);
+        verify(painter).paintRanking(header.capture(), any(), eq(1), any(), any());
+        assertEquals("本场数据 · " + uname + "的直播间", header.getValue().subtitle());
+    }
+
+    @Test
     @DisplayName("未指定榜单时应列出可选榜单而非直接出图")
     void listsBoardsWhenUnspecified() {
         CommandReply reply = command.execute(context());

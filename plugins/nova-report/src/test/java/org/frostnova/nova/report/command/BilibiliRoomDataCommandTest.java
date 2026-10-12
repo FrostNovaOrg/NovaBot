@@ -42,6 +42,19 @@ class BilibiliRoomDataCommandTest {
     private static final Long SENDER = 40001L;
 
     @Test
+    @DisplayName("主播名带花括号时，直播间数据图仍使用原名")
+    void cardsKeepOriginalStreamerName() {
+        Fixture fixture = new Fixture(false, 1_700_000_000_000L, 1_700_000_090_000L, 10.0, true, "主播{名字}");
+
+        fixture.command.execute(context());
+
+        ArgumentCaptor<BilibiliDataQueryPainter.Header> header =
+                ArgumentCaptor.forClass(BilibiliDataQueryPainter.Header.class);
+        verify(fixture.painter).paintCards(header.capture(), any(), nullable(String.class));
+        assertEquals("主播{名字}", header.getValue().title());
+    }
+
+    @Test
     @DisplayName("不在播且起止同一秒：脚注整句不出")
     void footnoteIsNullWhenOffAndStartEqualsEnd() {
         long at = 1_700_000_000_000L;
@@ -198,8 +211,14 @@ class BilibiliRoomDataCommandTest {
         }
 
         Fixture(boolean living, long start, Long end, double boxProfit, boolean showRevenue) {
+            this(living, start, end, boxProfit, showRevenue, "主播甲");
+        }
+
+        Fixture(boolean living, long start, Long end, double boxProfit, boolean showRevenue, String uname) {
             AbstractDataSource dataSource = mock(AbstractDataSource.class);
-            when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer()));
+            PushUser user = streamer();
+            user.setUname(uname);
+            when(dataSource.getUsers("bilibili")).thenReturn(List.of(user));
 
             LiveDataService liveDataService = mock(LiveDataService.class);
             when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(living));

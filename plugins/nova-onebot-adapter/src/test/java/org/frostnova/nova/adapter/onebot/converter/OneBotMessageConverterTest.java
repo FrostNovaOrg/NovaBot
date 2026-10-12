@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *     <li>占位符取的是「从 <code>{</code> 到<b>最近一个</b> <code>}</code>」，
  *         所以 <code>{at=1}}</code> 会剩一个右花括号当正文——与
  *         {@code MessagePlaceholders} 的非贪婪口径一致</li>
- *     <li>值为空或纯空白的占位符<b>整段消失</b>，既不变文本也不记录；
+ *     <li>@ 与三种图片的值为空或纯空白时<b>整段消失</b>，既不变文本也不记录；
  *         而值解析不了的表情（{@code {face=abc}}）反而<b>原样留成文本</b>——
  *         两种「填错了」走的是两条相反的路</li>
  *     <li>认不出的占位符原样留成文本，不报错</li>
@@ -37,6 +37,60 @@ class OneBotMessageConverterTest {
     private String convert(String content) {
         JSONArray elements = converter.convert(content);
         return elements.toJSONString();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "{image_url=file:///etc/passwd}", "{image_url=ftp://example.com/a.png}",
+            "{image_path=/etc/passwd}", "{image_path=/a/../b.png}", "{image_path=a.png}",
+            "{image_path=/a/..hidden.png}"
+    })
+    @DisplayName("非 HTTP 图片网址与非法图片路径保留为文字，不交给机器人读取")
+    void unsafeImageStaysText(String placeholder) {
+        assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"" + placeholder + "\"}}]", convert(placeholder));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "/opt/a.png", "/opt/a.jpg", "/opt/a.jpeg", "/opt/a.gif", "/opt/a.webp", "/opt/a.bmp", "/opt/a.PNG",
+            "C:\\images\\a.png", "C:/images/a.png", "C:\\a.png"
+    })
+    @DisplayName("本机图片路径只显示原文，不让机器人读取本机文件")
+    void localImagePathStaysText(String path) {
+        String placeholder = "{image_path=" + path + "}";
+        JSONArray segments = converter.convert(placeholder);
+        assertEquals(1, segments.size());
+        assertEquals("text", segments.getJSONObject(0).getString("type"));
+        assertEquals(placeholder, segments.getJSONObject(0).getJSONObject("data").getString("text"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "/\\server\\share\\a.png", "/\\\\server\\share\\a.png", "/\\?\\UNC\\h\\s\\a.png",
+            "/%5C%5Cserver/share/a.png", "/%2F%2Fhost/share/a.png", "/a/%2E%2E/b.png",
+            "file:///opt/a.png", " /opt/a.png", "/opt/a.png "
+    })
+    @DisplayName("混用斜杠、编码及其他图片路径只显示原文，不让机器人读取文件")
+    void otherImagePathStaysText(String path) {
+        String placeholder = "{image_path=" + path + "}";
+        JSONArray segments = converter.convert(placeholder);
+        assertEquals(1, segments.size());
+        assertEquals("text", segments.getJSONObject(0).getString("type"));
+        assertEquals(placeholder, segments.getJSONObject(0).getJSONObject("data").getString("text"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "\\\\server\\images\\a.png", "\\\\?\\UNC\\server\\images\\a.png",
+            "\\\\?\\C:\\images\\a.png", "\\\\.\\C:\\images\\a.png", "//host/share/a.png"
+    })
+    @DisplayName("网络共享与设备图片路径只显示文字，不读取远端或设备文件")
+    void remoteImagePathStaysText(String path) {
+        String placeholder = "{image_path=" + path + "}";
+        JSONArray segments = converter.convert(placeholder);
+        assertEquals(1, segments.size());
+        assertEquals("text", segments.getJSONObject(0).getString("type"));
+        assertEquals(placeholder, segments.getJSONObject(0).getJSONObject("data").getString("text"));
     }
 
     @Nested
@@ -107,7 +161,7 @@ class OneBotMessageConverterTest {
     }
 
     @Nested
-    @DisplayName("三种图片")
+    @DisplayName("图片与旧路径写法")
     class Image {
         @Test
         @DisplayName("网络图片直接用 URL 当 file")
@@ -117,9 +171,9 @@ class OneBotMessageConverterTest {
         }
 
         @Test
-        @DisplayName("本地图片补 file:// 前缀")
+        @DisplayName("本地图片写法原样显示文字，不生成读取文件的图片段")
         void pathImage() {
-            assertEquals("[{\"type\":\"image\",\"data\":{\"file\":\"file:///opt/a.jpg\"}}]",
+            assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"{image_path=/opt/a.jpg}\"}}]",
                     convert("{image_path=/opt/a.jpg}"));
         }
 
@@ -131,11 +185,14 @@ class OneBotMessageConverterTest {
         }
 
         @Test
-        @DisplayName("⚠️ 三种图片的值留空时整段消失, 不留文本")
-        void blankImageValueIsDropped() {
+        @DisplayName("三种图片的值留空时整段消失")
+        void blankImageValues() {
             assertEquals("[]", convert("{image_url=}"));
+            assertEquals("[]", convert("{image_url=   }"));
             assertEquals("[]", convert("{image_path=}"));
+            assertEquals("[]", convert("{image_path=   }"));
             assertEquals("[]", convert("{image_base64=}"));
+            assertEquals("[]", convert("{image_base64=   }"));
         }
     }
 

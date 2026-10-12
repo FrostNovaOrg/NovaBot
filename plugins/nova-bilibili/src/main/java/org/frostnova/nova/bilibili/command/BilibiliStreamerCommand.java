@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.command;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
@@ -59,7 +60,7 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
         if (StringUtil.isNotBlank(keyword)) {
             Matched matched = match(candidates, keyword);
             if (matched == null) {
-                return Resolved.failed(here + "没有配置「" + keyword + "」的推送，当前可选：\n" + describe(candidates));
+                return Resolved.failed(here + "没有配置「" + MessagePlaceholders.escapeExternalText(keyword) + "」的推送，当前可选：\n" + describe(candidates));
             }
             if (matched.byArchivedName()) {
                 PushUser streamer = matched.streamer();
@@ -131,13 +132,15 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
      * 同一趟里多位对上时，取配置里靠前的那位。
      */
     private Matched match(List<PushUser> candidates, String keyword) {
+        // 清单中的花括号是全角，照清单输入与输入原名都能匹配。
+        keyword = MessagePlaceholders.escapeExternalText(keyword);
         for (PushUser user : candidates) {
             if (String.valueOf(user.getUid()).equals(keyword)) {
                 return new Matched(user, false);
             }
         }
         for (PushUser user : candidates) {
-            if (StringUtil.isNotBlank(user.getUname()) && user.getUname().equals(keyword)) {
+            if (StringUtil.isNotBlank(user.getUname()) && MessagePlaceholders.escapeExternalText(user.getUname()).equals(keyword)) {
                 return new Matched(user, false);
             }
         }
@@ -146,12 +149,12 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
                 continue;
             }
             String uname = unameOf(user);
-            if (StringUtil.isNotBlank(uname) && uname.equals(keyword)) {
+            if (StringUtil.isNotBlank(uname) && MessagePlaceholders.escapeExternalText(uname).equals(keyword)) {
                 return new Matched(user, true);
             }
         }
         for (PushUser user : candidates) {
-            if (StringUtil.isNotBlank(user.getUname()) && user.getUname().contains(keyword)) {
+            if (StringUtil.isNotBlank(user.getUname()) && MessagePlaceholders.escapeExternalText(user.getUname()).contains(keyword)) {
                 return new Matched(user, false);
             }
         }
@@ -160,7 +163,7 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
                 continue;
             }
             String uname = unameOf(user);
-            if (StringUtil.isNotBlank(uname) && uname.contains(keyword)) {
+            if (StringUtil.isNotBlank(uname) && MessagePlaceholders.escapeExternalText(uname).contains(keyword)) {
                 return new Matched(user, true);
             }
         }
@@ -186,16 +189,21 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
         StringBuilder text = new StringBuilder();
         for (PushUser user : candidates) {
             String uname = unameOf(user);
-            text.append("· ").append(StringUtil.isBlank(uname) ? "未知主播" : uname)
+            text.append("· ").append(StringUtil.isBlank(uname) ? "未知主播" : MessagePlaceholders.escapeExternalText(uname))
                     .append("（").append(user.getUid()).append("）\n");
         }
         return text.toString().trim();
     }
 
     /**
-     * 主播的展示名
+     * 消息正文中的主播展示名，花括号已换成全角
      */
     protected String nameOf(PushUser streamer) {
+        return MessagePlaceholders.escapeExternalText(rawNameOf(streamer));
+    }
+
+    /** 主播的原始展示名，供画图使用；没有昵称时显示 uid。 */
+    protected String rawNameOf(PushUser streamer) {
         String uname = unameOf(streamer);
         return StringUtil.isBlank(uname) ? String.valueOf(streamer.getUid()) : uname;
     }

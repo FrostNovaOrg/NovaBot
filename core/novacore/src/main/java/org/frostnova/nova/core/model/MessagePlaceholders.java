@@ -22,6 +22,15 @@ public final class MessagePlaceholders {
     }
 
     /**
+     * 外来文字进入消息正文前，将花括号换成全角，避免执行消息占位符或继续展开模板。
+     * @param text 外来文字，允许为 null
+     * @return 保留其余字符的文字；null 仍返回 null
+     */
+    public static String escapeExternalText(String text) {
+        return text == null ? null : text.replace('{', '｛').replace('}', '｝');
+    }
+
+    /**
      * 消息分条
      */
     public static final String NEXT = "{next}";
@@ -37,8 +46,10 @@ public final class MessagePlaceholders {
     public static final String IMAGE_URL_PREFIX = "{image_url=";
 
     /**
-     * 本地图片
+     * 旧本地图片前缀，仅为插件源码兼容保留。
+     * @deprecated 转换器不再支持本地图片写法，请改用 {@link #IMAGE_BASE64_PREFIX}。
      */
+    @Deprecated
     public static final String IMAGE_PATH_PREFIX = "{image_path=";
 
     /**

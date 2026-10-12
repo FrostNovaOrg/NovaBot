@@ -102,7 +102,7 @@ public class BilibiliRoomDataCommand extends BilibiliScopedDataCommand {
         }
 
         BilibiliDataQueryPainter.Header header = new BilibiliDataQueryPainter.Header(
-                nameOf(streamer), subtitle(scope, platform, uid), streamer.getFace());
+                rawNameOf(streamer), subtitle(scope, platform, uid), streamer.getFace());
 
         // 没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁：
         // 图里虽然也有主播名，但看图的人未必会去核对，而猜错了的那次正是最该被核对的

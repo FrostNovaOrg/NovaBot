@@ -53,6 +53,22 @@ class BilibiliLiveOffPushHandlerTest {
     }
 
     @Test
+    @DisplayName("下播通知中的主播昵称只显示文字，不提醒、发图或拆条")
+    void sourcePlaceholdersStayText() {
+        PushMessage message = pushMessage();
+        message.getParamsJsonObject().put("message", "{uname}|{url}");
+        handler.handle(new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L,
+                "{at=all}{at=123}{image_path=/opt/a.png}{next}{url}", 20002L)), message);
+        String content = sentContent();
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertEquals("｛at=all｝｛at=123｝｛image_path=/opt/a.png｝｛next｝｛url｝|https://live.bilibili.com/20002", content);
+    }
+
+    @Test
     @DisplayName("时长可得时默认模板应渲染出直播时长")
     void rendersDurationWhenAvailable() {
         when(liveDataService.getLiveStartTime(anyString(), anyLong())).thenReturn(Optional.of(1_000_000L));
@@ -91,6 +107,8 @@ class BilibiliLiveOffPushHandlerTest {
     // 故障：下播仍提醒全体，或去掉旧提醒后多发一条空消息。
     @ParameterizedTest
     @CsvSource({
+            "all,{at=123 }{next}正文", "all_or_subscribers,前{at=abc}正文后",
+            "all,{at=123}{next}正文{at=456}", "all_or_subscribers,前{at=123}正文{at=456}后",
             "all,正文", "all_or_subscribers,正文",
             "all,{at=all}{next}正文", "all_or_subscribers,{at=all}{next}正文",
             "all,前{at}正文{at=all}后", "all_or_subscribers,前{at}正文{at=all}后",

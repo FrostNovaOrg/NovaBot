@@ -113,6 +113,18 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("文字报告的主播名与舰长昵称保留为文字占位符")
+    void textReportEscapesNames() {
+        BilibiliLiveReportPainter hooked = painterWithGuards(Optional.of(List.of(
+                new GuardMember(11L, "{at=123}{next}{image_path=/opt/a.png}", 3, 100))));
+        String text = hooked.textReport(PLATFORM,
+                new LiveStreamerInfo(STREAMER.getUid(), "{at=all}", STREAMER.getRoomId()),
+                BilibiliLiveReportOptions.of(null, true));
+        assertTrue(text.contains("｛at=all｝"), text);
+        assertTrue(text.contains("｛at=123｝｛next｝｛image_path=/opt/a.png｝"), text);
+    }
+
+    @Test
     @DisplayName("有完整数据时应绘制出报告")
     void paintsFullReport() {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);

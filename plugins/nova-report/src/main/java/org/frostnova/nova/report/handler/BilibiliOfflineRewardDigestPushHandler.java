@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.handler;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.event.live.BilibiliOfflineRewardDigestEvent;
@@ -86,12 +87,12 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
                     log.warn("{} 的打赏播报图片绘制失败, 改发文字版", event.getSource().getUname());
-                    return painter.textDigest(event, showRevenue);
+                    return MessagePlaceholders.escapeExternalText(painter.textDigest(event, showRevenue));
                 });
 
         String template = params.getString("message");
         String content = PushHandlerSupport.replaceOrDropClause(template, "{list}",
-                        painter.renderList(event, showRevenue))
+                        MessagePlaceholders.escapeExternalText(painter.renderList(event, showRevenue)))
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{picture}", picture);

@@ -54,6 +54,27 @@ import static org.mockito.Mockito.*;
 @DisplayName("QQ 告警通道")
 class QqAlertChannelTest {
     @Test
+    @DisplayName("告警标题与正文中的占位符只显示文字，不提醒、发图或拆条")
+    void alertPlaceholdersStayText() {
+        NovaMessageSender sender = mock(NovaMessageSender.class);
+        NovaSenderService senders = mock(NovaSenderService.class);
+        when(senders.getSender("qq-onebot")).thenReturn(Optional.of(new Sender()));
+        OneBotConnectionState connections = new OneBotConnectionState();
+        markOnline(connections);
+        new QqAlertChannel(properties(PushTargetType.GROUP.getCode(), 12345L), sender, senders, connections)
+                .send("{at=all}{next}", "{image_path=/opt/a.png}{at=123}");
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender).sendAlert(captor.capture());
+        String content = captor.getValue().getContent();
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertEquals("｛at=all｝｛next｝\n｛image_path=/opt/a.png｝｛at=123｝", content);
+    }
+
+    @Test
     @DisplayName("配置完整且类型合法时应判定为可用")
     void shouldBeAvailableWithValidConfiguration() {
         OneBotAdapterPluginProperties properties = properties(PushTargetType.FRIEND.getCode(), 10000L);

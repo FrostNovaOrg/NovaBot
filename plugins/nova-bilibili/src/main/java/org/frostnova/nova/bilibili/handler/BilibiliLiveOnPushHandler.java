@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.handler;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
@@ -78,9 +79,9 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
         String cover = "";
         try {
             Room room = api.getLiveInfoByRoomId(event.getSource().getRoomId());
-            title = StringUtil.isBlank(room.getTitle()) ? "" : room.getTitle();
+            title = StringUtil.isBlank(room.getTitle()) ? "" : MessagePlaceholders.escapeExternalText(room.getTitle());
             if (StringUtil.isNotBlank(room.getCover())) {
-                cover = "{image_url=" + room.getCover() + "}";
+                cover = "{image_url=" + MessagePlaceholders.escapeExternalText(room.getCover()) + "}";
             }
         } catch (Exception e) {
             log.error("获取直播间 {} 的标题与封面失败: {}", event.getSource().getRoomIdString(), e.getMessage());

@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.command.builtin;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandReply;
@@ -82,17 +83,17 @@ public abstract class ToggleCommand implements NovaCommand {
             // 他会以为整条命令都没配好，而要配的是累计数据这一件事
             NovaCommand unavailable = first(target, item -> !item.availableFor(probe));
             if (unavailable != null) {
-                return CommandReply.of(CommandContext.quoted(asked(unavailable, probe, target))
+                return CommandReply.of(MessagePlaceholders.escapeExternalText(CommandContext.quoted(asked(unavailable, probe, target)))
                         + "在本机没开，不用开关它，"
                         + "把它要的能力配好之后会自动回来");
             }
             NovaCommand hidden = first(target, item -> !item.availableIn(probe));
             if (hidden != null) {
-                return CommandReply.of(CommandContext.quoted(asked(hidden, probe, target))
+                return CommandReply.of(MessagePlaceholders.escapeExternalText(CommandContext.quoted(asked(hidden, probe, target)))
                         + "在" + probe.here() + "用不上，"
                         + "菜单里也没有它，不用开关它");
             }
-            return CommandReply.of("没有名为「" + target + "」的命令，发送「菜单」可查看全部命令");
+            return CommandReply.of("没有名为「" + MessagePlaceholders.escapeExternalText(target) + "」的命令，发送「菜单」可查看全部命令");
         }
         if (!command.disableable()) {
             return CommandReply.of("「" + command.name() + "」不可开关");
@@ -100,7 +101,7 @@ public abstract class ToggleCommand implements NovaCommand {
 
         List<String> keys = command.usageKeys(probe);
         if (keys.isEmpty()) {
-            return CommandReply.of("「" + target + "」没有可开关的用法");
+            return CommandReply.of("「" + MessagePlaceholders.escapeExternalText(target) + "」没有可开关的用法");
         }
 
         boolean changed = false;
@@ -111,7 +112,7 @@ public abstract class ToggleCommand implements NovaCommand {
             changed |= one;
         }
 
-        String joined = CommandContext.quoted(keys);
+        String joined = MessagePlaceholders.escapeExternalText(CommandContext.quoted(keys));
         if (!changed) {
             return CommandReply.of(joined + "本来就是" + (enabling() ? "启用" : "禁用") + "状态");
         }

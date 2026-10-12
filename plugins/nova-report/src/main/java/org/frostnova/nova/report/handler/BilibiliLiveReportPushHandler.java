@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.handler;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.handler.PushHandlerSupport;
@@ -82,7 +83,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
                     log.warn("{} 的下播报告图片绘制失败, 改发文字版", event.getSource().getUname());
-                    return painter.textReport(event.getPlatform(), event.getSource(), options);
+                    return MessagePlaceholders.escapeExternalText(painter.textReport(event.getPlatform(), event.getSource(), options));
                 });
 
         String template = params.getString("message");

@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -219,6 +220,59 @@ class BilibiliStreamerChoiceCorpusTest {
                     assertTrue(said.contains(expected),
                             corpus.name() + "：缺「" + expected + "」，实际说了「" + said + "」");
                 }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "{at=all}", "{at=123}", "{image_path=/opt/a.png}",
+            "{image_url=https://example.com/a.png}", "{next}", "{face=1}", "{image_base64=QUJD}"
+    })
+    @DisplayName("点名关键字中的占位符只显示文字，不提醒、发图或拆条")
+    void keywordPlaceholdersStayText(String keyword) {
+        Fixture fixture = new Fixture(PushTargetType.GROUP, 1, none(), none());
+        String content = fixture.feed(ASKER, keyword);
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertTrue(content.contains(keyword.replace('{', '｛').replace('}', '｝')), content);
+        assertEquals(1, org.frostnova.nova.core.model.Message.create(PLATFORM, PushTargetType.GROUP, GROUP, content).size());
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @DisplayName("候选清单中的花括号名字只显示文字，照清单或原名输入都能点中")
+    void streamerNamesStayText(boolean archived) {
+        PushUser first = streamer(1);
+        first.setUname("{at=all}{next}{image_path=/opt/a.png}");
+        PushUser second = streamer(2);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(first, second));
+        LiveDataService liveData = mock(LiveDataService.class);
+        String originalName = first.getUname();
+        LiveSessionArchive archive = mock(LiveSessionArchive.class);
+        if (archived) {
+            first.setUname(null);
+            when(archive.latestUname("bilibili", first.getUid())).thenReturn(Optional.of(originalName));
+        }
+        ProbeCommand command = new ProbeCommand(dataSource, new BilibiliStreamerChoice(liveData, archive));
+        String displayedName = "｛at=all｝｛next｝｛image_path=/opt/a.png｝";
+        for (String keyword : List.of("", "没有这位", originalName, displayedName, "｛at=all｝")) {
+            String content = command.execute(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
+                    command.name(), keyword.isEmpty() ? List.of() : List.of(keyword), "")).content();
+            var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+            assertFalse(segments.isEmpty());
+            for (int i = 0; i < segments.size(); i++) {
+                assertEquals("text", segments.getJSONObject(i).getString("type"), content);
+            }
+            assertTrue(content.contains("｛at=all｝｛next｝｛image_path=/opt/a.png｝"), content);
+            if (List.of(originalName, displayedName, "｛at=all｝").contains(keyword)) {
+                String notice = archived ? "本次用的是：" + displayedName
+                        + "（TA 的昵称没查回来，按最近一场的昵称认的）\n" : "";
+                assertEquals(notice + "已出图：" + displayedName, content);
             }
         }
     }
