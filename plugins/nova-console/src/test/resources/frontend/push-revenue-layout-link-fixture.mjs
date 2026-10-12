@@ -237,9 +237,9 @@ const OPTIONS = [
   {key: 'super_chat_ranking', label: '醒目留言名单', description: '发过醒目留言的观众，每人一行带原文，展示前几人，0 为不展示',
     type: 'INTEGER', defaultValue: 10, min: 0, max: 20,
     revenueVisibility: 'ONLY_WHEN_SHOWN', revenueNote: '隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费'},
-  {key: 'box_ranking', label: '盲盒榜', description: '每人开了几个、盈亏多少，展示前几名，0 为不展示',
+  {key: 'box_ranking', label: '盲盒盈亏榜', description: '每人本场盲盒盈亏多少，展示前几名，0 为不展示',
     type: 'INTEGER', defaultValue: 0, min: 0, max: 20,
-    revenueVisibility: 'RESTYLED_WHEN_HIDDEN', revenueNote: '隐藏金额的会话里只写个数，不写盈亏'},
+    revenueVisibility: 'ONLY_WHEN_SHOWN', revenueNote: '隐藏金额的会话里整榜不出：每一行都是某人的盲盒盈亏，是金额'},
 ];
 
 const TARGET = {platform: 'qq-onebot', type: 1, num: 12345};
@@ -344,9 +344,9 @@ if (push && store) {
   await paintPage();
 }
 
-await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留言名单灰掉并带原因，大航海名单可点，变样的三项只加说明', async () => {
+await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留言名单、盲盒盈亏榜灰掉并带原因，大航海名单可点，变样的两项只加说明', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
-  const locked = ['礼物列表', '流水排行', '醒目留言名单'];
+  const locked = ['礼物列表', '流水排行', '醒目留言名单', '盲盒盈亏榜'];
   for (const label of locked) {
     const input = layoutInput(label);
     if (!input) throw new Error('版式区没有「' + label + '」这一项');
@@ -365,7 +365,7 @@ await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留�
   }
   const open = layoutInput('本场开通大航海名单');
   if (!open || open.disabled === true) throw new Error('隐藏金额的会话里「本场开通大航海名单」该可点却灰着');
-  for (const label of ['数据卡片', '互动曲线', '盲盒榜']) {
+  for (const label of ['数据卡片', '互动曲线']) {
     const input = layoutInput(label);
     if (!input || input.disabled === true) throw new Error('「' + label + '」只是变样，不该灰');
   }
@@ -376,7 +376,7 @@ await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留�
   if (reasonOf('弹幕词云')) throw new Error('「弹幕词云」不该带原因行');
 });
 
-await ask('② 草稿拨到显示金额（还没保存）：三项当场可点、大航海名单转灰，预览与图下说明都按草稿走', async () => {
+await ask('② 草稿拨到显示金额（还没保存）：四项当场可点、大航海名单转灰，预览与图下说明都按草稿走', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   const toggle = revenueSwitch();
   if (!toggle) throw new Error('本群设置里没找到金额开关');
@@ -384,7 +384,7 @@ await ask('② 草稿拨到显示金额（还没保存）：三项当场可点�
   flip(toggle);
   await settle();
 
-  for (const label of ['礼物列表', '流水排行', '醒目留言名单']) {
+  for (const label of ['礼物列表', '流水排行', '醒目留言名单', '盲盒盈亏榜']) {
     const input = layoutInput(label);
     if (!input || input.disabled !== false) throw new Error('草稿拨到显示后「' + label + '」仍灰着');
   }
@@ -407,7 +407,7 @@ await ask('③ 草稿拨回隐藏（不保存）：灰的亮回来，预览与�
   flip(toggle);
   await settle();
 
-  for (const label of ['礼物列表', '流水排行', '醒目留言名单']) {
+  for (const label of ['礼物列表', '流水排行', '醒目留言名单', '盲盒盈亏榜']) {
     const input = layoutInput(label);
     if (!input || input.disabled !== true) throw new Error('拨回隐藏后「' + label + '」没灰回去');
   }

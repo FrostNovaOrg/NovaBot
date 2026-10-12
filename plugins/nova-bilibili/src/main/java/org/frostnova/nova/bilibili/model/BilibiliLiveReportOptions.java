@@ -150,7 +150,7 @@ public class BilibiliLiveReportOptions {
     private int superChatRanking = DEFAULT_SUPER_CHAT_LIST;
 
     /**
-     * 盲盒榜展示前多少名，0 为不展示。开了几个与盈亏多少合在一榜，每人一行
+     * 盲盒盈亏榜展示前多少名，0 为不展示。按每人本场盲盒盈亏排，每行只写盈亏；隐藏金额时整榜不出
      */
     private int boxRanking;
 
@@ -211,9 +211,9 @@ public class BilibiliLiveReportOptions {
      * 该显示的区块完全相同，该不该带金额则完全相反。
      * <p>
      * 关闭后并非简单地少画几块：卡片改用人数、条数等非金额表述，流水曲线保留形状但不标峰值，
-     * 收到的礼物整段不画，而流水排行与醒目留言名单整榜不出——
-     * 那两张榜的每一行都是「某人花了多少钱」，去掉数字也仍然在排消费。
-     * 盲盒榜照出、只写个数（个数不是消费额）；本场开通大航海名单也照旧画：
+     * 收到的礼物整段不画，而流水排行、醒目留言名单与盲盒盈亏榜整榜不出——
+     * 前两张榜的每一行都是「某人花了多少钱」，去掉数字也仍然在排消费；盲盒盈亏榜每一行是某人的盈亏，也是金额。
+     * 本场开通大航海名单照旧画：
      * 它不带金额，正是隐藏金额的会话里仅剩的那份名单。
      */
     private boolean showRevenue = true;
@@ -311,11 +311,11 @@ public class BilibiliLiveReportOptions {
                     DEFAULTS.superChatRanking, 0, MAX_RANKING_COUNT),
                     HandlerOption.RevenueVisibility.ONLY_WHEN_SHOWN,
                     "隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费"),
-            // 盲盒榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多一块空白
-            revenue(HandlerOption.integer("box_ranking", "盲盒榜", "每人开了几个、盈亏多少，展示前几名，0 为不展示",
+            // 盲盒盈亏榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多一块空白
+            revenue(HandlerOption.integer("box_ranking", "盲盒盈亏榜", "每人本场盲盒盈亏多少，展示前几名，0 为不展示",
                     DEFAULTS.boxRanking, 0, MAX_RANKING_COUNT),
-                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
-                    "隐藏金额的会话里只写个数，不写盈亏"));
+                    HandlerOption.RevenueVisibility.ONLY_WHEN_SHOWN,
+                    "隐藏金额的会话里整榜不出：每一行都是某人的盲盒盈亏，是金额"));
 
     /**
      * 给一项标上随金额：只在上面那张表里用，复制其余各栏、换掉随金额两栏

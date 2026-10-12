@@ -103,12 +103,12 @@ class BilibiliLiveReportDrawnTextTest {
     }
 
     @Test
-    @DisplayName("排行得分：最长的样例得分（盲盒榜第 1 行）右端不越右边距")
+    @DisplayName("排行得分：最长的样例得分（流水排行第 1 行）右端不越右边距")
     void longestScoreLabelStaysInsideRightMargin(@TempDir Path dir) throws Exception {
         paintReport(dir, true);
 
-        // 合并后的盲盒榜第 1 行：个数与盈亏一行两个数，是各榜里最长的得分文案
-        String expected = "11 个 · +¥18.6";
+        // 流水排行第 1 行：演示数据里位数最多的金额，是各榜里最长的得分文案
+        String expected = "¥2150.4";
         int rightMargin = ReportSharedStyle.WIDTH - ReportSharedStyle.MARGIN;
 
         List<Integer> offenders = new ArrayList<>();
@@ -125,7 +125,7 @@ class BilibiliLiveReportDrawnTextTest {
 
         List<String> red = new ArrayList<>();
         try {
-            assertTrue(drawn, "盲盒榜第 1 行的得分文字没画上去，这格没量到东西");
+            assertTrue(drawn, "流水排行第 1 行的得分文字没画上去，这格没量到东西");
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
         }
