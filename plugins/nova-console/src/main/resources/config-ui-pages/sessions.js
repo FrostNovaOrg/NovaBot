@@ -128,6 +128,26 @@ let helpKeysBound = false;
 
 /** 此刻开着的那块说明怎么收起来；没开着时是空 */
 let closeHelp = null;
+let activeHelpButton = null;
+
+/** 滚动后仍贴着问号；按钮已移除或滚出视口时收起 */
+function placeHelp() {
+  if (!activeHelpButton || !helpTip || helpTip.hidden) return;
+  const rect = activeHelpButton.getBoundingClientRect();
+  if (!activeHelpButton.isConnected || rect.bottom < 0 || rect.top > window.innerHeight
+      || rect.right < 0 || rect.left > window.innerWidth) {
+    closeHelp();
+    return;
+  }
+  const inset = 8;
+  const width = helpTip.offsetWidth || 280;
+  const below = rect.bottom + 6;
+  const top = below + helpTip.offsetHeight <= window.innerHeight - inset
+    ? below : Math.max(inset, rect.top - helpTip.offsetHeight - 6);
+  helpTip.style.position = 'fixed';
+  helpTip.style.left = Math.max(inset, Math.min(rect.left, window.innerWidth - width - inset)) + 'px';
+  helpTip.style.top = top + 'px';
+}
 
 function tipNode() {
   if (!helpTip) {
@@ -147,6 +167,21 @@ function bindHelpKeys() {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && closeHelp) closeHelp();
   });
+  document.addEventListener('pointerdown', event => {
+    if (activeHelpButton && !activeHelpButton.contains(event.target)
+        && !helpTip.contains(event.target)) closeHelp();
+  });
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('scroll', placeHelp, {capture: true, passive: true});
+    window.addEventListener('resize', placeHelp);
+    window.addEventListener('hashchange', () => { if (closeHelp) closeHelp(); });
+  }
+  if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(() => {
+      if (activeHelpButton && !activeHelpButton.isConnected) closeHelp();
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
+  }
 }
 
 /**
@@ -167,7 +202,9 @@ function helpButton(title, text) {
 
   const hide = () => {
     pinned = false;
-    if (closeHelp === hide) closeHelp = null;
+    if (closeHelp !== hide) return;
+    closeHelp = null;
+    activeHelpButton = null;
     btn.setAttribute('aria-expanded', 'false');
     btn.removeAttribute('aria-describedby');
     tipNode().hidden = true;
@@ -176,19 +213,13 @@ function helpButton(title, text) {
   const show = () => {
     if (closeHelp && closeHelp !== hide) closeHelp();
     closeHelp = hide;
+    activeHelpButton = btn;
     const tip = tipNode();
     btn.setAttribute('aria-expanded', 'true');
     btn.setAttribute('aria-describedby', tip.id);
     tip.textContent = text;
     tip.hidden = false;
-    // 贴着按钮下面；窄屏上贴着视口右边，不顶出屏幕
-    const rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : {bottom: 0, left: 0};
-    const width = tip.offsetWidth || 280;
-    const view = (document.documentElement && document.documentElement.clientWidth) || 360;
-    const left = Math.max(8, Math.min(rect.left || 0, view - width - 8));
-    tip.style.position = 'fixed';
-    tip.style.left = left + 'px';
-    tip.style.top = ((rect.bottom || 0) + 6) + 'px';
+    placeHelp();
   };
 
   btn.addEventListener('focus', () => {
@@ -214,9 +245,7 @@ function helpButton(title, text) {
 
 function revenueRow(host, ctx) {
   const body = row(host, ctx, '金额可见', ctx.summary.revenue.text,
-    '关掉后，下播报告不显示收益、卡片改用人数与条数、礼物与醒目留言榜整榜不出；'
-    + '数据查询命令同样不再回金额。'
-    + '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
+    '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
     + '只去掉右侧的数字，仍然是在公开排消费。');
 
   const wanted = revenueDraft(ctx.target);

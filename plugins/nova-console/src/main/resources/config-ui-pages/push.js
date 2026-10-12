@@ -149,7 +149,6 @@ const PAGE_STYLE = `
   border-radius:var(--r-ctl);font-family:var(--mono);font-size:13.5px;white-space:pre-wrap;
   word-break:break-all}
 /* 本群设置：四行摘要 */
-/* 本群设置：四行摘要 */
 .crow{border-top:1px solid var(--line)}
 .crow:first-of-type{border-top:none}
 .crow>summary{display:flex;align-items:baseline;gap:10px;padding:10px 0;cursor:pointer;
