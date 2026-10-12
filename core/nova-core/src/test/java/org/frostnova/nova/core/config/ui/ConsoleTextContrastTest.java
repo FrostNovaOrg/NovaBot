@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 登录错误字、危险按钮上的字、淡底上的选中项与辅助字又看不清了（不到 WCAG 的 4.5:1）；
  * 日志页上今天没有条目的分类小标签，字看不清。
  * <p>
- * 读 app.css 与 login.html 的三块色表（浅色、跟随系统的暗色、手动暗色），字色与底色
+ * 读 product-ui.css 与 login.html 的三块色表（浅色、跟随系统的暗色、手动暗色），字色与底色
  * 都从组件规则里现取 {@code color:var(--x)}、{@code background:var(--y)}，
  * 半透明底按 alpha 叠在下面那层上再算。规则改引了别的色，量的也跟着是新引的那个。
  * 规则里写了 opacity 的算量不出：它把字和底一起淡掉，色表里的字色已不是画出来的那个。
@@ -87,7 +87,8 @@ class ConsoleTextContrastTest {
     void textStaysReadableInBothThemes() throws IOException {
         List<String> bad = new ArrayList<>();
         List<String> read = new ArrayList<>();
-        int measured = measure("app.css", APP, bad, read) + measure("login.html", LOGIN, bad, read);
+        int measured = measure("app.css", "product-ui.css", APP, bad, read)
+                + measure("login.html", "login.html", LOGIN, bad, read);
 
         System.out.println("对比度读数：\n  " + String.join("\n  ", read));
         assertTrue(measured >= (APP.size() + LOGIN.size()) * 3,
@@ -95,9 +96,10 @@ class ConsoleTextContrastTest {
         assertTrue(bad.isEmpty(), "这些字不到 " + MIN + ":1:\n" + String.join("\n", bad));
     }
 
-    private static int measure(String file, List<Spot> spots, List<String> bad, List<String> read) throws IOException {
+    private static int measure(String file, String paletteFile, List<Spot> spots,
+                               List<String> bad, List<String> read) throws IOException {
         String text = Files.readString(UI.resolve(file), StandardCharsets.UTF_8);
-        Map<String, Map<String, String>> themes = themes(file, text, bad);
+        Map<String, Map<String, String>> themes = themes(paletteFile, Files.readString(UI.resolve(paletteFile), StandardCharsets.UTF_8), bad);
         int measured = 0;
         for (Spot spot : spots) {
             String body = rule(text, spot.selector());

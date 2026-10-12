@@ -21,6 +21,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("配了部署前缀时，页面里的地址带上前缀")
 class ConfigUiPrefixPageTest {
 
+    /** 色表地址丢了部署前缀时会取不到，整页失去配色；也须先于组件样式加载。 */
+    @Test
+    @DisplayName("控制台色表带部署前缀，并先于组件样式加载")
+    void productPaletteLoadsBeforeComponentsWithPrefix() throws Exception {
+        for (String prefix : List.of("/novabot", "")) {
+            String html = ConfigUiPrefixPages.index(prefix, prefix);
+            String palette = "<link rel=\"stylesheet\" href=\"" + prefix
+                    + "/config/assets/product-ui.css\">";
+            String components = "<link rel=\"stylesheet\" href=\"" + prefix
+                    + "/config/assets/app.css\">";
+            assertTrue(html.contains(palette), "色表地址未带部署前缀，整页配色取不到: " + palette);
+            assertTrue(html.contains(components) && html.indexOf(palette) < html.indexOf(components),
+                    "色表必须排在组件样式之前");
+        }
+    }
+
     @Test
     @DisplayName("控制台页：属性上的本站地址一律以前缀起头，不剩裸的 /config")
     void indexAddressesCarryPrefix() throws Exception {

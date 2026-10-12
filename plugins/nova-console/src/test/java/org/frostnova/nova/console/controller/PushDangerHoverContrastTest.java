@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （它带着 ghost 与 danger 两个类，宿主的 button.danger 写在 button.ghost 之后，底色取 danger 的），
  * 于是鼠标一放上去，字和底同色，按钮上什么字都看不见。
  * <p>
- * 量法照宿主那一份对比度尺：三块色表从宿主的 app.css 里取（按类路径读，不写模块目录），
+ * 量法照宿主那一份对比度尺：三块色表从宿主的 product-ui.css 里取（按类路径读，不写模块目录），
  * 不悬停时的字色、底色取宿主的 {@code button.danger}，再按先宿主、后推送页的顺序叠上
  * 所有 {@code .danger:hover} 规则里写到的字色与底色，最后按 WCAG 公式算，三套主题都要到 4.5:1。
  */
@@ -51,7 +51,7 @@ class PushDangerHoverContrastTest {
     @Test
     @DisplayName("浅色、暗色两套主题下，悬停时危险按钮的字到 4.5:1")
     void dangerButtonTextStaysReadableOnHover() throws IOException {
-        String app = hostCss();
+        String app = hostCss("app.css");
         String push = Files.readString(PUSH, StandardCharsets.UTF_8);
 
         Matcher base = Pattern.compile("(?m)^\\s*button\\.danger\\s*\\{([^}]*)\\}").matcher(app);
@@ -77,7 +77,7 @@ class PushDangerHoverContrastTest {
             }
         }
 
-        Map<String, Map<String, String>> themes = themes(app);
+        Map<String, Map<String, String>> themes = themes(hostCss("product-ui.css"));
         assertEquals(3, themes.size(), "三块色表没找全");
         List<String> read = new ArrayList<>();
         List<String> bad = new ArrayList<>();
@@ -94,9 +94,9 @@ class PushDangerHoverContrastTest {
         assertTrue(bad.isEmpty(), "这些不到 " + MIN + ":1:\n" + String.join("\n", bad));
     }
 
-    private static String hostCss() throws IOException {
-        try (InputStream in = PushDangerHoverContrastTest.class.getResourceAsStream("/config-ui/app.css")) {
-            assertNotNull(in, "类路径上没有宿主的 config-ui/app.css");
+    private static String hostCss(String name) throws IOException {
+        try (InputStream in = PushDangerHoverContrastTest.class.getResourceAsStream("/config-ui/" + name)) {
+            assertNotNull(in, "类路径上没有宿主的 config-ui/" + name);
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
