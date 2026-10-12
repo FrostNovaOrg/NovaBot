@@ -3,10 +3,12 @@
  *
  * 用户那头的毛病：窄屏上「这个通道最近推送」那张表把整页撑宽；页顶、通道一览、通道页头
  * 那三段长说明与第 4 段里那句重复，删的时候容易把讲清「共用」的那句一起删掉；左树上
- * 「N 类关着」「N 条命令被关」两颗小标一删，就看不出哪个群关了命令。
+ * 群／好友那一行从前挂着「N 类关着」「N 条命令被关」两枚小标，这一批删掉了，
+ * 删的时候别把主播那一行的「已停用」「只采集，不推送」一起抹了，也别把群行那两枚又挂回去。
  *
  * 这里量的是三件：表外面包着只在卡片里横向滚的那一层（真宽度留到测试机上量）；
- * 第 4 段那句共用说明仍在、有几位主播时列出名字；左树那两颗小标仍在。
+ * 第 4 段那句共用说明仍在、有几位主播时列出名字；群／好友那一行不挂那两枚小标，
+ * 主播那一行的两颗照在。
  *
  * 本尺真跑：假 DOM 与假 fetch 之外，整条通道页与左树走的都是产品码那一份
  * （push.js 的 showPush／renderStreamers）。只查源码里有没有某段字是不行的——
@@ -251,7 +253,6 @@ globalThis.fetch = (path, opt) => {
       platform: 'bilibili', uid: 1, _uname: '甲', enabled: true,
       targets: [{
         platform: PLATFORM, type: 1, num: GROUP_NUM, enabled: true,
-        // 只开了一类通知：另一类在左树上要挂出「N 类关着」
         messages: [{handler: 'x.LiveOn'}],
       }],
     }, {
@@ -260,6 +261,12 @@ globalThis.fetch = (path, opt) => {
         platform: PLATFORM, type: 1, num: GROUP_NUM, enabled: true,
         messages: [{handler: 'x.LiveOn'}],
       }],
+    }, {
+      // 两位不推到这个群的主播，只用来把左树主播那一行的两颗小标画出来
+      platform: 'bilibili', uid: 3, _uname: '丙', enabled: false,
+      targets: [{platform: PLATFORM, type: 1, num: 654321, enabled: true, messages: []}],
+    }, {
+      platform: 'bilibili', uid: 4, _uname: '丁', enabled: true, targets: [],
     }])});
     if (url.endsWith('/state')) return ok({
       commands: [], sessions: [SESSION], subscriptions: [], incomplete: [],
@@ -351,19 +358,29 @@ await ask('② 删长说明时第 4 段那句共用说明仍在，有几位主�
   }, '第 4 段共用说明');
 });
 
-await ask('③ 左树上「N 类关着」「N 条命令被关」两颗小标仍在', async () => {
+await ask('③ 群／好友那一行不再挂「N 类关着」「N 条命令被关」，主播那一行的两颗照在', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
-  const marks = allNodes(idNode('push-tree'))
+  const tree = idNode('push-tree');
+  const all = allNodes(tree);
+  const markTexts = all
     .filter(node => classesOf(node).includes('tn-marks'))
     .map(node => node.textContent);
-  const notices = marks.find(text => text.includes('类关着'));
-  const commands = marks.find(text => text.includes('条命令被关'));
+  const chanRows = all.filter(node => classesOf(node).includes('tchan'));
+  const chanWithMarks = chanRows
+    .filter(row => allNodes(row).some(node => classesOf(node).includes('tn-marks')));
+  const pills = markTexts.join('｜');
   same({
-    '「N 类关着」那颗小标': !!notices,
-    '「N 条命令被关」那颗小标': !!commands,
+    '群／好友那一行还挂着「N 类关着」': markTexts.some(text => text.includes('类关着')),
+    '群／好友那一行还挂着「N 条命令被关」': markTexts.some(text => text.includes('条命令被关')),
+    '群／好友那一行剩下空的小标层': chanWithMarks.length,
+    '「已停用」那颗小标': pills.includes('已停用'),
+    '「只采集，不推送」那颗小标': pills.includes('只采集，不推送'),
   }, {
-    '「N 类关着」那颗小标': true,
-    '「N 条命令被关」那颗小标': true,
+    '群／好友那一行还挂着「N 类关着」': false,
+    '群／好友那一行还挂着「N 条命令被关」': false,
+    '群／好友那一行剩下空的小标层': 0,
+    '「已停用」那颗小标': true,
+    '「只采集，不推送」那颗小标': true,
   }, '左树小标');
 });
 

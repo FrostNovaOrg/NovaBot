@@ -346,7 +346,6 @@ export function pushTree(users, sessions, handlers, directory) {
     collectOnly: ((user.targets) || []).length === 0,
     channels: ((user.targets) || []).map(target => {
       const session = sessionOf(sessions, target.platform, target.num, target.type);
-      const switches = noticeSwitches(user, target, handlers);
       return {
         num: target.num,
         platform: target.platform,
@@ -354,8 +353,6 @@ export function pushTree(users, sessions, handlers, directory) {
         typeName: typeName(session, target),
         name: channelName(session, target, directory),
         enabled: target.enabled !== false,
-        noticesOff: switches.filter(item => !item.on).length,
-        commandsOff: ((session || {}).disabled || []).length,
       };
     }),
   }));

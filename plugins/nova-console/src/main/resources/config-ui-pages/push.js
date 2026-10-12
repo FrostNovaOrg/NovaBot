@@ -743,11 +743,6 @@ function channelNode(streamer, channel) {
   const name = el('span', 'tn-nm');
   name.textContent = channel.name;
   body.appendChild(name);
-
-  const marks = el('span', 'tn-marks');
-  if (channel.noticesOff) marks.appendChild(pill(channel.noticesOff + ' 类关着'));
-  if (channel.commandsOff) marks.appendChild(pill(channel.commandsOff + ' 条命令被关', 'err'));
-  body.appendChild(marks);
   node.appendChild(body);
 
   node.addEventListener('click', () => {

@@ -15,11 +15,12 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * 推送页左树：群名后面的小标不许被挤成一字一行的竖条
+ * 推送页左树：名字后面的小标不许被挤成一字一行的竖条
  * <p>
- * 左栏 236px 宽，群名带两颗小标（「N 类关着」「N 条命令被关」）摆不下同一行；从前那组小标
- * 封顶 96px，两颗挤进去字被压成一两个字一行竖着排。夹具按字面宽算左树各行，量的是
- * 「一颗小标一行字、放不下整组换到名字下面一行并与名字左对齐、名字截断也留四五个字」。
+ * 主播那一行最多一颗小标（「已停用」或「只采集，不推送」）；群／好友那一行从前还挂着
+ * 「N 类关着」「N 条命令被关」两枚，这一批删掉了。夹具按字面宽算左树各行，量的是
+ * 「一颗小标一行字、放不下整组换到名字下面一行并与名字左对齐、名字截断也留四五个字」，
+ * 并盯着群／好友那一行不再有小标那一层。
  * <p>
  * 小标的描边记在核心界面那份样式表里，那件不在本模块。这里由类加载器从测试类路径上把它
  * 取到（取不到就红），把绝对路径经环境变量交给夹具——夹具那边见不到路径时也红，不跳过。
@@ -34,7 +35,7 @@ class PushTreeMarksTest {
     private static final Path FIXTURE = Path.of("src/test/resources/frontend/push-tree-marks-fixture.mjs");
 
     @Test
-    @DisplayName("小标一行字不裁不折，放不下整组换到名字下面一行")
+    @DisplayName("小标一行字不裁不折，放不下整组换到名字下面一行；群行不再挂小标")
     void pushTreeMarksStayOnOneLine() throws IOException, InterruptedException, URISyntaxException {
         URL url = PushTreeMarksTest.class.getClassLoader().getResource("config-ui/app.css");
         assertNotNull(url, "核心界面的 app.css 不在本模块测试的类路径上，这一格什么也没量");
