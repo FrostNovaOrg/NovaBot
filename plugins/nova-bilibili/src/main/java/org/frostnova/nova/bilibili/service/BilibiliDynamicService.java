@@ -105,6 +105,9 @@ public class BilibiliDynamicService {
      */
     private volatile Long checkedLoginUid;
 
+    /** 最近确定的登录账号，用于每次换号只说明一次跳过关注自己。 */
+    private volatile Long observedFollowLoginUid;
+
     /**
      * 下一次复核关注列表的时刻，为空表示还没完整核对过
      */
@@ -283,6 +286,16 @@ public class BilibiliDynamicService {
         Long loginUid = accountService.getLoginUid();
         if (loginUid != null && !java.util.Objects.equals(loginUid, checkedLoginUid)) {
             followRejections.clear();
+        }
+        if (loginUid != null) {
+            if (!java.util.Objects.equals(loginUid, observedFollowLoginUid)) {
+                observedFollowLoginUid = loginUid;
+                if (configured.contains(loginUid)) {
+                    log.info("推送用户里有登录账号自己，自动关注跳过");
+                }
+            }
+            configuredUps.remove(loginUid);
+            followRejections.remove(loginUid);
         }
         if (configured.isEmpty()) {
             return;

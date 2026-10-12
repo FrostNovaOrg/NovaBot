@@ -391,6 +391,54 @@ class BilibiliAutoFollowTest {
     }
 
     @Test
+    @DisplayName("主播用自己的账号登录：自动关注跳过自己，健康栏正常，换号后也只说明一次")
+    void loginAccountIsNeverFollowed() {
+        // 抓的用户故障：主播拿自己的号登录时，自动关注每小时去关注自己、健康栏误报关注不了。
+        configure(LOGIN_UID, NOT_FOLLOWED);
+        BilibiliAutoFollowHealthProbe probe = new BilibiliAutoFollowHealthProbe(service);
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        when(account.getLoginUid()).thenReturn(null);
+        service.followConfiguredUps(start);
+        when(account.getLoginUid()).thenReturn(LOGIN_UID);
+        api.failingPages.add(1);
+        service.followConfiguredUps(start.plusSeconds(30));
+        service.followConfiguredUps(start.plusSeconds(60));
+        assertEquals(1, messages().stream().filter(m -> m.equals(
+                "INFO 推送用户里有登录账号自己，自动关注跳过")).count(), "关注列表暂时取不到时也不能重复说明");
+        api.failingPages.clear();
+        service.followConfiguredUps(start.plusSeconds(90));
+        for (int hour = 1; hour <= 24; hour++) {
+            service.followConfiguredUps(start.plusSeconds(90).plus(Duration.ofHours(hour)));
+        }
+        assertEquals(List.of(NOT_FOLLOWED), api.followRequests, "只能关注另一位主播，不能请求关注登录账号自己");
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "健康栏不能误报登录账号自己关注不了");
+        assertTrue(service.getFollowRejections().isEmpty(), "不能记下登录账号自己的关注失败");
+        assertEquals(1, messages().stream().filter(m -> m.equals(
+                "INFO 推送用户里有登录账号自己，自动关注跳过")).count(), "每小时复核不能重复说明跳过自己");
+
+        configure(OTHER_LOGIN_UID, NOT_FOLLOWED);
+        api.selfUid = OTHER_LOGIN_UID;
+        api.following.remove(NOT_FOLLOWED);
+        when(account.getLoginUid()).thenReturn(OTHER_LOGIN_UID);
+        Instant switchedAt = start.plus(Duration.ofHours(24)).plusSeconds(120);
+        service.followConfiguredUps(switchedAt);
+        service.followConfiguredUps(switchedAt.plus(Duration.ofHours(1)));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests, "换号后仍只关注另一位主播");
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "换号后健康栏也不能误报自己");
+        assertEquals(2, messages().stream().filter(m -> m.equals(
+                "INFO 推送用户里有登录账号自己，自动关注跳过")).count(), "换号后也只能说明一次");
+
+        // 只有自己且关注列表暂时不可用时，也应跳过，不刷说明或健康告警。
+        configure(OTHER_LOGIN_UID);
+        api.failingPages.add(1);
+        service.followConfiguredUps(switchedAt.plus(Duration.ofHours(2)));
+        service.followConfiguredUps(switchedAt.plus(Duration.ofHours(3)));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests);
+        assertEquals(HealthStatus.ok("正常"), probe.check());
+        assertEquals(2, messages().stream().filter(m -> m.contains("自动关注跳过")).count());
+    }
+
+    @Test
     @DisplayName("B 站明确拒绝：每小时跳过，满 24 小时只再试一次，重复拒绝不再报错误")
     void businessRejectionRetriesDaily() {
         // 抓的用户故障：隐私设置禁止关注时，每小时发注定失败的请求并报 ERROR。
@@ -633,6 +681,8 @@ class BilibiliAutoFollowTest {
 
         RuntimeException followFailure;
 
+        Long selfUid = LOGIN_UID;
+
         FakeRelationApi() {
             super(mock(HttpUtil.class), new NovaBilibiliProperties(), mock(BilibiliRiskMetrics.class));
             setCookies(new Cookies("placeholder-sess", "placeholder-jct", "placeholder-buvid"));
@@ -679,6 +729,9 @@ class BilibiliAutoFollowTest {
         private JSONObject follow(Map<String, Object> params) {
             long uid = ((Number) params.get("fid")).longValue();
             followRequests.add(uid);
+            if (selfUid.equals(uid)) {
+                throw new ResponseCodeException(22001, "不能关注自己");
+            }
             if (followFailure != null) {
                 throw followFailure;
             }
