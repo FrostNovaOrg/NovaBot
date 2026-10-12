@@ -124,6 +124,13 @@ public abstract class BilibiliAtSubscribeCommand extends BilibiliAtCommand {
         }
 
         AtSubscriptionService.Result result = subscriptions.subscribe(platform, num, uid, type, sender);
+        // 订上归订上：这位主播的这类通知现在一条也推不到本群时直说，
+        // 免得「会 @ 你」这句不属实——群友以为订上就能收到
+        if (result == AtSubscriptionService.Result.OK && modes.isEmpty()) {
+            return CommandReply.of("好的，订上了。不过" + nameOf(streamer) + "的" + noticeKind().noticeName()
+                    + "现在没推到" + context.here() + "，推送开了以后才会 @ 你"
+                    + (cancelOnly ? "" : "。再发「" + name() + "」可取消"));
+        }
         return switch (result) {
             case OK -> CommandReply.of(cancelOnly
                     ? "好的，" + nameOf(streamer) + typeName() + "时会 @ 你"
