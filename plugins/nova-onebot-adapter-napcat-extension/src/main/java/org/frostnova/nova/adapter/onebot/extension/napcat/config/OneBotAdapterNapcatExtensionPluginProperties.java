@@ -2,6 +2,8 @@ package org.frostnova.nova.adapter.onebot.extension.napcat.config;
 
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
+import org.frostnova.nova.core.properties.ConfigSummary;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.Getter;
 import lombok.Setter;
@@ -29,5 +31,7 @@ public class OneBotAdapterNapcatExtensionPluginProperties {
     // 键名要与 BackupAtAllAspect 上的 @ConditionalOnProperty 一起改。只改一处的话，开关看着还在，拨过去却没有任何反应。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("@全体成员 · 用完改发待办")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
+    @ConfigSummary("")
     private boolean enableBackupAtAll = true;
 }

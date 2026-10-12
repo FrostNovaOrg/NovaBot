@@ -31,6 +31,7 @@ public class EventStreamProperties {
     // 这是它默认关就该关的唯一理由。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出")
+    @ConfigSummary("事件中包含观众昵称与消费金额，请勿暴露到公网。")
     private boolean enabled = false;
 
     /**
@@ -38,6 +39,7 @@ public class EventStreamProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 路径")
+    @ConfigSummary(value = "与控制台共用服务端口。", details = false)
     private String path = "/nova/events";
 
     /**
@@ -51,6 +53,7 @@ public class EventStreamProperties {
     // 靠「本机进程直连」，因此默认关。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出要求只读口令")
+    @ConfigSummary("本机装有反向代理就必须开启：经它进来的连接看着像本机。")
     private boolean requireToken = false;
 
     /**
@@ -60,5 +63,6 @@ public class EventStreamProperties {
     // 每条含原始报文，2000 条量级在十 MB 上下。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 回补缓冲条数")
+    @ConfigSummary("所有房间共享；增大缓冲会增加内存占用。")
     private int bufferSize = 2000;
 }

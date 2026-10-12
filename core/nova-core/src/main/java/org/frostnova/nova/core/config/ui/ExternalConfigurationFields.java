@@ -1,7 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.properties.ConfigEffect;
-import org.frostnova.nova.core.config.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigLevel;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,27 +37,27 @@ public final class ExternalConfigurationFields {
         put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 地址",
                 "累计数据存储用的 Redis 地址，填了才有跨场次数据，留空则带「总」的查法提示不可用；只需本机可达，别暴露到公网，填完即时生效。");
-        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
+        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 6379, "累计数据 Redis · 端口", "Redis 端口，默认 6379。");
-        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
+        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 密码",
                 "Redis 密码，未设密码时留空。");
-        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
+        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 0, "累计数据 Redis · 库号", "Redis 库号，默认 0；与其他程序共用同一实例时可换个库避免键冲突。改完即时生效，不用重启。");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 novabot.core.mail.default-to，在界面上找得到；
         // 但没有下面这几项，那一项配了也发不出去
-        put("spring.mail.host", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+        put("spring.mail.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 服务器",
                 "邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。");
-        put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+        put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 端口",
                 "SMTP 端口，如 465（SSL）或 587（STARTTLS）。");
-        put("spring.mail.username", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+        put("spring.mail.username", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 账号",
                 "SMTP 登录账号，通常就是发件邮箱地址。");
-        put("spring.mail.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+        put("spring.mail.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 密码／授权码",
                 "SMTP 密码或授权码；多数邮箱要的是「授权码」而不是登录密码。");
 
@@ -186,6 +186,22 @@ public final class ExternalConfigurationFields {
                 .filter(entry -> entry.getValue().effect() == ConfigEffect.Effect.IMMEDIATE)
                 .map(entry -> entry.getKey().name())
                 .toList();
+    }
+
+    /**
+     * 这几项在设置页行内常驻的短说明
+     * <p>
+     * 这几项没有字段可标 {@link org.frostnova.nova.core.properties.ConfigSummary}，要写只能写在这里。
+     * 眼下一项也没写：它们的说明本来就只有一两句，行内照旧显示整段。
+     * 不在表里的项照旧显示整段说明，与没标注解的配置项一样。
+     */
+    private static final Map<String, ConfigurationLabelResolver.Summary> SUMMARIES = Map.of();
+
+    /**
+     * 这几项的短说明
+     */
+    static Map<String, ConfigurationLabelResolver.Summary> summaries() {
+        return SUMMARIES;
     }
 
     /**

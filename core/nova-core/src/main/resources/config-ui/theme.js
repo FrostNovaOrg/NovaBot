@@ -27,16 +27,65 @@ export const THEME_LIGHT = 'light';
 export const THEME_DARK = 'dark';
 
 /**
+ * 同一页里别的部件想知道主题换了，可以听 window 上的这个事件（detail.theme 是新值）。
+ * 设置页那三颗钮走 subscribeTheme，不靠它。
+ */
+export const THEME_CHANGE_EVENT = 'novabot-theme-change';
+
+/** 订阅者：只改各自的钮，不重画页面 */
+const themeListeners = new Set();
+
+/**
+ * 归一：只认 light／dark，别的一律按跟随系统
+ * @param value 任意值
+ * @return {'auto'|'light'|'dark'}
+ */
+function normalizeTheme(value) {
+  return value === THEME_LIGHT || value === THEME_DARK ? value : THEME_AUTO;
+}
+
+/**
  * 读本浏览器记着的主题偏好
  * 读不到、读出错、读出别的值，一律按跟随系统
+ *
+ * 每次都现读 localStorage，不在模块里另记一份：另一个标签改了它，这里读到的就是新的；
+ * 存不下的那一次，刷新后读回来的也照实是跟随系统。
  * @return {'auto'|'light'|'dark'}
  */
 export function readTheme() {
   try {
-    const raw = localStorage.getItem(THEME_KEY);
-    return raw === THEME_LIGHT || raw === THEME_DARK ? raw : THEME_AUTO;
+    return normalizeTheme(localStorage.getItem(THEME_KEY));
   } catch (e) {
     return THEME_AUTO;
+  }
+}
+
+/**
+ * 订阅主题变化：本页点了钮、或另一个标签换了主题，都会叫一次
+ *
+ * 订阅者只该改自己那几颗钮的状态。<b>不许借此重画页面</b>：设置页上可能正有一格填到一半
+ * 还没保存，重画会把它连同焦点一起清掉——而触发它的是另一个标签里的一次点击，使用者无从察觉。
+ * @param listener (theme) => void
+ * @return {Function} 取消订阅
+ */
+export function subscribeTheme(listener) {
+  themeListeners.add(listener);
+  return () => themeListeners.delete(listener);
+}
+
+/**
+ * 把一个主题画到根元素上，再告诉订阅者
+ * @param v 已归一的值
+ */
+function showTheme(v) {
+  if (v === THEME_AUTO) document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', v);
+  for (const listener of themeListeners) {
+    try {
+      listener(v);
+    } catch (e) {
+      // 一个订阅者出错不挡别的，也不挡换肤
+    }
   }
 }
 
@@ -45,10 +94,11 @@ export function readTheme() {
  *
  * 跟随系统会去掉 data-theme——不删的话页面会锁在上一次手动选的那一个。
  * 存不下也要当场换肤，只是刷新后回到跟随系统。
+ * 别的标签由浏览器的 storage 事件通知（见文件末尾），这里不用管。
  * @param value 'auto' | 'light' | 'dark'，别的值按跟随系统
  */
 export function applyTheme(value) {
-  const v = value === THEME_LIGHT || value === THEME_DARK ? value : THEME_AUTO;
+  const v = normalizeTheme(value);
   try {
     if (v === THEME_AUTO) localStorage.removeItem(THEME_KEY);
     else if (v === THEME_DARK) localStorage.setItem(THEME_KEY, THEME_DARK);
@@ -56,6 +106,27 @@ export function applyTheme(value) {
   } catch (e) {
     // 存不下不挡换肤
   }
-  if (v === THEME_AUTO) document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', v);
+  showTheme(v);
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function'
+    && typeof CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, {detail: {theme: v}}));
+  }
+}
+
+/**
+ * 另一个标签改了偏好：浏览器在<b>别的</b>标签上发 storage 事件，本页跟着换
+ *
+ * 只认这一把键。key 为 null 是对方调了 localStorage.clear()：那把键也没了，该回到跟随系统，
+ * 因此照常处理，而不是当成不相干的事件丢掉——丢掉的话这一页会一直锁在手动选的那一档。
+ * 不取事件里带来的新值，一律现读一次本页的偏好：别的存储区（sessionStorage）发来同名键的事件，
+ * 读回来的仍是 localStorage 里那一份，什么也不会变；也不必在这里另写一处去碰存储。
+ * @param event storage 事件
+ */
+function onThemeStorage(event) {
+  if (!event || (event.key !== THEME_KEY && event.key !== null)) return;
+  showTheme(readTheme());
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', onThemeStorage);
 }

@@ -24,6 +24,7 @@ public class LogProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("控制台日志级别")
+    @ConfigSummary(value = "", details = false)
     private Level console;
 
     /**
@@ -31,6 +32,7 @@ public class LogProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("日志文件级别")
+    @ConfigSummary(value = "", details = false)
     private Level file;
 
     /**
@@ -38,6 +40,7 @@ public class LogProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件日志")
+    @ConfigSummary(value = "", details = false)
     private boolean eventLog = false;
 
     /**
@@ -45,6 +48,7 @@ public class LogProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络日志")
+    @ConfigSummary(value = "", details = false)
     private boolean networkLog = false;
 
     /**
@@ -54,5 +58,6 @@ public class LogProperties {
     // 日志一起报出来。失败一律放行——抑制的目的就是让异常显出来。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络日志 · 去重窗口")
+    @ConfigSummary("0 表示关闭去重；失败请求始终保留。")
     private int networkLogSuppressWindow = 60;
 }

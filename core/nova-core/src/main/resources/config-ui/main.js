@@ -13,7 +13,7 @@ import {manualHref} from './manual-link.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
 import {CLEAR, defaultValue} from './settings-model.js';
-import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
+import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleAdvanced, toggleKeyNames}
   from './settings.js';
 import {notePlatformsArrived, openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
@@ -545,7 +545,8 @@ function focusCard(name, card) {
     const box = $('#' + PROBE_ANCHOR);
     if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
   }
-  if (name === 'settings' && card) focusGroup(card);
+  // 点名跳来的那一组，里面的卡一并展开（首页「告警有死角 → 去配」落到告警卡上）
+  if (name === 'settings' && card) focusGroup(card, true);
 }
 
 /**
@@ -721,6 +722,7 @@ $('#selftest-run').addEventListener('click', runSelfTest);
 $('#set-search').addEventListener('input', filterSettings);
 $('#only-changed').addEventListener('change', filterSettings);
 $('#show-keys').addEventListener('change', toggleKeyNames);
+$('#show-advanced').addEventListener('click', toggleAdvanced);
 
 $('#logout').addEventListener('click', async () => {
   await api('/auth/logout', {method: 'POST'});
