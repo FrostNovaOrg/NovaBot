@@ -809,6 +809,43 @@ class ConfigUiFrontendTest {
         assertTrue(bad.isEmpty(), "深色下药丸仍是浏览器默认白底:\n  " + String.join("\n  ", bad));
     }
 
+    /** 搬出色表时漏掉变量会让对应组件失去颜色，落回浏览器默认样式。 */
+    @Test
+    @DisplayName("组件与各页引用的配色变量在共享色表中都有定义")
+    void componentVariablesHavePaletteDefinitions() throws IOException {
+        String palette = Files.readString(frontendDir().resolve("product-ui.css"), StandardCharsets.UTF_8);
+        Set<String> defined = new LinkedHashSet<>();
+        Matcher definitions = Pattern.compile("(--[a-z0-9-]+)\\s*:").matcher(
+                palette.replaceAll("(?s)/\\*.*?\\*/", ""));
+        while (definitions.find()) defined.add(definitions.group(1));
+
+        List<Path> dirs = new ArrayList<>(pageDirs());
+        dirs.add(frontendDir());
+        List<String> missing = new ArrayList<>();
+        for (Path dir : dirs) {
+            try (Stream<Path> files = Files.walk(dir)) {
+                for (Path file : files.filter(Files::isRegularFile)
+                        .filter(p -> p.toString().matches(".*\\.(css|html|js)$")).sorted().toList()) {
+                    String source = Files.readString(file, StandardCharsets.UTF_8)
+                            .replaceAll("(?s)/\\*.*?\\*/", "");
+                    Matcher uses = Pattern.compile("var\\(\\s*(--[a-z0-9-]+)").matcher(source);
+                    while (uses.find()) {
+                        String name = uses.group(1);
+                        // 顶栏高度由脚本实测，属于布局尺寸，默认回退为 0。
+                        if (name.equals("--side-h")) {
+                            assertTrue(source.contains("var(--side-h,0)"));
+                            assertTrue(Files.readString(frontendDir().resolve("settings.js"))
+                                    .contains("setProperty('--side-h', side.offsetHeight + 'px')"));
+                        } else if (!defined.contains(name)) {
+                            missing.add(file.getFileName() + ": " + name);
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(missing.isEmpty(), "共享色表缺少变量，组件可能退回默认颜色: " + missing);
+    }
+
     /**
      * 全站声明 color-scheme，滚动条、日期框、下拉列表、原生复选框才会跟着主题走。
      * <p>
@@ -819,7 +856,7 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("全站声明 color-scheme，原生控件跟随主题")
     void nativeControlsFollowTheme() throws IOException {
-        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+        String css = Files.readString(frontendDir().resolve("product-ui.css"), StandardCharsets.UTF_8);
         List<String> bad = new ArrayList<>();
 
         String root = cssBlock(css, ":root");
