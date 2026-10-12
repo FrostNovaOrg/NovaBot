@@ -19,6 +19,8 @@ import {
   restoreDefaults, splitText, spotFromDom, templateAdoption, textBlock, toTemplateText, usesBlock,
 } from '../../../main/resources/config-ui-pages/template-model.js';
 
+import * as model from '../../../main/resources/config-ui-pages/template-model.js';
+
 const failures = [];
 let checks = 0;
 
@@ -184,7 +186,7 @@ eq(atPlan(parseTemplate('{at}{uname}', SPEC), 'all_or_subscribers', group).fallb
 // ---------- 八、群里会看到几条 ----------
 const bubbles = previewBubbles(parsed, 'all', notAdmin);
 eq(bubbles.length, 1, '默认模板在群里是一条消息');
-eq(bubbles[0].at, 'all', '第一条前面挂着 @全体成员');
+eq(bubbles[0].at, '', '非管理员发送时省略全体提醒');
 eq(bubbles[0].atDropped, true, '机器人不是管理员时它划掉');
 eq(bubbles[0].images, ['cover'], '附件画成图片占位，不混进正文');
 eq(bubbles[0].parts.filter(part => part.kind === 'ph').map(part => part.label),
@@ -340,6 +342,64 @@ eq(spotFromDom(emptyBody, emptyBody, 0), {index: 0, offset: 0, onPill: false},
   '空卡片：落在第 0 格');
 eq(spotFromDom(gapBody, gapBody, 3), {index: 3, offset: 0, onPill: false},
   '光标在所有孩子之后：仍落在所有块之后');
+
+// 显示名称、定位提醒与原文往返：每组说明用户看到的故障。
+function check(name, fn) {
+  checks++;
+  try { fn(); } catch (error) { failures.push(name + '：' + error.message); }
+}
+function same(actual, expected) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error('得到 ' + JSON.stringify(actual) + '，应为 ' + JSON.stringify(expected));
+  }
+}
+check('中文药丸保留原占位符', () => {
+  const spec = blockSpec({...HANDLER, placeholderLabels: {'{uname}': '主播昵称'}});
+  same(blockLabel('{uname}', spec), '主播昵称');
+  same(blockLabel('{title}', spec), 'title');
+  same(blockLabel('{custom}', blockSpec({placeholders: ['{custom}']})), 'custom');
+  same(toTemplateText(parseTemplate('{uname}{title}', spec)), '{uname}{title}');
+  same(previewBubbles(parseTemplate('{uname}', spec), 'subscribers', group, undefined, spec)[0].parts[0].label, '主播昵称');
+});
+check('@定位到第二条句中', () => {
+  const original = parseTemplate('第一条{next}前后', SPEC);
+  const cut = splitText(original, {card: 1, index: 0, offset: 1});
+  const placed = model.placeAtBlock(cut.cards, 'subscribers', {card: 1, index: cut.index}, SPEC);
+  same(placed.refused, '');
+  same(toTemplateText(placed.cards), '第一条{next}前{at}后');
+  same(atPlan(placed.cards, 'subscribers', group).prepend, 'none');
+});
+check('再次放置@只挪位置', () => {
+  const original = parseTemplate('前{at}中{next}后{at=all}尾', SPEC);
+  const placed = model.placeAtBlock(original, 'subscribers', {card: 1, index: 3}, SPEC);
+  same(toTemplateText(placed.cards), '前中{next}后尾{at}');
+  same(model.atLiteralOf('all_or_subscribers'), '{at=all}');
+  same(toTemplateText(model.changeAtBlocks(placed.cards, 'all', SPEC)), '前中{next}后尾{at=all}');
+});
+check('旧模板打开与保存逐字相同', () => {
+  const original = ' {at=all}前{at}{next}后\n{at=all} ';
+  const cards = parseTemplate(original, SPEC);
+  same(toTemplateText(cards), original);
+  same(applyEdit({}, {}, cards, 'all').message, original);
+});
+check('无订阅能力拒绝定位并提示', () => {
+  const spec = blockSpec({placeholders: ['{uname}', '{at=all}']});
+  const cards = parseTemplate('{uname}', spec);
+  const placed = model.placeAtBlock(cards, 'subscribers', {card: 0, index: 0}, spec);
+  same(placed.cards, cards);
+  same(placed.refused, '这类通知不支持 @订阅的人。');
+  same(previewBubbles(cards, 'subscribers', {...group, supportsSubscribers: false})[0].at, '');
+});
+check('预览只显示实际降级结果', () => {
+  const cards = parseTemplate('第一条{next}前{at=all}后', SPEC);
+  const context = {...notAdmin, supportsSubscribers: true};
+  const bubbles = previewBubbles(cards, 'all_or_subscribers', context);
+  same(bubbles[1].parts.map(part => part.kind === 'at' ? part.at : part.text), ['前', 'subscribers', '后']);
+  same(bubbles[1].parts.filter(part => part.at === 'all').length, 0);
+  same(previewBubbles(cards, 'all', context)[1].parts.map(part => part.text), ['前', '后']);
+  same(previewBubbles(cards, 'all', unknownAdmin)[1].parts[1].at, 'all');
+  same(previewBubbles(cards, 'all_or_subscribers', {...context, supportsSubscribers: false})[1].parts.map(part => part.text), ['前', '后']);
+});
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

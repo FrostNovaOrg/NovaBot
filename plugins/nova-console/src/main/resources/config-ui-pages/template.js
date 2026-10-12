@@ -12,8 +12,9 @@
 
 import {el, esc} from './core.js';
 import {
-  AT_MODES, addCard, applyEdit, atModeInfo, atModeOf, atPlan, blockLabel, blockRefusal,
-  blockSpec, blocksFromDom, dropIndex, insertBlock, isAttachment, moveBlock, moveCard,
+  AT_LITERALS, AT_MODES, addCard, applyEdit, atLiteralOf, atModeInfo, atModeOf,
+  atPlan, blockLabel, blockRefusal,
+  blockSpec, blocksFromDom, changeAtBlocks, dropIndex, insertBlock, isAttachment, moveBlock, moveCard, placeAtBlock,
   normalizeCards, parseTemplate, placeholderBlock, previewBubbles, removeCard, splitText,
   spotFromDom, textBlock, toTemplateText,
 } from './template-model.js';
@@ -55,7 +56,7 @@ function startDrag(event, what, effect) {
  * 版式编辑器的卡片小块也记在 drag 上（kind 为 'report-card'）。消息正文只认这几种，
  * 别的一概不收——不然卡片小块拖进正文，会被当成一个占位符插进去。
  */
-const TEMPLATE_DRAGS = ['new', 'move', 'card'];
+const TEMPLATE_DRAGS = ['new', 'move', 'card', 'at'];
 
 /** 正在拖的是别的编辑器里的东西 */
 const foreignDrag = () => !!drag && !TEMPLATE_DRAGS.includes(drag.kind);
@@ -88,9 +89,9 @@ export function buildTemplateEditor(host, options) {
   tabs.id = 'tpl-tabs';
   host.appendChild(tabs);
 
-  const note = el('div', 'tpl-note xs dim');
-  note.id = 'tpl-note';
-  host.appendChild(note);
+  if (!opts.editable && opts.lockedNote) {
+    host.appendChild(el('p', 'xs dim')).textContent = opts.lockedNote;
+  }
 
   const wrap = el('div', 'tpl-wrap');
   const left = el('div', 'tpl-left');
@@ -164,7 +165,6 @@ export function buildTemplateEditor(host, options) {
 
   function paint() {
     paintTabs();
-    paintNote();
     paintPalette();
     paintCards();
     paintSide();
@@ -183,20 +183,8 @@ export function buildTemplateEditor(host, options) {
     }
   }
 
-  function paintNote() {
-    const plan = atPlan(state.cards, state.atMode, opts.context);
-    const lines = [];
-    if (!opts.editable && opts.lockedNote) lines.push(opts.lockedNote);
-    if (state.cards.length === 1) {
-      lines.push('现在是一条消息（文字与附件同一条）。想拆成两条，就「再加一条消息」，'
-        + '再把附件块拖过去。');
-    }
-    if (plan.inline) {
-      lines.push('这份模板里自己写了 @ 的占位符：程序见模板里已经有了就不再补一份，'
-        + '因此「@ 谁」那一档只管没写的那种情形。');
-    }
-    note.textContent = lines.join(' ');
-    note.hidden = !lines.length;
+  function previewContext() {
+    return {...(opts.context || {}), supportsSubscribers: state.spec.all.includes('{at}')};
   }
 
   // ---- 调色板 ----
@@ -210,7 +198,7 @@ export function buildTemplateEditor(host, options) {
       const attachment = isAttachment(key, state.spec);
       const button = el('button', 'tpl-blk' + (attachment ? ' att' : ''));
       button.type = 'button';
-      button.textContent = (attachment ? '▤ ' : '') + blockLabel(key);
+      button.textContent = (attachment ? '▤ ' : '') + blockLabel(key, state.spec);
       button.disabled = !opts.editable || !!used;
       button.title = opts.editable ? (used || '点一下插到光标处，或拖进卡里') : (opts.lockedNote || '');
       button.draggable = opts.editable && !used;
@@ -218,6 +206,14 @@ export function buildTemplateEditor(host, options) {
       button.addEventListener('dragstart', event => startDrag(event, {kind: 'new', key}, 'copy'));
       button.addEventListener('dragend', () => { drag = null; });
       palette.appendChild(button);
+    }
+    palette.appendChild(atNode());
+    const ctx = previewContext();
+    const inlineAll = state.cards.some(card => card.blocks.some(block => block.key === '{at=all}'));
+    if ((state.atMode !== 'subscribers' || inlineAll) && (ctx.admin === false || ctx.isGroup === false)) {
+      palette.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
+        ? '私聊不支持 @全体成员，发送时会被摘掉，正文照发。'
+        : '机器人不是本群管理员，@全体成员 会被摘掉，正文照发。';
     }
   }
 
@@ -294,7 +290,6 @@ export function buildTemplateEditor(host, options) {
     body.contentEditable = opts.editable ? 'true' : 'false';
     body.setAttribute('role', 'textbox');
     body.setAttribute('aria-label', '第 ' + (index + 1) + ' 条消息的内容');
-    if (index === 0) main.appendChild(atNode());
     paintBody(body, card, index);
     main.appendChild(body);
     box.appendChild(main);
@@ -340,8 +335,16 @@ export function buildTemplateEditor(host, options) {
     body.addEventListener('input', () => {
       // 打字之后 DOM 才是真的，块表得跟着它走
       state.cards = readBody(body, state.cards, cardIndex);
+      rememberCaret(body, cardIndex);
       commit();
+      paintPalette();
       paintSide();
+    });
+    body.addEventListener('focus', () => {
+      if (!state.caret || state.caret.card !== cardIndex) {
+        state.caret = {card: cardIndex, index: card.blocks.length, offset: 0};
+      }
+      rememberCaret(body, cardIndex);
     });
     body.addEventListener('keyup', () => rememberCaret(body, cardIndex));
     body.addEventListener('mouseup', () => rememberCaret(body, cardIndex));
@@ -363,7 +366,9 @@ export function buildTemplateEditor(host, options) {
     const pill = el('span', block.attachment ? 'tpl-att' : 'tpl-pill');
     pill.contentEditable = 'false';
     pill.dataset.k = block.key;
-    pill.appendChild(document.createTextNode((block.attachment ? '▤ ' : '') + blockLabel(block.key)));
+    pill.title = block.key;
+    pill.tabIndex = 0;
+    pill.appendChild(document.createTextNode((block.attachment ? '▤ ' : '') + blockLabel(block.key, state.spec)));
     pill.draggable = opts.editable;
 
     if (opts.editable) {
@@ -371,7 +376,8 @@ export function buildTemplateEditor(host, options) {
       kill.type = 'button';
       kill.contentEditable = 'false';
       kill.textContent = '×';
-      kill.setAttribute('aria-label', '删除块 ' + blockLabel(block.key));
+      kill.setAttribute('aria-label', AT_LITERALS.includes(block.key)
+        ? '恢复 @ 的默认位置' : '删除块 ' + blockLabel(block.key, state.spec));
       kill.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
@@ -386,6 +392,28 @@ export function buildTemplateEditor(host, options) {
       pill.appendChild(kill);
     }
 
+    pill.addEventListener('keydown', event => {
+      if (!opts.editable || !AT_LITERALS.includes(block.key)) return;
+      const body = pill.closest('.tpl-c-body');
+      const next = readBody(body, state.cards, cardIndex);
+      const index = spotFromDom(body, pill, 0).index;
+      const step = {ArrowLeft: -1, ArrowRight: 1}[event.key];
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        pill.querySelector('.tpl-x')?.click();
+      } else if (step) {
+        event.preventDefault();
+        let card = cardIndex;
+        let to = index + (step > 0 ? 2 : -1);
+        if (to < 0 && card > 0) { card--; to = next[card].blocks.length; }
+        if (to > next[card].blocks.length && card < next.length - 1) { card++; to = 0; }
+        if (to < 0 || to > next[card].blocks.length) return;
+        placeAt(next, {card, index: to});
+        [...(cards.querySelectorAll('.tpl-c-body')[card]?.querySelectorAll('[data-k]') || [])]
+          .find(node => AT_LITERALS.includes(node.dataset.k))?.focus();
+      }
+    });
+
     pill.addEventListener('dragstart', event => {
       // 拖起来的那一刻才算它此刻在第几格：渲染时算好的序号，在打过字之后已经对不上
       const body = pill.closest('.tpl-c-body');
@@ -397,20 +425,31 @@ export function buildTemplateEditor(host, options) {
     return pill;
   }
 
-  /**
-   * @ 那一枚药丸
-   *
-   * 钉在第一张卡的开头，不能拖也不能删：它存的是推送参数 at_mode，程序在发送时
-   * 把 @ 拼到正文最前面，屏幕上摆在别处等于画了一个假位置。三档是个闭集，
-   * 里面没有「不 @」——「@订阅的人」那一档在无人订阅时本来就什么也不 @。
-   */
+  /** 模式选择与位置独立；按钮可用键盘或触屏定位。 */
   function atNode() {
     const row = el('div', 'tpl-at');
-    row.appendChild(el('span', 'tpl-at-t')).textContent = '@ 谁';
+    const capsule = el('div', 'tpl-at-capsule');
+    const supported = state.spec.all.includes(atLiteralOf(state.atMode));
+    const positionable = !!opts.editable && supported;
+    const handle = el('button', 'tpl-at-handle');
+    handle.type = 'button';
+    handle.textContent = '⋮⋮';
+    handle.disabled = !positionable;
+    handle.draggable = positionable;
+    handle.setAttribute('aria-label', '拖动 @块到消息中，或按 Enter 插入到光标处');
+    handle.title = supported ? '拖进任意消息；也可点击插入到光标处' : '这类通知不支持 @订阅的人。';
+    handle.addEventListener('dragstart', event => {
+      if (positionable) startDrag(event, {kind: 'at'}, 'move');
+      else event.preventDefault();
+    });
+    handle.addEventListener('dragend', () => { drag = null; });
+    capsule.appendChild(handle);
 
     const select = el('select', 'tpl-at-s');
     select.id = 'tpl-at';
     select.disabled = !opts.editable;
+    select.setAttribute('aria-label', '选择提醒方式');
+    select.title = atModeInfo(state.atMode).note;
     for (const mode of AT_MODES) {
       const option = el('option');
       option.value = mode.key;
@@ -418,14 +457,49 @@ export function buildTemplateEditor(host, options) {
       if (mode.key === state.atMode) option.selected = true;
       select.appendChild(option);
     }
+    select.value = state.atMode;
     select.addEventListener('change', event => {
       state.atMode = event.target.value;
+      state.cards = changeAtBlocks(state.cards, state.atMode, state.spec);
       commit();
       paint();
+      palette.querySelector('#tpl-at')?.focus();
     });
-    row.appendChild(select);
-    row.appendChild(el('span', 'xs dim')).textContent = atModeInfo(state.atMode).note;
+    capsule.appendChild(select);
+    row.appendChild(capsule);
+    const insert = el('button', 'tpl-at-insert');
+    insert.type = 'button';
+    insert.textContent = '插入到这里';
+    insert.disabled = !positionable;
+    insert.title = handle.title;
+    insert.addEventListener('click', insertAtHere);
+    handle.addEventListener('click', insertAtHere);
+    row.appendChild(insert);
+    row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = atModeInfo(state.atMode).note;
     return row;
+  }
+
+  function placeAt(next, spot) {
+    const result = placeAtBlock(next, state.atMode, spot, state.spec);
+    if (result.refused) {
+      window.alert(result.refused);
+      return false;
+    }
+    state.cards = result.cards;
+    const index = state.cards[spot.card].blocks.findIndex(block => AT_LITERALS.includes(block.key));
+    state.caret = {card: spot.card, index: index + 1, offset: 0};
+    commit();
+    paint();
+    return true;
+  }
+
+  function insertAtHere() {
+    if (!opts.editable) return;
+    const spot = state.caret || {card: 0, index: state.cards[0].blocks.length, offset: 0};
+    const cut = splitText(state.cards, spot);
+    if (placeAt(cut.cards, {card: spot.card, index: cut.index})) {
+      cards.querySelectorAll('.tpl-c-body')[spot.card]?.focus();
+    }
   }
 
   /** 记住光标落在哪一块的第几个字，点调色板时插到这里 */
@@ -456,7 +530,8 @@ export function buildTemplateEditor(host, options) {
     event.preventDefault();
     event.stopPropagation();
 
-    const key = drag.key;
+    const isAt = drag.kind === 'at' || AT_LITERALS.includes(drag.key);
+    const key = isAt ? atLiteralOf(state.atMode) : drag.key;
     const from = drag.kind === 'move' ? drag.from : null;
     const refusal = blockRefusal(state.cards, cardIndex, key, state.spec, from ? from.card : -1);
     if (refusal) {
@@ -481,7 +556,11 @@ export function buildTemplateEditor(host, options) {
       index = (cards[cardIndex] || {blocks: []}).blocks.length;
     }
 
-    if (from) {
+    if (isAt) {
+      drag = null;
+      placeAt(cards, {card: cardIndex, index});
+      return;
+    } else if (from) {
       // 同一张卡里劈过一刀时，被拖的那一块的序号可能已经往后挪了一格
       const shifted = split && from.card === cardIndex && from.index > spot.index
         ? {card: from.card, index: from.index + 1} : from;
@@ -550,18 +629,19 @@ export function buildTemplateEditor(host, options) {
   // ---- 右侧与文本形式 ----
 
   function paintSide() {
-    const bubbles = previewBubbles(state.cards, state.atMode, opts.context);
+    const bubbles = previewBubbles(state.cards, state.atMode, previewContext(), undefined, state.spec);
     preview.innerHTML = '';
     for (const bubble of bubbles) preview.appendChild(bubbleNode(bubble));
     if (!bubbles.length) {
       preview.appendChild(el('p', 'hint')).textContent = '这样配的话，一条消息也不会发出去。';
     }
 
-    const plan = atPlan(state.cards, state.atMode, opts.context);
-    if (plan.note) preview.appendChild(el('p', 'xs dim')).textContent = plan.note;
-    preview.appendChild(el('p', 'xs dim')).textContent =
-      '花括号里的东西发出去时会换成真的内容，这里按原样显示——编一个样例出来的话，'
-      + '看的人会以为那就是将来的样子。';
+    const plan = atPlan(state.cards, state.atMode, previewContext());
+    if (bubbles.some(bubble => bubble.atDropped) || plan.dropped) {
+      preview.appendChild(el('p', 'tpl-preview-note xs dim')).textContent = plan.fallback
+        ? '发送时改为 @订阅的人，正文正常发送。'
+        : '发送时省略 @全体成员，正文正常发送。';
+    }
 
     count.textContent = bubbles.length + ' 条消息';
     rawBody.textContent = toTemplateText(state.cards);
@@ -583,6 +663,9 @@ export function buildTemplateEditor(host, options) {
     for (const part of bubble.parts) {
       if (part.kind === 'text') {
         balloon.appendChild(document.createTextNode(part.text));
+      } else if (part.kind === 'at') {
+        balloon.appendChild(el('span', part.at === 'all' ? 'qq-atall' : 'qq-at')).textContent =
+          part.at === 'all' ? '@全体成员' : '@订阅的人';
       } else {
         balloon.appendChild(el('span', 'qq-ph')).textContent = part.label;
       }
@@ -591,10 +674,6 @@ export function buildTemplateEditor(host, options) {
 
     for (const image of bubble.images) {
       stack.appendChild(el('div', 'qq-img')).textContent = '［' + image + '］';
-    }
-    if (bubble.atDropped) {
-      stack.appendChild(el('div', 'xs dim')).textContent =
-        '机器人不是本群管理员，@全体成员 会被自动摘掉，正文照发。';
     }
     row.appendChild(stack);
     return row;
@@ -970,8 +1049,8 @@ export function buildLayoutEditor(host, options) {
       onArea.appendChild(node);
     });
 
-    const offArea = zoneNode('off', '没放进报告的 · 点一下放回末尾，或拖进上面', offKeys, '都在报告里',
-      key => act(order, key, sequence, false, 'off'));
+    const offArea = offKeys.length ? zoneNode('off', '没放进报告的 · 点一下放回末尾，或拖进上面', offKeys, '都在报告里',
+      key => act(order, key, sequence, false, 'off')) : null;
     for (const key of offKeys) {
       const node = chipNode(key, 'off');
       node.setAttribute('role', 'button');

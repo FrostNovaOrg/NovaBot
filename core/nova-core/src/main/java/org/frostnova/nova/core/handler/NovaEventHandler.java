@@ -119,6 +119,14 @@ public interface NovaEventHandler extends PushMessageHandler {
     }
 
     /**
+     * 占位符的展示名称，仅影响界面标签，模板仍保存原占位符。
+     * @return 占位符 → 展示名称；未声明的占位符显示原名
+     */
+    default Map<String, String> placeholderLabels() {
+        return Map.of();
+    }
+
+    /**
      * 上面那些占位符里，哪几个展开成整行的附件（图片）
      * <p>
      * 模板编辑器把一条消息画成一串块，而附件块与文字块在屏幕上是两种东西：
