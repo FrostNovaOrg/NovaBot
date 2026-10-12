@@ -5,6 +5,7 @@ import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 
 import java.util.List;
@@ -115,7 +116,21 @@ public abstract class BilibiliAtSubscribeCommand extends BilibiliAtCommand {
                     : "已取消，" + nameOf(streamer) + typeName() + "时不再 @ 你。再发「" + name() + "」可订回来");
         }
 
+        // 只在加入名单前检查点名主播的配置；退订与查看名单沿用原有行为。
+        List<AtMode> modes = modesOf(context, noticeKind(), streamer);
+        if (!modes.isEmpty() && modes.stream().allMatch(mode -> mode == AtMode.ALL)) {
+            return CommandReply.of(context.here() + "，" + nameOf(streamer) + "的" + typeName()
+                    + "通知会 @全体成员，单独订阅也不会被单独 @，不用单独订阅");
+        }
+
         AtSubscriptionService.Result result = subscriptions.subscribe(platform, num, uid, type, sender);
+        // 订上归订上：这位主播的这类通知现在一条也推不到本群时直说，
+        // 免得「会 @ 你」这句不属实——群友以为订上就能收到
+        if (result == AtSubscriptionService.Result.OK && modes.isEmpty()) {
+            return CommandReply.of("好的，订上了。不过" + nameOf(streamer) + "的" + noticeKind().noticeName()
+                    + "现在没推到" + context.here() + "，推送开了以后才会 @ 你"
+                    + (cancelOnly ? "" : "。再发「" + name() + "」可取消"));
+        }
         return switch (result) {
             case OK -> CommandReply.of(cancelOnly
                     ? "好的，" + nameOf(streamer) + typeName() + "时会 @ 你"

@@ -14,3 +14,7 @@ export function pageStatus() {
 
 export function refreshPages() {
 }
+
+// 设置页引着它；设置引导的夹具连带载入设置页，用不上，留空
+export async function load() {
+}
