@@ -2,7 +2,10 @@ package org.frostnova.nova.core.config.ui;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +23,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DisplayName("配了部署前缀时，页面里的地址带上前缀")
 class ConfigUiPrefixPageTest {
+
+    /** 地址末尾多一个斜杠时，已登录的使用者打开或刷新控制台会看到 404。 */
+    @ParameterizedTest(name = "configured={0}, request={1}")
+    @CsvSource(value = {"'', ''", "/novabot, /novabot", "/novabot, /forwarded"})
+    @DisplayName("已登录打开 /config/ 会转到控制台，部署前缀取配置值")
+    void trailingSlashRedirectsToConsole(String configured, String onRequest) throws Exception {
+        var response = ConfigUiPrefixPages.trailingSlash(configured, onRequest, true);
+        assertEquals(302, response.getStatus(), "已登录打开末尾带斜杠的控制台地址应跳转，不能是 404");
+        assertEquals(configured + "/config", response.getHeader("Location"), "跳转地址必须带配置的部署前缀");
+        assertFalse(response.getHeader("Location").contains("#"), "跳转不指定片段，让浏览器保留原来的页面位置");
+    }
+
+    /** 没登录时末尾带斜杠也要显示登录卡，不能变成错误页或绕过登录。 */
+    @ParameterizedTest(name = "prefix={0}")
+    @CsvSource({"''", "/novabot"})
+    @DisplayName("未登录打开 /config/ 仍显示同一张登录卡")
+    void trailingSlashStillShowsLogin(String prefix) throws Exception {
+        var response = ConfigUiPrefixPages.trailingSlash(prefix, prefix, false);
+        assertEquals(200, response.getStatus());
+        assertEquals(ConfigUiPrefixPages.login(prefix, prefix),
+                response.getContentAsString(StandardCharsets.UTF_8));
+    }
 
     /** 色表地址丢了部署前缀时会取不到，整页失去配色；也须先于组件样式加载。 */
     @Test

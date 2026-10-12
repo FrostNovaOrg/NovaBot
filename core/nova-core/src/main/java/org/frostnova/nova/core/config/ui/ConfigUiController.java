@@ -49,6 +49,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -712,6 +714,14 @@ public class ConfigUiController {
                     .body(ConfigUiPrefix.render(new String(stream.readAllBytes(), StandardCharsets.UTF_8),
                             ConfigUiPrefix.of(request)));
         }
+    }
+
+    /** 控制台地址末尾带斜杠时转到首页，不指定片段以保留浏览器中的页面位置。 */
+    @GetMapping("/")
+    public ResponseEntity<Void> redirectPage(HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, ConfigUiPrefix.consolePath(request))
+                .build();
     }
 
     /**
