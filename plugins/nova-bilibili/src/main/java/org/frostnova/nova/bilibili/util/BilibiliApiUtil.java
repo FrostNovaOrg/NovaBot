@@ -2473,22 +2473,50 @@ public class BilibiliApiUtil {
             return;
         }
 
-        Map<String, Object> params = new LinkedHashMap<>();
-        params.put("fid", uid);
-        // act=1 表示关注
-        params.put("act", 1);
-        params.put("re_src", 11);
-        params.put("csrf", cookies.getBiliJct());
+        FollowResult result = followUpWithResult(uid);
+        switch (result.outcome()) {
+            case SUCCESS -> log.info("已关注 uid {}", uid);
+            case ALREADY_FOLLOWING -> log.info("uid {} 已在关注中, 无需重复关注", uid);
+            case BUSINESS_ERROR -> log.error("关注 uid {} 失败: 接口返回错误代码 {}: {}",
+                    uid, result.code(), result.message());
+            case FAILURE -> log.error("关注 uid {} 失败: {}", uid, result.message());
+        }
+    }
 
+    /** 关注请求的结果，业务错误保留 B 站错误码与原话。 */
+    public record FollowResult(FollowOutcome outcome, Integer code, String message) {
+    }
+
+    public enum FollowOutcome {
+        SUCCESS, ALREADY_FOLLOWING, BUSINESS_ERROR, FAILURE
+    }
+
+    /**
+     * 关注指定 UP 主并返回结果，由调用方决定重试与日志方式。
+     * 不抛出请求异常，也不在此处记录关注结果日志。
+     */
+    public FollowResult followUpWithResult(Long uid) {
         try {
-            requestBilibiliApi(RELATION_MODIFY_API, "POST", getBilibiliHeaders(), params);
-            log.info("已关注 uid {}", uid);
-        } catch (Exception e) {
-            if (e instanceof ResponseCodeException codeException && codeException.getCode() == CODE_ALREADY_FOLLOWING) {
-                log.info("uid {} 已在关注中, 无需重复关注", uid);
-                return;
+            if (uid == null) {
+                return new FollowResult(FollowOutcome.FAILURE, null, "缺少 uid");
             }
-            log.error("关注 uid {} 失败: {}", uid, e.getMessage());
+            if (StringUtil.isBlank(cookies.getBiliJct())) {
+                return new FollowResult(FollowOutcome.FAILURE, null, "未登录");
+            }
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("fid", uid);
+            // act=1 表示关注
+            params.put("act", 1);
+            params.put("re_src", 11);
+            params.put("csrf", cookies.getBiliJct());
+            requestBilibiliApi(RELATION_MODIFY_API, "POST", getBilibiliHeaders(), params);
+            return new FollowResult(FollowOutcome.SUCCESS, null, "");
+        } catch (ResponseCodeException e) {
+            FollowOutcome outcome = e.getCode() == CODE_ALREADY_FOLLOWING
+                    ? FollowOutcome.ALREADY_FOLLOWING : FollowOutcome.BUSINESS_ERROR;
+            return new FollowResult(outcome, e.getCode(), e.getResponseMessage());
+        } catch (Exception e) {
+            return new FollowResult(FollowOutcome.FAILURE, null, e.getMessage());
         }
     }
 

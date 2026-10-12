@@ -10,10 +10,16 @@ import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.exception.ResponseCodeException;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.bilibili.health.BilibiliAutoFollowHealthProbe;
+import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.bilibili.model.Cookies;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.alert.AlertService;
+import org.frostnova.nova.core.alert.HealthAlertMonitor;
+import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +27,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
@@ -30,12 +37,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collection;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.LongStream;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -388,6 +398,285 @@ class BilibiliAutoFollowTest {
                 "应写明这一位已在关注中，实际日志: " + messages());
     }
 
+    @Test
+    @DisplayName("主播用自己的账号登录：自动关注跳过自己，健康栏正常，换号后也只说明一次")
+    void loginAccountIsNeverFollowed() {
+        // 抓的用户故障：主播拿自己的号登录时，自动关注每小时去关注自己、健康栏误报关注不了。
+        configure(LOGIN_UID, NOT_FOLLOWED);
+        BilibiliAutoFollowHealthProbe probe = new BilibiliAutoFollowHealthProbe(service);
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        when(account.getLoginUid()).thenReturn(null);
+        service.followConfiguredUps(start);
+        when(account.getLoginUid()).thenReturn(LOGIN_UID);
+        api.failingPages.add(1);
+        service.followConfiguredUps(start.plusSeconds(30));
+        service.followConfiguredUps(start.plusSeconds(60));
+        assertEquals(1, messages().stream().filter(m -> m.equals(
+                "INFO 推送用户里有登录账号自己，自动关注跳过")).count(), "关注列表暂时取不到时也不能重复说明");
+        api.failingPages.clear();
+        service.followConfiguredUps(start.plusSeconds(90));
+        for (int hour = 1; hour <= 24; hour++) {
+            service.followConfiguredUps(start.plusSeconds(90).plus(Duration.ofHours(hour)));
+        }
+        assertEquals(List.of(NOT_FOLLOWED), api.followRequests, "只能关注另一位主播，不能请求关注登录账号自己");
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "健康栏不能误报登录账号自己关注不了");
+        assertTrue(service.getFollowRejections().isEmpty(), "不能记下登录账号自己的关注失败");
+        assertEquals(1, messages().stream().filter(m -> m.equals(
+                "INFO 推送用户里有登录账号自己，自动关注跳过")).count(), "每小时复核不能重复说明跳过自己");
+
+        configure(OTHER_LOGIN_UID, NOT_FOLLOWED);
+        api.selfUid = OTHER_LOGIN_UID;
+        api.following.remove(NOT_FOLLOWED);
+        when(account.getLoginUid()).thenReturn(OTHER_LOGIN_UID);
+        Instant switchedAt = start.plus(Duration.ofHours(24)).plusSeconds(120);
+        service.followConfiguredUps(switchedAt);
+        service.followConfiguredUps(switchedAt.plus(Duration.ofHours(1)));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests, "换号后仍只关注另一位主播");
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "换号后健康栏也不能误报自己");
+        assertEquals(2, messages().stream().filter(m -> m.equals(
+                "INFO 推送用户里有登录账号自己，自动关注跳过")).count(), "换号后也只能说明一次");
+
+        // 只有自己且关注列表暂时不可用时，也应跳过，不刷说明或健康告警。
+        configure(OTHER_LOGIN_UID);
+        api.failingPages.add(1);
+        service.followConfiguredUps(switchedAt.plus(Duration.ofHours(2)));
+        service.followConfiguredUps(switchedAt.plus(Duration.ofHours(3)));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests);
+        assertEquals(HealthStatus.ok("正常"), probe.check());
+        assertEquals(2, messages().stream().filter(m -> m.contains("自动关注跳过")).count());
+    }
+
+    @Test
+    @DisplayName("B 站明确拒绝：每小时跳过，满 24 小时只再试一次，重复拒绝不再报错误")
+    void businessRejectionRetriesDaily() {
+        // 抓的用户故障：隐私设置禁止关注时，每小时发注定失败的请求并报 ERROR。
+        configure(NOT_FOLLOWED);
+        api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+        for (int hour = 1; hour < 24; hour++) {
+            service.followConfiguredUps(start.plus(Duration.ofHours(hour)));
+        }
+        assertEquals(List.of(NOT_FOLLOWED), api.followRequests, "明确拒绝后 24 小时内不能再发关注");
+        service.followConfiguredUps(start.plus(Duration.ofHours(24)));
+        service.followConfiguredUps(start.plus(Duration.ofHours(24)).plusSeconds(30));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests, "满 24 小时只应再试一次");
+        assertEquals(0, logs.list.stream().filter(e -> e.getLevel() == Level.ERROR).count(), "明确拒绝不应报 ERROR");
+        assertEquals(1, logs.list.stream().filter(e -> e.getLevel() == Level.WARN).count(), "相同原话只在首次 WARN");
+        assertTrue(messages().stream().anyMatch(m -> m.startsWith("INFO") && m.contains("还不能关注")),
+                "每日重试的相同拒绝应记 INFO");
+        String warning = warnContaining("还不能关注");
+        assertTrue(warning.contains("主播2001") && warning.contains("动态因此推不出来")
+                && warning.contains("直播推送不受影响") && warning.contains("24 小时"), "首次 WARN 应说清影响和重试时间");
+        for (int hour = 25; hour < 48; hour++) {
+            service.followConfiguredUps(start.plus(Duration.ofHours(hour)));
+        }
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests, "再次被拒后仍须再等 24 小时");
+        api.followFailure = new ResponseCodeException(22002, "对方暂不允许关注");
+        service.followConfiguredUps(start.plus(Duration.ofHours(48)));
+        assertEquals(2, logs.list.stream().filter(e -> e.getLevel() == Level.WARN).count(), "B 站原话变化应再 WARN");
+    }
+
+    @Test
+    @DisplayName("网络失败：下一小时补关注，不等待一天")
+    void networkFailureRetriesHourly() {
+        // 抓的用户故障：暂时断网也被当成明确拒绝，让新主播等一天才补关注。
+        configure(NOT_FOLLOWED);
+        api.followFailure = new IllegalStateException("请求超时");
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+        api.followFailure = null;
+        service.followConfiguredUps(start.plus(Duration.ofMinutes(59)));
+        assertEquals(List.of(NOT_FOLLOWED), api.followRequests, "网络失败仍按每小时复核");
+        service.followConfiguredUps(start.plus(Duration.ofHours(1)));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests, "网络恢复后下一小时就应补关注");
+        assertTrue(api.following.contains(NOT_FOLLOWED), "下一小时应成功关注");
+    }
+
+    @Test
+    @DisplayName("换登录账号：立即补关注，不沿用旧账号的拒绝记录")
+    void switchedAccountClearsRejection() {
+        // 抓的用户故障：换成能关注的账号后，仍被旧账号的每日重试限制跳过。
+        configure(NOT_FOLLOWED);
+        api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+        api.followFailure = null;
+        when(account.getLoginUid()).thenReturn(OTHER_LOGIN_UID);
+        service.followConfiguredUps(start.plusSeconds(30));
+        assertEquals(List.of(NOT_FOLLOWED, NOT_FOLLOWED), api.followRequests, "换号后立即补关注，不能沿用拒绝记录");
+        assertTrue(api.following.contains(NOT_FOLLOWED), "新账号应关注成功");
+    }
+
+    @Test
+    @DisplayName("健康栏：点名关注不了的主播并写 B 站原话，成功或已关注后恢复正常")
+    void rejectionHealthNamesStreamerAndRecovers() {
+        // 抓的用户故障：动态一直推不出来，健康栏却正常，或关注成功后仍报降级。
+        configure(NOT_FOLLOWED);
+        api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+        BilibiliAutoFollowHealthProbe probe = new BilibiliAutoFollowHealthProbe(service);
+        int requestCount = api.followRequests.size() + api.pageRequests.size();
+        HealthStatus status = probe.check();
+        assertEquals(HealthStatus.Level.DEGRADED, status.level(), "关注不了时健康栏必须降级");
+        assertEquals(Map.of("2001", "主播2001：因对方隐私设置，你还不能关注"), status.members(), "健康栏须点名并保留 B 站原话");
+        assertEquals("账号关注不了这几位，他们的动态推不出来，直播推送不受影响", status.memberCondition());
+        assertEquals("常见原因是主播把这个账号拉黑或移出了粉丝，或者改了隐私设置；NovaBot 每天会自动再试；"
+                + "能做的只有换一个能关注他的账号登录，或者请主播调整设置。", status.advice(),
+                "建议须说明常见原因和可做的事，不能断言账号已被拉黑");
+        System.out.println("summary=" + status.summary());
+        System.out.println("advice=" + status.advice());
+        System.out.println("memberCondition=" + status.memberCondition());
+        System.out.println("members=" + status.members());
+        assertEquals(requestCount, api.followRequests.size() + api.pageRequests.size(), "健康探针不能打网络");
+        BilibiliDynamicService.FollowRejection rejection = service.getFollowRejections().get(NOT_FOLLOWED);
+        assertEquals(22002, rejection.code());
+        assertEquals(start, rejection.failedAt());
+
+        api.followFailure = null;
+        service.followConfiguredUps(start.plus(Duration.ofHours(24)));
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "关注成功后应恢复正常");
+
+        api.following.remove(NOT_FOLLOWED);
+        api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+        service.followConfiguredUps(start.plus(Duration.ofHours(25)));
+        api.followFailure = null;
+        api.hiddenFromList.add(NOT_FOLLOWED);
+        service.followConfiguredUps(start.plus(Duration.ofHours(49)));
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "已在关注中也应清掉拒绝记录");
+
+        api.hiddenFromList.clear();
+        api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+        service.followConfiguredUps(start.plus(Duration.ofHours(50)));
+        api.followFailure = null;
+        api.following.add(NOT_FOLLOWED);
+        service.followConfiguredUps(start.plus(Duration.ofHours(51)));
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "关注列表确认已关注时也应清掉记录");
+    }
+
+    @Test
+    @DisplayName("补关注被拒：告警点名、不逐小时重发，新增被拒主播单独告警，关注成功后通知恢复")
+    @SuppressWarnings("unchecked")
+    void rejectedRefollowAlertsOnceAndRecovers() {
+        // 抓的用户故障：主播把账号拉黑（补关注被拒）后没有告警，或者每小时重发一条。
+        configure(ON_PAGE_ONE);
+        BilibiliAutoFollowHealthProbe probe = new BilibiliAutoFollowHealthProbe(service);
+        ObjectProvider<HealthProbe> probes = mock(ObjectProvider.class);
+        when(probes.orderedStream()).thenAnswer(invocation -> List.<HealthProbe>of(probe).stream());
+        List<String> alerts = new ArrayList<>();
+        AlertService alertService = mock(AlertService.class, invocation -> {
+            if (invocation.getMethod().getName().equals("alert")) {
+                alerts.add(invocation.<String>getArgument(1) + "\n" + invocation.<String>getArgument(2));
+            } else if (invocation.getMethod().getName().equals("alertMembers")) {
+                Map<String, String> members = invocation.getArgument(0);
+                Function<Collection<String>, String> content = invocation.getArgument(2);
+                alerts.add(invocation.<String>getArgument(1) + "\n" + content.apply(members.values()));
+            }
+            return null;
+        });
+        HealthAlertMonitor monitor = new HealthAlertMonitor(probes, alertService, TimelineWriter.NONE);
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+        monitor.check();
+        assertEquals(List.of(), alerts, "已经关注时不能误报告警");
+
+        // 模拟平台取消已有关注，随后补关注被拒；拒绝原因本身不能证明被拉黑。
+        api.following.remove(Long.valueOf(ON_PAGE_ONE));
+        String reason = "因对方隐私设置，你还不能关注";
+        api.followFailure = new ResponseCodeException(22002, reason);
+        service.followConfiguredUps(start.plus(Duration.ofHours(1)));
+        monitor.check();
+        assertEquals(1, alerts.size(), "补关注被拒后必须发出且只发出一条告警");
+        assertTrue(alerts.get(0).contains("NovaBot 异常告警：哔哩哔哩自动关注"));
+        assertTrue(alerts.get(0).contains("主播1003：" + reason), "告警必须点名并保留 B 站原话");
+        assertTrue(alerts.get(0).contains(probe.check().advice()), "告警须附上探针的处理建议");
+        for (int hour = 2; hour <= 4; hour++) {
+            service.followConfiguredUps(start.plus(Duration.ofHours(hour)));
+            monitor.check();
+        }
+        assertEquals(1, alerts.size(), "未变化的拒绝不能每小时重发告警");
+
+        configure(ON_PAGE_ONE, NOT_FOLLOWED);
+        service.followConfiguredUps(start.plus(Duration.ofHours(4)).plusSeconds(30));
+        monitor.check();
+        assertEquals(2, alerts.size(), "第一位未恢复时，新增被拒主播应再发一条告警");
+        assertTrue(alerts.get(1).contains("新增异常成员：主播2001：" + reason));
+        assertFalse(alerts.get(1).contains("主播1003"), "新增成员告警只点名第二位主播");
+        assertTrue(alerts.get(1).contains(probe.check().memberCondition()));
+        assertTrue(alerts.get(1).contains(probe.check().advice()));
+        System.out.println("additionalMemberAlert=" + alerts.get(1));
+        monitor.check();
+        assertEquals(2, alerts.size(), "新增成员的拒绝也不能重复告警");
+
+        api.followFailure = null;
+        service.followConfiguredUps(start.plus(Duration.ofHours(29)));
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "关注成功后探针恢复正常");
+        monitor.check();
+        assertEquals(3, alerts.size(), "关注成功后必须再发一条恢复通知");
+        assertEquals("NovaBot 状态恢复：哔哩哔哩自动关注\n正常", alerts.get(2));
+        monitor.check();
+        assertEquals(3, alerts.size(), "恢复通知也只发一次");
+    }
+
+    @Test
+    @DisplayName("删掉或停用主播：健康栏清掉记录，加回后立即补关注，无名主播显示 uid")
+    void removedOrDisabledStreamerClearsRejection() {
+        // 抓的用户故障：删掉、停用后健康栏还点名，加回时又被旧记录跳过。
+        BilibiliAutoFollowHealthProbe probe = new BilibiliAutoFollowHealthProbe(service);
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        for (boolean disabled : List.of(false, true)) {
+            configure(NOT_FOLLOWED);
+            dataSource.getUsers(BilibiliPlatform.BILIBILI.id()).get(0).setUname(null);
+            api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+            service.followConfiguredUps(start);
+            assertEquals(Map.of("2001", "uid 2001：因对方隐私设置，你还不能关注"), probe.check().members(), "无名主播应显示 uid");
+            if (disabled) {
+                dataSource.getUsers(BilibiliPlatform.BILIBILI.id()).get(0).setEnabled(false);
+            } else {
+                configure();
+            }
+            when(account.isLoggedIn()).thenReturn(false);
+            service.followConfiguredUps(start.plusSeconds(30));
+            assertEquals(HealthStatus.ok("正常"), probe.check(), "删掉或停用后健康栏应清掉记录");
+            when(account.isLoggedIn()).thenReturn(true);
+            int attempts = api.followRequests.size();
+            configure(NOT_FOLLOWED);
+            service.followConfiguredUps(start.plusSeconds(60));
+            assertEquals(attempts + 1, api.followRequests.size(), "加回后立即补关注");
+            configure();
+            service.followConfiguredUps(start.plusSeconds(90));
+            start = start.plus(Duration.ofHours(1));
+        }
+    }
+
+    @Test
+    @DisplayName("关注接口：结果区分成功、已关注、业务拒绝和其他失败，公开旧方法仍不抛且失败报 ERROR")
+    void followResultAndLegacyContract() {
+        // 抓的用户故障：自动关注认不出明确拒绝，或原有插件调用失败时意外抛异常。
+        assertEquals(BilibiliApiUtil.FollowOutcome.SUCCESS, api.followUpWithResult(NOT_FOLLOWED).outcome());
+        assertEquals(BilibiliApiUtil.FollowOutcome.ALREADY_FOLLOWING, api.followUpWithResult(NOT_FOLLOWED).outcome());
+        api.followFailure = new ResponseCodeException(22002, "因对方隐私设置，你还不能关注");
+        BilibiliApiUtil.FollowResult result = api.followUpWithResult(NOT_FOLLOWED);
+        assertEquals(BilibiliApiUtil.FollowOutcome.BUSINESS_ERROR, result.outcome(), "业务拒绝必须可识别");
+        assertEquals(22002, result.code());
+        assertEquals("因对方隐私设置，你还不能关注", result.message(), "必须保留 B 站原话");
+        api.followUp(NOT_FOLLOWED);
+        assertTrue(messages().contains("ERROR 关注 uid 2001 失败: 接口返回错误代码 22002: 因对方隐私设置，你还不能关注"), "旧方法仍须 ERROR 且不抛");
+        api.followFailure = new IllegalStateException("请求超时");
+        assertEquals(BilibiliApiUtil.FollowOutcome.FAILURE, api.followUpWithResult(NOT_FOLLOWED).outcome());
+        api.followUp(NOT_FOLLOWED);
+        assertTrue(messages().contains("ERROR 关注 uid 2001 失败: 请求超时"));
+        api.setCookies(new Cookies());
+        api.followUp(NOT_FOLLOWED);
+        assertTrue(messages().contains("ERROR 未登录, 无法关注 uid 2001"));
+        int requests = api.followRequests.size();
+        api.followUp(null);
+        assertEquals(requests, api.followRequests.size(), "null uid 不应发请求");
+        assertEquals(BilibiliApiUtil.FollowOutcome.FAILURE, api.followUpWithResult(null).outcome());
+        assertEquals(BilibiliApiUtil.FollowOutcome.FAILURE, api.followUpWithResult(NOT_FOLLOWED).outcome());
+    }
+
     private void configure(long... uids) {
         List<PushUser> users = new ArrayList<>();
         for (long uid : uids) {
@@ -463,6 +752,10 @@ class BilibiliAutoFollowTest {
          */
         int alreadyFollowingReplies;
 
+        RuntimeException followFailure;
+
+        Long selfUid = LOGIN_UID;
+
         FakeRelationApi() {
             super(mock(HttpUtil.class), new NovaBilibiliProperties(), mock(BilibiliRiskMetrics.class));
             setCookies(new Cookies("placeholder-sess", "placeholder-jct", "placeholder-buvid"));
@@ -509,6 +802,12 @@ class BilibiliAutoFollowTest {
         private JSONObject follow(Map<String, Object> params) {
             long uid = ((Number) params.get("fid")).longValue();
             followRequests.add(uid);
+            if (selfUid.equals(uid)) {
+                throw new ResponseCodeException(22001, "不能关注自己");
+            }
+            if (followFailure != null) {
+                throw followFailure;
+            }
             if (following.contains(uid) || hiddenFromList.contains(uid)) {
                 alreadyFollowingReplies++;
                 throw new ResponseCodeException(22014, "已经关注用户，无法重复关注");

@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -53,6 +54,22 @@ public class BilibiliDynamicService {
      * 默认 30 秒一次，一天近三千次请求，拉回来的几乎总是同一份。
      */
     private static final Duration FOLLOWING_RECHECK_INTERVAL = Duration.ofHours(1);
+
+    private static final Duration FOLLOW_REJECTION_RETRY_INTERVAL = Duration.ofHours(24);
+
+    private final Map<Long, FollowRejection> followRejections = new ConcurrentHashMap<>();
+
+    /** 最近一次明确拒绝关注的结果，仅在内存中保留。 */
+    public record FollowRejection(Long uid, String uname, int code, String message, Instant failedAt) {
+        public String displayName() {
+            return uname == null || uname.isBlank() ? "uid " + uid : uname;
+        }
+    }
+
+    /** 供健康探针读取的不可变快照，不发起请求。 */
+    public Map<Long, FollowRejection> getFollowRejections() {
+        return Map.copyOf(followRejections);
+    }
 
     private final BilibiliApiUtil api;
 
@@ -87,6 +104,9 @@ public class BilibiliDynamicService {
      * 上一次完整核对关注列表所用的登录账号 uid，换了账号就立即再核对
      */
     private volatile Long checkedLoginUid;
+
+    /** 最近确定的登录账号，用于每次换号只说明一次跳过关注自己。 */
+    private volatile Long observedFollowLoginUid;
 
     /**
      * 下一次复核关注列表的时刻，为空表示还没完整核对过
@@ -240,29 +260,46 @@ public class BilibiliDynamicService {
      * 距上次核对满复核周期。关注列表没取全时本轮一个都不补关注，下一轮再试——
      * 拿残表去比，没取到那几页里的已关注主播都会被当成没关注，再关注一遍。
      * <p>
-     * 补关注失败的主播不单独重试，等下一次复核：按检查间隔反复重试只会把关注请求推得更密。
+     * B 站明确拒绝的主播满 24 小时再试，其他失败等下一次每小时复核。
      * @param now 当前时刻
      */
     void followConfiguredUps(Instant now) {
         AbstractDataSource source = this.dataSource;
-        if (source == null || !accountService.isLoggedIn()) {
+        if (source == null) {
             return;
         }
 
-        Set<Long> configured = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
+        Map<Long, Up> configuredUps = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
-                .map(org.frostnova.nova.core.model.PushUser::getUid)
-                .filter(java.util.Objects::nonNull)
-                .collect(Collectors.toSet());
+                .map(Up::new)
+                .filter(up -> up.getUid() != null)
+                .collect(Collectors.toMap(Up::getUid, up -> up, (first, second) -> first));
+        Set<Long> configured = configuredUps.keySet();
+        followRejections.keySet().retainAll(configured);
 
         // 删掉或停用后再加回的主播若仍留在已核对名单里，要等满一小时复核才补关注，这期间他的动态推不出来
         checkedUids = Set.copyOf(checkedUids.stream().filter(configured::contains).toList());
 
+        if (!accountService.isLoggedIn()) {
+            return;
+        }
+        Long loginUid = accountService.getLoginUid();
+        if (loginUid != null && !java.util.Objects.equals(loginUid, checkedLoginUid)) {
+            followRejections.clear();
+        }
+        if (loginUid != null) {
+            if (!java.util.Objects.equals(loginUid, observedFollowLoginUid)) {
+                observedFollowLoginUid = loginUid;
+                if (configured.contains(loginUid)) {
+                    log.info("推送用户里有登录账号自己，自动关注跳过");
+                }
+            }
+            configuredUps.remove(loginUid);
+            followRejections.remove(loginUid);
+        }
         if (configured.isEmpty()) {
             return;
         }
-
-        Long loginUid = accountService.getLoginUid();
         if (loginUid == null) {
             // 保留凭据按已登录启动、uid 尚未确认：这一轮拿不出账号身份，取关注列表只会
             // 逐轮失败。安静跳过，只在刚进这个状态时说明一次；uid 补上后下一轮照常
@@ -296,9 +333,36 @@ public class BilibiliDynamicService {
         checkedLoginUid = loginUid;
         nextFollowingCheckAt = now.plus(FOLLOWING_RECHECK_INTERVAL);
 
-        configured.stream()
-                .filter(uid -> !following.contains(uid))
-                .forEach(api::followUp);
+        followRejections.keySet().removeAll(following);
+        for (Long uid : configured) {
+            if (following.contains(uid)) {
+                continue;
+            }
+            FollowRejection previous = followRejections.get(uid);
+            if (previous != null && now.isBefore(previous.failedAt().plus(FOLLOW_REJECTION_RETRY_INTERVAL))) {
+                continue;
+            }
+            BilibiliApiUtil.FollowResult result = api.followUpWithResult(uid);
+            switch (result.outcome()) {
+                case SUCCESS, ALREADY_FOLLOWING -> {
+                    followRejections.remove(uid);
+                    log.info("{} uid {}", result.outcome() == BilibiliApiUtil.FollowOutcome.SUCCESS
+                            ? "已关注" : "已在关注中，无需重复关注", uid);
+                }
+                case BUSINESS_ERROR -> {
+                    FollowRejection rejection = new FollowRejection(uid, configuredUps.get(uid).getUname(),
+                            result.code(), result.message(), now);
+                    followRejections.put(uid, rejection);
+                    String message = "自动关注 {} 被 B 站拒绝（{}）：{}，他的动态因此推不出来，直播推送不受影响，24 小时后再试";
+                    if (previous == null || !java.util.Objects.equals(previous.message(), result.message())) {
+                        log.warn(message, rejection.displayName(), rejection.code(), rejection.message());
+                    } else {
+                        log.info(message, rejection.displayName(), rejection.code(), rejection.message());
+                    }
+                }
+                case FAILURE -> log.error("关注 uid {} 失败: {}", uid, result.message());
+            }
+        }
     }
 
     /**
