@@ -45,6 +45,12 @@ public class RetiredConfigurationKeyCheck {
                 "命令不再靠前缀触发：群里 @ 机器人后接命令名，私聊直接发命令名。这一行已不起作用，可以删掉");
         RETIRED.put("novabot.core.command.prefix",
                 "命令不再靠前缀触发：群里 @ 机器人后接命令名，私聊直接发命令名。这一行已不起作用，可以删掉");
+        RETIRED.put("novabot.bilibili.bilibili-thread.max-pool-size",
+                "B 站这一池是定时调度器，只按「核心线程数」（core-pool-size）那一项开线程。这一行从来没起过作用，可以删掉");
+        RETIRED.put("novabot.bilibili.bilibili-thread.queue-capacity",
+                "B 站这一池是定时调度器，只按「核心线程数」（core-pool-size）那一项开线程。这一行从来没起过作用，可以删掉");
+        RETIRED.put("novabot.bilibili.bilibili-thread.keep-alive-seconds",
+                "B 站这一池是定时调度器，只按「核心线程数」（core-pool-size）那一项开线程。这一行从来没起过作用，可以删掉");
     }
 
     /**
