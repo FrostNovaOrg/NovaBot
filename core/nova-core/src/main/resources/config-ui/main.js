@@ -391,9 +391,12 @@ export async function load(how) {
       }
     }
     store.dirty = kept;
-    renderGeneral();
     const here = parseHash();
-    focusCard(here.name, here.card);
+    // 设置页要等告警通道表到齐再画，避免把通道配置摆成普通行。
+    if (here.name !== 'settings') {
+      renderGeneral();
+      focusCard(here.name, here.card);
+    }
 
     // 各供数方那一份与这一趟并行取：它们要赶在下面 refreshPages 之前进来，
     // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍。
@@ -431,6 +434,11 @@ export async function load(how) {
     } catch (e) {
       store.vocab = {};
       store.alertChannels = [];
+    }
+    const current = parseHash();
+    if (current.name === 'settings') {
+      renderGeneral();
+      focusCard(current.name, current.card);
     }
     applyConnectionVocab();
     refreshPages();
