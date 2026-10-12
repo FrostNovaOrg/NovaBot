@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
+import java.util.Map;
 
 import java.util.Optional;
 
@@ -112,6 +113,16 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
     @Override
     public String platform() {
         return BilibiliPlatform.BILIBILI.id();
+    }
+
+    @Override
+    public Map<String, String> placeholderLabels() {
+        return Map.of(
+                "{uname}", "主播昵称",
+                "{time}", "本场直播时长",
+                "{url}", "直播间链接",
+                "{next}", "另起一条消息",
+                "{at=all}", "@全体成员");
     }
 
     @Override

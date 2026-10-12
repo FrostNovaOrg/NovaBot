@@ -255,12 +255,33 @@ const PAGE_STYLE = `
   border-radius:var(--r-ctl);padding:7px;cursor:pointer;font-size:13.5px;font-family:inherit}
 .tpl-add:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .tpl-add:disabled{opacity:.5;cursor:not-allowed}
-/* @ 谁：钉在第一张卡的开头，不能拖也不能删 */
-.tpl-at{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:13.5px}
-.tpl-at-t{flex:none;color:var(--dim)}
-.tpl-at-s{border:1px solid var(--softline);background:var(--soft);color:var(--accent);
-  border-radius:var(--r-ctl);padding:3px 8px;font-size:13.5px;font-family:inherit}
-.tpl-at .xs{flex:1 1 100%;margin:0}
+/* 提醒模式与位置：拖柄独立于原生下拉，触屏可点按钮定位 */
+.tpl-at{display:flex;align-items:center;gap:6px;max-width:100%;font-size:13px}
+.tpl-at-capsule{display:flex;align-items:stretch;min-width:0;border:1px solid var(--softline);
+  border-radius:var(--r-pill);background:var(--surface);overflow:hidden}
+.tpl-at-s{width:auto;min-width:0;max-width:100%;border:0;border-radius:0;
+  background:var(--surface);color:var(--accent-text);padding:6px 32px 6px 5px;font:inherit}
+.tpl-at-handle{flex:none;min-width:28px;min-height:34px;padding:3px 5px;border:0;
+  border-right:1px solid var(--softline);background:var(--soft);color:var(--accent-text);
+  cursor:grab;user-select:none;font:inherit}
+.tpl-at-handle:active{cursor:grabbing}
+.tpl-at-insert{flex:none;min-height:34px;padding:4px 9px;border:1px solid var(--line);
+  border-radius:var(--r-pill);background:var(--surface);color:var(--text);font:inherit;
+  cursor:pointer;touch-action:manipulation}
+.tpl-at-handle:disabled,.tpl-at-insert:disabled{opacity:.45;cursor:not-allowed}
+.tpl-at-capsule:focus-within,.tpl-at-insert:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tpl-at-warning{flex:1 0 100%;margin:3px 0 0;color:var(--warn);line-height:1.6}
+.tpl-preview-note{margin:8px 0 0;line-height:1.6}
+.template-diff{font-size:13px;margin:6px 0}
+@media(pointer:coarse){
+  .tpl-at-handle,.tpl-at-s,.tpl-at-insert{min-height:42px}
+  .tpl-at-handle{min-width:34px}
+}
+@media(max-width:520px){
+  .tpl-pal>.tpl-at{flex-basis:100%}
+  .tpl-at-capsule{flex:1 1 auto}
+  .tpl-at-s{flex:1 1 auto;font-size:12.5px}
+}
 /* 文本形式：给老使用者对照，只能看 */
 .tpl-raw{margin-top:10px;font-size:13.5px;color:var(--dim)}
 .tpl-raw>summary{cursor:pointer}
@@ -286,6 +307,7 @@ const PAGE_STYLE = `
   color:var(--accent);font-family:var(--mono);font-size:12.5px}
 .qq-img{margin-top:5px;padding:16px 10px;border:1px dashed var(--line);border-radius:8px;
   text-align:center;color:var(--dim);font-size:13px;background:var(--surface)}
+.tpl-blk,.tpl-pill,.tpl-att,.qq-ph{font-family:var(--font)}
 /* ---------- 报告版式：左边开关，右边照着开关画出来的那张图 ---------- */
 .rep-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px;
   margin-top:10px}
@@ -302,7 +324,7 @@ const PAGE_STYLE = `
 .rep-row.parent-off{opacity:.6}
 /* 可排先后的那几项：上面报告区的小块照占位符药丸，下面没放进报告的照调色板 */
 .rep-board{padding:7px 0 7px 26px;border-top:1px solid var(--line)}
-.rep-board>.rep-zone-t{margin:4px 0}
+.rep-board>.rep-zone-t{margin:4px 0;font-size:13px;font-weight:600;line-height:1.5}
 .rep-zone{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:34px;padding:6px 8px;
   border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground)}
 .rep-zone.over{border-color:var(--accent);background:var(--soft)}
@@ -1336,14 +1358,11 @@ function sectionTemplate(host, user, target, session) {
   line.appendChild(toDefault);
   box.appendChild(line);
 
-  box.appendChild(el('p', 'hint')).textContent =
-    '默认模板改一次，所有用默认的通道一起变；在这个通道里改过的，不跟着默认变。';
-
   if (state.custom) {
     const which = (store.handlerList || [])
       .filter(item => state.changed.includes(item.className))
       .map(item => item.displayName || item.className);
-    box.appendChild(el('div', 'note')).textContent = '与默认不同的是：' + which.join('、');
+    box.appendChild(el('div', 'note template-diff')).textContent = '与默认不同的是：' + which.join('、');
   }
 
   buildTemplateEditor(box, {
@@ -1381,7 +1400,7 @@ function adminOf(target) {
   return known ? known.admin : null;
 }
 
-/** 段 3：报告长什么样。只有开着带版式的那类通知时才出现 */
+/** 段 3：报告版式。只有开着带版式的那类通知时才出现 */
 function sectionLayout(host, target, session) {
   const state = layoutState(target, store.handlerList);
   if (!state.present) return;
@@ -1389,14 +1408,10 @@ function sectionLayout(host, target, session) {
   // 处理器整项由 layoutState 一并给回来，不在这里按 className 回头再查一遍：
   // 两处查法差一点，旧名那一条就会在其中一处掉出去
   const handler = state.handler || {};
-  const box = sectionHead(host, 3, (handler.displayName || '报告') + '长什么样',
-    '这一类通知没有文字模板，只有版式：左边调，右边就是发到群里的那张图');
+  const box = sectionHead(host, 3, (handler.displayName || '报告') + '版式', null);
 
   const line = el('div', 'tplstate');
   const label = el('span');
-
-  const free = el('span', 'tplfree');
-  free.textContent = '直接改就行；改过的通道不再跟着默认版式变，随时可以恢复默认';
 
   // 与段 2 同一条规矩：改了第一下当场出现、改回相同当场收起，只动状态行这几个节点
   const act = el('button', 'ghost');
@@ -1421,14 +1436,11 @@ function sectionLayout(host, target, session) {
 
   const syncState = () => {
     const now = layoutState(target, store.handlerList);
-    label.innerHTML = '本通道用的是：<b>' + (now.custom ? '自定义版式' : '默认版式') + '</b>'
-      + (now.custom ? ' · 与默认不同' : ' ✓');
-    free.hidden = now.custom;
+    label.innerHTML = '当前版式：<b>' + (now.custom ? '自定义' : '默认') + '</b>';
     act.hidden = !now.custom;
   };
   syncState();
   line.appendChild(label);
-  line.appendChild(free);
   line.appendChild(act);
   box.appendChild(line);
 

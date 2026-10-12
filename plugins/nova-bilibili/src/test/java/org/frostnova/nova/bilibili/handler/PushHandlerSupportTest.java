@@ -1,5 +1,8 @@
 package org.frostnova.nova.bilibili.handler;
 
+import org.frostnova.nova.core.sender.AtMode;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.enums.PushTargetType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +16,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 @DisplayName("占位符分句移除")
 class PushHandlerSupportTest {
+    @Test
+    @DisplayName("第二条句中的订阅提醒不再前补，位置保持")
+    void inlineAtInSecondMessageIsNotPrepended() {
+        PushTarget target = new PushTarget();
+        target.setType(PushTargetType.GROUP);
+        String template = "第一条{next}前{at}后";
+        String subscribers = "{at=123}";
+        String content = template.replace("{at}", subscribers);
+        assertEquals("第一条{next}前{at=123}后",
+                PushHandlerSupport.withAtBlock(AtMode.SUBSCRIBERS, target, template, content, subscribers));
+    }
+
     @Test
     @DisplayName("取值非空时应正常替换")
     void replacesWhenValuePresent() {

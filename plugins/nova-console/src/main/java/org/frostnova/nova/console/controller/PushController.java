@@ -131,6 +131,7 @@ public class PushController {
             item.put("description", handler.description());
             item.put("platform", handler.platform());
             item.put("placeholders", handler.placeholders());
+            item.put("placeholderLabels", handler.placeholderLabels());
             item.put("attachments", handler.attachmentPlaceholders());
             // 「默认」是这台机器此刻的默认（出厂默认盖上控制台改过的那几个键），
             // 不是出厂默认：界面拿它判「这个通道用的是默认还是自定义」，
