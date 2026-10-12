@@ -430,6 +430,11 @@ export function buildTemplateEditor(host, options) {
     const capsule = el('div', 'tpl-at-capsule');
     const supported = state.spec.all.includes(atLiteralOf(state.atMode));
     const positionable = !!opts.editable && supported;
+    const note = !supported && state.atMode === 'subscribers'
+      ? '这类通知没有订阅名单，选这档就是不 @ 人。'
+      : state.atMode === 'all_or_subscribers' && !state.spec.all.includes('{at}')
+        ? '被摘掉的那一次不 @ 人：这类通知没有订阅名单。'
+        : atModeInfo(state.atMode).note;
     const handle = el('button', 'tpl-at-handle');
     handle.type = 'button';
     handle.textContent = '⋮⋮';
@@ -442,13 +447,13 @@ export function buildTemplateEditor(host, options) {
       else event.preventDefault();
     });
     handle.addEventListener('dragend', () => { drag = null; });
-    capsule.appendChild(handle);
+    if (supported) capsule.appendChild(handle);
 
     const select = el('select', 'tpl-at-s');
     select.id = 'tpl-at';
     select.disabled = !opts.editable;
     select.setAttribute('aria-label', '选择提醒方式');
-    select.title = atModeInfo(state.atMode).note;
+    select.title = note;
     const ctx = previewContext();
     for (const mode of AT_MODES) {
       const option = el('option');
@@ -470,13 +475,13 @@ export function buildTemplateEditor(host, options) {
     row.appendChild(capsule);
     const insert = el('button', 'tpl-at-insert');
     insert.type = 'button';
-    insert.textContent = '插入到这里';
+    insert.textContent = '插到光标处';
     insert.disabled = !positionable;
     insert.title = handle.title;
     insert.addEventListener('click', insertAtHere);
     handle.addEventListener('click', insertAtHere);
-    row.appendChild(insert);
-    row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = atModeInfo(state.atMode).note;
+    if (supported) row.appendChild(insert);
+    row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
     return row;
   }
 
