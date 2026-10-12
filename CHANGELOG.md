@@ -25,6 +25,7 @@
 - 给自家配置项标常用／高级的注解 `ConfigLevel` 从 `org.frostnova.nova.core.config` 挪到 `org.frostnova.nova.core.properties`，与 `ConfigEffect`、`ConfigLabel` 放在一起。只有自己写插件、给配置项标了 `@ConfigLevel` 的人要改一下 import，用法不变；同一个包里新加 `@ConfigSummary`（设置页行内那一句短说明）和 `@ConfigFormat`（时刻、文件位置），不标的项照旧显示整段说明。
 - 设置页上 B 站线程池的最大线程数、队列容量、空闲存活三项去掉了，它们本来就不起作用；配置文件里还留着的，启动日志会提醒一句，删不删都不影响运行。
 - 给插件写页面的人：控制台的配色变量（如 `--accent`）挪到单独的 `product-ui.css`，变量名和取值都没变，页面照常可用。
+- 手册换成跟控制台同一套配色与样式；随程序自带的手册与控制台共用主题选择，在控制台选了深色，打开手册也是深色；之前在手册里选过的主题会回到跟随系统一次。
 
 ### 修复
 

@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import urllib.parse
+from html.parser import HTMLParser
 from pathlib import Path
 
 MANUAL = Path(__file__).resolve().parent
@@ -16,6 +17,69 @@ OUT = MANUAL / "dist"
 ASSETS = MANUAL / "assets"
 SITE_NAME = "NovaBot 用户手册"
 EXTERNAL = ("http://", "https://", "mailto:")
+
+
+class HeadStyles(HTMLParser):
+    """只收集 head 里的样式表，正文里的同名链接不能替代它。"""
+
+    def __init__(self):
+        super().__init__()
+        self.in_head = False
+        self.styles = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "head":
+            self.in_head = True
+        if self.in_head and tag == "link":
+            attrs = dict(attrs)
+            if "stylesheet" in attrs.get("rel", "").split():
+                self.styles.append(attrs.get("href"))
+
+    def handle_endtag(self, tag):
+        if tag == "head":
+            self.in_head = False
+
+
+def check_product_styles(out):
+    """防止手册整页没颜色或被错误顺序的样式表覆盖。"""
+    errors = []
+    if not (out / "product-ui.css").is_file():
+        errors.append("控制台样式加载: 缺少 product-ui.css")
+    for page in sorted(out.glob("*.html")):
+        head = HeadStyles()
+        head.feed(page.read_text(encoding="utf-8"))
+        if (head.styles.count("product-ui.css") != 1
+                or head.styles.count("manual.css") != 1
+                or head.styles.index("product-ui.css") > head.styles.index("manual.css")):
+            errors.append("控制台样式加载: %s 的 head 必须先引 product-ui.css，再引 manual.css"
+                          % page.name)
+    return errors
+
+
+def check_manual_colors(css):
+    """防止组件写死颜色后，手册在深浅模式下又偏离控制台。"""
+    # 只豁免文件开头的手册变量区，且只允许三态选择器里的变量声明。
+    start = "/* manual tokens begin */"
+    end = "/* manual tokens end */"
+    errors = []
+    allowed = None
+    if css.startswith(start) and css.count(start) == 1 and css.count(end) == 1:
+        stop = css.index(end)
+        tokens = re.sub(r"/\*.*?\*/", "", css[len(start):stop], flags=re.S)
+        tokens = re.sub(r"--manual-[a-z-]+\s*:[^;{}]+;", "", tokens)
+        tokens = re.sub(r':root(?:\[data-theme="dark"\]|:not\(\[data-theme="light"\]\))?'
+                        r'|@media\s*\(prefers-color-scheme:\s*dark\)|[\s{}]', "", tokens)
+        if tokens:
+            errors.append("手册颜色变量: 开头变量区只允许三态选择器与 --manual-* 声明")
+        else:
+            allowed = (len(start), stop)
+    pattern = re.compile(r"#[0-9a-fA-F]{3,8}\b|rgba?\(")
+    for match in pattern.finditer(css):
+        if allowed and allowed[0] <= match.start() < allowed[1]:
+            continue
+        line = css.count("\n", 0, match.start()) + 1
+        errors.append("手册颜色变量: manual.css:%d 的色值必须放在开头的手册变量区" % line)
+    return errors
 
 # ---------- Markdown 子集渲染（支持的写法见 manual/README.md） ----------
 
@@ -263,14 +327,11 @@ _THEME_BOOT = (
     "(function () {\n"
     "  var mode = \"system\";\n"
     "  try {\n"
-    "    var saved = localStorage.getItem(\"novabot-manual-theme\");\n"
-    "    if (saved === \"dark\" || saved === \"light\" || saved === \"system\") mode = saved;\n"
+    "    var saved = localStorage.getItem(\"novabot-theme\");\n"
+    "    if (saved === \"dark\" || saved === \"light\") mode = saved;\n"
     "  } catch (e) {}\n"
-    "  var dark = mode === \"dark\";\n"
-    "  if (mode === \"system\" && window.matchMedia) {\n"
-    "    dark = window.matchMedia(\"(prefers-color-scheme: dark)\").matches;\n"
-    "  }\n"
-    "  document.documentElement.setAttribute(\"data-theme\", dark ? \"dark\" : \"light\");\n"
+    "  if (mode === \"system\") document.documentElement.removeAttribute(\"data-theme\");\n"
+    "  else document.documentElement.setAttribute(\"data-theme\", mode);\n"
     "  document.documentElement.setAttribute(\"data-mode\", mode);\n"
     "})();\n"
     "</script>"
@@ -393,6 +454,7 @@ def page_shell(title, toc, content, pager, cur):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%s</title>
 %s
+<link rel="stylesheet" href="product-ui.css">
 <link rel="stylesheet" href="manual.css">
 </head>
 <body>
@@ -535,6 +597,8 @@ def main():
     OUT.mkdir(parents=True)
     for name in ("manual.css", "search.js", "theme.js"):
         shutil.copy(ASSETS / name, OUT / name)
+    shutil.copy(MANUAL.parent / "core/nova-core/src/main/resources/config-ui/product-ui.css",
+                OUT / "product-ui.css")
 
     entries = []
     for i, (stem, title, blocks) in enumerate(pages):
@@ -582,6 +646,13 @@ def main():
     if img_root.exists():
         shutil.copytree(img_root, OUT / "images")
 
+    style_errors = check_product_styles(OUT) + check_manual_colors(
+        (OUT / "manual.css").read_text(encoding="utf-8"))
+    if style_errors:
+        for error in style_errors:
+            print("自检失败: %s" % error, file=sys.stderr)
+        sys.exit("共 %d 处样式问题，构建失败。" % len(style_errors))
+    print("自检通过: 控制台样式加载；手册颜色变量；站内链接、锚点与图片")
     print("生成 %d 页 + 目录页 → %s" % (len(pages), OUT))
 
 

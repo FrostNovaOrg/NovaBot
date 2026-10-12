@@ -1,5 +1,5 @@
 # 手册站发布到 GitHub Pages。
-# Pages 已开启。推到 main 时，只有 manual/ 目录或本工作流文件有改动才跑，
+# Pages 已开启。推到 main 时，手册、控制台色表或本工作流文件有改动才跑，
 # 免得跟手册无关的提交也空跑一遍发布。
 # 手动触发留着，不改文件也可以重发。
 name: Manual site (Pages)
@@ -9,6 +9,7 @@ on:
     branches: [ main ]
     paths:
       - 'manual/**'
+      - 'core/nova-core/src/main/resources/config-ui/product-ui.css'
       - '.github/workflows/manual-pages.yml'
   workflow_dispatch:
 
