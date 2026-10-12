@@ -109,14 +109,13 @@ class BilibiliLiveReportRankingBarTest {
     void longScoreStaysClearOfTheBar() {
         List<String> red = new ArrayList<>();
 
+        // 盲盒盈亏榜：带正负号与「¥」的金额，位数一多就宽过默认槽
         paint(paramsWith("box_ranking", 5), data -> {
-            data.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_USERS, 1L, 23);
             data.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(),
-                    BilibiliLiveMetric.BOX_PROFIT_USERS, 1L, -135.2);
+                    BilibiliLiveMetric.BOX_PROFIT_USERS, 1L, 12345678.9);
             data.recordLiveUserName(PLATFORM, STREAMER.getUid(), 1L, "甲");
-            data.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_USERS, 2L, 2);
             data.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(),
-                    BilibiliLiveMetric.BOX_PROFIT_USERS, 2L, 1);
+                    BilibiliLiveMetric.BOX_PROFIT_USERS, 2L, -1);
             data.recordLiveUserName(PLATFORM, STREAMER.getUid(), 2L, "乙");
         });
 

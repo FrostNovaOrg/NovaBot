@@ -347,8 +347,8 @@ class BilibiliLiveReportRevenueCardsTest {
     }
 
     @Test
-    @DisplayName("隐藏金额时盲盒榜照出、只写个数：有盲盒数据的隐藏图比没有的高出那一块")
-    void hiddenSessionKeepsTheBoxBoardWithCountsOnly() throws Exception {
+    @DisplayName("隐藏金额时盲盒盈亏榜整张不出：有盲盒数据的隐藏图与没有的一样高")
+    void hiddenSessionDropsTheBoxProfitBoard() throws Exception {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
         liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
         com.alibaba.fastjson2.JSONObject params = quietParams();
@@ -363,8 +363,8 @@ class BilibiliLiveReportRevenueCardsTest {
         liveDataService.recordLiveUserName(PLATFORM, STREAMER.getUid(), 1L, "甲乙丙");
         int with = heightOf(painter.paint(PLATFORM, STREAMER, hidden).orElseThrow());
 
-        assertTrue(with > without,
-                "隐藏金额时盲盒榜该照出（只写个数），喂了盲盒数据图却没长高：" + with + " vs " + without);
+        assertEquals(without, with,
+                "隐藏金额时盲盒盈亏榜该整张不出，喂了盲盒数据图却长高了：" + with + " vs " + without);
     }
 
     private int heightOf(String base64) throws Exception {
@@ -378,12 +378,12 @@ class BilibiliLiveReportRevenueCardsTest {
 
         List<String> red = new ArrayList<>();
         try {
-            assertFalse(keys.contains("box_profit_ranking"), "盲盒盈亏榜已并入盲盒榜：" + keys);
+            assertFalse(keys.contains("box_profit_ranking"), "旧键 box_profit_ranking 已撤掉：" + keys);
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
         }
         try {
-            assertTrue(keys.contains("box_ranking"), "合并后沿用 box_ranking 键：" + keys);
+            assertTrue(keys.contains("box_ranking"), "盲盒盈亏榜沿用 box_ranking 键：" + keys);
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }

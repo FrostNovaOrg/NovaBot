@@ -1937,16 +1937,18 @@ public class BilibiliLiveReportPainter {
      */
     private void drawRankings(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         // 金额榜整榜跳过而非只抹掉数字：这几张榜的每一行本质都是「某人花了多少钱」，
-        // 留下名次仍然是在公开排消费。盲盒榜例外：隐藏金额时只写个数——个数不是消费额，
-        // 而它是隐藏金额的会话里仅剩的几张榜之一
+        // 留下名次仍然是在公开排消费。盲盒盈亏榜同理：每一行都是某人盲盒赚了亏了多少
         int revenueRankingLimit = options.isShowRevenue() ? options.getGiftRanking() : 0;
         int superChatListLimit = options.isShowRevenue() ? options.getSuperChatRanking() : 0;
+        int boxProfitLimit = options.isShowRevenue() ? options.getBoxRanking() : 0;
 
         drawRanking(painter, platform, uid, "弹幕排行", BilibiliLiveMetric.DANMU_USERS,
                 options.getDanmuRanking(), score -> Math.round(score) + " 条", null);
         drawRevenueRanking(painter, platform, uid, revenueRankingLimit);
         drawSuperChatList(painter, platform, uid, superChatListLimit);
-        drawBoxBoard(painter, platform, uid, options.getBoxRanking(), options.isShowRevenue());
+        // 盲盒盈亏可正可负，正数补加号、负数补减号；零没有方向，不带号
+        drawRanking(painter, platform, uid, "盲盒盈亏榜", BilibiliLiveMetric.BOX_PROFIT_USERS,
+                boxProfitLimit, BilibiliLiveReportPainter::profitLabel, null);
 
         // 本场开通大航海：只有隐藏金额的会话还画这张名单——那里没有金额可露，
         // 名单正是氛围；显示金额的会话里不画，全名单上的「本场」小标承担同一件事
@@ -2033,42 +2035,6 @@ public class BilibiliLiveReportPainter {
         List<String> labels = new ArrayList<>(ranking.size());
         for (UserScore user : ranking) {
             labels.add(scoreText.apply(user.score()));
-        }
-        int scoreSlot = rankingScoreSlot(painter, labels);
-        double top = ranking.get(0).score();
-        for (int i = 0; i < ranking.size(); i++) {
-            drawRankingRow(painter, i + 1, ranking.get(i), top, labels.get(i), scoreSlot);
-        }
-        painter.movePos(0, 8);
-    }
-
-    /**
-     * 盲盒榜：开了几个与盈亏多少合在一榜，每人一行。按个数排序——个数是活动量，
-     * 盈亏是运气，条形按个数走，盈亏跟着各人行显示（正负号照 profitLabel）。
-     * 隐藏金额时盈亏那一截不写，榜照出、只写个数：个数不是消费额
-     */
-    private void drawBoxBoard(CommonPainter painter, String platform, Long uid, int limit, boolean showRevenue) {
-        if (limit <= 0) {
-            return;
-        }
-        List<UserScore> ranking = liveDataService.getLiveUserRanking(platform, uid, BilibiliLiveMetric.BOX_USERS, limit);
-        if (ranking.isEmpty()) {
-            return;
-        }
-
-        painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle("盲盒榜", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
-        painter.movePos(0, 6);
-
-        List<String> labels = new ArrayList<>(ranking.size());
-        for (UserScore user : ranking) {
-            String label = Math.round(user.score()) + " 个";
-            if (showRevenue) {
-                double profit = liveDataService.getLiveUserMetric(platform, uid,
-                        BilibiliLiveMetric.BOX_PROFIT_USERS, user.userUid());
-                label += " · " + profitLabel(profit);
-            }
-            labels.add(label);
         }
         int scoreSlot = rankingScoreSlot(painter, labels);
         double top = ranking.get(0).score();
@@ -2186,7 +2152,7 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle("大航海名单（全部）",
+        painter.drawTextWithStyle(List.of(new TextWithStyle(guardRosterTitle(fetched, options.getGuardListLimit()),
                 CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
         if (fetched.isEmpty()) {
             painter.drawTextWithStyle(
@@ -2468,7 +2434,7 @@ public class BilibiliLiveReportPainter {
         if (fetched.isPresent() && fetched.get().isEmpty()) {
             return;
         }
-        text.append("\n大航海名单（全部）");
+        text.append('\n').append(guardRosterTitle(fetched, options.getGuardListLimit()));
         if (fetched.isEmpty()) {
             text.append("\n名单暂时拉不到");
             return;
@@ -2480,6 +2446,17 @@ public class BilibiliLiveReportPainter {
                 text.append(" · 本场");
             }
         }
+    }
+
+    /**
+     * 大航海名单的标题，图与文字版共用：被 {@link #sortAndLimit} 截掉时写「前 N 名」，
+     * 全部列出或拉不到名单时只写「大航海名单」
+     */
+    private static String guardRosterTitle(Optional<List<GuardMember>> fetched, int limit) {
+        if (fetched.isPresent() && limit > 0 && fetched.get().size() > limit) {
+            return "大航海名单（前 " + limit + " 名）";
+        }
+        return "大航海名单";
     }
 
     private static List<GuardMember> sortAndLimit(List<GuardMember> members, int limit) {
@@ -2517,7 +2494,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 绘制排行榜的一行：名次、昵称、比例条与得分
      * <p>
-     * 得分文案由调用方按行算好传入：盲盒榜那种「一行两个数」的榜拿不到一行一个函数的口子。
+     * 得分文案由调用方算好传入：整榜共用的得分占位要先量过各行文案才定得下。
      * {@code scoreSlot} 是这一榜共用的得分占位，各行条子因此一样宽。
      */
     private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore,
@@ -2552,8 +2529,8 @@ public class BilibiliLiveReportPainter {
                     RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
         }
 
-        // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：盲盒榜那种「一行两个数」
-        // 的长文案会画出右边距外（数再长一两位就被画布截掉）。与醒目留言名单的合计文案同一写法
+        // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：位数多的长文案
+        // 会画出右边距外（数再长一两位就被画布截掉）。与醒目留言名单的合计文案同一写法
         int scoreWidth = painter.getStringWidthAndHeight(
                 new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)).getFirst();
         painter.drawTextWithStyle(List.of(new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)),
@@ -3055,7 +3032,7 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 盲盒盈亏排行金额：正数带加号、负数带减号、零无方向不带号。
+     * 盲盒盈亏榜金额：正数带加号、负数带减号、零无方向不带号。
      */
     static String profitLabel(double score) {
         if (score == 0) {

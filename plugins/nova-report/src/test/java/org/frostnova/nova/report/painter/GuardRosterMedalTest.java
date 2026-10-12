@@ -56,7 +56,7 @@ class GuardRosterMedalTest {
     private static final LiveStreamerInfo STREAMER =
             new LiveStreamerInfo(10001L, "测试主播", 20002L, "https://pic.example/face.jpg");
 
-    private static final String ROSTER_TITLE = "大航海名单（全部）";
+    private static final String ROSTER_TITLE = "大航海名单";
 
     @BeforeAll
     static void headless() {

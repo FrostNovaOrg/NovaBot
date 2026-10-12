@@ -714,7 +714,7 @@ class BilibiliLiveReportPainterTest {
 
         String text = hooked.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true));
         assertAll(
-                () -> assertTrue(text.contains("大航海名单（全部）"), text),
+                () -> assertTrue(text.contains("\n大航海名单\n"), text),
                 () -> assertTrue(text.contains("甲总督"), text),
                 () -> assertTrue(text.contains("乙提督"), text),
                 () -> assertTrue(text.contains("丙舰长"), text));

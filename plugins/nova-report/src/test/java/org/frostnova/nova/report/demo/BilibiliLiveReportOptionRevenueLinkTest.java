@@ -60,12 +60,13 @@ class BilibiliLiveReportOptionRevenueLinkTest {
             "gift_list", "收到的礼物",
             "gift_ranking", "流水排行",
             "super_chat_ranking", "醒目留言名单",
+            "box_ranking", "盲盒盈亏榜",
             "guard_list", "本场开通大航海");
 
     /**
      * 表上该标「显示金额时才出」的键
      */
-    private static final Set<String> ONLY_WHEN_SHOWN = Set.of("gift_list", "gift_ranking", "super_chat_ranking");
+    private static final Set<String> ONLY_WHEN_SHOWN = Set.of("gift_list", "gift_ranking", "super_chat_ranking", "box_ranking");
 
     /**
      * 表上该标「隐藏金额时才出」的键
@@ -75,7 +76,7 @@ class BilibiliLiveReportOptionRevenueLinkTest {
     /**
      * 表上该标「隐藏金额时变样」的键：不整块消失，控制台不灰、只加说明，这里只核它们确实带原因句
      */
-    private static final Set<String> RESTYLED_WHEN_HIDDEN = Set.of("cards", "interaction_curve", "box_ranking");
+    private static final Set<String> RESTYLED_WHEN_HIDDEN = Set.of("cards", "interaction_curve");
 
     /**
      * 画上去的每一句字
