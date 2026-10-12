@@ -215,6 +215,15 @@ class BilibiliDataQueryPainterTest {
                         + "，卡片右缘在 x=" + cardRight);
             }
         }
+        // 截短的那行带着「…」顶到卡片右边，比左边贴得紧，看着像被切掉一截：右边至少留出跟左边一样的 18px
+        String cut = (String) values.get(1)[0];
+        int cutRight = (int) values.get(1)[1] + (int) values.get(1)[2];
+        int cutCardRight = boxes.get(1)[0] + boxes.get(1)[1];
+        if (!cut.endsWith("…")) {
+            red.add("「-¥123456789.5」该截短，实际画的是「" + cut + "」");
+        } else if (cutCardRight - cutRight < 18) {
+            red.add("截短的大字「" + cut + "」右缘离卡片右边只有 " + (cutCardRight - cutRight) + "px，应至少 18px");
+        }
         if (!red.isEmpty()) {
             fail(String.join("；", red));
         }

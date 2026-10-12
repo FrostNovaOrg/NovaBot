@@ -77,7 +77,7 @@ public class BilibiliDataQueryPainter {
     private static final int CARD_RADIUS = 16;
 
     /**
-     * 卡片内文字距卡片左边的留白
+     * 卡片内文字距卡片左边的留白；截短的那行右边也留这么宽
      */
     private static final int CARD_TEXT_INSET = 18;
 
@@ -338,19 +338,32 @@ public class BilibiliDataQueryPainter {
             int y = startY + (i / CARD_COLUMNS) * (CARD_HEIGHT + CARD_GAP);
 
             painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-            // 同报告卡片：放不下的截短，不让字伸出卡片压到隔壁那张上（盲盒卡大字是金额，位数没有上限）。
-            // 可用宽是文字起点到卡片右缘：再扣一份右留白会把放得下的字也截掉（「弹幕 · 1234567 人参与」宽 195，这里有 201）
-            int usable = CARD_WIDTH - CARD_TEXT_INSET;
             TextWithStyle value = new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD);
-            value.setText(painter.truncateToWidth(value, usable));
+            value.setText(fitCardText(painter, value));
             painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 14));
             TextWithStyle label = new TextWithStyle(card.label(), 20, COLOR_TIP, Font.PLAIN);
-            label.setText(painter.truncateToWidth(label, usable));
+            label.setText(fitCardText(painter, label));
             painter.drawTextWithStyle(List.of(label), new Point(x + CARD_TEXT_INSET, y + 62));
         }
 
         int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;
         painter.setPos(MARGIN, startY + rows * (CARD_HEIGHT + CARD_GAP) + 4);
+    }
+
+    /**
+     * 卡片里的一行字：放得进卡片就整串画，放不进才截短（盲盒卡大字是金额，位数没有上限）
+     * <p>
+     * 两道宽不一样。放不放得下按文字起点到卡片右缘算（201px）：再扣一份右留白，
+     * 「弹幕 · 1234567 人参与」（宽 195）这种放得下的字也会被截掉。
+     * 截短时则同报告卡片，截到左右各留 {@link #CARD_TEXT_INSET}（183px），
+     * 不然带着「…」的那行顶到卡片右边，看着像被切掉一截。
+     */
+    private static String fitCardText(CommonPainter painter, TextWithStyle text) {
+        String whole = painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET);
+        if (Objects.equals(whole, text.getText())) {
+            return whole;
+        }
+        return painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET * 2);
     }
 
     /**
