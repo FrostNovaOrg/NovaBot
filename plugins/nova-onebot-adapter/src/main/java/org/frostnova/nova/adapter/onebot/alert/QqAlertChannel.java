@@ -1,5 +1,6 @@
 package org.frostnova.nova.adapter.onebot.alert;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.core.alert.AlertBlockedException;
@@ -211,7 +212,7 @@ public class QqAlertChannel implements AlertChannel {
                 alert.getPlatform(),
                 PushTargetType.of(alert.getType()),
                 alert.getNum(),
-                subject + "\n" + content);
+                MessagePlaceholders.escapeExternalText(subject) + "\n" + MessagePlaceholders.escapeExternalText(content));
     }
 
     /**

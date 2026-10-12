@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.command;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
@@ -59,7 +60,7 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
         if (StringUtil.isNotBlank(keyword)) {
             Matched matched = match(candidates, keyword);
             if (matched == null) {
-                return Resolved.failed(here + "没有配置「" + keyword + "」的推送，当前可选：\n" + describe(candidates));
+                return Resolved.failed(here + "没有配置「" + MessagePlaceholders.escapeExternalText(keyword) + "」的推送，当前可选：\n" + describe(candidates));
             }
             if (matched.byArchivedName()) {
                 PushUser streamer = matched.streamer();
@@ -186,7 +187,7 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
         StringBuilder text = new StringBuilder();
         for (PushUser user : candidates) {
             String uname = unameOf(user);
-            text.append("· ").append(StringUtil.isBlank(uname) ? "未知主播" : uname)
+            text.append("· ").append(StringUtil.isBlank(uname) ? "未知主播" : MessagePlaceholders.escapeExternalText(uname))
                     .append("（").append(user.getUid()).append("）\n");
         }
         return text.toString().trim();
@@ -197,7 +198,7 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
      */
     protected String nameOf(PushUser streamer) {
         String uname = unameOf(streamer);
-        return StringUtil.isBlank(uname) ? String.valueOf(streamer.getUid()) : uname;
+        return StringUtil.isBlank(uname) ? String.valueOf(streamer.getUid()) : MessagePlaceholders.escapeExternalText(uname);
     }
 
     /**

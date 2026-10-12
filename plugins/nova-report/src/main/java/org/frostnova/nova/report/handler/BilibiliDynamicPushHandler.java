@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.handler;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
@@ -113,8 +114,8 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
 
         String content = template
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
-                .replace("{action}", Optional.ofNullable(event.getAction()).orElse("发布了动态"))
-                .replace("{url}", Optional.ofNullable(event.getUrl()).orElse(""))
+                .replace("{action}", MessagePlaceholders.escapeExternalText(Optional.ofNullable(event.getAction()).orElse("发布了动态")))
+                .replace("{url}", MessagePlaceholders.escapeExternalText(Optional.ofNullable(event.getUrl()).orElse("")))
                 .replace("{picture}", picture)
                 .replace("{at}", subscriberAt);
 

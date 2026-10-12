@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.handler;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
@@ -166,7 +167,7 @@ public final class PushHandlerSupport {
     public static String withoutAtBlocks(String content) {
         List<String> kept = new ArrayList<>();
         for (String part : content.split("\\{next}", -1)) {
-            String cleaned = part.replace(AT_ALL, "").replace(AT_SUBSCRIBERS, "");
+            String cleaned = part.replace(AT_ALL, "").replace(AT_SUBSCRIBERS, "").replaceAll("\\{at=[0-9]+}", "");
             if (StringUtil.isNotBlank(cleaned)) {
                 kept.add(cleaned);
             }
@@ -250,19 +251,19 @@ public final class PushHandlerSupport {
      * @param names 主播名的归档退路
      * @param platform 直播平台
      * @param source 主播信息
-     * @return 昵称
+     * @return 可直接放入消息正文的昵称，花括号已换成全角
      */
     public static String resolveUname(BilibiliApiUtil api, StreamerNames names, String platform, LiveStreamerInfo source) {
         try {
             String uname = api.getUpInfoByUid(source.getUid()).getUname();
             if (StringUtil.isNotBlank(uname)) {
-                return uname;
+                return MessagePlaceholders.escapeExternalText(uname);
             }
         } catch (Exception e) {
             log.debug("获取 uid {} 的最新昵称失败: {}", source.getUid(), e.getMessage());
         }
 
         String uname = names.uname(platform, source.getUid(), source.getUname());
-        return StringUtil.isBlank(uname) ? String.valueOf(source.getUid()) : uname;
+        return StringUtil.isBlank(uname) ? String.valueOf(source.getUid()) : MessagePlaceholders.escapeExternalText(uname);
     }
 }

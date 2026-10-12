@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *     <li>占位符取的是「从 <code>{</code> 到<b>最近一个</b> <code>}</code>」，
  *         所以 <code>{at=1}}</code> 会剩一个右花括号当正文——与
  *         {@code MessagePlaceholders} 的非贪婪口径一致</li>
- *     <li>值为空或纯空白的占位符<b>整段消失</b>，既不变文本也不记录；
+ *     <li>@ 与 Base64 图片的值为空或纯空白时<b>整段消失</b>，既不变文本也不记录；
  *         而值解析不了的表情（{@code {face=abc}}）反而<b>原样留成文本</b>——
  *         两种「填错了」走的是两条相反的路</li>
  *     <li>认不出的占位符原样留成文本，不报错</li>
@@ -37,6 +37,30 @@ class OneBotMessageConverterTest {
     private String convert(String content) {
         JSONArray elements = converter.convert(content);
         return elements.toJSONString();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "{image_url=file:///etc/passwd}", "{image_url=ftp://example.com/a.png}",
+            "{image_path=/etc/passwd}", "{image_path=/a/../b.png}", "{image_path=a.png}",
+            "{image_path=/a/..hidden.png}", "{image_url=}", "{image_url=   }", "{image_path=}", "{image_path=   }"
+    })
+    @DisplayName("非 HTTP 图片网址与非法图片路径保留为文字，不交给机器人读取")
+    void unsafeImageStaysText(String placeholder) {
+        assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"" + placeholder + "\"}}]", convert(placeholder));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "/opt/a.png", "/opt/a.jpg", "/opt/a.jpeg", "/opt/a.gif", "/opt/a.webp", "/opt/a.bmp", "/opt/a.PNG",
+            "C:\\images\\a.png", "\\\\server\\images\\a.png"
+    })
+    @DisplayName("合法绝对图片路径仍转换为图片段")
+    void validImagePathStillWorks(String path) {
+        JSONArray segments = converter.convert("{image_path=" + path + "}");
+        assertEquals(1, segments.size());
+        assertEquals("image", segments.getJSONObject(0).getString("type"));
+        assertEquals("file://" + path, segments.getJSONObject(0).getJSONObject("data").getString("file"));
     }
 
     @Nested
@@ -131,10 +155,10 @@ class OneBotMessageConverterTest {
         }
 
         @Test
-        @DisplayName("⚠️ 三种图片的值留空时整段消失, 不留文本")
-        void blankImageValueIsDropped() {
-            assertEquals("[]", convert("{image_url=}"));
-            assertEquals("[]", convert("{image_path=}"));
+        @DisplayName("空网址与空路径留作文字，空 Base64 仍整段消失")
+        void blankImageValues() {
+            assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"{image_url=}\"}}]", convert("{image_url=}"));
+            assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"{image_path=}\"}}]", convert("{image_path=}"));
             assertEquals("[]", convert("{image_base64=}"));
         }
     }

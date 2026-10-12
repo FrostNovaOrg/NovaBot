@@ -69,6 +69,25 @@ class BilibiliLiveReportPushHandlerTest {
     }
 
     @Test
+    @DisplayName("下播报告昵称与文字退路里的占位符只显示文字")
+    void sourcePlaceholdersStayText() {
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(painter.textReport(anyString(), any(), any())).thenReturn("舰长{at=123}{image_path=/opt/a.png}{next}");
+        PushMessage message = pushMessage();
+        message.getParamsJsonObject().put("message", "{uname}|{report}");
+        handler.handle(new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L, "{at=all}{report}", 20002L)), message);
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(captor.capture());
+        String content = captor.getValue().getContent();
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertEquals("｛at=all｝｛report｝|舰长｛at=123｝｛image_path=/opt/a.png｝｛next｝", content);
+    }
+
+    @Test
     @DisplayName("绘制成功时应推送报告图片")
     void pushesReportImage() {
         when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
@@ -178,6 +197,7 @@ class BilibiliLiveReportPushHandlerTest {
     // 故障：下播仍提醒全体，或去掉旧提醒后多发一条空消息。
     @ParameterizedTest
     @CsvSource({
+            "all,{at=123}{next}正文{at=456}", "all_or_subscribers,前{at=123}正文{at=456}后",
             "all,正文", "all_or_subscribers,正文",
             "all,{at=all}{next}正文", "all_or_subscribers,{at=all}{next}正文",
             "all,前{at}正文{at=all}后", "all_or_subscribers,前{at}正文{at=all}后",

@@ -87,6 +87,26 @@ class BilibiliDynamicPushHandlerTest {
     }
 
     @Test
+    @DisplayName("动态昵称、动作与链接中的占位符不会提醒、发图或被后续替换")
+    void sourcePlaceholdersStayText() {
+        when(painter.paint(any())).thenReturn(Optional.empty());
+        PushMessage message = pushMessage();
+        message.getParamsJsonObject().put("message", "{uname}|{action}|{url}|{picture}{at}");
+        handler.handle(new BilibiliDynamicUpdateEvent(
+                new LiveStreamerInfo(UID, "{at=all}{next}{action}", ROOM_ID), event().getDynamic(),
+                "{image_path=/opt/a.png}{url}", "https://t.example/{at=123}{picture}"), message);
+        List<Message> sent = sentMessages();
+        assertEquals(1, sent.size(), "动态文字不能拆条");
+        String content = sent.get(0).getContent();
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertEquals("｛at=all｝｛next｝｛action｝|｛image_path=/opt/a.png｝｛url｝|https://t.example/｛at=123｝｛picture｝|", content);
+    }
+
+    @Test
     @DisplayName("🔴 动态图没送到时，按主播记进本场的图片降级数")
     void countsImageDegradedIntoTheSession() {
         handler.handle(event(), pushMessage());

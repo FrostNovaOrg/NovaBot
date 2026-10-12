@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.command;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandSettingsService;
@@ -267,7 +268,7 @@ public class BilibiliAtListCommand extends BilibiliAtCommand {
             for (Map.Entry<Long, String> entry : asked.entrySet()) {
                 String name = entry.getValue() == null ? "" : entry.getValue().trim();
                 if (!name.isEmpty()) {
-                    names.put(entry.getKey(), name);
+                    names.put(entry.getKey(), MessagePlaceholders.escapeExternalText(name));
                 }
             }
             return names;

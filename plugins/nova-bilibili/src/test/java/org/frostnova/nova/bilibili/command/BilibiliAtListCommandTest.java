@@ -57,6 +57,28 @@ class BilibiliAtListCommandTest {
     private static final int PER_KIND = 30;
 
     @Test
+    @DisplayName("群名片与账号昵称中的占位符不会在名单回复中提醒或发图")
+    void memberPlaceholdersStayText() {
+        SessionMemberNames memberNames = mock(SessionMemberNames.class, invocation -> {
+            if ("supports".equals(invocation.getMethod().getName())) {
+                return true;
+            }
+            Map<Long, String> names = new LinkedHashMap<>();
+            for (Long uid : uids(0)) {
+                names.put(uid, "{at=all}{at=123}{image_url=https://example.com/a.png}{next}");
+            }
+            return names;
+        });
+        String content = command(dataSource(), subscriptions(), memberNames).execute(context("@名单")).content();
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
+        assertFalse(segments.isEmpty());
+        for (int i = 0; i < segments.size(); i++) {
+            assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
+        }
+        assertTrue(content.contains("｛at=all｝｛at=123｝｛image_url=https://example.com/a.png｝｛next｝"), content);
+    }
+
+    @Test
     @DisplayName("两类各 30 人的一次回话，只向取名字的服务问一次，且一次问全")
     void oneReplyAsksMemberNamesOnceWithEveryone() {
         AbstractDataSource dataSource = dataSource();

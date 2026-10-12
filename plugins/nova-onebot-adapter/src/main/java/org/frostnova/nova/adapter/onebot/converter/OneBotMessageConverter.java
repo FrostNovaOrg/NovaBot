@@ -8,6 +8,11 @@ import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.util.Locale;
+
 /**
  * 把占位符写法翻译成 OneBot 认得的消息段
  * <ul>
@@ -20,9 +25,8 @@ import org.springframework.stereotype.Component;
  *     <li>{image_base64=...}: Base64 图片</li>
  * </ul>
  * <p>
- * 两种「填错了」刻意走相反的路：值<b>空着</b>的占位符整段丢掉（宁可少 @ 一个人，也不把
- * <code>{at=}</code> 原样发进群里）；表情 ID <b>解析不了</b>时原样留成文本，
- * 那多半正是使用者想发的字。
+ * @ 与 Base64 图片的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址或路径
+ * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS，路径须为绝对图片路径且不含 {@code ..}。
  */
 @Slf4j
 @Component
@@ -87,13 +91,46 @@ public class OneBotMessageConverter {
         } else if (placeholder.startsWith(AT_PREFIX)) {
             addIfPresent(elements, "at", "qq", valueOf(placeholder, AT_PREFIX), "");
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_URL_PREFIX)) {
-            addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_URL_PREFIX), "");
+            String value = valueOf(placeholder, MessagePlaceholders.IMAGE_URL_PREFIX);
+            addImage(elements, placeholder, value, "", isHttpUrl(value));
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_PATH_PREFIX)) {
-            addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_PATH_PREFIX), "file://");
+            String value = valueOf(placeholder, MessagePlaceholders.IMAGE_PATH_PREFIX);
+            addImage(elements, placeholder, value, "file://", isImagePath(value));
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_BASE64_PREFIX)) {
             addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_BASE64_PREFIX), "base64://");
         } else {
             elements.add(element("text", "text", placeholder));
+        }
+    }
+
+    private void addImage(JSONArray elements, String placeholder, String value, String scheme, boolean valid) {
+        if (valid) {
+            addIfPresent(elements, "image", "file", value, scheme);
+        } else {
+            elements.add(element("text", "text", placeholder));
+        }
+    }
+
+    private boolean isHttpUrl(String value) {
+        try {
+            URI uri = URI.create(value);
+            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                    && StringUtil.isNotBlank(uri.getRawAuthority());
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private boolean isImagePath(String value) {
+        if (value.contains("..") || !value.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpg|jpeg|gif|webp|bmp)")) {
+            return false;
+        }
+        try {
+            // 文件由机器人端读取，兼容 Unix 与 Windows 的绝对路径。
+            return Path.of(value).isAbsolute() || value.matches("^[A-Za-z]:[\\\\/].*")
+                    || value.matches("^\\\\\\\\[^\\\\]+\\\\[^\\\\]+\\\\.+");
+        } catch (InvalidPathException e) {
+            return false;
         }
     }
 

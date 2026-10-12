@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.command;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandFollowUp;
@@ -233,7 +234,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
                     .append(" 位，回「").append(EXPAND).append("」展开");
         }
         text.append("\n知道是谁时也可以直接说名字：")
-                .append(pending.command()).append(" ").append(pending.example());
+                .append(MessagePlaceholders.escapeExternalText(pending.command())).append(" ").append(pending.example());
         return text.toString();
     }
 
@@ -326,7 +327,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
     private String display(PushUser user) {
         String uname = uname(user);
-        return StringUtil.isBlank(uname) ? String.valueOf(user.getUid()) : uname;
+        return StringUtil.isBlank(uname) ? String.valueOf(user.getUid()) : MessagePlaceholders.escapeExternalText(uname);
     }
 
     /**

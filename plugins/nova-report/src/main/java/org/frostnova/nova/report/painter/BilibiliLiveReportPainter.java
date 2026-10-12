@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.painter;
 
+import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
@@ -515,7 +516,7 @@ public class BilibiliLiveReportPainter {
         Long uid = source.getUid();
         StringBuilder text = new StringBuilder();
 
-        text.append(unameOf(platform, source)).append(" 本场直播数据");
+        text.append(MessagePlaceholders.escapeExternalText(unameOf(platform, source))).append(" 本场直播数据");
 
         String duration = durationText(platform, uid);
         text.append("\n直播时长 ").append(StringUtil.isNotBlank(duration) ? duration : "未知");
@@ -2435,7 +2436,7 @@ public class BilibiliLiveReportPainter {
         }
         Set<Long> thisSession = thisSessionGuardBuyers(platform, source.getUid());
         for (GuardMember member : sortAndLimit(fetched.get(), options.getGuardListLimit())) {
-            text.append('\n').append(guardRankName(member.level())).append("  ").append(member.name());
+            text.append('\n').append(guardRankName(member.level())).append("  ").append(MessagePlaceholders.escapeExternalText(member.name()));
             if (member.uid() > 0 && thisSession.contains(member.uid())) {
                 text.append(" · 本场");
             }
