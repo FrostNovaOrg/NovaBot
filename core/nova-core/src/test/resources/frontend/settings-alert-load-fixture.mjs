@@ -181,19 +181,23 @@ const channel = {id: 'qq', name: 'QQ', recipient: [
 const noop = () => {};
 
 // 抓的错：刷新后 QQ 卡缺失，QQ 平台项散成普通行；定位告警时三卡没有全部展开。
-for (const [card, channelFailure] of [['', false], ['alert', false], ['', true]]) {
+// 抓的错：状态接口一时失败，直接载入设置页后整页空白、QQ 卡不见。
+for (const [card, channelFailure, statusFailure] of [['', false], ['alert', false], ['', true], ['', false, true]]) {
   const store = {dirty: {}, values: {}, alertChannels: [], locked: {}, vocab: {}};
   let root;
   const api = async path => {
     if (path === '/schema') return {groups: [group]};
     if (path === '/values') return {values: {}};
     if (path === '/alert/channels') {
-      // 通道表在途时已填的内容，绘制后仍需保留。
-      store.dirty['demo.pending'] = 'draft';
       if (channelFailure) throw new Error('unavailable');
       return {channels: [channel]};
     }
-    if (path === '/status') return {alerts: {mail: false}};
+    if (path === '/status') {
+      // 设置页画出后、后续接口仍在载入时填写的内容仍需保留。
+      store.dirty['demo.pending'] = 'draft';
+      if (statusFailure) throw new Error('status unavailable');
+      return {alerts: {mail: false}};
+    }
     return {};
   };
   const cards = loadUi(store, api);
@@ -215,8 +219,14 @@ for (const [card, channelFailure] of [['', false], ['alert', false], ['', true]]
   try {
     await load();
     await new Promise(resolve => setImmediate(resolve));
-    eq(store.dirty['demo.pending'], 'draft', '通道表在途时填写的内容保留');
     const all = collect(root, n => hasClass(n, 'alcard'));
+    if (statusFailure) {
+      eq({rendered: !!root, channels: all.map(n => n.dataset.channel)},
+        {rendered: true, channels: ['qq', 'webhook', 'mail']},
+        '状态接口失败时直接载入设置页：页面照常画出，QQ 卡存在');
+      continue;
+    }
+    eq(store.dirty['demo.pending'], 'draft', '设置页画出后载入途中填写的内容保留');
     if (channelFailure) {
       eq({channels: all.map(n => n.dataset.channel), ordinaryRows: collect(root, n => hasClass(n, 'field') && n.textContent === key).length},
         {channels: ['webhook', 'mail'], ordinaryRows: 1}, '通道表取失败：按空表照常绘制设置页');
