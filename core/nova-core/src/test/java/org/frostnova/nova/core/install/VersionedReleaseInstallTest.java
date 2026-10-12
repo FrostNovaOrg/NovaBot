@@ -1498,6 +1498,8 @@ class VersionedReleaseInstallTest {
         command.add("starbot");
         command.addAll(Arrays.asList(moreArgs));
         ProcessBuilder builder = new ProcessBuilder(command);
+        builder.directory(world.logs.getParent().toFile());
+        builder.environment().put("TMPDIR", world.logs.getParent().toString());
         builder.environment().put("PATH", world.bin + ":/usr/bin:/bin");
         builder.environment().put("NOVABOT_STUB_ETC", world.etc.toString());
         builder.environment().put("NOVABOT_STUB_LOG", world.logs.toString());

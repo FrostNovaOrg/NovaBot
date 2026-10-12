@@ -39,9 +39,13 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1430,25 +1434,31 @@ class ConfigurationConsistencyTest {
         }
     }
 
-    /** 仓内按文件名找测试源文件，不写死模块目录 */
-    private static Path javaFileNamed(Path root, String fileName) throws IOException {
-        try (Stream<Path> top = Files.walk(root, 6)) {
-            List<Path> testRoots = top.filter(Files::isDirectory)
-                    .filter(dir -> dir.getFileName().toString().equals("java")
-                            && dir.getParent() != null
-                            && dir.getParent().getFileName().toString().equals("test")
-                            && dir.getParent().getParent() != null
-                            && dir.getParent().getParent().getFileName().toString().equals("src"))
-                    .toList();
-            for (Path testRoot : testRoots) {
-                try (Stream<Path> files = Files.walk(testRoot)) {
-                    java.util.Optional<Path> hit = files.filter(Files::isRegularFile)
-                            .filter(path -> path.getFileName().toString().equals(fileName))
-                            .findFirst();
-                    if (hit.isPresent()) {
-                        return hit.get();
+    /** 按聚合工程的模块列表找测试源文件，只遍历各模块的测试源码目录 */
+    private Path javaFileNamed(Path root, String fileName) throws IOException {
+        for (String module : modules()) {
+            Path testRoot = root.resolve(module).resolve("src/test/java");
+            List<Path> hits = new ArrayList<>();
+            Files.walkFileTree(testRoot, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (attrs.isRegularFile() && file.getFileName().toString().equals(fileName)) {
+                        hits.add(file);
+                        return FileVisitResult.TERMINATE;
                     }
+                    return FileVisitResult.CONTINUE;
                 }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException error) throws IOException {
+                    if (error instanceof NoSuchFileException) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    throw error;
+                }
+            });
+            if (!hits.isEmpty()) {
+                return hits.get(0);
             }
         }
         throw new AssertionError("找不到 " + fileName);
