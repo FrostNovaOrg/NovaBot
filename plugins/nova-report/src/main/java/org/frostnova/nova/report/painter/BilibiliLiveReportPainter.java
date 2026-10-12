@@ -294,6 +294,11 @@ public class BilibiliLiveReportPainter {
     private static final Color COLOR_CURVE_WATCHED = new Color(110, 199, 122);
 
     /**
+     * 盈亏榜里亏了的那几行比例条的颜色：照「红涨绿跌」用绿，取看过人数曲线那个绿
+     */
+    private static final Color COLOR_LOSS = COLOR_CURVE_WATCHED;
+
+    /**
      * 在线人数折线的配色。包内可见：像素判据要靠它认出折线而不是面积
      */
     static final Color COLOR_CURVE_ONLINE = new Color(255, 99, 132);
@@ -2521,12 +2526,13 @@ public class BilibiliLiveReportPainter {
         int barWidth = Math.max(RANKING_BAR_HEIGHT, CONTENT_WIDTH - 300 - scoreSlot);
         painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
 
-        // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度
+        // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度。
+        // 长短不分赚亏，颜色分：亏了的画绿，否则一眼看去亏得多的像是排得高
         double ratio = topScore == 0 ? 0 : Math.abs(user.score()) / Math.abs(topScore);
         int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
         if (filled > 0) {
             painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
-                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? COLOR_LOSS : rankColor(rank));
         }
 
         // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：位数多的长文案

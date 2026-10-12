@@ -108,6 +108,11 @@ public class BilibiliDataQueryPainter {
 
     private static final Color COLOR_CARD = new Color(246, 247, 249);
 
+    /**
+     * 盈亏榜里亏了的那几行比例条的颜色，与下播报告同一个绿
+     */
+    private static final Color COLOR_LOSS = new Color(110, 199, 122);
+
     private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
@@ -415,12 +420,13 @@ public class BilibiliDataQueryPainter {
         int barWidth = CONTENT_WIDTH - BAR_X - 140;
         painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
 
-        // 盈亏榜可能出现负分或榜首为 0，按绝对值取比例并留一段最小可见长度
+        // 盈亏榜可能出现负分或榜首为 0，按绝对值取比例并留一段最小可见长度。
+        // 长短不分赚亏，颜色分：亏了的画绿，与下播报告一致
         double ratio = topScore == 0 ? 0 : Math.abs(user.score()) / Math.abs(topScore);
         int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
         if (filled > 0) {
             painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
-                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? COLOR_LOSS : rankColor(rank));
         }
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(scoreText.apply(user.score()), 24, COLOR_TEXT, Font.PLAIN)),
