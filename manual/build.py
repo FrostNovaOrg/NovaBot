@@ -5,8 +5,10 @@
 # 产物生成到 manual/dist/。生成时检查全部站内链接、页内锚点与图片引用，
 # 有断的就逐条报出并以退码 1 结束，不产出残缺的站。
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import urllib.parse
 from html.parser import HTMLParser
@@ -652,6 +654,17 @@ def main():
         for error in style_errors:
             print("自检失败: %s" % error, file=sys.stderr)
         sys.exit("共 %d 处样式问题，构建失败。" % len(style_errors))
+    node = shutil.which("node")
+    if node:
+        tests = sorted((MANUAL / "tests").rglob("*.test.mjs"))
+        result = subprocess.run(
+            [node, "--test", *map(str, tests)], cwd=MANUAL.parent,
+            env={**os.environ, "MANUAL_TEST_PYTHON": sys.executable})
+        if result.returncode:
+            sys.exit("自检失败: 手册主题测试，构建失败。")
+        print("自检通过: 手册主题测试")
+    else:
+        print("没有 node，跳过手册主题测试")
     print("自检通过: 控制台样式加载；手册颜色变量；站内链接、锚点与图片")
     print("生成 %d 页 + 目录页 → %s" % (len(pages), OUT))
 
