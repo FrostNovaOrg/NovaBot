@@ -46,7 +46,8 @@ public class BilibiliAutoFollowHealthProbe implements HealthProbe {
         }
         return new HealthStatus(HealthStatus.Level.DEGRADED,
                 "有 " + members.size() + " 位主播关注不了：" + String.join("；", members.values()),
-                "这是对方或 B 站那边的设置，NovaBot 每天会自动再试；能做的只有换一个能关注他的账号登录，或者请主播调整设置。",
+                "常见原因是主播把这个账号拉黑或移出了粉丝，或者改了隐私设置；NovaBot 每天会自动再试；"
+                        + "能做的只有换一个能关注他的账号登录，或者请主播调整设置。",
                 "", members, "账号关注不了这几位，他们的动态推不出来，直播推送不受影响");
     }
 }

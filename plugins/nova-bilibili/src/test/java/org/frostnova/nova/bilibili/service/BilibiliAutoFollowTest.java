@@ -15,7 +15,11 @@ import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.bilibili.model.Cookies;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.alert.AlertService;
+import org.frostnova.nova.core.alert.HealthAlertMonitor;
+import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
@@ -32,12 +37,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collection;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.LongStream;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -514,8 +522,9 @@ class BilibiliAutoFollowTest {
         assertEquals(HealthStatus.Level.DEGRADED, status.level(), "关注不了时健康栏必须降级");
         assertEquals(Map.of("2001", "主播2001：因对方隐私设置，你还不能关注"), status.members(), "健康栏须点名并保留 B 站原话");
         assertEquals("账号关注不了这几位，他们的动态推不出来，直播推送不受影响", status.memberCondition());
-        assertTrue(status.advice().contains("每天会自动再试") && status.advice().contains("换一个能关注他的账号登录")
-                && status.advice().contains("请主播调整"));
+        assertEquals("常见原因是主播把这个账号拉黑或移出了粉丝，或者改了隐私设置；NovaBot 每天会自动再试；"
+                + "能做的只有换一个能关注他的账号登录，或者请主播调整设置。", status.advice(),
+                "建议须说明常见原因和可做的事，不能断言账号已被拉黑");
         System.out.println("summary=" + status.summary());
         System.out.println("advice=" + status.advice());
         System.out.println("memberCondition=" + status.memberCondition());
@@ -544,6 +553,70 @@ class BilibiliAutoFollowTest {
         api.following.add(NOT_FOLLOWED);
         service.followConfiguredUps(start.plus(Duration.ofHours(51)));
         assertEquals(HealthStatus.ok("正常"), probe.check(), "关注列表确认已关注时也应清掉记录");
+    }
+
+    @Test
+    @DisplayName("补关注被拒：告警点名、不逐小时重发，新增被拒主播单独告警，关注成功后通知恢复")
+    @SuppressWarnings("unchecked")
+    void rejectedRefollowAlertsOnceAndRecovers() {
+        // 抓的用户故障：主播把账号拉黑（补关注被拒）后没有告警，或者每小时重发一条。
+        configure(ON_PAGE_ONE);
+        BilibiliAutoFollowHealthProbe probe = new BilibiliAutoFollowHealthProbe(service);
+        ObjectProvider<HealthProbe> probes = mock(ObjectProvider.class);
+        when(probes.orderedStream()).thenAnswer(invocation -> List.<HealthProbe>of(probe).stream());
+        List<String> alerts = new ArrayList<>();
+        AlertService alertService = mock(AlertService.class, invocation -> {
+            if (invocation.getMethod().getName().equals("alert")) {
+                alerts.add(invocation.<String>getArgument(1) + "\n" + invocation.<String>getArgument(2));
+            } else if (invocation.getMethod().getName().equals("alertMembers")) {
+                Map<String, String> members = invocation.getArgument(0);
+                Function<Collection<String>, String> content = invocation.getArgument(2);
+                alerts.add(invocation.<String>getArgument(1) + "\n" + content.apply(members.values()));
+            }
+            return null;
+        });
+        HealthAlertMonitor monitor = new HealthAlertMonitor(probes, alertService, TimelineWriter.NONE);
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+        monitor.check();
+        assertEquals(List.of(), alerts, "已经关注时不能误报告警");
+
+        // 模拟平台取消已有关注，随后补关注被拒；拒绝原因本身不能证明被拉黑。
+        api.following.remove(Long.valueOf(ON_PAGE_ONE));
+        String reason = "因对方隐私设置，你还不能关注";
+        api.followFailure = new ResponseCodeException(22002, reason);
+        service.followConfiguredUps(start.plus(Duration.ofHours(1)));
+        monitor.check();
+        assertEquals(1, alerts.size(), "补关注被拒后必须发出且只发出一条告警");
+        assertTrue(alerts.get(0).contains("NovaBot 异常告警：哔哩哔哩自动关注"));
+        assertTrue(alerts.get(0).contains("主播1003：" + reason), "告警必须点名并保留 B 站原话");
+        assertTrue(alerts.get(0).contains(probe.check().advice()), "告警须附上探针的处理建议");
+        for (int hour = 2; hour <= 4; hour++) {
+            service.followConfiguredUps(start.plus(Duration.ofHours(hour)));
+            monitor.check();
+        }
+        assertEquals(1, alerts.size(), "未变化的拒绝不能每小时重发告警");
+
+        configure(ON_PAGE_ONE, NOT_FOLLOWED);
+        service.followConfiguredUps(start.plus(Duration.ofHours(4)).plusSeconds(30));
+        monitor.check();
+        assertEquals(2, alerts.size(), "第一位未恢复时，新增被拒主播应再发一条告警");
+        assertTrue(alerts.get(1).contains("新增异常成员：主播2001：" + reason));
+        assertFalse(alerts.get(1).contains("主播1003"), "新增成员告警只点名第二位主播");
+        assertTrue(alerts.get(1).contains(probe.check().memberCondition()));
+        assertTrue(alerts.get(1).contains(probe.check().advice()));
+        System.out.println("additionalMemberAlert=" + alerts.get(1));
+        monitor.check();
+        assertEquals(2, alerts.size(), "新增成员的拒绝也不能重复告警");
+
+        api.followFailure = null;
+        service.followConfiguredUps(start.plus(Duration.ofHours(29)));
+        assertEquals(HealthStatus.ok("正常"), probe.check(), "关注成功后探针恢复正常");
+        monitor.check();
+        assertEquals(3, alerts.size(), "关注成功后必须再发一条恢复通知");
+        assertEquals("NovaBot 状态恢复：哔哩哔哩自动关注\n正常", alerts.get(2));
+        monitor.check();
+        assertEquals(3, alerts.size(), "恢复通知也只发一次");
     }
 
     @Test
