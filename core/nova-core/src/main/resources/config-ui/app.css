@@ -21,6 +21,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--text);
   font-family:var(--font);font-size:var(--fs);line-height:var(--lh)}
+.xs{font-size:12.5px;line-height:1.6}
+.dim{color:var(--dim)}
 /* ---------- 外壳：左侧主导航 ＋ 右侧内容 ---------- */
 #app{display:flex;max-width:1320px;margin:0 auto;align-items:flex-start}
 #side{position:sticky;top:0;flex:0 0 216px;width:216px;align-self:flex-start;
