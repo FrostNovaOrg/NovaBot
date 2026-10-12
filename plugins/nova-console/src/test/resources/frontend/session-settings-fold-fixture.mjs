@@ -543,8 +543,11 @@ await ask('⑨ 滚动与缩放时说明跟随，出屏或移除时收起', async
   rect = {top: 200, bottom: 222, left: 50, right: 72};
   window.dispatch('scroll');
   same([panel.hidden, panel.style.top !== initialTop], [false, true], '滚动后跟随');
+  const beforeResize = [panel.style.top, panel.style.left];
   rect = {top: 720, bottom: 742, left: 370, right: 392};
   window.dispatch('resize');
+  same([panel.hidden, panel.style.top !== beforeResize[0], panel.style.left !== beforeResize[1]],
+    [false, true, true], '缩放后跟随移动的按钮');
   same([parseFloat(panel.style.top) < rect.top, parseFloat(panel.style.left) + panel.offsetWidth <= window.innerWidth],
     [true, true], '缩放后不出视口');
   rect = {top: -30, bottom: -8, left: 40, right: 62};
@@ -566,6 +569,37 @@ await ask('⑩ 金额说明只讲理由，开关下保留后果', async () => {
   same(allNodes(rowOf(host, '金额可见')).some(node => node.innerHTML.includes(
     '关掉后，下播报告不显示收益、卡片改用人数与条数、礼物与醒目留言榜整榜不出；数据查询命令同样不再回金额。')),
     true, '开关下的后果说明');
+});
+
+// 切到另一颗问号时只能显示新说明；旧按钮晚到的失焦不能收掉它，读屏状态也应复位。
+await ask('⑪ 切换问号只开一块，旧按钮失焦不收掉新说明', async () => {
+  const host = paint(GROUP_A);
+  const buttonA = helpOf(host, '金额可见');
+  const buttonB = helpOf(host, '静音时段');
+  buttonA.focus();
+  buttonA.click();
+  const panel = tipPanels()[0];
+  same([panel.hidden, buttonA.getAttribute('aria-expanded')], [false, 'true'], '先钉住第一颗问号');
+
+  // 点第二颗的浏览器事件顺序：按下指针、旧按钮失焦、新按钮获焦、点击。
+  document.dispatchDoc('pointerdown', {target: buttonB});
+  buttonA.blur();
+  buttonB.focus();
+  buttonB.click();
+  const switched = () => [
+    panel.hidden, panel.textContent.includes('静音'),
+    buttonB.getAttribute('aria-expanded'), buttonB.getAttribute('aria-describedby'),
+    buttonA.getAttribute('aria-expanded'), buttonA.getAttribute('aria-describedby'),
+    tipPanels().filter(node => !node.hidden).length,
+  ];
+  same(switched(), [false, true, 'true', panel.id, 'false', null, 1], '点到另一颗后只开新说明');
+
+  // 新说明打开后再收到旧按钮的失焦，仍应保持新说明可见。
+  buttonA.blur();
+  same(switched(), [false, true, 'true', panel.id, 'false', null, 1], '旧按钮晚到失焦后新说明仍开着');
+  buttonB.click();
+  same([panel.hidden, buttonB.getAttribute('aria-expanded'), buttonB.getAttribute('aria-describedby')],
+    [true, 'false', null], '新问号再点一下收起');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
