@@ -24,14 +24,19 @@ const STATION_ICONS = {
  * 站是按钮不是链接：平台与机器人要把人带到连接页上对应的那张卡，
  * 本机则锚到本页健康自检那一块。地址里带着是哪一站
  * （{@code #/links?card=platform} 或 {@code #/home?card=probes}），刷新与收藏也能回到同一处。
+ * 三站都挂灯，灯色照这一段的级别：只有本机挂灯时，平台或机器人那一侧掉了，那一站上看不出来。
+ * 灯只是颜色，读屏读不到，因此对读屏藏起来，状态改写进按钮的 aria-label。
  * @param key 站名，与连接页那侧认的一致：platform / self / bot
  */
-function station(key, seg, withLamp) {
-  return '<button class="lm-st" type="button" data-goto="' + esc(key) + '">'
+function station(key, seg) {
+  const state = {ok: '正常', warn: '需要关注', err: '连接异常', off: '未启用'}[seg.level] || '状态未知';
+  return '<button class="lm-st" type="button" data-goto="' + esc(key)
+    + '" aria-label="' + esc(seg.station + '，' + state + '，' + seg.sub)
+    + '" title="' + esc(seg.caption || state) + '">'
     + '<span class="lm-ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'
     + STATION_ICONS[key] + '</svg></span>'
     + '<span class="lm-nm">' + esc(seg.station)
-    + (withLamp ? '<span class="lamp ' + esc(seg.level) + '"></span>' : '') + '</span>'
+    + '<span class="lamp ' + esc(seg.level) + '" aria-hidden="true"></span></span>'
     + '<span class="lm-sub">' + esc(seg.sub) + '</span>'
     + '</button>';
 }
@@ -48,15 +53,16 @@ function link(seg) {
  * 链路图
  *
  * 三段对应探针自报的三档范围：直播平台一侧、本机、机器人一侧。
- * 本机那一档的灯挂在中间那座站上——它不是两站之间的一条线，而是这台机器自己的状况。
+ * 平台与机器人两档各有一段线，灯同时挂在线中点与那一站上；本机那一档只挂在中间那座站上——
+ * 它不是两站之间的一条线，而是这台机器自己的状况。
  */
 function renderLinkMap(model) {
   $('#linkmap').innerHTML = '<div class="lm-track">'
-    + station('platform', model.chain.platform, false)
+    + station('platform', model.chain.platform)
     + link(model.chain.platform)
-    + station('self', model.chain.self, true)
+    + station('self', model.chain.self)
     + link(model.chain.bot)
-    + station('bot', model.chain.bot, false)
+    + station('bot', model.chain.bot)
     + '</div>'
     // 本机那一段的说明没有线可挂，单独写在轨道下面
     + '<div class="lm-seg" style="min-width:0;padding-top:8px">'

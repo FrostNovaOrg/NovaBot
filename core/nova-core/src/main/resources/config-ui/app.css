@@ -30,6 +30,8 @@
   --paper:#FFFFFF; --on-accent:#FFFFFF; --on-err:#FFFFFF; --accent-text:#6D3CFF; --on-status:#FFFFFF;
   /* 比 --dim 再淡一档的字，落在 --surface 上仍到 4.5:1。日志页今天没有条目的分类小标签用它 */
   --faint:#75718C;
+  /* 下拉框的箭头。画在 data URI 里引不到 var(--dim)，只好三块各写一份，色值与那一块的 --dim 相同 */
+  --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%236A6682' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* 盖在整页上的那层。亮色下压得轻些、暗色下压得重些：暗色本来就暗，
      用同一个值的话底下那一页几乎还是清清楚楚，看起来像面板浮在没被挡住的页面上 */
   --overlay:rgba(28,26,46,.32);
@@ -54,6 +56,7 @@
     --c-guard:#4CC9F0; --c-view:#9B96B5;
     --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF; --on-status:#14121F;
     --faint:#8A85A3;
+    --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A5A0BF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --overlay:rgba(10,8,18,.58);
   }
 }
@@ -72,6 +75,7 @@
   --c-guard:#4CC9F0; --c-view:#9B96B5;
   --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF; --on-status:#14121F;
   --faint:#8A85A3;
+  --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A5A0BF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --overlay:rgba(10,8,18,.58);
 }
 :root[data-theme="light"]{color-scheme:light}
@@ -135,6 +139,16 @@ body{margin:0;background:var(--ground);color:var(--text);
 #auth-actions button{background:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:5px 12px;cursor:pointer;color:var(--dim);font-size:13px;font-family:inherit;text-align:left}
 #auth-actions button:hover{color:var(--accent);border-color:var(--accent)}
+/* 宽屏：底部几个入口竖排、一样宽、文字一律靠左，读起来是一列而不是散落的几枚；
+   退出那组与上面隔一条线，免得顺手点到。版本行不设定位基准，药丸面板仍从整格头顶长出来 */
+@media (min-width:960px){
+  .side-foot{padding:12px 0 0;flex-direction:column;align-items:stretch}
+  .side-foot>.side-link,.side-foot .verline,.side-foot #side-source{width:100%}
+  .side-foot .verline{flex-wrap:nowrap}
+  .side-foot #side-source{flex:1;min-width:0}
+  .side-foot .side-link,#auth-actions button{min-height:34px;justify-content:flex-start;padding:6px 10px;font-size:12.5px}
+  #auth-actions{padding-top:12px;margin-top:12px;border-top:1px solid var(--line)}
+}
 /* 「新版」药丸是按钮不是链接：它要做的事是就地展开说明，没有去处。
    字体要写一遍：button 默认不继承页面字体，别的都从 .nv-pill.acc 来 */
 #side-update{cursor:pointer;font-family:inherit}
@@ -381,6 +395,9 @@ html.showkeys .keyname{display:block}
 /* 未上锁提示与 .field 同缩进，不贴卡片左边 */
 #auth-unlocked{padding:0 16px}
 #auth-cards table{font-size:13.5px}
+/* 使用协议那一行：按钮放不下时整组折行，不挤成一列；同意记录是一行附注，字小一号、颜色淡一档 */
+#auth-agreement>.agreement-actions{display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px}
+#agreement-record{font-size:12.5px;line-height:1.6;color:var(--dim)}
 .tblwrap{overflow-x:auto}
 /* 开与关各自要问的那一段，摆在开关下面；不问的时候整块不占位 */
 .totp-flow:not(:empty){margin-top:12px;margin-bottom:10px;padding-top:12px;border-top:1px solid var(--line)}
@@ -447,6 +464,10 @@ tr:last-child td{border-bottom:none}
 .backups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:13.5px;color:var(--dim)}
 .backups select{background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 9px;font-size:13.5px}
+/* 下拉框一律用自画的箭头，浅色、深色两档各配一色，见色表里的 --select-chevron。
+   右侧给箭头留出位置，选项文字再长也不压到箭头上 */
+#app select{appearance:none;-webkit-appearance:none;background-image:var(--select-chevron);
+  background-repeat:no-repeat;background-position:right 12px center;background-size:12px 8px;padding-right:34px}
 .backups button{background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 12px;font-size:13.5px;cursor:pointer}
 .backups button:hover{border-color:var(--dim)}
@@ -569,12 +590,21 @@ td.act button:hover{color:var(--err)}
 .lm-st .lm-ico svg{width:16px;height:16px}
 .lm-st .lm-nm{font-size:14.5px;font-weight:600;display:flex;align-items:center;
   justify-content:center;gap:6px}
+.lm-nm>.lamp{flex:none;margin-left:7px}
 .lm-st .lm-sub{font-size:12px;color:var(--dim);margin-top:2px}
 .lm-seg{flex:1 1 auto;min-width:150px;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:6px;padding:0 8px}
 .lm-seg .lm-line{width:100%;height:2px;background:var(--line);border-radius:2px;position:relative}
 .lm-seg .lm-line .lamp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
 .lm-seg .lm-cap{font-size:12.5px;color:var(--dim);text-align:center;line-height:1.5;max-width:230px}
+/* 宽屏上两段线等长、同一高度：按说明文字的长短分宽、按它的行数居中的话，
+   一段说明长一段短，两段线就一长一短、一高一低，图是歪的。
+   这里两段平分余下的宽，线一律钉在同一高度，说明从线下往下折行 */
+@media (min-width:761px){
+  .lm-track > .lm-seg{flex:1 1 0;min-width:0;justify-content:flex-start;padding-top:42px}
+  .lm-track > .lm-seg .lm-line{flex:0 0 2px}
+  .lm-track > .lm-seg .lm-cap{max-width:100%;overflow-wrap:anywhere}
+}
 /* 窄屏上轨道立起来：横着放时三站会各自压到四十来像素宽，站名一个字一折行 */
 @media (max-width:760px){
   .lm-track{flex-wrap:wrap;overflow:visible}
@@ -755,6 +785,14 @@ td.act button:hover{color:var(--err)}
 .daystep:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .daystep:disabled{opacity:.45;cursor:not-allowed}
 #log-daybar b{font-size:15px;color:var(--text)}
+/* 日期条与「工程日志 →」同一条工具条：宽屏并排，入口靠右；窄屏日期条占满一行，入口落到下一行靠右 */
+.log-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:16px}
+.log-toolbar #log-daybar{margin:0;flex:1 1 auto}
+.log-toolbar #log-eng-open{flex:none}
+@media (max-width:959px){
+  .log-toolbar #log-daybar{flex-basis:100%}
+  .log-toolbar #log-eng-open{margin-left:auto}
+}
 #log-cats{margin:12px 0 0}
 #log-filters{margin:10px 0 4px}
 /* 一条事件底下那个「在工程日志里看这一刻 →」。默认淡着，鼠标落到这一行上才显出来——

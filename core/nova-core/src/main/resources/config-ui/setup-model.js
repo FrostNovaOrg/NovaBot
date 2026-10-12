@@ -123,6 +123,8 @@ const stop = reason => ({ok: false, reason});
  * 回头又把主播加上了，那一格该变成完成而不是一直挂着「跳过了」。
  * 唯一排在事实前面的是免登录：那一步确实「定了」，但它定的是一个有后果的决定，
  * 打勾会让人以为登录成功了。
+ * 勾底下那行小字写「已配置」（试发那一步写「有试发记录」）而不写「完成」：
+ * 勾读的是盘上已有的配置，不是这一趟刚验过，从设置引导重走时尤其容易被读成后者。
  * @param facts {@link stepFacts} 的结果
  * @param skips 每一步被跳过的方式，'' / 'skip' / 'anon'
  * @param current 正在做第几步
@@ -132,7 +134,7 @@ const stop = reason => ({ok: false, reason});
 export function railMarks(facts, skips, current, steps) {
   return (steps || SETUP_STEPS).map((step, i) => {
     if ((skips || [])[i] === 'anon') return {state: 'warn', note: '免登录模式'};
-    if ((facts || [])[i]) return {state: 'done', note: '完成'};
+    if ((facts || [])[i]) return {state: 'done', note: step.key === 'test' ? '有试发记录' : '已配置'};
     if ((skips || [])[i]) return {state: 'skip', note: '跳过了'};
     if (i === current) return {state: 'current', note: '正在做'};
     return {state: 'idle', note: ''};

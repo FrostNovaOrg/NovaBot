@@ -81,7 +81,7 @@ function constLine(name) {
 const channelSrc = bracedFrom(src, 'function channelText');
 const lineSrc = bracedFrom(src, 'function acceptedLine');
 const timeSrc = bracedFrom(src, 'function agreementTime');
-eq(channelSrc.includes('password') && lineSrc.includes('时间') && constLine('AGREEMENT_TIME_KEY').includes('accepted-at'),
+eq(channelSrc.includes('password') && lineSrc.includes('已同意第') && constLine('AGREEMENT_TIME_KEY').includes('accepted-at'),
   true, '切得到通道人话、同意那一行和三个键');
 
 function load(store) {
@@ -108,7 +108,7 @@ eq(/\d:\d\d:\d\d/.test(shown), false, '时间不到秒');
 eq(/0?3:18/.test(shown), true, '钟点到分钟还在');
 eq(shown.includes('2026') && shown.includes('30'), true, '年月日还在');
 eq(shown.includes('已同意第 1 版'), true, '版次还在');
-eq(shown.includes('输密码登录之后点的。'), true, '通道仍是人话');
+eq(shown.includes('确认方式：密码登录'), true, '通道仍是人话');
 
 store.values['novabot.core.config-ui.agreement.accepted-at'] = '不是时间';
 let raw = 'missing';

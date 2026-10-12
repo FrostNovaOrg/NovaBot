@@ -256,6 +256,9 @@ function render() {
   const main = $('#setup-main');
   rail.innerHTML = '';
   main.innerHTML = '';
+  if (seen.mark.rerunRequested && !finished) {
+    main.appendChild(note('', '勾选表示已有配置或试发记录，并不代表本次已重新验证。可选择任一步检查或修改。'));
+  }
 
   railMarks(facts, skips, finished ? -1 : current, steps).forEach((mark, i) => {
     const item = el('button', 'su-st');
