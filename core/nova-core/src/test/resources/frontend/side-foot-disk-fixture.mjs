@@ -108,8 +108,8 @@ ask('① 使用说明是一枚带图标的按钮：图标、悬停说明与外�
   has(manual, '<svg', '使用说明的图标');
   has(manual, 'stroke-width="1.4"', '图标笔触与侧栏导航同一副');
   has(manual, '使用说明', '按钮文字');
-  has(manual, 'title="打开使用说明（手册网站）"', '悬停说明');
-  has(manual, 'aria-label="打开使用说明（手册网站）"', '读屏说明');
+  has(manual, 'title="打开使用说明"', '悬停说明');
+  has(manual, 'aria-label="打开使用说明"', '读屏说明');
   has(manual, 'target="_blank"', '新开一页');
   has(manual, 'noopener noreferrer', '外链不带本页窗口与来源');
   has(manual, 'referrerpolicy="no-referrer"', '来源策略');

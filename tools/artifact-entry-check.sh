@@ -14,11 +14,12 @@
 #         不量产物，直接退 2，压过产物红。
 #
 # ── 与 tools/artifact-ui-resource-check.sh 的分工 ────────────────────────
-# 那把只量三样：核心 jar 的 BOOT-INF/classes/config-ui（界面核心格）、
+# 那把只量四样：核心 jar 的 BOOT-INF/classes/config-ui（界面核心格）、
+# BOOT-INF/classes/config-ui-manual（随包手册格，真源 manual/dist）、
 # 各插件 jar 的 config-ui-pages（界面插件格）、出厂覆盖件 template-defaults.json，
-# 而且只判「多出」不判「缺少」。本尺量其余条目：源码已删、包里还躺着的 class、
-# 非界面资源、插件字体。BOOT-INF/classes/config-ui/** 与 config-ui-pages/** 归那一把，
-# 本尺跳过不重判。另量 $OUT/lib/*.jar 里带 META-INF/maven/org.frostnova.nova/ 的
+# 而且除整块缺席的两格外只判「多出」不判「缺少」。本尺量其余条目：源码已删、包里还躺着的 class、
+# 非界面资源、插件字体。BOOT-INF/classes/config-ui/**、config-ui-manual/** 与 config-ui-pages/**
+# 归那一把，本尺跳过不重判。另量 $OUT/lib/*.jar 里带 META-INF/maven/org.frostnova.nova/ 的
 # 自家产物（第三方一律跳过）；找不到对应模块红并点名，不许静默跳过。
 #
 # ── 量法 ────────────────────────────────────────────────────────────────
@@ -601,6 +602,10 @@ scan_core_entries() {
         esac
         case "$entry" in
             BOOT-INF/classes/config-ui/*) continue ;;
+            # 随包手册：源在 manual/（.md 经 build.py 生成 dist，再由 pom 拷进来），
+            # 不在 nova-core 的资源目录里，按资源目录判必红。归界面资源尺的
+            # 「随包手册」那一格（真源 manual/dist），本尺跳过不重判，与 config-ui 同一条分工。
+            BOOT-INF/classes/config-ui-manual/*) continue ;;
         esac
         if core_whitelisted "$entry" "$drop"; then
             continue
