@@ -12,7 +12,7 @@
 
 import {el, esc} from './core.js';
 import {
-  AT_LITERALS, AT_MODES, addCard, applyEdit, atLiteralOf, atModeAllowed, atModeInfo, atModeOf,
+  AT_LITERALS, AT_MODES, addCard, applyEdit, atLiteralOf, atModeInfo, atModeOf,
   atPlan, blockLabel, blockRefusal,
   blockSpec, blocksFromDom, changeAtBlocks, dropIndex, insertBlock, isAttachment, moveBlock, moveCard, placeAtBlock,
   normalizeCards, parseTemplate, placeholderBlock, previewBubbles, removeCard, splitText,
@@ -214,9 +214,6 @@ export function buildTemplateEditor(host, options) {
       palette.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
         ? '私聊不支持 @全体成员，发送时会被摘掉，正文照发。'
         : '机器人不是本群管理员，@全体成员 会被摘掉，正文照发。';
-    }
-    if (!ctx.supportsSubscribers && state.atMode !== 'all') {
-      palette.appendChild(el('p', 'tpl-at-warning xs')).textContent = '这类通知不支持 @订阅的人。';
     }
   }
 
@@ -432,7 +429,6 @@ export function buildTemplateEditor(host, options) {
   function atNode() {
     const row = el('div', 'tpl-at');
     const capsule = el('div', 'tpl-at-capsule');
-    const context = previewContext();
     const supported = state.spec.all.includes(atLiteralOf(state.atMode));
     const positionable = !!opts.editable && supported;
     const handle = el('button', 'tpl-at-handle');
@@ -458,16 +454,11 @@ export function buildTemplateEditor(host, options) {
       const option = el('option');
       option.value = mode.key;
       option.textContent = mode.label;
-      option.disabled = !atModeAllowed(mode.key, context);
       if (mode.key === state.atMode) option.selected = true;
       select.appendChild(option);
     }
     select.value = state.atMode;
     select.addEventListener('change', event => {
-      if (!atModeAllowed(event.target.value, context)) {
-        select.value = state.atMode;
-        return;
-      }
       state.atMode = event.target.value;
       state.cards = changeAtBlocks(state.cards, state.atMode, state.spec);
       commit();
@@ -484,6 +475,7 @@ export function buildTemplateEditor(host, options) {
     insert.addEventListener('click', insertAtHere);
     handle.addEventListener('click', insertAtHere);
     row.appendChild(insert);
+    row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = atModeInfo(state.atMode).note;
     return row;
   }
 

@@ -107,21 +107,14 @@ export function atLiteralOf(mode) {
   return mode === 'subscribers' ? AT_LITERALS[0] : AT_LITERALS[1];
 }
 
-/** 权限未知时不禁用全体提醒；没有订阅能力时禁止新选订阅提醒。 */
-export function atModeAllowed(mode, context) {
-  const ctx = context || {};
-  return mode === 'subscribers' ? ctx.supportsSubscribers !== false
-    : ctx.isGroup !== false && ctx.admin !== false;
-}
-
 /** 仅主动切换模式时调整已放置的提醒，不在载入或绘制时调用。 */
 export function changeAtBlocks(cards, mode, spec) {
   const key = atLiteralOf(mode);
-  if (!((spec || {}).all || []).includes(key)) return cards;
+  const supported = ((spec || {}).all || []).includes(key);
   let kept = false;
   return normalizeCards((cards || []).map(card => ({blocks: (card.blocks || []).flatMap(block => {
     if (block.kind !== 'ph' || !AT_LITERALS.includes(block.key)) return [block];
-    if (kept) return [];
+    if (!supported || kept) return [];
     kept = true;
     return [placeholderBlock(key, spec)];
   })})));

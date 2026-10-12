@@ -256,7 +256,8 @@ const PAGE_STYLE = `
 .tpl-add:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .tpl-add:disabled{opacity:.5;cursor:not-allowed}
 /* 提醒模式与位置：拖柄独立于原生下拉，触屏可点按钮定位 */
-.tpl-at{display:flex;align-items:center;gap:6px;max-width:100%;font-size:13px}
+.tpl-at{display:flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:100%;font-size:13px}
+.tpl-at-note{flex-basis:100%;line-height:1.6}
 .tpl-at-capsule{display:flex;align-items:stretch;min-width:0;border:1px solid var(--softline);
   border-radius:var(--r-pill);background:var(--surface);overflow:hidden}
 .tpl-at-s{width:auto;min-width:0;max-width:100%;border:0;border-radius:0;

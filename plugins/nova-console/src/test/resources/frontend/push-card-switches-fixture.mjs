@@ -791,8 +791,82 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
     paramsOf: () => ({message: '前{at=all}后', at_mode: 'all'})});
   same(textOf(unsupported).includes('会被摘掉'), true, '已确定非管理员时提示');
   const picker = unsupported.querySelector('#tpl-at');
-  same(picker.children.find(node => node.value === 'subscribers').disabled, true, '无订阅能力不能新选');
+  same(picker.children.map(node => node.disabled), [false, false, false], '三档提醒方式都能选择');
   same(allNodes(unsupported).filter(node => hasClass(node, 'tpl-preview-note')).length, 1, '只画实际降级说明');
+});
+
+function reminderEditor(placeholders, context, initial = {}) {
+  const host = new MiniNode('div');
+  let params = {...initial};
+  const handler = {className: 'demo', placeholders, defaultParams: {message: '前后'}};
+  editors.buildTemplateEditor(host, {handlers: [handler], editable: true, context,
+    paramsOf: () => params, onChange: (_, value) => { params = value; }});
+  return {host, params: () => params, choose(mode) {
+    const picker = host.querySelector('#tpl-at');
+    picker.value = mode;
+    picker.dispatchEvent(fakeEvent('change', picker));
+    same(host.querySelector('#tpl-at').value, mode, '下拉当前提醒方式');
+    same(params.at_mode || 'subscribers', mode, '保存的提醒方式');
+  }};
+}
+
+// 下播默认不提醒订阅成员，但选全体后仍应能切回默认档。
+await ask('下播提醒方式选全体后能切回订阅档', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
+  editor.choose('all');
+  editor.choose('subscribers');
+});
+
+// 非管理员也能保留全体失败后提醒订阅成员的选择，权限只影响提示和预览。
+await ask('非管理员提醒方式能切回全体失败转订阅档', async () => {
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: false},
+    {at_mode: 'all_or_subscribers'});
+  editor.choose('subscribers');
+  editor.choose('all_or_subscribers');
+});
+
+// 界面切回订阅档后，正文不能留下会使发送端仍提醒全体的旧块。
+await ask('下播切回订阅档移除已定位的全体块', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
+  editor.choose('all');
+  allNodes(editor.host).find(node => hasClass(node, 'tpl-at-insert')).click();
+  same(editor.params().message, '前后{at=all}', '已经定位全体块');
+  editor.choose('subscribers');
+  same(editor.params().message || '前后', '前后', '切回后不留全体块');
+  same(allNodes(editor.host).filter(node => node.dataset.k === '{at=all}').length, 0, '正文全体块数');
+});
+
+// 默认不提醒的通知不应常显报错；只有用户尝试放入不支持的块时才提示。
+await ask('无订阅能力默认不常显警告，定位被拒时才提示', async () => {
+  const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: null});
+  same(textOf(editor.host).includes('这类通知不支持 @订阅的人。'), false, '默认页面无订阅警告');
+  // 即使绕过禁用按钮派发点击，产品的定位判定仍必须拒收并解释原因。
+  const alerts = [];
+  const originalAlert = window.alert;
+  window.alert = message => alerts.push(message);
+  try {
+    const insert = allNodes(editor.host).find(node => hasClass(node, 'tpl-at-insert'));
+    insert.dispatchEvent(fakeEvent('click', insert));
+    same(alerts, ['这类通知不支持 @订阅的人。'], '尝试定位时提示');
+    same(editor.params(), {}, '拒收不写回');
+  } finally {
+    window.alert = originalAlert;
+  }
+});
+
+// 触屏用户看不到悬停提示，三档原有说明都应在下拉旁直接可读。
+await ask('三档提醒说明常显在下拉旁', async () => {
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: null});
+  const notes = {
+    subscribers: '只 @ 在本群发过「开播@我」这类命令的人。',
+    all: '机器人不是管理员、或额度用完时会被摘掉，通知照发。',
+    all_or_subscribers: '被摘掉的那一次改 @ 订阅名单。',
+  };
+  for (const [mode, note] of Object.entries(notes)) {
+    editor.choose(mode);
+    const row = allNodes(editor.host).find(node => hasClass(node, 'tpl-at'));
+    same(textOf(row).includes(note), true, '下拉旁常显 ' + mode + ' 说明');
+  }
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
