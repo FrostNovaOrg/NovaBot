@@ -49,7 +49,11 @@ class BilibiliAtCommandHereTest {
 
     private static final String PRIVATE_REPLY = "这里开播通知会 @全体成员，不用单独订阅";
 
-    private static final String EMPTY_ACT = "好的，测试主播开播时会 @ 你。再发「开播@我」可取消";
+    private static final String GROUP_EMPTY_ACT =
+            "好的，订上了。不过测试主播的开播现在没推到本群，推送开了以后才会 @ 你。再发「开播@我」可取消";
+
+    private static final String PRIVATE_EMPTY_ACT =
+            "好的，订上了。不过测试主播的开播现在没推到这里，推送开了以后才会 @ 你。再发「开播@我」可取消";
 
     @Test
     @DisplayName("群仍说本群；私聊不含本群；空模式下菜单不加注、订阅回话带反悔那一句；两处已接 everyoneNotice")
@@ -83,8 +87,14 @@ class BilibiliAtCommandHereTest {
             fixture.clearModes();
             assertEquals("", fixture.command.menuNote(fixture.group()));
             assertEquals("", fixture.command.menuNote(fixture.priv()));
-            assertEquals(EMPTY_ACT, fixture.command.execute(fixture.group()).content());
-            assertEquals(EMPTY_ACT, fixture.command.execute(fixture.priv()).content());
+            String groupEmpty = fixture.command.execute(fixture.group()).content();
+            assertTrue(groupEmpty.contains("再发「开播@我」可取消"), groupEmpty);
+            assertEquals(GROUP_EMPTY_ACT, groupEmpty);
+            String privEmpty = fixture.command.execute(fixture.priv()).content();
+            assertFalse(privEmpty.contains("本群"), privEmpty);
+            assertTrue(privEmpty.contains("这里"), privEmpty);
+            assertTrue(privEmpty.contains("再发「开播@我」可取消"), privEmpty);
+            assertEquals(PRIVATE_EMPTY_ACT, privEmpty);
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
         }
@@ -153,15 +163,9 @@ class BilibiliAtCommandHereTest {
             }
         }
 
-        /**
-         * 留一条通知推送，但不配 @ 模式：即按订阅名单 @ 的默认那一档
-         */
         void clearModes() {
             for (PushTarget target : streamer.getTargets()) {
                 target.getMessages().clear();
-                PushMessage message = new PushMessage();
-                message.setHandler(BilibiliAtNoticeKind.LIVE.handlerName());
-                target.getMessages().add(message);
             }
         }
 
