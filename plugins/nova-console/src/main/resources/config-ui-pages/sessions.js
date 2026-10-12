@@ -24,12 +24,28 @@ import {
 } from './session-draft.js';
 
 /**
- * 静音时段那一行摊开着的会话
+ * 各栏目此刻摊开着的那些
  *
- * 那一行要连着点几下（选档、改开始、改结束），而每点一下这一段都整段重画；
- * 不记住的话，每改一处它就自己收起来一次。
+ * 这几行要连着点几下（选档、改起止、拨开关），而每点一下这一段都整段重画；
+ * 不记住的话，每改一处它就自己收起来一次。切到别的通道再回来也照旧摊着——
+ * 记住的是「这个会话的哪一行摊着」，不是某一位主播下的哪一行：这一段本来就是群共用的。
  */
-const quietOpen = new Set();
+const foldOpen = new Set();
+
+/** 这个会话的哪一行摊着：会话身份 + 行名。同一群下的几位主播共用一份 */
+function foldKey(ctx, name) {
+  return ctx.target.platform + ':' + ctx.target.type + ':' + ctx.target.num + ':' + name;
+}
+
+/** 折叠项记住摊开与否 */
+function keepFold(box, ctx, name) {
+  const key = foldKey(ctx, name);
+  box.open = foldOpen.has(key);
+  box.addEventListener('toggle', () => {
+    if (box.open) foldOpen.add(key);
+    else foldOpen.delete(key);
+  });
+}
 
 /** 本页刚画完的那一次重画：草稿变了要连摘要与开关一起对齐，否则屏幕上留着拨过的空壳 */
 let repaintSession = () => {};
@@ -83,22 +99,17 @@ function refresh() {
 }
 
 /**
- * 一行可折叠的摘要
- * @param keep 记住摊开与否的那张表与键，可不给：给了才在重画后照原样摊开
+ * 一行可折叠的摘要，标题末尾带一颗问号说明
+ * @param helpText 这一行的详细说明，收在问号里；给空就不画那颗问号
  * @return {HTMLElement} 正文容器
  */
-function row(host, title, summary, keep) {
+function row(host, ctx, title, summary, helpText) {
   const box = el('details', 'crow');
-  if (keep) {
-    box.open = keep.set.has(keep.key);
-    box.addEventListener('toggle', () => {
-      if (box.open) keep.set.add(keep.key);
-      else keep.set.delete(keep.key);
-    });
-  }
+  keepFold(box, ctx, title);
   const head = el('summary');
   head.innerHTML = '<span class="cr-t">' + esc(title) + '</span>'
     + '<span class="cr-sum">' + esc(summary) + '</span>';
+  if (helpText) head.appendChild(helpButton(title, helpText));
   box.appendChild(head);
   const body = el('div', 'cr-body');
   box.appendChild(body);
@@ -106,10 +117,107 @@ function row(host, title, summary, keep) {
   return body;
 }
 
+// ---- 问号说明 ----
+//
+// 详细解释从前摊在段里，占掉小半屏还把开关挤到下面去。挪进问号里之后，
+// 想看的人点开看，不想看的人一眼只看见开关。
+
+/** 全页共用的一块说明浮层：同一时刻只开一个，换一行说明就换一段字 */
+let helpTip = null;
+let helpKeysBound = false;
+
+/** 此刻开着的那块说明怎么收起来；没开着时是空 */
+let closeHelp = null;
+
+function tipNode() {
+  if (!helpTip) {
+    helpTip = el('div', 'row-help-tip');
+    helpTip.id = 'row-help-tip';
+    helpTip.setAttribute('role', 'tooltip');
+    helpTip.hidden = true;
+    document.body.appendChild(helpTip);
+  }
+  return helpTip;
+}
+
+function bindHelpKeys() {
+  if (helpKeysBound) return;
+  helpKeysBound = true;
+  if (typeof document.addEventListener !== 'function') return;
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && closeHelp) closeHelp();
+  });
+}
+
+/**
+ * 一行末尾那颗问号
+ *
+ * 键盘走到就摊开、走开或按 Esc 收起；手机上点一下钉住、再点一下收起。
+ * 按钮长在折叠项的标题里，点它这一下不能顺手把整行也拨了。
+ */
+function helpButton(title, text) {
+  const btn = el('button', 'row-help');
+  btn.type = 'button';
+  btn.textContent = '?';
+  btn.setAttribute('aria-label', title + '：查看说明');
+  btn.setAttribute('aria-controls', 'row-help-tip');
+  btn.setAttribute('aria-expanded', 'false');
+
+  let pinned = false;
+
+  const hide = () => {
+    pinned = false;
+    if (closeHelp === hide) closeHelp = null;
+    btn.setAttribute('aria-expanded', 'false');
+    btn.removeAttribute('aria-describedby');
+    tipNode().hidden = true;
+  };
+
+  const show = () => {
+    if (closeHelp && closeHelp !== hide) closeHelp();
+    closeHelp = hide;
+    const tip = tipNode();
+    btn.setAttribute('aria-expanded', 'true');
+    btn.setAttribute('aria-describedby', tip.id);
+    tip.textContent = text;
+    tip.hidden = false;
+    // 贴着按钮下面；窄屏上贴着视口右边，不顶出屏幕
+    const rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : {bottom: 0, left: 0};
+    const width = tip.offsetWidth || 280;
+    const view = (document.documentElement && document.documentElement.clientWidth) || 360;
+    const left = Math.max(8, Math.min(rect.left || 0, view - width - 8));
+    tip.style.position = 'fixed';
+    tip.style.left = left + 'px';
+    tip.style.top = ((rect.bottom || 0) + 6) + 'px';
+  };
+
+  btn.addEventListener('focus', () => {
+    if (!pinned) show();
+  });
+  btn.addEventListener('blur', () => {
+    if (!pinned) hide();
+  });
+  btn.addEventListener('click', event => {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    if (pinned) hide();
+    else {
+      pinned = true;
+      show();
+    }
+  });
+  bindHelpKeys();
+  return btn;
+}
+
 // ---- 1 金额可见 ----
 
 function revenueRow(host, ctx) {
-  const body = row(host, '金额可见', ctx.summary.revenue.text);
+  const body = row(host, ctx, '金额可见', ctx.summary.revenue.text,
+    '关掉后，下播报告不显示收益、卡片改用人数与条数、礼物与醒目留言榜整榜不出；'
+    + '数据查询命令同样不再回金额。'
+    + '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
+    + '只去掉右侧的数字，仍然是在公开排消费。');
 
   const wanted = revenueDraft(ctx.target);
   const visible = wanted === undefined ? ctx.summary.revenue.visible : wanted;
@@ -131,10 +239,6 @@ function revenueRow(host, ctx) {
     + (ctx.summary.revenue.explicit ? '' : '（当前是默认值：群聊隐藏、私聊显示）') + '</p>';
   line.appendChild(text);
   body.appendChild(line);
-
-  body.appendChild(el('div', 'note')).textContent =
-    '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
-    + '只去掉右侧的数字，仍然是在公开排消费。';
 }
 
 // ---- 2 静音时段 ----
@@ -150,8 +254,10 @@ const QUIET_MODES = [
 
 function quietRow(host, ctx) {
   const summary = ctx.summary.quiet;
-  const key = ctx.target.platform + ':' + ctx.target.type + ':' + ctx.target.num;
-  const body = row(host, '静音时段', summary.text, {set: quietOpen, key});
+  const body = row(host, ctx, '静音时段', summary.text,
+    '静音期间推往这个会话的开播、下播、报告、动态与命令回复直接丢弃，不攒着补发，'
+    + '时间线上记「静音丢弃」。起止不能填成一样，填成一样保存时会被拒；'
+    + '要全天照发选「本会话不静音」。设置页的全局推送开关关着时一律不发；告警不受静音影响。');
 
   const saved = {mode: summary.mode, start: summary.start, end: summary.end};
   const wanted = quietDraft(ctx.target) || saved;
@@ -163,7 +269,7 @@ function quietRow(host, ctx) {
     refresh();
   };
 
-  const name = 'quiet-' + key;
+  const name = 'quiet-' + foldKey(ctx, '静音时段');
   for (const item of QUIET_MODES) {
     const line = el('label', 'swrow');
     const input = el('input');
@@ -205,11 +311,6 @@ function quietRow(host, ctx) {
     times.appendChild(input);
   }
   body.appendChild(times);
-
-  body.appendChild(el('div', 'note')).textContent =
-    '静音期间推往这个会话的开播、下播、报告、动态与命令回复直接丢弃，不攒着补发，时间线上记「静音丢弃」。'
-    + '起止不能填成一样，填成一样保存时会被拒；要全天照发选「本会话不静音」。'
-    + '设置页的全局推送开关关着时一律不发；告警不受静音影响。';
 }
 
 // ---- 3 命令 ----
@@ -217,12 +318,11 @@ function quietRow(host, ctx) {
 function commandRow(host, ctx) {
   const group = Number(ctx.target.type) === 1;
   const summary = ctx.summary.command;
-  const body = row(host, '命令', summary.text + (group ? ' · 群里 @ 机器人再发' : ' · 私聊直接发'));
-
-  body.appendChild(el('div', 'note')).textContent = group
-    ? '群成员要先 @ 机器人再发命令，例如「@机器人 直播报告」。@ 了但不是命令，机器人回菜单；'
-      + '命令被本群关掉了，回一句「本群已关闭该命令」。没 @ 的消息一律不理，同一群 3 秒一次。'
-    : '私聊直接发命令名，不是命令就回菜单。没配推送的会话一律不理。';
+  const body = row(host, ctx, '命令', summary.text + (group ? ' · 群里 @ 机器人再发' : ' · 私聊直接发'),
+    group
+      ? '群成员要先 @ 机器人再发命令，例如「@机器人 直播报告」。@ 了但不是命令，机器人回菜单；'
+        + '命令被本群关掉了，回一句「本群已关闭该命令」。没 @ 的消息一律不理，同一群 3 秒一次。'
+      : '私聊直接发命令名，不是命令就回菜单。没配推送的会话一律不理。');
 
   if (summary.offNames.length) {
     const warn = el('div', 'note n-err');
@@ -273,13 +373,15 @@ function effectiveUsageOff(ctx, usage) {
 }
 
 function commandGroup(ctx, group) {
-  const box = el('div', 'cgroup');
+  // 分类自己就是一层折叠：点标题即开即收，不必先找「细调」才看得见这一类的开关
+  const box = el('details', 'cgroup');
+  keepFold(box, ctx, '命令/' + group.category);
   const commands = group.commands || [];
   // 这一组每一条都不可关闭时，没有开关可画。画一个关着且拨不动的，
   // 看起来像整组被关掉了。与单条命令同一写法：开关位留空位，「不可关闭」写进文字列的标记里。
   const noneClosable = commands.length > 0 && commands.every(command => !command.disableable);
 
-  const head = el('div', 'swrow');
+  const head = el('summary', 'swrow');
   if (noneClosable) {
     head.appendChild(el('span', 'cmdslot'));
   } else {
@@ -301,25 +403,17 @@ function commandGroup(ctx, group) {
   text.innerHTML = '<b>' + esc(group.category) + ' <span class="dim">'
     + group.total + ' 条</span></b>'
     + (marks.length ? '<span class="cmdmark">' + esc(marks.join(' · ')) + '</span>' : '');
+  // 这一类对谁生效：拨一下是这个群（或这位好友）自己的事，不是某一位主播下的事
+  text.appendChild(el('span', 'cmdscope')).textContent =
+    Number(ctx.target.type) === 1 ? '当前群共用' : '当前会话共用';
   head.appendChild(text);
-
-  const fine = el('button', 'ghost');
-  fine.type = 'button';
-  fine.textContent = '细调';
-  head.appendChild(fine);
   box.appendChild(head);
 
   const list = el('div', 'cfine');
-  list.hidden = true;
   for (const command of group.commands) {
     list.appendChild(commandLine(ctx, command));
   }
   box.appendChild(list);
-
-  fine.addEventListener('click', () => {
-    list.hidden = !list.hidden;
-    fine.textContent = list.hidden ? '细调' : '收起';
-  });
   return box;
 }
 
@@ -421,11 +515,9 @@ function batchCommands(ctx, names, disabled) {
 
 function subscriptionRow(host, ctx) {
   const summary = ctx.summary.subscription;
-  const body = row(host, '提醒订阅', summary.text);
-
-  body.appendChild(el('div', 'note')).textContent =
+  const body = row(host, ctx, '提醒订阅', summary.text,
     '开播或发动态时会 @ 这些人。人退群后订阅仍会留着，@ 一个不在群里的号是无效的，可在此清理。'
-    + '改「谁会被 @」不在这一行——那一档配在通道的消息模板里。';
+    + '改「谁会被 @」不在这一行——那一档配在通道的消息模板里。');
 
   if (!summary.rows.length) {
     body.appendChild(el('p', 'hint')).textContent =

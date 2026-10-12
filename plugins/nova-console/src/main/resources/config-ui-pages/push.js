@@ -85,6 +85,10 @@ const PAGE_STYLE = `
 .ptable td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ptable .good{color:var(--ok)}
 .ptable .bad{color:var(--err)}
+/* 最近推送那张表：只在卡片里横着滚，不把整页顶宽。表本身撑到内容宽，
+   窄屏上就地横滚——整页一横滚，左树与底下的保存条跟着被推出屏外 */
+.push-history-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.push-history-scroll>.ptable{width:max-content;min-width:100%}
 /* 主播级的头 */
 .shead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .sav{width:40px;height:40px;border-radius:50%;flex:none;background:var(--line);object-fit:cover}
@@ -112,17 +116,23 @@ const PAGE_STYLE = `
 .ch-id{color:var(--dim);font-size:13.5px}
 .chead .ghost{margin-left:auto}
 /* 开关一行：左边开关、右边名字与一句说明 */
+/* 字号分四档，从重到轻依次是栏目名、行名、摘要、说明：
+   四下里挤成同一号字时，一眼扫过去分不出「哪一行是我要改的」与「这句只是解释」 */
 .swrow{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
 .swrow:first-of-type{border-top:none}
 .swrow>.switch{flex:none;margin-top:2px}
-.swtxt{flex:1;min-width:0;font-size:14px}
-.swtxt b{font-weight:600}
+.swtxt{flex:1;min-width:0;font-size:13.5px}
+.swtxt b{font-weight:600;font-size:13.5px}
 .swtxt .dim{color:var(--dim);font-weight:400;font-size:12.5px}
-.swtxt p{margin:2px 0 0;color:var(--dim);font-size:13.5px}
+.swtxt p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
 /* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
    使用者会以为这条命令不存在，而它只是在这个会话里不列 */
 .swrow.dimmed{opacity:.6}
 .cmdmark{margin-left:8px;font-size:12.5px;color:var(--dim);font-weight:400}
+/* 这一类命令的共用范围：整类一句，不与「不可关闭」那些旁注混在同一个标记里 */
+.cmdscope{margin-left:8px;font-size:12px;color:var(--dim);font-weight:400;
+  border:1px solid var(--softline);border-radius:var(--r-pill);padding:1px 7px;
+  white-space:nowrap}
 /* 不可关闭的那几行没有开关可画，开关那 38px 留同宽空位：各行文字列照旧对齐。
    「不可关闭」写进右边文字列的标记里，与「仅管理员」同一写法 */
 .cmdslot{flex:none;width:38px}
@@ -139,6 +149,7 @@ const PAGE_STYLE = `
   border-radius:var(--r-ctl);font-family:var(--mono);font-size:13.5px;white-space:pre-wrap;
   word-break:break-all}
 /* 本群设置：四行摘要 */
+/* 本群设置：四行摘要 */
 .crow{border-top:1px solid var(--line)}
 .crow:first-of-type{border-top:none}
 .crow>summary{display:flex;align-items:baseline;gap:10px;padding:10px 0;cursor:pointer;
@@ -146,13 +157,27 @@ const PAGE_STYLE = `
 .crow>summary::-webkit-details-marker{display:none}
 .crow>summary::before{content:"▸";color:var(--dim);flex:none}
 .crow[open]>summary::before{content:"▾"}
-.cr-t{flex:none;min-width:76px;font-weight:600}
-.cr-sum{flex:1;min-width:0;color:var(--dim);font-size:13.5px}
+.cr-t{flex:none;min-width:76px;font-weight:600;font-size:14.5px}
+.cr-sum{flex:1;min-width:0;color:var(--dim);font-size:13px}
 .cr-body{padding:2px 0 14px 16px}
+/* 命令分类也是一层原生折叠：点标题即开即收，不必再找「细调」那个按钮 */
 .cgroup{border-top:1px solid var(--line);padding:2px 0}
-.cgroup>.swrow{border-top:none}
-.cgroup>.swrow>.ghost{flex:none;padding:4px 12px;font-size:13px}
+.cgroup>summary.swrow{border-top:none;cursor:pointer;list-style:none;align-items:flex-start}
+.cgroup>summary.swrow::-webkit-details-marker{display:none}
+.cgroup>summary.swrow::after{content:"▸";color:var(--dim);flex:none;margin-left:auto;
+  align-self:center;font-size:11px}
+.cgroup[open]>summary.swrow::after{content:"▾"}
 .cfine{padding-left:24px}
+/* 每行末尾那颗问号：点开、再点关上；键盘 Tab 得到、Esc 关得掉，读屏按按钮念标题 */
+.row-help{flex:none;align-self:center;width:22px;height:22px;padding:0;border-radius:50%;
+  border:1px solid var(--line);background:var(--surface);color:var(--dim);font-size:12.5px;
+  line-height:1;cursor:pointer;font-family:inherit}
+.row-help:hover{border-color:var(--accent);color:var(--accent)}
+.row-help[aria-expanded="true"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+.row-help-tip{position:fixed;z-index:30;max-width:min(320px,calc(100vw - 24px));
+  padding:9px 12px;background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);box-shadow:var(--shadow);font-size:12.5px;line-height:1.65}
+.row-help-tip[hidden]{display:none}
 .cmdline{border-top:1px solid var(--line)}
 .cmdline:first-child{border-top:none}
 .cmdline>.swrow{border-top:none}
@@ -375,8 +400,6 @@ export function render(section) {
   ensureStyle();
   ensureDrawer();
   section.innerHTML = `
-    <p class="hint">推谁、推到哪、推什么，按主播管。左边先选一位主播看它推到哪几个通道；
-      再点开通道，定这个通道收到什么、消息长什么样、这个群怎么设。</p>
     <div id="sess-incomplete"></div>
     <div class="pnarrow">
       <label for="push-nav">选一位主播或一个通道</label>
@@ -800,9 +823,7 @@ function card(host, title, desc) {
 
 function renderIndex(host) {
   const rows = channelIndex(pushData, runtime.sessions, store.handlerList, directory);
-  const box = card(host, '通道一览',
-    '一位主播 × 一个群（或一位好友）＝ 一个通道。同一个群出现在多位主播下是正常的，'
-    + '而「本群设置」那一段是这个群自己的事，对推给它的所有主播共用。');
+  const box = card(host, '通道一览');
 
   if (!rows.length) {
     box.appendChild(el('p', 'hint')).textContent =
@@ -1156,9 +1177,7 @@ function renderChannelLevel(host, user, target) {
   });
   line.appendChild(remove);
   head.appendChild(line);
-  head.appendChild(el('p', 'hint')).textContent =
-    '这一页定的是「' + streamerName(user) + ' → ' + name + '」这一条通道。'
-    + '同一个群下面还有别的主播时，只有第 4 段「本群设置」是共用的。';
+  head.appendChild(el('p', 'hint')).textContent = streamerName(user) + ' → ' + name;
 
   sectionNotices(host, user, target, session);
   sectionTemplate(host, user, target, session);
@@ -1221,7 +1240,10 @@ function sectionNotices(host, user, target, session) {
           : row.uncertain ? '<span>送达不明，可能已发出、没有重发：' + esc(row.reason || '未知原因') + '</span>'
           : '<span class="bad">失败：' + esc(row.reason || '未知原因') + '</span>') + '</td></tr>').join('')
       + '</tbody>';
-    box.appendChild(table);
+    // 表只在卡片里横着滚，不把整页顶宽：窄屏上整页一横滚，左树与底下的保存条跟着推出屏外
+    const scroll = el('div', 'push-history-scroll');
+    scroll.appendChild(table);
+    box.appendChild(scroll);
   }
 
   const channel = pushChannelOf(session);
