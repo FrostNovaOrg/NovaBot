@@ -59,6 +59,20 @@ export const NEXT = '{next}';
  */
 export const AT_LITERALS = [ '{at}', '{at=all}' ];
 
+/** 未声明任何提醒占位符的通知，旧提醒文字也不再生效。 */
+export function supportsAt(spec) {
+  return AT_LITERALS.some(key => ((spec || {}).all || []).includes(key));
+}
+
+/** 去掉旧提醒及因此空出来的消息段。 */
+export function withoutAtBlocks(text) {
+  return String(text == null ? '' : text).split(NEXT)
+    .flatMap(part => {
+      const cleaned = part.replace(/\{at(?:=all)?}/g, '');
+      return cleaned !== part && !cleaned.trim() ? [] : [cleaned];
+    }).join(NEXT);
+}
+
 /**
  * 占位符的取法：从 { 到<b>最近一个</b> }
  *
@@ -150,6 +164,7 @@ export function placeAtBlock(cards, mode, spot, spec) {
  */
 export function parseTemplate(text, spec) {
   const known = ((spec || {}).all) || [];
+  if (!supportsAt(spec)) text = withoutAtBlocks(text);
   return String(text == null ? '' : text).split(NEXT).map(segment => {
     const blocks = [];
     let last = 0;
@@ -629,6 +644,9 @@ function say(terms, key, withTerm, without) {
  *         这一次会不会被摘掉、摘掉后是否改 @ 订阅名单、以及一句说明
  */
 export function atPlan(cards, mode, context, terms) {
+  if ((context || {}).supportsAt === false) {
+    return {prepend: 'none', inline: false, dropped: false, fallback: false, note: ''};
+  }
   const text = toTemplateText(cards);
   const isGroup = !!(context || {}).isGroup;
   const words = terms || (context || {}).terms;
@@ -695,6 +713,7 @@ export function previewBubbles(cards, mode, context, terms, spec) {
       if (block.kind === 'text') {
         if (block.text !== '') parts.push({kind: 'text', text: block.text});
       } else if (AT_LITERALS.includes(block.key)) {
+        if ((context || {}).supportsAt === false) continue;
         const all = block.key === '{at=all}';
         const unavailable = all && ((context || {}).isGroup === false || (context || {}).admin === false);
         inlineDropped ||= unavailable;
