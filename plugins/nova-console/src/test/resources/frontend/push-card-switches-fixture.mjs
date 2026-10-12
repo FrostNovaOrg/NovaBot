@@ -738,7 +738,7 @@ await ask('备选区按需出现且说明可见', async () => {
   killButton('点赞').click();
   await settle();
   same(labelsIn(OFF), ['点赞'], '拿掉后出现的备选卡片');
-  same(textOf(page()).includes('点一下放回末尾，或拖进上面'), true, '备选区的可见操作说明');
+  same(textOf(page()).includes('点一下或拖回上面'), true, '备选区的可见操作说明');
   chip(OFF, '点赞').click();
   await settle();
   same(allNodes(page()).filter(node => hasClass(node, OFF)).length, 0, '最后一项放回后备选区消失');
@@ -789,9 +789,9 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
   editors.buildTemplateEditor(unsupported, {handlers: [{...handler, placeholders: ['{uname}', '{at=all}']}],
     editable: true, context: {isGroup: true, admin: false},
     paramsOf: () => ({message: '前{at=all}后', at_mode: 'all'})});
-  same(textOf(unsupported).includes('会被摘掉'), true, '已确定非管理员时提示');
+  same(textOf(unsupported).includes('机器人不是本群管理员，@全体成员 两档选不了。'), true, '已确定非管理员时提示');
   const picker = unsupported.querySelector('#tpl-at');
-  same(picker.children.map(node => node.disabled), [false, false, false], '三档提醒方式都能选择');
+  same(picker.children.map(node => node.disabled), [false, true, true], '全体两档禁用');
   same(allNodes(unsupported).filter(node => hasClass(node, 'tpl-preview-note')).length, 1, '只画实际降级说明');
 });
 
@@ -817,12 +817,23 @@ await ask('下播提醒方式选全体后能切回订阅档', async () => {
   editor.choose('subscribers');
 });
 
-// 非管理员也能保留全体失败后提醒订阅成员的选择，权限只影响提示和预览。
-await ask('非管理员提醒方式能切回全体失败转订阅档', async () => {
-  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: false},
-    {at_mode: 'all_or_subscribers'});
-  editor.choose('subscribers');
-  editor.choose('all_or_subscribers');
+// 故障：非管理员或私聊仍能选择发不出去的全体提醒，或打开编辑器就改掉原有设置。
+await ask('全体提醒按群权限变灰，已选值和存值保留', async () => {
+  for (const [context, disabled, reason] of [
+    [{isGroup: true, admin: false}, [false, true, true], '机器人不是本群管理员，@全体成员 两档选不了。'],
+    [{isGroup: false, admin: true}, [false, true, true], '私聊没有 @全体成员。'],
+    [{isGroup: true, admin: null}, [false, false, false], ''],
+  ]) {
+    const initial = {at_mode: 'all', message: '前{at=all}后'};
+    const editor = reminderEditor(['{at}', '{at=all}'], context, initial);
+    const picker = editor.host.querySelector('#tpl-at');
+    same(picker.children.map(node => node.disabled), disabled, '选项禁用状态');
+    same(picker.value, 'all', '原先选中的全体档');
+    same(editor.params(), initial, '打开时存值不变');
+    if (reason) same(textOf(editor.host).includes(reason), true, '可见禁用原因');
+    editor.choose('subscribers');
+    same(editor.host.querySelector('#tpl-at').children.map(node => node.disabled), disabled, '换走后的禁用状态');
+  }
 });
 
 // 界面切回订阅档后，正文不能留下会使发送端仍提醒全体的旧块。

@@ -209,11 +209,10 @@ export function buildTemplateEditor(host, options) {
     }
     palette.appendChild(atNode());
     const ctx = previewContext();
-    const inlineAll = state.cards.some(card => card.blocks.some(block => block.key === '{at=all}'));
-    if ((state.atMode !== 'subscribers' || inlineAll) && (ctx.admin === false || ctx.isGroup === false)) {
+    if (ctx.admin === false || ctx.isGroup === false) {
       palette.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
-        ? '私聊不支持 @全体成员，发送时会被摘掉，正文照发。'
-        : '机器人不是本群管理员，@全体成员 会被摘掉，正文照发。';
+        ? '私聊没有 @全体成员。'
+        : '机器人不是本群管理员，@全体成员 两档选不了。';
     }
   }
 
@@ -450,10 +449,12 @@ export function buildTemplateEditor(host, options) {
     select.disabled = !opts.editable;
     select.setAttribute('aria-label', '选择提醒方式');
     select.title = atModeInfo(state.atMode).note;
+    const ctx = previewContext();
     for (const mode of AT_MODES) {
       const option = el('option');
       option.value = mode.key;
       option.textContent = mode.label;
+      option.disabled = mode.key !== 'subscribers' && (ctx.admin === false || ctx.isGroup === false);
       if (mode.key === state.atMode) option.selected = true;
       select.appendChild(option);
     }
@@ -1049,7 +1050,7 @@ export function buildLayoutEditor(host, options) {
       onArea.appendChild(node);
     });
 
-    const offArea = offKeys.length ? zoneNode('off', '没放进报告的 · 点一下放回末尾，或拖进上面', offKeys, '都在报告里',
+    const offArea = offKeys.length ? zoneNode('off', '没放进报告的 · 点一下或拖回上面', offKeys, '都在报告里',
       key => act(order, key, sequence, false, 'off')) : null;
     for (const key of offKeys) {
       const node = chipNode(key, 'off');

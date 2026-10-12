@@ -349,7 +349,7 @@ const PAGE_STYLE = `
 .rep-row.parent-off{opacity:.6}
 /* 可排先后的那几项：上面报告区的小块照占位符药丸，下面没放进报告的照调色板 */
 .rep-board{padding:7px 0 7px 26px;border-top:1px solid var(--line)}
-.rep-board>.rep-zone-t{margin:4px 0;font-size:13px;font-weight:600;line-height:1.5}
+.rep-board>.rep-zone-t{margin:4px 0;font-size:12px;font-weight:400;color:var(--dim);line-height:1.5}
 .rep-zone{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:34px;padding:6px 8px;
   border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground)}
 .rep-zone.over{border-color:var(--accent);background:var(--soft)}
@@ -1681,6 +1681,15 @@ function pickTarget(opts) {
 
       for (const item of rows) {
         const taken = (opts.taken || []).includes(item.key);
+        const otherStreamers = item.type === 1 ? pushData
+          .filter(user => user !== opts.user && (user.targets || []).some(target =>
+            target.platform === item.sender && Number(target.type) === 1
+            && String(target.num) === String(item.num)))
+          .map(streamerName) : [];
+        const pushing = otherStreamers.length
+          ? ' · 已在推 ' + otherStreamers.slice(0, 3).join('、')
+            + (otherStreamers.length > 3 ? '等 ' + otherStreamers.length + ' 位' : '')
+          : '';
         const row = el('button', 'dwrow' + (taken ? ' taken' : ''));
         row.type = 'button';
         row.disabled = taken;
@@ -1689,7 +1698,7 @@ function pickTarget(opts) {
             ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
           + esc(item.num)
           + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
-          + (item.admin ? ' · 机器人是管理员' : '') + '</span>'
+          + (item.admin ? ' · 机器人是管理员' : '') + esc(pushing) + '</span>'
           + (taken ? '<span class="dw-tag">已是通道</span>' : '');
         row.addEventListener('click', () => {
           const hit = resolveTarget(options, item.key);
@@ -1716,7 +1725,8 @@ function addChannel(user) {
 
   pickTarget({
     title: '给「' + streamerName(user) + '」添加通道',
-    lead: '从机器人已经加入的群、已经加的好友里挑。已经是通道的灰着。',
+    lead: '从机器人已经加入的群、已经加的好友里挑。已经是通道的灰着。群的设置（金额显示、静音、命令开关等）由推到这个群的所有主播共用。',
+    user,
     taken,
     onPick: hit => {
       user.targets = user.targets || [];
