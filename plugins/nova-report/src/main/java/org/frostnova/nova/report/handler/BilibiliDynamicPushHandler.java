@@ -10,6 +10,7 @@ import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.PushMessage;
@@ -105,8 +106,10 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
 
         AtMode mode = AtMode.of(params);
         String template = params.getString("message");
-        String subscriberAt = PushHandlerSupport.atSubscribers(subscriptions.list(
-                target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic"));
+        String subscriberAt = target.getType() == PushTargetType.GROUP
+                ? PushHandlerSupport.atSubscribers(subscriptions.list(
+                        target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic"))
+                : "";
 
         String content = template
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))

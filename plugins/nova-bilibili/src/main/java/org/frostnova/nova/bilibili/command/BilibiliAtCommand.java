@@ -204,17 +204,26 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     protected List<AtMode> modesOf(CommandContext context, BilibiliAtNoticeKind kind) {
         List<AtMode> modes = new ArrayList<>();
         for (PushUser user : streamersOf(context)) {
-            for (PushTarget target : user.getTargets()) {
-                if (Boolean.FALSE.equals(target.getEnabled()) || !targets(target, context)) {
+            modes.addAll(modesOf(context, kind, user));
+        }
+        return modes;
+    }
+
+    /**
+     * 指定主播推到本会话的这一类通知的 @ 模式。
+     */
+    protected List<AtMode> modesOf(CommandContext context, BilibiliAtNoticeKind kind, PushUser streamer) {
+        List<AtMode> modes = new ArrayList<>();
+        for (PushTarget target : streamer.getTargets()) {
+            if (Boolean.FALSE.equals(target.getEnabled()) || !targets(target, context)) {
+                continue;
+            }
+            for (PushMessage message : target.getMessages()) {
+                // 关掉的那条通知不推，它配成什么都影响不到群里的人
+                if (Boolean.FALSE.equals(message.getEnabled()) || !isKind(message, kind)) {
                     continue;
                 }
-                for (PushMessage message : target.getMessages()) {
-                    // 关掉的那条通知不推，它配成什么都影响不到群里的人
-                    if (Boolean.FALSE.equals(message.getEnabled()) || !isKind(message, kind)) {
-                        continue;
-                    }
-                    modes.add(AtMode.of(message.getParamsJsonObject()));
-                }
+                modes.add(AtMode.of(message.getParamsJsonObject()));
             }
         }
         return modes;
