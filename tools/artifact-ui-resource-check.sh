@@ -19,8 +19,12 @@
 # 插件格：**jar 内条目 ⊆ 该模块的登记清单**（tools/console-page-registry.sh 取的
 #         provider 申报＋控制器直取并集）。插件界面件进产物走的是登记不是目录：
 #         目录里多放一件不改变出口，按目录判会把那件认成「源码有」——洞正在这里。
+# 手册格：**jar 内 config-ui-manual 条目 ⊆ manual/dist**——手册的源是 manual/*.md，
+#         经 manual/build.py 生成为 dist 再进包，真源是刚生成的那一份，不是源码目录。
 # 只判「多出」不判「缺少」：缺少的那种表现是页面 404，一眼看得见；多出的那种表现是
 # 请求成功、内容却来自根本没登记过的一份，**看起来完全正常**——那才是要一把尺来量的。
+# 两个例外按「缺少也红」判：核心界面与随包手册整块缺席不是 404 一页的事，是打进包的
+# 那条链断了，包看上去却一切正常——那种静默正是这一格要拦的。
 #
 # 空集也要报数：一把「子集」尺在被量清单为空时永远是绿的。因此每一格都把两侧条目数印出来，
 # 并且：核心那一格若一个界面资源都没有，直接判红（「界面丢光了」不能读成「干净」）；
@@ -38,6 +42,10 @@ PLUGIN_UI_DIR="config-ui-pages"
 # 核心界面资源在 Spring Boot 重打包后的位置
 CORE_UI_IN_JAR="BOOT-INF/classes/config-ui"
 CORE_UI_SRC="core/nova-core/src/main/resources/config-ui"
+# 随包手册在 jar 里的位置与其真源：手册的源是 manual/*.md，经 manual/build.py 生成为
+# manual/dist，再由 pom 拷进 jar。按源码目录判会把每一页 html 都认成多出，故单列一格
+MANUAL_IN_JAR="BOOT-INF/classes/config-ui-manual"
+MANUAL_SRC="manual/dist"
 
 RED=0
 EXTRA_TOTAL=0
@@ -77,9 +85,12 @@ find_module_dir() {
 
 # 一格：某个 jar 的某个资源目录 ⊆ 某一份清单
 #   $1 jar 路径   $2 jar 内目录前缀（不带末尾斜杠）   $3 清单件（每行一个件名）
-#   $4 这一格叫什么   $5 清单的叫法（源码／登记）——读数与多出报文里用它
+#   $4 这一格叫什么   $5 清单的叫法（源码／登记／生成）——读数与多出报文里用它
+#   $6 可选：jar 内一项都没有时那句「这不是干净是丢了」怎么说（核心界面与随包手册
+#        都不该有缺席的形态：缺席说明打进包的那条链断了，而不是这一块本来就不该在）
 check_one() {
     local jar="$1" prefix="$2" list="$3" label="$4" word="$5"
+    local missing_word="${6:-}"
     local entries rel extra=0 count=0 list_count=0
 
     if [ ! -f "$jar" ]; then
@@ -122,8 +133,8 @@ check_one() {
     elif [ "$extra" -gt 0 ]; then
         echo "  $label 红 jar内${count}项 ${word}${list_count}项 多出${extra}项 $(basename "$jar")"
         RED=1
-    elif [ "$count" -eq 0 ] && [ "$label" = "核心界面" ]; then
-        echo "  $label 红 jar内0项 —— 核心界面资源一个都没打进包，这不是干净是丢了 $(basename "$jar")"
+    elif [ "$count" -eq 0 ] && [ -n "$missing_word" ]; then
+        echo "  $label 红 jar内0项 —— ${missing_word}，这不是干净是丢了 $(basename "$jar")"
         RED=1
     else
         echo "  $label 绿 jar内${count}项 ${word}${list_count}项 多出0项 $(basename "$jar")"
@@ -160,7 +171,18 @@ core_list="$WORK/core-ui.list"
 if [ -d "$CORE_UI_SRC" ]; then
     find "$CORE_UI_SRC" -type f | sed "s|^$CORE_UI_SRC/||" | sort > "$core_list"
 fi
-check_one "$OUT/NovaBot.jar" "$CORE_UI_IN_JAR" "$core_list" "核心界面" 源码
+check_one "$OUT/NovaBot.jar" "$CORE_UI_IN_JAR" "$core_list" "核心界面" 源码 "核心界面资源一个都没打进包"
+
+# 随包手册格：jar 内 config-ui-manual ⊆ manual/dist。真源是 build.py 刚生成的这一份
+# （生成与打包同在 [4/9]，量到这里它必然在）；手册打进包是本链的结构而非可选，
+# 一项都没有即红——那时控制台的「使用说明」会静默退到站上那份，版本对不上的老毛病
+# 就是从这里回来的。
+manual_list="$WORK/manual-dist.list"
+: > "$manual_list"
+if [ -d "$MANUAL_SRC" ]; then
+    find "$MANUAL_SRC" -type f | sed "s|^$MANUAL_SRC/||" | sort > "$manual_list"
+fi
+check_one "$OUT/NovaBot.jar" "$MANUAL_IN_JAR" "$manual_list" "随包手册" 生成 "随包手册一个都没打进包"
 
 # 插件那一侧按目录里实际有哪些 jar 来量，不写死任何一个插件的名字：
 # 写死一个，这把尺守的就只是那一个插件，下一个插件带着脏条目进包照样是绿的。

@@ -1,8 +1,10 @@
 /**
- * 侧栏「使用说明」：按当前页算出手册网址，外链不把本页地址交出去
+ * 侧栏「使用说明」：按当前页算出自带手册的地址（带部署前缀），外链不把本页地址交出去
  *
- * 控制台地址里常带访问令牌。外链只写 noopener 时，新页拿不到本窗口，
- * 来源信息照样走，令牌会跟去别的网站。
+ * 手册地址是站内的 /config/manual/…：配了部署前缀时必须带上，丢了前缀就 404。
+ * 前缀与 core.js 同一个 <meta name="nova-prefix">，manual-link.js 经 core.js 的 CONSOLE 取；
+ * 夹具在载入之前把那个 meta 摆好，ManualLinkTest 分别以带前缀与不带前缀各拉起一次，
+ * 前缀经命令行参数传进来（module 载入时取定，一次只能量一个）。
  *
  * 由 ManualLinkTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -10,10 +12,18 @@
 import {readFileSync, readdirSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {extAttrs, manualHref} from '../../../main/resources/config-ui/manual-link.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
-const site = 'https://frostnovaorg.github.io/NovaBot/';
+
+// 部署前缀：core.js 载入时从 meta 取，载入前摆好
+const prefix = process.argv[2] || '';
+globalThis.document = {
+  querySelector: s => (s === 'meta[name="nova-prefix"]' ? {content: prefix} : null),
+};
+
+const {extAttrs, manualHref} = await import('../../../main/resources/config-ui/manual-link.js');
+
+const site = `${prefix}/config/manual/`;
 
 const failures = [];
 let checks = 0;
@@ -59,6 +69,9 @@ eq(manualHref('#/no-such-page'), site + 'index.html', '不认识的页去目录'
 eq(manualHref('#/settings/later-plugin'), site + 'index.html', '设置页下后加的插件页去目录');
 eq(manualHref(''), site + chapter.home, '空地址当首页');
 
+// 自带手册是站内地址：就算页面把它当外链摆，extAttrs 也不许给出外链那一套
+eq(extAttrs(manualHref('#/home')), '', '自带手册是站内地址，不加外链属性');
+
 const attrs = extAttrs('https://example.com/manual');
 has(attrs, 'noopener', '外链属性');
 has(attrs, 'noreferrer', '外链属性');
@@ -74,6 +87,12 @@ if (!anchor) {
   failures.push('index.html 没有 #side-manual「使用说明」');
 } else {
   has(anchor[0], '使用说明', '侧栏入口');
+  has(anchor[0], 'title="打开使用说明"', '侧栏入口的悬停说明');
+  has(anchor[0], 'aria-label="打开使用说明"', '侧栏入口的读屏说明');
+  checks++;
+  if (anchor[0].includes('手册网站')) {
+    failures.push('侧栏入口还写着「手册网站」：手册已是自带的，不再指站外那份');
+  }
   has(anchor[0], 'noopener', '侧栏入口');
   has(anchor[0], 'noreferrer', '侧栏入口');
   has(anchor[0], 'referrerpolicy="no-referrer"', '侧栏入口');
@@ -86,7 +105,7 @@ if (!anchor) {
 
 const mainJs = readFileSync(join(ui, 'main.js'), 'utf8');
 has(mainJs, 'manualHref(location.hash)', '侧栏入口要按地址栏改 href');
-has(mainJs, "from './manual-link.js'", 'main.js 要引入手册网址');
+has(mainJs, "from './manual-link.js'", 'main.js 要引入手册地址');
 has(readFileSync(join(ui, 'overview.js'), 'utf8'), 'extAttrs(', '源码地址与更新说明要走外链属性');
 
 const files = readdirSync(ui).filter(name => name.endsWith('.js') || name.endsWith('.html'));
@@ -100,6 +119,6 @@ for (const name of files) {
   });
 }
 
-console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
+console.log(`跑了 ${checks} 格（前缀 ${JSON.stringify(prefix)}），红 ${failures.length} 格`);
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

@@ -381,6 +381,13 @@ else
 fi
 
 echo "==> [4/9] 打包可运行的 NovaBot"
+# 先生成随包手册：控制台的「使用说明」打开的是打进包里的那一份（站内、登录后可看、
+# 跟所装版本走），下面那条 mvn 会把 manual/dist 拷进 jar 的 config-ui-manual/ 下。
+# python 只在这一步要：不经本脚本的 mvn 构建里 manual/dist 不在，pom 把它当可选资源
+# 目录，缺了不报错、只是包里少这一块（控制台那时把「使用说明」退到站上那份手册）。
+# build.py 自带全站断链检查，手册里链坏了这里就红，不带出残缺的站。
+python3 manual/build.py
+
 # 这一步不带 clean：[2/9] 刚把 core/nova-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
 mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage -DskipTests package
