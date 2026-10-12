@@ -1095,7 +1095,7 @@ function defaultsBlock() {
 // ============ 走完之后 ============
 
 function renderDone(host) {
-  heading(host, '初始设置完成', '这几步定的东西都已经生效。之后想改，全在设置页与各功能页里。');
+  heading(host, '设置引导完成', '这几步定的东西都已经生效。之后想改，全在设置页与各功能页里。');
 
   summaryLines(facts, skips, {
     accounts: seen.login.accounts || [],

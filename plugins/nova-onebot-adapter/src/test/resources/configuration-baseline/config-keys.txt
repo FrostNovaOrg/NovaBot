@@ -19,7 +19,7 @@ novabot.adapter.onebot.security.rate-limit.burst|java.lang.Integer|100|可容忍
 novabot.adapter.onebot.security.rate-limit.enabled|java.lang.Boolean|true|是否启用推送接口频率限制。
 novabot.adapter.onebot.security.rate-limit.permits-per-minute|java.lang.Integer|600|单个来源每分钟允许的请求数。
 novabot.adapter.onebot.security.trust-proxy|java.lang.Boolean|false|是否信任反向代理设置的 X-Forwarded-For／X-Real-IP 头；只有确实部署在反代之后才可开，否则来源 IP 可被伪造。
-novabot.adapter.onebot.senders|java.util.List<org.frostnova.nova.adapter.onebot.model.OneBotSender>|<null>|OneBot 推送平台列表。在「连接」页或初始设置里保存后立刻断开旧连接、连上新的，不必重启。
+novabot.adapter.onebot.senders|java.util.List<org.frostnova.nova.adapter.onebot.model.OneBotSender>|<null>|OneBot 推送平台列表。在「连接」页或设置引导里保存后立刻断开旧连接、连上新的，不必重启。
 novabot.adapter.onebot.websocket-thread.core-pool-size|java.lang.Integer|2|线程池核心线程数。
 novabot.adapter.onebot.websocket-thread.keep-alive-seconds|java.lang.Integer|300|非核心线程存活时间，单位：秒。
 novabot.adapter.onebot.websocket-thread.max-pool-size|java.lang.Integer|16|线程池最大线程数。

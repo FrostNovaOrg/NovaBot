@@ -33,7 +33,7 @@ public class OneBotAdapterPluginProperties {
     private String baseUrl = "/onebot";
 
     /**
-     * OneBot 推送平台列表。在「连接」页或初始设置里保存后立刻断开旧连接、连上新的，不必重启。
+     * OneBot 推送平台列表。在「连接」页或设置引导里保存后立刻断开旧连接、连上新的，不必重启。
      */
     // 连接不在设置页上逐条改，在「连接」页和初始设置里保存。
     @Getter

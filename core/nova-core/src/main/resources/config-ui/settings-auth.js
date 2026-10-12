@@ -617,7 +617,7 @@ export function authCards() {
     const note = el('p', 'hint');
     note.id = 'auth-unlocked';
     note.textContent = '这台机器还没设密码，因此不出登录页，进来就是控制台。'
-      + '要上锁的话，到初始设置页走第 1 步。';
+      + '要上锁的话，到设置引导页走第 1 步。';
     wrap.appendChild(note);
     // 协议这张卡与「上没上锁」无关：没配口令的那一形态里，同意也是凭令牌进来的人点下的，
     // 撤回同样要有地方点——只摆在上过锁的机器上，等于这一形态的使用者一辈子撤不回来

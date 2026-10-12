@@ -79,7 +79,7 @@ git clone https://github.com/FrostNovaOrg/NovaBot
 cd NovaBot && ./install.sh
 ```
 
-装好后按[第 4 章](https://frostnovaorg.github.io/NovaBot/04-first-open.html)打开控制台，跟着初始设置走完五步，群里就能收到第一条消息。macOS、Windows 用手动安装，另有 Docker 部署，见[第 3 章](https://frostnovaorg.github.io/NovaBot/03-install.html)。
+装好后按[第 4 章](https://frostnovaorg.github.io/NovaBot/04-first-open.html)打开控制台，跟着设置引导走完五步，群里就能收到第一条消息。macOS、Windows 用手动安装，另有 Docker 部署，见[第 3 章](https://frostnovaorg.github.io/NovaBot/03-install.html)。
 
 ## 文档
 
