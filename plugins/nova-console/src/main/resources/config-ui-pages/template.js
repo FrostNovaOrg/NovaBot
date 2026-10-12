@@ -435,20 +435,6 @@ export function buildTemplateEditor(host, options) {
       : state.atMode === 'all_or_subscribers' && !state.spec.all.includes('{at}')
         ? '被摘掉的那一次不 @ 人：这类通知没有订阅名单。'
         : atModeInfo(state.atMode).note;
-    const handle = el('button', 'tpl-at-handle');
-    handle.type = 'button';
-    handle.textContent = '⋮⋮';
-    handle.disabled = !positionable;
-    handle.draggable = positionable;
-    handle.setAttribute('aria-label', '拖动 @块到消息中，或按 Enter 插入到光标处');
-    handle.title = supported ? '拖进任意消息；也可点击插入到光标处' : '这类通知不支持 @订阅的人。';
-    handle.addEventListener('dragstart', event => {
-      if (positionable) startDrag(event, {kind: 'at'}, 'move');
-      else event.preventDefault();
-    });
-    handle.addEventListener('dragend', () => { drag = null; });
-    if (supported) capsule.appendChild(handle);
-
     const select = el('select', 'tpl-at-s');
     select.id = 'tpl-at';
     select.disabled = !opts.editable;
@@ -473,14 +459,21 @@ export function buildTemplateEditor(host, options) {
     });
     capsule.appendChild(select);
     row.appendChild(capsule);
-    const insert = el('button', 'tpl-at-insert');
-    insert.type = 'button';
-    insert.textContent = '插到光标处';
-    insert.disabled = !positionable;
-    insert.title = handle.title;
-    insert.addEventListener('click', insertAtHere);
-    handle.addEventListener('click', insertAtHere);
-    if (supported) row.appendChild(insert);
+    if (supported) {
+      const block = el('button', 'tpl-blk');
+      block.type = 'button';
+      block.textContent = blockLabel(atLiteralOf(state.atMode), state.spec);
+      block.disabled = !positionable;
+      block.draggable = positionable;
+      block.title = opts.editable ? '点一下插到光标处，或拖进卡里' : (opts.lockedNote || '');
+      block.addEventListener('click', insertAtHere);
+      block.addEventListener('dragstart', event => {
+        if (positionable) startDrag(event, {kind: 'at'}, 'move');
+        else event.preventDefault();
+      });
+      block.addEventListener('dragend', () => { drag = null; });
+      row.appendChild(block);
+    }
     row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
     return row;
   }

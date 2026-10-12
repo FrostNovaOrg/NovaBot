@@ -279,32 +279,24 @@ const PAGE_STYLE = `
   border-radius:var(--r-ctl);padding:7px;cursor:pointer;font-size:13.5px;font-family:inherit}
 .tpl-add:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .tpl-add:disabled{opacity:.5;cursor:not-allowed}
-/* 提醒模式与位置：拖柄独立于原生下拉，触屏可点按钮定位 */
+/* 提醒模式与位置：原生下拉选人，旁边的块点按或拖动定位 */
 .tpl-at{display:flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:100%;font-size:13px}
 .tpl-at-note{flex-basis:100%;line-height:1.6}
 .tpl-at-capsule{display:flex;align-items:stretch;min-width:0;border:1px solid var(--softline);
   border-radius:var(--r-pill);background:var(--surface);overflow:hidden}
 .tpl-at-s{width:auto;min-width:0;max-width:100%;border:0;border-radius:0;
   background:var(--surface);color:var(--accent-text);padding:6px 32px 6px 5px;font:inherit}
-.tpl-at-handle{flex:none;min-width:28px;min-height:34px;padding:3px 5px;border:0;
-  border-right:1px solid var(--softline);background:var(--soft);color:var(--accent-text);
-  cursor:grab;user-select:none;font:inherit}
-.tpl-at-handle:active{cursor:grabbing}
-.tpl-at-insert{flex:none;min-height:34px;padding:4px 9px;border:1px solid var(--line);
-  border-radius:var(--r-pill);background:var(--surface);color:var(--text);font:inherit;
-  cursor:pointer;touch-action:manipulation}
-.tpl-at-handle:disabled,.tpl-at-insert:disabled{opacity:.45;cursor:not-allowed}
-.tpl-at-capsule:focus-within,.tpl-at-insert:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tpl-at-capsule:focus-within{outline:2px solid var(--accent);outline-offset:2px}
 .tpl-at-warning{flex:1 0 100%;margin:3px 0 0;color:var(--warn);line-height:1.6}
 .tpl-preview-note{margin:8px 0 0;line-height:1.6}
 .template-diff{font-size:13px;margin:6px 0}
 @media(pointer:coarse){
-  .tpl-at-handle,.tpl-at-s,.tpl-at-insert{min-height:42px}
-  .tpl-at-handle{min-width:34px}
+  .tpl-at-s,.tpl-at>.tpl-blk{min-height:42px}
 }
 @media(max-width:520px){
   .tpl-pal>.tpl-at{flex-basis:100%}
   .tpl-at-capsule{flex:1 1 auto}
+  .tpl-at>.tpl-blk{flex:none}
   .tpl-at-s{flex:1 1 auto;font-size:12.5px}
 }
 /* 文本形式：给老使用者对照，只能看 */
