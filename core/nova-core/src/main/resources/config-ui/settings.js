@@ -90,11 +90,17 @@ export function stopWatchingGroups() {
  * 组标题正好被它们盖住，看起来像「点了没反应」；宽屏上没有吸顶元素，落点不偏。
  * 让出多少与「哪一组算当前」共用 headerHeight 量出来的那一个数：两处各算各的，
  * 窄屏上点某一组会亮上一组，或滚到位的组标题正好被盖住。
+ * 从别的页点名跳来（fresh 为真）时，先把上一回留下的搜索词与「只看改过」清掉、按无筛选重筛一遍：
+ * 先搜过 quiet 再回首页点「去配」，旧搜索还挂着的话，目标那一组的行、卡和整块高级照旧被筛掉，
+ * 只揭掉组的 hide 落到的是一片空白。保存、放弃后的重画也会按地址栏再走一遍这里，那时不清：
+ * 正在搜着的人不该因为点了一下保存就丢了搜索词。
  * @param id 组标识，与 schema 里的 group 一致；高级里拆出来的那半组带 -advanced，整块高级传 adv
  * @param open 从别处点名跳来时为真：展开那一组里的卡
+ * @param fresh 从别的页点名跳来（地址栏换了）时为真：先清掉搜索与「只看改过」
  */
-export function focusGroup(id, open) {
+export function focusGroup(id, open, fresh) {
   if (!id) return;
+  if (fresh) clearFilters();
   const adv = $('#adv-groups');
   const target = id === 'adv' ? adv : document.querySelector('[data-grp="' + id + '"]');
   if (target) {
@@ -105,6 +111,19 @@ export function focusGroup(id, open) {
     const top = window.scrollY + target.getBoundingClientRect().top - above;
     window.scrollTo(0, Math.max(0, top));
   }
+}
+
+/**
+ * 清掉搜索词与「只看改过」，按无筛选重筛一遍
+ *
+ * 只改框里的值不会触发它们的监听，因此这里自己筛：不筛的话框是空的，行却还按旧搜索藏着。
+ */
+function clearFilters() {
+  const search = $('#set-search');
+  const onlyChanged = $('#only-changed');
+  if (search) search.value = '';
+  if (onlyChanged) onlyChanged.checked = false;
+  filterSettings();
 }
 
 /**

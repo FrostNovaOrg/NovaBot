@@ -96,7 +96,7 @@ public class OneBotAdapterPluginProperties {
         private boolean auditLog = true;
 
         /**
-         * 启动时检测到弱配置是否直接终止启动；默认只告警不拦，对外网可达的部署建议开。
+         * 推送接口令牌过弱（太短，或含常见词）时是否直接终止启动；只查这一项。默认只告警不拦，对外网可达的部署建议开。
          */
         // 默认不拦是为了既有部署升级后仍能启动。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -225,7 +225,7 @@ public class OneBotAdapterPluginProperties {
         private boolean enableWebsocketDetect = true;
 
         /**
-         * 长连接静默多少秒判定为失效。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报；对方关了心跳时本项不生效。
+         * 长连接静默多少秒判定为失效。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报：实际不短于三个心跳周期；对方关了心跳时本项不生效。
          */
         // 按「多久没人发言」判断的话，半夜必然误报。实际超时不会小于三个心跳周期。
         @ConfigEffect(ConfigEffect.Effect.RESTART)

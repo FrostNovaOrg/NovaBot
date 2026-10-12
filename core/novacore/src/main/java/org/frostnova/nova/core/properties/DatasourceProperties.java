@@ -18,7 +18,7 @@ import lombok.Setter;
 @Setter
 public class DatasourceProperties {
     /**
-     * JSON 文件路径，仅使用 JSON 数据源时生效。
+     * 推送配置（JSON 文件）的路径；控制台读写的也是这个文件。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("数据源文件 · 路径")

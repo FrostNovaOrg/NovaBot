@@ -538,15 +538,18 @@ function parseHash() {
  * 连接页的卡、首页健康自检、设置页的某一组，问的都是地址栏里的 card。
  * 首屏整体载入会再画一次设置页分组，因此 load 在画完之后也走这里——
  * 只在切页时滚的话，从收藏夹打开带 card 的设置页地址会停在页顶。
+ * @param fresh 地址栏换过来、设置页按新地址画完的那一趟（applyRoute 末尾）为真：设置页先清掉旧搜索再落点。
+ *   只在这一处带：取数之前那一趟落在旧画面上，跟着清的话两处各清一遍，少了哪一处都看不出来。
+ *   载入（含保存、放弃后的重画）不带它，正在搜着的人不丢搜索词
  */
-function focusCard(name, card) {
+function focusCard(name, card, fresh) {
   focusStation(name === 'links' ? card : '');
   if (name === 'home' && card === 'probes') {
     const box = $('#' + PROBE_ANCHOR);
     if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
   }
   // 点名跳来的那一组，里面的卡一并展开（首页「告警有死角 → 去配」落到告警卡上）
-  if (name === 'settings' && card) focusGroup(card, true);
+  if (name === 'settings' && card) focusGroup(card, true, fresh);
 }
 
 /**
@@ -669,7 +672,7 @@ function applyRoute(withData = true) {
   else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
   // 每次进入都按当下的 store.values 重画一遍：首页那个推送总开关改完不刷新就切过来时，
   // 这一页画的还是启动那一刻的值，而屏幕上看不出它是旧的
-  else if (name === 'settings') { renderGeneral(); focusCard(name, card); }
+  else if (name === 'settings') { renderGeneral(); focusCard(name, card, true); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
   if (!card) window.scrollTo(0, 0);

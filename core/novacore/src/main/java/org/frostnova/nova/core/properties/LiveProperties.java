@@ -19,7 +19,7 @@ import lombok.Setter;
 @Setter
 public class LiveProperties {
     /**
-     * 是否把直播数据保存到文件，仅使用默认直播数据服务时生效。
+     * 是否把直播数据保存到文件。关闭后本场直播数据只在内存里，重启即丢。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 保存到文件")
@@ -28,7 +28,7 @@ public class LiveProperties {
     private boolean saveLiveData = true;
 
     /**
-     * 直播数据文件路径，仅使用默认直播数据服务时生效。
+     * 直播数据文件路径；同一目录里还存着运行状态、场次归档与时间线。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 文件路径")
@@ -38,7 +38,7 @@ public class LiveProperties {
     private String liveDataPath = "data.json";
 
     /**
-     * 自动保存直播数据的间隔，单位：秒，仅使用默认直播数据服务时生效。
+     * 自动保存直播数据的间隔，单位：秒，须大于 0；订阅等运行状态也按这个间隔存盘。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 存盘间隔")

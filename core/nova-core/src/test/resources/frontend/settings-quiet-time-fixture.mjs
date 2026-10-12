@@ -10,7 +10,10 @@
  * 各格：①服务端标了时刻的项出时间框（type=time、step=60），已存的 23:00 照显示；
  * ②框里改了：交出去的是 HH:mm，浏览器带了秒也收成 HH:mm；③旁边有「清空」，点了交空串；
  * ④存着 8:00：框里空着，行里说一句认不出、现在不生效，且不凭空记一笔改动；
- * ⑤存着空串：不说那一句。
+ * ⑤存着空串：不说那一句；
+ * ⑥小数秒的位数与服务端一样（LocalTime.parse 至多 9 位，小数点后不带数字也收）：存着
+ * 23:59:59.1234567890（10 位）时框里空着、行里说认不出，因为服务端也认不出、静音整段不生效；
+ * 9 位的、只带小数点的照常显示 23:59。
  *
  * 由 SettingsQuietTimeTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -195,6 +198,19 @@ guard('④', () => {
 guard('⑤', () => {
   const {row} = build('');
   eq(noteShown(row), false, '⑤ 存着空串：不说认不出');
+});
+
+// ---------- ⑥ 小数秒至多 9 位，与服务端一样 ----------
+guard('⑥', () => {
+  const {row} = build('23:59:59.1234567890');
+  eq({value: inputOf(row).value, note: noteShown(row)}, {value: '', note: true},
+    '⑥ 存着 23:59:59.1234567890（小数 10 位，服务端认不出）：框里空着，行里说认不出');
+  const nine = build('23:59:59.123456789').row;
+  eq({value: inputOf(nine).value, note: noteShown(nine)}, {value: '23:59', note: false},
+    '⑥ 存着 23:59:59.123456789（9 位，服务端照收）：照常显示 23:59，不说认不出');
+  const dot = build('23:59:59.').row;
+  eq({value: inputOf(dot).value, note: noteShown(dot)}, {value: '23:59', note: false},
+    '⑥ 存着 23:59:59.（小数点后一位不带，服务端照收）：照常显示 23:59，不说认不出');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

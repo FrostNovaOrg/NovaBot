@@ -277,7 +277,7 @@ public class NovaCoreProperties {
         private int atAllSessionDailyLimit = 20;
 
         /**
-         * 静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
+         * 静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用全局静音，单独设了静音时段的会话照它自己的来。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
          */
         // 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力。
         // 之所以能即时生效：PushGate 每条推送都现读一次起止时刻
@@ -306,7 +306,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Alert {
         /**
-         * 是否启用告警。关闭后登录失效、连接中断这类问题只写日志，不会主动通知。
+         * 是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -426,7 +426,7 @@ public class NovaCoreProperties {
         private boolean enabled = true;
 
         /**
-         * 配置界面访问令牌。留空时每次启动自动生成一个随机令牌并打进日志；需要从其他机器访问时在这里填一个随机串。
+         * 配置界面访问令牌。留空时每次启动自动生成一个随机令牌；没设登录密码时，带令牌的访问地址打在启动日志里。需要从其他机器访问时在这里填一个随机串。
          */
         // 配合默认仅监听回环地址，单机部署无需任何配置即可安全使用。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -668,7 +668,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Paint {
         /**
-         * 绘图字体列表，可填字体名称或字体文件路径。
+         * 绘图字体列表，每行一个：系统里的字体名，或以 .ttf 结尾的字体文件路径；靠前的优先。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("成图字体")
