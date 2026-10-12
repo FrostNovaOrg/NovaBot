@@ -150,18 +150,22 @@ public class RuntimeStateController {
     /**
      * 开关某个会话中的命令
      * @param body 请求体，含 platform、type（0 好友、1 群）、num、command 与 disabled
-     * @return 操作结果；type 缺了或认不出时回 400
+     * @return 操作结果；type 缺了或认不出时回 400，会话号不是正整数时回失败说明
      */
     @PostMapping("/command")
     public ResponseEntity<JSONObject> toggleCommand(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long num = body.getLong("num");
+        Object rawNum = body.get("num");
         String name = body.getString("command");
         boolean disabled = Boolean.TRUE.equals(body.getBoolean("disabled"));
-        if (platform == null || num == null || name == null) {
+        if (platform == null || rawNum == null || name == null) {
             return ok(fail(result, "缺少参数"));
+        }
+        Long num = positiveSessionNum(rawNum);
+        if (num == null) {
+            return ok(fail(result, "会话号「" + rawNum + "」不是正整数"));
         }
         PushTargetType type = sessionType(body.get("type"));
         if (type == null) {
@@ -213,18 +217,22 @@ public class RuntimeStateController {
      * <b>先全查再全改</b>：名单里只要有一条禁不得，整批都不动。改了一半再报错，
      * 等于让人从一个自己没选过的状态往回收拾。
      * @param body 请求体，含 platform、type（0 好友、1 群）、num、commands 与 disabled
-     * @return 操作结果；type 缺了或认不出时回 400
+     * @return 操作结果；type 缺了或认不出时回 400，会话号不是正整数时回失败说明
      */
     @PostMapping("/commands")
     public ResponseEntity<JSONObject> toggleCommands(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long num = body.getLong("num");
+        Object rawNum = body.get("num");
         JSONArray names = body.getJSONArray("commands");
         Boolean disabled = body.getBoolean("disabled");
-        if (platform == null || num == null || names == null || disabled == null) {
+        if (platform == null || rawNum == null || names == null || disabled == null) {
             return ok(fail(result, "缺少参数"));
+        }
+        Long num = positiveSessionNum(rawNum);
+        if (num == null) {
+            return ok(fail(result, "会话号「" + rawNum + "」不是正整数"));
         }
         PushTargetType type = sessionType(body.get("type"));
         if (type == null) {
@@ -291,16 +299,20 @@ public class RuntimeStateController {
      * 与命令开关不同，这一项<b>只能在这里改</b>：让群里的人自己把金额打开，
      * 等于这道设置形同虚设。
      * @param body 请求体，含 platform、type（0 好友、1 群）、num 与 visible；visible 为 null 表示恢复默认
-     * @return 操作结果；type 缺了或认不出时回 400
+     * @return 操作结果；type 缺了或认不出时回 400，会话号不是正整数时回失败说明
      */
     @PostMapping("/revenue")
     public ResponseEntity<JSONObject> setRevenueVisibility(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long num = body.getLong("num");
-        if (platform == null || num == null) {
+        Object rawNum = body.get("num");
+        if (platform == null || rawNum == null) {
             return ok(fail(result, "缺少参数"));
+        }
+        Long num = positiveSessionNum(rawNum);
+        if (num == null) {
+            return ok(fail(result, "会话号「" + rawNum + "」不是正整数"));
         }
         PushTargetType type = sessionType(body.get("type"));
         if (type == null) {
@@ -428,11 +440,13 @@ public class RuntimeStateController {
     }
 
     /**
-     * 会话号只认正整数：十进制数字串或 JSON 整数
+     * 号码只认正整数：十进制数字串或 JSON 整数
      * <p>
-     * 不能交给 getLong：它会把 12.5 截成 12、true 读成 1，存到一个没人要的会话上
+     * 会话号、主播号、用户号都走这一条路。不能交给 getLong：它会把 12.5 截成 12、
+     * true 读成 1，存到一个没人要的会话上；读不出时又成了 null，移除订阅会被当成
+     * 「清空整份名单」
      * @param raw 请求体里原样的值
-     * @return 会话号，不是正整数时为 null
+     * @return 号码，不是正整数时为 null
      */
     private static Long positiveSessionNum(Object raw) {
         long value;
@@ -471,21 +485,39 @@ public class RuntimeStateController {
     /**
      * 移除订阅
      * @param body 请求体，含 platform、num、streamerUid、type，userUid 为空时清空整份名单
-     * @return 操作结果
+     * @return 操作结果；号码不是正整数、或类型不是开播与动态时回失败说明，名单不动
      */
     @PostMapping("/subscription")
     public JSONObject removeSubscription(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long num = body.getLong("num");
-        Long streamerUid = body.getLong("streamerUid");
+        Object rawNum = body.get("num");
+        Object rawStreamerUid = body.get("streamerUid");
         String type = body.getString("type");
-        if (platform == null || num == null || streamerUid == null || type == null) {
+        if (platform == null || rawNum == null || rawStreamerUid == null || type == null) {
             return fail(result, "缺少参数");
         }
+        Long num = positiveSessionNum(rawNum);
+        if (num == null) {
+            return fail(result, "会话号「" + rawNum + "」不是正整数");
+        }
+        Long streamerUid = positiveSessionNum(rawStreamerUid);
+        if (streamerUid == null) {
+            return fail(result, "主播号「" + rawStreamerUid + "」不是正整数");
+        }
+        // 界面只办这两类的移除：认不出的类型多半是调用方写错了名单的哪一栏，
+        // 照删下去删的是另一份名单，回话却还说「已移除」
+        if (!TYPE_NAMES.containsKey(type)) {
+            return fail(result, "订阅类型只认开播（live）与动态（dynamic），收到的是「" + type + "」");
+        }
 
-        Long userUid = body.getLong("userUid");
+        Object rawUserUid = body.get("userUid");
+        Long userUid = rawUserUid == null ? null : positiveSessionNum(rawUserUid);
+        if (rawUserUid != null && userUid == null) {
+            // 用户号读不出时不能当「清空整份名单」办：那是一个字没提清空的请求
+            return fail(result, "用户号「" + rawUserUid + "」不是正整数");
+        }
         if (userUid == null) {
             int removed = subscriptions.clear(platform, num, streamerUid, type);
             store.save();
