@@ -135,13 +135,37 @@ fi
 SCRATCH="${RELEASE_WORKDIR:-${TMPDIR:-/tmp}/novabot-release}"
 mkdir -p "$SCRATCH" || arg_stop "建不了临时目录 ${SCRATCH}"
 SCRATCH="$(cd "$SCRATCH" && pwd)" || arg_stop "进不了临时目录"
-if [ -z "${JAVA_HOME:-}" ] && [ -x /usr/libexec/java_home ]; then
-  JAVA_HOME=$(/usr/libexec/java_home -v 17) || arg_stop "找不到 Java 17"
-fi
 for bin_dir in /usr/local/bin /opt/homebrew/bin; do
   [ ! -d "$bin_dir" ] || export PATH="$bin_dir:$PATH"
 done
-if [ -n "${JAVA_HOME:-}" ]; then export JAVA_HOME; export PATH="$JAVA_HOME/bin:$PATH"; fi
+if [ "$FROM_I" -le 2 ]; then
+  java17(){
+    local version
+    version=$("$1" -version 2>&1) || return 1
+    [[ "$version" =~ version[[:space:]]+\"17(\.|\") ]]
+  }
+  if [ -n "${JAVA_HOME:-}" ]; then
+    java17 "$JAVA_HOME/bin/java" || arg_stop "找不到 Java 17"
+  else
+    JAVA_HOME=""
+    if [ -x /usr/libexec/java_home ]; then
+      candidate=$(/usr/libexec/java_home -v 17 2>/dev/null) &&
+        java17 "$candidate/bin/java" && JAVA_HOME="$candidate"
+    fi
+    if [ -z "$JAVA_HOME" ] && command -v brew >/dev/null 2>&1; then
+      candidate=$(brew --prefix openjdk@17 2>/dev/null) &&
+        candidate="$candidate/libexec/openjdk.jdk/Contents/Home" &&
+        java17 "$candidate/bin/java" && JAVA_HOME="$candidate"
+    fi
+    if [ -z "$JAVA_HOME" ]; then
+      for candidate in /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home /usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home; do
+        if java17 "$candidate/bin/java"; then JAVA_HOME="$candidate"; break; fi
+      done
+    fi
+    [ -n "$JAVA_HOME" ] || java17 java || arg_stop "找不到 Java 17"
+  fi
+  if [ -n "$JAVA_HOME" ]; then export JAVA_HOME; export PATH="$JAVA_HOME/bin:$PATH"; else unset JAVA_HOME; fi
+fi
 TAG="v${VER}"; [ "$SANDBOX" = 1 ] && TAG="v${VER}-sandbox"
 [ "$TRIAL" = 1 ] && TAG="v${VER}-trial"
 LOG="$SCRATCH/发版-${VER}-$(date +%Y%m%d-%H%M%S).log"
