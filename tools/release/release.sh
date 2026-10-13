@@ -92,6 +92,7 @@ fi
 [ "$TRIAL" = 0 ] || [ "$PUBLISH_ONLY" = 0 ] || arg_stop "--trial 需要部署，不能 --publish-only"
 [[ "$WAIT_MAX" =~ ^[0-9]+$ ]] || arg_stop "--wait-max 须为非负整数分钟"
 case "$NEED_ROOM:$NOWAIT" in 0:0|0:1|1:0|1:1) ;; *) arg_stop "REQUIRE_ROOM 与 NO_WAIT_WINDOW 须为 0 或 1";; esac
+[[ -z "$APP" || "$APP" != */ ]] || arg_stop "应用目录不能以 / 结尾"
 # 靶值会写进远端命令与部署脚本，先拒绝 shell 元字符。
 if [ "$PUBLISH_ONLY" = 0 ]; then
   [ -n "$APP" ] && [ -n "$UNIT" ] && [ -n "$OWNER" ] || arg_stop "部署必须给 --host、--app-dir、--service、--owner"
@@ -296,9 +297,10 @@ cd "$REPO" || stop preflight "进不了 $REPO"
 # 预检与发布共用这一个发行说明文件。
 NOTES="$SCRATCH/release-notes-${VER}.md"
 prepare_notes(){
-  [ "$TRIAL" = 0 ] && [ "$SANDBOX" = 0 ] || return 0
+  [ "$TRIAL" = 0 ] || return 0
   awk -v v="$VER" '$0 ~ "^## \\["v"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md > "$NOTES"
   [ -s "$NOTES" ] || stop preflight "CHANGELOG ${VER} 段为空"
+  say "发行说明：${NOTES}（$(wc -l < "$NOTES" | tr -d ' ') 行）"
   if [ -n "$NOTES_CHECK" ]; then
     HOUT=$(bash -c "$NOTES_CHECK \"\$1\"" -- "$NOTES" 2>&1); rc=$?
     [ -z "$HOUT" ] || say "$HOUT"
@@ -323,7 +325,7 @@ if should preflight; then
       say "$CIOUT"
       case "$rc" in 0|8) ;; *) stop preflight "CI 没过（ci-status 退 ${rc}，见上行）";; esac
     else
-      say "〔沙盘〕跳过远端标签查询、CI 与发行说明"
+      say "〔沙盘〕跳过远端标签查询、fetch 与 HEAD＝origin/main、CI"
     fi
     prepare_notes
   fi
@@ -456,7 +458,7 @@ unpack(){
   cp "\$ISH" "\$STAGE/install.sh"; chmod 755 "\$STAGE/install.sh"
 }
 probe(){
-  local r n rel=无 old cur
+  local run n rel=无 old cur
   if [ -d "\$APP/releases" ]; then rel=有; fi
   run=\$(running | tr '\n' ' ')
   n=\$(printf '%s' "\$run" | wc -w | tr -d ' ')
