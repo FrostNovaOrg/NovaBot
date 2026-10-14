@@ -240,8 +240,8 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("全局推送开关")
-        @ConfigSummary(value = "关闭后机器人发的消息全停；邮件与 Webhook 告警照发。", details = false)
-        private boolean enabled = true;
+        @ConfigSummary(value = "关闭后机器人不再发送推送、命令回复与告警（已排队的也不再发出）；控制台的发送测试消息、推送接口收到的消息，以及邮件与 Webhook 告警不受此开关控制。", details = false)
+        private volatile boolean enabled = true;
 
         /**
          * 第一次推送到一个群或好友时附一句用法提示，只发一次。改完立即生效，不必重启。
