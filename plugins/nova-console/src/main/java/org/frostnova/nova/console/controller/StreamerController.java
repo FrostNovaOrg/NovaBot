@@ -223,6 +223,61 @@ public class StreamerController {
     }
 
     /**
+     * 当前这一场的内存数据；分钟序列只按请求的名字返回。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param series 请求的分钟序列名，逗号分隔
+     * @return 直播状态、本场指标与数据时刻
+     */
+    @GetMapping("/{platform}/{uid}/live")
+    public ResponseEntity<JSONObject> live(@PathVariable String platform,
+                                           @PathVariable Long uid,
+                                           @RequestParam(required = false) String series) {
+        String key = key(platform, uid);
+        Optional<StreamerDirectory.Entry> entry = roster(loadedUsers()).stream()
+                .filter(item -> key.equals(key(item.platform(), item.uid())))
+                .findFirst();
+        if (entry.isEmpty() && archive.find(0, Long.MAX_VALUE).stream()
+                .noneMatch(session -> platform.equals(session.platform()) && uid.equals(session.uid()))) {
+            JSONObject missing = new JSONObject();
+            missing.put("success", false);
+            missing.put("message", "没有这位主播的记录：他既不在推送配置里，也没有归档过的场次");
+            return ResponseEntity.status(404).body(missing);
+        }
+
+        boolean living = entry.map(StreamerDirectory.Entry::enabled).orElse(false)
+                && liveDataService.getLiveStatus(platform, uid).orElse(false);
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("living", living);
+        result.put("since", living ? liveDataService.getLiveStartTime(platform, uid).orElse(null) : null);
+        result.put("metrics", living ? liveDataService.getLiveMetrics(platform, uid) : Map.of());
+
+        Set<String> requested = new LinkedHashSet<>();
+        if (series != null) {
+            for (String name : series.split(",")) requested.add(name.trim());
+        }
+        JSONObject selected = new JSONObject();
+        Long dataAt = null;
+        if (living) {
+            for (String name : liveDataService.getLiveSeriesMetrics(platform, uid)) {
+                Map<Long, Double> points = liveDataService.getLiveSeries(platform, uid, name);
+                for (Long at : points.keySet()) {
+                    if (dataAt == null || at > dataAt) dataAt = at;
+                }
+                if (requested.contains(name)) {
+                    selected.put(name, points.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                            .map(point -> List.of(point.getKey(), point.getValue())).toList());
+                }
+            }
+        }
+        result.put("dataAt", dataAt);
+        if (series != null) result.put("series", selected);
+        result.put("checkedAt", System.currentTimeMillis());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
+    }
+
+    /**
      * 某一场的报告图
      * <p>
      * 控制台回看时按当场明细现画。<b>没有图不是错误</b>——那一场可能压根没配下播报告，

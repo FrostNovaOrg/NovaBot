@@ -287,7 +287,7 @@ class LiveSessionRecoveryTest {
         @Test
         @DisplayName("超过保留期的停机记录应被裁掉，不无限膨胀")
         void prunesExpiredDowntimes() {
-            long ancient = System.currentTimeMillis() - 40L * 24 * 3600 * 1000;
+            long ancient = System.currentTimeMillis() - 401L * 24 * 3600 * 1000;
 
             DefaultLiveDataService service = boot();
             service.recordDowntime(ancient, ancient + 60_000);
