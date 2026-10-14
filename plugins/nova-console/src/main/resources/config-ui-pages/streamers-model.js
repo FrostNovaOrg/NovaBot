@@ -87,7 +87,7 @@ export function parseStreamersHash(hash) {
 
   const [viewList, viewDetail, viewSession] = STREAMER_VIEWS;
   const state = {view: viewList, platform: '', uid: '', pane: 'overview', start: '',
-    page: 1, period: 'week'};
+    page: 1, period: 'week', days: 30};
 
   // 第一段不是本页名字的，后两段是别页的（如 #/push/<uid>/<群号> 的主播与群号）。
   // 只看第二、三段的话，那样的地址会被读成一位平台与 uid 都对不上的主播——
@@ -121,6 +121,7 @@ export function parseStreamersHash(hash) {
     // 页码只认正整数。写错值时退回第 1 页而不是拿它去问服务端——
     // 那一头会把越界的页码夹回来，于是地址栏说第 9 页而屏幕上是第 1 页
     if (key === 'page' && DIGITS.test(value) && Number(value) > 0) state.page = Number(value);
+    else if (key === 'days' && ['7', '30', '90'].includes(value)) state.days = Number(value);
     else if (key === 'period' && PERIODS.some(one => one[0] === value)) state.period = value;
   }
   return state;
@@ -562,4 +563,27 @@ export function rowSubtitle(item, days) {
   const head = '最近 ' + window + ' 天 ' + (Number(summary.sessions) || 0) + ' 场 · '
     + fmtDuration(summary.durationSeconds);
   return summary.lastStart ? head + ' · 最近一场 ' + fmtTime(summary.lastStart) : head + ' · 还没有归档的场次';
+}
+
+/** 概况按日柱的显示状态；没有开播记录与已知零值分开。 */
+export function insightsPoint(day, key) {
+  const value = day[key];
+  const format = key === 'durationSeconds' ? fmtDuration
+    : n => fmtMetric(n, {money: key === 'revenue'}) + (key === 'revenue' ? ' 元' : key === 'audience' ? ' 人' : ' 条');
+  return {
+    value: value == null ? 0 : Number(value),
+    draw: day.sessions > 0 && value != null,
+    title: day.date + '：' + (!day.sessions ? '这天没有记录到开播'
+      : value == null ? '暂无数据 · ' + day.sessions + ' 场'
+        : format(value) + ' · ' + day.sessions + ' 场'),
+  };
+}
+
+/** 范围和快照的时刻统一按东八区显示。 */
+export function insightsTime(ms, time = true) {
+  const d = new Date(Number(ms));
+  const parts = new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', month: 'numeric',
+    day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).formatToParts(d);
+  const part = name => parts.find(p => p.type === name).value;
+  return part('month') + ' 月 ' + part('day') + ' 日' + (time ? ' ' + part('hour') + ':' + part('minute') : '');
 }

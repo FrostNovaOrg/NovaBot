@@ -41,13 +41,13 @@ function eq(actual, expected, what) {
 
 // ---------- 一、地址栏 → 子视图 ----------
 const LIST = {view: 'list', platform: '', uid: '', pane: 'overview', start: '', page: 1,
-  period: 'week'};
+  period: 'week', days: 30};
 
 eq(parseStreamersHash('#/streamers'), LIST, '光秃秃的地址就是列表');
 eq(parseStreamersHash(''), LIST, '地址栏是空的也当列表');
 eq(parseStreamersHash('#/streamers/bilibili/3493'),
   {view: 'detail', platform: 'bilibili', uid: '3493', pane: 'overview', start: '', page: 1,
-    period: 'week'},
+    period: 'week', days: 30},
   '平台加 uid 是详情，默认落概况');
 eq(parseStreamersHash('#/streamers/bilibili/3493/sessions').pane, 'sessions', '第三段是页签名时按页签');
 eq(parseStreamersHash('#/streamers/bilibili/3493/trend').pane, 'trend', '趋势同理');
@@ -59,7 +59,7 @@ eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').view, 'detail', '认不�
 // 第三段是一串数字＝某一场。页签是词、开播时刻是毫秒时间戳，靠形状分辨
 eq(parseStreamersHash('#/streamers/bilibili/3493/1757000000000'),
   {view: 'session', platform: 'bilibili', uid: '3493', pane: 'overview',
-    start: '1757000000000', page: 1, period: 'week'},
+    start: '1757000000000', page: 1, period: 'week', days: 30},
   '第三段是一串数字时是某一场');
 
 // 🔴 uid 不是数字一律退回列表：不校验的话，undefined 会被当成一位真主播拿去问接口，
