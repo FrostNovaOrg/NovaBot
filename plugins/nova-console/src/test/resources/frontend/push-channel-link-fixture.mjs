@@ -238,6 +238,12 @@ globalThis.document = {
 };
 
 globalThis.location = {hash: '', href: '', replace(v) { this.hash = String(v); }, reload() {}};
+let selectedText = '';
+const openedTabs = [];
+globalThis.window = {
+  getSelection: () => ({toString: () => selectedText}),
+  open: (href, target) => openedTabs.push({href, target}),
+};
 
 // —— 假接口 ——
 
@@ -503,6 +509,38 @@ await ask('通道一览整行进入，每行一个键盘链接且表头有范围
     same(location.hash, href, '点其他单元格进入');
   }
 });
+
+// 用户故障：想复制群号，一松手页面跳走，选中的文字丢了。
+await ask('通道一览选中群号后点击单元格，保留地址与选字', async () => {
+  await openHash('#/push');
+  const table = allNodes(idNode('push-right')).find(node => node.tagName === 'table');
+  const href = '#/push/1/' + PLATFORM + '|1|' + GROUP_NUM;
+  selectedText = String(GROUP_NUM);
+  try {
+    table.dispatchEvent({type: 'click', target: {
+      closest: selector => selector === 'a' ? null : {querySelector: () => ({getAttribute: () => href})},
+    }});
+    same(location.hash, '#/push', '选字后当前地址');
+    same(window.getSelection().toString(), String(GROUP_NUM), '群号选字保留');
+  } finally {
+    selectedText = '';
+  }
+});
+
+for (const [key, label] of [['ctrlKey', 'Ctrl'], ['metaKey', '⌘']]) {
+  // 用户故障：按住 Ctrl 或 ⌘ 点一行，把当前页换掉，没有另开标签页。
+  await ask('通道一览按住 ' + label + ' 点击单元格，在新标签页打开', async () => {
+    await openHash('#/push');
+    const table = allNodes(idNode('push-right')).find(node => node.tagName === 'table');
+    const href = '#/push/1/' + PLATFORM + '|0|' + FRIEND_NUM;
+    openedTabs.length = 0;
+    table.dispatchEvent({type: 'click', [key]: true, target: {
+      closest: selector => selector === 'a' ? null : {querySelector: () => ({getAttribute: () => href})},
+    }});
+    same(location.hash, '#/push', label + ' 点击后当前地址');
+    same(openedTabs, [{href, target: '_blank'}], label + ' 另开一次且地址指向本行');
+  });
+}
 
 await ask('③ 点左树上群那一行：右栏开的是群那个，两行互不串', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
