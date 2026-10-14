@@ -4,7 +4,7 @@
  * 这一页此前是按配置键的前缀自动分组的，二十余组，组名叫「核心 · 网络线程」这类东西。
  * 那是照程序结构摆的：使用者要办一件事（「让它别在半夜发消息」），得先猜这件事
  * 在代码里归哪个类管。现在组由服务端那张表给（见 ConfigurationGroups），
- * 每一项按服务端标的级别分进常用或高级：高级默认收着，由页头的钮显示；
+ * 每一项按服务端标的级别分进常用或高级：高级默认收着，由组目录最底下的「高级选项」显示；
  * 每一项旁边标着改完什么时候生效，行内只留一句短说明，整段说明在问号里。
  */
 
@@ -29,7 +29,7 @@ const AUTH_GROUP = 'auth';
 /**
  * 高级那一块的开合
  *
- * 默认收起。advancedChosen：使用者点了「显示高级选项」，或从别处点名跳进了高级里的一组；
+ * 默认收起。advancedChosen：使用者点了目录底下的「高级选项」，或从别处点名跳进了高级里的一组；
  * advancedDismissed：使用者在某一次搜索上亲手收起过——记的是那一次搜索本身，换了搜索词就作废，
  * 否则搜到了高级里的项、却因为上一次收起过而一直收着，与没搜到长得一样。
  * 重画（保存、放弃）不动这两样：改到一半的人不该因为一次保存就被收回去。
@@ -285,7 +285,7 @@ function buildControl(field, value, cell) {
     // 元素为对象的列表与映射无法用简单控件表达。控制台不编辑配置文件，
     // 因此这里只说清「这一项要到文件里改」，路径就在页底
     const note = el('div', 'readonly');
-    note.textContent = '这一项结构较复杂，界面上表达不了，请到服务器上改配置文件。';
+    note.textContent = '此配置项结构复杂，暂不支持在控制台编辑，请在服务器上修改配置文件，修改后需重启生效。';
     cell.appendChild(note);
     return null;
   }
@@ -350,7 +350,7 @@ function buildRow(field, groupAllRestart) {
   if (isDangerous(field)) {
     const mark = el('span', 'dgm');
     mark.textContent = '⚠';
-    mark.title = '这一项改错了后果不小，改到危险的那一档时会先问一句';
+    mark.title = '此配置项设置不当可能造成严重后果；改为风险取值时，将先请求确认';
     head.appendChild(mark);
   }
   const label = el('b');
@@ -361,7 +361,7 @@ function buildRow(field, groupAllRestart) {
   const summary = typeof field.summary === 'string' ? field.summary : null;
   if (summary !== null && field.help) head.appendChild(buildHelp(field.label, field.help));
   const dot = el('span', 'chgdot hide');
-  dot.textContent = '已改';
+  dot.textContent = '已修改';
   head.appendChild(dot);
   meta.appendChild(head);
 
@@ -382,8 +382,8 @@ function buildRow(field, groupAllRestart) {
   // 否则使用者在文件里按现行名字找不到这一行，会以为界面显示错了
   if (store.legacy[field.name]) {
     const note = el('div', 'legacy');
-    note.textContent = '该项按旧位置 ' + store.legacy[field.name]
-      + ' 生效，建议迁到新位置：在此保存一次即可，旧位置的内容不会被改动。';
+    note.textContent = '此项当前按旧配置键 ' + store.legacy[field.name]
+      + ' 生效。建议在此保存一次，以迁移至新配置键；旧配置键中的内容不会被修改。';
     meta.appendChild(note);
   }
 
@@ -445,11 +445,11 @@ function buildRow(field, groupAllRestart) {
       const draft = canonicalValue(field, value);
       const past = fonts.pastDefault && draft === saved;
       const empty = draft.trim() === '';
-      pastNote.textContent = past ? '这是旧版自动写进配置的默认字体表，启动时已按未设处理。'
-        + '点「恢复默认」清空它，以后跟着程序自带的默认表走。' : '';
+      pastNote.textContent = past ? '此为旧版本自动写入配置的默认字体表，启动时已视为未设置。'
+        + '点击「恢复默认」可清除此表，此后将使用程序内置的默认字体表。' : '';
       pastNote.classList.toggle('hide', !past);
       defaultsNote.textContent = past || empty
-        ? '现在用的是本系统的默认表：' + (fonts.defaults || []).join('、') : '';
+        ? '当前使用本系统的默认字体表：' + (fonts.defaults || []).join('、') : '';
       defaultsNote.classList.toggle('hide', !(past || empty));
     };
     fontNotes(shown);
@@ -483,7 +483,7 @@ function buildRow(field, groupAllRestart) {
     cell.appendChild(note);
     timeNote = () => {
       const odd = store.dirty[field.name] === undefined && timeOfDay(saved).unreadable;
-      note.textContent = odd ? '配置文件里的值「' + saved + '」认不出（要写成 08:00 这样），现在不生效。' : '';
+      note.textContent = odd ? '配置文件中的值「' + saved + '」格式无效（应为 08:00 这样的写法），当前不生效。' : '';
       note.classList.toggle('hide', !odd);
     };
   }
@@ -521,8 +521,8 @@ function buildRow(field, groupAllRestart) {
   if (field.sensitive && saved && !noClear) {
     const clear = el('button', 'lnkbtn');
     clear.type = 'button';
-    clear.textContent = clearing ? '撤回清除' : '清除';
-    clear.title = '保存后这一项就删掉了，要再用得重新填';
+    clear.textContent = clearing ? '取消清除' : '清除';
+    clear.title = '保存后将删除此项；如需再次使用，须重新填写';
     // 同一句话挂着清除时摆在框下：悬停提示在触屏上看不到，点了清除却不知道保存后会删
     const clearNote = el('div', 'dflt clearnote');
     const showClearNote = () => {
@@ -543,7 +543,7 @@ function buildRow(field, groupAllRestart) {
         input.value = '';
         input.disabled = true;
         input.placeholder = '保存后清除';
-        clear.textContent = '撤回清除';
+        clear.textContent = '取消清除';
         store.dirty[field.name] = CLEAR;
       } else {
         input.disabled = false;
@@ -627,7 +627,7 @@ function buildThemeGroup() {
   box.appendChild(title);
 
   const desc = el('div', 'card-desc');
-  desc.textContent = '深色、浅色，或跟随系统。选择记在当前浏览器里，不进这台机器的配置。';
+  desc.textContent = '可选择深色、浅色或跟随系统。此设置仅保存在当前浏览器中，不写入服务器配置。';
   box.appendChild(desc);
 
   const row = el('div', 'themechoice');
@@ -685,7 +685,7 @@ function buildGroup(group) {
   // 整组都要重启的组，牌子挂在组标题上，行里不再逐行标。混着的组（推送、告警）逐行标保留
   if (group.allRestart) {
     const pill = el('span', 'pill warn');
-    pill.textContent = '这一组改了都要重启';
+    pill.textContent = '本组设置修改后均需重启生效';
     title.appendChild(pill);
   }
   box.appendChild(title);
@@ -724,12 +724,12 @@ function buildUngrouped() {
   const box = el('div', 'group setgrp ungrouped');
   box.dataset.grp = 'ungrouped';
   const title = el('h2');
-  title.textContent = '还没归组的 ' + store.ungrouped.length + ' 项';
+  title.textContent = '未分组的设置项（' + store.ungrouped.length + ' 项）';
   box.appendChild(title);
 
   const desc = el('div', 'card-desc');
-  desc.textContent = '这几项在设置页的分组表里没有位置，多半是新加的配置项还没被安排。'
-    + '它们照常可以改，只是暂时摆在这里。';
+  desc.textContent = '以下设置项尚未纳入设置页的分组，通常是新增的配置项。'
+    + '可以照常修改，暂时显示在此处。';
   box.appendChild(desc);
 
   for (const field of store.ungrouped) box.appendChild(buildRow(field, false));
@@ -751,11 +751,22 @@ function buildNavLink(group) {
 }
 
 /**
- * 组目录：常用一段，有高级则加「高级」分隔再列高级各组
+ * 「高级选项」那颗钮上的眼睛：收着时带一道斜杠，摆出来时斜杠由样式藏掉（见 app.css）。
+ * 固定的几笔，不含任何服务端给的字
+ */
+const ADVANCED_EYE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"'
+  + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+  + '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>'
+  + '<path class="eye-slash" d="M2.5 2.5l11 11"/></svg>';
+
+/**
+ * 组目录：常用一段，有高级则加「高级」分隔再列高级各组，最后一项是「高级选项」开关
  *
- * 高级收着的时候，高级那一段照样列着：点进去由 focusGroup 先把高级摆出来再滚，
- * 与改版前「点高级里的组会先打开折页」是同一回事。常用组里拆出来的「某组 · 高级」
+ * 高级那一段（分隔与各组）装在 #adv-nav 里，跟着高级区一起收起、一起出现（见 filterSettings）；
+ * 搜到高级里的项、从别处点名跳进高级时，两处照样一起出来。常用组里拆出来的「某组 · 高级」
  * 也列在这一段，按组表的先后与整组高级的那几组排在一起。
+ * 开关钉在目录最后，开合状态的字与图由 filterSettings 同步。全页只有它一个 #show-advanced：
+ * 别处再有一个同 id 的，按 id 取到的是排在前面的那一个，同步的就不是人点的这颗。
  * @param groups 常用组
  * @param advanced 高级组
  */
@@ -768,10 +779,22 @@ function buildNav(groups, advanced) {
   for (const group of groups) nav.appendChild(buildNavLink(group));
 
   if (advanced.length) {
+    const part = el('div', 'grpnav-advanced hide');
+    part.id = 'adv-nav';
     const sep = el('div', 'sep');
     sep.textContent = '高级';
-    nav.appendChild(sep);
-    for (const group of advanced) nav.appendChild(buildNavLink(group));
+    part.appendChild(sep);
+    for (const group of advanced) part.appendChild(buildNavLink(group));
+    nav.appendChild(part);
+
+    const toggle = el('button', 'settings-advanced-toggle');
+    toggle.type = 'button';
+    toggle.id = 'show-advanced';
+    toggle.setAttribute('aria-controls', 'adv-groups adv-nav');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.innerHTML = '<span>高级选项</span>' + ADVANCED_EYE;
+    toggle.addEventListener('click', toggleAdvanced);
+    nav.appendChild(toggle);
   }
 }
 
@@ -798,7 +821,7 @@ export function renderGeneral() {
 
   for (const group of common) box.appendChild(buildGroup(group));
 
-  // 高级默认收着，由页头「显示高级选项」摆出来。收着就是整块不显示，不是一道折页：
+  // 高级默认收着，由组目录最底下的「高级选项」摆出来。收着就是整块不显示，不是一道折页：
   // 折页的标题横在页底，人会以为那就是全部
   if (advanced.length) {
     const region = el('section', 'settings-advanced hide');
@@ -830,12 +853,12 @@ function showAdvanced() {
 }
 
 /**
- * 页头那颗「显示高级选项／隐藏高级选项」
+ * 组目录最底下那颗「高级选项」：字不变，眼睛与读屏念的名字跟着开合换（见 filterSettings）
  *
  * 搜索把高级自动摆出来的时候，点它是收起：记下这一次搜索，同一次搜索上不再自动摆出来，
  * 改了搜索词再重新算。
  */
-export function toggleAdvanced() {
+function toggleAdvanced() {
   const region = $('#adv-groups');
   const visible = !!region && !region.classList.contains('hide');
   advancedChosen = !visible;
@@ -1002,15 +1025,19 @@ export function filterSettings() {
   const advancedVisible = advancedShown({matches, filtering, chosen: advancedChosen,
     dismissed: filtering && advancedDismissed === filterKey()});
   if (region) region.classList.toggle('hide', !advancedVisible);
+  // 目录里高级那一段与高级区同开同合：搜到高级里的项、点名跳进高级时一起出来
+  const advancedNav = $('#adv-nav');
+  if (advancedNav) advancedNav.classList.toggle('hide', !advancedVisible);
   const toggle = $('#show-advanced');
   if (toggle) {
-    toggle.textContent = advancedVisible ? '隐藏高级选项' : '显示高级选项';
     toggle.setAttribute('aria-expanded', String(advancedVisible));
+    toggle.setAttribute('aria-label', advancedVisible ? '高级选项，已显示；点击隐藏' : '高级选项，已隐藏；点击显示');
+    toggle.title = advancedVisible ? '隐藏高级选项' : '显示高级选项';
     toggle.classList.toggle('hide', !arranged.advanced.length);
   }
 
   // 目录跟着组走：一组被筛没了，左边还留着那条会点进去什么也不发生。
-  // 高级收着不算被筛没：那几条照样列着，点进去会先把高级摆出来
+  // 高级那一段整段的开合在上面跟着高级区走，这里只管段内哪几条被筛没了
   let advancedLinks = 0;
   for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
     const id = link.getAttribute('data-grp-link');
@@ -1025,7 +1052,7 @@ export function filterSettings() {
 
   const count = groups => groups.reduce((n, g) => n + g.fields.length, 0);
   $('#set-count').textContent = filtering
-    ? '匹配 ' + shown + ' 项' + (matches && !advancedVisible ? '（含收起的高级项 ' + matches + ' 项）' : '')
+    ? '匹配 ' + shown + ' 项' + (matches && !advancedVisible ? '（含已隐藏的高级选项 ' + matches + ' 项）' : '')
     : '常用 ' + count(arranged.common) + ' 项 · 高级 ' + count(arranged.advanced) + ' 项';
 }
 
@@ -1047,8 +1074,8 @@ export function toggleKeyNames() {
  */
 export function renderConfigPath(path) {
   const node = $('#cfg-path');
-  node.textContent = path || '（未能确定）';
-  // 以 /status 传来的 path 为准，不从显示文本反推。空串＝未确定。
+  node.textContent = path || '（未获取到路径）';
+  // 以 /status 传来的 path 为准，不从显示文本反推。空串＝/status 没带路径（服务端总会给，没带只会是没取到）。
   node.dataset.path = path || '';
 }
 
@@ -1062,14 +1089,14 @@ export function renderConfigPath(path) {
 export async function copyConfigPath() {
   const path = $('#cfg-path').dataset.path;
   if (!path) {
-    say('路径还没确定，没法复制', 'err');
+    say('未获取到配置文件路径，无法复制', 'err');
     return;
   }
   try {
     await navigator.clipboard.writeText(path);
-    say('已复制路径', 'ok');
+    say('已复制配置文件路径', 'ok');
   } catch (e) {
-    say('这个浏览器不让脚本写剪贴板，请手动复制：' + path, 'err');
+    say('当前浏览器不允许脚本写入剪贴板，请手动复制：' + path, 'err');
   }
 }
 
@@ -1092,7 +1119,7 @@ export async function save() {
 
   $('#save').disabled = true;
   showIssues(null);
-  say('保存中…');
+  say('正在保存…');
 
   try {
     // 发出去的是此刻这一份。回包之前使用者可能又改了几项：那几项没随这一趟发出去，
@@ -1140,8 +1167,8 @@ export async function save() {
  */
 export async function discard() {
   const target = saveTarget();
-  if (!await ask({title: '放弃这一页的改动？',
-    body: '这一页改过还没保存的内容会回到上一次保存时的样子。'})) return;
+  if (!await ask({title: '放弃本页未保存的修改？',
+    body: '本页尚未保存的内容将恢复为上次保存时的状态。'})) return;
   if (target && target !== 'values') {
     // 它的 reload 回 false 时，状态栏上那句话是它自己写上去的，这里不能再盖一句上去
     const quiet = await reloadChangeSources({only: target});
@@ -1150,11 +1177,11 @@ export async function discard() {
     const repainted = refreshPages(target);
     markDirty();
     // 重画自己也出了事时，状态栏上已是那句「页出错」，也不该被下面这句盖掉
-    if (quiet && repainted) say('已放弃这一页的改动', 'ok');
+    if (quiet && repainted) say('已放弃本页未保存的修改', 'ok');
     return;
   }
   // 草稿态由 load 自己清。在这里先清一遍的话，重载失败时屏幕上还留着改过的值，
   // 而计数已经归零——看起来像「改动被保存了」
   await load({keepDrafts: true});
-  say('已放弃这一页的改动', 'ok');
+  say('已放弃本页未保存的修改', 'ok');
 }

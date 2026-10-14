@@ -102,7 +102,7 @@ function el(tag, cls) {
 }
 
 const shellSrc = bracedFrom(src, 'function shell');
-eq(shellSrc.includes('发一条测试') && shellSrc.includes('al-r'), true, '切得到卡片壳');
+eq(shellSrc.includes('发送测试告警') && shellSrc.includes('al-r'), true, '切得到卡片壳');
 
 const shell = new Function('el', shellSrc + '\nreturn shell;')(el);
 const built = shell('webhook', 'Webhook', '说明');

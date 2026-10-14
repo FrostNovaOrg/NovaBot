@@ -77,4 +77,16 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
     public List<Metric> snapshotMetrics() {
         return SNAPSHOT_METRICS;
     }
+    @Override
+    public Insights insights() {
+        List<String> interaction = List.of(BilibiliLiveMetric.DANMU_USERS, BilibiliLiveMetric.LIKE_USERS,
+                BilibiliLiveMetric.GIFT_USERS, BilibiliLiveMetric.SUPER_CHAT_USERS,
+                BilibiliLiveMetric.BOX_USERS, BilibiliLiveMetric.BOX_PROFIT_USERS,
+                BilibiliLiveMetric.GUARD_USERS, BilibiliLiveMetric.REVENUE_USERS);
+        var audience = new java.util.ArrayList<>(interaction);
+        audience.add(BilibiliLiveMetric.ENTER_USERS);
+        return new Insights(List.of(BilibiliLiveMetric.GIFT_VALUE, BilibiliLiveMetric.SUPER_CHAT_VALUE,
+                BilibiliLiveMetric.GUARD_VALUE), BilibiliLiveMetric.DANMU_COUNT,
+                List.copyOf(audience), interaction, BilibiliStreamerMetric.FANS);
+    }
 }

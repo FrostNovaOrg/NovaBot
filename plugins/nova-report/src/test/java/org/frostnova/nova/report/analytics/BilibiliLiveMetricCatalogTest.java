@@ -59,4 +59,21 @@ class BilibiliLiveMetricCatalogTest {
         snapshotKeys.forEach(key -> assertFalse(periodKeys.contains(key),
                 "快照指标 " + key + " 同时进了可累加集，存量相加是个无中生有的数"));
     }
+    @Test
+    @DisplayName("概况口径包含三项流水、九份观众名单且进房不算互动")
+    void insightsRules() {
+        var rules = new BilibiliLiveMetricCatalog().insights();
+        org.junit.jupiter.api.Assertions.assertNotNull(rules, "平台必须说明概况口径");
+        assertEquals(List.of(BilibiliLiveMetric.GIFT_VALUE, BilibiliLiveMetric.SUPER_CHAT_VALUE,
+                BilibiliLiveMetric.GUARD_VALUE), rules.revenueKeys());
+        assertEquals(BilibiliLiveMetric.DANMU_COUNT, rules.messageKey());
+        assertEquals(Set.of(BilibiliLiveMetric.ENTER_USERS, BilibiliLiveMetric.DANMU_USERS,
+                BilibiliLiveMetric.LIKE_USERS, BilibiliLiveMetric.GIFT_USERS,
+                BilibiliLiveMetric.SUPER_CHAT_USERS, BilibiliLiveMetric.BOX_USERS,
+                BilibiliLiveMetric.BOX_PROFIT_USERS, BilibiliLiveMetric.GUARD_USERS,
+                BilibiliLiveMetric.REVENUE_USERS), Set.copyOf(rules.audienceSets()));
+        assertEquals(8, rules.interactionSets().size());
+        assertFalse(rules.interactionSets().contains(BilibiliLiveMetric.ENTER_USERS));
+        assertEquals(BilibiliStreamerMetric.FANS, rules.fansKey());
+    }
 }

@@ -123,9 +123,14 @@ class ThemeSwitchFrontendTest {
                 "「界面」组不许进改动条（markDirty）");
     }
 
-    /** 设置页里「界面」那一块的正文，从标题起截到下一个函数声明 */
+    /**
+     * 设置页里「界面」那一块的正文，从标题起截到下一个函数声明
+     * <p>
+     * 认的是标题那个字面量 '界面'，不是这两个字第一次出现的地方：注释和别的提示句里也写「界面」，
+     * 改一句提示就会让截取落到别的函数上
+     */
     private String themeBlock(String settings) {
-        int at = settings.indexOf("界面");
+        int at = settings.indexOf("'界面'");
         if (at < 0) return "";
         int next = settings.indexOf("\nfunction ", at);
         int nextExport = settings.indexOf("\nexport function ", at);

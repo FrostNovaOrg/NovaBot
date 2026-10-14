@@ -14,7 +14,7 @@ import java.util.Map;
  * {@code novabot.core.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
  * 使用者要办一件事（「让它别在半夜发消息」），得先猜这件事在代码里归哪个类管。
  * 这里改成按「要办的事」分组，常用六组在上，工程用的两组整组算高级。
- * 常用六组里各项另按 {@code @ConfigLevel} 分：标了高级的也收进高级，由界面页头的钮显示。
+ * 常用六组里各项另按 {@code @ConfigLevel} 分：标了高级的也收进高级，由界面组目录最底下的钮显示。
  *
  * <h2>为什么是闭集</h2>
  *
@@ -37,7 +37,7 @@ public final class ConfigurationGroups {
      * @param id 组标识，界面上的锚点与药丸用它
      * @param title 组名
      * @param description 组说明，写「这一组管什么」
-     * @param advanced 是否整组算高级（界面上默认收起，由页头「显示高级选项」摆出来）
+     * @param advanced 是否整组算高级（界面上默认收起，由组目录最底下的「高级选项」摆出来）
      */
     public record Group(String id, String title, String description, boolean advanced) {
     }

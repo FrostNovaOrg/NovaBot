@@ -46,6 +46,16 @@ public interface LiveMetricCatalog {
         return List.of();
     }
 
+    /** 概况统计的口径；未提供时只展示场次与时长。 */
+    default Insights insights() {
+        return null;
+    }
+
+    /** 流水的可累加项、弹幕项、观众与互动名单、粉丝快照项，由平台说明。 */
+    record Insights(List<String> revenueKeys, String messageKey, List<String> audienceSets,
+                    List<String> interactionSets, String fansKey) {
+    }
+
     /**
      * 一项指标的说明
      * @param key 指标键，与归档中的键一致

@@ -47,7 +47,7 @@ class ConsoleTextContrastTest {
     private static final List<Spot> APP = List.of(
             new Spot("设置项「立即生效」", ".badge.now", List.of("surface")),
             new Spot("设置项「重启生效」", ".badge.restart", List.of("surface")),
-            new Spot("组标题上「这一组改了都要重启」", ".pill.warn", List.of("surface", "soft")),
+            new Spot("组标题上「本组设置修改后均需重启生效」", ".pill.warn", List.of("surface", "soft")),
             new Spot("改动过的设置行里的绿色药丸", ".pill.ok", List.of("surface", "soft")),
             new Spot("危险按钮", "button.danger", List.of("surface")),
             new Spot("确认框的危险按钮", ".ask-ok", List.of("surface")),

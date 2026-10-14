@@ -106,7 +106,7 @@ try {
   const fn = loadSend({dirty: {a: 1}}, async () => ({success: true, message: '已发出'}));
   await fn('webhook', button);
   q2ok = String(box.textContent).includes('已发出')
-    && String(box.textContent).includes('有改动还没保存');
+    && String(box.textContent).includes('当前有未保存的修改');
 } catch (e) {
   q2ok = 'error:' + e.message;
 }
@@ -117,8 +117,8 @@ try {
   const {box, button} = fakeAlertButton();
   const fn = loadSend({dirty: {a: 1}}, async () => { throw new Error('net'); });
   await fn('webhook', button);
-  q2err = String(box.textContent).includes('发不出去')
-    && String(box.textContent).includes('有改动还没保存');
+  q2err = String(box.textContent).includes('发送失败')
+    && String(box.textContent).includes('当前有未保存的修改');
 } catch (e) {
   q2err = 'error:' + e.message;
 }

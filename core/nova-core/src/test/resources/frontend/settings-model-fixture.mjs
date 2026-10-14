@@ -37,9 +37,9 @@ function field(over) {
 }
 
 // ---------- 一、默认值 ----------
-eq(defaultText(field({widget: 'boolean', defaultValue: true})), '开', '布尔默认值显示成「开」');
-eq(defaultText(field({widget: 'boolean', defaultValue: false})), '关', '布尔默认值显示成「关」');
-eq(defaultText(field({widget: 'string', defaultValue: null})), '未设', '没有默认值的说「未设」');
+eq(defaultText(field({widget: 'boolean', defaultValue: true})), '启用', '布尔默认值显示成「启用」');
+eq(defaultText(field({widget: 'boolean', defaultValue: false})), '关闭', '布尔默认值显示成「关闭」');
+eq(defaultText(field({widget: 'string', defaultValue: null})), '未设置', '没有默认值的说「未设置」');
 eq(defaultText(field({widget: 'list', defaultValue: null})), '空', '列表没有默认值的说「空」');
 eq(defaultText(field({widget: 'list', defaultValue: ['127.0.0.1/32', '::1/128']})),
   '127.0.0.1/32、::1/128', '列表默认值用顿号连起来');

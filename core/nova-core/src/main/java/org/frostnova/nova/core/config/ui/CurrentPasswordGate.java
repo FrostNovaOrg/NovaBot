@@ -55,19 +55,19 @@ final class CurrentPasswordGate {
         result.put("success", false);
 
         if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISSING) {
-            result.put("message", "请填现在的密码");
+            result.put("message", "请输入当前密码");
             return Optional.of(ResponseEntity.badRequest().body(result));
         }
 
         if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISMATCH) {
-            result.put("message", "现在的密码不对，再输错 " + check.remaining() + " 次会退出这次登录");
+            result.put("message", "当前密码不正确，再输错 " + check.remaining() + " 次将退出本次登录");
             return Optional.of(ResponseEntity.badRequest().body(result));
         }
 
         result.put("message", check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT
-                ? "现在的密码连续输错 " + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT
-                        + " 次，这次登录已退出，请重新登录"
-                : "认不出这次登录，请重新登录后" + again);
+                ? "当前密码连续输错 " + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT
+                        + " 次，本次登录已退出，请重新登录"
+                : "无法识别本次登录，请重新登录后" + again);
         return Optional.of(ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result));
     }
 

@@ -1120,7 +1120,7 @@ public class ConfigUiController {
         Set<String> misplaced = SensitiveFields.misplacedClears(changes, name -> typeOf(types, name));
         if (!misplaced.isEmpty()) {
             result.put("success", false);
-            result.put("message", "清除标记只认机密项：" + misplaced.iterator().next() + " 不是机密项，本批未保存");
+            result.put("message", "清除标记仅适用于机密项：" + misplaced.iterator().next() + " 不是机密项，本批未保存");
             return ResponseEntity.badRequest().body(result);
         }
         SensitiveFields.dropUnchanged(changes, name -> typeOf(types, name));
@@ -1131,7 +1131,7 @@ public class ConfigUiController {
         asked.addAll(cleared);
         if (ConfigUiAuthService.containsDedicatedAuthKey(asked, aliases())) {
             result.put("success", false);
-            result.put("message", "登录密码和二次验证请到「登录与安全」里改；「忘记密码」的启动令牌通道这里也改不了——那个页面关得了、开不了，要开须改配置文件再重启");
+            result.put("message", "登录密码与二次验证请在「登录与安全」中修改；「忘记密码」的启动令牌登录通道也无法在此修改：控制台只能关闭它、不能开启，如需开启，请修改配置文件后重启");
             return ResponseEntity.ok(result);
         }
 
@@ -1142,7 +1142,7 @@ public class ConfigUiController {
         if (normalized == null) {
             String unknown = findUnknownKey(changesToWrite.keySet(), types);
             result.put("success", false);
-            result.put("message", "设置页没有这一项：" + unknown + "，本批未保存");
+            result.put("message", "设置页中不存在此项：" + unknown + "，本批未保存");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -1240,12 +1240,12 @@ public class ConfigUiController {
      */
     private static String saveMessage(int changed, int restart) {
         if (changed == 0) {
-            return "没有需要保存的改动";
+            return "没有需要保存的修改";
         }
         if (restart == 0) {
             return "已保存 " + changed + " 项，已生效";
         }
-        return "已保存 " + changed + " 项，其中 " + restart + " 项需重启";
+        return "已保存 " + changed + " 项，其中 " + restart + " 项需重启生效";
     }
 
     /*
@@ -1476,7 +1476,7 @@ public class ConfigUiController {
             websocketPort = port(body.getString("websocketPort"));
         } catch (NumberFormatException e) {
             result.put("success", false);
-            result.put("message", "端口只能填数字：" + e.getMessage());
+            result.put("message", "端口必须为数字：" + e.getMessage());
             return result;
         }
 
@@ -1509,8 +1509,8 @@ public class ConfigUiController {
         if (listKey.isEmpty()) {
             result.put("success", false);
             result.put("message", applied.live()
-                    ? "连接已经接上，但没有适配器申报连接列表位置，无法写入配置文件"
-                    : "没有适配器申报连接列表位置");
+                    ? "连接已建立，但没有适配器声明连接列表的位置，无法写入配置文件"
+                    : "没有适配器声明连接列表的位置");
             return result;
         }
 
@@ -1518,13 +1518,13 @@ public class ConfigUiController {
             fileService.writeListItemFields(listKey, 0, applied.configuration());
             result.put("success", true);
             result.put("message", applied.live()
-                    ? "已保存，这条连接已经接上了：" + applied.detail()
+                    ? "已保存，此连接已建立：" + applied.detail()
                     : "已保存，重启后生效：" + applied.detail());
         } catch (IOException e) {
             log.error("保存机器人连接信息失败", e);
             result.put("success", applied.live());
             result.put("message", applied.live()
-                    ? "连接已经接上，但没能写进配置文件，重启后将恢复原状: " + fileService.describeSaveFailure(e)
+                    ? "连接已建立，但未能写入配置文件，重启后将恢复原状: " + fileService.describeSaveFailure(e)
                     : "保存失败: " + fileService.describeSaveFailure(e));
         }
 
@@ -1610,7 +1610,7 @@ public class ConfigUiController {
         } catch (Exception e) {
             log.error("退出 {} 的登录失败", platform, e);
             result.put("success", false);
-            result.put("message", "退出失败: " + e.getMessage());
+            result.put("message", "退出登录失败: " + e.getMessage());
         }
 
         return result;
