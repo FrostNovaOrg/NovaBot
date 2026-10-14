@@ -347,8 +347,8 @@ await ask('① 「本群最近推送」那张表外面包着只在卡片里横�
 await ask('② 删长说明时第 4 段那句共用说明仍在，有几位主播时列出名字', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
   const note = rightPane().find(node => classesOf(node).includes('note')
-    && node.textContent.includes('本群设置对推给它的所有主播共用'));
-  if (!note) throw new Error('第 4 段那句「对推给它的所有主播共用」没了');
+    && node.textContent.includes('本群设置由推送到本群的所有主播共用'));
+  if (!note) throw new Error('第 4 段那句「由推送到本群的所有主播共用」没了');
   const text = note.textContent;
   same({
     '说明里点了几位主播': text.includes('2 位主播'),
@@ -375,13 +375,13 @@ await ask('③ 群／好友那一行不再挂「N 类关着」「N 条命令被�
     '群／好友那一行还挂着「N 条命令被关」': markTexts.some(text => text.includes('条命令被关')),
     '群／好友那一行剩下空的小标层': chanWithMarks.length,
     '「已停用」那颗小标': pills.includes('已停用'),
-    '「只采集，不推送」那颗小标': pills.includes('只采集，不推送'),
+    '「仅采集」那颗小标': pills.includes('仅采集'),
   }, {
     '群／好友那一行还挂着「N 类关着」': false,
     '群／好友那一行还挂着「N 条命令被关」': false,
     '群／好友那一行剩下空的小标层': 0,
     '「已停用」那颗小标': true,
-    '「只采集，不推送」那颗小标': true,
+    '「仅采集」那颗小标': true,
   }, '左树小标');
 });
 
@@ -393,10 +393,10 @@ await ask('添加通道写明群设置共用并列出其他主播', async () => 
   if (!add) throw new Error('没有添加通道按钮');
   add.click();
   const rows = allNodes(idNode('push-drawer-body')).filter(node => classesOf(node).includes('dwrow'));
-  same(rows[0].innerHTML.includes(' · 已在推 甲、乙'), true, '已有推送的群列出主播');
-  same(rows[1].innerHTML.includes('已在推'), false, '没人推的群不写主播');
-  same(rows[2].innerHTML.includes('已在推'), false, '好友不写主播');
-  same(idNode('push-drawer-lead').textContent.includes('群的设置（金额显示、静音、命令开关等）由推到这个群的所有主播共用。'),
+  same(rows[0].innerHTML.includes(' · 正在推送 甲、乙'), true, '已有推送的群列出主播');
+  same(rows[1].innerHTML.includes('正在推送'), false, '没人推的群不写主播');
+  same(rows[2].innerHTML.includes('正在推送'), false, '好友不写主播');
+  same(idNode('push-drawer-lead').textContent.includes('群的设置（金额显示、静音、命令开关等）由推送到该群的所有主播共用。'),
     true, '添加前的共用说明');
   push.closeDrawer();
 });

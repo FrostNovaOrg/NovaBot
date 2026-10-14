@@ -6,7 +6,7 @@
  * 一律在那边判——判断留在这里的话，那几档就只能靠人打开页面拖着试，
  * 而其中好几档（机器人不是管理员、模板里手写了 @、块拖进块）手点点不出来。
  *
- * 两处用它：通道页第 2 段「消息长什么样」，与左树顶「默认模板」。同一份编辑器、
+ * 两处用它：通道页第 2 段「消息模板」，与左树顶「默认模板」。同一份编辑器、
  * 同一套规矩，区别只在于改完之后写到哪儿去（见 buildTemplateEditor 的 onChange）。
  */
 
@@ -78,7 +78,7 @@ export function buildTemplateEditor(host, options) {
   const handlers = (opts.handlers || []).filter(item => ((item.placeholders) || []).length);
   if (!handlers.length) {
     host.appendChild(el('p', 'hint')).textContent = opts.emptyNote
-      || '还没有加载到任何带文字模板的通知，确认对应插件已加载。';
+      || '暂无带文字模板的通知，请检查对应插件是否已加载。';
     return;
   }
 
@@ -109,14 +109,14 @@ export function buildTemplateEditor(host, options) {
   rawBody.id = 'tpl-raw';
   raw.appendChild(rawBody);
   raw.appendChild(el('p', 'xs dim')).textContent =
-    '这是配置文件里存着的写法，只能看。上面的块与它一一对应；分条不再写 {next}——'
-    + '一张卡就是一条消息。';
+    '这是配置文件中保存的写法，仅供查看。上方的块与其一一对应；分条不再使用 {next}，'
+    + '一张卡片即一条消息。';
   left.appendChild(raw);
   wrap.appendChild(left);
 
   const right = el('div', 'tpl-right');
   const head = el('div', 'tpl-pv-h');
-  head.appendChild(el('span')).textContent = (opts.channelLabel || '群里') + '会长这样';
+  head.appendChild(el('span')).textContent = '消息预览 · ' + (opts.channelLabel || '群聊');
   const count = el('span', 'xs dim');
   count.id = 'tpl-count';
   head.appendChild(count);
@@ -202,7 +202,7 @@ export function buildTemplateEditor(host, options) {
 
   function paintPalette() {
     palette.innerHTML = '';
-    palette.appendChild(el('span', 'xs dim')).textContent = '可用的块 · 点一下插到光标处，或拖进卡里';
+    palette.appendChild(el('span', 'xs dim')).textContent = '可用变量 · 点击插入到光标处，或拖入卡片';
 
     for (const key of state.spec.keys) {
       const used = blockRefusal(state.cards, 0, key, state.spec, -1);
@@ -211,7 +211,7 @@ export function buildTemplateEditor(host, options) {
       button.type = 'button';
       button.textContent = (attachment ? '▤ ' : '') + blockLabel(key, state.spec);
       button.disabled = !opts.editable || !!used;
-      button.title = opts.editable ? (used || '点一下插到光标处，或拖进卡里') : (opts.lockedNote || '');
+      button.title = opts.editable ? (used || '点击插入到光标处，或拖入卡片') : (opts.lockedNote || '');
       button.draggable = opts.editable && !used;
       button.addEventListener('click', () => insertHere(key));
       button.addEventListener('dragstart', event => startDrag(event, {kind: 'new', key}, 'copy'));
@@ -246,9 +246,9 @@ export function buildTemplateEditor(host, options) {
 
     const add = el('button', 'tpl-add');
     add.type = 'button';
-    add.textContent = '⊕ 再加一条消息';
+    add.textContent = '⊕ 添加一条消息';
     add.disabled = !opts.editable;
-    add.title = opts.editable ? '群里会多收到一条消息' : (opts.lockedNote || '');
+    add.title = opts.editable ? '会多发送一条消息' : (opts.lockedNote || '');
     add.addEventListener('click', () => {
       state.cards = addCard(state.cards);
       commit();
@@ -273,8 +273,8 @@ export function buildTemplateEditor(host, options) {
     remove.type = 'button';
     remove.textContent = '⊖';
     remove.disabled = !opts.editable;
-    remove.setAttribute('aria-label', '删掉第 ' + (index + 1) + ' 条消息');
-    remove.title = '删掉这条消息';
+    remove.setAttribute('aria-label', '删除第 ' + (index + 1) + ' 条消息');
+    remove.title = '删除此条消息';
     remove.addEventListener('click', () => {
       const result = removeCard(state.cards, index);
       if (result.refused) {
@@ -449,7 +449,7 @@ export function buildTemplateEditor(host, options) {
     select.title = note;
     const ctx = previewContext();
     const modes = subscribers ? AT_MODES : [
-      {...AT_MODES[0], label: '不 @ 人'}, AT_MODES[1],
+      {...AT_MODES[0], label: '不 @ 任何人'}, AT_MODES[1],
     ];
     for (const mode of modes) {
       const option = el('option');
@@ -474,7 +474,7 @@ export function buildTemplateEditor(host, options) {
       block.textContent = blockLabel(atLiteralOf(state.atMode), state.spec);
       block.disabled = !positionable;
       block.draggable = positionable;
-      block.title = opts.editable ? '点一下插到光标处，或拖进卡里' : (opts.lockedNote || '');
+      block.title = opts.editable ? '点击插入到光标处，或拖入卡片' : (opts.lockedNote || '');
       block.addEventListener('click', insertAtHere);
       block.addEventListener('dragstart', event => {
         if (positionable) startDrag(event, {kind: 'at'}, 'move');
@@ -486,9 +486,9 @@ export function buildTemplateEditor(host, options) {
     if (note) row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
     if (ctx.admin === false || ctx.isGroup === false) {
       row.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
-        ? '私聊没有 @全体成员。'
-        : subscribers ? '机器人不是本群管理员，@全体成员 两档选不了。'
-          : '机器人不是本群管理员，@全体成员 选不了。';
+        ? '私聊不支持 @全体成员。'
+        : subscribers ? '机器人不是本群管理员，两档 @全体成员 均不可选。'
+          : '机器人不是本群管理员，无法选择 @全体成员。';
     }
     return row;
   }
@@ -647,13 +647,13 @@ export function buildTemplateEditor(host, options) {
     preview.innerHTML = '';
     for (const bubble of bubbles) preview.appendChild(bubbleNode(bubble));
     if (!bubbles.length) {
-      preview.appendChild(el('p', 'hint')).textContent = '这样配的话，一条消息也不会发出去。';
+      preview.appendChild(el('p', 'hint')).textContent = '按当前配置，不会发出任何消息。';
     }
 
     const plan = atPlan(state.cards, state.atMode, previewContext());
     if (bubbles.some(bubble => bubble.atDropped) || plan.dropped) {
       preview.appendChild(el('p', 'tpl-preview-note xs dim')).textContent = plan.fallback
-        ? '发送时改为 @订阅的人，正文正常发送。'
+        ? '发送时改为 @订阅者，正文正常发送。'
         : '发送时省略 @全体成员，正文正常发送。';
     }
 
@@ -672,14 +672,14 @@ export function buildTemplateEditor(host, options) {
       at.textContent = '@全体成员 ';
       balloon.appendChild(at);
     } else if (bubble.at === 'subscribers') {
-      balloon.appendChild(el('span', 'qq-at')).textContent = '@订阅的人 ';
+      balloon.appendChild(el('span', 'qq-at')).textContent = '@订阅者 ';
     }
     for (const part of bubble.parts) {
       if (part.kind === 'text') {
         balloon.appendChild(document.createTextNode(part.text));
       } else if (part.kind === 'at') {
         balloon.appendChild(el('span', part.at === 'all' ? 'qq-atall' : 'qq-at')).textContent =
-          part.at === 'all' ? '@全体成员' : '@订阅的人';
+          part.at === 'all' ? '@全体成员' : '@订阅者';
       } else {
         balloon.appendChild(el('span', 'qq-ph')).textContent = part.label;
       }
@@ -807,10 +807,10 @@ export function buildLayoutEditor(host, options) {
 
   /** 灰掉的原因那句：处理器给的为什么，加上去哪儿改这一段 */
   function whyText(option) {
-    const note = option.revenueNote || '这一项在当前的金额设定下不出图';
+    const note = option.revenueNote || '此项在当前金额可见设置下不显示';
     const how = option.revenueVisibility === 'ONLY_WHEN_HIDDEN'
-      ? '在下方「本群设置」的「金额可见」里关掉金额后才会画出'
-      : '在下方「本群设置」的「金额可见」里打开金额后才会画出';
+      ? '在下方「本群设置」的「金额可见」中关闭金额后才会显示'
+      : '在下方「本群设置」的「金额可见」中打开金额后才会显示';
     return note + '。' + how + '。';
   }
 
@@ -936,7 +936,7 @@ export function buildLayoutEditor(host, options) {
   const owner = {};
 
   /**
-   * 顺序项画成两区小块：上面「报告里的卡片」，下面「没放进报告的」
+   * 顺序项画成两区小块：上面「已启用卡片」，下面「未启用卡片」
    *
    * 在报告区＝那张卡的开关开着，报告区里的先后＝顺序项存着的先后。上面的拖着换位、× 拿掉
    * （键盘：左右方向键挪一格、Delete／Backspace 拿掉）；下面的点一下放回末尾（键盘：回车／空格），
@@ -1029,19 +1029,19 @@ export function buildLayoutEditor(host, options) {
       return area;
     };
 
-    const onArea = zoneNode('on', '报告里的卡片 · 拖着排先后，× 拿掉', onKeys, '一张都没放，这一块不画',
+    const onArea = zoneNode('on', '已启用卡片 · 拖动调整顺序，点 × 移除', onKeys, '尚未启用任何卡片，报告中不显示这一块',
       (key, target, after) => act(order, key, placed(sequence, key, target, after), true, 'on'));
     onKeys.forEach((key, index) => {
       const node = chipNode(key, 'on');
       node.setAttribute('role', 'listitem');
-      node.setAttribute('aria-label', nameOf(key) + '，报告里第 ' + (index + 1) + ' 张，共 ' + onKeys.length + ' 张。'
-        + (locked ? why : '左右方向键挪位置，Delete 拿掉，也可以拖'));
+      node.setAttribute('aria-label', nameOf(key) + '，报告中第 ' + (index + 1) + ' 张，共 ' + onKeys.length + ' 张。'
+        + (locked ? why : '左右方向键调整顺序，Delete 移除，也可拖动'));
       const kill = el('button', 'rep-chip-x');
       kill.type = 'button';
       kill.textContent = '×';
       // 键盘走 Delete，不在 Tab 上多停一站；读屏的浏览模式与手机点按照样够得着
       kill.tabIndex = -1;
-      kill.setAttribute('aria-label', '拿掉：' + nameOf(key));
+      kill.setAttribute('aria-label', '移除：' + nameOf(key));
       kill.disabled = locked;
       kill.addEventListener('click', event => {
         event.stopPropagation();
@@ -1063,12 +1063,12 @@ export function buildLayoutEditor(host, options) {
       onArea.appendChild(node);
     });
 
-    const offArea = offKeys.length ? zoneNode('off', '没放进报告的 · 点一下或拖回上面', offKeys, '都在报告里',
+    const offArea = offKeys.length ? zoneNode('off', '未启用卡片 · 点击或拖回上方即可启用', offKeys, '全部卡片均已启用',
       key => act(order, key, sequence, false, 'off')) : null;
     for (const key of offKeys) {
       const node = chipNode(key, 'off');
       node.setAttribute('role', 'button');
-      node.setAttribute('aria-label', '放回报告：' + nameOf(key) + '。' + (locked ? why : '回车或空格放到末尾，也可以拖进上面'));
+      node.setAttribute('aria-label', '启用：' + nameOf(key) + '。' + (locked ? why : '按回车或空格添加到末尾，也可拖回上方'));
       if (locked) node.setAttribute('aria-disabled', 'true');
       // 放回排到末尾：整串里挪到最后，报告区里也就是最后一张
       const putBack = () => { if (!locked) act(order, key, placed(sequence, key, null, false), true, 'on'); };
@@ -1083,7 +1083,7 @@ export function buildLayoutEditor(host, options) {
 
     if (members.some(option => revenueState(option, visible) === 'styled')) {
       board.appendChild(el('p', 'rep-why xs dim')).textContent =
-        '带 ¥ 的几张在隐藏金额的会话里换成不带钱的说法；鼠标停在小块上看它画什么。';
+        '带 ¥ 的卡片在隐藏金额的会话中改用不含金额的说法；鼠标悬停在卡片上可查看其显示内容。';
     }
     if (locked) board.appendChild(el('p', 'rep-why')).textContent = why;
     return board;
@@ -1115,8 +1115,8 @@ export function buildLayoutEditor(host, options) {
       if (order) {
         if (boards.has(order)) continue;
         boards.add(order);
-        const why = !opts.editable ? (opts.lockedNote || '这一页改不了。')
-          : parentOff ? '「' + (parent.label || parent.key) + '」关着，这几张不起作用；打开后照这里的设定画。'
+        const why = !opts.editable ? (opts.lockedNote || '此页不可修改。')
+          : parentOff ? '「' + (parent.label || parent.key) + '」未启用，这几张卡片不起作用；启用后按此处的设置显示。'
             : null;
         controls.appendChild(boardNode(order, why, visible));
         continue;
@@ -1154,7 +1154,7 @@ export function buildLayoutEditor(host, options) {
         text.appendChild(el('p', 'rep-why')).textContent = whyText(option);
       } else if (parentOff) {
         text.appendChild(el('p', 'rep-why')).textContent =
-          '「' + (parent.label || parent.key) + '」关着，这一项不起作用；打开后照这里的设定画。';
+          '「' + (parent.label || parent.key) + '」未启用，此项不起作用；启用后按此处的设置显示。';
       } else if (state === 'styled') {
         // 变样的那三项不灰：它们照出，只是换了不带钱的说法——灰掉反而让人以为配不了
         text.appendChild(el('p', 'rep-why')).textContent = option.revenueNote || '';
@@ -1173,25 +1173,25 @@ export function buildLayoutEditor(host, options) {
   /** 照当前这套版式画一张 */
   function redraw() {
     image.innerHTML = '';
-    image.appendChild(el('p', 'hint')).textContent = '正在画…';
+    image.appendChild(el('p', 'hint')).textContent = '正在生成预览…';
     opts.render((opts.paramsOf ? opts.paramsOf() : null) || {}).then(url => {
       image.innerHTML = '';
       if (!url) {
         // 画不出来时说明白，不留一块白：一块白与「这套版式什么都不显示」长得一样
         image.appendChild(el('p', 'hint')).textContent =
-          '这一类通知的预览取不到，确认对应插件已加载。改动照样存得下来。';
+          '无法获取此类通知的预览，请检查对应插件是否已加载。改动仍可正常保存。';
         return;
       }
       const node = el('img', 'rep-shot');
       node.src = url;
-      node.alt = '按当前版式画出来的报告';
+      node.alt = '按当前版式生成的报告预览';
       image.appendChild(node);
     });
   }
 
   if (!items.length) {
     controls.appendChild(el('p', 'hint')).textContent =
-      '这一类通知没有可调的版式项，或对应插件没加载。';
+      '此类通知没有可调整的版式项，或对应插件未加载。';
   }
   paint();
   return {repaint: paint};

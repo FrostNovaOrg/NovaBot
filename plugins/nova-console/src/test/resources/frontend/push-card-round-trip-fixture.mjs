@@ -352,7 +352,7 @@ const textOf = scope => allNodes(scope).map(node => node.textContent || '').join
 
 const ON = 'rep-zone-on';
 const OFF = 'rep-zone-off';
-const ZONE_NAME = {[ON]: '报告里的卡片', [OFF]: '没放进报告的'};
+const ZONE_NAME = {[ON]: '已启用卡片', [OFF]: '未启用卡片'};
 
 /** 某一区；scope 缺省为通道页 */
 function zone(which, scope) {
@@ -373,8 +373,8 @@ function chip(which, label, scope) {
 
 function killButton(label, scope) {
   const node = allNodes(scope || page())
-    .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '拿掉：' + label);
-  if (!node) throw new Error('版式区没有「拿掉：' + label + '」按钮');
+    .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '移除：' + label);
+  if (!node) throw new Error('版式区没有「移除：' + label + '」按钮');
   return node;
 }
 

@@ -145,13 +145,13 @@ try {
     const {go, out} = await runLookup(
       async () => ({success: true, uid: 1, uname: 'a'}),
       [{uid: 1}]);
-    q2 = go.disabled === false && String(out.textContent).includes('已经在列表里了');
+    q2 = go.disabled === false && String(out.textContent).includes('已在列表中');
   }
 } catch (e) {
   q2 = 'error:' + e.message;
 }
 eq(q2, true, body
-  ? '② api 回已在列表的主播 → go.disabled===false 且 out 含已经在列表里了'
+  ? '② api 回已在列表的主播 → go.disabled===false 且 out 含已在列表中'
   : '② 切不出整块，退 ' + fallback);
 
 // ③ 阳性对照：api 抛错 → 按钮解开且 out 含「查询失败」，还带着抛进去的那句话，

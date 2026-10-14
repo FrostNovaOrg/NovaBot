@@ -33,10 +33,10 @@ import {messageOf} from './push-model.js';
  * 取值一多一少只有真发生过那种配置的人才看得见。
  */
 export const AT_MODES = [
-  {key: 'subscribers', label: '@订阅的人', note: '只 @ 在本群发过「开播@我」这类命令的人。'},
-  {key: 'all', label: '@全体成员', note: '机器人不是管理员、或额度用完时会被摘掉，通知照发。'},
-  {key: 'all_or_subscribers', label: '@全体成员，不行就 @订阅的人',
-    note: '被摘掉的那一次改 @ 订阅名单。'},
+  {key: 'subscribers', label: '@订阅者', note: '仅 @ 在本群发送过「开播@我」等订阅命令的成员。'},
+  {key: 'all', label: '@全体成员', note: '机器人不是管理员或额度用完时，@全体成员 会被省略，通知照常发送。'},
+  {key: 'all_or_subscribers', label: '@全体成员，失败时改为 @订阅者',
+    note: '@全体成员 被省略的那一次，改为 @ 订阅名单中的成员。'},
 ];
 
 /**
@@ -139,7 +139,7 @@ export function placeAtBlock(cards, mode, spot, spec) {
   const key = atLiteralOf(mode);
   if (!((spec || {}).all || []).includes(key)) {
     return {cards, refused: mode === 'subscribers'
-      ? '这类通知不支持 @订阅的人。' : '这类通知不支持定位 @全体成员。'};
+      ? '此类通知不支持 @订阅者。' : '此类通知不支持定位 @全体成员。'};
   }
   if (!(cards || [])[spot.card]) return {cards, refused: '请选择一条消息。'};
   let removedBefore = 0;
@@ -419,7 +419,7 @@ export function addCard(cards) {
  * 删掉一张卡
  *
  * 最后一张不许删：一条消息都没有的模板发不出任何东西，而它与「配好了」在界面上长得一样。
- * 整类通知不想推是在「推什么」里关掉，不是把模板删空。
+ * 整类通知不想推是在「推送类型」里关掉，不是把模板删空。
  * @param cards 卡
  * @param index 第几张
  * @return {{cards: Array, refused: string}} 新的卡表，以及拒绝的理由（没拒绝时为空串）
@@ -427,7 +427,7 @@ export function addCard(cards) {
 export function removeCard(cards, index) {
   const list = cards || [];
   if (list.length <= 1) {
-    return {cards: list, refused: '至少留一条消息。整类通知不想推的话，到上面「推什么」里把它关掉。'};
+    return {cards: list, refused: '至少保留一条消息。如不想推送整类通知，请在上方「推送类型」中关闭。'};
   }
   if (index < 0 || index >= list.length) return {cards: list, refused: ''};
   return {cards: list.slice(0, index).concat(list.slice(index + 1)), refused: ''};
@@ -584,10 +584,10 @@ export function blockRefusal(cards, cardIndex, key, spec, movingFrom) {
   if (movingFrom === undefined || movingFrom === null) movingFrom = -1;
 
   if (movingFrom < 0 && usesBlock(cards, key)) {
-    return '这份模板里已经有一个「' + blockLabel(key, spec) + '」了。同一份内容发两遍，群里就是两张一样的图。';
+    return '此模板中已有一个「' + blockLabel(key, spec) + '」。同一内容发送两次，群里会出现两张相同的图片。';
   }
   if (cardHasAttachment(cards, cardIndex) && movingFrom !== cardIndex) {
-    return '一张卡最多放一个附件块。想再放一个，就再加一张卡。';
+    return '一张卡片最多放一个附件块。如需再放一个，请再添加一张卡片。';
   }
   return '';
 }
@@ -660,15 +660,15 @@ export function atPlan(cards, mode, context, terms) {
       prepend: hasAt || (context || {}).supportsSubscribers === false || (context || {}).isGroup === false
         ? 'none' : 'subscribers', inline, dropped: false, fallback: false,
       note: hasAt
-        ? '模板里自己写了 {at}，@ 就落在那个位置，程序不再往正文前面补一份。'
-        : '@ 的是本会话里订阅过这类提醒的人；没有人订阅时这一段不出现。',
+        ? '模板中已写入 {at}，@ 将出现在该位置，不再在正文前补加。'
+        : '@ 的是本会话中订阅了此类提醒的成员；无人订阅时不显示这一段。',
     };
   }
 
   if (!isGroup) {
     return {
       prepend: 'none', inline, dropped: false, fallback: false,
-      note: '私聊没有 @全体成员 这回事，这一档在这个通道上不起作用。',
+      note: '私聊不支持 @全体成员，此选项在该通道上不起作用。',
     };
   }
 
@@ -678,14 +678,14 @@ export function atPlan(cards, mode, context, terms) {
   const fallback = mode === 'all_or_subscribers' && !hasAt && (context || {}).supportsSubscribers !== false;
   return {
     prepend: hasAtAll ? 'none' : 'all', inline, dropped, fallback,
-    note: (hasAtAll ? '模板里自己写了 {at=all}，程序不再往正文前面补一份。' : '')
+    note: (hasAtAll ? '模板中已写入 {at=all}，不再在正文前补加。' : '')
       + (dropped
-        ? '机器人不是本群管理员，@全体成员 会被自动摘掉，正文照发。'
-          + (fallback ? '这一次改 @ 订阅名单。' : '')
+        ? '机器人不是本群管理员，@全体成员 将被自动省略，正文照常发送。'
+          + (fallback ? '本次改为 @ 订阅名单中的成员。' : '')
         : say(words, 'bot.platform',
-            v => '@全体成员 不绕过 ' + v + ' 权限，额度用尽或不是管理员时会被摘掉，正文照发。',
-            '@全体成员 不绕过机器人权限，额度用尽或不是管理员时会被摘掉，正文照发。')
-          + (fallback ? '被摘掉的那一次改 @ 订阅名单。' : '')),
+            v => '@全体成员 不绕过 ' + v + ' 权限，额度用尽或机器人不是管理员时将被省略，正文照常发送。',
+            '@全体成员 不绕过机器人权限，额度用尽或机器人不是管理员时将被省略，正文照常发送。')
+          + (fallback ? '被省略的那一次改为 @ 订阅名单中的成员。' : '')),
   };
 }
 
@@ -823,7 +823,7 @@ export function applyEdit(params, base, cards, atMode) {
   else out[AT_MODE_KEY] = atMode;
 
   // 旧的布尔键只读不写。留着它的话，它会在「这一档回到默认」之后重新顶上来，
-  // 表现是使用者选了「@订阅的人」，群里照样 @全体成员
+  // 表现是使用者选了「@订阅者」，群里照样 @全体成员
   delete out[AT_ALL_KEY];
   return out;
 }

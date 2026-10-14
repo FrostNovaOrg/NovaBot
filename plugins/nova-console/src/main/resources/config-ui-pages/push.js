@@ -336,7 +336,7 @@ const PAGE_STYLE = `
 /* 跟着上一项开关走的子项：缩进挂在那一项下面，那一项关着时同样淡下去 */
 .rep-row.rep-sub{padding-left:26px}
 .rep-row.parent-off{opacity:.6}
-/* 可排先后的那几项：上面报告区的小块照占位符药丸，下面没放进报告的照调色板 */
+/* 可排先后的那几项：上面「已启用卡片」的小块照占位符药丸，下面「未启用卡片」照调色板 */
 .rep-board{padding:7px 0 7px 26px;border-top:1px solid var(--line)}
 .rep-board>.rep-zone-t{margin:4px 0;font-size:12px;font-weight:400;color:var(--dim);line-height:1.5}
 .rep-zone{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:34px;padding:6px 8px;
@@ -413,7 +413,7 @@ export function render(section) {
   section.innerHTML = `
     <div id="sess-incomplete"></div>
     <div class="pnarrow">
-      <label for="push-nav">选一位主播或一个通道</label>
+      <label for="push-nav">选择主播或推送通道</label>
       <select id="push-nav"></select>
     </div>
     <div class="pushwrap">
@@ -616,7 +616,7 @@ export async function loadPushPage() {
   try {
     runtime = await api('/state');
   } catch (e) {
-    say('载入运行状态失败：' + e.message, 'err');
+    say('运行状态加载失败：' + e.message, 'err');
   }
 
   try {
@@ -666,7 +666,7 @@ function paintTree() {
   nav.innerHTML = '<option value="">通道一览</option><option value="default">默认模板</option>';
 
   if (!tree.length) {
-    host.innerHTML = '<p class="hint">还没有主播。点上面「＋ 添加主播」开始。</p>';
+    host.innerHTML = '<p class="hint">暂无主播，请点击上方「＋ 添加主播」开始配置。</p>';
     nav.value = picked.uid === 'default' ? 'default' : '';
     return;
   }
@@ -682,7 +682,7 @@ function paintTree() {
         group.appendChild(channelNode(streamer, channel));
       }
       if (!streamer.channels.length) {
-        group.appendChild(el('div', 'tempty')).textContent = '还没有通道';
+        group.appendChild(el('div', 'tempty')).textContent = '暂无推送通道';
       }
     }
     for (const channel of streamer.channels) {
@@ -730,7 +730,7 @@ function streamerNode(streamer) {
 
   const marks = el('span', 'tn-marks');
   if (!streamer.enabled) marks.appendChild(pill('已停用'));
-  else if (streamer.collectOnly) marks.appendChild(pill('只采集，不推送'));
+  else if (streamer.collectOnly) marks.appendChild(pill('仅采集'));
   body.appendChild(marks);
   node.appendChild(body);
 
@@ -791,7 +791,7 @@ function paintRight() {
   }
 
   if (!picked.num) {
-    if (lost === String(user.uid)) say('地址里的那个通道没找到（可能已经删掉），已回到这位主播');
+    if (lost === String(user.uid)) say('未找到地址中的通道（可能已删除），已返回该主播');
     renderStreamerLevel(host, user);
     return;
   }
@@ -833,20 +833,20 @@ function renderIndex(host) {
 
   if (!rows.length) {
     box.appendChild(el('p', 'hint')).textContent =
-      '还没有通道。左边加一位主播，再给它挑一个群或好友。';
+      '暂无推送通道。请先在左侧添加主播，再为其选择群或好友。';
   } else {
     // 五列全 nowrap，宽了在卡片里横着滚，而不是把卡片顶破——做法与主播页历史表一致
     const wrap = el('div', 'tblwrap');
     const table = el('table', 'ptable channel-index');
     table.style.width = 'max-content';
     table.style.minWidth = '100%';
-    table.innerHTML = '<thead><tr><th scope="col">主播</th><th scope="col">通道</th><th scope="col">号</th>'
-      + '<th scope="col">开着的通知</th><th scope="col">模板</th></tr></thead><tbody>'
+    table.innerHTML = '<thead><tr><th scope="col">主播</th><th scope="col">通道</th><th scope="col">号码</th>'
+      + '<th scope="col">已启用通知</th><th scope="col">模板</th></tr></thead><tbody>'
       + rows.map(row => '<tr><td><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row))
         + '" aria-label="' + esc(row.streamer + ' → ' + row.name) + '">' + esc(row.streamer) + '</a></td>'
         + '<td>' + esc(row.name) + '</td>'
         + '<td class="n">' + esc(row.num) + '</td>'
-        + '<td>' + (row.on.length ? esc(row.on.join('、')) : '全关') + '</td>'
+        + '<td>' + (row.on.length ? esc(row.on.join('、')) : '全部停用') + '</td>'
         + '<td>' + (row.custom ? '自定义' : '默认') + '</td></tr>').join('')
       + '</tbody>';
     // 原生链接提供 Tab、回车与读屏名称；其余单元格点击走同一地址，无定位覆盖层。
@@ -878,24 +878,24 @@ function renderStranded(host) {
   const rows = strandedSessions(pushData, runtime.sessions);
   if (!rows.length) return;
 
-  const box = card(host, '配置里已经没有、状态里还留着的会话',
-    '这些群或好友不在任何一位主播的通道里，因此上面的表里没有它们。'
-    + '状态文件里的命令开关仍然留着，一旦重新配上推送就立刻生效。');
+  const box = card(host, '未配置推送但仍有状态记录的会话',
+    '这些群或好友不在任何主播的推送通道中，因此不在上表中。'
+    + '状态文件中的命令开关仍然保留，重新配置推送后立即生效。');
 
   for (const row of rows) {
     const line = el('div', 'strand');
     const text = el('span');
     text.textContent = row.platform + ' · ' + (row.type ? row.type + ' ' : '') + row.num
-      + (row.disabled.length ? ' · 关着 ' + row.disabled.length + ' 条命令（'
-        + row.disabled.join('、') + '）' : ' · 命令没有被关过')
-      + (row.revenueExplicit ? ' · 金额可见性配过' : '')
-      + (row.quietExplicit ? ' · 静音时段配过' : '');
+      + (row.disabled.length ? ' · 已禁用 ' + row.disabled.length + ' 条命令（'
+        + row.disabled.join('、') + '）' : ' · 未禁用任何命令')
+      + (row.revenueExplicit ? ' · 已设置金额可见性' : '')
+      + (row.quietExplicit ? ' · 已设置静音时段' : '');
     line.appendChild(text);
 
     if (row.disabled.length) {
       const fix = el('button', 'ghost');
       fix.type = 'button';
-      fix.textContent = '恢复这几条';
+      fix.textContent = '恢复这些命令';
       fix.addEventListener('click', () => restoreCommands(row.platform, row.typeCode, row.num, row.disabled));
       line.appendChild(fix);
     }
@@ -916,12 +916,12 @@ function renderStranded(host) {
  */
 function renderDefaultTemplates(host) {
   const box = card(host, '默认模板',
-    '用默认模板的通道跟着这里一起变。某个通道想不一样，到那个通道里直接改，改过它就不跟着这里变了。');
+    '使用默认模板的通道随此处同步更新。如需单独调整某个通道，请在该通道中直接修改；修改后该通道不再随默认模板更新。');
 
   const handlers = (store.handlerList || []).filter(item => (item.placeholders || []).length);
   if (!handlers.length) {
     box.appendChild(el('p', 'hint')).textContent =
-      '还没有加载到任何带文字模板的通知，确认对应插件已加载。';
+      '暂无带文字模板的通知，请检查对应插件是否已加载。';
     return;
   }
 
@@ -942,7 +942,7 @@ function renderDefaultTemplates(host) {
   reset.addEventListener('click', async () => {
     const name = currentHandler.displayName || currentHandler.className;
     if (!await ask({title: '恢复出厂默认？',
-      body: '「' + name + '」的默认模板会改回出厂的样子，用默认模板的通道会一起变回去。'})) return;
+      body: '「' + name + '」的默认模板将恢复为出厂设置，使用默认模板的通道将同步恢复。'})) return;
     delete draft[currentHandler.className];
     saveDefaults(currentHandler, {}, save);
   });
@@ -959,7 +959,7 @@ function renderDefaultTemplates(host) {
     base: handler => handler.factoryParams || handler.defaultParams,
     paramsOf: handler => draft[handler.className] || overridesOf(handler),
     context: {isGroup: true, admin: null, terms: store.vocab},
-    channelLabel: '群里',
+    channelLabel: '群聊',
     onSelect: handler => {
       currentHandler = handler;
       save.disabled = !draft[handler.className];
@@ -1023,23 +1023,23 @@ async function reloadHandlers() {
     const res = await api('/handlers');
     store.handlerList = res.handlers || store.handlerList;
   } catch (e) {
-    say('重新读取推送处理器失败，屏幕上的「默认／自定义」可能还是旧的：' + e.message, 'err');
+    say('推送处理器重新读取失败，页面上的「默认／自定义」状态可能未更新：' + e.message, 'err');
   }
 }
 
 /** 谁在用默认、谁自定义了 */
 function renderAdoption(host, handlers) {
-  const box = card(host, '谁在用默认模板',
-    '在上面改一次，这里「用默认」的通道全都跟着变；已经自定义的那些不受影响。');
+  const box = card(host, '默认模板使用情况',
+    '在上方修改默认模板后，下列使用默认模板的通道将同步更新；已自定义的通道不受影响。');
 
   for (const handler of handlers) {
     const rows = templateAdoption(pushData, handler, store.vocab);
     const item = el('div', 'tplrow');
     item.appendChild(el('b')).textContent = handler.displayName || handler.className;
     item.appendChild(el('p', 'hint')).textContent =
-      '用默认 ' + rows.following.length + ' 个通道 · 自定义 ' + rows.custom.length + ' 个通道';
+      '使用默认 ' + rows.following.length + ' 个通道 · 自定义 ' + rows.custom.length + ' 个通道';
     if (rows.following.length) {
-      item.appendChild(el('p', 'xs dim')).textContent = '跟着变：' + describe(rows.following);
+      item.appendChild(el('p', 'xs dim')).textContent = '同步更新：' + describe(rows.following);
     }
     if (rows.custom.length) {
       item.appendChild(el('p', 'xs dim')).textContent = '不受影响：' + describe(rows.custom);
@@ -1083,9 +1083,9 @@ function renderStreamerLevel(host, user) {
   remove.type = 'button';
   remove.textContent = '删除主播';
   remove.addEventListener('click', async () => {
-    if (!await ask({title: '删除这位主播？',
+    if (!await ask({title: '删除该主播？',
       body: '「' + streamerName(user) + '」的 '
-        + (user.targets || []).length + ' 个通道会一起没掉，历史场次数据保留。'})) return;
+        + (user.targets || []).length + ' 个通道将一并删除，历史场次数据保留。'})) return;
     pushData.splice(pushData.indexOf(user), 1);
     expanded.delete(String(user.uid));
     markDirty();
@@ -1097,13 +1097,13 @@ function renderStreamerLevel(host, user) {
 
   if (user.enabled === false) {
     box.appendChild(el('div', 'note')).textContent =
-      '这位主播已停用：照常留在配置里，但不采集也不推送。';
+      '该主播已停用：配置保留，但不采集数据，也不推送。';
   } else if (!(user.targets || []).length) {
     box.appendChild(el('div', 'note')).textContent =
-      '这位主播还没有通道：只采集，不推送。加一个通道才会有人收到消息。';
+      '该主播尚未配置推送通道，当前仅采集数据。添加通道后才会有人收到消息。';
   }
 
-  const list = card(host, '通道', '一个通道 = 一个群或一位好友。点一行进去，定它收到什么、消息长什么样。');
+  const list = card(host, '推送通道', '每个通道对应一个群或一位好友。点击某一行进入，设置推送类型与消息模板。');
   for (const target of user.targets || []) {
     list.appendChild(channelRow(user, target));
   }
@@ -1114,7 +1114,7 @@ function renderStreamerLevel(host, user) {
   add.addEventListener('click', () => addChannel(user));
   list.appendChild(add);
 
-  const data = card(host, '这位主播的数据', '场次、趋势，还有每一场的详细报告，都在主播页。');
+  const data = card(host, '主播数据', '场次、趋势及每一场的详细报告均可在主播页查看。');
   const link = el('a', 'lnkbtn');
   link.href = detailHash(user.platform, user.uid);
   link.textContent = '打开 ' + streamerName(user) + ' 的数据 →';
@@ -1134,7 +1134,7 @@ function channelRow(user, target) {
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
   if ((session && (session.disabled || []).length)) {
-    title.appendChild(pill('命令有 ' + session.disabled.length + ' 条被关掉', 'err'));
+    title.appendChild(pill('已禁用 ' + session.disabled.length + ' 条命令', 'err'));
   }
   main.appendChild(title);
 
@@ -1145,7 +1145,7 @@ function channelRow(user, target) {
 
   const tags = el('div', 'rc-tg');
   for (const item of switches) {
-    tags.appendChild(pill(item.displayName + (item.on ? ' 开' : ' 关'), item.on ? 'ok' : ''));
+    tags.appendChild(pill(item.displayName + (item.on ? ' 已启用' : ' 已停用'), item.on ? 'ok' : ''));
   }
   main.appendChild(tags);
   row.appendChild(main);
@@ -1184,11 +1184,11 @@ function renderChannelLevel(host, user, target) {
 
   const remove = el('button', 'ghost danger');
   remove.type = 'button';
-  remove.textContent = '移除这个通道';
+  remove.textContent = '移除通道';
   remove.addEventListener('click', async () => {
-    if (!await ask({title: '移除这个通道？',
-      body: '不再把「' + streamerName(user) + '」推到 ' + name
-        + '。这个群的本群设置会留着，其他主播照旧推。'})) return;
+    if (!await ask({title: '移除该通道？',
+      body: '不再向 ' + name + ' 推送「' + streamerName(user) + '」'
+        + '。该群的本群设置将保留，其他主播的推送不受影响。'})) return;
     user.targets.splice(user.targets.indexOf(target), 1);
     markDirty();
     location.hash = '#/push/' + user.uid;
@@ -1214,14 +1214,14 @@ function sectionHead(host, index, title, desc) {
   return box;
 }
 
-/** 段 1：推什么 */
+/** 段 1：推送类型 */
 function sectionNotices(host, user, target, session) {
-  const box = sectionHead(host, 1, '推什么', '这几件事发生时，要不要往这个通道发');
+  const box = sectionHead(host, 1, '推送类型', '选择以下事件发生时是否向此通道发送通知');
   const switches = noticeSwitches(user, target, store.handlerList);
 
   if (!switches.length) {
     box.appendChild(el('p', 'hint')).textContent =
-      '还没有加载到任何推送处理器，确认对应插件已加载。';
+      '暂无已加载的推送处理器，请检查对应插件是否已加载。';
   }
 
   for (const item of switches) {
@@ -1242,23 +1242,23 @@ function sectionNotices(host, user, target, session) {
 
   const recent = el('h4');
   const group = Number(target.type) === 1;
-  recent.textContent = group ? '本群最近推送' : '这位好友最近推送';
+  recent.textContent = group ? '本群最近推送' : '该好友最近推送';
   box.appendChild(recent);
-  if (group) box.appendChild(el('p', 'hint')).textContent = '推到这个群的所有主播都算在内。';
+  if (group) box.appendChild(el('p', 'hint')).textContent = '推送到本群的所有主播均计算在内。';
 
   const rows = recentPushes(pushHistory, session, 5);
   if (!rows.length) {
     box.appendChild(el('p', 'hint')).textContent = session && session.type
-      ? (group ? '本次启动以来的最近推送里，没有发往这个群的。'
-        : '本次启动以来的最近推送里，没有发给这位好友的。')
-      : '这个通道还没被加载出来，取不到它的推送记录。';
+      ? (group ? '本次启动以来，暂无发往本群的推送。'
+        : '本次启动以来，暂无发给该好友的推送。')
+      : '此通道尚未加载，无法获取其推送记录。';
   } else {
     const table = el('table', 'ptable');
     table.innerHTML = '<thead><tr><th>时间</th><th>内容</th><th>结果</th></tr></thead><tbody>'
       + rows.map(row => '<tr><td>' + esc(row.at) + '</td>'
         + '<td title="' + esc(row.summary) + '">' + esc(row.summary) + '</td>'
         + '<td>' + (row.success ? '<span class="good">成功</span>'
-          : row.uncertain ? '<span>送达不明，可能已发出、没有重发：' + esc(row.reason || '未知原因') + '</span>'
+          : row.uncertain ? '<span>送达状态未知（可能已发出，未重发）：' + esc(row.reason || '未知原因') + '</span>'
           : '<span class="bad">失败：' + esc(row.reason || '未知原因') + '</span>') + '</td></tr>').join('')
       + '</tbody>';
     // 表只在卡片里横着滚，不把整页顶宽：窄屏上整页一横滚，左树与底下的保存条跟着推出屏外
@@ -1272,7 +1272,7 @@ function sectionNotices(host, user, target, session) {
     const more = el('a', 'lnkbtn');
     // 落在推送栏而不是全部栏：开播、下播记录不属任何群，落进全部栏会被「只看这个群」筛掉
     more.href = '#/log?cat=PUSH&chan=' + encodeURIComponent(channel);
-    more.textContent = '在日志页看全部 →';
+    more.textContent = '在日志页查看全部 →';
     box.appendChild(more);
   }
 }
@@ -1313,9 +1313,9 @@ function toggleNotice(target, className, on) {
   renderStreamers();
 }
 
-/** 段 2：消息长什么样 */
+/** 段 2：消息模板 */
 function sectionTemplate(host, user, target, session) {
-  const box = sectionHead(host, 2, '消息长什么样', '一张卡＝一条消息，花括号是可以拖的块');
+  const box = sectionHead(host, 2, '消息模板', '一张卡片即一条消息，花括号变量块可拖动');
   // 只列这个通道<b>开着</b>的那几类：关着的那一类改了模板也不会有人收到，
   // 而屏幕上它与改好了长得一样
   const on = noticeSwitches(user, target, store.handlerList)
@@ -1330,7 +1330,7 @@ function sectionTemplate(host, user, target, session) {
   // 未改动时状态行旁的小字：这一段默认就能改，先把「改过就不再跟着默认走」说在改之前——
   // 等到改完才发现回不去默认，与改不了是一样地堵人
   const free = el('span', 'tplfree');
-  free.textContent = '直接改就行；改过的通道不再跟着默认变，随时可以恢复默认';
+  free.textContent = '可直接修改；修改后此通道不再随默认模板更新，可随时恢复默认';
 
   // 「恢复默认」只在与默认不同时出现。改了第一下就得出场、改回相同就得收起，
   // 而这只能靠改状态行自己这几个节点：整段重画会把正在打字的输入框焦点弄丢
@@ -1340,8 +1340,8 @@ function sectionTemplate(host, user, target, session) {
   act.addEventListener('click', async () => {
     // 「恢复默认」丢得掉使用者写了很久的东西，因此先问一句，并说清丢的是什么
     if (!await ask({title: '恢复默认？',
-      body: '这个通道的消息模板会改回默认，自己写的内容会丢掉。'
-        + '此后默认模板再改，这个通道跟着一起变。'})) return;
+      body: '此通道的消息模板将恢复为默认，自定义的内容将会丢失。'
+        + '此后默认模板的修改将同步应用到此通道。'})) return;
     for (const message of target.messages || []) {
       // 按主名与旧名一起认：老配置里写着旧名的那一条按主名找不着，「恢复默认」会静静地跳过它，
       // 而屏幕上这个通道已经写着「默认模板」
@@ -1363,7 +1363,7 @@ function sectionTemplate(host, user, target, session) {
   /** 状态行那一排跟着判法走：默认／自定义、小字、「恢复默认」出现还是收起 */
   const syncState = () => {
     const now = templateState(target, store.handlerList);
-    label.innerHTML = '本通道用的是：<b>' + (now.custom ? '自定义' : '默认模板') + '</b>'
+    label.innerHTML = '当前模板：<b>' + (now.custom ? '自定义' : '默认模板') + '</b>'
       + (now.custom ? ' · 与默认不同' : ' ✓');
     free.hidden = now.custom;
     act.hidden = !now.custom;
@@ -1375,7 +1375,7 @@ function sectionTemplate(host, user, target, session) {
 
   const toDefault = el('a', 'lnkbtn');
   toDefault.href = '#/push/default';
-  toDefault.textContent = '看默认模板';
+  toDefault.textContent = '查看默认模板';
   line.appendChild(toDefault);
   box.appendChild(line);
 
@@ -1383,15 +1383,15 @@ function sectionTemplate(host, user, target, session) {
     const which = (store.handlerList || [])
       .filter(item => state.changed.includes(item.className))
       .map(item => item.displayName || item.className);
-    box.appendChild(el('div', 'note template-diff')).textContent = '与默认不同的是：' + which.join('、');
+    box.appendChild(el('div', 'note template-diff')).textContent = '与默认模板不同的通知：' + which.join('、');
   }
 
   buildTemplateEditor(box, {
     handlers,
     // 这一段默认就能改，不传锁态；编辑器本身仍支持锁态（template.js 那一套），留给要用它的地方
     editable: true,
-    emptyNote: '这个通道带文字模板的通知一条都没开着。关着的那一类改了模板也不会有人收到，'
-      + '因此这里不列——到上面「推什么」里先开一条。',
+    emptyNote: '此通道未启用任何带文字模板的通知。未启用的通知即使修改模板也不会有人收到，'
+      + '因此此处不列出；请先在上方「推送类型」中启用。',
     paramsOf: handler => (messageOf(target, handler) || {}).params || {},
     context: {
       isGroup: Number(target.type) === 1,
@@ -1440,7 +1440,7 @@ function sectionLayout(host, target, session) {
   act.textContent = '恢复默认';
   act.addEventListener('click', async () => {
     if (!await ask({title: '恢复默认？',
-      body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
+      body: '此通道的报告版式将恢复为默认。此后默认版式的修改将同步应用到此通道。'})) return;
     const message = messageOf(target, handler);
     if (message) {
       // 与段 2 的「恢复默认」同理（见 savedMessageHasParams）
@@ -1540,14 +1540,14 @@ function layoutPreviewRenderer(target, revenueVisible) {
 /** 段 4：本群设置 */
 function sectionSession(host, user, target, session) {
   const box = sectionHead(host, 4, '本群设置',
-    Number(target.type) === 1 ? '这个群自己的事，和推谁无关' : '这位好友自己的事');
+    Number(target.type) === 1 ? '仅作用于本群，与推送哪位主播无关' : '仅作用于该好友');
 
   if (Number(target.type) === 1) {
     const streamers = (session || {}).streamers || [];
     box.appendChild(el('div', 'note')).textContent = streamers.length > 1
-      ? '本群设置对推给它的所有主播共用。这个群下面有 ' + streamers.length + ' 位主播（'
-        + streamers.join('、') + '），在这里改一次是改全部。'
-      : '本群设置对推给它的所有主播共用。';
+      ? '本群设置由推送到本群的所有主播共用。本群共有 ' + streamers.length + ' 位主播（'
+        + streamers.join('、') + '），在此修改将同时作用于全部主播。'
+      : '本群设置由推送到本群的所有主播共用。';
   }
 
   // 四行摆进自己的容器：草稿变了那一段要重画（换掉，不是再摆一份），
@@ -1641,7 +1641,7 @@ function pickTarget(opts) {
     const bar = el('div', 'dwbar');
     const search = el('input');
     search.type = 'search';
-    search.placeholder = '搜群名、群号、好友昵称';
+    search.placeholder = '搜索群名、群号或好友昵称';
     search.setAttribute('aria-label', '搜索可选的群与好友');
     bar.appendChild(search);
 
@@ -1655,7 +1655,7 @@ function pickTarget(opts) {
         await loadPushPage();
         pickTarget(opts);
       } catch (e) {
-        say('刷新名单失败：' + e.message, 'err');
+        say('名单刷新失败：' + e.message, 'err');
       }
       refresh.disabled = false;
     });
@@ -1671,7 +1671,7 @@ function pickTarget(opts) {
 
       if (!options.length) {
         list.appendChild(el('p', 'hint')).textContent =
-          '取不到机器人的群与好友名单。机器人此刻多半没连上，到「连接」页看一眼。';
+          '无法获取机器人的群与好友名单。机器人可能未连接，请到「连接」页检查。';
         return;
       }
 
@@ -1679,7 +1679,7 @@ function pickTarget(opts) {
         || String(item.num).includes(keyword)
         || (item.name || '').toLowerCase().includes(keyword));
       if (!rows.length) {
-        list.appendChild(el('p', 'hint')).textContent = '没有匹配的群或好友。';
+        list.appendChild(el('p', 'hint')).textContent = '未找到匹配的群或好友。';
         return;
       }
 
@@ -1691,7 +1691,7 @@ function pickTarget(opts) {
             && String(target.num) === String(item.num)))
           .map(streamerName) : [];
         const pushing = otherStreamers.length
-          ? ' · 已在推 ' + otherStreamers.slice(0, 3).join('、')
+          ? ' · 正在推送 ' + otherStreamers.slice(0, 3).join('、')
             + (otherStreamers.length > 3 ? '等 ' + otherStreamers.length + ' 位' : '')
           : '';
         const row = el('button', 'dwrow' + (taken ? ' taken' : ''));
@@ -1702,8 +1702,8 @@ function pickTarget(opts) {
             ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
           + esc(item.num)
           + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
-          + (item.admin ? ' · 机器人是管理员' : '') + esc(pushing) + '</span>'
-          + (taken ? '<span class="dw-tag">已是通道</span>' : '');
+          + (item.admin ? ' · 机器人为管理员' : '') + esc(pushing) + '</span>'
+          + (taken ? '<span class="dw-tag">已添加</span>' : '');
         row.addEventListener('click', () => {
           const hit = resolveTarget(options, item.key);
           if (!hit.ok) {
@@ -1729,7 +1729,7 @@ function addChannel(user) {
 
   pickTarget({
     title: '给「' + streamerName(user) + '」添加通道',
-    lead: '从机器人已经加入的群、已经加的好友里挑。已经是通道的灰着。群的设置（金额显示、静音、命令开关等）由推到这个群的所有主播共用。',
+    lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。群的设置（金额显示、静音、命令开关等）由推送到该群的所有主播共用。',
     user,
     taken,
     onPick: hit => {
@@ -1761,10 +1761,10 @@ function addChannel(user) {
 export function addStreamer() {
   const platformNames = store.platforms || [];
 
-  openDrawer('添加主播', '加完之后给它配至少一个通道，才会有人收到消息。', body => {
+  openDrawer('添加主播', '添加后需为其配置至少一个通道，才会有人收到消息。', body => {
     if (!platformNames.length) {
       body.appendChild(el('p', 'hint')).textContent =
-        '没有加载任何直播平台插件，无法添加主播。';
+        '未加载任何直播平台插件，无法添加主播。';
       return;
     }
 
@@ -1772,7 +1772,7 @@ export function addStreamer() {
     if (platformNames.length > 1) {
       const pick = el('select');
       pick.id = 'add-platform';
-      pick.setAttribute('aria-label', '哪个平台的主播');
+      pick.setAttribute('aria-label', '主播所属平台');
       pick.innerHTML = platformNames.map(name =>
         '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
       form.appendChild(pick);
@@ -1781,13 +1781,13 @@ export function addStreamer() {
     const input = el('input');
     input.id = 'add-uid';
     input.placeholder = '输入 ' + STREAMER_INPUT_HINT;
-    input.setAttribute('aria-label', '主播 uid、直播间号或链接');
+    input.setAttribute('aria-label', '主播 UID、直播间号或链接');
     form.appendChild(input);
 
     const go = el('button', 'primary');
     go.id = 'add-streamer';
     go.type = 'button';
-    go.textContent = '找一下';
+    go.textContent = '查询';
     form.appendChild(go);
     body.appendChild(form);
 
@@ -1824,7 +1824,7 @@ async function lookupStreamer(platformNames, input, go, out) {
       return;
     }
     if ((pushData || []).some(item => Number(item.uid) === Number(res.uid))) {
-      out.textContent = '主播 ' + res.uname + ' 已经在列表里了。';
+      out.textContent = '主播 ' + res.uname + ' 已在列表中。';
       return;
     }
 
@@ -1834,7 +1834,7 @@ async function lookupStreamer(platformNames, input, go, out) {
       + (res.roomId ? ' · 直播间 ' + esc(res.roomId) : '') + '</span>';
     const add = el('button', 'primary');
     add.type = 'button';
-    add.textContent = '就是它，加进来';
+    add.textContent = '确认添加';
     add.addEventListener('click', () => {
       pushData.push({
         uid: res.uid, platform, enabled: true, targets: [],
@@ -1842,7 +1842,7 @@ async function lookupStreamer(platformNames, input, go, out) {
       });
       closeDrawer();
       markDirty();
-      say('已添加 ' + res.uname + '，请为它配置通道后保存', 'ok');
+      say('已添加 ' + res.uname + '，请为其配置通道后保存', 'ok');
       expanded.add(String(res.uid));
       location.hash = '#/push/' + res.uid;
       renderStreamers();
@@ -2006,8 +2006,8 @@ export async function reload() {
   } catch (e) {
     pushData = [];
     pushSaved = '[]';
-    say('推送配置 datasource.json 不是合法 JSON，界面上暂时看不到已配好的主播。'
-      + '请到服务器上修正该文件后重新载入', 'err');
+    say('推送配置 datasource.json 不是合法的 JSON，页面暂时无法显示已配置的主播。'
+      + '请在服务器上修正该文件后重新加载', 'err');
     return false;
   }
 }
@@ -2107,21 +2107,21 @@ export async function save() {
     if (statePhrase) parts.push(statePhrase);
     if (!parts.length) parts.push('已保存');
     let text = parts.join(' · ');
-    if (skipped) text += ' · 有 ' + skipped + ' 项删除没确认，那一项没写';
+    if (skipped) text += ' · ' + skipped + ' 项删除未确认，未写入';
     say(text, 'ok');
   } else if (pushOk && !stateOk) {
     const parts = [];
     if (pushTried && pushMsg) parts.push(pushMsg);
-    parts.push('本群设置没存上' + (notes.length ? '：' + notes.join('；') : ''));
+    parts.push('本群设置保存失败' + (notes.length ? '：' + notes.join('；') : ''));
     say(parts.join(' · '), 'err');
   } else if (!pushOk && stateOk) {
     // 成的那段与败的那句并列：塞进括号里跟着失败那句走的话，存上的东西会被读成没存上。
     // 本群设置一处没动时（stateWrote 为 0）不提它——那一段根本没发过请求
-    const parts = ['推送配置没存上' + (notes.length ? '：' + notes.join('；') : '')];
-    if (stateWrote > 0) parts.push('本群设置已存' + (statePhrase ? '（' + statePhrase + '）' : ''));
+    const parts = ['推送配置保存失败' + (notes.length ? '：' + notes.join('；') : '')];
+    if (stateWrote > 0) parts.push('本群设置已保存' + (statePhrase ? '（' + statePhrase + '）' : ''));
     say(parts.join(' · '), 'err');
   } else {
-    say('两段都没存上：' + notes.join('；'), 'err');
+    say('推送配置与本群设置均保存失败：' + notes.join('；'), 'err');
   }
   markDirty();
   try {

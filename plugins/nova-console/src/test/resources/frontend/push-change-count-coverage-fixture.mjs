@@ -117,7 +117,7 @@ const CASES = [
   },
   {
     name: '主播·加一位（pushData.push）',
-    at: 'push.js 的「就是它，加进来」',
+    at: 'push.js 的「确认添加」',
     want: 1,
     change: users => { users.push({uid: 2, platform: 'p', enabled: true, targets: []}); },
   },
@@ -137,7 +137,7 @@ const CASES = [
   },
   {
     name: '通道·移除（user.targets.splice）',
-    at: 'push.js 的「移除这个通道」',
+    at: 'push.js 的「移除通道」',
     want: 1,
     change: users => { users[0].targets.splice(0, 1); },
   },

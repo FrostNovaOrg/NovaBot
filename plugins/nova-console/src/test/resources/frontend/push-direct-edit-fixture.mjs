@@ -160,12 +160,12 @@ function section(mark) {
   return head ? head.parentNode : null;
 }
 
-const tpl = () => section('消息长什么样');
+const tpl = () => section('消息模板');
 const lay = () => section('下播报告版式');
 
 /** 状态行上「本通道用的是」那一句 */
 const stateLabel = box =>
-  all(box, item => item.tagName === 'span' && (String(item.innerHTML).includes('本通道用的是') || String(item.innerHTML).includes('当前版式')))[0];
+  all(box, item => item.tagName === 'span' && (String(item.innerHTML).includes('当前模板') || String(item.innerHTML).includes('当前版式')))[0];
 
 /** 「恢复默认」出现没有：得有这颗按钮，且没藏着 */
 const restoreVisible = box =>
@@ -183,7 +183,7 @@ function mentions(box, text) {
 
 /** 未改动时状态行旁那句小字（直接改就行…） */
 const freeNote = box =>
-  all(box, item => String(item.textContent).includes('直接改就行')
+  all(box, item => String(item.textContent).includes('可直接修改')
     && String(item.textContent).includes('恢复默认'))[0] || null;
 
 /** 当前那一枚 @ 档下拉：重画之后取最新的一枚 */
@@ -209,7 +209,7 @@ function fire(control, kind, event) {
 await ask('① 段 2 默认就能改：块按得动、@ 档换得动、正文可编辑', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
   const box = tpl();
-  if (!box) throw new Error('没画出来「消息长什么样」那一段');
+  if (!box) throw new Error('没画出来「消息模板」那一段');
   const blocks = all(box, item => String(item.className).includes('tpl-blk'));
   const bodies = all(box, item => String(item.className).includes('tpl-c-body'));
   same({
@@ -241,7 +241,7 @@ await ask('④ 未改动时两段都没有「恢复默认」', async () => {
     {'段 2 没有': true, '段 3 没有': true}, '恢复默认');
 });
 
-await ask('⑤ 未改动时状态行旁有小字：直接改就行，改过随时可恢复', async () => {
+await ask('⑤ 未改动时状态行旁有小字：可直接修改，改过随时可恢复', async () => {
   const note2 = freeNote(tpl());
   const note3 = freeNote(lay());
   same({

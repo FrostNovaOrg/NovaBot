@@ -365,21 +365,21 @@ public class RuntimeStateController {
         String raw = body.getString("mode");
         SessionQuietHoursService.Mode mode = SessionQuietHoursService.Mode.of(raw);
         if (raw != null && !raw.isBlank() && !mode.key().equalsIgnoreCase(raw.trim())) {
-            return ok(fail(result, "认不出的静音档位「" + raw + "」"));
+            return ok(fail(result, "无法识别的静音档位「" + raw + "」"));
         }
 
         String start = body.getString("start");
         String end = body.getString("end");
         if (mode == SessionQuietHoursService.Mode.CUSTOM
                 && (start == null || start.isBlank() || end == null || end.isBlank())) {
-            return ok(fail(result, "本会话自己的时段要填开始和结束"));
+            return ok(fail(result, "本会话自定义时段需填写开始和结束时间"));
         }
         if (mode == SessionQuietHoursService.Mode.CUSTOM && !(isQuietTime(start) && isQuietTime(end))) {
             return ok(fail(result, "时段格式应为 HH:mm（24 小时制，两位时两位分，如 23:00、07:30），收到「"
                     + start.trim() + "」到「" + end.trim() + "」"));
         }
         if (mode == SessionQuietHoursService.Mode.CUSTOM && start.trim().equals(end.trim())) {
-            return ok(fail(result, "起止相同（" + start.trim() + "）等于没设；要全天照发选「不静音」，要跟设置页走选「跟全局」"));
+            return ok(fail(result, "开始与结束时间相同（" + start.trim() + "），等于未设置；如需全天照常发送请选择「本会话不静音」，如需沿用设置页请选择「使用全局设置」"));
         }
 
         quietHours.set(platform, type, num, mode, start, end);
@@ -387,9 +387,9 @@ public class RuntimeStateController {
         store.save();
 
         String phrase = switch (mode) {
-            case FOLLOW -> "已改为跟全局";
+            case FOLLOW -> "已改为「使用全局设置」";
             case CUSTOM -> "已设为 " + start.trim() + "–" + end.trim();
-            case OFF -> "已设为不静音";
+            case OFF -> "已改为「本会话不静音」";
         };
         log.info("配置界面将会话 {} 的静音时段{}", describe(type, num), phrase);
 
