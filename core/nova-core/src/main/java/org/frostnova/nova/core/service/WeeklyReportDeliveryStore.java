@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.util.DurableFiles;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -147,7 +148,8 @@ public final class WeeklyReportDeliveryStore {
             writeWarning = "";
             return true;
         } catch (IOException | RuntimeException e) {
-            writeWarning = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            writeWarning = e instanceof AccessDeniedException ? "没有写入权限（" + path + "）"
+                    : e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             log.error("周报记录无法保存到 {}，自动发送已暂停", path, e);
             return false;
         }

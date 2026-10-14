@@ -43,6 +43,7 @@ public class WeeklyReportDeliveryService {
     private final Clock clock;
     private ThreadPoolTaskScheduler scheduler;
     private boolean started;
+    private boolean startupPending;
 
     @Autowired
     public WeeklyReportDeliveryService(AbstractDataSource source, WeeklyReportContentService content,
@@ -110,13 +111,15 @@ public class WeeklyReportDeliveryService {
     /** startup 只补停机前已经存在的订阅；运行中新增的订阅等下一期。 */
     public synchronized void check(boolean startup) {
         started = true;
+        // 保存恢复前保留启动补发规则，不把运行中新订阅的目标算成停机错过。
+        startupPending |= startup;
         if (!store.ensureSaved()) return;
         Instant now = clock.instant();
         long due = latestDue(now).toEpochMilli();
         var targets = active();
         if (store.period() < due) {
             List<String> enrolled = new ArrayList<>();
-            if (startup) {
+            if (startupPending) {
                 if (store.lastSeen() > 0 && store.lastSeen() < due) enrolled.addAll(store.subscriptions());
                 else if (now.toEpochMilli() == due) enrolled.addAll(targets.keySet());
             } else if (now.toEpochMilli() == due || (store.lastSeen() > 0 && store.lastSeen() < due)) {
@@ -125,6 +128,7 @@ public class WeeklyReportDeliveryService {
             // 名单和本期标记一起落盘，发送途中停止也不会漏掉名单后半段。
             if (!store.enroll(due, enrolled, now)) return;
         }
+        startupPending = false;
         for (var record : store.records()) {
             if (!store.ensureSaved()) return;
             if (record.status() != Status.READY && record.status() != Status.QUIET) continue;

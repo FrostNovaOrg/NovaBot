@@ -323,6 +323,68 @@ class WeeklyReportDeliveryServiceTest {
         }
         service.check(false); reopen(); assertEquals(Status.UNCERTAIN, status());
     }
+    @ParameterizedTest(name = "启动时无法写入：{0}")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("停机补发因无法保存延后，恢复后不向运行中新订阅的目标补发")
+    void startupWriteFailureKeepsSubscriptions(boolean denied) throws Exception {
+        var previousTarget = user(1L, 1002L, true).getTargets().get(0);
+        previousTarget.setUser(users.get(0)); users.get(0).getTargets().add(previousTarget);
+        clock.at("2026-10-11T09:00:00");
+        store.enroll(WeeklyReportDeliveryService.latestDue(clock.instant()).toEpochMilli(), List.of(key()), clock.instant());
+        store.update(store.records().get(0), Status.SENDING, "", clock.instant());
+        store.observe(List.of(key(), WeeklyReportDeliveryService.key("sample", 1L, previousTarget)), clock.instant());
+        Path file = dir.resolve("weekly-report-deliveries.json");
+        var writable = new java.util.concurrent.atomic.AtomicBoolean(!denied);
+        clock.at("2026-10-12T14:00:00");
+        var interrupted = JSONObject.parseObject(Files.readString(file));
+        var sending = interrupted.getJSONArray("records").getJSONObject(0);
+        sending.put("dueAt", WeeklyReportDeliveryService.latestDue(clock.instant()).toEpochMilli());
+        sending.put("updatedAt", sending.getLongValue("dueAt"));
+        Files.writeString(file, interrupted.toJSONString());
+        String beforeStartup = Files.readString(file);
+        try (var files = mockStatic(org.frostnova.nova.core.util.DurableFiles.class, CALLS_REAL_METHODS)) {
+            files.when(() -> org.frostnova.nova.core.util.DurableFiles.replace(any(Path.class), anyString(), any()))
+                    .thenAnswer(call -> {
+                        if (!writable.get()) throw new AccessDeniedException(file.toString());
+                        return call.callRealMethod();
+                    });
+            reopen(); service.check(true);
+            assertEquals(Status.UNCERTAIN, status());
+            if (denied) {
+                verify(sender, never()).sendWeeklyReport(any());
+                assertEquals(beforeStartup, Files.readString(file));
+            }
+            clock.at("2026-10-14T10:00:00");
+            var newTarget = user(1L, 2001L, true).getTargets().get(0);
+            newTarget.setUser(users.get(0)); users.get(0).getTargets().add(newTarget);
+            users.add(user(2L, 2002L, true)); service.subscriptionsChanged();
+            writable.set(true);
+            users.add(user(3L, 3002L, true)); service.subscriptionsChanged(); service.check(false);
+        }
+        assertEquals(List.of(1002L), sent.stream().map(Message::getNum).toList(), "只补停机前已经订阅的目标");
+        assertEquals(List.of(Status.UNCERTAIN, Status.SENT), store.records().stream().map(r -> r.status()).toList());
+        reopen(); service.check(true);
+        assertEquals(1, sent.size(), "恢复后再重启也不重复补发");
+        sent.clear(); clock.at("2026-10-19T10:00:00"); service.check(false);
+        assertEquals(List.of(1001L, 1002L, 2001L, 2002L, 3002L), sent.stream().map(Message::getNum).toList(),
+                "运行中新增的订阅从下一期开始发送");
+    }
+    @Test @DisplayName("周报记录没有写入权限时，状态行说明原因并显示路径")
+    void accessDeniedShowsReason() {
+        Path file = dir.resolve("weekly-report-deliveries.json");
+        try (var files = mockStatic(org.frostnova.nova.core.util.DurableFiles.class)) {
+            files.when(() -> org.frostnova.nova.core.util.DurableFiles.replace(any(Path.class), anyString(), any()))
+                    .thenThrow(new AccessDeniedException(file.toString()));
+            assertDoesNotThrow(() -> service.check(false));
+            String warning = service.status(key());
+            assertTrue(warning.contains("没有写入权限"), warning);
+            assertTrue(warning.contains(file.toString()), warning);
+            verify(sender, never()).sendWeeklyReport(any());
+        }
+        service.check(false);
+        assertEquals(Status.SENT, status());
+        assertFalse(service.status(key()).contains("没有写入权限"));
+    }
     @Test @DisplayName("周报保存失败不打断同次配置重载的后续主播与监听器")
     void reloadContinuesAfterWriteFailure() throws Exception {
         var registry = mock(DataSourceServiceRegistry.class);
