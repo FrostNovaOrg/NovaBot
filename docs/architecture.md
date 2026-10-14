@@ -441,6 +441,13 @@ Class<?> type = ClassUtils.getUserClass(bean);
 Maven 插件，而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此必须先单独安装它。
 `build.sh` 已处理这一点——直接 `mvn package` 会失败。
 
+**发布与安装版本号**：`tools/release/release.sh` 与 `install.sh` 只接受三段纯数字
+（如 `5.9.3`）或三段数字加 `-beta.N`（如 `6.0.0-beta.1`，`N` 为正整数，不带前导零）。
+beta 发布到 GitHub 时标为预发布，不标最新版，控制台的「检查更新」不会提示正式版用户升级到 beta。
+安装时按语义版本挑上一版：`5.9.2 < 6.0.0-beta.1 < 6.0.0-beta.2 < 6.0.0`。
+根 pom 为 beta 时，试装的 `auto` 仍取前两段，在 `6.0.90` 与 `6.0.91` 间轮换。
+发行说明取 `CHANGELOG.md` 中版本号完全相同的 `## [版本号]` 一节。
+
 **恒清理**：两步都带 `clean`（`--clean` 因此成了空动作，保留只为兼容旧命令行）。
 Maven 只往 `target/` 里写，从不为「源码里已经没有的东西」做删除：源文件删掉或改名之后，
 上一次构建留下的那一份照旧躺在 `target/classes` 里、照旧进 jar，而**包上看不出来**。
