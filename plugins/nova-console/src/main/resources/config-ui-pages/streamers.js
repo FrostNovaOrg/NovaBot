@@ -600,8 +600,10 @@ function renderInsights(data, message, living) {
         + fmtMetric(data.composition.returning) + ' 人' : '本期构成：暂无数据';
     composition.title = data.composition
       ? '首次记录是指 NovaBot 第一次记到这位观众，不一定是第一次来看直播'
-      : data.firstRecordedAt != null ? '名单从 ' + insightsTime(data.firstRecordedAt, false)
-        + '才开始记，这之前来过的观众分不出来' : '尚未记录到带名单的场次';
+      : data.firstRecordedAt == null ? '尚未记录到带名单的场次'
+      : data.audience == null ? '这段时间没有带名单的场次，分不出首次记录与回访'
+      : '名单从 ' + insightsTime(data.firstRecordedAt, false)
+        + '才开始记，这之前来过的观众分不出来';
     host.appendChild(composition);
     const coverage = data.coverage || {};
     const parts = [

@@ -59,6 +59,7 @@ globalThis.clearInterval = () => cleared++;
 const requests = [];
 const pending = [];
 const response = json => ({status: 200, ok: true, json: async () => json});
+let compositionScenario = null;
 globalThis.fetch = async url => {
   requests.push(String(url));
   if (String(url).includes('/insights?')) {
@@ -66,7 +67,8 @@ globalThis.fetch = async url => {
     return response({success: true, insights: {from: 1792015200000, sessions: 1, durationSeconds: 600,
       metricsKnown: true, revenue: 0, messages: 0, audience: null, interactionAudience: null,
       composition: null, coverage: {missing: 1}, daily: [
-        {date: '2026-10-15', sessions: 0, revenue: 0}, {date: '2026-10-16', sessions: 1, revenue: 0}]}});
+        {date: '2026-10-15', sessions: 0, revenue: 0}, {date: '2026-10-16', sessions: 1, revenue: 0}],
+      ...compositionScenario}});
   }
   if (String(url).endsWith('/status')) return response({});
   if (String(url).includes('/live?')) return response({success: true, living: false, metrics: {}});
@@ -112,6 +114,26 @@ await check('慢请求晚到时不能覆盖后来选中的范围', async () => {
   const card = nodes.get('sd-insights');
   assert.ok(flatten(card).some(n => n.href?.endsWith('?days=7') && n.attrs['aria-current'] === 'page'));
   assert.match(flatten(card).map(n => n.textContent + n.innerHTML).join(''), /流水/, '晚到的数据不得覆盖已选范围的指标');
+});
+await check('本期构成暂无数据时，悬停提示说明实际缺少名单的原因', async () => {
+  const scenarios = [
+    {name: '本期无名单、范围前有名单', audience: null, firstRecordedAt: Date.parse('2026-09-01T06:00:00+08:00'),
+      title: '这段时间没有带名单的场次，分不出首次记录与回访'},
+    {name: '本期有名单、范围前无名单', audience: 1, firstRecordedAt: Date.parse('2026-10-16T06:00:00+08:00'),
+      title: '名单从 10 月 16 日才开始记，这之前来过的观众分不出来'},
+    {name: '从未记录名单', audience: null, firstRecordedAt: null,
+      title: '尚未记录到带名单的场次'},
+  ];
+  const titles = [];
+  for (const scenario of scenarios) {
+    compositionScenario = {audience: scenario.audience, firstRecordedAt: scenario.firstRecordedAt};
+    await page.refresh();
+    const composition = flatten(nodes.get('sd-insights')).find(n => n.textContent === '本期构成：暂无数据');
+    assert.ok(composition, scenario.name + '应显示暂无数据');
+    titles.push(composition.title);
+    console.log(scenario.name + '：' + composition.title);
+  }
+  assert.deepEqual(titles, scenarios.map(scenario => scenario.title), '本期无名单时不得归因为历史记录起点');
 });
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);
