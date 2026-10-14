@@ -58,6 +58,6 @@ public class LogProperties {
     // 日志一起报出来。失败一律放行——抑制的目的就是让异常显出来。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络日志 · 去重窗口")
-    @ConfigSummary("0 表示关闭去重；失败请求始终保留。")
+    @ConfigSummary("0 表示不去重；失败的请求始终记录。")
     private int networkLogSuppressWindow = 60;
 }

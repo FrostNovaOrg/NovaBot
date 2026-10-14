@@ -605,7 +605,7 @@ await ask('⑤ 同号的群与好友在会话列表里是两行：各自的命�
   }, '会话行');
 });
 
-await ask('⑥ 保存本群设置与「恢复这几条」：请求体都带着会话类型码', async () => {
+await ask('⑥ 保存本群设置与「恢复这些命令」：请求体都带着会话类型码', async () => {
   // 用户故障：控制台只发平台与号，后端分不出改的是群还是同号的好友
   if (!drafts || !push) throw new Error('session-draft.js 或 push.js 没载入，无从量起');
   drafts.clearSessionDrafts();
@@ -687,8 +687,8 @@ await ask('⑩ 通道没找到：退到主播一级，状态栏说一声', async
   const said = statusText();
   same({
     '退到的地址': String(globalThis.location.hash),
-    '状态栏说了没找到': said.includes('没找到'),
-    '状态栏说了回到这位主播': said.includes('回到这位主播'),
+    '状态栏说了没找到': said.includes('未找到'),
+    '状态栏说了回到这位主播': said.includes('返回该主播'),
   }, {
     '退到的地址': '#/push/1',
     '状态栏说了没找到': true,

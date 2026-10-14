@@ -49,7 +49,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站定时任务 · 调度线程数")
-        @ConfigSummary("直播间心跳、重连、动态轮询与备用直播推送共用；小于 2 按 2 算。")
+        @ConfigSummary("直播间心跳、重连、动态轮询与备用直播推送共用；小于 2 时按 2 处理。")
         private int corePoolSize = 4;
 
     }
@@ -83,8 +83,8 @@ public class NovaBilibiliProperties {
         // 相同」。与上一项（整份原始响应，含关注列表里所有人的动态内容与昵称）刻意
         // 不同。默认关闭；取证结束即关闭并清理日志，探针行里的 id/rid 按关联信息处置。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("动态去重探针")
-        @ConfigSummary("开启后每轮把每条动态的编号都写进日志，用完关掉。")
+        @ConfigLabel("动态去重排查日志")
+        @ConfigSummary("开启后每轮轮询都会把每条动态的编号写入日志，排查结束后请关闭。")
         private boolean dynamicDedupProbe = false;
     }
 
@@ -118,7 +118,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 重试间隔")
-        @ConfigSummary("仅控制当次请求重试；不影响风控冷却。")
+        @ConfigSummary("仅作用于单次请求内的重试，不影响风控冷却。")
         private int apiRetryInterval = 3000;
     }
 
@@ -141,7 +141,7 @@ public class NovaBilibiliProperties {
                 consequence = "个人主播的直播间只能拿到约一成弹幕，发送者会被抹成匿名，报告会明显缩水；"
                         + "动态推送与自动关注不可用。")
         @ConfigLabel("匿名模式")
-        @ConfigSummary("动态推送与自动关注不可用；弹幕大多收不到，收到的也看不出是谁发的。")
+        @ConfigSummary("动态推送与自动关注不可用；大部分弹幕无法接收，已接收的弹幕也无法识别发送者。")
         private boolean anonymous = false;
 
         /**
@@ -171,7 +171,7 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 密钥文件")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
-        @ConfigSummary("密钥丢了，已加密的凭据就得重新扫码登录。")
+        @ConfigSummary("密钥文件丢失后，已加密的凭据无法解密，需重新扫码登录。")
         @ConfigFormat(ConfigFormat.Format.PATH)
         private String keyPath = "cookies.key";
 
@@ -182,7 +182,7 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 复检间隔")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
-        @ConfigSummary("0 或负数关闭复检，也会停止自动续期。")
+        @ConfigSummary("0 或负数表示关闭复检，自动续期也随之停止。")
         private int verifyInterval = 600;
 
         /**
@@ -206,7 +206,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("登录凭据 · 自动续期")
-        @ConfigSummary("关闭后凭据到期需重新扫码；复检关闭时也不会续期。")
+        @ConfigSummary("关闭后凭据到期需重新扫码登录；关闭复检时同样不会续期。")
         private boolean autoRefreshCookie = true;
 
         /**
@@ -217,7 +217,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("扫码登录方式")
-        @ConfigSummary("tv 支持自动续期；web 到期需重新扫码。")
+        @ConfigSummary("tv 支持自动续期；web 方式在凭据到期后需重新扫码。")
         private String qrCodeLoginMode = "tv";
     }
 
@@ -232,8 +232,8 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("连直播间长连接")
-        @ConfigSummary("关闭后需启用备用推送，才能检测开播。")
+        @ConfigLabel("直播间长连接")
+        @ConfigSummary("关闭后须启用备用直播推送才能检测开播。")
         private boolean enableConnectLiveRoom = true;
 
         /**
@@ -243,8 +243,8 @@ public class NovaBilibiliProperties {
         // 纯监听房间只把事件送进事件输出或累计数据，一条消息都不发。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("只连有推送的直播间")
-        @ConfigSummary("开启后不连没配直播类推送的房间，它们的弹幕礼物不采集。")
+        @ConfigLabel("仅连接已配置推送的直播间")
+        @ConfigSummary("开启后不连接未配置直播类推送的直播间，这些直播间的弹幕与礼物不再采集。")
         private boolean onlyConnectNecessaryRooms = false;
 
         /**
@@ -294,7 +294,7 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("断线摘要汇总窗口")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
-        @ConfigSummary("0 表示关闭摘要；逐次断线仅记入调试日志。")
+        @ConfigSummary("0 表示关闭摘要；每次断线的记录只写入调试日志。")
         private int disconnectDigestInterval = 600;
 
         /**
@@ -319,7 +319,7 @@ public class NovaBilibiliProperties {
          * 是否在连续多个窗口只见到进房、见不到弹幕礼物时提醒。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("长时间无弹幕礼物")
+        @ConfigLabel("长时间无弹幕礼物提醒")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("")
         private boolean autoDetectLiveRoomRisk = true;
@@ -328,7 +328,7 @@ public class NovaBilibiliProperties {
          * 检查有没有收到弹幕礼物的周期，单位：秒。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("长时间无弹幕礼物 · 周期")
+        @ConfigLabel("长时间无弹幕礼物 · 检查周期")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary(value = "", details = false)
         private int autoDetectLiveRoomRiskInterval = 60;
@@ -343,7 +343,7 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("长时间无弹幕礼物 · 判定窗口数")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
-        @ConfigSummary("连续这么多个周期没有弹幕礼物才算异常；调小容易误报。")
+        @ConfigSummary("连续达到该周期数没有弹幕和礼物才判定为异常；调小容易误报。")
         private int autoDetectLiveRoomRiskWindows = 3;
 
         /**
@@ -392,8 +392,8 @@ public class NovaBilibiliProperties {
         // 已经结束的场次重新画报告也会按这份名单来。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel("词云不计这些用户")
-        @ConfigSummary("每行一个用户编号（纯数字）；只排除词云统计，缺弹幕原文的场次排除不了。")
+        @ConfigLabel("词云排除的用户")
+        @ConfigSummary("每行一个用户编号（纯数字）；仅从词云统计中排除，缺少弹幕原文的场次无法排除。")
         private List<String> wordCloudExcludeUids = new ArrayList<>();
 
         /**
@@ -402,8 +402,8 @@ public class NovaBilibiliProperties {
         // 画图时按当下这份表过滤，已经结束的场次重新画报告也跟着变。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel("词云不显示这些词")
-        @ConfigSummary("每行一个；包含该词的词均不显示，弹幕原文仍保存。")
+        @ConfigLabel("词云屏蔽词")
+        @ConfigSummary("每行一个；包含这些词的词条均不显示，弹幕原文照常保存。")
         private List<String> wordCloudBlockWords = new ArrayList<>();
     }
 
@@ -459,7 +459,7 @@ public class NovaBilibiliProperties {
          * 是否自动保存画出来的动态图片。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("动态图片自动存盘")
+        @ConfigLabel("动态图片自动保存")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary(value = "", details = false)
         private boolean autoSaveImage = false;
@@ -530,7 +530,7 @@ public class NovaBilibiliProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel(HEIGHT_LIMIT_LABEL)
-        @ConfigSummary("装不下的名次不画，记作「其余 N 名未列出」。")
+        @ConfigSummary("超出高度的名次不绘制，计入「其余 N 名未列出」。")
         private int heightLimit = 10000;
     }
 }

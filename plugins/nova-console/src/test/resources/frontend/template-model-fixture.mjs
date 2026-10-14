@@ -387,7 +387,7 @@ check('无订阅能力拒绝定位并提示', () => {
   const cards = parseTemplate('{uname}', spec);
   const placed = model.placeAtBlock(cards, 'subscribers', {card: 0, index: 0}, spec);
   same(placed.cards, cards);
-  same(placed.refused, '这类通知不支持 @订阅的人。');
+  same(placed.refused, '此类通知不支持 @订阅者。');
   same(previewBubbles(cards, 'subscribers', {...group, supportsSubscribers: false})[0].at, '');
 });
 check('预览只显示实际降级结果', () => {

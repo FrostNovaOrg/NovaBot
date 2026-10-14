@@ -372,7 +372,7 @@ await ask('⑥ 面板里第一个控件禁用或藏起来时，焦点落到第�
 });
 
 // 故障：点了「就是它，加进来」面板还开着，挡着下面刚加进来的主播；再点一次，同一位主播进了名单两份
-await ask('⑦ 点「就是它，加进来」后面板自己关，焦点回到「＋ 添加主播」，名单里多了这一位', async () => {
+await ask('⑦ 点「确认添加」后面板自己关，焦点回到「＋ 添加主播」，名单里多了这一位', async () => {
   const uid = 7130042;
   const before = push ? push.pushEntries().filter(item => Number(item.uid) === uid).length : -1;
   openAddStreamer();
@@ -391,8 +391,8 @@ await ask('⑦ 点「就是它，加进来」后面板自己关，焦点回到�
   } finally {
     globalThis.fetch = realFetch;
   }
-  const add = findAll(idNode('push-drawer-body'), 'button').find(node => node.textContent === '就是它，加进来');
-  if (!add) throw new Error('「找一下」之后没画出「就是它，加进来」');
+  const add = findAll(idNode('push-drawer-body'), 'button').find(node => node.textContent === '确认添加');
+  if (!add) throw new Error('「查询」之后没画出「确认添加」');
   add.click();
   same({
     '面板藏起': drawer.hidden,
@@ -402,7 +402,7 @@ await ask('⑦ 点「就是它，加进来」后面板自己关，焦点回到�
     '面板藏起': true,
     '焦点停在': '#push-add-streamer',
     '名单里这一位': 1,
-  }, '点「就是它，加进来」之后');
+  }, '点「确认添加」之后');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
