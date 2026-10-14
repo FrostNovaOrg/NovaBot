@@ -251,14 +251,14 @@ await ask('⑤ 刷新失败保留本场数与服务端原话，数据更新时�
   await overview();
   const original = textOf(liveCard());
   for (const expected of ['正在直播', '123', '12.50 元', 'unknown_metric', '42 人',
-    '数据更新到 12:34', '检查于 12:35:07', '已播']) {
+    '数据更新至 12:34', '检查于 12:35:07', '已直播']) {
     if (!original.includes(expected)) throw new Error('缺少 ' + expected);
   }
   liveFailure = '暂时读不到本场数据';
   await clickRefresh();
   const failed = textOf(liveCard());
   for (const expected of ['123', '12.50 元', '刷新失败：' + liveFailure,
-    '显示的是 12:35:07 的数据', '数据更新到 12:34', '检查于 12:35:07']) {
+    '当前显示的是 12:35:07 的数据', '数据更新至 12:34', '检查于 12:35:07']) {
     if (!failed.includes(expected)) throw new Error('失败后缺少 ' + expected);
   }
   liveFailure = '网络错误';
@@ -345,7 +345,7 @@ await ask('⑩ 详情已显示新一场时清掉前一场数据，不把旧场�
   liveFailure = '暂时不可用';
   await overview();
   if (textOf(liveCard()).includes('321')) throw new Error('上一场的指标还留在新一场卡片');
-  if (!textOf(liveCard()).includes('还没有取到本场数据')) throw new Error('没说明新一场尚未取到数据');
+  if (!textOf(liveCard()).includes('尚未获取到本场数据')) throw new Error('没说明新一场尚未取到数据');
   liveFailure = '';
   page.leave();
 });
@@ -367,7 +367,7 @@ await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，�
       same(liveCard().hidden, false, '服务端错误后卡片仍可见');
       const text = textOf(liveCard());
       for (const expected of ['321', '21 人', '刷新失败：' + reason,
-        '显示的是 12:35:07 的数据', '数据更新到 12:34', '检查于 12:35:07']) {
+        '当前显示的是 12:35:07 的数据', '数据更新至 12:34', '检查于 12:35:07']) {
         if (!text.includes(expected)) throw new Error('服务端错误后缺少 ' + expected);
       }
     }

@@ -323,7 +323,7 @@ class QqAlertChannelTest {
     @Nested
     @DisplayName("没配机器人或机器人掉线")
     class RobotMissingOrOffline {
-        private static final String SAID_DELIVERED = "已经往 QQ 发了一条测试告警，去看看收到没有。";
+        private static final String SAID_DELIVERED = "已向 QQ 发送一条测试告警，请确认是否收到。";
 
         private static final String SAID_NO_PLATFORM =
                 "QQ 这一路发不出去：没有找到推送平台「qq-onebot」。请先到「连接」页添加这个机器人，再到「设置 → 告警」里把「发给谁」重新选一次。";
@@ -750,7 +750,7 @@ class QqAlertChannelTest {
             assertEquals(0, service.pendingCount(), "送达不明不入重投");
 
             AlertService.TestResult result = service.test("qq");
-            assertTrue(result.message().contains("送没送到说不准") || result.message().contains("送达不明"),
+            assertTrue(result.message().contains("无法确定是否送达") || result.message().contains("送达不明"),
                     "测试回话要说清送达不明: " + result.message());
         }
 

@@ -20,7 +20,7 @@ import {$, api, CONSOLE, el, esc, markDirty, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
-  handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
+  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
   previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
@@ -1775,9 +1775,7 @@ function addChannel(user) {
       // 新通道默认四种通知全开、全用默认模板：这与初始设置第 4 步给的是同一份起点
       user.targets.push({
         platform: hit.platform, type: hit.type, num: hit.num, enabled: true,
-        messages: (store.handlerList || [])
-          .filter(item => (!item.platform || item.platform === user.platform) && item.defaultEnabled !== false)
-          .map(item => ({handler: item.className})),
+        messages: defaultMessages(store.handlerList, user.platform),
       });
       markDirty();
       say('已添加通道，保存后生效', 'ok');

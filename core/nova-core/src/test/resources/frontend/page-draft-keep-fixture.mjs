@@ -457,7 +457,7 @@ try {
   cell9 = 'error:' + e.message;
 }
 ask('⑨ 插件页放弃时它自己重画砸了，「页出错」那句话留在状态栏上', () => {
-  const want = JSON.stringify({'状态栏上的话': '推送癸 页出错：重画不出来'});
+  const want = JSON.stringify({'状态栏上的话': '推送癸 页面发生错误：重画不出来'});
   if (cell9 !== want) throw new Error('得到 ' + cell9 + '，应为 ' + want);
 });
 

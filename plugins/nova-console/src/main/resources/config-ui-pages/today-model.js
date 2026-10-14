@@ -79,7 +79,7 @@ export function todayAtAllMarkup(tile, expanded) {
   const rows = details.map(item =>
     '<div class="stat-row"><span>' + esc(item.who || ('群 ' + item.num)) + '</span><span>'
     + esc(item.text) + '</span></div>').join('')
-    + (cell.more ? '<div class="stat-more">还有 ' + esc(cell.more) + ' 个群</div>' : '');
+    + (cell.more ? '<div class="stat-more">另有 ' + esc(cell.more) + ' 个群</div>' : '');
   const inner = '<div class="stat-v">' + esc(cell.value) + '</div>'
     + '<div class="stat-l">' + esc(cell.label) + '</div>'
     + (rows ? '<div class="stat-drop">' + rows + '</div>' : '');

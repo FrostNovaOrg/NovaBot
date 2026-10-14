@@ -341,12 +341,12 @@ export function gapCells(item) {
   const maintenance = Number(one.maintenanceGapSeconds) || 0;
   const outage = Number(one.roomOutageSeconds) || 0;
   const parts = [];
-  if (maintenance) parts.push('其中 ' + fmtGap(maintenance) + '因程序停机未采集');
+  if (maintenance) parts.push('其中 ' + fmtGap(maintenance) + '因程序停机未能采集');
   // 这个数只含对端断开和解析失败。本端为核实而主动重连的秒数不在这里，所以不说「因这个直播间断线」。
-  if (outage) parts.push('其中 ' + fmtGap(outage) + '因这个直播间断线未采集');
+  if (outage) parts.push('其中 ' + fmtGap(outage) + '因该直播间断线未能采集');
   return {
     maintenance, outage, any: maintenance > 0 || outage > 0,
-    title: parts.length ? parts.join('；') + '。本行各项计数只是下界' : '',
+    title: parts.length ? parts.join('；') + '。本行各项计数仅为下界' : '',
   };
 }
 
@@ -359,7 +359,7 @@ export function gapCells(item) {
  * @return {string} 要说的那句话，没话说时为空串
  */
 export function totalDataBanner(status) {
-  return totalDataOff(status) ? '这台机器没开累计数据：群里只能查本场。' : '';
+  return totalDataOff(status) ? '本机未启用累计数据：群内只能查询本场数据。' : '';
 }
 
 /**
@@ -446,11 +446,11 @@ export function pageBar(page) {
 export function reportView(phase, message) {
   if (phase === 'ok') return {image: true, text: ''};
   if (phase === 'loading') {
-    return {image: false, text: '正在取这一场的报告图。每次都按当场数据现画，请稍候。'};
+    return {image: false, text: '正在获取该场报告图。报告图按该场数据实时绘制，请稍候。'};
   }
   return {
     image: false,
-    text: message || '这一场没有报告图，也没有留下明细数据，重新绘制不出来。',
+    text: message || '该场没有报告图，也没有保留明细数据，无法重新绘制。',
   };
 }
 
@@ -539,13 +539,13 @@ export function fmtTime(ms) {
 /**
  * 本场标题：取最后一次改成的那一个，并说明改过几次
  * @param item 场次
- * @return {{title: string, changed: string}} 标题与「（改过 N 次）」
+ * @return {{title: string, changed: string}} 标题与「（修改过 N 次）」
  */
 export function sessionTitle(item) {
   const titles = (item || {}).titles || [];
   const last = titles.length ? titles[titles.length - 1] : null;
   const count = Number((item || {}).titleChangeCount) || 0;
-  return {title: (last && last.title) || '', changed: count ? '（改过 ' + count + ' 次）' : ''};
+  return {title: (last && last.title) || '', changed: count ? '（修改过 ' + count + ' 次）' : ''};
 }
 
 /**
@@ -562,7 +562,7 @@ export function rowSubtitle(item, days) {
   const window = Number(days) || Number(summary.days) || 0;
   const head = '最近 ' + window + ' 天 ' + (Number(summary.sessions) || 0) + ' 场 · '
     + fmtDuration(summary.durationSeconds);
-  return summary.lastStart ? head + ' · 最近一场 ' + fmtTime(summary.lastStart) : head + ' · 还没有归档的场次';
+  return summary.lastStart ? head + ' · 最近一场 ' + fmtTime(summary.lastStart) : head + ' · 暂无已归档的场次';
 }
 
 /** 概况按日柱的显示状态；没有开播记录与已知零值分开。 */
@@ -573,7 +573,7 @@ export function insightsPoint(day, key) {
   return {
     value: value == null ? 0 : Number(value),
     draw: day.sessions > 0 && value != null,
-    title: day.date + '：' + (!day.sessions ? '这天没有记录到开播'
+    title: day.date + '：' + (!day.sessions ? '当天没有开播记录'
       : value == null ? '暂无数据 · ' + day.sessions + ' 场'
         : format(value) + ' · ' + day.sessions + ' 场'),
   };

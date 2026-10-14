@@ -176,8 +176,8 @@ export function hasFilter(state) {
  * @return 那句话
  */
 export function emptyText(state, dayCount) {
-  if (!dayCount) return '这一天没有记录。';
-  return hasFilter(state) ? '没有符合条件的，清掉筛选试试。' : '这一天没有记录。';
+  if (!dayCount) return '当天没有记录。';
+  return hasFilter(state) ? '没有符合筛选条件的记录，可清除筛选后重试。' : '当天没有记录。';
 }
 
 /**
@@ -209,7 +209,7 @@ export function blockingFilters(state) {
  */
 export function liveChannelHint(state) {
   return state.cat === 'LIVE' && state.channel
-    ? '开播、下播记录不属于任何群，筛着群时这一栏总是空的。'
+    ? '开播、下播记录不属于任何群，按群筛选时此栏始终为空。'
     : '';
 }
 
@@ -230,7 +230,7 @@ export function emptyStateView(state, dayCount, alertEnabled) {
   return {
     lead: emptyText(state, dayCount),
     chips: blocking,
-    hint: alertOff ? '告警已关，这里不会有记录。' : (dayCount ? liveChannelHint(state) : ''),
+    hint: alertOff ? '告警已关闭，此处不会产生记录。' : (dayCount ? liveChannelHint(state) : ''),
   };
 }
 
@@ -403,12 +403,12 @@ function levelsParam(levelsOn) {
  * @return 那句话
  */
 export function engFootText(state, shown, all, more, scannedTo) {
-  const head = '显示 ' + shown + ' 段，共读到 ' + all + ' 段';
-  if (state.at) return head + '（这一刻前后那一段）';
+  const head = '显示 ' + shown + ' 段，共读取 ' + all + ' 段';
+  if (state.at) return head + '（所选时刻前后的日志）';
   // 扫到哪儿那句优先于「更早的没读进来」：它是「为什么没找全」的那句回答
-  if (scannedTo) return head + '（只扫到 ' + scannedTo + '，更早的没有扫）';
-  if (more) return head + '（更早的没有读进来，只有 NovaBot 自己这一份）';
-  return head + '（这一份的全部）';
+  if (scannedTo) return head + '（仅扫描到 ' + scannedTo + '，更早的日志未扫描）';
+  if (more) return head + '（更早的日志未读取；此处仅包含 NovaBot 自身的日志）';
+  return head + '（已读取当前文件的全部内容）';
 }
 
 /**
@@ -491,8 +491,8 @@ export function engCopyText(entries) {
  * @return 那句话
  */
 export function engEmptyText(state, today, total) {
-  if (total) return '没有符合条件的行。';
-  return state.date && state.date !== today ? '这一天没有记录。' : '这一份日志此刻还没有内容。';
+  if (total) return '没有符合筛选条件的日志行。';
+  return state.date && state.date !== today ? '当天没有记录。' : '当前日志文件暂无内容。';
 }
 
 /**
@@ -512,7 +512,7 @@ function levelsLeft(levelsOn) {
     else on.push(label);
   }
   if (!off) return '';
-  return on.length ? on.join('、') : '一档都没留';
+  return on.length ? on.join('、') : '未选择任何级别';
 }
 
 /**

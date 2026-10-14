@@ -140,4 +140,48 @@ class WeeklyReportApiTest {
         assertEquals(JSON.parseObject(json).getString("summary"), JSON.parseObject(targetJson).getString("summary"));
     }
 
+    WeeklyReportDeliveryService targetReports() {
+        return new WeeklyReportDeliveryService(source,
+                (WeeklyReportContentService) ReflectionTestUtils.getField(controller, "weeklyReports"),
+                new RevenueVisibilityService(new NovaStateStore(props)), mock(NovaMessageSender.class), mock(PushGate.class),
+                new WeeklyReportDeliveryStore(dir.resolve("weekly.json")),
+                Clock.fixed(Instant.parse("2026-10-12T02:00:00Z"), ZoneOffset.UTC));
+    }
+    @ParameterizedTest(name = "文字预览：{0}")
+    @ValueSource(strings = {"empty", "renderer-failed", "renderer-missing"})
+    @DisplayName("推送页无图预览展示摘要与文字，不展示原始JSON")
+    void targetTextPreview(String mode) throws Exception {
+        var user = new PushUser(); user.setUid(1L); user.setPlatform("bilibili"); user.setUname("主播示例");
+        when(source.getAllUsers()).thenReturn(List.of(user));
+        if (!mode.equals("empty")) archive(Instant.parse("2026-10-05T00:00:00Z"));
+        if (mode.equals("renderer-failed")) when(renderer.render(any(), any())).thenThrow(new IllegalStateException("sample render failure"));
+        if (mode.equals("renderer-missing")) when(renderer.platform()).thenReturn("sample");
+        mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
+        String url = "/config/api/weekly-report/bilibili/1/preview";
+        var page = mvc.perform(get(url).param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
+                .andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("text/html"))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        var raw = mvc.perform(get(url).param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001").param("format", "json"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var json = JSON.parseObject(raw);
+        assertTrue(page.contains(json.getString("summary")));
+        assertTrue(page.contains(json.getString("text")));
+        assertTrue(page.contains("<pre")); assertFalse(page.contains("\"data\"")); assertFalse(json.containsKey("data"));
+    }
+    @Test @DisplayName("推送页有图预览仍显示PNG")
+    void targetImagePreview() throws Exception {
+        archive(Instant.parse("2026-10-05T00:00:00Z"));
+        mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
+        mvc.perform(get("/config/api/weekly-report/bilibili/1/preview").param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
+                .andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+    }
+    @Test @DisplayName("推送页不存在的主播预览返回共用404提示")
+    void targetMissingPreview() throws Exception {
+        var expected = controller.streamer("bilibili", 1L, "week", 1, 0).getBody().getString("message");
+        mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
+        var raw = mvc.perform(get("/config/api/weekly-report/bilibili/1/preview").param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
+                .andExpect(status().isNotFound()).andReturn().getResponse().getContentAsString();
+        assertEquals(expected, JSON.parseObject(raw).getString("message"));
+    }
+
 }

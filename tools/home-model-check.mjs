@@ -262,6 +262,13 @@ if (stationHref('bot') !== '#/links?card=bot') {
 if (stationHref('nope') !== '') hrefBad.push('未知站名应回空串');
 if (PROBE_ANCHOR !== 'home-probes') hrefBad.push('探针区锚应为 home-probes');
 
+const quietModel = homeModel(status({quiet: {active: true, start: '23:00', end: '08:00'}}), login(), timeline());
+if (quietModel.banner.text !== '静音时段 23:00 – 08:00 · 期间的推送不发送，也不会补发；运营周报顺延到静音结束后发送')
+  bad.push('静音提示缺少运营周报顺延说明');
+if (quietModel.banner.action.text !== '修改静音时段') bad.push('静音操作名称不一致');
+if (quietModel.chain.bot.caption !== '静音 · 23:00 – 08:00 期间的推送不发送、不补发；运营周报顺延到静音结束后发送')
+  bad.push('静音链路缺少运营周报顺延说明');
+
 if (bad.length || hrefBad.length) {
   console.error('\n对不上 ' + (bad.length + hrefBad.length) + ' 处：');
   bad.forEach(b => console.error('  ' + b));
@@ -317,7 +324,7 @@ const webhookTodo = homeModel(status({alerts: {qq: false, webhook: false, mail: 
 same((webhookTodo || {}).soft, true, 'Webhook 待办是软的');
 same((webhookTodo || {}).href, '#/settings?card=alert',
   '点待办落到设置页告警段');
-same((webhookTodo || {}).action, '去配', '待办按钮');
+same((webhookTodo || {}).action, '前往配置', '待办按钮');
 
 // 首次安装只出初始设置，不叠 Webhook 待办
 const freshStatus = status({
@@ -432,8 +439,8 @@ function botUnconfiguredPatch() {
 askPhrase('①有词', () => {
   const m = homeOf({alerts: {qq: false, webhook: false, mail: false}}, ADAPTER_TERMS);
   const t = m.todos.find(x => x.key === 'webhook') || {};
-  mustEq(t.title, 'QQ 告警有死角，建议再配 Webhook', '待办标题');
-  mustEq(t.body, '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失', '待办正文');
+  mustEq(t.title, 'QQ 告警存在盲区，建议同时配置 Webhook', '待办标题');
+  mustEq(t.body, '机器人掉线时，QQ 告警无法送达；配置 Webhook 或邮件中的任意一种后，此提示即消失', '待办正文');
   mustEq(m.chain.bot.station, 'QQ', '站名');
   mustEq(m.chain.bot.sub, '群与好友', '站副');
   mustEq((homeOf(botDownPatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
@@ -442,34 +449,34 @@ askPhrase('①有词', () => {
     ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
     '重新登录 NapCat', '静音且掉线重登');
   mustEq((homeOf(botUnreachablePatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
-    '把 NapCat 连上', '连上');
+    '连接 NapCat', '连上');
   mustEq((homeOf(botUnconfiguredPatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
-    '连上机器人', '未配置');
+    '连接机器人', '未配置');
 });
 
 askPhrase('②无词', () => {
   const m = homeOf({alerts: {qq: false, webhook: false, mail: false}}, {});
   const t = m.todos.find(x => x.key === 'webhook') || {};
-  mustEq(t.title, '机器人告警有死角，建议再配 Webhook', '待办标题');
-  mustEq(t.body, '机器人掉线时告警那路叫不到你，Webhook 或邮件配好其中一路这条就消失', '待办正文');
+  mustEq(t.title, '机器人告警存在盲区，建议同时配置 Webhook', '待办标题');
+  mustEq(t.body, '机器人掉线时，经机器人发送的告警无法送达；配置 Webhook 或邮件中的任意一种后，此提示即消失', '待办正文');
   mustEq(m.chain.bot.station, '机器人', '站名');
   mustEq(m.chain.bot.sub, '会话', '站副');
   mustEq((homeOf(botDownPatch(), {}).todos.find(x => x.key === 'bot') || {}).title,
     '重新登录机器人', '重登');
   mustEq((homeOf(botUnreachablePatch(), {}).todos.find(x => x.key === 'bot') || {}).title,
-    '把机器人连上', '连上');
+    '连接机器人', '连上');
   mustEq((homeOf(botUnconfiguredPatch(), {}).todos.find(x => x.key === 'bot') || {}).title,
-    '连上机器人', '未配置');
+    '连接机器人', '未配置');
 });
 
 askPhrase('③只缺 bot.impl', () => {
   const m = homeOf({alerts: {qq: false, webhook: false, mail: false}}, NO_IMPL);
   const t = m.todos.find(x => x.key === 'webhook') || {};
-  mustEq(t.title, 'QQ 告警有死角，建议再配 Webhook', '待办标题仍用 platform');
+  mustEq(t.title, 'QQ 告警存在盲区，建议同时配置 Webhook', '待办标题仍用 platform');
   mustEq((homeOf(botDownPatch(), NO_IMPL).todos.find(x => x.key === 'bot') || {}).title,
     '重新登录机器人', '重登缺 impl');
   mustEq((homeOf(botUnreachablePatch(), NO_IMPL).todos.find(x => x.key === 'bot') || {}).title,
-    '把机器人连上', '连上缺 impl');
+    '连接机器人', '连上缺 impl');
   mustEq(m.chain.bot.station, 'QQ', '站名仍用 platform');
   mustEq(m.chain.bot.sub, '群与好友', '站副仍用 targets');
 });

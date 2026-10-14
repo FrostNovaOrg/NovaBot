@@ -19,7 +19,7 @@ await check('没有场次不画柱并提示，有场次数值零仍画柱', () =
   const empty = model.insightsPoint({date: '2026-10-15', sessions: 0, revenue: 0}, 'revenue');
   const zero = model.insightsPoint({date: '2026-10-16', sessions: 1, revenue: 0}, 'revenue');
   assert.equal(empty.draw, false);
-  assert.match(empty.title, /这天没有记录到开播/);
+  assert.match(empty.title, /当天没有开播记录/);
   assert.equal(zero.draw, true);
   assert.match(zero.title, /2026-10-16.*0\.00.*1 场/);
   const unknown = model.insightsPoint({date: '2026-10-17', sessions: 1, audience: null}, 'audience');
@@ -94,7 +94,7 @@ await check('切换与后退只重读概况新卡，保留本场节点和十五�
   assert.ok(links.some(n => n.href.endsWith('?days=7') && n.attrs['aria-current'] === 'page'));
   const chart = flatten(card).map(n => n.innerHTML).join('');
   assert.equal((chart.match(/<rect class="c-bar/g) || []).length, 1);
-  assert.match(chart, /这天没有记录到开播/);
+  assert.match(chart, /当天没有开播记录/);
   const text = flatten(card).map(n => n.textContent + n.innerHTML).join('');
   assert.match(text, /暂无数据/);
   assert.match(text, /没有名单 1 场/);
@@ -118,9 +118,9 @@ await check('慢请求晚到时不能覆盖后来选中的范围', async () => {
 await check('本期构成暂无数据时，悬停提示说明实际缺少名单的原因', async () => {
   const scenarios = [
     {name: '本期无名单、范围前有名单', audience: null, firstRecordedAt: Date.parse('2026-09-01T06:00:00+08:00'),
-      title: '这段时间没有带名单的场次，分不出首次记录与回访'},
+      title: '所选时段内没有带名单的场次，无法区分首次记录与回访'},
     {name: '本期有名单、范围前无名单', audience: 1, firstRecordedAt: Date.parse('2026-10-16T06:00:00+08:00'),
-      title: '名单从 10 月 16 日才开始记，这之前来过的观众分不出来'},
+      title: '名单从 10 月 16 日起才开始记录，此前来过的观众无法区分'},
     {name: '从未记录名单', audience: null, firstRecordedAt: null,
       title: '尚未记录到带名单的场次'},
   ];

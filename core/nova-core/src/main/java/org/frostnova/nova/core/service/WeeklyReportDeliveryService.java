@@ -109,6 +109,8 @@ public class WeeklyReportDeliveryService {
 
     /** startup 只补停机前已经存在的订阅；运行中新增的订阅等下一期。 */
     public synchronized void check(boolean startup) {
+        started = true;
+        if (!store.ensureSaved()) return;
         Instant now = clock.instant();
         long due = latestDue(now).toEpochMilli();
         var targets = active();
@@ -121,9 +123,10 @@ public class WeeklyReportDeliveryService {
                 enrolled.addAll(targets.keySet());
             }
             // 名单和本期标记一起落盘，发送途中停止也不会漏掉名单后半段。
-            store.enroll(due, enrolled, now);
+            if (!store.enroll(due, enrolled, now)) return;
         }
         for (var record : store.records()) {
+            if (!store.ensureSaved()) return;
             if (record.status() != Status.READY && record.status() != Status.QUIET) continue;
             if (record.dueAt() < due) {
                 store.update(record, Status.EXPIRED, "下一期已到，过期未发", now);
@@ -141,11 +144,10 @@ public class WeeklyReportDeliveryService {
             }
         }
         store.observe(new ArrayList<>(targets.keySet()), now);
-        started = true;
     }
     @EventListener(NovaDataSourceChangeEvent.class)
     public synchronized void subscriptionsChanged() {
-        if (started) check(false);
+        if (started) safely(() -> check(false));
     }
 
     private String inactiveReason(String subscription) {
@@ -166,7 +168,7 @@ public class WeeklyReportDeliveryService {
             store.update(record, Status.FAILED, "周报生成失败：" + e.getMessage(), now);
             return;
         }
-        store.update(record, Status.SENDING, "", now);
+        if (!store.update(record, Status.SENDING, "", now)) return;
         var sending = store.records().stream().filter(r -> r.subscription().equals(record.subscription())
                 && r.dueAt() == record.dueAt()).findFirst().orElseThrow();
         message.addOnSuccessCallback(() -> result(sending, Status.SENT, ""));
@@ -194,14 +196,16 @@ public class WeeklyReportDeliveryService {
         return Message.create(target.getPlatform(), target.getType(), target.getNum(), body).get(0);
     }
 
-    public WeeklyReport.Preview preview(String platform, Long uid, PushTarget target) {
+    public Optional<WeeklyReport.Preview> preview(String platform, Long uid, PushTarget target) {
         return content.preview(platform, uid, clock.instant(),
-                revenue.isVisible(target.getPlatform(), target.getType(), target.getNum())).orElseThrow();
+                revenue.isVisible(target.getPlatform(), target.getType(), target.getNum()));
     }
     public JSONObject trial(String platform, Long uid, PushTarget target) {
         return sender.sendNow(message(key(platform, uid, target), target, clock.instant()));
     }
     public String status(String subscription) {
+        String warning = store.warning();
+        if (!warning.isEmpty()) return warning;
         var last = store.records().stream().filter(r -> r.subscription().equals(subscription))
                 .max(Comparator.comparingLong(Delivery::dueAt));
         if (last.isEmpty()) return "还没有发过";
