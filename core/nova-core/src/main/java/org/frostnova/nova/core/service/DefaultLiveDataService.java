@@ -325,9 +325,15 @@ public class DefaultLiveDataService implements LiveDataService {
         long expiry = System.currentTimeMillis() - DOWNTIME_RETENTION_MILLIS;
         intervals.removeIf(entry -> !(entry instanceof JSONObject json) || json.getLongValue("to") < expiry);
         if (intervals.size() > MAX_GAP_INTERVALS) {
-            intervals.sort(Comparator.comparingLong(entry -> ((JSONObject) entry).getLongValue("from"))
-                    .thenComparingLong(entry -> ((JSONObject) entry).getLongValue("to")));
-            intervals.subList(0, intervals.size() - MAX_GAP_INTERVALS).clear();
+            // 只排序待删条目的下标：剩余条目的先后决定重叠区间的成因归属，不能重排。
+            List<Integer> oldest = java.util.stream.IntStream.range(0, intervals.size()).boxed()
+                    .sorted(Comparator.<Integer>comparingLong(index -> intervals.getJSONObject(index).getLongValue("from"))
+                            .thenComparingLong(index -> intervals.getJSONObject(index).getLongValue("to")))
+                    .limit(intervals.size() - MAX_GAP_INTERVALS)
+                    .sorted(Comparator.reverseOrder())
+                    .toList();
+            // 从尾部删除，避免前面的删除改变后续下标。
+            oldest.forEach(index -> intervals.remove(index.intValue()));
         }
     }
 

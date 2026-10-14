@@ -628,6 +628,40 @@ class DefaultLiveDataServiceTest {
             cap(true);
         }
 
+        // 防止记录超限后重叠的断线被归给另一种成因。
+        @Test
+        @DisplayName("断线记录超限后仍按原顺序划分重叠区间的成因")
+        void roomOutageCapPreservesOverlappingReasons() throws Exception {
+            long base = System.currentTimeMillis() - DAY;
+            DefaultLiveDataService control = new DefaultLiveDataService(new NovaCoreProperties());
+            control.recordRoomOutage(PLATFORM, UID, base + 100_000, base + 200_000, LiveGap.Reason.STREAM_LOSS);
+            control.recordRoomOutage(PLATFORM, UID, base, base + 300_000, LiveGap.Reason.PARSE_DEGRADED);
+            List<LiveGap> expected = List.of(
+                    new LiveGap(base, base + 100_000, LiveGap.Reason.PARSE_DEGRADED),
+                    new LiveGap(base + 100_000, base + 200_000, LiveGap.Reason.STREAM_LOSS),
+                    new LiveGap(base + 200_000, base + 300_000, LiveGap.Reason.PARSE_DEGRADED));
+            assertEquals(expected, control.roomOutageIntervals(PLATFORM, UID, base, base + 300_000));
+
+            JSONArray entries = new JSONArray();
+            IntStream.rangeClosed(1, 4999).forEach(i -> entries.add(entry(base - i * 10_000L)));
+            DefaultLiveDataService loaded = boot(true, entries);
+            try {
+                loaded.recordRoomOutage(PLATFORM, UID, base + 100_000, base + 200_000, LiveGap.Reason.STREAM_LOSS);
+                loaded.recordRoomOutage(PLATFORM, UID, base, base + 300_000, LiveGap.Reason.PARSE_DEGRADED);
+                assertEquals(expected, loaded.roomOutageIntervals(PLATFORM, UID, base, base + 300_000),
+                        "超限不能把重叠的断流改算成解析降级");
+            } finally {
+                loaded.onContextClosedEvent();
+            }
+            DefaultLiveDataService restarted = boot();
+            try {
+                assertEquals(expected, restarted.roomOutageIntervals(PLATFORM, UID, base, base + 300_000),
+                        "落盘重启后也要保留原来的成因划分");
+            } finally {
+                restarted.onContextClosedEvent();
+            }
+        }
+
         private void retention(boolean room) throws Exception {
             long now = System.currentTimeMillis();
             JSONArray entries = new JSONArray();
@@ -670,6 +704,11 @@ class DefaultLiveDataServiceTest {
             } finally {
                 service.onContextClosedEvent();
             }
+            JSONObject saved = com.alibaba.fastjson2.JSON.parseObject(Files.readString(dir.resolve("data.json")));
+            JSONArray kept = room ? saved.getJSONObject("RoomOutages:" + PLATFORM).getJSONArray(String.valueOf(UID))
+                    : saved.getJSONArray("Downtimes");
+            assertTrue(entries.subList(0, 4999).equals(kept.subList(0, 4999)),
+                    "删掉最早的一条后，其余条目的落盘顺序不能改变");
         }
 
         private DefaultLiveDataService boot(boolean room, JSONArray entries) throws Exception {
@@ -683,8 +722,12 @@ class DefaultLiveDataServiceTest {
             }
             Path path = dir.resolve("data.json");
             Files.writeString(path, data.toJSONString());
+            return boot();
+        }
+
+        private DefaultLiveDataService boot() {
             NovaCoreProperties properties = new NovaCoreProperties();
-            properties.getLive().setLiveDataPath(path.toString());
+            properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
             properties.getLive().setSaveLiveData(true);
             properties.getLive().setAutoSaveLiveDataInterval(3600);
             DefaultLiveDataService service = new DefaultLiveDataService(properties);

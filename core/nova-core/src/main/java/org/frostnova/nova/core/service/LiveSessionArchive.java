@@ -348,7 +348,7 @@ public class LiveSessionArchive {
                     // 那时候序列没留下来，事后补不出来，界面上该显示「—」。
                     // 分析侧必须用 LiveSession.hasPeaks() 把两者分开
                     parsePeaks(json.getJSONObject("peaks")),
-                    // 旧记录空表表示未记录，不能推断成没有匿名事件。
+                    // 缺失读成 null 表示未记录；空表表示已记录且没有匿名事件。
                     parseAnonymousCounts(json.getJSONObject("anonymousCounts")));
         } catch (Exception e) {
             // 只记原因不记内容：一行里有观众 uid 名单
@@ -359,8 +359,8 @@ public class LiveSessionArchive {
 
     /** 逐项保留有效的正整数次数，坏项不连累本场其余数据，缺失表示未知。 */
     private Map<String, Long> parseAnonymousCounts(JSONObject raw) {
-        if (raw == null || raw.isEmpty()) {
-            return Map.of();
+        if (raw == null) {
+            return null;
         }
         Map<String, Long> result = new HashMap<>();
         raw.forEach((metric, value) -> {

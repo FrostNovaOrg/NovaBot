@@ -27,6 +27,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -212,7 +213,7 @@ class LiveSessionArchiveTest {
                 7,
                 Map.of("danmu_users", List.of(19427650908284L, 19471545457530L)),
                 3,
-                Map.of("danmu_count", new SeriesPeak(1_002_520_000L, 34))));
+                Map.of("danmu_count", new SeriesPeak(1_002_520_000L, 34)), Map.of()));
 
         JSONObject line = JSON.parseObject(Files.readAllLines(
                 dir.resolve("sessions.jsonl"), StandardCharsets.UTF_8).get(0));
@@ -255,14 +256,36 @@ class LiveSessionArchiveTest {
     }
 
     @Test
-    @DisplayName("老归档没有匿名次数时读成空表，表示未知，不能补成0")
+    @DisplayName("老归档没有匿名次数时读成未知，不能补成0")
     void oldRecordsHaveUnknownAnonymousCounts() throws Exception {
         JSONObject old = JSON.parseObject(JSON.toJSONString(session(2_000_000L, 100)));
         old.remove("anonymousCounts");
         Files.writeString(dir.resolve("sessions.jsonl"), old.toJSONString() + "\n");
         LiveSession found = archive.find(0, Long.MAX_VALUE).get(0);
-        assertEquals(Map.of(), JSON.parseObject(JSON.toJSONString(found)).getJSONObject("anonymousCounts"),
-                "老记录空表表示当时没有记录，不能补成0");
+        assertNull(found.anonymousCounts(), "老记录缺字段表示当时没有记录，不能补成0");
+        assertNull(session(2_000_000L, 100).anonymousCounts(), "旧构造调用也没有记录匿名次数");
+    }
+
+    // 防止整场都认得出的新记录被当成当时没有记录，误判名单完整度未知。
+    @Test
+    @DisplayName("没有匿名事件的新记录写出空表，与老记录的未知分开")
+    void zeroAnonymousCountsRemainKnown() throws Exception {
+        archive.append(new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                1_000_000L, 1_100_000L, 100, Map.of(), Map.of(),
+                org.frostnova.nova.core.enums.LiveEndReason.NORMAL, List.of(), 0, Map.of(), 0,
+                Map.of(), Map.of()));
+        String line = Files.readString(dir.resolve("sessions.jsonl"));
+        assertTrue(line.contains("\"anonymousCounts\":{}"), "已记录且没有匿名事件，也必须写出空表");
+        assertEquals(Map.of(), archive.find(0, Long.MAX_VALUE).get(0).anonymousCounts(),
+                "新记录空表表示已记录且没有匿名事件");
+
+        JSONObject old = JSON.parseObject(line);
+        old.put("startTime", 2_000_000L);
+        old.remove("anonymousCounts");
+        Files.writeString(dir.resolve("sessions.jsonl"), old.toJSONString() + "\n",
+                java.nio.file.StandardOpenOption.APPEND);
+        assertNull(archive.find(2_000_000L, 3_000_000L).get(0).anonymousCounts(),
+                "老记录未知不能与新记录的已记录为零混为一谈");
     }
 
     // ⚠️ 夹具一律用保留段假值。

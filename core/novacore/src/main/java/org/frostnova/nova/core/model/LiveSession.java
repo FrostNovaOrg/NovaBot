@@ -45,7 +45,7 @@ import java.util.Optional;
  *              <b>本版之前归档的场次没有这一项，读成空表</b>：那时候的序列已经没了，
  *              补不出来，界面上该显示「—」而不是 0
  * @param anonymousCounts 各计分表因认不出观众而未计分的次数，只含大于 0 的项。
- *                        老记录没有这一项，读成空表表示「当时未记录，不知道」，不能当作 0。
+ *                        空表表示已记录且没有匿名事件；null 表示「当时未记录，不知道」，不能当作 0。
  *                        次数按计分尝试累计，不是匿名观众的人数
  */
 public record LiveSession(
@@ -67,24 +67,24 @@ public record LiveSession(
         Map<String, Long> anonymousCounts
 ) {
     public LiveSession {
-        Map<String, Long> positiveCounts = new java.util.HashMap<>();
         if (anonymousCounts != null) {
+            Map<String, Long> positiveCounts = new java.util.HashMap<>();
             anonymousCounts.forEach((name, count) -> {
                 if (count != null && count > 0) {
                     positiveCounts.put(name, count);
                 }
             });
+            anonymousCounts = Map.copyOf(positiveCounts);
         }
-        anonymousCounts = Map.copyOf(positiveCounts);
     }
 
-    /** 兼容未记录匿名次数的调用方，空表表示当时未记录。 */
+    /** 兼容未记录匿名次数的调用方，null 表示当时未记录。 */
     public LiveSession(String platform, Long uid, String uname, Long roomId, long startTime, long endTime,
                        long durationSeconds, Map<String, Double> metrics, Map<String, Integer> userCounts,
                        LiveEndReason endReason, List<RoomInfoSnapshot> titles, long maintenanceGapSeconds,
                        Map<String, List<Long>> userSets, long roomOutageSeconds, Map<String, SeriesPeak> peaks) {
         this(platform, uid, uname, roomId, startTime, endTime, durationSeconds, metrics, userCounts,
-                endReason, titles, maintenanceGapSeconds, userSets, roomOutageSeconds, peaks, Map.of());
+                endReason, titles, maintenanceGapSeconds, userSets, roomOutageSeconds, peaks, null);
     }
 
     /**
