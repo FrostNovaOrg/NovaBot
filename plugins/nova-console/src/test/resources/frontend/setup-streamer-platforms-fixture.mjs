@@ -182,7 +182,7 @@ try {
   cell1 = 'error:' + e.message;
 }
 eq(JSON.parse(cell1), {
-  '那句话是什么': '正在载入直播平台清单…',
+  '那句话是什么': '正在加载直播平台列表…',
   '当警告说吗': false,
   '回话那块画出来了吗': true,
 }, '① 清单还没到：说「正在载入」而不是「没装插件」，回话那块也画出来');
@@ -203,7 +203,7 @@ try {
   cell2 = 'error:' + e.message;
 }
 eq(JSON.parse(cell2), {
-  '那句话是什么': '没有装任何直播平台插件，加不了主播。',
+  '那句话是什么': '未安装任何直播平台插件，无法添加主播。',
   '当警告说吗': true,
   '回话那块画出来了吗': false,
 }, '② 对照：一个都没装时照旧说没装插件，回话那块不画');
@@ -245,7 +245,7 @@ try {
 }
 eq(JSON.parse(cell4), {
   '放行了吗': false,
-  '回话说什么': '直播平台清单还在载入，稍等一下再试',
+  '回话说什么': '直播平台列表仍在加载，请稍后重试',
 }, '④ 清单还没到：「下一步」拦下并说在等什么，不一声不吭地放行');
 
 // ---------- ⑤ 对照：一个都没装时照旧放行 ----------
@@ -268,7 +268,7 @@ try {
   const passed = await next();
   cell6 = JSON.stringify({
     '放行了吗': passed,
-    '说的是先填吗': globalThis.result ? globalThis.result.textContent.startsWith('先填') : null,
+    '说的是先填吗': globalThis.result ? globalThis.result.textContent.startsWith('请先输入') : null,
   });
 } catch (e) {
   cell6 = 'error:' + e.message;
@@ -290,7 +290,7 @@ try {
   cell7 = JSON.stringify({
     '画的那句话是什么': note ? note.textContent : '(没有)',
     '当警告说吗': note ? String(note.className).includes('warn') : null,
-    '还在说正在载入吗': note ? note.textContent.includes('正在载入') : null,
+    '还在说正在载入吗': note ? note.textContent.includes('正在加载') : null,
     '放行了吗': passed,
     '回话说什么': globalThis.result ? globalThis.result.textContent : '(没有回话块)',
     '两处说的是同一句吗': note && globalThis.result
@@ -300,11 +300,11 @@ try {
   cell7 = 'error:' + e.message;
 }
 eq(JSON.parse(cell7), {
-  '画的那句话是什么': '直播平台清单没取到：网络不通。刷新页面再试，或者点「先不加主播」先跳过。',
+  '画的那句话是什么': '直播平台列表获取失败：网络不通。请刷新页面重试，或点击「暂不添加主播」跳过此步骤。',
   '当警告说吗': true,
   '还在说正在载入吗': false,
   '放行了吗': false,
-  '回话说什么': '直播平台清单没取到：网络不通。刷新页面再试，或者点「先不加主播」先跳过。',
+  '回话说什么': '直播平台列表获取失败：网络不通。请刷新页面重试，或点击「暂不添加主播」跳过此步骤。',
   '两处说的是同一句吗': true,
 }, '⑦ 清单没取到：说清没取到与出路，「下一步」拦下说的是同一句');
 

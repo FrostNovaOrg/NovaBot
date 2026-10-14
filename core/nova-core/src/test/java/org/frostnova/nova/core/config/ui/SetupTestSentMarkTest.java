@@ -17,7 +17,7 @@ class SetupTestSentMarkTest {
     private static final String FIXTURE = FrontendFixture.fixture("setup-test-sent-mark-fixture.mjs");
 
     @Test
-    @DisplayName("回包缺 testSent 时不写「有试发记录」，false 不打勾，true 才写")
+    @DisplayName("回包缺 testSent 时不写「已有测试发送记录」，false 不打勾，true 才写")
     void testStepClaimsARecordOnlyWhenOneExists() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "设置引导试发那一步的记号");
     }

@@ -61,7 +61,7 @@ outcome(() => {
   // 既有四支的文案不能被这次改动碰歪（回归护栏）
   includes(mod.explain(401, {reason: 'bad_credentials'}), '密码', 'bad_credentials 文案');
   includes(mod.explain(429, {reason: 'locked_out', retryAfterSeconds: 30}), '30 秒', '锁定文案带等待时长');
-  includes(mod.explain(503, {reason: 'busy'}), '同时在校验', 'busy 文案');
+  includes(mod.explain(503, {reason: 'busy'}), '同时进行校验', 'busy 文案');
   includes(mod.explain(400, {reason: 'auth_disabled'}), '密码', 'auth_disabled 文案');
 }, 'explain 翻译');
 

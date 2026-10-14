@@ -45,8 +45,8 @@ export async function loadPasskeys(box, addButton) {
   if (!box) return;
 
   if (!supported()) {
-    box.innerHTML = '<p class="hint">这个浏览器（或这个地址）用不了通行密钥。'
-      + '通行密钥只在 https 或 localhost 下可用。</p>';
+    box.innerHTML = '<p class="hint">当前浏览器或访问地址不支持通行密钥。'
+      + '通行密钥仅在 HTTPS 或 localhost 下可用。</p>';
     if (addButton) addButton.disabled = true;
     return;
   }
@@ -58,17 +58,17 @@ export async function loadPasskeys(box, addButton) {
   // 原因句用服务端那一句，判 IP 的只在服务端一处；已登记的照常列出，删除不受地址影响
   const blocked = data.usable === false;
   if (blocked && addButton) addButton.disabled = true;
-  const notice = blocked ? '<p class="hint">' + esc(data.unusableReason || '这个地址用不了通行密钥。') + '</p>' : '';
+  const notice = blocked ? '<p class="hint">' + esc(data.unusableReason || '当前访问地址不支持通行密钥。') + '</p>' : '';
 
   if (!list.length) {
-    box.innerHTML = notice || '<p class="hint">还没有登记过通行密钥。登记之后，登录时按一下指纹或面容即可，'
-      + '<b>不用再输动态验证码</b>。</p>';
+    box.innerHTML = notice || '<p class="hint">尚未登记通行密钥。登记后，登录时只需验证指纹或面容，'
+      + '<b>无需再输入动态验证码</b>。</p>';
     return;
   }
 
-  box.innerHTML = notice + '<table><thead><tr><th>名字</th><th>登记时间</th><th>上次使用</th><th></th></tr></thead><tbody>'
+  box.innerHTML = notice + '<table><thead><tr><th>名称</th><th>登记时间</th><th>上次使用</th><th></th></tr></thead><tbody>'
     + list.map(item => '<tr><td>' + esc(item.name) + '</td><td>' + time(item.createdAt) + '</td><td>'
-      + (item.lastUsedAt ? time(item.lastUsedAt) : '还没用过')
+      + (item.lastUsedAt ? time(item.lastUsedAt) : '尚未使用')
       + '</td><td><button type="button" class="ghost" data-id="' + esc(item.id) + '">删除</button></td></tr>').join('')
     + '</tbody></table>';
   const table = box.querySelector('table');
@@ -96,9 +96,9 @@ function time(value) {
  * 判 IP 的只在服务端一处：这里取列表那一条的 usable 与原因句，不另开接口
  */
 export async function registerBlockedReason() {
-  if (!supported()) return '这个浏览器（或这个地址）用不了通行密钥。通行密钥只在 https 或 localhost 下可用。';
+  if (!supported()) return '当前浏览器或访问地址不支持通行密钥。通行密钥仅在 HTTPS 或 localhost 下可用。';
   const data = await api('/auth/passkeys');
-  return data.usable === false ? (data.unusableReason || '这个地址用不了通行密钥。') : null;
+  return data.usable === false ? (data.unusableReason || '当前访问地址不支持通行密钥。') : null;
 }
 
 /**
@@ -139,8 +139,8 @@ export async function registerPasskey(trigger) {
     // 留下一把没人认领的钥匙，比多问一次更糟
     const pending = ask({
       title: '登记通行密钥',
-      body: '登记前要再输一次现在的密码，证明是你本人。',
-      fields: [{label: '现在的密码', id: 'pwd-passkey-current', type: 'password'}],
+      body: '登记前请再次输入当前的控制台密码，以确认是本人操作。',
+      fields: [{label: '当前密码', id: 'pwd-passkey-current', type: 'password'}],
       danger: false,
     });
     const host = document.querySelector('.ask-fields');
@@ -181,8 +181,8 @@ export async function registerPasskey(trigger) {
 
     const nameLimit = options.nameLimit || 40;
     const named = await ask({
-      title: '给这把通行密钥起个名字',
-      fields: [{label: '给这把通行密钥起个名字', value: '我的设备', maxlength: nameLimit}],
+      title: '为通行密钥命名',
+      fields: [{label: '通行密钥名称', value: '我的设备', maxlength: nameLimit}],
       danger: false,
     });
     // 取消了就是取消：这一步之后才提交，因此认证器上那把钥匙不会留下一个没人认领的登记
@@ -220,8 +220,8 @@ export async function registerPasskey(trigger) {
  * 卡若已被重画换掉，也不去认全局的「最近一次」
  */
 async function remove(id, box, addButton) {
-  if (!await ask({title: '确定删除？',
-    body: '删了以后这台设备就只能用密码进。'})) return;
+  if (!await ask({title: '删除此通行密钥？',
+    body: '删除后，该设备只能使用密码登录。'})) return;
 
   const result = await api('/auth/passkeys/' + encodeURIComponent(id), {method: 'DELETE'});
   say(result.message, result.success ? 'ok' : 'err');

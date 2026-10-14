@@ -76,9 +76,9 @@ function labelAfterClick(noun) {
 eq(labelOf(undefined), '显示密码', '读屏用户在登录页听到「显示密码」');
 eq(labelAfterClick(undefined), '隐藏密码', '登录页揭开后念「隐藏密码」');
 
-// ---------- 二、签发口令页：传「口令」 ----------
-eq(labelOf('口令'), '显示口令', '读屏用户在签发口令页听到「显示口令」');
-eq(labelAfterClick('口令'), '隐藏口令', '签发口令页揭开后念「隐藏口令」');
+// ---------- 二、签发令牌页：传「令牌」 ----------
+eq(labelOf('令牌'), '显示令牌', '读屏用户在签发令牌页听到「显示令牌」');
+eq(labelAfterClick('令牌'), '隐藏令牌', '签发令牌页揭开后念「隐藏令牌」');
 
 // ---------- 三、设置页机密行：传该行自己的标签名 ----------
 eq(labelOf('二次验证密钥'), '显示二次验证密钥', '读屏用户在设置页机密行听到的是该行的名字（二次验证密钥）');
@@ -95,8 +95,8 @@ const settings = read('settings.js');
 const login = read('login.html');
 const auth = read('settings-auth.js');
 
-eq(/bindPasswordReveal\s*\(\s*field\s*,\s*\$\(\s*'#tk-reveal'\s*\)\s*,\s*'口令'\s*\)/.test(tokens),
-  true, 'tokens.js:签发口令页调用点传「口令」');
+eq(/bindPasswordReveal\s*\(\s*field\s*,\s*\$\(\s*'#tk-reveal'\s*\)\s*,\s*'令牌'\s*\)/.test(tokens),
+  true, 'tokens.js:签发令牌页调用点传「令牌」');
 eq(/bindPasswordReveal\s*\(\s*input\s*,\s*eye\s*,\s*field\.label\s*\)/.test(settings),
   true, 'settings.js:设置页机密行调用点传该行标签名');
 eq(/bindPasswordReveal\s*\(\s*\$\(\s*'#password'\s*\)\s*,\s*\$\(\s*'#password-reveal'\s*\)\s*\)/.test(login),

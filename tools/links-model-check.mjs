@@ -93,34 +93,34 @@ const THREE = ['platform', 'bot', 'panel'];
 
 const CASES = [
   {name: '已登录 × 机器人正常', login: 'in', bot: 'ok',
-    expect: {cards: THREE, level: ['ok', 'ok', 'ok'], say: ['已登录', 'HTTP 正常', '1 把有效']}},
+    expect: {cards: THREE, level: ['ok', 'ok', 'ok'], say: ['已登录', 'HTTP 正常', '有效令牌 1 个']}},
   {name: '已登录 × 机器人掉线', login: 'in', bot: 'down',
     expect: {cards: THREE, level: ['ok', 'err', 'ok'], say: ['已登录', '队列积压 7 条', '']}},
   {name: '已登录 × 机器人未配置', login: 'in', bot: 'none',
-    expect: {cards: THREE, level: ['ok', 'off', 'ok'], say: ['已登录', '还没连上机器人', '']}},
+    expect: {cards: THREE, level: ['ok', 'off', 'ok'], say: ['已登录', '尚未连接机器人', '']}},
 
   {name: '匿名 × 机器人正常', login: 'anon', bot: 'ok',
     expect: {cards: THREE, level: ['off', 'ok', 'ok'], say: ['匿名', 'HTTP 正常', '']}},
   {name: '匿名 × 机器人掉线', login: 'anon', bot: 'down',
     expect: {cards: THREE, level: ['off', 'err', 'ok'], say: ['匿名', '队列积压 7 条', '']}},
   {name: '匿名 × 机器人未配置', login: 'anon', bot: 'none',
-    expect: {cards: THREE, level: ['off', 'off', 'ok'], say: ['匿名', '还没连上机器人', '']}},
+    expect: {cards: THREE, level: ['off', 'off', 'ok'], say: ['匿名', '尚未连接机器人', '']}},
 
   {name: '未登录 × 机器人正常', login: 'out', bot: 'ok',
     expect: {cards: THREE, level: ['err', 'ok', 'ok'], say: ['动态通知已停', 'HTTP 正常', '']}},
   {name: '未登录 × 机器人掉线', login: 'out', bot: 'down',
     expect: {cards: THREE, level: ['err', 'err', 'ok'], say: ['动态通知已停', '队列积压 7 条', '']}},
   {name: '未登录 × 机器人未配置', login: 'out', bot: 'none',
-    expect: {cards: THREE, level: ['err', 'off', 'ok'], say: ['动态通知已停', '还没连上机器人', '']}},
+    expect: {cards: THREE, level: ['err', 'off', 'ok'], say: ['动态通知已停', '尚未连接机器人', '']}},
 
   // 平台卡该整张不出现。上面九档里它一直在，少了这一档「显隐」那一列就是恒真的
   {name: '没装平台插件', login: 'in', bot: 'ok', cards: [],
-    expect: {cards: ['bot', 'panel'], level: ['ok', 'ok'], say: ['HTTP 正常', '1 把有效'], noAnchor: true}},
+    expect: {cards: ['bot', 'panel'], level: ['ok', 'ok'], say: ['HTTP 正常', '有效令牌 1 个'], noAnchor: true}},
 
   {name: '还没签过口令', login: 'in', bot: 'ok', tokens: [],
-    expect: {cards: THREE, level: ['ok', 'ok', 'off'], say: ['已登录', 'HTTP 正常', '还没签发过']}},
+    expect: {cards: THREE, level: ['ok', 'ok', 'off'], say: ['已登录', 'HTTP 正常', '尚未签发']}},
   {name: '口令全撤', login: 'in', bot: 'ok', tokens: TOKENS_REVOKED,
-    expect: {cards: THREE, level: ['ok', 'ok', 'off'], say: ['已登录', 'HTTP 正常', '1 把已吊销']}},
+    expect: {cards: THREE, level: ['ok', 'ok', 'off'], say: ['已登录', 'HTTP 正常', '已吊销 1 个']}},
 ];
 
 // ── 跑 ─────────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ rows.forEach(r => console.log(r));
 console.log('目标名单\t' + OPTIONS.length + ' 条\t手填 4 例\t' + (pickBad.length ? '红' : '绿'));
 
 const capBad = [];
-if (accountCaption({accountId: '123', accountName: '柚子'}) !== '已登录 · 柚子 · uid 123') {
+if (accountCaption({accountId: '123', accountName: '柚子'}) !== '已登录 · 柚子 · UID 123') {
   capBad.push('接口有昵称时应显名，实得「' + accountCaption({accountId: '123', accountName: '柚子'}) + '」');
 }
 if (accountCaption({accountId: '123'}) !== '已登录 · 账号 123') {

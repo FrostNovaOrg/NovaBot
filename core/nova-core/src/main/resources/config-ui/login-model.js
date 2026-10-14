@@ -35,8 +35,8 @@ export function lockText(seconds) {
   const span = minutes === 0 ? rest + ' 秒'
     : (rest === 0 ? minutes + ' 分' : minutes + ' 分 ' + rest + ' 秒');
 
-  return '连续失败太多次，你这个来源被暂时锁定，还要等 ' + span
-    + '。锁定期内即使输对也会被拒，这不代表密码错了，别急着去改密码。';
+  return '连续失败次数过多，当前来源已被暂时锁定，还需等待 ' + span
+    + '。锁定期间即使输入正确也会被拒绝，这并不表示密码错误，请勿因此修改密码。';
 }
 
 /**

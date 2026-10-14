@@ -126,7 +126,7 @@ class NapCatBootstrapFailMessageTest {
                 "提示框里只该有返回控制台那一个链接，提示里的标记长成了链接");
         assertEquals(CONSOLE, eval("elements['#msg'].anchors()[0].href"), "返回链接没指向控制台");
         assertEquals("返回 NovaBot 控制台", eval("elements['#msg'].anchors()[0].textContent"));
-        assertEquals("没能替你登录 NapCat", eval("elements['#title'].textContent"));
+        assertEquals("NapCat 自动登录失败", eval("elements['#title'].textContent"));
         assertEquals("err", eval("elements['#msg'].className"));
     }
 }

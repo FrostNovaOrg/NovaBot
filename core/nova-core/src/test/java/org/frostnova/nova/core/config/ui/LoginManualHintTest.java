@@ -8,7 +8,7 @@ import java.io.IOException;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 登录页上的「登不进控制台怎么办」链接
+ * 登录页上的「登录故障排查」链接
  * <p>
  * 抓的用户故障：登不进控制台的人，恰恰是那张页上唯一没有帮助入口的人——
  * 手册随包那份要登录后才看得到，所以这一条只能链站上那份的排障章。
@@ -28,8 +28,8 @@ class LoginManualHintTest {
     @DisplayName("登不进的人也有处可查：链到站上手册的排障章，令牌不经 Referer 带出去")
     void loginPageLinksTroubleshootingChapter() throws IOException {
         String html = ConfigUiLoginPage.html("");
-        int at = html.indexOf("登不进控制台怎么办");
-        assertTrue(at > 0, "登录页上要有那一行小字「登不进控制台怎么办」");
+        int at = html.indexOf("登录故障排查");
+        assertTrue(at > 0, "登录页上要有那一行小字「登录故障排查」");
 
         int open = html.lastIndexOf("<a ", at);
         int close = html.indexOf("</a>", at);

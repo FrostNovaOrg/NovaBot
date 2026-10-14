@@ -33,18 +33,18 @@ function say(terms, key, withTerm, without) {
 export function explain(status, data, terms) {
   switch (data.reason) {
     case 'bad_credentials':
-      return '密码' + (store.totpRequired ? '或动态验证码' : '') + '不对。'
-        + '要填的是登录这个控制台用的那一个——'
+      return '控制台密码' + (store.totpRequired ? '或动态验证码' : '') + '不正确。'
+        + '请填写登录 NovaBot 控制台所用的密码，'
         + say(terms, 'bot.impl',
-          v => '不是机器人（' + v + ' 等）WebUI 的口令，两者互不相干',
-          '不是机器人程序界面的口令，两者互不相干');
+          v => '不是机器人（' + v + ' 等）WebUI 的口令，两者相互独立。',
+          '不是机器人程序界面的口令，两者相互独立。');
     case 'locked_out':
-      return '连续失败太多次，你这个来源已被暂时锁定，' + waitText(data.retryAfterSeconds) + '后再试。'
-        + '⚠️ 锁定期内即使输对也会被拒，这不代表密码错了，别急着去改密码';
+      return '连续验证失败次数过多，当前来源已被暂时锁定，请在 ' + waitText(data.retryAfterSeconds) + '后重试。'
+        + '锁定期间即使输入正确也会被拒绝，这并不表示密码错误，请勿因此修改密码。';
     case 'busy':
-      return '同时在校验的请求太多，等几秒再点一次';
+      return '同时进行校验的请求过多，请等待几秒后重试。';
     case 'auth_disabled':
-      return '这台机器没有启用密码，因此没有可校验的凭据。请先在「设置」里配置密码';
+      return '本机尚未设置控制台密码，没有可校验的凭据。请先在「设置」中设置控制台密码。';
     case 'write_failed':
       // 后端已把原因写成一句人话带过来，原样透出——转述一道就是多一处会走样的地方
       return data.message || '签发失败（HTTP ' + status + '）';

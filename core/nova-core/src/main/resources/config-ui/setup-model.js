@@ -92,23 +92,23 @@ export function allDone(facts, steps) {
 export function canAdvance(index, draft, steps) {
   const it = draft || {};
   const step = (steps || SETUP_STEPS)[index];
-  if (!step) return stop('认不出这一步，不放行');
+  if (!step) return stop('无法识别此步骤，不能继续');
   if (step.plugin) return pass();
 
   switch (step.key) {
     case 'lock':
       return it.locked ? pass()
-        : stop('先设一把密码。这一步不能跳过——没上锁的控制台，任何能连上这台机器的人都进得来');
+        : stop('请先设置控制台密码。此步骤不可跳过：未设置密码时，任何能访问本机的人都可以进入控制台');
     case 'bot':
       return it.botOk ? pass()
-        : stop('先按「测试连接」，通过了才能往下走。这一步不能跳过——连不上机器人，一条消息也发不出去');
+        : stop('请先点击「测试连接」，测试通过后才能继续。此步骤不可跳过：未连接机器人时，任何消息都无法发送');
     case 'account':
       return it.accountsReady || it.anonymousConfirmed ? pass()
-        : stop('扫码登录，或者点「不登录，先用免登录模式」并确认那一段后果');
+        : stop('请扫码登录，或点击「暂不登录，使用免登录模式」并确认相应影响');
     case 'test':
-      return it.sent ? pass() : stop('先发一条试试，群里看得到才说明整条链路是通的');
+      return it.sent ? pass() : stop('请先发送一条测试消息，对方能收到才说明整条推送链路畅通');
     default:
-      return stop('认不出这一步，不放行');
+      return stop('无法识别此步骤，不能继续');
   }
 }
 
@@ -137,9 +137,9 @@ const stop = reason => ({ok: false, reason});
 export function railMarks(facts, skips, current, steps, sent) {
   return (steps || SETUP_STEPS).map((step, i) => {
     if ((skips || [])[i] === 'anon') return {state: 'warn', note: '免登录模式'};
-    if ((facts || [])[i]) return {state: 'done', note: step.key === 'test' && sent === true ? '有试发记录' : '已配置'};
-    if ((skips || [])[i]) return {state: 'skip', note: '跳过了'};
-    if (i === current) return {state: 'current', note: '正在做'};
+    if ((facts || [])[i]) return {state: 'done', note: step.key === 'test' && sent === true ? '已有测试发送记录' : '已配置'};
+    if ((skips || [])[i]) return {state: 'skip', note: '已跳过'};
+    if (i === current) return {state: 'current', note: '进行中'};
     return {state: 'idle', note: ''};
   });
 }
@@ -190,16 +190,16 @@ export function initialRows(configValues, commandCount, terms, status) {
     || mailAlertConfigured(read('novabot.core.mail.default-to'), read('spring.mail.host'));
 
   return [
-    row('推送总开关', read('novabot.core.push.enabled') === 'false' ? '关' : '开',
+    row('推送总开关', read('novabot.core.push.enabled') === 'false' ? '关闭' : '开启',
       '#/settings', 'novabot.core.push.enabled'),
-    row('静音时段', quietStart && quietEnd ? quietStart + ' – ' + quietEnd : '未设（半夜被吵到再来设）',
+    row('静音时段', quietStart && quietEnd ? quietStart + ' – ' + quietEnd : '未设置',
       '#/settings', 'novabot.core.push.quiet-start'),
     // 金额可见没有一个总的配置键：它按会话来，默认群聊隐藏、私聊显示，改在推送页上
     row('金额可见', '群聊隐藏、私聊显示', '#/push', ''),
-    row('命令', (commandCount ? commandCount + ' 条' : '') + '全开、只认 @ 机器人',
+    row('命令', (commandCount ? commandCount + ' 条' : '') + '全部开启，仅响应 @ 机器人的消息',
       '#/settings', 'novabot.core.command.admins'),
-    row('告警', alerted ? '已配' : '未配。建议配一条 Webhook，'
-      + say(terms, 'bot.platform', v => v + ' 掉线时只有它能叫到你', '机器人掉线时只有它能叫到你'),
+    row('告警', alerted ? '已配置' : '未配置。建议配置一条 Webhook，'
+      + say(terms, 'bot.platform', v => v + ' 掉线时只能靠它收到通知', '机器人掉线时只能靠它收到通知'),
       '#/settings', 'novabot.core.alert.webhook-url'),
     // 0 与负数是「不自动清理」，不是「留 0 天」——后者读起来像日志当天就没了
     row('日志保留', Number.isFinite(retention) && retention > 0 ? retention + ' 天' : '不自动清理',
@@ -236,19 +236,19 @@ export function summaryLines(facts, skips, counts, steps, terms) {
 
   const account = accounts.length
     ? accounts.map(one => (one.displayName || '直播平台') + ' '
-      + (one.loggedIn ? '已登录' : (one.disabledReason ? '免登录模式（动态推送与自动关注不可用）' : '还没登录')))
+      + (one.loggedIn ? '已登录' : (one.disabledReason ? '免登录模式（动态推送与自动关注不可用）' : '未登录')))
       .join(' · ')
-    : '没有装任何直播平台插件，这台 NovaBot 采不到直播事件';
+    : '未安装任何直播平台插件，NovaBot 无法采集直播事件';
 
   const streamer = it.streamers
     ? it.streamers + ' 位主播 → ' + (it.targets || 0) + ' 个推送目标'
-    : '还没加主播——这台 NovaBot 起来暂时什么都不做';
+    : '尚未添加主播，NovaBot 暂时不会采集或推送任何内容';
 
   return [
     fact('bot')
-      ? say(terms, 'bot.platform', v => v + ' 机器人 已连上', '机器人 已连上')
-      : say(terms, 'bot.platform', v => v + ' 机器人 还没连上，推送发不出去',
-        '机器人 还没连上，推送发不出去'),
+      ? say(terms, 'bot.platform', v => v + ' 机器人 已连接', '机器人 已连接')
+      : say(terms, 'bot.platform', v => v + ' 机器人 未连接，推送无法发出',
+        '机器人 未连接，推送无法发出'),
     account,
     streamer,
   ];

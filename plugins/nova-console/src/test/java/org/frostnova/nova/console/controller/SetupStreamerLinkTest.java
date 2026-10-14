@@ -15,7 +15,7 @@ import java.io.IOException;
  * 夹具切出 doneLink 后真执行三态，不是只 includes：「含 detailHash」证明不了
  * 它在没落盘时会不会照样给出一个地址。
  */
-@DisplayName("向导主播步的「去主播页看看」")
+@DisplayName("向导主播步的「前往主播页」")
 class SetupStreamerLinkTest {
     private static final String FIXTURE =
             "plugins/nova-console/src/test/resources/frontend/setup-streamer-link-fixture.mjs";
@@ -23,6 +23,6 @@ class SetupStreamerLinkTest {
     @Test
     @DisplayName("没查过人／查到未落盘都不出链接，已落盘才出且地址经 detailHash")
     void goStreamerLinkOnlyAfterSave() throws IOException, InterruptedException {
-        FrontendFixture.run(FIXTURE, "向导主播步的「去主播页看看」");
+        FrontendFixture.run(FIXTURE, "向导主播步的「前往主播页」");
     }
 }

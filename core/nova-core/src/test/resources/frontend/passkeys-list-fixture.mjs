@@ -240,7 +240,7 @@ try {
   const load = makeSubject(dom, emptyApi).loadPasskeys;
   const box = dom.newElement();
   await load(box, dom.newElement());
-  q2 = box.innerHTML.includes('还没有登记过通行密钥')
+  q2 = box.innerHTML.includes('尚未登记通行密钥')
     && box.querySelectorAll('table').length === 0
     && !dom.$('#passkey-list').innerHTML;
 } catch (e) {
