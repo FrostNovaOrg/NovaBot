@@ -52,9 +52,11 @@ const abortError = () => Object.assign(new Error('This operation was aborted'), 
 const response = (json, status = 200) => ({status, ok: status >= 200 && status < 300, json: async () => json});
 /**
  * 这一趟取 /live 与取报告图时怎么答：'down' 照浏览器那样抛 TypeError，'error' 回 500 带一句话，
- * 'abort' 回包头到了、读正文时被中止，'html' 回包头到了、正文不是 JSON
+ * 'abort' 回包头到了、读正文时被中止，'html' 回包头到了、正文不是 JSON，
+ * 'body' 回包头到了、读正文时抛 bodyError（读到一半断网等）
  */
 let mode = 'down';
+let bodyError = null;
 globalThis.fetch = async url => {
   const text = String(url);
   if (text.includes('/live?') || text.endsWith('/report') || text.endsWith('/probe')) {
@@ -63,6 +65,7 @@ globalThis.fetch = async url => {
     if (mode === 'abort') return {status: 200, ok: true, json: async () => { throw abortError(); }};
     // 回包头已到、正文不是 JSON（反向代理的错误页）：json() 抛 SyntaxError
     if (mode === 'html') return {status: 502, ok: false, json: async () => JSON.parse('<html>')};
+    if (mode === 'body') return {status: 200, ok: true, json: async () => { throw bodyError; }};
     return response({success: false, message: '直播数据暂不可用：样例原因'}, 500);
   }
   if (text.includes('/insights?')) return response({success: true, insights: {metricsKnown: false, daily: []}});
@@ -138,6 +141,20 @@ await check('回的不是 JSON：api() 拒绝时的原因是中文，带上状�
   assert.ok(reason, 'api() 应当拒绝');
   console.log('api()：' + reason.message);
   assert.equal(reason.message, '服务器返回的内容无法识别（HTTP 502）');
+});
+
+await check('读正文读到一半出错：api() 原样抛出那个错误，不说成服务器返回的内容无法识别', async () => {
+  mode = 'body';
+  for (const thrown of [new TypeError('body stream failed'), new Error('other body error')]) {
+    bodyError = thrown;
+    let reason = null;
+    await core.api('/probe').catch(e => { reason = e; });
+    assert.ok(reason, 'api() 应当拒绝');
+    console.log('api()：' + reason.name + '：' + reason.message);
+    assert.equal(reason.name, thrown.name);
+    assert.equal(reason.message, thrown.message);
+    assert.doesNotMatch(reason.message, /无法识别/);
+  }
 });
 
 page.leave();
