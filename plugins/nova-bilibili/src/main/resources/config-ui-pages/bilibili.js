@@ -32,7 +32,7 @@ const VISIBLE_TABS = ['bot', 'overview'];
  */
 export function render(section) {
   section.innerHTML = `
-    <p class="hint">登录状态用于获取动态与直播间信息。登录失效后，动态推送会静默停止，直播推送不受影响。</p>
+    <p class="hint">登录状态用于获取动态与直播间信息。登录失效后，动态推送与自动关注将停止，直播推送不受影响；已启用告警时会收到告警通知。</p>
     <div id="accounts"></div>
     <div class="health" id="bili-health"></div>`;
 }
