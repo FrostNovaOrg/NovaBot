@@ -53,7 +53,7 @@ public class EventStreamProperties {
     // 靠「本机进程直连」，因此默认关。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出要求只读访问令牌")
-    @ConfigSummary("本机部署了反向代理时必须开启：未启用转发头处理（server.forward-headers-strategy）或代理不传转发头时，经代理转入的连接会被识别为本机连接。")
+    @ConfigSummary("本机装有反向代理就必须开启：经它进来的连接看着像本机。")
     private boolean requireToken = false;
 
     /**
