@@ -116,6 +116,8 @@ const sessions = STARTS.map((start, i) => ({
 }));
 
 let liveFailure = '';
+let liveHttpReply = null;
+let configured = true;
 let liveRequests = 0;
 let pendingLive = null;
 const dataAt = new Date(2026, 9, 14, 12, 34, 0).getTime();
@@ -130,6 +132,7 @@ globalThis.fetch = url => {
   const path = String(url);
   if (path.includes('/live?')) {
     liveRequests++;
+    if (liveHttpReply) return Promise.resolve({status: liveHttpReply.status, json: async () => liveHttpReply.body});
     if (pendingLive) return new Promise(done => { pendingLive.resolve = data => done({status: 200, json: async () => data}); });
     return liveFailure === '网络错误' ? Promise.reject(new Error(liveFailure))
       : reply(liveFailure ? {success: false, message: liveFailure} : liveData);
@@ -140,7 +143,8 @@ globalThis.fetch = url => {
   ], days: 7});
   if (path.startsWith('/config/api/streamers/' + PLATFORM + '/' + UID)) {
     return Promise.resolve({status: 200, json: () => Promise.resolve({
-      success: true, platform: PLATFORM, uid: UID, uname: '甲', living: liveData.living, since: liveData.since,
+      success: true, platform: PLATFORM, uid: UID, uname: '甲', configured,
+      living: liveData.living, since: liveData.since,
       overview: {},
       sessions: {items: sessions, metrics: [
         {key: 'danmu_count', name: '弹幕', unit: '条'},
@@ -273,7 +277,7 @@ await ask('⑥ 在线人数取报告图的 online_count 最新点，只画一种
   same(labels.filter(label => label === '在线人数').length, 1, '在线人数标签');
   same(labels.includes('online_count'), false, '在线人数不重复');
   if (!textOf(card).includes('42 人') || textOf(card).includes('999 人')) throw new Error('在线人数没有用分钟序列的最新点');
-  same(labels.includes('online_rank_count'), true, '未列入目录的原始指标照留');
+  same(labels.includes('online_rank_count'), false, '高能榜人数不作为另一种在线人数显示');
 });
 
 // 故障：切页或隐藏后继续轮询，回到概况后却不再更新。
@@ -344,6 +348,77 @@ await ask('⑩ 详情已显示新一场时清掉前一场数据，不把旧场�
   if (!textOf(liveCard()).includes('还没有取到本场数据')) throw new Error('没说明新一场尚未取到数据');
   liveFailure = '';
   page.leave();
+});
+
+// 故障：服务端回默认 500 错误包后，正在直播卡片消失，已有数值和失败原因都看不到。
+await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，并说明失败原因', async () => {
+  await overview();
+  try {
+    for (const [status, body, reason] of [
+      [500, {timestamp: checkedAt, status: 500, error: 'Internal Server Error', path: '/config/api/streamers/bilibili/3493/live'}, 'Internal Server Error'],
+      [503, {status: 503}, 'HTTP 503'],
+      [500, {message: '本场数据暂时不可用'}, '本场数据暂时不可用'],
+      [200, {success: true, living: 'true'}, 'HTTP 200'],
+      [200, {living: true}, 'HTTP 200'],
+      [200, null, 'HTTP 200'],
+    ]) {
+      liveHttpReply = {status, body};
+      await clickRefresh();
+      same(liveCard().hidden, false, '服务端错误后卡片仍可见');
+      const text = textOf(liveCard());
+      for (const expected of ['321', '21 人', '刷新失败：' + reason,
+        '显示的是 12:35:07 的数据', '数据更新到 12:34', '检查于 12:35:07']) {
+        if (!text.includes(expected)) throw new Error('服务端错误后缺少 ' + expected);
+      }
+    }
+  } finally {
+    liveHttpReply = null;
+    await overview();
+  }
+});
+
+// 故障：在线序列没有点时显示「— 人」，让缺失值带上人数单位。
+await ask('⑫ 在线序列为空时只显示破折号，不带人数单位', async () => {
+  const saved = liveData;
+  try {
+    liveData = {...liveData, series: {online_count: []}};
+    await overview();
+    const cells = walk(liveCard()).find(one => one.tagName === 'dl').children;
+    const index = cells.findIndex(one => one.tagName === 'dt' && one.textContent === '在线人数');
+    if (index < 0) throw new Error('缺少在线人数');
+    same(cells[index + 1].textContent, '—', '在线序列为空时的显示');
+  } finally {
+    liveData = saved;
+  }
+});
+
+// 故障：正在直播卡片排到最近几场下面，当前这一场的数据被旧场次挤到页面底下。
+await ask('⑬ 正在直播卡片在最近几场上面', async () => {
+  await overview();
+  const cards = node('sd-body').children;
+  const current = cards.indexOf(liveCard());
+  const recent = cards.findIndex(card => card.children.some(one => one.tagName === 'h3'
+    && one.textContent.startsWith('最近几场')));
+  if (current < 0 || recent < 0 || current >= recent) throw new Error('正在直播没有排在最近几场上面');
+});
+
+// 故障：只在归档中的主播不采集数据，概况仍反复请求本场数据。
+await ask('⑭ 不在推送配置里的主播不请求本场数据，也不启动刷新表', async () => {
+  configured = false;
+  try {
+    const before = liveRequests;
+    await overview();
+    same(intervals.size, 0, '归档主播不启动刷新表');
+    same(liveRequests, before, '归档主播不请求本场数据');
+    document.hidden = true;
+    for (const fn of documentListeners.visibilitychange || []) await fn();
+    document.hidden = false;
+    for (const fn of documentListeners.visibilitychange || []) await fn();
+    same(intervals.size, 0, '重新可见也不启动刷新表');
+    same(liveRequests, before, '重新可见也不请求本场数据');
+  } finally {
+    configured = true;
+  }
 });
 
 page?.leave();

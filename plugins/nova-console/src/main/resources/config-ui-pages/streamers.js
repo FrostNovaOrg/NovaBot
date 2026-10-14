@@ -140,6 +140,7 @@ function canRefreshLive() {
     && current.platform === where.platform && current.uid === where.uid
     && liveActive && !document.hidden && isStreamersHash(location.hash)
     && where.view === 'detail' && where.pane === 'overview' && detail?.success
+    && detail.configured !== false
     && liveKey === where.platform + '/' + where.uid;
 }
 
@@ -567,11 +568,24 @@ async function loadLive() {
   const generation = liveGeneration;
   livePending = generation;
   try {
-    const response = await api('/streamers/' + encodeURIComponent(where.platform) + '/'
+    const response = await fetch(CONSOLE + '/api/streamers/' + encodeURIComponent(where.platform) + '/'
       + encodeURIComponent(where.uid) + '/live?series=online_count');
+    if (response.status === 401) {
+      location.reload();
+      return;
+    }
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error('HTTP ' + response.status);
+    }
     if (generation !== liveGeneration || !canRefreshLive()) return;
-    if (!response || response.success === false) throw new Error(response?.message || '网络错误');
-    live = response;
+    if (response.status < 200 || response.status >= 300
+      || data?.success !== true || typeof data.living !== 'boolean') {
+      throw new Error(data?.message || data?.error || 'HTTP ' + response.status);
+    }
+    live = data;
     liveError = '';
   } catch (error) {
     if (generation !== liveGeneration || !canRefreshLive()) return;
@@ -622,7 +636,10 @@ function renderLive() {
   const metrics = {...(live?.metrics || {})};
   // 报告图的在线人数使用 online_count：分钟内取最大，最新分钟的值不是本场峰值。
   const online = live?.series?.online_count || [];
-  if (detail.platform === 'bilibili') delete metrics.online_count;
+  if (detail.platform === 'bilibili') {
+    delete metrics.online_count;
+    delete metrics.online_rank_count;
+  }
   const rows = snapshotRows(metrics, catalog);
   if (detail.platform === 'bilibili') {
     rows.push({key: 'online_count', name: '在线人数', unit: '人', known: true,
@@ -635,7 +652,8 @@ function renderLive() {
     if (!row.known) label.title = '这台机器采到了一项插件还没说出名字的指标，原样显示';
     metricList.appendChild(label);
     const value = el('dd');
-    value.textContent = fmtMetric(row.value, labels.get(row.key)) + (row.unit ? ' ' + row.unit : '');
+    value.textContent = fmtMetric(row.value, labels.get(row.key))
+      + (row.value != null && row.unit ? ' ' + row.unit : '');
     metricList.appendChild(value);
   }
   card.appendChild(metricList);
