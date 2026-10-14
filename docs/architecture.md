@@ -224,6 +224,17 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
   缺口的起点是**最后一次落盘的时刻**而不是进程死掉的时刻——
   那之后收到的消息随进程一起没了，同样没进任何统计
 
+`data.json` 中的 `Downtimes` 保存程序停机区间，`RoomOutages:<平台>` 按房间 uid
+保存断线区间。两者保留 400 天，供以后判断近一年每天机器人是否一直在看（一年加余量）；
+停机表与每个房间的断线表各限 5000 条，超过时删掉时间最早的记录，剩余记录的先后顺序不变。
+
+各名单无法识别观众而跳过计分的次数存于 `data.json` 的 `LiveAnonymousCounts:<平台>`，
+按房间 uid、计分表名分层，与名单一起随本场数据保存、重启继续累加、开播清零。
+正常下播与未闭合恢复都把它写入 `sessions.jsonl` 的 `anonymousCounts`（计分表名 → 次数），
+只记大于 0 的项；新记录没有匿名事件时也写出 `"anonymousCounts":{}`，表示已记录且为零。
+这是跳过计分的次数，不是人数；匿名事件仍不进名单。
+旧归档缺少这一项时读为 `null`，表示当时未记录、无法得知，不能解释成 0，也不能与新记录的空表混同。
+
 `LiveDataService` 只注册一个实现 `CompositeLiveDataService`：本场数据委托
 `DefaultLiveDataService` 写 `data.json`，累计数据交给 `TotalDataStorage`。
 **累计数据要外部存储才有**——那类数据随时间无限增长，放在单个 JSON 文件里迟早撑不住。

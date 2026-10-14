@@ -287,6 +287,16 @@ public class CompositeLiveDataService implements LiveDataService {
     }
 
     @Override
+    public void incrementLiveAnonymousCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        delegate.incrementLiveAnonymousCount(platform, uid, metric);
+    }
+
+    @Override
+    public Map<String, Long> getLiveAnonymousCounts(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveAnonymousCounts(platform, uid);
+    }
+
+    @Override
     public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to,
                                   @NonNull LiveGap.Reason reason) {
         delegate.recordRoomOutage(platform, uid, from, to, reason);

@@ -166,7 +166,8 @@ public class LiveSessionRecovery {
                 // 而漏在这里的后果是「崩溃过的那一场永远没有名单」，事后补不回来
                 liveDataService.getLiveMetricUserSets(platform, source.getUid()),
                 outage,
-                peaks));
+                peaks,
+                liveDataService.getLiveAnonymousCounts(platform, source.getUid())));
 
         // 明细那一份与正常下播走同一套（LiveSessionDetailArchiver）：曲线全量、排行、词频、
         // 高能、缺口区间、打赏。存下 detail.json 同时把旧场的弹幕原文封了口——
