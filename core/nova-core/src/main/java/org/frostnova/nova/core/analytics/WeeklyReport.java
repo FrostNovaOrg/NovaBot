@@ -118,8 +118,8 @@ public final class WeeklyReport {
         if (c.anonymous() + c.unknown() + c.missing() == 0) return "";
         var parts = new java.util.ArrayList<String>();
         if (c.complete() != 0) parts.add("完整 " + c.complete() + " 场");
-        if (c.anonymous() != 0) parts.add("有认不出的观众 " + c.anonymous() + " 场（这几场的人数偏少）");
-        if (c.unknown() != 0) parts.add("不知道是否完整 " + c.unknown() + " 场（升级到 6.0 之前开播的场次没有记这一项）");
+        if (c.anonymous() != 0) parts.add("含无法识别的观众 " + c.anonymous() + " 场（这几场的人数偏少）");
+        if (c.unknown() != 0) parts.add("完整性未知 " + c.unknown() + " 场（升级到 6.0 之前开播的场次未记录此项）");
         if (c.missing() != 0) parts.add("没有名单 " + c.missing() + " 场");
         return "名单：" + String.join("；", parts);
     }
@@ -128,6 +128,11 @@ public final class WeeklyReport {
         if (d.metrics().get("sessions").intValue() == 0) return summary(d);
         var lines = new java.util.ArrayList<String>();
         lines.add("运营周报（" + period(d) + "）");
+        if (d.chartMetric().equals("durationSeconds")) {
+            lines.add("场次：" + number(d.metrics().get("sessions"), " 场", false));
+            lines.add("直播时长：" + duration(d.metrics().get("durationSeconds").longValue()));
+            return String.join("\n", lines);
+        }
         for (var c : cards(d)) lines.add(c.label() + "：" + c.value() + (c.note().isEmpty() ? "" : "（" + c.note() + "）"));
         lines.add(composition(d));
         if (!coverage(d).isEmpty()) lines.add(coverage(d));

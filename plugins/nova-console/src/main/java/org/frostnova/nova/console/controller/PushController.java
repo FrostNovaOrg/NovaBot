@@ -128,6 +128,7 @@ public class PushController {
             // 而「这个处理器没搬过家」与「这一版后端还不答这一问」要人做的事不是同一件
             item.put("aliases", legacyNames.getOrDefault(className, List.of()));
             item.put("displayName", handler.displayName());
+            item.put("defaultEnabled", handler.defaultEnabled());
             item.put("description", handler.description());
             item.put("platform", handler.platform());
             item.put("placeholders", handler.placeholders());

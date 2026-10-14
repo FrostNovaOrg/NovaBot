@@ -153,6 +153,15 @@ public class NovaMessageSender {
         enqueue(message);
     }
 
+    /** 周报仅在过闸时入队；被静音拦下时交还调度器顺延，不丢弃。 */
+    public PushGate.Block sendWeeklyReport(Message message) {
+        if (!pushGate.allowedFor(message.getPlatform(), message.getType(), message.getNum())) {
+            return pushGate.blockedBy();
+        }
+        enqueue(message);
+        return null;
+    }
+
     /**
      * 将告警消息加入发送队列
      * <p>

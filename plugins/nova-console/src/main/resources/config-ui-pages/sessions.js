@@ -287,7 +287,7 @@ function quietRow(host, ctx) {
   const summary = ctx.summary.quiet;
   const body = row(host, ctx, '静音时段', summary.text,
     '静音期间推往此会话的开播、下播、报告、动态与命令回复将直接丢弃，不会补发，'
-    + '时间线上记为「静音丢弃」。开始与结束时间不能相同，相同时保存会被拒绝；'
+    + '时间线上记为「静音丢弃」。运营周报除外：顺延到静音结束后发送。开始与结束时间不能相同，相同时保存会被拒绝；'
     + '如需全天照常发送，请选择「本会话不静音」。设置页的全局推送开关关闭时一律不发送；告警不受静音影响。');
 
   const saved = {mode: summary.mode, start: summary.start, end: summary.end};
