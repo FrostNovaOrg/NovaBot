@@ -422,6 +422,15 @@ public class AlertService {
             pending.clear();
         }
 
+        if (!properties.getAlert().isEnabled()) {
+            log.error("告警已关闭, {} 条待重投告警没送出去, 这些告警已作废:", batch.size());
+            for (PendingAlert alert : batch) {
+                log.error("  未送出: [{}] {} （发生于 {}, 已尝试 {} 次）",
+                        alert.key(), alert.subject(), alert.occurredAtText(), alert.attempts());
+            }
+            return;
+        }
+
         Instant now = Instant.now();
         for (PendingAlert alert : batch) {
             deliver(alert, alert.contentForRedelivery(now));

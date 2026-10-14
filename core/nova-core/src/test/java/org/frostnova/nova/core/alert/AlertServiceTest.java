@@ -27,7 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -723,6 +726,47 @@ class AlertServiceTest {
                     (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AlertService.class);
             logger.detachAppender(appender);
             appender.stop();
+        }
+
+        @Test
+        @DisplayName("关闭告警后待重投告警仍报出、时间线新增已报出：应清空且重新开启也不补发")
+        void dropsPendingWhenAlertsDisabledWithoutTimelineEntry() {
+            FakeChannel channel = spy(new FakeChannel("qq", "QQ"));
+            channel.failing = true;
+            channels.add(channel);
+            AlertService service = capturing();
+            service.alert("login-expired", "登录已失效", "凭据复检未通过");
+            assertEquals(1, service.pendingCount(), "前置：通道失败后等待重投");
+            assertEquals(1, recorded.size(), "前置：首投失败已记入时间线");
+            List<TimelineEvent> beforeDisable = List.copyOf(recorded);
+            clearInvocations(channel);
+
+            properties.getAlert().setEnabled(false);
+            channel.failing = false;
+            ListAppender<ILoggingEvent> appender = attachLog();
+            try {
+                service.retryPending();
+                assertEquals(0, channel.received.size(), "关闭告警后不应补发待重投告警");
+                verifyNoInteractions(channel);
+                assertEquals(beforeDisable, recorded, "关闭告警后时间线不应新增告警记录");
+                assertEquals(0, service.pendingCount(), "关闭告警后待重投告警应全部作废");
+
+                properties.getAlert().setEnabled(true);
+                service.retryPending();
+                assertEquals(0, channel.received.size(), "重新开启告警后不应补发已作废的告警");
+                verifyNoInteractions(channel);
+                assertEquals(beforeDisable, recorded);
+                assertEquals(0, service.pendingCount());
+            } finally {
+                detachLog(appender);
+            }
+
+            List<String> messages = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage).toList();
+            assertEquals(2, messages.size(), "工程日志应写总数及逐条未送出告警");
+            assertTrue(messages.get(0).contains("告警已关闭") && messages.get(0).contains("1 条"));
+            assertTrue(messages.get(1).contains("未送出: [login-expired] 登录已失效")
+                    && messages.get(1).contains("发生于") && messages.get(1).contains("已尝试 1 次"));
         }
 
         @Test
