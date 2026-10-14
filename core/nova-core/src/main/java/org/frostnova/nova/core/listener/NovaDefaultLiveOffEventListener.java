@@ -139,7 +139,8 @@ public class NovaDefaultLiveOffEventListener {
                 // 差 1 的代价（分析侧一个计数偏差）远小于把人数打成 0。
                 userSets,
                 outage,
-                peaks));
+                peaks,
+                liveDataService.getLiveAnonymousCounts(event.getPlatform(), source.getUid())));
 
         // 明细那一份与未闭合补档走同一套（见 LiveSessionDetailArchiver），仍排在场次归档之后：
         // 先把小的那份落定再写大的那份，程序若在这中间被杀，丢的是明细不是场次。

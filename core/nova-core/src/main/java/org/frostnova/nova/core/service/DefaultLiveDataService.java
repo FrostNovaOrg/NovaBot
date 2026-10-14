@@ -314,10 +314,22 @@ public class DefaultLiveDataService implements LiveDataService {
     private volatile LiveGap startupDowntimeSegment;
 
     /**
-     * 停机记录的保留时长。留 30 天：月度统计要算得出「这个月有多少时间没在采」，
-     * 再往前的场次早已归档，归档里带着当时算好的缺口
+     * 停机与断线记录保留 400 天：要回答近一年每一天机器人是否一直在看，留一年再加余量。
      */
-    private static final long DOWNTIME_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000;
+    private static final long DOWNTIME_RETENTION_MILLIS = 400L * 24 * 60 * 60 * 1000;
+
+    /** 每张区间表最多保留的条数，断线表按房间分别限制，防止数据文件无限增长。 */
+    private static final int MAX_GAP_INTERVALS = 5000;
+
+    private static void trimGapIntervals(JSONArray intervals) {
+        long expiry = System.currentTimeMillis() - DOWNTIME_RETENTION_MILLIS;
+        intervals.removeIf(entry -> !(entry instanceof JSONObject json) || json.getLongValue("to") < expiry);
+        if (intervals.size() > MAX_GAP_INTERVALS) {
+            intervals.sort(Comparator.comparingLong(entry -> ((JSONObject) entry).getLongValue("from"))
+                    .thenComparingLong(entry -> ((JSONObject) entry).getLongValue("to")));
+            intervals.subList(0, intervals.size() - MAX_GAP_INTERVALS).clear();
+        }
+    }
 
     /**
      * 时刻的本机时区表示。运维日志里的时刻一律用本机时区，
@@ -357,15 +369,13 @@ public class DefaultLiveDataService implements LiveDataService {
                 cache.put(KEY_DOWNTIMES, downtimes);
             }
 
-            long expiry = System.currentTimeMillis() - DOWNTIME_RETENTION_MILLIS;
-            downtimes.removeIf(entry -> !(entry instanceof JSONObject json) || json.getLongValue("to") < expiry);
-
             JSONObject entry = new JSONObject();
             entry.put("from", from);
             entry.put("to", to);
             // 存枚举名而不是中文说明：说明是给人看的、改得动，键值是数据文件的一部分、改不得
             entry.put(FIELD_REASON, reason.name());
             downtimes.add(entry);
+            trimGapIntervals(downtimes);
         }
 
         log.info("已记录一段停机: {} ~ {}, 共 {} 秒, 成因 {}",
@@ -456,16 +466,13 @@ public class DefaultLiveDataService implements LiveDataService {
                 byRoom.put(String.valueOf(uid), outages);
             }
 
-            // 保留窗口与停机记录一致：更早的场次早已归档，归档里带着当时算好的缺口
-            long expiry = System.currentTimeMillis() - DOWNTIME_RETENTION_MILLIS;
-            outages.removeIf(entry -> !(entry instanceof JSONObject json) || json.getLongValue("to") < expiry);
-
             JSONObject entry = new JSONObject();
             entry.put("from", from);
             entry.put("to", to);
             // 存枚举名而不是中文说明，理由与停机那边同一条
             entry.put(FIELD_REASON, reason.name());
             outages.add(entry);
+            trimGapIntervals(outages);
         }
 
         log.debug("已记录直播间 {} 的一段断线: {} ~ {}, 共 {} 秒, 成因 {}",
@@ -878,6 +885,39 @@ public class DefaultLiveDataService implements LiveDataService {
                 JSONObject users = byMetric.getJSONObject(metric);
                 result.put(metric, users == null ? 0 : users.size());
             }
+            return result;
+        }
+    }
+
+    /** 本场每张计分表因无法识别观众而跳过的次数，随本场数据存盘。 */
+    private static final String KEY_ANONYMOUS_COUNTS = "LiveAnonymousCounts:";
+
+    @Override
+    public void incrementLiveAnonymousCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        synchronized (metricLock) {
+            cache.putIfAbsent(KEY_ANONYMOUS_COUNTS + platform, new JSONObject());
+            JSONObject byRoom = cache.getJSONObject(KEY_ANONYMOUS_COUNTS + platform);
+            byRoom.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject counts = byRoom.getJSONObject(String.valueOf(uid));
+            counts.put(metric, counts.getLongValue(metric) + 1);
+        }
+    }
+
+    @Override
+    public Map<String, Long> getLiveAnonymousCounts(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject counts = Optional.ofNullable(cache.getJSONObject(KEY_ANONYMOUS_COUNTS + platform))
+                    .map(byRoom -> byRoom.getJSONObject(String.valueOf(uid))).orElse(null);
+            if (counts == null) {
+                return Map.of();
+            }
+            Map<String, Long> result = new HashMap<>();
+            counts.forEach((metric, value) -> {
+                long count = counts.getLongValue(metric);
+                if (count > 0) {
+                    result.put(metric, count);
+                }
+            });
             return result;
         }
     }
@@ -1513,6 +1553,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject(KEY_ANONYMOUS_COUNTS + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));

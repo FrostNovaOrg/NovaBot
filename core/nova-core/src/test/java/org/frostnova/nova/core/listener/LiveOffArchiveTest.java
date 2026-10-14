@@ -59,7 +59,7 @@ class LiveOffArchiveTest {
 
     private static final long ROOM_ID = 47615208934771L;
 
-    private static final long START = 1_700_000_000_000L;
+    private static final long START = System.currentTimeMillis() - 3_600_000L;
 
     private static final long MINUTE = 60_000L;
 

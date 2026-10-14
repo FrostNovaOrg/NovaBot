@@ -221,7 +221,7 @@ class LiveSessionArchiveTest {
         try {
             assertEquals(Set.of("platform", "uid", "uname", "roomId", "startTime", "endTime", "durationSeconds",
                     "metrics", "userCounts", "endReason", "titles", "maintenanceGapSeconds", "userSets",
-                    "roomOutageSeconds", "peaks"), line.keySet(), "① 顶层键集");
+                    "roomOutageSeconds", "peaks", "anonymousCounts"), line.keySet(), "① 顶层键集");
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
         }
@@ -236,6 +236,33 @@ class LiveSessionArchiveTest {
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
         }
+    }
+
+    // 防止匿名造成的名单缺项在归档读取时消失，被当成完整名单分析。
+    @Test
+    @DisplayName("匿名次数原样读回，坏项逐个跳过，不丢本场其余数据")
+    void anonymousCountsSurviveReadingBadItems() throws Exception {
+        JSONObject row = JSON.parseObject(JSON.toJSONString(session(1_000_000L, 100)));
+        row.put("anonymousCounts", Map.of("danmu_users", 3, "gift_users", 2,
+                "zero", 0, "negative", -1, "broken", "bad", "fraction", 1.5));
+        Files.writeString(dir.resolve("sessions.jsonl"), row.toJSONString() + "\n");
+
+        List<LiveSession> found = archive.find(0, Long.MAX_VALUE);
+        assertEquals(1, found.size(), "坏项不能连累整场归档");
+        assertEquals(Map.of("danmu_users", 3, "gift_users", 2),
+                JSON.parseObject(JSON.toJSONString(found.get(0))).getJSONObject("anonymousCounts"),
+                "名单缺项的次数必须留住");
+    }
+
+    @Test
+    @DisplayName("老归档没有匿名次数时读成空表，表示未知，不能补成0")
+    void oldRecordsHaveUnknownAnonymousCounts() throws Exception {
+        JSONObject old = JSON.parseObject(JSON.toJSONString(session(2_000_000L, 100)));
+        old.remove("anonymousCounts");
+        Files.writeString(dir.resolve("sessions.jsonl"), old.toJSONString() + "\n");
+        LiveSession found = archive.find(0, Long.MAX_VALUE).get(0);
+        assertEquals(Map.of(), JSON.parseObject(JSON.toJSONString(found)).getJSONObject("anonymousCounts"),
+                "老记录空表表示当时没有记录，不能补成0");
     }
 
     // ⚠️ 夹具一律用保留段假值。

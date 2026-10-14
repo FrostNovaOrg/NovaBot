@@ -1,13 +1,17 @@
 package org.frostnova.nova.core.service;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.UserScore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
@@ -19,8 +23,10 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -584,6 +590,131 @@ class DefaultLiveDataServiceTest {
     private static boolean anyNameStartsWith(Path dir, String prefix) throws Exception {
         try (Stream<Path> children = Files.list(dir)) {
             return children.anyMatch(path -> path.getFileName().toString().startsWith(prefix));
+        }
+    }
+    @Nested
+    @DisplayName("停机与断线记录保留期及条数上限")
+    class GapRetention {
+        private static final long DAY = 86_400_000L;
+        private static final String PLATFORM = "bilibili";
+        private static final long UID = 10001L;
+
+        @TempDir
+        Path dir;
+
+        // 防止历史停机被误当作全程在线，进而把未采到的日子算成确认没播。
+        @Test
+        @DisplayName("停机记录保留31天与399天前的缺口，删除401天前的缺口")
+        void downtimeKeepsNearlyAYear() throws Exception {
+            retention(false);
+        }
+
+        // 防止历史房间断线被误当作一直在看，进而把未采到的日子算成确认没播。
+        @Test
+        @DisplayName("房间断线保留31天与399天前的缺口，删除401天前的缺口")
+        void roomOutageKeepsNearlyAYear() throws Exception {
+            retention(true);
+        }
+
+        @Test
+        @DisplayName("停机记录超过5000条时删掉最早的，防止数据文件持续膨胀")
+        void downtimeDropsOldestAboveLimit() throws Exception {
+            cap(false);
+        }
+
+        @Test
+        @DisplayName("每个房间断线各限5000条，防止数据文件持续膨胀")
+        void roomOutageDropsOldestAboveLimit() throws Exception {
+            cap(true);
+        }
+
+        private void retention(boolean room) throws Exception {
+            long now = System.currentTimeMillis();
+            JSONArray entries = new JSONArray();
+            for (int days : new int[]{31, 399, 401}) {
+                entries.add(entry(now - days * DAY));
+            }
+            DefaultLiveDataService service = boot(room, entries);
+            try {
+                record(service, room, now);
+                assertAll(
+                        () -> assertEquals(1, intervals(service, room, now - 31 * DAY).size(), "31天前的缺口不能丢"),
+                        () -> assertEquals(1, intervals(service, room, now - 399 * DAY).size(), "399天前的缺口不能丢"),
+                        () -> assertEquals(0, intervals(service, room, now - 401 * DAY).size(), "401天前的缺口应过期"));
+                // 新写入的历史记录也必须遵守保留窗口。
+                record(service, room, now - 401 * DAY);
+                assertEquals(0, intervals(service, room, now - 401 * DAY).size());
+            } finally {
+                service.onContextClosedEvent();
+            }
+        }
+
+        private void cap(boolean room) throws Exception {
+            long now = System.currentTimeMillis();
+            JSONArray entries = new JSONArray();
+            // 倒序放入，验证删的是时间最早的，而非数组的第一项。
+            IntStream.rangeClosed(1, 5000).forEach(i -> entries.add(entry(now - i * 10_000L)));
+            DefaultLiveDataService service = boot(room, entries);
+            try {
+                record(service, room, now);
+                assertAll(
+                        () -> assertEquals(5000, all(service, room).size(), "每张表最多5000条"),
+                        () -> assertEquals(0, intervals(service, room, now - 5000 * 10_000L).size(), "应删除时间最早的缺口"),
+                        () -> assertEquals(1, intervals(service, room, now - 10_000L).size(), "较新的缺口必须保留"),
+                        () -> assertEquals(1, intervals(service, room, now).size(), "本次缺口必须保留"));
+                if (room) {
+                    service.recordRoomOutage(PLATFORM, UID + 1, now, now + 1000, LiveGap.Reason.STREAM_LOSS);
+                    assertEquals(5000, all(service, true).size(), "其他房间不得挤占本房间上限");
+                    assertEquals(1, service.roomOutageIntervals(PLATFORM, UID + 1, 0, Long.MAX_VALUE).size());
+                }
+            } finally {
+                service.onContextClosedEvent();
+            }
+        }
+
+        private DefaultLiveDataService boot(boolean room, JSONArray entries) throws Exception {
+            JSONObject data = new JSONObject();
+            if (room) {
+                JSONObject rooms = new JSONObject();
+                rooms.put(String.valueOf(UID), entries);
+                data.put("RoomOutages:" + PLATFORM, rooms);
+            } else {
+                data.put("Downtimes", entries);
+            }
+            Path path = dir.resolve("data.json");
+            Files.writeString(path, data.toJSONString());
+            NovaCoreProperties properties = new NovaCoreProperties();
+            properties.getLive().setLiveDataPath(path.toString());
+            properties.getLive().setSaveLiveData(true);
+            properties.getLive().setAutoSaveLiveDataInterval(3600);
+            DefaultLiveDataService service = new DefaultLiveDataService(properties);
+            service.onApplicationReadyEvent();
+            return service;
+        }
+
+        private JSONObject entry(long from) {
+            JSONObject entry = new JSONObject();
+            entry.put("from", from);
+            entry.put("to", from + 1000);
+            return entry;
+        }
+
+        private void record(DefaultLiveDataService service, boolean room, long from) {
+            if (room) {
+                service.recordRoomOutage(PLATFORM, UID, from, from + 1000, LiveGap.Reason.STREAM_LOSS);
+            } else {
+                service.recordDowntime(from, from + 1000, LiveGap.Reason.RESTART);
+            }
+        }
+
+        private List<LiveGap> intervals(DefaultLiveDataService service, boolean room, long from) {
+            return room ? service.roomOutageIntervals(PLATFORM, UID, from, from + 1000)
+                    : service.downtimeIntervals(from, from + 1000);
+        }
+
+        private List<LiveGap> all(DefaultLiveDataService service, boolean room) {
+            return room ? service.roomOutageIntervals(PLATFORM, UID, 0, Long.MAX_VALUE)
+                    : service.downtimeIntervals(0, Long.MAX_VALUE);
         }
     }
 }

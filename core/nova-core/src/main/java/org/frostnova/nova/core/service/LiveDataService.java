@@ -435,6 +435,21 @@ public interface LiveDataService {
         return Map.of();
     }
 
+    /**
+     * 本场一次计分因认不出观众而跳过，与参与者名单使用相同的计分表名。
+     * 随本场数据存盘、重启后继续累加，下次开播时清零，不并入累计。
+     */
+    default void incrementLiveAnonymousCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+    }
+
+    /**
+     * 本场各计分表无法识别观众的次数快照，只含大于 0 的项。
+     * 空表不保证没有匿名事件：旧数据或未实现此功能的数据源也返回空表，表示未记录。
+     */
+    default Map<String, Long> getLiveAnonymousCounts(@NonNull String platform, @NonNull Long uid) {
+        return Map.of();
+    }
+
     // ================ 时间序列（互动曲线） ================
     // 与「本场指标」记总量、「按用户计分」记谁贡献了多少并列，这里记的是**什么时候发生的**。
     // 只服务于本场报告里的曲线图，因此随本场数据一并清零，也不并入累计。

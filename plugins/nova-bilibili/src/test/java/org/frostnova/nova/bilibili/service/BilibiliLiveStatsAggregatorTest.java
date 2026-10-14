@@ -22,12 +22,29 @@ import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.model.UserInfo;
 import org.frostnova.nova.core.model.DanmuRecord;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.event.live.common.LiveOffEvent;
+import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
+import org.frostnova.nova.core.model.LiveSession;
+import org.frostnova.nova.core.service.CompositeLiveDataService;
+import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveInterventionTracker;
+import org.frostnova.nova.core.service.LiveRoomInfoHistory;
+import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
+import org.frostnova.nova.core.service.LiveSessionRecovery;
+import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.TotalDataStorage;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
 
 /**
  * 本场直播数据聚合器测试
@@ -83,6 +101,8 @@ class BilibiliLiveStatsAggregatorTest {
     @TempDir
     Path dir;
 
+    private NovaCoreProperties properties;
+
     private DefaultLiveDataService liveDataService;
 
     private LiveDetailArchive details;
@@ -91,7 +111,7 @@ class BilibiliLiveStatsAggregatorTest {
 
     @BeforeEach
     void setUp() {
-        NovaCoreProperties properties = new NovaCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
         liveDataService = new DefaultLiveDataService(properties);
@@ -658,6 +678,103 @@ class BilibiliLiveStatsAggregatorTest {
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
         }
+    }
+
+    // 防止未登录连接的名单缺项消失，导致以后把这份名单当成完整名单。
+    @ParameterizedTest(name = "uid={0}：十张名单的匿名缺项次数留下，名单和指标不变")
+    @NullSource
+    @ValueSource(longs = {0, -1})
+    @DisplayName("uid为0、空、负数各计一次匿名缺项，十张名单和原有指标不变")
+    void unidentifiedUsersLeaveCountsForEveryTable(Long uid) throws Exception {
+        assertEquals(List.of(), feedEveryScoredEvent(key -> user(uid)));
+        liveDataService.onContextClosedEvent();
+        assertEquals(expectedAnonymousCounts(1), savedAnonymousCounts(),
+                "每张名单都要留下认不出是谁的次数，uid=" + uid);
+        assertEquals(Map.of(), liveDataService.getLiveMetricUserSets(PLATFORM, STREAMER.getUid()));
+        assertEquals(Map.of(), tablesWithViewers());
+        assertEquals(Map.of(), tablesWithRanking());
+        assertEquals(2.0, metric(BilibiliLiveMetric.DANMU_COUNT));
+        assertEquals(11.8, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001);
+    }
+
+    @Test
+    @DisplayName("匿名次数重启后继续累加，正常下播归档带上次数，新场清零")
+    void anonymousCountsSurviveRestartAndNormalLiveOff() throws Exception {
+        archiveAnonymousCounts(false);
+    }
+
+    @Test
+    @DisplayName("匿名次数重启后继续累加，未闭合恢复归档带上次数，新场清零")
+    void anonymousCountsSurviveRestartAndRecovery() throws Exception {
+        archiveAnonymousCounts(true);
+    }
+
+    private void archiveAnonymousCounts(boolean recover) throws Exception {
+        long start = 1_700_000_000_000L;
+        properties.getLive().setSaveLiveData(true);
+        properties.getLive().setAutoSaveLiveDataInterval(3600);
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+        LiveDataService composite = new CompositeLiveDataService(liveDataService, mock(TotalDataStorage.class));
+        aggregator = new BilibiliLiveStatsAggregator(composite, details);
+        assertEquals(List.of(), feedEveryScoredEvent(key -> user(0L)));
+        liveDataService.onContextClosedEvent();
+
+        liveDataService = new DefaultLiveDataService(properties);
+        liveDataService.onApplicationReadyEvent();
+        try {
+            composite = new CompositeLiveDataService(liveDataService, mock(TotalDataStorage.class));
+            aggregator = new BilibiliLiveStatsAggregator(composite, details);
+            assertEquals(List.of(), feedEveryScoredEvent(key -> user(null)));
+            assertEquals(List.of(), feedEveryScoredEvent(key -> user(-1L)));
+            assertEquals(List.of(), feedEveryScoredEvent(key -> user(1L)));
+            LiveSessionArchive archive = new LiveSessionArchive(properties);
+            LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
+            LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(composite, history, details);
+            if (recover) {
+                assertTrue(new LiveSessionRecovery(composite, archive, history, archiver)
+                        .archiveUnclosedIfAny(PLATFORM, STREAMER, start + 3_600_000));
+            } else {
+                new NovaDefaultLiveOffEventListener(composite, archive, new LiveInterventionTracker(), history, archiver)
+                        .onLiveOffEvent(new LiveOffEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(start + 3_600_000)));
+            }
+            List<LiveSession> found = archive.find(0, Long.MAX_VALUE);
+            assertEquals(1, found.size());
+            JSONObject session = JSON.parseObject(JSON.toJSONString(found.get(0)));
+            assertEquals(expectedAnonymousCounts(3), session.getJSONObject("anonymousCounts"),
+                    "归档必须留下名单缺项次数，含重启前那一份");
+            assertEquals(List.of(1L), found.get(0).userSet(BilibiliLiveMetric.DANMU_USERS));
+            assertEquals(1, found.get(0).userCount(BilibiliLiveMetric.DANMU_USERS));
+            assertEquals(8.0, found.get(0).metric(BilibiliLiveMetric.DANMU_COUNT));
+            composite.resetLiveData(PLATFORM, STREAMER.getUid());
+            liveDataService.onContextClosedEvent();
+            assertTrue(savedAnonymousCounts() == null || savedAnonymousCounts().isEmpty(), "新场不得带入上一场缺项次数");
+            liveDataService = new DefaultLiveDataService(properties);
+            liveDataService.onApplicationReadyEvent();
+            aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
+            aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(0L), "新场", "新场"));
+            liveDataService.onContextClosedEvent();
+            assertEquals(Map.of(BilibiliLiveMetric.DANMU_USERS, 1), savedAnonymousCounts());
+        } finally {
+            liveDataService.onContextClosedEvent();
+        }
+    }
+
+    private Map<String, Integer> expectedAnonymousCounts(int rounds) {
+        Map<String, Integer> expected = new LinkedHashMap<>();
+        for (String table : USER_TABLES) {
+            int perRound = table.equals(BilibiliLiveMetric.REVENUE_USERS) ? 6
+                    : table.equals(BilibiliLiveMetric.GUARD_USERS) ? 3
+                    : table.equals(BilibiliLiveMetric.DANMU_USERS) || table.equals(BilibiliLiveMetric.GIFT_USERS) ? 2 : 1;
+            expected.put(table, perRound * rounds);
+        }
+        return expected;
+    }
+
+    private JSONObject savedAnonymousCounts() throws Exception {
+        JSONObject data = JSON.parseObject(Files.readString(dir.resolve("data.json")));
+        JSONObject rooms = data.getJSONObject("LiveAnonymousCounts:" + PLATFORM);
+        return rooms == null ? null : rooms.getJSONObject(String.valueOf(STREAMER.getUid()));
     }
 
     // ---------------------------------------------------------------- 弹幕原文留档
