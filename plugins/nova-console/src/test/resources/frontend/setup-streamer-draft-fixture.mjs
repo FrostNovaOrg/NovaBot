@@ -162,6 +162,28 @@ eq(next.includes('draft.streamer') && next.includes('draft.targets.length')
 const skip = bracedFrom(src, 'export async function skip');
 eq(skip.length > 0 && skip.includes('ask('), true, '⑥ skip 走 ask 的后果确认');
 
+// ⑦ 「不会采集、不会推送」只对一位主播都没有的人成立：已有主播时跳过这一步
+//    不停用也不删除谁，那句后果不该出现。真执行 skip，ask 换成记下弹了什么的替身
+const NO_STREAMER_TEXT = '不会采集任何直播数据';
+async function runSkip(users) {
+  const asked = [];
+  const ask = async opts => { asked.push(String((opts || {}).title) + '｜' + String((opts || {}).body)); return true; };
+  const fn = new Function('ask', skip.replace(/^export\s+/, '') + '\nreturn skip;')(ask);
+  const passed = await fn({status: {users}});
+  return {passed, asked};
+}
+try {
+  const none = await runSkip([]);
+  eq(none.asked.some(text => text.includes(NO_STREAMER_TEXT)), true,
+    '⑦ 一位主播都没有时点「暂不添加主播」，确认框说不会采集');
+  const some = await runSkip([{uid: 1}, {uid: 2}]);
+  eq(some.passed !== false, true, '⑦ 已有主播时点「暂不添加主播」照样放行');
+  eq(some.asked.filter(text => text.includes(NO_STREAMER_TEXT)), [],
+    '⑦ 已有主播时点「暂不添加主播」，不出现不会采集、不会推送的说法');
+} catch (e) {
+  eq('error:' + e.message, 'ok', '⑦ skip 能真执行');
+}
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

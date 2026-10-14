@@ -340,10 +340,14 @@ function stop(reason) {
 
 /**
  * 「先不加主播」。<b>要过一次确认</b>：不加主播的话这台 NovaBot 起来什么都不做，
- * 而一路点下去的人不会意识到这一点
+ * 而一路点下去的人不会意识到这一点。
+ * 已经有主播的人重走引导时直接跳过、不弹：跳过这一步不停用也不删除已有的主播，
+ * 那句「不会采集、不会推送」对他不成立
+ * @param ctx {status, login, api}
  * @return {Promise<boolean>} 真才跳过
  */
-export async function skip() {
+export async function skip(ctx) {
+  if ((((ctx || {}).status || {}).users || []).length > 0) return true;
   return ask({title: '确定暂不添加主播？',
     body: '不添加主播时，NovaBot 启动后不会采集任何直播数据，也不会推送任何通知。'
       + '之后可在「推送」页中添加。'});
