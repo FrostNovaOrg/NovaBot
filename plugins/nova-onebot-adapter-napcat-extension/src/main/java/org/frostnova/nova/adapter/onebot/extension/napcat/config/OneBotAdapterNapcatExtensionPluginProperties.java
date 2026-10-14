@@ -30,7 +30,7 @@ public class OneBotAdapterNapcatExtensionPluginProperties {
     // 决定做不做这件事，运行中改了要到下次启动才起作用。
     // 键名要与 BackupAtAllAspect 上的 @ConditionalOnProperty 一起改。只改一处的话，开关看着还在，拨过去却没有任何反应。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    @ConfigLabel("@全体成员 · 用完改发待办")
+    @ConfigLabel("@全体成员 · 次数用完后改发群待办")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigSummary("")
     private boolean enableBackupAtAll = true;
