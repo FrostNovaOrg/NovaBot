@@ -415,7 +415,7 @@ async function fresh() {
   mock.requests.length = 0;
 }
 
-await ask('① 静音从「跟全局」改成「不静音」、点保存，回包前又改成「自己的时段」：这一档还在，下次保存发出去', async () => {
+await ask('① 静音从「使用全局设置」改成「本会话不静音」、点保存，回包前又改成「本会话自定义时段」：这一档还在，下次保存发出去', async () => {
   if (!push || !sessions || !model) throw new Error('产品码没载入，无从量起');
   await fresh();
 
@@ -433,7 +433,7 @@ await ask('① 静音从「跟全局」改成「不静音」、点保存，回�
   if (!quietPosts().length) throw new Error('点下保存就该把静音写出去，实测一条都没发');
 
   // 这段时间里又选「本会话自己的时段」并填上起止：这一档还没存上
-  choose(inputByLabel(host, '本会话自己的时段'), '本会话自己的时段');
+  choose(inputByLabel(host, '本会话自定义时段'), '本会话自定义时段');
   await settle();
   // 起止各拨一下即整段重画一次，两框得各找各的——拿旧框拨只会写进旧那一份草稿
   const start = inputByLabel(host, '静音开始');
@@ -543,7 +543,7 @@ await ask('③ 静音时段：保存途中改回原值，存完它仍是草稿�
   if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
   await revertDuringSave(
     () => choose(inputByLabel(host, '本会话不静音'), '本会话不静音'),
-    () => choose(inputByLabel(host, '跟全局'), '跟全局'),
+    () => choose(inputByLabel(host, '使用全局设置'), '使用全局设置'),
     {mode: 'follow', start: '', end: ''},
     () => drafts.quietDraft(TARGET), '/state/quiet');
   same(sessionOf(mock.state).quietMode, 'follow', '服务端最后的静音档位');

@@ -305,7 +305,7 @@ await ask('⑧ 推送败、本群成：与推送失败那句并列写明本群�
   const said = statusText();
   same({
     '说了推送没存上': said.includes('推送'),
-    '写明本群设置已存': said.includes('本群设置已存'),
+    '写明本群设置已存': said.includes('本群设置已保存'),
     '两句并列': said.includes(' · '),
     '也带着服务端那句': said.includes('金额已设为可见'),
   }, {

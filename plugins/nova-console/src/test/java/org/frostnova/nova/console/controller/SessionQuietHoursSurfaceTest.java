@@ -205,7 +205,7 @@ class SessionQuietHoursSurfaceTest {
             JSONObject result = controller.setQuietHours(body("custom", pair[0], pair[1])).getBody();
             assertFalse(result.getBooleanValue("success"), pair[0] + "–" + pair[1] + ": " + result);
             String message = result.getString("message");
-            assertTrue(message.contains("起止相同") && message.contains("不静音") && message.contains("跟全局"), message);
+            assertTrue(message.contains("相同") && message.contains("本会话不静音") && message.contains("使用全局设置"), message);
         }
         assertTrue(quietHours.all().isEmpty(), quietHours.all().toString());
     }

@@ -96,9 +96,9 @@ let checks = 0;
 const SESSION = {platform: 'qq', type: '群', num: 12345};
 const TARGET = {platform: 'qq', type: 1, num: 12345};
 const CHAN = '群 12345';
-const NEW_EMPTY = '本次启动以来的最近推送里，没有发往这个群的。';
-const UNLOADED = '这个通道还没被加载出来，取不到它的推送记录。';
-const LINK_TEXT = '在日志页看全部 →';
+const NEW_EMPTY = '本次启动以来，暂无发往本群的推送。';
+const UNLOADED = '此通道尚未加载，无法获取其推送记录。';
+const LINK_TEXT = '在日志页查看全部 →';
 
 function eq(actual, expected, what) {
   const a = JSON.stringify(actual);
@@ -253,7 +253,7 @@ function renderNotices(session, history) {
 ask('① 推送记录为空时日志链接落在推送栏、带全通道串', () => {
   const host = renderNotices(SESSION, []);
   const link = linkOf(host);
-  if (!link) throw new Error('没有「在日志页看全部」链接');
+  if (!link) throw new Error('没有「在日志页查看全部」链接');
   eq(link.href, '#/log?cat=PUSH&chan=' + encodeURIComponent(CHAN), 'href');
 });
 
@@ -282,20 +282,20 @@ ask('② 空表提示句恰为本次启动以来那句', () => {
 ask('群最近推送写明所有主播与空表范围', () => {
   const host = renderNotices(SESSION, []);
   eq(collect(host, []).find(n => n.tag === 'h4').textContent, '本群最近推送', '标题');
-  eq(hintsOf(host).includes('推到这个群的所有主播都算在内。'), true, '群范围说明');
+  eq(hintsOf(host).includes('推送到本群的所有主播均计算在内。'), true, '群范围说明');
   eq(hintsOf(host).includes(NEW_EMPTY), true, '群空表');
 });
 
 ask('好友最近推送标题与空表范围', () => {
   const host = renderNotices({...SESSION, type: '好友'}, []);
-  eq(collect(host, []).find(n => n.tag === 'h4').textContent, '这位好友最近推送', '标题');
-  eq(hintsOf(host).includes('本次启动以来的最近推送里，没有发给这位好友的。'), true, '好友空表');
-  eq(hintsOf(host).includes('推到这个群的所有主播都算在内。'), false, '好友没有群说明');
+  eq(collect(host, []).find(n => n.tag === 'h4').textContent, '该好友最近推送', '标题');
+  eq(hintsOf(host).includes('本次启动以来，暂无发给该好友的推送。'), true, '好友空表');
+  eq(hintsOf(host).includes('推送到本群的所有主播均计算在内。'), false, '好友没有群说明');
 });
 
 ask('③ session 为 null 时不出链接且提示句为取不到记录', () => {
   const host = renderNotices(null, []);
-  if (linkOf(host)) throw new Error('仍出了「在日志页看全部」链接');
+  if (linkOf(host)) throw new Error('仍出了「在日志页查看全部」链接');
   const hints = hintsOf(host);
   if (!hints.includes(UNLOADED)) {
     throw new Error('提示句不是取不到记录，现有 hint=' + JSON.stringify(hints));
