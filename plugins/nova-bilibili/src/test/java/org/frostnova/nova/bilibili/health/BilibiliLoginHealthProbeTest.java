@@ -151,10 +151,12 @@ class BilibiliLoginHealthProbeTest {
     }
 
     @Test
-    @DisplayName("哔哩哔哩页的登录说明与探针讲同一套后果：动态与自动关注停、直播不受影响、会告警而不是静默")
+    @DisplayName("哔哩哔哩页的登录说明与探针讲同一套后果：动态与自动关注停、直播不受影响、不说静默；说会发告警时要写明须配了告警通道")
     void loginHintOnPageMatchesProbeConsequences() throws IOException {
         // 掉登录时探针判 DOWN，健康监控据此发告警；页上若说「静默停止」，
-        // 使用者会以为出了事没人提醒，从而不去配告警
+        // 使用者会以为出了事没人提醒，从而不去配告警。
+        // 反过来也不能只说「启用告警就会收到」：默认告警开着却一个通道都没配，
+        // AlertService.deliver 筛不出可用通道，只记一条「没有配置告警通道」，什么也不发
         String hint;
         try (InputStream in = getClass().getResourceAsStream("/config-ui-pages/bilibili.js")) {
             assertNotNull(in, "类路径上找不到 config-ui-pages/bilibili.js");
@@ -165,9 +167,11 @@ class BilibiliLoginHealthProbeTest {
 
         assertTrue(BilibiliLoginHealthProbe.ADVICE_WITHOUT_QR.contains("自动关注"), "探针的说法变了，本格要跟着改");
         assertFalse(hint.contains("静默"), "掉登录会告警，不是静默：" + hint);
-        assertTrue(hint.contains("自动关注"), "探针说自动关注也停，页上漏了：" + hint);
+        assertTrue(hint.contains("动态推送与自动关注将停止"), "探针说动态与自动关注都停，页上没说全：" + hint);
         assertTrue(hint.contains("直播推送不受影响"), hint);
         assertTrue(hint.contains("告警"), "页上没说会收到告警：" + hint);
+        assertTrue(hint.contains("启用告警") && hint.contains("配置了告警通道"),
+                "只启用告警、没配通道时什么也不发，页上漏了通道前提：" + hint);
     }
 
     /**
