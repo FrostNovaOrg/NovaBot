@@ -61,7 +61,7 @@ const shown = rows.slice(0, -1).filter(item => !item.href);
 const hidden = Number(String(more.text || '').replace(/\D/g, ''));
 eq(shown.length + hidden, 20, '显示的失败条数加末行的条数要等于二十条失败，普通记录不算');
 eq(more.href, '#/log', '还有几条那一行点了去日志页');
-eq(more.text, '还有 13 条失败或告警', '末行只数没显示出来的失败与告警');
+eq(more.text, '另有 13 条失败或告警', '末行只数没显示出来的失败与告警');
 
 const mixed = [
   event('error', '推送失败一'),

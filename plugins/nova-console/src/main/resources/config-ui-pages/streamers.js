@@ -15,7 +15,7 @@
  * 从地址栏直接进某一场与点一行进去会渲染出两种结果。
  */
 
-import {$, api, CONSOLE, el, esc, say} from './core.js';
+import {$, api, CONSOLE, el, esc, request, say} from './core.js';
 import {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   gapCells, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
@@ -74,7 +74,7 @@ export function render(section) {
         <div class="stats" id="st-all"></div>
       </div>
       <div class="nv-card hcard">
-        <h3>每位主播 <span class="h-note">右边那条小折线是最近几天的场次</span></h3>
+        <h3>每位主播 <span class="h-note">右侧折线为最近几天每天的场次</span></h3>
         <div id="st-list"></div>
       </div>
       <div id="st-unlisted"></div>
@@ -82,7 +82,7 @@ export function render(section) {
     <div id="sv-detail" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="sd-back" href="#/streamers">‹ 回主播列表</a>
+          <a class="daystep" id="sd-back" href="#/streamers">‹ 返回主播列表</a>
         </div>
       </div>
       <div class="nv-card hcard" id="sd-head"></div>
@@ -92,7 +92,7 @@ export function render(section) {
     <div id="sv-session" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="sx-back" href="#/streamers">‹ 回场次列表</a>
+          <a class="daystep" id="sx-back" href="#/streamers">‹ 返回场次列表</a>
         </div>
       </div>
       <h3 class="cat-title" id="sx-title">场次</h3>
@@ -237,7 +237,7 @@ async function loadList() {
   try {
     data = await api('/streamers');
   } catch (e) {
-    say('载入主播列表失败：' + e.message, 'err');
+    say('主播列表加载失败：' + e.message, 'err');
     return;
   }
 
@@ -248,7 +248,7 @@ async function loadList() {
   const totals = summaryTotals(list, days);
   $('#st-all').innerHTML = [
     [String(totals.total), '在册主播'],
-    [String(totals.living), '正在播'],
+    [String(totals.living), '正在直播'],
     [String(totals.sessions), '最近 ' + totals.days + ' 天场次'],
     [fmtDuration(totals.durationSeconds), '最近 ' + totals.days + ' 天时长'],
   ].map(([value, label]) => '<div class="stat"><div class="stat-v">' + esc(value)
@@ -261,8 +261,8 @@ async function loadList() {
   // 静静地显示出来——界面不至于坏，但没有任何东西提起「这里该补一句定稿的说法」
   const missing = uncoveredStatuses(data.statuses);
   if (missing.length) {
-    say('这台服务端多出了界面还不认识的主播状态：' + missing.join('、')
-      + '。它们照服务端给的说法显示', 'err');
+    say('服务端返回了界面尚未适配的主播状态：' + missing.join('、')
+      + '。这些状态按服务端提供的名称显示', 'err');
   }
 }
 
@@ -277,7 +277,7 @@ function renderRows(list, days) {
 
   if (!list.length) {
     host.appendChild(el('div', 'empty'));
-    host.lastChild.textContent = '还没有配置任何主播。到「推送」页左上角点「＋ 添加主播」。';
+    host.lastChild.textContent = '尚未配置任何主播。请在「推送」页左上角点击「＋ 添加主播」。';
     return;
   }
 
@@ -387,9 +387,9 @@ function renderUnlisted(list) {
 
   const card = el('div', 'nv-card hcard');
   const head = el('h3');
-  head.textContent = '归档里有、名单里没有 ';
+  head.textContent = '已归档、但不在推送配置中的主播 ';
   const note = el('span', 'h-note');
-  note.textContent = '从推送配置里删掉了，但他过去的场次还留着';
+  note.textContent = '已从推送配置中删除，过去的场次仍保留在归档中';
   head.appendChild(note);
   card.appendChild(head);
 
@@ -403,7 +403,7 @@ function renderUnlisted(list) {
     name.appendChild(link);
     main.appendChild(name);
     const sub = el('div', 'rc-sub');
-    sub.textContent = 'uid ' + one.uid + ' · 归档里有 ' + one.sessions + ' 场';
+    sub.textContent = 'uid ' + one.uid + ' · 已归档 ' + one.sessions + ' 场';
     main.appendChild(sub);
     row.appendChild(main);
     card.appendChild(row);
@@ -431,14 +431,14 @@ async function loadDetail() {
     if (generation !== viewGeneration || !liveActive) return;
     detail = response;
   } catch (e) {
-    say('载入主播详情失败：' + e.message, 'err');
+    say('主播详情加载失败：' + e.message, 'err');
     return;
   }
 
   if (!detail.success) {
     $('#sd-head').innerHTML = '';
     $('#sd-tabs').innerHTML = '';
-    $('#sd-body').innerHTML = '<p class="empty">' + esc(detail.message || '没有这位主播的记录。') + '</p>';
+    $('#sd-body').innerHTML = '<p class="empty">' + esc(detail.message || '没有该主播的记录。') + '</p>';
     return;
   }
 
@@ -487,7 +487,7 @@ function renderHead() {
   // 而停用是配置里的一个决定，压根没在册是另一回事
   if (detail.configured === false) {
     const off = el('div', 'sh-id');
-    off.textContent = '这位主播不在推送配置里：下面的数据来自他过去的归档，此刻既不采集也不推送。';
+    off.textContent = '该主播不在推送配置中：以下数据来自过去的归档，目前既不采集也不推送。';
     mid.appendChild(off);
   }
   head.appendChild(mid);
@@ -567,7 +567,7 @@ function renderInsights(data, message, living) {
   }
   const range = el('p', 'hint');
   range.textContent = insightsTime(data.from) + ' 至今'
-    + (living ? ' · 正在直播的这一场下播后才计入' : '');
+    + (living ? ' · 正在直播的场次下播后才计入' : '');
   range.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
   host.appendChild(range);
   const stats = el('div', 'stats');
@@ -589,7 +589,7 @@ function renderInsights(data, message, living) {
     const change = fans ? (fans.change > 0 ? '+' : fans.change < 0 ? '−' : '') + fmtMetric(Math.abs(fans.change)) : '暂无数据';
     const tooltip = fans ? (fans.partial ? '从 ' + insightsTime(fans.fromAt) + ' 起算；' : '')
       + insightsTime(fans.fromAt) + ' 的 ' + fmtMetric(fans.fromValue) + ' 人 → '
-      + insightsTime(fans.toAt) + ' 的 ' + fmtMetric(fans.toValue) + ' 人' : '能用的粉丝快照不足两次';
+      + insightsTime(fans.toAt) + ' 的 ' + fmtMetric(fans.toValue) + ' 人' : '可用的粉丝数快照不足两次';
     stat(change, '粉丝净增', '', tooltip);
   }
   host.appendChild(stats);
@@ -599,17 +599,17 @@ function renderInsights(data, message, living) {
       ? '本期首次记录 ' + fmtMetric(data.composition.firstRecorded) + ' 人 · 回访 '
         + fmtMetric(data.composition.returning) + ' 人' : '本期构成：暂无数据';
     composition.title = data.composition
-      ? '首次记录是指 NovaBot 第一次记到这位观众，不一定是第一次来看直播'
+      ? '首次记录指 NovaBot 第一次记录到该观众，不一定是其第一次观看直播'
       : data.firstRecordedAt == null ? '尚未记录到带名单的场次'
-      : data.audience == null ? '这段时间没有带名单的场次，分不出首次记录与回访'
+      : data.audience == null ? '所选时段内没有带名单的场次，无法区分首次记录与回访'
       : '名单从 ' + insightsTime(data.firstRecordedAt, false)
-        + '才开始记，这之前来过的观众分不出来';
+        + '起才开始记录，此前来过的观众无法区分';
     host.appendChild(composition);
     const coverage = data.coverage || {};
     const parts = [
       coverage.complete ? '完整 ' + coverage.complete + ' 场' : '',
-      coverage.anonymous ? '有认不出的观众 ' + coverage.anonymous + ' 场（这几场的人数偏少）' : '',
-      coverage.unknown ? '不知道是否完整 ' + coverage.unknown + ' 场（升级到 6.0 之前开播的场次没有记这一项）' : '',
+      coverage.anonymous ? '含无法识别的观众 ' + coverage.anonymous + ' 场（这几场的人数偏少）' : '',
+      coverage.unknown ? '完整性未知 ' + coverage.unknown + ' 场（升级到 6.0 之前开播的场次未记录此项）' : '',
       coverage.missing ? '没有名单 ' + coverage.missing + ' 场' : '',
     ].filter(Boolean);
     if (parts.length) {
@@ -682,7 +682,7 @@ function renderOverview(host) {
   const head = el('h3');
   head.textContent = '累计 ';
   const note = el('span', 'h-note');
-  note.textContent = '归档里这位主播的全部场次';
+  note.textContent = '该主播在归档中的全部场次';
   head.appendChild(note);
   stats.appendChild(head);
 
@@ -713,7 +713,7 @@ async function loadLive() {
   const generation = liveGeneration;
   livePending = generation;
   try {
-    const response = await fetch(CONSOLE + '/api/streamers/' + encodeURIComponent(where.platform) + '/'
+    const response = await request(CONSOLE + '/api/streamers/' + encodeURIComponent(where.platform) + '/'
       + encodeURIComponent(where.uid) + '/live?series=online_count');
     if (response.status === 401) {
       location.reload();
@@ -771,8 +771,8 @@ function renderLive() {
   const times = el('p', 'live-times');
   const since = live ? live.since : detail.since;
   times.textContent = '开播于 ' + fmtTime(since)
-    + (since != null ? ' · 已播 ' + fmtDuration(Math.max(0, (Date.now() - since) / 1000)) : '')
-    + ' · 数据更新到 ' + liveClock(live?.dataAt)
+    + (since != null ? ' · 已直播 ' + fmtDuration(Math.max(0, (Date.now() - since) / 1000)) : '')
+    + ' · 数据更新至 ' + liveClock(live?.dataAt)
     + ' · 检查于 ' + liveClock(live?.checkedAt, true);
   card.appendChild(times);
 
@@ -794,7 +794,7 @@ function renderLive() {
   for (const row of rows) {
     const label = el('dt');
     label.textContent = row.known ? row.name : row.key;
-    if (!row.known) label.title = '这台机器采到了一项插件还没说出名字的指标，原样显示';
+    if (!row.known) label.title = '本机采集到一项插件尚未命名的指标，按原始键名显示';
     metricList.appendChild(label);
     const value = el('dd');
     value.textContent = fmtMetric(row.value, labels.get(row.key))
@@ -807,7 +807,7 @@ function renderLive() {
     const error = el('p', 'live-error');
     error.setAttribute('role', 'status');
     error.textContent = '刷新失败：' + liveError + (live
-      ? '，显示的是 ' + liveClock(live.checkedAt, true) + ' 的数据' : '，还没有取到本场数据');
+      ? '，当前显示的是 ' + liveClock(live.checkedAt, true) + ' 的数据' : '，尚未获取到本场数据');
     card.appendChild(error);
   }
 }
@@ -823,7 +823,7 @@ function snapshotCard(snapshot, catalog) {
   const head = el('h3');
   head.textContent = '基础数据 ';
   const note = el('span', 'h-note');
-  note.textContent = snapshot ? '采于 ' + fmtTime(snapshot.at) : '';
+  note.textContent = snapshot ? '采集于 ' + fmtTime(snapshot.at) : '';
   head.appendChild(note);
   card.appendChild(head);
 
@@ -833,8 +833,8 @@ function snapshotCard(snapshot, catalog) {
     empty.style.margin = '0';
     // 「从来没采到过」与「采到了但全是 0」是两回事，说清是哪一种
     empty.textContent = snapshot
-      ? '这一次采样一项数据都没有。'
-      : '还没有采到过这位主播的基础数据：粉丝数这类数字由平台插件按固定间隔采样留档。';
+      ? '本次采样没有任何数据。'
+      : '尚未采集到该主播的基础数据：粉丝数等数据由平台插件按固定间隔采样保存。';
     card.appendChild(empty);
     return card;
   }
@@ -844,7 +844,7 @@ function snapshotCard(snapshot, catalog) {
     const key = el('dt');
     // 目录里没有的键原样显示，并标一句：藏起来的话，插件新采了一项的那一天屏幕上不会有任何变化
     key.textContent = row.known ? row.name : row.key;
-    if (!row.known) key.title = '这台机器采到了一项插件还没说出名字的指标，原样显示';
+    if (!row.known) key.title = '本机采集到一项插件尚未命名的指标，按原始键名显示';
     list.appendChild(key);
     const value = el('dd');
     value.textContent = Math.round(row.value).toLocaleString('en-US') + (row.unit ? ' ' + row.unit : '');
@@ -863,7 +863,7 @@ function recentCard() {
   const head = el('h3');
   head.textContent = '最近几场 ';
   const note = el('span', 'h-note');
-  note.textContent = '点一行看这一场的报告';
+  note.textContent = '点击一行可查看该场报告';
   head.appendChild(note);
   card.appendChild(head);
 
@@ -872,7 +872,7 @@ function recentCard() {
   if (!items.length) {
     const empty = el('p', 'hint');
     empty.style.margin = '0';
-    empty.textContent = '还没有归档的场次。每场直播下播时会自动记一条。';
+    empty.textContent = '暂无已归档的场次。每场直播下播时会自动归档一条记录。';
     card.appendChild(empty);
     return card;
   }
@@ -895,14 +895,14 @@ function renderSessions(host) {
   const head = el('h3');
   head.textContent = '场次 ';
   const note = el('span', 'h-note');
-  note.textContent = '点一行看这一场发生了什么';
+  note.textContent = '点击一行可查看该场详情';
   head.appendChild(note);
   card.appendChild(head);
 
   if (!items.length) {
     const empty = el('p', 'hint');
     empty.style.margin = '0';
-    empty.textContent = '还没有归档的场次。每场直播下播时会自动记一条。';
+    empty.textContent = '暂无已归档的场次。每场直播下播时会自动归档一条记录。';
     card.appendChild(empty);
     host.appendChild(card);
     return;
@@ -924,10 +924,10 @@ function renderSessions(host) {
   tips.style.margin = '10px 0 0';
   const hidden = shownMetrics(page.metrics || [], items).hidden;
   tips.textContent = [
-    '被中断或未闭合的场次已标出：它的时长与营收和正常场次不可比，做趋势判断时应当单独看待。',
-    '时长后带 ⚠ 的有采集缺口，那几场的计数只是下界；程序停机与直播间断线两种缺口分开算，不相加。',
-    '人气峰显示「—」的场次早于「峰值入归档」：不是峰值为 0，是那一场的曲线已经没有了。',
-    hidden ? '这些场次里全为零的 ' + hidden + ' 项指标未列出。' : '',
+    '被中断或未闭合的场次已标出：其时长与营收不能与正常场次直接比较，判断趋势时应单独看待。',
+    '时长后带 ⚠ 的场次有采集缺口，其计数仅为下界；程序停机与直播间断线两种缺口分别计算，不相加。',
+    '人气峰显示「—」的场次早于「峰值入归档」：并非峰值为 0，而是该场的曲线已不存在。',
+    hidden ? '本页场次中全部为零的 ' + hidden + ' 项指标未列出。' : '',
   ].filter(Boolean).join('');
   card.appendChild(tips);
 
@@ -991,7 +991,7 @@ function sessionTable(items, metrics) {
       + esc(fmtDuration(item.durationSeconds)) + (gaps.any ? ' ⚠' : '') + '</td>'
       + shown.map(one => '<td class="n">'
           + esc(fmtMetric((item.metrics || {})[one.key] || 0, one)) + '</td>').join('')
-      + (peak ? '<td class="n"' + (peak.known ? '' : ' title="这一场早于「峰值入归档」，那时的曲线已经没有了"')
+      + (peak ? '<td class="n"' + (peak.known ? '' : ' title="该场早于「峰值入归档」，当时的曲线已不存在"')
           + '>' + esc(peak.known ? Math.round(peak.value).toLocaleString('en-US') : '—') + '</td>' : '')
       + '<td title="' + esc(title) + '">'
       + esc((title.length > 18 ? title.slice(0, 18) + '…' : title) + changed) + '</td>'
@@ -1038,7 +1038,7 @@ function renderTrend(host) {
     const empty = el('div', 'nv-card hcard');
     const text = el('p', 'hint');
     text.style.margin = '0';
-    text.textContent = '还没有归档数据。每场直播下播时会自动追加一条，播过一场之后这里就有内容了。';
+    text.textContent = '暂无归档数据。每场直播下播时会自动归档一条记录，直播过一场后此处即有内容。';
     empty.appendChild(text);
     host.appendChild(empty);
     return;
@@ -1084,10 +1084,10 @@ function renderTrend(host) {
   notes.style.margin = '10px 0 0';
   notes.textContent = [
     !trend.metricsKnown ? '未找到该平台的指标说明，只能统计场次与时长。' : '',
-    '时长与各项指标按开播时刻归入周期，跨零点的直播整场算在开播那一天。',
+    '时长与各项指标按开播时刻归入周期，跨过早上 6 点的直播，整场算在开播那一天。',
     '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天。',
     metrics.length
-      ? '开播时的粉丝数等「快照」指标不参与累加——把十场的粉丝数加起来不是任何一个真实数字。' : '',
+      ? '开播时的粉丝数等「快照」指标不参与累加：十场粉丝数相加的结果不对应任何真实数值。' : '',
     '4.3.0 之前归档的场次没有结束原因、标题记录与缺口统计，一律显示为正常结束、无缺口。',
   ].filter(Boolean).join('');
   card.appendChild(notes);
@@ -1130,7 +1130,7 @@ function chartCard(title, buckets, pick, format) {
 
 async function loadSession() {
   $('#sx-back').setAttribute('href', detailHash(where.platform, where.uid, 'sessions'));
-  $('#sx-title').textContent = '这一场的报告';
+  $('#sx-title').textContent = '单场报告';
 
   const host = $('#sx-body');
   host.innerHTML = '';
@@ -1151,9 +1151,9 @@ async function loadSession() {
 
   let response;
   try {
-    response = await fetch(CONSOLE + '/api' + reportPath(where.platform, where.uid, where.start));
+    response = await request(CONSOLE + '/api' + reportPath(where.platform, where.uid, where.start));
   } catch (e) {
-    paint(body, reportView('missing', '取这一场的报告图失败：' + e.message));
+    paint(body, reportView('missing', '报告图获取失败：' + e.message));
     return;
   }
 
@@ -1185,7 +1185,7 @@ function paint(host, state) {
   if (state.image) {
     const image = el('img');
     image.src = reportUrl;
-    image.alt = '这一场的直播报告';
+    image.alt = '该场直播报告';
     image.style.cssText = 'max-width:100%;border-radius:var(--r-card);display:block';
     host.appendChild(image);
     return;

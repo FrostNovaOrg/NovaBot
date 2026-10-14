@@ -126,7 +126,7 @@ function alertText(terms) {
 
 askPhrase('①有词', () => {
   mustEq((withPluginSteps(undefined, ADAPTER_TERMS).find(s => s.key === 'bot') || {}).title,
-    '连上 QQ 机器人', '步名');
+    '连接 QQ 机器人', '步名');
   const alert = alertText(ADAPTER_TERMS);
   if (!alert.includes('QQ 掉线')) throw new Error('告警行 ' + JSON.stringify(alert));
   mustEq(summaryLines([true, true, true, true], ['', '', '', ''], {}, undefined, ADAPTER_TERMS)[0],
@@ -135,7 +135,7 @@ askPhrase('①有词', () => {
 
 askPhrase('②无词', () => {
   mustEq((withPluginSteps(undefined, {}).find(s => s.key === 'bot') || {}).title,
-    '连上机器人', '步名');
+    '连接机器人', '步名');
   const alert = alertText({});
   if (alert.includes('QQ') || !alert.includes('机器人掉线')) {
     throw new Error('告警行 ' + JSON.stringify(alert));
@@ -146,7 +146,7 @@ askPhrase('②无词', () => {
 
 askPhrase('③只缺 bot.impl', () => {
   mustEq((withPluginSteps(undefined, NO_IMPL).find(s => s.key === 'bot') || {}).title,
-    '连上 QQ 机器人', '步名仍用 platform');
+    '连接 QQ 机器人', '步名仍用 platform');
   const alert = alertText(NO_IMPL);
   if (!alert.includes('QQ 掉线')) throw new Error('告警行 ' + JSON.stringify(alert));
   mustEq(summaryLines([false, false, false, false], ['', '', '', ''], {}, undefined, NO_IMPL)[0],

@@ -156,7 +156,7 @@ async function loadTimeline() {
     retention = list.retentionDays || 0;
     renderDayBar();
   } catch (e) {
-    say('载入日志日期失败：' + e.message, 'err');
+    say('日志日期加载失败：' + e.message, 'err');
     return;
   }
   cursor = '';
@@ -172,11 +172,11 @@ async function loadEvents(append) {
   try {
     found = await api('/timeline' + timelineQuery(filters, 0, append ? cursor : ''));
   } catch (e) {
-    say('载入日志失败：' + e.message, 'err');
+    say('日志加载失败：' + e.message, 'err');
     return;
   }
   if (!found.success) {
-    say(found.message || '载入日志失败', 'err');
+    say(found.message || '日志加载失败', 'err');
     return;
   }
 
@@ -203,12 +203,12 @@ function renderDayBar() {
 
   bar.innerHTML = step('‹ 前一天', older) + '<b>' + esc(filters.date)
     + (filters.date === today() ? '（今天）' : '') + '</b>' + step('后一天 ›', newer)
-    + '<span class="dim">' + esc(dayCount() ? dayCount() + ' 条' : '这一天没有记录') + '</span>';
+    + '<span class="dim">' + esc(dayCount() ? dayCount() + ' 条' : '当天没有记录') + '</span>';
 
   // 保留期是这一页的边界：不写出来的话，「再往前没有了」看起来像是那几天什么都没发生
   $('#log-retention').textContent = retention > 0
-    ? '只留最近 ' + retention + ' 天，更早的整日记录会自动删掉。'
-    : '按当前配置不自动清理，记录会一直留着。';
+    ? '仅保留最近 ' + retention + ' 天的记录，更早的整日记录将自动删除。'
+    : '当前配置不自动清理，记录将一直保留。';
 }
 
 /** 翻到某一天的按钮。没有那一天时是个按不动的按钮，而不是干脆不画——位置得留着 */
@@ -282,7 +282,7 @@ function renderCatBar() {
  */
 function fillSelect(box, blank, options, chosen) {
   const all = options.slice();
-  if (chosen && !all.some(([value]) => value === chosen)) all.push([chosen, chosen + '（这一天没有）']);
+  if (chosen && !all.some(([value]) => value === chosen)) all.push([chosen, chosen + '（当天无记录）']);
 
   box.innerHTML = '<option value="">' + esc(blank) + '</option>'
     + all.map(([value, label]) => '<option value="' + esc(value) + '"'
@@ -302,7 +302,7 @@ function renderEvents(events, append) {
     wrap.appendChild(lead);
 
     // 筛没了才点名：这一天一条都没有时，清掉筛选也长不出记录来。
-    // 每枚芯片只清它自己那一项，「全部清掉」与上面那颗按钮同一条路
+    // 每枚芯片只清它自己那一项，「清除全部筛选」与上面那颗按钮同一条路
     if (dayCount() && hasFilter(filters)) {
       const row = el('div', 'empty-chips');
       for (const item of view.chips) {
@@ -314,7 +314,7 @@ function renderEvents(events, append) {
       }
       const all = el('button', 'pill lgpill');
       all.type = 'button';
-      all.textContent = '全部清掉';
+      all.textContent = '清除全部筛选';
       all.addEventListener('click', () => changed({
         only: false, cat: '', type: '', streamer: '', channel: '', q: '',
       }));
@@ -354,7 +354,7 @@ function renderEvents(events, append) {
           + detail.map(([key, value]) => '<dt>' + esc(key) + '</dt><dd>' + esc(value) + '</dd>').join('')
           + '</dl></details>'
         : '')
-      + '<a class="tl-go" href="' + esc(jump) + '">在工程日志里看这一刻 →</a>'
+      + '<a class="tl-go" href="' + esc(jump) + '">在工程日志中查看此刻 →</a>'
       + '</div></div>';
   }).join(''));
 }
@@ -374,7 +374,7 @@ function renderFoot(found) {
 
   const more = el('button', 'daystep');
   more.type = 'button';
-  more.textContent = '看更早的';
+  more.textContent = '加载更早的记录';
   more.addEventListener('click', () => loadEvents(true));
   foot.appendChild(more);
 }
@@ -420,7 +420,7 @@ async function loadEng() {
   try {
     found = await api('/engineering-log' + engQuery(filters, limitOf(), -1, engLevels));
   } catch (e) {
-    say('载入工程日志失败：' + e.message, 'err');
+    say('工程日志加载失败：' + e.message, 'err');
     return;
   }
 
@@ -428,7 +428,7 @@ async function loadEng() {
   if (!found.success || !found.available) {
     engLines = [];
     engOffset = -1;
-    $('#eng-body').innerHTML = '<div class="empty">' + esc(found.message || '读不了日志文件') + '</div>';
+    $('#eng-body').innerHTML = '<div class="empty">' + esc(found.message || '无法读取日志文件') + '</div>';
     $('#eng-foot').textContent = '';
     renderEngJump(null);
     return;
@@ -469,15 +469,15 @@ function renderEngJump(found) {
   const text = el('div');
   text.textContent = found.exact
     ? '已定位到 ' + filters.at + ' · 来自日志页'
-    : (found.message || '这一分钟没有记录。') + ' · 来自日志页';
+    : (found.message || '该分钟没有记录。') + ' · 来自日志页';
   bar.appendChild(text);
 
   const back = el('div');
   const toList = el('a', 'daystep');
-  toList.textContent = '‹ 回日志';
+  toList.textContent = '‹ 返回日志';
   toList.setAttribute('href', logHash(Object.assign({}, filters, {view: 'timeline', at: ''}), today()));
   const toLatest = el('a', 'daystep');
-  toLatest.textContent = '回到最新';
+  toLatest.textContent = '返回最新';
   toLatest.setAttribute('href', logHash(Object.assign({}, filters, {at: ''}), today()));
   toLatest.style.marginLeft = '8px';
   back.style.marginTop = '8px';
@@ -545,14 +545,14 @@ function engEmptyView(total, shown) {
   const lead = el('div');
   lead.textContent = engEmptyText(filters, today(), total);
   wrap.appendChild(lead);
-  // 筛没了才点名。每枚芯片只清它自己那一项，「全部清掉」一次清掉这三样，日子不动
+  // 筛没了才点名。每枚芯片只清它自己那一项，「清除全部筛选」一次清掉这三样，日子不动
   const chips = engEmptyChips(filters, engLevels, engSearch, total, shown);
   if (!chips.length) return wrap;
   const row = el('div', 'empty-chips');
   for (const item of chips) {
     row.appendChild(engChip(item.label + ' ✕', () => applyEngClear(item.key)));
   }
-  row.appendChild(engChip('全部清掉', () => applyEngClear('')));
+  row.appendChild(engChip('清除全部筛选', () => applyEngClear('')));
   wrap.appendChild(row);
   return wrap;
 }
@@ -607,7 +607,7 @@ async function followTick() {
     // 停下来并说一声：不说的话，这一页会安静地不再更新，而开关看起来还开着
     engFollow = false;
     $('#eng-follow').checked = false;
-    say('跟随最新读不到日志了，已停下：' + e.message, 'err');
+    say('读取日志失败，已停止跟随最新：' + e.message, 'err');
     return;
   }
   if (!found.success || !found.available) return;
@@ -640,20 +640,20 @@ async function copyEng() {
   const {shown} = engSegments(engLines, engHighlight, engLevels, engSearch);
   const text = engCopyText(shown);
   if (!text) {
-    say('这里没有可复制的行', 'err');
+    say('没有可复制的日志行', 'err');
     return;
   }
 
   try {
     await navigator.clipboard.writeText(text);
-    say('已复制这一段（' + shown.length + ' 段）', 'ok');
+    say('已复制当前显示的日志（' + shown.length + ' 段）', 'ok');
   } catch (e) {
     const range = document.createRange();
     range.selectNodeContents($('#eng-body'));
     const selection = window.getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
-    say('这个浏览器不让脚本写剪贴板，已替你选中，按 Ctrl/⌘+C 复制', 'err');
+    say('浏览器不允许脚本写入剪贴板，已选中日志，请按 Ctrl/⌘+C 复制', 'err');
   }
 }
 
@@ -668,8 +668,8 @@ async function renderBotLogEntry() {
   if (box.childElementCount || box.textContent) return;
 
   box.textContent = phrase('bot.impl',
-    v => term('bot.platform', '聊天平台') + ' 那头（' + v + '）的日志不在这里，到它自己的控制台看。',
-    '机器人那头的日志不在这里，到它自己的控制台看。');
+    v => term('bot.platform', '聊天平台') + ' 机器人（' + v + '）的日志不在此处，请在其自身的界面中查看。',
+    '机器人的日志不在此处，请在机器人自身的界面中查看。');
   let state;
   try {
     state = await api('/bot/console');
@@ -682,7 +682,7 @@ async function renderBotLogEntry() {
     + 'href="' + esc(state.href) + '" target="_blank" rel="noopener noreferrer">'
     + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
     + '</a>'
-    + '<span class="dim"> NovaBot 自己知道它在哪，不用另填。</span></div>');
+    + '<span class="dim"> 地址由 NovaBot 自动获取，无需填写。</span></div>');
 }
 
 // ============ 绑定 ============

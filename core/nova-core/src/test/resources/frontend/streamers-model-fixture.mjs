@@ -181,7 +181,7 @@ eq(peakCell(null, 'danmu'), {known: true, value: 0}, '整条记录都没有时�
 const GAPS = gapCells({maintenanceGapSeconds: 1330, roomOutageSeconds: 44});
 eq([GAPS.maintenance, GAPS.outage], [1330, 44], '两种缺口各是各的，不相加');
 eq(GAPS.any, true, '有缺口就该标出来');
-eq(GAPS.title, '其中 22 分 10 秒因程序停机未采集；其中 44 秒因这个直播间断线未采集。本行各项计数只是下界',
+eq(GAPS.title, '其中 22 分 10 秒因程序停机未能采集；其中 44 秒因该直播间断线未能采集。本行各项计数仅为下界',
   '两句分开说，说得出各是多少');
 eq(gapCells({maintenanceGapSeconds: 0, roomOutageSeconds: 0}), {maintenance: 0, outage: 0,
   any: false, title: ''}, '没有缺口时不标');
@@ -189,7 +189,7 @@ eq(gapCells({maintenanceGapSeconds: 0, roomOutageSeconds: 44}).any, true, '只�
 
 // ---------- 八、累计数据那条横条 ----------
 // 🔴 三态里只有明确的 false 才算没开。写成取反的话，接口还没回来那一瞬间会先闪一条假话
-eq(totalDataBanner({totalDataAvailable: false}), '这台机器没开累计数据：群里只能查本场。', '没开时说这一句');
+eq(totalDataBanner({totalDataAvailable: false}), '本机未启用累计数据：群内只能查询本场数据。', '没开时说这一句');
 eq(totalDataBanner({totalDataAvailable: true}), '', '开着时不说');
 eq(totalDataBanner({}), '', '旧版服务端没给这一栏时不说——不知道不许读成没开');
 eq(totalDataBanner(null), '', '整份状态都没有时不说');
@@ -250,7 +250,7 @@ eq(pageBar({total: 5, page: 1, size: 20, pages: 1}).page, 1, '页码以服务端
 // ---------- 十一、报告图三态 ----------
 eq(reportView('ok'), {image: true, text: ''}, '拿到了就显示图');
 eq(reportView('loading'),
-  {image: false, text: '正在取这一场的报告图。每次都按当场数据现画，请稍候。'},
+  {image: false, text: '正在获取该场报告图。报告图按该场数据实时绘制，请稍候。'},
   '正在取要说一句——不说的话，那几秒的空白与「这一场没有报告」长得一样');
 eq(reportView('missing', '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开下播报告'),
   {image: false, text: '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开下播报告'},
@@ -283,10 +283,10 @@ eq(barGeometry([], 1000, 100), [], '一根柱子都没有时是空的');
 
 // ---------- 十三、几处摆到屏幕上的话 ----------
 eq(sessionTitle({titles: [{title: '甲'}, {title: '乙'}], titleChangeCount: 1}),
-  {title: '乙', changed: '（改过 1 次）'}, '标题取最后改成的那一个');
+  {title: '乙', changed: '（修改过 1 次）'}, '标题取最后改成的那一个');
 eq(sessionTitle({titles: [], titleChangeCount: 0}), {title: '', changed: ''}, '没有标题记录时是空的');
 eq(rowSubtitle({summary: {days: 7, sessions: 3, durationSeconds: 10800, lastStart: 0}}, 7),
-  '最近 7 天 3 场 · 3 时 0 分 · 还没有归档的场次',
+  '最近 7 天 3 场 · 3 时 0 分 · 暂无已归档的场次',
   '一场都没归档过时说得出来，不写一个假的时刻');
 eq(rowSubtitle({summary: {days: 7, sessions: 0, durationSeconds: 0, lastStart: 1}}, 7)
   .indexOf('最近一场') > 0, true,

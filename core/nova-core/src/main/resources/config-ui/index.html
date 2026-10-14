@@ -128,7 +128,7 @@
       <div id="home-banner"></div>
 
       <div class="nv-card hcard">
-        <h3>链路 <span class="h-note">点平台或机器人去连接页，点本机看下面的健康自检</span></h3>
+        <h3>链路 <span class="h-note">点击平台或机器人可前往连接页，点击本机可查看下方的健康自检</span></h3>
         <div class="linkmap" id="linkmap"></div>
       </div>
 
@@ -156,9 +156,9 @@
       </div>
 
       <div class="nv-card hcard">
-        <h3>今天发生了什么 <span class="h-note">失败与告警置顶，再带最近几条</span></h3>
+        <h3>今日事件 <span class="h-note">失败与告警置顶，其后为最近几条</span></h3>
         <div class="tl" id="home-timeline"></div>
-        <div class="tl-foot"><a href="#/log">看全部 → 日志</a></div>
+        <div class="tl-foot"><a href="#/log">查看全部 → 日志</a></div>
       </div>
     </div>
   </section>
@@ -183,7 +183,7 @@
         </div>
 
         <label class="switch"><input type="checkbox" id="log-only">
-          <span>只看问题 · 失败、告警，还有降级发出去的那几条</span></label>
+          <span>只看问题 · 失败、告警及降级发送的记录</span></label>
 
         <!--
           大类药丸：一类一枚，点一下筛出一整块事情。清单由服务端给，且只列有类型归属的大类——
@@ -199,10 +199,10 @@
           而缺了谁，只有想筛它的人才看得见。
         -->
         <div class="backups" id="log-filters">
-          <span>主播</span><select id="log-streamer" aria-label="按主播筛"></select>
-          <span>群 / 私聊</span><select id="log-channel" aria-label="按通道筛"></select>
-          <input type="search" id="log-q" placeholder="搜主播、群、关键字" aria-label="搜索日志">
-          <button type="button" id="log-clear" style="display:none">清掉筛选</button>
+          <span>主播</span><select id="log-streamer" aria-label="按主播筛选"></select>
+          <span>群 / 私聊</span><select id="log-channel" aria-label="按通道筛选"></select>
+          <input type="search" id="log-q" placeholder="搜索主播、群或关键字" aria-label="搜索日志">
+          <button type="button" id="log-clear" style="display:none">清除筛选</button>
         </div>
 
         <div class="tl" id="log-list"></div>
@@ -215,9 +215,9 @@
     <div id="logeng" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="log-back" href="#/log">‹ 回日志</a>
-          <p class="hint" style="margin:8px 0 0">NovaBot 程序自己记的，给排障用。上面那页是给人看的。
-            口令与 Cookie 这类串在送到这里之前已经打码。</p>
+          <a class="daystep" id="log-back" href="#/log">‹ 返回日志</a>
+          <p class="hint" style="margin:8px 0 0">NovaBot 程序自身的运行日志，用于排查问题；日常查看请使用日志页的时间线。
+            口令与 Cookie 等内容在显示前已打码。</p>
         </div>
         <!--
           机器人自己的日志不进控制台：把别人的日志代理进来，
@@ -236,11 +236,11 @@
 
         <div class="backups" id="eng-tools">
           <div class="lgpills" id="eng-levels"></div>
-          <input type="search" id="eng-q" placeholder="搜这一段日志" aria-label="搜索工程日志">
-          <span>这一天</span>
-          <input type="date" id="eng-date" aria-label="看哪一天的日志">
+          <input type="search" id="eng-q" placeholder="搜索当前日志" aria-label="搜索工程日志">
+          <span>日期</span>
+          <input type="date" id="eng-date" aria-label="选择日志日期">
           <span>行数</span>
-          <select id="eng-limit" aria-label="读多少行">
+          <select id="eng-limit" aria-label="读取行数">
             <option value="300">最后 300 行</option>
             <option value="1000">最后 1000 行</option>
             <option value="2000">最后 2000 行</option>
@@ -251,8 +251,8 @@
           -->
           <label class="switch"><input type="checkbox" id="eng-follow" checked>
             <span>跟随最新</span></label>
-          <button type="button" id="eng-copy">复制这一段</button>
-          <button type="button" id="eng-reload">重新读</button>
+          <button type="button" id="eng-copy">复制当前日志</button>
+          <button type="button" id="eng-reload">重新读取</button>
         </div>
         <div class="eng" id="eng-body"></div>
         <p class="hint" id="eng-foot" style="margin:8px 0 0"></p>

@@ -160,7 +160,7 @@ function testCell() {
   for (const item of rail.children) {
     const [badge, text] = item.children;
     const [title, small] = (text && text.children) || [];
-    if (title && title.textContent === '发一条试试') {
+    if (title && title.textContent === '发送测试消息') {
       return {'记号': badge ? badge.textContent : '', '小字': small ? small.textContent : ''};
     }
   }

@@ -29,6 +29,13 @@ class ConsolePasswordWordingTest {
     private static final String WORD = "口令";
 
     /**
+     * 改密码、上锁、关二次验证时要人再填的那一把，设置页上那一栏叫「当前密码」
+     */
+    private static final String CURRENT = "当前密码";
+
+    private static final String OLD_CURRENT = "现在的密码";
+
+    /**
      * 登录、上锁、改密码、二次验证与通行密钥几个接口回给人看的句子出自这几件
      */
     private static final List<String> BACKEND = List.of(
@@ -98,6 +105,39 @@ class ConsolePasswordWordingTest {
 
         assertTrue(seenPassword > 0, "阳性对照：一处「密码」都没读到，说明扫的不是页上那些字");
         assertTrue(found.isEmpty(), "这几处还写着「口令」，同一页别处说的却是「密码」:\n" + String.join("\n", found));
+    }
+
+    @Test
+    @DisplayName("🔴 要人再填一次密码的句子说「当前密码」，与设置页那一栏同名，不说「现在的密码」")
+    void currentPasswordKeepsOneName() throws IOException {
+        List<String> found = new ArrayList<>();
+        int seenCurrent = 0;
+        for (String file : BACKEND) {
+            String src = Files.readString(module().resolve(file), StandardCharsets.UTF_8);
+            for (Literal literal : javaLiterals(src)) {
+                if (literal.inLog()) {
+                    continue;
+                }
+                seenCurrent += literal.text().contains(CURRENT) ? 1 : 0;
+                if (literal.text().contains(OLD_CURRENT)) {
+                    found.add(file.substring(file.lastIndexOf('/') + 1) + ":" + literal.line() + " " + literal.text());
+                }
+            }
+        }
+        Path ui = module().resolve("src/main/resources/config-ui");
+        for (String file : FRONTEND) {
+            String src = Files.readString(ui.resolve(file), StandardCharsets.UTF_8);
+            String[] lines = (file.endsWith(".html") ? htmlWithoutComments(src) : jsWithoutComments(src)).split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].contains(OLD_CURRENT)) {
+                    found.add(file + ":" + (i + 1) + " " + lines[i].strip());
+                }
+            }
+        }
+
+        assertTrue(seenCurrent > 0, "阳性对照：接口回话里一句带「当前密码」的都没读到，说明扫的不是回给人看的那些句子");
+        assertTrue(found.isEmpty(), "这几处还写着「" + OLD_CURRENT + "」，设置页那一栏叫「" + CURRENT + "」:\n"
+                + String.join("\n", found));
     }
 
     /**

@@ -98,7 +98,7 @@ function paint() {
   const toggle = box.querySelector('#toggle-push');
   const hint = box.querySelector('#push-hint');
   toggle.textContent = model.pushOn ? '暂停全部推送' : '恢复推送';
-  hint.textContent = model.pushOn ? '当前正常推送' : '已暂停，所有推送都会被丢弃';
+  hint.textContent = model.pushOn ? '推送正常' : '推送已暂停：推送、群命令回复与机器人告警均不发送，期间的消息不会补发';
   hint.style.color = model.pushOn ? '' : 'var(--err)';
 }
 

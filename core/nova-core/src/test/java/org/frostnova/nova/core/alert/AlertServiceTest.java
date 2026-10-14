@@ -651,7 +651,7 @@ class AlertServiceTest {
             assertNotEquals(AlertService.TestResult.Status.FAILED, result.status(),
                     "不该标成发不出去");
             assertFalse(result.delivered(), "还没等到结果不算已经发出去");
-            assertEquals("QQ 这一路还没等到结果。请到 QQ 上看一眼，或到日志页「推送」里查看。",
+            assertEquals("QQ 告警通道暂未返回结果。请在 QQ 上确认是否收到，或在日志页「推送」中查看。",
                     result.message());
         }
 

@@ -42,10 +42,10 @@ function say(terms, key, withTerm, without) {
  * 一个它管不着的页里的判定，而卸掉那个插件之后这一步会永远走不完。
  */
 export const SETUP_STEPS = [
-  {key: 'lock', title: '给控制台上把锁', skippable: false},
-  {key: 'bot', title: '连上机器人', skippable: false},
+  {key: 'lock', title: '设置控制台密码', skippable: false},
+  {key: 'bot', title: '连接机器人', skippable: false},
   {key: 'account', title: '登录直播平台', skippable: true},
-  {key: 'test', title: '发一条试试', skippable: false},
+  {key: 'test', title: '发送测试消息', skippable: false},
 ];
 
 const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
@@ -56,7 +56,7 @@ const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
  * 只收 {@code slot === 'setup_step'} 的页。插在内置锚点之后、「试发」之前，
  * 按 order 升序（同 order 按 id）。无插件页时返回 {@link SETUP_STEPS} 本身。
  * @param pages /api/pages 的 pages 清单
- * @param terms 词表，缺则机器人那一步仍说「连上机器人」
+ * @param terms 词表，缺则机器人那一步仍说「连接机器人」
  * @param afterKey 插件步插在哪一步之后，缺省 {@code 'account'}
  * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
  */
@@ -80,7 +80,7 @@ export function withPluginSteps(pages, terms, afterKey) {
     table = [...SETUP_STEPS.slice(0, at + 1), ...extra, ...SETUP_STEPS.slice(at + 1)];
   }
   return table.map(step => step.key !== 'bot' ? step : Object.assign({}, step, {
-    title: say(terms, 'bot.platform', v => '连上 ' + v + ' 机器人', '连上机器人'),
+    title: say(terms, 'bot.platform', v => '连接 ' + v + ' 机器人', '连接机器人'),
   }));
 }
 
@@ -253,7 +253,7 @@ function banner(status, chain, fresh) {
     // 而屏幕上只有一句「切换失败」。开关就在同一页那张卡上，隔着一屏不到
     return {
       kind: 'paused', level: 'err',
-      text: '已暂停，所有推送都会被丢弃',
+      text: '推送已暂停：推送、群命令回复与机器人告警均不发送，暂停期间的消息不会补发',
       action: null,
     };
   }
@@ -261,16 +261,16 @@ function banner(status, chain, fresh) {
   if (quiet.active) {
     return {
       kind: 'quiet', level: 'dim',
-      text: '静音中 ' + quiet.start + ' – ' + quiet.end + ' · 期间推送直接丢弃，不攒着',
-      action: {text: '去改静音时段', href: '#/settings'},
+      text: '静音时段 ' + quiet.start + ' – ' + quiet.end + ' · 期间的推送不发送，也不会补发',
+      action: {text: '修改静音时段', href: '#/settings'},
     };
   }
 
   if (fresh) {
     return {
       kind: 'setup', level: 'warn',
-      text: '还没配置完 · 设置引导走完，就能收到第一条推送',
-      action: {text: '去设置引导', href: '#/setup'},
+      text: '尚未完成配置 · 完成设置引导后即可收到第一条推送',
+      action: {text: '前往设置引导', href: '#/setup'},
     };
   }
 
@@ -278,7 +278,7 @@ function banner(status, chain, fresh) {
     return {
       kind: 'botdown', level: 'err',
       text: '机器人连接不可用 · ' + chain.bot.caption,
-      action: {text: '去连接页', href: '#/links'},
+      action: {text: '前往连接页', href: '#/links'},
     };
   }
 
@@ -286,7 +286,7 @@ function banner(status, chain, fresh) {
     return {
       kind: 'botslow', level: 'warn',
       text: chain.bot.caption,
-      action: {text: '去连接页', href: '#/links'},
+      action: {text: '前往连接页', href: '#/links'},
     };
   }
 
@@ -294,7 +294,7 @@ function banner(status, chain, fresh) {
     return {
       kind: 'platform', level: chain.platform.level === 'err' ? 'err' : 'warn',
       text: chain.platform.caption,
-      action: {text: '去连接页', href: '#/links'},
+      action: {text: '前往连接页', href: '#/links'},
     };
   }
 
@@ -340,10 +340,10 @@ export function alertConfigured(status) {
  */
 function botTodoTitle(terms, reason) {
   if (reason === 'unconfigured') {
-    return '连上机器人';
+    return '连接机器人';
   }
   if (reason === 'unreachable') {
-    return say(terms, 'bot.impl', v => '把 ' + v + ' 连上', '把机器人连上');
+    return say(terms, 'bot.impl', v => '连接 ' + v, '连接机器人');
   }
   return say(terms, 'bot.impl', v => '重新登录 ' + v, '重新登录机器人');
 }
@@ -367,7 +367,7 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
     const done = setupDone(status, login, pages, pluginDone);
     return [{
       key: 'setup',
-      title: '设置引导还没走完 · ' + table.length + ' 步里完成了 ' + done + ' 步',
+      title: '设置引导尚未完成 · 共 ' + table.length + ' 步，已完成 ' + done + ' 步',
       // 这一行按步骤表现拼，不写死一串步名：装了插件的机器上会多出几步
       // （「第一位主播，推到哪」就是其中一步），写死的那份会漏掉它们，
       // 而漏掉的表现是使用者照着这行字走完却发现进度条还差一格。
@@ -375,8 +375,8 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
       // 不写「走完就生效，不用重启」：连接参数是进程启动时按配置注册的，
       // 第 2 步存下来之后要重启一次那条连接才真的建立起来。写一句不成立的承诺，
       // 换来的是使用者对着一份空名单猜自己填错了什么
-      body: table.map(step => step.title).join(' → ') + '。每一步做完当场落盘。',
-      action: '去继续', href: '#/setup', soft: false,
+      body: table.map(step => step.title).join(' → ') + '。每一步完成后立即保存。',
+      action: '继续设置', href: '#/setup', soft: false,
     }];
   }
 
@@ -388,38 +388,38 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
       key: 'bot',
       title: botTodoTitle(terms, botReason),
       body: chain.bot.advice || chain.bot.caption,
-      action: '去连接页', href: '#/links', soft: false,
+      action: '前往连接页', href: '#/links', soft: false,
     });
   }
 
   if (!status.locked) {
     list.push({
       key: 'lock',
-      title: '控制台还没上锁',
-      body: '没设密码、也没登记通行密钥，能打到这个端口的人都进得来。',
-      action: '去上锁', href: '#/settings', soft: false,
+      title: '控制台尚未设置密码',
+      body: '未设置密码，也未登记通行密钥，任何能访问此端口的人都可以进入控制台。',
+      action: '设置密码', href: '#/settings', soft: false,
     });
   }
 
   if (totalDataOff(status)) {
     list.push({
       key: 'total',
-      title: '累计数据没开',
-      body: '群里只能查本场：菜单照列这两条，带「总」的查法要先开累计数据。'
-        + '要开得给 NovaBot 配一个累计存储，找运维。',
-      action: '去配', href: '#/settings', soft: true,
+      title: '累计数据未启用',
+      body: '群内只能查询本场数据：菜单仍列出这两条命令，带「总」的查询需先启用累计数据。'
+        + '启用前需为 NovaBot 配置累计存储，请联系运维人员。',
+      action: '前往设置', href: '#/settings', soft: true,
     });
   }
 
   if (!alertConfigured(status)) {
     list.push({
       key: 'webhook',
-      title: say(terms, 'bot.platform', v => v + ' 告警有死角，建议再配 Webhook',
-        '机器人告警有死角，建议再配 Webhook'),
+      title: say(terms, 'bot.platform', v => v + ' 告警存在盲区，建议同时配置 Webhook',
+        '机器人告警存在盲区，建议同时配置 Webhook'),
       body: say(terms, 'bot.platform',
-        v => '机器人掉线时 ' + v + ' 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
-        '机器人掉线时告警那路叫不到你，Webhook 或邮件配好其中一路这条就消失'),
-      action: '去配', href: '#/settings?card=alert', soft: true,
+        v => '机器人掉线时，' + v + ' 告警无法送达；配置 Webhook 或邮件中的任意一种后，此提示即消失',
+        '机器人掉线时，经机器人发送的告警无法送达；配置 Webhook 或邮件中的任意一种后，此提示即消失'),
+      action: '前往配置', href: '#/settings?card=alert', soft: true,
     });
   }
 
@@ -431,9 +431,9 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
   if (status.update) {
     list.push({
       key: 'update',
-      title: '有新版 ' + status.update.latestVersion,
-      body: '控制台不做在线更新：到服务器上换 jar 重启就是了。',
-      action: '看完整说明', href: extAttrs(status.update.url) ? status.update.url : '', soft: true,
+      title: '发现新版本 ' + status.update.latestVersion,
+      body: '控制台不提供在线更新：请在服务器上替换 jar 文件并重启。',
+      action: '查看完整说明', href: extAttrs(status.update.url) ? status.update.url : '', soft: true,
     });
   }
 
@@ -460,8 +460,8 @@ function now(status, chain, fresh) {
   });
 
   let text = '';
-  if (fresh) text = '还没有配置任何主播，配好之后这里会显示谁在播。';
-  else if (!live.length) text = '现在没有人在播 · 共监听 ' + users.length + ' 位主播';
+  if (fresh) text = '尚未配置任何主播，配置后此处将显示正在直播的主播。';
+  else if (!live.length) text = '当前没有主播在直播 · 共监听 ' + users.length + ' 位主播';
 
   // 断流那一档要在这里加一句：报告里的数字会缺一块，而缺的那块不会自己写在图上。
   // 判据是「直播平台侧有非登录态的探针发黄或发红」——登录掉了不影响弹幕采集，
@@ -472,7 +472,7 @@ function now(status, chain, fresh) {
   return {
     live, text,
     note: (gap && live.length)
-      ? '有直播间正在断流：本场报告会标注采集缺口，弹幕与礼物计数只是下界。'
+      ? '有直播间的连接中断：本场报告将标注采集缺口，弹幕与礼物计数仅为下界。'
       : '',
     paused: status.pushEnabled === false && live.length > 0,
   };
@@ -501,7 +501,7 @@ function shortStrip(timeline) {
   const limit = 8;
   if (total > limit) {
     const shown = bad.slice(0, limit - 1);
-    return shown.concat([{text: '还有 ' + (total - shown.length) + ' 条失败或告警', href: '#/log'}]);
+    return shown.concat([{text: '另有 ' + (total - shown.length) + ' 条失败或告警', href: '#/log'}]);
   }
   return bad.concat(rest.slice(0, Math.max(0, Math.min(6, limit - bad.length))));
 }
@@ -530,13 +530,13 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   const chain = {
     platform: Object.assign(
       {station: platformName(account), sub: '账号与直播间', advice: ''},
-      segment(platform, '还没登录直播平台')),
+      segment(platform, '尚未登录直播平台')),
     self: Object.assign(
       {station: 'NovaBot', sub: '本机', advice: ''},
-      segment(self, '还没开始干活')),
+      segment(self, '尚未开始运行')),
     bot: Object.assign(
       {station: word(words, 'bot.platform', '机器人'), sub: word(words, 'bot.targets', '会话'), advice: ''},
-      segment(bot, '还没连上机器人')),
+      segment(bot, '尚未连接机器人')),
   };
 
   // 建议那句话跟着最重的那盏灯走：横条与待办都要用它，各自再算一遍就会分叉
@@ -555,12 +555,12 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
     chain.bot.level = 'off';
   } else if (state.pushEnabled === false) {
     chain.bot.level = 'off';
-    chain.bot.caption = '已暂停 · 所有推送都会被丢弃';
+    chain.bot.caption = '推送已暂停 · 期间的消息不发送、不补发';
   } else if (state.quiet && state.quiet.active) {
     // 静音期间这一段判熄灯而不是判正常：链路本身通着，是这一段此刻按配置不走消息，
     // 而绿灯会让人以为「推送在正常发出去」
     chain.bot.level = 'off';
-    chain.bot.caption = '静音 · ' + state.quiet.start + ' – ' + state.quiet.end + ' 期间推送直接丢弃';
+    chain.bot.caption = '静音 · ' + state.quiet.start + ' – ' + state.quiet.end + ' 期间的推送不发送、不补发';
   }
 
   return {
@@ -579,8 +579,8 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
     events: shortStrip(timeline),
     // 空态那句话分两种：刚装好的机器与「今天真的没发生什么」不是一回事
     eventsEmpty: fresh
-      ? '今天还没有任何事件。配置完成、收到第一条推送之后，这里会一条条记下来。'
-      : '这一天没有记录。',
+      ? '今天暂无事件。完成配置并收到第一条推送后，事件将在此逐条记录。'
+      : '当天没有记录。',
   };
 }
 
