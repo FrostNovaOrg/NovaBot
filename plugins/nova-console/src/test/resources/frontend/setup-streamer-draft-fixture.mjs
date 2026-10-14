@@ -184,6 +184,32 @@ try {
   eq('error:' + e.message, 'ok', '⑦ skip 能真执行');
 }
 
+// 新目标只订阅默认开启的推送类型，向导与推送页使用相同起点。
+try {
+  const model = await import('../../../main/resources/config-ui-pages/push-model.js');
+  const handlers = [{className: 'Live', platform: 'sample'},
+    {className: 'Weekly', defaultEnabled: false}, {className: 'Other', platform: 'other'}];
+  let saved = [];
+  const fn = new Function('store', 'draft', 'options', 'pushEntries', 'setPushEntries',
+    'api', 'serializePush', 'say', 'markPushSaved', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
+    bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
+      {handlerList: handlers}, {streamer: {platform: 'sample', uid: 1}, targets: ['group']},
+      [{key: 'group', sender: 'qq-onebot', type: 1, num: 1001}], () => [], value => { saved = value; },
+      async () => ({success: true}), () => '', () => {}, () => {}, () => {}, model.defaultMessages, () => {}, {});
+  await fn();
+  eq(saved[0].targets[0].messages, [{handler: 'Live'}], '向导新目标运营周报默认关闭');
+  const push = readFileSync(join(pages, 'push.js'), 'utf8');
+  let added;
+  const add = new Function('store', 'pickTarget', 'streamerName', 'markDirty', 'say',
+    'location', 'channelTail', 'renderStreamers', 'defaultMessages',
+    bracedFrom(push, 'function addChannel(') + '\nreturn addChannel;')(
+      {handlerList: handlers}, config => { added = config; }, () => '', () => {}, () => {},
+      {}, () => '', () => {}, model.defaultMessages);
+  const user = {platform: 'sample', uid: 1, targets: []};
+  add(user); added.onPick({platform: 'qq-onebot', type: 1, num: 1001});
+  eq(user.targets[0].messages, saved[0].targets[0].messages, '添加通道与向导默认订阅相同');
+} catch (e) { eq('error:' + e.message, 'ok', '默认订阅能执行'); }
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

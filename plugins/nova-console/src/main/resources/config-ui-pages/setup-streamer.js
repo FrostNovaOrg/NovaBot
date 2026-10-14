@@ -19,6 +19,7 @@ import {targetOptions} from './links-model.js';
 import {markPushSaved, pushEntries, renderStreamers, serializePush, setPushEntries, STREAMER_INPUT_HINT}
   from './push.js';
 import {store} from './store.js';
+import {defaultMessages} from './push-model.js';
 import {detailHash} from './streamers-model.js';
 
 /**
@@ -371,7 +372,7 @@ export function doneLink(ctx) {
 /**
  * 把这位主播连同推送目标一起落盘
  *
- * 四种通知按「这个平台注册出来的处理器」全开，界面不写死任何一份清单——
+ * 通知按处理器给出的默认开关启用，界面不写死任何一份清单——
  * 处理器由插件带来，写死的话，插件加一种通知这里就少一种，而屏幕上不会有任何异常。
  * @return {Promise<boolean>} 存下去了没有。没存下去就不往下走，
  *         否则第 5 步会在一台其实什么也没配的机器上发消息
@@ -379,9 +380,7 @@ export function doneLink(ctx) {
 async function saveStreamer() {
   const one = draft.streamer;
 
-  const messages = (store.handlerList || [])
-    .filter(handler => !handler.platform || handler.platform === one.platform)
-    .map(handler => ({handler: handler.className}));
+  const messages = defaultMessages(store.handlerList, one.platform);
 
   const targets = draft.targets
     .map(key => options.find(item => item.key === key))

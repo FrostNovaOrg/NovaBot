@@ -262,6 +262,13 @@ if (stationHref('bot') !== '#/links?card=bot') {
 if (stationHref('nope') !== '') hrefBad.push('未知站名应回空串');
 if (PROBE_ANCHOR !== 'home-probes') hrefBad.push('探针区锚应为 home-probes');
 
+const quietModel = homeModel(status({quiet: {active: true, start: '23:00', end: '08:00'}}), login(), timeline());
+if (quietModel.banner.text !== '静音时段 23:00 – 08:00 · 期间的推送不发送，也不会补发；运营周报顺延到静音结束后发送')
+  bad.push('静音提示缺少运营周报顺延说明');
+if (quietModel.banner.action.text !== '修改静音时段') bad.push('静音操作名称不一致');
+if (quietModel.chain.bot.caption !== '静音 · 23:00 – 08:00 期间的推送不发送、不补发；运营周报顺延到静音结束后发送')
+  bad.push('静音链路缺少运营周报顺延说明');
+
 if (bad.length || hrefBad.length) {
   console.error('\n对不上 ' + (bad.length + hrefBad.length) + ' 处：');
   bad.forEach(b => console.error('  ' + b));

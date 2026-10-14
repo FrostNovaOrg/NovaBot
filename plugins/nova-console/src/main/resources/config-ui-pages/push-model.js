@@ -830,3 +830,10 @@ export function atAllStatus(quota, session, target, directory) {
       ? '机器人不是本群管理员，@全体成员 将被自动省略，正文照常发送。' : '',
   };
 }
+
+/** 新目标只启用适用于主播平台且默认开启的推送类型。 */
+export function defaultMessages(handlers, platform) {
+  return (handlers || [])
+    .filter(item => (!item.platform || item.platform === platform) && item.defaultEnabled !== false)
+    .map(item => ({handler: item.className}));
+}

@@ -261,7 +261,7 @@ function banner(status, chain, fresh) {
   if (quiet.active) {
     return {
       kind: 'quiet', level: 'dim',
-      text: '静音时段 ' + quiet.start + ' – ' + quiet.end + ' · 期间的推送不发送，也不会补发',
+      text: '静音时段 ' + quiet.start + ' – ' + quiet.end + ' · 期间的推送不发送，也不会补发；运营周报顺延到静音结束后发送',
       action: {text: '修改静音时段', href: '#/settings'},
     };
   }
@@ -560,7 +560,7 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
     // 静音期间这一段判熄灯而不是判正常：链路本身通着，是这一段此刻按配置不走消息，
     // 而绿灯会让人以为「推送在正常发出去」
     chain.bot.level = 'off';
-    chain.bot.caption = '静音 · ' + state.quiet.start + ' – ' + state.quiet.end + ' 期间的推送不发送、不补发';
+    chain.bot.caption = '静音 · ' + state.quiet.start + ' – ' + state.quiet.end + ' 期间的推送不发送、不补发；运营周报顺延到静音结束后发送';
   }
 
   return {

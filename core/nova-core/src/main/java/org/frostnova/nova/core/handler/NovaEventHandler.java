@@ -80,6 +80,9 @@ public interface NovaEventHandler extends PushMessageHandler {
         return List.of();
     }
 
+    /** 新建通道时是否默认启用；定时订阅可选择默认关闭。 */
+    default boolean defaultEnabled() { return true; }
+
     /**
      * 展示名称，例如「开播通知」
      * <p>

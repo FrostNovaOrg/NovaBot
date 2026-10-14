@@ -20,7 +20,7 @@ import {$, api, CONSOLE, el, esc, markDirty, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
-  handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
+  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
   previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
@@ -1238,6 +1238,9 @@ function sectionNotices(host, user, target, session) {
       + '<p>' + esc(item.description) + '</p>';
     row.appendChild(text);
     box.appendChild(row);
+    if (item.className === 'org.frostnova.nova.core.handler.WeeklyReportPushHandler') {
+      weeklyReportActions(text, user, target);
+    }
   }
 
   const recent = el('h4');
@@ -1275,6 +1278,40 @@ function sectionNotices(host, user, target, session) {
     more.textContent = '在日志页查看全部 →';
     box.appendChild(more);
   }
+}
+
+/** 运营周报的操作只作用于当前主播和当前通道。 */
+function weeklyReportActions(host, user, target) {
+  const path = '/weekly-report/' + encodeURIComponent(user.platform) + '/' + user.uid;
+  const query = '?pushPlatform=' + encodeURIComponent(target.platform)
+    + '&type=' + Number(target.type) + '&num=' + target.num;
+  const status = el('p', 'hint');
+  status.textContent = '正在读取周报状态…';
+  host.appendChild(status);
+  const update = () => api(path + '/status' + query)
+    .then(res => { status.textContent = res.status; })
+    .catch(() => { status.textContent = '周报状态读取失败'; });
+  update();
+  const preview = el('a', 'lnkbtn');
+  preview.textContent = '预览';
+  preview.href = CONSOLE + '/api' + path + '/preview' + query;
+  preview.target = '_blank';
+  preview.rel = 'noopener';
+  host.appendChild(preview);
+  const trial = el('button', 'ghost');
+  trial.type = 'button';
+  trial.textContent = '试发';
+  trial.addEventListener('click', async () => {
+    if (!await ask({title: '试发运营周报？',
+      body: '立即把上周的周报发到这个会话？这是试发，不影响周一的定时发送。'})) return;
+    trial.disabled = true;
+    try {
+      const res = await api(path + '/trial' + query, {method: 'POST'});
+      say(res.message, res.success ? 'ok' : 'err');
+    } catch (err) { say('试发失败：' + err.message, 'err'); }
+    finally { trial.disabled = false; }
+  });
+  host.appendChild(trial);
 }
 
 /**
@@ -1738,9 +1775,7 @@ function addChannel(user) {
       // 新通道默认四种通知全开、全用默认模板：这与初始设置第 4 步给的是同一份起点
       user.targets.push({
         platform: hit.platform, type: hit.type, num: hit.num, enabled: true,
-        messages: (store.handlerList || [])
-          .filter(item => !item.platform || item.platform === user.platform)
-          .map(item => ({handler: item.className})),
+        messages: defaultMessages(store.handlerList, user.platform),
       });
       markDirty();
       say('已添加通道，保存后生效', 'ok');

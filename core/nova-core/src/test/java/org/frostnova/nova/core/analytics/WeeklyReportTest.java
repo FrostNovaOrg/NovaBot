@@ -134,4 +134,23 @@ class WeeklyReportTest {
         r = WeeklyReport.calculate(List.of(session(FROM, List.of())), List.of(), NOW, RULES, true);
         assertEquals("0 人", WeeklyReport.cards(r).get(3).value());
     }
+    @Test @DisplayName("无统计口径的文字版只展示场次与时长")
+    void noCatalogText() {
+        var text = WeeklyReport.text(WeeklyReport.calculate(sessions(), snapshots(), NOW, null, true));
+        assertTrue(text.contains("直播时长："));
+        assertTrue(text.contains("场次："));
+        for (String label : List.of("弹幕", "观众", "粉丝", "名单", "首次记录", "暂无数据"))
+            assertFalse(text.contains(label), label);
+    }
+    @Test @DisplayName("名单说明与主播页使用相同叫法")
+    void coverageNames() {
+        var d = report(false);
+        var data = new WeeklyReport.Data(d.firstDay(), d.lastDay(), d.metrics(), d.fans(), d.composition(),
+                new StreamerInsights.Coverage(1, 2, 3, 4), d.daily(), d.chartMetric());
+        var text = WeeklyReport.coverage(data);
+        assertTrue(text.contains("含无法识别的观众 2 场"));
+        assertTrue(text.contains("完整性未知 3 场"));
+        assertTrue(text.contains("未记录此项"));
+    }
+
 }

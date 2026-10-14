@@ -7,9 +7,7 @@ import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
-import org.frostnova.nova.core.analytics.WeeklyReport;
-import org.frostnova.nova.core.service.WeeklyReportRenderer;
-import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.LiveSession;
@@ -118,9 +116,9 @@ public class StreamerController {
     private final Clock clock;
 
     @Autowired
-    private ObjectProvider<WeeklyReportRenderer> weeklyRenderers;
+    private WeeklyReportContentService weeklyReports;
 
-    private static final String MISSING_STREAMER = "没有该主播的记录：既不在推送配置中，也没有已归档的场次";
+    static final String MISSING_STREAMER = "没有该主播的记录：既不在推送配置中，也没有已归档的场次";
 
     @Autowired
     public StreamerController(AbstractDataSource dataSource,
@@ -286,23 +284,9 @@ public class StreamerController {
         if (!List.of("png", "json").contains(format)) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "请选择 png 或 json"));
         }
-        String key = key(platform, uid);
-        var loaded = loadedUsers();
-        var sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE)).getOrDefault(key, List.of());
-        if (sessions.isEmpty() && roster(loaded).stream().noneMatch(e -> key.equals(key(e.platform(), e.uid())))) {
-            return streamer(platform, uid, "week", 1, 0);
-        }
-        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
-                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
-        Instant now = clock.instant();
-        var range = WeeklyReport.previousWeek(now);
-        var sampled = snapshots.find(0, range.to().toEpochMilli()).stream()
-                .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid())).toList();
-        var data = WeeklyReport.calculate(sessions, sampled, now, rules, showRevenue);
-        var identity = identity(platform, uid, loaded.get(key), sessions);
-        var source = new LiveStreamerInfo(uid, identity.getString("uname"), identity.getLong("roomId"), identity.getString("face"));
-        var preview = WeeklyReport.preview(data, () -> weeklyRenderers.orderedStream()
-                .filter(r -> platform.equals(r.platform())).findFirst().map(r -> r.render(source, data)).orElse(null));
+        var found = weeklyReports.preview(platform, uid, clock.instant(), showRevenue);
+        if (found.isEmpty()) return streamer(platform, uid, "week", 1, 0);
+        var preview = found.get();
         if (format.equals("png") && preview.image() != null) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.IMAGE_PNG).body(preview.image());
         }
