@@ -4,9 +4,9 @@
  * 告警在配置表里是十六个平铺的键，其中九个是「Webhook 的字段名叫什么」「SMTP 端口是多少」
  * 这类只有在配某一路时才有意义的东西。平铺着看，使用者分不出哪几项是一伙的，
  * 也看不出「我到底配通了几路」。于是这里把它们按路收成三张卡，每张卡自己回答两件事：
- * 这一路配好了没有（右上角的药丸），以及它现在到底通不通（底下的「发一条测试」）。
+ * 这一路配好了没有（右上角的药丸），以及它现在到底通不通（底下的「发送测试告警」）。
  *
- * 「发一条测试」按的是真的发送路径。地址填错一个字母、授权码过期、机器人被踢出那个群，
+ * 「发送测试告警」按的是真的发送路径。地址填错一个字母、授权码过期、机器人被踢出那个群，
  * 三者在配置文件上都长得完全正常，而它们的共同后果是真出事那天没有人收到告警。
  */
 
@@ -231,8 +231,8 @@ function field(box, label, name, opt) {
   if (o.type === 'password' && store.values[name]) {
     const clear = el('button', 'lnkbtn');
     clear.type = 'button';
-    clear.textContent = clearing ? '撤回清除' : '清除';
-    clear.title = '保存后这一项就删掉了，要再用得重新填';
+    clear.textContent = clearing ? '取消清除' : '清除';
+    clear.title = '保存后将删除此项；如需再次使用，须重新填写';
     // 同一句话挂着清除时摆在框下：悬停提示在触屏上看不到，点了清除却不知道保存后会删
     const clearNote = el('div', 'al-note clearnote');
     const showClearNote = () => {
@@ -251,7 +251,7 @@ function field(box, label, name, opt) {
         input.value = '';
         input.disabled = true;
         input.placeholder = '保存后清除';
-        clear.textContent = '撤回清除';
+        clear.textContent = '取消清除';
         store.dirty[name] = CLEAR;
       } else {
         input.disabled = false;
@@ -309,7 +309,7 @@ function presetField(box, options) {
 
 /**
  * 一张卡的壳
- * @param id 卡片标识，也是「发一条测试」要传给后端的通道标识
+ * @param id 卡片标识，也是「发送测试告警」要传给后端的通道标识
  * @param title 卡片标题
  * @param desc 一句说明
  * @return {{card: HTMLElement, head: HTMLElement, body: HTMLElement, pill: HTMLElement}} 各部位
@@ -346,7 +346,7 @@ function shell(id, title, desc) {
   const result = el('span', 'al-r');
   const test = el('button', 'ghost');
   test.type = 'button';
-  test.textContent = '发一条测试';
+  test.textContent = '发送测试告警';
   test.addEventListener('click', () => sendTest(id, test));
   foot.append(result, test);
   card.appendChild(foot);
@@ -369,24 +369,24 @@ function testOutcomeText(base, note) {
  */
 async function sendTest(channel, button) {
   const box = button.parentElement.querySelector('.al-r');
-  const note = Object.keys(store.dirty).length ? '有改动还没保存，这一条测试用的是保存过的那份配置。' : '';
+  const note = Object.keys(store.dirty).length ? '当前有未保存的修改，本次测试使用已保存的配置。' : '';
   if (note) {
     // 发送用的是服务端此刻的配置，不是屏幕上这一份。不说清的话，
     // 使用者会以为自己刚填的地址已经被试过了
     box.textContent = note;
     box.className = 'al-r warn';
   } else {
-    box.textContent = '发送中…';
+    box.textContent = '正在发送…';
     box.className = 'al-r';
   }
 
   button.disabled = true;
   try {
     const res = await api('/alert/test?channel=' + encodeURIComponent(channel), {method: 'POST'});
-    box.textContent = testOutcomeText(res.message || (res.success ? '已发出' : '没发出去'), note);
+    box.textContent = testOutcomeText(res.message || (res.success ? '已发送' : '发送失败'), note);
     box.className = 'al-r ' + (res.status === 'UNCERTAIN' ? 'warn' : (res.success ? 'ok' : 'err'));
   } catch (e) {
-    box.textContent = testOutcomeText('发不出去：' + e.message, note);
+    box.textContent = testOutcomeText('发送失败：' + e.message, note);
     box.className = 'al-r err';
   }
   button.disabled = false;
@@ -424,13 +424,13 @@ function hookPillState(pill, name, draft) {
 /**
  * 运行值没取到时药丸的「未知」态
  *
- * 卡片右上角标着「以运行值为准」：取不到时若退回按编辑框判，药丸答的又变回了
+ * 卡片右上角标着「以运行中的配置为准」：取不到时若退回按编辑框判，药丸答的又变回了
  * 文件值，两种口径同屏比明说「没取到」更误导。样式沿用中性底色，与「未配置」同色不同字。
  * @param pill 药丸元素
  */
 function pillUnknown(pill) {
   pill.className = 'pill';
-  pill.textContent = '运行值未取到';
+  pill.textContent = '未获取到运行配置';
 }
 
 /**
@@ -495,11 +495,11 @@ async function recipientPicker(box, pill, fields) {
     }
     const numReason = whyLocked(numField.key);
     if (numReason) {
-      readOnlyField(box, numField.label || '发给谁', numField.key, numReason);
+      readOnlyField(box, numField.label || '接收目标', numField.key, numReason);
     } else {
       const row = el('div', 'al-fld');
       const lab = el('label');
-      lab.textContent = numField.label || '发给谁';
+      lab.textContent = numField.label || '接收目标';
       row.appendChild(lab);
       const view = el('div', 'readonly lockedval');
       view.textContent = valueOf(numField.key);
@@ -515,12 +515,12 @@ async function recipientPicker(box, pill, fields) {
 
   const wrap = el('div', 'al-fld');
   const label = el('label');
-  label.textContent = numField.label || '发给谁';
+  label.textContent = numField.label || '接收目标';
   wrap.appendChild(label);
 
   const select = el('select');
   select.id = 'alert-bot-target';
-  select.setAttribute('aria-label', '告警发给谁');
+  select.setAttribute('aria-label', '告警接收目标');
   wrap.appendChild(select);
   const hint = el('div', 'al-note');
   wrap.appendChild(hint);
@@ -535,8 +535,8 @@ async function recipientPicker(box, pill, fields) {
   const currentKey = num ? platform + '|' + type + '|' + num : '';
 
   const options = [];
-  // 空档要能选回来：配过之后想撤掉这一路，除了选「不发到 机器人」没有别的路
-  options.push({key: '', text: '不发到 ' + term('bot.platform', '机器人')});
+  // 空档要能选回来：配过之后想撤掉这一路，除了选「不通过 机器人 发送」没有别的路
+  options.push({key: '', text: '不通过 ' + term('bot.platform', '机器人') + ' 发送'});
   if (currentKey) options.push({key: currentKey, text: '当前：' + (platform || '未知平台') + ' '
     + (String(type) === '1' ? '群' : '好友') + ' ' + num});
 
@@ -568,8 +568,8 @@ async function recipientPicker(box, pill, fields) {
   select.value = currentKey;
 
   hint.textContent = reachable
-    ? (seen.size <= 2 ? '机器人还没有在任何群里，也没有加好友。把它拉进一个群，再回来挑。' : '')
-    : '暂时取不到机器人的群与好友名单，只能先显示已配好的那一个。到连接页看看机器人连上了没有。';
+    ? (seen.size <= 2 ? '机器人尚未加入任何群，也没有好友。请先将机器人拉入一个群，再返回此处选择。' : '')
+    : '暂时无法获取机器人的群与好友列表，仅显示已配置的接收目标。请在连接页确认机器人是否已连接。';
 
   select.addEventListener('change', () => {
     const parts = select.value ? select.value.split('|') : ['', '0', ''];
@@ -593,15 +593,15 @@ export function alertCards() {
   // ---- 申报了收件人栏的通道（机器人那一路）----
   for (const ch of store.alertChannels || []) {
     if (!ch.recipient || ch.recipient.length === 0) continue;
-    const x = shell(ch.id, ch.name || term('bot.platform', '机器人'), '走机器人自己的推送链路。'
-      + term('bot.platform', '机器人') + ' 掉线的时候，这一路也一起掉——'
-      + '而那正是最需要收到告警的时刻，所以别只配这一路。');
+    const x = shell(ch.id, ch.name || term('bot.platform', '机器人'), '通过机器人自身的推送链路发送。'
+      + term('bot.platform', '机器人') + ' 掉线时，此通道同时失效，'
+      + '而那正是最需要收到告警的时刻，因此请勿只配置此通道。');
     recipientPicker(x.body, x.pill, ch.recipient);
     wrap.appendChild(x.card);
   }
 
   // ---- Webhook ----
-  const hook = shell('webhook', 'Webhook', '推到手机上的通知类应用。机器人掉线时只有这一路还活着。');
+  const hook = shell('webhook', 'Webhook', '推送到手机上的通知类应用。不依赖机器人连接，机器人掉线时仍可送达。');
   const hookCustom = el('div', 'al-cus');
   const preset = presetField(hook.body, Object.keys(WEBHOOK_PRESETS).concat(CUSTOM));
   // Bark、Server 酱把推送密钥拼在地址里，地址本身就是凭据：照口令框处理，
@@ -615,7 +615,7 @@ export function alertCards() {
     {type: 'select', opts: ['POST', 'GET']});
   const titleField = field(hookCustom, '标题字段名', 'novabot.core.alert.webhook-title-field', {ph: 'title'});
   const contentField = field(hookCustom, '内容字段名', 'novabot.core.alert.webhook-content-field',
-    {ph: 'content', note: '各家不一样：Bark 用 body，Server 酱用 desp。'});
+    {ph: 'content', note: '各服务的字段名不同：Bark 使用 body，Server 酱使用 desp。'});
 
   const rowLocked = el => !!(el && el.dataset && el.dataset.locked);
   // 预设本身不是配置项，不进 store.dirty；它改的是下面那三栏，改完照常记账。
@@ -645,8 +645,8 @@ export function alertCards() {
     if (blocked.length) {
       const back = preset.dataset && preset.dataset.accepted;
       if (back) preset.value = back;
-      showNote(blocked.join('、') + (blocked.length > 1 ? '这几栏' : '这一栏')
-        + '锁着，改不了，所以没有换成「' + picked + '」。要换的话，得到配置文件里改。');
+      showNote(blocked.join('、') + ' 为只读项，因此未切换为「' + picked + '」。'
+        + '如需切换，请在配置文件中修改。');
       return;
     }
     showNote('');
@@ -687,24 +687,24 @@ export function alertCards() {
   wrap.appendChild(hook.card);
 
   // ---- 邮件 ----
-  const mail = shell('mail', '邮件', '慢一点，但不跟 ' + term('bot.platform', '机器人')
-    + ' 一起挂掉。发件那栏填的是授权码，不是登录密码。');
+  const mail = shell('mail', '邮件', '送达较慢，但不受 ' + term('bot.platform', '机器人')
+    + ' 掉线影响。发件授权码须填写邮箱授权码，而非登录密码。');
   // 药丸说的是运行值，编辑框显示的是文件值，两栏会差：不注明的话，
   // 「文件里明明填着」与「药丸说未配置」同屏，看起来像坏了
   const runtimeNote = el('span', 'hint');
-  runtimeNote.textContent = '以运行值为准';
+  runtimeNote.textContent = '以运行中的配置为准';
   runtimeNote.style.margin = '0';
   mail.head.appendChild(runtimeNote);
   const mailCustom = el('div', 'al-cus');
   const mailPreset = presetField(mail.body, Object.keys(MAIL_PRESETS).concat(CUSTOM));
-  const to = field(mail.body, '收件邮箱', 'novabot.core.mail.default-to', {ph: '收告警的邮箱'});
+  const to = field(mail.body, '收件邮箱', 'novabot.core.mail.default-to', {ph: '接收告警的邮箱'});
   field(mail.body, '发件账号', 'spring.mail.username',
-    {ph: '发信的那个邮箱', autocomplete: 'off', inputName: 'sender-account'});
+    {ph: '用于发信的邮箱', autocomplete: 'off', inputName: 'sender-account'});
   field(mail.body, '发件授权码', 'spring.mail.password',
-    {type: 'password', ph: '留空＝保持原值', note: '多数邮箱要的是「授权码」，在邮箱设置里单独生成。',
+    {type: 'password', ph: '留空＝保持原值', note: '多数邮箱要求使用授权码，可在邮箱设置中单独生成。',
       autocomplete: 'new-password', inputName: 'sender-code'});
   mail.body.appendChild(mailCustom);
-  const host = field(mailCustom, '服务器', 'spring.mail.host', {ph: '如 smtp.qq.com'});
+  const host = field(mailCustom, '服务器', 'spring.mail.host', {ph: '例如 smtp.qq.com'});
   const port = field(mailCustom, '端口', 'spring.mail.port', {type: 'number', ph: '465'});
 
   const applyMail = () => {
@@ -730,8 +730,8 @@ export function alertCards() {
     if (blocked.length) {
       const back = mailPreset.dataset && mailPreset.dataset.accepted;
       if (back) mailPreset.value = back;
-      showNote(blocked.join('、') + (blocked.length > 1 ? '这几栏' : '这一栏')
-        + '锁着，改不了，所以没有换成「' + picked + '」。要换的话，得到配置文件里改。');
+      showNote(blocked.join('、') + ' 为只读项，因此未切换为「' + picked + '」。'
+        + '如需切换，请在配置文件中修改。');
       return;
     }
     showNote('');

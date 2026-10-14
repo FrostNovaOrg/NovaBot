@@ -236,7 +236,6 @@ html.nobar #main{padding-bottom:20px}
   border-radius:var(--r-ctl);background:var(--surface);color:var(--text);font-family:inherit;font-size:14px}
 .setbar input[type=search]:focus{outline:none;border-color:var(--accent)}
 .setbar .dim{margin-left:auto;color:var(--dim);font-variant-numeric:tabular-nums}
-.setbar .settings-advanced-toggle{padding:6px 12px;font-size:13.5px;white-space:nowrap}
 /* 高级那一块：收着时整块不显示（.hide），摆出来时紧接着常用各组往下排 */
 .settings-advanced{min-width:0}
 /* 两栏：左目录、右各组。目录自己矮、sticky 贴在顶上，翻到第五组时第一组还在 */
@@ -250,6 +249,20 @@ html.nobar #main{padding-bottom:20px}
 .grpnav .cur{color:var(--accent-text);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent);
   background:var(--soft)}
 .grpnav .sep{font-size:12px;color:var(--dim);padding:8px 9px 2px}
+/* 目录里高级那一段：分隔与各组装在一起，随高级区一同收起（.hide） */
+.grpnav-advanced{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+/* 「高级选项」开关：目录最后一项，占满目录宽度；目录长得要自己滚时贴在可见区的最底下，
+   不用先把目录滚到底才找得到它。收着时眼睛带斜杠，摆出来时斜杠藏掉 */
+.grpnav .settings-advanced-toggle{position:sticky;bottom:0;display:flex;align-items:center;
+  justify-content:space-between;gap:8px;flex-shrink:0;width:100%;margin-top:8px;padding:7px 10px;
+  border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--surface);color:var(--dim);
+  font-family:inherit;font-size:13.5px;white-space:nowrap;cursor:pointer}
+.grpnav .settings-advanced-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.grpnav .settings-advanced-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.grpnav .settings-advanced-toggle[aria-expanded="true"]{color:var(--accent-text);border-color:var(--softline);
+  background:var(--soft)}
+.settings-advanced-toggle svg{width:16px;height:16px;flex:none}
+.settings-advanced-toggle[aria-expanded="true"] .eye-slash{display:none}
 @media (max-width:959px){
   .setwrap{display:block}
   /* 窄屏上顶栏先吸在视口顶上（#side，z-index 更高），目录再吸时要垫在它底下：
@@ -258,6 +271,9 @@ html.nobar #main{padding-bottom:20px}
   .grpnav{max-height:28vh;top:var(--side-h,0);flex-direction:row;flex-wrap:wrap;gap:7px}
   .grpnav .pill{justify-content:center}
   .grpnav .sep{flex-basis:100%;padding:4px 0 0}
+  /* 横排时高级那一段另起一行；开关跟在后面，只占自己那么宽，不撑满整行 */
+  .grpnav-advanced{flex-basis:100%;flex-direction:row;flex-wrap:wrap;gap:7px}
+  .grpnav .settings-advanced-toggle{position:static;width:auto;margin-top:0}
 }
 .setgrp{scroll-margin-top:0}
 .setgrp>h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}

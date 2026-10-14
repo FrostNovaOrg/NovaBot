@@ -6,6 +6,10 @@ import org.frostnova.nova.core.health.HealthStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -144,6 +148,30 @@ class BilibiliLoginHealthProbeTest {
         // 表现只是「登录掉了的那一次在日志页上混进了普通状态变化」，
         // 而那种事一年不出一次，没人会因为它没单独出现而起疑
         assertTrue(probe(loggedIn(), new NovaBilibiliProperties()).loginState());
+    }
+
+    @Test
+    @DisplayName("哔哩哔哩页的登录说明与探针讲同一套后果：动态与自动关注停、直播不受影响、不说静默；说会发告警时要写明须配了告警通道")
+    void loginHintOnPageMatchesProbeConsequences() throws IOException {
+        // 掉登录时探针判 DOWN，健康监控据此发告警；页上若说「静默停止」，
+        // 使用者会以为出了事没人提醒，从而不去配告警。
+        // 反过来也不能只说「启用告警就会收到」：默认告警开着却一个通道都没配，
+        // AlertService.deliver 筛不出可用通道，只记一条「没有配置告警通道」，什么也不发
+        String hint;
+        try (InputStream in = getClass().getResourceAsStream("/config-ui-pages/bilibili.js")) {
+            assertNotNull(in, "类路径上找不到 config-ui-pages/bilibili.js");
+            String page = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            hint = page.lines().filter(line -> line.contains("登录失效后")).findFirst().orElse("");
+        }
+        assertFalse(hint.isEmpty(), "哔哩哔哩页上找不到讲登录失效后果的那句");
+
+        assertTrue(BilibiliLoginHealthProbe.ADVICE_WITHOUT_QR.contains("自动关注"), "探针的说法变了，本格要跟着改");
+        assertFalse(hint.contains("静默"), "掉登录会告警，不是静默：" + hint);
+        assertTrue(hint.contains("动态推送与自动关注将停止"), "探针说动态与自动关注都停，页上没说全：" + hint);
+        assertTrue(hint.contains("直播推送不受影响"), hint);
+        assertTrue(hint.contains("告警"), "页上没说会收到告警：" + hint);
+        assertTrue(hint.contains("启用告警") && hint.contains("配置了告警通道"),
+                "只启用告警、没配通道时什么也不发，页上漏了通道前提：" + hint);
     }
 
     /**

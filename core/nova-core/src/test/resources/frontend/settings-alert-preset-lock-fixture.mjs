@@ -29,8 +29,8 @@ const PORT = 'spring.mail.port';
 const REASON = '这一项在配置文件里写成了别名，引到的是一份名单或一整块设置，'
   + '在界面改会拆掉这层引用；这里显示的是程序实际读到的值，要改请到配置文件里改。';
 
-const WEBHOOK_REFUSE = '提交方式这一栏锁着，改不了，所以没有换成「Bark」。要换的话，得到配置文件里改。';
-const MAIL_REFUSE = '服务器这一栏锁着，改不了，所以没有换成「Gmail」。要换的话，得到配置文件里改。';
+const WEBHOOK_REFUSE = '提交方式 为只读项，因此未切换为「Bark」。如需切换，请在配置文件中修改。';
+const MAIL_REFUSE = '服务器 为只读项，因此未切换为「Gmail」。如需切换，请在配置文件中修改。';
 
 const failures = [];
 let checks = 0;

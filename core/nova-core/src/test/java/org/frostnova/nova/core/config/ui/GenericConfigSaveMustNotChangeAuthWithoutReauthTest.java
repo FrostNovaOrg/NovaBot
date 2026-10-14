@@ -180,7 +180,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
                 "专用口不该在没给旧口令时改掉");
         // 拒的理由得是「没填」：回 401「认不出这次登录」说明卡在了会话那一关，这一格就没量到没给旧口令这件事
         assertEquals(400, response.getStatusCode().value(), response.getBody().toJSONString());
-        assertEquals("请填现在的密码", response.getBody().getString("message"), response.getBody().toJSONString());
+        assertEquals("请输入当前密码", response.getBody().getString("message"), response.getBody().toJSONString());
         assertTrue(doorAccepts(OLD_PASSWORD), "旧口令仍应有效");
     }
 

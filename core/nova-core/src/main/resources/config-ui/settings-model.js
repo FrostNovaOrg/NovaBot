@@ -81,8 +81,8 @@ export function isDangerous(field) {
  */
 export function defaultText(field) {
   const d = field.defaultValue;
-  if (field.widget === 'boolean') return String(d) === 'true' ? '开' : '关';
-  if (d === null || d === undefined || d === '') return field.widget === 'list' ? '空' : '未设';
+  if (field.widget === 'boolean') return String(d) === 'true' ? '启用' : '关闭';
+  if (d === null || d === undefined || d === '') return field.widget === 'list' ? '空' : '未设置';
   if (Array.isArray(d)) return d.length ? d.join('、') : '空';
   return String(d).replace(/\n/g, '、');
 }
@@ -285,7 +285,7 @@ export function arrangeGroups(groups, carded) {
 /**
  * 高级那一块此刻该不该摆出来
  *
- * 收起是默认。三种情况要摆出来：使用者点了「显示高级选项」或从别处点名跳进高级里的某一组
+ * 收起是默认。三种情况要摆出来：使用者点了组目录底下的「高级选项」或从别处点名跳进高级里的某一组
  * （chosen）；搜索／只看改过命中了高级里的项（搜到了却收着，与没搜到长得一样）——
  * 除非使用者就在这一次筛选上亲手收起过它（dismissed）。高级里一项都不剩时不摆。
  * @param state.matches 高级里此刻没被筛掉的项数

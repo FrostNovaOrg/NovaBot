@@ -714,8 +714,8 @@ class ConfigUiFrontendTest {
         if (!scripts.contains("$('#cfg-path').addEventListener('click'")) {
             bad.add("#cfg-path 没有挂点击接线，点路径不会复制");
         }
-        if (!html.contains("id=\"cfg-path\"") || !html.contains("title=\"点一下复制\"")) {
-            bad.add("#cfg-path 没有 title「点一下复制」");
+        if (!html.contains("id=\"cfg-path\"") || !html.contains("title=\"点击复制\"")) {
+            bad.add("#cfg-path 没有 title「点击复制」");
         }
         if (html.contains("nv-card cfgpath") || html.contains("cfgpath nv-card")) {
             bad.add("配置文件路径仍套着 .nv-card，页脚不应再是一张卡片");

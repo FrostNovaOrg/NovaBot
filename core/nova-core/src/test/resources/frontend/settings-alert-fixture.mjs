@@ -8,7 +8,7 @@
  * （spring.mail.host 可以被环境变量越过文件），初值仍要写「未配置」。
  * ④切的是接线段（草稿判定义到卡片入列前）并真跑：初值走没走 /status 由行为说话，
  * 不靠「源码里有没有那个函数」——函数在而接线断掉时，只切函数本身的格是绿的。
- * ⑤/status 取不到时药丸写「运行值未取到」，不退回草稿判；⑥status 在途时敲键，
+ * ⑤/status 取不到时药丸写「未获取到运行配置」，不退回草稿判；⑥status 在途时敲键，
  * 草稿回评先行接管，后到的运行值不覆盖那次回评。
  * 发件账号与发件授权码两框按卡片里的调用真建出来：授权码不承接浏览器已存的登录口令，
  * 账号不承接登录名，两框各有自己的 name。设置页口令型机密框同样不承接已存口令。
@@ -289,11 +289,11 @@ try {
   runWiring(wiring, pill, stubInput('a@example.invalid'), stubInput('smtp.example.invalid'),
     loadMailPillFromStatus(api));
   await settle();
-  q5 = pill.textContent === '运行值未取到' && !String(pill.className).includes('ok');
+  q5 = pill.textContent === '未获取到运行配置' && !String(pill.className).includes('ok');
 } catch (e) {
   q5 = 'error:' + e.message;
 }
-eq(q5, true, '⑤ /status 取不到：药丸写「运行值未取到」，不退回草稿判');
+eq(q5, true, '⑤ /status 取不到：药丸写「未获取到运行配置」，不退回草稿判');
 
 // ⑥ status 在途时敲键：草稿回评先行接管，后到的运行值不覆盖那次回评
 let q6 = 'missing';
@@ -525,7 +525,7 @@ if (clearBtn && clearInput) {
   for (const fn of clearBtn.listeners.click || []) fn();
   clearBtnFirst = [clearStore.dirty['spring.mail.password'], clearInput.disabled, clearInput.placeholder, clearBtn.textContent].join('|');
 }
-eq(clearBtnFirst, [CLEAR, true, '保存后清除', '撤回清除'].join('|'), '⑪b 点一下：记清除标记、框显示「保存后清除」');
+eq(clearBtnFirst, [CLEAR, true, '保存后清除', '取消清除'].join('|'), '⑪b 点一下：记清除标记、框显示「保存后清除」');
 if (clearBtn && clearInput) {
   for (const fn of clearBtn.listeners.click || []) fn();
   clearBtnUndo = [clearStore.dirty['spring.mail.password'] === undefined, clearInput.disabled, clearBtn.textContent].join('|');
@@ -571,9 +571,9 @@ try {
 } catch (e) {
   repaintClear = 'error:' + e.message;
 }
-eq(repaintClear, ['', true, '保存后清除', '撤回清除'].join('|') + ' || '
+eq(repaintClear, ['', true, '保存后清除', '取消清除'].join('|') + ' || '
   + [MASK, false, '留空＝保持原值', '清除', true].join('|'),
-  '⑬ 重画后仍是清除态（框空且禁用、写着「保存后清除」、钮是「撤回清除」），点一次即撤回');
+  '⑬ 重画后仍是清除态（框空且禁用、写着「保存后清除」、钮是「取消清除」），点一次即撤回');
 
 /** 带真 classList 的元素桩：看得见＝有字且没挂 hide */
 function liveNode(tag, cls) {
@@ -602,7 +602,7 @@ function visible(root, out) {
 // ⑭ 清除钮那句话看得见
 // 病：「保存后这一项就删掉了，要再用得重新填」只挂在悬停提示里，触屏上点了清除看不到，
 // 不知道保存后会删。挂着清除时这句要作为字摆在这一栏里，撤回后收起
-const CLEAR_NOTE = '保存后这一项就删掉了，要再用得重新填';
+const CLEAR_NOTE = '保存后将删除此项；如需再次使用，须重新填写';
 let alertNote = 'missing';
 try {
   const storeStub = {values: {'spring.mail.password': MASK}, dirty: {}};
@@ -657,7 +657,7 @@ function hookCard(values, dirty) {
     field, hook, pillState, hookPillState, liveNode('div'), liveNode('select'), presets,
     '自定义', valueOf, setValue);
   const input = collectInputs(hook.body).find(i => i.attrs['aria-label'] === '地址');
-  const btn = collect(hook.body, 'button').find(b => b.textContent === '清除' || b.textContent === '撤回清除');
+  const btn = collect(hook.body, 'button').find(b => b.textContent === '清除' || b.textContent === '取消清除');
   const read = () => hook.pill.textContent + (String(hook.pill.className).includes('ok') ? '+ok'
     : String(hook.pill.className).includes('warn') ? '+warn' : '');
   const type = text => {

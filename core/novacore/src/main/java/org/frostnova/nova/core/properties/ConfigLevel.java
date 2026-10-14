@@ -14,7 +14,7 @@ import java.lang.annotation.Target;
  * 标注在 {@code @ConfigurationProperties} 类的字段上，由配置界面在运行期读取。
  * 未标注的配置项按 {@link Level#ADVANCED} 处理：新增配置项默认收进高级区，
  * 需要展示到前台时再显式标注，避免常用区随时间推移不断膨胀。
- * 设置页据此逐项分：标成高级的收在页头「显示高级选项」后面，其余留在常用里；
+ * 设置页据此逐项分：标成高级的收在组目录最底下的「高级选项」后面，其余留在常用里；
  * 界面上没有另一张名单，插件新加的键标什么就落在哪儿。
  * <p>
  * 本注解在核心模块里，与 {@link ConfigEffect}、{@link ConfigLabel} 同处：
