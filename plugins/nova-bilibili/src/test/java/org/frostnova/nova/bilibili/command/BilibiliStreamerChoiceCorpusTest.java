@@ -20,7 +20,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -376,7 +377,8 @@ class BilibiliStreamerChoiceCorpusTest {
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
             command = new ProbeCommand(dataSource,
-                    new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties)));
+                    new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties),
+                            Clock.fixed(Instant.parse("2026-08-10T04:00:00Z"), ZoneId.of("UTC"))));
         }
 
         /**
@@ -394,8 +396,7 @@ class BilibiliStreamerChoiceCorpusTest {
         }
 
         private static long todayStartMillis() {
-            ZoneId zone = ZoneId.of("Asia/Shanghai");
-            return LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli();
+            return Instant.parse("2026-08-09T22:00:00Z").toEpochMilli();
         }
     }
 

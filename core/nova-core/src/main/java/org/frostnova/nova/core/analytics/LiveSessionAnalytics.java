@@ -6,7 +6,6 @@ import lombok.NonNull;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -25,10 +24,10 @@ import java.util.TreeMap;
  * <p>
  * 三条容易出错的规则集中在这里：
  * <ul>
- *     <li><b>按本地时区划周期</b>。凌晨 0:30 开播的那场，在 UTC 里属于前一天，
- *     照 UTC 分周会把它算进上一周。运营看的是自己的日历</li>
- *     <li><b>整场算在开播那一天</b>，与 {@code LiveSessionArchive#find} 一致。
- *     否则跨零点的直播会在两个周期里各算半截</li>
+ *     <li><b>按东八区早上 6 点切统计日</b>，使用 {@link StatisticsDay}。
+ *     主播多播到凌晨，同一晚归一天；周从周一 6 点起，月从 1 号 6 点起</li>
+ *     <li><b>整场算在开播时刻所属的统计日</b>。
+ *     跨过统计日边界也不拆到两个周期里各算半截</li>
  *     <li><b>中间没播的周期也要出现</b>。空着的那一格本身就是运营信息，
  *     跳过它会让趋势看起来比实际连贯</li>
  * </ul>
@@ -43,16 +42,6 @@ public class LiveSessionAnalytics {
      * 撞上时枚举常量体内的 {@code MONTH} 会解析成常量自己，而不是这个格式化器
      */
     private static final DateTimeFormatter MONTH_LABEL = DateTimeFormatter.ofPattern("yyyy-MM");
-
-    private final ZoneId zone;
-
-    public LiveSessionAnalytics() {
-        this(ZoneId.systemDefault());
-    }
-
-    public LiveSessionAnalytics(@NonNull ZoneId zone) {
-        this.zone = zone;
-    }
 
     /**
      * 按周期聚合场次
@@ -90,11 +79,11 @@ public class LiveSessionAnalytics {
     }
 
     private LocalDate dateOf(long millis) {
-        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate();
+        return StatisticsDay.dateOf(Instant.ofEpochMilli(millis));
     }
 
     private long millisOf(LocalDate date) {
-        return date.atStartOfDay(zone).toInstant().toEpochMilli();
+        return StatisticsDay.startOf(date).toEpochMilli();
     }
 
     /**
@@ -102,7 +91,7 @@ public class LiveSessionAnalytics {
      */
     public enum Period {
         /**
-         * 周，从周一起算
+         * 周，从周一早上 6 点起算
          */
         WEEK {
             @Override
@@ -127,7 +116,7 @@ public class LiveSessionAnalytics {
         },
 
         /**
-         * 月
+         * 月，从 1 号早上 6 点起算
          */
         MONTH {
             @Override
