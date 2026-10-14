@@ -39,7 +39,7 @@ const PAGE_STYLE = `
    左边一棵「主播 → 通道」两级树，右边随选中项换。版式取自 5.1 原型，
    色值一律引本文件顶部的 token，这一段里不写任何十六进制色。 */
 .pushwrap{display:grid;grid-template-columns:236px 1fr;gap:16px;align-items:start}
-.ptree{position:sticky;top:16px;background:var(--surface);
+.ptree{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;overscroll-behavior:contain;background:var(--surface);
   border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);padding:10px}
 .ptop{display:grid;gap:6px;margin-bottom:10px}
 .ptop>*{justify-self:stretch;text-align:left;background:var(--surface);color:var(--text);
@@ -83,6 +83,9 @@ const PAGE_STYLE = `
 .ptable{margin-bottom:8px}
 .ptable td.n{font-variant-numeric:tabular-nums;color:var(--dim)}
 .ptable td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.channel-index tbody tr{cursor:pointer}
+.channel-index tbody tr:hover,.channel-index tbody tr:focus-within{background:var(--soft)}
+.channel-index a{color:inherit}
 .ptable .good{color:var(--ok)}
 .ptable .bad{color:var(--err)}
 /* 最近推送那张表：只在卡片里横着滚，不把整页顶宽。表本身撑到内容宽，
@@ -832,20 +835,32 @@ function renderIndex(host) {
     box.appendChild(el('p', 'hint')).textContent =
       '还没有通道。左边加一位主播，再给它挑一个群或好友。';
   } else {
-    // 六列全 nowrap，宽了在卡片里横着滚，而不是把卡片顶破——做法与主播页历史表一致
+    // 五列全 nowrap，宽了在卡片里横着滚，而不是把卡片顶破——做法与主播页历史表一致
     const wrap = el('div', 'tblwrap');
-    const table = el('table', 'ptable');
+    const table = el('table', 'ptable channel-index');
     table.style.width = 'max-content';
     table.style.minWidth = '100%';
-    table.innerHTML = '<thead><tr><th>主播</th><th>通道</th><th>号</th>'
-      + '<th>开着的通知</th><th>模板</th><th></th></tr></thead><tbody>'
-      + rows.map(row => '<tr><td>' + esc(row.streamer) + '</td>'
+    table.innerHTML = '<thead><tr><th scope="col">主播</th><th scope="col">通道</th><th scope="col">号</th>'
+      + '<th scope="col">开着的通知</th><th scope="col">模板</th></tr></thead><tbody>'
+      + rows.map(row => '<tr><td><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row))
+        + '" aria-label="' + esc(row.streamer + ' → ' + row.name) + '">' + esc(row.streamer) + '</a></td>'
         + '<td>' + esc(row.name) + '</td>'
         + '<td class="n">' + esc(row.num) + '</td>'
         + '<td>' + (row.on.length ? esc(row.on.join('、')) : '全关') + '</td>'
-        + '<td>' + (row.custom ? '自定义' : '默认') + '</td>'
-        + '<td><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row)) + '">打开</a></td></tr>').join('')
+        + '<td>' + (row.custom ? '自定义' : '默认') + '</td></tr>').join('')
       + '</tbody>';
+    // 原生链接提供 Tab、回车与读屏名称；其余单元格点击走同一地址，无定位覆盖层。
+    table.addEventListener('click', event => {
+      if (event.target.closest('a')) return;
+      if (window.getSelection()?.toString()) return;
+      const row = event.target.closest('tbody tr');
+      const link = row && row.querySelector('a');
+      if (link) {
+        const href = link.getAttribute('href');
+        if (event.ctrlKey || event.metaKey) window.open(href, '_blank', 'noopener');
+        else location.hash = href;
+      }
+    });
     wrap.appendChild(table);
     box.appendChild(wrap);
   }
@@ -1226,13 +1241,16 @@ function sectionNotices(host, user, target, session) {
   }
 
   const recent = el('h4');
-  recent.textContent = '这个通道最近推送';
+  const group = Number(target.type) === 1;
+  recent.textContent = group ? '本群最近推送' : '这位好友最近推送';
   box.appendChild(recent);
+  if (group) box.appendChild(el('p', 'hint')).textContent = '推到这个群的所有主播都算在内。';
 
   const rows = recentPushes(pushHistory, session, 5);
   if (!rows.length) {
     box.appendChild(el('p', 'hint')).textContent = session && session.type
-      ? '本次启动以来的最近推送里，没有发往这个通道的。'
+      ? (group ? '本次启动以来的最近推送里，没有发往这个群的。'
+        : '本次启动以来的最近推送里，没有发给这位好友的。')
       : '这个通道还没被加载出来，取不到它的推送记录。';
   } else {
     const table = el('table', 'ptable');

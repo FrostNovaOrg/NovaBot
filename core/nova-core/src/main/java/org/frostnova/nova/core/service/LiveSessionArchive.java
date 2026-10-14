@@ -347,12 +347,35 @@ public class LiveSessionArchive {
                     // 峰值。本版之前的记录没有这一项，缺失读成空表——同样是「不知道」而不是「最高 0」：
                     // 那时候序列没留下来，事后补不出来，界面上该显示「—」。
                     // 分析侧必须用 LiveSession.hasPeaks() 把两者分开
-                    parsePeaks(json.getJSONObject("peaks")));
+                    parsePeaks(json.getJSONObject("peaks")),
+                    // 缺失读成 null 表示未记录；空表表示已记录且没有匿名事件。
+                    parseAnonymousCounts(json.getJSONObject("anonymousCounts")));
         } catch (Exception e) {
             // 只记原因不记内容：一行里有观众 uid 名单
             badLine.skipped(state, e);
             return null;
         }
+    }
+
+    /** 逐项保留有效的正整数次数，坏项不连累本场其余数据，缺失表示未知。 */
+    private Map<String, Long> parseAnonymousCounts(JSONObject raw) {
+        if (raw == null) {
+            return null;
+        }
+        Map<String, Long> result = new HashMap<>();
+        raw.forEach((metric, value) -> {
+            if (value instanceof Number number) {
+                try {
+                    long count = new java.math.BigDecimal(number.toString()).longValueExact();
+                    if (count > 0) {
+                        result.put(metric, count);
+                    }
+                } catch (ArithmeticException | NumberFormatException e) {
+                    log.debug("归档匿名次数 {} 里有认不出的次数, 已跳过", metric);
+                }
+            }
+        });
+        return result;
     }
 
     /**

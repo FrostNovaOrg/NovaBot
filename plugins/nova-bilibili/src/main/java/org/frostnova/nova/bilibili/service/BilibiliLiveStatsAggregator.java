@@ -536,8 +536,11 @@ public class BilibiliLiveStatsAggregator {
      * 计分表的大小即独立人数，因此计人数与计分共用同一份数据。
      */
     private void scoreUser(NovaBaseLiveEvent event, String metric, UserInfo sender, double delta) {
-        if (event.getSource() == null || event.getSource().getUid() == null
-                || sender == null || !isIdentified(sender.getUid())) {
+        if (event.getSource() == null || event.getSource().getUid() == null) {
+            return;
+        }
+        if (sender == null || !isIdentified(sender.getUid())) {
+            liveDataService.incrementLiveAnonymousCount(event.getPlatform(), event.getSource().getUid(), metric);
             return;
         }
         liveDataService.incrementLiveUserMetric(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid(), delta);

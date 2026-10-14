@@ -1,5 +1,5 @@
 /**
- * 推送页「这个通道最近推送」：日志链接带全通道串，空表句写明本次启动以来
+ * 推送页「本群最近推送／这位好友最近推送」：日志链接带全通道串，空表句写明本次启动以来
  *
  * 切段按花括号配平截到块尾后真执行，不是只 includes。
  * 由 PushRecentLinkTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
@@ -96,7 +96,7 @@ let checks = 0;
 const SESSION = {platform: 'qq', type: '群', num: 12345};
 const TARGET = {platform: 'qq', type: 1, num: 12345};
 const CHAN = '群 12345';
-const NEW_EMPTY = '本次启动以来的最近推送里，没有发往这个通道的。';
+const NEW_EMPTY = '本次启动以来的最近推送里，没有发往这个群的。';
 const UNLOADED = '这个通道还没被加载出来，取不到它的推送记录。';
 const LINK_TEXT = '在日志页看全部 →';
 
@@ -246,7 +246,7 @@ function loadSectionNotices(pushHistory) {
 
 function renderNotices(session, history) {
   const host = el('div');
-  loadSectionNotices(history)(host, {}, TARGET, session);
+  loadSectionNotices(history)(host, {}, {...TARGET, type: session && session.type === '好友' ? 0 : 1}, session);
   return host;
 }
 
@@ -276,6 +276,21 @@ ask('② 空表提示句恰为本次启动以来那句', () => {
   if (!hints.includes(NEW_EMPTY)) {
     throw new Error('没有新句，现有 hint=' + JSON.stringify(hints));
   }
+});
+
+// 标题应说明整个会话的范围，避免把其他主播的推送误认成当前通道的。
+ask('群最近推送写明所有主播与空表范围', () => {
+  const host = renderNotices(SESSION, []);
+  eq(collect(host, []).find(n => n.tag === 'h4').textContent, '本群最近推送', '标题');
+  eq(hintsOf(host).includes('推到这个群的所有主播都算在内。'), true, '群范围说明');
+  eq(hintsOf(host).includes(NEW_EMPTY), true, '群空表');
+});
+
+ask('好友最近推送标题与空表范围', () => {
+  const host = renderNotices({...SESSION, type: '好友'}, []);
+  eq(collect(host, []).find(n => n.tag === 'h4').textContent, '这位好友最近推送', '标题');
+  eq(hintsOf(host).includes('本次启动以来的最近推送里，没有发给这位好友的。'), true, '好友空表');
+  eq(hintsOf(host).includes('推到这个群的所有主播都算在内。'), false, '好友没有群说明');
 });
 
 ask('③ session 为 null 时不出链接且提示句为取不到记录', () => {
