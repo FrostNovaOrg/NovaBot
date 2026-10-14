@@ -548,7 +548,7 @@ public class ConfigUiAuthController {
 
         if (authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "这台机器已经上过锁了，改密码请填现在的密码");
+            result.put("message", "本机已设置控制台密码；如需修改密码，请填写当前密码");
             return ResponseEntity.badRequest().body(result);
         }
 

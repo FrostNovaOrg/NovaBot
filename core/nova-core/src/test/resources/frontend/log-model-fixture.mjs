@@ -133,10 +133,10 @@ eq(hasFilter(state({channel: '群 111'})), true, '通道算筛');
 eq(hasFilter(state({q: '开播'})), true, '搜索算筛');
 // 空日与无命中是两回事：前者要说的是「这一天什么都没发生」，后者要说的是「筛得太狠了」，
 // 而使用者对这两句话的反应完全不同
-eq(emptyText(state({}), 0), '这一天没有记录。', '这一天一条都没有');
-eq(emptyText(state({only: true}), 0), '这一天没有记录。', '这一天一条都没有时，先说没记录');
-eq(emptyText(state({only: true}), 12), '没有符合条件的，清掉筛选试试。', '有记录而筛没了');
-eq(emptyText(state({}), 12), '这一天没有记录。', '没筛却没命中只可能是这一天空着');
+eq(emptyText(state({}), 0), '当天没有记录。', '这一天一条都没有');
+eq(emptyText(state({only: true}), 0), '当天没有记录。', '这一天一条都没有时，先说没记录');
+eq(emptyText(state({only: true}), 12), '没有符合筛选条件的记录，可清除筛选后重试。', '有记录而筛没了');
+eq(emptyText(state({}), 12), '当天没有记录。', '没筛却没命中只可能是这一天空着');
 
 // ---------- 五b、空态点名挡住的筛选 ----------
 // 从群抽屉带进来「只看这个群」、再切到「直播」：开播下播不属任何群，这一栏必空。
@@ -152,7 +152,7 @@ eq(blockingFilters(state({only: true, type: 'PUSH_SENT', streamer: '甲主播', 
 eq(blockingFilters(state({})), [], '什么都没筛时没有要点名的项');
 
 eq(liveChannelHint(state({cat: 'LIVE', channel: '群 111'})),
-  '开播、下播记录不属于任何群，筛着群时这一栏总是空的。',
+  '开播、下播记录不属于任何群，按群筛选时此栏始终为空。',
   '直播栏筛着群：空因那一句');
 eq(liveChannelHint(state({cat: 'LIVE'})), '', '直播栏没筛群：不加这句');
 eq(liveChannelHint(state({channel: '群 111'})), '', '别的栏筛群：不加这句');
@@ -160,7 +160,7 @@ eq(liveChannelHint(state({})), '', '什么都没筛：不加这句');
 
 const VIEW = emptyStateView(state({cat: 'LIVE', channel: '群 111'}), 12);
 eq(VIEW.chips.map(item => item.key), ['channel'], '空态点名的正是「只看这个群」那一项');
-eq(VIEW.hint, '开播、下播记录不属于任何群，筛着群时这一栏总是空的。',
+eq(VIEW.hint, '开播、下播记录不属于任何群，按群筛选时此栏始终为空。',
   '空态带着直播栏筛群的那句解释');
 const AFTER_ONE = emptyStateView(state({cat: 'LIVE', channel: ''}), 12);
 eq(AFTER_ONE.chips, [], '只清通道这一项之后不再点名它');
@@ -171,13 +171,13 @@ eq(VIEW.chips.every(item => Object.hasOwn(state({}), item.key)), true,
 // 告警那一栏空着时，「筛没了」与「告警关着」是两件事：只说清掉筛选的话，
 // 看的人清了一遍又一遍，还是空的——那一页永远答不出「这天到底有没有告警」
 eq(emptyStateView(state({cat: 'ALERT'}), 5, false).hint,
-  '告警已关，这里不会有记录。', '告警关着、告警栏空着：说明是关了');
-eq(emptyStateView(state({cat: 'ALERT'}), 5, false).lead, '没有符合条件的，清掉筛选试试。',
+  '告警已关闭，此处不会产生记录。', '告警关着、告警栏空着：说明是关了');
+eq(emptyStateView(state({cat: 'ALERT'}), 5, false).lead, '没有符合筛选条件的记录，可清除筛选后重试。',
   '空因那一句之外照旧点名筛选项，清筛选仍然是正当动作');
 eq(emptyStateView(state({cat: 'ALERT'}), 5, true).hint, '', '告警开着：不加这句');
 eq(emptyStateView(state({cat: 'ALERT'}), 5).hint, '', '接口没说开关时也不加这句——猜着说是关了，比不说话更坏');
 eq(emptyStateView(state({cat: 'PUSH'}), 5, false).hint, '', '别的栏空着时不加这句');
-eq(emptyStateView(state({cat: 'ALERT'}), 0, false).hint, '告警已关，这里不会有记录。',
+eq(emptyStateView(state({cat: 'ALERT'}), 0, false).hint, '告警已关闭，此处不会产生记录。',
   '这一天一条记录都没有也照样说得出原因');
 
 // ---------- 六、日期导航 ----------
@@ -304,12 +304,12 @@ eq(engCopyText(SHOWN), '甲\n\tat a.b.C.d(C.java:1)\n乙', '逐段一行，堆�
 eq(engCopyText([]), '', '一段都没有时复制出来是空的');
 eq(engCopyText([{level: 'info', text: '登录失败 password: ******', hl: false}]),
   '登录失败 password: ******', '口令那一行复制出去仍是打过码的那一份');
-eq(engEmptyText(state({view: 'eng'}), TODAY, 0), '这一份日志此刻还没有内容。',
+eq(engEmptyText(state({view: 'eng'}), TODAY, 0), '当前日志文件暂无内容。',
   '今天这一份还一行都没写过');
-eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 0), '这一天没有记录。',
+eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 0), '当天没有记录。',
   '那一天的文件不在——与「今天还没写」不是一回事，后者过一会儿自己就有了');
-eq(engEmptyText(state({view: 'eng'}), TODAY, 12), '没有符合条件的行。', '有行而筛没了');
-eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 12), '没有符合条件的行。',
+eq(engEmptyText(state({view: 'eng'}), TODAY, 12), '没有符合筛选条件的日志行。', '有行而筛没了');
+eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 12), '没有符合筛选条件的日志行。',
   '旧日子里筛没了也是筛没了');
 
 // ---------- 十二、工程日志：画与复制共用的那一份「屏幕上是哪几段」 ----------
@@ -320,8 +320,8 @@ const SEG_LINES = [HEAD_ERR, '\tat a.b.C.d(C.java:1)', HEAD_INFO];
 const SEG_ALL = engSegments(SEG_LINES, -1, ON, '');
 eq(SEG_ALL.all.length, 2, '分段与 groupEngLines 是同一份：堆栈不另算一段');
 eq(SEG_ALL.shown.length, 2, '什么都不筛时屏幕上就是全部');
-// all 是页脚那句「共读到 N 段」的分母，它不跟着筛缩水：跟着缩水的话，
-// 那句话会永远说「显示 N 段，共读到 N 段」，而筛掉了多少就此看不见
+// all 是页脚那句「共读取 N 段」的分母，它不跟着筛缩水：跟着缩水的话，
+// 那句话会永远说「显示 N 段，共读取 N 段」，而筛掉了多少就此看不见
 const SEG_OFF = engSegments(SEG_LINES, -1, OFF_INFO, '');
 eq(SEG_OFF.all.length, 2, '关掉一档不改变读到了几段');
 eq(SEG_OFF.shown.length, 1, '关掉的那一档不上屏');
@@ -341,18 +341,18 @@ eq(engSegments(SEG_LINES, 1, ON, '').shown[0].hl, true, '高亮照样落在它�
 // 页脚要说清「屏幕上有几段、一共读到几段」，以及只扫到几点几分。只写「显示 N 条」的话，
 // 那句话在只看错误时会静默变成谎言：它说的 N 只是扫到上限为止那几段，而页面看着像这一天的全部
 eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, false, '') : '(缺)',
-  '显示 3 段，共读到 12 段（这一份的全部）', '都读进来时说这一份的全部');
+  '显示 3 段，共读取 12 段（已读取当前文件的全部内容）', '都读进来时说这一份的全部');
 eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, true, '') : '(缺)',
-  '显示 3 段，共读到 12 段（更早的没有读进来，只有 NovaBot 自己这一份）',
+  '显示 3 段，共读取 12 段（更早的日志未读取；此处仅包含 NovaBot 自身的日志）',
   '只读到尾巴时说清更早的没读进来');
 eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, true, '08:15') : '(缺)',
-  '显示 3 段，共读到 12 段（只扫到 08:15，更早的没有扫）',
+  '显示 3 段，共读取 12 段（仅扫描到 08:15，更早的日志未扫描）',
   '整天找撞到上限时说清扫到几点几分');
 eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, false, '08:15') : '(缺)',
-  '显示 3 段，共读到 12 段（只扫到 08:15，更早的没有扫）',
+  '显示 3 段，共读取 12 段（仅扫描到 08:15，更早的日志未扫描）',
   '扫到哪儿那句优先：它是「为什么没找全」的那句回答');
 eq(model.engFootText ? model.engFootText(state({view: 'eng', at: '20:07'}), 1, 1, true, '08:15') : '(缺)',
-  '显示 1 段，共读到 1 段（这一刻前后那一段）', '定住某一分钟时说清只取了这一刻那一段');
+  '显示 1 段，共读取 1 段（所选时刻前后的日志）', '定住某一分钟时说清只取了这一刻那一段');
 
 // 大类药丸带上这一天的条数：一条没有的那几类置灰但仍点得动。
 // 0 与「没给」要分得开——count 缺失时不硬凑一个 0，那会把「接口没说」画成「今天没有」
@@ -396,7 +396,7 @@ eq(engChips({error: false, warn: true, info: false, debug: true}, '', '', 4, 0),
   [{key: 'levels', label: '级别：警告、调试'}],
   '留着的档按错误、警告、信息、调试的顺序写');
 eq(engChips({error: false, warn: false, info: false, debug: false}, '', '', 4, 0),
-  [{key: 'levels', label: '级别：一档都没留'}],
+  [{key: 'levels', label: '级别：未选择任何级别'}],
   '四档都关掉也点名，不然看不出是级别挡住的');
 eq(engChips(LEVELS_ALL, '', '', 12, 0), [],
   '四档都开、没搜、没定位：没有要点名的项');

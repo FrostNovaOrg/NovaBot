@@ -37,14 +37,38 @@ export const api = (p, o) => {
   if (opt.method && opt.method.toUpperCase() !== 'GET' && store.csrfToken) {
     opt.headers = Object.assign({}, opt.headers, {'X-CSRF-Token': store.csrfToken});
   }
-  return fetch(CONSOLE + '/api' + p, opt).then(r => {
+  return request(CONSOLE + '/api' + p, opt).then(r => {
     if (r.status === 401) {
       location.reload();
       return new Promise(() => {});
     }
-    return r.json();
+    // 回的不是 JSON（多见于前面挡着的反向代理回了一张错误页）时，解析器那句英文不往外露
+    return r.json().catch(() => {
+      throw new Error('服务器返回的内容无法识别（HTTP ' + r.status + '）');
+    });
   }).then(adoptCsrfToken);
 };
+
+/** 请求没到服务器时给人看的那句话 */
+export const UNREACHABLE = '无法连接到服务器';
+
+/**
+ * 发一趟请求；请求根本没到服务器时，换成 {@link UNREACHABLE} 那句话
+ *
+ * 断网、服务器没开、地址不通时，浏览器只抛一个 TypeError，原话随浏览器而异
+ * （Failed to fetch、Load failed、NetworkError when attempting to fetch resource）——
+ * 各页把 e.message 拼进提示，屏幕上就是一句英文。服务器回了话（哪怕是 4xx、5xx）
+ * 不在这里拦：那句话照常交给调用方去显示。要直接拿回包的页（取图、看状态码）也走这里，
+ * 各写一个 fetch 的话，漏掉的那一处照旧露英文。
+ * @param {string} url 地址
+ * @param {object} [options] 同 fetch
+ * @return {Promise<Response>}
+ */
+export function request(url, options) {
+  return fetch(url, options).catch(e => {
+    throw e instanceof TypeError ? new Error(UNREACHABLE) : e;
+  });
+}
 
 /**
  * 回包里带着 CSRF 令牌就换上它
@@ -210,7 +234,7 @@ export async function reloadChangeSources(how) {
     try {
       if (await source.reload?.() === false) quiet = false;
     } catch (e) {
-      say(source.displayName + ' 的数据没能载入：' + e.message, 'err');
+      say(source.displayName + ' 数据加载失败：' + e.message, 'err');
       quiet = false;
     }
   }

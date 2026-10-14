@@ -143,15 +143,15 @@ function renderNow(model) {
       + '</span></div>'
       + '<dl class="kv">'
       + (who.roomId ? '<dt>直播间</dt><dd>' + esc(who.roomId) + '</dd>' : '')
-      + '<dt>推送目标</dt><dd>' + esc(who.targets) + ' 处</dd>'
+      + '<dt>推送目标</dt><dd>' + esc(who.targets) + ' 个</dd>'
       + '</dl></div></div>');
   }
 
   if (model.now.text) parts.push('<div class="empty">' + esc(model.now.text) + '</div>');
   if (model.now.note) parts.push('<div class="note n-warn">' + esc(model.now.note) + '</div>');
   if (model.now.paused) {
-    parts.push('<div class="note n-err">推送总开关已关闭：主播照常在播、数据照常采，'
-      + '但一条消息都不会发出去。</div>');
+    parts.push('<div class="note n-err">推送已暂停：主播照常直播、数据照常采集，'
+      + '但推送、群命令回复与机器人告警均不会发出。</div>');
   }
 
   box.innerHTML = parts.join('');
@@ -258,7 +258,7 @@ export async function refreshHome() {
     refreshPages();
     return status;
   } catch (e) {
-    say('载入首页失败：' + e.message, 'err');
+    say('首页加载失败：' + e.message, 'err');
     return null;
   }
 }
@@ -361,7 +361,7 @@ function renderDiskRow(el, runtime) {
   const level = runtime.diskLevel;
   el.className = level === 'err' ? 'err' : level === 'warn' ? 'warn' : '';
   el.title = level === 'err' || level === 'warn'
-    ? '磁盘快满了：数据和日志写不进去时，推送记录和报告会丢' : '';
+    ? '磁盘空间即将用尽：数据与日志无法写入时，推送记录与报告将会丢失' : '';
 }
 
 // 命令开关、订阅名单与「哪几条推送配置没填完」那三块随推送页改版挪去了通道页的
@@ -407,20 +407,20 @@ function renderUpdate(update) {
   }
 
   pill.style.display = '';
-  pill.textContent = '新版 ' + update.latestVersion;
+  pill.textContent = '新版本 ' + update.latestVersion;
   // onclick 是赋值不是叠加，重画多少次都只有一份监听；addEventListener 会一份份摞上去
   pill.onclick = toggleUpdatePop;
 
   // 说明地址来自新版来源的回包：不是 http(s) 的不画成链接，免得一段 javascript: 在控制台里被点开
   const notesLink = extAttrs(update.url);
-  pop.innerHTML = '<div class="up-head">新版 ' + esc(update.latestVersion) + '</div>'
+  pop.innerHTML = '<div class="up-head">新版本 ' + esc(update.latestVersion) + '</div>'
     + '<div class="up-notes">'
     + (update.notes || []).map(line => '<p>' + esc(line) + '</p>').join('')
     + '</div>'
-    + '<p class="up-note">控制台不做在线更新：到服务器上换 jar 重启就是了。</p>'
+    + '<p class="up-note">控制台不提供在线更新：请在服务器上替换 jar 文件并重启。</p>'
     + '<div class="up-actions">'
-    + (notesLink ? '<a href="' + esc(update.url) + '"' + notesLink + '>看完整更新说明 ↗</a>' : '')
-    + '<button type="button" id="update-skip">知道了，这版先不提醒</button>'
+    + (notesLink ? '<a href="' + esc(update.url) + '"' + notesLink + '>查看完整更新说明 ↗</a>' : '')
+    + '<button type="button" id="update-skip">此版本不再提醒</button>'
     + '</div>';
 
   $('#update-skip').addEventListener('click', () => skipUpdate(update.latestVersion));
@@ -432,7 +432,7 @@ function toggleUpdatePop() {
 }
 
 /**
- * 「知道了，这版先不提醒」
+ * 「此版本不再提醒」
  *
  * 记在服务器上、按版本记，因此点完走一次整页重取而不是本地把药丸藏掉：
  * 首页待办里那条软提醒与这枚药丸由同一份状态驱动，只藏一处，另一处会继续催
@@ -450,11 +450,11 @@ async function skipUpdate(version) {
     if (res.success) {
       await refreshHome();
     } else {
-      say('没记上，稍后再试', 'err');
+      say('未能保存提醒设置，请稍后重试', 'err');
       btn.disabled = false;
     }
   } catch (e) {
-    say('没记上：' + e.message, 'err');
+    say('提醒设置保存失败：' + e.message, 'err');
     btn.disabled = false;
   }
 }

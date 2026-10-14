@@ -119,7 +119,7 @@ function anchors(html) {
 /** 首页待办里「有新版」那一行 */
 function updateTodo(html) {
   const rows = String(html).split('<div class="todo">');
-  return rows.find(row => row.includes('有新版 v5.1.0')) || '';
+  return rows.find(row => row.includes('发现新版本 v5.1.0')) || '';
 }
 
 register(new URL('./home-problems-fetch-failure-loader.mjs', import.meta.url));
@@ -166,8 +166,8 @@ if (refreshHome) {
   if (mode === 'about-script') {
     for (const url of SCRIPTS) {
       const {pop} = await draw(url);
-      check(pop.includes('新版 v5.1.0'), '关于卡没画出来，这一格什么也没量。正文：' + pop);
-      check(pop.includes('知道了，这版先不提醒'), '关于卡的「先不提醒」不见了');
+      check(pop.includes('新版本 v5.1.0'), '关于卡没画出来，这一格什么也没量。正文：' + pop);
+      check(pop.includes('此版本不再提醒'), '关于卡的「先不提醒」不见了');
       noScriptHref(pop, '关于卡', url);
     }
   } else if (mode === 'todo-script') {

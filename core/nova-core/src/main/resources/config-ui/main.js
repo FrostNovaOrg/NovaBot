@@ -108,7 +108,7 @@ async function mountPages() {
       // 装不上的页也要留在清单里。清单是路由认页的唯一依据，不留就等于 #/settings/<页标识>
       // 认不出它，于是下面这句「为什么空着」永远显示不出来——而这句话正是给装不上时看的
       if (!pages.some(item => item.meta.id === meta.id)) pages.push({meta, module: {}});
-      container.innerHTML = '<p class="hint">' + esc(meta.displayName) + ' 的页面没能载入：' + esc(e.message)
+      container.innerHTML = '<p class="hint">' + esc(meta.displayName) + ' 页面加载失败：' + esc(e.message)
         + '。该插件的其余功能不受影响。</p>';
     }
   }
@@ -257,7 +257,7 @@ function callPage(page, hook, ...args) {
     page.module[hook]?.(...args);
     return true;
   } catch (e) {
-    say(page.meta.displayName + ' 页出错：' + e.message, 'err');
+    say(page.meta.displayName + ' 页面发生错误：' + e.message, 'err');
     return false;
   }
 }
@@ -305,15 +305,15 @@ function applyConnectionVocab() {
   const hint = $('#card-bot .lc-body > p.hint');
   if (hint) {
     hint.innerHTML = '机器人指 ' + esc(term('bot.impl.hint', '机器人程序'))
-      + '，NovaBot 通过它把消息发到 ' + esc(term('bot.platform', '聊天平台'))
-      + '。两个 Token 留空表示<b>保持原值</b>，不会被抹掉。';
+      + '，NovaBot 通过它将消息发送到 ' + esc(term('bot.platform', '聊天平台'))
+      + '。两个 Token 留空时<b>保留原值</b>，不会被清空。';
   }
   const entryHint = $('#bot-entry p.hint');
   if (entryHint) {
     entryHint.innerHTML = '扫码登录 ' + esc(term('bot.platform', '聊天平台'))
-      + '、查看它自己的运行日志，'
-      + phrase('bot.impl', v => '这些事在 ' + esc(v) + ' 的界面里做', '这些事在机器人的界面里做')
-      + '。你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。';
+      + '、查看运行日志等操作需在'
+      + phrase('bot.impl', v => ' ' + esc(v) + ' 界面', '机器人界面')
+      + '中完成。已登录本控制台时<b>无需再次登录</b>，打开时将自动完成登录。';
   }
   const open = $('#bot-open');
   if (open) {
@@ -332,7 +332,7 @@ function applyConnectionVocab() {
  *         交给调用方去说：保存那一趟末尾还要说一句「已保存」，在这里写状态栏会被它盖掉。没话时为空串
  */
 export async function load(how) {
-  say('载入中…');
+  say('加载中…');
   const notes = [];
   try {
     const [s, v, channels] = await Promise.all([
@@ -382,8 +382,8 @@ export async function load(how) {
         // 机密项改回留空是另一回事：留空＝没动，可发出去的那个值已经存上了。
         // 旧值界面手里根本没有（后端只给遮罩），还原不出来——不留草稿，只说清存上的是哪一份
         if (field && field.sensitive && sentDrafts[name] !== CLEAR) {
-          notes.push('「' + (field.label || name) + '」在保存途中改回了留空，存上的是刚才发出去的那一份；'
-            + '要换回原来的，请重新填写。');
+          notes.push('「' + (field.label || name) + '」在保存过程中被改回留空，已保存的是提交时的值；'
+            + '如需恢复原值，请重新填写。');
           continue;
         }
         // 还原成发出前的值：已存的值原样，没存过时按默认值。与 settings.js 里 valuesOf
@@ -443,7 +443,7 @@ export async function load(how) {
 
     if (quiet) say('');
   } catch (e) {
-    say('载入失败：' + e.message, 'err');
+    say('加载失败：' + e.message, 'err');
   }
   markDirty();
   return notes.join(' ');
@@ -733,8 +733,8 @@ $('#logout').addEventListener('click', async () => {
   location.reload();
 });
 $('#logout-all').addEventListener('click', async () => {
-  if (!await ask({title: '继续？',
-    body: '将注销所有设备上的登录，包括当前这一个。'})) return;
+  if (!await ask({title: '退出全部设备？',
+    body: '所有设备上的控制台登录都将失效，包括当前设备。'})) return;
   await api('/auth/logout?all=true', {method: 'POST'});
   location.reload();
 });

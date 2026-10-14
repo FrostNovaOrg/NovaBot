@@ -188,7 +188,7 @@ if (typeof refreshHome === 'function') {
   eq(back != null, true, '失败与告警那一趟出错时首页仍取到运行状态');
   const strip = node('#home-timeline').innerHTML;
   const note = node('#status-text').textContent;
-  lacks(note, '载入首页失败', '失败与告警那一趟出错时不报整页载入失败');
+  lacks(note, '首页加载失败', '失败与告警那一趟出错时不报整页载入失败');
   has(strip, '页上这条失败', '取不到那份数据时，短条仍显示这一页里的失败');
   has(strip, '页上这条普通记录', '取不到那份数据时，没占满的位置仍补这一页的普通记录');
   lacks(strip, '还有', '这一页里的失败没超过八条，不另起还有几条那一行');
@@ -198,14 +198,14 @@ if (typeof refreshHome === 'function') {
   back = await refreshHome();
   eq(back != null, true, '失败与告警那一趟正常回来时首页仍取到运行状态');
   has(node('#home-timeline').innerHTML, '另取到的失败', '那一趟正常回来时，短条用它带回来的失败');
-  lacks(node('#status-text').textContent, '载入首页失败', '那一趟正常回来时不报整页载入失败');
+  lacks(node('#status-text').textContent, '首页加载失败', '那一趟正常回来时不报整页载入失败');
 
   mode = 'login-down';
   node('#home-timeline').innerHTML = '尚未重画';
   node('#status-text').textContent = '';
   back = await refreshHome();
   eq(back, null, '原来三趟里登录那一趟出错时，首页不把这一趟当成取到了');
-  has(node('#status-text').textContent, '载入首页失败', '原来三趟里登录那一趟出错时，仍报整页载入失败');
+  has(node('#status-text').textContent, '首页加载失败', '原来三趟里登录那一趟出错时，仍报整页载入失败');
   eq(node('#home-timeline').innerHTML, '尚未重画', '原来三趟出错时首页不重画');
 } else {
   // refreshHome 被改名或删掉后，上面那些格一格也跑不起来。

@@ -219,7 +219,7 @@ public class StreamerController {
             // 回一份空壳会让「uid 打错一位」看起来像「这位主播还没播过」
             JSONObject missing = new JSONObject();
             missing.put("success", false);
-            missing.put("message", "没有这位主播的记录：他既不在推送配置里，也没有归档过的场次");
+            missing.put("message", "没有该主播的记录：既不在推送配置中，也没有已归档的场次");
             return ResponseEntity.status(404).body(missing);
         }
 
@@ -289,7 +289,7 @@ public class StreamerController {
                 .noneMatch(session -> platform.equals(session.platform()) && uid.equals(session.uid()))) {
             JSONObject missing = new JSONObject();
             missing.put("success", false);
-            missing.put("message", "没有这位主播的记录：他既不在推送配置里，也没有归档过的场次");
+            missing.put("message", "没有该主播的记录：既不在推送配置中，也没有已归档的场次");
             return ResponseEntity.status(404).body(missing);
         }
 
@@ -345,8 +345,8 @@ public class StreamerController {
         if (image.isEmpty()) {
             JSONObject missing = new JSONObject();
             missing.put("success", false);
-            missing.put("message", "这一场没有报告图，也没有留下明细数据，重新绘制不出来："
-                    + "可能没开下播报告，也可能这一场早于「每场留明细」这个功能");
+            missing.put("message", "该场没有报告图，也没有保留明细数据，无法重新绘制："
+                    + "可能未开启下播报告，也可能该场早于「每场留明细」功能");
             return ResponseEntity.status(404).contentType(MediaType.APPLICATION_JSON).body(missing);
         }
 

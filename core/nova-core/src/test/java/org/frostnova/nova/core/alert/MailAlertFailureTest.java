@@ -183,7 +183,7 @@ class MailAlertFailureTest {
             AlertService.TestResult result = service().test("mail");
 
             assertEquals(AlertService.TestResult.Status.DELIVERED, result.status());
-            assertEquals("已经往 邮件 发了一条测试告警，去看看收到没有。", result.message());
+            assertEquals("已向 邮件 发送一条测试告警，请确认是否收到。", result.message());
             assertEquals(1, sender.plain.size(), "测试必须真发一封，回话才有依据");
         }
 

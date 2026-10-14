@@ -522,7 +522,8 @@ class SwitchVersionToolTest {
     @Test
     @DisplayName("n 带减号后缀的版本号")
     void hyphenatedVersionSwitches(@TempDir Path dir) throws Exception {
-        // 故障：装得上的 5.8.0-rc1 这类版本，换版工具不认，换不过去。
+        // 故障：版本目录名带减号后缀（如 5.8.0-rc1）时，换版工具不认，换不过去。
+        // 安装脚本现在只认三段数字与 -beta.N；这一格量的是换版工具本身认不认这类目录名。
         String target = "5.8.0-rc1";
         World world = lay(dir, true, true, true, "hot-ok", OLD, target);
         Run run = run(world);

@@ -80,7 +80,7 @@ public class AlertService {
      */
     private static final String TEST_SUBJECT = "NovaBot 告警通道测试";
 
-    private static final String TEST_CONTENT = "这是一条测试消息，由控制台上的「发一条测试」按出来，不代表出了任何问题。"
+    private static final String TEST_CONTENT = "这是一条测试消息，由控制台上的「发送测试告警」按出来，不代表出了任何问题。"
             + "能收到它，说明这一路告警通道是通的。";
 
     private final NovaCoreProperties properties;
@@ -284,12 +284,12 @@ public class AlertService {
         AlertChannel channel = channel(id);
 
         if (channel == null) {
-            return new TestResult(TestResult.Status.UNKNOWN, id, null, "没有这一路告警通道");
+            return new TestResult(TestResult.Status.UNKNOWN, id, null, "不存在此告警通道");
         }
 
         if (!channel.isAvailable()) {
             return new TestResult(TestResult.Status.NOT_CONFIGURED, id, channel.name(),
-                    channel.name() + " 这一路还没配好，先把上面几栏填完并保存。");
+                    channel.name() + " 告警通道尚未配置完成，请先填写上方各项并保存。");
         }
 
         CountDownLatch latch = new CountDownLatch(1);
@@ -308,19 +308,19 @@ public class AlertService {
         try {
             if (!latch.await(testWaitTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 return new TestResult(TestResult.Status.UNCERTAIN, id, channel.name(),
-                        channel.name() + " 这一路还没等到结果。请到 " + channel.name()
-                                + " 上看一眼，或到日志页「推送」里查看。");
+                        channel.name() + " 告警通道暂未返回结果。请在 " + channel.name()
+                                + " 上确认是否收到，或在日志页「推送」中查看。");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new TestResult(TestResult.Status.UNCERTAIN, id, channel.name(),
-                    channel.name() + " 这一路的等待被打断了，还没等到结果。");
+                    channel.name() + " 告警通道的等待已中断，尚未获得结果。");
         }
 
         AlertChannel.SendResult r = result.get();
         return switch (r.status()) {
             case SENT -> new TestResult(TestResult.Status.DELIVERED, id, channel.name(),
-                    "已经往 " + channel.name() + " 发了一条测试告警，去看看收到没有。");
+                    "已向 " + channel.name() + " 发送一条测试告警，请确认是否收到。");
             case BLOCKED -> {
                 // 被总开关拦下是使用者自己按下的「先别发」，不是故障：工程日志一行、不打栈。
                 // 界面回话与别的失败同一句——点的人要听到的正是「没发出去」及原因
@@ -334,8 +334,8 @@ public class AlertService {
                         channel.name() + " 这一路发不出去：" + r.reason());
             }
             case UNCERTAIN -> new TestResult(TestResult.Status.UNCERTAIN, id, channel.name(),
-                    "请求已经发出去了，没等到 " + channel.name() + " 回话，送没送到说不准，请到 "
-                            + channel.name() + " 上看一眼。");
+                    "请求已发出，但未收到 " + channel.name() + " 的响应，无法确定是否送达。请在 "
+                            + channel.name() + " 上确认是否收到。");
         };
     }
 

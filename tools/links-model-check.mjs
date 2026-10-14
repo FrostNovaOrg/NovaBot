@@ -235,12 +235,12 @@ askPhrase('②无词恰为「机器人」且不含「（」', () => {
   }
 });
 
-askPhrase('③log 那句无词时不含「（」且含「机器人那头」', () => {
+askPhrase('③log 那句无词时不含「（」且含「机器人的日志」', () => {
   store.vocab = {'bot.platform': 'QQ'};
   const got = phrase('bot.impl',
-    v => term('bot.platform', '聊天平台') + ' 那头（' + v + '）的日志不在这里，到它自己的控制台看。',
-    '机器人那头的日志不在这里，到它自己的控制台看。');
-  if (got.includes('（') || !got.includes('机器人那头')) {
+    v => term('bot.platform', '聊天平台') + ' 机器人（' + v + '）的日志不在此处，请在其自身的界面中查看。',
+    '机器人的日志不在此处，请在机器人自身的界面中查看。');
+  if (got.includes('（') || !got.includes('机器人的日志')) {
     throw new Error('实得「' + got + '」');
   }
 });

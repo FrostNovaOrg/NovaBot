@@ -651,8 +651,10 @@ class StreamerApiTest {
 
         assertEquals(404, response.getStatusCode().value());
         assertFalse(response.getBody().getBooleanValue("success"));
-        assertTrue(response.getBody().getString("message").contains("没有这位主播的记录"),
+        assertTrue(response.getBody().getString("message").contains("没有该主播的记录"),
                 "回一份空壳会让「uid 打错一位」看起来像「这位主播还没播过」");
+        assertFalse(response.getBody().getString("message").contains("他"),
+                "回话不用「他」指主播: " + response.getBody().getString("message"));
     }
 
     @Test
