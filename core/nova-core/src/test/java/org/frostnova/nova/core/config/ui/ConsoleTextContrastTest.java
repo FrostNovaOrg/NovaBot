@@ -55,7 +55,7 @@ class ConsoleTextContrastTest {
             new Spot("主题选中项", ".themechoice .pill.cur", List.of("surface")),
             new Spot("日志筛选选中项", ".lgpill[aria-pressed=\"true\"]", List.of("surface")),
             new Spot("日志页今天没有条目的分类小标签", ".lgpill.dim", List.of("surface")),
-            new Spot("连接页「去设置页改」", ".lc-note .lc-go", List.of("ground")),
+            new Spot("连接页「前往设置」", ".lc-note .lc-go", List.of("ground")),
             new Spot("错误行的日志辅助字", ".tl-hd .tl-x", List.of("surface", "errsoft")),
             new Spot("警告行的日志辅助字", ".tl-hd .tl-x", List.of("surface", "warnsoft")),
             new Spot("错误行的「在工程日志里看」", ".tl-go", List.of("surface", "errsoft")),

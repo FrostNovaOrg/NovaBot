@@ -132,7 +132,7 @@ class SensitiveReauthFrontendTest {
         assertTrue(askAt < optionsAt, "取登记参数之后才要密码：输错已经在认证器里留下一把没人认领的钥匙");
 
         String beforeOptions = register.substring(0, optionsAt);
-        assertTrue(beforeOptions.contains("现在的密码"), "要的那一格不是「现在的密码」");
+        assertTrue(beforeOptions.contains("当前密码"), "要的那一格不是「当前密码」");
         assertTrue(beforeOptions.contains("type: 'password'") || beforeOptions.contains("type:\"password\""),
                 "那一格不是密码框");
 
