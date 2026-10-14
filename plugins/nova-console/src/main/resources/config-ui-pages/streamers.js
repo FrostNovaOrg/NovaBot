@@ -3,7 +3,7 @@
  *
  * 本文件随控制台插件走，由控制台按注册清单装载，落在顶级导航。
  * 三个导出就是与控制台之间的全部约定：render 建出页容器里的三块、
- * refresh 按地址栏取数、leave 离开本页时撤掉报告图的临时地址。
+ * refresh 按地址栏取数、leave 离开本页时停止直播刷新并撤掉报告图的临时地址。
  *
  * 本文件只管把东西摆上屏幕。地址栏怎么读怎么拼、状态标写哪几个字、折线与柱图的几何、
  * 人气峰该显示 0 还是「—」、两种缺口怎么分开说、快照那些裸键换成什么人话——
@@ -24,6 +24,13 @@ import {
 } from './streamers-model.js';
 
 const PAGE_STYLE = `
+#st-list a.rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;color:inherit;text-decoration:none}
+#st-list a.rowcard:hover{background:var(--soft)}
+#st-list a.rowcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#sd-live .live-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#sd-live .live-head h3{margin:0}
+#sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
+#sd-live .live-error{color:var(--err,var(--dim))}
 .chart{margin-bottom:2px}
 .chart .plot{position:relative;padding-top:6px}
 .chart svg{display:block;width:100%;height:110px}
@@ -98,16 +105,58 @@ export function render(section) {
  * 解析仍走 parseStreamersHash(location.hash)，与拼地址用的是同一份。
  */
 export function refresh() {
-  loadStreamers();
+  return loadStreamers();
 }
 
 /** 离开本页时把报告图的临时地址撤掉 */
 export function leave() {
+  liveActive = false;
+  viewGeneration++;
+  stopLiveRefresh();
   releaseReport();
 }
 
 /** 当前落在哪一块，真源是地址栏 */
 let where = parseStreamersHash('');
+let liveActive = false;
+let liveTimer = null;
+let liveGeneration = 0;
+let viewGeneration = 0;
+let livePending = null;
+let liveKey = '';
+let live = null;
+let liveError = '';
+
+function stopLiveRefresh() {
+  if (liveTimer !== null) clearInterval(liveTimer);
+  liveTimer = null;
+  liveGeneration++;
+  livePending = null;
+}
+
+function canRefreshLive() {
+  const current = parseStreamersHash(location.hash);
+  return current.view === 'detail' && current.pane === 'overview'
+    && current.platform === where.platform && current.uid === where.uid
+    && liveActive && !document.hidden && isStreamersHash(location.hash)
+    && where.view === 'detail' && where.pane === 'overview' && detail?.success
+    && detail.configured !== false
+    && liveKey === where.platform + '/' + where.uid;
+}
+
+function startLiveRefresh() {
+  if (!canRefreshLive() || liveTimer !== null) return;
+  liveTimer = setInterval(loadLive, 15000);
+}
+
+// 隐藏时撤表；再看这一页时立即检查一次，再继续每 15 秒刷新。
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) stopLiveRefresh();
+  else if (canRefreshLive()) {
+    startLiveRefresh();
+    await loadLive();
+  }
+});
 
 /**
  * 这台机器的运行状态，只取「开没开累计数据」那一位
@@ -127,6 +176,8 @@ let reportUrl = '';
  * 两件事合成一个函数的话，直接打开某一场的地址会先闪一下列表。
  */
 export function syncStreamersView() {
+  viewGeneration++;
+  stopLiveRefresh();
   where = parseStreamersHash(location.hash);
   $('#sv-list').style.display = where.view === 'list' ? '' : 'none';
   $('#sv-detail').style.display = where.view === 'detail' ? '' : 'none';
@@ -138,7 +189,13 @@ export function loadStreamers() {
   // 宿主刷新各插件页（refreshPages）时不分在不在屏幕上，这一页也被叫到。
   // 地址栏第一段不是本页名字的（正落在推送页那类地址上），取了也用不上——
   // 照后两段读出一位主播再去问接口，问回来的是一位不存在的人，白挨 404
-  if (!isStreamersHash(location.hash)) return;
+  if (!isStreamersHash(location.hash)) {
+    liveActive = false;
+    viewGeneration++;
+    stopLiveRefresh();
+    return;
+  }
+  liveActive = true;
 
   syncStreamersView();
   releaseReport();
@@ -217,14 +274,13 @@ function renderRows(list, days) {
   }
 
   for (const one of list) {
-    const row = el('div', 'rowcard');
+    const row = el('a', 'rowcard');
+    row.href = detailHash(one.platform, one.uid);
+    row.setAttribute('aria-label', one.uname || String(one.uid));
 
     const main = el('div', 'rc-main');
     const name = el('div', 'rc-nm');
-    const link = el('a');
-    link.href = detailHash(one.platform, one.uid);
-    link.textContent = one.uname || String(one.uid);
-    name.appendChild(link);
+    name.textContent = one.uname || String(one.uid);
     name.appendChild(chip(one));
     main.appendChild(name);
 
@@ -237,13 +293,6 @@ function renderRows(list, days) {
     row.appendChild(main);
 
     row.appendChild(spark(one.series));
-
-    const side = el('div', 'rc-side');
-    const go = el('a', 'nv-btn2');
-    go.href = detailHash(one.platform, one.uid);
-    go.textContent = '打开';
-    side.appendChild(go);
-    row.appendChild(side);
 
     host.appendChild(row);
   }
@@ -357,6 +406,7 @@ function renderUnlisted(list) {
 let detail = null;
 
 async function loadDetail() {
+  const generation = viewGeneration;
   $('#sd-back').setAttribute('href', '#/streamers');
 
   const query = where.pane === 'sessions' ? 'page=' + where.page
@@ -365,7 +415,9 @@ async function loadDetail() {
     + encodeURIComponent(where.uid) + (query ? '?' + query : '');
 
   try {
-    detail = await api(path);
+    const response = await api(path);
+    if (generation !== viewGeneration || !liveActive) return;
+    detail = response;
   } catch (e) {
     say('载入主播详情失败：' + e.message, 'err');
     return;
@@ -380,7 +432,18 @@ async function loadDetail() {
 
   renderHead();
   renderTabs();
+  const key = where.platform + '/' + where.uid;
+  if (key !== liveKey || !detail.living
+    || (live && detail.since != null && live.since !== detail.since)) {
+    liveKey = key;
+    live = null;
+    liveError = '';
+  }
   renderPane();
+  if (where.pane === 'overview') {
+    startLiveRefresh();
+    await loadLive();
+  }
 }
 
 function renderHead() {
@@ -492,7 +555,116 @@ function renderOverview(host) {
   host.appendChild(stats);
 
   host.appendChild(snapshotCard(overview.snapshot, overview.snapshotMetrics));
+  const current = el('div', 'nv-card hcard');
+  current.id = 'sd-live';
+  host.appendChild(current);
+  renderLive();
   host.appendChild(recentCard());
+}
+
+/** 只读当前这一场；失败时保留上一次成功读到的数据。 */
+async function loadLive() {
+  if (!canRefreshLive() || livePending === liveGeneration) return;
+  const generation = liveGeneration;
+  livePending = generation;
+  try {
+    const response = await fetch(CONSOLE + '/api/streamers/' + encodeURIComponent(where.platform) + '/'
+      + encodeURIComponent(where.uid) + '/live?series=online_count');
+    if (response.status === 401) {
+      location.reload();
+      return;
+    }
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error('HTTP ' + response.status);
+    }
+    if (generation !== liveGeneration || !canRefreshLive()) return;
+    if (response.status < 200 || response.status >= 300
+      || data?.success !== true || typeof data.living !== 'boolean') {
+      throw new Error(data?.message || data?.error || 'HTTP ' + response.status);
+    }
+    live = data;
+    liveError = '';
+  } catch (error) {
+    if (generation !== liveGeneration || !canRefreshLive()) return;
+    liveError = error.message || '网络错误';
+  } finally {
+    if (livePending === generation) livePending = null;
+  }
+  renderLive();
+}
+
+function liveClock(ms, seconds = false) {
+  if (ms === null || ms === undefined) return '—';
+  const date = new Date(Number(ms));
+  const pad = value => String(value).padStart(2, '0');
+  return pad(date.getHours()) + ':' + pad(date.getMinutes())
+    + (seconds ? ':' + pad(date.getSeconds()) : '');
+}
+
+/** 概况中的本场卡片，独立更新，累计与归档卡片不使用这份数。 */
+function renderLive() {
+  const card = $('#sd-live');
+  if (!card) return;
+  card.hidden = !(live ? live.living : detail?.living);
+  card.innerHTML = '';
+  if (card.hidden) return;
+
+  const header = el('div', 'live-head');
+  const head = el('h3');
+  head.textContent = '正在直播';
+  header.appendChild(head);
+  const refresh = el('button', 'nv-btn2');
+  refresh.type = 'button';
+  refresh.textContent = '刷新';
+  refresh.addEventListener('click', loadLive);
+  header.appendChild(refresh);
+  card.appendChild(header);
+
+  const times = el('p', 'live-times');
+  const since = live ? live.since : detail.since;
+  times.textContent = '开播于 ' + fmtTime(since)
+    + (since != null ? ' · 已播 ' + fmtDuration(Math.max(0, (Date.now() - since) / 1000)) : '')
+    + ' · 数据更新到 ' + liveClock(live?.dataAt)
+    + ' · 检查于 ' + liveClock(live?.checkedAt, true);
+  card.appendChild(times);
+
+  const catalog = detail.sessions?.metrics || [];
+  const labels = new Map(catalog.map(one => [one.key, one]));
+  const metrics = {...(live?.metrics || {})};
+  // 报告图的在线人数使用 online_count：分钟内取最大，最新分钟的值不是本场峰值。
+  const online = live?.series?.online_count || [];
+  if (detail.platform === 'bilibili') {
+    delete metrics.online_count;
+    delete metrics.online_rank_count;
+  }
+  const rows = snapshotRows(metrics, catalog);
+  if (detail.platform === 'bilibili') {
+    rows.push({key: 'online_count', name: '在线人数', unit: '人', known: true,
+      value: online.length ? online[online.length - 1][1] : null});
+  }
+  const metricList = el('dl', 'kv');
+  for (const row of rows) {
+    const label = el('dt');
+    label.textContent = row.known ? row.name : row.key;
+    if (!row.known) label.title = '这台机器采到了一项插件还没说出名字的指标，原样显示';
+    metricList.appendChild(label);
+    const value = el('dd');
+    value.textContent = fmtMetric(row.value, labels.get(row.key))
+      + (row.value != null && row.unit ? ' ' + row.unit : '');
+    metricList.appendChild(value);
+  }
+  card.appendChild(metricList);
+
+  if (liveError) {
+    const error = el('p', 'live-error');
+    error.setAttribute('role', 'status');
+    error.textContent = '刷新失败：' + liveError + (live
+      ? '，显示的是 ' + liveClock(live.checkedAt, true) + ' 的数据' : '，还没有取到本场数据');
+    card.appendChild(error);
+  }
 }
 
 /**

@@ -28,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -49,7 +50,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 主播数据接口
@@ -343,6 +348,90 @@ class StreamerApiTest {
         JSONArray items = controller.streamers().getJSONArray("streamers");
 
         assertEquals(3, items.size(), "并两处名单不该把同一位数两遍");
+    }
+
+    // 当前直播的数据不能等下播后才看得到，也不能拿上一场的数冒充。
+    private JSONObject live(Long uid, String series) throws Exception {
+        var request = get("/config/api/streamers/bilibili/" + uid + "/live");
+        if (series != null) request.param("series", series);
+        var response = MockMvcBuilders.standaloneSetup(controller).build().perform(request)
+                .andExpect(status().isOk()).andReturn().getResponse();
+        return JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("在播时概况能读到本场指标与开播时刻")
+    void liveReturnsCurrentMetrics() throws Exception {
+        when(liveDataService.getLiveStatus("bilibili", 1001L)).thenReturn(Optional.of(true));
+        when(liveDataService.getLiveStartTime("bilibili", 1001L)).thenReturn(Optional.of(todayStart));
+        when(liveDataService.getLiveMetrics("bilibili", 1001L)).thenReturn(Map.of("danmu_count", 123.0));
+        when(liveDataService.getLiveSeriesMetrics("bilibili", 1001L)).thenReturn(Set.of());
+        long before = System.currentTimeMillis();
+        JSONObject result = live(1001L, null);
+        assertTrue(result.getBooleanValue("living"));
+        assertEquals(todayStart, result.getLongValue("since"));
+        assertEquals(123.0, result.getJSONObject("metrics").getDoubleValue("danmu_count"));
+        assertTrue(result.getLongValue("checkedAt") >= before);
+        assertTrue(result.getLongValue("checkedAt") <= System.currentTimeMillis());
+        assertNull(result.get("dataAt"));
+        assertFalse(result.containsKey("series"));
+    }
+
+    @Test
+    @DisplayName("未开播或停用时不拿上一场的指标和开播时刻冒充")
+    void offlineDoesNotReturnPreviousSession() throws Exception {
+        for (long uid : List.of(1001L, 1003L)) {
+            when(liveDataService.getLiveStatus("bilibili", uid)).thenReturn(Optional.of(uid == 1003L));
+            when(liveDataService.getLiveStartTime("bilibili", uid)).thenReturn(Optional.of(todayStart));
+            when(liveDataService.getLiveMetrics("bilibili", uid)).thenReturn(Map.of("danmu_count", 999.0));
+            when(liveDataService.getLiveSeriesMetrics("bilibili", uid)).thenReturn(Set.of("online_count"));
+            when(liveDataService.getLiveSeries("bilibili", uid, "online_count"))
+                    .thenReturn(Map.of(todayStart, 500.0));
+            JSONObject result = live(uid, "online_count");
+            assertFalse(result.getBooleanValue("living"));
+            assertNull(result.get("since"));
+            assertTrue(result.getJSONObject("metrics").isEmpty());
+            assertNull(result.get("dataAt"));
+            assertTrue(result.getJSONObject("series").isEmpty());
+            verify(liveDataService, never()).getLiveMetrics("bilibili", uid);
+            verify(liveDataService, never()).getLiveSeriesMetrics("bilibili", uid);
+        }
+    }
+
+    @Test
+    @DisplayName("分钟序列只给认得的名字并按时间排序，更新时间取全部序列的最新点")
+    void liveSeriesFiltersNamesAndSeparatesDataTime() throws Exception {
+        when(liveDataService.getLiveStatus("bilibili", 1002L)).thenReturn(Optional.of(true));
+        when(liveDataService.getLiveMetrics("bilibili", 1002L)).thenReturn(Map.of());
+        when(liveDataService.getLiveSeriesMetrics("bilibili", 1002L))
+                .thenReturn(Set.of("online_count", "danmu_count", "empty"));
+        when(liveDataService.getLiveSeries("bilibili", 1002L, "online_count"))
+                .thenReturn(Map.of(todayStart + 60_000, 30.0, todayStart, 40.0));
+        when(liveDataService.getLiveSeries("bilibili", 1002L, "danmu_count"))
+                .thenReturn(Map.of(todayStart + 120_000, 7.0));
+        when(liveDataService.getLiveSeries("bilibili", 1002L, "empty")).thenReturn(Map.of());
+        JSONObject result = live(1002L, " online_count,unknown,empty,online_count ");
+        assertTrue(result.getBooleanValue("living"), "只采集不推送的主播也能看本场");
+        assertEquals(Set.of("online_count", "empty"), result.getJSONObject("series").keySet());
+        assertEquals("[[" + todayStart + ",40.0],[" + (todayStart + 60_000) + ",30.0]]",
+                result.getJSONObject("series").getJSONArray("online_count").toJSONString());
+        assertTrue(result.getJSONObject("series").getJSONArray("empty").isEmpty());
+        verify(liveDataService, never()).getLiveSeries("bilibili", 1002L, "unknown");
+        assertEquals(todayStart + 120_000, result.getLongValue("dataAt"));
+        assertEquals(todayStart + 120_000, live(1002L, null).getLongValue("dataAt"));
+        assertFalse(live(1002L, null).containsKey("series"));
+    }
+
+    @Test
+    @DisplayName("直播接口对不存在的主播与详情给同一句提示，归档里的主播仍能访问")
+    void liveMissingStreamerMatchesDetail() throws Exception {
+        var response = MockMvcBuilders.standaloneSetup(controller).build()
+                .perform(get("/config/api/streamers/bilibili/9009/live"))
+                .andExpect(status().isNotFound()).andReturn().getResponse();
+        JSONObject missing = JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8));
+        assertEquals(controller.streamer("bilibili", 9009L, "week", 1, 0).getBody(), missing);
+        archive.append(session(9009L, "已删掉的主播", todayStart - DAY, 100));
+        assertFalse(live(9009L, null).getBooleanValue("living"));
     }
 
     // ---------------------------------------------------------------- 详情
