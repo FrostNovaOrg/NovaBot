@@ -132,20 +132,20 @@ public class BilibiliLiveReportPainter {
     /**
      * 数据卡片：每行三张
      */
-    private static final int CARD_COLUMNS = 3;
+    private static final int CARD_COLUMNS = ReportSharedStyle.CARD_COLUMNS;
 
-    private static final int CARD_GAP = 18;
+    private static final int CARD_GAP = ReportSharedStyle.CARD_GAP;
 
-    private static final int CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
+    private static final int CARD_WIDTH = ReportSharedStyle.CARD_WIDTH;
 
-    private static final int CARD_HEIGHT = 112;
+    private static final int CARD_HEIGHT = ReportSharedStyle.CARD_HEIGHT;
 
-    private static final int CARD_RADIUS = 16;
+    private static final int CARD_RADIUS = ReportSharedStyle.CARD_RADIUS;
 
     /**
      * 卡片内文字距卡片左右两边的留白
      */
-    private static final int CARD_TEXT_INSET = 20;
+    private static final int CARD_TEXT_INSET = ReportSharedStyle.CARD_TEXT_INSET;
 
     /**
      * 排行榜每行的行高
@@ -259,7 +259,7 @@ public class BilibiliLiveReportPainter {
      * 卡片底色。包内可见：版式判据要靠它认出「哪几行落在卡片带里」，
      * 否则同样的 x 区间会撞上封面横幅与排行榜的比例条
      */
-    static final Color COLOR_CARD = new Color(246, 247, 249);
+    static final Color COLOR_CARD = ReportSharedStyle.COLOR_CARD;
 
     /**
      * 互动曲线的高度与像素列宽
@@ -954,19 +954,7 @@ public class BilibiliLiveReportPainter {
      * 绘制单张数据卡片
      */
     private void drawCard(CommonPainter painter, Card card, int x, int y) {
-        painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-
-        // 卡片里的文字放不下时不是被画布切掉，而是<b>盖到隔壁那张卡片上</b>——那比被切还难认。
-        // 实测余量只剩个位数像素：「粉丝团 · 本场 +12345」离撑破只差 9px，涨幅到六位数就出界
-        int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
-
-        TextWithStyle value = new TextWithStyle(card.value, 34, COLOR_TEXT, Font.BOLD);
-        value.setText(painter.truncateToWidth(value, usable));
-        painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 16));
-
-        TextWithStyle label = new TextWithStyle(card.label, 22, COLOR_TIP, Font.PLAIN);
-        label.setText(painter.truncateToWidth(label, usable));
-        painter.drawTextWithStyle(List.of(label), new Point(x + CARD_TEXT_INSET, y + 68));
+        ReportSharedStyle.drawCard(painter, card.value, card.label, x, y);
     }
 
     /**
