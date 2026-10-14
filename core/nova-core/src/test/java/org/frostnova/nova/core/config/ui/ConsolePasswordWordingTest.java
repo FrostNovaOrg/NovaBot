@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 登录页的输入框、设置页「修改密码」那一栏早就写「密码」，接口回来的提示句与页上另一些句子却还写「口令」——
  * 同一样东西两个叫法，人会以为是两样：「现在的口令不对」说的是哪一把？
  * <p>
- * 「口令」留给另外两样东西：机器人程序界面那一把（与控制台互不相干，页上正是靠这两个词把它们分开），
- * 以及事件流的只读口令。查的只是给人看的字：Java 里的字符串字面量（日志除外），
+ * 「口令」留给机器人程序界面那一把（与控制台互不相干，页上正是靠这两个词把它们分开）；
+ * 事件流那一把叫「只读访问令牌」。查的只是给人看的字：Java 里的字符串字面量（日志除外），
  * 页面与脚本里注释之外的字。注释、日志、标识符不管。
  */
 @DisplayName("控制台登录的提示一律叫密码")
@@ -45,10 +45,11 @@ class ConsolePasswordWordingTest {
             "main.js", "home-model.js", "login-model.js", "tokens-model.js");
 
     /**
-     * 注释之外仍可以写「口令」的说法：机器人程序界面那一把、事件流的只读口令、日志页里「口令与 Cookie」那一类串
+     * 注释之外仍可以写「口令」的说法：机器人程序界面那一把、日志页里「口令与 Cookie」那一类串；
+     * 事件流那一把的几处叫法照列，它们已不含「口令」
      */
     private static final List<String> NOT_THE_CONSOLE = List.of(
-            "界面的口令", "界面口令", "WebUI 的口令", "只读口令", "签发一把新口令", "已签发的口令", "口令与 Cookie");
+            "界面的口令", "界面口令", "WebUI 的口令", "只读访问令牌", "签发新令牌", "已签发的令牌", "口令与 Cookie");
 
     private static final Pattern LOG_CALL = Pattern.compile("(^|[^\\w.])log\\.(trace|debug|info|warn|error)\\s*\\(");
 

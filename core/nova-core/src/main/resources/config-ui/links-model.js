@@ -73,7 +73,7 @@ function platformCard(card, status, accounts) {
       level: 'off',
       caption: '匿名模式（未登录）',
       note: account.disabledReason,
-      action: {text: '去设置页改', href: '#/settings'},
+      action: {text: '前往设置', href: '#/settings'},
     });
   }
 
@@ -88,8 +88,8 @@ function platformCard(card, status, accounts) {
 
   return Object.assign(base, {
     level: 'err',
-    caption: account.qrCode ? '未登录 · 请扫下面的二维码' : '未登录 · 二维码还没生成，稍候',
-    note: probe.advice || probe.summary || '登录掉了，重新扫码即可',
+    caption: account.qrCode ? '未登录 · 请扫描下方二维码' : '未登录 · 正在生成二维码，请稍候',
+    note: probe.advice || probe.summary || '登录状态已失效，请重新扫码登录',
   });
 }
 
@@ -104,7 +104,7 @@ function platformCard(card, status, accounts) {
 export function accountCaption(account) {
   const uid = (account && account.accountId) || '未知';
   const name = String((account && account.accountName) || '').trim();
-  return name ? '已登录 · ' + name + ' · uid ' + uid : '已登录 · 账号 ' + uid;
+  return name ? '已登录 · ' + name + ' · UID ' + uid : '已登录 · 账号 ' + uid;
 }
 
 /**
@@ -118,7 +118,7 @@ export function accountCaption(account) {
 function expiryText(account) {
   const parts = [];
   if (account.expiresAt) {
-    parts.push('凭据 ' + day(account.expiresAt) + ' 到期');
+    parts.push('凭据有效期至 ' + day(account.expiresAt));
   }
   if (account.credentialNote) {
     parts.push(account.credentialNote);
@@ -155,7 +155,7 @@ function botCard(status, title) {
 
   if (!(status.senders || []).length) {
     return Object.assign(base, {
-      caption: '还没连上机器人 · 填好地址与端口，点「测试连接」',
+      caption: '尚未连接机器人 · 请填写地址与端口，并点击「测试连接」',
       note: '',
     });
   }
@@ -218,13 +218,13 @@ function panelCard(tokens) {
   if (active) {
     return Object.assign(base, {
       level: 'ok',
-      caption: active + ' 把有效' + (revoked ? ' · ' + revoked + ' 把已吊销' : ''),
+      caption: '有效令牌 ' + active + ' 个' + (revoked ? ' · 已吊销 ' + revoked + ' 个' : ''),
     });
   }
 
   return Object.assign(base, {
-    caption: revoked ? ('一把有效的都没有 · ' + revoked + ' 把已吊销') : '还没签发过口令',
-    note: '外部面板连不上时，先看这里是不是空的',
+    caption: revoked ? ('无有效令牌 · 已吊销 ' + revoked + ' 个') : '尚未签发只读访问令牌',
+    note: '外部面板无法连接时，请先确认此处是否有有效的令牌',
   });
 }
 
@@ -335,8 +335,8 @@ export function targetOptions(groups, friends) {
 export function resolveTarget(options, key) {
   const hit = (options || []).find(item => item.key === key);
   if (!hit) {
-    return {ok: false, reason: '请从名单里挑一个群或好友。这里不接受手填号码——填错一位数不会报错，'
-      + '消息只是发去了别处'};
+    return {ok: false, reason: '请从列表中选择群组或好友。此处不支持手动输入号码：号码填错一位不会报错，'
+      + '消息会被发往其他目标'};
   }
   return {ok: true, platform: hit.sender, type: hit.type, num: hit.num};
 }

@@ -84,7 +84,7 @@ eq(linkWith({streamer: null}, [{}]), null,
 eq(linkWith({streamer: WHO}, []), null,
   '③ 查到人但还没落盘：不出链接——详情页读的是已落盘的名单，点进去是空页');
 eq(linkWith({streamer: WHO}, [{uid: 3493}]),
-  {text: '去主播页看看', href: '#/streamers/somewhere/3493'},
+  {text: '前往主播页', href: '#/streamers/somewhere/3493'},
   '④ 查到人且已落盘：出链接，地址经 detailHash 拼');
 
 // ⑤⑥ 画「找到了」那张卡的时候不许出这个链接：那一刻还没落盘。

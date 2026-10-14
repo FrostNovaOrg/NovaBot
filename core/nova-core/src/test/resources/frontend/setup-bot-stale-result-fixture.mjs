@@ -162,7 +162,7 @@ try {
 } catch (e) {
   stale = 'error:' + e.message;
 }
-eq(stale, {saves: 0, botOk: false, result: '参数改了，请重新测试连接'},
+eq(stale, {saves: 0, botOk: false, result: '连接参数已修改，请重新测试连接'},
   '① 测试挂着时改地址、再回成功：不发 POST /setup/bot，botOk 仍为假');
 
 // ② 对照：回包前没动，测通照旧自动存下，存的是测过的那一套

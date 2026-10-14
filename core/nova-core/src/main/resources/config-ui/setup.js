@@ -204,7 +204,7 @@ async function collectPluginDone() {
  */
 export async function openSetup() {
   const main = $('#setup-main');
-  main.textContent = '载入中…';
+  main.textContent = '正在加载…';
   loadOptions();
 
   try {
@@ -223,8 +223,8 @@ export async function openSetup() {
     skips = steps.map((_, i) => skips[i] || '');
   } catch (e) {
     main.textContent = '';
-    main.appendChild(note('err', '载入失败：' + e.message
-      + '\n这一页要先问清楚这台机器现在什么样，问不到的话画出来的每一步都是猜的。'));
+    main.appendChild(note('err', '加载失败：' + e.message
+      + '\n无法读取本机当前的配置状态，各步骤的完成情况无从判断。请检查与服务器的连接后刷新页面。'));
     return;
   }
 
@@ -257,7 +257,7 @@ function render() {
   rail.innerHTML = '';
   main.innerHTML = '';
   if (seen.mark.rerunRequested && !finished) {
-    main.appendChild(note('', '勾选表示已有配置或试发记录，并不代表本次已重新验证。可选择任一步检查或修改。'));
+    main.appendChild(note('', '勾选表示已有配置或测试发送记录，并不代表本次已重新验证。可选择任一步骤进行检查或修改。'));
   }
 
   railMarks(facts, skips, finished ? -1 : current, steps, seen.mark.testSent).forEach((mark, i) => {
@@ -305,12 +305,12 @@ function render() {
 function renderPlugin(host, step) {
   const mod = pluginMods[step.key];
   if (!mod || typeof mod.render !== 'function') {
-    host.appendChild(note('warn', '这一步的界面没装上'));
+    host.appendChild(note('warn', '此步骤的界面未能加载'));
   } else {
     try {
       mod.render(host, pluginCtx());
     } catch (e) {
-      host.appendChild(note('warn', '这一步的界面没装上'));
+      host.appendChild(note('warn', '此步骤的界面未能加载'));
     }
   }
   // skippable 可以是一个串，那就是按钮上要写的字（「先不加主播」这类）；
@@ -339,7 +339,7 @@ async function pluginNext(step) {
   try {
     return await mod.next(pluginCtx()) !== false;
   } catch (e) {
-    say('这一步没能完成：' + e.message, 'err');
+    say('当前步骤未能完成：' + e.message, 'err');
     return false;
   }
 }
@@ -355,7 +355,7 @@ async function skipPlugin(step) {
   try {
     if (mod && typeof mod.skip === 'function' && await mod.skip(pluginCtx()) === false) return;
   } catch (e) {
-    say('这一步没能跳过：' + e.message, 'err');
+    say('当前步骤未能跳过：' + e.message, 'err');
     return;
   }
   finishStep('skip');
@@ -475,7 +475,7 @@ function field(host, label, id, type, value, onInput) {
 }
 
 function report(box, res) {
-  box.textContent = res.message || (res.success ? '好了' : '没能办成');
+  box.textContent = res.message || (res.success ? '操作成功' : '操作失败');
   box.className = 'su-r ' + (res.success ? 'ok' : 'err');
 }
 
@@ -554,10 +554,10 @@ function syncFoot() {
  */
 function stepLock(host) {
   heading(host, titleOf('lock'),
-    '设了密码，访问这个控制台才要登录。这一步不能跳过。');
+    '设置控制台密码后，访问控制台需要先登录。此步骤不可跳过。');
 
   if (draft.locked) {
-    host.appendChild(note('ok', '这台机器已经上锁了。要改密码去「设置 → 登录与安全」，那条路要填现在的密码。'));
+    host.appendChild(note('ok', '控制台密码已设置。如需修改，请前往「设置 → 登录与安全」，修改时需输入当前密码。'));
     passkeyBlock(host);
     foot(host, null, '', null);
     return;
@@ -565,20 +565,20 @@ function stepLock(host) {
 
   const row = el('div', 'su-row');
   const first = field(row, '密码', 'setup-pwd', 'password', '', null);
-  const again = field(row, '再输一遍', 'setup-pwd2', 'password', '', null);
+  const again = field(row, '确认密码', 'setup-pwd2', 'password', '', null);
   host.appendChild(row);
   host.appendChild(note('', phrase('bot.family',
-    v => '至少 8 个字符。填的是这个控制台的密码，与 ' + v + ' 那边的界面口令互不相干。',
-    '至少 8 个字符。填的是这个控制台的密码，与机器人那边的界面口令互不相干。')));
+    v => '至少 8 个字符。此密码用于登录本控制台，与 ' + v + ' 的界面口令相互独立。',
+    '至少 8 个字符。此密码用于登录本控制台，与机器人程序的界面口令相互独立。')));
 
   const result = el('div', 'su-r');
   const save = el('button', 'primary');
   save.type = 'button';
   save.id = 'setup-lock';
-  save.textContent = '上锁';
+  save.textContent = '设置密码';
   save.addEventListener('click', async () => {
     if (first.value !== again.value) {
-      report(result, {success: false, message: '两遍密码不一样'});
+      report(result, {success: false, message: '两次输入的密码不一致'});
       return;
     }
 
@@ -601,7 +601,7 @@ function stepLock(host) {
         return;
       }
     } catch (e) {
-      report(result, {success: false, message: '没能上锁：' + e.message});
+      report(result, {success: false, message: '设置密码失败：' + e.message});
     }
     save.disabled = false;
   });
@@ -623,7 +623,7 @@ function passkeyBlock(host) {
   const button = el('button', 'ghost');
   button.type = 'button';
   button.id = 'setup-passkey';
-  button.textContent = '登记一个通行密钥';
+  button.textContent = '登记通行密钥';
   button.disabled = !draft.locked;
   // 把按钮本身交过去，不让那边按 id 取：设置页上另有一个同样的按钮，
   // 两处按 id 取就得共用一个 id，而重复 id 取到的永远是靠前的那一个
@@ -631,8 +631,8 @@ function passkeyBlock(host) {
   box.appendChild(button);
 
   const hint = note('', draft.locked
-    ? '登记过之后，登录时按一下指纹或面容就行，不用密码也不用验证码。可以跳过，之后在设置里补。'
-    : '先上锁，再登记：通行密钥跟着密码登录走，没有密码时它签出来的会话打不开任何门。');
+    ? '登记后，登录时只需验证指纹或面容，无需输入密码或动态验证码。此项可跳过，之后可在设置中登记。'
+    : '请先设置控制台密码，再登记通行密钥：通行密钥依附于密码登录，未设置密码时，通过它建立的会话无法访问任何页面。');
   box.appendChild(hint);
   host.appendChild(box);
 
@@ -659,14 +659,14 @@ function invalidateBot(draft) {
 function stepBot(host) {
   heading(host, titleOf('bot'),
     '机器人指 ' + term('bot.impl.hint', '机器人程序')
-    + '，NovaBot 通过它把消息发到 ' + term('bot.platform', '聊天平台')
-    + '。这一步不能跳过。');
+    + '，NovaBot 通过它将消息发送到 ' + term('bot.platform', '聊天平台')
+    + '。此步骤不可跳过。');
 
   const at = draft.bot;
   const result = el('div', 'su-r');
   const retest = () => {
     invalidateBot(draft);
-    result.textContent = '参数改了，请重新测试连接';
+    result.textContent = '连接参数已修改，请重新测试连接';
     result.className = 'su-r';
     syncFoot();
   };
@@ -729,8 +729,8 @@ function stepBot(host) {
   // 保存的回话由服务端给，说的是「现在通了没有」，不是「已保存」——所以这里不另写一句
   if (!(seen.status.senders || []).length) {
     host.appendChild(note('', phrase('bot.impl',
-      v => '填 ' + v + ' 那一侧的地址、端口与两个 Token。测通之后会自动存下来并当场接上，不用重启。',
-      '填机器人那一侧的地址、端口与两个 Token。测通之后会自动存下来并当场接上，不用重启。')));
+      v => '请填写 ' + v + ' 的地址、端口与两个 Token。测试通过后会自动保存并立即连接，无需重启。',
+      '请填写机器人程序的地址、端口与两个 Token。测试通过后会自动保存并立即连接，无需重启。')));
   }
 
   /**
@@ -757,7 +757,7 @@ function stepBot(host) {
         draft.botSynced = sent;
       }
     } catch (e) {
-      report(box, {success: false, message: '连接是通的，但没能存下来：' + e.message});
+      report(box, {success: false, message: '连接测试已通过，但配置未能保存：' + e.message});
       draft.botOk = false;
     }
   }
@@ -770,17 +770,17 @@ function stepBot(host) {
 function stepAccount(host) {
   const accounts = seen.login.accounts || [];
   heading(host, titleOf('account'),
-    '登录之后才有动态推送与自动关注；直播推送不登录也照常。');
+    '登录后才能使用动态推送与自动关注；直播推送不受影响，未登录时也照常发送。');
 
   if (!accounts.length) {
-    host.appendChild(note('warn', '这台机器上没有装任何直播平台插件，这一步没得做。'
-      + '装上之后回来再走一遍即可。'));
-    foot(host, () => finishStep('skip'), '先跳过', null);
+    host.appendChild(note('warn', '本机未安装任何直播平台插件，此步骤无法进行。'
+      + '安装插件后重新执行此步骤即可。'));
+    foot(host, () => finishStep('skip'), '跳过此步骤', null);
     return;
   }
 
   accounts.forEach(one => host.appendChild(accountCard(one)));
-  foot(host, chooseAnonymous, '不登录，先用免登录模式', null);
+  foot(host, chooseAnonymous, '暂不登录，使用免登录模式', null);
   schedulePoll(accounts);
 }
 
@@ -792,9 +792,9 @@ function stepAccount(host) {
  * 这一步确实定了，但它定的是一个有后果的决定。
  */
 async function chooseAnonymous() {
-  if (!await ask({title: '确定先不登录吗？',
-    body: '不登录的话：个人主播的直播间实测只能拿到约一成弹幕，'
-      + '发送者的号会被抹成 0、昵称只留首字；动态推送与自动关注都用不了。直播推送不受影响。'})) return;
+  if (!await ask({title: '确定暂不登录？',
+    body: '不登录时：个人主播的直播间实测只能获取约一成弹幕，'
+      + '发送者的 UID 会被置为 0，昵称只保留首字；动态推送与自动关注均不可用。直播推送不受影响。'})) return;
 
   draft.anonymousConfirmed = true;
   finishStep('anon');
@@ -826,9 +826,9 @@ function accountCard(one) {
     img.src = 'data:image/png;base64,' + one.qrCode;
     img.alt = '登录二维码';
     card.appendChild(img);
-    card.appendChild(note('', '用手机客户端扫这张码，扫完这一页会自己变成已登录。'));
+    card.appendChild(note('', '请使用手机客户端扫描此二维码，扫码后本页会自动更新为已登录。'));
   } else {
-    card.appendChild(note('', '二维码生成中，稍候。'));
+    card.appendChild(note('', '正在生成二维码，请稍候。'));
   }
   return card;
 }
@@ -894,12 +894,12 @@ const TEST_TEXT = '这是一条来自 NovaBot 的测试消息，收到即表示�
 
 function stepTest(host) {
   heading(host, titleOf('test'),
-    '往一个群或一位好友发一条，那头看得到就说明整条链路是通的。');
+    '向一个群或一位好友发送一条测试消息，对方能收到即说明整条推送链路畅通。');
 
   const result = el('div');
   const wrap = el('div', 'su-fld');
   const label = el('label');
-  label.textContent = '发给谁';
+  label.textContent = '发送目标';
   label.setAttribute('for', 'setup-send-target');
   wrap.appendChild(label);
 
@@ -910,14 +910,14 @@ function stepTest(host) {
   picker.id = 'setup-send-target';
   picker.innerHTML = pickable.length
     ? pickable.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text) + '</option>').join('')
-    : '<option value="">暂时取不到群与好友名单</option>';
+    : '<option value="">暂时无法获取群组与好友列表</option>';
   wrap.appendChild(picker);
   host.appendChild(wrap);
 
   const send = el('button', 'ghost');
   send.type = 'button';
   send.id = 'setup-send';
-  send.textContent = '发一条';
+  send.textContent = '发送测试消息';
   send.disabled = !pickable.length;
   send.addEventListener('click', async () => {
     // 只认名单里有的那几个，这一条判在 links-model 里：连接页那一块用的是同一份判法，
@@ -973,7 +973,7 @@ function paintSent(host, res, targetText) {
 
   const bubble = el('div', 'bubble');
   const to = el('div', 'bb-to');
-  to.textContent = '发给 ' + targetText;
+  to.textContent = '发送目标：' + targetText;
   bubble.appendChild(to);
   const body = el('div', 'bb-body');
   body.textContent = TEST_TEXT;
@@ -987,7 +987,7 @@ function paintSent(host, res, targetText) {
   const got = el('button', 'primary');
   got.type = 'button';
   got.id = 'setup-got';
-  got.textContent = '收到了，完成';
+  got.textContent = '已收到，完成';
   got.addEventListener('click', async () => {
     got.disabled = true;
     try {
@@ -995,7 +995,7 @@ function paintSent(host, res, targetText) {
       seen.mark.testSent = true;
     } catch (e) {
       // 记不上不该拦着人走完：这一位只影响下次进来时落在第几步
-      say('没能记下这一步：' + e.message, 'err');
+      say('未能记录此步骤：' + e.message, 'err');
     }
     draft.sent = true;
     await refreshFacts();
@@ -1006,7 +1006,7 @@ function paintSent(host, res, targetText) {
   const no = el('button', 'ghost');
   no.type = 'button';
   no.id = 'setup-not-got';
-  no.textContent = '没收到';
+  no.textContent = '未收到';
   no.addEventListener('click', () => tips.classList.toggle('hide'));
   bar.appendChild(no);
 
@@ -1023,20 +1023,22 @@ function paintSent(host, res, targetText) {
 function troubleshooting() {
   const box = el('div', 'su-tips');
   box.id = 'setup-tips';
-  [['机器人被踢出群了',
+  [['机器人已不在群内',
       phrase('bot.platform',
-        v => '到 ' + v + ' 里看一眼机器人还在不在那个群。不在就拉回去，再回上一步重选一次。',
-        '到聊天软件里看一眼机器人还在不在那个群。不在就拉回去，再回上一步重选一次。')],
-    [phrase('bot.family', v => 'Token 与 ' + v + ' 那头不一致', 'Token 与机器人那头不一致'),
+        v => '请在 ' + v + ' 中确认机器人是否仍在该群。如已不在，请将其重新拉入群，再返回上一步重新选择。',
+        '请在聊天软件中确认机器人是否仍在该群。如已不在，请将其重新拉入群，再返回上一步重新选择。')],
+    [phrase('bot.family', v => 'Token 与 ' + v + ' 的配置不一致', 'Token 与机器人程序的配置不一致'),
       phrase('bot.family',
-        v => '回第 2 步重测一次；两个 Token 要和 ' + v + ' 的配置里一模一样。',
-        '回第 2 步重测一次；两个 Token 要和机器人配置里一模一样。')],
+        v => '返回第 2 步重新测试；两个 Token 必须与 ' + v + ' 配置中的完全一致。',
+        '返回第 2 步重新测试；两个 Token 必须与机器人程序配置中的完全一致。')],
     [phrase('bot.family',
-        v => phrase('bot.platform', p => v + ' 那头的 ' + p + ' 掉线了', v + ' 那头掉线了'),
-        phrase('bot.platform', p => '机器人那头的 ' + p + ' 掉线了', '机器人那头掉线了')),
+        v => phrase('bot.platform', p => v + ' 中的 ' + p + ' 账号已掉线', v + ' 中的账号已掉线'),
+        phrase('bot.platform', p => '机器人程序中的 ' + p + ' 账号已掉线', '机器人程序中的账号已掉线')),
       phrase('bot.platform',
-        v => '接口通不代表 ' + v + ' 在线。到它自己的界面看登录状态，掉了就重新扫码。',
-        '接口通不代表账号在线。到它自己的界面看登录状态，掉了就重新扫码。')]]
+        v => '接口能连通不代表 ' + v + ' 账号在线：账号掉线时接口照样连通，消息却无人接收。'
+          + '请在机器人程序的界面中查看登录状态，如已掉线请重新扫码登录。',
+        '接口能连通不代表账号在线：账号掉线时接口照样连通，消息却无人接收。'
+          + '请在机器人程序的界面中查看登录状态，如已掉线请重新扫码登录。')]]
     .forEach(pair => {
       const item = el('div', 'su-tip');
       const title = el('b');
@@ -1061,7 +1063,7 @@ function defaultsBlock() {
   const box = el('details', 'su-defaults');
   const head = el('summary');
   head.id = 'setup-defaults';
-  head.textContent = '已替你定好的初始值（都可改）';
+  head.textContent = '已设置的初始值（均可修改）';
   box.appendChild(head);
 
   // 命令条数没有任何接口给得出来，因此交 null 进去，由那边说「全开」而不写个数。
@@ -1084,7 +1086,7 @@ function defaultsBlock() {
 
     const go = el('a', 'ghost su-go');
     go.href = item.href;
-    go.textContent = '改';
+    go.textContent = '修改';
     line.appendChild(go);
     box.appendChild(line);
   });
@@ -1095,7 +1097,7 @@ function defaultsBlock() {
 // ============ 走完之后 ============
 
 function renderDone(host) {
-  heading(host, '设置引导完成', '这几步定的东西都已经生效。之后想改，全在设置页与各功能页里。');
+  heading(host, '设置引导完成', '以上各步骤的设置均已生效。如需修改，请前往设置页或各功能页。');
 
   summaryLines(facts, skips, {
     accounts: seen.login.accounts || [],
@@ -1123,7 +1125,7 @@ function renderDone(host) {
     const to = el('a', 'ghost su-go');
     to.id = 'setup-go-' + meta.id;
     to.href = link.href;
-    to.textContent = link.text || '去看看';
+    to.textContent = link.text || '查看';
     host.appendChild(to);
   }
 
@@ -1131,7 +1133,7 @@ function renderDone(host) {
   const go = el('button', 'primary');
   go.type = 'button';
   go.id = 'setup-enter';
-  go.textContent = '进控制台';
+  go.textContent = '进入控制台';
   go.addEventListener('click', () => { location.hash = '#/home'; });
   bar.appendChild(go);
   host.appendChild(bar);

@@ -130,7 +130,7 @@ askPhrase('①有词', () => {
   const alert = alertText(ADAPTER_TERMS);
   if (!alert.includes('QQ 掉线')) throw new Error('告警行 ' + JSON.stringify(alert));
   mustEq(summaryLines([true, true, true, true], ['', '', '', ''], {}, undefined, ADAPTER_TERMS)[0],
-    'QQ 机器人 已连上', '小结已连');
+    'QQ 机器人 已连接', '小结已连');
 });
 
 askPhrase('②无词', () => {
@@ -141,7 +141,7 @@ askPhrase('②无词', () => {
     throw new Error('告警行 ' + JSON.stringify(alert));
   }
   mustEq(summaryLines([true, true, true, true], ['', '', '', ''], {}, undefined, {})[0],
-    '机器人 已连上', '小结已连');
+    '机器人 已连接', '小结已连');
 });
 
 askPhrase('③只缺 bot.impl', () => {
@@ -150,7 +150,7 @@ askPhrase('③只缺 bot.impl', () => {
   const alert = alertText(NO_IMPL);
   if (!alert.includes('QQ 掉线')) throw new Error('告警行 ' + JSON.stringify(alert));
   mustEq(summaryLines([false, false, false, false], ['', '', '', ''], {}, undefined, NO_IMPL)[0],
-    'QQ 机器人 还没连上，推送发不出去', '小结未连');
+    'QQ 机器人 未连接，推送无法发出', '小结未连');
 });
 
 console.log('terms 三档\t跑了 3 格\t红 ' + phraseReds.length + ' 格\t' + (phraseReds.length ? '红' : '绿'));

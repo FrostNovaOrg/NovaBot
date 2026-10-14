@@ -157,7 +157,7 @@
 </defs></svg>
 <section id="agreement" class="hidden">
   <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>NovaBot 使用协议</h1></div>
-  <p class="sub">进入控制台之前，请先读一遍下面的约定</p>
+  <p class="sub">访问控制台前，请阅读并同意以下使用协议</p>
 
   <!-- 正文由 /api/auth/agreement 下发后填入，页面里不留第二份副本 -->
   <div id="agreement-text"></div>
@@ -168,7 +168,7 @@
 
 <div class="card hidden" id="login">
   <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>NovaBot 控制台</h1></div>
-  <p class="sub">先证明你是这台机器的主人</p>
+  <p class="sub">请验证身份后访问控制台</p>
 
   <!-- 锁定横条。文案含实值剩余时间，由 lockText 现算，见 login-model.js -->
   <div class="banner hidden" id="lock"></div>
@@ -179,14 +179,14 @@
     登记过时它是主按钮，口令那条路折到下面去。
   -->
   <div id="passkey-field" class="hidden">
-    <button type="button" id="passkey">用通行密钥登录</button>
-    <p class="lead">用这台电脑的指纹、面容，或手机上确认一下。不用输密码，也不用验证器。</p>
-    <p class="note">通行密钥认的是当前访问地址，换了地址（如从局域网换成域名）要重新登记。</p>
+    <button type="button" id="passkey">使用通行密钥登录</button>
+    <p class="lead">通过本机的指纹、面容或手机确认即可登录，无需输入密码，也无需动态验证码。</p>
+    <p class="note">通行密钥与当前访问地址绑定，更换地址（例如从局域网地址改为域名）后需重新登记。</p>
     <p class="or">或</p>
   </div>
 
   <details id="pwd-fold" class="bare" open>
-    <summary>用密码登录</summary>
+    <summary>使用密码登录</summary>
     <form id="form" autocomplete="on">
       <!--
         单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
@@ -199,7 +199,7 @@
         <input type="password" id="password" name="password" autocomplete="current-password" required>
         <button type="button" id="password-reveal">显示</button>
       </div>
-      <p class="note">填的是<b>这个控制台</b>的密码，不是机器人程序界面的口令，两者互不相干。</p>
+      <p class="note">请输入 <b>NovaBot 控制台</b>的密码，不是机器人程序的界面口令，两者相互独立。</p>
 
       <div id="code-field" class="hidden" style="margin-top:14px">
         <label for="code">动态验证码</label>
@@ -222,7 +222,7 @@
       这张页的地址栏里可能带着一次性令牌（?token=…），经 Referer 送出去就等于把门禁卡递了出去。
     -->
     <a class="lnk" href="https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html#%E9%85%8D%E7%BD%AE%E7%95%8C%E9%9D%A2%E6%89%93%E4%B8%8D%E5%BC%80"
-       target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">登不进控制台怎么办</a>
+       target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">登录故障排查</a>
   </div>
 </div>
 
@@ -232,19 +232,19 @@
 -->
 <div class="card hidden" id="forgot-panel">
   <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>忘记密码</h1></div>
-  <p class="sub">密码没有找回，只能重设</p>
+  <p class="sub">密码无法找回，只能重新设置</p>
   <ol>
-    <li>上服务器，把配置项 <code>novabot.core.config-ui.auth.operator-token</code> 改成
-      <code>true</code> 并重启。这条通道默认关着，就是为了不留后门。</li>
-    <li>启动日志里会印一行带令牌的地址，令牌是那一串。</li>
-    <li>把它贴到下面，换一次进入，然后<b>先改密码；改完这条通道会自动关掉并写回配置</b>。</li>
+    <li>在服务器上将配置项 <code>novabot.core.config-ui.auth.operator-token</code> 设为
+      <code>true</code> 并重启。该通道默认关闭，以免留下后门。</li>
+    <li>启动日志中会输出一行带令牌的访问地址，令牌即地址中 token= 后面的那串字符。</li>
+    <li>将令牌粘贴到下方并进入控制台，然后<b>先修改密码；修改完成后该通道会自动关闭并写回配置</b>。</li>
   </ol>
-  <label for="token">一次性令牌</label>
-  <input type="text" id="token" placeholder="启动日志里印的那一串" autocomplete="off">
-  <button type="button" id="use-token" style="margin-top:14px">用令牌进入</button>
+  <label for="token">一次性启动令牌</label>
+  <input type="text" id="token" placeholder="粘贴启动日志中的令牌" autocomplete="off">
+  <button type="button" id="use-token" style="margin-top:14px">使用令牌进入</button>
   <div class="msg" id="forgot-msg"></div>
   <div class="links">
-    <button type="button" class="lnk" id="back">← 回登录</button>
+    <button type="button" class="lnk" id="back">← 返回登录</button>
   </div>
 </div>
 
@@ -408,7 +408,7 @@
       // 它发出去的那个挑战早已作废（挑战是一次性的）
       const options = await fetch(CONSOLE + '/api/auth/passkey/login/options', {method: 'POST'}).then(r => r.json());
       if (!options.success) {
-        $('#msg').textContent = options.message || '这台机器还没有登记过通行密钥';
+        $('#msg').textContent = options.message || '本机尚未登记通行密钥';
         return;
       }
 
@@ -442,7 +442,7 @@
         return;
       }
 
-      $('#msg').textContent = data.message || '这把通行密钥没能通过验证';
+      $('#msg').textContent = data.message || '通行密钥验证失败';
     } catch (err) {
       // 使用者按了取消也会走到这里。不说成「出错了」——那会让人以为设备有问题
       $('#msg').textContent = err.name === 'NotAllowedError' ? '' : '无法使用通行密钥：' + err.message;
@@ -510,7 +510,7 @@
   $('#use-token').addEventListener('click', () => {
     const value = $('#token').value.trim();
     if (!value) {
-      $('#forgot-msg').textContent = '把启动日志里印的那一串贴进来';
+      $('#forgot-msg').textContent = '请粘贴启动日志中的令牌';
       return;
     }
 

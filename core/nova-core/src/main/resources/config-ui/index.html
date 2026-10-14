@@ -282,8 +282,8 @@
         <div class="lc-hd"><span class="lamp"></span><b>机器人</b><span class="lc-cap"></span></div>
         <div class="lc-note"></div>
         <div class="lc-body">
-          <p class="hint">机器人把消息发到聊天平台。
-            两个 Token 留空表示<b>保持原值</b>，不会被抹掉。</p>
+          <p class="hint">机器人负责将消息发送到聊天平台。
+            两个 Token 留空时<b>保留原值</b>，不会被清空。</p>
           <div class="fbox" id="bot-form"></div>
 
           <!--
@@ -291,15 +291,15 @@
             一个点了才知道不能用的按钮，比没有那个按钮更费解。
           -->
           <div class="lc-sub" id="bot-entry" style="display:none">
-            <p class="hint" style="margin:0 0 8px">扫码登录、查看它自己的运行日志，这些事在机器人自己的界面里做。
-              你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
+            <p class="hint" style="margin:0 0 8px">扫码登录、查看运行日志等操作需在机器人界面中完成。
+              已登录本控制台时<b>无需再次登录机器人界面</b>，打开时将自动完成登录。</p>
             <button type="button" class="nv-btn2" id="bot-open">打开机器人界面 ↗</button>
           </div>
         </div>
       </div>
 
       <!--
-        发一条试试。它不是第四条连接，而是上面那张卡的验收：群号填错、Token 不对、
+        发送测试消息。它不是第四条连接，而是上面那张卡的验收：群号填错、Token 不对、
         机器人不在群里、机器人没起——这四类错的表现完全一样，什么都不发生。
 
         目标从机器人自己给的名单里挑，<b>没有手填号码的格子</b>：手填时填错一位数不会有任何报错，
@@ -307,11 +307,11 @@
         由 links-model.js 的 resolveTarget 判，见 tools/links-model-check.sh。
       -->
       <div class="nv-card lcard" id="card-test">
-        <div class="lc-hd"><b>发一条试试</b><span class="lc-cap">从机器人自己知道的群与好友里挑</span></div>
+        <div class="lc-hd"><b>发送测试消息</b><span class="lc-cap">从机器人已有的群组与好友中选择</span></div>
         <div class="lc-body">
           <div class="backups" id="selftest">
-            <select id="test-target" aria-label="发给谁"></select>
-            <button id="test-refresh" type="button">刷新名单</button>
+            <select id="test-target" aria-label="发送目标"></select>
+            <button id="test-refresh" type="button">刷新列表</button>
             <button id="test-send" type="button">发送</button>
           </div>
           <p class="hint" id="test-hint" style="margin:0"></p>
@@ -321,7 +321,7 @@
     </div>
 
     <!--
-      只读口令。它签给的是这台机器之外的东西——桌面面板、别人电脑上的看板，
+      只读访问令牌。它签给的是这台机器之外的东西——桌面面板、别人电脑上的看板，
       因此权限刻意只有「读事件流」这一项：那些机器不在运维范围内，
       上面的副本泄漏时，损失必须止于「别人能看直播事件」，而不是「别人能改机器人配置」。
       它与上面两块同属「这台机器与外面怎么连」，因此并在本页。
@@ -331,13 +331,13 @@
         <div class="lc-hd"><span class="lamp"></span><b>外部面板</b><span class="lc-cap"></span></div>
         <div class="lc-note"></div>
         <div class="lc-body">
-          <p class="hint">外部面板要连事件流，得有一把只读口令。它<b>只能读</b>——
-            看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
+          <p class="hint">外部面板连接事件流需要只读访问令牌。该令牌<b>仅可读取</b>开播、弹幕等事件，
+            无法修改任何配置，也无法登录本控制台。</p>
 
-          <h4 class="lc-h">签发一把新口令</h4>
+          <h4 class="lc-h">签发新令牌</h4>
           <div class="fbox" id="token-issue"></div>
 
-          <h4 class="lc-h">已签发的口令</h4>
+          <h4 class="lc-h">已签发的令牌</h4>
           <div id="token-list"></div>
         </div>
       </div>

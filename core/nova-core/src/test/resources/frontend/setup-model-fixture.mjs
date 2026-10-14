@@ -195,7 +195,7 @@ const rows = initialRows({
 
 eq(rows.length >= 6, true, '初始值至少摊开六行');
 eq(rows.every(r => r.label && r.text && r.href), true, '每行都要有名字、现值与去处');
-eq(rows[0].text, '开', '推送总开关按现值写，不写死');
+eq(rows[0].text, '开启', '推送总开关按现值写，不写死');
 eq(rows.find(r => r.label === '静音时段').text.includes('未设'), true, '没设静音时段时写「未设」');
 eq(rows.find(r => r.label === '日志保留').text, '14 天', '日志保留天数取自现值');
 eq(rows.find(r => r.label === '告警').text.includes('未配'), true, '没配告警时说未配');
@@ -210,7 +210,7 @@ const changed = initialRows({
   'novabot.core.alert.webhook-url': 'https://example.invalid/hook',
   'novabot.core.timeline.retention-days': '0',
 }, null);
-eq(changed[0].text, '关', '推送关掉之后这一行跟着变');
+eq(changed[0].text, '关闭', '推送关掉之后这一行跟着变');
 eq(changed.find(r => r.label === '静音时段').text, '23:00 – 08:00', '设了静音时段就写出来');
 eq(changed.find(r => r.label === '告警').text.includes('已配'), true, '配了 Webhook 就说已配');
 eq(changed.find(r => r.label === '日志保留').text.includes('不自动清理'), true, '0 天是不清理，不是留 0 天');
@@ -255,7 +255,7 @@ const skipped = summaryLines([true, true, true, true], ['', '', 'anon', ''], {
   accounts: [{displayName: '某平台', loggedIn: false, disabledReason: '免登录模式'}],
   streamers: 0, targets: 0,
 });
-eq(skipped[2].includes('什么都不做'), true, '🔴 没加主播时小结如实说这台机器起来什么都不做');
+eq(skipped[2].includes('不会采集或推送'), true, '🔴 没加主播时小结如实说这台机器起来什么都不做');
 eq(skipped[1].includes('免登录'), true, '免登录时小结把后果带上');
 eq(summaryLines([true, true, true, true], ['', '', '', ''],
   {accounts: [], streamers: 1, targets: 1})[1].includes('插件'), true,

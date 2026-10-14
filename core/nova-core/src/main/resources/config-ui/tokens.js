@@ -51,16 +51,16 @@ export function clearIssuedToken() {
 }
 
 function issueFormHtml() {
-  return '<p class="hint">签发要<b>再输一次</b>密码'
+  return '<p class="hint">签发只读访问令牌需<b>再次输入</b>控制台密码'
     + (store.totpRequired ? '与动态验证码' : '')
-    + '。这一步是有意留的：用当前这个已登录的会话直接签，就等于「浏览器里有枚 Cookie 就能签出口令」——'
-    + '借走一台没锁屏的电脑也签得出来，而签出来的口令长期有效。签发是低频动作，多这一步买断这条路。</p>'
+    + '。若仅凭当前已登录的会话即可签发，借用一台未锁屏的电脑就能签出令牌，'
+    + '而签出的令牌长期有效。签发属于低频操作，再次验证可杜绝这种情况。</p>'
 
-    + '<div class="row"><label for="tk-label">签给谁</label>'
-    + '<input id="tk-label" name="label" maxlength="40" placeholder="例如：客厅那台电脑" autocomplete="off"></div>'
+    + '<div class="row"><label for="tk-label">令牌名称</label>'
+    + '<input id="tk-label" name="label" maxlength="40" placeholder="例如：客厅的电脑" autocomplete="off"></div>'
     + '<div class="row"><label></label><span class="hint" style="margin:0;flex:1;min-width:220px">'
-    + '这个名字会原样出现在下面的清单里，日后单独吊销就靠它。'
-    + '<b>别填带真名的机器名</b>——「某某的 MacBook」会把一个人名留在这台服务器上。</span></div>'
+    + '名称将原样显示在下方列表中，日后单独吊销该令牌时以此识别。'
+    + '<b>请勿填写含真实姓名的设备名</b>，例如「某某的 MacBook」会将他人姓名保存在本服务器上。</span></div>'
 
     // 浏览器把紧挨着密码框的文本框当成登录名。「签给谁」里的名字会原样留在清单里，
     // 而这一页正叮嘱别填带真名的机器名。密码框前面放一个隐藏的用户名框，登录名只进这一框。
@@ -78,10 +78,10 @@ function issueFormHtml() {
     + (store.totpRequired
         ? '<div class="row"><label for="tk-code">动态验证码</label>'
           + '<input id="tk-code" inputmode="numeric" pattern="[0-9]*" maxlength="6"'
-          + ' placeholder="验证器里的 6 位数字" autocomplete="one-time-code"></div>'
+          + ' placeholder="验证器应用中的 6 位数字" autocomplete="one-time-code"></div>'
         : '')
 
-    + '<div class="row"><label></label><button type="button" id="tk-issue">签发</button></div>'
+    + '<div class="row"><label></label><button type="button" id="tk-issue">签发令牌</button></div>'
     + '<div class="out" id="tk-msg"></div>'
     + '<div id="token-issued"></div>';
 }
@@ -92,9 +92,9 @@ async function issue() {
   const codeInput = $('#tk-code');
   const code = codeInput ? codeInput.value.trim() : '';
 
-  if (!label) return fail('先填「签给谁」。没有它日后只能一次全撤，把别的面板一起踢下线');
-  if (!password) return fail('请输入密码');
-  if (store.totpRequired && !/^\d{6}$/.test(code)) return fail('动态验证码是 6 位数字，请从验证器应用里读取');
+  if (!label) return fail('请填写令牌名称。没有名称就无法单独吊销，只能全部吊销，其他外部面板也将无法再连接');
+  if (!password) return fail('请输入控制台密码');
+  if (store.totpRequired && !/^\d{6}$/.test(code)) return fail('动态验证码为 6 位数字，请从验证器应用中读取');
 
   const body = {label, password};
   // 契约定的是「不传」而非空串——服务端对这两种写法走的是两条路径
@@ -136,14 +136,14 @@ function showIssued(token, label) {
   const box = $('#token-issued');
   box.innerHTML = '<div class="issued">'
     + '<b>已签发：' + esc(label) + '</b>'
-    + '<p>这是这把口令<b>唯一一次显示</b>，离开本页后无法再次查看：服务器只存指纹不存明文，'
-    + '「再看一眼」这件事在这里不存在，忘了就只能吊销重签。</p>'
+    + '<p>令牌明文<b>仅显示这一次</b>，离开本页后无法再次查看：服务器只保存指纹，不保存明文，'
+    + '之后无法再次取回。遗失后只能吊销并重新签发。</p>'
     + '<div class="secret">'
     + '<input id="tk-value" type="password" readonly>'
     + '<button type="button" id="tk-copy">复制</button>'
     + '<button type="button" id="tk-reveal">显示</button>'
     + '</div>'
-    + '<span class="status" id="tk-copy-msg">默认遮住：复制不需要先显示出来，正在直播时也能安全地按</span>'
+    + '<span class="status" id="tk-copy-msg">令牌默认隐藏，无需显示即可复制，直播过程中也可安全操作</span>'
     + '</div>';
 
   // 明文直接赋给 value，不拼进 innerHTML：少一次转义与反转义的往返，
@@ -151,7 +151,7 @@ function showIssued(token, label) {
   const field = $('#tk-value');
   field.value = token;
 
-  const reveal = bindPasswordReveal(field, $('#tk-reveal'), '口令');
+  const reveal = bindPasswordReveal(field, $('#tk-reveal'), '令牌');
 
   $('#tk-copy').addEventListener('click', async () => {
     try {
@@ -162,7 +162,7 @@ function showIssued(token, label) {
       // 手上这把口令没有第二次机会，得把它交到人手里
       reveal.setRevealed(true);
       field.select();
-      note('这个浏览器不让脚本写剪贴板，已为你选中，请按 Ctrl / ⌘ + C 复制', 'err');
+      note('当前浏览器不允许写入剪贴板，令牌已选中，请按 Ctrl / ⌘ + C 手动复制', 'err');
     }
   });
 }
@@ -186,15 +186,15 @@ function refreshTokens() {
 function renderTokenList(tokens) {
   const box = $('#token-list');
   if (!tokens.length) {
-    box.innerHTML = '<p class="hint" style="margin:0">还没有签发过任何口令。'
-      + '外部面板连不上时，先看这里是不是空的。</p>';
+    box.innerHTML = '<p class="hint" style="margin:0">尚未签发只读访问令牌。'
+      + '外部面板无法连接时，请先确认此处是否为空。</p>';
     return;
   }
 
   // 新的在上：要吊销的多半是刚签错的那一把
   const sorted = tokens.slice().sort((a, b) => (b.issuedAt || 0) - (a.issuedAt || 0));
 
-  box.innerHTML = '<table><thead><tr><th>签给谁</th><th>指纹</th><th>签发时间</th>'
+  box.innerHTML = '<table><thead><tr><th>令牌名称</th><th>指纹</th><th>签发时间</th>'
     + '<th>状态</th><th></th></tr></thead><tbody>'
     + sorted.map(token =>
         '<tr' + (token.active ? '' : ' class="revoked"') + '>'
@@ -208,8 +208,8 @@ function renderTokenList(tokens) {
     + '</tbody></table>'
     // 指纹不是秘密（是口令的哈希前缀），列出来是为了对账：鉴权失败的日志里印的就是它，
     // 否则「有个面板连不上」只能靠猜是哪一把
-    + '<p class="hint" style="margin:10px 0 0">指纹会出现在鉴权失败的日志里，'
-    + '用它可以认出是哪一把口令连不上。吊销<b>不会断开已经建立的连接</b>，撤完请确认对方确实掉线了。</p>';
+    + '<p class="hint" style="margin:10px 0 0">鉴权失败的日志中会记录指纹，'
+    + '可据此确定是哪个令牌无法连接。吊销<b>不会断开已建立的连接</b>，吊销后请确认对方确已断开。</p>';
 
   box.querySelectorAll('button[data-fp]').forEach(button => {
     const token = sorted.find(t => t.fingerprint === button.dataset.fp);
@@ -218,8 +218,8 @@ function renderTokenList(tokens) {
 }
 
 async function revoke(token) {
-  if (!await ask({title: '确定吊销这把口令吗？',
-    body: '「' + token.label + '」吊销之后，已经连上的面板不会因此掉线——吊销只对新连接生效。撤完请确认对方确实断开了。'})) return;
+  if (!await ask({title: '吊销此令牌？',
+    body: '吊销「' + token.label + '」后，该令牌无法再建立新连接；已连接的面板不会因此断开。吊销后请确认对方确已断开。'})) return;
 
   try {
     const result = await api('/event-tokens/' + encodeURIComponent(token.fingerprint) + '/revoke',
