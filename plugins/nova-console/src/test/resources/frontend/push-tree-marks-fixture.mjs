@@ -166,8 +166,8 @@ const streamerLine = ptreeIn - 2 * tnodePad[1] - px(caret['width']) - rowGap;
 
 // ---- ⑤ 主播行最长那颗「只采集，不推送」照同一规矩 ----
 {
-  const one = pillWidth('只采集，不推送');
-  ok(one <= streamerLine, '⑤ 「只采集，不推送」自己一行要放得下：要 ' + one.toFixed(1)
+  const one = pillWidth('仅采集');
+  ok(one <= streamerLine, '⑤ 「仅采集」自己一行要放得下：要 ' + one.toFixed(1)
     + 'px，主播行 ' + streamerLine.toFixed(1) + 'px');
   const nameMin = (num(nm['min-width'])?.n ?? 5) * px(tnode['font-size'] ?? 14);
   const sameLine = nameMin + (bodyGap ?? 0) + one;

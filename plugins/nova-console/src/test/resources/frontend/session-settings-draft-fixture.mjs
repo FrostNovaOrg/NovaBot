@@ -616,12 +616,12 @@ await ask('⑦ 静音时段摘要：三档各写明是哪一档、几点到几�
     '不静音': model.quietSummary({quietMode: 'off'}, global).text,
     '页面上那一行': summaryText(host, '静音时段'),
   }, {
-    '跟全局': '跟全局（23:00–08:00）',
-    '跟全局、全局没设': '跟全局（设置页没设静音时段）',
-    '没这一栏的旧会话': '跟全局（23:00–08:00）',
+    '跟全局': '使用全局设置（23:00–08:00）',
+    '跟全局、全局没设': '使用全局设置（设置页未设置静音时段）',
+    '没这一栏的旧会话': '使用全局设置（23:00–08:00）',
     '自己的时段、此刻在里面': '本会话 22:00–07:00 · 静音中',
     '不静音': '本会话不静音',
-    '页面上那一行': '跟全局（23:00–08:00）',
+    '页面上那一行': '使用全局设置（23:00–08:00）',
   }, '静音摘要');
 });
 
@@ -640,7 +640,7 @@ await ask('⑧ 静音选「本会话不静音」：没保存不写、放弃还�
 
   await discardAsHostDoes();
   await settle();
-  const follow = inputByLabel(host, '跟全局');
+  const follow = inputByLabel(host, '使用全局设置');
   const discarded = {
     '放弃后改动数': push.changeCount(),
     '放弃后回到跟全局': !!(follow && follow.checked),
@@ -668,13 +668,13 @@ await ask('⑧ 静音选「本会话不静音」：没保存不写、放弃还�
   }, '不静音');
 });
 
-await ask('⑨ 静音选「本会话自己的时段」并改开始时刻：保存时带上起止', async () => {
+await ask('⑨ 静音选「本会话自定义时段」并改开始时刻：保存时带上起止', async () => {
   if (!push || !sessions) throw new Error('产品码没载入，无从量起');
   // 上一格存成了不静音，这里先拨回跟全局再量
   sessionOf(mock.state).quietMode = 'follow';
   await fresh();
-  const custom = inputByLabel(host, '本会话自己的时段');
-  if (!custom) throw new Error('没找到「本会话自己的时段」那一档');
+  const custom = inputByLabel(host, '本会话自定义时段');
+  if (!custom) throw new Error('没找到「本会话自定义时段」那一档');
   choose(custom);
   await settle();
   const start = inputByLabel(host, '静音开始');
