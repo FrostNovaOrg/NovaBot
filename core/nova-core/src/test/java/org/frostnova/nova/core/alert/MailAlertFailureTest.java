@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -171,7 +172,7 @@ class MailAlertFailureTest {
     }
 
     @Nested
-    @DisplayName("发一条测试")
+    @DisplayName("发送测试告警")
     class TestButton {
 
         @Test
@@ -185,6 +186,21 @@ class MailAlertFailureTest {
             assertEquals(AlertService.TestResult.Status.DELIVERED, result.status());
             assertEquals("已向 邮件 发送一条测试告警，请确认是否收到。", result.message());
             assertEquals(1, sender.plain.size(), "测试必须真发一封，回话才有依据");
+        }
+
+        @Test
+        @DisplayName("测试告警的正文点的是设置页上那个按钮的现名「发送测试告警」")
+        void testBodyNamesTheCurrentButton() {
+            CapturingMailSender sender = new CapturingMailSender();
+            channels.add(mailChannel(sender));
+
+            service().test("mail");
+
+            assertEquals(1, sender.plain.size());
+            String body = sender.plain.get(0).getText();
+            assertTrue(body.contains("「发送测试告警」"),
+                    "收件人照正文去设置页找按钮，名字对不上就找不到: " + body);
+            assertFalse(body.contains("发一条测试"), "正文还写着按钮的旧名: " + body);
         }
 
         @Test

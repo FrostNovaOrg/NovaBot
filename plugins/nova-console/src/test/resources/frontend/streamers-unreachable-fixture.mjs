@@ -48,13 +48,21 @@ globalThis.location = {hash: '#/streamers/sample/1', reload() {}};
 globalThis.setInterval = () => 1;
 globalThis.clearInterval = () => {};
 
+const abortError = () => Object.assign(new Error('This operation was aborted'), {name: 'AbortError'});
 const response = (json, status = 200) => ({status, ok: status >= 200 && status < 300, json: async () => json});
-/** 这一趟取 /live 与取报告图时怎么答：'down' 照浏览器那样抛 TypeError，'error' 回 500 带一句话 */
+/**
+ * 这一趟取 /live 与取报告图时怎么答：'down' 照浏览器那样抛 TypeError，'error' 回 500 带一句话，
+ * 'abort' 回包头到了、读正文时被中止，'html' 回包头到了、正文不是 JSON
+ */
 let mode = 'down';
 globalThis.fetch = async url => {
   const text = String(url);
   if (text.includes('/live?') || text.endsWith('/report') || text.endsWith('/probe')) {
     if (mode === 'down') throw new TypeError('Failed to fetch');
+    // 回包头已到、读正文时被中止：浏览器在 json() 上抛 AbortError
+    if (mode === 'abort') return {status: 200, ok: true, json: async () => { throw abortError(); }};
+    // 回包头已到、正文不是 JSON（反向代理的错误页）：json() 抛 SyntaxError
+    if (mode === 'html') return {status: 502, ok: false, json: async () => JSON.parse('<html>')};
     return response({success: false, message: '直播数据暂不可用：样例原因'}, 500);
   }
   if (text.includes('/insights?')) return response({success: true, insights: {metricsKnown: false, daily: []}});
@@ -111,6 +119,25 @@ await check('连不上服务器：宿主 api() 拒绝时的原因是中文，不
   console.log('api()：' + reason.message);
   assert.doesNotMatch(reason.message, /Failed to fetch/);
   assert.equal(reason.message, '无法连接到服务器');
+});
+
+await check('收到回包头后被中止：api() 原样抛出 AbortError，不改成「内容无法识别」', async () => {
+  mode = 'abort';
+  let reason = null;
+  await core.api('/probe').catch(e => { reason = e; });
+  assert.ok(reason, 'api() 应当拒绝');
+  console.log('api()：' + reason.name + '：' + reason.message);
+  assert.equal(reason.name, 'AbortError');
+  assert.doesNotMatch(reason.message, /无法识别/);
+});
+
+await check('回的不是 JSON：api() 拒绝时的原因是中文，带上状态码', async () => {
+  mode = 'html';
+  let reason = null;
+  await core.api('/probe').catch(e => { reason = e; });
+  assert.ok(reason, 'api() 应当拒绝');
+  console.log('api()：' + reason.message);
+  assert.equal(reason.message, '服务器返回的内容无法识别（HTTP 502）');
 });
 
 page.leave();

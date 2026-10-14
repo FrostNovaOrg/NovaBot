@@ -333,6 +333,9 @@ class SetupBootstrapTest {
         assertNotNull(again);
         assertFalse(again.getBooleanValue("success"),
                 "🔴 上过锁之后这条路还开着，就等于给面板留了第二扇门，而那扇门不要旧口令");
+        String message = again.getString("message");
+        assertTrue(message.contains("当前密码"), "设置页那一栏叫「当前密码」，回话要用同一个名字: " + message);
+        assertFalse(message.contains("现在的密码"), "回话还写着旧叫法: " + message);
         assertTrue(authService.login(FIRST_PASSWORD.toCharArray(), null, "127.0.0.2").success(),
                 "被拒的那一趟不该动到口令");
     }
