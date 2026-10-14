@@ -140,6 +140,9 @@ public class QqAlertChannel implements AlertChannel {
                 }
             });
             message.addOnFailureCallback(() -> {
+                if (message.isBlockedByPushSwitch()) {
+                    anyBlocked.set(true);
+                }
                 String reason = message.getFailureReason();
                 if (reason != null) {
                     failureReason.set(reason);

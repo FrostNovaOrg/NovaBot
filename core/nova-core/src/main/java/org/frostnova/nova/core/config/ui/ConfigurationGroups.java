@@ -49,7 +49,7 @@ public final class ConfigurationGroups {
             "这一组管「什么时候发、发多少」。", false);
 
     public static final Group ALERT = new Group("alert", "告警",
-            "出了事谁先知道。告警会出现在日志里，改这里不影响那条线怎么显示。", false);
+            "发生故障时的通知方式。关闭告警后不再发送通知，时间线里的「告警」也不再新增记录；故障仍会写入「工程日志」。", false);
 
     public static final Group COMMAND = new Group("cmd", "命令与权限",
             "群里谁能管命令。群主与群管理员天生能用启用命令与禁用命令，超级管理员是跨群都算数的那几个号。", false);

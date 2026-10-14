@@ -43,7 +43,7 @@ public class EventStreamProperties {
     private String path = "/nova/events";
 
     /**
-     * 是否要求出示只读口令。默认关闭；本机装了反向代理就必须打开——经它转来的连接在程序看来像本机，不开等于没有鉴权。口令由控制台签发，只能读事件流。
+     * 是否要求出示只读口令。默认关闭；本机装了反向代理就必须打开——除非已启用转发头处理且代理会传来访者地址，否则经它转来的连接在程序看来像本机，不开等于没有鉴权。口令由控制台签发，只能读事件流。
      */
     // 反代与本程序同机、未送 X-Forwarded-* 时，转发来的连接源地址就是回环；反过来，
     // 反代送了 X-Forwarded-* 而程序开着 server.forward-headers-strategy 时，回环判据
@@ -53,7 +53,7 @@ public class EventStreamProperties {
     // 靠「本机进程直连」，因此默认关。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出要求只读口令")
-    @ConfigSummary("本机装有反向代理就必须开启：经它进来的连接看着像本机。")
+    @ConfigSummary("本机部署了反向代理时必须开启：除非已启用转发头处理且代理会传来访者地址，否则经代理转入的连接都会被当成本机连接。")
     private boolean requireToken = false;
 
     /**
