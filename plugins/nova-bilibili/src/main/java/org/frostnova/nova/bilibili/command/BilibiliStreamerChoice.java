@@ -1,6 +1,7 @@
 package org.frostnova.nova.bilibili.command;
 
 import org.frostnova.nova.core.model.MessagePlaceholders;
+import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandFollowUp;
@@ -19,8 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -58,8 +57,8 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     /**
      * 清单默认展示几位
      * <p>
-     * 折叠的界线取「在播与今天播过」这两档，但这两档很可能一个人都没有——夜里问的时候
-     * 通常就是这样。那时若照章折叠，回出去的清单会一位都不列，而这份清单存在的意义
+     * 折叠的界线取「在播与今天播过」这两档，今天按东八区早上 6 点起算。
+     * 两档可能一个人都没有；那时若照章折叠，回出去的清单会一位都不列，而这份清单存在的意义
      * 正是让人挑一位。所以两档之外再兜一个下限。
      */
     private static final int DEFAULT_SHOWN = 5;
@@ -73,11 +72,6 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * 序号的最大位数。主播 uid 也是纯数字，但它有八位以上，落不进清单的范围
      */
     private static final int MAX_INDEX_DIGITS = 3;
-
-    /**
-     * 直播数据所用的时区，与报告里的时间显示一致
-     */
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final LiveDataService liveDataService;
 
@@ -99,7 +93,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
     @Autowired
     public BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive) {
-        this(liveDataService, archive, Clock.systemDefaultZone());
+        this(liveDataService, archive, Clock.systemUTC());
     }
 
     BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive, Clock clock) {
@@ -124,7 +118,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * @return 排过序的候选
      */
     public Ranked rank(@NonNull List<PushUser> candidates) {
-        long dayStart = LocalDate.now(ZONE).atStartOfDay(ZONE).toInstant().toEpochMilli();
+        long dayStart = StatisticsDay.startOf(StatisticsDay.today(clock)).toEpochMilli();
         Set<Long> archivedToday = archivedToday(dayStart);
 
         List<PushUser> living = new ArrayList<>();
@@ -154,7 +148,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     }
 
     /**
-     * 归档里今天开播的那些主播
+     * 归档里当前统计日开播的那些主播
      */
     private Set<Long> archivedToday(long dayStart) {
         Set<Long> uids = new HashSet<>();
@@ -167,12 +161,13 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     }
 
     /**
-     * 今天播过没有
+     * 当前统计日播过没有
      * <p>
      * 两处来源取<b>并集</b>，各自都有够不着的地方：
      * <ul>
-     *     <li>场次归档按<b>开播时刻</b>归属日期，跨零点的那一场记在昨天，今天问它答不上来；</li>
-     *     <li>「最近一场的结束时刻」补得上跨零点那一场，但它只记得最近一场，
+     *     <li>场次归档按<b>开播时刻</b>查询，东八区早上 6 点之前开播的归前一统计日；
+     *         跨过 6 点仍在播的那一场，开播时刻查不到当前统计日；</li>
+     *     <li>「最近一场的结束时刻」补得上跨过 6 点那一场，但它只记得最近一场，
      *         而且直播数据被清空过就没了——归档不会。</li>
      * </ul>
      */
