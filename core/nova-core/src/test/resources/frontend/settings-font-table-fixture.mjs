@@ -28,9 +28,9 @@ const src = readFileSync(join(ui, 'settings.js'), 'utf8');
 const FONTS = 'novabot.core.paint.fonts';
 /** 回包里的本系统默认表，取 macOS 那张的样子；夹具只看它被原样列出来 */
 const DEFAULTS = ['内置', 'PingFang SC', 'Apple Color Emoji', 'SansSerif'];
-const PAST_NOTE = '这是旧版自动写进配置的默认字体表，启动时已按未设处理。'
-  + '点「恢复默认」清空它，以后跟着程序自带的默认表走。';
-const DEFAULTS_NOTE = '现在用的是本系统的默认表：' + DEFAULTS.join('、');
+const PAST_NOTE = '此为旧版本自动写入配置的默认字体表，启动时已视为未设置。'
+  + '点击「恢复默认」可清除此表，此后将使用程序内置的默认字体表。';
+const DEFAULTS_NOTE = '当前使用本系统的默认字体表：' + DEFAULTS.join('、');
 
 const failures = [];
 let checks = 0;
@@ -153,7 +153,7 @@ function texts(row) {
 
 /** 框下那两句：只收两句原文之一，别的字不算 */
 function notes(row) {
-  return texts(row).filter(t => t === PAST_NOTE || t.startsWith('现在用的是本系统的默认表'));
+  return texts(row).filter(t => t === PAST_NOTE || t.startsWith('当前使用本系统的默认字体表'));
 }
 
 const OLD_MAC = ['内置', 'PingFang SC', 'Apple Color Emoji', 'SansSerif'].join('\n');

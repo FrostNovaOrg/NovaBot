@@ -288,7 +288,7 @@ public class ConfigUiAuthController {
 
         if (ConfigUiAgreement.required(agreement)) {
             result.put("success", false);
-            result.put("message", "这台机器本来就没有同意过使用协议");
+            result.put("message", "本机尚未同意过使用协议");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -296,7 +296,7 @@ public class ConfigUiAuthController {
         // 中间那一小段时间里别的请求读到的是一个并没有发生的撤回
         if (!persistAgreement(0, "", "")) {
             result.put("success", false);
-            result.put("message", "保存失败，同意记录没有改动");
+            result.put("message", "保存失败，同意记录未作修改");
             return ResponseEntity.internalServerError().body(result);
         }
 
@@ -309,7 +309,7 @@ public class ConfigUiAuthController {
                 channel.wire(), request.getRemoteAddr());
 
         result.put("success", true);
-        result.put("message", "已撤回。这台机器回到未同意使用协议的状态，控制台要重新同意才进得来");
+        result.put("message", "已撤回。本机已恢复为未同意使用协议的状态，须重新同意后才能进入控制台");
         return ResponseEntity.ok(result);
     }
 
@@ -454,7 +454,7 @@ public class ConfigUiAuthController {
         authService.activateTotp(session, match.secret(), match.step());
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         result.put("success", true);
-        result.put("message", "已绑定，下次登录需要输入动态验证码");
+        result.put("message", "已绑定，下次登录时需输入动态验证码");
 
         return withRenewedSession(result, authService.rotateSession(sessionId(request)), request);
     }
@@ -482,7 +482,7 @@ public class ConfigUiAuthController {
 
         if (!authService.totpRequired()) {
             result.put("success", false);
-            result.put("message", "二次验证本来就没开着");
+            result.put("message", "二次验证未启用，无需关闭");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -524,7 +524,7 @@ public class ConfigUiAuthController {
         authService.disableTotp(authService.validate(sessionId(request)).orElse(null));
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         result.put("success", true);
-        result.put("message", "已关闭。下次登录只要密码，验证器里那一条可以删掉了");
+        result.put("message", "已关闭二次验证。下次登录只需密码，验证器中的对应条目可以删除");
 
         return withRenewedSession(result, authService.rotateSession(sessionId(request)), request);
     }
@@ -596,7 +596,7 @@ public class ConfigUiAuthController {
 
         if (!authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "这台机器还没设过密码，请到设置引导里上锁");
+            result.put("message", "本机尚未设置控制台密码，请在设置引导中设置密码");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -628,7 +628,7 @@ public class ConfigUiAuthController {
 
         if (!authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "这台机器还没设过密码，请到设置引导里上锁");
+            result.put("message", "本机尚未设置控制台密码，请在设置引导中设置密码");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -637,7 +637,7 @@ public class ConfigUiAuthController {
                 .orElse(false);
         if (!operator) {
             result.put("success", false);
-            result.put("message", "这条路只给用启动令牌进来的那一次用，改密码请填现在的密码");
+            result.put("message", "此操作仅适用于通过启动令牌登录的会话；修改密码请填写当前密码");
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
         }
 
@@ -699,7 +699,7 @@ public class ConfigUiAuthController {
         } catch (Exception e) {
             log.error("写入新的登录口令失败", e);
             result.put("success", false);
-            result.put("message", "保存失败，密码没有改动: " + fileService.describeSaveFailure(e));
+            result.put("message", "保存失败，密码未修改: " + fileService.describeSaveFailure(e));
             return ResponseEntity.internalServerError().body(result);
         }
 
@@ -714,8 +714,8 @@ public class ConfigUiAuthController {
         result.put("success", true);
         result.put("revoked", revoked);
         result.put("message", revoked > 0
-                ? "密码已改。别处那 " + revoked + " 个登录已经一并注销"
-                : "密码已改。下次登录用新密码");
+                ? "密码已修改。其他设备上的 " + revoked + " 个登录已一并注销"
+                : "密码已修改。下次登录请使用新密码");
 
         return withRenewedSession(result, rotation, request);
     }

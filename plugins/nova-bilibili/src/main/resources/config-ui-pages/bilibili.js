@@ -32,7 +32,7 @@ const VISIBLE_TABS = ['bot', 'overview'];
  */
 export function render(section) {
   section.innerHTML = `
-    <p class="hint">登录态用于拉取动态与直播间信息。登录态失效时动态推送会静默停止，直播推送不受影响。</p>
+    <p class="hint">登录状态用于获取动态与直播间信息。登录失效后，动态推送会静默停止，直播推送不受影响。</p>
     <div id="accounts"></div>
     <div class="health" id="bili-health"></div>`;
 }
@@ -75,13 +75,13 @@ function renderAccounts(accounts) {
 
     const qr = a.qrCode
       ? '<img alt="登录二维码" src="data:image/png;base64,' + esc(a.qrCode) + '">'
-      : (a.loggedIn ? '' : '<div class="qrwait">二维码生成中，稍候</div>');
+      : (a.loggedIn ? '' : '<div class="qrwait">正在生成二维码，请稍候</div>');
     const action = a.loggedIn
       ? '<button type="button" data-logout="' + esc(a.platform) + '">退出登录并重新扫码</button>'
       : '';
     const tip = a.loggedIn
-      ? '<span>要换个账号，或者怀疑凭据泄漏时，退出登录会清掉本机存的凭据并立刻出一张新二维码。</span>'
-      : '<span>用手机客户端扫这张码即可，扫完本页会自己变成已登录。</span>';
+      ? '<span>如需更换账号，或怀疑凭据已泄露，可退出登录：本机保存的凭据将被清除，并立即生成新的登录二维码。</span>'
+      : '<span>请使用手机客户端扫描二维码，确认登录后本页将自动显示为已登录。</span>';
 
     return '<div class="account"><div class="who">' + tip + '</div>' + qr + action + '</div>';
   }).join('');
@@ -111,17 +111,17 @@ async function loadAccounts() {
 }
 
 async function logout(platform) {
-  if (!await ask({title: '确定退出登录吗？', body: '退出后需要重新扫码，期间动态推送会停。'})) return;
-  say('正在退出…');
+  if (!await ask({title: '退出登录？', body: '退出后须重新扫码登录；重新登录前，动态推送将暂停。'})) return;
+  say('正在退出登录…');
   try {
     const res = await api('/login/logout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ platform })
     });
-    say(res.message || (res.success ? '已退出' : '退出失败'), res.success ? 'ok' : 'err');
+    say(res.message || (res.success ? '已退出登录' : '退出登录失败'), res.success ? 'ok' : 'err');
     if (res.success) setTimeout(loadAccounts, 500);
   } catch (e) {
-    say('退出失败：' + e.message, 'err');
+    say('退出登录失败：' + e.message, 'err');
   }
 }
