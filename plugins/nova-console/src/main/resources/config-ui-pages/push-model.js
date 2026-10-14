@@ -425,7 +425,7 @@ export function pushChannelOf(session) {
 }
 
 /**
- * 「这个通道最近推送」
+ * 「本群最近推送／这位好友最近推送」
  *
  * 🔴 <b>按目标描述整串相等来筛，不是按号码找子串。</b>推送记录里只有一句给人看的目标描述
  * （「群 12345」），号本身没有单独一栏；按子串找的话，群 123 的记录会算进群 12345 里。
@@ -435,7 +435,7 @@ export function pushChannelOf(session) {
  * @param records /api/push-history 的 records
  * @param session 会话，取它的类型说法与号
  * @param limit 最多几条
- * @return 这个通道的推送记录
+ * @return 这个会话的推送记录
  */
 export function recentPushes(records, session, limit) {
   const target = pushChannelOf(session);

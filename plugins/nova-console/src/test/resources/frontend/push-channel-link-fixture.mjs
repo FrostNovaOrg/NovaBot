@@ -446,7 +446,7 @@ await ask('① 同号的群与好友：点左树上好友那一行，右栏开�
   }, '点好友那一行');
 });
 
-await ask('② 一览表与通道行的「打开」都指向好友那一个，地址里带着类型与平台', async () => {
+await ask('② 一览表链接与通道行的「打开」都指向好友那一个，地址里带着类型与平台', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
   // 通道一览
   await openHash('#/push');
@@ -468,7 +468,7 @@ await ask('② 一览表与通道行的「打开」都指向好友那一个，�
     '一览表里也有指向群的': indexLinks.filter(href => href.includes('|1|' + GROUP_NUM)).length,
     '通道行里也有指向群的': rowLinks.filter(href => href.includes('|1|' + GROUP_NUM)).length,
   }, {
-    // 一览表一行一个「打开」；通道行上标题与「打开」各一个，两处都得认对人
+    // 一览表一行一个链接；通道行上标题与「打开」各一个，两处都得认对人
     '一览表里指向好友的条数': 1,
     '一览表里只写号的条数': 0,
     '通道行里指向好友的条数': 2,
@@ -476,6 +476,32 @@ await ask('② 一览表与通道行的「打开」都指向好友那一个，�
     '一览表里也有指向群的': 1,
     '通道行里也有指向群的': 2,
   }, '打开链接');
+});
+
+// 去掉末列后，行内点击仍可进入，每行只留一个原生键盘链接。
+await ask('通道一览整行进入，每行一个键盘链接且表头有范围', async () => {
+  await openHash('#/push');
+  const table = allNodes(idNode('push-right')).find(node => node.tagName === 'table');
+  const html = table.innerHTML;
+  const heads = html.match(/<th\b[^>]*>/g) || [];
+  same(heads.length, 5, '五列表头');
+  same(heads.every(head => head.includes('scope="col"')), true, '列范围');
+  const rows = html.split('<tbody>')[1].match(/<tr>.*?<\/tr>/g) || [];
+  same(rows.length, 2, '群与好友两行');
+  for (const row of rows) {
+    same((row.match(/<a\b/g) || []).length, 1, '每行一个原生链接');
+    same((row.match(/<td\b/g) || []).length, 5, '没有打开列');
+    same(row.includes('tabindex='), false, '不增加 Tab 停点');
+    same(/aria-label="甲 → [^"]+"/.test(row), true, '读屏包含主播与通道');
+    const href = /href="([^"]+)"/.exec(row)[1];
+    same(href.startsWith('#/push/1/'), true, '主播地址');
+    same(href.includes('|1|' + GROUP_NUM) || href.includes('|0|' + FRIEND_NUM), true, '完整通道地址');
+    const link = {getAttribute: () => href};
+    table.dispatchEvent({type: 'click', target: {
+      closest: selector => selector === 'a' ? null : {querySelector: () => link},
+    }});
+    same(location.hash, href, '点其他单元格进入');
+  }
 });
 
 await ask('③ 点左树上群那一行：右栏开的是群那个，两行互不串', async () => {
