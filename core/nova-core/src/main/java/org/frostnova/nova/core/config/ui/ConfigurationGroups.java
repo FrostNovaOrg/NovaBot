@@ -46,31 +46,31 @@ public final class ConfigurationGroups {
      * 常用六组，顺序即界面上的顺序
      */
     public static final Group PUSH = new Group("push", "推送",
-            "这一组管「什么时候发、发多少」。", false);
+            "推送的发送时段与发送数量。", false);
 
     public static final Group ALERT = new Group("alert", "告警",
             "出了事谁先知道。告警会出现在日志里，改这里不影响那条线怎么显示。", false);
 
     public static final Group COMMAND = new Group("cmd", "命令与权限",
-            "群里谁能管命令。群主与群管理员天生能用启用命令与禁用命令，超级管理员是跨群都算数的那几个号。", false);
+            "群内命令的管理权限。群主与群管理员默认可以使用启用命令与禁用命令；超级管理员的权限在所有群生效。", false);
 
     public static final Group COLLECT = new Group("collect", "采集",
-            "从直播平台那头拿数据的方式，以及数据存到哪。改这一组前先读一遍每项的说明。", false);
+            "从直播平台获取数据的方式与数据的保存位置。修改前请先阅读各项说明。", false);
 
     public static final Group REPORT = new Group("report", "报告外观",
-            "报告图与动态图上的东西。", false);
+            "报告图与动态图中显示的内容。", false);
 
     public static final Group AUTH = new Group("auth", "登录与安全",
-            "控制台自己怎么被访问。", false);
+            "控制台的访问方式与登录安全。", false);
 
     /**
      * 高级两组，整组默认收起
      */
     public static final Group LOG_DEBUG = new Group("logdbg", "日志与调试",
-            "出问题时才需要动这一组。", true);
+            "通常仅在排查问题时需要修改。", true);
 
     public static final Group SERVICE = new Group("svc", "服务",
-            "这台机器怎么把控制台端出来，以及各处的连接、线程与超时。", true);
+            "控制台的服务端口与监听地址，以及各处的连接、线程与超时设置。", true);
 
     /**
      * 八个组，顺序即界面顺序

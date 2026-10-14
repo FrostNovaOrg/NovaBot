@@ -34,6 +34,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -42,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -93,7 +96,7 @@ class StreamerApiTest {
 
     private StreamerController controller;
 
-    /** 今天零点，夹具的场次都按「几天前」摆放，免得跨零点跑测试时结果飘 */
+    /** 固定统计日的六点起点，夹具场次按「几天前」摆放 */
     private long todayStart;
 
     @BeforeEach
@@ -102,8 +105,7 @@ class StreamerApiTest {
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
 
-        todayStart = LocalDate.now(ZoneId.systemDefault())
-                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        todayStart = Instant.parse("2026-08-19T22:00:00Z").toEpochMilli();
 
         archive = new LiveSessionArchive(properties);
         snapshots = new StreamerSnapshotArchive(properties);
@@ -139,8 +141,12 @@ class StreamerApiTest {
                 """, StandardCharsets.UTF_8);
     }
 
-    @SuppressWarnings("unchecked")
     private StreamerController controller() {
+        return controller(Clock.fixed(Instant.parse("2026-08-20T04:00:00Z"), ZoneId.of("UTC")));
+    }
+
+    @SuppressWarnings("unchecked")
+    private StreamerController controller(Clock clock) {
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(catalog()));
 
@@ -149,7 +155,7 @@ class StreamerApiTest {
                 redrawer == null ? java.util.stream.Stream.empty() : java.util.stream.Stream.of(redrawer));
 
         return new StreamerController(dataSource, new StreamerDirectory(properties), liveDataService,
-                archive, snapshots, details, catalogs, redrawers);
+                archive, snapshots, details, catalogs, redrawers, clock);
     }
 
     /**
@@ -262,6 +268,27 @@ class StreamerApiTest {
     }
 
     @Test
+    @DisplayName("凌晨列表把昨晚与凌晨场次合到今天，六点后今天换日且七天不漏场")
+    void earlyMorningSeriesAndWindowUseStatisticsDay() {
+        archive.append(session(1001L, "主播甲", Instant.parse("2026-08-09T15:00:00Z").toEpochMilli(), 1200));
+        archive.append(session(1001L, "主播甲", Instant.parse("2026-08-09T17:00:00Z").toEpochMilli(), 1800));
+        archive.append(session(1001L, "主播甲", Instant.parse("2026-08-03T12:00:00Z").toEpochMilli(), 600));
+        JSONObject before = controller(Clock.fixed(Instant.parse("2026-08-09T21:00:00Z"), ZoneId.of("UTC")))
+                .streamers().getJSONArray("streamers").getJSONObject(0);
+        JSONObject after = controller(Clock.fixed(Instant.parse("2026-08-09T23:00:00Z"), ZoneId.of("UTC")))
+                .streamers().getJSONArray("streamers").getJSONObject(0);
+        assertAll(
+                () -> assertEquals("2026-08-09", before.getJSONArray("series").getJSONObject(6).getString("date")),
+                () -> assertEquals(2, before.getJSONArray("series").getJSONObject(6).getIntValue("sessions")),
+                () -> assertEquals(3, before.getJSONObject("summary").getIntValue("sessions")),
+                () -> assertEquals(3600, before.getJSONObject("summary").getLongValue("durationSeconds")),
+                () -> assertEquals("2026-08-10", after.getJSONArray("series").getJSONObject(6).getString("date")),
+                () -> assertEquals(0, after.getJSONArray("series").getJSONObject(6).getIntValue("sessions")),
+                () -> assertEquals(2, after.getJSONArray("series").getJSONObject(5).getIntValue("sessions")),
+                () -> assertEquals(2, after.getJSONObject("summary").getIntValue("sessions")));
+    }
+
+    @Test
     @DisplayName("七天折线恰好 7 点，没播的那天是 0 而不是跳过")
     void sevenDaySeriesFillsEmptyDays() {
         archive.append(session(1001L, "主播甲", todayStart + 3600_000L, 1800));
@@ -271,7 +298,7 @@ class StreamerApiTest {
                 .getJSONArray("series");
 
         assertEquals(7, series.size());
-        LocalDate today = LocalDate.now(ZoneId.systemDefault());
+        LocalDate today = LocalDate.of(2026, 8, 20);
         assertEquals(today.minusDays(6).toString(), series.getJSONObject(0).getString("date"));
         assertEquals(today.toString(), series.getJSONObject(6).getString("date"));
 

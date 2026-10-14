@@ -215,6 +215,56 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
+    @DisplayName("从 beta 升到正式版：保留最新 beta，清理更旧的版本")
+    void stableUpgradeKeepsLatestBeta(@TempDir Path dir) throws Exception {
+        World world = world(dir, "6.0.0");
+        for (String version : List.of("5.9.2", "6.0.0-beta.1", "6.0.0-beta.2")) {
+            writeRelease(world.install, version, version);
+        }
+        Run run = run(world, "", "");
+        assertEquals(0, run.code, run.stderr + run.stdout);
+        assertEquals(List.of("6.0.0", "6.0.0-beta.2"), fileNames(world.install.resolve("releases")));
+    }
+
+    @Test
+    @DisplayName("混合版本目录：正式版新于同号 beta，beta 序号按数字比较")
+    void mixedReleasesChooseSemanticPrevious(@TempDir Path dir) throws Exception {
+        List<String> versions = List.of("5.9.2", "6.0.0-beta.1", "6.0.0-beta.2", "6.0.0-beta.10", "6.0.0");
+        for (String target : List.of("6.0.0", "6.0.1")) {
+            World world = world(dir.resolve(target), target);
+            for (String version : versions) {
+                writeRelease(world.install, version, version);
+            }
+            Run run = run(world, "6.0.0-beta.1", "");
+            assertEquals(0, run.code, run.stderr + run.stdout);
+            List<String> expected = target.equals("6.0.0")
+                    ? List.of("6.0.0", "6.0.0-beta.1", "6.0.0-beta.10")
+                    : List.of("6.0.0", "6.0.0-beta.1", "6.0.1");
+            assertEquals(expected, fileNames(world.install.resolve("releases")));
+            assertTrue(read(world.logs.resolve("switch-version.log")).contains("args=" + target));
+        }
+    }
+
+    @Test
+    @DisplayName("beta 扁平布局：能从 jar 元数据和 lib 文件名迁移旧程序")
+    void flatBetaVersionIsMigrated(@TempDir Path dir) throws Exception {
+        for (String source : List.of("metadata", "lib")) {
+            World world = world(dir.resolve(source), "6.0.0");
+            Path oldJar = world.install.resolve("NovaBot.jar");
+            if (source.equals("metadata")) {
+                writeJarWithBuildVersion(oldJar, "6.0.0-beta.2");
+            } else {
+                write(oldJar, "old-jar");
+                write(world.install.resolve("lib/novacore-6.0.0-beta.2.jar"), "old-core");
+            }
+            byte[] oldBytes = Files.readAllBytes(oldJar);
+            Run run = run(world, "", "");
+            assertEquals(0, run.code, run.stderr + run.stdout);
+            assertArrayEquals(oldBytes, Files.readAllBytes(world.install.resolve("releases/6.0.0-beta.2/NovaBot.jar")));
+        }
+    }
+
+    @Test
     @DisplayName("再升级：没改过的 application.yml 与 datasource.json 不重写，修改时间不变")
     void upgradeLeavesUnchangedConfigUntouched(@TempDir Path dir) throws Exception {
         // 故障：拷回把修改时间改成了现在，正在跑的旧版本看到 datasource.json「更新了」就重读配置
@@ -480,7 +530,11 @@ class VersionedReleaseInstallTest {
         assertAll(
                 () -> assertIllegalVersion(dir.resolve("dotdot"), ".."),
                 () -> assertIllegalVersion(dir.resolve("plus"), "1.0+1"),
-                () -> assertIllegalVersion(dir.resolve("dotlead"), ".5"));
+                () -> assertIllegalVersion(dir.resolve("dotlead"), ".5"),
+                () -> assertIllegalVersion(dir.resolve("zero-beta"), "6.0.0-beta.0"),
+                () -> assertIllegalVersion(dir.resolve("leading-zero-beta"), "6.0.0-beta.01"),
+                () -> assertIllegalVersion(dir.resolve("rc"), "6.0.0-rc.1"),
+                () -> assertIllegalVersion(dir.resolve("two-parts"), "6.0"));
     }
 
     @Test

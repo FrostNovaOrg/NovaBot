@@ -31,7 +31,7 @@ novabot.core.datasource.json-path|java.lang.String|datasource.json|推送配置�
 novabot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数，全部房间共用。房间多或热闹就调大，否则重连时会补不上；每条约数 KB，调大前先掂量内存。
 novabot.core.event-stream.enabled|java.lang.Boolean|false|是否启用事件输出。默认关闭；启用后只接受本机连接，流里有观众的昵称与消费金额，别暴露到公网。
 novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路径，与配置界面共用服务端口。
-novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令。默认关闭；本机装了反向代理就必须打开——经它转来的连接在程序看来像本机，不开等于没有鉴权。口令由控制台签发，只能读事件流。
+novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读访问令牌。默认关闭；本机装了反向代理就必须打开——经它转来的连接在程序看来像本机，不开等于没有鉴权。令牌由控制台签发，只能读事件流。
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令。
 novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
 novabot.core.exec.rules|java.util.List<org.frostnova.nova.core.config.NovaCoreProperties$ExecRule>|<null>|事件触发外部命令的规则列表。
@@ -64,13 +64,13 @@ novabot.core.push.quiet-end|java.lang.String||静音时段的结束时间，格�
 novabot.core.push.quiet-start|java.lang.String||静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用全局静音，单独设了静音时段的会话照它自己的来。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
 novabot.core.sender|java.util.List<org.frostnova.nova.core.model.Sender>|<null>|非插件实现的推送平台配置。
 novabot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
-server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录密码。
+server.address|java.lang.String|127.0.0.1|服务监听的地址。默认 127.0.0.1 表示仅允许本机连接；改为 0.0.0.0 会将控制台与推送接口暴露到网络，此时务必配置反向代理、来源 IP 白名单与登录密码。
 server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，默认 7827。
-spring.data.redis.database|java.lang.Integer|0|Redis 库号，默认 0；与其他程序共用同一实例时可换个库避免键冲突。改完即时生效，不用重启。
-spring.data.redis.host|java.lang.String|<null>|累计数据存储用的 Redis 地址，填了才有跨场次数据，留空则带「总」的查法提示不可用；只需本机可达，别暴露到公网，填完即时生效。
+spring.data.redis.database|java.lang.Integer|0|Redis 数据库编号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。
+spring.data.redis.host|java.lang.String|<null>|累计数据存储使用的 Redis 地址。填写后才有跨场次数据，留空时带「总」的查询不可用；只需本机可访问，请勿暴露到公网。修改后即时生效。
 spring.data.redis.password|java.lang.String|<null>|Redis 密码，未设密码时留空。
 spring.data.redis.port|java.lang.Integer|6379|Redis 端口，默认 6379。
 spring.mail.host|java.lang.String|<null>|邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。
-spring.mail.password|java.lang.String|<null>|SMTP 密码或授权码；多数邮箱要的是「授权码」而不是登录密码。
+spring.mail.password|java.lang.String|<null>|SMTP 密码或授权码；多数邮箱需要填写「授权码」，而非登录密码。
 spring.mail.port|java.lang.Integer|<null>|SMTP 端口，如 465（SSL）或 587（STARTTLS）。
-spring.mail.username|java.lang.String|<null>|SMTP 登录账号，通常就是发件邮箱地址。
+spring.mail.username|java.lang.String|<null>|SMTP 登录账号，通常为发件邮箱地址。

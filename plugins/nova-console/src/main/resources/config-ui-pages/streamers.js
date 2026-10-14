@@ -288,7 +288,11 @@ function renderRows(list, days) {
     // 直播间号与 uid 一并写出：群里的人报的是直播间号，控制台里配的是 uid，
     // 两者对不上时，只显示其中一个的那一行谁也认不出是不是同一位
     sub.textContent = 'uid ' + one.uid + (one.roomId ? ' · 直播间 ' + one.roomId : '')
-      + ' · ' + rowSubtitle(one, days);
+      + ' · ';
+    const summary = el('span');
+    summary.textContent = rowSubtitle(one, days);
+    summary.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
+    sub.appendChild(summary);
     main.appendChild(sub);
     row.appendChild(main);
 
@@ -940,6 +944,7 @@ function renderTrend(host) {
   notes.textContent = [
     !trend.metricsKnown ? '未找到该平台的指标说明，只能统计场次与时长。' : '',
     '时长与各项指标按开播时刻归入周期，跨零点的直播整场算在开播那一天。',
+    '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天。',
     metrics.length
       ? '开播时的粉丝数等「快照」指标不参与累加——把十场的粉丝数加起来不是任何一个真实数字。' : '',
     '4.3.0 之前归档的场次没有结束原因、标题记录与缺口统计，一律显示为正常结束、无缺口。',
