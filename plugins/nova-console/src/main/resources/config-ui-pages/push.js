@@ -852,9 +852,14 @@ function renderIndex(host) {
     // 原生链接提供 Tab、回车与读屏名称；其余单元格点击走同一地址，无定位覆盖层。
     table.addEventListener('click', event => {
       if (event.target.closest('a')) return;
+      if (window.getSelection()?.toString()) return;
       const row = event.target.closest('tbody tr');
       const link = row && row.querySelector('a');
-      if (link) location.hash = link.getAttribute('href');
+      if (link) {
+        const href = link.getAttribute('href');
+        if (event.ctrlKey || event.metaKey) window.open(href, '_blank', 'noopener');
+        else location.hash = href;
+      }
     });
     wrap.appendChild(table);
     box.appendChild(wrap);
