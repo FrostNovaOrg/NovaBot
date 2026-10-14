@@ -78,13 +78,18 @@ public final class ReportSharedStyle {
     public static final int CARD_GAP = 18;
     public static final int CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
     public static final int CARD_HEIGHT = 112;
+    public static final int WEEKLY_CARD_HEIGHT = 160;
     public static final int CARD_RADIUS = 16;
     public static final int CARD_TEXT_INSET = 20;
     public static final Color COLOR_CARD = new Color(246, 247, 249);
 
     /** 与下播报告一致的数值卡片，文字按内宽截断。 */
     public static void drawCard(CommonPainter painter, String valueText, String labelText, int x, int y) {
-        painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
+        drawCard(painter, valueText, labelText, x, y, CARD_HEIGHT);
+    }
+
+    private static void drawCard(CommonPainter painter, String valueText, String labelText, int x, int y, int height) {
+        painter.drawRoundedRectangle(x, y, CARD_WIDTH, height, CARD_RADIUS, COLOR_CARD);
         int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
         TextWithStyle value = new TextWithStyle(valueText, 34, COLOR_TEXT, Font.BOLD);
         value.setText(painter.truncateToWidth(value, usable));
@@ -94,13 +99,13 @@ public final class ReportSharedStyle {
         painter.drawTextWithStyle(java.util.List.of(label), new Point(x + CARD_TEXT_INSET, y + 68));
     }
 
-    /** 周报卡片的补充说明，保持原卡片尺寸。 */
+    /** 周报卡片加高，为标签与补充说明留出间距。 */
     public static void drawCard(CommonPainter painter, String value, String label, String note, int x, int y) {
-        drawCard(painter, value, label, x, y);
+        drawCard(painter, value, label, x, y, WEEKLY_CARD_HEIGHT);
         if (!note.isEmpty()) {
             TextWithStyle text = new TextWithStyle(note, 14, COLOR_TIP, Font.PLAIN);
             text.setText(painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET * 2));
-            painter.drawTextWithStyle(java.util.List.of(text), new Point(x + CARD_TEXT_INSET, y + 92));
+            painter.drawTextWithStyle(java.util.List.of(text), new Point(x + CARD_TEXT_INSET, y + 116));
         }
     }
 

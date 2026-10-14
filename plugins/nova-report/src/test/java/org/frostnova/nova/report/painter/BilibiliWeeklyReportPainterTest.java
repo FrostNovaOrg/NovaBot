@@ -20,6 +20,8 @@ import org.springframework.core.io.DefaultResourceLoader;
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Font;
+import org.frostnova.nova.core.model.TextWithStyle;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
@@ -106,31 +108,87 @@ class BilibiliWeeklyReportPainterTest {
             assertFalse(raw.contains("9200000001"));
         }
     }
-    @Test @DisplayName("下播报告卡片在共用绘制前后像素一致")
-    void liveCardPixels() throws Exception {
-        String output = System.getProperty("weekly.samples");
-        var p = spy(factory.create(900, 200, true)); p.setPos(35, 165);
+    record TextCall(String text, Font font, int size, Color color, int style) {
+        static TextCall of(TextWithStyle t) {
+            return new TextCall(t.getText(), t.getFont(), t.getSize(), t.getColor(), t.getStyle());
+        }
+    }
+    record PaintCall(String method, List<?> arguments) {}
+
+    @Test @DisplayName("下播卡片的全部绘制与截断调用保持抽取前的参数")
+    void liveCardCalls() throws Exception {
+        var calls = new ArrayList<PaintCall>();
+        var p = mock(CommonPainter.class, invocation -> {
+            String name = invocation.getMethod().getName();
+            Object[] args = invocation.getArguments();
+            if (name.equals("truncateToWidth")) {
+                var text = (TextWithStyle) args[0];
+                calls.add(new PaintCall(name, List.of(TextCall.of(text), args[1])));
+                return "fit:" + text.getText();
+            }
+            if (name.equals("drawTextWithStyle")) {
+                var texts = (List<TextWithStyle>) args[0];
+                calls.add(new PaintCall(name, List.of(texts.stream().map(TextCall::of).toList(), new Point((Point) args[1]))));
+            } else {
+                calls.add(new PaintCall(name, Arrays.asList(args.clone())));
+            }
+            return invocation.getMethod().getReturnType() == CommonPainter.class ? invocation.getMock() : null;
+        });
         var live = new BilibiliLiveReportPainter(factory, api, mock(LiveDataService.class), fonts,
                 new NovaBilibiliProperties(), mock(LiveRoomInfoHistory.class));
         var method = BilibiliLiveReportPainter.class.getDeclaredMethod("drawCard", CommonPainter.class,
                 BilibiliLiveReportPainter.Card.class, int.class, int.class);
         method.setAccessible(true);
         method.invoke(live, p, new BilibiliLiveReportPainter.Card("1,234.50 元", "流水 · 5 人"), 35, 35);
-        verify(p).drawRoundedRectangle(35, 35, 264, 112, 16, new Color(246, 247, 249));
-        var texts = org.mockito.ArgumentCaptor.forClass(List.class);
-        var points = org.mockito.ArgumentCaptor.forClass(Point.class);
-        verify(p, times(2)).drawTextWithStyle(texts.capture(), points.capture());
-        assertEquals(List.of(51, 103), points.getAllValues().stream().map(point -> point.y).toList());
-        assertEquals(34, ((org.frostnova.nova.core.model.TextWithStyle)texts.getAllValues().get(0).get(0)).getSize());
-        assertEquals(22, ((org.frostnova.nova.core.model.TextWithStyle)texts.getAllValues().get(1).get(0)).getSize());
-        if (output == null) return;
-        p.createSolidRoundedRectangleBackground(Color.WHITE, 25);
-        byte[] bytes = Base64.getDecoder().decode(p.base64().orElseThrow());
-        Path path = Path.of(output).resolve("live-card-before.png");
-        if (Files.exists(path)) {
-            var before = ImageIO.read(path.toFile()); var after = ImageIO.read(new java.io.ByteArrayInputStream(bytes));
-            assertArrayEquals(before.getRGB(0, 0, before.getWidth(), before.getHeight(), null, 0, before.getWidth()), after.getRGB(0, 0, after.getWidth(), after.getHeight(), null, 0, after.getWidth()));
-            System.out.println("LIVE_CARD_PIXELS: identical");
-        } else Files.write(path, bytes);
+        // 抽取前 drawCard 的参数；不引用共用常量，避免常量改变时预期也跟着变。
+        var expected = List.of(
+                new PaintCall("drawRoundedRectangle", List.of(35, 35, 264, 112, 16, new Color(246, 247, 249))),
+                new PaintCall("truncateToWidth", List.of(new TextCall("1,234.50 元", null, 34, new Color(51, 51, 51), Font.BOLD), 224)),
+                new PaintCall("drawTextWithStyle", List.of(List.of(new TextCall("fit:1,234.50 元", null, 34, new Color(51, 51, 51), Font.BOLD)), new Point(55, 51))),
+                new PaintCall("truncateToWidth", List.of(new TextCall("流水 · 5 人", null, 22, new Color(153, 162, 170), Font.PLAIN), 224)),
+                new PaintCall("drawTextWithStyle", List.of(List.of(new TextCall("fit:流水 · 5 人", null, 22, new Color(153, 162, 170), Font.PLAIN)), new Point(55, 103))));
+        assertEquals(expected.size(), calls.size(), "绘制与截断调用数");
+        for (int i = 0; i < expected.size(); i++) assertEquals(expected.get(i), calls.get(i), "call " + i);
+    }
+
+    @Test @DisplayName("周报副行与标签及卡片下沿留出间距")
+    void weeklyCardSpacing() {
+        for (String note : List.of("5 场", "从 10 月 5 日 08:00 起算")) {
+            var p = mock(CommonPainter.class, RETURNS_SELF);
+            when(p.truncateToWidth(any(TextWithStyle.class), anyInt())).thenAnswer(i -> ((TextWithStyle)i.getArgument(0)).getText());
+            ReportSharedStyle.drawCard(p, "25 人", "粉丝净增", note, 35, 35);
+            var heights = org.mockito.ArgumentCaptor.forClass(Integer.class);
+            verify(p).drawRoundedRectangle(eq(35), eq(35), eq(264), heights.capture(), eq(16), any(Color.class));
+            var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+            var points = org.mockito.ArgumentCaptor.forClass(Point.class);
+            verify(p, times(3)).drawTextWithStyle(texts.capture(), points.capture());
+            int labelHeight = factory.create(900, 200, true).getStringWidthAndHeight((TextWithStyle)texts.getAllValues().get(1).get(0)).getSecond();
+            int noteHeight = factory.create(900, 200, true).getStringWidthAndHeight((TextWithStyle)texts.getAllValues().get(2).get(0)).getSecond();
+            int above = points.getAllValues().get(2).y - points.getAllValues().get(1).y - labelHeight;
+            int below = 35 + heights.getValue() - points.getAllValues().get(2).y - noteHeight;
+            assertTrue(above >= 12, "副行上方间距: " + above);
+            assertTrue(below >= 18, "副行下方间距: " + below);
+            System.out.println("CARD_NOTE_SPACING: " + note + " above=" + above + "px below=" + below + "px");
+        }
+    }
+
+    @Test @DisplayName("无统计口径的按天图展示时长并区分零和未开播")
+    void noCatalogChart() {
+        for (boolean visible : List.of(true, false)) {
+            var sessions = List.of(session(from, 500, 1000, List.of(), Map.of()),
+                    new LiveSession("sample", 1L, "主播示例", 2L, from.plusSeconds(86400).toEpochMilli(),
+                            from.plusSeconds(86400).toEpochMilli(), 0, Map.of(), Map.of(), LiveEndReason.NORMAL, List.of()));
+            var data = WeeklyReport.calculate(sessions, List.of(), now, null, visible);
+            var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+            painter.drawDays(p, data);
+            var title = org.mockito.ArgumentCaptor.forClass(String.class);
+            verify(p).drawSection(title.capture(), any(Color.class));
+            assertEquals("每天直播时长（小时）", title.getValue());
+            var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(p, atLeast(7)).drawTextWithStyle(texts.capture(), any(Point.class));
+            var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0)).filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
+            assertEquals(List.of("3.67", "0.00", "—", "—", "—", "—", "—"), labels);
+            verify(p).drawRectangle(eq(67), anyInt(), eq(54), eq(150), eq(ReportSharedStyle.COLOR_NAME));
+        }
     }
 }

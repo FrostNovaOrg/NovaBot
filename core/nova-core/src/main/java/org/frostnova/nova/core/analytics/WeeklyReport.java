@@ -43,12 +43,13 @@ public final class WeeklyReport {
         List<Day> daily = result.daily().stream().map(d -> {
             Map<String, Number> values = new LinkedHashMap<>();
             put(values, "messages", d.messages());
+            if (!result.metricsKnown()) values.put("durationSeconds", d.durationSeconds());
             if (showRevenue) put(values, "revenue", d.revenue());
             return new Day(d.date(), d.sessions(), Map.copyOf(values));
         }).toList();
         return new Data(StatisticsDay.dateOf(range.from()), StatisticsDay.dateOf(range.to()).minusDays(1),
                 Map.copyOf(metrics), result.fans(), result.composition(), result.coverage(), daily,
-                showRevenue ? "revenue" : "messages");
+                result.metricsKnown() ? (showRevenue ? "revenue" : "messages") : "durationSeconds");
     }
 
     public static Preview preview(Data data, Supplier<byte[]> paint) {
@@ -100,7 +101,9 @@ public final class WeeklyReport {
         String lead = "上周（" + period(d) + "）";
         if (d.metrics().get("sessions").intValue() == 0) return lead + "没有记录到开播。";
         var c = cards(d);
-        return lead + "共直播 " + number(d.metrics().get("sessions"), " 场", false) + "、" + c.get(0).value()
+        String activity = lead + "共直播 " + number(d.metrics().get("sessions"), " 场", false) + "、" + c.get(0).value();
+        if (d.chartMetric().equals("durationSeconds")) return activity + "。";
+        return activity
                 + (d.chartMetric().equals("revenue") ? "，流水 " + c.get(1).value() : "")
                 + "，弹幕 " + c.get(2).value() + "，观众 " + c.get(3).value() + "。";
     }

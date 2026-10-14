@@ -48,10 +48,10 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         for (int i = 0; i < cards.size(); i++) {
             var c = cards.get(i);
             int x = MARGIN + i % CARD_COLUMNS * (CARD_WIDTH + CARD_GAP);
-            int y = top + i / CARD_COLUMNS * (CARD_HEIGHT + CARD_GAP);
+            int y = top + i / CARD_COLUMNS * (WEEKLY_CARD_HEIGHT + CARD_GAP);
             drawCard(p, c.value(), c.label(), c.note(), x, y);
         }
-        p.setPos(MARGIN, top + 2 * (CARD_HEIGHT + CARD_GAP) + 8);
+        p.setPos(MARGIN, top + 2 * (WEEKLY_CARD_HEIGHT + CARD_GAP) + 8);
         drawDays(p, data);
         p.drawTextMultiLine(WeeklyReport.composition(data), COLOR_TEXT, null, MARGIN);
         if (!WeeklyReport.coverage(data).isEmpty()) {
@@ -70,7 +70,8 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     void drawDays(CommonPainter p, WeeklyReport.Data data) {
         String metric = data.chartMetric();
         boolean money = metric.equals("revenue");
-        p.drawSection(money ? "每天流水（元）" : "每天弹幕（条）", COLOR_TEXT);
+        boolean duration = metric.equals("durationSeconds");
+        p.drawSection(duration ? "每天直播时长（小时）" : money ? "每天流水（元）" : "每天弹幕（条）", COLOR_TEXT);
         int top = p.getY() + 32;
         int base = top + 150;
         int slot = CONTENT_WIDTH / 7;
@@ -85,8 +86,8 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             boolean known = d.sessions() > 0 && value != null;
             int height = known && max > 0 ? (int) Math.round(value.doubleValue() / max * 150) : 0;
             if (known && height > 0) p.drawRectangle(x + 32, base - height, slot - 64, height, COLOR_NAME);
-            String label = !known ? "—" : String.format(Locale.ROOT, money ? "%,.2f" : "%,d",
-                    money ? value.doubleValue() : (Object) value.longValue());
+            String label = !known ? "—" : String.format(Locale.ROOT, money || duration ? "%,.2f" : "%,d",
+                    duration ? value.doubleValue() / 3600 : money ? value.doubleValue() : (Object) value.longValue());
             var text = new TextWithStyle(label, 18, COLOR_TEXT, Font.PLAIN);
             text.setText(p.truncateToWidth(text, slot - 4));
             int width = p.getStringWidthAndHeight(text).getFirst();
