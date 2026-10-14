@@ -138,7 +138,7 @@ function authRow(id, title, desc) {
 }
 
 function report(box, res) {
-  box.textContent = res.message || (res.success ? '好了' : '没能办成');
+  box.textContent = res.message || (res.success ? '操作成功' : '操作失败');
   box.className = 'al-r ' + (res.success ? 'ok' : 'err');
 }
 
@@ -153,8 +153,8 @@ function passwordCard() {
   const operator = authState.operatorSession;
   const box = authRow('auth-password', '密码',
     operator
-      ? '你是用启动令牌进来的，直接设一个新密码即可。设完密码后通道会自动关掉。'
-      : '修改后其他设备退出登录，当前设备保留。');
+      ? '当前通过启动令牌登录，可直接设置新密码。设置后，启动令牌登录通道将自动关闭。'
+      : '修改后，其他设备上的登录将被注销，当前设备保持登录。');
   keyLine(box.meta, 'novabot.core.config-ui.auth.password');
 
   const button = el('button', 'ghost');
@@ -165,17 +165,17 @@ function passwordCard() {
 
   button.addEventListener('click', async () => {
     const fields = [];
-    if (!operator) fields.push({label: '现在的密码', id: 'pwd-current', type: 'password'});
+    if (!operator) fields.push({label: '当前密码', id: 'pwd-current', type: 'password'});
     fields.push({label: '新密码', id: 'pwd-next', type: 'password'});
-    fields.push({label: '再输一遍', id: 'pwd-again', type: 'password'});
+    fields.push({label: '确认新密码', id: 'pwd-again', type: 'password'});
 
     const pending = ask({
       title: '修改密码',
       body: operator
-        ? '设完之后启动令牌通道会自动关掉。'
+        ? '设置新密码后，启动令牌登录通道将自动关闭。'
         : phrase('bot.impl',
-          v => '至少 8 个字符。填的是这个控制台的密码，不是 ' + v + ' 界面的口令。',
-          '至少 8 个字符。填的是这个控制台的密码，不是机器人程序界面的口令。'),
+          v => '新密码至少 8 个字符。此处设置的是控制台密码，不是 ' + v + ' 的界面口令。',
+          '新密码至少 8 个字符。此处设置的是控制台密码，不是机器人程序的界面口令。'),
       fields,
       danger: false,
     });
@@ -195,7 +195,7 @@ function passwordCard() {
     const filled = await pending;
     if (!filled) return;
     if (filled['pwd-next'] !== filled['pwd-again']) {
-      say('两次输入的新密码不一样', 'err');
+      say('两次输入的新密码不一致', 'err');
       return;
     }
 
@@ -205,9 +205,9 @@ function passwordCard() {
       const res = await api(operator ? '/auth/password/reset' : '/auth/password/change', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
       });
-      say(res.message || (res.success ? '好了' : '没能办成'), res.success ? 'ok' : 'err');
+      say(res.message || (res.success ? '密码已修改' : '密码修改失败'), res.success ? 'ok' : 'err');
     } catch (e) {
-      say('没能改成：' + e.message, 'err');
+      say('密码修改失败：' + e.message, 'err');
     }
     button.disabled = false;
   });
@@ -278,7 +278,7 @@ function totpCard() {
 }
 
 function recoverToggle(result, settle, prev, e) {
-  report(result, {success: false, message: '请求没发出去：' + e.message});
+  report(result, {success: false, message: '请求失败：' + e.message});
   settle(prev);
 }
 
@@ -295,16 +295,16 @@ async function enrollFlow(flow, result, settle) {
     }
 
     flow.innerHTML =
-      '<p class="al-note">用任意验证器应用扫这个码，再填上它给出的 6 位数字。取消就退回原样。</p>'
+      '<p class="al-note">请使用任意验证器应用扫描二维码，并填写其生成的 6 位数字。点击「取消」将恢复原状态。</p>'
       + '<div class="totp-body">'
       + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
       + '<div class="totp-side">'
-      + '<label for="totp-enroll-code">不方便扫码时手动输入这串密钥</label>'
+      + '<label for="totp-enroll-code">无法扫码时，可手动输入以下密钥</label>'
       + '<code>' + esc(setup.secret) + '</code>'
       + '<div class="totp-confirm">'
-      + '<input id="totp-enroll-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
+      + '<input id="totp-enroll-pwd" type="password" placeholder="当前密码" autocomplete="current-password">'
       + '<input id="totp-enroll-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
-      + '<button type="button" id="totp-enroll-ok">确认开启</button>'
+      + '<button type="button" id="totp-enroll-ok">确认启用</button>'
       + '<button type="button" id="totp-enroll-no">取消</button>'
       + '</div></div></div>';
 
@@ -328,10 +328,10 @@ async function enrollFlow(flow, result, settle) {
  */
 function disableFlow(flow, result, settle) {
   flow.innerHTML =
-    '<p class="al-note">关掉的是一整道防线。填一次现在的密码和验证器现在给的 6 位数字，'
-    + '证明它此刻就在你手上。关掉之后那把密钥会一并清掉，验证器里那一条可以删了。</p>'
+    '<p class="al-note">关闭后，密码登录将不再要求动态验证码。请输入当前密码与验证器当前显示的 6 位数字以确认操作。'
+    + '关闭后，已绑定的密钥将被清除，验证器中的对应条目可以删除。</p>'
     + '<div class="totp-confirm">'
-    + '<input id="totp-off-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
+    + '<input id="totp-off-pwd" type="password" placeholder="当前密码" autocomplete="current-password">'
     + '<input id="totp-off-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
     + '<button type="button" id="totp-off-ok">确认关闭</button>'
     + '<button type="button" id="totp-off-no">取消</button>'
@@ -368,14 +368,14 @@ async function renderTotpSetup() {
   box.style.display = '';
   box.innerHTML =
     '<h3>建议绑定验证器</h3>'
-    + '<p>面板开到公网后，只有密码这一道防线。用任意验证器应用扫码，再输一次它给出的数字即可。</p>'
+    + '<p>控制台开放到公网后，密码将是唯一的防护。请使用任意验证器应用扫码，并输入其生成的 6 位数字完成绑定。</p>'
     + '<div class="totp-body">'
     + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
     + '<div class="totp-side">'
-    + '<label>不方便扫码时手动输入这串密钥</label>'
+    + '<label>无法扫码时，可手动输入以下密钥</label>'
     + '<code>' + esc(setup.secret) + '</code>'
     + '<div class="totp-confirm">'
-    + '<input id="totp-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
+    + '<input id="totp-pwd" type="password" placeholder="当前密码" autocomplete="current-password">'
     + '<input id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
     + '<button type="button" id="totp-enroll">确认绑定</button>'
     + '<button type="button" id="totp-skip">暂不绑定</button>'
@@ -408,7 +408,7 @@ async function renderTotpSetup() {
     box.style.display = 'none';
     // 只跳过这一次登录。要永久关掉得去改 novabot.core.config-ui.auth.totp，
     // 那是个该显式做出的决定，不该由一次「等会儿再说」代劳
-    say('本次登录不再提示。要永久关闭请改配置项 auth.totp');
+    say('本次登录期间不再提示。如需永久关闭，请修改配置项 auth.totp。');
   });
 }
 
@@ -428,7 +428,7 @@ function passkeyCard() {
   const add = el('button', 'ghost');
   add.type = 'button';
   add.id = 'passkey-add';
-  add.textContent = '登记这台设备';
+  add.textContent = '登记当前设备';
   box.cell.appendChild(add);
   // 把按钮本身传进去，不靠那边按 id 取：初始设置页第 1 步也要登记一把，
   // 两处按 id 取就得共用一个 id，而重复 id 取到的永远是靠前的那一个
@@ -479,7 +479,7 @@ function rerunCard() {
         report(result, res);
       }
     } catch (e) {
-      report(result, {success: false, message: '没能标记：' + e.message});
+      report(result, {success: false, message: '无法打开设置引导：' + e.message});
     }
     button.disabled = false;
   });
@@ -517,7 +517,7 @@ function acceptedLine() {
   const at = store.values[AGREEMENT_TIME_KEY];
   const by = store.values[AGREEMENT_BY_KEY];
 
-  if (!version || !at || !by) return '这台机器上还没有完整的同意记录。';
+  if (!version || !at || !by) return '本机尚无完整的协议同意记录。';
   return '已同意第 ' + version + ' 版 · ' + agreementTime(at) + ' · 确认方式：' + channelText(by);
 }
 
@@ -579,8 +579,8 @@ function agreementCard() {
 async function revokeAgreement(button, result) {
   if (!await ask({
     title: '撤回对使用协议的同意？',
-    body: '撤回之后这台机器回到未签协议的状态：所有人都要重新同意一次才进得了控制台，'
-      + '当前这一个登录会立刻结束。已经配好的东西不会被清掉。',
+    body: '撤回后，本机将恢复为未同意协议的状态：所有用户须重新同意协议才能进入控制台，'
+      + '当前登录会话将立即结束。现有配置不会被清除。',
     danger: true,
   })) return;
 
@@ -595,7 +595,7 @@ async function revokeAgreement(button, result) {
     }
     report(result, res);
   } catch (e) {
-    report(result, {success: false, message: '没能撤回：' + e.message});
+    report(result, {success: false, message: '撤回失败：' + e.message});
   }
   button.disabled = false;
 }
@@ -616,8 +616,8 @@ export function authCards() {
   if (!authState.enabled) {
     const note = el('p', 'hint');
     note.id = 'auth-unlocked';
-    note.textContent = '这台机器还没设密码，因此不出登录页，进来就是控制台。'
-      + '要上锁的话，到设置引导页走第 1 步。';
+    note.textContent = '本机尚未设置控制台密码，因此不显示登录页，打开即进入控制台。'
+      + '如需设置密码，请在设置引导中完成第 1 步。';
     wrap.appendChild(note);
     // 协议这张卡与「上没上锁」无关：没配口令的那一形态里，同意也是凭令牌进来的人点下的，
     // 撤回同样要有地方点——只摆在上过锁的机器上，等于这一形态的使用者一辈子撤不回来

@@ -207,7 +207,7 @@ try {
   const openWrap = keyWrap(root, OPEN);
   if (!openWrap) throw new Error('no open field');
   openSeen = controls(openWrap).map(n => n.tagName);
-  const tests = collect(root, n => n.tagName === 'BUTTON' && n._text === '发一条测试');
+  const tests = collect(root, n => n.tagName === 'BUTTON' && n._text === '发送测试告警');
   buttons = {count: tests.length, enabled: tests.filter(n => !n.disabled).length};
 } catch (e) {
   lockedSeen = openSeen = buttons = 'error:' + e.message;
@@ -216,7 +216,7 @@ try {
 eq(lockedSeen, {inputs: 0, shown: [VALUE], notes: 1},
   '① 锁住的收件邮箱：不出输入框，只读摆出读到的值，附说明');
 eq(openSeen, ['INPUT'], '② 没锁的地址照旧是输入框');
-eq(buttons, {count: 2, enabled: 2}, '③ 发一条测试仍在且可点');
+eq(buttons, {count: 2, enabled: 2}, '③ 发送测试告警仍在且可点');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

@@ -370,7 +370,7 @@ class PasswordChangeTest {
                 ResponseEntity<JSONObject> response = controller.changePassword(body(missing, NEW), mine);
 
                 assertEquals(400, response.getStatusCode().value(), response.getBody().toJSONString());
-                assertEquals("请填现在的密码", response.getBody().getString("message"),
+                assertEquals("请输入当前密码", response.getBody().getString("message"),
                         "没填要说请填，不能说成输错了: " + response.getBody().toJSONString());
             }
         }

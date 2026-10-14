@@ -155,7 +155,7 @@ class SensitiveReauthTest {
         JSONObject payload = denied.getBody();
         assertNotNull(payload);
         assertFalse(payload.getBooleanValue("success"), payload.toJSONString());
-        assertEquals("请填现在的密码", payload.getString("message"), payload.toJSONString());
+        assertEquals("请输入当前密码", payload.getString("message"), payload.toJSONString());
         assertFalse(payload.containsKey("challenge"), "拒了就不该发挑战: " + payload.toJSONString());
     }
 

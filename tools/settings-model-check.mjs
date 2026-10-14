@@ -37,8 +37,8 @@ function field(over) {
 }
 
 // —— 档一：默认值与改过 ——
-eq(defaultText(field({widget: 'boolean', defaultValue: true})), '开', '布尔默认值显示成开');
-eq(defaultText(field({widget: 'string', defaultValue: null})), '未设', '没有默认值的说未设');
+eq(defaultText(field({widget: 'boolean', defaultValue: true})), '启用', '布尔默认值显示成启用');
+eq(defaultText(field({widget: 'string', defaultValue: null})), '未设置', '没有默认值的说未设置');
 eq(isChanged(field({widget: 'boolean', defaultValue: true}), 'true'), false, '与默认值相同不算改过');
 eq(isChanged(field({widget: 'boolean', defaultValue: true}), 'false'), true, '与默认值不同算改过');
 eq(isChanged(field({sensitive: true, widget: 'string', defaultValue: null}), MASK), true,
@@ -141,14 +141,14 @@ async function runCopy(statusPath, opts) {
   return {writes, said};
 }
 
-const COPY_HINT = '路径还没确定，没法复制';
+const COPY_HINT = '未获取到配置文件路径，无法复制';
 const SAMPLE_PATH = '/opt/novabot/application.yml';
 
 let q1 = 'missing';
 try {
-  const r = await runCopy(SAMPLE_PATH, {poisonText: '（未能确定）'});
+  const r = await runCopy(SAMPLE_PATH, {poisonText: '（未获取到路径）'});
   q1 = r.writes.length === 1 && r.writes[0] === SAMPLE_PATH
-    && r.said.length === 1 && r.said[0].text === '已复制路径' && r.said[0].kind === 'ok';
+    && r.said.length === 1 && r.said[0].text === '已复制配置文件路径' && r.said[0].kind === 'ok';
 } catch (e) {
   q1 = 'error:' + e.message;
 }
@@ -169,7 +169,7 @@ try {
   const r = await runCopy(SAMPLE_PATH, {clipboardThrow: true});
   q3 = r.writes.length === 1 && r.writes[0] === SAMPLE_PATH
     && r.said.length === 1
-    && r.said[0].text === '这个浏览器不让脚本写剪贴板，请手动复制：' + SAMPLE_PATH
+    && r.said[0].text === '当前浏览器不允许脚本写入剪贴板，请手动复制：' + SAMPLE_PATH
     && r.said[0].kind === 'err';
 } catch (e) {
   q3 = 'error:' + e.message;

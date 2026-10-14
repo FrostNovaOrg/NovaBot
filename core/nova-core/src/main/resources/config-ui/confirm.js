@@ -112,7 +112,7 @@ function paint() {
   const doc = box.querySelector('.ask-doc');
   if (doc) {
     doc.hidden = !docMode;
-    doc.textContent = docMode ? (docLoading ? '正在取…' : docText) : '';
+    doc.textContent = docMode ? (docLoading ? '正在加载…' : docText) : '';
   }
   const card = box.querySelector('.ask-card');
   if (card) card.classList.toggle('ask-card-doc', docMode);
@@ -239,14 +239,14 @@ export function showDoc(spec) {
         .then(res => {
           if (!docMode || state.status !== 'open') return;
           if (res && res.text) docText = res.text;
-          else if (res && !res.success) docText = res.message || '读不到正文';
+          else if (res && !res.success) docText = res.message || '无法加载正文';
           else docText = '';
           docLoading = false;
           paint();
         })
         .catch(e => {
           if (!docMode || state.status !== 'open') return;
-          docText = '读不到正文：' + (e && e.message ? e.message : String(e));
+          docText = '无法加载正文：' + (e && e.message ? e.message : String(e));
           docLoading = false;
           paint();
         });

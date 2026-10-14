@@ -352,17 +352,14 @@
         使用者常常是一边改一边搜下一项，重绘会把正在编辑的那一格丢掉。
       -->
       <div class="setbar">
-        <input type="search" id="set-search" placeholder="搜设置，例如：静音" aria-label="搜设置">
+        <input type="search" id="set-search" placeholder="搜索设置项，例如：静音" aria-label="搜索设置项">
         <label class="switch"><input type="checkbox" id="show-keys"><span>显示键名</span></label>
-        <label class="switch"><input type="checkbox" id="only-changed"><span>只看改过的</span></label>
-        <!-- 高级默认收着。开合只改可见性、不重绘，理由同上 -->
-        <button type="button" class="ghost settings-advanced-toggle" id="show-advanced"
-                aria-controls="adv-groups" aria-expanded="false">显示高级选项</button>
+        <label class="switch"><input type="checkbox" id="only-changed"><span>仅显示已修改项</span></label>
         <span class="dim" id="set-count"></span>
       </div>
       <!--
         组目录：宽屏左侧竖栏，窄屏收回顶上横排。点一下滚到那一组。
-        内容由脚本按服务端给的组表建出。
+        内容由脚本按服务端给的组表建出；最后一项是「高级选项」开关，也由脚本建。
       -->
       <div class="setwrap">
         <div class="grpnav" id="grp-nav"></div>
@@ -382,7 +379,7 @@
         而控制台随之一同挂掉——远程部署时人就被挡在门外。要直接改文件请到服务器上改，
         写坏之后的正门是安全模式（程序起不来时它接管端口）。
       -->
-      <p class="cfgpath">配置文件在 <code id="cfg-path" title="点一下复制">读取中…</code>。要直接改的话，到服务器上改；控制台不提供编辑，改完重启生效。</p>
+      <p class="cfgpath">配置文件路径：<code id="cfg-path" title="点击复制">读取中…</code>。如需直接修改，请在服务器上编辑该文件；控制台不提供文件编辑，修改后需重启生效。</p>
       <!--
         许可与源码地址。AGPL-3.0 要求使用者能拿到这个程序对应的源码，而「使用者」常常
         只见得到这张控制台——只写在仓库的 README 里，等于只告诉了已经找到仓库的那些人。

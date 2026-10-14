@@ -143,7 +143,7 @@ class SensitiveReauthDisableTest {
 
         assertEquals(400, denied.getStatusCode().value(), denied.getBody().toJSONString());
         assertFalse(denied.getBody().getBooleanValue("success"), denied.getBody().toJSONString());
-        assertEquals("请填现在的密码", denied.getBody().getString("message"),
+        assertEquals("请输入当前密码", denied.getBody().getString("message"),
                 "没填要说请填: " + denied.getBody().toJSONString());
         assertTrue(authService.totpRequired(), "拒了就得照旧要码");
         assertEquals(before, Files.readString(config, StandardCharsets.UTF_8), "拒了就不该动配置文件");

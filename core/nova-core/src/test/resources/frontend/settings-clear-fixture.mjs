@@ -166,7 +166,7 @@ function page(over) {
 function reading(store, row, field) {
   const input = collect(row, 'input')[0];
   const clear = collect(row, 'button')
-    .find(b => b.textContent === '清除' || b.textContent === '撤回清除');
+    .find(b => b.textContent === '清除' || b.textContent === '取消清除');
   return {
     input,
     clear,
@@ -205,8 +205,8 @@ try {
 } catch (e) {
   clearThenRepaint = 'error:' + e.message;
 }
-eq(clearThenRepaint, ['撤回清除', '', true, '保存后清除', CLEAR].join('|'),
-  '① 点清除→重画→仍是清除态：框空且禁用、写着「保存后清除」、钮是「撤回清除」，清除记账不丢');
+eq(clearThenRepaint, ['取消清除', '', true, '保存后清除', CLEAR].join('|'),
+  '① 点清除→重画→仍是清除态：框空且禁用、写着「保存后清除」、钮是「取消清除」，清除记账不丢');
 
 // ---------- ② 撤回一次即恢复 ----------
 // 病：重画后要撤回得连点两下——第一下反而又进了一次清除态
@@ -263,7 +263,7 @@ eq(saveDeletes, true,
 // ---------- ④ 那句话看得见 ----------
 // 病：「保存后这一项就删掉了，要再用得重新填」只挂在悬停提示里，触屏上点了清除
 // 看不到，不知道保存后会删。挂着清除时这句要作为字摆在这一项里，撤回后收起
-const CLEAR_NOTE = '保存后这一项就删掉了，要再用得重新填';
+const CLEAR_NOTE = '保存后将删除此项；如需再次使用，须重新填写';
 
 /** 带真 classList 的元素桩：看得见＝有字且没挂 hide */
 function liveNode(tag, cls) {

@@ -11,10 +11,10 @@ export function botFormHtml(p) {
   return '<div class="row"><label for="' + p + '-addr">地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
     + '<div class="row"><label for="' + p + '-hport">HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
     + '<div class="row"><label for="' + p + '-htoken">HTTP Token</label><input id="' + p + '-htoken" placeholder="与 '
-    + term('bot.family', '机器人程序') + '中配置的一致"></div>'
+    + term('bot.family', '机器人程序') + ' 中的配置保持一致"></div>'
     + '<div class="row"><label for="' + p + '-wport">WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
     + '<div class="row"><label for="' + p + '-wtoken">WS Token</label><input id="' + p + '-wtoken" placeholder="与 '
-    + term('bot.family', '机器人程序') + '中配置的一致"></div>'
+    + term('bot.family', '机器人程序') + ' 中的配置保持一致"></div>'
     + '<div class="row"><button id="' + p + '-test" type="button">测试连接</button>'
     + '<button id="' + p + '-save" type="button" disabled>保存</button></div>'
     + '<div class="out" id="' + p + '-out"></div>';
@@ -26,7 +26,7 @@ const botFormEdits = {};
 function invalidateBotForm(p) {
   botFormEdits[p] = (botFormEdits[p] || 0) + 1;
   $('#' + p + '-save').disabled = true;
-  $('#' + p + '-out').textContent = '参数改了，请重新测试连接';
+  $('#' + p + '-out').textContent = '连接参数已修改，请重新测试连接';
   $('#' + p + '-out').className = 'out';
 }
 
@@ -62,7 +62,7 @@ async function testBotConnection(p) {
   const out = $('#' + p + '-out');
   $('#' + p + '-test').disabled = true;
   out.className = 'out';
-  out.textContent = '测试中…';
+  out.textContent = '正在测试…';
   const edits = botFormEdits[p] || 0;
   // 等回包期间参数改过：这次结果作废，保存保持禁用，提示留着「请重新测试连接」
   const stale = () => (botFormEdits[p] || 0) !== edits;

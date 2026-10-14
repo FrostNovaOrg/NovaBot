@@ -165,6 +165,11 @@ public class Message {
     private volatile String failureReason;
 
     /**
+     * 被推送总开关丢弃，属于最终失败；告警通道据此回报不重投的结果。
+     */
+    private volatile boolean blockedByPushSwitch;
+
+    /**
      * 发送结果。和下面两份回调名单共用一把锁。
      * <p>
      * 结果定下来的那一下就把当时的名单抄走；这之后才登记的，当场执行，不再排进名单。

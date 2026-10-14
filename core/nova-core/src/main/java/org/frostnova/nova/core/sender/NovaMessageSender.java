@@ -429,6 +429,11 @@ public class NovaMessageSender {
                 try {
                     Message message = queue.take();
                     try {
+                        // 出队只复查总开关，静音仍只在入队时判断。
+                        if (!pushGate.alertsAllowed()) {
+                            discardQueuedMessage(message);
+                            continue;
+                        }
                         doSend(sender, message, true);
                     } catch (Exception e) {
                         log.error("{} 平台消息发送异常", sender.getName(), e);
@@ -446,6 +451,27 @@ public class NovaMessageSender {
             }
             return null;
         }));
+    }
+
+    private void discardQueuedMessage(Message message) {
+        PushGate.Block block = PushGate.Block.DISABLED;
+        log.info("{}, 已丢弃消息: [{}] {}: {}", block.getDescription(),
+                message.getType().getStr(), message.getNum(), message.getDisplay());
+        if (!message.isAlert()) {
+            timeline.record(TimelineEvent.of(block.timelineType(), TimelineEvent.Level.WARN)
+                    .channel(describeTarget(message))
+                    .text(block.getDescription() + "，丢弃了发往" + describeTarget(message) + "的一条消息")
+                    .detail("summary", message.getDisplay())
+                    .detail("platform", message.getPlatform())
+                    .build());
+        }
+        // 告警由通道回报 BLOCKED，告警服务只记失败及原因，不入重投队列。
+        message.setBlockedByPushSwitch(true);
+        message.setFailureReason(block.getDescription()
+                + (message.isAlert() ? "，这条告警没有发出" : "，这条消息没有发出"));
+        message.setCompleteTime(Instant.now());
+        runEach(message.markFailed(), message, "发送失败");
+        runEach(message.getOnCompleteCallbacks(), message, "发送完毕");
     }
 
     /**

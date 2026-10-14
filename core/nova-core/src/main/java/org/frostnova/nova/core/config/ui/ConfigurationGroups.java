@@ -14,7 +14,7 @@ import java.util.Map;
  * {@code novabot.core.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
  * 使用者要办一件事（「让它别在半夜发消息」），得先猜这件事在代码里归哪个类管。
  * 这里改成按「要办的事」分组，常用六组在上，工程用的两组整组算高级。
- * 常用六组里各项另按 {@code @ConfigLevel} 分：标了高级的也收进高级，由界面页头的钮显示。
+ * 常用六组里各项另按 {@code @ConfigLevel} 分：标了高级的也收进高级，由界面组目录最底下的钮显示。
  *
  * <h2>为什么是闭集</h2>
  *
@@ -37,7 +37,7 @@ public final class ConfigurationGroups {
      * @param id 组标识，界面上的锚点与药丸用它
      * @param title 组名
      * @param description 组说明，写「这一组管什么」
-     * @param advanced 是否整组算高级（界面上默认收起，由页头「显示高级选项」摆出来）
+     * @param advanced 是否整组算高级（界面上默认收起，由组目录最底下的「高级选项」摆出来）
      */
     public record Group(String id, String title, String description, boolean advanced) {
     }
@@ -49,7 +49,7 @@ public final class ConfigurationGroups {
             "推送的发送时段与发送数量。", false);
 
     public static final Group ALERT = new Group("alert", "告警",
-            "出了事谁先知道。告警会出现在日志里，改这里不影响那条线怎么显示。", false);
+            "发生故障时的通知方式。关闭告警后不再发送通知，时间线里的「告警」也不再新增记录；故障仍会写入「工程日志」。", false);
 
     public static final Group COMMAND = new Group("cmd", "命令与权限",
             "群内命令的管理权限。群主与群管理员默认可以使用启用命令与禁用命令；超级管理员的权限在所有群生效。", false);

@@ -107,7 +107,7 @@ try {
 } catch (e) {
   stale = 'error:' + e.message;
 }
-eq(stale, {saveDisabled: true, out: '参数改了，请重新测试连接', tested: ['10.0.0.1']},
+eq(stale, {saveDisabled: true, out: '连接参数已修改，请重新测试连接', tested: ['10.0.0.1']},
   '① 测试挂着时改地址、再回成功：保存仍禁用，提示仍是重新测试');
 
 // ② 对照：回包前没动，测通照旧解开保存，点保存发出去的是测过的那一套
