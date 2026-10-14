@@ -213,13 +213,14 @@ html.nobar #main{padding-bottom:20px}
 .field .timenote{color:var(--warn)}
 /* 按旧位置生效的配置项：不是错误，但必须看得见，否则值与文件里的行对不上 */
 .field .legacy{color:var(--err);font-size:12.5px;margin-top:4px;line-height:1.5}
-.field input[type=text],.field input[type=number],.field input[type=time],.field textarea{width:100%;padding:6px 9px;
+.field input[type=text],.field input[type=number],.field input[type=time],.session-quiet-times input[type=time],.field textarea{width:100%;padding:6px 9px;
   border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);
   font-family:inherit;font-size:14px}
 .field textarea{min-height:60px;font-family:var(--mono);resize:vertical}
-.field input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
+.field input:focus,.session-quiet-times input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
 /* 静音时段这类时刻项：时间框，数字等宽免得改一位整行抽动；旁边「清空」另起一行 */
-.field input[type=time]{min-height:34px;font-variant-numeric:tabular-nums}
+.field input[type=time],.session-quiet-times input[type=time]{min-height:34px;font-variant-numeric:tabular-nums}
+.session-quiet-times input[type=time]{width:auto}
 .field .time-clear{display:block;margin-top:6px}
 /* 文件位置：等宽字，l 与 1、O 与 0 认得出来 */
 .field input.setting-path{font-family:var(--mono);font-size:13.5px}
@@ -241,8 +242,9 @@ html.nobar #main{padding-bottom:20px}
 /* 两栏：左目录、右各组。目录自己矮、sticky 贴在顶上，翻到第五组时第一组还在 */
 .setwrap{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:start}
 .grpnav{position:sticky;top:0;z-index:5;display:flex;flex-direction:column;flex-wrap:nowrap;gap:4px;
-  padding:8px 0 10px;background:var(--ground);align-self:start}
-.grpnav .pill{cursor:pointer;font-family:inherit;justify-content:flex-start;text-align:left;
+  padding:8px 0 10px;background:var(--ground);align-self:start;
+  max-height:100vh;overflow:auto;overscroll-behavior:contain}
+.grpnav .pill{flex-shrink:0;cursor:pointer;font-family:inherit;justify-content:flex-start;text-align:left;
   background:var(--surface)}
 .grpnav .pill:hover{border-color:var(--accent);color:var(--accent)}
 .grpnav .cur{color:var(--accent-text);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent);
@@ -253,7 +255,7 @@ html.nobar #main{padding-bottom:20px}
   /* 窄屏上顶栏先吸在视口顶上（#side，z-index 更高），目录再吸时要垫在它底下：
      top 取 --side-h（settings.js 量出来的实测高度），不是写死的数——顶栏里的内容
      会折行，换台设备、改一下字号高度就变。宽屏那一档 top:0 不动，没人引用这个变量 */
-  .grpnav{top:var(--side-h,0);flex-direction:row;flex-wrap:wrap;gap:7px}
+  .grpnav{max-height:28vh;top:var(--side-h,0);flex-direction:row;flex-wrap:wrap;gap:7px}
   .grpnav .pill{justify-content:center}
   .grpnav .sep{flex-basis:100%;padding:4px 0 0}
 }

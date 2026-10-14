@@ -244,12 +244,14 @@ function helpButton(title, text) {
 // ---- 1 金额可见 ----
 
 function revenueRow(host, ctx) {
-  const body = row(host, ctx, '金额可见', ctx.summary.revenue.text,
+  const wanted = revenueDraft(ctx.target);
+  const visible = wanted === undefined ? ctx.summary.revenue.visible : wanted;
+  const summary = wanted !== undefined && wanted !== ctx.summary.revenue.visible
+    ? (visible ? '显示金额' : '隐藏金额') + ' · 未保存' : ctx.summary.revenue.text;
+  const body = row(host, ctx, '金额可见', summary,
     '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
     + '只去掉右侧的数字，仍然是在公开排消费。');
 
-  const wanted = revenueDraft(ctx.target);
-  const visible = wanted === undefined ? ctx.summary.revenue.visible : wanted;
   const line = el('div', 'swrow');
   const label = el('label', 'switch');
   label.innerHTML = '<input type="checkbox"' + (visible ? ' checked' : '') + '>';
@@ -324,7 +326,7 @@ function quietRow(host, ctx) {
     body.appendChild(line);
   }
 
-  const times = el('div', 'swrow');
+  const times = el('div', 'swrow session-quiet-times');
   for (const [field, label] of [['start', '静音开始'], ['end', '静音结束']]) {
     const input = el('input');
     input.type = 'time';

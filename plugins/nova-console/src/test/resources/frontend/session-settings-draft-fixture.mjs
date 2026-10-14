@@ -446,6 +446,31 @@ await ask('① 改金额可见、没点保存：状态文件不该变，改动�
   }, '金额可见未保存');
 });
 
+// 未保存的开关状态也要出现在摘要里，拨回原样则恢复默认说明。
+await ask('金额草稿摘要随开关变化，拨回后恢复默认说明', async () => {
+  const saved = sessionOf(mock.state);
+  for (const explicit of [true, false]) {
+    saved.revenueVisible = false;
+    saved.revenueExplicit = explicit;
+    await fresh();
+    const original = model.revenueSummary(saved).text;
+    flip(inputByLabel(host, '直播收益等金额'));
+    paintFrom(clone(mock.state));
+    same(summaryText(host, '金额可见'), '显示金额 · 未保存', '未保存摘要');
+    flip(inputByLabel(host, '直播收益等金额'));
+    paintFrom(clone(mock.state));
+    same(summaryText(host, '金额可见'), original, '拨回摘要');
+  }
+  saved.revenueVisible = true;
+  saved.revenueExplicit = true;
+  await fresh();
+  flip(inputByLabel(host, '直播收益等金额'));
+  paintFrom(clone(mock.state));
+  same(summaryText(host, '金额可见'), '隐藏金额 · 未保存', '隐藏草稿摘要');
+  saved.revenueVisible = false;
+  await fresh();
+});
+
 await ask('② 拨命令开关、没点保存：状态文件不该变，改动条上要看得见这一处', async () => {
   if (!push || !sessions) throw new Error('产品码没载入，无从量起');
   await fresh();
