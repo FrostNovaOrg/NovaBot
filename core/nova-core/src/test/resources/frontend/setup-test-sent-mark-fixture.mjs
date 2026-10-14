@@ -183,8 +183,8 @@ try {
 } catch (err) {
   cell1 = 'error:' + err.message;
 }
-eq(cell1 && cell1['小字'] === '有试发记录', false,
-  '① 回包缺 testSent：试发那一格不写「有试发记录」（读到 ' + JSON.stringify(cell1) + '）');
+eq(cell1 && cell1['小字'] === '已有测试发送记录', false,
+  '① 回包缺 testSent：试发那一格不写「已有测试发送记录」（读到 ' + JSON.stringify(cell1) + '）');
 eq(cell1, {'记号': '✓', '小字': '已配置'}, '① 回包缺 testSent：勾照前几步推断，小字写「已配置」');
 
 let cell2;
@@ -202,7 +202,7 @@ try {
 } catch (err) {
   cell3 = 'error:' + err.message;
 }
-eq(cell3, {'记号': '✓', '小字': '有试发记录'}, '③ testSent 为 true：打勾，写「有试发记录」');
+eq(cell3, {'记号': '✓', '小字': '已有测试发送记录'}, '③ testSent 为 true：打勾，写「已有测试发送记录」');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
+import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.LiveSession;
@@ -31,9 +32,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -110,7 +111,7 @@ public class StreamerController {
 
     private final LiveSessionAnalytics analytics = new LiveSessionAnalytics();
 
-    private final ZoneId zone = ZoneId.systemDefault();
+    private final Clock clock;
 
     @Autowired
     public StreamerController(AbstractDataSource dataSource,
@@ -121,6 +122,19 @@ public class StreamerController {
                               LiveDetailArchive details,
                               ObjectProvider<LiveMetricCatalog> catalogs,
                               ObjectProvider<LiveReportRedrawer> redrawers) {
+        this(dataSource, directory, liveDataService, archive, snapshots, details, catalogs, redrawers,
+                Clock.systemUTC());
+    }
+
+    StreamerController(AbstractDataSource dataSource,
+                       StreamerDirectory directory,
+                       LiveDataService liveDataService,
+                       LiveSessionArchive archive,
+                       StreamerSnapshotArchive snapshots,
+                       LiveDetailArchive details,
+                       ObjectProvider<LiveMetricCatalog> catalogs,
+                       ObjectProvider<LiveReportRedrawer> redrawers,
+                       Clock clock) {
         this.dataSource = dataSource;
         this.directory = directory;
         this.liveDataService = liveDataService;
@@ -129,6 +143,7 @@ public class StreamerController {
         this.details = details;
         this.catalogs = catalogs;
         this.redrawers = redrawers;
+        this.clock = clock;
     }
 
     /**
@@ -147,7 +162,7 @@ public class StreamerController {
         List<LiveSession> all = archive.find(0, Long.MAX_VALUE);
         Map<String, List<LiveSession>> byStreamer = groupByStreamer(all);
 
-        LocalDate today = LocalDate.now(zone);
+        LocalDate today = StatisticsDay.today(clock);
         LocalDate windowStart = today.minusDays(SERIES_DAYS - 1L);
 
         JSONArray items = new JSONArray();
@@ -712,7 +727,7 @@ public class StreamerController {
     }
 
     private LocalDate dateOf(long millis) {
-        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate();
+        return StatisticsDay.dateOf(Instant.ofEpochMilli(millis));
     }
 
     private String key(String platform, Long uid) {

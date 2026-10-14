@@ -101,7 +101,7 @@ export async function refreshLinks() {
     renderTokens(tokens.tokens || []);
     scrollToWanted();
   } catch (e) {
-    say('载入连接页失败：' + e.message, 'err');
+    say('连接页加载失败：' + e.message, 'err');
   }
 }
 
@@ -147,7 +147,7 @@ let options = [];
  */
 export async function loadTargets(force) {
   const pick = $('#test-target');
-  pick.innerHTML = '<option value="">载入中…</option>';
+  pick.innerHTML = '<option value="">正在加载…</option>';
   $('#test-send').disabled = true;
 
   try {
@@ -159,18 +159,18 @@ export async function loadTargets(force) {
     // 取不到名单时<b>不退回手填</b>：退回手填等于把「填错一位数不报错」那个失败形态请回来。
     // 这里只把话说清楚——先去把机器人连上，再回来发这一条
     options = [];
-    pick.innerHTML = '<option value="">暂时取不到群与好友名单</option>';
-    $('#test-hint').textContent = '机器人还没连上，或它此刻答不上话。先看上面那张卡。';
+    pick.innerHTML = '<option value="">群组与好友列表加载失败</option>';
+    $('#test-hint').textContent = '机器人尚未连接，或暂时无响应。请先查看上方机器人卡片的状态。';
     return;
   }
 
   pick.innerHTML = options.length
     ? options.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text)
-        + (item.configured ? ' · 已配推送' : '') + '</option>').join('')
-    : '<option value="">机器人还没在任何群里，也没有加好友</option>';
+        + (item.configured ? ' · 已配置推送' : '') + '</option>').join('')
+    : '<option value="">机器人尚未加入任何群组，也没有好友</option>';
   $('#test-hint').textContent = options.length
-    ? '名单由机器人自己给出，这里没有手填号码的格子。'
-    : '把机器人拉进一个群，或给它加个好友，再回来发这一条。';
+    ? '列表由机器人提供，不支持手动输入号码。'
+    : '请先将机器人加入群组或添加为好友，然后点击「刷新列表」。';
   $('#test-send').disabled = !options.length;
 }
 
@@ -225,7 +225,7 @@ function renderTestResult(res, targetText) {
   if (res.success) {
     box.className = 'issues ok';
     box.innerHTML = '<b>' + esc(res.message) + '</b>'
-      + '<div class="bubble"><div class="bb-to">发给 ' + esc(targetText) + '</div>'
+      + '<div class="bubble"><div class="bb-to">发送目标：' + esc(targetText) + '</div>'
       + '<div class="bb-body">这是一条来自 NovaBot 的测试消息，收到即表示推送链路正常。</div></div>';
     return;
   }
@@ -234,10 +234,10 @@ function renderTestResult(res, targetText) {
   box.innerHTML = '<b>' + esc(res.message) + '</b>'
     + (res.advice ? '<p class="tr-advice">' + esc(res.advice) + '</p>' : '')
     + '<ul>'
-    + '<li>机器人此刻在不在线：看本页上面那张卡，账号掉线时接口照样通，消息却没人收得到。</li>'
-    + '<li>不用查首页那个「暂停全部推送」和静音时段：这一条当场直发、不进队列，'
-    + '两处都拦不到它；它发不出去，就是链路本身的问题。</li>'
-    + '<li>' + esc(term('bot.family', '机器人程序')) + ' 那侧的日志：填对了地址与 Token 却仍不通时，答案通常只在它自己的日志里。</li>'
+    + '<li>确认机器人账号是否在线：查看本页上方的机器人卡片。账号离线时接口仍可正常调用，但消息无人接收。</li>'
+    + '<li>无需检查首页的「暂停全部推送」与静音时段：测试消息立即直接发送，不进入推送队列，'
+    + '不受这两项限制；发送失败说明链路本身存在问题。</li>'
+    + '<li>查看 ' + esc(term('bot.family', '机器人程序')) + ' 的运行日志：地址与 Token 均正确但仍无法发送时，原因通常只记录在它自己的日志中。</li>'
     + '</ul>'
     + (res.raw ? '<p class="tr-advice">接口原始响应：' + esc(JSON.stringify(res.raw)) + '</p>' : '');
 }

@@ -9,7 +9,9 @@ usage(){
   cat <<'EOF'
 Usage: release.sh [VERSION|auto] [OPTIONS]
 
-发布与部署 NovaBot；VERSION 缺省取根 pom 的三段数字版本。
+发布与部署 NovaBot；VERSION 缺省取根 pom 的版本号。
+版本号只认三段纯数字（5.9.3）或三段数字加 -beta.N（6.0.0-beta.1，N 为正整数）。
+beta 建为 GitHub 预发布，不标最新版；正式版标最新版。
 部署必须给出 --host、--app-dir、--service、--owner；没有默认机器。
 只发布到 GitHub、不部署时，使用 --publish-only。
 
@@ -40,6 +42,7 @@ auto 只许试装：读取 --host 上的 novabot@ 实例，在 X.Y.90 与 X.Y.91
 EOF
 }
 arg_stop(){ echo "🛑 停在：参数（$1）"; exit 2; }
+release_name_is_version(){ [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[1-9][0-9]*)?$ ]]; }
 need_value(){ [ "$#" -ge 2 ] && [ -n "$2" ] && [[ "$2" != --* ]] || arg_stop "$1 缺少值"; }
 VER=""; REPO=""; SANDBOX=0; FROM=preflight; WAIT_MAX=360; NOWAIT=0
 TRIAL=0; SB_ROUTE=""; COMMIT=""; PUBLISH_ONLY=0; NOTES_CHECK=""; TARGET_FILE=""
@@ -112,12 +115,12 @@ if [ -z "$REPO" ]; then
 fi
 REPO="$(cd "$REPO" && pwd)" || arg_stop "进不了产品仓"
 [ -n "$VER" ] || VER=$(awk '/<parent>/{p=1} /<\/parent>/{p=0; next} !p && /<version>/{sub(/.*<version>/, ""); sub(/<\/version>.*/, ""); print; exit}' "$REPO/pom.xml")
-[ "$VER" = auto ] || [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || arg_stop "版本号须三段纯数字如 5.8.0，给的是 ${VER}"
+[ "$VER" = auto ] || release_name_is_version "$VER" || arg_stop "版本号须三段纯数字如 5.9.3 或 beta 如 6.0.0-beta.1（N 为正整数），给的是 ${VER}"
 if [ "$VER" = auto ]; then
   [ "$TRIAL" = 1 ] && [ -n "$HOST" ] || arg_stop "auto 只许 --trial 并指定 --host"
   CURV=$(git -C "$REPO" show "${COMMIT:-HEAD}:pom.xml" 2>/dev/null | awk '/<parent>/{p=1} /<\/parent>/{p=0; next} !p && /<version>/{sub(/.*<version>/, ""); sub(/<\/version>.*/, ""); print; exit}')
-  [[ "$CURV" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || arg_stop "${COMMIT:-HEAD} 的根 pom 读不出版本号，读到「${CURV}」"
-  XY="${CURV%.*}"
+  release_name_is_version "$CURV" || arg_stop "${COMMIT:-HEAD} 的根 pom 版本号须如 5.9.3 或 6.0.0-beta.1（N 为正整数），读到「${CURV}」"
+  BASEV="${CURV%%-beta.*}"; XY="${BASEV%.*}"
   if [ "$SANDBOX" = 1 ]; then
     VER="${XY}.90"; echo "〔沙盘〕试装号自动取 ${VER}（沙盘不问 ${HOST}）"
   else
@@ -295,7 +298,7 @@ if [ "$TRIAL" = 1 ]; then
   fi
   cd "$REPO" || stop preflight "进不了 $REPO"
   CURV=$(awk '/<parent>/{p=1} /<\/parent>/{p=0; next} !p && /<version>/{sub(/.*<version>/, ""); sub(/<\/version>.*/, ""); print; exit}' pom.xml)
-  printf '%s\n' "$CURV" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || stop preflight "根 pom 读不出现版本号（读到「${CURV}」）"
+  release_name_is_version "$CURV" || stop preflight "根 pom 版本号须如 5.9.3 或 6.0.0-beta.1（N 为正整数），读到「${CURV}」"
   [ "$CURV" != "$VER" ] || stop preflight "试装号 ${VER} 与现版本相同"
   PAT=">${CURV//./\\.}<"
   EXR=templates/nova-example-plugin/README.md
@@ -320,9 +323,12 @@ cd "$REPO" || stop preflight "进不了 $REPO"
 
 # 预检与发布共用这一个发行说明文件。
 NOTES="$SCRATCH/release-notes-${VER}.md"
+changelog_has_version(){
+  awk -v v="$VER" '/^## \[/ {h=$0; sub(/^## \[/, "", h); sub(/\].*$/, "", h); if (h==v) found=1} END {exit !found}' CHANGELOG.md
+}
 prepare_notes(){
   [ "$TRIAL" = 0 ] || return 0
-  awk -v v="$VER" '$0 ~ "^## \\["v"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md > "$NOTES"
+  awk -v v="$VER" '/^## \[/ {h=$0; sub(/^## \[/, "", h); sub(/\].*$/, "", h); f=(h==v); next} f' CHANGELOG.md > "$NOTES"
   [ -s "$NOTES" ] || stop preflight "CHANGELOG ${VER} 段为空"
   say "发行说明：${NOTES}（$(wc -l < "$NOTES" | tr -d ' ') 行）"
   if [ -n "$NOTES_CHECK" ]; then
@@ -335,11 +341,11 @@ HEAD=$(git rev-parse --short HEAD)
 if should preflight; then
   say "── preflight（HEAD ${HEAD}）"
   [ -z "$(git status --short)" ] || stop preflight "树不净：$(git status --short | wc -l | tr -d ' ') 件"
-  grep -q "<version>${VER}</version>" pom.xml || stop preflight "根 pom 版本不是 ${VER}（先更新版本号）"
+  grep -qF "<version>${VER}</version>" pom.xml || stop preflight "根 pom 版本不是 ${VER}（先更新版本号）"
   if [ "$TRIAL" = 1 ]; then
     say "试装：跳过 CHANGELOG 段、标签未有（v${VER} 上面已查，${TAG} 只在克隆里）、HEAD＝origin/main、CI、发行说明"
   else
-    grep -q "^## \[${VER}\]" CHANGELOG.md || stop preflight "CHANGELOG 无 ## [${VER}] 段"
+    changelog_has_version || stop preflight "CHANGELOG 无 ## [${VER}] 段"
     if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then stop preflight "本地已有标签 ${TAG}（不覆盖；上趟停在发包留下的，同一提交走 --from package，改过代码先 git tag -d ${TAG}）"; fi
     if [ "$SANDBOX" = 0 ] && git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then stop preflight "远端已有标签 ${TAG}"; fi
     if [ "$SANDBOX" = 0 ]; then
@@ -405,8 +411,8 @@ if should package; then
   bi_tree=$(printf '%s\n' "$BI" | sed -n 's/^tree=//p')
   buildinfo_ok "$bi_commit" "$bi_tree" "$TAG" "$REPO" || package_stop "BUILD-INFO commit 不是标签 ${TAG} 所指（commit 与 tree 皆不合）"
   echo "$BI" | grep -q '^dirty=false$' || package_stop "BUILD-INFO dirty≠false"
-  echo "$BI" | grep -q "^version=${VER}\$" || package_stop "BUILD-INFO version≠${VER}"
-  tar -tzf "$TB" | grep -q "^\./lib/novacore-${VER}\.jar\$" || package_stop "包里 lib 没有 novacore-${VER}.jar"
+  echo "$BI" | grep -qxF "version=${VER}" || package_stop "BUILD-INFO version≠${VER}"
+  tar -tzf "$TB" | grep -qxF "./lib/novacore-${VER}.jar" || package_stop "包里 lib 没有 novacore-${VER}.jar"
   if [ "$TRIAL" = 1 ]; then say "试装包 BUILD-INFO 原样："; printf '%s\n' "$BI" | while IFS= read -r l; do say "  ${l}"; done; fi
   say "包 $(stat -f %z "$TB") B sha $(shasum -a 256 "$TB" | cut -c1-16)… BUILD-INFO 对上"
 fi
@@ -434,15 +440,17 @@ elif should push-tag || [ "$FROM" = publish ]; then
   LOCAL_TAG_PENDING=0
 fi
 if should publish && [ "$TRIAL" = 0 ]; then
+  RELEASE_FLAG=--latest; RELEASE_KIND=Latest
+  case "$VER" in *-beta.*) RELEASE_FLAG=--prerelease; RELEASE_KIND=Pre-release;; esac
   say "── publish gh release ${TAG}"
   if [ "$SANDBOX" = 1 ]; then
-    say "〔沙盘〕gh release create ${TAG} ${TB} --title \"NovaBot ${VER}\" --notes-file ${NOTES} --latest"
+    say "〔沙盘〕gh release create ${TAG} ${TB} --title \"NovaBot ${VER}\" --notes-file ${NOTES} ${RELEASE_FLAG}"
   else
-    gh release create "$TAG" "$TB" --title "NovaBot ${VER}" --notes-file "$NOTES" --latest >/dev/null || stop publish "gh release create 失败"
+    gh release create "$TAG" "$TB" --title "NovaBot ${VER}" --notes-file "$NOTES" "$RELEASE_FLAG" >/dev/null || stop publish "gh release create 失败"
     DL="$SCRATCH/dl-${VER}.tar.gz"; rm -f "$DL"
     gh release download "$TAG" -p "NovaBot-${VER}.tar.gz" -O "$DL" || stop publish "回下载失败"
     [ "$(shasum -a 256 "$DL" | cut -d' ' -f1)" = "$SHA" ] || stop publish "回下 sha 不一致"
-    say "release ${TAG} 已建（Latest），回下 sha 一致"
+    say "release ${TAG} 已建（${RELEASE_KIND}），回下 sha 一致"
   fi
 fi
 if [ "$PUBLISH_ONLY" = 1 ]; then
@@ -462,6 +470,7 @@ cat > "$DEPLOY" <<EOS
 # probe 看现状；install 只装不换；plan 只读问路；first 首升；switch 换版；measure 量断档。
 set -Eeuo pipefail
 VER=${VER}; APP=${APP}; OLD_UNIT=${UNIT}; RUSER=${RUSER}
+$(declare -f release_name_is_version)
 TB=/root/NovaBot-${VER}.tar.gz; ISH=/root/install-${VER}.sh; STAGE=${STAGE}
 SW=/usr/local/sbin/novabot-switch-version; NEW=novabot@${VER}; RLOG=${RLOG}
 DROPIN=/etc/systemd/system/novabot@.service.d
@@ -546,7 +555,7 @@ do_first(){
     n=\$((n+1)); OLDVER=\$d
   done
   if [ "\$n" != 1 ]; then echo "🛑 releases/ 下除 \${VER} 外有 \${n} 个版本目录（期恰 1 个＝旧版）"; first_fail 4; fi
-  if ! printf '%s\n' "\$OLDVER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\$'; then echo "🛑 releases/ 下旧版目录名不是版本号：\${OLDVER}"; first_fail 4; fi
+  if ! release_name_is_version "\$OLDVER"; then echo "🛑 releases/ 下旧版目录名须如 5.9.3 或 6.0.0-beta.1（N 为正整数）：\${OLDVER}"; first_fail 4; fi
   if [ ! -f /etc/systemd/system/novabot@.service ]; then echo "🛑 装后没有 /etc/systemd/system/novabot@.service"; first_fail 4; fi
   echo "装后核过：releases/\${VER}/BUILD-INFO 在；旧版 \${OLDVER}（releases/ 下除 \${VER} 外恰此一份）；单元模板在"
   echo "上一版 \${OLDVER}"

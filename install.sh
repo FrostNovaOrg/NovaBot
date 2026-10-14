@@ -13,6 +13,8 @@
 #   ./install.sh --keep-syslog          系统日志（rsyslog）里照旧多记一份 NovaBot 的输出
 #
 # 安装目录若还是旧的扁平布局（程序在根上），先把旧程序搬进 releases/旧版本号/ 再装。
+# 版本号只认三段纯数字（5.9.3）或 -beta.N 测试版（6.0.0-beta.1，N 为正整数）。
+# 同号正式版新于 beta；beta 按序号比较新旧。
 #
 # 脚本会依次完成：检查并安装 Java 17、构建、安装到目标目录、生成配置、
 # 创建 systemd 服务、输出配置界面地址。
@@ -89,13 +91,9 @@ if [ "$(id -u)" -ne 0 ]; then
     SUDO="sudo"
 fi
 
-# 目录名要像 5.7.9：至少两段数字，中间用点连。别的名字留在 releases/ 里。
+# 目录名只认正式版或 beta 版。别的名字留在 releases/ 里。
 release_name_is_version() {
-    case "$1" in
-        *[!0-9.]*|.*|*.|*..*) return 1 ;;
-        *.*) return 0 ;;
-        *) return 1 ;;
-    esac
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[1-9][0-9]*)?$ ]]
 }
 
 # 根上 NovaBot.jar 里的 build.version。没有 unzip、不是 jar、或读不到时打印空。
@@ -166,7 +164,7 @@ if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; t
         die "取不到旧版本号，这一次没有改安装目录里的文件。
      根上是旧的扁平布局。本脚本要先把旧程序搬进 releases/旧版本号/ 再装，
      但没能从 NovaBot.jar 里的 build.version（需要 unzip），
-     也没能从恰好一个 lib/novacore-版本.jar 读出能当目录名的版本号。
+     也没能从恰好一个 lib/novacore-版本.jar 读出版本号（须如 5.9.3 或 6.0.0-beta.1，N 为正整数）。
      请确认这是 NovaBot 的安装目录；若程序包不完整，请自行把旧程序放进 releases/旧版本号/ 后再运行。"
     fi
 fi
@@ -395,31 +393,18 @@ if [ ! -f "$SOURCE_DIR/NovaBot.jar" ]; then
     die "未找到构建产物 NovaBot.jar"
 fi
 
-# $1 比 $2 新才返回 0。按点切开比数字：5.7.10 比 5.7.9 新，不能按字母序。
+# $1 比 $2 新才返回 0。先比三段数字，再比 beta；同号正式版新于 beta。
 version_newer() {
+    release_name_is_version "$1" && release_name_is_version "$2" || return 1
     local IFS=.
     local -a left right
-    local i n x y
-    read -r -a left <<< "$1"
-    read -r -a right <<< "$2"
-    n=${#left[@]}
-    if [ "${#right[@]}" -gt "$n" ]; then
-        n=${#right[@]}
-    fi
+    local i x y
+    read -r -a left <<< "${1%%-beta.*}"
+    read -r -a right <<< "${2%%-beta.*}"
     i=0
-    while [ "$i" -lt "$n" ]; do
-        x=0
-        y=0
-        if [ "${left[$i]+set}" = set ]; then
-            x=${left[$i]}
-        fi
-        if [ "${right[$i]+set}" = set ]; then
-            y=${right[$i]}
-        fi
-        x=${x%%[!0-9]*}
-        y=${y%%[!0-9]*}
-        x=${x:-0}
-        y=${y:-0}
+    while [ "$i" -lt 3 ]; do
+        x=${left[$i]}
+        y=${right[$i]}
         if [ "$x" -gt "$y" ]; then
             return 0
         fi
@@ -428,7 +413,12 @@ version_newer() {
         fi
         i=$((i + 1))
     done
-    return 1
+    case "$1:$2" in
+        *-beta.*:*-beta.*) [ "${1##*-beta.}" -gt "${2##*-beta.}" ] ;;
+        *-beta.*:*) return 1 ;;
+        *:*-beta.*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # 这一版的实例是不是正在跑。没有 systemctl 时无从确认，不当作正在跑。
@@ -461,9 +451,7 @@ VERSION="${VERSION//$'\r'/}"
 if [ -z "$VERSION" ]; then
     die "包里的 BUILD-INFO 没有版本号，不能安装"
 fi
-case "$VERSION" in
-    .*|-*|*[!A-Za-z0-9._-]*) die "版本号「${VERSION}」不能当作目录名" ;;
-esac
+release_name_is_version "$VERSION" || die "版本号须三段纯数字如 5.9.3 或 beta 如 6.0.0-beta.1（N 为正整数），当前为「${VERSION}」"
 
 # 要装的这一版已经在，并且正在跑。换掉它等于换掉正在用的程序。
 if [ -d "$INSTALL_DIR/releases/$VERSION" ] && instance_running "$VERSION"; then

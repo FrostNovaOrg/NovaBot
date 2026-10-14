@@ -1340,7 +1340,7 @@ public class ConfigUiController {
         if (label == null || label.isBlank()) {
             result.put("success", false);
             // 没有标签就无法定向吊销，只能一次全撤——那就退回了复用控制台令牌时的粒度
-            result.put("message", "请填写这把口令签给谁，否则日后无法单独吊销它");
+            result.put("message", "请填写令牌名称，否则日后无法单独吊销该令牌");
             result.put("reason", "missing_label");
             return result;
         }
@@ -1349,7 +1349,7 @@ public class ConfigUiController {
             String token = eventStreamTokens.issue(label.trim());
             result.put("success", true);
             result.put("token", token);
-            result.put("message", "这是这把口令唯一一次显示，请立即复制保存；关闭后无法再次查看");
+            result.put("message", "这是该令牌唯一一次显示，请立即复制保存；关闭后无法再次查看");
             return result;
         } catch (UncheckedIOException e) {
             log.error("配置界面签发只读口令失败", e);
@@ -1376,7 +1376,7 @@ public class ConfigUiController {
             result.put("success", found);
             result.put("message", found
                     ? "已吊销。⚠️ 已经建立的连接不会自动断开，请确认对方已掉线"
-                    : "没有找到这把仍然有效的口令（可能已经撤过了）");
+                    : "没有找到该有效令牌（可能已被吊销）");
             // not_found 多半是清单过期（别处已经撤过），界面据此重取；写盘失败则不能重取——
             // 盘上还是旧账，刷新只会把同一份旧账再画一遍。两者原先只靠文案区分，而文案是会改的
             if (!found) {

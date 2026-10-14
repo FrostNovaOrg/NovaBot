@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,7 +32,7 @@ class LiveSessionAnalyticsTest {
 
     @BeforeEach
     void setUp() {
-        analytics = new LiveSessionAnalytics(SHANGHAI);
+        analytics = new LiveSessionAnalytics();
     }
 
     @Test
@@ -72,15 +73,15 @@ class LiveSessionAnalyticsTest {
     }
 
     @Test
-    @DisplayName("按本地时区分周，凌晨开播的那场不应被推到上一周")
-    void bucketsByLocalZoneNotUtc() {
-        // 周一 00:30（东八区）在 UTC 是上周日 16:30。照 UTC 分周会把它算进上一周
+    @DisplayName("按东八区统计日分周，周一凌晨开播仍属于上一周")
+    void bucketsByShanghaiStatisticsDay() {
+        // 东八区周一 00:30 还在周日的统计日，整场归上一周
         List<LiveSessionAnalytics.Bucket> buckets = analytics.aggregate(
                 List.of(session("2026-08-10T00:30", 3600, 10, 1)),
                 LiveSessionAnalytics.Period.WEEK, METRICS);
 
         assertEquals(1, buckets.size());
-        assertEquals("2026-08-10 ~ 08-16", buckets.get(0).label());
+        assertEquals("2026-08-03 ~ 08-09", buckets.get(0).label());
     }
 
     @Test
@@ -186,14 +187,32 @@ class LiveSessionAnalyticsTest {
     }
 
     @Test
-    @DisplayName("周期起止时刻应是本地零点，且左闭右开")
-    void bucketRangeIsLocalMidnight() {
+    @DisplayName("周期起止时刻应是东八区早上六点，且左闭右开")
+    void bucketRangeIsShanghaiSixOClock() {
         LiveSessionAnalytics.Bucket bucket = analytics.aggregate(
                 List.of(session("2026-08-05T20:00", 60, 1, 1)),
                 LiveSessionAnalytics.Period.WEEK, METRICS).get(0);
 
-        assertEquals(millis("2026-08-03T00:00"), bucket.start());
-        assertEquals(millis("2026-08-10T00:00"), bucket.end());
+        assertEquals(millis("2026-08-03T06:00"), bucket.start());
+        assertEquals(millis("2026-08-10T06:00"), bucket.end());
+    }
+
+    @Test
+    @DisplayName("周一与月初凌晨开播归上一周期，周月边界均为东八区六点")
+    void earlyMorningUsesPreviousPeriodAndSixOClockBounds() {
+        LiveSessionAnalytics.Bucket week = analytics.aggregate(
+                List.of(session("2026-08-10T02:00", 3600, 10, 1)),
+                LiveSessionAnalytics.Period.WEEK, METRICS).get(0);
+        LiveSessionAnalytics.Bucket month = analytics.aggregate(
+                List.of(session("2026-11-01T03:00", 3600, 10, 1)),
+                LiveSessionAnalytics.Period.MONTH, METRICS).get(0);
+        assertAll(
+                () -> assertEquals("2026-08-03 ~ 08-09", week.label()),
+                () -> assertEquals(millis("2026-08-03T06:00"), week.start()),
+                () -> assertEquals(millis("2026-08-10T06:00"), week.end()),
+                () -> assertEquals("2026-10", month.label()),
+                () -> assertEquals(millis("2026-10-01T06:00"), month.start()),
+                () -> assertEquals(millis("2026-11-01T06:00"), month.end()));
     }
 
     private LiveSession session(String localDateTime, long durationSeconds, double danmu, double gift) {

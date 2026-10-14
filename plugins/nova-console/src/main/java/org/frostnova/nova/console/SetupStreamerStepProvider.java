@@ -24,7 +24,7 @@ public class SetupStreamerStepProvider implements ConsolePageProvider {
 
     @Override
     public String displayName() {
-        return "第一位主播，推到哪";
+        return "添加主播与推送目标";
     }
 
     @Override

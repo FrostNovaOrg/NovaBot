@@ -26,7 +26,7 @@ import {detailHash} from './streamers-model.js';
  *
  * 不是「不填也能过」：跳过要先过一段后果确认，见 {@link skip}。
  */
-export const skippable = '先不加主播';
+export const skippable = '暂不添加主播';
 
 /**
  * 这一步此刻手里的东西
@@ -63,11 +63,11 @@ function note(kind, text) {
  * @param reason 没取到的原因
  */
 function platformsFailedText(reason) {
-  return '直播平台清单没取到：' + reason + '。刷新页面再试，或者点「先不加主播」先跳过。';
+  return '直播平台列表获取失败：' + reason + '。请刷新页面重试，或点击「暂不添加主播」跳过此步骤。';
 }
 
 function report(box, res) {
-  box.textContent = res.message || (res.success ? '好了' : '没能办成');
+  box.textContent = res.message || (res.success ? '操作成功' : '操作失败');
   box.className = 'su-r ' + (res.success ? 'ok' : 'err');
 }
 
@@ -123,10 +123,10 @@ export function render(host, ctx) {
   result = el('div', 'su-r');
 
   const head = el('div', 'su-h');
-  head.textContent = '第一位主播，推到哪';
+  head.textContent = '添加主播与推送目标';
   host.appendChild(head);
   const desc = el('div', 'su-d');
-  desc.textContent = '填主播的 ' + STREAMER_INPUT_HINT + '。';
+  desc.textContent = '请输入主播的 ' + STREAMER_INPUT_HINT + '。';
   host.appendChild(desc);
 
   // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
@@ -138,12 +138,12 @@ export function render(host, ctx) {
     // 回话那块跟着画出来：清单没到时「下一步」拦人，理由要写在这里
     host.appendChild(store.platformsError
       ? note('warn', platformsFailedText(store.platformsError))
-      : note('', '正在载入直播平台清单…'));
+      : note('', '正在加载直播平台列表…'));
     host.appendChild(result);
     return;
   }
   if (!store.platforms.length) {
-    host.appendChild(note('warn', '没有装任何直播平台插件，加不了主播。'));
+    host.appendChild(note('warn', '未安装任何直播平台插件，无法添加主播。'));
     return;
   }
   const known = store.platforms;
@@ -175,7 +175,7 @@ export function render(host, ctx) {
   const look = el('button', 'ghost');
   look.type = 'button';
   look.id = 'setup-lookup';
-  look.textContent = '找一下';
+  look.textContent = '查询';
   look.addEventListener('click', async () => {
     const value = input.value.trim();
     if (!value) {
@@ -231,7 +231,7 @@ function paintFound(host) {
 
   const card = el('div', 'su-card');
   const who = el('div', 'su-nm');
-  who.textContent = '找到了：' + draft.streamer.uname;
+  who.textContent = '查询结果：' + draft.streamer.uname;
   card.appendChild(who);
 
   // 粉丝数是这张小卡上最容易发现「认错人」的一项：uid 打错一位仍可能查到一位真实存在的人，
@@ -256,12 +256,12 @@ function paintFound(host) {
 function targetPicker() {
   const box = el('div', 'su-pick');
   const title = el('div', 'su-d');
-  title.textContent = '推到哪（可多选）';
+  title.textContent = '推送目标（可多选）';
   box.appendChild(title);
 
   if (!options.length) {
-    box.appendChild(note('warn', '暂时取不到群与好友名单：先把机器人连上（第 2 步），'
-      + '或者把它拉进一个群、加个好友，再回来选。'));
+    box.appendChild(note('warn', '暂时无法获取群组与好友列表：请先在第 2 步连接机器人，'
+      + '或将机器人加入群组、添加好友后再返回选择。'));
     return box;
   }
 
@@ -280,14 +280,14 @@ function targetPicker() {
     label.appendChild(check);
 
     const text = el('span');
-    text.textContent = item.text + (item.configured ? ' · 已配推送' : '');
+    text.textContent = item.text + (item.configured ? ' · 已配置推送' : '');
     label.appendChild(text);
     list.appendChild(label);
   });
   box.appendChild(list);
 
-  box.appendChild(note('', '开播、下播、下播报告、动态、下播打赏播报这几种通知默认全开、用默认模板，'
-    + '之后在「推送」页里细调。'));
+  box.appendChild(note('', '开播、下播、下播报告、动态与下播打赏播报通知默认全部开启并使用默认模板，'
+    + '之后可在「推送」页中调整。'));
   return box;
 }
 
@@ -313,7 +313,7 @@ export async function next(ctx) {
     // 当没装的话装着插件的人会被白白放去配下一步。拦下并说清在等什么
     //（取失败时说「没取到、可以怎么办」，与画出来的那一句同一句）
     stop(store.platformsError ? platformsFailedText(store.platformsError)
-      : '直播平台清单还在载入，稍等一下再试');
+      : '直播平台列表仍在加载，请稍后重试');
     return false;
   }
   if (!store.platforms.length) {
@@ -321,11 +321,11 @@ export async function next(ctx) {
     return true;
   }
   if (!draft.streamer) {
-    stop('先填 ' + STREAMER_INPUT_HINT + ' 并点「找一下」；确实不想现在加的话，点「先不加主播」');
+    stop('请先输入 ' + STREAMER_INPUT_HINT + ' 并点击「查询」；如暂不添加，请点击「暂不添加主播」');
     return false;
   }
   if (!draft.targets.length) {
-    stop('至少选一个群或一位好友，否则这位主播的开播通知没有地方可去');
+    stop('请至少选择一个群或一位好友，否则该主播的开播通知将无处发送');
     return false;
   }
   return saveStreamer();
@@ -340,13 +340,17 @@ function stop(reason) {
 
 /**
  * 「先不加主播」。<b>要过一次确认</b>：不加主播的话这台 NovaBot 起来什么都不做，
- * 而一路点下去的人不会意识到这一点
+ * 而一路点下去的人不会意识到这一点。
+ * 已经有主播的人重走引导时直接跳过、不弹：跳过这一步不停用也不删除已有的主播，
+ * 那句「不会采集、不会推送」对他不成立
+ * @param ctx {status, login, api}
  * @return {Promise<boolean>} 真才跳过
  */
-export async function skip() {
-  return ask({title: '确定先不加吗？',
-    body: '不加主播的话，这台 NovaBot 起来什么都不做——不采集，也不推送。'
-      + '之后可以在「推送」页里加。'});
+export async function skip(ctx) {
+  if ((((ctx || {}).status || {}).users || []).length > 0) return true;
+  return ask({title: '确定暂不添加主播？',
+    body: '不添加主播时，NovaBot 启动后不会采集任何直播数据，也不会推送任何通知。'
+      + '之后可在「推送」页中添加。'});
 }
 
 /**
@@ -361,7 +365,7 @@ export async function skip() {
 export function doneLink(ctx) {
   const users = (((ctx || {}).status || {}).users || []).length;
   if (!draft.streamer || !users) return null;
-  return {text: '去主播页看看', href: detailHash(draft.streamer.platform, draft.streamer.uid)};
+  return {text: '前往主播页', href: detailHash(draft.streamer.platform, draft.streamer.uid)};
 }
 
 /**
@@ -401,12 +405,12 @@ async function saveStreamer() {
     });
     if (!res.success) {
       setPushEntries(before);
-      say(res.message || '没能存下这位主播', 'err');
+      say(res.message || '主播配置未能保存', 'err');
       return false;
     }
   } catch (e) {
     setPushEntries(before);
-    say('没能存下这位主播：' + e.message, 'err');
+    say('主播配置未能保存：' + e.message, 'err');
     return false;
   }
 

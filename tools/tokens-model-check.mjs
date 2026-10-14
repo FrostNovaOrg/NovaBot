@@ -35,10 +35,10 @@ eq(explain(429, {reason: 'locked_out', retryAfterSeconds: 45}).includes('45 秒'
 eq(explain(429, {reason: 'locked_out', retryAfterSeconds: 60}).includes('1 分钟'), true, '满 60 秒改写分钟');
 eq(explain(429, {reason: 'locked_out', retryAfterSeconds: '  90  '}).includes('2 分钟'), true, '秒数字符带空白仍按分钟进位');
 eq(explain(429, {reason: 'locked_out', retryAfterSeconds: ''}).includes('1 秒'), true, '秒数空串视同 0 再抬到 1 秒');
-eq(explain(429, {reason: 'locked_out'}).includes('锁定期内即使输对也会被拒'), true, '锁定文案必须把「输对也会被拒」说出口');
+eq(explain(429, {reason: 'locked_out'}).includes('锁定期间即使输入正确也会被拒绝'), true, '锁定文案必须把「输对也会被拒」说出口');
 
-eq(explain(503, {reason: 'busy'}).includes('等几秒再点一次'), true, '忙');
-eq(explain(400, {reason: 'auth_disabled'}).includes('没有启用密码'), true, '没开口令');
+eq(explain(503, {reason: 'busy'}).includes('请等待几秒后重试'), true, '忙');
+eq(explain(400, {reason: 'auth_disabled'}).includes('尚未设置控制台密码'), true, '没开口令');
 eq(explain(500, {reason: 'write_failed', message: '磁盘满了'}), '磁盘满了', '写盘失败带人话原样透出');
 eq(explain(500, {reason: 'write_failed'}), '签发失败（HTTP 500）', '写盘失败没人话就带状态码');
 eq(explain(418, {reason: 'no_such', message: '后端那句'}), '后端那句', '没认出的 reason 带了人话就用它');

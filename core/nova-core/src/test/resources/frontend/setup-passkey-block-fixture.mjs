@@ -97,10 +97,10 @@ function element(tag) {
   };
 }
 
-const LOCKED_NOTE = '登记过之后';
-const UNLOCKED_NOTE = '先上锁';
+const LOCKED_NOTE = '登记后，登录时';
+const UNLOCKED_NOTE = '请先设置控制台密码';
 const REASON = '通行密钥只能绑定域名，而现在是用 IP 地址（192.168.1.10）访问的。请改用一个域名访问控制台后再试。';
-const FALLBACK = '这个地址用不了通行密钥。';
+const FALLBACK = '当前访问地址不支持通行密钥。';
 const MARKED_REASON = '通行密钥只能绑定域名，而现在是用 <b>IP 地址</b> 访问的。';
 
 /**
@@ -162,7 +162,7 @@ async function cardUnsupportedText() {
 let q1 = 'missing';
 try {
   const got = await render(true, false, {usable: true, passkeys: []});
-  q1 = {disabled: got.disabled, told: got.note.includes('用不了通行密钥')};
+  q1 = {disabled: got.disabled, told: got.note.includes('不支持通行密钥')};
 } catch (e) {
   q1 = 'error:' + e.message;
 }

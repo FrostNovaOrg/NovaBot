@@ -48,11 +48,11 @@
 <body>
 <div class="box">
   <h1 id="title">正在进入 NapCat…</h1>
-  <p id="msg">正在替你换取一次登录凭据，稍等一下。</p>
+  <p id="msg">正在获取登录凭据，请稍候。</p>
   <div class="steps" id="steps"></div>
 </div>
 <iframe id="frame" title="NapCat WebUI"></iframe>
-<div id="banner"><button type="button" id="banner-close">知道了</button><span id="banner-text"></span></div>
+<div id="banner"><button type="button" id="banner-close">关闭提示</button><span id="banner-text"></span></div>
 
 <script src="{{nova-prefix}}/config/napcat-bootstrap/napcat-resume.js"></script>
 
@@ -76,7 +76,7 @@
 
   // 提示里可能带服务端回的原话，只按文字放，不拼进标记
   function fail(text) {
-    $('#title').textContent = '没能替你登录 NapCat';
+    $('#title').textContent = 'NapCat 自动登录失败';
     const msg = $('#msg');
     msg.className = 'err';
     msg.textContent = text;
@@ -128,8 +128,8 @@
         // 停手之后不清 localStorage、不跳转、不弹窗挡住内层：
         // 使用者看到的仍是 NapCat 自己的登录页，照样能手动登录（边界②：回落到现状）
         const text = reason === 'throttled'
-          ? '自动续登被本机的速率闸拦下了（短时间内换取太多次）。稍等一会儿刷新本页即可，也可以直接在下面手动登录。'
-          : '自动续登没能救回来，请在下面手动登录一次。若反复出现，检查 NovaBot 侧配的 NapCat token 与二次验证密钥是否仍与 NapCat 当前的一致。';
+          ? '自动续登已被本机的频率限制拦截（短时间内获取凭据次数过多）。请稍候刷新本页，或直接在下方手动登录。'
+          : '自动续登失败，请在下方手动登录。若反复出现，请检查 NovaBot 中配置的 NapCat Token 与二次验证密钥是否与 NapCat 当前的设置一致。';
         document.getElementById('banner-text').textContent = text;
         document.getElementById('banner').classList.add('show');
       }
@@ -146,13 +146,13 @@
       const state = await (await fetch(CONSOLE + '/api/auth/state')).json();
       csrf = state.csrfToken || '';
     } catch (e) {
-      fail('连不上 NovaBot 控制台。');
+      fail('无法连接 NovaBot 控制台。');
       return;
     }
 
-    step('① 取凭据');
+    step('① 获取凭据');
     let issued = await mint(csrf, false);
-    if (!issued.success) { fail(issued.message || '换取凭据失败。'); return; }
+    if (!issued.success) { fail(issued.message || '获取凭据失败。'); return; }
 
     localStorage.setItem(KEY, JSON.stringify(issued.credential));
 
@@ -160,20 +160,20 @@
     if (!await accepted(issued.credential)) {
       // 🔴 只重换一次，不循环。换不出来的原因几乎总是配置不对，
       //    而那类原因重试多少次都是同一个结果，只会把 NapCat 的登录限流打满
-      step('③ 凭据不管用，换一把（只换这一次）');
+      step('③ 凭据无效，重新获取（仅重试一次）');
       issued = await mint(csrf, true);
-      if (!issued.success) { fail(issued.message || '换取凭据失败。'); return; }
+      if (!issued.success) { fail(issued.message || '获取凭据失败。'); return; }
 
       localStorage.setItem(KEY, JSON.stringify(issued.credential));
       if (!await accepted(issued.credential)) {
         localStorage.removeItem(KEY);
-        fail('换了两把凭据 NapCat 都不认。多半是 NovaBot 侧配的 NapCat token 或二次验证密钥'
-          + '与 NapCat 当前的对不上——两边改过其中一边时会这样。');
+        fail('两次获取的凭据均未被 NapCat 接受。通常是 NovaBot 中配置的 NapCat Token 或二次验证密钥'
+          + '与 NapCat 当前的设置不一致，多发生在只修改了其中一侧之后。');
         return;
       }
     }
 
-    step('④ 进入');
+    step('④ 打开 NapCat');
     mount(csrf);
   })();
 </script>

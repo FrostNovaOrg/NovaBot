@@ -44,7 +44,7 @@ eq(lockText(0), '', '没锁定时不出文案');
 eq(lockText(45).includes('45 秒'), true, '不足一分钟按秒写');
 eq(lockText(120).includes('秒'), false, '整分钟不拖一个 0 秒');
 eq(lockText(125).includes('2 分 5 秒'), true, '零头分秒都写');
-eq(lockText(60).includes('输对'), true, '文案说明锁定期内输对也会被拒');
+eq(lockText(60).includes('输入正确也会被拒绝'), true, '文案说明锁定期内输对也会被拒');
 eq(lockText(7) === lockText(8), false, '不同剩余时长给出不同文案');
 
 // —— 档四：落点 ——
