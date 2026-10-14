@@ -65,7 +65,7 @@ export function renderIncomplete(entries) {
   }
 
   box.innerHTML = '<div class="notice"><b>推送配置尚未填写完整</b>，以下条目暂未生效，'
-    + '因此下面的树上看不到它们：<ul>'
+    + '因此不会显示在下方的树中：<ul>'
     + entries.map(e => '<li>' + esc(e.message) + '</li>').join('')
     + '</ul></div>';
 }
@@ -249,8 +249,8 @@ function revenueRow(host, ctx) {
   const summary = wanted !== undefined && wanted !== ctx.summary.revenue.visible
     ? (visible ? '显示金额' : '隐藏金额') + ' · 未保存' : ctx.summary.revenue.text;
   const body = row(host, ctx, '金额可见', summary,
-    '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
-    + '只去掉右侧的数字，仍然是在公开排消费。');
+    '金额榜整榜不显示，而不是只隐去数字：这几张榜的每一行本质上都是「某人花了多少钱」，'
+    + '只去掉右侧的数字，仍然是在公开排列消费。');
 
   const line = el('div', 'swrow');
   const label = el('label', 'switch');
@@ -265,9 +265,9 @@ function revenueRow(host, ctx) {
   line.appendChild(label);
 
   const text = el('div', 'swtxt');
-  text.innerHTML = '<b>直播收益等金额</b><p>关掉后，下播报告不显示收益、卡片改用人数与条数、'
-    + '礼物与醒目留言榜整榜不出；数据查询命令同样不再回金额。'
-    + (ctx.summary.revenue.explicit ? '' : '（当前是默认值：群聊隐藏、私聊显示）') + '</p>';
+  text.innerHTML = '<b>直播收益等金额</b><p>关闭后，下播报告不显示收益，卡片改用人数与条数，'
+    + '礼物与醒目留言榜整榜不显示；数据查询命令同样不再返回金额。'
+    + (ctx.summary.revenue.explicit ? '' : '（当前为默认值：群聊隐藏、私聊显示）') + '</p>';
   line.appendChild(text);
   body.appendChild(line);
 }
@@ -278,17 +278,17 @@ function revenueRow(host, ctx) {
 const QUIET_FALLBACK = {start: '23:00', end: '08:00'};
 
 const QUIET_MODES = [
-  {mode: 'follow', label: '跟全局', hint: '用设置页里那一项全局静音时段。没设过的会话都是这一档。'},
-  {mode: 'custom', label: '本会话自己的时段', hint: '这个会话按下面的起止静音，不看全局那一项。可跨零点。'},
-  {mode: 'off', label: '本会话不静音', hint: '全局在静音时，推往这个会话的照发。'},
+  {mode: 'follow', label: '使用全局设置', hint: '使用设置页中的全局静音时段。未单独设置过的会话均为此项。'},
+  {mode: 'custom', label: '本会话自定义时段', hint: '此会话按下方的起止时间静音，不受全局静音时段影响。可跨零点。'},
+  {mode: 'off', label: '本会话不静音', hint: '全局处于静音时，推往此会话的消息照常发送。'},
 ];
 
 function quietRow(host, ctx) {
   const summary = ctx.summary.quiet;
   const body = row(host, ctx, '静音时段', summary.text,
-    '静音期间推往这个会话的开播、下播、报告、动态与命令回复直接丢弃，不攒着补发，'
-    + '时间线上记「静音丢弃」。起止不能填成一样，填成一样保存时会被拒；'
-    + '要全天照发选「本会话不静音」。设置页的全局推送开关关着时一律不发；告警不受静音影响。');
+    '静音期间推往此会话的开播、下播、报告、动态与命令回复将直接丢弃，不会补发，'
+    + '时间线上记为「静音丢弃」。开始与结束时间不能相同，相同时保存会被拒绝；'
+    + '如需全天照常发送，请选择「本会话不静音」。设置页的全局推送开关关闭时一律不发送；告警不受静音影响。');
 
   const saved = {mode: summary.mode, start: summary.start, end: summary.end};
   const wanted = quietDraft(ctx.target) || saved;
@@ -349,24 +349,24 @@ function quietRow(host, ctx) {
 function commandRow(host, ctx) {
   const group = Number(ctx.target.type) === 1;
   const summary = ctx.summary.command;
-  const body = row(host, ctx, '命令', summary.text + (group ? ' · 群里 @ 机器人再发' : ' · 私聊直接发'),
+  const body = row(host, ctx, '命令', summary.text + (group ? ' · 群聊中需先 @机器人' : ' · 私聊直接发送'),
     group
-      ? '群成员要先 @ 机器人再发命令，例如「@机器人 直播报告」。@ 了但不是命令，机器人回菜单；'
-        + '命令被本群关掉了，回一句「本群已关闭该命令」。没 @ 的消息一律不理，同一群 3 秒一次。'
-      : '私聊直接发命令名，不是命令就回菜单。没配推送的会话一律不理。');
+      ? '群成员需先 @机器人再发送命令，例如「@机器人 直播报告」。@机器人但内容不是命令时，机器人回复菜单；'
+        + '命令已被本群禁用时，回复「本群已关闭该命令」。未 @机器人的消息一律不处理，同一群每 3 秒最多响应一次。'
+      : '私聊直接发送命令名，不是命令时回复菜单。未配置推送的会话一律不响应。');
 
   if (summary.offNames.length) {
     const warn = el('div', 'note n-err');
     warn.appendChild(document.createTextNode(
-      '群主或群管理员在群里发「禁用命令」关掉了：' + summary.offNames.join('、')
-      + '。关掉后有人发它，机器人会回「本群已关闭该命令」。'));
+      '群主或群管理员在群里发送「禁用命令」禁用了：' + summary.offNames.join('、')
+      + '。禁用后有人发送这些命令，机器人会回复「本群已关闭该命令」。'));
     const fix = el('button', 'ghost');
     fix.type = 'button';
-    fix.textContent = '一键恢复';
+    fix.textContent = '全部恢复';
     fix.addEventListener('click', async () => {
-      if (!await ask({title: '一键恢复？',
-        body: '把「' + summary.offNames.join('、') + '」在 ' + ctx.target.num
-          + ' 恢复可用。群管理员之后仍可再关掉。'})) return;
+      if (!await ask({title: '全部恢复？',
+        body: '将「' + summary.offNames.join('、') + '」在 ' + ctx.target.num
+          + ' 恢复为可用。群管理员之后仍可再次禁用。'})) return;
       batchCommands(ctx, summary.restorable, false);
     });
     warn.appendChild(fix);
@@ -376,11 +376,11 @@ function commandRow(host, ctx) {
   if (summary.strayNames.length) {
     const stray = el('div', 'note');
     stray.appendChild(document.createTextNode(
-      '状态文件里还留着这几条的禁用记录，但现在没有这个命令（多为改过名或已删除），'
-      + '留着也不会生效：' + summary.strayNames.join('、') + '。'));
+      '状态文件中仍保留以下命令的禁用记录，但这些命令已不存在（多为已改名或已删除），'
+      + '保留也不会生效：' + summary.strayNames.join('、') + '。'));
     const clean = el('button', 'ghost');
     clean.type = 'button';
-    clean.textContent = '清掉记录';
+    clean.textContent = '清除记录';
     clean.addEventListener('click', () => batchCommands(ctx, summary.strayNames, false));
     stray.appendChild(clean);
     body.appendChild(stray);
@@ -388,8 +388,8 @@ function commandRow(host, ctx) {
 
   if (!summary.menuKnown) {
     body.appendChild(el('div', 'note n-warn')).textContent =
-      '这个会话不在推送配置里，菜单口径取不到：下面这些行只按整台机器的能力标，'
-      + '不代表群里真会列出哪几条。';
+      '此会话不在推送配置中，无法获取菜单状态：以下各行仅按本机整体能力标注，'
+      + '不代表群里实际列出的命令。';
   }
 
   for (const item of ctx.groups) {
@@ -489,7 +489,7 @@ function commandLine(ctx, command) {
   }
   // 残留记录那句摆在文字这一列：挤进左边那个 38px 的开关位会被压成一竖排字，
   // 而这一列本来就是放这些旁注的地方
-  if (command.off) marks.push('文件里有残留记录，当前不生效');
+  if (command.off) marks.push('状态文件中有残留记录，当前不生效');
   if (command.hiddenReason) marks.push(command.hiddenReason);
   if (command.note) marks.push(command.note);
   text.innerHTML = '<b>' + esc(command.name) + '</b>'
@@ -547,12 +547,12 @@ function batchCommands(ctx, names, disabled) {
 function subscriptionRow(host, ctx) {
   const summary = ctx.summary.subscription;
   const body = row(host, ctx, '提醒订阅', summary.text,
-    '开播或发动态时会 @ 这些人。人退群后订阅仍会留着，@ 一个不在群里的号是无效的，可在此清理。'
-    + '改「谁会被 @」不在这一行——那一档配在通道的消息模板里。');
+    '开播或发布动态时会 @ 这些人。成员退群后订阅仍会保留，@ 不在群里的账号无效，可在此清理。'
+    + '「@ 谁」不在此处设置，而是在通道的消息模板中设置。');
 
   if (!summary.rows.length) {
     body.appendChild(el('p', 'hint')).textContent =
-      '还没有人订阅。群成员发送「@机器人 开播@我」即可订阅。';
+      '暂无订阅。群成员发送「@机器人 开播@我」即可订阅。';
     return;
   }
 
@@ -564,7 +564,7 @@ function subscriptionRow(host, ctx) {
 }
 
 function subscriptionDrawer(ctx) {
-  openDrawer('「@我」订阅名单', '群成员自己订阅的。人退群后订阅仍会留着，可在这里清理。', body => {
+  openDrawer('「@我」订阅名单', '由群成员自行订阅。成员退群后订阅仍会保留，可在此清理。', body => {
     for (const sub of ctx.summary.subscription.rows) {
       const clearPending = isClearPending(ctx.target, sub.streamerUid, sub.type);
       const box = el('div', 'dwsub');
@@ -574,7 +574,7 @@ function subscriptionDrawer(ctx) {
 
       const clear = el('button', 'ghost danger');
       clear.type = 'button';
-      clear.textContent = clearPending ? '撤回清空' : '清空';
+      clear.textContent = clearPending ? '撤销清空' : '清空';
       clear.addEventListener('click', () => {
         // 确认挪到保存那一步：这里只记「想要清空」，保存前再点一次即撤回
         setSubscriptionClearDraft(ctx.target, {
@@ -595,7 +595,7 @@ function subscriptionDrawer(ctx) {
         const pending = isUserPendingRemove(ctx.target, sub.streamerUid, sub.type, uid);
         const one = el('button', 'nv-pill');
         one.type = 'button';
-        one.title = pending && !clearPending ? '撤回' : '移除';
+        one.title = pending && !clearPending ? '撤销移除' : '移除';
         one.textContent = uid + ' ×';
         // 清空已进草稿时整份都要走，单人「移除」这会儿点了也跟着走
         one.disabled = clearPending;

@@ -36,14 +36,14 @@ public final class ExternalConfigurationFields {
         // 降级为只有本场数据，连回来自己恢复
         put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 地址",
-                "累计数据存储用的 Redis 地址，填了才有跨场次数据，留空则带「总」的查法提示不可用；只需本机可达，别暴露到公网，填完即时生效。");
+                "累计数据存储使用的 Redis 地址。填写后才有跨场次数据，留空时带「总」的查询不可用；只需本机可访问，请勿暴露到公网。修改后即时生效。");
         put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 6379, "累计数据 Redis · 端口", "Redis 端口，默认 6379。");
         put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 密码",
                 "Redis 密码，未设密码时留空。");
         put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                0, "累计数据 Redis · 库号", "Redis 库号，默认 0；与其他程序共用同一实例时可换个库避免键冲突。改完即时生效，不用重启。");
+                0, "累计数据 Redis · 数据库编号", "Redis 数据库编号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 novabot.core.mail.default-to，在界面上找得到；
@@ -56,10 +56,10 @@ public final class ExternalConfigurationFields {
                 "SMTP 端口，如 465（SSL）或 587（STARTTLS）。");
         put("spring.mail.username", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 账号",
-                "SMTP 登录账号，通常就是发件邮箱地址。");
+                "SMTP 登录账号，通常为发件邮箱地址。");
         put("spring.mail.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 密码／授权码",
-                "SMTP 密码或授权码；多数邮箱要的是「授权码」而不是登录密码。");
+                "SMTP 密码或授权码；多数邮箱需要填写「授权码」，而非登录密码。");
 
         // ---- 控制台自己怎么被端出来 ----
         // 监听地址是四个危险项之一，界面上得有它才谈得上围栏；此前它压根不在界面上，
@@ -67,9 +67,9 @@ public final class ExternalConfigurationFields {
         put("server.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 7827, "服务端口", "控制台与事件流共用的服务端口，默认 7827。");
         put("server.address", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                "127.0.0.1", "监听地址", "只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；"
-                        + "改成 0.0.0.0 会把控制台与推送接口暴露到网络，"
-                        + "此时务必配好反向代理、来源 IP 白名单与登录密码。");
+                "127.0.0.1", "监听地址", "服务监听的地址。默认 127.0.0.1 表示仅允许本机连接；"
+                        + "改为 0.0.0.0 会将控制台与推送接口暴露到网络，"
+                        + "此时务必配置反向代理、来源 IP 白名单与登录密码。");
     }
 
     /**
@@ -81,9 +81,9 @@ public final class ExternalConfigurationFields {
      */
     private static final Map<String, ConfigurationDangerResolver.Danger> DANGERS = Map.of(
             "server.address", new ConfigurationDangerResolver.Danger("0.0.0.0",
-                    "监听地址改成 0.0.0.0？",
-                    "会把控制台与推送接口暴露到网络上，任何能连到这台机器的人都够得着。"
-                            + "没有配好反向代理、来源 IP 白名单与登录密码就别开。"));
+                    "将监听地址改为 0.0.0.0？",
+                    "控制台与推送接口将暴露到网络，任何能连接到这台机器的人都可以访问。"
+                            + "配置好反向代理、来源 IP 白名单与登录密码之前，请勿修改。"));
 
     /**
      * 这几项的重要程度与生效时机

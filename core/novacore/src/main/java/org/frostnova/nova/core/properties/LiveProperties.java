@@ -24,7 +24,7 @@ public class LiveProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 保存到文件")
     @ConfigLevel(ConfigLevel.Level.COMMON)
-    @ConfigSummary(value = "关闭后本场直播数据不落盘，重启即丢。", details = false)
+    @ConfigSummary(value = "关闭后本场直播数据不写入磁盘，程序重启后丢失。", details = false)
     private boolean saveLiveData = true;
 
     /**
@@ -33,7 +33,7 @@ public class LiveProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 文件路径")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
-    @ConfigSummary(value = "同一目录里还存着运行状态、场次归档与时间线。", details = false)
+    @ConfigSummary(value = "该文件所在目录还存放运行状态、场次归档与事件时间线。", details = false)
     @ConfigFormat(ConfigFormat.Format.PATH)
     private String liveDataPath = "data.json";
 
@@ -41,16 +41,16 @@ public class LiveProperties {
      * 自动保存直播数据的间隔，单位：秒，须大于 0；订阅等运行状态也按这个间隔存盘。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    @ConfigLabel("直播数据 · 存盘间隔")
+    @ConfigLabel("直播数据 · 保存间隔")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
-    @ConfigSummary(value = "须大于 0；订阅等运行状态也按这个间隔存盘。", details = false)
+    @ConfigSummary(value = "须大于 0；订阅等运行状态也按此间隔保存。", details = false)
     private int autoSaveLiveDataInterval = 300;
 
     /**
      * 多长时间内的下播又开播算同一场直播，单位：秒；这样的重连不会重置直播数据。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    @ConfigLabel("短暂下播视为同场")
+    @ConfigLabel("短暂下播视为同一场")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigSummary(value = "时限内重新开播视为同一场，数据继续累计。", details = false)
     private int reconnectInterval = 300;

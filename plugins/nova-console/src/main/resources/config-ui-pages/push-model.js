@@ -463,7 +463,7 @@ export function commandGroups(commands, session, totalDataAvailable) {
   const notes = ((session || {}).menuNotes) || {};
 
   for (const command of commands || []) {
-    const category = command.category || '其它';
+    const category = command.category || '其他';
     if (!index.has(category)) {
       index.set(category, {category, commands: []});
       groups.push(index.get(category));
@@ -533,7 +533,7 @@ function usageRows(command, off, totalDataAvailable) {
  * @return 理由
  */
 function machineReason(totalDataAvailable) {
-  return totalDataAvailable === false ? '累计数据没开' : '这台机器暂时用不上';
+  return totalDataAvailable === false ? '累计数据未启用' : '当前环境暂不支持';
 }
 
 /**
@@ -572,9 +572,9 @@ function menuHiddenOf(session) {
 function hiddenReason(command, hidden, totalDataAvailable) {
   if (!hidden.has(command.name)) return '';
   if (command.available === false) {
-    return machineReason(totalDataAvailable) + '，菜单里不显示';
+    return machineReason(totalDataAvailable) + '，菜单中不显示';
   }
-  return '在这个会话里不起作用，菜单里不显示';
+  return '在此会话中不适用，菜单中不显示';
 }
 
 /**
@@ -624,19 +624,19 @@ export function commandSummary(commands, session, totalDataAvailable) {
 
   const parts = [];
   parts.push(offNames.length
-    ? (listed.length - fullyOff) + ' 条可用 · ' + offNames.length + ' 条被群管理员关了（'
+    ? (listed.length - fullyOff) + ' 条可用 · ' + offNames.length + ' 条已被群管理员禁用（'
       + offNames.join('、') + '）'
     : listed.length + ' 条全部可用');
   if (hiddenByMachine.length) {
     parts.push(hiddenByMachine.length + ' 条'
-      + (totalDataAvailable === false ? '因累计数据没开' : '因这台机器用不上') + '隐藏');
+      + (totalDataAvailable === false ? '因累计数据未启用而' : '因当前环境不支持而') + '隐藏');
   }
   if (hiddenBySession.length) {
-    parts.push(hiddenBySession.length + ' 条在这个会话里不列');
+    parts.push(hiddenBySession.length + ' 条在此会话中不列出');
   }
 
   if (!menuKnown(session)) {
-    parts.push('这个会话不在推送配置里，菜单口径取不到');
+    parts.push('此会话不在推送配置中，无法获取菜单状态');
   }
 
   return {
@@ -690,7 +690,7 @@ export function quietSummary(session, global) {
   } else if (mode === 'custom') {
     text = '本会话 ' + start + '–' + end;
   } else {
-    text = '跟全局' + (g.start && g.end ? '（' + g.start + '–' + g.end + '）' : '（设置页没设静音时段）');
+    text = '使用全局设置' + (g.start && g.end ? '（' + g.start + '–' + g.end + '）' : '（设置页未设置静音时段）');
   }
   if (active) text += ' · 静音中';
   return {mode, start, end, active, text};
@@ -755,7 +755,7 @@ export function savedRevenueVisible(session, target) {
 export function previewRevenueCaption(session, target, revenueVisible) {
   const visible = revenueVisible === undefined
     ? savedRevenueVisible(session, target) : !!revenueVisible;
-  return '按本群金额可见画：' + (visible ? '显示' : '隐藏');
+  return '按本群金额可见设置预览：' + (visible ? '显示' : '隐藏');
 }
 
 /**
@@ -784,7 +784,7 @@ export function subscriptionSummary(subscriptions, session) {
 
   const text = byType.size
     ? [...byType].map(([name, n]) => name + ' ' + n + ' 人').join(' · ')
-    : '还没有人订阅';
+    : '暂无订阅';
   return {rows, text};
 }
 
@@ -802,7 +802,7 @@ export function subscriptionSummary(subscriptions, session) {
  */
 export function atAllStatus(quota, session, target, directory) {
   if (Number(target.type) !== 1) {
-    return {applicable: false, text: '私聊没有 @全体成员。', admin: null};
+    return {applicable: false, text: '私聊不支持 @全体成员。', admin: null};
   }
 
   const platform = (session || {}).platform || target.platform;
@@ -814,10 +814,10 @@ export function atAllStatus(quota, session, target, directory) {
   const parts = [];
   // limited 为假＝没有上限，此时不画分母：画一个 0 的分母，看的人会以为一次都不许用
   parts.push(seat ? '今日本群已用 ' + seat.used + (seat.limited ? '/' + seat.limit : '（不限）')
-    : '今日本群用量取不到');
+    : '今日本群用量无法获取');
   parts.push(bot ? '账号 ' + bot.used + (bot.limited ? '/' + bot.limit : '（不限）')
-    : '账号用量取不到');
-  parts.push(known ? '机器人角色：' + (known.admin ? '管理员' : '普通成员') : '机器人角色：名单取不到');
+    : '账号用量无法获取');
+  parts.push(known ? '机器人角色：' + (known.admin ? '管理员' : '普通成员') : '机器人角色：无法获取名单');
 
   return {
     applicable: true,
@@ -827,6 +827,6 @@ export function atAllStatus(quota, session, target, directory) {
     // @全体成员 不绕过 QQ 权限：不是管理员时它会被整段摘掉，正文照发。
     // 这句话得在这里说，否则「配了却没 @ 到人」这件事没有任何现象
     warning: known && !known.admin
-      ? '机器人不是本群管理员，@全体成员 会被自动摘掉，正文照发。' : '',
+      ? '机器人不是本群管理员，@全体成员 将被自动省略，正文照常发送。' : '',
   };
 }

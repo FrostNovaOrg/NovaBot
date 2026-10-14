@@ -183,7 +183,7 @@ public class PushController {
                 className == null ? Optional.empty() : handlerService.getHandler(className);
         if (handler.isEmpty()) {
             result.put("success", false);
-            result.put("message", "没有这样一个推送处理器: " + className);
+            result.put("message", "未找到推送处理器: " + className);
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -196,7 +196,7 @@ public class PushController {
         }
 
         result.put("success", true);
-        result.put("message", "已保存，用默认模板的通道跟着一起变");
+        result.put("message", "已保存，使用默认模板的通道将同步更新");
         log.info("配置界面已更新默认模板: {}", className);
         return ResponseEntity.ok(result);
     }

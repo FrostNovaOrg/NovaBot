@@ -22,7 +22,7 @@ public class DatasourceProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("数据源文件 · 路径")
-    @ConfigSummary(value = "推送配置文件的位置；控制台读写的也是它。", details = false)
+    @ConfigSummary(value = "推送配置文件的位置，控制台读写的也是该文件。", details = false)
     @ConfigFormat(ConfigFormat.Format.PATH)
     private String jsonPath = "datasource.json";
 
@@ -31,6 +31,6 @@ public class DatasourceProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("数据源文件 · 自动重载")
-    @ConfigSummary(value = "关闭后推送配置的改动（含控制台保存）要重启才生效。", details = false)
+    @ConfigSummary(value = "关闭后，推送配置的修改（包括在控制台保存的修改）需重启程序才能生效。", details = false)
     private boolean jsonAutoReload = true;
 }

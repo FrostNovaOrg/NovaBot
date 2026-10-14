@@ -186,7 +186,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
                 "{title}", "直播标题",
                 "{cover}", "直播间封面",
                 "{url}", "直播间链接",
-                "{at}", "@订阅的人",
+                "{at}", "@订阅者",
                 "{next}", "另起一条消息",
                 "{at=all}", "@全体成员");
     }

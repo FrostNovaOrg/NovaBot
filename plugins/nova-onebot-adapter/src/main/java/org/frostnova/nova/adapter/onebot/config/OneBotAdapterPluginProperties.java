@@ -67,7 +67,7 @@ public class OneBotAdapterPluginProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("推送接口 · 安全校验")
-        @ConfigSummary("关闭后取消推送接口的安全校验。")
+        @ConfigSummary("关闭后推送接口不再校验来源 IP、令牌与请求频率。")
         private boolean enabled = true;
 
         /**
@@ -100,8 +100,8 @@ public class OneBotAdapterPluginProperties {
          */
         // 默认不拦是为了既有部署升级后仍能启动。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("推送接口 · 弱防护拒绝启动")
-        @ConfigSummary("只查推送接口令牌：过弱就拒绝启动。")
+        @ConfigLabel("推送接口 · 令牌过弱时拒绝启动")
+        @ConfigSummary("仅检查推送接口令牌，令牌过弱时程序拒绝启动。")
         private boolean failOnWeakConfig = false;
 
         @Getter
@@ -210,7 +210,7 @@ public class OneBotAdapterPluginProperties {
         // 内联 base64，转发一慢就没有工作线程去读它，最终卡满超时被丢弃。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("OneBot 探测 · 慢调用阈值")
-        @ConfigSummary("0 或负数关闭慢调用判定。")
+        @ConfigSummary("0 或负数表示不判定慢调用。")
         private int slowThresholdMillis = 2000;
 
         // 告警收敛间隔原本在此按通道各配一份，现已统一由 novabot.core.alert.convergence-interval
@@ -229,8 +229,8 @@ public class OneBotAdapterPluginProperties {
          */
         // 按「多久没人发言」判断的话，半夜必然误报。实际超时不会小于三个心跳周期。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("OneBot 探测 · 长连接静默")
-        @ConfigSummary("实际不短于三个心跳周期；对方没开心跳时不生效。")
+        @ConfigLabel("OneBot 探测 · 长连接静默超时")
+        @ConfigSummary("实际不短于三个心跳周期；对端未开启心跳时不生效。")
         private int websocketSilenceTimeout = 120;
 
     }
@@ -308,7 +308,7 @@ public class OneBotAdapterPluginProperties {
         // 的登录接口就收这个。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("NapCat · 令牌哈希")
-        @ConfigSummary("由 WebUI 令牌自动生成，无需手填。")
+        @ConfigSummary("由 WebUI 令牌自动生成，无需手动填写。")
         private String tokenHash = "";
 
         /**
@@ -326,7 +326,7 @@ public class OneBotAdapterPluginProperties {
         // 这条请求一旦离开本机，凭据就上了网线。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("NapCat · WebUI 地址")
-        @ConfigSummary("代登录使用，建议保持本机地址。")
+        @ConfigSummary("用于代为登录，建议保持本机地址。")
         private String address = "http://127.0.0.1:6099";
     }
 }

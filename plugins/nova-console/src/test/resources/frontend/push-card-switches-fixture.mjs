@@ -350,7 +350,7 @@ const textOf = scope => allNodes(scope).map(node => node.textContent || '').join
 
 const ON = 'rep-zone-on';
 const OFF = 'rep-zone-off';
-const ZONE_NAME = {[ON]: '报告里的卡片', [OFF]: '没放进报告的'};
+const ZONE_NAME = {[ON]: '已启用卡片', [OFF]: '未启用卡片'};
 
 /** 某一区；scope 缺省为通道页 */
 function zone(which, scope) {
@@ -371,8 +371,8 @@ function chip(which, label, scope) {
 
 function killButton(label, scope) {
   const node = allNodes(scope || page())
-    .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '拿掉：' + label);
-  if (!node) throw new Error('版式区没有「拿掉：' + label + '」按钮');
+    .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '移除：' + label);
+  if (!node) throw new Error('版式区没有「移除：' + label + '」按钮');
   return node;
 }
 
@@ -548,7 +548,7 @@ await ask('⑤ 拿掉放回：× 存成关并落到下面那区；点一下放�
 
   await paintPage(Object.fromEntries(CARD_KEYS.map(key => [key, false])));
   same(labelsIn(ON), [], '十张全拿掉之后报告区');
-  same(textOf(zone(ON)).includes('一张都没放，这一块不画'), true, '报告区空着时那一句');
+  same(textOf(zone(ON)).includes('尚未启用任何卡片，报告中不显示这一块'), true, '报告区空着时那一句');
 });
 
 // 故障：拖不了的人用键盘做不完：方向键挪不了位、Delete 拿不掉、回车放不回，或动完焦点丢了
@@ -608,7 +608,7 @@ await ask('⑦ 锁着：总开关关着或页不可编辑时，拖、×、放回
   same(chipsIn(ON).filter(node => node.draggable).length, 0, '总开关关着时拖得动的小块');
   same(CARD_LABELS.filter(label => label !== '点赞' && !killButton(label).disabled), [], '总开关关着时可点的 ×');
   same(chip(OFF, '点赞').getAttribute('aria-disabled'), 'true', '总开关关着时下面那区小块的 aria-disabled');
-  if (!textOf(page()).includes('「数据卡片」关着')) throw new Error('锁着时没写为什么');
+  if (!textOf(page()).includes('「数据卡片」未启用')) throw new Error('锁着时没写为什么');
 
   killButton('分享').click();
   chip(OFF, '点赞').click();
@@ -738,7 +738,7 @@ await ask('备选区按需出现且说明可见', async () => {
   killButton('点赞').click();
   await settle();
   same(labelsIn(OFF), ['点赞'], '拿掉后出现的备选卡片');
-  same(textOf(page()).includes('点一下或拖回上面'), true, '备选区的可见操作说明');
+  same(textOf(page()).includes('点击或拖回上方即可启用'), true, '备选区的可见操作说明');
   chip(OFF, '点赞').click();
   await settle();
   same(allNodes(page()).filter(node => hasClass(node, OFF)).length, 0, '最后一项放回后备选区消失');
@@ -790,7 +790,7 @@ await ask('中文药丸与@入口按能力和权限显示', async () => {
   editors.buildTemplateEditor(unsupported, {handlers: [{...handler, placeholders: ['{uname}', '{at=all}']}],
     editable: true, context: {isGroup: true, admin: false},
     paramsOf: () => ({message: '前{at=all}后', at_mode: 'all'})});
-  same(textOf(unsupported).includes('机器人不是本群管理员，@全体成员 选不了。'), true, '已确定非管理员时提示');
+  same(textOf(unsupported).includes('机器人不是本群管理员，无法选择 @全体成员。'), true, '已确定非管理员时提示');
   const picker = unsupported.querySelector('#tpl-at');
   same(picker.children.map(node => node.disabled), [false, true], '全体档禁用');
   same(allNodes(unsupported).filter(node => hasClass(node, 'tpl-preview-note')).length, 1, '只画实际降级说明');
@@ -800,7 +800,7 @@ function reminderEditor(placeholders, context, initial = {}, editable = true) {
   const host = new MiniNode('div');
   let params = {...initial};
   const handler = {className: 'demo', placeholders,
-    placeholderLabels: {'{at}': '@订阅的人', '{at=all}': '@全体成员'},
+    placeholderLabels: {'{at}': '@订阅者', '{at=all}': '@全体成员'},
     defaultParams: {message: '前后'}};
   editors.buildTemplateEditor(host, {handlers: [handler], editable, context,
     paramsOf: () => params, onChange: (_, value) => { params = value; }});
@@ -823,8 +823,8 @@ await ask('仅全体类提醒方式选全体后能切回订阅档', async () => 
 // 故障：非管理员或私聊仍能选择发不出去的全体提醒，或打开编辑器就改掉原有设置。
 await ask('全体提醒按群权限变灰，已选值和存值保留', async () => {
   for (const [context, disabled, reason] of [
-    [{isGroup: true, admin: false}, [false, true, true], '机器人不是本群管理员，@全体成员 两档选不了。'],
-    [{isGroup: false, admin: true}, [false, true, true], '私聊没有 @全体成员。'],
+    [{isGroup: true, admin: false}, [false, true, true], '机器人不是本群管理员，两档 @全体成员 均不可选。'],
+    [{isGroup: false, admin: true}, [false, true, true], '私聊不支持 @全体成员。'],
     [{isGroup: true, admin: null}, [false, false, false], ''],
   ]) {
     const initial = {at_mode: 'all', message: '前{at=all}后'};
@@ -854,13 +854,13 @@ await ask('仅全体类切回订阅档移除已定位的全体块', async () => 
 await ask('仅全体类只有不提醒与全体两项', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: true});
   same(editor.host.querySelector('#tpl-at').children.map(node => [node.value, node.textContent]),
-    [['subscribers', '不 @ 人'], ['all', '@全体成员']], '仅全体类可选项');
+    [['subscribers', '不 @ 任何人'], ['all', '@全体成员']], '仅全体类可选项');
   same(!!editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk'), false, '不提醒时无 @ 块');
   same(!!editor.host.querySelector('.tpl-at-note'), false, '不提醒时无说明');
   editor.choose('all');
   same(editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk').textContent, '@全体成员', '全体档块');
   same(editor.host.querySelector('.tpl-at-note').textContent,
-    '机器人不是管理员、或额度用完时会被摘掉，通知照发。', '全体档说明');
+    '机器人不是管理员或额度用完时，@全体成员 会被省略，通知照常发送。', '全体档说明');
   editor.choose('subscribers');
   same(!!editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk'), false, '切回后无 @ 块');
   same(!!editor.host.querySelector('.tpl-at-note'), false, '切回后无说明');
@@ -883,11 +883,11 @@ await ask('@ 谁独立在可用块上方，块留在可用块里', async () => {
 await ask('仅全体类非管理员提示只说全体一档', async () => {
   const editor = reminderEditor(['{at=all}'], {isGroup: true, admin: false});
   const warning = editor.host.querySelector('.tpl-at-warning');
-  same(warning.textContent, '机器人不是本群管理员，@全体成员 选不了。', '仅全体类禁用原因');
+  same(warning.textContent, '机器人不是本群管理员，无法选择 @全体成员。', '仅全体类禁用原因');
   same(warning.parentNode === editor.host.querySelector('.tpl-at'), true, '提示跟随下拉行');
   same(editor.host.querySelector('#tpl-at').children.map(node => node.disabled), [false, true], '全体档禁用');
   const privateEditor = reminderEditor(['{at=all}'], {isGroup: false, admin: true});
-  same(privateEditor.host.querySelector('.tpl-at-warning').textContent, '私聊没有 @全体成员。', '私聊提示');
+  same(privateEditor.host.querySelector('.tpl-at-warning').textContent, '私聊不支持 @全体成员。', '私聊提示');
 });
 
 // 故障：可用的 @ 块消失、不可操作，或名称和操作提示与其他块不一致。
@@ -896,8 +896,8 @@ await ask('有订阅名单时定位控件可用且写明光标', async () => {
   const block = editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk');
   same(!!block && !block.disabled && block.draggable, true, '@ 块存在且可点击拖动');
   same(block.tagName, 'button', '@ 块使用可 Tab 和回车操作的原生按钮');
-  same(block.textContent, '@订阅的人', '@ 块名称');
-  same(block.title, '点一下插到光标处，或拖进卡里', '@ 块操作提示');
+  same(block.textContent, '@订阅者', '@ 块名称');
+  same(block.title, '点击插入到光标处，或拖入卡片', '@ 块操作提示');
   editor.choose('all');
   same(editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk').textContent,
     '@全体成员', '全体档 @ 块名称');
@@ -935,7 +935,7 @@ await ask('仅全体类旧降级档显示全体且保留存值', async () => {
   same(editor.host.querySelector('#tpl-at').value, 'all', '旧降级档显示全体');
   same(editor.params(), initial, '打开时存值不变');
   same(editor.host.querySelector('.tpl-at-note').textContent,
-    '机器人不是管理员、或额度用完时会被摘掉，通知照发。', '旧降级档显示全体说明');
+    '机器人不是管理员或额度用完时，@全体成员 会被省略，通知照常发送。', '旧降级档显示全体说明');
   editor.host.querySelector('.tpl-pal').querySelector('.tpl-blk').click();
   same(editor.params().at_mode, 'all_or_subscribers', '编辑正文也保留旧档');
   editor.choose('all');
@@ -945,9 +945,9 @@ await ask('仅全体类旧降级档显示全体且保留存值', async () => {
 await ask('三档提醒说明常显在下拉旁', async () => {
   const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: true, admin: null});
   const notes = {
-    subscribers: '只 @ 在本群发过「开播@我」这类命令的人。',
-    all: '机器人不是管理员、或额度用完时会被摘掉，通知照发。',
-    all_or_subscribers: '被摘掉的那一次改 @ 订阅名单。',
+    subscribers: '仅 @ 在本群发送过「开播@我」等订阅命令的成员。',
+    all: '机器人不是管理员或额度用完时，@全体成员 会被省略，通知照常发送。',
+    all_or_subscribers: '@全体成员 被省略的那一次，改为 @ 订阅名单中的成员。',
   };
   for (const [mode, note] of Object.entries(notes)) {
     editor.choose(mode);
