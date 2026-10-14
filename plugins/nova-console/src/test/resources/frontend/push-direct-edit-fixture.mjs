@@ -298,6 +298,26 @@ await ask('⑧ 改回默认值：两段「恢复默认」都收起、状态行�
   }, '改回默认后');
 });
 
+// ---- 「恢复默认」的确认框要说自定义的会丢 ----
+
+/** 确认框那一层：confirm.js 挂在 body 上的那个节点，正文在它的 p 里 */
+const dialog = () => all(document.body, item => item.className === 'ask')[0] || null;
+
+await ask('⑨ 段 3「恢复默认」的确认框说清自定义的版式会丢失', async () => {
+  // 恢复默认把处理器自报的每个版式键从参数里删掉（restoredLayoutParams），改过的值不留底
+  fire(layoutToggle(), 'change', {target: {checked: false}});
+  const button = all(lay(), item => item.tagName === 'button' && item.textContent === '恢复默认')
+    .find(item => !item.hidden);
+  if (!button) throw new Error('改过版式后段 3 没有「恢复默认」');
+  fire(button, 'click', {});
+  const box = dialog();
+  const body = box ? String((box.found['p'] || {}).textContent) : '';
+  // 点「取消」收掉，版式照旧
+  if (box) fire(box, 'click', {target: {closest: () => ({getAttribute: () => 'no'})}});
+  same({'说版式恢复为默认': body.includes('恢复为默认'), '说自定义的会丢失': body.includes('丢失')},
+    {'说版式恢复为默认': true, '说自定义的会丢失': true}, '确认框正文「' + body + '」');
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

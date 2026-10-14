@@ -1440,7 +1440,8 @@ function sectionLayout(host, target, session) {
   act.textContent = '恢复默认';
   act.addEventListener('click', async () => {
     if (!await ask({title: '恢复默认？',
-      body: '此通道的报告版式将恢复为默认。此后默认版式的修改将同步应用到此通道。'})) return;
+      body: '此通道的报告版式将恢复为默认，自定义的版式设置将会丢失。'
+        + '此后默认版式的修改将同步应用到此通道。'})) return;
     const message = messageOf(target, handler);
     if (message) {
       // 与段 2 的「恢复默认」同理（见 savedMessageHasParams）
