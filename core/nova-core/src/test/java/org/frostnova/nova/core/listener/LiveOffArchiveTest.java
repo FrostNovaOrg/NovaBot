@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.listener;
 
+import com.alibaba.fastjson2.JSON;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.event.live.common.LiveOffEvent;
@@ -12,6 +13,7 @@ import org.frostnova.nova.core.model.SeriesPeak;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.CompositeLiveDataService;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
+import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveInterventionTracker;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
@@ -26,16 +28,23 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Answers.CALLS_REAL_METHODS;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -122,6 +131,33 @@ class LiveOffArchiveTest {
         listener.onLiveOffEvent(liveOff(START + MINUTE));
 
         assertFalse(sessions.find(0, Long.MAX_VALUE).get(0).hasPeaks());
+    }
+
+    @ParameterizedTest(name = "{displayName}：恢复={0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("不记录匿名次数的数据源归档为未知，不能当成整场观众都可识别")
+    void nonRecordingSourceArchivesUnknownAnonymousCounts(boolean recovery) throws IOException {
+        // 使用接口默认方法，不为数据源补上它没有记录的匿名次数。
+        LiveDataService source = mock(LiveDataService.class, CALLS_REAL_METHODS);
+        when(source.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
+        LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(source, history, details);
+        if (recovery) {
+            when(source.getLiveStatus(PLATFORM, UID)).thenReturn(Optional.of(true));
+            when(source.getLastSaveTime()).thenReturn(Optional.of(START + MINUTE));
+            assertTrue(new LiveSessionRecovery(source, sessions, history, archiver)
+                    .archiveUnclosedIfAny(PLATFORM, liveOff(START + 2 * MINUTE).getSource(), START + 2 * MINUTE));
+        } else {
+            new NovaDefaultLiveOffEventListener(source, sessions, new LiveInterventionTracker(), history, archiver)
+                    .onLiveOffEvent(liveOff(START + MINUTE));
+        }
+
+        String json = Files.readString(dir.resolve("sessions.jsonl"));
+        assertFalse(JSON.parseObject(json).containsKey("anonymousCounts"),
+                "未记录的匿名次数不能写成已记录为零");
+        List<LiveSession> reloaded = new LiveSessionArchive(properties).find(0, Long.MAX_VALUE);
+        assertEquals(1, reloaded.size());
+        assertNull(reloaded.get(0).anonymousCounts(), "未记录的场次读回来仍应为未知");
     }
 
     @Test

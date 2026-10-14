@@ -444,10 +444,11 @@ public interface LiveDataService {
 
     /**
      * 本场各计分表无法识别观众的次数快照，只含大于 0 的项。
-     * 空表不保证没有匿名事件：旧数据或未实现此功能的数据源也返回空表，表示未记录。
+     * 空表表示已记录且没有匿名事件；{@code null} 表示当时未记录、次数未知。
+     * 未实现此功能的数据源默认返回 {@code null}，不能视为已记录为零。
      */
     default Map<String, Long> getLiveAnonymousCounts(@NonNull String platform, @NonNull Long uid) {
-        return Map.of();
+        return null;
     }
 
     // ================ 时间序列（互动曲线） ================
