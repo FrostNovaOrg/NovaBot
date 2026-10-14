@@ -6,6 +6,7 @@ import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
 import org.frostnova.nova.core.analytics.StatisticsDay;
+import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.LiveSession;
@@ -234,6 +235,38 @@ public class StreamerController {
         result.put("sessions", sessionPage(platform, uid, sessions, page, size));
         result.put("trend", trend(sessions, period));
 
+        return ResponseEntity.ok(result);
+    }
+
+    /** 指定天数的只读归档概况，与详情共用认证路径。 */
+    @GetMapping("/{platform}/{uid}/insights")
+    public ResponseEntity<JSONObject> insights(@PathVariable String platform, @PathVariable Long uid,
+                                               @RequestParam(defaultValue = "30") String days) {
+        if (!List.of("7", "30", "90").contains(days)) {
+            JSONObject invalid = new JSONObject();
+            invalid.put("success", false);
+            invalid.put("message", "请选择近 7、30、90 天中的一个范围");
+            return ResponseEntity.badRequest().body(invalid);
+        }
+        String key = key(platform, uid);
+        List<LiveSession> sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE))
+                .getOrDefault(key, List.of());
+        var entry = roster(loadedUsers()).stream()
+                .filter(item -> key.equals(key(item.platform(), item.uid()))).findFirst();
+        if (entry.isEmpty() && sessions.isEmpty()) {
+            return streamer(platform, uid, "week", 1, 0);
+        }
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
+        var sampled = snapshots.find(0, range.to().toEpochMilli()).stream()
+                .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid())).toList();
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("days", Integer.parseInt(days));
+        result.put("living", entry.map(StreamerDirectory.Entry::enabled).orElse(false)
+                && liveDataService.getLiveStatus(platform, uid).orElse(false));
+        result.put("insights", new StreamerInsights().calculate(sessions, sampled, range.from(), range.to(), rules));
         return ResponseEntity.ok(result);
     }
 

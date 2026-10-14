@@ -113,7 +113,7 @@ function needPage() {
 await ask('① 解析认第一段：推送页的三段地址退回列表，不读出平台与 uid', () => {
   needPage();
   same(model.parseStreamersHash('#/push/9200000001/910000001'),
-    {view: 'list', platform: '', uid: '', pane: 'overview', start: '', page: 1, period: 'week'},
+    {view: 'list', platform: '', uid: '', pane: 'overview', start: '', page: 1, period: 'week', days: 30},
     '推送页的地址');
 });
 

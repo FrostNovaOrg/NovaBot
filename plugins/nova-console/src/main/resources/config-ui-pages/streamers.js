@@ -18,7 +18,7 @@
 import {$, api, CONSOLE, el, esc, say} from './core.js';
 import {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
-  gapCells, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
+  gapCells, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle, shownMetrics,
   snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } from './streamers-model.js';
@@ -194,6 +194,14 @@ export function loadStreamers() {
     viewGeneration++;
     stopLiveRefresh();
     return;
+  }
+  const next = parseStreamersHash(location.hash);
+  if (liveActive && detail?.success && $('#sd-insights')
+    && where.view === 'detail' && next.view === 'detail'
+    && where.pane === 'overview' && next.pane === 'overview'
+    && where.platform === next.platform && where.uid === next.uid && where.days !== next.days) {
+    where = next;
+    return loadInsights();
   }
   liveActive = true;
 
@@ -437,6 +445,7 @@ async function loadDetail() {
   renderHead();
   renderTabs();
   const key = where.platform + '/' + where.uid;
+  if (key !== liveKey) insightsMetric = 'revenue';
   if (key !== liveKey || !detail.living
     || (live && detail.since != null && live.since !== detail.since)) {
     liveKey = key;
@@ -446,7 +455,7 @@ async function loadDetail() {
   renderPane();
   if (where.pane === 'overview') {
     startLiveRefresh();
-    await loadLive();
+    await Promise.all([loadLive(), loadInsights()]);
   }
 }
 
@@ -514,6 +523,133 @@ function renderPane() {
   renderBanner();
 }
 
+let insightsGeneration = 0;
+let insightsMetric = 'revenue';
+
+async function loadInsights() {
+  const generation = ++insightsGeneration;
+  const view = viewGeneration;
+  renderInsights(null, '正在读取归档数据…');
+  try {
+    const response = await api('/streamers/' + encodeURIComponent(where.platform) + '/'
+      + encodeURIComponent(where.uid) + '/insights?days=' + where.days);
+    if (generation !== insightsGeneration || view !== viewGeneration || !liveActive) return;
+    if (!response.success) throw new Error(response.message || '未能读取归档数据');
+    renderInsights(response.insights, '', response.living);
+  } catch (e) {
+    if (generation === insightsGeneration && view === viewGeneration && liveActive) {
+      renderInsights(null, '读取失败：' + e.message);
+    }
+  }
+}
+
+function renderInsights(data, message, living) {
+  const host = $('#sd-insights');
+  if (!host) return;
+  host.innerHTML = '';
+  const head = el('h3');
+  head.textContent = '近 ' + where.days + ' 天';
+  host.appendChild(head);
+  const ranges = el('div', 'lgpills');
+  for (const days of [7, 30, 90]) {
+    const link = el('a', 'nv-pill lgpill');
+    link.href = detailHash(where.platform, where.uid, 'overview', 'days=' + days);
+    link.textContent = '近 ' + days + ' 天';
+    if (days === where.days) link.setAttribute('aria-current', 'page');
+    ranges.appendChild(link);
+  }
+  host.appendChild(ranges);
+  if (!data) {
+    const hint = el('p', 'hint');
+    hint.textContent = message;
+    host.appendChild(hint);
+    return;
+  }
+  const range = el('p', 'hint');
+  range.textContent = insightsTime(data.from) + ' 至今'
+    + (living ? ' · 正在直播的这一场下播后才计入' : '');
+  range.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
+  host.appendChild(range);
+  const stats = el('div', 'stats');
+  function stat(value, label, note, title) {
+    const cell = el('div', 'stat');
+    cell.innerHTML = '<div class="stat-v">' + esc(value) + '</div><div class="stat-l">' + esc(label)
+      + '</div>' + (note ? '<small>' + esc(note) + '</small>' : '');
+    if (title) cell.title = title;
+    stats.appendChild(cell);
+  }
+  stat(fmtDuration(data.durationSeconds), '直播时长', '共 ' + data.sessions + ' 场');
+  if (data.metricsKnown) {
+    const count = value => value == null ? '暂无数据' : fmtMetric(value) + ' 人';
+    stat(fmtMetric(data.revenue, {money: true}) + ' 元', '流水');
+    stat(fmtMetric(data.messages) + ' 条', '弹幕');
+    stat(count(data.audience), '观众');
+    stat(count(data.interactionAudience), '互动观众');
+    const fans = data.fans;
+    const change = fans ? (fans.change > 0 ? '+' : fans.change < 0 ? '−' : '') + fmtMetric(Math.abs(fans.change)) : '暂无数据';
+    const tooltip = fans ? (fans.partial ? '从 ' + insightsTime(fans.fromAt) + ' 起算；' : '')
+      + insightsTime(fans.fromAt) + ' 的 ' + fmtMetric(fans.fromValue) + ' 人 → '
+      + insightsTime(fans.toAt) + ' 的 ' + fmtMetric(fans.toValue) + ' 人' : '能用的粉丝快照不足两次';
+    stat(change, '粉丝净增', '', tooltip);
+  }
+  host.appendChild(stats);
+  if (data.metricsKnown) {
+    const composition = el('p', 'hint');
+    composition.textContent = data.composition
+      ? '本期首次记录 ' + fmtMetric(data.composition.firstRecorded) + ' 人 · 回访 '
+        + fmtMetric(data.composition.returning) + ' 人' : '本期构成：暂无数据';
+    composition.title = data.composition
+      ? '首次记录是指 NovaBot 第一次记到这位观众，不一定是第一次来看直播'
+      : data.firstRecordedAt != null ? '名单从 ' + insightsTime(data.firstRecordedAt, false)
+        + '才开始记，这之前来过的观众分不出来' : '尚未记录到带名单的场次';
+    host.appendChild(composition);
+    const coverage = data.coverage || {};
+    const parts = [
+      coverage.complete ? '完整 ' + coverage.complete + ' 场' : '',
+      coverage.anonymous ? '有认不出的观众 ' + coverage.anonymous + ' 场（这几场的人数偏少）' : '',
+      coverage.unknown ? '不知道是否完整 ' + coverage.unknown + ' 场（升级到 6.0 之前开播的场次没有记这一项）' : '',
+      coverage.missing ? '没有名单 ' + coverage.missing + ' 场' : '',
+    ].filter(Boolean);
+    if (parts.length) {
+      const note = el('p', 'hint');
+      note.textContent = '名单：' + parts.join('；');
+      host.appendChild(note);
+    }
+  }
+  const metrics = data.metricsKnown ? [['durationSeconds', '时长'], ['revenue', '流水'],
+    ['messages', '弹幕'], ['audience', '观众']] : [['durationSeconds', '时长']];
+  if (!metrics.some(([key]) => key === insightsMetric)) insightsMetric = metrics[0][0];
+  const switches = el('div', 'lgpills');
+  for (const [key, text] of metrics) {
+    const button = el('button', 'nv-pill lgpill');
+    button.textContent = text;
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(key === insightsMetric));
+    button.addEventListener('click', () => {
+      insightsMetric = key;
+      renderInsights(data, '', living);
+    });
+    switches.appendChild(button);
+  }
+  host.appendChild(switches);
+  const days = data.daily || [];
+  if (!days.length) return;
+  const points = days.map(day => insightsPoint(day, insightsMetric));
+  const geometry = barGeometry(points.map(p => p.value), 1000, 100);
+  const bars = geometry.map((bar, i) => {
+    const point = points[i];
+    if (!point.draw) return '<rect fill="transparent" x="' + (i * 1000 / days.length)
+      + '" y="0" width="' + (1000 / days.length) + '" height="100"><title>' + esc(point.title) + '</title></rect>';
+    return '<rect class="c-bar' + (bar.zero ? ' zero' : '') + '" x="' + bar.x + '" y="' + bar.y
+      + '" width="' + bar.w + '" height="' + bar.h + '"><title>' + esc(point.title) + '</title></rect>';
+  }).join('');
+  const chart = el('div', 'chart');
+  chart.innerHTML = '<div class="plot"><svg viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="按统计日的'
+    + esc(metrics.find(([key]) => key === insightsMetric)[1]) + '走势">' + bars + '</svg></div>'
+    + '<div class="xlab"><span>' + esc(days[0].date) + '</span><span>' + esc(days[days.length - 1].date) + '</span></div>';
+  host.appendChild(chart);
+}
+
 /**
  * 概况顶上那条小横条
  *
@@ -535,6 +671,9 @@ function renderBanner() {
 }
 
 function renderOverview(host) {
+  const recent = el('div', 'nv-card hcard');
+  recent.id = 'sd-insights';
+  host.appendChild(recent);
   const overview = detail.overview || {};
 
   const stats = el('div', 'nv-card hcard');
