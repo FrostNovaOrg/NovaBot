@@ -122,7 +122,7 @@ class BilibiliSchedulerSettingsTest {
             assertEquals(List.of(PREFIX + "core-pool-size"), fields.stream().map(f -> f.getString("name")).toList());
             assertNotNull(fields.get(0).getString("group"));
             assertEquals("B站定时任务 · 调度线程数", fields.get(0).getString("label"));
-            assertTrue(fields.get(0).getString("summary").contains("小于 2 按 2 算"));
+            assertTrue(fields.get(0).getString("summary").contains("小于 2 时按 2 处理"));
             for (Object field : schema.getJSONArray("ungrouped")) {
                 assertFalse(((JSONObject) field).getString("name").startsWith(PREFIX));
             }
