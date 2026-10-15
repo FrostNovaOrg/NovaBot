@@ -268,6 +268,9 @@ eq(fmtDuration(1800), '30 分', '不足一时只写分');
 eq(fmtGap(44), '44 秒', '缺口留住秒');
 eq(fmtGap(1330), '22 分 10 秒', '缺口的分与秒');
 eq(fmtGap(0), '0 秒', '零缺口也说得出来');
+// 负金额不能用短横，以免与页面其余负数符号不一致。
+eq(fmtMetric(-163.6, {money: true}), '−163.60', '负金额使用数学负号');
+eq(fmtMetric(-1234), '−1,234', '负整数使用数学负号');
 eq(fmtMetric(1234, {}), '1,234', '整数带千分位');
 eq(fmtMetric(12.345, {money: true}), '12.35', '钱按两位小数');
 // 金额漏掉千分位时，流水和正在直播的金额都难以读清数量级。
@@ -362,6 +365,15 @@ eq(slotCell({sessions: 3, revenuePerHour: 50}, 'revenue', 100),
   {text: '50.00 元/时', count: '3 场', intensity: 0.5}, '流水按最大值上色并带元每时');
 eq(slotCell({sessions: 4, messagesPerHour: 0}, 'messages', 0),
   {text: '0.00 条/时', count: '4 场', intensity: 0}, '弹幕零值仍有数据和单位');
+// 格子与前三的每小时值都应有千分位和两位小数。
+eq(slotCell({sessions: 3, revenuePerHour: 4219.97}, 'revenue', 5000).text,
+  '4,219.97 元/时', '热图流水每小时带千分位');
+eq(slotCell({sessions: 3, messagesPerHour: 1234.56}, 'messages', 2000).text,
+  '1,234.56 条/时', '热图弹幕每小时带千分位');
+eq(slotTopText([{weekday: 2, startHour: 20, value: 4219.97, sessions: 3}], 'revenue'),
+  ['周二 20:00–22:00 · 4,219.97 元/时 · 3 场'], '前三流水每小时带千分位');
+eq(slotTopText([{weekday: 2, startHour: 20, value: 1234.56, sessions: 3}], 'messages'),
+  ['周二 20:00–22:00 · 1,234.56 条/时 · 3 场'], '前三弹幕每小时带千分位');
 eq(slotTopText([], 'revenue'), ['当前范围暂无达到 3 场的时段。'], '前三为空说明门槛');
 eq(slotTopText([{weekday: 1, startHour: 22, value: 50, sessions: 3}], 'revenue'),
   ['周一 22:00–24:00 · 50.00 元/时 · 3 场'], '前三含星期时段值和场数');

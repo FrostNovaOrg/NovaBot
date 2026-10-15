@@ -525,9 +525,10 @@ export function fmtGap(seconds) {
 export function fmtMetric(value, metric) {
   if (value === undefined || value === null) return '—';
   const one = metric || {};
-  return one.money
+  const text = one.money
     ? Number(value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
     : Math.round(Number(value) || 0).toLocaleString('en-US');
+  return text.replace(/^-/, '−');
 }
 
 /**
@@ -667,7 +668,7 @@ export function slotLabel(cell) {
 }
 
 function slotRate(value, metric) {
-  return Number(value).toFixed(2) + (metric === 'revenue' ? ' 元/时' : ' 条/时');
+  return fmtMetric(value, {money: true}) + (metric === 'revenue' ? ' 元/时' : ' 条/时');
 }
 
 /** 缺少样本与缺少数据均不参与色阶；已知零值仍显示为零。 */

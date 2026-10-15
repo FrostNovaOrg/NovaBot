@@ -11,6 +11,7 @@
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。由 StreamersSessionLinkTest 拉起。
  */
 
+import {readFileSync} from 'node:fs';
 import {register} from 'node:module';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -49,7 +50,7 @@ function fakeElement(tag) {
     tagName: String(tag).toLowerCase(),
     className: '', id: '', type: '', textContent: '', innerHTML: '', href: '', title: '',
     hidden: false, disabled: false,
-    attrs: {}, dataset: {}, style: {},
+    attrs: {}, dataset: {}, style: {}, scrollLeft: 0,
     children: [], listeners: {}, parentNode: null,
   };
   node.appendChild = child => {
@@ -72,7 +73,8 @@ function fakeElement(tag) {
   };
   node.setAttribute = (key, value) => { node.attrs[key] = String(value); };
   node.getAttribute = key => node.attrs[key];
-  node.querySelector = () => null;
+  node.querySelector = selector => walk(node).slice(1).find(one =>
+    selector.startsWith('.') && one.className.split(' ').includes(selector.slice(1))) || null;
   node.classList = {toggle() {}, add() {}, remove() {}, contains() { return false; }};
   if (node.tagName === 'tr') rows.push(node);
   return node;
@@ -138,6 +140,10 @@ const slotCells = Array.from({length: 84}, (_, i) => ({weekday: Math.floor(i / 1
 const slotData = {cells: slotCells,
   topRevenue: [{weekday: 1, startHour: 22, sessions: 3, value: 50}],
   topMessages: [{weekday: 1, startHour: 22, sessions: 3, value: 100}]};
+// 使用目录里的实际名称和单位，让遗漏名称也能在卡片断言中暴露。
+const catalogSource = readFileSync(new URL('../../../../../nova-report/src/main/java/org/frostnova/nova/report/analytics/BilibiliLiveMetricCatalog.java', import.meta.url), 'utf8');
+const extraLiveMetrics = [...catalogSource.matchAll(/Metric\.count\(BilibiliLiveMetric\.(GUARD_OPEN_COUNT|GUARD_RENEW_COUNT|IMAGE_DEGRADED_COUNT), "([^"]+)", "([^"]+)"\)/g)]
+  .map(([, key, name, unit]) => ({key: key.toLowerCase(), name, unit}));
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
@@ -163,6 +169,7 @@ globalThis.fetch = url => {
       living: liveData.living, since: liveData.since,
       overview: {},
       liveMetrics: [
+        ...extraLiveMetrics,
         {key: 'danmu_count', name: '弹幕', unit: '条'},
         {key: 'gift_value', name: '礼物价值', unit: '元', money: true},
         {key: 'session_extra', name: '本场新增计数', unit: '次'},
@@ -453,6 +460,19 @@ await ask('⑭ 不在推送配置里的主播不请求本场数据，也不启�
   }
 });
 
+// 续费与新开不能在本场卡片中以英文键名显示。
+await ask('正在直播大航海新开续费显示中文名与人次', async () => {
+  const saved = liveData;
+  try {
+    liveData = {...liveData, metrics: {guard_open_count: 1, guard_renew_count: 1, image_degraded_count: 1}};
+    await overview();
+    const list = walk(liveCard()).find(one => one.tagName === 'dl');
+    same(list.children.map(one => one.textContent),
+      ['大航海新开', '1 人次', '大航海续费', '1 人次', '开播通知缺图', '1 次', '在线人数', '21 人'], '本场指标名称与单位');
+    same(textOf(liveCard()).includes('guard_'), false, '不显示大航海原始键');
+  } finally { liveData = saved; }
+});
+
 async function openSlots(query = '') {
   location.hash = model.detailHash(PLATFORM, UID, 'start-slots', query);
   await page.loadStreamers();
@@ -479,6 +499,17 @@ await ask('开播时段显示84格且点击列出整场数据与场次链接', a
   for (const part of ['整场流水', '100.00 元', model.sessionHash(PLATFORM, UID, STARTS[0]), '不表示该两小时内的产出']) {
     if (!content.includes(part)) throw new Error('点击格子后缺少 ' + part);
   }
+});
+
+// 重画选中格时不能把已向右滑动的热图送回最左边。
+await ask('热图点击后保留横向滚动位置', async () => {
+  await openSlots();
+  const scroll = walk(node('sd-body')).find(n => n.className === 'slot-scroll');
+  scroll.scrollLeft = 872;
+  await press(slotButtons().find(n => n.attrs['aria-label'].includes('周二 20:00')));
+  same(walk(node('sd-body')).find(n => n.className === 'slot-scroll').scrollLeft, 872, '点击后横向位置');
+  same(slotButtons().find(n => n.attrs['aria-pressed'] === 'true')?.attrs['aria-label'].startsWith('周二 20:00'),
+    true, '选中格仍为周二20点');
 });
 
 // 选择180天和弹幕时须实际换请求与明细，不能只换按钮外观。

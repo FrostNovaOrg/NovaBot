@@ -33,9 +33,9 @@ const PAGE_STYLE = `
 #sd-live .live-head h3{margin:0}
 #sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
 #sd-live .live-error{color:var(--err,var(--dim))}
-/* 仅流水格按内容宽度缩字：每个数字或标点预留 .65em，空格和单位预留 1.5em。 */
-#sd-insights .stat-revenue{container-type:inline-size;min-width:0}
-#sd-insights .stat-revenue .stat-v{white-space:nowrap;font-size:min(23px,calc(100cqi / var(--revenue-width)))}
+/* 数值按格内宽度缩字，统一数值行高度使标题对齐。 */
+#sd-insights .stat{container-type:inline-size;min-width:0}
+#sd-insights .stat-v{white-space:nowrap;height:27px;line-height:27px;font-size:min(23px,calc(100cqi / var(--stat-value-width)))}
 .chart{margin-bottom:2px}
 .chart .plot{position:relative;padding-top:6px}
 .chart svg{display:block;width:100%;height:110px}
@@ -49,20 +49,26 @@ const PAGE_STYLE = `
 a.lgpill{text-decoration:none}
 a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
 #sd-tabs{display:block;margin:0 0 14px}
-#sd-tabs>.lgpills+.lgpills{margin-top:10px}
+#sd-tabs>.lgpills+.lgpills,#sd-body .start-slots>.lgpills+.lgpills,#sd-audience>.lgpills+.lgpills{margin-top:10px}
 #sd-body td.n,#sd-body th.n{text-align:right;font-variant-numeric:tabular-nums}
 #sd-body tr.empty-row td{color:var(--dim)}
 #sd-body tbody tr:hover{background:var(--soft)}
 #sd-body .start-slots{min-width:0;max-width:100%;box-sizing:border-box}
 #sd-body .slot-scroll{overflow-x:auto;max-width:100%;margin-top:14px}
-#sd-body .slot-grid{border-collapse:collapse;min-width:1200px;width:100%;font-size:12px}
-#sd-body .slot-grid th,#sd-body .slot-grid td{padding:4px;text-align:center}
+#sd-body .slot-grid{border-collapse:collapse;table-layout:fixed;min-width:920px;width:100%;font-size:12px}
+#sd-body .slot-grid th,#sd-body .slot-grid td{padding:3px;text-align:center}
+#sd-body .slot-grid th:first-child{width:52px;box-sizing:border-box}
 #sd-body .slot-grid button{display:block;width:100%;min-height:64px;border:1px solid var(--line);border-radius:6px;color:inherit;background:transparent;cursor:pointer;font:inherit}
 #sd-body .slot-grid button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:-2px}
 #sd-body .slot-grid button:focus-visible{outline:2px solid var(--accent)}
 #sd-body .slot-grid small{display:block;margin-top:6px}
 #sd-body .slot-details{overflow-x:auto;max-width:100%}
 #sd-body .start-slots .lgpills{flex-wrap:wrap}
+#sd-audience{min-width:0;max-width:100%;box-sizing:border-box}
+#sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
+#sd-audience table{min-width:700px}
+#sd-audience th,#sd-audience td{white-space:nowrap}
+#sd-body .slot-details a,#sd-body .slot-details a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 #sd-body{min-width:0}
 #sx-body img{max-width:100%;height:auto}
 `;
@@ -529,7 +535,6 @@ const audienceStates = new Map();
 function renderTabs() {
   const host = $('#sd-tabs');
   host.innerHTML = '';
-  if (where.pane === 'audience') host.appendChild(audienceRanges());
   const stateKey = where.platform + '/' + where.uid;
   if (where.pane === 'audience') audienceStates.set(stateKey, {...where});
   const audienceState = audienceStates.get(stateKey)
@@ -548,6 +553,7 @@ function renderTabs() {
 
 function renderPane() {
   const host = $('#sd-body');
+  const scrollLeft = where.pane === 'start-slots' ? host.querySelector('.slot-scroll')?.scrollLeft || 0 : 0;
   host.innerHTML = '';
   if (where.pane === 'sessions') renderSessions(host);
   else if (where.pane === 'trend') renderTrend(host);
@@ -557,6 +563,10 @@ function renderPane() {
     host.appendChild(card);
   } else if (where.pane === 'start-slots') renderStartSlots(host);
   else renderOverview(host);
+  if (where.pane === 'start-slots') {
+    const scroll = host.querySelector('.slot-scroll');
+    if (scroll) scroll.scrollLeft = scrollLeft;
+  }
   renderBanner();
 }
 
@@ -597,6 +607,7 @@ function renderAudience(data, message) {
   const host = $('#sd-audience');
   if (!host) return;
   host.innerHTML = '';
+  host.appendChild(audienceRanges());
   if (!data) {
     const hint = el('p', 'hint');
     hint.textContent = message;
@@ -618,8 +629,7 @@ function renderAudience(data, message) {
   const explanation = el('p', 'hint');
   explanation.textContent = '首次记录指已有记录中第一次出现，不一定是第一次观看。流水按礼物、醒目留言与大航海合计；到过的场次缺少逐人金额时显示「—」。';
   host.appendChild(explanation);
-  const scroll = el('div');
-  scroll.style.overflowX = 'auto';
+  const scroll = el('div', 'audience-scroll');
   const table = el('table');
   const head = el('thead');
   const headers = el('tr');
@@ -699,7 +709,7 @@ function renderAudience(data, message) {
     pager.appendChild(link);
   }
   const text = el('span', 'hint');
-  text.textContent = '第 ' + data.page + ' / ' + Math.max(1, data.pages) + ' 页 · 共 ' + data.total + ' 人';
+  text.textContent = '第 ' + fmtMetric(data.page) + ' / ' + fmtMetric(Math.max(1, data.pages)) + ' 页 · 共 ' + fmtMetric(data.total) + ' 人';
   pager.appendChild(text);
   host.appendChild(pager);
 }
@@ -769,7 +779,7 @@ function renderStartSlots(host) {
     const table = el('table', 'slot-grid');
     const thead = el('thead');
     const headers = el('tr');
-    for (const text of ['星期 / 开播钟点', ...Array.from({length: 12}, (_, i) => (i * 2) + '–' + (i * 2 + 2) + ' 时')]) {
+    for (const text of ['星期（' + (slotsMetric === 'revenue' ? '元/时' : '条/时') + '）', ...Array.from({length: 12}, (_, i) => (i * 2) + '–' + (i * 2 + 2) + ' 时')]) {
       const th = el('th');
       th.setAttribute('scope', 'col');
       th.textContent = text;
@@ -790,7 +800,7 @@ function renderStartSlots(host) {
         const button = el('button');
         button.type = 'button';
         const shown = slotCell(cell, slotsMetric, maximum);
-        button.innerHTML = esc(shown.text) + '<small>' + esc(shown.count) + '</small>';
+        button.innerHTML = esc(shown.text.replace(/ (元|条)\/时$/, '')) + '<small>' + esc(shown.count) + '</small>';
         button.setAttribute('aria-label', slotLabel(cell) + ' · ' + shown.text + ' · ' + shown.count);
         button.setAttribute('aria-pressed', String(slotsSelected === cell));
         if (shown.intensity !== null && shown.intensity > 0) {
@@ -884,6 +894,8 @@ function renderInsights(data, message, living) {
   const stats = el('div', 'stats');
   function stat(value, label, note, title, key) {
     const cell = el('div', 'stat');
+    const width = Array.from(value).reduce((sum, char) => sum + (/[^\x00-\x7f]/.test(char) ? 1 : 0.65), 0) + 0.2;
+    cell.style.setProperty('--stat-value-width', width);
     cell.innerHTML = '<div class="stat-v">' + esc(value) + '</div><div class="stat-l">' + esc(label)
       + '</div>' + (note ? '<small>' + esc(note) + '</small>' : '');
     const comparison = insightsComparison(data.comparisons?.[key]);
@@ -902,9 +914,7 @@ function renderInsights(data, message, living) {
   if (data.metricsKnown) {
     const count = value => value == null ? '暂无数据' : fmtMetric(value) + ' 人';
     const revenue = fmtMetric(data.revenue, {money: true});
-    const revenueCell = stat(revenue + ' 元', '流水', '', '', 'revenue');
-    revenueCell.classList.add('stat-revenue');
-    revenueCell.style.setProperty('--revenue-width', revenue.length * 0.65 + 1.5);
+    stat(revenue + ' 元', '流水', '', '', 'revenue');
     stat(fmtMetric(data.messages) + ' 条', '弹幕', '', '', 'messages');
     stat(count(data.audience), '观众', '', '', 'audience');
     stat(count(data.interactionAudience), '互动观众', '', '', 'interactionAudience');
@@ -920,7 +930,7 @@ function renderInsights(data, message, living) {
   if (explanation.count || explanation.note) {
     const details = el('details', 'hint');
     const summary = el('summary');
-    summary.textContent = '对比说明 · ' + explanation.count + ' 项未比较';
+    summary.textContent = '对比说明' + (explanation.count ? ' · ' + explanation.count + ' 项未比较' : '');
     details.appendChild(summary);
     for (const group of explanation.groups) {
       const line = el('p');
