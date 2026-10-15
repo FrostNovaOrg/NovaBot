@@ -80,6 +80,8 @@ public class BilibiliLiveRoomService {
      */
     private final LiveDataService liveDataService;
 
+    private final BilibiliGapRecovery gapRecovery;
+
     /**
      * 直播间号到连接器的映射
      */
@@ -125,6 +127,15 @@ public class BilibiliLiveRoomService {
      */
     private final WebSocketClient webSocketClient = new StandardWebSocketClient();
 
+    public BilibiliLiveRoomService(BilibiliApiUtil api, BilibiliEventParser parser,
+                                   NovaBilibiliProperties properties, ApplicationEventPublisher publisher,
+                                   TaskScheduler scheduler, BilibiliLiveStateGate stateGate,
+                                   BilibiliConnectGate connectGate, BilibiliRiskMetrics riskMetrics,
+                                   BilibiliDisconnectDigest disconnectDigest, LiveDataService liveDataService) {
+        this(api, parser, properties, publisher, scheduler, stateGate, connectGate, riskMetrics,
+                disconnectDigest, liveDataService, null);
+    }
+
     @Autowired
     public BilibiliLiveRoomService(BilibiliApiUtil api,
                                    BilibiliEventParser parser,
@@ -135,7 +146,8 @@ public class BilibiliLiveRoomService {
                                    BilibiliConnectGate connectGate,
                                    BilibiliRiskMetrics riskMetrics,
                                    BilibiliDisconnectDigest disconnectDigest,
-                                   LiveDataService liveDataService) {
+                                   LiveDataService liveDataService,
+                                   BilibiliGapRecovery gapRecovery) {
         this.api = api;
         this.parser = parser;
         this.properties = properties;
@@ -146,6 +158,7 @@ public class BilibiliLiveRoomService {
         this.riskMetrics = riskMetrics;
         this.disconnectDigest = disconnectDigest;
         this.liveDataService = liveDataService;
+        this.gapRecovery = gapRecovery;
     }
 
     /**
@@ -321,6 +334,7 @@ public class BilibiliLiveRoomService {
                     up, api, parser, properties, publisher, scheduler, webSocketClient,
                     stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService,
                     acceptingConnectors, wave);
+            connector.setGapRecovery(gapRecovery);
             created[0] = connector;
             return connector;
         });

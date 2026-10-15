@@ -27,6 +27,7 @@ import org.frostnova.nova.core.event.live.common.MembershipEvent;
 import org.frostnova.nova.core.event.live.common.PkBattleEvent;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.GiftInfo;
+import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.UserInfo;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -58,6 +59,71 @@ import java.util.Set;
 @NovaComponent
 public class BilibiliLiveStatsAggregator {
     private final LiveDataService liveDataService;
+
+    private record DanmuKey(Long uid, String text, long second) { }
+
+    private static final class RecoveryHistory {
+        private final long start;
+        private long newestSecond;
+        private final Map<DanmuKey, Boolean> danmus = new LinkedHashMap<>();
+        private final Set<Long> superChats = new LinkedHashSet<>();
+        private final Set<Long> recoveredSuperChats = new LinkedHashSet<>();
+
+        private RecoveryHistory(long start) { this.start = start; }
+    }
+
+    private final Map<Long, RecoveryHistory> recoveryHistory = new LinkedHashMap<>();
+
+    private RecoveryHistory history(NovaBaseLiveEvent event) {
+        long start = liveDataService.getLiveStartTime(event.getPlatform(), event.getSource().getUid()).orElse(0L);
+        return recoveryHistory.compute(event.getSource().getUid(), (uid, old) ->
+                old != null && old.start == start ? old : new RecoveryHistory(start));
+    }
+
+    private DanmuKey danmuKey(BilibiliDanmuEvent event) {
+        return new DanmuKey(event.getSender() == null ? null : event.getSender().getUid(),
+                event.getContent(), event.getTimestamp() / 1000);
+    }
+
+    private void remember(RecoveryHistory history, DanmuKey key, boolean recovered) {
+        history.newestSecond = Math.max(history.newestSecond, key.second());
+        history.danmus.put(key, recovered);
+        history.danmus.keySet().removeIf(k -> k.second() < history.newestSecond - 120);
+        while (history.danmus.size() > 16384) {
+            history.danmus.remove(history.danmus.keySet().iterator().next());
+        }
+    }
+
+    /** 在认证线程上保存旧连接尾部的键，长缺口也不会因新消息淘汰而漏掉起点去重。 */
+    synchronized Set<?> snapshotDanmus(LiveStreamerInfo source) {
+        RecoveryHistory history = recoveryHistory.get(source.getUid());
+        return history == null ? Set.of() : Set.copyOf(history.danmus.keySet());
+    }
+
+    synchronized boolean recoverDanmu(BilibiliDanmuEvent event, long start, Set<?> snapshot) {
+        if (!currentSession(event, start)) { return false; }
+        RecoveryHistory history = history(event);
+        DanmuKey key = danmuKey(event);
+        if (snapshot.contains(key) || history.danmus.containsKey(key)) { return false; }
+        remember(history, key, true);
+        countDanmu(event, true);
+        return true;
+    }
+
+    synchronized boolean recoverSuperChat(BilibiliSuperChatEvent event, long start) {
+        if (!currentSession(event, start)) { return false; }
+        RecoveryHistory history = history(event);
+        if (!history.superChats.add(event.getMessageId())) { return false; }
+        history.recoveredSuperChats.add(event.getMessageId());
+        countSuperChat(event, true);
+        return true;
+    }
+
+    private boolean currentSession(NovaBaseLiveEvent event, long start) {
+        Long uid = event.getSource().getUid();
+        return liveDataService.getLiveStatus(event.getPlatform(), uid).orElse(false)
+                && liveDataService.getLiveStartTime(event.getPlatform(), uid).orElse(0L) == start;
+    }
 
     /**
      * 弹幕原文留档。逐条追加，与指标累计并列——那边记「有多少」，这边记「说了什么」
@@ -101,19 +167,37 @@ public class BilibiliLiveStatsAggregator {
      * 弹幕
      */
     @EventListener(BilibiliDanmuEvent.class)
-    public void onDanmu(BilibiliDanmuEvent event) {
+    public synchronized void onDanmu(BilibiliDanmuEvent event) {
+        if (event.getSource() != null && event.getSource().getUid() != null) {
+            RecoveryHistory history = history(event);
+            DanmuKey key = danmuKey(event);
+            if (Boolean.TRUE.equals(history.danmus.get(key))) { return; }
+            remember(history, key, false);
+        }
+        countDanmu(event, false);
+    }
+
+    private void countDanmu(BilibiliDanmuEvent event, boolean recovered) {
         increment(event, BilibiliLiveMetric.DANMU_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.DANMU_USERS, event.getSender());
         String text = StringUtil.isNotBlank(event.getContentText()) ? event.getContentText() : event.getContent();
         recordWords(event, text);
-        recordDanmu(event, event.getSender(), text, DanmuRecord.Type.DANMU);
+        recordDanmu(event, event.getSender(), text, DanmuRecord.Type.DANMU, recovered);
     }
 
     /**
      * 表情包弹幕，计入弹幕
      */
     @EventListener(BilibiliEmojiEvent.class)
-    public void onEmoji(BilibiliEmojiEvent event) {
+    public synchronized void onEmoji(BilibiliEmojiEvent event) {
+        if (event.getSource() != null && event.getSource().getUid() != null) {
+            String text = event.getEmoji() == null ? null : event.getEmoji().getName();
+            RecoveryHistory history = history(event);
+            DanmuKey key = new DanmuKey(event.getSender() == null ? null : event.getSender().getUid(),
+                    text, event.getTimestamp() / 1000);
+            if (Boolean.TRUE.equals(history.danmus.get(key))) { return; }
+            remember(history, key, false);
+        }
         increment(event, BilibiliLiveMetric.DANMU_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.DANMU_USERS, event.getSender());
         // 表情包留的是表情的名字而不是图片地址：地址会失效，而名字是这条弹幕的意思所在。
@@ -216,7 +300,16 @@ public class BilibiliLiveStatsAggregator {
      * 醒目留言
      */
     @EventListener(BilibiliSuperChatEvent.class)
-    public void onSuperChat(BilibiliSuperChatEvent event) {
+    public synchronized void onSuperChat(BilibiliSuperChatEvent event) {
+        if (event.getSource() != null && event.getSource().getUid() != null && event.getMessageId() != null) {
+            RecoveryHistory history = history(event);
+            if (history.recoveredSuperChats.contains(event.getMessageId())) { return; }
+            history.superChats.add(event.getMessageId());
+        }
+        countSuperChat(event, false);
+    }
+
+    private void countSuperChat(BilibiliSuperChatEvent event, boolean recovered) {
         double value = Optional.ofNullable(event.getValue()).orElse(0.0);
         increment(event, BilibiliLiveMetric.SUPER_CHAT_COUNT, 1);
         increment(event, BilibiliLiveMetric.SUPER_CHAT_VALUE, value);
@@ -225,7 +318,7 @@ public class BilibiliLiveStatsAggregator {
         scoreUser(event, BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT, event.getSender(), 1);
         scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(), value);
         // 付费留言也是一句话，同样留原文；类型分开标，密度统计据此把它排除在外
-        recordDanmu(event, event.getSender(), event.getContent(), DanmuRecord.Type.SUPER_CHAT);
+        recordDanmu(event, event.getSender(), event.getContent(), DanmuRecord.Type.SUPER_CHAT, recovered);
     }
 
     /**
@@ -415,7 +508,8 @@ public class BilibiliLiveStatsAggregator {
      * 下播即清掉本场记过的 PK 阶段
      */
     @EventListener(BilibiliLiveOffEvent.class)
-    public void onLiveOff(BilibiliLiveOffEvent event) {
+    public synchronized void onLiveOff(BilibiliLiveOffEvent event) {
+        if (event.getSource() != null) { recoveryHistory.remove(event.getSource().getUid()); }
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
@@ -580,6 +674,11 @@ public class BilibiliLiveStatsAggregator {
      * 空文本不留：一条没有内容的记录占着行数，却答不出任何问题。
      */
     private void recordDanmu(NovaBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type) {
+        recordDanmu(event, sender, text, type, false);
+    }
+
+    private void recordDanmu(NovaBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type,
+                             boolean recovered) {
         if (event.getSource() == null || event.getSource().getUid() == null || StringUtil.isBlank(text)) {
             return;
         }
@@ -595,7 +694,7 @@ public class BilibiliLiveStatsAggregator {
                 sender == null ? null : sender.getUid(),
                 sender == null ? null : sender.getUname(),
                 text,
-                type));
+                type, recovered));
     }
 
     /** 与 {@link #recordDanmu} 同守卫：无开播时刻即不留。 */

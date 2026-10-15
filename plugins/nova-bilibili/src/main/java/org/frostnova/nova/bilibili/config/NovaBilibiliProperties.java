@@ -227,6 +227,13 @@ public class NovaBilibiliProperties {
     @Getter
     @Setter
     public static class Live {
+        /** 重连认证成功后，用历史弹幕与屏上醒目留言补充本场统计和原文。 */
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("重连后补录")
+        @ConfigSummary("补录仅进入统计与原文留档；接口失败时放弃本次补录。")
+        private boolean reconnectRecovery = true;
+
         /**
          * 是否连直播间的长连接；被风控连不上时可关掉，只用备用直播推送。
          */
