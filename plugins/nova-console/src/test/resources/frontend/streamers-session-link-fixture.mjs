@@ -127,7 +127,7 @@ let pendingLive = null;
 const dataAt = new Date(2026, 9, 14, 12, 34, 0).getTime();
 const checkedAt = new Date(2026, 9, 14, 12, 35, 7).getTime();
 let liveData = {
-  success: true, living: true, since: checkedAt - 3600000, dataAt, checkedAt,
+  success: true, living: true, since: checkedAt - 3600000, dataAt, checkedAt, revenue: 12.5,
   metrics: {danmu_count: 123, gift_value: 12.5, unknown_metric: 9, online_count: 999, online_rank_count: 3,
     session_extra: 7},
   series: {online_count: [[dataAt - 60000, 50], [dataAt, 42]]},
@@ -303,7 +303,7 @@ await ask('直播摘要区分缺失与真实零且流水不累加观众消耗', 
   const saved = liveData;
   try {
     for (const metrics of [{}, {gift_value: 0, gift_paid: 200, box_profit: 8, danmu_count: 0, online_count: 0}]) {
-      liveData = {...saved, metrics}; await overview();
+      liveData = {...saved, metrics, revenue: Object.keys(metrics).length ? 0 : null}; await overview();
       const values = walk(liveCard()).find(n => n.className === 'sd-live-metrics')?.children.map(n => n.children[1].textContent);
       same(values, Object.keys(metrics).length ? ['0.00 元', '0 条', '0 人'] : ['暂无数据', '暂无数据', '暂无数据'], '缺失和零的三项摘要');
     }

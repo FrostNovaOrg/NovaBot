@@ -31,6 +31,7 @@ class StreamerInsightsApiTest {
     LiveSessionArchive archive;
     StreamerSnapshotArchive snapshots;
     LiveDetailArchive details;
+    LiveDataService live;
     final Instant now = Instant.parse("2026-10-21T07:00:00Z");
     final Instant from = Instant.parse("2026-10-14T22:00:00Z");
 
@@ -43,7 +44,7 @@ class StreamerInsightsApiTest {
         snapshots = new StreamerSnapshotArchive(props);
         var data = mock(AbstractDataSource.class);
         when(data.getAllUsers()).thenReturn(List.of());
-        var live = mock(LiveDataService.class);
+        live = mock(LiveDataService.class);
         when(live.getLiveStatus(any(), any())).thenReturn(Optional.of(false));
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(new BilibiliLiveMetricCatalog()));
@@ -138,7 +139,7 @@ class StreamerInsightsApiTest {
             var data = JSON.parseObject(raw).getJSONObject("insights");
             assertEquals(Set.of("from", "to", "metricsKnown", "sessions", "durationSeconds", "revenue",
                     "messages", "audience", "interactionAudience", "composition", "firstRecordedAt", "coverage",
-                    "fans", "daily", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
+                    "fans", "daily", "follows", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
             var nullable = new ArrayList<>(List.of("audience", "interactionAudience", "composition", "firstRecordedAt", "fans"));
             if (platform.equals("other")) nullable.addAll(List.of("revenue", "messages"));
             for (String key : nullable) assertNull(data.get(key), key + "应保留null值");
@@ -395,6 +396,92 @@ class StreamerInsightsApiTest {
         var mvc = MockMvcBuilders.standaloneSetup(controller).addFilters(filter).build();
         mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // 周月数字必须与同范围概况一致，观众跨周重复出现时仍只算一人。
+    @Test @DisplayName("周月趋势沿用概况口径与名单去重")
+    void trendSummaryRules() throws Exception {
+        append(from); append(now.minusSeconds(3600));
+        double overviewRevenue = insights("7", "bilibili").getDoubleValue("revenue");
+        for (String period : List.of("day", "week", "month")) {
+            var raw = MockMvcBuilders.standaloneSetup(controller).build().perform(
+                    get("/config/api/streamers/bilibili/1/trend").param("period", period).param("days", "7"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var buckets = JSON.parseObject(raw).getJSONObject("trend").getJSONArray("buckets");
+            double sum = 0;
+            for (int i = 0; i < buckets.size(); i++) {
+                var bucket = buckets.getJSONObject(i);
+                assertTrue(bucket.containsKey("revenue"), "趋势桶必须给概况口径流水");
+                sum += bucket.getDoubleValue("revenue");
+                if (bucket.getIntValue("sessions") > 0) assertEquals(1, bucket.getIntValue("audience"));
+            }
+            assertEquals(overviewRevenue, sum);
+            if (period.equals("week")) assertEquals(2, buckets.size());
+            if (period.equals("month")) assertEquals(1, buckets.size());
+            System.out.println("TREND_" + period.toUpperCase(Locale.ROOT) + "_SAMPLE: " + raw);
+        }
+        assertEquals(1, insights("7", "bilibili").getIntValue("audience"), "概况观众不能相加各周人数");
+    }
+
+    // 空周、空月也必须占据页面范围，不能只保留有场次的两端。
+    @Test @DisplayName("周月趋势保留范围内所有空桶")
+    void trendEmptyPeriods() {
+        append(now.minusSeconds(3600));
+        for (String period : List.of("week", "month")) {
+            var raw = JSON.parseObject(JSON.toJSONString(controller.rangeTrend("bilibili", 1L, period, "90").getBody()));
+            var buckets = raw.getJSONObject("trend").getJSONArray("buckets");
+            assertEquals(period.equals("week") ? 14 : 4, buckets.size());
+            assertTrue(buckets.getJSONObject(0).containsKey("revenue"), "空周期也须有概况口径");
+            assertEquals(0d, buckets.getJSONObject(0).getDoubleValue("revenue"));
+            assertEquals(0, buckets.getJSONObject(0).getIntValue("sessions"));
+        }
+    }
+
+    // 新增关注须是归档计数，不能误用粉丝快照差值；没有规则则保留null。
+    @Test @DisplayName("新增关注合计与每日值且未知平台不伪装零")
+    void followsTotals() throws Exception {
+        archive.append(new LiveSession("bilibili", 1L, "sample", 2L, from.toEpochMilli(),
+                from.plusSeconds(600).toEpochMilli(), 600, Map.of("follow_count", 9d), Map.of()));
+        var raw = MockMvcBuilders.standaloneSetup(controller).build().perform(
+                get("/config/api/streamers/bilibili/1/insights").param("days", "7"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var data = JSON.parseObject(raw).getJSONObject("insights");
+        assertEquals(9L, data.getLong("follows"), "本期必须返回新增关注计数");
+        assertEquals(9L, data.getJSONArray("daily").getJSONObject(0).getLong("follows"));
+        comparisonSession(from, 0, 0, false, false, "other");
+        var unsupported = JSON.parseObject(JSON.toJSONString(controller.insights("other", 1L, "7").getBody(),
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls)).getJSONObject("insights");
+        assertTrue(unsupported.containsKey("follows"));
+        assertNull(unsupported.get("follows"));
+        System.out.println("FOLLOWS_INSIGHTS_SAMPLE: " + raw);
+    }
+
+    // 空周期不能混入跨界长场；明确选择空开播列表应得到零场。
+    @Test @DisplayName("趋势空周期下钻返回空列表")
+    void emptyTrendDrill() throws Exception {
+        append(from);
+        var raw = MockMvcBuilders.standaloneSetup(controller).build().perform(
+                get("/config/api/streamers/bilibili/1/sessions").param("from", "" + from.toEpochMilli())
+                        .param("to", "" + now.toEpochMilli()).param("starts", ""))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(0, JSON.parseObject(raw).getJSONObject("sessions").getIntValue("total"));
+    }
+
+    // 本场流水只能采用概况声明的收入项，不能把所有金额都相加。
+    @Test @DisplayName("直播流水与归档概况共用收入口径")
+    void liveRevenueRules() throws Exception {
+        append(from);
+        java.nio.file.Files.writeString(dir.resolve("datasource.json"),
+                "[{\"platform\":\"bilibili\",\"uid\":1,\"enabled\":true,\"targets\":[]}]");
+        when(live.getLiveStatus("bilibili", 1L)).thenReturn(Optional.of(true));
+        when(live.getLiveMetrics("bilibili", 1L)).thenReturn(Map.of("gift_value", 10d,
+                "super_chat_value", 30d, "guard_value", 198d, "box_profit", 999d));
+        var raw = MockMvcBuilders.standaloneSetup(controller).build().perform(get("/config/api/streamers/bilibili/1/live"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var data = JSON.parseObject(raw);
+        assertEquals(238d, data.getDouble("revenue"), "本场必须下发按规则计算的流水");
+        assertEquals(insights("7", "bilibili").getDoubleValue("revenue"), data.getDoubleValue("revenue"));
+        System.out.println("LIVE_REVENUE_SAMPLE: " + raw);
     }
 
 }

@@ -409,7 +409,7 @@ public class StreamerController {
             start = from == null ? 0 : Long.parseLong(from);
             end = to == null ? Long.MAX_VALUE : Long.parseLong(to);
             if (start < 0 || end <= start) throw new IllegalArgumentException();
-            if (starts != null) {
+            if (starts != null && !starts.isEmpty()) {
                 for (String value : starts.split(",", -1)) {
                     long at = Long.parseLong(value.trim());
                     if (at < 0) throw new IllegalArgumentException();
@@ -443,8 +443,16 @@ public class StreamerController {
         var range = StreamerInsights.recent(Integer.parseInt(days), clock);
         var buckets = analytics.aggregate(sessions,
                 LiveSessionAnalytics.Period.valueOf(period.toUpperCase(java.util.Locale.ROOT)), keys, range.from(), range.to());
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        var summaries = new StreamerInsights().trend(sessions, range.from(), range.to(),
+                LiveSessionAnalytics.Period.valueOf(period.toUpperCase(java.util.Locale.ROOT)), rules);
+        var items = LiveAnalyticsJson.toJson(buckets);
+        for (int i = 0; i < items.size(); i++) {
+            items.getJSONObject(i).putAll(JSON.parseObject(JSON.toJSONString(summaries.get(i), JSONWriter.Feature.WriteNulls)));
+        }
         return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days), "trend",
-                JSONObject.of("period", period, "buckets", LiveAnalyticsJson.toJson(buckets),
+                JSONObject.of("period", period, "buckets", items,
                         "metrics", describe(metrics), "metricsKnown", !metrics.isEmpty())));
     }
 
@@ -521,7 +529,11 @@ public class StreamerController {
         result.put("success", true);
         result.put("living", living);
         result.put("since", living ? liveDataService.getLiveStartTime(platform, uid).orElse(null) : null);
-        result.put("metrics", living ? liveDataService.getLiveMetrics(platform, uid) : Map.of());
+        var metrics = living ? liveDataService.getLiveMetrics(platform, uid) : Map.<String, Double>of();
+        result.put("metrics", metrics);
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        result.put("revenue", living && rules != null ? rules.revenue(metrics) : null);
 
         Set<String> requested = new LinkedHashSet<>();
         if (series != null) {

@@ -25,7 +25,7 @@ public final class StreamerInsights {
                 .minusDays(days - 1)), now);
     }
     public record Day(String date, int sessions, long durationSeconds, Double revenue,
-                      Long messages, Integer audience) {}
+                      Long messages, Integer audience, Long follows, List<Long> starts) {}
     public record Coverage(int complete, int anonymous, int unknown, int missing) {}
     public record Composition(int firstRecorded, int returning) {}
     public record Fans(double change, long fromAt, double fromValue, long toAt,
@@ -33,7 +33,7 @@ public final class StreamerInsights {
     public record Result(long from, long to, boolean metricsKnown, int sessions, long durationSeconds,
                          Double revenue, Long messages, Integer audience, Integer interactionAudience,
                          Composition composition, Long firstRecordedAt, Coverage coverage,
-                         Fans fans, List<Day> daily) {}
+                         Fans fans, List<Day> daily, Long follows) {}
 
     /** changeRatio 为变化比例，例如 0.12 表示上涨 12%；不能比较时仅给原因。 */
     public record Comparison(Double changeRatio, String reasonCode, String reason) {}
@@ -108,7 +108,7 @@ public final class StreamerInsights {
         for (var day = StatisticsDay.dateOf(from); !day.isAfter(last); day = day.plusDays(1)) {
             var a = daily.getOrDefault(day, new Accumulator());
             days.add(new Day(day.toString(), a.sessions, a.duration, rules == null ? null : a.revenue,
-                    rules == null ? null : a.messages, a.audience(rules)));
+                    rules == null ? null : a.messages, a.audience(rules), a.follows(rules), List.copyOf(a.starts)));
         }
         Composition composition = null;
         if (rules != null && historyKnown && total.listed > 0) {
@@ -119,8 +119,29 @@ public final class StreamerInsights {
                 rules == null ? null : total.revenue, rules == null ? null : total.messages,
                 total.audience(rules), rules == null || total.listed == 0 ? null : total.interaction.size(),
                 composition, firstRecordedAt, new Coverage(total.complete, total.anonymous,
-                total.unknown, total.missing), fans(snapshots, start, end, rules), List.copyOf(days));
+                total.unknown, total.missing), fans(snapshots, start, end, rules), List.copyOf(days), total.follows(rules));
     }
+    public record TrendBucket(String label, long start, long end, int sessions, long durationSeconds,
+                              Double revenue, Long messages, Integer audience, Long follows, List<Long> starts) {}
+
+    /** 概况口径按统计周期归桶，页面范围外的场次不参与；保留完整周期边界供下钻。 */
+    public List<TrendBucket> trend(Collection<LiveSession> sessions, Instant from, Instant to,
+                                   LiveSessionAnalytics.Period period, LiveMetricCatalog.Insights rules) {
+        var grouped = new LinkedHashMap<Long, Accumulator>();
+        for (var session : sessions) {
+            if (session.startTime() < from.toEpochMilli() || session.startTime() >= to.toEpochMilli()) continue;
+            long start = StatisticsDay.startOf(period.startOf(StatisticsDay.dateOf(
+                    Instant.ofEpochMilli(session.startTime())))).toEpochMilli();
+            grouped.computeIfAbsent(start, ignored -> new Accumulator()).add(session, rules);
+        }
+        return new LiveSessionAnalytics().aggregate(sessions, period, Set.of(), from, to).stream().map(bucket -> {
+            var a = grouped.getOrDefault(bucket.start(), new Accumulator());
+            return new TrendBucket(bucket.label(), bucket.start(), bucket.end(), a.sessions, a.duration,
+                    rules == null ? null : a.revenue, rules == null ? null : a.messages, a.audience(rules),
+                    a.follows(rules), List.copyOf(a.starts));
+        }).toList();
+    }
+
     private static void addUsers(Set<Long> into, LiveSession session, List<String> keys) {
         for (String key : keys) into.addAll(session.userSet(key));
     }
@@ -146,17 +167,20 @@ public final class StreamerInsights {
 
     private static final class Accumulator {
         int sessions, listed, complete, anonymous, unknown, missing;
-        long duration, messages;
+        long duration, messages, follows;
         double revenue;
+        final List<Long> starts = new ArrayList<>();
         final Set<Long> audience = new HashSet<>();
         final Set<Long> interaction = new HashSet<>();
 
         void add(LiveSession session, LiveMetricCatalog.Insights rules) {
             sessions++;
+            starts.add(session.startTime());
             duration += session.durationSeconds();
             if (rules != null) {
-                for (String key : rules.revenueKeys()) revenue += session.metric(key);
-                messages += (long) session.metric(rules.messageKey());
+                revenue += rules.revenue(session.metrics());
+                if (rules.messageKey() != null) messages += (long) session.metric(rules.messageKey());
+                if (rules.followsKey() != null) follows += (long) session.metric(rules.followsKey());
             }
             if (!session.hasUserSets()) {
                 missing++;
@@ -170,6 +194,9 @@ public final class StreamerInsights {
                 addUsers(audience, session, rules.audienceSets());
                 addUsers(interaction, session, rules.interactionSets());
             }
+        }
+        Long follows(LiveMetricCatalog.Insights rules) {
+            return rules == null || rules.followsKey() == null ? null : follows;
         }
         Integer audience(LiveMetricCatalog.Insights rules) {
             return rules == null || listed == 0 ? null : audience.size();

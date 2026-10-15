@@ -109,6 +109,6 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
         audience.add(BilibiliLiveMetric.ENTER_USERS);
         return new Insights(List.of(BilibiliLiveMetric.GIFT_VALUE, BilibiliLiveMetric.SUPER_CHAT_VALUE,
                 BilibiliLiveMetric.GUARD_VALUE), BilibiliLiveMetric.DANMU_COUNT,
-                List.copyOf(audience), interaction, BilibiliStreamerMetric.FANS);
+                List.copyOf(audience), interaction, BilibiliStreamerMetric.FANS, BilibiliLiveMetric.FOLLOW_COUNT);
     }
 }

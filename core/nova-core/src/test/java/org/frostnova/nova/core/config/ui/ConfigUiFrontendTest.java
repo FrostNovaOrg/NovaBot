@@ -2093,7 +2093,7 @@ class ConfigUiFrontendTest {
     private static final List<String> STREAMERS_MODEL_FUNCTIONS = List.of(
             "function parseStreamersHash", "function statusChip", "function sparkline",
             "function peakCell", "function gapCells", "function totalDataBanner",
-            "function snapshotRows", "function barGeometry");
+            "function snapshotRows");
 
     /**
      * 主播页三块各有落点，且状态标、折线、人气峰那几条判法只有 streamers-model 一份
