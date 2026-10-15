@@ -43,22 +43,23 @@ export const COMPONENT_STYLE = `
 .sc-calendar-days{display:grid;gap:var(--sc-gap)}
 .sc-calendar-day,.sc-calendar-blank{height:var(--sc-cell);width:100%;min-width:0;box-sizing:border-box}
 .sc-calendar-day{position:relative;border:1px solid var(--line);border-radius:3px;padding:0;background:var(--ground);font:inherit;color:var(--text);font-size:11px}
-.sc-calendar-recorded{background:color-mix(in srgb,var(--accent) var(--sc-intensity,68%),var(--ground));border-color:var(--softline)}
+.sc-calendar-recorded{background:color-mix(in srgb,var(--accent) var(--sc-intensity,68%),var(--ground));border-color:color-mix(in srgb,var(--accent) 65%,var(--line))}
 .sc-calendar-off{background:var(--ground);border-color:var(--line)}
 .sc-calendar-unknown{background:color-mix(in srgb,var(--dim) 23%,var(--ground));border-color:color-mix(in srgb,var(--dim) 45%,var(--line))}
 .sc-calendar-day.sc-calendar-recorded{cursor:pointer}
-.sc-calendar-day:focus-visible{outline:2px solid var(--accent-text);outline-offset:-2px}
+.sc-calendar-day:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .sc-calendar-day[aria-current="date"]{box-shadow:inset 0 0 0 1px var(--text)}
 .sc-calendar-today{position:absolute;right:0;bottom:0;width:4px;height:4px;background:var(--text);border-radius:50%;overflow:hidden;font-size:0}
 .sc-calendar-legend{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap;font-size:10px;color:var(--dim);margin:5px 0 8px}
 .sc-calendar-legend-item{display:inline-flex;align-items:center;gap:3px;margin-left:5px}
 .sc-calendar-legend i{width:10px;height:10px;border:1px solid var(--line);border-radius:2px}
 .sc-calendar-history{font-size:11px;color:var(--dim)}
-.sc-calendar-month{--sc-cell:32px;--sc-gap:4px;grid-template-columns:minmax(0,1fr);width:100%;min-width:280px}
+.sc-calendar-month{--sc-cell:32px;--sc-gap:4px;grid-template-columns:minmax(0,1fr);width:100%;min-width:0}
 .sc-calendar-month .sc-calendar-row,.sc-calendar-daynames{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));column-gap:var(--sc-gap)}
 .sc-calendar-daynames{position:sticky;top:0;z-index:2;min-height:20px;align-items:center;text-align:center;background:var(--surface);color:var(--dim);font-size:11px}
-.sc-calendar-short{--sc-cell:54px;--sc-gap:5px;grid-template-columns:minmax(0,1fr);min-width:max-content}
-.sc-calendar-short .sc-calendar-day{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px}
+.sc-calendar-short{grid-template-columns:minmax(0,1fr);width:100%;min-width:0}
+.sc-calendar-short .sc-calendar-row{grid-template-columns:repeat(var(--sc-cols),minmax(28px,1fr));gap:4px}
+.sc-calendar-short .sc-calendar-day{height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px}
 .sc-calendar-short .sc-calendar-day small{font-size:10px}
 .sc-audience{display:grid;grid-template-columns:154px minmax(0,1fr);align-items:center;gap:16px;margin:6px 0 16px;color:var(--text)}
 .sc-audience-ring{display:grid;width:154px;height:154px}
@@ -88,7 +89,7 @@ export const COMPONENT_STYLE = `
 .sc-drawer-body .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(max-width:1000px){.sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sc-kpi-value{font-size:21px}}
 @media(max-width:1150px) and (min-width:901px),(max-width:420px){.sc-audience{grid-template-columns:132px minmax(0,1fr);gap:12px}.sc-audience-ring{width:132px;height:132px}.sc-audience-label strong{font-size:23px}.sc-audience-segment{padding:9px}.sc-audience-segment strong{font-size:17px}}
-@media(max-width:560px){.sc-card{padding:14px;font-size:14px}.sc-card h3{font-size:16px}.sc-kpis{gap:8px}.sc-kpi{padding:11px}.sc-kpi-value{font-size:20px}.sc-section-head{align-items:center}.sc-drawer{width:100vw;border:0}.sc-drawer-head{padding:12px 14px}.sc-drawer-close{min-height:42px}.sc-drawer-body{padding:14px}}
+@media(max-width:560px){.sc-calendar-layout{--sc-cell:30px;--sc-gap:4px}.sc-calendar-month{--sc-cell:34px}.sc-card{padding:14px;font-size:14px}.sc-card h3{font-size:16px}.sc-kpis{gap:8px}.sc-kpi{padding:11px}.sc-kpi-value{font-size:20px}.sc-section-head{align-items:center}.sc-drawer{width:100vw;border:0}.sc-drawer-head{padding:12px 14px}.sc-drawer-close{min-height:42px}.sc-drawer-body{padding:14px}}
 `;
 
 const charts = new Set();
@@ -117,7 +118,7 @@ export function createChart(host, {
   points = [], title = '趋势', period = 'day', hideOff = false,
   isOff = point => point.status === 'off', format = chartNumber, onSelect,
 } = {}) {
-  const shown = period === 'day' && hideOff ? points.filter(point => !isOff(point)) : [...points];
+  const shown = period === 'day' && hideOff ? points.filter(point => !isOff(point) && finite(point.value)) : [...points];
   const samples = shown.map(point => point.value).filter(finite);
   const min = Math.min(0, ...samples);
   const max = Math.max(0, ...samples) || (min === 0 ? 1 : 0);
@@ -228,7 +229,7 @@ export function createCalendar(host, calendar, {onSelect} = {}) {
   if (!short) {
     const weekdays = element('div', month ? 'sc-calendar-daynames' : 'sc-calendar-weekdays');
     weekdays.setAttribute('aria-hidden', 'true');
-    for (const name of names) weekdays.append(element('span', '', month ? name : name.slice(1)));
+    names.forEach((name, index) => weekdays.append(element('span', '', month ? name : [0, 2, 4, 6].includes(index) ? name.slice(1) : '')));
     if (!month) {
       const spacer = element('span'); spacer.setAttribute('aria-hidden', 'true');
       const months = element('div', 'sc-calendar-months'); months.setAttribute('aria-hidden', 'true');

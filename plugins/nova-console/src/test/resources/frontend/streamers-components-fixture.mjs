@@ -100,6 +100,31 @@ await check('隐藏未播后点选原日期', () => {
     Number(dots[2].getAttribute('cx')) - Number(dots[1].getAttribute('cx')), '压缩后等间距');
   assert.equal(JSON.stringify(points), before);
 });
+// 隐藏日期时，缺测不能继续占位或让折线断开，真实零与原日期仍须保留。
+await check('隐藏未播与缺测后连续且点选原日期', () => {
+  const records = [
+    {start: 100, end: 200, label: '10/11', value: 4, status: 'recorded'},
+    {start: 200, end: 300, label: '10/12', value: null, status: 'recorded'},
+    {start: 300, end: 400, label: '10/13', value: 8, status: 'off'},
+    {start: 400, end: 500, label: '10/14', value: 0, status: 'recorded'},
+    {start: 500, end: 600, label: '10/15', value: null, status: 'unknown'},
+    {start: 600, end: 700, label: '10/16', value: -2, status: 'recorded'},
+  ];
+  const before = JSON.stringify(records);
+  const selected = [];
+  const chart = ui.createChart(host(), {points: records, hideOff: true, onSelect: value => selected.push(value)});
+  const path = byClass(chart.element, 'sc-line')[0].getAttribute('d');
+  assert.equal((path.match(/M/g) || []).length, 1, '隐藏缺测后折线连续');
+  const dots = byClass(chart.element, 'sc-point');
+  assert.equal(dots.length, 3, '只保留有效值且排除未播');
+  assert.equal(Number(dots[1].getAttribute('cx')) - Number(dots[0].getAttribute('cx')),
+    Number(dots[2].getAttribute('cx')) - Number(dots[1].getAttribute('cx')), '缺测不占位且等间距');
+  assert.equal(dots[1].getAttribute('cy'), byClass(chart.element, 'sc-zero')[0].getAttribute('y1'), '真实零仍在零线上');
+  assert.deepEqual(byClass(chart.element, 'sc-chart-labels')[0].children.map(node => node.textContent), ['10/11', '10/14', '10/16']);
+  dots.forEach(dot => dot.fire('click'));
+  assert.deepEqual(selected, [{start: 100, end: 200}, {start: 400, end: 500}, {start: 600, end: 700}]);
+  assert.equal(JSON.stringify(records), before);
+});
 // 卡片缩放须重画坐标，否则文字和图形一起挤压。
 await check('尺寸变化重画且离页释放', () => {
   const chart = ui.createChart(host(), {points});
