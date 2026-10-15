@@ -192,6 +192,7 @@ class BilibiliBackupLivePushServiceTest {
     void shouldNotAdoptWhenAlreadyLivingOnRecord() {
         statusStore.put(UID, true);
         startTimeStore.put(UID, 111111111000L);
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(LIVE_START_SECONDS * 1000 + 60000));
 
         runRound(List.of(streamer()), Map.of(UID, livingRoom(LIVE_START_SECONDS)));
 

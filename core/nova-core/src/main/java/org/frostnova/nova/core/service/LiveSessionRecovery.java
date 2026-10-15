@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.service;
 
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveSession;
@@ -58,13 +59,22 @@ public class LiveSessionRecovery {
      */
     private final LiveSessionDetailArchiver detailArchiver;
 
-    @Autowired
+    private final NovaCoreProperties properties;
+
     public LiveSessionRecovery(LiveDataService liveDataService, LiveSessionArchive archive,
                                LiveRoomInfoHistory roomInfoHistory, LiveSessionDetailArchiver detailArchiver) {
+        this(liveDataService, archive, roomInfoHistory, detailArchiver, new NovaCoreProperties());
+    }
+
+    @Autowired
+    public LiveSessionRecovery(LiveDataService liveDataService, LiveSessionArchive archive,
+                               LiveRoomInfoHistory roomInfoHistory, LiveSessionDetailArchiver detailArchiver,
+                               NovaCoreProperties properties) {
         this.liveDataService = liveDataService;
         this.archive = archive;
         this.roomInfoHistory = roomInfoHistory;
         this.detailArchiver = detailArchiver;
+        this.properties = properties;
     }
 
     /**
@@ -201,9 +211,28 @@ public class LiveSessionRecovery {
 
     /** 接管时辨认已结束的旧场。下播数据仍需保留给报告，不能仅凭起点存在就认作续播。 */
     public boolean isArchivedSession(@NonNull String platform, @NonNull Long uid, long start) {
-        if (start <= 0 || start == Long.MAX_VALUE) return false;
+        return archivedSession(platform, uid, start).isPresent();
+    }
+
+    /** 接口仍报同一起点，或在原有重连窗口内回来，均恢复原场的计数与明细。 */
+    public boolean canResumeArchivedSession(@NonNull String platform, @NonNull Long uid, long start, long apiStart) {
+        if (apiStart <= 0) return false;
+        return archivedSession(platform, uid, start)
+                .map(session -> apiStart == start || isWithinReconnectWindow(session.endTime(), apiStart))
+                .orElse(false);
+    }
+
+    /** 与开播事件一样以秒比较重连间隔；缺少有效时刻时不把两场混在一起。 */
+    public boolean isWithinReconnectWindow(long endTime, long startTime) {
+        return endTime > 0 && startTime >= endTime
+                && (startTime - endTime) / 1000 <= properties.getLive().getReconnectInterval();
+    }
+
+    private Optional<LiveSession> archivedSession(String platform, Long uid, long start) {
+        if (start <= 0 || start == Long.MAX_VALUE) return Optional.empty();
         return archive.find(start, start + 1).stream()
-                .anyMatch(session -> platform.equals(session.platform()) && uid.equals(session.uid()));
+                .filter(session -> platform.equals(session.platform()) && uid.equals(session.uid()))
+                .findFirst();
     }
 
     /**

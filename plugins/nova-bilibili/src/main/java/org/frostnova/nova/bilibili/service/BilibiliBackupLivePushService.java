@@ -283,9 +283,8 @@ public class BilibiliBackupLivePushService {
         // 不是在播时，这场直播会全程被当成没在播——直播报告、实时数据与控制台在播态
         // 读的都是那本账。此处把状态同步成在播，但不补推开播：人不是刚开播，补推是误报；
         // 长连接进房后迟到的开播消息也会被状态闸门按「账上已在播」拦下，不会漏出第二条。
-        // 账上已在播的（如进程重启后延续的场次）不是新加入监听，跳过，也不动已有的本场数据。
-        if (previous == null && living
-                && !liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), up.getUid()).orElse(false)) {
+        // 账上已在播也核对接口起点：停机期间可能已经结束旧场、又开了新场。
+        if (previous == null && living) {
             adoptLivingStream(up, room);
             return;
         }
@@ -457,27 +456,45 @@ public class BilibiliBackupLivePushService {
      * 把加入监听时已在播的主播按在播记账
      * <p>
      * 只做同步，不发开播事件——事件除了推送通知，还会触发监听器把本场数据整场重置，
-     * 那会把已有的本场数据抹掉。未归档的本场起始保持原值；已归档的旧场须清零，
-     * 与没有起始时一样按接口报的开播时间起一场；接口没报就按当前时刻。
+     * 那会把已有的本场数据抹掉。同一起点或重连窗口内返回的仍续原场，
+     * 窗口外的另起一场；停机期间结束的旧场先按原有恢复路径收尾。
      * @param up UP 主信息
      * @param room 直播间信息
      */
     private void adoptLivingStream(Up up, Room room) {
         String platform = BilibiliPlatform.BILIBILI.id();
-        liveDataService.setLiveStatus(platform, up.getUid(), true);
-
         var previousStart = liveDataService.getLiveStartTime(platform, up.getUid());
+        Long apiStart = room.getLiveStartTime() == null || room.getLiveStartTime() <= 0
+                ? null : Instant.ofEpochSecond(room.getLiveStartTime()).toEpochMilli();
         boolean archived = previousStart.filter(start ->
                 sessionRecovery.isArchivedSession(platform, up.getUid(), start)).isPresent();
-        if (previousStart.isEmpty() || archived) {
-            Instant startTime = room.getLiveStartTime() == null || room.getLiveStartTime() <= 0
-                    ? Instant.now()
-                    : Instant.ofEpochSecond(room.getLiveStartTime());
-            if (archived) {
+        boolean newStream = previousStart.isEmpty();
+        if (archived) {
+            if (sessionRecovery.canResumeArchivedSession(platform, up.getUid(), previousStart.get(), apiStart == null ? 0 : apiStart)) {
+                sessionRecovery.resumeAfterReconnect(platform, up);
+            } else {
+                newStream = true;
+            }
+        } else if (liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)
+                && previousStart.isPresent() && apiStart != null && apiStart > previousStart.get()) {
+            var lastSave = liveDataService.getLastSaveTime();
+            if (lastSave.isEmpty() || (apiStart > lastSave.get()
+                    && !sessionRecovery.isWithinReconnectWindow(lastSave.get(), apiStart))) {
+                closeStreamEndedWhileDown(up, upsAtStartup.contains(up.getUid()));
+                // 退出中或下播处理失败时保留旧场，不能清掉尚未收尾的统计。
+                if (liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)) return;
+                newStream = true;
+            }
+        }
+        if (newStream) {
+            if (previousStart.isPresent()) {
                 liveDataService.resetLiveData(platform, up.getUid());
             }
-            liveDataService.setLiveStartTime(platform, up.getUid(), startTime.toEpochMilli());
+            liveDataService.setLiveStartTime(platform, up.getUid(), apiStart == null ? System.currentTimeMillis() : apiStart);
         }
+        liveDataService.setLiveStatus(platform, up.getUid(), true);
+        // 收尾旧场可能已放行过下播，同步闸门后，新场的真下播才不会被拦住。
+        stateGate.admit(up.getUid(), true);
 
         log.info("备用直播推送: {} 加入监听时已在播, 已按在播记账, 不补推开播", up.getUname());
     }
