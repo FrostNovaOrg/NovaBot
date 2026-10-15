@@ -69,6 +69,7 @@ let insightsFailure = false;
 let livePendingResponse = false;
 let liveSnapshot = null;
 let resolveLive;
+let sessionMessageKey = null;
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
   start: 1791736800000 - i * 604800000, end: 1792341600000 - i * 604800000,
   label: 'week ' + i, sessions: i === 2 ? 0 : 2, durationSeconds: i === 1 ? 0 : 7200,
@@ -101,7 +102,7 @@ globalThis.fetch = async url => {
     if (livePendingResponse) return new Promise(resolve => { resolveLive = resolve; });
     return response(liveSnapshot || {success: true, living: false, metrics: {}, revenue: null, messages: null});
   }
-  return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}});
+  return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {chat_total: 37, other_total: 999}, title: String(startTime)})), messageKey: sessionMessageKey, metrics: []}});
 };
 const page = await import('../../../main/resources/config-ui-pages/streamers.js');
 const flatten = n => n ? [n, ...n.children.flatMap(flatten)] : [];
@@ -109,6 +110,17 @@ const base = '#/streamers/sample/1';
 const drawer = () => flatten(document.body).find(n => n.className === 'sc-drawer');
 const load = async hash => { location.hash = hash; await page.refresh(); };
 const textOf = node => flatten(node).map(n => n.textContent + n.innerHTML).join(' ');
+// 最近归档的弹幕必须跟随场次接口的指标规则，不能取另一个计数。
+await check('最近场次预览按场次接口messageKey读取弹幕', async () => {
+  for (const [key, expected] of [['chat_total', '37'], ['other_total', '999'], [null, '—']]) {
+    sessionMessageKey = key;
+    await load(base);
+    const rows = flatten(nodes.get('sd-recent')).filter(n => n.className === 'sd-recent-row');
+    assert.equal(rows.length, 2);
+    for (const row of rows) assert.ok(textOf(row).includes('弹幕 ' + expected), '最近场次弹幕须读取messageKey指定的值：' + expected);
+  }
+  sessionMessageKey = null;
+});
 // 重画指标和趋势时，卡片标题及操作提示不能消失。
 await check('范围和指标切换后保留卡片标题与趋势提示', async () => {
   await load(base);
@@ -195,6 +207,8 @@ await check('收藏的旧链接恢复总览与明细', async () => {
 // 范围必须作用于全部本期卡片，不能混用不同范围的数字。
 await check('180天同步指标趋势观众日历', async () => {
   await load(base);
+  const metric = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
+  metric.value = 'revenue'; await metric.fire('change');
   const live = nodes.get('sd-live'), beforeIntervals = intervals, beforeCleared = cleared;
   const range = flatten(nodes.get('sd-toolbar') || nodes.get('sd-insights')).find(n => n.href?.includes('days=180'));
   assert.ok(range, '工具条应提供180天'); requests.length = 0;

@@ -30,7 +30,8 @@ export const COMPONENT_STYLE = `
 .sc-chart-labels span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;font-variant-numeric:tabular-nums}
 .sc-chart-labels span:first-child{transform:none}
 .sc-chart-labels span:last-child{transform:translateX(-100%)}
-.sc-chart-action{display:block;margin:8px auto 0}.sc-point[aria-current=true]{stroke:var(--text);stroke-width:3}
+.sc-chart-footer{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;min-height:36px;margin-top:5px}
+.sc-chart-action{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;margin:0;font-size:12px;min-height:36px}.sc-point[aria-current=true]{stroke:var(--text);stroke-width:3}
 .sc-chart-readout{min-height:26px;padding:5px 0;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
 .sc-chart-note,.sc-empty{color:var(--dim);font-size:12px;margin:8px 0}
 .sc-calendar{min-width:0;color:var(--text);margin-top:2px}
@@ -127,14 +128,19 @@ export function createChart(host, {
   const max = Math.max(0, ...samples) || (min === 0 ? 1 : 0);
   const span = max - min || 1;
   const wrap = element('div', 'sc-chart');
+  if (deferred && !samples.length) {
+    wrap.append(element('p', 'sc-empty', '暂无有效图表数据')); host.append(wrap);
+    return {element: wrap, svg: null, destroy() {}};
+  }
   const plot = element('div', 'sc-chart-plot');
   const scale = element('div', 'sc-chart-scale');
   scale.setAttribute('aria-hidden', 'true');
-  const svg = svgElement('svg', {role: 'group', 'aria-label': title, preserveAspectRatio: 'xMidYMid meet'});
+  const svg = svgElement('svg', {role: 'group', 'aria-label': title + (deferred ? '；用左右键选择日期，再按查看当天场次' : ''), preserveAspectRatio: 'xMidYMid meet'});
   const labels = element('div', 'sc-chart-labels');
   const readout = element('div', 'sc-chart-readout');
   readout.setAttribute('role', 'status');
-  plot.append(scale, svg); wrap.append(plot, labels, readout); host.append(wrap);
+  const footer = element('div', 'sc-chart-footer'); footer.append(readout);
+  plot.append(scale, svg); wrap.append(plot, labels, footer); host.append(wrap);
 
   if (!samples.length) wrap.append(element('p', 'sc-empty', '暂无有效图表数据'));
   let destroyed = false;
@@ -144,19 +150,29 @@ export function createChart(host, {
   const action = deferred ? element('button', 'nv-btn2 sc-chart-action', '查看当天场次 →') : null;
   if (action) {
     action.type = 'button'; action.disabled = true;
-    action.addEventListener('click', () => select(shown[selectedIndex])); wrap.append(action);
+    action.setAttribute('aria-label', '查看当天场次：请先选择日期');
+    action.addEventListener('click', () => select(shown[selectedIndex])); footer.append(action);
   }
   if (deferred) readout.textContent = '点击图表选择日期';
   const choose = index => {
     if (!shown.length) return;
     selectedIndex = Math.max(0, Math.min(shown.length - 1, index));
     readout.textContent = describe(shown[selectedIndex]);
-    if (action) action.disabled = !canSelect(shown[selectedIndex]);
+    if (action) {
+      action.disabled = !canSelect(shown[selectedIndex]);
+      action.setAttribute('aria-label', '查看当天场次：' + shown[selectedIndex].label);
+    }
     for (const mark of svg.children) if (mark.dataset.index != null)
       mark.setAttribute('aria-current', String(Number(mark.dataset.index) === selectedIndex));
   };
   const move = event => {
-    if (!deferred || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    if (!deferred) return;
+    if (event.key === 'Enter') {
+      event.preventDefault(); event.stopPropagation?.();
+      if (selectedIndex >= 0 && !action.disabled) action.focus();
+      return;
+    }
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation?.();
     choose(selectedIndex < 0 ? 0 : selectedIndex + (event.key === 'ArrowLeft' ? -1 : 1));
   };
@@ -205,10 +221,11 @@ export function createChart(host, {
       mark.addEventListener('pointerenter', preview);
       mark.addEventListener('focus', preview);
       if (onSelect && (period === 'day' || canSelect(point))) {
-        mark.setAttribute('role', 'button'); mark.setAttribute('tabindex', '0');
+        mark.setAttribute('role', 'button');
+        if (!deferred) mark.setAttribute('tabindex', '0');
         mark.addEventListener('click', () => period === 'day' ? choose(i) : select(point));
         mark.addEventListener('keydown', event => {
-          if (['ArrowLeft', 'ArrowRight'].includes(event.key)) move(event);
+          if (deferred && ['ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) { move(event); return; }
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation?.(); period === 'day' ? choose(i) : select(point); }
         });
       }

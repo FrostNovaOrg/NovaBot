@@ -56,10 +56,6 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap}
-/* 页脚那行：翻页按钮与页数文字竖向居中。hint 自带的下边距把文字压在行的上沿，
-   而居中按外边距盒算，留着那段边距等于没居中 */
-#sd-audience .audience-pager{align-items:center;margin-top:10px}
-#sd-audience .audience-pager .hint{margin:0}
 :is(#sd-body,.sc-drawer) .session-table a,:is(#sd-body,.sc-drawer) .session-table a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
@@ -94,7 +90,9 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-trend-hide{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
 .sd-trend-table{overflow-x:auto}.sd-trend-table table{min-width:480px}
 .sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
-.sd-trend-pager{display:flex;align-items:center;gap:12px;margin-top:12px}.sd-trend-pager .hint{margin:0}
+.sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:13px}
+.sd-pagination>span{margin:0 auto 0 0;color:var(--dim)}
+.sd-pagination a{text-decoration:none}
 .sd-interaction-bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
 .sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
@@ -692,7 +690,7 @@ function renderAudience(data, message) {
     empty.textContent = '该范围和分组暂无观众名单。';
     host.appendChild(empty);
   }
-  const pager = el('div', 'lgpills audience-pager');
+  const pager = el('div', 'sd-pagination');
   const text = el('span', 'hint');
   text.textContent = '共 ' + fmtMetric(data.total) + ' 条 · 第 ' + fmtMetric(data.page) + '/' + fmtMetric(Math.max(1, data.pages)) + ' 页';
   pager.appendChild(text);
@@ -1255,7 +1253,7 @@ async function loadTrendDrawer(current) {
       body.appendChild(row);
     }
     table.appendChild(body); scroll.appendChild(table);
-    const pager = el('div', 'sd-trend-pager'); section.box.appendChild(pager);
+    const pager = el('div', 'sd-pagination'); section.box.appendChild(pager);
     const note = el('span', 'hint'); note.textContent = '共 ' + fmtMetric(ordered.length) + ' 条 · 第 ' + fmtMetric(page) + '/' + fmtMetric(pages) + ' 页'; pager.appendChild(note);
     for (const [label, target] of [['‹ 上一页', page - 1], ['下一页 ›', page + 1]]) {
       if (target < 1 || target > pages) continue;
@@ -1545,9 +1543,8 @@ function renderSessions(host, page = {}) {
   card.appendChild(sessionTable(items, page.metrics || []));
 
   const bar = pageBar(page);
-  const foot = el('div', 'tl-foot');
+  const foot = el('div', 'sd-pagination');
   const text = el('span', 'dim');
-  text.style.marginRight = '12px';
   text.textContent = bar.text;
   foot.appendChild(text);
   if (bar.prev) foot.appendChild(pageLink('‹ 上一页', bar.prev));
@@ -1576,7 +1573,6 @@ function renderSessions(host, page = {}) {
  */
 function pageLink(label, page) {
   const link = el('a', 'daystep');
-  link.style.marginRight = '8px';
   link.href = dashboardHash({panel: 'sessions', page});
   link.textContent = label;
   return link;
