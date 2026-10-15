@@ -81,7 +81,7 @@ class BilibiliLiveReportCurveAlignmentTest {
     /**
      * 缺口列与取值列必须共用同一个原点
      * <p>
-     * 一段完全落在 12:02 那一分钟之内的缺口（如 12:02:00-12:02:10），
+     * 一段完全落在 12:02 那一分钟之内的缺口（如 12:02:00-12:02:40），
      * 斜纹应压在第 2 列——那一列画的就是 12:02。若缺口列从开播时刻起算，
      * 斜纹会压到第 1 列上，盖住的恰是有数据的那一列。
      */
@@ -90,7 +90,7 @@ class BilibiliLiveReportCurveAlignmentTest {
     void gapColumnsShareTheOriginWithValues() {
         long end = NOON + 11 * MINUTE;
         int buckets = 12;
-        List<LiveGap> gaps = List.of(new LiveGap(NOON + 2 * MINUTE, NOON + 2 * MINUTE + 10_000L, LiveGap.Reason.STREAM_LOSS));
+        List<LiveGap> gaps = List.of(new LiveGap(NOON + 2 * MINUTE, NOON + 2 * MINUTE + 40_000L, LiveGap.Reason.STREAM_LOSS));
 
         boolean[] missing = BilibiliLiveReportPainter.gapColumns(gaps, START, buckets, 12);
         assertEquals(true, missing[2], "12:02 内的缺口应压第 2 列");
