@@ -244,6 +244,32 @@ class LiveDetailArchiveTest {
     }
 
     @Test
+    @DisplayName("旧明细里没有点赞那条曲线时照「没有」读出，不报错")
+    void oldDetailWithoutLikeSeriesReadsAsAbsent() throws IOException {
+        // 点赞累计数的分钟曲线是后加的：在这之前留下的 detail.json 里，series 没有 like_total 这一条。
+        // 读到缺的一条就报错的话，旧场次的明细与重画整份读不出来，而那一场的数据还在盘上
+        Path folder = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START);
+        Files.createDirectories(folder);
+        Files.writeString(folder.resolve("detail.json"), """
+                {"version":1,"platform":"bilibili","uid":%d,"uname":"主播甲","roomId":20002,
+                 "startTime":%d,"endTime":%d,"durationSeconds":7200,
+                 "metrics":{"like_total":300},
+                 "series":{"danmu_count":{"%d":3,"%d":5}},
+                 "rankings":{},"words":{},"highlights":[],"titles":[],"gaps":[],"peaks":{},"gifts":[]}
+                """.formatted(UID, START, START + 120 * MINUTE, START, START + MINUTE),
+                StandardCharsets.UTF_8);
+
+        LiveDetail read = archive.read(PLATFORM, UID, START).orElseThrow();
+
+        assertAll(
+                () -> assertEquals(Map.of(), read.series("like_total"),
+                        "缺这一条照「没有」：空表而不是 null，更不是读整份明细时报错"),
+                () -> assertEquals(3.0, read.series("danmu_count").get(START), 0.0001, "有的那条曲线照常读出"),
+                () -> assertEquals(300.0, read.metrics().get("like_total"), 0.0001,
+                        "整场点赞总数照常读出——旧档的曲线缺一条，不连累别的段"));
+    }
+
+    @Test
     @DisplayName("平台名撬不开目录：带斜杠或点号的一律不落盘")
     void platformNameCannotEscape() {
         archive.store(detail(1, 1, 1, "../../etc"));
