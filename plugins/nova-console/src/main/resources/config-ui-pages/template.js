@@ -1186,6 +1186,9 @@ export function buildLayoutEditor(host, options) {
       node.src = url;
       node.alt = '按当前版式生成的报告预览';
       image.appendChild(node);
+    }).catch(err => {
+      image.innerHTML = '';
+      image.appendChild(el('p', 'hint')).textContent = '预览图读取失败：' + err.message;
     });
   }
 

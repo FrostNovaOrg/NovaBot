@@ -16,7 +16,7 @@
  */
 
 import {ask, keepTabInside} from './confirm.js';
-import {$, api, CONSOLE, el, esc, markDirty, say, term} from './core.js';
+import {$, api, CONSOLE, el, esc, markDirty, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
@@ -1555,19 +1555,19 @@ function sectionLayout(host, target, session) {
  * 的图地址，新图还没载完时预览那一块就白了。
  * @param target 当前通道
  * @param revenueVisible 算金额可见性的那一支（含草稿），画的时候现取
- * @return {Function} 收版式参数，回图片地址；画不出来时为空
+ * @return {Function} 收版式参数，回图片地址；请求失败时抛错，服务端画不出来时为空
  */
 function layoutPreviewRenderer(target, revenueVisible) {
   let url = null;
   return async params => {
+    const res = await request(CONSOLE + '/api/report/preview', {
+      method: 'POST',
+      headers: Object.assign({'Content-Type': 'application/json'},
+        store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
+      body: JSON.stringify(previewRequestBody(params, target, revenueVisible())),
+    });
+    if (!res.ok) return '';
     try {
-      const res = await fetch(CONSOLE + '/api/report/preview', {
-        method: 'POST',
-        headers: Object.assign({'Content-Type': 'application/json'},
-          store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
-        body: JSON.stringify(previewRequestBody(params, target, revenueVisible())),
-      });
-      if (!res.ok) return '';
       // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里
       if (url) URL.revokeObjectURL(url);
       url = URL.createObjectURL(await res.blob());

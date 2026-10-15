@@ -403,10 +403,14 @@
     $('#msg').textContent = '';
     markInvalidCredentials(false);
 
+    const request = (url, options) => fetch(url, options).catch(err => {
+      throw err instanceof TypeError ? new Error('无法连接到服务器') : err;
+    });
+
     try {
       // 这一趟要的是一个新挑战：上面那一趟只用来判断「要不要摆这个按钮」，
       // 它发出去的那个挑战早已作废（挑战是一次性的）
-      const options = await fetch(CONSOLE + '/api/auth/passkey/login/options', {method: 'POST'}).then(r => r.json());
+      const options = await request(CONSOLE + '/api/auth/passkey/login/options', {method: 'POST'}).then(r => r.json());
       if (!options.success) {
         $('#msg').textContent = options.message || '本机尚未登记通行密钥';
         return;
@@ -422,7 +426,7 @@
         },
       });
 
-      const r = await fetch(CONSOLE + '/api/auth/passkey/login/verify', {
+      const r = await request(CONSOLE + '/api/auth/passkey/login/verify', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
