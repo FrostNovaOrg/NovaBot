@@ -60,6 +60,11 @@ public interface LiveMetricCatalog {
         return null;
     }
 
+    /** 全量分人流水榜的键，得分须为元；未提供时逐人流水未知。 */
+    default String audienceRevenueRanking() {
+        return null;
+    }
+
     /** 流水的可累加项、弹幕项、观众与互动名单、粉丝快照项，由平台说明。 */
     record Insights(List<String> revenueKeys, String messageKey, List<String> audienceSets,
                     List<String> interactionSets, String fansKey) {

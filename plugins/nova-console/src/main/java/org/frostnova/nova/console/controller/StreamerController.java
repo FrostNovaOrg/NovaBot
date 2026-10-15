@@ -7,6 +7,7 @@ import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
+import org.frostnova.nova.core.analytics.StreamerAudience;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -278,6 +279,41 @@ public class StreamerController {
                 && liveDataService.getLiveStatus(platform, uid).orElse(false));
         result.put("insights", new StreamerInsights().calculate(sessions, sampled, range.from(), range.to(), rules));
         return ResponseEntity.ok(result);
+    }
+
+    /** 本期观众的只读分页；观众标识仅在分析过程中使用。 */
+    @GetMapping("/{platform}/{uid}/audience")
+    public ResponseEntity<JSONObject> audience(@PathVariable String platform, @PathVariable Long uid,
+                                               @RequestParam(defaultValue = "30") String days,
+                                               @RequestParam(defaultValue = "all") String group,
+                                               @RequestParam(defaultValue = "attendance") String sort,
+                                               @RequestParam(defaultValue = "1") int page) {
+        if (!List.of("7", "30", "90").contains(days)
+                || !List.of("all", "first", "returning", "interaction").contains(group)
+                || !List.of("attendance", "revenue", "recent").contains(sort)) {
+            JSONObject invalid = new JSONObject();
+            invalid.put("success", false);
+            invalid.put("message", "请选择近 7、30、90 天，以及有效的观众分组和排序");
+            return ResponseEntity.badRequest().body(invalid);
+        }
+        String key = key(platform, uid);
+        List<LiveSession> sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE))
+                .getOrDefault(key, List.of());
+        boolean configured = roster(loadedUsers()).stream()
+                .anyMatch(item -> key.equals(key(item.platform(), item.uid())));
+        if (!configured && sessions.isEmpty()) return streamer(platform, uid, "week", 1, 0);
+        var catalog = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .filter(c -> c.insights() != null).findFirst().orElse(null);
+        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
+        var data = new StreamerAudience().calculate(sessions, range.from(), range.to(),
+                catalog == null ? null : catalog.insights(),
+                catalog == null ? null : catalog.audienceRevenueRanking(),
+                session -> details.read(platform, uid, session.startTime()), group, sort, page);
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("days", Integer.parseInt(days));
+        result.put("audience", data);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
     }
 
     /** 上一个完整统计周的只读预览；format=json 返回摘要与降级文字。 */

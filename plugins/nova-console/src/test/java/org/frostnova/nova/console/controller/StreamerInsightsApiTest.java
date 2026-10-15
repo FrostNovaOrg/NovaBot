@@ -24,12 +24,13 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@DisplayName("主播近七天概况接口")
+@DisplayName("主播范围概况与观众接口")
 class StreamerInsightsApiTest {
     @TempDir Path dir;
     StreamerController controller;
     LiveSessionArchive archive;
     StreamerSnapshotArchive snapshots;
+    LiveDetailArchive details;
     final Instant now = Instant.parse("2026-10-20T23:00:00Z");
     final Instant from = Instant.parse("2026-10-14T22:00:00Z");
 
@@ -47,8 +48,9 @@ class StreamerInsightsApiTest {
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(new BilibiliLiveMetricCatalog()));
         ObjectProvider<LiveReportRedrawer> redrawers = mock(ObjectProvider.class);
+        details = new LiveDetailArchive(props);
         controller = new StreamerController(data, new StreamerDirectory(props), live, archive,
-                snapshots, new LiveDetailArchive(props), catalogs, redrawers, Clock.fixed(now, ZoneOffset.UTC));
+                snapshots, details, catalogs, redrawers, Clock.fixed(now, ZoneOffset.UTC));
     }
     void append(Instant start) {
         archive.append(new LiveSession("bilibili", 1L, "sample", 2L,
@@ -99,4 +101,73 @@ class StreamerInsightsApiTest {
                     controller.insights("bilibili", 1L, days).getBody().getString("message"));
         }
     }
+    @Test @DisplayName("观众接口只返回当页二十人，不泄露观众标识或完整名单")
+    void audiencePagePrivacy() throws Exception {
+        var ids = java.util.stream.LongStream.rangeClosed(9200000001L, 9200000045L).boxed().toList();
+        long start = from.toEpochMilli();
+        archive.append(new LiveSession("bilibili", 1L, "sample", 2L, start, start+60000, 60,
+                Map.of(), Map.of(), LiveEndReason.NORMAL, List.of(), 0,
+                Map.of("enter_users", ids), 0, Map.of(), Map.of()));
+        details.store(new org.frostnova.nova.core.analytics.LiveDetail(1, "bilibili", 1L, "sample", 2L,
+                start, start+60000, 60, Map.of(), Map.of(), Map.of(),
+                Map.of("revenue_users", ids.stream().map(id -> new org.frostnova.nova.core.model.UserScore(id, "viewer"+(id-9200000000L), 10.5)).toList()),
+                Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of()));
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        String raw = mvc.perform(get("/config/api/streamers/bilibili/1/audience").param("days", "7"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var data = JSON.parseObject(raw).getJSONObject("audience");
+        assertEquals(20, data.getJSONArray("items").size(), "只返回当页的人");
+        assertEquals(45, data.getIntValue("total"));
+        assertFalse(raw.contains("viewer21"), "下一页的人不能提前返回");
+        assertFalse(raw.contains("92000000"), "不返回观众UID");
+        assertFalse(raw.contains("userSets"));
+        assertFalse(raw.contains("rankings"));
+        assertFalse(raw.contains("enter_users"));
+        System.out.println("AUDIENCE_PAGE_SAMPLE: " + raw);
+    }
+
+    @Test @DisplayName("观众范围分组排序参数校验，越界返回末页且与概况人数一致")
+    void audienceParameters() throws Exception {
+        append(from.minusSeconds(60)); append(from);
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (var param : Map.of("days", "8", "group", "other", "sort", "other").entrySet()) {
+            mvc.perform(get("/config/api/streamers/bilibili/1/audience").param(param.getKey(), param.getValue()))
+                    .andExpect(status().isBadRequest());
+        }
+        var raw = mvc.perform(get("/config/api/streamers/bilibili/1/audience").param("days", "7").param("page", "999"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var data = JSON.parseObject(raw).getJSONObject("audience");
+        assertEquals(1, data.getIntValue("page"));
+        assertEquals(1, data.getJSONObject("counts").getIntValue("returning"));
+        assertEquals(0, data.getJSONObject("counts").getIntValue("first"));
+        System.out.println("AUDIENCE_SAMPLE: " + raw);
+        var defaults = mvc.perform(get("/config/api/streamers/bilibili/1/audience"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(30, JSON.parseObject(defaults).getIntValue("days"));
+        mvc.perform(get("/config/api/streamers/bilibili/999/audience")).andExpect(status().isNotFound());
+    }
+
+    @Test @DisplayName("三百场明细归档的观众计算耗时")
+    void audienceArchiveTiming() throws Exception {
+        var ids = java.util.stream.LongStream.rangeClosed(9200000001L, 9200000045L).boxed().toList();
+        for (int n=0; n<300; n++) {
+            long start = now.minusSeconds(3600L*(n+1)).toEpochMilli();
+            archive.append(new LiveSession("bilibili", 1L, "sample", 2L, start, start+60000, 60,
+                    Map.of(), Map.of(), LiveEndReason.NORMAL, List.of(), 0, Map.of("enter_users", ids), 0, Map.of(), Map.of()));
+            details.store(new org.frostnova.nova.core.analytics.LiveDetail(1, "bilibili", 1L, "sample", 2L,
+                    start, start+60000, 60, Map.of(), Map.of(), Map.of(),
+                    Map.of("revenue_users", ids.stream().map(id -> new org.frostnova.nova.core.model.UserScore(id, "viewer"+(id-9200000000L), 10.5)).toList()),
+                    Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of()));
+        }
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        long started = System.nanoTime();
+        String raw = mvc.perform(get("/config/api/streamers/bilibili/1/audience").param("days", "30"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        double millis = (System.nanoTime()-started)/1_000_000d;
+        var data = JSON.parseObject(raw).getJSONObject("audience");
+        assertEquals(45, data.getIntValue("total"));
+        assertEquals(300, data.getJSONArray("items").getJSONObject(0).getIntValue("attendance"));
+        System.out.printf(java.util.Locale.ROOT, "AUDIENCE_TIMING: sessions=300 viewers=45 detailRows=13500 elapsedMs=%.3f%n", millis);
+    }
+
 }
