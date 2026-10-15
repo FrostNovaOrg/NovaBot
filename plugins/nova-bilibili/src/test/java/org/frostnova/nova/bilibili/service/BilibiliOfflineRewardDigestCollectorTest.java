@@ -15,6 +15,8 @@ import org.frostnova.nova.core.model.UserInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -27,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -364,16 +367,26 @@ class BilibiliOfflineRewardDigestCollectorTest {
     }
 
     @Test
-    @DisplayName("提醒窗口关闭后极晚礼物不转入普通播报")
-    void dropsRewardsArrivingAfterReminderWasSent() {
+    @DisplayName("提醒发出后才到的下播前礼物进入普通播报并保留送出时间")
+    void broadcastsRewardsArrivingAfterReminderWasSent() {
         Instant end = clock.instant();
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(true);
+        sentGift(1, "先到", 60, end.minusSeconds(8));
         closeLive();
         clock.advance(Duration.ofSeconds(15));
         collector.sweep();
+        assertEquals(1, digests().size(), "先到礼物应已发出提醒");
+        assertTrue(digests().get(0).isClosingReminder());
+        published.clear();
         sentGift(2, "晚到", 100, end.minusSeconds(3));
         clock.advance(Duration.ofSeconds(61));
         collector.sweep();
-        assertTrue(digests().isEmpty(), "已关闭提醒窗口的礼物不能再播");
+        assertEquals(1, digests().size(), "提醒发出后才到的礼物不能丢失");
+        assertFalse(digests().get(0).isClosingReminder(), "极晚礼物要进入普通播报");
+        assertEquals("晚到", onlyPerson().getUname());
+        var gift = onlyPerson().getGifts().get(0);
+        assertEquals(end.minusSeconds(3), gift.firstSentAt(), "极晚礼物要保留自己的送出时间");
+        assertEquals(end.minusSeconds(3), gift.lastSentAt());
     }
 
     @Test
@@ -391,22 +404,36 @@ class BilibiliOfflineRewardDigestCollectorTest {
         assertEquals(1, digests().size(), "移入提醒后不能再进普通播报");
     }
 
-    @Test
-    @DisplayName("晚到的较早在播礼物不进普通播报且下播后新礼物照常播")
-    void excludesOlderLateLiveGiftButKeepsNewOfflineGift() {
+    @ParameterizedTest(name = "{displayName}（下播事件先到：{0}）")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("下播后才收到的较早礼物与新礼物一起普通播报")
+    void keepsOlderLateLiveGiftAndNewOfflineGift(boolean offEventArrivesFirst) {
         Instant end = clock.instant();
-        closeLive();
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(false);
+        if (offEventArrivesFirst) {
+            closeLive();
+        }
         clock.advance(Duration.ofSeconds(5));
         sentGift(3, "C", 60, end.minusSeconds(15));
         sentGift(4, "D", 60, end.plusSeconds(1));
-        clock.advance(Duration.ofSeconds(10));
+        if (!offEventArrivesFirst) {
+            collector.onLiveEvent(new BilibiliLiveOffEvent(source(), end));
+        }
+        clock.advance(BilibiliOfflineRewardDigestCollector.REMINDER_DELAY);
         collector.sweep();
         assertTrue(digests().isEmpty(), "更早在播礼物不能进最后十秒提醒");
         clock.advance(Duration.ofSeconds(61));
         collector.sweep();
-        assertEquals(List.of("D"), digests().get(0).getContributions().stream()
+        assertEquals(1, digests().size(), "晚到的较早礼物与新礼物应合成一条普通播报");
+        assertFalse(digests().get(0).isClosingReminder());
+        assertEquals(List.of("C", "D"), digests().get(0).getContributions().stream()
                 .map(BilibiliOfflineRewardDigestEvent.Contribution::getUname).toList(),
-                "晚到的在播礼物不能混入普通播报");
+                "下播后才收到的较早礼物不能丢失");
+        var gifts = digests().get(0).getContributions().stream()
+                .flatMap(person -> person.getGifts().stream()).toList();
+        assertEquals(List.of(end.minusSeconds(15), end.plusSeconds(1)),
+                gifts.stream().map(BilibiliOfflineRewardDigestEvent.GiftLine::firstSentAt).toList(),
+                "普通播报要保留两份礼物各自的送出时间");
     }
 
     private void closeLive() {

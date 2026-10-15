@@ -139,7 +139,7 @@ public class BilibiliOfflineRewardDigestCollector {
                         due.add(closing.batch);
                     }
                 }
-                // 留住最新下播窗口，已经发过的极晚礼物也不转入普通播报。
+                // 留住最新下播窗口，以识别重复的下播事件。
                 Closing latest = windows.get(windows.size() - 1);
                 windows.removeIf(window -> window.sent && window != latest
                         && now.isAfter(window.readyAt.plus(RECENT_WINDOW)));
@@ -219,8 +219,7 @@ public class BilibiliOfflineRewardDigestCollector {
             // 闸门先变为下播、下播事件稍后才送达时，收进普通阵的礼物也要移到提醒。
             Batch batch = batches.get(key);
             if (batch != null) {
-                batch.rewards.removeIf(reward -> closing.contains(reward.sentAt)
-                        || (!reward.receivedAt.isBefore(closing.endAt) && !reward.sentAt.isAfter(closing.endAt)));
+                batch.rewards.removeIf(reward -> closing.contains(reward.sentAt));
                 if (batch.rewards.isEmpty()) {
                     batches.remove(key);
                 } else {
@@ -251,16 +250,10 @@ public class BilibiliOfflineRewardDigestCollector {
         List<Batch> due = new ArrayList<>(1);
         synchronized (batches) {
             for (Closing closing : closings.getOrDefault(key, List.of())) {
-                if (closing.contains(sentAt)) {
-                    if (!closing.sent) {
-                        closing.batch.rewards.add(reward);
-                    }
+                if (!closing.sent && closing.contains(sentAt)) {
+                    closing.batch.rewards.add(reward);
                     return;
                 }
-            }
-            // 已知是在下播之前送出的较早礼物，也不转为普通下播打赏。
-            if (closings.getOrDefault(key, List.of()).stream().anyMatch(closing -> !sentAt.isAfter(closing.endAt))) {
-                return;
             }
             recent.computeIfAbsent(key, ignored -> new ArrayList<>()).add(reward);
             if (stateGate.isLiving(source.getUid())) {
