@@ -4,6 +4,12 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.event.datasource.NovaBaseDataSourceEvent;
+import org.frostnova.nova.core.event.datasource.other.NovaDataSourceLoadCompleteEvent;
+import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
+import org.frostnova.nova.core.event.datasource.change.NovaDataSourceRemoveEvent;
+import org.frostnova.nova.core.event.datasource.change.NovaDataSourceUpdateEvent;
 import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.frostnova.nova.core.model.UserScore;
@@ -284,7 +290,14 @@ public class DefaultLiveDataService implements LiveDataService {
      */
     private String snapshot(boolean cleanShutdown) {
         synchronized (metricLock) {
-            cache.put(KEY_LAST_SAVE_TIME, System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            activeMonitoring.values().forEach(segment -> segment.put("to", now));
+            for (String key : cache.keySet()) {
+                if (key.startsWith(KEY_MONITORING) || key.startsWith(KEY_ROSTER)) {
+                    cache.getJSONObject(key).values().forEach(rows -> trimGapIntervals((JSONArray) rows));
+                }
+            }
+            cache.put(KEY_LAST_SAVE_TIME, now);
             cache.put(KEY_CLEAN_SHUTDOWN, cleanShutdown);
             return cache.toJSONString();
         }
@@ -540,6 +553,120 @@ public class DefaultLiveDataService implements LiveDataService {
         }
 
         return LiveGap.merge(List.of(clipped));
+    }
+
+    private static final String KEY_MONITORING = "Monitoring:";
+    private static final String KEY_ROSTER = "RosterHistory:";
+    private final Map<String, JSONObject> activeMonitoring = new HashMap<>();
+
+    private JSONArray roomHistory(String prefix, String platform, Long uid) {
+        var rooms = cache.getJSONObject(prefix + platform);
+        if (rooms == null) {
+            rooms = new JSONObject();
+            cache.put(prefix + platform, rooms);
+        }
+        var rows = rooms.getJSONArray(uid.toString());
+        if (rows == null) {
+            rows = new JSONArray();
+            rooms.put(uid.toString(), rows);
+        }
+        return rows;
+    }
+
+    @Override
+    public void recordMonitoring(String platform, Long uid, Long roomId, long at, boolean watching) {
+        synchronized (metricLock) {
+            String key = platform + "#" + uid;
+            var current = activeMonitoring.get(key);
+            if (current == null && !watching) return;
+            if (current != null && watching && java.util.Objects.equals(roomId, current.getLong("roomId"))) return;
+            if (current != null) {
+                current.put("to", Math.max(current.getLongValue("from"), at));
+                activeMonitoring.remove(key);
+            }
+            var rows = roomHistory(KEY_MONITORING, platform, uid);
+            if (watching) {
+                var row = JSONObject.of("from", at, "to", at, "roomId", roomId);
+                rows.add(row);
+                activeMonitoring.put(key, row);
+            }
+            trimGapIntervals(rows);
+        }
+        // 高频连接切换只更新内存，随自动保存及正常退出落盘。
+    }
+
+    @Override
+    public List<LiveGap> monitoringIntervals(String platform, Long uid, long now) {
+        if (!properties.getLive().isSaveLiveData() || diskSuspended) return List.of();
+        synchronized (metricLock) {
+            var rows = roomHistory(KEY_MONITORING, platform, uid);
+            var active = activeMonitoring.get(platform + "#" + uid);
+            if (active != null) active.put("to", now);
+            trimGapIntervals(rows);
+            long expiry = now - DOWNTIME_RETENTION_MILLIS;
+            List<LiveGap> result = new ArrayList<>();
+            for (int i = 0; i < rows.size(); i++) {
+                var row = rows.getJSONObject(i);
+                long from = Math.max(expiry, row.getLongValue("from"));
+                long to = Math.min(now, row.getLongValue("to"));
+                if (to > from) result.add(new LiveGap(from, to, LiveGap.Reason.UNKNOWN));
+            }
+            return List.copyOf(result);
+        }
+    }
+
+    /** 名单本身不能证明在收消息；另留变更历史用于核对加入、移出及房间变更。 */
+    @EventListener
+    public void recordRosterEvent(NovaBaseDataSourceEvent event) {
+        if (event instanceof NovaDataSourceLoadCompleteEvent loaded) {
+            var users = loaded.getUsers();
+            synchronized (metricLock) {
+                for (String cacheKey : List.copyOf(cache.keySet())) {
+                    if (!cacheKey.startsWith(KEY_ROSTER)) continue;
+                    String platform = cacheKey.substring(KEY_ROSTER.length());
+                    for (String uid : List.copyOf(cache.getJSONObject(cacheKey).keySet())) {
+                        if (users.stream().noneMatch(u -> platform.equals(u.getPlatform()) && uid.equals(String.valueOf(u.getUid())))) {
+                            var removed = new PushUser();
+                            removed.setPlatform(platform); removed.setUid(Long.valueOf(uid));
+                            recordRoster(removed, event.getTimestamp(), false);
+                        }
+                    }
+                }
+                users.forEach(user -> recordRoster(user, event.getTimestamp(), true));
+            }
+        } else if (event instanceof NovaDataSourceChangeEvent changed) {
+            if (event instanceof NovaDataSourceUpdateEvent updated) {
+                var old = updated.getOldUser();
+                var user = changed.getUser();
+                if (!java.util.Objects.equals(old.getRoomId(), user.getRoomId())
+                        || !java.util.Objects.equals(old.getUid(), user.getUid())
+                        || !java.util.Objects.equals(old.getPlatform(), user.getPlatform())) {
+                    recordMonitoring(old.getPlatform(), old.getUid(), old.getRoomId(), event.getTimestamp(), false);
+                }
+            }
+            synchronized (metricLock) {
+                recordRoster(changed.getUser(), event.getTimestamp(), !(event instanceof NovaDataSourceRemoveEvent));
+            }
+        } else return;
+        if (properties.getLive().isSaveLiveData()) saveNow(false);
+    }
+
+    private void recordRoster(PushUser user, long at, boolean configured) {
+        if (user.getPlatform() == null || user.getUid() == null) return;
+        var rows = roomHistory(KEY_ROSTER, user.getPlatform(), user.getUid());
+        var previous = rows.isEmpty() ? null : rows.getJSONObject(rows.size() - 1);
+        boolean enabled = configured && !Boolean.FALSE.equals(user.getEnabled());
+        if (previous == null || previous.getBooleanValue("configured") != configured
+                || previous.getBooleanValue("enabled") != enabled
+                || !java.util.Objects.equals(previous.getLong("roomId"), user.getRoomId())) {
+            rows.add(JSONObject.of("from", at, "to", at, "configured", configured,
+                    "enabled", enabled, "roomId", user.getRoomId()));
+        }
+        trimGapIntervals(rows);
+        if (!enabled) {
+            var current = activeMonitoring.remove(user.getPlatform() + "#" + user.getUid());
+            if (current != null) current.put("to", at);
+        }
     }
 
     // ================ 直播间状态 ================

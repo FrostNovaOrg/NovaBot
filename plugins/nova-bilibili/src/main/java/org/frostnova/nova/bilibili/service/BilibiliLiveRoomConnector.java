@@ -599,13 +599,25 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         }
     }
 
+    /** 监看证据写入失败不能打断连接的恢复与关闭。 */
+    private void recordMonitoring(long at, boolean watching) {
+        try {
+            liveDataService.recordMonitoring(BilibiliPlatform.BILIBILI.id(), source.getUid(),
+                    source.getRoomId(), at, watching);
+        } catch (Exception e) {
+            log.warn("直播间 {} 记录监看状态失败: {}", source.getRoomId(), e.toString());
+        }
+    }
+
     /**
      * 停收新消息
      * @return 这一次是不是由本调用停的收。已经停过则返回 false
      */
     private boolean sealIntake() {
         synchronized (intake) {
-            return closed.compareAndSet(false, true);
+            boolean sealed = closed.compareAndSet(false, true);
+            if (sealed) recordMonitoring(System.currentTimeMillis(), false);
+            return sealed;
         }
     }
 
@@ -888,6 +900,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                 recordStartupTail(now);
             }
             closeOutageGap(!firstSuccess);
+            synchronized (intake) {
+                if (!closed.get() && acceptingConnectors.get()) {
+                    recordMonitoring(now.toEpochMilli(), true);
+                }
+            }
             return;
         }
 
@@ -1098,6 +1115,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return;
         }
         status = ConnectStatus.ERROR;
+        recordMonitoring(System.currentTimeMillis(), false);
     }
 
     @Override
@@ -1132,6 +1150,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         Instant authAt = authenticatedAt;
         Duration lived = authAt == null ? null : Duration.between(authAt, Instant.now());
         authenticatedAt = null;
+        recordMonitoring(System.currentTimeMillis(), false);
 
         BilibiliDisconnectCause cause = BilibiliDisconnectCause.classify(
                 closerOf(session), closeStatus.getCode(), authAt != null, lived);
@@ -1181,6 +1200,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 重复排队由 {@link #scheduleReconnect()} 里的闸门挡住。
      */
     private void reconnect() {
+        recordMonitoring(System.currentTimeMillis(), false);
         closeSession();
         scheduleReconnect();
     }

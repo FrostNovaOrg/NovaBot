@@ -78,6 +78,26 @@ public class LiveSessionAnalytics {
         return result;
     }
 
+    /** 页面范围内按开播统计日归桶，保留两端及中间的空周期。 */
+    public List<Bucket> aggregate(Collection<LiveSession> sessions, Period period, Set<String> metrics,
+                                  Instant from, Instant to) {
+        TreeMap<LocalDate, Accumulator> grouped = new TreeMap<>();
+        for (var session : sessions) {
+            if (session.startTime() >= from.toEpochMilli() && session.startTime() < to.toEpochMilli()) {
+                grouped.computeIfAbsent(period.startOf(dateOf(session.startTime())), ignored -> new Accumulator())
+                        .add(session, metrics);
+            }
+        }
+        List<Bucket> result = new ArrayList<>();
+        var last = period.startOf(StatisticsDay.dateOf(to.minusMillis(1)));
+        for (var date = period.startOf(StatisticsDay.dateOf(from)); !date.isAfter(last); date = period.next(date)) {
+            var bucket = grouped.getOrDefault(date, new Accumulator());
+            metrics.forEach(key -> bucket.metrics.putIfAbsent(key, 0d));
+            result.add(bucket.toBucket(period.label(date), millisOf(date), millisOf(period.next(date))));
+        }
+        return List.copyOf(result);
+    }
+
     private LocalDate dateOf(long millis) {
         return StatisticsDay.dateOf(Instant.ofEpochMilli(millis));
     }
@@ -90,6 +110,11 @@ public class LiveSessionAnalytics {
      * 统计周期
      */
     public enum Period {
+        DAY {
+            @Override LocalDate startOf(LocalDate date) { return date; }
+            @Override LocalDate next(LocalDate date) { return date.plusDays(1); }
+            @Override String label(LocalDate date) { return DAY_LABEL.format(date); }
+        },
         /**
          * 周，从周一早上 6 点起算
          */

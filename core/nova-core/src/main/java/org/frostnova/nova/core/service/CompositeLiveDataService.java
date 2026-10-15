@@ -49,6 +49,16 @@ public class CompositeLiveDataService implements LiveDataService {
         this.total = total;
     }
 
+    @Override
+    public void recordMonitoring(String platform, Long uid, Long roomId, long at, boolean watching) {
+        delegate.recordMonitoring(platform, uid, roomId, at, watching);
+    }
+
+    @Override
+    public List<LiveGap> monitoringIntervals(String platform, Long uid, long now) {
+        return delegate.monitoringIntervals(platform, uid, now);
+    }
+
     // ================ 累计数据 ================
 
     @Override
