@@ -9,6 +9,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.PushMessage;
+import org.frostnova.nova.core.model.HandlerOption;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.NovaMessageSender;
@@ -19,6 +20,9 @@ import org.frostnova.nova.report.painter.BilibiliOfflineRewardDigestPainter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +42,12 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
      * 当前的默认消息模板：只放一张图，不再发文字感谢
      */
     private static final String DEFAULT_MESSAGE = "{picture}";
+
+    private static final HandlerOption THRESHOLD = HandlerOption.integer("reward_threshold_yuan", "播报门槛（元）",
+            "一个人这一阵的礼物合计达到这个数才播，0 表示有打赏就播；下播前 10 秒内的提醒也按它，上舰不受门槛限制。",
+            50, 0, 1_000_000);
+
+    private static final int REMINDER_LIMIT = 20;
 
     private final BilibiliApiUtil api;
 
@@ -72,8 +82,11 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
 
     @Override
     public void handle(NovaExternalBaseEvent baseEvent, PushMessage pushMessage) {
-        BilibiliOfflineRewardDigestEvent event = (BilibiliOfflineRewardDigestEvent) baseEvent;
         JSONObject params = pushMessage.getParamsJsonObject();
+        BilibiliOfflineRewardDigestEvent event = forTarget((BilibiliOfflineRewardDigestEvent) baseEvent, params);
+        if (event.getContributions().isEmpty()) {
+            return;
+        }
         PushTarget target = pushMessage.getTarget();
 
         // 版式来自推送配置，金额可见性来自会话：前者是「说哪些事」，后者是「该不该带金额」。
@@ -100,6 +113,46 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
         PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
     }
 
+    private BilibiliOfflineRewardDigestEvent forTarget(BilibiliOfflineRewardDigestEvent original, JSONObject params) {
+        int threshold = (int) THRESHOLD.defaultValue();
+        try {
+            Integer stored = params.getInteger(THRESHOLD.key());
+            if (stored != null) {
+                threshold = Math.max(THRESHOLD.min(), Math.min(THRESHOLD.max(), stored));
+            }
+        } catch (RuntimeException e) {
+            log.warn("打赏播报门槛无效，使用默认值 {}", threshold);
+        }
+        long thresholdFen = threshold * 100L;
+        List<BilibiliOfflineRewardDigestEvent.Contribution> people = new ArrayList<>(original.getContributions().stream()
+                .filter(person -> person.getGuardLevel() != null || (person.getGifts() != null && !person.getGifts().isEmpty()
+                        && person.getGiftAmountFen() != null && person.getGiftAmountFen() >= thresholdFen))
+                .toList());
+        var event = new BilibiliOfflineRewardDigestEvent(original.getSource(), people,
+                Instant.ofEpochMilli(original.getTimestamp()));
+        event.setClosingReminder(original.isClosingReminder());
+        if (original.isClosingReminder()) {
+            people.sort(Comparator.comparingLong(BilibiliOfflineRewardDigestPushHandler::totalFen).reversed());
+            if (people.size() > REMINDER_LIMIT) {
+                event.setOmittedCount(people.size() - REMINDER_LIMIT);
+                event.setOmittedAmountFen(people.subList(REMINDER_LIMIT, people.size()).stream()
+                        .mapToLong(BilibiliOfflineRewardDigestPushHandler::totalFen).sum());
+                event.setContributions(List.copyOf(people.subList(0, REMINDER_LIMIT)));
+            }
+        }
+        return event;
+    }
+
+    private static long totalFen(BilibiliOfflineRewardDigestEvent.Contribution person) {
+        return (person.getGiftAmountFen() == null ? 0 : person.getGiftAmountFen())
+                + (person.getGuardAmountFen() == null ? 0 : person.getGuardAmountFen());
+    }
+
+    @Override
+    public List<HandlerOption> options() {
+        return List.of(THRESHOLD);
+    }
+
     @Override
     public Class<? extends NovaExternalBaseEvent> getEventType() {
         return BilibiliOfflineRewardDigestEvent.class;
@@ -110,6 +163,7 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
         JSONObject params = new JSONObject();
         params.put("at_all", false);
         params.put("message", DEFAULT_MESSAGE);
+        params.put(THRESHOLD.key(), THRESHOLD.defaultValue());
         return params;
     }
 
@@ -141,7 +195,7 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
 
     @Override
     public String description() {
-        return "主播不在播时有人上舰或送礼够多，攒一小阵后画一张打赏播报图推送";
+        return "主播不在播时攒批播报打赏，下播后另行提醒下播前 10 秒内的打赏";
     }
 
     @Override

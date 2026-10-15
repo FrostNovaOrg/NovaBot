@@ -1,6 +1,7 @@
 package org.frostnova.nova.bilibili.service;
 
 import org.frostnova.nova.bilibili.event.live.BilibiliCaptainEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliCommanderEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliGovernorEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliOfflineRewardDigestEvent;
@@ -17,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Clock;
@@ -39,8 +41,8 @@ import java.util.function.Consumer;
  * <p>
  * 一阵的两个时限：从最后一份起安静 {@link #IDLE_WINDOW} 就播；
  * 从第一份起最多攒 {@link #MAX_WINDOW}，到了就先播这一阵、之后来的算下一阵。
- * 够不够格是按人的（礼物合计 {@link #PERSON_THRESHOLD_FEN} 分即 100 元、或这一阵上过舰），
- * <b>够格不提前触发播报</b>：哪怕一份就过了 100 元，也要等这一阵停下来再播。
+ * 金额门槛由推送处理器按会话筛选，这里保留完整名单。
+ * 在播时保留最近两分钟的原始打赏，下播后独立提醒最后十秒内的礼物。
  */
 @Slf4j
 @NovaComponent
@@ -55,11 +57,11 @@ public class BilibiliOfflineRewardDigestCollector {
      */
     static final Duration MAX_WINDOW = Duration.ofMinutes(10);
 
-    /**
-     * 一个人这一阵礼物合计够格播报的金额（分）：100 元＝10000 分。
-     * 金额一律按「分」整数记账，用元的小数逐份累加会把整 100 元加成差一点点、判成不够格
-     */
-    static final long PERSON_THRESHOLD_FEN = 10_000L;
+    static final Duration RECENT_WINDOW = Duration.ofMinutes(2);
+
+    static final Duration CLOSING_WINDOW = Duration.ofSeconds(10);
+
+    static final Duration REMINDER_DELAY = Duration.ofSeconds(15);
 
     private final ApplicationEventPublisher publisher;
 
@@ -71,6 +73,10 @@ public class BilibiliOfflineRewardDigestCollector {
      * 各主播手上攒着的那一阵。播报可能走到网络发送，因此发布一律在锁外做
      */
     private final Map<String, Batch> batches = new HashMap<>();
+
+    private final Map<String, List<Reward>> recent = new HashMap<>();
+
+    private final Map<String, List<Closing>> closings = new HashMap<>();
 
     @Autowired
     public BilibiliOfflineRewardDigestCollector(ApplicationEventPublisher publisher, BilibiliLiveStateGate stateGate) {
@@ -89,9 +95,12 @@ public class BilibiliOfflineRewardDigestCollector {
      * 收哪几类写成 instanceof 链而不是拆成几个监听方法：口径里「背包礼物不计、
      * 醒目留言不算、银瓜子不算」说的是<b>收什么、不收什么</b>，写在一处才看得见边界。
      */
+    @Order(-9000)
     @EventListener(NovaBaseLiveEvent.class)
     public void onLiveEvent(NovaBaseLiveEvent event) {
-        if (event instanceof BilibiliPaidGiftEvent gift) {
+        if (event instanceof BilibiliLiveOffEvent off) {
+            close(off);
+        } else if (event instanceof BilibiliPaidGiftEvent gift) {
             // 背包礼物实付为 0、不计。认 fromBag 字段而不是拿金额反推，见 NovaLiveGiftEvent 的契约
             if (gift.isFromBag()) {
                 return;
@@ -122,6 +131,19 @@ public class BilibiliOfflineRewardDigestCollector {
         Instant now = clock.instant();
         List<Batch> due = new ArrayList<>();
         synchronized (batches) {
+            pruneRecent(now);
+            for (List<Closing> windows : closings.values()) {
+                for (Closing closing : windows) {
+                    if (!closing.sent && !now.isBefore(closing.readyAt)) {
+                        closing.sent = true;
+                        due.add(closing.batch);
+                    }
+                }
+                // 留住最新下播窗口，已经发过的极晚礼物也不转入普通播报。
+                Closing latest = windows.get(windows.size() - 1);
+                windows.removeIf(window -> window.sent && window != latest
+                        && now.isAfter(window.readyAt.plus(RECENT_WINDOW)));
+            }
             Iterator<Batch> iterator = batches.values().iterator();
             while (iterator.hasNext()) {
                 Batch batch = iterator.next();
@@ -140,43 +162,110 @@ public class BilibiliOfflineRewardDigestCollector {
         }
         String name = gift.getName();
         int count = gift.getCount() == null || gift.getCount() < 1 ? 1 : gift.getCount();
-        record(event, sender, person -> {
+        Instant sentAt = sentAt(event);
+        record(event, sender, sentAt, person -> {
             person.giftAmountFen += amountFen;
             GiftAcc acc = person.gifts.computeIfAbsent(name, key -> new GiftAcc());
             acc.count += count;
             acc.amountFen += amountFen;
+            if (acc.firstSentAt == null || sentAt.isBefore(acc.firstSentAt)) {
+                acc.firstSentAt = sentAt;
+            }
+            if (acc.lastSentAt == null || sentAt.isAfter(acc.lastSentAt)) {
+                acc.lastSentAt = sentAt;
+            }
         });
     }
 
     private void accumulateGuard(NovaBaseLiveEvent event, UserInfo sender, int level, GuardOperateType operateType, Double amount) {
         // 上舰不论金额都播报，因此不看合计、只挂到人身上
-        record(event, sender, person -> {
+        Instant sentAt = sentAt(event);
+        record(event, sender, sentAt, person -> {
+            if (person.guardSentAt != null && sentAt.isBefore(person.guardSentAt)) {
+                return;
+            }
+            person.guardSentAt = sentAt;
             person.guardLevel = level;
             person.operateType = operateType;
             person.guardAmountFen = amount == null ? null : Math.round(amount * 100);
         });
     }
 
+    private Instant sentAt(NovaBaseLiveEvent event) {
+        return event.getTimestamp() > 0 ? Instant.ofEpochMilli(event.getTimestamp()) : clock.instant();
+    }
+
     /**
-     * 把一笔打赏挂进当前这一阵里这位观众的条目
-     * <p>
-     * 在播时的礼物与上舰在这里被挡掉：这类通知只算下播时段的打赏。
-     * 到了上限的旧阵也在这里先摘下、锁外发布。
+     * 下播时刻与本场 setLiveEndTime 使用同一事件时间；排在同步绘制报告之前收好窗口。
      */
-    private void record(NovaBaseLiveEvent event, UserInfo sender, Consumer<Person> mutation) {
+    private void close(BilibiliLiveOffEvent event) {
+        if (event.getSource() == null || event.getSource().getUid() == null) {
+            return;
+        }
+        Instant now = clock.instant();
+        String key = keyOf(event);
+        synchronized (batches) {
+            pruneRecent(now);
+            Closing closing = new Closing(event.getSource(), sentAt(event), now.plus(REMINDER_DELAY));
+            List<Closing> windows = closings.computeIfAbsent(key, ignored -> new ArrayList<>());
+            if (windows.stream().anyMatch(window -> window.endAt.equals(closing.endAt))) {
+                return;
+            }
+            windows.add(closing);
+            List<Reward> rewards = recent.remove(key);
+            if (rewards != null) {
+                rewards.stream().filter(reward -> closing.contains(reward.sentAt)).forEach(closing.batch.rewards::add);
+            }
+            // 闸门先变为下播、下播事件稍后才送达时，收进普通阵的礼物也要移到提醒。
+            Batch batch = batches.get(key);
+            if (batch != null) {
+                batch.rewards.removeIf(reward -> closing.contains(reward.sentAt)
+                        || (!reward.receivedAt.isBefore(closing.endAt) && !reward.sentAt.isAfter(closing.endAt)));
+                if (batch.rewards.isEmpty()) {
+                    batches.remove(key);
+                } else {
+                    batch.firstAt = batch.rewards.get(0).receivedAt;
+                    batch.lastAt = batch.rewards.get(batch.rewards.size() - 1).receivedAt;
+                }
+            }
+        }
+    }
+
+    private static String keyOf(NovaBaseLiveEvent event) {
+        return event.getPlatform() + "|" + event.getSource().getUid();
+    }
+
+    private void pruneRecent(Instant now) {
+        recent.values().forEach(rewards -> rewards.removeIf(reward -> reward.receivedAt.isBefore(now.minus(RECENT_WINDOW))));
+        recent.values().removeIf(List::isEmpty);
+    }
+
+    private void record(NovaBaseLiveEvent event, UserInfo sender, Instant sentAt, Consumer<Person> mutation) {
         LiveStreamerInfo source = event.getSource();
         if (source == null || source.getUid() == null || sender == null || !isIdentified(sender.getUid())) {
             return;
         }
-        if (stateGate.isLiving(source.getUid())) {
-            return;
-        }
-
         Instant now = clock.instant();
-        String key = event.getPlatform() + "|" + source.getUid();
-
+        String key = keyOf(event);
+        Reward reward = new Reward(sentAt, now, sender.getUid(), sender.getUname(), mutation);
         List<Batch> due = new ArrayList<>(1);
         synchronized (batches) {
+            for (Closing closing : closings.getOrDefault(key, List.of())) {
+                if (closing.contains(sentAt)) {
+                    if (!closing.sent) {
+                        closing.batch.rewards.add(reward);
+                    }
+                    return;
+                }
+            }
+            // 已知是在下播之前送出的较早礼物，也不转为普通下播打赏。
+            if (closings.getOrDefault(key, List.of()).stream().anyMatch(closing -> !sentAt.isAfter(closing.endAt))) {
+                return;
+            }
+            recent.computeIfAbsent(key, ignored -> new ArrayList<>()).add(reward);
+            if (stateGate.isLiving(source.getUid())) {
+                return;
+            }
             Batch batch = batches.get(key);
             if (batch != null && !now.isBefore(batch.firstAt.plus(MAX_WINDOW))) {
                 batches.remove(key);
@@ -184,35 +273,32 @@ public class BilibiliOfflineRewardDigestCollector {
                 batch = null;
             }
             if (batch == null) {
-                batch = new Batch(source, now);
+                batch = new Batch(source, now, false);
                 batches.put(key, batch);
             }
-            // 每来一份就把一阵续上：这一阵的最后一份之后再安静一分钟才播
             batch.lastAt = now;
-
-            Person person = batch.people.computeIfAbsent(sender.getUid(), uid -> new Person(uid, sender.getUname()));
-            if (StringUtil.isNotBlank(sender.getUname())) {
-                person.uname = sender.getUname();
-            }
-            mutation.accept(person);
+            batch.rewards.add(reward);
         }
         due.forEach(this::publish);
     }
 
-    /**
-     * 发布一阵的汇总事件。没一个够格的人就什么也不发
-     */
     private void publish(Batch batch) {
-        List<BilibiliOfflineRewardDigestEvent.Contribution> qualifying = new ArrayList<>();
-        for (Person person : batch.people.values()) {
-            if (person.guardLevel != null || (!person.gifts.isEmpty() && person.giftAmountFen >= PERSON_THRESHOLD_FEN)) {
-                qualifying.add(person.toContribution());
+        Map<Long, Person> people = new LinkedHashMap<>();
+        for (Reward reward : batch.rewards) {
+            Person person = people.computeIfAbsent(reward.uid, uid -> new Person(uid, reward.uname));
+            if (StringUtil.isNotBlank(reward.uname)) {
+                person.uname = reward.uname;
             }
+            reward.mutation.accept(person);
         }
-        if (qualifying.isEmpty()) {
+        batch.rewards.clear();
+        if (people.isEmpty()) {
             return;
         }
-        publisher.publishEvent(new BilibiliOfflineRewardDigestEvent(batch.source, qualifying));
+        var event = new BilibiliOfflineRewardDigestEvent(batch.source,
+                people.values().stream().map(Person::toContribution).toList(), clock.instant());
+        event.setClosingReminder(batch.closingReminder);
+        publisher.publishEvent(event);
     }
 
     /**
@@ -234,22 +320,38 @@ public class BilibiliOfflineRewardDigestCollector {
         return uid != null && uid > 0;
     }
 
-    /**
-     * 攒着的一阵
-     */
+    private record Reward(Instant sentAt, Instant receivedAt, Long uid, String uname, Consumer<Person> mutation) {
+    }
+
+    private static final class Closing {
+        private final Instant endAt;
+        private final Instant readyAt;
+        private final Batch batch;
+        private boolean sent;
+
+        private Closing(LiveStreamerInfo source, Instant endAt, Instant readyAt) {
+            this.endAt = endAt;
+            this.readyAt = readyAt;
+            this.batch = new Batch(source, readyAt, true);
+        }
+
+        private boolean contains(Instant sentAt) {
+            return !sentAt.isBefore(endAt.minus(CLOSING_WINDOW)) && !sentAt.isAfter(endAt);
+        }
+    }
+
     private static final class Batch {
         private final LiveStreamerInfo source;
-
-        private final Instant firstAt;
-
+        private Instant firstAt;
         private Instant lastAt;
+        private final boolean closingReminder;
+        private final List<Reward> rewards = new ArrayList<>();
 
-        private final Map<Long, Person> people = new LinkedHashMap<>();
-
-        private Batch(LiveStreamerInfo source, Instant firstAt) {
+        private Batch(LiveStreamerInfo source, Instant firstAt, boolean closingReminder) {
             this.source = source;
             this.firstAt = firstAt;
             this.lastAt = firstAt;
+            this.closingReminder = closingReminder;
         }
     }
 
@@ -271,6 +373,8 @@ public class BilibiliOfflineRewardDigestCollector {
 
         private Long guardAmountFen;
 
+        private Instant guardSentAt;
+
         private Person(Long uid, String uname) {
             this.uid = uid;
             this.uname = uname;
@@ -283,11 +387,13 @@ public class BilibiliOfflineRewardDigestCollector {
             contribution.setGuardLevel(guardLevel);
             contribution.setOperateType(operateType);
             contribution.setGuardAmountFen(guardAmountFen);
+            contribution.setGuardSentAt(guardSentAt);
             if (!gifts.isEmpty()) {
                 contribution.setGiftAmountFen(giftAmountFen);
                 contribution.setGifts(gifts.entrySet().stream()
                         .map(entry -> new BilibiliOfflineRewardDigestEvent.GiftLine(
-                                entry.getKey(), entry.getValue().count, entry.getValue().amountFen))
+                                entry.getKey(), entry.getValue().count, entry.getValue().amountFen,
+                                entry.getValue().firstSentAt, entry.getValue().lastSentAt))
                         .toList());
             }
             return contribution;
@@ -301,5 +407,9 @@ public class BilibiliOfflineRewardDigestCollector {
         private int count;
 
         private long amountFen;
+
+        private Instant firstSentAt;
+
+        private Instant lastSentAt;
     }
 }

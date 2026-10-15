@@ -114,7 +114,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
         BilibiliOfflineRewardDigestEvent event = new BilibiliOfflineRewardDigestEvent(
                 new LiveStreamerInfo(STREAMER_UID, "{at=all}{picture}", ROOM_ID),
                 List.of(guardPerson("{at=123}{uname}", 3, GuardOperateType.ACTIVATION, 198.0),
-                        giftPerson("{next}", "{image_path=/opt/a.png}{picture}", 1, 1.0)));
+                        giftPerson("{next}", "{image_path=/opt/a.png}{picture}", 1, 60.0)));
         failing.handle(event, message);
         List<String> sent = sentContents();
         assertEquals(1, sent.size(), "打赏文字不能拆条");
@@ -254,6 +254,85 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
         verify(sender, never()).send(any());
         assertEquals(1, timeline.size(), "丢弃在分发那一层记一条");
         assertEquals(TimelineEventType.PUSH_MUTED, timeline.get(0).type());
+    }
+
+    @Test
+    @DisplayName("两个群按各自门槛挑人且不改变原始名单")
+    void filtersIndependentlyForEachGroup() {
+        var event = digest(giftPerson("甲", "小花花", 1, 80),
+                guardPerson("乙", 3, GuardOperateType.ACTIVATION, 198));
+        var low = pushMessage();
+        low.getParamsJsonObject().put("reward_threshold_yuan", 50);
+        var high = pushMessage();
+        high.getTarget().setNum(30004L);
+        high.getParamsJsonObject().put("reward_threshold_yuan", 200);
+        var handler = failingPainterHandler();
+        handler.handle(event, low);
+        handler.handle(event, high);
+        var contents = sentContents();
+        assertTrue(contents.get(0).contains("甲 送了") && contents.get(0).contains("乙"));
+        assertFalse(contents.get(1).contains("甲 送了"), "200 元群不能播 80 元的甲");
+        assertTrue(contents.get(1).contains("乙"));
+        assertEquals(2, event.getContributions().size(), "筛群不能改原始名单");
+    }
+
+    @Test
+    @DisplayName("没有够格观众的群不发消息")
+    void skipsGroupWithNobodyQualified() {
+        var message = pushMessage();
+        message.getParamsJsonObject().put("reward_threshold_yuan", 200);
+        failingPainterHandler().handle(digest(giftPerson("甲", "小花花", 1, 80)), message);
+        assertEquals(0, org.mockito.Mockito.mockingDetails(sender).getInvocations().size(), "没有够格观众的群不能发送");
+    }
+
+    @Test
+    @DisplayName("未设置过门槛的群默认五十元")
+    void defaultsToFiftyYuan() {
+        var option = handler.options().stream().filter(o -> o.key().equals("reward_threshold_yuan")).findFirst();
+        assertTrue(option.isPresent(), "推送页应有播报门槛选项");
+        assertEquals("播报门槛（元）", option.orElseThrow().label());
+        assertEquals(50, option.orElseThrow().defaultValue(), "默认门槛应为五十元");
+        assertEquals(0, option.orElseThrow().min());
+        assertEquals(50, handler.getDefaultParams().getInteger("reward_threshold_yuan"));
+        var message = pushMessage();
+        message.getParamsJsonObject().remove("reward_threshold_yuan");
+        failingPainterHandler().handle(digest(giftPerson("甲", "小花花", 1, 60)), message);
+        assertTrue(sentContents().get(0).contains("甲 送了"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"50,false,true", "0,true,true", "200,false,false"})
+    @DisplayName("最后十秒提醒也按群门槛并始终保留上舰")
+    void reminderUsesGroupThreshold(int threshold, boolean includeA, boolean includeB) {
+        var event = digest(giftPerson("甲", "小花花", 1, 1),
+                giftPerson("乙", "甜梦花", 1, 60), guardPerson("丙", 3, GuardOperateType.ACTIVATION, 198));
+        event.setClosingReminder(true);
+        var message = pushMessage();
+        message.getParamsJsonObject().put("reward_threshold_yuan", threshold);
+        failingPainterHandler().handle(event, message);
+        String content = sentContents().get(0);
+        assertEquals(includeA, content.contains("甲 送了"), "甲要按门槛过滤");
+        assertEquals(includeB, content.contains("乙 送了"), "乙要按门槛过滤");
+        assertTrue(content.contains("丙"));
+    }
+
+    @Test
+    @DisplayName("最后十秒提醒仅列金额最高二十人并汇总余下五人")
+    void reminderListsTopTwentyAndSummarizesRest() {
+        List<BilibiliOfflineRewardDigestEvent.Contribution> people = new ArrayList<>();
+        for (int i = 1; i <= 25; i++) {
+            people.add(giftPerson(String.format("观众%02d", i), "小花花", 1, i));
+        }
+        var event = digest(people.toArray(BilibiliOfflineRewardDigestEvent.Contribution[]::new));
+        event.setClosingReminder(true);
+        var message = pushMessage();
+        message.getParamsJsonObject().put("reward_threshold_yuan", 0);
+        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        failingPainterHandler().handle(event, message);
+        String content = sentContents().get(0);
+        assertTrue(content.contains("另有 5 人，合计 ¥15"), "25 人不能全列，应汇总最低五人");
+        assertFalse(content.contains("观众05"));
+        assertTrue(content.indexOf("观众25") < content.indexOf("观众06"), "按合计金额从高到低");
     }
 
     // —— 以下为夹具 ——
