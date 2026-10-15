@@ -1,5 +1,6 @@
 import {register} from 'node:module';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {enhance, installCharts} from './streamers-dom.mjs';
 register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
 const model = await import('../../../main/resources/config-ui-pages/streamers-model.js');
@@ -93,6 +94,78 @@ const flatten = n => n ? [n, ...n.children.flatMap(flatten)] : [];
 const base = '#/streamers/sample/1';
 const drawer = () => flatten(document.body).find(n => n.className === 'sc-drawer');
 const load = async hash => { location.hash = hash; await page.refresh(); };
+const textOf = node => flatten(node).map(n => n.textContent + n.innerHTML).join(' ');
+// 重画指标和趋势时，卡片标题及操作提示不能消失。
+await check('范围和指标切换后保留卡片标题与趋势提示', async () => {
+  await load(base);
+  for (const days of [7, 180]) {
+    await load(base + '?days=' + days);
+    const trend = nodes.get('sd-trend');
+    const header = flatten(trend).find(n => n.className === 'sc-section-head');
+    assert.ok(header, '趋势卡应保留分区标题');
+    const select = flatten(trend).find(n => n.tagName === 'select');
+    select.value = 'messages'; await select.fire('change');
+    assert.ok(flatten(trend).includes(header), '换指标应保留原标题区');
+    assert.match(textOf(trend), /按统计日 · 点击日期查看场次/, '趋势操作提示应保留');
+    for (const id of ['sd-insights', 'sd-period-audience', 'sd-calendar-card']) {
+      assert.ok(flatten(nodes.get(id)).some(n => n.className === 'sc-section-head'), id + '应使用同样的分区标题');
+    }
+  }
+});
+// 各卡日期提示必须随全页范围一起更新，不能显示空白或上期区间。
+await check('各卡显示当前范围与简写起止日期', async () => {
+  compositionScenario = {from: Date.parse('2026-04-20T06:00:00+08:00'), to: Date.parse('2026-10-16T12:00:00+08:00')};
+  await load(base + '?days=180');
+  assert.match(textOf(nodes.get('sd-insights')), /近 180 天（含今天）· 较上期为再往前的 180 天/);
+  for (const id of ['sd-trend', 'sd-period-audience', 'sd-calendar-card', 'sd-recent-card']) {
+    const hint = flatten(nodes.get(id)).find(n => n.className === 'sc-section-hint');
+    assert.ok(hint, id + '应显示区间提示');
+    assert.match(hint.textContent, /4[ /月-]+20.*06:00.*10[ /月-]+16.*12:00/, id + '应显示本期区间');
+  }
+  compositionScenario = {from: Date.parse('2026-10-10T06:00:00+08:00'), to: Date.parse('2026-10-16T12:00:00+08:00')};
+  await load(base + '?days=7');
+  assert.match(textOf(nodes.get('sd-insights')), /近 7 天（含今天）· 较上期为再往前的 7 天/);
+  assert.match(textOf(nodes.get('sd-calendar-card')), /10[ /月-]+10.*06:00/);
+  compositionScenario = {from: Date.parse('2025-10-22T06:00:00+08:00'), to: Date.parse('2026-10-16T12:00:00+08:00')};
+  await load(base + '?days=360');
+  assert.match(textOf(nodes.get('sd-calendar-card')), /2025\/10\/22 06:00.*2026\/10\/16 12:00/, '跨年区间应显示年份');
+  compositionScenario = null;
+});
+// 桌面图也应与示例一样高，不能只在手机缩成180px。
+await check('总览趋势图在宽窄屏均为180px', () => {
+  const source = readFileSync(new URL('../../../main/resources/config-ui-pages/streamers.js', import.meta.url), 'utf8');
+  const heights = [...source.matchAll(/#sd-trend \.sc-chart svg\{height:(\d+)px\}/g)].map(match => Number(match[1]));
+  assert.ok(heights.length && heights.every(height => height === 180), '总览趋势图高度应统一180px');
+});
+// 点环和两段时，应直接进入本期的对应名单，键盘也能进入。
+await check('观众环与首次回访分段打开对应名单', async () => {
+  compositionScenario = {audience: 45, composition: {firstRecorded: 20, returning: 25}};
+  for (const [cls, group, event] of [['sc-audience-ring', 'all', 'click'], ['sc-first', 'first', 'click'], ['sc-returning', 'returning', 'keydown']]) {
+    await load(base + '?days=180');
+    const target = flatten(nodes.get('sd-audience-summary')).find(n => n.className.split(' ').includes(cls));
+    assert.ok(target, '应显示' + cls);
+    assert.ok(target.href || target.attrs.tabindex === '0', cls + '应支持键盘');
+    await target.fire(event, {key: 'Enter'});
+    if (target.href) location.hash = target.href;
+    const state = model.parseStreamersHash(location.hash);
+    assert.deepEqual([state.panel, state.group, state.days], ['audience', group, 180], cls + '应进入对应名单');
+    await page.refresh(); assert.ok(drawer());
+  }
+  compositionScenario = null;
+});
+// 粉丝差值有单位，但它由快照计算，不应给出任何较上期提示或颜色。
+await check('粉丝净增带人数单位且不参加较上期', async () => {
+  for (const change of [2, -2, 0, null]) {
+    compositionScenario = {fans: change == null ? null : {change, partial: true, fromAt: 1792015200000, toAt: 1792101600000}, comparisons: {fans: {changeRatio: .5}}};
+    await load(base);
+    const cell = flatten(nodes.get('sd-insights')).find(n => n.attrs['aria-label'] === '粉丝净增');
+    assert.equal(cell.children[1].textContent, change == null ? '暂无数据' : (change > 0 ? '+' : change < 0 ? '−' : '') + Math.abs(change) + ' 人', '粉丝差值应带人');
+    assert.ok(!textOf(cell).includes('较上期'), '粉丝格不得出现较上期提示');
+    assert.ok(!cell.children[2].style.color, '粉丝格不得使用较上期涨跌色');
+    assert.match(cell.title, change == null ? /快照不足两次/ : /快照未覆盖整个范围/);
+  }
+  compositionScenario = null;
+});
 // 旧收藏必须保留入口，否则从外部进入会丢失明细。
 await check('收藏的旧链接恢复总览与明细', async () => {
   for (const panel of ['sessions', 'start-slots', 'audience']) {
@@ -218,13 +291,13 @@ await check('本期构成暂无数据时，悬停提示说明实际缺少名单�
   }
   assert.deepEqual(titles, scenarios.map(scenario => scenario.title), '本期无名单时不得归因为历史记录起点');
 });
-await check('六格沿用较上期判法，红涨绿跌持平无色', async () => {
+await check('五项指标沿用较上期判法，红涨绿跌持平无色', async () => {
   compositionScenario = {comparisons: {durationSeconds: {changeRatio: 0}, revenue: {changeRatio: .12},
     messages: {changeRatio: -.05}, audience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'},
     interactionAudience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}}};
   await page.refresh();
   const all = flatten(nodes.get('sd-insights'));
-  const lines = all.filter(n => n.className.includes('sc-kpi-delta') && n.textContent.startsWith('较上期') && n.textContent !== '较上期暂无数据');
+  const lines = all.filter(n => n.className.includes('sc-kpi-delta') && n.textContent.startsWith('较上期'));
   assert.deepEqual(lines.map(n => [n.textContent, n.style.color]), [
     ['较上期持平', ''], ['较上期 +12%', 'var(--err)'], ['较上期 −5%', 'var(--ok)']]);
   assert.equal(all.filter(n => n.className === 'sc-kpi' && n.attrs.role === 'button').length, 6);

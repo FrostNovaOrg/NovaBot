@@ -64,11 +64,8 @@ const PAGE_KEY = 'streamers';
  * 🔴 uid 必须是一串数字才认。不校验的话，#/streamers/&lt;平台&gt;/undefined 会被当成
  * 一位真主播拿去问接口，屏幕上于是出现一张空的详情页——它与「这位主播还没播过」长得一样。
  * @param hash location.hash
- * @return {{view: string, platform: string, uid: string, pane: string, start: string,
+ * @return {{view: string, platform: string, uid: string, start: string,
  *           page: number, period: string}} 子视图与它的参数
- *
- * 页签那一栏叫 pane 不叫 tab：{@code tab} 是 store 上一份共享状态的名字（当前页签），
- * 在界面文件里裸着出现即为 ReferenceError，因此有一条判据在盯着它——它当场逮住了这一处。
  */
 export function parseStreamersHash(hash) {
   const raw = String(hash || '').replace(/^#\/?/, '');
@@ -77,7 +74,7 @@ export function parseStreamersHash(hash) {
   const query = cut < 0 ? '' : raw.slice(cut + 1);
 
   const [viewList, viewDetail, viewSession] = STREAMER_VIEWS;
-  const state = {view: viewList, platform: '', uid: '', pane: 'overview', start: '',
+  const state = {view: viewList, platform: '', uid: '', start: '',
     page: 1, period: 'week', days: 30};
 
   // 第一段不是本页名字的，后两段是别页的（如 #/push/<uid>/<群号> 的主播与群号）。
@@ -454,35 +451,6 @@ export function reportView(phase, message) {
     image: false,
     text: message || '该场没有报告图，也没有保留明细数据，无法重新绘制。',
   };
-}
-
-/**
- * 柱状图的几何
- *
- * 零值也留 2px 的痕迹，否则「这一周没播」和「这一周没有这项数据」在图上长得一样。
- * 全零时不缩放——0/0 出 NaN，整张图会消失。
- * @param points 逐柱取值
- * @param width 画布宽
- * @param height 画布高
- * @return {{x: number, y: number, w: number, h: number, zero: boolean}[]} 逐柱几何
- */
-export function barGeometry(points, width, height) {
-  const list = points || [];
-  if (!list.length) return [];
-  const max = Math.max.apply(null, list.concat([0]));
-  const step = width / list.length;
-
-  return list.map((value, i) => {
-    const full = max > 0 ? height * (value / max) : 0;
-    const h = Math.max(full, value ? 1 : 2);
-    return {
-      x: Number((i * step + step * 0.15).toFixed(1)),
-      y: Number((height - h).toFixed(1)),
-      w: Number((step * 0.7).toFixed(1)),
-      h: Number(h.toFixed(1)),
-      zero: !value,
-    };
-  });
 }
 
 /**

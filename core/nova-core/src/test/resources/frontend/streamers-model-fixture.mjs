@@ -24,7 +24,7 @@ register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.u
 
 const {
   AUDIENCE_COLUMNS, audienceGroups, audienceCells, audienceSort, coverageText,
-  PERIODS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
+  PERIODS, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
   gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
@@ -42,25 +42,25 @@ function eq(actual, expected, what) {
 }
 
 // ---------- 一、地址栏 → 子视图 ----------
-const LIST = {view: 'list', platform: '', uid: '', pane: 'overview', start: '', page: 1,
+const LIST = {view: 'list', platform: '', uid: '', start: '', page: 1,
   period: 'week', days: 30};
 
 eq(parseStreamersHash('#/streamers'), LIST, '光秃秃的地址就是列表');
 eq(parseStreamersHash(''), LIST, '地址栏是空的也当列表');
 eq(parseStreamersHash('#/streamers/bilibili/3493'),
-  {view: 'detail', platform: 'bilibili', uid: '3493', pane: 'overview', start: '', page: 1,
+  {view: 'detail', platform: 'bilibili', uid: '3493', start: '', page: 1,
     period: 'week', days: 30},
   '平台加 uid 是详情，默认落概况');
-eq(parseStreamersHash('#/streamers/bilibili/3493/sessions').panel, 'sessions', '第三段是页签名时按页签');
+eq(parseStreamersHash('#/streamers/bilibili/3493/sessions').panel, 'sessions', '旧场次路径打开场次抽屉');
 eq(parseStreamersHash('#/streamers/bilibili/3493/trend').section, 'trend', '趋势同理');
-eq(parseStreamersHash('#/streamers/bilibili/3493/overview').pane, 'overview', '写全概况也认');
+eq(parseStreamersHash('#/streamers/bilibili/3493/overview').view, 'detail', '写全概况也认');
 // 认不出的第三段退回概况，不留白屏：这一页从三个地方点进来，哪一处拼错都该得到一张能用的页
-eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').pane, 'overview', '认不出的页签退回概况');
-eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').view, 'detail', '认不出的页签仍是详情');
+eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').view, 'detail', '认不出的明细路径显示总览');
+eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').panel, undefined, '认不出的明细路径不打开抽屉');
 
-// 第三段是一串数字＝某一场。页签是词、开播时刻是毫秒时间戳，靠形状分辨
+// 第三段是一串数字＝某一场。明细名称是词、开播时刻是毫秒时间戳，靠形状分辨
 eq(parseStreamersHash('#/streamers/bilibili/3493/1757000000000'),
-  {view: 'session', platform: 'bilibili', uid: '3493', pane: 'overview',
+  {view: 'session', platform: 'bilibili', uid: '3493',
     start: '1757000000000', page: 1, period: 'week', days: 30},
   '第三段是一串数字时是某一场');
 
@@ -77,7 +77,7 @@ eq(parseStreamersHash('#/streamers/bilibili/3493/sessions?page=zzz').page, 1, '�
 eq(parseStreamersHash('#/streamers/bilibili/3493/trend?period=month').period, 'month', '周期走查询串');
 eq(parseStreamersHash('#/streamers/bilibili/3493/trend?period=day').period, 'week',
   '认不出的周期退回按周——拿它去问服务端的话，那一头也会退回按周，而地址栏说的是按日');
-eq(parseStreamersHash('#/streamers/bilibili/3493?zzz=1').pane, 'overview', '不认得的查询参数一律忽略');
+eq(parseStreamersHash('#/streamers/bilibili/3493?zzz=1').view, 'detail', '不认得的查询参数一律忽略');
 eq(parseStreamersHash('#/streamers/%E5%93%94%E5%93%A9/3493').platform, '哔哩',
   '平台名要解码');
 // 坏转义不至于让整页打不开：解不开就用原文，屏幕上是一位查不到的主播，而不是白屏
@@ -87,7 +87,7 @@ eq(parseStreamersHash('#/streamers/%E5%93/3493').platform, '%E5%93', '坏转义�
 eq(detailHash('bilibili', 3493), '#/streamers/bilibili/3493', '概况的地址最短');
 eq(detailHash('bilibili', 3493, 'overview'), '#/streamers/bilibili/3493',
   '写全概况也拼成最短的那一个——两种写法拼出两个地址的话，收藏夹里会有两条指向同一张页');
-eq(detailHash('bilibili', 3493, 'sessions'), '#/streamers/bilibili/3493?panel=sessions', '页签写进路径');
+eq(detailHash('bilibili', 3493, 'sessions'), '#/streamers/bilibili/3493?panel=sessions', '明细名称写入抽屉参数');
 eq(detailHash('bilibili', 3493, 'sessions', 'page=2'), '#/streamers/bilibili/3493?page=2&panel=sessions',
   '页码写进查询串');
 eq(sessionHash('bilibili', 3493, 1757000000000), '#/streamers/bilibili/3493/1757000000000',
@@ -282,16 +282,6 @@ eq(fmtMetric(12864.4), '12,864', '整数指标仍取整并带千分位');
 eq(fmtMetric(null, {}), '—', '没有这一项时是破折号，不是 0');
 eq(fmtTime(0), '—', '没有时刻时是破折号');
 
-const BARS = barGeometry([0, 4, 2], 1000, 100);
-eq(BARS.length, 3, '三根柱子');
-// 零值也留 2px 的痕迹，否则「这一周没播」和「这一周没有这项数据」在图上长得一样
-eq([BARS[0].h, BARS[0].zero], [2, true], '零值留 2px 的痕迹并标出它是零');
-eq([BARS[1].h, BARS[1].y], [100, 0], '最大值那根顶满');
-eq(BARS[2].h, 50, '一半的值画一半高');
-eq(barGeometry([0, 0], 1000, 100).map(one => one.h), [2, 2],
-  '全零时不缩放——0/0 出 NaN，整张图会消失');
-eq(barGeometry([], 1000, 100), [], '一根柱子都没有时是空的');
-
 // ---------- 十三、几处摆到屏幕上的话 ----------
 eq(sessionTitle({titles: [{title: '甲'}, {title: '乙'}], titleChangeCount: 1}),
   {title: '乙', changed: '（修改过 1 次）'}, '标题取最后改成的那一个');
@@ -311,7 +301,7 @@ eq(PERIODS.map(one => one[0]), ['week', 'month'], '两种周期，与服务端�
 eq(parseStreamersHash('#/streamers/sample/1/audience').panel, 'audience', '观众地址可直接打开');
 eq(parseStreamersHash('#/streamers/sample/1/audience').days, 30, '观众默认三十天');
 eq(parseStreamersHash('#/streamers/sample/1/audience?days=7&group=returning&sort=revenue&page=3'),
-  {view: 'detail', platform: 'sample', uid: '1', pane: 'overview', start: '', page: 3,
+  {view: 'detail', platform: 'sample', uid: '1', start: '', page: 3,
     period: 'week', days: 7, panel: 'audience', group: 'returning', sort: 'revenue'}, '观众范围分组排序页码刷新后保留');
 eq(AUDIENCE_COLUMNS.map(c => c[1]), ['昵称', '本期到场', '最近到场', '本期流水（元）', '本期互动'], '观众表列文字');
 eq(audienceGroups({all: 45, first: 20, returning: 25, interaction: 12}).map(g => g[1]),

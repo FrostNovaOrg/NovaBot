@@ -72,8 +72,9 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-columns{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,1fr);gap:16px;margin-top:16px}
 .sd-columns>.sc-card{min-width:0;margin:0;display:flex;flex-direction:column}
 #sd-trend{scroll-margin-top:82px}
+#sd-trend-content{display:flex;flex:1;flex-direction:column}
 #sd-trend .sc-chart{margin-top:auto}
-#sd-trend .sc-chart svg{height:220px}
+#sd-trend .sc-chart svg{height:180px}
 .sd-slot-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0;list-style:none}
 .sd-slot-top a{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:8px;padding:12px;color:inherit;text-decoration:none}
 .sd-slot-top a:hover{border-color:var(--accent)}
@@ -87,14 +88,25 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-trend select{margin:8px 0 12px}
 .sd-interaction-bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
-.sd-current-live{padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--soft);margin:14px 0}
+.sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
+.sd-current-live[hidden]{display:none}
+#sd-live .live-head{flex-wrap:wrap;gap:8px}#sd-live .live-head h3{font-size:13px}
+#sd-live .live-head button{margin-left:auto;padding:4px 9px;font-size:11px}
+.sd-live-badge{font-size:11px;color:var(--accent);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+#sd-live .live-times{margin:7px 0 10px;font-size:11px;line-height:1.6}
+.sd-live-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0}
+.sd-live-metrics div{min-width:0}.sd-live-metrics dt{font-size:11px;color:var(--dim);margin-bottom:3px}
+.sd-live-metrics dd{margin:0;font-size:15px;font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.sd-live-details{margin-top:10px;font-size:11px}.sd-live-details summary{cursor:pointer;color:var(--accent)}
+#sd-live .live-status{min-height:4.8em;margin:10px 0 0;font-size:10px;line-height:1.6}
+#sd-audience-summary [role=link]{cursor:pointer}#sd-audience-summary [role=link]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #sd-live .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 0}
 #sd-live .kv dt{color:var(--dim)}#sd-live .kv dd{margin:0;text-align:right}
 .sd-recent-row{display:grid;gap:5px;padding:12px 0;color:inherit;text-decoration:none;border-top:1px solid var(--line)}
 .sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:12px}.sd-recent-row:hover{color:var(--accent)}
 .sc-drawer table{width:100%;border-collapse:collapse}.sc-drawer th,.sc-drawer td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
 .sc-drawer .nv-card{background:var(--surface);padding:16px;border-radius:10px}
-@media(min-width:1280px){#sd-insights>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(min-width:1280px){#sd-insights-content>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.sd-columns{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:560px){.sd-slot-top{grid-template-columns:1fr}#sd-insights .sc-kpis,#sd-more .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-trend .sc-chart svg{height:180px}.sd-toolbar .hint{width:100%;margin:4px 0 0}}
 `;
@@ -797,11 +809,20 @@ function renderStartSlots(host) {
         const shown = slotCell(cell, slotsMetric, maximum);
         button.innerHTML = esc(shown.text.replace(/ (元|条)\/时$/, '')) + '<small>' + esc(shown.count) + '</small>';
         button.setAttribute('aria-label', slotLabel(cell) + ' · ' + shown.text + ' · ' + shown.count);
+        button.setAttribute('aria-pressed', 'false');
         button.disabled = !cell.sessions;
         if (shown.intensity !== null && shown.intensity > 0) {
           button.style.background = 'color-mix(in srgb, var(--accent) ' + (12 + shown.intensity * 48) + '%, transparent)';
         }
-        button.addEventListener('click', () => { if (cell.sessions) location.hash = dashboardHash({panel: 'sessions', starts: (cell.starts || cell.sessionItems?.map(item => item.startTime) || []).join(','), from: null, to: null, page: 1}); });
+        button.addEventListener('click', () => {
+          if (!cell.sessions) return;
+          for (const row of tbody.children) for (const column of row.children) {
+            const previous = column.firstChild;
+            if (previous?.tagName?.toLowerCase() === 'button') previous.setAttribute('aria-pressed', 'false');
+          }
+          button.setAttribute('aria-pressed', 'true');
+          location.hash = dashboardHash({panel: 'sessions', starts: (cell.starts || cell.sessionItems?.map(item => item.startTime) || []).join(','), from: null, to: null, page: 1});
+        });
         td.appendChild(button);
         tr.appendChild(td);
       }
@@ -938,20 +959,47 @@ function renderScope(data = {}) {
   for (const text of lines.filter(Boolean)) { const line = el('p', 'hint'); line.textContent = text; scope.appendChild(line); }
 }
 
+function performanceHint() {
+  return '近 ' + where.days + ' 天（含今天）· 较上期为再往前的 ' + where.days + ' 天';
+}
+
+function renderDashboardHints(data) {
+  const from = data?.from;
+  const to = data?.to ?? Date.now();
+  const moment = at => {
+    const parts = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit',
+      day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).formatToParts(new Date(at));
+    return Object.fromEntries(parts.map(part => [part.type, part.value]));
+  };
+  let interval = '正在读取本期日期…';
+  if (from != null) {
+    const start = moment(from), end = moment(to);
+    const compact = date => (start.year !== end.year ? date.year + '/' : '') + date.month + '/' + date.day + ' ' + date.hour + ':' + date.minute;
+    interval = compact(start) + ' — ' + compact(end);
+  }
+  for (const [id, text] of [['sd-insights', performanceHint()], ['sd-trend', interval + ' · 按统计日 · 点击日期查看场次'],
+    ['sd-period-audience', interval], ['sd-calendar-card', interval], ['sd-recent-card', interval]]) {
+    const hint = $('#' + id)?.querySelector('.sc-section-hint');
+    if (hint) hint.textContent = text;
+  }
+}
+
 function renderDashboard() {
   const host = $('#sd-body'); host.innerHTML = '';
   const toolbar = el('div', 'sd-toolbar'); toolbar.id = 'sd-toolbar'; host.appendChild(toolbar);
   const scope = el('details', 'sd-scope'); scope.id = 'sd-scope'; host.appendChild(scope);
-  const performance = createSection('本期表现', '', host).box; performance.id = 'sd-insights';
+  const performance = createSection('本期表现', performanceHint(), host).box; performance.id = 'sd-insights';
+  const performanceBody = el('div'); performanceBody.id = 'sd-insights-content'; performance.appendChild(performanceBody);
   const columns = el('div', 'sd-columns'); host.appendChild(columns);
-  const trend = createSection('近期趋势', '按统计日 · 点击日期查看场次', columns).box; trend.id = 'sd-trend';
-  const audience = createSection('本期观众', '', columns); audience.box.id = 'sd-period-audience';
+  const trend = createSection('近期趋势', '正在读取本期日期… · 按统计日 · 点击日期查看场次', columns).box; trend.id = 'sd-trend';
+  const trendBody = el('div'); trendBody.id = 'sd-trend-content'; trend.appendChild(trendBody);
+  const audience = createSection('本期观众', '正在读取本期日期…', columns); audience.box.id = 'sd-period-audience';
   audience.header.appendChild(panelLink('查看名单', 'audience', {group: 'all', sort: 'attendance'}));
   const audienceBody = el('div'); audienceBody.id = 'sd-audience-summary'; audience.box.appendChild(audienceBody);
-  const calendar = createSection('开播日历', '', columns); calendar.box.id = 'sd-calendar-card';
+  const calendar = createSection('开播日历', '正在读取本期日期…', columns); calendar.box.id = 'sd-calendar-card';
   calendar.header.appendChild(panelLink('查看开播时段', 'start-slots'));
   const calendarBody = el('div'); calendarBody.id = 'sd-calendar'; calendar.box.appendChild(calendarBody);
-  const sessions = createSection('当前直播与最近归档', '', columns);
+  const sessions = createSection('当前直播与最近归档', '正在读取本期日期…', columns); sessions.box.id = 'sd-recent-card';
   sessions.header.appendChild(panelLink('全部场次', 'sessions'));
   const current = el('div', 'sd-current-live'); current.id = 'sd-live'; sessions.box.appendChild(current);
   renderLive(); sessions.box.appendChild(recentCard());
@@ -965,7 +1013,7 @@ async function loadDashboard() {
   const generation = ++dashboardGeneration;
   const view = viewGeneration;
   const days = where.days;
-  renderToolbar();
+  renderToolbar(); renderDashboardHints();
   // 范围变更时先清掉旧范围，避免等待期间把两期数字混在一起。
   insightsData = null; periodAudience = null;
   renderScope();
@@ -986,7 +1034,7 @@ async function loadDashboard() {
     }
   };
   await Promise.all([
-    read('insights', response => { insightsData = response.insights; renderInsights(insightsData, '', response.living); renderToolbar(insightsData); renderScope(insightsData); renderAudienceSummary(insightsData); }),
+    read('insights', response => { insightsData = response.insights; renderInsights(insightsData, ''); renderToolbar(insightsData); renderDashboardHints(insightsData); renderScope(insightsData); renderAudienceSummary(insightsData); }),
     read('audience', response => { periodAudience = response.audience; renderAudienceSummary(insightsData); }),
     read('calendar', response => { const host = $('#sd-calendar'); host.innerHTML = ''; createCalendar(host, response.calendar, {onSelect: interval => {
       location.hash = dashboardHash({panel: 'sessions', starts: interval.starts.join(','), from: null, to: null, page: 1});
@@ -999,9 +1047,16 @@ function renderAudienceSummary(data) {
   const host = $('#sd-audience-summary'); host.innerHTML = '';
   if (!data) return;
   const counts = periodAudience?.counts || {};
-  createAudienceRing({first: data.composition?.firstRecorded ?? counts.first ?? null,
+  const audienceRing = createAudienceRing({first: data.composition?.firstRecorded ?? counts.first ?? null,
     returning: data.composition?.returning ?? counts.returning ?? null, total: data.audience,
     format: value => value == null ? '暂无数据' : fmtMetric(value)}, host);
+  for (const [selector, group, label] of [['.sc-audience-ring', 'all', '全部观众'], ['.sc-first', 'first', '首次记录'], ['.sc-returning', 'returning', '回访']]) {
+    const target = audienceRing.querySelector(selector);
+    target.setAttribute('role', 'link'); target.setAttribute('tabindex', '0'); target.setAttribute('aria-label', label + '，查看名单');
+    const activate = () => { location.hash = audienceHash({group, sort: 'attendance', page: 1}); };
+    target.addEventListener('click', activate);
+    target.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); activate(); } });
+  }
   const composition = el('p', 'hint');
   composition.textContent = data.composition ? '首次记录指第一次被记录，不一定是第一次观看' : '本期构成：暂无数据';
   composition.title = data.composition ? '首次记录不一定是第一次观看直播'
@@ -1018,20 +1073,20 @@ function renderAudienceSummary(data) {
 }
 
 function renderInsights(data, message) {
-  const host = $('#sd-insights'); host.innerHTML = '';
-  const title = el('h3'); title.textContent = '本期表现'; host.appendChild(title);
+  const host = $('#sd-insights-content'); host.innerHTML = '';
+  const note = el('p', 'hint'); note.id = 'sd-archive-note'; host.appendChild(note); renderArchiveNote();
   if (!data) { const hint = el('p', 'hint'); hint.textContent = message; host.appendChild(hint); renderDailyTrend(); return; }
   const count = value => value == null ? '暂无数据' : fmtMetric(value) + ' 人';
   const fans = data.fans;
   const kpiValues = [fmtDuration(data.durationSeconds), data.metricsKnown ? fmtMetric(data.revenue, {money: true}) + ' 元' : '暂无数据',
     data.metricsKnown ? fmtMetric(data.messages) + ' 条' : '暂无数据', count(data.audience), count(data.interactionAudience),
-    fans?.change == null ? '暂无数据' : (fans.change > 0 ? '+' : fans.change < 0 ? '−' : '') + fmtMetric(Math.abs(fans.change))];
+    fans?.change == null ? '暂无数据' : (fans.change > 0 ? '+' : fans.change < 0 ? '−' : '') + fmtMetric(Math.abs(fans.change)) + ' 人'];
   const keys = ['durationSeconds', 'revenue', 'messages', 'audience', 'interactionAudience', 'fans'];
   const labels = ['直播时长', '流水', '弹幕', '观众', '互动观众', '粉丝净增'];
-  const grid = createKpis(keys.map((key, index) => ({label: labels[index], value: kpiValues[index], comparison: insightsComparison(data.comparisons?.[key])?.text || '较上期暂无数据'})), host);
+  const grid = createKpis(keys.map((key, index) => ({label: labels[index], value: kpiValues[index], comparison: key === 'fans' ? '' : insightsComparison(data.comparisons?.[key])?.text || ''})), host);
   [...grid.children].forEach((cell, index) => {
     cell.setAttribute('role', 'button'); cell.setAttribute('tabindex', '0'); cell.setAttribute('aria-label', labels[index]);
-    const comparison = insightsComparison(data.comparisons?.[keys[index]]);
+    const comparison = keys[index] === 'fans' ? null : insightsComparison(data.comparisons?.[keys[index]]);
     if (comparison) cell.children[2].style.color = comparison.color;
     if (keys[index] === 'fans') cell.title = fans ? (fans.partial ? '可用快照未覆盖整个范围；' : '') + insightsTime(fans.fromAt) + ' → ' + insightsTime(fans.toAt) : '可用的粉丝数快照不足两次';
     const activate = () => {
@@ -1052,8 +1107,7 @@ function renderInsights(data, message) {
 
 function renderDailyTrend() {
   trendChart?.destroy(); trendChart = null;
-  const host = $('#sd-trend'); host.innerHTML = '';
-  const title = el('h3'); title.textContent = '近期趋势'; host.appendChild(title);
+  const host = $('#sd-trend-content'); host.innerHTML = '';
   const label = el('label'); label.textContent = '指标 ';
   const select = el('select'); select.setAttribute('aria-label', '趋势指标');
   for (const [key, name] of trendMetrics) { const option = el('option'); option.value = key; option.textContent = name; select.appendChild(option); }
@@ -1082,7 +1136,7 @@ function renderBanner() {
   if (old) old.remove();
 
   const text = totalDataBanner(runtime);
-  if (!text || where.view !== 'detail' || where.pane !== 'overview') return;
+  if (!text || where.view !== 'detail') return;
 
   const banner = el('div', 'banner b-dim');
   banner.id = 'sd-banner';
@@ -1122,6 +1176,7 @@ function renderOverview(host) {
 async function loadLive() {
   if (!canRefreshLive() || livePending === liveGeneration) return;
   const generation = liveGeneration;
+  const wasLiving = isLiving();
   livePending = generation;
   try {
     const response = await request(CONSOLE + '/api/streamers/' + encodeURIComponent(where.platform) + '/'
@@ -1150,6 +1205,9 @@ async function loadLive() {
     if (livePending === generation) livePending = null;
   }
   renderLive();
+  const recent = $('#sd-recent');
+  if (recent && wasLiving !== isLiving()) { recent.innerHTML = ''; renderRecent(recent); }
+  renderArchiveNote();
 }
 
 function liveClock(ms, seconds = false) {
@@ -1160,11 +1218,22 @@ function liveClock(ms, seconds = false) {
     + (seconds ? ':' + pad(date.getSeconds()) : '');
 }
 
+function isLiving() {
+  return live ? live.living : !!detail?.living;
+}
+
+function renderArchiveNote() {
+  const note = $('#sd-archive-note');
+  if (!note) return;
+  note.textContent = isLiving() ? '正在直播的场次下播后才计入' : '';
+  note.hidden = !isLiving();
+}
+
 /** 概况中的本场卡片，独立更新，累计与归档卡片不使用这份数。 */
 function renderLive() {
   const card = $('#sd-live');
   if (!card) return;
-  card.hidden = !(live ? live.living : detail?.living);
+  card.hidden = !isLiving();
   card.innerHTML = '';
   if (card.hidden) return;
 
@@ -1172,6 +1241,7 @@ function renderLive() {
   const head = el('h3');
   head.textContent = '正在直播';
   header.appendChild(head);
+  const badge = el('span', 'sd-live-badge'); badge.textContent = '进行中'; header.appendChild(badge);
   const refresh = el('button', 'nv-btn2');
   refresh.type = 'button';
   refresh.textContent = '刷新';
@@ -1182,9 +1252,7 @@ function renderLive() {
   const times = el('p', 'live-times');
   const since = live ? live.since : detail.since;
   times.textContent = '开播于 ' + fmtTime(since)
-    + (since != null ? ' · 已直播 ' + fmtDuration(Math.max(0, (Date.now() - since) / 1000)) : '')
-    + ' · 数据更新至 ' + liveClock(live?.dataAt)
-    + ' · 检查于 ' + liveClock(live?.checkedAt, true);
+    + (since != null ? ' · 已开播 ' + fmtDuration(Math.max(0, (Date.now() - since) / 1000)) : '');
   card.appendChild(times);
 
   const catalog = detail.liveMetrics || detail.sessions?.metrics || [];
@@ -1201,6 +1269,18 @@ function renderLive() {
     rows.push({key: 'online_count', name: '在线人数', unit: '人', known: true,
       value: online.length ? online[online.length - 1][1] : null});
   }
+  const primary = el('dl', 'sd-live-metrics');
+  const revenueKeys = detail.platform === 'bilibili' ? ['gift_value', 'super_chat_value', 'guard_value'] : catalog.filter(metric => metric.money).map(metric => metric.key);
+  const revenueParts = revenueKeys.map(key => live?.metrics?.[key]).filter(value => typeof value === 'number' && Number.isFinite(value));
+  const revenue = revenueParts.length ? revenueParts.reduce((sum, value) => sum + value, 0) : null;
+  for (const [name, value, unit, money] of [['流水', revenue, '元', true], ['弹幕', live?.metrics?.danmu_count ?? live?.metrics?.messages, '条'], ['在线峰值', live?.metrics?.online_count, '人']]) {
+    const row = el('div'), label = el('dt'), shown = el('dd'); label.textContent = name;
+    shown.textContent = value == null ? '暂无数据' : fmtMetric(value, {money}) + ' ' + unit;
+    row.appendChild(label); row.appendChild(shown); primary.appendChild(row);
+  }
+  card.appendChild(primary);
+  const details = el('details', 'sd-live-details');
+  const summary = el('summary'); summary.textContent = '查看本场快照明细'; details.appendChild(summary);
   const metricList = el('dl', 'kv');
   for (const row of rows) {
     const label = el('dt');
@@ -1212,7 +1292,11 @@ function renderLive() {
       + (row.value != null && row.unit ? ' ' + row.unit : '');
     metricList.appendChild(value);
   }
-  card.appendChild(metricList);
+  details.appendChild(metricList);
+  const checked = el('p', 'hint'); checked.textContent = '检查于 ' + liveClock(live?.checkedAt, true); details.appendChild(checked);
+  card.appendChild(details);
+  const status = el('p', 'live-status'); status.setAttribute('role', 'status');
+  status.textContent = '数据截至 ' + liveClock(live?.dataAt) + ' · 每 15 秒检查更新'; card.appendChild(status);
 
   if (liveError) {
     const error = el('p', 'live-error');
@@ -1270,9 +1354,13 @@ function snapshotCard(snapshot, catalog) {
  * @return {HTMLElement} 一张卡
  */
 function recentCard() {
-  const host = el('div', 'sd-recent');
+  const host = el('div', 'sd-recent'); host.id = 'sd-recent';
+  renderRecent(host); return host;
+}
+
+function renderRecent(host) {
   const title = el('h4'); title.textContent = '最近几场'; host.appendChild(title);
-  const items = (detail.sessions?.items || []).slice(0, detail.living ? 3 : 5);
+  const items = (detail.sessions?.items || []).slice(0, isLiving() ? 3 : 5);
   if (!items.length) { const note = el('p', 'hint'); note.textContent = '暂无已归档的场次。每场直播下播时会自动归档一条记录。'; host.appendChild(note); }
   for (const item of items) {
     const link = el('a', 'sd-recent-row'); link.href = sessionHash(item.platform, item.uid, item.startTime);
