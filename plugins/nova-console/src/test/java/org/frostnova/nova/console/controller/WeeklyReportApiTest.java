@@ -133,6 +133,10 @@ class WeeklyReportApiTest {
         var json = mvc.perform(get("/config/api/streamers/bilibili/1/weekly-report")
                 .param("format", "json").param("showRevenue", Boolean.toString(visible)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertTrue(JSON.parseObject(json).getString("summary").startsWith("主播示例 上周（"), json);
+        assertEquals(JSON.parseObject(json).getString("summary"), outgoing.getValue().getContent().split("\n", 2)[1]);
+        delivery.trial("bilibili", 1L, target);
+        verify(sender).sendNow(outgoing.capture());
         assertEquals(JSON.parseObject(json).getString("summary"), outgoing.getValue().getContent().split("\n", 2)[1]);
         var targetJson = mvc.perform(get("/config/api/weekly-report/bilibili/1/preview")
                 .param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001").param("format", "json"))
@@ -146,6 +150,36 @@ class WeeklyReportApiTest {
                 new RevenueVisibilityService(new NovaStateStore(props)), mock(NovaMessageSender.class), mock(PushGate.class),
                 new WeeklyReportDeliveryStore(dir.resolve("weekly.json")),
                 Clock.fixed(Instant.parse("2026-10-12T02:00:00Z"), ZoneOffset.UTC));
+    }
+
+    @ParameterizedTest(name = "有图={0}")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("主播名中的全体占位符与CQ码发送到OneBot后仍是文字")
+    void externalNameStaysText(boolean image) {
+        archive(Instant.parse("2026-10-05T00:00:00Z"));
+        var user = new PushUser(); user.setUid(1L); user.setPlatform("bilibili");
+        user.setUname("{at=all}测试[CQ:at,qq=all]");
+        when(source.getAllUsers()).thenReturn(List.of(user));
+        if (!image) when(renderer.render(any(), any())).thenReturn(null);
+        var sender = mock(NovaMessageSender.class);
+        var delivery = new WeeklyReportDeliveryService(source,
+                (WeeklyReportContentService) ReflectionTestUtils.getField(controller, "weeklyReports"),
+                new RevenueVisibilityService(new NovaStateStore(props)), sender, mock(PushGate.class),
+                new WeeklyReportDeliveryStore(dir.resolve("weekly.json")),
+                Clock.fixed(Instant.parse("2026-10-12T02:00:00Z"), ZoneOffset.UTC));
+        var target = new PushTarget(); target.setPlatform("qq-onebot"); target.setType(PushTargetType.GROUP); target.setNum(1001L);
+        delivery.trial("bilibili", 1L, target);
+        var outgoing = ArgumentCaptor.forClass(Message.class);
+        verify(sender).sendNow(outgoing.capture());
+        var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter()
+                .convert(outgoing.getValue().getContent());
+        var text = new StringBuilder();
+        for (int i = 0; i < segments.size(); i++) {
+            var segment = segments.getJSONObject(i);
+            assertTrue(Set.of("text", "image").contains(segment.getString("type")), segment.toJSONString());
+            if ("text".equals(segment.getString("type"))) text.append(segment.getJSONObject("data").getString("text"));
+        }
+        assertTrue(text.toString().contains("｛at=all｝测试[CQ:at,qq=all] "), text.toString());
     }
     @ParameterizedTest(name = "文字预览：{0}")
     @ValueSource(strings = {"empty", "renderer-failed", "renderer-missing"})

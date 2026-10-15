@@ -1,12 +1,15 @@
 package org.frostnova.nova.console.controller;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
+import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -278,12 +281,33 @@ public class StreamerController {
                 && liveDataService.getLiveStatus(platform, uid).orElse(false));
         var comparison = new StreamerInsights().compareRecent(sessions, sampled, Integer.parseInt(days),
                 Clock.fixed(range.to(), clock.getZone()), rules);
-        JSONObject insights = JSONObject.from(comparison.current());
+        JSONObject insights = JSON.parseObject(JSON.toJSONString(comparison.current(), JSONWriter.Feature.WriteNulls));
         insights.put("previous", comparison.previous());
         insights.put("comparisons", comparison.comparisons());
         insights.put("comparisonNote", comparison.comparisonNote());
         result.put("insights", insights);
         return ResponseEntity.ok(result);
+    }
+
+    /** 开播时段表现：整场总量按有效直播时长折算，仅提供近90或180个统计日。 */
+    @GetMapping("/{platform}/{uid}/start-slots")
+    public ResponseEntity<JSONObject> startSlots(@PathVariable String platform, @PathVariable Long uid,
+                                                @RequestParam(defaultValue = "90") String days) {
+        if (!List.of("90", "180").contains(days)) {
+            return ResponseEntity.badRequest().body(JSONObject.of("success", false,
+                    "message", "请选择近 90、180 天中的一个范围"));
+        }
+        String key = key(platform, uid);
+        List<LiveSession> sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE))
+                .getOrDefault(key, List.of());
+        boolean configured = roster(loadedUsers()).stream()
+                .anyMatch(item -> key.equals(key(item.platform(), item.uid())));
+        if (!configured && sessions.isEmpty()) return streamer(platform, uid, "week", 1, 0);
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
+        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
+                "startSlots", new StreamerStartSlots().calculate(sessions, range.from(), range.to(), rules)));
     }
 
     /** 上一个完整统计周的只读预览；format=json 返回摘要与降级文字。 */

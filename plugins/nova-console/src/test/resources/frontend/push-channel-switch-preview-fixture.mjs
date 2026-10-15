@@ -199,6 +199,7 @@ const mock = {requests: []};
 // 预览回应两档：自动档当场回（量「切走后还发不发」）；手动档攥在手里按测试要的
 // 先后放行（量「晚到的回应撤销了谁」）——真机上等两个请求自然乱序，窗口凑不齐
 let previewManual = false;
+let previewOffline = false;
 const previewPending = [];
 
 globalThis.fetch = (path, opt) => {
@@ -215,6 +216,7 @@ globalThis.fetch = (path, opt) => {
   }
 
   if (url.endsWith('/config/api/report/preview')) {
+    if (previewOffline) return Promise.reject(new TypeError('Failed to fetch'));
     if (previewManual) {
       return new Promise(resolve => previewPending.push(resolve))
         .then(() => ({ok: true, blob: () => Promise.resolve('preview-bytes')}));
@@ -394,6 +396,36 @@ await ask('③ 晚到的旧回应·旧通道的预览回应晚于新通道的回
   const shotAfter = previewShot();
   if (!shotAfter || String(shotAfter.src) !== current) {
     throw new Error('当前预览图的地址被晚到的旧回应换掉了');
+  }
+});
+
+// 抓断网时预览没有连接失败说明，并核对恢复网络后改版式能重新出图。
+await ask('④ 版式预览断网显示中文连接失败，恢复后改动重新出图', async () => {
+  previewManual = false;
+  previewOffline = true;
+  const before = previewCount();
+  push.showPush('1', String(REPORT_A));
+  const waitFor = async predicate => {
+    const deadline = Date.now() + 10000;
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error('预览结果未在时限内显示');
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+  const previewNodes = () => allNodes(allNodes(page()).find(node => node.id === 'rep-preview'));
+  await waitFor(() => previewCount() > before && previewNodes().some(node =>
+    node.tagName === 'p' && /预览/.test(node.textContent) && !/正在生成/.test(node.textContent)));
+  const hint = previewNodes().find(node => node.tagName === 'p' && /预览/.test(node.textContent)
+    && !/正在生成/.test(node.textContent))?.textContent || '';
+  if (!hint.includes('预览图读取失败：无法连接到服务器')) {
+    throw new Error('断网预览缺少中文连接失败说明，显示：' + JSON.stringify(hint));
+  }
+  previewOffline = false;
+  flip(layoutInput('礼物列表'));
+  await waitFor(() => !!previewShot());
+  if (!String(previewShot().src).startsWith('blob:')) throw new Error('恢复网络后没有预览图');
+  if (allNodes(page()).some(node => node.textContent.includes('预览图读取失败'))) {
+    throw new Error('恢复网络后仍留着失败提示');
   }
 });
 

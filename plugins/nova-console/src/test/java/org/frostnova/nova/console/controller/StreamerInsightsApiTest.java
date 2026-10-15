@@ -126,6 +126,46 @@ class StreamerInsightsApiTest {
         pair(from, 112, 100, true, true, "bilibili");
         reason(insights("7", "bilibili"), "revenue", "PREVIOUS_ZERO", "上期为 0");
     }
+    @Test @DisplayName("缺少口径或名单时旧字段仍返回键和值为null")
+    void nullFieldsRemainInResponse() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (String platform : List.of("other", "bilibili")) {
+            comparisonSession(from, 100, 100, false, true, platform);
+            String raw = mvc.perform(get("/config/api/streamers/" + platform + "/1/insights").param("days", "7"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var data = JSON.parseObject(raw).getJSONObject("insights");
+            assertEquals(Set.of("from", "to", "metricsKnown", "sessions", "durationSeconds", "revenue",
+                    "messages", "audience", "interactionAudience", "composition", "firstRecordedAt", "coverage",
+                    "fans", "daily", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
+            var nullable = new ArrayList<>(List.of("audience", "interactionAudience", "composition", "firstRecordedAt", "fans"));
+            if (platform.equals("other")) nullable.addAll(List.of("revenue", "messages"));
+            for (String key : nullable) assertNull(data.get(key), key + "应保留null值");
+            if (platform.equals("other")) {
+                var day = data.getJSONArray("daily").getJSONObject(0);
+                for (String key : List.of("revenue", "messages", "audience")) {
+                    assertTrue(day.containsKey(key), "每日旧字段不得丢键：" + key);
+                    assertNull(day.get(key));
+                }
+            }
+        }
+    }
+    @Test @DisplayName("上期观众为零且缺名单时优先说明上期为0")
+    void zeroAudienceBeforeMissingList() {
+        Instant previous = from.minusSeconds(7 * 86400);
+        comparisonSession(previous, 50, 50, false, true, "bilibili");
+        archive.append(new LiveSession("bilibili", 1L, "sample", 2L,
+                previous.plusSeconds(3600).toEpochMilli(), previous.plusSeconds(4200).toEpochMilli(), 600,
+                Map.of("gift_value", 50d, "danmu_count", 50d), Map.of(), LiveEndReason.NORMAL,
+                List.of(), 0, Map.of("danmu_users", List.of()), 0, Map.of(), Map.of()));
+        pair(from, 100, 100, true, true, "bilibili");
+        var data = insights("7", "bilibili");
+        var baseline = data.getJSONObject("previous");
+        assertEquals(1, baseline.getJSONObject("coverage").getIntValue("missing"));
+        for (String key : List.of("audience", "interactionAudience")) {
+            assertEquals(0, baseline.getIntValue(key));
+            reason(data, key, "PREVIOUS_ZERO", "上期为 0");
+        }
+    }
     @Test @DisplayName("上期没有开播优先于场次不足和平台口径")
     void noPreviousSessions() {
         pair(from, 100, 100, false, true, "other");
@@ -217,4 +257,55 @@ class StreamerInsightsApiTest {
                     controller.insights("bilibili", 1L, days).getBody().getString("message"));
         }
     }
+    @Test @DisplayName("开播时段接口返回84格及整场明细且180天独立筛选")
+    void startSlotsApi() throws Exception {
+        append(Instant.parse("2026-06-01T02:00:00Z"));
+        append(Instant.parse("2026-09-07T02:00:00Z"));
+        append(Instant.parse("2026-09-14T02:00:00Z"));
+        append(Instant.parse("2026-09-21T02:00:00Z"));
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (String days : List.of("90", "180")) {
+            String raw = mvc.perform(get("/config/api/streamers/bilibili/1/start-slots").param("days", days))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var body = JSON.parseObject(raw);
+            var data = body.getJSONObject("startSlots");
+            assertEquals(Integer.parseInt(days), body.getIntValue("days"));
+            assertEquals(84, data.getJSONArray("cells").size(), "接口须给完整热力表");
+            var cell = data.getJSONArray("cells").getJSONObject(5);
+            assertEquals(days.equals("90") ? 3 : 4, cell.getIntValue("sessions"), "180天须含六月场次");
+            assertEquals(1428d, cell.getDoubleValue("revenuePerHour"));
+            assertEquals(24d, cell.getDoubleValue("messagesPerHour"));
+            assertEquals(238d, cell.getJSONArray("sessionItems").getJSONObject(0).getDoubleValue("revenue"));
+            assertEquals(1, data.getJSONArray("topRevenue").size());
+            assertFalse(raw.contains("userSets"));
+            assertFalse(raw.contains("enter_users"));
+            if (days.equals("90")) System.out.println("START_SLOTS_SAMPLE: " + raw);
+        }
+        mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
+                .andExpect(status().isOk());
+    }
+
+    @Test @DisplayName("开播时段只接受90或180天且不存在主播返回404")
+    void startSlotsValidation() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (String days : List.of("7", "30", "abc", "0", "90.0")) {
+            mvc.perform(get("/config/api/streamers/bilibili/1/start-slots").param("days", days))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test @DisplayName("开播时段接口和主播概况一样要求登录")
+    void startSlotsRequiresLogin() throws Exception {
+        var auth = mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class);
+        when(auth.isEnabled()).thenReturn(true);
+        var filter = new org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter("sample-token",
+                new org.frostnova.nova.core.util.IpMatcher(List.of("0.0.0.0/0", "::/0")), auth,
+                new NovaCoreProperties.ConfigUi.Auth(), new NovaCoreProperties.ConfigUi.Agreement());
+        var mvc = MockMvcBuilders.standaloneSetup(controller).addFilters(filter).build();
+        mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
+                .andExpect(status().isUnauthorized());
+    }
+
 }

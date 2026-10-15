@@ -22,6 +22,7 @@ import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.datasource.DataSourceService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.nio.file.*;
 import java.time.*;
@@ -45,6 +46,7 @@ class WeeklyReportDeliveryServiceTest {
     WeeklyReportDeliveryService service;
     List<PushUser> users;
     List<Message> sent;
+    WeeklyReportRenderer renderer;
     boolean quiet;
 
     static class MutableClock extends Clock {
@@ -77,7 +79,9 @@ class WeeklyReportDeliveryServiceTest {
         when(catalog.insights()).thenReturn(new LiveMetricCatalog.Insights(List.of("gift"), "messages", List.of("chat"), List.of("chat"), "fans"));
         when(catalogs.orderedStream()).thenAnswer(i -> Stream.of(catalog));
         ObjectProvider<WeeklyReportRenderer> renderers = mock(ObjectProvider.class);
-        when(renderers.orderedStream()).thenAnswer(i -> Stream.empty());
+        renderer = mock(WeeklyReportRenderer.class);
+        when(renderer.platform()).thenReturn("sample");
+        when(renderers.orderedStream()).thenAnswer(i -> Stream.of(renderer));
         var archive = new LiveSessionArchive(props);
         Instant from = Instant.parse("2026-10-05T00:00:00Z");
         archive.append(new LiveSession("sample", 1L, "主播示例", 2L, from.toEpochMilli(), from.plusSeconds(600).toEpochMilli(),
@@ -104,6 +108,67 @@ class WeeklyReportDeliveryServiceTest {
     PushTarget target() { return users.get(0).getTargets().get(0); }
     String key() { return WeeklyReportDeliveryService.key("sample", 1L, target()); }
     Status status() { return store.records().get(0).status(); }
+
+    @Test @DisplayName("摘要以主播名开头，群里只看文字也能分清主播")
+    void summaryNamesStreamer() {
+        users.get(0).setUname("莜娜Yuna");
+        var preview = content.preview("sample", 1L, clock.instant(), false).orElseThrow();
+        assertEquals("莜娜Yuna 上周（10 月 5 日至 11 日）共直播 1 场、0 小时 10 分，弹幕 8,901 条，观众 0 人。", preview.summary());
+        var identity = org.mockito.ArgumentCaptor.forClass(LiveStreamerInfo.class);
+        verify(renderer).render(identity.capture(), any());
+        assertEquals("莜娜Yuna", identity.getValue().getUname());
+        System.out.println("NAMED_SUMMARY: " + preview.summary());
+    }
+
+    @Test @DisplayName("文字版以主播名开头，图片出不来时仍能分清主播")
+    void textNamesStreamer() {
+        users.get(0).setUname("莜娜Yuna");
+        service.check(false);
+        String text = sent.get(0).getContent();
+        assertTrue(text.startsWith("莜娜Yuna 运营周报（"), text);
+        System.out.println("NAMED_TEXT:\n" + text);
+    }
+
+    @Test @DisplayName("没有开播的周报也以主播名开头")
+    void emptyWeekNamesStreamer() {
+        var user = user(2L, 1002L, true); user.setUname("莜娜Yuna"); users.add(user);
+        var preview = content.preview("sample", 2L, clock.instant(), false).orElseThrow();
+        assertEquals("莜娜Yuna 上周（10 月 5 日至 11 日）没有记录到开播。", preview.summary());
+        assertEquals(preview.summary(), preview.text());
+        System.out.println("NAMED_EMPTY: " + preview.text());
+    }
+
+    @ParameterizedTest(name = "有图={0}，试发={1}")
+    @CsvSource({"true,true", "true,false", "false,true", "false,false"})
+    @DisplayName("主播名中的占位符在定时和试发正文中只作为转义文字")
+    void externalNameIsEscaped(boolean image, boolean trial) {
+        users.get(0).setUname("{at=all}测试{next}{image_url=https://example.test/a.png}[CQ:at,qq=all]");
+        if (image) when(renderer.render(any(), any())).thenReturn(new byte[]{1});
+        Message message;
+        if (trial) {
+            service.trial("sample", 1L, target());
+            var outgoing = org.mockito.ArgumentCaptor.forClass(Message.class);
+            verify(sender).sendNow(outgoing.capture()); message = outgoing.getValue();
+        } else {
+            service.check(false); assertEquals(1, sent.size()); message = sent.get(0);
+        }
+        String body = message.getContent();
+        assertTrue(body.contains("｛at=all｝测试｛next｝｛image_url=https://example.test/a.png｝[CQ:at,qq=all] "), body);
+        for (String token : List.of("{at=all}", "{next}", "{image_url=")) assertFalse(body.contains(token), body);
+        assertTrue(message.getDisplay().contains("｛at=all｝测试"));
+    }
+
+    @Test @DisplayName("当前昵称缺失时摘要沿用图片的归档昵称和未知主播叫法")
+    void nameFallbackMatchesImage() {
+        var preview = content.preview("sample", 1L, clock.instant(), false).orElseThrow();
+        assertTrue(preview.summary().startsWith("主播示例 "), preview.summary());
+        var identity = org.mockito.ArgumentCaptor.forClass(LiveStreamerInfo.class);
+        verify(renderer).render(identity.capture(), any());
+        assertEquals("主播示例", identity.getValue().getUname());
+        users.add(user(2L, 1002L, true));
+        var empty = content.preview("sample", 2L, clock.instant(), false).orElseThrow();
+        assertTrue(empty.summary().startsWith("未知主播 "), empty.summary());
+    }
 
     @Test @DisplayName("周一十点仅向启用的订阅各发一次") void mondayTen() {
         users.add(user(2L, 1002L, true));

@@ -29,7 +29,8 @@ await check('没有场次不画柱并提示，有场次数值零仍画柱', () =
 
 const nodes = new Map();
 function element(tag) {
-  const n = {tagName: tag, children: [], style: {}, attrs: {}, listeners: {}, textContent: '', _html: ''};
+  const n = {tagName: tag, children: [], style: {setProperty(k, v) { this[k] = String(v); }},
+    attrs: {}, listeners: {}, textContent: '', _html: ''};
   Object.defineProperty(n, 'id', {get() { return this._id; }, set(v) { this._id = v; nodes.set(v, this); }});
   Object.defineProperty(n, 'innerHTML', {get() { return this._html; }, set(v) {
     this._html = v;
@@ -166,6 +167,23 @@ await check('只有旧名单参考说明时仍可展开，无说明时隐藏折�
   compositionScenario = {comparisons: {audience: {changeRatio: 0}}};
   await page.refresh();
   assert.ok(!flatten(nodes.get('sd-insights')).some(n => n.tagName === 'details'));
+});
+await check('完整名单的观众与互动观众都显示较上期，涨红跌绿', async () => {
+  for (const sign of [1, -1]) {
+    compositionScenario = {audience: 112, interactionAudience: 95, coverage: {complete: 2},
+      comparisons: {audience: {changeRatio: sign * .12}, interactionAudience: {changeRatio: sign * -.05}}};
+    await page.refresh();
+    const cells = flatten(nodes.get('sd-insights')).filter(n => n.className === 'stat');
+    for (const [label, text, color] of [
+      ['观众', sign > 0 ? '较上期 +12%' : '较上期 −12%', sign > 0 ? 'var(--err)' : 'var(--ok)'],
+      ['互动观众', sign > 0 ? '较上期 −5%' : '较上期 +5%', sign > 0 ? 'var(--ok)' : 'var(--err)'],
+    ]) {
+      const cell = cells.find(n => n.innerHTML.includes('>' + label + '</div>'));
+      assert.ok(cell, label + '格应存在');
+      assert.ok(cell.children.some(n => n.tagName === 'small' && n.textContent === text && n.style.color === color),
+        label + '格缺少较上期文字或涨跌颜色');
+    }
+  }
 });
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);
