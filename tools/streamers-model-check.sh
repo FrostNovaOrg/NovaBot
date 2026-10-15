@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 主播页那两个前端模块的语法尺
+# 主播页前端模块的语法检查
 #
 # 这一页的行为判据不在这里——地址栏往返、状态四档、折线几何、人气峰三态、缺口分列
 # 由 StreamersModelTest 拉起 streamers-model-fixture.mjs 逐格量，接在整盘里跑。
@@ -42,7 +42,7 @@ fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个：一次传一串时，后面那些是「查过了」还是「没轮到」分不出来
-for f in "$PAGES"/streamers-model.js "$PAGES"/streamers.js; do
+for f in "$PAGES"/streamers-model.js "$PAGES"/streamers-components.js "$PAGES"/streamers.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else

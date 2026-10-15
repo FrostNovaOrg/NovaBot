@@ -32,7 +32,7 @@ public class StreamersConsolePageProvider implements ConsolePageProvider {
 
     @Override
     public List<String> assets() {
-        return List.of("streamers-model.js");
+        return List.of("streamers-model.js", "streamers-components.js");
     }
 
     @Override

@@ -840,6 +840,14 @@ class ConfigUiFrontendTest {
                                 && file.getFileName().toString().equals("streamers.js")) {
                             // 数值格的宽度系数由内容长度计算，不属于共享配色。
                             assertTrue(source.contains("setProperty('--stat-value-width',"));
+                        } else if (file.getFileName().toString().equals("streamers-components.js")
+                                && Set.of("--sc-cell", "--sc-gap", "--sc-cols", "--sc-intensity").contains(name)) {
+                            // 日历格尺寸、列数与色阶比例由组件定义，实际颜色仍取共享色表。
+                            if (name.equals("--sc-cell") || name.equals("--sc-gap")) {
+                                assertTrue(Pattern.compile(Pattern.quote(name) + ":\\d+px").matcher(source).find());
+                            } else {
+                                assertTrue(source.contains("setProperty('" + name + "',"));
+                            }
                         } else if (!defined.contains(name)) {
                             missing.add(file.getFileName() + ": " + name);
                         }
