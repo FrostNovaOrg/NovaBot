@@ -127,9 +127,24 @@ let liveData = {
   metrics: {danmu_count: 123, gift_value: 12.5, unknown_metric: 9, online_count: 999, online_rank_count: 3},
   series: {online_count: [[dataAt - 60000, 50], [dataAt, 42]]},
 };
+const slotRequests = [];
+let pendingSlots = null;
+const slotCells = Array.from({length: 84}, (_, i) => ({weekday: Math.floor(i / 12) + 1,
+  startHour: i % 12 * 2, sessions: i === 11 ? 3 : 0, revenuePerHour: i === 11 ? 50 : null,
+  messagesPerHour: i === 11 ? 100 : null,
+  sessionItems: i === 11 ? [{startTime: STARTS[0], durationSeconds: 3600, revenue: 100, messages: 200}] : [],
+}));
+const slotData = {cells: slotCells,
+  topRevenue: [{weekday: 1, startHour: 22, sessions: 3, value: 50}],
+  topMessages: [{weekday: 1, startHour: 22, sessions: 3, value: 100}]};
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
+  if (path.includes('/start-slots?')) {
+    slotRequests.push(path);
+    if (pendingSlots) return new Promise(done => { pendingSlots.resolve = data => done({status: 200, json: async () => data}); });
+    return reply({success: true, startSlots: slotData});
+  }
   if (path.includes('/live?')) {
     liveRequests++;
     if (liveHttpReply) return Promise.resolve({status: liveHttpReply.status, json: async () => liveHttpReply.body});
@@ -419,6 +434,62 @@ await ask('⑭ 不在推送配置里的主播不请求本场数据，也不启�
   } finally {
     configured = true;
   }
+});
+
+async function openSlots(query = '') {
+  location.hash = model.detailHash(PLATFORM, UID, 'start-slots', query);
+  await page.loadStreamers();
+}
+const slotButtons = () => walk(node('sd-body')).filter(n => n.tagName === 'button' && n.attrs['aria-label']);
+const press = async button => {
+  if (!button) throw new Error('没有找到按钮');
+  for (const fn of button.listeners.click || []) await fn();
+};
+
+// 开播时段不能漏列、让小样本上色，或把整场总量误写成每小时值。
+await ask('开播时段显示84格且点击列出整场数据与场次链接', async () => {
+  await openSlots();
+  same(slotButtons().length, 84, '7×12格');
+  same(slotRequests.at(-1).endsWith('days=90'), true, '默认90天请求');
+  same(walk(node('sd-tabs')).filter(n => n.tagName === 'a').at(-1).textContent, '开播时段', '最后页签');
+  const active = slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00'));
+  if (!active) throw new Error('没有周一22点格子');
+  same(Boolean(active.style.background), true, '有值格子上色');
+  same(slotButtons().filter(n => n.style.background).length, 1, '空格不上色');
+  await press(active);
+  const content = textOf(node('sd-body'));
+  for (const part of ['整场流水', '100.00 元', model.sessionHash(PLATFORM, UID, STARTS[0]), '不表示该两小时内的产出']) {
+    if (!content.includes(part)) throw new Error('点击格子后缺少 ' + part);
+  }
+});
+
+// 选择180天和弹幕时须实际换请求与明细，不能只换按钮外观。
+await ask('开播时段180天独立取数且弹幕切换更新前三和整场明细', async () => {
+  await openSlots('slotDays=180&days=7');
+  same(slotRequests.at(-1).endsWith('days=180'), true, '180天请求');
+  const metric = walk(node('sd-body')).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕'));
+  await press(metric);
+  await press(slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00')));
+  const content = textOf(node('sd-body'));
+  for (const part of ['周一 22:00–24:00 · 100.00 条/时 · 3 场', '整场弹幕', '200 条']) {
+    if (!content.includes(part)) throw new Error('切换弹幕后缺少 ' + part);
+  }
+});
+
+// 慢请求在切页后不能把开播时段表画到场次页。
+await ask('离开开播时段后迟到的请求不覆盖场次页', async () => {
+  pendingSlots = {};
+  const loading = openSlots();
+  await until(() => pendingSlots.resolve, '开播时段请求');
+  location.hash = model.detailHash(PLATFORM, UID, 'sessions');
+  await page.loadStreamers();
+  const previous = textOf(node('sd-body'));
+  const previousCard = node('sd-body').firstChild;
+  pendingSlots.resolve({success: true, startSlots: slotData});
+  await loading;
+  same(textOf(node('sd-body')), previous, '迟到响应不改场次页');
+  if (node('sd-body').firstChild !== previousCard) throw new Error('迟到响应重建了场次页');
+  pendingSlots = null;
 });
 
 page?.leave();
