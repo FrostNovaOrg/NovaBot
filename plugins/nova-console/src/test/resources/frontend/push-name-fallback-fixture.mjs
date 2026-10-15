@@ -206,27 +206,106 @@ const knownName = uname => path => {
   eq(JSON.parse(page.serializePush()), saved, '⑦ 昵称等展示字段不进入保存内容');
 }
 
-// ⑧ 整页载入时尚未进入推送页，即使平台清单已就绪也不查询昵称
-{
+// ⑧ 从宿主整页载入与导航入口运行，不直接改推送页的活动状态。
+const hostSrc = readFileSync(join(ui, '../../../../../../core/nova-core/src/main/resources/config-ui/main.js'), 'utf8');
+async function consolePage(hash, slowPlatforms = false) {
   const calls = [];
-  const api = async path => {
+  const pending = [];
+  const location = {hash};
+  const store = {platforms: [], dirty: {}, values: {}};
+  let releasePlatforms;
+  const platformsReady = new Promise(resolve => { releasePlatforms = resolve; });
+  const saved = [{platform: 'bilibili', uid: 7}, {platform: 'bilibili', uid: 8}];
+  let names = [];
+  const noop = () => {};
+  const api = async (path, opts) => {
     calls.push(path);
-    if (path === '/datasource') return {content: JSON.stringify([
-      {platform: 'bilibili', uid: 7}, {platform: 'bilibili', uid: 8},
-    ])};
-    return {success: true, uname: '现场昵称'};
+    if (path === '/datasource') {
+      if (slowPlatforms) await Promise.all(pending);
+      return {content: JSON.stringify(saved)};
+    }
+    if (path === '/platforms') {
+      if (slowPlatforms) await platformsReady;
+      return {platforms: ['bilibili']};
+    }
+    if (path === '/streamer/lookup') {
+      const {uid} = JSON.parse(opts.body);
+      return {success: true, uname: '主播' + uid};
+    }
+    return {};
   };
-  const functions = [
-    'async function reload()', 'function serializePush', 'function dropDisplayOnly',
-    'async function decoratePushData',
+  const pushFns = [
+    'function refresh(', 'function leave(', 'function routeFromHash(',
+    'async function loadPushPage(', 'async function reload()', 'function serializePush',
+    'function dropDisplayOnly', 'async function decoratePushData',
   ].map(marker => bracedFrom(src, marker)).join('\n');
-  const reload = new Function('api', 'store', 'clearSessionDrafts', 'renderStreamers', 'say',
-    'let pushData = []; let pushSaved = "[]"; let pageLive = false;\n' + functions
-    + '\nreturn reload;')(api, {platforms: ['bilibili']}, () => {}, () => {},
-    message => { throw new Error(message); });
-  await reload();
-  eq(calls.filter(path => path === '/streamer/lookup').length, 0,
-    '⑧ 整页载入、尚未进入推送页 → lookup 零次');
+  const push = new Function('api', 'store', 'location', 'showPush', 'renderStreamers',
+    'clearSessionDrafts', 'closeDrawer', 'say', 'targetOptions', 'buildDirectory',
+    'let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
+    + pushFns + '\nreturn {refresh, reload, leave, entries: () => pushData};')(
+    api, store, location, () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
+    () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
+    noop, noop, message => { throw new Error(message); }, () => [], () => ({}));
+  const pages = [{meta: {id: 'push', slot: 'top'}, module: {
+    refresh: (...args) => { const result = push.refresh(...args); if (result) pending.push(result); },
+    leave: push.leave,
+  }}];
+  const scope = {api, store, location, pages, SLOT_TOP: 'top', SLOT_SETTINGS: 'settings',
+    PAGE_TAB: {home: 'home', log: 'log', links: 'links', settings: 'general'},
+    TAB_HASH: {}, topPageIds: new Set(['push', 'streamers']),
+    route: '', homeStatus: {}, homeLogin: {}, later: false,
+    shouldOpenSetup: () => false, manualHref: () => '',
+    $: () => ({scrollIntoView: noop}),
+    document: {querySelectorAll: () => [], documentElement: {classList: {toggle: noop}}},
+    window: {scrollTo: noop}, clearTimeout,
+    reloadChangeSources: async () => { await push.reload(); releasePlatforms(); },
+  };
+  for (const key of ['say', 'renderGeneral', 'focusCard', 'renderStatus', 'renderConfigPath',
+    'refreshHome', 'fillBotForms', 'applyConnectionVocab', 'markDirty', 'notePlatformsArrived',
+    'clearIssuedToken', 'stopFollow', 'stopSetupPolling', 'stopWatchingGroups', 'syncLogView',
+    'loadTokens', 'refreshLinks', 'loadTargets', 'loadLog', 'openSetup']) scope[key] = noop;
+  scope.say = (message, level) => { if (level === 'err') throw new Error(message); };
+  const hostFns = ['function callPage(', 'function refreshPages(', 'function parseHash(',
+    'function applyRoute(', 'async function load(']
+    .map(marker => bracedFrom(hostSrc, marker)).join('\n');
+  const host = new Function('scope', 'with (scope) { ' + hostFns
+    + '\nreturn {applyRoute, load, refreshPages}; }')(scope);
+  async function settled() {
+    while (pending.length) await Promise.all(pending.splice(0));
+  }
+  // main.js 挂好插件页之后的真实顺序：先按路由进页，再整体载入。
+  host.applyRoute(false);
+  host.applyRoute();
+  await host.load();
+  await settled();
+  return {calls, names: () => names, async enter() {
+    location.hash = '#/push'; host.applyRoute(); await settled();
+  }, async discard() {
+    await push.reload(); host.refreshPages('push'); await settled();
+  }};
+}
+for (const page of ['home', 'streamers', 'log', 'links', 'settings']) {
+  const console = await consolePage('#/' + page);
+  eq(console.calls.filter(p => p === '/streamer/lookup').length, 0,
+    '⑧ 宿主整页载入 ' + page + ' → lookup 零次');
+  console.calls.length = 0;
+  await console.enter();
+  eq(console.calls.filter(p => p === '/streamer/lookup').length, 2,
+    '⑧ 从 ' + page + ' 进入推送页 → 逐个补名');
+  eq(console.names(), ['主播7', '主播8'], '⑧ 进入推送页后左树名字补全');
+}
+{
+  const console = await consolePage('#/push');
+  eq(console.names(), ['主播7', '主播8'], '⑨ 推送页整页载入后左树名字补全');
+  console.calls.length = 0;
+  await console.discard();
+  eq(console.calls.filter(p => p === '/streamer/lookup').length, 0, '⑨ 放弃不再查询昵称');
+  eq(console.names(), ['主播7', '主播8'], '⑨ 放弃后左树名字不丢');
+}
+
+{
+  const console = await consolePage('#/push', true);
+  eq(console.names(), ['主播7', '主播8'], '⑩ 平台清单晚于配置到达，整页载入仍补全左树名字');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

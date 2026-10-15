@@ -445,11 +445,15 @@ function routeFromHash() {
  * 页内换选中项不重取名单与额度。
  */
 export function refresh(route) {
+  // 宿主整体刷新也会调用隐藏页；只有地址栏落在本页才算进入。
+  if (!/^#\/?push(?:[/?]|$)/.test(location.hash || '')) return;
   const r = route && typeof route.sub === 'string' ? route : routeFromHash();
   const entering = !pageLive;
   pageLive = true;
   showPush(r.sub, r.tail);
   if (entering) return loadPushPage();
+  // 整体载入末尾平台清单与配置才齐备，补上先前尚不能查询的昵称。
+  return decoratePushData();
 }
 
 /** 离开本页时收起抽屉 */
