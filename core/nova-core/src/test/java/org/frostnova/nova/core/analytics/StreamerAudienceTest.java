@@ -69,7 +69,7 @@ class StreamerAudienceTest {
                 new UserScore(1L, "a", 1), new UserScore(2L, "b", 20), new UserScore(3L, "c", 20)),
                 session(60, List.of(1L, 4L), List.of(), new UserScore(4L, "d", 100)),
                 session(120, List.of(5L), List.of(), new UserScore(5L, "e", 20)));
-        assertEquals(List.of("未记录昵称", "d", "e", "b", "c"),
+        assertEquals(List.of("a", "d", "e", "b", "c"),
                 page(sessions, "all", "attendance", 1).items().stream().map(StreamerAudience.Person::name).toList(), "到场、流水、最近依次降序");
         assertEquals("d", page(sessions, "all", "revenue", 1).items().get(0).name());
         assertEquals("e", page(sessions, "all", "recent", 1).items().get(0).name());
@@ -91,16 +91,84 @@ class StreamerAudienceTest {
         for (int n=1; n<=3; n++) for (var p : page(distinctSessions, "all", "attendance", n).items()) assertTrue(names.add(p.name()), "分页不能重复");
         assertEquals(45, names.size(), "分页不能丢人");
     }
-    @Test @DisplayName("没有昵称显示未记录昵称且不沿用前场昵称")
+    @Test @DisplayName("最近场没上榜或缺明细仍保留本期昵称，全期无昵称才显示未记录昵称")
     void missingName() {
-        var sessions = List.of(session(0, List.of(1L), List.of(), new UserScore(1L, "old", 0)),
-                session(60, List.of(1L), List.of(), new UserScore(1L, " ", 0)));
-        assertEquals("未记录昵称", page(sessions, "all", "attendance", 1).items().get(0).name());
+        var before = session(-60, List.of(2L), List.of(), new UserScore(2L, "before", 0));
+        var a = session(0, List.of(1L, 2L), List.of(), new UserScore(1L, "old", 0));
+        var b = session(60, List.of(1L, 2L), List.of(), new UserScore(1L, " ", 0));
+        var people = page(List.of(before, a, b), "all", "attendance", 1).items();
+        assertEquals(List.of("old", "未记录昵称"), people.stream().map(StreamerAudience.Person::name).toList(),
+                "没上榜不丢已知昵称，也不从本期之前补昵称");
+        details.remove(b.startTime());
+        assertEquals("old", page(List.of(a, b), "all", "attendance", 1).items().get(0).name(),
+                "缺明细不丢已知昵称");
+    }
+
+    LiveSession metrics(LiveSession s, Map<String, Double> metrics) {
+        return new LiveSession(s.platform(), s.uid(), s.uname(), s.roomId(), s.startTime(), s.endTime(),
+                s.durationSeconds(), metrics, s.userCounts(), s.endReason(), s.titles(),
+                s.maintenanceGapSeconds(), s.userSets(), s.roomOutageSeconds(), s.peaks(), s.anonymousCounts());
+    }
+    void removeRevenueRanking(LiveSession s) {
+        var d = details.get(s.startTime());
+        details.put(s.startTime(), new LiveDetail(d.version(), d.platform(), d.uid(), d.uname(), d.roomId(),
+                d.startTime(), d.endTime(), d.durationSeconds(), d.metrics(), d.userCounts(), d.series(), Map.of(),
+                d.words(), d.highlights(), d.titles(), d.gaps(), d.peaks(), d.gifts()));
+    }
+    @Test @DisplayName("到过零流水且无流水榜的场次仍显示已知总额，正流水或未知合计缺榜显示未知")
+    void zeroRevenueWithoutRanking() {
+        var a = session(0, List.of(1L), List.of(), new UserScore(1L, "alice", 10));
+        var b = metrics(session(60, List.of(1L), List.of()), Map.of("gift", 0d, "sc", 0d, "guard", 0d));
+        removeRevenueRanking(b);
+        for (var totals : List.of(b.metrics(), Map.of("chat", 1d), Map.of("gift", 0d))) {
+            assertEquals(10d, page(List.of(a, metrics(b, totals)), "all", "attendance", 1).items().get(0).revenue(),
+                    "零流水无榜不能把已知总额变成未知，未发生的指标不会写入归档");
+        }
+        for (var totals : List.of(Map.<String, Double>of(), Map.of("gift", 1d), Map.of("gift", Double.NaN))) {
+            assertNull(page(List.of(a, metrics(b, totals)), "all", "attendance", 1).items().get(0).revenue(),
+                    "正流水缺榜或合计不可用不得当零");
+        }
+        assertNull(page(List.of(a, metrics(b, null)), "all", "attendance", 1).items().get(0).revenue(),
+                "缺少流水合计不得当零");
+        details.remove(b.startTime());
+        assertNull(page(List.of(a, b), "all", "attendance", 1).items().get(0).revenue(), "缺整份明细不得当零");
+    }
+    @Test @DisplayName("按流水排序时拿不全金额排在所有已知金额之后")
+    void unknownRevenueLast() {
+        var unknown = session(120, List.of(1L), List.of(), new UserScore(1L, "unknown", 100));
+        details.remove(unknown.startTime());
+        var zero = session(0, List.of(2L), List.of(), new UserScore(2L, "zero", 0));
+        var paid = session(60, List.of(3L), List.of(), new UserScore(3L, "paid", 10));
+        assertEquals(List.of("paid", "zero", "未记录昵称"), page(List.of(unknown, zero, paid), "all", "revenue", 1)
+                .items().stream().map(StreamerAudience.Person::name).toList(), "未知金额排在已知零元之后");
+    }
+    @Test @DisplayName("按流水排序同额时先到场多，再最近到场晚")
+    void revenueTies() {
+        var a = session(0, List.of(1L, 2L, 3L), List.of(), new UserScore(1L, "old", 10),
+                new UserScore(2L, "frequent", 10), new UserScore(3L, "recent", 10));
+        var b = session(60, List.of(2L), List.of(), new UserScore(2L, "frequent", 0));
+        var c = session(120, List.of(3L), List.of(), new UserScore(3L, "recent", 0));
+        var d = session(180, List.of(4L), List.of(), new UserScore(4L, "single", 10));
+        assertEquals(List.of("recent", "frequent", "single", "old"), page(List.of(a, b, c, d), "all", "revenue", 1)
+                .items().stream().map(StreamerAudience.Person::name).toList(), "同额先到场再最近");
+    }
+    @Test @DisplayName("范围起点首次出现的人算本期首次且与概况一致")
+    void firstAtRangeStart() {
+        var sessions = List.of(session(-60, List.of(1L), List.of(), new UserScore(1L, "returning", 0)),
+                session(0, List.of(2L), List.of(), new UserScore(2L, "first", 0)),
+                session(60, List.of(1L), List.of(), new UserScore(1L, "returning", 0)));
+        var overview = new StreamerInsights().calculate(sessions, List.of(), FROM, TO, RULES).composition();
+        var first = page(sessions, "first", "attendance", 1);
+        var returning = page(sessions, "returning", "attendance", 1);
+        assertEquals(overview.firstRecorded(), first.total(), "起点首次人数与概况一致");
+        assertEquals(overview.returning(), returning.total(), "起点不应误算回访");
+        assertEquals("first", first.items().get(0).name());
+        assertEquals("returning", returning.items().get(0).name());
     }
     @Test @DisplayName("两场流水相加，缺明细或分人金额时不当零")
     void revenueAndMissing() {
         var a = session(0, List.of(1L, 2L), List.of(), new UserScore(1L, "a", 10.5));
-        var b = session(60, List.of(1L), List.of(), new UserScore(1L, "a", 20));
+        var b = metrics(session(60, List.of(1L), List.of(), new UserScore(1L, "a", 20)), Map.of("gift", 20d));
         assertEquals(30.5, page(List.of(a,b), "all", "attendance", 1).items().get(0).revenue(), "两场流水应为30.50元");
         assertEquals(0, page(List.of(a), "all", "revenue", 1).items().get(1).revenue());
         var old = details.get(b.startTime());

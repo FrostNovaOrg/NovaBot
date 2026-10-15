@@ -13,13 +13,13 @@
 import {totalDataOff} from './home-model.js';
 
 /**
- * 详情页的三个页签，闭集
+ * 详情页的五个页签，闭集
  *
- * 第三段落在这三个词上时是页签，落在一串数字上时是某一场——见 parseStreamersHash。
+ * 第三段落在这五个词上时是页签，落在一串数字上时是某一场——见 parseStreamersHash。
  * 两种取值共用同一段路径，是因为场次是主播底下的东西，地址上摆成
  * #/streamers/<平台>/<uid>/<开播时刻> 才能一眼看出它属于谁。
  */
-export const TABS = [['overview', '概况'], ['sessions', '场次'], ['trend', '趋势'], ['audience', '观众']];
+export const TABS = [['overview', '概况'], ['sessions', '场次'], ['trend', '趋势'], ['start-slots', '开播时段'], ['audience', '观众']];
 
 /**
  * 这一页的三块子视图，闭集
@@ -105,7 +105,7 @@ export function parseStreamersHash(hash) {
 
   const seg = path[3] || '';
   if (DIGITS.test(seg)) {
-    // 第三段是一串数字＝某一场的开播时刻。它与三个页签共用这一段，
+    // 第三段是一串数字＝某一场的开播时刻。它与五个页签共用这一段，
     // 靠形状分辨：页签是词，开播时刻是毫秒时间戳
     state.view = viewSession;
     state.start = seg;
@@ -125,6 +125,7 @@ export function parseStreamersHash(hash) {
     else if (key === 'days' && ['7', '30', '90'].includes(value)) state.days = Number(value);
     else if (state.pane === 'audience' && key === 'group' && ['all', 'first', 'returning', 'interaction'].includes(value)) state.group = value;
     else if (state.pane === 'audience' && key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
+    else if (key === 'slotDays' && ['90', '180'].includes(value)) state.slotDays = Number(value);
     else if (key === 'period' && PERIODS.some(one => one[0] === value)) state.period = value;
   }
   return state;
@@ -516,7 +517,7 @@ export function fmtGap(seconds) {
 }
 
 /**
- * 一项指标的人话。钱按两位小数，其余取整加千分位
+ * 一项指标的人话。钱加千分位并保留两位小数，其余取整加千分位
  * @param value 取值
  * @param metric 指标说明
  * @return {string} 一格里写什么
@@ -524,7 +525,9 @@ export function fmtGap(seconds) {
 export function fmtMetric(value, metric) {
   if (value === undefined || value === null) return '—';
   const one = metric || {};
-  return one.money ? Number(value).toFixed(2) : Math.round(Number(value) || 0).toLocaleString('en-US');
+  return one.money
+    ? Number(value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+    : Math.round(Number(value) || 0).toLocaleString('en-US');
 }
 
 /**
@@ -629,4 +632,37 @@ export function coverageText(coverage) {
     c.unknown ? '完整性未知 ' + c.unknown + ' 场（升级到 6.0 之前开播的场次未记录此项）' : '',
     c.missing ? '没有名单 ' + c.missing + ' 场' : ''].filter(Boolean);
   return parts.length ? '名单：' + parts.join('；') : '';
+}
+
+/** 开播时段的范围与概况分别保存。 */
+export function slotRangeDays(state) { return state.slotDays === 180 ? 180 : 90; }
+
+export function slotLabel(cell) {
+  const hour = value => String(value).padStart(2, '0') + ':00';
+  return '周' + '一二三四五六日'[cell.weekday - 1] + ' ' + hour(cell.startHour) + '–' + hour(cell.startHour + 2);
+}
+
+function slotRate(value, metric) {
+  return Number(value).toFixed(2) + (metric === 'revenue' ? ' 元/时' : ' 条/时');
+}
+
+/** 缺少样本与缺少数据均不参与色阶；已知零值仍显示为零。 */
+export function slotCell(cell, metric, maximum) {
+  const value = cell[metric + 'PerHour'];
+  const count = cell.sessions + ' 场';
+  if (!cell.sessions) return {text: '—', count, intensity: null};
+  if (cell.sessions < 3) return {text: '样本不足', count, intensity: null};
+  if (value == null) return {text: '暂无数据', count, intensity: null};
+  return {text: slotRate(value, metric), count, intensity: maximum > 0 ? Math.max(0, value / maximum) : 0};
+}
+
+export function slotTopText(items, metric) {
+  return items.length ? items.map(item => slotLabel(item) + ' · ' + slotRate(item.value, metric)
+    + ' · ' + item.sessions + ' 场') : ['当前范围暂无达到 3 场的时段。'];
+}
+
+export function slotTotal(session, metric) {
+  const value = session[metric];
+  return value == null ? '暂无数据' : fmtMetric(value, {money: metric === 'revenue'})
+    + (metric === 'revenue' ? ' 元' : ' 条');
 }

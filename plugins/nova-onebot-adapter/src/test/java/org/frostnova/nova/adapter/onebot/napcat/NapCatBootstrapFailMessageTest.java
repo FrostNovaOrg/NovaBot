@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -111,6 +112,20 @@ class NapCatBootstrapFailMessageTest {
 
     private String eval(String script) throws Exception {
         return String.valueOf(engine.eval(script));
+    }
+
+    @Test
+    @DisplayName("取凭据断网不再卡在第一步，验证断网不当成凭据无效")
+    void offlineBootstrapExplainsConnectionFailure() throws Exception {
+        Path root = repositoryRoot();
+        Path fixture = root.resolve("plugins/nova-onebot-adapter/src/test/resources/frontend/napcat-bootstrap-fixture.mjs");
+        Process process = new ProcessBuilder("node", fixture.toString())
+                .directory(root.toFile()).redirectErrorStream(true).start();
+        assertTrue(process.waitFor(60, TimeUnit.SECONDS), "NapCat 引导页检查超时");
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        System.out.println("NapCat 引导页连接失败检查：" + output);
+        assertEquals(0, process.exitValue(), output);
+        assertTrue(output.contains("跑了 7 格"), "没有完成引导页检查：" + output);
     }
 
     @Test

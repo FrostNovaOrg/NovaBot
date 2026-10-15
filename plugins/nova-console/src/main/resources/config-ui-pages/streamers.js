@@ -1,5 +1,5 @@
 /**
- * 主播页：列表、详情（概况／场次／趋势）、某一场
+ * 主播页：列表、详情（概况／场次／趋势／开播时段／观众）、某一场
  *
  * 本文件随控制台插件走，由控制台按注册清单装载，落在顶级导航。
  * 三个导出就是与控制台之间的全部约定：render 建出页容器里的三块、
@@ -21,6 +21,7 @@ import {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   gapCells, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle, shownMetrics,
+  slotCell, slotLabel, slotRangeDays, slotTopText, slotTotal,
   snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } from './streamers-model.js';
 
@@ -32,6 +33,9 @@ const PAGE_STYLE = `
 #sd-live .live-head h3{margin:0}
 #sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
 #sd-live .live-error{color:var(--err,var(--dim))}
+/* 仅流水格按内容宽度缩字：每个数字或标点预留 .65em，空格和单位预留 1.5em。 */
+#sd-insights .stat-revenue{container-type:inline-size;min-width:0}
+#sd-insights .stat-revenue .stat-v{white-space:nowrap;font-size:min(23px,calc(100cqi / var(--revenue-width)))}
 .chart{margin-bottom:2px}
 .chart .plot{position:relative;padding-top:6px}
 .chart svg{display:block;width:100%;height:110px}
@@ -49,6 +53,17 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-body td.n,#sd-body th.n{text-align:right;font-variant-numeric:tabular-nums}
 #sd-body tr.empty-row td{color:var(--dim)}
 #sd-body tbody tr:hover{background:var(--soft)}
+#sd-body .start-slots{min-width:0;max-width:100%;box-sizing:border-box}
+#sd-body .slot-scroll{overflow-x:auto;max-width:100%;margin-top:14px}
+#sd-body .slot-grid{border-collapse:collapse;min-width:1200px;width:100%;font-size:12px}
+#sd-body .slot-grid th,#sd-body .slot-grid td{padding:4px;text-align:center}
+#sd-body .slot-grid button{display:block;width:100%;min-height:64px;border:1px solid var(--line);border-radius:6px;color:inherit;background:transparent;cursor:pointer;font:inherit}
+#sd-body .slot-grid button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:-2px}
+#sd-body .slot-grid button:focus-visible{outline:2px solid var(--accent)}
+#sd-body .slot-grid small{display:block;margin-top:6px}
+#sd-body .slot-details{overflow-x:auto;max-width:100%}
+#sd-body .start-slots .lgpills{flex-wrap:wrap}
+#sd-body{min-width:0}
 #sx-body img{max-width:100%;height:auto}
 `;
 
@@ -417,7 +432,7 @@ function renderUnlisted(list) {
 
 // ---------------------------------------------------------------- 详情
 
-/** 详情那一趟拿回来的整份，三个页签共用——换页签不再重取 */
+/** 详情响应供概况、场次与趋势使用 */
 let detail = null;
 
 async function loadDetail() {
@@ -448,7 +463,10 @@ async function loadDetail() {
   renderHead();
   renderTabs();
   const key = where.platform + '/' + where.uid;
-  if (key !== liveKey) insightsMetric = 'revenue';
+  if (key !== liveKey) {
+    insightsMetric = 'revenue';
+    slotsMetric = 'revenue';
+  }
   if (key !== liveKey || !detail.living
     || (live && detail.since != null && live.since !== detail.since)) {
     liveKey = key;
@@ -460,6 +478,7 @@ async function loadDetail() {
     startLiveRefresh();
     await Promise.all([loadLive(), loadInsights()]);
   } else if (where.pane === 'audience') await loadAudience();
+  else if (where.pane === 'start-slots') await loadStartSlots();
 }
 
 function renderHead() {
@@ -505,16 +524,22 @@ function renderHead() {
   host.appendChild(head);
 }
 
+const audienceStates = new Map();
+
 function renderTabs() {
   const host = $('#sd-tabs');
   host.innerHTML = '';
   if (where.pane === 'audience') host.appendChild(audienceRanges());
+  const stateKey = where.platform + '/' + where.uid;
+  if (where.pane === 'audience') audienceStates.set(stateKey, {...where});
+  const audienceState = audienceStates.get(stateKey)
+    || {...where, group: 'all', sort: 'attendance', page: 1};
   const tabs = el('div', 'lgpills');
   host.appendChild(tabs);
   for (const [key, label] of TABS) {
     const link = el('a', 'nv-pill lgpill');
-    link.href = detailHash(detail.platform, detail.uid, key,
-      ['overview', 'audience'].includes(key) ? 'days=' + where.days : '');
+    link.href = key === 'audience' ? audienceHash(audienceState)
+      : detailHash(detail.platform, detail.uid, key, key === 'overview' ? 'days=' + where.days : '');
     link.textContent = label;
     if (key === where.pane) link.setAttribute('aria-current', 'page');
     tabs.appendChild(link);
@@ -530,7 +555,8 @@ function renderPane() {
     const card = el('div', 'nv-card hcard');
     card.id = 'sd-audience';
     host.appendChild(card);
-  } else renderOverview(host);
+  } else if (where.pane === 'start-slots') renderStartSlots(host);
+  else renderOverview(host);
   renderBanner();
 }
 
@@ -678,6 +704,136 @@ function renderAudience(data, message) {
   host.appendChild(pager);
 }
 
+let slotsMetric = 'revenue';
+let slotsData = null;
+let slotsSelected = null;
+let slotsMessage = '';
+
+async function loadStartSlots() {
+  const generation = viewGeneration;
+  slotsData = null;
+  slotsSelected = null;
+  slotsMessage = '正在读取归档数据…';
+  renderPane();
+  try {
+    const response = await api('/streamers/' + encodeURIComponent(where.platform) + '/'
+      + encodeURIComponent(where.uid) + '/start-slots?days=' + slotRangeDays(where));
+    if (generation !== viewGeneration || !liveActive) return;
+    if (!response.success) throw new Error(response.message || '未能读取归档数据');
+    slotsData = response.startSlots;
+    slotsMessage = '';
+  } catch (error) {
+    if (generation !== viewGeneration || !liveActive) return;
+    slotsMessage = '读取失败：' + error.message;
+  }
+  renderPane();
+}
+
+function renderStartSlots(host) {
+  const card = el('div', 'nv-card hcard start-slots');
+  const head = el('h3');
+  head.textContent = '开播时段表现';
+  card.appendChild(head);
+  const ranges = el('div', 'lgpills');
+  for (const days of [90, 180]) {
+    const link = el('a', 'nv-pill lgpill');
+    link.href = detailHash(where.platform, where.uid, 'start-slots', 'slotDays=' + days);
+    link.textContent = '近 ' + days + ' 天';
+    if (days === slotRangeDays(where)) link.setAttribute('aria-current', 'page');
+    ranges.appendChild(link);
+  }
+  card.appendChild(ranges);
+  const metrics = el('div', 'lgpills');
+  for (const [metric, text] of [['revenue', '每小时流水（元/时）'], ['messages', '每小时弹幕（条/时）']]) {
+    const button = el('button', 'nv-pill lgpill');
+    button.type = 'button';
+    button.textContent = text;
+    button.setAttribute('aria-pressed', String(slotsMetric === metric));
+    button.addEventListener('click', () => { slotsMetric = metric; renderPane(); });
+    metrics.appendChild(button);
+  }
+  card.appendChild(metrics);
+  if (slotsData) {
+    const topHead = el('h4');
+    topHead.textContent = '表现较好的开播时段';
+    card.appendChild(topHead);
+    for (const text of slotTopText(slotsMetric === 'revenue' ? slotsData.topRevenue : slotsData.topMessages, slotsMetric)) {
+      const line = el('p', 'hint');
+      line.textContent = text;
+      card.appendChild(line);
+    }
+    const scroll = el('div', 'slot-scroll');
+    scroll.setAttribute('tabindex', '0');
+    scroll.setAttribute('role', 'region');
+    scroll.setAttribute('aria-label', '开播时段表现，可左右滚动');
+    const table = el('table', 'slot-grid');
+    const thead = el('thead');
+    const headers = el('tr');
+    for (const text of ['星期 / 开播钟点', ...Array.from({length: 12}, (_, i) => (i * 2) + '–' + (i * 2 + 2) + ' 时')]) {
+      const th = el('th');
+      th.setAttribute('scope', 'col');
+      th.textContent = text;
+      headers.appendChild(th);
+    }
+    thead.appendChild(headers);
+    table.appendChild(thead);
+    const tbody = el('tbody');
+    const maximum = Math.max(0, ...slotsData.cells.filter(c => c.sessions >= 3).map(c => c[slotsMetric + 'PerHour'] || 0));
+    for (let day = 1; day <= 7; day++) {
+      const tr = el('tr');
+      const th = el('th');
+      th.setAttribute('scope', 'row');
+      th.textContent = '周' + '一二三四五六日'[day - 1];
+      tr.appendChild(th);
+      for (const cell of slotsData.cells.filter(c => c.weekday === day)) {
+        const td = el('td');
+        const button = el('button');
+        button.type = 'button';
+        const shown = slotCell(cell, slotsMetric, maximum);
+        button.innerHTML = esc(shown.text) + '<small>' + esc(shown.count) + '</small>';
+        button.setAttribute('aria-label', slotLabel(cell) + ' · ' + shown.text + ' · ' + shown.count);
+        button.setAttribute('aria-pressed', String(slotsSelected === cell));
+        if (shown.intensity !== null && shown.intensity > 0) {
+          button.style.background = 'color-mix(in srgb, var(--accent) ' + (12 + shown.intensity * 48) + '%, transparent)';
+        }
+        button.addEventListener('click', () => { slotsSelected = cell; renderPane(); });
+        td.appendChild(button);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    scroll.appendChild(table);
+    card.appendChild(scroll);
+    if (slotsSelected) {
+      const head = el('h4');
+      head.textContent = slotLabel(slotsSelected) + ' · ' + slotsSelected.sessions + ' 场';
+      card.appendChild(head);
+      const list = el('div', 'slot-details');
+      if (!slotsSelected.sessionItems.length) list.textContent = '该时段没有场次。';
+      else {
+        const table = el('table');
+        table.innerHTML = '<thead><tr><th>开播时间（东八区）</th><th>时长</th><th>整场'
+          + (slotsMetric === 'revenue' ? '流水' : '弹幕') + '</th></tr></thead><tbody>'
+          + slotsSelected.sessionItems.map(item => '<tr><td><a href="'
+            + esc(sessionHash(where.platform, where.uid, item.startTime)) + '">'
+            + esc(insightsTime(item.startTime)) + '</a></td><td>' + esc(fmtDuration(item.durationSeconds))
+            + '</td><td>' + esc(slotTotal(item, slotsMetric)) + '</td></tr>').join('') + '</tbody>';
+        list.appendChild(table);
+      }
+      card.appendChild(list);
+    }
+  } else {
+    const hint = el('p', 'hint');
+    hint.textContent = slotsMessage || '正在读取归档数据…';
+    card.appendChild(hint);
+  }
+  const note = el('p', 'hint');
+  note.textContent = '时段按实际星期与钟表时间，场次按开播时刻归入；数值是这些场次整场总量 ÷ 有效直播时长，不表示该两小时内的产出。少于 3 场为样本不足。';
+  card.appendChild(note);
+  host.appendChild(card);
+}
+
 let insightsGeneration = 0;
 let insightsMetric = 'revenue';
 
@@ -732,11 +888,15 @@ function renderInsights(data, message, living) {
       + '</div>' + (note ? '<small>' + esc(note) + '</small>' : '');
     if (title) cell.title = title;
     stats.appendChild(cell);
+    return cell;
   }
   stat(fmtDuration(data.durationSeconds), '直播时长', '共 ' + data.sessions + ' 场');
   if (data.metricsKnown) {
     const count = value => value == null ? '暂无数据' : fmtMetric(value) + ' 人';
-    stat(fmtMetric(data.revenue, {money: true}) + ' 元', '流水');
+    const revenue = fmtMetric(data.revenue, {money: true});
+    const revenueCell = stat(revenue + ' 元', '流水');
+    revenueCell.classList.add('stat-revenue');
+    revenueCell.style.setProperty('--revenue-width', revenue.length * 0.65 + 1.5);
     stat(fmtMetric(data.messages) + ' 条', '弹幕');
     stat(count(data.audience), '观众');
     stat(count(data.interactionAudience), '互动观众');

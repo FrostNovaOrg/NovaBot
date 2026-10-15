@@ -53,6 +53,7 @@ public final class StreamerAudience {
                 }
                 boolean moneyKnown = revenueRanking != null && detail != null && detail.rankings() != null
                         && detail.rankings().containsKey(revenueRanking);
+                moneyKnown |= revenueRanking != null && detail != null && knownZeroRevenue(session, rules);
                 Map<Long, Double> money = new HashMap<>();
                 if (moneyKnown) for (var score : detail.ranking(revenueRanking)) money.put(score.userUid(), score.score());
                 Set<Long> interacting = users(session, rules.interactionSets());
@@ -60,7 +61,7 @@ public final class StreamerAudience {
                 String title = titles == null || titles.isEmpty() ? "" : titles.get(titles.size() - 1).title();
                 for (long uid : audience) {
                     Entry entry = people.computeIfAbsent(uid, ignored -> new Entry());
-                    entry.name = names.getOrDefault(uid, "未记录昵称");
+                    if (names.containsKey(uid)) entry.name = names.get(uid);
                     entry.last = session.startTime();
                     entry.interaction |= interacting.contains(uid);
                     entry.known &= moneyKnown;
@@ -94,6 +95,20 @@ public final class StreamerAudience {
                 group, sort, current, pages, total, List.copyOf(items));
     }
 
+    /** 未发生的指标不写入归档，与概况一样按零求和；没有指标快照时仍未知。 */
+    private static boolean knownZeroRevenue(LiveSession session, LiveMetricCatalog.Insights rules) {
+        if (session.metrics() == null || session.metrics().isEmpty() || rules.revenueKeys().isEmpty()) return false;
+        double total = 0;
+        for (String key : rules.revenueKeys()) {
+            if (session.metrics().containsKey(key)) {
+                Double value = session.metrics().get(key);
+                if (value == null || !Double.isFinite(value)) return false;
+                total += value;
+            }
+        }
+        return total == 0;
+    }
+
     private static Set<Long> users(LiveSession session, List<String> keys) {
         Set<Long> result = new HashSet<>();
         for (String key : keys) result.addAll(session.userSet(key));
@@ -113,7 +128,7 @@ public final class StreamerAudience {
     }
 
     private static final class Entry {
-        String name;
+        String name = "未记录昵称";
         long last;
         double revenue;
         boolean known = true, interaction;

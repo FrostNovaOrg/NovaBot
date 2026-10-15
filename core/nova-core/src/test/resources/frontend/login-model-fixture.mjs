@@ -12,6 +12,8 @@
  */
 
 import {loginView, lockText, loginControlState, landing} from '../../../main/resources/config-ui/login-model.js';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
 
 const failures = [];
 let checks = 0;
@@ -112,6 +114,48 @@ for (const id of CONTROL_IDS) eq(freeControls[id], false, '未锁定时 ' + id +
 eq(landing('http://h/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
 eq(landing('http://h/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
 eq(landing('http://h/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
+
+// 断网时通行密钥登录不能露出浏览器的英文；取消和设备错误仍按各自原因处理。
+const loginHtml = readFileSync(new URL('../../../main/resources/config-ui/login.html', import.meta.url), 'utf8');
+const passkeyLogin = loginHtml.match(/^  async function loginWithPasskey\(\) \{[\s\S]*?^  }/m)?.[0];
+if (!passkeyLogin) throw new Error('登录页没有找到 loginWithPasskey');
+
+async function passkeyResult(failedRequest, credentialError) {
+  const msg = {textContent: ''};
+  const button = {disabled: false};
+  let requests = 0;
+  let entered = false;
+  const context = {
+    TypeError, CONSOLE: '/novabot/config',
+    $: selector => selector === '#msg' ? msg : button,
+    markInvalidCredentials() {}, paint() { button.disabled = false; },
+    enterConsole() { entered = true; },
+    toBuffer: value => value, toBase64Url: value => value,
+    navigator: {credentials: {get: async () => {
+      if (credentialError) throw credentialError;
+      return {id: 'key', response: {clientDataJSON: 'client', authenticatorData: 'auth', signature: 'sig'}};
+    }}},
+    fetch: async () => {
+      requests++;
+      if (requests === failedRequest) throw new TypeError('Failed to fetch');
+      return {json: async () => ({success: true, challenge: 'challenge'})};
+    },
+  };
+  await runInNewContext(passkeyLogin + '\nloginWithPasskey();', context);
+  eq(button.disabled, false, '通行密钥请求结束后按钮恢复');
+  return {text: msg.textContent, requests, entered};
+}
+
+for (const [request, name] of [[1, '取挑战'], [2, '验证']]) {
+  const result = await passkeyResult(request);
+  eq(result.text, '无法使用通行密钥：无法连接到服务器', '通行密钥' + name + '断网显示中文');
+  eq(result.requests, request, '通行密钥' + name + '断网不再发后续请求');
+  eq(result.entered, false, '断网不进入控制台');
+}
+eq((await passkeyResult(0, {name: 'NotAllowedError', message: 'cancelled'})).text, '', '通行密钥取消不提示错误');
+eq((await passkeyResult(0, new Error('设备不可用'))).text, '无法使用通行密钥：设备不可用', '通行密钥设备错误保留原因');
+eq((await passkeyResult(0, new TypeError('设备参数错误'))).text, '无法使用通行密钥：设备参数错误', '非请求的 TypeError 保留原因');
+eq((await passkeyResult(0)).entered, true, '通行密钥正常验证仍进入控制台');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

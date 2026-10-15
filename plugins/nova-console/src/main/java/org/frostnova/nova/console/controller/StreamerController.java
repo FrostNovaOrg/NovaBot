@@ -8,6 +8,7 @@ import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.analytics.StreamerAudience;
+import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -287,15 +288,18 @@ public class StreamerController {
                                                @RequestParam(defaultValue = "30") String days,
                                                @RequestParam(defaultValue = "all") String group,
                                                @RequestParam(defaultValue = "attendance") String sort,
-                                               @RequestParam(defaultValue = "1") int page) {
+                                               @RequestParam(defaultValue = "1") String page) {
         if (!List.of("7", "30", "90").contains(days)
                 || !List.of("all", "first", "returning", "interaction").contains(group)
-                || !List.of("attendance", "revenue", "recent").contains(sort)) {
+                || !List.of("attendance", "revenue", "recent").contains(sort)
+                || !page.matches("[+-]?[0-9]+")) {
             JSONObject invalid = new JSONObject();
             invalid.put("success", false);
             invalid.put("message", "请选择近 7、30、90 天，以及有效的观众分组和排序");
             return ResponseEntity.badRequest().body(invalid);
         }
+        int requestedPage = new java.math.BigInteger(page).max(java.math.BigInteger.ONE)
+                .min(java.math.BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
         String key = key(platform, uid);
         List<LiveSession> sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE))
                 .getOrDefault(key, List.of());
@@ -308,12 +312,33 @@ public class StreamerController {
         var data = new StreamerAudience().calculate(sessions, range.from(), range.to(),
                 catalog == null ? null : catalog.insights(),
                 catalog == null ? null : catalog.audienceRevenueRanking(),
-                session -> details.read(platform, uid, session.startTime()), group, sort, page);
+                session -> details.read(platform, uid, session.startTime()), group, sort, requestedPage);
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("days", Integer.parseInt(days));
         result.put("audience", data);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
+    }
+
+    /** 开播时段表现：整场总量按有效直播时长折算，仅提供近90或180个统计日。 */
+    @GetMapping("/{platform}/{uid}/start-slots")
+    public ResponseEntity<JSONObject> startSlots(@PathVariable String platform, @PathVariable Long uid,
+                                                @RequestParam(defaultValue = "90") String days) {
+        if (!List.of("90", "180").contains(days)) {
+            return ResponseEntity.badRequest().body(JSONObject.of("success", false,
+                    "message", "请选择近 90、180 天中的一个范围"));
+        }
+        String key = key(platform, uid);
+        List<LiveSession> sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE))
+                .getOrDefault(key, List.of());
+        boolean configured = roster(loadedUsers()).stream()
+                .anyMatch(item -> key.equals(key(item.platform(), item.uid())));
+        if (!configured && sessions.isEmpty()) return streamer(platform, uid, "week", 1, 0);
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
+        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
+                "startSlots", new StreamerStartSlots().calculate(sessions, range.from(), range.to(), rules)));
     }
 
     /** 上一个完整统计周的只读预览；format=json 返回摘要与降级文字。 */

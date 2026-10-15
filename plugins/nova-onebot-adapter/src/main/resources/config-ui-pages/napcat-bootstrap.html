@@ -108,6 +108,7 @@
       // NapCat 鉴权失败也回 HTTP 200，错误只在响应体里。只看状态码会一律读成成功
       return data && data.code === 0;
     } catch (e) {
+      if (e instanceof TypeError) throw e;
       return false;
     }
   }
@@ -175,7 +176,7 @@
 
     step('④ 打开 NapCat');
     mount(csrf);
-  })();
+  })().catch(() => fail('无法连接 NovaBot 控制台。'));
 </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 #
 # 这一页的行为判据不在这里——地址栏往返、状态四档、折线几何、人气峰三态、缺口分列
 # 由 StreamersModelTest 拉起 streamers-model-fixture.mjs 逐格量，接在整盘里跑。
-# 本尺补的是那一份量不到的另一半：**渲染那一份（streamers.js）的语法**。
+# 本尺同时运行模型用例，并检查渲染模块（streamers.js）的语法。
 # 它不碰得到夹具（满篇 DOM），而它是控制台按注册清单装上来的——一个语法错会让
 # 这一页载入失败，屏幕上只剩一句与出错文件无关的「载入失败」。
 #
@@ -52,6 +52,11 @@ for f in "$PAGES"/streamers-model.js "$PAGES"/streamers.js; do
         SYNTAX_RED=1
     fi
 done
+
+# 开播时段的空态、样本门槛、单位与前三文字也在模型用例中核对。
+if ! node core/nova-core/src/test/resources/frontend/streamers-model-fixture.mjs; then
+    RED=1
+fi
 
 # —— 末行汇总 ——
 # 本尺没有档尺那一段，语法红时原先的最后输出是一段 node 报错原文、没有一个收尾。

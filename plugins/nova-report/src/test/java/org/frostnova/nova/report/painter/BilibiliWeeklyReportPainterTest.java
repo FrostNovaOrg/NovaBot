@@ -67,7 +67,7 @@ class BilibiliWeeklyReportPainterTest {
                 session(from.plusSeconds(7 * 86400 - 10800), 200, 3000, List.of(9200000001L), Map.of()));
         var snapshots = List.of(new StreamerSnapshot("bilibili", 1L, "主播示例", from.plusSeconds(7200).toEpochMilli(), Map.of("fans", 100d)),
                 new StreamerSnapshot("bilibili", 1L, "主播示例", from.plusSeconds(6 * 86400).toEpochMilli(), Map.of("fans", 125d)));
-        return WeeklyReport.calculate(sessions, snapshots, now, new BilibiliLiveMetricCatalog().insights(), visible);
+        return WeeklyReport.calculate("主播示例", sessions, snapshots, now, new BilibiliLiveMetricCatalog().insights(), visible);
     }
     @Test @DisplayName("可见与隐藏金额出图，缺记录用破折号，已记录零写零")
     void samples() throws Exception {
@@ -87,7 +87,7 @@ class BilibiliWeeklyReportPainterTest {
         var d = data(true);
         var failed = WeeklyReport.preview(d, () -> { throw new IllegalStateException("image unavailable"); });
         System.out.println("FALLBACK_TEXT:\n" + failed.text());
-        var empty = WeeklyReport.calculate(List.of(), List.of(), now, new BilibiliLiveMetricCatalog().insights(), true);
+        var empty = WeeklyReport.calculate("主播示例", List.of(), List.of(), now, new BilibiliLiveMetricCatalog().insights(), true);
         System.out.println("EMPTY_TEXT: " + WeeklyReport.preview(empty, () -> { fail("不应出图"); return null; }).text());
     }
     @Test @DisplayName("日图显示真实零与未记录，隐藏金额使用弹幕且不带观众身份")
@@ -178,7 +178,7 @@ class BilibiliWeeklyReportPainterTest {
             var sessions = List.of(session(from, 500, 1000, List.of(), Map.of()),
                     new LiveSession("sample", 1L, "主播示例", 2L, from.plusSeconds(86400).toEpochMilli(),
                             from.plusSeconds(86400).toEpochMilli(), 0, Map.of(), Map.of(), LiveEndReason.NORMAL, List.of()));
-            var data = WeeklyReport.calculate(sessions, List.of(), now, null, visible);
+            var data = WeeklyReport.calculate("主播示例", sessions, List.of(), now, null, visible);
             var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
             painter.drawDays(p, data);
             var title = org.mockito.ArgumentCaptor.forClass(String.class);
