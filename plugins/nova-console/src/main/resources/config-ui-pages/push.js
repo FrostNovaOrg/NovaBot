@@ -405,6 +405,9 @@ function ensureDrawer() {
 /** 是否正停在这一页。页内换选中项不重取名单，刚进来才取 */
 let pageLive = false;
 
+/** 本次进页已尝试补名的主播；查不回时等下次进页或重取配置再试。 */
+let nameLookups = new Set();
+
 /**
  * 建出推送页外壳。控制台只给一个空的 section#page-push。
  * @param section 控制台按落位建好的空容器
@@ -459,6 +462,7 @@ export function refresh(route) {
 /** 离开本页时收起抽屉 */
 export function leave() {
   pageLive = false;
+  nameLookups = new Set();
   closeDrawer();
 }
 
@@ -648,6 +652,7 @@ export async function loadPushPage() {
     directory = {};
   }
 
+  renderStreamers();
   await decoratePushData();
 }
 
@@ -2054,6 +2059,7 @@ export async function reload() {
   const res = await api('/datasource');
   try {
     pushData = JSON.parse(res.content || '[]');
+    nameLookups = new Set();
     // 沿用同一平台、同一主播的展示信息，避免放弃草稿时丢名或重复查询
     for (const user of pushData) {
       const known = knownNames.get(user.platform + ':' + user.uid);
@@ -2204,9 +2210,13 @@ export async function save() {
  * @param {boolean} repaint 补全后是否立即重画；重取配置时由宿主统一重画
  */
 export async function decoratePushData(repaint = true) {
+  const attempted = nameLookups;
   await Promise.all((pushData || []).map(async user => {
     // 补昵称要靠对应平台的数据源服务，没注册的平台查不了，照 uid 显示就是
     if (user._uname || !(store.platforms || []).includes(user.platform)) return;
+    const key = user.platform + ':' + user.uid;
+    if (attempted.has(key)) return;
+    attempted.add(key);
     try {
       const res = await api('/streamer/lookup', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -2229,7 +2239,7 @@ export async function decoratePushData(repaint = true) {
       // 补全失败不影响配置本身，仍以 uid 展示
     }
   }));
-  if (repaint) renderStreamers();
+  if (repaint) paintTree();
 }
 
 /**

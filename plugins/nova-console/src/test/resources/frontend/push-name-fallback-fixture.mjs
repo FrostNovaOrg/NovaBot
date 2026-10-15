@@ -90,7 +90,7 @@ async function decorate(pushData, routes) {
   };
   const store = {platforms: ['bilibili']};
   const fn = new Function('api', 'store', 'renderStreamers', 'pushData',
-    decorateSrc + '\nreturn decoratePushData;')(api, store, () => {}, pushData);
+    'const paintTree = renderStreamers; let nameLookups = new Set();\n' + decorateSrc + '\nreturn decoratePushData;')(api, store, () => {}, pushData);
   await fn();
   return calls;
 }
@@ -190,7 +190,7 @@ const knownName = uname => path => {
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const page = new Function('api', 'store', 'initial', 'clearSessionDrafts',
     'sessionDraftCount', 'renderStreamers', 'say',
-    'let pushData = initial; let pushSaved = "[]"; let pageLive = true;\n' + functions
+    'const paintTree = renderStreamers; let nameLookups = new Set(); let pushData = initial; let pushSaved = "[]"; let pageLive = true;\n' + functions
     + '\nreturn {reload, serializePush, changeCount, entries: () => pushData};')(
     api, {platforms: ['bilibili', 'other']}, initial, () => { drafts = 0; },
     () => drafts, () => {},
@@ -208,7 +208,7 @@ const knownName = uname => path => {
 
 // ⑧ 从宿主整页载入与导航入口运行，不直接改推送页的活动状态。
 const hostSrc = readFileSync(join(ui, '../../../../../../core/nova-core/src/main/resources/config-ui/main.js'), 'utf8');
-async function consolePage(hash, slowPlatforms = false) {
+async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   const calls = [];
   const pending = [];
   const location = {hash};
@@ -229,6 +229,7 @@ async function consolePage(hash, slowPlatforms = false) {
       return {platforms: ['bilibili']};
     }
     if (path === '/streamer/lookup') {
+      if (missingNames) return {success: false};
       const {uid} = JSON.parse(opts.body);
       return {success: true, uname: '主播' + uid};
     }
@@ -241,7 +242,7 @@ async function consolePage(hash, slowPlatforms = false) {
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const push = new Function('api', 'store', 'location', 'showPush', 'renderStreamers',
     'clearSessionDrafts', 'closeDrawer', 'say', 'targetOptions', 'buildDirectory',
-    'let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
+    'const paintTree = renderStreamers; let nameLookups = new Set(); let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
     + pushFns + '\nreturn {refresh, reload, leave, entries: () => pushData};')(
     api, store, location, () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
     () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
@@ -278,8 +279,10 @@ async function consolePage(hash, slowPlatforms = false) {
   host.applyRoute();
   await host.load();
   await settled();
-  return {calls, names: () => names, async enter() {
-    location.hash = '#/push'; host.applyRoute(); await settled();
+  return {calls, names: () => names, async refresh() {
+    host.refreshPages(); await settled();
+  }, async enter(hash = '#/push') {
+    location.hash = hash; host.applyRoute(); await settled();
   }, async discard() {
     await push.reload(); host.refreshPages('push'); await settled();
   }};
@@ -306,6 +309,42 @@ for (const page of ['home', 'streamers', 'log', 'links', 'settings']) {
 {
   const console = await consolePage('#/push', true);
   eq(console.names(), ['主播7', '主播8'], '⑩ 平台清单晚于配置到达，整页载入仍补全左树名字');
+}
+
+// ⑪ 查名失败也只在这一趟进页时尝试一次，切换通道与整体刷新不重试。
+{
+  const page = await consolePage('#/push', false, true);
+  const counts = () => [page.calls.filter(p => p === '/streamer/lookup').length,
+    page.calls.filter(p => p.startsWith('/streamer/name?')).length];
+  eq(counts(), [2, 2], '⑪ 推送页整页载入，两个缺名主播各查一次');
+  for (const hash of ['#/push/7', '#/push/8', '#/push/default', '#/push']) {
+    await page.enter(hash);
+    eq(counts(), [2, 2], '⑪ 切换 ' + hash + ' 不重试失败的查名');
+  }
+  await page.refresh();
+  eq(counts(), [2, 2], '⑪ 停在推送页整体刷新不重试失败的查名');
+  await page.enter('#/home');
+  await page.enter();
+  eq(counts(), [4, 4], '⑪ 离开后重新进页，缺名主播可以再查');
+  await page.discard();
+  eq(counts(), [6, 6], '⑪ 放弃重取后，缺名主播可以再查一次');
+  await page.refresh();
+  eq(counts(), [6, 6], '⑪ 放弃后的整体刷新不重复查名');
+}
+
+// ⑫ 异步补名只更新左树，保留右栏正在编辑的内容。
+{
+  let treePaints = 0;
+  let input = '正在输入的模板';
+  const repaint = new Function('api', 'store', 'pushData', 'paintTree', 'paintRight', 'renderIncomplete',
+    'let nameLookups = new Set(); const runtime = {};\n'
+    + bracedFrom(src, 'function renderStreamers(') + '\n' + decorateSrc
+    + '\nreturn decoratePushData;')(
+    async () => ({success: true, uname: '主播7'}), {platforms: ['bilibili']},
+    [{platform: 'bilibili', uid: 7}], () => { treePaints++; },
+    () => { input = ''; }, () => {});
+  await repaint();
+  eq([treePaints, input], [1, '正在输入的模板'], '⑫ 补名后只重画左树，右栏输入保留');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
