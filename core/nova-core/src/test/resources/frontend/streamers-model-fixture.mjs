@@ -26,8 +26,8 @@ const {
   AUDIENCE_COLUMNS, audienceGroups, audienceCells, audienceSort, coverageText,
   detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
-  gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
-  seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
+  gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, reportPath, reportView, rowSubtitle,
+  seriesValues, sessionHash, sessionTitle, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } = await import('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/streamers-model.js');
 
@@ -167,17 +167,6 @@ eq(summaryTotals(LISTED, 7),
 eq(summaryTotals([], 7), {days: 7, total: 0, living: 0, sessions: 0, durationSeconds: 0},
   '一位主播都没有时四个数都是 0');
 
-// ---------- 六、人气峰三态 ----------
-eq(peakCell({hasPeaks: true, peaks: {danmu: {at: 1, value: 15}}}, 'danmu'), {known: true, value: 15},
-  '有峰值就显示它');
-// 🔴 早于「峰值入归档」的场次是「不知道」，不是 0：写 0 是句假话，而它与真的 0 长得一模一样
-eq(peakCell({hasPeaks: false, peaks: {}}, 'danmu'), {known: false, value: 0}, '没有峰值这件事时是不知道');
-eq(peakCell({hasPeaks: true, peaks: {}}, 'danmu'), {known: true, value: 0},
-  '有峰值这件事成立而这一项没有＝那条曲线一个点都没有，是真的 0');
-eq(peakCell({hasPeaks: true, peaks: {gift: {at: 1, value: 8}}}, 'danmu'), {known: true, value: 0},
-  '别的指标有峰不算这一项有');
-eq(peakCell(null, 'danmu'), {known: true, value: 0}, '整条记录都没有时不至于抛');
-
 // ---------- 七、两种缺口分开列 ----------
 // 🔴 程序停机期间这个房间当然也是断的，两段必然重叠，加起来就是重复计数
 const GAPS = gapCells({maintenanceGapSeconds: 1330, roomOutageSeconds: 44});
@@ -231,15 +220,7 @@ eq(snapshotRows({zzz_new_metric: 7}, SNAPSHOT_CATALOG), [
 eq(snapshotRows({}, SNAPSHOT_CATALOG), [], '一项都没采到时是空的');
 eq(snapshotRows(null, SNAPSHOT_CATALOG), [], '整段快照都没有时是空的');
 
-// ---------- 十、场次表的列与分页 ----------
-const METRICS = [{key: 'danmu', name: '弹幕'}, {key: 'gift', name: '礼物', money: true},
-  {key: 'box', name: '盲盒'}];
-const ITEMS = [{metrics: {danmu: 120, gift: 0, box: 0}}, {metrics: {danmu: 0, gift: 12.5, box: 0}}];
-eq(shownMetrics(METRICS, ITEMS).shown.map(one => one.key), ['danmu', 'gift'],
-  '只留至少有一场非零的列');
-eq(shownMetrics(METRICS, ITEMS).hidden, 1, '藏了几列要说得出来');
-eq(shownMetrics(METRICS, []).shown.length, 0, '一场都没有时一列也不留');
-
+// ---------- 十、分页 ----------
 eq(pageBar({total: 45, page: 2, size: 20, pages: 3}),
   {page: 2, pages: 3, prev: 1, next: 3, text: '共 45 条 · 第 2/3 页'}, '中间那一页两头都能翻');
 eq(pageBar({total: 45, page: 1, size: 20, pages: 3}).prev, 0, '第一页没有上一页');

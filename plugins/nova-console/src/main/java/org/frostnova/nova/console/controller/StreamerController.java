@@ -247,7 +247,7 @@ public class StreamerController {
                 .filter(catalog -> catalog.platform().equals(platform))
                 .flatMap(catalog -> catalog.liveMetrics().stream())
                 .toList()));
-        result.put("sessions", sessionPage(platform, uid, sessions, page, size));
+        result.put("sessions", sessionPage(platform, uid, sessions, page, size, false));
         result.put("trend", trend(sessions, period));
 
         return ResponseEntity.ok(result);
@@ -410,14 +410,18 @@ public class StreamerController {
                                                @RequestParam(required = false) String from,
                                                @RequestParam(required = false) String to,
                                                @RequestParam(required = false) String starts,
+                                               @RequestParam(required = false) String dateFrom,
+                                               @RequestParam(required = false) String dateTo,
                                                @RequestParam(defaultValue = "1") int page,
                                                @RequestParam(defaultValue = "0") int size) {
-        long start, end;
+        long start, end, firstStart, lastStart;
         Set<Long> selected = new LinkedHashSet<>();
         try {
             start = from == null ? 0 : Long.parseLong(from);
             end = to == null ? Long.MAX_VALUE : Long.parseLong(to);
-            if (start < 0 || end <= start) throw new IllegalArgumentException();
+            firstStart = dateFrom == null ? 0 : Long.parseLong(dateFrom);
+            lastStart = dateTo == null ? Long.MAX_VALUE : Long.parseLong(dateTo);
+            if (start < 0 || end <= start || firstStart < 0 || lastStart <= firstStart) throw new IllegalArgumentException();
             if (starts != null && !starts.isEmpty()) {
                 for (String value : starts.split(",", -1)) {
                     long at = Long.parseLong(value.trim());
@@ -431,8 +435,9 @@ public class StreamerController {
         var all = sessionsOf(platform, uid);
         if (!knownStreamer(platform, uid, all)) return missingStreamer();
         var filtered = all.stream().filter(s -> s.startTime() < end && s.endTime() > start)
-                .filter(s -> starts == null || selected.contains(s.startTime())).toList();
-        return ResponseEntity.ok(JSONObject.of("success", true, "sessions", sessionPage(platform, uid, filtered, page, size)));
+                .filter(s -> starts == null || selected.contains(s.startTime()))
+                .filter(s -> s.startTime() >= firstStart && s.startTime() < lastStart).toList();
+        return ResponseEntity.ok(JSONObject.of("success", true, "sessions", sessionPage(platform, uid, filtered, page, size, true)));
     }
 
     @GetMapping("/{platform}/{uid}/trend")
@@ -815,7 +820,7 @@ public class StreamerController {
     /**
      * 场次分页，最近的在前
      */
-    private JSONObject sessionPage(String platform, Long uid, List<LiveSession> sessions, int page, int size) {
+    private JSONObject sessionPage(String platform, Long uid, List<LiveSession> sessions, int page, int size, boolean includeAudience) {
         List<LiveSession> ordered = new ArrayList<>(sessions);
         // 归档按开播时间升序，而场次表要的是最近几场，倒过来
         Collections.reverse(ordered);
@@ -837,6 +842,15 @@ public class StreamerController {
             // 配了也可能画失败改发了文字版，那一场就是没有图。
             // 有明细就能现画，没有明细就点不开
             item.put("hasReport", details.has(platform, uid, session.startTime()));
+            if (includeAudience) {
+                Integer audience = null;
+                if (rules != null && session.hasUserSets()) {
+                    Set<Long> people = new LinkedHashSet<>();
+                    rules.audienceSets().forEach(name -> people.addAll(session.userSet(name)));
+                    audience = people.size();
+                }
+                item.put("audience", audience);
+            }
             items.add(item);
         }
 
@@ -848,6 +862,7 @@ public class StreamerController {
         json.put("items", items);
         json.put("metrics", describe(metricsOf(sessions)));
         json.put("messageKey", rules == null ? null : rules.messageKey());
+        json.put("revenueKeys", rules == null ? List.of() : rules.revenueKeys());
         return json;
     }
 

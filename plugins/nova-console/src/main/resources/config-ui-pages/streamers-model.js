@@ -111,8 +111,10 @@ export function parseStreamersHash(hash) {
     else if (key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
     else if (key === 'panel' && ['audience', 'start-slots', 'sessions', 'fans', 'trend'].includes(value)) state.panel = value;
     else if (key === 'section' && value === 'trend') state.panel = 'trend';
-    else if (['from', 'to'].includes(key) && DIGITS.test(value)) state[key] = value;
+    else if (['from', 'to', 'dateFrom', 'dateTo'].includes(key) && DIGITS.test(value)) state[key] = value;
     else if (key === 'starts' && /^(\d+(,\d+)*)?$/.test(value)) state.starts = value;
+    else if (key === 'source' && ['dashboard', 'calendar', 'trend', 'rhythm'].includes(value)) state.source = value;
+    else if (key === 'sourceDay' && /^\d{4}-\d{2}-\d{2}$/.test(value)) state.sourceDay = value;
     else if (key === 'slotDays' && ['90', '180'].includes(value)) state.slotDays = Number(value);
     else if (key === 'period' && ['day', 'week', 'month'].includes(value)) state.period = value;
     else if (key === 'metric' && ['revenue', 'messages', 'audience', 'follows', 'durationSeconds', 'sessions'].includes(value)) state.metric = value;
@@ -305,28 +307,6 @@ export function summaryTotals(list, days) {
 }
 
 /**
- * 场次表上「人气峰」那一格
- *
- * 🔴 三态，不是两态：
- * <ul>
- *   <li>{@code hasPeaks} 为假 ＝ 这条记录早于「峰值入归档」，那一场的序列早就没了。
- *   显示「—」——写 0 是句假话，我们不是知道它是 0，是不知道它是多少。</li>
- *   <li>有峰值 ＝ 显示它。</li>
- *   <li>有峰值这件事成立、但这一项没有 ＝ 那条曲线一个点都没有，显示 0。</li>
- * </ul>
- * 只分两态的话，几个月前的场次会整批显示成「人气峰 0」，而那正是这一格要防的误读。
- * @param item 场次
- * @param key 看哪一项指标的峰
- * @return {{known: boolean, value: number}} 知不知道，以及知道时是多少
- */
-export function peakCell(item, key) {
-  const one = item || {};
-  if (one.hasPeaks === false) return {known: false, value: 0};
-  const peak = (one.peaks || {})[key];
-  return {known: true, value: peak ? Number(peak.value) || 0 : 0};
-}
-
-/**
  * 一场的两种采集缺口
  *
  * 🔴 <b>分开列，不相加</b>：程序停机期间这个房间当然也是断的，两段必然重叠，
@@ -387,22 +367,6 @@ export function snapshotRows(metrics, catalog) {
       known: !!label,
     };
   });
-}
-
-/**
- * 场次表上留哪几列指标
- *
- * 横向的表，指标一多就没法读了。只留至少有一场非零的列——十几列清一色的 0
- * 除了把真正有数的那几列挤出屏幕之外没有任何作用。藏了几列要说，见调用方。
- * @param metrics 指标说明
- * @param items 本页场次
- * @return {{shown: object[], hidden: number}} 留下的列与藏起来的列数
- */
-export function shownMetrics(metrics, items) {
-  const list = metrics || [];
-  const rows = items || [];
-  const shown = list.filter(one => rows.some(row => Number((row.metrics || {})[one.key] || 0) !== 0));
-  return {shown, hidden: list.length - shown.length};
 }
 
 /**
