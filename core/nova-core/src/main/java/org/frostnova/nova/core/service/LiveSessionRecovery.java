@@ -218,13 +218,14 @@ public class LiveSessionRecovery {
     public boolean canResumeArchivedSession(@NonNull String platform, @NonNull Long uid, long start, long apiStart) {
         if (apiStart <= 0) return false;
         return archivedSession(platform, uid, start)
-                .map(session -> apiStart == start || isWithinReconnectWindow(session.endTime(), apiStart))
+                .map(session -> apiStart == start || (apiStart > start && isWithinReconnectWindow(session.endTime(), apiStart)))
                 .orElse(false);
     }
 
     /** 与开播事件一样以秒比较重连间隔；缺少有效时刻时不把两场混在一起。 */
     public boolean isWithinReconnectWindow(long endTime, long startTime) {
-        return endTime > 0 && startTime >= endTime
+        // 平台起点精确到秒，下播按本机收消息的时刻记录；晚到的下播可能比重开更晚。
+        return endTime > 0 && startTime > 0
                 && (startTime - endTime) / 1000 <= properties.getLive().getReconnectInterval();
     }
 

@@ -482,7 +482,13 @@ public class BilibiliBackupLivePushService {
                     && !sessionRecovery.isWithinReconnectWindow(lastSave.get(), apiStart))) {
                 closeStreamEndedWhileDown(up, upsAtStartup.contains(up.getUid()));
                 // 退出中或下播处理失败时保留旧场，不能清掉尚未收尾的统计。
-                if (liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)) return;
+                if (liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)) {
+                    // 发布失败可能已把闸门记成下播，先按账上在播恢复，真下播仍须放行。
+                    stateGate.admit(up.getUid(), true);
+                    // 这次接管尚未完成，下轮仍按首次观测重试，不能把新场续进旧场。
+                    livingStates.remove(up.getUid());
+                    return;
+                }
                 newStream = true;
             }
         }

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
 import org.frostnova.nova.bilibili.model.BilibiliUserInfo;
 import org.frostnova.nova.bilibili.model.Room;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -11,6 +12,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
+import org.frostnova.nova.core.listener.NovaDefaultLiveOnEventListener;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.*;
 import org.junit.jupiter.api.*;
@@ -52,6 +54,7 @@ class BilibiliStreamAdoptionTest {
     private PushUser user;
     private Room polledRoom;
     private Runnable nextPoll;
+    private BilibiliLiveStateGate gate;
 
     @BeforeEach
     void setup() {
@@ -63,8 +66,10 @@ class BilibiliStreamAdoptionTest {
         user = new PushUser();
         user.setPlatform(PLATFORM); user.setUid(UID); user.setRoomId(9200000002L);
         user.setUname("sample"); user.setEnabled(true);
-        data.setLiveStatus(PLATFORM, UID, true);
-        data.setLiveStartTime(PLATFORM, UID, OLD);
+        var on = new NovaDefaultLiveOnEventListener(props, liveData, recovery);
+        var event = new BilibiliLiveOnEvent(streamer(), Instant.ofEpochMilli(OLD));
+        on.onLiveOnEventCheckReconnect(event);
+        on.onLiveOnEventSetLiveData(event);
         stats.onDanmu(danmu(OLD + 1000, "previous"));
     }
 
@@ -133,8 +138,9 @@ class BilibiliStreamAdoptionTest {
         when(source.getUsers(PLATFORM)).thenReturn(List.of(user));
         when(api.getLiveInfoByUids(anySet())).thenReturn(Map.of(UID, room));
         var scheduler = mock(TaskScheduler.class);
+        gate = new BilibiliLiveStateGate(liveData);
         new BilibiliBackupLivePushService(api, new NovaBilibiliProperties(), publisher,
-                scheduler, new BilibiliLiveStateGate(liveData), liveData, recovery).start(source);
+                scheduler, gate, liveData, recovery).start(source);
         var poll = ArgumentCaptor.forClass(Runnable.class);
         verify(scheduler).scheduleAtFixedRate(poll.capture(), any(Duration.class));
         nextPoll = poll.getValue();
@@ -193,6 +199,64 @@ class BilibiliStreamAdoptionTest {
         adopt(end + seconds * 1000L);
         assertEquals(Optional.of(OLD), data.getLiveStartTime(PLATFORM, UID), "窗口内续场不能另起一场");
         finishResumedStream(end + seconds * 1000L);
+    }
+
+    @ParameterizedTest(name = "{displayName}：{0}")
+    @CsvSource({"同秒重开,3600700,3600000,true", "下播晚记8秒,3608000,3603000,true",
+            "早于旧场起点,3600000,-1000,false"})
+    @DisplayName("下播晚记时重启不拆续场，早于旧场起点仍另起新场")
+    void archivedStartBeforeRecordedEnd(String scenario, long endOffset, long startOffset, boolean resumes) throws Exception {
+        long end = OLD + endOffset;
+        long apiStart = OLD + startOffset;
+        off.onLiveOffEvent(new BilibiliLiveOffEvent(streamer(), Instant.ofEpochMilli(end)));
+        restart(end + 1000);
+        adopt(apiStart);
+        assertEquals(Optional.of(resumes ? OLD : apiStart), data.getLiveStartTime(PLATFORM, UID),
+                "下播晚记不能拆续场，早于旧场起点不能混场");
+        stats.onDanmu(danmu(end + 2000, "continued"));
+        polledRoom.setLiveStatus(0);
+        nextPoll.run();
+        assertEquals(Optional.of(false), data.getLiveStatus(PLATFORM, UID), "真下播应由轮询放行");
+        var saved = sessions.find(0, Long.MAX_VALUE);
+        assertEquals(resumes ? 1 : 2, saved.size(), "续场只留一份归档，新场保留各自归档");
+        var current = saved.stream().filter(s -> s.startTime() == (resumes ? OLD : apiStart)).findFirst().orElseThrow();
+        assertEquals(resumes ? 2d : 1d, current.metrics().get("danmu_count"));
+        assertEquals(resumes ? List.of("previous", "continued") : List.of("continued"),
+                details.readDanmu(PLATFORM, UID, current.startTime()).stream().map(r -> r.text()).toList());
+        assertEquals(2d, mergedDanmu, "重启前后累计不能丢失或重复");
+    }
+
+    @Test @DisplayName("关旧场失败后保留旧场并重试接管，新场真下播仍能归档")
+    void failedCloseMustRetryAdoptionAndAllowRealOff() throws Exception {
+        long stoppedAt = (System.currentTimeMillis() / 1000 - 400) * 1000;
+        long apiStart = stoppedAt + 301000;
+        restart(stoppedAt);
+        off = spy(off);
+        doThrow(new IllegalStateException("temporary live-off failure")).doCallRealMethod()
+                .when(off).onLiveOffEvent(any());
+        adopt(apiStart, true);
+        assertEquals(Optional.of(OLD), data.getLiveStartTime(PLATFORM, UID), "关旧场失败不能清零或另起新场");
+        assertEquals(1d, data.getLiveMetric(PLATFORM, UID, "danmu_count"), "失败后仍保留旧场统计");
+        assertTrue(sessions.find(0, Long.MAX_VALUE).isEmpty(), "失败后不能假定旧场已归档");
+        assertTrue(gate.isLiving(UID), "关旧场失败后闸门须回到在播，不能吞掉真下播");
+        nextPoll.run();
+        assertEquals(Optional.of(apiStart), data.getLiveStartTime(PLATFORM, UID), "下一轮必须重试接管，不能把新场续进旧场");
+        assertEquals(0d, data.getLiveMetric(PLATFORM, UID, "danmu_count"));
+        stats.onDanmu(danmu(apiStart + 1000, "current"));
+        polledRoom.setLiveStatus(0);
+        nextPoll.run();
+        assertEquals(Optional.of(false), data.getLiveStatus(PLATFORM, UID), "重试后真下播不能被吞掉");
+        verify(off, times(3)).onLiveOffEvent(any());
+        var saved = sessions.find(0, Long.MAX_VALUE);
+        assertEquals(2, saved.size(), "旧场与新场最终都应归档");
+        assertEquals(OLD, saved.get(0).startTime());
+        assertEquals(stoppedAt, saved.get(0).endTime());
+        assertEquals(apiStart, saved.get(1).startTime());
+        assertEquals(1d, saved.get(0).metrics().get("danmu_count"));
+        assertEquals(1d, saved.get(1).metrics().get("danmu_count"));
+        assertEquals(List.of("previous"), details.readDanmu(PLATFORM, UID, OLD).stream().map(r -> r.text()).toList());
+        assertEquals(List.of("current"), details.readDanmu(PLATFORM, UID, apiStart).stream().map(r -> r.text()).toList());
+        assertEquals(2d, mergedDanmu);
     }
 
     @Test @DisplayName("重启续场判断遵守配置的重连窗口")
