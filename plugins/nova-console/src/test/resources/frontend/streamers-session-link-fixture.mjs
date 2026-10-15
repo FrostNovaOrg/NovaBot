@@ -468,7 +468,7 @@ await ask('正在直播大航海新开续费显示中文名与人次', async () 
     await overview();
     const list = walk(liveCard()).find(one => one.tagName === 'dl');
     same(list.children.map(one => one.textContent),
-      ['大航海新开', '1 人次', '大航海续费', '1 人次', '开播通知缺图', '1 次', '在线人数', '21 人'], '本场指标名称与单位');
+      ['大航海新开', '1 人次', '大航海续费', '1 人次', '推送图片未送达', '1 条', '在线人数', '21 人'], '本场指标名称与单位');
     same(textOf(liveCard()).includes('guard_'), false, '不显示大航海原始键');
   } finally { liveData = saved; }
 });
