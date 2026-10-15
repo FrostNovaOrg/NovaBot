@@ -319,7 +319,7 @@ if (push && store) {
     attachments: [],
     defaultParams: {},
     factoryParams: {},
-    options: OPTIONS,
+    reportLayout: true, options: OPTIONS,
   }];
   push.setPushEntries([{
     platform: 'bilibili', uid: 1, _uname: '甲', enabled: true,

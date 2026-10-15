@@ -104,7 +104,7 @@ const HANDLERS = [
   },
   {
     className: REPORT, displayName: '下播报告', description: '下播时推送', platform: PLATFORM,
-    aliases: [], placeholders: [], options: [
+    aliases: [], placeholders: [], reportLayout: true, options: [
       {key: 'showRevenue', label: '显示营收', type: 'BOOLEAN', defaultValue: true},
     ],
     // 版式键的默认值也在默认参数里：模板那一段的判法按同一份参数袋比，

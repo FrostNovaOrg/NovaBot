@@ -141,6 +141,7 @@ public class PushController {
             // 出厂默认另给一份：默认模板那一页要答「这一项改过没有」与「恢复出厂」
             item.put("factoryParams", handler.getDefaultParams());
             item.put("options", handler.options());
+            item.put("reportLayout", handler.reportLayout());
             items.add(item);
         });
 
