@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 @DisplayName("控制台主播页登记")
 class ConsolePageProviderTest {
     @Test
-    @DisplayName("TOP 槽登记 streamers、script＋assets 两件在 classpath 可读")
+    @DisplayName("TOP 槽登记 streamers、页面与模型及组件在 classpath 可读")
     void topSlotRegistersStreamersAndAssetsAreOnClasspath() {
         List<String> red = new ArrayList<>();
         StreamersConsolePageProvider page = new StreamersConsolePageProvider();
@@ -38,8 +38,8 @@ class ConsolePageProviderTest {
 
         try {
             assertEquals("streamers.js", page.script(), "主脚本必须是 streamers.js");
-            assertEquals(List.of("streamers-model.js"), page.assets(),
-                    "附属脚本必须登记 streamers-model.js，否则 import 解析到 404");
+            assertEquals(List.of("streamers-model.js", "streamers-components.js"), page.assets(),
+                    "模型与展示组件必须登记，否则 import 解析到 404");
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }
@@ -47,6 +47,7 @@ class ConsolePageProviderTest {
         try {
             assertReadable("config-ui-pages/streamers.js");
             assertReadable("config-ui-pages/streamers-model.js");
+            assertReadable("config-ui-pages/streamers-components.js");
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
         }

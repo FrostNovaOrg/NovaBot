@@ -16,6 +16,7 @@
  */
 
 import {$, api, CONSOLE, el, esc, request, say} from './core.js';
+import {COMPONENT_STYLE, releaseComponents} from './streamers-components.js';
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText,
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
@@ -85,7 +86,7 @@ function ensureStyle() {
   if (document.getElementById('streamers-page-style')) return;
   const style = document.createElement('style');
   style.id = 'streamers-page-style';
-  style.textContent = PAGE_STYLE;
+  style.textContent = PAGE_STYLE + COMPONENT_STYLE;
   document.head.appendChild(style);
 }
 
@@ -138,6 +139,7 @@ export function refresh() {
 
 /** 离开本页时把报告图的临时地址撤掉 */
 export function leave() {
+  releaseComponents();
   liveActive = false;
   viewGeneration++;
   stopLiveRefresh();
