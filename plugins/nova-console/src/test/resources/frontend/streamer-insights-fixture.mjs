@@ -53,6 +53,8 @@ for (const id of ['sv-list', 'sv-detail', 'sv-session', 'sd-back', 'sd-head', 's
 globalThis.document = {hidden: false, querySelector: s => nodes.get(s.replace(/^#/, '')) || null,
   getElementById: id => nodes.get(id) || null, createElement: element,
   head: element('head'), body: element('body'), addEventListener() {}};
+document.body.appendChild(nodes.get('sd-tabs'));
+document.body.appendChild(nodes.get('sd-body'));
 globalThis.location = {hash: '#/streamers/sample/1'};
 let intervals = 0, cleared = 0;
 globalThis.setInterval = () => ++intervals;
@@ -168,9 +170,11 @@ await check('对比说明默认折叠，按原因列指标，展开后显示参�
   assert.match(text, /6.0 之前开播.*仅供参考/);
 });
 await check('只有旧名单参考说明时仍可展开，无说明时隐藏折叠入口', async () => {
-  compositionScenario = {comparisons: {audience: {changeRatio: 0}}, comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
+  compositionScenario = {comparisons: Object.fromEntries(
+    ['durationSeconds', 'revenue', 'messages', 'audience', 'interactionAudience'].map(key => [key, {changeRatio: 0}])), comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
   await page.refresh();
-  assert.ok(flatten(nodes.get('sd-insights')).some(n => n.textContent === '对比说明 · 0 项未比较'));
+  assert.equal(flatten(nodes.get('sd-insights')).find(n => n.tagName === 'summary')?.textContent,
+    '对比说明', '全部比较时摘要不显示零项');
   compositionScenario = {comparisons: {audience: {changeRatio: 0}}};
   await page.refresh();
   assert.ok(!flatten(nodes.get('sd-insights')).some(n => n.tagName === 'details'));
@@ -197,7 +201,6 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
   await page.refresh();
   const card = nodes.get('sd-audience');
   assert.ok(card, '观众页应创建表格容器');
-  assert.ok(flatten(nodes.get('sd-tabs').children[0]).some(n => n.href?.includes('days=7')), '范围切换应在页签上方');
   const all = [...flatten(card), ...flatten(nodes.get('sd-tabs'))];
   const text = all.map(n => n.textContent).join(' ');
   assert.match(text, /本期全部观众 45 人/);
@@ -214,6 +217,27 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
     assert.ok(links.some(n => n.href.endsWith(query)), '应能切换 ' + query);
   }
   assert.ok(requests.some(url => url.includes('/audience?days=30&group=all&sort=attendance&page=1')));
+});
+// 范围放进页签栏会把五颗页签整排向下挤。
+await check('观众范围在页签之后且位于页内', async () => {
+  await page.refresh();
+  const tabs = nodes.get('sd-tabs');
+  assert.ok(!flatten(tabs).some(n => /^近 \d+ 天$/.test(n.textContent)), '范围不能放在页签栏里');
+  assert.deepEqual(flatten(nodes.get('sd-audience')).filter(n => /^近 \d+ 天$/.test(n.textContent))
+    .map(n => n.textContent), ['近 7 天', '近 30 天', '近 90 天']);
+  const order = flatten(document.body);
+  assert.ok(order.indexOf(tabs) < order.indexOf(nodes.get('sd-audience')), '页签必须排在范围前');
+});
+// 页脚人数与分组人数的数字格式必须一致。
+await check('观众页脚页数和人数带千分位', async () => {
+  const data = audienceResponse.audience;
+  const saved = {...data};
+  try {
+    Object.assign(data, {page: 1, pages: 2942, total: 58840});
+    await page.refresh();
+    assert.equal(flatten(nodes.get('sd-audience')).find(n => n.textContent.startsWith('第 '))?.textContent,
+      '第 1 / 2,942 页 · 共 58,840 人', '页脚数字应带千分位');
+  } finally { Object.assign(data, saved); }
 });
 await check('点击昵称展开本期场次开播时间标题，再点收起', () => {
   const all = flatten(nodes.get('sd-audience'));

@@ -51,8 +51,11 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
             Metric.count(BilibiliLiveMetric.FREE_GIFT_COUNT, "免费礼物", "个")
     );
 
-    // 只用于本场显示；开播存量和进房人次不改变周期统计的可累加范围。
+    // 只用于本场显示，不改变周期统计的可累加范围。
     private static final List<Metric> LIVE_METRICS = Stream.concat(METRICS.stream(), Stream.of(
+            Metric.count(BilibiliLiveMetric.GUARD_OPEN_COUNT, "大航海新开", "人次"),
+            Metric.count(BilibiliLiveMetric.GUARD_RENEW_COUNT, "大航海续费", "人次"),
+            Metric.count(BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, "推送图片未送达", "条"),
             Metric.count(BilibiliLiveMetric.ENTER_COUNT, "进房人次", "人次"),
             Metric.count(BilibiliLiveMetric.FANS_AT_START, "开播时粉丝", "人"),
             Metric.count(BilibiliLiveMetric.FANS_MEDAL_AT_START, "开播时粉丝团", "人"),

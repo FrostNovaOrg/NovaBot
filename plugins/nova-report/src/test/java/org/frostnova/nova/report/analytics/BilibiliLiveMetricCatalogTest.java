@@ -28,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 @DisplayName("哔哩哔哩指标目录")
 class BilibiliLiveMetricCatalogTest {
     private static final List<LiveMetricCatalog.Metric> LIVE_ONLY = List.of(
+            LiveMetricCatalog.Metric.count(BilibiliLiveMetric.GUARD_OPEN_COUNT, "大航海新开", "人次"),
+            LiveMetricCatalog.Metric.count(BilibiliLiveMetric.GUARD_RENEW_COUNT, "大航海续费", "人次"),
+            LiveMetricCatalog.Metric.count(BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, "推送图片未送达", "条"),
             LiveMetricCatalog.Metric.count(BilibiliLiveMetric.ENTER_COUNT, "进房人次", "人次"),
             LiveMetricCatalog.Metric.count(BilibiliLiveMetric.FANS_AT_START, "开播时粉丝", "人"),
             LiveMetricCatalog.Metric.count(BilibiliLiveMetric.FANS_MEDAL_AT_START, "开播时粉丝团", "人"),
@@ -35,7 +38,7 @@ class BilibiliLiveMetricCatalogTest {
     );
 
     @Test
-    @DisplayName("正在直播卡的进房人次与开播快照显示中文名和单位")
+    @DisplayName("正在直播卡的专用指标显示中文名和单位")
     void liveMetricsNameEntriesAndStartSnapshots() {
         var metrics = new BilibiliLiveMetricCatalog().liveMetrics();
         assertAll(LIVE_ONLY.stream().map(expected -> () -> assertEquals(expected,
@@ -44,7 +47,7 @@ class BilibiliLiveMetricCatalogTest {
     }
 
     @Test
-    @DisplayName("进房人次与开播快照不进入可累加表")
+    @DisplayName("本场专用指标不进入可累加表")
     void liveOnlyMetricsStayOutOfPeriodCatalog() {
         var keys = new BilibiliLiveMetricCatalog().metrics().stream()
                 .map(LiveMetricCatalog.Metric::key).collect(Collectors.toSet());
@@ -53,7 +56,7 @@ class BilibiliLiveMetricCatalogTest {
     }
 
     @Test
-    @DisplayName("周期统计不会把进房人次与开播快照加入汇总结果")
+    @DisplayName("周期统计不会把本场专用指标加入汇总结果")
     void liveOnlyMetricsStayOutOfPeriodTotals() {
         var keys = new BilibiliLiveMetricCatalog().metrics().stream()
                 .map(LiveMetricCatalog.Metric::key).collect(Collectors.toSet());
