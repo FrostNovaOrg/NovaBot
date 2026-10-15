@@ -776,7 +776,7 @@ function renderLive() {
     + ' · 检查于 ' + liveClock(live?.checkedAt, true);
   card.appendChild(times);
 
-  const catalog = detail.sessions?.metrics || [];
+  const catalog = detail.liveMetrics || detail.sessions?.metrics || [];
   const labels = new Map(catalog.map(one => [one.key, one]));
   const metrics = {...(live?.metrics || {})};
   // 报告图的在线人数使用 online_count：分钟内取最大，最新分钟的值不是本场峰值。

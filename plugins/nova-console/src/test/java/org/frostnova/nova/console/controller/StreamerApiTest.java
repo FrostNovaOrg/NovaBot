@@ -21,6 +21,7 @@ import org.frostnova.nova.core.service.LiveReportRedrawer;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.StreamerDirectory;
 import org.frostnova.nova.core.service.StreamerSnapshotArchive;
+import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -207,6 +208,34 @@ class StreamerApiTest {
     }
 
     // ---------------------------------------------------------------- 列表
+
+    @Test
+    @DisplayName("有无历史场次都提供插件的本场中文名录，统计仍用可累加表")
+    @SuppressWarnings("unchecked")
+    void detailProvidesLiveCatalogWithoutChangingStatistics() throws IOException {
+        var catalog = new BilibiliLiveMetricCatalog();
+        ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
+        when(catalogs.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(catalog));
+        ObjectProvider<LiveReportRedrawer> redrawers = mock(ObjectProvider.class);
+        var controller = new StreamerController(dataSource, new StreamerDirectory(properties), liveDataService,
+                archive, snapshots, details, catalogs, redrawers);
+        when(liveDataService.getLiveStatus("bilibili", 1001L)).thenReturn(Optional.of(true));
+
+        for (boolean archived : List.of(false, true)) {
+            if (archived) {
+                archive.append(new LiveSession("bilibili", 1001L, "sample", 2L, 1_760_000_000_000L,
+                        1_760_003_600_000L, 3600, Map.of(), Map.of(), LiveEndReason.NORMAL, List.of()));
+            }
+            var detail = controller.streamer("bilibili", 1001L, "week", 1, 0).getBody();
+            assertNotNull(detail);
+            assertTrue(detail.getBooleanValue("living"));
+            assertNotNull(detail.getJSONArray("liveMetrics"), "正在直播卡必须取得插件的本场指标名录");
+            assertEquals(LiveAnalyticsJson.describe(catalog.liveMetrics()), detail.getJSONArray("liveMetrics"));
+            var periodMetrics = LiveAnalyticsJson.describe(archived ? catalog.metrics() : List.of());
+            assertEquals(periodMetrics, detail.getJSONObject("sessions").getJSONArray("metrics"));
+            assertEquals(periodMetrics, detail.getJSONObject("trend").getJSONArray("metrics"));
+        }
+    }
 
     @Test
     @DisplayName("三位夹具主播的状态各得其一，字段是同一组闭集")

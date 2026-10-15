@@ -29,6 +29,15 @@ public interface LiveMetricCatalog {
     List<Metric> metrics();
 
     /**
+     * 正在直播卡片的指标说明，只用于显示名称与单位，不决定统计范围。
+     * 默认沿用可累加指标；平台可补充本场计数、开播快照等仅供展示的指标。
+     * @return 本场指标说明列表
+     */
+    default List<Metric> liveMetrics() {
+        return metrics();
+    }
+
+    /**
      * 基础数据快照里那些指标的说明，按界面展示顺序排列
      * <p>
      * 快照记的是「开播那一刻的粉丝数」这类<b>存量</b>，由平台插件按固定间隔采样留档，

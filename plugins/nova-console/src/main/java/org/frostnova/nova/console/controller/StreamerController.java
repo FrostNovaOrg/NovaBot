@@ -238,6 +238,10 @@ public class StreamerController {
         result.put("configured", entry.isPresent());
 
         result.put("overview", overview(platform, uid, sessions));
+        result.put("liveMetrics", describe(catalogs.orderedStream()
+                .filter(catalog -> catalog.platform().equals(platform))
+                .flatMap(catalog -> catalog.liveMetrics().stream())
+                .toList()));
         result.put("sessions", sessionPage(platform, uid, sessions, page, size));
         result.put("trend", trend(sessions, period));
 
