@@ -69,7 +69,11 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap}
-#sd-body .slot-details a,#sd-body .slot-details a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
+/* 页脚那行：翻页按钮与页数文字竖向居中。hint 自带的下边距把文字压在行的上沿，
+   而居中按外边距盒算，留着那段边距等于没居中 */
+#sd-audience .audience-pager{align-items:center}
+#sd-audience .audience-pager .hint{margin:0}
+#sd-body .slot-details a,#sd-body .slot-details a:visited,#sd-body .session-table a,#sd-body .session-table a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 #sd-body{min-width:0}
 #sx-body img{max-width:100%;height:auto}
 `;
@@ -701,7 +705,7 @@ function renderAudience(data, message) {
     empty.textContent = '该范围和分组暂无观众名单。';
     host.appendChild(empty);
   }
-  const pager = el('div', 'lgpills');
+  const pager = el('div', 'lgpills audience-pager');
   for (const [page, label] of [[data.page - 1, '上一页'], [data.page + 1, '下一页']]) {
     if (page < 1 || page > data.pages) continue;
     const link = el('a', 'daystep');
@@ -843,6 +847,7 @@ function renderStartSlots(host) {
     card.appendChild(hint);
   }
   const note = el('p', 'hint');
+  note.style.margin = '10px 0 0';
   note.textContent = '时段按实际星期与钟表时间，场次按开播时刻归入；数值是这些场次整场总量 ÷ 有效直播时长，不表示该两小时内的产出。少于 3 场为样本不足。';
   card.appendChild(note);
   host.appendChild(card);
@@ -1313,7 +1318,7 @@ function sessionTable(items, metrics) {
   // 而第一项正是那个平台自己排在最前的那一项，运营分析的每周曲线用的也是它
   const peakOf = shown.length ? shown[0] : null;
 
-  const wrap = el('div');
+  const wrap = el('div', 'session-table');
   wrap.style.overflowX = 'auto';
   const table = document.createElement('table');
   table.style.width = 'max-content';
