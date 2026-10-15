@@ -119,6 +119,7 @@ class BilibiliLiveMetricCatalogTest {
         assertEquals(List.of(BilibiliLiveMetric.GIFT_VALUE, BilibiliLiveMetric.SUPER_CHAT_VALUE,
                 BilibiliLiveMetric.GUARD_VALUE), rules.revenueKeys());
         assertEquals(BilibiliLiveMetric.DANMU_COUNT, rules.messageKey());
+        assertEquals(BilibiliLiveMetric.FOLLOW_COUNT, rules.followsKey());
         assertEquals(Set.of(BilibiliLiveMetric.ENTER_USERS, BilibiliLiveMetric.DANMU_USERS,
                 BilibiliLiveMetric.LIKE_USERS, BilibiliLiveMetric.GIFT_USERS,
                 BilibiliLiveMetric.SUPER_CHAT_USERS, BilibiliLiveMetric.BOX_USERS,

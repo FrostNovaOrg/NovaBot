@@ -24,7 +24,7 @@ register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.u
 
 const {
   AUDIENCE_COLUMNS, audienceGroups, audienceCells, audienceSort, coverageText,
-  PERIODS, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
+  detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
   gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
@@ -52,7 +52,7 @@ eq(parseStreamersHash('#/streamers/bilibili/3493'),
     period: 'week', days: 30},
   '平台加 uid 是详情，默认落概况');
 eq(parseStreamersHash('#/streamers/bilibili/3493/sessions').panel, 'sessions', '旧场次路径打开场次抽屉');
-eq(parseStreamersHash('#/streamers/bilibili/3493/trend').section, 'trend', '趋势同理');
+eq(parseStreamersHash('#/streamers/bilibili/3493/trend').panel, 'trend', '趋势同理');
 eq(parseStreamersHash('#/streamers/bilibili/3493/overview').view, 'detail', '写全概况也认');
 // 认不出的第三段退回概况，不留白屏：这一页从三个地方点进来，哪一处拼错都该得到一张能用的页
 eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').view, 'detail', '认不出的明细路径显示总览');
@@ -75,8 +75,8 @@ eq(parseStreamersHash('#/streamers/bilibili/3493/sessions?page=0').page, 1, '页
 eq(parseStreamersHash('#/streamers/bilibili/3493/sessions?page=-2').page, 1, '负页码不认');
 eq(parseStreamersHash('#/streamers/bilibili/3493/sessions?page=zzz').page, 1, '页码不是数字时不认');
 eq(parseStreamersHash('#/streamers/bilibili/3493/trend?period=month').period, 'month', '周期走查询串');
-eq(parseStreamersHash('#/streamers/bilibili/3493/trend?period=day').period, 'week',
-  '认不出的周期退回按周——拿它去问服务端的话，那一头也会退回按周，而地址栏说的是按日');
+eq(parseStreamersHash('#/streamers/bilibili/3493/trend?period=day').period, 'day',
+  '趋势支持统计日周期');
 eq(parseStreamersHash('#/streamers/bilibili/3493?zzz=1').view, 'detail', '不认得的查询参数一律忽略');
 eq(parseStreamersHash('#/streamers/%E5%93%94%E5%93%A9/3493').platform, '哔哩',
   '平台名要解码');
@@ -96,7 +96,7 @@ eq(reportPath('bilibili', 3493, 1757000000000),
   '/streamers/bilibili/3493/sessions/1757000000000/report', '报告图的接口路径');
 // 拼与解要能对上：只做前一半的话，贴出去的地址打开是另一张页
 const ROUND = parseStreamersHash(detailHash('a/b', 3493, 'trend'));
-eq([ROUND.platform, ROUND.uid, ROUND.section], ['a/b', '3493', 'trend'],
+eq([ROUND.platform, ROUND.uid, ROUND.panel], ['a/b', '3493', 'trend'],
   '平台名里带斜杠时，拼出去与读回来仍是同一位');
 
 // ---------- 三、状态四档 ----------
@@ -241,11 +241,11 @@ eq(shownMetrics(METRICS, ITEMS).hidden, 1, '藏了几列要说得出来');
 eq(shownMetrics(METRICS, []).shown.length, 0, '一场都没有时一列也不留');
 
 eq(pageBar({total: 45, page: 2, size: 20, pages: 3}),
-  {page: 2, pages: 3, prev: 1, next: 3, text: '第 2 / 3 页 · 共 45 场'}, '中间那一页两头都能翻');
+  {page: 2, pages: 3, prev: 1, next: 3, text: '共 45 条 · 第 2/3 页'}, '中间那一页两头都能翻');
 eq(pageBar({total: 45, page: 1, size: 20, pages: 3}).prev, 0, '第一页没有上一页');
 eq(pageBar({total: 45, page: 3, size: 20, pages: 3}).next, 0, '最后一页没有下一页');
-eq(pageBar({total: 5, page: 1, size: 20, pages: 1}).text, '共 5 场', '只有一页时不写页码');
-eq(pageBar({total: 0, page: 1, size: 20, pages: 0}).text, '共 0 场', '一场都没有时也说得出来');
+eq(pageBar({total: 5, page: 1, size: 20, pages: 1}).text, '共 5 条 · 第 1/1 页', '只有一页时仍写当前页');
+eq(pageBar({total: 0, page: 1, size: 20, pages: 0}).text, '共 0 条 · 第 1/1 页', '一场都没有时也说得出来');
 // 页码照服务端回的那个数画，不照地址栏：那一头会把越界的页码夹回来
 eq(pageBar({total: 5, page: 1, size: 20, pages: 1}).page, 1, '页码以服务端回的为准');
 
@@ -295,7 +295,6 @@ eq(rowSubtitle({summary: {days: 7, sessions: 0, durationSeconds: 0, lastStart: 1
 
 // ---------- 十四、闭集本身 ----------
 for (const days of [7, 30, 90, 180, 360]) eq(parseStreamersHash('#/streamers/sample/1?days=' + days).days, days, '全页范围可收藏：' + days);
-eq(PERIODS.map(one => one[0]), ['week', 'month'], '两种周期，与服务端认的值一致');
 
 // 观众表：列文字、分组人数、缺失值和排序链接。
 eq(parseStreamersHash('#/streamers/sample/1/audience').panel, 'audience', '观众地址可直接打开');

@@ -127,7 +127,7 @@ let pendingLive = null;
 const dataAt = new Date(2026, 9, 14, 12, 34, 0).getTime();
 const checkedAt = new Date(2026, 9, 14, 12, 35, 7).getTime();
 let liveData = {
-  success: true, living: true, since: checkedAt - 3600000, dataAt, checkedAt,
+  success: true, living: true, since: checkedAt - 3600000, dataAt, checkedAt, revenue: 12.5, messages: 123,
   metrics: {danmu_count: 123, gift_value: 12.5, unknown_metric: 9, online_count: 999, online_rank_count: 3,
     session_extra: 7},
   series: {online_count: [[dataAt - 60000, 50], [dataAt, 42]]},
@@ -149,7 +149,7 @@ const extraLiveMetrics = [...catalogSource.matchAll(/Metric\.count\(BilibiliLive
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
-  if (path.includes('/sessions?')) return reply({success: true, sessions: {items: sessions, metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}], total: 3, page: 1, pages: 1}});
+  if (path.includes('/sessions?')) return reply({success: true, sessions: {items: sessions, messageKey: 'danmu_count', metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}], total: 3, page: 1, pages: 1}});
   if (path.includes('/calendar?')) return reply({success: true, calendar: {items: []}});
   if (path.includes('/audience?')) return reply({success: true, audience: {counts: {}, items: []}});
   if (path.includes('/start-slots?')) {
@@ -181,7 +181,7 @@ globalThis.fetch = url => {
         {key: 'box_profit', name: '盲盒盈亏', unit: '元', money: true},
         {key: 'session_extra', name: '本场新增计数', unit: '次'},
       ],
-      sessions: {items: sessions, metrics: [
+      sessions: {items: sessions, messageKey: 'danmu_count', metrics: [
         {key: 'danmu_count', name: '弹幕', unit: '条'},
         {key: 'gift_value', name: '礼物价值', unit: '元', money: true},
       ], total: sessions.length, page: 1, pageSize: 20},
@@ -302,8 +302,8 @@ await ask('当前直播显示进行中三项摘要折叠明细与更新说明', 
 await ask('直播摘要区分缺失与真实零且流水不累加观众消耗', async () => {
   const saved = liveData;
   try {
-    for (const metrics of [{}, {gift_value: 0, gift_paid: 200, box_profit: 8, danmu_count: 0, online_count: 0}]) {
-      liveData = {...saved, metrics}; await overview();
+    for (const [metrics, revenue, messages] of [[{}, null, null], [{gift_value: 0, gift_paid: 200, box_profit: 8, danmu_count: 0, online_count: 0}, 0, 0]]) {
+      liveData = {...saved, metrics, revenue, messages}; await overview();
       const values = walk(liveCard()).find(n => n.className === 'sd-live-metrics')?.children.map(n => n.children[1].textContent);
       same(values, Object.keys(metrics).length ? ['0.00 元', '0 条', '0 人'] : ['暂无数据', '暂无数据', '暂无数据'], '缺失和零的三项摘要');
     }
@@ -317,12 +317,12 @@ await ask('直播刷新同步最近三五场与未归档提示', async () => {
     const recentCount = () => walk(node('sd-body')).filter(n => n.className === 'sd-recent-row').length;
     same(recentCount(), 3, '在播预览三场');
     same(textOf(find('sd-insights')).includes('正在直播的场次下播后才计入'), true, '在播时的归档提示');
-    liveData = {...liveData, living: false};
+    liveData = {...liveData, living: false, since: null, revenue: null, messages: null, metrics: {}, series: {}};
     for (const timer of [...intervals.values()]) await timer.fn();
     same(liveCard().hidden, true, '中途下播隐藏直播卡');
     same(recentCount(), 5, '中途下播预览五场');
     same(textOf(find('sd-insights')).includes('正在直播的场次下播后才计入'), false, '下播后清除归档提示');
-    liveData = {...liveData, living: true};
+    liveData = {...saved, living: true};
     for (const timer of [...intervals.values()]) await timer.fn();
     same(liveCard().hidden, false, '中途开播显示直播卡');
     same(recentCount(), 3, '中途开播预览三场');
@@ -409,11 +409,11 @@ await ask('⑧ 离开概况后迟到的响应不再更新页面，下播后卡�
   const requests = (button.listeners.click || []).map(fn => fn());
   await until(() => pendingLive.resolve, '待返回的直播请求');
   page.leave();
-  pendingLive.resolve({...liveData, metrics: {danmu_count: 888}});
+  pendingLive.resolve({...liveData, revenue: null, messages: 888, metrics: {danmu_count: 888}});
   await Promise.all(requests);
   if (textOf(liveCard()).includes('888')) throw new Error('离开后慢响应仍修改页面');
   pendingLive = null;
-  liveData = {...liveData, living: false, since: null, metrics: {}, series: {}};
+  liveData = {...liveData, living: false, since: null, revenue: null, messages: null, metrics: {}, series: {}};
   await overview();
   same(liveCard().hidden, true, '下播后隐藏卡片');
   page.leave();
@@ -421,7 +421,7 @@ await ask('⑧ 离开概况后迟到的响应不再更新页面，下播后卡�
 // 故障：首次取详情时隐藏标签页，详情响应被丢弃，重新可见后再也不刷新。
 await ask('⑨ 隐藏时加载概况不启动表，可见后能读取这一场', async () => {
   liveData = {...liveData, living: true, since: checkedAt - 3600000,
-    metrics: {danmu_count: 321}, series: {online_count: [[dataAt, 21]]}};
+    revenue: null, messages: 321, metrics: {danmu_count: 321}, series: {online_count: [[dataAt, 21]]}};
   document.hidden = true;
   const before = liveRequests;
   await overview();
@@ -520,7 +520,7 @@ await ask('⑭ 不在推送配置里的主播不请求本场数据，也不启�
 await ask('正在直播大航海新开续费显示中文名与人次', async () => {
   const saved = liveData;
   try {
-    liveData = {...liveData, metrics: {guard_open_count: 1, guard_renew_count: 1, image_degraded_count: 1}};
+    liveData = {...liveData, revenue: null, messages: null, metrics: {guard_open_count: 1, guard_renew_count: 1, image_degraded_count: 1}};
     await overview();
     const list = walk(liveCard()).find(one => one.className === 'kv');
     same(list.children.map(one => one.textContent),

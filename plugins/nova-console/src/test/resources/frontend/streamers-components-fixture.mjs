@@ -74,6 +74,8 @@ await check('缺测断线且真实零保留', () => {
   const chart = ui.createChart(host(), {points});
   const dots = byClass(chart.element, 'sc-point');
   assert.equal(dots.length, 3, '有效点数量');
+  dots[0].fire('pointerenter');
+  assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'), '普通曲线保留悬停读数');
   assert.equal(byClass(chart.element, 'sc-line')[0].getAttribute('d').match(/M/g).length, 2, '缺测处分段');
   const zero = byClass(chart.element, 'sc-zero')[0];
   assert.equal(dots[1].getAttribute('cy'), zero.getAttribute('y1'), '真实零在零线上');
@@ -95,6 +97,7 @@ await check('隐藏未播后点选原日期', () => {
   const chart = ui.createChart(host(), {points, hideOff: true, onSelect: interval => { selected = interval; }});
   const dots = byClass(chart.element, 'sc-point');
   dots[1].fire('click');
+  byClass(chart.element, 'sc-chart-action')[0].fire('click');
   assert.deepEqual(selected, {start: 300, end: 400});
   assert.equal(Number(dots[1].getAttribute('cx')) - Number(dots[0].getAttribute('cx')),
     Number(dots[2].getAttribute('cx')) - Number(dots[1].getAttribute('cx')), '压缩后等间距');
@@ -121,7 +124,7 @@ await check('隐藏未播与缺测后连续且点选原日期', () => {
     Number(dots[2].getAttribute('cx')) - Number(dots[1].getAttribute('cx')), '缺测不占位且等间距');
   assert.equal(dots[1].getAttribute('cy'), byClass(chart.element, 'sc-zero')[0].getAttribute('y1'), '真实零仍在零线上');
   assert.deepEqual(byClass(chart.element, 'sc-chart-labels')[0].children.map(node => node.textContent), ['10/11', '10/14', '10/16']);
-  dots.forEach(dot => dot.fire('click'));
+  dots.forEach(dot => { dot.fire('click'); byClass(chart.element, 'sc-chart-action')[0].fire('click'); });
   assert.deepEqual(selected, [{start: 100, end: 200}, {start: 400, end: 500}, {start: 600, end: 700}]);
   assert.equal(JSON.stringify(records), before);
 });
@@ -150,6 +153,60 @@ await check('周月柱图与键盘选择', () => {
     bars[0].fire('pointerenter');
     assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'));
   }
+});
+// 先读到选中日期的数值，点击操作按钮才进入场次。
+await check('按日点选和左右键只更新读数由按钮下钻', () => {
+  const selected = [];
+  const chart = ui.createChart(host(), {points, onSelect: value => selected.push(value)});
+  const action = byClass(chart.element, 'sc-chart-action')[0];
+  assert.ok(action?.disabled, '未选日期时按钮不可用');
+  assert.equal(byClass(chart.element, 'sc-chart-readout')[0].textContent, '点击图表选择日期');
+  const dots = byClass(chart.element, 'sc-point');
+  dots[0].fire('click');
+  assert.equal(selected.length, 0, '一点就跳走，看不到当天数值');
+  assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'));
+  dots[0].fire('keydown', {key: 'ArrowRight'});
+  assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/14'), '左右键应能选择空日');
+  dots[0].fire('keydown', {key: 'ArrowRight'});
+  assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/15'));
+  assert.equal(selected.length, 0);
+  action.fire('click');
+  assert.deepEqual(selected, [{start: 300, end: 400}]);
+});
+// 键盘选择后应直接到操作按钮，日期点不能增加 Tab 停留次数。
+await check('按日图键盘选择后Enter聚焦查看按钮且点不占Tab位', () => {
+  const chart = ui.createChart(host(), {points: [{...points[0], sessions: 1}, {...points[2], sessions: 0}], onSelect() {}});
+  const action = byClass(chart.element, 'sc-chart-action')[0];
+  chart.svg.focus();
+  chart.svg.fire('keydown', {key: 'ArrowRight'});
+  chart.svg.fire('keydown', {key: 'Enter'});
+  assert.ok(document.activeElement === action, '选好日期按Enter应聚焦查看按钮');
+  assert.equal(chart.svg.getAttribute('tabindex'), '0');
+  for (const dot of byClass(chart.element, 'sc-point')) assert.notEqual(dot.getAttribute('tabindex'), '0', '日期点不应占Tab位');
+  chart.svg.focus();
+  chart.svg.fire('keydown', {key: 'ArrowRight'});
+  chart.svg.fire('keydown', {key: 'Enter'});
+  assert.ok(document.activeElement === chart.svg, '空日按钮不可用时焦点留在图上');
+});
+// 没有可选择的数据时，不应再要求选择日期或提供查看按钮。
+await check('按日图没有有效点时只显示空态', () => {
+  for (const records of [[], [{...points[0], status: 'off'}], [{...points[0], value: null}]]) {
+    const chart = ui.createChart(host(), {points: records, hideOff: true, onSelect() {}});
+    assert.equal(chart.element.textContent, '暂无有效图表数据', '空态不能同时出现选择提示或按钮');
+    assert.equal(byClass(chart.element, 'sc-chart-action').length, 0);
+  }
+});
+// 没直播的日子仍可读数，但不能打开空场次列表。
+for (const period of ['day', 'week', 'month']) await check(({day: '空日按钮不可下钻', week: '空周柱不可下钻', month: '空月柱不可下钻'})[period], () => {
+    const selected = [];
+    const chart = ui.createChart(host(), {period, points: [{...points[0], sessions: 0}], onSelect: value => selected.push(value)});
+    const mark = byClass(chart.element, period === 'day' ? 'sc-point' : 'sc-bar')[0];
+    mark.fire('click'); mark.fire('keydown', {key: 'Enter'});
+    if (period === 'day') {
+      const action = byClass(chart.element, 'sc-chart-action')[0];
+      assert.ok(action?.disabled, '没场次的日子按钮不可用'); action.fire('click');
+    }
+    assert.equal(selected.length, 0, '空周期不可下钻');
 });
 const calendar = {provableFrom: 250, items: [
   {date: '2026-10-13', weekday: 2, start: 100, end: 200, status: 'unknown', effectiveSeconds: 0, gapSeconds: 40, starts: []},

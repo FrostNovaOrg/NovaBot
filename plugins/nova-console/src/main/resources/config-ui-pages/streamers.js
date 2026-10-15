@@ -20,7 +20,7 @@ import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis,
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText,
   detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
-  gapCells, insightsComparison, comparisonExplanation, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
+  gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle, shownMetrics,
   slotCell, slotLabel, slotRangeDays, slotTopText,
   snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
@@ -56,10 +56,6 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap}
-/* 页脚那行：翻页按钮与页数文字竖向居中。hint 自带的下边距把文字压在行的上沿，
-   而居中按外边距盒算，留着那段边距等于没居中 */
-#sd-audience .audience-pager{align-items:center;margin-top:10px}
-#sd-audience .audience-pager .hint{margin:0}
 :is(#sd-body,.sc-drawer) .session-table a,:is(#sd-body,.sc-drawer) .session-table a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
@@ -84,8 +80,19 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-insights .sc-kpi[role=button]{cursor:pointer}
 #sd-insights .sc-kpi[role=button]:hover{background:var(--soft)}
 #sd-insights .sc-kpi:focus-visible{outline:2px solid var(--accent)}
-#sd-more{margin-top:14px}#sd-more .sc-kpis{margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr))}
-#sd-trend select{margin:8px 0 12px}
+#sd-more{margin-top:14px}#sd-more .sc-kpis{margin-top:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.sd-trend-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px}
+.sd-trend-controls .lgpills{display:flex;gap:4px;flex-wrap:wrap}
+.sd-trend-controls label{display:flex;align-items:center;gap:6px;font-size:12px}
+.sd-trend-controls button[aria-pressed=true]{color:var(--accent);border-color:var(--accent);background:var(--soft)}
+.sd-trend-controls button:disabled{opacity:.45;cursor:default}
+.sd-trend-daily{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}.sd-trend-daily strong{font-size:13px}.sd-trend-note{font-size:12px;color:var(--dim);line-height:1.7}
+.sd-trend-hide{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.sd-trend-table{overflow-x:auto}.sd-trend-table table{min-width:480px}
+.sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
+.sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:13px}
+.sd-pagination>span{margin:0 auto 0 0;color:var(--dim)}
+.sd-pagination a{text-decoration:none}
 .sd-interaction-bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
 .sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
@@ -265,11 +272,9 @@ export function loadStreamers() {
     && where.platform === next.platform && where.uid === next.uid
     && JSON.stringify(where) !== JSON.stringify(next)) {
     const rangeChanged = where.days !== next.days;
-    const focusTrend = next.section === 'trend' && where.section !== 'trend';
     where = next;
     const jobs = [openDetailDrawer()];
     if (rangeChanged) jobs.push(loadDashboard());
-    if (focusTrend) $('#sd-trend')?.scrollIntoView({behavior: 'smooth', block: 'start'});
     return Promise.all(jobs);
   }
   liveActive = true;
@@ -512,7 +517,7 @@ async function loadDetail() {
   renderHead();
   const key = where.platform + '/' + where.uid;
   if (key !== liveKey) {
-    insightsMetric = 'revenue';
+    insightsMetric = 'revenue'; insightsMode = 'total'; insightsHideOff = false;
     slotsMetric = 'revenue';
   }
   if (key !== liveKey || !detail.living
@@ -524,7 +529,6 @@ async function loadDetail() {
   renderDashboard();
   startLiveRefresh();
   await Promise.all([loadLive(), loadDashboard(), openDetailDrawer()]);
-  if (generation === viewGeneration && where.section === 'trend') $('#sd-trend')?.scrollIntoView({block: 'start'});
 }
 
 function renderHead() {
@@ -686,17 +690,17 @@ function renderAudience(data, message) {
     empty.textContent = '该范围和分组暂无观众名单。';
     host.appendChild(empty);
   }
-  const pager = el('div', 'lgpills audience-pager');
-  for (const [page, label] of [[data.page - 1, '上一页'], [data.page + 1, '下一页']]) {
+  const pager = el('div', 'sd-pagination');
+  const text = el('span', 'hint');
+  text.textContent = '共 ' + fmtMetric(data.total) + ' 条 · 第 ' + fmtMetric(data.page) + '/' + fmtMetric(Math.max(1, data.pages)) + ' 页';
+  pager.appendChild(text);
+  for (const [page, label] of [[data.page - 1, '‹ 上一页'], [data.page + 1, '下一页 ›']]) {
     if (page < 1 || page > data.pages) continue;
     const link = el('a', 'daystep');
     link.href = audienceHash({page});
     link.textContent = label;
     pager.appendChild(link);
   }
-  const text = el('span', 'hint');
-  text.textContent = '第 ' + fmtMetric(data.page) + ' / ' + fmtMetric(Math.max(1, data.pages)) + ' 页 · 共 ' + fmtMetric(data.total) + ' 人';
-  pager.appendChild(text);
   host.appendChild(pager);
 }
 
@@ -845,6 +849,8 @@ function renderStartSlots(host) {
 }
 
 let insightsMetric = 'revenue';
+let insightsMode = 'total';
+let insightsHideOff = false;
 let insightsData = null;
 let dashboardGeneration = 0;
 let trendChart = null;
@@ -852,7 +858,8 @@ let detailDrawer = null;
 let drawerGeneration = 0;
 let drawerChanging = false;
 const ranges = [7, 30, 90, 180, 360];
-const trendMetrics = [['revenue', '流水'], ['messages', '弹幕'], ['audience', '观众'], ['durationSeconds', '直播时长'], ['sessions', '场次']];
+const trendMetrics = [['revenue', '流水', '元', true], ['messages', '弹幕', '条', true], ['audience', '观众', '人', false],
+  ['follows', '新增关注', '人', true], ['durationSeconds', '直播时长', '', false], ['sessions', '场次', '场', false]];
 
 function streamerPath() {
   return '/streamers/' + encodeURIComponent(where.platform) + '/' + encodeURIComponent(where.uid);
@@ -861,8 +868,10 @@ function streamerPath() {
 function dashboardHash(changes = {}) {
   const state = {...where, ...changes};
   const params = new URLSearchParams();
-  for (const key of ['days', 'panel', 'group', 'sort', 'page', 'slotDays', 'from', 'to', 'starts']) {
-    if (state[key] != null && state[key] !== '') params.set(key, state[key]);
+  for (const key of ['days', 'panel', 'group', 'sort', 'page', 'slotDays', 'from', 'to', 'starts', 'period', 'metric', 'mode', 'hideOff']) {
+    if (['period', 'metric', 'mode', 'hideOff'].includes(key) && (state.panel !== 'trend'
+      || state[key] === {period: 'day', metric: 'revenue', mode: 'total', hideOff: null}[key])) continue;
+    if (state[key] != null && (state[key] !== '' || key === 'starts')) params.set(key, state[key]);
   }
   return detailHash(state.platform, state.uid, 'overview', params.toString());
 }
@@ -884,7 +893,7 @@ function closeDetailDrawer() {
 
 async function openDetailDrawer() {
   closeDetailDrawer();
-  const titles = {audience: '本期观众名单', 'start-slots': '开播节奏', sessions: '场次', fans: '粉丝变化'};
+  const titles = {audience: '本期观众名单', 'start-slots': '开播节奏', sessions: '场次', fans: '粉丝变化', trend: '趋势明细'};
   const panel = where.panel;
   if (!titles[panel]) return;
   detailDrawer = openDrawer({title: titles[panel]});
@@ -893,13 +902,14 @@ async function openDetailDrawer() {
     if (!drawerChanging && detailDrawer === current) {
       detailDrawer = null;
       drawerGeneration++;
-      location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null});
+      location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null, period: null, metric: null, mode: null, hideOff: null});
     }
   });
   if (panel === 'audience') {
     const host = el('div'); host.id = 'sd-audience'; current.body.appendChild(host);
     await loadAudience();
   } else if (panel === 'start-slots') await loadStartSlots();
+  else if (panel === 'trend') await loadTrendDrawer(current);
   else {
     const generation = drawerGeneration;
     current.body.textContent = '正在读取…';
@@ -929,7 +939,7 @@ async function openDetailDrawer() {
   }
 }
 
-function renderToolbar(data) {
+function renderToolbar(data, error) {
   const host = $('#sd-toolbar'); host.innerHTML = '';
   const label = el('strong'); label.textContent = '范围'; host.appendChild(label);
   for (const days of ranges) {
@@ -940,7 +950,7 @@ function renderToolbar(data) {
     host.appendChild(link);
   }
   const interval = el('span', 'hint');
-  interval.textContent = data ? '本期：' + insightsTime(data.from) + ' 至 ' + insightsTime(data.to ?? Date.now()) : '正在读取本期日期…';
+  interval.textContent = error ? '读取失败：' + error : data ? '本期：' + insightsTime(data.from) + ' 至 ' + insightsTime(data.to ?? Date.now()) : '正在读取本期日期…';
   host.appendChild(interval);
 }
 
@@ -963,7 +973,7 @@ function performanceHint() {
   return '近 ' + where.days + ' 天（含今天）· 较上期为再往前的 ' + where.days + ' 天';
 }
 
-function renderDashboardHints(data) {
+function renderDashboardHints(data, error) {
   const from = data?.from;
   const to = data?.to ?? Date.now();
   const moment = at => {
@@ -971,13 +981,13 @@ function renderDashboardHints(data) {
       day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).formatToParts(new Date(at));
     return Object.fromEntries(parts.map(part => [part.type, part.value]));
   };
-  let interval = '正在读取本期日期…';
+  let interval = error ? '读取失败：' + error : '正在读取本期日期…';
   if (from != null) {
     const start = moment(from), end = moment(to);
     const compact = date => (start.year !== end.year ? date.year + '/' : '') + date.month + '/' + date.day + ' ' + date.hour + ':' + date.minute;
     interval = compact(start) + ' — ' + compact(end);
   }
-  for (const [id, text] of [['sd-insights', performanceHint()], ['sd-trend', interval + ' · 按统计日 · 点击日期查看场次'],
+  for (const [id, text] of [['sd-insights', error ? interval : performanceHint()], ['sd-trend', interval],
     ['sd-period-audience', interval], ['sd-calendar-card', interval], ['sd-recent-card', interval]]) {
     const hint = $('#' + id)?.querySelector('.sc-section-hint');
     if (hint) hint.textContent = text;
@@ -991,7 +1001,9 @@ function renderDashboard() {
   const performance = createSection('本期表现', performanceHint(), host).box; performance.id = 'sd-insights';
   const performanceBody = el('div'); performanceBody.id = 'sd-insights-content'; performance.appendChild(performanceBody);
   const columns = el('div', 'sd-columns'); host.appendChild(columns);
-  const trend = createSection('近期趋势', '正在读取本期日期… · 按统计日 · 点击日期查看场次', columns).box; trend.id = 'sd-trend';
+  const trendSection = createSection('近期趋势', '正在读取本期日期…', columns);
+  const trend = trendSection.box; trend.id = 'sd-trend';
+  trendSection.header.appendChild(panelLink('查看明细', 'trend', {period: 'day', metric: insightsMetric, mode: insightsMode}));
   const trendBody = el('div'); trendBody.id = 'sd-trend-content'; trend.appendChild(trendBody);
   const audience = createSection('本期观众', '正在读取本期日期…', columns); audience.box.id = 'sd-period-audience';
   audience.header.appendChild(panelLink('查看名单', 'audience', {group: 'all', sort: 'attendance'}));
@@ -1029,7 +1041,10 @@ async function loadDashboard() {
       render(response);
     } catch (error) {
       if (!current()) return;
-      if (endpoint === 'insights') renderInsights(null, '读取失败：' + error.message);
+      if (endpoint === 'insights') {
+        renderInsights(null, '读取失败：' + error.message);
+        renderDashboardHints(null, error.message); renderToolbar(null, error.message);
+      }
       else $(endpoint === 'calendar' ? '#sd-calendar' : '#sd-audience-summary').textContent = '读取失败：' + error.message;
     }
   };
@@ -1090,7 +1105,7 @@ function renderInsights(data, message) {
     if (comparison) cell.children[2].style.color = comparison.color;
     if (keys[index] === 'fans') cell.title = fans ? (fans.partial ? '可用快照未覆盖整个范围；' : '') + insightsTime(fans.fromAt) + ' → ' + insightsTime(fans.toAt) : '可用的粉丝数快照不足两次';
     const activate = () => {
-      if (index < 3) { insightsMetric = keys[index]; renderDailyTrend(); $('#sd-trend').scrollIntoView({behavior: 'smooth', block: 'start'}); }
+      if (index < 3) location.hash = dashboardHash({panel: 'trend', metric: keys[index], period: 'day', mode: 'total', page: 1, from: null, to: null, starts: null});
       else location.hash = dashboardHash({panel: index === 5 ? 'fans' : 'audience', group: index === 4 ? 'interaction' : 'all', sort: 'attendance', page: 1, starts: null, from: null, to: null});
     };
     cell.addEventListener('click', activate);
@@ -1100,28 +1115,153 @@ function renderInsights(data, message) {
   const summary = el('summary'); summary.textContent = '更多指标'; more.appendChild(summary);
   const hours = data.durationSeconds / 3600;
   createKpis([{label: '场次', value: fmtMetric(data.sessions)},
+    {label: '新增关注', value: data.follows == null ? '—' : fmtMetric(data.follows) + ' 人'},
     {label: '每小时流水', value: hours > 0 && data.revenue != null ? fmtMetric(data.revenue / hours, {money: true}) + ' 元/时' : '—'},
     {label: '每小时弹幕', value: hours > 0 && data.messages != null ? fmtMetric(data.messages / hours, {money: true}) + ' 条/时' : '—'}], more);
   host.appendChild(more); renderDailyTrend();
 }
 
-function renderDailyTrend() {
-  trendChart?.destroy(); trendChart = null;
-  const host = $('#sd-trend-content'); host.innerHTML = '';
+function trendFormat(metric, mode) {
+  const [, , unit, canRate] = trendMetrics.find(([key]) => key === metric);
+  const hourly = mode === 'hourly' && canRate;
+  return value => value == null ? '—' : metric === 'durationSeconds' ? fmtDuration(value)
+    : fmtMetric(value, {money: metric === 'revenue' || hourly}) + ' ' + unit + (hourly ? '/小时' : '');
+}
+
+function trendControls(host, {metric, mode, period, onMetric, onMode, onPeriod}) {
+  const controls = el('div', 'sd-trend-controls'); host.appendChild(controls);
+  if (period) {
+    const periods = el('div', 'lgpills'); controls.appendChild(periods);
+    for (const [key, name] of [['day', '按统计日'], ['week', '按统计周'], ['month', '按统计月']]) {
+      const link = el('a', 'nv-pill lgpill'); link.textContent = name; link.href = onPeriod(key);
+      if (key === period) link.setAttribute('aria-current', 'page'); periods.appendChild(link);
+    }
+  }
   const label = el('label'); label.textContent = '指标 ';
   const select = el('select'); select.setAttribute('aria-label', '趋势指标');
   for (const [key, name] of trendMetrics) { const option = el('option'); option.value = key; option.textContent = name; select.appendChild(option); }
-  select.value = insightsMetric;
-  select.addEventListener('change', () => { insightsMetric = select.value; renderDailyTrend(); }); label.appendChild(select); host.appendChild(label);
+  select.value = metric; select.addEventListener('change', () => onMetric(select.value));
+  label.appendChild(select); controls.appendChild(label);
+  const canRate = trendMetrics.find(([key]) => key === metric)[3];
+  if (!canRate) return controls;
+  const modes = el('div', 'lgpills'); modes.setAttribute('aria-label', '趋势数值'); controls.appendChild(modes);
+  for (const [key, name] of [['total', '总量'], ['hourly', '每小时']]) {
+    const button = el('button', 'nv-pill'); button.type = 'button'; button.textContent = name;
+    button.disabled = key === 'hourly' && !canRate;
+    button.setAttribute('aria-pressed', String(key === (canRate ? mode : 'total')));
+    button.addEventListener('click', () => { if (!button.disabled) onMode(key); }); modes.appendChild(button);
+  }
+  return controls;
+}
+
+function hideOffControl(host, checked, onChange) {
+  const bar = el('div', 'sd-trend-daily'); host.appendChild(bar);
+  const title = el('strong'); title.textContent = '开播日趋势'; bar.appendChild(title);
+  const label = el('label', 'sd-trend-hide');
+  label.title = '只显示当前指标有有效数值的开播统计日，保留真实的 0；原始日期和数据可在明细中查看。';
+  const input = el('input'); input.type = 'checkbox'; input.checked = checked;
+  input.addEventListener('change', () => onChange(input.checked));
+  label.append(input, '隐藏未播与无效日期'); bar.appendChild(label);
+}
+
+function trendNote(host, period, hideOff, points) {
+  const note = el('p', 'sd-trend-note');
+  const scope = '整场指标按开播统计日归属，不拆分整场；范围按整统计日选取，并非滚动 N×24 小时。';
+  let drawing = period === 'day' ? '按真实日期间距绘制折线，未播或无有效值时断开，不画虚线。' : '按统计周期绘制柱图，空周期保留。';
+  if (period === 'day' && hideOff) {
+    const off = points.filter(point => point.sessions === 0).length;
+    const invalid = points.filter(point => point.sessions !== 0 && !Number.isFinite(point.value)).length;
+    drawing = '已隐藏 ' + fmtMetric(off) + ' 个未播日、' + fmtMetric(invalid) + ' 个无有效值日期；日期间距已压缩，实线连接保留点，原始明细和统计不变。';
+  }
+  note.textContent = scope + drawing; host.appendChild(note);
+}
+
+function trendPoints(buckets, metric, mode) {
+  return buckets.map(bucket => ({...bucket, value: bucket.sessions > 0 ? trendValue(bucket, metric, mode) : null}));
+}
+
+function trendSessions(interval, buckets) {
+  const bucket = buckets.find(item => item.start === interval.start && item.end === interval.end);
+  location.hash = dashboardHash({panel: 'sessions', from: interval.start, to: interval.end,
+    starts: bucket?.starts?.join(',') ?? null, page: 1});
+}
+
+function renderDailyTrend() {
+  trendChart?.destroy(); trendChart = null;
+  const host = $('#sd-trend-content'); host.innerHTML = '';
+  const controls = trendControls(host, {metric: insightsMetric, mode: insightsMode,
+    onMetric: metric => { insightsMetric = metric; renderDailyTrend(); },
+    onMode: mode => { insightsMode = mode; renderDailyTrend(); }});
+  const periodLabel = el('span', 'hint'); periodLabel.textContent = '按统计日汇总'; controls.appendChild(periodLabel);
+  hideOffControl(host, insightsHideOff, checked => { insightsHideOff = checked; renderDailyTrend(); });
+  const detailLink = $('#sd-trend').querySelector('.daystep');
+  if (detailLink) detailLink.href = dashboardHash({panel: 'trend', period: 'day', metric: insightsMetric, mode: insightsMode, hideOff: insightsHideOff ? '1' : null, page: 1});
   if (!insightsData) return;
-  const points = (insightsData.daily || []).map(day => {
+  const buckets = (insightsData.daily || []).map(day => {
     const start = day.start ?? Date.parse(day.date + 'T06:00:00+08:00');
-    const point = insightsPoint(day, insightsMetric);
-    return {start, end: day.end ?? start + 86400000, label: day.date, value: point.draw ? point.value : null};
+    return {...day, start, end: day.end ?? start + 86400000, label: day.date};
   });
-  trendChart = createChart(host, {title: '按统计日的' + trendMetrics.find(([key]) => key === insightsMetric)[1] + '走势', points,
-    format: value => insightsMetric === 'durationSeconds' ? fmtDuration(value) : fmtMetric(value, {money: insightsMetric === 'revenue'}),
-    onSelect: interval => { location.hash = dashboardHash({panel: 'sessions', from: interval.start, to: interval.end, starts: null, page: 1}); }});
+  trendChart = createChart(host, {title: '按统计日的' + trendMetrics.find(([key]) => key === insightsMetric)[1] + '走势',
+    points: trendPoints(buckets, insightsMetric, insightsMode), hideOff: insightsHideOff, isOff: point => point.sessions === 0,
+    format: trendFormat(insightsMetric, insightsMode), onSelect: interval => trendSessions(interval, buckets)});
+  trendNote(host, 'day', insightsHideOff, trendPoints(buckets, insightsMetric, insightsMode));
+}
+
+async function loadTrendDrawer(current) {
+  const generation = drawerGeneration;
+  const period = where.period || 'day', metric = where.metric || 'revenue', mode = where.mode || 'total';
+  const route = changes => dashboardHash({page: 1, ...changes});
+  trendControls(current.body, {metric, mode, period,
+    onPeriod: next => route({period: next}), onMetric: next => { location.hash = route({metric: next}); },
+    onMode: next => { location.hash = route({mode: next}); }});
+  const content = el('div'); current.body.appendChild(content); content.textContent = '正在读取趋势…';
+  try {
+    const response = await api(streamerPath() + '/trend?period=' + period + '&days=' + where.days);
+    if (generation !== drawerGeneration || !liveActive) return;
+    if (!response.success) throw new Error(response.message || '未能读取趋势');
+    content.textContent = '';
+    const buckets = response.trend?.buckets || [];
+    const format = trendFormat(metric, mode);
+    const selected = trendMetrics.find(([key]) => key === metric);
+    const chart = createSection(selected[1] + (mode === 'hourly' && selected[3] ? ' · 每小时' : ' · 总量'), '', content);
+    if (period === 'day') hideOffControl(chart.box, where.hideOff === '1', checked => { location.hash = route({hideOff: checked ? '1' : null}); });
+    createChart(chart.box, {title: period === 'day' ? '每日趋势，选择日期查看当天场次' : '点击周期查看场次', points: trendPoints(buckets, metric, mode), period,
+      hideOff: where.hideOff === '1', isOff: point => point.sessions === 0, format,
+      onSelect: interval => trendSessions(interval, buckets)});
+    trendNote(chart.box, period, where.hideOff === '1', trendPoints(buckets, metric, mode));
+    const section = createSection('周期明细', '', content);
+    const scroll = el('div', 'sd-trend-table'); section.box.appendChild(scroll);
+    const table = el('table'), head = el('thead'), tr = el('tr');
+    for (const [index, name] of ['周期', '场次', '直播时长', selected[1] + (mode === 'hourly' && selected[3] ? ' / 小时' : '')].entries()) {
+      const th = el('th', index ? 'n' : ''); th.textContent = name; tr.appendChild(th);
+    }
+    head.appendChild(tr); table.appendChild(head);
+    const ordered = buckets.slice().reverse(), pages = Math.max(1, Math.ceil(ordered.length / 10));
+    const page = Math.min(pages, where.page), body = el('tbody');
+    for (const bucket of ordered.slice((page - 1) * 10, page * 10)) {
+      const row = el('tr');
+      if (bucket.sessions > 0) {
+        row.setAttribute('tabindex', '0'); row.setAttribute('role', 'link');
+        row.setAttribute('aria-label', bucket.label + '，查看场次');
+        const activate = () => trendSessions(bucket, buckets);
+        row.addEventListener('click', activate);
+        row.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); activate(); } });
+      }
+      for (const [index, value] of [bucket.label, fmtMetric(bucket.sessions), fmtDuration(bucket.durationSeconds), format(trendValue(bucket, metric, mode))].entries()) {
+        const cell = el('td', index ? 'n' : ''); cell.textContent = value; row.appendChild(cell);
+      }
+      body.appendChild(row);
+    }
+    table.appendChild(body); scroll.appendChild(table);
+    const pager = el('div', 'sd-pagination'); section.box.appendChild(pager);
+    const note = el('span', 'hint'); note.textContent = '共 ' + fmtMetric(ordered.length) + ' 条 · 第 ' + fmtMetric(page) + '/' + fmtMetric(pages) + ' 页'; pager.appendChild(note);
+    for (const [label, target] of [['‹ 上一页', page - 1], ['下一页 ›', page + 1]]) {
+      if (target < 1 || target > pages) continue;
+      const link = el('a', 'daystep'); link.textContent = label; link.href = route({page: target}); pager.appendChild(link);
+    }
+  } catch (error) {
+    if (generation === drawerGeneration && liveActive) content.textContent = '读取失败：' + error.message;
+  }
 }
 
 /**
@@ -1249,6 +1389,10 @@ function renderLive() {
   header.appendChild(refresh);
   card.appendChild(header);
 
+  if (!live && !liveError) {
+    const loading = el('p', 'hint'); loading.textContent = '正在读取当前直播快照…'; card.appendChild(loading);
+    return;
+  }
   const times = el('p', 'live-times');
   const since = live ? live.since : detail.since;
   times.textContent = '开播于 ' + fmtTime(since)
@@ -1270,10 +1414,7 @@ function renderLive() {
       value: online.length ? online[online.length - 1][1] : null});
   }
   const primary = el('dl', 'sd-live-metrics');
-  const revenueKeys = detail.platform === 'bilibili' ? ['gift_value', 'super_chat_value', 'guard_value'] : catalog.filter(metric => metric.money).map(metric => metric.key);
-  const revenueParts = revenueKeys.map(key => live?.metrics?.[key]).filter(value => typeof value === 'number' && Number.isFinite(value));
-  const revenue = revenueParts.length ? revenueParts.reduce((sum, value) => sum + value, 0) : null;
-  for (const [name, value, unit, money] of [['流水', revenue, '元', true], ['弹幕', live?.metrics?.danmu_count ?? live?.metrics?.messages, '条'], ['在线峰值', live?.metrics?.online_count, '人']]) {
+  for (const [name, value, unit, money] of [['流水', live?.revenue, '元', true], ['弹幕', live?.messages, '条'], ['在线峰值', live?.metrics?.online_count, '人']]) {
     const row = el('div'), label = el('dt'), shown = el('dd'); label.textContent = name;
     shown.textContent = value == null ? '暂无数据' : fmtMetric(value, {money}) + ' ' + unit;
     row.appendChild(label); row.appendChild(shown); primary.appendChild(row);
@@ -1371,7 +1512,7 @@ function renderRecent(host) {
     const catalog = detail.sessions?.metrics || [];
     const moneyMetrics = catalog.filter(metric => metric.money);
     const money = moneyMetrics.length ? moneyMetrics.reduce((sum, metric) => sum + (item.metrics?.[metric.key] || 0), 0) : null;
-    const messages = item.metrics?.danmu_count ?? item.metrics?.messages;
+    const messages = item.metrics?.[detail.sessions?.messageKey];
     metrics.textContent = '流水 ' + fmtMetric(money, {money: true}) + (money == null ? '' : ' 元') + ' · 弹幕 ' + fmtMetric(messages) + (gaps.any ? ' · ' + gaps.title : '');
     if (item.interrupted) metrics.textContent += ' · ' + item.endReasonText;
     link.appendChild(time); link.appendChild(title); link.appendChild(metrics); host.appendChild(link);
@@ -1402,9 +1543,8 @@ function renderSessions(host, page = {}) {
   card.appendChild(sessionTable(items, page.metrics || []));
 
   const bar = pageBar(page);
-  const foot = el('div', 'tl-foot');
+  const foot = el('div', 'sd-pagination');
   const text = el('span', 'dim');
-  text.style.marginRight = '12px';
   text.textContent = bar.text;
   foot.appendChild(text);
   if (bar.prev) foot.appendChild(pageLink('‹ 上一页', bar.prev));
@@ -1433,7 +1573,6 @@ function renderSessions(host, page = {}) {
  */
 function pageLink(label, page) {
   const link = el('a', 'daystep');
-  link.style.marginRight = '8px';
   link.href = dashboardHash({panel: 'sessions', page});
   link.textContent = label;
   return link;

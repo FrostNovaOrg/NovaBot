@@ -135,4 +135,44 @@ class StreamerInsightsTest {
         assertFalse(r.metricsKnown());
         assertNull(r.revenue());
     }
+    // 插件可以采用任意关注计数键；没有声明时不能把未知显示成零。
+    @Test @DisplayName("新增关注只使用插件声明的键，缺少规则保留未知")
+    void followsUsesDeclaredKey() {
+        var item = new LiveSession("sample", 1L, "sample", 2L, FROM.toEpochMilli(),
+                FROM.plusSeconds(7200).toEpochMilli(), 7200,
+                Map.of("subscriptions", 6d, "anotherCount", 99d), Map.of());
+        var rules = new LiveMetricCatalog.Insights(List.of("gift"), "messages", List.of("enter"),
+                List.of("chat"), "fans", "subscriptions");
+        var engine = new StreamerInsights();
+        var result = engine.calculate(List.of(item), List.of(), FROM, TO, rules);
+        assertEquals(6L, result.follows(), "必须读取插件指定的新增关注项");
+        assertEquals(6L, result.daily().get(0).follows());
+        for (var period : LiveSessionAnalytics.Period.values()) {
+            var buckets = engine.trend(List.of(item), FROM, TO, period, rules);
+            assertEquals(6, buckets.stream().mapToLong(b -> b.follows()).sum());
+            assertTrue(engine.trend(List.of(item), FROM, TO, period, RULES).stream().allMatch(b -> b.follows() == null));
+        }
+        assertNull(engine.calculate(List.of(item), List.of(), FROM, TO, RULES).follows());
+        assertEquals(0L, engine.calculate(List.of(), List.of(), FROM, TO, rules).follows());
+    }
+
+    // 同周多场及跨周的重复名单都要去重；首尾周期只能计入所选范围的场次。
+    @Test @DisplayName("趋势按周期去重名单且首尾桶不混入范围外场次")
+    void trendAudienceAndBoundaries() {
+        var engine = new StreamerInsights();
+        var items = List.of(session(FROM.minusSeconds(60), Map.of("enter", List.of(200L)), Map.of()),
+                session(FROM, Map.of("enter", List.of(99L)), Map.of()),
+                session(FROM.plusSeconds(3600), Map.of("chat", List.of(99L, 100L)), Map.of()),
+                session(TO.minusSeconds(3600), Map.of("enter", List.of(99L)), Map.of()),
+                session(TO, Map.of("enter", List.of(201L)), Map.of()));
+        var weeks = engine.trend(items, FROM, TO, LiveSessionAnalytics.Period.WEEK, RULES);
+        assertEquals(List.of(2, 1), weeks.stream().map(StreamerInsights.TrendBucket::audience).toList());
+        assertEquals(2, engine.calculate(items, List.of(), FROM, TO, RULES).audience());
+        assertEquals(List.of(FROM.toEpochMilli(), FROM.plusSeconds(3600).toEpochMilli()), weeks.get(0).starts());
+        assertEquals(3 * 238d, weeks.stream().mapToDouble(b -> b.revenue()).sum());
+        var months = engine.trend(items, FROM, TO, LiveSessionAnalytics.Period.MONTH, RULES);
+        assertEquals(2, months.get(0).audience());
+        assertEquals(3, months.get(0).sessions());
+    }
+
 }

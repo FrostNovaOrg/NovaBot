@@ -65,9 +65,23 @@ public interface LiveMetricCatalog {
         return null;
     }
 
-    /** 流水的可累加项、弹幕项、观众与互动名单、粉丝快照项，由平台说明。 */
+    /** 流水的可累加项、弹幕项、观众与互动名单、粉丝快照项与新增关注项，由平台说明。 */
     record Insights(List<String> revenueKeys, String messageKey, List<String> audienceSets,
-                    List<String> interactionSets, String fansKey) {
+                    List<String> interactionSets, String fansKey, String followsKey) {
+        public Insights(List<String> revenueKeys, String messageKey, List<String> audienceSets,
+                        List<String> interactionSets, String fansKey) {
+            this(revenueKeys, messageKey, audienceSets, interactionSets, fansKey, null);
+        }
+
+        /** 本场与归档使用同一组流水项；未记录的项按零处理。 */
+        public double revenue(java.util.Map<String, Double> metrics) {
+            double total = 0;
+            for (String key : revenueKeys) {
+                Double value = metrics == null ? null : metrics.get(key);
+                if (value != null) total += value;
+            }
+            return total;
+        }
     }
 
     /**
