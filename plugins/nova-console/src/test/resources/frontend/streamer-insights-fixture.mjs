@@ -1,5 +1,7 @@
 import {register} from 'node:module';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {enhance, installCharts} from './streamers-dom.mjs';
 register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
 const model = await import('../../../main/resources/config-ui-pages/streamers-model.js');
 let checks = 0;
@@ -45,15 +47,15 @@ function element(tag) {
   n.addEventListener = (k, fn) => n.listeners[k] = fn;
   n.classList = {add() {}, remove() {}, toggle() {}, contains() { return false; }};
   Object.defineProperty(n, 'firstChild', {get() { return n.children[0]; }});
-  return n;
+  return enhance(n);
 }
-for (const id of ['sv-list', 'sv-detail', 'sv-session', 'sd-back', 'sd-head', 'sd-tabs', 'sd-body']) {
+for (const id of ['sv-list', 'sv-detail', 'sv-session', 'sd-back', 'sd-head', 'sd-body']) {
   element('div').id = id;
 }
 globalThis.document = {hidden: false, querySelector: s => nodes.get(s.replace(/^#/, '')) || null,
   getElementById: id => nodes.get(id) || null, createElement: element,
   head: element('head'), body: element('body'), addEventListener() {}};
-document.body.appendChild(nodes.get('sd-tabs'));
+const observers = installCharts(document);
 document.body.appendChild(nodes.get('sd-body'));
 globalThis.location = {hash: '#/streamers/sample/1'};
 let intervals = 0, cleared = 0;
@@ -70,6 +72,10 @@ const audienceResponse = {success: true, audience: {group: 'all', sort: 'attenda
     visits: [{startTime: 1792101600000, title: 'latest title'}, {startTime: 1792015200000, title: 'first title'}]}]}};
 globalThis.fetch = async url => {
   requests.push(String(url));
+  if (String(url).includes('/calendar?')) return response({success: true, calendar: {items: [{date: '2026-10-16', weekday: 5, start: 1792101600000, end: 1792188000000, status: 'recorded', effectiveSeconds: 600, starts: [1792101600100, 1792101600200]}]}});
+  if (String(url).includes('/sessions?')) return response({success: true, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {}, title: String(startTime)})), total: 2, page: 1, pages: 1, metrics: []}});
+  if (String(url).includes('/start-slots?')) return response({success: true, startSlots: {cells: [], topRevenue: [], topMessages: []}});
+  if (String(url).includes('/fans?')) return response({success: true, fans: {points: [{at: 1792101600000, value: 10}, {at: 1792101600100, value: 12}], change: 2, partial: true}});
   if (String(url).includes('/audience?')) return response(audienceResponse);
   if (String(url).includes('/insights?')) {
     if (String(url).includes('days=90')) return new Promise(resolve => pending.push(resolve));
@@ -84,8 +90,146 @@ globalThis.fetch = async url => {
   return response({success: true, platform: 'sample', uid: 1, configured: true, living: false, overview: {}});
 };
 const page = await import('../../../main/resources/config-ui-pages/streamers.js');
-const flatten = n => [n, ...n.children.flatMap(flatten)];
-await check('切换与后退只重读概况新卡，保留本场节点和十五秒刷新', async () => {
+const flatten = n => n ? [n, ...n.children.flatMap(flatten)] : [];
+const base = '#/streamers/sample/1';
+const drawer = () => flatten(document.body).find(n => n.className === 'sc-drawer');
+const load = async hash => { location.hash = hash; await page.refresh(); };
+const textOf = node => flatten(node).map(n => n.textContent + n.innerHTML).join(' ');
+// 重画指标和趋势时，卡片标题及操作提示不能消失。
+await check('范围和指标切换后保留卡片标题与趋势提示', async () => {
+  await load(base);
+  for (const days of [7, 180]) {
+    await load(base + '?days=' + days);
+    const trend = nodes.get('sd-trend');
+    const header = flatten(trend).find(n => n.className === 'sc-section-head');
+    assert.ok(header, '趋势卡应保留分区标题');
+    const select = flatten(trend).find(n => n.tagName === 'select');
+    select.value = 'messages'; await select.fire('change');
+    assert.ok(flatten(trend).includes(header), '换指标应保留原标题区');
+    assert.match(textOf(trend), /按统计日 · 点击日期查看场次/, '趋势操作提示应保留');
+    for (const id of ['sd-insights', 'sd-period-audience', 'sd-calendar-card']) {
+      assert.ok(flatten(nodes.get(id)).some(n => n.className === 'sc-section-head'), id + '应使用同样的分区标题');
+    }
+  }
+});
+// 各卡日期提示必须随全页范围一起更新，不能显示空白或上期区间。
+await check('各卡显示当前范围与简写起止日期', async () => {
+  compositionScenario = {from: Date.parse('2026-04-20T06:00:00+08:00'), to: Date.parse('2026-10-16T12:00:00+08:00')};
+  await load(base + '?days=180');
+  assert.match(textOf(nodes.get('sd-insights')), /近 180 天（含今天）· 较上期为再往前的 180 天/);
+  for (const id of ['sd-trend', 'sd-period-audience', 'sd-calendar-card', 'sd-recent-card']) {
+    const hint = flatten(nodes.get(id)).find(n => n.className === 'sc-section-hint');
+    assert.ok(hint, id + '应显示区间提示');
+    assert.match(hint.textContent, /4[ /月-]+20.*06:00.*10[ /月-]+16.*12:00/, id + '应显示本期区间');
+  }
+  compositionScenario = {from: Date.parse('2026-10-10T06:00:00+08:00'), to: Date.parse('2026-10-16T12:00:00+08:00')};
+  await load(base + '?days=7');
+  assert.match(textOf(nodes.get('sd-insights')), /近 7 天（含今天）· 较上期为再往前的 7 天/);
+  assert.match(textOf(nodes.get('sd-calendar-card')), /10[ /月-]+10.*06:00/);
+  compositionScenario = {from: Date.parse('2025-10-22T06:00:00+08:00'), to: Date.parse('2026-10-16T12:00:00+08:00')};
+  await load(base + '?days=360');
+  assert.match(textOf(nodes.get('sd-calendar-card')), /2025\/10\/22 06:00.*2026\/10\/16 12:00/, '跨年区间应显示年份');
+  compositionScenario = null;
+});
+// 桌面图也应与示例一样高，不能只在手机缩成180px。
+await check('总览趋势图在宽窄屏均为180px', () => {
+  const source = readFileSync(new URL('../../../main/resources/config-ui-pages/streamers.js', import.meta.url), 'utf8');
+  const heights = [...source.matchAll(/#sd-trend \.sc-chart svg\{height:(\d+)px\}/g)].map(match => Number(match[1]));
+  assert.ok(heights.length && heights.every(height => height === 180), '总览趋势图高度应统一180px');
+});
+// 点环和两段时，应直接进入本期的对应名单，键盘也能进入。
+await check('观众环与首次回访分段打开对应名单', async () => {
+  compositionScenario = {audience: 45, composition: {firstRecorded: 20, returning: 25}};
+  for (const [cls, group, event] of [['sc-audience-ring', 'all', 'click'], ['sc-first', 'first', 'click'], ['sc-returning', 'returning', 'keydown']]) {
+    await load(base + '?days=180');
+    const target = flatten(nodes.get('sd-audience-summary')).find(n => n.className.split(' ').includes(cls));
+    assert.ok(target, '应显示' + cls);
+    assert.ok(target.href || target.attrs.tabindex === '0', cls + '应支持键盘');
+    await target.fire(event, {key: 'Enter'});
+    if (target.href) location.hash = target.href;
+    const state = model.parseStreamersHash(location.hash);
+    assert.deepEqual([state.panel, state.group, state.days], ['audience', group, 180], cls + '应进入对应名单');
+    await page.refresh(); assert.ok(drawer());
+  }
+  compositionScenario = null;
+});
+// 粉丝差值有单位，但它由快照计算，不应给出任何较上期提示或颜色。
+await check('粉丝净增带人数单位且不参加较上期', async () => {
+  for (const change of [2, -2, 0, null]) {
+    compositionScenario = {fans: change == null ? null : {change, partial: true, fromAt: 1792015200000, toAt: 1792101600000}, comparisons: {fans: {changeRatio: .5}}};
+    await load(base);
+    const cell = flatten(nodes.get('sd-insights')).find(n => n.attrs['aria-label'] === '粉丝净增');
+    assert.equal(cell.children[1].textContent, change == null ? '暂无数据' : (change > 0 ? '+' : change < 0 ? '−' : '') + Math.abs(change) + ' 人', '粉丝差值应带人');
+    assert.ok(!textOf(cell).includes('较上期'), '粉丝格不得出现较上期提示');
+    assert.ok(!cell.children[2].style.color, '粉丝格不得使用较上期涨跌色');
+    assert.match(cell.title, change == null ? /快照不足两次/ : /快照未覆盖整个范围/);
+  }
+  compositionScenario = null;
+});
+// 旧收藏必须保留入口，否则从外部进入会丢失明细。
+await check('收藏的旧链接恢复总览与明细', async () => {
+  for (const panel of ['sessions', 'start-slots', 'audience']) {
+    await load(base + '/' + panel);
+    assert.ok(nodes.get('sd-trend'), '旧链接应显示总览趋势卡');
+    assert.ok(drawer(), '旧链接应打开抽屉：' + panel);
+    assert.ok(requests.some(url => url.includes('/' + panel + '?')));
+  }
+  await load(base + '/trend');
+  assert.equal(nodes.get('sd-trend')?.scrolled, true, '旧趋势链接应定位趋势卡');
+  assert.equal(drawer(), undefined);
+});
+// 范围必须作用于全部本期卡片，不能混用不同范围的数字。
+await check('180天同步指标趋势观众日历', async () => {
+  await load(base);
+  const live = nodes.get('sd-live'), beforeIntervals = intervals, beforeCleared = cleared;
+  const range = flatten(nodes.get('sd-toolbar') || nodes.get('sd-insights')).find(n => n.href?.includes('days=180'));
+  assert.ok(range, '工具条应提供180天'); requests.length = 0;
+  await load(range.href);
+  for (const endpoint of ['insights', 'audience', 'calendar']) assert.ok(requests.some(url => url.includes('/' + endpoint + '?days=180')), endpoint + '应带days=180');
+  assert.ok(flatten(nodes.get('sd-trend')).some(n => n.className.includes('sc-line')), '趋势应使用本期daily');
+  assert.equal(nodes.get('sd-live'), live); assert.equal(intervals, beforeIntervals); assert.equal(cleared, beforeCleared);
+});
+// 日历场次使用starts，防止跨日长场或同日多场被误选。
+await check('日历按starts列出所选场次', async () => {
+  await load(base); requests.length = 0;
+  const day = flatten(nodes.get('sd-calendar') || nodes.get('sd-body')).find(n => n.dataset.date === '2026-10-16');
+  assert.ok(day, '有直播日期应可点击'); await day.fire('click'); await page.refresh();
+  assert.ok(requests.some(url => url.includes('/sessions?') && new URL(url, 'https://example.test').searchParams.get('starts') === '1792101600100,1792101600200'), '场次请求应带当天starts');
+  const content = flatten(drawer()).map(n => n.innerHTML).join(' ');
+  assert.match(content, /1792101600100/); assert.match(content, /1792101600200/);
+});
+// 指标不能打开错误的明细；前三格只切换并定位趋势。
+await check('指标点击分派到对应趋势与抽屉', async () => {
+  for (const [label, panel] of [['观众', 'audience'], ['互动观众', 'audience'], ['粉丝净增', 'fans']]) {
+    await load(base);
+    const cell = flatten(nodes.get('sd-insights')).find(n => n.attrs['aria-label'] === label);
+    assert.ok(cell, label + '应可点击'); await cell.fire('click'); await page.refresh();
+    assert.equal(model.parseStreamersHash(location.hash).panel, panel, label + '应打开' + panel + '抽屉'); assert.ok(drawer());
+    if (panel === 'fans') { assert.ok(flatten(drawer()).some(n => n.className.includes('sc-line')), '粉丝抽屉应画曲线'); assert.ok(flatten(drawer()).some(n => n.textContent.includes('净增 2')), '粉丝抽屉应显示净增'); }
+  }
+  await load(base);
+  await flatten(nodes.get('sd-insights')).find(n => n.attrs['aria-label'] === '弹幕').fire('click');
+  assert.equal(nodes.get('sd-trend').scrolled, true);
+  assert.equal(flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select').value, 'messages');
+});
+// 离页后轮询、抽屉和图表监听都必须释放。
+await check('离页释放直播抽屉与尺寸监听', async () => {
+  await load(base + '?panel=fans&days=30');
+  assert.ok(drawer(), '离页前应有抽屉'); assert.ok(observers.some(o => !o.disconnected));
+  const before = cleared; page.leave(); assert.ok(cleared > before);
+  assert.equal(drawer(), undefined, '离页应关闭抽屉');
+  assert.ok(observers.every(o => o.disconnected), '离页应断开尺寸监听');
+});
+// panel收藏需要恢复分组排序页码，关闭后也应清理地址。
+await check('带panel地址刷新恢复抽屉', async () => {
+  requests.length = 0; await load(base + '?panel=audience&days=180&group=returning&sort=revenue&page=2');
+  assert.ok(drawer(), 'panel地址应打开抽屉'); assert.ok(nodes.get('sd-trend'));
+  assert.ok(requests.some(url => url.endsWith('/audience?days=180&group=returning&sort=revenue&page=2')));
+  await flatten(drawer()).find(n => n.className.includes('sc-drawer-close')).fire('click');
+  assert.equal(model.parseStreamersHash(location.hash).panel, undefined);
+  assert.equal(model.parseStreamersHash(location.hash).days, 180);
+});
+await check('切换与后退重读本期卡片，保留本场节点和十五秒刷新', async () => {
   await page.refresh();
   const live = nodes.get('sd-live');
   const beforeIntervals = intervals, beforeCleared = cleared;
@@ -95,19 +239,21 @@ await check('切换与后退只重读概况新卡，保留本场节点和十五�
   assert.equal(nodes.get('sd-live'), live);
   assert.equal(intervals, beforeIntervals);
   assert.equal(cleared, beforeCleared);
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 3);
   assert.match(requests[0], /insights\?days=7/);
-  assert.ok(flatten(nodes.get('sd-tabs')).some(n => n.href?.endsWith('/audience?days=7&group=all&sort=attendance&page=1')), '切到观众应保留刚选的天数');
   const card = nodes.get('sd-insights');
   assert.ok(card);
-  const links = flatten(card).filter(n => n.tagName === 'a');
-  assert.ok(links.some(n => n.href.endsWith('?days=7') && n.attrs['aria-current'] === 'page'));
-  const chart = flatten(card).map(n => n.innerHTML).join('');
-  assert.equal((chart.match(/<rect class="c-bar/g) || []).length, 1);
-  assert.match(chart, /当天没有开播记录/);
+  assert.ok(flatten(nodes.get('sd-toolbar')).some(n => n.href?.includes('days=7') && n.attrs['aria-current'] === 'page'));
+  const revenueSelect = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
+  revenueSelect.value = 'revenue'; await revenueSelect.fire('change');
+  const dots = flatten(nodes.get('sd-trend')).filter(n => n.className.includes('sc-point'));
+  assert.equal(dots.length, 1, '未播不画，已播零值保留');
+  const select = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
+  select.value = 'audience'; await select.fire('change');
+  assert.equal(flatten(nodes.get('sd-trend')).filter(n => n.className.includes('sc-point')).length, 0, '缺失观众值不能画成零');
   const text = flatten(card).map(n => n.textContent + n.innerHTML).join('');
   assert.match(text, /暂无数据/);
-  assert.match(text, /没有名单 1 场/);
+  assert.match(flatten(nodes.get('sd-scope')).map(n => n.textContent).join(' '), /没有名单 1 场/);
   requests.length = 0;
   location.hash = '#/streamers/sample/1';
   await page.refresh();
@@ -122,7 +268,7 @@ await check('慢请求晚到时不能覆盖后来选中的范围', async () => {
   pending.splice(0).forEach(resolve => resolve(response({success: true, insights: {metricsKnown: false, daily: []}})));
   await slow;
   const card = nodes.get('sd-insights');
-  assert.ok(flatten(card).some(n => n.href?.endsWith('?days=7') && n.attrs['aria-current'] === 'page'));
+  assert.ok(flatten(nodes.get('sd-toolbar')).some(n => n.href?.includes('days=7') && n.attrs['aria-current'] === 'page'));
   assert.match(flatten(card).map(n => n.textContent + n.innerHTML).join(''), /流水/, '晚到的数据不得覆盖已选范围的指标');
 });
 await check('本期构成暂无数据时，悬停提示说明实际缺少名单的原因', async () => {
@@ -138,60 +284,59 @@ await check('本期构成暂无数据时，悬停提示说明实际缺少名单�
   for (const scenario of scenarios) {
     compositionScenario = {audience: scenario.audience, firstRecordedAt: scenario.firstRecordedAt};
     await page.refresh();
-    const composition = flatten(nodes.get('sd-insights')).find(n => n.textContent === '本期构成：暂无数据');
+    const composition = flatten(nodes.get('sd-audience-summary')).find(n => n.textContent === '本期构成：暂无数据');
     assert.ok(composition, scenario.name + '应显示暂无数据');
     titles.push(composition.title);
     console.log(scenario.name + '：' + composition.title);
   }
   assert.deepEqual(titles, scenarios.map(scenario => scenario.title), '本期无名单时不得归因为历史记录起点');
 });
-await check('五项下方显示较上期，红涨绿跌持平无色，粉丝不比', async () => {
+await check('五项指标沿用较上期判法，红涨绿跌持平无色', async () => {
   compositionScenario = {comparisons: {durationSeconds: {changeRatio: 0}, revenue: {changeRatio: .12},
     messages: {changeRatio: -.05}, audience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'},
     interactionAudience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}}};
   await page.refresh();
   const all = flatten(nodes.get('sd-insights'));
-  const lines = all.filter(n => n.tagName === 'small' && n.textContent.startsWith('较上期'));
+  const lines = all.filter(n => n.className.includes('sc-kpi-delta') && n.textContent.startsWith('较上期'));
   assert.deepEqual(lines.map(n => [n.textContent, n.style.color]), [
     ['较上期持平', ''], ['较上期 +12%', 'var(--err)'], ['较上期 −5%', 'var(--ok)']]);
-  assert.equal(all.filter(n => n.className === 'stat').length, 6);
+  assert.equal(all.filter(n => n.className === 'sc-kpi' && n.attrs.role === 'button').length, 6);
 });
 await check('对比说明默认折叠，按原因列指标，展开后显示参考说明', async () => {
   compositionScenario.comparisonNote = '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考';
   await page.refresh();
-  const all = flatten(nodes.get('sd-insights'));
-  const details = all.find(n => n.tagName === 'details');
+  const details = nodes.get('sd-scope');
   assert.ok(details, '必须有可展开的说明');
   assert.ok(!details.open && !('open' in details.attrs), '说明默认折叠');
   assert.equal(details.children[0].tagName, 'summary');
-  assert.equal(details.children[0].textContent, '对比说明 · 2 项未比较');
+  assert.equal(details.children[0].textContent, '统计口径');
   const text = flatten(details).map(n => n.textContent).join(' ');
   assert.match(text, /上期为 0[：:]观众、互动观众/);
   assert.match(text, /6.0 之前开播.*仅供参考/);
 });
-await check('只有旧名单参考说明时仍可展开，无说明时隐藏折叠入口', async () => {
+await check('只有旧名单参考说明时仍可展开，无说明时清除旧内容', async () => {
   compositionScenario = {comparisons: Object.fromEntries(
     ['durationSeconds', 'revenue', 'messages', 'audience', 'interactionAudience'].map(key => [key, {changeRatio: 0}])), comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
   await page.refresh();
-  assert.equal(flatten(nodes.get('sd-insights')).find(n => n.tagName === 'summary')?.textContent,
-    '对比说明', '全部比较时摘要不显示零项');
+  assert.equal(flatten(nodes.get('sd-scope')).find(n => n.tagName === 'summary')?.textContent,
+    '统计口径', '全部比较时摘要不显示零项');
   compositionScenario = {comparisons: {audience: {changeRatio: 0}}};
   await page.refresh();
-  assert.ok(!flatten(nodes.get('sd-insights')).some(n => n.tagName === 'details'));
+  assert.ok(!flatten(nodes.get('sd-scope')).some(n => n.textContent.includes('仅供参考')), '无说明时不留旧说明');
 });
 await check('完整名单的观众与互动观众都显示较上期，涨红跌绿', async () => {
   for (const sign of [1, -1]) {
     compositionScenario = {audience: 112, interactionAudience: 95, coverage: {complete: 2},
       comparisons: {audience: {changeRatio: sign * .12}, interactionAudience: {changeRatio: sign * -.05}}};
     await page.refresh();
-    const cells = flatten(nodes.get('sd-insights')).filter(n => n.className === 'stat');
+    const cells = flatten(nodes.get('sd-insights')).filter(n => n.className === 'sc-kpi');
     for (const [label, text, color] of [
       ['观众', sign > 0 ? '较上期 +12%' : '较上期 −12%', sign > 0 ? 'var(--err)' : 'var(--ok)'],
       ['互动观众', sign > 0 ? '较上期 −5%' : '较上期 +5%', sign > 0 ? 'var(--ok)' : 'var(--err)'],
     ]) {
-      const cell = cells.find(n => n.innerHTML.includes('>' + label + '</div>'));
+      const cell = cells.find(n => n.attrs['aria-label'] === label);
       assert.ok(cell, label + '格应存在');
-      assert.ok(cell.children.some(n => n.tagName === 'small' && n.textContent === text && n.style.color === color),
+      assert.ok(cell.children.some(n => n.className.includes('sc-kpi-delta') && n.textContent === text && n.style.color === color),
         label + '格缺少较上期文字或涨跌颜色');
     }
   }
@@ -201,7 +346,7 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
   await page.refresh();
   const card = nodes.get('sd-audience');
   assert.ok(card, '观众页应创建表格容器');
-  const all = [...flatten(card), ...flatten(nodes.get('sd-tabs'))];
+  const all = [...flatten(card), ...flatten(nodes.get('sd-toolbar'))];
   const text = all.map(n => n.textContent).join(' ');
   assert.match(text, /本期全部观众 45 人/);
   assert.match(text, /回访 25 人/);
@@ -209,24 +354,21 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
   assert.match(text, /首次 2026/);
   assert.match(text, /名单：完整 2 场/);
   const links = all.filter(n => n.tagName === 'a');
-  for (const query of ['days=7&group=all&sort=attendance&page=1',
+  for (const query of [
     'days=30&group=returning&sort=attendance&page=1',
     'days=30&group=all&sort=revenue&page=1',
     'days=30&group=all&sort=recent&page=1',
     'days=30&group=all&sort=attendance&page=2']) {
-    assert.ok(links.some(n => n.href.endsWith(query)), '应能切换 ' + query);
+    assert.ok(links.some(n => { const target = model.parseStreamersHash(n.href); return query.split('&').every(part => { const [key, value] = part.split('='); return String(target[key]) === value; }); }), '应能切换 ' + query);
   }
   assert.ok(requests.some(url => url.includes('/audience?days=30&group=all&sort=attendance&page=1')));
 });
-// 范围放进页签栏会把五颗页签整排向下挤。
-await check('观众范围在页签之后且位于页内', async () => {
+// 全页只有一个范围入口，抽屉使用该范围。
+await check('观众范围统一放在总览工具条', async () => {
   await page.refresh();
-  const tabs = nodes.get('sd-tabs');
-  assert.ok(!flatten(tabs).some(n => /^近 \d+ 天$/.test(n.textContent)), '范围不能放在页签栏里');
-  assert.deepEqual(flatten(nodes.get('sd-audience')).filter(n => /^近 \d+ 天$/.test(n.textContent))
-    .map(n => n.textContent), ['近 7 天', '近 30 天', '近 90 天']);
-  const order = flatten(document.body);
-  assert.ok(order.indexOf(tabs) < order.indexOf(nodes.get('sd-audience')), '页签必须排在范围前');
+  assert.deepEqual(flatten(nodes.get('sd-toolbar')).filter(n => /^近 \d+ 天$/.test(n.textContent)).map(n => n.textContent),
+    ['近 7 天', '近 30 天', '近 90 天', '近 180 天', '近 360 天']);
+  assert.ok(!flatten(nodes.get('sd-audience')).some(n => /^近 \d+ 天$/.test(n.textContent)));
 });
 // 页脚人数与分组人数的数字格式必须一致。
 await check('观众页脚页数和人数带千分位', async () => {
@@ -256,24 +398,14 @@ await check('点击昵称展开本期场次开播时间标题，再点收起', (
   assert.equal(expanded.hidden, true, '再次点击收起');
   assert.equal(button.attrs['aria-expanded'], 'false');
 });
-await check('经场次趋势切回观众保留范围分组排序页码', async () => {
-  const original = '#/streamers/sample/1/audience?days=7&group=returning&sort=revenue&page=2';
-  location.hash = original;
-  await page.refresh();
-  assert.equal(flatten(nodes.get('sd-tabs')).find(n => n.textContent === '观众').href, original,
-    '观众页签链接保留当前条件');
-  for (const pane of ['sessions', 'trend']) {
-    const link = flatten(nodes.get('sd-tabs')).find(n => n.textContent === (pane === 'sessions' ? '场次' : '趋势'));
-    location.hash = link.href;
-    await page.refresh();
-    const back = flatten(nodes.get('sd-tabs')).find(n => n.textContent === '观众');
-    assert.equal(back.href, original, '切回观众应保留全部筛选条件');
-    requests.length = 0;
-    location.hash = back.href;
-    await page.refresh();
-    assert.ok(requests.some(url => url.endsWith('/audience?days=7&group=returning&sort=revenue&page=2')),
-      '恢复后请求沿用原范围分组排序页码');
-  }
+await check('观众筛选链接保留范围分组排序页码并可恢复', async () => {
+  await load(base + '?panel=audience&days=7&group=returning&sort=revenue&page=2');
+  const state = model.parseStreamersHash(location.hash);
+  assert.deepEqual([state.days, state.group, state.sort, state.page], [7, 'returning', 'revenue', 2]);
+  assert.ok(requests.some(url => url.endsWith('/audience?days=7&group=returning&sort=revenue&page=2')));
+  const next = flatten(nodes.get('sd-audience')).find(n => n.textContent === '下一页');
+  const parsed = model.parseStreamersHash(next.href);
+  assert.deepEqual([parsed.days, parsed.group, parsed.sort, parsed.page], [7, 'returning', 'revenue', 2]);
 });
 await check('点击流水与最近表头后请求带当前排序', async () => {
   for (const [sort, label] of [['revenue', '本期流水'], ['recent', '最近到场']]) {

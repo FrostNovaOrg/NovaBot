@@ -1,3 +1,4 @@
+import {enhance, installCharts} from './streamers-dom.mjs';
 /**
  * 主播详情的场次列表：每一行都有一个指向这一场的链接
  *
@@ -77,13 +78,13 @@ function fakeElement(tag) {
     selector.startsWith('.') && one.className.split(' ').includes(selector.slice(1))) || null;
   node.classList = {toggle() {}, add() {}, remove() {}, contains() { return false; }};
   if (node.tagName === 'tr') rows.push(node);
-  return node;
+  return enhance(node);
 }
 
 const byId = {};
 const node = id => byId[id] || (byId[id] = fakeElement('div'));
 const walk = root => [root, ...root.children.flatMap(walk)];
-const find = id => Object.values(byId).flatMap(walk).find(one => one.id === id) || byId[id] || null;
+const find = id => [...Object.values(byId), document.body].flatMap(walk).find(one => one.id === id) || byId[id] || null;
 const documentListeners = {};
 const intervals = new Map();
 let nextInterval = 0;
@@ -93,7 +94,7 @@ globalThis.clearInterval = id => intervals.delete(id);
 globalThis.document = {
   querySelector: sel => {
     const id = String(sel).replace(/^#/, '');
-    return id === 'sd-banner' ? null : (id === 'sd-live' ? find(id) : node(id));
+    return id === 'sd-banner' ? null : (['sd-live', 'sd-insights-content', 'sd-trend-content', 'sd-archive-note', 'sd-recent', 'sd-audience', 'sd-toolbar', 'sd-scope', 'sd-trend', 'sd-insights', 'sd-calendar', 'sd-audience-summary'].includes(id) ? find(id) : node(id));
   },
   getElementById: id => byId[id] || null,
   createElement: fakeElement,
@@ -104,17 +105,18 @@ globalThis.document = {
   documentElement: {classList: {toggle() {}, contains() { return false; }}},
   hidden: false,
   addEventListener(kind, fn) { (documentListeners[kind] ||= []).push(fn); },
-  get activeElement() { return null; },
+  activeElement: null,
 };
+installCharts(document);
 globalThis.location = {hash: ''};
 
 const PLATFORM = 'bilibili';
 const UID = 3493;
-const STARTS = [1760000000000, 1759900000000, 1759800000000];
+const STARTS = [1760000000000, 1759900000000, 1759800000000, 1759700000000, 1759600000000];
 
 const sessions = STARTS.map((start, i) => ({
   platform: PLATFORM, uid: UID, startTime: start, endTime: start + 3600000,
-  durationSeconds: 3600, title: '第 ' + (i + 1) + ' 场', metrics: {}, interrupted: false,
+  durationSeconds: 3600, title: '第 ' + (i + 1) + ' 场', metrics: {danmu_count: 200, gift_value: 100}, interrupted: false,
 }));
 
 let liveFailure = '';
@@ -147,6 +149,9 @@ const extraLiveMetrics = [...catalogSource.matchAll(/Metric\.count\(BilibiliLive
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
+  if (path.includes('/sessions?')) return reply({success: true, sessions: {items: sessions, metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}], total: 3, page: 1, pages: 1}});
+  if (path.includes('/calendar?')) return reply({success: true, calendar: {items: []}});
+  if (path.includes('/audience?')) return reply({success: true, audience: {counts: {}, items: []}});
   if (path.includes('/start-slots?')) {
     slotRequests.push(path);
     if (pendingSlots) return new Promise(done => { pendingSlots.resolve = data => done({status: 200, json: async () => data}); });
@@ -172,6 +177,8 @@ globalThis.fetch = url => {
         ...extraLiveMetrics,
         {key: 'danmu_count', name: '弹幕', unit: '条'},
         {key: 'gift_value', name: '礼物价值', unit: '元', money: true},
+        {key: 'gift_paid', name: '观众消耗', unit: '元', money: true},
+        {key: 'box_profit', name: '盲盒盈亏', unit: '元', money: true},
         {key: 'session_extra', name: '本场新增计数', unit: '次'},
       ],
       sessions: {items: sessions, metrics: [
@@ -274,6 +281,55 @@ await ask('④ 主播列表每行是唯一的真链接，地址和主播名正�
   same(listed.map(row => row.attrs['aria-label']), ['甲', '乙'], '读屏的主播名');
 });
 
+// 当前场次须有三项摘要，其余数据默认收在快照明细里。
+await ask('当前直播显示进行中三项摘要折叠明细与更新说明', async () => {
+  await overview();
+  const card = liveCard();
+  same(walk(card).some(n => n.textContent === '进行中'), true, '进行中标');
+  const primary = walk(card).find(n => n.className === 'sd-live-metrics');
+  same(primary?.children.map(n => n.children[0].textContent), ['流水', '弹幕', '在线峰值'], '三项摘要标签');
+  same(primary?.children.map(n => n.children[1].textContent), ['12.50 元', '123 条', '999 人'], '三项摘要的现有数值');
+  const details = walk(card).find(n => n.tagName === 'details');
+  same(Boolean(details), true, '快照明细折叠');
+  same(Boolean(details?.open), false, '明细默认收起');
+  same(details?.children[0].textContent, '查看本场快照明细', '明细入口');
+  for (const part of ['已开播', '数据截至 12:34', '每 15 秒检查更新']) {
+    if (!textOf(card).includes(part)) throw new Error('当前直播缺少 ' + part);
+  }
+  same(textOf(details).includes('unknown_metric'), true, '其余指标留在明细');
+});
+// 未取得的摘要不能补零，真实零仍须带单位显示。
+await ask('直播摘要区分缺失与真实零且流水不累加观众消耗', async () => {
+  const saved = liveData;
+  try {
+    for (const metrics of [{}, {gift_value: 0, gift_paid: 200, box_profit: 8, danmu_count: 0, online_count: 0}]) {
+      liveData = {...saved, metrics}; await overview();
+      const values = walk(liveCard()).find(n => n.className === 'sd-live-metrics')?.children.map(n => n.children[1].textContent);
+      same(values, Object.keys(metrics).length ? ['0.00 元', '0 条', '0 人'] : ['暂无数据', '暂无数据', '暂无数据'], '缺失和零的三项摘要');
+    }
+  } finally { liveData = saved; }
+});
+// 中途开播或下播时，直播卡和最近场次数都应跟随同一份/live状态。
+await ask('直播刷新同步最近三五场与未归档提示', async () => {
+  const saved = liveData;
+  try {
+    await overview();
+    const recentCount = () => walk(node('sd-body')).filter(n => n.className === 'sd-recent-row').length;
+    same(recentCount(), 3, '在播预览三场');
+    same(textOf(find('sd-insights')).includes('正在直播的场次下播后才计入'), true, '在播时的归档提示');
+    liveData = {...liveData, living: false};
+    for (const timer of [...intervals.values()]) await timer.fn();
+    same(liveCard().hidden, true, '中途下播隐藏直播卡');
+    same(recentCount(), 5, '中途下播预览五场');
+    same(textOf(find('sd-insights')).includes('正在直播的场次下播后才计入'), false, '下播后清除归档提示');
+    liveData = {...liveData, living: true};
+    for (const timer of [...intervals.values()]) await timer.fn();
+    same(liveCard().hidden, false, '中途开播显示直播卡');
+    same(recentCount(), 3, '中途开播预览三场');
+    same(textOf(find('sd-insights')).includes('正在直播的场次下播后才计入'), true, '中途开播恢复归档提示');
+  } finally { liveData = saved; await overview(); }
+});
+
 // 本场新增指标若误用周期名录，会在正在直播卡显示原始键名。
 await ask('正在直播卡从本场名录取中文名和单位，未命名指标仍提示原始键', async () => {
   await overview();
@@ -290,14 +346,14 @@ await ask('⑤ 刷新失败保留本场数与服务端原话，数据更新时�
   await overview();
   const original = textOf(liveCard());
   for (const expected of ['正在直播', '123', '12.50 元', 'unknown_metric', '42 人',
-    '数据更新至 12:34', '检查于 12:35:07', '已直播']) {
+    '数据截至 12:34', '检查于 12:35:07', '已开播']) {
     if (!original.includes(expected)) throw new Error('缺少 ' + expected);
   }
   liveFailure = '暂时读不到本场数据';
   await clickRefresh();
   const failed = textOf(liveCard());
   for (const expected of ['123', '12.50 元', '刷新失败：' + liveFailure,
-    '当前显示的是 12:35:07 的数据', '数据更新至 12:34', '检查于 12:35:07']) {
+    '当前显示的是 12:35:07 的数据', '数据截至 12:34', '检查于 12:35:07']) {
     if (!failed.includes(expected)) throw new Error('失败后缺少 ' + expected);
   }
   liveFailure = '网络错误';
@@ -315,12 +371,12 @@ await ask('⑥ 在线人数取报告图的 online_count 最新点，只画一种
   const labels = walk(card).filter(one => one.tagName === 'dt').map(one => one.textContent);
   same(labels.filter(label => label === '在线人数').length, 1, '在线人数标签');
   same(labels.includes('online_count'), false, '在线人数不重复');
-  if (!textOf(card).includes('42 人') || textOf(card).includes('999 人')) throw new Error('在线人数没有用分钟序列的最新点');
+  if (!textOf(card).includes('42 人') || textOf(walk(card).find(n => n.tagName === 'details')).includes('999 人')) throw new Error('在线人数没有用分钟序列的最新点');
   same(labels.includes('online_rank_count'), false, '高能榜人数不作为另一种在线人数显示');
 });
 
 // 故障：切页或隐藏后继续轮询，回到概况后却不再更新。
-await ask('⑦ 可见概况每 15 秒刷新，隐藏、切页和 leave 停止，返回后恢复', async () => {
+await ask('⑦ 可见总览每15秒刷新，隐藏离页停止，明细保持刷新', async () => {
   await overview();
   same([...intervals.values()].map(one => one.ms), [15000], '刷新间隔');
   let before = liveRequests;
@@ -335,7 +391,7 @@ await ask('⑦ 可见概况每 15 秒刷新，隐藏、切页和 leave 停止，
   for (const pane of ['sessions', 'trend']) {
     location.hash = model.detailHash(PLATFORM, UID, pane);
     await page.loadStreamers();
-    same(intervals.size, 0, pane + ' 停表');
+    same(intervals.size, 1, pane + ' 保持刷新');
     await overview();
   }
   page.leave();
@@ -406,7 +462,7 @@ await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，�
       same(liveCard().hidden, false, '服务端错误后卡片仍可见');
       const text = textOf(liveCard());
       for (const expected of ['321', '21 人', '刷新失败：' + reason,
-        '当前显示的是 12:35:07 的数据', '数据更新至 12:34', '检查于 12:35:07']) {
+        '当前显示的是 12:35:07 的数据', '数据截至 12:34', '检查于 12:35:07']) {
         if (!text.includes(expected)) throw new Error('服务端错误后缺少 ' + expected);
       }
     }
@@ -422,7 +478,7 @@ await ask('⑫ 在线序列为空时只显示破折号，不带人数单位', as
   try {
     liveData = {...liveData, series: {online_count: []}};
     await overview();
-    const cells = walk(liveCard()).find(one => one.tagName === 'dl').children;
+    const cells = walk(liveCard()).find(one => one.className === 'kv').children;
     const index = cells.findIndex(one => one.tagName === 'dt' && one.textContent === '在线人数');
     if (index < 0) throw new Error('缺少在线人数');
     same(cells[index + 1].textContent, '—', '在线序列为空时的显示');
@@ -434,9 +490,9 @@ await ask('⑫ 在线序列为空时只显示破折号，不带人数单位', as
 // 故障：正在直播卡片排到最近几场下面，当前这一场的数据被旧场次挤到页面底下。
 await ask('⑬ 正在直播卡片在最近几场上面', async () => {
   await overview();
-  const cards = node('sd-body').children;
+  const cards = walk(node('sd-body'));
   const current = cards.indexOf(liveCard());
-  const recent = cards.findIndex(card => card.children.some(one => one.tagName === 'h3'
+  const recent = cards.findIndex(card => card.children.some(one => one.tagName === 'h4'
     && one.textContent.startsWith('最近几场')));
   if (current < 0 || recent < 0 || current >= recent) throw new Error('正在直播没有排在最近几场上面');
 });
@@ -466,7 +522,7 @@ await ask('正在直播大航海新开续费显示中文名与人次', async () 
   try {
     liveData = {...liveData, metrics: {guard_open_count: 1, guard_renew_count: 1, image_degraded_count: 1}};
     await overview();
-    const list = walk(liveCard()).find(one => one.tagName === 'dl');
+    const list = walk(liveCard()).find(one => one.className === 'kv');
     same(list.children.map(one => one.textContent),
       ['大航海新开', '1 人次', '大航海续费', '1 人次', '推送图片未送达', '1 条', '在线人数', '21 人'], '本场指标名称与单位');
     same(textOf(liveCard()).includes('guard_'), false, '不显示大航海原始键');
@@ -477,7 +533,8 @@ async function openSlots(query = '') {
   location.hash = model.detailHash(PLATFORM, UID, 'start-slots', query);
   await page.loadStreamers();
 }
-const slotButtons = () => walk(node('sd-body')).filter(n => n.tagName === 'button' && n.attrs['aria-label']);
+const drawerBody = () => walk(document.body).find(n => n.className === 'sc-drawer-body');
+const slotButtons = () => walk(drawerBody()).filter(n => n.tagName === 'button' && n.attrs['aria-label']);
 const press = async button => {
   if (!button) throw new Error('没有找到按钮');
   for (const fn of button.listeners.click || []) await fn();
@@ -486,47 +543,51 @@ const press = async button => {
 // 开播时段不能漏列、让小样本上色，或把整场总量误写成每小时值。
 await ask('开播时段显示84格且点击列出整场数据与场次链接', async () => {
   await openSlots();
+  same(textOf(drawerBody()).includes('不表示该两小时内的产出'), true, '热图不得被理解为两小时内的产出');
   same(slotButtons().length, 84, '7×12格');
-  same(walk(node('sd-body')).find(n => n.className === 'hint slot-unit')?.textContent,
+  same(walk(drawerBody()).find(n => n.className === 'hint slot-unit')?.textContent,
     '单位：元/时', '热图上方单独显示流水单位');
-  same(walk(node('sd-body')).find(n => n.className === 'slot-grid')?.children[0]?.children[0]?.children[0]?.textContent,
+  same(walk(drawerBody()).find(n => n.className === 'slot-grid')?.children[0]?.children[0]?.children[0]?.textContent,
     '星期', '星期表头不挤入单位');
   same(slotRequests.at(-1).endsWith('days=90'), true, '默认90天请求');
-  same(walk(node('sd-tabs')).filter(n => n.tagName === 'a').map(n => n.textContent),
-    ['概况', '场次', '趋势', '开播时段', '观众'], '观众位于开播时段之后');
   const active = slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00'));
   if (!active) throw new Error('没有周一22点格子');
   same(Boolean(active.style.background), true, '有值格子上色');
   same(slotButtons().filter(n => n.style.background).length, 1, '空格不上色');
+  same(active.attrs['aria-pressed'], 'false', '热图初始未选中');
+  const header = walk(drawerBody()).find(n => n.tagName === 'th' && n.attrs.scope === 'row');
+  header.appendChild(document.createTextNode(header.textContent));
   await press(active);
-  const content = textOf(node('sd-body'));
-  for (const part of ['整场流水', '100.00 元', model.sessionHash(PLATFORM, UID, STARTS[0]), '不表示该两小时内的产出']) {
+  same(active.attrs['aria-pressed'], 'true', '所选格向读屏报告选中');
+  same(slotButtons().filter(n => n.attrs['aria-pressed'] === 'true').length, 1, '只选中一个时段');
+  const parsed = model.parseStreamersHash(location.hash);
+  same(parsed.starts, String(STARTS[0]), '热图传递原场次');
+  await page.loadStreamers();
+  const content = textOf(drawerBody());
+  for (const part of ['礼物价值', model.sessionHash(PLATFORM, UID, STARTS[0])]) {
     if (!content.includes(part)) throw new Error('点击格子后缺少 ' + part);
   }
 });
 
-// 重画选中格时不能把已向右滑动的热图送回最左边。
-await ask('热图点击后保留横向滚动位置', async () => {
+// 切换指标时不能把已向右滑动的热图送回最左边。
+await ask('热图切换指标保留横向滚动位置', async () => {
   await openSlots();
-  const scroll = walk(node('sd-body')).find(n => n.className === 'slot-scroll');
+  const scroll = walk(drawerBody()).find(n => n.className === 'slot-scroll');
   scroll.scrollLeft = 872;
-  await press(slotButtons().find(n => n.attrs['aria-label'].includes('周二 20:00')));
-  same(walk(node('sd-body')).find(n => n.className === 'slot-scroll').scrollLeft, 872, '点击后横向位置');
-  same(slotButtons().find(n => n.attrs['aria-pressed'] === 'true')?.attrs['aria-label'].startsWith('周二 20:00'),
-    true, '选中格仍为周二20点');
+  await press(walk(drawerBody()).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕')));
+  same(walk(drawerBody()).find(n => n.className === 'slot-scroll').scrollLeft, 872, '切换后横向位置');
 });
 
-// 选择180天和弹幕时须实际换请求与明细，不能只换按钮外观。
-await ask('开播时段180天独立取数且弹幕切换更新前三和整场明细', async () => {
+// 选择180天和弹幕时须实际换请求、热图单位与前三，不能只换按钮外观。
+await ask('开播时段180天独立取数且弹幕切换更新前三与热图单位', async () => {
   await openSlots('slotDays=180&days=7');
   same(slotRequests.at(-1).endsWith('days=180'), true, '180天请求');
-  const metric = walk(node('sd-body')).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕'));
+  const metric = walk(drawerBody()).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕'));
   await press(metric);
-  same(walk(node('sd-body')).find(n => n.className === 'hint slot-unit')?.textContent,
+  same(walk(drawerBody()).find(n => n.className === 'hint slot-unit')?.textContent,
     '单位：条/时', '切换弹幕后同步热图单位');
-  await press(slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00')));
-  const content = textOf(node('sd-body'));
-  for (const part of ['周一 22:00–24:00 · 100.00 条/时 · 3 场', '整场弹幕', '200 条']) {
+  const content = textOf(drawerBody());
+  for (const part of ['周一 22:00–24:00', '100.00 条/时', '3 场有效样本']) {
     if (!content.includes(part)) throw new Error('切换弹幕后缺少 ' + part);
   }
 });
@@ -538,12 +599,12 @@ await ask('离开开播时段后迟到的请求不覆盖场次页', async () => 
   await until(() => pendingSlots.resolve, '开播时段请求');
   location.hash = model.detailHash(PLATFORM, UID, 'sessions');
   await page.loadStreamers();
-  const previous = textOf(node('sd-body'));
-  const previousCard = node('sd-body').firstChild;
+  const previous = textOf(drawerBody());
+  const previousCard = drawerBody().firstChild;
   pendingSlots.resolve({success: true, startSlots: slotData});
   await loading;
-  same(textOf(node('sd-body')), previous, '迟到响应不改场次页');
-  if (node('sd-body').firstChild !== previousCard) throw new Error('迟到响应重建了场次页');
+  same(textOf(drawerBody()), previous, '迟到响应不改场次页');
+  if (drawerBody().firstChild !== previousCard) throw new Error('迟到响应重建了场次页');
   pendingSlots = null;
 });
 
