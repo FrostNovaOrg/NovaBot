@@ -122,6 +122,11 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
     }
 
     @Override
+    public boolean reportLayout() {
+        return true;
+    }
+
+    @Override
     public List<HandlerOption> options() {
         return OPTIONS;
     }

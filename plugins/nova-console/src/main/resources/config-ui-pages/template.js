@@ -745,16 +745,17 @@ export function normalizedOrder(stored, defaultValue) {
  * 这些地方会悄悄给出不同的结果，而那正是所见即所得要防的事。
  * @param host 挂在哪
  * @param options paramsOf/editable/onChange 三项与 buildTemplateEditor 同形，另加
- *        items（版式项清单）、render（按当前这套版式画一张的那一支）、
+ *        preview（是否显示报告预览，默认 true）、items（配置项清单）、render（按当前这套版式画一张的那一支）、
  *        caption（图下那行说明，可为函数：按草稿现说，每次重画时重取）、
  *        revenueVisible（算当前金额可见性的函数，含草稿；不传则不灰任何项）
  * @return {{repaint: Function}} repaint：金额草稿变了之类的外部变化进来时，整段重画一遍
  */
 export function buildLayoutEditor(host, options) {
   const opts = options || {};
-  const box = el('div', 'rep-wrap');
+  const preview = opts.preview !== false;
+  const box = el('div', 'rep-wrap' + (preview ? '' : ' rep-settings'));
   const controls = el('div', 'rep-opts');
-  controls.id = 'rep-options';
+  if (preview) controls.id = 'rep-options';
   box.appendChild(controls);
   const view = el('div', 'rep-view');
   const image = el('div', 'rep-img');
@@ -763,7 +764,7 @@ export function buildLayoutEditor(host, options) {
   const cap = el('p', 'hint');
   cap.id = 'rep-caption';
   view.appendChild(cap);
-  box.appendChild(view);
+  if (preview) box.appendChild(view);
   host.appendChild(box);
 
   const items = opts.items || [];
@@ -1172,6 +1173,7 @@ export function buildLayoutEditor(host, options) {
 
   /** 照当前这套版式画一张 */
   function redraw() {
+    if (!preview) return;
     image.innerHTML = '';
     image.appendChild(el('p', 'hint')).textContent = '正在生成预览…';
     opts.render((opts.paramsOf ? opts.paramsOf() : null) || {}).then(url => {

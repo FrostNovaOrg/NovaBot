@@ -157,4 +157,13 @@ public interface NovaEventHandler extends PushMessageHandler {
     default List<HandlerOption> options() {
         return List.of();
     }
+
+    /**
+     * 可配置参数是否控制报告版式，使用报告图片预览。
+     * 未声明的处理器只显示设置项，不请求报告预览。
+     * @return 是否使用报告版式编辑器，默认否
+     */
+    default boolean reportLayout() {
+        return false;
+    }
 }

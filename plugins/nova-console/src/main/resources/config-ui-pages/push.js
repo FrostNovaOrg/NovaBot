@@ -20,7 +20,7 @@ import {$, api, CONSOLE, el, esc, markDirty, request, say, term} from './core.js
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
-  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
+  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, optionStates, previewRequestBody,
   previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
@@ -324,6 +324,7 @@ const PAGE_STYLE = `
   text-align:center;color:var(--dim);font-size:13px;background:var(--surface)}
 .tpl-blk,.tpl-pill,.tpl-att,.qq-ph{font-family:var(--font)}
 /* ---------- 报告版式：左边开关，右边照着开关画出来的那张图 ---------- */
+.rep-wrap.rep-settings{grid-template-columns:minmax(0,1fr)}
 .rep-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px;
   margin-top:10px}
 .rep-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;
@@ -1200,7 +1201,7 @@ function renderChannelLevel(host, user, target) {
 
   sectionNotices(host, user, target, session);
   sectionTemplate(host, user, target, session);
-  sectionLayout(host, target, session);
+  sectionOptions(host, user, target, session);
   sectionSession(host, user, target, session);
 }
 
@@ -1461,15 +1462,22 @@ function adminOf(target) {
   return known ? known.admin : null;
 }
 
-/** 段 3：报告版式。只有开着带版式的那类通知时才出现 */
-function sectionLayout(host, target, session) {
-  const state = layoutState(target, store.handlerList);
-  if (!state.present) return;
+/** 段 3：按推送类型顺序逐类显示配置；只有报告版式监听金额草稿。 */
+function sectionOptions(host, user, target, session) {
+  const previews = [];
+  for (const state of optionStates(user, target, store.handlerList)) {
+    const editor = sectionHandlerOptions(host, target, session, state);
+    if (state.preview) previews.push(editor);
+  }
+  if (previews.length) onRevenueDraftChange(() => {
+    for (const editor of previews) editor.repaint();
+  });
+}
 
-  // 处理器整项由 layoutState 一并给回来，不在这里按 className 回头再查一遍：
-  // 两处查法差一点，旧名那一条就会在其中一处掉出去
+function sectionHandlerOptions(host, target, session, state) {
   const handler = state.handler || {};
-  const box = sectionHead(host, 3, (handler.displayName || '报告') + '版式', null);
+  const name = handler.displayName || handler.className;
+  const box = sectionHead(host, 3, name + (state.preview ? '版式' : '设置'), null);
 
   const line = el('div', 'tplstate');
   const label = el('span');
@@ -1480,8 +1488,10 @@ function sectionLayout(host, target, session) {
   act.textContent = '恢复默认';
   act.addEventListener('click', async () => {
     if (!await ask({title: '恢复默认？',
-      body: '此通道的报告版式将恢复为默认，自定义的版式设置将会丢失。'
-        + '此后默认版式的修改将同步应用到此通道。'})) return;
+      body: state.preview
+        ? '此通道的报告版式将恢复为默认，自定义的版式设置将会丢失。'
+          + '此后默认版式的修改将同步应用到此通道。'
+        : '此通道的「' + name + '」设置将恢复为默认，自定义的设置将会丢失。'})) return;
     const message = messageOf(target, handler);
     if (message) {
       // 与段 2 的「恢复默认」同理（见 savedMessageHasParams）
@@ -1497,8 +1507,9 @@ function sectionLayout(host, target, session) {
   });
 
   const syncState = () => {
-    const now = layoutState(target, store.handlerList);
-    label.innerHTML = '当前版式：<b>' + (now.custom ? '自定义' : '默认') + '</b>';
+    const now = layoutState(target, [handler]);
+    label.innerHTML = (state.preview ? '当前版式' : '当前设置') + '：<b>'
+      + (now.custom ? '自定义' : '默认') + '</b>';
     act.hidden = !now.custom;
   };
   syncState();
@@ -1516,10 +1527,11 @@ function sectionLayout(host, target, session) {
   const editor = buildLayoutEditor(box, {
     // 与段 2 同理：这一段默认就能改，不传锁态
     editable: true,
+    preview: state.preview,
     items: handler.options || [],
     paramsOf: () => (messageOf(target, handler) || {}).params || {},
-    caption: () => previewRevenueCaption(session, target, draftVisible()),
-    revenueVisible: draftVisible,
+    caption: state.preview ? () => previewRevenueCaption(session, target, draftVisible()) : null,
+    revenueVisible: state.preview ? draftVisible : null,
     onChange: params => {
       const message = messageOf(target, handler);
       if (!message) return;
@@ -1533,13 +1545,10 @@ function sectionLayout(host, target, session) {
       markDirty();
       syncState();
     },
-    render: layoutPreviewRenderer(target, draftVisible),
+    render: state.preview ? layoutPreviewRenderer(target, draftVisible) : null,
   });
 
-  // 金额开关在段 4 的草稿里，版式区在段 3：草稿变了从那边叫一声，这边整段重画。
-  // 单槽位，只有当前显示的那个通道的编辑器挂着——换屏时 paintRight 先把旧的摘掉，
-  // 切到没有版式区的通道时不挂新的，已离开页面的编辑器就不再听草稿了
-  onRevenueDraftChange(() => editor.repaint());
+  return editor;
 }
 
 /**

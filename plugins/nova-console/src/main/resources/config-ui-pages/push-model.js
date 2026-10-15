@@ -226,10 +226,11 @@ export function noticeSwitches(user, target, handlers) {
       displayName: handler.displayName || handler.className,
       description: handler.description || '',
       on: noticeOn(target, handler),
-      // 「消息长什么样」只对有文字模板的那几类成立；「报告长什么样」只对自带版式项的那类成立。
+      // 模板、配置项与报告预览能力分别由处理器声明。
       // 两者都由处理器自己声明，界面不认得任何一类通知的名字
       hasTemplate: ((handler.placeholders) || []).length > 0,
-      hasLayout: ((handler.options) || []).length > 0,
+      hasOptions: ((handler.options) || []).length > 0,
+      hasLayout: handler.reportLayout === true && ((handler.options) || []).length > 0,
     }));
 }
 
@@ -273,9 +274,9 @@ export function restoredLayoutParams(params, handler) {
 }
 
 /**
- * 这个通道的报告版式是默认的还是自定义的
+ * 这个通道首个带配置项的通知是默认的还是自定义的
  *
- * 「哪一类通知有版式」由处理器自报（options 非空），界面不认得「下播报告」这四个字。
+ * 配置项由处理器自报，界面不认得任何一类通知的名字。
  * @param target 推送目标
  * @param handlers /api/handlers 的 handlers
  * @return {{present: boolean, custom: boolean, className: string, handler: object}}
@@ -295,6 +296,19 @@ export function layoutState(target, handlers) {
     return {present: true, custom, className: handler.className, handler};
   }
   return {present: false, custom: false, className: '', handler: null};
+}
+
+/**
+ * 当前通道各类通知的配置块，与推送类型使用同一份平台筛选和列表顺序。
+ * 配置值与默认状态各自按对应消息计算；只有明确声明 reportLayout 的才带报告预览。
+ */
+export function optionStates(user, target, handlers) {
+  return noticeSwitches(user, target, handlers)
+    .filter(notice => notice.on && notice.hasOptions)
+    .map(notice => {
+      const handler = (handlers || []).find(item => item.className === notice.className);
+      return {...layoutState(target, [handler]), preview: notice.hasLayout};
+    });
 }
 
 /**

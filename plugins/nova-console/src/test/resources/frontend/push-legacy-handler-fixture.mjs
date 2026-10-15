@@ -122,7 +122,7 @@ const LAYOUT_OPTIONS = [
 const HANDLERS = [
   {
     className: MAIN, displayName: '下播报告', description: '下播时推送', platform: PLATFORM,
-    aliases: [LEGACY], placeholders: ['{uname}'], options: LAYOUT_OPTIONS,
+    reportLayout: true, aliases: [LEGACY], placeholders: ['{uname}'], options: LAYOUT_OPTIONS,
     defaultParams: {message: '出厂的下播报告', showRevenue: true},
   },
   {

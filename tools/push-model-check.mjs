@@ -40,7 +40,7 @@ const LAYOUT_OPTIONS = [
 const HANDLERS = [
   handler('LiveOn', '开播通知', ['{uname}', '{url}']),
   handler('LiveOff', '下播通知', ['{uname}', '{time}']),
-  handler('LiveReport', '下播报告', ['{uname}', '{report}'], LAYOUT_OPTIONS),
+  {...handler('LiveReport', '下播报告', ['{uname}', '{report}'], LAYOUT_OPTIONS), reportLayout: true},
   handler('Dynamic', '动态通知', ['{uname}', '{picture}']),
 ];
 

@@ -485,7 +485,7 @@ if (push && store) {
       attachments: [],
       defaultParams: {},
       factoryParams: {},
-      options: OPTIONS,
+      reportLayout: true, options: OPTIONS,
     },
     {
       className: TEXT_HANDLER,
