@@ -2068,7 +2068,7 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> STREAMERS_SHELL = List.of(
             "sv-list", "st-all", "st-list", "st-unlisted",
-            "sv-detail", "sd-back", "sd-head", "sd-tabs", "sd-body",
+            "sv-detail", "sd-back", "sd-head", "sd-body",
             "sv-session", "sx-back", "sx-title", "sx-body");
 
     /**
@@ -2085,7 +2085,7 @@ class ConfigUiFrontendTest {
     private static final List<String> STREAMERS_MODEL_CALLS = List.of(
             "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(", "peakCell(",
             "gapCells(", "totalDataBanner(", "snapshotRows(", "detailHash(", "sessionHash(",
-            "reportPath(", "reportView(", "pageBar(", "barGeometry(");
+            "reportPath(", "reportView(", "pageBar(");
 
     /**
      * 抄进渲染代码就算退步的那几条判法，闭集

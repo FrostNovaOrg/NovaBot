@@ -1,3 +1,4 @@
+import {enhance, installCharts} from './streamers-dom.mjs';
 /**
  * 连不上服务器时，主播页的出错提示是中文，不露浏览器的英文原话
  *
@@ -35,15 +36,16 @@ function element(tag) {
   n.addEventListener = (k, fn) => n.listeners[k] = fn;
   n.classList = {add() {}, remove() {}, toggle() {}, contains() { return false; }};
   Object.defineProperty(n, 'firstChild', {get() { return n.children[0]; }});
-  return n;
+  return enhance(n);
 }
-for (const id of ['sv-list', 'sv-detail', 'sv-session', 'sd-back', 'sd-head', 'sd-tabs', 'sd-body',
+for (const id of ['sv-list', 'sv-detail', 'sv-session', 'sd-back', 'sd-head', 'sd-body',
   'sx-back', 'sx-title', 'sx-body']) {
   element('div').id = id;
 }
 globalThis.document = {hidden: false, querySelector: s => nodes.get(s.replace(/^#/, '')) || null,
   getElementById: id => nodes.get(id) || null, createElement: element,
   head: element('head'), body: element('body'), addEventListener() {}};
+installCharts(document);
 globalThis.location = {hash: '#/streamers/sample/1', reload() {}};
 globalThis.setInterval = () => 1;
 globalThis.clearInterval = () => {};

@@ -24,7 +24,7 @@ register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.u
 
 const {
   AUDIENCE_COLUMNS, audienceGroups, audienceCells, audienceSort, coverageText,
-  PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
+  PERIODS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
   gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
@@ -51,8 +51,8 @@ eq(parseStreamersHash('#/streamers/bilibili/3493'),
   {view: 'detail', platform: 'bilibili', uid: '3493', pane: 'overview', start: '', page: 1,
     period: 'week', days: 30},
   '平台加 uid 是详情，默认落概况');
-eq(parseStreamersHash('#/streamers/bilibili/3493/sessions').pane, 'sessions', '第三段是页签名时按页签');
-eq(parseStreamersHash('#/streamers/bilibili/3493/trend').pane, 'trend', '趋势同理');
+eq(parseStreamersHash('#/streamers/bilibili/3493/sessions').panel, 'sessions', '第三段是页签名时按页签');
+eq(parseStreamersHash('#/streamers/bilibili/3493/trend').section, 'trend', '趋势同理');
 eq(parseStreamersHash('#/streamers/bilibili/3493/overview').pane, 'overview', '写全概况也认');
 // 认不出的第三段退回概况，不留白屏：这一页从三个地方点进来，哪一处拼错都该得到一张能用的页
 eq(parseStreamersHash('#/streamers/bilibili/3493/zzz').pane, 'overview', '认不出的页签退回概况');
@@ -87,8 +87,8 @@ eq(parseStreamersHash('#/streamers/%E5%93/3493').platform, '%E5%93', '坏转义�
 eq(detailHash('bilibili', 3493), '#/streamers/bilibili/3493', '概况的地址最短');
 eq(detailHash('bilibili', 3493, 'overview'), '#/streamers/bilibili/3493',
   '写全概况也拼成最短的那一个——两种写法拼出两个地址的话，收藏夹里会有两条指向同一张页');
-eq(detailHash('bilibili', 3493, 'sessions'), '#/streamers/bilibili/3493/sessions', '页签写进路径');
-eq(detailHash('bilibili', 3493, 'sessions', 'page=2'), '#/streamers/bilibili/3493/sessions?page=2',
+eq(detailHash('bilibili', 3493, 'sessions'), '#/streamers/bilibili/3493?panel=sessions', '页签写进路径');
+eq(detailHash('bilibili', 3493, 'sessions', 'page=2'), '#/streamers/bilibili/3493?page=2&panel=sessions',
   '页码写进查询串');
 eq(sessionHash('bilibili', 3493, 1757000000000), '#/streamers/bilibili/3493/1757000000000',
   '某一场的地址是第三段');
@@ -96,7 +96,7 @@ eq(reportPath('bilibili', 3493, 1757000000000),
   '/streamers/bilibili/3493/sessions/1757000000000/report', '报告图的接口路径');
 // 拼与解要能对上：只做前一半的话，贴出去的地址打开是另一张页
 const ROUND = parseStreamersHash(detailHash('a/b', 3493, 'trend'));
-eq([ROUND.platform, ROUND.uid, ROUND.pane], ['a/b', '3493', 'trend'],
+eq([ROUND.platform, ROUND.uid, ROUND.section], ['a/b', '3493', 'trend'],
   '平台名里带斜杠时，拼出去与读回来仍是同一位');
 
 // ---------- 三、状态四档 ----------
@@ -304,15 +304,15 @@ eq(rowSubtitle({summary: {days: 7, sessions: 0, durationSeconds: 0, lastStart: 1
   '一个月没播的主播也写得出上次是什么时候——最近一场不受七天窗口限制');
 
 // ---------- 十四、闭集本身 ----------
-eq(TABS.map(one => one[0]), ['overview', 'sessions', 'trend', 'start-slots', 'audience'], '观众排在开播时段后面');
+for (const days of [7, 30, 90, 180, 360]) eq(parseStreamersHash('#/streamers/sample/1?days=' + days).days, days, '全页范围可收藏：' + days);
 eq(PERIODS.map(one => one[0]), ['week', 'month'], '两种周期，与服务端认的值一致');
 
 // 观众表：列文字、分组人数、缺失值和排序链接。
-eq(parseStreamersHash('#/streamers/sample/1/audience').pane, 'audience', '观众地址可直接打开');
+eq(parseStreamersHash('#/streamers/sample/1/audience').panel, 'audience', '观众地址可直接打开');
 eq(parseStreamersHash('#/streamers/sample/1/audience').days, 30, '观众默认三十天');
 eq(parseStreamersHash('#/streamers/sample/1/audience?days=7&group=returning&sort=revenue&page=3'),
-  {view: 'detail', platform: 'sample', uid: '1', pane: 'audience', start: '', page: 3,
-    period: 'week', days: 7, group: 'returning', sort: 'revenue'}, '观众范围分组排序页码刷新后保留');
+  {view: 'detail', platform: 'sample', uid: '1', pane: 'overview', start: '', page: 3,
+    period: 'week', days: 7, panel: 'audience', group: 'returning', sort: 'revenue'}, '观众范围分组排序页码刷新后保留');
 eq(AUDIENCE_COLUMNS.map(c => c[1]), ['昵称', '本期到场', '最近到场', '本期流水（元）', '本期互动'], '观众表列文字');
 eq(audienceGroups({all: 45, first: 20, returning: 25, interaction: 12}).map(g => g[1]),
   ['本期全部观众 45 人', '本期首次记录 20 人', '回访 25 人', '本期互动观众 12 人'], '分组显示各自人数');
@@ -352,7 +352,7 @@ eq(comparisonExplanation?.({comparisons: {revenue: {changeRatio: 0}}}),
 
 // ---------- 报数 ----------
 // 开播时段：空格、样本不足与缺少数据不能画成低效时段。
-eq(parseStreamersHash('#/streamers/sample/1/start-slots').pane, 'start-slots', '开播时段地址可往返');
+eq(parseStreamersHash('#/streamers/sample/1/start-slots').panel, 'start-slots', '开播时段地址可往返');
 eq(slotRangeDays(parseStreamersHash('#/streamers/sample/1/start-slots')), 90, '开播时段默认90天');
 eq(slotRangeDays(parseStreamersHash('#/streamers/sample/1/start-slots?slotDays=180&days=7')), 180, '开播时段180天独立于概况');
 eq(slotRangeDays(parseStreamersHash('#/streamers/sample/1/start-slots?slotDays=7')), 90, '开播时段不接受7天');

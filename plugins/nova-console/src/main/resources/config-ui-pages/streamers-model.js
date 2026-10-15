@@ -13,15 +13,6 @@
 import {totalDataOff} from './home-model.js';
 
 /**
- * 详情页的五个页签，闭集
- *
- * 第三段落在这五个词上时是页签，落在一串数字上时是某一场——见 parseStreamersHash。
- * 两种取值共用同一段路径，是因为场次是主播底下的东西，地址上摆成
- * #/streamers/<平台>/<uid>/<开播时刻> 才能一眼看出它属于谁。
- */
-export const TABS = [['overview', '概况'], ['sessions', '场次'], ['trend', '趋势'], ['start-slots', '开播时段'], ['audience', '观众']];
-
-/**
  * 这一页的三块子视图，闭集
  *
  * 列表、某位主播的详情、某一场。解析与拼地址都从这张表认——另写一个字符串的话，
@@ -105,15 +96,14 @@ export function parseStreamersHash(hash) {
 
   const seg = path[3] || '';
   if (DIGITS.test(seg)) {
-    // 第三段是一串数字＝某一场的开播时刻。它与五个页签共用这一段，
-    // 靠形状分辨：页签是词，开播时刻是毫秒时间戳
+    // 第三段是一串数字＝某一场的开播时刻。它与明细名称共用这一段，
+    // 靠形状分辨：明细名称是词，开播时刻是毫秒时间戳
     state.view = viewSession;
     state.start = seg;
-  } else if (TABS.some(one => one[0] === seg)) {
-    state.pane = seg;
-  }
+  } else if (['sessions', 'start-slots', 'audience'].includes(seg)) {
+    state.panel = seg;
+  } else if (seg === 'trend') state.section = 'trend';
 
-  if (state.pane === 'audience') { state.group = 'all'; state.sort = 'attendance'; }
   for (const part of query.split('&')) {
     if (!part) continue;
     const eq = part.indexOf('=');
@@ -122,12 +112,17 @@ export function parseStreamersHash(hash) {
     // 页码只认正整数。写错值时退回第 1 页而不是拿它去问服务端——
     // 那一头会把越界的页码夹回来，于是地址栏说第 9 页而屏幕上是第 1 页
     if (key === 'page' && DIGITS.test(value) && Number(value) > 0) state.page = Number(value);
-    else if (key === 'days' && ['7', '30', '90'].includes(value)) state.days = Number(value);
-    else if (state.pane === 'audience' && key === 'group' && ['all', 'first', 'returning', 'interaction'].includes(value)) state.group = value;
-    else if (state.pane === 'audience' && key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
+    else if (key === 'days' && ['7', '30', '90', '180', '360'].includes(value)) state.days = Number(value);
+    else if (key === 'group' && ['all', 'first', 'returning', 'interaction'].includes(value)) state.group = value;
+    else if (key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
+    else if (key === 'panel' && ['audience', 'start-slots', 'sessions', 'fans'].includes(value)) state.panel = value;
+    else if (key === 'section' && value === 'trend') state.section = value;
+    else if (['from', 'to'].includes(key) && DIGITS.test(value)) state[key] = value;
+    else if (key === 'starts' && /^\d+(,\d+)*$/.test(value)) state.starts = value;
     else if (key === 'slotDays' && ['90', '180'].includes(value)) state.slotDays = Number(value);
     else if (key === 'period' && PERIODS.some(one => one[0] === value)) state.period = value;
   }
+  if (state.panel === 'audience') { state.group ||= 'all'; state.sort ||= 'attendance'; }
   return state;
 }
 
@@ -168,14 +163,17 @@ function decode(text) {
  * 有的地方转义了有的没转义，而两种地址在屏幕上长得一模一样。
  * @param platform 平台
  * @param uid 主播 uid
- * @param pane 页签，概况可省
+ * @param pane 明细抽屉，概况可省
  * @param query 附加查询串，如 page=2
  * @return {string} hash 地址
  */
 export function detailHash(platform, uid, pane, query) {
   const base = '#/streamers/' + encodeURIComponent(platform) + '/' + encodeURIComponent(uid);
-  const path = pane && pane !== 'overview' ? base + '/' + pane : base;
-  return query ? path + '?' + query : path;
+  const params = new URLSearchParams(query || '');
+  if (['sessions', 'start-slots', 'audience', 'fans'].includes(pane)) params.set('panel', pane);
+  else if (pane === 'trend') params.set('section', 'trend');
+  const suffix = params.toString();
+  return suffix ? base + '?' + suffix : base;
 }
 
 /**
