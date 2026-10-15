@@ -414,32 +414,36 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
-    @DisplayName("⚠️ 点赞累计数按分钟记曲线：一格一分钟取该分钟见到的最大值，整场总数照旧取最大")
+    @DisplayName("⚠️ 点赞累计数按分钟记曲线：同一分钟取该分钟见到的最大值，整场总数照旧取最大")
     void likeTotalKeepsPerMinuteSeries() {
         List<String> red = new ArrayList<>();
         // 分钟对齐的开播时刻，时序那几问的格键才是 start、start+60s 与 start+120s
         long start = 1_700_000_040_000L;
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
 
-        // 一场里连续三分钟见到点赞累计 10、25、25
+        // 同一分钟里先后见到点赞累计 10、25、12，下一分钟另有读数，再下一分钟重复见到同一累计值
         aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 10, Instant.ofEpochMilli(start)));
-        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 60_000L)));
-        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 120_000L)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 20_000L)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 12, Instant.ofEpochMilli(start + 50_000L)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 30, Instant.ofEpochMilli(start + 60_000L)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 30, Instant.ofEpochMilli(start + 120_000L)));
 
         try {
             Map<Long, Double> series = liveDataService.getLiveSeries(PLATFORM, STREAMER.getUid(),
                     BilibiliLiveMetric.LIKE_TOTAL);
             assertEquals(3, series.size(), "① 按分钟分格");
-            assertEquals(10.0, series.get(start), 0.0001, "① 第 1 分钟 10");
-            assertEquals(25.0, series.get(start + 60_000L), 0.0001, "① 第 2 分钟 25");
-            assertEquals(25.0, series.get(start + 120_000L), 0.0001, "① 第 3 分钟 25（重复见到同一累计值，格子仍要留）。"
-                    + "没有这条时序，以后画不出一场里的点赞走势，而这种数据过了就补不回");
+            assertEquals(25.0, series.get(start), 0.0001, "① 第 1 分钟取该分钟见到的最大 25："
+                    + "先后见到 10、25、12，相加是 47、后到的覆盖是 12，都不对。"
+                    + "同一分钟里平台会下发好几次累计值，曲线记错就画不出一场里的点赞走势，而这种数据过了就补不回");
+            assertEquals(30.0, series.get(start + 60_000L), 0.0001, "① 第 2 分钟 30（下一分钟另起一格）");
+            assertEquals(30.0, series.get(start + 120_000L), 0.0001,
+                    "① 第 3 分钟 30（重复见到同一累计值，格子仍要留）");
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
         }
         try {
-            assertEquals(25.0, metric(BilibiliLiveMetric.LIKE_TOTAL), 0.0001,
-                    "② 整场 like_total 仍取最大：10、25、25 若累加就成了 60");
+            assertEquals(30.0, metric(BilibiliLiveMetric.LIKE_TOTAL), 0.0001,
+                    "② 整场 like_total 仍取最大：10、25、12、30、30 若累加就成了 107");
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }
@@ -455,6 +459,40 @@ class BilibiliLiveStatsAggregatorTest {
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
         }
+    }
+
+    @Test
+    @DisplayName("⚠️ 点赞曲线要真进明细档：下播归档读回的 detail.json 里有 like_total 那条，逐点和记的一致")
+    void likeSeriesGoesIntoTheDetailArchive() throws Exception {
+        // 分钟对齐的开播时刻，格键才是 start 与 start+60s
+        long start = 1_700_000_040_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+        LiveDataService composite = new CompositeLiveDataService(liveDataService, mock(TotalDataStorage.class));
+        aggregator = new BilibiliLiveStatsAggregator(composite, details);
+
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 10, Instant.ofEpochMilli(start)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 20_000L)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 30, Instant.ofEpochMilli(start + 60_000L)));
+
+        Map<Long, Double> recorded = composite.getLiveSeries(PLATFORM, STREAMER.getUid(),
+                BilibiliLiveMetric.LIKE_TOTAL);
+
+        // 下播归档整场走一遍：LiveSessionDetailArchiver.allSeries 按 getLiveSeriesMetrics 逐条取全部时序
+        LiveSessionArchive archive = new LiveSessionArchive(properties);
+        LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
+        LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(composite, history, details);
+        new NovaDefaultLiveOffEventListener(composite, archive, new LiveInterventionTracker(), history, archiver)
+                .onLiveOffEvent(new LiveOffEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(start + 3_600_000)));
+
+        Map<Long, Double> read = details.read(PLATFORM, STREAMER.getUid(), start)
+                .orElseThrow()
+                .series(BilibiliLiveMetric.LIKE_TOTAL);
+
+        assertEquals(Map.of(start, 25.0, start + 60_000L, 30.0), read,
+                "下播后读回的 detail.json 里要有 like_total 那条，逐点和记的一致（第 1 分钟 25、第 2 分钟 30）。"
+                        + "记了曲线却没进明细档，历史照样没留下，以后画走势还是没数据");
+        assertEquals(recorded, read, "读回的与下播那一刻记着的逐点一致");
     }
 
     @Test
