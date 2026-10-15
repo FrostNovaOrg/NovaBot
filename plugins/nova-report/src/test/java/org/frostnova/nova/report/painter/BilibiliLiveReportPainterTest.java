@@ -27,13 +27,16 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,6 +44,8 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 /**
@@ -980,6 +985,128 @@ class BilibiliLiveReportPainterTest {
                         "没人说话的那几分钟仍要画贴地面积：一片空白与斜纹区就分不出了"),
                 () -> assertFalse(isColor(image, quietX, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH),
                         "没人说话不是缺口, 不该画成斜纹"));
+    }
+
+    @Test
+    void classifiesGapsByTotalMillisecondsInEachColumn() {
+        assertAll(
+                () -> assertGapColumns(new boolean[]{false}, 1, List.of(gap(10_000, 11_300))),
+                () -> assertGapColumns(new boolean[]{true}, 1, List.of(gap(10_000, 50_000))),
+                () -> assertGapColumns(new boolean[]{true}, 1, List.of(gap(0, 30_000))),
+                () -> assertGapColumns(new boolean[]{false}, 1, List.of(gap(0, 29_999))),
+                () -> assertGapColumns(new boolean[]{false, true, true, true}, 4,
+                        List.of(gap(40_000, 220_000))),
+                () -> assertGapColumns(new boolean[]{true}, 1,
+                        List.of(gap(0, 20_000), gap(30_000, 50_000))),
+                () -> assertGapColumns(new boolean[]{false}, 2, List.of(gap(0, 40_000))),
+                () -> assertGapColumns(new boolean[]{false, false, false}, 1,
+                        List.of(gap(10_000, 11_300))));
+    }
+
+    private static LiveGap gap(long from, long to) {
+        return new LiveGap(from, to, LiveGap.Reason.STREAM_LOSS);
+    }
+
+    private static void assertGapColumns(boolean[] expected, int buckets, List<LiveGap> gaps) {
+        assertArrayEquals(expected,
+                BilibiliLiveReportPainter.gapColumns(gaps, 0, buckets, expected.length));
+    }
+
+    @Test
+    void fillsAcrossShortGapsButStopsAtHatchedColumns() {
+        List<LiveGap> gaps = List.of(gap(70_000, 71_300), gap(190_000, 230_000));
+        boolean[] missing = BilibiliLiveReportPainter.gapColumns(gaps, 0, 5, 5);
+        assertArrayEquals(
+                new boolean[]{false, false, false, true, false}, missing);
+        double[] values = BilibiliLiveReportPainter.curveColumnValues(BilibiliLiveMetric.ONLINE_COUNT,
+                Map.of(0L, 10.0, 240_000L, 50.0), 0, 299_999, 5, gaps);
+        assertArrayEquals(new double[]{10, 10, 10, 0, 50}, values);
+    }
+
+    @Test
+    void retainsShortGapPeakAndHatchesOnlyLongGapColumns() throws Exception {
+        long start = System.currentTimeMillis() / 60_000 * 60_000 - 10 * 60_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 10 * 60_000);
+        for (int minute = 0; minute < 11; minute++) {
+            liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.DANMU_COUNT, start + minute * 60_000L, minute == 1 ? 100 : 10);
+        }
+        liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(), start + 70_000, start + 71_300);
+        liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(), start + 220_000, start + 400_000);
+        BufferedImage image = imageOf(painter.paint(PLATFORM, STREAMER, curvesOnly()).orElseThrow());
+        int baseline = baselineOf(image);
+        assertAll(
+                () -> assertTrue(isColor(image, 35 + 50 * 2, baseline - 80,
+                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "短缺口列仍画数据"),
+                () -> assertFalse(isColor(image, 35 + 2 * 2, baseline - 45,
+                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "短缺口列的峰值仍决定纵轴"),
+                () -> assertTrue(isColor(image, 35 + 125 * 2, baseline - 1,
+                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "长缺口开头只占 20 秒的边格保留面积"),
+                () -> assertFalse(isColor(image, 35 + 240 * 2, baseline - 1,
+                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "长缺口结尾占 40 秒的边格不画面积"));
+        boolean hatch = false;
+        for (int x = 35 + 151 * 2; x < 35 + 265 * 2; x++) {
+            hatch |= isColor(image, x, baseline - 45, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH);
+        }
+        assertTrue(hatch, "长缺口仍画斜纹");
+    }
+
+    @Test
+    void rendersSecondScaleGapsAsSinglePixelLines() throws Exception {
+        long start = OffsetDateTime.parse("2026-10-15T17:30:27+08:00").toInstant().toEpochMilli();
+        long end = OffsetDateTime.parse("2026-10-15T19:57:35+08:00").toInstant().toEpochMilli();
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), end);
+        long origin = start / 60_000 * 60_000;
+        for (int minute = 0; minute < 148; minute++) {
+            liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.DANMU_COUNT, origin + minute * 60_000L, 100);
+        }
+        String[][] intervals = {
+                {"17:33:56.030", "17:33:57.334"}, {"17:45:56.030", "17:45:57.262"},
+                {"17:54:56.030", "17:54:57.337"}, {"18:04:56.031", "18:04:57.267"},
+                {"18:14:56.030", "18:14:57.276"}, {"18:17:56.529", "18:17:57.564"},
+                {"18:17:57.564", "18:18:00.595"}};
+        List<LiveGap> downtime = new ArrayList<>();
+        List<LiveGap> outages = new ArrayList<>();
+        for (int i = 0; i < intervals.length; i++) {
+            long from = OffsetDateTime.parse("2026-10-15T" + intervals[i][0] + "+08:00")
+                    .toInstant().toEpochMilli();
+            long to = OffsetDateTime.parse("2026-10-15T" + intervals[i][1] + "+08:00")
+                    .toInstant().toEpochMilli();
+            if (i == 5) {
+                downtime.add(new LiveGap(from, to, LiveGap.Reason.MAINTENANCE));
+            } else {
+                outages.add(new LiveGap(from, to,
+                        i == 6 ? LiveGap.Reason.MAINTENANCE : LiveGap.Reason.VERIFY_RECONNECT));
+            }
+        }
+        // 历史场次不受采集存储的保留期限影响，绘图仍走真实的合并与落列逻辑。
+        DefaultLiveDataService historicalData = spy(liveDataService);
+        doReturn(downtime).when(historicalData).downtimeIntervals(start, end);
+        doReturn(outages).when(historicalData).roomOutageIntervals(PLATFORM, STREAMER.getUid(), start, end);
+        BilibiliLiveReportPainter historicalPainter = new BilibiliLiveReportPainter(factory, api,
+                historicalData, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
+        BufferedImage image = imageOf(historicalPainter.paint(PLATFORM, STREAMER, curvesOnly()).orElseThrow());
+        int y = baselineOf(image) - 45;
+        List<Integer> lines = new ArrayList<>();
+        int hatchPixels = 0;
+        for (int x = GAUGE_MARGIN; x < GAUGE_MARGIN + GAUGE_CONTENT_WIDTH; x++) {
+            if (isColor(image, x, y, BilibiliLiveReportPainter.COLOR_CURVE_GAP_EDGE)) {
+                lines.add(x);
+            }
+            if (isColor(image, x, y, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH)) {
+                hatchPixels++;
+            }
+        }
+        assertEquals(0, hatchPixels, "秒级缺口不应画斜纹");
+        assertEquals(List.of(58, 124, 176, 232, 288, 304), lines, "每次连续中断只画一道 1 px 细线");
+        for (int x : lines) {
+            assertTrue(isColor(image, x - 1, y, BilibiliLiveReportPainter.COLOR_CURVE_DANMU));
+            assertTrue(isColor(image, x + 1, y, BilibiliLiveReportPainter.COLOR_CURVE_DANMU));
+        }
+        System.out.println("Short-gap rendering: lines=6, columns(0-based)=[11, 44, 70, 98, 126, 134], hatch runs=0");
     }
 
     /**

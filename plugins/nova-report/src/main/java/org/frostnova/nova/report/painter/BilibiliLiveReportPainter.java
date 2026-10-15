@@ -1208,7 +1208,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 绘制一条面积图：标题、峰值、面积本体与基线
      * <p>
-     * 落在缺口里的那几列<b>不画面积改画斜纹</b>：那几分钟的数字不是 0，是没有——
+     * 缺口占时段至少一半的列<b>不画面积改画斜纹</b>：那几分钟的数字不是 0，是没有——
      * 画成贴地的面积等于替它答了「没人来」，而真相可能是那会儿最热闹。
      * @param gaps 本场的采集缺口，已裁剪到 {@code [start, end)} 之内
      */
@@ -1218,8 +1218,8 @@ public class BilibiliLiveReportPainter {
 
         int columns = Math.max(1, CONTENT_WIDTH / CURVE_COLUMN_WIDTH);
         int buckets = bucketCount(start, end);
-        double[] values = curveColumnValues(curve.metric(), series, start, end, columns, gaps);
         boolean[] missing = gapColumns(gaps, start, buckets, columns);
+        double[] values = curveColumnValues(curve.metric(), series, start, end, columns, missing);
         boolean[] sampled = sampledColumns(series, start, end, columns);
 
         double peak = 0;
@@ -1260,6 +1260,11 @@ public class BilibiliLiveReportPainter {
                 drawAreaRun(painter, values, peak, from, to, baseline, curve.color);
             }
             from = to + 1;
+        }
+
+        // 短缺口保留数据，在实际时间位置叠一道细线；连续中断只标一次。
+        for (int x : shortGapPixels(gaps, start, buckets, columns, missing)) {
+            painter.drawRectangle(x, chartTop, 1, CURVE_HEIGHT, COLOR_CURVE_GAP_EDGE);
         }
 
         // 基线压在面积下沿，给曲线一个明确的落脚点
@@ -1437,31 +1442,81 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 逐列判断这一列是不是落在缺口里
-     * <p>
-     * 只要这一列覆盖的时段与缺口<b>有一点交集</b>就算缺口列。宁可多标一列，
-     * 也不让一段真实的缺口因为不足一列宽而在图上整个消失——
-     * 「缺口如实标注」的方向是让它看得见，不是让它凑整。
+     * 缺口合计占列时段一半及以上才画斜纹，否则保留数据并标细线。
+     * 入参是 collectionGaps 给出的互不重叠、按时间排序的区间，毫秒数可以直接相加。
+     * 绘制与补值共用此判定；列时段仍由 bucketRange 决定。
      */
     static boolean[] gapColumns(List<LiveGap> gaps, long start, int buckets, int columns) {
         boolean[] missing = new boolean[columns];
-        if (gaps.isEmpty()) {
-            return missing;
-        }
-
         long origin = gridStart(start);
         for (int i = 0; i < columns; i++) {
             int[] range = bucketRange(i, buckets, columns);
             long from = origin + range[0] * LiveDataService.SERIES_BUCKET_MILLIS;
             long to = origin + range[1] * LiveDataService.SERIES_BUCKET_MILLIS;
+            long covered = 0;
             for (LiveGap gap : gaps) {
-                if (gap.from() < to && gap.to() > from) {
-                    missing[i] = true;
+                covered += Math.max(0, Math.min(to, gap.to()) - Math.max(from, gap.from()));
+            }
+            missing[i] = covered >= (to - from + 1) / 2;
+        }
+        return missing;
+    }
+
+    /**
+     * 在保留数据的连续列中，为每次中断标出一个像素位置。
+     * 相接的区间即使成因不同也只标一次；长缺口两端未达斜纹门槛的部分分别标线。
+     */
+    private static List<Integer> shortGapPixels(List<LiveGap> gaps, long start, int buckets,
+                                               int columns, boolean[] missing) {
+        List<Integer> pixels = new ArrayList<>();
+        long origin = gridStart(start);
+        for (int g = 0; g < gaps.size(); g++) {
+            long gapFrom = gaps.get(g).from();
+            long gapTo = gaps.get(g).to();
+            while (g + 1 < gaps.size() && gaps.get(g + 1).from() <= gapTo) {
+                gapTo = Math.max(gapTo, gaps.get(++g).to());
+            }
+            int column = 0;
+            while (column < columns) {
+                if (missing[column]) {
+                    column++;
+                    continue;
+                }
+                int first = column;
+                while (column + 1 < columns && !missing[column + 1]) {
+                    column++;
+                }
+                int last = column++;
+                long from = Math.max(gapFrom, origin
+                        + bucketRange(first, buckets, columns)[0] * LiveDataService.SERIES_BUCKET_MILLIS);
+                long to = Math.min(gapTo, origin
+                        + bucketRange(last, buckets, columns)[1] * LiveDataService.SERIES_BUCKET_MILLIS);
+                if (from >= to) {
+                    continue;
+                }
+                long middle = from + (to - from) / 2;
+                for (int i = first; i <= last; i++) {
+                    int[] range = bucketRange(i, buckets, columns);
+                    long rangeFrom = origin + range[0] * LiveDataService.SERIES_BUCKET_MILLIS;
+                    long rangeTo = origin + range[1] * LiveDataService.SERIES_BUCKET_MILLIS;
+                    if (middle < rangeFrom || middle >= rangeTo) {
+                        continue;
+                    }
+                    // 一个分钟格可铺到多列，按时刻在整段宽度内定位，而非每列各标一次。
+                    int right = i + 1;
+                    while (right <= last && java.util.Arrays.equals(range, bucketRange(right, buckets, columns))) {
+                        right++;
+                    }
+                    int x = columnX(i) + (int) ((middle - rangeFrom)
+                            * (columnX(right) - columnX(i)) / (rangeTo - rangeFrom));
+                    if (!pixels.contains(x)) {
+                        pixels.add(x);
+                    }
                     break;
                 }
             }
         }
-        return missing;
+        return pixels;
     }
 
     /**
@@ -1545,9 +1600,13 @@ public class BilibiliLiveReportPainter {
      */
     static double[] curveColumnValues(String metric, Map<Long, Double> series,
                                       long start, long end, int columns, List<LiveGap> gaps) {
-        int buckets = bucketCount(start, end);
+        return curveColumnValues(metric, series, start, end, columns,
+                gapColumns(gaps, start, bucketCount(start, end), columns));
+    }
+
+    private static double[] curveColumnValues(String metric, Map<Long, Double> series,
+                                              long start, long end, int columns, boolean[] missing) {
         double[] values = resample(series, start, end, columns);
-        boolean[] missing = gapColumns(gaps, start, buckets, columns);
         boolean[] sampled = sampledColumns(series, start, end, columns);
         fillMissingSamples(values, sampled, missing, fillsMissingSamples(metric));
         return values;
