@@ -1,7 +1,9 @@
 package org.frostnova.nova.console.controller;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
@@ -278,7 +280,13 @@ public class StreamerController {
         result.put("days", Integer.parseInt(days));
         result.put("living", entry.map(StreamerDirectory.Entry::enabled).orElse(false)
                 && liveDataService.getLiveStatus(platform, uid).orElse(false));
-        result.put("insights", new StreamerInsights().calculate(sessions, sampled, range.from(), range.to(), rules));
+        var comparison = new StreamerInsights().compareRecent(sessions, sampled, Integer.parseInt(days),
+                Clock.fixed(range.to(), clock.getZone()), rules);
+        JSONObject insights = JSON.parseObject(JSON.toJSONString(comparison.current(), JSONWriter.Feature.WriteNulls));
+        insights.put("previous", comparison.previous());
+        insights.put("comparisons", comparison.comparisons());
+        insights.put("comparisonNote", comparison.comparisonNote());
+        result.put("insights", insights);
         return ResponseEntity.ok(result);
     }
 

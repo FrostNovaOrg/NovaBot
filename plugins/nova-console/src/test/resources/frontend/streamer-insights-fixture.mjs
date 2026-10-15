@@ -143,6 +143,55 @@ await check('本期构成暂无数据时，悬停提示说明实际缺少名单�
   }
   assert.deepEqual(titles, scenarios.map(scenario => scenario.title), '本期无名单时不得归因为历史记录起点');
 });
+await check('五项下方显示较上期，红涨绿跌持平无色，粉丝不比', async () => {
+  compositionScenario = {comparisons: {durationSeconds: {changeRatio: 0}, revenue: {changeRatio: .12},
+    messages: {changeRatio: -.05}, audience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'},
+    interactionAudience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}}};
+  await page.refresh();
+  const all = flatten(nodes.get('sd-insights'));
+  const lines = all.filter(n => n.tagName === 'small' && n.textContent.startsWith('较上期'));
+  assert.deepEqual(lines.map(n => [n.textContent, n.style.color]), [
+    ['较上期持平', ''], ['较上期 +12%', 'var(--err)'], ['较上期 −5%', 'var(--ok)']]);
+  assert.equal(all.filter(n => n.className === 'stat').length, 6);
+});
+await check('对比说明默认折叠，按原因列指标，展开后显示参考说明', async () => {
+  compositionScenario.comparisonNote = '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考';
+  await page.refresh();
+  const all = flatten(nodes.get('sd-insights'));
+  const details = all.find(n => n.tagName === 'details');
+  assert.ok(details, '必须有可展开的说明');
+  assert.ok(!details.open && !('open' in details.attrs), '说明默认折叠');
+  assert.equal(details.children[0].tagName, 'summary');
+  assert.equal(details.children[0].textContent, '对比说明 · 2 项未比较');
+  const text = flatten(details).map(n => n.textContent).join(' ');
+  assert.match(text, /上期为 0[：:]观众、互动观众/);
+  assert.match(text, /6.0 之前开播.*仅供参考/);
+});
+await check('只有旧名单参考说明时仍可展开，无说明时隐藏折叠入口', async () => {
+  compositionScenario = {comparisons: {audience: {changeRatio: 0}}, comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
+  await page.refresh();
+  assert.ok(flatten(nodes.get('sd-insights')).some(n => n.textContent === '对比说明 · 0 项未比较'));
+  compositionScenario = {comparisons: {audience: {changeRatio: 0}}};
+  await page.refresh();
+  assert.ok(!flatten(nodes.get('sd-insights')).some(n => n.tagName === 'details'));
+});
+await check('完整名单的观众与互动观众都显示较上期，涨红跌绿', async () => {
+  for (const sign of [1, -1]) {
+    compositionScenario = {audience: 112, interactionAudience: 95, coverage: {complete: 2},
+      comparisons: {audience: {changeRatio: sign * .12}, interactionAudience: {changeRatio: sign * -.05}}};
+    await page.refresh();
+    const cells = flatten(nodes.get('sd-insights')).filter(n => n.className === 'stat');
+    for (const [label, text, color] of [
+      ['观众', sign > 0 ? '较上期 +12%' : '较上期 −12%', sign > 0 ? 'var(--err)' : 'var(--ok)'],
+      ['互动观众', sign > 0 ? '较上期 −5%' : '较上期 +5%', sign > 0 ? 'var(--ok)' : 'var(--err)'],
+    ]) {
+      const cell = cells.find(n => n.innerHTML.includes('>' + label + '</div>'));
+      assert.ok(cell, label + '格应存在');
+      assert.ok(cell.children.some(n => n.tagName === 'small' && n.textContent === text && n.style.color === color),
+        label + '格缺少较上期文字或涨跌颜色');
+    }
+  }
+});
 await check('观众页显示人数五列及范围分组排序分页链接', async () => {
   location.hash = '#/streamers/sample/1/audience';
   await page.refresh();

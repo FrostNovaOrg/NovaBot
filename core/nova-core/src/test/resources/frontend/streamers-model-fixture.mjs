@@ -26,7 +26,7 @@ const {
   AUDIENCE_COLUMNS, audienceGroups, audienceCells, audienceSort, coverageText,
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
-  gapCells, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
+  gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } = await import('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/streamers-model.js');
@@ -325,6 +325,27 @@ eq(['attendance', 'revenue', 'recent'].map(col => audienceSort('attendance', col
 eq(audienceSort('revenue', 'name'), 'revenue', '昵称表头不参与排序');
 eq(coverageText({complete: 1, anonymous: 2, unknown: 3, missing: 4}),
   '名单：完整 1 场；含无法识别的观众 2 场（这几场的人数偏少）；完整性未知 3 场（升级到 6.0 之前开播的场次未记录此项）；没有名单 4 场', '名单情况与概况共用一句话');
+
+eq(insightsComparison?.({changeRatio: .12}), {text: '较上期 +12%', color: 'var(--err)'},
+  '概况上涨显示较上期与红色');
+eq(insightsComparison?.({changeRatio: -.05}), {text: '较上期 −5%', color: 'var(--ok)'},
+  '概况下降显示负百分比与绿色');
+eq(insightsComparison?.({changeRatio: .003}), {text: '较上期持平', color: ''}, '概况小于半个百分点持平不上色');
+eq(insightsComparison?.({changeRatio: -.005}), {text: '较上期 −1%', color: 'var(--ok)'}, '概况负半个百分点四舍五入');
+eq(insightsComparison?.({reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}), null,
+  '未比较的格子不显示原因或百分比');
+eq(insightsComparison?.(undefined), null, '没有对比结果时不造持平');
+const explanationData = {comparisons: {
+  durationSeconds: {changeRatio: 0}, revenue: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'},
+  messages: {changeRatio: .12}, audience: {reasonCode: 'MISSING_AUDIENCE_LIST', reason: '有场次没有观众名单'},
+  interactionAudience: {reasonCode: 'MISSING_AUDIENCE_LIST', reason: '有场次没有观众名单'},
+}, comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
+eq(comparisonExplanation?.(explanationData), {count: 3, groups: [
+  {reason: '上期为 0', metrics: ['流水']},
+  {reason: '有场次没有观众名单', metrics: ['观众', '互动观众']},
+], note: explanationData.comparisonNote}, '对比说明按原因合并指标并保留旧场次参考说明');
+eq(comparisonExplanation?.({comparisons: {revenue: {changeRatio: 0}}}),
+  {count: 0, groups: [], note: ''}, '全部可比且无参考说明时不报未比较');
 
 // ---------- 报数 ----------
 // 开播时段：空格、样本不足与缺少数据不能画成低效时段。
