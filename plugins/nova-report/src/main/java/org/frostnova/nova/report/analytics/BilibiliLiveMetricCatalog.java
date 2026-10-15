@@ -6,12 +6,13 @@ import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.plugin.NovaComponent;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * 哔哩哔哩指标说明
  * <p>
- * 两张表：{@link #metrics()} 是周月统计用的可累加指标，{@link #snapshotMetrics()} 是
- * 基础数据快照那几项存量的人话名。下面这一整段说的是前一张表。
+ * {@link #metrics()} 是周月统计用的可累加指标，{@link #snapshotMetrics()} 是
+ * 基础数据快照的说明，{@link #liveMetrics()} 是正在直播卡的说明。下面这一整段说的是可累加表。
  * <p>
  * 只列**可累加**的指标：周月统计做的就是相加，列进来就等于声明「这个数相加有意义」。
  * <p>
@@ -50,6 +51,14 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
             Metric.count(BilibiliLiveMetric.FREE_GIFT_COUNT, "免费礼物", "个")
     );
 
+    // 只用于本场显示；开播存量和进房人次不改变周期统计的可累加范围。
+    private static final List<Metric> LIVE_METRICS = Stream.concat(METRICS.stream(), Stream.of(
+            Metric.count(BilibiliLiveMetric.ENTER_COUNT, "进房人次", "人次"),
+            Metric.count(BilibiliLiveMetric.FANS_AT_START, "开播时粉丝", "人"),
+            Metric.count(BilibiliLiveMetric.FANS_MEDAL_AT_START, "开播时粉丝团", "人"),
+            Metric.count(BilibiliLiveMetric.GUARD_AT_START, "开播时大航海", "人")
+    )).toList();
+
     /**
      * 基础数据快照那三项，与 {@code BilibiliStreamerSnapshotService} 采的键一一对应
      * <p>
@@ -71,6 +80,11 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
     @Override
     public List<Metric> metrics() {
         return METRICS;
+    }
+
+    @Override
+    public List<Metric> liveMetrics() {
+        return LIVE_METRICS;
     }
 
     @Override

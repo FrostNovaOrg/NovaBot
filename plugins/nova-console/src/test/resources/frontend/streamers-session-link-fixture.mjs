@@ -124,7 +124,8 @@ const dataAt = new Date(2026, 9, 14, 12, 34, 0).getTime();
 const checkedAt = new Date(2026, 9, 14, 12, 35, 7).getTime();
 let liveData = {
   success: true, living: true, since: checkedAt - 3600000, dataAt, checkedAt,
-  metrics: {danmu_count: 123, gift_value: 12.5, unknown_metric: 9, online_count: 999, online_rank_count: 3},
+  metrics: {danmu_count: 123, gift_value: 12.5, unknown_metric: 9, online_count: 999, online_rank_count: 3,
+    session_extra: 7},
   series: {online_count: [[dataAt - 60000, 50], [dataAt, 42]]},
 };
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
@@ -146,6 +147,11 @@ globalThis.fetch = url => {
       success: true, platform: PLATFORM, uid: UID, uname: '甲', configured,
       living: liveData.living, since: liveData.since,
       overview: {},
+      liveMetrics: [
+        {key: 'danmu_count', name: '弹幕', unit: '条'},
+        {key: 'gift_value', name: '礼物价值', unit: '元', money: true},
+        {key: 'session_extra', name: '本场新增计数', unit: '次'},
+      ],
       sessions: {items: sessions, metrics: [
         {key: 'danmu_count', name: '弹幕', unit: '条'},
         {key: 'gift_value', name: '礼物价值', unit: '元', money: true},
@@ -244,6 +250,17 @@ await ask('④ 主播列表每行是唯一的真链接，地址和主播名正�
     [[model.detailHash(PLATFORM, UID)], [model.detailHash(PLATFORM, UID + 1)]], '每行唯一链接的地址');
   same(listed.map(row => walk(row).filter(one => one.tagName === 'button').length), [0, 0], '链接内按钮');
   same(listed.map(row => row.attrs['aria-label']), ['甲', '乙'], '读屏的主播名');
+});
+
+// 本场新增指标若误用周期名录，会在正在直播卡显示原始键名。
+await ask('正在直播卡从本场名录取中文名和单位，未命名指标仍提示原始键', async () => {
+  await overview();
+  const labels = walk(liveCard()).filter(one => one.tagName === 'dt');
+  same(labels.some(one => one.textContent === '本场新增计数'), true, '本场新增指标的中文名');
+  same(labels.some(one => one.textContent === 'session_extra'), false, '已命名指标不露原始键');
+  same(textOf(liveCard()).includes('7 次'), true, '本场新增指标的单位');
+  const unknown = labels.find(one => one.textContent === 'unknown_metric');
+  same(unknown?.title, '本机采集到一项插件尚未命名的指标，按原始键名显示', '未命名指标的提示');
 });
 
 // 故障：失败时把已有本场数清空或变成 0，检查时刻混成数据更新时间。
