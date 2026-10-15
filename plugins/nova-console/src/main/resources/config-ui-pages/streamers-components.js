@@ -154,7 +154,7 @@ export function createChart(host, {
   const max = Math.max(0, ...samples) || (min === 0 ? 1 : 0);
   const span = max - min || 1;
   const wrap = element('div', 'sc-chart');
-  if (deferred && !samples.length) {
+  if (!samples.length) {
     wrap.append(element('p', 'sc-empty', '暂无有效图表数据')); host.append(wrap);
     return {element: wrap, svg: null, destroy() {}};
   }
@@ -168,7 +168,6 @@ export function createChart(host, {
   const footer = element('div', 'sc-chart-footer'); footer.append(readout);
   plot.append(scale, svg); wrap.append(plot, labels, footer); host.append(wrap);
 
-  if (!samples.length) wrap.append(element('p', 'sc-empty', '暂无有效图表数据'));
   let destroyed = false;
   const select = point => { if (point && canSelect(point)) onSelect?.({start: point.start, end: point.end}); };
   const describe = point => `${pointDate(point, period)} · ${format(point.value)}`;

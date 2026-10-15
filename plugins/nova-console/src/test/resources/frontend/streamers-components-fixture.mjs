@@ -199,12 +199,20 @@ await check('按日图键盘选择后Enter聚焦查看按钮且点不占Tab位',
   chart.svg.fire('keydown', {key: 'Enter'});
   assert.ok(document.activeElement === chart.svg, '空日按钮不可用时焦点留在图上');
 });
-// 没有可选择的数据时，不应再要求选择日期或提供查看按钮。
-await check('按日图没有有效点时只显示空态', () => {
-  for (const records of [[], [{...points[0], status: 'off'}], [{...points[0], value: null}]]) {
-    const chart = ui.createChart(host(), {points: records, hideOff: true, onSelect() {}});
-    assert.equal(chart.element.textContent, '暂无有效图表数据', '空态不能同时出现选择提示或按钮');
-    assert.equal(byClass(chart.element, 'sc-chart-action').length, 0);
+// 全空数据只显示空态，不能把粉丝曲线或周月柱图的末期日期当作有效读数。
+for (const [name, options] of [
+  ['按日图', {hideOff: true, onSelect() {}}],
+  ['粉丝图', {}],
+  ['周柱图', {period: 'week', onSelect() {}}],
+  ['月柱图', {period: 'month', onSelect() {}}],
+]) await check(name + '没有有效点时只显示空态', () => {
+  const records = [[{...points[0], value: null}], [{...points[0], value: null}, {...points[1], value: null}], []];
+  if (options.hideOff) records.push([{...points[0], status: 'off'}]);
+  for (const input of records) {
+    const chart = ui.createChart(host(), {...options, points: input});
+    assert.equal(chart.element.textContent, '暂无有效图表数据', '全空数据只能显示空态');
+    assert.equal(byClass(chart.element, 'sc-chart-readout').length, 0, '全空数据不能显示读数行');
+    assert.equal(byClass(chart.element, 'sc-chart-action').length, 0, '全空数据不能显示查看按钮');
   }
 });
 // 没直播的日子仍可读数，但不能打开空场次列表。
@@ -264,6 +272,20 @@ await check('日历点选保留边界与场次', () => {
   byClass(node, 'sc-calendar-action')[0].fire('click');
   assert.deepEqual(selected, [{start: 400, end: 500, starts: [410, 430]}]);
 });
+// 选中较早的有直播日期后，按钮不能仍打开最后一天的场次。
+await check('日历按钮打开选中的非最后一天', () => {
+  const selected = [];
+  const node = ui.createCalendar(host(), calendar, {onSelect: value => selected.push(value)});
+  const cell = byClass(node, 'sc-calendar-day').find(cell => cell.dataset.date === '2026-10-15');
+  cell.fire('click');
+  assert.equal(selected.length, 0, '选日期时不能直接打开场次');
+  assert.ok(byClass(node, 'sc-calendar-readout')[0].textContent.includes('10/15'), '读数应显示选中的日期');
+  const action = byClass(node, 'sc-calendar-action')[0];
+  assert.equal(action.disabled, false, '选中的日期有场次可看');
+  assert.equal(action.textContent, '查看 10/15 场次');
+  action.fire('click');
+  assert.deepEqual(selected, [{start: 300, end: 400, starts: [310]}], '按钮应传递所选日的 start/end/starts');
+});
 // 一整张日历只占一个日期 Tab 位，方向键选择后 Enter 到查看按钮。
 await check('日历键盘单入口且Enter到所选日按钮', () => {
   const node = ui.createCalendar(host(), calendar, {onSelect() {}});
@@ -296,6 +318,18 @@ await check('日历读数给出状态原因与缺口', () => {
   assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('20秒'));
   cells[4].fire('click');
   assert.ok(text().includes('停机或断线'), '可证明日期之后仍未知时解释监测中断');
+});
+// 横轴全日期太长会挤压相邻标签，日和周都必须由组件缩写。
+for (const [period, label, date, end, expected] of [
+  ['day', '2026-09-11', '2026-09-11', '2026-09-12', '09/11'],
+  ['week', '2026-09-14 ~ 09-20', '2026-09-14', '2026-09-21', '09/14–09/20'],
+]) await check(({day: '日横轴使用短日期', week: '周横轴使用短日期'})[period], () => {
+  const chart = ui.createChart(host(), {period, points: [{
+    start: Date.parse(date + 'T06:00:00+08:00'), end: Date.parse(end + 'T06:00:00+08:00'), label, value: 12,
+  }]});
+  assert.equal(byClass(chart.element, 'sc-chart-labels')[0].textContent, expected, '横轴应使用短日期');
+  const mark = byClass(chart.element, period === 'day' ? 'sc-chart-hit' : 'sc-bar')[0];
+  assert.ok(mark.getAttribute('aria-label').includes(label), '读屏仍保留完整日期');
 });
 // 周月柱与粉丝折线初次打开就应有最后周期读数，日期由组件简写。
 await check('周月与普通曲线默认显示末期短日期读数', () => {
