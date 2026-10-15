@@ -199,6 +199,13 @@ public class LiveSessionRecovery {
                 .ifPresent(start -> detailArchiver.reopen(platform, source.getUid(), start));
     }
 
+    /** 接管时辨认已结束的旧场。下播数据仍需保留给报告，不能仅凭起点存在就认作续播。 */
+    public boolean isArchivedSession(@NonNull String platform, @NonNull Long uid, long start) {
+        if (start <= 0 || start == Long.MAX_VALUE) return false;
+        return archive.find(start, start + 1).stream()
+                .anyMatch(session -> platform.equals(session.platform()) && uid.equals(session.uid()));
+    }
+
     /**
      * 未闭合场次的结束时刻
      * <p>

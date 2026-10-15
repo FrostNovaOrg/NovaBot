@@ -457,8 +457,8 @@ public class BilibiliBackupLivePushService {
      * 把加入监听时已在播的主播按在播记账
      * <p>
      * 只做同步，不发开播事件——事件除了推送通知，还会触发监听器把本场数据整场重置，
-     * 那会把已有的本场数据抹掉。已有本场起始时保持原值（如进程重启后延续的场次），
-     * 没有时才按接口报的开播时间起一场；接口没报就按当前时刻。
+     * 那会把已有的本场数据抹掉。未归档的本场起始保持原值；已归档的旧场须清零，
+     * 与没有起始时一样按接口报的开播时间起一场；接口没报就按当前时刻。
      * @param up UP 主信息
      * @param room 直播间信息
      */
@@ -466,10 +466,16 @@ public class BilibiliBackupLivePushService {
         String platform = BilibiliPlatform.BILIBILI.id();
         liveDataService.setLiveStatus(platform, up.getUid(), true);
 
-        if (liveDataService.getLiveStartTime(platform, up.getUid()).isEmpty()) {
-            Instant startTime = room.getLiveStartTime() == null
+        var previousStart = liveDataService.getLiveStartTime(platform, up.getUid());
+        boolean archived = previousStart.filter(start ->
+                sessionRecovery.isArchivedSession(platform, up.getUid(), start)).isPresent();
+        if (previousStart.isEmpty() || archived) {
+            Instant startTime = room.getLiveStartTime() == null || room.getLiveStartTime() <= 0
                     ? Instant.now()
                     : Instant.ofEpochSecond(room.getLiveStartTime());
+            if (archived) {
+                liveDataService.resetLiveData(platform, up.getUid());
+            }
             liveDataService.setLiveStartTime(platform, up.getUid(), startTime.toEpochMilli());
         }
 
