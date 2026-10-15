@@ -363,6 +363,56 @@ await ask('门槛改为 200 保存读回，报告参数原样保留', async () =
   paint(saved[0].targets[0].messages);
   same(threshold().value, '200', '重新打开门槛');
 });
+// 抓清空已存门槛后变成 0，导致每笔打赏都播。
+await ask('清空已存门槛仍保留 200', async () => {
+  paint([message(digest, {reward_threshold_yuan: 200})]);
+  change(threshold(), '');
+  same(paramsOf(digest), {reward_threshold_yuan: 200}, '门槛参数');
+  same(threshold().value, '200', '门槛框');
+  await push.save();
+  same(saved[0].targets[0].messages[0].params, {reward_threshold_yuan: 200}, '保存门槛');
+});
+// 抓清空默认门槛后写入 0，覆盖原来的默认行为。
+await ask('清空默认门槛仍无键且显示 50', () => {
+  paint([message(digest)]);
+  change(threshold(), '');
+  same(paramsOf(digest), {}, '默认门槛参数');
+  same(threshold().value, '50', '默认门槛框');
+});
+// 抓非法数字污染存值，或框里没有恢复到原值。
+for (const invalid of ['abc', 'Infinity', '   ']) {
+  await ask('非数字门槛恢复原值：' + JSON.stringify(invalid), () => {
+    paint([message(digest, {reward_threshold_yuan: 200})]);
+    change(threshold(), invalid);
+    same(paramsOf(digest), {reward_threshold_yuan: 200}, '门槛参数');
+    same(threshold().value, '200', '门槛框');
+  });
+}
+// 抓越界数字照存，页面与实际播报门槛不一致。
+for (const [input, expected] of [[-5, 0], [2000000, 1000000]]) {
+  await ask('越界门槛夹住：' + input, () => {
+    paint([message(digest)]);
+    change(threshold(), input);
+    same(paramsOf(digest).reward_threshold_yuan, expected, '门槛参数');
+    same(threshold().value, String(expected), '门槛框');
+  });
+}
+// 抓整数项存下小数，页面与运行时读到的整数不一致。
+for (const [input, expected] of [[12.4, 12], [12.5, 13]]) {
+  await ask('小数门槛四舍五入：' + input, () => {
+    paint([message(digest)]);
+    change(threshold(), input);
+    same(paramsOf(digest).reward_threshold_yuan, expected, '门槛参数');
+    same(threshold().value, String(expected), '门槛框');
+  });
+}
+// 抓共用数字框只修设置块，报告版式清空仍变成 0。
+await ask('清空报告弹幕排行仍保留 8', () => {
+  paint([message(report, {danmu_ranking: 8})]);
+  change(control(section('下播报告版式'), '弹幕排行'), '');
+  same(paramsOf(report), {danmu_ranking: 8}, '版式参数');
+  same(control(section('下播报告版式'), '弹幕排行').value, '8', '版式数字框');
+});
 // 抓一次保存只写入其中一类。
 await ask('一次保存两类改动，重新打开都在', async () => {
   paint([message(report), message(digest)]);

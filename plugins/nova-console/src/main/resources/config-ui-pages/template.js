@@ -1143,7 +1143,19 @@ export function buildLayoutEditor(host, options) {
         // 灰掉时锁的不只是样式：能拨却不起作用的开关，比锁着的更费解。
         // 存着的值不清不改，亮回来还是原来那个数
         input.disabled = locked;
-        input.addEventListener('change', event => change(option, Number(event.target.value)));
+        input.addEventListener('change', event => {
+          const raw = event.target.value.trim();
+          let value = Number(raw);
+          if (!raw || !Number.isFinite(value)) {
+            event.target.value = String(valueOf(option));
+            return;
+          }
+          if (String(option.type).toUpperCase() === 'INTEGER') value = Math.round(value);
+          if (option.min !== null && option.min !== undefined) value = Math.max(option.min, value);
+          if (option.max !== null && option.max !== undefined) value = Math.min(option.max, value);
+          event.target.value = String(value);
+          change(option, value);
+        });
         row.appendChild(input);
       }
 
