@@ -361,16 +361,25 @@ public class StreamerController {
         boolean living = roster(loadedUsers()).stream()
                 .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()) && item.enabled())
                 && liveDataService.getLiveStatus(platform, uid).orElse(false);
-        if (living) {
-            liveDataService.getLiveStartTime(platform, uid).filter(start -> start > 0 && start < now)
-                    .filter(start -> sessions.stream().noneMatch(session -> session.startTime() == start))
-                    .ifPresent(start -> sessions.add(new LiveSession(platform, uid, null, null, start, now,
-                            (now - start) / 1000, Map.of(), Map.of())));
-        }
+        var ongoingStart = living ? liveDataService.getLiveStartTime(platform, uid)
+                .filter(start -> start > 0 && start < now)
+                .filter(start -> sessions.stream().noneMatch(session -> session.startTime() == start))
+                : java.util.Optional.<Long>empty();
+        long uncertainFrom = sessions.stream().mapToLong(LiveSession::endTime).max().orElse(0);
+        ongoingStart.ifPresent(start -> sessions.add(new LiveSession(platform, uid, null, null, start, now,
+                (now - start) / 1000, Map.of(), Map.of())));
         var calendar = new StreamerCalendar().calculate(sessions,
                 liveDataService.monitoringIntervals(platform, uid, now),
                 liveDataService.downtimeIntervals(0, now),
                 liveDataService.roomOutageIntervals(platform, uid, 0, now), Integer.parseInt(days), clock);
+        if (living && ongoingStart.isEmpty()) {
+            // 在播却无法定位本场时，最近归档之后缺少确认没播的依据。已归档的已播证据照留。
+            calendar = new StreamerCalendar.Result(calendar.provableFrom(), calendar.items().stream()
+                    .map(day -> day.status().equals("off") && day.end() > uncertainFrom && day.start() < now
+                            ? new StreamerCalendar.Day(day.date(), day.weekday(), day.start(), day.end(),
+                                    day.current(), "unknown", day.effectiveSeconds(), day.gapSeconds(), day.starts())
+                            : day).toList());
+        }
         return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
                 "calendar", JSON.parseObject(JSON.toJSONString(calendar, JSONWriter.Feature.WriteNulls))));
     }
