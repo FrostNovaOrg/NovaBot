@@ -40,7 +40,6 @@ a.lgpill{text-decoration:none}
 a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
 :is(#sd-body,.sc-drawer) .start-slots>.lgpills+.lgpills,#sd-audience>.lgpills+.lgpills{margin-top:10px}
 :is(#sd-body,.sc-drawer) td.n,:is(#sd-body,.sc-drawer) th.n{text-align:right;font-variant-numeric:tabular-nums}
-:is(#sd-body,.sc-drawer) tr.empty-row td{color:var(--dim)}
 :is(#sd-body,.sc-drawer) tbody tr:hover{background:var(--soft)}
 :is(#sd-body,.sc-drawer) .start-slots{min-width:0;max-width:100%;box-sizing:border-box}
 :is(#sd-body,.sc-drawer) .slot-scroll{overflow-x:auto;max-width:100%;margin-top:14px}
@@ -56,7 +55,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap}
-:is(#sd-body,.sc-drawer) .session-table a,:is(#sd-body,.sc-drawer) .session-table a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
+#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
 
@@ -122,7 +121,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-scope summary{font-size:12px}
 #sd-insights .sc-kpis{gap:8px}
 #sd-insights .sc-kpi{padding:11px 8px;background:var(--ground)}
-#sd-insights .sc-kpi-value{font-size:21px;letter-spacing:-.6px;overflow-wrap:normal;white-space:nowrap}
+#sd-insights .sc-kpi-value{font-size:21px;letter-spacing:-.6px;overflow-wrap:normal;word-break:keep-all;white-space:normal}
 .sd-trend-controls>.hint{margin:0}
 .sd-trend-controls select,.sd-slot-controls select,.sd-session-filters input{width:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--r-ctl,8px);background:var(--ground);color:var(--text);padding:7px 10px;font-size:14px;min-height:32px;box-sizing:border-box}
 .sd-trend-controls select,.sd-slot-controls select{appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23838391' stroke-width='1.5'/%3E%3C/svg%3E");background-position:right 10px center;background-repeat:no-repeat}
@@ -1052,7 +1051,7 @@ function updateDrawerScope() {
     : where.panel === 'start-slots' ? slotsMetric === 'revenue' ? '每小时流水' : '每小时弹幕' : '';
   if (detailDrawer.fansNote) {
     const fans = detailDrawer.fans;
-    detailDrawer.fansNote.textContent = intervalText(from, to, false) + ' · 净增 ' + (fans.change == null ? '暂无数据' : fmtMetric(fans.change) + ' 人')
+    detailDrawer.fansNote.textContent = intervalText(from, to) + ' · 净增 ' + (fans.change == null ? '暂无数据' : fmtMetric(fans.change) + ' 人')
       + (fans.points?.length ? ' · 快照 ' + pageTime(fans.points.at(-1).at, false) : ' · 缺少有效快照')
       + (fans.partial ? ' · 可用快照未覆盖整个范围' : '');
   }
@@ -1206,7 +1205,7 @@ function renderAudienceSummary(data) {
     format: value => value == null ? '暂无数据' : fmtMetric(value)}, host);
   const caption = audienceRing.querySelector('.sc-audience-label');
   caption.children[0].textContent = '本期去重观众';
-  caption.appendChild(panelLink('查看名单', 'audience', {group: 'all', sort: 'attendance'}));
+  const viewList = el('span'); viewList.textContent = '查看名单'; caption.appendChild(viewList);
   for (const [selector, value, label] of [['.sc-first', data.composition?.firstRecorded ?? counts.first, '本期首次记录'],
     ['.sc-returning', data.composition?.returning ?? counts.returning, '历史回访']]) {
     const segment = audienceRing.querySelector(selector);
@@ -1240,7 +1239,9 @@ function renderAudienceSummary(data) {
   const progress = el('div', 'sd-interaction-bar');
   const fill = el('span'); fill.style.width = (share ?? 0) + '%'; progress.appendChild(fill); interaction.appendChild(progress);
   const rate = el('small'); rate.textContent = share == null ? '互动占比暂不可计算' : '占本期观众 ' + share.toFixed(1) + '%'; interaction.appendChild(rate); host.appendChild(interaction);
-  const coverage = el('p', 'hint sd-audience-note'); coverage.textContent = coverageText(data.coverage) + '。人数仅为记录到的下界，缺失名单不补估。'; host.appendChild(coverage);
+  const coverage = el('p', 'hint sd-audience-note');
+  const coverageSummary = coverageText(data.coverage);
+  coverage.textContent = (coverageSummary ? coverageSummary + '。' : '') + '人数仅为记录到的下界，缺失名单不补估。'; host.appendChild(coverage);
   const note = el('p', 'hint sd-audience-note'); note.textContent = '首次记录指系统首次记录，不等同第一次观看直播。';
   if (!data.composition) note.textContent += '当前历史名单不足，首次记录与回访构成暂无数据。';
   host.appendChild(note);
@@ -1668,7 +1669,8 @@ function gapBadge(item) {
 }
 
 function sessionRevenue(item, page) {
-  return page.revenueKeys?.length ? page.revenueKeys.reduce((sum, key) => sum + (item.metrics?.[key] || 0), 0) : null;
+  return page.revenueKeys?.some(key => item.metrics?.[key] != null)
+    ? page.revenueKeys.reduce((sum, key) => sum + (item.metrics?.[key] || 0), 0) : null;
 }
 
 function renderRecent(host) {
@@ -1713,13 +1715,19 @@ function sessionFilters(host, page) {
     location.hash = dashboardHash({panel: 'sessions', dateFrom: from, dateTo: to, page: 1});
   });
   controls.appendChild(apply);
-  const clear = el('a', 'sd-detail-link'); clear.textContent = '清除筛选'; clear.href = dashboardHash({dateFrom: null, dateTo: null, page: 1});
-  controls.append(clear, error); host.appendChild(controls);
-  const source = el('p', 'hint');
-  const name = {calendar: '开播日历（统计日重叠归档，含跨 06:00）', trend: '近期趋势', rhythm: '开播节奏', dashboard: '总览归档'}[where.source] || '全部归档';
-  const interval = where.sourceDay ? where.sourceDay.replaceAll('-', '/') : where.from && where.to ? intervalText(where.from, where.to) : '';
-  source.textContent = '筛选来源：' + name + (interval ? ' · ' + interval : '') + ' · ' + fmtMetric(page.total ?? 0) + ' 个场次';
-  host.appendChild(source);
+  if (where.dateFrom != null || where.dateTo != null || where.from != null || where.to != null || where.starts != null) {
+    const clear = el('a', 'sd-detail-link'); clear.textContent = '清除筛选';
+    clear.href = dashboardHash({dateFrom: null, dateTo: null, from: null, to: null, starts: null, source: null, sourceDay: null, page: null});
+    controls.appendChild(clear);
+  }
+  controls.appendChild(error); host.appendChild(controls);
+  if (where.source || where.starts != null) {
+    const source = el('p', 'hint');
+    const name = {calendar: '开播日历（统计日重叠归档，含跨 06:00）', trend: '近期趋势', rhythm: '开播节奏', dashboard: '总览归档'}[where.source] || '所选场次';
+    const interval = where.sourceDay ? where.sourceDay.replaceAll('-', '/') : where.from && where.to ? intervalText(where.from, where.to) : '';
+    source.textContent = '筛选来源：' + name + (interval ? ' · ' + interval : '') + ' · ' + fmtMetric(page.total ?? 0) + ' 个场次';
+    host.appendChild(source);
+  }
 }
 
 function renderSessions(host, page = {}) {
@@ -1745,6 +1753,9 @@ function renderSessions(host, page = {}) {
       group.append(name, shown); metricsList.appendChild(group);
     }
     bottom.append(metricsList, gapBadge(item)); link.appendChild(bottom); card.appendChild(link);
+    if (item.interrupted) {
+      const reason = el('small', 'hint'); reason.textContent = item.endReasonText; link.appendChild(reason);
+    }
   }
   const bar = pageBar(page), foot = el('div', 'sd-pagination'), text = el('span'); text.textContent = bar.text; foot.appendChild(text);
   if (bar.prev) foot.appendChild(pageLink('‹ 上一页', bar.prev));

@@ -137,7 +137,6 @@ class StreamerOverviewApiTest {
         assertEquals(3, items.getJSONObject(1).getInteger("audience"), "跨名单重复观众只计一次");
         assertEquals(read("insights", "days", "7").getJSONObject("insights").getInteger("audience"),
                 items.getJSONObject(1).getInteger("audience"), "单场人数与概况同口径");
-        System.out.println("SESSION_SAMPLE: " + JSON.toJSONString(body, com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls));
     }
     @Test @DisplayName("日周月趋势保留范围两端空桶并排除范围外场次")
     void filledTrend() throws Exception {

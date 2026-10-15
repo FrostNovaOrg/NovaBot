@@ -71,6 +71,8 @@ let liveSnapshot = null;
 let resolveLive;
 let sessionMessageKey = null;
 let sessionScenario = null;
+let recentScenario = null;
+const revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
   start: 1791736800000 - i * 604800000, end: 1792341600000 - i * 604800000,
   label: 'week ' + i, sessions: i === 2 ? 0 : 2, durationSeconds: i === 1 ? 0 : 7200,
@@ -90,7 +92,7 @@ globalThis.fetch = async url => {
     const from = Number(params.get('dateFrom') || params.get('from') || 0), to = Number(params.get('dateTo') || params.get('to') || Number.MAX_SAFE_INTEGER);
     const starts = params.has('starts') ? params.get('starts').split(',').map(Number) : null;
     const items = sessionScenario.filter(item => item.startTime >= from && item.startTime < to && (!starts || starts.includes(item.startTime)));
-    return response({success: true, sessions: {items, total: items.length, page: 1, pages: 1, metrics: []}});
+    return response({success: true, sessions: {items, total: items.length, page: 1, pages: 1, metrics: [], revenueKeys}});
   }
   if (String(url).includes('/sessions?')) return response({success: true, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {}, title: String(startTime)})), total: 2, page: 1, pages: 1, metrics: []}});
   if (String(url).includes('/start-slots?')) return response({success: true, startSlots: {cells: [], topRevenue: [], topMessages: []}});
@@ -110,7 +112,7 @@ globalThis.fetch = async url => {
     if (livePendingResponse) return new Promise(resolve => { resolveLive = resolve; });
     return response(liveSnapshot || {success: true, living: false, metrics: {}, revenue: null, messages: null});
   }
-  return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {chat_total: 37, other_total: 999}, title: String(startTime)})), messageKey: sessionMessageKey, metrics: []}});
+  return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}, sessions: {items: recentScenario || [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {chat_total: 37, other_total: 999}, title: String(startTime)})), messageKey: sessionMessageKey, metrics: [], revenueKeys}});
 };
 const page = await import('../../../main/resources/config-ui-pages/streamers.js');
 const flatten = n => n ? [n, ...n.children.flatMap(flatten)] : [];
@@ -118,6 +120,13 @@ const base = '#/streamers/sample/1';
 const drawer = () => flatten(document.body).find(n => n.className === 'sc-drawer');
 const load = async hash => { location.hash = hash; await page.refresh(); };
 const textOf = node => flatten(node).map(n => n.textContent + n.innerHTML).join(' ');
+const sessionRows = () => flatten(drawer()).filter(n => n.className === 'sd-session-row');
+const sessionMetric = (row, label) => {
+  assert.ok(row, '须列出目标场次卡');
+  const name = flatten(row).find(n => n.tagName === 'dt' && n.textContent === label);
+  assert.ok(name, '须显示' + label);
+  return name.parentNode.children.find(n => n.tagName === 'dd').textContent;
+};
 // 长范围跨年时，范围行省去年份会让起止日期看起来倒置。
 await check('360天全页范围明确显示跨年起止', async () => {
   compositionScenario = {from: Date.parse('2025-10-22T06:00:00+08:00'), to: Date.parse('2026-10-16T06:10:00+08:00')};
@@ -125,7 +134,7 @@ await check('360天全页范围明确显示跨年起止', async () => {
   assert.match(textOf(nodes.get('sd-toolbar')), /本期统计：2025\/10\/22 06:00 — 2026\/10\/16 06:10（不含结束时刻）/, '全页范围须显示跨年起止');
   compositionScenario = null;
 });
-// 日期框必须改变实际请求和展示结果，清除后恢复进入抽屉时的集合。
+// 日期框必须改变实际请求和展示结果，清除后回到全部归档。
 await check('场次日期筛选按06点统计日生效并可清除', async () => {
   const start = Date.parse('2026-10-15T06:00:00+08:00');
   sessionScenario = [-1, 0, 86400000 - 1, 86400000].map((offset, index) => ({platform: 'sample', uid: 1,
@@ -147,23 +156,84 @@ await check('场次日期筛选按06点统计日生效并可清除', async () =>
   if (clear.href) location.hash = clear.href; else await clear.fire('click');
   await page.refresh();
   assert.equal(flatten(drawer()).filter(n => n.href?.startsWith(base + '/') && /\/\d+$/.test(n.href)).length, 4, '清除后恢复原集合');
-  const selected = base + '?panel=sessions&source=calendar&sourceDay=2026-10-15&starts=' + [start - 1, start].join(',');
+  const selected = base + '?panel=sessions&source=calendar&sourceDay=2026-10-15&from=' + (start - 1) + '&to=' + (start + 1) + '&starts=' + [start - 1, start].join(',');
   await load(selected);
   const selectedInputs = flatten(drawer()).filter(n => n.tagName === 'input' && n.type === 'date');
   selectedInputs[0].value = selectedInputs[1].value = '2026-10-15';
   await flatten(drawer()).find(n => n.tagName === 'button' && n.textContent === '筛选').fire('click'); await page.refresh();
   assert.equal(flatten(drawer()).filter(n => n.className === 'sd-session-row').length, 1, '日期与来源集合取交集');
+  await load(location.hash + '&page=2');
   location.hash = flatten(drawer()).find(n => n.textContent === '清除筛选').href; await page.refresh();
-  assert.equal(flatten(drawer()).filter(n => n.className === 'sd-session-row').length, 2, '清除后恢复来源集合');
-  assert.equal(model.parseStreamersHash(location.hash).source, 'calendar', '清除保留来源');
+  assert.equal(sessionRows().length, 4, '清除后恢复全部归档');
+  const clearedParams = new URLSearchParams(location.hash.split('?')[1]);
+  for (const key of ['dateFrom', 'dateTo', 'from', 'to', 'starts', 'source', 'sourceDay', 'page']) {
+    assert.equal(clearedParams.has(key), false, '清除后地址不保留' + key);
+  }
   sessionScenario = null;
 });
 // 缺失名单属于未知人数，不能把它显示成无人到场。
 await check('场次缺名单显示未知到场人数', async () => {
-  sessionScenario = [{platform: 'sample', uid: 1, startTime: 1792101600100, durationSeconds: 60, title: 'unknown', audience: null, metrics: {}}];
+  sessionScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, durationSeconds: 60, title: 'unknown', audience: null, metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, durationSeconds: 60, title: 'known', audience: 0, metrics: {}},
+  ];
   await load(base + '?panel=sessions');
-  assert.match(textOf(drawer()), /到场人数.*—/, '缺名单应显示到场人数—');
+  assert.equal(sessionMetric(sessionRows().find(n => n.href.endsWith('/1792101600100')), '到场人数'), '—', '缺名单那场到场人数须为—');
+  assert.equal(sessionMetric(sessionRows().find(n => n.href.endsWith('/1792101600200')), '到场人数'), '0 人', '已知空名单仍显示0人');
   sessionScenario = null;
+});
+// 未采集收入不是收入为零；仅记录礼物时仍应显示已知流水。
+await check('场次流水区分部分收入与完全未记录', async () => {
+  sessionScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {gift_value: 12.5}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {danmu_count: 2}},
+    {platform: 'sample', uid: 1, startTime: 1792101600300, metrics: {gift_value: 0}},
+  ];
+  try {
+    await load(base + '?panel=sessions');
+    assert.equal(sessionMetric(sessionRows()[0], '流水'), '12.50 元', '仅有礼物收入也须显示流水');
+    assert.equal(sessionMetric(sessionRows()[1], '流水'), '—', '没有收入键须显示—');
+    assert.equal(sessionMetric(sessionRows()[2], '流水'), '0.00 元', '已知零收入须显示0.00元');
+  } finally { sessionScenario = null; }
+});
+// 同笔收入的消耗与盈亏不能再次加进最近场次流水。
+await check('最近场次流水只合计收入键', async () => {
+  recentScenario = [{platform: 'sample', uid: 1, startTime: 1792101600100,
+    metrics: {gift_value: 12.5, super_chat_value: 20, guard_value: 30, gift_paid: 100, box_profit: -5}}];
+  try {
+    page.leave();
+    await load(base);
+    const row = flatten(nodes.get('sd-recent')).find(n => n.className === 'sd-recent-row');
+    assert.match(textOf(row), /流水 62\.50 元/, '流水不得重复计入观众消耗与盲盒盈亏：' + textOf(row));
+  } finally { recentScenario = null; }
+});
+// 提示必须落在中断那场卡上，正常场次不能混入中断原因。
+await check('场次卡仅为中断场次标明原因', async () => {
+  sessionScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, interrupted: true, endReasonText: '程序停止', metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, interrupted: false, endReasonText: '正常下播', metrics: {}},
+  ];
+  try {
+    await load(base + '?panel=sessions');
+    assert.ok(textOf(sessionRows()[0]).includes('程序停止'), '中断那场须显示结束原因');
+    assert.ok(!textOf(sessionRows()[1]).includes('正常下播'), '正常那场不显示结束原因');
+    assert.ok(!textOf(sessionRows()[1]).includes('程序停止'), '正常那场不混入中断原因');
+  } finally { sessionScenario = null; }
+});
+// 未筛选时不出清除入口和来源，旧书签按所选场次说明来源。
+await check('未筛选场次不显示清除入口与来源', async () => {
+  await load(base + '?panel=sessions');
+  assert.ok(!textOf(drawer()).includes('清除筛选'), '没有筛选不显示清除入口');
+  assert.ok(!textOf(drawer()).includes('筛选来源：'), '没有来源不显示来源行');
+});
+// 只有场次集合的旧地址也不能冒充全部归档。
+await check('旧书签场次集合显示所选场次来源', async () => {
+  sessionScenario = [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, metrics: {}}));
+  try {
+    await load(base + '?panel=sessions&starts=1792101600100');
+    assert.match(textOf(drawer()), /筛选来源：所选场次 · 1 个场次/, '旧书签须说明所选场次与场数');
+    assert.ok(textOf(drawer()).includes('清除筛选'), 'starts筛选也须能清除');
+  } finally { sessionScenario = null; }
 });
 // 日历下钻须留下可刷新恢复的日期、来源和场数。
 await check('日历下钻展示所选日期来源与场数', async () => {

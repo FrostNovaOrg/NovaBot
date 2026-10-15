@@ -149,7 +149,7 @@ const extraLiveMetrics = [...catalogSource.matchAll(/Metric\.count\(BilibiliLive
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
-  if (path.includes('/sessions?')) return reply({success: true, sessions: {items: sessions, messageKey: 'danmu_count', metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}], total: 3, page: 1, pages: 1}});
+  if (path.includes('/sessions?')) return reply({success: true, sessions: {items: sessions, messageKey: 'danmu_count', revenueKeys: ['gift_value'], metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}], total: 3, page: 1, pages: 1}});
   if (path.includes('/calendar?')) return reply({success: true, calendar: {items: []}});
   if (path.includes('/audience?')) return reply({success: true, audience: {counts: {}, items: []}});
   if (path.includes('/start-slots?')) {
@@ -549,10 +549,9 @@ await ask('开播时段显示84格且点击列出整场数据与场次链接', a
   const parsed = model.parseStreamersHash(location.hash);
   same(parsed.starts, String(STARTS[0]), '热图传递原场次');
   await page.loadStreamers();
-  const content = textOf(drawerBody());
-  for (const part of ['流水']) {
-    if (!content.includes(part)) throw new Error('点击格子后缺少 ' + part);
-  }
+  const row = walk(drawerBody()).find(n => n.className === 'sd-session-row' && n.href === model.sessionHash(PLATFORM, UID, STARTS[0]));
+  const revenue = walk(row).find(n => n.tagName === 'dt' && n.textContent === '流水');
+  same(revenue?.parentNode.children.find(n => n.tagName === 'dd')?.textContent, '100.00 元', '所选场次流水数值');
   same(walk(drawerBody()).some(n => n.href === model.sessionHash(PLATFORM, UID, STARTS[0])), true, '场次卡链接');
 });
 
