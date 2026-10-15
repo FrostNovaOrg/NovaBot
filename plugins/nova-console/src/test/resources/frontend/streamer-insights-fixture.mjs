@@ -135,6 +135,38 @@ await check('本期构成暂无数据时，悬停提示说明实际缺少名单�
   }
   assert.deepEqual(titles, scenarios.map(scenario => scenario.title), '本期无名单时不得归因为历史记录起点');
 });
+await check('五项下方显示较上期，红涨绿跌持平无色，粉丝不比', async () => {
+  compositionScenario = {comparisons: {durationSeconds: {changeRatio: 0}, revenue: {changeRatio: .12},
+    messages: {changeRatio: -.05}, audience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'},
+    interactionAudience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}}};
+  await page.refresh();
+  const all = flatten(nodes.get('sd-insights'));
+  const lines = all.filter(n => n.tagName === 'small' && n.textContent.startsWith('较上期'));
+  assert.deepEqual(lines.map(n => [n.textContent, n.style.color]), [
+    ['较上期持平', ''], ['较上期 +12%', 'var(--err)'], ['较上期 −5%', 'var(--ok)']]);
+  assert.equal(all.filter(n => n.className === 'stat').length, 6);
+});
+await check('对比说明默认折叠，按原因列指标，展开后显示参考说明', async () => {
+  compositionScenario.comparisonNote = '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考';
+  await page.refresh();
+  const all = flatten(nodes.get('sd-insights'));
+  const details = all.find(n => n.tagName === 'details');
+  assert.ok(details, '必须有可展开的说明');
+  assert.ok(!details.open && !('open' in details.attrs), '说明默认折叠');
+  assert.equal(details.children[0].tagName, 'summary');
+  assert.equal(details.children[0].textContent, '对比说明 · 2 项未比较');
+  const text = flatten(details).map(n => n.textContent).join(' ');
+  assert.match(text, /上期为 0[：:]观众、互动观众/);
+  assert.match(text, /6.0 之前开播.*仅供参考/);
+});
+await check('只有旧名单参考说明时仍可展开，无说明时隐藏折叠入口', async () => {
+  compositionScenario = {comparisons: {audience: {changeRatio: 0}}, comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
+  await page.refresh();
+  assert.ok(flatten(nodes.get('sd-insights')).some(n => n.textContent === '对比说明 · 0 项未比较'));
+  compositionScenario = {comparisons: {audience: {changeRatio: 0}}};
+  await page.refresh();
+  assert.ok(!flatten(nodes.get('sd-insights')).some(n => n.tagName === 'details'));
+});
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);
 console.log('跑了 ' + checks + ' 格，失败 ' + failures.length + ' 格');

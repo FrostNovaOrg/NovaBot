@@ -5,11 +5,14 @@ import org.frostnova.nova.core.model.StreamerSnapshot;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -31,6 +34,47 @@ public final class StreamerInsights {
                          Double revenue, Long messages, Integer audience, Integer interactionAudience,
                          Composition composition, Long firstRecordedAt, Coverage coverage,
                          Fans fans, List<Day> daily) {}
+
+    /** changeRatio 为变化比例，例如 0.12 表示上涨 12%；不能比较时仅给原因。 */
+    public record Comparison(Double changeRatio, String reasonCode, String reason) {}
+    public record PeriodComparison(Result current, Result previous, Map<String, Comparison> comparisons,
+                                   String comparisonNote) {}
+
+    /** 上期整体前移指定天数，保留尚未结束的统计日进度。 */
+    public PeriodComparison compareRecent(Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,
+                                          int days, Clock clock, LiveMetricCatalog.Insights rules) {
+        Range range = recent(days, clock);
+        Result current = calculate(sessions, snapshots, range.from(), range.to(), rules);
+        Result previous = calculate(sessions, snapshots, range.from().minus(days, ChronoUnit.DAYS),
+                range.to().minus(days, ChronoUnit.DAYS), rules);
+        Map<String, Comparison> comparisons = new LinkedHashMap<>();
+        comparisons.put("durationSeconds", compare(current, previous, current.durationSeconds(),
+                previous.durationSeconds(), false, false));
+        comparisons.put("revenue", compare(current, previous, current.revenue(), previous.revenue(), true, false));
+        comparisons.put("messages", compare(current, previous, current.messages(), previous.messages(), true, false));
+        comparisons.put("audience", compare(current, previous, current.audience(), previous.audience(), true, true));
+        comparisons.put("interactionAudience", compare(current, previous, current.interactionAudience(),
+                previous.interactionAudience(), true, true));
+        String note = current.coverage().unknown() + previous.coverage().unknown() > 0
+                ? "6.0 之前开播的场次名单完整性未知，观众数对比仅供参考" : null;
+        return new PeriodComparison(current, previous, Map.copyOf(comparisons), note);
+    }
+
+    private static Comparison compare(Result current, Result previous, Number value, Number baseline,
+                                      boolean platformMetric, boolean audienceMetric) {
+        if (previous.sessions() == 0) return unavailable("NO_PREVIOUS_SESSIONS", "上期没有开播");
+        if (current.sessions() < 2 || previous.sessions() < 2)
+            return unavailable("TOO_FEW_SESSIONS", "本期或上期少于 2 场");
+        if (platformMetric && !current.metricsKnown()) return unavailable("UNSUPPORTED_METRIC", "平台没有这项口径");
+        if (baseline != null && baseline.doubleValue() == 0) return unavailable("PREVIOUS_ZERO", "上期为 0");
+        if (audienceMetric && current.coverage().missing() + previous.coverage().missing() > 0)
+            return unavailable("MISSING_AUDIENCE_LIST", "有场次没有观众名单");
+        return new Comparison((value.doubleValue() - baseline.doubleValue()) / baseline.doubleValue(), null, null);
+    }
+
+    private static Comparison unavailable(String code, String reason) {
+        return new Comparison(null, code, reason);
+    }
 
     /** 输入场次与快照须属于同一位主播；区间含起点、不含终点。 */
     public Result calculate(Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,

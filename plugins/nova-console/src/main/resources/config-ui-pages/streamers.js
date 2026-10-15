@@ -18,7 +18,7 @@
 import {$, api, CONSOLE, el, esc, request, say} from './core.js';
 import {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
-  gapCells, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
+  gapCells, insightsComparison, comparisonExplanation, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle, shownMetrics,
   snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } from './streamers-model.js';
@@ -571,20 +571,28 @@ function renderInsights(data, message, living) {
   range.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
   host.appendChild(range);
   const stats = el('div', 'stats');
-  function stat(value, label, note, title) {
+  function stat(value, label, note, title, key) {
     const cell = el('div', 'stat');
     cell.innerHTML = '<div class="stat-v">' + esc(value) + '</div><div class="stat-l">' + esc(label)
       + '</div>' + (note ? '<small>' + esc(note) + '</small>' : '');
+    const comparison = insightsComparison(data.comparisons?.[key]);
+    if (comparison) {
+      const line = el('small');
+      line.textContent = comparison.text;
+      line.style.display = 'block';
+      line.style.color = comparison.color;
+      cell.appendChild(line);
+    }
     if (title) cell.title = title;
     stats.appendChild(cell);
   }
-  stat(fmtDuration(data.durationSeconds), '直播时长', '共 ' + data.sessions + ' 场');
+  stat(fmtDuration(data.durationSeconds), '直播时长', '共 ' + data.sessions + ' 场', '', 'durationSeconds');
   if (data.metricsKnown) {
     const count = value => value == null ? '暂无数据' : fmtMetric(value) + ' 人';
-    stat(fmtMetric(data.revenue, {money: true}) + ' 元', '流水');
-    stat(fmtMetric(data.messages) + ' 条', '弹幕');
-    stat(count(data.audience), '观众');
-    stat(count(data.interactionAudience), '互动观众');
+    stat(fmtMetric(data.revenue, {money: true}) + ' 元', '流水', '', '', 'revenue');
+    stat(fmtMetric(data.messages) + ' 条', '弹幕', '', '', 'messages');
+    stat(count(data.audience), '观众', '', '', 'audience');
+    stat(count(data.interactionAudience), '互动观众', '', '', 'interactionAudience');
     const fans = data.fans;
     const change = fans ? (fans.change > 0 ? '+' : fans.change < 0 ? '−' : '') + fmtMetric(Math.abs(fans.change)) : '暂无数据';
     const tooltip = fans ? (fans.partial ? '从 ' + insightsTime(fans.fromAt) + ' 起算；' : '')
@@ -593,6 +601,24 @@ function renderInsights(data, message, living) {
     stat(change, '粉丝净增', '', tooltip);
   }
   host.appendChild(stats);
+  const explanation = comparisonExplanation(data);
+  if (explanation.count || explanation.note) {
+    const details = el('details', 'hint');
+    const summary = el('summary');
+    summary.textContent = '对比说明 · ' + explanation.count + ' 项未比较';
+    details.appendChild(summary);
+    for (const group of explanation.groups) {
+      const line = el('p');
+      line.textContent = group.reason + '：' + group.metrics.join('、');
+      details.appendChild(line);
+    }
+    if (explanation.note) {
+      const note = el('p');
+      note.textContent = explanation.note;
+      details.appendChild(note);
+    }
+    host.appendChild(details);
+  }
   if (data.metricsKnown) {
     const composition = el('p', 'hint');
     composition.textContent = data.composition
