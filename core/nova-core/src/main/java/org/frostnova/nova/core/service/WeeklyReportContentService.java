@@ -45,7 +45,6 @@ public class WeeklyReportContentService {
         var range = WeeklyReport.previousWeek(now);
         var sampled = snapshots.find(0, range.to().toEpochMilli()).stream()
                 .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid())).toList();
-        var data = WeeklyReport.calculate(sessions, sampled, now, rules, showRevenue);
         String uname = loaded == null ? null : loaded.getUname();
         Long roomId = loaded == null ? null : loaded.getRoomId();
         if ((uname == null || uname.isBlank()) && !sessions.isEmpty()) {
@@ -54,6 +53,7 @@ public class WeeklyReportContentService {
             if (roomId == null) roomId = latest.roomId();
         }
         var identity = new LiveStreamerInfo(uid, uname, roomId, loaded == null ? null : loaded.getFace());
+        var data = WeeklyReport.calculate(uname, sessions, sampled, now, rules, showRevenue);
         return Optional.of(WeeklyReport.preview(data, () -> renderers.orderedStream()
                 .filter(r -> platform.equals(r.platform())).findFirst()
                 .map(r -> r.render(identity, data)).orElse(null)));
