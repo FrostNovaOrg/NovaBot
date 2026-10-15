@@ -99,4 +99,55 @@ class StreamerInsightsApiTest {
                     controller.insights("bilibili", 1L, days).getBody().getString("message"));
         }
     }
+    @Test @DisplayName("开播时段接口返回84格及整场明细且180天独立筛选")
+    void startSlotsApi() throws Exception {
+        append(Instant.parse("2026-06-01T02:00:00Z"));
+        append(Instant.parse("2026-09-07T02:00:00Z"));
+        append(Instant.parse("2026-09-14T02:00:00Z"));
+        append(Instant.parse("2026-09-21T02:00:00Z"));
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (String days : List.of("90", "180")) {
+            String raw = mvc.perform(get("/config/api/streamers/bilibili/1/start-slots").param("days", days))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var body = JSON.parseObject(raw);
+            var data = body.getJSONObject("startSlots");
+            assertEquals(Integer.parseInt(days), body.getIntValue("days"));
+            assertEquals(84, data.getJSONArray("cells").size(), "接口须给完整热力表");
+            var cell = data.getJSONArray("cells").getJSONObject(5);
+            assertEquals(days.equals("90") ? 3 : 4, cell.getIntValue("sessions"), "180天须含六月场次");
+            assertEquals(1428d, cell.getDoubleValue("revenuePerHour"));
+            assertEquals(24d, cell.getDoubleValue("messagesPerHour"));
+            assertEquals(238d, cell.getJSONArray("sessionItems").getJSONObject(0).getDoubleValue("revenue"));
+            assertEquals(1, data.getJSONArray("topRevenue").size());
+            assertFalse(raw.contains("userSets"));
+            assertFalse(raw.contains("enter_users"));
+            if (days.equals("90")) System.out.println("START_SLOTS_SAMPLE: " + raw);
+        }
+        mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
+                .andExpect(status().isOk());
+    }
+
+    @Test @DisplayName("开播时段只接受90或180天且不存在主播返回404")
+    void startSlotsValidation() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (String days : List.of("7", "30", "abc", "0", "90.0")) {
+            mvc.perform(get("/config/api/streamers/bilibili/1/start-slots").param("days", days))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test @DisplayName("开播时段接口和主播概况一样要求登录")
+    void startSlotsRequiresLogin() throws Exception {
+        var auth = mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class);
+        when(auth.isEnabled()).thenReturn(true);
+        var filter = new org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter("sample-token",
+                new org.frostnova.nova.core.util.IpMatcher(List.of("0.0.0.0/0", "::/0")), auth,
+                new NovaCoreProperties.ConfigUi.Auth(), new NovaCoreProperties.ConfigUi.Agreement());
+        var mvc = MockMvcBuilders.standaloneSetup(controller).addFilters(filter).build();
+        mvc.perform(get("/config/api/streamers/bilibili/1/start-slots"))
+                .andExpect(status().isUnauthorized());
+    }
+
 }

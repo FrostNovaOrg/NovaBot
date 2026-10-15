@@ -23,7 +23,7 @@ import {totalDataOff} from '../../../main/resources/config-ui/home-model.js';
 register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
 
 const {
-  PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
+  PERIODS, TABS, slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   gapCells, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
@@ -299,10 +299,34 @@ eq(rowSubtitle({summary: {days: 7, sessions: 0, durationSeconds: 0, lastStart: 1
   '一个月没播的主播也写得出上次是什么时候——最近一场不受七天窗口限制');
 
 // ---------- 十四、闭集本身 ----------
-eq(TABS.map(one => one[0]), ['overview', 'sessions', 'trend'], '三个页签');
+eq(TABS.map(one => one[0]), ['overview', 'sessions', 'trend', 'start-slots'], '开播时段在趋势后');
 eq(PERIODS.map(one => one[0]), ['week', 'month'], '两种周期，与服务端认的值一致');
 
 // ---------- 报数 ----------
+// 开播时段：空格、样本不足与缺少数据不能画成低效时段。
+eq(parseStreamersHash('#/streamers/sample/1/start-slots').pane, 'start-slots', '开播时段地址可往返');
+eq(slotRangeDays(parseStreamersHash('#/streamers/sample/1/start-slots')), 90, '开播时段默认90天');
+eq(slotRangeDays(parseStreamersHash('#/streamers/sample/1/start-slots?slotDays=180&days=7')), 180, '开播时段180天独立于概况');
+eq(slotRangeDays(parseStreamersHash('#/streamers/sample/1/start-slots?slotDays=7')), 90, '开播时段不接受7天');
+eq(slotCell({sessions: 0}, 'revenue', 100), {text: '—', count: '0 场', intensity: null}, '空格显示破折号');
+eq(slotCell({sessions: 2, revenuePerHour: 90}, 'revenue', 100),
+  {text: '样本不足', count: '2 场', intensity: null}, '少于3场不显示数值不上色');
+eq(slotCell({sessions: 3, revenuePerHour: null}, 'revenue', 100),
+  {text: '暂无数据', count: '3 场', intensity: null}, '没有口径或有效时长时无数据');
+eq(slotCell({sessions: 3, revenuePerHour: 50}, 'revenue', 100),
+  {text: '50.00 元/时', count: '3 场', intensity: 0.5}, '流水按最大值上色并带元每时');
+eq(slotCell({sessions: 4, messagesPerHour: 0}, 'messages', 0),
+  {text: '0.00 条/时', count: '4 场', intensity: 0}, '弹幕零值仍有数据和单位');
+eq(slotTopText([], 'revenue'), ['当前范围暂无达到 3 场的时段。'], '前三为空说明门槛');
+eq(slotTopText([{weekday: 1, startHour: 22, value: 50, sessions: 3}], 'revenue'),
+  ['周一 22:00–24:00 · 50.00 元/时 · 3 场'], '前三含星期时段值和场数');
+eq(slotTopText([{weekday: 7, startHour: 0, value: 10, sessions: 4}], 'messages'),
+  ['周日 00:00–02:00 · 10.00 条/时 · 4 场'], '弹幕前三带条每时');
+eq(slotLabel({weekday: 7, startHour: 0}), '周日 00:00–02:00', '凌晨显示实际星期');
+eq(slotTotal({revenue: 100, messages: 200}, 'revenue'), '100.00 元', '场次显示整场流水');
+eq(slotTotal({revenue: null, messages: 200}, 'revenue'), '暂无数据', '场次无口径不显示零');
+eq(slotTotal({messages: 200}, 'messages'), '200 条', '场次显示整场弹幕');
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);
