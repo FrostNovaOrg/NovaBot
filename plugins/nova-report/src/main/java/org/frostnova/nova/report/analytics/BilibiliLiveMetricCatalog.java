@@ -92,6 +92,11 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
         return SNAPSHOT_METRICS;
     }
     @Override
+    public String audienceRevenueRanking() {
+        return BilibiliLiveMetric.REVENUE_USERS;
+    }
+
+    @Override
     public Insights insights() {
         List<String> interaction = List.of(BilibiliLiveMetric.DANMU_USERS, BilibiliLiveMetric.LIKE_USERS,
                 BilibiliLiveMetric.GIFT_USERS, BilibiliLiveMetric.SUPER_CHAT_USERS,

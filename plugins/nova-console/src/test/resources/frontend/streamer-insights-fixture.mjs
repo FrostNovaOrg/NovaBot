@@ -61,8 +61,14 @@ const requests = [];
 const pending = [];
 const response = json => ({status: 200, ok: true, json: async () => json});
 let compositionScenario = null;
+const audienceResponse = {success: true, audience: {group: 'all', sort: 'attendance',
+  counts: {all: 45, first: 20, returning: 25, interaction: 12}, coverage: {complete: 2},
+  page: 1, pages: 3, total: 45, items: [{name: 'viewer', attendance: 2, revenue: 30.5,
+    firstSeen: 1792015200000, lastSeen: 1792101600000, interaction: true,
+    visits: [{startTime: 1792101600000, title: 'latest title'}, {startTime: 1792015200000, title: 'first title'}]}]}};
 globalThis.fetch = async url => {
   requests.push(String(url));
+  if (String(url).includes('/audience?')) return response(audienceResponse);
   if (String(url).includes('/insights?')) {
     if (String(url).includes('days=90')) return new Promise(resolve => pending.push(resolve));
     return response({success: true, insights: {from: 1792015200000, sessions: 1, durationSeconds: 600,
@@ -89,6 +95,7 @@ await check('切换与后退只重读概况新卡，保留本场节点和十五�
   assert.equal(cleared, beforeCleared);
   assert.equal(requests.length, 1);
   assert.match(requests[0], /insights\?days=7/);
+  assert.ok(flatten(nodes.get('sd-tabs')).some(n => n.href?.endsWith('/audience?days=7&group=all&sort=attendance&page=1')), '切到观众应保留刚选的天数');
   const card = nodes.get('sd-insights');
   assert.ok(card);
   const links = flatten(card).filter(n => n.tagName === 'a');
@@ -183,6 +190,78 @@ await check('完整名单的观众与互动观众都显示较上期，涨红跌�
       assert.ok(cell.children.some(n => n.tagName === 'small' && n.textContent === text && n.style.color === color),
         label + '格缺少较上期文字或涨跌颜色');
     }
+  }
+});
+await check('观众页显示人数五列及范围分组排序分页链接', async () => {
+  location.hash = '#/streamers/sample/1/audience';
+  await page.refresh();
+  const card = nodes.get('sd-audience');
+  assert.ok(card, '观众页应创建表格容器');
+  assert.ok(flatten(nodes.get('sd-tabs').children[0]).some(n => n.href?.includes('days=7')), '范围切换应在页签上方');
+  const all = [...flatten(card), ...flatten(nodes.get('sd-tabs'))];
+  const text = all.map(n => n.textContent).join(' ');
+  assert.match(text, /本期全部观众 45 人/);
+  assert.match(text, /回访 25 人/);
+  assert.match(text, /30\.50/);
+  assert.match(text, /首次 2026/);
+  assert.match(text, /名单：完整 2 场/);
+  const links = all.filter(n => n.tagName === 'a');
+  for (const query of ['days=7&group=all&sort=attendance&page=1',
+    'days=30&group=returning&sort=attendance&page=1',
+    'days=30&group=all&sort=revenue&page=1',
+    'days=30&group=all&sort=recent&page=1',
+    'days=30&group=all&sort=attendance&page=2']) {
+    assert.ok(links.some(n => n.href.endsWith(query)), '应能切换 ' + query);
+  }
+  assert.ok(requests.some(url => url.includes('/audience?days=30&group=all&sort=attendance&page=1')));
+});
+await check('点击昵称展开本期场次开播时间标题，再点收起', () => {
+  const all = flatten(nodes.get('sd-audience'));
+  const button = all.find(n => n.tagName === 'button' && n.textContent === 'viewer');
+  assert.ok(button, '昵称应可点击');
+  const expanded = all.find(n => n.tagName === 'tr' && n.hidden === true);
+  assert.ok(expanded, '场次初始应收起');
+  button.listeners.click();
+  assert.equal(expanded.hidden, false, '点击后展开');
+  assert.equal(button.attrs['aria-expanded'], 'true');
+  const visits = flatten(expanded).filter(n => n.tagName === 'a');
+  assert.equal(visits.length, 2);
+  assert.match(visits[0].textContent, /2026.*latest title/);
+  assert.ok(visits[0].href.endsWith('/1792101600000'));
+  button.listeners.click();
+  assert.equal(expanded.hidden, true, '再次点击收起');
+  assert.equal(button.attrs['aria-expanded'], 'false');
+});
+await check('经场次趋势切回观众保留范围分组排序页码', async () => {
+  const original = '#/streamers/sample/1/audience?days=7&group=returning&sort=revenue&page=2';
+  location.hash = original;
+  await page.refresh();
+  assert.equal(flatten(nodes.get('sd-tabs')).find(n => n.textContent === '观众').href, original,
+    '观众页签链接保留当前条件');
+  for (const pane of ['sessions', 'trend']) {
+    const link = flatten(nodes.get('sd-tabs')).find(n => n.textContent === (pane === 'sessions' ? '场次' : '趋势'));
+    location.hash = link.href;
+    await page.refresh();
+    const back = flatten(nodes.get('sd-tabs')).find(n => n.textContent === '观众');
+    assert.equal(back.href, original, '切回观众应保留全部筛选条件');
+    requests.length = 0;
+    location.hash = back.href;
+    await page.refresh();
+    assert.ok(requests.some(url => url.endsWith('/audience?days=7&group=returning&sort=revenue&page=2')),
+      '恢复后请求沿用原范围分组排序页码');
+  }
+});
+await check('点击流水与最近表头后请求带当前排序', async () => {
+  for (const [sort, label] of [['revenue', '本期流水'], ['recent', '最近到场']]) {
+    location.hash = '#/streamers/sample/1/audience';
+    await page.refresh();
+    const link = flatten(nodes.get('sd-audience')).find(n => n.tagName === 'a' && n.textContent.startsWith(label));
+    assert.ok(link, '应有排序表头');
+    requests.length = 0;
+    location.hash = link.href;
+    await page.refresh();
+    assert.ok(requests.some(url => url.includes('/audience?') && url.includes('sort=' + sort)),
+      '表头排序必须进入请求：' + sort);
   }
 });
 page.leave();

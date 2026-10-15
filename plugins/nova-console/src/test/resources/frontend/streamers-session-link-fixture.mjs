@@ -468,7 +468,8 @@ await ask('开播时段显示84格且点击列出整场数据与场次链接', a
   await openSlots();
   same(slotButtons().length, 84, '7×12格');
   same(slotRequests.at(-1).endsWith('days=90'), true, '默认90天请求');
-  same(walk(node('sd-tabs')).filter(n => n.tagName === 'a').at(-1).textContent, '开播时段', '最后页签');
+  same(walk(node('sd-tabs')).filter(n => n.tagName === 'a').map(n => n.textContent),
+    ['概况', '场次', '趋势', '开播时段', '观众'], '观众位于开播时段之后');
   const active = slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00'));
   if (!active) throw new Error('没有周一22点格子');
   same(Boolean(active.style.background), true, '有值格子上色');

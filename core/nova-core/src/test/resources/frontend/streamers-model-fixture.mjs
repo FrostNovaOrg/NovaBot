@@ -23,7 +23,9 @@ import {totalDataOff} from '../../../main/resources/config-ui/home-model.js';
 register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
 
 const {
-  PERIODS, TABS, slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
+  AUDIENCE_COLUMNS, audienceGroups, audienceCells, audienceSort, coverageText,
+  PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
+  slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
   gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
@@ -299,8 +301,30 @@ eq(rowSubtitle({summary: {days: 7, sessions: 0, durationSeconds: 0, lastStart: 1
   '一个月没播的主播也写得出上次是什么时候——最近一场不受七天窗口限制');
 
 // ---------- 十四、闭集本身 ----------
-eq(TABS.map(one => one[0]), ['overview', 'sessions', 'trend', 'start-slots'], '开播时段在趋势后');
+eq(TABS.map(one => one[0]), ['overview', 'sessions', 'trend', 'start-slots', 'audience'], '观众排在开播时段后面');
 eq(PERIODS.map(one => one[0]), ['week', 'month'], '两种周期，与服务端认的值一致');
+
+// 观众表：列文字、分组人数、缺失值和排序链接。
+eq(parseStreamersHash('#/streamers/sample/1/audience').pane, 'audience', '观众地址可直接打开');
+eq(parseStreamersHash('#/streamers/sample/1/audience').days, 30, '观众默认三十天');
+eq(parseStreamersHash('#/streamers/sample/1/audience?days=7&group=returning&sort=revenue&page=3'),
+  {view: 'detail', platform: 'sample', uid: '1', pane: 'audience', start: '', page: 3,
+    period: 'week', days: 7, group: 'returning', sort: 'revenue'}, '观众范围分组排序页码刷新后保留');
+eq(AUDIENCE_COLUMNS.map(c => c[1]), ['昵称', '本期到场', '最近到场', '本期流水（元）', '本期互动'], '观众表列文字');
+eq(audienceGroups({all: 45, first: 20, returning: 25, interaction: 12}).map(g => g[1]),
+  ['本期全部观众 45 人', '本期首次记录 20 人', '回访 25 人', '本期互动观众 12 人'], '分组显示各自人数');
+eq(audienceGroups({all: null, first: null, returning: null, interaction: null}).map(g => g[1]),
+  ['本期全部观众 暂无数据', '本期首次记录 暂无数据', '回访 暂无数据', '本期互动观众 暂无数据'], '未知人数不写零');
+eq(audienceCells({name: '', attendance: 2, revenue: 12345.5, interaction: true}).name, '未记录昵称', '缺昵称不能空白');
+eq(audienceCells({attendance: 2, revenue: 12345.5, interaction: true}).attendance, '2 场', '到场数带场字');
+eq(audienceCells({attendance: 2, revenue: 12345.5, interaction: true}).revenue, '12,345.50', '本期流水千分位两位小数');
+eq(audienceCells({revenue: null, interaction: false}).revenue, '—', '拿不全金额不得写零');
+eq([audienceCells({interaction: true}).interaction, audienceCells({interaction: false}).interaction], ['有', '无'], '互动有无两态');
+eq(['attendance', 'revenue', 'recent'].map(col => audienceSort('attendance', col)),
+  ['attendance', 'revenue', 'recent'], '点击三列表头可换排序');
+eq(audienceSort('revenue', 'name'), 'revenue', '昵称表头不参与排序');
+eq(coverageText({complete: 1, anonymous: 2, unknown: 3, missing: 4}),
+  '名单：完整 1 场；含无法识别的观众 2 场（这几场的人数偏少）；完整性未知 3 场（升级到 6.0 之前开播的场次未记录此项）；没有名单 4 场', '名单情况与概况共用一句话');
 
 eq(insightsComparison?.({changeRatio: .12}), {text: '较上期 +12%', color: 'var(--err)'},
   '概况上涨显示较上期与红色');

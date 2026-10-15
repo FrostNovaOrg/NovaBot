@@ -1,5 +1,5 @@
 /**
- * 主播页：列表、详情（概况／场次／趋势／开播时段）、某一场
+ * 主播页：列表、详情（概况／场次／趋势／开播时段／观众）、某一场
  *
  * 本文件随控制台插件走，由控制台按注册清单装载，落在顶级导航。
  * 三个导出就是与控制台之间的全部约定：render 建出页容器里的三块、
@@ -17,6 +17,7 @@
 
 import {$, api, CONSOLE, el, esc, request, say} from './core.js';
 import {
+  AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText,
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   gapCells, insightsComparison, comparisonExplanation, insightsPoint, insightsTime, isStreamersHash, pageBar, parseStreamersHash, peakCell, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle, shownMetrics,
@@ -47,7 +48,8 @@ const PAGE_STYLE = `
 .spark.up{color:var(--accent)}
 a.lgpill{text-decoration:none}
 a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
-#sd-tabs{margin:0 0 14px}
+#sd-tabs{display:block;margin:0 0 14px}
+#sd-tabs>.lgpills+.lgpills{margin-top:10px}
 #sd-body td.n,#sd-body th.n{text-align:right;font-variant-numeric:tabular-nums}
 #sd-body tr.empty-row td{color:var(--dim)}
 #sd-body tbody tr:hover{background:var(--soft)}
@@ -216,6 +218,7 @@ export function loadStreamers() {
     && where.pane === 'overview' && next.pane === 'overview'
     && where.platform === next.platform && where.uid === next.uid && where.days !== next.days) {
     where = next;
+    renderTabs();
     return loadInsights();
   }
   liveActive = true;
@@ -474,7 +477,8 @@ async function loadDetail() {
   if (where.pane === 'overview') {
     startLiveRefresh();
     await Promise.all([loadLive(), loadInsights()]);
-  } else if (where.pane === 'start-slots') await loadStartSlots();
+  } else if (where.pane === 'audience') await loadAudience();
+  else if (where.pane === 'start-slots') await loadStartSlots();
 }
 
 function renderHead() {
@@ -520,15 +524,25 @@ function renderHead() {
   host.appendChild(head);
 }
 
+const audienceStates = new Map();
+
 function renderTabs() {
   const host = $('#sd-tabs');
   host.innerHTML = '';
+  if (where.pane === 'audience') host.appendChild(audienceRanges());
+  const stateKey = where.platform + '/' + where.uid;
+  if (where.pane === 'audience') audienceStates.set(stateKey, {...where});
+  const audienceState = audienceStates.get(stateKey)
+    || {...where, group: 'all', sort: 'attendance', page: 1};
+  const tabs = el('div', 'lgpills');
+  host.appendChild(tabs);
   for (const [key, label] of TABS) {
     const link = el('a', 'nv-pill lgpill');
-    link.href = detailHash(detail.platform, detail.uid, key);
+    link.href = key === 'audience' ? audienceHash(audienceState)
+      : detailHash(detail.platform, detail.uid, key, key === 'overview' ? 'days=' + where.days : '');
     link.textContent = label;
     if (key === where.pane) link.setAttribute('aria-current', 'page');
-    host.appendChild(link);
+    tabs.appendChild(link);
   }
 }
 
@@ -537,9 +551,157 @@ function renderPane() {
   host.innerHTML = '';
   if (where.pane === 'sessions') renderSessions(host);
   else if (where.pane === 'trend') renderTrend(host);
-  else if (where.pane === 'start-slots') renderStartSlots(host);
+  else if (where.pane === 'audience') {
+    const card = el('div', 'nv-card hcard');
+    card.id = 'sd-audience';
+    host.appendChild(card);
+  } else if (where.pane === 'start-slots') renderStartSlots(host);
   else renderOverview(host);
   renderBanner();
+}
+
+function audienceHash(changes = {}) {
+  const state = {...where, ...changes};
+  return detailHash(state.platform, state.uid, 'audience', 'days=' + state.days
+    + '&group=' + state.group + '&sort=' + state.sort + '&page=' + state.page);
+}
+
+async function loadAudience() {
+  const generation = viewGeneration;
+  renderAudience(null, '正在读取观众名单…');
+  try {
+    const response = await api('/streamers/' + encodeURIComponent(where.platform) + '/'
+      + encodeURIComponent(where.uid) + '/audience?days=' + where.days + '&group=' + where.group
+      + '&sort=' + where.sort + '&page=' + where.page);
+    if (generation !== viewGeneration || !liveActive) return;
+    if (!response.success) throw new Error(response.message || '未能读取观众名单');
+    renderAudience(response.audience);
+  } catch (e) {
+    if (generation === viewGeneration && liveActive) renderAudience(null, '读取失败：' + e.message);
+  }
+}
+
+function audienceRanges() {
+  const ranges = el('div', 'lgpills');
+  for (const days of [7, 30, 90]) {
+    const link = el('a', 'nv-pill lgpill');
+    link.href = audienceHash({days, page: 1});
+    link.textContent = '近 ' + days + ' 天';
+    if (days === where.days) link.setAttribute('aria-current', 'page');
+    ranges.appendChild(link);
+  }
+  return ranges;
+}
+
+function renderAudience(data, message) {
+  const host = $('#sd-audience');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!data) {
+    const hint = el('p', 'hint');
+    hint.textContent = message;
+    host.appendChild(hint);
+    return;
+  }
+  const groups = el('div', 'lgpills');
+  for (const [key, label] of audienceGroups(data.counts)) {
+    const link = el('a', 'nv-pill lgpill');
+    link.href = audienceHash({group: key, page: 1});
+    link.textContent = label;
+    if (key === data.group) link.setAttribute('aria-current', 'page');
+    groups.appendChild(link);
+  }
+  host.appendChild(groups);
+  const note = el('p', 'hint');
+  note.textContent = coverageText(data.coverage);
+  host.appendChild(note);
+  const explanation = el('p', 'hint');
+  explanation.textContent = '首次记录指已有记录中第一次出现，不一定是第一次观看。流水按礼物、醒目留言与大航海合计；到过的场次缺少逐人金额时显示「—」。';
+  host.appendChild(explanation);
+  const scroll = el('div');
+  scroll.style.overflowX = 'auto';
+  const table = el('table');
+  const head = el('thead');
+  const headers = el('tr');
+  for (const [key, label] of AUDIENCE_COLUMNS) {
+    const th = el('th');
+    if (['attendance', 'revenue', 'recent'].includes(key)) {
+      th.setAttribute('aria-sort', key === data.sort ? 'descending' : 'none');
+      const link = el('a');
+      link.href = audienceHash({sort: audienceSort(data.sort, key), page: 1});
+      link.textContent = label + (key === data.sort ? ' ↓' : '');
+      th.appendChild(link);
+    } else th.textContent = label;
+    headers.appendChild(th);
+  }
+  head.appendChild(headers);
+  table.appendChild(head);
+  const body = el('tbody');
+  for (const person of data.items || []) {
+    const cells = audienceCells(person);
+    const row = el('tr');
+    const name = el('td');
+    const button = el('button', 'daystep');
+    button.type = 'button';
+    button.textContent = cells.name;
+    button.setAttribute('aria-expanded', 'false');
+    name.appendChild(button);
+    row.appendChild(name);
+    for (const key of ['attendance', 'recent', 'revenue', 'interaction']) {
+      const cell = el('td');
+      cell.textContent = cells[key];
+      if (key === 'recent') {
+        const first = el('small', 'hint');
+        first.style.display = 'block';
+        first.textContent = cells.first;
+        cell.appendChild(first);
+      }
+      row.appendChild(cell);
+    }
+    body.appendChild(row);
+    const expanded = el('tr');
+    expanded.hidden = true;
+    const visitCell = el('td');
+    visitCell.colSpan = 5;
+    const visits = el('ul');
+    for (const visit of person.visits || []) {
+      const item = el('li');
+      const link = el('a');
+      link.href = sessionHash(where.platform, where.uid, visit.startTime);
+      link.textContent = new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai',
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+        hourCycle: 'h23'}).format(new Date(visit.startTime)) + ' · ' + (visit.title || '未记录标题');
+      item.appendChild(link);
+      visits.appendChild(item);
+    }
+    visitCell.appendChild(visits);
+    expanded.appendChild(visitCell);
+    body.appendChild(expanded);
+    button.addEventListener('click', () => {
+      expanded.hidden = !expanded.hidden;
+      button.setAttribute('aria-expanded', String(!expanded.hidden));
+    });
+  }
+  table.appendChild(body);
+  scroll.appendChild(table);
+  host.appendChild(scroll);
+  if (!data.items?.length) {
+    const empty = el('p', 'hint');
+    empty.textContent = '该范围和分组暂无观众名单。';
+    host.appendChild(empty);
+  }
+  const pager = el('div', 'lgpills');
+  for (const [page, label] of [[data.page - 1, '上一页'], [data.page + 1, '下一页']]) {
+    if (page < 1 || page > data.pages) continue;
+    const link = el('a', 'daystep');
+    link.href = audienceHash({page});
+    link.textContent = label;
+    pager.appendChild(link);
+  }
+  const text = el('span', 'hint');
+  text.textContent = '第 ' + data.page + ' / ' + Math.max(1, data.pages) + ' 页 · 共 ' + data.total + ' 人';
+  pager.appendChild(text);
+  host.appendChild(pager);
 }
 
 let slotsMetric = 'revenue';
@@ -784,16 +946,10 @@ function renderInsights(data, message, living) {
       : '名单从 ' + insightsTime(data.firstRecordedAt, false)
         + '起才开始记录，此前来过的观众无法区分';
     host.appendChild(composition);
-    const coverage = data.coverage || {};
-    const parts = [
-      coverage.complete ? '完整 ' + coverage.complete + ' 场' : '',
-      coverage.anonymous ? '含无法识别的观众 ' + coverage.anonymous + ' 场（这几场的人数偏少）' : '',
-      coverage.unknown ? '完整性未知 ' + coverage.unknown + ' 场（升级到 6.0 之前开播的场次未记录此项）' : '',
-      coverage.missing ? '没有名单 ' + coverage.missing + ' 场' : '',
-    ].filter(Boolean);
-    if (parts.length) {
+    const text = coverageText(data.coverage);
+    if (text) {
       const note = el('p', 'hint');
-      note.textContent = '名单：' + parts.join('；');
+      note.textContent = text;
       host.appendChild(note);
     }
   }

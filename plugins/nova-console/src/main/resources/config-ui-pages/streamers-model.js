@@ -13,13 +13,13 @@
 import {totalDataOff} from './home-model.js';
 
 /**
- * 详情页的四个页签，闭集
+ * 详情页的五个页签，闭集
  *
- * 第三段落在这四个词上时是页签，落在一串数字上时是某一场——见 parseStreamersHash。
+ * 第三段落在这五个词上时是页签，落在一串数字上时是某一场——见 parseStreamersHash。
  * 两种取值共用同一段路径，是因为场次是主播底下的东西，地址上摆成
  * #/streamers/<平台>/<uid>/<开播时刻> 才能一眼看出它属于谁。
  */
-export const TABS = [['overview', '概况'], ['sessions', '场次'], ['trend', '趋势'], ['start-slots', '开播时段']];
+export const TABS = [['overview', '概况'], ['sessions', '场次'], ['trend', '趋势'], ['start-slots', '开播时段'], ['audience', '观众']];
 
 /**
  * 这一页的三块子视图，闭集
@@ -105,7 +105,7 @@ export function parseStreamersHash(hash) {
 
   const seg = path[3] || '';
   if (DIGITS.test(seg)) {
-    // 第三段是一串数字＝某一场的开播时刻。它与四个页签共用这一段，
+    // 第三段是一串数字＝某一场的开播时刻。它与五个页签共用这一段，
     // 靠形状分辨：页签是词，开播时刻是毫秒时间戳
     state.view = viewSession;
     state.start = seg;
@@ -113,6 +113,7 @@ export function parseStreamersHash(hash) {
     state.pane = seg;
   }
 
+  if (state.pane === 'audience') { state.group = 'all'; state.sort = 'attendance'; }
   for (const part of query.split('&')) {
     if (!part) continue;
     const eq = part.indexOf('=');
@@ -122,6 +123,8 @@ export function parseStreamersHash(hash) {
     // 那一头会把越界的页码夹回来，于是地址栏说第 9 页而屏幕上是第 1 页
     if (key === 'page' && DIGITS.test(value) && Number(value) > 0) state.page = Number(value);
     else if (key === 'days' && ['7', '30', '90'].includes(value)) state.days = Number(value);
+    else if (state.pane === 'audience' && key === 'group' && ['all', 'first', 'returning', 'interaction'].includes(value)) state.group = value;
+    else if (state.pane === 'audience' && key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
     else if (key === 'slotDays' && ['90', '180'].includes(value)) state.slotDays = Number(value);
     else if (key === 'period' && PERIODS.some(one => one[0] === value)) state.period = value;
   }
@@ -589,6 +592,46 @@ export function insightsTime(ms, time = true) {
     day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).formatToParts(d);
   const part = name => parts.find(p => p.type === name).value;
   return part('month') + ' 月 ' + part('day') + ' 日' + (time ? ' ' + part('hour') + ':' + part('minute') : '');
+}
+
+/** 观众表的列及其排序参数。 */
+export const AUDIENCE_COLUMNS = [['name', '昵称'], ['attendance', '本期到场'],
+  ['recent', '最近到场'], ['revenue', '本期流水（元）'], ['interaction', '本期互动']];
+
+/** 与接口一致的四个分组；未知构成不伪装成零。 */
+export function audienceGroups(counts) {
+  const c = counts || {};
+  return [['all', '本期全部观众'], ['first', '本期首次记录'], ['returning', '回访'],
+    ['interaction', '本期互动观众']].map(([key, label]) => [key,
+    label + ' ' + (c[key] == null ? '暂无数据' : fmtMetric(c[key]) + ' 人')]);
+}
+
+/** 表格的显示值，流水缺一场就显示未知。 */
+export function audienceCells(person) {
+  const p = person || {};
+  const date = ms => ms == null ? '—' : new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(Number(ms)));
+  return {name: p.name && p.name.trim() ? p.name : '未记录昵称',
+    attendance: (Number(p.attendance) || 0) + ' 场', recent: date(p.lastSeen),
+    first: '首次 ' + date(p.firstSeen),
+    revenue: p.revenue == null ? '—' : Number(p.revenue).toLocaleString('en-US', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2}), interaction: p.interaction ? '有' : '无'};
+}
+
+/** 三列均从多到少或从晚到早排列。 */
+export function audienceSort(current, column) {
+  return ['attendance', 'revenue', 'recent'].includes(column) ? column : current;
+}
+
+/** 概况和观众页共用的名单情况文案。 */
+export function coverageText(coverage) {
+  const c = coverage || {};
+  const parts = [c.complete ? '完整 ' + c.complete + ' 场' : '',
+    c.anonymous ? '含无法识别的观众 ' + c.anonymous + ' 场（这几场的人数偏少）' : '',
+    c.unknown ? '完整性未知 ' + c.unknown + ' 场（升级到 6.0 之前开播的场次未记录此项）' : '',
+    c.missing ? '没有名单 ' + c.missing + ' 场' : ''].filter(Boolean);
+  return parts.length ? '名单：' + parts.join('；') : '';
 }
 
 /** 将服务端的对比结果换成文字与涨跌色。 */
