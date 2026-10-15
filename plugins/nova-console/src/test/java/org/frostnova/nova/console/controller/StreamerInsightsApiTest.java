@@ -32,6 +32,7 @@ class StreamerInsightsApiTest {
     StreamerSnapshotArchive snapshots;
     LiveDetailArchive details;
     LiveDataService live;
+    ObjectProvider<LiveMetricCatalog> catalogs;
     final Instant now = Instant.parse("2026-10-21T07:00:00Z");
     final Instant from = Instant.parse("2026-10-14T22:00:00Z");
 
@@ -46,7 +47,7 @@ class StreamerInsightsApiTest {
         when(data.getAllUsers()).thenReturn(List.of());
         live = mock(LiveDataService.class);
         when(live.getLiveStatus(any(), any())).thenReturn(Optional.of(false));
-        ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
+        catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(new BilibiliLiveMetricCatalog()));
         ObjectProvider<LiveReportRedrawer> redrawers = mock(ObjectProvider.class);
         details = new LiveDetailArchive(props);
@@ -481,7 +482,67 @@ class StreamerInsightsApiTest {
         var data = JSON.parseObject(raw);
         assertEquals(238d, data.getDouble("revenue"), "本场必须下发按规则计算的流水");
         assertEquals(insights("7", "bilibili").getDoubleValue("revenue"), data.getDoubleValue("revenue"));
+        assertEquals("danmu_count", controller.streamer("bilibili", 1L, "week", 1, 20).getBody()
+                .getJSONObject("sessions").getString("messageKey"), "最近归档弹幕也使用平台规则");
         System.out.println("LIVE_REVENUE_SAMPLE: " + raw);
+        for (var metrics : List.of(Map.<String, Double>of(), Map.of("gift_value", 0d))) {
+            when(live.getLiveMetrics("bilibili", 1L)).thenReturn(metrics);
+            var sample = controller.live("bilibili", 1L, null).getBody();
+            assertEquals(metrics.isEmpty() ? null : Double.valueOf(0), sample.getDouble("revenue"));
+            System.out.println("LIVE_BILIBILI_SAMPLE: " + JSON.toJSONString(sample, com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls));
+        }
+        when(live.getLiveStatus("bilibili", 1L)).thenReturn(Optional.of(false));
+        System.out.println("LIVE_BILIBILI_OFF_SAMPLE: " + JSON.toJSONString(controller.live("bilibili", 1L, null).getBody(),
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls));
+    }
+
+    // 第一轮采集之前不能把缺失当零；有收入项的真实零仍须显示。
+    @Test @DisplayName("直播流水与弹幕区分缺失和真实零并遵循平台规则")
+    void liveMissingAndZero() throws Exception {
+        append(from);
+        java.nio.file.Files.writeString(dir.resolve("datasource.json"),
+                "[{\"platform\":\"bilibili\",\"uid\":1,\"enabled\":true,\"targets\":[]}]");
+        var catalog = mock(LiveMetricCatalog.class);
+        when(catalog.platform()).thenReturn("bilibili");
+        when(catalog.insights()).thenReturn(new LiveMetricCatalog.Insights(
+                List.of("income_a", "income_b"), "chat_total", List.of(), List.of(), null));
+        when(catalogs.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(catalog));
+        when(live.getLiveStatus("bilibili", 1L)).thenReturn(Optional.of(true));
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (var metrics : List.of(Map.<String, Double>of(), Map.of("unrelated", 5d),
+                Map.of("income_b", 0d, "chat_total", 0d), Map.of("income_a", 12d, "chat_total", 7d))) {
+            when(live.getLiveMetrics("bilibili", 1L)).thenReturn(metrics);
+            var raw = mvc.perform(get("/config/api/streamers/bilibili/1/live"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var data = JSON.parseObject(raw);
+            assertTrue(data.containsKey("revenue"));
+            assertEquals(metrics.containsKey("income_a") ? Double.valueOf(12) : metrics.containsKey("income_b") ? Double.valueOf(0) : null,
+                    data.getDouble("revenue"), "没有收入键时流水必须未知，有收入键才可为零");
+            assertTrue(data.containsKey("messages"), "直播必须下发按规则计算的弹幕");
+            assertEquals(metrics.get("chat_total"), data.getDouble("messages"), "弹幕只读取插件声明的键");
+        }
+        when(live.getLiveStatus("bilibili", 1L)).thenReturn(Optional.of(false));
+        var raw = mvc.perform(get("/config/api/streamers/bilibili/1/live"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertNull(JSON.parseObject(raw).getDouble("revenue"));
+        assertNull(JSON.parseObject(raw).getDouble("messages"));
+    }
+
+    // 每个桶用不同金额，防止合并概况字段时把相邻周期的数字移过来。
+    @Test @DisplayName("趋势概况字段与原始周期逐桶对齐")
+    void trendBucketAlignment() {
+        for (int days : List.of(2, 12, 40, 70))
+            comparisonSession(now.minusSeconds(days * 86400L), days * 3d, days, true, true, "bilibili");
+        for (String period : List.of("day", "week", "month")) {
+            var raw = JSON.parseObject(JSON.toJSONString(controller.rangeTrend("bilibili", 1L, period, "90").getBody()));
+            var buckets = raw.getJSONObject("trend").getJSONArray("buckets");
+            for (int i = 0; i < buckets.size(); i++) {
+                var bucket = buckets.getJSONObject(i);
+                assertEquals(bucket.getJSONObject("metrics").getDoubleValue("gift_value"), bucket.getDoubleValue("revenue"),
+                        "周期流水必须与本桶原始数据对齐：" + period + " " + i);
+                assertEquals(bucket.getJSONObject("metrics").getDoubleValue("danmu_count"), bucket.getDoubleValue("messages"));
+            }
+        }
     }
 
 }

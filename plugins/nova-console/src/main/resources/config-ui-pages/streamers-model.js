@@ -20,9 +20,6 @@ import {totalDataOff} from './home-model.js';
  */
 export const STREAMER_VIEWS = ['list', 'detail', 'session'];
 
-/** 趋势那一栏的两种周期，与服务端认的值一致 */
-export const PERIODS = [['week', '按周'], ['month', '按月']];
-
 /**
  * 状态四档在屏幕上写什么
  *
@@ -122,7 +119,7 @@ export function parseStreamersHash(hash) {
     else if (key === 'mode' && ['total', 'hourly'].includes(value)) state.mode = value;
     else if (key === 'hideOff' && value === '1') state.hideOff = value;
   }
-  if (state.panel === 'trend' && !['day', 'week', 'month'].includes(new URLSearchParams(query).get('period'))) state.period = 'day';
+  if (state.panel === 'trend' && !['day', 'week', 'month'].includes(new URLSearchParams(query).get('period'))) state.period = seg === 'trend' ? 'week' : 'day';
   if (state.panel === 'audience') { state.group ||= 'all'; state.sort ||= 'attendance'; }
   return state;
 }
@@ -425,8 +422,7 @@ export function pageBar(page) {
     pages,
     prev: current > 1 ? current - 1 : 0,
     next: current < pages ? current + 1 : 0,
-    text: pages > 1 ? '第 ' + current + ' / ' + pages + ' 页 · 共 ' + (Number(one.total) || 0) + ' 场'
-      : '共 ' + (Number(one.total) || 0) + ' 场',
+    text: '共 ' + fmtMetric(Number(one.total) || 0) + ' 条 · 第 ' + fmtMetric(current) + '/' + fmtMetric(Math.max(1, pages)) + ' 页',
   };
 }
 

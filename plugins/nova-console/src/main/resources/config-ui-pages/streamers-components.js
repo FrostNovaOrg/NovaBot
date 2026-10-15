@@ -30,6 +30,7 @@ export const COMPONENT_STYLE = `
 .sc-chart-labels span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;font-variant-numeric:tabular-nums}
 .sc-chart-labels span:first-child{transform:none}
 .sc-chart-labels span:last-child{transform:translateX(-100%)}
+.sc-chart-action{display:block;margin:8px auto 0}.sc-point[aria-current=true]{stroke:var(--text);stroke-width:3}
 .sc-chart-readout{min-height:26px;padding:5px 0;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
 .sc-chart-note,.sc-empty{color:var(--dim);font-size:12px;margin:8px 0}
 .sc-calendar{min-width:0;color:var(--text);margin-top:2px}
@@ -113,11 +114,13 @@ function svgElement(tag, attrs = {}) {
   return node;
 }
 
-/** points: {start,end,label,value,status?}[]；period 为 day/week/month，onSelect 收到 {start,end}。 */
+/** points: {start,end,label,value,status?}[]；period 为 day/week/month，按日先选择再查看场次，周月直接下钻；onSelect 收到 {start,end}。 */
 export function createChart(host, {
   points = [], title = '趋势', period = 'day', hideOff = false,
   isOff = point => point.status === 'off', format = chartNumber, onSelect,
+  canSelect = point => !Number.isFinite(point.sessions) || point.sessions > 0,
 } = {}) {
+  const deferred = period === 'day' && typeof onSelect === 'function';
   const shown = period === 'day' && hideOff ? points.filter(point => !isOff(point) && finite(point.value)) : [...points];
   const samples = shown.map(point => point.value).filter(finite);
   const min = Math.min(0, ...samples);
@@ -132,11 +135,33 @@ export function createChart(host, {
   const readout = element('div', 'sc-chart-readout');
   readout.setAttribute('role', 'status');
   plot.append(scale, svg); wrap.append(plot, labels, readout); host.append(wrap);
-  if (period === 'day' && hideOff) wrap.append(element('p', 'sc-chart-note', '已隐藏未开播日期，日期间距已压缩；明细仍按原日期查看。'));
+
   if (!samples.length) wrap.append(element('p', 'sc-empty', '暂无有效图表数据'));
   let destroyed = false;
-  const select = point => onSelect?.({start: point.start, end: point.end});
+  const select = point => { if (point && canSelect(point)) onSelect?.({start: point.start, end: point.end}); };
   const describe = point => `${point.label ?? ''} · ${format(point.value)}`;
+  let selectedIndex = -1;
+  const action = deferred ? element('button', 'nv-btn2 sc-chart-action', '查看当天场次 →') : null;
+  if (action) {
+    action.type = 'button'; action.disabled = true;
+    action.addEventListener('click', () => select(shown[selectedIndex])); wrap.append(action);
+  }
+  if (deferred) readout.textContent = '点击图表选择日期';
+  const choose = index => {
+    if (!shown.length) return;
+    selectedIndex = Math.max(0, Math.min(shown.length - 1, index));
+    readout.textContent = describe(shown[selectedIndex]);
+    if (action) action.disabled = !canSelect(shown[selectedIndex]);
+    for (const mark of svg.children) if (mark.dataset.index != null)
+      mark.setAttribute('aria-current', String(Number(mark.dataset.index) === selectedIndex));
+  };
+  const move = event => {
+    if (!deferred || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault(); event.stopPropagation?.();
+    choose(selectedIndex < 0 ? 0 : selectedIndex + (event.key === 'ArrowLeft' ? -1 : 1));
+  };
+  if (deferred) { svg.setAttribute('tabindex', '0'); svg.addEventListener('keydown', move); }
+
   const draw = (viewportWidth, viewportHeight) => {
     if (destroyed) return;
     svg.setAttribute('viewBox', `0 0 ${viewportWidth} ${viewportHeight}`);
@@ -174,14 +199,17 @@ export function createChart(host, {
           width: Math.max(.5, step - Math.min(6, step / 2)), height: Math.max(2, Math.abs(y(0) - y(point.value))), class: 'sc-bar'});
       mark.setAttribute('aria-label', describe(point));
       const tip = svgElement('title'); tip.textContent = describe(point); mark.append(tip);
-      const preview = () => { readout.textContent = describe(point); };
+      mark.dataset.index = String(i);
+      if (period === 'day') mark.setAttribute('aria-current', String(i === selectedIndex));
+      const preview = () => { if (!deferred) readout.textContent = describe(point); };
       mark.addEventListener('pointerenter', preview);
       mark.addEventListener('focus', preview);
-      if (onSelect) {
+      if (onSelect && (period === 'day' || canSelect(point))) {
         mark.setAttribute('role', 'button'); mark.setAttribute('tabindex', '0');
-        mark.addEventListener('click', () => select(point));
+        mark.addEventListener('click', () => period === 'day' ? choose(i) : select(point));
         mark.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(point); }
+          if (['ArrowLeft', 'ArrowRight'].includes(event.key)) move(event);
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation?.(); period === 'day' ? choose(i) : select(point); }
         });
       }
       svg.append(mark);

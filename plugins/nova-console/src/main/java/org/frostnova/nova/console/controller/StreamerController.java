@@ -533,7 +533,11 @@ public class StreamerController {
         result.put("metrics", metrics);
         var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
                 .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
-        result.put("revenue", living && rules != null ? rules.revenue(metrics) : null);
+        result.put("revenue", living && rules != null
+                && rules.revenueKeys().stream().anyMatch(name -> metrics.get(name) != null)
+                ? rules.revenue(metrics) : null);
+        result.put("messages", living && rules != null && rules.messageKey() != null
+                ? metrics.get(rules.messageKey()) : null);
 
         Set<String> requested = new LinkedHashSet<>();
         if (series != null) {
@@ -815,6 +819,8 @@ public class StreamerController {
         int from = Math.min((effectivePage - 1) * effectiveSize, ordered.size());
         int to = Math.min(from + effectiveSize, ordered.size());
 
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         JSONArray items = new JSONArray();
         for (LiveSession session : ordered.subList(from, to)) {
             JSONObject item = LiveSessionJson.of(session);
@@ -832,6 +838,7 @@ public class StreamerController {
         json.put("pages", pages);
         json.put("items", items);
         json.put("metrics", describe(metricsOf(sessions)));
+        json.put("messageKey", rules == null ? null : rules.messageKey());
         return json;
     }
 

@@ -67,6 +67,7 @@ const response = json => ({status: 200, ok: true, json: async () => json});
 let compositionScenario = null;
 let insightsFailure = false;
 let livePendingResponse = false;
+let liveSnapshot = null;
 let resolveLive;
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
   start: 1791736800000 - i * 604800000, end: 1792341600000 - i * 604800000,
@@ -98,7 +99,7 @@ globalThis.fetch = async url => {
   if (String(url).endsWith('/status')) return response({});
   if (String(url).includes('/live?')) {
     if (livePendingResponse) return new Promise(resolve => { resolveLive = resolve; });
-    return response({success: true, living: false, metrics: {}});
+    return response(liveSnapshot || {success: true, living: false, metrics: {}, revenue: null, messages: null});
   }
   return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}});
 };
@@ -119,7 +120,8 @@ await check('范围和指标切换后保留卡片标题与趋势提示', async (
     const select = flatten(trend).find(n => n.tagName === 'select');
     select.value = 'messages'; await select.fire('change');
     assert.ok(flatten(trend).includes(header), '换指标应保留原标题区');
-    assert.match(textOf(trend), /按统计日 · 点击日期查看场次/, '趋势操作提示应保留');
+    assert.match(textOf(trend), /按统计日汇总/, '指标行应显示汇总周期');
+    assert.doesNotMatch(flatten(trend).find(n => n.className === 'sc-section-hint').textContent, /按统计日|点击/);
     for (const id of ['sd-insights', 'sd-period-audience', 'sd-calendar-card']) {
       assert.ok(flatten(nodes.get(id)).some(n => n.className === 'sc-section-head'), id + '应使用同样的分区标题');
     }
@@ -390,8 +392,8 @@ await check('观众页脚页数和人数带千分位', async () => {
   try {
     Object.assign(data, {page: 1, pages: 2942, total: 58840});
     await page.refresh();
-    assert.equal(flatten(nodes.get('sd-audience')).find(n => n.textContent.startsWith('第 '))?.textContent,
-      '第 1 / 2,942 页 · 共 58,840 人', '页脚数字应带千分位');
+    assert.equal(flatten(nodes.get('sd-audience')).find(n => n.textContent.startsWith('共 '))?.textContent,
+      '共 58,840 条 · 第 1/2,942 页', '页脚数字应带千分位');
   } finally { Object.assign(data, saved); }
 });
 await check('点击昵称展开本期场次开播时间标题，再点收起', () => {
@@ -416,7 +418,7 @@ await check('观众筛选链接保留范围分组排序页码并可恢复', asyn
   const state = model.parseStreamersHash(location.hash);
   assert.deepEqual([state.days, state.group, state.sort, state.page], [7, 'returning', 'revenue', 2]);
   assert.ok(requests.some(url => url.endsWith('/audience?days=7&group=returning&sort=revenue&page=2')));
-  const next = flatten(nodes.get('sd-audience')).find(n => n.textContent === '下一页');
+  const next = flatten(nodes.get('sd-audience')).find(n => n.textContent === '下一页 ›');
   const parsed = model.parseStreamersHash(next.href);
   assert.deepEqual([parsed.days, parsed.group, parsed.sort, parsed.page], [7, 'returning', 'revenue', 2]);
 });
@@ -450,7 +452,7 @@ await check('趋势收藏与旧链接都打开抽屉并恢复控件', async () =
     if (hash.includes('panel=')) {
       const select = flatten(drawer()).find(n => n.attrs['aria-label'] === '趋势指标');
       assert.equal(select?.value, 'follows', '收藏应恢复新增关注');
-      assert.match(textOf(drawer()), /第 2 \/ 2 页/);
+      assert.match(textOf(drawer()), /第 2\/3 页/);
       assert.ok(requests.some(url => url.includes('/trend?period=month&days=30')));
     }
   }
@@ -464,7 +466,7 @@ await check('每小时按桶时长计算并禁用不支持的指标', async () =
   assert.ok(!bars.some(n => n.attrs['aria-label'].startsWith('week 1 ·')), '零时长不应画有效值');
   assert.match(textOf(drawer()), /—/);
   await load(base + '?panel=trend&period=week&metric=audience&mode=hourly');
-  assert.ok(flatten(drawer()).some(n => n.textContent === '每小时' && n.disabled), '观众不得选择每小时');
+  assert.ok(!flatten(drawer()).some(n => n.textContent === '每小时'), '观众不显示数值切换');
   assert.ok(flatten(drawer()).filter(n => n.className.trim() === 'sc-bar').some(n => / · 1 人$/.test(n.attrs['aria-label'])), '不支持每小时的指标仍显示总量');
 });
 // 周图与行链接必须使用该桶的完整半开区间。
@@ -483,10 +485,10 @@ await check('周图和周期行打开对应起止的场次', async () => {
     assert.ok(requests.some(url => url.includes('/sessions?') && url.includes('from=' + expected.start) && url.includes('to=' + expected.end)));
   }
 });
-// 周期与页码链接在地址中保存，换周期重置页码，空周期下钻为空列表。
-await check('趋势周期分页与空桶下钻保留地址状态', async () => {
+// 周期与页码链接在地址中保存，换周期重置页码，空周期不可下钻。
+await check('趋势周期分页保留地址且空周期不可下钻', async () => {
   await load(base + '?panel=trend&period=week&metric=messages&mode=hourly&days=180');
-  const next = flatten(drawer()).find(n => n.textContent === '下一页');
+  const next = flatten(drawer()).find(n => n.textContent === '下一页 ›');
   assert.ok(next, '周期明细应可分页'); await load(next.href);
   assert.equal(model.parseStreamersHash(location.hash).page, 2);
   const month = flatten(drawer()).find(n => n.textContent === '按统计月');
@@ -494,8 +496,84 @@ await check('趋势周期分页与空桶下钻保留地址状态', async () => {
   const state = model.parseStreamersHash(location.hash);
   assert.deepEqual([state.period, state.page, state.metric, state.mode, state.days], ['month', 1, 'messages', 'hourly', 180]);
   assert.ok(requests.some(url => url.endsWith('/trend?period=month&days=180')));
-  await flatten(drawer()).find(n => n.tagName === 'tr' && n.attrs['aria-label'] === 'week 2，查看场次').fire('keydown', {key: 'Enter'});
-  assert.equal(model.parseStreamersHash(location.hash).starts, '', '空桶使用空开播列表');
+  const before = location.hash;
+  const empty = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.textContent === 'week 2');
+  assert.ok(empty); await empty.fire('click'); await empty.fire('keydown', {key: 'Enter'});
+  assert.equal(location.hash, before, '空周期不能打开场次');
+  assert.notEqual(empty.attrs.role, 'link');
+});
+// 空周期的行不能伪装成可用链接。
+await check('空周期明细行不打开场次抽屉', async () => {
+  await load(base + '?panel=trend&period=week');
+  const before = location.hash;
+  const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.textContent === 'week 2');
+  assert.ok(row); await row.fire('click'); await row.fire('keydown', {key: 'Enter'});
+  assert.equal(location.hash, before, '空周期行不能打开场次');
+  assert.notEqual(row.attrs.role, 'link');
+});
+// 图和表须保留各桶原值，翻页每次只展示十个周期。
+await check('周期明细逐桶显示场次时长和指标且每页十条', async () => {
+  await load(base + '?panel=trend&period=week');
+  const rows = flatten(drawer()).filter(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
+  assert.equal(rows.length, 10, '每页应为十条');
+  for (const [i, row] of rows.entries()) {
+    const bucket = trendBuckets.at(-1 - i);
+    assert.equal(row.children[0].textContent, bucket.label);
+    assert.equal(row.children[1].textContent, model.fmtMetric(bucket.sessions), '明细场次须来自本桶');
+    assert.equal(row.children[2].textContent, model.fmtDuration(bucket.durationSeconds), '明细时长须来自本桶');
+    assert.equal(row.children[3].textContent, '100.00 元', '明细指标须来自本桶');
+  }
+  assert.match(textOf(drawer()), /共 25 条 · 第 1\/3 页/);
+});
+// 收藏链接须恢复隐藏选项，切换后也要写回地址。
+await check('趋势收藏恢复隐藏设置并可取消', async () => {
+  await load(base + '?panel=trend&period=day&hideOff=1');
+  let input = flatten(drawer()).find(n => n.type === 'checkbox');
+  assert.ok(input?.checked, '收藏链接须恢复隐藏复选框');
+  input.checked = false; await input.fire('change');
+  assert.equal(new URLSearchParams(location.hash.split('?')[1]).has('hideOff'), false);
+});
+// 非趋势抽屉不能带入趋势选择，默认趋势选项也不应污染地址。
+await check('名单和关闭后的地址不带趋势参数且默认值省略', async () => {
+  await load(base + '?panel=trend&period=day&metric=follows&mode=hourly&hideOff=1');
+  const audience = flatten(nodes.get('sd-period-audience')).find(n => n.tagName === 'a');
+  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+    assert.equal(new URLSearchParams(audience.href.split('?')[1]).has(key), false, '名单链接不得携带' + key);
+  await flatten(drawer()).find(n => n.className.includes('sc-drawer-close')).fire('click');
+  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+    assert.equal(new URLSearchParams(location.hash.split('?')[1]).has(key), false);
+  await load(base);
+  const select = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
+  select.value = 'revenue'; await select.fire('change');
+  await flatten(nodes.get('sd-trend')).find(n => n.textContent === '总量').fire('click');
+  const hide = flatten(nodes.get('sd-trend')).find(n => n.type === 'checkbox');
+  hide.checked = false; await hide.fire('change');
+  const detail = flatten(nodes.get('sd-trend')).find(n => n.textContent === '查看明细');
+  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+    assert.equal(new URLSearchParams(detail.href.split('?')[1]).has(key), false, '默认趋势参数应省略' + key);
+  requests.length = 0; await load(base + '/trend');
+  assert.ok(requests.some(url => url.includes('/trend?period=week&')), '旧趋势链接应按周打开');
+});
+// 卡片与抽屉按日图只选中读数，须经按钮进入对应一天。
+await check('按日图先选读数再查看当天场次', async () => {
+  for (const hash of [base, base + '?panel=trend&period=day']) {
+    await load(hash);
+    const host = hash === base ? nodes.get('sd-trend') : drawer();
+    if (hash === base) {
+      const select = flatten(host).find(n => n.tagName === 'select');
+      select.value = 'revenue'; await select.fire('change');
+    }
+    const dot = flatten(host).find(n => n.className.trim() === 'sc-point');
+    const action = flatten(host).find(n => n.textContent === '查看当天场次 →');
+    assert.ok(action?.disabled, '未选日期时按钮不可用');
+    const before = location.hash;
+    await dot.fire('click'); assert.equal(location.hash, before, '点图只选择，不跳走');
+    assert.ok(!action.disabled); await action.fire('click');
+    const state = model.parseStreamersHash(location.hash);
+    assert.equal(state.panel, 'sessions');
+    const expected = hash === base ? {start: Date.parse('2026-10-16T06:00:00+08:00'), end: Date.parse('2026-10-17T06:00:00+08:00')} : trendBuckets[0];
+    assert.deepEqual([Number(state.from), Number(state.to)], [expected.start, expected.end]);
+  }
 });
 // 卡片需提供六指标、每小时与隐藏空日，并能打开明细。
 await check('趋势卡六指标切换总量每小时隐藏空日及明细', async () => {
@@ -511,7 +589,7 @@ await check('趋势卡六指标切换总量每小时隐藏空日及明细', asyn
   const checkbox = flatten(nodes.get('sd-trend')).find(n => n.type === 'checkbox');
   assert.ok(checkbox && !checkbox.checked, '隐藏默认不勾');
   checkbox.checked = true; await checkbox.fire('change');
-  assert.match(textOf(nodes.get('sd-trend')), /已隐藏未开播日期/);
+  assert.match(textOf(nodes.get('sd-trend')), /已隐藏 1 个未播日/);
   const detail = flatten(nodes.get('sd-trend')).find(n => n.textContent === '查看明细');
   assert.equal(model.parseStreamersHash(detail.href).panel, 'trend');
   compositionScenario = {follows: null}; await load(base + '?days=30');
@@ -545,14 +623,24 @@ await check('首次直播响应前显示快照读取提示', async () => {
     assert.doesNotMatch(textOf(nodes.get('sd-live')), /暂无数据|数据截至/);
   } finally {
     livePendingResponse = false;
-    resolveLive?.(response({success: true, living: false, metrics: {}}));
+    resolveLive?.(response({success: true, living: false, metrics: {}, revenue: null, messages: null}));
     await loading;
   }
+});
+// 平台可把别的原始项声明为弹幕，摘要须使用服务端算出的结果。
+await check('直播弹幕采用服务端规则结果', async () => {
+  try {
+    liveSnapshot = {success: true, living: true, since: 1792101600000, revenue: null,
+      messages: 7, metrics: {chat_total: 7, danmu_count: 999}};
+    await load(base);
+    const values = flatten(nodes.get('sd-live')).find(n => n.className === 'sd-live-metrics').children.map(n => n.children[1].textContent);
+    assert.equal(values[1], '7 条', '弹幕须采用服务端字段');
+  } finally { liveSnapshot = null; }
 });
 // 收入规则只能在服务端由插件声明，页面不能保留第二份金额键表。
 await check('直播卡采用服务端流水且没有平台收入键', () => {
   const source = readFileSync(new URL('../../../main/resources/config-ui-pages/streamers.js', import.meta.url), 'utf8');
-  for (const key of ['gift_value', 'super_chat_value', 'guard_value']) assert.ok(!source.includes(key), '页面不应识别' + key);
+  for (const key of ['gift_value', 'super_chat_value', 'guard_value', 'danmu_count']) assert.ok(!source.includes(key), '页面不应识别' + key);
   assert.match(source, /live\?\.revenue/);
 });
 page.leave();
