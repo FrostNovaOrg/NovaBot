@@ -149,6 +149,8 @@ public class BilibiliApiUtil {
 
     private static final String DANMU_HISTORY_API = "https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=";
 
+    private static final String SUPER_CHAT_LIST_API = "https://api.live.bilibili.com/av/v1/SuperChat/getMessageList?room_id=";
+
     private static final String GIFT_CONFIG_API = "https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftConfig?platform=pc";
 
     /**
@@ -2209,6 +2211,48 @@ public class BilibiliApiUtil {
         } catch (Exception e) {
             log.debug("上报直播间 {} 观看心跳失败: {}", roomId, e.getMessage());
         }
+    }
+
+    /** 断线补录专用：沿用登录请求头、路径冷却，只发送一次，不登记补发。 */
+    private JSONArray requestRecoveryList(String url, String field) {
+        String path = shortUrl(url);
+        boolean probing = acquireSendPermit(path, clock.get());
+        try {
+            JSONObject response = doRequest(url, "GET", getBilibiliHeaders(), null);
+            if (response == null || !(response.get("code") instanceof Number)) {
+                throw new RequestFailedException("invalid-response");
+            }
+            int code = response.getIntValue("code");
+            if (code != 0) {
+                recordBusinessCode(url, code, null);
+                if (BLOCKED_CODES.contains(code) || code == CODE_RISK_CONTROL) {
+                    block(path, Integer.toString(code), clock.get());
+                }
+                throw new RequestFailedException("code=" + code);
+            }
+            if (!(response.get("data") instanceof JSONObject data)
+                    || !(data.get(field) instanceof JSONArray list)
+                    || list.stream().anyMatch(item -> !(item instanceof JSONObject))) {
+                throw new RequestFailedException("invalid-list");
+            }
+            noteProbeSuccess(path, clock.get());
+            return list;
+        } catch (HttpBlockedException e) {
+            block(path, "HTTP " + e.status, clock.get());
+            throw new RequestFailedException("http-blocked");
+        } finally {
+            if (probing) {
+                releaseProbe(path);
+            }
+        }
+    }
+
+    public JSONArray getLiveRoomDanmuHistoryOnce(@NonNull Long roomId) {
+        return requestRecoveryList(DANMU_HISTORY_API + roomId, "room");
+    }
+
+    public JSONArray getLiveRoomSuperChatsOnce(@NonNull Long roomId) {
+        return requestRecoveryList(SUPER_CHAT_LIST_API + roomId, "list");
     }
 
     /**

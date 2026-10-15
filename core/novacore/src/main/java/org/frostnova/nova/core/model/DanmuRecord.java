@@ -20,8 +20,13 @@ package org.frostnova.nova.core.model;
  * @param uname 发送者昵称，记录当时的值——昵称会改，事后再查得到的是另一个名字
  * @param text 原文
  * @param type 类型
+ * @param recovered 是否由断线后的历史查询补入
  */
-public record DanmuRecord(long at, Long uid, String uname, String text, Type type) {
+public record DanmuRecord(long at, Long uid, String uname, String text, Type type, boolean recovered) {
+    public DanmuRecord(long at, Long uid, String uname, String text, Type type) {
+        this(at, uid, uname, text, type, false);
+    }
+
     /**
      * 弹幕的类型
      * <p>

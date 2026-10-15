@@ -140,6 +140,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     private final LiveDataService liveDataService;
 
+    private BilibiliGapRecovery gapRecovery;
+
+    void setGapRecovery(BilibiliGapRecovery gapRecovery) {
+        this.gapRecovery = gapRecovery;
+    }
+
     /**
      * 停机开始后置为 false。建连回来时看见它，就关掉新建的会话，不再往下收。
      */
@@ -814,7 +820,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * <p>
      * ⚠️ 这一段与「程序停机」是两个口径，存在两个字段里，<b>不相加</b>。
      */
-    private void closeOutageGap() {
+    private void closeOutageGap(boolean recover) {
         Instant from = disconnectedAt;
         if (from == null) {
             return;
@@ -835,6 +841,9 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         } else {
             liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
                     from.toEpochMilli(), now.toEpochMilli(), reason);
+        }
+        if (recover && gapRecovery != null) {
+            gapRecovery.recover(source, from, now);
         }
         log.debug("直播间 {} 空了 {} 秒后恢复, 已记入采集缺口（{}）",
                 source.getRoomId(), Duration.between(from, now).toSeconds(), reason.getDescription());
@@ -878,7 +887,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             if (firstSuccess) {
                 recordStartupTail(now);
             }
-            closeOutageGap();
+            closeOutageGap(!firstSuccess);
             return;
         }
 

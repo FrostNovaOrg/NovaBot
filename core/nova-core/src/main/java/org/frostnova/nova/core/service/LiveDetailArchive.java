@@ -820,6 +820,9 @@ public class LiveDetailArchive implements SmartLifecycle {
         json.put("uid", record.uid());
         json.put("uname", record.uname());
         json.put("text", record.text());
+        if (record.recovered()) {
+            json.put("recovered", true);
+        }
         json.put("type", record.type() == null ? DanmuRecord.Type.DANMU.name() : record.type().name());
         return json;
     }
@@ -997,7 +1000,7 @@ public class LiveDetailArchive implements SmartLifecycle {
                 type = DanmuRecord.Type.DANMU;
             }
             return new DanmuRecord(json.getLongValue("at"), json.getLong("uid"),
-                    json.getString("uname"), json.getString("text"), type);
+                    json.getString("uname"), json.getString("text"), type, json.getBooleanValue("recovered"));
         } catch (Exception e) {
             log.debug("跳过弹幕原文里无法解析的一行: {}", e.getMessage());
             return null;
