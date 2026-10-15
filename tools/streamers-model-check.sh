@@ -58,6 +58,10 @@ if ! node core/nova-core/src/test/resources/frontend/streamers-model-fixture.mjs
     RED=1
 fi
 
+if ! node plugins/nova-console/src/test/resources/frontend/streamer-insights-fixture.mjs; then
+    RED=1
+fi
+
 # —— 末行汇总 ——
 # 本尺没有档尺那一段，语法红时原先的最后输出是一段 node 报错原文、没有一个收尾。
 # 末行由本尺自己收，语法格写进最后一句
