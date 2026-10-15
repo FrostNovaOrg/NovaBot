@@ -128,6 +128,7 @@ const PAGE_STYLE = `
 .swtxt b{font-weight:600;font-size:13.5px}
 .swtxt .dim{color:var(--dim);font-weight:400;font-size:12.5px}
 .swtxt p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
+.weekly-report-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 /* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
    使用者会以为这条命令不存在，而它只是在这个会话里不列 */
 .swrow.dimmed{opacity:.6}
@@ -1292,17 +1293,19 @@ function weeklyReportActions(host, user, target) {
     .then(res => { status.textContent = res.status; })
     .catch(() => { status.textContent = '周报状态读取失败'; });
   update();
+  const actions = el('div', 'weekly-report-actions');
+  host.appendChild(actions);
   const preview = el('a', 'lnkbtn');
   preview.textContent = '预览';
   preview.href = CONSOLE + '/api' + path + '/preview' + query;
   preview.target = '_blank';
   preview.rel = 'noopener';
-  host.appendChild(preview);
+  actions.appendChild(preview);
   const trial = el('button', 'ghost');
   trial.type = 'button';
   trial.textContent = '试发';
   trial.addEventListener('click', async () => {
-    if (!await ask({title: '试发运营周报？',
+    if (!await ask({title: '试发运营周报？', danger: false,
       body: '立即把上周的周报发到这个会话？这是试发，不影响周一的定时发送。'})) return;
     trial.disabled = true;
     try {
@@ -1311,7 +1314,7 @@ function weeklyReportActions(host, user, target) {
     } catch (err) { say('试发失败：' + err.message, 'err'); }
     finally { trial.disabled = false; }
   });
-  host.appendChild(trial);
+  actions.appendChild(trial);
 }
 
 /**

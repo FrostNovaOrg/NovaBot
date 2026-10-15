@@ -513,7 +513,7 @@ export function fmtGap(seconds) {
 }
 
 /**
- * 一项指标的人话。钱按两位小数，其余取整加千分位
+ * 一项指标的人话。钱加千分位并保留两位小数，其余取整加千分位
  * @param value 取值
  * @param metric 指标说明
  * @return {string} 一格里写什么
@@ -521,7 +521,9 @@ export function fmtGap(seconds) {
 export function fmtMetric(value, metric) {
   if (value === undefined || value === null) return '—';
   const one = metric || {};
-  return one.money ? Number(value).toFixed(2) : Math.round(Number(value) || 0).toLocaleString('en-US');
+  return one.money
+    ? Number(value).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+    : Math.round(Number(value) || 0).toLocaleString('en-US');
 }
 
 /**

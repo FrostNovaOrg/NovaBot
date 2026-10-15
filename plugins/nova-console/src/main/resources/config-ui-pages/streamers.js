@@ -31,6 +31,9 @@ const PAGE_STYLE = `
 #sd-live .live-head h3{margin:0}
 #sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
 #sd-live .live-error{color:var(--err,var(--dim))}
+/* 仅流水格按内容宽度缩字：每个数字或标点预留 .65em，空格和单位预留 1.5em。 */
+#sd-insights .stat-revenue{container-type:inline-size;min-width:0}
+#sd-insights .stat-revenue .stat-v{white-space:nowrap;font-size:min(23px,calc(100cqi / var(--revenue-width)))}
 .chart{margin-bottom:2px}
 .chart .plot{position:relative;padding-top:6px}
 .chart svg{display:block;width:100%;height:110px}
@@ -577,11 +580,15 @@ function renderInsights(data, message, living) {
       + '</div>' + (note ? '<small>' + esc(note) + '</small>' : '');
     if (title) cell.title = title;
     stats.appendChild(cell);
+    return cell;
   }
   stat(fmtDuration(data.durationSeconds), '直播时长', '共 ' + data.sessions + ' 场');
   if (data.metricsKnown) {
     const count = value => value == null ? '暂无数据' : fmtMetric(value) + ' 人';
-    stat(fmtMetric(data.revenue, {money: true}) + ' 元', '流水');
+    const revenue = fmtMetric(data.revenue, {money: true});
+    const revenueCell = stat(revenue + ' 元', '流水');
+    revenueCell.classList.add('stat-revenue');
+    revenueCell.style.setProperty('--revenue-width', revenue.length * 0.65 + 1.5);
     stat(fmtMetric(data.messages) + ' 条', '弹幕');
     stat(count(data.audience), '观众');
     stat(count(data.interactionAudience), '互动观众');
