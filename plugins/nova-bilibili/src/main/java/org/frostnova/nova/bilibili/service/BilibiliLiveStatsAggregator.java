@@ -313,12 +313,16 @@ public class BilibiliLiveStatsAggregator {
 
     /**
      * 点赞总数更新（服务端下发的单调累计值）
+     * <p>
+     * 分钟曲线与整场总数同口径：一格一分钟，记这一分钟里见到的最大值。
+     * 这条曲线暂不画、不显示，先记着——走势这种数据过了就补不回。
      */
     @EventListener(BilibiliLikeUpdateEvent.class)
     public void onLikeUpdate(BilibiliLikeUpdateEvent event) {
         Integer count = event.getCount();
         if (count != null) {
             max(event, BilibiliLiveMetric.LIKE_TOTAL, count);
+            maxSeries(event, BilibiliLiveMetric.LIKE_TOTAL, count);
         }
     }
 

@@ -414,6 +414,50 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
+    @DisplayName("⚠️ 点赞累计数按分钟记曲线：一格一分钟取该分钟见到的最大值，整场总数照旧取最大")
+    void likeTotalKeepsPerMinuteSeries() {
+        List<String> red = new ArrayList<>();
+        // 分钟对齐的开播时刻，时序那几问的格键才是 start、start+60s 与 start+120s
+        long start = 1_700_000_040_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+
+        // 一场里连续三分钟见到点赞累计 10、25、25
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 10, Instant.ofEpochMilli(start)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 60_000L)));
+        aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 120_000L)));
+
+        try {
+            Map<Long, Double> series = liveDataService.getLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.LIKE_TOTAL);
+            assertEquals(3, series.size(), "① 按分钟分格");
+            assertEquals(10.0, series.get(start), 0.0001, "① 第 1 分钟 10");
+            assertEquals(25.0, series.get(start + 60_000L), 0.0001, "① 第 2 分钟 25");
+            assertEquals(25.0, series.get(start + 120_000L), 0.0001, "① 第 3 分钟 25（重复见到同一累计值，格子仍要留）。"
+                    + "没有这条时序，以后画不出一场里的点赞走势，而这种数据过了就补不回");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(25.0, metric(BilibiliLiveMetric.LIKE_TOTAL), 0.0001,
+                    "② 整场 like_total 仍取最大：10、25、25 若累加就成了 60");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            // 下播归档按 getLiveSeriesMetrics 逐条取全部时序（NovaDefaultLiveOffEventListener），
+            // 新时序进了这份名单，归档才收得下、读得回来
+            assertTrue(liveDataService.getLiveSeriesMetrics(PLATFORM, STREAMER.getUid())
+                            .contains(BilibiliLiveMetric.LIKE_TOTAL),
+                    "③ 新时序要在归档遍历的那份名单里");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
     @DisplayName("进房与关注应分别累计独立人数与人次")
     void enterAndFollow() {
         aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER, user(1L)));
