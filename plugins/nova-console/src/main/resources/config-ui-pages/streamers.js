@@ -56,12 +56,13 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-body .start-slots{min-width:0;max-width:100%;box-sizing:border-box}
 #sd-body .slot-scroll{overflow-x:auto;max-width:100%;margin-top:14px}
 #sd-body .slot-grid{border-collapse:collapse;table-layout:fixed;min-width:920px;width:100%;font-size:12px}
-#sd-body .slot-grid th,#sd-body .slot-grid td{padding:3px;text-align:center}
+#sd-body .slot-grid th,#sd-body .slot-grid td{padding:3px;text-align:center;font-size:12px}
 #sd-body .slot-grid th:first-child{width:52px;box-sizing:border-box}
-#sd-body .slot-grid button{display:block;width:100%;min-height:64px;border:1px solid var(--line);border-radius:6px;color:inherit;background:transparent;cursor:pointer;font:inherit}
+#sd-body .slot-grid button{display:block;box-sizing:border-box;width:100%;min-height:64px;padding:8px 4px;border:1px solid var(--line);border-radius:6px;color:inherit;background:transparent;cursor:pointer;font:inherit;white-space:nowrap}
 #sd-body .slot-grid button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:-2px}
 #sd-body .slot-grid button:focus-visible{outline:2px solid var(--accent)}
-#sd-body .slot-grid small{display:block;margin-top:6px}
+#sd-body .slot-grid small{display:block;margin-top:6px;font-size:inherit}
+#sd-body .slot-unit{white-space:nowrap;margin:14px 0 0}
 #sd-body .slot-details{overflow-x:auto;max-width:100%}
 #sd-body .start-slots .lgpills{flex-wrap:wrap}
 #sd-audience{min-width:0;max-width:100%;box-sizing:border-box}
@@ -772,6 +773,9 @@ function renderStartSlots(host) {
       line.textContent = text;
       card.appendChild(line);
     }
+    const unit = el('p', 'hint slot-unit');
+    unit.textContent = '单位：' + (slotsMetric === 'revenue' ? '元/时' : '条/时');
+    card.appendChild(unit);
     const scroll = el('div', 'slot-scroll');
     scroll.setAttribute('tabindex', '0');
     scroll.setAttribute('role', 'region');
@@ -779,7 +783,7 @@ function renderStartSlots(host) {
     const table = el('table', 'slot-grid');
     const thead = el('thead');
     const headers = el('tr');
-    for (const text of ['星期（' + (slotsMetric === 'revenue' ? '元/时' : '条/时') + '）', ...Array.from({length: 12}, (_, i) => (i * 2) + '–' + (i * 2 + 2) + ' 时')]) {
+    for (const text of ['星期', ...Array.from({length: 12}, (_, i) => (i * 2) + '–' + (i * 2 + 2) + ' 时')]) {
       const th = el('th');
       th.setAttribute('scope', 'col');
       th.textContent = text;

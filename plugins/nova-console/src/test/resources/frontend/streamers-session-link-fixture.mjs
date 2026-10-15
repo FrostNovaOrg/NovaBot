@@ -487,6 +487,10 @@ const press = async button => {
 await ask('开播时段显示84格且点击列出整场数据与场次链接', async () => {
   await openSlots();
   same(slotButtons().length, 84, '7×12格');
+  same(walk(node('sd-body')).find(n => n.className === 'hint slot-unit')?.textContent,
+    '单位：元/时', '热图上方单独显示流水单位');
+  same(walk(node('sd-body')).find(n => n.className === 'slot-grid')?.children[0]?.children[0]?.children[0]?.textContent,
+    '星期', '星期表头不挤入单位');
   same(slotRequests.at(-1).endsWith('days=90'), true, '默认90天请求');
   same(walk(node('sd-tabs')).filter(n => n.tagName === 'a').map(n => n.textContent),
     ['概况', '场次', '趋势', '开播时段', '观众'], '观众位于开播时段之后');
@@ -518,6 +522,8 @@ await ask('开播时段180天独立取数且弹幕切换更新前三和整场明
   same(slotRequests.at(-1).endsWith('days=180'), true, '180天请求');
   const metric = walk(node('sd-body')).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕'));
   await press(metric);
+  same(walk(node('sd-body')).find(n => n.className === 'hint slot-unit')?.textContent,
+    '单位：条/时', '切换弹幕后同步热图单位');
   await press(slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00')));
   const content = textOf(node('sd-body'));
   for (const part of ['周一 22:00–24:00 · 100.00 条/时 · 3 场', '整场弹幕', '200 条']) {
