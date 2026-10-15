@@ -11,6 +11,7 @@ import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.analytics.StreamerAudience;
 import org.frostnova.nova.core.analytics.StreamerStartSlots;
+import org.frostnova.nova.core.analytics.StreamerCalendar;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -256,10 +257,10 @@ public class StreamerController {
     @GetMapping("/{platform}/{uid}/insights")
     public ResponseEntity<JSONObject> insights(@PathVariable String platform, @PathVariable Long uid,
                                                @RequestParam(defaultValue = "30") String days) {
-        if (!List.of("7", "30", "90").contains(days)) {
+        if (!List.of("7", "30", "90", "180", "360").contains(days)) {
             JSONObject invalid = new JSONObject();
             invalid.put("success", false);
-            invalid.put("message", "请选择近 7、30、90 天中的一个范围");
+            invalid.put("message", "请选择近 7、30、90、180、360 天中的一个范围");
             return ResponseEntity.badRequest().body(invalid);
         }
         String key = key(platform, uid);
@@ -297,13 +298,13 @@ public class StreamerController {
                                                @RequestParam(defaultValue = "all") String group,
                                                @RequestParam(defaultValue = "attendance") String sort,
                                                @RequestParam(defaultValue = "1") String page) {
-        if (!List.of("7", "30", "90").contains(days)
+        if (!List.of("7", "30", "90", "180", "360").contains(days)
                 || !List.of("all", "first", "returning", "interaction").contains(group)
                 || !List.of("attendance", "revenue", "recent").contains(sort)
                 || !page.matches("[+-]?[0-9]+")) {
             JSONObject invalid = new JSONObject();
             invalid.put("success", false);
-            invalid.put("message", "请选择近 7、30、90 天，以及有效的观众分组和排序");
+            invalid.put("message", "请选择近 7、30、90、180、360 天，以及有效的观众分组和排序");
             return ResponseEntity.badRequest().body(invalid);
         }
         int requestedPage = new java.math.BigInteger(page).max(java.math.BigInteger.ONE)
@@ -326,6 +327,116 @@ public class StreamerController {
         result.put("days", Integer.parseInt(days));
         result.put("audience", data);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
+    }
+
+    private boolean validDays(String days) {
+        return List.of("7", "30", "90", "180", "360").contains(days);
+    }
+
+    private ResponseEntity<JSONObject> invalidRange() {
+        return ResponseEntity.badRequest().body(JSONObject.of("success", false,
+                "message", "请选择近 7、30、90、180、360 天中的一个范围"));
+    }
+
+    private List<LiveSession> sessionsOf(String platform, Long uid) {
+        return groupByStreamer(archive.find(0, Long.MAX_VALUE)).getOrDefault(key(platform, uid), List.of());
+    }
+
+    private boolean knownStreamer(String platform, Long uid, List<LiveSession> sessions) {
+        return !sessions.isEmpty() || roster(loadedUsers()).stream()
+                .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()));
+    }
+
+    private ResponseEntity<JSONObject> missingStreamer() {
+        return ResponseEntity.status(404).body(JSONObject.of("success", false, "message", MISSING_STREAMER));
+    }
+
+    @GetMapping("/{platform}/{uid}/calendar")
+    public ResponseEntity<JSONObject> calendar(@PathVariable String platform, @PathVariable Long uid,
+                                               @RequestParam(defaultValue = "30") String days) {
+        if (!validDays(days)) return invalidRange();
+        var sessions = sessionsOf(platform, uid);
+        if (!knownStreamer(platform, uid, sessions)) return missingStreamer();
+        long now = clock.millis();
+        var calendar = new StreamerCalendar().calculate(sessions,
+                liveDataService.monitoringIntervals(platform, uid, now),
+                liveDataService.downtimeIntervals(0, now),
+                liveDataService.roomOutageIntervals(platform, uid, 0, now), Integer.parseInt(days), clock);
+        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
+                "calendar", JSON.parseObject(JSON.toJSONString(calendar, JSONWriter.Feature.WriteNulls))));
+    }
+
+    @GetMapping("/{platform}/{uid}/fans")
+    public ResponseEntity<JSONObject> fans(@PathVariable String platform, @PathVariable Long uid,
+                                           @RequestParam(defaultValue = "30") String days) {
+        if (!validDays(days)) return invalidRange();
+        if (!knownStreamer(platform, uid, sessionsOf(platform, uid))) return missingStreamer();
+        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
+        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
+                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        var sampled = snapshots.find(0, range.to().toEpochMilli()).stream()
+                .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid())).toList();
+        JSONArray points = new JSONArray();
+        if (rules != null && rules.fansKey() != null) {
+            sampled.stream().filter(s -> s.at() >= range.from().toEpochMilli() && s.has(rules.fansKey()))
+                    .forEach(s -> points.add(JSONObject.of("at", s.at(), "value", s.metric(rules.fansKey()))));
+        }
+        var change = StreamerInsights.fans(sampled, range.from().toEpochMilli(), range.to().toEpochMilli(), rules);
+        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days), "fans",
+                JSONObject.of("points", points, "change", change == null ? null : change.change(),
+                        "partial", change == null || change.partial())));
+    }
+
+    @GetMapping("/{platform}/{uid}/sessions")
+    public ResponseEntity<JSONObject> sessions(@PathVariable String platform, @PathVariable Long uid,
+                                               @RequestParam(required = false) String from,
+                                               @RequestParam(required = false) String to,
+                                               @RequestParam(required = false) String starts,
+                                               @RequestParam(defaultValue = "1") int page,
+                                               @RequestParam(defaultValue = "0") int size) {
+        long start, end;
+        Set<Long> selected = new LinkedHashSet<>();
+        try {
+            start = from == null ? 0 : Long.parseLong(from);
+            end = to == null ? Long.MAX_VALUE : Long.parseLong(to);
+            if (start < 0 || end <= start) throw new IllegalArgumentException();
+            if (starts != null) {
+                for (String value : starts.split(",", -1)) {
+                    long at = Long.parseLong(value.trim());
+                    if (at < 0) throw new IllegalArgumentException();
+                    selected.add(at);
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(JSONObject.of("success", false, "message", "请提供有效的场次时间范围或开播时刻"));
+        }
+        var all = sessionsOf(platform, uid);
+        if (!knownStreamer(platform, uid, all)) return missingStreamer();
+        var filtered = all.stream().filter(s -> s.startTime() < end && s.endTime() > start)
+                .filter(s -> starts == null || selected.contains(s.startTime())).toList();
+        return ResponseEntity.ok(JSONObject.of("success", true, "sessions", sessionPage(platform, uid, filtered, page, size)));
+    }
+
+    @GetMapping("/{platform}/{uid}/trend")
+    public ResponseEntity<JSONObject> rangeTrend(@PathVariable String platform, @PathVariable Long uid,
+                                                 @RequestParam(defaultValue = "day") String period,
+                                                 @RequestParam(defaultValue = "30") String days) {
+        if (!validDays(days)) return invalidRange();
+        if (!List.of("day", "week", "month").contains(period)) {
+            return ResponseEntity.badRequest().body(JSONObject.of("success", false, "message", "请选择 day、week 或 month"));
+        }
+        var sessions = sessionsOf(platform, uid);
+        if (!knownStreamer(platform, uid, sessions)) return missingStreamer();
+        var metrics = catalogs.orderedStream().filter(c -> platform.equals(c.platform())).findFirst()
+                .map(LiveMetricCatalog::metrics).orElse(List.of());
+        Set<String> keys = new LinkedHashSet<>();
+        metrics.forEach(m -> keys.add(m.key()));
+        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
+        var buckets = analytics.aggregate(sessions,
+                LiveSessionAnalytics.Period.valueOf(period.toUpperCase(java.util.Locale.ROOT)), keys, range.from(), range.to());
+        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days), "trend",
+                JSONObject.of("period", period, "buckets", LiveAnalyticsJson.toJson(buckets),
+                        "metrics", describe(metrics), "metricsKnown", !metrics.isEmpty())));
     }
 
     /** 开播时段表现：整场总量按有效直播时长折算，仅提供近90或180个统计日。 */

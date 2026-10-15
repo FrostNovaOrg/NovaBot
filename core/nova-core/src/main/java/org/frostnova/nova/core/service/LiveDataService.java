@@ -14,6 +14,12 @@ import java.util.Set;
  * 直播数据服务接口
  */
 public interface LiveDataService {
+    /** 认证成功或停止接收时记录实际监看区间，房间号变更另起区间。 */
+    default void recordMonitoring(String platform, Long uid, Long roomId, long at, boolean watching) {}
+
+    /** 已持久化的实际监看证据；仅本进程仍连接的区间可延伸至查询时刻。 */
+    default List<LiveGap> monitoringIntervals(String platform, Long uid, long now) { return List.of(); }
+
     /**
      * 获取直播间状态
      * @param platform 直播平台

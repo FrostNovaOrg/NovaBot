@@ -125,7 +125,7 @@ public final class StreamerInsights {
         for (String key : keys) into.addAll(session.userSet(key));
     }
 
-    private static Fans fans(Collection<StreamerSnapshot> snapshots, long from, long to,
+    public static Fans fans(Collection<StreamerSnapshot> snapshots, long from, long to,
                              LiveMetricCatalog.Insights rules) {
         if (rules == null || rules.fansKey() == null) return null;
         var usable = snapshots.stream().filter(s -> s.at() < to && s.has(rules.fansKey()))
