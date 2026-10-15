@@ -592,7 +592,7 @@ public class DefaultLiveDataService implements LiveDataService {
             }
             trimGapIntervals(rows);
         }
-        if (properties.getLive().isSaveLiveData()) saveNow(false);
+        // 高频连接切换只更新内存，随自动保存及正常退出落盘。
     }
 
     @Override

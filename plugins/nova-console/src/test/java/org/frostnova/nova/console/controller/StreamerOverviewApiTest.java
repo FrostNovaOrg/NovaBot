@@ -148,6 +148,44 @@ class StreamerOverviewApiTest {
             assertEquals(3600,items.getJSONObject(n).getLongValue("effectiveSeconds"));
         }
     }
+    @ParameterizedTest(name = "{displayName}：跨统计日={0}") @ValueSource(booleans = {false, true})
+    @DisplayName("正在直播的已播时段不能被日历写成确认没播")
+    void ongoingSession(boolean crossesDay) throws Exception {
+        long start = boundary + (crossesDay ? -3600000 : 3600000);
+        when(live.monitoringIntervals("bilibili",1L,now.toEpochMilli())).thenReturn(List.of(
+                new LiveGap(boundary-7*86400000L,now.toEpochMilli(),LiveGap.Reason.UNKNOWN)));
+        when(live.getLiveStatus("bilibili",1L)).thenReturn(Optional.of(true));
+        when(live.getLiveStartTime("bilibili",1L)).thenReturn(Optional.of(start));
+        assertTrue(read("live").getBooleanValue("living"));
+        assertEquals(start,read("live").getLongValue("since"));
+        var items = read("calendar","days","7").getJSONObject("calendar").getJSONArray("items");
+        for (int i : crossesDay ? List.of(5,6) : List.of(6)) {
+            var day = items.getJSONObject(i);
+            assertEquals("recorded",day.getString("status"));
+            assertEquals(i == 6,day.getBooleanValue("current"));
+            assertEquals(List.of(start),day.getJSONArray("starts").toJavaList(Long.class));
+            long from = Math.max(start,day.getLongValue("start"));
+            long to = Math.min(now.toEpochMilli(),day.getLongValue("end"));
+            assertEquals((to-from)/1000,day.getLongValue("effectiveSeconds"));
+        }
+        if (!crossesDay) assertEquals("off",items.getJSONObject(5).getString("status"));
+        assertTrue(archive.find(0,Long.MAX_VALUE).isEmpty(),"进行中的场次只参与日历，不写入归档");
+    }
+    @ParameterizedTest(name = "{displayName}：{0}") @ValueSource(strings = {"downtime", "outage"})
+    @DisplayName("日历接口接入停机和本房断线以免把中断当天标成确认没播")
+    void calendarGapEvidence(String kind) throws Exception {
+        when(live.monitoringIntervals("bilibili",1L,now.toEpochMilli())).thenReturn(List.of(
+                new LiveGap(boundary-7*86400000L,now.toEpochMilli(),LiveGap.Reason.UNKNOWN)));
+        var gap = new LiveGap(boundary+1000,boundary+4000,LiveGap.Reason.UNKNOWN);
+        if (kind.equals("downtime")) when(live.downtimeIntervals(0,now.toEpochMilli())).thenReturn(List.of(gap));
+        else when(live.roomOutageIntervals("bilibili",1L,0,now.toEpochMilli())).thenReturn(List.of(gap));
+        var today = read("calendar","days","7").getJSONObject("calendar").getJSONArray("items").getJSONObject(6);
+        assertEquals("unknown",today.getString("status"));
+        session(boundary,now.toEpochMilli());
+        today = read("calendar","days","7").getJSONObject("calendar").getJSONArray("items").getJSONObject(6);
+        assertEquals("recorded",today.getString("status"));
+        assertEquals(3,today.getLongValue("gapSeconds"));
+    }
     @Test @DisplayName("新增主播接口沿用登录保护")
     void authentication() throws Exception {
         var auth = mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class);

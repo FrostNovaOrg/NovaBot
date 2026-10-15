@@ -80,6 +80,52 @@ class MonitoringHistoryTest {
         var watched = service.monitoringIntervals("sample",1L,now);
         assertEquals(5000,watched.size());assertEquals(base+1000,watched.get(0).from());
     }
+    @Test @DisplayName("监看记录超过5000条会裁剪以免数据文件无限增长")
+    void monitoringCountLimit() throws Exception {
+        long base = now-20*86400000L;
+        properties.getLive().setSaveLiveData(false);
+        for (int i=0;i<5001;i++) {
+            service.recordMonitoring("sample",1L,2L,base+i*2000L,true);
+            service.recordMonitoring("sample",1L,2L,base+i*2000L+1000,false);
+        }
+        properties.getLive().setSaveLiveData(true);
+        var watched = service.monitoringIntervals("sample",1L,now);
+        assertEquals(5000,watched.size());
+        assertEquals(base+2000,watched.get(0).from());
+        service.saveNow(false);
+        var rows = JSONObject.parseObject(Files.readString(dir.resolve("data.json")))
+                .getJSONObject("Monitoring:sample").getJSONArray("1");
+        assertEquals(5000,rows.size());
+        assertEquals(base+2000,rows.getJSONObject(0).getLongValue("from"));
+    }
+    @Test @DisplayName("400天前的监看记录会删除以免过期数据持续累积")
+    void monitoringAgeLimit() throws Exception {
+        long expired = now-401*86400000L;
+        service.recordMonitoring("sample",1L,2L,expired,true);
+        service.recordMonitoring("sample",1L,2L,expired+1000,false);
+        service.recordMonitoring("sample",1L,2L,now-10000,true);
+        service.recordMonitoring("sample",1L,2L,now-9000,false);
+        service.saveNow(false);
+        var rows = JSONObject.parseObject(Files.readString(dir.resolve("data.json")))
+                .getJSONObject("Monitoring:sample").getJSONArray("1");
+        assertEquals(1,rows.size());
+        assertEquals(now-10000,rows.getJSONObject(0).getLongValue("from"));
+    }
+    @Test @DisplayName("频繁监看切换等待自动保存而名单变更立即保存")
+    void monitoringUsesScheduledSave() throws Exception {
+        service.saveNow(false);
+        String before = Files.readString(dir.resolve("data.json"));
+        service.recordMonitoring("sample",1L,2L,now-10000,true);
+        service.recordMonitoring("sample",1L,2L,now-9000,false);
+        assertEquals(before,Files.readString(dir.resolve("data.json")),"监看切换不能同步重写数据文件");
+        service.saveNow(false);
+        var rows = JSONObject.parseObject(Files.readString(dir.resolve("data.json")))
+                .getJSONObject("Monitoring:sample").getJSONArray("1");
+        assertEquals(1,rows.size());
+        assertEquals(now-9000,rows.getJSONObject(0).getLongValue("to"));
+        service.recordRosterEvent(new NovaDataSourceRemoveEvent(user(2),Instant.ofEpochMilli(now-1000)));
+        assertNotNull(JSONObject.parseObject(Files.readString(dir.resolve("data.json"))).getJSONObject("RosterHistory:sample"));
+    }
     @Test @DisplayName("加入移出及改房间号留档且移出立即结束监看")
     void rosterChanges() throws Exception {
         var user = user(2);

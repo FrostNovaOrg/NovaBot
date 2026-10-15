@@ -355,9 +355,18 @@ public class StreamerController {
     public ResponseEntity<JSONObject> calendar(@PathVariable String platform, @PathVariable Long uid,
                                                @RequestParam(defaultValue = "30") String days) {
         if (!validDays(days)) return invalidRange();
-        var sessions = sessionsOf(platform, uid);
+        var sessions = new ArrayList<>(sessionsOf(platform, uid));
         if (!knownStreamer(platform, uid, sessions)) return missingStreamer();
         long now = clock.millis();
+        boolean living = roster(loadedUsers()).stream()
+                .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()) && item.enabled())
+                && liveDataService.getLiveStatus(platform, uid).orElse(false);
+        if (living) {
+            liveDataService.getLiveStartTime(platform, uid).filter(start -> start > 0 && start < now)
+                    .filter(start -> sessions.stream().noneMatch(session -> session.startTime() == start))
+                    .ifPresent(start -> sessions.add(new LiveSession(platform, uid, null, null, start, now,
+                            (now - start) / 1000, Map.of(), Map.of())));
+        }
         var calendar = new StreamerCalendar().calculate(sessions,
                 liveDataService.monitoringIntervals(platform, uid, now),
                 liveDataService.downtimeIntervals(0, now),
