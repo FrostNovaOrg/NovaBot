@@ -2211,6 +2211,7 @@ export async function save() {
  */
 export async function decoratePushData(repaint = true) {
   const attempted = nameLookups;
+  let named = false;
   await Promise.all((pushData || []).map(async user => {
     // 补昵称要靠对应平台的数据源服务，没注册的平台查不了，照 uid 显示就是
     if (user._uname || !(store.platforms || []).includes(user.platform)) return;
@@ -2224,6 +2225,7 @@ export async function decoratePushData(repaint = true) {
       });
       if (res.success) {
         user._uname = res.uname;
+        if (user._uname) named = true;
         user._roomId = res.roomId;
         user._face = res.face;
         return;
@@ -2234,12 +2236,15 @@ export async function decoratePushData(repaint = true) {
     try {
       const known = await api('/streamer/name?platform=' + encodeURIComponent(user.platform)
         + '&uid=' + encodeURIComponent(String(user.uid)));
-      if (known.success) user._uname = known.uname;
+      if (known.success) {
+        user._uname = known.uname;
+        if (user._uname) named = true;
+      }
     } catch (e) {
       // 补全失败不影响配置本身，仍以 uid 展示
     }
   }));
-  if (repaint) paintTree();
+  if (repaint && named) renderStreamers();
 }
 
 /**

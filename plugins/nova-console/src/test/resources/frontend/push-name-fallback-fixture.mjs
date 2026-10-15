@@ -217,6 +217,7 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   const platformsReady = new Promise(resolve => { releasePlatforms = resolve; });
   const saved = [{platform: 'bilibili', uid: 7}, {platform: 'bilibili', uid: 8}];
   let names = [];
+  const repaints = [];
   const noop = () => {};
   const api = async (path, opts) => {
     calls.push(path);
@@ -240,12 +241,16 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
     'async function loadPushPage(', 'async function reload()', 'function serializePush',
     'function dropDisplayOnly', 'async function decoratePushData',
   ].map(marker => bracedFrom(src, marker)).join('\n');
-  const push = new Function('api', 'store', 'location', 'showPush', 'renderStreamers',
+  const push = new Function('api', 'store', 'location', 'showPush', 'paintTree', 'renderStreamers',
     'clearSessionDrafts', 'closeDrawer', 'say', 'targetOptions', 'buildDirectory',
-    'const paintTree = renderStreamers; let nameLookups = new Set(); let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
+    'let nameLookups = new Set(); let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
     + pushFns + '\nreturn {refresh, reload, leave, entries: () => pushData};')(
     api, store, location, () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
     () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
+    () => {
+      repaints.push(push.entries().map(user => user._uname || null));
+      names = pushTree(push.entries(), [], [], {}).map(u => u.name);
+    },
     noop, noop, message => { throw new Error(message); }, () => [], () => ({}));
   const pages = [{meta: {id: 'push', slot: 'top'}, module: {
     refresh: (...args) => { const result = push.refresh(...args); if (result) pending.push(result); },
@@ -279,7 +284,7 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   host.applyRoute();
   await host.load();
   await settled();
-  return {calls, names: () => names, async refresh() {
+  return {calls, repaints, names: () => names, async refresh() {
     host.refreshPages(); await settled();
   }, async enter(hash = '#/push') {
     location.hash = hash; host.applyRoute(); await settled();
@@ -332,19 +337,16 @@ for (const page of ['home', 'streamers', 'log', 'links', 'settings']) {
   eq(counts(), [6, 6], '⑪ 放弃后的整体刷新不重复查名');
 }
 
-// ⑫ 异步补名只更新左树，保留右栏正在编辑的内容。
-{
-  let treePaints = 0;
-  let input = '正在输入的模板';
-  const repaint = new Function('api', 'store', 'pushData', 'paintTree', 'paintRight', 'renderIncomplete',
-    'let nameLookups = new Set(); const runtime = {};\n'
-    + bracedFrom(src, 'function renderStreamers(') + '\n' + decorateSrc
-    + '\nreturn decoratePushData;')(
-    async () => ({success: true, uname: '主播7'}), {platforms: ['bilibili']},
-    [{platform: 'bilibili', uid: 7}], () => { treePaints++; },
-    () => { input = ''; }, () => {});
-  await repaint();
-  eq([treePaints, input], [1, '正在输入的模板'], '⑫ 补名后只重画左树，右栏输入保留');
+// ⑫ 从首页进入推送页，补到名字才整页重画，重画时名字已全部写入。
+for (const missingNames of [false, true]) {
+  const page = await consolePage('#/home', false, missingNames);
+  page.repaints.length = 0;
+  await page.enter();
+  eq(page.repaints, missingNames ? [[null, null]] : [[null, null], ['主播7', '主播8']],
+    '⑫ 首页进入推送页，' + (missingNames ? '查名失败不追加整页重画' : '补名完成后整页重画恰好一次'));
+  page.repaints.length = 0;
+  await page.refresh();
+  eq(page.repaints, [], '⑫ 已有名字或已试过时不追加整页重画');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
