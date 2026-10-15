@@ -171,6 +171,48 @@ class StreamerOverviewApiTest {
         if (!crossesDay) assertEquals("off",items.getJSONObject(5).getString("status"));
         assertTrue(archive.find(0,Long.MAX_VALUE).isEmpty(),"进行中的场次只参与日历，不写入归档");
     }
+    @ParameterizedTest(name = "{displayName}：{0}")
+    @ValueSource(strings = {"missing", "archived", "zero", "future", "noArchive"})
+    @DisplayName("在播起点不可用时最近归档以后不能确认没播")
+    void unavailableOngoingStart(String kind) throws Exception {
+        long oldStart = boundary - 4 * 86400000L + 3600000;
+        long latestStart = boundary - 2 * 86400000L - 3600000;
+        if (!kind.equals("noArchive")) {
+            session(oldStart, oldStart + 3600000);
+            session(latestStart, latestStart + 7200000);
+        }
+        when(live.monitoringIntervals("bilibili", 1L, now.toEpochMilli())).thenReturn(List.of(
+                new LiveGap(boundary - 7 * 86400000L, now.toEpochMilli(), LiveGap.Reason.UNKNOWN)));
+        when(live.getLiveStatus("bilibili", 1L)).thenReturn(Optional.of(true));
+        when(live.getLiveStartTime("bilibili", 1L)).thenReturn(switch (kind) {
+            case "archived" -> Optional.of(oldStart);
+            case "zero" -> Optional.of(0L);
+            case "future" -> Optional.of(now.toEpochMilli() + 1000);
+            default -> Optional.empty();
+        });
+        var items = read("calendar", "days", "7").getJSONObject("calendar").getJSONArray("items");
+        for (int i : List.of(5, 6)) {
+            assertEquals("unknown", items.getJSONObject(i).getString("status"), "在播但起点不可用，不能确认没播");
+            assertTrue(items.getJSONObject(i).getJSONArray("starts").isEmpty());
+        }
+        if (!kind.equals("noArchive")) {
+            assertEquals("off", items.getJSONObject(1).getString("status"), "最近归档以前的判法保持不变");
+            assertEquals("recorded", items.getJSONObject(4).getString("status"));
+        }
+    }
+
+    @Test @DisplayName("刚下播的归档与在播起点相同只计算一次时长")
+    void archivedOngoingStartIsCountedOnce() throws Exception {
+        long start = boundary + 3600000;
+        session(start, start + 3600000);
+        when(live.getLiveStatus("bilibili", 1L)).thenReturn(Optional.of(true));
+        when(live.getLiveStartTime("bilibili", 1L)).thenReturn(Optional.of(start));
+        var today = read("calendar", "days", "7").getJSONObject("calendar").getJSONArray("items").getJSONObject(6);
+        assertEquals("recorded", today.getString("status"));
+        assertEquals(3600, today.getLongValue("effectiveSeconds"), "归档与在播不能重复累加时长");
+        assertEquals(List.of(start), today.getJSONArray("starts").toJavaList(Long.class));
+    }
+
     @ParameterizedTest(name = "{displayName}：{0}") @ValueSource(strings = {"downtime", "outage"})
     @DisplayName("日历接口接入停机和本房断线以免把中断当天标成确认没播")
     void calendarGapEvidence(String kind) throws Exception {
