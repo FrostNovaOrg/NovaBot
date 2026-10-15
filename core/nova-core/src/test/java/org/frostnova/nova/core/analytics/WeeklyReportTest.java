@@ -39,7 +39,7 @@ class WeeklyReportTest {
         return List.of(new StreamerSnapshot("sample", 1L, "主播示例", FROM.plusSeconds(7200).toEpochMilli(), Map.of("fans", 100d)),
                 new StreamerSnapshot("sample", 1L, "主播示例", TO.minusSeconds(60).toEpochMilli(), Map.of("fans", 125d)));
     }
-    WeeklyReport.Data report(boolean money) { return WeeklyReport.calculate(sessions(), snapshots(), NOW, RULES, money); }
+    WeeklyReport.Data report(boolean money) { return WeeklyReport.calculate("主播示例", sessions(), snapshots(), NOW, RULES, money); }
 
     @Test @DisplayName("周一凌晨场次属于上一周，六点开播排除")
     void mondayBoundary() {
@@ -80,12 +80,12 @@ class WeeklyReportTest {
     }
     @Test @DisplayName("无归档只输出没有记录到开播，不调用绘图")
     void emptyWeek() {
-        var r = WeeklyReport.calculate(List.of(), snapshots(), NOW, RULES, true);
+        var r = WeeklyReport.calculate("主播示例", List.of(), snapshots(), NOW, RULES, true);
         var painted = new AtomicBoolean();
         var p = WeeklyReport.preview(r, () -> { painted.set(true); return new byte[]{1}; });
         assertFalse(painted.get(), "无归档不应出图");
         assertNull(p.image());
-        assertEquals("上周（10 月 5 日至 11 日）没有记录到开播。", p.summary());
+        assertEquals("主播示例 上周（10 月 5 日至 11 日）没有记录到开播。", p.summary());
         assertEquals(p.summary(), p.text());
     }
     @Test @DisplayName("画图抛错仍输出六项文字统计")
@@ -109,8 +109,8 @@ class WeeklyReportTest {
     @Test @DisplayName("无统计口径的摘要只展示场次与时长")
     void noCatalogSummary() {
         for (boolean visible : List.of(true, false)) {
-            var r = WeeklyReport.calculate(sessions(), snapshots(), NOW, null, visible);
-            assertEquals("上周（10 月 5 日至 11 日）共直播 5 场、9 小时 10 分。", WeeklyReport.summary(r));
+            var r = WeeklyReport.calculate("主播示例", sessions(), snapshots(), NOW, null, visible);
+            assertEquals("主播示例 上周（10 月 5 日至 11 日）共直播 5 场、9 小时 10 分。", WeeklyReport.summary(r));
             assertFalse(r.metrics().containsKey("revenue"));
         }
     }
@@ -118,7 +118,7 @@ class WeeklyReportTest {
     void noCatalogDaily() {
         var direct = new StreamerInsights().calculate(sessions(), snapshots(), FROM, TO, null);
         for (boolean visible : List.of(true, false)) {
-            var r = WeeklyReport.calculate(sessions(), snapshots(), NOW, null, visible);
+            var r = WeeklyReport.calculate("主播示例", sessions(), snapshots(), NOW, null, visible);
             assertEquals("durationSeconds", r.chartMetric());
             for (int i = 0; i < 7; i++) {
                 assertEquals(Map.of("durationSeconds", direct.daily().get(i).durationSeconds()), r.daily().get(i).metrics());
@@ -127,16 +127,16 @@ class WeeklyReportTest {
     }
     @Test @DisplayName("未知数写暂无数据，已记录的零保留为零")
     void unavailableAndZero() {
-        var r = WeeklyReport.calculate(List.of(session(FROM, List.of())), List.of(), NOW, null, true);
+        var r = WeeklyReport.calculate("主播示例", List.of(session(FROM, List.of())), List.of(), NOW, null, true);
         assertEquals("1 场", WeeklyReport.cards(r).get(1).value());
         assertEquals("暂无数据", WeeklyReport.cards(r).get(2).value());
         assertEquals("首次记录与回访：暂无数据", WeeklyReport.composition(r));
-        r = WeeklyReport.calculate(List.of(session(FROM, List.of())), List.of(), NOW, RULES, true);
+        r = WeeklyReport.calculate("主播示例", List.of(session(FROM, List.of())), List.of(), NOW, RULES, true);
         assertEquals("0 人", WeeklyReport.cards(r).get(3).value());
     }
     @Test @DisplayName("无统计口径的文字版只展示场次与时长")
     void noCatalogText() {
-        var text = WeeklyReport.text(WeeklyReport.calculate(sessions(), snapshots(), NOW, null, true));
+        var text = WeeklyReport.text(WeeklyReport.calculate("主播示例", sessions(), snapshots(), NOW, null, true));
         assertTrue(text.contains("直播时长："));
         assertTrue(text.contains("场次："));
         for (String label : List.of("弹幕", "观众", "粉丝", "名单", "首次记录", "暂无数据"))
@@ -145,12 +145,22 @@ class WeeklyReportTest {
     @Test @DisplayName("名单说明与主播页使用相同叫法")
     void coverageNames() {
         var d = report(false);
-        var data = new WeeklyReport.Data(d.firstDay(), d.lastDay(), d.metrics(), d.fans(), d.composition(),
+        var data = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(), d.composition(),
                 new StreamerInsights.Coverage(1, 2, 3, 4), d.daily(), d.chartMetric());
         var text = WeeklyReport.coverage(data);
         assertTrue(text.contains("含无法识别的观众 2 场"));
         assertTrue(text.contains("完整性未知 3 场"));
         assertTrue(text.contains("未记录此项"));
+    }
+
+    @Test @DisplayName("首次记录与回访人数在图片用语和文字版中都有千分位")
+    void compositionThousands() {
+        var d = report(false);
+        var data = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(),
+                new StreamerInsights.Composition(12345, 4228), d.coverage(), d.daily(), d.chartMetric());
+        String expected = "本周首次记录 12,345 人 · 回访 4,228 人";
+        assertEquals(expected, WeeklyReport.composition(data));
+        assertTrue(WeeklyReport.text(data).contains(expected));
     }
 
 }

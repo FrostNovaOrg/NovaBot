@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 /** 上一个完整统计周的内容；只保留汇总数，不保留观众名单。 */
 public final class WeeklyReport {
     public record Day(String date, int sessions, Map<String, Number> metrics) {}
-    public record Data(LocalDate firstDay, LocalDate lastDay, Map<String, Number> metrics,
+    public record Data(String streamerName, LocalDate firstDay, LocalDate lastDay, Map<String, Number> metrics,
                        StreamerInsights.Fans fans, StreamerInsights.Composition composition,
                        StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric) {}
     public record Card(String label, String value, String note) {}
@@ -29,7 +29,7 @@ public final class WeeklyReport {
         return new StreamerInsights.Range(StatisticsDay.startOf(monday.minusWeeks(1)), StatisticsDay.startOf(monday));
     }
 
-    public static Data calculate(Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,
+    public static Data calculate(String streamerName, Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,
                                  Instant now, LiveMetricCatalog.Insights rules, boolean showRevenue) {
         var range = previousWeek(now);
         var result = new StreamerInsights().calculate(sessions, snapshots, range.from(), range.to(), rules);
@@ -47,7 +47,8 @@ public final class WeeklyReport {
             if (showRevenue) put(values, "revenue", d.revenue());
             return new Day(d.date(), d.sessions(), Map.copyOf(values));
         }).toList();
-        return new Data(StatisticsDay.dateOf(range.from()), StatisticsDay.dateOf(range.to()).minusDays(1),
+        return new Data(streamerName == null ? "未知主播" : streamerName,
+                StatisticsDay.dateOf(range.from()), StatisticsDay.dateOf(range.to()).minusDays(1),
                 Map.copyOf(metrics), result.fans(), result.composition(), result.coverage(), daily,
                 result.metricsKnown() ? (showRevenue ? "revenue" : "messages") : "durationSeconds");
     }
@@ -98,7 +99,7 @@ public final class WeeklyReport {
     }
 
     public static String summary(Data d) {
-        String lead = "上周（" + period(d) + "）";
+        String lead = d.streamerName() + " 上周（" + period(d) + "）";
         if (d.metrics().get("sessions").intValue() == 0) return lead + "没有记录到开播。";
         var c = cards(d);
         String activity = lead + "共直播 " + number(d.metrics().get("sessions"), " 场", false) + "、" + c.get(0).value();
@@ -110,7 +111,8 @@ public final class WeeklyReport {
 
     public static String composition(Data d) {
         return d.composition() == null ? "首次记录与回访：暂无数据" : "本周首次记录 "
-                + d.composition().firstRecorded() + " 人 · 回访 " + d.composition().returning() + " 人";
+                + number(d.composition().firstRecorded(), " 人", false) + " · 回访 "
+                + number(d.composition().returning(), " 人", false);
     }
 
     public static String coverage(Data d) {
@@ -127,7 +129,7 @@ public final class WeeklyReport {
     public static String text(Data d) {
         if (d.metrics().get("sessions").intValue() == 0) return summary(d);
         var lines = new java.util.ArrayList<String>();
-        lines.add("运营周报（" + period(d) + "）");
+        lines.add(d.streamerName() + " 运营周报（" + period(d) + "）");
         if (d.chartMetric().equals("durationSeconds")) {
             lines.add("场次：" + number(d.metrics().get("sessions"), " 场", false));
             lines.add("直播时长：" + duration(d.metrics().get("durationSeconds").longValue()));
