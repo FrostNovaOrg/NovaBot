@@ -127,13 +127,7 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
      */
     @Override
     protected BufferedImage guardIcon(String url) {
-        if (StringUtil.isNotBlank(url)) {
-            BufferedImage cached = readDiskImage(guardFetchUrl(url));
-            if (cached != null) {
-                return cached;
-            }
-        }
-        return guardMark;
+        return guardIcon(url, GUARD_ICON_SIZE);
     }
 
     /**
@@ -143,7 +137,10 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     @Override
     protected BufferedImage guardIcon(String url, int size) {
         if (StringUtil.isNotBlank(url)) {
-            BufferedImage cached = readDiskImage(guardFetchUrl(url, size));
+            BufferedImage cached = readDiskImage(guardCacheKey(url, size));
+            if (cached == null) {
+                cached = readDiskImage(legacyGuardCacheKey(url, size));
+            }
             if (cached != null) {
                 return cached;
             }

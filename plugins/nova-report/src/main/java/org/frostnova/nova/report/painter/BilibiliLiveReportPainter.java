@@ -194,13 +194,13 @@ public class BilibiliLiveReportPainter {
     private static final int MEDAL_FONT_SIZE = 16;
 
     private static final String GUARD_ICON_GOVERNOR =
-            "https://i0.hdslb.com/bfs/live/0d2b29717af2e7b1bbdc21a4fba8619636f82517.png";
+            "https://i0.hdslb.com/bfs/live/1d16bf0fcc3b1b768d1179d60f1fdbabe6ab4489.png";
 
     private static final String GUARD_ICON_COMMANDER =
-            "https://i0.hdslb.com/bfs/live/405bffdfd78bb562e0394dd828f8bf69ea01f400.png";
+            "https://i0.hdslb.com/bfs/live/98a201c14a64e860a758f089144dcf3f42e7038c.png";
 
     private static final String GUARD_ICON_CAPTAIN =
-            "https://i0.hdslb.com/bfs/live/00749d246e2b49b2328cb981de02142fb6aeceba.png";
+            "https://i0.hdslb.com/bfs/live/143f5ec3003b4080d1b5f817a9efdca46d631945.png";
 
     private static final Color GUARD_COLOR_GOVERNOR = new Color(0xE6, 0xB4, 0x22);
 
@@ -1769,7 +1769,7 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 收到的礼物里大航海格的图标边长。与礼物最高档同档（96px）：
-     * 名单用的 32px 源图放大到这个尺寸会糊，按这个宽度另取一张清楚的
+     * 与名单共用原图，按各自尺寸缩放并分别缓存成品
      */
     private static final int GUARD_GIFT_ICON_SIZE = 96;
 
@@ -1840,17 +1840,37 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 大航海标志实际请求的地址，含缩放后缀
+     * 大航海标志取原图，避免有损转码
      */
     protected String guardFetchUrl(String url) {
         return guardFetchUrl(url, GUARD_ICON_SIZE);
     }
 
     /**
-     * 大航海标志按指定宽度请求的地址。不同宽度是不同地址，本机缓存也各存各的
+     * 大航海原图不加缩放后缀；尺寸只用于成品缓存键
      */
     protected String guardFetchUrl(String url, int size) {
-        return atSize(url, size);
+        return url;
+    }
+
+    /**
+     * 成品缓存独立记录画法版本与尺寸，不能复用旧的缩放、裁圆成品
+     */
+    protected String guardCacheKey(String url, int size) {
+        return url + "#guard-v2-" + size;
+    }
+
+    /**
+     * 历史报告兼容旧成品；默认徽章的源地址也随画法一起换过
+     */
+    protected String legacyGuardCacheKey(String url, int size) {
+        String oldUrl = switch (url) {
+            case GUARD_ICON_GOVERNOR -> "https://i0.hdslb.com/bfs/live/0d2b29717af2e7b1bbdc21a4fba8619636f82517.png";
+            case GUARD_ICON_COMMANDER -> "https://i0.hdslb.com/bfs/live/405bffdfd78bb562e0394dd828f8bf69ea01f400.png";
+            case GUARD_ICON_CAPTAIN -> "https://i0.hdslb.com/bfs/live/00749d246e2b49b2328cb981de02142fb6aeceba.png";
+            default -> url;
+        };
+        return atSize(oldUrl, size);
     }
 
     /**
@@ -2556,18 +2576,23 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 取大航海标志，按绘制尺寸另取一张。
-     * <p>
-     * 「收到的礼物」那一格要 96px：把名单用的 32px 源图放大到 96 会糊，
-     * 而地址本身支持按宽度取图（与礼物图标同一条机制），按目标尺寸另取就是清楚的。
+     * 取大航海原图，按绘制尺寸缩放，保留透明徽章的轮廓。
      * 预览与历史重画覆写这一口，不向外取图。
      */
     protected BufferedImage guardIcon(String url, int size) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
-        BufferedImage cached = guardIconCache.get(url + "@" + size,
-                key -> loadIcon(guardFetchUrl(url, size), size, true));
+        BufferedImage cached = guardIconCache.get(guardCacheKey(url, size), key -> {
+            BufferedImage stored = readDiskImage(key);
+            if (stored != null) {
+                return stored;
+            }
+            Optional<BufferedImage> fetched = api.getBilibiliImage(guardFetchUrl(url, size))
+                    .map(image -> GuardIconStyle.render(image, size));
+            fetched.ifPresent(image -> imageDisk.store(key, image));
+            return fetched.orElse(FAILED_AVATAR);
+        });
         return cached == FAILED_AVATAR ? null : cached;
     }
 

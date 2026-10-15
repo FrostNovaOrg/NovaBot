@@ -2276,9 +2276,9 @@ public class BilibiliApiUtil {
     public Map<String, String> getGuardInfos() {
         JSONObject data = requestBilibiliApi(GIFT_CONFIG_API);
 
-        JSONArray list = Optional.ofNullable(data.getJSONObject("guard_resources"))
-                .map(config -> config.getJSONArray("list"))
-                .orElse(null);
+        Object resources = data.get("guard_resources");
+        JSONArray list = resources instanceof JSONArray array ? array
+                : resources instanceof JSONObject object ? object.getJSONArray("list") : null;
         if (list == null) {
             return Map.of();
         }
