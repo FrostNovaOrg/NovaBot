@@ -591,6 +591,30 @@ export function insightsTime(ms, time = true) {
   return part('month') + ' 月 ' + part('day') + ' 日' + (time ? ' ' + part('hour') + ':' + part('minute') : '');
 }
 
+/** 将服务端的对比结果换成文字与涨跌色。 */
+export function insightsComparison(comparison) {
+  if (comparison?.changeRatio == null) return null;
+  const ratio = comparison.changeRatio;
+  const percent = Math.round(Math.abs(ratio) * 100);
+  if (Math.abs(ratio) < .005) return {text: '较上期持平', color: ''};
+  return {text: '较上期 ' + (ratio > 0 ? '+' : '−') + percent + '%',
+    color: ratio > 0 ? 'var(--err)' : 'var(--ok)'};
+}
+
+export function comparisonExplanation(data) {
+  const groups = new Map();
+  let count = 0;
+  for (const [key, label] of [['durationSeconds', '直播时长'], ['revenue', '流水'], ['messages', '弹幕'],
+    ['audience', '观众'], ['interactionAudience', '互动观众']]) {
+    const comparison = data.comparisons?.[key];
+    if (!comparison?.reasonCode) continue;
+    count++;
+    if (!groups.has(comparison.reasonCode)) groups.set(comparison.reasonCode, {reason: comparison.reason, metrics: []});
+    groups.get(comparison.reasonCode).metrics.push(label);
+  }
+  return {count, groups: [...groups.values()], note: data.comparisonNote || ''};
+}
+
 /** 开播时段的范围与概况分别保存。 */
 export function slotRangeDays(state) { return state.slotDays === 180 ? 180 : 90; }
 
