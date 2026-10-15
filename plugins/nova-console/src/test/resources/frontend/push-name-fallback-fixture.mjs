@@ -16,7 +16,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui-pages');
 const src = readFileSync(join(ui, 'push.js'), 'utf8');
-const {streamerName} = await import(pathToFileURL(join(ui, 'push-model.js')).href);
+const {streamerName, pushTree} = await import(pathToFileURL(join(ui, 'push-model.js')).href);
 
 const failures = [];
 let checks = 0;
@@ -158,6 +158,52 @@ const knownName = uname => path => {
   const addSrc = start < 0 ? '' : bracedFrom(src.slice(start), 'async function');
   eq([addSrc !== '' && addSrc !== decorateSrc, addSrc.includes('/streamer/name')], [true, false],
     '⑥ 添加主播的查询函数不走退路接口');
+}
+
+// ⑦ 放弃草稿后沿用已知昵称，只查询重载后仍缺昵称的主播
+{
+  const initial = [
+    {platform: 'bilibili', uid: 7, enabled: false, _uname: '原来的昵称', _roomId: 22, _face: 'avatar'},
+    {platform: 'bilibili', uid: 8},
+  ];
+  const saved = [
+    {platform: 'bilibili', uid: '7'},
+    {platform: 'bilibili', uid: 8},
+    {platform: 'bilibili', uid: 9},
+    {platform: 'other', uid: 7},
+  ];
+  const calls = [];
+  const api = async (path, opts) => {
+    calls.push(path);
+    if (path === '/datasource') return {content: JSON.stringify(saved)};
+    if (path === '/streamer/lookup') {
+      const {platform, uid} = JSON.parse(opts.body);
+      return uid === '8' ? liveMiss() : {success: true, uname: platform + uid};
+    }
+    if (path.startsWith('/streamer/name?')) return {success: true, uname: '补回的昵称'};
+    throw new Error('未设的接口 ' + path);
+  };
+  let drafts = 1;
+  const functions = [
+    'async function reload()', 'function serializePush', 'function dropDisplayOnly',
+    'function pushChangeCount', 'function changeCount', 'async function decoratePushData',
+  ].map(marker => bracedFrom(src, marker)).join('\n');
+  const page = new Function('api', 'store', 'initial', 'clearSessionDrafts',
+    'sessionDraftCount', 'renderStreamers', 'say',
+    'let pushData = initial; let pushSaved = "[]";\n' + functions
+    + '\nreturn {reload, serializePush, changeCount, entries: () => pushData};')(
+    api, {platforms: ['bilibili', 'other']}, initial, () => { drafts = 0; },
+    () => drafts, () => {},
+    message => { throw new Error(message); });
+  await page.reload();
+  const expectedNames = ['原来的昵称', '补回的昵称', 'bilibili9', 'other7'];
+  eq(pushTree(page.entries(), [], [], {}).map(u => u.name), expectedNames,
+    '⑦ 放弃后左树保留原名，并补全缺失昵称，同号不同平台分别显示');
+  eq(page.entries().map(streamerName), expectedNames, '⑦ 通道头部使用的主播名保持一致');
+  eq(calls, ['/datasource', '/streamer/lookup', '/streamer/lookup', '/streamer/lookup',
+    '/streamer/name?platform=bilibili&uid=8'], '⑦ 已知昵称不再查询，缺失昵称仍先现场查再退回');
+  eq(page.changeCount(), 0, '⑦ 放弃并补名后仍为零处改动');
+  eq(JSON.parse(page.serializePush()), saved, '⑦ 昵称等展示字段不进入保存内容');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

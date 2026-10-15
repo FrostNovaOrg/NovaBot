@@ -2045,9 +2045,20 @@ export function changeCount() {
 export async function reload() {
   // 「放弃」是整页一起还原：本群设置那份草稿与推送配置那份一并丢
   clearSessionDrafts();
+  const knownNames = new Map((pushData || []).filter(user => user._uname)
+    .map(user => [user.platform + ':' + user.uid, user]));
   const res = await api('/datasource');
   try {
     pushData = JSON.parse(res.content || '[]');
+    // 沿用同一平台、同一主播的展示信息，避免放弃草稿时丢名或重复查询
+    for (const user of pushData) {
+      const known = knownNames.get(user.platform + ':' + user.uid);
+      if (known) {
+        user._uname = known._uname;
+        user._roomId = known._roomId;
+        user._face = known._face;
+      }
+    }
     // 快照要取序列化之后的形态，与改动计数比的是同一把尺；
     // 直接存 res.content 的话，文件里的缩进与键序都会算成「改动」
     pushSaved = serializePush();
@@ -2058,6 +2069,8 @@ export async function reload() {
       + '请在服务器上修正该文件后重新加载', 'err');
     return false;
   }
+  // 宿主会在重取完成后统一重画，此时只补数据
+  await decoratePushData(false);
 }
 
 /**
@@ -2184,8 +2197,9 @@ export async function save() {
  *
  * 先现场去平台查；查不回（断网、被风控）时退回程序手上已有的昵称——内存里的，
  * 或最近一场归档里的，与运行状态页、主播页同一种取法。都没有才照 uid 显示。
+ * @param {boolean} repaint 补全后是否立即重画；重取配置时由宿主统一重画
  */
-export async function decoratePushData() {
+export async function decoratePushData(repaint = true) {
   await Promise.all((pushData || []).map(async user => {
     // 补昵称要靠对应平台的数据源服务，没注册的平台查不了，照 uid 显示就是
     if (user._uname || !(store.platforms || []).includes(user.platform)) return;
@@ -2211,7 +2225,7 @@ export async function decoratePushData() {
       // 补全失败不影响配置本身，仍以 uid 展示
     }
   }));
-  renderStreamers();
+  if (repaint) renderStreamers();
 }
 
 /**

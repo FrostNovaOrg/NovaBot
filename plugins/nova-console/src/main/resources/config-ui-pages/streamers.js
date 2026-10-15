@@ -71,7 +71,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience th,#sd-audience td{white-space:nowrap}
 /* 页脚那行：翻页按钮与页数文字竖向居中。hint 自带的下边距把文字压在行的上沿，
    而居中按外边距盒算，留着那段边距等于没居中 */
-#sd-audience .audience-pager{align-items:center}
+#sd-audience .audience-pager{align-items:center;margin-top:10px}
 #sd-audience .audience-pager .hint{margin:0}
 #sd-body .slot-details a,#sd-body .slot-details a:visited,#sd-body .session-table a,#sd-body .session-table a:visited,#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 #sd-body{min-width:0}
