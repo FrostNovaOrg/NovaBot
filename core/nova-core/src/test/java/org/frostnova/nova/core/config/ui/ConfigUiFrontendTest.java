@@ -836,6 +836,10 @@ class ConfigUiFrontendTest {
                             assertTrue(source.contains("var(--side-h,0)"));
                             assertTrue(Files.readString(frontendDir().resolve("settings.js"))
                                     .contains("setProperty('--side-h', side.offsetHeight + 'px')"));
+                        } else if (name.equals("--revenue-width")
+                                && file.getFileName().toString().equals("streamers.js")) {
+                            // 流水格的宽度系数由金额长度计算，不属于共享配色。
+                            assertTrue(source.contains("setProperty('--revenue-width',"));
                         } else if (!defined.contains(name)) {
                             missing.add(file.getFileName() + ": " + name);
                         }

@@ -29,7 +29,8 @@ await check('没有场次不画柱并提示，有场次数值零仍画柱', () =
 
 const nodes = new Map();
 function element(tag) {
-  const n = {tagName: tag, children: [], style: {}, attrs: {}, listeners: {}, textContent: '', _html: ''};
+  const n = {tagName: tag, children: [], style: {setProperty(k, v) { this[k] = String(v); }},
+    attrs: {}, listeners: {}, textContent: '', _html: ''};
   Object.defineProperty(n, 'id', {get() { return this._id; }, set(v) { this._id = v; nodes.set(v, this); }});
   Object.defineProperty(n, 'innerHTML', {get() { return this._html; }, set(v) {
     this._html = v;
