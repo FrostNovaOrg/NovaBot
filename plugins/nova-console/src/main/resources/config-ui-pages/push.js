@@ -2069,8 +2069,8 @@ export async function reload() {
       + '请在服务器上修正该文件后重新加载', 'err');
     return false;
   }
-  // 宿主会在重取完成后统一重画，此时只补数据
-  await decoratePushData(false);
+  // 只在推送页上重取时补名；整页载入留到进页时再查。宿主会统一重画。
+  if (pageLive) await decoratePushData(false);
 }
 
 /**
