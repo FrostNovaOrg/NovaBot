@@ -239,7 +239,9 @@ await check('旧书签场次集合显示所选场次来源', async () => {
 await check('日历下钻展示所选日期来源与场数', async () => {
   await load(base);
   const day = flatten(nodes.get('sd-calendar')).find(n => n.dataset.date === '2026-10-16');
-  await day.fire('click'); await page.refresh();
+  await day.fire('click');
+  await flatten(nodes.get('sd-calendar')).find(n => n.className.includes('sc-calendar-action')).fire('click');
+  await page.refresh();
   assert.equal(new URLSearchParams(location.hash.split('?')[1]).get('source'), 'calendar', '地址须保留日历来源');
   assert.match(textOf(drawer()), /筛选来源：开播日历.*2026[/-]10[/-]16.*2 个场次/, '来源须说明日期与场数');
 });
