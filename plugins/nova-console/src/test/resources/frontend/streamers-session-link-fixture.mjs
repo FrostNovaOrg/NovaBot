@@ -56,6 +56,7 @@ function fakeElement(tag) {
   };
   node.appendChild = child => {
     node.children.push(child);
+    if (child.className === 'sd-session-row') rows.push(child);
     child.parentNode = node;
     return child;
   };
@@ -77,7 +78,6 @@ function fakeElement(tag) {
   node.querySelector = selector => walk(node).slice(1).find(one =>
     selector.startsWith('.') && one.className.split(' ').includes(selector.slice(1))) || null;
   node.classList = {toggle() {}, add() {}, remove() {}, contains() { return false; }};
-  if (node.tagName === 'tr') rows.push(node);
   return enhance(node);
 }
 
@@ -231,6 +231,7 @@ function linksIn(row) {
   const re = /<a\b[^>]*\bhref\s*=\s*"([^"]*)"/gi;
   let match;
   while ((match = re.exec(String(row.innerHTML)))) out.push(match[1].replace(/&amp;/g, '&'));
+  if (row.tagName === 'a' && row.href) out.push(row.href);
   return out;
 }
 
@@ -244,28 +245,13 @@ await ask('① 画出来的每一行都有一个链接，地址指向这一场',
   same(want()[0], '#/streamers/bilibili/3493/1760000000000', '第一场的地址');
 });
 
-// 对照：整行点照旧能用，跳的是同一处
-await ask('② 对照：整行点一下照旧跳到这一场', () => {
-  if (!page || !model) throw new Error('主播页没载进来，这一格量不了');
-  const reached = rows.map(row => {
-    globalThis.location.hash = '';
-    for (const fn of row.listeners.click || []) fn({target: row});
-    return globalThis.location.hash;
-  });
-  same(reached, want(), '点整行之后的地址');
+// 整张场次卡使用原生链接，键盘和新标签页都能进入同一报告。
+await ask('② 整张场次卡使用原生链接', () => {
+  same(rows.map(row => row.tagName), STARTS.map(() => 'a'), '整行应为链接');
+  same(rows.map(row => row.href), want(), '整行链接的目标');
 });
-
-// 故障：在主播页场次表里按住 Ctrl（Mac 上 ⌘）点开播时间，想在新标签页打开那一场，结果这一页也跟着跳走了
-await ask('③ 点在行里的链接上时，整行的点击不改地址，交给链接自己去', () => {
-  if (!page || !model) throw new Error('主播页没载进来，这一格量不了');
-  if (rows.length !== STARTS.length) throw new Error('该画 ' + STARTS.length + ' 行，画了 ' + rows.length + ' 行');
-  const reached = rows.map(row => {
-    globalThis.location.hash = '';
-    const link = {tagName: 'a', closest: sel => (sel === 'a' ? link : null)};
-    for (const fn of row.listeners.click || []) fn({target: link});
-    return globalThis.location.hash;
-  });
-  same(reached, STARTS.map(() => ''), '点在链接上之后的地址');
+await ask('③ 链接没有额外点击处理，支持新标签页打开', () => {
+  same(rows.map(row => (row.listeners.click || []).length), STARTS.map(() => 0), '链接不能重复改变当前页地址');
 });
 
 // 故障：去掉「打开」以后行里的空白点不进去，或一行留下多个 Tab 停点。
@@ -493,7 +479,7 @@ await ask('⑬ 正在直播卡片在最近几场上面', async () => {
   const cards = walk(node('sd-body'));
   const current = cards.indexOf(liveCard());
   const recent = cards.findIndex(card => card.children.some(one => one.tagName === 'h4'
-    && one.textContent.startsWith('最近几场')));
+    && /^最近 \d+ 场归档$/.test(one.textContent)));
   if (current < 0 || recent < 0 || current >= recent) throw new Error('正在直播没有排在最近几场上面');
 });
 
@@ -548,7 +534,7 @@ await ask('开播时段显示84格且点击列出整场数据与场次链接', a
   same(walk(drawerBody()).find(n => n.className === 'hint slot-unit')?.textContent,
     '单位：元/时', '热图上方单独显示流水单位');
   same(walk(drawerBody()).find(n => n.className === 'slot-grid')?.children[0]?.children[0]?.children[0]?.textContent,
-    '星期', '星期表头不挤入单位');
+    '', '热图首列表头留空');
   same(slotRequests.at(-1).endsWith('days=90'), true, '默认90天请求');
   const active = slotButtons().find(n => n.attrs['aria-label'].includes('周一 22:00'));
   if (!active) throw new Error('没有周一22点格子');
@@ -564,9 +550,10 @@ await ask('开播时段显示84格且点击列出整场数据与场次链接', a
   same(parsed.starts, String(STARTS[0]), '热图传递原场次');
   await page.loadStreamers();
   const content = textOf(drawerBody());
-  for (const part of ['礼物价值', model.sessionHash(PLATFORM, UID, STARTS[0])]) {
+  for (const part of ['流水']) {
     if (!content.includes(part)) throw new Error('点击格子后缺少 ' + part);
   }
+  same(walk(drawerBody()).some(n => n.href === model.sessionHash(PLATFORM, UID, STARTS[0])), true, '场次卡链接');
 });
 
 // 切换指标时不能把已向右滑动的热图送回最左边。
@@ -574,7 +561,7 @@ await ask('热图切换指标保留横向滚动位置', async () => {
   await openSlots();
   const scroll = walk(drawerBody()).find(n => n.className === 'slot-scroll');
   scroll.scrollLeft = 872;
-  await press(walk(drawerBody()).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕')));
+  const metric = walk(drawerBody()).find(n => n.tagName === 'select'); metric.value = 'messages'; await metric.fire('change');
   same(walk(drawerBody()).find(n => n.className === 'slot-scroll').scrollLeft, 872, '切换后横向位置');
 });
 
@@ -582,12 +569,12 @@ await ask('热图切换指标保留横向滚动位置', async () => {
 await ask('开播时段180天独立取数且弹幕切换更新前三与热图单位', async () => {
   await openSlots('slotDays=180&days=7');
   same(slotRequests.at(-1).endsWith('days=180'), true, '180天请求');
-  const metric = walk(drawerBody()).find(n => n.tagName === 'button' && n.textContent.includes('每小时弹幕'));
-  await press(metric);
+  const metric = walk(drawerBody()).find(n => n.tagName === 'select');
+  metric.value = 'messages'; await metric.fire('change');
   same(walk(drawerBody()).find(n => n.className === 'hint slot-unit')?.textContent,
     '单位：条/时', '切换弹幕后同步热图单位');
   const content = textOf(drawerBody());
-  for (const part of ['周一 22:00–24:00', '100.00 条/时', '3 场有效样本']) {
+  for (const part of ['周一 22:00–24:00', '100.00', '条/时', '3 场有效样本']) {
     if (!content.includes(part)) throw new Error('切换弹幕后缺少 ' + part);
   }
 });

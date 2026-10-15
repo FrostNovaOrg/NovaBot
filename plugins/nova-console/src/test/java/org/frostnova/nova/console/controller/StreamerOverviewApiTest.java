@@ -105,6 +105,40 @@ class StreamerOverviewApiTest {
             mvc.perform(request).andExpect(status().isBadRequest());
         }
     }
+    @Test @DisplayName("日期筛选以06点开播统计日过滤并保留来源集合")
+    void sessionDateFilter() throws Exception {
+        session(boundary-60000, boundary+60000);
+        session(boundary, boundary+60000);
+        session(boundary+86400000-1, boundary+86400000+60000);
+        session(boundary+86400000, boundary+86400000+60000);
+        var page = read("sessions", "dateFrom", ""+boundary, "dateTo", ""+(boundary+86400000)).getJSONObject("sessions");
+        assertEquals(2, page.getIntValue("total"), "只能列出所选统计日开播场次");
+        for (var value : page.getJSONArray("items")) {
+            long at = ((JSONObject)value).getLongValue("startTime");
+            assertTrue(at >= boundary && at < boundary+86400000);
+        }
+        assertEquals(4, read("sessions").getJSONObject("sessions").getIntValue("total"), "清除日期后恢复原场次");
+        assertEquals(1, read("sessions", "dateFrom", ""+boundary, "dateTo", ""+(boundary+86400000),
+                "starts", boundary+","+(boundary+86400000)).getJSONObject("sessions").getIntValue("total"));
+        mvc.perform(get("/config/api/streamers/bilibili/1/sessions").param("dateFrom", "bad"))
+                .andExpect(status().isBadRequest());
+    }
+    @Test @DisplayName("场次到场人数沿用概况名单去重且缺名单未知")
+    void sessionAudience() throws Exception {
+        archive.append(new LiveSession("bilibili", 1L, "sample", 2L, boundary, boundary+60000, 60,
+                Map.of("danmu_count", 5d), Map.of(), org.frostnova.nova.core.enums.LiveEndReason.NORMAL,
+                List.of(), 0, Map.of("enter_users", List.of(9200000001L, 9200000002L),
+                "danmu_users", List.of(9200000002L, 9200000003L)), 0, Map.of(), Map.of()));
+        session(boundary+60000, boundary+120000);
+        var body = read("sessions").getJSONObject("sessions");
+        var items = body.getJSONArray("items");
+        assertTrue(items.getJSONObject(0).containsKey("audience"), "缺名单也须显式返回未知人数");
+        assertNull(items.getJSONObject(0).getInteger("audience"), "缺名单不能返回0");
+        assertEquals(3, items.getJSONObject(1).getInteger("audience"), "跨名单重复观众只计一次");
+        assertEquals(read("insights", "days", "7").getJSONObject("insights").getInteger("audience"),
+                items.getJSONObject(1).getInteger("audience"), "单场人数与概况同口径");
+        System.out.println("SESSION_SAMPLE: " + JSON.toJSONString(body, com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls));
+    }
     @Test @DisplayName("日周月趋势保留范围两端空桶并排除范围外场次")
     void filledTrend() throws Exception {
         session(boundary-10*86400000L, boundary-10*86400000L+60000);

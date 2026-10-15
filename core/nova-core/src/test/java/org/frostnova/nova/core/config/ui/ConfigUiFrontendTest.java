@@ -2083,7 +2083,7 @@ class ConfigUiFrontendTest {
      * 渲染那一层必须问过判法的那几件事，闭集
      */
     private static final List<String> STREAMERS_MODEL_CALLS = List.of(
-            "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(", "peakCell(",
+            "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(",
             "gapCells(", "totalDataBanner(", "snapshotRows(", "detailHash(", "sessionHash(",
             "reportPath(", "reportView(", "pageBar(");
 
