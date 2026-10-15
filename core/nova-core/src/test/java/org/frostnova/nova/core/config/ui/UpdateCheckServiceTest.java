@@ -3,6 +3,7 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -38,6 +41,9 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("新版检查器")
 class UpdateCheckServiceTest {
+    private static final String LATEST = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest";
+    private static final String RELEASES = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases";
+
     @TempDir
     Path dir;
 
@@ -79,18 +85,114 @@ class UpdateCheckServiceTest {
         UpdateCheckService older = service(buildOf("5.1.0-beta.1"), release("v5.0.0", "内容"));
         older.checkNow();
         assertTrue(older.pendingUpdate().isEmpty(), "来源最新的是 5.0.0、跑着的是 5.1.0-beta.1，没有谁比谁新");
+
+        for (String custom : List.of("https://mirror.example.invalid/releases/latest",
+                "https://api.github.com/repos/example/other/releases/latest")) {
+            properties.getConfigUi().getUpdate().setSource(custom);
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.get(custom)).thenReturn("{\"tag_name\":\"v6.0.0-beta.2\"}");
+            UpdateCheckService mirror = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+            mirror.checkNow();
+            assertEquals("v6.0.0-beta.2", mirror.pendingUpdate().orElseThrow().version(),
+                    "自定义来源仍读取原地址的单个发布对象");
+            verify(http).get(custom);
+            verify(http, never()).get(RELEASES);
+        }
+    }
+
+    @Test
+    @DisplayName("测试版用户收到更新的测试版")
+    void prereleaseUserSeesNewerPrerelease() {
+        HttpUtil http = responses("""
+                [{"tag_name":"v6.0.0-beta.2","prerelease":true,"body":"测试版说明","html_url":"https://example.invalid/beta2"},
+                 {"tag_name":"v5.9.2"}]
+                """);
+        UpdateCheckService service = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+
+        service.checkNow();
+
+        assertEquals("v6.0.0-beta.2", service.pendingUpdate().map(UpdateCheckService.UpdateInfo::version).orElse(""),
+                "测试版用户应收到更新的测试版");
+        assertEquals(List.of("测试版说明"), service.pendingUpdate().orElseThrow().notes());
+        assertEquals("https://example.invalid/beta2", service.pendingUpdate().orElseThrow().url());
+        verify(http, never()).get(LATEST);
+    }
+
+    @Test
+    @DisplayName("测试版用户收到正式版，取版本最大的发布")
+    void prereleaseUserSeesStableRelease() {
+        HttpUtil http = responses("""
+                [{"tag_name":"v6.0.0-beta.2","prerelease":true},
+                 {"tag_name":"v6.0.0","body":"正式版说明","html_url":"https://example.invalid/stable"},
+                 {"tag_name":"v6.0.0-beta.10","prerelease":true}]
+                """);
+        UpdateCheckService service = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+
+        service.checkNow();
+
+        assertEquals("v6.0.0", service.pendingUpdate().map(UpdateCheckService.UpdateInfo::version).orElse(""),
+                "测试版用户应收到正式版，不能取列表首项或最后一项");
+        assertEquals(List.of("正式版说明"), service.pendingUpdate().orElseThrow().notes());
+        assertEquals("https://example.invalid/stable", service.pendingUpdate().orElseThrow().url());
+    }
+
+    @Test
+    @DisplayName("测试版用户不被提示当前版本或更旧的正式版")
+    void prereleaseUserDoesNotSeeOlderStableRelease() {
+        HttpUtil http = responses("""
+                [{"tag_name":"v6.0.0-beta.1","prerelease":true},{"tag_name":"v5.9.2"}]
+                """);
+        UpdateCheckService service = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+
+        service.checkNow();
+
+        assertTrue(service.pendingUpdate().isEmpty(), "当前版本与更旧的正式版都不能提示");
+        verify(http).get(RELEASES);
+    }
+
+    @Test
+    @DisplayName("正式版用户不被推送测试版")
+    void stableUserDoesNotSeePrerelease() {
+        HttpUtil http = responses("""
+                [{"tag_name":"v6.0.0-beta.2","prerelease":true}]
+                """);
+        for (String current : List.of("5.9.2", "5.9.2+build-test")) {
+            UpdateCheckService service = new UpdateCheckService(properties, http, state, buildOf(current));
+
+            service.checkNow();
+
+            assertTrue(service.pendingUpdate().isEmpty(), "正式版用户不能被推送测试版: " + current);
+        }
+        verify(http, never()).get(RELEASES);
+    }
+
+    @Test
+    @DisplayName("草稿不被当成新版提示")
+    void draftsAreNotUpdates() {
+        HttpUtil http = responses("""
+                [{"tag_name":"v7.0.0","draft":true},
+                 {"tag_name":"v6.0.0-beta.2","draft":true,"prerelease":true}]
+                """);
+        UpdateCheckService service = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+
+        service.checkNow();
+
+        assertTrue(service.pendingUpdate().isEmpty(), "草稿不能当成新版提示");
+        verify(http).get(RELEASES);
     }
 
     @Test
     @DisplayName("取不到来源：安静返回，不抛也不提示")
     void unreachableSourceStaysSilent() {
-        UpdateCheckService service = service(buildOf("5.0.0"), url -> {
-            throw new IllegalStateException("连不上");
-        });
+        for (String current : List.of("5.0.0", "6.0.0-beta.1")) {
+            UpdateCheckService service = service(buildOf(current), url -> {
+                throw new IllegalStateException("连不上");
+            });
 
-        service.checkNow();
+            service.checkNow();
 
-        assertTrue(service.pendingUpdate().isEmpty(), "取不到就是不知道有没有新版，不知道不该被当成有");
+            assertTrue(service.pendingUpdate().isEmpty(), "取不到就是不知道有没有新版，不知道不该被当成有");
+        }
     }
 
     @Test
@@ -101,6 +203,21 @@ class UpdateCheckServiceTest {
         service.checkNow();
 
         assertTrue(service.pendingUpdate().isEmpty());
+
+        HttpUtil http = responses("[]");
+        UpdateCheckService beta = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+        for (String body : new String[]{null, "not json", "{}", "[]", "[null,1,{}, {\"tag_name\":\" \"}]"}) {
+            when(http.get(RELEASES)).thenReturn(body);
+            beta.checkNow();
+            assertTrue(beta.pendingUpdate().isEmpty(), "列表取不到或认不出时不提示: " + body);
+        }
+        when(http.get(RELEASES)).thenReturn("[{\"tag_name\":\"v6.0.0-beta.2\"}]");
+        beta.checkNow();
+        assertTrue(beta.pendingUpdate().isPresent());
+        when(http.get(RELEASES)).thenThrow(new IllegalStateException("连不上"));
+        beta.checkNow();
+        assertEquals("v6.0.0-beta.2", beta.pendingUpdate().orElseThrow().version(), "后续取数失败保留已有提示");
+        verify(http, never()).get(LATEST);
     }
 
     /**
@@ -151,6 +268,19 @@ class UpdateCheckServiceTest {
 
         assertTrue(next.pendingUpdate().isPresent(), "跳过是「这版先不提醒」，不是「以后都别提醒」");
         assertEquals("v5.1.1", next.pendingUpdate().get().version());
+
+        HttpUtil http = responses("[{\"tag_name\":\"v6.0.0-beta.2\"}]");
+        UpdateCheckService beta = new UpdateCheckService(properties, http, state, buildOf("6.0.0-beta.1"));
+        beta.checkNow();
+        assertTrue(beta.skip("v6.0.0-beta.2"));
+        when(http.get(RELEASES)).thenReturn("[{\"tag_name\":\"6.0.0-beta.2\"}]");
+        beta.checkNow();
+        assertTrue(beta.pendingUpdate().isEmpty(), "跳过版本的比较忽略 v 前缀");
+        when(http.get(RELEASES)).thenReturn("""
+                [{"tag_name":"v6.0.0-beta.2"},{"tag_name":"v6.0.0-beta.10"},{"tag_name":"v6.0.0-beta.3"}]
+                """);
+        beta.checkNow();
+        assertEquals("v6.0.0-beta.10", beta.pendingUpdate().orElseThrow().version(), "取数值最大的测试版并恢复提示");
     }
 
     /**
@@ -216,6 +346,13 @@ class UpdateCheckServiceTest {
 
     private UpdateCheckService service(ObjectProvider<BuildProperties> build, UpdateCheckService.SourceClient source) {
         return new UpdateCheckService(properties, state, build, source);
+    }
+
+    private static HttpUtil responses(String releases) {
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.get(LATEST)).thenReturn("{\"tag_name\":\"v5.9.2\"}");
+        when(http.get(RELEASES)).thenReturn(releases);
+        return http;
     }
 
     private static UpdateCheckService.SourceClient release(String tag, String body) {

@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.service.NovaStateStore;
@@ -98,7 +100,7 @@ public class UpdateCheckService {
     @Autowired
     public UpdateCheckService(NovaCoreProperties properties, HttpUtil http, NovaStateStore state,
                               ObjectProvider<BuildProperties> buildProperties) {
-        this(properties, state, buildProperties, http::getJson);
+        this(properties, state, buildProperties, url -> JSON.parse(http.get(url)));
     }
 
     UpdateCheckService(NovaCoreProperties properties, NovaStateStore state,
@@ -143,15 +145,25 @@ public class UpdateCheckService {
             return;
         }
 
+        String sourceUrl = update.getSource();
+        // 只为默认来源切换接口：已有自定义镜像可能只提供单个 release，不能假定它也有列表。
+        boolean useReleaseList = current.split("\\+", 2)[0].contains("-")
+                && NovaCoreProperties.ConfigUi.Update.DEFAULT_SOURCE.equals(sourceUrl);
+        if (useReleaseList) {
+            sourceUrl = sourceUrl.substring(0, sourceUrl.length() - "/latest".length());
+        }
+
         JSONObject release;
         try {
-            release = source.fetch(update.getSource());
+            Object response = source.fetch(sourceUrl);
+            release = useReleaseList ? newestRelease(response, current)
+                    : response instanceof JSONObject object ? object : null;
         } catch (Exception e) {
-            log.debug("新版检查未取到结果: {}", update.getSource(), e);
+            log.debug("新版检查未取到结果: {}", sourceUrl, e);
             return;
         }
         if (release == null) {
-            log.debug("新版检查未取到结果: {}", update.getSource());
+            log.debug("新版检查未取到结果: {}", sourceUrl);
             return;
         }
 
@@ -159,7 +171,7 @@ public class UpdateCheckService {
         if (tag.isEmpty()) {
             // 取回来了但认不出版本号：来源格式改版或被代理改写。与取不到同样对待，
             // 只是这里没有异常可带，把认不出的原因写进那一行 debug
-            log.debug("新版检查取回的内容里没有 tag_name: {}", update.getSource());
+            log.debug("新版检查取回的内容里没有 tag_name: {}", sourceUrl);
             return;
         }
 
@@ -167,6 +179,25 @@ public class UpdateCheckService {
         latestNotes = notesOf(release.getString("body"));
         latestUrl = webUrlOrEmpty(release.getString("html_url"));
         log.debug("新版检查完成, 当前 {} 最新 {}", current, tag);
+    }
+
+    private static JSONObject newestRelease(Object response, String current) {
+        if (!(response instanceof JSONArray releases)) {
+            return null;
+        }
+        JSONObject newest = null;
+        String newestTag = current;
+        for (Object entry : releases) {
+            if (!(entry instanceof JSONObject release) || release.getBooleanValue("draft")) {
+                continue;
+            }
+            String tag = Optional.ofNullable(release.getString("tag_name")).orElse("").strip();
+            if (!tag.isEmpty() && VersionOrder.compare(tag, newestTag) > 0) {
+                newest = release;
+                newestTag = tag;
+            }
+        }
+        return newest;
     }
 
     /**
@@ -272,18 +303,18 @@ public class UpdateCheckService {
     }
 
     /**
-     * 取回一个地址上的 release 信息
+     * 取回一个地址上的 release 对象或发布列表
      * <p>
      * 独立成口而不是直接调 {@link HttpUtil}：解析与比较逻辑不关心字节从哪来
      */
     @FunctionalInterface
     interface SourceClient {
         /**
-         * 取回的 release JSON，取不到时抛异常或返回 null 均可，由调用方统一按失败处理
+         * 取回的 release JSON 对象或数组，取不到时抛异常或返回 null 均可，由调用方统一按失败处理
          * @param url 来源地址
-         * @return release 信息
+         * @return release 信息或发布列表
          */
-        JSONObject fetch(String url);
+        Object fetch(String url);
     }
 
     /**

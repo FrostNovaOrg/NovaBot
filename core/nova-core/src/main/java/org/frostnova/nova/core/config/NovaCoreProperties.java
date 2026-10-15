@@ -500,6 +500,9 @@ public class NovaCoreProperties {
         @Getter
         @Setter
         public static class Update {
+            // 默认地址在运行测试版时改读同仓列表；自定义来源仍按单个 release 读取。
+            public static final String DEFAULT_SOURCE = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest";
+
             /**
              * 是否检查新版。关掉后侧栏与首页的新版提醒都不再出现；程序不会自己更新，这是得知该换新版了的唯一入口。
              */
@@ -518,7 +521,7 @@ public class NovaCoreProperties {
             @ConfigLabel("检查新版本 · 来源地址")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
             @ConfigSummary("")
-            private String source = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest";
+            private String source = DEFAULT_SOURCE;
         }
 
         /**
