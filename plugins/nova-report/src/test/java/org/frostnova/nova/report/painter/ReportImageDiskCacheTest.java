@@ -135,19 +135,19 @@ class ReportImageDiskCacheTest {
         BilibiliApiUtil first = mock(BilibiliApiUtil.class);
         BilibiliLiveReportPainter live = painter(first);
         String giftKey = live.giftFetchUrl(GIFT_URL);
-        String guardKey = live.guardFetchUrl(GUARD_URL);
+        String guardKey = live.guardCacheKey(GUARD_URL, BilibiliLiveReportPainter.GUARD_ICON_SIZE);
         when(first.getBilibiliImage(giftKey)).thenReturn(Optional.of(solid(GIFT_COLOR)));
-        when(first.getBilibiliImage(guardKey)).thenReturn(Optional.of(solid(GUARD_COLOR)));
+        when(first.getBilibiliImage(live.guardFetchUrl(GUARD_URL))).thenReturn(Optional.of(solid(GUARD_COLOR)));
 
         BufferedImage gift = live.giftIcon(GIFT_URL);
         BufferedImage guard = live.guardIcon(GUARD_URL);
         assertEquals(GIFT_COLOR.getRGB(), center(gift));
         assertEquals(GUARD_COLOR.getRGB(), center(guard));
         assertTrue(Files.isRegularFile(cache.file(giftKey)), "应按实际请求的地址留下礼物图");
-        assertTrue(Files.isRegularFile(cache.file(guardKey)), "应按实际请求的地址留下大航海标志");
+        assertTrue(Files.isRegularFile(cache.file(guardKey)), "大航海成品应按版本和尺寸保存");
         assertFalse(Files.exists(cache.file(GIFT_URL)), "不带缩放后缀的原地址不该单独成一个文件");
         verify(first, times(1)).getBilibiliImage(giftKey);
-        verify(first, times(1)).getBilibiliImage(guardKey);
+        verify(first, times(1)).getBilibiliImage(live.guardFetchUrl(GUARD_URL));
 
         BilibiliApiUtil second = mock(BilibiliApiUtil.class);
         when(second.getBilibiliImage(anyString())).thenReturn(Optional.of(solid(OTHER)));
