@@ -190,7 +190,7 @@ const knownName = uname => path => {
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const page = new Function('api', 'store', 'initial', 'clearSessionDrafts',
     'sessionDraftCount', 'renderStreamers', 'say',
-    'let pushData = initial; let pushSaved = "[]";\n' + functions
+    'let pushData = initial; let pushSaved = "[]"; let pageLive = true;\n' + functions
     + '\nreturn {reload, serializePush, changeCount, entries: () => pushData};')(
     api, {platforms: ['bilibili', 'other']}, initial, () => { drafts = 0; },
     () => drafts, () => {},
@@ -204,6 +204,29 @@ const knownName = uname => path => {
     '/streamer/name?platform=bilibili&uid=8'], '⑦ 已知昵称不再查询，缺失昵称仍先现场查再退回');
   eq(page.changeCount(), 0, '⑦ 放弃并补名后仍为零处改动');
   eq(JSON.parse(page.serializePush()), saved, '⑦ 昵称等展示字段不进入保存内容');
+}
+
+// ⑧ 整页载入时尚未进入推送页，即使平台清单已就绪也不查询昵称
+{
+  const calls = [];
+  const api = async path => {
+    calls.push(path);
+    if (path === '/datasource') return {content: JSON.stringify([
+      {platform: 'bilibili', uid: 7}, {platform: 'bilibili', uid: 8},
+    ])};
+    return {success: true, uname: '现场昵称'};
+  };
+  const functions = [
+    'async function reload()', 'function serializePush', 'function dropDisplayOnly',
+    'async function decoratePushData',
+  ].map(marker => bracedFrom(src, marker)).join('\n');
+  const reload = new Function('api', 'store', 'clearSessionDrafts', 'renderStreamers', 'say',
+    'let pushData = []; let pushSaved = "[]"; let pageLive = false;\n' + functions
+    + '\nreturn reload;')(api, {platforms: ['bilibili']}, () => {}, () => {},
+    message => { throw new Error(message); });
+  await reload();
+  eq(calls.filter(path => path === '/streamer/lookup').length, 0,
+    '⑧ 整页载入、尚未进入推送页 → lookup 零次');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
