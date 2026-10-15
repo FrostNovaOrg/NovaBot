@@ -2083,7 +2083,7 @@ class ConfigUiFrontendTest {
      * 渲染那一层必须问过判法的那几件事，闭集
      */
     private static final List<String> STREAMERS_MODEL_CALLS = List.of(
-            "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(", "peakCell(",
+            "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(",
             "gapCells(", "totalDataBanner(", "snapshotRows(", "detailHash(", "sessionHash(",
             "reportPath(", "reportView(", "pageBar(");
 
@@ -2092,18 +2092,18 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> STREAMERS_MODEL_FUNCTIONS = List.of(
             "function parseStreamersHash", "function statusChip", "function sparkline",
-            "function peakCell", "function gapCells", "function totalDataBanner",
+            "function gapCells", "function totalDataBanner",
             "function snapshotRows");
 
     /**
-     * 主播页三块各有落点，且状态标、折线、人气峰那几条判法只有 streamers-model 一份
+     * 主播页三块各有落点，且状态标、折线那几条判法只有 streamers-model 一份
      * <p>
      * 与设置页、连接页、日志页、推送页那几条同理：元素与接线缺哪一半都不会报错——元素没了，
      * 脚本按 id 取到 null；脚本没接上，那一块就静静地空着。
      * <p>
      * 🔴 后半截奔着两类具体的退步去：
      * <ul>
-     *   <li><b>把地址解析、状态标、人气峰那几条判法抄一份到渲染代码里。</b>它们由
+     *   <li><b>把地址解析、状态标、折线那几条判法抄一份到渲染代码里。</b>它们由
      *   {@code streamers-model.js} 现算，那一份有 node 夹具逐格在量；抄进渲染代码之后，
      *   夹具照样全绿——它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。</li>
      *   <li><b>自己判「这台机器开没开累计数据」。</b>那一条与首页那条软待办问的是同一件事，

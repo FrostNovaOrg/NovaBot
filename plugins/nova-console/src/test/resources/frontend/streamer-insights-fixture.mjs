@@ -70,6 +70,9 @@ let livePendingResponse = false;
 let liveSnapshot = null;
 let resolveLive;
 let sessionMessageKey = null;
+let sessionScenario = null;
+let recentScenario = null;
+const revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
   start: 1791736800000 - i * 604800000, end: 1792341600000 - i * 604800000,
   label: 'week ' + i, sessions: i === 2 ? 0 : 2, durationSeconds: i === 1 ? 0 : 7200,
@@ -84,6 +87,13 @@ globalThis.fetch = async url => {
   requests.push(String(url));
   if (String(url).includes('/trend?')) return response({success: true, trend: {buckets: trendBuckets}});
   if (String(url).includes('/calendar?')) return response({success: true, calendar: {items: [{date: '2026-10-16', weekday: 5, start: 1792101600000, end: 1792188000000, status: 'recorded', effectiveSeconds: 600, starts: [1792101600100, 1792101600200]}]}});
+  if (String(url).includes('/sessions?') && sessionScenario) {
+    const params = new URL(url, 'https://example.test').searchParams;
+    const from = Number(params.get('dateFrom') || params.get('from') || 0), to = Number(params.get('dateTo') || params.get('to') || Number.MAX_SAFE_INTEGER);
+    const starts = params.has('starts') ? params.get('starts').split(',').map(Number) : null;
+    const items = sessionScenario.filter(item => item.startTime >= from && item.startTime < to && (!starts || starts.includes(item.startTime)));
+    return response({success: true, sessions: {items, total: items.length, page: 1, pages: 1, metrics: [], revenueKeys}});
+  }
   if (String(url).includes('/sessions?')) return response({success: true, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {}, title: String(startTime)})), total: 2, page: 1, pages: 1, metrics: []}});
   if (String(url).includes('/start-slots?')) return response({success: true, startSlots: {cells: [], topRevenue: [], topMessages: []}});
   if (String(url).includes('/fans?')) return response({success: true, fans: {points: [{at: 1792101600000, value: 10}, {at: 1792101600100, value: 12}], change: 2, partial: true}});
@@ -102,7 +112,7 @@ globalThis.fetch = async url => {
     if (livePendingResponse) return new Promise(resolve => { resolveLive = resolve; });
     return response(liveSnapshot || {success: true, living: false, metrics: {}, revenue: null, messages: null});
   }
-  return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {chat_total: 37, other_total: 999}, title: String(startTime)})), messageKey: sessionMessageKey, metrics: []}});
+  return response({success: true, platform: 'sample', uid: 1, configured: true, living: livePendingResponse, overview: {}, sessions: {items: recentScenario || [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {chat_total: 37, other_total: 999}, title: String(startTime)})), messageKey: sessionMessageKey, metrics: [], revenueKeys}});
 };
 const page = await import('../../../main/resources/config-ui-pages/streamers.js');
 const flatten = n => n ? [n, ...n.children.flatMap(flatten)] : [];
@@ -110,6 +120,153 @@ const base = '#/streamers/sample/1';
 const drawer = () => flatten(document.body).find(n => n.className === 'sc-drawer');
 const load = async hash => { location.hash = hash; await page.refresh(); };
 const textOf = node => flatten(node).map(n => n.textContent + n.innerHTML).join(' ');
+const sessionRows = () => flatten(drawer()).filter(n => n.className === 'sd-session-row');
+const sessionMetric = (row, label) => {
+  assert.ok(row, '须列出目标场次卡');
+  const name = flatten(row).find(n => n.tagName === 'dt' && n.textContent === label);
+  assert.ok(name, '须显示' + label);
+  return name.parentNode.children.find(n => n.tagName === 'dd').textContent;
+};
+// 长范围跨年时，范围行省去年份会让起止日期看起来倒置。
+await check('360天全页范围明确显示跨年起止', async () => {
+  compositionScenario = {from: Date.parse('2025-10-22T06:00:00+08:00'), to: Date.parse('2026-10-16T06:10:00+08:00')};
+  await load(base + '?days=360');
+  assert.match(textOf(nodes.get('sd-toolbar')), /本期统计：2025\/10\/22 06:00 — 2026\/10\/16 06:10（不含结束时刻）/, '全页范围须显示跨年起止');
+  compositionScenario = null;
+});
+// 日期框必须改变实际请求和展示结果，清除后回到全部归档。
+await check('场次日期筛选按06点统计日生效并可清除', async () => {
+  const start = Date.parse('2026-10-15T06:00:00+08:00');
+  sessionScenario = [-1, 0, 86400000 - 1, 86400000].map((offset, index) => ({platform: 'sample', uid: 1,
+    startTime: start + offset, endTime: start + offset + 60000, durationSeconds: 60, title: 'session ' + index, metrics: {}}));
+  const original = base + '?panel=sessions&source=dashboard';
+  await load(original);
+  const inputs = flatten(drawer()).filter(n => n.tagName === 'input' && n.type === 'date');
+  assert.equal(inputs.length, 2, '场次抽屉须有起止日期框');
+  inputs[0].value = inputs[1].value = '2026-10-15';
+  await flatten(drawer()).find(n => n.tagName === 'button' && n.textContent === '筛选').fire('click');
+  await page.refresh();
+  let params = new URLSearchParams(location.hash.split('?')[1]);
+  assert.equal(Number(params.get('dateFrom')), start, '筛选起点为06点');
+  assert.equal(Number(params.get('dateTo')), start + 86400000, '截止日包含完整统计日');
+  const links = flatten(drawer()).filter(n => n.href?.startsWith(base + '/') && /\/\d+$/.test(n.href));
+  assert.deepEqual(links.map(n => Number(n.href.split('/').at(-1))), [start, start + 86400000 - 1], '只列出所选统计日开播场次');
+  const clear = flatten(drawer()).find(n => n.textContent === '清除筛选');
+  assert.ok(clear, '须提供清除筛选');
+  if (clear.href) location.hash = clear.href; else await clear.fire('click');
+  await page.refresh();
+  assert.equal(flatten(drawer()).filter(n => n.href?.startsWith(base + '/') && /\/\d+$/.test(n.href)).length, 4, '清除后恢复原集合');
+  const selected = base + '?panel=sessions&source=calendar&sourceDay=2026-10-15&from=' + (start - 1) + '&to=' + (start + 1) + '&starts=' + [start - 1, start].join(',');
+  await load(selected);
+  const selectedInputs = flatten(drawer()).filter(n => n.tagName === 'input' && n.type === 'date');
+  selectedInputs[0].value = selectedInputs[1].value = '2026-10-15';
+  await flatten(drawer()).find(n => n.tagName === 'button' && n.textContent === '筛选').fire('click'); await page.refresh();
+  assert.equal(flatten(drawer()).filter(n => n.className === 'sd-session-row').length, 1, '日期与来源集合取交集');
+  await load(location.hash + '&page=2');
+  location.hash = flatten(drawer()).find(n => n.textContent === '清除筛选').href; await page.refresh();
+  assert.equal(sessionRows().length, 4, '清除后恢复全部归档');
+  const clearedParams = new URLSearchParams(location.hash.split('?')[1]);
+  for (const key of ['dateFrom', 'dateTo', 'from', 'to', 'starts', 'source', 'sourceDay', 'page']) {
+    assert.equal(clearedParams.has(key), false, '清除后地址不保留' + key);
+  }
+  sessionScenario = null;
+});
+// 缺失名单属于未知人数，不能把它显示成无人到场。
+await check('场次缺名单显示未知到场人数', async () => {
+  sessionScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, durationSeconds: 60, title: 'unknown', audience: null, metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, durationSeconds: 60, title: 'known', audience: 0, metrics: {}},
+  ];
+  await load(base + '?panel=sessions');
+  assert.equal(sessionMetric(sessionRows().find(n => n.href.endsWith('/1792101600100')), '到场人数'), '—', '缺名单那场到场人数须为—');
+  assert.equal(sessionMetric(sessionRows().find(n => n.href.endsWith('/1792101600200')), '到场人数'), '0 人', '已知空名单仍显示0人');
+  sessionScenario = null;
+});
+// 未采集收入不是收入为零；仅记录礼物时仍应显示已知流水。
+await check('场次流水区分部分收入与完全未记录', async () => {
+  sessionScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {gift_value: 12.5}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {danmu_count: 2}},
+    {platform: 'sample', uid: 1, startTime: 1792101600300, metrics: {gift_value: 0}},
+  ];
+  try {
+    await load(base + '?panel=sessions');
+    assert.equal(sessionMetric(sessionRows()[0], '流水'), '12.50 元', '仅有礼物收入也须显示流水');
+    assert.equal(sessionMetric(sessionRows()[1], '流水'), '—', '没有收入键须显示—');
+    assert.equal(sessionMetric(sessionRows()[2], '流水'), '0.00 元', '已知零收入须显示0.00元');
+  } finally { sessionScenario = null; }
+});
+// 同笔收入的消耗与盈亏不能再次加进最近场次流水。
+await check('最近场次流水只合计收入键', async () => {
+  recentScenario = [{platform: 'sample', uid: 1, startTime: 1792101600100,
+    metrics: {gift_value: 12.5, super_chat_value: 20, guard_value: 30, gift_paid: 100, box_profit: -5}}];
+  try {
+    page.leave();
+    await load(base);
+    const row = flatten(nodes.get('sd-recent')).find(n => n.className === 'sd-recent-row');
+    assert.match(textOf(row), /流水 62\.50 元/, '流水不得重复计入观众消耗与盲盒盈亏：' + textOf(row));
+  } finally { recentScenario = null; }
+});
+// 提示必须落在中断那场卡上，正常场次不能混入中断原因。
+await check('场次卡仅为中断场次标明原因', async () => {
+  sessionScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, interrupted: true, endReasonText: '程序停止', metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, interrupted: false, endReasonText: '正常下播', metrics: {}},
+  ];
+  try {
+    await load(base + '?panel=sessions');
+    assert.ok(textOf(sessionRows()[0]).includes('程序停止'), '中断那场须显示结束原因');
+    assert.ok(!textOf(sessionRows()[1]).includes('正常下播'), '正常那场不显示结束原因');
+    assert.ok(!textOf(sessionRows()[1]).includes('程序停止'), '正常那场不混入中断原因');
+  } finally { sessionScenario = null; }
+});
+// 未筛选时不出清除入口和来源，旧书签按所选场次说明来源。
+await check('未筛选场次不显示清除入口与来源', async () => {
+  await load(base + '?panel=sessions');
+  assert.ok(!textOf(drawer()).includes('清除筛选'), '没有筛选不显示清除入口');
+  assert.ok(!textOf(drawer()).includes('筛选来源：'), '没有来源不显示来源行');
+});
+// 只有场次集合的旧地址也不能冒充全部归档。
+await check('旧书签场次集合显示所选场次来源', async () => {
+  sessionScenario = [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, metrics: {}}));
+  try {
+    await load(base + '?panel=sessions&starts=1792101600100');
+    assert.match(textOf(drawer()), /筛选来源：所选场次 · 1 个场次/, '旧书签须说明所选场次与场数');
+    assert.ok(textOf(drawer()).includes('清除筛选'), 'starts筛选也须能清除');
+  } finally { sessionScenario = null; }
+});
+// 日历下钻须留下可刷新恢复的日期、来源和场数。
+await check('日历下钻展示所选日期来源与场数', async () => {
+  await load(base);
+  const day = flatten(nodes.get('sd-calendar')).find(n => n.dataset.date === '2026-10-16');
+  await day.fire('click'); await page.refresh();
+  assert.equal(new URLSearchParams(location.hash.split('?')[1]).get('source'), 'calendar', '地址须保留日历来源');
+  assert.match(textOf(drawer()), /筛选来源：开播日历.*2026[/-]10[/-]16.*2 个场次/, '来源须说明日期与场数');
+});
+// 直播时长已有固定列，选择同一指标后不应再出现一列同名列。
+await check('直播时长趋势明细没有重复表头', async () => {
+  await load(base + '?panel=trend&metric=durationSeconds');
+  const headers = flatten(drawer()).filter(n => n.tagName === 'th').map(n => n.textContent);
+  assert.equal(headers.filter(name => name === '直播时长').length, 1, '直播时长表头只能出现一次');
+});
+// 移动说明后，所有未比较项和原因应仍在卡头展开区，口径区不重复。
+await check('卡头对比说明保留全部未比较项与原因', async () => {
+  compositionScenario = {comparisons: {durationSeconds: {reasonCode: 'SMALL', reason: '本期或上期少于 2 场'},
+    revenue: {reasonCode: 'ZERO', reason: '上期为 0'}, audience: {reasonCode: 'SMALL', reason: '本期或上期少于 2 场'}}, comparisonNote: '名单完整性未知'};
+  const expected = model.comparisonExplanation(compositionScenario);
+  await load(base); await page.refresh();
+  const head = flatten(nodes.get('sd-insights')).find(n => n.className === 'sc-section-head');
+  const disclosure = flatten(head).find(n => n.tagName === 'details');
+  assert.ok(disclosure, '本期表现卡头须有对比说明折叠');
+  assert.match(textOf(disclosure), /对比说明 · 3 项未比较/);
+  for (const group of expected.groups) {
+    assert.ok(textOf(disclosure).includes(group.reason));
+    for (const metric of group.metrics) assert.ok(textOf(disclosure).includes(metric));
+    assert.ok(!textOf(nodes.get('sd-scope')).includes(group.reason), '统计口径不重复原因');
+  }
+  assert.ok(textOf(disclosure).includes(expected.note));
+  compositionScenario = null;
+});
 // 最近归档的弹幕必须跟随场次接口的指标规则，不能取另一个计数。
 await check('最近场次预览按场次接口messageKey读取弹幕', async () => {
   for (const [key, expected] of [['chat_total', '37'], ['other_total', '999'], [null, '—']]) {
@@ -228,8 +385,8 @@ await check('日历按starts列出所选场次', async () => {
   const action = flatten(nodes.get('sd-calendar')).find(n => n.className.includes('sc-calendar-action'));
   await action.fire('click'); await page.refresh();
   assert.ok(requests.some(url => url.includes('/sessions?') && new URL(url, 'https://example.test').searchParams.get('starts') === '1792101600100,1792101600200'), '场次请求应带当天starts');
-  const content = flatten(drawer()).map(n => n.innerHTML).join(' ');
-  assert.match(content, /1792101600100/); assert.match(content, /1792101600200/);
+  const links = flatten(drawer()).filter(n => n.tagName === 'a').map(n => n.href);
+  for (const start of [1792101600100, 1792101600200]) assert.ok(links.includes(model.sessionHash('sample', 1, start)), '须列出所选场次链接');
 });
 // 指标必须打开对应的趋势或名单明细。
 await check('指标点击分派到对应趋势与抽屉', async () => {
@@ -339,11 +496,11 @@ await check('五项指标沿用较上期判法，红涨绿跌持平无色', asyn
 await check('对比说明默认折叠，按原因列指标，展开后显示参考说明', async () => {
   compositionScenario.comparisonNote = '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考';
   await page.refresh();
-  const details = nodes.get('sd-scope');
+  const details = flatten(nodes.get('sd-insights')).find(n => n.className === 'sd-comparison');
   assert.ok(details, '必须有可展开的说明');
   assert.ok(!details.open && !('open' in details.attrs), '说明默认折叠');
   assert.equal(details.children[0].tagName, 'summary');
-  assert.equal(details.children[0].textContent, '统计口径');
+  assert.equal(details.children[0].textContent, '对比说明 · 2 项未比较');
   const text = flatten(details).map(n => n.textContent).join(' ');
   assert.match(text, /上期为 0[：:]观众、互动观众/);
   assert.match(text, /6.0 之前开播.*仅供参考/);
@@ -352,8 +509,8 @@ await check('只有旧名单参考说明时仍可展开，无说明时清除旧�
   compositionScenario = {comparisons: Object.fromEntries(
     ['durationSeconds', 'revenue', 'messages', 'audience', 'interactionAudience'].map(key => [key, {changeRatio: 0}])), comparisonNote: '6.0 之前开播的场次名单完整性未知，观众数对比仅供参考'};
   await page.refresh();
-  assert.equal(flatten(nodes.get('sd-scope')).find(n => n.tagName === 'summary')?.textContent,
-    '统计口径', '全部比较时摘要不显示零项');
+  assert.ok(!flatten(nodes.get('sd-insights')).some(n => n.className === 'sd-comparison'), '全部比较时不显示未比较折叠');
+  assert.ok(textOf(nodes.get('sd-scope')).includes('仅供参考'), '旧名单参考说明仍可查看');
   compositionScenario = {comparisons: {audience: {changeRatio: 0}}};
   await page.refresh();
   assert.ok(!flatten(nodes.get('sd-scope')).some(n => n.textContent.includes('仅供参考')), '无说明时不留旧说明');
@@ -382,8 +539,8 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
   assert.ok(card, '观众页应创建表格容器');
   const all = [...flatten(card), ...flatten(nodes.get('sd-toolbar'))];
   const text = all.map(n => n.textContent).join(' ');
-  assert.match(text, /本期全部观众 45 人/);
-  assert.match(text, /回访 25 人/);
+  assert.match(text, /本期全部观众 45/);
+  assert.match(text, /回访 25/);
   assert.match(text, /30\.50/);
   assert.match(text, /首次 2026/);
   assert.match(text, /名单：完整 2 场/);
@@ -400,9 +557,9 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
 // 全页只有一个范围入口，抽屉使用该范围。
 await check('观众范围统一放在总览工具条', async () => {
   await page.refresh();
-  assert.deepEqual(flatten(nodes.get('sd-toolbar')).filter(n => /^近 \d+ 天$/.test(n.textContent)).map(n => n.textContent),
-    ['近 7 天', '近 30 天', '近 90 天', '近 180 天', '近 360 天']);
-  assert.ok(!flatten(nodes.get('sd-audience')).some(n => /^近 \d+ 天$/.test(n.textContent)));
+  assert.deepEqual(flatten(nodes.get('sd-toolbar')).filter(n => /^\d+天$/.test(n.textContent)).map(n => n.textContent),
+    ['7天', '30天', '90天', '180天', '360天']);
+  assert.ok(!flatten(nodes.get('sd-audience')).some(n => /^\d+天$/.test(n.textContent)));
 });
 // 页脚人数与分组人数的数字格式必须一致。
 await check('观众页脚页数和人数带千分位', async () => {
@@ -415,20 +572,20 @@ await check('观众页脚页数和人数带千分位', async () => {
       '共 58,840 条 · 第 1/2,942 页', '页脚数字应带千分位');
   } finally { Object.assign(data, saved); }
 });
-await check('点击昵称展开本期场次开播时间标题，再点收起', () => {
+await check('点击昵称展开本期场次开播时间标题，再点收起', async () => {
   const all = flatten(nodes.get('sd-audience'));
-  const button = all.find(n => n.tagName === 'button' && n.textContent === 'viewer');
+  const button = all.find(n => n.tagName === 'a' && n.textContent === 'viewer');
   assert.ok(button, '昵称应可点击');
   const expanded = all.find(n => n.tagName === 'tr' && n.hidden === true);
   assert.ok(expanded, '场次初始应收起');
-  button.listeners.click();
+  await button.fire('click');
   assert.equal(expanded.hidden, false, '点击后展开');
   assert.equal(button.attrs['aria-expanded'], 'true');
   const visits = flatten(expanded).filter(n => n.tagName === 'a');
   assert.equal(visits.length, 2);
   assert.match(visits[0].textContent, /2026.*latest title/);
   assert.ok(visits[0].href.endsWith('/1792101600000'));
-  button.listeners.click();
+  await button.fire('click');
   assert.equal(expanded.hidden, true, '再次点击收起');
   assert.equal(button.attrs['aria-expanded'], 'false');
 });
