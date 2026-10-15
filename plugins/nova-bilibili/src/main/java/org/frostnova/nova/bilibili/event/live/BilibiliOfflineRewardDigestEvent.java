@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,10 +17,9 @@ import java.util.List;
  * 下播时段打赏汇总事件
  * <p>
  * 主播不在播时收到的上舰与礼物并不当场播报，先攒一小阵；一阵停下来（或到上限）后，
- * 把这一阵里够格播报的人合成这一条事件，交给推送处理器发出一条消息。
+ * 把这一阵的人合成一条事件，交给推送处理器按各会话门槛筛选并发送。
  * <p>
- * 够格是按人的：礼物合计够 100 元、或这一阵里上过舰，两者占其一就够；
- * 一个够格的人都没有时这条事件根本不会发布。
+ * 下播前十秒的打赏另发提醒事件，使用同一推送设置；没有打赏不发布。
  * <p>
  * 事件类必须留在本包（{@code org.frostnova.nova.bilibili.event.live}）：
  * 「只连有推送的直播间」按事件类的包名前缀判断某个推送目标算不算订阅了直播事件，
@@ -31,9 +31,22 @@ import java.util.List;
 @ToString(callSuper = true)
 public class BilibiliOfflineRewardDigestEvent extends NovaExternalBaseEvent {
     /**
-     * 够格播报的人，按够格先后排列，一人一条
+     * 本阵观众，按首次收到打赏的先后排列，一人一条
      */
     private List<Contribution> contributions = new ArrayList<>();
+
+    /** 下播前十秒内打赏的独立提醒。 */
+    private boolean closingReminder;
+
+    /** 会话筛选后，超过展示人数上限的观众人数及其合计金额（分）。 */
+    private int omittedCount;
+
+    private long omittedAmountFen;
+
+    public BilibiliOfflineRewardDigestEvent(LiveStreamerInfo source, List<Contribution> contributions, Instant instant) {
+        super(BilibiliPlatform.BILIBILI, source, instant);
+        this.contributions = contributions;
+    }
 
     public BilibiliOfflineRewardDigestEvent(LiveStreamerInfo source, List<Contribution> contributions) {
         super(BilibiliPlatform.BILIBILI, source);
@@ -82,11 +95,17 @@ public class BilibiliOfflineRewardDigestEvent extends NovaExternalBaseEvent {
          * 上舰实付（分），取不到时为空
          */
         private Long guardAmountFen;
+
+        /** 最后一次上舰的送出时刻。 */
+        private Instant guardSentAt;
     }
 
     /**
      * 一种礼物：名字、这一阵送了几个、合计实付（分）
      */
-    public record GiftLine(String name, Integer count, Long amountFen) {
+    public record GiftLine(String name, Integer count, Long amountFen, Instant firstSentAt, Instant lastSentAt) {
+        public GiftLine(String name, Integer count, Long amountFen) {
+            this(name, count, amountFen, null, null);
+        }
     }
 }

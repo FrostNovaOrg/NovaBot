@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
  * <p>
  * 主播不在播时攒下的那一阵上舰与礼物，画成与下播报告同一套模板的一张图：
  * 同宽、同页头（头像、名字、副标题写这一阵发出的时刻）、同标识图与底部版权。
- * 正文逐人一段：观众名字，上舰的写开通或续费了哪一级，送礼的逐样写礼物名×数量。
+ * 正文逐人一段：名字一行，上舰与每种礼物各占一行，行首写东八区的送出分钟或起止分钟。
  * <p>
  * 金额可见性是画图入参而不是图里自行判断的：同一阵推给主播私聊与推给大群
  * 是两次画图，该不该带金额相反，该说的事相同。不可见时一个金额都不画。
@@ -43,11 +43,12 @@ public class BilibiliOfflineRewardDigestPainter {
      */
     private static final int INITIAL_HEIGHT = 900;
 
-    /**
-     * 副标题里的时刻写法，与下播报告页头同一形
-     */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+
+    private static final DateTimeFormatter MINUTE_FORMATTER = DateTimeFormatter.ofPattern("HH:mm").withZone(ZONE);
+
     private static final DateTimeFormatter TIME_FORMATTER =
-            DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
+            DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZONE);
 
     /**
      * 每人一段的段间距
@@ -99,12 +100,15 @@ public class BilibiliOfflineRewardDigestPainter {
             BufferedImage face = ReportSharedStyle.faceImage(api, event.getSource());
             ReportSharedStyle.drawSimpleHeader(painter,
                     names.uname(event.getPlatform(), event.getSource().getUid(), event.getSource().getUname()), face,
-                    "打赏播报 · " + TIME_FORMATTER.format(Instant.ofEpochMilli(event.getTimestamp())));
+                    title(event));
 
             for (BilibiliOfflineRewardDigestEvent.Contribution person : event.getContributions()) {
-                drawPerson(painter, person, showRevenue);
+                drawPerson(painter, person, showRevenue, Instant.ofEpochMilli(event.getTimestamp()));
             }
 
+            if (event.getOmittedCount() > 0) {
+                painter.drawTextMultiLine(summary(event, showRevenue), ReportSharedStyle.COLOR_TEXT, ReportSharedStyle.MARGIN);
+            }
             painter.movePos(0, 20);
             logoDrawer.draw(painter, properties);
             painter.drawCopyright(ReportSharedStyle.MARGIN);
@@ -124,8 +128,7 @@ public class BilibiliOfflineRewardDigestPainter {
      * 这一阵播报的<b>文字版</b>，画图失败时顶上
      * <p>
      * 与下播报告同一条退路：图画不出来时这一阵的感谢不能跟着消失。
-     * 文字就是此前默认模板的那句感谢，原样保留——它经过一版真机使用，
-     * 用词（不提「下播」、按人一段、金额进括号）是验证过的。
+     * 文字与图共用送出时间和明细，最后十秒的提醒另带标题。
      * 金额可见性照画图那一路走：降级不是放宽口径的理由。
      *
      * @param event 攒好的一阵
@@ -133,7 +136,7 @@ public class BilibiliOfflineRewardDigestPainter {
      * @return 文字版播报
      */
     public String textDigest(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
-        return "感谢 " + renderList(event, showRevenue) + "，"
+        return (event.isClosingReminder() ? title(event) + "\n" : "") + "感谢 " + renderList(event, showRevenue) + "，"
                 + PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()) + " 都收到啦"
                 + "\n\n（播报图片绘制失败，本条为文字版）";
     }
@@ -145,17 +148,18 @@ public class BilibiliOfflineRewardDigestPainter {
      * 金额可见性只影响括号里的数字，谁做了什么两边都写。
      */
     public String renderList(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
-        return event.getContributions().stream()
-                .map(person -> renderPerson(person, showRevenue))
+        String people = event.getContributions().stream()
+                .map(person -> renderPerson(person, showRevenue, Instant.ofEpochMilli(event.getTimestamp())))
                 .collect(Collectors.joining("、"));
+        return people + (event.getOmittedCount() > 0 ? "\n" + summary(event, showRevenue) : "");
     }
 
     /**
      * 一个人拼成文字版的一段：名字打头，其后的事用逗号连起来。
      * 行内容与画图那一路同出 {@link #bodyLines}——同一阵的图与文字说的是同一句话
      */
-    private String renderPerson(BilibiliOfflineRewardDigestEvent.Contribution person, boolean showRevenue) {
-        List<String> lines = bodyLines(person, showRevenue);
+    private String renderPerson(BilibiliOfflineRewardDigestEvent.Contribution person, boolean showRevenue, Instant headerAt) {
+        List<String> lines = bodyLines(person, showRevenue, headerAt);
         return MessagePlaceholders.escapeExternalText(lines.get(0) + " " + String.join("，", lines.subList(1, lines.size())));
     }
 
@@ -166,8 +170,8 @@ public class BilibiliOfflineRewardDigestPainter {
      * 不必等图画出来再从像素里找。
      */
     private void drawPerson(CommonPainter painter, BilibiliOfflineRewardDigestEvent.Contribution person,
-                            boolean showRevenue) {
-        List<String> lines = bodyLines(person, showRevenue);
+                            boolean showRevenue, Instant headerAt) {
+        List<String> lines = bodyLines(person, showRevenue, headerAt);
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(lines.get(0),
                 CommonPainter.TEXT_FONT_SIZE, ReportSharedStyle.COLOR_NAME, Font.BOLD)));
@@ -179,7 +183,7 @@ public class BilibiliOfflineRewardDigestPainter {
     }
 
     /**
-     * 一个人画进图里的几行字：首行名字，其后上舰一行、礼物一行
+     * 一个人画进图里的几行字：首行名字，其后上舰与每种礼物各一行
      * <p>
      * 金额可见时上舰行带「（¥x）」、礼物行带「（合计 ¥x）」；不可见时一个金额都没有。
      *
@@ -188,12 +192,18 @@ public class BilibiliOfflineRewardDigestPainter {
      * @return 行的列表，至少一行
      */
     static List<String> bodyLines(BilibiliOfflineRewardDigestEvent.Contribution person, boolean showRevenue) {
+        return bodyLines(person, showRevenue, Instant.now());
+    }
+
+    private static List<String> bodyLines(BilibiliOfflineRewardDigestEvent.Contribution person,
+                                          boolean showRevenue, Instant headerAt) {
         List<String> lines = new ArrayList<>();
         lines.add(StringUtil.isBlank(UserText.singleLine(person.getUname()))
                 ? String.valueOf(person.getUid()) : UserText.singleLine(person.getUname()));
 
         if (person.getGuardLevel() != null) {
-            String text = guardVerb(person.getOperateType()) + guardLevelName(person.getGuardLevel());
+            String text = timePrefix(person.getGuardSentAt(), person.getGuardSentAt(), headerAt)
+                    + guardVerb(person.getOperateType()) + guardLevelName(person.getGuardLevel());
             if (showRevenue && person.getGuardAmountFen() != null) {
                 text += "（¥" + ReportSharedStyle.yuanFromFen(person.getGuardAmountFen()) + "）";
             }
@@ -202,16 +212,44 @@ public class BilibiliOfflineRewardDigestPainter {
 
         List<BilibiliOfflineRewardDigestEvent.GiftLine> gifts = person.getGifts();
         if (gifts != null && !gifts.isEmpty()) {
-            String text = "送了 " + gifts.stream()
-                    .map(line -> line.name() + "×" + line.count())
-                    .collect(Collectors.joining("、"));
-            if (showRevenue && person.getGiftAmountFen() != null) {
-                text += "（合计 ¥" + ReportSharedStyle.yuanFromFen(person.getGiftAmountFen()) + "）";
+            for (BilibiliOfflineRewardDigestEvent.GiftLine gift : gifts) {
+                String text = timePrefix(gift.firstSentAt(), gift.lastSentAt(), headerAt)
+                        + "送了 " + UserText.singleLine(gift.name()) + "×" + gift.count();
+                if (showRevenue && gift.amountFen() != null) {
+                    text += "（合计 ¥" + ReportSharedStyle.yuanFromFen(gift.amountFen()) + "）";
+                }
+                lines.add(text);
             }
-            lines.add(text);
+            if (showRevenue && gifts.size() > 1 && person.getGiftAmountFen() != null) {
+                lines.add("礼物合计 ¥" + ReportSharedStyle.yuanFromFen(person.getGiftAmountFen()));
+            }
         }
 
         return lines;
+    }
+
+    private static String title(BilibiliOfflineRewardDigestEvent event) {
+        return (event.isClosingReminder() ? "下播前 10 秒内 · 打赏提醒" : "打赏播报")
+                + " · " + TIME_FORMATTER.format(Instant.ofEpochMilli(event.getTimestamp()));
+    }
+
+    private static String summary(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
+        return "另有 " + event.getOmittedCount() + " 人"
+                + (showRevenue ? "，合计 ¥" + ReportSharedStyle.yuanFromFen(event.getOmittedAmountFen()) : "");
+    }
+
+    private static String timePrefix(Instant first, Instant last, Instant headerAt) {
+        if (first == null) {
+            return "";
+        }
+        var start = first.atZone(ZONE).withSecond(0).withNano(0);
+        var end = (last == null ? first : last).atZone(ZONE).withSecond(0).withNano(0);
+        var headerDay = headerAt.atZone(ZONE).toLocalDate();
+        String text = (start.toLocalDate().equals(headerDay) ? MINUTE_FORMATTER : TIME_FORMATTER).format(start);
+        if (!start.equals(end)) {
+            text += "–" + (end.toLocalDate().equals(start.toLocalDate()) ? MINUTE_FORMATTER : TIME_FORMATTER).format(end);
+        }
+        return text + " ";
     }
 
     private static String guardLevelName(int level) {

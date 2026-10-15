@@ -1,6 +1,7 @@
 package org.frostnova.nova.bilibili.service;
 
 import org.frostnova.nova.bilibili.event.live.BilibiliCaptainEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliCommanderEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliFreeGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliOfflineRewardDigestEvent;
@@ -14,6 +15,8 @@ import org.frostnova.nova.core.model.UserInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -26,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -137,12 +141,12 @@ class BilibiliOfflineRewardDigestCollectorTest {
     }
 
     @Test
-    @DisplayName("单人合计 99 元不播")
-    void skipsBelowThreshold() {
+    @DisplayName("小额礼物保留给各群按门槛筛选")
+    void retainsSmallRewardsForPerGroupThreshold() {
         collector.onLiveEvent(gift(50001L, "张三", "心动盲盒", 99.0));
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
         collector.sweep();
-        assertTrue(digests().isEmpty(), "不够 100 元就不发");
+        assertEquals(9900L, onlyPerson().getGiftAmountFen(), "金额门槛由各群单独筛选");
     }
 
     @Test
@@ -155,13 +159,14 @@ class BilibiliOfflineRewardDigestCollectorTest {
     }
 
     @Test
-    @DisplayName("两人各 60 元不播：够格按人算，不按全场合计")
+    @DisplayName("两人各六十元均保留各自合计")
     void thresholdIsPerPerson() {
         collector.onLiveEvent(gift(50001L, "张三", "辣条", 60.0));
         collector.onLiveEvent(gift(50002L, "李四", "辣条", 60.0));
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
         collector.sweep();
-        assertTrue(digests().isEmpty(), "两个人凑 120 也不算谁够格");
+        assertEquals(List.of(6000L, 6000L), digests().get(0).getContributions().stream()
+                .map(BilibiliOfflineRewardDigestEvent.Contribution::getGiftAmountFen).toList());
     }
 
     @Test
@@ -193,7 +198,7 @@ class BilibiliOfflineRewardDigestCollectorTest {
         collector.onLiveEvent(gift(50001L, "张三", "辣条", 60.0));
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
         collector.sweep();
-        assertTrue(digests().isEmpty(), "醒目留言的钱不算进礼物合计");
+        assertEquals(6000L, onlyPerson().getGiftAmountFen(), "醒目留言的钱不算进礼物合计");
     }
 
     @Test
@@ -259,7 +264,8 @@ class BilibiliOfflineRewardDigestCollectorTest {
         collector.onLiveEvent(blindBox());
         clock.advance(Duration.ofMinutes(1).plusSeconds(1));
         collector.sweep();
-        assertTrue(digests().isEmpty(), "盒子只花 4 元，开出物面值 200 不算数");
+        assertEquals(400L, onlyPerson().getGiftAmountFen(), "盲盒按盒价，群设置再筛门槛");
+        published.clear();
 
         collector.onLiveEvent(blindBox());
         collector.onLiveEvent(gift(50001L, "张三", "辣条", 100.0));
@@ -285,6 +291,204 @@ class BilibiliOfflineRewardDigestCollectorTest {
         BilibiliOfflineRewardDigestEvent.Contribution person = onlyPerson();
         assertEquals(3, person.getGuardLevel());
         assertEquals(GuardOperateType.RENEWAL, person.getOperateType());
+    }
+
+    @Test
+    @DisplayName("礼物时间来自送出时刻而非到达时刻")
+    void preservesSentTimeInsteadOfArrival() {
+        clock.now = Instant.parse("2026-10-15T12:16:10Z");
+        Instant sent = Instant.parse("2026-10-15T12:15:30Z");
+        BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(source(), sender(50001L, "甲"),
+                new GiftInfo(1L, "小花花", 120.0, 1, null), 120.0, sent);
+        collector.onLiveEvent(event);
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertEquals(1, digests().size(), "应发布有礼物的播报");
+        assertEquals(sent, onlyPerson().getGifts().get(0).firstSentAt(), "送出时间不能换成收到时间");
+    }
+
+    @Test
+    @DisplayName("同名礼物保留最早与最晚送出时间")
+    void mergesTimeRangeEvenOutOfOrder() {
+        Instant first = clock.instant().minusSeconds(420);
+        Instant last = clock.instant();
+        collector.onLiveEvent(new BilibiliPaidGiftEvent(source(), sender(50001L, "甲"),
+                new GiftInfo(1L, "小花花", 60.0, 1, null), 60.0, last));
+        collector.onLiveEvent(new BilibiliPaidGiftEvent(source(), sender(50001L, "甲"),
+                new GiftInfo(1L, "小花花", 60.0, 1, null), 60.0, first));
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        var line = onlyPerson().getGifts().get(0);
+        assertEquals(first, line.firstSentAt(), "合并后不能丢掉最早送出时间");
+        assertEquals(last, line.lastSentAt());
+    }
+
+    @Test
+    @DisplayName("同分钟同名礼物合并数量并分别保留各礼物时间")
+    void preservesMinutesAndMergedCounts() {
+        Instant first = Instant.parse("2026-10-15T12:15:03Z");
+        clock.now = Instant.parse("2026-10-15T12:32:00Z");
+        for (int count : List.of(3, 2)) {
+            collector.onLiveEvent(new BilibiliPaidGiftEvent(source(), sender(1L, "甲"),
+                    new GiftInfo(1L, "小花花", 60.0, count, null), 60.0,
+                    count == 3 ? first : first.plusSeconds(30)));
+        }
+        collector.onLiveEvent(new BilibiliPaidGiftEvent(source(), sender(1L, "甲"),
+                new GiftInfo(2L, "甜梦花", 60.0, 1, null), 60.0, first.plusSeconds(16 * 60)));
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        var gifts = onlyPerson().getGifts();
+        assertEquals(List.of(5, 1), gifts.stream().map(BilibiliOfflineRewardDigestEvent.GiftLine::count).toList(),
+                "同名礼物必须合并数量");
+        assertEquals(first, gifts.get(0).firstSentAt());
+        assertEquals(first.plusSeconds(30), gifts.get(0).lastSentAt());
+        assertEquals(first.plusSeconds(16 * 60), gifts.get(1).firstSentAt());
+    }
+
+    @Test
+    @DisplayName("六十元礼物保留供默认五十元群播报")
+    void retainsSixtyYuanForDefaultThreshold() {
+        collector.onLiveEvent(gift(50001L, "甲", "小花花", 60));
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertEquals(1, digests().size(), "默认门槛降为五十元后六十元不能丢失");
+    }
+
+    @Test
+    @DisplayName("缺少送出时间时使用到达时刻")
+    void fallsBackToArrivalWhenTimestampMissing() {
+        var gift = org.mockito.Mockito.spy(gift(50001L, "甲", "小花花", 120));
+        when(gift.getTimestamp()).thenReturn(0L);
+        Instant arrival = clock.instant();
+        collector.onLiveEvent(gift);
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertEquals(arrival, onlyPerson().getGifts().get(0).firstSentAt(), "缺少平台时间才用到达时刻");
+    }
+
+    @Test
+    @DisplayName("提醒发出后才到的下播前礼物进入普通播报并保留送出时间")
+    void broadcastsRewardsArrivingAfterReminderWasSent() {
+        Instant end = clock.instant();
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(true);
+        sentGift(1, "先到", 60, end.minusSeconds(8));
+        closeLive();
+        clock.advance(Duration.ofSeconds(15));
+        collector.sweep();
+        assertEquals(1, digests().size(), "先到礼物应已发出提醒");
+        assertTrue(digests().get(0).isClosingReminder());
+        published.clear();
+        sentGift(2, "晚到", 100, end.minusSeconds(3));
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertEquals(1, digests().size(), "提醒发出后才到的礼物不能丢失");
+        assertFalse(digests().get(0).isClosingReminder(), "极晚礼物要进入普通播报");
+        assertEquals("晚到", onlyPerson().getUname());
+        var gift = onlyPerson().getGifts().get(0);
+        assertEquals(end.minusSeconds(3), gift.firstSentAt(), "极晚礼物要保留自己的送出时间");
+        assertEquals(end.minusSeconds(3), gift.lastSentAt());
+    }
+
+    @Test
+    @DisplayName("闸门先下播时已暂存的最后十秒礼物移入提醒")
+    void movesRacingOfflineRewardIntoReminder() {
+        Instant end = clock.instant();
+        sentGift(2, "B", 100, end.minusSeconds(3));
+        closeLive();
+        clock.advance(Duration.ofSeconds(15));
+        collector.sweep();
+        assertEquals(1, digests().size(), "状态闸门和下播事件之间的礼物也要提醒");
+        assertTrue(digests().get(0).isClosingReminder());
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertEquals(1, digests().size(), "移入提醒后不能再进普通播报");
+    }
+
+    @ParameterizedTest(name = "{displayName}（下播事件先到：{0}）")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("下播后才收到的较早礼物与新礼物一起普通播报")
+    void keepsOlderLateLiveGiftAndNewOfflineGift(boolean offEventArrivesFirst) {
+        Instant end = clock.instant();
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(false);
+        if (offEventArrivesFirst) {
+            closeLive();
+        }
+        clock.advance(Duration.ofSeconds(5));
+        sentGift(3, "C", 60, end.minusSeconds(15));
+        sentGift(4, "D", 60, end.plusSeconds(1));
+        if (!offEventArrivesFirst) {
+            collector.onLiveEvent(new BilibiliLiveOffEvent(source(), end));
+        }
+        clock.advance(BilibiliOfflineRewardDigestCollector.REMINDER_DELAY);
+        collector.sweep();
+        assertTrue(digests().isEmpty(), "更早在播礼物不能进最后十秒提醒");
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertEquals(1, digests().size(), "晚到的较早礼物与新礼物应合成一条普通播报");
+        assertFalse(digests().get(0).isClosingReminder());
+        assertEquals(List.of("C", "D"), digests().get(0).getContributions().stream()
+                .map(BilibiliOfflineRewardDigestEvent.Contribution::getUname).toList(),
+                "下播后才收到的较早礼物不能丢失");
+        var gifts = digests().get(0).getContributions().stream()
+                .flatMap(person -> person.getGifts().stream()).toList();
+        assertEquals(List.of(end.minusSeconds(15), end.plusSeconds(1)),
+                gifts.stream().map(BilibiliOfflineRewardDigestEvent.GiftLine::firstSentAt).toList(),
+                "普通播报要保留两份礼物各自的送出时间");
+    }
+
+    private void closeLive() {
+        collector.onLiveEvent(new BilibiliLiveOffEvent(source(), clock.instant()));
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(false);
+    }
+
+    private void sentGift(long uid, String name, double yuan, Instant sent) {
+        collector.onLiveEvent(new BilibiliPaidGiftEvent(source(), sender(uid, name),
+                new GiftInfo(1L, name, yuan, 1, null), yuan, sent));
+    }
+
+    @Test
+    @DisplayName("最后十秒提醒收在播及晚到礼物并排除更早礼物")
+    void remindsLiveAndLateRewardsOnly() {
+        Instant end = clock.instant();
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(true);
+        sentGift(1, "A", 60, end.minusSeconds(8));
+        sentGift(3, "C", 60, end.minusSeconds(15));
+        sentGift(4, "边界", 60, end.minusSeconds(10));
+        closeLive();
+        clock.advance(Duration.ofSeconds(5));
+        sentGift(2, "B", 60, end.minusSeconds(3));
+        collector.sweep();
+        assertTrue(digests().isEmpty(), "先等晚到礼物");
+        clock.advance(Duration.ofSeconds(10));
+        collector.sweep();
+        assertEquals(1, digests().size(), "下播后应单独提醒最后十秒");
+        assertTrue(digests().get(0).isClosingReminder());
+        assertEquals(List.of("A", "边界", "B"), digests().get(0).getContributions().stream()
+                .map(BilibiliOfflineRewardDigestEvent.Contribution::getUname).toList());
+    }
+
+    @Test
+    @DisplayName("晚到的最后十秒礼物不会再进普通播报")
+    void lateRewardDoesNotRepeatInOrdinaryBatch() {
+        Instant end = clock.instant();
+        closeLive();
+        clock.advance(Duration.ofSeconds(5));
+        sentGift(2, "B", 100, end.minusSeconds(3));
+        clock.advance(Duration.ofSeconds(10));
+        collector.sweep();
+        published.clear();
+        clock.advance(Duration.ofSeconds(61));
+        collector.sweep();
+        assertTrue(digests().isEmpty(), "B 只能在提醒里出现一次");
+    }
+
+    @Test
+    @DisplayName("无人打赏时不发空提醒")
+    void doesNotRemindWhenEmpty() {
+        closeLive();
+        clock.advance(Duration.ofSeconds(15));
+        collector.sweep();
+        assertTrue(digests().isEmpty(), "没有礼物不能发空提醒");
     }
 
     // —— 以下为夹具 ——

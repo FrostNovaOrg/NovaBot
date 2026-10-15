@@ -24,6 +24,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -111,12 +112,12 @@ class BilibiliOfflineRewardDigestPainterTest {
                 BilibiliOfflineRewardDigestPainter.bodyLines(guardPerson("王一", 3, GuardOperateType.ACTIVATION, 198.0), true));
         assertEquals(List.of("王五", "续费了提督（¥398）"),
                 BilibiliOfflineRewardDigestPainter.bodyLines(guardPerson("王五", 2, GuardOperateType.RENEWAL, 398.0), true));
-        assertEquals(List.of("李三", "送了 小花花×10、甜梦花×3（合计 ¥40）"),
+        assertEquals(List.of("李三", "送了 小花花×10（合计 ¥10）", "送了 甜梦花×3（合计 ¥30）", "礼物合计 ¥40"),
                 BilibiliOfflineRewardDigestPainter.bodyLines(giftPerson("李三", 40.0,
                         new BilibiliOfflineRewardDigestEvent.GiftLine("小花花", 10, 1000L),
                         new BilibiliOfflineRewardDigestEvent.GiftLine("甜梦花", 3, 3000L)), true));
         // 不可见时同一批人行数一样、字里没有括号金额——谁做了什么两种都写
-        assertEquals(List.of("李三", "送了 小花花×10、甜梦花×3"),
+        assertEquals(List.of("李三", "送了 小花花×10", "送了 甜梦花×3"),
                 BilibiliOfflineRewardDigestPainter.bodyLines(giftPerson("李三", 40.0,
                         new BilibiliOfflineRewardDigestEvent.GiftLine("小花花", 10, 1000L),
                         new BilibiliOfflineRewardDigestEvent.GiftLine("甜梦花", 3, 3000L)), false));
@@ -138,6 +139,7 @@ class BilibiliOfflineRewardDigestPainterTest {
     void writesSampleImages(@TempDir Path dir) throws Exception {
         writeSample(dir.resolve("打赏播报-金额可见.png"), true);
         writeSample(dir.resolve("打赏播报-金额不可见.png"), false);
+        writesTimedSamples();
     }
 
     private void writeSample(Path file, boolean showRevenue) throws Exception {
@@ -147,6 +149,109 @@ class BilibiliOfflineRewardDigestPainterTest {
         BufferedImage image = ImageIO.read(file.toFile());
         assertEquals(900, image.getWidth(), file + " 该与下播报告同宽");
         assertTrue(image.getHeight() > 200, file + " 高度不该贴地");
+    }
+
+    private BilibiliOfflineRewardDigestEvent timedEvent(boolean reminder,
+            BilibiliOfflineRewardDigestEvent.GiftLine... gifts) {
+        var person = giftPerson("李三", 120.0, gifts);
+        var event = new BilibiliOfflineRewardDigestEvent(STREAMER, List.of(person),
+                Instant.parse("2026-10-15T12:32:00Z"));
+        event.setClosingReminder(reminder);
+        return event;
+    }
+
+    private BilibiliOfflineRewardDigestEvent.GiftLine timedGift(String name, int count, String first, String last) {
+        return new BilibiliOfflineRewardDigestEvent.GiftLine(name, count, 6000L,
+                Instant.parse(first), Instant.parse(last));
+    }
+
+    @Test
+    @DisplayName("逐种礼物显示各自送出分钟")
+    void showsEachGiftMinute() {
+        var event = timedEvent(false,
+                timedGift("小花花", 5, "2026-10-15T12:15:03Z", "2026-10-15T12:15:59Z"),
+                timedGift("甜梦花", 1, "2026-10-15T12:31:00Z", "2026-10-15T12:31:00Z"));
+        String text = painter.textDigest(event, true);
+        assertTrue(text.contains("20:15 送了 小花花×5"), "小花花要显示 20:15");
+        assertTrue(text.contains("20:31 送了 甜梦花×1"));
+        assertFalse(text.contains("20:15–20:15"), "同一分钟不写重复区间");
+    }
+
+    @Test
+    @DisplayName("同名礼物跨分钟显示时间范围")
+    void showsMergedMinuteRange() {
+        var event = timedEvent(false,
+                timedGift("小花花", 2, "2026-10-15T12:15:00Z", "2026-10-15T12:22:00Z"));
+        assertTrue(painter.renderList(event, false).contains("20:15–20:22"), "合并礼物要显示起止分钟");
+    }
+
+    @Test
+    @DisplayName("跨天的礼物显示送出日期")
+    void showsPreviousDay() {
+        var event = new BilibiliOfflineRewardDigestEvent(STREAMER,
+                timedEvent(false, timedGift("小花花", 1, "2026-10-15T15:58:00Z", "2026-10-15T15:58:00Z"))
+                        .getContributions(), Instant.parse("2026-10-15T16:05:00Z"));
+        assertTrue(painter.textDigest(event, false).contains("10-15 23:58"), "跨天要带送出日期");
+    }
+
+    @Test
+    @DisplayName("上舰显示自己的送出分钟")
+    void showsGuardMinute() {
+        var person = guardPerson("王一", 3, GuardOperateType.ACTIVATION, 198);
+        person.setGuardSentAt(Instant.parse("2026-10-15T12:18:00Z"));
+        var event = new BilibiliOfflineRewardDigestEvent(STREAMER, List.of(person),
+                Instant.parse("2026-10-15T12:32:00Z"));
+        assertTrue(painter.renderList(event, false).contains("20:18 开通了舰长"), "上舰要带自己的时间");
+    }
+
+    @Test
+    @DisplayName("最后十秒提醒标题及省略汇总遵守金额可见性")
+    void reminderTitleAndSummary() {
+        var event = timedEvent(true,
+                timedGift("小花花", 5, "2026-10-15T12:15:03Z", "2026-10-15T12:15:59Z"));
+        event.setOmittedCount(5);
+        event.setOmittedAmountFen(15000);
+        String visible = painter.textDigest(event, true);
+        assertTrue(visible.contains("下播前 10 秒内"), "提醒要写明最后十秒");
+        assertTrue(visible.contains("另有 5 人，合计 ¥150"));
+        String hidden = painter.textDigest(event, false);
+        assertTrue(hidden.contains("另有 5 人"));
+        assertFalse(hidden.contains("¥"));
+    }
+
+    private void writesTimedSamples() throws Exception {
+        var event = timedEvent(false,
+                timedGift("小花花", 5, "2026-10-15T12:15:03Z", "2026-10-15T12:15:59Z"),
+                timedGift("甜梦花", 2, "2026-10-15T12:22:00Z", "2026-10-15T12:31:00Z"));
+        var guard = guardPerson("王一", 3, GuardOperateType.ACTIVATION, 198);
+        guard.setGuardSentAt(Instant.parse("2026-10-15T12:18:00Z"));
+        event.setContributions(List.of(guard, event.getContributions().get(0),
+                giftPerson("张二", 60, timedGift("心动盲盒", 2,
+                        "2026-10-15T12:20:00Z", "2026-10-15T12:20:00Z"))));
+        Path dir = Path.of("target", "offline-reward-samples");
+        Files.createDirectories(dir);
+        writeTimedSample(dir.resolve("ordinary-digest.png"), event);
+
+        List<BilibiliOfflineRewardDigestEvent.Contribution> people = new java.util.ArrayList<>();
+        for (int i = 25; i >= 6; i--) {
+            var gift = new BilibiliOfflineRewardDigestEvent.GiftLine("小花花", 1, i * 100L,
+                    Instant.parse("2026-10-15T12:31:53Z"), Instant.parse("2026-10-15T12:31:57Z"));
+            people.add(giftPerson(String.format("观众%02d", i), i, gift));
+        }
+        var reminder = new BilibiliOfflineRewardDigestEvent(STREAMER, people, Instant.parse("2026-10-15T12:32:15Z"));
+        reminder.setClosingReminder(true);
+        reminder.setOmittedCount(5);
+        reminder.setOmittedAmountFen(1500);
+        writeTimedSample(dir.resolve("closing-reminder.png"), reminder);
+        var hidden = painter.textDigest(reminder, false);
+        assertFalse(hidden.contains("¥"));
+    }
+
+    private void writeTimedSample(Path file, BilibiliOfflineRewardDigestEvent event) throws Exception {
+        Files.write(file, Base64.getDecoder().decode(painter.paint(event, true).orElseThrow()));
+        var image = ImageIO.read(file.toFile());
+        assertEquals(900, image.getWidth());
+        System.out.println("Sample image: " + file.toAbsolutePath() + " " + image.getWidth() + "x" + image.getHeight());
     }
 
     // —— 以下为夹具 ——
