@@ -56,6 +56,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience th,#sd-audience td{white-space:nowrap}
 #sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500}
 #sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
+.sd-area-table th a,.sd-area-table th a:visited{color:var(--accent)}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
 
@@ -811,11 +812,13 @@ function renderAudience(data, message) {
 
 let slotsMetric = 'revenue';
 let slotsData = null;
+let slotsAreas = null;
 let slotsMessage = '';
 
 async function loadStartSlots() {
   const generation = drawerGeneration;
   slotsData = null;
+  slotsAreas = null;
   slotsMessage = '正在读取归档数据…';
   renderSlotsDrawer();
   try {
@@ -823,6 +826,7 @@ async function loadStartSlots() {
     if (generation !== drawerGeneration || !liveActive) return;
     if (!response.success) throw new Error(response.message || '未能读取归档数据');
     slotsData = response.startSlots;
+    slotsAreas = response.areas || [];
     slotsMessage = '';
   } catch (error) {
     if (generation !== drawerGeneration || !liveActive) return;
@@ -954,6 +958,66 @@ function renderStartSlots(host) {
   note.textContent = '时段按实际星期与钟表时间，场次按开播时刻归入；数值是这些场次整场总量 ÷ 有效直播时长，不表示该两小时内的产出。少于 3 场为样本不足。';
   card.appendChild(note);
   host.appendChild(card);
+  renderAreaCompare(host);
+}
+
+/**
+ * 「直播分区对比」：一张表比各区的场次、有效时长与流水
+ *
+ * 分区按开播时的那一条归属，中途换分区整场算给开头那个；没有分区轨迹的场次
+ * 归入「未记录分区」。整区都没有指标快照时流水写「—」，不补 0。
+ * @param host 开播节奏抽屉的正文
+ */
+function renderAreaCompare(host) {
+  const card = el('div', 'nv-card hcard sd-area-compare');
+  const head = el('h3');
+  head.textContent = '直播分区对比';
+  card.appendChild(head);
+  const rows = slotsAreas || [];
+  if (!rows.length) {
+    const empty = el('p', 'hint');
+    empty.textContent = '所选范围无可用于分区对比的有效数值场次。';
+    card.appendChild(empty);
+  } else {
+    const table = el('table', 'sd-area-table');
+    const thead = el('thead');
+    const headers = el('tr');
+    for (const text of ['分区', '场次', '有效时长', '流水', '每小时流水']) {
+      const th = el('th');
+      th.setAttribute('scope', 'col');
+      th.textContent = text;
+      headers.appendChild(th);
+    }
+    thead.appendChild(headers);
+    table.appendChild(thead);
+    const tbody = el('tbody');
+    for (const row of rows) {
+      const tr = el('tr');
+      const name = el('th');
+      name.setAttribute('scope', 'row');
+      const link = el('a');
+      link.href = dashboardHash({panel: 'sessions', starts: (row.starts || []).join(','),
+        source: 'area', sourceArea: row.area, from: slotsData?.from ?? null, to: slotsData?.to ?? null,
+        dateFrom: null, dateTo: null, page: 1});
+      link.textContent = row.area;
+      name.appendChild(link);
+      tr.appendChild(name);
+      for (const value of [fmtMetric(row.sessions), fmtDuration(row.effectiveSeconds),
+        fmtMetric(row.revenue, {money: true}) + (row.revenue == null ? '' : ' 元'),
+        fmtMetric(row.revenuePerHour, {money: true}) + (row.revenuePerHour == null ? '' : ' 元/时')]) {
+        const td = el('td', 'n');
+        td.textContent = value;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    card.appendChild(table);
+  }
+  const note = el('p', 'hint');
+  note.textContent = '整场按开播时的分区归属，中途换分区的不拆分；没有分区记录的场次归入「未记录分区」。';
+  card.appendChild(note);
+  host.appendChild(card);
 }
 
 let insightsMetric = 'revenue';
@@ -976,8 +1040,8 @@ function streamerPath() {
 function dashboardHash(changes = {}) {
   const state = {...where, ...changes};
   const params = new URLSearchParams();
-  for (const key of ['days', 'panel', 'group', 'sort', 'page', 'slotDays', 'from', 'to', 'starts', 'source', 'sourceDay', 'dateFrom', 'dateTo', 'period', 'metric', 'mode', 'hideOff']) {
-    if (['source', 'sourceDay', 'dateFrom', 'dateTo', 'from', 'to', 'starts'].includes(key) && state.panel !== 'sessions') continue;
+  for (const key of ['days', 'panel', 'group', 'sort', 'page', 'slotDays', 'from', 'to', 'starts', 'source', 'sourceDay', 'sourceArea', 'dateFrom', 'dateTo', 'period', 'metric', 'mode', 'hideOff']) {
+    if (['source', 'sourceDay', 'sourceArea', 'dateFrom', 'dateTo', 'from', 'to', 'starts'].includes(key) && state.panel !== 'sessions') continue;
     if (['period', 'metric', 'mode'].includes(key) && (state.panel !== 'trend'
       || state[key] === {period: 'day', metric: 'revenue', mode: 'total'}[key])) continue;
     if (state[key] != null && (state[key] !== '' || key === 'starts')) params.set(key, state[key]);
@@ -1002,7 +1066,7 @@ function updateHideOffLinks() {
 function panelLink(label, panel, changes = {}) {
   const link = el('a', 'sd-detail-link');
   link.textContent = label;
-  link.href = dashboardHash({panel, page: 1, from: null, to: null, starts: null, source: panel === 'sessions' ? 'dashboard' : null, sourceDay: null, dateFrom: null, dateTo: null, ...changes});
+  link.href = dashboardHash({panel, page: 1, from: null, to: null, starts: null, source: panel === 'sessions' ? 'dashboard' : null, sourceDay: null, sourceArea: null, dateFrom: null, dateTo: null, ...changes});
   return link;
 }
 
@@ -1026,7 +1090,7 @@ async function openDetailDrawer() {
     if (!drawerChanging && detailDrawer === current) {
       detailDrawer = null;
       drawerGeneration++;
-      location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null, source: null, sourceDay: null, dateFrom: null, dateTo: null, period: null, metric: null, mode: null});
+      location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null, source: null, sourceDay: null, sourceArea: null, dateFrom: null, dateTo: null, period: null, metric: null, mode: null});
     }
   });
   if (panel === 'audience') {
@@ -1759,8 +1823,8 @@ function gapBadge(item) {
 }
 
 function sessionRevenue(item, page) {
-  return page.revenueKeys?.some(key => item.metrics?.[key] != null)
-    ? page.revenueKeys.reduce((sum, key) => sum + (item.metrics?.[key] || 0), 0) : null;
+  return item.metrics != null && Object.keys(item.metrics).length > 0
+    ? (page.revenueKeys || []).reduce((sum, key) => sum + (item.metrics[key] || 0), 0) : null;
 }
 
 function renderRecent(host) {
@@ -1807,14 +1871,14 @@ function sessionFilters(host, page) {
   controls.appendChild(apply);
   if (where.dateFrom != null || where.dateTo != null || where.from != null || where.to != null || where.starts != null) {
     const clear = el('a', 'sd-detail-link'); clear.textContent = '清除筛选';
-    clear.href = dashboardHash({dateFrom: null, dateTo: null, from: null, to: null, starts: null, source: null, sourceDay: null, page: null});
+    clear.href = dashboardHash({dateFrom: null, dateTo: null, from: null, to: null, starts: null, source: null, sourceDay: null, sourceArea: null, page: null});
     controls.appendChild(clear);
   }
   controls.appendChild(error); host.appendChild(controls);
   if (where.source || where.starts != null) {
     const source = el('p', 'hint');
-    const name = {calendar: '开播日历（统计日重叠归档，含跨 06:00）', trend: '近期趋势', rhythm: '开播节奏', dashboard: '总览归档'}[where.source] || '所选场次';
-    const interval = where.sourceDay ? where.sourceDay.replaceAll('-', '/') : where.from && where.to ? intervalText(where.from, where.to) : '';
+    const name = {calendar: '开播日历（统计日重叠归档，含跨 06:00）', trend: '近期趋势', rhythm: '开播节奏', dashboard: '总览归档', area: '分区对比'}[where.source] || '所选场次';
+    const interval = where.source === 'area' ? where.sourceArea : (where.sourceDay ? where.sourceDay.replaceAll('-', '/') : where.from && where.to ? intervalText(where.from, where.to) : '');
     source.textContent = '筛选来源：' + name + (where.source !== 'dashboard' && interval ? ' · ' + interval : '') + ' · ' + fmtMetric(page.total ?? 0) + ' 个场次'
       + (where.source === 'dashboard' ? ' · 与总览使用同一组场次' : '');
     host.appendChild(source);

@@ -359,6 +359,15 @@ class StreamerInsightsApiTest {
             String raw = mvc.perform(get("/config/api/streamers/bilibili/1/start-slots").param("days", days))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             var body = JSON.parseObject(raw);
+            // 防止分区计算存在但接口漏传，页面静默显示空表。
+            assertTrue(body.containsKey("areas"), "开播节奏接口必须返回areas");
+            var areas = body.getJSONArray("areas");
+            assertEquals(1, areas.size());
+            var area = areas.getJSONObject(0);
+            assertEquals("未记录分区", area.getString("area"));
+            assertEquals(days.equals("90") ? 3 : 4, area.getIntValue("sessions"));
+            assertEquals(area.getIntValue("sessions"), area.getJSONArray("starts").size());
+            assertEquals(1428d, area.getDouble("revenuePerHour"));
             var data = body.getJSONObject("startSlots");
             assertEquals(Integer.parseInt(days), body.getIntValue("days"));
             assertEquals(84, data.getJSONArray("cells").size(), "接口须给完整热力表");
@@ -519,7 +528,7 @@ class StreamerInsightsApiTest {
         assertEquals("danmu_count", controller.streamer("bilibili", 1L, "week", 1, 20).getBody()
                 .getJSONObject("sessions").getString("messageKey"), "最近归档弹幕也使用平台规则");
         System.out.println("LIVE_REVENUE_SAMPLE: " + raw);
-        for (var metrics : List.of(Map.<String, Double>of(), Map.of("gift_value", 0d))) {
+        for (var metrics : List.of(Map.<String, Double>of(), Map.of("danmu_count", 2d), Map.of("gift_value", 0d))) {
             when(live.getLiveMetrics("bilibili", 1L)).thenReturn(metrics);
             var sample = controller.live("bilibili", 1L, null).getBody();
             assertEquals(metrics.isEmpty() ? null : Double.valueOf(0), sample.getDouble("revenue"));
@@ -530,7 +539,7 @@ class StreamerInsightsApiTest {
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls));
     }
 
-    // 第一轮采集之前不能把缺失当零；有收入项的真实零仍须显示。
+    // 抓住未收到收入事件的快照被写成未知；空快照仍表示尚未采集。
     @Test @DisplayName("直播流水与弹幕区分缺失和真实零并遵循平台规则")
     void liveMissingAndZero() throws Exception {
         append(from);
@@ -550,8 +559,8 @@ class StreamerInsightsApiTest {
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             var data = JSON.parseObject(raw);
             assertTrue(data.containsKey("revenue"));
-            assertEquals(metrics.containsKey("income_a") ? Double.valueOf(12) : metrics.containsKey("income_b") ? Double.valueOf(0) : null,
-                    data.getDouble("revenue"), "没有收入键时流水必须未知，有收入键才可为零");
+            assertEquals(metrics.containsKey("income_a") ? Double.valueOf(12) : !metrics.isEmpty() ? Double.valueOf(0) : null,
+                    data.getDouble("revenue"), "有快照没收入键时流水为零，没有快照才未知");
             assertTrue(data.containsKey("messages"), "直播必须下发按规则计算的弹幕");
             assertEquals(metrics.get("chat_total"), data.getDouble("messages"), "弹幕只读取插件声明的键");
         }

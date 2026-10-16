@@ -46,8 +46,7 @@ public final class StreamerStartSlots {
             var group = groups.get(i);
             group.sort(Comparator.comparingLong(LiveSession::startTime).reversed());
             for (var session : group) {
-                effective += Math.max(0, session.durationSeconds()
-                        - session.maintenanceGapSeconds() - session.roomOutageSeconds());
+                effective += effectiveSeconds(session);
                 Double sessionRevenue = revenueKnown ? rules.revenueKeys().stream()
                         .mapToDouble(session::metric).sum() : null;
                 Long sessionMessages = messagesKnown ? (long) session.metric(rules.messageKey()) : null;
@@ -63,6 +62,17 @@ public final class StreamerStartSlots {
         }
         return new Result(start, end, List.copyOf(cells), top(cells, Cell::revenuePerHour),
                 top(cells, Cell::messagesPerHour));
+    }
+
+    /**
+     * 有效直播时长：整场时长扣掉程序停机与单房断线中的大者，截到零。
+     * 两种缺口会重叠，不能相加扣除。
+     * <p>
+     * 每小时效率与直播分区对比都用这一个定义，两边各写一遍就迟早分家。
+     */
+    static long effectiveSeconds(LiveSession session) {
+        return Math.max(0, session.durationSeconds()
+                - Math.max(session.maintenanceGapSeconds(), session.roomOutageSeconds()));
     }
 
     private List<Top> top(List<Cell> cells, Function<Cell, Double> value) {

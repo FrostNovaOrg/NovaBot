@@ -10,6 +10,7 @@ import org.frostnova.nova.core.analytics.LiveSessionAnalytics;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.analytics.StreamerAudience;
+import org.frostnova.nova.core.analytics.StreamerStartAreas;
 import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.analytics.StreamerCalendar;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
@@ -488,7 +489,8 @@ public class StreamerController {
                 .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         var range = StreamerInsights.recent(Integer.parseInt(days), clock);
         return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
-                "startSlots", new StreamerStartSlots().calculate(sessions, range.from(), range.to(), rules)));
+                "startSlots", new StreamerStartSlots().calculate(sessions, range.from(), range.to(), rules),
+                "areas", new StreamerStartAreas().calculate(sessions, range.from(), range.to(), rules)));
     }
 
     /** 上一个完整统计周的只读预览；format=json 返回摘要与降级文字。 */
@@ -548,9 +550,9 @@ public class StreamerController {
         var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
                 .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         result.put("revenue", living && rules != null
-                && rules.revenueKeys().stream().anyMatch(name -> metrics.get(name) != null)
+                && metrics != null && !metrics.isEmpty() && !rules.revenueKeys().isEmpty()
                 ? rules.revenue(metrics) : null);
-        result.put("messages", living && rules != null && rules.messageKey() != null
+        result.put("messages", living && rules != null && rules.messageKey() != null && metrics != null
                 ? metrics.get(rules.messageKey()) : null);
 
         Set<String> requested = new LinkedHashSet<>();

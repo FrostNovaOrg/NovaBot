@@ -113,8 +113,9 @@ export function parseStreamersHash(hash) {
     else if (key === 'section' && value === 'trend') state.panel = 'trend';
     else if (['from', 'to', 'dateFrom', 'dateTo'].includes(key) && DIGITS.test(value)) state[key] = value;
     else if (key === 'starts' && /^(\d+(,\d+)*)?$/.test(value)) state.starts = value;
-    else if (key === 'source' && ['dashboard', 'calendar', 'trend', 'rhythm'].includes(value)) state.source = value;
+    else if (key === 'source' && ['dashboard', 'calendar', 'trend', 'rhythm', 'area'].includes(value)) state.source = value;
     else if (key === 'sourceDay' && /^\d{4}-\d{2}-\d{2}$/.test(value)) state.sourceDay = value;
+    else if (key === 'sourceArea' && value) state.sourceArea = value;
     else if (key === 'slotDays' && ['90', '180'].includes(value)) state.slotDays = Number(value);
     else if (key === 'period' && ['day', 'week', 'month'].includes(value)) state.period = value;
     else if (key === 'metric' && ['revenue', 'messages', 'audience', 'follows', 'durationSeconds', 'sessions'].includes(value)) state.metric = value;
@@ -145,14 +146,17 @@ export function isStreamersHash(hash) {
 
 /**
  * 解码地址栏里的一段，坏转义不至于让整页打不开
+ * <p>
+ * 拼地址用的 URLSearchParams 把空格写成「+」，这一头按表单那套先还原再按百分号解码。
+ * 分区名（「娱乐 · 视频聊天」）带空格，不先还原就会带着加号上屏。
  * @param text 原文
  * @return {string} 解码后的文本
  */
 function decode(text) {
   try {
-    return decodeURIComponent(text);
+    return decodeURIComponent(text.replace(/\+/g, ' '));
   } catch (e) {
-    return text;
+    return text.replace(/\+/g, ' ');
   }
 }
 
