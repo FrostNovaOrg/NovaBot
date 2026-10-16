@@ -16,7 +16,7 @@ import java.util.function.Function;
 
 /** 指定范围的观众分页；输出不包含观众标识。 */
 public final class StreamerAudience {
-    private static final int PAGE_SIZE = 20;
+    private static final int PAGE_SIZE = 10;
 
     public record Visit(long startTime, String title) {}
     public record Person(String name, int attendance, long firstSeen, long lastSeen,

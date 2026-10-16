@@ -595,7 +595,7 @@ await check('完整名单的观众与互动观众都显示较上期，涨红跌�
     }
   }
 });
-await check('观众页显示人数五列及范围分组排序分页链接', async () => {
+await check('观众页显示人数六列及范围分组排序分页链接', async () => {
   location.hash = '#/streamers/sample/1/audience';
   await page.refresh();
   const card = nodes.get('sd-audience');
@@ -606,7 +606,7 @@ await check('观众页显示人数五列及范围分组排序分页链接', asyn
   assert.match(text, /回访 25/);
   assert.match(text, /30\.50/);
   assert.match(text, /首次 2026/);
-  assert.match(text, /名单：完整 2 场/);
+  assert.doesNotMatch(text, /名单：完整 2 场/);
   const links = all.filter(n => n.tagName === 'a');
   for (const query of [
     'days=30&group=returning&sort=attendance&page=1',

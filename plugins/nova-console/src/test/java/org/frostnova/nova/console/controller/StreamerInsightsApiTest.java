@@ -261,7 +261,7 @@ class StreamerInsightsApiTest {
                     controller.insights("bilibili", 1L, days).getBody().getString("message"));
         }
     }
-    @Test @DisplayName("观众接口只返回当页二十人，不泄露观众标识或完整名单")
+    @Test @DisplayName("观众接口只返回当页十人，不泄露观众标识或完整名单")
     void audiencePagePrivacy() throws Exception {
         var ids = java.util.stream.LongStream.rangeClosed(9200000001L, 9200000045L).boxed().toList();
         long start = from.toEpochMilli();
@@ -276,9 +276,9 @@ class StreamerInsightsApiTest {
         String raw = mvc.perform(get("/config/api/streamers/bilibili/1/audience").param("days", "7"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var data = JSON.parseObject(raw).getJSONObject("audience");
-        assertEquals(20, data.getJSONArray("items").size(), "只返回当页的人");
+        assertEquals(10, data.getJSONArray("items").size(), "只返回当页的人");
         assertEquals(45, data.getIntValue("total"));
-        assertFalse(raw.contains("viewer21"), "下一页的人不能提前返回");
+        assertFalse(raw.contains("viewer11"), "下一页的人不能提前返回");
         assertFalse(raw.contains("92000000"), "不返回观众UID");
         assertFalse(raw.contains("userSets"));
         assertFalse(raw.contains("rankings"));
@@ -318,7 +318,7 @@ class StreamerInsightsApiTest {
             var raw = mvc.perform(get("/config/api/streamers/bilibili/1/audience").param("page", page))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             var data = JSON.parseObject(raw).getJSONObject("audience");
-            assertEquals(3, data.getIntValue("page"), "大页码回末页");
+            assertEquals(5, data.getIntValue("page"), "大页码回末页");
             assertEquals(5, data.getJSONArray("items").size());
         }
         mvc.perform(get("/config/api/streamers/bilibili/1/audience").param("page", "abc"))

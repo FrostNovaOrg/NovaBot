@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import {register} from 'node:module';
+register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
 
 class Element extends EventTarget {
   constructor(tag) {
@@ -298,13 +300,21 @@ await check('日历无场次日期隐藏查看链且不占Tab位', () => {
 for (const [status, gapSeconds, expected] of [
   ['unknown', 0, '监测或时长证据不足 · 不按 0 计算'],
   ['off', 0, '已完整监测，确认没播'],
-  ['recorded', 20, '缺口 20秒 · 仅使用已记录数据'],
-  ['recorded', 0, '缺口 0秒 · 无已知缺口'],
+  ['recorded', 20, '缺口 20 秒 · 仅使用已记录数据'],
+  ['recorded', 0, '缺口 0 秒 · 无已知缺口'],
   ['recorded', undefined, '当前暂无缺口说明'],
 ]) await check('日历缺口说明对应状态' + status + '/' + gapSeconds, () => {
   const node = ui.createCalendar(host(), {items: [{...calendar.items[2], status, gapSeconds}]});
   assert.equal(byClass(node, 'sc-calendar-quality')[0].textContent, expected, '缺口说明不能与当天状态矛盾');
 });
+// 缺口格式须与页顶和抽屉一致，不能显示原始的带千分位秒数。
+for (const [seconds, expected] of [[59, '59 秒'], [3599, '59 分 59 秒'], [3725, '1 时 2 分 5 秒']]) {
+  await check('日历缺口写法/' + seconds, () => {
+    const node = ui.createCalendar(host(), {items: [{...calendar.items[2], gapSeconds: seconds}]});
+    assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('缺口 ' + expected),
+      '日历缺口应显示' + expected);
+  });
+}
 // 合计逐一对应三种格子，不能漏掉未知状态或把它算成未播。
 await check('日历合计与三种格子数一致', () => {
   const node = ui.createCalendar(host(), calendar);
@@ -387,7 +397,7 @@ await check('日历读数给出状态原因与缺口', () => {
   assert.ok(text().includes('已监看') && text().includes('没开播'));
   cells[3].fire('click');
   assert.ok(text().includes('2 场') && text().includes('统计截止日，尚未结束'));
-  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('20秒'));
+  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('20 秒'));
   cells[4].fire('click');
   assert.ok(text().includes('停机或断线'), '可证明日期之后仍未知时解释监测中断');
 });
@@ -412,6 +422,21 @@ await check('周月与普通曲线默认显示末期短日期读数', () => {
     assert.ok(readout.includes(period === 'day' ? '10/05' : '10/05–10/11'), '缺少末期短日期');
     assert.ok(readout.includes('43760.3元'), '缺少末期数值');
   }
+});
+// 鼠标点击导致的 focus 不能冒充键盘聚焦，使游标在移出以后一直显示。
+await check('粉丝图点击后移出隐藏游标且键盘聚焦显示', () => {
+  const chart = ui.createChart(host(), {points: points.filter(point => point.value != null)});
+  const cursor = byClass(chart.element, 'sc-cursor-line')[0];
+  const dot = byClass(chart.element, 'sc-chart-hit')[0];
+  const clientX = Number(dot.getAttribute('cx'));
+  chart.svg.fire('pointermove', {clientX});
+  chart.svg.fire('click', {clientX});
+  assert.equal(document.activeElement, chart.svg, '点击确实触发图表focus');
+  chart.svg.fire('pointerleave');
+  assert.equal(cursor.getAttribute('visibility'), 'hidden', '鼠标移出应隐藏游标');
+  chart.svg.fire('blur');
+  chart.svg.focus();
+  assert.equal(cursor.getAttribute('visibility'), 'visible', '键盘Tab进图后保留游标');
 });
 // 读数和游标必须预览同一天，离开后恢复所选日期并按焦点决定显隐。
 await check('粉丝图悬停同步游标读数且离开恢复选择', () => {

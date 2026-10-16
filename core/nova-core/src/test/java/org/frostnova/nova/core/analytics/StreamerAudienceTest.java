@@ -78,17 +78,17 @@ class StreamerAudienceTest {
     void pagination() {
         var ids = java.util.stream.LongStream.rangeClosed(1, 45).boxed().toList();
         var sessions = List.of(session(0, ids, List.of()));
-        for (int n=1; n<=3; n++) {
+        for (int n=1; n<=5; n++) {
             var p = page(sessions, "all", "attendance", n);
-            assertEquals(n < 3 ? 20 : 5, p.items().size(), "每页二十人，末页五人");
-            assertEquals(3, p.pages());
+            assertEquals(n < 5 ? 10 : 5, p.items().size(), "每页十人，末页五人");
+            assertEquals(5, p.pages());
         }
-        assertEquals(page(sessions, "all", "attendance", 3), page(sessions, "all", "attendance", 999));
+        assertEquals(page(sessions, "all", "attendance", 5), page(sessions, "all", "attendance", 999));
         // 使用不同昵称区分输出，避免依赖观众标识出现在响应里。
         var distinctSessions = new ArrayList<LiveSession>();
         for (int n=1; n<=45; n++) distinctSessions.add(session(n, List.of((long)n), List.of(), new UserScore((long)n, "name"+n, n)));
         Set<String> names = new HashSet<>();
-        for (int n=1; n<=3; n++) for (var p : page(distinctSessions, "all", "attendance", n).items()) assertTrue(names.add(p.name()), "分页不能重复");
+        for (int n=1; n<=5; n++) for (var p : page(distinctSessions, "all", "attendance", n).items()) assertTrue(names.add(p.name()), "分页不能重复");
         assertEquals(45, names.size(), "分页不能丢人");
     }
     @Test @DisplayName("最近场没上榜或缺明细仍保留本期昵称，全期无昵称才显示未记录昵称")

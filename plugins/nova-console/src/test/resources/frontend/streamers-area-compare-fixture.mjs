@@ -132,6 +132,14 @@ const slotCells = Array.from({length: 84}, () => ({weekday: 1, startHour: 0, ses
 const slotData = {from: SLOTS_FROM, to: SLOTS_TO, cells: slotCells,
   topRevenue: [], topMessages: []};
 
+let slotRequest = null;
+let audienceKnown = true;
+const audienceItems = [
+  {name: 'current', firstSeen: SLOTS_FROM + 1, attendance: 1},
+  {name: 'boundary', firstSeen: SLOTS_FROM, attendance: 1},
+  {name: 'returning', firstSeen: SLOTS_FROM - 1, attendance: 1},
+];
+
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
@@ -143,9 +151,17 @@ globalThis.fetch = url => {
       metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}],
       total: items.length, page: 1, pages: 1}});
   }
-  if (path.includes('/start-slots?')) return reply({success: true, startSlots: slotData, areas: AREAS});
+  if (path.includes('/start-slots?')) {
+    if (slotRequest) return slotRequest();
+    return reply({success: true, startSlots: slotData, areas: AREAS});
+  }
   if (path.includes('/calendar?')) return reply({success: true, calendar: {items: []}});
-  if (path.includes('/audience?')) return reply({success: true, audience: {counts: {}, items: []}});
+  if (path.includes('/audience?')) {
+    const group = new URLSearchParams(path.split('?')[1]).get('group') || 'all';
+    return reply({success: true, audience: {from: SLOTS_FROM, to: SLOTS_TO, group, sort: 'attendance',
+      counts: {all: 3, first: audienceKnown ? 2 : null, returning: audienceKnown ? 1 : null},
+      items: audienceItems, total: 3, page: 1, pages: 1}});
+  }
   if (path.includes('/live?')) return reply({success: true, living: false, metrics: {}, series: {}});
   if (path === '/config/api/streamers') return reply({streamers: [
     {platform: PLATFORM, uid: UID, uname: '甲', status: 'OFFLINE', living: false, series: []},
@@ -251,6 +267,57 @@ await ask('④ 清除分区筛选后地址没有sourceArea并保留hideOff', asy
   await page.loadStreamers();
   same(walk(drawerBody()).some(n => String(n.textContent || '').startsWith('筛选来源')), false, '清除后没有来源行');
 });
+
+// 首次时刻与本期起点比较，构成未知时必须与分组块一起写未知。
+for (const known of [true, false]) await ask('本期构成与分组一致/' + (known ? 'known' : 'unknown'), async () => {
+  audienceKnown = known;
+  location.hash = model.detailHash(PLATFORM, UID, 'audience');
+  await page.loadStreamers();
+  const table = walk(drawerBody()).find(n => n.tagName === 'table');
+  const headers = table.children.find(n => n.tagName === 'thead').children[0].children.map(cellText);
+  same(headers[1], '本期构成', '昵称后一列');
+  const rows = table.children.find(n => n.tagName === 'tbody').children.filter(n => !n.hidden);
+  same(rows.map(row => cellText(row.children[1])), known ? ['本期首次记录', '本期首次记录', '历史回访'] : ['—', '—', '—'], '逐人构成');
+  const groups = walk(drawerBody()).filter(n => n.className === 'sd-audience-group');
+  same(groups.slice(1, 3).map(n => cellText(n.children[1])), known ? ['2', '1'] : ['—', '—'], '分组人数');
+});
+
+// 请求返回前检查卡片，防止先把读取中当成空结果。
+await ask('分区切范围读取中显示读取提示', async () => {
+  await openSlots();
+  let resolveResponse, requestStarted, requestTimer;
+  const started = new Promise((resolve, reject) => {
+    requestStarted = resolve;
+    requestTimer = setTimeout(() => reject(new Error('未发出分区读取请求')), 10000);
+  });
+  slotRequest = () => { requestStarted(); return new Promise(resolve => { resolveResponse = resolve; }); };
+  location.hash = model.detailHash(PLATFORM, UID, 'start-slots', 'slotDays=180');
+  const loading = page.loadStreamers();
+  try {
+    await started;
+    const card = walk(drawerBody()).find(n => n.className.split(' ').includes('sd-area-compare'));
+    const message = cellText(card);
+    same(message.includes('正在读取归档数据'), true, '分区卡读取提示');
+    same(message.includes('所选范围无'), false, '读取中不应显示无数据');
+  } finally {
+    clearTimeout(requestTimer);
+    resolveResponse?.(await reply({success: true, startSlots: slotData, areas: AREAS}));
+    slotRequest = null;
+    await loading;
+  }
+});
+
+// 折叠条与页顶使用相同的时分秒，防止原始秒数和千分位混入。
+for (const [seconds, expected] of [[59, '59 秒'], [3599, '59 分 59 秒'], [3725, '1 时 2 分 5 秒']]) {
+  await ask('已记录数据缺口写法/' + seconds, async () => {
+    slotData.capture = {gapSeconds: seconds, gapSessions: 1};
+    slotData.sessions = 3;
+    await openSlots();
+    const recording = walk(drawerBody()).find(n => n.className === 'sd-recording');
+    const line = walk(recording).find(n => n.tagName === 'li' && n.textContent.startsWith('缺口合计'));
+    same(line?.textContent.split(' · ')[0], '缺口合计 ' + expected, '折叠条缺口');
+  });
+}
 
 page?.leave();
 

@@ -286,7 +286,7 @@ eq(parseStreamersHash('#/streamers/sample/1/audience').days, 30, '观众默认�
 eq(parseStreamersHash('#/streamers/sample/1/audience?days=7&group=returning&sort=revenue&page=3'),
   {view: 'detail', platform: 'sample', uid: '1', start: '', page: 3,
     period: 'week', days: 7, panel: 'audience', group: 'returning', sort: 'revenue'}, '观众范围分组排序页码刷新后保留');
-eq(AUDIENCE_COLUMNS.map(c => c[1]), ['昵称', '本期到场', '最近到场', '本期流水（元）', '本期互动'], '观众表列文字');
+eq(AUDIENCE_COLUMNS.map(c => c[1]), ['昵称', '本期构成', '本期到场', '最近到场', '本期流水（元）', '本期互动'], '观众表列文字');
 eq(audienceGroups({all: 45, first: 20, returning: 25, interaction: 12}).map(g => g[1]),
   ['本期全部观众 45 人', '本期首次记录 20 人', '回访 25 人', '本期互动观众 12 人'], '分组显示各自人数');
 eq(audienceGroups({all: null, first: null, returning: null, interaction: null}).map(g => g[1]),

@@ -2,6 +2,8 @@
  * 主播详情的展示组件。时间范围、统计值与比较文字均由调用方提供。
  * 页面插入 COMPONENT_STYLE；离开时调用 releaseComponents，单个图表也可 destroy。
  */
+import {fmtWholeGap} from './streamers-model.js';
+
 export const COMPONENT_STYLE = `
 .sc-card{min-width:0;padding:16px;margin-bottom:16px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);font-size:15px;line-height:1.55}
 .sc-card h3{font-size:17px;margin:0 0 14px}
@@ -240,7 +242,7 @@ export function createChart(host, {
       updateSelection();
     });
     svg.addEventListener('pointerleave', () => { hovering = false; choose(selectedIndex); });
-    svg.addEventListener('focus', () => { keyboardFocused = true; updateSelection(); });
+    svg.addEventListener('focus', () => { keyboardFocused = !hovering; updateSelection(); });
     const blurCursor = event => {
       if (event.relatedTarget && svg.contains(event.relatedTarget)) return;
       keyboardFocused = false; updateSelection();
@@ -253,8 +255,8 @@ export function createChart(host, {
     if (destroyed) return;
     svg.setAttribute('viewBox', `0 0 ${viewportWidth} ${viewportHeight}`);
     svg.replaceChildren(); scale.replaceChildren(); labels.replaceChildren();
-    const left = 20, top = 14;
-    const width = Math.max(1, viewportWidth - 40), height = Math.max(1, viewportHeight - 40);
+    const left = deferred ? 8 : 20, top = 14;
+    const width = Math.max(1, viewportWidth - left * 2), height = Math.max(1, viewportHeight - 40);
     const y = value => top + height - (value - min) / span * height;
     const start = shown[0]?.start ?? 0, end = shown.at(-1)?.start ?? start;
     const x = index => left + (period !== 'day' ? (index + .5) / shown.length
@@ -450,7 +452,7 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
     readout.title = `${item.date} · ${explanation}`;
     quality.textContent = status === 'off' ? '已完整监测，确认没播'
       : status === 'unknown' ? '监测或时长证据不足 · 不按 0 计算'
-        : finite(item.gapSeconds) ? `缺口 ${chartNumber(item.gapSeconds)}秒 · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
+        : finite(item.gapSeconds) ? `缺口 ${fmtWholeGap(item.gapSeconds)} · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
           : '当前暂无缺口说明';
     action.textContent = `查看 ${shortDate(item.date)} 场次`;
     action.disabled = !onSelect || !(item.starts || []).length;
