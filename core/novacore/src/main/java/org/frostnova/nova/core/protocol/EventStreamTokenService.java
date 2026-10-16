@@ -82,10 +82,14 @@ public class EventStreamTokenService {
     synchronized Verdict authenticate(String presented, Consumer<String> register) {
         Verdict verdict = check(presented);
         if (verdict == Verdict.OK) {
+            afterValidation();
             register.accept(hash(presented));
         }
         return verdict;
     }
+
+    /** 校验通过、登记连接之前的钩子，默认不执行任何操作。 */
+    void afterValidation() {}
 
     public record RevocationResult(boolean found, int disconnected) {}
 
