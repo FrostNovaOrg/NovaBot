@@ -1437,7 +1437,9 @@ function renderInsights(data, message) {
   [...grid.children].forEach((cell, index) => {
     markRecorded(cell, data, keys[index]);
     if (keys[index] === 'fans' && fans) {
-      const note = el('small', 'sd-cell-note'); note.textContent = '按区间边界有效快照计算'; cell.appendChild(note);
+      const note = el('small', 'sd-cell-note'); note.textContent = fans.partial
+        ? '可用快照未覆盖整个范围，从 ' + insightsTime(fans.fromAt) + ' 起算'
+        : '按区间边界有效快照计算'; cell.appendChild(note);
     }
     cell.setAttribute('role', 'button'); cell.setAttribute('tabindex', '0'); cell.setAttribute('aria-label', labels[index]);
     const comparison = keys[index] === 'fans' ? null : insightsComparison(data.comparisons?.[keys[index]]);
@@ -1587,7 +1589,7 @@ async function loadTrendDrawer(current) {
     const scroll = el('div', 'sd-trend-table'); section.box.appendChild(scroll);
     const table = el('table'), head = el('thead'), tr = el('tr');
     for (const [index, name] of ['周期', '场次', '直播时长', ...(metric === 'durationSeconds' ? [] : [selected[1] + (mode === 'hourly' && selected[3] ? ' / 小时' : '')]), '统计覆盖'].entries()) {
-      const th = el('th', index ? 'n' : ''); th.textContent = name; tr.appendChild(th);
+      const th = el('th', name === '统计覆盖' ? 'sd-trend-coverage' : index ? 'n' : ''); th.textContent = name; tr.appendChild(th);
     }
     head.appendChild(tr); table.appendChild(head);
     const ordered = buckets.slice().reverse(), pages = Math.max(1, Math.ceil(ordered.length / 10));

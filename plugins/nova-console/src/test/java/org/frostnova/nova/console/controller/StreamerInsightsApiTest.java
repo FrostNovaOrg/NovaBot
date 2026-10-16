@@ -588,6 +588,34 @@ class StreamerInsightsApiTest {
         }
     }
 
+    // 跨起点但在范围前开播的场次不能进入合计，否则合计会与热图、分区表不一致。
+    @Test @DisplayName("开播节奏覆盖合计与热图分区均按范围内开播取场")
+    void startSlotsRecordingRange() {
+        var boundary = Instant.parse("2026-07-23T22:00:00Z");
+        for (var start : List.of(boundary.minusSeconds(60), boundary.plusSeconds(60))) {
+            boolean before = start.isBefore(boundary);
+            archive.append(new LiveSession("bilibili", 1L, "sample", 2L,
+                    start.toEpochMilli(), start.plusSeconds(3600).toEpochMilli(), 3600,
+                    Map.of(), Map.of(), LiveEndReason.NORMAL, List.of(), before ? 30 : 10,
+                    before ? Map.of() : Map.of("enter_users", List.of()), 0, Map.of(), Map.of()));
+        }
+        var body = JSON.parseObject(JSON.toJSONString(controller.startSlots("bilibili", 1L, "90").getBody()));
+        var slots = body.getJSONObject("startSlots");
+        assertEquals(boundary.toEpochMilli(), slots.getLongValue("from"));
+        assertEquals(JSONObject.of("effectiveSeconds", 3590, "gapSeconds", 10, "gapSessions", 1),
+                slots.getJSONObject("capture"), "开播节奏覆盖不得计入范围前开播的重叠场次");
+        assertEquals(1, slots.getIntValue("sessions"));
+        assertEquals(3600, slots.getLongValue("durationSeconds"));
+        assertEquals(JSONObject.of("complete", 1, "anonymous", 0, "unknown", 0, "missing", 0), slots.getJSONObject("coverage"));
+        var cells = slots.getJSONArray("cells");
+        assertEquals(1, cells.stream().mapToInt(value -> ((JSONObject) value).getIntValue("sessions")).sum());
+        assertEquals(3590, cells.stream().mapToLong(value -> ((JSONObject) value).getLongValue("effectiveSeconds")).sum());
+        var area = body.getJSONArray("areas").getJSONObject(0);
+        assertEquals(1, body.getJSONArray("areas").size());
+        assertEquals(1, area.getIntValue("sessions"));
+        assertEquals(List.of(boundary.plusSeconds(60).toEpochMilli()), area.getJSONArray("starts").toJavaList(Long.class));
+    }
+
     // 重叠缺口只扣较大者；范围前开播即使跨入范围也不能计入，趋势按开播归桶。
     @Test @DisplayName("记录覆盖与名单分类使用各自范围内开播的场次")
     void recordingCoverage() {

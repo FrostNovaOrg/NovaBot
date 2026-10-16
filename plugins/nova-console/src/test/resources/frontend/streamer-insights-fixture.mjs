@@ -396,6 +396,23 @@ await check('粉丝净增带人数单位且不参加较上期', async () => {
   }
   compositionScenario = null;
 });
+// 起点快照不足时不能把范围内首张快照说成边界快照。
+await check('粉丝净增快照不足时说明实际起算时刻', async () => {
+  try {
+    for (const partial of [true, false]) {
+      const fromAt = 1792015200000;
+      compositionScenario = {fans: {change: 5, partial, fromAt, toAt: 1792101600000}};
+      await load(base);
+      const cell = flatten(nodes.get('sd-insights')).find(n => n.attrs['aria-label'] === '粉丝净增');
+      const note = cell.children.find(n => n.className.includes('sd-cell-note'));
+      if (partial) {
+        assert.ok(!note.textContent.includes('按区间边界有效快照计算'), '缺起点快照时不得声称按边界快照计算');
+        assert.ok(note.textContent.includes('可用快照未覆盖整个范围'), '须说明快照覆盖不足');
+        assert.ok(note.textContent.includes('从 ' + model.insightsTime(fromAt) + ' 起算'), '须显示实际起算时刻');
+      } else assert.equal(note.textContent, '按区间边界有效快照计算');
+    }
+  } finally { compositionScenario = null; }
+});
 // 旧收藏必须保留入口，否则从外部进入会丢失明细。
 await check('收藏的旧链接恢复总览与明细', async () => {
   for (const panel of ['sessions', 'start-slots', 'audience']) {
