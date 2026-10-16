@@ -30,7 +30,7 @@ class Element extends EventTarget {
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   get isConnected() { return this === document.body || !!this.parentNode?.isConnected; }
   getBoundingClientRect() {
-    if (this.tagName === 'span' && this.parentNode?.className === 'sc-chart-labels')
+    if (this.tagName === 'span' && this.parentNode?.className.split(' ').includes('sc-chart-labels'))
       return {...this.rect, width: this.textContent.length * 7};
     return this.rect;
   }
@@ -84,7 +84,7 @@ await check('缺测断线且真实零保留', () => {
   const chart = ui.createChart(host(), {points});
   const dots = byClass(chart.element, 'sc-chart-hit');
   assert.equal(dots.length, 3, '有效点数量');
-  assert.equal(byClass(chart.element, 'sc-point').length, 1, '只有所选点保留可见标记');
+  assert.equal(byClass(chart.element, 'sc-point').length, 3, '普通曲线的每个有效快照都有可见标记');
   dots[0].fire('pointerenter');
   assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'), '普通曲线保留悬停读数');
   assert.equal(byClass(chart.element, 'sc-line')[0].getAttribute('d').match(/M/g).length, 2, '缺测处分段');
@@ -162,8 +162,47 @@ await check('周月柱图与键盘选择', () => {
     assert.deepEqual(selected, {start: 400, end: 500});
     assert.equal(bars[2].getAttribute('y'), byClass(chart.element, 'sc-zero')[0].getAttribute('y1'));
     bars[0].fire('pointerenter');
-    assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'));
+    assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('01/01'));
   }
+});
+// 两根柱的标签本可放下，首尾对齐却会误判重叠、漏掉末根。
+for (const period of ['week', 'month']) await check(period + '窄图两根柱都有居中标签', () => {
+  const chart = ui.createChart(host(), {period, points: [
+    {start: Date.parse('2026-09-17T06:00:00+08:00'), end: Date.parse('2026-10-01T06:00:00+08:00'), value: 1},
+    {start: Date.parse('2026-10-01T06:00:00+08:00'), end: Date.parse('2026-10-17T06:00:00+08:00'), value: 2},
+  ]});
+  observers.at(-1).resize(233, 180);
+  const labels = byClass(chart.element, 'sc-chart-labels')[0].children;
+  assert.equal(labels.length, 2, '两根柱应各有一个标签');
+  const bars = byClass(chart.element, 'sc-bar');
+  labels.forEach((label, i) => assert.equal(parseFloat(label.style.left),
+    (Number(bars[i].getAttribute('x')) + Number(bars[i].getAttribute('width')) / 2) / 233 * 100));
+});
+// 周月原标签仍是整周期，显示和下钻必须采用接口已截过的起止。
+for (const [period, intervals, expected] of [
+  ['week', [['2026-09-17', '2026-09-21', '2026-09-14'], ['2026-10-12', '2026-10-16', '2026-10-12']], ['09/17–09/20', '10/12–10/16']],
+  ['month', [['2026-09-17', '2026-10-01', '2026-09-01'], ['2026-10-01', '2026-10-16', '2026-10-01']], ['09/17–09/30', '10/01–10/16']],
+]) await check(period + '首尾标签与下钻使用截过的范围', () => {
+  const selected = [];
+  const records = intervals.map(([start, end, date], i) => ({
+    start: Date.parse(start + 'T06:00:00+08:00'),
+    end: Date.parse(end + (i ? 'T15:00:00+08:00' : 'T06:00:00+08:00')),
+    label: date, date, value: i + 1, sessions: 1,
+  }));
+  const chart = ui.createChart(host(), {period, points: records, onSelect: value => selected.push(value)});
+  assert.deepEqual(byClass(chart.element, 'sc-chart-labels')[0].children.map(node => node.textContent), expected, '标签不能使用整周期起点');
+  byClass(chart.element, 'sc-bar').forEach(bar => bar.fire('click'));
+  assert.deepEqual(selected, records.map(({start, end}) => ({start, end})), '下钻不能越出截过的范围');
+});
+// 提示和读屏不能沿用整周的 label，否则会声称包含范围外的日期。
+await check('首周柱提示与读屏使用截过的完整日期', () => {
+  const chart = ui.createChart(host(), {period: 'week', points: [{
+    start: Date.parse('2026-09-17T06:00:00+08:00'), end: Date.parse('2026-09-21T06:00:00+08:00'),
+    label: '2026-09-14 ~ 09-20', value: 1,
+  }]});
+  const bar = byClass(chart.element, 'sc-bar')[0];
+  assert.equal(bar.children[0].textContent, '2026-09-17 ~ 09-20 · 1', '悬停提示不能使用整周起点');
+  assert.equal(bar.getAttribute('aria-label'), '2026-09-17 ~ 09-20 · 1', '读屏不能使用整周起点');
 });
 // 先读到选中日期的数值，点击操作按钮才进入场次。
 await check('按日点选和左右键只更新读数由按钮下钻', () => {
@@ -233,6 +272,39 @@ const calendar = {provableFrom: 250, items: [
   {date: '2026-10-15', weekday: 4, start: 300, end: 400, status: 'recorded', effectiveSeconds: 100, gapSeconds: 0, starts: [310]},
   {date: '2026-10-16', weekday: 5, start: 400, end: 500, status: 'recorded', effectiveSeconds: 900, gapSeconds: 20, starts: [410, 430], current: true},
 ]};
+// 空日的操作不能只灰掉：必须隐藏且移出 Tab 顺序，也不能打开场次。
+await check('日历无场次日期隐藏查看链且不占Tab位', () => {
+  const selected = [];
+  const node = ui.createCalendar(host(), calendar, {onSelect: value => selected.push(value)});
+  const cells = byClass(node, 'sc-calendar-day');
+  const action = byClass(node, 'sc-calendar-action')[0];
+  for (const cell of cells.slice(0, 2)) {
+    cell.focus();
+    assert.equal(action.style.visibility, 'hidden', '无场次日期应隐藏查看链并保留位置');
+    assert.ok(!action.hidden, '不能用hidden属性移除链的位置');
+    assert.equal(action.getAttribute('aria-hidden'), 'true');
+    assert.equal(action.tabIndex, -1, '隐藏链不应占Tab位');
+    cell.fire('keydown', {key: 'Enter'});
+    assert.equal(document.activeElement, cell, '无场次时Enter应留在日期上');
+    action.fire('click');
+  }
+  assert.equal(selected.length, 0, '无场次日期不能下钻');
+  cells[2].fire('click');
+  assert.equal(action.style.visibility, 'visible', '有场次时恢复查看链');
+  assert.equal(action.getAttribute('aria-hidden'), 'false');
+  assert.equal(action.tabIndex, 0, '有场次的查看链可用Tab到达');
+});
+// 没场次时的 gapSeconds 不代表监测完整，说明必须与当天状态一致。
+for (const [status, gapSeconds, expected] of [
+  ['unknown', 0, '监测或时长证据不足 · 不按 0 计算'],
+  ['off', 0, '已完整监测，确认没播'],
+  ['recorded', 20, '缺口 20秒 · 仅使用已记录数据'],
+  ['recorded', 0, '缺口 0秒 · 无已知缺口'],
+  ['recorded', undefined, '当前暂无缺口说明'],
+]) await check('日历缺口说明对应状态' + status + '/' + gapSeconds, () => {
+  const node = ui.createCalendar(host(), {items: [{...calendar.items[2], status, gapSeconds}]});
+  assert.equal(byClass(node, 'sc-calendar-quality')[0].textContent, expected, '缺口说明不能与当天状态矛盾');
+});
 // 合计逐一对应三种格子，不能漏掉未知状态或把它算成未播。
 await check('日历合计与三种格子数一致', () => {
   const node = ui.createCalendar(host(), calendar);
@@ -310,7 +382,7 @@ await check('日历读数给出状态原因与缺口', () => {
   const text = () => byClass(node, 'sc-calendar-readout')[0].textContent;
   cells[0].fire('click');
   assert.ok(text().includes('此前的记录不全') && text().includes('说不准'));
-  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('40秒'));
+  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('不按 0 计算'));
   cells[1].fire('click');
   assert.ok(text().includes('已监看') && text().includes('没开播'));
   cells[3].fire('click');

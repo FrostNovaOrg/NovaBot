@@ -424,6 +424,40 @@ class StreamerInsightsApiTest {
         assertEquals(1, insights("7", "bilibili").getIntValue("audience"), "概况观众不能相加各周人数");
     }
 
+    // 范围从周中、月中开始且在周期内截止，接口边界不能多带范围外的日期。
+    @Test @DisplayName("周趋势首尾边界截到全页范围")
+    void trendWeekClipsRange() throws Exception {
+        assertTrendClipsRange("week");
+    }
+
+    @Test @DisplayName("月趋势首尾边界截到全页范围")
+    void trendMonthClipsRange() throws Exception {
+        assertTrendClipsRange("month");
+    }
+
+    private void assertTrendClipsRange(String period) throws Exception {
+        append(from);
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        var response = mvc.perform(get("/config/api/streamers/bilibili/1/trend")
+                        .param("period", period).param("days", "30"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var buckets = JSON.parseObject(response).getJSONObject("trend").getJSONArray("buckets");
+        var range = org.frostnova.nova.core.analytics.StreamerInsights.recent(30, Clock.fixed(now, ZoneOffset.UTC));
+        assertAll(
+                () -> assertEquals(range.from().toEpochMilli(), buckets.getJSONObject(0).getLongValue("start"),
+                        period + " first start must equal page from"),
+                () -> assertEquals(range.to().toEpochMilli(), buckets.getJSONObject(buckets.size() - 1).getLongValue("end"),
+                        period + " last end must equal page to"),
+                () -> {
+                    for (int i = 0; i < buckets.size(); i++) {
+                        var bucket = buckets.getJSONObject(i);
+                        assertTrue(bucket.getLongValue("start") >= range.from().toEpochMilli());
+                        assertTrue(bucket.getLongValue("end") <= range.to().toEpochMilli());
+                        if (i > 0) assertEquals(buckets.getJSONObject(i - 1).getLongValue("end"), bucket.getLongValue("start"));
+                    }
+                });
+    }
+
     // 空周、空月也必须占据页面范围，不能只保留有场次的两端。
     @Test @DisplayName("周月趋势保留范围内所有空桶")
     void trendEmptyPeriods() {

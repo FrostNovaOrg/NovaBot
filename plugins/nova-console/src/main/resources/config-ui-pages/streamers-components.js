@@ -17,10 +17,11 @@ export const COMPONENT_STYLE = `
 .sc-kpi-delta.sc-down{color:var(--err)}
 .sc-chart{position:relative;min-width:0;color:var(--text);display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:8px}
 .sc-chart-plot{display:contents}
-.sc-chart-scale{display:flex;flex-direction:column;justify-content:space-between;padding:14px 0 26px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sc-chart-scale{min-width:48px;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding:14px 0 26px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sc-chart svg{display:block;width:100%;height:180px;overflow:visible;touch-action:pan-y}
 .sc-chart .sc-grid{stroke:var(--line);stroke-width:1}
 .sc-chart .sc-zero{stroke:var(--dim);stroke-width:1}
+.sc-chart .sc-cursor-line{stroke:var(--text);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
 .sc-chart .sc-line{fill:none;stroke:var(--accent);stroke-width:2.5;vector-effect:non-scaling-stroke}
 .sc-chart .sc-point{fill:var(--accent);stroke:var(--surface);stroke-width:1.5}
 .sc-chart .sc-chart-hit{fill:transparent;stroke:none}
@@ -29,11 +30,13 @@ export const COMPONENT_STYLE = `
 .sc-chart [role="button"]:focus-visible{outline:2px solid var(--text);outline-offset:2px}
 .sc-chart-labels{grid-column:2;position:relative;height:22px;color:var(--dim);font-size:12px}
 .sc-chart-labels span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;font-variant-numeric:tabular-nums}
-.sc-chart-labels span:first-child{transform:none}
-.sc-chart-labels span:last-child:not(:first-child){transform:translateX(-100%)}
+.sc-chart-line-labels span:first-child{transform:none}
+.sc-chart-line-labels span:last-child:not(:first-child){transform:translateX(-100%)}
 .sc-chart-footer{grid-column:1/-1;display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;min-height:36px;margin-top:5px}
 .sc-chart-action,.sc-calendar-action{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;margin:0 0 0 auto;font-size:12px;min-height:36px}
-.sc-chart-action:disabled,.sc-calendar-action:disabled{opacity:.5;cursor:default}
+.sc-chart-action:disabled{opacity:.5;cursor:default}
+.sc-calendar-action{border:0;padding:0;background:transparent;color:var(--accent-text,var(--accent));font-family:inherit;cursor:pointer}
+.sc-calendar-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sc-point[aria-current=true]{stroke:var(--text);stroke-width:3}
 .sc-chart-readout{min-height:26px;padding:5px 0;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
 .sc-chart-note,.sc-empty{grid-column:1/-1;color:var(--dim);font-size:12px;margin:8px 0}
@@ -101,6 +104,7 @@ export const COMPONENT_STYLE = `
 .sc-drawer-body .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(max-width:1000px){.sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sc-kpi-value{font-size:21px}}
 @media(max-width:1150px) and (min-width:901px),(max-width:420px){.sc-audience{grid-template-columns:132px minmax(0,1fr);gap:12px}.sc-audience-ring{width:132px;height:132px}.sc-audience-label strong{font-size:23px}.sc-audience-segment{padding:9px}.sc-audience-segment strong{font-size:17px}}
+@media(max-width:560px){.sc-chart-footer{flex-direction:column;align-items:flex-start;gap:10px}.sc-chart-action{margin-left:0}}
 @media(max-width:560px){.sc-calendar-layout{--sc-cell:30px;--sc-gap:4px}.sc-calendar-month{--sc-cell:34px}.sc-card{padding:14px;font-size:14px}.sc-card h3{font-size:16px}.sc-kpis{gap:8px}.sc-kpi{padding:11px}.sc-kpi-value{font-size:20px}.sc-section-head{align-items:center}.sc-drawer{width:100vw;border:0}.sc-drawer-head{padding:12px 14px}.sc-drawer-close{min-height:42px}.sc-drawer-body{padding:14px}}
 `;
 
@@ -118,12 +122,15 @@ function dateAt(time) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 const shortDate = date => date.slice(5, 10).replace('-', '/');
+// 周期结束时刻不包含在内，统计日从 06:00 起算。
+const pointEndDate = point => dateAt(point.end - 6 * 3600000 - 1);
 function pointDate(point, period) {
-  const date = point.date || String(point.label || '').match(/^\d{4}-\d{2}-\d{2}/)?.[0] || dateAt(point.start);
-  if (/^\d{2}\/\d{2}$/.test(point.label || '')) return point.label;
-  if (period === 'day') return shortDate(date);
-  // 周期结束时刻不包含在内，统计日从 06:00 起算。
-  const end = dateAt(point.end - 6 * 3600000 - 1);
+  if (period === 'day') {
+    if (/^\d{2}\/\d{2}$/.test(point.label || '')) return point.label;
+    return shortDate(point.date || String(point.label || '').match(/^\d{4}-\d{2}-\d{2}/)?.[0] || dateAt(point.start));
+  }
+  const date = dateAt(point.start);
+  const end = pointEndDate(point);
   return shortDate(date) + (end && end !== date ? '–' + shortDate(end) : '');
 }
 function element(tag, className = '', text) {
@@ -162,7 +169,7 @@ export function createChart(host, {
   const scale = element('div', 'sc-chart-scale');
   scale.setAttribute('aria-hidden', 'true');
   const svg = svgElement('svg', {role: 'group', 'aria-label': title + (deferred ? '；用左右键选择日期，再按查看当天场次' : ''), preserveAspectRatio: 'xMidYMid meet'});
-  const labels = element('div', 'sc-chart-labels');
+  const labels = element('div', 'sc-chart-labels' + (period === 'day' ? ' sc-chart-line-labels' : ''));
   const readout = element('div', 'sc-chart-readout');
   readout.setAttribute('role', 'status');
   const footer = element('div', 'sc-chart-footer'); footer.append(readout);
@@ -171,8 +178,14 @@ export function createChart(host, {
   let destroyed = false;
   const select = point => { if (point && canSelect(point)) onSelect?.({start: point.start, end: point.end}); };
   const describe = point => `${pointDate(point, period)} · ${format(point.value)}`;
-  const accessibleDescription = point => `${point.label || point.date || dateAt(point.start)} · ${format(point.value)}`;
+  const accessibleDescription = point => {
+    const date = dateAt(point.start), end = pointEndDate(point);
+    const label = period === 'day' ? point.label || point.date || date
+      : date + (end && end !== date ? ' ~ ' + (end.slice(0, 4) === date.slice(0, 4) ? end.slice(5) : end) : '');
+    return `${label} · ${format(point.value)}`;
+  };
   let selectedIndex = deferred ? -1 : shown.length - 1;
+  let hasSelection = false;
   let updateSelection = () => {};
   const action = deferred ? element('button', 'nv-btn2 sc-chart-action', '查看当天场次 →') : null;
   if (action) {
@@ -188,6 +201,7 @@ export function createChart(host, {
   const choose = index => {
     if (!shown.length) return;
     selectedIndex = Math.max(0, Math.min(shown.length - 1, index));
+    hasSelection = true;
     readout.textContent = describe(shown[selectedIndex]);
     readout.setAttribute('aria-label', accessibleDescription(shown[selectedIndex]));
     if (action) {
@@ -275,8 +289,24 @@ export function createChart(host, {
         });
       }
       svg.append(mark);
+      if (period === 'day' && !deferred) {
+        svg.append(svgElement('circle', {cx: x(i), cy: y(point.value), r: shown.length < 25 ? 3 : 1.7,
+          class: 'sc-point', 'aria-hidden': 'true', 'pointer-events': 'none'}));
+      }
     });
-    if (period === 'day') {
+    if (period === 'day' && !deferred) {
+      const cursor = svgElement('line', {x1: left, x2: left, y1: top, y2: top + height,
+        class: 'sc-cursor-line', visibility: 'hidden', 'aria-hidden': 'true'});
+      svg.append(cursor);
+      updateSelection = () => {
+        cursor.setAttribute('visibility', hasSelection ? 'visible' : 'hidden');
+        if (hasSelection) {
+          cursor.setAttribute('x1', x(selectedIndex)); cursor.setAttribute('x2', x(selectedIndex));
+        }
+      };
+      updateSelection();
+    }
+    if (deferred) {
       const selected = svgElement('circle', {r: 3.5, class: 'sc-point', 'aria-hidden': 'true', 'pointer-events': 'none'});
       svg.append(selected);
       updateSelection = () => {
@@ -289,7 +319,7 @@ export function createChart(host, {
       };
       updateSelection();
     }
-    for (let count = Math.min(shown.length, 5); count > 0; count--) {
+    for (let count = Math.min(shown.length, period === 'day' && !deferred ? 2 : 5); count > 0; count--) {
       labels.replaceChildren();
       const ticks = Array.from({length: count}, (_, i) => Math.round(i * (shown.length - 1) / Math.max(1, count - 1)));
       let previousRight = -Infinity, fits = true;
@@ -297,7 +327,8 @@ export function createChart(host, {
         const label = element('span', '', pointDate(shown[index], period));
         label.style.left = `${x(index) / viewportWidth * 100}%`; labels.append(label);
         const labelWidth = label.getBoundingClientRect().width;
-        const leftEdge = x(index) - (i === 0 ? 0 : i === ticks.length - 1 ? labelWidth : labelWidth / 2);
+        const leftEdge = x(index) - (period !== 'day' ? labelWidth / 2
+          : i === 0 ? 0 : i === ticks.length - 1 ? labelWidth : labelWidth / 2);
         if (leftEdge < previousRight + 8) fits = false;
         previousRight = leftEdge + labelWidth;
       });
@@ -336,7 +367,7 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
   heading.append(element('span', '', `覆盖 ${items.length} 个统计日期`));
   const firstMonth = items[0].date.slice(0, 7), lastMonth = items.at(-1).date.slice(0, 7);
   const monthText = value => `${Number(value.slice(0, 4))}年${Number(value.slice(5))}月`;
-  heading.append(element('strong', 'sc-calendar-range-months', monthText(firstMonth) + (firstMonth === lastMonth ? ''
+  if (short || month) heading.append(element('strong', 'sc-calendar-range-months', monthText(firstMonth) + (firstMonth === lastMonth ? ''
     : ' — ' + (firstMonth.slice(0, 4) === lastMonth.slice(0, 4) ? `${Number(lastMonth.slice(5))}月` : monthText(lastMonth)))));
   wrap.append(heading);
   const scroll = element('div', 'sc-calendar-scroll');
@@ -372,7 +403,7 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
   if (selected < 0) selected = items.length - 1;
   const selection = element('div', 'sc-calendar-selection');
   const readout = element('span', 'sc-calendar-readout'); readout.setAttribute('role', 'status');
-  const action = element('button', 'nv-btn2 sc-calendar-action'); action.type = 'button';
+  const action = element('button', 'sc-calendar-action'); action.type = 'button';
   const quality = element('p', 'sc-calendar-quality');
   action.addEventListener('click', () => {
     const item = items[selected];
@@ -396,9 +427,15 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
           ? '说不准 · 此前的记录不全，在可证明的日子之前' : '说不准 · 有停机或断线，监看证据不足';
     readout.textContent = `${shortDate(item.date)} · ${explanation}${item.current ? ' · 统计截止日，尚未结束' : ''}`;
     readout.title = `${item.date} · ${explanation}`;
-    quality.textContent = `缺口 ${finite(item.gapSeconds) ? chartNumber(item.gapSeconds) + '秒' : '—'}`;
+    quality.textContent = status === 'off' ? '已完整监测，确认没播'
+      : status === 'unknown' ? '监测或时长证据不足 · 不按 0 计算'
+        : finite(item.gapSeconds) ? `缺口 ${chartNumber(item.gapSeconds)}秒 · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
+          : '当前暂无缺口说明';
     action.textContent = `查看 ${shortDate(item.date)} 场次`;
     action.disabled = !onSelect || !(item.starts || []).length;
+    action.style.visibility = action.disabled ? 'hidden' : 'visible';
+    action.tabIndex = action.disabled ? -1 : 0;
+    action.setAttribute('aria-hidden', String(action.disabled));
     action.setAttribute('aria-label', `查看 ${item.date} 场次`);
     for (const [i, button] of buttons) {
       button.tabIndex = i === selected ? 0 : -1;
