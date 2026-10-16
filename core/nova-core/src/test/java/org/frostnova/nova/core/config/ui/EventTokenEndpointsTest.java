@@ -4,6 +4,11 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
+import org.frostnova.nova.core.protocol.NovaEventEndpoint;
+import org.frostnova.nova.core.protocol.NovaEventStream;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 
 /**
  * 控制台的只读口令签发／吊销接口
@@ -145,16 +156,156 @@ class EventTokenEndpointsTest {
     }
 
     @Test
-    @DisplayName("吊销的回执必须提醒「已建连接不会自动断」")
-    void revokeWarnsAboutLiveConnections() {
+    @DisplayName("没有使用该口令的连接时，吊销结果说明数量为零")
+    void revokeReportsNoLiveConnections() {
         controller.issueEventToken(Map.of("label", "面板-甲"));
         String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
 
         JSONObject result = controller.revokeEventToken(fingerprint);
 
         assertTrue(result.getBooleanValue("success"));
-        assertTrue(result.getString("message").contains("不会自动断开"),
-                "这个坑换了机制也还在，回执里必须说");
+        assertEquals("已吊销，当前没有用它连着的连接", result.getString("message"));
+    }
+
+    /**
+     * 防止吊销仅拒绝新认证、旧连接仍持续接收事件；同时验证其他口令和免口令连接不受影响。
+     */
+    @Test
+    @DisplayName("吊销立即关闭对应连接，其他连接继续收事件，接口报告实际数量")
+    void revokeDisconnectsOnlyAuthenticatedTokenConnections() throws Exception {
+        String tokenA = controller.issueEventToken(Map.of("label", "panel-a")).getString("token");
+        String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
+        String tokenB = controller.issueEventToken(Map.of("label", "panel-b")).getString("token");
+        NovaEventStream stream = new NovaEventStream(64);
+        NovaEventEndpoint secured = new NovaEventEndpoint(stream, tokens);
+        NovaEventEndpoint open = new NovaEventEndpoint(stream);
+        try {
+            EventClient a = new EventClient("a");
+            EventClient b = new EventClient("b");
+            EventClient anonymous = new EventClient("anonymous");
+            a.connect(secured, tokenA);
+            b.connect(secured, tokenB);
+            anonymous.connect(open, null);
+            stream.publish(JSONObject.of("kind", "danmaku", "v", 2));
+            assertEquals(1L, a.next().getLongValue("seq"));
+            assertEquals(1L, b.next().getLongValue("seq"));
+            assertEquals(1L, anonymous.next().getLongValue("seq"));
+
+            JSONObject result = controller.revokeEventToken(fingerprint);
+
+            assertTrue(a.closeReceived.await(5, TimeUnit.SECONDS), "吊销后 A 的已有连接必须立即断开");
+            assertEquals("口令已吊销", a.closed.get().getReason());
+            assertTrue(result.getBooleanValue("success"));
+            assertEquals("已吊销，用这把口令连着的 1 个连接已断开", result.getString("message"));
+            stream.publish(JSONObject.of("kind", "danmaku", "v", 2));
+            assertEquals(2L, b.next().getLongValue("seq"));
+            assertEquals(2L, anonymous.next().getLongValue("seq"));
+            assertFalse(b.closed.isDone());
+            assertFalse(anonymous.closed.isDone());
+            assertTrue(a.frames.isEmpty(), "吊销后不能再下发事件");
+        } finally {
+            secured.shutdown();
+            open.shutdown();
+        }
+    }
+
+    @Test
+    @DisplayName("吊销关闭同一口令的全部连接，数量不含已断开和未认证的连接")
+    void revokeCountsOnlyLiveTokenConnections() throws Exception {
+        String token = controller.issueEventToken(Map.of("label", "panel-a")).getString("token");
+        String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
+        NovaEventEndpoint endpoint = new NovaEventEndpoint(new NovaEventStream(64), tokens);
+        try {
+            EventClient first = new EventClient("first");
+            EventClient second = new EventClient("second");
+            EventClient departed = new EventClient("departed");
+            EventClient pending = new EventClient("pending");
+            first.connect(endpoint, token);
+            second.connect(endpoint, token);
+            departed.connect(endpoint, token);
+            departed.session.close(CloseStatus.NORMAL);
+            endpoint.afterConnectionClosed(departed.session, CloseStatus.NORMAL);
+            endpoint.afterConnectionEstablished(pending.session);
+
+            JSONObject result = controller.revokeEventToken(fingerprint);
+
+            assertEquals("已吊销，用这把口令连着的 2 个连接已断开", result.getString("message"));
+            assertEquals(CloseStatus.NORMAL.withReason("口令已吊销"), first.closed.get(5, TimeUnit.SECONDS));
+            assertEquals(CloseStatus.NORMAL.withReason("口令已吊销"), second.closed.get(5, TimeUnit.SECONDS));
+            assertEquals(CloseStatus.NORMAL, departed.closed.get());
+            assertFalse(pending.closed.isDone());
+            assertTrue(pending.frames.isEmpty());
+            assertEquals("not_found", controller.revokeEventToken(fingerprint).getString("reason"));
+        } finally {
+            endpoint.shutdown();
+        }
+    }
+
+    @Test
+    @DisplayName("吊销写盘失败时，已有连接继续收事件，成功重试才断开")
+    void failedRevocationKeepsExistingConnection() throws Exception {
+        String token = controller.issueEventToken(Map.of("label", "panel-a")).getString("token");
+        String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
+        NovaEventStream stream = new NovaEventStream(64);
+        NovaEventEndpoint endpoint = new NovaEventEndpoint(stream, tokens);
+        Path file = dir.resolve("event-stream-tokens.jsonl");
+        var permissions = Files.getPosixFilePermissions(file);
+        try {
+            EventClient client = new EventClient("active");
+            client.connect(endpoint, token);
+            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("r--r--r--"));
+
+            assertEquals("write_failed", controller.revokeEventToken(fingerprint).getString("reason"));
+            stream.publish(JSONObject.of("kind", "danmaku", "v", 2));
+            assertEquals(1L, client.next().getLongValue("seq"));
+            assertFalse(client.closed.isDone());
+
+            Files.setPosixFilePermissions(file, permissions);
+            assertEquals("已吊销，用这把口令连着的 1 个连接已断开",
+                    controller.revokeEventToken(fingerprint).getString("message"));
+            assertEquals("口令已吊销", client.closed.get(5, TimeUnit.SECONDS).getReason());
+        } finally {
+            Files.setPosixFilePermissions(file, permissions);
+            endpoint.shutdown();
+        }
+    }
+
+    private static final class EventClient {
+        private final WebSocketSession session = mock(WebSocketSession.class);
+        private final LinkedBlockingQueue<String> frames = new LinkedBlockingQueue<>();
+        private final CompletableFuture<CloseStatus> closed = new CompletableFuture<>();
+        private final CountDownLatch closeReceived = new CountDownLatch(1);
+
+        private EventClient(String id) throws Exception {
+            when(session.getId()).thenReturn(id);
+            when(session.isOpen()).thenAnswer(invocation -> !closed.isDone());
+            doAnswer(invocation -> {
+                frames.add(((TextMessage) invocation.getArgument(0)).getPayload());
+                return null;
+            }).when(session).sendMessage(org.mockito.ArgumentMatchers.any());
+            doAnswer(invocation -> {
+                closed.complete(invocation.getArgument(0));
+                closeReceived.countDown();
+                return null;
+            }).when(session).close(org.mockito.ArgumentMatchers.any(CloseStatus.class));
+        }
+
+        private void connect(NovaEventEndpoint endpoint, String token) throws Exception {
+            endpoint.afterConnectionEstablished(session);
+            if (token != null) {
+                endpoint.handleMessage(session, new TextMessage(
+                        JSONObject.of("kind", "auth", "token", token).toJSONString()));
+            }
+            assertEquals("hello", next().getString("kind"));
+            endpoint.handleMessage(session, new TextMessage(
+                    JSONObject.of("kind", "resume", "data", JSONObject.of("fromSeq", 0)).toJSONString()));
+        }
+
+        private JSONObject next() throws Exception {
+            String frame = frames.poll(5, TimeUnit.SECONDS);
+            assertNotNull(frame, "未收到预期事件");
+            return JSONObject.parseObject(frame);
+        }
     }
 
     /**
