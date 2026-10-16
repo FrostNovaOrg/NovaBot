@@ -54,7 +54,8 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap}
-#sd-audience th a,#sd-audience th a:visited,#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
+#sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500}
+#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
 
@@ -87,7 +88,8 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-trend-controls button:disabled{opacity:.45;cursor:default}
 .sd-trend-daily{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}.sd-trend-daily strong{font-size:13px}.sd-trend-note{font-size:12px;color:var(--dim);line-height:1.7}
 .sd-trend-hide{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
-.sd-trend-table{overflow-x:auto}.sd-trend-table table{min-width:480px}
+.sd-trend-table{overflow-x:auto;min-width:0;max-width:100%}.sd-trend-table table{min-width:480px}
+.sd-period-link,.sd-period-link:visited{color:#3877cf;text-decoration:none}.sd-period-link:hover{text-decoration:underline}
 .sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
 .sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:13px}
 .sd-pagination>span{margin:0 auto 0 0;color:var(--dim)}
@@ -108,7 +110,8 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience-summary [role=link]{cursor:pointer}#sd-audience-summary [role=link]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #sd-live .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 0}
 #sd-live .kv dt{color:var(--dim)}#sd-live .kv dd{margin:0;text-align:right}
-.sd-recent-row{display:grid;gap:5px;padding:12px 0;color:inherit;text-decoration:none;border-top:1px solid var(--line)}
+.sd-recent-row{display:grid;gap:5px;padding:9px 0;color:inherit;text-decoration:none}
+.sd-recent-row+.sd-recent-row{border-top:1px solid var(--line)}
 .sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:12px}.sd-recent-row:hover{color:var(--accent)}
 .sc-drawer table{width:100%;border-collapse:collapse}.sc-drawer th,.sc-drawer td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
 .sc-drawer .nv-card{background:var(--surface);padding:16px;border-radius:10px}
@@ -117,9 +120,15 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-detail-link:hover{text-decoration:underline}
 .sd-toolbar .nv-pill,.sd-trend-controls .nv-pill,.sd-slot-controls .nv-pill{padding:5px 12px;font-size:13px;min-height:32px;background:var(--ground);box-sizing:border-box}
 .sd-toolbar strong{font-size:13px}
-.sd-scope summary{font-size:12px}
+.sd-scope summary{font-size:13px;color:var(--text)}
+#sd-more summary{font-size:13px;color:var(--text)}
+#sd-insights #sd-more .sc-kpi{padding:10px;min-height:73px;box-sizing:border-box}
+#sd-insights #sd-more .sc-kpi-value{font-size:19px}
+#sd-more .sc-kpi-delta:empty{display:none}
+.sd-toolbar a[aria-current=page]{border-color:color-mix(in srgb,var(--accent) 25%,var(--surface))}
+.sd-history .hint{font-size:13px;color:var(--dim);margin:0 0 4px;line-height:1.6}
 #sd-insights .sc-kpis{gap:8px}
-#sd-insights .sc-kpi{padding:11px 8px;background:var(--ground)}
+#sd-insights .sc-kpi{padding:11px 12px;background:var(--ground)}
 #sd-insights .sc-kpi-value{font-size:21px;letter-spacing:-.6px;overflow-wrap:normal;word-break:keep-all;white-space:normal}
 .sd-trend-controls>.hint{margin:0}
 .sd-trend-controls select,.sd-slot-controls select,.sd-session-filters input{width:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--r-ctl,8px);background:var(--ground);color:var(--text);padding:7px 10px;font-size:14px;min-height:32px;box-sizing:border-box}
@@ -138,44 +147,51 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-interaction-head strong{font-size:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .sd-interaction>small{align-self:center;white-space:nowrap;font-size:11px;color:var(--dim)}
 .sd-audience-note{font-size:11px;margin:10px 0 0;line-height:1.7}
-.sd-recent h4{font-size:12px;font-weight:400;color:var(--dim);margin:10px 0 2px}
-.sd-recent-row{grid-template-columns:90px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:60px}
+.sd-recent h4{font-size:10px;font-weight:400;color:var(--dim);margin:10px 0 2px}
+.sd-recent-row{grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:8px}
 .sd-recent-time,.sd-recent-main{display:flex;flex-direction:column;gap:5px;min-width:0}
 .sd-recent-main>span{font-size:13px;color:var(--text);overflow-wrap:anywhere}
 .sd-recent-row small{font-size:11px}
-.sd-gap-badge{display:inline-block;white-space:nowrap;background:var(--soft);color:var(--accent)!important;border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));border-radius:5px;padding:2px 6px;font-size:11px!important}
+.sd-gap-badge{display:inline-block;white-space:nowrap;background:var(--soft);color:var(--accent)!important;border:0;border-radius:999px;padding:2px 7px;font-size:11px!important}
 .sd-drawer-heading{min-width:0}.sd-drawer-context{font-size:12px;color:var(--dim);line-height:1.6;margin:6px 0 0}
 .sd-session-filters,.sd-slot-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .sd-session-filters label,.sd-slot-controls label{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
-.sd-session-row{display:block;padding:13px 0;border-top:1px solid var(--line);color:var(--text);text-decoration:none}
+.sd-session-list>h3{font-size:17px}
+.sd-session-row{display:block;padding:13px 0;color:var(--text);text-decoration:none}
 .sd-session-row:hover{background:var(--soft)}
 .sd-session-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sd-session-row-head{display:grid;grid-template-columns:155px minmax(0,1fr) 14px;gap:12px;align-items:baseline}
 .sd-session-date{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .sd-session-row-head strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .sd-session-arrow{font-size:20px;color:var(--accent)}
-.sd-session-row-body{display:flex;align-items:center;gap:18px;margin-top:9px}
+.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 100px;align-items:center;gap:18px;margin-top:9px}
+.sd-session-row-body>.sd-gap-badge{justify-self:end}
 .sd-session-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:1;margin:0}
 .sd-session-metrics dt{font-size:11px;color:var(--dim)}.sd-session-metrics dd{font-size:13px;margin:2px 0 0;font-variant-numeric:tabular-nums}
 .sd-audience-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
-.sd-audience-group{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:11px 10px;color:var(--text);text-decoration:none;font-size:12px}
-.sd-audience-group[aria-current=page]{border-color:var(--accent);background:var(--soft);color:var(--accent)}
+.sd-audience-group{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:9px 10px;background:var(--ground);color:var(--text);text-decoration:none;font-size:12px}
+.sd-audience-group strong{font-size:15px;color:var(--text)}
+.sd-audience-group[aria-current=page]{border-color:var(--accent);background:var(--soft)}
+#sd-audience-summary .sd-ring-link{font-size:11px;color:var(--accent)}
 #sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:#3877cf;text-decoration:none;font-size:13px}
 .sd-scroll-hint{font-size:11px;color:var(--dim);margin:8px 0}
 .sd-slot-top a{background:var(--ground);text-align:left}
 .sd-slot-title{display:flex;align-items:center;gap:7px;font-size:12px}
-.sd-slot-title>small{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--accent);color:var(--surface);flex-shrink:0}
+.sd-slot-title>small{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--soft);color:var(--accent);flex-shrink:0}
 .sd-slot-top strong{font-size:24px;font-variant-numeric:tabular-nums}
 .sd-slot-top strong small{font-size:11px;font-weight:400}
 .sd-slot-sample{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;color:var(--dim);font-size:11px}
 .sd-slot-sample>span{color:var(--accent)}
-.sc-drawer .slot-grid button{background:var(--ground);font-size:12px;min-height:56px}
-.sc-drawer .slot-grid button[data-low=true]{color:var(--dim);font-size:11px}
+:is(#sd-body,.sc-drawer) .slot-grid button{background:var(--ground);font-size:12px;min-height:56px}
+:is(#sd-body,.sc-drawer) .slot-grid button[data-low=true]{color:var(--dim);font-size:11px}
 .sc-drawer .slot-grid small{font-size:10px;opacity:.65}
-@media(max-width:560px){.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{align-items:flex-start;flex-direction:column;gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:normal}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:end}.sd-comparison{flex-shrink:0}}
+.sd-slot-heading{font-size:15px;margin:14px 0 4px}
+.sd-slot-method{font-size:12px;line-height:1.6;margin:4px 0}
+.sd-slot-scope{font-size:11px;margin:6px 0 12px}
+@media(max-width:560px){.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:normal}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
 @media(min-width:1280px){#sd-insights-content>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.sd-columns{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:560px){.sd-slot-top{grid-template-columns:1fr}#sd-insights .sc-kpis,#sd-more .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-trend .sc-chart svg{height:180px}.sd-toolbar .hint{width:100%;margin:4px 0 0}}
+@media(max-width:560px){.sd-slot-top{grid-template-columns:1fr}#sd-insights .sc-kpis,#sd-more .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-trend .sc-chart svg{height:180px}.sd-toolbar{gap:4px}.sd-toolbar .nv-pill{padding:5px 9px;white-space:nowrap}.sd-toolbar .hint{width:100%;margin:4px 0 0}}
 `;
 
 /**
@@ -332,7 +348,11 @@ export function loadStreamers() {
     && where.platform === next.platform && where.uid === next.uid
     && JSON.stringify(where) !== JSON.stringify(next)) {
     const rangeChanged = where.days !== next.days;
+    const hideChanged = where.hideOff !== next.hideOff;
     where = next;
+    insightsHideOff = where.hideOff === '1';
+    if (hideChanged) renderDailyTrend();
+    if (hideChanged) updateHideOffLinks();
     const jobs = [openDetailDrawer()];
     if (rangeChanged) jobs.push(loadDashboard());
     return Promise.all(jobs);
@@ -577,7 +597,7 @@ async function loadDetail() {
   renderHead();
   const key = where.platform + '/' + where.uid;
   if (key !== liveKey) {
-    insightsMetric = 'revenue'; insightsMode = 'total'; insightsHideOff = false;
+    insightsMetric = 'revenue'; insightsMode = 'total';
     slotsMetric = 'revenue';
   }
   if (key !== liveKey || !detail.living
@@ -586,6 +606,7 @@ async function loadDetail() {
     live = null;
     liveError = '';
   }
+  insightsHideOff = where.hideOff === '1';
   renderDashboard();
   startLiveRefresh();
   await Promise.all([loadLive(), loadDashboard(), openDetailDrawer()]);
@@ -632,6 +653,23 @@ function renderHead() {
   head.appendChild(side);
 
   host.appendChild(head);
+}
+
+function renderHistory(data) {
+  const host = $('#sd-body').querySelector('.sd-history');
+  if (!host) return;
+  host.innerHTML = '';
+  const valid = value => Number.isFinite(value) && value > 0;
+  const first = detail.overview?.firstStart;
+  if (valid(first) && valid(data?.to) && first <= data.to) {
+    const history = el('p', 'hint');
+    history.textContent = '可用历史：' + pageTime(first) + ' — ' + pageTime(data.to) + ' · Asia/Shanghai';
+    host.appendChild(history);
+  }
+  if (valid(data?.from) && valid(data?.to)) {
+    const scope = el('p', 'hint'); scope.textContent = '统计日 06:00–次日06:00 · Asia/Shanghai';
+    host.appendChild(scope);
+  }
 }
 
 function audienceHash(changes = {}) {
@@ -689,7 +727,7 @@ function renderAudience(data, message) {
   const head = el('thead');
   const headers = el('tr');
   for (const [key, label] of AUDIENCE_COLUMNS) {
-    const th = el('th');
+    const th = el('th', ['attendance', 'revenue'].includes(key) ? 'n' : '');
     if (['attendance', 'revenue', 'recent'].includes(key)) {
       th.setAttribute('aria-sort', key === data.sort ? 'descending' : 'none');
       const link = el('a');
@@ -713,8 +751,8 @@ function renderAudience(data, message) {
     name.appendChild(button);
     row.appendChild(name);
     for (const key of ['attendance', 'recent', 'revenue', 'interaction']) {
-      const cell = el('td');
-      cell.textContent = cells[key];
+      const cell = el('td', ['attendance', 'revenue'].includes(key) ? 'n' : '');
+      cell.textContent = key === 'interaction' && person.interaction ? '已记录互动' : cells[key];
       if (key === 'recent') {
         const first = el('small', 'hint');
         first.style.display = 'block';
@@ -826,16 +864,14 @@ function renderStartSlots(host) {
   select.addEventListener('change', () => { slotsMetric = select.value; renderSlotsDrawer(); });
   metrics.appendChild(select); controls.appendChild(metrics);
   const scope = el('p', 'hint'); scope.textContent = '历史节奏 · 独立观察范围：' + intervalText(slotsData?.from, slotsData?.to); host.appendChild(scope);
-  const method = el('p', 'hint'); method.textContent = '按实际开播时间所属的星期与时段分组，以整场总量 ÷ 有效直播总时长比较效率；不表示该两小时内的产出。'; card.appendChild(method);
-  const order = el('p', 'hint'); order.textContent = '按' + (slotsMetric === 'revenue' ? '每小时流水' : '每小时弹幕') + '排序 · 至少 3 场有效样本 · 与下方热图同一观察范围'; card.appendChild(order);
+  const topHead = el('h4', 'sd-slot-heading'); topHead.textContent = '表现较好的开播时段'; card.appendChild(topHead);
+  const method = el('p', 'hint sd-slot-method'); method.textContent = '按实际开播时间所属的星期与时段分组，以整场总量 ÷ 有效直播总时长比较效率；不表示该两小时内的产出。'; card.appendChild(method);
+  const order = el('p', 'hint sd-slot-scope'); order.textContent = '按' + (slotsMetric === 'revenue' ? '每小时流水' : '每小时弹幕') + '排序 · 至少 3 场有效样本 · 与下方热图同一观察范围'; card.appendChild(order);
   if (slotsData) {
-    const topHead = el('h4');
-    topHead.textContent = '表现较好的开播时段';
-    card.appendChild(topHead);
     const topItems = slotsMetric === 'revenue' ? slotsData.topRevenue : slotsData.topMessages;
     const ranking = el('ol', 'sd-slot-top');
     ranking.setAttribute('aria-label', '表现较好的开播时段，最多三名');
-    slotTopText(topItems || [], slotsMetric).slice(0, 3).forEach((text, index) => {
+    slotTopText(topItems || [], slotsMetric).slice(0, topItems?.length ? 3 : 0).forEach((text, index) => {
       const item = el('li');
       const entry = topItems?.[index];
       if (!entry) { item.textContent = text; ranking.appendChild(item); return; }
@@ -848,10 +884,11 @@ function renderStartSlots(host) {
       const sample = el('span', 'sd-slot-sample'); sample.textContent = entry.sessions + ' 场有效样本'; const action = el('span'); action.textContent = '查看场次 →'; sample.appendChild(action);
       link.appendChild(time); link.appendChild(value); link.appendChild(sample); item.appendChild(link); ranking.appendChild(item);
     });
-    card.appendChild(ranking);
-    const unit = el('p', 'hint slot-unit');
-    unit.textContent = '单位：' + (slotsMetric === 'revenue' ? '元/时' : '条/时');
-    card.appendChild(unit);
+    if (topItems?.length) card.appendChild(ranking);
+    else {
+      const empty = el('p', 'hint sd-slot-method');
+      empty.textContent = '当前范围暂无达到样本门槛且效率有效的时段。'; card.appendChild(empty);
+    }
     const scroll = el('div', 'slot-scroll');
     scroll.setAttribute('tabindex', '0');
     scroll.setAttribute('role', 'region');
@@ -886,7 +923,7 @@ function renderStartSlots(host) {
         button.disabled = !cell.sessions;
         button.dataset.low = String(shown.intensity == null);
         if (shown.intensity !== null) {
-          button.style.background = 'color-mix(in srgb, var(--accent) ' + (12 + shown.intensity * 48) + '%, var(--ground))';
+          button.style.background = 'color-mix(in srgb, var(--accent) ' + Math.round(12 + shown.intensity * 48) + '%, var(--surface))';
         }
         button.addEventListener('click', () => {
           if (!cell.sessions) return;
@@ -941,11 +978,25 @@ function dashboardHash(changes = {}) {
   const params = new URLSearchParams();
   for (const key of ['days', 'panel', 'group', 'sort', 'page', 'slotDays', 'from', 'to', 'starts', 'source', 'sourceDay', 'dateFrom', 'dateTo', 'period', 'metric', 'mode', 'hideOff']) {
     if (['source', 'sourceDay', 'dateFrom', 'dateTo', 'from', 'to', 'starts'].includes(key) && state.panel !== 'sessions') continue;
-    if (['period', 'metric', 'mode', 'hideOff'].includes(key) && (state.panel !== 'trend'
-      || state[key] === {period: 'day', metric: 'revenue', mode: 'total', hideOff: null}[key])) continue;
+    if (['period', 'metric', 'mode'].includes(key) && (state.panel !== 'trend'
+      || state[key] === {period: 'day', metric: 'revenue', mode: 'total'}[key])) continue;
     if (state[key] != null && (state[key] !== '' || key === 'starts')) params.set(key, state[key]);
   }
   return detailHash(state.platform, state.uid, 'overview', params.toString());
+}
+
+function updateHideOffLinks() {
+  // 勾选变化时同步已画出的入口；后续生成的链接由 dashboardHash 保留此参数。
+  for (const link of $('#sd-body').querySelectorAll('a')) {
+    const hash = link.href?.slice(link.href.indexOf('#'));
+    if (!isStreamersHash(hash)) continue;
+    const target = parseStreamersHash(hash);
+    if (target.view !== 'detail' || target.platform !== where.platform || target.uid !== where.uid) continue;
+    const params = new URLSearchParams(hash.split('?')[1]);
+    if (insightsHideOff) params.set('hideOff', '1');
+    else params.delete('hideOff');
+    link.href = detailHash(target.platform, target.uid, 'overview', params.toString());
+  }
 }
 
 function panelLink(label, panel, changes = {}) {
@@ -975,7 +1026,7 @@ async function openDetailDrawer() {
     if (!drawerChanging && detailDrawer === current) {
       detailDrawer = null;
       drawerGeneration++;
-      location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null, source: null, sourceDay: null, dateFrom: null, dateTo: null, period: null, metric: null, mode: null, hideOff: null});
+      location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null, source: null, sourceDay: null, dateFrom: null, dateTo: null, period: null, metric: null, mode: null});
     }
   });
   if (panel === 'audience') {
@@ -1003,7 +1054,7 @@ async function openDetailDrawer() {
         const note = el('p', 'hint');
         current.fans = fans; current.fansNote = note;
         current.body.appendChild(note); updateDrawerScope();
-        createChart(current.body, {title: '粉丝数', points: (fans.points || []).map(point => ({start: point.at, end: point.at, label: insightsTime(point.at), value: point.value}))});
+        createChart(current.body, {title: '粉丝数', format: value => value == null ? '—' : fmtMetric(value) + ' 人', points: (fans.points || []).map(point => ({start: point.at, end: point.at, label: insightsTime(point.at), value: point.value}))});
       }
     } catch (error) {
       if (generation === drawerGeneration && liveActive) current.body.textContent = '读取失败：' + error.message;
@@ -1019,9 +1070,13 @@ function pageTime(at, year = true) {
   return (year ? parts.year + '/' : '') + parts.month + '/' + parts.day + ' ' + parts.hour + ':' + parts.minute;
 }
 
-function statisticalDate(at) {
+function dateAt(at) {
   return new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'})
-    .format(new Date(Number(at) - 6 * 3600000));
+    .format(new Date(Number(at)));
+}
+
+function statisticalDate(at) {
+  return dateAt(Number(at) - 6 * 3600000);
 }
 
 function intervalText(from, to, exclusive = true) {
@@ -1054,7 +1109,8 @@ function updateDrawerScope() {
       + (fans.points?.length ? ' · 快照 ' + pageTime(fans.points.at(-1).at, false) : ' · 缺少有效快照')
       + (fans.partial ? ' · 可用快照未覆盖整个范围' : '');
   }
-  heading.querySelector('.sd-drawer-context').textContent = intervalText(from, to) + ' · Asia/Shanghai' + (metric ? ' · ' + metric : '');
+  heading.querySelector('.sd-drawer-context').textContent = intervalText(from, to) + ' · Asia/Shanghai' + (metric ? ' · ' + metric : '')
+    + (where.panel === 'sessions' && where.source === 'calendar' ? ' · 日历所选日期的重叠归档' : '');
 }
 
 function renderComparison(data) {
@@ -1111,6 +1167,7 @@ function performanceHint() {
 }
 
 function renderDashboardHints(data, error) {
+  renderHistory(data); renderArchiveLink(data);
   const from = data?.from;
   const to = data?.to ?? Date.now();
   const moment = at => {
@@ -1133,6 +1190,7 @@ function renderDashboardHints(data, error) {
 
 function renderDashboard() {
   const host = $('#sd-body'); host.innerHTML = '';
+  host.appendChild(el('div', 'sd-history'));
   const toolbar = el('div', 'sd-toolbar'); toolbar.id = 'sd-toolbar'; host.appendChild(toolbar);
   const scope = el('details', 'sd-scope'); scope.id = 'sd-scope'; host.appendChild(scope);
   const performance = createSection('本期表现', performanceHint(), host).box; performance.id = 'sd-insights';
@@ -1143,19 +1201,30 @@ function renderDashboard() {
   trendSection.header.appendChild(panelLink('查看明细', 'trend', {period: 'day', metric: insightsMetric, mode: insightsMode}));
   const trendBody = el('div'); trendBody.id = 'sd-trend-content'; trend.appendChild(trendBody);
   const audience = createSection('本期观众', '正在读取本期日期…', columns); audience.box.id = 'sd-period-audience';
-  audience.header.appendChild(panelLink('查看名单', 'audience', {group: 'all', sort: 'attendance'}));
+  audience.header.appendChild(panelLink('查看本期名单', 'audience', {group: 'all', sort: 'attendance'}));
   const audienceBody = el('div'); audienceBody.id = 'sd-audience-summary'; audience.box.appendChild(audienceBody);
   const calendar = createSection('开播日历', '正在读取本期日期…', columns); calendar.box.id = 'sd-calendar-card';
   calendar.header.appendChild(panelLink('查看历史节奏', 'start-slots'));
   const calendarBody = el('div'); calendarBody.id = 'sd-calendar'; calendar.box.appendChild(calendarBody);
   const sessions = createSection('当前直播与最近归档', '正在读取本期日期…', columns); sessions.box.id = 'sd-recent-card';
-  sessions.header.appendChild(panelLink('查看 ' + fmtMetric(detail.sessions?.total ?? 0) + ' 场归档', 'sessions'));
+  const archiveLink = el('a', 'sd-detail-link sd-archive-link'); archiveLink.textContent = '正在读取归档场数…'; sessions.header.appendChild(archiveLink);
   const current = el('div', 'sd-current-live'); current.id = 'sd-live'; sessions.box.appendChild(current);
   renderLive(); sessions.box.appendChild(recentCard());
   const cumulative = el('details', 'sd-cumulative');
   const title = el('summary'); title.textContent = '累计数据'; cumulative.appendChild(title);
   renderOverview(cumulative); host.appendChild(cumulative);
   insightsData = null; renderToolbar(); renderScope(); renderBanner();
+}
+
+function renderArchiveLink(data) {
+  const link = $('#sd-body')?.querySelector('.sd-archive-link');
+  if (!link) return;
+  const available = data?.sessions != null && data.from != null && data.to != null;
+  link.textContent = available ? '查看 ' + fmtMetric(data.sessions) + ' 场归档' : '查看全部归档';
+  // 按开播统计日归入，包含范围起点开播的零秒归档。
+  link.href = dashboardHash({panel: 'sessions', page: 1, from: null, to: null,
+    dateFrom: available ? data.from : null, dateTo: available ? data.to : null,
+    starts: null, source: available ? 'dashboard' : null, sourceDay: null});
 }
 
 async function loadDashboard() {
@@ -1204,7 +1273,10 @@ function renderAudienceSummary(data) {
     format: value => value == null ? '暂无数据' : fmtMetric(value)}, host);
   const caption = audienceRing.querySelector('.sc-audience-label');
   caption.children[0].textContent = '本期去重观众';
-  const viewList = el('span'); viewList.textContent = '查看名单'; caption.appendChild(viewList);
+  const viewList = el('span', 'sd-ring-link'); viewList.textContent = '查看名单'; caption.appendChild(viewList);
+  for (const count of [caption.children[1], ...['.sc-first', '.sc-returning'].map(selector => audienceRing.querySelector(selector)?.children[1])]) {
+    if (count?.children[0]) count.children[0].textContent = ' 人';
+  }
   for (const [selector, value, label] of [['.sc-first', data.composition?.firstRecorded ?? counts.first, '本期首次记录'],
     ['.sc-returning', data.composition?.returning ?? counts.returning, '历史回访']]) {
     const segment = audienceRing.querySelector(selector);
@@ -1340,10 +1412,21 @@ function trendPoints(buckets, metric, mode) {
   return buckets.map(bucket => ({...bucket, value: bucket.sessions > 0 ? trendValue(bucket, metric, mode) : null}));
 }
 
-function trendSessions(interval, buckets) {
+function trendSessionHash(interval, buckets) {
   const bucket = buckets.find(item => item.start === interval.start && item.end === interval.end);
-  location.hash = dashboardHash({panel: 'sessions', from: interval.start, to: interval.end,
+  return dashboardHash({panel: 'sessions', from: interval.start, to: interval.end,
     starts: bucket?.starts?.join(',') ?? null, source: 'trend', sourceDay: null, dateFrom: null, dateTo: null, page: 1});
+}
+
+function trendSessions(interval, buckets) {
+  location.hash = trendSessionHash(interval, buckets);
+}
+
+function trendPeriod(bucket, period) {
+  if (!Number.isFinite(bucket.start) || !Number.isFinite(bucket.end)) return '—';
+  const start = dateAt(bucket.start), end = statisticalDate(bucket.end - 1);
+  const short = date => date.slice(5).replace('-', '/');
+  return short(start) + (period !== 'day' && end !== start ? '–' + short(end) : '');
 }
 
 function renderDailyTrend() {
@@ -1353,7 +1436,10 @@ function renderDailyTrend() {
     onMetric: metric => { insightsMetric = metric; renderDailyTrend(); },
     onMode: mode => { insightsMode = mode; renderDailyTrend(); }});
   const periodLabel = el('span', 'hint'); periodLabel.textContent = '按统计日汇总'; controls.appendChild(periodLabel);
-  hideOffControl(host, insightsHideOff, checked => { insightsHideOff = checked; renderDailyTrend(); });
+  hideOffControl(host, insightsHideOff, checked => {
+    insightsHideOff = checked; location.hash = dashboardHash({hideOff: checked ? '1' : null}); renderDailyTrend();
+    updateHideOffLinks();
+  });
   const detailLink = $('#sd-trend').querySelector('.sd-detail-link');
   if (detailLink) detailLink.href = dashboardHash({panel: 'trend', period: 'day', metric: insightsMetric, mode: insightsMode, hideOff: insightsHideOff ? '1' : null, page: 1});
   if (!insightsData) return;
@@ -1402,13 +1488,18 @@ async function loadTrendDrawer(current) {
       const row = el('tr');
       if (bucket.sessions > 0) {
         row.setAttribute('tabindex', '0'); row.setAttribute('role', 'link');
-        row.setAttribute('aria-label', bucket.label + '，查看场次');
+        row.setAttribute('aria-label', trendPeriod(bucket, period) + '，查看场次');
         const activate = () => trendSessions(bucket, buckets);
         row.addEventListener('click', activate);
-        row.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); activate(); } });
+        row.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target === row) { event.preventDefault(); activate(); } });
       }
-      for (const [index, value] of [bucket.label, fmtMetric(bucket.sessions), fmtDuration(bucket.durationSeconds), ...(metric === 'durationSeconds' ? [] : [format(trendValue(bucket, metric, mode))])].entries()) {
-        const cell = el('td', index ? 'n' : ''); cell.textContent = value; row.appendChild(cell);
+      for (const [index, value] of [trendPeriod(bucket, period), fmtMetric(bucket.sessions), fmtDuration(bucket.durationSeconds), ...(metric === 'durationSeconds' ? [] : [format(trendValue(bucket, metric, mode))])].entries()) {
+        const cell = el('td', index ? 'n' : '');
+        if (index === 0 && bucket.sessions > 0) {
+          const link = el('a', 'sd-period-link'); link.textContent = value; link.href = trendSessionHash(bucket, buckets);
+          link.addEventListener('click', event => event.stopPropagation()); cell.appendChild(link);
+        } else cell.textContent = value;
+        row.appendChild(cell);
       }
       body.appendChild(row);
     }
@@ -1724,7 +1815,8 @@ function sessionFilters(host, page) {
     const source = el('p', 'hint');
     const name = {calendar: '开播日历（统计日重叠归档，含跨 06:00）', trend: '近期趋势', rhythm: '开播节奏', dashboard: '总览归档'}[where.source] || '所选场次';
     const interval = where.sourceDay ? where.sourceDay.replaceAll('-', '/') : where.from && where.to ? intervalText(where.from, where.to) : '';
-    source.textContent = '筛选来源：' + name + (interval ? ' · ' + interval : '') + ' · ' + fmtMetric(page.total ?? 0) + ' 个场次';
+    source.textContent = '筛选来源：' + name + (where.source !== 'dashboard' && interval ? ' · ' + interval : '') + ' · ' + fmtMetric(page.total ?? 0) + ' 个场次'
+      + (where.source === 'dashboard' ? ' · 与总览使用同一组场次' : '');
     host.appendChild(source);
   }
 }
@@ -1732,7 +1824,7 @@ function sessionFilters(host, page) {
 function renderSessions(host, page = {}) {
   const items = page.items || [];
   sessionFilters(host, page);
-  const card = el('div', 'nv-card hcard');
+  const card = el('div', 'nv-card hcard sd-session-list');
   const head = el('h3'); head.textContent = '场次 · ' + fmtMetric(page.total ?? items.length) + ' 场'; card.appendChild(head);
   if (!items.length) { const empty = el('p', 'hint'); empty.textContent = '所选范围暂无已归档的场次。'; card.appendChild(empty); }
   for (const item of items) {
