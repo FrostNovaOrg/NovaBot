@@ -72,6 +72,7 @@ let resolveLive;
 let sessionMessageKey = null;
 let sessionScenario = null;
 let recentScenario = null;
+let slotsScenario = null;
 const revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
   start: Date.parse('2026-10-12T06:00:00+08:00') - i * 604800000,
@@ -97,7 +98,7 @@ globalThis.fetch = async url => {
     return response({success: true, sessions: {items, total: items.length, page: 1, pages: 1, metrics: [], revenueKeys}});
   }
   if (String(url).includes('/sessions?')) return response({success: true, sessions: {items: [1792101600100, 1792101600200].map(startTime => ({platform: 'sample', uid: 1, startTime, durationSeconds: 60, metrics: {}, title: String(startTime)})), total: 2, page: 1, pages: 1, metrics: []}});
-  if (String(url).includes('/start-slots?')) return response({success: true, startSlots: {cells: [], topRevenue: [], topMessages: []}});
+  if (String(url).includes('/start-slots?')) return response({success: true, startSlots: slotsScenario || {cells: [], topRevenue: [], topMessages: []}});
   if (String(url).includes('/fans?')) return response({success: true, fans: {points: [{at: 1792101600000, value: 10}, {at: 1792101600100, value: 12}], change: 2, partial: true}});
   if (String(url).includes('/audience?')) return response(audienceResponse);
   if (String(url).includes('/insights?')) {
@@ -884,6 +885,65 @@ await check('直播卡采用服务端流水且没有平台收入键', () => {
   const source = readFileSync(new URL('../../../main/resources/config-ui-pages/streamers.js', import.meta.url), 'utf8');
   for (const key of ['gift_value', 'super_chat_value', 'guard_value', 'danmu_count']) assert.ok(!source.includes(key), '页面不应识别' + key);
   assert.match(source, /live\?\.revenue/);
+});
+// 截断百分比保留可见缺口；不能将两个重叠缺口相加，也不能把未知名单写成完整。
+await check('有效时长覆盖截断且零分母未知', () => {
+  assert.equal(typeof model.durationCoverage, 'function', '须提供时长覆盖格式');
+  assert.equal(model.durationCoverage({durationSeconds: 3600, effectiveSeconds: 3570}), '99.16%');
+  assert.equal(model.durationCoverage({durationSeconds: 16260, effectiveSeconds: 16244}), '99.90%');
+  assert.equal(model.durationCoverage({durationSeconds: 3600, effectiveSeconds: 3600}), '100%');
+  assert.equal(model.durationCoverage({durationSeconds: 0, effectiveSeconds: 0}), '—');
+});
+await check('场次覆盖行分别显示四种名单词且保留缺口小标', async () => {
+  sessionScenario = ['complete', 'anonymous', 'unknown', 'missing'].map((listQuality, i) => ({platform: 'sample', uid: 1,
+    startTime: 1792101600000 + i, durationSeconds: 3600, effectiveSeconds: 3570,
+    maintenanceGapSeconds: 30, roomOutageSeconds: 20, listQuality, metrics: {}}));
+  try {
+    await load(base + '?panel=sessions');
+    for (const [i, word] of ['名单完整', '名单含匿名', '名单完整性未知', '无名单'].entries())
+      assert.match(textOf(sessionRows()[i]), new RegExp('时长 99\\.16% · ' + word));
+    assert.match(textOf(sessionRows()[0]), /缺 30 秒/);
+  } finally { sessionScenario = null; }
+});
+// 缺口和名单是独立维度，标签不能全部显示或全部隐藏。
+await check('已记录按缺口和名单独立判断', async () => {
+  for (const gap of [true, false]) {
+    compositionScenario = {sessions: 2, durationSeconds: 7200, capture: {effectiveSeconds: gap ? 7170 : 7200, gapSeconds: gap ? 30 : 0, gapSessions: gap ? 1 : 0}, coverage: {complete: gap ? 2 : 1, missing: gap ? 0 : 1}};
+    page.leave(); await load(base);
+    const cards = flatten(nodes.get('sd-insights-content')).filter(n => n.className === 'sc-kpi');
+    for (const [label, expected] of [['流水', gap], ['弹幕', gap], ['观众', !gap], ['互动观众', !gap], ['新增关注', gap], ['每小时流水', gap], ['每小时弹幕', gap], ['直播时长', false], ['场次', false], ['粉丝净增', false]]) {
+      const card = cards.find(n => n.children[0].textContent === label);
+      assert.ok(card, label);
+      assert.equal(flatten(card.children[0]).some(n => n.textContent === '已记录'), expected, label);
+    }
+  }
+  compositionScenario = null;
+});
+await check('趋势覆盖逐桶读取且折叠条使用全页范围', async () => {
+  compositionScenario = {sessions: 3, durationSeconds: 10800, capture: {effectiveSeconds: 10770, gapSeconds: 30, gapSessions: 1}, coverage: {complete: 2, missing: 1}};
+  Object.assign(trendBuckets.at(-1), {effectiveSeconds: 7170, coverage: {complete: 1, anonymous: 1}});
+  page.leave(); await load(base);
+  try {
+    for (const period of ['day', 'week', 'month']) {
+      await load(base + '?panel=trend&period=' + period);
+      assert.match(textOf(drawer()), /已记录数据 · 时长覆盖 99\.72% · 名单完整 2\/3 场 · 有缺口 1 场/);
+      const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
+      assert.match(textOf(row.children.at(-1)), /采集 99\.58%.*名单完整 1\/2 场/);
+    }
+  } finally { compositionScenario = null; }
+});
+// 独立观察范围不能借用全页场数与覆盖，也不能在零缺口时显示尾段。
+await check('观众使用全页覆盖而节奏使用独立观察范围', async () => {
+  compositionScenario = {sessions: 2, durationSeconds: 7200, capture: {effectiveSeconds: 7200, gapSeconds: 0, gapSessions: 0}, coverage: {complete: 2}};
+  slotsScenario = {sessions: 5, durationSeconds: 18000, capture: {effectiveSeconds: 17940, gapSeconds: 60, gapSessions: 2}, coverage: {complete: 3, unknown: 2}, cells: [], topRevenue: [], topMessages: []};
+  try {
+    page.leave(); await load(base + '?panel=audience');
+    let summary = flatten(drawer()).find(n => n.tagName === 'summary' && n.textContent.startsWith('已记录数据'));
+    assert.equal(summary?.textContent, '已记录数据 · 时长覆盖 100% · 名单完整 2/2 场');
+    await load(base + '?panel=start-slots');
+    summary = flatten(drawer()).find(n => n.tagName === 'summary' && n.textContent.startsWith('已记录数据'));
+    assert.equal(summary?.textContent, '已记录数据 · 时长覆盖 99.66% · 名单完整 3/5 场 · 有缺口 2 场');
+  } finally { compositionScenario = null; slotsScenario = null; }
 });
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);

@@ -632,3 +632,25 @@ export function trendValue(bucket, metric, mode = 'total') {
   if (mode !== 'hourly' || !['revenue', 'messages', 'follows'].includes(metric)) return value;
   return bucket.durationSeconds > 0 ? value / (bucket.durationSeconds / 3600) : null;
 }
+
+/** 覆盖率向下截到两位；只有确实没有缺口才显示 100%。 */
+export function durationCoverage(data) {
+  const duration = data?.durationSeconds, effective = data?.capture?.effectiveSeconds ?? data?.effectiveSeconds;
+  if (!Number.isSafeInteger(duration) || duration <= 0 || !Number.isSafeInteger(effective) || effective < 0 || effective > duration) return '—';
+  if (effective === duration) return '100%';
+  // 接口时长是整数秒，先以整数计算万分比，避免浮点误差把整两位向下多截一位。
+  const hundredths = BigInt(Math.trunc(effective)) * 10000n / BigInt(Math.trunc(duration));
+  return (Number(hundredths) / 100).toFixed(2) + '%';
+}
+
+export function sessionCoverageText(item) {
+  const words = {complete: '名单完整', anonymous: '名单含匿名', unknown: '名单完整性未知', missing: '无名单'};
+  return '时长 ' + durationCoverage(item) + ' · ' + (words[item.listQuality] || '名单完整性未知');
+}
+
+export function metricRecorded(data, key) {
+  if (['audience', 'interactionAudience'].includes(key))
+    return data.sessions > 0 && data.coverage?.complete !== data.sessions;
+  return ['revenue', 'messages', 'follows', 'revenuePerHour', 'messagesPerHour'].includes(key)
+    && data.capture?.gapSessions > 0;
+}

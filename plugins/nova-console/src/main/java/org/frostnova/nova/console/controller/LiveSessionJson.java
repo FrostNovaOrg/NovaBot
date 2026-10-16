@@ -3,6 +3,8 @@ package org.frostnova.nova.console.controller;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.enums.LiveEndReason;
+import org.frostnova.nova.core.analytics.StreamerInsights;
+import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.RoomInfoSnapshot;
 
@@ -32,6 +34,8 @@ final class LiveSessionJson {
         item.put("startTime", session.startTime());
         item.put("endTime", session.endTime());
         item.put("durationSeconds", session.durationSeconds());
+        item.put("effectiveSeconds", StreamerStartSlots.effectiveSeconds(session));
+        item.put("listQuality", StreamerInsights.listQuality(session));
         item.put("metrics", session.metrics() == null ? new JSONObject() : new JSONObject(session.metrics()));
         item.put("userCounts", session.userCounts() == null ? new JSONObject() : new JSONObject(session.userCounts()));
 

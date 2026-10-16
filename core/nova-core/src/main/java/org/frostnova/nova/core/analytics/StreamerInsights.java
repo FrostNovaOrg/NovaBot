@@ -27,13 +27,21 @@ public final class StreamerInsights {
     public record Day(String date, int sessions, long durationSeconds, Double revenue,
                       Long messages, Integer audience, Long follows, List<Long> starts) {}
     public record Coverage(int complete, int anonymous, int unknown, int missing) {}
+    public record Capture(long effectiveSeconds, long gapSeconds, int gapSessions) {}
+
+    /** 名单完整性与时长覆盖独立判断，逐场和各级汇总共用。 */
+    public static String listQuality(LiveSession session) {
+        if (!session.hasUserSets()) return "missing";
+        if (session.anonymousCounts() == null) return "unknown";
+        return session.anonymousCounts().values().stream().anyMatch(v -> v > 0) ? "anonymous" : "complete";
+    }
     public record Composition(int firstRecorded, int returning) {}
     public record Fans(double change, long fromAt, double fromValue, long toAt,
                        double toValue, boolean partial) {}
     public record Result(long from, long to, boolean metricsKnown, int sessions, long durationSeconds,
                          Double revenue, Long messages, Integer audience, Integer interactionAudience,
                          Composition composition, Long firstRecordedAt, Coverage coverage,
-                         Fans fans, List<Day> daily, Long follows) {}
+                         Fans fans, List<Day> daily, Long follows, Capture capture) {}
 
     /** changeRatio 为变化比例，例如 0.12 表示上涨 12%；不能比较时仅给原因。 */
     public record Comparison(Double changeRatio, String reasonCode, String reason) {}
@@ -118,11 +126,11 @@ public final class StreamerInsights {
         return new Result(start, end, rules != null, total.sessions, total.duration,
                 rules == null ? null : total.revenue, rules == null ? null : total.messages,
                 total.audience(rules), rules == null || total.listed == 0 ? null : total.interaction.size(),
-                composition, firstRecordedAt, new Coverage(total.complete, total.anonymous,
-                total.unknown, total.missing), fans(snapshots, start, end, rules), List.copyOf(days), total.follows(rules));
+                composition, firstRecordedAt, total.coverage(), fans(snapshots, start, end, rules), List.copyOf(days), total.follows(rules), total.capture());
     }
     public record TrendBucket(String label, long start, long end, int sessions, long durationSeconds,
-                              Double revenue, Long messages, Integer audience, Long follows, List<Long> starts) {}
+                              Double revenue, Long messages, Integer audience, Long follows, List<Long> starts,
+                              long effectiveSeconds, Coverage coverage) {}
 
     /** 概况口径按统计周期归桶，页面范围外的场次不参与；下钻边界截到页面范围。 */
     public List<TrendBucket> trend(Collection<LiveSession> sessions, Instant from, Instant to,
@@ -139,7 +147,7 @@ public final class StreamerInsights {
             return new TrendBucket(bucket.label(), Math.max(bucket.start(), from.toEpochMilli()),
                     Math.min(bucket.end(), to.toEpochMilli()), a.sessions, a.duration,
                     rules == null ? null : a.revenue, rules == null ? null : a.messages, a.audience(rules),
-                    a.follows(rules), List.copyOf(a.starts));
+                    a.follows(rules), List.copyOf(a.starts), a.effective, a.coverage());
         }).toList();
     }
 
@@ -166,9 +174,10 @@ public final class StreamerInsights {
         return new Fans(after - before, baseline.at(), before, latest.at(), after, partial);
     }
 
-    private static final class Accumulator {
+    static final class Accumulator {
         int sessions, listed, complete, anonymous, unknown, missing;
-        long duration, messages, follows;
+        long duration, messages, follows, effective;
+        int gapSessions;
         double revenue;
         final List<Long> starts = new ArrayList<>();
         final Set<Long> audience = new HashSet<>();
@@ -178,24 +187,28 @@ public final class StreamerInsights {
             sessions++;
             starts.add(session.startTime());
             duration += session.durationSeconds();
+            effective += StreamerStartSlots.effectiveSeconds(session);
+            if (Math.max(session.maintenanceGapSeconds(), session.roomOutageSeconds()) > 0) gapSessions++;
             if (rules != null) {
                 revenue += rules.revenue(session.metrics());
                 if (rules.messageKey() != null) messages += (long) session.metric(rules.messageKey());
                 if (rules.followsKey() != null) follows += (long) session.metric(rules.followsKey());
             }
-            if (!session.hasUserSets()) {
-                missing++;
-                return;
+            switch (listQuality(session)) {
+                case "missing" -> { missing++; return; }
+                case "unknown" -> unknown++;
+                case "anonymous" -> anonymous++;
+                case "complete" -> complete++;
+                default -> throw new IllegalStateException("Unknown list quality");
             }
             listed++;
-            if (session.anonymousCounts() == null) unknown++;
-            else if (session.anonymousCounts().values().stream().anyMatch(v -> v > 0)) anonymous++;
-            else complete++;
             if (rules != null) {
                 addUsers(audience, session, rules.audienceSets());
                 addUsers(interaction, session, rules.interactionSets());
             }
         }
+        Coverage coverage() { return new Coverage(complete, anonymous, unknown, missing); }
+        Capture capture() { return new Capture(effective, duration - effective, gapSessions); }
         Long follows(LiveMetricCatalog.Insights rules) {
             return rules == null || rules.followsKey() == null ? null : follows;
         }
