@@ -1153,6 +1153,10 @@ await check('统计口径头两行完整使用本期和上期接口边界', asyn
     assert.deepEqual(lines.slice(0, 2), [
       '全页范围：2026/10/10 06:00 — 2026/10/16 12:34（不含结束时刻） · Asia/Shanghai',
       '对比范围：2026/10/03 06:00 — 2026/10/10 06:00（不含结束时刻）'], '须分别显示本期和上期起止');
+    // 回包没有上期时，不能把已经读完的统计范围继续写成正在读取。
+    compositionScenario.previous = null;
+    page.leave(); await load(base + '?days=7');
+    assert.equal(nodes.get('sd-scope').children[2].textContent, '对比范围：—', '无上期回包后须显示破折号');
   } finally { compositionScenario = null; }
 });
 // 模拟东京的本地时区，抓住当前卡比场次列表多一小时及缺少日期的情况。

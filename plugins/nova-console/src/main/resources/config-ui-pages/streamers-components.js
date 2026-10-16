@@ -116,7 +116,9 @@ let drawerId = 0;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const display = value => value == null ? '—' : String(value);
 const chartNumber = value => finite(value) ? new Intl.NumberFormat('zh-CN', {maximumFractionDigits: 1}).format(value) : '—';
-const axisNumber = (value, inTenThousands) => value !== 0 && inTenThousands ? (value / 10000).toFixed(1) + '万' : chartNumber(value);
+const axisNumber = (value, inTenThousands) => inTenThousands
+  ? Math.abs(value / 10000) < 0.05 ? '0' : chartNumber(value / 10000) + '万'
+  : chartNumber(value);
 const dateParts = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'});
 function dateAt(time) {
   if (!finite(time)) return '';

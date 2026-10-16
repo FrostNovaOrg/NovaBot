@@ -470,16 +470,16 @@ export function fmtMetric(value, metric) {
 }
 
 /**
- * 时刻的人话，按东八区显示年月日与时分
+ * 时刻的人话，按东八区显示月日与时分
  * @param ms 毫秒时间戳
- * @return {string} 「2026/09/04 20:07」
+ * @return {string} 「09/04 20:07」
  */
 export function fmtTime(ms) {
   if (!ms) return '—';
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai',
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     hourCycle: 'h23'}).formatToParts(new Date(Number(ms))).map(part => [part.type, part.value]));
-  return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 /**

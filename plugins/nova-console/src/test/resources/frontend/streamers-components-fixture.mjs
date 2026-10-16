@@ -544,6 +544,16 @@ await check('最大刻度17071时纵轴非零刻度统一为万', () => {
   assert.ok(labels.every(text => text === '0' || /^\d+\.\d万$/.test(text)), '纵轴单位须一致：' + labels.join('/'));
   assert.ok(labels.includes('0.6万'), '低于一万的刻度也须用万');
 });
+// 万单位仍须保留千分位、去掉无用小数，并把接近零的刻度显示为零。
+for (const [name, values, expected] of [
+  ['大数保留千分位', [12345678], ['1,234.6万', '823万', '411.5万', '0']],
+  ['整万不补小数', [10000], ['1万', '0.7万', '0.3万', '0']],
+  ['零附近不显示负零', [10000, -100], ['1万', '0.7万', '0.3万', '0']],
+]) await check('纵轴万单位边界：' + name, () => {
+  const chart = ui.createChart(host(), {points: values.map((value, i) => ({start: 100 + i * 100, end: 200 + i * 100, value}))});
+  const labels = byClass(chart.element, 'sc-chart-scale')[0].children.map(n => n.textContent);
+  assert.deepEqual(labels, expected, '刻度写法须一致：' + labels.join('/'));
+});
 // 格子的辅助标签与可见读数共享小时精度，小于六分钟时秒数须留空格。
 await check('日历格读屏标签与读数使用相同有效时长', () => {
   for (const [seconds, expected] of [[30959, '8.6 小时'], [300, '300 秒']]) {

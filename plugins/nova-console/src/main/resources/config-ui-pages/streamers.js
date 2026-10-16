@@ -184,7 +184,7 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 .sd-session-date{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .sd-session-row-head strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .sd-session-arrow{font-size:20px;line-height:1;text-align:right;color:var(--accent-text)}
-.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 150px;align-items:center;gap:18px;margin-top:9px}
+.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 158px;align-items:center;gap:10px;margin-top:9px}
 .sd-session-row-body>.sd-gap-badge{justify-self:end}
 .sd-session-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:1;margin:0}
 .sd-session-metrics dt{font-size:11px;color:var(--dim)}.sd-session-metrics dd{font-size:13px;margin:2px 0 0;font-variant-numeric:tabular-nums}
@@ -1268,7 +1268,8 @@ function renderScope(data = {}) {
   const summary = el('summary'); summary.textContent = '统计口径' + (data.sessions != null ? ' · 归档 ' + fmtMetric(data.sessions) + ' 场 · 名单完整 ' + fmtMetric(data.coverage?.complete ?? 0) + ' 场' : ''); scope.appendChild(summary);
   const lines = [
     '全页范围：' + intervalText(data.from, data.to ?? Date.now()) + ' · Asia/Shanghai',
-    '对比范围：' + intervalText(data.previous?.from, data.previous?.to),
+    '对比范围：' + (data.previous ? intervalText(data.previous.from, data.previous.to)
+      : data.from != null ? '—' : intervalText()),
     '近 ' + where.days + ' 天＝含今天的 ' + where.days + ' 个统计日；统计日从早上 6 点起（东八区）。',
     '较上期＝往前挪 ' + where.days + ' 天、长度相同的一段。场次与整场指标按开播统计日归入，不拆分跨日金额。',
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
