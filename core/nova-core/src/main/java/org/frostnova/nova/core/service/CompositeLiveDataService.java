@@ -55,6 +55,11 @@ public class CompositeLiveDataService implements LiveDataService {
     }
 
     @Override
+    public boolean isMonitoringRecording() {
+        return delegate.isMonitoringRecording();
+    }
+
+    @Override
     public List<LiveGap> monitoringIntervals(String platform, Long uid, long now) {
         return delegate.monitoringIntervals(platform, uid, now);
     }

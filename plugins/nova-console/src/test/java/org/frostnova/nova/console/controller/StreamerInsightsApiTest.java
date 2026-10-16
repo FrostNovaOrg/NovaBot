@@ -140,7 +140,7 @@ class StreamerInsightsApiTest {
             var data = JSON.parseObject(raw).getJSONObject("insights");
             assertEquals(Set.of("from", "to", "metricsKnown", "sessions", "durationSeconds", "revenue",
                     "messages", "audience", "interactionAudience", "composition", "firstRecordedAt", "coverage",
-                    "fans", "daily", "follows", "capture", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
+                    "fans", "daily", "follows", "capture", "monitoring", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
             var nullable = new ArrayList<>(List.of("audience", "interactionAudience", "composition", "firstRecordedAt", "fans"));
             if (platform.equals("other")) nullable.addAll(List.of("revenue", "messages"));
             for (String key : nullable) assertNull(data.get(key), key + "应保留null值");

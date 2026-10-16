@@ -106,7 +106,7 @@ globalThis.fetch = async url => {
     if (String(url).includes('days=90')) return new Promise(resolve => pending.push(resolve));
     return response({success: true, insights: {from: 1792015200000, sessions: 1, durationSeconds: 600,
       metricsKnown: true, revenue: 0, messages: 0, audience: null, interactionAudience: null,
-      composition: null, coverage: {missing: 1}, daily: [
+      composition: null, coverage: {missing: 1}, monitoring: {recording: true, watchedSeconds: 540000, elapsedSeconds: 540000, observableDays: 6.3, rangeDays: 7}, daily: [
         {date: '2026-10-15', sessions: 0, revenue: 0}, {date: '2026-10-16', sessions: 1, revenue: 0}],
       ...compositionScenario}});
   }
@@ -961,6 +961,78 @@ await check('观众使用全页覆盖而节奏使用独立观察范围', async (
     summary = flatten(drawer()).find(n => n.tagName === 'summary' && n.textContent.startsWith('已记录数据'));
     assert.equal(summary?.textContent, '已记录数据 · 时长覆盖 99.66% · 名单完整 3/5 场 · 有缺口 2 场');
   } finally { compositionScenario = null; slotsScenario = null; }
+});
+// 六小时的当日须显示全覆盖，不能把未到来的十八小时算成缺口。
+await check('今天六小时监看完整显示监测100%', async () => {
+  const bucket = trendBuckets.at(-1);
+  bucket.monitoring = {recording: true, watchedSeconds: 21600, elapsedSeconds: 21600}; bucket.status = 'off';
+  try {
+    page.leave(); await load(base + '?panel=trend&period=day');
+    assert.match(textOf(drawer()), /监测 100% · 确认没播/);
+    for (const period of ['week', 'month']) {
+      await load(base + '?panel=trend&period=' + period);
+      assert.doesNotMatch(textOf(drawer()), /监测 .* · 确认没播/);
+    }
+  } finally { delete bucket.monitoring; delete bucket.status; }
+});
+// 未记录与没有监看到是两回事，未知不能写成百分之零。
+await check('监测未知与零覆盖分开显示', async () => {
+  const bucket = trendBuckets.at(-1);
+  try {
+    for (const recording of [false, true]) {
+      bucket.monitoring = {recording, watchedSeconds: 0, elapsedSeconds: 21600}; bucket.status = 'unknown';
+      page.leave(); await load(base + '?panel=trend&period=day');
+      assert.ok(textOf(drawer()).includes(recording ? '监测 0.00% · 说不准' : '监测未知 · 说不准'));
+    }
+  } finally { delete bucket.monitoring; delete bucket.status; }
+});
+// 趋势三种状态词使用日历的闭集；近全覆盖仍要截断，不能四舍五入成100%。
+await check('监测状态词及百分比向下截断', async () => {
+  const bucket = trendBuckets.at(-1);
+  assert.equal(model.monitoringCoverage({recording: true, watchedSeconds: 21599.999, elapsedSeconds: 21600}), '99.99%');
+  try {
+    for (const [status, word] of [['recorded', '有直播'], ['off', '确认没播'], ['unknown', '说不准']]) {
+      bucket.monitoring = {recording: true, watchedSeconds: 999999, elapsedSeconds: 1000000}; bucket.status = status;
+      page.leave(); await load(base + '?panel=trend&period=day');
+      assert.ok(textOf(drawer()).includes('监测 99.99% · ' + word));
+    }
+  } finally { delete bucket.monitoring; delete bucket.status; }
+});
+// 两期独立读取；可观察天数不能补齐，缺口不足一分钟须保留秒，未知不编造天数。
+await check('统计口径分别显示两期监测和可观察天数', async () => {
+  compositionScenario = {monitoring: {recording: true, watchedSeconds: 540000, elapsedSeconds: 540000, observableDays: 3.3, rangeDays: 7},
+    previous: {monitoring: {recording: true, watchedSeconds: 539941, elapsedSeconds: 540000, observableDays: null, rangeDays: 7}}};
+  try {
+    page.leave(); await load(base);
+    let scope = textOf(nodes.get('sd-scope'));
+    assert.ok(scope.includes('本期：3.3 / 7 天可观察 · 监测覆盖 100% · 监测缺口 0秒'));
+    assert.ok(scope.includes('上期：未知 / 7 天可观察 · 监测覆盖 99.98% · 监测缺口 59秒'));
+    compositionScenario.previous.monitoring.watchedSeconds = 536340;
+    page.leave(); await load(base);
+    assert.ok(textOf(nodes.get('sd-scope')).includes('监测缺口 1 时 1 分'));
+    compositionScenario.monitoring.recording = false;
+    compositionScenario.previous.monitoring.recording = false;
+    page.leave(); await load(base);
+    scope = textOf(nodes.get('sd-scope'));
+    assert.ok(scope.includes('本期：监测未知（本机没有监看记录）'));
+    assert.ok(scope.includes('上期：监测未知（本机没有监看记录）'));
+  } finally { compositionScenario = null; }
+});
+// 没缺口且名单齐全时，99%或未知仍要标已记录；全覆盖则所有标签都应消失。
+await check('已记录同时反映监测不足且粉丝净增除外', async () => {
+  try {
+    for (const [recording, watchedSeconds, expected] of [[true, 9900, true], [false, 0, true], [true, 10000, false]]) {
+      compositionScenario = {sessions: 2, durationSeconds: 7200, capture: {effectiveSeconds: 7200, gapSeconds: 0, gapSessions: 0},
+        coverage: {complete: 2}, monitoring: {recording, watchedSeconds, elapsedSeconds: 10000}};
+      page.leave(); await load(base);
+      const cards = flatten(nodes.get('sd-insights-content')).filter(n => n.className === 'sc-kpi');
+      for (const label of ['直播时长', '场次', '流水', '弹幕', '新增关注', '每小时流水', '每小时弹幕', '观众', '互动观众', '粉丝净增']) {
+        const card = cards.find(n => n.children[0].textContent === label);
+        assert.ok(card, label);
+        assert.equal(flatten(card.children[0]).some(n => n.textContent === '已记录'), label === '粉丝净增' ? false : expected, label);
+      }
+    }
+  } finally { compositionScenario = null; }
 });
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);
