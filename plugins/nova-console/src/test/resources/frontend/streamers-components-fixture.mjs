@@ -194,6 +194,16 @@ for (const [period, intervals, expected] of [
   byClass(chart.element, 'sc-bar').forEach(bar => bar.fire('click'));
   assert.deepEqual(selected, records.map(({start, end}) => ({start, end})), '下钻不能越出截过的范围');
 });
+// 提示和读屏不能沿用整周的 label，否则会声称包含范围外的日期。
+await check('首周柱提示与读屏使用截过的完整日期', () => {
+  const chart = ui.createChart(host(), {period: 'week', points: [{
+    start: Date.parse('2026-09-17T06:00:00+08:00'), end: Date.parse('2026-09-21T06:00:00+08:00'),
+    label: '2026-09-14 ~ 09-20', value: 1,
+  }]});
+  const bar = byClass(chart.element, 'sc-bar')[0];
+  assert.equal(bar.children[0].textContent, '2026-09-17 ~ 09-20 · 1', '悬停提示不能使用整周起点');
+  assert.equal(bar.getAttribute('aria-label'), '2026-09-17 ~ 09-20 · 1', '读屏不能使用整周起点');
+});
 // 先读到选中日期的数值，点击操作按钮才进入场次。
 await check('按日点选和左右键只更新读数由按钮下钻', () => {
   const selected = [];
@@ -270,7 +280,9 @@ await check('日历无场次日期隐藏查看链且不占Tab位', () => {
   const action = byClass(node, 'sc-calendar-action')[0];
   for (const cell of cells.slice(0, 2)) {
     cell.focus();
-    assert.equal(action.hidden, true, '无场次日期不应显示查看链');
+    assert.equal(action.style.visibility, 'hidden', '无场次日期应隐藏查看链并保留位置');
+    assert.ok(!action.hidden, '不能用hidden属性移除链的位置');
+    assert.equal(action.getAttribute('aria-hidden'), 'true');
     assert.equal(action.tabIndex, -1, '隐藏链不应占Tab位');
     cell.fire('keydown', {key: 'Enter'});
     assert.equal(document.activeElement, cell, '无场次时Enter应留在日期上');
@@ -278,8 +290,20 @@ await check('日历无场次日期隐藏查看链且不占Tab位', () => {
   }
   assert.equal(selected.length, 0, '无场次日期不能下钻');
   cells[2].fire('click');
-  assert.equal(action.hidden, false, '有场次时恢复查看链');
+  assert.equal(action.style.visibility, 'visible', '有场次时恢复查看链');
+  assert.equal(action.getAttribute('aria-hidden'), 'false');
   assert.equal(action.tabIndex, 0, '有场次的查看链可用Tab到达');
+});
+// 没场次时的 gapSeconds 不代表监测完整，说明必须与当天状态一致。
+for (const [status, gapSeconds, expected] of [
+  ['unknown', 0, '监测或时长证据不足 · 不按 0 计算'],
+  ['off', 0, '已完整监测，确认没播'],
+  ['recorded', 20, '缺口 20秒 · 仅使用已记录数据'],
+  ['recorded', 0, '缺口 0秒 · 无已知缺口'],
+  ['recorded', undefined, '当前暂无缺口说明'],
+]) await check('日历缺口说明对应状态' + status + '/' + gapSeconds, () => {
+  const node = ui.createCalendar(host(), {items: [{...calendar.items[2], status, gapSeconds}]});
+  assert.equal(byClass(node, 'sc-calendar-quality')[0].textContent, expected, '缺口说明不能与当天状态矛盾');
 });
 // 合计逐一对应三种格子，不能漏掉未知状态或把它算成未播。
 await check('日历合计与三种格子数一致', () => {
@@ -358,7 +382,7 @@ await check('日历读数给出状态原因与缺口', () => {
   const text = () => byClass(node, 'sc-calendar-readout')[0].textContent;
   cells[0].fire('click');
   assert.ok(text().includes('此前的记录不全') && text().includes('说不准'));
-  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('40秒'));
+  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('不按 0 计算'));
   cells[1].fire('click');
   assert.ok(text().includes('已监看') && text().includes('没开播'));
   cells[3].fire('click');

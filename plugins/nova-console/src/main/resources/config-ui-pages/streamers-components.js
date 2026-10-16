@@ -17,10 +17,11 @@ export const COMPONENT_STYLE = `
 .sc-kpi-delta.sc-down{color:var(--err)}
 .sc-chart{position:relative;min-width:0;color:var(--text);display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:8px}
 .sc-chart-plot{display:contents}
-.sc-chart-scale{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding:14px 0 26px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sc-chart-scale{min-width:48px;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding:14px 0 26px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sc-chart svg{display:block;width:100%;height:180px;overflow:visible;touch-action:pan-y}
 .sc-chart .sc-grid{stroke:var(--line);stroke-width:1}
 .sc-chart .sc-zero{stroke:var(--dim);stroke-width:1}
+.sc-chart .sc-cursor-line{stroke:var(--text);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
 .sc-chart .sc-line{fill:none;stroke:var(--accent);stroke-width:2.5;vector-effect:non-scaling-stroke}
 .sc-chart .sc-point{fill:var(--accent);stroke:var(--surface);stroke-width:1.5}
 .sc-chart .sc-chart-hit{fill:transparent;stroke:none}
@@ -35,7 +36,6 @@ export const COMPONENT_STYLE = `
 .sc-chart-action,.sc-calendar-action{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;margin:0 0 0 auto;font-size:12px;min-height:36px}
 .sc-chart-action:disabled{opacity:.5;cursor:default}
 .sc-calendar-action{border:0;padding:0;background:transparent;color:var(--accent-text,var(--accent));font-family:inherit;cursor:pointer}
-.sc-calendar-action[hidden]{display:none}
 .sc-calendar-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sc-point[aria-current=true]{stroke:var(--text);stroke-width:3}
 .sc-chart-readout{min-height:26px;padding:5px 0;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
@@ -122,14 +122,15 @@ function dateAt(time) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 const shortDate = date => date.slice(5, 10).replace('-', '/');
+// 周期结束时刻不包含在内，统计日从 06:00 起算。
+const pointEndDate = point => dateAt(point.end - 6 * 3600000 - 1);
 function pointDate(point, period) {
   if (period === 'day') {
     if (/^\d{2}\/\d{2}$/.test(point.label || '')) return point.label;
     return shortDate(point.date || String(point.label || '').match(/^\d{4}-\d{2}-\d{2}/)?.[0] || dateAt(point.start));
   }
   const date = dateAt(point.start);
-  // 周期结束时刻不包含在内，统计日从 06:00 起算。
-  const end = dateAt(point.end - 6 * 3600000 - 1);
+  const end = pointEndDate(point);
   return shortDate(date) + (end && end !== date ? '–' + shortDate(end) : '');
 }
 function element(tag, className = '', text) {
@@ -177,8 +178,14 @@ export function createChart(host, {
   let destroyed = false;
   const select = point => { if (point && canSelect(point)) onSelect?.({start: point.start, end: point.end}); };
   const describe = point => `${pointDate(point, period)} · ${format(point.value)}`;
-  const accessibleDescription = point => `${point.label || point.date || dateAt(point.start)} · ${format(point.value)}`;
+  const accessibleDescription = point => {
+    const date = dateAt(point.start), end = pointEndDate(point);
+    const label = period === 'day' ? point.label || point.date || date
+      : date + (end && end !== date ? ' ~ ' + (end.slice(0, 4) === date.slice(0, 4) ? end.slice(5) : end) : '');
+    return `${label} · ${format(point.value)}`;
+  };
   let selectedIndex = deferred ? -1 : shown.length - 1;
+  let hasSelection = false;
   let updateSelection = () => {};
   const action = deferred ? element('button', 'nv-btn2 sc-chart-action', '查看当天场次 →') : null;
   if (action) {
@@ -194,6 +201,7 @@ export function createChart(host, {
   const choose = index => {
     if (!shown.length) return;
     selectedIndex = Math.max(0, Math.min(shown.length - 1, index));
+    hasSelection = true;
     readout.textContent = describe(shown[selectedIndex]);
     readout.setAttribute('aria-label', accessibleDescription(shown[selectedIndex]));
     if (action) {
@@ -286,6 +294,18 @@ export function createChart(host, {
           class: 'sc-point', 'aria-hidden': 'true', 'pointer-events': 'none'}));
       }
     });
+    if (period === 'day' && !deferred) {
+      const cursor = svgElement('line', {x1: left, x2: left, y1: top, y2: top + height,
+        class: 'sc-cursor-line', visibility: 'hidden', 'aria-hidden': 'true'});
+      svg.append(cursor);
+      updateSelection = () => {
+        cursor.setAttribute('visibility', hasSelection ? 'visible' : 'hidden');
+        if (hasSelection) {
+          cursor.setAttribute('x1', x(selectedIndex)); cursor.setAttribute('x2', x(selectedIndex));
+        }
+      };
+      updateSelection();
+    }
     if (deferred) {
       const selected = svgElement('circle', {r: 3.5, class: 'sc-point', 'aria-hidden': 'true', 'pointer-events': 'none'});
       svg.append(selected);
@@ -407,13 +427,15 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
           ? '说不准 · 此前的记录不全，在可证明的日子之前' : '说不准 · 有停机或断线，监看证据不足';
     readout.textContent = `${shortDate(item.date)} · ${explanation}${item.current ? ' · 统计截止日，尚未结束' : ''}`;
     readout.title = `${item.date} · ${explanation}`;
-    quality.textContent = `缺口 ${finite(item.gapSeconds) ? chartNumber(item.gapSeconds) + '秒' : '—'}`
-      + (finite(item.gapSeconds) ? item.gapSeconds > 0 ? ' · 仅使用已记录数据' : ' · 无已知缺口' : '');
+    quality.textContent = status === 'off' ? '已完整监测，确认没播'
+      : status === 'unknown' ? '监测或时长证据不足 · 不按 0 计算'
+        : finite(item.gapSeconds) ? `缺口 ${chartNumber(item.gapSeconds)}秒 · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
+          : '当前暂无缺口说明';
     action.textContent = `查看 ${shortDate(item.date)} 场次`;
     action.disabled = !onSelect || !(item.starts || []).length;
-    action.hidden = action.disabled;
+    action.style.visibility = action.disabled ? 'hidden' : 'visible';
     action.tabIndex = action.disabled ? -1 : 0;
-    action.setAttribute('aria-hidden', String(action.hidden));
+    action.setAttribute('aria-hidden', String(action.disabled));
     action.setAttribute('aria-label', `查看 ${item.date} 场次`);
     for (const [i, button] of buttons) {
       button.tabIndex = i === selected ? 0 : -1;
