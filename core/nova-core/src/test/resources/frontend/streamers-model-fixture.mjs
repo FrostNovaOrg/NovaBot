@@ -277,6 +277,17 @@ eq(rowSubtitle({summary: {days: 7, sessions: 0, durationSeconds: 0, lastStart: 1
   .indexOf('最近一场') > 0, true,
   '一个月没播的主播也写得出上次是什么时候——最近一场不受七天窗口限制');
 
+// 列表副标题保持短日期，即使浏览器在东京也按东八区显示。
+const savedTimezone = process.env.TZ;
+try {
+  process.env.TZ = 'Asia/Tokyo';
+  eq(rowSubtitle({summary: {days: 7, sessions: 1, durationSeconds: 60,
+    lastStart: Date.parse('2026-09-04T20:07:00+08:00')}}, 7),
+  '最近 7 天 1 场 · 1 分 · 最近一场 09/04 20:07', '列表最近一场使用东八区短日期');
+} finally {
+  if (savedTimezone === undefined) delete process.env.TZ; else process.env.TZ = savedTimezone;
+}
+
 // ---------- 十四、闭集本身 ----------
 for (const days of [7, 30, 90, 180, 360]) eq(parseStreamersHash('#/streamers/sample/1?days=' + days).days, days, '全页范围可收藏：' + days);
 

@@ -19,7 +19,7 @@ import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis,
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
   monitoringDayText, monitoringPeriodText,
-  detailHash, fmtDuration, fmtWholeGap, fmtMetric, fmtTime,
+  detailHash, fmtDuration, fmtWholeGap, fmtMetric,
   gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle,
   slotCell, slotLabel, slotRangeDays, slotTopText,
@@ -35,11 +35,12 @@ const PAGE_STYLE = `
 #sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
 #sd-live .live-error{color:var(--err,var(--dim))}
 .spark{width:88px;height:26px;flex:none;color:var(--dim)}
-.spark.up{color:var(--accent)}
+.spark.up{color:var(--accent-text)}
 a.lgpill{text-decoration:none}
-a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent-text);background:var(--soft)}
 :is(#sd-body,.sc-drawer) .start-slots>.lgpills+.lgpills,#sd-audience>.lgpills+.lgpills{margin-top:10px}
-:is(#sd-body,.sc-drawer) td.n,:is(#sd-body,.sc-drawer) th.n{text-align:right;font-variant-numeric:tabular-nums}
+:is(#sd-body,.sc-drawer) th.n{text-align:left}
+:is(#sd-body,.sc-drawer) td.n{text-align:right;font-variant-numeric:tabular-nums}
 :is(#sd-body,.sc-drawer) tbody tr:hover{background:var(--soft)}
 :is(#sd-body,.sc-drawer) .start-slots{min-width:0;max-width:100%;box-sizing:border-box}
 :is(#sd-body,.sc-drawer) .slot-scroll{overflow-x:auto;max-width:100%;margin-top:14px}
@@ -48,7 +49,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 :is(#sd-body,.sc-drawer) .slot-grid th:first-child{width:52px;box-sizing:border-box}
 :is(#sd-body,.sc-drawer) .slot-grid button{display:block;box-sizing:border-box;width:100%;min-height:64px;padding:8px 4px;border:1px solid var(--line);border-radius:6px;color:inherit;background:transparent;cursor:pointer;font:inherit;white-space:nowrap}
 :is(#sd-body,.sc-drawer) .slot-grid button:focus-visible{outline:2px solid var(--accent)}
-:is(#sd-body,.sc-drawer) .slot-grid small{display:block;margin-top:6px;font-size:inherit}
+:is(#sd-body,.sc-drawer) .slot-grid small{display:block;margin-top:6px;font-size:10px;color:var(--dim)}
 :is(#sd-body,.sc-drawer) .slot-unit{white-space:nowrap;margin:14px 0 0}
 :is(#sd-body,.sc-drawer) .start-slots .lgpills{flex-wrap:wrap}
 #sd-audience{min-width:0;max-width:100%;box-sizing:border-box}
@@ -56,16 +57,16 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap;height:auto}
 #sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500;text-decoration:none}
-#sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
+#sd-audience td a,#sd-audience td a:visited{color:var(--accent-text)}
 .sd-area-table td a,.sd-area-table td a:visited{color:rgb(0,0,238);font-weight:400;text-decoration:none}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
 
 .sd-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:16px 0}
 .sd-toolbar .hint{margin:0}
-.sd-scope,.sd-cumulative{border:1px solid var(--line);border-radius:var(--r-ctl,10px);padding:12px 16px;margin:14px 0;background:var(--surface)}
+.sd-cumulative{border:1px solid var(--line);border-radius:var(--r-ctl,10px);padding:12px 16px;margin:14px 0;background:var(--surface)}
 .sd-scope summary,.sd-cumulative summary,#sd-more summary{cursor:pointer;color:var(--dim)}
-.sd-scope p{margin:10px 0 0}
+details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;color:var(--dim)}
 .sd-columns{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,1fr);gap:16px;margin-top:16px}
 .sd-columns>.sc-card{min-width:0;margin:0;display:flex;flex-direction:column}
 #sd-trend{scroll-margin-top:82px}
@@ -86,15 +87,15 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-trend-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px}
 .sd-trend-controls .lgpills{display:flex;gap:4px;flex-wrap:wrap}
 .sd-trend-controls label{display:flex;align-items:center;gap:6px;font-size:12px}
-.sd-trend-controls button[aria-pressed=true]{color:var(--accent);border-color:var(--accent);background:var(--soft)}
+.sd-trend-controls button[aria-pressed=true]{color:var(--accent-text);border-color:var(--accent);background:var(--soft)}
 .sd-trend-controls button:disabled{opacity:.45;cursor:default}
 .sd-trend-daily{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}.sd-trend-daily strong{font-size:13px}.sd-trend-note{font-size:12px;color:var(--dim);line-height:1.7}
 .sd-trend-hide{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
-.sd-recording{border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:10px 13px;margin:0 0 16px;color:var(--dim);font-size:13px}
+.sd-scope,.sd-recording{border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:10px 13px;margin:0 0 16px;color:var(--dim);font-size:13px}
 .sd-recording summary{cursor:pointer;color:var(--text)}.sd-recording ul{margin:10px 0 0;padding-left:20px}
 .sd-cell-note{display:block;font-size:11px;color:var(--dim)}
 .sd-kpi-recorded{font-size:10px;font-weight:400;color:var(--dim);white-space:nowrap;margin-left:5px}
-.sd-session-quality{text-align:right}.sd-session-quality .sd-cell-note{margin-top:3px}
+.sd-session-quality{text-align:right}.sd-session-quality .sd-cell-note{margin-top:3px;white-space:nowrap}
 .sd-trend-coverage{white-space:nowrap;text-align:left}
 .sd-trend-table{overflow-x:auto;min-width:0;max-width:100%}.sd-trend-table table{min-width:480px}
 .sd-period-link,.sd-period-link:visited{color:rgb(0,0,238);text-decoration:none}
@@ -108,30 +109,30 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-current-live[hidden]{display:none}
 #sd-live .live-head{flex-wrap:wrap;gap:8px}#sd-live .live-head h3{font-size:13px}
 #sd-live .live-head button{margin-left:auto;padding:4px 9px;font-size:11px}
-.sd-live-badge{font-size:11px;color:var(--accent);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+.sd-live-badge{font-size:11px;color:var(--accent-text);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
 #sd-live .live-times{margin:7px 0 10px;font-size:11px;line-height:1.6}
 .sd-live-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0}
 .sd-live-metrics div{min-width:0}.sd-live-metrics dt{font-size:11px;color:var(--dim);margin-bottom:3px}
 .sd-live-metrics dd{margin:0;font-size:15px;font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-.sd-live-details{margin-top:10px;font-size:11px}.sd-live-details summary{cursor:pointer;color:var(--accent)}
+.sd-live-details{margin-top:10px;font-size:11px}.sd-live-details summary{cursor:pointer;color:var(--accent-text)}
 #sd-live .live-status{min-height:4.8em;margin:10px 0 0;font-size:10px;line-height:1.6}
 #sd-audience-summary [role=link]{cursor:pointer}#sd-audience-summary [role=link]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #sd-live .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 0}
 #sd-live .kv dt{color:var(--dim)}#sd-live .kv dd{margin:0;text-align:right}
 .sd-recent-row{display:grid;gap:5px;padding:9px 0;color:inherit;text-decoration:none}
 .sd-recent-row+.sd-recent-row{border-top:1px solid var(--line)}
-.sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:12px}.sd-recent-row:hover{color:var(--accent)}
+.sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:12px}.sd-recent-row:hover{color:var(--accent-text)}
 .sc-drawer table{width:100%;border-collapse:collapse}.sc-drawer th,.sc-drawer td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
 .sc-drawer .nv-card{background:var(--surface);padding:16px;border-radius:10px}
 .sc-drawer .nv-card h3{font-size:17px}
 .sc-drawer thead th{font-size:12px;font-weight:500;color:var(--dim)}
-.sc-drawer .sd-area-compare{border-radius:14px}
+.sc-drawer .sd-area-compare{border-radius:14px;padding:14px 16px}
 .sd-session-filters .sd-clear-filter,.sd-session-filters .sd-clear-filter:visited{color:rgb(0,0,238);font-size:15px;text-decoration:underline}
 #sd-head .sh-nm{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #sd-head .sh-nm>.pill{flex-shrink:0}
 #sd-banner{padding:9px 13px;border:0;border-left:3px solid var(--accent);background:var(--soft);border-radius:var(--r-ctl);font-size:13px;color:var(--dim);margin:0 0 16px}
 #sd-trend .sc-chart-readout{font-size:12px}
-.sd-detail-link,.sd-detail-link:visited{color:var(--accent);font-size:12px;text-decoration:none;background:none;border:0;padding:4px 0}
+.sd-detail-link,.sd-detail-link:visited{color:var(--accent-text);font-size:12px;text-decoration:none;background:none;border:0;padding:4px 0}
 .sc-section-head>.sd-detail-link{flex-shrink:0;text-align:right}
 .sd-detail-link:hover{text-decoration:underline}
 .sd-toolbar .nv-pill,.sd-trend-controls .nv-pill,.sd-slot-controls .nv-pill{padding:5px 12px;font-size:13px;min-height:32px;background:var(--ground);box-sizing:border-box}
@@ -163,12 +164,14 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-interaction-head strong{font-size:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .sd-interaction>small{align-self:center;white-space:nowrap;font-size:11px;color:var(--dim)}
 .sd-audience-note{font-size:11px;margin:10px 0 0;line-height:1.7}
+.sd-recent{display:flex;flex-direction:column;flex:1;min-width:0}
+.sd-recent-row{flex:1}
 .sd-recent h4{font-size:10px;font-weight:400;color:var(--dim);margin:10px 0 2px}
 .sd-recent-row{grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:8px}
 .sd-recent-time,.sd-recent-main{display:flex;flex-direction:column;gap:5px;min-width:0}
 .sd-recent-main>span{font-size:13px;color:var(--text);overflow-wrap:anywhere}
 .sd-recent-row small{font-size:11px}
-.sd-gap-badge{display:inline-block;white-space:nowrap;background:var(--soft);color:var(--accent)!important;border:0;border-radius:999px;padding:2px 7px;font-size:11px!important}
+.sd-gap-badge{display:inline-block;white-space:nowrap;background:var(--soft);color:var(--accent-text)!important;border:0;border-radius:999px;padding:2px 7px;font-size:11px!important}
 .sd-drawer-heading{min-width:0}.sd-drawer-context{font-size:12px;color:var(--dim);line-height:1.6;margin:6px 0 0}
 .sd-session-filters,.sd-slot-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .sd-session-filters label,.sd-slot-controls label{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
@@ -180,8 +183,8 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-session-row-head{display:grid;grid-template-columns:155px minmax(0,1fr) 14px;gap:12px;align-items:baseline}
 .sd-session-date{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .sd-session-row-head strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
-.sd-session-arrow{font-size:20px;color:var(--accent)}
-.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 185px;align-items:center;gap:18px;margin-top:9px}
+.sd-session-arrow{font-size:20px;line-height:1;text-align:right;color:var(--accent-text)}
+.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 158px;align-items:center;gap:10px;margin-top:9px}
 .sd-session-row-body>.sd-gap-badge{justify-self:end}
 .sd-session-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:1;margin:0}
 .sd-session-metrics dt{font-size:11px;color:var(--dim)}.sd-session-metrics dd{font-size:13px;margin:2px 0 0;font-variant-numeric:tabular-nums}
@@ -189,22 +192,23 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-audience-group{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:9px 10px;background:var(--ground);color:var(--text);text-decoration:none;font-size:12px}
 .sd-audience-group strong{font-size:15px;color:var(--text)}
 .sd-audience-group[aria-current=page]{border-color:var(--accent);background:var(--soft)}
-#sd-audience-summary .sd-ring-link{font-size:11px;color:var(--accent)}
+#sd-audience-summary .sd-ring-link{font-size:11px;color:var(--accent-text)}
 #sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:rgb(0,0,238);text-decoration:none;font-size:14px}
-.sd-scroll-hint{font-size:11px;color:var(--dim);margin:8px 0}
+.sd-scroll-hint{font-size:12px;color:var(--dim);margin:7px 0 0}
+.sd-session-note{font-size:12px;color:var(--dim);margin:8px 0 0}
 .sd-slot-top a{background:var(--ground);text-align:left}
 .sd-slot-title{display:flex;align-items:center;gap:7px;font-size:12px}
-.sd-slot-title>small{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--soft);color:var(--accent);flex-shrink:0}
+.sd-slot-title>small{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--soft);color:var(--accent-text);flex-shrink:0}
 .sd-slot-top strong{font-size:24px;font-variant-numeric:tabular-nums}
 .sd-slot-top strong small{font-size:11px;font-weight:400}
 .sd-slot-sample{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;color:var(--dim);font-size:11px}
-.sd-slot-sample>span{color:var(--accent)}
+.sd-slot-sample>span{color:var(--accent-text)}
 :is(#sd-body,.sc-drawer) .slot-grid button{background:var(--ground);font-size:12px;min-height:56px}
 :is(#sd-body,.sc-drawer) .slot-grid button[data-low=true]{color:var(--dim);font-size:11px}
-.sc-drawer .slot-grid small{font-size:10px;opacity:.65}
 .sd-slot-heading{font-size:15px;margin:14px 0 4px}
 .sd-slot-method{font-size:12px;line-height:1.6;margin:4px 0}
 .sd-slot-scope{font-size:11px;margin:6px 0 12px}
+.sd-detail-scope{font-size:13px;color:var(--dim);margin:4px 0 10px;overflow-wrap:anywhere}
 @media(max-width:560px){.sd-session-quality{text-align:left}.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:nowrap}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
 @media(min-width:1280px){#sd-insights-content>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.sd-columns{grid-template-columns:minmax(0,1fr)}}
@@ -882,7 +886,8 @@ function renderStartSlots(host) {
   select.value = slotsMetric;
   select.addEventListener('change', () => { slotsMetric = select.value; renderSlotsDrawer(); });
   metrics.appendChild(select); controls.appendChild(metrics);
-  const scope = el('p', 'hint'); scope.textContent = '历史节奏 · 独立观察范围：' + intervalText(slotsData?.from, slotsData?.to); host.appendChild(scope);
+  const scope = el('p', 'hint sd-detail-scope'); scope.textContent = '历史节奏 · 独立观察范围：' + intervalText(slotsData?.from, slotsData?.to); host.appendChild(scope);
+  renderRecording(host, slotsData);
   const topHead = el('h4', 'sd-slot-heading'); topHead.textContent = '表现较好的开播时段'; card.appendChild(topHead);
   const method = el('p', 'hint sd-slot-method'); method.textContent = '按实际开播时间所属的星期与时段分组，以整场总量 ÷ 有效直播总时长比较效率；不表示该两小时内的产出。'; card.appendChild(method);
   const order = el('p', 'hint sd-slot-scope'); order.textContent = '按' + (slotsMetric === 'revenue' ? '每小时流水' : '每小时弹幕') + '排序 · 至少 3 场有效样本 · 与下方热图同一观察范围'; card.appendChild(order);
@@ -1109,6 +1114,8 @@ async function openDetailDrawer() {
     }
   });
   if (panel === 'audience') {
+    const scope = el('p', 'hint sd-detail-scope'); scope.id = 'sd-audience-scope'; current.body.appendChild(scope);
+    renderRecording(current.body, insightsData); updateDrawerScope();
     const host = el('div'); host.id = 'sd-audience'; current.body.appendChild(host);
     await loadAudience();
   } else if (panel === 'start-slots') await loadStartSlots();
@@ -1167,7 +1174,7 @@ function renderRecording(host, data) {
   let box = host.querySelector('.sd-recording');
   if (!box) {
     box = el('details', 'sd-recording');
-    host.insertBefore(box, host.firstChild);
+    host.appendChild(box);
   }
   box.innerHTML = '';
   const summary = el('summary');
@@ -1189,8 +1196,10 @@ function renderRecording(host, data) {
 
 function updateDrawerScope() {
   if (!detailDrawer) return;
-  if (['trend', 'audience', 'start-slots'].includes(where.panel))
+  if (detailDrawer.body.querySelector('.sd-recording'))
     renderRecording(detailDrawer.body, where.panel === 'start-slots' ? slotsData : insightsData);
+  const audienceScope = detailDrawer.body.querySelector('#sd-audience-scope');
+  if (audienceScope) audienceScope.textContent = '本期名单 · 与总览全页范围一致：' + intervalText(insightsData?.from, insightsData?.to);
   const head = detailDrawer.dialog.querySelector('.sc-drawer-head');
   let heading = head.querySelector('.sd-drawer-heading');
   if (!heading) {
@@ -1258,6 +1267,9 @@ function renderScope(data = {}) {
   const scope = $('#sd-scope'); scope.innerHTML = '';
   const summary = el('summary'); summary.textContent = '统计口径' + (data.sessions != null ? ' · 归档 ' + fmtMetric(data.sessions) + ' 场 · 名单完整 ' + fmtMetric(data.coverage?.complete ?? 0) + ' 场' : ''); scope.appendChild(summary);
   const lines = [
+    '全页范围：' + intervalText(data.from, data.to ?? Date.now()) + ' · Asia/Shanghai',
+    '对比范围：' + (data.previous ? intervalText(data.previous.from, data.previous.to)
+      : data.from != null ? '—' : intervalText()),
     '近 ' + where.days + ' 天＝含今天的 ' + where.days + ' 个统计日；统计日从早上 6 点起（东八区）。',
     '较上期＝往前挪 ' + where.days + ' 天、长度相同的一段。场次与整场指标按开播统计日归入，不拆分跨日金额。',
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
@@ -1465,9 +1477,9 @@ function renderInsights(data, message) {
   [...grid.children].forEach((cell, index) => {
     markRecorded(cell, data, keys[index]);
     if (keys[index] === 'fans' && fans) {
-      const note = el('small', 'sd-cell-note'); note.textContent = fans.partial
+      cell.children[2].textContent = fans.partial
         ? '可用快照未覆盖整个范围，从 ' + insightsTime(fans.fromAt) + ' 起算'
-        : '按区间边界有效快照计算'; cell.appendChild(note);
+        : '按区间边界有效快照计算';
     }
     cell.setAttribute('role', 'button'); cell.setAttribute('tabindex', '0'); cell.setAttribute('aria-label', labels[index]);
     const comparison = keys[index] === 'fans' ? null : insightsComparison(data.comparisons?.[keys[index]]);
@@ -1600,6 +1612,7 @@ async function loadTrendDrawer(current) {
   trendControls(current.body, {metric, mode, period,
     onPeriod: next => route({period: next}), onMetric: next => { location.hash = route({metric: next}); },
     onMode: next => { location.hash = route({mode: next}); }});
+  renderRecording(current.body, insightsData);
   const content = el('div'); current.body.appendChild(content); content.textContent = '正在读取趋势…';
   try {
     const response = await api(streamerPath() + '/trend?period=' + period + '&days=' + where.days);
@@ -1702,7 +1715,7 @@ function renderOverview(host) {
     // 一场都没有时服务端给 null，这里就写破折号：「场均 0 分」读起来像每场都秒退
     [overview.averageDurationSeconds === null || overview.averageDurationSeconds === undefined
       ? '—' : fmtDuration(overview.averageDurationSeconds), '场均时长'],
-    [fmtTime(overview.lastStart), '最近一场'],
+    [pageTime(overview.lastStart), '最近一场'],
   ].map(([value, label]) => '<div class="stat"><div class="stat-v">' + esc(value)
     + '</div><div class="stat-l">' + esc(label) + '</div></div>').join('');
   stats.appendChild(box);
@@ -1752,10 +1765,8 @@ async function loadLive() {
 
 function liveClock(ms, seconds = false) {
   if (ms === null || ms === undefined) return '—';
-  const date = new Date(Number(ms));
-  const pad = value => String(value).padStart(2, '0');
-  return pad(date.getHours()) + ':' + pad(date.getMinutes())
-    + (seconds ? ':' + pad(date.getSeconds()) : '');
+  return new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit',
+    ...(seconds ? {second: '2-digit'} : {}), hourCycle: 'h23'}).format(new Date(Number(ms)));
 }
 
 function isLiving() {
@@ -1795,7 +1806,7 @@ function renderLive() {
   }
   const times = el('p', 'live-times');
   const since = live ? live.since : detail.since;
-  times.textContent = '开播于 ' + fmtTime(since)
+  times.textContent = '开播于 ' + pageTime(since)
     + (since != null ? ' · 已开播 ' + fmtDuration(Math.max(0, (Date.now() - since) / 1000)) : '');
   card.appendChild(times);
 
@@ -1837,7 +1848,7 @@ function renderLive() {
   const checked = el('p', 'hint'); checked.textContent = '检查于 ' + liveClock(live?.checkedAt, true); details.appendChild(checked);
   card.appendChild(details);
   const status = el('p', 'live-status'); status.setAttribute('role', 'status');
-  status.textContent = '数据截至 ' + liveClock(live?.dataAt) + ' · 每 15 秒检查更新'; card.appendChild(status);
+  status.textContent = '数据截至 ' + pageTime(live?.dataAt) + ' · 每 15 秒检查更新'; card.appendChild(status);
 
   if (liveError) {
     const error = el('p', 'live-error');
@@ -1859,7 +1870,7 @@ function snapshotCard(snapshot, catalog) {
   const head = el('h3');
   head.textContent = '基础数据 ';
   const note = el('span', 'h-note');
-  note.textContent = snapshot ? '采集于 ' + fmtTime(snapshot.at) : '';
+  note.textContent = snapshot ? '采集于 ' + pageTime(snapshot.at) : '';
   head.appendChild(note);
   card.appendChild(head);
 
@@ -1902,7 +1913,7 @@ function recentCard() {
 function gapBadge(item) {
   const gaps = gapCells(item);
   const badge = el('span', 'sd-gap-badge');
-  badge.textContent = gaps.any ? '缺 ' + fmtMetric(Math.max(gaps.maintenance, gaps.outage)) + ' 秒' : '完整';
+  badge.textContent = gaps.any ? '缺 ' + fmtWholeGap(Math.max(gaps.maintenance, gaps.outage)) : '完整';
   badge.title = gaps.title || '未记录到采集缺口';
   return badge;
 }
@@ -2004,7 +2015,7 @@ function renderSessions(host, page = {}) {
   if (bar.prev) foot.appendChild(pageLink('‹ 上一页', bar.prev));
   if (bar.next) foot.appendChild(pageLink('下一页 ›', bar.next));
   card.appendChild(foot);
-  const note = el('p', 'hint'); note.textContent = '人数按已有观众名单去重，没有名单时显示「—」。采集缺口不补估，计数仅为记录到的下界；被中断或未闭合的场次应单独看待。'; card.appendChild(note);
+  const note = el('p', 'sd-session-note'); note.textContent = '人数按已有观众名单去重，没有名单时显示「—」。采集缺口不补估，计数仅为记录到的下界；被中断或未闭合的场次应单独看待。'; card.appendChild(note);
   host.appendChild(card);
 }
 
@@ -2034,7 +2045,7 @@ async function loadSession() {
   const head = el('h3');
   head.textContent = '报告 ';
   const note = el('span', 'h-note');
-  note.textContent = '开播于 ' + fmtTime(Number(where.start));
+  note.textContent = '开播于 ' + pageTime(Number(where.start));
   head.appendChild(note);
   card.appendChild(head);
 

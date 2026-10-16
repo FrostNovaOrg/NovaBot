@@ -124,8 +124,8 @@ let liveHttpReply = null;
 let configured = true;
 let liveRequests = 0;
 let pendingLive = null;
-const dataAt = new Date(2026, 9, 14, 12, 34, 0).getTime();
-const checkedAt = new Date(2026, 9, 14, 12, 35, 7).getTime();
+const dataAt = Date.parse('2026-10-14T12:34:00+08:00');
+const checkedAt = Date.parse('2026-10-14T12:35:07+08:00');
 let liveData = {
   success: true, living: true, since: checkedAt - 3600000, dataAt, checkedAt, revenue: 12.5, messages: 123,
   metrics: {danmu_count: 123, gift_value: 12.5, unknown_metric: 9, online_count: 999, online_rank_count: 3,
@@ -309,7 +309,7 @@ await ask('当前直播显示进行中三项摘要折叠明细与更新说明', 
   same(Boolean(details), true, '快照明细折叠');
   same(Boolean(details?.open), false, '明细默认收起');
   same(details?.children[0].textContent, '查看本场快照明细', '明细入口');
-  for (const part of ['已开播', '数据截至 12:34', '每 15 秒检查更新']) {
+  for (const part of ['已开播', '数据截至 2026/10/14 12:34', '每 15 秒检查更新']) {
     if (!textOf(card).includes(part)) throw new Error('当前直播缺少 ' + part);
   }
   same(textOf(details).includes('unknown_metric'), true, '其余指标留在明细');
@@ -362,14 +362,14 @@ await ask('⑤ 刷新失败保留本场数与服务端原话，数据更新时�
   await overview();
   const original = textOf(liveCard());
   for (const expected of ['正在直播', '123', '12.50 元', 'unknown_metric', '42 人',
-    '数据截至 12:34', '检查于 12:35:07', '已开播']) {
+    '数据截至 2026/10/14 12:34', '检查于 12:35:07', '已开播']) {
     if (!original.includes(expected)) throw new Error('缺少 ' + expected);
   }
   liveFailure = '暂时读不到本场数据';
   await clickRefresh();
   const failed = textOf(liveCard());
   for (const expected of ['123', '12.50 元', '刷新失败：' + liveFailure,
-    '当前显示的是 12:35:07 的数据', '数据截至 12:34', '检查于 12:35:07']) {
+    '当前显示的是 12:35:07 的数据', '数据截至 2026/10/14 12:34', '检查于 12:35:07']) {
     if (!failed.includes(expected)) throw new Error('失败后缺少 ' + expected);
   }
   liveFailure = '网络错误';
@@ -478,7 +478,7 @@ await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，�
       same(liveCard().hidden, false, '服务端错误后卡片仍可见');
       const text = textOf(liveCard());
       for (const expected of ['321', '21 人', '刷新失败：' + reason,
-        '当前显示的是 12:35:07 的数据', '数据截至 12:34', '检查于 12:35:07']) {
+        '当前显示的是 12:35:07 的数据', '数据截至 2026/10/14 12:34', '检查于 12:35:07']) {
         if (!text.includes(expected)) throw new Error('服务端错误后缺少 ' + expected);
       }
     }
