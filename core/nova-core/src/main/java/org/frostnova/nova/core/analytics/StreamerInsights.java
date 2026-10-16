@@ -124,7 +124,7 @@ public final class StreamerInsights {
     public record TrendBucket(String label, long start, long end, int sessions, long durationSeconds,
                               Double revenue, Long messages, Integer audience, Long follows, List<Long> starts) {}
 
-    /** 概况口径按统计周期归桶，页面范围外的场次不参与；保留完整周期边界供下钻。 */
+    /** 概况口径按统计周期归桶，页面范围外的场次不参与；下钻边界截到页面范围。 */
     public List<TrendBucket> trend(Collection<LiveSession> sessions, Instant from, Instant to,
                                    LiveSessionAnalytics.Period period, LiveMetricCatalog.Insights rules) {
         var grouped = new LinkedHashMap<Long, Accumulator>();
@@ -136,7 +136,8 @@ public final class StreamerInsights {
         }
         return new LiveSessionAnalytics().aggregate(sessions, period, Set.of(), from, to).stream().map(bucket -> {
             var a = grouped.getOrDefault(bucket.start(), new Accumulator());
-            return new TrendBucket(bucket.label(), bucket.start(), bucket.end(), a.sessions, a.duration,
+            return new TrendBucket(bucket.label(), Math.max(bucket.start(), from.toEpochMilli()),
+                    Math.min(bucket.end(), to.toEpochMilli()), a.sessions, a.duration,
                     rules == null ? null : a.revenue, rules == null ? null : a.messages, a.audience(rules),
                     a.follows(rules), List.copyOf(a.starts));
         }).toList();
