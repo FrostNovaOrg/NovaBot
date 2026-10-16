@@ -1823,7 +1823,7 @@ function gapBadge(item) {
 }
 
 function sessionRevenue(item, page) {
-  return item.metrics != null
+  return item.metrics != null && Object.keys(item.metrics).length > 0
     ? (page.revenueKeys || []).reduce((sum, key) => sum + (item.metrics[key] || 0), 0) : null;
 }
 

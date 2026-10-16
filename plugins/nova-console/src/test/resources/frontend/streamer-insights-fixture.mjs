@@ -185,7 +185,7 @@ await check('场次缺名单显示未知到场人数', async () => {
   sessionScenario = null;
 });
 // 抓住有指标快照却因没有收入键被写成未知的情况；没有快照才写—。
-await check('场次流水区分有快照零收入与没有快照', async () => {
+await check('场次流水区分有快照零收入与空对象、null及缺失指标', async () => {
   sessionScenario = [
     {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {gift_value: 12.5}},
     {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {danmu_count: 2}},
@@ -199,7 +199,7 @@ await check('场次流水区分有快照零收入与没有快照', async () => {
     assert.equal(sessionMetric(sessionRows()[0], '流水'), '12.50 元', '仅有礼物收入也须显示流水');
     assert.equal(sessionMetric(sessionRows()[1], '流水'), '0.00 元', '有快照没收到礼物须显示零');
     assert.equal(sessionMetric(sessionRows()[2], '流水'), '0.00 元', '已知零收入须显示0.00元');
-    assert.equal(sessionMetric(sessionRows()[3], '流水'), '0.00 元', '空指标对象仍按零求和');
+    assert.equal(sessionMetric(sessionRows()[3], '流水'), '—', '空指标对象须显示未知');
     assert.equal(sessionMetric(sessionRows()[4], '流水'), '—', 'null快照须显示—');
     assert.equal(sessionMetric(sessionRows()[5], '流水'), '—', '缺少快照须显示—');
   } finally { sessionScenario = null; }
@@ -220,16 +220,35 @@ await check('最近归档有快照没收入键显示零，没有快照显示未�
   recentScenario = [
     {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {danmu_count: 2}},
     {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {}},
-    {platform: 'sample', uid: 1, startTime: 1792101600300},
+    {platform: 'sample', uid: 1, startTime: 1792101600300, metrics: {}},
   ];
   try {
     page.leave();
     await load(base);
     const rows = flatten(nodes.get('sd-recent')).filter(n => n.className === 'sd-recent-row');
     assert.match(textOf(rows[0]), /流水 0\.00 元/, '没收到礼物须显示零');
-    assert.match(textOf(rows[1]), /流水 0\.00 元/, '空快照按零求和');
+    assert.match(textOf(rows[1]), /流水 —/, '空指标对象须显示未知');
     assert.match(textOf(rows[2]), /流水 —/, '没有快照须显示—');
   } finally { recentScenario = null; }
+});
+// 接口把无快照下发为空对象；抓住场次卡与最近归档将未知流水写成零的情况。
+await check('接口空指标与弹幕快照在场次卡和最近归档区分未知与零', async () => {
+  const items = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {danmu_count: 5}},
+  ];
+  sessionScenario = items;
+  recentScenario = items;
+  try {
+    await load(base + '?panel=sessions');
+    assert.equal(sessionMetric(sessionRows()[0], '流水'), '—', '场次卡空指标对象须显示未知');
+    assert.equal(sessionMetric(sessionRows()[1], '流水'), '0.00 元', '场次卡弹幕快照须显示零收入');
+    page.leave();
+    await load(base);
+    const rows = flatten(nodes.get('sd-recent')).filter(n => n.className === 'sd-recent-row');
+    assert.match(textOf(rows[0]), /流水 —/, '最近归档空指标对象须显示未知');
+    assert.match(textOf(rows[1]), /流水 0\.00 元/, '最近归档弹幕快照须显示零收入');
+  } finally { sessionScenario = null; recentScenario = null; }
 });
 // 提示必须落在中断那场卡上，正常场次不能混入中断原因。
 await check('场次卡仅为中断场次标明原因', async () => {
