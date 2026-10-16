@@ -132,6 +132,15 @@ let liveData = {
     session_extra: 7},
   series: {online_count: [[dataAt - 60000, 50], [dataAt, 42]]},
 };
+let dashboardFixtures = false;
+let historyStart = null;
+let cutoff = Date.parse('2026-10-16T08:40:00+08:00');
+const rangeStart = days => Date.parse('2026-10-16T06:00:00+08:00') - (days - 1) * 86400000;
+const archiveItems = ['2026-10-15T10:00', '2026-09-17T06:00', '2026-09-17T05:30', '2026-08-01T10:00'].map(date => {
+  const startTime = Date.parse(date + ':00+08:00');
+  return {...sessions[0], startTime, endTime: startTime + 3600000};
+});
+let trendBuckets = [];
 const slotRequests = [];
 let pendingSlots = null;
 const slotCells = Array.from({length: 84}, (_, i) => ({weekday: Math.floor(i / 12) + 1,
@@ -149,6 +158,22 @@ const extraLiveMetrics = [...catalogSource.matchAll(/Metric\.count\(BilibiliLive
 const reply = data => Promise.resolve({status: 200, json: () => Promise.resolve(data)});
 globalThis.fetch = url => {
   const path = String(url);
+  const params = new URL(path, 'https://example.test').searchParams;
+  if (dashboardFixtures && path.includes('/insights?')) {
+    const from = rangeStart(Number(params.get('days')));
+    return reply({success: true, insights: {from, to: cutoff,
+      sessions: archiveItems.filter(s => s.startTime >= from && s.startTime < cutoff).length,
+      daily: [], coverage: {}}});
+  }
+  if (dashboardFixtures && path.includes('/trend?')) return reply({success: true, trend: {buckets: trendBuckets}});
+  if (dashboardFixtures && path.includes('/fans?')) return reply({success: true, fans: {points: [{at: cutoff, value: 17053}]}});
+  if (dashboardFixtures && path.includes('/sessions?')) {
+    const items = archiveItems.filter(s => s.startTime < Number(params.get('to') || Infinity)
+      && s.endTime > Number(params.get('from') || 0)
+      && s.startTime >= Number(params.get('dateFrom') || 0)
+      && s.startTime < Number(params.get('dateTo') || Infinity));
+    return reply({success: true, sessions: {items, total: items.length, page: 1, pages: 1}});
+  }
   if (path.includes('/sessions?')) return reply({success: true, sessions: {items: sessions, messageKey: 'danmu_count', revenueKeys: ['gift_value'], metrics: [{key: 'danmu_count', name: '弹幕', unit: '条'}, {key: 'gift_value', name: '礼物价值', unit: '元', money: true}], total: 3, page: 1, pages: 1}});
   if (path.includes('/calendar?')) return reply({success: true, calendar: {items: []}});
   if (path.includes('/audience?')) return reply({success: true, audience: {counts: {}, items: []}});
@@ -172,7 +197,7 @@ globalThis.fetch = url => {
     return Promise.resolve({status: 200, json: () => Promise.resolve({
       success: true, platform: PLATFORM, uid: UID, uname: '甲', configured,
       living: liveData.living, since: liveData.since,
-      overview: {},
+      overview: dashboardFixtures ? {firstStart: historyStart} : {},
       liveMetrics: [
         ...extraLiveMetrics,
         {key: 'danmu_count', name: '弹幕', unit: '条'},
@@ -181,10 +206,10 @@ globalThis.fetch = url => {
         {key: 'box_profit', name: '盲盒盈亏', unit: '元', money: true},
         {key: 'session_extra', name: '本场新增计数', unit: '次'},
       ],
-      sessions: {items: sessions, messageKey: 'danmu_count', metrics: [
+      sessions: {items: dashboardFixtures ? archiveItems : sessions, messageKey: 'danmu_count', metrics: [
         {key: 'danmu_count', name: '弹幕', unit: '条'},
         {key: 'gift_value', name: '礼物价值', unit: '元', money: true},
-      ], total: sessions.length, page: 1, pageSize: 20},
+      ], total: dashboardFixtures ? archiveItems.length : sessions.length, page: 1, pageSize: 20},
     })});
   }
   return Promise.resolve({status: 200, json: () => Promise.resolve({})});
@@ -531,8 +556,9 @@ await ask('开播时段显示84格且点击列出整场数据与场次链接', a
   await openSlots();
   same(textOf(drawerBody()).includes('不表示该两小时内的产出'), true, '热图不得被理解为两小时内的产出');
   same(slotButtons().length, 84, '7×12格');
-  same(walk(drawerBody()).find(n => n.className === 'hint slot-unit')?.textContent,
-    '单位：元/时', '热图上方单独显示流水单位');
+  same(walk(drawerBody()).some(n => n.className === 'hint slot-unit'), false, '热图不重复显示单位');
+  same(walk(drawerBody()).filter(n => n.tagName === 'option').map(n => n.textContent),
+    ['每小时流水', '每小时弹幕'], '指标下拉说明单位');
   same(walk(drawerBody()).find(n => n.className === 'slot-grid')?.children[0]?.children[0]?.children[0]?.textContent,
     '', '热图首列表头留空');
   same(slotRequests.at(-1).endsWith('days=90'), true, '默认90天请求');
@@ -570,8 +596,6 @@ await ask('开播时段180天独立取数且弹幕切换更新前三与热图单
   same(slotRequests.at(-1).endsWith('days=180'), true, '180天请求');
   const metric = walk(drawerBody()).find(n => n.tagName === 'select');
   metric.value = 'messages'; await metric.fire('change');
-  same(walk(drawerBody()).find(n => n.className === 'hint slot-unit')?.textContent,
-    '单位：条/时', '切换弹幕后同步热图单位');
   const content = textOf(drawerBody());
   for (const part of ['周一 22:00–24:00', '100.00', '条/时', '3 场有效样本']) {
     if (!content.includes(part)) throw new Error('切换弹幕后缺少 ' + part);
@@ -592,6 +616,91 @@ await ask('离开开播时段后迟到的请求不覆盖场次页', async () => 
   same(textOf(drawerBody()), previous, '迟到响应不改场次页');
   if (drawerBody().firstChild !== previousCard) throw new Error('迟到响应重建了场次页');
   pendingSlots = null;
+});
+
+// 入口必须与统计口径同数同范围，跨范围起点的重叠场次不能混入；清除后回到全部归档。
+dashboardFixtures = true;
+page.leave();
+await ask('总览归档入口按范围计数并可清除筛选', async () => {
+  const counts = [];
+  for (const days of [30, 360]) {
+    location.hash = model.detailHash(PLATFORM, UID, null, 'days=' + days);
+    await page.loadStreamers();
+    const expected = days === 30 ? 2 : 4;
+    const link = walk(node('sd-body')).find(n => n.tagName === 'a' && /查看 .* 场归档/.test(n.textContent));
+    same(link?.textContent, '查看 ' + expected + ' 场归档', days + '天入口');
+    same(textOf(find('sd-scope')).includes('归档 ' + expected + ' 场'), true, '入口与统计口径同数');
+    const state = model.parseStreamersHash(link.href);
+    same([Number(state.from), Number(state.to), state.source], [rangeStart(days), cutoff, 'dashboard'], '范围与来源');
+    counts.push(expected);
+    location.hash = link.href; await page.loadStreamers();
+    same(walk(drawerBody()).filter(n => n.className === 'sd-session-row').length, expected, '抽屉场数');
+    same(textOf(drawerBody()).includes('筛选来源：总览归档 · ' + expected + ' 个场次 · 与总览使用同一组场次'), true, '来源说明');
+    const clear = walk(drawerBody()).find(n => n.textContent === '清除筛选');
+    same(Boolean(clear), true, '有清除筛选');
+    location.hash = clear.href; await page.loadStreamers();
+    same(walk(drawerBody()).filter(n => n.className === 'sd-session-row').length, 4, '清除后全部归档');
+    same(textOf(drawerBody()).includes('筛选来源'), false, '清除后没有来源');
+  }
+  same(counts[0] !== counts[1], true, '不同范围的归档数不同');
+});
+
+// 接口 label 故意保留整周期；显示必须使用已截短的 start/end，且链接与整行选择同一期。
+for (const [period, start, end, label, expected] of [
+  ['day', '2026-10-15', '2026-10-16', '2026-10-15', '10/15'],
+  ['week', '2026-10-12', '2026-10-19', '2026-10-12 ~ 10-18', '10/12–10/18'],
+  ['week', '2026-09-17', '2026-09-21', '2026-09-14 ~ 09-20', '09/17–09/20'],
+  ['month', '2026-09-17', '2026-10-01', '2026-09', '09/17–09/30'],
+  ['month', '2026-10-01', '2026-10-16T08:40', '2026-10', '10/01–10/16'],
+]) await ask('趋势周期 ' + period + ' ' + expected + ' 从起止推导并链接', async () => {
+  const at = date => Date.parse(date + (date.includes('T') ? ':00' : 'T06:00:00') + '+08:00');
+  trendBuckets = [{start: at(start), end: at(end), label, sessions: 2, durationSeconds: 7200, revenue: 42, starts: [STARTS[0]]}];
+  location.hash = model.detailHash(PLATFORM, UID, 'trend', 'period=' + period);
+  await page.loadStreamers();
+  const table = walk(drawerBody()).find(n => n.className === 'sd-trend-table');
+  const row = walk(table).find(n => n.tagName === 'tbody')?.children[0];
+  same(textOf(row?.children[0]).trim(), expected, period + '周期文字');
+  const link = walk(row.children[0]).find(n => n.tagName === 'a');
+  same(Boolean(link), true, '周期有原生链接');
+  const state = model.parseStreamersHash(link.href);
+  same([Number(state.from), Number(state.to), state.source, state.starts], [at(start), at(end), 'trend', String(STARTS[0])], '周期链接范围与场次');
+  await press(row);
+  same(location.hash, link.href, '整行和文字链接相同');
+});
+
+// 缺少任一边界时不能编造历史起点或截止时刻。
+await ask('可用历史只显示真实起止', async () => {
+  historyStart = null; await overview();
+  same(textOf(node('sd-body')).includes('可用历史：'), false, '无归档不显示历史');
+  historyStart = Date.parse('2026-08-01T10:00:00+08:00'); await overview();
+  same(textOf(node('sd-body')).includes('可用历史：2026/08/01 10:00 — 2026/10/16 08:40 · Asia/Shanghai'), true, '真实历史范围');
+  same(textOf(node('sd-body')).includes('统计日 06:00–次日06:00 · Asia/Shanghai'), true, '统计日说明');
+  const saved = cutoff;
+  try {
+    cutoff = null; await overview();
+    same(textOf(node('sd-body')).includes('可用历史：'), false, '缺截止时刻不显示历史');
+  } finally { cutoff = saved; }
+});
+
+// 地址持久化必须在勾选和整页重新载入两头都成立。
+await ask('隐藏未播写入地址且重新载入恢复', async () => {
+  await overview();
+  const checkbox = () => walk(find('sd-trend-content')).find(n => n.type === 'checkbox');
+  checkbox().checked = true; await checkbox().fire('change');
+  same(model.parseStreamersHash(location.hash).hideOff, '1', '勾选后地址');
+  page.leave(); await page.loadStreamers();
+  same(checkbox().checked, true, '重新载入仍勾选');
+  checkbox().checked = false; await checkbox().fire('change');
+  same(model.parseStreamersHash(location.hash).hideOff, undefined, '取消后移除参数');
+  page.leave(); await page.loadStreamers();
+  same(checkbox().checked, false, '重新载入保持取消');
+});
+
+// 粉丝图实际读数必须带人数单位。
+await ask('粉丝图读数带人数单位', async () => {
+  location.hash = model.detailHash(PLATFORM, UID, 'fans'); await page.loadStreamers();
+  const readout = walk(drawerBody()).find(n => n.className === 'sc-chart-readout');
+  same(readout?.textContent.includes('17,053 人'), true, '粉丝读数');
 });
 
 page?.leave();

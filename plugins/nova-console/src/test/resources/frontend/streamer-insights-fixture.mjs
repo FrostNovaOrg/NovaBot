@@ -675,7 +675,7 @@ await check('趋势周期分页保留地址且空周期不可下钻', async () =
   assert.deepEqual([state.period, state.page, state.metric, state.mode, state.days], ['month', 1, 'messages', 'hourly', 180]);
   assert.ok(requests.some(url => url.endsWith('/trend?period=month&days=180')));
   const before = location.hash;
-  const empty = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.textContent === 'week 2');
+  const empty = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td' && n.children[1]?.textContent === '0');
   assert.ok(empty); await empty.fire('click'); await empty.fire('keydown', {key: 'Enter'});
   assert.equal(location.hash, before, '空周期不能打开场次');
   assert.notEqual(empty.attrs.role, 'link');
@@ -684,7 +684,7 @@ await check('趋势周期分页保留地址且空周期不可下钻', async () =
 await check('空周期明细行不打开场次抽屉', async () => {
   await load(base + '?panel=trend&period=week');
   const before = location.hash;
-  const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.textContent === 'week 2');
+  const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td' && n.children[1]?.textContent === '0');
   assert.ok(row); await row.fire('click'); await row.fire('keydown', {key: 'Enter'});
   assert.equal(location.hash, before, '空周期行不能打开场次');
   assert.notEqual(row.attrs.role, 'link');
@@ -694,9 +694,11 @@ await check('周期明细逐桶显示场次时长和指标且每页十条', asyn
   await load(base + '?panel=trend&period=week');
   const rows = flatten(drawer()).filter(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
   assert.equal(rows.length, 10, '每页应为十条');
+  const labels = ['10/11–10/18', '10/04–10/11', '09/27–10/04', '09/20–09/27', '09/13–09/20',
+    '09/06–09/13', '08/30–09/06', '08/23–08/30', '08/16–08/23', '08/09–08/16'];
   for (const [i, row] of rows.entries()) {
     const bucket = trendBuckets.at(-1 - i);
-    assert.equal(row.children[0].textContent, bucket.label);
+    assert.equal(textOf(row.children[0]).trim(), labels[i]);
     assert.equal(row.children[1].textContent, model.fmtMetric(bucket.sessions), '明细场次须来自本桶');
     assert.equal(row.children[2].textContent, model.fmtDuration(bucket.durationSeconds), '明细时长须来自本桶');
     assert.equal(row.children[3].textContent, '100.00 元', '明细指标须来自本桶');
@@ -711,15 +713,16 @@ await check('趋势收藏恢复隐藏设置并可取消', async () => {
   input.checked = false; await input.fire('change');
   assert.equal(new URLSearchParams(location.hash.split('?')[1]).has('hideOff'), false);
 });
-// 非趋势抽屉不能带入趋势选择，默认趋势选项也不应污染地址。
-await check('名单和关闭后的地址不带趋势参数且默认值省略', async () => {
+// 周期与指标仅属于趋势；关闭趋势后总览仍保留隐藏设置，默认值省略。
+await check('名单省略趋势参数且关闭趋势保留隐藏设置', async () => {
   await load(base + '?panel=trend&period=day&metric=follows&mode=hourly&hideOff=1');
   const audience = flatten(nodes.get('sd-period-audience')).find(n => n.tagName === 'a');
   for (const key of ['period', 'metric', 'mode', 'hideOff'])
     assert.equal(new URLSearchParams(audience.href.split('?')[1]).has(key), false, '名单链接不得携带' + key);
   await flatten(drawer()).find(n => n.className.includes('sc-drawer-close')).fire('click');
-  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+  for (const key of ['period', 'metric', 'mode'])
     assert.equal(new URLSearchParams(location.hash.split('?')[1]).has(key), false);
+  assert.equal(model.parseStreamersHash(location.hash).hideOff, '1', '关闭后保留全页隐藏设置');
   await load(base);
   const select = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
   select.value = 'revenue'; await select.fire('change');
