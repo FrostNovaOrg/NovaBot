@@ -648,7 +648,31 @@ export function sessionCoverageText(item) {
   return '时长 ' + durationCoverage(item) + ' · ' + (words[item.listQuality] || '名单完整性未知');
 }
 
+export function monitoringCoverage(monitoring) {
+  if (monitoring?.recording !== true) return '未知';
+  const elapsed = monitoring.elapsedSeconds, watched = monitoring.watchedSeconds;
+  if (!Number.isFinite(elapsed) || elapsed <= 0 || !Number.isFinite(watched) || watched < 0) return '未知';
+  return durationCoverage({durationSeconds: Math.round(elapsed * 1000),
+    effectiveSeconds: Math.round(Math.min(watched, elapsed) * 1000)});
+}
+
+export function monitoringDayText(bucket) {
+  const coverage = monitoringCoverage(bucket.monitoring);
+  const status = {recorded: '有直播', off: '确认没播', unknown: '说不准'}[bucket.status] || '说不准';
+  return '监测' + (coverage === '未知' ? coverage : ' ' + coverage) + ' · ' + status;
+}
+
+export function monitoringPeriodText(monitoring, name) {
+  if (monitoring?.recording !== true) return name + '：监测未知（本机没有监看记录）';
+  const observable = monitoring.observableDays == null ? '未知' : monitoring.observableDays.toFixed(1);
+  const gap = Math.max(0, Math.round((monitoring.elapsedSeconds - monitoring.watchedSeconds) * 1000) / 1000);
+  return name + '：' + observable + ' / ' + monitoring.rangeDays + ' 天可观察 · 监测覆盖 '
+    + monitoringCoverage(monitoring) + ' · 监测缺口 ' + (gap < 60 ? gap + '秒' : fmtDuration(gap));
+}
+
 export function metricRecorded(data, key) {
+  if (['durationSeconds', 'sessions', 'revenue', 'messages', 'follows', 'revenuePerHour', 'messagesPerHour',
+    'audience', 'interactionAudience'].includes(key) && monitoringCoverage(data.monitoring) !== '100%') return true;
   if (['audience', 'interactionAudience'].includes(key))
     return data.sessions > 0 && data.coverage?.complete !== data.sessions;
   return ['revenue', 'messages', 'follows', 'revenuePerHour', 'messagesPerHour'].includes(key)

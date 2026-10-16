@@ -13,6 +13,8 @@ import org.frostnova.nova.core.analytics.StreamerAudience;
 import org.frostnova.nova.core.analytics.StreamerStartAreas;
 import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.analytics.StreamerCalendar;
+import org.frostnova.nova.core.analytics.StreamerMonitoring;
+import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -285,7 +287,15 @@ public class StreamerController {
         var comparison = new StreamerInsights().compareRecent(sessions, sampled, Integer.parseInt(days),
                 Clock.fixed(range.to(), clock.getZone()), rules);
         JSONObject insights = JSON.parseObject(JSON.toJSONString(comparison.current(), JSONWriter.Feature.WriteNulls));
-        insights.put("previous", comparison.previous());
+        long now = range.to().toEpochMilli();
+        var watched = liveDataService.monitoringIntervals(platform, uid, now);
+        var monitoring = new StreamerMonitoring(liveDataService.isMonitoringRecording(), watched, now);
+        Long proof = calendarResult(platform, uid, sessions, watched, Integer.parseInt(days),
+                Clock.fixed(range.to(), clock.getZone())).provableFrom();
+        insights.put("monitoring", monitoring.period(comparison.current().from(), comparison.current().to(), proof, Integer.parseInt(days)));
+        JSONObject previous = JSON.parseObject(JSON.toJSONString(comparison.previous(), JSONWriter.Feature.WriteNulls));
+        previous.put("monitoring", monitoring.period(comparison.previous().from(), comparison.previous().to(), proof, Integer.parseInt(days)));
+        insights.put("previous", previous);
         insights.put("comparisons", comparison.comparisons());
         insights.put("comparisonNote", comparison.comparisonNote());
         result.put("insights", insights);
@@ -356,9 +366,19 @@ public class StreamerController {
     public ResponseEntity<JSONObject> calendar(@PathVariable String platform, @PathVariable Long uid,
                                                @RequestParam(defaultValue = "30") String days) {
         if (!validDays(days)) return invalidRange();
-        var sessions = new ArrayList<>(sessionsOf(platform, uid));
+        var sessions = sessionsOf(platform, uid);
         if (!knownStreamer(platform, uid, sessions)) return missingStreamer();
-        long now = clock.millis();
+        var queryClock = Clock.fixed(clock.instant(), clock.getZone());
+        var calendar = calendarResult(platform, uid, sessions,
+                liveDataService.monitoringIntervals(platform, uid, queryClock.millis()), Integer.parseInt(days), queryClock);
+        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
+                "calendar", JSON.parseObject(JSON.toJSONString(calendar, JSONWriter.Feature.WriteNulls))));
+    }
+
+    private StreamerCalendar.Result calendarResult(String platform, Long uid, List<LiveSession> archived,
+                                                    List<LiveGap> watched, int days, Clock queryClock) {
+        var sessions = new ArrayList<>(archived);
+        long now = queryClock.millis();
         boolean living = roster(loadedUsers()).stream()
                 .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()) && item.enabled())
                 && liveDataService.getLiveStatus(platform, uid).orElse(false);
@@ -370,9 +390,9 @@ public class StreamerController {
         ongoingStart.ifPresent(start -> sessions.add(new LiveSession(platform, uid, null, null, start, now,
                 (now - start) / 1000, Map.of(), Map.of())));
         var calendar = new StreamerCalendar().calculate(sessions,
-                liveDataService.monitoringIntervals(platform, uid, now),
+                watched,
                 liveDataService.downtimeIntervals(0, now),
-                liveDataService.roomOutageIntervals(platform, uid, 0, now), Integer.parseInt(days), clock);
+                liveDataService.roomOutageIntervals(platform, uid, 0, now), days, queryClock);
         if (living && ongoingStart.isEmpty()) {
             // 在播却无法定位本场时，最近归档之后缺少确认没播的依据。已归档的已播证据照留。
             calendar = new StreamerCalendar.Result(calendar.provableFrom(), calendar.items().stream()
@@ -381,8 +401,7 @@ public class StreamerController {
                                     day.current(), "unknown", day.effectiveSeconds(), day.gapSeconds(), day.starts())
                             : day).toList());
         }
-        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
-                "calendar", JSON.parseObject(JSON.toJSONString(calendar, JSONWriter.Feature.WriteNulls))));
+        return calendar;
     }
 
     @GetMapping("/{platform}/{uid}/fans")
@@ -465,6 +484,20 @@ public class StreamerController {
         var items = LiveAnalyticsJson.toJson(buckets);
         for (int i = 0; i < items.size(); i++) {
             items.getJSONObject(i).putAll(JSON.parseObject(JSON.toJSONString(summaries.get(i), JSONWriter.Feature.WriteNulls)));
+        }
+        if ("day".equals(period)) {
+            long now = range.to().toEpochMilli();
+            var watched = liveDataService.monitoringIntervals(platform, uid, now);
+            var monitoring = new StreamerMonitoring(liveDataService.isMonitoringRecording(), watched, now);
+            var calendar = calendarResult(platform, uid, sessions, watched, Integer.parseInt(days),
+                    Clock.fixed(range.to(), clock.getZone()));
+            var statuses = new LinkedHashMap<String, String>();
+            calendar.items().forEach(day -> statuses.put(day.date(), day.status()));
+            for (int i = 0; i < items.size(); i++) {
+                var item = items.getJSONObject(i);
+                item.put("monitoring", monitoring.evidence(item.getLongValue("start"), item.getLongValue("end")));
+                item.put("status", statuses.get(StatisticsDay.dateOf(Instant.ofEpochMilli(item.getLongValue("start"))).toString()));
+            }
         }
         return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days), "trend",
                 JSONObject.of("period", period, "buckets", items,

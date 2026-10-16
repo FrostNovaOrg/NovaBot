@@ -18,6 +18,7 @@ import {$, api, CONSOLE, el, esc, request, say} from './core.js';
 import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis, createAudienceRing, openDrawer, releaseComponents} from './streamers-components.js';
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
+  monitoringDayText, monitoringPeriodText,
   detailHash, fmtDuration, fmtMetric, fmtTime,
   gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle,
@@ -1255,6 +1256,7 @@ function renderScope(data = {}) {
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
     coverageText(data.coverage),
     ...(data.capture ? ['归档采集覆盖 ' + durationCoverage(data) + ' · 缺口合计 ' + fmtMetric(data.capture.gapSeconds) + '秒 · 有缺口 ' + fmtMetric(data.capture.gapSessions) + ' 场'] : []),
+    ...(data.monitoring ? [monitoringPeriodText(data.monitoring, '本期'), monitoringPeriodText(data.previous?.monitoring, '上期')] : []),
   ];
   if (!comparisonExplanation(data).count && data.comparisonNote) lines.push(data.comparisonNote);
   for (const text of lines.filter(Boolean)) { const line = el('p', 'hint'); line.textContent = text; scope.appendChild(line); }
@@ -1613,6 +1615,10 @@ async function loadTrendDrawer(current) {
       }
       const coverage = el('td', 'sd-trend-coverage');
       coverage.textContent = bucket.sessions > 0 ? '采集 ' + durationCoverage(bucket) : '采集暂无数据';
+      if (period === 'day') {
+        const monitoring = el('span', 'sd-cell-note'); monitoring.textContent = monitoringDayText(bucket);
+        coverage.appendChild(monitoring);
+      }
       const list = el('span', 'sd-cell-note');
       list.textContent = '名单完整 ' + fmtMetric(bucket.coverage?.complete ?? 0) + '/' + fmtMetric(bucket.sessions) + ' 场';
       coverage.appendChild(list); row.appendChild(coverage);

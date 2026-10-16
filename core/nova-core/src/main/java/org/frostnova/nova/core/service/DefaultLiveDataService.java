@@ -596,8 +596,13 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     @Override
+    public boolean isMonitoringRecording() {
+        return properties.getLive().isSaveLiveData() && !diskSuspended;
+    }
+
+    @Override
     public List<LiveGap> monitoringIntervals(String platform, Long uid, long now) {
-        if (!properties.getLive().isSaveLiveData() || diskSuspended) return List.of();
+        if (!isMonitoringRecording()) return List.of();
         synchronized (metricLock) {
             var rows = roomHistory(KEY_MONITORING, platform, uid);
             var active = activeMonitoring.get(platform + "#" + uid);

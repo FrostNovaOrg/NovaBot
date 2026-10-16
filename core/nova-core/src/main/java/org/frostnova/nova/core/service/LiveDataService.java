@@ -20,6 +20,9 @@ public interface LiveDataService {
     /** 已持久化的实际监看证据；仅本进程仍连接的区间可延伸至查询时刻。 */
     default List<LiveGap> monitoringIntervals(String platform, Long uid, long now) { return List.of(); }
 
+    /** 是否正在保留监看记录；空区间本身不能区分未记录与零覆盖。 */
+    default boolean isMonitoringRecording() { return false; }
+
     /**
      * 获取直播间状态
      * @param platform 直播平台
