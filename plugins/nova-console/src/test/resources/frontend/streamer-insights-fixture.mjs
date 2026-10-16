@@ -74,9 +74,11 @@ let sessionScenario = null;
 let recentScenario = null;
 const revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
-  start: 1791736800000 - i * 604800000, end: 1792341600000 - i * 604800000,
+  start: Date.parse('2026-10-12T06:00:00+08:00') - i * 604800000,
+  end: Date.parse('2026-10-19T06:00:00+08:00') - i * 604800000,
   label: 'week ' + i, sessions: i === 2 ? 0 : 2, durationSeconds: i === 1 ? 0 : 7200,
-  revenue: 100, messages: 20, audience: 1, follows: 6, starts: i === 2 ? [] : [1791736800100 - i * 604800000],
+  revenue: 100, messages: 20, audience: 1, follows: 6,
+  starts: i === 2 ? [] : [Date.parse('2026-10-12T06:00:00+08:00') + 100 - i * 604800000],
 })).reverse();
 const audienceResponse = {success: true, audience: {group: 'all', sort: 'attendance',
   counts: {all: 45, first: 20, returning: 25, interaction: 12}, coverage: {complete: 2},
@@ -182,18 +184,24 @@ await check('场次缺名单显示未知到场人数', async () => {
   assert.equal(sessionMetric(sessionRows().find(n => n.href.endsWith('/1792101600200')), '到场人数'), '0 人', '已知空名单仍显示0人');
   sessionScenario = null;
 });
-// 未采集收入不是收入为零；仅记录礼物时仍应显示已知流水。
-await check('场次流水区分部分收入与完全未记录', async () => {
+// 抓住有指标快照却因没有收入键被写成未知的情况；没有快照才写—。
+await check('场次流水区分有快照零收入与没有快照', async () => {
   sessionScenario = [
     {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {gift_value: 12.5}},
     {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {danmu_count: 2}},
     {platform: 'sample', uid: 1, startTime: 1792101600300, metrics: {gift_value: 0}},
+    {platform: 'sample', uid: 1, startTime: 1792101600400, metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600500, metrics: null},
+    {platform: 'sample', uid: 1, startTime: 1792101600600},
   ];
   try {
     await load(base + '?panel=sessions');
     assert.equal(sessionMetric(sessionRows()[0], '流水'), '12.50 元', '仅有礼物收入也须显示流水');
-    assert.equal(sessionMetric(sessionRows()[1], '流水'), '—', '没有收入键须显示—');
+    assert.equal(sessionMetric(sessionRows()[1], '流水'), '0.00 元', '有快照没收到礼物须显示零');
     assert.equal(sessionMetric(sessionRows()[2], '流水'), '0.00 元', '已知零收入须显示0.00元');
+    assert.equal(sessionMetric(sessionRows()[3], '流水'), '0.00 元', '空指标对象仍按零求和');
+    assert.equal(sessionMetric(sessionRows()[4], '流水'), '—', 'null快照须显示—');
+    assert.equal(sessionMetric(sessionRows()[5], '流水'), '—', '缺少快照须显示—');
   } finally { sessionScenario = null; }
 });
 // 同笔收入的消耗与盈亏不能再次加进最近场次流水。
@@ -205,6 +213,22 @@ await check('最近场次流水只合计收入键', async () => {
     await load(base);
     const row = flatten(nodes.get('sd-recent')).find(n => n.className === 'sd-recent-row');
     assert.match(textOf(row), /流水 62\.50 元/, '流水不得重复计入观众消耗与盲盒盈亏：' + textOf(row));
+  } finally { recentScenario = null; }
+});
+// 抓住最近归档与场次卡采用不同零收入规则的情况。
+await check('最近归档有快照没收入键显示零，没有快照显示未知', async () => {
+  recentScenario = [
+    {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {danmu_count: 2}},
+    {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {}},
+    {platform: 'sample', uid: 1, startTime: 1792101600300},
+  ];
+  try {
+    page.leave();
+    await load(base);
+    const rows = flatten(nodes.get('sd-recent')).filter(n => n.className === 'sd-recent-row');
+    assert.match(textOf(rows[0]), /流水 0\.00 元/, '没收到礼物须显示零');
+    assert.match(textOf(rows[1]), /流水 0\.00 元/, '空快照按零求和');
+    assert.match(textOf(rows[2]), /流水 —/, '没有快照须显示—');
   } finally { recentScenario = null; }
 });
 // 提示必须落在中断那场卡上，正常场次不能混入中断原因。
@@ -675,7 +699,7 @@ await check('趋势周期分页保留地址且空周期不可下钻', async () =
   assert.deepEqual([state.period, state.page, state.metric, state.mode, state.days], ['month', 1, 'messages', 'hourly', 180]);
   assert.ok(requests.some(url => url.endsWith('/trend?period=month&days=180')));
   const before = location.hash;
-  const empty = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.textContent === 'week 2');
+  const empty = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td' && n.children[1]?.textContent === '0');
   assert.ok(empty); await empty.fire('click'); await empty.fire('keydown', {key: 'Enter'});
   assert.equal(location.hash, before, '空周期不能打开场次');
   assert.notEqual(empty.attrs.role, 'link');
@@ -684,7 +708,7 @@ await check('趋势周期分页保留地址且空周期不可下钻', async () =
 await check('空周期明细行不打开场次抽屉', async () => {
   await load(base + '?panel=trend&period=week');
   const before = location.hash;
-  const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.textContent === 'week 2');
+  const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td' && n.children[1]?.textContent === '0');
   assert.ok(row); await row.fire('click'); await row.fire('keydown', {key: 'Enter'});
   assert.equal(location.hash, before, '空周期行不能打开场次');
   assert.notEqual(row.attrs.role, 'link');
@@ -694,14 +718,32 @@ await check('周期明细逐桶显示场次时长和指标且每页十条', asyn
   await load(base + '?panel=trend&period=week');
   const rows = flatten(drawer()).filter(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
   assert.equal(rows.length, 10, '每页应为十条');
+  const labels = ['10/12–10/18', '10/05–10/11', '09/28–10/04', '09/21–09/27', '09/14–09/20',
+    '09/07–09/13', '08/31–09/06', '08/24–08/30', '08/17–08/23', '08/10–08/16'];
   for (const [i, row] of rows.entries()) {
     const bucket = trendBuckets.at(-1 - i);
-    assert.equal(row.children[0].textContent, bucket.label);
+    assert.equal(textOf(row.children[0]).trim(), labels[i]);
     assert.equal(row.children[1].textContent, model.fmtMetric(bucket.sessions), '明细场次须来自本桶');
     assert.equal(row.children[2].textContent, model.fmtDuration(bucket.durationSeconds), '明细时长须来自本桶');
     assert.equal(row.children[3].textContent, '100.00 元', '明细指标须来自本桶');
   }
   assert.match(textOf(drawer()), /共 25 条 · 第 1\/3 页/);
+});
+// 起点在06点之前也与图使用同一自然日；逐根读取图上标签，避免夹具自设另一套规则。
+await check('周期表与图上同一根桶的标签一致', async () => {
+  const older = trendBuckets.splice(0, trendBuckets.length - 1);
+  const bucket = trendBuckets.at(-1), saved = bucket.start;
+  try {
+    for (const period of ['week', 'month']) {
+      for (const start of [saved, Date.parse('2026-10-12T00:40:00+08:00')]) {
+        bucket.start = start;
+        page.leave(); await load(base + '?panel=trend&period=' + period);
+        const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
+        const chartLabels = flatten(drawer()).find(n => n.className === 'sc-chart-labels');
+        assert.equal(textOf(row.children[0]).trim(), chartLabels.children.at(-1).textContent, '同一桶的表和图标签');
+      }
+    }
+  } finally { bucket.start = saved; trendBuckets.unshift(...older); }
 });
 // 收藏链接须恢复隐藏选项，切换后也要写回地址。
 await check('趋势收藏恢复隐藏设置并可取消', async () => {
@@ -711,15 +753,18 @@ await check('趋势收藏恢复隐藏设置并可取消', async () => {
   input.checked = false; await input.fire('change');
   assert.equal(new URLSearchParams(location.hash.split('?')[1]).has('hideOff'), false);
 });
-// 非趋势抽屉不能带入趋势选择，默认趋势选项也不应污染地址。
-await check('名单和关闭后的地址不带趋势参数且默认值省略', async () => {
+// 周期与指标仅属于趋势；关闭趋势后总览仍保留隐藏设置，默认值省略。
+await check('名单省略趋势指标参数并保留全页隐藏设置', async () => {
+  page.leave();
   await load(base + '?panel=trend&period=day&metric=follows&mode=hourly&hideOff=1');
   const audience = flatten(nodes.get('sd-period-audience')).find(n => n.tagName === 'a');
-  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+  for (const key of ['period', 'metric', 'mode'])
     assert.equal(new URLSearchParams(audience.href.split('?')[1]).has(key), false, '名单链接不得携带' + key);
+  assert.equal(model.parseStreamersHash(audience.href).hideOff, '1', '名单入口保留全页隐藏设置');
   await flatten(drawer()).find(n => n.className.includes('sc-drawer-close')).fire('click');
-  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+  for (const key of ['period', 'metric', 'mode'])
     assert.equal(new URLSearchParams(location.hash.split('?')[1]).has(key), false);
+  assert.equal(model.parseStreamersHash(location.hash).hideOff, '1', '关闭后保留全页隐藏设置');
   await load(base);
   const select = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
   select.value = 'revenue'; await select.fire('change');

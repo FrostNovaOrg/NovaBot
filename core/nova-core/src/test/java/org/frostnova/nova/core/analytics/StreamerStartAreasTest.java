@@ -76,22 +76,51 @@ class StreamerStartAreasTest {
                 "被换过去的分区不该单独成行");
     }
 
-    @Test @DisplayName("全是没收入记录的场次时流水与每小时流水未知，不写零")
+    @Test @DisplayName("没有指标快照的分区流水与每小时流水未知，不写零")
     void unknownRevenue() {
         var rows = calculate(List.of(
-                session("2026-10-05T10:00", 3600, Map.of("chat", 100d), "音乐 · 翻唱"),
-                session("2026-10-06T10:00", 3600, Map.of("chat", 80d), "音乐 · 翻唱")));
+                session("2026-10-05T10:00", 3600, null, "音乐 · 翻唱"),
+                session("2026-10-06T10:00", 3600, Map.of(), "音乐 · 翻唱")));
         assertEquals(1, rows.size());
-        assertNull(rows.get(0).revenue(), "一个收入键都没记到的场次不得当零流水");
+        assertNull(rows.get(0).revenue(), "没有指标快照的场次不得当零流水");
         assertNull(rows.get(0).revenuePerHour(), "流水未知时每小时流水也是未知");
         var zero = calculate(List.of(
                 session("2026-10-05T10:00", 3600, Map.of("gift", 0d), "音乐 · 翻唱")));
         assertEquals(0d, zero.get(0).revenue(), "记到的零元仍是数据");
         assertEquals(0d, zero.get(0).revenuePerHour());
-        var noHours = calculate(List.of(
+        var overlap = calculate(List.of(
                 session("2026-10-05T10:00", 1800, 900, 900, Map.of("gift", 50d), "音乐 · 翻唱")));
+        assertEquals(900, area(overlap, "音乐 · 翻唱").effectiveSeconds(), "重叠缺口只扣一次");
+        assertEquals(200d, area(overlap, "音乐 · 翻唱").revenuePerHour());
+        var noHours = calculate(List.of(
+                session("2026-10-05T10:00", 900, 900, 900, Map.of("gift", 50d), "音乐 · 翻唱")));
         assertEquals(50d, area(noHours, "音乐 · 翻唱").revenue());
         assertNull(area(noHours, "音乐 · 翻唱").revenuePerHour(), "有效时长为零时不得给每小时流水");
+    }
+
+    // 抓住有快照却因没收到收入事件被误写为未知的情况，缺少收入键按零算。
+    @Test @DisplayName("有指标快照但没有收入键时流水为零")
+    void snapshotWithoutRevenueKeys() {
+        var rows = calculate(List.of(
+                session("2026-10-05T10:00", 3600, Map.of("chat", 100d), "音乐 · 翻唱")));
+        assertEquals(0d, rows.get(0).revenue(), "有快照但没收到礼物须为零流水");
+        assertEquals(0d, rows.get(0).revenuePerHour());
+    }
+
+    // 抓住未知场次的时长混进分母、把已知场次每小时流水拉低的情况。
+    @Test @DisplayName("未知流水的场次保留时长与下钻但不进每小时流水分母")
+    void knownRevenueHoursOnly() {
+        var rows = calculate(List.of(
+                session("2026-10-05T10:00", 3600, Map.of("gift", 80d), "音乐 · 翻唱"),
+                session("2026-10-06T10:00", 3600, Map.of("chat", 2d), "音乐 · 翻唱"),
+                session("2026-10-07T10:00", 7200, null, "音乐 · 翻唱"),
+                session("2026-10-08T10:00", 3600, Map.of(), "音乐 · 翻唱")));
+        var row = rows.get(0);
+        assertEquals(40d, row.revenuePerHour(), "只除以有指标快照的两小时");
+        assertEquals(80d, row.revenue());
+        assertEquals(18000, row.effectiveSeconds(), "有效时长列仍展示所有场次");
+        assertEquals(4, row.sessions());
+        assertEquals(4, row.starts().size());
     }
 
     @Test @DisplayName("与开播时段热图数的是同一组场次")
@@ -132,7 +161,7 @@ class StreamerStartAreasTest {
         var rows = calculate(List.of(
                 session("2026-10-05T10:00", 3600, Map.of("gift", 10d), "低效"),
                 session("2026-10-06T10:00", 3600, Map.of("gift", 100d), "高效"),
-                session("2026-10-07T10:00", 3600, Map.of("chat", 5d), "无流水")));
+                session("2026-10-07T10:00", 3600, null, "无流水")));
         assertEquals(List.of("高效", "低效", "无流水"),
                 rows.stream().map(StreamerStartAreas.Area::area).collect(Collectors.toList()),
                 "照每小时流水降序，流水未知的排最后");

@@ -226,6 +226,32 @@ await ask('② 分区链接带本区场次，来源写分区名', async () => {
   same(source?.textContent, '筛选来源：分区对比 · ' + AREA_KNOWN + ' · 2 个场次', '来源行');
 });
 
+// 抓住其他来源误用地址里的分区名，覆盖日期说明的情况。
+await ask('③ 非分区来源不使用sourceArea', async () => {
+  location.hash = model.detailHash(PLATFORM, UID, 'overview',
+    'panel=sessions&source=calendar&sourceDay=2026-10-15&sourceArea=other&starts=' + STARTS_KNOWN.join(','));
+  await page.loadStreamers();
+  const source = walk(drawerBody()).find(n => String(n.textContent || '').startsWith('筛选来源'));
+  same(source?.textContent.includes('other'), false, '日历来源不得混入分区名');
+  same(source?.textContent.includes('2026/10/15'), true, '日历来源保留统计日');
+});
+
+// 抓住清除筛选后仍把旧分区名写进地址的情况。
+await ask('④ 清除分区筛选后地址没有sourceArea并保留hideOff', async () => {
+  location.hash = model.detailHash(PLATFORM, UID, 'overview',
+    'panel=sessions&source=area&sourceArea=other&hideOff=1&starts=' + STARTS_KNOWN.join(','));
+  await page.loadStreamers();
+  const clear = walk(drawerBody()).find(n => n.textContent === '清除筛选');
+  const params = new URLSearchParams(clear.href.split('?')[1]);
+  for (const key of ['sourceArea', 'source', 'starts', 'from', 'to']) {
+    same(params.has(key), false, '清除后地址不保留' + key);
+  }
+  same(params.get('hideOff'), '1', '清除筛选保留隐藏设置');
+  location.hash = clear.href;
+  await page.loadStreamers();
+  same(walk(drawerBody()).some(n => String(n.textContent || '').startsWith('筛选来源')), false, '清除后没有来源行');
+});
+
 page?.leave();
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

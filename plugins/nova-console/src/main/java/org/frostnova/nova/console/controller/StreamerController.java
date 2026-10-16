@@ -550,9 +550,9 @@ public class StreamerController {
         var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
                 .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         result.put("revenue", living && rules != null
-                && rules.revenueKeys().stream().anyMatch(name -> metrics.get(name) != null)
+                && metrics != null && !metrics.isEmpty() && !rules.revenueKeys().isEmpty()
                 ? rules.revenue(metrics) : null);
-        result.put("messages", living && rules != null && rules.messageKey() != null
+        result.put("messages", living && rules != null && rules.messageKey() != null && metrics != null
                 ? metrics.get(rules.messageKey()) : null);
 
         Set<String> requested = new LinkedHashSet<>();

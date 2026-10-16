@@ -36,16 +36,21 @@ public final class StreamerStartAreas {
         var areas = new ArrayList<Area>();
         for (var entry : byArea.entrySet()) {
             long effective = 0;
+            long knownRevenueSeconds = 0;
             Double revenue = null;
             var starts = new ArrayList<Long>();
             for (var session : entry.getValue()) {
-                effective += StreamerStartSlots.effectiveSeconds(session);
+                long seconds = StreamerStartSlots.effectiveSeconds(session);
+                effective += seconds;
                 Double amount = revenueOf(session, rules);
-                if (amount != null) revenue = revenue == null ? amount : revenue + amount;
+                if (amount != null) {
+                    revenue = revenue == null ? amount : revenue + amount;
+                    knownRevenueSeconds += seconds;
+                }
                 starts.add(session.startTime());
             }
             areas.add(new Area(entry.getKey(), entry.getValue().size(), effective, revenue,
-                    revenue == null || effective <= 0 ? null : revenue * 3600 / effective,
+                    revenue == null || knownRevenueSeconds <= 0 ? null : revenue * 3600 / knownRevenueSeconds,
                     List.copyOf(starts)));
         }
         // 照运营分析里分区表的排法：每小时流水高的在前，流水未知的沉底
@@ -66,16 +71,15 @@ public final class StreamerStartAreas {
     /**
      * 这一场按收入键合计的流水
      * <p>
-     * <b>一个收入键都没记到的场次是「不知道」不是 0。</b>写成 0 的话，没留下指标的那些场
-     * 会把这个分区的每小时流水拖低，而屏幕上分不出「没赚」和「没记」。
-     * 记到的零元则是数据，照零算。
+     * 未发生的收入指标按零求和；没有指标快照的场次仍未知，且不进每小时流水的分母。
      */
     private static Double revenueOf(LiveSession session, LiveMetricCatalog.Insights rules) {
         if (rules == null || rules.revenueKeys() == null || rules.revenueKeys().isEmpty()) return null;
-        Double total = null;
+        if (session.metrics() == null || session.metrics().isEmpty()) return null;
+        double total = 0;
         for (String key : rules.revenueKeys()) {
-            Double value = session.metrics() == null ? null : session.metrics().get(key);
-            if (value != null && Double.isFinite(value)) total = (total == null ? 0 : total) + value;
+            Double value = session.metrics().get(key);
+            if (value != null && Double.isFinite(value)) total += value;
         }
         return total;
     }

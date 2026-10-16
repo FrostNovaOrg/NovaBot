@@ -93,16 +93,28 @@ class StreamerStartSlotsTest {
         assertEquals(100d, c.sessionItems().get(1).revenue());
     }
 
-    @Test @DisplayName("有效时长扣除维护缺口与断线并截到零")
+    @Test @DisplayName("有效时长扣除两种缺口的大者并截到零")
     void effectiveDuration() {
         var items = group("2026-09-07T10:00", 2, 100);
         items.add(session("2026-09-21T10:00", 7200, 100, 1800, 1800));
         var c = cell(calculate(items), 1, 10);
-        assertEquals(10800, c.effectiveSeconds(), "缺口与断线不得计入有效直播时长");
-        assertEquals(100d, c.revenuePerHour());
+        assertEquals(12600, c.effectiveSeconds(), "缺口与断线重叠时只扣大者");
+        assertEquals(300d * 3600 / 12600, c.revenuePerHour());
         c = cell(calculate(Collections.nCopies(3, session("2026-09-07T10:00", 60, 0, 100, 100))), 1, 10);
         assertEquals(0, c.effectiveSeconds(), "有效时长不得为负");
         assertNull(c.revenuePerHour(), "零有效时长不得显示零效率");
+    }
+
+    // 抓住全重叠缺口被扣两遍、有效时长归零而丢失每小时读数的情况。
+    @Test @DisplayName("两种缺口全重叠时有效时长仍保留且热图与分区表一致")
+    void overlappingGaps() {
+        var items = Collections.nCopies(3, session("2026-09-07T10:00", 3600, 100, 1800, 1800));
+        var c = cell(calculate(items), 1, 10);
+        assertEquals(5400, c.effectiveSeconds(), "全重叠的缺口不得扣两遍");
+        assertEquals(200d, c.revenuePerHour());
+        var area = new StreamerStartAreas().calculate(items, FROM, TO, RULES).get(0);
+        assertEquals(c.effectiveSeconds(), area.effectiveSeconds());
+        assertEquals(c.revenuePerHour(), area.revenuePerHour());
     }
 
     @Test @DisplayName("九十和一百八十天分别按统计日筛选且排除终点")
