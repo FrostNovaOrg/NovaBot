@@ -54,10 +54,10 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 #sd-audience{min-width:0;max-width:100%;box-sizing:border-box}
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
-#sd-audience th,#sd-audience td{white-space:nowrap}
-#sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500}
+#sd-audience th,#sd-audience td{white-space:nowrap;height:auto}
+#sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500;text-decoration:none}
 #sd-audience td a,#sd-audience td a:visited{color:var(--accent)}
-.sd-area-table th a,.sd-area-table th a:visited{color:var(--accent)}
+.sd-area-table td a,.sd-area-table td a:visited{color:rgb(0,0,238);font-weight:400;text-decoration:none}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
 
@@ -97,11 +97,11 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-session-quality{text-align:right}.sd-session-quality .sd-cell-note{margin-top:3px}
 .sd-trend-coverage{white-space:nowrap;text-align:left}
 .sd-trend-table{overflow-x:auto;min-width:0;max-width:100%}.sd-trend-table table{min-width:480px}
-.sd-period-link,.sd-period-link:visited{color:#3877cf;text-decoration:none}.sd-period-link:hover{text-decoration:underline}
+.sd-period-link,.sd-period-link:visited{color:rgb(0,0,238);text-decoration:none}
 .sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
 .sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:13px}
 .sd-pagination>span{margin:0 auto 0 0;color:var(--dim)}
-.sd-pagination a{text-decoration:none}
+.sd-pagination a,.sd-pagination a:visited{color:rgb(0,0,238);text-decoration:none}
 .sd-interaction-bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
 .sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
@@ -123,6 +123,14 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:12px}.sd-recent-row:hover{color:var(--accent)}
 .sc-drawer table{width:100%;border-collapse:collapse}.sc-drawer th,.sc-drawer td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
 .sc-drawer .nv-card{background:var(--surface);padding:16px;border-radius:10px}
+.sc-drawer .nv-card h3{font-size:17px}
+.sc-drawer thead th{font-size:12px;font-weight:500;color:var(--dim)}
+.sc-drawer .sd-area-compare{border-radius:14px}
+.sd-session-filters .sd-clear-filter,.sd-session-filters .sd-clear-filter:visited{color:rgb(0,0,238);font-size:15px;text-decoration:underline}
+#sd-head .sh-nm{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#sd-head .sh-nm>.pill{flex-shrink:0}
+#sd-banner{padding:9px 13px;border:0;border-left:3px solid var(--accent);background:var(--soft);border-radius:var(--r-ctl);font-size:13px;color:var(--dim);margin:0 0 16px}
+#sd-trend .sc-chart-readout{font-size:12px}
 .sd-detail-link,.sd-detail-link:visited{color:var(--accent);font-size:12px;text-decoration:none;background:none;border:0;padding:4px 0}
 .sc-section-head>.sd-detail-link{flex-shrink:0;text-align:right}
 .sd-detail-link:hover{text-decoration:underline}
@@ -137,7 +145,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-history .hint{font-size:13px;color:var(--dim);margin:0 0 4px;line-height:1.6}
 #sd-insights .sc-kpis{gap:8px}
 #sd-insights .sc-kpi{padding:11px 12px;background:var(--ground)}
-#sd-insights .sc-kpi-value{font-size:21px;letter-spacing:-.6px;overflow-wrap:normal;word-break:keep-all;white-space:normal}
+#sd-insights .sc-kpi-value{font-size:21px;letter-spacing:-.6px;overflow-wrap:normal;word-break:keep-all;white-space:nowrap}
 .sd-trend-controls>.hint{margin:0}
 .sd-trend-controls select,.sd-slot-controls select,.sd-session-filters input{width:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--r-ctl,8px);background:var(--ground);color:var(--text);padding:7px 10px;font-size:14px;min-height:32px;box-sizing:border-box}
 .sd-trend-controls select,.sd-slot-controls select{appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23838391' stroke-width='1.5'/%3E%3C/svg%3E");background-position:right 10px center;background-repeat:no-repeat}
@@ -166,6 +174,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-session-filters label,.sd-slot-controls label{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
 .sd-session-list>h3{font-size:17px}
 .sd-session-row{display:block;padding:13px 0;color:var(--text);text-decoration:none}
+.sd-session-row+.sd-session-row{border-top:1px solid var(--line)}
 .sd-session-row:hover{background:var(--soft)}
 .sd-session-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sd-session-row-head{display:grid;grid-template-columns:155px minmax(0,1fr) 14px;gap:12px;align-items:baseline}
@@ -181,7 +190,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-audience-group strong{font-size:15px;color:var(--text)}
 .sd-audience-group[aria-current=page]{border-color:var(--accent);background:var(--soft)}
 #sd-audience-summary .sd-ring-link{font-size:11px;color:var(--accent)}
-#sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:#3877cf;text-decoration:none;font-size:13px}
+#sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:rgb(0,0,238);text-decoration:none;font-size:14px}
 .sd-scroll-hint{font-size:11px;color:var(--dim);margin:8px 0}
 .sd-slot-top a{background:var(--ground);text-align:left}
 .sd-slot-title{display:flex;align-items:center;gap:7px;font-size:12px}
@@ -196,7 +205,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-slot-heading{font-size:15px;margin:14px 0 4px}
 .sd-slot-method{font-size:12px;line-height:1.6;margin:4px 0}
 .sd-slot-scope{font-size:11px;margin:6px 0 12px}
-@media(max-width:560px){.sd-session-quality{text-align:left}.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:normal}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
+@media(max-width:560px){.sd-session-quality{text-align:left}.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:nowrap}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
 @media(min-width:1280px){#sd-insights-content>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.sd-columns{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:560px){.sd-slot-top{grid-template-columns:1fr}#sd-insights .sc-kpis,#sd-more .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-trend .sc-chart svg{height:180px}.sd-toolbar{gap:4px}.sd-toolbar .nv-pill{padding:5px 9px;white-space:nowrap}.sd-toolbar .hint{width:100%;margin:4px 0 0}}
@@ -263,6 +272,7 @@ export function refresh() {
 export function leave() {
   closeDetailDrawer();
   releaseComponents();
+  kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
   liveActive = false;
   viewGeneration++;
   stopLiveRefresh();
@@ -331,6 +341,7 @@ let reportUrl = '';
 export function syncStreamersView() {
   closeDetailDrawer();
   releaseComponents();
+  kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
   viewGeneration++;
   stopLiveRefresh();
   where = parseStreamersHash(location.hash);
@@ -713,24 +724,21 @@ function renderAudience(data, message) {
   }
   const card = el('div', 'nv-card hcard sd-audience-people'); host.appendChild(card);
   const title = el('h3'); title.textContent = '本期有效观众名单'; card.appendChild(title);
-  const intro = el('p', 'hint'); intro.textContent = '仅包含本期已有名单中记录到的身份；首次记录参照已有名单历史。'; card.appendChild(intro);
+  const groupNames = {all: '本期全部观众', first: '本期首次记录', returning: '历史回访', interaction: '本期互动观众'};
+  const intro = el('p', 'hint'); intro.textContent = '当前：' + (groupNames[data.group] || groupNames.all) + ' · 仅包含本期已有名单中记录到的身份；首次记录参照已有名单历史。'; card.appendChild(intro);
   const groups = el('div', 'sd-audience-groups');
   for (const [key] of audienceGroups(data.counts)) {
     const link = el('a', 'sd-audience-group');
     link.href = audienceHash({group: key, page: 1});
-    const name = el('span'); name.textContent = {all: '本期全部观众', first: '本期首次记录', returning: '历史回访', interaction: '本期互动观众'}[key];
+    const name = el('span'); name.textContent = groupNames[key];
     const count = el('strong'); count.textContent = data.counts?.[key] == null ? '—' : fmtMetric(data.counts[key]);
     link.append(name, count);
     if (key === data.group) link.setAttribute('aria-current', 'page');
     groups.appendChild(link);
   }
   card.appendChild(groups);
-  const note = el('p', 'hint');
-  note.textContent = coverageText(data.coverage);
-  card.appendChild(note);
-  const explanation = el('p', 'hint');
+  const explanation = el('p', 'sd-audience-note hint');
   explanation.textContent = '首次记录指已有记录中第一次出现，不一定是第一次观看。流水按礼物、醒目留言与大航海合计；到过的场次缺少逐人金额时显示「—」。';
-  card.appendChild(explanation);
   const scroll = el('div', 'audience-scroll');
   const table = el('table');
   const head = el('thead');
@@ -750,7 +758,7 @@ function renderAudience(data, message) {
   table.appendChild(head);
   const body = el('tbody');
   for (const person of data.items || []) {
-    const cells = audienceCells(person);
+    const cells = audienceCells(person, data);
     const row = el('tr');
     const name = el('td');
     const button = el('a', 'sd-person-link');
@@ -759,12 +767,11 @@ function renderAudience(data, message) {
     button.setAttribute('aria-expanded', 'false');
     name.appendChild(button);
     row.appendChild(name);
-    for (const key of ['attendance', 'recent', 'revenue', 'interaction']) {
+    for (const key of ['composition', 'attendance', 'recent', 'revenue', 'interaction']) {
       const cell = el('td', ['attendance', 'revenue'].includes(key) ? 'n' : '');
       cell.textContent = key === 'interaction' && person.interaction ? '已记录互动' : cells[key];
       if (key === 'recent') {
-        const first = el('small', 'hint');
-        first.style.display = 'block';
+        const first = el('span', 'sd-cell-note');
         first.textContent = cells.first;
         cell.appendChild(first);
       }
@@ -774,7 +781,7 @@ function renderAudience(data, message) {
     const expanded = el('tr');
     expanded.hidden = true;
     const visitCell = el('td');
-    visitCell.colSpan = 5;
+    visitCell.colSpan = AUDIENCE_COLUMNS.length;
     const visits = el('ul');
     for (const visit of person.visits || []) {
       const item = el('li');
@@ -810,12 +817,12 @@ function renderAudience(data, message) {
   pager.appendChild(text);
   for (const [page, label] of [[data.page - 1, '‹ 上一页'], [data.page + 1, '下一页 ›']]) {
     if (page < 1 || page > data.pages) continue;
-    const link = el('a', 'daystep');
+    const link = el('a');
     link.href = audienceHash({page});
     link.textContent = label;
     pager.appendChild(link);
   }
-  card.appendChild(pager);
+  card.append(pager, explanation);
 }
 
 let slotsMetric = 'revenue';
@@ -984,7 +991,7 @@ function renderAreaCompare(host) {
   const rows = slotsAreas || [];
   if (!rows.length) {
     const empty = el('p', 'hint');
-    empty.textContent = '所选范围无可用于分区对比的有效数值场次。';
+    empty.textContent = slotsMessage || '所选范围无可用于分区对比的有效数值场次。';
     card.appendChild(empty);
   } else {
     const table = el('table', 'sd-area-table');
@@ -1001,8 +1008,7 @@ function renderAreaCompare(host) {
     const tbody = el('tbody');
     for (const row of rows) {
       const tr = el('tr');
-      const name = el('th');
-      name.setAttribute('scope', 'row');
+      const name = el('td');
       const link = el('a');
       link.href = dashboardHash({panel: 'sessions', starts: (row.starts || []).join(','),
         source: 'area', sourceArea: row.area, from: slotsData?.from ?? null, to: slotsData?.to ?? null,
@@ -1034,6 +1040,7 @@ let insightsHideOff = false;
 let insightsData = null;
 let dashboardGeneration = 0;
 let trendChart = null;
+let kpiResizeObserver = null;
 let detailDrawer = null;
 let drawerGeneration = 0;
 let drawerChanging = false;
@@ -1112,7 +1119,7 @@ async function openDetailDrawer() {
     try {
       let path = streamerPath() + '/' + panel + '?days=' + where.days;
       if (panel === 'sessions') {
-        const params = new URLSearchParams({page: where.page, size: 20});
+        const params = new URLSearchParams({page: where.page, size: 10});
         for (const key of ['from', 'to', 'starts', 'dateFrom', 'dateTo']) if (where[key] != null) params.set(key, where[key]);
         path = streamerPath() + '/sessions?' + params;
       }
@@ -1173,7 +1180,7 @@ function renderRecording(host, data) {
   const list = el('ul');
   for (const text of [
     '数值只统计记录到的数据，缺口不补估。时长覆盖＝有效时长 ÷ 直播时长；有效时长是每场直播时长减去停机与断线两项缺口里较大的那一项。',
-    '缺口合计 ' + fmtMetric(capture.gapSeconds) + '秒 · 有缺口 ' + fmtMetric(capture.gapSessions) + ' 场 · 没有缺口 ' + fmtMetric(data.sessions - capture.gapSessions) + ' 场',
+    '缺口合计 ' + fmtWholeGap(capture.gapSeconds) + ' · 有缺口 ' + fmtMetric(capture.gapSessions) + ' 场 · 没有缺口 ' + fmtMetric(data.sessions - capture.gapSessions) + ' 场',
     coverageText(data.coverage),
     '名单完整与否单独判断；时长或流水计入了，不代表名单完整。',
   ]) { const line = el('li'); line.textContent = text; list.appendChild(line); }
@@ -1429,6 +1436,7 @@ function markRecorded(cell, data, key) {
 }
 
 function renderInsights(data, message) {
+  kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
   renderComparison(data);
   const host = $('#sd-insights-content'); host.innerHTML = '';
   const note = el('p', 'hint'); note.id = 'sd-archive-note'; host.appendChild(note); renderArchiveNote();
@@ -1441,6 +1449,19 @@ function renderInsights(data, message) {
   const keys = ['durationSeconds', 'revenue', 'messages', 'audience', 'interactionAudience', 'fans'];
   const labels = ['直播时长', '流水', '弹幕', '观众', '互动观众', '粉丝净增'];
   const grid = createKpis(keys.map((key, index) => ({label: labels[index], value: kpiValues[index], comparison: key === 'fans' ? '' : insightsComparison(data.comparisons?.[key])?.text || ''})), host);
+  kpiResizeObserver = new ResizeObserver(() => {
+    for (const cell of grid.children) {
+      const value = cell.querySelector('.sc-kpi-value');
+      if (!value || !value.clientWidth) continue;
+      value.style.fontSize = '';
+      let size = parseFloat(getComputedStyle(value).fontSize);
+      while (value.scrollWidth > value.clientWidth && size > 16) {
+        size = Math.max(16, size - .5);
+        value.style.fontSize = size + 'px';
+      }
+    }
+  });
+  kpiResizeObserver.observe(grid);
   [...grid.children].forEach((cell, index) => {
     markRecorded(cell, data, keys[index]);
     if (keys[index] === 'fans' && fans) {
@@ -1515,14 +1536,14 @@ function hideOffControl(host, checked, onChange) {
 
 function trendNote(host, period, hideOff, points) {
   const note = el('p', 'sd-trend-note');
-  const scope = '整场指标按开播统计日归属，不拆分整场；范围按整统计日选取，并非滚动 N×24 小时。';
-  let drawing = period === 'day' ? '按真实日期间距绘制折线，未播或无有效值时断开，不画虚线。' : '按统计周期绘制柱图，空周期保留。';
+  let drawing = period === 'day' ? '整场指标按开播统计日归属，不拆分整场；未播或无有效值时断开，不画虚线。'
+    : '整场指标按开播统计日归属，不拆分整场；按统计周期绘制柱图，空周期保留。';
   if (period === 'day' && hideOff) {
     const off = points.filter(point => point.sessions === 0).length;
     const invalid = points.filter(point => point.sessions !== 0 && !Number.isFinite(point.value)).length;
     drawing = '已隐藏 ' + fmtMetric(off) + ' 个未播日、' + fmtMetric(invalid) + ' 个无有效值日期；日期间距已压缩，实线连接保留点，原始明细和统计不变。';
   }
-  note.textContent = scope + drawing; host.appendChild(note);
+  note.textContent = drawing; host.appendChild(note);
 }
 
 function trendPoints(buckets, metric, mode) {
@@ -1634,7 +1655,7 @@ async function loadTrendDrawer(current) {
     const note = el('span', 'hint'); note.textContent = '共 ' + fmtMetric(ordered.length) + ' 条 · 第 ' + fmtMetric(page) + '/' + fmtMetric(pages) + ' 页'; pager.appendChild(note);
     for (const [label, target] of [['‹ 上一页', page - 1], ['下一页 ›', page + 1]]) {
       if (target < 1 || target > pages) continue;
-      const link = el('a', 'daystep'); link.textContent = label; link.href = route({page: target}); pager.appendChild(link);
+      const link = el('a'); link.textContent = label; link.href = route({page: target}); pager.appendChild(link);
     }
   } catch (error) {
     if (generation === drawerGeneration && liveActive) content.textContent = '读取失败：' + error.message;
@@ -1932,7 +1953,7 @@ function sessionFilters(host, page) {
   });
   controls.appendChild(apply);
   if (where.dateFrom != null || where.dateTo != null || where.from != null || where.to != null || where.starts != null) {
-    const clear = el('a', 'sd-detail-link'); clear.textContent = '清除筛选';
+    const clear = el('a', 'sd-clear-filter'); clear.textContent = '清除筛选';
     clear.href = dashboardHash({dateFrom: null, dateTo: null, from: null, to: null, starts: null, source: null, sourceDay: null, sourceArea: null, page: null});
     controls.appendChild(clear);
   }
@@ -1992,7 +2013,7 @@ function renderSessions(host, page = {}) {
  * @return {HTMLElement} 一个链接
  */
 function pageLink(label, page) {
-  const link = el('a', 'daystep');
+  const link = el('a');
   link.href = dashboardHash({panel: 'sessions', page});
   link.textContent = label;
   return link;

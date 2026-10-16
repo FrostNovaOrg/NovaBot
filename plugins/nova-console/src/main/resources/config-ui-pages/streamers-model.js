@@ -534,7 +534,7 @@ export function insightsTime(ms, time = true) {
 }
 
 /** 观众表的列及其排序参数。 */
-export const AUDIENCE_COLUMNS = [['name', '昵称'], ['attendance', '本期到场'],
+export const AUDIENCE_COLUMNS = [['name', '昵称'], ['composition', '本期构成'], ['attendance', '本期到场'],
   ['recent', '最近到场'], ['revenue', '本期流水（元）'], ['interaction', '本期互动']];
 
 /** 与接口一致的四个分组；未知构成不伪装成零。 */
@@ -546,12 +546,15 @@ export function audienceGroups(counts) {
 }
 
 /** 表格的显示值，流水缺一场就显示未知。 */
-export function audienceCells(person) {
+export function audienceCells(person, page = {}) {
   const p = person || {};
   const date = ms => ms == null ? '—' : new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date(Number(ms)));
   return {name: p.name && p.name.trim() ? p.name : '未记录昵称',
+    composition: page.counts?.first == null || page.counts?.returning == null
+      || !Number.isFinite(page.from) || !Number.isFinite(p.firstSeen) ? '—'
+      : p.firstSeen >= page.from ? '本期首次记录' : '历史回访',
     attendance: (Number(p.attendance) || 0) + ' 场', recent: date(p.lastSeen),
     first: '首次 ' + date(p.firstSeen),
     revenue: p.revenue == null ? '—' : Number(p.revenue).toLocaleString('en-US', {
