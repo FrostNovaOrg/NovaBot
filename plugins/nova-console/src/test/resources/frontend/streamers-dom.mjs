@@ -5,6 +5,7 @@ export function enhance(node) {
   node.className ||= '';
   node.classList.add = (...names) => { node.className += ' ' + names.join(' '); };
   node.querySelector ||= selector => walk(node).slice(1).find(child => selector.startsWith('.') ? child.className.split(' ').includes(selector.slice(1)) : child.id === selector.slice(1)) || null;
+  node.querySelectorAll ||= selector => walk(node).slice(1).filter(child => child.tagName === selector);
   node.append = (...children) => children.forEach(child => node.appendChild(typeof child === 'string' ? Object.assign(document.createElement('span'), {textContent: child}) : child));
   node.replaceChildren = (...children) => { node.innerHTML = ''; node.append(...children); };
   node.contains = other => walk(node).includes(other);

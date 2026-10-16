@@ -182,8 +182,8 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-slot-top strong small{font-size:11px;font-weight:400}
 .sd-slot-sample{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;color:var(--dim);font-size:11px}
 .sd-slot-sample>span{color:var(--accent)}
-.sc-drawer .slot-grid button{background:var(--ground);font-size:12px;min-height:56px}
-.sc-drawer .slot-grid button[data-low=true]{color:var(--dim);font-size:11px}
+:is(#sd-body,.sc-drawer) .slot-grid button{background:var(--ground);font-size:12px;min-height:56px}
+:is(#sd-body,.sc-drawer) .slot-grid button[data-low=true]{color:var(--dim);font-size:11px}
 .sc-drawer .slot-grid small{font-size:10px;opacity:.65}
 .sd-slot-heading{font-size:15px;margin:14px 0 4px}
 .sd-slot-method{font-size:12px;line-height:1.6;margin:4px 0}
@@ -352,6 +352,7 @@ export function loadStreamers() {
     where = next;
     insightsHideOff = where.hideOff === '1';
     if (hideChanged) renderDailyTrend();
+    if (hideChanged) updateHideOffLinks();
     const jobs = [openDetailDrawer()];
     if (rangeChanged) jobs.push(loadDashboard());
     return Promise.all(jobs);
@@ -870,7 +871,7 @@ function renderStartSlots(host) {
     const topItems = slotsMetric === 'revenue' ? slotsData.topRevenue : slotsData.topMessages;
     const ranking = el('ol', 'sd-slot-top');
     ranking.setAttribute('aria-label', '表现较好的开播时段，最多三名');
-    slotTopText(topItems || [], slotsMetric).slice(0, 3).forEach((text, index) => {
+    slotTopText(topItems || [], slotsMetric).slice(0, topItems?.length ? 3 : 0).forEach((text, index) => {
       const item = el('li');
       const entry = topItems?.[index];
       if (!entry) { item.textContent = text; ranking.appendChild(item); return; }
@@ -883,7 +884,11 @@ function renderStartSlots(host) {
       const sample = el('span', 'sd-slot-sample'); sample.textContent = entry.sessions + ' 场有效样本'; const action = el('span'); action.textContent = '查看场次 →'; sample.appendChild(action);
       link.appendChild(time); link.appendChild(value); link.appendChild(sample); item.appendChild(link); ranking.appendChild(item);
     });
-    card.appendChild(ranking);
+    if (topItems?.length) card.appendChild(ranking);
+    else {
+      const empty = el('p', 'hint sd-slot-method');
+      empty.textContent = '当前范围暂无达到样本门槛且效率有效的时段。'; card.appendChild(empty);
+    }
     const scroll = el('div', 'slot-scroll');
     scroll.setAttribute('tabindex', '0');
     scroll.setAttribute('role', 'region');
@@ -973,12 +978,25 @@ function dashboardHash(changes = {}) {
   const params = new URLSearchParams();
   for (const key of ['days', 'panel', 'group', 'sort', 'page', 'slotDays', 'from', 'to', 'starts', 'source', 'sourceDay', 'dateFrom', 'dateTo', 'period', 'metric', 'mode', 'hideOff']) {
     if (['source', 'sourceDay', 'dateFrom', 'dateTo', 'from', 'to', 'starts'].includes(key) && state.panel !== 'sessions') continue;
-    if (key === 'hideOff' && state.panel && state.panel !== 'trend') continue;
     if (['period', 'metric', 'mode'].includes(key) && (state.panel !== 'trend'
       || state[key] === {period: 'day', metric: 'revenue', mode: 'total'}[key])) continue;
     if (state[key] != null && (state[key] !== '' || key === 'starts')) params.set(key, state[key]);
   }
   return detailHash(state.platform, state.uid, 'overview', params.toString());
+}
+
+function updateHideOffLinks() {
+  // 勾选变化时同步已画出的入口；后续生成的链接由 dashboardHash 保留此参数。
+  for (const link of $('#sd-body').querySelectorAll('a')) {
+    const hash = link.href?.slice(link.href.indexOf('#'));
+    if (!isStreamersHash(hash)) continue;
+    const target = parseStreamersHash(hash);
+    if (target.view !== 'detail' || target.platform !== where.platform || target.uid !== where.uid) continue;
+    const params = new URLSearchParams(hash.split('?')[1]);
+    if (insightsHideOff) params.set('hideOff', '1');
+    else params.delete('hideOff');
+    link.href = detailHash(target.platform, target.uid, 'overview', params.toString());
+  }
 }
 
 function panelLink(label, panel, changes = {}) {
@@ -1052,9 +1070,13 @@ function pageTime(at, year = true) {
   return (year ? parts.year + '/' : '') + parts.month + '/' + parts.day + ' ' + parts.hour + ':' + parts.minute;
 }
 
-function statisticalDate(at) {
+function dateAt(at) {
   return new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'})
-    .format(new Date(Number(at) - 6 * 3600000));
+    .format(new Date(Number(at)));
+}
+
+function statisticalDate(at) {
+  return dateAt(Number(at) - 6 * 3600000);
 }
 
 function intervalText(from, to, exclusive = true) {
@@ -1196,11 +1218,13 @@ function renderDashboard() {
 
 function renderArchiveLink(data) {
   const link = $('#sd-body')?.querySelector('.sd-archive-link');
-  if (!link || !data || data.sessions == null || data.from == null || data.to == null) return;
-  link.textContent = '查看 ' + fmtMetric(data.sessions) + ' 场归档';
-  // 同时约束开播归属，排除前一统计日开播但与本期重叠的场次。
-  link.href = dashboardHash({panel: 'sessions', page: 1, from: data.from, to: data.to,
-    dateFrom: data.from, dateTo: data.to, starts: null, source: 'dashboard', sourceDay: null});
+  if (!link) return;
+  const available = data?.sessions != null && data.from != null && data.to != null;
+  link.textContent = available ? '查看 ' + fmtMetric(data.sessions) + ' 场归档' : '查看全部归档';
+  // 按开播统计日归入，包含范围起点开播的零秒归档。
+  link.href = dashboardHash({panel: 'sessions', page: 1, from: null, to: null,
+    dateFrom: available ? data.from : null, dateTo: available ? data.to : null,
+    starts: null, source: available ? 'dashboard' : null, sourceDay: null});
 }
 
 async function loadDashboard() {
@@ -1400,7 +1424,7 @@ function trendSessions(interval, buckets) {
 
 function trendPeriod(bucket, period) {
   if (!Number.isFinite(bucket.start) || !Number.isFinite(bucket.end)) return '—';
-  const start = statisticalDate(bucket.start), end = statisticalDate(bucket.end - 1);
+  const start = dateAt(bucket.start), end = statisticalDate(bucket.end - 1);
   const short = date => date.slice(5).replace('-', '/');
   return short(start) + (period !== 'day' && end !== start ? '–' + short(end) : '');
 }
@@ -1414,6 +1438,7 @@ function renderDailyTrend() {
   const periodLabel = el('span', 'hint'); periodLabel.textContent = '按统计日汇总'; controls.appendChild(periodLabel);
   hideOffControl(host, insightsHideOff, checked => {
     insightsHideOff = checked; location.hash = dashboardHash({hideOff: checked ? '1' : null}); renderDailyTrend();
+    updateHideOffLinks();
   });
   const detailLink = $('#sd-trend').querySelector('.sd-detail-link');
   if (detailLink) detailLink.href = dashboardHash({panel: 'trend', period: 'day', metric: insightsMetric, mode: insightsMode, hideOff: insightsHideOff ? '1' : null, page: 1});

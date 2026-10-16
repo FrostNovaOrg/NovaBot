@@ -133,16 +133,20 @@ let liveData = {
   series: {online_count: [[dataAt - 60000, 50], [dataAt, 42]]},
 };
 let dashboardFixtures = false;
+let insightsFailure = false;
 let historyStart = null;
 let cutoff = Date.parse('2026-10-16T08:40:00+08:00');
 const rangeStart = days => Date.parse('2026-10-16T06:00:00+08:00') - (days - 1) * 86400000;
-const archiveItems = ['2026-10-15T10:00', '2026-09-17T06:00', '2026-09-17T05:30', '2026-08-01T10:00'].map(date => {
+const archiveItems = ['2026-10-15T10:00', '2026-09-17T07:00', '2026-09-17T05:30', '2026-08-01T10:00'].map(date => {
   const startTime = Date.parse(date + ':00+08:00');
   return {...sessions[0], startTime, endTime: startTime + 3600000};
 });
+// 范围起点的零秒归档按开播统计日计入，不能被重叠条件漏掉。
+archiveItems.push({...sessions[0], startTime: rangeStart(30), endTime: rangeStart(30), durationSeconds: 0});
 let trendBuckets = [];
 const slotRequests = [];
 let pendingSlots = null;
+let emptySlots = false;
 const slotCells = Array.from({length: 84}, (_, i) => ({weekday: Math.floor(i / 12) + 1,
   startHour: i % 12 * 2, sessions: i === 11 ? 3 : 0, revenuePerHour: i === 11 ? 50 : null,
   messagesPerHour: i === 11 ? 100 : null,
@@ -160,6 +164,7 @@ globalThis.fetch = url => {
   const path = String(url);
   const params = new URL(path, 'https://example.test').searchParams;
   if (dashboardFixtures && path.includes('/insights?')) {
+    if (insightsFailure) return reply({success: false, message: '暂不可用'});
     const from = rangeStart(Number(params.get('days')));
     return reply({success: true, insights: {from, to: cutoff,
       sessions: archiveItems.filter(s => s.startTime >= from && s.startTime < cutoff).length,
@@ -180,7 +185,7 @@ globalThis.fetch = url => {
   if (path.includes('/start-slots?')) {
     slotRequests.push(path);
     if (pendingSlots) return new Promise(done => { pendingSlots.resolve = data => done({status: 200, json: async () => data}); });
-    return reply({success: true, startSlots: slotData});
+    return reply({success: true, startSlots: emptySlots ? {...slotData, topRevenue: [], topMessages: []} : slotData});
   }
   if (path.includes('/live?')) {
     liveRequests++;
@@ -626,12 +631,13 @@ await ask('总览归档入口按范围计数并可清除筛选', async () => {
   for (const days of [30, 360]) {
     location.hash = model.detailHash(PLATFORM, UID, null, 'days=' + days);
     await page.loadStreamers();
-    const expected = days === 30 ? 2 : 4;
+    const expected = days === 30 ? 3 : 5;
     const link = walk(node('sd-body')).find(n => n.tagName === 'a' && /查看 .* 场归档/.test(n.textContent));
     same(link?.textContent, '查看 ' + expected + ' 场归档', days + '天入口');
     same(textOf(find('sd-scope')).includes('归档 ' + expected + ' 场'), true, '入口与统计口径同数');
     const state = model.parseStreamersHash(link.href);
-    same([Number(state.from), Number(state.to), state.source], [rangeStart(days), cutoff, 'dashboard'], '范围与来源');
+    same([Number(state.dateFrom), Number(state.dateTo), state.source], [rangeStart(days), cutoff, 'dashboard'], '统计日范围与来源');
+    same([state.from, state.to], [undefined, undefined], '不使用重叠筛选');
     counts.push(expected);
     location.hash = link.href; await page.loadStreamers();
     same(walk(drawerBody()).filter(n => n.className === 'sd-session-row').length, expected, '抽屉场数');
@@ -639,10 +645,26 @@ await ask('总览归档入口按范围计数并可清除筛选', async () => {
     const clear = walk(drawerBody()).find(n => n.textContent === '清除筛选');
     same(Boolean(clear), true, '有清除筛选');
     location.hash = clear.href; await page.loadStreamers();
-    same(walk(drawerBody()).filter(n => n.className === 'sd-session-row').length, 4, '清除后全部归档');
+    same(walk(drawerBody()).filter(n => n.className === 'sd-session-row').length, 5, '清除后全部归档');
     same(textOf(drawerBody()).includes('筛选来源'), false, '清除后没有来源');
   }
   same(counts[0] !== counts[1], true, '不同范围的归档数不同');
+});
+
+// 总览接口失败不能让归档入口永久停在不可点击的读取状态。
+await ask('总览读取失败仍可查看全部归档', async () => {
+  insightsFailure = true;
+  try {
+    page.leave(); await overview();
+    const link = walk(node('sd-body')).find(n => n.className.includes('sd-archive-link'));
+    same(link?.textContent, '查看全部归档', '失败后的入口');
+    same(Boolean(link?.href), true, '入口可点击');
+    const state = model.parseStreamersHash(link.href);
+    same([state.from, state.to, state.dateFrom, state.dateTo, state.source], Array(5).fill(undefined), '全部归档不带筛选');
+    location.hash = link.href; await page.loadStreamers();
+    same(walk(drawerBody()).filter(n => n.className === 'sd-session-row').length, archiveItems.length, '失败后打开全部归档');
+    same(textOf(drawerBody()).includes('清除筛选'), false, '全部归档无清除入口');
+  } finally { insightsFailure = false; }
 });
 
 // 接口 label 故意保留整周期；显示必须使用已截短的 start/end，且链接与整行选择同一期。
@@ -682,18 +704,70 @@ await ask('可用历史只显示真实起止', async () => {
   } finally { cutoff = saved; }
 });
 
-// 地址持久化必须在勾选和整页重新载入两头都成立。
+// 每次加载新的模块实例，避免从旧模块内存恢复而掩盖地址读取遗漏。
+let reloads = 0;
+async function reloadPage() {
+  page.leave();
+  page = await import(join(pages, 'streamers.js') + '?reload=' + ++reloads);
+  page.render(fakeElement('section'));
+  await page.loadStreamers();
+}
 await ask('隐藏未播写入地址且重新载入恢复', async () => {
   await overview();
   const checkbox = () => walk(find('sd-trend-content')).find(n => n.type === 'checkbox');
   checkbox().checked = true; await checkbox().fire('change');
   same(model.parseStreamersHash(location.hash).hideOff, '1', '勾选后地址');
-  page.leave(); await page.loadStreamers();
+  await reloadPage();
   same(checkbox().checked, true, '重新载入仍勾选');
   checkbox().checked = false; await checkbox().fire('change');
   same(model.parseStreamersHash(location.hash).hideOff, undefined, '取消后移除参数');
-  page.leave(); await page.loadStreamers();
+  await reloadPage();
   same(checkbox().checked, false, '重新载入保持取消');
+});
+
+// 导航真实使用页面入口并刷新地址状态，开关不能在开关抽屉和切范围时丢失。
+for (const [panel, label] of [['audience', '查看本期名单'], ['sessions', '查看 3 场归档'],
+  ['fans', '粉丝净增'], ['start-slots', '查看历史节奏']]) {
+  await ask('隐藏未播在' + panel + '抽屉往返和切范围后保留', async () => {
+    await overview();
+    const checkbox = () => walk(find('sd-trend-content')).find(n => n.type === 'checkbox');
+    checkbox().checked = true; await checkbox().fire('change');
+    await page.loadStreamers(); // 对应宿主的 hashchange 刷新。
+    if (panel === 'fans') {
+      const cell = walk(node('sd-body')).find(n => n.attrs['aria-label'] === label);
+      await press(cell);
+    } else {
+      const link = walk(node('sd-body')).find(n => n.tagName === 'a' && n.textContent === label);
+      location.hash = link.href;
+    }
+    await page.loadStreamers();
+    same(model.parseStreamersHash(location.hash).panel, panel, '目标抽屉');
+    same(model.parseStreamersHash(location.hash).hideOff, '1', '打开抽屉保留地址');
+    same(checkbox().checked, true, '打开抽屉保留勾选');
+    await press(walk(document.body).find(n => n.className.includes('sc-drawer-close')));
+    await page.loadStreamers();
+    same(model.parseStreamersHash(location.hash).panel, undefined, '关闭抽屉');
+    same(model.parseStreamersHash(location.hash).hideOff, '1', '关闭后保留地址');
+    same(checkbox().checked, true, '关闭后保留勾选');
+    const range = walk(find('sd-toolbar')).find(n => n.textContent === '360天');
+    location.hash = range.href; await page.loadStreamers();
+    same(model.parseStreamersHash(location.hash).days, 360, '切换范围');
+    same(model.parseStreamersHash(location.hash).hideOff, '1', '切范围保留地址');
+    same(checkbox().checked, true, '切范围保留勾选');
+  });
+}
+
+// 排名为空时须说明样本和效率门槛，不能只留下标题或笼统的场数提示。
+await ask('无有效开播时段时显示样本与效率说明', async () => {
+  emptySlots = true;
+  try {
+    page.leave(); await openSlots();
+    const card = walk(drawerBody()).find(n => n.className.includes('start-slots'));
+    const heading = card.children.findIndex(n => n.textContent === '表现较好的开播时段');
+    same(heading >= 0, true, '排名标题');
+    same(textOf(card).includes('当前范围暂无达到样本门槛且效率有效的时段。'), true, '空排名说明');
+    same(card.children.slice(heading + 1).some(n => n.textContent.includes('当前范围暂无达到样本门槛且效率有效的时段')), true, '说明在标题之后');
+  } finally { emptySlots = false; }
 });
 
 // 粉丝图实际读数必须带人数单位。

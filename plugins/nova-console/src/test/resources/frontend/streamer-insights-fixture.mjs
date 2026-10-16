@@ -74,9 +74,11 @@ let sessionScenario = null;
 let recentScenario = null;
 const revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
-  start: 1791736800000 - i * 604800000, end: 1792341600000 - i * 604800000,
+  start: Date.parse('2026-10-12T06:00:00+08:00') - i * 604800000,
+  end: Date.parse('2026-10-19T06:00:00+08:00') - i * 604800000,
   label: 'week ' + i, sessions: i === 2 ? 0 : 2, durationSeconds: i === 1 ? 0 : 7200,
-  revenue: 100, messages: 20, audience: 1, follows: 6, starts: i === 2 ? [] : [1791736800100 - i * 604800000],
+  revenue: 100, messages: 20, audience: 1, follows: 6,
+  starts: i === 2 ? [] : [Date.parse('2026-10-12T06:00:00+08:00') + 100 - i * 604800000],
 })).reverse();
 const audienceResponse = {success: true, audience: {group: 'all', sort: 'attendance',
   counts: {all: 45, first: 20, returning: 25, interaction: 12}, coverage: {complete: 2},
@@ -694,8 +696,8 @@ await check('周期明细逐桶显示场次时长和指标且每页十条', asyn
   await load(base + '?panel=trend&period=week');
   const rows = flatten(drawer()).filter(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
   assert.equal(rows.length, 10, '每页应为十条');
-  const labels = ['10/11–10/18', '10/04–10/11', '09/27–10/04', '09/20–09/27', '09/13–09/20',
-    '09/06–09/13', '08/30–09/06', '08/23–08/30', '08/16–08/23', '08/09–08/16'];
+  const labels = ['10/12–10/18', '10/05–10/11', '09/28–10/04', '09/21–09/27', '09/14–09/20',
+    '09/07–09/13', '08/31–09/06', '08/24–08/30', '08/17–08/23', '08/10–08/16'];
   for (const [i, row] of rows.entries()) {
     const bucket = trendBuckets.at(-1 - i);
     assert.equal(textOf(row.children[0]).trim(), labels[i]);
@@ -704,6 +706,22 @@ await check('周期明细逐桶显示场次时长和指标且每页十条', asyn
     assert.equal(row.children[3].textContent, '100.00 元', '明细指标须来自本桶');
   }
   assert.match(textOf(drawer()), /共 25 条 · 第 1\/3 页/);
+});
+// 起点在06点之前也与图使用同一自然日；逐根读取图上标签，避免夹具自设另一套规则。
+await check('周期表与图上同一根桶的标签一致', async () => {
+  const older = trendBuckets.splice(0, trendBuckets.length - 1);
+  const bucket = trendBuckets.at(-1), saved = bucket.start;
+  try {
+    for (const period of ['week', 'month']) {
+      for (const start of [saved, Date.parse('2026-10-12T00:40:00+08:00')]) {
+        bucket.start = start;
+        page.leave(); await load(base + '?panel=trend&period=' + period);
+        const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
+        const chartLabels = flatten(drawer()).find(n => n.className === 'sc-chart-labels');
+        assert.equal(textOf(row.children[0]).trim(), chartLabels.children.at(-1).textContent, '同一桶的表和图标签');
+      }
+    }
+  } finally { bucket.start = saved; trendBuckets.unshift(...older); }
 });
 // 收藏链接须恢复隐藏选项，切换后也要写回地址。
 await check('趋势收藏恢复隐藏设置并可取消', async () => {
@@ -714,11 +732,13 @@ await check('趋势收藏恢复隐藏设置并可取消', async () => {
   assert.equal(new URLSearchParams(location.hash.split('?')[1]).has('hideOff'), false);
 });
 // 周期与指标仅属于趋势；关闭趋势后总览仍保留隐藏设置，默认值省略。
-await check('名单省略趋势参数且关闭趋势保留隐藏设置', async () => {
+await check('名单省略趋势指标参数并保留全页隐藏设置', async () => {
+  page.leave();
   await load(base + '?panel=trend&period=day&metric=follows&mode=hourly&hideOff=1');
   const audience = flatten(nodes.get('sd-period-audience')).find(n => n.tagName === 'a');
-  for (const key of ['period', 'metric', 'mode', 'hideOff'])
+  for (const key of ['period', 'metric', 'mode'])
     assert.equal(new URLSearchParams(audience.href.split('?')[1]).has(key), false, '名单链接不得携带' + key);
+  assert.equal(model.parseStreamersHash(audience.href).hideOff, '1', '名单入口保留全页隐藏设置');
   await flatten(drawer()).find(n => n.className.includes('sc-drawer-close')).fire('click');
   for (const key of ['period', 'metric', 'mode'])
     assert.equal(new URLSearchParams(location.hash.split('?')[1]).has(key), false);
