@@ -17,7 +17,7 @@
 import {$, api, CONSOLE, el, esc, request, say} from './core.js';
 import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis, createAudienceRing, openDrawer, releaseComponents} from './streamers-components.js';
 import {
-  AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText,
+  AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
   detailHash, fmtDuration, fmtMetric, fmtTime,
   gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle,
@@ -89,6 +89,12 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-trend-controls button:disabled{opacity:.45;cursor:default}
 .sd-trend-daily{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}.sd-trend-daily strong{font-size:13px}.sd-trend-note{font-size:12px;color:var(--dim);line-height:1.7}
 .sd-trend-hide{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.sd-recording{border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:10px 13px;margin:0 0 16px;color:var(--dim);font-size:13px}
+.sd-recording summary{cursor:pointer;color:var(--text)}.sd-recording ul{margin:10px 0 0;padding-left:20px}
+.sd-cell-note{display:block;font-size:11px;color:var(--dim)}
+.sd-kpi-recorded{font-size:10px;font-weight:400;color:var(--dim);white-space:nowrap;margin-left:5px}
+.sd-session-quality{text-align:right}.sd-session-quality .sd-cell-note{margin-top:3px}
+.sd-trend-coverage{white-space:nowrap;text-align:left}
 .sd-trend-table{overflow-x:auto;min-width:0;max-width:100%}.sd-trend-table table{min-width:480px}
 .sd-period-link,.sd-period-link:visited{color:#3877cf;text-decoration:none}.sd-period-link:hover{text-decoration:underline}
 .sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
@@ -165,7 +171,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-session-date{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .sd-session-row-head strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .sd-session-arrow{font-size:20px;color:var(--accent)}
-.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 100px;align-items:center;gap:18px;margin-top:9px}
+.sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 185px;align-items:center;gap:18px;margin-top:9px}
 .sd-session-row-body>.sd-gap-badge{justify-self:end}
 .sd-session-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:1;margin:0}
 .sd-session-metrics dt{font-size:11px;color:var(--dim)}.sd-session-metrics dd{font-size:13px;margin:2px 0 0;font-variant-numeric:tabular-nums}
@@ -189,7 +195,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .sd-slot-heading{font-size:15px;margin:14px 0 4px}
 .sd-slot-method{font-size:12px;line-height:1.6;margin:4px 0}
 .sd-slot-scope{font-size:11px;margin:6px 0 12px}
-@media(max-width:560px){.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:normal}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
+@media(max-width:560px){.sd-session-quality{text-align:left}.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:normal}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
 @media(min-width:1280px){#sd-insights-content>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.sd-columns{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:560px){.sd-slot-top{grid-template-columns:1fr}#sd-insights .sc-kpis,#sd-more .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-trend .sc-chart svg{height:180px}.sd-toolbar{gap:4px}.sd-toolbar .nv-pill{padding:5px 9px;white-space:nowrap}.sd-toolbar .hint{width:100%;margin:4px 0 0}}
@@ -354,6 +360,7 @@ export function loadStreamers() {
     insightsHideOff = where.hideOff === '1';
     if (hideChanged) renderDailyTrend();
     if (hideChanged) updateHideOffLinks();
+    if (rangeChanged) insightsData = null;
     const jobs = [openDetailDrawer()];
     if (rangeChanged) jobs.push(loadDashboard());
     return Promise.all(jobs);
@@ -1148,8 +1155,34 @@ function intervalText(from, to, exclusive = true) {
   return pageTime(from) + ' — ' + pageTime(to) + (exclusive ? '（不含结束时刻）' : '');
 }
 
+function renderRecording(host, data) {
+  let box = host.querySelector('.sd-recording');
+  if (!box) {
+    box = el('details', 'sd-recording');
+    host.insertBefore(box, host.firstChild);
+  }
+  box.innerHTML = '';
+  const summary = el('summary');
+  if (!data) { summary.textContent = '已记录数据 · 正在读取…'; box.appendChild(summary); return; }
+  const capture = data.capture || {};
+  summary.textContent = '已记录数据 · 时长覆盖 ' + durationCoverage(data)
+    + ' · 名单完整 ' + fmtMetric(data.coverage?.complete ?? 0) + '/' + fmtMetric(data.sessions) + ' 场'
+    + (capture.gapSessions > 0 ? ' · 有缺口 ' + fmtMetric(capture.gapSessions) + ' 场' : '');
+  box.appendChild(summary);
+  const list = el('ul');
+  for (const text of [
+    '数值只统计记录到的数据，缺口不补估。时长覆盖＝有效时长 ÷ 直播时长；有效时长是每场直播时长减去停机与断线两项缺口里较大的那一项。',
+    '缺口合计 ' + fmtMetric(capture.gapSeconds) + '秒 · 有缺口 ' + fmtMetric(capture.gapSessions) + ' 场 · 没有缺口 ' + fmtMetric(data.sessions - capture.gapSessions) + ' 场',
+    coverageText(data.coverage),
+    '名单完整与否单独判断；时长或流水计入了，不代表名单完整。',
+  ]) { const line = el('li'); line.textContent = text; list.appendChild(line); }
+  box.appendChild(list);
+}
+
 function updateDrawerScope() {
   if (!detailDrawer) return;
+  if (['trend', 'audience', 'start-slots'].includes(where.panel))
+    renderRecording(detailDrawer.body, where.panel === 'start-slots' ? slotsData : insightsData);
   const head = detailDrawer.dialog.querySelector('.sc-drawer-head');
   let heading = head.querySelector('.sd-drawer-heading');
   if (!heading) {
@@ -1221,6 +1254,7 @@ function renderScope(data = {}) {
     '较上期＝往前挪 ' + where.days + ' 天、长度相同的一段。场次与整场指标按开播统计日归入，不拆分跨日金额。',
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
     coverageText(data.coverage),
+    ...(data.capture ? ['归档采集覆盖 ' + durationCoverage(data) + ' · 缺口合计 ' + fmtMetric(data.capture.gapSeconds) + '秒 · 有缺口 ' + fmtMetric(data.capture.gapSessions) + ' 场'] : []),
   ];
   if (!comparisonExplanation(data).count && data.comparisonNote) lines.push(data.comparisonNote);
   for (const text of lines.filter(Boolean)) { const line = el('p', 'hint'); line.textContent = text; scope.appendChild(line); }
@@ -1382,6 +1416,11 @@ function renderAudienceSummary(data) {
   host.appendChild(note);
 }
 
+function markRecorded(cell, data, key) {
+  if (!metricRecorded(data, key)) return;
+  const label = el('small', 'sd-kpi-recorded'); label.textContent = '已记录'; cell.children[0].appendChild(label);
+}
+
 function renderInsights(data, message) {
   renderComparison(data);
   const host = $('#sd-insights-content'); host.innerHTML = '';
@@ -1396,6 +1435,12 @@ function renderInsights(data, message) {
   const labels = ['直播时长', '流水', '弹幕', '观众', '互动观众', '粉丝净增'];
   const grid = createKpis(keys.map((key, index) => ({label: labels[index], value: kpiValues[index], comparison: key === 'fans' ? '' : insightsComparison(data.comparisons?.[key])?.text || ''})), host);
   [...grid.children].forEach((cell, index) => {
+    markRecorded(cell, data, keys[index]);
+    if (keys[index] === 'fans' && fans) {
+      const note = el('small', 'sd-cell-note'); note.textContent = fans.partial
+        ? '可用快照未覆盖整个范围，从 ' + insightsTime(fans.fromAt) + ' 起算'
+        : '按区间边界有效快照计算'; cell.appendChild(note);
+    }
     cell.setAttribute('role', 'button'); cell.setAttribute('tabindex', '0'); cell.setAttribute('aria-label', labels[index]);
     const comparison = keys[index] === 'fans' ? null : insightsComparison(data.comparisons?.[keys[index]]);
     if (comparison) cell.children[2].style.color = comparison.color;
@@ -1410,10 +1455,11 @@ function renderInsights(data, message) {
   const more = el('details'); more.id = 'sd-more';
   const summary = el('summary'); summary.textContent = '更多指标'; more.appendChild(summary);
   const hours = data.durationSeconds / 3600;
-  createKpis([{label: '场次', value: fmtMetric(data.sessions)},
+  const moreGrid = createKpis([{label: '场次', value: fmtMetric(data.sessions)},
     {label: '新增关注', value: data.follows == null ? '—' : fmtMetric(data.follows) + ' 人'},
     {label: '每小时流水', value: hours > 0 && data.revenue != null ? fmtMetric(data.revenue / hours, {money: true}) + ' 元/时' : '—'},
     {label: '每小时弹幕', value: hours > 0 && data.messages != null ? fmtMetric(data.messages / hours, {money: true}) + ' 条/时' : '—'}], more);
+  [...moreGrid.children].forEach((cell, index) => markRecorded(cell, data, ['sessions', 'follows', 'revenuePerHour', 'messagesPerHour'][index]));
   host.appendChild(more); renderDailyTrend();
 }
 
@@ -1542,8 +1588,8 @@ async function loadTrendDrawer(current) {
     const section = createSection('周期明细', '', content);
     const scroll = el('div', 'sd-trend-table'); section.box.appendChild(scroll);
     const table = el('table'), head = el('thead'), tr = el('tr');
-    for (const [index, name] of ['周期', '场次', '直播时长', ...(metric === 'durationSeconds' ? [] : [selected[1] + (mode === 'hourly' && selected[3] ? ' / 小时' : '')])].entries()) {
-      const th = el('th', index ? 'n' : ''); th.textContent = name; tr.appendChild(th);
+    for (const [index, name] of ['周期', '场次', '直播时长', ...(metric === 'durationSeconds' ? [] : [selected[1] + (mode === 'hourly' && selected[3] ? ' / 小时' : '')]), '统计覆盖'].entries()) {
+      const th = el('th', name === '统计覆盖' ? 'sd-trend-coverage' : index ? 'n' : ''); th.textContent = name; tr.appendChild(th);
     }
     head.appendChild(tr); table.appendChild(head);
     const ordered = buckets.slice().reverse(), pages = Math.max(1, Math.ceil(ordered.length / 10));
@@ -1565,6 +1611,11 @@ async function loadTrendDrawer(current) {
         } else cell.textContent = value;
         row.appendChild(cell);
       }
+      const coverage = el('td', 'sd-trend-coverage');
+      coverage.textContent = bucket.sessions > 0 ? '采集 ' + durationCoverage(bucket) : '采集暂无数据';
+      const list = el('span', 'sd-cell-note');
+      list.textContent = '名单完整 ' + fmtMetric(bucket.coverage?.complete ?? 0) + '/' + fmtMetric(bucket.sessions) + ' 场';
+      coverage.appendChild(list); row.appendChild(coverage);
       body.appendChild(row);
     }
     table.appendChild(body); scroll.appendChild(table);
@@ -1907,7 +1958,10 @@ function renderSessions(host, page = {}) {
       const group = el('div'), name = el('dt'), shown = el('dd'); name.textContent = label; shown.textContent = value;
       group.append(name, shown); metricsList.appendChild(group);
     }
-    bottom.append(metricsList, gapBadge(item)); link.appendChild(bottom); card.appendChild(link);
+    const quality = el('div', 'sd-session-quality');
+    const coverage = el('span', 'sd-cell-note'); coverage.textContent = sessionCoverageText(item);
+    quality.append(gapBadge(item), coverage);
+    bottom.append(metricsList, quality); link.appendChild(bottom); card.appendChild(link);
     if (item.interrupted) {
       const reason = el('small', 'hint'); reason.textContent = item.endReasonText; link.appendChild(reason);
     }

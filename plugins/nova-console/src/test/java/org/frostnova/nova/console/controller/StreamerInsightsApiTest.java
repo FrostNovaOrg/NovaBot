@@ -140,7 +140,7 @@ class StreamerInsightsApiTest {
             var data = JSON.parseObject(raw).getJSONObject("insights");
             assertEquals(Set.of("from", "to", "metricsKnown", "sessions", "durationSeconds", "revenue",
                     "messages", "audience", "interactionAudience", "composition", "firstRecordedAt", "coverage",
-                    "fans", "daily", "follows", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
+                    "fans", "daily", "follows", "capture", "previous", "comparisons", "comparisonNote"), data.keySet(), "旧字段不得丢键");
             var nullable = new ArrayList<>(List.of("audience", "interactionAudience", "composition", "firstRecordedAt", "fans"));
             if (platform.equals("other")) nullable.addAll(List.of("revenue", "messages"));
             for (String key : nullable) assertNull(data.get(key), key + "应保留null值");
@@ -586,6 +586,112 @@ class StreamerInsightsApiTest {
                 assertEquals(bucket.getJSONObject("metrics").getDoubleValue("danmu_count"), bucket.getDoubleValue("messages"));
             }
         }
+    }
+
+    // 跨起点但在范围前开播的场次不能进入合计，否则合计会与热图、分区表不一致。
+    @Test @DisplayName("开播节奏覆盖合计与热图分区均按范围内开播取场")
+    void startSlotsRecordingRange() {
+        var boundary = Instant.parse("2026-07-23T22:00:00Z");
+        for (var start : List.of(boundary.minusSeconds(60), boundary.plusSeconds(60))) {
+            boolean before = start.isBefore(boundary);
+            archive.append(new LiveSession("bilibili", 1L, "sample", 2L,
+                    start.toEpochMilli(), start.plusSeconds(3600).toEpochMilli(), 3600,
+                    Map.of(), Map.of(), LiveEndReason.NORMAL, List.of(), before ? 30 : 10,
+                    before ? Map.of() : Map.of("enter_users", List.of()), 0, Map.of(), Map.of()));
+        }
+        var body = JSON.parseObject(JSON.toJSONString(controller.startSlots("bilibili", 1L, "90").getBody()));
+        var slots = body.getJSONObject("startSlots");
+        assertEquals(boundary.toEpochMilli(), slots.getLongValue("from"));
+        assertEquals(JSONObject.of("effectiveSeconds", 3590, "gapSeconds", 10, "gapSessions", 1),
+                slots.getJSONObject("capture"), "开播节奏覆盖不得计入范围前开播的重叠场次");
+        assertEquals(1, slots.getIntValue("sessions"));
+        assertEquals(3600, slots.getLongValue("durationSeconds"));
+        assertEquals(JSONObject.of("complete", 1, "anonymous", 0, "unknown", 0, "missing", 0), slots.getJSONObject("coverage"));
+        var cells = slots.getJSONArray("cells");
+        assertEquals(1, cells.stream().mapToInt(value -> ((JSONObject) value).getIntValue("sessions")).sum());
+        assertEquals(3590, cells.stream().mapToLong(value -> ((JSONObject) value).getLongValue("effectiveSeconds")).sum());
+        var area = body.getJSONArray("areas").getJSONObject(0);
+        assertEquals(1, body.getJSONArray("areas").size());
+        assertEquals(1, area.getIntValue("sessions"));
+        assertEquals(List.of(boundary.plusSeconds(60).toEpochMilli()), area.getJSONArray("starts").toJavaList(Long.class));
+    }
+
+    // 重叠缺口只扣较大者；范围前开播即使跨入范围也不能计入，趋势按开播归桶。
+    @Test @DisplayName("记录覆盖与名单分类使用各自范围内开播的场次")
+    void recordingCoverage() {
+        var starts = List.of(from.minusSeconds(60), from, from.plusSeconds(86340),
+                from.plusSeconds(86400), from.plusSeconds(3 * 86400));
+        for (int i = -1; i < 4; i++) {
+            Instant start = starts.get(i + 1);
+            archive.append(new LiveSession("bilibili", 1L, "sample", 2L,
+                    start.toEpochMilli(), start.plusSeconds(3600).toEpochMilli(), 3600,
+                    Map.of("follow_count", 2d), Map.of(), LiveEndReason.NORMAL, List.of(),
+                    i <= 0 ? 30 : 0, i == 3 ? Map.of() : Map.of("enter_users", List.of()),
+                    i <= 0 ? 20 : 0, Map.of(), i == 2 ? null : i == 1 ? Map.of("enter_users", 1L) : Map.of()));
+        }
+        var data = insights("7", "bilibili");
+        assertEquals(JSONObject.of("effectiveSeconds", 14370, "gapSeconds", 30, "gapSessions", 1), data.getJSONObject("capture"), "区间缺口不得相加或混入范围前开播场次");
+        assertEquals(JSONObject.of("complete", 1, "anonymous", 1, "unknown", 1, "missing", 1), data.getJSONObject("coverage"));
+        var slots = JSON.parseObject(JSON.toJSONString(controller.startSlots("bilibili", 1L, "90").getBody())).getJSONObject("startSlots");
+        assertEquals(5, slots.getIntValue("sessions"));
+        assertEquals(18000, slots.getLongValue("durationSeconds"));
+        assertEquals(17940, slots.getJSONObject("capture").getLongValue("effectiveSeconds"));
+        assertEquals(2, slots.getJSONObject("capture").getIntValue("gapSessions"));
+        assertEquals(2, slots.getJSONObject("coverage").getIntValue("complete"));
+        for (String period : List.of("day", "week", "month")) {
+            var buckets = JSON.parseObject(JSON.toJSONString(controller.rangeTrend("bilibili", 1L, period, "7").getBody())).getJSONObject("trend").getJSONArray("buckets");
+            for (int i = 0; i < buckets.size(); i++) {
+                var bucket = buckets.getJSONObject(i);
+                var expectedStarts = starts.stream().map(Instant::toEpochMilli)
+                        .filter(at -> at >= bucket.getLongValue("start") && at < bucket.getLongValue("end")).toList();
+                int count = expectedStarts.size();
+                assertEquals(count, bucket.getIntValue("sessions"), "跨进本桶但在前桶开播的场次不得混入");
+                assertEquals(expectedStarts, bucket.getJSONArray("starts").toJavaList(Long.class));
+                assertTrue(bucket.containsKey("effectiveSeconds"), "趋势必须输出有效时长");
+                var coverage = bucket.getJSONObject("coverage");
+                assertNotNull(coverage, "趋势必须输出名单分类");
+                assertEquals(count, coverage.values().stream().mapToInt(v -> ((Number) v).intValue()).sum());
+                String[] qualities = {"complete", "anonymous", "unknown", "missing"};
+                for (int q = 0; q < qualities.length; q++)
+                    assertEquals(expectedStarts.contains(starts.get(q + 1).toEpochMilli()) ? 1 : 0,
+                            coverage.getIntValue(qualities[q]), "名单只算本桶开播场次");
+                assertEquals(count * 3600L - (bucket.getJSONArray("starts").contains(from.toEpochMilli()) ? 30 : 0), bucket.getLongValue("effectiveSeconds"), "只扣本桶开播场次的缺口");
+            }
+            if (period.equals("day")) System.out.println("RECORDING_TREND_SAMPLE: " + buckets.getJSONObject(0));
+        }
+        var items = controller.streamer("bilibili", 1L, "week", 1, 20).getBody().getJSONObject("sessions").getJSONArray("items");
+        var qualities = new HashSet<String>();
+        for (int i = 0; i < items.size(); i++) {
+            var item = items.getJSONObject(i);
+            qualities.add(item.getString("listQuality"));
+            assertEquals(item.getLongValue("maintenanceGapSeconds") > 0 ? 3570 : 3600, item.getLongValue("effectiveSeconds"));
+            if (item.getLongValue("startTime") == from.toEpochMilli()) System.out.println("RECORDING_SESSION_SAMPLE: " + item);
+        }
+        assertEquals(Set.of("complete", "anonymous", "unknown", "missing"), qualities);
+        System.out.println("RECORDING_INSIGHTS_SAMPLE: " + data);
+        System.out.println("RECORDING_SLOTS_SAMPLE: " + JSONObject.of("sessions", slots.get("sessions"), "durationSeconds", slots.get("durationSeconds"), "capture", slots.get("capture"), "coverage", slots.get("coverage")));
+    }
+
+    // 单场有效时长与四种名单词均从接口读取，避免页面自行猜测完整性。
+    @Test void sessionRecordingFields() {
+        String[] qualities = {"complete", "anonymous", "unknown", "missing"};
+        for (int i = 0; i < qualities.length; i++) {
+            var item = LiveSessionJson.of(new LiveSession("bilibili", 1L, "sample", 2L,
+                    from.toEpochMilli(), from.plusSeconds(3600).toEpochMilli(), 3600, Map.of(), Map.of(),
+                    LiveEndReason.NORMAL, List.of(), 30, i == 3 ? Map.of() : Map.of("enter_users", List.of()),
+                    20, Map.of(), i == 2 ? null : i == 1 ? Map.of("enter_users", 1L) : Map.of()));
+            assertEquals(3570L, item.getLong("effectiveSeconds"), "有效时长必须扣较大缺口");
+            assertEquals(qualities[i], item.getString("listQuality"), "四种名单不能混淆");
+        }
+    }
+    // 跨进次日的整场只归开播桶，不能按重叠重复计数。
+    @Test void trendRecordingFields() {
+        append(from);
+        var buckets = JSON.parseObject(JSON.toJSONString(controller.rangeTrend("bilibili", 1L, "day", "7").getBody())).getJSONObject("trend").getJSONArray("buckets");
+        assertEquals(600L, buckets.getJSONObject(0).getLong("effectiveSeconds"), "趋势必须带出有效时长");
+        assertEquals(1, buckets.getJSONObject(0).getJSONObject("coverage").getIntValue("complete"));
+        assertEquals(0L, buckets.getJSONObject(1).getLong("effectiveSeconds"));
+        assertEquals(0, buckets.getJSONObject(1).getJSONObject("coverage").getIntValue("complete"));
     }
 
 }

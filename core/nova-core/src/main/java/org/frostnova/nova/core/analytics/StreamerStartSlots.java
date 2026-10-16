@@ -19,7 +19,9 @@ public final class StreamerStartSlots {
                        Double revenue, Long messages, Double revenuePerHour, Double messagesPerHour,
                        List<Session> sessionItems) {}
     public record Top(int weekday, int startHour, int sessions, double value) {}
-    public record Result(long from, long to, List<Cell> cells, List<Top> topRevenue, List<Top> topMessages) {}
+    public record Result(long from, long to, List<Cell> cells, List<Top> topRevenue, List<Top> topMessages,
+                         int sessions, long durationSeconds, StreamerInsights.Capture capture,
+                         StreamerInsights.Coverage coverage) {}
 
     /** 输入场次须属于同一主播；区间含起点、不含终点。指标口径仅来自平台插件。 */
     public Result calculate(Collection<LiveSession> sessions, Instant from, Instant to,
@@ -29,10 +31,12 @@ public final class StreamerStartSlots {
         long end = to.toEpochMilli();
         boolean revenueKnown = rules != null && rules.revenueKeys() != null && !rules.revenueKeys().isEmpty();
         boolean messagesKnown = rules != null && rules.messageKey() != null && !rules.messageKey().isBlank();
+        var total = new StreamerInsights.Accumulator();
         var groups = new ArrayList<List<LiveSession>>();
         for (int i = 0; i < 84; i++) groups.add(new ArrayList<>());
         for (var session : sessions) {
             if (session.startTime() < start || session.startTime() >= end) continue;
+            total.add(session, null);
             var local = Instant.ofEpochMilli(session.startTime()).atZone(StatisticsDay.ZONE);
             int index = (local.getDayOfWeek().getValue() - 1) * 12 + local.getHour() / 2;
             groups.get(index).add(session);
@@ -61,7 +65,7 @@ public final class StreamerStartSlots {
                     usable && messagesKnown ? messages * 3600d / effective : null, List.copyOf(items)));
         }
         return new Result(start, end, List.copyOf(cells), top(cells, Cell::revenuePerHour),
-                top(cells, Cell::messagesPerHour));
+                top(cells, Cell::messagesPerHour), total.sessions, total.duration, total.capture(), total.coverage());
     }
 
     /**
@@ -70,7 +74,7 @@ public final class StreamerStartSlots {
      * <p>
      * 每小时效率与直播分区对比都用这一个定义，两边各写一遍就迟早分家。
      */
-    static long effectiveSeconds(LiveSession session) {
+    public static long effectiveSeconds(LiveSession session) {
         return Math.max(0, session.durationSeconds()
                 - Math.max(session.maintenanceGapSeconds(), session.roomOutageSeconds()));
     }
