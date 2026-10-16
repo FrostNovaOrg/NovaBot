@@ -269,11 +269,28 @@ for (const period of ['day', 'week', 'month']) await check(({day: '空日按钮�
     assert.equal(selected.length, 0, '空周期不可下钻');
 });
 const calendar = {provableFrom: 250, items: [
-  {date: '2026-10-13', weekday: 2, start: 100, end: 200, status: 'unknown', effectiveSeconds: 0, gapSeconds: 40, starts: []},
-  {date: '2026-10-14', weekday: 3, start: 200, end: 300, status: 'off', effectiveSeconds: 0, gapSeconds: 0, starts: []},
-  {date: '2026-10-15', weekday: 4, start: 300, end: 400, status: 'recorded', effectiveSeconds: 100, gapSeconds: 0, starts: [310]},
-  {date: '2026-10-16', weekday: 5, start: 400, end: 500, status: 'recorded', effectiveSeconds: 900, gapSeconds: 20, starts: [410, 430], current: true},
+  {date: '2026-10-13', weekday: 2, start: 100, end: 200, status: 'unknown', durationSeconds: 0, effectiveSeconds: 0, gapSeconds: 40, starts: []},
+  {date: '2026-10-14', weekday: 3, start: 200, end: 300, status: 'off', durationSeconds: 0, effectiveSeconds: 0, gapSeconds: 0, starts: []},
+  {date: '2026-10-15', weekday: 4, start: 300, end: 400, status: 'recorded', durationSeconds: 100, effectiveSeconds: 100, gapSeconds: 0, starts: [310]},
+  {date: '2026-10-16', weekday: 5, start: 400, end: 500, status: 'recorded', durationSeconds: 920, effectiveSeconds: 900, gapSeconds: 20, starts: [410, 430], current: true},
 ]};
+// 防止日历显示直播总时长，读数与读屏都应使用扣除缺口后的有效时长。
+await check('日历三小时直播半小时断线显示有效2.5小时与覆盖83.33%', () => {
+  const node = ui.createCalendar(host(), {items: [{...calendar.items[2],
+    durationSeconds: 10800, effectiveSeconds: 9000, gapSeconds: 1800}]});
+  assert.ok(byClass(node, 'sc-calendar-readout')[0].textContent.includes('有效 2.5 小时'), '应显示有效 2.5 小时');
+  assert.ok(byClass(node, 'sc-calendar-day')[0].getAttribute('aria-label').includes('有效时长 9000 秒'), '读屏应显示有效时长 9000 秒');
+  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('缺口 30 分 · 覆盖 83.33% · 仅使用已记录数据'),
+    '应显示缺口 30 分 · 覆盖 83.33% · 仅使用已记录数据');
+});
+// 防止百分比四舍五入到100%，掩盖仍存在的一秒缺口。
+await check('日历十小时直播一秒缺口覆盖99.99%不进位', () => {
+  const node = ui.createCalendar(host(), {items: [{...calendar.items[2],
+    durationSeconds: 36000, effectiveSeconds: 35999, gapSeconds: 1}]});
+  const quality = byClass(node, 'sc-calendar-quality')[0].textContent;
+  assert.ok(quality.includes('覆盖 99.99%'), '一秒缺口应显示覆盖 99.99%');
+  assert.ok(!quality.includes('100%'), '有缺口不能显示100%');
+});
 // 空日的操作不能只灰掉：必须隐藏且移出 Tab 顺序，也不能打开场次。
 await check('日历无场次日期隐藏查看链且不占Tab位', () => {
   const selected = [];
@@ -300,11 +317,12 @@ await check('日历无场次日期隐藏查看链且不占Tab位', () => {
 for (const [status, gapSeconds, expected] of [
   ['unknown', 0, '监测或时长证据不足 · 不按 0 计算'],
   ['off', 0, '已完整监测，确认没播'],
-  ['recorded', 20, '缺口 20 秒 · 仅使用已记录数据'],
-  ['recorded', 0, '缺口 0 秒 · 无已知缺口'],
+  ['recorded', 20, '缺口 20 秒 · 覆盖 80.00% · 仅使用已记录数据'],
+  ['recorded', 0, '缺口 0 秒 · 覆盖 100% · 无已知缺口'],
   ['recorded', undefined, '当前暂无缺口说明'],
 ]) await check('日历缺口说明对应状态' + status + '/' + gapSeconds, () => {
-  const node = ui.createCalendar(host(), {items: [{...calendar.items[2], status, gapSeconds}]});
+  const node = ui.createCalendar(host(), {items: [{...calendar.items[2], status, gapSeconds,
+    effectiveSeconds: 100 - (gapSeconds ?? 0)}]});
   assert.equal(byClass(node, 'sc-calendar-quality')[0].textContent, expected, '缺口说明不能与当天状态矛盾');
 });
 // 缺口格式须与页顶和抽屉一致，不能显示原始的带千分位秒数。

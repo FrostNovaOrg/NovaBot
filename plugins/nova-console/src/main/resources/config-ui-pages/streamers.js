@@ -1449,8 +1449,8 @@ function renderInsights(data, message) {
   const keys = ['durationSeconds', 'revenue', 'messages', 'audience', 'interactionAudience', 'fans'];
   const labels = ['直播时长', '流水', '弹幕', '观众', '互动观众', '粉丝净增'];
   const grid = createKpis(keys.map((key, index) => ({label: labels[index], value: kpiValues[index], comparison: key === 'fans' ? '' : insightsComparison(data.comparisons?.[key])?.text || ''})), host);
-  kpiResizeObserver = new ResizeObserver(() => {
-    for (const cell of grid.children) {
+  kpiResizeObserver = new ResizeObserver(entries => {
+    for (const cell of entries.flatMap(entry => [...entry.target.children])) {
       const value = cell.querySelector('.sc-kpi-value');
       if (!value || !value.clientWidth) continue;
       value.style.fontSize = '';
@@ -1488,7 +1488,9 @@ function renderInsights(data, message) {
     {label: '每小时流水', value: hours > 0 && data.revenue != null ? fmtMetric(data.revenue / hours, {money: true}) + ' 元/时' : '—'},
     {label: '每小时弹幕', value: hours > 0 && data.messages != null ? fmtMetric(data.messages / hours, {money: true}) + ' 条/时' : '—'}], more);
   [...moreGrid.children].forEach((cell, index) => markRecorded(cell, data, ['sessions', 'follows', 'revenuePerHour', 'messagesPerHour'][index]));
-  host.appendChild(more); renderDailyTrend();
+  host.appendChild(more);
+  kpiResizeObserver.observe(moreGrid);
+  renderDailyTrend();
 }
 
 function trendFormat(metric, mode) {

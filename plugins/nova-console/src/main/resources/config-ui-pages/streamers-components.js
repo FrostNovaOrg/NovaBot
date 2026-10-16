@@ -2,7 +2,7 @@
  * 主播详情的展示组件。时间范围、统计值与比较文字均由调用方提供。
  * 页面插入 COMPONENT_STYLE；离开时调用 releaseComponents，单个图表也可 destroy。
  */
-import {fmtWholeGap} from './streamers-model.js';
+import {durationCoverage, fmtWholeGap} from './streamers-model.js';
 
 export const COMPONENT_STYLE = `
 .sc-card{min-width:0;padding:16px;margin-bottom:16px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);font-size:15px;line-height:1.55}
@@ -452,7 +452,7 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
     readout.title = `${item.date} · ${explanation}`;
     quality.textContent = status === 'off' ? '已完整监测，确认没播'
       : status === 'unknown' ? '监测或时长证据不足 · 不按 0 计算'
-        : finite(item.gapSeconds) ? `缺口 ${fmtWholeGap(item.gapSeconds)} · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
+        : finite(item.gapSeconds) ? `缺口 ${fmtWholeGap(item.gapSeconds)} · 覆盖 ${durationCoverage(item)} · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
           : '当前暂无缺口说明';
     action.textContent = `查看 ${shortDate(item.date)} 场次`;
     action.disabled = !onSelect || !(item.starts || []).length;

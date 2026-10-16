@@ -398,7 +398,7 @@ public class StreamerController {
             calendar = new StreamerCalendar.Result(calendar.provableFrom(), calendar.items().stream()
                     .map(day -> day.status().equals("off") && day.end() > uncertainFrom && day.start() < now
                             ? new StreamerCalendar.Day(day.date(), day.weekday(), day.start(), day.end(),
-                                    day.current(), "unknown", day.effectiveSeconds(), day.gapSeconds(), day.starts())
+                                    day.current(), "unknown", day.durationSeconds(), day.effectiveSeconds(), day.gapSeconds(), day.starts())
                             : day).toList());
         }
         return calendar;

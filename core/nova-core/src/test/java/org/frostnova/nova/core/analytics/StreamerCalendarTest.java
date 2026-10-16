@@ -21,6 +21,16 @@ class StreamerCalendarTest {
     LiveSession session(long from,long to) {
         return new LiveSession("sample",1L,"sample",2L,from,to,(to-from)/1000,Map.of(),Map.of());
     }
+    @Test @DisplayName("三小时直播扣除半小时断线后有效时长为两小时半")
+    void effectiveDurationExcludesGaps() {
+        // 防止把分日直播时长直接当成有效时长。
+        var result = calendar(List.of(session(today, today + 10800000)), watched(), List.of(),
+                List.of(interval(today + 3600000, today + 5400000)));
+        var item = result.items().get(6);
+        assertEquals(1800, item.gapSeconds());
+        assertEquals(9000, item.effectiveSeconds(), "有效时长须从直播时长扣除断线");
+        assertEquals(10800, item.durationSeconds());
+    }
     @Test @DisplayName("恢复不补认开播时三秒停机也不能确认没播")
     void anyDowntimeIsUnknown() {
         for (long seconds : List.of(3L,660L)) {
@@ -38,7 +48,8 @@ class StreamerCalendarTest {
         }
         var gaps = calendar(List.of(session),watched(),List.of(interval(today,today+3000)),List.of(interval(today+1000,today+4000)));
         assertEquals(4,gaps.items().get(6).gapSeconds(),"重叠缺口只计一次");
-        assertEquals(7200,gaps.items().stream().mapToLong(StreamerCalendar.Day::effectiveSeconds).sum());
+        assertEquals(7200,gaps.items().stream().mapToLong(StreamerCalendar.Day::durationSeconds).sum());
+        assertEquals(7196,gaps.items().stream().mapToLong(StreamerCalendar.Day::effectiveSeconds).sum());
     }
     @Test @DisplayName("今天只检查截至此刻的监看且有场次优先记为有直播")
     void currentDay() {

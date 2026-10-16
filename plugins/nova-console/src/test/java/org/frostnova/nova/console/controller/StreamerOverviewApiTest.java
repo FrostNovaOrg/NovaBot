@@ -167,6 +167,18 @@ class StreamerOverviewApiTest {
         for (String endpoint : List.of("calendar","fans","sessions","trend"))
             mvc.perform(get("/config/api/streamers/bilibili/99/"+endpoint)).andExpect(status().isNotFound());
     }
+    @Test @DisplayName("日历接口三小时直播扣除半小时断线")
+    void calendarEffectiveDuration() throws Exception {
+        // 防止接口仍把直播时长输出为有效时长。
+        session(boundary, boundary + 10800000);
+        when(live.roomOutageIntervals("bilibili", 1L, 0, now.toEpochMilli())).thenReturn(List.of(
+                new LiveGap(boundary + 3600000, boundary + 5400000, LiveGap.Reason.UNKNOWN)));
+        var today = read("calendar", "days", "7").getJSONObject("calendar").getJSONArray("items").getJSONObject(6);
+        System.out.println("CALENDAR_DAY_SAMPLE: " + today.toJSONString());
+        assertEquals(9000, today.getLongValue("effectiveSeconds"), "有效时长须扣除半小时断线");
+        assertEquals(10800L, today.getLong("durationSeconds"), "直播时长单独保留");
+        assertEquals(1800, today.getLongValue("gapSeconds"));
+    }
     @Test @DisplayName("开播日历传递本房监看证据并区分已播与未知")
     void calendarEvidence() throws Exception {
         when(live.monitoringIntervals(eq("bilibili"),eq(1L),anyLong())).thenReturn(List.of(
