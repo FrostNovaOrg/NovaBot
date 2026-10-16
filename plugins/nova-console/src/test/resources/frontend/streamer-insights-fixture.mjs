@@ -73,7 +73,7 @@ let sessionMessageKey = null;
 let sessionScenario = null;
 let recentScenario = null;
 let slotsScenario = null;
-const revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
+let revenueKeys = ['gift_value', 'super_chat_value', 'guard_value'];
 const trendBuckets = Array.from({length: 25}, (_, i) => ({
   start: Date.parse('2026-10-12T06:00:00+08:00') - i * 604800000,
   end: Date.parse('2026-10-19T06:00:00+08:00') - i * 604800000,
@@ -185,7 +185,7 @@ await check('场次缺名单显示未知到场人数', async () => {
   assert.equal(sessionMetric(sessionRows().find(n => n.href.endsWith('/1792101600200')), '到场人数'), '0 人', '已知空名单仍显示0人');
   sessionScenario = null;
 });
-// 抓住有指标快照却因没有收入键被写成未知的情况；没有快照才写—。
+// 收入目录非空时，快照缺少收入键按零；没有快照仍未知。
 await check('场次流水区分有快照零收入与空对象、null及缺失指标', async () => {
   sessionScenario = [
     {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {gift_value: 12.5}},
@@ -217,7 +217,7 @@ await check('最近场次流水只合计收入键', async () => {
   } finally { recentScenario = null; }
 });
 // 抓住最近归档与场次卡采用不同零收入规则的情况。
-await check('最近归档有快照没收入键显示零，没有快照显示未知', async () => {
+await check('最近归档有收入目录且快照缺键显示零，没有快照显示未知', async () => {
   recentScenario = [
     {platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {danmu_count: 2}},
     {platform: 'sample', uid: 1, startTime: 1792101600200, metrics: {}},
@@ -1005,8 +1005,8 @@ await check('统计口径分别显示两期监测和可观察天数', async () =
   try {
     page.leave(); await load(base);
     let scope = textOf(nodes.get('sd-scope'));
-    assert.ok(scope.includes('本期：3.3 / 7 天可观察 · 监测覆盖 100% · 监测缺口 0秒'));
-    assert.ok(scope.includes('上期：未知 / 7 天可观察 · 监测覆盖 99.98% · 监测缺口 59秒'));
+    assert.ok(scope.includes('本期：3.3 / 7 天可观察 · 监测覆盖 100% · 监测缺口 0 秒'));
+    assert.ok(scope.includes('上期：未知 / 7 天可观察 · 监测覆盖 99.98% · 监测缺口 59 秒'));
     compositionScenario.previous.monitoring.watchedSeconds = 536340;
     page.leave(); await load(base);
     assert.ok(textOf(nodes.get('sd-scope')).includes('监测缺口 1 时 1 分'));
@@ -1033,6 +1033,82 @@ await check('已记录同时反映监测不足且粉丝净增除外', async () =
       }
     }
   } finally { compositionScenario = null; }
+});
+// 统计口径的两种缺口都保留整秒，小于一秒不能冒充零。
+for (const [gap, expected] of [[59, '59 秒'], [60, '1 分'], [3.217, '3 秒'],
+  [0.001, '不足 1 秒'], [3599, '59 分 59 秒'], [7199, '1 时 59 分 59 秒'], [0, '0 秒']]) {
+  for (const kind of ['monitoring', 'capture']) await check('统计口径' + kind + '缺口 ' + gap, async () => {
+    const monitoring = {recording: true, elapsedSeconds: 10000, watchedSeconds: 10000 - gap, rangeDays: 7};
+    compositionScenario = {monitoring, previous: {monitoring}, capture: {gapSeconds: gap, gapSessions: 1}};
+    try {
+      page.leave(); await load(base);
+      const lines = nodes.get('sd-scope').children.map(n => n.textContent);
+      const prefix = kind === 'monitoring' ? '监测缺口 ' : '缺口合计 ';
+      const actual = lines.filter(line => line.includes(prefix)).map(line => line.split(prefix)[1].split(' · ')[0]);
+      assert.deepEqual(actual, kind === 'monitoring' ? [expected, expected] : [expected], prefix + '得到' + JSON.stringify(actual) + '，应为' + expected);
+    } finally { compositionScenario = null; }
+  });
+}
+// 首屏和换范围均不得在计数未到时闪出可点击的全部归档。
+await check('归档入口读取中不可点击，成功与失败后恢复链接', async () => {
+  const link = () => flatten(nodes.get('sd-body')).find(n => n.className.includes('sd-archive-link'));
+  const waitForRequest = async count => {
+    const deadline = Date.now() + 20000;
+    while (pending.length < count) {
+      if (Date.now() > deadline) throw new Error('归档请求未发出');
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+  const initial = () => { assert.equal(link().textContent, '正在读取归档场数…'); assert.ok(!link().href, '读取时没有href'); };
+  let loading;
+  try {
+    page.leave(); loading = load(base + '?days=90');
+    await waitForRequest(1); initial();
+  } finally {
+    pending.splice(0).forEach(resolve => resolve(response({success: true, insights: {from: 100, to: 200, sessions: 2, daily: []}})));
+    await loading;
+  }
+  assert.equal(link().textContent, '查看 2 场归档'); assert.ok(link().href);
+  await load(base + '?days=30');
+  try {
+    loading = load(base + '?days=90'); await waitForRequest(1); initial();
+  } finally {
+    pending.splice(0).forEach(resolve => resolve(response({success: false, message: 'unavailable'})));
+    await loading;
+  }
+  assert.equal(link().textContent, '查看全部归档'); assert.ok(link().href);
+  const state = model.parseStreamersHash(link().href);
+  for (const key of ['from', 'to', 'dateFrom', 'dateTo', 'source']) assert.equal(state[key], undefined);
+});
+// 地址历史改变开关时，已画出的静态入口必须刷新，不能只重画趋势。
+await check('后退前进同步名单与历史节奏入口的隐藏日期参数', async () => {
+  page.leave(); await load(base + '?days=30');
+  const links = ['查看本期名单', '查看历史节奏'].map(label =>
+    flatten(nodes.get('sd-body')).find(n => n.tagName === 'a' && n.textContent === label));
+  assert.ok(links.every(Boolean));
+  for (const hideOff of ['1', undefined, '1', undefined]) {
+    await load(base + '?days=30' + (hideOff ? '&hideOff=1' : ''));
+    for (const link of links) {
+      assert.ok(flatten(nodes.get('sd-body')).includes(link), '保留已画出的入口');
+      assert.equal(model.parseStreamersHash(link.href).hideOff, hideOff, link.textContent + '地址参数');
+    }
+  }
+});
+// 平台目录为空属于未知；目录非空且快照缺键才是未发生的零收入。
+for (const place of ['recent', 'sessions']) await check(place + '无收入目录显示未知，有目录缺键显示零', async () => {
+  const saved = revenueKeys;
+  const items = [{platform: 'sample', uid: 1, startTime: 1792101600100, metrics: {danmu_count: 2}}];
+  sessionScenario = recentScenario = items;
+  try {
+    for (const [keys, expected] of [[[], '—'], [['gift_value'], '0.00 元']]) {
+      revenueKeys = keys; page.leave(); await load(base + (place === 'sessions' ? '?panel=sessions' : ''));
+      if (place === 'sessions') assert.equal(sessionMetric(sessionRows()[0], '流水'), expected);
+      else {
+        const row = flatten(nodes.get('sd-recent')).find(n => n.className === 'sd-recent-row');
+        assert.equal(textOf(row).split('流水 ')[1].split(' · ')[0], expected);
+      }
+    }
+  } finally { revenueKeys = saved; sessionScenario = recentScenario = null; }
 });
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);

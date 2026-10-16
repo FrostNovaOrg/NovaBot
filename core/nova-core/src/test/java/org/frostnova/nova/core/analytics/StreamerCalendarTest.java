@@ -68,4 +68,16 @@ class StreamerCalendarTest {
         var result = calendar(List.of(),List.of(interval(today-30*day,today+1000)),List.of(),List.of());
         assertEquals("unknown",result.items().get(6).status());
     }
+    @Test
+    @DisplayName("同日部分重叠且未覆盖全天的监看记录只计算并集")
+    void overlappingPartialDayCountsUnion() {
+        long hour = 3600000L;
+        var monitoring = new StreamerMonitoring(true, List.of(
+                new LiveGap(3 * hour, 8 * hour, LiveGap.Reason.UNKNOWN),
+                new LiveGap(hour, 5 * hour, LiveGap.Reason.UNKNOWN)), 24 * hour);
+        var evidence = monitoring.evidence(0, 24 * hour);
+        assertEquals(25200d, evidence.watchedSeconds(), "重叠的2小时不能重复计入监看秒数");
+        assertEquals(86400d, evidence.elapsedSeconds());
+        assertEquals(25200d, monitoring.period(0, 24 * hour, 0L, 1).watchedSeconds());
+    }
 }
