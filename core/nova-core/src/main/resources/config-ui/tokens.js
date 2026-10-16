@@ -209,7 +209,7 @@ function renderTokenList(tokens) {
     // 指纹不是秘密（是口令的哈希前缀），列出来是为了对账：鉴权失败的日志里印的就是它，
     // 否则「有个面板连不上」只能靠猜是哪一把
     + '<p class="hint" style="margin:10px 0 0">鉴权失败的日志中会记录指纹，'
-    + '可据此确定是哪个令牌无法连接。吊销<b>不会断开已建立的连接</b>，吊销后请确认对方确已断开。</p>';
+    + '可据此确定是哪个令牌无法连接。吊销会<b>立即断开用该令牌认证的所有已有连接</b>，其他连接不受影响。</p>';
 
   box.querySelectorAll('button[data-fp]').forEach(button => {
     const token = sorted.find(t => t.fingerprint === button.dataset.fp);
@@ -219,7 +219,7 @@ function renderTokenList(tokens) {
 
 async function revoke(token) {
   if (!await ask({title: '吊销此令牌？',
-    body: '吊销「' + token.label + '」后，该令牌无法再建立新连接；已连接的面板不会因此断开。吊销后请确认对方确已断开。'})) return;
+    body: '吊销「' + token.label + '」后，该令牌无法再建立新连接，用它认证的所有已有连接也会立即断开。其他连接不受影响。'})) return;
 
   try {
     const result = await api('/event-tokens/' + encodeURIComponent(token.fingerprint) + '/revoke',

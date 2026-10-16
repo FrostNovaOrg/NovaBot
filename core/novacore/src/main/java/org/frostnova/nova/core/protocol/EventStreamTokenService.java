@@ -26,7 +26,10 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 import java.util.stream.Stream;
 
 /**
@@ -65,6 +68,31 @@ public class EventStreamTokenService {
 
     private final Path file;
 
+    private final List<ToIntFunction<String>> revocationListeners = new CopyOnWriteArrayList<>();
+
+    void addRevocationListener(ToIntFunction<String> listener) {
+        revocationListeners.add(listener);
+    }
+
+    void removeRevocationListener(ToIntFunction<String> listener) {
+        revocationListeners.remove(listener);
+    }
+
+    /** 校验与登记在同一把锁下完成，吊销不会漏掉刚通过认证的连接。 */
+    synchronized Verdict authenticate(String presented, Consumer<String> register) {
+        Verdict verdict = check(presented);
+        if (verdict == Verdict.OK) {
+            afterValidation();
+            register.accept(hash(presented));
+        }
+        return verdict;
+    }
+
+    /** 校验通过、登记连接之前的钩子，默认不执行任何操作。 */
+    void afterValidation() {}
+
+    public record RevocationResult(boolean found, int disconnected) {}
+
     /**
      * 坏行的提示：每连一次面板、每核验一次都要读一遍口令表，同一份文件只报第一次，变了再报
      */
@@ -99,13 +127,18 @@ public class EventStreamTokenService {
      * 按指纹定位，<b>标记而不删除</b>。已经吊销的再吊销一次不算失败——
      * 重复操作应当是幂等的，否则使用者会因为「点了两次」而以为出了问题。
      * <p>
-     * ⚠️ <b>吊销对已经建立的连接不自动生效。</b> 这一条与校验放在哪一侧无关，
-     * 两种机制下都成立：吊销之后必须确认旧连接已断，否则「已吊销」只对新连接成立。
+     * 写盘成功后立即断开用这把口令认证的已有连接，不影响其他连接。
      * @param fingerprint 口令指纹（列表里展示的那个）
      * @return 是否找到了这把口令
      */
-    public synchronized boolean revoke(@NonNull String fingerprint) {
+    public boolean revoke(@NonNull String fingerprint) {
+        return revokeAndDisconnect(fingerprint).found();
+    }
+
+    /** 吊销并返回本次断开的连接数；写盘失败时不通知连接。 */
+    public synchronized RevocationResult revokeAndDisconnect(@NonNull String fingerprint) {
         List<EventStreamToken> all = list();
+        List<String> revokedHashes = new ArrayList<>();
         boolean found = false;
         List<EventStreamToken> updated = new ArrayList<>(all.size());
         for (EventStreamToken token : all) {
@@ -113,17 +146,24 @@ public class EventStreamTokenService {
                 updated.add(new EventStreamToken(token.hash(), token.label(),
                         token.issuedAt(), System.currentTimeMillis()));
                 found = true;
+                revokedHashes.add(token.hash());
             } else {
                 updated.add(token);
             }
         }
 
+        int disconnected = 0;
         if (found) {
             rewrite(updated);
-            log.warn("已吊销一把事件流只读口令: 指纹 {} —— ⚠️ 已建立的连接不会自动断开, 请确认对方已掉线",
-                    fingerprint);
+            for (String hash : revokedHashes) {
+                for (ToIntFunction<String> listener : revocationListeners) {
+                    disconnected += listener.applyAsInt(hash);
+                }
+            }
+            log.warn("已吊销一把事件流只读口令: 指纹 {}, 已断开使用该口令的 {} 个连接",
+                    fingerprint, disconnected);
         }
-        return found;
+        return new RevocationResult(found, disconnected);
     }
 
     /**

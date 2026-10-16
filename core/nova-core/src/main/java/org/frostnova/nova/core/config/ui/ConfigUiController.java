@@ -1363,8 +1363,7 @@ public class ConfigUiController {
     /**
      * 吊销一把只读口令
      * <p>
-     * ⚠️ <b>吊销对已经建立的连接不自动生效。</b> 这一条与校验放在哪一侧无关，
-     * 撤完必须确认对方确实掉线了，否则「已吊销」只对新连接成立。
+     * 吊销成功即断开用这把口令认证的已有连接，并报告实际断开的数量。
      * @param fingerprint 口令指纹
      * @return 吊销结果
      */
@@ -1372,10 +1371,13 @@ public class ConfigUiController {
     public JSONObject revokeEventToken(@PathVariable String fingerprint) {
         JSONObject result = new JSONObject();
         try {
-            boolean found = eventStreamTokens.revoke(fingerprint);
+            EventStreamTokenService.RevocationResult revoked = eventStreamTokens.revokeAndDisconnect(fingerprint);
+            boolean found = revoked.found();
             result.put("success", found);
             result.put("message", found
-                    ? "已吊销。⚠️ 已经建立的连接不会自动断开，请确认对方已掉线"
+                    ? (revoked.disconnected() == 0
+                        ? "已吊销，当前没有用它连着的连接"
+                        : "已吊销，用这把口令连着的 " + revoked.disconnected() + " 个连接已断开")
                     : "没有找到该有效令牌（可能已被吊销）");
             // not_found 多半是清单过期（别处已经撤过），界面据此重取；写盘失败则不能重取——
             // 盘上还是旧账，刷新只会把同一份旧账再画一遍。两者原先只靠文案区分，而文案是会改的

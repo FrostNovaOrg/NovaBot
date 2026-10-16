@@ -24,6 +24,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.ToIntFunction;
 
 /**
  * 事件输出协议 v2 的 WebSocket 端点
@@ -195,6 +197,19 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      */
     private final EventStreamTokenService tokens;
 
+    private final ToIntFunction<String> revocationListener = this::disconnectToken;
+
+    private int disconnectToken(String hash) {
+        int disconnected = 0;
+        for (Client client : clients.values()) {
+            if (hash.equals(client.tokenHash)
+                    && client.closeAsync(CloseStatus.NORMAL.withReason("口令已吊销"))) {
+                disconnected++;
+            }
+        }
+        return disconnected;
+    }
+
     public NovaEventEndpoint(NovaEventStream stream) {
         this(stream, null);
     }
@@ -215,6 +230,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         this.tokens = tokens;
         this.timings = timings;
         this.outboxCapacity = stream.getCapacity() + OUTBOX_HEADROOM;
+        if (tokens != null) {
+            tokens.addRevocationListener(revocationListener);
+        }
     }
 
     private volatile boolean heartbeatsStarted;
@@ -257,6 +275,11 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         private volatile boolean live = false;
 
         private volatile boolean closed = false;
+
+        private final AtomicBoolean closeStarted = new AtomicBoolean();
+
+        /** 仅保存认证口令的哈希，免口令连接为 null。 */
+        private volatile String tokenHash;
 
         private volatile long lastSeenAt = System.currentTimeMillis();
 
@@ -336,8 +359,8 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                     return;
                 }
 
-                EventStreamTokenService.Verdict verdict = tokens.check(presented);
-                if (verdict == EventStreamTokenService.Verdict.OK) {
+                EventStreamTokenService.Verdict verdict = tokens.authenticate(presented, hash -> {
+                    tokenHash = hash;
                     authenticated = true;
                     if (authDeadline != null) {
                         authDeadline.cancel(false);
@@ -347,6 +370,8 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                     send(hello(state));
                     grace = heartbeats.schedule(() -> goLive(state.lastSeq()), timings.resumeGrace(), TimeUnit.MILLISECONDS);
                     log.info("事件流客户端 {} 已通过口令认证", session.getId());
+                });
+                if (verdict == EventStreamTokenService.Verdict.OK) {
                     return;
                 }
 
@@ -452,6 +477,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         }
 
         private boolean writeLocked(String json) {
+            if (closed) {
+                return false;
+            }
             try {
                 session.sendMessage(new TextMessage(json));
                 return true;
@@ -553,11 +581,14 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          * 关闭的记账部分：只做一次，返回是否由本次调用做的
          */
         private boolean beginClose() {
-            if (closed) {
+            if (!closeStarted.compareAndSet(false, true)) {
                 return false;
             }
             closed = true;
 
+            if (grace != null) {
+                grace.cancel(false);
+            }
             if (authDeadline != null) {
                 authDeadline.cancel(false);
             }
@@ -668,12 +699,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         if (client == null) {
             return;
         }
-        if (client.grace != null) {
-            client.grace.cancel(false);
-        }
-        client.closed = true;
-        stream.unsubscribe(client);
-        client.outbox.clear();
+        client.beginClose();
 
         log.info("事件流客户端 {} 已断开 ({}), 当前连接数 {}", session.getId(), status.getCode(), clients.size());
     }
@@ -693,6 +719,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      */
     public void shutdown() {
         running = false;
+        if (tokens != null) {
+            tokens.removeRevocationListener(revocationListener);
+        }
         for (Client client : clients.values()) {
             client.close(CloseStatus.GOING_AWAY);
         }

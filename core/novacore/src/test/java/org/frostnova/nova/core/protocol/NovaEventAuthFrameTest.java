@@ -17,8 +17,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -98,6 +102,57 @@ class NovaEventAuthFrameTest {
         assertNotNull(hello, "认证通过后应当照常走原来那条路");
         assertEquals("hello", hello.getString("kind"));
         assertTrue(session.isOpen());
+    }
+
+    @Test
+    @Timeout(15)
+    @DisplayName("认证校验与登记之间吊销，不能留下已认证但未关闭的连接")
+    void revocationDuringAuthenticationCannotLeaveConnectionOpen() throws Exception {
+        // 抓住校验已通过、吊销通知却早于连接登记，导致已吊销口令的连接继续存活的竞态。
+        CountDownLatch validated = new CountDownLatch(1);
+        CountDownLatch closed = new CountDownLatch(1);
+        LiveProperties live = new LiveProperties();
+        live.setLiveDataPath(dir.resolve("data.json").toString());
+        FutureTask<EventStreamTokenService.RevocationResult> revocation = new FutureTask<>(() -> {
+            assertTrue(validated.await(5, TimeUnit.SECONDS), "认证应进入校验与登记之间的窗口");
+            return tokens.revokeAndDisconnect(tokens.fingerprintOf(tokens.list().get(0)));
+        });
+        tokens = new EventStreamTokenService(live) {
+            @Override
+            void afterValidation() {
+                validated.countDown();
+                try {
+                    revocation.get(200, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException expected) {
+                    // 认证持锁时吊销无法完成；继续登记并释放锁，让吊销随后关闭连接。
+                } catch (Exception e) {
+                    throw new AssertionError("等待吊销失败", e);
+                }
+            }
+        };
+        endpoint.shutdown();
+        endpoint = new NovaEventEndpoint(stream, tokens);
+        String token = tokens.issue("面板-甲");
+        NovaEventEndpointTest.FakeSession session = new NovaEventEndpointTest.FakeSession("auth-revoke") {
+            @Override
+            public void close(CloseStatus status) {
+                super.close(status);
+                closed.countDown();
+            }
+        };
+        endpoint.afterConnectionEstablished(session);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            executor.execute(revocation);
+            send(session, authFrame(token));
+            assertEquals(true, readField(clientOf(session), "authenticated"), "窗口内校验已通过，应完成认证");
+            assertTrue(revocation.get(5, TimeUnit.SECONDS).found(), "口令应已吊销");
+            assertTrue(closed.await(3, TimeUnit.SECONDS), "吊销与认证并发后，不能留下已认证但未关闭的连接");
+            assertEquals("口令已吊销", session.closedWith.getReason());
+        } finally {
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "吊销线程应结束");
+        }
     }
 
     @Test
