@@ -413,6 +413,41 @@ await check('周月与普通曲线默认显示末期短日期读数', () => {
     assert.ok(readout.includes('43760.3元'), '缺少末期数值');
   }
 });
+// 读数和游标必须预览同一天，离开后恢复所选日期并按焦点决定显隐。
+await check('粉丝图悬停同步游标读数且离开恢复选择', () => {
+  const chart = ui.createChart(host(), {points: points.filter(point => point.value != null)});
+  const dots = byClass(chart.element, 'sc-chart-hit');
+  const cursor = byClass(chart.element, 'sc-cursor-line')[0];
+  const readout = byClass(chart.element, 'sc-chart-readout')[0];
+  assert.equal(cursor.getAttribute('visibility'), 'hidden');
+  chart.svg.fire('pointermove', {clientX: Number(dots[1].getAttribute('cx')) + 8});
+  assert.equal(cursor.getAttribute('x1'), dots[1].getAttribute('cx'), '悬停游标应移到最近的第2点');
+  assert.equal(cursor.getAttribute('x2'), dots[1].getAttribute('cx'));
+  assert.equal(cursor.getAttribute('visibility'), 'visible');
+  assert.match(readout.textContent, /10\/15.*0/);
+  chart.svg.fire('pointerleave');
+  assert.match(readout.textContent, /10\/16.*-2/);
+  assert.equal(cursor.getAttribute('visibility'), 'hidden');
+  chart.svg.focus();
+  assert.equal(cursor.getAttribute('x1'), dots.at(-1).getAttribute('cx'));
+  assert.equal(cursor.getAttribute('visibility'), 'visible');
+  chart.svg.fire('pointermove', {clientX: Number(dots[1].getAttribute('cx'))});
+  chart.svg.fire('pointerleave');
+  assert.equal(cursor.getAttribute('x1'), dots.at(-1).getAttribute('cx'));
+  assert.equal(cursor.getAttribute('visibility'), 'visible', '键盘焦点仍在时显示已选点');
+  chart.svg.fire('blur');
+  assert.equal(cursor.getAttribute('visibility'), 'hidden');
+  chart.svg.fire('pointermove', {clientX: Number(dots[0].getAttribute('cx'))});
+  chart.svg.focus(); chart.svg.fire('blur');
+  assert.equal(cursor.getAttribute('visibility'), 'visible', '指针仍在时保留游标');
+  chart.svg.fire('pointerleave');
+  chart.svg.fire('click', {clientX: Number(dots[0].getAttribute('cx'))});
+  chart.svg.fire('keydown', {key: 'ArrowRight'});
+  assert.equal(cursor.getAttribute('x1'), dots[1].getAttribute('cx'), '键盘改选后移动游标');
+  chart.svg.fire('pointermove', {clientX: Number(dots.at(-1).getAttribute('cx'))});
+  chart.svg.fire('pointerleave');
+  assert.match(readout.textContent, /10\/15.*0/, '恢复后来选中的日期');
+});
 // Esc 关闭后键盘操作必须从原按钮继续。
 await check('抽屉Esc关闭恢复焦点', () => {
   const opener = new Element('button'); document.body.append(opener); opener.focus();

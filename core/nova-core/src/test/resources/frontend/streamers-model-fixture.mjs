@@ -239,6 +239,11 @@ eq(reportView('missing', '这一场没有报告图，也没有留下明细数据
 eq(reportView('missing').text.length > 0, true, '服务端没给话时也得有一句，不留白');
 
 // ---------- 十二、几句人话与柱图几何 ----------
+// 分钟舍入越过整点时必须进位，不能出现60分。
+for (const [seconds, expected] of [[3599, '1 时 0 分'], [7199, '2 时 0 分'],
+  [3569, '59 分'], [5400, '1 时 30 分'], [3600, '1 时 0 分'], [29, '0 分']]) {
+  eq(fmtDuration(seconds), expected, '时长进位 ' + seconds);
+}
 eq(fmtDuration(0), '0 分', '零时长');
 eq(fmtDuration(3600), '1 时 0 分', '整时');
 eq(fmtDuration(7440), '2 时 4 分', '时加分');

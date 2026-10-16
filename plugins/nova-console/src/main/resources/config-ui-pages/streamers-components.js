@@ -185,7 +185,7 @@ export function createChart(host, {
     return `${label} · ${format(point.value)}`;
   };
   let selectedIndex = deferred ? -1 : shown.length - 1;
-  let hasSelection = false;
+  let hovering = false, keyboardFocused = false, hoverIndex = -1;
   let updateSelection = () => {};
   const action = deferred ? element('button', 'nv-btn2 sc-chart-action', '查看当天场次 →') : null;
   if (action) {
@@ -201,7 +201,7 @@ export function createChart(host, {
   const choose = index => {
     if (!shown.length) return;
     selectedIndex = Math.max(0, Math.min(shown.length - 1, index));
-    hasSelection = true;
+    hoverIndex = -1;
     readout.textContent = describe(shown[selectedIndex]);
     readout.setAttribute('aria-label', accessibleDescription(shown[selectedIndex]));
     if (action) {
@@ -229,6 +229,25 @@ export function createChart(host, {
     if (!finite(event.clientX)) return;
     choose(nearestIndex(event.clientX)); svg.focus();
   });
+
+  if (period === 'day' && !deferred) {
+    svg.addEventListener('pointermove', event => {
+      if (!finite(event.clientX)) return;
+      hovering = true; hoverIndex = nearestIndex(event.clientX);
+      const point = shown[hoverIndex];
+      readout.textContent = describe(point);
+      readout.setAttribute('aria-label', accessibleDescription(point));
+      updateSelection();
+    });
+    svg.addEventListener('pointerleave', () => { hovering = false; choose(selectedIndex); });
+    svg.addEventListener('focus', () => { keyboardFocused = true; updateSelection(); });
+    const blurCursor = event => {
+      if (event.relatedTarget && svg.contains(event.relatedTarget)) return;
+      keyboardFocused = false; updateSelection();
+    };
+    svg.addEventListener('blur', blurCursor);
+    svg.addEventListener('focusout', blurCursor);
+  }
 
   const draw = (viewportWidth, viewportHeight) => {
     if (destroyed) return;
@@ -275,7 +294,10 @@ export function createChart(host, {
       mark.dataset.index = String(i);
       if (period === 'day') mark.setAttribute('aria-current', String(i === selectedIndex));
       const preview = () => {
-        if (!deferred) { readout.textContent = describe(point); readout.setAttribute('aria-label', accessibleDescription(point)); }
+        if (!deferred) {
+          readout.textContent = describe(point); readout.setAttribute('aria-label', accessibleDescription(point));
+          if (period === 'day') { hovering = true; hoverIndex = i; updateSelection(); }
+        }
       };
       mark.addEventListener('pointerenter', preview);
       mark.addEventListener('focus', preview);
@@ -299,10 +321,9 @@ export function createChart(host, {
         class: 'sc-cursor-line', visibility: 'hidden', 'aria-hidden': 'true'});
       svg.append(cursor);
       updateSelection = () => {
-        cursor.setAttribute('visibility', hasSelection ? 'visible' : 'hidden');
-        if (hasSelection) {
-          cursor.setAttribute('x1', x(selectedIndex)); cursor.setAttribute('x2', x(selectedIndex));
-        }
+        cursor.setAttribute('visibility', hovering || keyboardFocused ? 'visible' : 'hidden');
+        const index = hovering && hoverIndex >= 0 ? hoverIndex : selectedIndex;
+        cursor.setAttribute('x1', x(index)); cursor.setAttribute('x2', x(index));
       };
       updateSelection();
     }

@@ -19,7 +19,7 @@ import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis,
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
   monitoringDayText, monitoringPeriodText,
-  detailHash, fmtDuration, fmtMetric, fmtTime,
+  detailHash, fmtDuration, fmtWholeGap, fmtMetric, fmtTime,
   gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle,
   slotCell, slotLabel, slotRangeDays, slotTopText,
@@ -1255,7 +1255,7 @@ function renderScope(data = {}) {
     '较上期＝往前挪 ' + where.days + ' 天、长度相同的一段。场次与整场指标按开播统计日归入，不拆分跨日金额。',
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
     coverageText(data.coverage),
-    ...(data.capture ? ['归档采集覆盖 ' + durationCoverage(data) + ' · 缺口合计 ' + fmtMetric(data.capture.gapSeconds) + '秒 · 有缺口 ' + fmtMetric(data.capture.gapSessions) + ' 场'] : []),
+    ...(data.capture ? ['归档采集覆盖 ' + durationCoverage(data) + ' · 缺口合计 ' + fmtWholeGap(data.capture.gapSeconds) + ' · 有缺口 ' + fmtMetric(data.capture.gapSessions) + ' 场'] : []),
     ...(data.monitoring ? [monitoringPeriodText(data.monitoring, '本期'), monitoringPeriodText(data.previous?.monitoring, '上期')] : []),
   ];
   if (!comparisonExplanation(data).count && data.comparisonNote) lines.push(data.comparisonNote);
@@ -1267,7 +1267,7 @@ function performanceHint() {
 }
 
 function renderDashboardHints(data, error) {
-  renderHistory(data); renderArchiveLink(data);
+  renderHistory(data); renderArchiveLink(data, error);
   const from = data?.from;
   const to = data?.to ?? Date.now();
   const moment = at => {
@@ -1316,10 +1316,15 @@ function renderDashboard() {
   insightsData = null; renderToolbar(); renderScope(); renderBanner();
 }
 
-function renderArchiveLink(data) {
+function renderArchiveLink(data, error) {
   const link = $('#sd-body')?.querySelector('.sd-archive-link');
   if (!link) return;
   const available = data?.sessions != null && data.from != null && data.to != null;
+  if (!available && !error) {
+    link.textContent = '正在读取归档场数…';
+    link.removeAttribute('href');
+    return;
+  }
   link.textContent = available ? '查看 ' + fmtMetric(data.sessions) + ' 场归档' : '查看全部归档';
   // 按开播统计日归入，包含范围起点开播的零秒归档。
   link.href = dashboardHash({panel: 'sessions', page: 1, from: null, to: null,
@@ -1880,8 +1885,8 @@ function gapBadge(item) {
 }
 
 function sessionRevenue(item, page) {
-  return item.metrics != null && Object.keys(item.metrics).length > 0
-    ? (page.revenueKeys || []).reduce((sum, key) => sum + (item.metrics[key] || 0), 0) : null;
+  return page.revenueKeys?.length > 0 && item.metrics != null && Object.keys(item.metrics).length > 0
+    ? page.revenueKeys.reduce((sum, key) => sum + (item.metrics[key] || 0), 0) : null;
 }
 
 function renderRecent(host) {

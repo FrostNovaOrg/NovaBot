@@ -426,10 +426,9 @@ export function reportView(phase, message) {
  * @return {string} 「2 时 04 分」这样的一段
  */
 export function fmtDuration(seconds) {
-  const total = Number(seconds) || 0;
-  if (!total) return '0 分';
-  const h = Math.floor(total / 3600);
-  const m = Math.round((total % 3600) / 60);
+  const minutes = Math.round((Number(seconds) || 0) / 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
   return h ? h + ' 时 ' + m + ' 分' : m + ' 分';
 }
 
@@ -447,6 +446,12 @@ export function fmtGap(seconds) {
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   return [h ? h + ' 时' : '', m ? m + ' 分' : '', s ? s + ' 秒' : ''].filter(Boolean).join(' ') || '0 秒';
+}
+
+/** 统计口径缺口向下取整到秒；非零的亚秒缺口仍须说明。 */
+export function fmtWholeGap(seconds) {
+  const total = Number(seconds) || 0;
+  return total > 0 && total < 1 ? '不足 1 秒' : fmtGap(Math.floor(total));
 }
 
 /**
@@ -667,7 +672,7 @@ export function monitoringPeriodText(monitoring, name) {
   const observable = monitoring.observableDays == null ? '未知' : monitoring.observableDays.toFixed(1);
   const gap = Math.max(0, Math.round((monitoring.elapsedSeconds - monitoring.watchedSeconds) * 1000) / 1000);
   return name + '：' + observable + ' / ' + monitoring.rangeDays + ' 天可观察 · 监测覆盖 '
-    + monitoringCoverage(monitoring) + ' · 监测缺口 ' + (gap < 60 ? gap + '秒' : fmtDuration(gap));
+    + monitoringCoverage(monitoring) + ' · 监测缺口 ' + fmtWholeGap(gap);
 }
 
 export function metricRecorded(data, key) {

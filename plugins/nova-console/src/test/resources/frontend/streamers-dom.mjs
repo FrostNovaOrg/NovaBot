@@ -2,6 +2,7 @@ export const walk = node => node ? [node, ...node.children.flatMap(walk)] : [];
 export function enhance(node) {
   node.style.setProperty ||= function(key, value) { this[key] = String(value); };
   node.dataset ||= {};
+  node.removeAttribute ||= key => { delete node.attrs[key]; if (key === 'href') delete node.href; };
   node.className ||= '';
   node.classList.add = (...names) => { node.className += ' ' + names.join(' '); };
   node.querySelector ||= selector => walk(node).slice(1).find(child => selector.startsWith('.') ? child.className.split(' ').includes(selector.slice(1)) : child.id === selector.slice(1)) || null;
