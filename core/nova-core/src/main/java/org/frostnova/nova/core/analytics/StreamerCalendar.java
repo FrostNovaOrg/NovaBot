@@ -11,7 +11,7 @@ import java.util.List;
 /** 统计日开播日历。没有连续监看证据的空白不能推断为未开播。 */
 public final class StreamerCalendar {
     public record Day(String date, int weekday, long start, long end, boolean current, String status,
-                      long effectiveSeconds, long gapSeconds, List<Long> starts) {}
+                      long durationSeconds, long effectiveSeconds, long gapSeconds, List<Long> starts) {}
     public record Result(Long provableFrom, List<Day> items) {}
 
     public Result calculate(Collection<LiveSession> sessions, List<LiveGap> watched,
@@ -33,13 +33,13 @@ public final class StreamerCalendar {
             long end = StatisticsDay.startOf(date.plusDays(1)).toEpochMilli();
             long until = Math.min(end, range.to().toEpochMilli());
             var intersecting = sessions.stream().filter(s -> s.startTime() < until && s.endTime() > start).toList();
-            long effective = 0;
+            long duration = 0;
             List<LiveGap> sessionParts = new ArrayList<>();
             for (var session : intersecting) {
                 long from = Math.max(start, session.startTime());
                 long to = Math.min(until, session.endTime());
                 // 与概况共用归档时长；按时间位置分配，分日取整后仍保持整场总秒数。
-                effective += allocated(session, to) - allocated(session, from);
+                duration += allocated(session, to) - allocated(session, from);
                 sessionParts.add(new LiveGap(from, to, LiveGap.Reason.UNKNOWN));
             }
             long gapMillis = 0;
@@ -58,8 +58,9 @@ public final class StreamerCalendar {
             // 连接恢复不保证识别期间开播，因此任何长度的中断都不能宽限。
             covered &= gaps.stream().noneMatch(g -> g.from() < until && g.to() > start);
             String status = !intersecting.isEmpty() ? "recorded" : covered ? "off" : "unknown";
+            long gapSeconds = gapMillis / 1000;
             items.add(new Day(date.toString(), date.getDayOfWeek().getValue(), start, end, date.equals(today),
-                    status, effective, gapMillis / 1000,
+                    status, duration, Math.max(0, duration - gapSeconds), gapSeconds,
                     intersecting.stream().map(LiveSession::startTime).distinct().sorted().toList()));
         }
         return new Result(proof, List.copyOf(items));
