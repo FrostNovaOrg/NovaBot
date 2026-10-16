@@ -279,7 +279,7 @@ await check('日历三小时直播半小时断线显示有效2.5小时与覆盖8
   const node = ui.createCalendar(host(), {items: [{...calendar.items[2],
     durationSeconds: 10800, effectiveSeconds: 9000, gapSeconds: 1800}]});
   assert.ok(byClass(node, 'sc-calendar-readout')[0].textContent.includes('有效 2.5 小时'), '应显示有效 2.5 小时');
-  assert.ok(byClass(node, 'sc-calendar-day')[0].getAttribute('aria-label').includes('有效时长 9000 秒'), '读屏应显示有效时长 9000 秒');
+  assert.ok(byClass(node, 'sc-calendar-day')[0].getAttribute('aria-label').includes('有效 2.5 小时'), '读屏应显示有效 2.5 小时');
   assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('缺口 30 分 · 覆盖 83.33% · 仅使用已记录数据'),
     '应显示缺口 30 分 · 覆盖 83.33% · 仅使用已记录数据');
 });
@@ -535,5 +535,36 @@ await check('卡片指标与观众环保留输入', () => {
   assert.equal(arcs.length, 2);
   assert.ok(Number(arcs[0].getAttribute('stroke-dasharray').split(' ')[0]) > Number(arcs[1].getAttribute('stroke-dasharray').split(' ')[0]));
 });
+
+// 低于一万的中间刻度不能突然换成原数，读数不受刻度简写影响。
+await check('最大刻度17071时纵轴非零刻度统一为万', () => {
+  const chart = ui.createChart(host(), {points: [{start: 100, end: 200, value: 17071}]});
+  const labels = byClass(chart.element, 'sc-chart-scale')[0].children.map(n => n.textContent);
+  assert.equal(labels.length, 4);
+  assert.ok(labels.every(text => text === '0' || /^\d+\.\d万$/.test(text)), '纵轴单位须一致：' + labels.join('/'));
+  assert.ok(labels.includes('0.6万'), '低于一万的刻度也须用万');
+});
+// 格子的辅助标签与可见读数共享小时精度，小于六分钟时秒数须留空格。
+await check('日历格读屏标签与读数使用相同有效时长', () => {
+  for (const [seconds, expected] of [[30959, '8.6 小时'], [300, '300 秒']]) {
+    const node = ui.createCalendar(host(), {items: [{date: '2026-10-15', weekday: 4, start: 100, end: 200,
+      status: 'recorded', effectiveSeconds: seconds, durationSeconds: seconds, gapSeconds: 0, starts: [100]}]});
+    const cell = byClass(node, 'sc-calendar-day')[0]; cell.fire('click');
+    console.log('CALENDAR_SAMPLE: ' + cell.getAttribute('aria-label'));
+    assert.ok(cell.getAttribute('aria-label').includes('有效 ' + expected), '读屏标签须与读数同为有效 ' + expected);
+    assert.equal(cell.title, cell.getAttribute('aria-label'), '悬停与读屏标签须一致');
+    assert.ok(byClass(node, 'sc-calendar-readout')[0].textContent.includes('有效 ' + expected));
+  }
+});
+// 零秒归档没有覆盖率分母，缺口行须省略整段覆盖说明。
+await check('零秒归档的日历缺口行省略覆盖', () => {
+  const node = ui.createCalendar(host(), {items: [{date: '2026-10-15', weekday: 4, start: 100, end: 200,
+    status: 'recorded', durationSeconds: 0, effectiveSeconds: 0, gapSeconds: 0, starts: [100]}]});
+  byClass(node, 'sc-calendar-day')[0].fire('click');
+  const text = byClass(node, 'sc-calendar-quality')[0].textContent;
+  assert.ok(!text.includes('覆盖'), '零秒缺口行不得显示覆盖：' + text);
+  assert.ok(text.includes('缺口 0 秒') && text.includes('无已知缺口'), '其余缺口说明须保留');
+});
+
 process.stdout.write(`跑了 ${checks} 格，失败 ${failures} 格\n`);
 process.exitCode = failures ? 1 : 0;

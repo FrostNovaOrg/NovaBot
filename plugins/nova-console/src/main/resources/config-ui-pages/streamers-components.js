@@ -22,7 +22,7 @@ export const COMPONENT_STYLE = `
 .sc-chart-scale{min-width:48px;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding:14px 0 26px;text-align:right;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sc-chart svg{display:block;width:100%;height:180px;overflow:visible;touch-action:pan-y}
 .sc-chart .sc-grid{stroke:var(--line);stroke-width:1}
-.sc-chart .sc-zero{stroke:var(--dim);stroke-width:1}
+.sc-chart .sc-zero{stroke:var(--line);stroke-width:1}
 .sc-chart .sc-cursor-line{stroke:var(--text);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
 .sc-chart .sc-line{fill:none;stroke:var(--accent);stroke-width:2.5;vector-effect:non-scaling-stroke}
 .sc-chart .sc-point{fill:var(--accent);stroke:var(--surface);stroke-width:1.5}
@@ -116,7 +116,7 @@ let drawerId = 0;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const display = value => value == null ? '—' : String(value);
 const chartNumber = value => finite(value) ? new Intl.NumberFormat('zh-CN', {maximumFractionDigits: 1}).format(value) : '—';
-const axisNumber = value => Math.abs(value) >= 10000 ? chartNumber(value / 10000) + '万' : chartNumber(value);
+const axisNumber = (value, inTenThousands) => value !== 0 && inTenThousands ? (value / 10000).toFixed(1) + '万' : chartNumber(value);
 const dateParts = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'});
 function dateAt(time) {
   if (!finite(time)) return '';
@@ -270,7 +270,7 @@ export function createChart(host, {
     if (samples.length) {
       for (let i = 0; i < 4; i++) {
         const value = max - i * span / 3;
-        scale.append(element('span', '', axisNumber(value)));
+        scale.append(element('span', '', axisNumber(value, Math.max(Math.abs(min), Math.abs(max)) >= 10000)));
         svg.append(svgElement('line', {x1: left, x2: left + width, y1: y(value), y2: y(value), class: 'sc-grid'}));
       }
       svg.append(svgElement('line', {x1: left, x2: left + width, y1: y(0), y2: y(0), class: 'sc-zero'}));
@@ -439,11 +439,12 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
     if (cell.left < outer.left + 4) scroll.scrollLeft += cell.left - outer.left - 4;
     else if (cell.right > outer.right - 4) scroll.scrollLeft += cell.right - outer.right + 4;
   };
+  const effectiveDuration = seconds => finite(seconds) ? seconds < 360
+    ? `${chartNumber(seconds)} 秒` : `${chartNumber(seconds / 3600)} 小时` : '—';
   const show = index => {
     selected = Math.max(0, Math.min(items.length - 1, index));
     const item = items[selected], status = statusOf(item);
-    const seconds = item.effectiveSeconds;
-    const duration = finite(seconds) ? seconds < 360 ? `${chartNumber(seconds)}秒` : `${chartNumber(seconds / 3600)} 小时` : '—';
+    const duration = effectiveDuration(item.effectiveSeconds);
     const explanation = status === 'recorded' ? `有直播 · 有效 ${duration} · ${(item.starts || []).length} 场`
       : status === 'off' ? '确认没播 · 已监看，没开播'
         : calendar.provableFrom == null || item.start < calendar.provableFrom
@@ -452,7 +453,7 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
     readout.title = `${item.date} · ${explanation}`;
     quality.textContent = status === 'off' ? '已完整监测，确认没播'
       : status === 'unknown' ? '监测或时长证据不足 · 不按 0 计算'
-        : finite(item.gapSeconds) ? `缺口 ${fmtWholeGap(item.gapSeconds)} · 覆盖 ${durationCoverage(item)} · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
+        : finite(item.gapSeconds) ? `缺口 ${fmtWholeGap(item.gapSeconds)}${item.durationSeconds === 0 ? '' : ' · 覆盖 ' + durationCoverage(item)} · ${item.gapSeconds > 0 ? '仅使用已记录数据' : '无已知缺口'}`
           : '当前暂无缺口说明';
     action.textContent = `查看 ${shortDate(item.date)} 场次`;
     action.disabled = !onSelect || !(item.starts || []).length;
@@ -478,7 +479,7 @@ export function createCalendar(host, calendar, {onSelect, selectedDate} = {}) {
       button.tabIndex = index === selected ? 0 : -1;
       button.setAttribute('aria-selected', String(index === selected));
       const statusText = {recorded: '有直播', off: '确认没播', unknown: '说不准'}[status];
-      const text = `${item.date}，${statusText}${status === 'recorded' ? `，有效时长 ${display(item.effectiveSeconds)} 秒` : ''}${item.current ? '，今天' : ''}`;
+      const text = `${item.date}，${statusText}${status === 'recorded' ? `，有效 ${effectiveDuration(item.effectiveSeconds)}` : ''}${item.current ? '，今天' : ''}`;
       button.setAttribute('aria-label', text); button.title = text;
       if (short || month) button.append(element('span', '', `${Number(item.date.slice(5, 7))}/${Number(item.date.slice(8))}`));
       if (short) button.append(element('small', '', names[item.weekday - 1]));

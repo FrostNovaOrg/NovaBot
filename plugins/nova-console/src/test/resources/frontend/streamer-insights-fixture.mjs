@@ -404,7 +404,9 @@ await check('粉丝净增快照不足时说明实际起算时刻', async () => {
       compositionScenario = {fans: {change: 5, partial, fromAt, toAt: 1792101600000}};
       await load(base);
       const cell = flatten(nodes.get('sd-insights')).find(n => n.attrs['aria-label'] === '粉丝净增');
-      const note = cell.children.find(n => n.className.includes('sd-cell-note'));
+      const note = cell.children[2];
+      assert.equal(note.className, 'sc-kpi-delta', '粉丝说明须放在值下的比较行');
+      assert.equal(cell.children.length, 3, '粉丝格不应另挂底部说明');
       if (partial) {
         assert.ok(!note.textContent.includes('按区间边界有效快照计算'), '缺起点快照时不得声称按边界快照计算');
         assert.ok(note.textContent.includes('可用快照未覆盖整个范围'), '须说明快照覆盖不足');
@@ -1110,6 +1112,85 @@ for (const place of ['recent', 'sessions']) await check(place + '无收入目录
     }
   } finally { revenueKeys = saved; sessionScenario = recentScenario = null; }
 });
+
+// 周期、指标、分页和范围切换不能把折叠条移回控件前或重复插入。
+await check('折叠条切按周及其他控件后仍唯一且在控件后', async () => {
+  page.leave(); await load(base + '?panel=trend&period=day');
+  const week = flatten(drawer()).find(n => n.textContent === '按统计周');
+  await load(week.href);
+  const verify = () => {
+    const body = flatten(drawer()).find(n => n.className === 'sc-drawer-body');
+    const bars = flatten(body).filter(n => n.className === 'sd-recording');
+    assert.equal(bars.length, 1, '折叠条只能有一个');
+    const controls = body.children.findIndex(n => n.className === 'sd-trend-controls');
+    assert.equal(body.children.indexOf(bars[0]), controls + 1, '折叠条须紧跟趋势控件');
+    return bars[0];
+  };
+  verify().open = true;
+  for (const [key, value] of [['metric', 'messages'], ['page', '2'], ['period', 'month'], ['days', '7']]) {
+    const params = new URLSearchParams(location.hash.split('?')[1]); params.set(key, value);
+    await load(base + '?' + params); assert.ok(!verify().open, '切换后沿用重新折叠的行为');
+  }
+  for (const panel of ['audience', 'start-slots']) {
+    await load(base + '?panel=' + panel);
+    const body = flatten(drawer()).find(n => n.className === 'sc-drawer-body');
+    const bars = flatten(body).filter(n => n.className === 'sd-recording');
+    assert.equal(bars.length, 1, panel + '折叠条只能有一个');
+    const scope = body.children.findIndex(n => n.className.includes('sd-detail-scope'));
+    assert.equal(body.children.indexOf(bars[0]), scope + 1, panel + '折叠条须跟在范围行后');
+    if (panel === 'audience') assert.ok(body.children[scope].textContent.startsWith('本期名单 · 与总览全页范围一致：'));
+  }
+});
+// 使用不同的本期、上期边界，防止对比范围误用本期或漏掉一端。
+await check('统计口径头两行完整使用本期和上期接口边界', async () => {
+  compositionScenario = {from: Date.parse('2026-10-10T06:00:00+08:00'), to: Date.parse('2026-10-16T12:34:00+08:00'),
+    previous: {from: Date.parse('2026-10-03T06:00:00+08:00'), to: Date.parse('2026-10-10T06:00:00+08:00')}};
+  try {
+    page.leave(); await load(base + '?days=7');
+    const scope = nodes.get('sd-scope'); scope.open = true;
+    const lines = scope.children.slice(1).map(n => n.textContent);
+    console.log('SCOPE_SAMPLE: ' + lines.join(' | '));
+    assert.deepEqual(lines.slice(0, 2), [
+      '全页范围：2026/10/10 06:00 — 2026/10/16 12:34（不含结束时刻） · Asia/Shanghai',
+      '对比范围：2026/10/03 06:00 — 2026/10/10 06:00（不含结束时刻）'], '须分别显示本期和上期起止');
+  } finally { compositionScenario = null; }
+});
+// 模拟东京的本地时区，抓住当前卡比场次列表多一小时及缺少日期的情况。
+await check('Asia/Tokyo查看直播卡仍按东八区带日期显示', async () => {
+  const saved = process.env.TZ;
+  process.env.TZ = 'Asia/Tokyo';
+  const at = Date.parse('2026-10-16T10:09:08+08:00');
+  liveSnapshot = {success: true, living: true, since: at, dataAt: at + 60000, checkedAt: at + 120000, metrics: {}};
+  sessionScenario = [{platform: 'sample', uid: 1, startTime: at, durationSeconds: 60, metrics: {}}];
+  try {
+    assert.equal(new Date(at).getHours(), 11, '测试环境须在东京');
+    page.leave(); await load(base + '?panel=sessions');
+    const liveText = textOf(nodes.get('sd-live'));
+    assert.ok(liveText.includes('开播于 2026/10/16 10:09'), '开播于须为东八区日期与时分：' + liveText);
+    assert.ok(liveText.includes('数据截至 2026/10/16 10:10'), '数据截至须带日期');
+    assert.ok(liveText.includes('检查于 10:11:08'), '检查于须为东八区时分秒');
+    assert.ok(textOf(sessionRows()[0]).includes('2026/10/16 10:09'), '场次列表须与直播卡对齐');
+  } finally {
+    if (saved === undefined) delete process.env.TZ; else process.env.TZ = saved;
+    liveSnapshot = sessionScenario = null;
+  }
+});
+// 同样的缺口在最近归档与场次列表都须使用分秒，不能保留整串秒数。
+for (const [gap, expected] of [[66, '缺 1 分 6 秒'], [3599, '缺 59 分 59 秒']]) {
+  await check('场次与最近归档小标格式 ' + gap, async () => {
+    sessionScenario = recentScenario = [{platform: 'sample', uid: 1, startTime: 1792101600100,
+      maintenanceGapSeconds: gap, durationSeconds: 7200, metrics: {}}];
+    try {
+      page.leave(); await load(base + '?panel=sessions');
+      const badges = flatten(sessionRows()[0]).filter(n => n.className === 'sd-gap-badge');
+      const recentBadges = flatten(nodes.get('sd-recent')).filter(n => n.className === 'sd-gap-badge');
+      console.log('GAP_SAMPLE: ' + gap + ' => ' + badges[0]?.textContent);
+      assert.equal(badges[0]?.textContent, expected, '场次小标须使用分秒');
+      assert.equal(recentBadges[0]?.textContent, expected, '最近归档须使用相同小标');
+    } finally { sessionScenario = recentScenario = null; }
+  });
+}
+
 page.leave();
 for (const failure of failures) console.log('FAIL: ' + failure);
 console.log('跑了 ' + checks + ' 格，失败 ' + failures.length + ' 格');
