@@ -29,7 +29,11 @@ class Element extends EventTarget {
   getAttribute(key) { return this.attrs[key] ?? null; }
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   get isConnected() { return this === document.body || !!this.parentNode?.isConnected; }
-  getBoundingClientRect() { return this.rect; }
+  getBoundingClientRect() {
+    if (this.tagName === 'span' && this.parentNode?.className === 'sc-chart-labels')
+      return {...this.rect, width: this.textContent.length * 7};
+    return this.rect;
+  }
   focus() { document.activeElement = this; this.dispatchEvent(new Event('focus')); }
   showModal() { this.open = true; }
   close() { this.open = false; this.dispatchEvent(new Event('close')); }
@@ -69,11 +73,18 @@ async function check(name, fn) {
   finally { ui.releaseComponents(); }
 }
 
+// 纵轴全数加单位会换行；读数仍须保留调用方提供的精度和单位。
+await check('纵轴大数简写且读数保留单位', () => {
+  const chart = ui.createChart(host(), {points: [{...points[0], value: 87745.8}], format: value => value.toFixed(2) + ' 元'});
+  assert.equal(byClass(chart.element, 'sc-chart-scale')[0].children[0].textContent, '8.8万', '大数刻度应简写成一位小数的万');
+  assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('87745.80 元'), '刻度格式不能改掉读数精度与单位');
+});
 // 缺测不能变成零点，否则曲线会凭空跌到零；真实的零必须保留。
 await check('缺测断线且真实零保留', () => {
   const chart = ui.createChart(host(), {points});
-  const dots = byClass(chart.element, 'sc-point');
+  const dots = byClass(chart.element, 'sc-chart-hit');
   assert.equal(dots.length, 3, '有效点数量');
+  assert.equal(byClass(chart.element, 'sc-point').length, 1, '只有所选点保留可见标记');
   dots[0].fire('pointerenter');
   assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'), '普通曲线保留悬停读数');
   assert.equal(byClass(chart.element, 'sc-line')[0].getAttribute('d').match(/M/g).length, 2, '缺测处分段');
@@ -84,7 +95,7 @@ await check('缺测断线且真实零保留', () => {
     const one = ui.createChart(host(), {points: numbers.map((value, i) => ({start: i, end: i + 1, value}))});
     const baseline = Number(byClass(one.element, 'sc-zero')[0].getAttribute('y1'));
     assert.ok(baseline >= 14 && baseline <= 154, '零线在画布内');
-    for (const point of byClass(one.element, 'sc-point')) {
+    for (const point of byClass(one.element, 'sc-chart-hit')) {
       const coordinate = Number(point.getAttribute('cy'));
       assert.ok(coordinate >= 14 && coordinate <= 154, '数值在画布内');
     }
@@ -95,7 +106,7 @@ await check('隐藏未播后点选原日期', () => {
   let selected;
   const before = JSON.stringify(points);
   const chart = ui.createChart(host(), {points, hideOff: true, onSelect: interval => { selected = interval; }});
-  const dots = byClass(chart.element, 'sc-point');
+  const dots = byClass(chart.element, 'sc-chart-hit');
   dots[1].fire('click');
   byClass(chart.element, 'sc-chart-action')[0].fire('click');
   assert.deepEqual(selected, {start: 300, end: 400});
@@ -118,7 +129,7 @@ await check('隐藏未播与缺测后连续且点选原日期', () => {
   const chart = ui.createChart(host(), {points: records, hideOff: true, onSelect: value => selected.push(value)});
   const path = byClass(chart.element, 'sc-line')[0].getAttribute('d');
   assert.equal((path.match(/M/g) || []).length, 1, '隐藏缺测后折线连续');
-  const dots = byClass(chart.element, 'sc-point');
+  const dots = byClass(chart.element, 'sc-chart-hit');
   assert.equal(dots.length, 3, '只保留有效值且排除未播');
   assert.equal(Number(dots[1].getAttribute('cx')) - Number(dots[0].getAttribute('cx')),
     Number(dots[2].getAttribute('cx')) - Number(dots[1].getAttribute('cx')), '缺测不占位且等间距');
@@ -132,11 +143,11 @@ await check('隐藏未播与缺测后连续且点选原日期', () => {
 await check('尺寸变化重画且离页释放', () => {
   const chart = ui.createChart(host(), {points});
   const observer = observers.at(-1);
-  const before = byClass(chart.element, 'sc-point')[2].getAttribute('cx');
+  const before = byClass(chart.element, 'sc-chart-hit')[2].getAttribute('cx');
   observer.resize(360, 220);
   assert.equal(chart.svg.getAttribute('viewBox'), '0 0 360 220');
   assert.equal(chart.svg.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
-  assert.notEqual(byClass(chart.element, 'sc-point')[2].getAttribute('cx'), before, '横坐标重新计算');
+  assert.notEqual(byClass(chart.element, 'sc-chart-hit')[2].getAttribute('cx'), before, '横坐标重新计算');
   ui.releaseComponents();
   assert.equal(observer.disconnected, true, '尺寸监听已断开');
 });
@@ -161,7 +172,7 @@ await check('按日点选和左右键只更新读数由按钮下钻', () => {
   const action = byClass(chart.element, 'sc-chart-action')[0];
   assert.ok(action?.disabled, '未选日期时按钮不可用');
   assert.equal(byClass(chart.element, 'sc-chart-readout')[0].textContent, '点击图表选择日期');
-  const dots = byClass(chart.element, 'sc-point');
+  const dots = byClass(chart.element, 'sc-chart-hit');
   dots[0].fire('click');
   assert.equal(selected.length, 0, '一点就跳走，看不到当天数值');
   assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('10/13'));
@@ -182,25 +193,33 @@ await check('按日图键盘选择后Enter聚焦查看按钮且点不占Tab位',
   chart.svg.fire('keydown', {key: 'Enter'});
   assert.ok(document.activeElement === action, '选好日期按Enter应聚焦查看按钮');
   assert.equal(chart.svg.getAttribute('tabindex'), '0');
-  for (const dot of byClass(chart.element, 'sc-point')) assert.notEqual(dot.getAttribute('tabindex'), '0', '日期点不应占Tab位');
+  for (const dot of byClass(chart.element, 'sc-chart-hit')) assert.notEqual(dot.getAttribute('tabindex'), '0', '日期点不应占Tab位');
   chart.svg.focus();
   chart.svg.fire('keydown', {key: 'ArrowRight'});
   chart.svg.fire('keydown', {key: 'Enter'});
   assert.ok(document.activeElement === chart.svg, '空日按钮不可用时焦点留在图上');
 });
-// 没有可选择的数据时，不应再要求选择日期或提供查看按钮。
-await check('按日图没有有效点时只显示空态', () => {
-  for (const records of [[], [{...points[0], status: 'off'}], [{...points[0], value: null}]]) {
-    const chart = ui.createChart(host(), {points: records, hideOff: true, onSelect() {}});
-    assert.equal(chart.element.textContent, '暂无有效图表数据', '空态不能同时出现选择提示或按钮');
-    assert.equal(byClass(chart.element, 'sc-chart-action').length, 0);
+// 全空数据只显示空态，不能把粉丝曲线或周月柱图的末期日期当作有效读数。
+for (const [name, options] of [
+  ['按日图', {hideOff: true, onSelect() {}}],
+  ['粉丝图', {}],
+  ['周柱图', {period: 'week', onSelect() {}}],
+  ['月柱图', {period: 'month', onSelect() {}}],
+]) await check(name + '没有有效点时只显示空态', () => {
+  const records = [[{...points[0], value: null}], [{...points[0], value: null}, {...points[1], value: null}], []];
+  if (options.hideOff) records.push([{...points[0], status: 'off'}]);
+  for (const input of records) {
+    const chart = ui.createChart(host(), {...options, points: input});
+    assert.equal(chart.element.textContent, '暂无有效图表数据', '全空数据只能显示空态');
+    assert.equal(byClass(chart.element, 'sc-chart-readout').length, 0, '全空数据不能显示读数行');
+    assert.equal(byClass(chart.element, 'sc-chart-action').length, 0, '全空数据不能显示查看按钮');
   }
 });
 // 没直播的日子仍可读数，但不能打开空场次列表。
 for (const period of ['day', 'week', 'month']) await check(({day: '空日按钮不可下钻', week: '空周柱不可下钻', month: '空月柱不可下钻'})[period], () => {
     const selected = [];
     const chart = ui.createChart(host(), {period, points: [{...points[0], sessions: 0}], onSelect: value => selected.push(value)});
-    const mark = byClass(chart.element, period === 'day' ? 'sc-point' : 'sc-bar')[0];
+    const mark = byClass(chart.element, period === 'day' ? 'sc-chart-hit' : 'sc-bar')[0];
     mark.fire('click'); mark.fire('keydown', {key: 'Enter'});
     if (period === 'day') {
       const action = byClass(chart.element, 'sc-chart-action')[0];
@@ -214,31 +233,113 @@ const calendar = {provableFrom: 250, items: [
   {date: '2026-10-15', weekday: 4, start: 300, end: 400, status: 'recorded', effectiveSeconds: 100, gapSeconds: 0, starts: [310]},
   {date: '2026-10-16', weekday: 5, start: 400, end: 500, status: 'recorded', effectiveSeconds: 900, gapSeconds: 20, starts: [410, 430], current: true},
 ]};
+// 合计逐一对应三种格子，不能漏掉未知状态或把它算成未播。
+await check('日历合计与三种格子数一致', () => {
+  const node = ui.createCalendar(host(), calendar);
+  const totals = byClass(node, 'sc-calendar-totals')[0];
+  assert.equal(totals?.children.length, 3, '缺少三种状态的天数合计');
+  for (const status of ['recorded', 'off', 'unknown']) {
+    const total = totals.children.find(child => child.dataset.status === status);
+    assert.equal(total.children[0].textContent, byClass(node, 'sc-calendar-day').filter(cell => cell.className.split(' ').includes('sc-calendar-' + status)).length + '天');
+  }
+});
 // 记录不足与确认未播必须有不同视觉与读屏提示。
-await check('日历三态可辨且时长有深浅', () => {
+await check('日历三态可辨且有直播使用同色', () => {
   const node = ui.createCalendar(host(), calendar);
   const cells = byClass(node, 'sc-calendar-day');
   assert.ok(cells[0].className.includes('sc-calendar-unknown'));
   assert.ok(cells[1].className.includes('sc-calendar-off'));
   assert.ok(cells[2].className.includes('sc-calendar-recorded'));
   for (const [i, word] of ['说不准', '确认没播', '有直播'].entries()) assert.ok(cells[i].getAttribute('aria-label').includes(word), word);
-  assert.notEqual(cells[2].style['--sc-intensity'], cells[3].style['--sc-intensity']);
-  assert.ok(node.textContent.includes('此前的记录不全，只能显示说不准'));
+  assert.equal(cells[2].style['--sc-intensity'], cells[3].style['--sc-intensity']);
+  assert.ok(!byClass(node, 'sc-calendar-legend')[0].textContent.includes('此前的记录不全'));
 });
 // 今天不能与历史日期没有区别。
 await check('日历今天有标记', () => {
   const node = ui.createCalendar(host(), calendar);
   const today = byClass(node, 'sc-calendar-day')[3];
   assert.equal(today.getAttribute('aria-current'), 'date');
-  assert.ok(today.textContent.includes('今天'));
+  assert.ok(today.getAttribute('aria-label').includes('今天'));
 });
-// 只有有直播的日期可打开明细，并原样带回统计日起止和场次。
+// 先选日期读数，再用按钮打开所选统计日的场次。
 await check('日历点选保留边界与场次', () => {
   const selected = [];
   const node = ui.createCalendar(host(), calendar, {onSelect: value => selected.push(value)});
   const cells = byClass(node, 'sc-calendar-day');
   cells[0].fire('click'); cells[1].fire('click'); cells[3].fire('click');
+  assert.equal(selected.length, 0, '点一天直接打开了场次');
+  assert.ok(byClass(node, 'sc-calendar-readout')[0].textContent.includes('10/16'));
+  byClass(node, 'sc-calendar-action')[0].fire('click');
   assert.deepEqual(selected, [{start: 400, end: 500, starts: [410, 430]}]);
+});
+// 选中较早的有直播日期后，按钮不能仍打开最后一天的场次。
+await check('日历按钮打开选中的非最后一天', () => {
+  const selected = [];
+  const node = ui.createCalendar(host(), calendar, {onSelect: value => selected.push(value)});
+  const cell = byClass(node, 'sc-calendar-day').find(cell => cell.dataset.date === '2026-10-15');
+  cell.fire('click');
+  assert.equal(selected.length, 0, '选日期时不能直接打开场次');
+  assert.ok(byClass(node, 'sc-calendar-readout')[0].textContent.includes('10/15'), '读数应显示选中的日期');
+  const action = byClass(node, 'sc-calendar-action')[0];
+  assert.equal(action.disabled, false, '选中的日期有场次可看');
+  assert.equal(action.textContent, '查看 10/15 场次');
+  action.fire('click');
+  assert.deepEqual(selected, [{start: 300, end: 400, starts: [310]}], '按钮应传递所选日的 start/end/starts');
+});
+// 一整张日历只占一个日期 Tab 位，方向键选择后 Enter 到查看按钮。
+await check('日历键盘单入口且Enter到所选日按钮', () => {
+  const node = ui.createCalendar(host(), calendar, {onSelect() {}});
+  const cells = byClass(node, 'sc-calendar-day');
+  const scroll = byClass(node, 'sc-calendar-scroll')[0];
+  assert.notEqual(scroll.tabIndex, 0, '滚动容器不能另占一个 Tab 位');
+  assert.equal(cells.filter(cell => cell.tabIndex === 0).length, 1, '整张日历只能一个日期 Tab 位');
+  cells[3].fire('keydown', {key: 'ArrowLeft'});
+  assert.equal(document.activeElement, cells[2]);
+  assert.equal(cells[2].getAttribute('aria-selected'), 'true');
+  cells[2].fire('keydown', {key: 'Enter'});
+  assert.equal(document.activeElement, byClass(node, 'sc-calendar-action')[0]);
+  cells[2].fire('keydown', {key: 'ArrowLeft'});
+  assert.ok(byClass(node, 'sc-calendar-action')[0].disabled, '确认没播的日期不能查看场次');
+});
+// 读数保留接口的时长、场数和缺口；说不准不能被显示为零或确认未播。
+await check('日历读数给出状态原因与缺口', () => {
+  const input = {...calendar, items: [...calendar.items,
+    {...calendar.items[0], date: '2026-10-17', start: 500, end: 600, gapSeconds: 0}]};
+  const node = ui.createCalendar(host(), input);
+  const cells = byClass(node, 'sc-calendar-day');
+  const text = () => byClass(node, 'sc-calendar-readout')[0].textContent;
+  cells[0].fire('click');
+  assert.ok(text().includes('此前的记录不全') && text().includes('说不准'));
+  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('40秒'));
+  cells[1].fire('click');
+  assert.ok(text().includes('已监看') && text().includes('没开播'));
+  cells[3].fire('click');
+  assert.ok(text().includes('2 场') && text().includes('统计截止日，尚未结束'));
+  assert.ok(byClass(node, 'sc-calendar-quality')[0].textContent.includes('20秒'));
+  cells[4].fire('click');
+  assert.ok(text().includes('停机或断线'), '可证明日期之后仍未知时解释监测中断');
+});
+// 横轴全日期太长会挤压相邻标签，日和周都必须由组件缩写。
+for (const [period, label, date, end, expected] of [
+  ['day', '2026-09-11', '2026-09-11', '2026-09-12', '09/11'],
+  ['week', '2026-09-14 ~ 09-20', '2026-09-14', '2026-09-21', '09/14–09/20'],
+]) await check(({day: '日横轴使用短日期', week: '周横轴使用短日期'})[period], () => {
+  const chart = ui.createChart(host(), {period, points: [{
+    start: Date.parse(date + 'T06:00:00+08:00'), end: Date.parse(end + 'T06:00:00+08:00'), label, value: 12,
+  }]});
+  assert.equal(byClass(chart.element, 'sc-chart-labels')[0].textContent, expected, '横轴应使用短日期');
+  const mark = byClass(chart.element, period === 'day' ? 'sc-chart-hit' : 'sc-bar')[0];
+  assert.ok(mark.getAttribute('aria-label').includes(label), '读屏仍保留完整日期');
+});
+// 周月柱与粉丝折线初次打开就应有最后周期读数，日期由组件简写。
+await check('周月与普通曲线默认显示末期短日期读数', () => {
+  const start = Date.parse('2026-10-05T06:00:00+08:00');
+  for (const period of ['week', 'month', 'day']) {
+    const chart = ui.createChart(host(), {period, points: [{start, end: start + 7 * 86400000, label: '2026-10-05 ~ 10-11', value: 43760.3}], format: value => value + '元'});
+    const readout = byClass(chart.element, 'sc-chart-readout')[0].textContent;
+    assert.ok(readout.includes(period === 'day' ? '10/05' : '10/05–10/11'), '缺少末期短日期');
+    assert.ok(readout.includes('43760.3元'), '缺少末期数值');
+  }
 });
 // Esc 关闭后键盘操作必须从原按钮继续。
 await check('抽屉Esc关闭恢复焦点', () => {

@@ -239,7 +239,9 @@ await check('旧书签场次集合显示所选场次来源', async () => {
 await check('日历下钻展示所选日期来源与场数', async () => {
   await load(base);
   const day = flatten(nodes.get('sd-calendar')).find(n => n.dataset.date === '2026-10-16');
-  await day.fire('click'); await page.refresh();
+  await day.fire('click');
+  await flatten(nodes.get('sd-calendar')).find(n => n.className.includes('sc-calendar-action')).fire('click');
+  await page.refresh();
   assert.equal(new URLSearchParams(location.hash.split('?')[1]).get('source'), 'calendar', '地址须保留日历来源');
   assert.match(textOf(drawer()), /筛选来源：开播日历.*2026[/-]10[/-]16.*2 个场次/, '来源须说明日期与场数');
 });
@@ -378,7 +380,12 @@ await check('180天同步指标趋势观众日历', async () => {
 await check('日历按starts列出所选场次', async () => {
   await load(base); requests.length = 0;
   const day = flatten(nodes.get('sd-calendar') || nodes.get('sd-body')).find(n => n.dataset.date === '2026-10-16');
-  assert.ok(day, '有直播日期应可点击'); await day.fire('click'); await page.refresh();
+  assert.ok(day, '有直播日期应可点击');
+  const before = location.hash;
+  await day.fire('click');
+  assert.equal(location.hash, before, '日历点一天只选中');
+  const action = flatten(nodes.get('sd-calendar')).find(n => n.className.includes('sc-calendar-action'));
+  await action.fire('click'); await page.refresh();
   assert.ok(requests.some(url => url.includes('/sessions?') && new URL(url, 'https://example.test').searchParams.get('starts') === '1792101600100,1792101600200'), '场次请求应带当天starts');
   const links = flatten(drawer()).filter(n => n.tagName === 'a').map(n => n.href);
   for (const start of [1792101600100, 1792101600200]) assert.ok(links.includes(model.sessionHash('sample', 1, start)), '须列出所选场次链接');
@@ -432,11 +439,11 @@ await check('切换与后退重读本期卡片，保留本场节点和十五秒�
   assert.ok(flatten(nodes.get('sd-toolbar')).some(n => n.href?.includes('days=7') && n.attrs['aria-current'] === 'page'));
   const revenueSelect = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
   revenueSelect.value = 'revenue'; await revenueSelect.fire('change');
-  const dots = flatten(nodes.get('sd-trend')).filter(n => n.className.includes('sc-point'));
+  const dots = flatten(nodes.get('sd-trend')).filter(n => n.className.includes('sc-chart-hit'));
   assert.equal(dots.length, 1, '未播不画，已播零值保留');
   const select = flatten(nodes.get('sd-trend')).find(n => n.tagName === 'select');
   select.value = 'audience'; await select.fire('change');
-  assert.equal(flatten(nodes.get('sd-trend')).filter(n => n.className.includes('sc-point')).length, 0, '缺失观众值不能画成零');
+  assert.equal(flatten(nodes.get('sd-trend')).filter(n => n.className.includes('sc-chart-hit')).length, 0, '缺失观众值不能画成零');
   const text = flatten(card).map(n => n.textContent + n.innerHTML).join('');
   assert.match(text, /暂无数据/);
   assert.match(flatten(nodes.get('sd-scope')).map(n => n.textContent).join(' '), /没有名单 1 场/);
@@ -734,7 +741,7 @@ await check('按日图先选读数再查看当天场次', async () => {
       const select = flatten(host).find(n => n.tagName === 'select');
       select.value = 'revenue'; await select.fire('change');
     }
-    const dot = flatten(host).find(n => n.className.trim() === 'sc-point');
+    const dot = flatten(host).find(n => n.className.trim() === 'sc-chart-hit');
     const action = flatten(host).find(n => n.textContent === '查看当天场次 →');
     assert.ok(action?.disabled, '未选日期时按钮不可用');
     const before = location.hash;
