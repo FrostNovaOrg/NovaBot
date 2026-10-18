@@ -1011,6 +1011,15 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    void parseDanmuPreservesUnlistedBracketedText() {
+        // 用户故障：实时弹幕里未列入表情名单的手打方括号文字被误剥。
+        String extra = JSONObject.of("content", "我说[哈哈]你好[dog]", "emots",
+                JSONObject.of("[dog]", new JSONObject())).toJSONString();
+        BilibiliDanmuEvent danmu = (BilibiliDanmuEvent) parse(danmuMessage(extra, "\"\"")).orElseThrow();
+        assertEquals("我说[哈哈]你好", danmu.getContentText());
+    }
+
+    @Test
     @DisplayName("info[0][13] 为对象时解析为表情弹幕")
     void parseEmojiDanmu() {
         String thirteenth = "{\"emoticon_unique\":\"official_23\",\"url\":\"https://emo.example/o.png\",\"width\":200,\"height\":200}";

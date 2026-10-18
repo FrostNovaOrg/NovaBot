@@ -18,6 +18,9 @@ import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +53,7 @@ class BilibiliGapRecoveryTest {
     private LiveDetailArchive archive;
     private BilibiliLiveStatsAggregator stats;
     private BilibiliApiUtil api;
+    private BilibiliRiskMetrics risks;
     private JSONArray danmus;
     private JSONArray chats;
 
@@ -62,7 +66,8 @@ class BilibiliGapRecoveryTest {
         data.setLiveStatus("bilibili", ROOM.getUid(), true);
         archive = new LiveDetailArchive(core);
         stats = new BilibiliLiveStatsAggregator(data, archive);
-        api = new BilibiliApiUtil(http, properties, new BilibiliRiskMetrics());
+        risks = new BilibiliRiskMetrics();
+        api = new BilibiliApiUtil(http, properties, risks);
         danmus = new JSONArray();
         chats = new JSONArray();
         when(http.getJson(anyString(), any())).thenAnswer(call -> {
@@ -322,6 +327,7 @@ class BilibiliGapRecoveryTest {
 
     @Test
     void recoveredEmojiTextMatchesRealtimeWordsAndArchive() throws Exception {
+        // 用户故障：补录与实时的表情正文不同，留档和词频不一致。
         String text = "你好[dog]世界";
         JSONObject meta = JSONObject.of("user", JSONObject.of("uid", 5000005L,
                 "base", JSONObject.of("name", "测试观众")), "extra",
@@ -332,7 +338,9 @@ class BilibiliGapRecoveryTest {
                 JSONObject.of("cmd", "DANMU_MSG", "info", JSONArray.of(primary, text)), ROOM).orElseThrow();
         stats.onDanmu(live);
         var words = data.getLiveWordFrequencies("bilibili", ROOM.getUid());
-        danmus.add(danmu(3, text));
+        JSONObject recovered = danmu(3, text);
+        recovered.put("emots", JSONObject.of("[dog]", new JSONObject()));
+        danmus.add(recovered);
         recover();
         var records = archive.readDanmu("bilibili", ROOM.getUid(), START);
         assertEquals(2, records.size());
@@ -340,6 +348,89 @@ class BilibiliGapRecoveryTest {
         words.forEach((word, count) -> assertEquals(count * 2,
                 data.getLiveWordFrequencies("bilibili", ROOM.getUid()).get(word)));
         assertFalse(data.getLiveWordFrequencies("bilibili", ROOM.getUid()).containsKey("dog"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"listed", "missing", "empty", "string", "array", "unbracketed"})
+    void recoveredDanmuStripsOnlyOwnBracketedEmots(String shape) throws Exception {
+        // 用户故障：补录把观众手打的方括号文字也当成表情剥掉。
+        String text = shape.equals("listed") ? "我说[哈哈]你好[dog]" : "我说[哈哈]你好[dog]a[0]b";
+        JSONObject item = danmu(2, text);
+        switch (shape) {
+            case "listed" -> item.put("emots", JSONObject.of("[dog]", new JSONObject()));
+            case "empty" -> item.put("emots", new JSONObject());
+            case "string" -> item.put("emots", "[dog]");
+            case "array" -> item.put("emots", JSONArray.of("[dog]"));
+            case "unbracketed" -> item.put("emots", JSONObject.of("dog", new JSONObject(),
+                    "[哈哈", new JSONObject(), "0]", new JSONObject()));
+            default -> { }
+        }
+        danmus.add(item);
+        recover();
+        assertEquals(shape.equals("listed") ? "我说[哈哈]你好" : text,
+                archive.readDanmu("bilibili", ROOM.getUid(), START).get(0).text());
+    }
+
+    @Test
+    void invalidListShapeIsPreservedInRecoveryLog() throws Exception {
+        // 用户故障：补录日志丢掉列表错误的形状，无法分清接口异常。
+        when(http.getJson(contains("getMessageList"), any())).thenReturn(
+                JSONObject.of("code", 0, "data", JSONObject.of("list", "private-body")));
+        assertRecoveryReason("invalid-list:list=string");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,missing,v_voucher", "true,null,geetest", "true,missing,top",
+            "false,missing,geetest", "false,null,v_voucher", "false,string,top",
+            "false,object,geetest", "false,number,v_voucher"})
+    void challengeWithoutListFailsOnce(boolean superChat, String shape, String credential) throws Exception {
+        // 用户故障：人机验证挡住补录列表，日志却把零条当作成功。
+        JSONObject body = new JSONObject();
+        String field = superChat ? "list" : "room";
+        switch (shape) {
+            case "null" -> body.put(field, null);
+            case "string" -> body.put(field, "private-body");
+            case "object" -> body.put(field, new JSONObject());
+            case "number" -> body.put(field, 42);
+            default -> { }
+        }
+        JSONObject response = JSONObject.of("code", 0, "data", body);
+        if (credential.equals("top")) { response.put("v_voucher", "private-token"); }
+        else { body.put(credential, null); }
+        String endpoint = superChat ? "getMessageList" : "gethistory";
+        when(http.getJson(contains(endpoint), any())).thenReturn(response);
+        assertRecoveryReason("challenge");
+        assertEquals(1, risks.count(BilibiliRiskMetrics.Kind.GAIA, java.time.Duration.ofMinutes(1)));
+        verify(http, times(1)).getJson(contains(endpoint), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void challengeWithListStillRecovers(boolean superChat) throws Exception {
+        // 用户故障：带质询凭据但列表完整的补录消息被丢弃。
+        JSONArray list = superChat ? JSONArray.of(chat(101L, 2, 50)) : JSONArray.of(danmu(2, "有效发言"));
+        String endpoint = superChat ? "getMessageList" : "gethistory";
+        when(http.getJson(contains(endpoint), any())).thenReturn(JSONObject.of("code", 0, "data",
+                JSONObject.of("v_voucher", "private-token", superChat ? "list" : "room", list)));
+        recover();
+        assertEquals(1, metric(superChat ? BilibiliLiveMetric.SUPER_CHAT_COUNT : BilibiliLiveMetric.DANMU_COUNT));
+        assertEquals(1, risks.count(BilibiliRiskMetrics.Kind.GAIA, java.time.Duration.ofMinutes(1)));
+        verify(http, times(1)).getJson(contains(endpoint), any());
+    }
+
+    private void assertRecoveryReason(String reason) throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(BilibiliGapRecovery.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            recover();
+            String message = logs.list.get(0).getFormattedMessage();
+            assertTrue(message.contains("reason=失败:" + reason), message);
+        } finally {
+            logger.detachAppender(logs);
+            logs.stop();
+        }
     }
 
     @Test
