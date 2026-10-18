@@ -2011,13 +2011,16 @@ public class BilibiliApiUtil {
      * 判据放在响应体而不是错误码上：质询可能伴随 -352 下发，也可能单独出现。
      */
     private void recordChallenge(JSONObject response) {
-        JSONObject data = response.get("data") instanceof JSONObject object ? object : null;
-        boolean challenged = (data != null && (data.containsKey("v_voucher") || data.containsKey("geetest")))
-                || response.containsKey("v_voucher");
-        if (challenged) {
+        if (hasChallenge(response)) {
             riskMetrics.record(BilibiliRiskMetrics.Kind.GAIA,
                     Optional.ofNullable(response.getString("message")).filter(m -> !m.isBlank()).orElse("响应中带质询凭据"));
         }
+    }
+
+    private static boolean hasChallenge(JSONObject response) {
+        JSONObject data = response.get("data") instanceof JSONObject object ? object : null;
+        return (data != null && (data.containsKey("v_voucher") || data.containsKey("geetest")))
+                || response.containsKey("v_voucher");
     }
 
     /**
@@ -2230,6 +2233,11 @@ public class BilibiliApiUtil {
                     block(path, Integer.toString(code), clock.get());
                 }
                 throw new RequestFailedException("code=" + code);
+            }
+            Object recoveryList = response.get("data") instanceof JSONObject body ? body.get(field) : null;
+            if (hasChallenge(response) && ("list".equals(field)
+                    ? recoveryList == null : !(recoveryList instanceof JSONArray))) {
+                throw new RequestFailedException("challenge");
             }
             if (!(response.get("data") instanceof JSONObject data)) {
                 throw new RequestFailedException("invalid-list:data=" + recoveryShape(response.get("data")));

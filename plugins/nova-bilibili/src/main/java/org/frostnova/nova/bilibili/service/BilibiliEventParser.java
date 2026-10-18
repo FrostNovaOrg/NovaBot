@@ -842,11 +842,8 @@ public class BilibiliEventParser {
     /** 实时与历史弹幕共用的正文处理；原文保留表情名称。 */
     static String stripEmojiNames(String content, List<String> emojiNames) {
         if (content == null) { return null; }
-        // 历史接口没有表情元数据，只能从方括号名称中识别。
-        if (emojiNames == null) {
-            emojiNames = java.util.regex.Pattern.compile("\\[[^\\[\\]\\r\\n]+\\]").matcher(content)
-                    .results().map(java.util.regex.MatchResult::group).toList();
-        }
+        // 只使用这条弹幕自带的表情名单，缺少名单时保留正文。
+        if (emojiNames == null) { return content; }
         for (String name : emojiNames) {
             content = content.replace(name, "");
         }

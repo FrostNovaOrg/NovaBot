@@ -115,9 +115,13 @@ public class BilibiliGapRecovery implements AutoCloseable {
                         result.invalid++;
                         continue;
                     }
+                    List<String> emojiNames = item.get("emots") instanceof JSONObject emots
+                            ? emots.keySet().stream().filter(name -> name.startsWith("[") && name.endsWith("]"))
+                                    .toList()
+                            : List.of();
                     eligible.add(new BilibiliDanmuEvent(source,
                             new BilibiliUserInfo(item.getLong("uid"), item.getString("nickname")), text,
-                            BilibiliEventParser.stripEmojiNames(text, null), at));
+                            BilibiliEventParser.stripEmojiNames(text, emojiNames), at));
                 } catch (RuntimeException e) {
                     result.invalid++;
                 }
@@ -220,7 +224,7 @@ public class BilibiliGapRecovery implements AutoCloseable {
 
     private static String safeReason(RuntimeException e) {
         String message = e.getMessage();
-        if (message != null && message.matches("(code=-?[0-9]+|invalid-response|invalid-list(?::(?:data|list|room)=(?:null|object|array|string|number|boolean|other))?|http-blocked)")) {
+        if (message != null && message.matches("(code=-?[0-9]+|invalid-response|invalid-list(?::(?:data|list|room)=(?:null|object|array|string|number|boolean|other))?|http-blocked|challenge)")) {
             return message;
         }
         return e.getClass().getSimpleName();
