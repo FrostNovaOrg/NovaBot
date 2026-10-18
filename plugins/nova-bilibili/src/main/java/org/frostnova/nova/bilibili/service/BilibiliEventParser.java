@@ -525,7 +525,9 @@ public class BilibiliEventParser {
             "DANMU_MSG_MIRROR",
             "PK_BATTLE_ENTRANCE",
             // 2026-10-10 取表：两台 10-03～10-10 连接日志里出现过的新名
-            "ENTRY_EFFECT_MUST_RECEIVE");
+            "ENTRY_EFFECT_MUST_RECEIVE",
+            // 2026-10-18 取表
+            "ROOM_NEWS_UPDATE");
 
     /**
      * 收入口径名里不计收入的消息，登记为已知、不计收入、不记未知：与已计事件重复的副本、界面横幅、
@@ -808,7 +810,6 @@ public class BilibiliEventParser {
         }
 
         String content = extra.getString("content");
-        String contentText = content;
 
         List<BilibiliEmojiInfo> emojis = new ArrayList<>();
         JSONObject emots = extra.getJSONObject("emots");
@@ -817,10 +818,6 @@ public class BilibiliEventParser {
                 JSONObject emojiInfo = emots.getJSONObject(emojiName);
                 if (emojiInfo == null) {
                     continue;
-                }
-
-                if (contentText != null) {
-                    contentText = contentText.replace(emojiName, "");
                 }
 
                 emojis.add(new BilibiliEmojiInfo(
@@ -834,11 +831,26 @@ public class BilibiliEventParser {
             }
         }
 
+        String contentText = stripEmojiNames(content, emojis.stream().map(BilibiliEmojiInfo::getName).toList());
         BilibiliDanmuEvent event = new BilibiliDanmuEvent(source, sender, content, contentText, timestamp);
         event.setEmojis(emojis);
         event.setReply(parseReply(extra, source));
 
         return event;
+    }
+
+    /** 实时与历史弹幕共用的正文处理；原文保留表情名称。 */
+    static String stripEmojiNames(String content, List<String> emojiNames) {
+        if (content == null) { return null; }
+        // 历史接口没有表情元数据，只能从方括号名称中识别。
+        if (emojiNames == null) {
+            emojiNames = java.util.regex.Pattern.compile("\\[[^\\[\\]\\r\\n]+\\]").matcher(content)
+                    .results().map(java.util.regex.MatchResult::group).toList();
+        }
+        for (String name : emojiNames) {
+            content = content.replace(name, "");
+        }
+        return content;
     }
 
     /**

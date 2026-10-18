@@ -249,19 +249,97 @@ class BilibiliGapRecoveryTest {
     }
 
     @Test
-    void missingChatIdOrTimeRejectsEntireList() throws Exception {
+    void missingChatIdOrTimeSkipsOnlyInvalidItems() throws Exception {
         // 用户故障：没有可靠编号或开始时刻的列表造成醒目留言误补或重复。
         chats.add(chat(101L, 2, 50));
         chats.add(chat(null, 2, 30));
         recover();
-        assertEquals(0, metric(BilibiliLiveMetric.SUPER_CHAT_COUNT));
+        assertEquals(1, metric(BilibiliLiveMetric.SUPER_CHAT_COUNT));
         chats.clear();
         JSONObject noTime = chat(102L, 2, 30);
         noTime.remove("start_time");
         chats.add(noTime);
         recover();
-        assertEquals(0, metric(BilibiliLiveMetric.SUPER_CHAT_COUNT));
+        assertEquals(1, metric(BilibiliLiveMetric.SUPER_CHAT_COUNT));
         verify(http, times(2)).getJson(contains("getMessageList"), any());
+    }
+
+    @Test
+    void mixedDanmusSkipMissingFieldsAndNonObjects() throws Exception {
+        danmus.add(danmu(2, "有效发言"));
+        JSONObject noUid = danmu(3, "无用户");
+        noUid.remove("uid");
+        danmus.add(noUid);
+        JSONObject noText = danmu(3, "无正文");
+        noText.remove("text");
+        danmus.add(noText);
+        danmus.add("private-body");
+        assertRecoveredWithInvalidCount(BilibiliLiveMetric.DANMU_COUNT, 3);
+    }
+
+    @Test
+    void mixedChatsSkipMissingFieldsAndNonObjects() throws Exception {
+        chats.add(chat(101L, 2, 50));
+        chats.add(chat(null, 2, 30));
+        JSONObject noTime = chat(102L, 2, 30);
+        noTime.remove("start_time");
+        chats.add(noTime);
+        JSONObject noMessage = chat(103L, 2, 30);
+        noMessage.remove("message");
+        chats.add(noMessage);
+        chats.add(42);
+        assertRecoveredWithInvalidCount(BilibiliLiveMetric.SUPER_CHAT_COUNT, 4);
+    }
+
+    private void assertRecoveredWithInvalidCount(String metric, int invalid) throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(BilibiliGapRecovery.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            recover();
+            assertEquals(1, metric(metric));
+            assertTrue(logs.list.stream().anyMatch(e -> e.getFormattedMessage().contains("invalid=" + invalid)));
+        } finally {
+            logger.detachAppender(logs);
+            logs.stop();
+        }
+    }
+
+    @Test
+    void superChatBoundarySecondsRecoverWithoutRealtimeDuplicates() throws Exception {
+        BilibiliSuperChatEvent live = new BilibiliSuperChatEvent(ROOM, user(), "测试留言", 30.0, FROM);
+        live.setMessageId(100L);
+        stats.onSuperChat(live);
+        chats.add(chat(100L, 0, 30));
+        chats.add(chat(101L, 0, 50));
+        chats.add(chat(102L, 5, 70));
+        recover();
+        recover();
+        assertEquals(3, metric(BilibiliLiveMetric.SUPER_CHAT_COUNT));
+        assertEquals(150, metric(BilibiliLiveMetric.SUPER_CHAT_VALUE));
+    }
+
+    @Test
+    void recoveredEmojiTextMatchesRealtimeWordsAndArchive() throws Exception {
+        String text = "你好[dog]世界";
+        JSONObject meta = JSONObject.of("user", JSONObject.of("uid", 5000005L,
+                "base", JSONObject.of("name", "测试观众")), "extra",
+                JSONObject.of("content", text, "emots", JSONObject.of("[dog]", new JSONObject())).toJSONString());
+        JSONArray primary = JSONArray.of(0, 1, 25, 0, FROM.plusSeconds(2).toEpochMilli(), 0, 0, "", 0, 0, 0, "", 0, "", "", meta);
+        BilibiliDanmuEvent live = (BilibiliDanmuEvent) new BilibiliEventParser(properties, mock(BilibiliGiftService.class),
+                mock(BilibiliApiSupport.class), mock(BilibiliGuardReconciler.class)).parse(
+                JSONObject.of("cmd", "DANMU_MSG", "info", JSONArray.of(primary, text)), ROOM).orElseThrow();
+        stats.onDanmu(live);
+        var words = data.getLiveWordFrequencies("bilibili", ROOM.getUid());
+        danmus.add(danmu(3, text));
+        recover();
+        var records = archive.readDanmu("bilibili", ROOM.getUid(), START);
+        assertEquals(2, records.size());
+        assertEquals(records.get(0).text(), records.get(1).text());
+        words.forEach((word, count) -> assertEquals(count * 2,
+                data.getLiveWordFrequencies("bilibili", ROOM.getUid()).get(word)));
+        assertFalse(data.getLiveWordFrequencies("bilibili", ROOM.getUid()).containsKey("dog"));
     }
 
     @Test

@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.exception.RequestFailedException;
 import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.core.util.HttpUtil;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -53,8 +54,7 @@ class BilibiliApiUtilRecoveryTest {
     void malformedResponseFailsOnce(boolean superChat) {
         // 用户故障：回包形状错误被当作成功，或者触发重试。
         for (JSONObject response : new JSONObject[]{new JSONObject(), JSONObject.of("code", 0),
-                JSONObject.of("code", 0, "data", JSONObject.of(superChat ? "list" : "room", "private-body")),
-                JSONObject.of("code", 0, "data", JSONObject.of(superChat ? "list" : "room", JSONArray.of(1)))}) {
+                JSONObject.of("code", 0, "data", JSONObject.of(superChat ? "list" : "room", "private-body"))}) {
             HttpUtil http = mock(HttpUtil.class);
             when(http.getJson(anyString(), any())).thenReturn(response);
             assertThrows(RequestFailedException.class, () -> call(http, superChat).get());
@@ -69,6 +69,50 @@ class BilibiliApiUtilRecoveryTest {
         HttpUtil http = mock(HttpUtil.class);
         when(http.getJson(anyString(), any())).thenThrow(new IllegalStateException("private-body"));
         assertThrows(RuntimeException.class, () -> call(http, superChat).get());
+        verify(http, times(1)).getJson(anyString(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void absentSuperChatListIsEmpty(boolean explicitNull) {
+        HttpUtil http = mock(HttpUtil.class);
+        JSONObject data = new JSONObject();
+        if (explicitNull) { data.put("list", null); }
+        when(http.getJson(anyString(), any())).thenReturn(JSONObject.of("code", 0, "data", data));
+        assertTrue(call(http, true).get().isEmpty());
+        verify(http, times(1)).getJson(anyString(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void invalidShapeReasonContainsOnlyType(boolean arrayData) {
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.getJson(anyString(), any())).thenReturn(JSONObject.of("code", 0, "data",
+                arrayData ? new JSONArray() : JSONObject.of("list", "private-body")));
+        RequestFailedException error = assertThrows(RequestFailedException.class, () -> call(http, true).get());
+        assertEquals(arrayData ? "invalid-list:data=array" : "invalid-list:list=string", error.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void mixedListReachesRecovery(boolean superChat) {
+        HttpUtil http = mock(HttpUtil.class);
+        JSONArray list = JSONArray.of(JSONObject.of("uid", 123L), "private-body");
+        when(http.getJson(anyString(), any())).thenReturn(JSONObject.of("code", 0, "data",
+                JSONObject.of(superChat ? "list" : "room", list)));
+        assertEquals(list, call(http, superChat).get());
+    }
+
+    @Test
+    void recoveryChallengeIsRecordedAndCoolsPath() {
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.getJson(anyString(), any())).thenReturn(JSONObject.of("code", -352,
+                "data", JSONObject.of("geetest", JSONObject.of("challenge", "private-token"))));
+        BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+        BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
+        assertThrows(RequestFailedException.class, () -> api.getLiveRoomSuperChatsOnce(4000004L));
+        assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.GAIA, java.time.Duration.ofMinutes(1)));
+        assertThrows(RiskCooldownException.class, () -> api.getLiveRoomSuperChatsOnce(4000004L));
         verify(http, times(1)).getJson(anyString(), any());
     }
 

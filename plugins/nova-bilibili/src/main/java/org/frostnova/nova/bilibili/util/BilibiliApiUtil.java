@@ -2011,7 +2011,7 @@ public class BilibiliApiUtil {
      * 判据放在响应体而不是错误码上：质询可能伴随 -352 下发，也可能单独出现。
      */
     private void recordChallenge(JSONObject response) {
-        JSONObject data = response.getJSONObject("data");
+        JSONObject data = response.get("data") instanceof JSONObject object ? object : null;
         boolean challenged = (data != null && (data.containsKey("v_voucher") || data.containsKey("geetest")))
                 || response.containsKey("v_voucher");
         if (challenged) {
@@ -2222,6 +2222,7 @@ public class BilibiliApiUtil {
             if (response == null || !(response.get("code") instanceof Number)) {
                 throw new RequestFailedException("invalid-response");
             }
+            recordChallenge(response);
             int code = response.getIntValue("code");
             if (code != 0) {
                 recordBusinessCode(url, code, null);
@@ -2230,10 +2231,17 @@ public class BilibiliApiUtil {
                 }
                 throw new RequestFailedException("code=" + code);
             }
-            if (!(response.get("data") instanceof JSONObject data)
-                    || !(data.get(field) instanceof JSONArray list)
-                    || list.stream().anyMatch(item -> !(item instanceof JSONObject))) {
-                throw new RequestFailedException("invalid-list");
+            if (!(response.get("data") instanceof JSONObject data)) {
+                throw new RequestFailedException("invalid-list:data=" + recoveryShape(response.get("data")));
+            }
+            Object value = data.get(field);
+            JSONArray list;
+            if (value == null && "list".equals(field)) {
+                list = new JSONArray();
+            } else if (value instanceof JSONArray array) {
+                list = array;
+            } else {
+                throw new RequestFailedException("invalid-list:" + field + "=" + recoveryShape(value));
             }
             noteProbeSuccess(path, clock.get());
             return list;
@@ -2245,6 +2253,16 @@ public class BilibiliApiUtil {
                 releaseProbe(path);
             }
         }
+    }
+
+    private static String recoveryShape(Object value) {
+        if (value == null) { return "null"; }
+        if (value instanceof JSONObject) { return "object"; }
+        if (value instanceof JSONArray) { return "array"; }
+        if (value instanceof String) { return "string"; }
+        if (value instanceof Number) { return "number"; }
+        if (value instanceof Boolean) { return "boolean"; }
+        return "other";
     }
 
     public JSONArray getLiveRoomDanmuHistoryOnce(@NonNull Long roomId) {
