@@ -104,18 +104,23 @@ public class BilibiliGapRecovery implements AutoCloseable {
             List<BilibiliDanmuEvent> eligible = new ArrayList<>();
             Instant earliest = null;
             for (Object raw : list) {
-                JSONObject item = (JSONObject) raw;
-                Instant at = parseTimeline(item.getString("timeline"));
-                if (at == null) { result.invalid++; continue; }
-                if (earliest == null || at.isBefore(earliest)) { earliest = at; }
-                if (!insideSecond(at, from, to)) { continue; }
-                String text = item.getString("text");
-                if (text == null || item.getLong("uid") == null) {
-                    result.failure = "missing-danmu-fields";
-                    return result;
+                if (!(raw instanceof JSONObject item)) { result.invalid++; continue; }
+                try {
+                    Instant at = parseTimeline(item.getString("timeline"));
+                    if (at == null) { result.invalid++; continue; }
+                    if (earliest == null || at.isBefore(earliest)) { earliest = at; }
+                    if (!insideSecond(at, from, to)) { continue; }
+                    String text = item.getString("text");
+                    if (text == null || item.getLong("uid") == null) {
+                        result.invalid++;
+                        continue;
+                    }
+                    eligible.add(new BilibiliDanmuEvent(source,
+                            new BilibiliUserInfo(item.getLong("uid"), item.getString("nickname")), text,
+                            BilibiliEventParser.stripEmojiNames(text, null), at));
+                } catch (RuntimeException e) {
+                    result.invalid++;
                 }
-                eligible.add(new BilibiliDanmuEvent(source,
-                        new BilibiliUserInfo(item.getLong("uid"), item.getString("nickname")), text, text, at));
             }
             result.earliestBeforeGap = earliest == null ? null : earliest.getEpochSecond() < from.getEpochSecond();
             result.inGap = eligible.size();
@@ -138,28 +143,32 @@ public class BilibiliGapRecovery implements AutoCloseable {
             inspect(list, result);
             List<BilibiliSuperChatEvent> eligible = new ArrayList<>();
             for (Object raw : list) {
-                JSONObject item = (JSONObject) raw;
-                Long id = item.getLong("id");
-                Long seconds = item.getLong("start_time");
-                if (id == null || id <= 0 || seconds == null || seconds <= 0) {
-                    result.failure = "missing-id-or-start-time";
-                    return result;
+                if (!(raw instanceof JSONObject item)) { result.invalid++; continue; }
+                try {
+                    Long id = item.getLong("id");
+                    Long seconds = item.getLong("start_time");
+                    if (id == null || id <= 0 || seconds == null || seconds <= 0) {
+                        result.invalid++;
+                        continue;
+                    }
+                    Instant at = Instant.ofEpochSecond(seconds);
+                    if (!insideSecond(at, from, to)) { continue; }
+                    JSONObject user = item.getJSONObject("user_info");
+                    Double price = item.getDouble("price");
+                    if (price == null || !Double.isFinite(price) || price < 0 || item.getLong("uid") == null
+                            || item.getString("message") == null) {
+                        result.invalid++;
+                        continue;
+                    }
+                    BilibiliSuperChatEvent event = new BilibiliSuperChatEvent(source,
+                            new BilibiliUserInfo(item.getLong("uid"), user == null ? null : user.getString("uname")),
+                            item.getString("message"), price, at);
+                    event.setMessageId(id);
+                    event.setStartTime(at);
+                    eligible.add(event);
+                } catch (RuntimeException e) {
+                    result.invalid++;
                 }
-                Instant at = Instant.ofEpochSecond(seconds);
-                if (at.isBefore(from) || !at.isBefore(to)) { continue; }
-                JSONObject user = item.getJSONObject("user_info");
-                Double price = item.getDouble("price");
-                if (price == null || !Double.isFinite(price) || price < 0 || item.getLong("uid") == null
-                        || item.getString("message") == null) {
-                    result.failure = "missing-super-chat-fields";
-                    return result;
-                }
-                BilibiliSuperChatEvent event = new BilibiliSuperChatEvent(source,
-                        new BilibiliUserInfo(item.getLong("uid"), user == null ? null : user.getString("uname")),
-                        item.getString("message"), price, at);
-                event.setMessageId(id);
-                event.setStartTime(at);
-                eligible.add(event);
             }
             result.inGap = eligible.size();
             for (BilibiliSuperChatEvent event : eligible) {
@@ -182,7 +191,7 @@ public class BilibiliGapRecovery implements AutoCloseable {
     private static void inspect(JSONArray list, Result result) {
         result.received = list.size();
         for (Object raw : list) {
-            JSONObject item = (JSONObject) raw;
+            if (!(raw instanceof JSONObject item)) { continue; }
             // 只记字段名，便于核实编号字段；不记录任何字段值。
             for (String key : item.keySet()) {
                 if (key.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")) {
@@ -211,7 +220,7 @@ public class BilibiliGapRecovery implements AutoCloseable {
 
     private static String safeReason(RuntimeException e) {
         String message = e.getMessage();
-        if (message != null && message.matches("(code=-?[0-9]+|invalid-response|invalid-list|http-blocked)")) {
+        if (message != null && message.matches("(code=-?[0-9]+|invalid-response|invalid-list(?::(?:data|list|room)=(?:null|object|array|string|number|boolean|other))?|http-blocked)")) {
             return message;
         }
         return e.getClass().getSimpleName();

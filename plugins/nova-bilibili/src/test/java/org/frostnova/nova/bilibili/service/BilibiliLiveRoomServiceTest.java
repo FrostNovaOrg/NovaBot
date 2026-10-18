@@ -199,6 +199,29 @@ class BilibiliLiveRoomServiceTest {
         assertEquals(10, service.getManagedRoomCount());
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void managedConnectorRecoversAfterReauthentication() {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliGapRecovery recovery = mock(BilibiliGapRecovery.class);
+        BilibiliLiveRoomService service = service(scheduler);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "gapRecovery", recovery);
+        AbstractDataSource source = mock(AbstractDataSource.class);
+        when(source.getUsers(anyString())).thenReturn(users(1, 1));
+        service.sync(source);
+        runQueued(scheduler);
+        Map<Long, BilibiliLiveRoomConnector> connectors = (Map<Long, BilibiliLiveRoomConnector>)
+                org.springframework.test.util.ReflectionTestUtils.getField(service, "connectors");
+        BilibiliLiveRoomConnector connector = connectors.get(1001L);
+        assertNotNull(connector);
+        Instant from = Instant.now().minusSeconds(5);
+        org.springframework.test.util.ReflectionTestUtils.setField(connector, "authenticatedOnce", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(connector, "disconnectedAt", from);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(connector, "handlePacket",
+                new org.frostnova.nova.bilibili.protocol.BilibiliPacket(8, 1, new byte[0]));
+        verify(recovery).recover(any(), org.mockito.ArgumentMatchers.eq(from), any());
+    }
+
     @SuppressWarnings("unchecked")
     private static java.util.Set<Long> startupWaveRooms(BilibiliLiveRoomService service) throws Exception {
         Field field = BilibiliLiveRoomService.class.getDeclaredField("startupWaveRooms");
