@@ -12,6 +12,7 @@ import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.analytics.StreamerAudience;
 import org.frostnova.nova.core.analytics.StreamerStartAreas;
 import org.frostnova.nova.core.analytics.StreamerStartSlots;
+import org.frostnova.nova.core.analytics.StreamerEntryRhythm;
 import org.frostnova.nova.core.analytics.StreamerCalendar;
 import org.frostnova.nova.core.analytics.StreamerMonitoring;
 import org.frostnova.nova.core.model.LiveGap;
@@ -109,6 +110,8 @@ public class StreamerController {
      */
     private final LiveDetailArchive details;
 
+    private final StreamerEntryRhythm entryRhythm;
+
     /**
      * 各平台插件提供的指标说明，取法与运营分析一致（插件的 Bean 定义延迟注册）
      */
@@ -156,6 +159,7 @@ public class StreamerController {
         this.archive = archive;
         this.snapshots = snapshots;
         this.details = details;
+        this.entryRhythm = new StreamerEntryRhythm(details);
         this.catalogs = catalogs;
         this.redrawers = redrawers;
         this.clock = clock;
@@ -523,6 +527,7 @@ public class StreamerController {
         var range = StreamerInsights.recent(Integer.parseInt(days), clock);
         return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
                 "startSlots", new StreamerStartSlots().calculate(sessions, range.from(), range.to(), rules),
+                "entryRhythm", entryRhythm.calculate(sessions, range.from(), range.to()),
                 "areas", new StreamerStartAreas().calculate(sessions, range.from(), range.to(), rules)));
     }
 

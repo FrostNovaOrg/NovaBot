@@ -452,6 +452,22 @@ public class LiveDetailArchive implements SmartLifecycle {
         }
     }
 
+    /** 明细文件的版本标记；只读取元数据，供派生统计缓存判断是否仍可复用。 */
+    public Optional<FileStamp> detailStamp(String platform, Long uid, long startTime) {
+        var dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) return Optional.empty();
+        try {
+            var attributes = Files.readAttributes(dir.get().resolve(DETAIL_FILE),
+                    java.nio.file.attribute.BasicFileAttributes.class);
+            return attributes.isRegularFile()
+                    ? Optional.of(new FileStamp(attributes.lastModifiedTime(), attributes.size())) : Optional.empty();
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
+    public record FileStamp(java.nio.file.attribute.FileTime modified, long size) {}
+
     /**
      * 读一场的弹幕原文
      * <p>

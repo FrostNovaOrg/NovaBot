@@ -127,6 +127,17 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 .sc-drawer .nv-card h3{font-size:17px}
 .sc-drawer thead th{font-size:12px;font-weight:500;color:var(--dim)}
 .sc-drawer .sd-area-compare{border-radius:14px;padding:14px 16px}
+.sc-drawer .sd-entry-rhythm{min-width:0;max-width:100%;box-sizing:border-box;border-radius:14px;padding:14px 16px}
+.sd-entry-rhythm h4{font-size:13px;font-weight:500;margin:14px 0 8px;color:var(--dim)}
+.sd-entry-rhythm .hint{font-size:12px;line-height:1.65}
+.sd-entry-details{min-width:0;margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.sd-entry-details summary{cursor:pointer;font-size:13px;color:var(--dim);overflow-wrap:anywhere}
+.sd-entry-scroll{max-width:100%;min-width:0;overflow-x:auto;margin-top:10px;overscroll-behavior-x:contain}
+.sd-entry-table{width:100%;min-width:560px;border-collapse:collapse;font-size:12px}
+.sd-entry-table th,.sd-entry-table td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.sd-entry-table th{font-weight:500;color:var(--dim)}
+.sd-entry-table th:first-child,.sd-entry-table td:first-child{text-align:left}
+.sd-entry-table small{display:block;margin-top:3px;font-size:11px;color:var(--dim)}
 .sd-session-filters .sd-clear-filter,.sd-session-filters .sd-clear-filter:visited{color:rgb(0,0,238);font-size:15px;text-decoration:underline}
 #sd-head .sh-nm{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #sd-head .sh-nm>.pill{flex-shrink:0}
@@ -832,12 +843,15 @@ function renderAudience(data, message) {
 let slotsMetric = 'revenue';
 let slotsData = null;
 let slotsAreas = null;
+let slotsEntryRhythm = null;
+let slotsEntryChart = null;
 let slotsMessage = '';
 
 async function loadStartSlots() {
   const generation = drawerGeneration;
   slotsData = null;
   slotsAreas = null;
+  slotsEntryRhythm = null;
   slotsMessage = '正在读取归档数据…';
   renderSlotsDrawer();
   try {
@@ -846,6 +860,7 @@ async function loadStartSlots() {
     if (!response.success) throw new Error(response.message || '未能读取归档数据');
     slotsData = response.startSlots;
     slotsAreas = response.areas || [];
+    slotsEntryRhythm = response.entryRhythm || null;
     slotsMessage = '';
   } catch (error) {
     if (generation !== drawerGeneration || !liveActive) return;
@@ -857,6 +872,7 @@ async function loadStartSlots() {
 function renderSlotsDrawer() {
   if (!detailDrawer || where.panel !== 'start-slots') return;
   const left = detailDrawer.body.querySelector('.slot-scroll')?.scrollLeft || 0;
+  slotsEntryChart?.destroy(); slotsEntryChart = null;
   detailDrawer.body.innerHTML = '';
   renderStartSlots(detailDrawer.body);
   updateDrawerScope();
@@ -978,7 +994,65 @@ function renderStartSlots(host) {
   note.textContent = '时段按实际星期与钟表时间，场次按开播时刻归入；数值是这些场次整场总量 ÷ 有效直播时长，不表示该两小时内的产出。少于 3 场为样本不足。';
   card.appendChild(note);
   host.appendChild(card);
+  renderEntryRhythm(host);
   renderAreaCompare(host);
+}
+
+function renderEntryRhythm(host) {
+  const card = el('div', 'nv-card hcard sd-entry-rhythm');
+  const title = el('h3'); title.textContent = '开播后入场节奏'; card.appendChild(title);
+  const data = slotsEntryRhythm;
+  const points = data?.points || [];
+  const number = value => value == null ? '暂无数据' : new Intl.NumberFormat('zh-CN', {maximumFractionDigits: 1}).format(value);
+  if (points.length) {
+    const chartTitle = '开播后入场次数中位数（每 5 分钟一段）';
+    const heading = el('h4'); heading.textContent = chartTitle; card.appendChild(heading);
+    slotsEntryChart = createChart(card, {title: chartTitle, points: points.map(point => ({...point, start: point.minute, value: point.medianEntries})),
+      label: point => '开播 ' + point.minute + ' 分钟 · ' + number(point.entriesSamples) + ' 场有效样本',
+      tickLabel: point => point.minute + ' 分钟',
+      format: value => value == null ? '暂无数据' : number(value) + ' 次/分钟'});
+  } else {
+    const empty = el('p', 'hint');
+    empty.textContent = slotsMessage || (data?.entrySessions === 0
+      ? '所选范围的场次还没有入场分钟数据。' : '所选范围无可用数据。');
+    card.appendChild(empty);
+  }
+  const note = el('p', 'hint');
+  note.textContent = '以每场开播时刻为起点，每 5 分钟一段，先算每场段内平均每分钟的入场次数，再取各场中位数；同一人进出多次按次数计。在线与入场分别标明有效样本场次。';
+  card.appendChild(note);
+  if (data) {
+    const count = el('p', 'hint');
+    count.textContent = '范围内共 ' + number(data.sessions) + ' 场，其中 ' + number(data.entrySessions) + ' 场有入场分钟数据（更早的场次没有记录）。';
+    card.appendChild(count);
+  }
+  if (points.length) {
+    const details = el('details', 'sd-entry-details');
+    const summary = el('summary'); summary.textContent = '开播后采样明细 · 每 30 分钟'; details.appendChild(summary);
+    const scroll = el('div', 'sd-entry-scroll');
+    scroll.setAttribute('tabindex', '0'); scroll.setAttribute('role', 'region');
+    scroll.setAttribute('aria-label', '开播后采样明细，可左右滚动');
+    const table = el('table', 'sd-entry-table');
+    const head = el('thead'); const headers = el('tr');
+    for (const text of ['开播后', '在线人数中位数', '入场中位数（次/分钟）', '入场样本场次']) {
+      const th = el('th'); th.setAttribute('scope', 'col'); th.textContent = text; headers.appendChild(th);
+    }
+    head.appendChild(headers); table.appendChild(head);
+    const body = el('tbody');
+    for (const point of points.filter(point => point.minute % 30 === 0)) {
+      const row = el('tr');
+      const minute = el('td'); minute.textContent = point.minute + ' 分钟'; row.appendChild(minute);
+      const online = el('td');
+      const value = el('span'); value.textContent = number(point.medianOnline);
+      const samples = el('small'); samples.textContent = number(point.onlineSamples) + ' 场有效样本';
+      online.append(value, samples); row.appendChild(online);
+      for (const value of [point.medianEntries, point.entriesSamples]) {
+        const cell = el('td'); cell.textContent = number(value); row.appendChild(cell);
+      }
+      body.appendChild(row);
+    }
+    table.appendChild(body); scroll.appendChild(table); details.appendChild(scroll); card.appendChild(details);
+  }
+  host.appendChild(card);
 }
 
 /**
@@ -1091,6 +1165,7 @@ function panelLink(label, panel, changes = {}) {
 }
 
 function closeDetailDrawer() {
+  slotsEntryChart?.destroy(); slotsEntryChart = null;
   drawerGeneration++;
   drawerChanging = true;
   detailDrawer?.close();

@@ -103,7 +103,7 @@ globalThis.document = {
   addEventListener(kind, fn) { (documentListeners[kind] ||= []).push(fn); },
   activeElement: null,
 };
-installCharts(document);
+const chartObservers = installCharts(document);
 globalThis.location = {hash: ''};
 
 const PLATFORM = 'bilibili';
@@ -133,6 +133,9 @@ const slotData = {from: SLOTS_FROM, to: SLOTS_TO, cells: slotCells,
   topRevenue: [], topMessages: []};
 
 let slotRequest = null;
+let entryRhythm = {sessions: 8, entrySessions: 4, points: Array.from({length: 7}, (_, i) => ({
+  minute: i * 5, medianEntries: i / 2, entriesSamples: 4, medianOnline: i ? null : 70, onlineSamples: i ? 0 : 2,
+}))};
 let audienceKnown = true;
 const audienceItems = [
   {name: 'current', firstSeen: SLOTS_FROM + 1, attendance: 1},
@@ -153,7 +156,7 @@ globalThis.fetch = url => {
   }
   if (path.includes('/start-slots?')) {
     if (slotRequest) return slotRequest();
-    return reply({success: true, startSlots: slotData, areas: AREAS});
+    return reply({success: true, startSlots: slotData, areas: AREAS, entryRhythm});
   }
   if (path.includes('/calendar?')) return reply({success: true, calendar: {items: []}});
   if (path.includes('/audience?')) {
@@ -318,6 +321,56 @@ for (const [seconds, expected] of [[59, '59 秒'], [3599, '59 分 59 秒'], [372
     same(line?.textContent.split(' · ')[0], '缺口合计 ' + expected, '折叠条缺口');
   });
 }
+
+await ask('入场卡位于两张现有卡之间，曲线悬停显示分钟、独立样本与速率', async () => {
+  await openSlots();
+  const cards = drawerBody().children;
+  const index = cards.findIndex(n => n.className.includes('sd-entry-rhythm'));
+  same(index > 0, true, '应有入场卡');
+  same(cellText(cards[index - 1]).includes('开播时段表现'), true, '前一张热图');
+  same(cellText(cards[index + 1]).includes('直播分区对比'), true, '后一张分区表');
+  const chart = walk(cards[index]).find(n => n.tagName === 'svg');
+  same(chart?.getAttribute('aria-label').includes('每 5 分钟一段'), true, '图题');
+  const mark = walk(chart).find(n => n.dataset.index === '1');
+  await mark.fire('pointerenter');
+  const readout = walk(cards[index]).find(n => n.className === 'sc-chart-readout');
+  same(readout.textContent.includes('开播 5 分钟 · 4 场有效样本'), true, '悬停样本');
+  same(readout.textContent.includes('0.5 次/分钟'), true, '悬停速率');
+  same(cellText(cards[index]).includes('范围内共 8 场，其中 4 场有入场分钟数据'), true, '范围说明');
+});
+
+await ask('明细默认收起，每三十分钟一行，在线缺值不写成零且样本分别显示', async () => {
+  await openSlots();
+  const card = walk(drawerBody()).find(n => n.className.includes('sd-entry-rhythm'));
+  const details = walk(card).find(n => n.tagName === 'details');
+  same(!!details.open, false, '默认折叠');
+  same(walk(details).find(n => n.tagName === 'summary').textContent, '开播后采样明细 · 每 30 分钟', '明细标题');
+  const rows = walk(details).find(n => n.tagName === 'tbody').children;
+  same(rows.length, 2, '仅0及30分钟');
+  same(rowTexts(rows[0]), ['0 分钟', '702 场有效样本', '0', '4'], '独立样本列');
+  same(rowTexts(rows[1]), ['30 分钟', '暂无数据0 场有效样本', '3', '4'], '在线缺值');
+  const scroll = walk(details).find(n => n.className === 'sd-entry-scroll');
+  same(scroll.getAttribute('tabindex'), '0', '窄屏表格可以键盘滚动');
+});
+
+for (const [count, message] of [[0, '所选范围的场次还没有入场分钟数据。'], [2, '所选范围无可用数据。']]) {
+  await ask('入场空态区分没有记录与样本不足/' + count, async () => {
+    entryRhythm = {sessions: 8, entrySessions: count, points: []};
+    await openSlots();
+    const card = walk(drawerBody()).find(n => n.className.includes('sd-entry-rhythm'));
+    same(cellText(card).includes(message), true, '空态原因');
+    same(walk(card).some(n => n.tagName === 'details' || n.tagName === 'svg'), false, '不显示空折线或明细');
+  });
+}
+
+await ask('重画热图指标时释放旧曲线，避免重复切换后页面变慢', async () => {
+  entryRhythm = {sessions: 3, entrySessions: 3, points: [{minute: 0, medianEntries: 0, entriesSamples: 3, medianOnline: null, onlineSamples: 0}]};
+  await openSlots();
+  const observer = chartObservers.findLast(one => one.target?.getAttribute('aria-label')?.includes('每 5 分钟一段'));
+  const select = walk(drawerBody()).find(n => n.tagName === 'select');
+  select.value = 'messages'; await select.fire('change');
+  same(observer.disconnected, true, '旧曲线释放');
+});
 
 page?.leave();
 
