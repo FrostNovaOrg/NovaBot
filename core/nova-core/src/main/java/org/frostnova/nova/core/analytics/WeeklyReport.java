@@ -96,8 +96,7 @@ public final class WeeklyReport {
 
     private static Session session(LiveSession s, LiveMetricCatalog.Insights rules, boolean showRevenue) {
         var at = Instant.ofEpochMilli(s.startTime()).atZone(StatisticsDay.ZONE);
-        String started = "周" + "一二三四五六日".charAt(at.getDayOfWeek().getValue() - 1)
-                + " " + at.format(DateTimeFormatter.ofPattern("HH:mm"));
+        String started = at.format(DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.ROOT));
         String title = s.titles() == null || s.titles().isEmpty() ? null : s.titles().get(s.titles().size() - 1).title();
         if (title == null || title.isBlank()) title = "未记录标题";
         // Keep titles on one line in both the image and text fallback.

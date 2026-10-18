@@ -13,6 +13,9 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Point;
 import java.time.LocalDate;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.math.RoundingMode;
 import java.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
@@ -103,6 +106,8 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
                 .map(d -> d.metrics().get(metric)).filter(java.util.Objects::nonNull)
                 .mapToDouble(Number::doubleValue).max().orElse(0);
         p.drawRectangle(MARGIN, base, CONTENT_WIDTH, 2, COLOR_CARD);
+        var numbers = new DecimalFormat("#,##0.#", DecimalFormatSymbols.getInstance(Locale.ROOT));
+        numbers.setRoundingMode(RoundingMode.HALF_UP);
         var segment = new ArrayList<Point>();
         for (int i = 0; i < 7; i++) {
             var d = data.daily().get(i);
@@ -127,14 +132,18 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
                 int height = max > 0 ? (int) Math.round(value.doubleValue() / max * 150) : 0;
                 p.drawRoundedRectangle(x - 5, base - height - 5, 10, 10, 10, COLOR_NAME);
                 double v = duration ? value.doubleValue() / 3600 : value.doubleValue();
-                String label = Math.abs(v) >= 10000 ? String.format(Locale.ROOT, "%.1f万", v / 10000)
-                        : String.format(Locale.ROOT, money || duration ? "%,.2f" : "%,d", money || duration ? v : (Object) value.longValue());
+                String label = numbers.format(v);
                 centered(p, label, 18, COLOR_TEXT, x, base - height - 32);
             }
             centered(p, List.of("周一", "周二", "周三", "周四", "周五", "周六", "周日").get(i), 20, COLOR_TEXT, x, base + 16);
             LocalDate day = LocalDate.parse(d.date());
             centered(p, day.getMonthValue() + "/" + day.getDayOfMonth(), 16, COLOR_TIP, x, base + 46);
-            if (!known) centered(p, "未播", 16, COLOR_TIP, x, base + 72);
+            if (!known) {
+                boolean confirmedOff = data.calendar().items().stream()
+                        .anyMatch(dayStatus -> dayStatus.date().equals(d.date()) && "off".equals(dayStatus.status()));
+                String label = d.sessions() > 0 ? "无数据" : confirmedOff ? "未播" : "说不准";
+                centered(p, label, 16, COLOR_TIP, x, base + 72);
+            }
         }
         p.setPos(MARGIN, base + 116);
     }

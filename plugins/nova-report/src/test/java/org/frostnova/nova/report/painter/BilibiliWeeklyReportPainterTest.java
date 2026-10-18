@@ -61,30 +61,42 @@ class BilibiliWeeklyReportPainterTest {
                 13200, Map.of("gift_value", revenue, "danmu_count", (double) messages), Map.of(), LiveEndReason.NORMAL,
                 List.of(), 0, Map.of("enter_users", users, "danmu_users", users), 0, Map.of(), anonymous);
     }
-    WeeklyReport.Data data(boolean visible) {
+    WeeklyReport.Data data(boolean visible) { return data(visible, false); }
+    WeeklyReport.Data data(boolean visible, boolean sample) {
         var sessions = List.of(session(from.minusSeconds(2 * 86400), 1000, 4000, List.of(9200000002L), Map.of()),
                 session(from.minusSeconds(86400), 500, 500, List.of(9200000001L), Map.of()),
-                session(from, 500, 1000, List.of(9200000001L, 9200000002L), Map.of()),
+                session(from, sample ? 7209.4 : 500, 1000, List.of(9200000001L, 9200000002L), Map.of()),
                 session(from.plusSeconds(86400), 0, 0, List.of(), Map.of()),
-                session(from.plusSeconds(3 * 86400), 234.50, 2901, List.of(9200000003L), Map.of("enter_users", 1L)),
-                session(from.plusSeconds(4 * 86400), 300, 2000, List.of(9200000002L), null),
+                session(from.plusSeconds(3 * 86400), sample ? 71000 : 234.50, sample ? 71000 : 2901, List.of(9200000003L), Map.of("enter_users", 1L)),
+                sample ? new LiveSession("bilibili", 1L, "主播示例", 2L, from.plusSeconds(4 * 86400).toEpochMilli(),
+                        from.plusSeconds(4 * 86400 + 13200).toEpochMilli(), 13200, Map.of(), Map.of(),
+                        LiveEndReason.NORMAL, List.of())
+                        : session(from.plusSeconds(4 * 86400), 300, 2000, List.of(9200000002L), null),
                 session(from.plusSeconds(7 * 86400 - 10800), 200, 3000, List.of(9200000001L), Map.of()));
         var snapshots = List.of(new StreamerSnapshot("bilibili", 1L, "主播示例", from.plusSeconds(7200).toEpochMilli(), Map.of("fans", 100d)),
                 new StreamerSnapshot("bilibili", 1L, "主播示例", from.plusSeconds(6 * 86400).toEpochMilli(), Map.of("fans", 125d)));
         var data = WeeklyReport.calculate("主播示例", sessions, snapshots, now, new BilibiliLiveMetricCatalog().insights(), visible);
         return data.withCalendar(new StreamerCalendar().calculate(sessions,
-                List.of(new LiveGap(from.minusSeconds(14 * 86400).toEpochMilli(), now.toEpochMilli(), LiveGap.Reason.UNKNOWN)),
+                List.of(new LiveGap(from.minusSeconds(14 * 86400).toEpochMilli(), from.plusSeconds(5 * 86400).toEpochMilli(), LiveGap.Reason.UNKNOWN),
+                        new LiveGap(from.plusSeconds(6 * 86400).toEpochMilli(), now.toEpochMilli(), LiveGap.Reason.UNKNOWN)),
                 List.of(), List.of(), data.lastDay(), 35, java.time.Clock.fixed(now, StatisticsDay.ZONE)));
     }
     @Test @DisplayName("可见与隐藏金额出图，缺记录用破折号，已记录零写零")
     void samples() throws Exception {
         for (boolean visible : List.of(true, false)) {
-            var data = data(visible);
+            var source = data(visible, true);
+            var days = new ArrayList<>(source.daily());
+            var missing = days.get(4);
+            days.set(4, new WeeklyReport.Day(missing.date(), missing.sessions(), Map.of()));
+            var data = new WeeklyReport.Data(source.streamerName(), source.firstDay(), source.lastDay(), source.metrics(),
+                    source.fans(), source.composition(), source.coverage(), days, source.chartMetric(),
+                    source.comparisons(), source.comparisonNote(), source.sessionRows(), source.hiddenSessions(), source.calendar());
             var p = WeeklyReport.preview(data, () -> painter.render(streamer, data));
             assertNotNull(p.image());
             var image = ImageIO.read(new java.io.ByteArrayInputStream(p.image()));
             assertEquals(900, image.getWidth());
             assertTrue(image.getHeight() > 650);
+            System.out.println((visible ? "VISIBLE_IMAGE: " : "HIDDEN_IMAGE: ") + image.getWidth() + "x" + image.getHeight());
             assertEquals(0, data.daily().get(1).metrics().get(data.chartMetric()).doubleValue());
             assertEquals(0, data.daily().get(2).sessions());
             String output = System.getProperty("weekly.samples");
@@ -111,10 +123,87 @@ class BilibiliWeeklyReportPainterTest {
             for (List row : texts.getAllValues()) for (Object t : row)
                 drawn.append(((org.frostnova.nova.core.model.TextWithStyle)t).getText());
             String raw = drawn.toString();
-            assertTrue(raw.contains("未播")); assertTrue(raw.contains(money ? "0.00" : "0"));
+            assertTrue(raw.contains("未播")); assertTrue(raw.contains("0"));
             assertFalse(raw.contains("9200000001"));
         }
     }
+    @Test @DisplayName("图片场次保留真实日期，凌晨场次不误认成周首日")
+    void sessionDateIsNotTruncated() {
+        var d = WeeklyReport.calculate("示例", List.of(session(Instant.parse("2026-10-18T16:10:00Z"),
+                0, 0, List.of(), Map.of())), List.of(), Instant.parse("2026-10-19T02:00:00Z"),
+                new BilibiliLiveMetricCatalog().insights(), true);
+        var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawSessions(p, d);
+        assertTrue(drawnText(p).contains("10/19 00:10"));
+        assertFalse(drawnText(p).contains("周一 00:10"));
+    }
+
+    @Test @DisplayName("无场次日沿用日历结论，避免折线与日历互相矛盾")
+    void emptyDaysAgreeWithCalendar() {
+        var d = data(false);
+        var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawDays(p, d);
+        var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+        var points = org.mockito.ArgumentCaptor.forClass(Point.class);
+        verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), points.capture());
+        int off = 0, unknown = 0;
+        for (int i = 0; i < 7; i++) {
+            var day = d.daily().get(i);
+            if (day.sessions() > 0) continue;
+            String status = d.calendar().items().stream().filter(c -> c.date().equals(day.date()))
+                    .findFirst().orElseThrow().status();
+            String expected = status.equals("off") ? "未播" : "说不准";
+            if (status.equals("off")) off++; else unknown++;
+            final int center = 35 + i * 118 + 59;
+            var labels = new ArrayList<String>();
+            for (int j = 0; j < texts.getAllValues().size(); j++) {
+                var t = (TextWithStyle)texts.getAllValues().get(j).get(0);
+                var point = points.getAllValues().get(j);
+                if (point != null && Math.abs(point.x - p.getStringWidthAndHeight(t).getFirst() / 2 - center) <= 1)
+                    labels.add(t.getText());
+            }
+            assertTrue(labels.contains(expected), day.date() + " " + expected);
+            assertFalse(labels.contains(status.equals("off") ? "说不准" : "未播"));
+        }
+        assertTrue(off > 0 && unknown > 0, "同时覆盖确认没播和监看不完整的日期");
+    }
+
+    @Test @DisplayName("有直播但指标缺失写无数据，避免被误认成未播")
+    void liveDayWithMissingMetricHasNoDataLabel() {
+        var d = data(false);
+        var days = d.daily().stream().map(day -> new WeeklyReport.Day(day.date(), 1, Map.<String, Number>of())).toList();
+        var missing = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(),
+                d.composition(), d.coverage(), days, "messages");
+        var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawDays(p, missing);
+        var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+        assertEquals(7, texts.getAllValues().stream().filter(row ->
+                ((TextWithStyle)row.get(0)).getText().equals("无数据")).count());
+        assertFalse(drawnText(p).contains("未播"));
+        verify(p, never()).drawPolyline(anyList(), any(Color.class), anyInt());
+    }
+
+    @Test @DisplayName("三种折线数字都用千分位和最多一位小数，避免混用万和两位小数")
+    void chartNumbersMatchConsole() {
+        for (String metric : List.of("revenue", "messages", "durationSeconds")) {
+            var d = data(true);
+            var values = List.of(7209.4, 71000d, 0d, 1.25, 1.24, 10000d, 12d);
+            var days = new ArrayList<WeeklyReport.Day>();
+            for (int i = 0; i < 7; i++) days.add(new WeeklyReport.Day(d.daily().get(i).date(), 1,
+                    Map.of(metric, values.get(i) * (metric.equals("durationSeconds") ? 3600 : 1))));
+            var chart = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(),
+                    d.composition(), d.coverage(), days, metric);
+            var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+            painter.drawDays(p, chart);
+            var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+            var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0))
+                    .filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
+            assertEquals(List.of("7,209.4", "71,000", "0", "1.3", "1.2", "10,000", "12"), labels, metric);
+        }
+    }
+
     record TextCall(String text, Font font, int size, Color color, int style) {
         static TextCall of(TextWithStyle t) {
             return new TextCall(t.getText(), t.getFont(), t.getSize(), t.getColor(), t.getStyle());
@@ -158,24 +247,28 @@ class BilibiliWeeklyReportPainterTest {
         for (int i = 0; i < expected.size(); i++) assertEquals(expected.get(i), calls.get(i), "call " + i);
     }
 
-    @Test @DisplayName("周报副行与标签及卡片下沿留出间距")
+    @Test @DisplayName("副行使用20号字且完整换行，避免手机缩图看不清或截掉说明")
     void weeklyCardSpacing() {
-        for (String note : List.of("5 场", "从 10 月 5 日 08:00 起算")) {
-            var p = mock(CommonPainter.class, RETURNS_SELF);
-            when(p.truncateToWidth(any(TextWithStyle.class), anyInt())).thenAnswer(i -> ((TextWithStyle)i.getArgument(0)).getText());
+        for (String note : List.of("较上周 +4%", "从 10 月 5 日 08:00 起算", "按区间边界有效快照计算")) {
+            var p = spy(factory.create(900, 400, true));
             ReportSharedStyle.drawCard(p, "25 人", "粉丝净增", note, 35, 35);
             var heights = org.mockito.ArgumentCaptor.forClass(Integer.class);
             verify(p).drawRoundedRectangle(eq(35), eq(35), eq(264), heights.capture(), eq(16), any(Color.class));
             var texts = org.mockito.ArgumentCaptor.forClass(List.class);
             var points = org.mockito.ArgumentCaptor.forClass(Point.class);
-            verify(p, times(3)).drawTextWithStyle(texts.capture(), points.capture());
-            int labelHeight = factory.create(900, 200, true).getStringWidthAndHeight((TextWithStyle)texts.getAllValues().get(1).get(0)).getSecond();
-            int noteHeight = factory.create(900, 200, true).getStringWidthAndHeight((TextWithStyle)texts.getAllValues().get(2).get(0)).getSecond();
-            int above = points.getAllValues().get(2).y - points.getAllValues().get(1).y - labelHeight;
-            int below = 35 + heights.getValue() - points.getAllValues().get(2).y - noteHeight;
-            assertTrue(above >= 12, "副行上方间距: " + above);
-            assertTrue(below >= 18, "副行下方间距: " + below);
-            System.out.println("CARD_NOTE_SPACING: " + note + " above=" + above + "px below=" + below + "px");
+            verify(p, atLeast(3)).drawTextWithStyle(texts.capture(), points.capture());
+            var complete = new StringBuilder();
+            for (int i = 2; i < texts.getAllValues().size(); i++) {
+                var t = (TextWithStyle)texts.getAllValues().get(i).get(0);
+                assertEquals(20, t.getSize());
+                assertTrue(p.getStringWidthAndHeight(t).getFirst() <= 224);
+                assertTrue(points.getAllValues().get(i).y + p.getStringWidthAndHeight(t).getSecond() + 18 <= 35 + heights.getValue());
+                complete.append(t.getText());
+            }
+            assertEquals(note, complete.toString());
+            var label = (TextWithStyle)texts.getAllValues().get(1).get(0);
+            assertTrue(points.getAllValues().get(2).y - points.getAllValues().get(1).y
+                    - p.getStringWidthAndHeight(label).getSecond() >= 12);
         }
     }
 
@@ -194,7 +287,7 @@ class BilibiliWeeklyReportPainterTest {
             var texts = org.mockito.ArgumentCaptor.forClass(List.class);
             verify(p, atLeast(7)).drawTextWithStyle(texts.capture(), any(Point.class));
             var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0)).filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
-            assertEquals(List.of("3.67", "0.00"), labels);
+            assertEquals(List.of("3.7", "0"), labels);
             verify(p).drawPolyline(argThat(points -> points.size() == 2), eq(ReportSharedStyle.COLOR_NAME), eq(3));
         }
     }
@@ -241,7 +334,7 @@ class BilibiliWeeklyReportPainterTest {
         assertEquals(35 + 2 * 118 + 59, ((Point) points.getValue().get(0)).x);
         assertEquals(35 + 3 * 118 + 59, ((Point) points.getValue().get(1)).x);
         verify(p, times(4)).drawRoundedRectangle(anyInt(), anyInt(), eq(10), eq(10), eq(10), any(Color.class));
-        assertTrue(drawnText(p).contains("未播"));
+        assertTrue(drawnText(p).contains("无数据"));
         assertTrue(drawnText(p).contains("0"));
         for (int i = 1; i < 7; i++) days.set(i, new WeeklyReport.Day(days.get(i).date(), 0, Map.of()));
         p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
