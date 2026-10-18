@@ -231,6 +231,15 @@ public interface LiveDataService {
      */
     void deleteLiveEndTime(@NonNull String platform, @NonNull Long uid);
 
+    /** 收尾期间本场采集的截止时刻；为空时照常采集。 */
+    default Optional<Long> getLiveCollectionCutoff(@NonNull String platform, @NonNull Long uid) {
+        return Optional.empty();
+    }
+
+    /** 保留旧场等待归档时停止接收终点之后的数据；传 null 恢复采集。 */
+    default void setLiveCollectionCutoff(@NonNull String platform, @NonNull Long uid, Long cutoff) {
+    }
+
     /**
      * 重置最近一场直播数据
      * @param platform 直播平台

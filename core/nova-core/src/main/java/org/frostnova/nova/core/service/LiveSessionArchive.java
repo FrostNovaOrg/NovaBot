@@ -84,8 +84,7 @@ public class LiveSessionArchive {
     /**
      * 归档一场直播
      * <p>
-     * <b>失败只记日志，绝不向上抛。</b>调用点在下播事件里，归档写不进去
-     * 不该连累下播推送本身。
+     * 写盘失败向调用方抛出异常，保留本场数据供下一次收尾重试。
      * <p>
      * 同一主播、同一开播时刻已有一条时，<b>新的这条取代旧的</b>：断线重连续上的那一场
      * 中途下播时已归档过一次，真下播（或补档）这条才是整场。只在撞上时整份重写，
@@ -109,7 +108,8 @@ public class LiveSessionArchive {
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 log.info("已归档 {} 的一场直播: {} 秒", session.uname(), session.durationSeconds());
             } catch (IOException e) {
-                log.error("归档直播场次失败, 该场将不会出现在运营统计中", e);
+                log.error("归档直播场次失败, 保留本场数据等待重试", e);
+                throw new java.io.UncheckedIOException("Unable to archive live session", e);
             }
         }
     }

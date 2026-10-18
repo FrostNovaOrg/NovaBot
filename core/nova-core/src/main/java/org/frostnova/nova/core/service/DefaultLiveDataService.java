@@ -773,6 +773,24 @@ public class DefaultLiveDataService implements LiveDataService {
         Optional.ofNullable(cache.getJSONObject(key)).ifPresent(data -> data.remove(String.valueOf(uid)));
     }
 
+    @Override
+    public Optional<Long> getLiveCollectionCutoff(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            return Optional.ofNullable(cache.getJSONObject("LiveCollectionCutoff:" + platform))
+                    .map(data -> data.getLong(String.valueOf(uid)));
+        }
+    }
+
+    @Override
+    public void setLiveCollectionCutoff(@NonNull String platform, @NonNull Long uid, Long cutoff) {
+        synchronized (metricLock) {
+            String key = "LiveCollectionCutoff:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            if (cutoff == null) cache.getJSONObject(key).remove(String.valueOf(uid));
+            else cache.getJSONObject(key).put(String.valueOf(uid), cutoff);
+        }
+    }
+
     // ================ 本场直播统计指标 ================
 
     /**
@@ -1688,6 +1706,7 @@ public class DefaultLiveDataService implements LiveDataService {
     @Override
     public void resetLiveData(@NonNull String platform, @NonNull Long uid) {
         synchronized (metricLock) {
+            setLiveCollectionCutoff(platform, uid, null);
             Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))

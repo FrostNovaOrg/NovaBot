@@ -101,7 +101,7 @@ public class BilibiliLiveStatsAggregator {
     }
 
     synchronized boolean recoverDanmu(BilibiliDanmuEvent event, long start, Set<?> snapshot) {
-        if (!currentSession(event, start)) { return false; }
+        if (!accepts(event) || !currentSession(event, start)) { return false; }
         RecoveryHistory history = history(event);
         DanmuKey key = danmuKey(event);
         if (snapshot.contains(key) || history.danmus.containsKey(key)) { return false; }
@@ -111,12 +111,19 @@ public class BilibiliLiveStatsAggregator {
     }
 
     synchronized boolean recoverSuperChat(BilibiliSuperChatEvent event, long start) {
-        if (!currentSession(event, start)) { return false; }
+        if (!accepts(event) || !currentSession(event, start)) { return false; }
         RecoveryHistory history = history(event);
         if (!history.superChats.add(event.getMessageId())) { return false; }
         history.recoveredSuperChats.add(event.getMessageId());
         countSuperChat(event, true);
         return true;
+    }
+
+    /** 旧场收尾重试时，终点之后的事件不进入计数、词频、排行或原文。 */
+    private boolean accepts(NovaBaseLiveEvent event) {
+        if (event.getSource() == null || event.getSource().getUid() == null) { return true; }
+        return liveDataService.getLiveCollectionCutoff(event.getPlatform(), event.getSource().getUid())
+                .map(cutoff -> event.getTimestamp() <= cutoff).orElse(true);
     }
 
     private boolean currentSession(NovaBaseLiveEvent event, long start) {
@@ -168,6 +175,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliDanmuEvent.class)
     public synchronized void onDanmu(BilibiliDanmuEvent event) {
+        if (!accepts(event)) { return; }
         if (event.getSource() != null && event.getSource().getUid() != null) {
             RecoveryHistory history = history(event);
             DanmuKey key = danmuKey(event);
@@ -190,6 +198,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliEmojiEvent.class)
     public synchronized void onEmoji(BilibiliEmojiEvent event) {
+        if (!accepts(event)) { return; }
         if (event.getSource() != null && event.getSource().getUid() != null) {
             String text = event.getEmoji() == null ? null : event.getEmoji().getName();
             RecoveryHistory history = history(event);
@@ -211,6 +220,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliPaidGiftEvent.class)
     public void onPaidGift(BilibiliPaidGiftEvent event) {
+        if (!accepts(event)) { return; }
         double value = Optional.ofNullable(event.getValue()).orElse(0.0);
         // 取不到实扣时回退到到手价值，而不是当作 0：把「不知道」记成「没花钱」会让营收凭空少一截
         double charged = Optional.ofNullable(event.getCharged()).orElse(value);
@@ -237,6 +247,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliFreeGiftEvent.class)
     public void onFreeGift(BilibiliFreeGiftEvent event) {
+        if (!accepts(event)) { return; }
         int count = Optional.ofNullable(event.getGiftInfo())
                 .map(gift -> Optional.ofNullable(gift.getCount()).orElse(1))
                 .orElse(1);
@@ -269,6 +280,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliRandomGiftEvent.class)
     public void onRandomGift(BilibiliRandomGiftEvent event) {
+        if (!accepts(event)) { return; }
         int count = Optional.ofNullable(event.getRandomGiftInfo())
                 .map(gift -> Optional.ofNullable(gift.getCount()).orElse(1))
                 .orElse(1);
@@ -301,6 +313,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliSuperChatEvent.class)
     public synchronized void onSuperChat(BilibiliSuperChatEvent event) {
+        if (!accepts(event)) { return; }
         if (event.getSource() != null && event.getSource().getUid() != null && event.getMessageId() != null) {
             RecoveryHistory history = history(event);
             if (history.recoveredSuperChats.contains(event.getMessageId())) { return; }
@@ -326,6 +339,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliCaptainEvent.class)
     public void onCaptain(BilibiliCaptainEvent event) {
+        if (!accepts(event)) { return; }
         increment(event, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
@@ -340,6 +354,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliCommanderEvent.class)
     public void onCommander(BilibiliCommanderEvent event) {
+        if (!accepts(event)) { return; }
         increment(event, BilibiliLiveMetric.COMMANDER_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
@@ -354,6 +369,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliGovernorEvent.class)
     public void onGovernor(BilibiliGovernorEvent event) {
+        if (!accepts(event)) { return; }
         increment(event, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
@@ -380,6 +396,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliFollowEvent.class)
     public void onFollow(BilibiliFollowEvent event) {
+        if (!accepts(event)) { return; }
         increment(event, BilibiliLiveMetric.FOLLOW_COUNT, 1);
         recordEvent(event, "follow", eventFields(event.getSender()));
     }
@@ -392,6 +409,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliEnterRoomEvent.class)
     public void onEnterRoom(BilibiliEnterRoomEvent event) {
+        if (!accepts(event)) { return; }
         increment(event, BilibiliLiveMetric.ENTER_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.ENTER_USERS, event.getSender());
     }
@@ -401,6 +419,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliLikeEvent.class)
     public void onLike(BilibiliLikeEvent event) {
+        if (!accepts(event)) { return; }
         recordUser(event, BilibiliLiveMetric.LIKE_USERS, event.getSender());
     }
 
@@ -412,6 +431,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliLikeUpdateEvent.class)
     public void onLikeUpdate(BilibiliLikeUpdateEvent event) {
+        if (!accepts(event)) { return; }
         Integer count = event.getCount();
         if (count != null) {
             max(event, BilibiliLiveMetric.LIKE_TOTAL, count);
@@ -428,6 +448,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliWatchedUpdateEvent.class)
     public void onWatchedUpdate(BilibiliWatchedUpdateEvent event) {
+        if (!accepts(event)) { return; }
         Integer count = event.getCount();
         if (count != null) {
             max(event, BilibiliLiveMetric.WATCHED_COUNT, count);
@@ -443,6 +464,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliOnlineRankCountUpdateEvent.class)
     public void onOnlineRankCountUpdate(BilibiliOnlineRankCountUpdateEvent event) {
+        if (!accepts(event)) { return; }
         Integer count = event.getCount();
         if (count != null) {
             max(event, BilibiliLiveMetric.ONLINE_RANK_COUNT, count);
@@ -460,6 +482,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliShareEvent.class)
     public void onShare(BilibiliShareEvent event) {
+        if (!accepts(event)) { return; }
         increment(event, BilibiliLiveMetric.SHARE_COUNT, 1);
     }
 
@@ -483,6 +506,7 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliPkBattleEvent.class)
     public void onPkBattle(BilibiliPkBattleEvent event) {
+        if (!accepts(event)) { return; }
         if (event.getSource() == null || event.getSource().getUid() == null
                 || event.getPkId() == null || event.getStage() == null) {
             return;
