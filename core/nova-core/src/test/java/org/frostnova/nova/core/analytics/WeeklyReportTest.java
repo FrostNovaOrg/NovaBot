@@ -134,13 +134,13 @@ class WeeklyReportTest {
         r = WeeklyReport.calculate("主播示例", List.of(session(FROM, List.of())), List.of(), NOW, RULES, true);
         assertEquals("0 人", WeeklyReport.cards(r).get(3).value());
     }
-    @Test @DisplayName("无统计口径的文字版只展示场次与时长")
+    @Test @DisplayName("无统计口径的文字版保留六格并解释未知项")
     void noCatalogText() {
         var text = WeeklyReport.text(WeeklyReport.calculate("主播示例", sessions(), snapshots(), NOW, null, true));
         assertTrue(text.contains("直播时长："));
         assertTrue(text.contains("场次："));
-        for (String label : List.of("弹幕", "观众", "粉丝", "名单", "首次记录", "暂无数据"))
-            assertFalse(text.contains(label), label);
+        for (String label : List.of("弹幕：暂无数据", "观众：暂无数据", "粉丝净增：暂无数据", "较上周 —", "本周场次"))
+            assertTrue(text.contains(label), label);
     }
     @Test @DisplayName("名单说明与主播页使用相同叫法")
     void coverageNames() {

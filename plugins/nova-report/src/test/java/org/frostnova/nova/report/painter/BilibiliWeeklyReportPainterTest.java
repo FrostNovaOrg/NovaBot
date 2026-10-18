@@ -59,7 +59,8 @@ class BilibiliWeeklyReportPainterTest {
                 List.of(), 0, Map.of("enter_users", users, "danmu_users", users), 0, Map.of(), anonymous);
     }
     WeeklyReport.Data data(boolean visible) {
-        var sessions = List.of(session(from.minusSeconds(86400), 500, 500, List.of(9200000001L), Map.of()),
+        var sessions = List.of(session(from.minusSeconds(2 * 86400), 1000, 4000, List.of(9200000002L), Map.of()),
+                session(from.minusSeconds(86400), 500, 500, List.of(9200000001L), Map.of()),
                 session(from, 500, 1000, List.of(9200000001L, 9200000002L), Map.of()),
                 session(from.plusSeconds(86400), 0, 0, List.of(), Map.of()),
                 session(from.plusSeconds(3 * 86400), 234.50, 2901, List.of(9200000003L), Map.of("enter_users", 1L)),
@@ -104,7 +105,7 @@ class BilibiliWeeklyReportPainterTest {
             for (List row : texts.getAllValues()) for (Object t : row)
                 drawn.append(((org.frostnova.nova.core.model.TextWithStyle)t).getText());
             String raw = drawn.toString();
-            assertTrue(raw.contains("—")); assertTrue(raw.contains(money ? "0.00" : "0"));
+            assertTrue(raw.contains("未播")); assertTrue(raw.contains(money ? "0.00" : "0"));
             assertFalse(raw.contains("9200000001"));
         }
     }
@@ -187,8 +188,133 @@ class BilibiliWeeklyReportPainterTest {
             var texts = org.mockito.ArgumentCaptor.forClass(List.class);
             verify(p, atLeast(7)).drawTextWithStyle(texts.capture(), any(Point.class));
             var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0)).filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
-            assertEquals(List.of("3.67", "0.00", "—", "—", "—", "—", "—"), labels);
-            verify(p).drawRectangle(eq(67), anyInt(), eq(54), eq(150), eq(ReportSharedStyle.COLOR_NAME));
+            assertEquals(List.of("3.67", "0.00"), labels);
+            verify(p).drawPolyline(argThat(points -> points.size() == 2), eq(ReportSharedStyle.COLOR_NAME), eq(3));
         }
+    }
+
+    // Prevent the image from omitting the new sections or exposing amounts in a hidden-money group.
+    @Test void renderedSectionsAndPrivacy() {
+        for (boolean visible : List.of(true, false)) {
+            var p = spy(factory.create(900, 1200, true));
+            var recordingFactory = mock(NovaCommonPainterFactory.class);
+            when(recordingFactory.create(900, 1200, true)).thenReturn(p);
+            new BilibiliWeeklyReportPainter(recordingFactory, api, new NovaBilibiliProperties()).render(streamer, data(visible));
+            String raw = drawnText(p);
+            for (String label : List.of("本周开播 5 天、共 5 场", "统计日 06:00–次日 06:00", "较上周 +",
+                    "名单完整性未知", "本周观众", "本周去重观众", "本周首次记录", "历史回访",
+                    "本周互动观众", "不等于第一次观看直播", "本周场次 · 5 场", "未播", "10/5",
+                    "数字只算记录到的数据，采集缺口不补估")) assertTrue(raw.contains(label), label);
+            if (!visible) for (String token : List.of("流水", "元", "revenue", "234.50")) assertFalse(raw.contains(token), token);
+            var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+            verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+            var notes = new ArrayList<TextWithStyle>();
+            for (var row : texts.getAllValues()) for (Object item : row)
+                if (item instanceof TextWithStyle t && t.getText().startsWith("较上周")) notes.add(t);
+            assertTrue(notes.stream().anyMatch(t -> t.getText().startsWith("较上周 +") && t.getColor().equals(new Color(0xCA1226))));
+            if (visible) assertTrue(notes.stream().anyMatch(t -> t.getText().startsWith("较上周 −") && t.getColor().equals(new Color(0x167349))));
+        }
+    }
+
+    // Prevent joining across missing days, dropping recorded zeroes, or inventing a line for one point.
+    @Test void dailyLinesBreakAtMissingValues() {
+        var d = data(false);
+        var days = new ArrayList<WeeklyReport.Day>();
+        for (int i = 0; i < 7; i++) days.add(new WeeklyReport.Day(d.daily().get(i).date(), 1,
+                i == 1 || i == 4 || i == 6 ? Map.of() : Map.of("messages", i == 2 ? 0 : i + 1)));
+        var data = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(),
+                d.composition(), d.coverage(), days, "messages");
+        var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawDays(p, data);
+        var points = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(p).drawPolyline(points.capture(), any(Color.class), eq(3));
+        assertEquals(2, points.getValue().size());
+        assertEquals(35 + 2 * 118 + 59, ((Point) points.getValue().get(0)).x);
+        assertEquals(35 + 3 * 118 + 59, ((Point) points.getValue().get(1)).x);
+        verify(p, times(4)).drawRoundedRectangle(anyInt(), anyInt(), eq(10), eq(10), eq(10), any(Color.class));
+        assertTrue(drawnText(p).contains("未播"));
+        assertTrue(drawnText(p).contains("0"));
+        for (int i = 1; i < 7; i++) days.set(i, new WeeklyReport.Day(days.get(i).date(), 0, Map.of()));
+        p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawDays(p, data);
+        verify(p, never()).drawPolyline(anyList(), any(Color.class), anyInt());
+        verify(p).drawRoundedRectangle(anyInt(), anyInt(), eq(10), eq(10), eq(10), any(Color.class));
+    }
+
+    // Prevent the image from presenting an unavailable comparison as a percentage.
+    @Test void unavailableComparisonAndAudience() {
+        var data = WeeklyReport.calculate("示例", List.of(session(from, 0, 0, List.of(), Map.of())), List.of(), now,
+                new BilibiliLiveMetricCatalog().insights(), true);
+        var p = spy(factory.create(900, 1200, true));
+        var recordingFactory = mock(NovaCommonPainterFactory.class);
+        when(recordingFactory.create(900, 1200, true)).thenReturn(p);
+        new BilibiliWeeklyReportPainter(recordingFactory, api, new NovaBilibiliProperties()).render(streamer, data);
+        String raw = drawnText(p);
+        assertTrue(raw.contains("较上周 —"));
+        assertTrue(raw.contains("较上周：上周没有开播，不比较。"));
+        assertFalse(raw.contains("较上周 +")); assertFalse(raw.contains("较上周 −"));
+        assertTrue(raw.contains("暂无数据"));
+        p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        var d = data(false);
+        painter.drawAudience(p, new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), Map.of("sessions", 1),
+                null, null, d.coverage(), d.daily(), "messages"));
+        assertFalse(drawnText(p).contains("0 人"));
+        assertTrue(drawnText(p).contains("暂无数据"));
+        verify(p).drawArc(anyInt(), anyInt(), anyInt(), eq(90d), eq(-360d), eq(22), any(Color.class));
+    }
+
+    @Test void comparisonReasonsAreSharedWithText() {
+        var d = data(true);
+        for (String reason : List.of("上期没有开播", "本期或上期少于 2 场", "平台没有这项口径", "上期为 0", "有场次没有观众名单")) {
+            var comparisons = new LinkedHashMap<String, org.frostnova.nova.core.analytics.StreamerInsights.Comparison>();
+            for (String key : List.of("durationSeconds", "revenue", "messages", "audience", "interactionAudience"))
+                comparisons.put(key, new org.frostnova.nova.core.analytics.StreamerInsights.Comparison(null, "unavailable", reason));
+            var data = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(), d.composition(),
+                    d.coverage(), d.daily(), d.chartMetric(), comparisons, null, d.sessionRows(), 0);
+            var p = spy(factory.create(900, 1200, true));
+            var recordingFactory = mock(NovaCommonPainterFactory.class);
+            when(recordingFactory.create(900, 1200, true)).thenReturn(p);
+            new BilibiliWeeklyReportPainter(recordingFactory, api, new NovaBilibiliProperties()).render(streamer, data);
+            String explanation = "较上周：" + reason.replace("本期", "本周").replace("上期", "上周") + "，不比较。";
+            assertEquals(explanation, WeeklyReport.comparisonExplanation(data));
+            assertTrue(drawnText(p).contains(explanation));
+            assertTrue(WeeklyReport.text(data).contains(explanation));
+            assertFalse(drawnText(p).contains("较上周 +"));
+            assertFalse(drawnText(p).contains("较上周 −"));
+            for (int i = 0; i < 5; i++) assertEquals("较上周 —", WeeklyReport.cards(data).get(i).note());
+        }
+    }
+
+    // Prevent the image session list from concealing unknown values, interruptions, or additional sessions.
+    @Test void sessionRowsAndOverflow() {
+        var sessions = new ArrayList<LiveSession>();
+        for (int i = 0; i < 8; i++) sessions.add(session(from.plusSeconds(i), 0, 0, List.of(), Map.of()));
+        sessions.add(new LiveSession("bilibili", 1L, "示例", 2L, from.plusSeconds(10).toEpochMilli(),
+                from.plusSeconds(70).toEpochMilli(), 60, Map.of(), Map.of(), LiveEndReason.CUT_OFF,
+                List.of(new org.frostnova.nova.core.model.RoomInfoSnapshot(0, "标题".repeat(100), "")),
+                66, Map.of(), 40));
+        for (boolean visible : List.of(true, false)) {
+            var d = WeeklyReport.calculate("示例", sessions, List.of(), now, new BilibiliLiveMetricCatalog().insights(), visible);
+            var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+            painter.drawSessions(p, d);
+            String text = drawnText(p);
+            for (String value : List.of("本周场次 · 9 场", "另有 2 场未列出", "被平台切断", "缺 1 分 6 秒", "…"))
+                assertTrue(text.contains(value), value);
+            if (visible) { assertTrue(text.contains("流水 —")); assertTrue(text.contains("流水 0.00 元")); }
+            else { assertFalse(text.contains("流水")); assertFalse(text.contains("元")); }
+        }
+    }
+
+    String drawnText(CommonPainter p) {
+        var result = new StringBuilder();
+        for (var call : mockingDetails(p).getInvocations()) {
+            if (!call.getMethod().getName().startsWith("draw")) continue;
+            for (Object arg : call.getArguments()) {
+                if (arg instanceof String s) result.append(s);
+                if (arg instanceof List<?> list) for (Object item : list)
+                    if (item instanceof TextWithStyle t) result.append(t.getText());
+            }
+        }
+        return result.toString();
     }
 }

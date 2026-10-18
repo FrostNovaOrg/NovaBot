@@ -8,7 +8,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -20,8 +22,21 @@ public final class WeeklyReport {
     public record Day(String date, int sessions, Map<String, Number> metrics) {}
     public record Data(String streamerName, LocalDate firstDay, LocalDate lastDay, Map<String, Number> metrics,
                        StreamerInsights.Fans fans, StreamerInsights.Composition composition,
-                       StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric) {}
-    public record Card(String label, String value, String note) {}
+                       StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric,
+                       Map<String, StreamerInsights.Comparison> comparisons, String comparisonNote,
+                       List<Session> sessionRows, int hiddenSessions) {
+        public Data(String streamerName, LocalDate firstDay, LocalDate lastDay, Map<String, Number> metrics,
+                    StreamerInsights.Fans fans, StreamerInsights.Composition composition,
+                    StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric) {
+            this(streamerName, firstDay, lastDay, metrics, fans, composition, coverage, daily, chartMetric,
+                    Map.of(), null, List.of(), 0);
+        }
+    }
+    public record Card(String label, String value, String note, Double changeRatio) {
+        public Card(String label, String value, String note) { this(label, value, note, null); }
+    }
+    /** 场次仅保留展示字段，不携带名单或隐藏金额。 */
+    public record Session(String startedAt, String title, String details, String badge) {}
     public record Preview(Data data, String summary, String text, byte[] image) {}
 
     public static StreamerInsights.Range previousWeek(Instant now) {
@@ -32,7 +47,11 @@ public final class WeeklyReport {
     public static Data calculate(String streamerName, Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,
                                  Instant now, LiveMetricCatalog.Insights rules, boolean showRevenue) {
         var range = previousWeek(now);
-        var result = new StreamerInsights().calculate(sessions, snapshots, range.from(), range.to(), rules);
+        var comparison = new StreamerInsights().comparePeriods(sessions, snapshots, range.from(), range.to(),
+                range.from().minusSeconds(7 * 86400), range.to().minusSeconds(7 * 86400), rules);
+        var result = comparison.current();
+        Map<String, StreamerInsights.Comparison> comparisons = new LinkedHashMap<>(comparison.comparisons());
+        if (!showRevenue || !result.metricsKnown()) comparisons.remove("revenue");
         Map<String, Number> metrics = new LinkedHashMap<>();
         metrics.put("sessions", result.sessions());
         metrics.put("durationSeconds", result.durationSeconds());
@@ -47,10 +66,44 @@ public final class WeeklyReport {
             if (showRevenue) put(values, "revenue", d.revenue());
             return new Day(d.date(), d.sessions(), Map.copyOf(values));
         }).toList();
+        var rows = sessions.stream().filter(s -> s.startTime() >= range.from().toEpochMilli()
+                        && s.startTime() < range.to().toEpochMilli())
+                .sorted(Comparator.comparingLong(LiveSession::startTime).reversed()).limit(7)
+                .map(s -> session(s, rules, showRevenue)).toList();
         return new Data(streamerName == null ? "未知主播" : streamerName,
                 StatisticsDay.dateOf(range.from()), StatisticsDay.dateOf(range.to()).minusDays(1),
                 Map.copyOf(metrics), result.fans(), result.composition(), result.coverage(), daily,
-                result.metricsKnown() ? (showRevenue ? "revenue" : "messages") : "durationSeconds");
+                result.metricsKnown() ? (showRevenue ? "revenue" : "messages") : "durationSeconds",
+                Map.copyOf(comparisons), comparison.comparisonNote(), rows, Math.max(0, result.sessions() - rows.size()));
+    }
+
+    private static Session session(LiveSession s, LiveMetricCatalog.Insights rules, boolean showRevenue) {
+        var at = Instant.ofEpochMilli(s.startTime()).atZone(StatisticsDay.ZONE);
+        String started = "周" + "一二三四五六日".charAt(at.getDayOfWeek().getValue() - 1)
+                + " " + at.format(DateTimeFormatter.ofPattern("HH:mm"));
+        String title = s.titles() == null || s.titles().isEmpty() ? null : s.titles().get(s.titles().size() - 1).title();
+        if (title == null || title.isBlank()) title = "未记录标题";
+        // Keep titles on one line in both the image and text fallback.
+        title = title.replaceAll("[\\p{Cc}\\p{Zl}\\p{Zp}]", " ");
+        Double revenue = rules == null || rules.revenueKeys().isEmpty() || s.metrics() == null || s.metrics().isEmpty()
+                ? null : rules.revenue(s.metrics());
+        Number messages = rules == null || rules.messageKey() == null || s.metrics() == null
+                ? null : s.metrics().get(rules.messageKey());
+        long minutes = Math.round(s.durationSeconds() / 60.0);
+        String details = "时长 " + (minutes >= 60 ? minutes / 60 + " 时 " + minutes % 60 + " 分" : minutes + " 分")
+                + (showRevenue && rules != null ? " · 流水 " + (revenue == null ? "—" : number(revenue, " 元", true)) : "")
+                + " · 弹幕 " + (messages == null ? "—" : number(messages, " 条", false))
+                + (s.interrupted() ? " · " + s.endReason().getDescription() : "");
+        long gap = Math.max(s.maintenanceGapSeconds(), s.roomOutageSeconds());
+        return new Session(started, title, details, gap > 0 ? "缺 " + gap(gap) : "完整");
+    }
+
+    private static String gap(long seconds) {
+        var parts = new ArrayList<String>();
+        if (seconds / 3600 > 0) parts.add(seconds / 3600 + " 时");
+        if (seconds % 3600 / 60 > 0) parts.add(seconds % 3600 / 60 + " 分");
+        if (seconds % 60 > 0) parts.add(seconds % 60 + " 秒");
+        return String.join(" ", parts);
     }
 
     public static Preview preview(Data data, Supplier<byte[]> paint) {
@@ -88,14 +141,41 @@ public final class WeeklyReport {
     public static List<Card> cards(Data d) {
         var m = d.metrics();
         boolean revenue = d.chartMetric().equals("revenue");
-        String partial = d.fans() != null && d.fans().partial() ? "从 " + Instant.ofEpochMilli(d.fans().fromAt())
-                .atZone(StatisticsDay.ZONE).format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")) + " 起算" : "";
-        return List.of(new Card("直播时长", duration(m.get("durationSeconds").longValue()), number(m.get("sessions"), " 场", false)),
-                new Card(revenue ? "流水" : "场次", number(m.get(revenue ? "revenue" : "sessions"), revenue ? " 元" : " 场", revenue), ""),
-                new Card("弹幕", number(m.get("messages"), " 条", false), ""),
-                new Card("观众", number(m.get("audience"), " 人", false), ""),
-                new Card("互动观众", number(m.get("interactionAudience"), " 人", false), ""),
+        String partial = d.fans() == null ? "" : d.fans().partial() ? "从 " + Instant.ofEpochMilli(d.fans().fromAt())
+                .atZone(StatisticsDay.ZONE).format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")) + " 起算" : "按区间边界快照计算";
+        return List.of(comparedCard(d, "durationSeconds", "直播时长", duration(m.get("durationSeconds").longValue())),
+                revenue ? comparedCard(d, "revenue", "流水", number(m.get("revenue"), " 元", true))
+                        : new Card("场次", number(m.get("sessions"), " 场", false), ""),
+                comparedCard(d, "messages", "弹幕", number(m.get("messages"), " 条", false)),
+                comparedCard(d, "audience", "观众", number(m.get("audience"), " 人", false)),
+                comparedCard(d, "interactionAudience", "互动观众", number(m.get("interactionAudience"), " 人", false)),
                 new Card("粉丝净增", number(d.fans() == null ? null : d.fans().change(), " 人", false), partial));
+    }
+
+    private static Card comparedCard(Data d, String key, String label, String value) {
+        var c = d.comparisons().get(key);
+        Double ratio = c == null ? null : c.changeRatio();
+        return new Card(label, value, "较上周" + (ratio == null ? " —" : change(ratio).equals("持平") ? "持平" : " " + change(ratio)), ratio);
+    }
+
+    public static String change(double ratio) {
+        if (Math.abs(ratio) < .005) return "持平";
+        return (ratio > 0 ? "+" : "−") + Math.round(Math.abs(ratio) * 100) + "%";
+    }
+
+    public static String comparisonExplanation(Data d) {
+        var reasons = new java.util.LinkedHashSet<String>();
+        for (String key : List.of("durationSeconds", "revenue", "messages", "audience", "interactionAudience")) {
+            var c = d.comparisons().get(key);
+            if (c != null && c.reason() != null) reasons.add(c.reason().replace("本期", "本周").replace("上期", "上周"));
+        }
+        String text = reasons.isEmpty() ? "" : "较上周：" + String.join("，", reasons) + "，不比较。";
+        return text + (d.comparisonNote() == null ? "" : d.comparisonNote() + "。");
+    }
+
+    public static String activity(Data d) {
+        return "本周开播 " + d.daily().stream().filter(day -> day.sessions() > 0).count() + " 天、共 "
+                + d.metrics().get("sessions") + " 场 · 统计日 06:00–次日 06:00";
     }
 
     public static String summary(Data d) {
@@ -103,10 +183,13 @@ public final class WeeklyReport {
         if (d.metrics().get("sessions").intValue() == 0) return lead + "没有记录到开播。";
         var c = cards(d);
         String activity = lead + "共直播 " + number(d.metrics().get("sessions"), " 场", false) + "、" + c.get(0).value();
-        if (d.chartMetric().equals("durationSeconds")) return activity + "。";
-        return activity
+        String totals = activity + (d.chartMetric().equals("durationSeconds") ? "。" : ""
                 + (d.chartMetric().equals("revenue") ? "，流水 " + c.get(1).value() : "")
-                + "，弹幕 " + c.get(2).value() + "，观众 " + c.get(3).value() + "。";
+                + "，弹幕 " + c.get(2).value() + "，观众 " + c.get(3).value() + "。");
+        var changes = new ArrayList<String>();
+        for (var card : c) if (card.changeRatio() != null)
+            changes.add((card.label().equals("直播时长") ? "时长" : card.label()) + " " + change(card.changeRatio()));
+        return totals + (changes.isEmpty() ? "" : "比前一周：" + String.join("，", changes) + "。");
     }
 
     public static String composition(Data d) {
@@ -130,15 +213,15 @@ public final class WeeklyReport {
         if (d.metrics().get("sessions").intValue() == 0) return summary(d);
         var lines = new java.util.ArrayList<String>();
         lines.add(d.streamerName() + " 运营周报（" + period(d) + "）");
-        if (d.chartMetric().equals("durationSeconds")) {
-            lines.add("场次：" + number(d.metrics().get("sessions"), " 场", false));
-            lines.add("直播时长：" + duration(d.metrics().get("durationSeconds").longValue()));
-            return String.join("\n", lines);
-        }
+        lines.add(activity(d));
         for (var c : cards(d)) lines.add(c.label() + "：" + c.value() + (c.note().isEmpty() ? "" : "（" + c.note() + "）"));
+        if (!comparisonExplanation(d).isEmpty()) lines.add(comparisonExplanation(d));
         lines.add(composition(d));
+        lines.add("本周场次 · " + d.metrics().get("sessions") + " 场");
+        for (var s : d.sessionRows()) lines.add(s.startedAt() + " " + s.title() + " · " + s.details() + " · " + s.badge());
+        if (d.hiddenSessions() > 0) lines.add("另有 " + d.hiddenSessions() + " 场未列出");
         if (!coverage(d).isEmpty()) lines.add(coverage(d));
-        lines.add("一天从早上 6 点算起");
+        lines.add("数字只算记录到的数据，采集缺口不补估。");
         return String.join("\n", lines);
     }
 }

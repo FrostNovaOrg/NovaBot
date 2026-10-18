@@ -74,6 +74,10 @@ public final class ReportSharedStyle {
      */
     public static final Color COLOR_TEXT = new Color(51, 51, 51);
 
+    /** 与控制台浅色主题一致：上涨红、下跌绿。 */
+    public static final Color COLOR_UP = new Color(0xCA1226);
+    public static final Color COLOR_DOWN = new Color(0x167349);
+
     public static final int CARD_COLUMNS = 3;
     public static final int CARD_GAP = 18;
     public static final int CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
@@ -101,9 +105,13 @@ public final class ReportSharedStyle {
 
     /** 周报卡片加高，为标签与补充说明留出间距。 */
     public static void drawCard(CommonPainter painter, String value, String label, String note, int x, int y) {
+        drawCard(painter, value, label, note, COLOR_TIP, x, y);
+    }
+
+    public static void drawCard(CommonPainter painter, String value, String label, String note, Color noteColor, int x, int y) {
         drawCard(painter, value, label, x, y, WEEKLY_CARD_HEIGHT);
         if (!note.isEmpty()) {
-            TextWithStyle text = new TextWithStyle(note, 14, COLOR_TIP, Font.PLAIN);
+            TextWithStyle text = new TextWithStyle(note, 14, noteColor, Font.PLAIN);
             text.setText(painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET * 2));
             painter.drawTextWithStyle(java.util.List.of(text), new Point(x + CARD_TEXT_INSET, y + 116));
         }
