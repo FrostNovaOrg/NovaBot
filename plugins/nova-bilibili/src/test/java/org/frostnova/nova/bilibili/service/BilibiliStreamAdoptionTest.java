@@ -267,6 +267,65 @@ class BilibiliStreamAdoptionTest {
     }
 
     @Test
+    void nextLiveOnAfterRetryEndedMustClearCutoff() throws Exception {
+        // 用户故障：接管重试期间新场也下播了，下一场开播后弹幕、礼物全不计。
+        long end = finishOfflineDuringAdoptionRetryAndRestart();
+        long start = end + (props.getLive().getReconnectInterval() + 1L) * 1000;
+        var on = new NovaDefaultLiveOnEventListener(props, liveData, recovery);
+        var event = new BilibiliLiveOnEvent(streamer(), Instant.ofEpochMilli(start));
+        on.onLiveOnEventCheckReconnect(event);
+        assertFalse(event.isReconnect());
+        on.onLiveOnEventSetLiveData(event);
+
+        stats.onDanmu(danmu(start + 1000, "next stream"));
+        assertEquals(1d, data.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                "new stream must accept danmu after cutoff");
+        assertTrue(liveData.getLiveCollectionCutoff(PLATFORM, UID).isEmpty());
+        assertEquals(Optional.of(start), data.getLiveStartTime(PLATFORM, UID));
+        assertEquals(List.of("next stream"), details.readDanmu(PLATFORM, UID, start)
+                .stream().map(r -> r.text()).toList());
+    }
+
+    @Test
+    void reconnectAfterRetryEndedMustClearCutoff() throws Exception {
+        // 用户故障：接管重试后断线续场，续上之后的弹幕不计。
+        long end = finishOfflineDuringAdoptionRetryAndRestart();
+        long start = end + 1000;
+        var on = new NovaDefaultLiveOnEventListener(props, liveData, recovery);
+        var event = new BilibiliLiveOnEvent(streamer(), Instant.ofEpochMilli(start));
+        on.onLiveOnEventCheckReconnect(event);
+        assertTrue(event.isReconnect());
+        on.onLiveOnEventSetLiveData(event);
+
+        stats.onDanmu(danmu(start + 1000, "continued stream"));
+        assertEquals(2d, data.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                "resumed stream must accept danmu after cutoff");
+        assertTrue(liveData.getLiveCollectionCutoff(PLATFORM, UID).isEmpty());
+        assertEquals(Optional.of(OLD), data.getLiveStartTime(PLATFORM, UID));
+        assertEquals(List.of("previous", "continued stream"), details.readDanmu(PLATFORM, UID, OLD)
+                .stream().map(r -> r.text()).toList());
+    }
+
+    private long finishOfflineDuringAdoptionRetryAndRestart() throws Exception {
+        long stoppedAt = (System.currentTimeMillis() / 1000 - 400) * 1000;
+        restart(stoppedAt);
+        off = spy(off);
+        doThrow(new IllegalStateException("temporary live-off failure")).doCallRealMethod()
+                .when(off).onLiveOffEvent(any());
+        adopt(stoppedAt + 301000, true);
+        assertEquals(Optional.of(stoppedAt), liveData.getLiveCollectionCutoff(PLATFORM, UID));
+        stats.onDanmu(danmu(stoppedAt + 302000, "excluded opening"));
+        polledRoom.setLiveStatus(0);
+        nextPoll.run();
+        assertEquals(Optional.of(false), data.getLiveStatus(PLATFORM, UID));
+        assertEquals(1d, sessions.find(0, Long.MAX_VALUE).get(0).metrics().get("danmu_count"));
+        assertEquals(Optional.of(stoppedAt), data.getLiveEndTime(PLATFORM, UID));
+        restart(stoppedAt + 303000);
+        assertEquals(Optional.of(stoppedAt), liveData.getLiveCollectionCutoff(PLATFORM, UID));
+        return stoppedAt;
+    }
+
+    @Test
     void archiveWriteFailureMustAllowAdoptionWithoutRetry() throws Exception {
         long stoppedAt = (System.currentTimeMillis() / 1000 - 400) * 1000;
         long apiStart = stoppedAt + 301000;
