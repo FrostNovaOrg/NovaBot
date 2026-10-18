@@ -1159,6 +1159,35 @@ await check('统计口径头两行完整使用本期和上期接口边界', asyn
     assert.equal(nodes.get('sd-scope').children[2].textContent, '对比范围：—', '无上期回包后须显示破折号');
   } finally { compositionScenario = null; }
 });
+// 读不到整页数据时，统计口径头两行不能停在读取中，须写明与工具条那行一样的失败原因。
+await check('读取失败后统计口径头两行写明原因不写读取中', async () => {
+  insightsFailure = true;
+  try {
+    page.leave(); await load(base + '?days=7');
+    const lines = nodes.get('sd-scope').children.slice(1).map(n => n.textContent);
+    console.log('SCOPE_ERROR_SAMPLE: ' + lines.slice(0, 2).join(' | '));
+    assert.ok(textOf(nodes.get('sd-toolbar')).includes('读取失败：archive unavailable'), '工具条那行须写失败原因');
+    assert.ok(!lines[0].includes('正在读取'), '全页范围不得写正在读取，实际：' + lines[0]);
+    assert.ok(!lines[1].includes('正在读取'), '对比范围不得写正在读取，实际：' + lines[1]);
+    assert.equal(lines[0], '全页范围：读取失败：archive unavailable', '全页范围须写与工具条一样的失败原因');
+    assert.equal(lines[1], '对比范围：读取失败：archive unavailable', '对比范围须写与工具条一样的失败原因');
+  } finally { insightsFailure = false; }
+});
+// 接口给了上期但缺起止时刻时，对比范围须与没有上期一样写破折号，不能落进读取中。
+await check('上期缺起止时刻时对比范围写破折号', async () => {
+  try {
+    for (const previous of [{from: Date.parse('2026-10-03T06:00:00+08:00')},
+      {to: Date.parse('2026-10-10T06:00:00+08:00')}, {}]) {
+      compositionScenario = {from: Date.parse('2026-10-10T06:00:00+08:00'), to: Date.parse('2026-10-16T12:34:00+08:00'), previous};
+      page.leave(); await load(base + '?days=7');
+      const lines = nodes.get('sd-scope').children.slice(1).map(n => n.textContent);
+      console.log('SCOPE_PREVIOUS_SAMPLE: ' + lines[1]);
+      assert.ok(!lines[1].includes('正在读取'), '上期缺起止时刻不得写正在读取，实际：' + lines[1]);
+      assert.equal(lines[1], '对比范围：—', '上期缺起止时刻须写破折号');
+      assert.match(lines[0], /2026\/10\/10 06:00/, '全页范围仍照旧显示本期起止');
+    }
+  } finally { compositionScenario = null; }
+});
 // 模拟东京的本地时区，抓住当前卡比场次列表多一小时及缺少日期的情况。
 await check('Asia/Tokyo查看直播卡仍按东八区带日期显示', async () => {
   const saved = process.env.TZ;
