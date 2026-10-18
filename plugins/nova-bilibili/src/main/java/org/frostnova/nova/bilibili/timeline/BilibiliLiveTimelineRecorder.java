@@ -65,7 +65,7 @@ public class BilibiliLiveTimelineRecorder {
     }
 
     /**
-     * 下播收尾成功后才记录，归档失败的重试不重复记事。
+     * 本监听器排在下播收尾之后，收尾抛错的那一轮不记，重试成功那一次才记，时间线只留一条下播。
      * @param event 下播事件
      */
     @Order(-9999)
