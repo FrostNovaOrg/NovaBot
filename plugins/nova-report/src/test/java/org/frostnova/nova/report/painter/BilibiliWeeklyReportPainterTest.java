@@ -184,23 +184,29 @@ class BilibiliWeeklyReportPainterTest {
         verify(p, never()).drawPolyline(anyList(), any(Color.class), anyInt());
     }
 
-    @Test @DisplayName("三种折线数字都用千分位和最多一位小数，避免混用万和两位小数")
+    @Test @DisplayName("三种折线数字按十进制进位，避免同一天的流水与控制台相差 0.1")
     void chartNumbersMatchConsole() {
         for (String metric : List.of("revenue", "messages", "durationSeconds")) {
-            var d = data(true);
-            var values = List.of(7209.4, 71000d, 0d, 1.25, 1.24, 10000d, 12d);
-            var days = new ArrayList<WeeklyReport.Day>();
-            for (int i = 0; i < 7; i++) days.add(new WeeklyReport.Day(d.daily().get(i).date(), 1,
-                    Map.of(metric, values.get(i) * (metric.equals("durationSeconds") ? 3600 : 1))));
-            var chart = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(),
-                    d.composition(), d.coverage(), days, metric);
-            var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
-            painter.drawDays(p, chart);
-            var texts = org.mockito.ArgumentCaptor.forClass(List.class);
-            verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
-            var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0))
-                    .filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
-            assertEquals(List.of("7,209.4", "71,000", "0", "1.3", "1.2", "10,000", "12"), labels, metric);
+            for (var example : List.of(
+                    Map.entry(List.of(7209.4, 71000d, 0d, 1.25, 1.24, 10000d, 12d),
+                            List.of("7,209.4", "71,000", "0", "1.3", "1.2", "10,000", "12")),
+                    Map.entry(List.of(71000.45, 7209.45, 12.35, 0.15, 0d, 10000d, 12d),
+                            List.of("71,000.5", "7,209.5", "12.4", "0.2", "0", "10,000", "12")))) {
+                var d = data(true);
+                var values = example.getKey();
+                var days = new ArrayList<WeeklyReport.Day>();
+                for (int i = 0; i < 7; i++) days.add(new WeeklyReport.Day(d.daily().get(i).date(), 1,
+                        Map.of(metric, values.get(i) * (metric.equals("durationSeconds") ? 3600 : 1))));
+                var chart = new WeeklyReport.Data(d.streamerName(), d.firstDay(), d.lastDay(), d.metrics(), d.fans(),
+                        d.composition(), d.coverage(), days, metric);
+                var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+                painter.drawDays(p, chart);
+                var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+                verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+                var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0))
+                        .filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
+                assertEquals(example.getValue(), labels, metric);
+            }
         }
     }
 

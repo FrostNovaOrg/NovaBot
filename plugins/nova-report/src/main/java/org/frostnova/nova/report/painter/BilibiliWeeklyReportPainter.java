@@ -15,6 +15,7 @@ import java.awt.Point;
 import java.time.LocalDate;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Base64;
 import java.util.ArrayList;
@@ -132,7 +133,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
                 int height = max > 0 ? (int) Math.round(value.doubleValue() / max * 150) : 0;
                 p.drawRoundedRectangle(x - 5, base - height - 5, 10, 10, 10, COLOR_NAME);
                 double v = duration ? value.doubleValue() / 3600 : value.doubleValue();
-                String label = numbers.format(v);
+                String label = numbers.format(new BigDecimal(Double.toString(v)).setScale(1, RoundingMode.HALF_UP));
                 centered(p, label, 18, COLOR_TEXT, x, base - height - 32);
             }
             centered(p, List.of("周一", "周二", "周三", "周四", "周五", "周六", "周日").get(i), 20, COLOR_TEXT, x, base + 16);
