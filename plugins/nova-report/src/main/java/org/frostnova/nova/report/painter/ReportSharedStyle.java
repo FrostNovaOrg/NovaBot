@@ -82,7 +82,7 @@ public final class ReportSharedStyle {
     public static final int CARD_GAP = 18;
     public static final int CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
     public static final int CARD_HEIGHT = 112;
-    public static final int WEEKLY_CARD_HEIGHT = 160;
+    public static final int WEEKLY_CARD_HEIGHT = 196;
     public static final int CARD_RADIUS = 16;
     public static final int CARD_TEXT_INSET = 20;
     public static final Color COLOR_CARD = new Color(246, 247, 249);
@@ -111,9 +111,22 @@ public final class ReportSharedStyle {
     public static void drawCard(CommonPainter painter, String value, String label, String note, Color noteColor, int x, int y) {
         drawCard(painter, value, label, x, y, WEEKLY_CARD_HEIGHT);
         if (!note.isEmpty()) {
-            TextWithStyle text = new TextWithStyle(note, 14, noteColor, Font.PLAIN);
-            text.setText(painter.truncateToWidth(text, CARD_WIDTH - CARD_TEXT_INSET * 2));
-            painter.drawTextWithStyle(java.util.List.of(text), new Point(x + CARD_TEXT_INSET, y + 116));
+            int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
+            String line = "";
+            int lineY = y + 116;
+            for (int codePoint : note.codePoints().toArray()) {
+                String character = new String(Character.toChars(codePoint));
+                var candidate = new TextWithStyle(line + character, 20, noteColor, Font.PLAIN);
+                if (!line.isEmpty() && painter.getStringWidthAndHeight(candidate).getFirst() > usable) {
+                    painter.drawTextWithStyle(java.util.List.of(new TextWithStyle(line, 20, noteColor, Font.PLAIN)),
+                            new Point(x + CARD_TEXT_INSET, lineY));
+                    line = "";
+                    lineY += 28;
+                }
+                line += character;
+            }
+            painter.drawTextWithStyle(java.util.List.of(new TextWithStyle(line, 20, noteColor, Font.PLAIN)),
+                    new Point(x + CARD_TEXT_INSET, lineY));
         }
     }
 

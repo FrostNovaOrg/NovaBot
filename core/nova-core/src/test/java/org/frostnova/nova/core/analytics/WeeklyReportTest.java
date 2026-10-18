@@ -50,6 +50,19 @@ class WeeklyReportTest {
         assertEquals(new StreamerInsights.Range(FROM.minusSeconds(7 * 86400), FROM),
                 WeeklyReport.previousWeek(TO.minusSeconds(3600)), "周一五点应再退一周");
     }
+    @Test @DisplayName("凌晨场次写真实月日，避免被当成统计周首日")
+    void sessionDatesUseActualShanghaiDate() {
+        var r = WeeklyReport.calculate("示例", List.of(
+                session(Instant.parse("2026-10-18T16:10:00Z"), List.of()),
+                session(Instant.parse("2026-10-18T09:08:00Z"), List.of())), List.of(),
+                Instant.parse("2026-10-19T02:00:00Z"), RULES, true);
+        assertEquals(List.of("10/19 00:10", "10/18 17:08"),
+                r.sessionRows().stream().map(WeeklyReport.Session::startedAt).toList());
+        assertTrue(WeeklyReport.text(r).contains("10/19 00:10"));
+        assertTrue(WeeklyReport.text(r).contains("10/18 17:08"));
+        assertFalse(WeeklyReport.text(r).contains("周一 00:10"));
+    }
+
     @Test @DisplayName("六个指标与首次回访和控制台统计一致")
     void matchesInsights() {
         var direct = new StreamerInsights().calculate(sessions(), snapshots(), FROM, TO, RULES);
