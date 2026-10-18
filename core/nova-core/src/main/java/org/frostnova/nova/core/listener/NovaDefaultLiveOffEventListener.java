@@ -64,13 +64,15 @@ public class NovaDefaultLiveOffEventListener {
         liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), false);
         liveDataService.setLiveEndTime(event.getPlatform(), event.getSource().getUid(), event.getTimestamp());
 
-        // 归档与并入累计读的是同一份尚未清零的本场数据，互不影响，先后无所谓；
-        // 但两者都必须赶在**开播清零之前**，也就是趁下播这一刻做掉
         archiveSession(event);
 
         // 本场数据并入累计。选在下播而非开播清零前，是因为程序可能在两场之间重启，
         // 拖到开播才并入会整场丢失。本场数据本身保留到下次开播，报告仍读得到
-        liveDataService.mergeLiveDataIntoTotal(event.getPlatform(), event.getSource().getUid());
+        try {
+            liveDataService.mergeLiveDataIntoTotal(event.getPlatform(), event.getSource().getUid());
+        } catch (RuntimeException e) {
+            log.error("本场数据并入累计失败, 可从归档重算累计", e);
+        }
     }
 
     /**

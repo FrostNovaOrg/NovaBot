@@ -219,6 +219,16 @@ public class CompositeLiveDataService implements LiveDataService {
     }
 
     @Override
+    public Optional<Long> getLiveCollectionCutoff(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveCollectionCutoff(platform, uid);
+    }
+
+    @Override
+    public void setLiveCollectionCutoff(@NonNull String platform, @NonNull Long uid, Long cutoff) {
+        delegate.setLiveCollectionCutoff(platform, uid, cutoff);
+    }
+
+    @Override
     public void resetLiveData(@NonNull String platform, @NonNull Long uid) {
         delegate.resetLiveData(platform, uid);
     }

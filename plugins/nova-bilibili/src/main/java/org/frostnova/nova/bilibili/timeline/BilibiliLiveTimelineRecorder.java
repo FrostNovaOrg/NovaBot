@@ -65,10 +65,10 @@ public class BilibiliLiveTimelineRecorder {
     }
 
     /**
-     * 下播
+     * 下播收尾成功后才记录，归档失败的重试不重复记事。
      * @param event 下播事件
      */
-    @Order(BEFORE_THE_REST)
+    @Order(-9999)
     @EventListener
     public void onLiveOff(BilibiliLiveOffEvent event) {
         record(TimelineEventType.LIVE_OFF, "下播了", event.getPlatform(), event.getSource());

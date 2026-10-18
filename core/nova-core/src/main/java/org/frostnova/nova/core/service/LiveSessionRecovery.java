@@ -205,6 +205,7 @@ public class LiveSessionRecovery {
      * @param source 主播信息
      */
     public void resumeAfterReconnect(@NonNull String platform, @NonNull LiveStreamerInfo source) {
+        liveDataService.setLiveCollectionCutoff(platform, source.getUid(), null);
         liveDataService.getLiveStartTime(platform, source.getUid())
                 .ifPresent(start -> detailArchiver.reopen(platform, source.getUid(), start));
     }
@@ -239,12 +240,13 @@ public class LiveSessionRecovery {
     /**
      * 未闭合场次的结束时刻
      * <p>
-     * 首选最后一次落盘时刻——那是我们能证明的最后一刻。它可能早于开播（进程停了很久、
+     * 收尾重试时沿用已记录的采集截止时刻，否则取最后一次落盘时刻——那是我们能证明的最后一刻。它可能早于开播（进程停了很久、
      * 主播在停机期间开了又关），这种情况下时长确实无从得知，退回开播时刻让时长为 0，
      * 并把这一场留在归档里：<b>指标比时长值钱，一条没有时长的记录仍然记得住那一场收了多少弹幕</b>。
      */
     private long endTimeOf(String platform, LiveStreamerInfo source, long start) {
-        Optional<Long> lastSave = liveDataService.getLastSaveTime();
+        Optional<Long> lastSave = liveDataService.getLiveCollectionCutoff(platform, source.getUid())
+                .or(liveDataService::getLastSaveTime);
         if (lastSave.isPresent() && lastSave.get() > start) {
             return lastSave.get();
         }
