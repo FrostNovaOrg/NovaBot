@@ -22,6 +22,23 @@ class StreamerInsightsTest {
             List.of("gift", "messageValue", "guard"), "messages",
             List.of("enter", "chat"), List.of("chat"), "fans");
 
+    @Test @DisplayName("显式区间与最近周期比较使用同一算法并保持半开边界")
+    void explicitComparisonMatchesRecent() {
+        var clock = Clock.fixed(TO, ZoneOffset.UTC);
+        var range = StreamerInsights.recent(7, clock);
+        var sessions = List.of(session(range.from(), Map.of("chat", List.of(1L)), Map.of()),
+                session(TO.minusSeconds(1), Map.of("chat", List.of(2L)), Map.of()),
+                session(range.from().minusSeconds(7 * 86400), Map.of("chat", List.of(1L)), Map.of()),
+                session(TO.minusSeconds(7 * 86400 + 1), Map.of("chat", List.of(2L)), Map.of()),
+                session(TO, Map.of("chat", List.of(3L)), Map.of()));
+        var insights = new StreamerInsights();
+        var explicit = insights.comparePeriods(sessions, List.of(), range.from(), TO,
+                range.from().minusSeconds(7 * 86400), TO.minusSeconds(7 * 86400), RULES);
+        assertEquals(insights.compareRecent(sessions, List.of(), 7, clock, RULES), explicit);
+        assertEquals(2, explicit.current().sessions());
+        assertEquals(2, explicit.previous().sessions());
+    }
+
     LiveSession session(Instant start, Map<String, List<Long>> sets, Map<String, Long> anonymous) {
         return new LiveSession("sample", 1L, "sample", 2L, start.toEpochMilli(),
                 start.plusSeconds(600).toEpochMilli(), 600, Map.of("gift", 10d,

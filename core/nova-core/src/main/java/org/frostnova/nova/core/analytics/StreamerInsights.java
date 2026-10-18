@@ -52,9 +52,16 @@ public final class StreamerInsights {
     public PeriodComparison compareRecent(Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,
                                           int days, Clock clock, LiveMetricCatalog.Insights rules) {
         Range range = recent(days, clock);
-        Result current = calculate(sessions, snapshots, range.from(), range.to(), rules);
-        Result previous = calculate(sessions, snapshots, range.from().minus(days, ChronoUnit.DAYS),
-                range.to().minus(days, ChronoUnit.DAYS), rules);
+        return comparePeriods(sessions, snapshots, range.from(), range.to(),
+                range.from().minus(days, ChronoUnit.DAYS), range.to().minus(days, ChronoUnit.DAYS), rules);
+    }
+
+    /** 比较两段指定区间；各区间含起点、不含终点，输入须属于同一位主播。 */
+    public PeriodComparison comparePeriods(Collection<LiveSession> sessions, Collection<StreamerSnapshot> snapshots,
+                                            Instant currentFrom, Instant currentTo,
+                                            Instant previousFrom, Instant previousTo, LiveMetricCatalog.Insights rules) {
+        Result current = calculate(sessions, snapshots, currentFrom, currentTo, rules);
+        Result previous = calculate(sessions, snapshots, previousFrom, previousTo, rules);
         Map<String, Comparison> comparisons = new LinkedHashMap<>();
         comparisons.put("durationSeconds", compare(current, previous, current.durationSeconds(),
                 previous.durationSeconds(), false, false));

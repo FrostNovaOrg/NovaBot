@@ -65,12 +65,35 @@ class WeeklyReportApiTest {
         ObjectProvider<WeeklyReportRenderer> renderers = mock(ObjectProvider.class);
         when(renderers.orderedStream()).thenAnswer(i -> Stream.of(renderer));
         ReflectionTestUtils.setField(controller, "weeklyReports", new WeeklyReportContentService(source,
-                new StreamerDirectory(props), archive, snapshots, catalogs, renderers));
+                new StreamerDirectory(props), archive, snapshots, mock(LiveDataService.class), catalogs, renderers));
     }
     void archive(Instant start) {
         archive.append(new LiveSession("bilibili", 1L, "主播示例", 2L, start.toEpochMilli(), start.plusSeconds(600).toEpochMilli(),
                 600, Map.of("gift_value", 1234.5, "danmu_count", 8901d), Map.of(), LiveEndReason.NORMAL,
                 List.of(), 0, Map.of("enter_users", List.of(9200000001L)), 0, Map.of(), Map.of()));
+    }
+
+    @Test @DisplayName("周报取数保留前周场次与边界快照，比较与概况一致")
+    void previewLoadsBothWeeks() {
+        var now = Instant.parse("2026-10-12T02:00:00Z");
+        var range = org.frostnova.nova.core.analytics.WeeklyReport.previousWeek(now);
+        var previousFrom = range.from().minusSeconds(7 * 86400);
+        for (var at : List.of(previousFrom.minusSeconds(86400), previousFrom, range.from().minusSeconds(1),
+                range.from(), range.to().minusSeconds(1), range.to())) archive(at);
+        snapshots.append(new StreamerSnapshot("bilibili", 1L, "示例", previousFrom.minusSeconds(1).toEpochMilli(), Map.of("fans", 100d)));
+        snapshots.append(new StreamerSnapshot("bilibili", 1L, "示例", range.from().toEpochMilli(), Map.of("fans", 110d)));
+        snapshots.append(new StreamerSnapshot("bilibili", 1L, "示例", range.to().minusSeconds(1).toEpochMilli(), Map.of("fans", 120d)));
+        var content = (WeeklyReportContentService) ReflectionTestUtils.getField(controller, "weeklyReports");
+        var data = content.preview("bilibili", 1L, now, true).orElseThrow().data();
+        var direct = new org.frostnova.nova.core.analytics.StreamerInsights().comparePeriods(
+                archive.find(0, Long.MAX_VALUE), snapshots.find(0, range.to().toEpochMilli()), range.from(), range.to(),
+                previousFrom, range.from(), new BilibiliLiveMetricCatalog().insights());
+        assertEquals(direct.comparisons(), data.comparisons());
+        assertEquals(direct.current().fans(), data.fans());
+        assertEquals(direct.current().composition(), data.composition());
+        assertEquals(2, data.metrics().get("sessions"));
+        for (String key : List.of("durationSeconds", "revenue", "messages", "audience"))
+            assertEquals(0d, data.comparisons().get(key).changeRatio());
     }
     @Test @DisplayName("未知主播预览与详情返回同一404提示") void missing() throws Exception {
         String expected = controller.streamer("bilibili", 1L, "week", 1, 0).getBody().getString("message");
@@ -199,7 +222,7 @@ class WeeklyReportApiTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var json = JSON.parseObject(raw);
         assertTrue(page.contains(json.getString("summary")));
-        assertTrue(page.contains(json.getString("text")));
+        assertTrue(org.springframework.web.util.HtmlUtils.htmlUnescape(page).contains(json.getString("text")));
         assertTrue(page.contains("<pre")); assertFalse(page.contains("\"data\"")); assertFalse(json.containsKey("data"));
     }
     @Test @DisplayName("推送页有图预览仍显示PNG")

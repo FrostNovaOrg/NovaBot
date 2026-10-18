@@ -15,6 +15,7 @@ import org.springframework.util.CollectionUtils;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
+import java.awt.geom.Arc2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -256,6 +257,24 @@ public class CommonPainter {
             this.draw.setColor(originalColor);
         }
 
+        return this;
+    }
+
+    /** 绘制圆弧，不移动坐标；角度遵循 Java2D，正角度为逆时针。 */
+    public CommonPainter drawArc(int x, int y, int diameter, double start, double extent,
+                                 int strokeWidth, @NonNull Color color) {
+        if (diameter <= 0 || strokeWidth <= 0 || extent == 0) return this;
+        expandHeightIfNeeded(y + diameter + (strokeWidth + 1) / 2);
+        Color originalColor = this.draw.getColor();
+        Stroke originalStroke = this.draw.getStroke();
+        try {
+            this.draw.setColor(color);
+            this.draw.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+            this.draw.draw(new Arc2D.Double(x, y, diameter, diameter, start, extent, Arc2D.OPEN));
+        } finally {
+            this.draw.setColor(originalColor);
+            this.draw.setStroke(originalStroke);
+        }
         return this;
     }
 
