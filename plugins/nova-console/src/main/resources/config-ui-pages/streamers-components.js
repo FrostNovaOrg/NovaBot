@@ -157,6 +157,7 @@ export function createChart(host, {
   points = [], title = '趋势', period = 'day', hideOff = false,
   isOff = point => point.status === 'off', format = chartNumber, onSelect,
   canSelect = point => !Number.isFinite(point.sessions) || point.sessions > 0,
+  label = null, tickLabel = null,
 } = {}) {
   const deferred = period === 'day' && typeof onSelect === 'function';
   const shown = period === 'day' && hideOff ? points.filter(point => !isOff(point) && finite(point.value)) : [...points];
@@ -181,12 +182,13 @@ export function createChart(host, {
 
   let destroyed = false;
   const select = point => { if (point && canSelect(point)) onSelect?.({start: point.start, end: point.end}); };
-  const describe = point => `${pointDate(point, period)} · ${format(point.value)}`;
+  const describe = point => `${label ? label(point) : pointDate(point, period)} · ${format(point.value)}`;
   const accessibleDescription = point => {
+    if (label) return describe(point);
     const date = dateAt(point.start), end = pointEndDate(point);
-    const label = period === 'day' ? point.label || point.date || date
+    const dateLabel = period === 'day' ? point.label || point.date || date
       : date + (end && end !== date ? ' ~ ' + (end.slice(0, 4) === date.slice(0, 4) ? end.slice(5) : end) : '');
-    return `${label} · ${format(point.value)}`;
+    return `${dateLabel} · ${format(point.value)}`;
   };
   let selectedIndex = deferred ? -1 : shown.length - 1;
   let hovering = false, keyboardFocused = false, hoverIndex = -1;
@@ -349,7 +351,7 @@ export function createChart(host, {
       const ticks = Array.from({length: count}, (_, i) => Math.round(i * (shown.length - 1) / Math.max(1, count - 1)));
       let previousRight = -Infinity, fits = true;
       ticks.forEach((index, i) => {
-        const label = element('span', '', pointDate(shown[index], period));
+        const label = element('span', '', tickLabel ? tickLabel(shown[index]) : pointDate(shown[index], period));
         label.style.left = `${x(index) / viewportWidth * 100}%`; labels.append(label);
         const labelWidth = label.getBoundingClientRect().width;
         const leftEdge = x(index) - (period !== 'day' ? labelWidth / 2
