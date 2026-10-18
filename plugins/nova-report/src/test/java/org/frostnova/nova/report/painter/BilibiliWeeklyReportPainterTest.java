@@ -3,6 +3,9 @@ package org.frostnova.nova.report.painter;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.WeeklyReport;
+import org.frostnova.nova.core.analytics.StatisticsDay;
+import org.frostnova.nova.core.analytics.StreamerCalendar;
+import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.model.LiveSession;
@@ -68,7 +71,10 @@ class BilibiliWeeklyReportPainterTest {
                 session(from.plusSeconds(7 * 86400 - 10800), 200, 3000, List.of(9200000001L), Map.of()));
         var snapshots = List.of(new StreamerSnapshot("bilibili", 1L, "主播示例", from.plusSeconds(7200).toEpochMilli(), Map.of("fans", 100d)),
                 new StreamerSnapshot("bilibili", 1L, "主播示例", from.plusSeconds(6 * 86400).toEpochMilli(), Map.of("fans", 125d)));
-        return WeeklyReport.calculate("主播示例", sessions, snapshots, now, new BilibiliLiveMetricCatalog().insights(), visible);
+        var data = WeeklyReport.calculate("主播示例", sessions, snapshots, now, new BilibiliLiveMetricCatalog().insights(), visible);
+        return data.withCalendar(new StreamerCalendar().calculate(sessions,
+                List.of(new LiveGap(from.minusSeconds(14 * 86400).toEpochMilli(), now.toEpochMilli(), LiveGap.Reason.UNKNOWN)),
+                List.of(), List.of(), data.lastDay(), 35, java.time.Clock.fixed(now, StatisticsDay.ZONE)));
     }
     @Test @DisplayName("可见与隐藏金额出图，缺记录用破折号，已记录零写零")
     void samples() throws Exception {
@@ -203,8 +209,11 @@ class BilibiliWeeklyReportPainterTest {
             String raw = drawnText(p);
             for (String label : List.of("本周开播 5 天、共 5 场", "统计日 06:00–次日 06:00", "较上周 +",
                     "名单完整性未知", "本周观众", "本周去重观众", "本周首次记录", "历史回访",
-                    "本周互动观众", "不等于第一次观看直播", "本周场次 · 5 场", "未播", "10/5",
+                    "本周互动观众", "不等于第一次观看直播", "开播日历 · 近 5 周", "确认没播", "说不准",
+                    "本周场次 · 5 场", "未播", "10/5",
                     "数字只算记录到的数据，采集缺口不补估")) assertTrue(raw.contains(label), label);
+            assertTrue(raw.indexOf("本周观众") < raw.indexOf("开播日历 · 近 5 周"));
+            assertTrue(raw.indexOf("开播日历 · 近 5 周") < raw.indexOf("本周场次 · 5 场"));
             if (!visible) for (String token : List.of("流水", "元", "revenue", "234.50")) assertFalse(raw.contains(token), token);
             var texts = org.mockito.ArgumentCaptor.forClass(List.class);
             verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
@@ -303,6 +312,44 @@ class BilibiliWeeklyReportPainterTest {
             if (visible) { assertTrue(text.contains("流水 —")); assertTrue(text.contains("流水 0.00 元")); }
             else { assertFalse(text.contains("流水")); assertFalse(text.contains("元")); }
         }
+    }
+
+    @Test @DisplayName("日历铺满五行七列，报告周描边，三态合计与文字一致")
+    void calendarLayoutAndSharedCounts() {
+        var data = data(false);
+        var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawCalendar(p, data);
+        String raw = drawnText(p);
+        for (String text : List.of("9/7 – 10/11", "有直播", "确认没播", "说不准", "不按没播算"))
+            assertTrue(raw.contains(text), text);
+        var totals = WeeklyReport.calendarTotals(data);
+        assertEquals(35, totals.recorded() + totals.off() + totals.unknown());
+        assertTrue(totals.recorded() > 0 && totals.off() > 0 && totals.unknown() > 0);
+        assertTrue(raw.contains(totals.recorded() + "天 有直播"));
+        assertTrue(raw.contains(totals.off() + "天 确认没播"));
+        assertTrue(raw.contains(totals.unknown() + "天 说不准"));
+        var cells = mockingDetails(p).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("drawRoundedRectangle") && i.getArgument(3).equals(64)).toList();
+        assertEquals(35, cells.size(), "不能漏日期或多画报告周之后的日期");
+        assertEquals(5, cells.stream().map(i -> (Integer)i.getArgument(1)).distinct().count());
+        assertEquals(7, cells.stream().map(i -> (Integer)i.getArgument(0)).distinct().count());
+        assertEquals(7, cells.stream().filter(i -> ReportSharedStyle.COLOR_TEXT.equals(i.getArgument(5))).count());
+        for (int i = 0; i < cells.size(); i++) {
+            var cell = cells.get(i);
+            assertEquals(i >= 28, ReportSharedStyle.COLOR_TEXT.equals(cell.getArgument(5)), "只有报告周描边");
+            assertTrue((Integer)cell.getArgument(0) + (Integer)cell.getArgument(2) <= 865);
+        }
+        var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), any(Point.class));
+        var dates = new ArrayList<String>();
+        for (var row : texts.getAllValues()) for (Object item : row) {
+            String value = ((TextWithStyle)item).getText();
+            if (value.matches("[0-9]+/[0-9]+")) dates.add(value);
+        }
+        assertEquals(data.calendar().items().stream().map(d -> {
+            var date = java.time.LocalDate.parse(d.date());
+            return date.getMonthValue() + "/" + date.getDayOfMonth();
+        }).toList(), dates);
     }
 
     String drawnText(CommonPainter p) {

@@ -90,7 +90,7 @@ class WeeklyReportComparisonTest {
                 new org.frostnova.nova.core.model.StreamerSnapshot("sample", 1L, "示例",
                         TO.minusSeconds(1).toEpochMilli(), Map.of("fans", 120d)));
         var d = WeeklyReport.calculate("示例", sessions(), snapshots, NOW, RULES, true);
-        assertEquals("按区间边界快照计算", WeeklyReport.cards(d).get(5).note());
+        assertEquals("按区间边界有效快照计算", WeeklyReport.cards(d).get(5).note());
         assertNull(WeeklyReport.cards(d).get(5).changeRatio());
     }
 

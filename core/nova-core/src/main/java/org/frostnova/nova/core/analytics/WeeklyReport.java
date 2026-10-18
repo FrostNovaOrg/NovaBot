@@ -4,6 +4,7 @@ import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.StreamerSnapshot;
 
 import java.time.DayOfWeek;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -24,7 +25,21 @@ public final class WeeklyReport {
                        StreamerInsights.Fans fans, StreamerInsights.Composition composition,
                        StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric,
                        Map<String, StreamerInsights.Comparison> comparisons, String comparisonNote,
-                       List<Session> sessionRows, int hiddenSessions) {
+                       List<Session> sessionRows, int hiddenSessions, StreamerCalendar.Result calendar) {
+        public Data(String streamerName, LocalDate firstDay, LocalDate lastDay, Map<String, Number> metrics,
+                    StreamerInsights.Fans fans, StreamerInsights.Composition composition,
+                    StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric,
+                    Map<String, StreamerInsights.Comparison> comparisons, String comparisonNote,
+                    List<Session> sessionRows, int hiddenSessions) {
+            this(streamerName, firstDay, lastDay, metrics, fans, composition, coverage, daily, chartMetric,
+                    comparisons, comparisonNote, sessionRows, hiddenSessions,
+                    new StreamerCalendar().calculate(List.of(), List.of(), List.of(), List.of(), lastDay, 35,
+                            Clock.fixed(StatisticsDay.startOf(lastDay.plusDays(1)), StatisticsDay.ZONE)));
+        }
+        public Data withCalendar(StreamerCalendar.Result value) {
+            return new Data(streamerName, firstDay, lastDay, metrics, fans, composition, coverage, daily, chartMetric,
+                    comparisons, comparisonNote, sessionRows, hiddenSessions, value);
+        }
         public Data(String streamerName, LocalDate firstDay, LocalDate lastDay, Map<String, Number> metrics,
                     StreamerInsights.Fans fans, StreamerInsights.Composition composition,
                     StreamerInsights.Coverage coverage, List<Day> daily, String chartMetric) {
@@ -74,7 +89,9 @@ public final class WeeklyReport {
                 StatisticsDay.dateOf(range.from()), StatisticsDay.dateOf(range.to()).minusDays(1),
                 Map.copyOf(metrics), result.fans(), result.composition(), result.coverage(), daily,
                 result.metricsKnown() ? (showRevenue ? "revenue" : "messages") : "durationSeconds",
-                Map.copyOf(comparisons), comparison.comparisonNote(), rows, Math.max(0, result.sessions() - rows.size()));
+                Map.copyOf(comparisons), comparison.comparisonNote(), rows, Math.max(0, result.sessions() - rows.size()),
+                new StreamerCalendar().calculate(sessions, List.of(), List.of(), List.of(),
+                        StatisticsDay.dateOf(range.to()).minusDays(1), 35, Clock.fixed(now, StatisticsDay.ZONE)));
     }
 
     private static Session session(LiveSession s, LiveMetricCatalog.Insights rules, boolean showRevenue) {
@@ -142,7 +159,7 @@ public final class WeeklyReport {
         var m = d.metrics();
         boolean revenue = d.chartMetric().equals("revenue");
         String partial = d.fans() == null ? "" : d.fans().partial() ? "从 " + Instant.ofEpochMilli(d.fans().fromAt())
-                .atZone(StatisticsDay.ZONE).format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")) + " 起算" : "按区间边界快照计算";
+                .atZone(StatisticsDay.ZONE).format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")) + " 起算" : "按区间边界有效快照计算";
         return List.of(comparedCard(d, "durationSeconds", "直播时长", duration(m.get("durationSeconds").longValue())),
                 revenue ? comparedCard(d, "revenue", "流水", number(m.get("revenue"), " 元", true))
                         : new Card("场次", number(m.get("sessions"), " 场", false), ""),
@@ -209,6 +226,20 @@ public final class WeeklyReport {
         return "名单：" + String.join("；", parts);
     }
 
+    public record CalendarTotals(long recorded, long off, long unknown) {}
+
+    public static CalendarTotals calendarTotals(Data d) {
+        long recorded = d.calendar().items().stream().filter(day -> "recorded".equals(day.status())).count();
+        long off = d.calendar().items().stream().filter(day -> "off".equals(day.status())).count();
+        return new CalendarTotals(recorded, off, d.calendar().items().size() - recorded - off);
+    }
+
+    public static String calendarSummary(Data d) {
+        var totals = calendarTotals(d);
+        return "开播日历（近 5 周）：有直播 " + totals.recorded() + " 天、确认没播 " + totals.off()
+                + " 天、说不准 " + totals.unknown() + " 天";
+    }
+
     public static String text(Data d) {
         if (d.metrics().get("sessions").intValue() == 0) return summary(d);
         var lines = new java.util.ArrayList<String>();
@@ -217,6 +248,7 @@ public final class WeeklyReport {
         for (var c : cards(d)) lines.add(c.label() + "：" + c.value() + (c.note().isEmpty() ? "" : "（" + c.note() + "）"));
         if (!comparisonExplanation(d).isEmpty()) lines.add(comparisonExplanation(d));
         lines.add(composition(d));
+        lines.add(calendarSummary(d));
         lines.add("本周场次 · " + d.metrics().get("sessions") + " 场");
         for (var s : d.sessionRows()) lines.add(s.startedAt() + " " + s.title() + " · " + s.details() + " · " + s.badge());
         if (d.hiddenSessions() > 0) lines.add("另有 " + d.hiddenSessions() + " 场未列出");

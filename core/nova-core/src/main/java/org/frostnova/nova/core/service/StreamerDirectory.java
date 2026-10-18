@@ -3,6 +3,7 @@ package org.frostnova.nova.core.service;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.PushUser;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,8 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -57,6 +60,21 @@ public class StreamerDirectory {
             log.error("读取推送配置失败, 主播页将看不到在册名单", e);
             return List.of();
         }
+    }
+
+    /** 合并配置与已加载用户；配置中的停用状态优先，内存用户按最后一条记录取值。 */
+    public static List<Entry> roster(List<Entry> configured, Collection<PushUser> loaded) {
+        var entries = new ArrayList<>(configured);
+        var users = new LinkedHashMap<String, PushUser>();
+        loaded.forEach(user -> users.put(user.getPlatform() + "#" + user.getUid(), user));
+        users.forEach((key, user) -> {
+            if (user.getPlatform() == null || user.getUid() == null || configured.stream()
+                    .anyMatch(entry -> key.equals(entry.platform() + "#" + entry.uid()))) return;
+            boolean pushing = user.getTargets() != null && user.getTargets().stream()
+                    .anyMatch(target -> target.getMessages() != null && !target.getMessages().isEmpty());
+            entries.add(new Entry(user.getPlatform(), user.getUid(), !Boolean.FALSE.equals(user.getEnabled()), pushing));
+        });
+        return entries;
     }
 
     /**

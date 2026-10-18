@@ -13,9 +13,8 @@ import org.frostnova.nova.core.analytics.StreamerAudience;
 import org.frostnova.nova.core.analytics.StreamerStartAreas;
 import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.analytics.StreamerEntryRhythm;
-import org.frostnova.nova.core.analytics.StreamerCalendar;
 import org.frostnova.nova.core.analytics.StreamerMonitoring;
-import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.service.StreamerCalendarService;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -126,6 +125,8 @@ public class StreamerController {
 
     private final Clock clock;
 
+    private final StreamerCalendarService calendars;
+
     @Autowired
     private WeeklyReportContentService weeklyReports;
 
@@ -163,6 +164,7 @@ public class StreamerController {
         this.catalogs = catalogs;
         this.redrawers = redrawers;
         this.clock = clock;
+        this.calendars = new StreamerCalendarService(liveDataService);
     }
 
     /**
@@ -294,8 +296,8 @@ public class StreamerController {
         long now = range.to().toEpochMilli();
         var watched = liveDataService.monitoringIntervals(platform, uid, now);
         var monitoring = new StreamerMonitoring(liveDataService.isMonitoringRecording(), watched, now);
-        Long proof = calendarResult(platform, uid, sessions, watched, Integer.parseInt(days),
-                Clock.fixed(range.to(), clock.getZone())).provableFrom();
+        Long proof = calendars.calculate(platform, uid, calendarEnabled(platform, uid), sessions, watched,
+                StatisticsDay.dateOf(range.to()), Integer.parseInt(days), Clock.fixed(range.to(), clock.getZone())).provableFrom();
         insights.put("monitoring", monitoring.period(comparison.current().from(), comparison.current().to(), proof, Integer.parseInt(days)));
         JSONObject previous = JSON.parseObject(JSON.toJSONString(comparison.previous(), JSONWriter.Feature.WriteNulls));
         previous.put("monitoring", monitoring.period(comparison.previous().from(), comparison.previous().to(), proof, Integer.parseInt(days)));
@@ -373,39 +375,16 @@ public class StreamerController {
         var sessions = sessionsOf(platform, uid);
         if (!knownStreamer(platform, uid, sessions)) return missingStreamer();
         var queryClock = Clock.fixed(clock.instant(), clock.getZone());
-        var calendar = calendarResult(platform, uid, sessions,
-                liveDataService.monitoringIntervals(platform, uid, queryClock.millis()), Integer.parseInt(days), queryClock);
+        var calendar = calendars.calculate(platform, uid, calendarEnabled(platform, uid), sessions,
+                liveDataService.monitoringIntervals(platform, uid, queryClock.millis()),
+                StatisticsDay.today(queryClock), Integer.parseInt(days), queryClock);
         return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days),
                 "calendar", JSON.parseObject(JSON.toJSONString(calendar, JSONWriter.Feature.WriteNulls))));
     }
 
-    private StreamerCalendar.Result calendarResult(String platform, Long uid, List<LiveSession> archived,
-                                                    List<LiveGap> watched, int days, Clock queryClock) {
-        var sessions = new ArrayList<>(archived);
-        long now = queryClock.millis();
-        boolean living = roster(loadedUsers()).stream()
-                .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()) && item.enabled())
-                && liveDataService.getLiveStatus(platform, uid).orElse(false);
-        var ongoingStart = living ? liveDataService.getLiveStartTime(platform, uid)
-                .filter(start -> start > 0 && start < now)
-                .filter(start -> sessions.stream().noneMatch(session -> session.startTime() == start))
-                : java.util.Optional.<Long>empty();
-        long uncertainFrom = sessions.stream().mapToLong(LiveSession::endTime).max().orElse(0);
-        ongoingStart.ifPresent(start -> sessions.add(new LiveSession(platform, uid, null, null, start, now,
-                (now - start) / 1000, Map.of(), Map.of())));
-        var calendar = new StreamerCalendar().calculate(sessions,
-                watched,
-                liveDataService.downtimeIntervals(0, now),
-                liveDataService.roomOutageIntervals(platform, uid, 0, now), days, queryClock);
-        if (living && ongoingStart.isEmpty()) {
-            // 在播却无法定位本场时，最近归档之后缺少确认没播的依据。已归档的已播证据照留。
-            calendar = new StreamerCalendar.Result(calendar.provableFrom(), calendar.items().stream()
-                    .map(day -> day.status().equals("off") && day.end() > uncertainFrom && day.start() < now
-                            ? new StreamerCalendar.Day(day.date(), day.weekday(), day.start(), day.end(),
-                                    day.current(), "unknown", day.durationSeconds(), day.effectiveSeconds(), day.gapSeconds(), day.starts())
-                            : day).toList());
-        }
-        return calendar;
+    private boolean calendarEnabled(String platform, Long uid) {
+        return roster(loadedUsers()).stream()
+                .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()) && item.enabled());
     }
 
     @GetMapping("/{platform}/{uid}/fans")
@@ -493,8 +472,8 @@ public class StreamerController {
             long now = range.to().toEpochMilli();
             var watched = liveDataService.monitoringIntervals(platform, uid, now);
             var monitoring = new StreamerMonitoring(liveDataService.isMonitoringRecording(), watched, now);
-            var calendar = calendarResult(platform, uid, sessions, watched, Integer.parseInt(days),
-                    Clock.fixed(range.to(), clock.getZone()));
+            var calendar = calendars.calculate(platform, uid, calendarEnabled(platform, uid), sessions, watched,
+                    StatisticsDay.dateOf(range.to()), Integer.parseInt(days), Clock.fixed(range.to(), clock.getZone()));
             var statuses = new LinkedHashMap<String, String>();
             calendar.items().forEach(day -> statuses.put(day.date(), day.status()));
             for (int i = 0; i < items.size(); i++) {
@@ -973,31 +952,7 @@ public class StreamerController {
      * 它们必然是启用的——数据源在加载时就把停用的剔掉了。
      */
     private List<StreamerDirectory.Entry> roster(Map<String, PushUser> loaded) {
-        List<StreamerDirectory.Entry> entries = new ArrayList<>(directory.entries());
-        Set<String> known = new LinkedHashSet<>();
-        entries.forEach(entry -> known.add(key(entry.platform(), entry.uid())));
-
-        loaded.forEach((key, user) -> {
-            if (known.contains(key) || user.getPlatform() == null || user.getUid() == null) {
-                return;
-            }
-            entries.add(new StreamerDirectory.Entry(user.getPlatform(), user.getUid(),
-                    !Boolean.FALSE.equals(user.getEnabled()), pushing(user)));
-        });
-
-        return entries;
-    }
-
-    /**
-     * 这位加载着的主播会不会真的推出去
-     * <p>
-     * 与配置文件那一侧同一条规矩：<b>只数通道数是不够的</b>，一个通道里的通知全关掉，
-     * 与没有通道的效果完全相同。数据源加载时已经把停用的通道与消息剔掉了，
-     * 所以这里剩下的都是启用的，数一数还剩不剩东西即可。
-     */
-    private boolean pushing(PushUser user) {
-        return user.getTargets() != null && user.getTargets().stream()
-                .anyMatch(target -> target.getMessages() != null && !target.getMessages().isEmpty());
+        return StreamerDirectory.roster(directory.entries(), loaded.values());
     }
 
     /**

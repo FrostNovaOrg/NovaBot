@@ -65,7 +65,7 @@ class WeeklyReportApiTest {
         ObjectProvider<WeeklyReportRenderer> renderers = mock(ObjectProvider.class);
         when(renderers.orderedStream()).thenAnswer(i -> Stream.of(renderer));
         ReflectionTestUtils.setField(controller, "weeklyReports", new WeeklyReportContentService(source,
-                new StreamerDirectory(props), archive, snapshots, catalogs, renderers));
+                new StreamerDirectory(props), archive, snapshots, mock(LiveDataService.class), catalogs, renderers));
     }
     void archive(Instant start) {
         archive.append(new LiveSession("bilibili", 1L, "主播示例", 2L, start.toEpochMilli(), start.plusSeconds(600).toEpochMilli(),

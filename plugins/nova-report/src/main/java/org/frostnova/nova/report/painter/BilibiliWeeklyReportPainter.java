@@ -58,6 +58,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         if (!WeeklyReport.comparisonExplanation(data).isEmpty()) smallLine(p, WeeklyReport.comparisonExplanation(data));
         drawDays(p, data);
         drawAudience(p, data);
+        drawCalendar(p, data);
         drawSessions(p, data);
         if (!WeeklyReport.coverage(data).isEmpty()) {
             p.drawTextWithStyle(List.of(new TextWithStyle(WeeklyReport.coverage(data), 20, COLOR_TIP, Font.PLAIN)), null, true, MARGIN);
@@ -184,6 +185,57 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     private static String percent(double value, double total) {
         return String.format(Locale.ROOT, "%.0f%%", total > 0 ? value / total * 100 : 0);
     }
+
+    void drawCalendar(CommonPainter p, WeeklyReport.Data data) {
+        p.drawSection("开播日历 · 近 5 周", COLOR_TEXT);
+        LocalDate first = data.lastDay().minusDays(34);
+        p.drawTip(shortDate(first) + " – " + shortDate(data.lastDay()), COLOR_TIP);
+        int top = p.getY() + 14;
+        int gap = 8;
+        int height = 64;
+        Color recorded = new Color(252, 159, 186);
+        Color off = new Color(250, 251, 252);
+        Color unknown = new Color(225, 228, 231);
+        Color border = new Color(210, 215, 220);
+        for (int column = 0; column < 7; column++) {
+            int x = MARGIN + column * (CONTENT_WIDTH + gap) / 7;
+            int width = (column + 1) * (CONTENT_WIDTH + gap) / 7 - column * (CONTENT_WIDTH + gap) / 7 - gap;
+            centered(p, List.of("周一", "周二", "周三", "周四", "周五", "周六", "周日").get(column),
+                    22, COLOR_TEXT, x + width / 2, top);
+        }
+        int gridTop = top + 38;
+        for (int i = 0; i < data.calendar().items().size(); i++) {
+            var day = data.calendar().items().get(i);
+            int column = i % 7;
+            int x = MARGIN + column * (CONTENT_WIDTH + gap) / 7;
+            int width = (column + 1) * (CONTENT_WIDTH + gap) / 7 - column * (CONTENT_WIDTH + gap) / 7 - gap;
+            int y = gridTop + i / 7 * (height + gap);
+            Color fill = switch (day.status()) { case "recorded" -> recorded; case "off" -> off; default -> unknown; };
+            boolean reportWeek = !LocalDate.parse(day.date()).isBefore(data.firstDay());
+            int inset = reportWeek ? 2 : 1;
+            p.drawRoundedRectangle(x, y, width, height, 8, reportWeek ? COLOR_TEXT : border);
+            p.drawRoundedRectangle(x + inset, y + inset, width - inset * 2, height - inset * 2, 6, fill);
+            centered(p, shortDate(LocalDate.parse(day.date())), 26, COLOR_TEXT, x + width / 2, y + 15);
+        }
+        int legendTop = gridTop + 5 * (height + gap) + 10;
+        var totals = WeeklyReport.calendarTotals(data);
+        var counts = List.of(totals.recorded(), totals.off(), totals.unknown());
+        var labels = List.of("有直播", "确认没播", "说不准");
+        var colors = List.of(recorded, off, unknown);
+        int blockWidth = (CONTENT_WIDTH - 2 * CARD_GAP) / 3;
+        for (int i = 0; i < 3; i++) {
+            int x = MARGIN + i * (blockWidth + CARD_GAP);
+            p.drawRoundedRectangle(x, legendTop + 3, 22, 22, 4, border);
+            p.drawRoundedRectangle(x + 1, legendTop + 4, 20, 20, 3, colors.get(i));
+            text(p, labels.get(i), 21, COLOR_TEXT, x + 32, legendTop, blockWidth - 32);
+            p.drawRoundedRectangle(x, legendTop + 42, blockWidth, 60, 12, COLOR_CARD);
+            centered(p, counts.get(i) + "天 " + labels.get(i), 23, COLOR_TEXT, x + blockWidth / 2, legendTop + 57);
+        }
+        p.setPos(MARGIN, legendTop + 122);
+        smallLine(p, "说不准＝那天没录到开播，但监看不完整（停机、断线，或在监看记录开始之前），不按没播算。");
+    }
+
+    private static String shortDate(LocalDate day) { return day.getMonthValue() + "/" + day.getDayOfMonth(); }
 
     void drawSessions(CommonPainter p, WeeklyReport.Data data) {
         p.drawSection("本周场次 · " + data.metrics().get("sessions") + " 场", COLOR_TEXT);

@@ -88,7 +88,7 @@ class WeeklyReportDeliveryServiceTest {
                 600, Map.of("gift", 1234.5, "messages", 8901d), Map.of(), LiveEndReason.NORMAL,
                 List.of(), 0, Map.of("chat", List.of()), 0, Map.of(), Map.of()));
         content = new WeeklyReportContentService(source, new StreamerDirectory(props), archive,
-                new StreamerSnapshotArchive(props), catalogs, renderers);
+                new StreamerSnapshotArchive(props), mock(LiveDataService.class), catalogs, renderers);
         revenue = new RevenueVisibilityService(mock(NovaStateStore.class));
         reopen();
     }

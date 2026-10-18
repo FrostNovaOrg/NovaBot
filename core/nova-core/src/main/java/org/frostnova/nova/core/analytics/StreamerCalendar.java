@@ -4,6 +4,7 @@ import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveSession;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -16,8 +17,14 @@ public final class StreamerCalendar {
 
     public Result calculate(Collection<LiveSession> sessions, List<LiveGap> watched,
                             List<LiveGap> downtimes, List<LiveGap> outages, int days, Clock clock) {
-        var range = StreamerInsights.recent(days, clock);
-        var today = StatisticsDay.today(clock);
+        return calculate(sessions, watched, downtimes, outages, StatisticsDay.today(clock), days, clock);
+    }
+
+    /** 从指定的最后一个统计日往前取 days 天，包含最后一天；证据只使用到 clock 的时刻。 */
+    public Result calculate(Collection<LiveSession> sessions, List<LiveGap> watched,
+                            List<LiveGap> downtimes, List<LiveGap> outages, LocalDate lastDay, int days, Clock clock) {
+        if (days < 1) throw new IllegalArgumentException("days must be positive");
+        long now = clock.millis();
         Long proof = watched.stream().mapToLong(LiveGap::from).min().stream().boxed().findFirst().orElse(null);
         // 旧区间可能已被裁剪；不能把已删除的部分当成从未发生过中断。
         if (proof != null) {
@@ -28,11 +35,11 @@ public final class StreamerCalendar {
         List<LiveGap> gaps = LiveGap.merge(List.of(downtimes, outages));
         var orderedWatched = watched.stream().sorted(java.util.Comparator.comparingLong(LiveGap::from)).toList();
         List<Day> items = new ArrayList<>();
-        for (var date = StatisticsDay.dateOf(range.from()); !date.isAfter(today); date = date.plusDays(1)) {
+        for (var date = lastDay.minusDays(days - 1L); !date.isAfter(lastDay); date = date.plusDays(1)) {
             long start = StatisticsDay.startOf(date).toEpochMilli();
             long end = StatisticsDay.startOf(date.plusDays(1)).toEpochMilli();
-            long until = Math.min(end, range.to().toEpochMilli());
-            var intersecting = sessions.stream().filter(s -> s.startTime() < until && s.endTime() > start).toList();
+            long until = Math.min(end, now);
+            var intersecting = sessions.stream().filter(s -> start < until && s.startTime() < until && s.endTime() > start).toList();
             long duration = 0;
             List<LiveGap> sessionParts = new ArrayList<>();
             for (var session : intersecting) {
@@ -59,7 +66,7 @@ public final class StreamerCalendar {
             covered &= gaps.stream().noneMatch(g -> g.from() < until && g.to() > start);
             String status = !intersecting.isEmpty() ? "recorded" : covered ? "off" : "unknown";
             long gapSeconds = gapMillis / 1000;
-            items.add(new Day(date.toString(), date.getDayOfWeek().getValue(), start, end, date.equals(today),
+            items.add(new Day(date.toString(), date.getDayOfWeek().getValue(), start, end, start <= now && now < end,
                     status, duration, Math.max(0, duration - gapSeconds), gapSeconds,
                     intersecting.stream().map(LiveSession::startTime).distinct().sorted().toList()));
         }
