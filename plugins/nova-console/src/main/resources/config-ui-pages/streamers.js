@@ -1338,13 +1338,15 @@ function renderToolbar(data, error) {
   host.appendChild(interval);
 }
 
-function renderScope(data = {}) {
+function renderScope(data = {}, error) {
   const scope = $('#sd-scope'); scope.innerHTML = '';
   const summary = el('summary'); summary.textContent = '统计口径' + (data.sessions != null ? ' · 归档 ' + fmtMetric(data.sessions) + ' 场 · 名单完整 ' + fmtMetric(data.coverage?.complete ?? 0) + ' 场' : ''); scope.appendChild(summary);
+  const failure = error ? '读取失败：' + error : null;
+  const previous = data.previous?.from != null && data.previous?.to != null
+    ? intervalText(data.previous.from, data.previous.to) : null;
   const lines = [
-    '全页范围：' + intervalText(data.from, data.to ?? Date.now()) + ' · Asia/Shanghai',
-    '对比范围：' + (data.previous ? intervalText(data.previous.from, data.previous.to)
-      : data.from != null ? '—' : intervalText()),
+    '全页范围：' + (failure ?? intervalText(data.from, data.to ?? Date.now()) + ' · Asia/Shanghai'),
+    '对比范围：' + (failure ?? previous ?? (data.from != null || data.previous ? '—' : intervalText())),
     '近 ' + where.days + ' 天＝含今天的 ' + where.days + ' 个统计日；统计日从早上 6 点起（东八区）。',
     '较上期＝往前挪 ' + where.days + ' 天、长度相同的一段。场次与整场指标按开播统计日归入，不拆分跨日金额。',
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
@@ -1448,7 +1450,7 @@ async function loadDashboard() {
       if (!current()) return;
       if (endpoint === 'insights') {
         renderInsights(null, '读取失败：' + error.message);
-        renderDashboardHints(null, error.message); renderToolbar(null, error.message);
+        renderDashboardHints(null, error.message); renderToolbar(null, error.message); renderScope({}, error.message);
       }
       else $(endpoint === 'calendar' ? '#sd-calendar' : '#sd-audience-summary').textContent = '读取失败：' + error.message;
     }
