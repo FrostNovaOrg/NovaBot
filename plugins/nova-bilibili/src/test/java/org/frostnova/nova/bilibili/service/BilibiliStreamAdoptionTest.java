@@ -55,6 +55,7 @@ class BilibiliStreamAdoptionTest {
     private Room polledRoom;
     private Runnable nextPoll;
     private BilibiliLiveStateGate gate;
+    private ApplicationEventPublisher publisher;
 
     @BeforeEach
     void setup() {
@@ -132,7 +133,7 @@ class BilibiliStreamAdoptionTest {
     private void adopt(long apiStart, boolean closesPrevious) {
         var api = mock(BilibiliApiUtil.class);
         var source = mock(AbstractDataSource.class);
-        var publisher = mock(ApplicationEventPublisher.class);
+        publisher = mock(ApplicationEventPublisher.class);
         doAnswer(inv -> {
             off.onLiveOffEvent(inv.getArgument(0));
             return null;
@@ -265,53 +266,87 @@ class BilibiliStreamAdoptionTest {
         assertEquals(2d, mergedDanmu);
     }
 
-    @ParameterizedTest(name = "{displayName}: ioFailure={0}")
-    @ValueSource(booleans = {false, true})
-    @DisplayName("归档失败不能清零旧场，恢复后重试接管")
-    void archiveFailureMustRetryAdoption(boolean ioFailure) throws Exception {
+    @Test
+    void archiveWriteFailureMustAllowAdoptionWithoutRetry() throws Exception {
         long stoppedAt = (System.currentTimeMillis() / 1000 - 400) * 1000;
         long apiStart = stoppedAt + 301000;
         restart(stoppedAt);
-        Path blocked = dir.resolve("sessions.jsonl");
-        if (ioFailure) {
-            Files.createDirectory(blocked);
-        } else {
-            sessions = spy(sessions);
-            doAnswer(inv -> {
-                data.setLiveStatus(PLATFORM, UID, false);
-                throw new IllegalStateException("archive unavailable");
-            }).doCallRealMethod().when(sessions).append(any());
-            wireListeners();
-        }
+        Files.createDirectory(dir.resolve("sessions.jsonl"));
         adopt(apiStart, true);
-        assertEquals(Optional.of(OLD), data.getLiveStartTime(PLATFORM, UID), "archive failure must preserve old start");
-        assertEquals(1d, data.getLiveMetric(PLATFORM, UID, "danmu_count"));
-        assertTrue(gate.isLiving(UID));
-        if (ioFailure) Files.delete(blocked);
+        assertEquals(Optional.of(apiStart), data.getLiveStartTime(PLATFORM, UID),
+                "archive write failure must allow new stream");
+        assertTrue(liveData.getLiveCollectionCutoff(PLATFORM, UID).isEmpty());
         nextPoll.run();
-        assertEquals(Optional.of(apiStart), data.getLiveStartTime(PLATFORM, UID));
-        assertEquals(1d, sessions.find(0, Long.MAX_VALUE).get(0).metrics().get("danmu_count"));
-        assertEquals(1d, mergedDanmu);
+        verify(publisher, times(1)).publishEvent(any(BilibiliLiveOffEvent.class));
+        stats.onDanmu(danmu(apiStart + 1000, "current"));
+        assertEquals(1d, data.getLiveMetric(PLATFORM, UID, "danmu_count"));
     }
 
-    @Test @DisplayName("正常下播归档失败后下次开播先补档再清零")
-    void normalArchiveFailureMustSurviveNextLiveOn() throws Exception {
-        Path blocked = dir.resolve("sessions.jsonl");
-        Files.createDirectory(blocked);
-        try {
-            off.onLiveOffEvent(new BilibiliLiveOffEvent(streamer(), Instant.ofEpochMilli(OLD + 3600000)));
-        } catch (RuntimeException expected) {
-            // 后续开播仍须保留并归档这场数据。
-        }
-        Files.delete(blocked);
+    @Test
+    void reconnectMustCountDanmuDuringStreamLoss() {
+        long end = OLD + 3600000;
+        off.onLiveOffEvent(new BilibiliLiveOffEvent(streamer(), Instant.ofEpochMilli(end)));
+        stats.onDanmu(danmu(end + 60000, "during loss"));
+        stats.onDanmu(danmu(end + 90000, "still waiting"));
         var on = new NovaDefaultLiveOnEventListener(props, liveData, recovery);
-        var event = new BilibiliLiveOnEvent(streamer(), Instant.ofEpochMilli(CURRENT));
+        var event = new BilibiliLiveOnEvent(streamer(), Instant.ofEpochMilli(end + 120000));
         on.onLiveOnEventCheckReconnect(event);
+        assertTrue(event.isReconnect());
         on.onLiveOnEventSetLiveData(event);
-        assertEquals(1, sessions.find(0, Long.MAX_VALUE).size(), "failed normal off must archive before reset");
-        assertEquals(OLD + 3600000, sessions.find(0, Long.MAX_VALUE).get(0).endTime());
-        assertEquals(1d, mergedDanmu);
-        assertEquals(0d, data.getLiveMetric(PLATFORM, UID, "danmu_count"));
+        stats.onDanmu(danmu(end + 121000, "continued"));
+        off.onLiveOffEvent(new BilibiliLiveOffEvent(streamer(), Instant.ofEpochMilli(end + 3600000)));
+        assertEquals(4d, sessions.find(0, Long.MAX_VALUE).get(0).metrics().get("danmu_count"),
+                "stream loss danmu must count toward resumed session");
+        assertEquals(4d, mergedDanmu);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"window,3600000,3660000", "sameSecond,3600700,3600000", "sameStart,3600000,0"})
+    void unarchivedResumeMustClearCutoff(String scenario, long endOffset, long startOffset) throws Exception {
+        long end = OLD + endOffset;
+        liveData.setLiveCollectionCutoff(PLATFORM, UID, end);
+        restart(end + 1000);
+        adopt(OLD + startOffset);
+        stats.onDanmu(danmu(end + 121000, "continued"));
+        assertEquals(2d, data.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                "resumed session must accept danmu after cutoff");
+        assertTrue(liveData.getLiveCollectionCutoff(PLATFORM, UID).isEmpty(), "resume must clear cutoff");
+        assertEquals(Optional.of(OLD), data.getLiveStartTime(PLATFORM, UID));
+    }
+
+    @Test
+    void adoptionWithoutPreviousStartMustClearCutoff() {
+        data.onContextClosedEvent();
+        data = new DefaultLiveDataService(props);
+        wireServices();
+        data.setLiveStatus(PLATFORM, UID, true);
+        data.setLiveCollectionCutoff(PLATFORM, UID, OLD);
+        adopt(CURRENT);
+        stats.onDanmu(danmu(CURRENT + 1000, "current"));
+        assertEquals(1d, data.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                "adoption without previous start must accept danmu");
+        assertTrue(liveData.getLiveCollectionCutoff(PLATFORM, UID).isEmpty());
+    }
+
+    @Test
+    void failedCloseMustStopPublishingAfterRecentWindow() throws Exception {
+        long stoppedAt = (System.currentTimeMillis() / 1000 - 400) * 1000;
+        long apiStart = stoppedAt + 301000;
+        restart(stoppedAt);
+        off = spy(off);
+        doThrow(new IllegalStateException("off unavailable")).when(off).onLiveOffEvent(any());
+        adopt(apiStart, true);
+        assertEquals(Optional.of(OLD), data.getLiveStartTime(PLATFORM, UID));
+        long expiredEnd = System.currentTimeMillis() - Duration.ofMinutes(11).toMillis();
+        data.setLiveCollectionCutoff(PLATFORM, UID, expiredEnd);
+        nextPoll.run();
+        assertEquals(Optional.of(apiStart), data.getLiveStartTime(PLATFORM, UID),
+                "expired retry must finish through unclosed archive");
+        verify(publisher, times(1)).publishEvent(any(BilibiliLiveOffEvent.class));
+        var old = sessions.find(0, Long.MAX_VALUE).get(0);
+        assertEquals(LiveEndReason.UNCLOSED, old.endReason());
+        assertEquals(expiredEnd, old.endTime());
+        assertTrue(liveData.getLiveCollectionCutoff(PLATFORM, UID).isEmpty());
     }
 
     @ParameterizedTest(name = "{displayName}: restartDuringRetry={0}")

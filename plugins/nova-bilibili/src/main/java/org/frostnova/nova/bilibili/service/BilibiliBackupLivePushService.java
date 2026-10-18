@@ -476,27 +476,20 @@ public class BilibiliBackupLivePushService {
             } else {
                 newStream = true;
             }
-        } else if ((liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)
-                || liveDataService.getLiveCollectionCutoff(platform, up.getUid()).isPresent())
+        } else if (liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)
                 && previousStart.isPresent() && apiStart != null && apiStart > previousStart.get()) {
             var lastSave = liveDataService.getLiveCollectionCutoff(platform, up.getUid())
                     .or(liveDataService::getLastSaveTime);
             if (lastSave.isEmpty() || (apiStart > lastSave.get()
                     && !sessionRecovery.isWithinReconnectWindow(lastSave.get(), apiStart))) {
-                if (liveDataService.getLiveCollectionCutoff(platform, up.getUid()).isEmpty()) {
-                    long cutoff = lastSave.orElse(previousStart.get());
-                    liveDataService.setLiveCollectionCutoff(platform, up.getUid(), cutoff);
-                    log.warn("备用直播推送: {} 旧场等待收尾, 丢弃 {} 之后至新场接管完成前的采集数据",
-                            up.getUname(), Instant.ofEpochMilli(cutoff));
-                }
-                try {
-                    closeStreamEndedWhileDown(up, upsAtStartup.contains(up.getUid()));
-                } catch (RuntimeException e) {
-                    log.error("备用直播推送: {} 旧场收尾出错, 等待重试", up.getUname(), e);
-                }
-                // 状态写入不代表归档成功，只有旧场确实落档才可清零。
-                if (!sessionRecovery.isArchivedSession(platform, up.getUid(), previousStart.get())) {
-                    liveDataService.setLiveStatus(platform, up.getUid(), true);
+                closeStreamEndedWhileDown(up, upsAtStartup.contains(up.getUid()));
+                if (liveDataService.getLiveStatus(platform, up.getUid()).orElse(false)) {
+                    if (liveDataService.getLiveCollectionCutoff(platform, up.getUid()).isEmpty()) {
+                        long cutoff = lastSave.orElse(previousStart.get());
+                        liveDataService.setLiveCollectionCutoff(platform, up.getUid(), cutoff);
+                        log.warn("备用直播推送: {} 旧场等待收尾, 丢弃 {} 之后至新场接管完成前的采集数据",
+                                up.getUname(), Instant.ofEpochMilli(cutoff));
+                    }
                     // 发布失败可能已把闸门记成下播，先按账上在播恢复，真下播仍须放行。
                     stateGate.admit(up.getUid(), true);
                     // 这次接管尚未完成，下轮仍按首次观测重试，不能把新场续进旧场。
@@ -506,6 +499,7 @@ public class BilibiliBackupLivePushService {
                 newStream = true;
             }
         }
+        liveDataService.setLiveCollectionCutoff(platform, up.getUid(), null);
         if (newStream) {
             if (previousStart.isPresent()) {
                 liveDataService.resetLiveData(platform, up.getUid());
