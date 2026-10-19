@@ -103,6 +103,35 @@ await check('缺测断线且真实零保留', () => {
     }
   }
 });
+// 隔天有数时只有移动指令，透明命中圈不能代替可见的数据点。
+await check('按日点选图隔天有数时每个有效日都有可见标记', () => {
+  for (const length of [7, 30, 1]) {
+    const records = Array.from({length}, (_, i) => ({
+      start: i * 86400000, end: (i + 1) * 86400000, value: i % 2 ? null : i - 2,
+    }));
+    const chart = ui.createChart(host(), {points: records, onSelect() {}});
+    const assertVisible = () => {
+      const hits = byClass(chart.element, 'sc-chart-hit');
+      const visible = byClass(chart.element, 'sc-point').filter(mark =>
+        mark.getAttribute('visibility') !== 'hidden' && Number(mark.getAttribute('r')) > 0);
+      assert.equal(hits.length, records.filter(point => point.value != null).length);
+      for (const hit of hits) assert.ok(visible.some(mark =>
+        mark.getAttribute('cx') === hit.getAttribute('cx') && mark.getAttribute('cy') === hit.getAttribute('cy')),
+      '每个有效日都应有可见标记：' + hit.dataset.index);
+      const path = byClass(chart.element, 'sc-line')[0].getAttribute('d');
+      assert.equal((path.match(/M/g) || []).length, hits.length, '空日仍须断线');
+      assert.ok(!path.includes('L'), '不能跨空日连线');
+    };
+    assertVisible();
+    if (length > 1) {
+      chart.svg.fire('click', {clientX: 0});
+      chart.svg.fire('keydown', {key: 'ArrowRight'});
+      assertVisible();
+    }
+    observers.at(-1).resize(360, 220);
+    assertVisible();
+  }
+});
 // 日期轴压缩后，点选仍须钻取原始日期，且不得修改调用方数组。
 await check('隐藏未播后点选原日期', () => {
   let selected;
