@@ -1,24 +1,54 @@
 {
-	"success":true,
+	"categories":[
+		{
+			"name":"PUSH",
+			"text":"推送"
+		},
+		{
+			"name":"LIVE",
+			"text":"直播"
+		},
+		{
+			"name":"LINK",
+			"text":"连接"
+		},
+		{
+			"name":"COMMAND",
+			"text":"命令"
+		},
+		{
+			"name":"ALERT",
+			"text":"告警"
+		},
+		{
+			"name":"SETTINGS",
+			"text":"设置"
+		},
+		{
+			"name":"SYSTEM",
+			"text":"系统"
+		}
+	],
 	"days":[
 		{
-			"date":"2026-10-19",
-			"count":7
+			"count":10,
+			"date":"2026-10-19"
 		},
 		{
-			"date":"2026-10-18",
-			"count":6
+			"count":5,
+			"date":"2026-10-18"
 		},
 		{
-			"date":"2026-10-17",
-			"count":6
+			"count":5,
+			"date":"2026-10-17"
 		},
 		{
-			"date":"2026-10-16",
-			"count":6
+			"count":5,
+			"date":"2026-10-16"
 		}
 	],
 	"retentionDays":14,
+	"success":true,
 	"types":[
 		{
 			"name":"PUSH_MUTED",
@@ -111,36 +141,6 @@
 		{
 			"name":"BACKUP_SKIPPED",
 			"text":"没留备份"
-		}
-	],
-	"categories":[
-		{
-			"name":"PUSH",
-			"text":"推送"
-		},
-		{
-			"name":"LIVE",
-			"text":"直播"
-		},
-		{
-			"name":"LINK",
-			"text":"连接"
-		},
-		{
-			"name":"COMMAND",
-			"text":"命令"
-		},
-		{
-			"name":"ALERT",
-			"text":"告警"
-		},
-		{
-			"name":"SETTINGS",
-			"text":"设置"
-		},
-		{
-			"name":"SYSTEM",
-			"text":"系统"
 		}
 	]
 }

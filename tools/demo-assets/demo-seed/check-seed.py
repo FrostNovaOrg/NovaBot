@@ -27,6 +27,10 @@ class DemoSeedTest(unittest.TestCase):
                                 directory], check=True, capture_output=True)
                 read = lambda name: json.loads((work / name).read_text())
                 rows = lambda name: [json.loads(line) for line in (work / name).read_text().splitlines()]
+                replay = read('push-replay.json')
+                self.assertEqual(sorted(row['at'] for row in replay), [row['at'] for row in replay])
+                self.assertTrue(all(datetime.fromtimestamp(row['at'] / 1000).date()
+                                    == datetime.fromisoformat(moment).date() for row in replay))
                 users = read('datasource.json')
                 self.assertEqual(4, len(users), 'four different streamer states')
                 # The datasource endpoint embeds its configuration as a JSON
@@ -40,8 +44,8 @@ class DemoSeedTest(unittest.TestCase):
                 self.assertEqual(57, len(sessions))
                 detailed = {id(row) for user in users for row in sorted(
                     [row for row in sessions if row['uid'] == user['uid']],
-                    key=lambda row: row['startTime'], reverse=True)[:3]}
-                self.assertEqual(12, len(list((work / 'details').glob('*/detail.json'))))
+                    key=lambda row: row['startTime'], reverse=True)[:3 if users.index(user) < 2 else 2]}
+                self.assertEqual(10, len(list((work / 'details').glob('*/detail.json'))))
                 for session in sessions:
                     directory = f"details/bilibili-{session['uid']}-{session['startTime']}"
                     if id(session) not in detailed:

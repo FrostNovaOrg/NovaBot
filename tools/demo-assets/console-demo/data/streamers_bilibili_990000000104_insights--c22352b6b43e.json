@@ -1,13 +1,33 @@
 {
-	"success":true,
 	"days":7,
-	"living":false,
 	"insights":{
 		"audience":1,
 		"capture":{
 			"effectiveSeconds":5400,
 			"gapSeconds":0,
 			"gapSessions":0
+		},
+		"comparisons":{
+			"audience":{
+				"reason":"本期或上期少于 2 场",
+				"reasonCode":"TOO_FEW_SESSIONS"
+			},
+			"durationSeconds":{
+				"reason":"本期或上期少于 2 场",
+				"reasonCode":"TOO_FEW_SESSIONS"
+			},
+			"interactionAudience":{
+				"reason":"本期或上期少于 2 场",
+				"reasonCode":"TOO_FEW_SESSIONS"
+			},
+			"messages":{
+				"reason":"本期或上期少于 2 场",
+				"reasonCode":"TOO_FEW_SESSIONS"
+			},
+			"revenue":{
+				"reason":"本期或上期少于 2 场",
+				"reasonCode":"TOO_FEW_SESSIONS"
+			}
 		},
 		"composition":{
 			"firstRecorded":0,
@@ -102,15 +122,12 @@
 		"interactionAudience":1,
 		"messages":500,
 		"metricsKnown":true,
-		"revenue":52.0,
-		"sessions":1,
-		"to":1792382400000,
 		"monitoring":{
-			"recording":true,
-			"watchedSeconds":539940.0,
 			"elapsedSeconds":540000.0,
 			"observableDays":6.3,
-			"rangeDays":7
+			"rangeDays":7,
+			"recording":true,
+			"watchedSeconds":539940.0
 		},
 		"previous":{
 			"audience":1,
@@ -212,38 +229,21 @@
 			"interactionAudience":1,
 			"messages":521,
 			"metricsKnown":true,
-			"revenue":54.0,
-			"sessions":1,
-			"to":1791777600000,
 			"monitoring":{
-				"recording":true,
-				"watchedSeconds":367200.0,
 				"elapsedSeconds":540000.0,
 				"observableDays":6.3,
-				"rangeDays":7
-			}
+				"rangeDays":7,
+				"recording":true,
+				"watchedSeconds":367200.0
+			},
+			"revenue":54.0,
+			"sessions":1,
+			"to":1791777600000
 		},
-		"comparisons":{
-			"interactionAudience":{
-				"reasonCode":"TOO_FEW_SESSIONS",
-				"reason":"本期或上期少于 2 场"
-			},
-			"durationSeconds":{
-				"reasonCode":"TOO_FEW_SESSIONS",
-				"reason":"本期或上期少于 2 场"
-			},
-			"audience":{
-				"reasonCode":"TOO_FEW_SESSIONS",
-				"reason":"本期或上期少于 2 场"
-			},
-			"messages":{
-				"reasonCode":"TOO_FEW_SESSIONS",
-				"reason":"本期或上期少于 2 场"
-			},
-			"revenue":{
-				"reasonCode":"TOO_FEW_SESSIONS",
-				"reason":"本期或上期少于 2 场"
-			}
-		}
-	}
+		"revenue":52.0,
+		"sessions":1,
+		"to":1792382400000
+	},
+	"living":false,
+	"success":true
 }

@@ -11,18 +11,28 @@
     params.sort();
     return params.toString();
   };
-  const key = (method, path, query) => method + ' ' + path + '?' + queryKey(query);
-  const responses = new Map(recording.responses.map(row => [key(row.method, row.path, row.query), row]));
+  const canonical = value => JSON.stringify(value, (_, item) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.keys(item).sort().map(name => [name, item[name]])) : item);
+  const key = (method, path, query, body = {}) => method + ' ' + path + '?' + queryKey(query)
+    + (method === 'POST' ? ' ' + canonical(body) : '');
+  const responses = new Map(recording.responses.map(row => [key(row.method, row.path, row.query, row.body), row]));
   const json = (body, status = 200) => new Response(JSON.stringify(body), {
     status, headers: {'Content-Type': 'application/json; charset=utf-8'},
   });
+  let noticeTimer;
   const notice = text => {
+    clearTimeout(noticeTimer);
     const status = document.getElementById('console-demo-notice');
     if (status) {
       status.textContent = text === message ? '' : text;
       status.hidden = !status.textContent;
+      if (!status.hidden) noticeTimer = setTimeout(() => notice(message), 4000);
     }
   };
+
+  window.addEventListener('hashchange', () => notice(message));
+  window.addEventListener('pagehide', () => notice(message));
 
   // Keep both today's date and elapsed-time labels at the recording instant.
   function DemoDate(...args) {
@@ -61,9 +71,11 @@
     let body = {};
     try { body = JSON.parse(options.body || '{}'); } catch (_) { /* no JSON body */ }
     const ok = extra => json({success: true, message, ...extra});
-    if (path === '/report/preview') {
-      notice('演示模式：预览显示录制的默认版式，改动不会保存');
-      return read(responses.get(key('POST', '/config/api/report/preview', '')));
+    if (path === '/report/preview' || path === '/streamer/lookup') {
+      const row = responses.get(key('POST', '/config/api' + path, '', body));
+      if (row) return read(row);
+      notice(deviceMessage);
+      return json({success: false, message: deviceMessage});
     }
     if (path === '/values') return ok({changed: Object.keys(body).length,
       restartRequired: [], restartPending: []});
@@ -91,10 +103,6 @@
       return json({success: true, fetchedAt, stale, senders});
     }
     if (path === '/test-message') return ok({raw: []});
-    if (path === '/streamer/lookup') {
-      notice(deviceMessage);
-      return json({success: false, message: deviceMessage});
-    }
     if (['/push/toggle', '/datasource', '/templates', '/login/logout', '/state/command',
       '/state/revenue', '/state/quiet', '/state/subscription', '/auth/agreement/revoke'].includes(path)
       || /^\/weekly-report\/[^/]+\/\d+\/trial$/.test(path)

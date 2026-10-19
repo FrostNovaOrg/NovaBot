@@ -1,41 +1,41 @@
 {
-	"fetchedAt":"2026-10-19T04:30:01.225359Z",
-	"stale":false,
-	"senders":[
-		{
-			"sender":"qq-onebot",
-			"fetchedAt":"2026-10-19T04:30:01.225359Z",
-			"stale":false,
-			"groups":3,
-			"friends":1
-		}
-	],
-	"success":true,
-	"type":"group",
+	"fetchedAt":"2026-10-19T04:00:00Z",
 	"items":[
 		{
-			"sender":"qq-onebot",
-			"num":990000000301,
+			"admin":false,
+			"configured":true,
+			"memberCount":1,
 			"name":"演示群·星光",
-			"memberCount":1,
-			"admin":false,
-			"configured":true
+			"num":990000000301,
+			"sender":"qq-onebot"
 		},
 		{
-			"sender":"qq-onebot",
-			"num":990000000302,
+			"admin":false,
+			"configured":true,
+			"memberCount":1,
 			"name":"演示群·常青",
-			"memberCount":1,
-			"admin":false,
-			"configured":true
+			"num":990000000302,
+			"sender":"qq-onebot"
 		},
 		{
-			"sender":"qq-onebot",
-			"num":990000000303,
-			"name":"演示群·休息室",
-			"memberCount":1,
 			"admin":false,
-			"configured":false
+			"configured":false,
+			"memberCount":1,
+			"name":"演示群·休息室",
+			"num":990000000303,
+			"sender":"qq-onebot"
 		}
-	]
+	],
+	"senders":[
+		{
+			"fetchedAt":"2026-10-19T04:00:00Z",
+			"friends":1,
+			"groups":3,
+			"sender":"qq-onebot",
+			"stale":false
+		}
+	],
+	"stale":false,
+	"success":true,
+	"type":"group"
 }

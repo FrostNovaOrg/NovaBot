@@ -1,13 +1,58 @@
 {
-	"success":true,
-	"date":"2026-10-17",
-	"problemsOnly":false,
+	"alertEnabled":true,
+	"categories":[
+		{
+			"count":5,
+			"name":"PUSH",
+			"text":"推送"
+		},
+		{
+			"count":0,
+			"name":"LIVE",
+			"text":"直播"
+		},
+		{
+			"count":0,
+			"name":"LINK",
+			"text":"连接"
+		},
+		{
+			"count":0,
+			"name":"COMMAND",
+			"text":"命令"
+		},
+		{
+			"count":0,
+			"name":"ALERT",
+			"text":"告警"
+		},
+		{
+			"count":0,
+			"name":"SETTINGS",
+			"text":"设置"
+		},
+		{
+			"count":0,
+			"name":"SYSTEM",
+			"text":"系统"
+		}
+	],
 	"category":"LIVE",
+	"channels":[
+		"群 990000000301"
+	],
+	"date":"2026-10-17",
 	"events":[],
-	"matched":0,
-	"returned":0,
-	"truncated":false,
 	"limit":200,
+	"matched":0,
+	"problemsOnly":false,
+	"retentionDays":14,
+	"returned":0,
+	"streamers":[
+		"演示主播小星"
+	],
+	"success":true,
+	"truncated":false,
 	"types":[
 		{
 			"name":"PUSH_MUTED",
@@ -101,50 +146,5 @@
 			"name":"BACKUP_SKIPPED",
 			"text":"没留备份"
 		}
-	],
-	"categories":[
-		{
-			"name":"PUSH",
-			"text":"推送",
-			"count":6
-		},
-		{
-			"name":"LIVE",
-			"text":"直播",
-			"count":0
-		},
-		{
-			"name":"LINK",
-			"text":"连接",
-			"count":0
-		},
-		{
-			"name":"COMMAND",
-			"text":"命令",
-			"count":0
-		},
-		{
-			"name":"ALERT",
-			"text":"告警",
-			"count":0
-		},
-		{
-			"name":"SETTINGS",
-			"text":"设置",
-			"count":0
-		},
-		{
-			"name":"SYSTEM",
-			"text":"系统",
-			"count":0
-		}
-	],
-	"streamers":[
-		"演示主播小星"
-	],
-	"channels":[
-		"群 990000000301"
-	],
-	"retentionDays":14,
-	"alertEnabled":true
+	]
 }

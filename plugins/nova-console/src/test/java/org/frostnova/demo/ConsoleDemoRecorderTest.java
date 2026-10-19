@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @EnabledIfSystemProperty(named = "console.demo.record", matches = "true")
 @SpringBootTest(classes = NovaCoreApplication.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK,
         properties = "novabot.bilibili.account.anonymous=true")
-class ConsoleDemoRecorderTest {
+public class ConsoleDemoRecorderTest {
     @TestBean(methodName = "portContext") WebServerApplicationContext serverContext;
     @TestBean(methodName = "botTransport") OneBotHttpAdapter oneBotHttpAdapter;
     @Autowired WebApplicationContext context;
@@ -64,6 +64,15 @@ class ConsoleDemoRecorderTest {
         });
     }
 
+    @TestBean(methodName = "deferredStartup")
+    org.frostnova.nova.core.timeline.SystemTimelineRecorder startup;
+
+    static org.frostnova.nova.core.timeline.SystemTimelineRecorder deferredStartup() {
+        return mock(org.frostnova.nova.core.timeline.SystemTimelineRecorder.class);
+    }
+
+    public static long recordingMillis() { return Instant.now().toEpochMilli(); }
+
     private MockMvc mvc;
     private Cookie cookie;
     private Path output;
@@ -74,20 +83,21 @@ class ConsoleDemoRecorderTest {
     private final java.util.Map<String, String> bodies = new java.util.LinkedHashMap<>();
 
     private JSONObject capture(String path, Object... params) throws Exception {
-        return captureRequest("GET", path, params);
+        return captureRequest("GET", path, null, params);
     }
 
-    private JSONObject captureRequest(String method, String path, Object... params) throws Exception {
+    private JSONObject captureRequest(String method, String path, JSONObject requestBody, Object... params) throws Exception {
         var query = new java.util.TreeMap<String, String>();
         for (int i = 0; i < params.length; i += 2) query.put(params[i].toString(), params[i + 1].toString());
         String encoded = query.entrySet().stream().map(e -> encode(e.getKey()) + "=" + encode(e.getValue()))
                 .collect(java.util.stream.Collectors.joining("&"));
         String key = method + " /config/api" + path + (encoded.isEmpty() ? "" : "?" + encoded);
+        if (requestBody != null) key += " " + JSON.toJSONString(sortedJson(requestBody));
         if (!keys.add(key)) return null;
         var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .request(org.springframework.http.HttpMethod.valueOf(method), "/config/api" + path)
                 .header("Host", "localhost:7827").cookie(cookie);
-        if (method.equals("POST")) request.contentType("application/json").content("{}");
+        if (method.equals("POST")) request.contentType("application/json").content(requestBody == null ? "{}" : JSON.toJSONString(sortedJson(requestBody)));
         query.forEach((k, v) -> request.queryParam(k, v));
         org.springframework.mock.web.MockHttpServletResponse response;
         try {
@@ -113,9 +123,9 @@ class ConsoleDemoRecorderTest {
         if (contentType == null) contentType = "application/octet-stream";
         String ext = contentType.contains("json") ? ".json" : contentType.contains("html") ? ".html"
                 : contentType.contains("png") ? ".png" : ".bin";
-        String file = path.substring(1).replace('/', '_') + "--" + sha(encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0, 12) + ext;
+        String file = path.substring(1).replace('/', '_') + "--" + sha((encoded + (requestBody == null ? "" : JSON.toJSONString(sortedJson(requestBody)))).getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0, 12) + ext;
         if (contentType.contains("json")) {
-            bytes = (JSON.toJSONString(JSON.parse(bytes), com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat)
+            bytes = (JSON.toJSONString(sortedJson(JSON.parse(bytes)), com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat)
                     + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
         if (contentType.contains("png")) bytes = compressPng(bytes);
@@ -127,6 +137,7 @@ class ConsoleDemoRecorderTest {
         }
         entries.add(JSONObject.of("method", method, "path", "/config/api" + path, "query", encoded,
                 "file", "data/" + file, "status", response.getStatus(), "contentType", contentType, "sha256", sha(bytes)));
+        if (requestBody != null) entries.getJSONObject(entries.size() - 1).put("body", requestBody);
         // Anonymous nickname lookup can fail without an upstream connection.
         boolean offlineError = response.getStatus() == 500 && path.equals("/streamer/name");
         boolean expired = response.getStatus() == 404 && expiredReports.contains(path);
@@ -134,6 +145,16 @@ class ConsoleDemoRecorderTest {
         System.out.println("HIT " + line);
         if (response.getStatus() >= 400 && !offlineError && !expired) misses.add(line);
         return contentType.contains("json") ? JSON.parseObject(bytes) : null;
+    }
+
+    private static Object sortedJson(Object value) {
+        if (value instanceof java.util.Map<?, ?> map) {
+            var sorted = new java.util.TreeMap<String, Object>();
+            map.forEach((key, item) -> sorted.put(key.toString(), sortedJson(item)));
+            return sorted;
+        }
+        if (value instanceof java.util.List<?> list) return list.stream().map(ConsoleDemoRecorderTest::sortedJson).toList();
+        return value;
     }
 
     private static String encode(String text) {
@@ -200,7 +221,7 @@ class ConsoleDemoRecorderTest {
         output = Path.of("recorded-data");
         Files.createDirectory(output);
         JSONObject meta = JSON.parseObject(Files.readString(Path.of("recording.json")));
-        replayPushes();
+
         Instant instant = Instant.ofEpochMilli(meta.getLongValue("epochMs"));
         java.time.Clock clock = java.time.Clock.fixed(instant, java.time.ZoneId.of("Asia/Shanghai"));
         // Fix only the recording clock; controllers and renderers still run normally.
@@ -208,6 +229,47 @@ class ConsoleDemoRecorderTest {
                 org.frostnova.nova.console.controller.StreamerController.class,
                 org.frostnova.nova.core.service.WeeklyReportDeliveryService.class))
             org.springframework.test.util.ReflectionTestUtils.setField(context.getBean(type), "clock", clock);
+        var directory = context.getBean(org.frostnova.nova.adapter.onebot.service.OneBotTargetDirectory.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(directory, "clock", clock);
+        directory.invalidate("qq-onebot");
+        // Substitute the wall clock at its call site; the controller builds the response.
+        new net.bytebuddy.ByteBuddy().redefine(org.frostnova.nova.console.controller.StreamerController.class)
+                .visit(net.bytebuddy.asm.MemberSubstitution.relaxed()
+                        .method(net.bytebuddy.matcher.ElementMatchers.isDeclaredBy(System.class)
+                                .and(net.bytebuddy.matcher.ElementMatchers.named("currentTimeMillis")))
+                        .replaceWith(ConsoleDemoRecorderTest.class.getMethod("recordingMillis"))
+                        .on(net.bytebuddy.matcher.ElementMatchers.named("live")))
+                .make().load(getClass().getClassLoader(),
+                        net.bytebuddy.dynamic.loading.ClassReloadingStrategy.of(org.mockito.internal.PremainAttachAccess.getInstrumentation()));
+        new net.bytebuddy.ByteBuddy().redefine(org.frostnova.nova.core.timeline.TimelineEvent.Builder.class)
+                .visit(net.bytebuddy.asm.MemberSubstitution.relaxed()
+                        .method(net.bytebuddy.matcher.ElementMatchers.isDeclaredBy(System.class)
+                                .and(net.bytebuddy.matcher.ElementMatchers.named("currentTimeMillis")))
+                        .replaceWith(ConsoleDemoRecorderTest.class.getMethod("recordingMillis"))
+                        .on(net.bytebuddy.matcher.ElementMatchers.isConstructor()))
+                .make().load(getClass().getClassLoader(), net.bytebuddy.dynamic.loading.ClassReloadingStrategy.of(
+                        org.mockito.internal.PremainAttachAccess.getInstrumentation()));
+        Instant started = instant.minusSeconds(3 * 3600);
+        var runtime = mock(java.lang.management.RuntimeMXBean.class);
+        when(runtime.getUptime()).thenReturn(2500L);
+        try (var time = mockStatic(Instant.class, CALLS_REAL_METHODS);
+             var management = mockStatic(java.lang.management.ManagementFactory.class, CALLS_REAL_METHODS)) {
+            time.when(Instant::now).thenReturn(started);
+            management.when(java.lang.management.ManagementFactory::getRuntimeMXBean).thenReturn(runtime);
+            new org.frostnova.nova.core.timeline.SystemTimelineRecorder(
+                    context.getBean(org.frostnova.nova.core.timeline.TimelineStore.class)).onApplicationReadyEvent();
+        }
+        replayPushes();
+        // Restore chronological disk order after the real sender appended its events.
+        try (var files = Files.list(Path.of("timeline"))) {
+            for (Path file : files.toList()) {
+                var lines = new java.util.ArrayList<>(Files.readAllLines(file));
+                lines.sort(java.util.Comparator.comparingLong(line -> JSON.parseObject(line).getLongValue("at")));
+                Files.write(file, lines);
+            }
+        }
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                context.getBean(org.frostnova.nova.core.timeline.TimelineStore.class), "rebuildIndex");
         java.time.LocalDate day = instant.atZone(clock.getZone()).toLocalDate();
         try (var time = mockStatic(Instant.class, CALLS_REAL_METHODS);
              var dates = mockStatic(java.time.LocalDate.class, CALLS_REAL_METHODS)) {
@@ -229,7 +291,11 @@ class ConsoleDemoRecorderTest {
             if (path.equals("/event-tokens")) assertEquals(2, body.getJSONArray("tokens").size());
             if (path.equals("/streamers")) assertEquals(4, body.getJSONArray("streamers").size());
         }
-        captureRequest("POST", "/report/preview");
+        captureRequest("POST", "/report/preview", new JSONObject());
+        for (long num : new long[]{990000000301L, 990000000302L, 990000000303L, 990000000502L})
+            for (boolean visible : new boolean[]{false, true})
+                captureRequest("POST", "/report/preview", JSONObject.of("platform", "qq-onebot",
+                        "type", num == 990000000502L ? 0 : 1, "num", num, "revenueVisible", visible));
         capture("/bot/targets", "type", "group");
         capture("/bot/targets", "type", "friend");
         capture("/timeline");
@@ -261,6 +327,7 @@ class ConsoleDemoRecorderTest {
             String platform = user.getString("platform"), uid = user.getString("uid");
             String p = "/streamers/" + platform + "/" + uid;
             capture("/streamer/name", "platform", platform, "uid", uid);
+            captureRequest("POST", "/streamer/lookup", JSONObject.of("platform", platform, "uid", uid));
             capture(p);
             capture(p + "/live");
             capture(p + "/live", "series", "online_count");
@@ -269,6 +336,11 @@ class ConsoleDemoRecorderTest {
                 JSONObject data = capture(p + "/insights", "days", days);
                 for (String suffix : java.util.List.of("calendar", "fans", "audience")) {
                     JSONObject body = capture(p + "/" + suffix, "days", days);
+                    if (suffix.equals("calendar"))
+                        for (Object item : body.getJSONObject("calendar").getJSONArray("items")) {
+                            JSONObject interval = (JSONObject) item;
+                            captureInterval(p, interval, "start", "end", interval.getJSONArray("starts"));
+                        }
                     if (suffix.equals("fans")) assertFalse(body.getJSONObject("fans").getJSONArray("points").isEmpty());
                     if (suffix.equals("calendar") && days == 180) {
                         var states = body.getJSONObject("calendar").getJSONArray("items").stream()
@@ -276,19 +348,37 @@ class ConsoleDemoRecorderTest {
                         assertTrue(states.containsAll(java.util.Set.of("recorded", "off", "unknown")), "three calendar states: " + states);
                     }
                 }
-                for (String period : java.util.List.of("day", "week", "month"))
-                    capture(p + "/trend", "days", days, "period", period);
+                for (String period : java.util.List.of("day", "week", "month")) {
+                    JSONObject trend = capture(p + "/trend", "days", days, "period", period);
+                    for (Object item : trend.getJSONObject("trend").getJSONArray("buckets")) {
+                        JSONObject interval = (JSONObject) item;
+                        captureInterval(p, interval, "start", "end", interval.getJSONArray("starts"));
+                    }
+                }
                 for (String group : java.util.List.of("all", "first", "returning", "interaction"))
                     for (String sort : java.util.List.of("attendance", "revenue", "recent"))
                         capture(p + "/audience", "days", days, "group", group, "sort", sort, "page", 1);
                 JSONObject scope = data.getJSONObject("insights");
                 if (scope != null) {
-                    capture(p + "/sessions", "from", scope.get("from"), "to", scope.get("to"), "page", 1, "size", 10);
+                    capturePages(p, "from", scope.get("from"), "to", scope.get("to"));
+                    capturePages(p, "dateFrom", scope.get("from"), "dateTo", scope.get("to"));
                 }
             }
-            for (int days : new int[]{90, 180}) capture(p + "/start-slots", "days", days);
+            for (int days : new int[]{90, 180}) {
+                JSONObject rhythm = capture(p + "/start-slots", "days", days);
+                JSONObject slots = rhythm.getJSONObject("startSlots");
+                for (Object area : rhythm.getJSONArray("areas"))
+                    captureInterval(p, slots, "from", "to", ((JSONObject) area).getJSONArray("starts"));
+                for (Object item : slots.getJSONArray("cells")) {
+                    JSONObject cell = (JSONObject) item;
+                    JSONArray starts = new JSONArray();
+                    for (Object sessionItem : cell.getJSONArray("sessionItems"))
+                        starts.add(((JSONObject) sessionItem).get("startTime"));
+                    captureInterval(p, slots, "from", "to", starts);
+                }
+            }
             capture(p + "/sessions");
-            for (int page : new int[]{1, 2}) capture(p + "/sessions", "page", page, "size", 10);
+            capturePages(p);
             for (Object row : archives) {
                 JSONObject archive = (JSONObject) row;
                 if (!uid.equals(archive.getString("uid")) || !platform.equals(archive.getString("platform"))) continue;
@@ -332,8 +422,28 @@ class ConsoleDemoRecorderTest {
         }
         assertTrue(imageBytes <= 2_000_000, "PNG budget: " + imageBytes);
         meta.put("responses", entries);
-        Files.writeString(output.resolve("index.json"), JSON.toJSONString(meta, com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat) + "\n");
+        Files.writeString(output.resolve("index.json"), JSON.toJSONString(sortedJson(meta), com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat) + "\n");
         assertTrue(bytes + Files.size(output.resolve("index.json")) <= 8_000_000, "data budget");
+    }
+
+    private void captureInterval(String p, JSONObject scope, String from, String to, JSONArray starts) throws Exception {
+        String joined = starts == null ? "" : starts.stream().map(Object::toString)
+                .collect(java.util.stream.Collectors.joining(","));
+        capturePages(p, "from", scope.get(from), "to", scope.get(to), "starts", joined);
+    }
+
+    private void capturePages(String p, Object... filters) throws Exception {
+        Object[] query = java.util.Arrays.copyOf(filters, filters.length + 4);
+        query[filters.length] = "page";
+        query[filters.length + 1] = 1;
+        query[filters.length + 2] = "size";
+        query[filters.length + 3] = 10;
+        JSONObject first = capture(p + "/sessions", query);
+        if (first == null) return;
+        for (int page = 2; page <= first.getJSONObject("sessions").getIntValue("pages"); page++) {
+            query[filters.length + 1] = page;
+            capture(p + "/sessions", query);
+        }
     }
 
     private void replayPushes() throws Exception {

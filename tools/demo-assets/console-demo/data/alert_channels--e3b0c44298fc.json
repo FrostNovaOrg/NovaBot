@@ -15,28 +15,28 @@
 			"name":"QQ",
 			"recipient":[
 				{
+					"fill":"sender",
 					"key":"novabot.adapter.onebot.alert.platform",
 					"label":"",
-					"type":"hidden",
-					"placeholder":"",
 					"pattern":"",
-					"fill":"sender"
+					"placeholder":"",
+					"type":"hidden"
 				},
 				{
+					"fill":"kind",
 					"key":"novabot.adapter.onebot.alert.type",
 					"label":"",
-					"type":"hidden",
-					"placeholder":"",
 					"pattern":"",
-					"fill":"kind"
+					"placeholder":"",
+					"type":"hidden"
 				},
 				{
+					"fill":"num",
 					"key":"novabot.adapter.onebot.alert.num",
 					"label":"发给谁",
-					"type":"select",
-					"placeholder":"",
 					"pattern":"^\\d+$",
-					"fill":"num"
+					"placeholder":"",
+					"type":"select"
 				}
 			]
 		}

@@ -1,6 +1,4 @@
 {
-	"success":true,
-	"days":360,
 	"calendar":{
 		"items":[
 			{
@@ -4373,5 +4371,7 @@
 			}
 		],
 		"provableFrom":1777694400000
-	}
+	},
+	"days":360,
+	"success":true
 }

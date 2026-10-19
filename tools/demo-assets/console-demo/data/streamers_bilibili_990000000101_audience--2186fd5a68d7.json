@@ -1,34 +1,27 @@
 {
-	"success":true,
-	"days":30,
 	"audience":{
-		"from":1789855200000,
-		"to":1792382400000,
 		"counts":{
 			"all":3,
 			"first":0,
-			"returning":3,
-			"interaction":3
+			"interaction":3,
+			"returning":3
 		},
 		"coverage":{
-			"complete":4,
 			"anonymous":0,
-			"unknown":0,
-			"missing":0
+			"complete":4,
+			"missing":0,
+			"unknown":0
 		},
+		"from":1789855200000,
 		"group":"all",
-		"sort":"revenue",
-		"page":1,
-		"pages":1,
-		"total":3,
 		"items":[
 			{
-				"name":"演示观众1",
 				"attendance":1,
 				"firstSeen":1779278700000,
-				"lastSeen":1791633900000,
-				"revenue":137.3,
 				"interaction":true,
+				"lastSeen":1791633900000,
+				"name":"演示观众1",
+				"revenue":137.3,
 				"visits":[
 					{
 						"startTime":1791633900000,
@@ -37,12 +30,12 @@
 				]
 			},
 			{
-				"name":"演示观众2",
 				"attendance":1,
 				"firstSeen":1779535800000,
-				"lastSeen":1792151700000,
-				"revenue":70.8,
 				"interaction":true,
+				"lastSeen":1792151700000,
+				"name":"演示观众2",
+				"revenue":70.8,
 				"visits":[
 					{
 						"startTime":1792151700000,
@@ -51,11 +44,11 @@
 				]
 			},
 			{
-				"name":"演示观众3",
 				"attendance":2,
 				"firstSeen":1781956800000,
-				"lastSeen":1792379400000,
 				"interaction":true,
+				"lastSeen":1792379400000,
+				"name":"演示观众3",
 				"visits":[
 					{
 						"startTime":1792379400000,
@@ -67,6 +60,13 @@
 					}
 				]
 			}
-		]
-	}
+		],
+		"page":1,
+		"pages":1,
+		"sort":"revenue",
+		"to":1792382400000,
+		"total":3
+	},
+	"days":30,
+	"success":true
 }

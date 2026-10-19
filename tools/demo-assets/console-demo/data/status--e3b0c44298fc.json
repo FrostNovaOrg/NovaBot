@@ -1,128 +1,128 @@
 {
-	"success":true,
+	"alerts":{
+		"mail":true,
+		"qq":true,
+		"webhook":true
+	},
+	"configPath":"/opt/novabot/application.yml",
 	"health":[
 		{
-			"name":"哔哩哔哩登录",
-			"scope":"PLATFORM",
-			"loginState":true,
-			"level":"DEGRADED",
-			"summary":"匿名模式（未登录）",
 			"advice":"匿名模式：个人主播的直播间实测只能拿到约一成弹幕（七格实测 8.8%~12.5%），拿得到的弹幕里发送者 uid 会被抹成 0、昵称只留首字（形如 b***）；动态推送与自动关注不可用。需要完整数据请配置登录",
-			"reason":""
+			"level":"DEGRADED",
+			"loginState":true,
+			"name":"哔哩哔哩登录",
+			"reason":"",
+			"scope":"PLATFORM",
+			"summary":"匿名模式（未登录）"
 		},
 		{
+			"advice":"",
+			"level":"OK",
+			"loginState":false,
 			"name":"哔哩哔哩自动关注",
+			"reason":"",
 			"scope":"PLATFORM",
-			"loginState":false,
-			"level":"OK",
-			"summary":"正常",
-			"advice":"",
-			"reason":""
+			"summary":"正常"
 		},
 		{
+			"advice":"",
+			"level":"OK",
+			"loginState":false,
 			"name":"机器人连接",
+			"reason":"",
 			"scope":"BOT",
-			"loginState":false,
-			"level":"OK",
-			"summary":"qq-onebot：HTTP 正常 / 账号 在线 / WS 未启用",
-			"advice":"",
-			"reason":""
+			"summary":"qq-onebot：HTTP 正常 / 账号 在线 / WS 未启用"
 		},
 		{
+			"advice":"",
+			"level":"OK",
+			"loginState":false,
 			"name":"直播间连接",
+			"reason":"",
 			"scope":"PLATFORM",
-			"loginState":false,
-			"level":"OK",
-			"summary":"已关闭长连接，仅使用备用直播推送",
-			"advice":"",
-			"reason":""
+			"summary":"已关闭长连接，仅使用备用直播推送"
 		},
 		{
+			"advice":"最近一次推送失败且此后未再成功，原因：OneBot API 返回错误代码: 演示传输：群暂不可用。可用「发送测试消息」确认当前是否已恢复",
+			"level":"DEGRADED",
+			"loginState":false,
 			"name":"推送活动",
+			"reason":"",
 			"scope":"SYSTEM",
-			"loginState":false,
-			"level":"OK",
-			"summary":"启动以来成功 3 次，失败 1 次；最近成功于 10-19 11:15:00",
-			"advice":"",
-			"reason":""
+			"summary":"启动以来成功 3 次，失败 1 次；最近成功于 10-19 11:15:00；最近失败于 10-19 11:20:00"
 		},
 		{
+			"advice":"",
+			"level":"OK",
+			"loginState":false,
 			"name":"风控与静默降级",
+			"reason":"",
 			"scope":"PLATFORM",
-			"loginState":false,
-			"level":"OK",
-			"summary":"412 0 次/7 天，-352 0 次/时，-509 0 次/时，-401 0 次/日，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）",
-			"advice":"",
-			"reason":""
+			"summary":"412 0 次/7 天，-352 0 次/时，-509 0 次/时，-401 0 次/日，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）"
 		},
 		{
+			"advice":"",
+			"level":"OK",
+			"loginState":false,
 			"name":"数据存储",
+			"reason":"",
 			"scope":"SYSTEM",
-			"loginState":false,
-			"level":"OK",
-			"summary":"只有本场数据；要跨场次的累计数据，就在设置页「采集」组里填 spring.data.redis.host，填完即时生效，不用重启",
-			"advice":"",
-			"reason":""
+			"summary":"只有本场数据；要跨场次的累计数据，就在设置页「采集」组里填 spring.data.redis.host，填完即时生效，不用重启"
 		}
 	],
-	"users":[
-		{
-			"uid":990000000101,
-			"uname":"演示主播小星",
-			"platform":"bilibili",
-			"enabled":true,
-			"targets":3
-		},
-		{
-			"uid":990000000102,
-			"uname":"演示主播常青",
-			"platform":"bilibili",
-			"enabled":true,
-			"targets":2
-		},
-		{
-			"uid":990000000103,
-			"uname":"演示主播远山",
-			"platform":"bilibili",
-			"enabled":true,
-			"targets":1
-		}
-	],
-	"runtime":{
-		"heapUsedMb":329,
-		"heapMaxMb":4096,
-		"threads":30,
-		"processors":10,
-		"diskFreeMb":64843,
-		"diskLevel":"ok"
-	},
-	"version":"6.0.0-beta.5",
-	"configPath":"/opt/novabot/application.yml",
-	"streamerLimit":10,
+	"live":[],
+	"locked":false,
 	"pushEnabled":true,
+	"queue":{
+		"dropped":0,
+		"pending":0
+	},
+	"quiet":{
+		"active":false,
+		"end":"13:30",
+		"start":"11:30"
+	},
 	"restartPending":[],
+	"runtime":{
+		"diskFreeMb":64453,
+		"diskLevel":"ok",
+		"heapMaxMb":4096,
+		"heapUsedMb":200,
+		"processors":10,
+		"threads":30
+	},
 	"senders":[
 		"qq-onebot"
 	],
-	"locked":false,
-	"totalDataAvailable":false,
-	"quiet":{
-		"active":true,
-		"start":"11:30",
-		"end":"13:30"
-	},
-	"live":[],
+	"streamerLimit":10,
+	"success":true,
 	"today":{
-		"sent":4,
-		"failed":1
+		"failed":2,
+		"sent":6
 	},
-	"queue":{
-		"pending":0,
-		"dropped":0
-	},
-	"alerts":{
-		"mail":true,
-		"webhook":true,
-		"qq":true
-	}
+	"totalDataAvailable":false,
+	"users":[
+		{
+			"enabled":true,
+			"platform":"bilibili",
+			"targets":3,
+			"uid":990000000101,
+			"uname":"演示主播小星"
+		},
+		{
+			"enabled":true,
+			"platform":"bilibili",
+			"targets":2,
+			"uid":990000000102,
+			"uname":"演示主播常青"
+		},
+		{
+			"enabled":true,
+			"platform":"bilibili",
+			"targets":1,
+			"uid":990000000103,
+			"uname":"演示主播远山"
+		}
+	],
+	"version":"6.0.0-beta.5"
 }

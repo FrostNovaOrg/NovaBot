@@ -1,5 +1,5 @@
 {
-	"success":true,
 	"configured":false,
-	"href":"/config/napcat-bootstrap"
+	"href":"/config/napcat-bootstrap",
+	"success":true
 }

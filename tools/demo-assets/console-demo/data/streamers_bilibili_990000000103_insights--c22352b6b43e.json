@@ -1,12 +1,32 @@
 {
-	"success":true,
 	"days":7,
-	"living":false,
 	"insights":{
 		"capture":{
 			"effectiveSeconds":0,
 			"gapSeconds":0,
 			"gapSessions":0
+		},
+		"comparisons":{
+			"audience":{
+				"reason":"上期没有开播",
+				"reasonCode":"NO_PREVIOUS_SESSIONS"
+			},
+			"durationSeconds":{
+				"reason":"上期没有开播",
+				"reasonCode":"NO_PREVIOUS_SESSIONS"
+			},
+			"interactionAudience":{
+				"reason":"上期没有开播",
+				"reasonCode":"NO_PREVIOUS_SESSIONS"
+			},
+			"messages":{
+				"reason":"上期没有开播",
+				"reasonCode":"NO_PREVIOUS_SESSIONS"
+			},
+			"revenue":{
+				"reason":"上期没有开播",
+				"reasonCode":"NO_PREVIOUS_SESSIONS"
+			}
 		},
 		"coverage":{
 			"anonymous":0,
@@ -93,15 +113,12 @@
 		"from":1791842400000,
 		"messages":0,
 		"metricsKnown":true,
-		"revenue":0.0,
-		"sessions":0,
-		"to":1792382400000,
 		"monitoring":{
-			"recording":true,
-			"watchedSeconds":539940.0,
 			"elapsedSeconds":540000.0,
 			"observableDays":6.3,
-			"rangeDays":7
+			"rangeDays":7,
+			"recording":true,
+			"watchedSeconds":539940.0
 		},
 		"previous":{
 			"capture":{
@@ -194,38 +211,21 @@
 			"from":1791237600000,
 			"messages":0,
 			"metricsKnown":true,
-			"revenue":0.0,
-			"sessions":0,
-			"to":1791777600000,
 			"monitoring":{
-				"recording":true,
-				"watchedSeconds":367200.0,
 				"elapsedSeconds":540000.0,
 				"observableDays":6.3,
-				"rangeDays":7
-			}
+				"rangeDays":7,
+				"recording":true,
+				"watchedSeconds":367200.0
+			},
+			"revenue":0.0,
+			"sessions":0,
+			"to":1791777600000
 		},
-		"comparisons":{
-			"interactionAudience":{
-				"reasonCode":"NO_PREVIOUS_SESSIONS",
-				"reason":"上期没有开播"
-			},
-			"durationSeconds":{
-				"reasonCode":"NO_PREVIOUS_SESSIONS",
-				"reason":"上期没有开播"
-			},
-			"audience":{
-				"reasonCode":"NO_PREVIOUS_SESSIONS",
-				"reason":"上期没有开播"
-			},
-			"messages":{
-				"reasonCode":"NO_PREVIOUS_SESSIONS",
-				"reason":"上期没有开播"
-			},
-			"revenue":{
-				"reasonCode":"NO_PREVIOUS_SESSIONS",
-				"reason":"上期没有开播"
-			}
-		}
-	}
+		"revenue":0.0,
+		"sessions":0,
+		"to":1792382400000
+	},
+	"living":false,
+	"success":true
 }

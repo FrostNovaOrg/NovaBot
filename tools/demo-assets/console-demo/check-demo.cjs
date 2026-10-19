@@ -12,6 +12,8 @@ async function main() {
     ['error.json', '{"error":"null nickname"}'],
     ['sorted.json', '{"value":"sorted"}'],
     ['preview.png', new Uint8Array([137, 80, 78, 71])],
+    ['hidden.png', new Uint8Array([137, 80, 78, 72])],
+    ['lookup.json', '{"success":false,"message":"未查到主播"}'],
   ]);
   const rows = [
     ['GET', '/auth/state', '', 'auth.json', 200, 'application/json'],
@@ -21,6 +23,10 @@ async function main() {
     ['POST', '/report/preview', '', 'preview.png', 200, 'image/png'],
   ].map(([method, path, query, file, status, contentType]) => ({method, path: '/config/api' + path,
     query, file: 'data/' + file, status, contentType}));
+  rows.push({...rows.at(-1), body: {revenueVisible: false}, file: 'data/hidden.png'});
+  rows.push({method: 'POST', path: '/config/api/streamer/lookup', query: '',
+    body: {platform: 'bilibili', uid: '1'}, file: 'data/lookup.json', status: 200, contentType: 'application/json'});
+  const timers = new Map();
   const events = [], nodes = new Map(), warnings = [], network = [], opened = [];
   const document = {
     readyState: 'complete',
@@ -30,6 +36,8 @@ async function main() {
     addEventListener(type, handler) { events.push({type, handler}); },
   };
   const context = vm.createContext({document, location: {href: 'http://localhost/config/', origin: 'http://localhost'},
+    setTimeout: fn => { const id = timers.size + 1; timers.set(id, fn); return id; },
+    clearTimeout: id => timers.delete(id), addEventListener: (type, handler) => events.push({type, handler}),
     Response, Request, URL, URLSearchParams, TextDecoder, console: {warn: line => warnings.push(line)},
     NOVA_CONSOLE_DEMO: {epochMs: Date.parse('2026-01-15T00:30:00+08:00'), responses: rows},
     fetch: async input => {
@@ -53,6 +61,9 @@ async function main() {
   const error = await request('/streamer/name?platform=sample&uid=1');
   equal(error.status, 500); equal(await error.json(), {error: 'null nickname'});
   equal((await context.fetch(new Request('http://localhost/config/api/auth/state'))).status, 200);
+  const lookup = await request('/streamer/lookup', {method: 'POST', body: '{"uid":"1","platform":"bilibili"}'});
+  equal((await lookup.json()).message, '未查到主播');
+  equal(nodes.get('console-demo-notice').hidden, true);
   const before = network.length;
   for (const method of ['POST', 'PUT', 'DELETE']) {
     const result = await request('/values', {method, body: '{"theme":"test"}'});
@@ -70,6 +81,8 @@ async function main() {
   const preview = await request('/report/preview', {method: 'POST', body: '{}'});
   equal(preview.headers.get('Content-Type'), 'image/png');
   equal(Array.from(new Uint8Array(await preview.arrayBuffer())), [137, 80, 78, 71]);
+  const hidden = await request('/report/preview', {method: 'POST', body: '{"revenueVisible":false}'});
+  equal(Array.from(new Uint8Array(await hidden.arrayBuffer())), [137, 80, 78, 72]);
   const beforeMiss = network.length;
   for (const url of ['/config/api/missing?date=tomorrow', 'https://example.com/config/api/auth/state', '/unknown']) {
     const reply = await context.fetch(url);
@@ -86,6 +99,12 @@ async function main() {
   for (const {handler} of events) handler(deviceEvent);
   equal(stopped, true);
   equal(nodes.get('console-demo-notice').textContent.includes('真实设备'), true);
+  for (const fn of timers.values()) fn();
+  equal(nodes.get('console-demo-notice').hidden, true);
+  for (const {type, handler} of events) if (type === 'click') handler(deviceEvent);
+  equal(nodes.get('console-demo-notice').hidden, false);
+  for (const {type, handler} of events) if (type === 'hashchange') handler();
+  equal(nodes.get('console-demo-notice').hidden, true);
   equal(nodes.get('console-demo-banner')?.textContent, '演示模式：改动不会保存');
   console.log(`Console demo transport: PASS (${checks} assertions)`);
 }
