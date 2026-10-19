@@ -48,8 +48,8 @@ public class StreamerNameController {
     public JSONObject streamerName(@RequestParam String platform, @RequestParam Long uid) {
         String loaded = dataSource.getAllUsers().stream()
                 .filter(user -> platform.equals(user.getPlatform()) && uid.equals(user.getUid()))
-                .map(PushUser::getUname)
                 .findFirst()
+                .map(PushUser::getUname)
                 .orElse(null);
         String uname = streamerNames.uname(platform, uid, loaded);
 
