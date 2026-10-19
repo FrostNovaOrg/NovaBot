@@ -1,48 +1,67 @@
 {
-	"success":true,
 	"handlers":[
 		{
-			"className":"org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
 			"aliases":[
 				"com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
 			],
-			"displayName":"下播通知",
+			"attachments":[],
+			"className":"org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
 			"defaultEnabled":true,
+			"defaultParams":{
+				"at_all":false,
+				"message":"{uname} 直播结束了，本场直播时长 {time}"
+			},
 			"description":"主播结束直播时推送",
-			"platform":"bilibili",
+			"displayName":"下播通知",
+			"factoryParams":{
+				"at_all":false,
+				"message":"{uname} 直播结束了，本场直播时长 {time}"
+			},
+			"options":[],
+			"placeholderLabels":{
+				"{next}":"另起一条消息",
+				"{time}":"本场直播时长",
+				"{uname}":"主播昵称",
+				"{url}":"直播间链接"
+			},
 			"placeholders":[
 				"{uname}",
 				"{time}",
 				"{url}",
 				"{next}"
 			],
-			"placeholderLabels":{
-				"{uname}":"主播昵称",
-				"{url}":"直播间链接",
-				"{time}":"本场直播时长",
-				"{next}":"另起一条消息"
-			},
-			"attachments":[],
-			"defaultParams":{
-				"at_all":false,
-				"message":"{uname} 直播结束了，本场直播时长 {time}"
-			},
-			"factoryParams":{
-				"at_all":false,
-				"message":"{uname} 直播结束了，本场直播时长 {time}"
-			},
-			"options":[],
+			"platform":"bilibili",
 			"reportLayout":false
 		},
 		{
-			"className":"org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
 			"aliases":[
 				"com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
 			],
-			"displayName":"开播通知",
+			"attachments":[
+				"{cover}"
+			],
+			"className":"org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
 			"defaultEnabled":true,
+			"defaultParams":{
+				"message":"{uname} 正在直播 {title}\n{url}{cover}",
+				"reconnect_message":"检测到下播后短时间内重新开播,本次开播不再重复通知"
+			},
 			"description":"主播开始直播时推送",
-			"platform":"bilibili",
+			"displayName":"开播通知",
+			"factoryParams":{
+				"message":"{uname} 正在直播 {title}\n{url}{cover}",
+				"reconnect_message":"检测到下播后短时间内重新开播,本次开播不再重复通知"
+			},
+			"options":[],
+			"placeholderLabels":{
+				"{at=all}":"@全体成员",
+				"{at}":"@订阅者",
+				"{cover}":"直播间封面",
+				"{next}":"另起一条消息",
+				"{title}":"直播标题",
+				"{uname}":"主播昵称",
+				"{url}":"直播间链接"
+			},
 			"placeholders":[
 				"{uname}",
 				"{title}",
@@ -52,56 +71,60 @@
 				"{next}",
 				"{at=all}"
 			],
-			"placeholderLabels":{
-				"{title}":"直播标题",
-				"{at=all}":"@全体成员",
-				"{uname}":"主播昵称",
-				"{at}":"@订阅者",
-				"{url}":"直播间链接",
-				"{cover}":"直播间封面",
-				"{next}":"另起一条消息"
-			},
-			"attachments":[
-				"{cover}"
-			],
-			"defaultParams":{
-				"message":"{uname} 正在直播 {title}\n{url}{cover}",
-				"reconnect_message":"检测到下播后短时间内重新开播,本次开播不再重复通知"
-			},
-			"factoryParams":{
-				"message":"{uname} 正在直播 {title}\n{url}{cover}",
-				"reconnect_message":"检测到下播后短时间内重新开播,本次开播不再重复通知"
-			},
-			"options":[],
+			"platform":"bilibili",
 			"reportLayout":false
 		},
 		{
-			"className":"org.frostnova.nova.core.handler.WeeklyReportPushHandler",
 			"aliases":[
 				"com.starlwr.bot.core.handler.WeeklyReportPushHandler"
 			],
-			"displayName":"运营周报",
-			"defaultEnabled":false,
-			"description":"每周一 10:00 发送上一周（周一 6:00 至下周一 6:00）的统计图与摘要；遇静音时段顺延到静音结束后发送；隐藏金额的会话不显示金额",
-			"platform":"",
-			"placeholders":[],
-			"placeholderLabels":{},
 			"attachments":[],
+			"className":"org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+			"defaultEnabled":false,
 			"defaultParams":{},
+			"description":"每周一 10:00 发送上一周（周一 6:00 至下周一 6:00）的统计图与摘要；遇静音时段顺延到静音结束后发送；隐藏金额的会话不显示金额",
+			"displayName":"运营周报",
 			"factoryParams":{},
 			"options":[],
+			"placeholderLabels":{},
+			"placeholders":[],
+			"platform":"",
 			"reportLayout":false
 		},
 		{
-			"className":"org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
 			"aliases":[
 				"com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler",
 				"com.starlwr.bot.report.handler.BilibiliDynamicPushHandler"
 			],
-			"displayName":"动态通知",
+			"attachments":[
+				"{picture}"
+			],
+			"className":"org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
 			"defaultEnabled":true,
+			"defaultParams":{
+				"black_list":[],
+				"message":"{uname} {action}\n{url}{picture}",
+				"only_self_origin":false,
+				"white_list":[]
+			},
 			"description":"主播发布新动态时推送",
-			"platform":"bilibili",
+			"displayName":"动态通知",
+			"factoryParams":{
+				"black_list":[],
+				"message":"{uname} {action}\n{url}{picture}",
+				"only_self_origin":false,
+				"white_list":[]
+			},
+			"options":[],
+			"placeholderLabels":{
+				"{action}":"动态动作",
+				"{at=all}":"@全体成员",
+				"{at}":"@订阅者",
+				"{next}":"另起一条消息",
+				"{picture}":"动态图片",
+				"{uname}":"主播昵称",
+				"{url}":"动态链接"
+			},
 			"placeholders":[
 				"{uname}",
 				"{action}",
@@ -111,359 +134,366 @@
 				"{next}",
 				"{at=all}"
 			],
-			"placeholderLabels":{
-				"{action}":"动态动作",
-				"{at=all}":"@全体成员",
-				"{uname}":"主播昵称",
-				"{at}":"@订阅者",
-				"{picture}":"动态图片",
-				"{url}":"动态链接",
-				"{next}":"另起一条消息"
-			},
-			"attachments":[
-				"{picture}"
-			],
-			"defaultParams":{
-				"message":"{uname} {action}\n{url}{picture}",
-				"white_list":[],
-				"black_list":[],
-				"only_self_origin":false
-			},
-			"factoryParams":{
-				"message":"{uname} {action}\n{url}{picture}",
-				"white_list":[],
-				"black_list":[],
-				"only_self_origin":false
-			},
-			"options":[],
+			"platform":"bilibili",
 			"reportLayout":false
 		},
 		{
-			"className":"org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
 			"aliases":[
 				"com.starlwr.bot.bilibili.handler.BilibiliLiveReportPushHandler",
 				"com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler"
 			],
-			"displayName":"下播报告",
+			"attachments":[],
+			"className":"org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
 			"defaultEnabled":true,
+			"defaultParams":{
+				"at_all":false,
+				"box_ranking":0,
+				"card_box":true,
+				"card_danmu":true,
+				"card_enter":true,
+				"card_follow":true,
+				"card_free_gift":true,
+				"card_guard":true,
+				"card_like":true,
+				"card_order":"card_revenue,card_danmu,card_like,card_enter,card_follow,card_super_chat,card_guard,card_box,card_free_gift,card_share",
+				"card_revenue":true,
+				"card_share":true,
+				"card_super_chat":true,
+				"cards":true,
+				"cover":true,
+				"danmu_cloud":true,
+				"danmu_ranking":5,
+				"fans_change":true,
+				"gift_list":true,
+				"gift_ranking":5,
+				"guard_list":true,
+				"guard_list_all":true,
+				"guard_list_limit":30,
+				"highlights":true,
+				"interaction_curve":true,
+				"message":"{report}",
+				"super_chat_ranking":10
+			},
 			"description":"主播结束直播时推送本场直播数据统计图",
-			"platform":"bilibili",
+			"displayName":"下播报告",
+			"factoryParams":{
+				"at_all":false,
+				"box_ranking":0,
+				"card_box":true,
+				"card_danmu":true,
+				"card_enter":true,
+				"card_follow":true,
+				"card_free_gift":true,
+				"card_guard":true,
+				"card_like":true,
+				"card_order":"card_revenue,card_danmu,card_like,card_enter,card_follow,card_super_chat,card_guard,card_box,card_free_gift,card_share",
+				"card_revenue":true,
+				"card_share":true,
+				"card_super_chat":true,
+				"cards":true,
+				"cover":true,
+				"danmu_cloud":true,
+				"danmu_ranking":5,
+				"fans_change":true,
+				"gift_list":true,
+				"gift_ranking":5,
+				"guard_list":true,
+				"guard_list_all":true,
+				"guard_list_limit":30,
+				"highlights":true,
+				"interaction_curve":true,
+				"message":"{report}",
+				"super_chat_ranking":10
+			},
+			"options":[
+				{
+					"defaultValue":true,
+					"description":"报告顶部的封面横幅",
+					"key":"cover",
+					"label":"直播间封面",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"弹幕、流水、点赞等概览卡片。下面一张都不选，这一块就不画",
+					"key":"cards",
+					"label":"数据卡片",
+					"revenueNote":"隐藏金额的会话里流水卡改写付费人数，不带金额",
+					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场流水总额与付费人数，为 0 不画",
+					"key":"card_revenue",
+					"label":"流水",
+					"parentKey":"cards",
+					"revenueNote":"隐藏金额的会话里改写付费人数，不带金额",
+					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场弹幕条数与发弹幕的人数，0 条也画",
+					"key":"card_danmu",
+					"label":"弹幕",
+					"parentKey":"cards",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场点赞数，为 0 不画",
+					"key":"card_like",
+					"label":"点赞",
+					"parentKey":"cards",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场进过直播间的人数，为 0 不画",
+					"key":"card_enter",
+					"label":"进入直播间",
+					"parentKey":"cards",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场新增的关注数，为 0 不画",
+					"key":"card_follow",
+					"label":"新增关注",
+					"parentKey":"cards",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场醒目留言条数与金额，为 0 不画",
+					"key":"card_super_chat",
+					"label":"醒目留言",
+					"parentKey":"cards",
+					"revenueNote":"隐藏金额的会话里只写条数，不带金额",
+					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场上舰人次与金额，分得清时写新开与续费，为 0 不画",
+					"key":"card_guard",
+					"label":"大航海",
+					"parentKey":"cards",
+					"revenueNote":"隐藏金额的会话里只写人次，不带金额",
+					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场盲盒盈亏与开出个数，没开盲盒不画",
+					"key":"card_box",
+					"label":"盲盒",
+					"parentKey":"cards",
+					"revenueNote":"隐藏金额的会话里只写个数，不写盈亏",
+					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场收到的免费礼物个数，为 0 不画",
+					"key":"card_free_gift",
+					"label":"免费礼物",
+					"parentKey":"cards",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场直播间被分享的次数，为 0 不画",
+					"key":"card_share",
+					"label":"分享",
+					"parentKey":"cards",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":"card_revenue,card_danmu,card_like,card_enter,card_follow,card_super_chat,card_guard,card_box,card_free_gift,card_share",
+					"description":"十张卡从左到右、从上到下的先后；关着的和为 0 的跳过，后面的往前补",
+					"key":"card_order",
+					"label":"数据卡片顺序",
+					"revenueVisibility":"UNRELATED",
+					"type":"ORDER"
+				},
+				{
+					"defaultValue":true,
+					"description":"粉丝、粉丝团与大航海人数的涨幅，每次出报告要多打三个接口",
+					"key":"fans_change",
+					"label":"本场变化",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"弹幕、流水等随时间的变化曲线",
+					"key":"interaction_curve",
+					"label":"互动曲线",
+					"revenueNote":"隐藏金额的会话里曲线照画、不标金额峰值",
+					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场开通大航海的观众。只在隐藏金额的会话里画出——显示金额的会话里这份名单不画，大航海全名单上的「本场」小标承担同一件事",
+					"key":"guard_list",
+					"label":"本场开通大航海名单",
+					"revenueNote":"显示金额的会话里不画这张名单：大航海全名单上的「本场」小标承担了同一件事",
+					"revenueVisibility":"ONLY_WHEN_HIDDEN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"这位主播当前全部大航海，不只本场新开通。拉不到时这一段会写明，不会让整张报告失败",
+					"key":"guard_list_all",
+					"label":"大航海全名单",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":30,
+					"description":"展示前几名，0 为不限",
+					"key":"guard_list_limit",
+					"label":"全名单人数",
+					"max":1000,
+					"min":0,
+					"revenueVisibility":"UNRELATED",
+					"type":"INTEGER"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场弹幕的词云图",
+					"key":"danmu_cloud",
+					"label":"弹幕词云",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"弹幕最密集的几个时段，对应可剪切片的时间点",
+					"key":"highlights",
+					"label":"高能时刻",
+					"revenueVisibility":"UNRELATED",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":true,
+					"description":"本场收到的礼物与大航海，按种类列出个数",
+					"key":"gift_list",
+					"label":"礼物列表",
+					"revenueNote":"隐藏金额的会话里不画这一段：收到的礼物清单也是消费明细，与流水排行同一个判断",
+					"revenueVisibility":"ONLY_WHEN_SHOWN",
+					"type":"BOOLEAN"
+				},
+				{
+					"defaultValue":5,
+					"description":"展示前几名，0 为不展示",
+					"key":"danmu_ranking",
+					"label":"弹幕排行",
+					"max":20,
+					"min":0,
+					"revenueVisibility":"UNRELATED",
+					"type":"INTEGER"
+				},
+				{
+					"defaultValue":5,
+					"description":"每人本场礼物、醒目留言与上舰的金额合计，展示前几名，0 为不展示",
+					"key":"gift_ranking",
+					"label":"流水排行",
+					"max":20,
+					"min":0,
+					"revenueNote":"隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费",
+					"revenueVisibility":"ONLY_WHEN_SHOWN",
+					"type":"INTEGER"
+				},
+				{
+					"defaultValue":10,
+					"description":"发过醒目留言的观众，每人一行带原文，展示前几人，0 为不展示",
+					"key":"super_chat_ranking",
+					"label":"醒目留言名单",
+					"max":20,
+					"min":0,
+					"revenueNote":"隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费",
+					"revenueVisibility":"ONLY_WHEN_SHOWN",
+					"type":"INTEGER"
+				},
+				{
+					"defaultValue":0,
+					"description":"每人本场盲盒盈亏多少，展示前几名，0 为不展示",
+					"key":"box_ranking",
+					"label":"盲盒盈亏榜",
+					"max":20,
+					"min":0,
+					"revenueNote":"隐藏金额的会话里整榜不出：每一行都是某人的盲盒盈亏，是金额",
+					"revenueVisibility":"ONLY_WHEN_SHOWN",
+					"type":"INTEGER"
+				}
+			],
+			"placeholderLabels":{
+				"{next}":"另起一条消息",
+				"{report}":"直播报告",
+				"{uname}":"主播昵称",
+				"{url}":"直播间链接"
+			},
 			"placeholders":[
 				"{uname}",
 				"{report}",
 				"{url}",
 				"{next}"
 			],
-			"placeholderLabels":{
-				"{uname}":"主播昵称",
-				"{url}":"直播间链接",
-				"{report}":"直播报告",
-				"{next}":"另起一条消息"
-			},
-			"attachments":[],
-			"defaultParams":{
-				"at_all":false,
-				"message":"{report}",
-				"cover":true,
-				"cards":true,
-				"card_revenue":true,
-				"card_danmu":true,
-				"card_like":true,
-				"card_enter":true,
-				"card_follow":true,
-				"card_super_chat":true,
-				"card_guard":true,
-				"card_box":true,
-				"card_free_gift":true,
-				"card_share":true,
-				"card_order":"card_revenue,card_danmu,card_like,card_enter,card_follow,card_super_chat,card_guard,card_box,card_free_gift,card_share",
-				"fans_change":true,
-				"interaction_curve":true,
-				"guard_list":true,
-				"guard_list_all":true,
-				"guard_list_limit":30,
-				"danmu_cloud":true,
-				"highlights":true,
-				"gift_list":true,
-				"danmu_ranking":5,
-				"gift_ranking":5,
-				"super_chat_ranking":10,
-				"box_ranking":0
-			},
-			"factoryParams":{
-				"at_all":false,
-				"message":"{report}",
-				"cover":true,
-				"cards":true,
-				"card_revenue":true,
-				"card_danmu":true,
-				"card_like":true,
-				"card_enter":true,
-				"card_follow":true,
-				"card_super_chat":true,
-				"card_guard":true,
-				"card_box":true,
-				"card_free_gift":true,
-				"card_share":true,
-				"card_order":"card_revenue,card_danmu,card_like,card_enter,card_follow,card_super_chat,card_guard,card_box,card_free_gift,card_share",
-				"fans_change":true,
-				"interaction_curve":true,
-				"guard_list":true,
-				"guard_list_all":true,
-				"guard_list_limit":30,
-				"danmu_cloud":true,
-				"highlights":true,
-				"gift_list":true,
-				"danmu_ranking":5,
-				"gift_ranking":5,
-				"super_chat_ranking":10,
-				"box_ranking":0
-			},
-			"options":[
-				{
-					"key":"cover",
-					"label":"直播间封面",
-					"description":"报告顶部的封面横幅",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"cards",
-					"label":"数据卡片",
-					"description":"弹幕、流水、点赞等概览卡片。下面一张都不选，这一块就不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
-					"revenueNote":"隐藏金额的会话里流水卡改写付费人数，不带金额"
-				},
-				{
-					"key":"card_revenue",
-					"label":"流水",
-					"description":"本场流水总额与付费人数，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
-					"revenueNote":"隐藏金额的会话里改写付费人数，不带金额",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_danmu",
-					"label":"弹幕",
-					"description":"本场弹幕条数与发弹幕的人数，0 条也画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_like",
-					"label":"点赞",
-					"description":"本场点赞数，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_enter",
-					"label":"进入直播间",
-					"description":"本场进过直播间的人数，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_follow",
-					"label":"新增关注",
-					"description":"本场新增的关注数，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_super_chat",
-					"label":"醒目留言",
-					"description":"本场醒目留言条数与金额，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
-					"revenueNote":"隐藏金额的会话里只写条数，不带金额",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_guard",
-					"label":"大航海",
-					"description":"本场上舰人次与金额，分得清时写新开与续费，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
-					"revenueNote":"隐藏金额的会话里只写人次，不带金额",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_box",
-					"label":"盲盒",
-					"description":"本场盲盒盈亏与开出个数，没开盲盒不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
-					"revenueNote":"隐藏金额的会话里只写个数，不写盈亏",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_free_gift",
-					"label":"免费礼物",
-					"description":"本场收到的免费礼物个数，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_share",
-					"label":"分享",
-					"description":"本场直播间被分享的次数，为 0 不画",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED",
-					"parentKey":"cards"
-				},
-				{
-					"key":"card_order",
-					"label":"数据卡片顺序",
-					"description":"十张卡从左到右、从上到下的先后；关着的和为 0 的跳过，后面的往前补",
-					"type":"ORDER",
-					"defaultValue":"card_revenue,card_danmu,card_like,card_enter,card_follow,card_super_chat,card_guard,card_box,card_free_gift,card_share",
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"fans_change",
-					"label":"本场变化",
-					"description":"粉丝、粉丝团与大航海人数的涨幅，每次出报告要多打三个接口",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"interaction_curve",
-					"label":"互动曲线",
-					"description":"弹幕、流水等随时间的变化曲线",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"RESTYLED_WHEN_HIDDEN",
-					"revenueNote":"隐藏金额的会话里曲线照画、不标金额峰值"
-				},
-				{
-					"key":"guard_list",
-					"label":"本场开通大航海名单",
-					"description":"本场开通大航海的观众。只在隐藏金额的会话里画出——显示金额的会话里这份名单不画，大航海全名单上的「本场」小标承担同一件事",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"ONLY_WHEN_HIDDEN",
-					"revenueNote":"显示金额的会话里不画这张名单：大航海全名单上的「本场」小标承担了同一件事"
-				},
-				{
-					"key":"guard_list_all",
-					"label":"大航海全名单",
-					"description":"这位主播当前全部大航海，不只本场新开通。拉不到时这一段会写明，不会让整张报告失败",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"guard_list_limit",
-					"label":"全名单人数",
-					"description":"展示前几名，0 为不限",
-					"type":"INTEGER",
-					"defaultValue":30,
-					"min":0,
-					"max":1000,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"danmu_cloud",
-					"label":"弹幕词云",
-					"description":"本场弹幕的词云图",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"highlights",
-					"label":"高能时刻",
-					"description":"弹幕最密集的几个时段，对应可剪切片的时间点",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"gift_list",
-					"label":"礼物列表",
-					"description":"本场收到的礼物与大航海，按种类列出个数",
-					"type":"BOOLEAN",
-					"defaultValue":true,
-					"revenueVisibility":"ONLY_WHEN_SHOWN",
-					"revenueNote":"隐藏金额的会话里不画这一段：收到的礼物清单也是消费明细，与流水排行同一个判断"
-				},
-				{
-					"key":"danmu_ranking",
-					"label":"弹幕排行",
-					"description":"展示前几名，0 为不展示",
-					"type":"INTEGER",
-					"defaultValue":5,
-					"min":0,
-					"max":20,
-					"revenueVisibility":"UNRELATED"
-				},
-				{
-					"key":"gift_ranking",
-					"label":"流水排行",
-					"description":"每人本场礼物、醒目留言与上舰的金额合计，展示前几名，0 为不展示",
-					"type":"INTEGER",
-					"defaultValue":5,
-					"min":0,
-					"max":20,
-					"revenueVisibility":"ONLY_WHEN_SHOWN",
-					"revenueNote":"隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费"
-				},
-				{
-					"key":"super_chat_ranking",
-					"label":"醒目留言名单",
-					"description":"发过醒目留言的观众，每人一行带原文，展示前几人，0 为不展示",
-					"type":"INTEGER",
-					"defaultValue":10,
-					"min":0,
-					"max":20,
-					"revenueVisibility":"ONLY_WHEN_SHOWN",
-					"revenueNote":"隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费"
-				},
-				{
-					"key":"box_ranking",
-					"label":"盲盒盈亏榜",
-					"description":"每人本场盲盒盈亏多少，展示前几名，0 为不展示",
-					"type":"INTEGER",
-					"defaultValue":0,
-					"min":0,
-					"max":20,
-					"revenueVisibility":"ONLY_WHEN_SHOWN",
-					"revenueNote":"隐藏金额的会话里整榜不出：每一行都是某人的盲盒盈亏，是金额"
-				}
-			],
+			"platform":"bilibili",
 			"reportLayout":true
 		},
 		{
-			"className":"org.frostnova.nova.report.handler.BilibiliOfflineRewardDigestPushHandler",
 			"aliases":[
 				"com.starlwr.bot.report.handler.BilibiliOfflineRewardDigestPushHandler",
 				"org.frostnova.nova.bilibili.handler.BilibiliOfflineRewardDigestPushHandler"
 			],
-			"displayName":"下播打赏播报",
+			"attachments":[
+				"{picture}"
+			],
+			"className":"org.frostnova.nova.report.handler.BilibiliOfflineRewardDigestPushHandler",
 			"defaultEnabled":true,
+			"defaultParams":{
+				"at_all":false,
+				"message":"{picture}",
+				"reward_threshold_yuan":50
+			},
 			"description":"主播不在播时攒批播报打赏，下播后另行提醒下播前 10 秒内的打赏",
-			"platform":"bilibili",
+			"displayName":"下播打赏播报",
+			"factoryParams":{
+				"at_all":false,
+				"message":"{picture}",
+				"reward_threshold_yuan":50
+			},
+			"options":[
+				{
+					"defaultValue":50,
+					"description":"一个人这一阵的礼物合计达到这个数才播，0 表示有打赏就播；下播前 10 秒内的提醒也按它，上舰不受门槛限制。",
+					"key":"reward_threshold_yuan",
+					"label":"播报门槛（元）",
+					"max":1000000,
+					"min":0,
+					"revenueVisibility":"UNRELATED",
+					"type":"INTEGER"
+				}
+			],
+			"placeholderLabels":{
+				"{list}":"逐人打赏明细",
+				"{next}":"另起一条消息",
+				"{picture}":"打赏播报图",
+				"{uname}":"主播昵称",
+				"{url}":"直播间链接"
+			},
 			"placeholders":[
 				"{uname}",
 				"{list}",
@@ -471,39 +501,9 @@
 				"{picture}",
 				"{next}"
 			],
-			"placeholderLabels":{
-				"{picture}":"打赏播报图",
-				"{uname}":"主播昵称",
-				"{list}":"逐人打赏明细",
-				"{url}":"直播间链接",
-				"{next}":"另起一条消息"
-			},
-			"attachments":[
-				"{picture}"
-			],
-			"defaultParams":{
-				"at_all":false,
-				"message":"{picture}",
-				"reward_threshold_yuan":50
-			},
-			"factoryParams":{
-				"at_all":false,
-				"message":"{picture}",
-				"reward_threshold_yuan":50
-			},
-			"options":[
-				{
-					"key":"reward_threshold_yuan",
-					"label":"播报门槛（元）",
-					"description":"一个人这一阵的礼物合计达到这个数才播，0 表示有打赏就播；下播前 10 秒内的提醒也按它，上舰不受门槛限制。",
-					"type":"INTEGER",
-					"defaultValue":50,
-					"min":0,
-					"max":1000000,
-					"revenueVisibility":"UNRELATED"
-				}
-			],
+			"platform":"bilibili",
 			"reportLayout":false
 		}
-	]
+	],
+	"success":true
 }

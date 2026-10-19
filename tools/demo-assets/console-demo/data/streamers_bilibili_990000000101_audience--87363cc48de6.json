@@ -1,26 +1,26 @@
 {
-	"success":true,
-	"days":7,
 	"audience":{
-		"from":1791842400000,
-		"to":1792382400000,
 		"counts":{
 			"all":2,
 			"first":0,
-			"returning":2,
-			"interaction":2
+			"interaction":2,
+			"returning":2
 		},
 		"coverage":{
-			"complete":2,
 			"anonymous":0,
-			"unknown":0,
-			"missing":0
+			"complete":2,
+			"missing":0,
+			"unknown":0
 		},
+		"from":1791842400000,
 		"group":"first",
-		"sort":"attendance",
+		"items":[],
 		"page":1,
 		"pages":0,
-		"total":0,
-		"items":[]
-	}
+		"sort":"attendance",
+		"to":1792382400000,
+		"total":0
+	},
+	"days":7,
+	"success":true
 }

@@ -1,14 +1,14 @@
 {
-	"success":true,
-	"enabled":false,
-	"totpRequired":false,
-	"setupDone":true,
 	"agreementRequired":false,
 	"agreementVersion":1,
 	"authenticated":true,
-	"csrfToken":"gxP0dfyQzJrGRYjFDXhqHUdr7Kv4q49uqdusA1l-4iw",
-	"totpSetupNeeded":false,
-	"totpEnabled":true,
+	"csrfToken":"PZQ4hneWCnA8jXD_-A3ug1OLlp1KCS0HlJbxDtKbu1I",
+	"enabled":false,
 	"lockedSeconds":0,
-	"operatorSession":false
+	"operatorSession":false,
+	"setupDone":true,
+	"success":true,
+	"totpEnabled":true,
+	"totpRequired":false,
+	"totpSetupNeeded":false
 }

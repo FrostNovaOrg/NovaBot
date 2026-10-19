@@ -1,36 +1,36 @@
 {
-	"success":true,
-	"legacy":{},
 	"fontTables":{
 		"novabot.core.paint.fonts":{
-			"pastDefault":false,
 			"defaults":[
 				"内置",
 				"PingFang SC",
 				"Apple Color Emoji",
 				"SansSerif"
-			]
+			],
+			"pastDefault":false
 		}
 	},
+	"legacy":{},
 	"locked":{},
+	"success":true,
 	"values":{
-		"spring.mail.host":"127.0.0.1",
-		"spring.mail.port":"2525",
-		"spring.mail.username":"demo",
-		"spring.mail.password":"********",
+		"novabot.adapter.onebot.alert.num":"990000000301",
 		"novabot.adapter.onebot.alert.platform":"qq-onebot",
 		"novabot.adapter.onebot.alert.type":"1",
-		"novabot.adapter.onebot.alert.num":"990000000301",
-		"novabot.bilibili.live.enable-connect-live-room":"false",
 		"novabot.bilibili.live.backup-live-push":"false",
+		"novabot.bilibili.live.enable-connect-live-room":"false",
 		"novabot.bilibili.live.snapshot-interval":"0",
-		"novabot.core.mail.default-to":"demo@example.com",
-		"novabot.core.config-ui.update.enabled":"false",
-		"novabot.core.config-ui.agreement.accepted-version":"1",
+		"novabot.core.alert.webhook-url":"********",
 		"novabot.core.config-ui.agreement.accepted-at":"2026-10-19T12:00:00",
 		"novabot.core.config-ui.agreement.accepted-by":"operator-token",
-		"novabot.core.alert.webhook-url":"********",
+		"novabot.core.config-ui.agreement.accepted-version":"1",
+		"novabot.core.config-ui.update.enabled":"false",
+		"novabot.core.mail.default-to":"demo@example.com",
+		"novabot.core.push.quiet-end":"13:30",
 		"novabot.core.push.quiet-start":"11:30",
-		"novabot.core.push.quiet-end":"13:30"
+		"spring.mail.host":"127.0.0.1",
+		"spring.mail.password":"********",
+		"spring.mail.port":"2525",
+		"spring.mail.username":"demo"
 	}
 }

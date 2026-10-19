@@ -1,8 +1,8 @@
 {
-	"success":true,
+	"available":false,
+	"date":"2026-10-19",
 	"limit":2000,
 	"lines":[],
-	"date":"2026-10-19",
-	"available":false,
-	"message":"这台机器的日志没有写进文件，控制台读不到。日志此刻只在启动它的那个终端里。"
+	"message":"这台机器的日志没有写进文件，控制台读不到。日志此刻只在启动它的那个终端里。",
+	"success":true
 }

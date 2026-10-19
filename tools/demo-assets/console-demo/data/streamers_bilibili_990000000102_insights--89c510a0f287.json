@@ -1,13 +1,28 @@
 {
-	"success":true,
 	"days":30,
-	"living":false,
 	"insights":{
 		"audience":3,
 		"capture":{
 			"effectiveSeconds":64080,
 			"gapSeconds":1620,
 			"gapSessions":2
+		},
+		"comparisons":{
+			"audience":{
+				"changeRatio":0.0
+			},
+			"durationSeconds":{
+				"changeRatio":-0.05194805194805195
+			},
+			"interactionAudience":{
+				"changeRatio":0.0
+			},
+			"messages":{
+				"changeRatio":-0.2610316967060286
+			},
+			"revenue":{
+				"changeRatio":-0.24691358024691357
+			}
 		},
 		"composition":{
 			"firstRecorded":0,
@@ -336,15 +351,12 @@
 		"interactionAudience":3,
 		"messages":5945,
 		"metricsKnown":true,
-		"revenue":610.0,
-		"sessions":10,
-		"to":1792382400000,
 		"monitoring":{
-			"recording":true,
-			"watchedSeconds":2354340.0,
 			"elapsedSeconds":2527200.0,
 			"observableDays":29.3,
-			"rangeDays":30
+			"rangeDays":30,
+			"recording":true,
+			"watchedSeconds":2354340.0
 		},
 		"previous":{
 			"audience":3,
@@ -680,33 +692,21 @@
 			"interactionAudience":3,
 			"messages":8045,
 			"metricsKnown":true,
-			"revenue":810.0,
-			"sessions":10,
-			"to":1789790400000,
 			"monitoring":{
-				"recording":true,
-				"watchedSeconds":2527200.0,
 				"elapsedSeconds":2527200.0,
 				"observableDays":29.3,
-				"rangeDays":30
-			}
+				"rangeDays":30,
+				"recording":true,
+				"watchedSeconds":2527200.0
+			},
+			"revenue":810.0,
+			"sessions":10,
+			"to":1789790400000
 		},
-		"comparisons":{
-			"interactionAudience":{
-				"changeRatio":0.0
-			},
-			"durationSeconds":{
-				"changeRatio":-0.05194805194805195
-			},
-			"audience":{
-				"changeRatio":0.0
-			},
-			"messages":{
-				"changeRatio":-0.2610316967060286
-			},
-			"revenue":{
-				"changeRatio":-0.24691358024691357
-			}
-		}
-	}
+		"revenue":610.0,
+		"sessions":10,
+		"to":1792382400000
+	},
+	"living":false,
+	"success":true
 }

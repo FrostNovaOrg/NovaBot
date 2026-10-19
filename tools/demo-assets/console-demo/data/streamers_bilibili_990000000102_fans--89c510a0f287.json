@@ -1,7 +1,8 @@
 {
-	"success":true,
 	"days":30,
 	"fans":{
+		"change":210.0,
+		"partial":false,
 		"points":[
 			{
 				"at":1789876680000,
@@ -123,8 +124,7 @@
 				"at":1792382280000,
 				"value":3960.0
 			}
-		],
-		"change":210.0,
-		"partial":false
-	}
+		]
+	},
+	"success":true
 }

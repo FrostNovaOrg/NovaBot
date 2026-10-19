@@ -1,37 +1,9 @@
 {
-	"success":true,
 	"days":90,
+	"success":true,
 	"trend":{
-		"period":"month",
 		"buckets":[
 			{
-				"label":"2026-07",
-				"start":1784671200000,
-				"end":1785535200000,
-				"sessions":1,
-				"durationSeconds":4560,
-				"metrics":{
-					"super_chat_count":0.0,
-					"gift_value":21.0,
-					"follow_count":20.0,
-					"danmu_count":410.0,
-					"watched_count":2600.0,
-					"gift_paid":21.0,
-					"super_chat_value":0.0,
-					"like_total":980.0,
-					"guard_value":0.0,
-					"captain_count":0.0,
-					"commander_count":0.0,
-					"governor_count":0.0,
-					"share_count":0.0,
-					"box_count":0.0,
-					"box_profit":0.0,
-					"free_gift_count":0.0
-				},
-				"userTimes":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"audience":1,
 				"coverage":{
 					"anonymous":0,
@@ -39,42 +11,42 @@
 					"missing":0,
 					"unknown":0
 				},
+				"durationSeconds":4560,
 				"effectiveSeconds":4560,
+				"end":1785535200000,
 				"follows":20,
+				"label":"2026-07",
 				"messages":410,
-				"revenue":21.0,
-				"starts":[
-					1784807400000
-				]
-			},
-			{
-				"label":"2026-08",
-				"start":1785535200000,
-				"end":1788213600000,
-				"sessions":3,
-				"durationSeconds":20400,
 				"metrics":{
-					"super_chat_count":2.0,
-					"gift_value":172.89999999999998,
-					"follow_count":60.0,
-					"danmu_count":2009.0,
-					"watched_count":12210.0,
-					"gift_paid":172.89999999999998,
-					"super_chat_value":40.0,
-					"like_total":4990.0,
-					"guard_value":0.0,
-					"captain_count":0.0,
-					"commander_count":0.0,
-					"governor_count":0.0,
-					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
-					"free_gift_count":0.0
+					"captain_count":0.0,
+					"commander_count":0.0,
+					"danmu_count":410.0,
+					"follow_count":20.0,
+					"free_gift_count":0.0,
+					"gift_paid":21.0,
+					"gift_value":21.0,
+					"governor_count":0.0,
+					"guard_value":0.0,
+					"like_total":980.0,
+					"share_count":0.0,
+					"super_chat_count":0.0,
+					"super_chat_value":0.0,
+					"watched_count":2600.0
 				},
+				"revenue":21.0,
+				"sessions":1,
+				"start":1784671200000,
+				"starts":[
+					1784807400000
+				],
 				"userTimes":{
-					"gift_users":3,
-					"danmu_users":3
-				},
+					"danmu_users":1,
+					"gift_users":1
+				}
+			},
+			{
 				"audience":3,
 				"coverage":{
 					"anonymous":0,
@@ -82,44 +54,44 @@
 					"missing":0,
 					"unknown":0
 				},
+				"durationSeconds":20400,
 				"effectiveSeconds":18780,
+				"end":1788213600000,
 				"follows":60,
+				"label":"2026-08",
 				"messages":2009,
+				"metrics":{
+					"box_count":0.0,
+					"box_profit":0.0,
+					"captain_count":0.0,
+					"commander_count":0.0,
+					"danmu_count":2009.0,
+					"follow_count":60.0,
+					"free_gift_count":0.0,
+					"gift_paid":172.89999999999998,
+					"gift_value":172.89999999999998,
+					"governor_count":0.0,
+					"guard_value":0.0,
+					"like_total":4990.0,
+					"share_count":0.0,
+					"super_chat_count":2.0,
+					"super_chat_value":40.0,
+					"watched_count":12210.0
+				},
 				"revenue":212.9,
+				"sessions":3,
+				"start":1785535200000,
 				"starts":[
 					1786969800000,
 					1787227200000,
 					1787405400000
-				]
+				],
+				"userTimes":{
+					"danmu_users":3,
+					"gift_users":3
+				}
 			},
 			{
-				"label":"2026-09",
-				"start":1788213600000,
-				"end":1790805600000,
-				"sessions":2,
-				"durationSeconds":19980,
-				"metrics":{
-					"super_chat_count":2.0,
-					"gift_value":212.2,
-					"follow_count":40.0,
-					"danmu_count":2139.0,
-					"watched_count":12660.0,
-					"gift_paid":212.2,
-					"super_chat_value":72.0,
-					"like_total":5300.0,
-					"guard_value":0.0,
-					"captain_count":0.0,
-					"commander_count":0.0,
-					"governor_count":0.0,
-					"share_count":0.0,
-					"box_count":0.0,
-					"box_profit":0.0,
-					"free_gift_count":0.0
-				},
-				"userTimes":{
-					"gift_users":2,
-					"danmu_users":2
-				},
 				"audience":2,
 				"coverage":{
 					"anonymous":0,
@@ -127,43 +99,43 @@
 					"missing":0,
 					"unknown":0
 				},
+				"durationSeconds":19980,
 				"effectiveSeconds":19980,
+				"end":1790805600000,
 				"follows":40,
+				"label":"2026-09",
 				"messages":2139,
+				"metrics":{
+					"box_count":0.0,
+					"box_profit":0.0,
+					"captain_count":0.0,
+					"commander_count":0.0,
+					"danmu_count":2139.0,
+					"follow_count":40.0,
+					"free_gift_count":0.0,
+					"gift_paid":212.2,
+					"gift_value":212.2,
+					"governor_count":0.0,
+					"guard_value":0.0,
+					"like_total":5300.0,
+					"share_count":0.0,
+					"super_chat_count":2.0,
+					"super_chat_value":72.0,
+					"watched_count":12660.0
+				},
 				"revenue":284.2,
+				"sessions":2,
+				"start":1788213600000,
 				"starts":[
 					1789733700000,
 					1790077200000
-				]
+				],
+				"userTimes":{
+					"danmu_users":2,
+					"gift_users":2
+				}
 			},
 			{
-				"label":"2026-10",
-				"start":1790805600000,
-				"end":1792382400000,
-				"sessions":3,
-				"durationSeconds":19800,
-				"metrics":{
-					"super_chat_count":3.0,
-					"gift_value":208.1,
-					"follow_count":60.0,
-					"danmu_count":2202.0,
-					"watched_count":13410.0,
-					"gift_paid":208.1,
-					"super_chat_value":60.0,
-					"like_total":5400.0,
-					"guard_value":0.0,
-					"captain_count":0.0,
-					"commander_count":0.0,
-					"governor_count":0.0,
-					"share_count":0.0,
-					"box_count":0.0,
-					"box_profit":0.0,
-					"free_gift_count":0.0
-				},
-				"userTimes":{
-					"gift_users":3,
-					"danmu_users":3
-				},
 				"audience":3,
 				"coverage":{
 					"anonymous":0,
@@ -171,115 +143,143 @@
 					"missing":0,
 					"unknown":0
 				},
+				"durationSeconds":19800,
 				"effectiveSeconds":19800,
+				"end":1792382400000,
 				"follows":60,
+				"label":"2026-10",
 				"messages":2202,
+				"metrics":{
+					"box_count":0.0,
+					"box_profit":0.0,
+					"captain_count":0.0,
+					"commander_count":0.0,
+					"danmu_count":2202.0,
+					"follow_count":60.0,
+					"free_gift_count":0.0,
+					"gift_paid":208.1,
+					"gift_value":208.1,
+					"governor_count":0.0,
+					"guard_value":0.0,
+					"like_total":5400.0,
+					"share_count":0.0,
+					"super_chat_count":3.0,
+					"super_chat_value":60.0,
+					"watched_count":13410.0
+				},
 				"revenue":268.1,
+				"sessions":3,
+				"start":1790805600000,
 				"starts":[
 					1791633900000,
 					1792151700000,
 					1792379400000
-				]
+				],
+				"userTimes":{
+					"danmu_users":3,
+					"gift_users":3
+				}
 			}
 		],
 		"metrics":[
 			{
 				"key":"danmu_count",
+				"money":false,
 				"name":"弹幕",
-				"unit":"条",
-				"money":false
+				"unit":"条"
 			},
 			{
 				"key":"gift_value",
+				"money":true,
 				"name":"礼物价值",
-				"unit":"元",
-				"money":true
+				"unit":"元"
 			},
 			{
 				"key":"gift_paid",
+				"money":true,
 				"name":"观众消耗",
-				"unit":"元",
-				"money":true
+				"unit":"元"
 			},
 			{
 				"key":"super_chat_count",
+				"money":false,
 				"name":"醒目留言",
-				"unit":"条",
-				"money":false
+				"unit":"条"
 			},
 			{
 				"key":"super_chat_value",
+				"money":true,
 				"name":"醒目留言价值",
-				"unit":"元",
-				"money":true
+				"unit":"元"
 			},
 			{
 				"key":"guard_value",
+				"money":true,
 				"name":"大航海价值",
-				"unit":"元",
-				"money":true
+				"unit":"元"
 			},
 			{
 				"key":"captain_count",
+				"money":false,
 				"name":"舰长",
-				"unit":"人次",
-				"money":false
+				"unit":"人次"
 			},
 			{
 				"key":"commander_count",
+				"money":false,
 				"name":"提督",
-				"unit":"人次",
-				"money":false
+				"unit":"人次"
 			},
 			{
 				"key":"governor_count",
+				"money":false,
 				"name":"总督",
-				"unit":"人次",
-				"money":false
+				"unit":"人次"
 			},
 			{
 				"key":"follow_count",
+				"money":false,
 				"name":"新增关注",
-				"unit":"人次",
-				"money":false
+				"unit":"人次"
 			},
 			{
 				"key":"like_total",
+				"money":false,
 				"name":"点赞",
-				"unit":"次",
-				"money":false
+				"unit":"次"
 			},
 			{
 				"key":"share_count",
+				"money":false,
 				"name":"分享",
-				"unit":"人次",
-				"money":false
+				"unit":"人次"
 			},
 			{
 				"key":"watched_count",
+				"money":false,
 				"name":"看过",
-				"unit":"人次",
-				"money":false
+				"unit":"人次"
 			},
 			{
 				"key":"box_count",
+				"money":false,
 				"name":"盲盒",
-				"unit":"个",
-				"money":false
+				"unit":"个"
 			},
 			{
 				"key":"box_profit",
+				"money":true,
 				"name":"盲盒盈亏",
-				"unit":"元",
-				"money":true
+				"unit":"元"
 			},
 			{
 				"key":"free_gift_count",
+				"money":false,
 				"name":"免费礼物",
-				"unit":"个",
-				"money":false
+				"unit":"个"
 			}
 		],
-		"metricsKnown":true
+		"metricsKnown":true,
+		"period":"month"
 	}
 }

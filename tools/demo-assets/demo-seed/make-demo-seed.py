@@ -213,7 +213,7 @@ def extra_files(now, sessions):
     files['data.json'] = pretty({'Monitoring:bilibili': monitoring})
     recent = [row for user in USERS for row in sorted(
         [row for row in sessions if row['uid'] == user['uid']],
-        key=lambda row: row['startTime'], reverse=True)[:3]]
+        key=lambda row: row['startTime'], reverse=True)[:3 if USERS.index(user) < 2 else 2]]
     for session in recent:
         directory = f"details/bilibili-{session['uid']}-{session['startTime']}"
         detail = detail_of(session)
@@ -250,9 +250,10 @@ def extra_files(now, sessions):
                                     for key in keys]))
     # Push history is in memory only. The recorder replays these inputs through
     # the real sender and the OneBot transport, with a clock for each send.
-    files['push-replay.json'] = pretty([dict(at=ms(now - timedelta(days=age, minutes=45)),
+    files['push-replay.json'] = pretty([dict(at=ms(now - timedelta(minutes=offset)),
         num=IDENTITIES['groups'][age % 2], summary=f'演示推送·{name}', fail=age == 1)
-        for age, name in ((3, '开播通知'), (2, '下播报告'), (1, '动态发送失败'), (0, '运营周报'))])
+        for age, offset, name in ((3, 50, '开播通知'), (2, 47, '下播报告'),
+                                  (0, 45, '运营周报'), (1, 40, '动态发送失败'))])
     return files
 
 
@@ -422,7 +423,7 @@ def main():
     fresh_write(log_dir / f"novabot-{today.isoformat()}.log", "\n".join(log_lines(now, muted_minute, failed_minute)) + "\n")
 
     print(f"seeded demo data into {work}: {len(USERS)} streamers, 3 groups, 1 friend,"
-          f" {len(sessions)} sessions, {3 * len(USERS)} with details, {181 * len(USERS)} snapshots,"
+          f" {len(sessions)} sessions, {sum(3 if i < 2 else 2 for i in range(len(USERS)))} with details, {181 * len(USERS)} snapshots,"
           f" {len(events) * 4} timeline entries, quiet {quiet_start}-{quiet_end}")
     return 0
 

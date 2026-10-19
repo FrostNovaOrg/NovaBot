@@ -1,45 +1,45 @@
 {
-	"success":true,
 	"pages":[
 		{
-			"id":"today",
 			"displayName":"今日",
-			"script":"today.js",
-			"order":10,
 			"icon":"",
+			"id":"today",
+			"order":10,
+			"script":"today.js",
 			"slot":"home_card"
 		},
 		{
-			"id":"push",
 			"displayName":"推送",
-			"script":"push.js",
-			"order":20,
 			"icon":"<path d=\"M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z\"/>",
+			"id":"push",
+			"order":20,
+			"script":"push.js",
 			"slot":"top"
 		},
 		{
-			"id":"streamers",
 			"displayName":"主播",
-			"script":"streamers.js",
-			"order":30,
 			"icon":"<circle cx=\"8\" cy=\"5.2\" r=\"2.6\"/><path d=\"M2.8 14c0-2.9 2.3-4.6 5.2-4.6s5.2 1.7 5.2 4.6\"/>",
+			"id":"streamers",
+			"order":30,
+			"script":"streamers.js",
 			"slot":"top"
 		},
 		{
-			"id":"streamer",
 			"displayName":"添加主播与推送目标",
-			"script":"setup-streamer.js",
-			"order":40,
 			"icon":"",
+			"id":"streamer",
+			"order":40,
+			"script":"setup-streamer.js",
 			"slot":"setup_step"
 		},
 		{
-			"id":"bilibili",
 			"displayName":"哔哩哔哩",
-			"script":"bilibili.js",
-			"order":100,
 			"icon":"",
+			"id":"bilibili",
+			"order":100,
+			"script":"bilibili.js",
 			"slot":"links"
 		}
-	]
+	],
+	"success":true
 }

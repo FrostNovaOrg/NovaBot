@@ -1,31 +1,31 @@
 {
-	"success":true,
-	"date":"2026-10-19",
 	"bots":[
 		{
+			"limit":10,
+			"limited":true,
 			"platform":"qq-onebot",
 			"platformName":"QQ",
-			"used":0,
-			"limit":10,
-			"limited":true
+			"used":0
 		}
 	],
+	"date":"2026-10-19",
 	"sessions":[
 		{
+			"limit":20,
+			"limited":true,
+			"num":990000000301,
 			"platform":"qq-onebot",
 			"platformName":"QQ",
-			"num":990000000301,
-			"used":0,
-			"limit":20,
-			"limited":true
+			"used":0
 		},
 		{
+			"limit":20,
+			"limited":true,
+			"num":990000000302,
 			"platform":"qq-onebot",
 			"platformName":"QQ",
-			"num":990000000302,
-			"used":0,
-			"limit":20,
-			"limited":true
+			"used":0
 		}
-	]
+	],
+	"success":true
 }

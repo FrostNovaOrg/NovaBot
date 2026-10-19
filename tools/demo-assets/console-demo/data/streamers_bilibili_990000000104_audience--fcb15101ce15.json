@@ -1,34 +1,27 @@
 {
-	"success":true,
-	"days":7,
 	"audience":{
-		"from":1791842400000,
-		"to":1792382400000,
 		"counts":{
 			"all":1,
 			"first":0,
-			"returning":1,
-			"interaction":1
+			"interaction":1,
+			"returning":1
 		},
 		"coverage":{
-			"complete":1,
 			"anonymous":0,
-			"unknown":0,
-			"missing":0
+			"complete":1,
+			"missing":0,
+			"unknown":0
 		},
+		"from":1791842400000,
 		"group":"returning",
-		"sort":"recent",
-		"page":1,
-		"pages":1,
-		"total":1,
 		"items":[
 			{
-				"name":"演示观众1",
 				"attendance":1,
 				"firstSeen":1784635200000,
-				"lastSeen":1792152000000,
-				"revenue":52.0,
 				"interaction":true,
+				"lastSeen":1792152000000,
+				"name":"演示观众1",
+				"revenue":52.0,
 				"visits":[
 					{
 						"startTime":1792152000000,
@@ -36,6 +29,13 @@
 					}
 				]
 			}
-		]
-	}
+		],
+		"page":1,
+		"pages":1,
+		"sort":"recent",
+		"to":1792382400000,
+		"total":1
+	},
+	"days":7,
+	"success":true
 }

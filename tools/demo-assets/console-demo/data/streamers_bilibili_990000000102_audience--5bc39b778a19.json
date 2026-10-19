@@ -1,24 +1,24 @@
 {
-	"success":true,
-	"days":90,
 	"audience":{
-		"from":1784671200000,
-		"to":1792382400000,
 		"counts":{
 			"all":3,
 			"interaction":3
 		},
 		"coverage":{
-			"complete":24,
 			"anonymous":0,
-			"unknown":0,
-			"missing":0
+			"complete":24,
+			"missing":0,
+			"unknown":0
 		},
+		"from":1784671200000,
 		"group":"first",
-		"sort":"recent",
+		"items":[],
 		"page":1,
 		"pages":0,
-		"total":0,
-		"items":[]
-	}
+		"sort":"recent",
+		"to":1792382400000,
+		"total":0
+	},
+	"days":90,
+	"success":true
 }

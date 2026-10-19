@@ -1,786 +1,786 @@
 {
-	"success":true,
 	"sessions":{
-		"total":9,
-		"page":1,
-		"size":10,
-		"pages":1,
 		"items":[
 			{
-				"platform":"bilibili",
-				"uid":990000000104,
-				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1792152000000,
-				"endTime":1792157400000,
+				"audience":1,
 				"durationSeconds":5400,
 				"effectiveSeconds":5400,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":40.0,
-					"enter_count":810.0,
-					"follow_count":20.0,
-					"danmu_count":500.0,
-					"watched_count":3200.0,
-					"gift_paid":40.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4939.0,
-					"like_total":1200.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000401
-					],
-					"danmu_users":[
-						990000000401
-					]
-				},
+				"endTime":1792157400000,
 				"hasPeaks":true,
+				"hasReport":true,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":500.0,
+					"enter_count":810.0,
+					"fans_at_start":4939.0,
+					"follow_count":20.0,
+					"gift_paid":40.0,
+					"gift_value":40.0,
+					"like_total":1200.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3200.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1792154400000,
-						"value":80.0
-					},
-					"gift_value":{
-						"at":1792154160000,
-						"value":0.68
+					"danmu_count":{
+						"at":1792153860000,
+						"value":9.0
 					},
 					"enter_count":{
 						"at":1792153800000,
 						"value":14.0
 					},
-					"danmu_count":{
-						"at":1792153860000,
-						"value":9.0
+					"gift_value":{
+						"at":1792154160000,
+						"value":0.68
+					},
+					"online_count":{
+						"at":1792154400000,
+						"value":80.0
 					},
 					"super_chat_value":{
 						"at":1792154040000,
 						"value":0.21
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1792152000000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1792152000000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":true,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1791720000000,
-				"endTime":1791726300000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000401
+					],
+					"gift_users":[
+						990000000401
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":6300,
 				"effectiveSeconds":6300,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":42.0,
-					"enter_count":840.0,
-					"follow_count":20.0,
-					"danmu_count":521.0,
-					"watched_count":3270.0,
-					"gift_paid":42.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4904.0,
-					"like_total":1255.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000402
-					],
-					"danmu_users":[
-						990000000402
-					]
-				},
+				"endTime":1791726300000,
 				"hasPeaks":true,
+				"hasReport":true,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":521.0,
+					"enter_count":840.0,
+					"fans_at_start":4904.0,
+					"follow_count":20.0,
+					"gift_paid":42.0,
+					"gift_value":42.0,
+					"like_total":1255.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3270.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1791723000000,
-						"value":85.0
-					},
-					"gift_value":{
-						"at":1791722760000,
-						"value":0.71
+					"danmu_count":{
+						"at":1791722700000,
+						"value":9.0
 					},
 					"enter_count":{
 						"at":1791723360000,
 						"value":15.0
 					},
-					"danmu_count":{
-						"at":1791722700000,
-						"value":9.0
+					"gift_value":{
+						"at":1791722760000,
+						"value":0.71
+					},
+					"online_count":{
+						"at":1791723000000,
+						"value":85.0
 					},
 					"super_chat_value":{
 						"at":1791723120000,
 						"value":0.21
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1791720000000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1791720000000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":true,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1791115200000,
-				"endTime":1791122400000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000402
+					],
+					"gift_users":[
+						990000000402
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":7200,
 				"effectiveSeconds":5880,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":44.0,
-					"enter_count":870.0,
-					"follow_count":20.0,
-					"danmu_count":542.0,
-					"watched_count":3340.0,
-					"gift_paid":44.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4855.0,
-					"like_total":1310.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":1320,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000403
-					],
-					"danmu_users":[
-						990000000403
-					]
-				},
+				"endTime":1791122400000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":1320,
+				"metrics":{
+					"danmu_count":542.0,
+					"enter_count":870.0,
+					"fans_at_start":4855.0,
+					"follow_count":20.0,
+					"gift_paid":44.0,
+					"gift_value":44.0,
+					"like_total":1310.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3340.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1791118320000,
-						"value":85.0
-					},
-					"gift_value":{
-						"at":1791118320000,
-						"value":0.78
+					"danmu_count":{
+						"at":1791118380000,
+						"value":10.0
 					},
 					"enter_count":{
 						"at":1791118320000,
 						"value":16.0
 					},
-					"danmu_count":{
-						"at":1791118380000,
-						"value":10.0
+					"gift_value":{
+						"at":1791118320000,
+						"value":0.78
+					},
+					"online_count":{
+						"at":1791118320000,
+						"value":85.0
 					},
 					"super_chat_value":{
 						"at":1791118500000,
 						"value":0.22
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1791115200000,
+				"titleChangeCount":1,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1791115200000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					},
 					{
+						"area":"唱见电台",
 						"at":1791118800000,
-						"title":"凌晨加播·聊天回（演示）",
-						"area":"唱见电台"
+						"title":"凌晨加播·聊天回（演示）"
 					}
 				],
-				"titleChangeCount":1,
-				"hasReport":true,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1790510400000,
-				"endTime":1790518500000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000403
+					],
+					"gift_users":[
+						990000000403
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":8100,
 				"effectiveSeconds":8100,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":46.0,
-					"enter_count":900.0,
-					"follow_count":20.0,
-					"danmu_count":563.0,
-					"watched_count":3410.0,
-					"gift_paid":46.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4806.0,
-					"like_total":1365.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000401
-					],
-					"danmu_users":[
-						990000000401
-					]
-				},
+				"endTime":1790518500000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":563.0,
+					"enter_count":900.0,
+					"fans_at_start":4806.0,
+					"follow_count":20.0,
+					"gift_paid":46.0,
+					"gift_value":46.0,
+					"like_total":1365.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3410.0
+				},
 				"peaks":{
-					"online_count":{
+					"danmu_count":{
 						"at":1790514000000,
-						"value":90.0
-					},
-					"gift_value":{
-						"at":1790514060000,
-						"value":0.62
+						"value":8.0
 					},
 					"enter_count":{
 						"at":1790514000000,
 						"value":12.0
 					},
-					"danmu_count":{
+					"gift_value":{
+						"at":1790514060000,
+						"value":0.62
+					},
+					"online_count":{
 						"at":1790514000000,
-						"value":8.0
+						"value":90.0
 					},
 					"super_chat_value":{
 						"at":1790514540000,
 						"value":0.17
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1790510400000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1790510400000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":false,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1789905600000,
-				"endTime":1789911000000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000401
+					],
+					"gift_users":[
+						990000000401
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":5400,
 				"effectiveSeconds":5100,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":48.0,
-					"enter_count":930.0,
-					"follow_count":20.0,
-					"danmu_count":584.0,
-					"watched_count":3480.0,
-					"gift_paid":48.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4757.0,
-					"like_total":1420.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"CUT_OFF",
 				"endReasonText":"被平台切断",
-				"interrupted":true,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":300,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000402
-					],
-					"danmu_users":[
-						990000000402
-					]
-				},
+				"endTime":1789911000000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":true,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":584.0,
+					"enter_count":930.0,
+					"fans_at_start":4757.0,
+					"follow_count":20.0,
+					"gift_paid":48.0,
+					"gift_value":48.0,
+					"like_total":1420.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3480.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1789908000000,
-						"value":80.0
-					},
-					"gift_value":{
+					"danmu_count":{
 						"at":1789907460000,
-						"value":0.81
+						"value":10.0
 					},
 					"enter_count":{
 						"at":1789907460000,
 						"value":16.0
 					},
-					"danmu_count":{
+					"gift_value":{
 						"at":1789907460000,
-						"value":10.0
+						"value":0.81
+					},
+					"online_count":{
+						"at":1789908000000,
+						"value":80.0
 					},
 					"super_chat_value":{
 						"at":1789907640000,
 						"value":0.21
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":300,
+				"startTime":1789905600000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1789905600000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":false,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1788955200000,
-				"endTime":1788961500000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000402
+					],
+					"gift_users":[
+						990000000402
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":6300,
 				"effectiveSeconds":6300,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":50.0,
-					"enter_count":960.0,
-					"follow_count":20.0,
-					"danmu_count":605.0,
-					"watched_count":3550.0,
-					"gift_paid":50.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4680.0,
-					"like_total":1475.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000403
-					],
-					"danmu_users":[
-						990000000403
-					]
-				},
+				"endTime":1788961500000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":605.0,
+					"enter_count":960.0,
+					"fans_at_start":4680.0,
+					"follow_count":20.0,
+					"gift_paid":50.0,
+					"gift_value":50.0,
+					"like_total":1475.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3550.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1788958200000,
-						"value":85.0
-					},
-					"gift_value":{
-						"at":1788957900000,
-						"value":0.84
+					"danmu_count":{
+						"at":1788957960000,
+						"value":11.0
 					},
 					"enter_count":{
 						"at":1788957900000,
 						"value":17.0
 					},
-					"danmu_count":{
-						"at":1788957960000,
-						"value":11.0
+					"gift_value":{
+						"at":1788957900000,
+						"value":0.84
+					},
+					"online_count":{
+						"at":1788958200000,
+						"value":85.0
 					},
 					"super_chat_value":{
 						"at":1788958320000,
 						"value":0.21
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1788955200000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1788955200000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":false,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1787659200000,
-				"endTime":1787666400000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000403
+					],
+					"gift_users":[
+						990000000403
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":7200,
 				"effectiveSeconds":7200,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":52.0,
-					"enter_count":990.0,
-					"follow_count":20.0,
-					"danmu_count":626.0,
-					"watched_count":3620.0,
-					"gift_paid":52.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4575.0,
-					"like_total":1530.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000401
-					],
-					"danmu_users":[
-						990000000401
-					]
-				},
+				"endTime":1787666400000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":626.0,
+					"enter_count":990.0,
+					"fans_at_start":4575.0,
+					"follow_count":20.0,
+					"gift_paid":52.0,
+					"gift_value":52.0,
+					"like_total":1530.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3620.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1787662200000,
-						"value":85.0
-					},
-					"gift_value":{
-						"at":1787661960000,
-						"value":0.7
+					"danmu_count":{
+						"at":1787661900000,
+						"value":9.0
 					},
 					"enter_count":{
 						"at":1787662080000,
 						"value":14.0
 					},
-					"danmu_count":{
-						"at":1787661900000,
-						"value":9.0
+					"gift_value":{
+						"at":1787661960000,
+						"value":0.7
+					},
+					"online_count":{
+						"at":1787662200000,
+						"value":85.0
 					},
 					"super_chat_value":{
 						"at":1787662200000,
 						"value":0.17
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1787659200000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1787659200000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":false,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1786795200000,
-				"endTime":1786803300000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000401
+					],
+					"gift_users":[
+						990000000401
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":8100,
 				"effectiveSeconds":8100,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":54.0,
-					"enter_count":1020.0,
-					"follow_count":20.0,
-					"danmu_count":647.0,
-					"watched_count":3690.0,
-					"gift_paid":54.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4505.0,
-					"like_total":1585.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000402
-					],
-					"danmu_users":[
-						990000000402
-					]
-				},
+				"endTime":1786803300000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":647.0,
+					"enter_count":1020.0,
+					"fans_at_start":4505.0,
+					"follow_count":20.0,
+					"gift_paid":54.0,
+					"gift_value":54.0,
+					"like_total":1585.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3690.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1786798800000,
-						"value":90.0
-					},
-					"gift_value":{
-						"at":1786798800000,
-						"value":0.73
+					"danmu_count":{
+						"at":1786798860000,
+						"value":9.0
 					},
 					"enter_count":{
 						"at":1786798800000,
 						"value":14.0
 					},
-					"danmu_count":{
-						"at":1786798860000,
-						"value":9.0
+					"gift_value":{
+						"at":1786798800000,
+						"value":0.73
+					},
+					"online_count":{
+						"at":1786798800000,
+						"value":90.0
 					},
 					"super_chat_value":{
 						"at":1786799340000,
 						"value":0.17
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1786795200000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1786795200000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":false,
-				"audience":1
-			},
-			{
-				"platform":"bilibili",
 				"uid":990000000104,
 				"uname":"演示主播休眠",
-				"roomId":990000000204,
-				"startTime":1785758400000,
-				"endTime":1785763800000,
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000402
+					],
+					"gift_users":[
+						990000000402
+					]
+				}
+			},
+			{
+				"audience":1,
 				"durationSeconds":5400,
 				"effectiveSeconds":5400,
-				"listQuality":"complete",
-				"metrics":{
-					"super_chat_count":1.0,
-					"gift_value":56.0,
-					"enter_count":1050.0,
-					"follow_count":20.0,
-					"danmu_count":668.0,
-					"watched_count":3760.0,
-					"gift_paid":56.0,
-					"super_chat_value":12.0,
-					"fans_at_start":4421.0,
-					"like_total":1640.0
-				},
-				"userCounts":{
-					"gift_users":1,
-					"danmu_users":1
-				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
-				"interrupted":false,
-				"maintenanceGapSeconds":0,
-				"roomOutageSeconds":0,
-				"hasUserSets":true,
-				"userSets":{
-					"gift_users":[
-						990000000403
-					],
-					"danmu_users":[
-						990000000403
-					]
-				},
+				"endTime":1785763800000,
 				"hasPeaks":true,
+				"hasReport":false,
+				"hasUserSets":true,
+				"interrupted":false,
+				"listQuality":"complete",
+				"maintenanceGapSeconds":0,
+				"metrics":{
+					"danmu_count":668.0,
+					"enter_count":1050.0,
+					"fans_at_start":4421.0,
+					"follow_count":20.0,
+					"gift_paid":56.0,
+					"gift_value":56.0,
+					"like_total":1640.0,
+					"super_chat_count":1.0,
+					"super_chat_value":12.0,
+					"watched_count":3760.0
+				},
 				"peaks":{
-					"online_count":{
-						"at":1785760800000,
-						"value":80.0
-					},
-					"gift_value":{
+					"danmu_count":{
 						"at":1785760260000,
-						"value":0.94
+						"value":12.0
 					},
 					"enter_count":{
 						"at":1785760200000,
 						"value":18.0
 					},
-					"danmu_count":{
+					"gift_value":{
 						"at":1785760260000,
-						"value":12.0
+						"value":0.94
+					},
+					"online_count":{
+						"at":1785760800000,
+						"value":80.0
 					},
 					"super_chat_value":{
 						"at":1785760440000,
 						"value":0.21
 					}
 				},
+				"platform":"bilibili",
+				"roomId":990000000204,
+				"roomOutageSeconds":0,
+				"startTime":1785758400000,
+				"titleChangeCount":0,
 				"titles":[
 					{
+						"area":"唱见电台",
 						"at":1785758400000,
-						"title":"晚间歌回·点歌之夜（演示）",
-						"area":"唱见电台"
+						"title":"晚间歌回·点歌之夜（演示）"
 					}
 				],
-				"titleChangeCount":0,
-				"hasReport":false,
-				"audience":1
-			}
-		],
-		"metrics":[
-			{
-				"key":"danmu_count",
-				"name":"弹幕",
-				"unit":"条",
-				"money":false
-			},
-			{
-				"key":"gift_value",
-				"name":"礼物价值",
-				"unit":"元",
-				"money":true
-			},
-			{
-				"key":"gift_paid",
-				"name":"观众消耗",
-				"unit":"元",
-				"money":true
-			},
-			{
-				"key":"super_chat_count",
-				"name":"醒目留言",
-				"unit":"条",
-				"money":false
-			},
-			{
-				"key":"super_chat_value",
-				"name":"醒目留言价值",
-				"unit":"元",
-				"money":true
-			},
-			{
-				"key":"guard_value",
-				"name":"大航海价值",
-				"unit":"元",
-				"money":true
-			},
-			{
-				"key":"captain_count",
-				"name":"舰长",
-				"unit":"人次",
-				"money":false
-			},
-			{
-				"key":"commander_count",
-				"name":"提督",
-				"unit":"人次",
-				"money":false
-			},
-			{
-				"key":"governor_count",
-				"name":"总督",
-				"unit":"人次",
-				"money":false
-			},
-			{
-				"key":"follow_count",
-				"name":"新增关注",
-				"unit":"人次",
-				"money":false
-			},
-			{
-				"key":"like_total",
-				"name":"点赞",
-				"unit":"次",
-				"money":false
-			},
-			{
-				"key":"share_count",
-				"name":"分享",
-				"unit":"人次",
-				"money":false
-			},
-			{
-				"key":"watched_count",
-				"name":"看过",
-				"unit":"人次",
-				"money":false
-			},
-			{
-				"key":"box_count",
-				"name":"盲盒",
-				"unit":"个",
-				"money":false
-			},
-			{
-				"key":"box_profit",
-				"name":"盲盒盈亏",
-				"unit":"元",
-				"money":true
-			},
-			{
-				"key":"free_gift_count",
-				"name":"免费礼物",
-				"unit":"个",
-				"money":false
+				"uid":990000000104,
+				"uname":"演示主播休眠",
+				"userCounts":{
+					"danmu_users":1,
+					"gift_users":1
+				},
+				"userSets":{
+					"danmu_users":[
+						990000000403
+					],
+					"gift_users":[
+						990000000403
+					]
+				}
 			}
 		],
 		"messageKey":"danmu_count",
+		"metrics":[
+			{
+				"key":"danmu_count",
+				"money":false,
+				"name":"弹幕",
+				"unit":"条"
+			},
+			{
+				"key":"gift_value",
+				"money":true,
+				"name":"礼物价值",
+				"unit":"元"
+			},
+			{
+				"key":"gift_paid",
+				"money":true,
+				"name":"观众消耗",
+				"unit":"元"
+			},
+			{
+				"key":"super_chat_count",
+				"money":false,
+				"name":"醒目留言",
+				"unit":"条"
+			},
+			{
+				"key":"super_chat_value",
+				"money":true,
+				"name":"醒目留言价值",
+				"unit":"元"
+			},
+			{
+				"key":"guard_value",
+				"money":true,
+				"name":"大航海价值",
+				"unit":"元"
+			},
+			{
+				"key":"captain_count",
+				"money":false,
+				"name":"舰长",
+				"unit":"人次"
+			},
+			{
+				"key":"commander_count",
+				"money":false,
+				"name":"提督",
+				"unit":"人次"
+			},
+			{
+				"key":"governor_count",
+				"money":false,
+				"name":"总督",
+				"unit":"人次"
+			},
+			{
+				"key":"follow_count",
+				"money":false,
+				"name":"新增关注",
+				"unit":"人次"
+			},
+			{
+				"key":"like_total",
+				"money":false,
+				"name":"点赞",
+				"unit":"次"
+			},
+			{
+				"key":"share_count",
+				"money":false,
+				"name":"分享",
+				"unit":"人次"
+			},
+			{
+				"key":"watched_count",
+				"money":false,
+				"name":"看过",
+				"unit":"人次"
+			},
+			{
+				"key":"box_count",
+				"money":false,
+				"name":"盲盒",
+				"unit":"个"
+			},
+			{
+				"key":"box_profit",
+				"money":true,
+				"name":"盲盒盈亏",
+				"unit":"元"
+			},
+			{
+				"key":"free_gift_count",
+				"money":false,
+				"name":"免费礼物",
+				"unit":"个"
+			}
+		],
+		"page":1,
+		"pages":1,
 		"revenueKeys":[
 			"gift_value",
 			"super_chat_value",
 			"guard_value"
-		]
-	}
+		],
+		"size":10,
+		"total":9
+	},
+	"success":true
 }

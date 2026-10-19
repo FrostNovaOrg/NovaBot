@@ -1,24 +1,24 @@
 {
-	"fetchedAt":"2026-10-19T04:30:01.225359Z",
-	"stale":false,
-	"senders":[
-		{
-			"sender":"qq-onebot",
-			"fetchedAt":"2026-10-19T04:30:01.225359Z",
-			"stale":false,
-			"groups":3,
-			"friends":1
-		}
-	],
-	"success":true,
-	"type":"friend",
+	"fetchedAt":"2026-10-19T04:00:00Z",
 	"items":[
 		{
-			"sender":"qq-onebot",
-			"num":990000000502,
+			"configured":true,
 			"nickname":"演示好友",
+			"num":990000000502,
 			"remark":"",
-			"configured":true
+			"sender":"qq-onebot"
 		}
-	]
+	],
+	"senders":[
+		{
+			"fetchedAt":"2026-10-19T04:00:00Z",
+			"friends":1,
+			"groups":3,
+			"sender":"qq-onebot",
+			"stale":false
+		}
+	],
+	"stale":false,
+	"success":true,
+	"type":"friend"
 }

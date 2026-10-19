@@ -1,6 +1,6 @@
 {
-	"configured":true,
 	"address":"127.0.0.1",
+	"configured":true,
 	"httpPort":39000,
 	"websocketPort":39001
 }

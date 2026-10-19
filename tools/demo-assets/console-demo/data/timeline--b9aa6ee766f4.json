@@ -1,26 +1,72 @@
 {
-	"success":true,
-	"date":"2026-10-19",
-	"problemsOnly":false,
-	"category":"SYSTEM",
-	"events":[
+	"alertEnabled":true,
+	"categories":[
 		{
-			"at":1792384200503,
-			"type":"SYSTEM_STARTED",
-			"typeText":"启动",
-			"category":"SYSTEM",
-			"categoryText":"系统",
-			"level":"info",
-			"text":"NovaBot 已启动",
-			"detail":{
-				"startup_ms":"2367"
-			}
+			"count":9,
+			"name":"PUSH",
+			"text":"推送"
+		},
+		{
+			"count":0,
+			"name":"LIVE",
+			"text":"直播"
+		},
+		{
+			"count":0,
+			"name":"LINK",
+			"text":"连接"
+		},
+		{
+			"count":0,
+			"name":"COMMAND",
+			"text":"命令"
+		},
+		{
+			"count":0,
+			"name":"ALERT",
+			"text":"告警"
+		},
+		{
+			"count":0,
+			"name":"SETTINGS",
+			"text":"设置"
+		},
+		{
+			"count":1,
+			"name":"SYSTEM",
+			"text":"系统"
 		}
 	],
-	"matched":1,
-	"returned":1,
-	"truncated":false,
+	"category":"SYSTEM",
+	"channels":[
+		"群 990000000301",
+		"群 990000000302"
+	],
+	"date":"2026-10-19",
+	"events":[
+		{
+			"at":1792371600000,
+			"category":"SYSTEM",
+			"categoryText":"系统",
+			"detail":{
+				"startup_ms":"2500"
+			},
+			"level":"info",
+			"text":"NovaBot 已启动",
+			"type":"SYSTEM_STARTED",
+			"typeText":"启动"
+		}
+	],
 	"limit":200,
+	"matched":1,
+	"problemsOnly":false,
+	"retentionDays":14,
+	"returned":1,
+	"streamers":[
+		"演示主播小星"
+	],
+	"success":true,
+	"truncated":false,
 	"types":[
 		{
 			"name":"PUSH_MUTED",
@@ -114,50 +160,5 @@
 			"name":"BACKUP_SKIPPED",
 			"text":"没留备份"
 		}
-	],
-	"categories":[
-		{
-			"name":"PUSH",
-			"text":"推送",
-			"count":6
-		},
-		{
-			"name":"LIVE",
-			"text":"直播",
-			"count":0
-		},
-		{
-			"name":"LINK",
-			"text":"连接",
-			"count":0
-		},
-		{
-			"name":"COMMAND",
-			"text":"命令",
-			"count":0
-		},
-		{
-			"name":"ALERT",
-			"text":"告警",
-			"count":0
-		},
-		{
-			"name":"SETTINGS",
-			"text":"设置",
-			"count":0
-		},
-		{
-			"name":"SYSTEM",
-			"text":"系统",
-			"count":1
-		}
-	],
-	"streamers":[
-		"演示主播小星"
-	],
-	"channels":[
-		"群 990000000301"
-	],
-	"retentionDays":14,
-	"alertEnabled":true
+	]
 }

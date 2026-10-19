@@ -1,205 +1,201 @@
 {
-	"success":true,
 	"commands":[
 		{
-			"name":"@名单",
-			"description":"查看提醒订阅名单，可带「开播」或「动态」",
-			"category":"提醒订阅",
-			"usage":"[开播|动态] [主播 uid 或昵称]",
 			"aliases":[
 				"开播@名单",
 				"动态@名单"
 			],
-			"disableable":true,
-			"requiresAdmin":false,
-			"groupOnly":true,
 			"available":true,
+			"category":"提醒订阅",
+			"description":"查看提醒订阅名单，可带「开播」或「动态」",
+			"disableable":true,
+			"groupOnly":true,
+			"name":"@名单",
+			"requiresAdmin":false,
+			"usage":"[开播|动态] [主播 uid 或昵称]",
 			"usages":[
 				{
-					"key":"开播@名单",
-					"available":true
+					"available":true,
+					"key":"开播@名单"
 				},
 				{
-					"key":"动态@名单",
-					"available":true
+					"available":true,
+					"key":"动态@名单"
 				}
 			]
 		},
 		{
-			"name":"动态@我",
-			"description":"开关动态提醒：没订就订上，订了就取消",
-			"category":"提醒订阅",
-			"usage":"[主播 uid 或昵称]",
 			"aliases":[
 				"取消动态@我"
 			],
-			"disableable":true,
-			"requiresAdmin":false,
-			"groupOnly":true,
 			"available":true,
+			"category":"提醒订阅",
+			"description":"开关动态提醒：没订就订上，订了就取消",
+			"disableable":true,
+			"groupOnly":true,
+			"name":"动态@我",
+			"requiresAdmin":false,
+			"usage":"[主播 uid 或昵称]",
 			"usages":[
 				{
-					"key":"动态@我",
-					"available":true
+					"available":true,
+					"key":"动态@我"
 				},
 				{
-					"key":"取消动态@我",
-					"available":true
+					"available":true,
+					"key":"取消动态@我"
 				}
 			]
 		},
 		{
-			"name":"启用命令",
-			"description":"在本群启用某个命令",
-			"category":"命令管理",
-			"usage":"<命令名>",
 			"aliases":[],
-			"disableable":false,
-			"requiresAdmin":true,
-			"groupOnly":true,
 			"available":true,
+			"category":"命令管理",
+			"description":"在本群启用某个命令",
+			"disableable":false,
+			"groupOnly":true,
+			"name":"启用命令",
+			"requiresAdmin":true,
+			"usage":"<命令名>",
 			"usages":[
 				{
-					"key":"启用命令",
-					"available":true
+					"available":true,
+					"key":"启用命令"
 				}
 			]
 		},
 		{
-			"name":"开播@我",
-			"description":"开关开播提醒：没订就订上，订了就取消",
-			"category":"提醒订阅",
-			"usage":"[主播 uid 或昵称]",
 			"aliases":[
 				"取消开播@我"
 			],
-			"disableable":true,
-			"requiresAdmin":false,
-			"groupOnly":true,
 			"available":true,
+			"category":"提醒订阅",
+			"description":"开关开播提醒：没订就订上，订了就取消",
+			"disableable":true,
+			"groupOnly":true,
+			"name":"开播@我",
+			"requiresAdmin":false,
+			"usage":"[主播 uid 或昵称]",
 			"usages":[
 				{
-					"key":"开播@我",
-					"available":true
+					"available":true,
+					"key":"开播@我"
 				},
 				{
-					"key":"取消开播@我",
-					"available":true
+					"available":true,
+					"key":"取消开播@我"
 				}
 			]
 		},
 		{
-			"name":"数据排行榜",
-			"description":"查各榜单排行，带「总」出历次累计",
-			"category":"数据查询",
-			"usage":"<榜单> [总] [主播 uid 或昵称]（三者顺序不限）",
 			"aliases":[
 				"总数据排行榜"
 			],
-			"disableable":true,
-			"requiresAdmin":false,
-			"groupOnly":false,
 			"available":true,
+			"category":"数据查询",
+			"description":"查各榜单排行，带「总」出历次累计",
+			"disableable":true,
+			"groupOnly":false,
+			"name":"数据排行榜",
+			"requiresAdmin":false,
+			"usage":"<榜单> [总] [主播 uid 或昵称]（三者顺序不限）",
 			"usages":[
 				{
-					"key":"数据排行榜",
-					"available":true
+					"available":true,
+					"key":"数据排行榜"
 				},
 				{
-					"key":"总数据排行榜",
-					"available":false
+					"available":false,
+					"key":"总数据排行榜"
 				}
 			]
 		},
 		{
-			"name":"直播报告",
-			"description":"查看正在直播主播的实时数据报告",
-			"category":"数据查询",
-			"usage":"[主播 uid 或昵称]",
 			"aliases":[],
-			"disableable":true,
-			"requiresAdmin":false,
-			"groupOnly":false,
 			"available":true,
+			"category":"数据查询",
+			"description":"查看正在直播主播的实时数据报告",
+			"disableable":true,
+			"groupOnly":false,
+			"name":"直播报告",
+			"requiresAdmin":false,
+			"usage":"[主播 uid 或昵称]",
 			"usages":[
 				{
-					"key":"直播报告",
-					"available":true
+					"available":true,
+					"key":"直播报告"
 				}
 			]
 		},
 		{
-			"name":"直播间数据",
-			"description":"查询直播间的整体数据，带「总」出历次累计",
-			"category":"数据查询",
-			"usage":"[总] [主播 uid 或昵称]",
 			"aliases":[
 				"直播间总数据"
 			],
-			"disableable":true,
-			"requiresAdmin":false,
-			"groupOnly":false,
 			"available":true,
+			"category":"数据查询",
+			"description":"查询直播间的整体数据，带「总」出历次累计",
+			"disableable":true,
+			"groupOnly":false,
+			"name":"直播间数据",
+			"requiresAdmin":false,
+			"usage":"[总] [主播 uid 或昵称]",
 			"usages":[
 				{
-					"key":"直播间数据",
-					"available":true
+					"available":true,
+					"key":"直播间数据"
 				},
 				{
-					"key":"直播间总数据",
-					"available":false
+					"available":false,
+					"key":"直播间总数据"
 				}
 			]
 		},
 		{
-			"name":"禁用命令",
-			"description":"在本群禁用某个命令",
-			"category":"命令管理",
-			"usage":"<命令名>",
 			"aliases":[],
-			"disableable":false,
-			"requiresAdmin":true,
-			"groupOnly":true,
 			"available":true,
+			"category":"命令管理",
+			"description":"在本群禁用某个命令",
+			"disableable":false,
+			"groupOnly":true,
+			"name":"禁用命令",
+			"requiresAdmin":true,
+			"usage":"<命令名>",
 			"usages":[
 				{
-					"key":"禁用命令",
-					"available":true
+					"available":true,
+					"key":"禁用命令"
 				}
 			]
 		},
 		{
-			"name":"菜单",
-			"description":"列出可用命令",
-			"category":"命令管理",
-			"usage":"",
 			"aliases":[
 				"帮助",
 				"命令"
 			],
-			"disableable":false,
-			"requiresAdmin":false,
-			"groupOnly":false,
 			"available":true,
+			"category":"命令管理",
+			"description":"列出可用命令",
+			"disableable":false,
+			"groupOnly":false,
+			"name":"菜单",
+			"requiresAdmin":false,
+			"usage":"",
 			"usages":[
 				{
-					"key":"菜单",
-					"available":true
+					"available":true,
+					"key":"菜单"
 				}
 			]
 		}
 	],
+	"incomplete":[],
+	"quietGlobal":{
+		"end":"13:30",
+		"start":"11:30"
+	},
 	"sessions":[
 		{
-			"platform":"qq-onebot",
-			"num":990000000301,
-			"type":"群",
-			"typeCode":1,
 			"configured":true,
-			"streamers":[
-				"演示主播小星",
-				"演示主播常青"
-			],
 			"disabled":[
 				"数据排行榜"
 			],
@@ -208,42 +204,43 @@
 				"数据排行榜":"带「总」查累计要先开累计数据",
 				"直播间数据":"带「总」查累计要先开累计数据"
 			},
-			"revenueVisible":false,
-			"revenueExplicit":true,
-			"quietMode":"follow",
-			"quietActive":true
-		},
-		{
+			"num":990000000301,
 			"platform":"qq-onebot",
-			"num":990000000302,
-			"type":"群",
-			"typeCode":1,
-			"configured":true,
+			"quietActive":false,
+			"quietMode":"follow",
+			"revenueExplicit":true,
+			"revenueVisible":false,
 			"streamers":[
 				"演示主播小星",
-				"演示主播常青",
-				"演示主播远山"
+				"演示主播常青"
 			],
+			"type":"群",
+			"typeCode":1
+		},
+		{
+			"configured":true,
 			"disabled":[],
 			"menuHidden":[],
 			"menuNotes":{
 				"数据排行榜":"带「总」查累计要先开累计数据",
 				"直播间数据":"带「总」查累计要先开累计数据"
 			},
-			"revenueVisible":false,
-			"revenueExplicit":false,
+			"num":990000000302,
+			"platform":"qq-onebot",
+			"quietActive":false,
 			"quietMode":"follow",
-			"quietActive":true
+			"revenueExplicit":false,
+			"revenueVisible":false,
+			"streamers":[
+				"演示主播小星",
+				"演示主播常青",
+				"演示主播远山"
+			],
+			"type":"群",
+			"typeCode":1
 		},
 		{
-			"platform":"qq-onebot",
-			"num":990000000502,
-			"type":"好友",
-			"typeCode":0,
 			"configured":true,
-			"streamers":[
-				"演示主播小星"
-			],
 			"disabled":[],
 			"menuHidden":[
 				"@名单",
@@ -256,18 +253,25 @@
 				"数据排行榜":"带「总」查累计要先开累计数据",
 				"直播间数据":"带「总」查累计要先开累计数据"
 			},
-			"revenueVisible":true,
-			"revenueExplicit":false,
+			"num":990000000502,
+			"platform":"qq-onebot",
+			"quietActive":false,
 			"quietMode":"follow",
-			"quietActive":true
+			"revenueExplicit":false,
+			"revenueVisible":true,
+			"streamers":[
+				"演示主播小星"
+			],
+			"type":"好友",
+			"typeCode":0
 		}
 	],
 	"subscriptions":[
 		{
-			"platform":"qq-onebot",
 			"num":990000000301,
-			"streamerUid":990000000101,
+			"platform":"qq-onebot",
 			"streamerName":"演示主播小星",
+			"streamerUid":990000000101,
 			"type":"live",
 			"typeName":"开播",
 			"users":[
@@ -277,10 +281,6 @@
 			]
 		}
 	],
-	"incomplete":[],
-	"totalDataAvailable":false,
-	"quietGlobal":{
-		"start":"11:30",
-		"end":"13:30"
-	}
+	"success":true,
+	"totalDataAvailable":false
 }

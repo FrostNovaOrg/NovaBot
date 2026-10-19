@@ -1,0 +1,17 @@
+{
+	"sessions":{
+		"items":[],
+		"messageKey":"danmu_count",
+		"metrics":[],
+		"page":1,
+		"pages":0,
+		"revenueKeys":[
+			"gift_value",
+			"super_chat_value",
+			"guard_value"
+		],
+		"size":10,
+		"total":0
+	},
+	"success":true
+}

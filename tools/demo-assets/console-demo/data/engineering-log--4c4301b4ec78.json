@@ -1,8 +1,8 @@
 {
-	"success":true,
+	"available":false,
+	"date":"2026-10-19",
 	"limit":2000,
 	"lines":[],
-	"date":"2026-10-19",
-	"available":false,
-	"message":"这台机器的日志没有按天分文件，翻不了别的日子。"
+	"message":"这台机器的日志没有按天分文件，翻不了别的日子。",
+	"success":true
 }

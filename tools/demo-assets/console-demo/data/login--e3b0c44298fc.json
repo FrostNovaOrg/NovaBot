@@ -1,11 +1,11 @@
 {
-	"success":true,
 	"accounts":[
 		{
-			"platform":"bilibili",
+			"disabledReason":"匿名模式：个人主播的直播间实测只能拿到约一成弹幕（七格实测 8.8%~12.5%），拿得到的弹幕里发送者 uid 会被抹成 0、昵称只留首字（形如 b***）；动态推送与自动关注不可用。需要完整数据请配置登录",
 			"displayName":"哔哩哔哩",
 			"loggedIn":false,
-			"disabledReason":"匿名模式：个人主播的直播间实测只能拿到约一成弹幕（七格实测 8.8%~12.5%），拿得到的弹幕里发送者 uid 会被抹成 0、昵称只留首字（形如 b***）；动态推送与自动关注不可用。需要完整数据请配置登录"
+			"platform":"bilibili"
 		}
-	]
+	],
+	"success":true
 }
