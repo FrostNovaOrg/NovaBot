@@ -6,8 +6,9 @@
 # seconds after the probe before the usual stop, e.g. to screenshot the console.
 # Ctrl-C or TERM during the hold stops it early and cleans up as usual.
 #
-# Set DEMO_SEED=1 to preset sample data before the start: one demo streamer and
-# group, a few months of past sessions, today's push records and an engineering
+# Set DEMO_SEED=1 to preset sample data before the start: four demo streamers,
+# three groups and a friend, months of sessions and minute details, snapshots,
+# credentials, weekly deliveries, recent push records and an engineering
 # log, plus a config that keeps the instance from reaching the live platform
 # (no live-room connection, no polling, no update check). Platform calls that
 # no switch can turn off (the startup streamer lookup and the credential init)
@@ -20,9 +21,7 @@
 # All sample names and numbers are made up; nothing in them comes from a real
 # account. Without the switch nothing changes.
 #
-# Adding a streamer goes through the live platform lookup, which needs the network.
-# This script does not add a synthetic streamer source; the setup / template / connection
-# pages are reachable. The streamers API is expected to return an empty list.
+# Adding another streamer still requires a real platform lookup.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -285,7 +284,27 @@ else
 fi
 
 if [ "$SEED" = "1" ]; then
-    echo "seeded: sample data is preset (one demo streamer and group, past sessions, today's records and engineering log); outbound platform calls are switched off or fail on this machine."
+    # In-memory history starts empty after every boot. Populate it through the
+    # actual test-message controller and the local OneBot endpoint, at real time.
+    python3 - "$PORT" "$TOKEN" "$WORK/push-replay.json" <<'PY'
+import http.client, json, sys
+from urllib.parse import quote
+rows = json.load(open(sys.argv[3]))
+for row in rows:
+    conn = http.client.HTTPConnection('127.0.0.1', int(sys.argv[1]), timeout=15)
+    try:
+        conn.request('POST', '/config/api/test-message?token=' + quote(sys.argv[2]),
+                     json.dumps(dict(platform='qq-onebot', type=1, num=row['num'], content=row['summary'])),
+                     {'Content-Type': 'application/json', 'Origin': 'http://127.0.0.1:' + sys.argv[1]})
+        response = conn.getresponse()
+        result = json.loads(response.read())
+        if response.status != 200 or bool(result.get('success')) == row['fail']:
+            raise SystemExit('demo push replay did not produce the expected transport outcome: ' + str(result))
+    finally:
+        conn.close()
+print('Demo push replay: 3 sent, 1 failed (real controller, local transport, current timestamps)')
+PY
+    echo "seeded: four demo streamers, three groups, one friend, 57 sessions, 12 with details, snapshots, demo credentials and recent records; outbound platform calls are switched off or fail on this machine."
 else
     echo "limit: no synthetic streamer source; adding a streamer looks up the live platform and needs the network."
     echo "reachable without a streamer: setup, templates, connection pages."

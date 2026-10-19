@@ -1,0 +1,26 @@
+{
+	"success":true,
+	"days":30,
+	"audience":{
+		"from":1789855200000,
+		"to":1792382400000,
+		"counts":{
+			"all":3,
+			"first":0,
+			"returning":3,
+			"interaction":3
+		},
+		"coverage":{
+			"complete":5,
+			"anonymous":0,
+			"unknown":0,
+			"missing":0
+		},
+		"group":"first",
+		"sort":"recent",
+		"page":1,
+		"pages":0,
+		"total":0,
+		"items":[]
+	}
+}

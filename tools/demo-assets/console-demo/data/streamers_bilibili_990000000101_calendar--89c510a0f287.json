@@ -12,7 +12,7 @@
 				"gapSeconds":0,
 				"start":1789855200000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":7
 			},
 			{
@@ -24,7 +24,7 @@
 				"gapSeconds":0,
 				"start":1789941600000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":1
 			},
 			{
@@ -50,7 +50,7 @@
 				"gapSeconds":0,
 				"start":1790114400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":3
 			},
 			{
@@ -62,7 +62,7 @@
 				"gapSeconds":0,
 				"start":1790200800000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":4
 			},
 			{
@@ -74,7 +74,7 @@
 				"gapSeconds":0,
 				"start":1790287200000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":5
 			},
 			{
@@ -86,7 +86,7 @@
 				"gapSeconds":0,
 				"start":1790373600000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":6
 			},
 			{
@@ -98,7 +98,7 @@
 				"gapSeconds":0,
 				"start":1790460000000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":7
 			},
 			{
@@ -110,7 +110,7 @@
 				"gapSeconds":0,
 				"start":1790546400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":1
 			},
 			{
@@ -122,7 +122,7 @@
 				"gapSeconds":0,
 				"start":1790632800000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":2
 			},
 			{
@@ -134,7 +134,7 @@
 				"gapSeconds":0,
 				"start":1790719200000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":3
 			},
 			{
@@ -146,7 +146,7 @@
 				"gapSeconds":0,
 				"start":1790805600000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":4
 			},
 			{
@@ -158,7 +158,7 @@
 				"gapSeconds":0,
 				"start":1790892000000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":5
 			},
 			{
@@ -170,7 +170,7 @@
 				"gapSeconds":0,
 				"start":1790978400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":6
 			},
 			{
@@ -182,7 +182,7 @@
 				"gapSeconds":0,
 				"start":1791064800000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":7
 			},
 			{
@@ -194,7 +194,7 @@
 				"gapSeconds":0,
 				"start":1791151200000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":1
 			},
 			{
@@ -206,7 +206,7 @@
 				"gapSeconds":0,
 				"start":1791237600000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":2
 			},
 			{
@@ -268,7 +268,7 @@
 				"gapSeconds":0,
 				"start":1791669600000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":7
 			},
 			{
@@ -280,7 +280,7 @@
 				"gapSeconds":0,
 				"start":1791756000000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":1
 			},
 			{
@@ -292,7 +292,7 @@
 				"gapSeconds":0,
 				"start":1791842400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":2
 			},
 			{
@@ -304,7 +304,7 @@
 				"gapSeconds":0,
 				"start":1791928800000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":3
 			},
 			{
@@ -316,7 +316,7 @@
 				"gapSeconds":0,
 				"start":1792015200000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":4
 			},
 			{
@@ -342,7 +342,7 @@
 				"gapSeconds":0,
 				"start":1792188000000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":6
 			},
 			{
@@ -354,21 +354,24 @@
 				"gapSeconds":0,
 				"start":1792274400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":7
 			},
 			{
 				"current":true,
 				"date":"2026-10-19",
-				"durationSeconds":0,
-				"effectiveSeconds":0,
+				"durationSeconds":2400,
+				"effectiveSeconds":2400,
 				"end":1792447200000,
 				"gapSeconds":0,
 				"start":1792360800000,
-				"starts":[],
-				"status":"unknown",
+				"starts":[
+					1792379400000
+				],
+				"status":"recorded",
 				"weekday":1
 			}
-		]
+		],
+		"provableFrom":1777694400000
 	}
 }

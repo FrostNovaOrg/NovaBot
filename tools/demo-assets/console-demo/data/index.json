@@ -1,10 +1,19 @@
 {
 	"today":"2026-10-19",
-	"recordedAt":"2026-10-19T11:33:59.211783+08:00",
-	"epochMs":1792380839211,
+	"recordedAt":"2026-10-19T12:00:00+08:00",
+	"epochMs":1792382400000,
 	"timezone":"Asia/Shanghai",
-	"commit":"094458e87c418be128878cc2a39a7a86bbfaca67",
+	"commit":"26c3cc741af661adb8cb3c067b62e6e74d95c080",
 	"responses":[
+		{
+			"method":"GET",
+			"path":"/config/api/push-history",
+			"query":"",
+			"file":"data/push-history--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"121a3f2c31e103c026e03cd75d8b2e85962bfb8ec37763e2e27de823a46914e1"
+		},
 		{
 			"method":"GET",
 			"path":"/config/api/auth/state",
@@ -12,7 +21,7 @@
 			"file":"data/auth_state--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"34d577d9a4abb30d9ea3601490cce5582ea9300fc7be854363a46784b88a6bc8"
+			"sha256":"b5a11a76745a8546b61f36fd117de14c4988b008de3014265fa1a18d47962c28"
 		},
 		{
 			"method":"GET",
@@ -30,7 +39,7 @@
 			"file":"data/auth_passkeys--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"04b95095a602f549c34112e8e59a865f040f6f8a8bd455155964fbec0cac5c09"
+			"sha256":"fba92f4ea1d92fffbe001e9ceb8d9a9ee2e44164cffa319db50216fc4219c86c"
 		},
 		{
 			"method":"GET",
@@ -66,7 +75,7 @@
 			"file":"data/handlers--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a02222717ba115fd41bdc43eb2b0366d72671e9b0ba5db06b0d0d7d6affba8de"
+			"sha256":"12d8854e5dcd4a6796eba6d2b0d5e01da2c83b80e3b770c741d2dfcf3ba7bb65"
 		},
 		{
 			"method":"GET",
@@ -111,7 +120,7 @@
 			"file":"data/status--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"8473fb6adc361fd66233d33586b7a896ed190f465dac9253f32ecd27119487eb"
+			"sha256":"924d314cbab96d7b03c8c13308c901f8e668cd7394237260d83cb7afb8e4dcb6"
 		},
 		{
 			"method":"GET",
@@ -120,7 +129,7 @@
 			"file":"data/values--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"264d36b49631395ffd11eb098cde10f940fbd136ea16c8c933b65803fa595471"
+			"sha256":"6be7be095375c6d91a41d4968eb6a860386f4969739757d4bc8684bdd25e0257"
 		},
 		{
 			"method":"GET",
@@ -129,7 +138,7 @@
 			"file":"data/vocab--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a8d91269ca799fc176b8ea26ebb2e4b5a119c02b291b81f739dfba2247ba22a4"
+			"sha256":"530f80be0ec1ca306d2ab1f283c10dba3f87f58faf970dca3c6d17a1abbef67a"
 		},
 		{
 			"method":"GET",
@@ -138,7 +147,7 @@
 			"file":"data/event-tokens--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"39c06c47f25ff2e2f7db36dcbfb2a6f610c2a083e335d5fdf55dda07ca65a86a"
+			"sha256":"76b85292cb87aac0544c95ed709b66a812e27849ae602caa8eaaca790d8382dc"
 		},
 		{
 			"method":"GET",
@@ -165,7 +174,7 @@
 			"file":"data/datasource--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"88d176c7324c3d9bb7735891c18384fe666b8abc5192d09857ca03a13a921f75"
+			"sha256":"534209dd016812a105fc8f05658ea1b3509e584c45bb8a5b6e3afdf1736e5783"
 		},
 		{
 			"method":"GET",
@@ -174,16 +183,7 @@
 			"file":"data/state--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"6dda465c4b49af4f0205cf53af4fc04f2c0028db6f50d8196582068f40abc739"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/push-history",
-			"query":"",
-			"file":"data/push-history--e3b0c44298fc.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"804debb3e67640e8a4cca16dc00e7314ea65bb5dc472264fa52af37dd846d015"
+			"sha256":"5ce366e7bb9cf795eea1810ad5c1f95a313e6e29b4ed37f2872c7bbb5cb8879f"
 		},
 		{
 			"method":"GET",
@@ -192,7 +192,7 @@
 			"file":"data/at-all_quota--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"beca09f8fc20565469c81e8ddc7ff6bdcb4980733758d7a34948ad041b9da62e"
+			"sha256":"3e4b03fe4762b0f40b322d12a5a98d9a44d3fbe4f423d5ce8bb732a7134557f4"
 		},
 		{
 			"method":"GET",
@@ -210,7 +210,7 @@
 			"file":"data/timeline_days--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"292c1039d0b82fc0ec5dbcc421808ec123d793442fc5e45b4439e6effb768b25"
+			"sha256":"35d9ffd748bdca715e9ede8745bf419ad9bcba0380c7e4eb0d531fa9ccbfd5e7"
 		},
 		{
 			"method":"GET",
@@ -219,7 +219,7 @@
 			"file":"data/streamers--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"e666ca0a00697ac53f215aaceadb96003a5e8d791064a8753eef3dcf38b9b929"
+			"sha256":"e8e92d3f6dbdb90429c92453f8d593399af7716f8ecfbe6d9bf8a0abd17e5b27"
 		},
 		{
 			"method":"GET",
@@ -237,7 +237,7 @@
 			"file":"data/report_preview--e3b0c44298fc.png",
 			"status":200,
 			"contentType":"image/png",
-			"sha256":"bab98a4916ffdf74b159db21616caf93ce989f2a6303aec869193eaa3a9ae862"
+			"sha256":"f398b77a952ec8a58ef1c0ec67ded412fe472d8aba659d12404e39a03db13f26"
 		},
 		{
 			"method":"GET",
@@ -246,7 +246,7 @@
 			"file":"data/bot_targets--572fe4e8a245.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"dd694c80ee5a96e2b7163678c4817698da03939b9fc2ecb12310c8554583cd21"
+			"sha256":"1b77a8f2ffa93e54b8168921c24b4e5282376a939d38f604bdeedb7f809f0f03"
 		},
 		{
 			"method":"GET",
@@ -255,7 +255,7 @@
 			"file":"data/bot_targets--f034d538ea95.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"cd8d4173405ecf4072cdc001700a35cdda772d0f2544feb51419bbe6dad3f4dc"
+			"sha256":"6c18ea5644bf6ce234754fdd67fe19c08b55b6ac724cc9d3cbefc42cc40731df"
 		},
 		{
 			"method":"GET",
@@ -264,7 +264,7 @@
 			"file":"data/timeline--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"eb79964a6719c724ca96d31b2a90e4361698131b566ec40525035d995d2fa9e1"
+			"sha256":"c9a7fe0515ddd0409a2ad2c4c6227af263d2918eb74b94572798c96821015c5c"
 		},
 		{
 			"method":"GET",
@@ -273,7 +273,7 @@
 			"file":"data/timeline--97915b675727.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c4217760e793c9a4d3e4614a9f2e7785b5e709dfee1b28e48e1201e60e0215a6"
+			"sha256":"a277a009f3d7fc688a0ed404085c3029797401defeb2928e754cccc557074782"
 		},
 		{
 			"method":"GET",
@@ -282,7 +282,7 @@
 			"file":"data/timeline--054fe8760832.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"80e33267925d410337bfb4e62170b2fada89769d874d6593d0c63b904686a0b7"
+			"sha256":"b51ce937ae6c57cccb6b31b5b700d290afcbe73799d1520572e3030617c0b0e1"
 		},
 		{
 			"method":"GET",
@@ -291,7 +291,7 @@
 			"file":"data/timeline--97915b675727.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c4217760e793c9a4d3e4614a9f2e7785b5e709dfee1b28e48e1201e60e0215a6"
+			"sha256":"a277a009f3d7fc688a0ed404085c3029797401defeb2928e754cccc557074782"
 		},
 		{
 			"method":"GET",
@@ -300,7 +300,7 @@
 			"file":"data/timeline--054fe8760832.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"80e33267925d410337bfb4e62170b2fada89769d874d6593d0c63b904686a0b7"
+			"sha256":"b51ce937ae6c57cccb6b31b5b700d290afcbe73799d1520572e3030617c0b0e1"
 		},
 		{
 			"method":"GET",
@@ -309,7 +309,7 @@
 			"file":"data/timeline--49001317026c.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c6d3d6bafb3db5262e58fab91fa582747e272f8edfda9b7bcf63aece4c823922"
+			"sha256":"120aa1b832f07fe4f5844b058df9f623acfa67d07555871f5954c462ed311fd1"
 		},
 		{
 			"method":"GET",
@@ -318,7 +318,7 @@
 			"file":"data/timeline--9befb11a15f1.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a7a3ae31fe0f38de139752172909edf1333e79ee3602fa8a72b1fe771d152711"
+			"sha256":"7441f4663685cefd1011a7eb7a6175fd131343821174eb79d51844f00f01507d"
 		},
 		{
 			"method":"GET",
@@ -327,7 +327,196 @@
 			"file":"data/timeline--b9aa6ee766f4.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a20a0d6a33982245d2db6d90bd2456bbcac84490eb309bb6d322c1f5e1038f7a"
+			"sha256":"c002502187d4b192c8f5147d14787d07ac2a68f13478e38a0bfde3a6a59e9aeb"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-18",
+			"file":"data/timeline--39594ec872c1.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"17f09c1c25e70f69316b9f5ee5df200a212b30a4bf51f748af33235efa30b1e3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-18&problems=true",
+			"file":"data/timeline--715fdb5e866a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4d207abf1f178c7661cb8231c73f1af5c33563f298523e871ede9921735a48aa"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-18&limit=200",
+			"file":"data/timeline--39594ec872c1.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"17f09c1c25e70f69316b9f5ee5df200a212b30a4bf51f748af33235efa30b1e3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-18&limit=200&problems=true",
+			"file":"data/timeline--715fdb5e866a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4d207abf1f178c7661cb8231c73f1af5c33563f298523e871ede9921735a48aa"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=PUSH&date=2026-10-18&limit=200",
+			"file":"data/timeline--ba1f8153c0aa.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"134204dfb45ef030e42b31cbac87e3e173d9cdaeed4d3fa263dfd98bbf1fca46"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=LIVE&date=2026-10-18&limit=200",
+			"file":"data/timeline--75ff225c8c68.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"95011eebf1d006766c3c4cd3cf3885a662ee5fe083c831ce58aff06f005925d5"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=SYSTEM&date=2026-10-18&limit=200",
+			"file":"data/timeline--073e2f7fd869.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"9a6b6ef6d167deb84959d5fe63743d056bdc44e4f95825048a98505e1900c025"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-17",
+			"file":"data/timeline--5287ef059e0b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6393ad67f9b81c8f9bf9ed4cb7534ba0ce509d9a22366dc1f78ec8d9c3a35dd3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-17&problems=true",
+			"file":"data/timeline--d4a698de41d3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c48c45e0f71a22bfccbe3dbed22058a0eac47213320b4d812deeba8bedbab4db"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-17&limit=200",
+			"file":"data/timeline--5287ef059e0b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6393ad67f9b81c8f9bf9ed4cb7534ba0ce509d9a22366dc1f78ec8d9c3a35dd3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-17&limit=200&problems=true",
+			"file":"data/timeline--d4a698de41d3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c48c45e0f71a22bfccbe3dbed22058a0eac47213320b4d812deeba8bedbab4db"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=PUSH&date=2026-10-17&limit=200",
+			"file":"data/timeline--085ff6aeef4a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"732c16d104acea3cfba412c15b554e6c07966037515c1a7d468471a8df8560f7"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=LIVE&date=2026-10-17&limit=200",
+			"file":"data/timeline--e6a59dc5bb34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c8149a7d825bcf076252d83f99752866aa2e40f5143e2085726b7bc7f7818f2a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=SYSTEM&date=2026-10-17&limit=200",
+			"file":"data/timeline--d8bdc1b7fe1c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5cad7006db982664fb9b5200a1a1b79e8d74c81c0306ae69929ea739f96c9863"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-16",
+			"file":"data/timeline--a2b28d8e1675.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f1e63869870005677492916527fa42abd33254b9892cd8196805ea986d8892ff"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-16&problems=true",
+			"file":"data/timeline--889a9091ecf5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ed9e5ba64be13b3f1a1801f5126d2d54ce32938d49524450c18ae144a5dd21a9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-16&limit=200",
+			"file":"data/timeline--a2b28d8e1675.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f1e63869870005677492916527fa42abd33254b9892cd8196805ea986d8892ff"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"date=2026-10-16&limit=200&problems=true",
+			"file":"data/timeline--889a9091ecf5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ed9e5ba64be13b3f1a1801f5126d2d54ce32938d49524450c18ae144a5dd21a9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=PUSH&date=2026-10-16&limit=200",
+			"file":"data/timeline--b569a45cb435.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3e392b75fea1575a4652a021b2430d2ca364239496ea8ea4145a5695ea9fc3a0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=LIVE&date=2026-10-16&limit=200",
+			"file":"data/timeline--c19d579c24b0.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e00dee62731fa8bede3704ef34a20fb73a97a2e15d5bc18187c7b95a22ee648f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/timeline",
+			"query":"category=SYSTEM&date=2026-10-16&limit=200",
+			"file":"data/timeline--22766b1dffe9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7ef766f9f025842df6381e1ced83dab556c1fbed20706a6b8a0c42396792d112"
 		},
 		{
 			"method":"GET",
@@ -426,7 +615,7 @@
 			"file":"data/streamers_bilibili_990000000101--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"3926807dd3970bc7aaca3fb359fb0b89b164fa0453e64eda6b5428a663ab7c14"
+			"sha256":"922014ec36ac0d6300d639e475e2b887c069ac7f89395db3054f2f5f49212835"
 		},
 		{
 			"method":"GET",
@@ -435,7 +624,7 @@
 			"file":"data/streamers_bilibili_990000000101_live--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"ecabc3233579bd2e39398599162e0e65c9c1bab96865e721a099cbb4b51c7f08"
+			"sha256":"3e75383843b0586026661b9ad99a5b41cfb2e14a89d3e89d9fc5f21259103581"
 		},
 		{
 			"method":"GET",
@@ -444,7 +633,7 @@
 			"file":"data/streamers_bilibili_990000000101_live--5e20260f1473.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"cffd8f73c813125fc79fbb6883384282c6959cb5d274d7597edef6cfa380a636"
+			"sha256":"7250f19ea1f2338bd0524827b8a04ad913aa7db243fcf2cf4c000ffe5f609d41"
 		},
 		{
 			"method":"GET",
@@ -453,7 +642,7 @@
 			"file":"data/streamers_bilibili_990000000101_insights--c22352b6b43e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"043b822cc51956514f21c27b5a088d656a851d45187472c4e226e2c732b1a777"
+			"sha256":"91669fc30272457921c7df3c4cea7dc0522247b7359aab0194f3afb3e1ded881"
 		},
 		{
 			"method":"GET",
@@ -462,7 +651,7 @@
 			"file":"data/streamers_bilibili_990000000101_calendar--c22352b6b43e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"4ddee08b7de26c0dc7dfe6d7ab842f2cf4e7baa2e6ee7ae9fa008d438fd48ffd"
+			"sha256":"10a1e2f6e76acdb7234782b09ca7f6601012b1422049783bed1ad75681fbdeff"
 		},
 		{
 			"method":"GET",
@@ -471,16 +660,7 @@
 			"file":"data/streamers_bilibili_990000000101_fans--c22352b6b43e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"86a95f9e09cf0d9c5b3133f9a22718a578e6d0cab79a3752ef69a9c2390cf1c8"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/weekly-report",
-			"query":"days=7",
-			"file":"data/streamers_bilibili_990000000101_weekly-report--c22352b6b43e.png",
-			"status":200,
-			"contentType":"image/png",
-			"sha256":"690452aa24e0844c235e6737bd98d44231060af4a04b74d18c8ec05b685c29a5"
+			"sha256":"f453e9916417873d6754cd419f34f3f98cf96c9b5d42ba0b31d2b391be075355"
 		},
 		{
 			"method":"GET",
@@ -489,7 +669,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--c22352b6b43e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"fee2bb6634ec13b9d4f67de47f76b128c68a98f989e24155683e186d017a205b"
+			"sha256":"acc38ce61a78cdf813aa033324583074bdc4bb05d07e6d2f752e91b6d780b48e"
 		},
 		{
 			"method":"GET",
@@ -498,7 +678,7 @@
 			"file":"data/streamers_bilibili_990000000101_trend--16d91957b38d.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"34275fd8af8fab03dab650a71fe717facf75fed1594079b83145f8961f49fc89"
+			"sha256":"c7dc4d0882e83b4940203bc8a34c56829a126446ae8232e2005704f335829d92"
 		},
 		{
 			"method":"GET",
@@ -507,7 +687,7 @@
 			"file":"data/streamers_bilibili_990000000101_trend--50b811fe9ac5.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"9bdc00c1846abcaf6dca5f5ec535d5ca2e84c214255e8adeedd2976c89eca0f9"
+			"sha256":"465cbdeafb49622d1261c1f45f5c14e772205b1a2cf4d06d6fa8ed37789089b7"
 		},
 		{
 			"method":"GET",
@@ -516,16 +696,16 @@
 			"file":"data/streamers_bilibili_990000000101_trend--50f670db40c8.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"0bea1246b0f4570c06c9f729aa0aaa3b947d4e1c070cacd46797bcacc06f2cb5"
+			"sha256":"b3eafc3ae2c6dbe22f74324ce8f36fcee2d9dac078d371af432271387793de8c"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/audience",
 			"query":"days=7&group=all&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--f51c0853c55f.json",
+			"file":"data/streamers_bilibili_990000000101_audience--c22352b6b43e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"8e7116210edd0678d740d6a6afdc2c908c4af3c493476f96e5bc11aebb3ec7dc"
+			"sha256":"acc38ce61a78cdf813aa033324583074bdc4bb05d07e6d2f752e91b6d780b48e"
 		},
 		{
 			"method":"GET",
@@ -534,7 +714,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--d9fa8c15e1ec.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"5290f56ce3183c8dbcbe900309f7504f147129fc24f591364b1433c52c9523d8"
+			"sha256":"c7025b944ac5dce913e8f58b1f07d30b295e3f2024448fdd9ab840d629ab6dc9"
 		},
 		{
 			"method":"GET",
@@ -543,7 +723,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--6f3b79a4379d.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"42e81042bd63c0df7f12d7b2d88ca9c1c6bad6fa5442ddb490652e6e5db36849"
+			"sha256":"25114373e2e17695005f7797b240a46afd4824e059776b8fe1f5adc8cd238dbf"
 		},
 		{
 			"method":"GET",
@@ -552,7 +732,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--87363cc48de6.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"141ddd0654d9daa23c5ccdcbc826519770184908832f487b85a0aa1c7a0469a6"
+			"sha256":"92bc4b13838154d4fa98469c22227740050105ce4119607d3644b77534ad908e"
 		},
 		{
 			"method":"GET",
@@ -561,7 +741,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--f6cd8c60d79c.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"5277ceac114a25dec19a463cbe119a9ecd6c1ae8a795767389d597eb52e44a74"
+			"sha256":"76562f279cf0c683536df3ffe2b5ac1cb9624d90a3df7860e4eeaad5d8a8eefc"
 		},
 		{
 			"method":"GET",
@@ -570,7 +750,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--c829f4bd625d.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"6ff55cafdd79d534b8141b99b6843422a5177d7a1991a11388a1f394ca789339"
+			"sha256":"ad7e1985a94d6fbc5dbe80da094f265cf1bd494abc9846b97de6c53d91c70ab3"
 		},
 		{
 			"method":"GET",
@@ -579,7 +759,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--05a8746eab22.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"304974783097bb024d08a1ded9e069df23b567ce8a5c6823ba50fd727e99f7ec"
+			"sha256":"cfe05daad31f6e0b1d6b6b67e4fd3dbab4a1517f581d068164a717328937349e"
 		},
 		{
 			"method":"GET",
@@ -588,7 +768,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--b22670d06bba.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"be5a3b58b425fa58a068c18c80505e474320698e83efe533137f617c8b9f32d6"
+			"sha256":"098a92e470b889e6719f033ebf67de034c5510d8f47429756197d7617818e05e"
 		},
 		{
 			"method":"GET",
@@ -597,7 +777,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--fcb15101ce15.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"3f4980513707160329361e9ce6ecb5e6b986748823a557d0d9f4de9a155805e8"
+			"sha256":"c94526efb6fa8362a05e5faf2ab005d085d1456ceb45c85ee207ef3a9c923958"
 		},
 		{
 			"method":"GET",
@@ -606,7 +786,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--e3e08d404509.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"52d2c7af939d384ec3a627a79a4cc1b5a50a33e60cf2d85b3c0ab3bd004c9ed9"
+			"sha256":"b5b87085c7e328c780de4f17e3e8bd552919148e7f996662170f0d8c77dc0a08"
 		},
 		{
 			"method":"GET",
@@ -615,7 +795,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--d2a0b9bc51dc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"5aa77f3df9135935ecbd5afffade03dac698ddae6ee25f66815915a7d64e1ceb"
+			"sha256":"54be9e1be637d5f53f9254e201c3352d20f0df8fcccd99dba833be2c549a55de"
 		},
 		{
 			"method":"GET",
@@ -624,16 +804,16 @@
 			"file":"data/streamers_bilibili_990000000101_audience--954b98121065.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"9e650d2210aaa3c500cd291f580a4da4db62f1849ba8c8a188675da7f5d6692c"
+			"sha256":"0bb2be31ce21ca7c73b44781736dd1eb0462f99d49f8a874eb81eebe70c28803"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions",
-			"query":"from=1791842400000&page=1&size=10&to=1792380846369",
-			"file":"data/streamers_bilibili_990000000101_sessions--292147bb9e94.json",
+			"query":"from=1791842400000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000101_sessions--6f71cac31e25.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a2e9fb026f108a85353654cdb916ed8d6a6c0afd7571bee58a97c2c67314159f"
+			"sha256":"1606a25054ca63eab06058d301204ae05310d5dca5c666e1c097186535790e56"
 		},
 		{
 			"method":"GET",
@@ -642,7 +822,7 @@
 			"file":"data/streamers_bilibili_990000000101_insights--89c510a0f287.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"0482ea5b26a19b0bec4ec8d2748aa70c32dd8cb0efd5a3896adb244b128bbc6f"
+			"sha256":"d5ff54832027cf561e3b5dd2386b3aaefab5e34943a96a25a170f807e871002d"
 		},
 		{
 			"method":"GET",
@@ -651,7 +831,7 @@
 			"file":"data/streamers_bilibili_990000000101_calendar--89c510a0f287.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"f3d560cc8e081077aede8b7689f7104c1a2bd49592d3894e29ecbfcc44c2dbef"
+			"sha256":"a152b1f80dfb42fe53b355972595728888aba2c743b19dcbfa11800a142984e7"
 		},
 		{
 			"method":"GET",
@@ -660,16 +840,7 @@
 			"file":"data/streamers_bilibili_990000000101_fans--89c510a0f287.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"d2b7ab670d8c34434c96cc3ba962f3770e456843cf46555a9e35dda75d644409"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/weekly-report",
-			"query":"days=30",
-			"file":"data/streamers_bilibili_990000000101_weekly-report--c22352b6b43e.png",
-			"status":200,
-			"contentType":"image/png",
-			"sha256":"690452aa24e0844c235e6737bd98d44231060af4a04b74d18c8ec05b685c29a5"
+			"sha256":"d91e290fc725d912353de2d96881371cc10b17b5f23473cd06fdf6f04e3141f7"
 		},
 		{
 			"method":"GET",
@@ -678,7 +849,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--89c510a0f287.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c97600d5451963395f962d2088d1e67a7bbad5a5f1cc1b54553db4c4b87b91ef"
+			"sha256":"46efdbb9ea3f41aca51252f7b90ee5ff0f5e309bf6bacc15f533518087d3ca64"
 		},
 		{
 			"method":"GET",
@@ -687,7 +858,7 @@
 			"file":"data/streamers_bilibili_990000000101_trend--488720d248bb.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"7f3bbfc9f5c9b2ec564fa308a28ef41e6948927dc5d93a2bcb2ed95b8dfae0af"
+			"sha256":"c0b29c5a079e79a7a68564a3c9ac2c59868759bbd50a9534a986c134fcd80ce9"
 		},
 		{
 			"method":"GET",
@@ -696,7 +867,7 @@
 			"file":"data/streamers_bilibili_990000000101_trend--28fe592e293a.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"e1ff42d1ca42522f8f30336d7b9d83c5402ec0fe4cd85b25de4c33c667eef145"
+			"sha256":"e0ae909b328985e87c83630dcf5ba4f501adfb6b8105bc426e04667e7021e7fd"
 		},
 		{
 			"method":"GET",
@@ -705,16 +876,16 @@
 			"file":"data/streamers_bilibili_990000000101_trend--ec233e7948ad.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"803bfe3f443b945d40e762a7f5d6337bd737c6ac2fcf7e780024f67301c74fad"
+			"sha256":"307777d9500fc530da39b434d6753941ac12fbf72711a8e3f244ac0aaa43d370"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/audience",
 			"query":"days=30&group=all&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--a759ffeb5cac.json",
+			"file":"data/streamers_bilibili_990000000101_audience--89c510a0f287.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"4fd8180cd857c1adb82de7f24a7e21a1910861e35643c3ab5a6b367ad292a647"
+			"sha256":"46efdbb9ea3f41aca51252f7b90ee5ff0f5e309bf6bacc15f533518087d3ca64"
 		},
 		{
 			"method":"GET",
@@ -723,7 +894,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--2186fd5a68d7.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"4e7eb6b5a2a9ed0169e6ca31528994afd60da341e070dda2be21484c5d0b4a74"
+			"sha256":"c702455ddd9022767e2d273d5ebf1500131a5accf8e021370632c785f9fa46fd"
 		},
 		{
 			"method":"GET",
@@ -732,7 +903,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--b4b5520f4cbd.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"dc73072e59ec5a6cd5dfe808c0abff6e0f9462daaff8ba67d44d8091defecd68"
+			"sha256":"90b3f667e64c9d7f4f19c106aac9d045dae144ca0f7eec37c3b650c575dd2a49"
 		},
 		{
 			"method":"GET",
@@ -741,7 +912,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--dd27da875f59.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"3f23568c7839e0c3e49f9f8b279de68b8c5fc4a827c488530911090dae6c244d"
+			"sha256":"8dc830871f82fa949e522d489d95981927a97385434d5e86337e3534eef86942"
 		},
 		{
 			"method":"GET",
@@ -750,7 +921,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--7d5291ffc17e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"52a3977024668a7b7b4f141ad9cde5b3c051db0dd9d3338c0cddc42902bfcec2"
+			"sha256":"befb54c2b04fc45c24094040a6de05038ea59bc6f83249f0faa66301c2517f75"
 		},
 		{
 			"method":"GET",
@@ -759,7 +930,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--8621eac43221.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"17333c7e5450bf10372a5c5c441bb8f380646054f5b5edf705e8fdf501ff561a"
+			"sha256":"f3710a8dd0ec2b9a3955df5d591baed29e01e349386326d8002623d1b914b859"
 		},
 		{
 			"method":"GET",
@@ -768,7 +939,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--4166bdb72ed9.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"bae5f1a0ec56b8113266ccf7ab2f0e209881558de8dcd3352236532d48bc9b6a"
+			"sha256":"aca3600637ab361e05ae712e1914d410d56e9b84bbfb2c32abef1c54e2a93067"
 		},
 		{
 			"method":"GET",
@@ -777,7 +948,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--6b78454af039.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"500df37a23e176728c98a3bcb0cee7fd0b1b07e61f7c516ae69197a54858845c"
+			"sha256":"60852e069f879c883fbf2cd8495f9a495c755256516a35c3ad3e8e65c1ca49e7"
 		},
 		{
 			"method":"GET",
@@ -786,7 +957,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--88f40acd66c3.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"9d20fff2f442feee30fe6b64d8143b61b7e43f1ebea688b86a912718e3e95a87"
+			"sha256":"d2ef472429498395a6c014694c3a1d99c3d6d7d9dc87a95342e56426aebf4ee5"
 		},
 		{
 			"method":"GET",
@@ -795,7 +966,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--818a31a8f14c.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"0c680098ccc7151a5f8ce926585de26b79f0232974d324070ee922809f28d382"
+			"sha256":"a8916fc6289d2144fc646d68b24f4578de4e2d72566577fc450386194efe8df6"
 		},
 		{
 			"method":"GET",
@@ -804,7 +975,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--81195a4cfb0b.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a05f88115a2050cd793c397a2d9816a6911be5306db1643958f9a07e83d6ab06"
+			"sha256":"4d28f22a14df67eb2d9002cf49d823c59e039cacde783be5acc68cb6c7d1879e"
 		},
 		{
 			"method":"GET",
@@ -813,16 +984,16 @@
 			"file":"data/streamers_bilibili_990000000101_audience--e7138f3d57dc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"3f6c45950e2f519c0e8261bec7017a3f1e9f736f33eb7d12f199cdaf7a288b08"
+			"sha256":"e41bd3ea779bcc0086e179c7360d60d23db0d7a1ea6fc39e5ce0c3f6128489d9"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions",
-			"query":"from=1789855200000&page=1&size=10&to=1792380852862",
-			"file":"data/streamers_bilibili_990000000101_sessions--df4b4a0e0aa6.json",
+			"query":"from=1789855200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000101_sessions--7dfb2712f70e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"3f0a0b04fa6b21a2a5887ce8adfd0c80e912816a73e677033969505c9e907d98"
+			"sha256":"a10300609995bff616d8c433786354971ca434987fa13cc2c90c53579ff8b8f6"
 		},
 		{
 			"method":"GET",
@@ -831,7 +1002,7 @@
 			"file":"data/streamers_bilibili_990000000101_insights--f0de2c151c49.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"3d6ae8bea6ee88f239e61117c200a66f2518f15df0f925da046fd9535349cf2a"
+			"sha256":"2400662e285af4044bdea9d0625165eedc0655c6cec431be0eb15e456f316fd6"
 		},
 		{
 			"method":"GET",
@@ -840,7 +1011,7 @@
 			"file":"data/streamers_bilibili_990000000101_calendar--f0de2c151c49.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"9f9578e936c442262e31474f63e5fe67e11aaac0b97d9d4a9fd7584db40d4d67"
+			"sha256":"6e111be26d11dc9c0a6e1d2a2e0339a87abbe649c8fade29601f0e180b597bb0"
 		},
 		{
 			"method":"GET",
@@ -849,16 +1020,7 @@
 			"file":"data/streamers_bilibili_990000000101_fans--f0de2c151c49.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"bbb246eea2009517d54c92dec491f931c600e1f5ef8594d3488fa5225ec9c672"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/weekly-report",
-			"query":"days=90",
-			"file":"data/streamers_bilibili_990000000101_weekly-report--c22352b6b43e.png",
-			"status":200,
-			"contentType":"image/png",
-			"sha256":"690452aa24e0844c235e6737bd98d44231060af4a04b74d18c8ec05b685c29a5"
+			"sha256":"a73a959c03bb6b96b1a49f68a0e7fd1613a5727094d6d739c52145d69da1c385"
 		},
 		{
 			"method":"GET",
@@ -867,7 +1029,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--f0de2c151c49.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"e309ec6e4eabb7e3eade3ce73e6e566dadf3f46140341edbd1fd717ab42a00fc"
+			"sha256":"6e91da209d6da4f3f5b32f2d1ecdcce4e6a3c06e14244ee892ba8fc3a42ed1d6"
 		},
 		{
 			"method":"GET",
@@ -876,7 +1038,7 @@
 			"file":"data/streamers_bilibili_990000000101_trend--0a2423ab2f04.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"59adcb3568772849a6779ba9c8b43fc78057711164d4b98eba919557c329c556"
+			"sha256":"2843336ad2c02b420c5eabe523b5953c1cbc9580c47971223fe5513623c8670a"
 		},
 		{
 			"method":"GET",
@@ -885,7 +1047,7 @@
 			"file":"data/streamers_bilibili_990000000101_trend--0e33cf4a81a4.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"cb3a6e8778cc506d497ade2aade65d2bc25c5feee362fe650ff3976ae7281181"
+			"sha256":"9f829461576f8adf32f8fc5827a955ab0bc654d4e0435184e76be9340457fd03"
 		},
 		{
 			"method":"GET",
@@ -894,16 +1056,16 @@
 			"file":"data/streamers_bilibili_990000000101_trend--ab45f0e1d620.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"132d6bf648062bfcae2ff1d24e94941c0c51d79dd00cce2b5c30692e643538a4"
+			"sha256":"bff2924219cf19009827acaa02f8d646dd190d5258b7835fea4301fec59a6117"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/audience",
 			"query":"days=90&group=all&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--720d932976a6.json",
+			"file":"data/streamers_bilibili_990000000101_audience--f0de2c151c49.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"6000cdbaedcb6e4bfb0bf349cdcbfcc0819a686c4cd39ab7ac9efa5254f2d183"
+			"sha256":"6e91da209d6da4f3f5b32f2d1ecdcce4e6a3c06e14244ee892ba8fc3a42ed1d6"
 		},
 		{
 			"method":"GET",
@@ -912,7 +1074,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--995f7420e013.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"fe0047c449a028a2375537466df1d19eab3b174d66149e7465a886f1bfc96de2"
+			"sha256":"70053d3b91bfd72908239767fc84cfcc081dc2d324cde7d8d91b47b1d91ceb57"
 		},
 		{
 			"method":"GET",
@@ -921,7 +1083,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--83bd3a365f5f.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"4016c3c5abc7f7b58b37e3de716b28f2345dcc1e29d9cc0d51ccb91cb3074234"
+			"sha256":"e686bc23f67ed5973fc0b3085e62bd81129e49de3ad61d889151c7b69d88c215"
 		},
 		{
 			"method":"GET",
@@ -930,7 +1092,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--c786054e854a.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"5ca01a8fd6df1fc549b44d79d909393fd16388cd02abd1ca3c2078f77d514ac3"
+			"sha256":"dc6b0af79cc85d843429f6ef7e7b2f269dd9630a6627ba41d55ba9d6f141fa85"
 		},
 		{
 			"method":"GET",
@@ -939,7 +1101,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--7b1a111afb4c.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"39f6c270bb980805933673e5a9ce77bbe9b69cb9092f8dd95c364fc013d5c505"
+			"sha256":"a113b7cd712c345601cdaa04e4036489061dacfda5498c127b6670c7e05e03d7"
 		},
 		{
 			"method":"GET",
@@ -948,7 +1110,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--5bc39b778a19.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"16e1804b56bec095b335420a290982da7e78f9b80af76a356f6e57b0d2804057"
+			"sha256":"b78026c7204539a259f6fa3fc8d7202cfca28142dc65318c4f9b637bb54a1d02"
 		},
 		{
 			"method":"GET",
@@ -957,7 +1119,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--2f29b599ea21.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"1a6a1fb679e697b240509389dbd2994722216290c703bbe7794f409e2f216da8"
+			"sha256":"bb209a5f080f217dcdf422e5adbbca5e35cf5aaa922db421994a988ca42be0a5"
 		},
 		{
 			"method":"GET",
@@ -966,7 +1128,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--e4935cecc133.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"b44637774acca13e9f2fbb3d4493380092478549915a9c5cb6a8d92fee415228"
+			"sha256":"84d5e06df417077eaffb7132a5894e1d249f795b4418a61c6be665329c260d25"
 		},
 		{
 			"method":"GET",
@@ -975,7 +1137,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--d92fe3b3fb2b.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"d70ff7f65c55819bb52f657e09b68a187c70ad2734b1c9e15f67fbad40579cfb"
+			"sha256":"d57ba6de9eca7ab4461937820a613716fa8cbd7b87233fb444884f92de224afc"
 		},
 		{
 			"method":"GET",
@@ -984,7 +1146,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--ef9d193c26b4.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c9125350ff4f42fe67078bd5666c9b3e4adf89d9d6f8f2e55454f46ce58c55c7"
+			"sha256":"966b06812f4c08f1371d1bf7c128cea46fd2b95bd0fc26e6060ea84241721188"
 		},
 		{
 			"method":"GET",
@@ -993,7 +1155,7 @@
 			"file":"data/streamers_bilibili_990000000101_audience--c774a445c91e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"fcc9e8589f4098a466021485a44af2694c0bd8f3fdb4f1a4d845a51867ba29f3"
+			"sha256":"3028487ab4af4d0e794d08375ad1002973fe4801b94df4e716af68f9eb75e257"
 		},
 		{
 			"method":"GET",
@@ -1002,394 +1164,16 @@
 			"file":"data/streamers_bilibili_990000000101_audience--47f7c5e6e69e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"90f33efe7b6b0b8f77c28715cc48c14f16e797e0976d3de177b643bdd41ec1db"
+			"sha256":"abf6f4b89aa57e182f0f932526c9d830b908a0c784e31f0379b7c9a1021a03df"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions",
-			"query":"from=1784671200000&page=1&size=10&to=1792380859291",
-			"file":"data/streamers_bilibili_990000000101_sessions--d2c1a4e48ac2.json",
+			"query":"from=1784671200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000101_sessions--d7b4f0371d34.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"ca35f7e31a5656baaee47f67ed5106e1f1a461c4935b2ee2955611e06b2763af"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/insights",
-			"query":"days=180",
-			"file":"data/streamers_bilibili_990000000101_insights--e76f5f929ba5.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"478f3d4226ffdb582178b1e20124e15e8ab4da12b0ae62a73d2c1db37652cd0f"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/calendar",
-			"query":"days=180",
-			"file":"data/streamers_bilibili_990000000101_calendar--e76f5f929ba5.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"0e755459d7dfd27d13910f6a860390d43df6067f86b16a715ef24a1bb3c29921"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/fans",
-			"query":"days=180",
-			"file":"data/streamers_bilibili_990000000101_fans--e76f5f929ba5.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"79f5ecc063f3042edef0626060d143e7028e5a01f186dcb1dd6b4abe103c1e7b"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/weekly-report",
-			"query":"days=180",
-			"file":"data/streamers_bilibili_990000000101_weekly-report--c22352b6b43e.png",
-			"status":200,
-			"contentType":"image/png",
-			"sha256":"690452aa24e0844c235e6737bd98d44231060af4a04b74d18c8ec05b685c29a5"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180",
-			"file":"data/streamers_bilibili_990000000101_audience--e76f5f929ba5.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"d055016a454561c91437eb1a653254ce38c28ac10baaa0eb68ec30cb79324660"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/trend",
-			"query":"days=180&period=day",
-			"file":"data/streamers_bilibili_990000000101_trend--e1e11938dfce.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"a9cd978f0d2f3249c3d92d4fde577b123069ce45029ddb64d55a6e1bf8ec1741"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/trend",
-			"query":"days=180&period=week",
-			"file":"data/streamers_bilibili_990000000101_trend--53effd7e6302.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"c1fdb842560bc7d3d1a6d4af636b6497bd46d94571ee3bd8ee0b0cb180ebebde"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/trend",
-			"query":"days=180&period=month",
-			"file":"data/streamers_bilibili_990000000101_trend--3795083544d0.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"bf9b1ac6c1a16f4ead84fd099dbb0e21e805b81a9856e9b7094db09cea333fc5"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=all&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--8d46805c0a39.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"f0d3b50e51678e0599be24da81466e4ba92fe4565d7017c03c28dede0b6e9a0b"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=all&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--8a32e989026c.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"38ce21d18a8414112fe40fa17d4c9458cbc83be4f6a8a4350315f0f2d85474ca"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=all&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--544def33303d.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"e3bae3f6a0b20b2c9e187abcc5fbfa1cf1a273e41ea0abc84c754af58ce0be69"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=first&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--0dce2e014df3.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"4280a4eaa8d3f02e65aa62141d4a199fdc78537990100290d4db3761521086e4"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=first&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--9b55479f49a6.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"40bdc5dd0f47bd8436bc7357a7247dfed0520b4982dd415d6dea2ce3ad984f41"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=first&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--b34f59b82dbc.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"0c25c0875d797241ed62f554bdcfd0024de82cfffe6f8d4a809558fdf42723e5"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=returning&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--c047c8a8eea3.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"29a24a908de22047f720a8507d1be92d12e373b565ff63c9efa8ae8ad10a4783"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=returning&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--9dc7c73c1e7c.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"e6e225e5cf639575e28059d720b9742306672650b5d124110f558f9c6f94c1d4"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=returning&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--e08541a72a84.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"6583c92810c07bb23ea26b0fcb002fbd7f5c4d8d71db181096464cd6076272dc"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=interaction&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--b4364085f138.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"38ae98d6fb2736b8ccb9616d54d99baee036fac93457113768d5409b7007c3ab"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=interaction&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--326517c18e97.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"8123c7cf873bbc8d31ad5e8a1516fd10a26f93a11c2369df52f5f2fbded91412"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=180&group=interaction&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--b578f63cbfc4.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"b952d95062130461aeb71305730b865d93cd4ae22540b5d88689e047e1b32e91"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/sessions",
-			"query":"from=1776895200000&page=1&size=10&to=1792380865655",
-			"file":"data/streamers_bilibili_990000000101_sessions--fdf31ea6d3eb.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"cf7436cc9e1f4d8b00be15f55d7d88a6094ff35e142cbcc2313feabbb117e774"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/insights",
-			"query":"days=360",
-			"file":"data/streamers_bilibili_990000000101_insights--019e6bef46f6.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"a725e45b9ae2d0401041f187ec62f2259708e119ddb00d722e9418db5681c885"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/calendar",
-			"query":"days=360",
-			"file":"data/streamers_bilibili_990000000101_calendar--019e6bef46f6.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"a36c4bf066f69246a677c27ef49043cfd5014f1c8d54027d5b3d88117ee08637"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/fans",
-			"query":"days=360",
-			"file":"data/streamers_bilibili_990000000101_fans--019e6bef46f6.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"82bb16d181e45195c33a01fdc6c0e73e0078ce665b8380cce6dd1c693bb2e1f1"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/weekly-report",
-			"query":"days=360",
-			"file":"data/streamers_bilibili_990000000101_weekly-report--c22352b6b43e.png",
-			"status":200,
-			"contentType":"image/png",
-			"sha256":"690452aa24e0844c235e6737bd98d44231060af4a04b74d18c8ec05b685c29a5"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360",
-			"file":"data/streamers_bilibili_990000000101_audience--019e6bef46f6.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"76f450cfeb68e97905b5ded973ddfe8201007691bfcb3f92a195a7dbecd10f60"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/trend",
-			"query":"days=360&period=day",
-			"file":"data/streamers_bilibili_990000000101_trend--1689136c1111.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"34cc0c1aadfe9c40bfcfdb504a42345f135b419445736d67526ad08d3e284b85"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/trend",
-			"query":"days=360&period=week",
-			"file":"data/streamers_bilibili_990000000101_trend--17b9af3e3703.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"160695ea4acb8a62f4d443d7b91ae2fc9dc6c5a926ca30013d164baf382d6a16"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/trend",
-			"query":"days=360&period=month",
-			"file":"data/streamers_bilibili_990000000101_trend--6b75a7ed495c.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"509da70d50dd4e151caf6348e4a9c730ddd2c9d1b98f8a46eb509874b46d2d97"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=all&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--6668f4b282cd.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"9de7bd5e2c82788ea0b3fba159ab85e3eddf849461646dbc48eece73a9161eed"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=all&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--875b1d22ff74.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"1d44f51c85d05e0d2167351254c996196e49d3e09463a3966551ef7e4ac97586"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=all&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--a88bab6d0af9.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"a57104f0d8e746d0947fa2c3da1bd82a9df6a8d675534dbaf1732ae549295c3c"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=first&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--018f3643768b.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"cd7702a2f4c28d9c34775366032902827dfb752eb91ffd46e1f8212281dea218"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=first&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--9bd22f7428c3.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"bc5f15a7b6c382e918aa34f49c033157be3814468facea36e01a674935af2391"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=first&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--7cc15e97e1e9.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"037b017b4b18df011ff4c3d0ed7e9706b9fb5064b906f72eb1a7763437c2585a"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=returning&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--6cb16b34dea4.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"fed56fd141f5799227858eaea1dade69f6835310c1f051724237e408ea5078e7"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=returning&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--c6b0c5799c8a.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"80b900fcb3c2acbd29f7b8affcc00443e1a6fd46d890612c4b986b7dee676b5c"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=returning&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--a9c9645d561d.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"2e314a255fdfbd8212d63270b7fd885b32454e3966550c4ca152f3623fc230e9"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=interaction&page=1&sort=attendance",
-			"file":"data/streamers_bilibili_990000000101_audience--6b6073e83420.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"4ed3d14c48edfa55c30745c47939fd6561ab32e3e957450c44b95373674042e3"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=interaction&page=1&sort=revenue",
-			"file":"data/streamers_bilibili_990000000101_audience--251d7649b250.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"af8f807d0e2c379aa917c1643fc0d893fe38898c365b144c74ec5f5b3d6728b2"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/audience",
-			"query":"days=360&group=interaction&page=1&sort=recent",
-			"file":"data/streamers_bilibili_990000000101_audience--d5067e6bd33f.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"88406b2ff404657610671f19b705b8892d77dc2b450190bf1bd2bb49c71c1470"
-		},
-		{
-			"method":"GET",
-			"path":"/config/api/streamers/bilibili/990000000101/sessions",
-			"query":"from=1761343200000&page=1&size=10&to=1792380872072",
-			"file":"data/streamers_bilibili_990000000101_sessions--fdf31ea6d3eb.json",
-			"status":200,
-			"contentType":"application/json",
-			"sha256":"cf7436cc9e1f4d8b00be15f55d7d88a6094ff35e142cbcc2313feabbb117e774"
+			"sha256":"c9ea159631ee4abaf88592be357f59083c6aadcf9f80829d94080e2961db56a2"
 		},
 		{
 			"method":"GET",
@@ -1398,7 +1182,7 @@
 			"file":"data/streamers_bilibili_990000000101_start-slots--f0de2c151c49.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"1f754b8aef92bbd702dee3c6aaec62d794cc8da154ee663526017ecdac39dbd9"
+			"sha256":"177afcea1bae092f26215307637f0dd56f4941597906cb15155e7961365b9740"
 		},
 		{
 			"method":"GET",
@@ -1407,7 +1191,7 @@
 			"file":"data/streamers_bilibili_990000000101_start-slots--e76f5f929ba5.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"69e10d9ca4078828810e8381c91ee6563f457f32399f56f614c0fe3dd087c7bb"
+			"sha256":"967b808bfe866f6c4201f59419255f41ccd2100c02afa81d5e9ac6d0af4fcfca"
 		},
 		{
 			"method":"GET",
@@ -1416,16 +1200,16 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--e3b0c44298fc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"9044d737678227a50ec8365cd6f7674e2f219b7080b7276c502b4ae3e73b9f82"
+			"sha256":"2116996214630a179ee56c8c8efdf58cd4d76ea8bf5dc5dd444f634de6f85133"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions",
 			"query":"page=1&size=10",
-			"file":"data/streamers_bilibili_990000000101_sessions--fdf31ea6d3eb.json",
+			"file":"data/streamers_bilibili_990000000101_sessions--dffc439d1df3.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"cf7436cc9e1f4d8b00be15f55d7d88a6094ff35e142cbcc2313feabbb117e774"
+			"sha256":"df96b68d54e0e045a460b49dc7f2821e25a119f8cf67bfcbcd5732023108295d"
 		},
 		{
 			"method":"GET",
@@ -1434,7 +1218,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--4b8907609b8b.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"cfc415b573f5d8f55a97fbd2ed77b90c3465202a3fac0ad571149b7d124c62f5"
+			"sha256":"ea6e0a71c9c79e9568718133612359364993ef56f287d01ee5cfe1ecdb97e844"
 		},
 		{
 			"method":"GET",
@@ -1452,7 +1236,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--57aec9367cb3.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c79767eba31c109a6e8ac2e0772049186ba8d00ee9e9b3af1490363640f52895"
+			"sha256":"b40471e07969a9e2f1e53e85e4eb44354bbb71e1b5dd5bc4e002c49c24c3c8d7"
 		},
 		{
 			"method":"GET",
@@ -1470,7 +1254,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--10cbad4cc244.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"848979ea7944478d1873843cb6e76078f79abecd9be14736f53f59b0d50c6d45"
+			"sha256":"c4c71f3e71643ce18d3185f77f200ac2d8f0812381b02d93c4b69c0b01a93688"
 		},
 		{
 			"method":"GET",
@@ -1488,7 +1272,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--656b716afdfc.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"c0fbf8c4b13b3b2fc00c5f7bfce2f4ee0102966161e78ec71f7dd7aea86334b2"
+			"sha256":"94eaa49b5c090778b7d3259060a06b96dd51df6ddebf65a2b0a89a7a09088683"
 		},
 		{
 			"method":"GET",
@@ -1506,7 +1290,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--2e420b1d9476.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"d59994bb1537192d36d2efd19f7c40827d3f044204320ce64ae1c7e53e2d87cd"
+			"sha256":"7ea55ff76128ec9fc2f39aa60b263875788d7f5c31d7b402bc259317711e662b"
 		},
 		{
 			"method":"GET",
@@ -1524,7 +1308,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--0d291a7f4306.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"dfb5a87b3d15e9bada1ef02688a9bf0c77bd126e3651f5f953971a94230cfbb0"
+			"sha256":"e3ed107e301d8dcef38b8dd5eb98035995f9139bedeea7cb207ca02776cfb8bb"
 		},
 		{
 			"method":"GET",
@@ -1542,7 +1326,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--e759450dc393.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"13c2485c8a0505ade5adefec7ba5731a65f0f8d61e5b94cea622512af07b3434"
+			"sha256":"c607ac36509a0897e808767703dfb3eeebed3c9691c18a689153f69da7919062"
 		},
 		{
 			"method":"GET",
@@ -1560,7 +1344,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--582f859b5e99.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"562b42431b88e311090845715e74b0e94fdc9e70fbeecea633e167d86db9e6a9"
+			"sha256":"a28d386e40bbfbdcba84de2b033def21a9b75dc5813e75a0a095327f374c9720"
 		},
 		{
 			"method":"GET",
@@ -1578,7 +1362,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--45f7b5b4674d.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"67cffdd8aa32cfa2375b418f6628a6816ad4778d3fd0895c17dab4518c15e766"
+			"sha256":"7f9ebbf0389980712dcdc6de2bb9de6f6bd68f4b2c3a21105088c1ccaf3ef88d"
 		},
 		{
 			"method":"GET",
@@ -1596,7 +1380,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--c96d757f386c.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"0ad546a942387860861354810b4adeecd92311d7ef9dafdbc16e8cb20ee59481"
+			"sha256":"6f34a64298ac1c62ae20f19cff5137aa32cec7de6d87dea6a5bbe0472fe03484"
 		},
 		{
 			"method":"GET",
@@ -1614,7 +1398,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--6309e55bb3e2.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"5adbf413cf3b56bc59bd9260856336dc3813468092a3d388a49c39642d84159e"
+			"sha256":"6a4a7f5a8d22e41bf9e053df6b5b5eeb44da4597480c2843a1c8a123e2bfccf9"
 		},
 		{
 			"method":"GET",
@@ -1632,7 +1416,7 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--ef98cb683f3e.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"bad896cea6a652069f1d45a147f4bab215c2ad987e33aed4d18092e828bb065c"
+			"sha256":"63e6d481b1374cb0c17dcbbb8ea8496a4155a765abc8ef35e51ce20d20b76da9"
 		},
 		{
 			"method":"GET",
@@ -1650,16 +1434,16 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--ef37b2f879a7.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"765af9921539278532eb243237686e0af851e8edcc9793f7aac6b323c0ba0abb"
+			"sha256":"f85287580c545c41e08d1b56556c08d21d8756361cc6a8c470cb578889cd1122"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1791633900000/report",
 			"query":"",
-			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
-			"status":404,
-			"contentType":"application/json",
-			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+			"file":"data/streamers_bilibili_990000000101_sessions_1791633900000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"6cf58957c07f2dc9b004c68a4daf93e8ec2a670c4a4a69d7417a5dfe3928aa2e"
 		},
 		{
 			"method":"GET",
@@ -1668,25 +1452,43 @@
 			"file":"data/streamers_bilibili_990000000101_sessions--e700ee3ef1a0.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"2785a2ec8aa74932cc16e2a235a357e39a5a75d3b1a88210424bdc4dedcc813a"
+			"sha256":"141d9252f8c83fb40af763ca633a830014e9914a4c23e9f3c73696a0f3d347ea"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792151700000/report",
 			"query":"",
-			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
-			"status":404,
-			"contentType":"application/json",
-			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+			"file":"data/streamers_bilibili_990000000101_sessions_1792151700000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"6774718ad60761d77861634a92cc25e4393c81b79b6242a1c37e124f53d05968"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions",
 			"query":"page=1&size=10&starts=1792151700000",
-			"file":"data/streamers_bilibili_990000000101_sessions--292147bb9e94.json",
+			"file":"data/streamers_bilibili_990000000101_sessions--e4c6e545f133.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"a2e9fb026f108a85353654cdb916ed8d6a6c0afd7571bee58a97c2c67314159f"
+			"sha256":"f692b7b2cc3b5e4c8697da8c4d21b7e38eb85e2c9f02a26f7d44027da7ae421a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792379400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1792379400000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"bb104a465ac50269cb5ce8558b7beac2ade3f0ef66d4184b7c8fc816aa289573"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000101/sessions",
+			"query":"page=1&size=10&starts=1792379400000",
+			"file":"data/streamers_bilibili_990000000101_sessions--cceaa2c8480c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"54915be003a5976eab95c0e286e480890f0bd7f7592679be248edae9ab752140"
 		},
 		{
 			"method":"GET",
@@ -1695,25 +1497,3112 @@
 			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"9d1ca72672d69a2b5112c9b8c5bfaea4cd2f9af5f43f38b7772aa068cc8d474c"
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000101/preview",
 			"query":"num=990000000301&pushPlatform=qq-onebot&type=1",
-			"file":"data/streamers_bilibili_990000000101_weekly-report--c22352b6b43e.png",
+			"file":"data/weekly-report_bilibili_990000000101_preview--03ba20991e55.png",
 			"status":200,
 			"contentType":"image/png",
-			"sha256":"690452aa24e0844c235e6737bd98d44231060af4a04b74d18c8ec05b685c29a5"
+			"sha256":"4e43022bd7a145ade4d46c543793d299f917ff35a3677725f76201b3c4ea4b00"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000101/status",
+			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
 		},
 		{
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000101/preview",
-			"query":"format=json&num=990000000301&pushPlatform=qq-onebot&type=1",
-			"file":"data/weekly-report_bilibili_990000000101_preview--783209558560.json",
+			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_preview--03ba20991e55.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"4e43022bd7a145ade4d46c543793d299f917ff35a3677725f76201b3c4ea4b00"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000101/status",
+			"query":"num=990000000502&pushPlatform=qq-onebot&type=0",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
 			"status":200,
 			"contentType":"application/json",
-			"sha256":"2da14db485bbca4430d46ae9fb10567c383af86a1aa5d0dbf69dcea074b81f0a"
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000101/preview",
+			"query":"num=990000000502&pushPlatform=qq-onebot&type=0",
+			"file":"data/weekly-report_bilibili_990000000101_preview--3e698b80a7d9.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"a5f42ba40f83866cee04fe5b3be885daa7e16649b4cd5cb4382bb6e4657073c3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamer/name",
+			"query":"platform=bilibili&uid=990000000102",
+			"file":"data/streamer_name--7e568f4ad9d0.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e80fa153564079c7c8afd79a01854f58d9006b05aa2fa873325287094655bb95"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000102--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"565612658c1131b58f5ca7afd0e0996e051ba4cbdf388f1c7a4a6f8f2dc85c34"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/live",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000102_live--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7b7e86b289e143620663dc4593c025f174317a8838db8cd0c6e3dcefa2c001b0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/live",
+			"query":"series=online_count",
+			"file":"data/streamers_bilibili_990000000102_live--5e20260f1473.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cff9aeacff4b187d34797a482e54ad04e8808c7b879a4d7016ed8aed793b3c23"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/insights",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000102_insights--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"1f8caf2f4abf2acf92b927debfece5b7764717b776a9d1a81b0aa33fe1d19f79"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/calendar",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000102_calendar--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4c956b8b24eeda32ad6bbe599fc5675bd873894fb333dfe51ab99a8e49e947b0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/fans",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000102_fans--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3207c7ca1820a76eb9555423b793484a761d68a3c25fc229cfc849688406af97"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000102_audience--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"66687dca0aad7957a3967dabb1ed7bae122a9a1562b7c07bee55bd02c39b9e09"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=7&period=day",
+			"file":"data/streamers_bilibili_990000000102_trend--16d91957b38d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5c1cbb9df4f2a9f7426f46adb0bde092b86aebb6a55e670c09368a7852cdd439"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=7&period=week",
+			"file":"data/streamers_bilibili_990000000102_trend--50b811fe9ac5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e229549c443f4d905b1a8db5a228fa2629390b0d9f7445ed52c87cd4eeea8759"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=7&period=month",
+			"file":"data/streamers_bilibili_990000000102_trend--50f670db40c8.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e0a6c38242a4125eff7f417ebc5152600b0d0eff9e699738b9c890feba418b84"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"66687dca0aad7957a3967dabb1ed7bae122a9a1562b7c07bee55bd02c39b9e09"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--d9fa8c15e1ec.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c70886c4c10918f013c963ceeaef9c0c86cd2e078126e845125c1b1476491c2f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--6f3b79a4379d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"57870681a5c661dbef5ab04df889fde432b6614d39d5b9bf4183007a61958baa"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000101_audience--87363cc48de6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"92bc4b13838154d4fa98469c22227740050105ce4119607d3644b77534ad908e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000101_audience--f6cd8c60d79c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"76562f279cf0c683536df3ffe2b5ac1cb9624d90a3df7860e4eeaad5d8a8eefc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000101_audience--c829f4bd625d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ad7e1985a94d6fbc5dbe80da094f265cf1bd494abc9846b97de6c53d91c70ab3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--05a8746eab22.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0c6b3306b371dbbeb6dc6204f9638f8c013823cc018331d2a1248ca3b117ad5f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--b22670d06bba.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b658e11ea5b9dfd74711629e20a84d627c7d8768607635bbc7f0b20b52a9239b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--fcb15101ce15.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"53baa6edd710d406b9cd27d14d6b00326529c6e4d7867c8959c16eb26792ac09"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--e3e08d404509.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"088d5ee15fcd21c0d881ea87239d0462ebb0ef31c23c3c07bdafff554bc90bb1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--d2a0b9bc51dc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3a9c6c442c6c2f00749167c4b8dfbc5002348947d64e4e3764bebcb9afd2b9cc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=7&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--954b98121065.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e26401cf64c8ca93cfc660e729859c68345a904758d48822b127d35024655f0e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"from=1791842400000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--6f71cac31e25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"00c72259e7db81f2afca37510814b077e488c9387271271ee39dc5f02fdd5579"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/insights",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000102_insights--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5b2f3cd77fc905c11aa2263a367c98d4699b86e5670b71a64a2e2b9227888e54"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/calendar",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000102_calendar--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"70388daa171da60fc783004111580590b658d2ba4f9f05c38d6e0584d2bc073e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/fans",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000102_fans--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"01150f9d5b343a3baa1860f9867ab634641b1b5128d18d845abc96f66aea808c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000102_audience--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"2fc751cff3d3ab7d5ed618e02d72b6821c4556b30ee2bedfb12f3afebfbebcc9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=30&period=day",
+			"file":"data/streamers_bilibili_990000000102_trend--488720d248bb.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cc26319f1693c0075361eabae4c69efe26350fce3abf8b140000d8b88e7ae098"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=30&period=week",
+			"file":"data/streamers_bilibili_990000000102_trend--28fe592e293a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e4ca2a5c3d3123fd8a7c9023dcf563e03b20b76c1d32eefc1577e78b41cfbe98"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=30&period=month",
+			"file":"data/streamers_bilibili_990000000102_trend--ec233e7948ad.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"9a67d979c64d909b8903a0b520c0aff68c6b94b2f48ab29afaf5baafb874bbbe"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"2fc751cff3d3ab7d5ed618e02d72b6821c4556b30ee2bedfb12f3afebfbebcc9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--2186fd5a68d7.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e9b7b2eb2991622c88348f51d0f4bfadef0315146135c448a3b2add681c3e5c0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--b4b5520f4cbd.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6c665dbe51e7eec3b92bb97cec7f4c9d8bde4aa181d59385626da7cc6ea9b913"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--dd27da875f59.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f1c50ff9dfb8da0d34dfd3339702304f1d25b7ddf537b49c1aaba91029b7f57b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--7d5291ffc17e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5df40b55cc9fdd3eee6a718c1cfa6056963cc5679acc8331cfee8fae844b58e4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--8621eac43221.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"29c8658b0306b8cba3a53275d3525f3c37d16e4e12f9d752c6a1b977435814ea"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--4166bdb72ed9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0bb5d1a4152abaac313db8a61d70b86752c6898dc4449ff7b91cedddcd4251cd"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--6b78454af039.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"db4367e0c1471663510c21fe079bb2a05883ff6765cf68312f49713c89b2ad99"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--88f40acd66c3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"16a893f7f937a01abe16ac4bf09b8e5a793becf66399d86b5ead23e9dde24a2c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--818a31a8f14c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5a2f3856628af8f5136dcd1216997c6c7df73b686d9a0fcc20ffc507bbf2fcd3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--81195a4cfb0b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"dad2026cf40f36e942ad46ae0384fb6dd6d48d13828f2da1cb69fcb8bb8f74a3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=30&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--e7138f3d57dc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c4ca420a67f2eb5c220a95d32daa78370e819b7c26f536e7e4d48a54796e2ddb"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"from=1789855200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--7dfb2712f70e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5b217c6cd1692ae24d3548dc7bce9edd93c0647c14ad0b8f17cef1936a20989a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/insights",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000102_insights--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cfd345e6ce201e63894e40990941c30e96e5f612808ac6256a6592b7e48dc043"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/calendar",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000102_calendar--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8ba32d9540697b4dccc8d7e23fa4fa9b4258335ca301cd5dcc232b3f758ba675"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/fans",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000102_fans--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"23e5bbdaa7421a4df8c03bf9a271ab73186f0e633f91dd21232f8fc641e432ed"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000102_audience--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"793e8eabb8d9bcf1339e70c78bbd3c6c01edf9b2f723d36feac8777ce6378ded"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=90&period=day",
+			"file":"data/streamers_bilibili_990000000102_trend--0a2423ab2f04.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d67a577ccc2bd365003f34598a32588153284db59d8f9590bd04aca22e781ced"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=90&period=week",
+			"file":"data/streamers_bilibili_990000000102_trend--0e33cf4a81a4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"69d5a5d1f99816ad461e75e9b60fb35ff498fa4b34ea4b86a812197040c910b1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=90&period=month",
+			"file":"data/streamers_bilibili_990000000102_trend--ab45f0e1d620.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8f94861b65233435e56087a9c733b98235ca713b7ec1f5aaac0d0c4c000ffb26"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"793e8eabb8d9bcf1339e70c78bbd3c6c01edf9b2f723d36feac8777ce6378ded"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--995f7420e013.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7a74fe56d0833c05ab85f3791a2e95fbfee8808ba8bc38d2b5bf869b60afb64d"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--83bd3a365f5f.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7bb638e33be693335be959399a03e23d551bdfe5ce2e6986fb6d502ff9a5493c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--c786054e854a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"19d5f093819046e6909727f75a99544ef7bab7b2912dd611bef6a4e1f14c1c52"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--7b1a111afb4c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5b646859308f24b217fa2b9fda111ed220d6f5919a28a0133fdbfdc60e992554"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--5bc39b778a19.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e97c9824c3be8bbc610f986d545d09919356d7636855c75782ced0d5c194616a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--2f29b599ea21.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"245e135dade17ba4c908800e261d8d3399c78473f7992ea5ea022cd343436f9a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--e4935cecc133.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5389b35b05d6e4bbc3c9dd0e52dc3bbc18984b7112fbe97ae40eb915f961aa69"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--d92fe3b3fb2b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7bed33ab1b442b6947dee47b9315b0b0d20382e7258556380a1001c749ad6f84"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--ef9d193c26b4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f0a5bebaa8b6ef613caf212c8e9b085a814a291483ddcf2ff1dace34a322abb3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--c774a445c91e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"93978a6c20cfd1e6939d02aff24c30fbf37f330b2bd95faa73f214c91edca0ba"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=90&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--47f7c5e6e69e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f21cf78268d0c7074a797694f30e12957511d67f2244a31ecd53438bf6990b42"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"from=1784671200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--d7b4f0371d34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8939689adcc5a4681200717c11217eb6aa94781b72e244f32767afdaa844a091"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/insights",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000102_insights--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0452c432f2593371a19fb02c77d8b8917c5ca602d4dead8ebcd01a86c94df1b2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/calendar",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000102_calendar--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3885562bc5648fd9353777f79dfc7f3753db548c2ea88b4342724553e7a16b90"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/fans",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000102_fans--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"017e232b1a85a9f8bd338e7bde22d0a228f1f98de90282623d40dfd1ebd3d5fc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000102_audience--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"1495ebed0a63a71e65b1ec9f39d6ccccad1bca9f2ce9044c5af4731ee6f8f54f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=180&period=day",
+			"file":"data/streamers_bilibili_990000000102_trend--e1e11938dfce.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c615ca7d869fd93c372aa3b9e3268dfa08608d9fa06768b35236fd47dc98aa40"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=180&period=week",
+			"file":"data/streamers_bilibili_990000000102_trend--53effd7e6302.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d887830360a85fd063d0b07e0d78e3b570dd70f5b822e5332a7ca45697b9bef5"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=180&period=month",
+			"file":"data/streamers_bilibili_990000000102_trend--3795083544d0.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6c0806365d65b62eda018695eec0d46ff76d4d3e81d479458d6fa07037176f9f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"1495ebed0a63a71e65b1ec9f39d6ccccad1bca9f2ce9044c5af4731ee6f8f54f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--8a32e989026c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"db33fe54e6f376f1427ea92b1c03772fce14a96eda5b8f56fd2324c3a37dac35"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--544def33303d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"dda38d21c359fff78e9672dc58fc62ac249b4c21e25825fe72ceb79a4cc3040e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--0dce2e014df3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f34f821bc9d7253d65c139babdc51fd5161e927cf425b35261d5e0670a1a9c48"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--9b55479f49a6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a43f7b57fea94f55e7ff6c3aade3e6ab463a98e59aba1589c5cc66651c36690a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--b34f59b82dbc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c6f201f0d9b52c3a1f88c37155cbea47202eac59ab90239a3089160a053c52ed"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--c047c8a8eea3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"789d34b03a91fef956ed427794b5cd4e59ec656d59889689e68d4208a66336f9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--9dc7c73c1e7c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f72e9a1ec1e647fb6a26c600a718fb10ec1487cbd5489d63a6809e787f64b985"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--e08541a72a84.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e0f5f52a09dac893948bedd2a7dcc643660bfee2fa4229852a071dd023fdb249"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--b4364085f138.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7a8e3c1f81e3dc6d4836cb0324f6f40d9b2c05aa7df1996752ab4812efe764f9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--326517c18e97.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ea662f49d44f86ec286f44d35b4d679c9f05c60175158443a5e8ffbf8dfebfb3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=180&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--b578f63cbfc4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"05fa9a082cfa5de6e51a9b53f742421c87f10178f9f6c10124f5b7faeb4687cb"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"from=1776895200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--d7b4f0371d34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8939689adcc5a4681200717c11217eb6aa94781b72e244f32767afdaa844a091"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/insights",
+			"query":"days=360",
+			"file":"data/streamers_bilibili_990000000102_insights--019e6bef46f6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c66e441f1907b7fd9b5778172c303e3a1756ca566865aba87b82bd2410b7b4d3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/calendar",
+			"query":"days=360",
+			"file":"data/streamers_bilibili_990000000102_calendar--019e6bef46f6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"50cd6b16adb1349c713b60f7ba49e86159f5fda73980fc4c8edd61d033f0423e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/fans",
+			"query":"days=360",
+			"file":"data/streamers_bilibili_990000000102_fans--019e6bef46f6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"057fb4ac76164e0e36376a99e4a9b27e2c0b8cc9afd039eff90b2f301cc3a18a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360",
+			"file":"data/streamers_bilibili_990000000102_audience--019e6bef46f6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5d609d005f8b4f5e34340f7151c7a6cf4830592128f60442ab0c549c2998d055"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=360&period=day",
+			"file":"data/streamers_bilibili_990000000102_trend--1689136c1111.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"81789d7044e969c42526bbe97bd901d7a95ec1cd9ac22195d4378bdc38b96c91"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=360&period=week",
+			"file":"data/streamers_bilibili_990000000102_trend--17b9af3e3703.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3cbce43bff4e5aa90889973e4da2285ebe1baaf5be56e478c01afd84be647739"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/trend",
+			"query":"days=360&period=month",
+			"file":"data/streamers_bilibili_990000000102_trend--6b75a7ed495c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c2272ed8b1d3f35790056d2deb0661ea741d1782a8b9e99cf44d54c3e262ffce"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--019e6bef46f6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5d609d005f8b4f5e34340f7151c7a6cf4830592128f60442ab0c549c2998d055"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--875b1d22ff74.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8925251dffd54c247982149b59885ff9f653595a08f58e5b0182c06810d0f511"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--a88bab6d0af9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"910786cc392b632acf1d1be1a81849637855d7a8d80c1d79c6e159cd9fcec700"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--018f3643768b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"28c8c14fd9d07f03794fd5a4aa96096528074e6210ca4ad263abc526c4cfd0d7"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--9bd22f7428c3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"27b4e2a3dacdbbc98cf8c31ab955ba94fc2be41d11f8f519c0835021029e0d2e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--7cc15e97e1e9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"212b4bd81b520b80f2e1a0d73bb6ea1f877c389c3dfeb17495c86014b9dd743f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--6cb16b34dea4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6491ebdfd00ded10f19c632efc5734ccd1faa263bf84ba97750e0429dd3b3c31"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--c6b0c5799c8a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"bee19f14a7ebdd94326a486048e4f8a471de692d68be8c5af2b645396f006788"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--a9c9645d561d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a7d0bc2f1420adb0d68685219c29978adcc80c1a488afeff514cd221c1a5d7dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000102_audience--6b6073e83420.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a241d49f5fafca88a2f42c934dea26ea6fb1bd0ff1e42668d83f13eb7fdbbc1f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000102_audience--251d7649b250.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8775df9bd2336dfcfcc86541329af8a06c11dbcef07f98a371691b088383a11f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/audience",
+			"query":"days=360&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000102_audience--d5067e6bd33f.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"2d0c4d71da07055890d1dc33931f36c2567bb7ac95564ce4d9e90efe35efaac3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"from=1761343200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--d7b4f0371d34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8939689adcc5a4681200717c11217eb6aa94781b72e244f32767afdaa844a091"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/start-slots",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000102_start-slots--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e1f3747d6c4a3de28bc87547ce7b9f773d8fe7788c5d4728da4025a2d09c7184"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/start-slots",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000102_start-slots--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e77ac47a65e902fb6a77c27b31579003e1e1c900d7960880697c5e81e38a2f18"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000102_sessions--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b0068684f5aa0e3b6afda063da96884b4c5883ca8be3a668f9ab63cfad84dbb2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10",
+			"file":"data/streamers_bilibili_990000000102_sessions--d7b4f0371d34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8939689adcc5a4681200717c11217eb6aa94781b72e244f32767afdaa844a091"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=2&size=10",
+			"file":"data/streamers_bilibili_990000000102_sessions--4b8907609b8b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"30dbb911341f9779d5ef176bf10f07b76c158abba3ac645395465399775723e3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1786363200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1786363200000",
+			"file":"data/streamers_bilibili_990000000102_sessions--7e3f21b9d48d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3b915d54aefb1c92ab4318d1c6993cb51564cfac1e0a100ba45c29f05ad68e8c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1786622400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1786622400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--6be45f43473b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"96ad01ead126096acc6a2ea7d9586c323c9195bcb0097b18c0c9411fb70e56d0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1786881600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1786881600000",
+			"file":"data/streamers_bilibili_990000000102_sessions--b49c95d6b673.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f5c71f0fdf36228337a9665af4e921b4ac0ea179adf26df39275c11271fe3fc9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1787140800000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1787140800000",
+			"file":"data/streamers_bilibili_990000000102_sessions--793ab4a9c212.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a80e5505059eb1e503224377b3728e8ce3bd90de11cdbdc40c8d986d99f3367e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1787400000000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1787400000000",
+			"file":"data/streamers_bilibili_990000000102_sessions--01db95d8d130.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3304af3ce0c1d6ea051c4084aa2420193c252e5520d468545208d35b23de47b8"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1787659200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1787659200000",
+			"file":"data/streamers_bilibili_990000000102_sessions--91a677829b25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"78a672e7056bf8c239ca0cbdce6f058979fcc8a413742fefe1e7d127f5603791"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1787918400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1787918400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--e7976c49dc98.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b258b3ebd97418f959bf9603447496527ab15b6f7330de5e046caa4b7100ee9e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1788177600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1788177600000",
+			"file":"data/streamers_bilibili_990000000102_sessions--784e89c1f492.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"fbcb310a84d7c3a89c96145a6b89e21fe8ef3eff77dacd180a65b43615b46580"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1788436800000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1788436800000",
+			"file":"data/streamers_bilibili_990000000102_sessions--aa74a2c67d87.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"80f6550b8cd9ee786e6805fe4f97ece5edc2b2cba96215f5e8d359daa26a6db4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1788696000000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1788696000000",
+			"file":"data/streamers_bilibili_990000000102_sessions--19c39f7b7239.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4e8fb59ab0dd08537ccd29a1510a6ad9c530116020c9d6ead339721991def28e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1788955200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1788955200000",
+			"file":"data/streamers_bilibili_990000000102_sessions--418a51ad2771.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6cd1d1f0ecdecddc7b12f32c7323c979909a19f23d252861d2adec9570b7dd56"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1789214400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1789214400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--efe485e03570.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"892fbdc377b530b413df11b3d9ed9037f26daabaea2db5637c199aac5ba124cd"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1789473600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1789473600000",
+			"file":"data/streamers_bilibili_990000000102_sessions--8451d4502299.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"35c06ec148297e27738831f629f6df5ef2cae9ead232310f4b5f39fca768c478"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1789732800000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1789732800000",
+			"file":"data/streamers_bilibili_990000000102_sessions--809f757d67f6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"09f56d1c678fd9f86c0975178d650c16de4c9336a29d0e44c429aa00ad7693a7"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1789992000000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1789992000000",
+			"file":"data/streamers_bilibili_990000000102_sessions--aa15712092ca.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"dabf9d44941f57555f58dd82dcc99e8cf4508d353fba1f15a4a45e3c86cedce4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1790251200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1790251200000",
+			"file":"data/streamers_bilibili_990000000102_sessions--bc143472403a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ed27606aac27110570984e5daab85745c4ba08ed020d01f0d6112e7fddbd65ab"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1790510400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1790510400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--ef0135676093.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3b04fff14f1ae25259f9ce6198c731cc9cfc5bb2e4680d1c1884e7ad0dbb4bd9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1790769600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1790769600000",
+			"file":"data/streamers_bilibili_990000000102_sessions--0402c03deee2.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4ead6290782cb00ce1cee4a6342212f698d63c37b383f28713dcb9e159b3b2f1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791028800000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1791028800000",
+			"file":"data/streamers_bilibili_990000000102_sessions--261e7d257887.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d477045d059775dc936275bebab5cc81578623d81d5e28d5ed20e715b5321015"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791288000000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1791288000000",
+			"file":"data/streamers_bilibili_990000000102_sessions--cd7babf59c65.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"86e7db111acc0eafd98e75627ebe167fb46d71e44e93faa72127a1b387c621df"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791547200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1791547200000",
+			"file":"data/streamers_bilibili_990000000102_sessions--aed2f48731ee.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"026258aee6b0cc104a104e341a2d08604f650d2149d9f2b5bed261d5a1af2d06"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791806400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000102_sessions_1791806400000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"504b1bdc170753a274eed2663672ad61866b6376326aa8aabf6ae554f314dd7a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1791806400000",
+			"file":"data/streamers_bilibili_990000000102_sessions--d4b77ea45f8b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"90e1e9cd579d8b3d1b6116159c64f3c79d9fe3ffb1e307164bf16fb3557ec7c9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792065600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000102_sessions_1792065600000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"0641acc3e5d6a34ae22ca9e60a10dd2e84d01ed5ae54243176c907cd9ca2870f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1792065600000",
+			"file":"data/streamers_bilibili_990000000102_sessions--e32227cf07d8.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c14e3f390952f71b668f6e7095c4ef1bf6b83313cd9d0295e388ecd9629279f1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792324800000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000102_sessions_1792324800000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"9014155696b55c9f3d2793e404e66353dc39ddc544789855754a0377893ecb75"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000102/sessions",
+			"query":"page=1&size=10&starts=1792324800000",
+			"file":"data/streamers_bilibili_990000000102_sessions--9d3071eef3d1.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"9d1c3c47c5d4fc02a96f395b3a8aee3c41bcbf50a6bcd6c48fc974b9b21120e8"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000102/status",
+			"query":"num=990000000301&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000102/preview",
+			"query":"num=990000000301&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000102_preview--03ba20991e55.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"a2ffbaa6422ad161d4e1f974a3c61ba60c4504e1aed14bda1d34a7197ea11df2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000102/status",
+			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000102/preview",
+			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000102_preview--03ba20991e55.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"a2ffbaa6422ad161d4e1f974a3c61ba60c4504e1aed14bda1d34a7197ea11df2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000102/status",
+			"query":"num=990000000303&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000102/preview",
+			"query":"num=990000000303&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000102_preview--03ba20991e55.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"a2ffbaa6422ad161d4e1f974a3c61ba60c4504e1aed14bda1d34a7197ea11df2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamer/name",
+			"query":"platform=bilibili&uid=990000000103",
+			"file":"data/streamer_name--036ac67099a9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f0984d0f4e45d913d21541a9ea4db80f101e87c341bb47fd835037dfe4b53bf0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000103--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"aae6cbe87402941498f26500102331513ad6ff22ab7361187b641abd2a5f059e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/live",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000103_live--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"216369416e34d4b0d0bc3cc8b0787e578f8221ebf3cc418b7a92c5dd6aea5a0e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/live",
+			"query":"series=online_count",
+			"file":"data/streamers_bilibili_990000000103_live--5e20260f1473.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d492dc0ae39970f1c83377d8ba0465e6299df0227ba1ffbf4e5508c05ef14345"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/insights",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000103_insights--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c0b161fe6784b1d17c45f662fd125031b1415c5d595207bca99a1574df5239ef"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/calendar",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000103_calendar--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a6d85f5b93353aeb85f69f2a1ca88c6cc751256fb8cca94f0546d0e5ce43e779"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/fans",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000103_fans--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"570cd019e329e3a1482964406af132012707904f4110c979bce77893d45320fe"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000103_audience--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3413b0f2826f7802be5798795948c74f69938106a4915fd6b59dc7b1e73de314"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=7&period=day",
+			"file":"data/streamers_bilibili_990000000103_trend--16d91957b38d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"43214de81e4d33a44c0d861dbd55ec093997f354d1185505b433687da3aada3b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=7&period=week",
+			"file":"data/streamers_bilibili_990000000103_trend--50b811fe9ac5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c4f15e60af03b58bb19c16f10312c6c4c754c245056de4c68b8fc8da939eb2e5"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=7&period=month",
+			"file":"data/streamers_bilibili_990000000103_trend--50f670db40c8.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"2fa88623408882964e3853330b6313a1e9327c9985df7bca4131b3e740378eec"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3413b0f2826f7802be5798795948c74f69938106a4915fd6b59dc7b1e73de314"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--d9fa8c15e1ec.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"efcf174fecccc2ead1399331443b47570cca2fb0573354ed8fa781d513f76b04"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--6f3b79a4379d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"bd30e7a8f16bcbf40324301bdb00c7fe240b6303568ffc521921000539591854"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--87363cc48de6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"53ea9ebfeab99faafbfb76dcb639437242a006cc22fa700f14b9ddfd04c22b43"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--f6cd8c60d79c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8676b52237322146bb38be4d967ad6aedd09a1ed67769169f81501c09ac1c45f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--c829f4bd625d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"13810325ee328b7848cf3e968a3aaac9044bed5df522cc857318fe23ce9d2693"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--05a8746eab22.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b8306ff2536b14f6e96a434fe5007048b5792fd7c82d1db10b4e797b03d25200"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--b22670d06bba.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7f02272cb9fa768eb75974e1a66a7ce72a07253ee9b396564ba27194d5bd4765"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--fcb15101ce15.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b223f430189e83633389d35e166e03aec8db2968e8c845f5fc038db6d8efbe1e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--e3e08d404509.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6ae866ca9fdb06131f72672fc545d5d9dd8c8939678b113ed04a7e0ced1dbda6"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--d2a0b9bc51dc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"dc3fe1915ec0bd52e29930d0fe53a9889cc77982520d2ba9d61d1b55af9ed733"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=7&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--954b98121065.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e83a86fb9589ddee6531fa570b93ad7eaf7afa33fa655c4c25c86a965e2d12ce"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"from=1791842400000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000103_sessions--6f71cac31e25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3388043cac4cebdd52a64a858ca07cc3b58885416d151bfaed1f1a49ad49909e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/insights",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000103_insights--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3ae38b3e843af622827591727183e0cc79d9a790b26901232e9bb080e0153b00"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/calendar",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000103_calendar--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"02ecb6bca7adb97fe1326f66b89f58b1ae3c11bc54c503ff1b77d480505ba25f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/fans",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000103_fans--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"89144fb5b3816c213b5240d2db34529419328496a555473326f24ac93f423e5e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000103_audience--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cdc7fca83a381173ec448cbcce6192768fea02249b3f2f34d56186b07748d6cb"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=30&period=day",
+			"file":"data/streamers_bilibili_990000000103_trend--488720d248bb.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"28b53968e1bf7c7e68d33217d2fa820bccbe76830a90a2cbb5627befeadd6ba4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=30&period=week",
+			"file":"data/streamers_bilibili_990000000103_trend--28fe592e293a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"1864312e83e93abbbc12c88e5f39722f21b8ad2550543fc2f9666e4f9be47395"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=30&period=month",
+			"file":"data/streamers_bilibili_990000000103_trend--ec233e7948ad.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0a7bbb9a647c4870058307d5dad6e4325d5eb64d060584e9482d1cc8b045bf24"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cdc7fca83a381173ec448cbcce6192768fea02249b3f2f34d56186b07748d6cb"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--2186fd5a68d7.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b81eb9b9b785929ef70eb42d6af75baf02b04f49db20defcd7221cc0bd8ba753"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--b4b5520f4cbd.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"fd07123e76273a2802b51bdec86c13afcd0bef856dd880481ba41e79b32ba3bd"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--dd27da875f59.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"568066206c08131cf2c37a4729d9abdbb6e4803f70b8fa137945beec5293c3e4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--7d5291ffc17e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"45bda0de7628959b23f66408e987d34a41ce8c042ba6eb759567fadedf2a05b1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--8621eac43221.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"58c05cb7bd1032396e48cc558914356705fd52331d0c27bc0addff9beb5e17e9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--4166bdb72ed9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"25289b4fa80057a1d2e857adf641e06a08fcccfeba1d915b773bb5c09cfa3766"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--6b78454af039.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d6f1e394ad31c57e33a8c42a7220bfd7346251e963b8b7edc6fc5481b540b34a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--88f40acd66c3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"586deacaf26f1fff9353fb970e7b0b0e4b380f6bb35db45675dd957b77e75272"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--818a31a8f14c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c92694776b03bc4dc597f647c0dc2ab93bc7a09f94a07ccc185004f247557ef0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--81195a4cfb0b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"828e4b17e4392a2ad85a1aa0bb32da42d3806ad1600376356e0071ad951569d2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=30&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--e7138f3d57dc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6a8c85daad4bd0308b16d2f4ba6440ab0f1c4ec6229f5640ac9fc5ab34cf60b4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"from=1789855200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000103_sessions--6f71cac31e25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3388043cac4cebdd52a64a858ca07cc3b58885416d151bfaed1f1a49ad49909e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/insights",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000103_insights--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"986da851e1e0eb4cf696dc129f99488f15451e6f614a77781222eef613254386"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/calendar",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000103_calendar--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"60da3f0d40ddb7645b162ff30b86784c54d96c485daab26c7eb25db6b55617db"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/fans",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000103_fans--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cd589ecc29d3f215aef042c355d71cddfd64415d68439d434667baffa075bba8"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000103_audience--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a3cb01a99e557092c5651db0020a6ae2989ddcbc9b896ddafce8535d2e1e4616"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=90&period=day",
+			"file":"data/streamers_bilibili_990000000103_trend--0a2423ab2f04.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cdc65e8c77ff10af6c84a49bc331deb05156a8fb8313c7caa6fbd88d5e0e954c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=90&period=week",
+			"file":"data/streamers_bilibili_990000000103_trend--0e33cf4a81a4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7623ece7671d3058a50133755b52b6123bdfd8f24197a45b217c1af9513c6abc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/trend",
+			"query":"days=90&period=month",
+			"file":"data/streamers_bilibili_990000000103_trend--ab45f0e1d620.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3101ae7d1f8c2a7180d86b4df1667648acf15ffb69dd5b77fb693e1e33d77df0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a3cb01a99e557092c5651db0020a6ae2989ddcbc9b896ddafce8535d2e1e4616"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--995f7420e013.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"347874ece321fe30c9ca37a1b694819abde28c4cbc35d1d35c791c16b5b0ce4f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--83bd3a365f5f.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0ea469f4f30b3a286ed31b8085ad61c37924ab0d231f25c00cff05bf90f4ec29"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--c786054e854a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b97f9088fa26343d2cf912368b519818cf0ef098ffe400a1769f8cb87cb7444f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--7b1a111afb4c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d4b20188a634476e00c066561dc044201977586eaaa759bbc19ee98cb0122348"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--5bc39b778a19.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0d5ce0f02ee0ed2e21ea846879434e9e576029c81c6758d8af93c5a0d48f0b64"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--2f29b599ea21.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"266cb198b19d9cce436b0fb927e7ac7f7e85fb124f8988f85b3f0979c8aace21"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--e4935cecc133.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"cf142618a35a88ccbae3cd9059aa6fab50c25f22154fde6df0a5f6cbe7579525"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--d92fe3b3fb2b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"15bcdca6b5ee767d93c410d7bf1affe16fd0efb65eaf35a920f7219eca4abc24"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000103_audience--ef9d193c26b4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"44bc431b4377322b77601b747dd2cd039cfb86c4e7a8e11bac3045befceb4ca1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000103_audience--c774a445c91e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c5b6562fb2b71ad06371f923c5f6622f2c643ee2b641733fe59cd2e9ed67e3ed"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/audience",
+			"query":"days=90&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000103_audience--47f7c5e6e69e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"42d4eb4a8ad655b458f8b6aac8efd633493324b339805e33ee0946cac9fd30b1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"from=1784671200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000103_sessions--d7b4f0371d34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d6c9c3c434bc0f795d329001a9de8e39629de22f8b4fb37c0df885f904d1a471"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/start-slots",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000103_start-slots--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"362b03d3bea608d7ce9f8eb4d3d7d4a63fbaacddeefd8190bf7ff3c6c69c7a75"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/start-slots",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000103_start-slots--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"359a0e7c55da36c409376a4a47348edeb9a6414c0f05963fe9269ac28cc439d2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000103_sessions--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3abe9e6576ecd748d016834550ee046d39ee0eb83546142969b126d99ae10b6a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10",
+			"file":"data/streamers_bilibili_990000000103_sessions--dffc439d1df3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8ae972d96b39eeb8f2ce5af2087146814faad9649b3431450b566f7a7f3ed177"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=2&size=10",
+			"file":"data/streamers_bilibili_990000000103_sessions--dffc439d1df3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8ae972d96b39eeb8f2ce5af2087146814faad9649b3431450b566f7a7f3ed177"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1777723200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1777723200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--464d08699a3e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8909a7f37a4149c6bb157b4f9c01d43d0177fdb1f8e35f6b57896e410543dfca"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1779451200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1779451200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--0ea3e9cb8755.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6fb79f927335da17874cc898a7c0b4d5c6dd2f5c81d7dcf864c1bfa67c8b611e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1781179200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1781179200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--b1d2acb42b3c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"04a1637359fb15317273a35ce62feb3646dc3283103390ab008a187f34573730"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1782475200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1782475200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--6c63bb12bbeb.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5e894d82930cdf13d75f024ae86725cc478e31159005d3cbf56efd8d08352da0"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1783771200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1783771200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--3623d337d75c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3980af0a3c8931671729bb7a434bb626e9a89635c4c9ade816d04ae2a6191c7c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1785153600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000103_sessions_1785153600000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"52f012f0d3f81cc98ad68ad59a5cce4a769215baa47888bdc942d73febb5dbb1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1785153600000",
+			"file":"data/streamers_bilibili_990000000103_sessions--41f8918066b9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"735670f8f6127efcf16e426a88bb099aefd0b78053c4ffbef946b07badbaedd6"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786363200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000103_sessions_1786363200000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"dd99a53ec3336e8319ca9e47ba35b2610b9ff18ffe031f3cfa1f2ff4c3665c21"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1786363200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--7e3f21b9d48d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"1144c4feac9d5462073a2c010614f78f5507edb57a5454ae5917c6885401fcea"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786795200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000103_sessions_1786795200000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"62b7fd359ca516c00b595667a40a42b60a321469d638850ef991e6338a8c6595"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000103/sessions",
+			"query":"page=1&size=10&starts=1786795200000",
+			"file":"data/streamers_bilibili_990000000103_sessions--b3ff873c5a00.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3825185a97560a5fc1e24513e9eda4216eec476274795f0f6ab696d5b7567e15"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000103/status",
+			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000103/preview",
+			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000103_preview--d66c34c9ba53.html",
+			"status":200,
+			"contentType":"text/html;charset=UTF-8",
+			"sha256":"955f277a6d4a29ef231f5443a0f3085cd0d952041a6f33dd6ccf15a584e28a69"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamer/name",
+			"query":"platform=bilibili&uid=990000000104",
+			"file":"data/streamer_name--df4ea5cdd331.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"00516e77263fff3f111b03cd7b4768fbe1ed316678daa3f04215402197f35f4f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000104--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"64a253bc2b43477ac939d3886e6c5dcb892ea4d5db4958103ea20e9ec9eebe70"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/live",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000104_live--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7bdf202b1388822822d95abe48f50f021065d9943a3d9af277351aaaa4b5aea9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/live",
+			"query":"series=online_count",
+			"file":"data/streamers_bilibili_990000000104_live--5e20260f1473.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0f887734a5a94a5e22b567d5a247a6545b128b3e388fac0e8ad71f86cdd7bafb"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/insights",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000104_insights--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ddb03543fe0701e7108a725d2f5250a74002f24bf7bffe4641ef65b9ed3cdf02"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/calendar",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000104_calendar--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0b94c9e7c73855b2b6b4f33c72b4ea9f2bc73ecfa9c4c96235ce72479f27d8b7"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/fans",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000104_fans--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4a1533690eaef4cadd0068d6140abaa65821ec3c852307e6d4821c93950eeff4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7",
+			"file":"data/streamers_bilibili_990000000104_audience--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0dec167873e9daec0ca0d22b4d67d5af604b39bfeb71cc17343656c877516102"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=7&period=day",
+			"file":"data/streamers_bilibili_990000000104_trend--16d91957b38d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a37a840b0b81563b6fe7a96e82691b713ca557c0d9ee3201e75fa8ff3c8319ca"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=7&period=week",
+			"file":"data/streamers_bilibili_990000000104_trend--50b811fe9ac5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"2b825d52fe536431f6c13df4145ae368a156fdbedf7b4dc8041143d2c8130681"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=7&period=month",
+			"file":"data/streamers_bilibili_990000000104_trend--50f670db40c8.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7dff4250293a5ad498ed20670e8e08e66a6311baf2eaa08dcaea5c4ea86b9ed9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--c22352b6b43e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0dec167873e9daec0ca0d22b4d67d5af604b39bfeb71cc17343656c877516102"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--d9fa8c15e1ec.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ce6773b3ba6ccadbf4fe5e717cab48eb22aca943b4ad08322c569c45001870a8"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--6f3b79a4379d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"00b2c042cf526aad6a3b644336ccb99ebbde7befd61ec2e0e16e4d6bb67e2ff8"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--87363cc48de6.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"df51fabf184e26b7080fe2786e275bc2a2712218c80d3d6e100c4012a1537f3b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--f6cd8c60d79c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a76245f914147eb02dd27822f0c929dc08b4f38cf7adfebb9dc64b165ac209e2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--c829f4bd625d.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b904b57ae5cdd1baf6f005a964a74f67503a92762df0089c8658ef638f53f789"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--05a8746eab22.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"03d3f5b436a4564b25adb6a13f85ab76ec09d5ffee3c7e3d76189936aa09e1b4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--b22670d06bba.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"54d7a1f4a98110759dfc725f3e32547b5d4180f8ed8b76265e202bf632c6ad5d"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--fcb15101ce15.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4981d0e197567aa710fac5afaffc01cbd5526eb8fdf482711f07a1e842384d63"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--e3e08d404509.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"dccd46e46a9bcf9cda14cc6f848a8c9e8640c3ae92d3412ad5e54f7277781eb9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--d2a0b9bc51dc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e00a8b7ed2a3149c285ff71aa1f8a161df49c0f1c81a59a2e12562d1c946ff4b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=7&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--954b98121065.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"eabc4c4f7c0b0c58210c6ec47f03777b583ee8bb19e2da535e0e64c24524cd81"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"from=1791842400000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000104_sessions--6f71cac31e25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"afdaf29971fd43c9e09fd6ce094ab096314a3fe8184ad107795b43da8631d909"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/insights",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000104_insights--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7f7d8dbb43867f59a6ae1e6971a04f3a089f3ab0d4cbb4749197f90e703f0725"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/calendar",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000104_calendar--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"067f63e913ae14558876f49194e66dacbd0edbc8e9464d760f0ef114149f6146"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/fans",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000104_fans--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"f0443e6fffb2a66a1109a5c71e6afc0cdfd269aade93d771b689efebfe7097ea"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30",
+			"file":"data/streamers_bilibili_990000000104_audience--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6993e5d94f7f722b5b0ddec801d7dfac7887daf320cfa23fef8fc240f4650ea3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=30&period=day",
+			"file":"data/streamers_bilibili_990000000104_trend--488720d248bb.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"aa33df820116dddc6c2d0cde287e7ee61f5d517bce7459899097b058f45fbf64"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=30&period=week",
+			"file":"data/streamers_bilibili_990000000104_trend--28fe592e293a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"18e7f27cd150e169d376ebbdeac43d2666354a0ac868a271615d7b01df9b889b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=30&period=month",
+			"file":"data/streamers_bilibili_990000000104_trend--ec233e7948ad.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"51ee00e070ec432ccc41900660f19998f1339ada626a1f24c30f92d7a5b3d7b9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--89c510a0f287.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6993e5d94f7f722b5b0ddec801d7dfac7887daf320cfa23fef8fc240f4650ea3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--2186fd5a68d7.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"07f5596661b1aa120ab918018854fb1e075661f6ff6fbc3c07860555d3fad818"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--b4b5520f4cbd.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"079b2ffcc30426b566873b42dde4895702ac574a29b8e5aec836fae2a5bf8261"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--dd27da875f59.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e183ced7b96f263866ecd8b21420537c0d8d94430c20239be0740dfdf4658c9f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--7d5291ffc17e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3fef6eb1e7b856190ead753ca06e453b7a45675acfb4071f301af683f5dd70f2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--8621eac43221.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"af28e13897eb9c8e6fffbb58df300cb0c7102d95fa7ad5ebececad417fc97428"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--4166bdb72ed9.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c94ee3275eec6b17699bf338f9312f6163f8cab48cfe25f292c21184e355cde3"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--6b78454af039.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8c2e56c1fe10560471493380d696a4c427f89beb48e22207a376829d0fb2c607"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--88f40acd66c3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b363ad348cee6ef3c1efa1ad1154d1d6ce152b48861aabc110eb953012fb1f4c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--818a31a8f14c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b0becafb7813a47eb20a5b1cbfea709544707f71ee8970e9f63881547371712a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--81195a4cfb0b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3a307416e7b1927c0f6e318b60d6a1e1932ef8eb2d54fed84150c947f1d40f5f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=30&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--e7138f3d57dc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8b86827962e6f022ea0c69989661f4e287cbd09baba9072f27dcabee4b416206"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"from=1789855200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000104_sessions--7dfb2712f70e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8d005ea1aa1f7c1f979305abf882cf737ca4fd7702c99daaf1121b4e75a7a767"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/insights",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000104_insights--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"06938e9d5273cab009cbe207d69a314dd9e4ada22d61921becc4d3c49121da6d"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/calendar",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000104_calendar--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"4cb9449ee75fa3c18f0d5f44924a7d78766626082e8de2f36d9a79473936de51"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/fans",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000104_fans--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"89e914af1506fa02d65de9ba4e164a0b9b65ca43a6b5722e2840a3aaf0299948"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000104_audience--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"fa79d04b15da8504e1c628a662c434a6067127f89dcdf2d8c5743aecd4ca2102"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=90&period=day",
+			"file":"data/streamers_bilibili_990000000104_trend--0a2423ab2f04.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"e7070a3005915c36bd053c4b2ca81e805b3d0b62ce0bb107a1ebd973131d1f0a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=90&period=week",
+			"file":"data/streamers_bilibili_990000000104_trend--0e33cf4a81a4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c3485b8073f3d0ed4ec1926e61fee741c3c7820d880459bdd4f910e7a6f36c42"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/trend",
+			"query":"days=90&period=month",
+			"file":"data/streamers_bilibili_990000000104_trend--ab45f0e1d620.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"ea26304af6cf9002f41e6fdc6f58e5aef8d592f319bec4fd90c6dab549abcd8a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=all&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"fa79d04b15da8504e1c628a662c434a6067127f89dcdf2d8c5743aecd4ca2102"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=all&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--995f7420e013.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"440e060677b0dca54cf4cc650db96932a1cbacb91dcbab66d150b827b29fe0a1"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=all&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--83bd3a365f5f.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7d9cf9dc198553eb727b502bf7993ad8c475c8d448d4575d069b89bf07047db9"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=first&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--c786054e854a.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3fbacd09628159289b62a819c8df181462d10b14437b2c44fe4850b126b63b6c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=first&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--7b1a111afb4c.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"9adb8f82373239b483fa3453fd37e80072d93027717bcc02d6b9fb868f3cec5d"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=first&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--5bc39b778a19.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"7864c945a4eb9cefb41028c3b8a8a212a066c6b7fe452531e341f33ad8a0a6ff"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=returning&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--2f29b599ea21.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"beb4626031483e95e5b81d2450ec6b2d0ea31161384c60832fcf9955435d110c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=returning&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--e4935cecc133.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"d882dbf440147f585cad5637342d52e96c9784e1c7a51eb0a90eb4a8d2c5e5ac"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=returning&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--d92fe3b3fb2b.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"8334e7971590a20e01d614dd4372e7c9f18a3727f4825ded34b586834c5dcbff"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=interaction&page=1&sort=attendance",
+			"file":"data/streamers_bilibili_990000000104_audience--ef9d193c26b4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6df50639cb041fd477459dc4d8f96742935b205415a36d5fb29c241143c0fe16"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=interaction&page=1&sort=revenue",
+			"file":"data/streamers_bilibili_990000000104_audience--c774a445c91e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5a0d5c2029469dc1bbf7cec898f2ea6a27b15ac4ea589b6e61f4b10c224e5484"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/audience",
+			"query":"days=90&group=interaction&page=1&sort=recent",
+			"file":"data/streamers_bilibili_990000000104_audience--47f7c5e6e69e.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0cc9ccfc4dd794c893c11dbf10d127ea4555d37f95c4810e27d07936f6e059d4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"from=1784671200000&page=1&size=10&to=1792382400000",
+			"file":"data/streamers_bilibili_990000000104_sessions--d7b4f0371d34.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"a86377ef95ae9d03b918c76526138a008a973bf6688fd09a5d1c4ca8a6cbccc6"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/start-slots",
+			"query":"days=90",
+			"file":"data/streamers_bilibili_990000000104_start-slots--f0de2c151c49.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"3e476287d8c78ae92d34594e0ff71e71d0697d0604020ee3866b61022d2d9d9e"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/start-slots",
+			"query":"days=180",
+			"file":"data/streamers_bilibili_990000000104_start-slots--e76f5f929ba5.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"070b07aeeabe5f76fc44c46e3f93accbf252bb13629b5e298b2458a1a40d866a"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000104_sessions--e3b0c44298fc.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"1c70432192161e3c00b1a279b9ccdf2b097177e53f4004d7c3aa600de661e8bf"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10",
+			"file":"data/streamers_bilibili_990000000104_sessions--dffc439d1df3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"498e423718c0de9b84301dcea808182287beba134888d01c3d24be34ea753c43"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=2&size=10",
+			"file":"data/streamers_bilibili_990000000104_sessions--dffc439d1df3.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"498e423718c0de9b84301dcea808182287beba134888d01c3d24be34ea753c43"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1784635200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1784635200000",
+			"file":"data/streamers_bilibili_990000000104_sessions--802b372b9272.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"880ad2d83d347865b1721ae49a14d8c600d15aa01d31ff5b8d49cd03d333444b"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1785758400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1785758400000",
+			"file":"data/streamers_bilibili_990000000104_sessions--a7731753b0eb.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"34e12471836386c19d1362fec168d62716efe65849015dec15e175eab396a29f"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1786795200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1786795200000",
+			"file":"data/streamers_bilibili_990000000104_sessions--b3ff873c5a00.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"b4cd337c0d321fe22b7d0fbbe49460b474e023a8975183c455b6eb533f178e0c"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1787659200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1787659200000",
+			"file":"data/streamers_bilibili_990000000104_sessions--91a677829b25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"0ef0c4d03e9a3802f519b1ca88728815818813e4d285e28e94fa31b068b7c366"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1788955200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1788955200000",
+			"file":"data/streamers_bilibili_990000000104_sessions--418a51ad2771.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c05fe092830d660949a6219457d967325f9f9f07b6383be6227c475556be95ea"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1789905600000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1789905600000",
+			"file":"data/streamers_bilibili_990000000104_sessions--1f869f9e1d05.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"c8bbf008ac89a5c9dda3f378032af996a15872a0299f514a7f9019e7b03e7bad"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1790510400000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000101_sessions_1779278700000_report--e3b0c44298fc.json",
+			"status":404,
+			"contentType":"application/json",
+			"sha256":"8513f18eac1d748020585b334f3fea1fc61fdd6d322b9b0a7824fb739b8ed3dc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1790510400000",
+			"file":"data/streamers_bilibili_990000000104_sessions--ef0135676093.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"58d45a2e625d20855523d14f4c94d78abb08ad77a9c3338ef72152098ec92e60"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1791115200000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000104_sessions_1791115200000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"e50a599cb736684558f88d789678fe43b87093234dcb7f1045ad4879ab5305cc"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1791115200000",
+			"file":"data/streamers_bilibili_990000000104_sessions--5178f5c8edd4.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"5199c2907a74a9fc704acbe2d57530a8a598d594993f1b691994e51279c256f4"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1791720000000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000104_sessions_1791720000000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"ceab81f07d415649cda256176a668be7f45176678cdec90d353bec725bfd4dd2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1791720000000",
+			"file":"data/streamers_bilibili_990000000104_sessions--c6e963f2e703.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"6563e1a2ed177b986f577711b901b8ae1b3945c450fd0b82741e5ffe8cd213e2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions/1792152000000/report",
+			"query":"",
+			"file":"data/streamers_bilibili_990000000104_sessions_1792152000000_report--e3b0c44298fc.png",
+			"status":200,
+			"contentType":"image/png",
+			"sha256":"fe5f591a11b5a07c19fcf544b40e5f74a262fb9abb30a101746fbbc85c09b7d2"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/streamers/bilibili/990000000104/sessions",
+			"query":"page=1&size=10&starts=1792152000000",
+			"file":"data/streamers_bilibili_990000000104_sessions--6f71cac31e25.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"afdaf29971fd43c9e09fd6ce094ab096314a3fe8184ad107795b43da8631d909"
+		},
+		{
+			"method":"GET",
+			"path":"/config/api/weekly-report/bilibili/990000000104/status",
+			"query":"num=990000000303&pushPlatform=qq-onebot&type=1",
+			"file":"data/weekly-report_bilibili_990000000101_status--03ba20991e55.json",
+			"status":200,
+			"contentType":"application/json",
+			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1"
 		}
 	]
 }

@@ -9,7 +9,8 @@ NovaBot：启动那次体检只在程序起好时跑一次，错过了要等 300
   体检   get_version_info / get_login_info / get_status
   名单   get_group_list / get_friend_list / get_group_member_list / get_group_member_info
   发送   send_group_msg / send_private_msg
-其余接口一律回一份空 data，不回错误码——不验令牌，也不挑请求方法。
+其余接口一律回一份空 data，不验令牌，也不挑请求方法。
+发送包含「演示推送·动态发送失败」的群消息时回演示错误码，供截图展示失败记录。
 
 名字与号段都是编的，取平台不会发出去的那段，跟 make-demo-seed.py 里那批同一个规矩：
 随便点也点不到真账号真群。种子里 websocket 是关的，这个端点不答 Websocket。
@@ -51,7 +52,8 @@ def data_of(path):
     if path == "/get_group_member_info":
         return {"role": "member"}
     if path == "/get_group_list":
-        return [{"group_id": GROUP_ID, "group_name": GROUP_NAME, "member_count": 1}]
+        return [{"group_id": group, "group_name": f"演示群·{name}", "member_count": 1}
+                for group, name in zip(IDENTITIES['groups'], ('星光', '常青', '休息室'))]
     if path == "/get_friend_list":
         return [{"user_id": FRIEND_ID, "nickname": FRIEND_NAME, "remark": ""}]
     if path in ("/send_group_msg", "/send_private_msg"):
@@ -59,8 +61,10 @@ def data_of(path):
     return {}
 
 
-def reply(path):
+def reply(path, params=None):
     """整包应答。取数那头只认 retcode 与 data，缺 retcode 会当场炸。"""
+    if path == '/send_group_msg' and '演示推送·动态发送失败' in json.dumps(params, ensure_ascii=False):
+        return {'retcode': 100, 'message': '演示传输：群暂不可用', 'data': {}}
     return {"retcode": 0, "data": data_of(path)}
 
 
@@ -73,10 +77,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _answer(self):
         length = int(self.headers.get("Content-Length") or 0)
-        if length:
-            self.rfile.read(length)
+        body = self.rfile.read(length) if length else b'{}'
+        try:
+            params = json.loads(body)
+        except ValueError:
+            params = {}
         path = self.path.split("?", 1)[0]
-        payload = json.dumps(reply(path), ensure_ascii=False).encode("utf-8")
+        payload = json.dumps(reply(path, params), ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))

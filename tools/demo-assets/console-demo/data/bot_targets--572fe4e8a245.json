@@ -1,12 +1,12 @@
 {
-	"fetchedAt":"2026-10-19T03:34:06.334779Z",
+	"fetchedAt":"2026-10-19T04:30:01.225359Z",
 	"stale":false,
 	"senders":[
 		{
 			"sender":"qq-onebot",
-			"fetchedAt":"2026-10-19T03:34:06.334779Z",
+			"fetchedAt":"2026-10-19T04:30:01.225359Z",
 			"stale":false,
-			"groups":1,
+			"groups":3,
 			"friends":1
 		}
 	],
@@ -16,10 +16,26 @@
 		{
 			"sender":"qq-onebot",
 			"num":990000000301,
-			"name":"演示群",
+			"name":"演示群·星光",
 			"memberCount":1,
 			"admin":false,
 			"configured":true
+		},
+		{
+			"sender":"qq-onebot",
+			"num":990000000302,
+			"name":"演示群·常青",
+			"memberCount":1,
+			"admin":false,
+			"configured":true
+		},
+		{
+			"sender":"qq-onebot",
+			"num":990000000303,
+			"name":"演示群·休息室",
+			"memberCount":1,
+			"admin":false,
+			"configured":false
 		}
 	]
 }

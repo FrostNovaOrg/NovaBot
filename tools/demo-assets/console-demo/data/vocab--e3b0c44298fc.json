@@ -1,11 +1,11 @@
 {
 	"terms":{
-		"bot.target.user":"QQ 号",
-		"bot.impl.hint":"NapCat、Lagrange 等 OneBot 实现",
-		"bot.targets":"群与好友",
 		"bot.family":"OneBot 实现",
-		"bot.impl":"NapCat",
+		"bot.targets":"群与好友",
+		"bot.impl.hint":"NapCat、Lagrange 等 OneBot 实现",
+		"bot.target.user":"QQ 号",
+		"bot.target.group":"群号",
 		"bot.platform":"QQ",
-		"bot.target.group":"群号"
+		"bot.impl":"NapCat"
 	}
 }

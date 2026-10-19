@@ -3,21 +3,21 @@
 	"days":30,
 	"living":false,
 	"insights":{
-		"audience":5,
+		"audience":3,
 		"capture":{
-			"effectiveSeconds":25980,
+			"effectiveSeconds":28380,
 			"gapSeconds":0,
 			"gapSessions":0
 		},
 		"composition":{
 			"firstRecorded":0,
-			"returning":5
+			"returning":3
 		},
 		"coverage":{
 			"anonymous":0,
-			"complete":0,
+			"complete":4,
 			"missing":0,
-			"unknown":3
+			"unknown":0
 		},
 		"daily":[
 			{
@@ -39,10 +39,10 @@
 				"starts":[]
 			},
 			{
-				"audience":4,
+				"audience":1,
 				"date":"2026-09-22",
 				"durationSeconds":8580,
-				"follows":0,
+				"follows":20,
 				"messages":851,
 				"revenue":90.0,
 				"sessions":1,
@@ -204,10 +204,10 @@
 				"starts":[]
 			},
 			{
-				"audience":5,
+				"audience":1,
 				"date":"2026-10-10",
 				"durationSeconds":9720,
-				"follows":0,
+				"follows":20,
 				"messages":1032,
 				"revenue":137.3,
 				"sessions":1,
@@ -261,10 +261,10 @@
 				"starts":[]
 			},
 			{
-				"audience":4,
+				"audience":1,
 				"date":"2026-10-16",
 				"durationSeconds":7680,
-				"follows":0,
+				"follows":20,
 				"messages":744,
 				"revenue":70.8,
 				"sessions":1,
@@ -291,33 +291,45 @@
 				"starts":[]
 			},
 			{
+				"audience":1,
 				"date":"2026-10-19",
-				"durationSeconds":0,
-				"follows":0,
-				"messages":0,
-				"revenue":0.0,
-				"sessions":0,
-				"starts":[]
+				"durationSeconds":2400,
+				"follows":20,
+				"messages":426,
+				"revenue":60.0,
+				"sessions":1,
+				"starts":[
+					1792379400000
+				]
 			}
 		],
-		"durationSeconds":25980,
+		"durationSeconds":28380,
+		"fans":{
+			"change":210.0,
+			"fromAt":1789790280000,
+			"fromValue":3250.0,
+			"partial":false,
+			"toAt":1792382280000,
+			"toValue":3460.0
+		},
 		"firstRecordedAt":1779278700000,
-		"follows":0,
+		"follows":80,
 		"from":1789855200000,
-		"interactionAudience":5,
-		"messages":2627,
+		"interactionAudience":3,
+		"messages":3053,
 		"metricsKnown":true,
-		"revenue":298.1,
-		"sessions":3,
-		"to":1792380852862,
+		"revenue":358.1,
+		"sessions":4,
+		"to":1792382400000,
 		"monitoring":{
 			"recording":true,
-			"watchedSeconds":0.0,
-			"elapsedSeconds":2525652.862,
+			"watchedSeconds":2354340.0,
+			"elapsedSeconds":2527200.0,
+			"observableDays":29.3,
 			"rangeDays":30
 		},
 		"previous":{
-			"audience":7,
+			"audience":2,
 			"capture":{
 				"effectiveSeconds":17160,
 				"gapSeconds":1320,
@@ -325,13 +337,13 @@
 			},
 			"composition":{
 				"firstRecorded":0,
-				"returning":7
+				"returning":2
 			},
 			"coverage":{
 				"anonymous":0,
-				"complete":0,
+				"complete":2,
 				"missing":0,
-				"unknown":2
+				"unknown":0
 			},
 			"daily":[
 				{
@@ -344,10 +356,10 @@
 					"starts":[]
 				},
 				{
-					"audience":3,
+					"audience":1,
 					"date":"2026-08-22",
 					"durationSeconds":7080,
-					"follows":0,
+					"follows":20,
 					"messages":690,
 					"revenue":65.5,
 					"sessions":1,
@@ -590,10 +602,10 @@
 					"starts":[]
 				},
 				{
-					"audience":7,
+					"audience":1,
 					"date":"2026-09-18",
 					"durationSeconds":11400,
-					"follows":0,
+					"follows":20,
 					"messages":1288,
 					"revenue":194.2,
 					"sessions":1,
@@ -612,39 +624,47 @@
 				}
 			],
 			"durationSeconds":18480,
+			"fans":{
+				"change":210.0,
+				"fromAt":1787198280000,
+				"fromValue":3040.0,
+				"partial":false,
+				"toAt":1789790280000,
+				"toValue":3250.0
+			},
 			"firstRecordedAt":1779278700000,
-			"follows":0,
+			"follows":40,
 			"from":1787263200000,
-			"interactionAudience":7,
+			"interactionAudience":2,
 			"messages":1978,
 			"metricsKnown":true,
 			"revenue":259.7,
 			"sessions":2,
-			"to":1789788852862,
+			"to":1789790400000,
 			"monitoring":{
 				"recording":true,
-				"watchedSeconds":0.0,
-				"elapsedSeconds":2525652.862,
+				"watchedSeconds":2527200.0,
+				"elapsedSeconds":2527200.0,
+				"observableDays":29.3,
 				"rangeDays":30
 			}
 		},
 		"comparisons":{
-			"durationSeconds":{
-				"changeRatio":0.40584415584415584
-			},
 			"interactionAudience":{
-				"changeRatio":-0.2857142857142857
+				"changeRatio":0.5
 			},
-			"revenue":{
-				"changeRatio":0.14786291875240676
-			},
-			"messages":{
-				"changeRatio":0.3281092012133468
+			"durationSeconds":{
+				"changeRatio":0.5357142857142857
 			},
 			"audience":{
-				"changeRatio":-0.2857142857142857
+				"changeRatio":0.5
+			},
+			"messages":{
+				"changeRatio":0.5434782608695652
+			},
+			"revenue":{
+				"changeRatio":0.37889872930304214
 			}
-		},
-		"comparisonNote":"6.0 之前开播的场次名单完整性未知，观众数对比仅供参考"
+		}
 	}
 }

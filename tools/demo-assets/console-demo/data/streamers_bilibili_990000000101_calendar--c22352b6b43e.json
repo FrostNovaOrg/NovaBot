@@ -12,7 +12,7 @@
 				"gapSeconds":0,
 				"start":1791842400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":2
 			},
 			{
@@ -24,7 +24,7 @@
 				"gapSeconds":0,
 				"start":1791928800000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":3
 			},
 			{
@@ -36,7 +36,7 @@
 				"gapSeconds":0,
 				"start":1792015200000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":4
 			},
 			{
@@ -62,7 +62,7 @@
 				"gapSeconds":0,
 				"start":1792188000000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":6
 			},
 			{
@@ -74,21 +74,24 @@
 				"gapSeconds":0,
 				"start":1792274400000,
 				"starts":[],
-				"status":"unknown",
+				"status":"off",
 				"weekday":7
 			},
 			{
 				"current":true,
 				"date":"2026-10-19",
-				"durationSeconds":0,
-				"effectiveSeconds":0,
+				"durationSeconds":2400,
+				"effectiveSeconds":2400,
 				"end":1792447200000,
 				"gapSeconds":0,
 				"start":1792360800000,
-				"starts":[],
-				"status":"unknown",
+				"starts":[
+					1792379400000
+				],
+				"status":"recorded",
 				"weekday":1
 			}
-		]
+		],
+		"provableFrom":1777694400000
 	}
 }

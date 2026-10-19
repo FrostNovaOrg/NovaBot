@@ -42,7 +42,7 @@
 			"scope":"SYSTEM",
 			"loginState":false,
 			"level":"OK",
-			"summary":"启动后尚无推送",
+			"summary":"启动以来成功 3 次，失败 1 次；最近成功于 10-19 11:15:00",
 			"advice":"",
 			"reason":""
 		},
@@ -71,11 +71,25 @@
 			"uname":"演示主播小星",
 			"platform":"bilibili",
 			"enabled":true,
+			"targets":3
+		},
+		{
+			"uid":990000000102,
+			"uname":"演示主播常青",
+			"platform":"bilibili",
+			"enabled":true,
+			"targets":2
+		},
+		{
+			"uid":990000000103,
+			"uname":"演示主播远山",
+			"platform":"bilibili",
+			"enabled":true,
 			"targets":1
 		}
 	],
 	"runtime":{
-		"heapUsedMb":250,
+		"heapUsedMb":329,
 		"heapMaxMb":4096,
 		"threads":30,
 		"processors":10,
@@ -94,12 +108,12 @@
 	"totalDataAvailable":false,
 	"quiet":{
 		"active":true,
-		"start":"11:03",
-		"end":"13:03"
+		"start":"11:30",
+		"end":"13:30"
 	},
 	"live":[],
 	"today":{
-		"sent":3,
+		"sent":4,
 		"failed":1
 	},
 	"queue":{

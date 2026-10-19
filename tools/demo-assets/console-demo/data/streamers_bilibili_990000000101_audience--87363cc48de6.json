@@ -3,17 +3,17 @@
 	"days":7,
 	"audience":{
 		"from":1791842400000,
-		"to":1792380852848,
+		"to":1792382400000,
 		"counts":{
-			"all":4,
+			"all":2,
 			"first":0,
-			"returning":4,
-			"interaction":4
+			"returning":2,
+			"interaction":2
 		},
 		"coverage":{
-			"complete":0,
+			"complete":2,
 			"anonymous":0,
-			"unknown":1,
+			"unknown":0,
 			"missing":0
 		},
 		"group":"first",

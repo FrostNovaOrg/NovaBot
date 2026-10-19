@@ -5,8 +5,9 @@ export TZ=Asia/Shanghai
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/novabot-console-record-XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
-python3 "$ROOT/tools/demo-assets/demo-seed/make-demo-seed.py" "$WORK"
-python3 - "$ROOT" "$WORK" <<'PY'
+DEMO_NOW=2026-10-19T12:00:00
+python3 "$ROOT/tools/demo-assets/demo-seed/make-demo-seed.py" --now "$DEMO_NOW" "$WORK"
+python3 - "$ROOT" "$WORK" "$DEMO_NOW" <<'PY'
 import json, runpy, subprocess, sys
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ paths = ('get_version_info', 'get_login_info', 'get_status', 'get_group_list',
          'send_group_msg', 'send_private_msg')
 Path(sys.argv[2], 'transport.json').write_text(json.dumps(
     {'/' + path: bot['data_of']('/' + path) for path in paths}, ensure_ascii=False))
-now = datetime.now().astimezone()
+now = datetime.fromisoformat(sys.argv[3]).astimezone()
 Path(sys.argv[2], 'recording.json').write_text(json.dumps(dict(
     today=now.date().isoformat(), recordedAt=now.isoformat(), epochMs=int(now.timestamp() * 1000),
     timezone='Asia/Shanghai', commit=subprocess.check_output(

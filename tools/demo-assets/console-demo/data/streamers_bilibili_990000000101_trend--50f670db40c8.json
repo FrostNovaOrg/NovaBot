@@ -7,44 +7,45 @@
 			{
 				"label":"2026-10",
 				"start":1791842400000,
-				"end":1792380852843,
-				"sessions":1,
-				"durationSeconds":7680,
+				"end":1792382400000,
+				"sessions":2,
+				"durationSeconds":10080,
 				"metrics":{
-					"gift_value":58.8,
-					"danmu_count":744.0,
-					"watched_count":4450.0,
-					"super_chat_value":12.0,
-					"like_total":1780.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
+					"super_chat_count":2.0,
+					"gift_value":106.8,
+					"follow_count":40.0,
+					"danmu_count":1170.0,
+					"watched_count":6930.0,
+					"gift_paid":106.8,
+					"super_chat_value":24.0,
+					"like_total":2710.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":3,
-					"danmu_users":4
+					"gift_users":2,
+					"danmu_users":2
 				},
-				"audience":4,
+				"audience":2,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":2,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
-				"effectiveSeconds":7680,
-				"follows":0,
-				"messages":744,
-				"revenue":70.8,
+				"effectiveSeconds":10080,
+				"follows":40,
+				"messages":1170,
+				"revenue":130.8,
 				"starts":[
-					1792151700000
+					1792151700000,
+					1792379400000
 				]
 			}
 		],

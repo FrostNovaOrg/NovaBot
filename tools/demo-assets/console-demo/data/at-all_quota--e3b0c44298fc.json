@@ -18,6 +18,14 @@
 			"used":0,
 			"limit":20,
 			"limited":true
+		},
+		{
+			"platform":"qq-onebot",
+			"platformName":"QQ",
+			"num":990000000302,
+			"used":0,
+			"limit":20,
+			"limited":true
 		}
 	]
 }

@@ -3,7 +3,21 @@
 	"problemsOnly":false,
 	"events":[
 		{
-			"at":1792380845907,
+			"at":1792379700000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"channel":"群 990000000301",
+			"text":"已推送：演示推送·运营周报",
+			"detail":{
+				"elapsed_ms":"0",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792384200503,
 			"type":"SYSTEM_STARTED",
 			"typeText":"启动",
 			"category":"SYSTEM",
@@ -11,11 +25,11 @@
 			"level":"info",
 			"text":"NovaBot 已启动",
 			"detail":{
-				"startup_ms":"2585"
+				"startup_ms":"2367"
 			}
 		},
 		{
-			"at":1792380539169,
+			"at":1792382100000,
 			"type":"PUSH_MUTED",
 			"typeText":"静音丢弃",
 			"category":"PUSH",
@@ -25,12 +39,12 @@
 			"channel":"群 990000000301",
 			"text":"处于静音时段，丢弃了发往群 990000000301的一条消息",
 			"detail":{
-				"platform":"qq-onebot",
-				"summary":"动态推送（演示主播小星）"
+				"summary":"动态推送（演示主播小星）",
+				"platform":"qq-onebot"
 			}
 		},
 		{
-			"at":1792378439169,
+			"at":1792380000000,
 			"type":"PUSH_FAILED",
 			"typeText":"推送失败",
 			"category":"PUSH",
@@ -40,13 +54,13 @@
 			"channel":"群 990000000301",
 			"text":"推送失败：连接超时",
 			"detail":{
-				"elapsed_ms":"10024",
+				"platform":"qq-onebot",
 				"summary":"下播报告（演示主播小星）",
-				"platform":"qq-onebot"
+				"elapsed_ms":"10024"
 			}
 		},
 		{
-			"at":1792378139169,
+			"at":1792379700000,
 			"type":"PUSH_SENT",
 			"typeText":"推送成功",
 			"category":"PUSH",
@@ -56,12 +70,12 @@
 			"channel":"群 990000000301",
 			"text":"已推送：动态推送（演示主播小星）",
 			"detail":{
-				"platform":"qq-onebot",
-				"elapsed_ms":"495"
+				"elapsed_ms":"495",
+				"platform":"qq-onebot"
 			}
 		},
 		{
-			"at":1792378019169,
+			"at":1792379580000,
 			"type":"PUSH_SENT",
 			"typeText":"推送成功",
 			"category":"PUSH",
@@ -71,12 +85,12 @@
 			"channel":"群 990000000301",
 			"text":"已推送：下播报告（演示主播小星）",
 			"detail":{
-				"platform":"qq-onebot",
-				"elapsed_ms":"509"
+				"elapsed_ms":"509",
+				"platform":"qq-onebot"
 			}
 		},
 		{
-			"at":1792377839169,
+			"at":1792379400000,
 			"type":"PUSH_SENT",
 			"typeText":"推送成功",
 			"category":"PUSH",
@@ -86,13 +100,284 @@
 			"channel":"群 990000000301",
 			"text":"已推送：开播通知（演示主播小星）",
 			"detail":{
+				"elapsed_ms":"530",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792293300000,
+			"type":"PUSH_FAILED",
+			"typeText":"推送失败",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"error",
+			"channel":"群 990000000302",
+			"text":"推送失败：OneBot API 返回错误代码: 演示传输：群暂不可用",
+			"detail":{
 				"platform":"qq-onebot",
-				"elapsed_ms":"530"
+				"summary":"演示推送·动态发送失败",
+				"elapsed_ms":"0"
+			}
+		},
+		{
+			"at":1792295700000,
+			"type":"PUSH_MUTED",
+			"typeText":"静音丢弃",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"warn",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"处于静音时段，丢弃了发往群 990000000301的一条消息",
+			"detail":{
+				"summary":"动态推送（演示主播小星）",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792293600000,
+			"type":"PUSH_FAILED",
+			"typeText":"推送失败",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"error",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"推送失败：连接超时",
+			"detail":{
+				"platform":"qq-onebot",
+				"summary":"下播报告（演示主播小星）",
+				"elapsed_ms":"10024"
+			}
+		},
+		{
+			"at":1792293300000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：动态推送（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"495",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792293180000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：下播报告（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"509",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792293000000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：开播通知（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"530",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792206900000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"channel":"群 990000000301",
+			"text":"已推送：演示推送·下播报告",
+			"detail":{
+				"elapsed_ms":"0",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792209300000,
+			"type":"PUSH_MUTED",
+			"typeText":"静音丢弃",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"warn",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"处于静音时段，丢弃了发往群 990000000301的一条消息",
+			"detail":{
+				"summary":"动态推送（演示主播小星）",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792207200000,
+			"type":"PUSH_FAILED",
+			"typeText":"推送失败",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"error",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"推送失败：连接超时",
+			"detail":{
+				"platform":"qq-onebot",
+				"summary":"下播报告（演示主播小星）",
+				"elapsed_ms":"10024"
+			}
+		},
+		{
+			"at":1792206900000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：动态推送（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"495",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792206780000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：下播报告（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"509",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792206600000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：开播通知（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"530",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792120500000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"channel":"群 990000000302",
+			"text":"已推送：演示推送·开播通知",
+			"detail":{
+				"elapsed_ms":"0",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792122900000,
+			"type":"PUSH_MUTED",
+			"typeText":"静音丢弃",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"warn",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"处于静音时段，丢弃了发往群 990000000301的一条消息",
+			"detail":{
+				"summary":"动态推送（演示主播小星）",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792120800000,
+			"type":"PUSH_FAILED",
+			"typeText":"推送失败",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"error",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"推送失败：连接超时",
+			"detail":{
+				"platform":"qq-onebot",
+				"summary":"下播报告（演示主播小星）",
+				"elapsed_ms":"10024"
+			}
+		},
+		{
+			"at":1792120500000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：动态推送（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"495",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792120380000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：下播报告（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"509",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792120200000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"streamer":"演示主播小星",
+			"channel":"群 990000000301",
+			"text":"已推送：开播通知（演示主播小星）",
+			"detail":{
+				"elapsed_ms":"530",
+				"platform":"qq-onebot"
 			}
 		}
 	],
-	"matched":6,
-	"returned":6,
+	"matched":25,
+	"returned":25,
 	"truncated":false,
 	"limit":200,
 	"types":[
@@ -223,7 +508,8 @@
 		"演示主播小星"
 	],
 	"channels":[
-		"群 990000000301"
+		"群 990000000301",
+		"群 990000000302"
 	],
 	"retentionDays":14,
 	"alertEnabled":true

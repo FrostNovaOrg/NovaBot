@@ -15,18 +15,22 @@
 				"endTime":1784811960000,
 				"durationSeconds":4560,
 				"effectiveSeconds":4560,
-				"listQuality":"unknown",
+				"listQuality":"complete",
 				"metrics":{
+					"super_chat_count":0.0,
 					"gift_value":21.0,
 					"enter_count":620.0,
+					"follow_count":20.0,
 					"danmu_count":410.0,
 					"watched_count":2600.0,
+					"gift_paid":21.0,
 					"super_chat_value":0.0,
+					"fans_at_start":2844.0,
 					"like_total":980.0
 				},
 				"userCounts":{
 					"gift_users":1,
-					"danmu_users":2
+					"danmu_users":1
 				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
@@ -39,19 +43,30 @@
 						990000000401
 					],
 					"danmu_users":[
-						990000000401,
-						990000000402
+						990000000401
 					]
 				},
 				"hasPeaks":true,
 				"peaks":{
-					"danmu_count":{
-						"at":1784809680000,
-						"value":13.0
+					"online_count":{
+						"at":1784809200000,
+						"value":75.0
 					},
-					"watched_count":{
-						"at":1784811960000,
-						"value":2600.0
+					"gift_value":{
+						"at":1784809200000,
+						"value":0.46
+					},
+					"enter_count":{
+						"at":1784809200000,
+						"value":14.0
+					},
+					"danmu_count":{
+						"at":1784809200000,
+						"value":9.0
+					},
+					"super_chat_value":{
+						"at":1784807400000,
+						"value":0.0
 					}
 				},
 				"titles":[
@@ -63,7 +78,7 @@
 				],
 				"titleChangeCount":0,
 				"hasReport":false,
-				"audience":2
+				"audience":1
 			}
 		],
 		"metrics":[

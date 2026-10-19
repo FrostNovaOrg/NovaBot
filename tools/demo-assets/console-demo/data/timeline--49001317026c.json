@@ -5,7 +5,21 @@
 	"category":"PUSH",
 	"events":[
 		{
-			"at":1792380539169,
+			"at":1792379700000,
+			"type":"PUSH_SENT",
+			"typeText":"推送成功",
+			"category":"PUSH",
+			"categoryText":"推送",
+			"level":"info",
+			"channel":"群 990000000301",
+			"text":"已推送：演示推送·运营周报",
+			"detail":{
+				"elapsed_ms":"0",
+				"platform":"qq-onebot"
+			}
+		},
+		{
+			"at":1792382100000,
 			"type":"PUSH_MUTED",
 			"typeText":"静音丢弃",
 			"category":"PUSH",
@@ -15,12 +29,12 @@
 			"channel":"群 990000000301",
 			"text":"处于静音时段，丢弃了发往群 990000000301的一条消息",
 			"detail":{
-				"platform":"qq-onebot",
-				"summary":"动态推送（演示主播小星）"
+				"summary":"动态推送（演示主播小星）",
+				"platform":"qq-onebot"
 			}
 		},
 		{
-			"at":1792378439169,
+			"at":1792380000000,
 			"type":"PUSH_FAILED",
 			"typeText":"推送失败",
 			"category":"PUSH",
@@ -30,13 +44,13 @@
 			"channel":"群 990000000301",
 			"text":"推送失败：连接超时",
 			"detail":{
-				"elapsed_ms":"10024",
+				"platform":"qq-onebot",
 				"summary":"下播报告（演示主播小星）",
-				"platform":"qq-onebot"
+				"elapsed_ms":"10024"
 			}
 		},
 		{
-			"at":1792378139169,
+			"at":1792379700000,
 			"type":"PUSH_SENT",
 			"typeText":"推送成功",
 			"category":"PUSH",
@@ -46,12 +60,12 @@
 			"channel":"群 990000000301",
 			"text":"已推送：动态推送（演示主播小星）",
 			"detail":{
-				"platform":"qq-onebot",
-				"elapsed_ms":"495"
+				"elapsed_ms":"495",
+				"platform":"qq-onebot"
 			}
 		},
 		{
-			"at":1792378019169,
+			"at":1792379580000,
 			"type":"PUSH_SENT",
 			"typeText":"推送成功",
 			"category":"PUSH",
@@ -61,12 +75,12 @@
 			"channel":"群 990000000301",
 			"text":"已推送：下播报告（演示主播小星）",
 			"detail":{
-				"platform":"qq-onebot",
-				"elapsed_ms":"509"
+				"elapsed_ms":"509",
+				"platform":"qq-onebot"
 			}
 		},
 		{
-			"at":1792377839169,
+			"at":1792379400000,
 			"type":"PUSH_SENT",
 			"typeText":"推送成功",
 			"category":"PUSH",
@@ -76,13 +90,13 @@
 			"channel":"群 990000000301",
 			"text":"已推送：开播通知（演示主播小星）",
 			"detail":{
-				"platform":"qq-onebot",
-				"elapsed_ms":"530"
+				"elapsed_ms":"530",
+				"platform":"qq-onebot"
 			}
 		}
 	],
-	"matched":5,
-	"returned":5,
+	"matched":6,
+	"returned":6,
 	"truncated":false,
 	"limit":200,
 	"types":[
@@ -183,7 +197,7 @@
 		{
 			"name":"PUSH",
 			"text":"推送",
-			"count":5
+			"count":6
 		},
 		{
 			"name":"LIVE",

@@ -27,10 +27,10 @@
 		"novabot.core.mail.default-to":"demo@example.com",
 		"novabot.core.config-ui.update.enabled":"false",
 		"novabot.core.config-ui.agreement.accepted-version":"1",
-		"novabot.core.config-ui.agreement.accepted-at":"2026-10-19T11:33:59",
+		"novabot.core.config-ui.agreement.accepted-at":"2026-10-19T12:00:00",
 		"novabot.core.config-ui.agreement.accepted-by":"operator-token",
 		"novabot.core.alert.webhook-url":"********",
-		"novabot.core.push.quiet-start":"11:03",
-		"novabot.core.push.quiet-end":"13:03"
+		"novabot.core.push.quiet-start":"11:30",
+		"novabot.core.push.quiet-end":"13:30"
 	}
 }

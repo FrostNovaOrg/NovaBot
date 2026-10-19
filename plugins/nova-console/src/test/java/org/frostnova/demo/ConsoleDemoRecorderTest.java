@@ -8,6 +8,10 @@ import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.core.NovaCoreApplication;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
+import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
@@ -36,6 +40,8 @@ class ConsoleDemoRecorderTest {
     @TestBean(methodName = "botTransport") OneBotHttpAdapter oneBotHttpAdapter;
     @Autowired WebApplicationContext context;
     @Autowired ConfigUiSessionStore sessions;
+    @Autowired NovaMessageSender sender;
+    private static boolean failSend;
 
     static WebServerApplicationContext portContext() {
         WebServer web = mock(WebServer.class);
@@ -50,6 +56,8 @@ class ConsoleDemoRecorderTest {
         return mock(OneBotHttpAdapter.class, call -> {
             var api = call.getMethod().getAnnotation(org.frostnova.nova.adapter.onebot.annotation.OneBotApi.class);
             if (api == null) return org.mockito.Answers.RETURNS_DEFAULTS.answer(call);
+            if (failSend && api.url().equals("/send_group_msg"))
+                throw new OneBotApiException(api.url(), call.getArgument(1), 100, "演示传输：群暂不可用");
             Object value = replies.get(api.url());
             if (value == null) throw new IllegalStateException("Unrecorded OneBot transport: " + api.url());
             return value;
@@ -59,6 +67,7 @@ class ConsoleDemoRecorderTest {
     private MockMvc mvc;
     private Cookie cookie;
     private Path output;
+    private final java.util.Set<String> expiredReports = new java.util.HashSet<>();
     private final JSONArray entries = new JSONArray();
     private final java.util.List<String> misses = new java.util.ArrayList<>();
     private final java.util.Set<String> keys = new java.util.LinkedHashSet<>();
@@ -109,6 +118,7 @@ class ConsoleDemoRecorderTest {
             bytes = (JSON.toJSONString(JSON.parse(bytes), com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat)
                     + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
+        if (contentType.contains("png")) bytes = compressPng(bytes);
         String digest = sha(bytes);
         if (bodies.containsKey(digest)) file = bodies.get(digest);
         else {
@@ -117,12 +127,12 @@ class ConsoleDemoRecorderTest {
         }
         entries.add(JSONObject.of("method", method, "path", "/config/api" + path, "query", encoded,
                 "file", "data/" + file, "status", response.getStatus(), "contentType", contentType, "sha256", sha(bytes)));
-        // Missing report details and an unadmitted anonymous streamer are genuine empty states.
-        boolean empty = response.getStatus() == 404 && (path.endsWith("/preview") || path.endsWith("/report"));
+        // Anonymous nickname lookup can fail without an upstream connection.
         boolean offlineError = response.getStatus() == 500 && path.equals("/streamer/name");
-        String line = key + " -> HTTP " + response.getStatus() + (empty ? " (empty seed)" : offlineError ? " (backend offline error)" : "");
+        boolean expired = response.getStatus() == 404 && expiredReports.contains(path);
+        String line = key + " -> HTTP " + response.getStatus() + (offlineError ? " (backend offline error)" : expired ? " (expired detail)" : "");
         System.out.println("HIT " + line);
-        if (response.getStatus() >= 400 && !empty && !offlineError) misses.add(line);
+        if (response.getStatus() >= 400 && !offlineError && !expired) misses.add(line);
         return contentType.contains("json") ? JSON.parseObject(bytes) : null;
     }
 
@@ -134,6 +144,55 @@ class ConsoleDemoRecorderTest {
         return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
     }
 
+    /** Recompress IDAT losslessly; headers, metadata and decoded scanlines stay identical. */
+    private static byte[] compressPng(byte[] source) throws Exception {
+        var input = new java.io.DataInputStream(new java.io.ByteArrayInputStream(source));
+        byte[] signature = input.readNBytes(8);
+        var chunks = new java.util.ArrayList<byte[][]>();
+        var idat = new java.io.ByteArrayOutputStream();
+        while (input.available() > 0) {
+            int length = input.readInt();
+            byte[] type = input.readNBytes(4), data = input.readNBytes(length);
+            input.readInt();
+            chunks.add(new byte[][]{type, data});
+            if (java.util.Arrays.equals(type, new byte[]{73, 68, 65, 84})) idat.write(data);
+        }
+        byte[] scanlines;
+        try (var inflater = new java.util.zip.InflaterInputStream(
+                new java.io.ByteArrayInputStream(idat.toByteArray()))) {
+            scanlines = inflater.readAllBytes();
+        }
+        var packed = new java.io.ByteArrayOutputStream();
+        var deflater = new java.util.zip.Deflater(java.util.zip.Deflater.BEST_COMPRESSION);
+        try (var compressor = new java.util.zip.DeflaterOutputStream(packed, deflater)) {
+            compressor.write(scanlines);
+        } finally { deflater.end(); }
+        try (var inflater = new java.util.zip.InflaterInputStream(
+                new java.io.ByteArrayInputStream(packed.toByteArray()))) {
+            assertArrayEquals(scanlines, inflater.readAllBytes(), "lossless PNG scanlines");
+        }
+        var result = new java.io.ByteArrayOutputStream();
+        var output = new java.io.DataOutputStream(result);
+        output.write(signature);
+        boolean written = false;
+        for (byte[][] chunk : chunks) {
+            byte[] type = chunk[0], data = chunk[1];
+            if (java.util.Arrays.equals(type, new byte[]{73, 68, 65, 84})) {
+                if (written) continue;
+                written = true;
+                data = packed.toByteArray();
+            }
+            output.writeInt(data.length);
+            output.write(type);
+            output.write(data);
+            var crc = new java.util.zip.CRC32();
+            crc.update(type);
+            crc.update(data);
+            output.writeInt((int) crc.getValue());
+        }
+        return result.size() < source.length ? result.toByteArray() : source;
+    }
+
     @Test void record() throws Exception {
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
         ConfigUiSession session = sessions.issue("127.0.0.1", Instant.now(), ConfigUiSession.Channel.PASSWORD);
@@ -141,12 +200,35 @@ class ConsoleDemoRecorderTest {
         output = Path.of("recorded-data");
         Files.createDirectory(output);
         JSONObject meta = JSON.parseObject(Files.readString(Path.of("recording.json")));
+        replayPushes();
+        Instant instant = Instant.ofEpochMilli(meta.getLongValue("epochMs"));
+        java.time.Clock clock = java.time.Clock.fixed(instant, java.time.ZoneId.of("Asia/Shanghai"));
+        // Fix only the recording clock; controllers and renderers still run normally.
+        for (Class<?> type : java.util.List.of(
+                org.frostnova.nova.console.controller.StreamerController.class,
+                org.frostnova.nova.core.service.WeeklyReportDeliveryService.class))
+            org.springframework.test.util.ReflectionTestUtils.setField(context.getBean(type), "clock", clock);
+        java.time.LocalDate day = instant.atZone(clock.getZone()).toLocalDate();
+        try (var time = mockStatic(Instant.class, CALLS_REAL_METHODS);
+             var dates = mockStatic(java.time.LocalDate.class, CALLS_REAL_METHODS)) {
+            time.when(Instant::now).thenReturn(instant);
+            dates.when(java.time.LocalDate::now).thenReturn(day);
+            recordResponses(meta);
+        }
+    }
+
+    private void recordResponses(JSONObject meta) throws Exception {
         String today = meta.getString("today");
         for (String path : java.util.List.of("/auth/state", "/auth/agreement", "/auth/passkeys", "/auth/totp/setup",
                 "/alert/channels", "/bot/console", "/handlers", "/login", "/pages", "/platforms", "/schema",
                 "/status", "/values", "/vocab", "/event-tokens", "/setup/bot", "/setup/state", "/datasource",
                 "/state", "/push-history", "/at-all/quota", "/templates", "/timeline/days", "/streamers",
-                "/report/layout-options")) capture(path);
+                "/report/layout-options")) {
+            JSONObject body = capture(path);
+            if (path.equals("/auth/passkeys")) assertEquals(2, body.getJSONArray("passkeys").size());
+            if (path.equals("/event-tokens")) assertEquals(2, body.getJSONArray("tokens").size());
+            if (path.equals("/streamers")) assertEquals(4, body.getJSONArray("streamers").size());
+        }
         captureRequest("POST", "/report/preview");
         capture("/bot/targets", "type", "group");
         capture("/bot/targets", "type", "friend");
@@ -157,6 +239,15 @@ class ConsoleDemoRecorderTest {
         capture("/timeline", "date", today, "limit", 200, "problems", true);
         for (String category : java.util.List.of("PUSH", "LIVE", "SYSTEM"))
             capture("/timeline", "date", today, "limit", 200, "category", category);
+        for (int age : new int[]{1, 2, 3}) {
+            String date = java.time.LocalDate.parse(today).minusDays(age).toString();
+            capture("/timeline", "date", date);
+            capture("/timeline", "date", date, "problems", true);
+            capture("/timeline", "date", date, "limit", 200);
+            capture("/timeline", "date", date, "limit", 200, "problems", true);
+            for (String category : java.util.List.of("PUSH", "LIVE", "SYSTEM"))
+                capture("/timeline", "date", date, "limit", 200, "category", category);
+        }
         capture("/engineering-log");
         for (int limit : new int[]{0, 300, 1000, 2000}) {
             capture("/engineering-log", "limit", limit);
@@ -173,10 +264,18 @@ class ConsoleDemoRecorderTest {
             capture(p);
             capture(p + "/live");
             capture(p + "/live", "series", "online_count");
-            for (int days : new int[]{7, 30, 90, 180, 360}) {
+            boolean frequent = user.getString("uname").equals("演示主播常青");
+            for (int days : frequent ? new int[]{7, 30, 90, 180, 360} : new int[]{7, 30, 90}) {
                 JSONObject data = capture(p + "/insights", "days", days);
-                for (String suffix : java.util.List.of("calendar", "fans", "weekly-report", "audience"))
-                    capture(p + "/" + suffix, "days", days);
+                for (String suffix : java.util.List.of("calendar", "fans", "audience")) {
+                    JSONObject body = capture(p + "/" + suffix, "days", days);
+                    if (suffix.equals("fans")) assertFalse(body.getJSONObject("fans").getJSONArray("points").isEmpty());
+                    if (suffix.equals("calendar") && days == 180) {
+                        var states = body.getJSONObject("calendar").getJSONArray("items").stream()
+                                .map(rawDay -> ((JSONObject) rawDay).getString("status")).collect(java.util.stream.Collectors.toSet());
+                        assertTrue(states.containsAll(java.util.Set.of("recorded", "off", "unknown")), "three calendar states: " + states);
+                    }
+                }
                 for (String period : java.util.List.of("day", "week", "month"))
                     capture(p + "/trend", "days", days, "period", period);
                 for (String group : java.util.List.of("all", "first", "returning", "interaction"))
@@ -192,24 +291,70 @@ class ConsoleDemoRecorderTest {
             for (int page : new int[]{1, 2}) capture(p + "/sessions", "page", page, "size", 10);
             for (Object row : archives) {
                 JSONObject archive = (JSONObject) row;
-                capture(p + "/sessions/" + archive.getString("startTime") + "/report");
+                if (!uid.equals(archive.getString("uid")) || !platform.equals(archive.getString("platform"))) continue;
+                String report = p + "/sessions/" + archive.getString("startTime") + "/report";
+                boolean hasDetail = Files.isRegularFile(Path.of("details", platform + "-" + uid + "-"
+                        + archive.getString("startTime"), "detail.json"));
+                if (!hasDetail) expiredReports.add(report);
+                int before = entries.size();
+                capture(report);
+                assertEquals(hasDetail ? 200 : 404, entries.getJSONObject(before).getIntValue("status"),
+                        "report follows persisted detail availability");
                 capture(p + "/sessions", "starts", archive.getString("startTime"), "page", 1, "size", 10);
             }
             for (Object row : user.getJSONArray("targets")) {
                 JSONObject target = (JSONObject) row;
                 Object[] query = {"pushPlatform", target.get("platform"), "type", target.get("type"), "num", target.get("num")};
                 String wp = "/weekly-report/" + platform + "/" + uid;
-                capture(wp + "/status", query);
-                capture(wp + "/preview", query);
-                capture(wp + "/preview", "pushPlatform", target.get("platform"), "type", target.get("type"),
-                        "num", target.get("num"), "format", "json");
+                JSONObject status = capture(wp + "/status", query);
+                assertTrue(status.getString("status").contains("已发出"), "previous weekly delivery");
+                if (user.getBooleanValue("enabled")) capture(wp + "/preview", query);
             }
         }
         System.out.println("RECORDED " + entries.size() + " responses (MockMvc bodies; local config path replaced)");
         System.out.println("UNIQUE " + bodies.size() + " response files (SHA-256 deduplicated)");
+        long bytes;
+        try (var files = Files.list(output)) {
+            bytes = files.mapToLong(file -> {
+                try { return Files.size(file); }
+                catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+            }).sum();
+        }
+        System.out.println("SIZE " + bytes + " bytes (unique response bodies; index excluded)");
         System.out.println("MISS " + (misses.isEmpty() ? "(none)" : String.join("\n", misses)));
         if (!misses.isEmpty()) throw new IllegalStateException("Some endpoints could not be recorded");
+        long imageBytes;
+        try (var files = Files.list(output)) {
+            imageBytes = files.filter(file -> file.toString().endsWith(".png")).mapToLong(file -> {
+                try { return Files.size(file); }
+                catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+            }).sum();
+        }
+        assertTrue(imageBytes <= 2_000_000, "PNG budget: " + imageBytes);
         meta.put("responses", entries);
         Files.writeString(output.resolve("index.json"), JSON.toJSONString(meta, com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat) + "\n");
+        assertTrue(bytes + Files.size(output.resolve("index.json")) <= 8_000_000, "data budget");
+    }
+
+    private void replayPushes() throws Exception {
+        for (Object raw : JSON.parseArray(Files.readString(Path.of("push-replay.json")))) {
+            JSONObject row = (JSONObject) raw;
+            Instant at = Instant.ofEpochMilli(row.getLongValue("at"));
+            // Only the synchronous send's clock and transport are substituted.
+            // The sender, adapter service, history and timeline execute normally.
+            try (var time = mockStatic(Instant.class, CALLS_REAL_METHODS)) {
+                time.when(Instant::now).thenReturn(at);
+                failSend = row.getBooleanValue("fail");
+                try {
+                    JSONObject result = sender.sendNow(Message.create("qq-onebot", PushTargetType.GROUP,
+                            row.getLong("num"), row.getString("summary")).get(0));
+                    assertEquals(!failSend, result.getIntValue("code") == 0, "transport outcome");
+                } finally { failSend = false; }
+            }
+        }
+        JSONObject history = capture("/push-history");
+        assertEquals(4, history.getJSONArray("records").size(), "real sender history");
+        assertTrue(history.getJSONArray("records").stream()
+                .anyMatch(raw -> !((JSONObject) raw).getBooleanValue("success")), "failed delivery visible");
     }
 }

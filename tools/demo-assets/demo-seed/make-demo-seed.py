@@ -1,38 +1,15 @@
 #!/usr/bin/env python3
-"""Preset sample data into a demo instance's working directory.
+"""Generate an isolated demo world for screenshots and response recording.
 
-Used by start-demo.sh when DEMO_SEED=1. Takes the throwaway working directory
-as its only argument (--now YYYY-MM-DDTHH:MM:SS pretends that is the start
-moment; it is for checking this script, the demo run never passes it) and writes:
-
-  datasource.json   one demo streamer (nickname says it is a demo) pushing to
-                    one demo group            (copied from datasource.demo.json)
-  state.json        the demo group's command switch, revenue visibility and
-                    subscriptions             (copied from state.demo.json)
-  application.yml   quiet hours around the start moment, three fake alert
-                    channels, agreement record, and switches that keep the
-                    instance from reaching the live platform
-                                                    (rendered from application.demo.yml)
-  sessions.jsonl    past sessions dated back from the start day, spanning more
-                    than three months, with varying monthly totals, one session
-                    cut off by the platform and one with a collection gap
-  timeline/<today>.jsonl   today's push records: PUSH_SENT x3, PUSH_MUTED x1,
-                          PUSH_FAILED x1
-  logs/<YYYY-MM>/novabot-<today>.log   today's engineering log with ERROR and
-                          WARN lines; the ERROR sits in the same minute as the
-                          PUSH_FAILED timeline entry, so the log page's "view
-                          this moment" jump lands exactly on it
-
-Dates are computed from the start moment; nothing date-like is hardcoded. All
-names and numbers are made up for the demo and use ranges the platforms do not
-hand out, so no real account or group can be hit by accident.
-
-Samples are dated as "start minus a few tens of minutes", so starting before
-01:00 would put some of them on the previous day while the files are named for
-the start day. Nothing is written between 00:00 and 00:59; start after 01:00.
+Four synthetic streamers share three groups and a friend. Archives, minute
+details, fan snapshots, monitoring evidence, credentials and weekly deliveries
+use dates relative to startup. No online session is fabricated in saved state.
+Use --now YYYY-MM-DDTHH:MM:SS for reproducible checks; start after 01:00.
 """
 
 import json
+import base64
+import hashlib
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -46,6 +23,7 @@ DEMO_PLATFORM = "bilibili"
 PUSH_PLATFORM = "qq-onebot"
 CHANNEL = "群 " + str(DEMO_GROUP)
 VIEWER_UIDS = IDENTITIES['viewers']
+USERS = json.loads((Path(__file__).parent / 'datasource.demo.json').read_text())
 
 # Past sessions: (days_ago, hour, minute, duration_min, danmu, gift_yuan, sc_yuan,
 #                 enter, like, watched, kind) — kind is normal / cutoff / gap.
@@ -81,15 +59,39 @@ def compact(obj):
 
 
 def session_lines(now):
+    records = []
+    for index, user in enumerate(USERS):
+        rows = list(SESSIONS)
+        if index == 0:
+            rows.append((0, 0, 0, 40, 426, 48.0, 12.0, 710, 930, 2480, 'normal'))
+        else:
+            ages = (range(1, 73, 3) if index == 1 else
+                    [65, 70, 84, 100, 115, 130, 150, 170] if index == 2 else
+                    [3, 8, 15, 22, 29, 40, 55, 65, 77, 90])
+            rows = [(age, 20, 0, 90 + n % 4 * 15, 500 + n * 21, 40 + n * 2,
+                     12.0, 810 + n * 30, 1200 + n * 55, 3200 + n * 70,
+                     'gap' if n == 2 else 'cutoff' if n == 4 else 'normal')
+                    for n, age in enumerate(ages)]
+        records.extend(streamer_sessions(now, user, rows))
+    for record in records:
+        record['peaks'] = detail_of(record)['peaks']
+    return [compact(row) for row in sorted(records, key=lambda row: row['startTime'])]
+
+
+def streamer_sessions(now, user, rows):
     lines = []
-    for row_index, row in enumerate(SESSIONS):
+    for row_index, row in enumerate(rows):
         days_ago, hour, minute, dur_min, danmu, gift, sc, enter, like, watched, kind = row
         start = (now - timedelta(days=days_ago)).replace(hour=hour, minute=minute,
                                                          second=0, microsecond=0)
         end = start + timedelta(minutes=dur_min)
+        if days_ago == 0:
+            end = now - timedelta(minutes=10)
+            start = end - timedelta(minutes=dur_min)
 
-        danmu_users = min(len(VIEWER_UIDS), max(2, danmu // 180))
-        gift_users = min(len(VIEWER_UIDS), max(1, round(gift / 20)) if gift else 0)
+        danmu_users = 1
+        gift_users = 1 if gift else 0
+        viewers = VIEWER_UIDS[row_index % 3:] + VIEWER_UIDS[:row_index % 3]
 
         titles = [{"at": ms(start), "title": "晚间歌回·点歌之夜（演示）", "area": "唱见电台"}]
         if row_index == TITLE_CHANGE_ROW:
@@ -98,9 +100,9 @@ def session_lines(now):
 
         record = {
             "platform": DEMO_PLATFORM,
-            "uid": DEMO_UID,
-            "uname": DEMO_UNAME,
-            "roomId": DEMO_ROOM,
+            "uid": user['uid'],
+            "uname": user['uname'],
+            "roomId": user['roomId'],
             "startTime": ms(start),
             "endTime": ms(end),
             "durationSeconds": dur_min * 60,
@@ -111,15 +113,20 @@ def session_lines(now):
                 "enter_count": enter,
                 "like_total": like,
                 "watched_count": watched,
+                "fans_at_start": 2200 + USERS.index(user) * 500 + (180 - days_ago) * 7,
+                "follow_count": 20,
+                "gift_paid": gift,
+                "super_chat_count": 1 if sc else 0,
             },
             "userCounts": {"danmu_users": danmu_users, "gift_users": gift_users},
             "endReason": "CUT_OFF" if kind == "cutoff" else "NORMAL",
             "titles": titles,
             "maintenanceGapSeconds": 1320 if kind == "gap" else 0,
             "userSets": {
-                "danmu_users": VIEWER_UIDS[:danmu_users],
-                "gift_users": VIEWER_UIDS[:gift_users],
+                "danmu_users": viewers[:danmu_users],
+                "gift_users": viewers[:gift_users],
             },
+            "anonymousCounts": {},
             "roomOutageSeconds": 300 if kind == "cutoff" else 0,
             "peaks": {
                 "danmu_count": {"at": ms(start + timedelta(minutes=dur_min // 2)),
@@ -128,8 +135,125 @@ def session_lines(now):
                                   "value": watched},
             },
         }
-        lines.append(compact(record))
+        lines.append(record)
     return lines
+
+
+def detail_of(session):
+    detail = {key: session[key] for key in ('platform', 'uid', 'uname', 'roomId',
+              'startTime', 'endTime', 'durationSeconds', 'metrics', 'userCounts', 'titles')}
+    minutes = session['durationSeconds'] // 60
+    base = session['startTime'] // 60000 * 60000
+    gap_start = base + 30 * 60000
+    gap_end = gap_start + session['maintenanceGapSeconds'] * 1000
+    weights = [1 + min(m, minutes - 1 - m) // 15 for m in range(minutes)]
+    # Missing intervals contribute no invented observations. Other minute sums
+    # match the archived totals, including a zero-activity opening minute.
+    observed = [m for m in range(minutes) if not gap_start <= base + m * 60000 < gap_end]
+    weights[0] = 0
+    total = sum(weights[m] for m in observed)
+    series = {}
+    for metric in ('danmu_count', 'enter_count', 'gift_value', 'super_chat_value'):
+        cumulative = 0
+        points = {}
+        amount = session['metrics'][metric]
+        precision = 0 if metric in ('danmu_count', 'enter_count') else 2
+        for m in observed:
+            previous = round(amount * cumulative / total, precision)
+            cumulative += weights[m]
+            points[str(base + m * 60000)] = round(round(amount * cumulative / total, precision) - previous, precision)
+        series[metric] = points
+    series['online_count'] = {str(base + m * 60000): 60 + min(m, minutes - 1 - m) // 10 * 5 for m in observed}
+    rankings = {}
+    for metric, count in session['userCounts'].items():
+        amount = session['metrics']['danmu_count' if metric == 'danmu_users' else 'gift_value']
+        precision = 0 if metric == 'danmu_users' else 2
+        rankings[metric] = [dict(uid=uid, uname=f'演示观众{VIEWER_UIDS.index(uid) + 1}', face='',
+                                 score=round(round(amount * (i + 1) / count, precision)
+                                             - round(amount * i / count, precision), precision))
+                            for i, uid in enumerate(session['userSets'][metric])]
+    rankings['revenue_users'] = [dict(rankings['gift_users'][0],
+        score=session['metrics']['gift_value'] + session['metrics']['super_chat_value'])]
+    detail['metrics'] = dict(session['metrics'])
+    detail['metrics']['online_count'] = max(series['online_count'].values())
+    detail.update(version=1, series=series, rankings=rankings,
+                  words={'好听': 48, '晚安': 32},
+                  highlights=[dict(at=base + 20 * 60000, value=24, ratio=2.8)],
+                  gaps=[dict(from_=gap_start, to=gap_end, reason='MAINTENANCE')]
+                  if session['maintenanceGapSeconds'] else [],
+                  peaks={metric: dict(at=int(max(points, key=points.get)), value=max(points.values()))
+                         for metric, points in series.items()},
+                  gifts=[dict(name='演示星星', price=0.1, count=round(session['metrics']['gift_value'] * 10))])
+    for gap in detail['gaps']:
+        gap['from'] = gap.pop('from_')
+    return detail
+
+
+def extra_files(now, sessions):
+    """Return seed files in their actual persisted formats, never API responses."""
+    files = {}
+    pretty = lambda value: json.dumps(value, ensure_ascii=False, indent=2) + '\n'
+    snapshots = []
+    monitoring = {}
+    for index, user in enumerate(USERS):
+        for age in range(180, -1, -1):
+            at = now - timedelta(days=age, minutes=2)
+            snapshots.append(dict(platform=DEMO_PLATFORM, uid=user['uid'], uname=user['uname'],
+                                  at=ms(at), metrics={'fans': 2200 + index * 500 + (180 - age) * 7
+                                                     + (age % 5) * 2,
+                                                     'fans_medal': 120 + index * 30 + (180 - age) // 5,
+                                                     'guard': 8 + index + (180 - age) // 60}))
+        # Two separate stretches leave a full uncertain day between them.
+        monitoring[str(user['uid'])] = [
+            dict(from_=ms(now - timedelta(days=170)), to=ms(now - timedelta(days=12)), roomId=user['roomId']),
+            dict(from_=ms(now - timedelta(days=10)), to=ms(now - timedelta(minutes=1)), roomId=user['roomId'])]
+        for interval in monitoring[str(user['uid'])]:
+            interval['from'] = interval.pop('from_')
+    files['snapshots.jsonl'] = '\n'.join(compact(row) for row in sorted(snapshots, key=lambda row: row['at'])) + '\n'
+    files['data.json'] = pretty({'Monitoring:bilibili': monitoring})
+    recent = [row for user in USERS for row in sorted(
+        [row for row in sessions if row['uid'] == user['uid']],
+        key=lambda row: row['startTime'], reverse=True)[:3]]
+    for session in recent:
+        directory = f"details/bilibili-{session['uid']}-{session['startTime']}"
+        detail = detail_of(session)
+        files[directory + '/detail.json'] = pretty(detail)
+        times = [max(session['startTime'], int(at))
+                 for at, count in detail['series']['danmu_count'].items() for _ in range(int(count))]
+        viewers = [row['uid'] for row in detail['rankings']['danmu_users'] for _ in range(int(row['score']))]
+        files[directory + '/danmu.jsonl'] = '\n'.join(compact(dict(
+            at=at, uid=uid, uname=f'演示观众{VIEWER_UIDS.index(uid) + 1}',
+            text=('好听！', '欢迎来到演示直播间', '再来一首', '晚安')[i % 4], type='DANMU', recovered=False))
+            for i, (at, uid) in enumerate(zip(times, viewers))) + '\n'
+    state = json.loads((Path(__file__).parent / 'state.demo.json').read_text())
+    state['passkey'] = {f'demo-not-a-real-credential-{i}': dict(
+        name=f'演示通行密钥·{name}', publicKey='DEMO-NOT-A-REAL-PUBLIC-KEY', algorithm=-7,
+        signCount=i, createdAt=(now - timedelta(days=20 + i)).astimezone().isoformat(),
+        **({'lastUsedAt': (now - timedelta(days=1)).astimezone().isoformat()} if i == 1 else {}))
+        for i, name in enumerate(('备用设备', '日常设备'))}
+    files['state.json'] = pretty(state)
+    files['event-stream-tokens.jsonl'] = '\n'.join(compact(dict(
+        hash=base64.urlsafe_b64encode(hashlib.sha256(f'demo-not-a-real-token-{i}'.encode()).digest()).decode().rstrip('='),
+        label=f'演示只读口令·{label}', issuedAt=ms(now - timedelta(days=30)),
+        revokedAt=ms(now - timedelta(days=2)) if i else 0))
+        for i, label in enumerate(('演示面板', '已吊销设备'))) + '\n'
+    monday = (now - timedelta(days=now.weekday())).replace(hour=10, minute=0, second=0, microsecond=0)
+    if monday > now:
+        monday -= timedelta(days=7)
+    # Persist the preceding issue as sent. Observe the current period without
+    # scheduling synthetic sends during startup.
+    keys = [f"bilibili:{user['uid']}:qq-onebot:{'GROUP' if t['type'] == 1 else 'FRIEND'}:{t['num']}"
+            for user in USERS for t in user['targets']]
+    files['weekly-report-deliveries.json'] = pretty(dict(lastSeen=ms(now), period=ms(monday),
+        subscriptions=keys, records=[dict(subscription=key, dueAt=ms(monday - timedelta(days=7)),
+                                          status='SENT', reason='', updatedAt=ms(monday - timedelta(days=7) + timedelta(minutes=2)))
+                                    for key in keys]))
+    # Push history is in memory only. The recorder replays these inputs through
+    # the real sender and the OneBot transport, with a clock for each send.
+    files['push-replay.json'] = pretty([dict(at=ms(now - timedelta(days=age, minutes=45)),
+        num=IDENTITIES['groups'][age % 2], summary=f'演示推送·{name}', fail=age == 1)
+        for age, name in ((3, '开播通知'), (2, '下播报告'), (1, '动态发送失败'), (0, '运营周报'))])
+    return files
 
 
 def timeline_lines(now):
@@ -264,7 +388,6 @@ def main():
 
     # 1) static sample files
     fresh_write(work / "datasource.json", (here / "datasource.demo.json").read_text(encoding="utf-8"))
-    fresh_write(work / "state.json", (here / "state.demo.json").read_text(encoding="utf-8"))
 
     # 2) config rendered for this start moment
     template = (here / "application.demo.yml").read_text(encoding="utf-8")
@@ -276,21 +399,31 @@ def main():
                 .replace("__ACCEPTED_AT__", now.strftime("%Y-%m-%dT%H:%M:%S")))
 
     # 3) past sessions
-    fresh_write(work / "sessions.jsonl", "\n".join(session_lines(now)) + "\n")
+    sessions = session_lines(now)
+    fresh_write(work / "sessions.jsonl", "\n".join(sessions) + "\n")
+    for name, content in extra_files(now, [json.loads(line) for line in sessions]).items():
+        path = work / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fresh_write(path, content)
 
     # 4) today's timeline
     timeline_dir = work / "timeline"
     timeline_dir.mkdir(exist_ok=True)
     events, muted_minute, failed_minute = timeline_lines(now)
     fresh_write(timeline_dir / f"{today.isoformat()}.jsonl", "\n".join(events) + "\n")
+    for age in (1, 2, 3):
+        day = now - timedelta(days=age)
+        fresh_write(timeline_dir / f"{day.date().isoformat()}.jsonl",
+                    "\n".join(timeline_lines(day)[0]) + "\n")
 
     # 5) today's engineering log (the appender appends after these lines)
     log_dir = work / "logs" / today.strftime("%Y-%m")
     log_dir.mkdir(parents=True, exist_ok=True)
     fresh_write(log_dir / f"novabot-{today.isoformat()}.log", "\n".join(log_lines(now, muted_minute, failed_minute)) + "\n")
 
-    print(f"seeded demo data into {work}: streamer {DEMO_UNAME} (uid {DEMO_UID}) -> {CHANNEL},"
-          f" {len(SESSIONS)} sessions, {len(events)} timeline entries, quiet {quiet_start}-{quiet_end}")
+    print(f"seeded demo data into {work}: {len(USERS)} streamers, 3 groups, 1 friend,"
+          f" {len(sessions)} sessions, {3 * len(USERS)} with details, {181 * len(USERS)} snapshots,"
+          f" {len(events) * 4} timeline entries, quiet {quiet_start}-{quiet_end}")
     return 0
 
 

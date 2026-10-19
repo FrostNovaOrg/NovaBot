@@ -13,9 +13,9 @@
 			"living":false,
 			"summary":{
 				"days":7,
-				"sessions":1,
-				"durationSeconds":7680,
-				"lastStart":1792151700000
+				"sessions":2,
+				"durationSeconds":10080,
+				"lastStart":1792379400000
 			},
 			"series":[
 				{
@@ -50,13 +50,175 @@
 				},
 				{
 					"date":"2026-10-19",
+					"sessions":1,
+					"durationSeconds":2400
+				}
+			]
+		},
+		{
+			"platform":"bilibili",
+			"uid":990000000102,
+			"uname":"演示主播常青",
+			"roomId":990000000202,
+			"status":"OFFLINE",
+			"statusText":"未开播",
+			"enabled":true,
+			"pushing":true,
+			"living":false,
+			"summary":{
+				"days":7,
+				"sessions":2,
+				"durationSeconds":11700,
+				"lastStart":1792324800000
+			},
+			"series":[
+				{
+					"date":"2026-10-13",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-14",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-15",
+					"sessions":1,
+					"durationSeconds":6300
+				},
+				{
+					"date":"2026-10-16",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-17",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-18",
+					"sessions":1,
+					"durationSeconds":5400
+				},
+				{
+					"date":"2026-10-19",
+					"sessions":0,
+					"durationSeconds":0
+				}
+			]
+		},
+		{
+			"platform":"bilibili",
+			"uid":990000000103,
+			"uname":"演示主播远山",
+			"roomId":990000000203,
+			"status":"OFFLINE",
+			"statusText":"未开播",
+			"enabled":true,
+			"pushing":true,
+			"living":false,
+			"summary":{
+				"days":7,
+				"sessions":0,
+				"durationSeconds":0,
+				"lastStart":1786795200000
+			},
+			"series":[
+				{
+					"date":"2026-10-13",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-14",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-15",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-16",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-17",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-18",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-19",
+					"sessions":0,
+					"durationSeconds":0
+				}
+			]
+		},
+		{
+			"platform":"bilibili",
+			"uid":990000000104,
+			"uname":"演示主播休眠",
+			"roomId":990000000204,
+			"status":"DISABLED",
+			"statusText":"已停用",
+			"enabled":false,
+			"pushing":false,
+			"living":false,
+			"summary":{
+				"days":7,
+				"sessions":1,
+				"durationSeconds":5400,
+				"lastStart":1792152000000
+			},
+			"series":[
+				{
+					"date":"2026-10-13",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-14",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-15",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-16",
+					"sessions":1,
+					"durationSeconds":5400
+				},
+				{
+					"date":"2026-10-17",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-18",
+					"sessions":0,
+					"durationSeconds":0
+				},
+				{
+					"date":"2026-10-19",
 					"sessions":0,
 					"durationSeconds":0
 				}
 			]
 		}
 	],
-	"total":1,
+	"total":4,
 	"days":7,
 	"statuses":[
 		{
