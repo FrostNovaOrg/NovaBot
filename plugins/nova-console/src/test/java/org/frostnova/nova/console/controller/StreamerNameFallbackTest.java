@@ -10,6 +10,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -73,10 +76,12 @@ class StreamerNameFallbackTest {
                 StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
-    @Test
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" \t\n"})
     @DisplayName("内存名为空、归档里有昵称：给最近一场的昵称，推送页不再只显示 uid")
-    void blankLoadedNameFallsBackToLatestSession() throws IOException {
-        when(dataSource.getAllUsers()).thenReturn(List.of(user("bilibili", UID, "")));
+    void blankLoadedNameFallsBackToLatestSession(String loaded) throws IOException {
+        when(dataSource.getAllUsers()).thenReturn(List.of(user("bilibili", UID, loaded)));
         archive("bilibili", UID, "早先的昵称", 1_700_000_000_000L);
         archive("bilibili", UID, "最近的昵称", 1_700_100_000_000L);
         archive("bilibili", UID + 1, "别人的昵称", 1_700_200_000_000L);
@@ -84,6 +89,7 @@ class StreamerNameFallbackTest {
         JSONObject result = controller().streamerName("bilibili", UID);
 
         assertTrue(result.getBooleanValue("success"), result.toString());
+        assertEquals(UID, result.getLongValue("uid"));
         assertEquals("最近的昵称", result.getString("uname"));
     }
 
@@ -123,15 +129,18 @@ class StreamerNameFallbackTest {
         assertEquals("归档里的昵称", result.getString("uname"));
     }
 
-    @Test
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" \t\n"})
     @DisplayName("内存与归档都没有：回失败，页面照旧显示 uid")
-    void noNameAnywhereFails() throws IOException {
-        when(dataSource.getAllUsers()).thenReturn(List.of(user("bilibili", UID, "")));
+    void noNameAnywhereFails(String loaded) throws IOException {
+        when(dataSource.getAllUsers()).thenReturn(List.of(user("bilibili", UID, loaded)));
         archive("bilibili", UID + 1, "别人的昵称", 1_700_200_000_000L);
 
         JSONObject result = controller().streamerName("bilibili", UID);
 
         assertFalse(result.getBooleanValue("success"), result.toString());
+        assertEquals("程序手上没有这位主播的昵称", result.getString("message"));
         assertFalse(result.containsKey("uname"), result.toString());
     }
 }
