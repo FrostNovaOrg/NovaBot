@@ -18,13 +18,15 @@ NovaBot：启动那次体检只在程序起好时跑一次，错过了要等 300
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 # 与 demo-seed 里那批同一个规矩：号取平台不发的号段，名字说清是演示
 NICKNAME = "演示机器人"
-USER_ID = 9400000001
-GROUP_ID = 910000001          # 与 application.demo.yml 里告警群、种子的推送目标同一个
+IDENTITIES = json.loads((Path(__file__).parent / 'demo-seed/synthetic-identities.json').read_text())
+USER_ID = IDENTITIES['botAccounts'][0]
+GROUP_ID = IDENTITIES['groups'][0]
 GROUP_NAME = "演示群"
-FRIEND_ID = 9400000002
+FRIEND_ID = IDENTITIES['friends'][0]
 FRIEND_NAME = "演示好友"
 APP_VERSION = "9.9.9"
 

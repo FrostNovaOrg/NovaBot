@@ -1,15 +1,15 @@
 [
   {
-    "uid": 9200000001,
+    "uid": 990000000101,
     "uname": "演示主播小星",
-    "roomId": 9210000001,
+    "roomId": 990000000201,
     "platform": "bilibili",
     "enabled": true,
     "targets": [
       {
         "platform": "qq-onebot",
         "type": 1,
-        "num": 910000001,
+        "num": 990000000301,
         "enabled": true,
         "messages": [
           {

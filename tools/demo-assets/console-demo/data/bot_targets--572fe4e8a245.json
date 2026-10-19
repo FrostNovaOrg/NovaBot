@@ -1,0 +1,25 @@
+{
+	"fetchedAt":"2026-10-19T03:34:06.334779Z",
+	"stale":false,
+	"senders":[
+		{
+			"sender":"qq-onebot",
+			"fetchedAt":"2026-10-19T03:34:06.334779Z",
+			"stale":false,
+			"groups":1,
+			"friends":1
+		}
+	],
+	"success":true,
+	"type":"group",
+	"items":[
+		{
+			"sender":"qq-onebot",
+			"num":990000000301,
+			"name":"演示群",
+			"memberCount":1,
+			"admin":false,
+			"configured":true
+		}
+	]
+}

@@ -1,0 +1,4 @@
+{
+	"success":true,
+	"content":"[\n  {\n    \"uid\": 990000000101,\n    \"uname\": \"演示主播小星\",\n    \"roomId\": 990000000201,\n    \"platform\": \"bilibili\",\n    \"enabled\": true,\n    \"targets\": [\n      {\n        \"platform\": \"qq-onebot\",\n        \"type\": 1,\n        \"num\": 990000000301,\n        \"enabled\": true,\n        \"messages\": [\n          {\n            \"handler\": \"org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler\",\n            \"enabled\": true\n          },\n          {\n            \"handler\": \"org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler\",\n            \"enabled\": true\n          },\n          {\n            \"handler\": \"org.frostnova.nova.report.handler.BilibiliDynamicPushHandler\",\n            \"enabled\": true\n          }\n        ]\n      }\n    ]\n  }\n]\n"
+}

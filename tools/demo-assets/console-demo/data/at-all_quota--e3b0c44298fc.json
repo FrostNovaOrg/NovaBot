@@ -1,0 +1,23 @@
+{
+	"success":true,
+	"date":"2026-10-19",
+	"bots":[
+		{
+			"platform":"qq-onebot",
+			"platformName":"QQ",
+			"used":0,
+			"limit":10,
+			"limited":true
+		}
+	],
+	"sessions":[
+		{
+			"platform":"qq-onebot",
+			"platformName":"QQ",
+			"num":990000000301,
+			"used":0,
+			"limit":20,
+			"limited":true
+		}
+	]
+}
