@@ -1,0 +1,14 @@
+{
+	"success":true,
+	"enabled":false,
+	"totpRequired":false,
+	"setupDone":true,
+	"agreementRequired":false,
+	"agreementVersion":1,
+	"authenticated":true,
+	"csrfToken":"5vlmvKgjs3HUpJDwko_1finKeOUq-ZiuSLKFgFEdVOQ",
+	"totpSetupNeeded":false,
+	"totpEnabled":true,
+	"lockedSeconds":0,
+	"operatorSession":false
+}

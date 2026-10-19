@@ -14,7 +14,7 @@ novabot:
       alert:                # 机器人告警同样填假值：平台名与群号都是演示占位
         platform: qq-onebot
         type: 1
-        num: 910000001
+        num: 990000000301
 
       senders:              # 机器人连接列表：示例值，地址端口指向 start-demo.sh 起的假 OneBot 端点
                             # （tools/demo-assets/fake-onebot.py），它答得上话：首页自检是「已连接」，

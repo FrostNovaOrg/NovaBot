@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Scan each module's src/test tree (including resources) for two shapes:
+# Scan each module's src/test tree (including resources) for two shapes;
+# the demo seed and console responses also undergo an identity declaration check.
 # ① hdslb.com/bfs/face/ followed by a 40-hex hash — the hash must be listed
 #    in tools/fixture-privacy-allow.txt
 # ② mailbox-shaped strings — the domain must be example.com, example.org,
@@ -135,5 +136,6 @@ if [ "$HIT" -ne 0 ]; then
     echo "汇总：红 ${HIT} 处，整尺退码 1"
     exit 1
 fi
+python3 tools/demo-assets/check-console-privacy.py || exit "$?"
 echo "汇总：绿，整尺退码 0"
 exit 0

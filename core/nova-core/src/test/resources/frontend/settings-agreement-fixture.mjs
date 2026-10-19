@@ -209,10 +209,14 @@ await section('正文只此一份', async () => {
   // 扫的是仓，不是某一个目录：第二份正文最可能被抄进的正是卡片这一侧的源码，
   // 而只盯着 config-ui/ 的话，抄进 java 里的那一份看不见
   const skip = new Set(['.git', 'target', 'scratch', 'node_modules', 'dist', '.idea', '.m2-lane']);
+  // Raw API recordings retain the agreement returned by the server. They are
+  // offline response snapshots, while pages still read the single source above.
+  const recordings = join(repo, 'tools/demo-assets/console-demo/data');
   const sweep = dir => {
     for (const name of readdirSync(dir)) {
       if (skip.has(name)) continue;
       const path = join(dir, name);
+      if (path === recordings) continue;
       let info;
       try {
         info = statSync(path);

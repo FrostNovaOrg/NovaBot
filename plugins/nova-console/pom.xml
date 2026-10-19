@@ -72,6 +72,22 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <profile>
+            <id>console-demo-record</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <workingDirectory>${console.demo.work}</workingDirectory>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>

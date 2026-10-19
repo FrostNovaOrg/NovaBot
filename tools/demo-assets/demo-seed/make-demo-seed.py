@@ -37,14 +37,15 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DEMO_UID = 9200000001          # demo streamer uid; far above any issued bilibili uid
-DEMO_ROOM = 9210000001         # demo room id, same idea
-DEMO_GROUP = 910000001         # demo QQ group number (placeholder range)
+IDENTITIES = json.loads((Path(__file__).parent / 'synthetic-identities.json').read_text())
+DEMO_UID = IDENTITIES['streamers'][0]
+DEMO_ROOM = IDENTITIES['rooms'][0]
+DEMO_GROUP = IDENTITIES['groups'][0]
 DEMO_UNAME = "演示主播小星"
 DEMO_PLATFORM = "bilibili"
 PUSH_PLATFORM = "qq-onebot"
 CHANNEL = "群 " + str(DEMO_GROUP)
-VIEWER_UIDS = [9300000000 + i for i in range(1, 9)]  # demo viewer uids, 93-billion range
+VIEWER_UIDS = IDENTITIES['viewers']
 
 # Past sessions: (days_ago, hour, minute, duration_min, danmu, gift_yuan, sc_yuan,
 #                 enter, like, watched, kind) — kind is normal / cutoff / gap.
