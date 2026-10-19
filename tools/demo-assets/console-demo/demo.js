@@ -74,6 +74,16 @@
     if (path === '/report/preview' || path === '/streamer/lookup') {
       const row = responses.get(key('POST', '/config/api' + path, '', body));
       if (row) return read(row);
+      if (path === '/report/preview') {
+        const defaults = Object.fromEntries(['platform', 'type', 'num', 'revenueVisible']
+          .filter(name => Object.hasOwn(body, name)).map(name => [name, body[name]]));
+        const fallback = responses.get(key('POST', '/config/api' + path, '', defaults));
+        if (fallback) {
+          notice('演示模式：预览显示录制的默认版式，改动不会重新绘制');
+          return read(fallback);
+        }
+        return json({success: false, message: '离线演示未录制此预览'}, 404);
+      }
       notice(deviceMessage);
       return json({success: false, message: deviceMessage});
     }

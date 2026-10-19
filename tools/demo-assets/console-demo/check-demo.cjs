@@ -24,6 +24,11 @@ async function main() {
   ].map(([method, path, query, file, status, contentType]) => ({method, path: '/config/api' + path,
     query, file: 'data/' + file, status, contentType}));
   rows.push({...rows.at(-1), body: {revenueVisible: false}, file: 'data/hidden.png'});
+  const channel = {platform: 'qq-onebot', type: 1, num: 990000000301};
+  for (const revenueVisible of [false, true]) {
+    rows.push({...rows[4], body: {...channel, revenueVisible},
+      file: revenueVisible ? 'data/preview.png' : 'data/hidden.png'});
+  }
   rows.push({method: 'POST', path: '/config/api/streamer/lookup', query: '',
     body: {platform: 'bilibili', uid: '1'}, file: 'data/lookup.json', status: 200, contentType: 'application/json'});
   const timers = new Map();
@@ -36,7 +41,7 @@ async function main() {
     addEventListener(type, handler) { events.push({type, handler}); },
   };
   const context = vm.createContext({document, location: {href: 'http://localhost/config/', origin: 'http://localhost'},
-    setTimeout: fn => { const id = timers.size + 1; timers.set(id, fn); return id; },
+    setTimeout: (fn, delay) => { equal(delay, 4000); const id = timers.size + 1; timers.set(id, fn); return id; },
     clearTimeout: id => timers.delete(id), addEventListener: (type, handler) => events.push({type, handler}),
     Response, Request, URL, URLSearchParams, TextDecoder, console: {warn: line => warnings.push(line)},
     NOVA_CONSOLE_DEMO: {epochMs: Date.parse('2026-01-15T00:30:00+08:00'), responses: rows},
@@ -83,6 +88,30 @@ async function main() {
   equal(Array.from(new Uint8Array(await preview.arrayBuffer())), [137, 80, 78, 71]);
   const hidden = await request('/report/preview', {method: 'POST', body: '{"revenueVisible":false}'});
   equal(Array.from(new Uint8Array(await hidden.arrayBuffer())), [137, 80, 78, 72]);
+  for (const revenueVisible of [false, true]) {
+    const edited = await request('/report/preview', {method: 'POST',
+      body: JSON.stringify({params: {showRevenue: true}, ...channel, revenueVisible})});
+    equal(edited.status, 200);
+    equal(edited.headers.get('Content-Type'), 'image/png');
+    equal(Array.from(new Uint8Array(await edited.arrayBuffer())),
+      revenueVisible ? [137, 80, 78, 71] : [137, 80, 78, 72]);
+    equal(nodes.get('console-demo-notice').textContent,
+      '演示模式：预览显示录制的默认版式，改动不会重新绘制');
+    equal(nodes.get('console-demo-notice').hidden, false);
+    for (const fn of timers.values()) fn();
+    equal(nodes.get('console-demo-notice').hidden, true);
+  }
+  await request('/report/preview', {method: 'POST',
+    body: JSON.stringify({...channel, revenueVisible: false, params: {showRevenue: false}})});
+  for (const {type, handler} of events) if (type === 'hashchange') handler();
+  equal(nodes.get('console-demo-notice').hidden, true);
+  for (const body of [
+    {...channel, num: 990000000999, revenueVisible: false, params: {}},
+    {...channel, revenueVisible: null, params: {}},
+  ]) {
+    const missingPreview = await request('/report/preview', {method: 'POST', body: JSON.stringify(body)});
+    equal(missingPreview.ok, false);
+  }
   const beforeMiss = network.length;
   for (const url of ['/config/api/missing?date=tomorrow', 'https://example.com/config/api/auth/state', '/unknown']) {
     const reply = await context.fetch(url);
