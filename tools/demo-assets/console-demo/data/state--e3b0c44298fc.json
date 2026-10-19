@@ -197,7 +197,8 @@
 			"typeCode":1,
 			"configured":true,
 			"streamers":[
-				"演示主播小星"
+				"演示主播小星",
+				"演示主播常青"
 			],
 			"disabled":[
 				"数据排行榜"
@@ -209,6 +210,54 @@
 			},
 			"revenueVisible":false,
 			"revenueExplicit":true,
+			"quietMode":"follow",
+			"quietActive":true
+		},
+		{
+			"platform":"qq-onebot",
+			"num":990000000302,
+			"type":"群",
+			"typeCode":1,
+			"configured":true,
+			"streamers":[
+				"演示主播小星",
+				"演示主播常青",
+				"演示主播远山"
+			],
+			"disabled":[],
+			"menuHidden":[],
+			"menuNotes":{
+				"数据排行榜":"带「总」查累计要先开累计数据",
+				"直播间数据":"带「总」查累计要先开累计数据"
+			},
+			"revenueVisible":false,
+			"revenueExplicit":false,
+			"quietMode":"follow",
+			"quietActive":true
+		},
+		{
+			"platform":"qq-onebot",
+			"num":990000000502,
+			"type":"好友",
+			"typeCode":0,
+			"configured":true,
+			"streamers":[
+				"演示主播小星"
+			],
+			"disabled":[],
+			"menuHidden":[
+				"@名单",
+				"动态@我",
+				"启用命令",
+				"开播@我",
+				"禁用命令"
+			],
+			"menuNotes":{
+				"数据排行榜":"带「总」查累计要先开累计数据",
+				"直播间数据":"带「总」查累计要先开累计数据"
+			},
+			"revenueVisible":true,
+			"revenueExplicit":false,
 			"quietMode":"follow",
 			"quietActive":true
 		}
@@ -231,7 +280,7 @@
 	"incomplete":[],
 	"totalDataAvailable":false,
 	"quietGlobal":{
-		"start":"11:03",
-		"end":"13:03"
+		"start":"11:30",
+		"end":"13:30"
 	}
 }

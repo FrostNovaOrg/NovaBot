@@ -42,10 +42,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-23",
@@ -54,18 +54,18 @@
 				"sessions":1,
 				"durationSeconds":4560,
 				"metrics":{
+					"super_chat_count":0.0,
 					"gift_value":21.0,
+					"follow_count":20.0,
 					"danmu_count":410.0,
 					"watched_count":2600.0,
+					"gift_paid":21.0,
 					"super_chat_value":0.0,
 					"like_total":980.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
@@ -73,17 +73,17 @@
 				},
 				"userTimes":{
 					"gift_users":1,
-					"danmu_users":2
+					"danmu_users":1
 				},
-				"audience":2,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":4560,
-				"follows":0,
+				"follows":20,
 				"messages":410,
 				"revenue":21.0,
 				"starts":[
@@ -91,7 +91,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -134,10 +134,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-25",
@@ -177,10 +177,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-26",
@@ -220,10 +220,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-27",
@@ -263,10 +263,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-28",
@@ -306,10 +306,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-29",
@@ -349,10 +349,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-30",
@@ -392,10 +392,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-07-31",
@@ -435,10 +435,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-01",
@@ -478,10 +478,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-02",
@@ -521,10 +521,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-03",
@@ -564,10 +564,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-04",
@@ -607,10 +607,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-05",
@@ -650,10 +650,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-06",
@@ -693,10 +693,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-07",
@@ -736,10 +736,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-08",
@@ -779,10 +779,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-09",
@@ -822,10 +822,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-10",
@@ -865,10 +865,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-11",
@@ -908,10 +908,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-12",
@@ -951,10 +951,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-13",
@@ -994,10 +994,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-14",
@@ -1037,10 +1037,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-15",
@@ -1080,10 +1080,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-16",
@@ -1123,10 +1123,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-17",
@@ -1135,18 +1135,18 @@
 				"sessions":1,
 				"durationSeconds":2820,
 				"metrics":{
+					"super_chat_count":0.0,
 					"gift_value":18.8,
+					"follow_count":20.0,
 					"danmu_count":298.0,
 					"watched_count":1980.0,
+					"gift_paid":18.8,
 					"super_chat_value":0.0,
 					"like_total":720.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
@@ -1154,17 +1154,17 @@
 				},
 				"userTimes":{
 					"gift_users":1,
-					"danmu_users":2
+					"danmu_users":1
 				},
-				"audience":2,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":2520,
-				"follows":0,
+				"follows":20,
 				"messages":298,
 				"revenue":18.8,
 				"starts":[
@@ -1172,7 +1172,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -1215,10 +1215,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-19",
@@ -1258,10 +1258,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-20",
@@ -1270,36 +1270,36 @@
 				"sessions":1,
 				"durationSeconds":10500,
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":98.6,
+					"follow_count":20.0,
 					"danmu_count":1021.0,
 					"watched_count":6210.0,
+					"gift_paid":98.6,
 					"super_chat_value":30.0,
 					"like_total":2580.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":5,
-					"danmu_users":5
+					"gift_users":1,
+					"danmu_users":1
 				},
-				"audience":5,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":10500,
-				"follows":0,
+				"follows":20,
 				"messages":1021,
 				"revenue":128.6,
 				"starts":[
@@ -1307,7 +1307,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -1350,10 +1350,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-22",
@@ -1362,36 +1362,36 @@
 				"sessions":1,
 				"durationSeconds":7080,
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":55.5,
+					"follow_count":20.0,
 					"danmu_count":690.0,
 					"watched_count":4020.0,
+					"gift_paid":55.5,
 					"super_chat_value":10.0,
 					"like_total":1690.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":3,
-					"danmu_users":3
+					"gift_users":1,
+					"danmu_users":1
 				},
-				"audience":3,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":5760,
-				"follows":0,
+				"follows":20,
 				"messages":690,
 				"revenue":65.5,
 				"starts":[
@@ -1399,7 +1399,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -1442,10 +1442,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-24",
@@ -1485,10 +1485,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-25",
@@ -1528,10 +1528,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-26",
@@ -1571,10 +1571,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-27",
@@ -1614,10 +1614,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-28",
@@ -1657,10 +1657,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-29",
@@ -1700,10 +1700,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-30",
@@ -1743,10 +1743,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-08-31",
@@ -1786,10 +1786,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-01",
@@ -1829,10 +1829,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-02",
@@ -1872,10 +1872,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-03",
@@ -1915,10 +1915,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-04",
@@ -1958,10 +1958,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-05",
@@ -2001,10 +2001,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-06",
@@ -2044,10 +2044,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-07",
@@ -2087,10 +2087,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-08",
@@ -2130,10 +2130,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-09",
@@ -2173,10 +2173,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-10",
@@ -2216,10 +2216,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-11",
@@ -2259,10 +2259,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-12",
@@ -2302,10 +2302,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-13",
@@ -2345,10 +2345,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-14",
@@ -2388,10 +2388,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-15",
@@ -2431,10 +2431,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-16",
@@ -2474,10 +2474,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-17",
@@ -2517,10 +2517,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-18",
@@ -2529,36 +2529,36 @@
 				"sessions":1,
 				"durationSeconds":11400,
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":142.2,
+					"follow_count":20.0,
 					"danmu_count":1288.0,
 					"watched_count":7540.0,
+					"gift_paid":142.2,
 					"super_chat_value":52.0,
 					"like_total":3150.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":7,
-					"danmu_users":7
+					"gift_users":1,
+					"danmu_users":1
 				},
-				"audience":7,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":11400,
-				"follows":0,
+				"follows":20,
 				"messages":1288,
 				"revenue":194.2,
 				"starts":[
@@ -2566,7 +2566,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -2609,10 +2609,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-20",
@@ -2652,10 +2652,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-21",
@@ -2695,10 +2695,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-22",
@@ -2707,36 +2707,36 @@
 				"sessions":1,
 				"durationSeconds":8580,
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":70.0,
+					"follow_count":20.0,
 					"danmu_count":851.0,
 					"watched_count":5120.0,
+					"gift_paid":70.0,
 					"super_chat_value":20.0,
 					"like_total":2150.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":4,
-					"danmu_users":4
+					"gift_users":1,
+					"danmu_users":1
 				},
-				"audience":4,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":8580,
-				"follows":0,
+				"follows":20,
 				"messages":851,
 				"revenue":90.0,
 				"starts":[
@@ -2744,7 +2744,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -2787,10 +2787,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-24",
@@ -2830,10 +2830,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-25",
@@ -2873,10 +2873,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-26",
@@ -2916,10 +2916,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-27",
@@ -2959,10 +2959,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-28",
@@ -3002,10 +3002,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-29",
@@ -3045,10 +3045,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-09-30",
@@ -3088,10 +3088,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-01",
@@ -3131,10 +3131,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-02",
@@ -3174,10 +3174,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-03",
@@ -3217,10 +3217,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-04",
@@ -3260,10 +3260,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-05",
@@ -3303,10 +3303,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-06",
@@ -3346,10 +3346,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-07",
@@ -3389,7 +3389,7 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":21600.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"unknown"
@@ -3475,7 +3475,7 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":64800.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"unknown"
@@ -3487,36 +3487,36 @@
 				"sessions":1,
 				"durationSeconds":9720,
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":101.3,
+					"follow_count":20.0,
 					"danmu_count":1032.0,
 					"watched_count":6480.0,
+					"gift_paid":101.3,
 					"super_chat_value":36.0,
 					"like_total":2690.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":5,
-					"danmu_users":5
+					"gift_users":1,
+					"danmu_users":1
 				},
-				"audience":5,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":9720,
-				"follows":0,
+				"follows":20,
 				"messages":1032,
 				"revenue":137.3,
 				"starts":[
@@ -3524,7 +3524,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -3567,10 +3567,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-12",
@@ -3610,10 +3610,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-13",
@@ -3653,10 +3653,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-14",
@@ -3696,10 +3696,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-15",
@@ -3739,10 +3739,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-16",
@@ -3751,36 +3751,36 @@
 				"sessions":1,
 				"durationSeconds":7680,
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":58.8,
+					"follow_count":20.0,
 					"danmu_count":744.0,
 					"watched_count":4450.0,
+					"gift_paid":58.8,
 					"super_chat_value":12.0,
 					"like_total":1780.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":3,
-					"danmu_users":4
+					"gift_users":1,
+					"danmu_users":1
 				},
-				"audience":4,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":7680,
-				"follows":0,
+				"follows":20,
 				"messages":744,
 				"revenue":70.8,
 				"starts":[
@@ -3788,7 +3788,7 @@
 				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
 				"status":"recorded"
@@ -3831,10 +3831,10 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-18",
@@ -3874,53 +3874,59 @@
 				"starts":[],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
+					"watchedSeconds":86400.0,
 					"elapsedSeconds":86400.0
 				},
-				"status":"unknown"
+				"status":"off"
 			},
 			{
 				"label":"2026-10-19",
 				"start":1792360800000,
-				"end":1792380865634,
-				"sessions":0,
-				"durationSeconds":0,
+				"end":1792382400000,
+				"sessions":1,
+				"durationSeconds":2400,
 				"metrics":{
-					"danmu_count":0.0,
-					"gift_value":0.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
-					"super_chat_value":0.0,
+					"super_chat_count":1.0,
+					"gift_value":48.0,
+					"follow_count":20.0,
+					"danmu_count":426.0,
+					"watched_count":2480.0,
+					"gift_paid":48.0,
+					"super_chat_value":12.0,
+					"like_total":930.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
-					"like_total":0.0,
 					"share_count":0.0,
-					"watched_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
-				"userTimes":{},
+				"userTimes":{
+					"gift_users":1,
+					"danmu_users":1
+				},
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
 					"unknown":0
 				},
-				"effectiveSeconds":0,
-				"follows":0,
-				"messages":0,
-				"revenue":0.0,
-				"starts":[],
+				"effectiveSeconds":2400,
+				"follows":20,
+				"messages":426,
+				"revenue":60.0,
+				"starts":[
+					1792379400000
+				],
 				"monitoring":{
 					"recording":true,
-					"watchedSeconds":0.0,
-					"elapsedSeconds":20065.634
+					"watchedSeconds":21540.0,
+					"elapsedSeconds":21600.0
 				},
-				"status":"unknown"
+				"status":"recorded"
 			}
 		],
 		"metrics":[

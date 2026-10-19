@@ -1,7 +1,7 @@
 {
 	"success":true,
 	"sessions":{
-		"total":14,
+		"total":15,
 		"page":2,
 		"size":10,
 		"pages":2,
@@ -11,22 +11,26 @@
 				"uid":990000000101,
 				"uname":"演示主播小星",
 				"roomId":990000000201,
-				"startTime":1782220500000,
-				"endTime":1782228420000,
-				"durationSeconds":7920,
-				"effectiveSeconds":7920,
-				"listQuality":"unknown",
+				"startTime":1782474300000,
+				"endTime":1782486900000,
+				"durationSeconds":12600,
+				"effectiveSeconds":12600,
+				"listQuality":"complete",
 				"metrics":{
-					"gift_value":64.2,
-					"enter_count":1010.0,
-					"danmu_count":766.0,
-					"watched_count":4390.0,
-					"super_chat_value":12.0,
-					"like_total":1875.0
+					"super_chat_count":1.0,
+					"gift_value":156.0,
+					"enter_count":2080.0,
+					"follow_count":20.0,
+					"danmu_count":1402.0,
+					"watched_count":8110.0,
+					"gift_paid":156.0,
+					"super_chat_value":66.6,
+					"fans_at_start":2655.0,
+					"like_total":3405.0
 				},
 				"userCounts":{
-					"gift_users":3,
-					"danmu_users":4
+					"gift_users":1,
+					"danmu_users":1
 				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
@@ -36,26 +40,107 @@
 				"hasUserSets":true,
 				"userSets":{
 					"gift_users":[
-						990000000401,
-						990000000402,
-						990000000403
+						990000000402
 					],
 					"danmu_users":[
-						990000000401,
-						990000000402,
-						990000000403,
-						990000000404
+						990000000402
 					]
 				},
 				"hasPeaks":true,
 				"peaks":{
-					"danmu_count":{
-						"at":1782224460000,
-						"value":25.0
+					"online_count":{
+						"at":1782480300000,
+						"value":110.0
 					},
-					"watched_count":{
-						"at":1782228420000,
-						"value":4390.0
+					"gift_value":{
+						"at":1782479700000,
+						"value":1.31
+					},
+					"enter_count":{
+						"at":1782479700000,
+						"value":18.0
+					},
+					"danmu_count":{
+						"at":1782479760000,
+						"value":12.0
+					},
+					"super_chat_value":{
+						"at":1782479760000,
+						"value":0.56
+					}
+				},
+				"titles":[
+					{
+						"at":1782474300000,
+						"title":"晚间歌回·点歌之夜（演示）",
+						"area":"唱见电台"
+					}
+				],
+				"titleChangeCount":0,
+				"hasReport":false,
+				"audience":1
+			},
+			{
+				"platform":"bilibili",
+				"uid":990000000101,
+				"uname":"演示主播小星",
+				"roomId":990000000201,
+				"startTime":1782220500000,
+				"endTime":1782228420000,
+				"durationSeconds":7920,
+				"effectiveSeconds":7920,
+				"listQuality":"complete",
+				"metrics":{
+					"super_chat_count":1.0,
+					"gift_value":64.2,
+					"enter_count":1010.0,
+					"follow_count":20.0,
+					"danmu_count":766.0,
+					"watched_count":4390.0,
+					"gift_paid":64.2,
+					"super_chat_value":12.0,
+					"fans_at_start":2634.0,
+					"like_total":1875.0
+				},
+				"userCounts":{
+					"gift_users":1,
+					"danmu_users":1
+				},
+				"endReason":"NORMAL",
+				"endReasonText":"主动下播",
+				"interrupted":false,
+				"maintenanceGapSeconds":0,
+				"roomOutageSeconds":0,
+				"hasUserSets":true,
+				"userSets":{
+					"gift_users":[
+						990000000401
+					],
+					"danmu_users":[
+						990000000401
+					]
+				},
+				"hasPeaks":true,
+				"peaks":{
+					"online_count":{
+						"at":1782224100000,
+						"value":90.0
+					},
+					"gift_value":{
+						"at":1782224220000,
+						"value":0.9
+					},
+					"enter_count":{
+						"at":1782224340000,
+						"value":15.0
+					},
+					"danmu_count":{
+						"at":1782224100000,
+						"value":11.0
+					},
+					"super_chat_value":{
+						"at":1782224100000,
+						"value":0.17
 					}
 				},
 				"titles":[
@@ -67,7 +152,7 @@
 				],
 				"titleChangeCount":0,
 				"hasReport":false,
-				"audience":4
+				"audience":1
 			},
 			{
 				"platform":"bilibili",
@@ -78,18 +163,22 @@
 				"endTime":1781967660000,
 				"durationSeconds":10860,
 				"effectiveSeconds":10860,
-				"listQuality":"unknown",
+				"listQuality":"complete",
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":128.8,
 					"enter_count":1720.0,
+					"follow_count":20.0,
 					"danmu_count":1105.0,
 					"watched_count":6720.0,
+					"gift_paid":128.8,
 					"super_chat_value":50.0,
+					"fans_at_start":2613.0,
 					"like_total":2960.0
 				},
 				"userCounts":{
-					"gift_users":6,
-					"danmu_users":6
+					"gift_users":1,
+					"danmu_users":1
 				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
@@ -99,31 +188,33 @@
 				"hasUserSets":true,
 				"userSets":{
 					"gift_users":[
-						990000000401,
-						990000000402,
-						990000000403,
-						990000000404,
-						990000000405,
-						990000000406
+						990000000403
 					],
 					"danmu_users":[
-						990000000401,
-						990000000402,
-						990000000403,
-						990000000404,
-						990000000405,
-						990000000406
+						990000000403
 					]
 				},
 				"hasPeaks":true,
 				"peaks":{
+					"online_count":{
+						"at":1781962200000,
+						"value":105.0
+					},
+					"gift_value":{
+						"at":1781962200000,
+						"value":1.42
+					},
+					"enter_count":{
+						"at":1781962200000,
+						"value":19.0
+					},
 					"danmu_count":{
 						"at":1781962200000,
-						"value":36.0
+						"value":12.0
 					},
-					"watched_count":{
-						"at":1781967660000,
-						"value":6720.0
+					"super_chat_value":{
+						"at":1781962200000,
+						"value":0.55
 					}
 				},
 				"titles":[
@@ -140,7 +231,7 @@
 				],
 				"titleChangeCount":1,
 				"hasReport":false,
-				"audience":6
+				"audience":1
 			},
 			{
 				"platform":"bilibili",
@@ -151,18 +242,22 @@
 				"endTime":1779541500000,
 				"durationSeconds":5700,
 				"effectiveSeconds":5700,
-				"listQuality":"unknown",
+				"listQuality":"complete",
 				"metrics":{
+					"super_chat_count":0.0,
 					"gift_value":42.0,
 					"enter_count":830.0,
+					"follow_count":20.0,
 					"danmu_count":540.0,
 					"watched_count":3480.0,
+					"gift_paid":42.0,
 					"super_chat_value":0.0,
+					"fans_at_start":2417.0,
 					"like_total":1420.0
 				},
 				"userCounts":{
-					"gift_users":2,
-					"danmu_users":3
+					"gift_users":1,
+					"danmu_users":1
 				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
@@ -172,24 +267,33 @@
 				"hasUserSets":true,
 				"userSets":{
 					"gift_users":[
-						990000000401,
 						990000000402
 					],
 					"danmu_users":[
-						990000000401,
-						990000000402,
-						990000000403
+						990000000402
 					]
 				},
 				"hasPeaks":true,
 				"peaks":{
-					"danmu_count":{
-						"at":1779538620000,
-						"value":18.0
+					"online_count":{
+						"at":1779538200000,
+						"value":80.0
 					},
-					"watched_count":{
-						"at":1779541500000,
-						"value":3480.0
+					"gift_value":{
+						"at":1779538500000,
+						"value":0.85
+					},
+					"enter_count":{
+						"at":1779538500000,
+						"value":17.0
+					},
+					"danmu_count":{
+						"at":1779538560000,
+						"value":11.0
+					},
+					"super_chat_value":{
+						"at":1779535800000,
+						"value":0.0
 					}
 				},
 				"titles":[
@@ -201,7 +305,7 @@
 				],
 				"titleChangeCount":0,
 				"hasReport":false,
-				"audience":3
+				"audience":1
 			},
 			{
 				"platform":"bilibili",
@@ -212,18 +316,22 @@
 				"endTime":1779287940000,
 				"durationSeconds":9240,
 				"effectiveSeconds":9240,
-				"listQuality":"unknown",
+				"listQuality":"complete",
 				"metrics":{
+					"super_chat_count":1.0,
 					"gift_value":86.6,
 					"enter_count":1240.0,
+					"follow_count":20.0,
 					"danmu_count":812.0,
 					"watched_count":5214.0,
+					"gift_paid":86.6,
 					"super_chat_value":30.0,
+					"fans_at_start":2396.0,
 					"like_total":2103.0
 				},
 				"userCounts":{
-					"gift_users":4,
-					"danmu_users":4
+					"gift_users":1,
+					"danmu_users":1
 				},
 				"endReason":"NORMAL",
 				"endReasonText":"主动下播",
@@ -233,27 +341,33 @@
 				"hasUserSets":true,
 				"userSets":{
 					"gift_users":[
-						990000000401,
-						990000000402,
-						990000000403,
-						990000000404
+						990000000401
 					],
 					"danmu_users":[
-						990000000401,
-						990000000402,
-						990000000403,
-						990000000404
+						990000000401
 					]
 				},
 				"hasPeaks":true,
 				"peaks":{
-					"danmu_count":{
-						"at":1779283320000,
-						"value":27.0
+					"online_count":{
+						"at":1779282900000,
+						"value":95.0
 					},
-					"watched_count":{
-						"at":1779287940000,
-						"value":5214.0
+					"gift_value":{
+						"at":1779283200000,
+						"value":1.1
+					},
+					"enter_count":{
+						"at":1779283200000,
+						"value":16.0
+					},
+					"danmu_count":{
+						"at":1779283380000,
+						"value":11.0
+					},
+					"super_chat_value":{
+						"at":1779283200000,
+						"value":0.38
 					}
 				},
 				"titles":[
@@ -265,7 +379,7 @@
 				],
 				"titleChangeCount":0,
 				"hasReport":false,
-				"audience":4
+				"audience":1
 			}
 		],
 		"metrics":[

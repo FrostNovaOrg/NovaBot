@@ -1,8 +1,8 @@
 [
   {
     "uid": 990000000101,
-    "uname": "演示主播小星",
     "roomId": 990000000201,
+    "uname": "演示主播小星",
     "platform": "bilibili",
     "enabled": true,
     "targets": [
@@ -18,11 +18,242 @@
           },
           {
             "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
             "enabled": true
           },
           {
             "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
             "enabled": true
+          }
+        ]
+      },
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 990000000302,
+        "enabled": true,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": false
+          }
+        ]
+      },
+      {
+        "platform": "qq-onebot",
+        "type": 0,
+        "num": 990000000502,
+        "enabled": true,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "uid": 990000000102,
+    "roomId": 990000000202,
+    "uname": "演示主播常青",
+    "platform": "bilibili",
+    "enabled": true,
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 990000000301,
+        "enabled": true,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": false
+          }
+        ]
+      },
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 990000000302,
+        "enabled": true,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 990000000303,
+        "enabled": false,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "uid": 990000000103,
+    "roomId": 990000000203,
+    "uname": "演示主播远山",
+    "platform": "bilibili",
+    "enabled": true,
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 990000000302,
+        "enabled": true,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "uid": 990000000104,
+    "roomId": 990000000204,
+    "uname": "演示主播休眠",
+    "platform": "bilibili",
+    "enabled": false,
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 990000000303,
+        "enabled": false,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": false
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": false
           }
         ]
       }

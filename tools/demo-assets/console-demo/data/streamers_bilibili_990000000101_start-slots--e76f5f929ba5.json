@@ -3,7 +3,7 @@
 	"days":180,
 	"startSlots":{
 		"from":1776895200000,
-		"to":1792380878503,
+		"to":1792382400000,
 		"cells":[
 			{
 				"weekday":1,
@@ -53,11 +53,18 @@
 			{
 				"weekday":1,
 				"startHour":10,
-				"sessions":0,
-				"effectiveSeconds":0,
-				"revenue":0.0,
-				"messages":0,
-				"sessionItems":[]
+				"sessions":1,
+				"effectiveSeconds":2400,
+				"revenue":60.0,
+				"messages":426,
+				"sessionItems":[
+					{
+						"startTime":1792379400000,
+						"durationSeconds":2400,
+						"revenue":60.0,
+						"messages":426
+					}
+				]
 			},
 			{
 				"weekday":1,
@@ -875,32 +882,89 @@
 				"value":386.37813211845105
 			}
 		],
-		"sessions":14,
-		"durationSeconds":118740,
+		"sessions":15,
+		"durationSeconds":121140,
 		"capture":{
-			"effectiveSeconds":117120,
+			"effectiveSeconds":119520,
 			"gapSeconds":1620,
 			"gapSessions":2
 		},
 		"coverage":{
-			"complete":0,
+			"complete":15,
 			"anonymous":0,
-			"unknown":14,
+			"unknown":0,
 			"missing":0
 		}
 	},
 	"entryRhythm":{
-		"sessions":14,
-		"entrySessions":0,
-		"points":[]
+		"sessions":15,
+		"entrySessions":3,
+		"points":[
+			{
+				"minute":0,
+				"medianEntries":2.4,
+				"entriesSamples":3,
+				"medianOnline":60.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":5,
+				"medianEntries":3.0,
+				"entriesSamples":3,
+				"medianOnline":60.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":10,
+				"medianEntries":3.0,
+				"entriesSamples":3,
+				"medianOnline":65.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":15,
+				"medianEntries":6.0,
+				"entriesSamples":3,
+				"medianOnline":65.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":20,
+				"medianEntries":6.0,
+				"entriesSamples":3,
+				"medianOnline":70.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":25,
+				"medianEntries":6.0,
+				"entriesSamples":3,
+				"medianOnline":70.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":30,
+				"medianEntries":9.2,
+				"entriesSamples":3,
+				"medianOnline":75.0,
+				"onlineSamples":3
+			},
+			{
+				"minute":35,
+				"medianEntries":9.0,
+				"entriesSamples":3,
+				"medianOnline":75.0,
+				"onlineSamples":3
+			}
+		]
 	},
 	"areas":[
 		{
 			"area":"唱见电台",
-			"sessions":14,
-			"effectiveSeconds":117120,
-			"revenue":1482.7999999999997,
-			"revenuePerHour":45.577868852459005,
+			"sessions":15,
+			"effectiveSeconds":119520,
+			"revenue":1542.7999999999997,
+			"revenuePerHour":46.46987951807228,
 			"starts":[
 				1779278700000,
 				1779535800000,
@@ -915,7 +979,8 @@
 				1789733700000,
 				1790077200000,
 				1791633900000,
-				1792151700000
+				1792151700000,
+				1792379400000
 			]
 		}
 	]

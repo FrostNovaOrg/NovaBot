@@ -11,18 +11,18 @@
 				"sessions":1,
 				"durationSeconds":4560,
 				"metrics":{
+					"super_chat_count":0.0,
 					"gift_value":21.0,
+					"follow_count":20.0,
 					"danmu_count":410.0,
 					"watched_count":2600.0,
+					"gift_paid":21.0,
 					"super_chat_value":0.0,
 					"like_total":980.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
@@ -30,17 +30,17 @@
 				},
 				"userTimes":{
 					"gift_users":1,
-					"danmu_users":2
+					"danmu_users":1
 				},
-				"audience":2,
+				"audience":1,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":1,
 					"missing":0,
-					"unknown":1
+					"unknown":0
 				},
 				"effectiveSeconds":4560,
-				"follows":0,
+				"follows":20,
 				"messages":410,
 				"revenue":21.0,
 				"starts":[
@@ -54,36 +54,36 @@
 				"sessions":3,
 				"durationSeconds":20400,
 				"metrics":{
+					"super_chat_count":2.0,
 					"gift_value":172.89999999999998,
+					"follow_count":60.0,
 					"danmu_count":2009.0,
 					"watched_count":12210.0,
+					"gift_paid":172.89999999999998,
 					"super_chat_value":40.0,
 					"like_total":4990.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":9,
-					"danmu_users":10
+					"gift_users":3,
+					"danmu_users":3
 				},
-				"audience":5,
+				"audience":3,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":3,
 					"missing":0,
-					"unknown":3
+					"unknown":0
 				},
 				"effectiveSeconds":18780,
-				"follows":0,
+				"follows":60,
 				"messages":2009,
 				"revenue":212.9,
 				"starts":[
@@ -99,36 +99,36 @@
 				"sessions":2,
 				"durationSeconds":19980,
 				"metrics":{
+					"super_chat_count":2.0,
 					"gift_value":212.2,
+					"follow_count":40.0,
 					"danmu_count":2139.0,
 					"watched_count":12660.0,
+					"gift_paid":212.2,
 					"super_chat_value":72.0,
 					"like_total":5300.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":11,
-					"danmu_users":11
+					"gift_users":2,
+					"danmu_users":2
 				},
-				"audience":7,
+				"audience":2,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":2,
 					"missing":0,
-					"unknown":2
+					"unknown":0
 				},
 				"effectiveSeconds":19980,
-				"follows":0,
+				"follows":40,
 				"messages":2139,
 				"revenue":284.2,
 				"starts":[
@@ -139,45 +139,46 @@
 			{
 				"label":"2026-10",
 				"start":1790805600000,
-				"end":1792380865641,
-				"sessions":2,
-				"durationSeconds":17400,
+				"end":1792382400000,
+				"sessions":3,
+				"durationSeconds":19800,
 				"metrics":{
-					"gift_value":160.1,
-					"danmu_count":1776.0,
-					"watched_count":10930.0,
-					"super_chat_value":48.0,
-					"like_total":4470.0,
-					"gift_paid":0.0,
-					"super_chat_count":0.0,
+					"super_chat_count":3.0,
+					"gift_value":208.1,
+					"follow_count":60.0,
+					"danmu_count":2202.0,
+					"watched_count":13410.0,
+					"gift_paid":208.1,
+					"super_chat_value":60.0,
+					"like_total":5400.0,
 					"guard_value":0.0,
 					"captain_count":0.0,
 					"commander_count":0.0,
 					"governor_count":0.0,
-					"follow_count":0.0,
 					"share_count":0.0,
 					"box_count":0.0,
 					"box_profit":0.0,
 					"free_gift_count":0.0
 				},
 				"userTimes":{
-					"gift_users":8,
-					"danmu_users":9
+					"gift_users":3,
+					"danmu_users":3
 				},
-				"audience":5,
+				"audience":3,
 				"coverage":{
 					"anonymous":0,
-					"complete":0,
+					"complete":3,
 					"missing":0,
-					"unknown":2
+					"unknown":0
 				},
-				"effectiveSeconds":17400,
-				"follows":0,
-				"messages":1776,
-				"revenue":208.10000000000002,
+				"effectiveSeconds":19800,
+				"follows":60,
+				"messages":2202,
+				"revenue":268.1,
 				"starts":[
 					1791633900000,
-					1792151700000
+					1792151700000,
+					1792379400000
 				]
 			}
 		],

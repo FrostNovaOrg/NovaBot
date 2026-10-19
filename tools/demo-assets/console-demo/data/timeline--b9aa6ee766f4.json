@@ -5,7 +5,7 @@
 	"category":"SYSTEM",
 	"events":[
 		{
-			"at":1792380845907,
+			"at":1792384200503,
 			"type":"SYSTEM_STARTED",
 			"typeText":"启动",
 			"category":"SYSTEM",
@@ -13,7 +13,7 @@
 			"level":"info",
 			"text":"NovaBot 已启动",
 			"detail":{
-				"startup_ms":"2585"
+				"startup_ms":"2367"
 			}
 		}
 	],
@@ -119,7 +119,7 @@
 		{
 			"name":"PUSH",
 			"text":"推送",
-			"count":5
+			"count":6
 		},
 		{
 			"name":"LIVE",

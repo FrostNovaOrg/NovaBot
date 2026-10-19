@@ -1,4 +1,19 @@
 {
 	"success":true,
-	"tokens":[]
+	"tokens":[
+		{
+			"fingerprint":"45k5lKnM",
+			"label":"演示只读口令·演示面板",
+			"issuedAt":1789790400000,
+			"revokedAt":0,
+			"active":true
+		},
+		{
+			"fingerprint":"NAzMKhlL",
+			"label":"演示只读口令·已吊销设备",
+			"issuedAt":1789790400000,
+			"revokedAt":1792209600000,
+			"active":false
+		}
+	]
 }

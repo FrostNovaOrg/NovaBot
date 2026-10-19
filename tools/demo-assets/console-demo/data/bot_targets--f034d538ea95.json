@@ -1,12 +1,12 @@
 {
-	"fetchedAt":"2026-10-19T03:34:06.334779Z",
+	"fetchedAt":"2026-10-19T04:30:01.225359Z",
 	"stale":false,
 	"senders":[
 		{
 			"sender":"qq-onebot",
-			"fetchedAt":"2026-10-19T03:34:06.334779Z",
+			"fetchedAt":"2026-10-19T04:30:01.225359Z",
 			"stale":false,
-			"groups":1,
+			"groups":3,
 			"friends":1
 		}
 	],
@@ -18,7 +18,7 @@
 			"num":990000000502,
 			"nickname":"演示好友",
 			"remark":"",
-			"configured":false
+			"configured":true
 		}
 	]
 }

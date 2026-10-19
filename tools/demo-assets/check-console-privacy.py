@@ -4,6 +4,8 @@ import argparse
 import json
 import re
 import runpy
+import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote_plus
@@ -53,23 +55,23 @@ def inspect(text):
         if value.isdigit() and value not in IDS:
             hits.add('identity ' + value + ' is not declared synthetic')
 
-    def walk(value, users=False):
+    def walk(value, users=False, series=False):
         if isinstance(value, dict):
             for name, child in value.items():
                 normal = normal_key(name)
                 if normal in IDENTITY_KEYS:
                     identity(child)
-                if name.isdigit():
+                if name.isdigit() and not (series and re.fullmatch(r'\d{13}', name)):
                     identity(name)
                 if name.startswith('qq-onebot:'):
                     for part in name.split(':')[1:]:
                         identity(part)
-                walk(child, users or name == 'userSets')
+                walk(child, users or name == 'userSets', series or name == 'series')
         elif isinstance(value, list):
             for child in value:
                 if users:
                     identity(child)
-                walk(child, users)
+                walk(child, users, series)
         elif isinstance(value, str):
             environment(value)
             if value.lstrip().startswith(('{', '[')):
@@ -150,6 +152,14 @@ def main():
     bot = runpy.run_path(str(DEMO / 'fake-onebot.py'))
     for path in ('get_login_info', 'get_group_list', 'get_friend_list', 'get_group_member_list'):
         sources.append(('generated OneBot ' + path, json.dumps(bot['data_of']('/' + path))))
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(['python3', str(DEMO / 'demo-seed/make-demo-seed.py'),
+                        '--now', '2026-01-15T12:00:00', directory], check=True, capture_output=True)
+        for file in sorted(Path(directory).rglob('*')):
+            if file.is_file():
+                item = ('generated ' + str(file.relative_to(directory)), file.read_text())
+                sources.append(item)
+                file_sources.append(item)
     violations = 0
     for label, text in file_sources:
         for hit in inspect_lines(text):

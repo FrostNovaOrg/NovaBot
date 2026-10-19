@@ -49,6 +49,14 @@ class ConsolePrivacyTest(unittest.TestCase):
             'configPath': '/opt/novabot/application.yml', 'path': '/config/api/status',
             'host': '127.0.0.1', 'elapsedSeconds': 271828})))
 
+    def test_minute_series_timestamps_are_not_account_ids(self):
+        self.assertEqual([], privacy.inspect(json.dumps({'series': {
+            'online_count': {'1780000000000': 42}}})))
+        for value in ({'rankings': {'1780000000000': 42}},
+                      {'series': {'online_count': {'271828': 42}}},
+                      {'series': {'uid': 271828}}):
+            self.assertTrue(privacy.inspect(json.dumps(value)))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -46,7 +46,7 @@ for source in sources:
         shutil.copyfile(file, target)
 shutil.copytree(demo / 'data', dest / 'console-demo/data')
 shutil.copyfile(demo / 'demo.js', dest / 'console-demo/demo.js')
-(dest / 'console-demo/recording.js').write_text('window.NOVA_CONSOLE_DEMO = ' + json.dumps(index, ensure_ascii=False) + ';\n')
+(dest / 'console-demo/recording.js').write_text('window.NOVA_CONSOLE_DEMO = ' + json.dumps(index, ensure_ascii=False, indent=2) + ';\n')
 injection = '<script src="/console-demo/recording.js"></script>\n<script src="/console-demo/demo.js"></script>\n'
 def render(source):
     text = source.read_text().replace('{{nova-prefix}}', '').replace('{{nova-prefix:js}}', '')
