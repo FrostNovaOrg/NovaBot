@@ -36,7 +36,9 @@ class WeeklyReportMemberAccessTest {
                 """);
         reports = mock(WeeklyReportDeliveryService.class);
         when(reports.trial(anyString(), anyLong(), any())).thenReturn(JSONObject.of("code", 0));
-        var gate = new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), properties);
+        var platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
+        var gate = new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), properties, platforms);
         mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(reports)).addInterceptors(gate).build();
     }
 

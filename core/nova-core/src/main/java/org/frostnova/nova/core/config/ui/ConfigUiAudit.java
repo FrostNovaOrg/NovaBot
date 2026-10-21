@@ -7,11 +7,15 @@ import org.frostnova.nova.core.model.PushUser;
 public final class ConfigUiAudit {
     private ConfigUiAudit() { }
 
+    public static String safe(String text) {
+        return text == null ? "" : text.replaceAll("[\\p{Cntrl}\\p{Zl}\\p{Zp}]", " ");
+    }
+
     public static String streamer(AbstractDataSource source, String platform, String uid) {
         String name = source.getAllUsers().stream()
                 .filter(user -> java.util.Objects.equals(platform, user.getPlatform())
                         && java.util.Objects.equals(uid, String.valueOf(user.getUid())))
                 .map(PushUser::getUname).filter(value -> value != null && !value.isBlank()).findFirst().orElse(null);
-        return platform + ":" + uid + (name == null ? "" : " (" + name + ")");
+        return platform + ":" + uid + (name == null ? "" : " (" + safe(name) + ")");
     }
 }

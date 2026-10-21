@@ -3,6 +3,7 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
+import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpInputMessage;
@@ -20,6 +21,11 @@ import java.lang.reflect.Type;
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiMemberBodyAdvice extends RequestBodyAdviceAdapter {
     public static final String MISSING_STREAMER = "没有这位主播";
+    private final DataSourceServiceRegistry platforms;
+
+    public ConfigUiMemberBodyAdvice(DataSourceServiceRegistry platforms) {
+        this.platforms = platforms;
+    }
 
     @Override
     public boolean supports(MethodParameter parameter, Type targetType,
@@ -40,11 +46,11 @@ public class ConfigUiMemberBodyAdvice extends RequestBodyAdviceAdapter {
         try {
             allowed = switch (rule.subject()) {
                 case LOOKUP -> ConfigUiStreamerId.owns(account, json.getString("platform"),
-                        ConfigUiStreamerId.positiveDecimal(json.getString("uid") == null ? null : json.getString("uid").trim()));
+                        ConfigUiStreamerId.positiveDecimal(json.getString("uid") == null ? null : json.getString("uid").trim()), platforms.platforms());
                 case SUBSCRIPTION -> ConfigUiStreamerId.ownsUid(account,
-                        ConfigUiStreamerId.positiveDecimal(json.get("streamerUid")));
+                        ConfigUiStreamerId.positiveDecimal(json.get("streamerUid")), platforms.platforms());
                 case PREVIEW -> !json.containsKey("streamerPlatform") && !json.containsKey("streamerUid")
-                        || ConfigUiStreamerId.owns(account, json.getString("streamerPlatform"), json.getLong("streamerUid"));
+                        || ConfigUiStreamerId.owns(account, json.getString("streamerPlatform"), json.getLong("streamerUid"), platforms.platforms());
                 default -> true;
             };
         } catch (RuntimeException malformed) {
