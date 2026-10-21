@@ -700,15 +700,18 @@ export function revenueSummary(session) {
  * 两边各算一份的话，屏幕上写着「静音中」、推送却照发（或反过来）。
  * @param session 会话
  * @param global /api/state 的 quietGlobal：设置页那一项全局静音时段
+ * @param savedQuiet 已保存的通道静音设置；草稿与它相同时才能使用服务端的静音状态
  * @return 摘要：mode、自己的起止、此刻在不在静音里与那一行字
  */
-export function quietSummary(session, global) {
+export function quietSummary(session, global, savedQuiet) {
   const s = session || {};
   const g = global || {};
   const mode = s.quietMode === 'custom' || s.quietMode === 'off' ? s.quietMode : 'follow';
   const start = mode === 'custom' ? (s.quietStart || '') : '';
   const end = mode === 'custom' ? (s.quietEnd || '') : '';
-  const active = !!s.quietActive;
+  const same = !savedQuiet || (mode === (savedQuiet.mode || 'follow')
+    && (mode !== 'custom' || (start === savedQuiet.start && end === savedQuiet.end)));
+  const active = !!s.quietActive && same;
 
   let text;
   if (mode === 'off') {
@@ -837,6 +840,7 @@ export function atAllStatus(quota, session, target, directory) {
   const seat = ((quota || {}).sessions || [])
     .find(item => item.platform === platform && item.num === target.num) || null;
   const known = (directory || {})[directoryKey(target.platform, target.type, target.num)] || null;
+  const admin = typeof known?.admin === 'boolean' ? known.admin : null;
 
   const parts = [];
   // limited 为假＝没有上限，此时不画分母：画一个 0 的分母，看的人会以为一次都不许用
@@ -844,16 +848,16 @@ export function atAllStatus(quota, session, target, directory) {
     : '今日本群用量无法获取');
   parts.push(bot ? '账号 ' + bot.used + (bot.limited ? '/' + bot.limit : '（不限）')
     : '账号用量无法获取');
-  parts.push(known ? '机器人角色：' + (known.admin ? '管理员' : '普通成员') : '机器人角色：无法获取名单');
+  parts.push(admin !== null ? '机器人角色：' + (admin ? '管理员' : '普通成员') : '机器人角色：无法获取名单');
 
   return {
     applicable: true,
-    admin: known ? known.admin : null,
+    admin,
     used: seat ? seat.used : null,
     text: parts.join(' · '),
     // @全体成员 不绕过 QQ 权限：不是管理员时它会被整段摘掉，正文照发。
     // 这句话得在这里说，否则「配了却没 @ 到人」这件事没有任何现象
-    warning: known && !known.admin
+    warning: admin === false
       ? '机器人不是本群管理员，@全体成员 将被自动省略，正文照常发送。' : '',
   };
 }

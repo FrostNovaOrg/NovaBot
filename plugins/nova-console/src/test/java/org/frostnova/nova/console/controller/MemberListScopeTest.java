@@ -202,7 +202,7 @@ class MemberListScopeTest {
         JSONObject member = response(endpoint);
         assertTrue(member.getBooleanValue("success"));
         concealed(member);
-        if (endpoint.equals("status")) for (String key : List.of("health", "runtime", "version", "update", "configPath", "streamerLimit", "restartPending", "senders", "queue", "alerts"))
+        if (endpoint.equals("status")) for (String key : List.of("health", "runtime", "version", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
             assertFalse(member.containsKey(key), key);
         if (endpoint.equals("streamers")) assertFalse(member.containsKey("notConfigured"));
         if (endpoint.equals("at-all/quota")) assertFalse(member.containsKey("bots"));
@@ -217,6 +217,37 @@ class MemberListScopeTest {
         JSONObject after = response(endpoint);
         if (endpoint.equals("status")) { before.remove("runtime"); after.remove("runtime"); }
         assertEquals(before, after, "Administrator response changed");
+    }
+
+    // 新分到的主播还没有通道时，成员仍需知道可用平台，且不能收到全实例运行信息。
+    @Test void memberStatusIncludesSortedSenderNamesOnly() {
+        var senders = (NovaSenderService)dependencies.get(NovaSenderService.class);
+        when(senders.getSenderNames()).thenReturn(new LinkedHashSet<>(List.of("qq-secondary", "qq-onebot")));
+        var admin = config.status();
+        use(MEMBER);
+        var member = config.status();
+        assertEquals(List.of("qq-onebot", "qq-secondary"), member.getList("senders", String.class));
+        assertEquals(admin.get("senders"), member.get("senders"));
+        for (String key : List.of("health", "runtime", "version", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
+            assertFalse(member.containsKey(key), key);
+    }
+
+    // 主播和运行状态都没有通道时，页面须使用成员 status 的平台查号、添加并保存第一个通道。
+    @Test void memberCanAddFirstChannelFromStatus() throws Exception {
+        var a = user(A, "Owner A");
+        when(source.getAllUsers()).thenReturn(List.of(a));
+        Files.writeString(file, JSON.toJSONString(List.of(a)));
+        when(((NovaSenderService)dependencies.get(NovaSenderService.class)).getSenderNames()).thenReturn(Set.of("qq-onebot"));
+        use(MEMBER);
+        var status = config.status();
+        var state = runtime.state();
+        assertEquals(0, status.getJSONArray("users").getJSONObject(0).getIntValue("targets"));
+        assertTrue(state.getJSONArray("sessions").isEmpty());
+        Path statusFile = dir.resolve("status.json"), stateFile = dir.resolve("state.json");
+        Files.writeString(statusFile, status.toJSONString());
+        Files.writeString(stateFile, state.toJSONString());
+        FrontendFixture.runFromModule("src/test/resources/frontend/push-member-fixture.mjs", "first",
+                Map.of("PUSH_CASE", "first", "PUSH_STATUS", statusFile.toString(), "PUSH_STATE", stateFile.toString()));
     }
 
     // 插件管理页与内建日志、连接、设置不能再成为成员导航入口。

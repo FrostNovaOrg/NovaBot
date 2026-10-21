@@ -202,10 +202,10 @@ try {
   const push = readFileSync(join(pages, 'push.js'), 'utf8');
   let added;
   const add = new Function('store', 'pickTarget', 'streamerName', 'markDirty', 'say',
-    'location', 'channelTail', 'renderStreamers', 'defaultMessages',
+    'location', 'channelTail', 'renderStreamers', 'defaultMessages', 'isMember',
     bracedFrom(push, 'function addChannel(') + '\nreturn addChannel;')(
       {handlerList: handlers}, config => { added = config; }, () => '', () => {}, () => {},
-      {}, () => '', () => {}, model.defaultMessages);
+      {}, () => '', () => {}, model.defaultMessages, () => false);
   const user = {platform: 'sample', uid: 1, targets: []};
   add(user); added.onPick({platform: 'qq-onebot', type: 1, num: 1001});
   eq(user.targets[0].messages, saved[0].targets[0].messages, '添加通道与向导默认订阅相同');

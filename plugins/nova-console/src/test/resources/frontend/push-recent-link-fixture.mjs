@@ -238,10 +238,10 @@ function loadSectionNotices(pushHistory) {
   if (!body) throw new Error('切不出 sectionNotices 整块');
   return new Function(
     'el', 'esc', 'sectionHead', 'noticeSwitches', 'store', 'pushHistory',
-    'recentPushes', 'pushChannelOf',
+    'recentPushes', 'pushChannelOf', 'isMember',
     body + '\nreturn sectionNotices;')(
     el, esc, sectionHead, () => [], {handlerList: []}, pushHistory,
-    model.recentPushes, model.pushChannelOf);
+    model.recentPushes, model.pushChannelOf, () => false);
 }
 
 function renderNotices(session, history) {
