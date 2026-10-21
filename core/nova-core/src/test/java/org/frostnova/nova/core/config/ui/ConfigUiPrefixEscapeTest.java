@@ -25,7 +25,7 @@ class ConfigUiPrefixEscapeTest {
 
         assertTrue(html.contains("<meta name=\"nova-prefix\" content=\"/a&quot;b&#39;c&lt;d&gt;&amp;e&lt;/script&gt;\">"),
                 "meta 里的前缀没按属性转义");
-        assertTrue(html.contains("src=\"/a&quot;b&#39;c&lt;d&gt;&amp;e&lt;/script&gt;/config/assets/main.js\""),
+        assertTrue(html.contains("src=\"/a&quot;b&#39;c&lt;d&gt;&amp;e&lt;/script&gt;/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/main.js\""),
                 "入口脚本地址里的前缀没按属性转义");
         assertFalse(html.contains(ODD), "前缀原样出现在页面里");
     }

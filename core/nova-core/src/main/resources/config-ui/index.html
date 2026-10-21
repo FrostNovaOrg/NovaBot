@@ -16,9 +16,15 @@
     }
   } catch (e) {}
 </script>
-<link rel="icon" href="{{nova-prefix}}/config/assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{{nova-prefix}}/config/assets/product-ui.css">
-<link rel="stylesheet" href="{{nova-prefix}}/config/assets/app.css">
+<script>
+  window.novaStartupTimer = setTimeout(function () {
+    var message = document.getElementById('startup-message');
+    if (message) message.textContent = '控制台没加载出来，请强制刷新页面（Mac 按 Cmd+Shift+R，Windows 按 Ctrl+F5）。';
+  }, 30000);
+</script>
+<link rel="icon" href="{{nova-prefix}}/config/assets/{{nova-asset-version}}/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{nova-prefix}}/config/assets/{{nova-asset-version}}/product-ui.css">
+<link rel="stylesheet" href="{{nova-prefix}}/config/assets/{{nova-asset-version}}/app.css">
 </head>
 <body>
 <div id="app">
@@ -33,7 +39,7 @@
   -->
   <aside id="side">
     <div class="brand">
-      <div class="brand-mark"><img src="{{nova-prefix}}/config/assets/icon.svg" alt="NovaBot"></div>
+      <div class="brand-mark"><img src="{{nova-prefix}}/config/assets/{{nova-asset-version}}/icon.svg" alt="NovaBot"></div>
       <div class="brand-name">NovaBot</div>
     </div>
     <nav class="nav" id="nav">
@@ -472,6 +478,6 @@
   改成一堆 <script> 时那份顺序是隐性约定：谁依赖谁只存在于人的记忆里，插错一行就是 undefined。
   模块化没有引入构建步骤——浏览器原生支持，改完刷新即可。
 -->
-<script type="module" src="{{nova-prefix}}/config/assets/main.js"></script>
+<script type="module" src="{{nova-prefix}}/config/assets/{{nova-asset-version}}/main.js"></script>
 </body>
 </html>

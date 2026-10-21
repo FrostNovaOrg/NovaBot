@@ -8,8 +8,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../..
 const core = resolve(root, 'core/nova-core/src/main/resources/config-ui');
 const plugin = resolve(root, 'plugins/nova-console/src/main/resources/config-ui-pages');
 const mode = process.argv[2] || 'requests';
+const recovery = ['slow-plugins', 'retry-plugins', 'retry-member-plugins', 'plugin-version', 'plugin-version-next', 'missing-main', 'fallback-started'].includes(mode);
 const startup = mode.startsWith('loading-') || mode.startsWith('sidebar-');
-const role = (mode === 'sidebar-admin' || (mode.startsWith('loading-') && !mode.startsWith('loading-member-')) || mode === 'admin') ? 'ADMIN' : mode === 'legacy' ? undefined : mode === 'unknown' ? 'OTHER' : 'MEMBER';
+const role = mode === 'retry-member-plugins' ? 'MEMBER' : (recovery || mode === 'sidebar-admin' || (mode.startsWith('loading-') && !mode.startsWith('loading-member-')) || mode === 'admin') ? 'ADMIN' : mode === 'legacy' ? undefined : mode === 'unknown' ? 'OTHER' : 'MEMBER';
 class Element {
   constructor(tag = 'div') {
     this.tagName = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.style = {};
@@ -89,7 +90,19 @@ const events = {};
 const heldPath = mode.startsWith('loading-') ? '/' + mode.replace(/^loading-(member-)?/, '') : '/auth/state';
 let hold = startup, releaseHeld;
 let startupTimer;
+let now = 0, nextTimer = 0;
+const timers = new Map();
+const advance = ms => {
+  const end = now + ms;
+  while (true) {
+    const next = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+    if (!next) break;
+    now = next[1].at; timers.delete(next[0]); next[1].fn();
+  }
+  now = end;
+};
 const startupTimeout = (fn, ms, ...args) => {
+  if (recovery) { const id = ++nextTimer; timers.set(id, {at: now + ms, fn: () => fn(...args)}); return id; }
   if (ms === 15000) { startupTimer = fn; return 'startup'; }
   return setTimeout(fn, ms, ...args);
 };
@@ -123,7 +136,7 @@ const fetch = async (url, options = {}) => {
   pending--; return {status: path === '/login' ? 403 : 200, json: async () => body};
 };
 const context = vm.createContext({document, location, window, fetch, console, URL, URLSearchParams, Date, Set, Map, Promise,
-  setTimeout: startupTimeout, clearTimeout: id => { if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval, clearInterval, AbortController});
+  setTimeout: startupTimeout, clearTimeout: id => { if (recovery) timers.delete(id); else if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval, clearInterval, AbortController});
 const stubs = {
   'bot.js': ['bindBotForm','botFormHtml','fillBotForms'],
   'links.js': ['focusStation','loadTargets','mountLinkCard','refreshLinks','sendTestMessage'],
@@ -135,6 +148,16 @@ const stubs = {
   'push.js': ['render','refresh'], 'advanced.js': ['render','refresh'],
 };
 const modules = new Map();
+const imports = [];
+let pluginHeld = false;
+const delayedPlugins = mode === 'slow-plugins' || mode === 'retry-plugins' || mode === 'retry-member-plugins' || mode === 'fallback-started';
+const assetBase = 'https://console.example/novabot/config/assets/'
+  + (mode === 'plugin-version-next' ? '1792584000000' : '1792497600000') + '/';
+if (recovery) {
+  for (const script of readFileSync(resolve(core, 'index.html'), 'utf8').replace(/<!--[\s\S]*?-->/g, '').matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+    vm.runInContext(script[1], context);
+  }
+}
 function getModule(path) {
   if (modules.has(path)) return modules.get(path);
   const names = stubs[basename(path)];
@@ -143,7 +166,14 @@ function getModule(path) {
     return name === 'botFormHtml' ? '' : undefined;
   }); }, {context, identifier: path}) : new vm.SourceTextModule(readFileSync(path, 'utf8'), {
     context, identifier: path,
-    importModuleDynamically: async specifier => { const loaded = getModule(find(specifier)); if (loaded.status === 'unlinked') await loaded.link(link); if (loaded.status === 'linked') await loaded.evaluate(); return loaded; },
+    initializeImportMeta: meta => { meta.url = assetBase + basename(path); },
+    importModuleDynamically: async specifier => {
+      imports.push(specifier);
+      if (delayedPlugins && !pluginHeld && basename(specifier) === 'streamers.js') {
+        pluginHeld = true;
+        await new Promise(done => startupTimeout(done, 20000));
+      }
+      const loaded = getModule(find(specifier)); if (loaded.status === 'unlinked') await loaded.link(link); if (loaded.status === 'linked') await loaded.evaluate(); return loaded; },
   });
   modules.set(path, module); return module;
 }
@@ -165,12 +195,85 @@ const main = getModule(resolve(core, 'main.js'));
 let initialAdminLinks;
 // 身份未知时出现管理入口，会让成员误以为自己能打开日志、连接和设置。
 if (mode.startsWith('sidebar-')) initialAdminLinks = ['log','links','settings'].filter(id => visible($('#nav').querySelector('[data-page="' + id + '"]')));
-await main.link(link); await main.evaluate(); await settle();
-const store = getModule(resolve(core, 'store.js')).namespace.store;
-const overview = getModule(resolve(core, 'overview.js')).namespace;
+await main.link(link); if (mode !== 'missing-main') await main.evaluate(); await settle();
+const store = mode === 'missing-main' ? null : getModule(resolve(core, 'store.js')).namespace.store;
+const overview = mode === 'missing-main' ? null : getModule(resolve(core, 'overview.js')).namespace;
 const go = async hash => { location.hash = hash; await settle(); };
 let checks = 0, failed = 0;
 async function check(name, fn) { checks++; try { await fn(); console.log('绿 ' + name); } catch (e) { failed++; console.log('红 ' + name + '：' + e.message); } }
+// 网慢时提示不能丢掉仍在下载的脚本，否则等齐后设置仍点不开。
+if (mode === 'slow-plugins') await check('插件加载 20 秒后首屏恢复', async () => {
+  assert.ok(pluginHeld, '应等在插件脚本');
+  advance(15000); await settle();
+  assert.match($('#startup-message').textContent, /控制台没加载出来/);
+  assert.ok(visible($('#startup-retry')));
+  advance(5000); await settle();
+  assert.ok(!visible($('#startup')), '20 秒载完应收起卡片');
+  assert.equal(store.authReady, true);
+  assert.ok(visible($('#nav').querySelector('[data-page="settings"]')));
+  await go('#/settings');
+  assert.ok(visible($('#page-settings')), '设置应能打开');
+});
+// 等插件脚本时重试，已建出的推送、主播入口不能各挂两遍，旧加载也不能覆盖新结果。
+if (mode === 'retry-plugins' || mode === 'retry-member-plugins') await check('重试后插件页与导航各一份', async () => {
+  assert.ok(pluginHeld);
+  advance(15000); await settle();
+  assert.ok(visible($('#startup-retry')));
+  for (const fn of $('#startup-retry').listeners.click || []) fn();
+  await settle();
+  assert.ok(!visible($('#startup')));
+  advance(5000); await settle();
+  for (const id of ['push', 'streamers']) {
+    assert.equal($('#nav').querySelectorAll('a').filter(a => a.dataset.page === id).length, 1, id + ' 导航');
+    assert.equal(document.querySelectorAll('#page-' + id).length, 1, id + ' 容器');
+  }
+  assert.equal(document.querySelectorAll('#today').length, 1, '首页插件卡');
+  assert.equal(document.querySelectorAll('#advanced').length, role === 'ADMIN' ? 1 : 0, '设置插件页');
+  assert.equal($('#page-tabs').children.length, role === 'ADMIN' ? 1 : 0, '设置插件入口');
+  assert.equal(store.authReady, true);
+});
+// 插件若回到无版本地址，会继续用旧模块拼新版首屏；相对导入也必须跟随主入口的版本。
+if (mode.startsWith('plugin-version')) await check('插件与主入口使用同一个版本目录', async () => {
+  assert.equal(imports.length, pages.length);
+  for (const [i, url] of imports.entries()) {
+    assert.equal(url, assetBase + pages[i].script);
+    assert.equal(new URL('./core.js', url).href, assetBase + 'core.js');
+  }
+});
+// 首页与向导也会另取插件脚本，任一处漏掉版本都会装出另一份共享状态。
+if (mode.startsWith('plugin-version')) for (const name of ['overview.js', 'setup.js']) {
+  await check('插件脚本版本 ' + name, async () => {
+    const source = readFileSync(resolve(core, name), 'utf8');
+    const expression = source.match(/await import\(([^\n]+)\);/)[1];
+    let requested;
+    const probe = new vm.SourceTextModule(
+      'const meta = {script: "plugin-step.js"}; const CONSOLE = "/novabot/config"; await import(' + expression + ');', {
+        context, initializeImportMeta: meta => { meta.url = assetBase + name; },
+        importModuleDynamically: async url => {
+          requested = url;
+          const module = new vm.SyntheticModule([], function () {}, {context});
+          await module.link(() => {}); await module.evaluate(); return module;
+        },
+      });
+    await probe.link(() => {}); await probe.evaluate();
+    assert.equal(requested, assetBase + 'plugin-step.js', name + ' 插件地址');
+  });
+}
+// 主入口取不到或旧脚本不认当前页面时，用户不能永远面对加载卡。
+if (mode === 'missing-main') await check('主脚本未执行时提示强制刷新', () => {
+  advance(29999);
+  assert.match($('#startup-message').textContent, /正在加载/);
+  advance(1);
+  assert.match($('#startup-message').textContent, /控制台没加载出来，请强制刷新页面/);
+  assert.match($('#startup-message').textContent, /Cmd\+Shift\+R/);
+  assert.match($('#startup-message').textContent, /Ctrl\+F5/);
+});
+// 正常入口一开始启动就要撤掉后备提示，后续接口等待不该被说成脚本未运行。
+if (mode === 'fallback-started') await check('正常启动取消页面后备提示', async () => {
+  advance(30000); await settle();
+  assert.doesNotMatch($('#startup-message').textContent, /强制刷新/);
+  assert.ok(!visible($('#startup')));
+});
 // 某个首屏接口不回时，主区应给出等待、超时与可恢复的重试入口。
 if (mode.startsWith('loading-')) await check('首屏等待、15 秒超时与重试 ' + heldPath, async () => {
   assert.ok(releaseHeld, '应已等在指定接口');
@@ -274,6 +377,6 @@ if (['admin', 'legacy', 'unknown'].includes(mode)) await check('管理员保留�
 });
 for (const [method, path] of requests) console.log('REQUEST ' + method + ' ' + path);
 console.log('跑了 ' + checks + ' 格，红 ' + failed + ' 格');
-getModule(resolve(plugin, 'streamers.js')).namespace.leave?.();
+if (mode !== 'missing-main') getModule(resolve(plugin, 'streamers.js')).namespace.leave?.();
 if (mode === 'requests') { assert.ok(requests.some(([,path]) => path.endsWith('/streamers'))); assert.ok(requests.some(([,path]) => path.includes('/streamers/bilibili/71001'))); }
 if (failed || errors.length) process.exitCode = 1;

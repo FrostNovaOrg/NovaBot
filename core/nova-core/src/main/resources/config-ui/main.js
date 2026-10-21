@@ -4,7 +4,7 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, CONSOLE, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say,
+import {$, api, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say,
   term} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
@@ -22,6 +22,8 @@ import {store} from './store.js';
 import {ask} from './confirm.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
 
+clearTimeout(window.novaStartupTimer);
+
 /**
  * 插件带来的页，装好之后每项是 {meta, module}
  *
@@ -29,6 +31,8 @@ import {clearIssuedToken, loadTokens} from './tokens.js';
  * 现在它是运行期的一张清单——核心只知道「有几页、叫什么、脚本在哪」，页里做什么与它无关。
  */
 const pages = [];
+// 脚本还在下载时重试，也复用已经建出的入口与容器。
+const pageContainers = new Map();
 const accessiblePages = new Set(['home']);
 
 /** 身份到达后再显示导航与首页，避免成员先看到实例管理入口。 */
@@ -38,7 +42,7 @@ function applyRoleView() {
     return;
   }
   document.querySelectorAll('#nav a').forEach(link => {
-    if (link.dataset.page !== 'home') link.remove();
+    if (!accessiblePages.has(link.dataset.page)) link.remove();
   });
   for (const selector of ['.runbox', '.verline', '#home-banner', '#home-todo',
     '.home-connections', '#home-all-events', '#home-probes', '#cfg-path', '#plugin-adv']) {
@@ -118,20 +122,28 @@ async function mountPages(attempt) {
   const slot = $('#page-tabs');
   for (const meta of list) {
     if (!attempt.active) return;
-    const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta)
+    let page = pages.find(item => item.meta.id === meta.id);
+    if (page?.loaded) continue;
+    const container = pageContainers.get(meta.id) || (meta.slot === SLOT_LINKS ? mountLinkCard(meta)
       : meta.slot === SLOT_TOP ? mountTopPage(meta)
       : meta.slot === SLOT_HOME_CARD ? mountHomeCard(meta)
       : meta.slot === SLOT_SETUP_STEP ? null
-      : mountSettingsPage(meta, slot);
+      : mountSettingsPage(meta, slot));
     if (!container) continue;
+    pageContainers.set(meta.id, container);
 
     try {
-      const module = await import(CONSOLE + '/assets/' + meta.script);
+      // 相对入口地址解析，让插件与其相对导入都沿用当前页面的资源版本。
+      const module = await import(new URL(meta.script, import.meta.url).href);
       if (!attempt.active) return;
-      const page = {meta, module};
-      pages.push(page);
+      if (page) page.module = module;
+      else {
+        page = {meta, module};
+        pages.push(page);
+      }
       registerPageChangeSource(page);
       module.render?.(container);
+      page.loaded = true;
     } catch (e) {
       if (!attempt.active) return;
       // 装不上的页也要留在清单里。清单是路由认页的唯一依据，不留就等于 #/settings/<页标识>
@@ -788,6 +800,7 @@ let startupAttempt;
 function startConsole() {
   if (startupAttempt) {
     startupAttempt.active = false;
+    clearTimeout(startupAttempt.timer);
     startupAttempt.controller.abort();
   }
   const attempt = {active: true, controller: new AbortController()};
@@ -796,9 +809,8 @@ function startConsole() {
   $('#startup').style.display = '';
   $('#startup-message').textContent = '正在加载…';
   $('#startup-retry').style.display = 'none';
-  const timer = setTimeout(() => {
-    attempt.active = false;
-    attempt.controller.abort();
+  attempt.timer = setTimeout(() => {
+    if (!attempt.active) return;
     $('#startup-message').textContent = '控制台没加载出来，请刷新页面重试。';
     $('#startup-retry').style.display = '';
   }, 15000);
@@ -847,7 +859,7 @@ function startConsole() {
       if (!attempt.active) return;
       await mountPages(attempt);
       if (!attempt.active) return;
-      clearTimeout(timer);
+      clearTimeout(attempt.timer);
       $('#startup').style.display = 'none';
       store.authReady = true;
       applyRoute();

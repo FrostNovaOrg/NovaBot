@@ -53,9 +53,9 @@ class ConfigUiPrefixPageTest {
         for (String prefix : List.of("/novabot", "")) {
             String html = ConfigUiPrefixPages.index(prefix, prefix);
             String palette = "<link rel=\"stylesheet\" href=\"" + prefix
-                    + "/config/assets/product-ui.css\">";
+                    + "/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/product-ui.css\">";
             String components = "<link rel=\"stylesheet\" href=\"" + prefix
-                    + "/config/assets/app.css\">";
+                    + "/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/app.css\">";
             assertTrue(html.contains(palette), "色表地址未带部署前缀，整页配色取不到: " + palette);
             assertTrue(html.contains(components) && html.indexOf(palette) < html.indexOf(components),
                     "色表必须排在组件样式之前");
@@ -74,19 +74,19 @@ class ConfigUiPrefixPageTest {
                     "控制台页里的这个地址没带前缀，配了前缀时它取不到: " + address);
         }
         assertEquals(List.of(), ConfigUiPrefixPages.bareAddresses(html), "控制台页里还剩写死的地址");
-        assertTrue(html.contains("href=\"/novabot/config/assets/app.css\""), "样式表地址带前缀");
-        assertTrue(html.contains("src=\"/novabot/config/assets/main.js\""), "入口脚本地址带前缀");
+        assertTrue(html.contains("href=\"/novabot/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/app.css\""), "样式表地址带前缀");
+        assertTrue(html.contains("src=\"/novabot/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/main.js\""), "入口脚本地址带前缀");
     }
 
     @Test
-    @DisplayName("控制台页：没配前缀时地址与改前逐字相同")
+    @DisplayName("控制台页：没配前缀时地址仍从 /config 起头")
     void indexUnchangedWithoutPrefix() throws Exception {
         String html = ConfigUiPrefixPages.index("", "");
 
-        assertTrue(html.contains("<link rel=\"icon\" href=\"/config/assets/icon.svg\" type=\"image/svg+xml\">"));
-        assertTrue(html.contains("<link rel=\"stylesheet\" href=\"/config/assets/app.css\">"));
-        assertTrue(html.contains("<img src=\"/config/assets/icon.svg\" alt=\"NovaBot\">"));
-        assertTrue(html.contains("<script type=\"module\" src=\"/config/assets/main.js\"></script>"));
+        assertTrue(html.contains("<link rel=\"icon\" href=\"/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/icon.svg\" type=\"image/svg+xml\">"));
+        assertTrue(html.contains("<link rel=\"stylesheet\" href=\"/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/app.css\">"));
+        assertTrue(html.contains("<img src=\"/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/icon.svg\" alt=\"NovaBot\">"));
+        assertTrue(html.contains("<script type=\"module\" src=\"/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/main.js\"></script>"));
         assertFalse(html.contains("{{nova-prefix"), "没配前缀时也不许留下没顶替的占位");
     }
 

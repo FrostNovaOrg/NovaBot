@@ -35,7 +35,7 @@ class ConfigUiPrefixFromConfigTest {
         String html = ConfigUiPrefixPages.index(CONFIGURED, FORGED);
 
         assertFalse(html.contains("evil"), "控制台页里出现了请求上那一份前缀");
-        assertTrue(html.contains("src=\"/novabot/config/assets/main.js\""), "入口脚本地址取的是配置的前缀");
+        assertTrue(html.contains("src=\"/novabot/config/assets/" + ConfigUiPrefixPages.ASSET_VERSION + "/main.js\""), "入口脚本地址取的是配置的前缀");
     }
 
     @Test
