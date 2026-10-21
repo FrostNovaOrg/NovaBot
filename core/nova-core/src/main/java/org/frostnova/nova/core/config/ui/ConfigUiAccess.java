@@ -28,12 +28,17 @@ public final class ConfigUiAccess {
                 ? account.actor() : "本地管理员";
     }
 
+    public static boolean member(HttpServletRequest request) {
+        return request != null && request.getAttribute(ACCOUNT) instanceof ConfigUiAccount account
+                && account.role() == ConfigUiAccount.Role.MEMBER;
+    }
+
     public static ConfigUiAccount admin(HttpServletRequest request) {
         if (!(request.getAttribute(ACCOUNT) instanceof ConfigUiAccount account)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "尚未登录");
         }
         if (account.role() != ConfigUiAccount.Role.ADMIN) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "成员暂时不能使用这一项");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, ConfigUiApiInterceptor.MEMBER_DENIED);
         }
         return account;
     }

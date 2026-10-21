@@ -85,7 +85,7 @@ public class ConfigUiAccountStore {
 
     public synchronized ConfigUiAccount streamers(String id, List<String> streamers) {
         var a = require(id);
-        if (streamers.size() > 10000 || streamers.stream().anyMatch(s -> s == null || s.isBlank() || s.length() > 256)) {
+        if (streamers.size() > 10000 || streamers.stream().anyMatch(s -> ConfigUiStreamerId.parse(s) == null)) {
             throw new IllegalArgumentException("指定主播格式不正确");
         }
         var updated = new ConfigUiAccount(a.id(), a.role(), a.status(), a.displayName(), a.email(), a.issuer(), a.subject(),

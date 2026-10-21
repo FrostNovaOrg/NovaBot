@@ -221,7 +221,6 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         establish(request, session.get());
-        if (memberDenied(request, response)) return;
 
         // 令牌只能从地址栏或请求头带来，跨站页面拿不到它，因此换会话的那一趟不必再查 CSRF
         if (!redeemed && !SAFE_METHODS.contains(request.getMethod())
@@ -246,19 +245,6 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         request.setAttribute(ConfigUiAccess.SESSION, session);
         request.setAttribute(ConfigUiAccess.ACCOUNT, authService.account(session));
         request.setAttribute(ConfigUiAccess.FRESH_LOCAL, authService.freshLocal(session));
-    }
-
-    private boolean memberDenied(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        var account = (ConfigUiAccount) request.getAttribute(ConfigUiAccess.ACCOUNT);
-        String path = path(request);
-        if (account.role() == ConfigUiAccount.Role.MEMBER
-                && path.startsWith(ConfigUiController.BASE_PATH + "/api/")
-                && !PUBLIC_API.contains(path)
-                && !path.equals(ConfigUiController.BASE_PATH + "/api/auth/logout")) {
-            reject(request, response, HttpStatus.FORBIDDEN, "成员暂时不能使用这一项");
-            return true;
-        }
-        return false;
     }
 
     /**
