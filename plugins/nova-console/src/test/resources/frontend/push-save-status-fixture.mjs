@@ -133,12 +133,12 @@ await ask('① 存推送配置成功，状态栏写服务端那句（含「重�
   const said = statusText();
   same({
     '含服务端那句': said.includes('重启后生效'),
-    '不提本群设置': !said.includes('本群设置'),
-    '没发本群设置': statePosts().length === 0,
+    '不提提醒订阅': !said.includes('提醒订阅'),
+    '没发提醒订阅': statePosts().length === 0,
   }, {
     '含服务端那句': true,
-    '不提本群设置': true,
-    '没发本群设置': true,
+    '不提提醒订阅': true,
+    '没发提醒订阅': true,
   }, '推送成功提示');
 });
 
@@ -151,10 +151,10 @@ await ask('② 自动重新加载的机器上，写的是「配置将自动重�
   const said = statusText();
   same({
     '含服务端那句': said.includes('自动重新加载'),
-    '不提本群设置': !said.includes('本群设置'),
+    '不提提醒订阅': !said.includes('提醒订阅'),
   }, {
     '含服务端那句': true,
-    '不提本群设置': true,
+    '不提提醒订阅': true,
   }, '自动重载提示');
 });
 
@@ -164,14 +164,14 @@ await ask('③ 推送配置与本群设置都存了：两句并列', async () =>
   if (!push || !draft) throw new Error('产品码没载入，无从量起');
   await fresh();
   push.pushEntries()[0].targets[0].enabled = false;
-  draft.setRevenueDraft(TARGET, true, false);
+  draft.setSubscriptionRemoveDraft(TARGET, {streamerUid: 1, type: 'live'}, 9001);
   datasourceReply = {success: true, message: '已保存，重启后生效'};
-  stateReply = {success: true, message: '「甲」的金额已设为可见'};
+  stateReply = {success: true, message: '已移除 9001'};
   await push.save();
   const said = statusText();
   same({
     '有推送那句': said.includes('重启后生效'),
-    '有本群那句': said.includes('金额已设为可见'),
+    '有本群那句': said.includes('已移除 9001'),
     '两句并列': said.includes(' · '),
   }, {
     '有推送那句': true,
@@ -183,12 +183,12 @@ await ask('③ 推送配置与本群设置都存了：两句并列', async () =>
 await ask('④ 只改本群设置：状态栏写本群那段服务端那句', async () => {
   if (!push || !draft) throw new Error('产品码没载入，无从量起');
   await fresh();
-  draft.setRevenueDraft(TARGET, true, false);
-  stateReply = {success: true, message: '「甲」的金额已设为可见'};
+  draft.setSubscriptionRemoveDraft(TARGET, {streamerUid: 1, type: 'live'}, 9001);
+  stateReply = {success: true, message: '已移除 9001'};
   await push.save();
   const said = statusText();
   same({
-    '有本群那句': said.includes('金额已设为可见'),
+    '有本群那句': said.includes('已移除 9001'),
     '没发推送配置': pushPosts().length === 0,
   }, {
     '有本群那句': true,
@@ -206,13 +206,13 @@ await ask('⑤ 本群设置没动、推送配置存失败：提示里不提本�
   await push.save();
   const said = statusText();
   same({
-    '不提本群设置': !said.includes('本群设置'),
+    '不提提醒订阅': !said.includes('提醒订阅'),
     '说了推送那段的下场': said.includes('推送') || said.includes('拒绝') || said.includes('失败'),
-    '没发本群设置': statePosts().length === 0,
+    '没发提醒订阅': statePosts().length === 0,
   }, {
-    '不提本群设置': true,
+    '不提提醒订阅': true,
     '说了推送那段的下场': true,
-    '没发本群设置': true,
+    '没发提醒订阅': true,
   }, '推送失败不提本群');
 });
 
@@ -224,13 +224,13 @@ await ask('⑥ 本群设置没动、推送配置存成功：提示里也不提�
   await push.save();
   const said = statusText();
   same({
-    '不提本群设置': !said.includes('本群设置'),
+    '不提提醒订阅': !said.includes('提醒订阅'),
     '含服务端那句': said.includes('重启后生效'),
-    '没发本群设置': statePosts().length === 0,
+    '没发提醒订阅': statePosts().length === 0,
   }, {
-    '不提本群设置': true,
+    '不提提醒订阅': true,
     '含服务端那句': true,
-    '没发本群设置': true,
+    '没发提醒订阅': true,
   }, '推送成功也不提本群');
 });
 
@@ -240,17 +240,17 @@ await ask('⑦ 推送成、本群败：说出推送那句，也说本群没存�
   if (!push || !draft) throw new Error('产品码没载入，无从量起');
   await fresh();
   push.pushEntries()[0].targets[0].enabled = false;
-  draft.setRevenueDraft(TARGET, true, false);
+  draft.setSubscriptionRemoveDraft(TARGET, {streamerUid: 1, type: 'live'}, 9001);
   datasourceReply = {success: true, message: '已保存，重启后生效'};
   stateReply = {success: false, message: '这个群没找到'};
   await push.save();
   const said = statusText();
   same({
     '有推送那句': said.includes('重启后生效'),
-    '说了本群没存上': said.includes('本群设置'),
+    '说了提醒订阅没存上': said.includes('提醒订阅'),
   }, {
     '有推送那句': true,
-    '说了本群没存上': true,
+    '说了提醒订阅没存上': true,
   }, '本群失败要提');
 });
 
@@ -258,19 +258,19 @@ await ask('⑧ 推送败、本群成：与推送失败那句并列写明本群�
   if (!push || !draft) throw new Error('产品码没载入，无从量起');
   await fresh();
   push.pushEntries()[0].targets[0].enabled = false;
-  draft.setRevenueDraft(TARGET, true, false);
+  draft.setSubscriptionRemoveDraft(TARGET, {streamerUid: 1, type: 'live'}, 9001);
   datasourceReply = {success: false, message: '推送配置有误，已拒绝保存'};
-  stateReply = {success: true, message: '「甲」的金额已设为可见'};
+  stateReply = {success: true, message: '已移除 9001'};
   await push.save();
   const said = statusText();
   same({
     '说了推送没存上': said.includes('推送'),
-    '写明本群设置已存': said.includes('本群设置已保存'),
+    '写明提醒订阅已存': said.includes('提醒订阅已保存'),
     '两句并列': said.includes(' · '),
-    '也带着服务端那句': said.includes('金额已设为可见'),
+    '也带着服务端那句': said.includes('已移除 9001'),
   }, {
     '说了推送没存上': true,
-    '写明本群设置已存': true,
+    '写明提醒订阅已存': true,
     '两句并列': true,
     '也带着服务端那句': true,
   }, '一段成一段败时，成的那段不能被括号埋掉');

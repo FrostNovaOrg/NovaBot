@@ -354,7 +354,7 @@ await ask('只订打赏：无报告预览、金额说明或预览请求', async 
   await paint([message(digest)]);
   same(previewCount(page()), 0, '预览区数');
   same(previewRequests().length, 0, '预览请求数');
-  same(all(page()).some(item => item.textContent.includes('按本群金额可见设置预览')), false, '金额说明');
+  same(all(page()).some(item => item.textContent.includes('按这条通道的金额可见设置预览')), false, '金额说明');
   same(threshold().value, '50', '门槛默认值');
 });
 // 抓改门槛无法保存或误写报告那条消息。真正调用保存，再将收到的数据重新交给页面读回。
