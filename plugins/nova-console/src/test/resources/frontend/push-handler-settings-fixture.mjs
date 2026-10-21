@@ -458,10 +458,10 @@ await ask('未声明的插件按设置画且不请求报告预览', async () => 
   same(control(section('额外通知设置'), '重试次数').value, '3', '插件配置项');
 });
 // 抓多配置块顺序与推送类型列表不一致。
-await ask('配置块跟随推送类型顺序，本群设置最后', async () => {
+await ask('配置块跟随推送类型顺序，通道设置最后', async () => {
   await paint([message(report), message(digest)], [digest, report]);
   const titles = all(page()).filter(item => item.tagName === 'h3').map(item => item.innerHTML.replace(/<[^>]+>/g, ''));
-  same(titles, ['1推送类型', '2消息模板', '3下播打赏播报设置', '3下播报告版式', '4本群设置'], '段落顺序');
+  same(titles, ['1推送类型', '2消息模板', '3下播打赏播报设置', '3下播报告版式', '4通道设置'], '段落顺序');
 });
 for (const [name, chosen] of [['只开下播报告', [report]], ['只开下播打赏播报', [digest]], ['两样都开', [report, digest]]]) {
   await paint(chosen.map(item => message(item)));

@@ -83,6 +83,8 @@ class ChannelSettingsSurfaceTest {
     private RuntimeStateController controller;
 
     private CommandSettingsService settings;
+    private ChannelSettingsFile channels;
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -98,6 +100,9 @@ class ChannelSettingsSurfaceTest {
         assertNotNull(dataSource, "控制器没接数据源，会话清单无从量起");
         when(dataSource.getAllUsers()).thenReturn(List.of(streamer()));
         when(dataSource.getIncompleteEntries()).thenReturn(List.of());
+        var properties = new org.frostnova.nova.core.config.NovaCoreProperties();
+        properties.getLive().setLiveDataPath(dir.resolve("live.json").toString());
+        channels = new ChannelSettingsFile(properties, dataSource); channels.attach(controller);
 
         when(settings.all()).thenReturn(List.of());
         when(settings.disable(anyString(), any(), any(), anyString())).thenReturn(true);
@@ -175,7 +180,7 @@ class ChannelSettingsSurfaceTest {
     void strandedSessionKnowsItsType() {
         // 推送配置里已经没有这个会话，只在状态文件里留着；键里带着会话类型，控制台照类型显示
         when(settings.all()).thenReturn(List.of(
-                new CommandSettingsService.Disabled(PLATFORM, PushTargetType.GROUP, 777L, List.of("直播报告"))));
+                new CommandSettingsService.Disabled(PLATFORM, PushTargetType.GROUP, 777L, List.of("天气"))));
 
         JSONObject stranded = sessions().stream()
                 .filter(item -> item.getLongValue("num") == 777L)
@@ -184,20 +189,29 @@ class ChannelSettingsSurfaceTest {
         assertEquals("群", stranded.getString("type"), stranded.toString());
         assertEquals(PushTargetType.GROUP.getCode(), stranded.getIntValue("typeCode"), stranded.toString());
         assertNotNull(stranded.get("menuHidden"), "有了类型就答得上菜单口径: " + stranded);
-        assertEquals(List.of("直播报告"), stranded.getJSONArray("disabled"), stranded.toString());
+        assertEquals(List.of("天气"), stranded.getJSONArray("disabled"), stranded.toString());
     }
 
     // ── 写：成批开关 ────────────────────────────────────────────────────
 
     @Test
+    @DisplayName("通道命令计数要包含群插件命令，不能算入只供回退的旧主播命令记录")
+    void sessionDisabledCommandsExcludeLegacyStreamerRecords() {
+        when(settings.all()).thenReturn(List.of(new CommandSettingsService.Disabled(PLATFORM,
+                PushTargetType.GROUP, GROUP_NUM, List.of("天气", "直播报告", "菜单", "启用命令", "禁用命令"))));
+        assertEquals(List.of("天气"), sessionOf(PushTargetType.GROUP, GROUP_NUM).getJSONArray("disabled"));
+    }
+
+    @Test
     @DisplayName("阳：成批启用照数改，并逐条落到命令开关服务上")
     void batchEnableChangesEveryNamedCommand() {
+        channels.disable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, List.of("直播报告", "数据排行榜"));
         JSONObject result = controller.toggleCommands(body(List.of("直播报告", "数据排行榜"), false)).getBody();
 
         assertTrue(result.getBooleanValue("success"), result.toString());
         assertEquals(2, result.getIntValue("changed"), result.toString());
-        verify(settings).enable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, "直播报告");
-        verify(settings).enable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, "数据排行榜");
+        assertFalse(channels.model(PLATFORM, PushTargetType.GROUP, GROUP_NUM).getDisabledCommands() != null
+                && !channels.model(PLATFORM, PushTargetType.GROUP, GROUP_NUM).getDisabledCommands().isEmpty());
         verify(settings, never()).disable(anyString(), any(), any(), anyString());
     }
 
@@ -243,17 +257,13 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("一条也没真改到时不落盘，改到了才落盘")
     void savesOnlyWhenSomethingActuallyChanged() {
-        org.frostnova.nova.core.service.NovaStateStore store =
-                dependency(org.frostnova.nova.core.service.NovaStateStore.class);
-        assertNotNull(store, "控制器没接状态存储，落盘那一步无从量起");
-
-        when(settings.enable(anyString(), any(), any(), eq("直播报告"))).thenReturn(false);
-        controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
-        verify(store, never()).save();
-
-        when(settings.enable(anyString(), any(), any(), eq("直播报告"))).thenReturn(true);
-        controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
-        verify(store, times(1)).save();
+        int before = channels.reloads();
+        JSONObject unchanged = controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
+        assertEquals(0, unchanged.getIntValue("changed"));
+        assertEquals(before, channels.reloads());
+        JSONObject changed = controller.toggleCommands(body(List.of("直播报告"), true)).getBody();
+        assertEquals(1, changed.getIntValue("changed"));
+        assertEquals(before + 1, channels.reloads());
     }
 
     // ── 夹具 ────────────────────────────────────────────────────────────
@@ -292,6 +302,7 @@ class ChannelSettingsSurfaceTest {
     private PushUser streamer() {
         PushUser user = new PushUser();
         user.setUid(3493L);
+        user.setPlatform("bilibili");
         user.setUname("柚子");
         user.setTargets(List.of(
                 target(PushTargetType.GROUP, GROUP_NUM),

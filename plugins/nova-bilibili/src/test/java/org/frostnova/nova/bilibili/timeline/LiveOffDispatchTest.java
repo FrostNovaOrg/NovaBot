@@ -141,7 +141,7 @@ class LiveOffDispatchTest {
         user.getTargets().add(target);
         when(source.getUser(PLATFORM, UID)).thenReturn(Optional.of(user));
         var pushGate = mock(PushGate.class);
-        when(pushGate.allowedFor(any(), any(), any())).thenReturn(true);
+        when(pushGate.allowedFor(any(PushTarget.class))).thenReturn(true);
         var context = new AnnotationConfigApplicationContext();
         context.register(EventConfig.class);
         context.registerBean("liveOff", NovaDefaultLiveOffEventListener.class, () -> offListener);

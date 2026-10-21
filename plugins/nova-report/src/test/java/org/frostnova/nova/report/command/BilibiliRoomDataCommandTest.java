@@ -158,7 +158,7 @@ class BilibiliRoomDataCommandTest {
         when(painter.paintCards(any(), any(), nullable(String.class))).thenReturn(Optional.of("QUJD"));
 
         RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
 
         BilibiliRoomDataCommand command = new BilibiliRoomDataCommand(dataSource,
                 mock(BilibiliStreamerChoice.class), liveDataService, painter, revenueVisibility);
@@ -234,7 +234,7 @@ class BilibiliRoomDataCommandTest {
             when(painter.paintCards(any(), any(), nullable(String.class))).thenReturn(Optional.of("QUJD"));
 
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-            when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(showRevenue);
+            when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(showRevenue);
 
             command = new BilibiliRoomDataCommand(dataSource, mock(BilibiliStreamerChoice.class),
                     liveDataService, painter, revenueVisibility);

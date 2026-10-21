@@ -76,7 +76,7 @@ class BilibiliRankingCommandTest {
         revenueVisibility = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
         // 本类测的是参数匹配与列哪些名次，与金额可见性无关。群聊默认不展示金额，
         // 若不显式放开，礼物榜会被直接拒掉，测到的就不是这些了
-        revenueVisibility.set(PLATFORM, PushTargetType.GROUP, GROUP, true);
+
         dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "测试主播")));
 
@@ -144,7 +144,7 @@ class BilibiliRankingCommandTest {
     @Test
     @DisplayName("不展示金额的会话应拒绝金额榜，并说明原因")
     void refusesMoneyBoardsWithoutRevenue() {
-        revenueVisibility.set(PLATFORM, PushTargetType.GROUP, GROUP, false);
+        dataSource.getUsers("bilibili").forEach(user -> user.getTargets().forEach(target -> target.setRevenueVisible(false)));
 
         for (String board : List.of("礼物", "醒目留言", "盲盒盈亏")) {
             CommandReply reply = command.execute(context(board));
@@ -158,7 +158,7 @@ class BilibiliRankingCommandTest {
     @Test
     @DisplayName("不展示金额的会话仍可查非金额榜")
     void allowsNonMoneyBoardsWithoutRevenue() {
-        revenueVisibility.set(PLATFORM, PushTargetType.GROUP, GROUP, false);
+        dataSource.getUsers("bilibili").forEach(user -> user.getTargets().forEach(target -> target.setRevenueVisible(false)));
         withRanking(3);
 
         command.execute(context("弹幕"));
@@ -169,7 +169,7 @@ class BilibiliRankingCommandTest {
     @Test
     @DisplayName("提示里不应列出查了必被拒的榜")
     void hintOmitsMoneyBoardsWithoutRevenue() {
-        revenueVisibility.set(PLATFORM, PushTargetType.GROUP, GROUP, false);
+        dataSource.getUsers("bilibili").forEach(user -> user.getTargets().forEach(target -> target.setRevenueVisible(false)));
 
         CommandReply reply = command.execute(context());
 
@@ -480,6 +480,7 @@ class BilibiliRankingCommandTest {
 
     private PushUser streamer(Long uid, String uname) {
         PushTarget target = new PushTarget();
+        target.setRevenueVisible(true);
         target.setPlatform(PLATFORM);
         target.setType(PushTargetType.GROUP);
         target.setNum(GROUP);

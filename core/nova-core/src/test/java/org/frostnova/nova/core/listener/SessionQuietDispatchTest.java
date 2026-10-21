@@ -96,7 +96,7 @@ class SessionQuietDispatchTest {
 
         Capture capture = new Capture();
         RecordingHandler handler = new RecordingHandler();
-        NovaHandlerListener listener = new NovaHandlerListener(dataSource(handler, MUTED, OPEN),
+        NovaHandlerListener listener = new NovaHandlerListener(dataSource(handler, sessions, MUTED, OPEN),
                 new PushGate(new NovaCoreProperties(), sessions), capture);
 
         listener.onNovaExternalBaseEvent(liveEvent());
@@ -118,7 +118,7 @@ class SessionQuietDispatchTest {
 
         Capture capture = new Capture();
         RecordingHandler handler = new RecordingHandler();
-        NovaHandlerListener listener = new NovaHandlerListener(dataSource(handler, MUTED, OPEN),
+        NovaHandlerListener listener = new NovaHandlerListener(dataSource(handler, sessions, MUTED, OPEN),
                 new PushGate(quietNow(), sessions), capture);
 
         listener.onNovaExternalBaseEvent(liveEvent());
@@ -138,7 +138,7 @@ class SessionQuietDispatchTest {
 
         Capture capture = new Capture();
         RecordingHandler handler = new RecordingHandler();
-        NovaHandlerListener listener = new NovaHandlerListener(dataSource(handler, MUTED, OPEN),
+        NovaHandlerListener listener = new NovaHandlerListener(dataSource(handler, sessions, MUTED, OPEN),
                 new PushGate(properties, sessions), capture);
 
         listener.onNovaExternalBaseEvent(liveEvent());
@@ -191,7 +191,7 @@ class SessionQuietDispatchTest {
         return new NovaExternalBaseEvent(LIVE_PLATFORM, new LiveStreamerInfo(10001L, "主播甲", 20002L));
     }
 
-    private static AbstractDataSource dataSource(NovaEventHandler handler, Long... groups) {
+    private static AbstractDataSource dataSource(NovaEventHandler handler, SessionQuietHoursService sessions, Long... groups) {
         PushUser user = new PushUser();
         user.setPlatform(LIVE_PLATFORM);
         user.setUid(10001L);
@@ -202,6 +202,10 @@ class SessionQuietDispatchTest {
             target.setPlatform(PLATFORM);
             target.setType(PushTargetType.GROUP);
             target.setNum(num);
+            var setting = sessions.get(PLATFORM, PushTargetType.GROUP, num);
+            var quiet = new PushTarget.QuietHours();
+            quiet.setMode(setting.mode().key()); quiet.setStart(setting.start()); quiet.setEnd(setting.end());
+            target.setQuietHours(quiet);
 
             PushMessage message = new PushMessage();
             message.setTarget(target);

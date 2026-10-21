@@ -51,6 +51,7 @@ class BilibiliReportLayoutControllerTest {
     private BilibiliLiveReportPreviewPainter preview;
 
     private RevenueVisibilityService revenueVisibility;
+    private org.frostnova.nova.core.model.PushTarget channel;
 
     private BilibiliReportLayoutController controller;
 
@@ -59,6 +60,12 @@ class BilibiliReportLayoutControllerTest {
         preview = mock(BilibiliLiveReportPreviewPainter.class);
         revenueVisibility = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
         controller = new BilibiliReportLayoutController(preview, revenueVisibility);
+        channel = new org.frostnova.nova.core.model.PushTarget();
+        channel.setPlatform("qq-onebot"); channel.setType(PushTargetType.GROUP); channel.setNum(10000003L);
+        var user = new org.frostnova.nova.core.model.PushUser(); user.setTargets(java.util.List.of(channel));
+        var source = mock(org.frostnova.nova.core.datasource.AbstractDataSource.class);
+        when(source.getUser("bilibili", 10001L)).thenReturn(java.util.Optional.of(user));
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "dataSource", source);
 
         when(preview.render(any())).thenReturn(Optional.of(FAKE_PNG));
     }
@@ -166,6 +173,7 @@ class BilibiliReportLayoutControllerTest {
         body.put("platform", "qq-onebot");
         body.put("type", 1);
         body.put("num", 10000003L);
+        body.put("streamerPlatform", "bilibili"); body.put("streamerUid", 10001L);
 
         controller.preview(body);
 
@@ -185,12 +193,13 @@ class BilibiliReportLayoutControllerTest {
     @Test
     @DisplayName("🔴 通道金额改为可见后，预览跟着画金额")
     void previewShowsRevenueWhenChannelShowsIt() {
-        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 10000003L, true);
+        channel.setRevenueVisible(true);
 
         JSONObject body = new JSONObject();
         body.put("platform", "qq-onebot");
         body.put("type", 1);
         body.put("num", 10000003L);
+        body.put("streamerPlatform", "bilibili"); body.put("streamerUid", 10001L);
 
         controller.preview(body);
 
@@ -222,11 +231,12 @@ class BilibiliReportLayoutControllerTest {
     @DisplayName("🔴 预览带草稿的金额设定：只管这一张，不改存着的设定")
     void previewHonorsDraftRevenueVisible() {
         // 会话存的是隐藏；草稿里拨成了显示——这一张按显示画
-        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 10000003L, false);
+        channel.setRevenueVisible(false);
         JSONObject body = new JSONObject();
         body.put("platform", "qq-onebot");
         body.put("type", 1);
         body.put("num", 10000003L);
+        body.put("streamerPlatform", "bilibili"); body.put("streamerUid", 10001L);
         body.put("revenueVisible", true);
 
         controller.preview(body);
@@ -239,6 +249,7 @@ class BilibiliReportLayoutControllerTest {
         plain.put("platform", "qq-onebot");
         plain.put("type", 1);
         plain.put("num", 10000003L);
+        plain.put("streamerPlatform", "bilibili"); plain.put("streamerUid", 10001L);
         controller.preview(plain);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
@@ -248,11 +259,12 @@ class BilibiliReportLayoutControllerTest {
     @Test
     @DisplayName("🔴 草稿拨成隐藏也一样：会话存的是显示，这一张按隐藏画")
     void previewHonorsDraftRevenueHidden() {
-        revenueVisibility.set("qq-onebot", PushTargetType.GROUP, 10000003L, true);
+        channel.setRevenueVisible(true);
         JSONObject body = new JSONObject();
         body.put("platform", "qq-onebot");
         body.put("type", 1);
         body.put("num", 10000003L);
+        body.put("streamerPlatform", "bilibili"); body.put("streamerUid", 10001L);
         body.put("revenueVisible", false);
 
         controller.preview(body);

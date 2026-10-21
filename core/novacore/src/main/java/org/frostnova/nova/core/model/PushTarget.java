@@ -48,6 +48,34 @@ public class PushTarget {
      */
     private List<PushMessage> messages = new ArrayList<>();
 
+    /** 金额显示；null 使用群聊隐藏、好友显示的默认值。 */
+    private Boolean revenueVisible;
+
+    /** 静音设置；null 跟随全局。 */
+    private QuietHours quietHours;
+
+    /** 被关闭的命令用法名；null 或空列表表示全开。 */
+    private List<String> disabledCommands;
+
+    @Getter
+    @Setter
+    public static class QuietHours {
+        private String mode;
+        private String start;
+        private String end;
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof QuietHours q && Objects.equals(mode, q.mode)
+                    && Objects.equals(start, q.start) && Objects.equals(end, q.end);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(mode, start, end);
+        }
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -71,6 +99,9 @@ public class PushTarget {
      * @return 是否完全相同
      */
     public boolean same(PushTarget other) {
-        return equals(other) && messages.equals(other.messages);
+        return equals(other) && messages.equals(other.messages)
+                && Objects.equals(revenueVisible, other.revenueVisible)
+                && Objects.equals(quietHours, other.quietHours)
+                && Objects.equals(disabledCommands, other.disabledCommands);
     }
 }

@@ -11,21 +11,8 @@ import java.util.List;
 import java.util.ArrayList;
 
 /**
- * 会话级金额可见性
- * <p>
- * 主播想看的和能给大群看的不是同一份东西：收益、每位观众送了多少钱，这些是经营与消费信息，
- * 而弹幕数、词云、互动曲线是氛围。此前这两类混在一起，只要出报告就一并露出去。
- * <p>
- * <b>为什么是会话级而不是报告的一个开关</b>：金额的出口不止报告一个。
- * {@code 直播间数据}、{@code 数据排行榜 礼物} 这些聊天命令谁都能在群里打，
- * 它们不属于任何推送目标，读不到报告的版式配置。把「能不能看到金额」定义成会话的属性，
- * 才能同时管住推送与命令——否则关掉报告里的金额之后，一句命令就全漏回来了。
- * <p>
- * <b>默认私聊可见、群聊隐藏。</b>没配过的群按隐藏处理，是因为反过来的默认值一旦错了，
- * 错误的形式是「已经发出去了」，没有补救手段。
- * <p>
- * 会话的身份是「平台 + 会话类型 + 会话号」（见 {@link SessionKey}）：同一平台下群号与好友账号撞号时，
- * 给好友开的金额不能露到同号的群里。
+ * 金额显示统一按主播通道读取，默认群聊隐藏、好友显示。
+ * 旧会话接口保留给升级迁移与旧状态展示，推送和命令不再从它们继承设置。
  */
 @Service
 public class RevenueVisibilityService {
@@ -51,6 +38,12 @@ public class RevenueVisibilityService {
     public boolean isVisible(@NonNull String platform, PushTargetType type, @NonNull Long num) {
         Boolean explicit = explicit(platform, type, num);
         return explicit == null ? defaultFor(type) : explicit;
+    }
+
+    /** 按主播通道读取金额；不再继承旧会话设置。 */
+    public boolean isVisible(org.frostnova.nova.core.model.PushTarget target) {
+        return target != null && target.getRevenueVisible() != null ? target.getRevenueVisible()
+                : defaultFor(target == null ? null : target.getType());
     }
 
     /**

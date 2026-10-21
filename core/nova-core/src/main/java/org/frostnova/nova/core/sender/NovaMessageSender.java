@@ -129,7 +129,7 @@ public class NovaMessageSender {
      */
     public void send(Message message) {
         // 按这条消息发往的会话判：会话可以有自己的静音时段或不静音
-        if (!pushGate.allowedFor(message.getPlatform(), message.getType(), message.getNum())) {
+        if (!pushGate.allowedFor(message)) {
             PushGate.Block block = pushGate.blockedBy();
             log.info("{}, 已丢弃消息: [{}] {}: {}", block.getDescription(),
                     message.getType().getStr(), message.getNum(), message.getDisplay());
@@ -155,7 +155,7 @@ public class NovaMessageSender {
 
     /** 周报仅在过闸时入队；被静音拦下时交还调度器顺延，不丢弃。 */
     public PushGate.Block sendWeeklyReport(Message message) {
-        if (!pushGate.allowedFor(message.getPlatform(), message.getType(), message.getNum())) {
+        if (!pushGate.allowedFor(message)) {
             return pushGate.blockedBy();
         }
         enqueue(message);
@@ -792,10 +792,7 @@ public class NovaMessageSender {
      * 隔着几条别的推送再来就成了没头没尾的一句。因此走 {@link #doSend} 直投而不重新入队——
      * 队列里排着谁不归这里管，而排在后面就不叫紧跟了。
      * <p>
-     * <b>静音时段与推送开关这里不再判一遍。</b> 能走到这里，说明刚刚有一条推送
-     * 过了 {@link #send} 那道闸<b>并且真的送达了</b>——提示跟的就是它。
-     * 在这里补判一次是一道恒真的闸：拦不住任何东西，却让提示与它所解释的那条推送
-     * 在积压补发那种情形下各行其是（通知发出去了，解释通知的那句没有）。
+     * 提示发送前按原推送所属的通道再判一次，静音时不认领这次提示。
      * <p>
      * 剩下的几道判断各有各的事：
      * <ul>
@@ -813,12 +810,14 @@ public class NovaMessageSender {
         if (!firstPushTip.enabled()) {
             return;
         }
+        if (!pushGate.allowedFor(message)) return;
         if (!firstPushTip.claim(message.getPlatform(), message.getType(), message.getNum())) {
             return;
         }
 
         String text = firstPushTip.text(message.getType());
         for (Message tip : Message.create(message.getPlatform(), message.getType(), message.getNum(), text)) {
+            tip.setChannel(message.getChannel());
             // 提示自己不算推送：它引不出第二句提示，也不必再走一遍这一整套判断
             doSend(sender, tip, false);
         }

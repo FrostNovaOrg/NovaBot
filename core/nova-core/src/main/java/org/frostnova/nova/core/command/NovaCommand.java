@@ -164,4 +164,13 @@ public interface NovaCommand {
      * @return 回复内容，为空则不回复
      */
     CommandReply execute(CommandContext context);
+
+    record StreamerSelection(List<org.frostnova.nova.core.model.PushUser> users, String error, boolean named) { }
+
+    /** 命令在定下主播后检查通道开关。 */
+    default boolean channelScoped() { return false; }
+
+    default StreamerSelection selectForToggle(CommandContext context) {
+        return null;
+    }
 }

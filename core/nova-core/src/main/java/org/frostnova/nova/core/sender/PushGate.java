@@ -29,6 +29,47 @@ public class PushGate {
      */
     private final SessionQuietHoursService sessions;
 
+    @Autowired(required = false)
+    private org.frostnova.nova.core.datasource.AbstractDataSource dataSource;
+
+    private volatile boolean initialized = true;
+
+    @jakarta.annotation.PostConstruct
+    void starting() { initialized = false; }
+
+    @org.springframework.core.annotation.Order(3)
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void ready() { initialized = true; }
+
+    /** 无主播的回复：至少一个启用通道不静音时允许回复。 */
+    public boolean allowedFor(org.frostnova.nova.core.model.Message message) {
+        return message.getChannel() == null
+                ? allowedFor(message.getPlatform(), message.getType(), message.getNum())
+                : allowedFor(message.getChannel());
+    }
+
+    public boolean allowedFor(org.frostnova.nova.core.model.PushTarget target) {
+        return allowedAt(LocalTime.now(), target);
+    }
+
+    /** 当前通道是否静音；控制台与推送使用同一份判定，不受全局推送开关影响。 */
+    public boolean inQuietHoursFor(org.frostnova.nova.core.model.PushTarget target) {
+        return inQuietHoursAt(LocalTime.now(), target);
+    }
+
+    public boolean allowedAt(LocalTime now, org.frostnova.nova.core.model.PushTarget target) {
+        return initialized && properties.getPush().isEnabled() && !inQuietHoursAt(now, target);
+    }
+
+    private boolean inQuietHoursAt(LocalTime now, org.frostnova.nova.core.model.PushTarget target) {
+        var quiet = target == null ? null : target.getQuietHours();
+        var mode = SessionQuietHoursService.Mode.of(quiet == null ? null : quiet.getMode());
+        if (mode == SessionQuietHoursService.Mode.OFF) return false;
+        return mode == SessionQuietHoursService.Mode.CUSTOM
+                ? inQuietHours(now, quiet.getStart(), quiet.getEnd())
+                : inQuietHours(now, properties.getPush().getQuietStart(), properties.getPush().getQuietEnd());
+    }
+
     public PushGate(NovaCoreProperties properties) {
         this(properties, null);
     }
@@ -59,7 +100,14 @@ public class PushGate {
      * @return 允许推送时返回 true
      */
     public boolean allowedFor(String platform, PushTargetType type, Long num) {
-        return allowedAt(LocalTime.now(), platform, type, num);
+        if (!initialized || !properties.getPush().isEnabled()) return false;
+        if (dataSource == null) return allowedAt(LocalTime.now(), platform, type, num);
+        return dataSource.getAllUsers().stream().filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                .flatMap(user -> user.getTargets().stream())
+                .filter(target -> !Boolean.FALSE.equals(target.getEnabled()))
+                .filter(target -> java.util.Objects.equals(platform, target.getPlatform())
+                        && type == target.getType() && java.util.Objects.equals(num, target.getNum()))
+                .anyMatch(this::allowedFor);
     }
 
     /**

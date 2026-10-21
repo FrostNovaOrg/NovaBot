@@ -151,6 +151,7 @@ public final class PushHandlerSupport {
 
         List<Message> messages = Message.create(target.getPlatform(), target.getType(), target.getNum(), content);
         for (Message message : messages) {
+            message.setChannel(target);
             if (onImageDegraded != null) {
                 message.addOnImageDegradedCallback(onImageDegraded);
             }

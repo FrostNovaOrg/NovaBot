@@ -193,7 +193,7 @@ public class JsonDataSource extends AbstractDataSource {
     /**
      * 重载数据源
      */
-    private void reload() {
+    public synchronized void reload() {
         String path = properties.getJsonPath();
         try {
             List<PushUser> addUsers = new ArrayList<>();
@@ -265,6 +265,9 @@ public class JsonDataSource extends AbstractDataSource {
                     } else {
                         target.setEnabled(targetObject.getBoolean("enabled"));
                     }
+                    readChannelSetting(targetObject, "revenueVisible", () -> target.setRevenueVisible(targetObject.getBoolean("revenueVisible")));
+                    readChannelSetting(targetObject, "quietHours", () -> target.setQuietHours(targetObject.getObject("quietHours", PushTarget.QuietHours.class)));
+                    readChannelSetting(targetObject, "disabledCommands", () -> target.setDisabledCommands(targetObject.getList("disabledCommands", String.class)));
                     target.setMessages(new ArrayList<>());
                     user.getTargets().add(target);
 
@@ -412,5 +415,14 @@ public class JsonDataSource extends AbstractDataSource {
 
         scheduler.shutdownNow();
         executor.shutdownNow();
+    }
+
+    private static void readChannelSetting(JSONObject target, String field, Runnable read) {
+        try {
+            read.run();
+        } catch (RuntimeException e) {
+            log.warn("通道 {}:{}:{} 的 {} 读不出，按默认处理: {}", target.get("platform"), target.get("type"),
+                    target.get("num"), field, e.getMessage());
+        }
     }
 }

@@ -140,10 +140,10 @@ class WeeklyReportApiTest {
         target.setMessages(List.of(subscription)); user.setTargets(List.of(target));
         when(source.getAllUsers()).thenReturn(List.of(user));
         var revenue = new RevenueVisibilityService(new NovaStateStore(props));
-        revenue.set(target.getPlatform(), target.getType(), target.getNum(), visible);
+        target.setRevenueVisible(visible);
         var sender = mock(NovaMessageSender.class);
         var gate = mock(PushGate.class);
-        when(gate.allowedFor(anyString(), any(), anyLong())).thenReturn(true);
+        when(gate.allowedFor(any(PushTarget.class))).thenReturn(true);
         when(gate.blockedBy()).thenReturn(PushGate.Block.QUIET_HOURS);
         var shared = (WeeklyReportContentService) ReflectionTestUtils.getField(controller, "weeklyReports");
         var delivery = new WeeklyReportDeliveryService(source, shared, revenue, sender, gate,

@@ -133,7 +133,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     @DisplayName("默认模板只发一张图，群里不再收到文字感谢")
     void sendsImageByDefault() {
         // 抓的用户故障：群里收到的是一条文字感谢，没有图——默认模板换成只放图
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
 
         handler.handle(digest(guardPerson("李四", 3, GuardOperateType.ACTIVATION, 198.0),
                 giftPerson("张三", "心动盲盒", 2, 100.0)), pushMessage());
@@ -149,7 +149,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     @DisplayName("画图失败时退回文字版，这一阵的播报不丢（金额可见带金额）")
     void fallsBackToTextWithAmountsWhenVisible() {
         // 抓的用户故障：图画不出来时这一阵的感谢整条消失——退路必须照发
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
         BilibiliOfflineRewardDigestPushHandler failing = failingPainterHandler();
 
         failing.handle(digest(guardPerson("李四", 3, GuardOperateType.ACTIVATION, 198.0),
@@ -163,7 +163,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     @DisplayName("画图失败退回的文字版不带金额（金额不可见）")
     void fallsBackToTextWithoutAmountsWhenHidden() {
         // 抓的用户故障：金额不可见的群，退回文字版时把金额带了出来
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(false);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(false);
         BilibiliOfflineRewardDigestPushHandler failing = failingPainterHandler();
 
         failing.handle(digest(guardPerson("李四", 3, GuardOperateType.ACTIVATION, 198.0),
@@ -176,7 +176,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     @Test
     @DisplayName("文字退路上舰按等级与开通续费用词")
     void namesGuardLevelAndOperationOnFallback() {
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(false);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(false);
         BilibiliOfflineRewardDigestPushHandler failing = failingPainterHandler();
 
         failing.handle(digest(guardPerson("王五", 2, GuardOperateType.RENEWAL, 398.0)), pushMessage());
@@ -199,7 +199,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
     @DisplayName("自己改过模板的群：{list} {uname} {url} 照旧能用，{picture} 放图")
     void customTemplateKeepsPlaceholdersAndAddsPicture() {
         // 抓的用户故障：处理器换成出图后，自己改过模板的群里那几句占位符失效了
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
 
         PushMessage message = pushMessage();
         message.getParamsJsonObject().put("message", "{uname} 收到啦：{list}\n{url}{picture}");
@@ -327,7 +327,7 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
         event.setClosingReminder(true);
         var message = pushMessage();
         message.getParamsJsonObject().put("reward_threshold_yuan", 0);
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
         failingPainterHandler().handle(event, message);
         String content = sentContents().get(0);
         assertTrue(content.contains("另有 5 人，合计 ¥15"), "25 人不能全列，应汇总最低五人");

@@ -59,6 +59,9 @@ public class BilibiliReportLayoutController {
 
     private final RevenueVisibilityService revenueVisibility;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.frostnova.nova.core.datasource.AbstractDataSource dataSource;
+
     public BilibiliReportLayoutController(BilibiliLiveReportPreviewPainter preview,
                                           RevenueVisibilityService revenueVisibility) {
         this.preview = preview;
@@ -156,6 +159,14 @@ public class BilibiliReportLayoutController {
 
         Integer typeCode = body.getInteger("type");
         PushTargetType type = typeCode == null ? null : PushTargetType.of(typeCode);
-        return revenueVisibility.isVisible(platform, type, num);
+        Long uid = body.getLong("streamerUid");
+        String streamerPlatform = body.getString("streamerPlatform");
+        var user = dataSource == null || uid == null || streamerPlatform == null ? null
+                : dataSource.getUser(streamerPlatform, uid).orElse(null);
+        var channel = org.frostnova.nova.core.model.ChannelSettings.target(user, platform, type, num);
+        if (channel == null) {
+            channel = new org.frostnova.nova.core.model.PushTarget(); channel.setType(type);
+        }
+        return revenueVisibility.isVisible(channel);
     }
 }

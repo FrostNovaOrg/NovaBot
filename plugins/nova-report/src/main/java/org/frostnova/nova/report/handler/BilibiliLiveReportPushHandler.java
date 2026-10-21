@@ -71,7 +71,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
         // 版式来自推送配置，金额可见性来自会话：前者是「长什么样」，后者是「给谁看」。
         // 同一套版式推给主播私聊和推给大群，该显示的区块相同，该不该带金额则相反
-        boolean showRevenue = revenueVisibility.isVisible(target.getPlatform(), target.getType(), target.getNum());
+        boolean showRevenue = revenueVisibility.isVisible(target);
 
         // 画图失败时改发文字版，而不是什么都不发。默认模板只含 {report}，
         // 此前占位符被替换成空串会让整条消息成为空白、发送环节直接跳过——

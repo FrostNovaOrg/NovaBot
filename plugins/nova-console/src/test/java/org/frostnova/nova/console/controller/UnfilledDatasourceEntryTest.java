@@ -124,6 +124,7 @@ class UnfilledDatasourceEntryTest {
             }
             // 会话类型码一栏，同样只摘名
             sessions.getJSONObject(i).remove("typeCode");
+            sessions.getJSONObject(i).remove("channels");
         }
 
         assertEquals(FILLED_STATE_BEFORE, rest.toJSONString(),

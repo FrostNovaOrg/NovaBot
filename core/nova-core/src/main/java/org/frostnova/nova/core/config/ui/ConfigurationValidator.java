@@ -3,12 +3,14 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -134,7 +136,55 @@ public class ConfigurationValidator {
                 issues.add(at + "缺少 num（群号或用户号），或其不是数字");
             }
 
+            checkChannelSettings(target, at, issues);
             checkMessages(target.getJSONArray("messages"), at, handlers, issues);
+        }
+    }
+
+    public List<String> validateChannelSettings(JSONObject target) {
+        List<String> issues = new ArrayList<>();
+        checkChannelSettings(target, "通道设置", issues);
+        return issues;
+    }
+
+    private void checkChannelSettings(JSONObject target, String at, List<String> issues) {
+        Object revenue = target.get("revenueVisible");
+        if (revenue != null && !(revenue instanceof Boolean)) issues.add(at + "的 revenueVisible 必须为 true、false 或 null");
+        Object quiet = target.get("quietHours");
+        if (quiet != null) {
+            if (!(quiet instanceof JSONObject q)) issues.add(at + "的 quietHours 必须为对象或 null");
+            else {
+                Object mode = q.get("mode");
+                if (!(mode instanceof String) || !Set.of("follow", "custom", "off").contains(mode)) {
+                    issues.add(at + "的 quietHours.mode 必须为 follow、custom 或 off");
+                } else if ("custom".equals(mode) && (!quietTime(q.get("start")) || !quietTime(q.get("end"))
+                        || LocalTime.parse(q.getString("start")).equals(LocalTime.parse(q.getString("end"))))) {
+                    issues.add(at + "的 quietHours 起止必须为不同的 HH:mm 或 HH:mm:ss 时刻");
+                }
+                for (String field : List.of("start", "end")) {
+                    if (q.get(field) != null && !quietTime(q.get(field))) issues.add(at + "的 quietHours." + field + " 必须为 HH:mm 或 HH:mm:ss");
+                }
+            }
+        }
+        Object disabled = target.get("disabledCommands");
+        if (disabled != null) {
+            if (!(disabled instanceof JSONArray list)) issues.add(at + "的 disabledCommands 必须为用法名数组或 null");
+            else for (Object key : list) {
+                if (!(key instanceof String) || !org.frostnova.nova.core.model.ChannelSettings.COMMAND_KEYS.contains(key)) {
+                    issues.add(at + "的 disabledCommands 包含不可关闭的用法：" + key);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static boolean quietTime(Object value) {
+        if (!(value instanceof String text)) return false;
+        try {
+            LocalTime.parse(text);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
         }
     }
 

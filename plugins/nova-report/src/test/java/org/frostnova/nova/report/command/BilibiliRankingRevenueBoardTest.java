@@ -62,7 +62,7 @@ class BilibiliRankingRevenueBoardTest {
     @BeforeEach
     void setUp() {
         RevenueVisibilityService revenueVisibility = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
-        revenueVisibility.set(PLATFORM, PushTargetType.GROUP, GROUP, true);
+
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer()));
@@ -186,6 +186,7 @@ class BilibiliRankingRevenueBoardTest {
 
     private static PushUser streamer() {
         PushTarget target = new PushTarget();
+        target.setRevenueVisible(true);
         target.setPlatform(PLATFORM);
         target.setType(PushTargetType.GROUP);
         target.setNum(GROUP);

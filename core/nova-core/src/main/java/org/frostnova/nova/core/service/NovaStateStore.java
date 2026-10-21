@@ -340,6 +340,11 @@ public class NovaStateStore {
         }
     }
 
+    /** 本次启动未能读取状态文件时，不得将空缓存当作已经完成设置迁移。 */
+    public boolean isDiskSuspended() {
+        return diskSuspended;
+    }
+
     /**
      * 这一轮不写盘。第一次跳过时记一条，免得之后的保存一声不响。
      */

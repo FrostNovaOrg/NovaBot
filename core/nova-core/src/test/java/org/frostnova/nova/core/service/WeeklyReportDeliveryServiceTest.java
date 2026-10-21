@@ -47,6 +47,7 @@ class WeeklyReportDeliveryServiceTest {
     List<PushUser> users;
     List<Message> sent;
     WeeklyReportRenderer renderer;
+    LiveSessionArchive archive;
     boolean quiet;
 
     static class MutableClock extends Clock {
@@ -72,7 +73,7 @@ class WeeklyReportDeliveryServiceTest {
         when(sender.sendNow(any())).thenReturn(new JSONObject().fluentPut("code", 0));
         gate = mock(PushGate.class);
         when(gate.blockedBy()).thenAnswer(i -> props.getPush().isEnabled() ? PushGate.Block.QUIET_HOURS : PushGate.Block.DISABLED);
-        when(gate.allowedFor(anyString(), any(), anyLong())).thenAnswer(i -> props.getPush().isEnabled() && !quiet);
+        when(gate.allowedFor(any(PushTarget.class))).thenAnswer(i -> props.getPush().isEnabled() && !quiet);
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         LiveMetricCatalog catalog = mock(LiveMetricCatalog.class);
         when(catalog.platform()).thenReturn("sample");
@@ -82,7 +83,7 @@ class WeeklyReportDeliveryServiceTest {
         renderer = mock(WeeklyReportRenderer.class);
         when(renderer.platform()).thenReturn("sample");
         when(renderers.orderedStream()).thenAnswer(i -> Stream.of(renderer));
-        var archive = new LiveSessionArchive(props);
+        archive = new LiveSessionArchive(props);
         Instant from = Instant.parse("2026-10-05T00:00:00Z");
         archive.append(new LiveSession("sample", 1L, "主播示例", 2L, from.toEpochMilli(), from.plusSeconds(600).toEpochMilli(),
                 600, Map.of("gift", 1234.5, "messages", 8901d), Map.of(), LiveEndReason.NORMAL,
@@ -108,6 +109,54 @@ class WeeklyReportDeliveryServiceTest {
     PushTarget target() { return users.get(0).getTargets().get(0); }
     String key() { return WeeklyReportDeliveryService.key("sample", 1L, target()); }
     Status status() { return store.records().get(0).status(); }
+
+    @Test @DisplayName("甲的静音不能拦乙的周报，真实闸门只将甲留到静音结束")
+    void quietUsesRealChannelGate() {
+        var state = new NovaStateStore(props);
+        gate = new PushGate(props, new SessionQuietHoursService(state));
+        org.springframework.test.util.ReflectionTestUtils.setField(gate, "dataSource", source);
+        var b = user(2L, target().getNum(), true); users.add(b);
+        var quiet = new PushTarget.QuietHours(); quiet.setMode("custom");
+        quiet.setStart(LocalTime.now().minusHours(1).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+        quiet.setEnd(LocalTime.now().plusHours(1).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")));
+        var off = new PushTarget.QuietHours(); off.setMode("off");
+        target().setQuietHours(quiet); b.getTargets().get(0).setQuietHours(off);
+        reopen(); service.check(false);
+        assertEquals(List.of(2L), sent.stream().map(m -> m.getChannel().getUser().getUid()).toList());
+        assertEquals(Status.QUIET, store.records().stream().filter(r -> r.subscription().equals(key())).findFirst().orElseThrow().status());
+        target().setQuietHours(off); service.check(false);
+        assertEquals(List.of(2L, 1L), sent.stream().map(m -> m.getChannel().getUser().getUid()).toList());
+    }
+
+    @Test @DisplayName("同群甲隐藏乙显示，周报图片与文字都使用各主播的金额设置")
+    void revenueUsesSavedChannels() {
+        var b = user(2L, target().getNum(), true); users.add(b);
+        var from = Instant.parse("2026-10-05T00:00:00Z");
+        archive.append(new LiveSession("sample", 2L, "乙", 3L, from.toEpochMilli(), from.plusSeconds(600).toEpochMilli(),
+                600, Map.of("gift", 5678d), Map.of(), LiveEndReason.NORMAL,
+                List.of(), 0, Map.of(), 0, Map.of(), Map.of()));
+        target().setRevenueVisible(false); b.getTargets().get(0).setRevenueVisible(true);
+        gate = new PushGate(props, new SessionQuietHoursService(new NovaStateStore(props)));
+        org.springframework.test.util.ReflectionTestUtils.setField(gate, "dataSource", source);
+        reopen(); service.check(false);
+        var data = org.mockito.ArgumentCaptor.forClass(org.frostnova.nova.core.analytics.WeeklyReport.Data.class);
+        verify(renderer, times(2)).render(any(), data.capture());
+        assertEquals(List.of(false, true), data.getAllValues().stream().map(d -> d.metrics().containsKey("revenue")).toList());
+        assertEquals(2, sent.size());
+        assertFalse(sent.get(0).getContent().contains("流水"));
+        assertTrue(sent.get(1).getContent().contains("流水"));
+    }
+
+    @Test @DisplayName("周报预览只带通道身份时仍使用该主播保存的金额设置")
+    void previewResolvesSavedChannelSettings() {
+        target().setRevenueVisible(true);
+        var identity = new PushTarget(); identity.setPlatform(target().getPlatform());
+        identity.setType(target().getType()); identity.setNum(target().getNum());
+        service.preview("sample", 1L, identity).orElseThrow();
+        var data = org.mockito.ArgumentCaptor.forClass(org.frostnova.nova.core.analytics.WeeklyReport.Data.class);
+        verify(renderer).render(any(), data.capture());
+        assertTrue(data.getValue().metrics().containsKey("revenue"), "显示金额的通道预览应保留收益");
+    }
 
     @Test @DisplayName("摘要以主播名开头，群里只看文字也能分清主播")
     void summaryNamesStreamer() {

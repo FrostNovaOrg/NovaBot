@@ -52,8 +52,13 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
      * 各命令拿到结论后自行决定怎么降级：卡片改用人数、条数等非金额表述，
      * 而整张榜都是「谁花了多少钱」的，直接不出。
      */
+    @Override
+    protected String toggleKeyword(CommandContext context) {
+        return String.join(" ", context.getArgs().stream().filter(arg -> !TOTAL_FLAG.equals(arg)).toList());
+    }
+
     protected boolean revenueVisible(CommandContext context) {
-        return revenueVisibility.isVisible(context.getPlatform(), context.getType(), context.getNum());
+        return revenueVisibility.isVisible(context.getChannel());
     }
 
     /**

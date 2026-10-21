@@ -218,7 +218,7 @@ class BilibiliLiveReportCommandTest {
             when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
 
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-            when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+            when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
 
             NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());

@@ -405,8 +405,7 @@ export function channelIndex(users, sessions, handlers, directory) {
 /**
  * 配置里已经没有、状态文件里却还留着的会话
  *
- * 它们不属于任何通道，因此在树上一个字也看不见——而命令还关着，一旦重新把推送配回来
- * 就立刻生效。不单列一块的话，这些残留只能靠翻状态文件才发现。
+ * 这里只列仍生效的会话命令开关与订阅；旧金额、静音和主播命令记录不参与清单。
  * @param users 推送配置里的主播
  * @param sessions /api/state 的 sessions
  * @return 每个残留会话一行
@@ -671,6 +670,19 @@ export function commandSummary(commands, session, totalDataAvailable) {
  * @param session 会话
  * @return 摘要
  */
+export function channelSession(session, target, user) {
+  const quiet = target.quietHours || {};
+  const channel = ((session || {}).channels || []).find(item => user
+    && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
+  return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
+    revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
+    revenueExplicit: typeof target.revenueVisible === 'boolean',
+    disabled: target.disabledCommands || [],
+    // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
+    disabledCount: new Set([...(target.disabledCommands || []), ...((session || {}).disabled || [])]).size,
+    quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: !!channel?.quietActive};
+}
+
 export function revenueSummary(session) {
   const visible = !!(session || {}).revenueVisible;
   const explicit = !!(session || {}).revenueExplicit;
@@ -722,7 +734,7 @@ export function quietSummary(session, global) {
  *   存着的设定不动——预览跟草稿当场变，不然图上是存的设定、灰掉的开关却说按草稿
  * @return 请求体
  */
-export function previewRequestBody(params, target, revenueVisible) {
+export function previewRequestBody(params, target, revenueVisible, user) {
   const body = Object.assign({}, params || {});
   if (typeof revenueVisible === 'boolean') {
     body.revenueVisible = revenueVisible;
@@ -731,6 +743,7 @@ export function previewRequestBody(params, target, revenueVisible) {
       || target.num == null || target.num === '') {
     return body;
   }
+  if (user) { body.streamerPlatform = user.platform; body.streamerUid = user.uid; }
   body.platform = target.platform;
   if (target.type != null && target.type !== '') {
     body.type = Number(target.type);

@@ -91,7 +91,7 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
 
         // 版式来自推送配置，金额可见性来自会话：前者是「说哪些事」，后者是「该不该带金额」。
         // 同一份内容推给主播私聊和推给大群，该说的事相同，该不该带金额则相反
-        boolean showRevenue = revenueVisibility.isVisible(target.getPlatform(), target.getType(), target.getNum());
+        boolean showRevenue = revenueVisibility.isVisible(target);
 
         // 画图失败时改发文字版，而不是什么都不发——与下播报告同一条退路：
         // 这一阵谁送了什么不能跟着图片一起消失

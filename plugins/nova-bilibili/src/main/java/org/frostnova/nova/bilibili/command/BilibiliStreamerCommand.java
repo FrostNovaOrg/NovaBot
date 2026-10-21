@@ -7,6 +7,7 @@ import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.model.ChannelSettings;
 import org.frostnova.nova.core.lang.StringUtil;
 
 import java.util.ArrayList;
@@ -62,6 +63,10 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
             if (matched == null) {
                 return Resolved.failed(here + "没有配置「" + MessagePlaceholders.escapeExternalText(keyword) + "」的推送，当前可选：\n" + describe(candidates));
             }
+            context.setChannel(ChannelSettings.target(matched.streamer(), context.getPlatform(), context.getType(), context.getNum()));
+            if (ChannelSettings.allDisabled(context.getChannel(), usageKeys(context))) {
+                return Resolved.failed(here + "已关闭「" + nameOf(matched.streamer()) + "」的" + CommandContext.quoted(usageKeys(context)));
+            }
             if (matched.byArchivedName()) {
                 PushUser streamer = matched.streamer();
                 return Resolved.of(streamer, "本次用的是：" + nameOf(streamer)
@@ -70,17 +75,42 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
             return Resolved.of(matched.streamer());
         }
 
+        candidates = candidates.stream().filter(user -> !ChannelSettings.allDisabled(
+                ChannelSettings.target(user, context.getPlatform(), context.getType(), context.getNum()), usageKeys(context))).toList();
+        if (candidates.isEmpty()) {
+            return Resolved.failed(here + "已关闭" + CommandContext.quoted(usageKeys(context)) + "命令");
+        }
         if (candidates.size() == 1) {
+            context.setChannel(ChannelSettings.target(candidates.get(0), context.getPlatform(), context.getType(), context.getNum()));
             return Resolved.of(candidates.get(0));
         }
 
         BilibiliStreamerChoice.Ranked ranked = choice.rank(candidates);
         if (ranked.living() == 1) {
             PushUser only = ranked.ordered().get(0);
+            context.setChannel(ChannelSettings.target(only, context.getPlatform(), context.getType(), context.getNum()));
             return Resolved.of(only, "本次用的是：" + nameOf(only) + "（只有 TA 在播）");
         }
 
         return Resolved.failed(choice.ask(context, ranked));
+    }
+
+    @Override
+    public boolean channelScoped() { return true; }
+
+    @Override
+    public org.frostnova.nova.core.command.NovaCommand.StreamerSelection selectForToggle(CommandContext context) {
+        List<PushUser> candidates = streamersOf(context);
+        String keyword = toggleKeyword(context);
+        if (StringUtil.isBlank(keyword)) return new StreamerSelection(candidates, null, false);
+        Matched matched = match(candidates, keyword);
+        if (matched == null) return new StreamerSelection(List.of(), context.here() + "没有配置「"
+                + MessagePlaceholders.escapeExternalText(keyword) + "」的推送，当前可选：\n" + describe(candidates), true);
+        return new StreamerSelection(List.of(matched.streamer()), null, true);
+    }
+
+    protected String toggleKeyword(CommandContext context) {
+        return String.join(" ", context.getArgs());
     }
 
     /**

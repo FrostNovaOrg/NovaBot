@@ -16,7 +16,7 @@
 import {ask} from './confirm.js';
 import {api, el, esc, markDirty, say} from './core.js';
 import {targetOptions} from './links-model.js';
-import {acceptAddedPushUser, renderStreamers, STREAMER_INPUT_HINT}
+import {acceptAddedPushUser, trackSetupVersions, renderStreamers, STREAMER_INPUT_HINT}
   from './push.js';
 import {store} from './store.js';
 import {defaultMessages} from './push-model.js';
@@ -391,14 +391,20 @@ async function saveStreamer() {
   const key = one.platform + ':' + one.uid;
   // 只更新本次向导已添加的主播；列表里原有的主播仍走新增判重。
   const savedVersions = draft.savedVersions || (draft.savedVersions = new Map());
+  trackSetupVersions(key, savedVersions);
   const updating = savedVersions.has(key);
   const path = '/datasource/users' + (updating
     ? '/' + encodeURIComponent(one.platform) + '/' + encodeURIComponent(one.uid) : '');
   try {
-    const res = await api(path, {
+    let res = await api(path, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({user, version: savedVersions.get(key)}),
     });
+    if (!res.success && res.conflict && res.missing && updating) {
+      res = await api('/datasource/users', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({user}),
+      });
+    }
     if (!res.success) {
       say(res.message || '主播配置未能保存', 'err');
       return false;

@@ -31,6 +31,6 @@ public class DatasourceProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("数据源文件 · 自动重载")
-    @ConfigSummary(value = "关闭后，推送配置的修改（包括在控制台保存的修改）需重启程序才能生效。", details = false)
+    @ConfigSummary(value = "控制手改推送配置文件时是否自动重载；控制台保存和群内命令开关始终立即生效。", details = false)
     private boolean jsonAutoReload = true;
 }

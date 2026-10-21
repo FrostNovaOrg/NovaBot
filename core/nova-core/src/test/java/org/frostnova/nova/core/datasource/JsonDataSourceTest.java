@@ -40,6 +40,39 @@ class JsonDataSourceTest {
     }
 
     @Test
+    @DisplayName("手改 quietHours 成字符串不能使升级后数据源载入失败")
+    void malformedChannelSettingDoesNotBlockLoad() {
+        var users = assertDoesNotThrow(() -> dataSource.parse("""
+                [{"uid":1,"platform":"bilibili","targets":[{"platform":"qq","type":1,"num":100,
+                  "quietHours":"invalid","revenueVisible":true,"disabledCommands":["直播报告"]}]}]
+                """));
+        var target = users.get(0).getTargets().get(0);
+        assertNull(target.getQuietHours());
+        assertTrue(target.getRevenueVisible());
+        assertEquals(List.of("直播报告"), target.getDisabledCommands());
+    }
+
+    @Test
+    @DisplayName("主播通道设置载入后仍有效，设置变化会触发用户配置重载")
+    void loadsChannelSettingsAndDetectsChanges() {
+        String json = """
+                [{"uid":1,"platform":"bilibili","targets":[{"platform":"qq-onebot","type":1,"num":100,
+                  "revenueVisible":true,"quietHours":{"mode":"custom","start":"23:00","end":"07:00"},
+                  "disabledCommands":["直播报告"]}]}]
+                """;
+        PushTarget channel = dataSource.parse(json).get(0).getTargets().get(0);
+        assertTrue(channel.getRevenueVisible());
+        assertEquals("custom", channel.getQuietHours().getMode());
+        assertEquals("23:00", channel.getQuietHours().getStart());
+        assertEquals("07:00", channel.getQuietHours().getEnd());
+        assertEquals(List.of("直播报告"), channel.getDisabledCommands());
+        for (String changed : List.of(json.replace("revenueVisible\":true", "revenueVisible\":false"),
+                json.replace("23:00", "22:00"), json.replace("直播报告", "直播间数据"))) {
+            assertFalse(dataSource.parse(json).get(0).same(dataSource.parse(changed).get(0)));
+        }
+    }
+
+    @Test
     @DisplayName("应解析出完整的推送用户、目标与消息")
     void shouldParseFullConfiguration() {
         List<PushUser> users = dataSource.parse("""

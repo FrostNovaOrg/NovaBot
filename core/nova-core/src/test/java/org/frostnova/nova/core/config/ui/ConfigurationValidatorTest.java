@@ -33,6 +33,19 @@ class ConfigurationValidatorTest {
     }
 
     @Test
+    @DisplayName("通道设置填错时拒绝保存，避免静音和金额配置无效")
+    void rejectsInvalidChannelSettings() {
+        for (String fields : List.of("\"revenueVisible\":\"yes\"",
+                "\"quietHours\":{\"mode\":\"invalid\"}",
+                "\"quietHours\":{\"mode\":\"custom\",\"start\":\"25:00\",\"end\":\"07:00\"}",
+                "\"quietHours\":{\"mode\":\"custom\",\"start\":\"23:00\",\"end\":\"23:00:00\"}",
+                "\"disabledCommands\":[\"菜单\"]", "\"disabledCommands\":\"直播报告\"")) {
+            String json = "[{\"uid\":1,\"platform\":\"bilibili\",\"targets\":[{\"platform\":\"qq-onebot\",\"type\":1,\"num\":123," + fields + "}]}]";
+            assertFalse(validator.validateDatasource(json, Set.of("qq-onebot")).isEmpty(), fields);
+        }
+    }
+
+    @Test
     @DisplayName("合法的推送配置应通过")
     void acceptsValidDatasource() {
         String json = """

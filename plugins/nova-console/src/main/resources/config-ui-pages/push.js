@@ -19,7 +19,7 @@ import {ask, keepTabInside} from './confirm.js';
 import {$, api, CONSOLE, el, esc, markDirty, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
-  atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
+  atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
   defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, optionStates, previewRequestBody,
   previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
@@ -1028,8 +1028,7 @@ function renderIndex(host) {
 /**
  * 配置里已经没有、状态文件里还留着的会话
  *
- * 它们在树上一个字也看不见，而命令还关着——一旦重新把推送配回来就立刻生效。
- * 这一块正是让那种「配好了却不响应」现出形来的地方。
+ * 仅列仍生效的会话命令开关与提醒订阅，供查看和清理。
  */
 function renderStranded(host) {
   const rows = strandedSessions(pushData, runtime.sessions);
@@ -1037,16 +1036,14 @@ function renderStranded(host) {
 
   const box = card(host, '未配置推送但仍有状态记录的会话',
     '这些群或好友不在任何主播的推送通道中，因此不在上表中。'
-    + '状态文件中的命令开关仍然保留，重新配置推送后立即生效。');
+    + '这里只列仍然生效的会话命令开关和提醒订阅。金额、静音和主播命令的旧记录仅供退回旧版使用。');
 
   for (const row of rows) {
     const line = el('div', 'strand');
     const text = el('span');
     text.textContent = row.platform + ' · ' + (row.type ? row.type + ' ' : '') + row.num
       + (row.disabled.length ? ' · 已禁用 ' + row.disabled.length + ' 条命令（'
-        + row.disabled.join('、') + '）' : ' · 未禁用任何命令')
-      + (row.revenueExplicit ? ' · 已设置金额可见性' : '')
-      + (row.quietExplicit ? ' · 已设置静音时段' : '');
+        + row.disabled.join('、') + '）' : ' · 未禁用任何命令');
     line.appendChild(text);
 
     if (row.disabled.length) {
@@ -1290,7 +1287,7 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = sessionOf(runtime.sessions, target.platform, target.num, target.type);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1301,8 +1298,8 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
-  if ((session && (session.disabled || []).length)) {
-    title.appendChild(pill('已禁用 ' + session.disabled.length + ' 条命令', 'err'));
+  if (session.disabledCount) {
+    title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
   main.appendChild(title);
 
@@ -1332,7 +1329,7 @@ function channelRow(user, target) {
 // ---- 通道级：四段 ----
 
 function renderChannelLevel(host, user, target) {
-  const session = sessionOf(runtime.sessions, target.platform, target.num, target.type);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const name = channelName(session, target, directory);
 
   const head = card(host, null, null);
@@ -1706,10 +1703,7 @@ function sectionHandlerOptions(host, user, target, session, state) {
 
   // 金额可见按「会话存的＋草稿」现算：草稿里拨了（还没保存），灰不灰、预览图与
   // 图下说明都当场跟着变——不然开关旁说按草稿画、图上还是存的设定，两头各说各话
-  const draftVisible = () => {
-    const wanted = revenueDraft(target);
-    return wanted === undefined ? savedRevenueVisible(session, target) : wanted;
-  };
+  const draftVisible = () => target.revenueVisible ?? (Number(target.type) === 0);
 
   // 收起预览时，当前金额可见范围仍在状态行下方；与预览图共用现成的判法。
   const revenueScope = state.preview ? el('p', 'p-revenue-scope') : null;
@@ -1743,7 +1737,7 @@ function sectionHandlerOptions(host, user, target, session, state) {
       markDirty();
       syncState();
     },
-    render: state.preview ? layoutPreviewRenderer(target, draftVisible) : null,
+    render: state.preview ? layoutPreviewRenderer(target, draftVisible, user) : null,
   });
 
   return {repaint() {
@@ -1767,14 +1761,14 @@ function sectionHandlerOptions(host, user, target, session, state) {
  * @param revenueVisible 算金额可见性的那一支（含草稿），画的时候现取
  * @return {Function} 收版式参数，回图片地址；请求失败时抛错，服务端画不出来时为空
  */
-function layoutPreviewRenderer(target, revenueVisible) {
+function layoutPreviewRenderer(target, revenueVisible, user) {
   let url = null;
   return async params => {
     const res = await request(CONSOLE + '/api/report/preview', {
       method: 'POST',
       headers: Object.assign({'Content-Type': 'application/json'},
         store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
-      body: JSON.stringify(previewRequestBody(params, target, revenueVisible())),
+      body: JSON.stringify(previewRequestBody(params, target, revenueVisible(), user)),
     });
     if (!res.ok) return '';
     try {
@@ -1788,38 +1782,32 @@ function layoutPreviewRenderer(target, revenueVisible) {
   };
 }
 
-/** 段 4：本群设置 */
+/** 段 4：当前主播的通道设置。 */
 function sectionSession(host, user, target, session) {
-  const box = sectionHead(host, 4, '本群设置',
-    Number(target.type) === 1 ? '仅作用于本群，与推送哪位主播无关' : '仅作用于该好友');
-
-  if (Number(target.type) === 1) {
-    const streamers = (session || {}).streamers || [];
-    box.appendChild(el('div', 'note')).textContent = streamers.length > 1
-      ? '本群设置由推送到本群的所有主播共用。本群共有 ' + streamers.length + ' 位主播（'
-        + streamers.join('、') + '），在此修改将同时作用于全部主播。'
-      : '本群设置由推送到本群的所有主播共用。';
-  }
-
-  // 四行摆进自己的容器：草稿变了那一段要重画（换掉，不是再摆一份），
-  // 容器一清就是四行——连着上面的说明一起清的话，说明得在这里再摆一遍
+  const box = sectionHead(host, 4, '通道设置', Number(target.type) === 1
+    ? '只作用于这位主播在本群的推送和命令' : '只作用于这位主播与该好友');
   const settings = el('div');
   box.appendChild(settings);
-  sessionSettings(settings, {
-    session, target,
-    commands: runtime.commands || [],
-    subscriptions: runtime.subscriptions || [],
-    totalDataAvailable: runtime.totalDataAvailable,
-    quietGlobal: runtime.quietGlobal,
-    summary: {
-      revenue: revenueSummary(session),
-      quiet: quietSummary(session, runtime.quietGlobal),
-      command: commandSummary(runtime.commands || [], session, runtime.totalDataAvailable),
-      subscription: subscriptionSummary(runtime.subscriptions || [], session),
-      atAll: atAllStatus(quota, session, target, directory),
-    },
-    groups: commandGroups(runtime.commands || [], session, runtime.totalDataAvailable),
-  });
+  const render = () => {
+    const current = channelSession(session, target, user);
+    const commands = (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
+    const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
+    settings.innerHTML = '';
+    sessionSettings(settings, {
+      channel: true, repaint: render, session: current, target, commands, subscriptions,
+      baseline: JSON.parse(pushSaved).find(saved => userKey(saved) === userKey(user))?.targets?.find(saved =>
+        saved.platform === target.platform && Number(saved.type) === Number(target.type) && String(saved.num) === String(target.num)) || {},
+      totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
+      summary: {
+        revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal),
+        command: commandSummary(commands, current, runtime.totalDataAvailable),
+        subscription: subscriptionSummary(subscriptions, current),
+        atAll: atAllStatus(quota, current, target, directory),
+      },
+      groups: commandGroups(commands, current, runtime.totalDataAvailable),
+    });
+  };
+  render();
 }
 
 // ============ 抽屉 ============
@@ -2123,19 +2111,23 @@ export function markPushSaved(snapshot) {
 }
 
 /** 向导保存成功后只合入这一位，其他主播的草稿、快照与版本继续保留。 */
+const setupVersions = new Map();
+export function trackSetupVersions(key, versions) { setupVersions.set(key, versions); }
+
 export function acceptAddedPushUser(user, version) {
   const key = userKey(user);
   const existing = pushData.find(item => userKey(item) === key);
-  // 本地可能已有尚未提交的同身份草稿；保留它，让后续保存按新版本更新。
+  let acceptVersion = !existing;
   if (!existing) pushData.push(user);
   else {
     const saved = JSON.parse(pushSaved).find(item => userKey(item) === key);
     // 返回向导重选目标后同步未编辑的主播；本地已有的改动继续保留。
     if (JSON.stringify(existing, dropDisplayOnly) === JSON.stringify(saved)) {
       pushData[pushData.indexOf(existing)] = user;
+      acceptVersion = true;
     }
   }
-  userVersions.set(key, version);
+  if (acceptVersion) userVersions.set(key, version);
   updateSavedUser(key, user);
 }
 
@@ -2321,8 +2313,13 @@ export async function save() {
       });
       if (res.success) {
         updateSavedUser(key, user);
-        if (user) userVersions.set(key, res.version);
-        else userVersions.delete(key);
+        if (user) {
+          userVersions.set(key, res.version);
+          setupVersions.get(key)?.set(key, res.version);
+        } else {
+          userVersions.delete(key);
+          setupVersions.get(key)?.delete(key);
+        }
         conflictedUsers.delete(key);
         pushMsg = res.message || '已保存';
       } else {
