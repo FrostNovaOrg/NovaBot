@@ -320,6 +320,10 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
 
     public boolean oidcEnabled() { return isEnabled() && oidc != null && oidc.isEnabled(); }
 
+    public String oidcManagementUri() {
+        return oidc == null ? "" : oidc.managementUri().map(Object::toString).orElse("");
+    }
+
     @Autowired
     public void setAccounts(ConfigUiAccountStore accounts) { this.accounts = accounts; }
 

@@ -14,6 +14,7 @@ import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards, openCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
+import {memberGroup} from './settings-members.js';
 import {CLEAR, advancedShown, arrangeGroups, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf,
   isChanged, isDangerous, dangerOf, isVisible, secretDraft, timeOfDay, timeOfDayValue}
   from './settings-model.js';
@@ -777,6 +778,9 @@ function buildNav(groups, advanced) {
   // 界面组排最上：纯前端偏好，不是这台机器的配置
   nav.appendChild(buildNavLink({group: 'ui', title: '界面'}));
   for (const group of groups) nav.appendChild(buildNavLink(group));
+  if (document.querySelector('[data-grp="members"]')) {
+    nav.appendChild(buildNavLink({group: 'members', title: '成员'}));
+  }
 
   if (advanced.length) {
     const part = el('div', 'grpnav-advanced hide');
@@ -820,6 +824,8 @@ export function renderGeneral() {
   if (orphans) box.appendChild(orphans);
 
   for (const group of common) box.appendChild(buildGroup(group));
+  const members = memberGroup();
+  if (members) box.appendChild(members);
 
   // 高级默认收着，由组目录最底下的「高级选项」摆出来。收着就是整块不显示，不是一道折页：
   // 折页的标题横在页底，人会以为那就是全部
