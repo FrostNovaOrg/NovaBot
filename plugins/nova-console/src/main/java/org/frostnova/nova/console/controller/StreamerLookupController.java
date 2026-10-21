@@ -1,6 +1,8 @@
 package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.HttpServletRequest;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.model.PushUser;
@@ -60,7 +62,15 @@ public class StreamerLookupController {
      * @return 主播信息
      */
     @PostMapping("/api/streamer/lookup")
-    public JSONObject lookupStreamer(@RequestBody JSONObject body) {
+    public JSONObject lookupStreamer(@RequestBody JSONObject body, HttpServletRequest request) {
+        return lookupStreamer(body, !ConfigUiAccess.member(request));
+    }
+
+    public JSONObject lookupStreamer(JSONObject body) {
+        return lookupStreamer(body, true);
+    }
+
+    private JSONObject lookupStreamer(JSONObject body, boolean allowRoomFallback) {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
@@ -80,7 +90,8 @@ public class StreamerLookupController {
         }
 
         DataSourceService data = service.get();
-        StreamerQuery query = parseStreamerQuery(input, data);
+        StreamerQuery query = allowRoomFallback ? parseStreamerQuery(input, data)
+                : new StreamerQuery(StreamerIdKind.DIGITS, Long.parseLong(input.trim()));
         if (query == null) {
             result.put("success", false);
             result.put("message", recognizedByOtherPlatform(input, platform)
@@ -95,7 +106,7 @@ public class StreamerLookupController {
                 found = data.lookupByRoomIdWithFans(query.id());
             } else {
                 found = data.completeStreamerWithFans(incompleteUser(platform, query.id()));
-                if (missingName(found.user()) && query.kind() == StreamerIdKind.DIGITS) {
+                if (allowRoomFallback && missingName(found.user()) && query.kind() == StreamerIdKind.DIGITS) {
                     found = data.lookupByRoomIdWithFans(query.id());
                 }
             }
