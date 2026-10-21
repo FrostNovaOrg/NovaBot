@@ -73,7 +73,7 @@ class ChannelSettingsMigrationTest {
     // 类型错的金额和命令记录不能悄悄丢掉，日志要能定位会话与设置，迁移仍继续。
     @Test
     void wrongLegacyTypesAreLoggedAndSkipped() throws Exception {
-        state.write(RevenueVisibilityService.NAMESPACE, data -> data.put("qq:1:100", "yes"));
+        state.write(RevenueVisibilityService.NAMESPACE, data -> data.put("qq:1:100", new JSONObject()));
         state.write(CommandSettingsService.NAMESPACE, data -> data.put("qq:1:100", new JSONArray()));
         migration.migrate();
         var migrated = target(JSONArray.parseArray(Files.readString(file)), 0);
@@ -83,8 +83,23 @@ class ChannelSettingsMigrationTest {
         for (String namespace : List.of(RevenueVisibilityService.NAMESPACE, CommandSettingsService.NAMESPACE)) {
             assertTrue(migrationLog.list.stream().map(ILoggingEvent::getFormattedMessage)
                     .anyMatch(line -> line.contains("qq:1:100") && line.contains(namespace)
-                            && line.contains("类型不对") && line.contains("跳过")), namespace);
+                            && line.contains("跳过")), namespace);
         }
+    }
+
+    // 能转换的旧金额和命令仍应生效，日志不能误报为跳过。
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"true", "1"})
+    void convertedLegacyValuesAreNotReportedAsSkipped(String raw) throws Exception {
+        state.write(RevenueVisibilityService.NAMESPACE,
+                data -> data.put("qq:1:100", raw.equals("1") ? 1 : raw));
+        state.write(CommandSettingsService.NAMESPACE,
+                data -> data.put("qq:1:100", JSONObject.of("直播报告", 1).toJSONString()));
+        migration.migrate();
+        var migrated = target(JSONArray.parseArray(Files.readString(file)), 0);
+        assertTrue(migrated.getBooleanValue("revenueVisible"));
+        assertEquals(List.of("直播报告"), migrated.getList("disabledCommands", String.class));
+        assertFalse(logged("跳过"), () -> migrationLog.list.toString());
     }
 
     @Test @DisplayName("升级后两位主播保留群设置，停用通道也保留，旧状态完全不变")

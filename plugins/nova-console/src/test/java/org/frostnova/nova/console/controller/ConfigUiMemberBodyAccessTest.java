@@ -30,6 +30,7 @@ class ConfigUiMemberBodyAccessTest {
 
     @BeforeEach void setup() {
         var registry = mock(DataSourceServiceRegistry.class);
+        when(registry.platforms()).thenReturn(List.of("bilibili"));
         lookup = mock(DataSourceService.class);
         when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(lookup));
         when(lookup.completeStreamerWithFans(any())).thenAnswer(call -> {
@@ -43,8 +44,8 @@ class ConfigUiMemberBodyAccessTest {
         when(painter.render(any())).thenReturn(Optional.of(new byte[]{1, 2, 3}));
         mvc = MockMvcBuilders.standaloneSetup(new StreamerLookupController(registry), runtime,
                 new BilibiliReportLayoutController(painter, mock(RevenueVisibilityService.class)))
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class)))
-                .setControllerAdvice(new ConfigUiMemberBodyAdvice()).build();
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry))
+                .setControllerAdvice(new ConfigUiMemberBodyAdvice(registry)).build();
     }
 
     // 自家 uid 能查询，非自家 uid、直播间链接和其他平台不能触发对外查人。
@@ -69,6 +70,19 @@ class ConfigUiMemberBodyAccessTest {
         mvc.perform(post("/config/api/streamer/lookup").requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
                 .contentType("application/json").content("{\"platform\":\"bilibili\",\"uid\":\"1\"}"));
         verify(lookup).lookupByRoomIdWithFans(1L);
+    }
+
+    // 旧名单的非法平台不能借同号 uid 获得取消订阅权限。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"BILIBILI:1", "哔哩:1", "bilibili:01", "unknown:1"})
+    void legacyAssignmentsCannotGrantSubscriptionAccess(String assignment) throws Exception {
+        var account = new ConfigUiAccount(member.id(), member.role(), member.status(), member.displayName(),
+                null, null, null, List.of(assignment), Instant.EPOCH, null, true);
+        mvc.perform(post("/config/api/state/subscription").requestAttr(ConfigUiAccess.ACCOUNT, account)
+                .contentType("application/json").content(JSONObject.of("platform", "qq-onebot", "num", 1001,
+                        "streamerUid", 1, "type", "live").toJSONString()))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("没有这位主播"));
+        verifyNoInteractions(subscriptions);
     }
 
     // 会话平台不是主播平台；只按名下 uid 判订阅，错误编号不能删别人的订阅。

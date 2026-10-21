@@ -110,10 +110,12 @@ public class ChannelSettingsMigration {
             Object raw = state.read(namespace, key, data -> data.get(key)).orElse(null);
             boolean wrongType = raw != null && (RevenueVisibilityService.NAMESPACE.equals(namespace)
                     ? !(raw instanceof Boolean) : !(raw instanceof JSONObject));
+            T value = reader.get();
             if (wrongType) {
-                log.warn("会话 {} 的旧设置 {} 类型不对，跳过这一项", key, namespace);
+                if (value == null) log.warn("会话 {} 的旧设置 {} 类型不对，跳过这一项", key, namespace);
+                else log.warn("会话 {} 的旧设置 {} 类型不对，按原值迁移", key, namespace);
             }
-            return reader.get();
+            return value;
         } catch (RuntimeException e) {
             log.warn("会话 {} 的旧设置 {} 读不出，跳过这一项: {}", key, namespace, e.toString());
             return null;

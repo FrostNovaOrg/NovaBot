@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.config.ui.auth;
 
+import java.util.Collection;
 import java.util.Objects;
 
 /** Parsed streamer assignments; invalid historical entries never grant access. */
@@ -9,7 +10,9 @@ public record ConfigUiStreamerId(String platform, long uid) {
         int separator = value.indexOf(':');
         if (separator <= 0 || separator != value.lastIndexOf(':')) return null;
         String platform = value.substring(0, separator);
-        Long uid = positiveDecimal(value.substring(separator + 1));
+        String decimal = value.substring(separator + 1);
+        if (!decimal.matches("[1-9][0-9]{0,18}")) return null;
+        Long uid = positiveDecimal(decimal);
         if (platform.isBlank() || !platform.equals(platform.strip()) || uid == null) return null;
         return new ConfigUiStreamerId(platform, uid);
     }
@@ -26,13 +29,14 @@ public record ConfigUiStreamerId(String platform, long uid) {
         return value > 0 ? value : null;
     }
 
-    public static boolean owns(ConfigUiAccount account, String platform, Long uid) {
+    public static boolean owns(ConfigUiAccount account, String platform, Long uid, Collection<String> platforms) {
         return uid != null && uid > 0 && account.streamers().stream().map(ConfigUiStreamerId::parse)
-                .filter(Objects::nonNull).anyMatch(id -> id.uid == uid && Objects.equals(id.platform, platform));
+                .filter(Objects::nonNull).filter(id -> platforms.contains(id.platform))
+                .anyMatch(id -> id.uid == uid && Objects.equals(id.platform, platform));
     }
 
-    public static boolean ownsUid(ConfigUiAccount account, Long uid) {
+    public static boolean ownsUid(ConfigUiAccount account, Long uid, Collection<String> platforms) {
         return uid != null && uid > 0 && account.streamers().stream().map(ConfigUiStreamerId::parse)
-                .filter(Objects::nonNull).anyMatch(id -> id.uid == uid);
+                .filter(Objects::nonNull).filter(id -> platforms.contains(id.platform)).anyMatch(id -> id.uid == uid);
     }
 }
