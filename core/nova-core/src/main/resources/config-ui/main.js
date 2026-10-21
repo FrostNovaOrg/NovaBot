@@ -216,12 +216,7 @@ function mountTopPage(meta) {
 }
 
 /**
- * 已挂上的首页卡，按清单顺序排在探针卡后面
- */
-const homeCards = [];
-
-/**
- * 建出首页一张卡：形制与「探针」相同，插在它后面、同级
+ * 建出首页一张卡，按清单顺序挂进通用插件卡容器
  * @param meta 页面清单里的一项
  * @return {HTMLElement} 插件往里渲染的容器
  */
@@ -234,12 +229,8 @@ function mountHomeCard(meta) {
   const body = el('div');
   card.appendChild(body);
 
-  const probes = $('#home-probes');
-  const after = homeCards.length ? homeCards[homeCards.length - 1] : probes;
-  if (after && after.parentNode) {
-    after.parentNode.insertBefore(card, after.nextSibling);
-  }
-  homeCards.push(card);
+  const slot = $('#home-plugin-cards');
+  if (slot) slot.appendChild(card);
   return body;
 }
 
@@ -548,7 +539,11 @@ function focusCard(name, card, fresh) {
   focusStation(name === 'links' ? card : '');
   if (name === 'home' && card === 'probes') {
     const box = $('#' + PROBE_ANCHOR);
-    if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
+    if (box) {
+      const detail = box.querySelector('details');
+      if (detail) detail.open = true;
+      box.scrollIntoView({block: 'start', behavior: 'smooth'});
+    }
   }
   // 点名跳来的那一组，里面的卡一并展开（首页「告警有死角 → 去配」落到告警卡上）
   if (name === 'settings' && card) focusGroup(card, true, fresh);

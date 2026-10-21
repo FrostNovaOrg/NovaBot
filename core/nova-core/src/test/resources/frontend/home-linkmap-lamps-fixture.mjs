@@ -27,6 +27,15 @@ class Node {
     this.innerHTML = '';
     this.textContent = '';
     this.className = '';
+    this.classList = {
+      toggle: (name, force) => {
+        const names = new Set(this.className.split(/\s+/).filter(Boolean));
+        const on = force === undefined ? !names.has(name) : !!force;
+        if (on) names.add(name); else names.delete(name);
+        this.className = [...names].join(' ');
+        return on;
+      },
+    };
     this.style = {display: ''};
     this.disabled = false;
     this.dataset = {};
@@ -155,13 +164,9 @@ function attr(tag, name) {
   return m ? m[1] : null;
 }
 
-/** 站名那一格里挂的灯：灯色与标签里余下的属性；一盏都没有时为空表 */
+/** 每个状态入口内的灯：灯色与标签里余下的属性。 */
 function lampsIn(whole) {
-  const nm = whole.indexOf('<span class="lm-nm">');
-  const sub = whole.indexOf('<span class="lm-sub">');
-  if (nm < 0) return [];
-  const name = whole.slice(nm, sub > nm ? sub : whole.length);
-  return [...name.matchAll(/<span class="lamp ([^"]*)"([^>]*)>/g)].map(m => ({level: m[1], rest: m[2]}));
+  return [...whole.matchAll(/<span class="lamp ([^"]*)"([^>]*)>/g)].map(m => ({level: m[1], rest: m[2]}));
 }
 
 register(new URL('./home-problems-fetch-failure-loader.mjs', import.meta.url));
@@ -190,7 +195,7 @@ if (typeof refreshHome === 'function') {
       if (!st) continue;
 
       const lamps = lampsIn(st.whole);
-      eq(lamps.length, 1, where + '的站名旁有且只有一盏灯');
+      eq(lamps.length, 1, where + '的状态入口内有且只有一盏灯');
       if (lamps.length) {
         eq(lamps[0].level, level, where + '的灯色照这一段的级别');
         eq(lamps[0].rest.includes('aria-hidden="true"'), true, where + '的灯对读屏藏起来');

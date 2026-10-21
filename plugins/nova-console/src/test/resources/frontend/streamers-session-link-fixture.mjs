@@ -288,7 +288,7 @@ await ask('③ 链接没有额外点击处理，支持新标签页打开', () =>
 await ask('④ 主播列表每行是唯一的真链接，地址和主播名正确且没有按钮', async () => {
   location.hash = '#/streamers';
   await page.loadStreamers();
-  const listed = node('st-list').children;
+  const listed = node('st-list').children.filter(row => row.className.split(' ').includes('rowcard'));
   same(listed.length, 2, '主播行数');
   same(listed.map(row => row.tagName), ['a', 'a'], '整行链接');
   same(listed.map(row => walk(row).filter(one => one.tagName === 'a').map(one => one.href)),

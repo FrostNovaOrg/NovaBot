@@ -1,5 +1,5 @@
 /**
- * 首页：链路三段、待办、现在与今日、六项探针、今天发生了什么
+ * 首页：待办、连接状态、当前直播、今日数据与事件、健康自检
  *
  * 本文件只管把 home-model.js 算好的东西摆上屏幕。什么时候该显示哪句话、
  * 哪一段该是什么颜色，一律在那边判——判断留在这里的话，八档对照就只能靠人点开页面看。
@@ -35,38 +35,24 @@ function station(key, seg) {
     + '" title="' + esc(seg.caption || state) + '">'
     + '<span class="lm-ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'
     + STATION_ICONS[key] + '</svg></span>'
-    + '<span class="lm-nm">' + esc(seg.station)
-    + '<span class="lamp ' + esc(seg.level) + '" aria-hidden="true"></span></span>'
-    + '<span class="lm-sub">' + esc(seg.sub) + '</span>'
+    + '<span class="lm-info"><span class="lm-nm">' + esc(seg.station) + '</span>'
+    + '<span class="lm-sub"><span class="lamp ' + esc(seg.level) + '" aria-hidden="true"></span>'
+    + esc(state) + '</span></span>'
+    + '<span class="lm-arrow" aria-hidden="true">→</span>'
     + '</button>';
 }
 
-/** 两站之间的那一段线，灯嵌在中点，线下写这一段此刻怎么样 */
-function link(seg) {
-  return '<div class="lm-seg">'
-    + '<div class="lm-line"><span class="lamp ' + esc(seg.level) + '"></span></div>'
-    + '<div class="lm-cap">' + esc(seg.caption || '—') + '</div>'
-    + '</div>';
-}
-
 /**
- * 链路图
+ * 三个紧凑状态入口
  *
- * 三段对应探针自报的三档范围：直播平台一侧、本机、机器人一侧。
- * 平台与机器人两档各有一段线，灯同时挂在线中点与那一站上；本机那一档只挂在中间那座站上——
- * 它不是两站之间的一条线，而是这台机器自己的状况。
+ * 灯色与去处仍取模型。完整探针说明保留在健康自检，避免在首页重复展开同一份状态。
  */
 function renderLinkMap(model) {
   $('#linkmap').innerHTML = '<div class="lm-track">'
     + station('platform', model.chain.platform)
-    + link(model.chain.platform)
     + station('self', model.chain.self)
-    + link(model.chain.bot)
     + station('bot', model.chain.bot)
-    + '</div>'
-    // 本机那一段的说明没有线可挂，单独写在轨道下面
-    + '<div class="lm-seg" style="min-width:0;padding-top:8px">'
-    + '<div class="lm-cap">本机 · ' + esc(model.chain.self.caption || '—') + '</div></div>';
+    + '</div>';
 
   // 去处由 stationHref 一份判法给出。地址变了走 hashchange，由 focusCard 滚到那一块。
   $('#linkmap').querySelectorAll('[data-goto]').forEach(btn => {
@@ -131,6 +117,7 @@ function since(at) {
 /** 现在：谁在播 */
 function renderNow(model) {
   const box = $('#now-box');
+  $('#home-now').classList.toggle('is-empty', !model.now.live.length);
   const parts = [];
 
   for (const who of model.now.live) {
@@ -157,8 +144,28 @@ function renderNow(model) {
   box.innerHTML = parts.join('');
 }
 
-/** 六项探针 */
+/** 最近已展示的严重异常；同一异常刷新时保留使用者手动收起的选择。 */
+let shownProbeErrors = new Set();
+
+/** 检查明细保持原顺序，摘要只展示模型已有的状态与名称。 */
 function renderProbes(model) {
+  const errors = model.probes.filter(item => item.lamp === 'err');
+  const attention = model.probes.filter(item => item.lamp === 'warn');
+  const unknown = model.probes.filter(item => item.lamp === 'off');
+  const summary = [];
+  if (errors.length) summary.push('异常：' + errors.map(item => item.name).join('、'));
+  if (attention.length) summary.push('需关注：' + attention.map(item => item.name).join('、'));
+  if (unknown.length) summary.push('状态未知：' + unknown.map(item => item.name).join('、'));
+  const card = $('#home-probes');
+  card.classList.toggle('has-errors', errors.length > 0);
+  card.classList.toggle('has-attention', attention.length > 0 || unknown.length > 0);
+  $('#home-health-summary').textContent = summary.length ? summary.join('；')
+    : (model.probes.length ? '当前 ' + model.probes.length + ' 项检查均正常' : '暂无可用检查结果');
+  $('#home-probe-count').textContent = '（' + model.probes.length + ' 项）';
+  const detail = $('#home-probe-details');
+  if (errors.some(item => !shownProbeErrors.has(item.name))) detail.open = true;
+  shownProbeErrors = new Set(errors.map(item => item.name));
+
   $('#probe-list').innerHTML = model.probes.length
     ? model.probes.map(item =>
         '<div class="probe"><span class="lamp ' + esc(item.lamp) + ' p-lamp"></span>'
@@ -373,6 +380,7 @@ function renderDiskRow(el, runtime) {
 // 走整页重取而不是单取一次 /status：自检之后屏幕上的链路、待办、横条都该是这一刻的，
 // 只更新一句结论的话，结论说「2 项异常」而上面几块还画着上一次的样子
 export async function runSelfTest() {
+  $('#home-probe-details').open = true;
   $('#selftest-run').disabled = true;
   say('自检中…');
 

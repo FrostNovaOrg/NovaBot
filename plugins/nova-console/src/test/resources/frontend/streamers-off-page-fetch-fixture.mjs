@@ -64,6 +64,7 @@ function fakeElement(tag) {
   };
   node.setAttribute = (key, value) => { node.attrs[key] = String(value); };
   node.getAttribute = key => node.attrs[key];
+  node.removeAttribute = key => { delete node.attrs[key]; };
   node.querySelector = sel => node.found[sel] || (node.found[sel] = fakeElement('input'));
   node.classList = {toggle() {}, add() {}, remove() {}, contains() { return false; }};
   return node;

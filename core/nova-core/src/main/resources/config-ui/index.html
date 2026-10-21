@@ -114,7 +114,7 @@
   <!-- ============ 首页 #/home ============ -->
   <!--
     首页回答一个问题：现在好不好。
-    自上而下：出事时那条横条 → 链路三段 → 要人动手的待办 → 现在与今日 → 六项探针 → 今天发生了什么。
+    自上而下：异常提示与待办 → 连接状态 → 当前直播 → 今日数据、健康自检与事件。
 
     页上每一块的内容都由 home-model.js 一次算出，这里只留容器。
     分散在各处「取一份数据、渲染一块」的写法在故障档下会互相矛盾：链路已经按新的一份数据变红，
@@ -126,40 +126,43 @@
   <section class="page" id="page-home">
     <div id="overview">
       <div id="home-banner"></div>
+      <div id="home-todo"></div>
 
-      <div class="nv-card hcard">
-        <h3>链路 <span class="h-note">点击平台或机器人可前往连接页，点击本机可查看下方的健康自检</span></h3>
+      <div class="nv-card hcard home-connections">
+        <div class="home-section-head"><h3>连接状态</h3><a href="#/links">管理连接 →</a></div>
         <div class="linkmap" id="linkmap"></div>
       </div>
 
-      <div id="home-todo"></div>
+      <div class="nv-card hcard home-now" id="home-now">
+        <h3>当前直播</h3>
+        <div id="now-box"></div>
+      </div>
 
       <!--
-        「今日」那张卡（三个数与推送总开关）已随控制台插件走，挂在探针卡后面的 home_card 槽上：
-        它问的是推送这件事今天怎么样，而推送是产品形态。这里因此只剩「现在」一张——
-        并排的位子留着（.split 仍在），第二张卡由谁来摆不由这份版式定。
+        首页插件卡仍由 home_card 槽提供；宿主只安排通用容器，不依赖具体插件名称。
+        今日数据与健康自检归入左列、事件放右列；窄屏照 DOM 顺序逐项显示。
       -->
-      <div class="split">
-        <div class="nv-card hcard" style="flex:1 1 380px">
-          <h3>现在</h3>
-          <div id="now-box"></div>
+      <div class="home-primary">
+        <div class="home-primary-column">
+          <div id="home-plugin-cards"></div>
+          <div class="nv-card hcard home-health" id="home-probes">
+            <div class="home-health-head">
+              <div><h3>健康自检</h3><p id="home-health-summary">检查结果加载中…</p></div>
+              <button id="selftest-run" type="button">立即自检</button>
+            </div>
+            <details id="home-probe-details">
+              <summary>查看全部检查项 <span id="home-probe-count"></span></summary>
+              <div id="probe-list"></div>
+            </details>
+          </div>
+        </div>
+        <div class="nv-card hcard" id="home-events">
+          <h3>今日事件 <span class="h-note">失败与告警优先</span></h3>
+          <div class="tl" id="home-timeline"></div>
+          <div class="tl-foot"><a href="#/log">查看全部事件 →</a></div>
         </div>
       </div>
 
-      <div class="nv-card hcard" id="home-probes">
-        <h3>健康自检 <span class="h-note">六项探针</span></h3>
-        <div id="probe-list"></div>
-        <!-- 「立即自检」问的是这台机器此刻健不健康，与探针那一栏同一件事，因此留在宿主这张卡上 -->
-        <div class="quickbar">
-          <button id="selftest-run" type="button">立即自检</button>
-        </div>
-      </div>
-
-      <div class="nv-card hcard">
-        <h3>今日事件 <span class="h-note">失败与告警置顶，其后为最近几条</span></h3>
-        <div class="tl" id="home-timeline"></div>
-        <div class="tl-foot"><a href="#/log">查看全部 → 日志</a></div>
-      </div>
     </div>
   </section>
 

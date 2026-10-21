@@ -68,10 +68,13 @@ const PAGE_STYLE = `
 .pnarrow label{display:block;font-size:13.5px;color:var(--dim);margin-bottom:4px}
 .pnarrow select{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:8px 10px;font-size:14px;font-family:inherit}
+.pnarrow-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.pnarrow-top label{margin:0}
+.pnarrow-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pright{min-width:0}
 /* 窄屏：左树摆不下，改成上面那个下拉。树不是「藏起来」而是换了一种画法——
    直接横过来摆的话，正文只剩半屏宽，而通道页四段每一段都是整行的开关 */
-@media (max-width:900px){
+@media (max-width:1200px){
   .pushwrap{display:block}
   .ptree{display:none}
   .pnarrow{display:block}
@@ -86,6 +89,16 @@ const PAGE_STYLE = `
 .channel-index tbody tr{cursor:pointer}
 .channel-index tbody tr:hover,.channel-index tbody tr:focus-within{background:var(--soft)}
 .channel-index a{color:inherit}
+.channel-index{width:100%;min-width:590px;table-layout:fixed}
+.channel-index th:nth-child(1){width:17%}
+.channel-index th:nth-child(2){width:22%}
+.channel-index th:nth-child(3){width:136px}
+.channel-index th:nth-child(5){width:80px}
+.channel-index td:nth-child(1),.channel-index td:nth-child(2){white-space:normal;overflow-wrap:anywhere}
+.channel-index td.p-notices{max-width:none;overflow:visible;white-space:normal}
+.p-notice-tags{display:flex;flex-wrap:wrap;gap:4px}
+.p-notice-tag{display:inline-block;border:1px solid var(--softline);background:var(--soft);
+  border-radius:var(--r-pill);padding:1px 7px;font-size:11.5px;line-height:1.65;white-space:nowrap}
 .ptable .good{color:var(--ok)}
 .ptable .bad{color:var(--err)}
 /* 最近推送那张表：只在卡片里横着滚，不把整页顶宽。表本身撑到内容宽，
@@ -118,6 +131,9 @@ const PAGE_STYLE = `
 .ch-nm{font-size:18px;font-weight:600}
 .ch-id{color:var(--dim);font-size:13.5px}
 .chead .ghost{margin-left:auto}
+.chead .channel-remove{margin-left:auto;color:var(--dim);text-decoration:none;padding:5px 0}
+.chead .channel-remove:hover{color:var(--err);text-decoration:underline}
+.channel-remove:focus-visible,.p-editor-fold>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 /* 开关一行：左边开关、右边名字与一句说明 */
 /* 字号分四档，从重到轻依次是栏目名、行名、摘要、说明：
    四下里挤成同一号字时，一眼扫过去分不出「哪一行是我要改的」与「这句只是解释」 */
@@ -128,7 +144,15 @@ const PAGE_STYLE = `
 .swtxt b{font-weight:600;font-size:13.5px}
 .swtxt .dim{color:var(--dim);font-weight:400;font-size:12.5px}
 .swtxt p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
-.weekly-report-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.weekly-report-tools{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 10px 48px;
+  padding:10px 12px;background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
+.weekly-report-tools>.hint{flex:1 1 180px;margin:0;font-size:12.5px}
+.weekly-report-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.weekly-report-actions>.ghost{padding:4px 10px;font-size:12.5px}
+@media (max-width:600px){
+  .pnarrow-top{align-items:flex-start;flex-direction:column}
+  .weekly-report-tools{margin-left:0}
+}
 /* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
    使用者会以为这条命令不存在，而它只是在这个会话里不列 */
 .swrow.dimmed{opacity:.6}
@@ -147,6 +171,17 @@ const PAGE_STYLE = `
 .tplstate>span:first-child{flex:1 1 auto}
 /* 未改动时状态行旁那句小字：改过它就收起、换「恢复默认」出场 */
 .tplstate .tplfree{color:var(--dim);font-size:12.5px}
+.p-editor-fold{margin-top:10px;border-top:1px solid var(--line)}
+.p-editor-fold>summary{display:flex;align-items:center;gap:8px;padding:11px 0 2px;cursor:pointer;
+  list-style:none;font-size:13.5px;font-weight:500}
+.p-editor-fold>summary::-webkit-details-marker{display:none}
+.p-editor-fold>summary::before{content:"▸";color:var(--dim);font-size:11px}
+.p-editor-fold[open]>summary::before{content:"▾"}
+.p-editor-fold>summary::after{content:"展开";margin-left:auto;color:var(--dim);font-size:12px;font-weight:400}
+.p-editor-fold[open]>summary::after{content:"收起"}
+.p-editor-fold[open]>summary{padding-bottom:8px}
+.p-editor-body{min-width:0}
+.psec>.p-revenue-scope{margin:0;color:var(--dim);font-size:12.5px}
 .tplrow{padding:10px 0;border-top:1px solid var(--line)}
 .tplrow:first-of-type{border-top:none}
 .tplbody{margin:0 0 8px;padding:9px 11px;background:var(--ground);border:1px solid var(--line);
@@ -418,7 +453,13 @@ export function render(section) {
   section.innerHTML = `
     <div id="sess-incomplete"></div>
     <div class="pnarrow">
-      <label for="push-nav">选择主播或推送通道</label>
+      <div class="pnarrow-top">
+        <label for="push-nav">选择主播或推送通道</label>
+        <div class="pnarrow-actions">
+          <a class="lnkbtn" href="#/push/default">默认模板</a>
+          <button type="button" class="lnkbtn" id="push-add-streamer-narrow">＋ 添加主播</button>
+        </div>
+      </div>
       <select id="push-nav"></select>
     </div>
     <div class="pushwrap">
@@ -476,6 +517,7 @@ function bindShell() {
     location.hash = parts[0] === 's' ? '#/push/' + parts[1] : '#/push/' + parts[1] + '/' + parts.slice(2).join(':');
   });
   $('#push-add-streamer').addEventListener('click', addStreamer);
+  $('#push-add-streamer-narrow').addEventListener('click', addStreamer);
   $('#push-drawer-close').addEventListener('click', closeDrawer);
   $('#push-drawer').addEventListener('click', event => {
     if (event.target === $('#push-drawer')) closeDrawer();
@@ -541,6 +583,9 @@ let lostChannelOf = '';
 
 /** 树上展开了哪几位主播。收起状态不进地址栏——它是「翻到哪儿了」，不是「在看哪一个」 */
 const expanded = new Set();
+
+/** 通道的编辑区展开状态只保留在本次页面会话中，不写入配置或草稿。 */
+const editorFolds = new Set();
 
 /**
  * 通道在地址里怎么写
@@ -846,18 +891,18 @@ function renderIndex(host) {
     box.appendChild(el('p', 'hint')).textContent =
       '暂无推送通道。请先在左侧添加主播，再为其选择群或好友。';
   } else {
-    // 五列全 nowrap，宽了在卡片里横着滚，而不是把卡片顶破——做法与主播页历史表一致
+    // 通知按标签换行，优先利用卡片宽度；很窄时只在表格容器内横滚。
     const wrap = el('div', 'tblwrap');
     const table = el('table', 'ptable channel-index');
-    table.style.width = 'max-content';
-    table.style.minWidth = '100%';
     table.innerHTML = '<thead><tr><th scope="col">主播</th><th scope="col">通道</th><th scope="col">号码</th>'
       + '<th scope="col">已启用通知</th><th scope="col">模板</th></tr></thead><tbody>'
       + rows.map(row => '<tr><td><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row))
         + '" aria-label="' + esc(row.streamer + ' → ' + row.name) + '">' + esc(row.streamer) + '</a></td>'
         + '<td>' + esc(row.name) + '</td>'
         + '<td class="n">' + esc(row.num) + '</td>'
-        + '<td>' + (row.on.length ? esc(row.on.join('、')) : '全部停用') + '</td>'
+        + '<td class="p-notices">' + (row.on.length ? '<span class="p-notice-tags">'
+          + row.on.map(name => '<span class="p-notice-tag">' + esc(name) + '</span>').join('')
+          + '</span>' : '<span class="dim">全部停用</span>') + '</td>'
         + '<td>' + (row.custom ? '自定义' : '默认') + '</td></tr>').join('')
       + '</tbody>';
     // 原生链接提供 Tab、回车与读屏名称；其余单元格点击走同一地址，无定位覆盖层。
@@ -1193,7 +1238,7 @@ function renderChannelLevel(host, user, target) {
     ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
   line.appendChild(num);
 
-  const remove = el('button', 'ghost danger');
+  const remove = el('button', 'lnkbtn channel-remove');
   remove.type = 'button';
   remove.textContent = '移除通道';
   remove.addEventListener('click', async () => {
@@ -1225,6 +1270,23 @@ function sectionHead(host, index, title, desc) {
   return box;
 }
 
+/** 只收起占空间的编辑区，默认状态和适用范围仍留在卡片外层。 */
+function editorFold(host, user, target, name, title) {
+  const key = user.uid + ':' + target.platform + ':' + target.type + ':' + target.num + ':' + name;
+  const fold = el('details', 'p-editor-fold');
+  fold.open = editorFolds.has(key);
+  fold.appendChild(el('summary')).textContent = title;
+  const body = el('div', 'p-editor-body');
+  fold.appendChild(body);
+  fold.addEventListener('toggle', () => {
+    if (!fold.isConnected) return;
+    if (fold.open) editorFolds.add(key);
+    else editorFolds.delete(key);
+  });
+  host.appendChild(fold);
+  return body;
+}
+
 /** 段 1：推送类型 */
 function sectionNotices(host, user, target, session) {
   const box = sectionHead(host, 1, '推送类型', '选择以下事件发生时是否向此通道发送通知');
@@ -1250,7 +1312,7 @@ function sectionNotices(host, user, target, session) {
     row.appendChild(text);
     box.appendChild(row);
     if (item.className === 'org.frostnova.nova.core.handler.WeeklyReportPushHandler') {
-      weeklyReportActions(text, user, target);
+      weeklyReportActions(box, user, target);
     }
   }
 
@@ -1296,15 +1358,18 @@ function weeklyReportActions(host, user, target) {
   const path = '/weekly-report/' + encodeURIComponent(user.platform) + '/' + user.uid;
   const query = '?pushPlatform=' + encodeURIComponent(target.platform)
     + '&type=' + Number(target.type) + '&num=' + target.num;
+  const tools = el('div', 'weekly-report-tools');
+  host.appendChild(tools);
   const status = el('p', 'hint');
   status.textContent = '正在读取周报状态…';
-  host.appendChild(status);
+  status.setAttribute('role', 'status');
+  tools.appendChild(status);
   const update = () => api(path + '/status' + query)
     .then(res => { status.textContent = res.status; })
     .catch(() => { status.textContent = '周报状态读取失败'; });
   update();
   const actions = el('div', 'weekly-report-actions');
-  host.appendChild(actions);
+  tools.appendChild(actions);
   const preview = el('a', 'lnkbtn');
   preview.textContent = '预览';
   preview.href = CONSOLE + '/api' + path + '/preview' + query;
@@ -1436,7 +1501,8 @@ function sectionTemplate(host, user, target, session) {
     box.appendChild(el('div', 'note template-diff')).textContent = '与默认模板不同的通知：' + which.join('、');
   }
 
-  buildTemplateEditor(box, {
+  const editorHost = editorFold(box, user, target, 'template', '模板编辑与消息预览');
+  buildTemplateEditor(editorHost, {
     handlers,
     // 这一段默认就能改，不传锁态；编辑器本身仍支持锁态（template.js 那一套），留给要用它的地方
     editable: true,
@@ -1475,7 +1541,7 @@ function adminOf(target) {
 function sectionOptions(host, user, target, session) {
   const previews = [];
   for (const state of optionStates(user, target, store.handlerList)) {
-    const editor = sectionHandlerOptions(host, target, session, state);
+    const editor = sectionHandlerOptions(host, user, target, session, state);
     if (state.preview) previews.push(editor);
   }
   if (previews.length) onRevenueDraftChange(() => {
@@ -1483,7 +1549,7 @@ function sectionOptions(host, user, target, session) {
   });
 }
 
-function sectionHandlerOptions(host, target, session, state) {
+function sectionHandlerOptions(host, user, target, session, state) {
   const handler = state.handler || {};
   const name = handler.displayName || handler.className;
   const box = sectionHead(host, 3, name + (state.preview ? '版式' : '设置'), null);
@@ -1533,7 +1599,18 @@ function sectionHandlerOptions(host, target, session, state) {
     return wanted === undefined ? savedRevenueVisible(session, target) : wanted;
   };
 
-  const editor = buildLayoutEditor(box, {
+  // 收起预览时，当前金额可见范围仍在状态行下方；与预览图共用现成的判法。
+  const revenueScope = state.preview ? el('p', 'p-revenue-scope') : null;
+  const syncRevenueScope = () => {
+    if (revenueScope) revenueScope.textContent = previewRevenueCaption(session, target, draftVisible());
+  };
+  if (revenueScope) {
+    syncRevenueScope();
+    box.appendChild(revenueScope);
+  }
+  const editorHost = editorFold(box, user, target, 'options:' + handler.className,
+    state.preview ? '版式编辑与报告预览' : '通知详细设置');
+  const editor = buildLayoutEditor(editorHost, {
     // 与段 2 同理：这一段默认就能改，不传锁态
     editable: true,
     preview: state.preview,
@@ -1557,7 +1634,10 @@ function sectionHandlerOptions(host, target, session, state) {
     render: state.preview ? layoutPreviewRenderer(target, draftVisible) : null,
   });
 
-  return editor;
+  return {repaint() {
+    syncRevenueScope();
+    editor.repaint();
+  }};
 }
 
 /**
