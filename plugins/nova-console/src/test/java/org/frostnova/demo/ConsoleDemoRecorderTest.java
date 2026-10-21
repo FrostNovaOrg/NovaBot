@@ -74,6 +74,7 @@ public class ConsoleDemoRecorderTest {
     private MockMvc mvc;
     private Cookie cookie;
     private Path output;
+    private final java.util.Set<String> expiredReports = new java.util.HashSet<>();
     private final JSONArray entries = new JSONArray();
     private final java.util.List<String> misses = new java.util.ArrayList<>();
     private final java.util.Set<String> keys = new java.util.LinkedHashSet<>();
@@ -137,9 +138,10 @@ public class ConsoleDemoRecorderTest {
         if (requestBody != null) entries.getJSONObject(entries.size() - 1).put("body", requestBody);
         // Anonymous nickname lookup can fail without an upstream connection.
         boolean offlineError = response.getStatus() == 500 && path.equals("/streamer/name");
-        String line = key + " -> HTTP " + response.getStatus() + (offlineError ? " (backend offline error)" : "");
+        boolean expired = response.getStatus() == 404 && expiredReports.contains(path);
+        String line = key + " -> HTTP " + response.getStatus() + (offlineError ? " (backend offline error)" : expired ? " (expired detail)" : "");
         System.out.println("HIT " + line);
-        if (response.getStatus() >= 400 && !offlineError) misses.add(line);
+        if (response.getStatus() >= 400 && !offlineError && !expired) misses.add(line);
         return contentType.contains("json") ? JSON.parseObject(bytes) : null;
     }
 
@@ -382,7 +384,11 @@ public class ConsoleDemoRecorderTest {
                 String report = p + "/sessions/" + archive.getString("startTime") + "/report";
                 boolean hasDetail = Files.isRegularFile(Path.of("details", platform + "-" + uid + "-"
                         + archive.getString("startTime"), "detail.json"));
-                if (hasDetail) capture(report);
+                if (!hasDetail) expiredReports.add(report);
+                int before = entries.size();
+                capture(report);
+                assertEquals(hasDetail ? 200 : 404, entries.getJSONObject(before).getIntValue("status"),
+                        "report follows persisted detail availability");
                 capture(p + "/sessions", "starts", archive.getString("startTime"), "page", 1, "size", 10);
             }
             for (Object row : user.getJSONArray("targets")) {

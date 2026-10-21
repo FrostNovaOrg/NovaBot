@@ -206,13 +206,15 @@ class OidcSessionRefreshServiceTest extends OidcTestSupport {
 
     // 没有统一登录会话及尚未到期时都不应访问账户中心。
     @Test
-    void noWorkBeforeDeadlineOrWithoutOidcSessions() {
+    void noWorkBeforeDeadlineOrWithoutOidcSessions() throws Exception {
         int requests = provider.tokenRequests;
         service.checkNow();
+        await(() -> !session.oidcState().refreshing.get());
         assertEquals(requests, provider.tokenRequests);
         sessions.revoke(session.getId());
         clock.now = clock.instant().plus(Duration.ofMinutes(5));
         service.checkNow();
+        await(() -> !session.oidcState().refreshing.get());
         assertEquals(requests, provider.tokenRequests);
     }
 
