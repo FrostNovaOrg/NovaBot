@@ -126,6 +126,68 @@ class WordCloudBlockWordsTest {
         }
     }
 
+    // 抓的问题：全实例和主播同时设置多字词时，只保住一份，另一份切碎后漏进词云。
+    @Test
+    void collectionKeepsBothGlobalAndStreamerPhrasesWhole() {
+        String global = "星穹铁道";
+        String own = "原神启动";
+        for (String phrase : List.of(global, own)) {
+            assertFalse(DanmuWordUtil.extractWords(phrase + "了").contains(phrase), "测试词应原本会被切碎");
+        }
+        var source = mock(AbstractDataSource.class);
+        when(source.getUser(PLATFORM, STREAMER)).thenReturn(Optional.of(JSON.parseObject(
+                "{\"wordCloudBlockWords\":[\"原神启动\"]}", PushUser.class)));
+        LiveDataService data = sessionData(true);
+        var aggregator = new BilibiliLiveStatsAggregator(data, mock(LiveDetailArchive.class),
+                properties(List.of(), List.of(global)));
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AbstractDataSource.class, () -> source);
+            context.refresh();
+            context.getAutowireCapableBeanFactory().autowireBean(aggregator);
+            for (long uid : List.of(STREAMER, STREAMER + 1)) {
+                aggregator.onDanmu(new BilibiliDanmuEvent(new LiveStreamerInfo(uid, "主播", ROOM, null),
+                        new UserInfo(HUMAN, "观众", null), global + "了 " + own + "了 唱歌",
+                        global + "了 " + own + "了 唱歌"));
+            }
+            Map<String, Integer> first = data.getLiveWordFrequencies(PLATFORM, STREAMER);
+            assertTrue(first.containsKey(global), "全实例词被切碎: " + first);
+            assertTrue(first.containsKey(own), "主播词被切碎: " + first);
+            Map<String, Integer> other = data.getLiveWordFrequencies(PLATFORM, STREAMER + 1);
+            assertTrue(other.containsKey(global), "全实例词未用于乙: " + other);
+            assertFalse(other.containsKey(own), "甲的分词名单影响乙: " + other);
+        }
+    }
+
+    // 抓的问题：历史报告入口没传入推送配置，重画时仍冒出主播现在已屏蔽的词。
+    @Test
+    void historicalRedrawerUsesCurrentGlobalAndStreamerLists() {
+        var current = new AtomicReference<>(new PushUser());
+        var source = mock(AbstractDataSource.class);
+        when(source.getUser(PLATFORM, STREAMER)).thenAnswer(call -> Optional.of(current.get()));
+        var properties = properties(List.of(), List.of("全局屏蔽"));
+        var history = new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties()));
+        var images = new ReportImageDiskCache(temp.resolve("image-cache"));
+        var detail = new LiveDetail(LiveDetail.VERSION, PLATFORM, STREAMER, "主播甲", ROOM,
+                START, START + 3_600_000L, 3_600L, Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of("全局屏蔽", 4, "原神启动", 3, "唱歌", 2), List.of(), List.of(), List.of(), Map.of(), List.of());
+        var redrawer = new org.frostnova.nova.report.service.BilibiliLiveReportRedrawer(
+                factory, quietApi(), fontUtil, properties, history, images);
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AbstractDataSource.class, () -> source);
+            context.refresh();
+            context.getAutowireCapableBeanFactory().autowireBean(redrawer);
+            byte[] before = redrawer.redraw(detail).orElseThrow();
+            current.set(JSON.parseObject("{\"wordCloudBlockWords\":[\"原神启动\"]}", PushUser.class));
+            byte[] after = redrawer.redraw(detail).orElseThrow();
+            assertFalse(java.util.Arrays.equals(before, after), "当前名单变化后，历史图仍相同");
+            var expected = new CaptureReplay(factory, quietApi(), fontUtil, properties, history, detail, images);
+            expected.setDataSource(source);
+            byte[] reference = expected.render(new BilibiliLiveReportOptions()).orElseThrow();
+            assertEquals(List.of("唱歌"), oneCloud(expected.drawn), "两份当前名单都应过滤");
+            org.junit.jupiter.api.Assertions.assertArrayEquals(reference, after, "历史入口画的图未采用当前两份名单");
+        }
+    }
+
     // 抓的问题：甲排除观众后报告仍含其弹幕，修改两份名单后又用了旧重算结果。
     @Test
     void streamerExclusionsAndWordsInvalidateRecountWithoutAffectingOthers() throws Exception {

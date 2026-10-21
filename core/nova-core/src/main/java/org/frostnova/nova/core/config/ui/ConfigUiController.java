@@ -1930,6 +1930,14 @@ public class ConfigUiController {
                         || !Objects.equals(uid, replacement.getString("uid")))) {
                     return ResponseEntity.badRequest().body(datasourceError("主播的平台与 uid 不可更改"));
                 }
+                if ("save".equals(action)) {
+                    // 摘要与向导可能没有名单字段；只有显式提供（包括空数组）才替换。
+                    for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+                        if (!replacement.containsKey(field) && current.containsKey(field)) {
+                            replacement.put(field, current.get(field));
+                        }
+                    }
+                }
                 String description = switch (action) {
                     case "add" -> "加了主播 ";
                     case "delete" -> "删了主播 ";

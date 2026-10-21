@@ -1293,9 +1293,13 @@ function renderStreamerLevel(host, user) {
     input.setAttribute('data-block-list', key);
     input.rows = 4;
     input.placeholder = key === 'wordCloudExcludeUids' ? '一行一个观众 uid（纯数字的正整数）' : '一行一个词';
-    input.value = (user[key] || []).join('\n');
+    input.value = (Array.isArray(user[key]) ? user[key] : []).join('\n');
     input.addEventListener('input', () => {
-      user[key] = input.value === '' ? [] : input.value.split(/\r?\n/).map(value => value.trim());
+      const entries = input.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+      const current = (Array.isArray(user[key]) ? user[key] : [])
+        .map(value => String(value).trim()).filter(Boolean);
+      // 空行不算改动，也不为原本缺失的字段添加空数组。
+      if (JSON.stringify(entries) !== JSON.stringify(current)) user[key] = entries;
       markDirty();
     });
     field.appendChild(input);

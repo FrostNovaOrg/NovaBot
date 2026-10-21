@@ -102,7 +102,7 @@ public class ConfigurationValidator {
     private void checkUserLists(JSONObject user, String where, List<String> issues) {
         for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
             Object value = user.get(field);
-            if (!user.containsKey(field)) continue;
+            if (value == null) continue;
             String label = switch (field) {
                 case "dynamicBlockWords" -> "动态屏蔽词";
                 case "wordCloudBlockWords" -> "词云屏蔽词";

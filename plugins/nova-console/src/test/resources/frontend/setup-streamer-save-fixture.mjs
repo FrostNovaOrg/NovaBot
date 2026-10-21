@@ -12,6 +12,12 @@ const saveSource = source.slice(source.indexOf('async function saveStreamer()'))
 const copy = value => JSON.parse(JSON.stringify(value));
 const initial = () => [{platform: 'p', uid: 2, enabled: true, targets: [], extra: null}];
 let disk, requests, beforePost, reject;
+const listKeys = ['dynamicBlockWords', 'wordCloudBlockWords', 'wordCloudExcludeUids'];
+const fields = (value, keys) => Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
+const summary = user => ({...fields(user, ['platform', 'uid', 'enabled', 'roomId']),
+  targets: (user.targets || []).map(target => ({...fields(target, ['platform', 'type', 'num', 'enabled']),
+    messages: (target.messages || []).map(message => ({...fields(message, ['handler', 'enabled']),
+      _custom: !!message.params && Object.keys(message.params).length > 0}))}))});
 const version = user => JSON.stringify(user);
 const response = payload => ({status: 200, json: async () => copy(payload)});
 globalThis.fetch = async (path, options = {}) => {
@@ -33,13 +39,20 @@ globalThis.fetch = async (path, options = {}) => {
       if (!user || body.version !== version(user)) {
         return response({success: false, conflict: true, missing: !user, message: '这位主播的配置刚被别人改过，请重新载入'});
       }
+      // 保存接口仅为这三个字段保留缺失键；Java 接口测试同时验证该约定。
+      for (const key of listKeys) if (!Object.hasOwn(body.user, key) && Object.hasOwn(user, key)) body.user[key] = user[key];
+      for (const key of listKeys) {
+        if (Array.isArray(body.user[key]) && body.user[key].some(value => typeof value === 'string' && !value.trim())) {
+          return {...response({success: false, message: '名单不能含空行'}), status: 400};
+        }
+      }
       disk[disk.indexOf(user)] = body.user;
       return response({success: true, version: version(body.user)});
     }
     return response({success: true});
   }
   if (url === '/datasource') return response({success: true, content: JSON.stringify(disk)});
-  if (url === '/datasource/users') return response({success: true, users: disk});
+  if (url === '/datasource/users') return response({success: true, users: disk.map(summary)});
   const user = disk.find(user => url === '/datasource/users/p/' + user.uid);
   if (user) return response({success: true, user, version: version(user)});
   if (url === '/state') return response({sessions: [], incomplete: []});
@@ -226,6 +239,80 @@ await test('向导重存目标时保留在推送页保存的三份屏蔽名单',
   assert.equal(await flow.save(), true);
   for (const [key, value] of Object.entries(lists)) assert.deepEqual(disk.find(user => user.uid === 3)[key], value);
 });
+// 抓的问题：推送页重载只剩摘要时，向导再存把盘上名单抹掉。
+await test('重新载入摘要后向导重存仍保留三份名单，显式空数组才能清空', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+  Object.assign(push.pushEntries().find(user => user.uid === 3), lists);
+  await push.save();
+  await push.reload();
+  const brief = push.pushEntries().find(user => user.uid === 3);
+  for (const key of listKeys) assert.equal(Object.hasOwn(brief, key), false);
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  for (const key of listKeys) {
+    assert.equal(Object.hasOwn(requests.at(-1).body.user, key), false);
+    assert.deepEqual(disk.find(user => user.uid === 3)[key], lists[key]);
+  }
+  Object.assign(push.pushEntries().find(user => user.uid === 3), Object.fromEntries(listKeys.map(key => [key, []])));
+  assert.equal(await flow.save(), true);
+  for (const key of listKeys) assert.deepEqual(disk.find(user => user.uid === 3)[key], []);
+});
+
+// 抓的问题：只多敲回车就算改动，或行末、中间的空行导致保存失败。
+await test('三个框都丢弃空白行，只有回车不算改动，真实词条能保存', async () => {
+  for (const existing of [false, true]) {
+    const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+    await reset([{...initial()[0], ...(existing ? lists : {})}]);
+    await openB();
+    for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+      input.value += '\n  \n';
+      await input.dispatchEvent({type: 'input', target: input});
+    }
+    assert.equal(push.changeCount(), 0, '只有回车不能算未保存改动');
+    for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+      const key = input.getAttribute('data-block-list');
+      input.value = '  ' + lists[key][0] + '  \r\n\r\n  \r\n456\r\n';
+      await input.dispatchEvent({type: 'input', target: input});
+      assert.deepEqual(push.pushEntries()[0][key], [lists[key][0], '456']);
+    }
+    assert.equal(push.changeCount(), 1);
+    await push.save();
+    assert.equal(push.changeCount(), 0, '空行不应导致保存被拒绝');
+    for (const key of listKeys) assert.deepEqual(disk[0][key], [lists[key][0], '456']);
+  }
+});
+
+// 抓的问题：打完词回车或中间空一行，提交空串导致服务端拒绝保存。
+await test('行末回车和中间空行不进入提交名单', async () => {
+  await reset(); await openB();
+  const lists = {dynamicBlockWords: ['回放', '唱歌'], wordCloudBlockWords: ['原神启动', '星穹铁道'], wordCloudExcludeUids: ['123', '456']};
+  for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+    const key = input.getAttribute('data-block-list');
+    input.value = '  ' + lists[key][0] + '  \r\n\r\n  \r\n' + lists[key][1] + '\r\n';
+    await input.dispatchEvent({type: 'input', target: input});
+  }
+  await push.save();
+  const submitted = requests.findLast(request => request.method === 'POST').body.user;
+  for (const key of listKeys) assert.deepEqual(submitted[key], lists[key]);
+  assert.equal(push.changeCount(), 0);
+  for (const key of listKeys) assert.deepEqual(disk[0][key], lists[key]);
+});
+
+// 抓的问题：手改名单为字符串、null 或数字后，主播设置区整个画不出来。
+await test('非数组名单按空框显示，三个框和其他设置始终可用', async () => {
+  for (const value of ['回放', null, 123]) {
+    await reset([{...initial()[0], ...Object.fromEntries(listKeys.map(key => [key, value]))}]);
+    await openB();
+    const inputs = document.querySelector('#push-right').querySelectorAll('textarea');
+    assert.equal(inputs.length, 3);
+    for (const input of inputs) assert.equal(input.value, '');
+    assert.equal(push.changeCount(), 0, '显示坏值不应擅自改文件');
+  }
+});
+
 await test('主播页面读改存名单，切换页面保留草稿，冲突后保留输入，修改通道不清空名单', async () => {
   const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
   await reset([{...initial()[0], ...lists, targets: [{platform: 'qq', type: 1, num: 111, enabled: true, messages: []}]}]);
