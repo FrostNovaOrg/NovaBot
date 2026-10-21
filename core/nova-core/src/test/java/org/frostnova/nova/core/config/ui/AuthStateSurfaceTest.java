@@ -69,6 +69,46 @@ class AuthStateSurfaceTest {
         return request;
     }
 
+    // 已登录的人要能找到账户中心，地址必须与账号列表使用同一个来源。
+    @Test
+    void authenticatedOidcSetupExposesManagementUri() {
+        var oidcProperties = new NovaCoreProperties();
+        oidcProperties.getConfigUi().getOidc().setEnabled(true);
+        oidcProperties.getConfigUi().getOidc().setIssuer("https://accounts.example.com");
+        oidcProperties.getConfigUi().getOidc().setManagementUri("https://accounts.example.com/manage");
+        authService.setOidcClient(new org.frostnova.nova.core.config.ui.auth.oidc.OidcClient(
+                oidcProperties, new org.springframework.web.client.RestTemplate()));
+        var request = request("127.0.0.1");
+        request.setAttribute(ConfigUiAccess.ACCOUNT,
+                org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.local(java.time.Instant.now()));
+        assertEquals("https://accounts.example.com/manage", controller.state(request).getString("managementUri"));
+    }
+
+    // 没填管理地址时回空串，页面据此隐藏账户中心入口。
+    @Test
+    void authenticatedOidcSetupWithoutManagementUriExposesEmptyString() {
+        var oidcProperties = new NovaCoreProperties();
+        oidcProperties.getConfigUi().getOidc().setEnabled(true);
+        oidcProperties.getConfigUi().getOidc().setIssuer("https://accounts.example.com");
+        authService.setOidcClient(new org.frostnova.nova.core.config.ui.auth.oidc.OidcClient(
+                oidcProperties, new org.springframework.web.client.RestTemplate()));
+        var request = request("127.0.0.1");
+        request.setAttribute(ConfigUiAccess.ACCOUNT,
+                org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.local(java.time.Instant.now()));
+        assertEquals("", controller.state(request).getString("managementUri"));
+        // 未登录时不能把管理地址带到登录页。
+        assertFalse(controller.state(request("127.0.0.1")).containsKey("managementUri"));
+    }
+
+    // 没开统一登录时保持原来的回包，避免普通本地登录冒出账户中心入口。
+    @Test
+    void localOnlyStateDoesNotExposeManagementUri() {
+        var request = request("127.0.0.1");
+        request.setAttribute(ConfigUiAccess.ACCOUNT,
+                org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.local(java.time.Instant.now()));
+        assertFalse(controller.state(request).containsKey("managementUri"));
+    }
+
     @Test
     @DisplayName("🔴 令牌会话报 operatorSession 为真")
     void operatorSessionIsReported() {

@@ -84,7 +84,14 @@
     </div>
     <!-- 未启用口令登录时没有「退出」可言，由脚本按登录状态决定是否显示 -->
     <div id="auth-actions" style="display:none">
-      <button type="button" id="logout">退出登录</button>
+      <details id="personal-menu" class="personal-menu">
+        <summary id="personal-name" class="side-link"></summary>
+        <div class="personal-menu-items">
+          <a id="account-center" class="side-link" target="_blank" rel="noopener noreferrer" hidden>账户中心</a>
+          <button type="button" id="logout" data-action="logout">退出</button>
+          <p id="personal-result" class="member-result" role="status"></p>
+        </div>
+      </details>
       <!-- 怀疑 Cookie 泄漏时的收回手段。没有它就只能重启进程，而重启会断开全部直播间长连接 -->
       <button type="button" id="logout-all">退出全部设备</button>
     </div>

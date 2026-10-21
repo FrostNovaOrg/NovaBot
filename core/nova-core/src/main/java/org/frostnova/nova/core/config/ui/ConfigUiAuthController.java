@@ -141,6 +141,7 @@ public class ConfigUiAuthController {
         // CSRF 令牌只发给已经持有该会话的人，它本身不是秘密，但发给未登录者没有任何意义
         session.ifPresent(value -> result.put("csrfToken", value.getCsrfToken()));
         if (account != null) {
+            if (authService.oidcEnabled()) result.put("managementUri", authService.oidcManagementUri());
             result.put("accountId", account.id());
             result.put("role", account.role().name());
             result.put("displayName", account.displayName());
