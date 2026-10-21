@@ -20,3 +20,4 @@
 - [附录 B　进阶玩法](https://frostnovaorg.github.io/NovaBot/appendix-b-advanced.html)
 - [附录 C　安全须知与资源占用](https://frostnovaorg.github.io/NovaBot/appendix-c-security-and-resources.html)
 - [附录 D　从上游 StarBot 迁移](https://frostnovaorg.github.io/NovaBot/appendix-d-migrate-from-starbot.html)
+- [附录 E　接统一登录账户中心](https://frostnovaorg.github.io/NovaBot/appendix-e-oidc.html)
