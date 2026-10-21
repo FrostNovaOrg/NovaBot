@@ -16,7 +16,7 @@
 import {ask} from './confirm.js';
 import {api, el, esc, markDirty, say} from './core.js';
 import {targetOptions} from './links-model.js';
-import {markPushSaved, pushEntries, renderStreamers, serializePush, setPushEntries, STREAMER_INPUT_HINT}
+import {markPushSaved, pushEntries, reload, renderStreamers, serializePush, setPushEntries, STREAMER_INPUT_HINT}
   from './push.js';
 import {store} from './store.js';
 import {defaultMessages} from './push-model.js';
@@ -387,10 +387,20 @@ async function saveStreamer() {
     .filter(Boolean)
     .map(item => ({platform: item.sender, type: item.type, num: item.num, enabled: true, messages}));
 
+  let complete;
+  try {
+    const res = await api('/datasource');
+    if (!res.success) throw new Error(res.message || '主播配置未能载入');
+    complete = JSON.parse(res.content);
+    if (!Array.isArray(complete)) throw new Error('主播配置应为数组');
+  } catch (e) {
+    say('主播配置未能载入：' + e.message, 'err');
+    return false;
+  }
   const before = pushEntries();
   // 回上一步改完再走一遍是正当走法，因此同一位主播先去重再加——
   // 不去重的话，配置文件里会出现两条同 uid 的记录，而那台机器每场直播推两遍
-  setPushEntries(before
+  setPushEntries(complete
     .filter(user => !(Number(user.uid) === Number(one.uid) && user.platform === one.platform))
     .concat([{
       uid: one.uid, platform: one.platform, enabled: true, targets,
@@ -415,6 +425,11 @@ async function saveStreamer() {
 
   // 快照跟着走，否则推送页那条改动条会显示「还有 1 处没保存」——而它已经存下去了
   markPushSaved();
+  try {
+    await reload({keepSessionDrafts: true});
+  } catch (e) {
+    say('主播配置已保存，列表重新载入失败：' + e.message, 'err');
+  }
   renderStreamers();
   markDirty();
   // 末步「发一条试试」只在刚选定的这几个目标里挑：这一步要验的正是那条路通不通，

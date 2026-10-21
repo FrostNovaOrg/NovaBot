@@ -191,11 +191,11 @@ try {
     {className: 'Weekly', defaultEnabled: false}, {className: 'Other', platform: 'other'}];
   let saved = [];
   const fn = new Function('store', 'draft', 'options', 'pushEntries', 'setPushEntries',
-    'api', 'serializePush', 'say', 'markPushSaved', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
+    'api', 'serializePush', 'say', 'markPushSaved', 'reload', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
     bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
       {handlerList: handlers}, {streamer: {platform: 'sample', uid: 1}, targets: ['group']},
       [{key: 'group', sender: 'qq-onebot', type: 1, num: 1001}], () => [], value => { saved = value; },
-      async () => ({success: true}), () => '', () => {}, () => {}, () => {}, model.defaultMessages, () => {}, {});
+      async () => ({success: true, content: '[]'}), () => '', () => {}, () => {}, async () => {}, () => {}, model.defaultMessages, () => {}, {});
   await fn();
   eq(saved[0].targets[0].messages, [{handler: 'Live'}], '向导新目标运营周报默认关闭');
   const push = readFileSync(join(pages, 'push.js'), 'utf8');
@@ -209,6 +209,30 @@ try {
   add(user); added.onPick({platform: 'qq-onebot', type: 1, num: 1001});
   eq(user.targets[0].messages, saved[0].targets[0].messages, '添加通道与向导默认订阅相同');
 } catch (e) { eq('error:' + e.message, 'ok', '默认订阅能执行'); }
+
+try {
+  const model = await import('../../../main/resources/config-ui-pages/push-model.js');
+  const complete = [{platform: 'other', uid: 2, extra: 'keep', targets: [{
+    platform: 'qq', type: 1, num: 1002, messages: [{handler: 'Other', params: {message: 'keep text'}}],
+  }]}];
+  let saved = [{platform: 'other', uid: 2, targets: []}];
+  let posted;
+  let reloaded;
+  const save = new Function('store', 'draft', 'options', 'pushEntries', 'setPushEntries',
+    'api', 'serializePush', 'say', 'markPushSaved', 'reload', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
+    bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
+    {handlerList: []}, {streamer: {platform: 'sample', uid: 1}, targets: []}, [],
+    () => saved, value => { saved = value; },
+    async (path, opts) => {
+      if (!opts) return {success: true, content: JSON.stringify(complete)};
+      posted = JSON.parse(JSON.parse(opts.body).content);
+      return {success: true};
+    }, () => JSON.stringify(saved), () => {}, () => {},
+    async opts => { reloaded = opts; }, () => {}, model.defaultMessages, () => {}, {});
+  await save();
+  eq(posted.find(user => user.uid === 2), complete[0], '向导整份保存保留未打开主播的全部字段');
+  eq(reloaded, {keepSessionDrafts: true}, '向导保存后刷新主播列表保留本群设置草稿');
+} catch (e) { eq('error:' + e.message, 'ok', '向导保存完整配置能执行'); }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

@@ -1,3 +1,4 @@
+import {datasourceRead} from './datasource-read.mjs';
 /** 每类通知的设置各自可见、独立保存与恢复；配置项由真实处理器经接口传入。 */
 import {register} from 'node:module';
 import {dirname, join} from 'node:path';
@@ -271,9 +272,12 @@ globalThis.fetch = async (path, opt = {}) => {
   const url = String(path);
   requests.push({url, opt});
   if (url.endsWith('/api/report/preview')) return {ok: true, blob: async () => 'image'};
-  if (url.endsWith('/datasource')) {
-    if (opt.method === 'POST') saved = JSON.parse(JSON.parse(opt.body).content);
-    return {status: 200, json: async () => ({success: true, content: JSON.stringify(saved)})};
+  if (url.includes('/datasource')) {
+    if (opt.method === 'POST') {
+      saved = [JSON.parse(opt.body).user];
+      return {status: 200, json: async () => ({success: true, version: 'v1'})};
+    }
+    return {status: 200, json: async () => datasourceRead(url, JSON.stringify(saved))};
   }
   return {status: 200, json: async () => ({success: true, records: [], handlers})};
 };
@@ -300,13 +304,12 @@ function change(node, value) {
   if (node.type === 'checkbox') node.checked = value; else node.value = String(value);
   node.dispatchEvent(fakeEvent('change', node));
 }
-function paint(messages, list = handlers) {
+async function paint(messages, list = handlers) {
   requests.length = 0;
   store.handlerList = list;
   saved = [{...user, targets: [{...target, messages}]}];
-  push.setPushEntries(structuredClone(saved));
-  push.markPushSaved();
-  push.showPush('1', '12345');
+  await push.reload();
+  await push.showPush('1', '12345');
   push.renderStreamers();
 }
 const message = (handler, params = {}) => ({handler: handler.className, params});
@@ -322,7 +325,7 @@ async function until(read, what) {
 }
 
 // 抓两类同时订阅时只有第一类配置可见；平台、停用状态与别名也应按推送类型的口径筛选。
-await ask('模型：所有启用配置按推送类型顺序列出', () => {
+await ask('模型：所有启用配置按推送类型顺序列出', async () => {
   const list = [digest, report, {...plugin, platform: 'other'}];
   const states = model.optionStates(user, {...target, messages: [message(report), message(digest), message(plugin)]}, list);
   same(states.map(item => [item.className, item.preview]), [[digest.className, false], [report.className, true]], '配置集合');
@@ -332,7 +335,7 @@ await ask('模型：所有启用配置按推送类型顺序列出', () => {
     [[digest.className, true]], '旧名和停用');
 });
 // 抓恢复默认删错消息、删掉模板或其他插件参数。
-await ask('模型：恢复只删除本类配置键', () => {
+await ask('模型：恢复只删除本类配置键', async () => {
   const input = {reward_threshold_yuan: 200, message: '保留', extra: 7};
   same(model.restoredLayoutParams(input, digest), {message: '保留', extra: 7}, '恢复结果');
   same(input.reward_threshold_yuan, 200, '原参数未修改');
@@ -340,15 +343,15 @@ await ask('模型：恢复只删除本类配置键', () => {
   same(states.map(item => item.custom), [true, false], '各类独立状态');
 });
 // 抓两类都订时门槛项找不到，或默认不是处理器声明的 50。
-await ask('两类同时订阅：报告预览和门槛 50 同时可见', () => {
-  paint([message(report), message(digest)]);
+await ask('两类同时订阅：报告预览和门槛 50 同时可见', async () => {
+  await paint([message(report), message(digest)]);
   same(previewCount(section('下播报告版式')), 1, '报告预览区');
   same(threshold().value, '50', '门槛默认值');
   same(previewCount(section('下播打赏播报设置')), 0, '设置块没有预览区');
 });
 // 抓门槛设置误挂下播报告预览；金额说明与网络请求也必须不存在。
-await ask('只订打赏：无报告预览、金额说明或预览请求', () => {
-  paint([message(digest)]);
+await ask('只订打赏：无报告预览、金额说明或预览请求', async () => {
+  await paint([message(digest)]);
   same(previewCount(page()), 0, '预览区数');
   same(previewRequests().length, 0, '预览请求数');
   same(all(page()).some(item => item.textContent.includes('按本群金额可见设置预览')), false, '金额说明');
@@ -356,16 +359,16 @@ await ask('只订打赏：无报告预览、金额说明或预览请求', () => 
 });
 // 抓改门槛无法保存或误写报告那条消息。真正调用保存，再将收到的数据重新交给页面读回。
 await ask('门槛改为 200 保存读回，报告参数原样保留', async () => {
-  paint([message(report, {cover: false}), message(digest)]);
+  await paint([message(report, {cover: false}), message(digest)]);
   change(threshold(), 200);
   await push.save();
   same(saved[0].targets[0].messages.map(item => item.params), [{cover: false}, {reward_threshold_yuan: 200}], '保存内容');
-  paint(saved[0].targets[0].messages);
+  await paint(saved[0].targets[0].messages);
   same(threshold().value, '200', '重新打开门槛');
 });
 // 抓清空已存门槛后变成 0，导致每笔打赏都播。
 await ask('清空已存门槛仍保留 200', async () => {
-  paint([message(digest, {reward_threshold_yuan: 200})]);
+  await paint([message(digest, {reward_threshold_yuan: 200})]);
   change(threshold(), '');
   same(paramsOf(digest), {reward_threshold_yuan: 200}, '门槛参数');
   same(threshold().value, '200', '门槛框');
@@ -373,16 +376,16 @@ await ask('清空已存门槛仍保留 200', async () => {
   same(saved[0].targets[0].messages[0].params, {reward_threshold_yuan: 200}, '保存门槛');
 });
 // 抓清空默认门槛后写入 0，覆盖原来的默认行为。
-await ask('清空默认门槛仍无键且显示 50', () => {
-  paint([message(digest)]);
+await ask('清空默认门槛仍无键且显示 50', async () => {
+  await paint([message(digest)]);
   change(threshold(), '');
   same(paramsOf(digest), {}, '默认门槛参数');
   same(threshold().value, '50', '默认门槛框');
 });
 // 抓非法数字污染存值，或框里没有恢复到原值。
 for (const invalid of ['abc', 'Infinity', '   ']) {
-  await ask('非数字门槛恢复原值：' + JSON.stringify(invalid), () => {
-    paint([message(digest, {reward_threshold_yuan: 200})]);
+  await ask('非数字门槛恢复原值：' + JSON.stringify(invalid), async () => {
+    await paint([message(digest, {reward_threshold_yuan: 200})]);
     change(threshold(), invalid);
     same(paramsOf(digest), {reward_threshold_yuan: 200}, '门槛参数');
     same(threshold().value, '200', '门槛框');
@@ -390,8 +393,8 @@ for (const invalid of ['abc', 'Infinity', '   ']) {
 }
 // 抓越界数字照存，页面与实际播报门槛不一致。
 for (const [input, expected] of [[-5, 0], [2000000, 1000000]]) {
-  await ask('越界门槛夹住：' + input, () => {
-    paint([message(digest)]);
+  await ask('越界门槛夹住：' + input, async () => {
+    await paint([message(digest)]);
     change(threshold(), input);
     same(paramsOf(digest).reward_threshold_yuan, expected, '门槛参数');
     same(threshold().value, String(expected), '门槛框');
@@ -399,35 +402,35 @@ for (const [input, expected] of [[-5, 0], [2000000, 1000000]]) {
 }
 // 抓整数项存下小数，页面与运行时读到的整数不一致。
 for (const [input, expected] of [[12.4, 12], [12.5, 13]]) {
-  await ask('小数门槛四舍五入：' + input, () => {
-    paint([message(digest)]);
+  await ask('小数门槛四舍五入：' + input, async () => {
+    await paint([message(digest)]);
     change(threshold(), input);
     same(paramsOf(digest).reward_threshold_yuan, expected, '门槛参数');
     same(threshold().value, String(expected), '门槛框');
   });
 }
 // 抓共用数字框只修设置块，报告版式清空仍变成 0。
-await ask('清空报告弹幕排行仍保留 8', () => {
-  paint([message(report, {danmu_ranking: 8})]);
+await ask('清空报告弹幕排行仍保留 8', async () => {
+  await paint([message(report, {danmu_ranking: 8})]);
   change(control(section('下播报告版式'), '弹幕排行'), '');
   same(paramsOf(report), {danmu_ranking: 8}, '版式参数');
   same(control(section('下播报告版式'), '弹幕排行').value, '8', '版式数字框');
 });
 // 抓一次保存只写入其中一类。
 await ask('一次保存两类改动，重新打开都在', async () => {
-  paint([message(report), message(digest)]);
+  await paint([message(report), message(digest)]);
   change(control(section('下播报告版式'), '直播间封面'), false);
   change(threshold(), 200);
   await push.save();
   const stored = saved[0].targets[0].messages;
   same(stored.map(item => item.params), [{cover: false}, {reward_threshold_yuan: 200}], '两类保存内容');
-  paint(stored);
+  await paint(stored);
   same(control(section('下播报告版式'), '直播间封面').checked, false, '报告读回');
   same(threshold().value, '200', '门槛读回');
 });
 // 抓一块的自定义状态跟着另一块走，或恢复默认连另一块一并清掉。
 await ask('设置独立显示状态、确认与恢复，报告版式保留', async () => {
-  paint([message(report, {cover: false}), message(digest, {reward_threshold_yuan: 200, message: '保留'})]);
+  await paint([message(report, {cover: false}), message(digest, {reward_threshold_yuan: 200, message: '保留'})]);
   const box = section('下播打赏播报设置');
   const restore = all(box).find(item => item.tagName === 'button' && item.textContent === '恢复默认' && !item.hidden);
   if (!restore) throw new Error('设置块缺少恢复默认按钮');
@@ -446,22 +449,22 @@ await ask('设置独立显示状态、确认与恢复，报告版式保留', asy
   same(all(section('下播报告版式')).some(item => item.innerHTML.includes('当前版式：<b>自定义</b>')), true, '报告仍自定义');
 });
 // 抓第三方插件未声明预览能力时被默认当成报告版式。
-await ask('未声明的插件按设置画且不请求报告预览', () => {
+await ask('未声明的插件按设置画且不请求报告预览', async () => {
   const legacy = {...plugin};
   delete legacy.reportLayout;
-  paint([message(plugin)], [legacy]);
+  await paint([message(plugin)], [legacy]);
   same(previewCount(page()), 0, '插件预览区');
   same(previewRequests().length, 0, '插件预览请求');
   same(control(section('额外通知设置'), '重试次数').value, '3', '插件配置项');
 });
 // 抓多配置块顺序与推送类型列表不一致。
-await ask('配置块跟随推送类型顺序，本群设置最后', () => {
-  paint([message(report), message(digest)], [digest, report]);
+await ask('配置块跟随推送类型顺序，本群设置最后', async () => {
+  await paint([message(report), message(digest)], [digest, report]);
   const titles = all(page()).filter(item => item.tagName === 'h3').map(item => item.innerHTML.replace(/<[^>]+>/g, ''));
   same(titles, ['1推送类型', '2消息模板', '3下播打赏播报设置', '3下播报告版式', '4本群设置'], '段落顺序');
 });
 for (const [name, chosen] of [['只开下播报告', [report]], ['只开下播打赏播报', [digest]], ['两样都开', [report, digest]]]) {
-  paint(chosen.map(item => message(item)));
+  await paint(chosen.map(item => message(item)));
   console.log(name + '：' + all(page()).filter(item => item.tagName === 'h3')
     .map(item => item.innerHTML.replace(/<[^>]+>/g, '')).join(' → '));
 }

@@ -1,3 +1,5 @@
+import {installPushDom} from './push-test-dom.mjs';
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 推送页按「保存」之后，状态栏要说得出这一趟到底存成了什么
  *
@@ -43,15 +45,7 @@ function same(got, want, what) {
 
 // —— 假页面与假接口 ——
 
-const nodes = {};
-
-function node(selector) {
-  const id = String(selector).replace(/^#/, '');
-  if (!nodes[id]) {
-    nodes[id] = {id, textContent: '', className: '', disabled: false, style: {display: ''}};
-  }
-  return nodes[id];
-}
+const {node} = installPushDom();
 
 /** 这一跑发出去的每一条请求，按序 */
 const requests = [];
@@ -65,55 +59,20 @@ let datasourceReply = {success: true, message: '已保存'};
 /** 下一趟 POST /state/… 回什么 */
 let stateReply = {success: true, message: '已保存'};
 
-/** 挂在 <html> 上的那几个类。底部那条藏不藏由它一处定，见宿主 core.js 的 paintBar */
-const htmlClasses = new Set();
-
-globalThis.document = {
-  querySelector: node,
-  createElement: tag => {
-    const e = {
-      tagName: String(tag).toLowerCase(),
-      className: '',
-      textContent: '',
-      style: {},
-      children: [],
-      appendChild(child) {
-        this.children.push(child);
-        return child;
-      },
-      setAttribute() {},
-      addEventListener() {},
-      classList: {toggle() {}, add() {}, remove() {}, contains() { return false; }},
-    };
-    return e;
-  },
-  documentElement: {
-    classList: {
-      toggle: (name, on) => { if (on) htmlClasses.add(name); else htmlClasses.delete(name); },
-      contains: name => htmlClasses.has(name),
-    },
-  },
-  body: {appendChild() {}},
-  addEventListener() {},
-  get activeElement() {
-    return null;
-  },
-};
-
 globalThis.fetch = (path, opt) => {
   const method = ((opt || {}).method || 'GET').toUpperCase();
   const url = String(path);
   requests.push({path: url, method, body: (opt || {}).body});
   const ok = payload => Promise.resolve({status: 200, json: () => Promise.resolve(payload)});
   if (method === 'GET') {
-    if (url.endsWith('/datasource')) return ok({content: datasourceBody});
+    if (url.includes('/datasource')) return ok(datasourceRead(url, datasourceBody));
     if (url.endsWith('/state')) return ok({sessions: []});
     if (url.includes('/push-history')) return ok({records: []});
     if (url.includes('/at-all/quota')) return ok({bots: [], sessions: []});
     if (url.includes('/bot/targets')) return ok({items: []});
     return ok({});
   }
-  if (url.includes('/datasource')) return ok(datasourceReply);
+  if (url.includes('/datasource')) return ok({...datasourceReply, version: 'v1'});
   if (url.includes('/state/')) return ok(stateReply);
   return ok({success: true, message: '已保存'});
 };
@@ -147,6 +106,7 @@ async function fresh() {
   stateReply = {success: true, message: '已保存'};
   requests.length = 0;
   await push.reload();
+  await push.showPush('1', '');
   node('#status-text').textContent = '';
 }
 

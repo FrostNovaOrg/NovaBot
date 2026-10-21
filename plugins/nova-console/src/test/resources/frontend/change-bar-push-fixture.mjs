@@ -1,3 +1,5 @@
+import {installPushDom} from './push-test-dom.mjs';
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 推送页是改动条的供数方：这一份状态跟着推送页走，不再摆在宿主的 store 上
  *
@@ -45,15 +47,7 @@ function same(got, want, what) {
 
 // —— 假页面与假接口 ——
 
-const nodes = {};
-
-function node(selector) {
-  const id = String(selector).replace(/^#/, '');
-  if (!nodes[id]) {
-    nodes[id] = {id, textContent: '', className: '', disabled: false, style: {display: ''}};
-  }
-  return nodes[id];
-}
+const {node} = installPushDom();
 
 /** 这一跑发出去的每一条请求，按序 */
 const requests = [];
@@ -61,24 +55,12 @@ const requests = [];
 /** 下一趟 GET /datasource 回什么。第 ⑥ 问要把它换成一份坏文件 */
 let datasourceBody = '';
 
-/** 挂在 <html> 上的那几个类。底部那条藏不藏由它一处定，见宿主 core.js 的 paintBar */
-const htmlClasses = new Set();
-
-globalThis.document = {
-  querySelector: node,
-  documentElement: {
-    classList: {
-      toggle: (name, on) => { if (on) htmlClasses.add(name); else htmlClasses.delete(name); },
-      contains: name => htmlClasses.has(name),
-    },
-  },
-};
 globalThis.fetch = (path, opt) => {
   const method = ((opt || {}).method || 'GET').toUpperCase();
   requests.push({path, method, body: (opt || {}).body});
   const answer = method === 'GET'
-    ? {content: datasourceBody}
-    : {success: true, message: '已保存'};
+    ? datasourceRead(path, datasourceBody)
+    : {success: true, version: 'v1', message: '已保存'};
   return Promise.resolve({status: 200, json: () => Promise.resolve(answer)});
 };
 
@@ -112,6 +94,7 @@ async function freshLoad() {
   datasourceBody = JSON.stringify(datasource());
   requests.length = 0;
   const quiet = await push.reload();
+  for (const user of push.pushEntries()) await push.showPush(String(user.uid), '');
   return quiet;
 }
 
@@ -129,7 +112,7 @@ await ask('② 刚载入时零处改动，且这一份是自己去取的', async
   same(
     {'改动数': push.changeCount(), '取的接口': requests.map(item => item.method + ' ' + item.path),
       '有话要说': quiet === false},
-    {'改动数': 0, '取的接口': ['GET /config/api/datasource'], '有话要说': false},
+    {'改动数': 0, '取的接口': ['GET /config/api/datasource/users', 'GET /config/api/datasource/users/p/1', 'GET /config/api/datasource/users/p/2'], '有话要说': false},
     '刚载入');
 });
 
@@ -162,7 +145,7 @@ await ask('④ 按保存：写出去的正是本页序列化的那一份，存�
   const users = push.pushEntries();
   users[0].targets[0].enabled = false;
 
-  const wanted = push.serializePush();
+  const wanted = JSON.parse(push.serializePush())[0];
   requests.length = 0;
   await push.save();
 
@@ -170,14 +153,14 @@ await ask('④ 按保存：写出去的正是本页序列化的那一份，存�
   if (posts.length !== 1) {
     throw new Error('按一次保存发出了 ' + posts.length + ' 条 POST，应恰 1 条');
   }
-  const sent = JSON.parse(posts[0].body || '{}').content;
+  const sent = JSON.parse(posts[0].body || '{}').user;
   same({
     '存去哪': posts[0].path,
-    '写出去的与序列化的一致': sent === wanted,
-    '写出去的还带着昵称': String(sent).includes('_uname'),
+    '写出去的与序列化的一致': JSON.stringify(sent) === JSON.stringify(wanted),
+    '写出去的还带着昵称': JSON.stringify(sent).includes('_uname'),
     '存完的改动数': push.changeCount(),
   }, {
-    '存去哪': '/config/api/datasource',
+    '存去哪': '/config/api/datasource/users/p/1',
     '写出去的与序列化的一致': true,
     '写出去的还带着昵称': false,
     '存完的改动数': 0,
