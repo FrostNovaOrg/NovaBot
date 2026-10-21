@@ -31,7 +31,7 @@ const initial = () => [{platform: 'bilibili', uid: 1, enabled: true,
 let disk = initial(), requests = [], reject = false;
 const version = user => JSON.stringify(user);
 const summary = user => ({platform: user.platform, uid: user.uid, enabled: user.enabled, targets: user.targets});
-const state = () => ({sessions: [{platform: 'qq-onebot', typeCode: 1, num: 81001,
+const state = () => process.env.PUSH_STATE ? JSON.parse(readFileSync(process.env.PUSH_STATE, 'utf8')) : ({sessions: [{platform: 'qq-onebot', typeCode: 1, num: 81001,
   channels: [{streamerPlatform: 'bilibili', streamerUid: 1, quietActive: true}], disabled: [], menuHidden: []},
   {platform: 'qq-onebot', typeCode: 1, num: 89999, disabled: ['天气']}],
   commands: [{name: '直播报告', category: '数据查询', disableable: true, channelScoped: true}],
@@ -97,7 +97,7 @@ async function reset(role = 'MEMBER') {
 }
 async function addDrawer() { await open(); await button(root(), '＋ 添加通道').click(); }
 async function lookup(num, type = 'group') {
-  const kind = drawer().querySelector('select');
+  const kind = drawer().querySelector('[aria-label="会话类型"]');
   assert.ok(kind, '成员需要选择群或好友');
   kind.value = type; await kind.dispatchEvent({type: 'change', target: kind});
   const number = drawer().querySelector('input');
@@ -155,17 +155,66 @@ const cases = {
     store.role = 'ADMIN'; await push.loadPushPage(); await addDrawer();
     assert.ok(drawer().querySelectorAll('input').some(node => node.type === 'search')); assert.ok(button(drawer(), '刷新'));
   },
-  // 带前导零或关键字的号码可能查到与所填号码不同的会话。
+  // 号码边上的空格不应阻止查询，非数字与前导零则要给出对应原因并拦住请求。
   invalid: async () => {
     await reset(); await addDrawer();
-    for (const value of ['0990000000301', '群81001', '0', '81001abc']) {
+    for (const [value, message] of [['0990000000301', '开头不能是 0'], ['群81001', '只能填数字'], ['0', '开头不能是 0'], ['81001abc', '只能填数字'], ['81 001', '只能填数字']]) {
       const before = requests.length;
       const number = drawer().querySelector('input'); number.value = value;
       await number.dispatchEvent({type: 'input', target: number});
-      assert.ok(text(drawer()).includes('请填写完整的群号或 QQ 号，开头不能是 0'));
+      assert.ok(text(drawer()).includes(message), value + ' 应提示 ' + message);
       await button(drawer(), '查').click();
       assert.equal(requests.length, before);
     }
+    await lookup('  82002 \t');
+    assert.ok(button(drawer(), '加上'));
+    assert.equal(new URL(requests.at(-1).url, 'http://localhost').searchParams.get('num'), '82002');
+    noDirectory();
+  },
+  // 新分到的主播没有任何通道时，也必须能从成员 status 的平台添加第一个通道。
+  first: async () => {
+    await reset();
+    disk[0].targets = [];
+    store.senderList = JSON.parse(readFileSync(process.env.PUSH_STATUS, 'utf8')).senders || [];
+    await push.reload(); await push.loadPushPage(); await addDrawer();
+    assert.equal(drawer().querySelectorAll('select').length, 1, '单个平台直接使用');
+    await lookup('82002');
+    assert.ok(text(drawer()).includes('测试群 82002'), text(drawer()));
+    await button(drawer(), '加上').click(); await push.save();
+    assert.equal(push.changeCount(), 0);
+    assert.deepEqual(disk[0].targets.map(({platform, type, num}) => ({platform, type, num})),
+      [{platform: 'qq-onebot', type: 1, num: 82002}]);
+    noDirectory();
+    disk[0].targets = []; store.senderList = []; await push.reload(); await push.loadPushPage(); await addDrawer();
+    const before = requests.length;
+    await lookup('82002');
+    assert.ok(text(drawer()).includes('没有可用的推送平台，请联系管理员。'));
+    assert.equal(requests.length, before);
+  },
+  // 多平台实例的成员必须能选其他平台，查询和最终保存均应使用选中的平台。
+  platforms: async () => {
+    await reset(); store.senderList = ['qq-onebot', 'qq-secondary']; await addDrawer();
+    const platform = drawer().querySelector('[aria-label="推送平台"]');
+    assert.ok(platform, '多个平台应有下拉选择');
+    assert.equal(platform.querySelectorAll('option').length, 2, '合并来源后平台不重复');
+    platform.value = 'qq-secondary'; await platform.dispatchEvent({type: 'change'});
+    await lookup('82002');
+    assert.equal(new URL(requests.at(-1).url, 'http://localhost').searchParams.get('platform'), 'qq-secondary');
+    // 换平台后不能沿用刚才的查询结果添加到另一个平台。
+    platform.value = 'qq-onebot'; await platform.dispatchEvent({type: 'change'});
+    assert.equal(button(drawer(), '加上'), undefined);
+    platform.value = 'qq-secondary'; await platform.dispatchEvent({type: 'change'});
+    await lookup('82002'); await button(drawer(), '加上').click(); await push.save();
+    assert.ok(disk[0].targets.some(target => target.platform === 'qq-secondary' && target.num === 82002));
+    noDirectory();
+  },
+  // 已经添加的通道不能重复添加，灰色按钮旁应说明原因。
+  duplicate: async () => {
+    await reset(); await addDrawer(); await lookup('81001');
+    assert.equal(button(drawer(), '加上').disabled, true);
+    assert.ok(text(drawer()).includes('这个通道已经加过了'));
+    assert.equal(push.pushEntries()[0].targets.length, 1);
+    noDirectory();
   },
   // 新通道被服务端拒绝时，成员需要看到原因并保留尚未保存的通道。
   rejected: async () => {

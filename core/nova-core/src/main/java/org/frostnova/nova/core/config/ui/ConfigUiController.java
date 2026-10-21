@@ -2252,6 +2252,7 @@ public class ConfigUiController {
         }
         return JSONObject.of("success", true, "users", users, "locked", authService.isEnabled(),
                 "pushEnabled", properties.getPush().isEnabled(), "totalDataAvailable", liveDataService.supportsTotalData(),
+                "senders", senderService.getSenderNames().stream().sorted().toList(),
                 "quiet", quiet(), "live", liveNow(), "today", todayPushCounts());
     }
 

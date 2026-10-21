@@ -2028,11 +2028,26 @@ function lookupTarget(platform, type, num) {
 
 /** 成员只查询输入的完整号码，不读取或展示机器人会话名单。 */
 function pickMemberTarget(opts) {
-  const platform = opts.user.targets?.[0]?.platform
-    || pushData.flatMap(user => user.targets || [])[0]?.platform
-    || runtime.sessions?.[0]?.platform || store.senderList?.[0];
+  const platformNames = [...new Set([
+    ...(opts.user.targets || []).map(target => target.platform),
+    ...pushData.flatMap(user => user.targets || []).map(target => target.platform),
+    ...(runtime.sessions || []).map(session => session.platform),
+    ...(store.senderList || []),
+  ].filter(Boolean))];
   const numberLabel = term('bot.target.group', '群号') + '或 ' + term('bot.target.user', '用户号');
   openDrawer(opts.title, '填写完整的' + numberLabel + '，查到后再添加。', body => {
+    const sender = platformNames.length > 1 ? el('select') : null;
+    if (sender) {
+      sender.setAttribute('aria-label', '推送平台');
+      for (const platform of platformNames) {
+        const option = el('option');
+        option.value = platform;
+        option.textContent = platform;
+        sender.appendChild(option);
+      }
+      sender.value = platformNames[0];
+      body.appendChild(sender);
+    }
     const kind = el('select');
     kind.setAttribute('aria-label', '会话类型');
     kind.innerHTML = '<option value="group">群</option><option value="friend">好友</option>';
@@ -2052,22 +2067,30 @@ function pickMemberTarget(opts) {
     out.setAttribute('aria-live', 'polite');
     body.appendChild(out);
     let revision = 0;
-    const valid = () => /^[1-9]\d*$/.test(number.value);
-    const invalid = '请填写完整的' + numberLabel + '，开头不能是 0';
+    const invalid = () => {
+      const num = number.value.trim();
+      if (!/^\d+$/.test(num)) return '请填写完整的' + numberLabel + '，只能填数字';
+      if (num.startsWith('0')) return '请填写完整的' + numberLabel + '，开头不能是 0';
+      return '';
+    };
     const changed = () => {
       revision++;
       go.disabled = false;
       out.innerHTML = '';
-      if (number.value && !valid()) out.textContent = invalid;
+      if (number.value) out.textContent = invalid();
     };
     number.addEventListener('input', changed);
     kind.addEventListener('change', changed);
+    if (sender) sender.addEventListener('change', changed);
+    if (!platformNames.length) out.textContent = '没有可用的推送平台，请联系管理员。';
     go.addEventListener('click', async () => {
       out.innerHTML = '';
-      if (!valid()) { out.textContent = invalid; return; }
+      const error = invalid();
+      if (error) { out.textContent = error; return; }
+      const platform = sender ? sender.value : platformNames[0];
       if (!platform) { out.textContent = '没有可用的推送平台，请联系管理员。'; return; }
       const attempt = ++revision;
-      const num = number.value;
+      const num = number.value.trim();
       const type = kind.value;
       go.disabled = true;
       try {
@@ -2093,6 +2116,7 @@ function pickMemberTarget(opts) {
           opts.onPick(hit);
         });
         out.appendChild(add);
+        if (add.disabled) out.appendChild(el('p', 'hint')).textContent = '这个通道已经加过了';
       } catch (e) {
         if (attempt === revision) out.textContent = e.message;
       } finally {
