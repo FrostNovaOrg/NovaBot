@@ -98,6 +98,31 @@ public class RuntimeStateController {
     private final PushGate pushGate;
 
     @Autowired
+    private org.frostnova.nova.core.service.DatasourceChannelStore channelStore;
+
+    private int changeChannels(JSONObject body, String platform, PushTargetType type, Long num,
+                               java.util.function.Consumer<JSONObject> change) {
+        return channelStore.change(platform, type, num, body.getString("streamerPlatform"), body.getLong("streamerUid"), change);
+    }
+
+    private Set<String> changeCommands(JSONObject body, String platform, PushTargetType type, Long num,
+                                       List<String> keys, boolean disabled) {
+        Set<String> changed = new LinkedHashSet<>();
+        changeChannels(body, platform, type, num, target -> {
+            List<String> current = target.getList("disabledCommands", String.class);
+            List<String> next = new ArrayList<>(current == null ? List.of() : current);
+            for (String key : keys) {
+                if (!org.frostnova.nova.core.model.ChannelSettings.COMMAND_KEYS.contains(key)) continue;
+                if (disabled && !next.contains(key)) { next.add(key); changed.add(key); }
+                if (!disabled && next.remove(key)) changed.add(key);
+            }
+            if (next.isEmpty()) target.remove("disabledCommands");
+            else target.put("disabledCommands", next);
+        });
+        return changed;
+    }
+
+    @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions,
                                   NovaStateStore store, AbstractDataSource dataSource,
@@ -188,19 +213,7 @@ public class RuntimeStateController {
         }
 
         List<String> keys = ledgerKeys(name, disabled);
-        boolean changed = false;
-        for (String key : keys) {
-            boolean done = disabled
-                    ? settings.disable(platform, type, num, key)
-                    : settings.enable(platform, type, num, key);
-            changed = changed || done;
-        }
-        if (changed) {
-            // 立即落盘。状态存储平时靠定时保存，而这里的改动来自人的一次明确操作，
-            // 若此刻进程被杀掉，使用者会认为「我明明关了」
-            store.save();
-            log.info("配置界面{}了会话 {} 中的用法 {}", disabled ? "禁用" : "启用", describe(type, num), keys);
-        }
+        changeCommands(body, platform, type, num, keys, disabled);
 
         result.put("success", true);
         result.put("message", brackets(keys) + "已在" + describe(type, num) + " " + (disabled ? "禁用" : "启用"));
@@ -265,26 +278,10 @@ public class RuntimeStateController {
             }
         }
 
-        int changed = 0;
-        for (String name : wanted) {
-            // 一次点名可能落到好几格上（「@名单」盖着开播与动态两格），报的条数按点名的条数算
-            boolean any = false;
-            for (String key : ledgerKeys(name, Boolean.TRUE.equals(disabled))) {
-                boolean done = Boolean.TRUE.equals(disabled)
-                        ? settings.disable(platform, type, num, key)
-                        : settings.enable(platform, type, num, key);
-                any = any || done;
-            }
-            if (any) {
-                changed++;
-            }
-        }
-        if (changed > 0) {
-            // 立即落盘，理由同 toggleCommand
-            store.save();
-            log.info("配置界面成批{}了会话 {} 中的 {} 条命令", Boolean.TRUE.equals(disabled) ? "禁用" : "启用",
-                    describe(type, num), changed);
-        }
+        List<String> keys = wanted.stream().flatMap(name -> ledgerKeys(name, Boolean.TRUE.equals(disabled)).stream()).distinct().toList();
+        Set<String> changedKeys = changeCommands(body, platform, type, num, keys, Boolean.TRUE.equals(disabled));
+        int changed = (int) wanted.stream().filter(name -> ledgerKeys(name, Boolean.TRUE.equals(disabled)).stream()
+                .anyMatch(changedKeys::contains)).count();
 
         result.put("success", true);
         result.put("changed", changed);
@@ -320,9 +317,10 @@ public class RuntimeStateController {
         }
 
         Boolean visible = body.getBoolean("visible");
-        revenueVisibility.set(platform, type, num, visible);
-        // 立即落盘：这是人的一次明确操作，进程此刻被杀掉会让人以为「我明明关了」
-        store.save();
+        changeChannels(body, platform, type, num, target -> {
+            if (visible == null) target.remove("revenueVisible");
+            else target.put("revenueVisible", visible);
+        });
         log.info("配置界面将会话 {} 的金额可见性设为 {}", describe(type, num), visible == null ? "默认" : visible);
 
         result.put("success", true);
@@ -382,9 +380,17 @@ public class RuntimeStateController {
             return ok(fail(result, "开始与结束时间相同（" + start.trim() + "），等于未设置；如需全天照常发送请选择「本会话不静音」，如需沿用设置页请选择「使用全局设置」"));
         }
 
-        quietHours.set(platform, type, num, mode, start, end);
-        // 立即落盘，理由同 setRevenueVisibility
-        store.save();
+        changeChannels(body, platform, type, num, target -> {
+            if (mode == SessionQuietHoursService.Mode.FOLLOW) target.remove("quietHours");
+            else {
+                JSONObject quiet = new JSONObject().fluentPut("mode", mode.key());
+                if (mode == SessionQuietHoursService.Mode.CUSTOM) {
+                    quiet.put("start", start.trim());
+                    quiet.put("end", end.trim());
+                }
+                target.put("quietHours", quiet);
+            }
+        });
 
         String phrase = switch (mode) {
             case FOLLOW -> "已改为「使用全局设置」";

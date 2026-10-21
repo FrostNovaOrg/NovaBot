@@ -65,6 +65,9 @@ public class CommandContext {
         this(platform, type, num, senderUid, command, args, rawText, false);
     }
 
+    @lombok.Setter
+    private org.frostnova.nova.core.model.PushTarget channel;
+
     /**
      * 取第 n 个参数
      * @param index 下标，从 0 开始

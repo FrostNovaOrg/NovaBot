@@ -62,6 +62,7 @@ class RuntimeStateWriteValidationTest {
     private AtSubscriptionService subscriptions;
 
     private RuntimeStateController controller;
+    private ChannelSettingsFile channels;
 
     /** 状态文件放这里，不落在工作目录 */
     @TempDir
@@ -79,18 +80,22 @@ class RuntimeStateWriteValidationTest {
 
         // 默认方法走真实现：disableable 为真、用法名就是命令名，禁用这一条路径才走得通
         NovaCommand command = mock(NovaCommand.class, withSettings().defaultAnswer(CALLS_REAL_METHODS));
-        when(command.name()).thenReturn("礼物榜");
+        when(command.name()).thenReturn("直播报告");
         when(command.description()).thenReturn("看看这个群收到的礼物");
         CommandDispatcher dispatcher = mock(CommandDispatcher.class);
         when(dispatcher.all()).thenReturn(List.of(command));
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
-        when(dataSource.getAllUsers()).thenReturn(List.of());
+        var user = new org.frostnova.nova.core.model.PushUser(); user.setPlatform("bilibili"); user.setUid(STREAMER);
+        var target = new org.frostnova.nova.core.model.PushTarget(); target.setPlatform(PLATFORM);
+        target.setType(PushTargetType.GROUP); target.setNum(30007L); user.setTargets(List.of(target));
+        when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
         controller = new RuntimeStateController(dispatcher, settings, subscriptions, store,
                 dataSource, revenueVisibility, mock(LiveDataService.class),
                 new StreamerNames(new LiveSessionArchive(properties)), quietHours,
                 new PushGate(properties, quietHours));
+        channels = new ChannelSettingsFile(properties, dataSource); channels.attach(controller);
     }
 
     @Test
@@ -111,9 +116,9 @@ class RuntimeStateWriteValidationTest {
     void commandWritesTheGivenSession() {
         assertTrue(controller.toggleCommand(toggle(30007L)).getBody().getBooleanValue("success"));
 
-        assertTrue(settings.isDisabled(PLATFORM, PushTargetType.GROUP, 30007L, "礼物榜"));
-        assertEquals(1, settings.all().size(), settings.all().toString());
-        assertEquals(30007L, settings.all().get(0).num());
+        assertTrue(settings.isDisabled(channels.model(PLATFORM, PushTargetType.GROUP, 30007L), "直播报告"));
+        assertTrue(settings.all().isEmpty());
+        assertEquals(30007L, channels.target(PLATFORM, PushTargetType.GROUP, 30007L).getLongValue("num"));
     }
 
     @Test
@@ -135,7 +140,7 @@ class RuntimeStateWriteValidationTest {
         JSONObject result = controller.toggleCommands(toggles(30007L)).getBody();
 
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
-        assertTrue(settings.isDisabled(PLATFORM, PushTargetType.GROUP, 30007L, "礼物榜"));
+        assertTrue(settings.isDisabled(channels.model(PLATFORM, PushTargetType.GROUP, 30007L), "直播报告"));
     }
 
     @Test
@@ -156,8 +161,8 @@ class RuntimeStateWriteValidationTest {
     void revenueWritesTheGivenSession() {
         assertTrue(controller.setRevenueVisibility(revenue(30007L)).getBody().getBooleanValue("success"));
 
-        assertEquals(List.of(new RevenueVisibilityService.Setting(PLATFORM, PushTargetType.GROUP, 30007L, true)),
-                revenueVisibility.all());
+        assertTrue(revenueVisibility.isVisible(channels.model(PLATFORM, PushTargetType.GROUP, 30007L)));
+        assertTrue(revenueVisibility.all().isEmpty());
     }
 
     @Test
@@ -233,13 +238,13 @@ class RuntimeStateWriteValidationTest {
                 .fluentPut("platform", PLATFORM)
                 .fluentPut("type", PushTargetType.GROUP.getCode())
                 .fluentPut("num", num)
-                .fluentPut("command", "礼物榜")
+                .fluentPut("command", "直播报告")
                 .fluentPut("disabled", true);
     }
 
     private JSONObject toggles(Object num) {
         JSONArray names = new JSONArray();
-        names.add("礼物榜");
+        names.add("直播报告");
         return new JSONObject()
                 .fluentPut("platform", PLATFORM)
                 .fluentPut("type", PushTargetType.GROUP.getCode())

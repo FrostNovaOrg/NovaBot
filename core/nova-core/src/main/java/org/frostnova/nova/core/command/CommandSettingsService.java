@@ -30,6 +30,50 @@ public class CommandSettingsService {
 
     private final NovaStateStore store;
 
+    @Autowired(required = false)
+    private org.frostnova.nova.core.service.DatasourceChannelStore channels;
+
+    public boolean isDisabled(org.frostnova.nova.core.model.PushTarget channel, String command) {
+        return org.frostnova.nova.core.model.ChannelSettings.disabled(channel, command);
+    }
+
+    public int setChannels(CommandContext context, List<org.frostnova.nova.core.model.PushUser> users,
+                           List<String> keys, boolean disabled) {
+        if (channels == null) throw new IllegalStateException("推送配置存储不可用");
+        java.util.Set<String> identities = users.stream().map(user -> user.getPlatform() + ":" + user.getUid())
+                .collect(java.util.stream.Collectors.toSet());
+        int[] changed = {0};
+        channels.update(data -> {
+            for (Object entry : data) {
+                JSONObject user = (JSONObject) entry;
+                if (!identities.contains(user.getString("platform") + ":" + user.getString("uid"))) continue;
+                var targets = user.getJSONArray("targets");
+                if (targets == null) continue;
+                boolean one = false;
+                for (Object value : targets) {
+                    JSONObject target = (JSONObject) value;
+                    if (!java.util.Objects.equals(context.getPlatform(), target.getString("platform"))
+                            || !java.util.Objects.equals(context.getType().getCode(), target.getInteger("type"))
+                            || !java.util.Objects.equals(context.getNum(), target.getLong("num"))) continue;
+                    List<String> before = target.getList("disabledCommands", String.class);
+                    List<String> next = new ArrayList<>(before == null ? List.of() : before);
+                    for (String key : keys) {
+                        if (!org.frostnova.nova.core.model.ChannelSettings.COMMAND_KEYS.contains(key)) continue;
+                        if (disabled && !next.contains(key)) next.add(key);
+                        if (!disabled) next.remove(key);
+                    }
+                    if (!next.equals(before == null ? List.of() : before)) {
+                        if (next.isEmpty()) target.remove("disabledCommands");
+                        else target.put("disabledCommands", next);
+                        one = true;
+                    }
+                }
+                if (one) changed[0]++;
+            }
+        }, false);
+        return changed[0];
+    }
+
     @Autowired
     public CommandSettingsService(NovaStateStore store) {
         this.store = store;

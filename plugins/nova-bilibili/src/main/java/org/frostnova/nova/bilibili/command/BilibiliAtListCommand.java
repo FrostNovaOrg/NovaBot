@@ -143,6 +143,11 @@ public class BilibiliAtListCommand extends BilibiliAtCommand {
     }
 
     @Override
+    protected String toggleKeyword(CommandContext context) {
+        return String.join(" ", context.getArgs().stream().filter(arg -> !arg.equals("开播") && !arg.equals("动态")).toList());
+    }
+
+    @Override
     protected String streamerKeyword(CommandContext context) {
         // 类别开关不是主播名：先摘掉，剩下的第一个才是点名的那位
         List<String> args = new ArrayList<>(context.getArgs());
@@ -222,7 +227,7 @@ public class BilibiliAtListCommand extends BilibiliAtCommand {
     private List<Row> rows(CommandContext context, PushUser streamer) {
         List<Row> rows = new ArrayList<>();
         for (BilibiliAtNoticeKind kind : kinds(context)) {
-            if (settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), listKey(kind))) {
+            if (settings.isDisabled(context.getChannel(), listKey(kind))) {
                 continue;
             }
             // 配成 @全体成员的那一类没有「单独订阅」这回事，说清而不是列一张空名单

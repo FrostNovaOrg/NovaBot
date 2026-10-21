@@ -54,6 +54,7 @@ class SessionQuietHoursSurfaceTest {
     private RuntimeStateController controller;
 
     private AbstractDataSource dataSource;
+    private ChannelSettingsFile channels;
 
     @BeforeEach
     void setUp() {
@@ -79,7 +80,7 @@ class SessionQuietHoursSurfaceTest {
     }
 
     private RuntimeStateController controllerOn(NovaStateStore store, SessionQuietHoursService quiet) {
-        return new RuntimeStateController(
+        RuntimeStateController result = new RuntimeStateController(
                 mock(CommandDispatcher.class),
                 mock(CommandSettingsService.class),
                 mock(AtSubscriptionService.class),
@@ -90,6 +91,8 @@ class SessionQuietHoursSurfaceTest {
                 new StreamerNames(new LiveSessionArchive(properties)),
                 quiet,
                 new PushGate(properties, quiet));
+        channels = new ChannelSettingsFile(properties, dataSource); channels.attach(result);
+        return result;
     }
 
     @Test
@@ -112,11 +115,11 @@ class SessionQuietHoursSurfaceTest {
         JSONObject result = controller.setQuietHours(body("custom", aroundNow()[0], aroundNow()[1])).getBody();
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
 
-        JSONObject session = session(controller.state());
-        assertEquals("custom", session.getString("quietMode"));
-        assertEquals(aroundNow()[0], session.getString("quietStart"));
-        assertEquals(aroundNow()[1], session.getString("quietEnd"));
-        assertTrue(session.getBooleanValue("quietActive"));
+        var channel = channels.model(PLATFORM, PushTargetType.GROUP, GROUP);
+        assertEquals("custom", channel.getQuietHours().getMode());
+        assertEquals(aroundNow()[0], channel.getQuietHours().getStart());
+        assertEquals(aroundNow()[1], channel.getQuietHours().getEnd());
+        assertFalse(new PushGate(properties).allowedFor(channel));
     }
 
     @Test
@@ -128,9 +131,9 @@ class SessionQuietHoursSurfaceTest {
 
         controller.setQuietHours(body("off", null, null)).getBody();
 
-        JSONObject session = session(controller.state());
-        assertEquals("off", session.getString("quietMode"));
-        assertFalse(session.getBooleanValue("quietActive"));
+        var channel = channels.model(PLATFORM, PushTargetType.GROUP, GROUP);
+        assertEquals("off", channel.getQuietHours().getMode());
+        assertTrue(new PushGate(properties).allowedFor(channel));
     }
 
     @Test
@@ -139,7 +142,7 @@ class SessionQuietHoursSurfaceTest {
         controller.setQuietHours(body("off", null, null)).getBody();
         controller.setQuietHours(body("follow", null, null)).getBody();
 
-        assertEquals("follow", session(controller.state()).getString("quietMode"));
+        assertNull(channels.model(PLATFORM, PushTargetType.GROUP, GROUP).getQuietHours());
         assertTrue(quietHours.all().isEmpty());
     }
 
@@ -195,7 +198,7 @@ class SessionQuietHoursSurfaceTest {
             body.put("num", num);
             assertTrue(controller.setQuietHours(body).getBody().getBooleanValue("success"), String.valueOf(num));
         }
-        assertEquals(3, quietHours.all().size(), quietHours.all().toString());
+        assertTrue(quietHours.all().isEmpty(), "未配置的目标没有可修改的通道");
     }
 
     @Test

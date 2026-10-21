@@ -1800,6 +1800,7 @@ public class ConfigUiController {
                         .backupForSave(properties.getConfigUi().getBackupKeep()));
             }
             DurableFiles.replace(path, content);
+            if (dataSource instanceof org.frostnova.nova.core.datasource.JsonDataSource json) json.reload();
 
             result.put("success", true);
             result.put("message", properties.getDatasource().isJsonAutoReload()
@@ -1815,7 +1816,7 @@ public class ConfigUiController {
         return ResponseEntity.ok(result);
     }
 
-    private static final Object DATASOURCE_LOCK = new Object();
+    private static final Object DATASOURCE_LOCK = org.frostnova.nova.core.service.DatasourceChannelStore.LOCK;
 
     private static final String DATASOURCE_CONFLICT = "这位主播的配置刚被别人改过，请重新载入";
 
@@ -1907,7 +1908,7 @@ public class ConfigUiController {
                 if ("add".equals(action) ? current != null
                         : current == null || !datasourceVersion(current).equals(body.getString("version"))) {
                     return ResponseEntity.status(HttpStatus.CONFLICT).body(datasourceError("add".equals(action) ? "这位主播已经添加过了" : DATASOURCE_CONFLICT)
-                            .fluentPut("conflict", true));
+                            .fluentPut("conflict", true).fluentPut("missing", current == null));
                 }
                 if (!"delete".equals(action) && (replacement == null
                         || !Objects.equals(platform, replacement.getString("platform"))
@@ -1955,7 +1956,7 @@ public class ConfigUiController {
     }
 
     /** 与推送页 JSON.stringify 的两格缩进一致，保留 null 与空容器，不写展示字段。 */
-    private String formatDatasource(Object value, int depth) {
+    public static String formatDatasource(Object value, int depth) {
         String indent = "  ".repeat(depth);
         String childIndent = indent + "  ";
         if (value instanceof Map<?, ?> map) {

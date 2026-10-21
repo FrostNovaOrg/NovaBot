@@ -671,6 +671,15 @@ export function commandSummary(commands, session, totalDataAvailable) {
  * @param session 会话
  * @return 摘要
  */
+export function channelSession(session, target) {
+  const quiet = target.quietHours || {};
+  return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
+    revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
+    revenueExplicit: typeof target.revenueVisible === 'boolean',
+    disabled: target.disabledCommands || [],
+    quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: false};
+}
+
 export function revenueSummary(session) {
   const visible = !!(session || {}).revenueVisible;
   const explicit = !!(session || {}).revenueExplicit;
@@ -722,7 +731,7 @@ export function quietSummary(session, global) {
  *   存着的设定不动——预览跟草稿当场变，不然图上是存的设定、灰掉的开关却说按草稿
  * @return 请求体
  */
-export function previewRequestBody(params, target, revenueVisible) {
+export function previewRequestBody(params, target, revenueVisible, user) {
   const body = Object.assign({}, params || {});
   if (typeof revenueVisible === 'boolean') {
     body.revenueVisible = revenueVisible;
@@ -731,6 +740,7 @@ export function previewRequestBody(params, target, revenueVisible) {
       || target.num == null || target.num === '') {
     return body;
   }
+  if (user) { body.streamerPlatform = user.platform; body.streamerUid = user.uid; }
   body.platform = target.platform;
   if (target.type != null && target.type !== '') {
     body.type = Number(target.type);

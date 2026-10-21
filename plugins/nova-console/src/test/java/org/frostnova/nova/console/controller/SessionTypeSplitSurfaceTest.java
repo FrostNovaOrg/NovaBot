@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,6 +65,7 @@ class SessionTypeSplitSurfaceTest {
     Path dir;
 
     private MockMvc mvc;
+    private ChannelSettingsFile channels;
 
     @BeforeEach
     void setUp() {
@@ -100,6 +102,7 @@ class SessionTypeSplitSurfaceTest {
                 new StreamerNames(new LiveSessionArchive(properties)),
                 quiet,
                 new PushGate(properties, quiet));
+        channels = new ChannelSettingsFile(properties, dataSource); channels.attach(controller);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -152,24 +155,20 @@ class SessionTypeSplitSurfaceTest {
         assertEquals(200, send("/commands", body(1).fluentPut("commands", List.of(COMMAND))
                 .fluentPut("disabled", true)).getResponse().getStatus());
 
-        JSONObject group = row(1);
-        JSONObject friend = row(0);
-        assertEquals(List.of(true, true, "off", List.of()), List.of(
-                friend.getBoolean("revenueVisible"), friend.getBoolean("revenueExplicit"),
-                friend.getString("quietMode"), friend.getJSONArray("disabled")), "好友那一行");
-        assertEquals(List.of(false, false, "follow", List.of(COMMAND)), List.of(
-                group.getBoolean("revenueVisible"), group.getBoolean("revenueExplicit"),
-                group.getString("quietMode"), group.getJSONArray("disabled")), "群那一行");
-        assertEquals("群", group.getString("type"));
-        assertEquals("好友", friend.getString("type"));
-
-        // 单条开关同理：在好友那边关，群那边照旧
+        assertEquals(2, sessions().size());
+        JSONObject group = channels.target(PLATFORM, PushTargetType.GROUP, NUM);
+        JSONObject friend = channels.target(PLATFORM, PushTargetType.FRIEND, NUM);
+        assertEquals(true, friend.getBoolean("revenueVisible"));
+        assertEquals("off", friend.getJSONObject("quietHours").getString("mode"));
+        assertFalse(group.containsKey("revenueVisible"));
+        assertFalse(group.containsKey("quietHours"));
+        assertEquals(List.of(COMMAND), group.getJSONArray("disabledCommands"));
         assertEquals(200, send("/commands", body(1).fluentPut("commands", List.of(COMMAND))
                 .fluentPut("disabled", false)).getResponse().getStatus());
         assertEquals(200, send("/command", body(0).fluentPut("command", COMMAND)
                 .fluentPut("disabled", true)).getResponse().getStatus());
-        assertEquals(List.of(COMMAND), row(0).getJSONArray("disabled"), "好友那一行");
-        assertEquals(List.of(), row(1).getJSONArray("disabled"), "群那一行");
+        assertEquals(List.of(COMMAND), channels.target(PLATFORM, PushTargetType.FRIEND, NUM).getJSONArray("disabledCommands"));
+        assertFalse(channels.target(PLATFORM, PushTargetType.GROUP, NUM).containsKey("disabledCommands"));
     }
 
     private JSONObject body(Integer type) {

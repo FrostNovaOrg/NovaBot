@@ -218,16 +218,11 @@ public class CommandDispatcher {
             return;
         }
 
-        if (command.disableable()) {
-            // 落到哪几个用法名上按「这一句怎么打的」算：同一句里带不带「总」是两个用法，
-            // 旧名与新名指向同一个用法，于是合并前关掉的那个用法合并后照样挡得住。
-            // 用法名取空时不当关掉看——空集上「全都关了」恒真，而恒真与真关了长得一样
-            List<String> keys = command.usageKeys(new CommandContext(event.getPlatform(), type,
-                    event.getNum(), event.getSenderUid(), typedName, List.copyOf(parts), event.getText()));
-            if (!keys.isEmpty() && keys.stream()
-                    .allMatch(key -> settings.isDisabled(event.getPlatform(), type, event.getNum(), key))) {
-                // 关掉的命令也要回一句：沉默与「机器人坏了」在使用者眼里长得一样。
-                // 「在哪儿」与命令自己说不出主播时那一句同一处取词，见 CommandContext#here
+        CommandContext probe = new CommandContext(event.getPlatform(), type, event.getNum(),
+                event.getSenderUid(), typedName, List.copyOf(parts), event.getText());
+        if (command.disableable() && !command.channelScoped()) {
+            List<String> keys = command.usageKeys(probe);
+            if (!keys.isEmpty() && keys.stream().allMatch(key -> settings.isDisabled(event.getPlatform(), type, event.getNum(), key))) {
                 reply(event, type, CommandContext.here(type) + "已关闭" + CommandContext.quoted(keys) + "命令");
                 return;
             }
@@ -349,7 +344,7 @@ public class CommandDispatcher {
         try {
             CommandReply commandReply = command.execute(context);
             if (commandReply != null && commandReply.hasContent()) {
-                reply(event, type, commandReply.content());
+                reply(event, type, commandReply.content(), context.getChannel());
             }
             return true;
         } catch (Exception e) {
@@ -363,7 +358,12 @@ public class CommandDispatcher {
      * 向消息来源的会话回一条消息
      */
     private void reply(NovaRemoteMessageEvent event, PushTargetType type, String content) {
+        reply(event, type, content, null);
+    }
+
+    private void reply(NovaRemoteMessageEvent event, PushTargetType type, String content, PushTarget channel) {
         Message.create(event.getPlatform(), type, event.getNum(), content).forEach(message -> {
+            message.setChannel(channel);
             // 标成回复而不是推送：这一条是有人先开口才有的，凡是「只对主动推送成立」的事都不该算上它
             message.setReply(true);
             sender.send(message);

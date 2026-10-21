@@ -1,3 +1,4 @@
+import {notifyRevenueChange} from './session-draft.js';
 /**
  * 通道页第 4 段「本群设置」：金额可见、静音时段、命令、提醒订阅、@全体成员 状态行
  *
@@ -83,7 +84,7 @@ export function sessionSettings(host, ctx) {
   // 先清再画。不清的话，草稿每拨一下这一段就长出一倍，而摘要行的字还是旧的
   repaintSession = () => {
     host.innerHTML = '';
-    sessionSettings(host, ctx);
+    if (ctx.repaint) ctx.repaint(); else sessionSettings(host, ctx);
   };
   revenueRow(host, ctx);
   quietRow(host, ctx);
@@ -244,7 +245,7 @@ function helpButton(title, text) {
 // ---- 1 金额可见 ----
 
 function revenueRow(host, ctx) {
-  const wanted = revenueDraft(ctx.target);
+  const wanted = ctx.channel ? undefined : revenueDraft(ctx.target);
   const visible = wanted === undefined ? ctx.summary.revenue.visible : wanted;
   const summary = wanted !== undefined && wanted !== ctx.summary.revenue.visible
     ? (visible ? '显示金额' : '隐藏金额') + ' · 未保存' : ctx.summary.revenue.text;
@@ -259,7 +260,13 @@ function revenueRow(host, ctx) {
   input.setAttribute('aria-label', '直播收益等金额');
   input.addEventListener('change', () => {
     // 期望态与服务端那一份比：拨过去又拨回来的那几下自己会消失
-    setRevenueDraft(ctx.target, input.checked, ctx.summary.revenue.visible);
+    if (ctx.channel) {
+      const base = ctx.baseline || {};
+      const original = base.revenueVisible ?? (Number(ctx.target.type) === 0);
+      if (input.checked === original) restoreChannelField(ctx, 'revenueVisible');
+      else ctx.target.revenueVisible = input.checked;
+      notifyRevenueChange();
+    } else setRevenueDraft(ctx.target, input.checked, ctx.summary.revenue.visible);
     refresh();
   });
   line.appendChild(label);
@@ -291,12 +298,18 @@ function quietRow(host, ctx) {
     + '如需全天照常发送，请选择「本会话不静音」。设置页的全局推送开关关闭时一律不发送；告警不受静音影响。');
 
   const saved = {mode: summary.mode, start: summary.start, end: summary.end};
-  const wanted = quietDraft(ctx.target) || saved;
+  const wanted = (ctx.channel ? null : quietDraft(ctx.target)) || saved;
   const global = ctx.quietGlobal || {};
 
   /** 期望态与服务端那一份比：选过去又选回来的那几下自己会消失 */
   const put = to => {
-    setQuietDraft(ctx.target, to, saved);
+    if (ctx.channel) {
+      const base = ctx.baseline?.quietHours || {mode: 'follow'};
+      if (to.mode === base.mode && (to.mode !== 'custom' || to.start === base.start && to.end === base.end)) {
+        restoreChannelField(ctx, 'quietHours');
+      } else if (to.mode === 'follow') delete ctx.target.quietHours;
+      else ctx.target.quietHours = to;
+    } else setQuietDraft(ctx.target, to, saved);
     refresh();
   };
 
@@ -399,7 +412,7 @@ function commandRow(host, ctx) {
 
 /** 这一格此刻「想关掉吗」：草稿优先，没改过才认服务端那一份 */
 function effectiveUsageOff(ctx, usage) {
-  const wanted = commandDraft(ctx.target, usage.key);
+  const wanted = ctx.channel ? undefined : commandDraft(ctx.target, usage.key);
   return wanted === undefined ? usage.off : wanted;
 }
 
@@ -436,7 +449,7 @@ function commandGroup(ctx, group) {
     + (marks.length ? '<span class="cmdmark">' + esc(marks.join(' · ')) + '</span>' : '');
   // 这一类对谁生效：拨一下是这个群（或这位好友）自己的事，不是某一位主播下的事
   text.appendChild(el('span', 'cmdscope')).textContent =
-    Number(ctx.target.type) === 1 ? '当前群共用' : '当前会话共用';
+    ctx.channel ? '当前主播通道' : (Number(ctx.target.type) === 1 ? '当前群共用' : '当前会话共用');
   head.appendChild(text);
   box.appendChild(head);
 
@@ -516,7 +529,8 @@ function usageRow(ctx, command, usage) {
   // 本机用不上那一格时锁着：拨了也不起作用
   input.disabled = !command.listed || !usage.available;
   input.addEventListener('change', () => {
-    setCommandDraft(ctx.target, usage.key, !input.checked, usage.off);
+    if (ctx.channel) setChannelCommands(ctx, [usage.key], !input.checked);
+    else setCommandDraft(ctx.target, usage.key, !input.checked, usage.off);
     refresh();
   });
   row.appendChild(label);
@@ -536,8 +550,24 @@ function usageRow(ctx, command, usage) {
  *
  * 从服务端那一份起算每一条的「原样」：期望态与原样相同的那几条不占改动条。
  */
+function restoreChannelField(ctx, field) {
+  const base = ctx.baseline || {};
+  if (Object.prototype.hasOwnProperty.call(base, field)) ctx.target[field] = base[field];
+  else delete ctx.target[field];
+}
+
+function setChannelCommands(ctx, names, disabled) {
+  const keys = new Set(ctx.target.disabledCommands || []);
+  for (const name of names) { if (disabled) keys.add(name); else keys.delete(name); }
+  const base = ctx.baseline?.disabledCommands || [];
+  if (keys.size === base.length && base.every(key => keys.has(key))) restoreChannelField(ctx, 'disabledCommands');
+  else if (keys.size) ctx.target.disabledCommands = [...keys];
+  else delete ctx.target.disabledCommands;
+}
+
 function batchCommands(ctx, names, disabled) {
-  setCommandsDraft(ctx.target, names, disabled,
+  if (ctx.channel) setChannelCommands(ctx, names, disabled);
+  else setCommandsDraft(ctx.target, names, disabled,
     name => (((ctx.session || {}).disabled) || []).includes(name));
   refresh();
 }
@@ -617,7 +647,7 @@ function subscriptionDrawer(ctx) {
 function atAllRow(host, ctx) {
   const status = ctx.summary.atAll;
   const line = el('div', 'statline');
-  line.appendChild(el('span', 'st-nm')).textContent = '@全体成员';
+  line.appendChild(el('span', 'st-nm')).textContent = '@全体成员（本群各主播共用）';
   line.appendChild(el('span', 'st-v')).textContent = status.text;
   if (status.warning) {
     line.appendChild(el('span', 'st-w')).textContent = status.warning;

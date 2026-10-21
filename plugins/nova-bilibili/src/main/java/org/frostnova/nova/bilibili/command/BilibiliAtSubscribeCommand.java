@@ -99,8 +99,8 @@ public abstract class BilibiliAtSubscribeCommand extends BilibiliAtCommand {
             // 开关式取消要走取消那一格的口子：那一格被关了就得说清，
             // 否则「禁用命令 取消开播@我」关不住从开关这边退出去的人
             String cancel = cancelSpelling();
-            if (settings.isDisabled(platform, context.getType(), num, cancel)) {
-                return CommandReply.of(context.here() + "已关闭「" + cancel + "」命令，再发「"
+            if (settings.isDisabled(context.getChannel(), cancel)) {
+                return CommandReply.of(context.here() + "已关闭「" + nameOf(streamer) + "」的「" + cancel + "」，再发「"
                         + name() + "」也取消不了");
             }
         }

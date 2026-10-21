@@ -193,7 +193,7 @@ public class JsonDataSource extends AbstractDataSource {
     /**
      * 重载数据源
      */
-    private void reload() {
+    public synchronized void reload() {
         String path = properties.getJsonPath();
         try {
             List<PushUser> addUsers = new ArrayList<>();
@@ -265,6 +265,9 @@ public class JsonDataSource extends AbstractDataSource {
                     } else {
                         target.setEnabled(targetObject.getBoolean("enabled"));
                     }
+                    target.setRevenueVisible(targetObject.getBoolean("revenueVisible"));
+                    target.setQuietHours(targetObject.getObject("quietHours", PushTarget.QuietHours.class));
+                    target.setDisabledCommands(targetObject.getList("disabledCommands", String.class));
                     target.setMessages(new ArrayList<>());
                     user.getTargets().add(target);
 

@@ -88,6 +88,7 @@ class ConsoleCommandSwitchTest {
     private CommandSettingsService settings;
 
     private RuntimeStateController controller;
+    private ChannelSettingsFile channels;
 
     private LiveDataService liveDataService;
 
@@ -145,6 +146,7 @@ class ConsoleCommandSwitchTest {
                 build(BilibiliRankingCommand.class));
 
         controller = build(RuntimeStateController.class);
+        channels = new ChannelSettingsFile(storeProperties, dataSource); channels.attach(controller);
     }
 
     @Test
@@ -207,15 +209,15 @@ class ConsoleCommandSwitchTest {
     void apiReopensEveryCellWhenOneNameCoversSeveral() {
         JSONObject off = controller.toggleCommand(toggle("@名单", true)).getBody();
         assertTrue(off.getBooleanValue("success"), off.toJSONString());
-        assertTrue(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "开播@名单"), "先把开播那一格关上");
-        assertTrue(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "动态@名单"), "先把动态那一格关上");
+        assertTrue(settings.isDisabled(channels.model(PLATFORM, PushTargetType.GROUP, GROUP), "开播@名单"), "先把开播那一格关上");
+        assertTrue(settings.isDisabled(channels.model(PLATFORM, PushTargetType.GROUP, GROUP), "动态@名单"), "先把动态那一格关上");
 
         JSONObject on = controller.toggleCommand(toggle("@名单", false)).getBody();
         assertTrue(on.getBooleanValue("success"), on.toJSONString());
         String message = on.getString("message");
-        assertFalse(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "开播@名单"),
+        assertFalse(settings.isDisabled(channels.model(PLATFORM, PushTargetType.GROUP, GROUP), "开播@名单"),
                 "开播那一格该开回来，回话却是：" + message);
-        assertFalse(settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, "动态@名单"),
+        assertFalse(settings.isDisabled(channels.model(PLATFORM, PushTargetType.GROUP, GROUP), "动态@名单"),
                 "动态那一格该开回来，回话却是：" + message);
         assertTrue(message.contains("开播@名单") && message.contains("动态@名单"),
                 "回话该写明开了哪几格：" + message);

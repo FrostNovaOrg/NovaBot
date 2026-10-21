@@ -72,7 +72,7 @@ class WeeklyReportDeliveryServiceTest {
         when(sender.sendNow(any())).thenReturn(new JSONObject().fluentPut("code", 0));
         gate = mock(PushGate.class);
         when(gate.blockedBy()).thenAnswer(i -> props.getPush().isEnabled() ? PushGate.Block.QUIET_HOURS : PushGate.Block.DISABLED);
-        when(gate.allowedFor(anyString(), any(), anyLong())).thenAnswer(i -> props.getPush().isEnabled() && !quiet);
+        when(gate.allowedFor(any(PushTarget.class))).thenAnswer(i -> props.getPush().isEnabled() && !quiet);
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         LiveMetricCatalog catalog = mock(LiveMetricCatalog.class);
         when(catalog.platform()).thenReturn("sample");
@@ -108,6 +108,17 @@ class WeeklyReportDeliveryServiceTest {
     PushTarget target() { return users.get(0).getTargets().get(0); }
     String key() { return WeeklyReportDeliveryService.key("sample", 1L, target()); }
     Status status() { return store.records().get(0).status(); }
+
+    @Test @DisplayName("周报预览只带通道身份时仍使用该主播保存的金额设置")
+    void previewResolvesSavedChannelSettings() {
+        target().setRevenueVisible(true);
+        var identity = new PushTarget(); identity.setPlatform(target().getPlatform());
+        identity.setType(target().getType()); identity.setNum(target().getNum());
+        service.preview("sample", 1L, identity).orElseThrow();
+        var data = org.mockito.ArgumentCaptor.forClass(org.frostnova.nova.core.analytics.WeeklyReport.Data.class);
+        verify(renderer).render(any(), data.capture());
+        assertTrue(data.getValue().metrics().containsKey("revenue"), "显示金额的通道预览应保留收益");
+    }
 
     @Test @DisplayName("摘要以主播名开头，群里只看文字也能分清主播")
     void summaryNamesStreamer() {

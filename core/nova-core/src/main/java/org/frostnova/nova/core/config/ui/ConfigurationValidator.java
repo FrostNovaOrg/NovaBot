@@ -134,8 +134,44 @@ public class ConfigurationValidator {
                 issues.add(at + "缺少 num（群号或用户号），或其不是数字");
             }
 
+            checkChannelSettings(target, at, issues);
             checkMessages(target.getJSONArray("messages"), at, handlers, issues);
         }
+    }
+
+    private void checkChannelSettings(JSONObject target, String at, List<String> issues) {
+        Object revenue = target.get("revenueVisible");
+        if (revenue != null && !(revenue instanceof Boolean)) issues.add(at + "的 revenueVisible 必须为 true、false 或 null");
+        Object quiet = target.get("quietHours");
+        if (quiet != null) {
+            if (!(quiet instanceof JSONObject q)) issues.add(at + "的 quietHours 必须为对象或 null");
+            else {
+                Object mode = q.get("mode");
+                if (!(mode instanceof String) || !Set.of("follow", "custom", "off").contains(mode)) {
+                    issues.add(at + "的 quietHours.mode 必须为 follow、custom 或 off");
+                } else if ("custom".equals(mode) && (!quietTime(q.get("start")) || !quietTime(q.get("end"))
+                        || java.util.Objects.equals(q.get("start"), q.get("end")))) {
+                    issues.add(at + "的 quietHours 起止必须为不同的 HH:mm 时刻");
+                }
+                for (String field : List.of("start", "end")) {
+                    if (q.get(field) != null && !quietTime(q.get(field))) issues.add(at + "的 quietHours." + field + " 必须为 HH:mm");
+                }
+            }
+        }
+        Object disabled = target.get("disabledCommands");
+        if (disabled != null) {
+            if (!(disabled instanceof JSONArray list)) issues.add(at + "的 disabledCommands 必须为用法名数组或 null");
+            else for (Object key : list) {
+                if (!(key instanceof String) || !org.frostnova.nova.core.model.ChannelSettings.COMMAND_KEYS.contains(key)) {
+                    issues.add(at + "的 disabledCommands 包含不可关闭的用法：" + key);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static boolean quietTime(Object value) {
+        return value instanceof String text && text.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]");
     }
 
     /**

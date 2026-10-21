@@ -80,8 +80,6 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
             return unavailable;
         }
 
-        boolean revenue = revenueVisible(context);
-        String example = revenue ? "礼物" : "弹幕";
 
         // 「总」是范围开关，位置随人写：先整字摘掉，剩下的再认榜单与主播。
         // 不摘的话它会被当成主播名——「数据排行榜 总 礼物」会去查一位叫「总」的主播
@@ -99,6 +97,33 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
                 break;
             }
         }
+        String streamerKeyword = null;
+        for (int i = 0; i < args.size(); i++) {
+            if (i == boardAt) {
+                continue;
+            }
+            String arg = args.get(i);
+            // 三位以内的纯数字照旧收下但不用它：它原来是页码，一次一张长图后没有页了。
+            // 认出来就丢掉，既不当页码也不拿去当主播名查；更长的当 uid（uid 都是八位以上）
+            if (arg.length() <= 3 && arg.chars().allMatch(Character::isDigit)) {
+                continue;
+            }
+            streamerKeyword = arg;
+        }
+
+        if (board == null && streamerKeyword != null) {
+            String keyword = streamerKeyword;
+            boolean named = streamersOf(context).stream().anyMatch(user -> String.valueOf(user.getUid()).equals(keyword)
+                    || unameOf(user) != null && unameOf(user).contains(keyword));
+            if (!named) streamerKeyword = null;
+        }
+        Resolved resolved = resolve(context, streamerKeyword);
+        if (resolved.failed()) {
+            return resolved.error();
+        }
+
+        boolean revenue = revenueVisible(context);
+        String example = revenue ? "礼物" : "弹幕";
         if (board == null) {
             // 示例是给人照着发的，照着发要真查得到问的那一半：问累计时若写成
             // 「数据排行榜 …」，照着发查到的是本场，答非所问
@@ -114,24 +139,6 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
             return CommandReply.of("本会话不展示金额相关的榜单，可查：" + Board.names(false));
         }
 
-        String streamerKeyword = null;
-        for (int i = 0; i < args.size(); i++) {
-            if (i == boardAt) {
-                continue;
-            }
-            String arg = args.get(i);
-            // 三位以内的纯数字照旧收下但不用它：它原来是页码，一次一张长图后没有页了。
-            // 认出来就丢掉，既不当页码也不拿去当主播名查；更长的当 uid（uid 都是八位以上）
-            if (arg.length() <= 3 && arg.chars().allMatch(Character::isDigit)) {
-                continue;
-            }
-            streamerKeyword = arg;
-        }
-
-        Resolved resolved = resolve(context, streamerKeyword);
-        if (resolved.failed()) {
-            return resolved.error();
-        }
 
         PushUser streamer = resolved.streamer();
         String platform = BilibiliPlatform.BILIBILI.id();

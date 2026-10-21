@@ -33,6 +33,8 @@ export function onRevenueDraftChange(fn) {
   revenueDraftListener = typeof fn === 'function' ? fn : () => {};
 }
 
+export function notifyRevenueChange() { revenueDraftListener(); }
+
 function keyOf(target) {
   return target.platform + ':' + target.type + ':' + target.num;
 }

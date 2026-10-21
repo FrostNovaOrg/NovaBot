@@ -121,13 +121,12 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
 
     @Override
     public CommandReply execute(CommandContext context) {
-        // 排在解析主播之前：这一句与「说的是哪位主播」无关，本群配成 @全体成员 时
-        // 任何一位主播的订阅都同样不起作用，先问一遍主播只会多出一次追问
+        Resolved resolved = resolve(context, streamerKeyword(context));
+        if (resolved.failed()) return resolved.error();
         if (atsEveryone(context)) {
             return CommandReply.of(everyoneNotice(context, false));
         }
 
-        Resolved resolved = resolve(context, streamerKeyword(context));
         // 认的是最近一场归档里的昵称、或没点名而只有 TA 在播时，订阅订上的是谁回复里得说清，
         // 与数据查询命令同一句
         return resolved.failed() ? resolved.error()

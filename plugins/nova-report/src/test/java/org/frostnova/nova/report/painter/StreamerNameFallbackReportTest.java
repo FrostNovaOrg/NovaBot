@@ -264,7 +264,7 @@ class StreamerNameFallbackReportTest {
         when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
 
         RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
 
         return new BilibiliLiveReportCommand(dataSource,
                 new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties)),

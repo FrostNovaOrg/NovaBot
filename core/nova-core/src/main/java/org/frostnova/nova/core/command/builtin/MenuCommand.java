@@ -94,7 +94,7 @@ public class MenuCommand implements NovaCommand {
             if (command.disableable()) {
                 List<String> usable = usableKeys(command, context);
                 if (!usable.isEmpty() && usable.stream().allMatch(key ->
-                        settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), key))) {
+                        disabledForAll(command, context, key))) {
                     continue;
                 }
             }
@@ -120,6 +120,13 @@ public class MenuCommand implements NovaCommand {
         }
 
         return CommandReply.of(text.toString());
+    }
+
+    private boolean disabledForAll(NovaCommand command, CommandContext context, String key) {
+        var selection = command.selectForToggle(context);
+        if (selection == null) return settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), key);
+        return selection.users().stream().allMatch(user -> settings.isDisabled(
+                org.frostnova.nova.core.model.ChannelSettings.target(user, context.getPlatform(), context.getType(), context.getNum()), key));
     }
 
     /**

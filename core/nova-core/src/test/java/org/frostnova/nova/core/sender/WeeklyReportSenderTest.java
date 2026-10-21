@@ -46,7 +46,7 @@ class WeeklyReportSenderTest {
         try {
             assertEquals(PushGate.Block.QUIET_HOURS, sender.sendWeeklyReport(message));
             assertEquals(0, sender.getPendingCount()); assertEquals(0, failed.get()); verifyNoInteractions(http);
-            when(gate.allowedFor("sample", PushTargetType.GROUP, 1001L)).thenReturn(true);
+            when(gate.allowedFor(message)).thenReturn(true);
             assertNull(sender.sendWeeklyReport(message));
             assertTrue(delivered.await(10, TimeUnit.SECONDS), "等待发送成功回调");
             assertEquals(1, activity.getHistory().size()); assertTrue(activity.getHistory().get(0).success());

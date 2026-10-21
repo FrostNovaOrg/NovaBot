@@ -76,7 +76,7 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
 
         log.info("会话 {} 请求 {} 的实时直播报告", context.getNum(), streamer.getUname());
 
-        boolean visible = revenueVisibility.isVisible(context.getPlatform(), context.getType(), context.getNum());
+        boolean visible = revenueVisibility.isVisible(context.getChannel());
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(reportParams(context, streamer), visible);
 
         return withNotice(resolved, painter.paint(BilibiliPlatform.BILIBILI.id(),

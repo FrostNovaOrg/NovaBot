@@ -141,7 +141,7 @@ public class WeeklyReportDeliveryService {
                 store.update(record, Status.NOT_SENT, "全局推送开关已关闭", now);
             } else if (target == null) {
                 store.update(record, Status.NOT_SENT, inactiveReason(record.subscription()), now);
-            } else if (!gate.allowedFor(target.getPlatform(), target.getType(), target.getNum())) {
+            } else if (!gate.allowedFor(target)) {
                 if (record.status() != Status.QUIET) store.update(record, Status.QUIET, "静音中", now);
             } else {
                 deliver(record, target, now);
@@ -191,21 +191,30 @@ public class WeeklyReportDeliveryService {
     }
     private Message message(String subscription, PushTarget target, Instant period) {
         var parts = subscription.split(":");
-        boolean visible = revenue.isVisible(target.getPlatform(), target.getType(), target.getNum());
+        boolean visible = revenue.isVisible(target);
         var report = content.preview(parts[0], Long.valueOf(parts[1]), period, visible)
                 .orElseThrow(() -> new IllegalArgumentException("没有这位主播的记录"));
         String text = MessagePlaceholders.escapeExternalText(report.image() == null ? report.text() : report.summary());
         String body = report.image() == null ? text : "{image_base64="
                 + Base64.getEncoder().encodeToString(report.image()) + "}\n" + text;
-        return Message.create(target.getPlatform(), target.getType(), target.getNum(), body).get(0);
+        Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(), body).get(0);
+        message.setChannel(target);
+        return message;
+    }
+
+    private PushTarget savedChannel(String platform, Long uid, PushTarget identity) {
+        return source.getAllUsers().stream().filter(user -> platform.equals(user.getPlatform()) && uid.equals(user.getUid()))
+                .map(user -> org.frostnova.nova.core.model.ChannelSettings.target(user, identity.getPlatform(), identity.getType(), identity.getNum()))
+                .filter(Objects::nonNull).findFirst().orElse(identity);
     }
 
     public Optional<WeeklyReport.Preview> preview(String platform, Long uid, PushTarget target) {
         return content.preview(platform, uid, clock.instant(),
-                revenue.isVisible(target.getPlatform(), target.getType(), target.getNum()));
+                revenue.isVisible(savedChannel(platform, uid, target)));
     }
     public JSONObject trial(String platform, Long uid, PushTarget target) {
-        return sender.sendNow(message(key(platform, uid, target), target, clock.instant()));
+        PushTarget channel = savedChannel(platform, uid, target);
+        return sender.sendNow(message(key(platform, uid, channel), channel, clock.instant()));
     }
     public String status(String subscription) {
         String warning = store.warning();

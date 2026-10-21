@@ -345,19 +345,12 @@ await ask('① 「本群最近推送」那张表外面包着只在卡片里横�
   }, '最近推送表的滚动层');
 });
 
-await ask('② 删长说明时第 4 段那句共用说明仍在，有几位主播时列出名字', async () => {
-  if (!push) throw new Error('push.js 没载入，无从量起');
-  const note = rightPane().find(node => classesOf(node).includes('note')
-    && node.textContent.includes('本群设置由推送到本群的所有主播共用'));
-  if (!note) throw new Error('第 4 段那句「由推送到本群的所有主播共用」没了');
-  const text = note.textContent;
-  same({
-    '说明里点了几位主播': text.includes('2 位主播'),
-    '说明里列出了名字': text.includes('甲') && text.includes('乙'),
-  }, {
-    '说明里点了几位主播': true,
-    '说明里列出了名字': true,
-  }, '第 4 段共用说明');
+await ask('② 第 4 段说明只作用于当前主播通道，不再宣称修改全部主播', async () => {
+  if (!push) throw new Error('push.js 未载入');
+  const text = rightPane().map(node => node.textContent + node.innerHTML).join(' ');
+  if (!text.includes('通道设置')) throw new Error('缺少通道设置标题');
+  if (!text.includes('只作用于这位主播在本群的推送和命令')) throw new Error('缺少通道范围说明');
+  if (text.includes('在此修改将同时作用于全部主播')) throw new Error('仍显示旧的共用说明');
 });
 
 await ask('③ 群／好友那一行不再挂「N 类关着」「N 条命令被关」，主播那一行的两颗照在', async () => {

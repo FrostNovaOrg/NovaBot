@@ -346,7 +346,7 @@ class CommandSurfaceTest {
                 assertTrue(said.contains("没开"), toggle + " " + name + " 该回一句「本机没开」，实际说了：" + said);
                 assertFalse(said.contains("已启用") || said.contains("已禁用"),
                         toggle + " " + name + " 竟然真办了：" + said);
-                assertFalse(registry.settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, name),
+                assertFalse(registry.disabled(PLATFORM, PushTargetType.GROUP, GROUP, name),
                         name + " 进了命令开关表：菜单列的是正名，这一格记账名谁也看不见、也关不回来");
             }
         }
@@ -358,11 +358,11 @@ class CommandSurfaceTest {
         registry.supportsTotalData(true);
 
         for (String name : TOTAL_OFF_REPLIES.keySet()) {
-            assertEquals("已禁用「" + name + "」", registry.feed(true, "禁用命令 " + name, "owner"), name);
-            assertTrue(registry.settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, name), name);
+            assertEquals("已禁用本群 1 位主播的「" + name + "」", registry.feed(true, "禁用命令 " + name, "owner"), name);
+            assertTrue(registry.disabled(PLATFORM, PushTargetType.GROUP, GROUP, name), name);
 
-            assertEquals("已启用「" + name + "」", registry.feed(true, "启用命令 " + name, "owner"), name);
-            assertFalse(registry.settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, name), name);
+            assertEquals("已启用本群 1 位主播的「" + name + "」", registry.feed(true, "启用命令 " + name, "owner"), name);
+            assertFalse(registry.disabled(PLATFORM, PushTargetType.GROUP, GROUP, name), name);
         }
     }
 
@@ -416,7 +416,7 @@ class CommandSurfaceTest {
 
                 assertEquals("「" + name + "」在本群用不上，菜单里也没有它，不用开关它", said,
                         toggle + " " + name);
-                assertFalse(registry.settings.isDisabled(PLATFORM, PushTargetType.GROUP, GROUP, name),
+                assertFalse(registry.disabled(PLATFORM, PushTargetType.GROUP, GROUP, name),
                         name + " 进了命令开关表：菜单里本就没有它，这条记录谁也看不见、也关不回来");
             }
         }
@@ -445,7 +445,7 @@ class CommandSurfaceTest {
     void toggleFirstScansAllOncePerLookup() {
         registry.prepareDispatch();
         clearInvocations(registry.spiedDispatcher());
-        assertEquals("已禁用「直播间数据」", registry.dispatch(true, "禁用命令 直播间数据", "owner"));
+        assertEquals("已禁用本群 1 位主播的「直播间数据」", registry.dispatch(true, "禁用命令 直播间数据", "owner"));
         verify(registry.spiedDispatcher(), times(1)).all();
 
         registry.supportsTotalData(false);
@@ -474,9 +474,9 @@ class CommandSurfaceTest {
 
             String unknown = registry.feed(group, "直播间数据 主播壬");
 
-            registry.settings.disable(PLATFORM, type, num, "直播间数据");
+            registry.disable(PLATFORM, type, num, "直播间数据");
             String disabled = registry.feed(group, "直播间数据");
-            registry.settings.enable(PLATFORM, type, num, "直播间数据");
+            registry.enable(PLATFORM, type, num, "直播间数据");
 
             assertTrue(unknown.startsWith(word), "说不出主播那一句：" + unknown);
             assertTrue(disabled.startsWith(word), "命令被关掉那一句：" + disabled);
@@ -534,7 +534,7 @@ class CommandSurfaceTest {
     @DisplayName("禁用「总数据排行榜」后，「数据排行榜 弹幕 总」还能查到累计榜")
     void disabledTotalRankingMustBlockTotalArgSpelling() {
         registry.supportsTotalData(true);
-        registry.settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "总数据排行榜");
+        registry.disable(PLATFORM, PushTargetType.GROUP, GROUP, "总数据排行榜");
 
         String reply = registry.feed(true, "数据排行榜 弹幕 总");
 
@@ -557,7 +557,7 @@ class CommandSurfaceTest {
     @Test
     @DisplayName("群里只关掉「开播@我」，菜单就不该再列它，发了也不该照办")
     void menuStopsListingARowTheGroupTurnedOff() {
-        registry.settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "开播@我");
+        registry.disable(PLATFORM, PushTargetType.GROUP, GROUP, "开播@我");
 
         String menu = registry.feed(true, "菜单");
         String reply = registry.feed(true, "开播@我");
@@ -573,7 +573,7 @@ class CommandSurfaceTest {
     @DisplayName("本机没开累计数据、只关了本场：菜单不再列「直播间数据」；开了累计时只关本场仍列")
     void menuDropsRoomDataWhenTheOnlyUsableCellIsOff() {
         registry.supportsTotalData(false);
-        registry.settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "直播间数据");
+        registry.disable(PLATFORM, PushTargetType.GROUP, GROUP, "直播间数据");
 
         String hidden = registry.feed(true, "菜单");
         String refused = registry.feed(true, "直播间数据");
@@ -591,12 +591,12 @@ class CommandSurfaceTest {
     @Test
     @DisplayName("群里把「@名单」两格都关，菜单撤掉这一行；只关一格时照列")
     void menuDropsAtListOnlyWhenEveryCellIsOff() {
-        registry.settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "开播@名单");
+        registry.disable(PLATFORM, PushTargetType.GROUP, GROUP, "开播@名单");
 
         String oneOff = registry.feed(true, "菜单");
         assertTrue(oneOff.contains("\n@名单 "), "只关一格，这一行该照列：" + oneOff);
 
-        registry.settings.disable(PLATFORM, PushTargetType.GROUP, GROUP, "动态@名单");
+        registry.disable(PLATFORM, PushTargetType.GROUP, GROUP, "动态@名单");
         String bothOff = registry.feed(true, "菜单");
         assertFalse(bothOff.contains("\n@名单 "), "两格都关，这一行该撤：" + bothOff);
     }
@@ -741,7 +741,18 @@ class CommandSurfaceTest {
         private final Map<Class<?>, Object> dependencies = new LinkedHashMap<>();
 
         private final CommandSettingsService settings =
-                new CommandSettingsService(new NovaStateStore(new NovaCoreProperties()));
+                new CommandSettingsService(new NovaStateStore(new NovaCoreProperties())) {
+                    @Override
+                    public int setChannels(CommandContext context, List<PushUser> users, List<String> keys, boolean disabled) {
+                        int changed = 0;
+                        for (PushUser user : users) {
+                            PushTarget target = org.frostnova.nova.core.model.ChannelSettings.target(user,
+                                    context.getPlatform(), context.getType(), context.getNum());
+                            if (target != null && put(target, keys, disabled)) changed++;
+                        }
+                        return changed;
+                    }
+                };
 
         private final AtomicReference<CommandDispatcher> current = new AtomicReference<>();
 
@@ -773,6 +784,29 @@ class CommandSurfaceTest {
          * 唯一那位主播，各用例要改它在本群的 @ 模式，因此留成字段
          */
         private final PushUser streamer = configuredUser();
+
+        private static boolean put(PushTarget target, List<String> keys, boolean disabled) {
+            List<String> next = new ArrayList<>(target.getDisabledCommands() == null ? List.of() : target.getDisabledCommands());
+            List<String> before = List.copyOf(next);
+            for (String key : keys) {
+                if (disabled && !next.contains(key)) next.add(key);
+                if (!disabled) next.remove(key);
+            }
+            target.setDisabledCommands(next);
+            return !before.equals(next);
+        }
+
+        boolean disabled(String platform, PushTargetType type, long num, String key) {
+            return settings.isDisabled(org.frostnova.nova.core.model.ChannelSettings.target(streamer, platform, type, num), key);
+        }
+
+        void disable(String platform, PushTargetType type, long num, String key) {
+            put(org.frostnova.nova.core.model.ChannelSettings.target(streamer, platform, type, num), List.of(key), true);
+        }
+
+        void enable(String platform, PushTargetType type, long num, String key) {
+            put(org.frostnova.nova.core.model.ChannelSettings.target(streamer, platform, type, num), List.of(key), false);
+        }
 
         Registry() {
             this(null);

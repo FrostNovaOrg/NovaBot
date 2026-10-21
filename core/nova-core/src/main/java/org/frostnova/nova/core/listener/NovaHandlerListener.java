@@ -84,7 +84,7 @@ public class NovaHandlerListener {
         for (PushTarget target : user.getTargets()) {
             // 逐个会话判：会话可以有自己的静音时段或不静音，同一件事件推往的几个会话
             // 此刻可能一个在静音、一个不在。只认领这个事件的会话才数进被拦的那几个
-            if (!pushGate.allowedFor(target.getPlatform(), target.getType(), target.getNum())) {
+            if (!pushGate.allowedFor(target)) {
                 if (target.getMessages().stream().anyMatch(message -> handles(event, message))) {
                     blocked++;
                 }

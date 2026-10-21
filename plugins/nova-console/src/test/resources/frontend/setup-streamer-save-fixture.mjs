@@ -30,8 +30,8 @@ globalThis.fetch = async (path, options = {}) => {
       return response({success: true, version: version(body.user)});
     } else {
       const user = disk.find(user => url === '/datasource/users/p/' + user.uid);
-      if (body.version !== version(user)) {
-        return response({success: false, conflict: true, message: '这位主播的配置刚被别人改过，请重新载入'});
+      if (!user || body.version !== version(user)) {
+        return response({success: false, conflict: true, missing: !user, message: '这位主播的配置刚被别人改过，请重新载入'});
       }
       disk[disk.indexOf(user)] = body.user;
       return response({success: true, version: version(body.user)});
@@ -52,11 +52,11 @@ function wizard(uid = 3) {
     {key: 'g2', sender: 'qq', type: 1, num: 222}];
   const names = ['store', 'draft', 'options', 'pushEntries', 'setPushEntries', 'api',
     'serializePush', 'say', 'markPushSaved', 'reload', 'renderStreamers', 'defaultMessages',
-    'markDirty', 'seen', 'acceptAddedPushUser'];
+    'markDirty', 'seen', 'acceptAddedPushUser', 'trackSetupVersions'];
   const values = [{handlerList: []}, draft, targets,
     push.pushEntries, push.setPushEntries, async (url, opts) => (await fetch('/config/api' + url, opts)).json(),
     push.serializePush, text => messages.push(text), push.markPushSaved, push.reload,
-    () => {}, defaultMessages, () => {}, {}, push.acceptAddedPushUser];
+    () => {}, defaultMessages, () => {}, {}, push.acceptAddedPushUser, push.trackSetupVersions];
   return {save: new Function(...names, saveSource + '\nreturn saveStreamer;')(...values), messages, draft};
 }
 async function reset(users = initial()) {
@@ -183,6 +183,37 @@ await test('向导刚加的主播在推送页修改后能直接保存', async ()
   assert.equal(writes[0].url, '/datasource/users/p/3');
   assert.equal(writes[0].method, 'POST');
   assert.equal(writes[0].body.version, addedVersion);
+});
+await test('推送页保存自己刚加的 C 后，向导能退回重存', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  push.pushEntries().find(user => user.uid === 3).enabled = false;
+  await push.save();
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  assert.equal(disk.find(user => user.uid === 3).targets[0].num, 222);
+});
+await test('C 删除后向导能在同一页重新添加', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  disk = disk.filter(user => user.uid !== 3);
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  assert.equal(disk.find(user => user.uid === 3).targets[0].num, 222);
+});
+await test('向导重存 g2 后，推送页旧的 g1 草稿保存必须冲突', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  push.pushEntries().find(user => user.uid === 3).enabled = false;
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  await push.save();
+  assert.equal(disk.find(user => user.uid === 3).targets[0].num, 222);
+  assert.equal(disk.find(user => user.uid === 3).enabled, true);
+  assert.ok(push.changeCount() > 0);
 });
 await push.leave();
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

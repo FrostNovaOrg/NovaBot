@@ -33,6 +33,11 @@ public class Message {
      */
     private String platform;
 
+    /** 此消息所属的主播通道；命令尚未定主播时为空。 */
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false, deserialize = false)
+    @lombok.ToString.Exclude
+    private PushTarget channel;
+
     /**
      * 推送目标类型
      */

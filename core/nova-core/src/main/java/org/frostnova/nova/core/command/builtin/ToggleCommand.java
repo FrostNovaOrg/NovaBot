@@ -104,6 +104,18 @@ public abstract class ToggleCommand implements NovaCommand {
             return CommandReply.of("「" + MessagePlaceholders.escapeExternalText(target) + "」没有可开关的用法");
         }
 
+        NovaCommand.StreamerSelection selected = command.selectForToggle(probe);
+        if (selected != null) {
+            if (selected.error() != null) return CommandReply.of(selected.error());
+            if (selected.users().isEmpty()) return CommandReply.of(context.here() + "没有配置任何主播的推送");
+            int count = settings.setChannels(context, selected.users(), keys, !enabling());
+            String who = selected.named()
+                    ? "「" + MessagePlaceholders.escapeExternalText(selected.users().get(0).getUname() == null
+                        ? String.valueOf(selected.users().get(0).getUid()) : selected.users().get(0).getUname()) + "」在" + context.here() + "的"
+                    : context.here() + " " + count + " 位主播的";
+            return CommandReply.of("已" + (enabling() ? "启用" : "禁用") + who + CommandContext.quoted(keys));
+        }
+
         boolean changed = false;
         for (String key : keys) {
             boolean one = enabling()

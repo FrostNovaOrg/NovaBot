@@ -83,6 +83,8 @@ class ChannelSettingsSurfaceTest {
     private RuntimeStateController controller;
 
     private CommandSettingsService settings;
+    private ChannelSettingsFile channels;
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -98,6 +100,9 @@ class ChannelSettingsSurfaceTest {
         assertNotNull(dataSource, "控制器没接数据源，会话清单无从量起");
         when(dataSource.getAllUsers()).thenReturn(List.of(streamer()));
         when(dataSource.getIncompleteEntries()).thenReturn(List.of());
+        var properties = new org.frostnova.nova.core.config.NovaCoreProperties();
+        properties.getLive().setLiveDataPath(dir.resolve("live.json").toString());
+        channels = new ChannelSettingsFile(properties, dataSource); channels.attach(controller);
 
         when(settings.all()).thenReturn(List.of());
         when(settings.disable(anyString(), any(), any(), anyString())).thenReturn(true);
@@ -192,12 +197,13 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("阳：成批启用照数改，并逐条落到命令开关服务上")
     void batchEnableChangesEveryNamedCommand() {
+        channels.disable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, List.of("直播报告", "数据排行榜"));
         JSONObject result = controller.toggleCommands(body(List.of("直播报告", "数据排行榜"), false)).getBody();
 
         assertTrue(result.getBooleanValue("success"), result.toString());
         assertEquals(2, result.getIntValue("changed"), result.toString());
-        verify(settings).enable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, "直播报告");
-        verify(settings).enable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, "数据排行榜");
+        assertFalse(channels.model(PLATFORM, PushTargetType.GROUP, GROUP_NUM).getDisabledCommands() != null
+                && !channels.model(PLATFORM, PushTargetType.GROUP, GROUP_NUM).getDisabledCommands().isEmpty());
         verify(settings, never()).disable(anyString(), any(), any(), anyString());
     }
 
@@ -243,17 +249,13 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("一条也没真改到时不落盘，改到了才落盘")
     void savesOnlyWhenSomethingActuallyChanged() {
-        org.frostnova.nova.core.service.NovaStateStore store =
-                dependency(org.frostnova.nova.core.service.NovaStateStore.class);
-        assertNotNull(store, "控制器没接状态存储，落盘那一步无从量起");
-
-        when(settings.enable(anyString(), any(), any(), eq("直播报告"))).thenReturn(false);
-        controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
-        verify(store, never()).save();
-
-        when(settings.enable(anyString(), any(), any(), eq("直播报告"))).thenReturn(true);
-        controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
-        verify(store, times(1)).save();
+        int before = channels.reloads();
+        JSONObject unchanged = controller.toggleCommands(body(List.of("直播报告"), false)).getBody();
+        assertEquals(0, unchanged.getIntValue("changed"));
+        assertEquals(before, channels.reloads());
+        JSONObject changed = controller.toggleCommands(body(List.of("直播报告"), true)).getBody();
+        assertEquals(1, changed.getIntValue("changed"));
+        assertEquals(before + 1, channels.reloads());
     }
 
     // ── 夹具 ────────────────────────────────────────────────────────────
@@ -292,6 +294,7 @@ class ChannelSettingsSurfaceTest {
     private PushUser streamer() {
         PushUser user = new PushUser();
         user.setUid(3493L);
+        user.setPlatform("bilibili");
         user.setUname("柚子");
         user.setTargets(List.of(
                 target(PushTargetType.GROUP, GROUP_NUM),
