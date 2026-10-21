@@ -280,6 +280,77 @@ class DatasourceBackupTest {
         assertEquals("没留备份", event.type().getDescription());
     }
 
+    // 手改文件的人只改一个字段时，不应看到整份文件的格式和 null 一起变化。
+    @Test
+    void savingOneFieldKeepsLegacyFormattingAndNulls() throws Exception {
+        String original = """
+                [
+                  {
+                    "uid": 1,
+                    "platform": "bilibili",
+                    "enabled": true,
+                    "targets": [],
+                    "extra": null
+                  },
+                  {
+                    "platform": "bilibili",
+                    "uid": 2,
+                    "targets": [],
+                    "extension": {
+                      "text": "保留文本与 \\"引号\\"",
+                      "values": [
+                        null,
+                        {},
+                        []
+                      ]
+                    }
+                  }
+                ]""";
+        Files.writeString(datasource, original);
+        Path before = dir.resolve("before.json");
+        Files.writeString(before, original);
+        JSONObject read = controller.datasourceUser("bilibili", "1");
+        read.getJSONObject("user").put("enabled", false);
+
+        assertTrue(saveUser("1", read.getString("version"), read.getJSONObject("user"))
+                .getBody().getBooleanValue("success"));
+        Process diff = new ProcessBuilder("git", "diff", "--no-index", "--", before.toString(), datasource.toString())
+                .redirectErrorStream(true).start();
+        System.out.print(new String(diff.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+        assertTrue(diff.waitFor(10, TimeUnit.SECONDS));
+        assertEquals(1, diff.exitValue());
+        assertEquals(original.replace("\"enabled\": true", "\"enabled\": false"), Files.readString(datasource));
+    }
+
+    // 重复添加应明确说已经添加，避免用户反复重新载入。
+    @Test
+    void duplicateAdditionExplainsThatStreamerAlreadyExists() throws IOException {
+        seedTwoUsers();
+        JSONObject user = controller.datasourceUser("bilibili", "1").getJSONObject("user");
+        byte[] before = Files.readAllBytes(datasource);
+        ResponseEntity<JSONObject> response = controller.addDatasourceUser(new JSONObject().fluentPut("user", user));
+        assertEquals(409, response.getStatusCode().value());
+        assertEquals("这位主播已经添加过了", response.getBody().getString("message"));
+        assertArrayEquals(before, Files.readAllBytes(datasource));
+        assertEquals(0, stampedBackupNames().size());
+    }
+
+    // 新装或手动清空文件后，推送页应显示空列表，向导应能添加第一位主播。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", " \n\t\r ", "\uFEFF", "\uFEFF \n\t\r "})
+    void emptyFileListsNoStreamersAndAcceptsFirstAddition(String content) throws IOException {
+        Files.writeString(datasource, content);
+        JSONObject directory = controller.datasourceUsers();
+        assertTrue(directory.getBooleanValue("success"), directory.toString());
+        assertEquals(new JSONArray(), directory.getJSONArray("users"));
+        // 旧读取接口仍原样返回文件内容。
+        assertEquals(content, controller.datasource().getString("content"));
+        JSONObject added = controller.addDatasourceUser(new JSONObject().fluentPut("user", JSONArray.parseArray(users(1)).get(0)))
+                .getBody();
+        assertTrue(added.getBooleanValue("success"), added.toString());
+        assertEquals(1, controller.datasourceUsers().getJSONArray("users").size());
+    }
+
     @Test
     void staleVersionDoesNotWriteAnyBytesOrBackup() throws IOException {
         seedTwoUsers();
