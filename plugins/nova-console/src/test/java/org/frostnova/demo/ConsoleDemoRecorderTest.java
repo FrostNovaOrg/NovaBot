@@ -6,8 +6,6 @@ import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.core.NovaCoreApplication;
-import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
-import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -34,12 +32,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /** Explicitly invoked response recorder; no assertions use these response files. */
 @EnabledIfSystemProperty(named = "console.demo.record", matches = "true")
 @SpringBootTest(classes = NovaCoreApplication.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-        properties = "novabot.bilibili.account.anonymous=true")
+        properties = {"novabot.bilibili.account.anonymous=true",
+                "novabot.core.config-ui.token=console-demo-recording-token-0123456789"})
 public class ConsoleDemoRecorderTest {
     @TestBean(methodName = "portContext") WebServerApplicationContext serverContext;
     @TestBean(methodName = "botTransport") OneBotHttpAdapter oneBotHttpAdapter;
     @Autowired WebApplicationContext context;
-    @Autowired ConfigUiSessionStore sessions;
     @Autowired NovaMessageSender sender;
     private static boolean failSend;
 
@@ -215,9 +213,10 @@ public class ConsoleDemoRecorderTest {
     }
 
     @Test void record() throws Exception {
-        mvc = MockMvcBuilders.webAppContextSetup(context).build();
-        ConfigUiSession session = sessions.issue("127.0.0.1", Instant.now(), ConfigUiSession.Channel.PASSWORD);
-        cookie = new Cookie("starbot_config_session", session.getId());
+        var registration = context.getBean("configUiSecurityFilterRegistration",
+                org.springframework.boot.web.servlet.FilterRegistrationBean.class);
+        mvc = MockMvcBuilders.webAppContextSetup(context).addFilters(registration.getFilter()).build();
+        cookie = new Cookie("starbot_config_token", "console-demo-recording-token-0123456789");
         output = Path.of("recorded-data");
         Files.createDirectory(output);
         JSONObject meta = JSON.parseObject(Files.readString(Path.of("recording.json")));

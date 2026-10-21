@@ -630,6 +630,12 @@ public class NovaCoreProperties {
             @ConfigLabel("协议同意 · 确认人")
             @ConfigLevel(ConfigLevel.Level.COMMON)
             private String acceptedActor = "";
+
+            /** 确认人与同意记录的对应信息，由程序保存。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("协议同意 · 记录关联")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            private String acceptedActorRecord = "";
         }
 
         /**

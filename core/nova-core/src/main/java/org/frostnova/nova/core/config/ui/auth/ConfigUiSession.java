@@ -28,10 +28,12 @@ public class ConfigUiSession {
     private final String accountId;
 
     @Getter(lombok.AccessLevel.NONE)
-    private final OidcClient.Login oidcLogin;
+    private OidcRefreshState oidcState;
 
     /** Server-only refresh context; never included in HTTP responses. */
-    public OidcClient.Login oidcLogin() { return oidcLogin; }
+    public OidcClient.Login oidcLogin() { return oidcState.login; }
+
+    OidcRefreshState oidcState() { return oidcState; }
 
     /**
      * 该会话的 CSRF 令牌
@@ -124,7 +126,7 @@ public class ConfigUiSession {
                     OidcClient.Login oidcLogin) {
         this.id = id;
         this.accountId = accountId;
-        this.oidcLogin = oidcLogin;
+        this.oidcState = new OidcRefreshState(oidcLogin, issuedAt);
         this.csrfToken = csrfToken;
         this.issuedAt = issuedAt;
         this.expiresAt = expiresAt;
@@ -197,11 +199,25 @@ public class ConfigUiSession {
      */
     synchronized ConfigUiSession renew(String id, String csrfToken, Instant now) {
         ConfigUiSession renewed = new ConfigUiSession(id, csrfToken, issuedAt, expiresAt, clientIp, channel,
-                passkeyCredentialId, accountId, oidcLogin);
+                passkeyCredentialId, accountId, oidcLogin());
+        renewed.oidcState = oidcState;
         renewed.lastSeenAt = now;
         renewed.totpSetupDismissed = totpSetupDismissed;
         renewed.passwordChecks = passwordChecks;
         return renewed;
+    }
+
+    /** Shared across cookie rotation so an outstanding refresh cannot be duplicated or lost. */
+    static final class OidcRefreshState {
+        volatile OidcClient.Login login;
+        volatile Instant nextCheck;
+        volatile org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind failure;
+        final java.util.concurrent.atomic.AtomicBoolean refreshing = new java.util.concurrent.atomic.AtomicBoolean();
+
+        OidcRefreshState(OidcClient.Login login, Instant issuedAt) {
+            this.login = login;
+            this.nextCheck = issuedAt.plus(OidcSessionRefreshService.INTERVAL);
+        }
     }
 
     /**

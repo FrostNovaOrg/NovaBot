@@ -197,6 +197,26 @@ public class ConfigUiOidcController {
         }
     }
 
+    @PostMapping("/oidc/backchannel-logout")
+    public void backchannelLogout(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        if (!auth.oidcEnabled()) { response.setStatus(404); return; }
+        if (!acquire(request)) { response.setStatus(429); return; }
+        try {
+            if (request.getContentType() == null || !org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED
+                    .isCompatibleWith(org.springframework.http.MediaType.parseMediaType(request.getContentType()))) {
+                response.setStatus(400);
+                return;
+            }
+            auth.logoutOidcIdentity(client.verifyLogout(request.getParameter("logout_token")));
+            response.setStatus(200);
+        } catch (OidcException | IllegalArgumentException error) {
+            response.setStatus(400);
+        } finally {
+            throttle.releaseSlot();
+        }
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<JSONObject> accessFailure(ResponseStatusException error) {
         JSONObject result = new JSONObject();

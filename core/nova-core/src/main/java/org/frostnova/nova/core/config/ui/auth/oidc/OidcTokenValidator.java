@@ -27,6 +27,61 @@ final class OidcTokenValidator {
     }
 
     OidcClient.Identity validate(String token, String nonce, boolean nonceRequired) {
+        return validate(token, nonce, nonceRequired, false);
+    }
+
+    OidcClient.Identity validate(String token, String nonce, boolean nonceRequired, boolean refreshing) {
+        JSONObject claims = signedClaims(token);
+        String actualIssuer = OidcJson.text(claims, "iss", true, INVALID_TOKEN);
+
+        String subject = OidcJson.text(claims, "sub", true, INVALID_TOKEN);
+        validateAudience(claims, true);
+        long now = clock.instant().getEpochSecond();
+        long expiry = numericDate(claims, "exp");
+        long issued = numericDate(claims, "iat");
+        if (expiry <= now - CLOCK_SKEW_SECONDS) throw invalid("exp");
+        if (issued > now + CLOCK_SKEW_SECONDS || issued >= expiry) throw invalid("iat");
+        if (claims.containsKey("nbf") && numericDate(claims, "nbf") > now + CLOCK_SKEW_SECONDS) throw invalid("nbf");
+        if (nonceRequired || claims.containsKey("nonce")) {
+            String actual = OidcJson.text(claims, "nonce", true, INVALID_TOKEN);
+            if (nonce == null || !MessageDigest.isEqual(nonce.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8))) {
+                throw invalid("nonce");
+            }
+        }
+        if (!issuer.equals(actualIssuer)) {
+            if (refreshing) throw new OidcException(OidcException.Kind.IDENTITY_CHANGED, "OIDC refresh iss mismatch");
+            throw invalid("iss");
+        }
+        return new OidcClient.Identity(issuer, subject, display(claims, "name"), display(claims, "email"), display(claims, "sid"));
+    }
+
+    OidcClient.Logout validateLogout(String token) {
+        JSONObject claims = signedClaims(token);
+        JSONObject header = OidcJson.object(new String(OidcJson.base64(token.split("\\.", -1)[0]), StandardCharsets.UTF_8), "header", INVALID_TOKEN);
+        if (header.containsKey("typ") && !java.util.Set.of("logout+jwt", "JWT").contains(
+                OidcJson.text(header, "typ", true, INVALID_TOKEN))) throw invalid("typ");
+        if (!issuer.equals(OidcJson.text(claims, "iss", true, INVALID_TOKEN))) throw invalid("iss");
+        validateAudience(claims, false);
+        long now = clock.instant().getEpochSecond();
+        long expiry = numericDate(claims, "exp");
+        long issued = numericDate(claims, "iat");
+        if (expiry <= now - CLOCK_SKEW_SECONDS) throw invalid("exp");
+        if (issued > now + CLOCK_SKEW_SECONDS || issued >= expiry) throw invalid("iat");
+        if (claims.containsKey("nbf") && numericDate(claims, "nbf") > now + CLOCK_SKEW_SECONDS) throw invalid("nbf");
+        if (claims.containsKey("nonce")) throw invalid("nonce");
+        Object events = claims.get("events");
+        if (!(events instanceof JSONObject object)
+                || !(object.get("http://schemas.openid.net/event/backchannel-logout") instanceof JSONObject)) throw invalid("events");
+        String sid = OidcJson.text(claims, "sid", false, INVALID_TOKEN);
+        String subject = OidcJson.text(claims, "sub", false, INVALID_TOKEN);
+        if (sid == null && subject == null) throw invalid("logout identity");
+        if (expiry > java.time.Instant.MAX.getEpochSecond() - CLOCK_SKEW_SECONDS) throw invalid("exp");
+        String jti = OidcJson.text(claims, "jti", true, INVALID_TOKEN);
+        if (jti.length() > 512) throw invalid("jti");
+        return new OidcClient.Logout(issuer, subject, sid, jti, java.time.Instant.ofEpochSecond(expiry).plusSeconds(CLOCK_SKEW_SECONDS));
+    }
+
+    private JSONObject signedClaims(String token) {
         if (token == null || token.length() > 131072) throw invalid("ID token");
         String[] parts = token.split("\\.", -1);
         if (parts.length != 3) throw invalid("ID token");
@@ -51,23 +106,7 @@ final class OidcTokenValidator {
             throw invalid("signature");
         }
 
-        JSONObject claims = OidcJson.object(new String(OidcJson.base64(parts[1]), StandardCharsets.UTF_8), "claims", INVALID_TOKEN);
-        if (!issuer.equals(OidcJson.text(claims, "iss", true, INVALID_TOKEN))) throw invalid("iss");
-        String subject = OidcJson.text(claims, "sub", true, INVALID_TOKEN);
-        validateAudience(claims);
-        long now = clock.instant().getEpochSecond();
-        long expiry = numericDate(claims, "exp");
-        long issued = numericDate(claims, "iat");
-        if (expiry <= now - CLOCK_SKEW_SECONDS) throw invalid("exp");
-        if (issued > now + CLOCK_SKEW_SECONDS || issued >= expiry) throw invalid("iat");
-        if (claims.containsKey("nbf") && numericDate(claims, "nbf") > now + CLOCK_SKEW_SECONDS) throw invalid("nbf");
-        if (nonceRequired || claims.containsKey("nonce")) {
-            String actual = OidcJson.text(claims, "nonce", true, INVALID_TOKEN);
-            if (nonce == null || !MessageDigest.isEqual(nonce.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8))) {
-                throw invalid("nonce");
-            }
-        }
-        return new OidcClient.Identity(issuer, subject, display(claims, "name"), display(claims, "email"), display(claims, "sid"));
+        return OidcJson.object(new String(OidcJson.base64(parts[1]), StandardCharsets.UTF_8), "claims", INVALID_TOKEN);
     }
 
     private static String display(JSONObject claims, String name) {
@@ -77,7 +116,7 @@ final class OidcTokenValidator {
         throw invalid(name);
     }
 
-    private void validateAudience(JSONObject claims) {
+    private void validateAudience(JSONObject claims, boolean authorizedParty) {
         Object audience = claims.get("aud");
         int count;
         boolean matches;
@@ -92,7 +131,7 @@ final class OidcTokenValidator {
             throw invalid("aud");
         }
         if (!matches) throw invalid("aud");
-        if (count > 1 || claims.containsKey("azp")) {
+        if (authorizedParty && (count > 1 || claims.containsKey("azp"))) {
             if (!clientId.equals(OidcJson.text(claims, "azp", true, INVALID_TOKEN))) throw invalid("azp");
         }
     }

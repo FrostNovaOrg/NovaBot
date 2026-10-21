@@ -256,6 +256,7 @@ await section('协议三键归卡片', async () => {
     'novabot.core.config-ui.agreement.accepted-at',
     'novabot.core.config-ui.agreement.accepted-by',
     'novabot.core.config-ui.agreement.accepted-actor',
+    'novabot.core.config-ui.agreement.accepted-actor-record',
   ];
   for (const key of wanted) {
     eq(cardFields.includes(key), true, key + ' 已被这张卡吃掉');

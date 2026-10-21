@@ -598,13 +598,78 @@ class ConsoleAccountsTest extends OidcTestSupport {
         mvc.perform(post("/config/api/values").cookie(new Cookie("starbot_config_token", "test-operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value(ConfigUiAccess.LOCAL_REQUIRED));
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("统一登录要先设登录口令才能用：请先设口令，用口令登录后再改这几项"));
         mvc.perform(post("/config/api/values").param("token", "")
                         .cookie(new Cookie("starbot_config_token", "test-operator"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value(ConfigUiAccess.LOCAL_REQUIRED));
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("统一登录要先设登录口令才能用：请先设口令，用口令登录后再改这几项"));
         mvc.perform(post("/config/api/values").param("token", "test-operator")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+    }
+
+    // 口令形态的脚本重复使用启动令牌，不应写最近登录时间或制造登录日志，但每次保留审计。
+    @Test
+    void operatorRedemptionDoesNotWriteLoginState() throws Exception {
+        properties.getConfigUi().getAuth().setOperatorToken(true);
+        var authLog = (Logger) LoggerFactory.getLogger(ConfigUiAuthService.class);
+        var filterLog = (Logger) LoggerFactory.getLogger(ConfigUiSecurityFilter.class);
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        authLog.addAppender(appender);
+        filterLog.addAppender(appender);
+        try {
+            assertFalse(Files.exists(directory.resolve("state.json")));
+            for (int i = 0; i < 3; i++) {
+                mvc.perform(get("/config/api/values").header("Authorization", "Bearer test-operator"))
+                        .andExpect(status().isOk());
+            }
+            assertFalse(Files.exists(directory.resolve("state.json")), "Bearer 兑换不能写 state.json");
+            assertNull(accounts.require(LOCAL_ID).lastLoginAt());
+            assertEquals(0, appender.list.stream().filter(e -> e.getFormattedMessage().contains("配置界面登录:")).count());
+            assertEquals(3, appender.list.stream().filter(e -> e.getFormattedMessage().contains("以启动令牌换取了会话")).count());
+        } finally {
+            authLog.detachAppender(appender);
+            filterLog.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    // 降级后撤回又同意，遗留的确认人不能冒充新一次同意的签名者。
+    @Test
+    void agreementActorMustBelongToCurrentAcceptance() throws Exception {
+        var local = auth.issueForPassword("127.0.0.1");
+        perform(post("/config/api/auth/agreement/accept"), local).andExpect(status().isOk());
+        perform(get("/config/api/values"), local)
+                .andExpect(jsonPath("$.values['novabot.core.config-ui.agreement.accepted-actor']").value("本地管理员"));
+        new ConfigurationFileService(configFile).write(Map.of(
+                "novabot.core.config-ui.agreement.accepted-at", "2026-10-20T12:00:00+08:00",
+                "novabot.core.config-ui.agreement.accepted-by", "operator-token"));
+        perform(get("/config/api/values"), local)
+                .andExpect(jsonPath("$.values['novabot.core.config-ui.agreement.accepted-actor']").doesNotExist());
+    }
+
+    // 未开统一登录的机器不能暴露后台登出口，IP 白名单仍须先挡住账户中心的来源。
+    @Test
+    void backchannelEntranceRespectsModeAndAllowlist() throws Exception {
+        mvc.perform(post("/config/api/oidc/backchannel-logout").with(r -> { r.setRemoteAddr("192.0.2.1"); return r; }))
+                .andExpect(status().isForbidden());
+        auth.applyPasswordHash(null);
+        mvc.perform(post("/config/api/oidc/backchannel-logout")).andExpect(status().isNotFound());
+        auth.applyPasswordHash(LowIterationPasswordHash.of("example password"));
+        config.setEnabled(false);
+        rebuildClient();
+        auth.setOidcClient(client);
+        mvc.perform(post("/config/api/oidc/backchannel-logout")).andExpect(status().isNotFound());
+    }
+
+    // 令牌形态的显式 Bearer 仍可修改统一登录配置。
+    @Test
+    void explicitBearerCanSaveOidcSettingsInTokenMode() throws Exception {
+        auth.applyPasswordHash(null);
+        mvc.perform(post("/config/api/values").header("Authorization", "Bearer test-operator")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));

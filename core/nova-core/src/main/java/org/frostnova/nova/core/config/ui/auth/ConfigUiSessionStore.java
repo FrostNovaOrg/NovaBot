@@ -84,7 +84,7 @@ public class ConfigUiSessionStore {
         }
 
         ConfigUiSession session = new ConfigUiSession(
-                SecureToken.generate(), SecureToken.generate(), now, now.plus(ttl), clientIp, channel,
+                SecureToken.generate(), SecureToken.generate(), now, expiry(now, channel, oidcLogin), clientIp, channel,
                 passkeyCredentialId, accountId, oidcLogin);
         sessions.put(session.getId(), session);
 
@@ -215,6 +215,42 @@ public class ConfigUiSessionStore {
         sessions.entrySet().removeIf(entry ->
                 credentialId.equals(entry.getValue().getPasskeyCredentialId())
                         && (keepId == null || keepId.isBlank() || !entry.getKey().equals(keepId)));
+        return before - sessions.size();
+    }
+
+    private Instant expiry(Instant now, ConfigUiSession.Channel channel, OidcClient.Login login) {
+        if (channel == ConfigUiSession.Channel.OIDC && (login == null || login.tokens() == null
+                || login.tokens().refreshToken() == null || login.tokens().refreshToken().isBlank())) {
+            Long seconds = login == null || login.tokens() == null ? null : login.tokens().expiresIn();
+            return now.plusSeconds(Math.min(ttl.getSeconds(), seconds == null ? 3600 : Math.max(0, seconds)));
+        }
+        return now.plus(ttl);
+    }
+
+    /** A snapshot of live OIDC sessions; inspecting it never extends idle time. */
+    public synchronized java.util.List<ConfigUiSession> oidcSessions(Instant now) {
+        sweep(now);
+        return sessions.values().stream().filter(s -> s.getChannel() == ConfigUiSession.Channel.OIDC)
+                .map(session -> Map.entry(session, session.oidcState().nextCheck))
+                .sorted(Map.Entry.comparingByValue()).map(Map.Entry::getKey).toList();
+    }
+
+    synchronized void revokeOidcSession(ConfigUiSession session) {
+        sessions.values().removeIf(s -> s.getChannel() == ConfigUiSession.Channel.OIDC
+                && s.oidcState() == session.oidcState());
+    }
+
+    /** sid narrows the match; sub, when present, must match as well. Local login channels never match. */
+    public synchronized int revokeOidcIdentity(String issuer, String subject, String sid) {
+        if (issuer == null || subject == null && sid == null) return 0;
+        int before = sessions.size();
+        sessions.values().removeIf(s -> {
+            OidcClient.Login login = s.oidcLogin();
+            return s.getChannel() == ConfigUiSession.Channel.OIDC && login != null
+                    && issuer.equals(login.identity().issuer())
+                    && (sid == null || sid.equals(login.identity().sid()))
+                    && (subject == null || subject.equals(login.identity().subject()));
+        });
         return before - sessions.size();
     }
 

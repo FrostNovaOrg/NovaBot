@@ -49,6 +49,8 @@ public final class OidcClient {
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Transaction> transactions = new HashMap<>();
     private final boolean enabled;
+    private final Map<String, Instant> logoutIds = new HashMap<>();
+    private static final int MAX_LOGOUT_IDS = 4096;
     private final String issuer;
     private final String clientId;
     private final String clientSecret;
@@ -146,6 +148,7 @@ public final class OidcClient {
      * Refreshes a previous verified login. TOKEN_REJECTED means invalid_grant; CONFIGURATION means a client error;
      * PROVIDER_UNAVAILABLE means connectivity, throttling or server failure and must not force logout.
      * A new ID token is optional, but if supplied it must still identify the same issuer and subject.
+     * IDENTITY_CHANGED is reserved for a signed identity mismatch; other validation failures are INVALID_TOKEN.
      */
     public Login refresh(Login previous) {
         requireEnabled();
@@ -159,13 +162,35 @@ public final class OidcClient {
         Tokens tokens = exchange(form);
         Identity identity = previous.identity();
         if (tokens.idToken() != null) {
-            identity = validator.validate(tokens.idToken(), previous.nonce(), false);
-            if (!previous.identity().subject().equals(identity.subject())) throw new OidcException(INVALID_TOKEN, "OIDC refresh sub mismatch");
+            identity = validator.validate(tokens.idToken(), previous.nonce(), false, true);
+            if (!previous.identity().subject().equals(identity.subject())) throw new OidcException(IDENTITY_CHANGED, "OIDC refresh sub mismatch");
+        }
+        if (identity.sid() == null && previous.identity().sid() != null) {
+            identity = new Identity(identity.issuer(), identity.subject(), identity.name(), identity.email(), previous.identity().sid());
         }
         if (tokens.refreshToken() == null) {
             tokens = new Tokens(tokens.accessToken(), tokens.idToken(), previous.tokens().refreshToken(), tokens.expiresIn());
         }
         return new Login(identity, tokens, previous.nonce());
+    }
+
+    /** Verifies before atomically reserving a one-use logout ID. Active IDs are never evicted. */
+    public Logout verifyLogout(String token) {
+        requireEnabled();
+        Logout logout = validator.validateLogout(token);
+        synchronized (logoutIds) {
+            Instant now = clock.instant();
+            logoutIds.values().removeIf(expiry -> !now.isBefore(expiry));
+            if (logoutIds.containsKey(logout.jti()) || logoutIds.size() >= MAX_LOGOUT_IDS) {
+                throw new OidcException(INVALID_TOKEN, "OIDC logout replay or capacity reached");
+            }
+            logoutIds.put(logout.jti(), logout.expiresAt());
+        }
+        return logout;
+    }
+
+    public record Logout(String issuer, String subject, String sid, String jti, Instant expiresAt) {
+        @Override public String toString() { return "OIDC logout [redacted]"; }
     }
 
     /** No forwarded headers are parsed here. Scheme/host/port use the servlet request, prefix uses the servlet context. */

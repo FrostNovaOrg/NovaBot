@@ -31,6 +31,7 @@ export const AUTH_CARD_FIELDS = new Set([
   'novabot.core.config-ui.agreement.accepted-at',
   'novabot.core.config-ui.agreement.accepted-by',
   'novabot.core.config-ui.agreement.accepted-actor',
+  'novabot.core.config-ui.agreement.accepted-actor-record',
 ]);
 
 /** 同意记录的配置键，卡片按它们显示，设置页按它们摘走 */
