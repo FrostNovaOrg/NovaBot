@@ -1,3 +1,4 @@
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 推送页：点保存之后、回包之前又改的那一处，不许被当成已存
  *
@@ -251,7 +252,7 @@ globalThis.fetch = (path, opt) => {
   const url = String(path);
 
   if (method === 'GET') {
-    if (url.endsWith('/datasource')) return ok({content: datasourceBody()});
+    if (url.includes('/datasource')) return ok(datasourceRead(url, datasourceBody()));
     if (url.endsWith('/state')) return ok({sessions: [], commands: [], subscriptions: [], incomplete: []});
     if (url.includes('/push-history')) return ok({records: []});
     if (url.includes('/at-all/quota')) return ok({bots: [], sessions: []});
@@ -260,7 +261,7 @@ globalThis.fetch = (path, opt) => {
   }
 
   if (url.includes('/datasource')) {
-    const reply = {success: true, message: '已保存'};
+    const reply = {success: true, version: 'v1', message: '已保存'};
     if (holdDatasource) {
       return new Promise(resolve => datasourceWaiters.push(() => resolve({
         status: 200, json: () => Promise.resolve(reply),
@@ -282,7 +283,7 @@ function pushPosts() {
 function lastPushContent() {
   const posts = pushPosts();
   if (!posts.length) return null;
-  return JSON.parse(JSON.parse(posts[posts.length - 1].body).content);
+  return [JSON.parse(posts[posts.length - 1].body).user];
 }
 
 // —— 一位主播、一个通道，两类通知都开着 ——
@@ -358,7 +359,7 @@ async function fresh() {
   datasourceWaiters.length = 0;
   mock.requests.length = 0;
   if (push) await push.reload();
-  push.showPush('1', '12345');
+  await push.showPush('1', '12345');
   await settle();
   mock.requests.length = 0;
 }

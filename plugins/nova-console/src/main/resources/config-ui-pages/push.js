@@ -451,6 +451,7 @@ export function render(section) {
   ensureStyle();
   ensureDrawer();
   section.innerHTML = `
+    <div class="note" id="push-conflict" role="alert" hidden></div>
     <div id="sess-incomplete"></div>
     <div class="pnarrow">
       <div class="pnarrow-top">
@@ -553,6 +554,95 @@ let pushData = [];
  * 改动条恒显示 0，而这件事在界面上看不出任何异常
  */
 let pushSaved = '[]';
+const userVersions = new Map();
+const userLoads = new Map();
+const conflictedUsers = new Set();
+let datasourceGeneration = 0;
+const CONFLICT_TEXT = '这位主播的配置刚被别人改过，请重新载入';
+const userKey = user => user.platform + ':' + user.uid;
+const userPath = user => '/datasource/users/' + encodeURIComponent(user.platform) + '/' + encodeURIComponent(user.uid);
+
+function updateSavedUser(key, user) {
+  const saved = JSON.parse(pushSaved);
+  const index = saved.findIndex(item => userKey(item) === key);
+  if (user === undefined) {
+    if (index >= 0) saved.splice(index, 1);
+  } else if (index >= 0) saved[index] = user;
+  else saved.push(user);
+  pushSaved = JSON.stringify(saved, dropDisplayOnly, 2);
+}
+
+async function loadUser(user) {
+  if (!user?._summary) return;
+  const key = userKey(user);
+  if (userLoads.has(key)) return userLoads.get(key);
+  const generation = datasourceGeneration;
+  const loading = (async () => {
+    const res = await api(userPath(user));
+    if (!res.success || !res.user || !res.version) throw new Error(res.message || '主播配置载入失败');
+    if (generation !== datasourceGeneration || !pushData.includes(user)) return;
+    const full = {...res.user, _uname: user._uname, _roomId: user._roomId, _face: user._face};
+    pushData[pushData.indexOf(user)] = full;
+    userVersions.set(key, res.version);
+    updateSavedUser(key, full);
+  })();
+  userLoads.set(key, loading);
+  try { await loading; }
+  finally { if (userLoads.get(key) === loading) userLoads.delete(key); }
+}
+
+function paintConflict() {
+  const host = $('#push-conflict');
+  if (!host) return;
+  const user = pushData.find(item => String(item.uid) === String(picked.uid));
+  host.innerHTML = '';
+  host.textContent = '';
+  host.hidden = !user || !conflictedUsers.has(userKey(user));
+  if (host.hidden) return;
+  host.textContent = CONFLICT_TEXT;
+  const button = el('button', 'ghost');
+  button.type = 'button';
+  button.textContent = '重新载入';
+  button.addEventListener('click', async () => {
+    const saved = JSON.parse(pushSaved).find(item => userKey(item) === userKey(user));
+    const hasDraft = JSON.stringify(user, dropDisplayOnly) !== JSON.stringify(saved, dropDisplayOnly);
+    if ((hasDraft || sessionDraftCount() > 0) && !await ask({title: '丢弃未保存的草稿？',
+      body: '重新载入会丢弃这位主播尚未保存的修改，本群设置草稿保留。'})) return;
+    try {
+      const res = await api(userPath(user));
+      if (!res.missing && (!res.success || !res.user || !res.version)) throw new Error(res.message || '重新载入失败');
+      if (!pushData.includes(user)) return;
+      const full = res.missing ? undefined
+        : {...res.user, _uname: user._uname, _roomId: user._roomId, _face: user._face};
+      if (full) {
+        pushData[pushData.indexOf(user)] = full;
+        userVersions.set(userKey(user), res.version);
+      } else {
+        pushData.splice(pushData.indexOf(user), 1);
+        userVersions.delete(userKey(user));
+        if (String(picked.uid) === String(user.uid)) location.hash = '#/push';
+      }
+      updateSavedUser(userKey(user), full);
+      conflictedUsers.delete(userKey(user));
+      markDirty();
+      renderStreamers();
+    } catch (e) { say(e.message, 'err'); }
+  });
+  host.appendChild(button);
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !pageLive) return;
+  const user = pushData.find(item => String(item.uid) === String(picked.uid));
+  if (!user || !userVersions.has(userKey(user))) return;
+  const version = userVersions.get(userKey(user));
+  try {
+    const res = await api(userPath(user) + '/version');
+    if (!pushData.includes(user) || version !== userVersions.get(userKey(user))) return;
+    if (!res.success || res.version !== version) conflictedUsers.add(userKey(user));
+    paintConflict();
+  } catch (e) { say('主播配置检查失败：' + e.message, 'err'); }
+});
 
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
 let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: [], totalDataAvailable: null};
@@ -639,11 +729,16 @@ function pickChannel(list) {
  * @param uid 主播 uid，或 default（默认模板），空串为通道一览
  * @param tail 通道身份（「平台|类型码|号」，或旧地址的裸号），空串为主播级
  */
-export function showPush(uid, tail) {
+export async function showPush(uid, tail) {
   const id = parseChannelTail(tail);
   picked = {uid: uid || '', num: id.num || '', type: id.type, platform: id.platform};
   if (picked.uid && picked.uid !== 'default') expanded.add(String(picked.uid));
   renderStreamers();
+  const user = pushData.find(item => String(item.uid) === String(picked.uid));
+  if (user?._summary) {
+    try { await loadUser(user); renderStreamers(); }
+    catch (e) { say(e.message, 'err'); }
+  }
 }
 
 /**
@@ -653,6 +748,7 @@ export function showPush(uid, tail) {
  * 换个名字等于让那两处各自记得本页现在叫什么。
  */
 export function renderStreamers() {
+  paintConflict();
   renderIncomplete(runtime.incomplete || []);
   paintTree();
   paintRight();
@@ -843,6 +939,11 @@ function paintRight() {
   const user = (pushData || []).find(item => String(item.uid) === String(picked.uid));
   if (!picked.uid || !user) {
     renderIndex(host);
+    return;
+  }
+
+  if (user._summary) {
+    host.appendChild(el('p', 'hint')).textContent = '主播配置载入中…';
     return;
   }
 
@@ -1078,6 +1179,17 @@ async function reloadHandlers() {
   try {
     const res = await api('/handlers');
     store.handlerList = res.handlers || store.handlerList;
+    const index = await api('/datasource/users');
+    if (!index.success || !Array.isArray(index.users)) throw new Error(index.message || '通道摘要载入失败');
+    // 默认值变动后，尚未打开的通道也要重新判断模板状态。
+    const saved = new Map(JSON.parse(pushSaved).map(user => [userKey(user), user]));
+    for (const summary of index.users) {
+      const at = pushData.findIndex(user => userKey(user) === userKey(summary));
+      const user = pushData[at];
+      if (!user?._summary || JSON.stringify(user, dropDisplayOnly) !== JSON.stringify(saved.get(userKey(user)))) continue;
+      pushData[at] = {...summary, _summary: true, _uname: user._uname, _roomId: user._roomId, _face: user._face};
+      updateSavedUser(userKey(user), pushData[at]);
+    }
   } catch (e) {
     say('推送处理器重新读取失败，页面上的「默认／自定义」状态可能未更新：' + e.message, 'err');
   }
@@ -2131,36 +2243,36 @@ export function changeCount() {
  * 这里只把话说清楚：改哪个文件、在哪儿改，路径就显示在设置页底部。
  * @return {Promise<boolean|undefined>} 回 false 表示已在状态栏上写了话，宿主别替它清掉
  */
-export async function reload() {
+export async function reload(options) {
+  const keepSessionDrafts = options?.keepSessionDrafts === true;
   // 「放弃」是整页一起还原：本群设置那份草稿与推送配置那份一并丢
-  clearSessionDrafts();
+  if (!keepSessionDrafts) clearSessionDrafts();
   const knownNames = new Map((pushData || []).filter(user => user._uname)
     .map(user => [user.platform + ':' + user.uid, user]));
-  const res = await api('/datasource');
+  const res = await api('/datasource/users');
   try {
-    pushData = JSON.parse(res.content || '[]');
+    if (!res.success || !Array.isArray(res.users)) throw new Error(res.message || '无法读取主播列表');
+    datasourceGeneration++;
+    userVersions.clear();
+    userLoads.clear();
+    conflictedUsers.clear();
+    pushData = res.users.map(user => ({...user, _summary: true}));
     nameLookups = new Set();
-    // 沿用同一平台、同一主播的展示信息，避免放弃草稿时丢名或重复查询
     for (const user of pushData) {
-      const known = knownNames.get(user.platform + ':' + user.uid);
-      if (known) {
-        user._uname = known._uname;
-        user._roomId = known._roomId;
-        user._face = known._face;
-      }
+      const known = knownNames.get(userKey(user));
+      if (known) Object.assign(user, {_uname: known._uname, _roomId: known._roomId, _face: known._face});
     }
-    // 快照要取序列化之后的形态，与改动计数比的是同一把尺；
-    // 直接存 res.content 的话，文件里的缩进与键序都会算成「改动」
     pushSaved = serializePush();
   } catch (e) {
     pushData = [];
     pushSaved = '[]';
-    say('推送配置 datasource.json 不是合法的 JSON，页面暂时无法显示已配置的主播。'
-      + '请在服务器上修正该文件后重新加载', 'err');
+    say('推送配置 datasource.json 无法载入：' + e.message + '。请修正后重新加载', 'err');
     return false;
   }
-  // 只在推送页上重取时补名；整页载入留到进页时再查。宿主会统一重画。
-  if (pageLive) await decoratePushData(false);
+  if (pageLive) {
+    await showPush(picked.uid, picked.platform ? channelTail(picked) : picked.num);
+    await decoratePushData(false);
+  }
 }
 
 /**
@@ -2186,27 +2298,42 @@ export async function save() {
   const stateMsgs = [];
   let stateWrote = 0;
 
-  if (pushChangeCount() > 0) {
+  // 固定这一趟要发的内容；等待回包时的新修改继续留在草稿里。
+  const saved = new Map(JSON.parse(pushSaved).map(user => [userKey(user), user]));
+  const current = new Map(JSON.parse(serializePush()).map(user => [userKey(user), user]));
+  const writes = [];
+  for (const key of new Set([...saved.keys(), ...current.keys()])) {
+    const before = saved.get(key);
+    const user = current.get(key);
+    if (JSON.stringify(before) === JSON.stringify(user)) continue;
+    writes.push({key, user, before, version: userVersions.get(key)});
+  }
+  for (const {key, user, before, version} of writes) {
     pushTried = true;
+    const identity = user || before;
+    const display = pushData.find(item => userKey(item) === key) || before;
+    const label = streamerName(display) + '（' + identity.platform + '/' + identity.uid + '）';
     try {
-      // 快照对齐到「真发出去的那一份」，不是回包那一刻的最新一份：
-      // 挂着的那段时间里又改的东西留在改动条上，下次保存再发，不会被当成已经存过了
-      const sent = serializePush();
-      const res = await api('/datasource', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content: sent}),
+      if (before && !version) throw new Error('请重新载入这位主播后保存');
+      const path = !before ? '/datasource/users' : userPath(identity) + (!user ? '/delete' : '');
+      const res = await api(path, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({user, version}),
       });
       if (res.success) {
-        markPushSaved(sent);
+        updateSavedUser(key, user);
+        if (user) userVersions.set(key, res.version);
+        else userVersions.delete(key);
+        conflictedUsers.delete(key);
         pushMsg = res.message || '已保存';
       } else {
         pushOk = false;
-        notes.push(res.message || '推送配置保存失败');
+        if (res.conflict) conflictedUsers.add(key);
+        notes.push(label + '：' + (res.message || '保存失败') + (res.conflict ? '' : '，请重新载入这位主播'));
       }
     } catch (e) {
       pushOk = false;
-      notes.push('推送配置保存失败：' + e.message);
+      notes.push(label + '：' + e.message);
     }
   }
 

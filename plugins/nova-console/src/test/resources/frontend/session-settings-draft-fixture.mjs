@@ -1,3 +1,4 @@
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 本群设置与上方三段同一条保存纪律：改了先进草稿，按「保存」才写，按「放弃」全部还原
  *
@@ -312,8 +313,8 @@ globalThis.fetch = (path, opt) => {
   const url = String(path);
 
   if (method === 'GET') {
-    if (url.endsWith('/datasource')) {
-      return Promise.resolve({status: 200, json: () => Promise.resolve({content: datasourceBody()})});
+    if (url.includes('/datasource')) {
+      return Promise.resolve({status: 200, json: () => Promise.resolve(datasourceRead(url, datasourceBody()))});
     }
     if (url.endsWith('/state')) {
       return Promise.resolve({status: 200, json: () => Promise.resolve(clone(mock.state))});
