@@ -1135,6 +1135,18 @@ public class ConfigUiController {
             return ResponseEntity.ok(result);
         }
 
+        boolean oidcChange = asked.stream().anyMatch(key ->
+                ConfigUiAuthService.canonicalName(key).startsWith("novabot.core.configui.oidc.")
+                || ConfigUiAuthService.canonicalName(aliases().currentName(key)).startsWith("novabot.core.configui.oidc."));
+        if (oidcChange) {
+            HttpServletRequest request = ConfigUiAccess.request();
+            if (request == null || !Boolean.TRUE.equals(request.getAttribute(ConfigUiAccess.FRESH_LOCAL))) {
+                result.put("success", false);
+                result.put("message", ConfigUiAccess.LOCAL_REQUIRED);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+        }
+
         // 清除的键以 null 进写口：null 表示删键，与空串（写空值）不是一回事
         Map<String, String> changesToWrite = new LinkedHashMap<>(changes);
         cleared.forEach(key -> changesToWrite.put(key, null));

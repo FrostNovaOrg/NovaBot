@@ -45,34 +45,7 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class OidcClientTest {
-    private static final String ISSUER = "https://accounts.example.com/tenant";
-    private static final String CLIENT = "console-client";
-    private final MutableClock clock = new MutableClock();
-    private NovaCoreProperties.ConfigUi.Oidc config;
-    private FakeProvider provider;
-    private RestTemplate http;
-    private OidcClient client;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        config = new NovaCoreProperties().getConfigUi().getOidc();
-        config.setEnabled(true);
-        config.setIssuer(ISSUER);
-        config.setClientId(CLIENT);
-        config.setClientSecret("test:secret with spaces");
-        provider = new FakeProvider();
-        http = RestTemplateConfig.buildTemplate(Duration.ofSeconds(1), Duration.ofSeconds(1));
-        // All requests terminate here, including discovery and key rotation. No socket is opened.
-        http.setRequestFactory((uri, method) -> new MockClientHttpRequest(method, uri) {
-            @Override
-            protected ClientHttpResponse executeInternal() throws IOException {
-                return provider.respond(this);
-            }
-        });
-        client = new OidcClient(config, http, clock);
-    }
-
+class OidcClientTest extends OidcTestSupport {
     @Test
     void completesCodeFlowWithPkceAndStableIdentity() {
         var authorization = begin();
@@ -107,7 +80,11 @@ class OidcClientTest {
 
     @Test
     void rejectsExpiredToken() {
-        provider.claims = claims -> claims.put("exp", clock.instant().minusSeconds(61).getEpochSecond());
+        // 过期令牌不能因其他时间字段不合法而掩盖到期检查的缺失。
+        provider.claims = claims -> {
+            claims.put("iat", clock.instant().minusSeconds(600).getEpochSecond());
+            claims.put("exp", clock.instant().minusSeconds(61).getEpochSecond());
+        };
         assertRejected("exp", () -> complete(begin()));
     }
 
@@ -478,235 +455,71 @@ class OidcClientTest {
         assertEquals(OidcException.Kind.PROVIDER_ERROR, malformed.kind());
     }
 
-    private OidcClient.Authorization begin() {
-        var request = request();
-        var authorization = client.startLogin(request);
-        assertNull(request.getSession(false));
-        var query = query(authorization.uri().getRawQuery());
-        provider.nonce = query.get("nonce");
-        provider.challenge = query.get("code_challenge");
-        provider.redirect = query.get("redirect_uri");
-        return authorization;
+    // 账户中心声明回跳必须带 iss 时，缺失它不能继续换令牌。
+    @Test
+    void requiresCallbackIssuerWhenAdvertised() {
+        provider.responseIssuerSupported = true;
+        var authorization = begin();
+        assertRejected("iss", () -> client.completeLogin(authorization.state(), "code-1", null));
+        assertEquals(0, provider.tokenRequests);
     }
 
-    private OidcClient.Login complete(OidcClient.Authorization authorization) {
-        return client.completeLogin(authorization.state(), "code-1", ISSUER);
+    // 一把不合格的钥匙不能使其他正常成员都无法登录。
+    @Test
+    void skipsMalformedAndDuplicateKeysWithoutDiscardingHealthyKeys() throws Exception {
+        var valid = provider.keys.get(0);
+        var missingKid = new JSONObject(valid);
+        missingKid.remove("kid");
+        var weakRsa = new JSONObject(Map.of("kid", "weak", "kty", "RSA", "n", "Aw", "e", "Aw"));
+        var duplicate = new JSONObject(valid);
+        duplicate.put("kid", "duplicate");
+        provider.keys.addAll(List.of(missingKid, weakRsa, duplicate, new JSONObject(duplicate)));
+        assertEquals("subject-17", complete(begin()).identity().subject());
+        provider.kid = "duplicate";
+        assertRejected("kid", () -> complete(begin()));
     }
 
-    private static MockHttpServletRequest request() {
-        MockServletContext context = new MockServletContext();
-        context.setContextPath("/app");
-        var request = new MockHttpServletRequest(context);
-        request.setScheme("https");
-        request.setServerName("console.example.com");
-        request.setServerPort(443);
-        return request;
+    // 同一个 kid 即使有一把弱钥匙也不能被另一把正常钥匙掩盖，其他 kid 仍可登录。
+    @Test
+    void duplicateKidIsAmbiguousEvenWhenOneKeyIsWeak() {
+        var healthy = new JSONObject(provider.keys.get(0));
+        healthy.put("kid", "mixed");
+        provider.keys.add(healthy);
+        provider.keys.add(new JSONObject(Map.of("kid", "mixed", "kty", "RSA", "n", "Aw", "e", "Aw")));
+        assertEquals("subject-17", complete(begin()).identity().subject());
+        provider.kid = "mixed";
+        assertRejected("kid", () -> complete(begin()));
     }
 
-    private static void assertRejected(String field, Runnable action) {
-        var error = assertThrows(OidcException.class, action::run);
-        assertTrue(error.getMessage().contains(field), error.getMessage());
+    // 公钥过期且重取被限流是暂时故障，不能被当作撤销成员凭据。
+    @Test
+    void expiredKeysAndThrottledRefreshRemainProviderUnavailable() {
+        var login = complete(begin());
+        clock.advance(Duration.ofHours(1).plusSeconds(1));
+        provider.keysUnavailable = true;
+        assertEquals(OidcException.Kind.PROVIDER_UNAVAILABLE,
+                assertThrows(OidcException.class, () -> client.refresh(login)).kind());
+        assertEquals(OidcException.Kind.PROVIDER_UNAVAILABLE,
+                assertThrows(OidcException.class, () -> client.refresh(login)).kind());
     }
 
-    private static Map<String, String> query(String encoded) {
-        var result = new LinkedHashMap<String, String>();
-        for (String entry : encoded.split("&")) {
-            var pair = entry.split("=", 2);
-            result.put(URLDecoder.decode(pair[0], StandardCharsets.UTF_8),
-                    URLDecoder.decode(pair[1], StandardCharsets.UTF_8));
-        }
-        return result;
+    // 客户端配置错误不能被解释为账户中心拒绝了这个成员。
+    @ParameterizedTest
+    @ValueSource(strings = {"invalid_client", "unauthorized_client"})
+    void clientErrorsAreConfigurationFailures(String error) {
+        var login = complete(begin());
+        provider.tokenError = error;
+        assertEquals(OidcException.Kind.CONFIGURATION,
+                assertThrows(OidcException.class, () -> client.refresh(login)).kind());
     }
 
-    private static String b64(byte[] bytes) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    // 本机自用及 SSH 隧道允许明文回环回调，公网地址仍须 HTTPS。
+    @ParameterizedTest
+    @ValueSource(strings = {"127.0.0.1", "[::1]", "localhost"})
+    void permitsHttpLoopbackCallbacks(String host) {
+        config.setRedirectUri("http://" + host + ":8080/config/api/oidc/callback");
+        client = new OidcClient(config, http, clock);
+        assertEquals(config.getRedirectUri(), query(begin().uri().getRawQuery()).get("redirect_uri"));
     }
 
-    private static KeyPair key(String algorithm) throws Exception {
-        var generator = KeyPairGenerator.getInstance(switch (algorithm) {
-            case "EdDSA" -> "Ed25519";
-            case "RS256" -> "RSA";
-            case "ES256" -> "EC";
-            default -> throw new IllegalArgumentException(algorithm);
-        });
-        if (algorithm.equals("RS256")) generator.initialize(2048);
-        if (algorithm.equals("ES256")) generator.initialize(new ECGenParameterSpec("secp256r1"));
-        return generator.generateKeyPair();
-    }
-
-    private static byte[] unsigned(BigInteger integer, int length) {
-        byte[] encoded = integer.toByteArray();
-        if (length == 0) return encoded[0] == 0 ? Arrays.copyOfRange(encoded, 1, encoded.length) : encoded;
-        byte[] result = new byte[length];
-        int count = Math.min(length, encoded.length);
-        System.arraycopy(encoded, encoded.length - count, result, length - count, count);
-        return result;
-    }
-
-    private final class FakeProvider {
-        private String algorithm = "EdDSA";
-        private String headerAlgorithm;
-        private String kid = "key-1";
-        private KeyPair signingKey;
-        private final List<JSONObject> keys = new ArrayList<>();
-        private String discoveryIssuer = ISSUER;
-        private String tokenEndpoint = ISSUER + "/token";
-        private String nonce;
-        private String challenge;
-        private String redirect;
-        private String refreshToken = "refresh-1";
-        private String tokenOverride;
-        private String tokenError;
-        private String lastGrant;
-        private int tokenStatus = 200;
-        private int discoveryRequests;
-        private int keyRequests;
-        private int tokenRequests;
-        private boolean discoveryUnavailable;
-        private boolean keysUnavailable;
-        private boolean tokenUnavailable;
-        private boolean omitIdToken;
-        private boolean malformedTokenResponse;
-        private boolean pkceChecked;
-        private Consumer<JSONObject> claims = ignored -> {};
-        private Consumer<JSONObject> headers = ignored -> {};
-
-        FakeProvider() throws Exception {
-            useKey("EdDSA", "key-1");
-        }
-
-        void useKey(String nextAlgorithm, String nextKid) throws Exception {
-            algorithm = nextAlgorithm;
-            kid = nextKid;
-            signingKey = key(algorithm);
-            var jwk = new JSONObject();
-            jwk.put("kid", kid);
-            jwk.put("alg", algorithm);
-            jwk.put("use", "sig");
-            jwk.put("key_ops", List.of("verify"));
-            switch (algorithm) {
-                case "EdDSA" -> {
-                    jwk.put("kty", "OKP");
-                    jwk.put("crv", "Ed25519");
-                    byte[] encoded = signingKey.getPublic().getEncoded();
-                    jwk.put("x", b64(Arrays.copyOfRange(encoded, encoded.length - 32, encoded.length)));
-                }
-                case "RS256" -> {
-                    var rsa = (RSAPublicKey) signingKey.getPublic();
-                    jwk.put("kty", "RSA");
-                    jwk.put("n", b64(unsigned(rsa.getModulus(), 0)));
-                    jwk.put("e", b64(unsigned(rsa.getPublicExponent(), 0)));
-                }
-                case "ES256" -> {
-                    var ec = (ECPublicKey) signingKey.getPublic();
-                    jwk.put("kty", "EC");
-                    jwk.put("crv", "P-256");
-                    jwk.put("x", b64(unsigned(ec.getW().getAffineX(), 32)));
-                    jwk.put("y", b64(unsigned(ec.getW().getAffineY(), 32)));
-                }
-            }
-            keys.clear();
-            keys.add(jwk);
-        }
-
-        ClientHttpResponse respond(MockClientHttpRequest request) throws IOException {
-            String url = request.getURI().toString();
-            if (url.equals(ISSUER + "/.well-known/openid-configuration")) {
-                discoveryRequests++;
-                assertEquals(HttpMethod.GET, request.getMethod());
-                if (discoveryUnavailable) throw new IOException("discovery unavailable");
-                return response(Map.of("issuer", discoveryIssuer, "authorization_endpoint", ISSUER + "/authorize",
-                        "token_endpoint", tokenEndpoint, "jwks_uri", ISSUER + "/jwks"), 200);
-            }
-            if (url.equals(ISSUER + "/jwks")) {
-                keyRequests++;
-                if (keysUnavailable) throw new IOException("keys unavailable");
-                return response(Map.of("keys", keys), 200);
-            }
-            assertEquals(tokenEndpoint, url);
-            assertEquals(HttpMethod.POST, request.getMethod());
-            tokenRequests++;
-            if (tokenUnavailable) throw new IOException("token unavailable");
-            assertTrue(MediaType.APPLICATION_FORM_URLENCODED.isCompatibleWith(request.getHeaders().getContentType()));
-            String basic = new String(Base64.getDecoder().decode(request.getHeaders().getFirst("Authorization").substring(6)),
-                    StandardCharsets.UTF_8);
-            var pair = basic.split(":", 2);
-            assertEquals(CLIENT, URLDecoder.decode(pair[0], StandardCharsets.UTF_8));
-            assertEquals(config.getClientSecret(), URLDecoder.decode(pair[1], StandardCharsets.UTF_8));
-            var form = query(request.getBodyAsString());
-            assertFalse(form.containsKey("client_secret"));
-            lastGrant = form.get("grant_type");
-            if (lastGrant.equals("authorization_code")) {
-                assertEquals("code-1", form.get("code"));
-                assertEquals(redirect, form.get("redirect_uri"));
-                String verifier = form.get("code_verifier");
-                assertTrue(verifier.matches("[A-Za-z0-9_-]{43,128}"));
-                try {
-                    assertEquals(challenge, b64(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII))));
-                } catch (Exception error) {
-                    throw new AssertionError(error);
-                }
-                pkceChecked = true;
-            } else {
-                assertEquals("refresh_token", lastGrant);
-                assertEquals("refresh-1", form.get("refresh_token"));
-            }
-            if (tokenError != null) return response(Map.of("error", tokenError), 400);
-            if (tokenStatus != 200) return response(Map.of("error", "server_error"), tokenStatus);
-            if (malformedTokenResponse) return response(Map.of("unexpected", "response"), 200);
-            var tokens = new JSONObject();
-            tokens.put("access_token", "access-1");
-            tokens.put("token_type", "Bearer");
-            tokens.put("expires_in", 300);
-            if (refreshToken != null) tokens.put("refresh_token", refreshToken);
-            if (!omitIdToken) tokens.put("id_token", tokenOverride == null ? signedToken() : tokenOverride);
-            return response(tokens, 200);
-        }
-
-        String signedToken() {
-            try {
-                var header = new JSONObject();
-                header.put("alg", headerAlgorithm == null ? algorithm : headerAlgorithm);
-                header.put("kid", kid);
-                headers.accept(header);
-                var body = new JSONObject();
-                body.put("iss", ISSUER);
-                body.put("sub", "subject-17");
-                body.put("aud", CLIENT);
-                body.put("iat", clock.instant().getEpochSecond());
-                body.put("exp", clock.instant().plusSeconds(300).getEpochSecond());
-                body.put("nonce", nonce);
-                body.put("name", "Example Member");
-                body.put("email", "member@example.com");
-                claims.accept(body);
-                String input = b64(JSON.toJSONBytes(header)) + "." + b64(JSON.toJSONBytes(body));
-                var signature = Signature.getInstance(switch (algorithm) {
-                    case "EdDSA" -> "Ed25519";
-                    case "RS256" -> "SHA256withRSA";
-                    case "ES256" -> "SHA256withECDSAinP1363Format";
-                    default -> throw new IllegalArgumentException(algorithm);
-                });
-                signature.initSign(signingKey.getPrivate());
-                signature.update(input.getBytes(StandardCharsets.US_ASCII));
-                return input + "." + b64(signature.sign());
-            } catch (Exception error) {
-                throw new AssertionError(error);
-            }
-        }
-
-        ClientHttpResponse response(Object body, int status) {
-            var response = new MockClientHttpResponse(JSON.toJSONBytes(body), status);
-            response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-            return response;
-        }
-    }
-
-    private static final class MutableClock extends Clock {
-        private Instant now = Instant.parse("2026-01-01T00:00:00Z");
-
-        void advance(Duration duration) { now = now.plus(duration); }
-        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
-        @Override public Clock withZone(ZoneId zone) { return this; }
-        @Override public Instant instant() { return now; }
-    }
 }

@@ -35,6 +35,7 @@ import java.util.Map;
 import static org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind.*;
 
 /** Lazy discovery and kid-indexed public keys. Refreshes are serialized and bounded per client. */
+@lombok.extern.slf4j.Slf4j
 final class OidcProvider {
     private static final Duration CACHE_TTL = Duration.ofHours(1);
     private static final Duration KEY_REFRESH_INTERVAL = Duration.ofSeconds(30);
@@ -64,7 +65,7 @@ final class OidcProvider {
             throw new OidcException(PROVIDER_ERROR, "OIDC discovery issuer does not exactly match configured issuer");
         }
         var fresh = new Discovery(endpoint(json, "authorization_endpoint"), endpoint(json, "token_endpoint"),
-                endpoint(json, "jwks_uri"));
+                endpoint(json, "jwks_uri"), Boolean.TRUE.equals(json.get("authorization_response_iss_parameter_supported")));
         supports(json, "response_types_supported", "code");
         supports(json, "code_challenge_methods_supported", "S256");
         supports(json, "token_endpoint_auth_methods_supported", "client_secret_basic");
@@ -81,7 +82,7 @@ final class OidcProvider {
         Discovery metadata = discovery();
         Instant now = clock.instant();
         if (!now.isBefore(keysExpire)) {
-            if (now.isBefore(nextKeyRefresh)) throw new OidcException(INVALID_TOKEN, "OIDC jwks refresh rate limit");
+            if (now.isBefore(nextKeyRefresh)) throw new OidcException(PROVIDER_UNAVAILABLE, "OIDC jwks refresh rate limit");
             // Reserve before I/O: failed requests are rate limited too.
             nextKeyRefresh = now.plus(KEY_REFRESH_INTERVAL);
             loadKeys(metadata.jwks(), now);
@@ -111,16 +112,24 @@ final class OidcProvider {
             throw new OidcException(PROVIDER_ERROR, "OIDC jwks must contain 1 to 100 keys");
         }
         Map<String, SigningKey> loaded = new HashMap<>();
-        try {
-            for (Object entry : array) {
+        var seen = new java.util.HashSet<String>();
+        for (Object entry : array) {
+            try {
                 if (!(entry instanceof JSONObject jwk)) throw new IllegalArgumentException();
-                SigningKey key = parseKey(jwk);
-                if (key == null) continue;
+                if (jwk.containsKey("use") && !"sig".equals(jwk.get("use"))) continue;
+                if (jwk.containsKey("key_ops") && (!(jwk.get("key_ops") instanceof JSONArray ops)
+                        || !ops.contains("verify"))) continue;
                 String kid = OidcJson.text(jwk, "kid", true, PROVIDER_ERROR);
-                if (loaded.putIfAbsent(kid, key) != null) throw new IllegalArgumentException();
+                if (!seen.add(kid)) {
+                    loaded.remove(kid);
+                    log.warn("OIDC jwks: duplicate signing keys skipped");
+                    continue;
+                }
+                SigningKey key = parseKey(jwk);
+                if (key != null) loaded.put(kid, key);
+            } catch (GeneralSecurityException | RuntimeException error) {
+                log.warn("OIDC jwks: invalid signing key skipped");
             }
-        } catch (GeneralSecurityException | RuntimeException error) {
-            throw new OidcException(PROVIDER_ERROR, "OIDC jwks contains an invalid or duplicate signing key");
         }
         if (loaded.isEmpty()) throw new OidcException(PROVIDER_ERROR, "OIDC jwks has no supported signing keys");
         keys = Map.copyOf(loaded);
@@ -207,6 +216,6 @@ final class OidcProvider {
         }
     }
 
-    record Discovery(URI authorization, URI token, URI jwks) { }
+    record Discovery(URI authorization, URI token, URI jwks, boolean responseIssuerRequired) { }
     record SigningKey(String algorithm, PublicKey publicKey) { }
 }

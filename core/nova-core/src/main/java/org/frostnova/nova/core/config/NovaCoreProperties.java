@@ -527,7 +527,7 @@ public class NovaCoreProperties {
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("统一登录 · 回调地址")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
-            @ConfigSummary("留空时使用请求来源加应用前缀及 /config/api/oidc/callback；反向代理部署建议显式填写。")
+            @ConfigSummary("留空时由请求推导回调地址；反向代理建议显式填写。回环地址（127.0.0.1、::1、localhost）允许 HTTP，其余必须 HTTPS。")
             private String redirectUri = "";
 
             /** 账户中心管理页地址，供成员管理跳转使用，可留空。 */

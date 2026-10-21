@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.LockoutMinutes;
 import org.frostnova.nova.core.config.ui.auth.PasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
@@ -111,6 +112,7 @@ public class ConfigUiAuthController {
         result.put("success", true);
         result.put("enabled", authService.isEnabled());
         result.put("totpRequired", authService.totpRequired());
+        result.put("oidcEnabled", authService.oidcEnabled());
 
         // 配置文件在不在。界面进首页该不该转到初始设置<b>不再看这一位</b>：同意使用协议
         // 就会写出 application.yml，按文件在不在判的话刚装好的机器会停在空首页。
@@ -135,11 +137,20 @@ public class ConfigUiAuthController {
 
         result.put("authenticated", session.isPresent());
         // CSRF 令牌只发给已经持有该会话的人，它本身不是秘密，但发给未登录者没有任何意义
-        session.ifPresent(value -> result.put("csrfToken", value.getCsrfToken()));
+        session.ifPresent(value -> {
+            result.put("csrfToken", value.getCsrfToken());
+            var account = authService.account(value);
+            result.put("accountId", account.id());
+            result.put("role", account.role().name());
+            result.put("displayName", account.displayName());
+            result.put("loginMethod", value.getChannel().wire());
+        });
 
         // 已登录但还没绑验证器时提示去绑，本次登录按掉过就不再提
         result.put("totpSetupNeeded", authService.totpPending()
-                && session.map(value -> !value.isTotpSetupDismissed()).orElse(false));
+                && session.map(value -> authService.account(value).role()
+                        == ConfigUiAccount.Role.ADMIN
+                        && !value.isTotpSetupDismissed()).orElse(false));
         // 设置页那个开关显示在哪一档，照这一位来而不是照配置项猜：
         // 绑定与关闭都当场生效，配置文件里那一行要到下次重启才被读一遍
         result.put("totpEnabled", authService.totpEnabled());
@@ -239,7 +250,7 @@ public class ConfigUiAuthController {
 
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
-        agreement.setAcceptedBy(channel.wire());
+        agreement.setAcceptedBy(ConfigUiAccess.actor() + " (" + channel.wire() + ")");
 
         // 🔴 <b>写不进去也照常放行</b>：人已经看过并点了同意，这件事已经发生了；
         // 写盘失败的后果只是下次启动还要再点一次，而反过来让一次写盘失败把人挡在控制台外面，
@@ -820,7 +831,7 @@ public class ConfigUiAuthController {
         result.put("success", true);
 
         if (all) {
-            result.put("count", authService.logoutAll());
+            result.put("count", authService.logoutAll(sessionId(request)));
         } else {
             authService.logout(sessionId(request));
         }
@@ -851,6 +862,8 @@ public class ConfigUiAuthController {
     }
 
     private String sessionId(HttpServletRequest request) {
+        ConfigUiSession established = ConfigUiAccess.session(request);
+        if (established != null) return established.getId();
         return Optional.ofNullable(request.getCookies())
                 .flatMap(cookies -> Arrays.stream(cookies)
                         .filter(c -> ConfigUiSecurityFilter.SESSION_COOKIE.equals(c.getName()))

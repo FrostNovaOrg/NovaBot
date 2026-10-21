@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
@@ -108,6 +109,11 @@ public class ConfigUiRegistrar {
     /**
      * 已登记的通行密钥存在哪
      */
+    @Bean
+    public ConfigUiAccountStore configUiAccountStore(NovaStateStore state) {
+        return new ConfigUiAccountStore(state);
+    }
+
     @Bean
     public PasskeyStore passkeyStore(NovaStateStore stateStore) {
         return new PasskeyStore(stateStore);

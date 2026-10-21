@@ -570,7 +570,7 @@ class ConfigUiAgreementGateTest {
 
         MockHttpServletResponse accepted = accept(filter(), controller, sessionId, csrfOf(sessionId), null);
         assertEquals(200, accepted.getStatus(), "带着会话与 CSRF 令牌点下的同意才作数");
-        assertEquals(ConfigUiSession.Channel.PASSWORD.wire(), agreement().getAcceptedBy(),
+        assertEquals("本地管理员 (password)", agreement().getAcceptedBy(),
                 "记录要写下人是从哪条通道进来的，否则日后仍然答不上「这是谁点的」");
         assertFalse(agreement().getAcceptedAt().isBlank(), "时间也要留下");
 
@@ -626,7 +626,7 @@ class ConfigUiAgreementGateTest {
 
         MockHttpServletResponse accepted = accept(filter(), controller, sessionId, csrfOf(sessionId), null);
         assertEquals(200, accepted.getStatus(), "凭这条通道进来的人同样点得动同意");
-        assertEquals(ConfigUiSession.Channel.OPERATOR_TOKEN.wire(), agreement().getAcceptedBy(),
+        assertEquals("本地管理员 (operator-token)", agreement().getAcceptedBy(),
                 "这条通道绕过了口令与二次验证，记录里就该写明同意是从它那里来的");
 
         assertEquals(200, visitWithSession(ConfigUiController.BASE_PATH + "/api/session-check", sessionId).getStatus(),
@@ -639,7 +639,7 @@ class ConfigUiAgreementGateTest {
         MockHttpServletResponse accepted = accept(tokenFormFilter(), controller, null, null, TOKEN);
 
         assertEquals(200, accepted.getStatus(), "这一形态里令牌就是凭据，凭它点下的同意作数");
-        assertEquals(ConfigUiSession.Channel.OPERATOR_TOKEN.wire(), agreement().getAcceptedBy(),
+        assertEquals("本地管理员 (operator-token)", agreement().getAcceptedBy(),
                 "记录里写的是它真正走的那条通道");
     }
 
@@ -678,7 +678,7 @@ class ConfigUiAgreementGateTest {
         Map<String, String> saved = fileService.read();
         assertEquals(String.valueOf(ConfigUiAgreement.VERSION), saved.get(ACCEPTED_VERSION_KEY),
                 "同意的是哪一版必须落在盘上，只记在内存里等于重启就忘");
-        assertEquals(ConfigUiSession.Channel.OPERATOR_TOKEN.wire(), saved.get(ACCEPTED_BY_KEY),
+        assertEquals("本地管理员 (operator-token)", saved.get(ACCEPTED_BY_KEY),
                 "从哪条通道同意的同样要落盘：只留在内存里的话，重启后这行记录又说不出是谁点的了");
 
         String acceptedAt = saved.get(ACCEPTED_AT_KEY);

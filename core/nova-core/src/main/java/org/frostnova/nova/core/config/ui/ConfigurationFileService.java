@@ -1207,7 +1207,7 @@ public class ConfigurationFileService implements SmartLifecycle {
                 backup();
             }
             DurableFiles.replace(configPath, lines, DurableFiles.OWNER_ONLY);
-            log.info("配置界面已更新 {} 个配置项: {}", changed.size(), String.join(", ", changed));
+            log.info("配置界面已更新 {} 个配置项: {}, 操作者: {}", changed.size(), String.join(", ", changed), ConfigUiAccess.actor());
         }
 
         return List.copyOf(changed);
