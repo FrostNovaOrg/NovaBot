@@ -8,7 +8,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../..
 const core = resolve(root, 'core/nova-core/src/main/resources/config-ui');
 const plugin = resolve(root, 'plugins/nova-console/src/main/resources/config-ui-pages');
 const mode = process.argv[2] || 'requests';
-const role = mode === 'admin' ? 'ADMIN' : mode === 'legacy' ? undefined : mode === 'unknown' ? 'OTHER' : 'MEMBER';
+const startup = mode.startsWith('loading-') || mode.startsWith('sidebar-');
+const role = (mode === 'sidebar-admin' || (mode.startsWith('loading-') && !mode.startsWith('loading-member-')) || mode === 'admin') ? 'ADMIN' : mode === 'legacy' ? undefined : mode === 'unknown' ? 'OTHER' : 'MEMBER';
 class Element {
   constructor(tag = 'div') {
     this.tagName = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.style = {};
@@ -85,6 +86,13 @@ document.head = document.querySelector('head'); document.body = document.querySe
 const $ = selector => document.querySelector(selector);
 const visible = node => !!node && !node.hidden && node.style.display !== 'none' && (!node.classList.contains('page') || node.classList.contains('on')) && (!node.parentNode || visible(node.parentNode));
 const events = {};
+const heldPath = mode.startsWith('loading-') ? '/' + mode.replace(/^loading-(member-)?/, '') : '/auth/state';
+let hold = startup, releaseHeld;
+let startupTimer;
+const startupTimeout = (fn, ms, ...args) => {
+  if (ms === 15000) { startupTimer = fn; return 'startup'; }
+  return setTimeout(fn, ms, ...args);
+};
 const location = {_hash: mode === 'nav' ? '#/settings' : '#/home', reload() {},
   get hash() { return this._hash; },
   set hash(value) { if (this._hash === value) return; this._hash = value;
@@ -102,6 +110,7 @@ let pending = 0;
 const fetch = async (url, options = {}) => {
   pending++; requests.push([options.method || 'GET', String(url)]);
   const path = String(url).split('/api')[1] || '';
+  if (hold && path === heldPath) { pending--; await new Promise(done => { releaseHeld = done; }); pending++; }
   const body = path === '/auth/state' ? auth : path === '/status' ? (role === 'MEMBER' ? memberStatus : adminStatus)
     : path === '/pages' ? {pages, accessiblePages: ['home', 'push', 'streamers']}
     : path.startsWith('/timeline') ? {events: [{at: Date.now(), type: 'PUSH_BLOCKED_WORD', level: 'WARN', streamer: 'Owner A', text: '自家屏蔽词事件'}]}
@@ -114,7 +123,7 @@ const fetch = async (url, options = {}) => {
   pending--; return {status: path === '/login' ? 403 : 200, json: async () => body};
 };
 const context = vm.createContext({document, location, window, fetch, console, URL, URLSearchParams, Date, Set, Map, Promise,
-  setTimeout, clearTimeout, setInterval, clearInterval, AbortController});
+  setTimeout: startupTimeout, clearTimeout: id => { if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval, clearInterval, AbortController});
 const stubs = {
   'bot.js': ['bindBotForm','botFormHtml','fillBotForms'],
   'links.js': ['focusStation','loadTargets','mountLinkCard','refreshLinks','sendTestMessage'],
@@ -153,12 +162,47 @@ async function settle() {
   }
 }
 const main = getModule(resolve(core, 'main.js'));
+let initialAdminLinks;
+// 身份未知时出现管理入口，会让成员误以为自己能打开日志、连接和设置。
+if (mode.startsWith('sidebar-')) initialAdminLinks = ['log','links','settings'].filter(id => visible($('#nav').querySelector('[data-page="' + id + '"]')));
 await main.link(link); await main.evaluate(); await settle();
 const store = getModule(resolve(core, 'store.js')).namespace.store;
 const overview = getModule(resolve(core, 'overview.js')).namespace;
 const go = async hash => { location.hash = hash; await settle(); };
 let checks = 0, failed = 0;
 async function check(name, fn) { checks++; try { await fn(); console.log('绿 ' + name); } catch (e) { failed++; console.log('红 ' + name + '：' + e.message); } }
+// 某个首屏接口不回时，主区应给出等待、超时与可恢复的重试入口。
+if (mode.startsWith('loading-')) await check('首屏等待、15 秒超时与重试 ' + heldPath, async () => {
+  assert.ok(releaseHeld, '应已等在指定接口');
+  assert.match($('#main').textContent, /正在加载…/);
+  assert.ok(!visible($('#page-home')), '身份与清单齐备前不展开首页');
+  assert.equal(typeof startupTimer, 'function', '应设置 15 秒期限');
+  startupTimer();
+  const retry = walk($('#main')).find(node => node.tagName === 'button' && visible(node) && node.textContent === '重试');
+  assert.match($('#main').textContent, /控制台没加载出来，请刷新页面重试。/);
+  assert.ok(retry, '应显示重试按钮');
+  const before = requests.filter(([,path]) => path.endsWith('/auth/state')).length;
+  hold = false;
+  for (const fn of retry.listeners.click || []) fn();
+  await settle();
+  assert.equal(requests.filter(([,path]) => path.endsWith('/auth/state')).length, before + 1);
+  assert.ok(visible($('#page-home')), '重试成功后展开首页');
+  if (role === 'ADMIN') assert.equal($('#run-mem').textContent, '12 / 64 MB');
+  else assert.ok(!visible($('#home-events').querySelector('a')));
+  releaseHeld(); await settle();
+  assert.equal($('#nav').querySelectorAll('a').filter(link => link.dataset.page === 'push').length, 1, '旧请求返回不能重复挂页');
+});
+// 成员一进来不应闪过管理入口；只有确认管理员身份才显示这三项。
+if (mode.startsWith('sidebar-')) await check('身份前隐藏管理导航 ' + role, async () => {
+  assert.deepEqual(initialAdminLinks, []);
+  hold = false; releaseHeld(); await settle();
+  const shown = ['log','links','settings'].filter(id => visible($('#nav').querySelector('[data-page="' + id + '"]')));
+  assert.deepEqual(shown, role === 'ADMIN' ? ['log','links','settings'] : []);
+});
+// 成员点击全部事件会被弹回首页，因此首页不能提供这个死链；管理员仍需保留。
+if (mode === 'home' || mode === 'admin') await check('全部事件入口 ' + role, () => {
+  assert.equal(visible($('#home-events').querySelector('a')), role === 'ADMIN');
+});
 // 成员点日志、设置会看到空页；导航与直接地址都应只开放名下可用页面。
 if (mode === 'nav') await check('成员导航与直接地址', async () => {
   assert.deepEqual(Array.from($('#nav').querySelectorAll('a')).filter(visible).map(a => a.dataset.page), ['home','push','streamers']);

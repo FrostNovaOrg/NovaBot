@@ -33,12 +33,15 @@ const accessiblePages = new Set(['home']);
 
 /** 身份到达后再显示导航与首页，避免成员先看到实例管理入口。 */
 function applyRoleView() {
-  if (store.role !== 'MEMBER') return;
+  if (store.role !== 'MEMBER') {
+    document.querySelectorAll('#nav a').forEach(link => { link.style.display = ''; });
+    return;
+  }
   document.querySelectorAll('#nav a').forEach(link => {
     if (link.dataset.page !== 'home') link.remove();
   });
   for (const selector of ['.runbox', '.verline', '#home-banner', '#home-todo',
-    '.home-connections', '#home-probes', '#cfg-path', '#plugin-adv']) {
+    '.home-connections', '#home-all-events', '#home-probes', '#cfg-path', '#plugin-adv']) {
     const node = $(selector);
     if (node) node.style.display = 'none';
   }
@@ -92,10 +95,11 @@ const topPageIds = new Set();
  * refresh 调的时机不止一处：进页、整体载入、设置页存完之后的重取都会来一遍
  * （有草稿的页也会被调到），refresh 得按内存里那份状态重画并留住草稿。
  */
-async function mountPages() {
+async function mountPages(attempt) {
   let list = [];
   try {
-    const response = await api('/pages');
+    const response = await api('/pages', {signal: attempt.controller.signal});
+    if (!attempt.active) return;
     list = response.pages || [];
     if (store.role === 'MEMBER') {
       (response.accessiblePages || []).forEach(id => accessiblePages.add(id));
@@ -113,6 +117,7 @@ async function mountPages() {
 
   const slot = $('#page-tabs');
   for (const meta of list) {
+    if (!attempt.active) return;
     const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta)
       : meta.slot === SLOT_TOP ? mountTopPage(meta)
       : meta.slot === SLOT_HOME_CARD ? mountHomeCard(meta)
@@ -122,11 +127,13 @@ async function mountPages() {
 
     try {
       const module = await import(CONSOLE + '/assets/' + meta.script);
+      if (!attempt.active) return;
       const page = {meta, module};
       pages.push(page);
       registerPageChangeSource(page);
       module.render?.(container);
     } catch (e) {
+      if (!attempt.active) return;
       // 装不上的页也要留在清单里。清单是路由认页的唯一依据，不留就等于 #/settings/<页标识>
       // 认不出它，于是下面这句「为什么空着」永远显示不出来——而这句话正是给装不上时看的
       if (!pages.some(item => item.meta.id === meta.id)) pages.push({meta, module: {}});
@@ -777,42 +784,77 @@ $('#bot-open').addEventListener('click', () => { if (botHref) location.href = bo
 
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
-api('/auth/state')
-  .then(state => {
-    store.role = state.role;
-    applyRoleView();
-    store.csrfToken = state.csrfToken || '';
-    // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
-    store.totpRequired = !!state.totpRequired;
-    // 配置文件在不在。进首页该不该转到初始设置不看这一位（看五步），仍收下以免别处读它
-    store.setupDone = typeof state.setupDone === 'boolean' ? state.setupDone : null;
-    $('#auth-actions').style.display = state.enabled ? '' : 'none';
-    // 「登录与安全」那一组要按这几位决定摆哪一版（改口令还是重设口令、开关在哪一档），
-    // 因此必须赶在下面那趟整体载入之前交进去——那一趟里就要画它了
-    setAuthState(state);
-    setMemberAuthState(state);
-    renderPersonalMenu($('#personal-menu'), state);
-    // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
-    // 那道门开着这件事没有任何其它现象
-    $('#op-banner').style.display = state.operatorSession ? '' : 'none';
-  })
-  .catch(() => {})
-  // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
-  .then(() => {
-    if (store.role !== 'MEMBER') {
-      $('#bot-form').innerHTML = botFormHtml('bot');
-      bindBotForm('bot');
-      loadBotConsole();
-    }
-    return Promise.all([
-      api('/status').catch(() => null),
-      store.role === 'MEMBER' ? Promise.resolve(null) : api('/login').catch(() => null),
-    ]).then(([status, login]) => {
-      homeStatus = status;
-      homeLogin = login;
+let startupAttempt;
+function startConsole() {
+  if (startupAttempt) {
+    startupAttempt.active = false;
+    startupAttempt.controller.abort();
+  }
+  const attempt = {active: true, controller: new AbortController()};
+  startupAttempt = attempt;
+  store.authReady = false;
+  $('#startup').style.display = '';
+  $('#startup-message').textContent = '正在加载…';
+  $('#startup-retry').style.display = 'none';
+  const timer = setTimeout(() => {
+    attempt.active = false;
+    attempt.controller.abort();
+    $('#startup-message').textContent = '控制台没加载出来，请刷新页面重试。';
+    $('#startup-retry').style.display = '';
+  }, 15000);
+  return api('/auth/state', {signal: attempt.controller.signal})
+    .then(state => {
+      if (!attempt.active) return;
+      store.role = state.role;
+      applyRoleView();
+      store.csrfToken = state.csrfToken || '';
+      // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
+      store.totpRequired = !!state.totpRequired;
+      // 配置文件在不在。进首页该不该转到初始设置不看这一位（看五步），仍收下以免别处读它
+      store.setupDone = typeof state.setupDone === 'boolean' ? state.setupDone : null;
+      $('#auth-actions').style.display = state.enabled ? '' : 'none';
+      // 「登录与安全」那一组要按这几位决定摆哪一版（改口令还是重设口令、开关在哪一档），
+      // 因此必须赶在下面那趟整体载入之前交进去——那一趟里就要画它了
+      setAuthState(state);
+      setMemberAuthState(state);
+      renderPersonalMenu($('#personal-menu'), state);
+      // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
+      // 那道门开着这件事没有任何其它现象
+      $('#op-banner').style.display = state.operatorSession ? '' : 'none';
+    })
+    .catch(() => {})
+    // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
+    .then(() => {
+      if (!attempt.active) return;
+      // 身份请求报错时仍沿用原来的兼容行为。
+      applyRoleView();
+      if (store.role !== 'MEMBER') {
+        $('#bot-form').innerHTML = botFormHtml('bot');
+        bindBotForm('bot');
+        loadBotConsole();
+      }
+      return Promise.all([
+        api('/status', {signal: attempt.controller.signal}).catch(() => null),
+        store.role === 'MEMBER' ? Promise.resolve(null) : api('/login', {signal: attempt.controller.signal}).catch(() => null),
+      ]).then(([status, login]) => {
+        if (!attempt.active) return;
+        homeStatus = status;
+        homeLogin = login;
+      });
+    })
+    // 插件页要先挂上去，随后那一趟整体载入才有东西可刷
+    .finally(async () => {
+      if (!attempt.active) return;
+      await mountPages(attempt);
+      if (!attempt.active) return;
+      clearTimeout(timer);
+      $('#startup').style.display = 'none';
+      store.authReady = true;
+      applyRoute();
+      load();
     });
-  })
-  // 插件页要先挂上去，随后那一趟整体载入才有东西可刷
-  .finally(() => mountPages().finally(() => { store.authReady = true; applyRoute(); load(); }));
+}
+$('#startup-retry').addEventListener('click', startConsole);
+startConsole();
 
 // 页面在身份和插件清单到达后由 applyRoute 显示。
