@@ -194,8 +194,10 @@ class DatasourceBackupTest {
             seedTwoUsers();
             var account = new ConfigUiAccount("editor", role, ConfigUiAccount.Status.ENABLED,
                     "Editor", null, null, null, List.of("bilibili:1"), Instant.EPOCH, null, true);
+            var platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+            when(platforms.platforms()).thenReturn(List.of("bilibili"));
             var mvc = MockMvcBuilders.standaloneSetup(controller)
-                    .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
+                    .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms)).build();
             JSONObject lists = JSONObject.parseObject("""
                     {"dynamicBlockWords":[" 回放 "],"wordCloudBlockWords":["原神启动"],"wordCloudExcludeUids":["123"]}
                     """);
