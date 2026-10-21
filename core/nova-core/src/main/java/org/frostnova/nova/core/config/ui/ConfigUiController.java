@@ -281,6 +281,9 @@ public class ConfigUiController {
      */
     private final Clock backupClock;
 
+    @Autowired(required = false)
+    private ObjectProvider<PushTargetLookup> targetLookups = emptyProvider(PushTargetLookup.class);
+
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
                               NovaCoreProperties properties,
@@ -827,6 +830,9 @@ public class ConfigUiController {
 
         JSONArray pages = new JSONArray();
         for (ConsolePageProvider page : ConsolePages.valid(pageProviders.orderedStream().toList())) {
+            if (ConfigUiAccess.memberAccount() != null && (!page.memberAccessible()
+                    || page.slot() == org.frostnova.nova.core.config.ui.page.ConsolePageSlot.LINKS
+                    || page.slot() == org.frostnova.nova.core.config.ui.page.ConsolePageSlot.SETTINGS)) continue;
             JSONObject item = new JSONObject();
             item.put("id", page.id());
             item.put("displayName", page.displayName());
@@ -843,6 +849,14 @@ public class ConfigUiController {
         }
 
         result.put("pages", pages);
+        if (ConfigUiAccess.memberAccount() != null) {
+            List<String> accessible = new ArrayList<>(List.of("home"));
+            for (Object value : pages) {
+                JSONObject page = (JSONObject) value;
+                if ("top".equals(page.getString("slot"))) accessible.add(page.getString("id"));
+            }
+            result.put("accessiblePages", accessible);
+        }
         return result;
     }
 
@@ -1843,6 +1857,7 @@ public class ConfigUiController {
                 JSONArray summaries = new JSONArray();
                 for (Object item : readDatasourceUsers()) {
                     JSONObject user = (JSONObject) item;
+                    if (!ConfigUiAccess.visible(user.getString("platform"), user.getLong("uid"))) continue;
                     JSONObject summary = fields(user, "platform", "uid", "enabled", "roomId");
                     JSONArray targets = new JSONArray();
                     for (Object entry : user.getJSONArray("targets") == null ? new JSONArray() : user.getJSONArray("targets")) {
@@ -1930,6 +1945,10 @@ public class ConfigUiController {
                         || !Objects.equals(uid, replacement.getString("uid")))) {
                     return ResponseEntity.badRequest().body(datasourceError("主播的平台与 uid 不可更改"));
                 }
+                if ("save".equals(action) && ConfigUiAccess.memberAccount() != null) {
+                    String issue = validateNewTargets(current, replacement);
+                    if (issue != null) return ResponseEntity.badRequest().body(datasourceError(issue));
+                }
                 String description = switch (action) {
                     case "add" -> "加了主播 ";
                     case "delete" -> "删了主播 ";
@@ -1948,6 +1967,31 @@ public class ConfigUiController {
                 return ResponseEntity.ok(datasourceError("保存推送配置失败: " + e.getMessage()));
             }
         }
+    }
+
+    private String validateNewTargets(JSONObject current, JSONObject replacement) {
+        JSONArray oldTargets = current.getJSONArray("targets");
+        JSONArray targets = replacement.getJSONArray("targets");
+        if (targets == null) return null;
+        for (Object value : targets) {
+            JSONObject target = (JSONObject) value;
+            boolean existing = oldTargets != null && oldTargets.stream().map(item -> (JSONObject) item).anyMatch(old ->
+                    Objects.equals(old.getString("platform"), target.getString("platform"))
+                    && Objects.equals(old.getInteger("type"), target.getInteger("type"))
+                    && Objects.equals(old.getLong("num"), target.getLong("num")));
+            if (existing) continue;
+            String platform = target.getString("platform");
+            Long num = org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.positiveDecimal(target.get("num"));
+            Integer code = target.getInteger("type");
+            PushTargetType type = code == null ? null : PushTargetType.of(code);
+            if (platform == null || num == null || type == null || type == PushTargetType.UNKNOWN)
+                return "请填写完整的推送平台、会话类型与号码";
+            var lookup = targetLookups.orderedStream().filter(item -> item.supports(platform)).findFirst();
+            if (lookup.isEmpty()) return "无法核实会话 " + num + "，请联系管理员检查推送平台";
+            var found = lookup.get().lookup(platform, type, num, ConfigUiAccess.memberAccount());
+            if (!found.found()) return "会话 " + num + "：" + found.message();
+        }
+        return null;
     }
 
     private boolean datasourceMessageCustom(JSONObject message) {
@@ -2102,6 +2146,7 @@ public class ConfigUiController {
      */
     @GetMapping("/api/status")
     public JSONObject status() {
+        if (ConfigUiAccess.memberAccount() != null) return memberStatus();
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("health", health());
@@ -2181,6 +2226,18 @@ public class ConfigUiController {
         result.put("queue", queue());
         result.put("alerts", alerts());
         return result;
+    }
+
+    private JSONObject memberStatus() {
+        JSONArray users = new JSONArray();
+        for (var user : new ConfigUiConfiguredUsers(properties).users(dataSource.getAllUsers())) {
+            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid())) continue;
+            users.add(JSONObject.of("uid", user.getUid(), "uname", streamerNames.uname(user), "roomId", user.getRoomId(),
+                    "platform", user.getPlatform(), "enabled", user.getEnabled(), "targets", user.getTargets().size()));
+        }
+        return JSONObject.of("success", true, "users", users, "locked", authService.isEnabled(),
+                "pushEnabled", properties.getPush().isEnabled(), "totalDataAvailable", liveDataService.supportsTotalData(),
+                "quiet", quiet(), "live", liveNow(), "today", todayPushCounts());
     }
 
     /**
@@ -2321,7 +2378,7 @@ public class ConfigUiController {
         JSONArray items = new JSONArray();
 
         dataSource.getAllUsers().forEach(user -> {
-            if (Boolean.FALSE.equals(user.getEnabled())) {
+            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid()) || Boolean.FALSE.equals(user.getEnabled())) {
                 return;
             }
             if (!liveDataService.getLiveStatus(user.getPlatform(), user.getUid()).orElse(false)) {
@@ -2350,7 +2407,8 @@ public class ConfigUiController {
      * @return 今日推送条数
      */
     private JSONObject todayPushCounts() {
-        Map<TimelineEventType, Integer> counts = timeline.countsOn(LocalDate.now());
+        Map<TimelineEventType, Integer> counts = ConfigUiAccess.memberAccount() == null
+                ? timeline.countsOn(LocalDate.now()) : timeline.countsOn(LocalDate.now(), ConfigUiAccess::visible);
         JSONObject json = new JSONObject();
         json.put("sent", counts.getOrDefault(TimelineEventType.PUSH_SENT, 0));
         json.put("failed", counts.getOrDefault(TimelineEventType.PUSH_FAILED, 0));

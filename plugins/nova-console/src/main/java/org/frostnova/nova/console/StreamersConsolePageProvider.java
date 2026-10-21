@@ -16,6 +16,9 @@ import java.util.List;
 @NovaComponent
 public class StreamersConsolePageProvider implements ConsolePageProvider {
     @Override
+    public boolean memberAccessible() { return true; }
+
+    @Override
     public String id() {
         return "streamers";
     }

@@ -9,7 +9,7 @@ import java.util.Map;
 
 /** Permissions for the method and path pattern selected by Spring MVC. */
 public final class ConfigUiPermissions {
-    public enum Access { EVERYONE, STREAMER, ADMIN }
+    public enum Access { EVERYONE, STREAMER, FILTERED, ADMIN }
     public enum Subject { NONE, PATH, QUERY, LOOKUP, SUBSCRIPTION, PREVIEW }
     public record Rule(Access access, Subject subject) { }
     private static final Rule DEFAULT = new Rule(Access.ADMIN, Subject.NONE);
@@ -30,7 +30,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/oidc/callback");
         add(entries, Access.EVERYONE, Subject.NONE, "POST /config/api/oidc/backchannel-logout");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/auth/agreement");
-        add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/pages");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/pages");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/vocab");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/platforms");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/session-check");
@@ -99,8 +99,8 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/datasource/users");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/datasource/users/{platform}/{uid}/delete");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/version/skip");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/datasource/users");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/status");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/datasource/users");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/status");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/alert/channels");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/alert/test");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/setup/test-sent");
@@ -108,7 +108,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/setup/rerun/consumed");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/engineering-log");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/timeline/days");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/timeline");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/timeline");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/push/toggle");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/templates");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/command");
@@ -118,14 +118,15 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/binding");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics/sessions");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/streamers");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/state");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/push-history");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/at-all/quota");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/streamers");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/state");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/push-history");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/at-all/quota");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/bot/console");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/napcat/credential");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/bot/targets");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/bot/targets/refresh");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/bot/targets/lookup");
         ENTRIES = Collections.unmodifiableMap(entries);
     }
 

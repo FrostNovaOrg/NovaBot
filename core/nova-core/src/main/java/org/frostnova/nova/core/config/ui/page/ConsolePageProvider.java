@@ -22,6 +22,9 @@ public interface ConsolePageProvider {
      */
     String id();
 
+    /** Whether members can use this page; new plugin pages require an explicit opt-in. */
+    default boolean memberAccessible() { return false; }
+
     /**
      * 页签上显示的名字
      * @return 显示名称

@@ -33,6 +33,25 @@ public final class ConfigUiAccess {
                 && account.role() == ConfigUiAccount.Role.MEMBER;
     }
 
+    public static ConfigUiAccount memberAccount() {
+        var request = request();
+        return member(request) ? (ConfigUiAccount) request.getAttribute(ACCOUNT) : null;
+    }
+
+    public static boolean visible(String platform, Long uid) {
+        var member = memberAccount();
+        return member == null || org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.owns(member, platform, uid);
+    }
+
+    public static boolean visible(org.frostnova.nova.core.timeline.TimelineEvent event) {
+        var member = memberAccount();
+        if (member == null) return true;
+        if (event.streamer() == null) return false;
+        return org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.owns(member,
+                event.detail().get("streamerPlatform"),
+                org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.positiveDecimal(event.detail().get("streamerUid")));
+    }
+
     public static ConfigUiAccount admin(HttpServletRequest request) {
         if (!(request.getAttribute(ACCOUNT) instanceof ConfigUiAccount account)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "尚未登录");

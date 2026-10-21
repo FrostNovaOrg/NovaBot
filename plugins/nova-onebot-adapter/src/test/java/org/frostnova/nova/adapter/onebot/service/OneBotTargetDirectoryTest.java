@@ -146,6 +146,24 @@ class OneBotTargetDirectoryTest {
         return snapshots.get(0);
     }
 
+    // 精确查号限频后只能读缓存，缓存过期也不能暗中触发网络请求。
+    @Test
+    void cacheOnlyLookupDoesNotFetchAndSinglePlatformRefreshUpdatesIt() {
+        assertNull(directory.cachedSnapshot(SENDER));
+        verify(http, never()).getGroupList(any(), any());
+        var first = directory.snapshot(SENDER, false);
+        assertSame(first, directory.cachedSnapshot(SENDER));
+        clock.forward(Duration.ofMinutes(11));
+        assertSame(first, directory.cachedSnapshot(SENDER));
+        verify(http, times(1)).getGroupList(any(), any());
+        var refreshed = directory.snapshot(SENDER, true);
+        assertSame(refreshed, directory.cachedSnapshot(SENDER));
+        verify(http, times(2)).getGroupList(any(), any());
+        directory.invalidate(SENDER);
+        assertNull(directory.cachedSnapshot(SENDER));
+        assertNull(directory.snapshot("unknown", true));
+    }
+
     @Test
     @DisplayName("群与好友逐项解析, 管理员按群内角色判")
     void parsesBothTables() {

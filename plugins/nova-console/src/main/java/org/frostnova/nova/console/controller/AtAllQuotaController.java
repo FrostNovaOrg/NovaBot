@@ -53,6 +53,9 @@ public class AtAllQuotaController {
 
     private final NovaSenderService senders;
 
+    @Autowired(required = false)
+    private org.frostnova.nova.core.config.ui.ConfigUiConfiguredUsers configured;
+
     @Autowired
     public AtAllQuotaController(AtAllQuotaService quota, AbstractDataSource dataSource,
                                 NovaCoreProperties properties, NovaSenderService senders) {
@@ -85,7 +88,7 @@ public class AtAllQuotaController {
                     quota.used(target.getPlatform(), target.getNum()), sessionLimit));
         }
 
-        result.put("bots", bots);
+        if (org.frostnova.nova.core.config.ui.ConfigUiAccess.memberAccount() == null) result.put("bots", bots);
         result.put("sessions", sessions);
         return result;
     }
@@ -120,7 +123,10 @@ public class AtAllQuotaController {
     private Set<PushTarget> groups() {
         Set<PushTarget> targets = new LinkedHashSet<>();
         Set<Map.Entry<String, Long>> seen = new LinkedHashSet<>();
-        for (PushUser user : dataSource.getAllUsers()) {
+        var users = configured != null && org.frostnova.nova.core.config.ui.ConfigUiAccess.memberAccount() != null
+                ? configured.users(dataSource.getAllUsers()) : dataSource.getAllUsers();
+        for (PushUser user : users) {
+            if (!org.frostnova.nova.core.config.ui.ConfigUiAccess.visible(user.getPlatform(), user.getUid())) continue;
             for (PushTarget target : user.getTargets()) {
                 if (PushTargetType.GROUP != target.getType() || target.getNum() == null) {
                     continue;

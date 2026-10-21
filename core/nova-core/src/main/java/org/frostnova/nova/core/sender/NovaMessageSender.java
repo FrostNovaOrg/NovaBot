@@ -598,7 +598,7 @@ public class NovaMessageSender {
             // 编号与「送达」在消息里一起定下来，这之后才登记的成功回调会当场执行
             chargedOn.set(null);
             List<Runnable> succeeded = message.markDelivered(result.getString("id"));
-            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
+            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis, message.getChannel());
             log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
             runEach(succeeded, message, "发送成功");
         } else if (Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN))) {
@@ -607,12 +607,12 @@ public class NovaMessageSender {
             // 不记进失败次数。跑送达不明回调而不是失败回调——失败回调会让上层按「发不出去」入重投，
             // 群里就多一条一样的。手里没有编号，靠编号的后续（挂群待办）本来就做不成
             chargedOn.set(null);
-            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
+            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis, message.getChannel());
             log.warn("消息送达不明 ({}), 不重发: NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
             message.setFailureReason(result.getString("message"));
             runEach(message.markUncertain(), message, "送达不明");
         } else {
-            activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
+            activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis, message.getChannel());
             log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
             // 先试去掉图片再发一次文字。文字送到了就按送达算：写下那条文字的编号，跑成功回调。
@@ -718,7 +718,7 @@ public class NovaMessageSender {
         boolean textUncertain = !textDelivered && result != null
                 && Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN));
         if (textDelivered) {
-            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
+            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis, message.getChannel());
             log.warn("推送含图片的消息失败, 已剥除图片段重发纯文字并送达（图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"));
@@ -738,7 +738,7 @@ public class NovaMessageSender {
             // 也不当没发出去——额度不退、不记进失败，跑送达不明回调而不是失败回调，
             // 失败回调会让上层按「发不出去」入重投，群里就多一条一样的
             String reason = result.getString("message");
-            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), reason, elapsedMillis);
+            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), reason, elapsedMillis, message.getChannel());
             log.warn("剥除图片段后重发的纯文字送达不明（图片未送达, 不重发）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}；重发送达不明: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"), reason);

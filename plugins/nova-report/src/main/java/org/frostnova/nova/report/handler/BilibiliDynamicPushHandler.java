@@ -251,6 +251,8 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
 
         timeline.record(TimelineEvent.of(TimelineEventType.PUSH_BLOCKED_WORD, TimelineEvent.Level.WARN)
                 .streamer(streamer)
+                .detail("streamerPlatform", event.getPlatform())
+                .detail("streamerUid", String.valueOf(event.getSource().getUid()))
                 .text("命中屏蔽词「" + word + "」，没有推送" + streamer + "的这条动态")
                 .detail("word", word)
                 .detail("url", url)

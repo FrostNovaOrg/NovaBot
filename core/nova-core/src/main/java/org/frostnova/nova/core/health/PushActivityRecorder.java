@@ -4,6 +4,9 @@ import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import lombok.Getter;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -67,9 +70,32 @@ public class PushActivityRecorder {
      */
     private final TimelineWriter timeline;
 
+    private final StreamerNames names;
+
+    public PushActivityRecorder(TimelineWriter timeline) { this(timeline, StreamerNames.none()); }
+
     @Autowired
-    public PushActivityRecorder(TimelineWriter timeline) {
+    public PushActivityRecorder(TimelineWriter timeline, StreamerNames names) {
         this.timeline = timeline;
+        this.names = names;
+    }
+
+    private PushUser streamer(PushTarget channel) {
+        PushUser user = channel == null ? null : channel.getUser();
+        return user == null || user.getPlatform() == null || user.getUid() == null ? null : user;
+    }
+
+    private TimelineEvent.Builder withStreamer(TimelineEvent.Builder event, PushUser user) {
+        if (user == null) return event;
+        String name = names.uname(user);
+        return event.streamer(name == null || name.isBlank() ? String.valueOf(user.getUid()) : name)
+                .detail("streamerPlatform", user.getPlatform()).detail("streamerUid", String.valueOf(user.getUid()));
+    }
+
+    private PushRecord record(Instant at, String platform, String target, String summary, boolean success,
+                              String reason, boolean uncertain, PushUser user) {
+        return new PushRecord(at, platform, target, summary, success, reason, uncertain,
+                user == null ? null : user.getPlatform(), user == null ? null : user.getUid());
     }
 
     /**
@@ -80,11 +106,16 @@ public class PushActivityRecorder {
      * @param elapsedMillis 投递耗时，单位毫秒
      */
     public void recordSuccess(String platform, String target, String summary, long elapsedMillis) {
+        recordSuccess(platform, target, summary, elapsedMillis, null);
+    }
+
+    public void recordSuccess(String platform, String target, String summary, long elapsedMillis, PushTarget channel) {
+        PushUser user = streamer(channel);
         lastSuccessAt = Instant.now();
         successCount.incrementAndGet();
-        append(new PushRecord(lastSuccessAt, platform, target, summary, true, null));
+        append(record(lastSuccessAt, platform, target, summary, true, null, false, user));
 
-        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+        timeline.record(withStreamer(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO), user)
                 .at(lastSuccessAt)
                 .channel(target)
                 .text("已推送：" + summary)
@@ -102,12 +133,17 @@ public class PushActivityRecorder {
      * @param elapsedMillis 投递耗时，单位毫秒
      */
     public void recordFailure(String platform, String target, String summary, String reason, long elapsedMillis) {
+        recordFailure(platform, target, summary, reason, elapsedMillis, null);
+    }
+
+    public void recordFailure(String platform, String target, String summary, String reason, long elapsedMillis, PushTarget channel) {
+        PushUser user = streamer(channel);
         lastFailureAt = Instant.now();
         lastFailureReason = reason;
         failureCount.incrementAndGet();
-        append(new PushRecord(lastFailureAt, platform, target, summary, false, reason));
+        append(record(lastFailureAt, platform, target, summary, false, reason, false, user));
 
-        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_FAILED, TimelineEvent.Level.ERROR)
+        timeline.record(withStreamer(TimelineEvent.of(TimelineEventType.PUSH_FAILED, TimelineEvent.Level.ERROR), user)
                 .at(lastFailureAt)
                 .channel(target)
                 .text("推送失败：" + (reason == null || reason.isBlank() ? "未给出原因" : reason))
@@ -129,10 +165,15 @@ public class PushActivityRecorder {
      * @param elapsedMillis 投递耗时，单位毫秒
      */
     public void recordUncertain(String platform, String target, String summary, String reason, long elapsedMillis) {
-        Instant at = Instant.now();
-        append(new PushRecord(at, platform, target, summary, false, reason, true));
+        recordUncertain(platform, target, summary, reason, elapsedMillis, null);
+    }
 
-        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_UNCERTAIN, TimelineEvent.Level.WARN)
+    public void recordUncertain(String platform, String target, String summary, String reason, long elapsedMillis, PushTarget channel) {
+        PushUser user = streamer(channel);
+        Instant at = Instant.now();
+        append(record(at, platform, target, summary, false, reason, true, user));
+
+        timeline.record(withStreamer(TimelineEvent.of(TimelineEventType.PUSH_UNCERTAIN, TimelineEvent.Level.WARN), user)
                 .at(at)
                 .channel(target)
                 .text("送达不明（可能已发出，未重发）：" + summary)
@@ -175,9 +216,12 @@ public class PushActivityRecorder {
      * @param uncertain 送达不明：请求已交出去、没等到回包，此时 success 为 false
      */
     public record PushRecord(Instant at, String platform, String target, String summary, boolean success, String reason,
-                             boolean uncertain) {
+                             boolean uncertain, String streamerPlatform, Long streamerUid) {
+        public PushRecord(Instant at, String platform, String target, String summary, boolean success, String reason, boolean uncertain) {
+            this(at, platform, target, summary, success, reason, uncertain, null, null);
+        }
         public PushRecord(Instant at, String platform, String target, String summary, boolean success, String reason) {
-            this(at, platform, target, summary, success, reason, false);
+            this(at, platform, target, summary, success, reason, false, null, null);
         }
     }
 

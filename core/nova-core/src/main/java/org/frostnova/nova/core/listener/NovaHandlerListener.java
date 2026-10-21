@@ -141,6 +141,8 @@ public class NovaHandlerListener {
         // 改一个字判据就静默失效，失效方向还是「从此全归成同一类」
         timeline.record(TimelineEvent.of(block.timelineType(), TimelineEvent.Level.WARN)
                 .streamer(streamer)
+                .detail("streamerPlatform", event.getPlatform())
+                .detail("streamerUid", String.valueOf(event.getSource().getUid()))
                 .text(block.getDescription() + "，丢弃了" + streamer + "的一次推送（" + targets + " 个会话）")
                 .detail("targets", String.valueOf(targets))
                 .detail("platform", event.getPlatform())

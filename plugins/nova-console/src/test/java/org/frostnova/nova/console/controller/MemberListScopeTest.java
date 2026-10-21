@@ -1,0 +1,325 @@
+package org.frostnova.nova.console.controller;
+
+import com.alibaba.fastjson2.*;
+import org.frostnova.nova.console.*;
+import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.ui.*;
+import org.frostnova.nova.core.config.ui.auth.*;
+import org.frostnova.nova.core.config.ui.page.*;
+import org.frostnova.nova.core.datasource.*;
+import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.health.PushActivityRecorder;
+import org.frostnova.nova.core.model.*;
+import org.frostnova.nova.core.sender.PushGate;
+import org.frostnova.nova.core.service.*;
+import org.frostnova.nova.core.timeline.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.context.request.*;
+import java.nio.file.*;
+import java.time.*;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class MemberListScopeTest {
+    static final long A = 71001, B = 72002, SHARED = 81001, OTHER = 82002;
+    static final ConfigUiAccount MEMBER = new ConfigUiAccount("member-a", ConfigUiAccount.Role.MEMBER,
+            ConfigUiAccount.Status.ENABLED, "Member A", null, null, null, List.of("bilibili:" + A), Instant.EPOCH, null, true);
+    @TempDir Path dir;
+    Path file;
+    NovaCoreProperties props;
+    AbstractDataSource source;
+    ConfigUiController config;
+    RuntimeStateController runtime;
+    StreamerController streamers;
+    AtAllQuotaController quota;
+    PushController push;
+    TimelineStore timeline;
+    PushActivityRecorder recorder;
+    Map<Class<?>, Object> dependencies;
+
+    @BeforeEach void setup() throws Exception {
+        props = new NovaCoreProperties();
+        file = dir.resolve("datasource.json");
+        props.getDatasource().setJsonPath(file.toString());
+        props.getLive().setLiveDataPath(dir.resolve("live.json").toString());
+        var a = user(A, "Owner A", SHARED);
+        var b = user(B, "Other B", SHARED, OTHER);
+        JSONArray rawUsers = JSONArray.parseArray(JSON.toJSONString(List.of(a, b)));
+        for (Object value : rawUsers) for (Object entry : ((JSONObject)value).getJSONArray("targets")) ((JSONObject)entry).put("type", 1);
+        Files.writeString(file, rawUsers.toJSONString());
+        source = mock(AbstractDataSource.class);
+        when(source.getAllUsers()).thenReturn(List.of(a, b));
+        timeline = new TimelineStore(props);
+        recorder = new PushActivityRecorder(timeline);
+        dependencies = new HashMap<>();
+        dependencies.put(NovaCoreProperties.class, props);
+        dependencies.put(AbstractDataSource.class, source);
+        dependencies.put(TimelineStore.class, timeline);
+        dependencies.put(PushActivityRecorder.class, recorder);
+        dependencies.put(PushGate.class, new PushGate(props));
+        dependencies.put(StreamerDirectory.class, new StreamerDirectory(props));
+        var names = mock(StreamerNames.class);
+        when(names.uname(any(PushUser.class))).thenAnswer(i -> ((PushUser)i.getArgument(0)).getUname());
+        dependencies.put(StreamerNames.class, names);
+        dependencies.put(ConfigurationValidator.class, new ConfigurationValidator(mock(NovaEventHandlerService.class)));
+        config = create(ConfigUiController.class);
+        runtime = create(RuntimeStateController.class);
+        streamers = create(StreamerController.class);
+        quota = create(AtAllQuotaController.class);
+        when(((AtAllQuotaService)dependencies.get(AtAllQuotaService.class)).today()).thenReturn(LocalDate.now());
+        push = create(PushController.class);
+        for (var controller : List.of(runtime, quota)) {
+            if (Arrays.stream(controller.getClass().getDeclaredFields()).anyMatch(field -> field.getName().equals("configured")))
+                ReflectionTestUtils.setField(controller, "configured", new ConfigUiConfiguredUsers(props));
+        }
+        var live = (LiveDataService)dependencies.get(LiveDataService.class);
+        when(live.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(true));
+        use(null);
+    }
+
+    @SuppressWarnings("unchecked") <T> T create(Class<T> type) throws Exception {
+        var constructor = Arrays.stream(type.getConstructors()).min(Comparator.comparingInt(java.lang.reflect.Constructor::getParameterCount)).orElseThrow();
+        return (T)constructor.newInstance(Arrays.stream(constructor.getParameterTypes())
+                .map(t -> dependencies.computeIfAbsent(t, k -> mock(t))).toArray());
+    }
+    static PushUser user(long uid, String name, long... groups) {
+        var u = new PushUser(); u.setPlatform("bilibili"); u.setUid(uid); u.setUname(name); u.setEnabled(true);
+        var targets = new ArrayList<PushTarget>();
+        for (long num : groups) {
+            var t = new PushTarget(); t.setPlatform("qq"); t.setType(PushTargetType.GROUP); t.setNum(num); t.setEnabled(true); t.setUser(u);
+            targets.add(t);
+        }
+        u.setTargets(targets); return u;
+    }
+    static void use(ConfigUiAccount account) {
+        var request = new MockHttpServletRequest();
+        if (account != null) request.setAttribute(ConfigUiAccess.ACCOUNT, account);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+    }
+    @AfterEach void cleanup() { RequestContextHolder.resetRequestAttributes(); }
+    void concealed(JSONObject json) {
+        String text = json.toJSONString();
+        for (String secret : List.of(String.valueOf(B), "Other B", String.valueOf(OTHER)))
+            assertFalse(text.contains(secret), "Unexpected other streamer data: " + secret + " in " + text);
+    }
+    JSONObject response(String endpoint) {
+        return switch (endpoint) {
+            case "status" -> config.status();
+            case "datasource/users" -> config.datasourceUsers();
+            case "streamers" -> streamers.streamers();
+            case "state" -> runtime.state();
+            case "timeline" -> new TimelineController(timeline).timeline(null, false, null, null, null, null, null, 1, null);
+            case "push-history" -> push.pushHistory();
+            case "at-all/quota" -> quota.quota();
+            default -> throw new IllegalArgumentException(endpoint);
+        };
+    }
+
+    // 管理员各列表逐字段对照原有响应，只归一化随运行变化的时刻和资源读数。
+    @Test void adminListsKeepOriginalFields() throws Exception {
+        recorder.recordSuccess("qq", "群 " + SHARED, "A push", 1);
+        recorder.recordFailure("qq", "群 " + OTHER, "B push", "failure", 1);
+        ReflectionTestUtils.setField(streamers, "clock", Clock.fixed(Instant.parse("2026-10-01T00:00:00Z"), ZoneOffset.UTC));
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        JSONObject actual = new JSONObject();
+        for (String endpoint : List.of("status", "datasource/users", "streamers", "state", "timeline", "push-history", "at-all/quota", "pages")) {
+            JSONObject value = endpoint.equals("pages") ? config.pages() : response(endpoint);
+            if (endpoint.equals("status")) value.getJSONObject("runtime").replaceAll((key, reading) -> null);
+            normalizeTimes(value);
+            actual.put(endpoint, value);
+        }
+        JSONObject expected = JSONObject.parseObject(Files.readString(Path.of("src/test/resources/member-list-admin.json")));
+        normalizeTimes(expected);
+        assertEquals(expected, JSONObject.parseObject(actual.toJSONString(JSONWriter.Feature.WriteMapNullValue)));
+    }
+    private void normalizeTimes(Object value) {
+        if (value instanceof JSONObject json) json.replaceAll((key, item) -> {
+            if (key.equals("at")) return "time";
+            if (key.equals("nextCursor") && item instanceof String cursor) return "date" + cursor.substring(cursor.lastIndexOf(':'));
+            if (key.equals("date") && item instanceof String) return "date";
+            normalizeTimes(item); return item;
+        });
+        else if (value instanceof Iterable<?> items) items.forEach(this::normalizeTimes);
+    }
+
+    // 成员打开任意列表时，同群别的主播及其独占群都不能出现在回包中；管理员字段保持原样。
+    @ParameterizedTest @ValueSource(strings = {"status", "datasource/users", "streamers", "state", "timeline", "push-history", "at-all/quota"})
+    void listsConcealOtherStreamersAndPreserveAdmin(String endpoint) {
+        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO).streamer("Other B")
+                .channel("群 " + OTHER).detail("streamerPlatform", "bilibili").detail("streamerUid", String.valueOf(B)).build());
+        recorder.recordSuccess("qq", "群 " + OTHER, "Other B", 1);
+        JSONObject before = response(endpoint);
+        use(MEMBER);
+        JSONObject member = response(endpoint);
+        assertTrue(member.getBooleanValue("success"));
+        concealed(member);
+        if (endpoint.equals("status")) for (String key : List.of("health", "runtime", "version", "update", "configPath", "streamerLimit", "restartPending", "senders", "queue", "alerts"))
+            assertFalse(member.containsKey(key), key);
+        if (endpoint.equals("streamers")) assertFalse(member.containsKey("notConfigured"));
+        if (endpoint.equals("at-all/quota")) assertFalse(member.containsKey("bots"));
+        if (endpoint.equals("state")) {
+            assertEquals(1, member.getJSONArray("sessions").size());
+            var row = member.getJSONArray("sessions").getJSONObject(0);
+            assertEquals(1, row.getJSONArray("channels").size());
+            for (String key : List.of("revenueVisible", "revenueExplicit", "quietMode", "quietStart", "quietEnd", "quietActive")) assertFalse(row.containsKey(key), key);
+            for (String key : List.of("disabled", "menuHidden", "menuNotes")) assertTrue(row.containsKey(key), key);
+        }
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        JSONObject after = response(endpoint);
+        if (endpoint.equals("status")) { before.remove("runtime"); after.remove("runtime"); }
+        assertEquals(before, after, "Administrator response changed");
+    }
+
+    // 插件管理页与内建日志、连接、设置不能再成为成员导航入口。
+    @Test @SuppressWarnings("unchecked") void pagesAdvertiseOnlyAccessibleNavigation() {
+        ObjectProvider<ConsolePageProvider> pages = mock(ObjectProvider.class);
+        var adminPage = mock(ConsolePageProvider.class);
+        when(adminPage.id()).thenReturn("admin-tools"); when(adminPage.script()).thenReturn("admin-tools.js");
+        when(adminPage.slot()).thenReturn(ConsolePageSlot.SETTINGS); when(adminPage.assets()).thenReturn(List.of());
+        when(pages.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(new StreamersConsolePageProvider(), new PushConsolePageProvider(), adminPage));
+        ReflectionTestUtils.setField(config, "pageProviders", pages);
+        var before = config.pages();
+        use(MEMBER);
+        var result = config.pages();
+        assertEquals(List.of("home", "push", "streamers"), result.getList("accessiblePages", String.class));
+        assertFalse(result.toJSONString().contains("admin-tools"));
+        use(ConfigUiAccount.local(Instant.EPOCH)); assertEquals(before, config.pages());
+    }
+
+    // 停用主播或通道仍应留在成员名单里，静音指示取各通道自己的时段。
+    @ParameterizedTest @ValueSource(booleans = {true, false})
+    void disabledStreamersAndTargetsKeepTheirQuietState(boolean disableUser) throws Exception {
+        var users = JSONArray.parseArray(Files.readString(file));
+        users.getJSONObject(0).put("enabled", !disableUser);
+        var target = users.getJSONObject(0).getJSONArray("targets").getJSONObject(0);
+        target.put("enabled", disableUser);
+        LocalTime now = LocalTime.now();
+        target.put("quietHours", JSONObject.of("mode", "custom", "start", now.minusHours(2).toString().substring(0,5), "end", now.plusHours(2).toString().substring(0,5)));
+        Files.writeString(file, users.toJSONString());
+        var b = user(B, "Other B", SHARED, OTHER);
+        when(source.getAllUsers()).thenReturn(disableUser ? List.of(b) : List.of(user(A, "Owner A"), b));
+        for (ConfigUiAccount account : Arrays.asList(null, MEMBER)) {
+            use(account);
+            var channels = runtime.state().getJSONArray("sessions").getJSONObject(0).getJSONArray("channels");
+            assertTrue(channels.stream().map(x -> (JSONObject)x).anyMatch(x -> x.getLongValue("streamerUid") == A && x.getBooleanValue("quietActive")));
+        }
+        use(MEMBER);
+        assertEquals(A, config.status().getJSONArray("users").getJSONObject(0).getLongValue("uid"));
+        assertEquals(A, streamers.streamers().getJSONArray("streamers").getJSONObject(0).getLongValue("uid"));
+        assertEquals(1, quota.quota().getJSONArray("sessions").size());
+    }
+
+    // 首页只数名下主播的推送，旧记录不能算给成员，新事件还能按同一主播名筛选。
+    @Test void todayHistoryAndTimelineUseStreamerIdentityBeforePagination() {
+        var a = user(A, "Owner A", SHARED).getTargets().get(0);
+        var b = user(B, "Other B", SHARED, OTHER).getTargets().get(1);
+        recorder.recordSuccess("qq", "群 " + SHARED, "A one", 1, a);
+        recorder.recordSuccess("qq", "群 " + SHARED, "A two", 1, a);
+        for (int i = 0; i < 3; i++) recorder.recordSuccess("qq", "群 " + OTHER, "Other B", 1, b);
+        use(MEMBER);
+        assertEquals(2, config.status().getJSONObject("today").getIntValue("sent"));
+        assertEquals(2, push.pushHistory().getJSONArray("records").size());
+        var first = new TimelineController(timeline).timeline(LocalDate.now().toString(), false, null, null, null, null, null, 1, null);
+        concealed(first);
+        assertEquals(2, first.getIntValue("matched")); assertEquals(1, first.getIntValue("returned"));
+        assertTrue(first.getBooleanValue("truncated"));
+        assertEquals(List.of("Owner A"), first.getList("streamers", String.class));
+        assertEquals(List.of("群 " + SHARED), first.getList("channels", String.class));
+        var second = new TimelineController(timeline).timeline(null, false, null, null, "Owner A", null, null, 1, first.getString("nextCursor"));
+        assertEquals(1, second.getJSONArray("events").size());
+        assertFalse(second.getBooleanValue("truncated"));
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        assertEquals(5, config.status().getJSONObject("today").getIntValue("sent"));
+        assertEquals(5, push.pushHistory().getJSONArray("records").size());
+        // Same display name and uid on another platform still cannot establish ownership.
+        var collision = user(A, "Owner A", OTHER); collision.setPlatform("elsewhere");
+        recorder.recordSuccess("qq", "群 " + OTHER, "foreign", 1, collision.getTargets().get(0));
+        recorder.recordSuccess("qq", "群 " + OTHER, "legacy", 1);
+        recorder.recordFailure("qq", "群 " + SHARED, "A failure", "error", 1, a);
+        recorder.recordFailure("qq", "群 " + OTHER, "Other B", "error", 1, b);
+        use(MEMBER);
+        assertEquals(2, config.status().getJSONObject("today").getIntValue("sent"));
+        assertEquals(1, config.status().getJSONObject("today").getIntValue("failed"));
+        assertEquals(3, push.pushHistory().getJSONArray("records").size());
+        concealed(push.pushHistory());
+    }
+
+    // 未填完配置的序号必须对回原主播；同群订阅也不能混入别人的名单。
+    @Test void subscriptionsAndIncompleteEntriesFollowTheirStreamer() {
+        var subscriptions = (AtSubscriptionService)dependencies.get(AtSubscriptionService.class);
+        when(subscriptions.all()).thenReturn(List.of(new AtSubscriptionService.Subscription("qq", SHARED, A, "live", List.of(9L)),
+                new AtSubscriptionService.Subscription("qq", SHARED, B, "live", List.of(8L)),
+                new AtSubscriptionService.Subscription("qq", OTHER, B, "dynamic", List.of(7L))));
+        when(source.getIncompleteEntries()).thenReturn(List.of(new AbstractDataSource.IncompleteEntry(1, List.of("targets")),
+                new AbstractDataSource.IncompleteEntry(2, List.of("targets")), new AbstractDataSource.IncompleteEntry(99, List.of("uid"))));
+        use(MEMBER);
+        var result = runtime.state(); concealed(result);
+        assertEquals(1, result.getJSONArray("subscriptions").size());
+        assertEquals(A, result.getJSONArray("subscriptions").getJSONObject(0).getLongValue("streamerUid"));
+        assertEquals(1, result.getJSONArray("incomplete").size());
+        assertEquals(1, result.getJSONArray("incomplete").getJSONObject(0).getIntValue("index"));
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        assertEquals(3, runtime.state().getJSONArray("incomplete").size());
+        assertEquals(3, runtime.state().getJSONArray("subscriptions").size());
+    }
+
+    // 机器人已有的群和好友可以新增，校验不能把成员加通道一律挡住。
+    @Test void memberCanAddVerifiedGroupAndFriend() {
+        var lookup = mock(PushTargetLookup.class);
+        when(lookup.supports("qq")).thenReturn(true);
+        when(lookup.lookup(eq("qq"), any(), eq(89999L), eq(MEMBER))).thenReturn(new PushTargetLookup.Result(true, "Target", null));
+        @SuppressWarnings("unchecked") ObjectProvider<PushTargetLookup> lookups = mock(ObjectProvider.class);
+        when(lookups.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(lookup));
+        ReflectionTestUtils.setField(config, "targetLookups", lookups);
+        use(MEMBER);
+        for (int type : List.of(1, 0)) {
+            var loaded = config.datasourceUser("bilibili", String.valueOf(A));
+            loaded.getJSONObject("user").getJSONArray("targets").add(JSONObject.of("platform", "qq", "type", type, "num", 89999, "messages", new JSONArray()));
+            assertTrue(config.saveDatasourceUser("bilibili", String.valueOf(A), JSONObject.of("user", loaded.get("user"), "version", loaded.get("version")))
+                    .getBody().getBooleanValue("success"));
+        }
+        verify(lookup).lookup("qq", PushTargetType.GROUP, 89999L, MEMBER);
+        verify(lookup).lookup("qq", PushTargetType.FRIEND, 89999L, MEMBER);
+    }
+
+    // 成员新加机器人不在的群时应拒绝并保留文件，已退群的旧通道不阻止保存。
+    @Test void memberCannotSaveUnknownNewTargetButCanKeepExisting() throws Exception {
+        var directory = mock(org.frostnova.nova.adapter.onebot.service.OneBotTargetDirectory.class);
+        when(directory.supports("qq")).thenReturn(true);
+        var empty = new org.frostnova.nova.adapter.onebot.service.OneBotTargetDirectory.Snapshot("qq", List.of(), List.of(), Instant.now(), Instant.now(), false, null);
+        when(directory.cachedSnapshot("qq")).thenReturn(empty);
+        when(directory.snapshot("qq", true)).thenReturn(empty);
+        var lookup = new org.frostnova.nova.adapter.onebot.service.OneBotTargetLookup(directory);
+        @SuppressWarnings("unchecked") ObjectProvider<PushTargetLookup> lookups = mock(ObjectProvider.class);
+        when(lookups.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(lookup));
+        ReflectionTestUtils.setField(config, "targetLookups", lookups);
+        use(MEMBER);
+        var loaded = config.datasourceUser("bilibili", String.valueOf(A));
+        var replacement = loaded.getJSONObject("user");
+        replacement.getJSONArray("targets").add(JSONObject.of("platform", "qq", "type", 1, "num", 89999, "messages", new JSONArray()));
+        String before = Files.readString(file);
+        var result = config.saveDatasourceUser("bilibili", String.valueOf(A), JSONObject.of("user", replacement, "version", loaded.get("version")));
+        assertEquals(400, result.getStatusCode().value());
+        assertTrue(result.getBody().getString("message").contains("89999"));
+        assertEquals(before, Files.readString(file));
+        verify(directory).snapshot("qq", true);
+        assertTrue(lookup.lookup("qq", PushTargetType.GROUP, 89998, MEMBER).message().contains("刚查过"));
+        verify(directory, times(1)).snapshot("qq", true);
+        loaded = config.datasourceUser("bilibili", String.valueOf(A));
+        loaded.getJSONObject("user").put("enabled", false);
+        assertTrue(config.saveDatasourceUser("bilibili", String.valueOf(A), JSONObject.of("user", loaded.get("user"), "version", loaded.get("version"))).getBody().getBooleanValue("success"));
+        verify(directory, times(1)).snapshot("qq", true);
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        loaded = config.datasourceUser("bilibili", String.valueOf(A));
+        loaded.getJSONObject("user").getJSONArray("targets").add(JSONObject.of("platform", "qq", "type", 1, "num", 89999, "messages", new JSONArray()));
+        assertTrue(config.saveDatasourceUser("bilibili", String.valueOf(A), JSONObject.of("user", loaded.get("user"), "version", loaded.get("version"))).getBody().getBooleanValue("success"));
+    }
+}

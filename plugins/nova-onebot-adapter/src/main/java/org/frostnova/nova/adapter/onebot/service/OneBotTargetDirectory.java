@@ -137,6 +137,21 @@ public class OneBotTargetDirectory {
         return result;
     }
 
+    public boolean supports(String platform) {
+        return platform != null && properties.getSenders().stream().anyMatch(sender -> platform.equals(sender.getName()))
+                && httpService.getSender(platform) != null;
+    }
+
+    /** Read without causing network access, including when the cached entry has expired. */
+    public Snapshot cachedSnapshot(String platform) {
+        CacheEntry entry = snapshots.get(platform);
+        return entry == null ? null : entry.snapshot();
+    }
+
+    public Snapshot snapshot(String platform, boolean force) {
+        return supports(platform) ? snapshotOf(httpService.getSender(platform), force) : null;
+    }
+
     /**
      * 取单个推送平台的名单
      * <p>
