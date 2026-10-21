@@ -53,6 +53,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
     private ConfigUiAuthService auth;
     private MockMvc mvc;
     private Path configFile;
+    private org.frostnova.nova.core.datasource.DataSourceServiceRegistry platforms;
 
     @BeforeEach
     void console() throws Exception {
@@ -62,6 +63,8 @@ class ConsoleAccountsTest extends OidcTestSupport {
         properties.getConfigUi().getAuth().setTotp(false);
         properties.getConfigUi().getAgreement().setAcceptedVersion(ConfigUiAgreement.VERSION);
         properties.getConfigUi().getAgreement().setAcceptedBy("password");
+        platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
         state = new NovaStateStore(properties);
         accounts = new ConfigUiAccountStore(state);
         sessions = new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(24));
@@ -76,9 +79,9 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement());
         mvc = MockMvcBuilders.standaloneSetup(new ConfigUiAuthController(auth, files, properties),
                         new ConfigUiPasskeyController(new PasskeyService(new PasskeyStore(state), auth), properties, auth),
-                        new ConfigUiAccountController(accounts, auth, client),
+                        new ConfigUiAccountController(accounts, auth, client, platforms),
                         new ConfigUiOidcController(client, auth, accounts, properties), values(files))
-                .addInterceptors(new ConfigUiApiInterceptor(auth))
+                .addInterceptors(new ConfigUiApiInterceptor(auth, properties, platforms))
                 .addFilters(filter).build();
     }
 
@@ -418,18 +421,37 @@ class ConsoleAccountsTest extends OidcTestSupport {
     }
 
     // 管理员填错指定主播时整份名单不动，避免一次误填丢掉已有授权。
-    @Test
-    void invalidStreamerAssignmentsLeaveTheListUnchanged() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"BILIBILI:1", "哔哩:1", "bilibili:01", "unknown:1", "streamer-old", ":1",
+            "bilibili:", "bilibili:0", "bilibili:-1", "bilibili:1.5", "bilibili:9223372036854775808", "bilibili:1:2", " :1"})
+    void invalidStreamerAssignmentsLeaveTheListUnchanged(String invalid) throws Exception {
         var member = enabledMember();
         accounts.streamers(member.id(), List.of("bilibili:1"));
         var local = auth.issueForPassword("127.0.0.1");
-        for (String invalid : List.of("streamer-old", ":1", "bilibili:", "bilibili:0", "bilibili:-1",
-                "bilibili:1.5", "bilibili:9223372036854775808", "bilibili:1:2", " :1")) {
+        perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                .content(JSONObject.of("streamers", List.of("bilibili:2", invalid)).toJSONString()), local)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("指定主播格式不正确"));
+        assertEquals(List.of("bilibili:1"), accounts.require(member.id()).streamers());
+    }
+
+    // 名单接受当前已加载的平台及标准编号，平台卸载后不能继续新增授权。
+    @Test
+    void assignmentsUseLoadedPlatformsWithExactSpelling() throws Exception {
+        var member = enabledMember();
+        var local = auth.issueForPassword("127.0.0.1");
+        perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                .content("{\"streamers\":[\"bilibili:1\"]}"), local)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.account.streamers[0]").value("bilibili:1"));
+        when(platforms.platforms()).thenReturn(List.of("Example"));
+        perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                .content("{\"streamers\":[\"Example:1\"]}"), local)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.account.streamers[0]").value("Example:1"));
+        for (String value : List.of("example:1", "bilibili:1")) {
             perform(post("/config/api/accounts/" + member.id() + "/streamers")
-                    .content(JSONObject.of("streamers", List.of("bilibili:2", invalid)).toJSONString()), local)
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("指定主播格式不正确"));
-            assertEquals(List.of("bilibili:1"), accounts.require(member.id()).streamers());
+                    .content(JSONObject.of("streamers", List.of(value)).toJSONString()), local)
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("指定主播格式不正确"));
+            assertEquals(List.of("Example:1"), accounts.require(member.id()).streamers());
         }
     }
 
@@ -438,7 +460,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
     void legacyStreamerAssignmentsAreListedButGrantNoAccess() throws Exception {
         var member = enabledMember();
         var record = ConfigUiAccountStore.json(member);
-        record.put("streamers", List.of("streamer-old", "bilibili:bad", "bilibili:0"));
+        record.put("streamers", List.of("streamer-old", "bilibili:bad", "bilibili:0", "BILIBILI:1", "哔哩:1", "bilibili:01", "unknown:1"));
         state.write(ConfigUiAccountStore.NAMESPACE, data -> data.put(member.id(), record));
         assertTrue(state.trySave());
         var restored = new NovaStateStore(properties);

@@ -513,8 +513,10 @@ class DatasourceBackupTest {
                 ConfigUiAccount.Role.MEMBER,
                 ConfigUiAccount.Status.ENABLED, "Member", null, null, null,
                 List.of("bilibili:1"), Instant.EPOCH, null, true);
+        var platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
         var mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class)))
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms))
                 .build();
         var originalOther = controller.datasourceUser("bilibili", "2").getJSONObject("user");
         var read = controller.datasourceUser("bilibili", "1");

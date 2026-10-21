@@ -151,9 +151,12 @@ class ConfigUiMemberPermissionsTest {
     private static final ConfigUiAccount MEMBER = new ConfigUiAccount("member", ConfigUiAccount.Role.MEMBER,
             ConfigUiAccount.Status.ENABLED, "Member", null, null, null, List.of("bilibili:1"), Instant.EPOCH, null, true);
     private static MockMvc mvc;
+    private static org.frostnova.nova.core.datasource.DataSourceServiceRegistry platforms;
     private static Map<String, org.springframework.web.method.HandlerMethod> mappings;
 
     @BeforeAll static void setup() throws Exception {
+        platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AnnotationTypeFilter(Controller.class));
         var controllers = new ArrayList<Object>();
@@ -161,8 +164,8 @@ class ConfigUiMemberPermissionsTest {
             if (!bean.getBeanClassName().contains("$")) controllers.add(mock(Class.forName(bean.getBeanClassName())));
         }
         var builder = MockMvcBuilders.standaloneSetup(controllers.toArray())
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class)));
-        builder.setControllerAdvice(new ConfigUiMemberBodyAdvice());
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms));
+        builder.setControllerAdvice(new ConfigUiMemberBodyAdvice(platforms));
         mvc = builder.build();
         var mapping = mvc.getDispatcherServlet().getWebApplicationContext().getBean(RequestMappingHandlerMapping.class);
         mappings = new TreeMap<>();
@@ -262,13 +265,43 @@ class ConfigUiMemberPermissionsTest {
                 .param("platform", "bilibili").param("uid", "1", "2")).andExpect(status().isOk());
     }
 
-    @RestController static class FutureController {
-        @GetMapping({"/config/api/future", "/config/future"}) String future() { return "ok"; }
+    // 旧名单中写错或已卸载的平台及带前导零的编号不能授予成员读取权限。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"BILIBILI:1", "哔哩:1", "bilibili:01", "unknown:1"})
+    void legacyAssignmentsCannotGrantReadAccess(String assignment) throws Exception {
+        var account = new ConfigUiAccount(MEMBER.id(), MEMBER.role(), MEMBER.status(), MEMBER.displayName(),
+                null, null, null, List.of(assignment), Instant.EPOCH, null, true);
+        String platform = assignment.substring(0, assignment.indexOf(':'));
+        mvc.perform(get(API + "streamers/" + platform + "/1").requestAttr(ConfigUiAccess.ACCOUNT, account))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("没有这位主播"));
+    }
+
+    // 整机组件扫描后的处理器表不能出现其他测试专用的接口。
+    @Test void scannedControllersDoNotExposeTemporaryHandlers() throws Exception {
+        var scanner = new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AnnotationTypeFilter(Controller.class));
+        var controllers = new ArrayList<Object>();
+        for (var bean : scanner.findCandidateComponents("org.frostnova.nova"))
+            controllers.add(mock(Class.forName(bean.getBeanClassName())));
+        var app = MockMvcBuilders.standaloneSetup(controllers.toArray()).build();
+        var handlers = app.getDispatcherServlet().getWebApplicationContext().getBean(RequestMappingHandlerMapping.class);
+        var paths = handlers.getHandlerMethods().keySet().stream().flatMap(info -> info.getPatternValues().stream()).toList();
+        assertFalse(paths.contains("/config/api/future"), paths.toString());
+        assertFalse(paths.contains("/config/future"), paths.toString());
+    }
+
+    static class FutureController {
+        public String future() { return "ok"; }
     }
     // 未登记在表中的 API 和页面都默认拒绝成员。
     @Test void unknownHandlersDefaultToAdmin() throws Exception {
-        var future = MockMvcBuilders.standaloneSetup(new FutureController())
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
+        var future = MockMvcBuilders.standaloneSetup()
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms)).build();
+        var handlers = future.getDispatcherServlet().getWebApplicationContext().getBean(RequestMappingHandlerMapping.class);
+        handlers.registerMapping(org.springframework.web.servlet.mvc.method.RequestMappingInfo
+                        .paths("/config/api/future", "/config/future").methods(RequestMethod.GET)
+                        .options(handlers.getBuilderConfiguration()).build(),
+                new FutureController(), FutureController.class.getMethod("future"));
         for (String path : List.of("/config/api/future", "/config/future")) {
             future.perform(get(path).requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
             future.perform(get(path).requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH)))
