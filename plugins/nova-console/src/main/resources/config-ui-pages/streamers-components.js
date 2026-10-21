@@ -317,9 +317,9 @@ export function createChart(host, {
         });
       }
       svg.append(mark);
-      if (period === 'day' && (!deferred ||
-          (!finite(shown[i - 1]?.value) && !finite(shown[i + 1]?.value)))) {
-        svg.append(svgElement('circle', {cx: x(i), cy: y(point.value), r: shown.length < 25 ? 3 : 1.7,
+      const isolated = !finite(shown[i - 1]?.value) && !finite(shown[i + 1]?.value);
+      if (period === 'day' && (!deferred || isolated)) {
+        svg.append(svgElement('circle', {cx: x(i), cy: y(point.value), r: isolated || shown.length < 25 ? 3 : 1.7,
           class: 'sc-point', 'aria-hidden': 'true', 'pointer-events': 'none'}));
       }
     });

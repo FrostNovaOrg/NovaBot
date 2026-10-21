@@ -651,11 +651,17 @@ td.act button:hover{color:var(--err)}
 .todo>a:hover,.todo>button:hover{border-color:var(--accent);color:var(--accent)}
 
 /* ---------- 现在 ---------- */
-.livewho{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;padding:8px 0;
+.livewho{display:flex;gap:16px;align-items:center;padding:6px 0;line-height:24px;
   border-bottom:1px solid var(--line)}
 .livewho:last-of-type{border-bottom:none}
-.livewho .lw-m{flex:1 1 200px;min-width:0}
-.livewho .lw-nm{font-size:16px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.livewho .lw-m{display:flex;gap:8px;align-items:center;min-width:0}
+.livewho .lw-nm{font-size:16px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.livewho .pill{flex:none;line-height:18px}
+.livewho .lw-meta{display:flex;gap:16px;flex:none;font-size:13.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:560px){
+  .livewho{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}
+  .livewho .lw-meta{gap:12px;font-size:13px}
+}
 .dotlive{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--live);flex:none}
 .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--r-pill);
   border:1px solid var(--line);font-size:12.5px;color:var(--dim);white-space:nowrap}
