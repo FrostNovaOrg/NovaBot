@@ -134,6 +134,53 @@ class DatasourceBackupTest {
                 clock);
     }
 
+    // 抓的问题：合法的三份名单不能保存，或保存甲时改了乙。
+    @Test
+    void validStreamerListsSaveThroughUserEndpoint() throws IOException {
+        seedTwoUsers();
+        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        JSONObject current = controller.datasourceUser("bilibili", "1");
+        JSONObject other = controller.datasourceUser("bilibili", "2").getJSONObject("user");
+        JSONObject user = current.getJSONObject("user");
+        user.put("dynamicBlockWords", java.util.Collections.nCopies(500, "词"));
+        user.put("wordCloudBlockWords", List.of("😀".repeat(50)));
+        user.put("wordCloudExcludeUids", List.of(" 123 ", "9".repeat(50)));
+        var response = saveUser("1", current.getString("version"), user);
+        assertEquals(200, response.getStatusCode().value());
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toString());
+        JSONObject saved = controller.datasourceUser("bilibili", "1").getJSONObject("user");
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            assertEquals(user.getJSONArray(field), saved.getJSONArray(field));
+        }
+        assertEquals(other, controller.datasourceUser("bilibili", "2").getJSONObject("user"));
+    }
+
+    // 抓的问题：非法名单显示保存成功，或拒绝后仍改动文件。
+    @Test
+    void invalidStreamerListsReturn400WithoutWriting() throws IOException {
+        seedTwoUsers();
+        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        byte[] before = Files.readAllBytes(datasource);
+        JSONObject current = controller.datasourceUser("bilibili", "1");
+        String version = current.getString("version");
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            List<List<String>> invalid = new java.util.ArrayList<>(List.of(
+                    java.util.Collections.nCopies(501, "1"), List.of("a".repeat(51)), List.of("  ")));
+            if (field.equals("wordCloudExcludeUids")) invalid.addAll(List.of(List.of("abc"), List.of("0"), List.of("-1")));
+            for (List<String> values : invalid) {
+                JSONObject user = JSONObject.parseObject(current.getJSONObject("user").toJSONString());
+                user.put(field, values);
+                ResponseEntity<JSONObject> response = saveUser("1", version, user);
+                assertEquals(400, response.getStatusCode().value(), field + values.size());
+                String issues = response.getBody().getJSONArray("issues").toString();
+                assertTrue(issues.contains("uid 1") && issues.contains(field) && issues.contains("第 "), issues);
+                assertArrayEquals(before, Files.readAllBytes(datasource));
+            }
+        }
+    }
+
     @Test
     @DisplayName("保存两次应留下两份带时间戳的备份")
     void savingTwiceLeavesTwoStampedBackups() throws IOException {

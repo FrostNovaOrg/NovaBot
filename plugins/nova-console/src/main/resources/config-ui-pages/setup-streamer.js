@@ -16,7 +16,7 @@
 import {ask} from './confirm.js';
 import {api, el, esc, markDirty, say} from './core.js';
 import {targetOptions} from './links-model.js';
-import {acceptAddedPushUser, trackSetupVersions, renderStreamers, STREAMER_INPUT_HINT}
+import {acceptAddedPushUser, trackSetupVersions, renderStreamers, pushEntries, STREAMER_INPUT_HINT}
   from './push.js';
 import {store} from './store.js';
 import {defaultMessages} from './push-model.js';
@@ -388,6 +388,10 @@ async function saveStreamer() {
     .map(item => ({platform: item.sender, type: item.type, num: item.num, enabled: true, messages}));
 
   const user = {uid: one.uid, platform: one.platform, enabled: true, targets};
+  const previous = pushEntries().find(item => item.platform === one.platform && String(item.uid) === String(one.uid));
+  for (const field of ['dynamicBlockWords', 'wordCloudBlockWords', 'wordCloudExcludeUids']) {
+    if (previous && Object.prototype.hasOwnProperty.call(previous, field)) user[field] = previous[field];
+  }
   const key = one.platform + ':' + one.uid;
   // 只更新本次向导已添加的主播；列表里原有的主播仍走新增判重。
   const savedVersions = draft.savedVersions || (draft.savedVersions = new Map());

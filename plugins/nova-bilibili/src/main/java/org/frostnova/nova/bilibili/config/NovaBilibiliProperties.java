@@ -399,8 +399,8 @@ public class NovaBilibiliProperties {
         // 已经结束的场次重新画报告也会按这份名单来。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel("词云排除的用户")
-        @ConfigSummary("每行一个用户编号（纯数字）；仅从词云统计中排除，缺少弹幕原文的场次无法排除。")
+        @ConfigLabel("词云排除的用户（全实例）")
+        @ConfigSummary("每行一个用户编号（纯数字）；仅从词云统计中排除，缺少弹幕原文的场次无法排除。每位主播还可以在推送页另加自己的，两份合起来用。")
         private List<String> wordCloudExcludeUids = new ArrayList<>();
 
         /**
@@ -409,8 +409,8 @@ public class NovaBilibiliProperties {
         // 画图时按当下这份表过滤，已经结束的场次重新画报告也跟着变。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel("词云屏蔽词")
-        @ConfigSummary("每行一个；包含这些词的词条均不显示，弹幕原文照常保存。")
+        @ConfigLabel("词云屏蔽词（全实例）")
+        @ConfigSummary("每行一个；包含这些词的词条均不显示，弹幕原文照常保存。每位主播还可以在推送页另加自己的，两份合起来用。")
         private List<String> wordCloudBlockWords = new ArrayList<>();
     }
 
@@ -486,8 +486,8 @@ public class NovaBilibiliProperties {
         // 挡下的动态在日志与时间线各留一条，写明命中哪个词——不然「刚才那条为什么没推」无从查起。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel("动态屏蔽词")
-        @ConfigSummary("每行一个；命中任一词的动态不推送。")
+        @ConfigLabel("动态屏蔽词（全实例）")
+        @ConfigSummary("每行一个；命中任一词的动态不推送。每位主播还可以在推送页另加自己的，两份合起来用。")
         private List<String> blockWords = new ArrayList<>();
 
         /**

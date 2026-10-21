@@ -92,10 +92,42 @@ public class ConfigurationValidator {
                 issues.add(where + "（uid " + uid + "）重复配置，同一平台下的同一 uid 只能出现一次");
             }
 
+            checkUserLists(user, where + "（" + platform + ", uid " + uid + "）", issues);
             checkTargets(user.getJSONArray("targets"), where, knownPlatforms, handlers, issues);
         }
 
         return issues;
+    }
+
+    private void checkUserLists(JSONObject user, String where, List<String> issues) {
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            Object value = user.get(field);
+            if (!user.containsKey(field)) continue;
+            String label = switch (field) {
+                case "dynamicBlockWords" -> "动态屏蔽词";
+                case "wordCloudBlockWords" -> "词云屏蔽词";
+                default -> "词云排除名单";
+            };
+            String at = where + "的" + label + "（" + field + "）";
+            if (!(value instanceof JSONArray list)) {
+                issues.add(at + " 必须为字符串数组");
+                continue;
+            }
+            if (list.size() > 500) issues.add(at + " 最多 500 条，第 501 条起超出上限");
+            for (int i = 0; i < list.size() && issues.size() < MAX_ISSUES; i++) {
+                String row = at + " 第 " + (i + 1) + " 条";
+                if (!(list.get(i) instanceof String text)) {
+                    issues.add(row + "必须为字符串");
+                    continue;
+                }
+                String trimmed = text.strip();
+                if (trimmed.isEmpty()) issues.add(row + "去掉首尾空白后不能为空");
+                else if (trimmed.codePointCount(0, trimmed.length()) > 50) issues.add(row + "不能超过 50 个字");
+                else if (field.equals("wordCloudExcludeUids") && !trimmed.matches("0*[1-9][0-9]*")) {
+                    issues.add(row + "必须为纯数字的正整数 uid");
+                }
+            }
+        }
     }
 
     /**

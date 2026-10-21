@@ -1,5 +1,7 @@
 package org.frostnova.nova.report.handler;
 
+import com.alibaba.fastjson2.JSON;
+import org.frostnova.nova.core.model.PushUser;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -39,13 +41,11 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AssignableTypeFilter;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -134,6 +134,36 @@ class DynamicBlockWordsTest {
         timeline.clear();
     }
 
+    // 抓的问题：甲自己的词没有挡住，或挡到了乙的动态。
+    @Test
+    void streamerWordsOnlyBlockTheirOwner() {
+        BilibiliDynamicPushHandler handler = handlerUsing(new NovaBilibiliProperties());
+        PushMessage a = messageTo(GROUP);
+        a.getTarget().setUser(JSON.parseObject(
+                "{\"uid\":" + UID + ",\"platform\":\"bilibili\",\"dynamicBlockWords\":[\"LiveReplay\"]}",
+                PushUser.class));
+        handler.handle(event(dynamicWithText("今晚 LIVEREPLAY")), a);
+        assertTrue(sentMessages().isEmpty(), "甲自己的屏蔽词未挡住");
+        assertEquals("这位主播自己的", timeline.get(0).detail().get("scope"));
+        System.out.println("TIMELINE: " + timeline.get(0).text());
+        handler.handle(new BilibiliDynamicUpdateEvent(new LiveStreamerInfo(UID + 1, "主播乙", ROOM_ID + 1),
+                dynamicWithText("今晚 LIVEREPLAY"), "发布了动态", "https://t.bilibili.com/1"), messageTo(OTHER_GROUP));
+        assertEquals(1, sentMessages().size(), "甲的词挡到了乙");
+    }
+
+    // 抓的问题：主播自己的空名单覆盖了全实例的名单。
+    @Test
+    void globalWordsStillBlockBothStreamers() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+        PushMessage a = messageTo(GROUP);
+        a.getTarget().setUser(new PushUser());
+        handler.handle(event(dynamicWithText(WORD)), a);
+        handler.handle(new BilibiliDynamicUpdateEvent(new LiveStreamerInfo(UID + 1, "主播乙", ROOM_ID + 1),
+                dynamicWithText(WORD), "发布了动态", "https://t.bilibili.com/1"), messageTo(OTHER_GROUP));
+        assertTrue(sentMessages().isEmpty());
+        assertEquals("全实例", timeline.get(0).detail().get("scope"));
+    }
+
     @Test
     @DisplayName("🔴 正文里写着屏蔽词的动态不该推出去")
     void bodyWordStopsThePush() {
@@ -183,7 +213,8 @@ class DynamicBlockWordsTest {
 
         assertTrue(sentMessages().isEmpty(), "这一格量的是挡下之后日志写了什么，没挡住就什么都没量到");
         // 别的行（比如取昵称失败）也会进这份采集，认的是这一行在不在，不是这一份有几行
-        assertTrue(logMessages().contains("主播甲 的动态命中屏蔽词 " + WORD + ", 跳过推送"),
+        assertTrue(logMessages().stream().anyMatch(line -> line.contains("主播甲") && line.contains("命中屏蔽词")
+                        && line.contains(WORD) && line.contains("全实例")),
                 "挡下时日志该写清哪位主播、命中哪个词——查「刚才那条为什么没推」就指着这一行。实际: " + logMessages());
     }
 

@@ -97,6 +97,13 @@ const CASES = [
     want: 1,
     change: users => { users[0].enabled = false; },
   },
+  // 只改任意一份主播名单时，保存栏也必须显示这一位主播的草稿。
+  ...['dynamicBlockWords', 'wordCloudBlockWords', 'wordCloudExcludeUids'].map(field => ({
+    name: '主播·屏蔽名单（' + field + '）',
+    at: 'push.js 的主播屏蔽名单输入框',
+    want: 1,
+    change: users => { users[0][field] = ['123']; },
+  })),
   {
     name: '主播·加一位（pushData.push）',
     at: 'push.js 的「确认添加」',
@@ -213,7 +220,7 @@ await ask('② 同一位主播下改两处仍算一处：N 是主播数不是字
  * 在读数上是同一个样子。
  */
 // Reloading one streamer updates the saved snapshot; the conflict fixture checks that path.
-const MARK_DIRTY_CALLS = 12;
+const MARK_DIRTY_CALLS = 13;
 
 await ask('③ 分母闸：push.js 的 markDirty() 调用点数没变', () => {
   const text = readFileSync(join(pages, 'push.js'), 'utf8');

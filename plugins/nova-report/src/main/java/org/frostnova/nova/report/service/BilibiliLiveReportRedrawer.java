@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.service;
 
+import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
@@ -14,7 +15,6 @@ import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-
 import java.util.Optional;
 
 /**
@@ -45,6 +45,9 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
     private final LiveRoomInfoHistory roomInfoHistory;
 
     private final ReportImageDiskCache images;
+
+    @Autowired(required = false)
+    private AbstractDataSource dataSource;
 
     @Autowired
     public BilibiliLiveReportRedrawer(NovaCommonPainterFactory factory, BilibiliApiUtil api, FontUtil fontUtil,
@@ -79,6 +82,7 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
         try {
             BilibiliLiveReportReplayPainter painter = new BilibiliLiveReportReplayPainter(
                     factory, api, fontUtil, properties, roomInfoHistory, detail, images);
+            painter.setDataSource(dataSource);
             // 全默认版式，数据卡片各张的开关不看，顺序也一样：重画的这一场不属于哪个推送目标，
             // 没有哪一份版式算它的；按某个群挑过的卡来画，看的人会以为那几项这场没有数据
             return painter.render(new BilibiliLiveReportOptions());

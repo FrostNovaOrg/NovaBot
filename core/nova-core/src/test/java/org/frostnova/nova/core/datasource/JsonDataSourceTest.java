@@ -1,5 +1,8 @@
 package org.frostnova.nova.core.datasource;
 
+import com.alibaba.fastjson2.JSON;
+import org.mockito.Mockito;
+import java.util.Optional;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.exception.DataSourceException;
@@ -14,12 +17,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.ApplicationEventPublisher;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
@@ -37,6 +38,61 @@ class JsonDataSourceTest {
     @BeforeEach
     void setUp() {
         dataSource = newDataSource(new NovaCoreProperties());
+    }
+
+    // 抓的问题：只保存甲的三个名单后，运行中的甲仍用旧值，乙也被改动。
+    @Test
+    void savedStreamerListsReplaceRunningUserWithoutRestart(@TempDir Path dir) throws IOException {
+        NovaCoreProperties core = new NovaCoreProperties();
+        core.getDatasource().setJsonAutoReload(false);
+        Path file = dir.resolve("datasource.json");
+        core.getDatasource().setJsonPath(file.toString());
+        DataSourceServiceRegistry registry = mock(DataSourceServiceRegistry.class);
+        Mockito.when(registry.getDataSourceService("bilibili")).thenReturn(
+                Optional.of(mock(DataSourceService.class)));
+        JsonDataSource running = new JsonDataSource(mock(ApplicationEventPublisher.class), registry,
+                new NovaEventHandlerPushMessageInitializer(mock(NovaEventHandlerService.class), new PushTemplateDefaults(core)),
+                core.getDatasource());
+        Files.writeString(file, "[{\"uid\":1,\"platform\":\"bilibili\"},{\"uid\":2,\"platform\":\"bilibili\"}]");
+        try {
+            running.load();
+            PushUser other = running.getUser("bilibili", 2L).orElseThrow();
+            for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+                PushUser previous = running.getUser("bilibili", 1L).orElseThrow();
+                var users = JSON.parseArray(Files.readString(file));
+                users.getJSONObject(0).put(field, List.of("123"));
+                Files.writeString(file, users.toJSONString());
+                running.reload();
+                PushUser updated = running.getUser("bilibili", 1L).orElseThrow();
+                assertNotSame(previous, updated, field);
+                assertEquals(List.of("123"), JSON.parseObject(
+                        JSON.toJSONString(updated)).getList(field, String.class));
+                assertSame(other, running.getUser("bilibili", 2L).orElseThrow());
+            }
+        } finally { running.shutdown(); }
+    }
+
+    // 抓的问题：主播自己的名单未读入，或者未参与配置变更判断。
+    @Test
+    void streamerListsLoadAndTriggerReplacement() {
+        String original = "[{\"uid\":1,\"platform\":\"bilibili\"}]";
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            String changed = "[{\"uid\":1,\"platform\":\"bilibili\",\"" + field + "\":[\"123\"]}]";
+            PushUser user = dataSource.parse(changed).get(0);
+            assertEquals(List.of("123"), JSON.parseObject(
+                    JSON.toJSONString(user)).getList(field, String.class), field);
+            assertFalse(dataSource.parse(original).get(0).same(user), field);
+        }
+    }
+
+    // 抓的问题：手改一份名单写坏后，整位主播加载失败或其他名单丢失。
+    @Test
+    void malformedStreamerListsFallBackIndependently() {
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            PushUser user = dataSource.parse("[{\"uid\":1,\"platform\":\"bilibili\",\"" + field + "\":{\"bad\":true}}]").get(0);
+            assertEquals(List.of(), JSON.parseObject(
+                    JSON.toJSONString(user)).getList(field, String.class), field);
+        }
     }
 
     @Test

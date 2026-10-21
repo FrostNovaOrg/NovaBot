@@ -1795,7 +1795,7 @@ public class ConfigUiController {
             result.put("success", false);
             result.put("message", "推送配置有误，已拒绝保存");
             result.put("issues", issues);
-            return ResponseEntity.ok(result);
+            return ResponseEntity.badRequest().body(result);
         }
 
         // 超员在数据源那一层也拦得住，但那层只会拒收并写一行日志：界面照样回「已保存」，

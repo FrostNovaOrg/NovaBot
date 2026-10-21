@@ -19,7 +19,7 @@ globalThis.fetch = async (path, options = {}) => {
   requests.push({url, method: options.method || 'GET', body: options.body && JSON.parse(options.body)});
   if (options.method === 'POST') {
     if (beforePost) { const run = beforePost; beforePost = null; run(); }
-    if (reject) return response({success: false, message: reject});
+    if (reject) return {...response(typeof reject === 'string' ? {success: false, message: reject} : reject), status: 400};
     const body = JSON.parse(options.body);
     if (url === '/datasource') disk = JSON.parse(body.content);
     else if (url === '/datasource/users') {
@@ -214,6 +214,67 @@ await test('向导重存 g2 后，推送页旧的 g1 草稿保存必须冲突', 
   assert.equal(disk.find(user => user.uid === 3).targets[0].num, 222);
   assert.equal(disk.find(user => user.uid === 3).enabled, true);
   assert.ok(push.changeCount() > 0);
+});
+await test('向导重存目标时保留在推送页保存的三份屏蔽名单', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+  Object.assign(push.pushEntries().find(user => user.uid === 3), lists);
+  await push.save();
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  for (const [key, value] of Object.entries(lists)) assert.deepEqual(disk.find(user => user.uid === 3)[key], value);
+});
+await test('主播页面读改存名单，切换页面保留草稿，冲突后保留输入，修改通道不清空名单', async () => {
+  const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+  await reset([{...initial()[0], ...lists, targets: [{platform: 'qq', type: 1, num: 111, enabled: true, messages: []}]}]);
+  await openB();
+  const inputs = document.querySelector('#push-right').querySelectorAll('textarea');
+  assert.equal(inputs.length, 3);
+  for (const input of inputs) {
+    const key = input.getAttribute('data-block-list');
+    assert.equal(input.value, lists[key].join('\n'));
+    input.value += '\n456';
+    await input.dispatchEvent({type: 'input', target: input});
+  }
+  assert.equal(push.changeCount(), 1);
+  await push.showPush('', '');
+  await push.showPush('2', '');
+  assert.ok(document.querySelector('#push-right').querySelectorAll('textarea').every(input => input.value.includes('456')));
+  disk[0].extra = '别人修改';
+  await push.save();
+  assert.equal(push.changeCount(), 1);
+  assert.ok(document.querySelector('#push-conflict').textContent.includes('重新载入'));
+  for (const key of Object.keys(lists)) assert.deepEqual(push.pushEntries()[0][key], [...lists[key], '456']);
+  await reset([{...initial()[0], ...lists, targets: [{platform: 'qq', type: 1, num: 111, enabled: true, messages: []}]}]);
+  await openB();
+  push.pushEntries()[0].targets[0].enabled = false;
+  await push.save();
+  for (const [key, value] of Object.entries(lists)) assert.deepEqual(disk[0][key], value);
+  await openB();
+  const changed = {dynamicBlockWords: ['新词', '另一个词'], wordCloudBlockWords: ['新屏蔽词'], wordCloudExcludeUids: ['456']};
+  for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+    input.value = changed[input.getAttribute('data-block-list')].join('\n');
+    await input.dispatchEvent({type: 'input', target: input});
+  }
+  await push.save();
+  for (const [key, value] of Object.entries(changed)) assert.deepEqual(disk[0][key], value);
+  assert.equal(push.changeCount(), 0);
+});
+await test('非法名单保存失败后说明哪份第几条，并保留可修正的草稿', async () => {
+  await reset(); await openB();
+  const input = document.querySelector('#push-right').querySelectorAll('textarea')[2];
+  input.value = 'abc';
+  await input.dispatchEvent({type: 'input', target: input});
+  reject = {success: false, message: '推送配置有误，已拒绝保存',
+    issues: ['第 1 个主播（p, uid 2）的词云排除名单（wordCloudExcludeUids）第 1 条必须为正整数']};
+  const before = copy(disk);
+  await push.save();
+  const status = document.querySelector('#status-text').textContent;
+  assert.ok(status.includes('wordCloudExcludeUids') && status.includes('第 1 条'), status);
+  assert.deepEqual(disk, before);
+  assert.equal(push.changeCount(), 1);
 });
 await push.leave();
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
