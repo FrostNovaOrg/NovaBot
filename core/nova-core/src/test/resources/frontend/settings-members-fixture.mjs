@@ -88,9 +88,36 @@ await check('待授权排最前，身份状态和主播名字可辨认', async (
   assert.equal(rows[0].dataset.accountId, 'pending');
   for (const [id, words] of [['local-admin', ['本地管理员', '已启用']], ['admin', ['管理员', '已启用']],
     ['enabled', ['成员', '已启用', '主播甲', 'other:99', 'enabled@example.com', '2026']],
-    ['disabled', ['成员', '已停用']], ['pending', ['成员', '待授权', '他已经用统一登录进来过一次，等你授权。']]]) {
+    ['disabled', ['成员', '已停用']], ['pending', ['成员', '待授权', '对方已经用统一登录进来过一次，等你授权。']]]) {
     for (const word of words) assert.ok(row(s, id).textContent.includes(word), '缺少 ' + word);
   }
+});
+// 抓停用或待授权的管理员没有启用按钮，或者误要求给管理员选主播。
+for (const [status, label] of [['DISABLED', '启用'], ['PENDING', '授权并启用']]) {
+  await check('管理员 ' + status + ' 直接' + label, async () => {
+    const s = await members({'/accounts': {success: true, accounts: [account('recover-admin', 'ADMIN', status)]}});
+    const r = row(s, 'recover-admin');
+    assert.equal(r.querySelectorAll('input').length, 0);
+    const enable = find(r, 'enable'); assert.equal(enable.textContent, label); await enable.click();
+    assert.deepEqual(s.requests.filter(n => n.method === 'POST').map(n => n.path), ['/accounts/recover-admin/enable']);
+    assert.equal(s.questions.length, 0);
+  });
+}
+// 抓本地管理员出现改身份按钮，点后才得知不能降级。
+await check('本地管理员行没有改身份按钮', async () => {
+  const s = await members();
+  assert.ok(!walk(row(s, 'local-admin')).some(n => n.dataset.action === 'role'), '本地管理员不应显示改身份按钮');
+});
+// 抓名字不可用时把已有授权写成未指定；只检查指定主播单元格。
+await check('指定主播单元格保留无名字主播的平台与 uid', async () => {
+  const s = await members(); const cell = row(s, 'enabled').children[3];
+  assert.ok(cell.textContent.includes('other:99'), '指定主播单元格应包含 other:99，实际：' + cell.textContent);
+  assert.ok(!cell.textContent.includes('未指定主播'));
+});
+// 抓成员提示将对方预设为男性。
+await check('成员提示使用对方', async () => {
+  const s = await members({}, false); await find(row(s, 'enabled'), 'disable').click();
+  assert.ok(s.questions[0].body.includes('对方会立刻'));
 });
 // 抓主播列表过滤掉停用主播，或者启用时写入后端认不出的标识。
 await check('勾两位主播后按平台与 uid 保存，再启用', async () => {
@@ -105,7 +132,7 @@ await check('勾两位主播后按平台与 uid 保存，再启用', async () =>
 // 抓不选主播就启用后，成员进来空空如也却事先没得到提醒。
 await check('零主播启用先确认，取消不发请求', async () => {
   const s = await members({}, false); await find(row(s, 'pending'), 'enable').click();
-  assert.ok(s.questions.some(n => n.body === '没指定主播，他进来什么都看不到。'));
+  assert.ok(s.questions.some(n => n.body === '没指定主播，对方进来什么都看不到。'));
   assert.equal(s.requests.filter(n => n.method === 'POST').length, 0);
 });
 // 抓确认空授权后仍无法启用。
@@ -172,7 +199,7 @@ await check('保存失败显示原话，并停止后续启用', async () => {
 await check('有管理地址时新建成员新开页面，并说明首次登录', async () => {
   const s = await members(); await find(s.box, 'new-member').click();
   assert.equal(s.opened[0][0], 'https://accounts.example.com/manage'); assert.equal(s.opened[0][1], '_blank');
-  assert.ok(s.box.textContent.includes('在账户中心建好账号后，让他用统一登录进来一次，这里就会出现一行待授权。'));
+  assert.ok(s.box.textContent.includes('在账户中心建好账号后，让对方用统一登录进来一次，这里就会出现一行待授权。'));
 });
 // 抓管理地址没配时出现空链接，或者只显示按钮而不说怎么配。
 await check('无管理地址时只说明如何新建和配置管理地址', async () => {

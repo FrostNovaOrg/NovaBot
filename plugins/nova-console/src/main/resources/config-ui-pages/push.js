@@ -1279,6 +1279,33 @@ function renderStreamerLevel(host, user) {
   add.addEventListener('click', () => addChannel(user));
   list.appendChild(add);
 
+  const lists = card(host, '这位主播自己的屏蔽名单',
+    '设置页里还有一份全实例的，两份合起来用；这里只能多挡，挡不掉那一份里的。');
+  for (const [key, title] of [['dynamicBlockWords', '动态屏蔽词'],
+    ['wordCloudBlockWords', '词云屏蔽词'], ['wordCloudExcludeUids', '词云排除的观众 uid']]) {
+    const field = el('div', 'field');
+    const label = el('label');
+    label.setAttribute('for', 'push-' + key);
+    label.textContent = title;
+    field.appendChild(label);
+    const input = el('textarea');
+    input.id = 'push-' + key;
+    input.setAttribute('data-block-list', key);
+    input.rows = 4;
+    input.placeholder = key === 'wordCloudExcludeUids' ? '一行一个观众 uid（纯数字的正整数）' : '一行一个词';
+    input.value = (Array.isArray(user[key]) ? user[key] : []).join('\n');
+    input.addEventListener('input', () => {
+      const entries = input.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+      const current = (Array.isArray(user[key]) ? user[key] : [])
+        .map(value => String(value).trim()).filter(Boolean);
+      // 空行不算改动，也不为原本缺失的字段添加空数组。
+      if (JSON.stringify(entries) !== JSON.stringify(current)) user[key] = entries;
+      markDirty();
+    });
+    field.appendChild(input);
+    lists.appendChild(field);
+  }
+
   const data = card(host, '主播数据', '场次、趋势及每一场的详细报告均可在主播页查看。');
   const link = el('a', 'lnkbtn');
   link.href = detailHash(user.platform, user.uid);
@@ -2325,7 +2352,9 @@ export async function save() {
       } else {
         pushOk = false;
         if (res.conflict) conflictedUsers.add(key);
-        notes.push(label + '：' + (res.message || '保存失败') + (res.conflict ? '' : '，请重新载入这位主播'));
+        const issues = res.issues?.length ? '：' + res.issues.join('；') : '';
+        notes.push(label + '：' + (res.message || '保存失败') + issues
+          + (res.conflict || issues ? '' : '，请重新载入这位主播'));
       }
     } catch (e) {
       pushOk = false;

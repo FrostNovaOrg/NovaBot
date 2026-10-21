@@ -8,7 +8,7 @@ public final class ConfigUiAudit {
     private ConfigUiAudit() { }
 
     public static String safe(String text) {
-        return text == null ? "" : text.replaceAll("[\\p{Cntrl}\\p{Zl}\\p{Zp}]", " ");
+        return text == null ? "" : text.replaceAll("[\\p{Cc}\\p{Zl}\\p{Zp}\\x{061C}\\x{200E}\\x{200F}\\x{202A}-\\x{202E}\\x{2066}-\\x{2069}]", " ");
     }
 
     public static String streamer(AbstractDataSource source, String platform, String uid) {

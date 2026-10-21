@@ -1,5 +1,8 @@
 package org.frostnova.nova.report.painter;
 
+import com.alibaba.fastjson2.JSON;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -36,7 +39,6 @@ import org.frostnova.nova.report.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
-
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
@@ -482,6 +484,18 @@ public class BilibiliLiveReportPainter {
         this.properties = properties;
         this.roomInfoHistory = roomInfoHistory;
         this.imageDisk = imageDisk == null ? ReportImageDiskCache.none() : imageDisk;
+    }
+
+    private AbstractDataSource dataSource;
+
+    @Autowired(required = false)
+    public void setDataSource(AbstractDataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    private Optional<PushUser> pushUser(String platform, Long uid) {
+        return dataSource == null || platform == null || uid == null
+                ? Optional.empty() : dataSource.getUser(platform, uid);
     }
 
     /**
@@ -2689,14 +2703,14 @@ public class BilibiliLiveReportPainter {
      */
     Map<String, Integer> frequenciesForWordCloud(String platform, Long uid) {
         Map<String, Integer> stored = liveDataService.getLiveWordFrequencies(platform, uid);
-        Set<Long> exclude = excludedWordCloudUids();
+        Set<Long> exclude = excludedWordCloudUids(platform, uid);
         if (exclude.isEmpty() || platform == null || uid == null) {
             return stored;
         }
         Optional<Long> start = liveStart(platform, uid);
         long startValue = start.orElse(-1L);
         // 重算时切词要把屏蔽词整个留下，切法随屏蔽表变，所以表也进键：改了表不拿旧的那一份
-        String key = platform + "\0" + uid + "\0" + startValue + "\0" + exclude + "\0" + wordCloudBlockWords();
+        String key = platform + "\0" + uid + "\0" + startValue + "\0" + exclude + "\0" + JSON.toJSONString(wordCloudBlockWords(platform, uid));
         // 先拿这场的门，再碰留下的表。反过来两头会互等。
         // 读原文和重算放在表锁外面，别的场不用跟着等。
         Object gate = wordCloudGates.computeIfAbsent(key, ignored -> new Object());
@@ -2738,21 +2752,19 @@ public class BilibiliLiveReportPainter {
         }
     }
 
-    private Set<Long> excludedWordCloudUids() {
-        if (properties == null || properties.getLive() == null) {
-            return Set.of();
-        }
-        return DanmuWordCloudFrequencies.parseUids(properties.getLive().getWordCloudExcludeUids());
+    private Set<Long> excludedWordCloudUids(String platform, Long uid) {
+        List<String> global = properties == null || properties.getLive() == null
+                ? List.of() : properties.getLive().getWordCloudExcludeUids();
+        List<String> own = pushUser(platform, uid).map(PushUser::getWordCloudExcludeUids).orElse(List.of());
+        return DanmuWordCloudFrequencies.parseUids(DanmuWordCloudFrequencies.combine(global, own));
     }
 
-    /**
-     * 当下这张词云屏蔽词表，已折好大小写。每次画都现读，保存后下一张就按新表
-     */
-    private List<String> wordCloudBlockWords() {
-        if (properties == null || properties.getLive() == null) {
-            return List.of();
-        }
-        return DanmuWordCloudFrequencies.parseBlockWords(properties.getLive().getWordCloudBlockWords());
+    /** 当下这张词云的两份屏蔽词，保存后下一张按新名单。 */
+    private List<String> wordCloudBlockWords(String platform, Long uid) {
+        List<String> global = properties == null || properties.getLive() == null
+                ? List.of() : properties.getLive().getWordCloudBlockWords();
+        List<String> own = pushUser(platform, uid).map(PushUser::getWordCloudBlockWords).orElse(List.of());
+        return DanmuWordCloudFrequencies.parseBlockWords(DanmuWordCloudFrequencies.combine(global, own));
     }
 
     /**
@@ -2760,7 +2772,7 @@ public class BilibiliLiveReportPainter {
      */
     Map<String, Integer> recountWordCloud(String platform, Long uid, List<DanmuRecord> danmu,
                                           Set<Long> exclude) {
-        return DanmuWordCloudFrequencies.recount(platform, uid, danmu, exclude, wordCloudBlockWords());
+        return DanmuWordCloudFrequencies.recount(platform, uid, danmu, exclude, wordCloudBlockWords(platform, uid));
     }
 
     /**
@@ -2860,7 +2872,7 @@ public class BilibiliLiveReportPainter {
         // 尾部同频的那一批里究竟哪几个进得了前 72 名，由 Map 的遍历顺序决定。
         // 屏蔽词也在 limit 之前挑掉，让出的位子由后面的词补上。
         // 旧场重画拿的是当年存下的词频、不再切词，这里只能按存下的词挑
-        List<String> blockWords = wordCloudBlockWords();
+        List<String> blockWords = wordCloudBlockWords(platform, uid);
         List<WordCloudLayout.Word> words = frequencies.entrySet().stream()
                 .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank()
                         && entry.getValue() != null && entry.getValue() > 0)

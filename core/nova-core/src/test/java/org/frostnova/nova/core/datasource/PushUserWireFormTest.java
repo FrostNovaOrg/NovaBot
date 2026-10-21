@@ -211,6 +211,9 @@ class PushUserWireFormTest {
         user.setFace("https://example.invalid/face.jpg");
         user.setPlatform("bilibili");
         user.setEnabled(true);
+        user.setDynamicBlockWords(List.of("回放"));
+        user.setWordCloudBlockWords(List.of("原神启动"));
+        user.setWordCloudExcludeUids(List.of("123"));
 
         PushTarget target = new PushTarget();
         target.setUser(user);

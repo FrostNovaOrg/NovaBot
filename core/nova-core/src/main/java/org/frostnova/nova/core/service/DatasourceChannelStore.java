@@ -75,8 +75,8 @@ public class DatasourceChannelStore {
                 if (!migration) {
                     try {
                         audit(JSONArray.parseArray(before), users, actor);
-                    } catch (Throwable error) {
-                        log.warn("通道设置审计失败，配置已保存，将继续重载");
+                    } catch (RuntimeException error) {
+                        log.warn("通道设置审计失败，配置已保存，将继续重载", error);
                     }
                 }
                 if (dataSource instanceof JsonDataSource json) json.reload();
