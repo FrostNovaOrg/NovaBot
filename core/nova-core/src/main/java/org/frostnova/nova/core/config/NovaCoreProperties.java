@@ -480,6 +480,65 @@ public class NovaCoreProperties {
         private final Auth auth = new Auth();
 
         /**
+         * 外部 OpenID Connect 客户端配置；尚未接入控制台登录。
+         */
+        @Getter
+        private final Oidc oidc = new Oidc();
+
+        @Getter
+        @Setter
+        public static class Oidc {
+            /** 是否启用外部账户中心客户端；不改变现有管理员登录方式。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · 客户端开关")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("客户端底座开关，尚未接入登录页面。")
+            private boolean enabled = false;
+
+            /** 账户中心的 HTTPS issuer，必须与发现文档逐字相同；留空时不启用。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · Issuer")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("须与账户中心发现文档的 issuer 完全一致。")
+            private String issuer = "";
+
+            /** 在账户中心登记的客户端 ID。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · 客户端 ID")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("")
+            private String clientId = "";
+
+            /** 客户端密钥；按机密字段保存和遮掩，仅用于 client_secret_basic。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · 客户端密钥")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("留空或保持遮掩值表示不修改已保存的密钥。")
+            private String clientSecret = "";
+
+            /** 空格分隔的授权范围，必须包含 openid。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · 授权范围")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("空格分隔，必须包含 openid。")
+            private String scopes = "openid profile email offline_access";
+
+            /** 回调地址；留空时按请求的协议、主机、端口和应用前缀推导。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · 回调地址")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("留空时使用请求来源加应用前缀及 /config/api/oidc/callback；反向代理部署建议显式填写。")
+            private String redirectUri = "";
+
+            /** 账户中心管理页地址，供成员管理跳转使用，可留空。 */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("统一登录 · 账户管理页")
+            @ConfigLevel(ConfigLevel.Level.ADVANCED)
+            @ConfigSummary("可留空。")
+            private String managementUri = "";
+        }
+
+        /**
          * 使用协议的同意记录
          */
         @Getter

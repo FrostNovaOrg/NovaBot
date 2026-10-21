@@ -361,3 +361,12 @@ novabot:
         idle-hours: 12              # 会话闲置多久自动退出
         max-failures: 5             # 同一来源连续失败多少次后锁定
         lockout-minutes: 15         # 首次锁定时长，反复触发时逐次翻倍
+      # 外部 OpenID Connect 客户端。尚未接入控制台登录，修改后重启生效。
+      oidc:
+        enabled: false
+        issuer: ""                 # 与发现文档的 HTTPS issuer 逐字一致
+        client-id: ""
+        client-secret: ""          # 机密；设置页遮掩，留空保存时保持旧值
+        scopes: openid profile email offline_access
+        redirect-uri: ""           # 留空按请求来源、应用前缀及 /config/api/oidc/callback 推导
+        management-uri: ""         # 账户中心管理页，可留空
