@@ -345,6 +345,10 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
         return session;
     }
 
+    public int logoutOidcIdentity(OidcClient.Logout logout) {
+        return sessions.revokeOidcIdentity(logout.issuer(), logout.subject(), logout.sid());
+    }
+
     public int logoutAccount(String accountId) { return sessions.revokeAccount(accountId); }
 
     public int logoutOidcAccount(String accountId) { return sessions.revokeOidcAccount(accountId); }
@@ -643,7 +647,8 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
         Optional<ConfigUiSession> session = sessions.validate(sessionId, clock.get());
         if (session.isPresent()) {
             ConfigUiAccount account = account(session.get());
-            if (account == null || account.status() != ConfigUiAccount.Status.ENABLED) {
+            if (account == null || account.status() != ConfigUiAccount.Status.ENABLED
+                    || session.get().getChannel() == ConfigUiSession.Channel.OIDC && !oidcEnabled()) {
                 sessions.revoke(sessionId);
                 return Optional.empty();
             }
@@ -659,7 +664,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * @return 新会话
      */
     private ConfigUiSession issueLocal(String clientIp, ConfigUiSession.Channel channel, String credentialId) {
-        if (accounts != null) {
+        if (accounts != null && channel != ConfigUiSession.Channel.OPERATOR_TOKEN) {
             try {
                 accounts.loggedIn(ConfigUiAccount.LOCAL_ID, clock.get());
             } catch (IllegalStateException error) {
@@ -667,7 +672,9 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             }
         }
         ConfigUiSession session = sessions.issue(clientIp, clock.get(), channel, credentialId);
-        log.info("配置界面登录: 本地管理员, 方式: {}", channel.wire());
+        if (channel != ConfigUiSession.Channel.OPERATOR_TOKEN) {
+            log.info("配置界面登录: 本地管理员, 方式: {}", channel.wire());
+        }
         return session;
     }
 

@@ -63,6 +63,7 @@ novabot:
         management-uri: https://accounts.example.com/members
       agreement:
         accepted-actor: Example Admin
+        accepted-actor-record: '["71","2026-01-02T03:04:05","password"]'
         accepted-version: 71
         accepted-at: "2026-01-02T03:04:05"
         accepted-by: password

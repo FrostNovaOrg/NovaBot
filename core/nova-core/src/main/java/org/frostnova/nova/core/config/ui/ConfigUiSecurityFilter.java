@@ -87,6 +87,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     static final Set<String> PUBLIC_API = Set.of(
             ConfigUiController.BASE_PATH + "/api/oidc/login",
             ConfigUiController.BASE_PATH + "/api/oidc/callback",
+            ConfigUiController.BASE_PATH + "/api/oidc/backchannel-logout",
             ConfigUiController.BASE_PATH + "/api/auth/state",
             ConfigUiController.BASE_PATH + "/api/auth/login",
             // 通行密钥登录那两条与口令登录并列：它们本身就是进门的那一步，
@@ -167,8 +168,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         if ((path(request).equals(ConfigUiController.BASE_PATH + "/api/oidc/login")
-                || path(request).equals(ConfigUiController.BASE_PATH + "/api/oidc/callback")) && !authService.oidcEnabled()) {
+                || path(request).equals(ConfigUiController.BASE_PATH + "/api/oidc/callback")
+                || path(request).equals(ConfigUiController.BASE_PATH + "/api/oidc/backchannel-logout")) && !authService.oidcEnabled()) {
             response.setStatus(HttpStatus.NOT_FOUND.value());
+            return;
+        }
+
+        if (path(request).equals(ConfigUiController.BASE_PATH + "/api/oidc/backchannel-logout")) {
+            chain.doFilter(request, response);
             return;
         }
 

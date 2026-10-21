@@ -415,11 +415,29 @@ class OidcClientTest extends OidcTestSupport {
         assertEquals("refresh-2", client.refresh(login).tokens().refreshToken());
     }
 
+    // 续期 ID 令牌省略 sid 时，账户中心仍须能够注销原设备会话。
+    @Test
+    void refreshPreservesSessionIdWhenProviderOmitsIt() {
+        provider.claims = claims -> claims.put("sid", "session-id-for-logout");
+        var login = complete(begin());
+        provider.claims = claims -> claims.remove("sid");
+        assertEquals("session-id-for-logout", client.refresh(login).identity().sid());
+    }
+
     @Test
     void refreshRejectsChangedSubject() {
         var login = complete(begin());
         provider.claims = claims -> claims.put("sub", "other-subject");
         assertRejected("sub", () -> client.refresh(login));
+    }
+
+    // 续期身份变化必须与签名等校验失败分开，才能只注销被换了身份的会话。
+    @ParameterizedTest
+    @ValueSource(strings = {"iss", "sub"})
+    void refreshClassifiesIdentityChange(String claim) {
+        var login = complete(begin());
+        provider.claims = claims -> claims.put(claim, claim.equals("iss") ? "https://other.example.com" : "other-sub");
+        assertEquals("IDENTITY_CHANGED", assertThrows(OidcException.class, () -> client.refresh(login)).kind().name());
     }
 
     @Test

@@ -49,6 +49,21 @@ public final class ConfigUiAgreement {
                 || agreement.getAcceptedBy().isBlank();
     }
 
+    static final String ACTOR_RECORD = "novabot.core.config-ui.agreement.accepted-actor-record";
+
+    static String actorRecord(String version, String at, String by) {
+        return com.alibaba.fastjson2.JSON.toJSONString(java.util.Arrays.asList(version, at, by));
+    }
+
+    /** Old versions update the acceptance but leave unknown properties untouched. */
+    static void hideStaleActor(java.util.Map<String, String> values) {
+        String prefix = "novabot.core.config-ui.agreement.";
+        String expected = actorRecord(values.get(prefix + "accepted-version"), values.get(prefix + "accepted-at"),
+                values.get(prefix + "accepted-by"));
+        if (!expected.equals(values.get(ACTOR_RECORD))) values.remove(prefix + "accepted-actor");
+        values.remove(ACTOR_RECORD);
+    }
+
     /**
      * 读取协议全文
      * @return 协议文案

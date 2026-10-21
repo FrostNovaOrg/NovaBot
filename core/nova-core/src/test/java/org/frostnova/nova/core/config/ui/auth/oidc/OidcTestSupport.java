@@ -155,6 +155,10 @@ public abstract class OidcTestSupport {
         public String tokenOverride;
         public String tokenError;
         public String lastGrant;
+        public String expectedRefreshToken = "refresh-1";
+        public String lastRefreshToken;
+        public Runnable tokenHook = () -> {};
+        public boolean tokenTimeout;
         public int tokenStatus = 200;
         public int discoveryRequests;
         public int keyRequests;
@@ -173,7 +177,7 @@ public abstract class OidcTestSupport {
             useKey("EdDSA", "key-1");
         }
 
-        void useKey(String nextAlgorithm, String nextKid) throws Exception {
+        public void useKey(String nextAlgorithm, String nextKid) throws Exception {
             algorithm = nextAlgorithm;
             kid = nextKid;
             signingKey = key(algorithm);
@@ -225,6 +229,8 @@ public abstract class OidcTestSupport {
             assertEquals(tokenEndpoint, url);
             assertEquals(HttpMethod.POST, request.getMethod());
             tokenRequests++;
+            tokenHook.run();
+            if (tokenTimeout) throw new java.net.SocketTimeoutException("token timeout");
             if (tokenUnavailable) throw new IOException("token unavailable");
             assertTrue(MediaType.APPLICATION_FORM_URLENCODED.isCompatibleWith(request.getHeaders().getContentType()));
             String basic = new String(Base64.getDecoder().decode(request.getHeaders().getFirst("Authorization").substring(6)),
@@ -248,7 +254,8 @@ public abstract class OidcTestSupport {
                 pkceChecked = true;
             } else {
                 assertEquals("refresh_token", lastGrant);
-                assertEquals("refresh-1", form.get("refresh_token"));
+                lastRefreshToken = form.get("refresh_token");
+                assertEquals(expectedRefreshToken, lastRefreshToken);
             }
             if (tokenError != null) return response(Map.of("error", tokenError), 400);
             if (tokenStatus != 200) return response(Map.of("error", "server_error"), tokenStatus);
@@ -262,7 +269,7 @@ public abstract class OidcTestSupport {
             return response(tokens, 200);
         }
 
-        String signedToken() {
+        public String signedToken() {
             try {
                 var header = new JSONObject();
                 header.put("alg", headerAlgorithm == null ? algorithm : headerAlgorithm);

@@ -26,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -252,7 +251,7 @@ public class ConfigUiAuthController {
         }
 
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
-        agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
+        agreement.setAcceptedAt(OffsetDateTime.now().toString());
         agreement.setAcceptedBy(channel.wire());
         agreement.setAcceptedActor(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount account
                 ? account.displayName() : "本地管理员");
@@ -357,6 +356,8 @@ public class ConfigUiAuthController {
         changes.put(AGREEMENT_TIME_PROPERTY, acceptedAt);
         changes.put(AGREEMENT_BY_PROPERTY, acceptedBy);
         changes.put(AGREEMENT_ACTOR_PROPERTY, acceptedActor);
+        changes.put(ConfigUiAgreement.ACTOR_RECORD, version == 0 ? "" : ConfigUiAgreement.actorRecord(
+                String.valueOf(version), acceptedAt, acceptedBy));
 
         try {
             fileService.write(changes);

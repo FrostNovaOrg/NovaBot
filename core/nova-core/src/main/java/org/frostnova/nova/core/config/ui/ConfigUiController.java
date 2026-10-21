@@ -1014,6 +1014,7 @@ public class ConfigUiController {
         try {
             result.put("success", true);
             Map<String, String> values = fileService.read();
+            ConfigUiAgreement.hideStaleActor(values);
             String backupKeepKey = "novabot.core.config-ui.backup-keep";
             if (values.containsKey(backupKeepKey)) {
                 // 文件里可能写着越界值，程序按 1–100 生效。界面要显示生效值，
@@ -1147,7 +1148,8 @@ public class ConfigUiController {
             HttpServletRequest request = ConfigUiAccess.request();
             if (request == null || !Boolean.TRUE.equals(request.getAttribute(ConfigUiAccess.FRESH_LOCAL))) {
                 result.put("success", false);
-                result.put("message", ConfigUiAccess.LOCAL_REQUIRED);
+                result.put("message", authService.isEnabled() ? ConfigUiAccess.LOCAL_REQUIRED
+                        : "统一登录要先设登录口令才能用：请先设口令，用口令登录后再改这几项");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
             }
         }

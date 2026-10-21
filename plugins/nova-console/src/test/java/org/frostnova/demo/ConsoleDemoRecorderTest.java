@@ -6,8 +6,6 @@ import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.core.NovaCoreApplication;
-import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
-import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -34,12 +32,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /** Explicitly invoked response recorder; no assertions use these response files. */
 @EnabledIfSystemProperty(named = "console.demo.record", matches = "true")
 @SpringBootTest(classes = NovaCoreApplication.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-        properties = "novabot.bilibili.account.anonymous=true")
+        properties = {"novabot.bilibili.account.anonymous=true",
+                "novabot.core.config-ui.token=console-demo-recording-token-0123456789"})
 public class ConsoleDemoRecorderTest {
     @TestBean(methodName = "portContext") WebServerApplicationContext serverContext;
     @TestBean(methodName = "botTransport") OneBotHttpAdapter oneBotHttpAdapter;
     @Autowired WebApplicationContext context;
-    @Autowired ConfigUiSessionStore sessions;
     @Autowired NovaMessageSender sender;
     private static boolean failSend;
 
@@ -76,7 +74,6 @@ public class ConsoleDemoRecorderTest {
     private MockMvc mvc;
     private Cookie cookie;
     private Path output;
-    private final java.util.Set<String> expiredReports = new java.util.HashSet<>();
     private final JSONArray entries = new JSONArray();
     private final java.util.List<String> misses = new java.util.ArrayList<>();
     private final java.util.Set<String> keys = new java.util.LinkedHashSet<>();
@@ -140,10 +137,9 @@ public class ConsoleDemoRecorderTest {
         if (requestBody != null) entries.getJSONObject(entries.size() - 1).put("body", requestBody);
         // Anonymous nickname lookup can fail without an upstream connection.
         boolean offlineError = response.getStatus() == 500 && path.equals("/streamer/name");
-        boolean expired = response.getStatus() == 404 && expiredReports.contains(path);
-        String line = key + " -> HTTP " + response.getStatus() + (offlineError ? " (backend offline error)" : expired ? " (expired detail)" : "");
+        String line = key + " -> HTTP " + response.getStatus() + (offlineError ? " (backend offline error)" : "");
         System.out.println("HIT " + line);
-        if (response.getStatus() >= 400 && !offlineError && !expired) misses.add(line);
+        if (response.getStatus() >= 400 && !offlineError) misses.add(line);
         return contentType.contains("json") ? JSON.parseObject(bytes) : null;
     }
 
@@ -215,9 +211,10 @@ public class ConsoleDemoRecorderTest {
     }
 
     @Test void record() throws Exception {
-        mvc = MockMvcBuilders.webAppContextSetup(context).build();
-        ConfigUiSession session = sessions.issue("127.0.0.1", Instant.now(), ConfigUiSession.Channel.PASSWORD);
-        cookie = new Cookie("starbot_config_session", session.getId());
+        var registration = context.getBean("configUiSecurityFilterRegistration",
+                org.springframework.boot.web.servlet.FilterRegistrationBean.class);
+        mvc = MockMvcBuilders.webAppContextSetup(context).addFilters(registration.getFilter()).build();
+        cookie = new Cookie("starbot_config_token", "console-demo-recording-token-0123456789");
         output = Path.of("recorded-data");
         Files.createDirectory(output);
         JSONObject meta = JSON.parseObject(Files.readString(Path.of("recording.json")));
@@ -385,11 +382,7 @@ public class ConsoleDemoRecorderTest {
                 String report = p + "/sessions/" + archive.getString("startTime") + "/report";
                 boolean hasDetail = Files.isRegularFile(Path.of("details", platform + "-" + uid + "-"
                         + archive.getString("startTime"), "detail.json"));
-                if (!hasDetail) expiredReports.add(report);
-                int before = entries.size();
-                capture(report);
-                assertEquals(hasDetail ? 200 : 404, entries.getJSONObject(before).getIntValue("status"),
-                        "report follows persisted detail availability");
+                if (hasDetail) capture(report);
                 capture(p + "/sessions", "starts", archive.getString("startTime"), "page", 1, "size", 10);
             }
             for (Object row : user.getJSONArray("targets")) {
