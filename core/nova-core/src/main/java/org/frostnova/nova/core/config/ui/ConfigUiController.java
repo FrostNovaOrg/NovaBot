@@ -1906,7 +1906,7 @@ public class ConfigUiController {
                 JSONObject current = findDatasourceUser(users, platform, uid);
                 if ("add".equals(action) ? current != null
                         : current == null || !datasourceVersion(current).equals(body.getString("version"))) {
-                    return ResponseEntity.status(HttpStatus.CONFLICT).body(datasourceError(DATASOURCE_CONFLICT)
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(datasourceError("add".equals(action) ? "这位主播已经添加过了" : DATASOURCE_CONFLICT)
                             .fluentPut("conflict", true));
                 }
                 if (!"delete".equals(action) && (replacement == null
@@ -1918,7 +1918,7 @@ public class ConfigUiController {
                 else if (current == null) users.add(replacement);
                 else users.set(users.indexOf(current), replacement);
 
-                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", users.toJSONString()));
+                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", formatDatasource(users, 0)));
                 if (response.getBody().getBooleanValue("success") && !"delete".equals(action)) {
                     response.getBody().put("version", datasourceVersion(replacement));
                 }
@@ -1946,9 +1946,31 @@ public class ConfigUiController {
 
     private JSONArray readDatasourceUsers() throws IOException {
         Path path = Path.of(properties.getDatasource().getJsonPath());
-        JSONArray users = JSONArray.parseArray(Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "[]");
+        String content = Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "[]";
+        if (content.isBlank()) return new JSONArray();
+        JSONArray users = JSONArray.parseArray(content);
         if (users == null) throw new IllegalArgumentException("配置应为数组");
         return users;
+    }
+
+    /** 与推送页 JSON.stringify 的两格缩进一致，保留 null 与空容器，不写展示字段。 */
+    private String formatDatasource(Object value, int depth) {
+        String indent = "  ".repeat(depth);
+        String childIndent = indent + "  ";
+        if (value instanceof Map<?, ?> map) {
+            List<String> fields = new ArrayList<>();
+            map.forEach((key, item) -> {
+                if (!String.valueOf(key).startsWith("_")) {
+                    fields.add(childIndent + JSONObject.toJSONString(key) + ": " + formatDatasource(item, depth + 1));
+                }
+            });
+            return fields.isEmpty() ? "{}" : "{\n" + String.join(",\n", fields) + "\n" + indent + "}";
+        }
+        if (value instanceof List<?> list) {
+            List<String> items = list.stream().map(item -> childIndent + formatDatasource(item, depth + 1)).toList();
+            return items.isEmpty() ? "[]" : "[\n" + String.join(",\n", items) + "\n" + indent + "]";
+        }
+        return JSONObject.toJSONString(value);
     }
 
     private JSONObject findDatasourceUser(JSONArray users, String platform, String uid) {

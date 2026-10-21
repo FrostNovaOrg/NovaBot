@@ -2107,37 +2107,29 @@ async function lookupStreamer(platformNames, input, go, out) {
 
 // ============ 存盘与补全 ============
 
-/**
- * 推送配置此刻手里那一份
- *
- * 给向导那一步用：它要先看有没有同一位主播，再整份换掉。
- * @return {Array} 直接就是本页手里那个数组，改它即改本页的草稿态
- */
+/** 推送配置此刻手里那一份，改它即改本页的草稿态。 */
 export function pushEntries() {
   return pushData;
 }
 
-/**
- * 整份换掉
- *
- * 向导那一步落盘失败时要整份退回上一刻的样子，逐项撤是撤不干净的。
- * @param list 新的一份
- */
+/** 整份替换推送页草稿。 */
 export function setPushEntries(list) {
   pushData = list;
 }
 
-/**
- * 把快照对齐到某一份数
- *
- * 本页之外还有人往 /datasource 写（向导第一位主播那一步）。写完不对齐的话，
- * 改动条会一直说「还有 1 处没保存」——而它已经存下去了。那一路不传参，对齐到此刻这一份。
- * 本页保存时传的是「真发出去的那一份」：回包之前又改的东西不该被算成已存，
- * 要留在改动条上，下次保存再发出去。
- * @param [snapshot] 发下去的那一份数；不给即此刻这一份
- */
+/** 对齐到已保存的快照，保留请求发出后继续编辑的内容。 */
 export function markPushSaved(snapshot) {
   pushSaved = snapshot === undefined ? serializePush() : snapshot;
+}
+
+/** 向导新增成功后只合入这一位，其他主播的草稿、快照与版本继续保留。 */
+export function acceptAddedPushUser(user, version) {
+  const key = userKey(user);
+  const existing = pushData.find(item => userKey(item) === key);
+  // 本地可能已有尚未提交的同身份草稿；保留它，让后续保存按新版本更新。
+  if (!existing) pushData.push(user);
+  userVersions.set(key, version);
+  updateSavedUser(key, user);
 }
 
 // 下划线开头的字段仅供界面展示（昵称、头像等），既不写进配置文件，也不该算作改动
