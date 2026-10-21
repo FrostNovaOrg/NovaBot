@@ -16,6 +16,7 @@
 - [第 12 章　设置页怎么用](https://frostnovaorg.github.io/NovaBot/12-settings.html)
 - [第 13 章　升级与备份](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html)
 - [第 14 章　遇到问题怎么办](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html)
+- [第 15 章　成员：请别人帮你管主播](https://frostnovaorg.github.io/NovaBot/15-members.html)
 - [附录 A　实测数据与原理](https://frostnovaorg.github.io/NovaBot/appendix-a-measurements.html)
 - [附录 B　进阶玩法](https://frostnovaorg.github.io/NovaBot/appendix-b-advanced.html)
 - [附录 C　安全须知与资源占用](https://frostnovaorg.github.io/NovaBot/appendix-c-security-and-resources.html)
