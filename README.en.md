@@ -4,7 +4,7 @@
 
 <h3>Bilibili live stream and feed notification bot</h3>
 
-<p>Pushes go-live, stream-end and new-post notifications to QQ groups and friends as soon as they happen;<br>generates a data report image automatically when a stream ends, with all configuration done in the browser.</p>
+<p>Pushes go-live, stream-end and new-post notifications to QQ groups and friends as soon as they happen;<br>generates a data report image automatically when a stream ends, with all configuration done in the browser, and lets you bring in others to help manage your streamers.</p>
 
 <p><a href="README.md">简体中文</a> · English</p>
 <p>
@@ -38,17 +38,17 @@
 <tr>
 <td width="50%" valign="top">
 <b>Notifications</b><br>
-Three kinds of notifications: going live, ending a stream, and feed updates. One streamer can be pushed to several groups or friends, message templates are configured per push target, and quiet hours have one global setting that can also be set separately for each group or friend chat.
+Going live, ending a stream and feed updates can all be pushed, and one streamer can be pushed to several groups or friends. Each channel, meaning "this streamer pushed to this group", has its own template, amount display, quiet hours and command switches, and can follow the one global quiet-hours setting instead; each streamer also has their own block list.
 </td>
 <td width="50%" valign="top">
 <b>Reports</b><br>
-A data report image is generated automatically when a stream ends, and trends can be viewed by week or by month. Mentioning the bot with @ in a group also lets you look up data, pull leaderboards, or ask for a live image.
+A data report image is generated automatically when a stream ends, and a weekly operations report can go out every Monday; each streamer's page shows the overview and trends on one page, with a broadcast calendar. Mentioning the bot with @ in a group also lets you look up data, pull leaderboards, or ask for a live image.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <b>Console</b><br>
-Adding streamers, editing templates and sending test messages are all done in the browser. The home page shows what was pushed today, and when something goes wrong there is a health self-check with suggested fixes.
+Adding streamers, editing templates and sending test messages are all done in the browser. The home page shows what was pushed today, and when something goes wrong there is a health self-check with suggested fixes. You can also let others sign in through single sign-on and manage only the streamers you assign to them; see [Chapter 15](https://frostnovaorg.github.io/NovaBot/15-members.html).
 </td>
 <td width="50%" valign="top">
 <b>Extensions</b><br>
@@ -91,6 +91,8 @@ The user manual and the console interface are currently available in Chinese onl
 | See stream reports and trends | [Chapter 9: How your streams went](https://frostnovaorg.github.io/NovaBot/09-stream-reports.html) |
 | Upgrade and back up | [Chapter 13: Upgrades and backups](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html) |
 | Solve a problem | [Chapter 14: What to do when something goes wrong](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html) |
+| Have someone help manage my streamers | [Chapter 15: Members: getting others to help manage your streamers](https://frostnovaorg.github.io/NovaBot/15-members.html) |
+| Connect single sign-on | [Appendix E: Connecting a single sign-on account center](https://frostnovaorg.github.io/NovaBot/appendix-e-oidc.html) |
 
 For the other chapters, see the [user manual contents](https://frostnovaorg.github.io/NovaBot/index.html). For problems and suggestions, please open an [Issue](../../issues) and attach the relevant excerpt from the console's Logs page (「日志」) or from `journalctl -u novabot@<version>`.
 

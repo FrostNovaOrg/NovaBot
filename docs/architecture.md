@@ -197,7 +197,7 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 
 | 文件 | 谁写 | 内容 | 丢了会怎样 |
 |---|---|---|---|
-| `state.json` | `NovaStateStore` | 各群禁用了哪些命令、`@我` 订阅名单；旧版本留下的账号绑定记录还在文件里，但已不再写入、也没人读 | 群成员的设置全部回到默认 |
+| `state.json` | `NovaStateStore` | 控制台的账号（含统一登录身份与成员的指定主播）、通行密钥、`@我` 订阅名单、第三方插件命令的按群开关等；旧版本留下的账号绑定记录还在文件里，但已不再写入、也没人读 | 成员账号与通行密钥丢失，只剩本地管理员；群里的订阅与插件命令开关回到默认 |
 | `sessions.jsonl` | `LiveSessionArchive` | 每场直播的时长与全部指标 | **运营分析的历史永久消失，补不回来** |
 | `data.json` | `DefaultLiveDataService` | 本场与累计的直播数据 | 累计数据归零 |
 

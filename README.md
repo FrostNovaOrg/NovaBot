@@ -4,7 +4,7 @@
 
 <h3>哔哩哔哩直播与动态推送机器人</h3>
 
-<p>开播、下播、发动态，第一时间推到 QQ 群和好友；<br>下播自动出一张数据报告图，配置全在浏览器里完成。</p>
+<p>开播、下播、发动态，第一时间推到 QQ 群和好友；<br>下播自动出一张数据报告图，配置全在浏览器里完成，也能请别人帮你管主播。</p>
 
 <p><sub>Bilibili live &amp; feed notifier for QQ via OneBot, with a web console and post-stream report images.</sub></p>
 
@@ -40,17 +40,17 @@
 <tr>
 <td width="50%" valign="top">
 <b>推送</b><br>
-开播、下播、动态更新三类通知。同一位主播可以推给多个群或好友，消息模板按推送目标各配，静音时段全局设一项，另可按群或好友会话单独设。
+开播、下播、动态更新都能推，同一位主播可以推给多个群或好友。每条「这位主播推到这个群」的通道各设模板、金额显示、静音时段与命令开关，静音时段另有全局一项可跟；每位主播还有自己的屏蔽名单。
 </td>
 <td width="50%" valign="top">
 <b>报告</b><br>
-下播自动出一张数据报告图，按周或按月看趋势。群里 @ 机器人也能查数据、拉排行榜、要一张实时图。
+下播自动出一张数据报告图，每周一还能发一份运营周报；主播页一页看完概况与趋势，配开播日历。群里 @ 机器人也能查数据、拉排行榜、要一张实时图。
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <b>控制台</b><br>
-加主播、改模板、发测试消息都在浏览器里完成。首页看今天推了什么，出问题有健康自检和修复建议。
+加主播、改模板、发测试消息都在浏览器里完成。首页看今天推了什么，出问题有健康自检和修复建议。还可以请别人用统一登录进来，只管你指定给他的主播，见[第 15 章](https://frostnovaorg.github.io/NovaBot/15-members.html)。
 </td>
 <td width="50%" valign="top">
 <b>扩展</b><br>
@@ -91,6 +91,8 @@ cd NovaBot && ./install.sh
 | 看下播报告与趋势 | [第 9 章　看播得怎么样](https://frostnovaorg.github.io/NovaBot/09-stream-reports.html) |
 | 升级与备份 | [第 13 章　升级与备份](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html) |
 | 遇到问题 | [第 14 章　遇到问题怎么办](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html) |
+| 请别人帮我管主播 | [第 15 章　成员：请别人帮你管主播](https://frostnovaorg.github.io/NovaBot/15-members.html) |
+| 接统一登录 | [附录 E　接统一登录账户中心](https://frostnovaorg.github.io/NovaBot/appendix-e-oidc.html) |
 
 其余章节见[用户手册目录](https://frostnovaorg.github.io/NovaBot/index.html)。问题与建议请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot@<版本>` 的相关片段。
 
