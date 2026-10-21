@@ -5,7 +5,7 @@ import {ask} from './confirm.js';
 let memberAuth = {};
 const LOCAL_ID = 'local-admin';
 const FRESH_LOCAL = '这一步要先用本地方式重新登录';
-const NEW_MEMBER_HELP = '在账户中心建好账号后，让他用统一登录进来一次，这里就会出现一行待授权。';
+const NEW_MEMBER_HELP = '在账户中心建好账号后，让对方用统一登录进来一次，这里就会出现一行待授权。';
 
 export function setMemberAuthState(state) {
   memberAuth = {...state};
@@ -104,7 +104,7 @@ function accountRow(tbody, account, options, optionsReady, state, refresh) {
   row.appendChild(who);
   text(row, 'td', identity(account));
   const status = text(row, 'td', statusText(account.status));
-  if (account.status === 'PENDING') text(status, 'p', '他已经用统一登录进来过一次，等你授权。', 'hint');
+  if (account.status === 'PENDING') text(status, 'p', '对方已经用统一登录进来过一次，等你授权。', 'hint');
   const assigned = (account.streamers || []).map(key => options.find(option => option.key === key)?.name || key);
   text(row, 'td', account.role === 'MEMBER' ? assigned.join('、') || '未指定主播' : '—');
   const lastLogin = el('td');
@@ -166,16 +166,19 @@ function accountRow(tbody, account, options, optionsReady, state, refresh) {
       } else {
         const enable = button(actions, account.status === 'PENDING' ? '授权并启用' : '启用', 'enable', () => run(async () => {
           const streamers = selected();
-          if (!streamers.length && !await ask({title: '启用这位成员？', body: '没指定主播，他进来什么都看不到。'})) return false;
+          if (!streamers.length && !await ask({title: '启用这位成员？', body: '没指定主播，对方进来什么都看不到。'})) return false;
           await accountApi(path + '/streamers', 'POST', {streamers});
           await accountApi(path + '/enable');
         }));
         enable.disabled = !optionsReady;
       }
     }
+    if (account.role === 'ADMIN' && ['PENDING', 'DISABLED'].includes(account.status)) {
+      button(actions, account.status === 'PENDING' ? '授权并启用' : '启用', 'enable', () => run(() => accountApi(path + '/enable')));
+    }
     if (account.status === 'ENABLED') {
       button(actions, '停用', 'disable', () => run(async () => {
-        if (!await ask({title: '停用这个账号？', body: '他会立刻被踢下线，停用后不能登录控制台。'})) return false;
+        if (!await ask({title: '停用这个账号？', body: '对方会立刻被踢下线，停用后不能登录控制台。'})) return false;
         await accountApi(path + '/disable');
       }));
     }

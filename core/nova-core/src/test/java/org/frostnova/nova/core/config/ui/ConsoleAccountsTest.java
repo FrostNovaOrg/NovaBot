@@ -90,6 +90,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
         var metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getKnownTypes()).thenReturn(Map.of("novabot.core.config-ui.oidc.issuer", "java.lang.String",
                 "novabot.core.config-ui.oidc.enabled", "java.lang.Boolean",
+                "novabot.core.config-ui.oidc.management-uri", "java.lang.String",
                 "novabot.core.push.enabled", "java.lang.Boolean"));
         return new ConfigUiController(metadata, files, properties,
                 mock(org.frostnova.nova.core.datasource.AbstractDataSource.class), mock(ObjectProvider.class),
@@ -106,6 +107,67 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 mock(org.frostnova.nova.core.sender.PushGate.class), mock(org.frostnova.nova.core.service.LiveDataService.class),
                 mock(org.frostnova.nova.core.timeline.TimelineStore.class), auth, new PushTemplateDefaults(properties),
                 mock(UpdateCheckService.class));
+    }
+
+    // 管理地址少写一个 s 后，已登录管理员仍能取到登录态与成员列表，并且只警告一次。
+    @Test
+    void invalidManagementUriDoesNotBreakAuthenticatedConsoleAndWarnsOnce() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(OidcClient.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            config.setManagementUri("http://accounts.example.com/manage");
+            rebuildClient();
+            console();
+            var member = enabledMember();
+            var session = oidcSession(accounts.role(member.id(), Role.ADMIN));
+            for (int i = 0; i < 3; i++) {
+                perform(get("/config/api/auth/state"), session).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.oidcEnabled").value(true))
+                        .andExpect(jsonPath("$.csrfToken").isNotEmpty())
+                        .andExpect(jsonPath("$.managementUri").value(""));
+                perform(get("/config/api/accounts"), session).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.managementUri").value(""));
+            }
+            var warnings = logs.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
+            assertEquals(1, warnings.size());
+            String warning = warnings.get(0).getFormattedMessage();
+            assertTrue(warning.contains("novabot.core.config-ui.oidc.management-uri"));
+            assertTrue(warning.contains("https://") && warning.contains("完整地址") && warning.contains("留空"));
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
+    // 地址填错要在保存时指出具体设置，宽松键名也不能绕过校验，整批配置保持原样。
+    @ParameterizedTest
+    @ValueSource(strings = {"http://accounts.example.com/manage", "accounts.example.com/manage",
+            "https://user@accounts.example.com/manage", "https://accounts.example.com/manage#fragment",
+            "https://accounts.example.com:0/manage", "https://accounts.example.com:65536/manage", "https:///manage"})
+    void invalidManagementUriRejectsWholeSettingsBatch(String address) throws Exception {
+        String before = Files.readString(configFile);
+        var local = auth.issueForPassword("127.0.0.1");
+        for (String key : List.of("novabot.core.config-ui.oidc.management-uri", "novabot.core.configUI.oidc.management_uri")) {
+            perform(post("/config/api/values").content(JSONObject.toJSONString(Map.of(key, address,
+                            "novabot.core.push.enabled", "false"))), local)
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("novabot.core.config-ui.oidc.management-uri")))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("https://")))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("完整地址")))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("留空")));
+            assertEquals(before, Files.readString(configFile), "无效管理地址不能写入同批的任何项");
+        }
+    }
+
+    // 留空关闭管理入口，或者填好 HTTPS 地址，都应能通过设置页正常保存。
+    @Test
+    void blankAndHttpsManagementUrisCanBeSaved() throws Exception {
+        var local = auth.issueForPassword("127.0.0.1");
+        for (String address : List.of("https://accounts.example.com/manage", "")) {
+            perform(post("/config/api/values").content(JSONObject.toJSONString(Map.of(
+                            "novabot.core.configUI.oidc.management_uri", address))), local)
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+            assertEquals(address, new ConfigurationFileService(configFile).read()
+                    .getOrDefault("novabot.core.config-ui.oidc.management-uri", ""));
+        }
     }
 
     // 在账户中心自行注册的人必须先登记，管理员启用后才能拿到控制台会话。
