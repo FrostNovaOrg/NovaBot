@@ -11,6 +11,7 @@ const version = user => JSON.stringify(user);
 const requests = [];
 let sessionDisabled = [];
 const quietByUid = {1: true, 2: false};
+let quietGlobal;
 const response = payload => ({status: 200, json: async () => copy(payload)});
 globalThis.fetch = async (path, options = {}) => {
   const url = String(path).replace('/config/api', '');
@@ -35,7 +36,8 @@ globalThis.fetch = async (path, options = {}) => {
     {name: '天气', category: '天气查询', disableable: true, channelScoped: false},
     {name: '菜单', category: '命令管理', disableable: false},
     {name: '启用命令', category: '命令管理', disableable: false}, {name: '禁用命令', category: '命令管理', disableable: false}],
-    subscriptions: [1, 2].map(uid => ({platform: 'q', num: 100, streamerUid: uid, users: [uid], type: 'live'})), incomplete: []});
+    subscriptions: [1, 2].map(uid => ({platform: 'q', num: 100, streamerUid: uid, users: [uid], type: 'live'})), incomplete: [],
+    quietGlobal});
   return response({success: true});
 };
 const push = await import('../../../main/resources/config-ui-pages/push.js');
@@ -152,6 +154,29 @@ await test('通道明明在静音，主播页的通道行一眼看不出，以�
   assert.equal(rowQuiet(), false, '没设静音时段时通道行不应出「静音中」');
   quietByUid[1] = true;
 });
+function channelRowQuiet() {
+  const rows = idNode('push-right').querySelectorAll('.rowcard');
+  assert.equal(rows.length, 1, '主播页应列出这位主播的那一条通道');
+  return rows.some(row => text(row).includes('静音中'));
+}
+await test('通道设了自己的时段但此刻不在时段里，通道行却挂着静音中', async () => {
+  disk = initial(); sessionDisabled = []; quietByUid[1] = false;
+  disk[0].targets[0].quietHours = {mode: 'custom', start: '00:00', end: '23:59'};
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await push.showPush('1');
+  assert.equal(channelRowQuiet(), false, '服务端判甲通道此刻不在静音，设了时段也不应出「静音中」');
+  quietByUid[1] = true;
+});
+await test('通道跟随全局、全局正在静音，通道行看不出在静音', async () => {
+  disk = initial(); sessionDisabled = []; quietByUid[1] = true;
+  quietGlobal = {start: '00:00', end: '23:59'};
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await push.showPush('1');
+  assert.ok(channelRowQuiet(), '服务端判跟随全局的甲通道正在静音，通道行应出「静音中」');
+  quietGlobal = undefined;
+});
 await push.leave();
-console.log('跑了 6 格，红 ' + failures.length + ' 格');
+console.log('跑了 8 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;
