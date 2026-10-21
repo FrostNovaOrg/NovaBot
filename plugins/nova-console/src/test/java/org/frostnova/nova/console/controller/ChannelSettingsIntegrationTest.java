@@ -118,6 +118,183 @@ class ChannelSettingsIntegrationTest {
         config = (ConfigUiController) constructor.newInstance(args);
     }
 
+    // 多人管理时，每次保存、删除、静音、删订阅和签发口令都要查得到操作者，且不能泄露凭据。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void mutationsIdentifyActorAndTarget(boolean oidc) {
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer console-token-secret");
+        String actor = "本地管理员";
+        if (oidc) {
+            var account = new org.frostnova.nova.core.config.ui.auth.ConfigUiAccount("admin-42",
+                    org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.Role.ADMIN,
+                    org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.Status.ENABLED,
+                    "管理员甲", null, "https://id.example", "subject", List.of(), Instant.now(), null, true);
+            request.setAttribute(ConfigUiAccess.ACCOUNT, account);
+            actor = account.actor();
+        }
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger("org.frostnova.nova");
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            var loaded = config.datasourceUser("bilibili", "10001");
+            loaded.getJSONObject("user").put("enabled", false);
+            assertTrue(config.saveDatasourceUser("bilibili", "10001", JSONObject.of("user", loaded.get("user"),
+                    "version", loaded.get("version"))).getBody().getBooleanValue("success"));
+            assertAudit(logs, actor, "bilibili:10001", "存了");
+            logs.list.clear();
+            var controller = runtime();
+            controller.setQuietHours(JSONObject.of("platform", "qq", "type", 1, "num", 100,
+                    "streamerPlatform", "bilibili", "streamerUid", 10001, "mode", "custom", "start", "23:00", "end", "07:00"));
+            assertAudit(logs, actor, "qq:1:100", "23:00");
+            assertAudit(logs, actor, "bilibili:10001", "静音");
+            logs.list.clear();
+            controller.removeSubscription(JSONObject.of("platform", "qq", "num", 100, "streamerUid", 10001,
+                    "type", "live", "userUid", 9));
+            assertAudit(logs, actor, "qq", "订阅");
+            assertAudit(logs, actor, "10001", "订阅");
+            logs.list.clear();
+            loaded = config.datasourceUser("bilibili", "10001");
+            assertTrue(config.deleteDatasourceUser("bilibili", "10001", JSONObject.of("version", loaded.get("version")))
+                    .getBody().getBooleanValue("success"));
+            assertAudit(logs, actor, "bilibili:10001", "删了");
+            logs.list.clear();
+            var tokens = new org.frostnova.nova.core.protocol.EventStreamTokenService(props.getLive());
+            ReflectionTestUtils.setField(config, "eventStreamTokens", tokens);
+            String token = config.issueEventToken(Map.of("label", "只读面板")).getString("token");
+            assertNotNull(token);
+            assertAudit(logs, actor, "指纹", "签发");
+            assertFalse(logs.list.stream().anyMatch(e -> e.getFormattedMessage().contains(token)));
+            logs.list.clear();
+            config.revokeEventToken(org.frostnova.nova.core.lang.SecureToken.fingerprint(token));
+            assertAudit(logs, actor, "指纹", "吊销");
+            assertFalse(logs.list.stream().anyMatch(e -> e.getFormattedMessage().contains(token)));
+            assertFalse(logs.list.stream().anyMatch(e -> e.getFormattedMessage().contains("access-secret")));
+        } finally {
+            logger.detachAppender(logs); logs.stop();
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    static void assertAudit(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logs,
+                            String actor, String target, String action) {
+        assertFalse(logs.list.stream().anyMatch(event -> event.getFormattedMessage().contains("console-token-secret")));
+        assertTrue(logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                .anyMatch(line -> line.contains(actor) && line.contains(target) && line.contains(action)),
+                "Missing audit: " + actor + " / " + target + " / " + action);
+    }
+
+    // 设置、连接和试发也必须留下可查的操作者与目的地，正文和连接凭据不能进日志。
+    @Test
+    @SuppressWarnings("unchecked")
+    void remainingWriteEndpointsAreAuditedWithoutSecrets() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger("org.frostnova.nova");
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            String content = Files.readString(file);
+            assertTrue(config.saveDatasource(JSONObject.of("content", content)).getBody().getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", "整份", "覆盖");
+            assertTrue(config.addDatasourceUser(JSONObject.of("user", JSONObject.of("platform", "bilibili", "uid", 10003,
+                    "targets", new JSONArray()))).getBody().getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", "bilibili:10003", "加了");
+            var controller = runtime();
+            controller.setRevenueVisibility(JSONObject.of("platform", "qq", "type", 1, "num", 100, "visible", true));
+            assertAudit(logs, "本地管理员", "qq:1:100", "金额");
+            controller.toggleCommand(JSONObject.of("platform", "qq", "type", 1, "num", 100, "command", "天气", "disabled", true));
+            assertAudit(logs, "本地管理员", "qq:1:100", "禁用");
+            controller.toggleCommands(JSONObject.of("platform", "qq", "type", 1, "num", 100, "commands", JSONArray.of("天气"), "disabled", false));
+            assertAudit(logs, "本地管理员", "qq:1:100", "启用");
+            controller.removeSubscription(JSONObject.of("platform", "qq", "num", 100, "streamerUid", 10001, "type", "live"));
+            assertAudit(logs, "本地管理员", "qq:1:100", "清空");
+
+            var metadata = (ConfigurationMetadataService) ReflectionTestUtils.getField(config, "metadataService");
+            String key = "novabot.core.push.enabled";
+            when(metadata.getKnownTypes()).thenReturn(Map.of(key, "java.lang.Boolean"));
+            var configFile = (ConfigurationFileService) ReflectionTestUtils.getField(config, "fileService");
+            when(configFile.write(anyMap())).thenAnswer(call -> new ArrayList<>(((Map<String, String>) call.getArgument(0)).keySet()));
+            assertTrue(config.save(Map.of(key, "true")).getBody().getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", key, "设置");
+
+            var tester = mock(org.frostnova.nova.core.account.BotConnectionTester.class);
+            when(tester.apply(anyString(), anyInt(), anyInt(), anyString(), anyString())).thenReturn(
+                    new org.frostnova.nova.core.account.BotConnectionTester.Applied(true, "已连接", Map.of("name", "qq")));
+            ObjectProvider<org.frostnova.nova.core.account.BotConnectionTester> testers = mock(ObjectProvider.class);
+            when(testers.orderedStream()).thenAnswer(call -> java.util.stream.Stream.of(tester));
+            ReflectionTestUtils.setField(config, "connectionTesters", testers);
+            ObjectProvider<BotConnectionContributor> connections = mock(ObjectProvider.class);
+            when(connections.orderedStream()).thenAnswer(call -> java.util.stream.Stream.of((BotConnectionContributor) () -> "adapter.connections"));
+            ReflectionTestUtils.setField(config, "botConnections", connections);
+            assertTrue(config.saveBot(JSONObject.of("address", "localhost", "httpPort", "3000", "httpToken", "bot-token-secret"))
+                    .getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", "机器人连接", "存了");
+
+            var login = mock(org.frostnova.nova.core.account.AccountLoginProvider.class);
+            when(login.platform()).thenReturn("bilibili");
+            ObjectProvider<org.frostnova.nova.core.account.AccountLoginProvider> providers = mock(ObjectProvider.class);
+            when(providers.orderedStream()).thenAnswer(call -> java.util.stream.Stream.of(login));
+            ReflectionTestUtils.setField(config, "loginProviders", providers);
+            assertTrue(config.logout(JSONObject.of("platform", "bilibili")).getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", "bilibili", "退出");
+            var messageSender = (NovaMessageSender) ReflectionTestUtils.getField(config, "messageSender");
+            when(messageSender.sendNow(any())).thenReturn(JSONObject.of("code", 0));
+            assertTrue(config.testMessage(JSONObject.of("platform", "qq", "type", 1, "num", 100, "content", "message-secret"))
+                    .getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", "qq:1:100", "测试消息");
+
+            var push = new PushController(mock(RuntimeConfigurationApplier.class), configFile,
+                    mock(NovaEventHandlerService.class), mock(PushTemplateDefaults.class), mock(org.frostnova.nova.core.health.PushActivityRecorder.class));
+            push.togglePush(JSONObject.of("enabled", false)); push.togglePush(JSONObject.of("enabled", true));
+            assertAudit(logs, "本地管理员", "全局推送", "暂停");
+            assertAudit(logs, "本地管理员", "全局推送", "恢复");
+            var handlers = (NovaEventHandlerService) ReflectionTestUtils.getField(push, "handlerService");
+            when(handlers.getHandler("example.Handler")).thenReturn(Optional.of(mock(org.frostnova.nova.core.handler.NovaEventHandler.class)));
+            assertTrue(push.saveTemplate(JSONObject.of("className", "example.Handler", "params", JSONObject.of("message", "message-secret")))
+                    .getBody().getBooleanValue("success"));
+            assertAudit(logs, "本地管理员", "example.Handler", "默认模板");
+
+            var reports = mock(WeeklyReportDeliveryService.class);
+            when(reports.trial(anyString(), anyLong(), any())).thenReturn(JSONObject.of("code", 0));
+            new WeeklyReportPushController(reports, source).trial("bilibili", 10001L, "qq", 1, 100L);
+            assertAudit(logs, "本地管理员", "qq:1:100", "周报");
+            var credentials = mock(org.frostnova.nova.adapter.onebot.napcat.NapCatCredentialService.class);
+            when(credentials.issue(true)).thenReturn(new org.frostnova.nova.adapter.onebot.napcat.NapCatCredentialService.Issued(
+                    org.frostnova.nova.adapter.onebot.napcat.NapCatCredentialService.Outcome.OK, "napcat-credential-secret"));
+            new org.frostnova.nova.adapter.onebot.napcat.NapCatBootstrapController(credentials).credential(true);
+            assertAudit(logs, "本地管理员", "NapCat", "凭据");
+
+            var alert = mock(org.frostnova.nova.core.alert.AlertChannel.class);
+            when(alert.id()).thenReturn("qq"); when(alert.isAvailable()).thenReturn(true);
+            when(alert.auditDestination()).thenReturn("会话 qq:1:100");
+            doAnswer(call -> { ((java.util.function.Consumer<org.frostnova.nova.core.alert.AlertChannel.SendResult>) call.getArgument(2))
+                    .accept(org.frostnova.nova.core.alert.AlertChannel.SendResult.sent()); return null; }).when(alert).sendReporting(anyString(), anyString(), any());
+            ObjectProvider<org.frostnova.nova.core.alert.AlertChannel> alerts = mock(ObjectProvider.class);
+            when(alerts.orderedStream()).thenAnswer(call -> java.util.stream.Stream.of(alert));
+            new AlertTestController(new org.frostnova.nova.core.alert.AlertService(props, alerts, TimelineWriter.NONE)).test("qq");
+            assertAudit(logs, "本地管理员", "qq:1:100", "告警");
+            for (String secret : List.of("bot-token-secret", "message-secret", "napcat-credential-secret")) {
+                assertFalse(logs.list.stream().anyMatch(event -> event.getFormattedMessage().contains(secret)), secret);
+            }
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
+    // 群管理员改命令以后，日志必须能与控制台改动区分，不能记录发命令人的号码。
+    @Test
+    void groupCommandsIdentifyTheirSource() {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DatasourceChannelStore.class);
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent("qq", "group", 100L, 987654321L,
+                    "禁用命令 直播报告 甲", "owner", true));
+            assertAudit(logs, "群里命令", "qq:1:100", "命令");
+            assertAudit(logs, "群里命令", "bilibili:10001", "命令");
+            assertFalse(logs.list.stream().anyMatch(e -> e.getFormattedMessage().contains("987654321")));
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
     @Test @DisplayName("关甲的直播报告后不点名直接答乙，点甲说已关闭，菜单仍列出")
     void disabledCommandFiltersStreamerCandidates() {
         target(0).setDisabledCommands(List.of("直播报告"));
@@ -377,6 +554,7 @@ class ChannelSettingsIntegrationTest {
             var raw = (JSONObject) entry;
             var user = new PushUser(); user.setPlatform(raw.getString("platform")); user.setUid(raw.getLong("uid"));
             user.setUname(user.getUid() == 10001 ? "甲" : "乙"); user.setEnabled(true);
+            if (raw.getJSONArray("targets").isEmpty()) { user.setTargets(List.of()); users.add(user); continue; }
             var t = raw.getJSONArray("targets").getJSONObject(0);
             var target = new PushTarget(); target.setUser(user); target.setPlatform(t.getString("platform"));
             target.setType(PushTargetType.of(t.getIntValue("type"))); target.setNum(t.getLong("num")); target.setEnabled(true);

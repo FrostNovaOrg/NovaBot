@@ -272,6 +272,13 @@ public class ConfigUiSessionStore {
         return before - sessions.size();
     }
 
+    /** 退回令牌登录时立即注销所有统一登录会话。 */
+    public synchronized int revokeAllOidc() {
+        int before = sessions.size();
+        sessions.values().removeIf(session -> session.getChannel() == ConfigUiSession.Channel.OIDC);
+        return before - sessions.size();
+    }
+
     public synchronized int revokeOidcAccount(String accountId) {
         int before = sessions.size();
         sessions.values().removeIf(session -> session.getAccountId().equals(accountId)

@@ -101,7 +101,10 @@ public class AlertTestController {
      */
     @PostMapping(value = TEST_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<JSONObject> test(@RequestParam(required = false) String channel) {
-        AlertService.TestResult result = alertService.test(channel == null ? "" : channel.strip());
+        String id = channel == null ? "" : channel.strip();
+        alertService.declaredChannels().stream().filter(item -> item.id().equals(id)).findFirst()
+                .ifPresent(item -> log.info("{} 向 {} 试发告警", ConfigUiAccess.actor(), item.auditDestination()));
+        AlertService.TestResult result = alertService.test(id);
 
         JSONObject body = new JSONObject();
         body.put("success", result.delivered());

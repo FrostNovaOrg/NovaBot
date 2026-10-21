@@ -70,7 +70,7 @@ public class CommandSettingsService {
                 }
                 if (one) changed[0]++;
             }
-        }, false);
+        }, false, "群里命令");
         return changed[0];
     }
 

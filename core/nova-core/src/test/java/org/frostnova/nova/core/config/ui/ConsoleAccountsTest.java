@@ -142,7 +142,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
         assertNull(denied.getResponse().getCookie(ConfigUiSecurityFilter.SESSION_COOKIE));
     }
 
-    // 权限层开放前，成员不能读取或修改配置及数据源，也不能同意使用协议。
+    // 成员不能读取或修改整份配置及数据源，也不能同意使用协议。
     @Test
     void membersAreDeniedByDefault() throws Exception {
         var session = oidcSession(enabledMember());
@@ -150,7 +150,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 get("/config/api/datasource"), post("/config/api/auth/agreement/accept"),
                 post("/config/api/auth/agreement/revoke"), get("/config/api/accounts"))) {
             perform(builder, session).andExpect(status().isForbidden())
-                    .andExpect(content().string(org.hamcrest.Matchers.containsString("成员暂时不能使用这一项")));
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("成员不能使用这一项")));
         }
         perform(get("/config/api/auth/state"), session).andExpect(status().isOk())
                 .andExpect(jsonPath("$.accountId").value(session.getAccountId()))
@@ -417,6 +417,56 @@ class ConsoleAccountsTest extends OidcTestSupport {
         perform(get("/config/api/accounts"), session).andExpect(status().isForbidden());
     }
 
+    // 管理员填错指定主播时整份名单不动，避免一次误填丢掉已有授权。
+    @Test
+    void invalidStreamerAssignmentsLeaveTheListUnchanged() throws Exception {
+        var member = enabledMember();
+        accounts.streamers(member.id(), List.of("bilibili:1"));
+        var local = auth.issueForPassword("127.0.0.1");
+        for (String invalid : List.of("streamer-old", ":1", "bilibili:", "bilibili:0", "bilibili:-1",
+                "bilibili:1.5", "bilibili:9223372036854775808", "bilibili:1:2", " :1")) {
+            perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                    .content(JSONObject.of("streamers", List.of("bilibili:2", invalid)).toJSONString()), local)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("指定主播格式不正确"));
+            assertEquals(List.of("bilibili:1"), accounts.require(member.id()).streamers());
+        }
+    }
+
+    // 老名单照常启动、原样显示，但旧字符串不能给成员任何主播权限。
+    @Test
+    void legacyStreamerAssignmentsAreListedButGrantNoAccess() throws Exception {
+        var member = enabledMember();
+        var record = ConfigUiAccountStore.json(member);
+        record.put("streamers", List.of("streamer-old", "bilibili:bad", "bilibili:0"));
+        state.write(ConfigUiAccountStore.NAMESPACE, data -> data.put(member.id(), record));
+        assertTrue(state.trySave());
+        var restored = new NovaStateStore(properties);
+        restored.onApplicationReadyEvent();
+        assertEquals(record.getList("streamers", String.class), new ConfigUiAccountStore(restored)
+                .require(member.id()).streamers());
+        perform(get("/config/api/accounts"), auth.issueForPassword("127.0.0.1"))
+                .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("streamer-old")));
+        perform(get("/config/api/datasource/users/bilibili/1"), oidcSession(accounts.require(member.id())))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("没有这位主播"));
+    }
+
+    // 管理员收回主播后，成员原会话的下一次请求马上失去权限。
+    @Test
+    void streamerAssignmentChangesApplyWithoutLoggingInAgain() throws Exception {
+        var member = enabledMember();
+        accounts.streamers(member.id(), List.of("bilibili:1"));
+        var session = oidcSession(accounts.require(member.id()));
+        properties.getDatasource().setJsonPath(directory.resolve("datasource.json").toString());
+        Files.writeString(directory.resolve("datasource.json"), "[{\"platform\":\"bilibili\",\"uid\":1,\"enabled\":false}]");
+        perform(get("/config/api/datasource/users/bilibili/1"), session).andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        perform(post("/config/api/accounts/" + member.id() + "/streamers").content("{\"streamers\":[]}"),
+                auth.issueForPassword("127.0.0.1")).andExpect(status().isOk());
+        perform(get("/config/api/datasource/users/bilibili/1"), session).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("没有这位主播"));
+    }
+
     // 没有管理员同意协议时，启用成员也不能获发会话。
     @Test
     void memberLoginRequiresAdministratorAgreement() throws Exception {
@@ -488,14 +538,14 @@ class ConsoleAccountsTest extends OidcTestSupport {
     void persistsAccountsAndRestrictsDeletion() throws Exception {
         var member = enabledMember();
         var local = auth.issueForPassword("127.0.0.1");
-        perform(post("/config/api/accounts/" + member.id() + "/streamers").content("{\"streamers\":[\"streamer-1\"]}"), local)
+        perform(post("/config/api/accounts/" + member.id() + "/streamers").content("{\"streamers\":[\"bilibili:1\"]}"), local)
                 .andExpect(status().isOk());
         perform(delete("/config/api/accounts/" + member.id()), local).andExpect(status().isBadRequest());
         var restored = new NovaStateStore(properties);
         try {
             restored.onApplicationReadyEvent();
             var restoredMember = new ConfigUiAccountStore(restored).require(member.id());
-            assertEquals(List.of("streamer-1"), restoredMember.streamers());
+            assertEquals(List.of("bilibili:1"), restoredMember.streamers());
             assertEquals(ISSUER, restoredMember.issuer());
             assertEquals("subject-17", restoredMember.subject());
             assertEquals(Status.ENABLED, restoredMember.status());

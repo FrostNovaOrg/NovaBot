@@ -1,6 +1,11 @@
 package org.frostnova.nova.console.controller;
 
 import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
+import org.frostnova.nova.core.config.ui.ConfigUiAudit;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -16,13 +21,22 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.web.util.HtmlUtils;
 
 /** 推送目标旁的周报状态、按会话金额设置预览与试发。 */
+@Slf4j
 @NovaComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/weekly-report/{platform}/{uid}")
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class WeeklyReportPushController {
     private final WeeklyReportDeliveryService reports;
-    public WeeklyReportPushController(WeeklyReportDeliveryService reports) { this.reports = reports; }
+    private final AbstractDataSource dataSource;
+
+    public WeeklyReportPushController(WeeklyReportDeliveryService reports) { this(reports, null); }
+
+    @Autowired
+    public WeeklyReportPushController(WeeklyReportDeliveryService reports, AbstractDataSource dataSource) {
+        this.reports = reports;
+        this.dataSource = dataSource;
+    }
 
     private PushTarget target(String pushPlatform, int type, Long num) {
         var target = new PushTarget();
@@ -66,6 +80,8 @@ public class WeeklyReportPushController {
     @PostMapping("/trial")
     public Map<String, Object> trial(@PathVariable String platform, @PathVariable Long uid,
             @RequestParam String pushPlatform, @RequestParam int type, @RequestParam Long num) {
+        log.info("{} 向会话 {}:{}:{} 试发主播 {} 的周报", ConfigUiAccess.actor(), pushPlatform, type, num,
+                dataSource == null ? platform + ":" + uid : ConfigUiAudit.streamer(dataSource, platform, String.valueOf(uid)));
         try {
             var raw = reports.trial(platform, uid, target(pushPlatform, type, num));
             boolean ok = raw != null && Integer.valueOf(0).equals(raw.getInteger("code"));

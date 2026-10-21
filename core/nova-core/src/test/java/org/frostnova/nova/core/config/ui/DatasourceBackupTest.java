@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
@@ -18,6 +20,10 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -127,7 +133,7 @@ class DatasourceBackupTest {
                 mock(org.frostnova.nova.core.sender.PushGate.class),
                 mock(org.frostnova.nova.core.service.LiveDataService.class),
                 timeline,
-                mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class),
+                mock(ConfigUiAuthService.class),
                 new PushTemplateDefaults(properties),
                 mock(UpdateCheckService.class),
                 mock(AlertService.class),
@@ -544,6 +550,46 @@ class DatasourceBackupTest {
         assertTrue(message.getBooleanValue("_custom"));
         assertFalse(message.containsKey("params"));
         assertFalse(summary.containsKey("version"));
+    }
+
+    // 成员只能保存自己的主播，不能借保存、增加、删除或整份覆盖改动别人。
+    @Test
+    void memberSavesOnlyOwnedStreamerAndKeepsOtherUserIntact() throws Exception {
+        seedTwoUsers();
+        var member = new ConfigUiAccount("member",
+                ConfigUiAccount.Role.MEMBER,
+                ConfigUiAccount.Status.ENABLED, "Member", null, null, null,
+                List.of("bilibili:1"), Instant.EPOCH, null, true);
+        var mvc = MockMvcBuilders.standaloneSetup(controller)
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class)))
+                .build();
+        var originalOther = controller.datasourceUser("bilibili", "2").getJSONObject("user");
+        var read = controller.datasourceUser("bilibili", "1");
+        read.getJSONObject("user").put("enabled", false);
+        mvc.perform(post("/config/api/datasource/users/bilibili/1")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member).contentType("application/json").content(read.toJSONString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        assertEquals(originalOther, controller.datasourceUser("bilibili", "2").getJSONObject("user"));
+        assertFalse(controller.datasourceUser("bilibili", "1").getJSONObject("user").getBooleanValue("enabled"));
+        byte[] before = Files.readAllBytes(datasource);
+        for (String uid : List.of("2", "3"))
+            mvc.perform(post("/config/api/datasource/users/bilibili/" + uid)
+                    .requestAttr(ConfigUiAccess.ACCOUNT, member).contentType("application/json").content(read.toJSONString()))
+                    .andExpect(status().isNotFound());
+        for (String path : List.of("/config/api/datasource/users", "/config/api/datasource/users/bilibili/2/delete", "/config/api/datasource"))
+            mvc.perform(post(path)
+                    .requestAttr(ConfigUiAccess.ACCOUNT, member).contentType("application/json").content(read.toJSONString()))
+                    .andExpect(status().isForbidden());
+        mvc.perform(get("/config/api/datasource")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member))
+                .andExpect(status().isForbidden());
+        var mismatch = controller.datasourceUser("bilibili", "1");
+        mismatch.getJSONObject("user").put("uid", 2);
+        mvc.perform(post("/config/api/datasource/users/bilibili/1")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member).contentType("application/json").content(mismatch.toJSONString()))
+                .andExpect(status().isBadRequest());
+        assertArrayEquals(before, Files.readAllBytes(datasource));
     }
 
     private void seedTwoUsers() throws IOException {

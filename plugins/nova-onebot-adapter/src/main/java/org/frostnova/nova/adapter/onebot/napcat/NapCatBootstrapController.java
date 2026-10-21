@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.onebot.napcat;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiPrefix;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import jakarta.servlet.http.HttpServletRequest;
@@ -178,6 +179,7 @@ public class NapCatBootstrapController {
                 result.put("message", "无法替你登录 NapCat，请检查 NovaBot 侧的 NapCat 凭据配置");
             }
             case OK -> {
+                log.info("{} 换取了 NapCat 凭据，强制更新: {}", ConfigUiAccess.actor(), renew);
                 result.put("success", true);
                 result.put("credential", issued.credential());
             }

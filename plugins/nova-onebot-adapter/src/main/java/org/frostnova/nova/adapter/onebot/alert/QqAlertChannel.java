@@ -72,6 +72,12 @@ public class QqAlertChannel implements AlertChannel {
     }
 
     @Override
+    public String auditDestination() {
+        var alert = properties.getAlert();
+        return "会话 " + alert.getPlatform() + ":" + alert.getType() + ":" + alert.getNum();
+    }
+
+    @Override
     public boolean isAvailable() {
         OneBotAdapterPluginProperties.Alert alert = properties.getAlert();
 
