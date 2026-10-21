@@ -123,15 +123,15 @@ function renderNow(model) {
   for (const who of model.now.live) {
     const duration = since(who.since);
     parts.push('<div class="livewho"><div class="lw-m">'
-      + '<div class="lw-nm">' + esc(who.uname)
+      + '<span class="lw-nm">' + esc(who.uname) + '</span>'
       + '<span class="pill ' + (model.now.note ? 'warn' : 'live') + '">'
       + (model.now.note ? '' : '<span class="dotlive"></span>')
       + (model.now.note ? '直播中 · 采集有缺口' : '直播中' + (duration ? ' ' + duration : ''))
       + '</span></div>'
-      + '<dl class="kv">'
-      + (who.roomId ? '<dt>直播间</dt><dd>' + esc(who.roomId) + '</dd>' : '')
-      + '<dt>推送目标</dt><dd>' + esc(who.targets) + ' 个</dd>'
-      + '</dl></div></div>');
+      + '<div class="lw-meta">'
+      + (who.roomId ? '<span>直播间 ' + esc(who.roomId) + '</span>' : '')
+      + '<span>推送目标 ' + esc(who.targets) + ' 个</span>'
+      + '</div></div>');
   }
 
   if (model.now.text) parts.push('<div class="empty">' + esc(model.now.text) + '</div>');
