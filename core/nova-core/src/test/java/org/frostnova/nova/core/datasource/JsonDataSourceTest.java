@@ -40,6 +40,19 @@ class JsonDataSourceTest {
     }
 
     @Test
+    @DisplayName("手改 quietHours 成字符串不能使升级后数据源载入失败")
+    void malformedChannelSettingDoesNotBlockLoad() {
+        var users = assertDoesNotThrow(() -> dataSource.parse("""
+                [{"uid":1,"platform":"bilibili","targets":[{"platform":"qq","type":1,"num":100,
+                  "quietHours":"invalid","revenueVisible":true,"disabledCommands":["直播报告"]}]}]
+                """));
+        var target = users.get(0).getTargets().get(0);
+        assertNull(target.getQuietHours());
+        assertTrue(target.getRevenueVisible());
+        assertEquals(List.of("直播报告"), target.getDisabledCommands());
+    }
+
+    @Test
     @DisplayName("主播通道设置载入后仍有效，设置变化会触发用户配置重载")
     void loadsChannelSettingsAndDetectsChanges() {
         String json = """

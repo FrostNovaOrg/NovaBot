@@ -108,7 +108,13 @@ public abstract class ToggleCommand implements NovaCommand {
         if (selected != null) {
             if (selected.error() != null) return CommandReply.of(selected.error());
             if (selected.users().isEmpty()) return CommandReply.of(context.here() + "没有配置任何主播的推送");
-            int count = settings.setChannels(context, selected.users(), keys, !enabling());
+            int count;
+            try {
+                count = settings.setChannels(context, selected.users(), keys, !enabling());
+            } catch (RuntimeException e) {
+                log.warn("命令开关未能保存推送配置", e);
+                return CommandReply.of("推送配置有误，这次没改：" + MessagePlaceholders.escapeExternalText(e.getMessage()));
+            }
             String who = selected.named()
                     ? "「" + MessagePlaceholders.escapeExternalText(selected.users().get(0).getUname() == null
                         ? String.valueOf(selected.users().get(0).getUid()) : selected.users().get(0).getUname()) + "」在" + context.here() + "的"

@@ -35,6 +35,24 @@ class BilibiliAtSubscriptionModeTest {
     private static final long SUBSCRIBER_UID = 19604318752097L;
 
     @Test
+    @DisplayName("多主播全都 @全体时直接说明，@我和名单都不追问是哪一位")
+    void everyoneNoticePrecedesStreamerChoice() {
+        var source = mock(AbstractDataSource.class);
+        when(source.getUsers("bilibili")).thenReturn(List.of(streamer(ALL_UID, "甲", AtMode.ALL),
+                streamer(SUBSCRIBER_UID, "乙", AtMode.ALL)));
+        var choice = mock(BilibiliStreamerChoice.class);
+        var subscriptions = new AtSubscriptionService(new NovaStateStore(new NovaCoreProperties()));
+        var settings = mock(CommandSettingsService.class);
+        for (var command : List.of(new BilibiliLiveAtMeCommand(source, choice, subscriptions, settings),
+                new BilibiliDynamicAtMeCommand(source, choice, subscriptions, settings),
+                new BilibiliAtListCommand(source, choice, subscriptions,
+                        new StaticListableBeanFactory().getBeanProvider(SessionMemberNames.class), settings))) {
+            assertTrue(command.execute(context(command.name())).content().contains("@全体成员"));
+        }
+        org.mockito.Mockito.verifyNoInteractions(choice);
+    }
+
+    @Test
     @DisplayName("混合推送群：给 @全体主播订阅不再假报成功，按名单的主播照常订上")
     void subscriptionUsesTheNamedStreamersMode() {
         PushUser all = streamer(ALL_UID, "主播甲", AtMode.ALL);

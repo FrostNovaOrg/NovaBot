@@ -1803,9 +1803,7 @@ public class ConfigUiController {
             if (dataSource instanceof org.frostnova.nova.core.datasource.JsonDataSource json) json.reload();
 
             result.put("success", true);
-            result.put("message", properties.getDatasource().isJsonAutoReload()
-                    ? "已保存，配置将自动重新加载"
-                    : "已保存，重启后生效");
+            result.put("message", "已保存，配置已生效");
             log.info("配置界面已更新推送配置");
         } catch (IOException e) {
             log.error("保存推送配置失败", e);

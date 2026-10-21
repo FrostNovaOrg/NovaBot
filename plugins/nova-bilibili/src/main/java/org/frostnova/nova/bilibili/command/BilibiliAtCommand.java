@@ -121,11 +121,12 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
 
     @Override
     public CommandReply execute(CommandContext context) {
-        Resolved resolved = resolve(context, streamerKeyword(context));
-        if (resolved.failed()) return resolved.error();
+        // 每位主播都 @全体时，订阅和名单都用不上，先说明原因，避免多问一次是哪位主播。
         if (atsEveryone(context)) {
             return CommandReply.of(everyoneNotice(context, false));
         }
+        Resolved resolved = resolve(context, streamerKeyword(context));
+        if (resolved.failed()) return resolved.error();
 
         // 认的是最近一场归档里的昵称、或没点名而只有 TA 在播时，订阅订上的是谁回复里得说清，
         // 与数据查询命令同一句

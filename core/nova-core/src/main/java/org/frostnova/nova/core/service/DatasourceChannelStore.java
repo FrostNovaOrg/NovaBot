@@ -11,10 +11,13 @@ import org.frostnova.nova.core.datasource.JsonDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.springframework.stereotype.Service;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -35,6 +38,15 @@ public class DatasourceChannelStore {
     }
 
     public boolean update(Consumer<JSONArray> change, boolean backup) {
+        return update(change, backup, false);
+    }
+
+    /** 升级只校验本次新增的通道字段，未填完的旧配置不能阻止启动。 */
+    public boolean migrate(Consumer<JSONArray> change) {
+        return update(change, true, true);
+    }
+
+    private boolean update(Consumer<JSONArray> change, boolean backup, boolean migration) {
         synchronized (LOCK) {
             Path path = Path.of(properties.getDatasource().getJsonPath());
             try {
@@ -46,7 +58,8 @@ public class DatasourceChannelStore {
                 change.accept(users);
                 String after = ConfigUiController.formatDatasource(users, 0);
                 if (before.equals(after)) return false;
-                var issues = validator.validateDatasource(after, Set.of());
+                var issues = migration ? validateMigratedSettings(JSONArray.parseArray(before), JSONArray.parseArray(after))
+                        : validator.validateDatasource(after, Set.of());
                 if (!issues.isEmpty()) throw new IllegalArgumentException(String.join("；", issues));
                 if (backup && Files.exists(path)) new TimestampedFileBackup(path, Clock.systemDefaultZone())
                         .backupForSave(properties.getConfigUi().getBackupKeep());
@@ -57,6 +70,20 @@ public class DatasourceChannelStore {
                 throw new IllegalStateException("保存推送配置失败", e);
             }
         }
+    }
+
+    private List<String> validateMigratedSettings(JSONArray before, JSONArray after) {
+        var issues = new ArrayList<String>();
+        for (int i = 0; i < after.size(); i++) {
+            JSONArray targets = after.getJSONObject(i).getJSONArray("targets");
+            if (targets == null) continue;
+            JSONArray previous = before.getJSONObject(i).getJSONArray("targets");
+            for (int j = 0; j < targets.size(); j++) {
+                JSONObject target = targets.getJSONObject(j);
+                if (!target.equals(previous.getJSONObject(j))) issues.addAll(validator.validateChannelSettings(target));
+            }
+        }
+        return issues;
     }
 
     /** 未指定主播时修改该会话全部通道，包括暂时停用的通道。 */

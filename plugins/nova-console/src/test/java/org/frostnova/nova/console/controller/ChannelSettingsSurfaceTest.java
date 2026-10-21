@@ -180,7 +180,7 @@ class ChannelSettingsSurfaceTest {
     void strandedSessionKnowsItsType() {
         // 推送配置里已经没有这个会话，只在状态文件里留着；键里带着会话类型，控制台照类型显示
         when(settings.all()).thenReturn(List.of(
-                new CommandSettingsService.Disabled(PLATFORM, PushTargetType.GROUP, 777L, List.of("直播报告"))));
+                new CommandSettingsService.Disabled(PLATFORM, PushTargetType.GROUP, 777L, List.of("天气"))));
 
         JSONObject stranded = sessions().stream()
                 .filter(item -> item.getLongValue("num") == 777L)
@@ -189,7 +189,7 @@ class ChannelSettingsSurfaceTest {
         assertEquals("群", stranded.getString("type"), stranded.toString());
         assertEquals(PushTargetType.GROUP.getCode(), stranded.getIntValue("typeCode"), stranded.toString());
         assertNotNull(stranded.get("menuHidden"), "有了类型就答得上菜单口径: " + stranded);
-        assertEquals(List.of("直播报告"), stranded.getJSONArray("disabled"), stranded.toString());
+        assertEquals(List.of("天气"), stranded.getJSONArray("disabled"), stranded.toString());
     }
 
     // ── 写：成批开关 ────────────────────────────────────────────────────

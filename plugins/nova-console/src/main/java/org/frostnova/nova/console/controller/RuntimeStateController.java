@@ -2,24 +2,25 @@ package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.model.ChannelSettings;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
-import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
-import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionQuietHoursService;
 import org.frostnova.nova.core.service.StreamerNames;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
@@ -108,18 +109,28 @@ public class RuntimeStateController {
     private Set<String> changeCommands(JSONObject body, String platform, PushTargetType type, Long num,
                                        List<String> keys, boolean disabled) {
         Set<String> changed = new LinkedHashSet<>();
-        changeChannels(body, platform, type, num, target -> {
+        List<String> channelKeys = keys.stream().filter(ChannelSettings.COMMAND_KEYS::contains).toList();
+        if (!channelKeys.isEmpty() && changeChannels(body, platform, type, num, target -> {
             List<String> current = target.getList("disabledCommands", String.class);
             List<String> next = new ArrayList<>(current == null ? List.of() : current);
-            for (String key : keys) {
-                if (!org.frostnova.nova.core.model.ChannelSettings.COMMAND_KEYS.contains(key)) continue;
+            for (String key : channelKeys) {
                 if (disabled && !next.contains(key)) { next.add(key); changed.add(key); }
                 if (!disabled && next.remove(key)) changed.add(key);
             }
             if (next.isEmpty()) target.remove("disabledCommands");
             else target.put("disabledCommands", next);
-        });
+        }) == 0) return null;
+        for (String key : keys) {
+            if (ChannelSettings.COMMAND_KEYS.contains(key)) continue;
+            boolean one = disabled ? settings.disable(platform, type, num, key) : settings.enable(platform, type, num, key);
+            if (one) changed.add(key);
+        }
+        if (!changed.isEmpty()) store.save();
         return changed;
+    }
+
+    private static String noChannels(PushTargetType type) {
+        return (type == PushTargetType.GROUP ? "这个群" : "这个好友") + "还没有配置推送，没有可改的通道";
     }
 
     @Autowired
@@ -213,7 +224,7 @@ public class RuntimeStateController {
         }
 
         List<String> keys = ledgerKeys(name, disabled);
-        changeCommands(body, platform, type, num, keys, disabled);
+        if (changeCommands(body, platform, type, num, keys, disabled) == null) return ok(fail(result, noChannels(type)));
 
         result.put("success", true);
         result.put("message", brackets(keys) + "已在" + describe(type, num) + " " + (disabled ? "禁用" : "启用"));
@@ -280,6 +291,7 @@ public class RuntimeStateController {
 
         List<String> keys = wanted.stream().flatMap(name -> ledgerKeys(name, Boolean.TRUE.equals(disabled)).stream()).distinct().toList();
         Set<String> changedKeys = changeCommands(body, platform, type, num, keys, Boolean.TRUE.equals(disabled));
+        if (changedKeys == null) return ok(fail(result, noChannels(type)));
         int changed = (int) wanted.stream().filter(name -> ledgerKeys(name, Boolean.TRUE.equals(disabled)).stream()
                 .anyMatch(changedKeys::contains)).count();
 
@@ -317,10 +329,11 @@ public class RuntimeStateController {
         }
 
         Boolean visible = body.getBoolean("visible");
-        changeChannels(body, platform, type, num, target -> {
+        int count = changeChannels(body, platform, type, num, target -> {
             if (visible == null) target.remove("revenueVisible");
             else target.put("revenueVisible", visible);
         });
+        if (count == 0) return ok(fail(result, noChannels(type)));
         log.info("配置界面将会话 {} 的金额可见性设为 {}", describe(type, num), visible == null ? "默认" : visible);
 
         result.put("success", true);
@@ -380,7 +393,7 @@ public class RuntimeStateController {
             return ok(fail(result, "开始与结束时间相同（" + start.trim() + "），等于未设置；如需全天照常发送请选择「本会话不静音」，如需沿用设置页请选择「使用全局设置」"));
         }
 
-        changeChannels(body, platform, type, num, target -> {
+        int count = changeChannels(body, platform, type, num, target -> {
             if (mode == SessionQuietHoursService.Mode.FOLLOW) target.remove("quietHours");
             else {
                 JSONObject quiet = new JSONObject().fluentPut("mode", mode.key());
@@ -391,6 +404,7 @@ public class RuntimeStateController {
                 target.put("quietHours", quiet);
             }
         });
+        if (count == 0) return ok(fail(result, noChannels(type)));
 
         String phrase = switch (mode) {
             case FOLLOW -> "已改为「使用全局设置」";
@@ -577,6 +591,7 @@ public class RuntimeStateController {
             item.put("usage", command.usage());
             item.put("aliases", command.aliases());
             item.put("disableable", command.disableable());
+            item.put("channelScoped", command.channelScoped());
             item.put("requiresAdmin", command.requiresAdmin());
             item.put("groupOnly", command.groupOnly());
             item.put("available", command.available());
@@ -619,7 +634,7 @@ public class RuntimeStateController {
      * 会话清单
      * <p>
      * 取「已配置推送的会话」与「状态文件里出现过的会话」之并集。只取前者会漏掉从推送配置里
-     * 删掉、但状态仍残留的群——那些残留正是最需要被看见的：命令仍是关着的，一旦重新配置推送就立刻生效。
+     * 删掉、但仍有会话命令开关或提醒订阅的群。金额、静音与主播命令的旧记录只供回退使用。
      * <p>
      * 按「平台 + 会话类型 + 号」分行：同号的群与好友各有各的设置，各占一行。
      */
@@ -636,7 +651,11 @@ public class RuntimeStateController {
             }
         }
 
-        List<CommandSettingsService.Disabled> disabled = settings.all();
+        List<CommandSettingsService.Disabled> disabled = settings.all().stream()
+                .map(item -> new CommandSettingsService.Disabled(item.platform(), item.type(), item.num(), item.commands().stream()
+                        .filter(key -> !ChannelSettings.COMMAND_KEYS.contains(key))
+                        .filter(key -> !Set.of("菜单", "启用命令", "禁用命令").contains(key)).toList()))
+                .filter(item -> !item.commands().isEmpty()).toList();
         for (CommandSettingsService.Disabled item : disabled) {
             sessions.computeIfAbsent(rowKey(item.platform(), item.type(), item.num()),
                     k -> session(item.platform(), item.num(), item.type(), false));
@@ -645,15 +664,6 @@ public class RuntimeStateController {
         for (AtSubscriptionService.Subscription item : subscriptions.all()) {
             sessions.computeIfAbsent(rowKey(item.platform(), PushTargetType.GROUP, item.num()),
                     k -> session(item.platform(), item.num(), PushTargetType.GROUP, false));
-        }
-
-        for (RevenueVisibilityService.Setting item : revenueVisibility.all()) {
-            sessions.computeIfAbsent(rowKey(item.platform(), item.type(), item.num()),
-                    k -> session(item.platform(), item.num(), item.type(), false));
-        }
-        for (SessionQuietHoursService.Setting item : quietHours.all()) {
-            sessions.computeIfAbsent(rowKey(item.platform(), item.type(), item.num()),
-                    k -> session(item.platform(), item.num(), item.type(), false));
         }
 
         disabled.forEach(item -> sessions.get(rowKey(item.platform(), item.type(), item.num()))

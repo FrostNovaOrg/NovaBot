@@ -27,8 +27,10 @@ globalThis.fetch = async (path, options = {}) => {
   }
   if (url === '/state') return response({sessions: [{platform: 'q', typeCode: 1, num: 100,
     revenueVisible: true, disabled: [], menuHidden: []}], commands: [
-    {name: '直播报告', disableable: true}, {name: '菜单', disableable: false},
-    {name: '启用命令', disableable: false}, {name: '禁用命令', disableable: false}],
+    {name: '直播报告', category: '数据查询', disableable: true, channelScoped: true},
+    {name: '天气', category: '天气查询', disableable: true, channelScoped: false},
+    {name: '菜单', category: '命令管理', disableable: false},
+    {name: '启用命令', category: '命令管理', disableable: false}, {name: '禁用命令', category: '命令管理', disableable: false}],
     subscriptions: [1, 2].map(uid => ({platform: 'q', num: 100, streamerUid: uid, users: [uid], type: 'live'})), incomplete: []});
   return response({success: true});
 };
@@ -51,7 +53,10 @@ async function test(problem, run) {
   catch (error) { failures.push(problem); console.log('FAIL ' + problem + ': ' + error.stack); }
 }
 await test('甲通道金额保存在甲的配置，乙仍是默认，页面不调用旧状态写口', async () => {
-  await push.reload(); await open(1);
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await open(1);
+  assert.ok(input('直播报告'), '载入运行状态后应列出主播命令');
   const revenue = input('直播收益等金额');
   assert.ok(revenue, '金额开关应显示');
   assert.equal(revenue.checked, false, '旧群金额设置不应作为通道的值');
@@ -62,6 +67,10 @@ await test('甲通道金额保存在甲的配置，乙仍是默认，页面不�
   assert.equal(disk[1].targets[0].revenueVisible, undefined);
   assert.equal(requests.some(request => request.method === 'POST' && request.url.startsWith('/state/')), false);
   assert.equal(input('菜单'), undefined);
+  assert.equal(input('启用命令'), undefined);
+  assert.equal(input('禁用命令'), undefined);
+  assert.equal(input('天气'), undefined);
+  assert.equal(idNode('push-right').textContent.includes('命令管理'), false);
 });
 await test('金额拨回默认后草稿消失，避免无意写入设置', async () => {
   await push.reload(); await open(2);

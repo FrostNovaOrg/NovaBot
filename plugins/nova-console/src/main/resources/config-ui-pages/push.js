@@ -1028,8 +1028,7 @@ function renderIndex(host) {
 /**
  * 配置里已经没有、状态文件里还留着的会话
  *
- * 它们在树上一个字也看不见，而命令还关着——一旦重新把推送配回来就立刻生效。
- * 这一块正是让那种「配好了却不响应」现出形来的地方。
+ * 仅列仍生效的会话命令开关与提醒订阅，供查看和清理。
  */
 function renderStranded(host) {
   const rows = strandedSessions(pushData, runtime.sessions);
@@ -1037,16 +1036,14 @@ function renderStranded(host) {
 
   const box = card(host, '未配置推送但仍有状态记录的会话',
     '这些群或好友不在任何主播的推送通道中，因此不在上表中。'
-    + '状态文件中的命令开关仍然保留，重新配置推送后立即生效。');
+    + '这里只列仍然生效的会话命令开关和提醒订阅。金额、静音和主播命令的旧记录仅供退回旧版使用。');
 
   for (const row of rows) {
     const line = el('div', 'strand');
     const text = el('span');
     text.textContent = row.platform + ' · ' + (row.type ? row.type + ' ' : '') + row.num
       + (row.disabled.length ? ' · 已禁用 ' + row.disabled.length + ' 条命令（'
-        + row.disabled.join('、') + '）' : ' · 未禁用任何命令')
-      + (row.revenueExplicit ? ' · 已设置金额可见性' : '')
-      + (row.quietExplicit ? ' · 已设置静音时段' : '');
+        + row.disabled.join('、') + '）' : ' · 未禁用任何命令');
     line.appendChild(text);
 
     if (row.disabled.length) {
@@ -1793,7 +1790,7 @@ function sectionSession(host, user, target, session) {
   box.appendChild(settings);
   const render = () => {
     const current = channelSession(session, target);
-    const commands = (runtime.commands || []).filter(command => command.disableable !== false);
+    const commands = (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     settings.innerHTML = '';
     sessionSettings(settings, {

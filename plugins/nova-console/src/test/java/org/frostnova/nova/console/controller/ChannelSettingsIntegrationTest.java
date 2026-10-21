@@ -89,7 +89,12 @@ class ChannelSettingsIntegrationTest {
         menu = new MenuCommand(provider, settings);
         disable = new DisableCommand(provider, settings);
         enable = new EnableCommand(provider, settings);
-        var commands = List.<NovaCommand>of(report, ranking, menu, disable, enable);
+        var plugin = new NovaCommand() {
+            public String name() { return "天气"; }
+            public String description() { return "查询天气"; }
+            public CommandReply execute(CommandContext context) { return CommandReply.of("晴天"); }
+        };
+        var commands = List.<NovaCommand>of(report, ranking, menu, disable, enable, plugin);
         ObjectProvider<NovaCommand> commandProvider = mock(ObjectProvider.class);
         when(commandProvider.iterator()).thenAnswer(i -> commands.iterator());
         when(commandProvider.orderedStream()).thenAnswer(i -> commands.stream());
@@ -125,6 +130,123 @@ class ChannelSettingsIntegrationTest {
         assertFalse(menu.execute(context("菜单")).content().contains("直播报告"));
         dispatch("直播报告");
         assertTrue(replies.get(2).getContent().contains("本群已关闭「直播报告」命令"));
+    }
+
+    @Test @DisplayName("菜单后多打几个字也能看见可用的主播命令，两位都关闭才隐藏")
+    void menuArgumentsDoNotSelectStreamers() {
+        for (String text : List.of("菜单", "菜单 abc", "帮助 直播报告")) {
+            dispatch(text);
+            assertTrue(replies.get(replies.size() - 1).getContent().contains("直播报告"), text);
+        }
+        target(0).setDisabledCommands(List.of("直播报告"));
+        target(1).setDisabledCommands(List.of("直播报告"));
+        for (String text : List.of("菜单", "菜单 abc", "帮助 直播报告")) {
+            dispatch(text);
+            assertFalse(replies.get(replies.size() - 1).getContent().contains("直播报告"), text);
+        }
+    }
+
+    @Test @DisplayName("QQ 开关无法保存无效推送配置时说明失败原因，不能一句话都不回")
+    void invalidConfigurationExplainsToggleFailure() throws Exception {
+        var raw = JSONArray.parseArray(Files.readString(file));
+        raw.add(JSONObject.of("platform", "bilibili", "uid", null));
+        Files.writeString(file, raw.toJSONString());
+        String before = Files.readString(file);
+        dispatch("禁用命令 直播报告 甲");
+        assertEquals(1, replies.size(), "保存失败也应回复");
+        assertTrue(replies.get(0).getContent().contains("这次没改"));
+        assertTrue(replies.get(0).getContent().contains("uid"));
+        assertEquals(before, Files.readString(file));
+    }
+
+    @Test @DisplayName("插件命令仍可按群禁用和启用，QQ 与旧接口及菜单口径一致")
+    void pluginCommandsKeepSessionSettings() {
+        dispatch("禁用命令 天气");
+        assertTrue(settings.isDisabled("qq", PushTargetType.GROUP, 100L, "天气"));
+        assertFalse(menu.execute(context("菜单")).content().contains("天气"));
+        dispatch("天气");
+        assertFalse(replies.get(replies.size() - 1).getContent().contains("晴天"));
+        dispatch("启用命令 天气"); dispatch("天气");
+        assertEquals("晴天", replies.get(replies.size() - 1).getContent());
+        var controller = runtime();
+        var body = JSONObject.of("platform", "qq", "type", 1, "num", 999, "command", "天气", "disabled", true);
+        assertTrue(controller.toggleCommand(body).getBody().getBooleanValue("success"));
+        assertTrue(settings.isDisabled("qq", PushTargetType.GROUP, 999L, "天气"));
+        var orphan = controller.state().getJSONArray("sessions").stream().map(o -> (JSONObject) o)
+                .filter(o -> o.getLongValue("num") == 999L).findFirst().orElseThrow();
+        assertEquals(List.of("天气"), orphan.getJSONArray("disabled").toList(String.class));
+        assertTrue(controller.toggleCommands(JSONObject.of("platform", "qq", "type", 1, "num", 999,
+                "commands", JSONArray.of("天气"), "disabled", false)).getBody().getBooleanValue("success"));
+        assertFalse(settings.isDisabled("qq", PushTargetType.GROUP, 999L, "天气"));
+    }
+
+    @Test @DisplayName("没有通道时金额和静音接口明确失败，不能谎称已生效")
+    void emptySessionCannotChangeChannelSettings() {
+        var controller = runtime();
+        for (var result : List.of(
+                controller.setRevenueVisibility(JSONObject.of("platform", "qq", "type", 1, "num", 999, "visible", true)),
+                controller.setQuietHours(JSONObject.of("platform", "qq", "type", 1, "num", 999, "mode", "off")))) {
+            assertFalse(result.getBody().getBooleanValue("success"));
+            assertTrue(result.getBody().getString("message").contains("没有可改的通道"));
+        }
+    }
+
+    @Test @DisplayName("旧金额静音和主播命令记录不再占残留会话，插件命令与订阅仍可管理")
+    void orphanRowsOnlyIncludeEffectiveState() {
+        revenue.set("qq", PushTargetType.GROUP, 999L, true);
+        new SessionQuietHoursService(state).set("qq", PushTargetType.GROUP, 999L, SessionQuietHoursService.Mode.OFF, null, null);
+        settings.disable("qq", PushTargetType.GROUP, 999L, "直播报告");
+        assertFalse(runtime().state().getJSONArray("sessions").stream().map(o -> (JSONObject) o)
+                .anyMatch(o -> o.getLongValue("num") == 999L));
+        settings.disable("qq", PushTargetType.GROUP, 999L, "天气");
+        var rows = runtime().state().getJSONArray("sessions").stream().map(o -> (JSONObject) o)
+                .filter(o -> o.getLongValue("num") == 999L).toList();
+        assertEquals(1, rows.size());
+        assertEquals(List.of("天气"), rows.get(0).getJSONArray("disabled").toList(String.class));
+        var subscriptions = new AtSubscriptionService(state);
+        subscriptions.subscribe("qq", 888L, 10001L, "live", 9L);
+        var controller = runtime();
+        assertTrue(controller.state().getJSONArray("sessions").stream().map(o -> (JSONObject) o)
+                .anyMatch(o -> o.getLongValue("num") == 888L));
+        assertTrue(controller.removeSubscription(JSONObject.of("platform", "qq", "num", 888L,
+                "streamerUid", 10001L, "type", "live")).getBooleanValue("success"));
+        assertFalse(controller.state().getJSONArray("sessions").stream().map(o -> (JSONObject) o)
+                .anyMatch(o -> o.getLongValue("num") == 888L));
+    }
+
+    @Test @DisplayName("按主播保存冲突区分已删除和仍在盘上，向导删后重加有据可依")
+    void conflictReportsWhetherStreamerIsMissing() throws Exception {
+        var loaded = config.datasourceUser("bilibili", "10001");
+        var raw = JSONArray.parseArray(Files.readString(file));
+        raw.getJSONObject(0).put("enabled", false);
+        Files.writeString(file, raw.toJSONString());
+        var body = JSONObject.of("user", loaded.getJSONObject("user"), "version", loaded.getString("version"));
+        var present = config.saveDatasourceUser("bilibili", "10001", body);
+        assertEquals(409, present.getStatusCode().value());
+        assertEquals(Boolean.FALSE, present.getBody().getBoolean("missing"));
+        raw.remove(0); Files.writeString(file, raw.toJSONString());
+        var missing = config.saveDatasourceUser("bilibili", "10001", body);
+        assertEquals(409, missing.getStatusCode().value());
+        assertTrue(missing.getBody().getBooleanValue("missing"));
+    }
+
+    @Test @DisplayName("关自动重载时控制台保存仍立即生效，成功提示不让用户重启")
+    void saveWithoutFileWatcherStillTakesEffect() {
+        props.getDatasource().setJsonAutoReload(false);
+        var loaded = config.datasourceUser("bilibili", "10001");
+        loaded.getJSONObject("user").getJSONArray("targets").getJSONObject(0).put("revenueVisible", true);
+        var saved = config.saveDatasourceUser("bilibili", "10001", JSONObject.of("user", loaded.getJSONObject("user"),
+                "version", loaded.getString("version")));
+        assertTrue(saved.getBody().getBooleanValue("success"));
+        assertTrue(saved.getBody().getString("message").contains("已生效"));
+        assertTrue(revenue.isVisible(target(0)));
+    }
+
+    RuntimeStateController runtime() {
+        var controller = new RuntimeStateController(dispatcher, settings, new AtSubscriptionService(state), state,
+                source, revenue, live, StreamerNames.none(), new SessionQuietHoursService(state), gate);
+        ReflectionTestUtils.setField(controller, "channelStore", channels);
+        return controller;
     }
 
     @Test @DisplayName("甲的取消订阅和名单开关不能限制乙，开关式取消也遵守甲的那一格")

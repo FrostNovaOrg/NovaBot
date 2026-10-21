@@ -196,7 +196,9 @@ class SessionQuietHoursSurfaceTest {
         for (Object num : new Object[]{"30004", 30005, 30006L}) {
             JSONObject body = body("off", null, null);
             body.put("num", num);
-            assertTrue(controller.setQuietHours(body).getBody().getBooleanValue("success"), String.valueOf(num));
+            JSONObject result = controller.setQuietHours(body).getBody();
+            assertFalse(result.getBooleanValue("success"), String.valueOf(num));
+            assertTrue(result.getString("message").contains("没有可改的通道"), result.toString());
         }
         assertTrue(quietHours.all().isEmpty(), "未配置的目标没有可修改的通道");
     }

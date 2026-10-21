@@ -3,12 +3,14 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -139,6 +141,12 @@ public class ConfigurationValidator {
         }
     }
 
+    public List<String> validateChannelSettings(JSONObject target) {
+        List<String> issues = new ArrayList<>();
+        checkChannelSettings(target, "通道设置", issues);
+        return issues;
+    }
+
     private void checkChannelSettings(JSONObject target, String at, List<String> issues) {
         Object revenue = target.get("revenueVisible");
         if (revenue != null && !(revenue instanceof Boolean)) issues.add(at + "的 revenueVisible 必须为 true、false 或 null");
@@ -150,11 +158,11 @@ public class ConfigurationValidator {
                 if (!(mode instanceof String) || !Set.of("follow", "custom", "off").contains(mode)) {
                     issues.add(at + "的 quietHours.mode 必须为 follow、custom 或 off");
                 } else if ("custom".equals(mode) && (!quietTime(q.get("start")) || !quietTime(q.get("end"))
-                        || java.util.Objects.equals(q.get("start"), q.get("end")))) {
-                    issues.add(at + "的 quietHours 起止必须为不同的 HH:mm 时刻");
+                        || LocalTime.parse(q.getString("start")).equals(LocalTime.parse(q.getString("end"))))) {
+                    issues.add(at + "的 quietHours 起止必须为不同的 HH:mm 或 HH:mm:ss 时刻");
                 }
                 for (String field : List.of("start", "end")) {
-                    if (q.get(field) != null && !quietTime(q.get(field))) issues.add(at + "的 quietHours." + field + " 必须为 HH:mm");
+                    if (q.get(field) != null && !quietTime(q.get(field))) issues.add(at + "的 quietHours." + field + " 必须为 HH:mm 或 HH:mm:ss");
                 }
             }
         }
@@ -171,7 +179,13 @@ public class ConfigurationValidator {
     }
 
     private static boolean quietTime(Object value) {
-        return value instanceof String text && text.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]");
+        if (!(value instanceof String text)) return false;
+        try {
+            LocalTime.parse(text);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     /**

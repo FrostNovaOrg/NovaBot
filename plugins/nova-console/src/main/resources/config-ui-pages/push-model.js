@@ -405,8 +405,7 @@ export function channelIndex(users, sessions, handlers, directory) {
 /**
  * 配置里已经没有、状态文件里却还留着的会话
  *
- * 它们不属于任何通道，因此在树上一个字也看不见——而命令还关着，一旦重新把推送配回来
- * 就立刻生效。不单列一块的话，这些残留只能靠翻状态文件才发现。
+ * 这里只列仍生效的会话命令开关与订阅；旧金额、静音和主播命令记录不参与清单。
  * @param users 推送配置里的主播
  * @param sessions /api/state 的 sessions
  * @return 每个残留会话一行
