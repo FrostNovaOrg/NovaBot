@@ -255,6 +255,7 @@ await section('协议三键归卡片', async () => {
     'novabot.core.config-ui.agreement.accepted-version',
     'novabot.core.config-ui.agreement.accepted-at',
     'novabot.core.config-ui.agreement.accepted-by',
+    'novabot.core.config-ui.agreement.accepted-actor',
   ];
   for (const key of wanted) {
     eq(cardFields.includes(key), true, key + ' 已被这张卡吃掉');
@@ -284,7 +285,7 @@ await section('协议三键归卡片', async () => {
   const ordinaryBefore = keys.filter(key => !before.includes(key)).length;
   const ordinaryAfter = keys.filter(key => !cardFields.includes(key)).length;
   eq(ordinaryAfter > 0, true, '分母非零：这一组仍有普通行');
-  eq(ordinaryBefore - ordinaryAfter, 3, '「登录与安全」组的普通输入框比本笔之前正好少三行');
+  eq(ordinaryBefore - ordinaryAfter, wanted.length, '协议记录均从普通输入框移入协议卡');
 
   console.log('「登录与安全」组配置键 ' + keys.length + ' 个，普通行 '
     + ordinaryBefore + ' → ' + ordinaryAfter + '；协议正文载体 ' + carriers.length + ' 处');

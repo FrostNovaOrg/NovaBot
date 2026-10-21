@@ -9,6 +9,7 @@ novabot.core.alert.webhook-method|java.lang.String|POST|Webhook 请求方式：P
 novabot.core.alert.webhook-title-field|java.lang.String|title|Webhook JSON 里承载标题的字段名；各服务不统一（Server 酱用 title/desp），所以可配。
 novabot.core.alert.webhook-url|java.lang.String||Webhook 告警地址，留空不启用。它不依赖机器人链路——机器人掉线时恰恰需要它；适配 Bark、Server 酱、钉钉、飞书、Telegram。改完立即生效，不必重启。
 novabot.core.command.admins|java.util.List<java.lang.Long>|<null>|超级管理员账号，跨群生效。「禁用命令」这类操作只对管理员开放；群主与群管理员天生有权限，这里填的是额外名单。
+novabot.core.config-ui.agreement.accepted-actor|java.lang.String||同意协议的管理员显示名，留空表示旧记录未保存确认人；不参与协议有效性判断。
 novabot.core.config-ui.agreement.accepted-at|java.lang.String||同意协议的时间，ISO 格式，留空表示尚未同意；只作凭据，不参与任何判断。
 novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的：password 是输过密码后同意，operator-token 是凭启动令牌进来后同意。留空表示说不出是谁点的，下次登录会再确认一次。
 novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。

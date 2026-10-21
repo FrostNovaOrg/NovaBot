@@ -210,6 +210,7 @@
       <button type="submit" id="submit" style="margin-top:14px">登录</button>
     </form>
   </details>
+  <button type="button" id="oidc" class="lnk hidden" style="width:100%;margin-top:14px">使用统一登录</button>
 
   <div class="msg" id="msg" role="alert"></div>
 
@@ -350,6 +351,21 @@
   }
 
   function showLogin(state) {
+    $('#oidc').classList.toggle('hidden', !state.oidcEnabled);
+    const oidcMessages = {
+      pending: '已登记，请等管理员授权',
+      disabled: '账号已停用，请联系管理员',
+      agreement: '管理员还没同意使用协议',
+      configuration: '统一登录的客户端配置有误，请联系管理员',
+      busy: '统一登录暂时不可用，请稍后再试',
+      denied: '统一登录已取消，请重试',
+      failed: '统一登录失败，请重试或联系管理员',
+      local_required: '这一步要先用本地方式重新登录',
+      identity_in_use: '身份已属于其他账号，请先处理那个账号',
+      bound: '统一登录身份已绑定'
+    };
+    const result = new URLSearchParams(location.search).get('oidc');
+    if (Object.prototype.hasOwnProperty.call(oidcMessages, result)) $('#msg').textContent = oidcMessages[result];
     totp = !!state.totpRequired;
     lockedSeconds = Number(state.lockedSeconds) || 0;
 
@@ -504,6 +520,7 @@
 
   bindPasswordReveal($('#password'), $('#password-reveal'));
 
+  $('#oidc').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login'; });
   $('#passkey').addEventListener('click', loginWithPasskey);
 
   // 忘记口令说明页。与登录卡互斥显示，不另开一张页面——

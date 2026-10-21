@@ -25,19 +25,22 @@ export const AUTH_CARD_FIELDS = new Set([
   'novabot.core.config-ui.auth.password',
   'novabot.core.config-ui.auth.totp',
   'novabot.core.config-ui.auth.totp-secret',
-  // 同意记录那三项由程序写、由「使用协议」那张卡读。摊成普通输入框的话，
+  // 同意记录由程序写、由「使用协议」那张卡读。摊成普通输入框的话，
   // 使用者改得动「我是什么时候同意的」——那不是一个填得出来的值
   'novabot.core.config-ui.agreement.accepted-version',
   'novabot.core.config-ui.agreement.accepted-at',
   'novabot.core.config-ui.agreement.accepted-by',
+  'novabot.core.config-ui.agreement.accepted-actor',
 ]);
 
-/** 同意记录那三项的配置键，卡片按它们显示，设置页按它们摘走 */
+/** 同意记录的配置键，卡片按它们显示，设置页按它们摘走 */
 const AGREEMENT_VERSION_KEY = 'novabot.core.config-ui.agreement.accepted-version';
 
 const AGREEMENT_TIME_KEY = 'novabot.core.config-ui.agreement.accepted-at';
 
 const AGREEMENT_BY_KEY = 'novabot.core.config-ui.agreement.accepted-by';
+
+const AGREEMENT_ACTOR_KEY = 'novabot.core.config-ui.agreement.accepted-actor';
 
 /**
  * 登录状态里与这张卡有关的那几位，由 main.js 在取到 /auth/state 之后交进来
@@ -503,6 +506,7 @@ function channelText(wire) {
   if (wire === 'password') return '密码登录';
   if (wire === 'operator-token') return '启动令牌';
   if (wire === 'passkey') return '通行密钥';
+  if (wire === 'oidc') return '统一登录';
   return wire;
 }
 
@@ -516,9 +520,11 @@ function acceptedLine() {
   const version = store.values[AGREEMENT_VERSION_KEY];
   const at = store.values[AGREEMENT_TIME_KEY];
   const by = store.values[AGREEMENT_BY_KEY];
+  const actor = store.values[AGREEMENT_ACTOR_KEY];
 
   if (!version || !at || !by) return '本机尚无完整的协议同意记录。';
-  return '已同意第 ' + version + ' 版 · ' + agreementTime(at) + ' · 确认方式：' + channelText(by);
+  return '已同意第 ' + version + ' 版 · ' + agreementTime(at) + ' · 确认方式：' + channelText(by)
+    + (actor ? ' · 确认人：' + actor : '');
 }
 
 /**

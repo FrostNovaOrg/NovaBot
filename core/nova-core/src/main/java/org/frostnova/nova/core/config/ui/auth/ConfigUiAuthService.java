@@ -3,6 +3,8 @@ package org.frostnova.nova.core.config.ui.auth;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.ConfigurationKeyAliases;
+import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.frostnova.nova.core.protocol.StandbyPhases;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.source.ConfigurationProperty;
@@ -190,6 +192,9 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
 
     private final ConfigUiSessionStore sessions;
 
+    private ConfigUiAccountStore accounts;
+    private OidcClient oidc;
+
     private final LoginThrottle throttle;
 
     /**
@@ -309,6 +314,40 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             log.warn("配置界面已启用口令登录但尚未绑定验证器, 请在界面上完成绑定");
         }
     }
+
+    @Autowired
+    public void setOidcClient(OidcClient oidc) { this.oidc = oidc; }
+
+    public boolean oidcEnabled() { return isEnabled() && oidc != null && oidc.isEnabled(); }
+
+    @Autowired
+    public void setAccounts(ConfigUiAccountStore accounts) { this.accounts = accounts; }
+
+    public ConfigUiAccount account(ConfigUiSession session) {
+        if (accounts == null && ConfigUiAccount.LOCAL_ID.equals(session.getAccountId())) {
+            return ConfigUiAccount.local(session.getIssuedAt());
+        }
+        return accounts == null ? null : accounts.find(session.getAccountId()).orElse(null);
+    }
+
+    public boolean freshLocal(ConfigUiSession session) {
+        if (session == null || session.getChannel() == ConfigUiSession.Channel.OIDC) return false;
+        Instant now = clock.get();
+        return !session.getIssuedAt().isAfter(now) && now.isBefore(session.getIssuedAt().plus(Duration.ofMinutes(10)))
+                && validate(session.getId()).isPresent();
+    }
+
+    public ConfigUiSession issueForOidc(String accountId, String clientIp,
+            OidcClient.Login login) {
+        ConfigUiSession session = sessions.issueForAccount(clientIp, clock.get(), ConfigUiSession.Channel.OIDC,
+                null, accountId, login);
+        log.info("配置界面登录: {}, 方式: oidc", account(session).actor());
+        return session;
+    }
+
+    public int logoutAccount(String accountId) { return sessions.revokeAccount(accountId); }
+
+    public int logoutOidcAccount(String accountId) { return sessions.revokeOidcAccount(accountId); }
 
     /**
      * 是否启用了口令登录
@@ -601,7 +640,15 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * @return 有效会话，无效时为空
      */
     public Optional<ConfigUiSession> validate(String sessionId) {
-        return sessions.validate(sessionId, clock.get());
+        Optional<ConfigUiSession> session = sessions.validate(sessionId, clock.get());
+        if (session.isPresent()) {
+            ConfigUiAccount account = account(session.get());
+            if (account == null || account.status() != ConfigUiAccount.Status.ENABLED) {
+                sessions.revoke(sessionId);
+                return Optional.empty();
+            }
+        }
+        return session;
     }
 
     /**
@@ -611,8 +658,21 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * @param clientIp 来源 IP
      * @return 新会话
      */
+    private ConfigUiSession issueLocal(String clientIp, ConfigUiSession.Channel channel, String credentialId) {
+        if (accounts != null) {
+            try {
+                accounts.loggedIn(ConfigUiAccount.LOCAL_ID, clock.get());
+            } catch (IllegalStateException error) {
+                log.warn("配置界面: 本地管理员最近登录时间未能存盘，仍允许本地登录");
+            }
+        }
+        ConfigUiSession session = sessions.issue(clientIp, clock.get(), channel, credentialId);
+        log.info("配置界面登录: 本地管理员, 方式: {}", channel.wire());
+        return session;
+    }
+
     public ConfigUiSession issueForOperator(String clientIp) {
-        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.OPERATOR_TOKEN);
+        return issueLocal(clientIp, ConfigUiSession.Channel.OPERATOR_TOKEN, null);
     }
 
     /**
@@ -625,7 +685,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * @return 新会话
      */
     public ConfigUiSession issueForPassword(String clientIp) {
-        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSWORD);
+        return issueLocal(clientIp, ConfigUiSession.Channel.PASSWORD, null);
     }
 
     /**
@@ -642,7 +702,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      */
     public ConfigUiSession issueForPasskey(String clientIp, String credentialId) {
         throttle.recordSuccess(clientIp);
-        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSKEY, credentialId);
+        return issueLocal(clientIp, ConfigUiSession.Channel.PASSKEY, credentialId);
     }
 
     /**
@@ -723,6 +783,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * 注销会话
      */
     public void logout(String sessionId) {
+        validate(sessionId).ifPresent(session -> log.info("配置界面退出: {}", account(session).actor()));
         sessions.revoke(sessionId);
     }
 
@@ -733,9 +794,11 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * 而重启会断开全部直播间长连接，正在直播时代价不小。
      * @return 被注销的会话数
      */
-    public int logoutAll() {
-        int count = sessions.revokeAll();
-        log.info("配置界面已注销全部 {} 个登录会话", count);
+    public int logoutAll(String sessionId) {
+        Optional<ConfigUiSession> current = validate(sessionId);
+        if (current.isEmpty()) return 0;
+        int count = sessions.revokeAccount(current.get().getAccountId());
+        log.info("配置界面退出全部设备: {}, 注销 {} 个登录会话", account(current.get()).actor(), count);
         return count;
     }
 
@@ -823,7 +886,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
 
         return switch (check.verdict()) {
             case OK -> {
-                ConfigUiSession session = sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSWORD);
+                ConfigUiSession session = issueLocal(clientIp, ConfigUiSession.Channel.PASSWORD, null);
                 log.info("配置界面登录成功, 来源: {}", clientIp);
                 yield LoginResult.success(session);
             }

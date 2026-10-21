@@ -32,6 +32,18 @@ final class OidcJson {
         return text;
     }
 
+    static URI callback(String value) {
+        try {
+            URI uri = URI.create(value);
+            String host = uri.getHost();
+            if ("http".equals(uri.getScheme()) && ("127.0.0.1".equals(host)
+                    || "[::1]".equals(host) || "::1".equals(host) || "localhost".equalsIgnoreCase(host))
+                    && uri.getRawUserInfo() == null && uri.getRawFragment() == null
+                    && uri.getPort() != 0 && uri.getPort() <= 65535) return uri;
+        } catch (IllegalArgumentException ignored) { }
+        return https(value, "redirect-uri", CONFIGURATION);
+    }
+
     static URI https(String value, String name, OidcException.Kind kind) {
         try {
             URI uri = URI.create(value);

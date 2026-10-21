@@ -89,6 +89,7 @@ function load(store) {
     constLine('AGREEMENT_VERSION_KEY') + '\n'
     + constLine('AGREEMENT_TIME_KEY') + '\n'
     + constLine('AGREEMENT_BY_KEY') + '\n'
+    + constLine('AGREEMENT_ACTOR_KEY') + '\n'
     + channelSrc + '\n'
     + timeSrc + '\n'
     + lineSrc + '\nreturn acceptedLine;')(store);
@@ -109,6 +110,21 @@ eq(/0?3:18/.test(shown), true, '钟点到分钟还在');
 eq(shown.includes('2026') && shown.includes('30'), true, '年月日还在');
 eq(shown.includes('已同意第 1 版'), true, '版次还在');
 eq(shown.includes('确认方式：密码登录'), true, '通道仍是人话');
+// 老记录只有通道名也要正常显示，不能凭空补一个确认人。
+eq(shown.includes('确认人：'), false, '旧记录不显示不存在的确认人');
+
+// 新记录把确认人与方式分别显示，避免确认方式变成未经翻译的原值。
+store.values['novabot.core.config-ui.agreement.accepted-actor'] = '本地管理员';
+const named = acceptedLine();
+eq(named.includes('确认方式：密码登录'), true, '新记录的确认方式仍是密码登录');
+eq(named.includes(' · 确认人：本地管理员'), true, '新记录显示确认人');
+
+// 统一登录管理员同意协议后，也应显示人能读懂的登录方式和姓名。
+store.values['novabot.core.config-ui.agreement.accepted-by'] = 'oidc';
+store.values['novabot.core.config-ui.agreement.accepted-actor'] = 'Example Member';
+const federated = acceptedLine();
+eq(federated.includes('确认方式：统一登录'), true, '统一登录通道显示中文');
+eq(federated.includes('确认人：Example Member'), true, '统一登录管理员显示姓名');
 
 store.values['novabot.core.config-ui.agreement.accepted-at'] = '不是时间';
 let raw = 'missing';

@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui.auth;
 
 import org.frostnova.nova.core.lang.SecureToken;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,12 +28,11 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class ConfigUiSessionStore {
     /**
-     * 同时存在的会话数上限
-     * <p>
-     * 单用户场景下手机、电脑、平板各一个也就三五个，取 32 是留足余量。
-     * 设上限是为了让「反复登录」不会把内存撑大——超出时淘汰最早签发的那个。
+     * 每个账号至多 32 个会话；满时只淘汰该账号最早签发的会话。
+     * 全局至多 1024 个，其中 32 个名额始终留给本地管理员。
      */
     private static final int MAX_SESSIONS = 32;
+    private static final int MAX_GLOBAL_SESSIONS = 1024;
 
     private final Duration ttl;
 
@@ -68,12 +68,24 @@ public class ConfigUiSessionStore {
      */
     public ConfigUiSession issue(String clientIp, Instant now, ConfigUiSession.Channel channel,
                                  String passkeyCredentialId) {
+        return issueForAccount(clientIp, now, channel, passkeyCredentialId, ConfigUiAccount.LOCAL_ID, null);
+    }
+
+    public synchronized ConfigUiSession issueForAccount(String clientIp, Instant now, ConfigUiSession.Channel channel,
+                    String passkeyCredentialId, String accountId,
+                    OidcClient.Login oidcLogin) {
         sweep(now);
-        evictOldestIfFull();
+        evictOldestIfFull(accountId);
+        // Keep room for every local-admin session even when many other accounts log in.
+        long external = sessions.values().stream().filter(s -> !ConfigUiAccount.LOCAL_ID.equals(s.getAccountId())).count();
+        if (sessions.size() >= MAX_GLOBAL_SESSIONS
+                || !ConfigUiAccount.LOCAL_ID.equals(accountId) && external >= MAX_GLOBAL_SESSIONS - MAX_SESSIONS) {
+            throw new IllegalStateException("登录会话已满，请稍后再试");
+        }
 
         ConfigUiSession session = new ConfigUiSession(
                 SecureToken.generate(), SecureToken.generate(), now, now.plus(ttl), clientIp, channel,
-                passkeyCredentialId);
+                passkeyCredentialId, accountId, oidcLogin);
         sessions.put(session.getId(), session);
 
         return session;
@@ -116,7 +128,7 @@ public class ConfigUiSessionStore {
      * @param now 当前时刻
      * @return 新会话；标识为空、认不出或已过期时为空
      */
-    public Optional<ConfigUiSession> rotate(String id, Instant now) {
+    public synchronized Optional<ConfigUiSession> rotate(String id, Instant now) {
         if (id == null || id.isBlank()) {
             return Optional.empty();
         }
@@ -135,7 +147,7 @@ public class ConfigUiSessionStore {
      * 注销一个会话
      * @param id 会话标识
      */
-    public void revoke(String id) {
+    public synchronized void revoke(String id) {
         if (id != null) {
             sessions.remove(id);
         }
@@ -148,7 +160,7 @@ public class ConfigUiSessionStore {
      * 「改了口令」这个动作就没能把可能已经泄漏的访问权收回来。
      * @return 被注销的会话数
      */
-    public int revokeAll() {
+    public synchronized int revokeAll() {
         int size = sessions.size();
         sessions.clear();
         return size;
@@ -166,13 +178,16 @@ public class ConfigUiSessionStore {
      * @param keepId 留下的会话标识；认不出时传 null，本方法直接返回 0
      * @return 被注销的会话数
      */
-    public int revokeAllExcept(String keepId) {
+    public synchronized int revokeAllExcept(String keepId) {
         if (keepId == null || keepId.isBlank()) {
             return 0;
         }
 
+        ConfigUiSession keep = sessions.get(keepId);
+        if (keep == null) return 0;
         int before = sessions.size();
-        sessions.keySet().removeIf(id -> !id.equals(keepId));
+        sessions.values().removeIf(session -> keep.getAccountId().equals(session.getAccountId())
+                && !session.getId().equals(keepId));
         return before - sessions.size();
     }
 
@@ -191,7 +206,7 @@ public class ConfigUiSessionStore {
      * @param keepId 留下的会话标识，认不出时传 null
      * @return 被注销的会话数
      */
-    public int revokeByPasskey(String credentialId, String keepId) {
+    public synchronized int revokeByPasskey(String credentialId, String keepId) {
         if (credentialId == null || credentialId.isBlank()) {
             return 0;
         }
@@ -215,9 +230,23 @@ public class ConfigUiSessionStore {
         sessions.values().removeIf(session -> expired(session, now));
     }
 
-    private void evictOldestIfFull() {
-        while (sessions.size() >= MAX_SESSIONS) {
+    public synchronized int revokeAccount(String accountId) {
+        int before = sessions.size();
+        sessions.values().removeIf(session -> session.getAccountId().equals(accountId));
+        return before - sessions.size();
+    }
+
+    public synchronized int revokeOidcAccount(String accountId) {
+        int before = sessions.size();
+        sessions.values().removeIf(session -> session.getAccountId().equals(accountId)
+                && session.getChannel() == ConfigUiSession.Channel.OIDC);
+        return before - sessions.size();
+    }
+
+    private void evictOldestIfFull(String accountId) {
+        while (sessions.values().stream().filter(s -> accountId.equals(s.getAccountId())).count() >= MAX_SESSIONS) {
             Optional<ConfigUiSession> oldest = sessions.values().stream()
+                    .filter(s -> accountId.equals(s.getAccountId()))
                     .min(Comparator.comparing(ConfigUiSession::getIssuedAt));
             if (oldest.isEmpty()) {
                 return;
