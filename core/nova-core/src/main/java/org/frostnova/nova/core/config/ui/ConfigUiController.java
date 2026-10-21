@@ -69,6 +69,7 @@ import java.io.UncheckedIOException;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -78,6 +79,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -242,6 +244,15 @@ public class ConfigUiController {
      * 而那正是开发时最常见的跑法。
      */
     private final ObjectProvider<BuildProperties> buildProperties;
+
+    /** 未经打包直接运行时，每次启动使用独立的资源地址。 */
+    private final String developmentAssetVersion = UUID.randomUUID().toString();
+
+    private String assetVersion() {
+        BuildProperties build = buildProperties.getIfAvailable();
+        return build != null && build.getTime() != null
+                ? Long.toString(build.getTime().toEpochMilli()) : developmentAssetVersion;
+    }
 
     /**
      * 推送闸门。首页要显示「此刻在不在静音时段」，判据只有它那一份
@@ -721,8 +732,10 @@ public class ConfigUiController {
         try (var stream = new ClassPathResource("config-ui/index.html").getInputStream()) {
             return ResponseEntity.ok()
                     .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
+                    .cacheControl(CacheControl.noStore())
                     .body(ConfigUiPrefix.render(new String(stream.readAllBytes(), StandardCharsets.UTF_8),
-                            ConfigUiPrefix.of(request)));
+                            ConfigUiPrefix.of(request)).replace("{{nova-asset-version}}",
+                            ConfigUiPrefix.attribute(assetVersion())));
         }
     }
 
@@ -749,6 +762,17 @@ public class ConfigUiController {
      */
     @GetMapping("/assets/{name}")
     public ResponseEntity<byte[]> asset(@PathVariable String name) {
+        return asset(name, CacheControl.noCache());
+    }
+
+    /** 旧页面请求的版本也端出当前内容，但只给匹配当前构建的地址长期私有缓存。 */
+    @GetMapping("/assets/{version}/{name}")
+    public ResponseEntity<byte[]> versionedAsset(@PathVariable String version, @PathVariable String name) {
+        return asset(name, version.equals(assetVersion())
+                ? CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable() : CacheControl.noCache());
+    }
+
+    private ResponseEntity<byte[]> asset(String name, CacheControl cacheControl) {
         if (!ASSET_NAME.matcher(name).matches()) {
             log.warn("配置界面拒绝了非法的静态资源名: {}", name);
             return ResponseEntity.notFound().build();
@@ -761,14 +785,13 @@ public class ConfigUiController {
 
         ClassPathResource resource = new ClassPathResource("config-ui/" + name);
         if (!resource.exists()) {
-            return pageScript(name, type);
+            return pageScript(name, type, cacheControl);
         }
 
         try (var stream = resource.getInputStream()) {
             return ResponseEntity.ok()
                     .contentType(type)
-                    // 内容随版本走，升级后必须立刻生效，因此不缓存
-                    .cacheControl(CacheControl.noCache())
+                    .cacheControl(cacheControl)
                     .body(stream.readAllBytes());
         } catch (IOException e) {
             log.error("读取配置界面静态资源 {} 失败", name, e);
@@ -789,9 +812,10 @@ public class ConfigUiController {
      * jar 里的其余内容一概取不到。
      * @param name 脚本文件名
      * @param type 内容类型
+     * @param cacheControl 由请求地址的版本决定的缓存策略
      * @return 脚本内容，未登记或读取失败时返回 404
      */
-    private ResponseEntity<byte[]> pageScript(String name, MediaType type) {
+    private ResponseEntity<byte[]> pageScript(String name, MediaType type, CacheControl cacheControl) {
         Optional<ConsolePageProvider> page = ConsolePages.byScript(pageProviders.orderedStream().toList(), name);
         if (page.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -806,7 +830,7 @@ public class ConfigUiController {
 
             return ResponseEntity.ok()
                     .contentType(type)
-                    .cacheControl(CacheControl.noCache())
+                    .cacheControl(cacheControl)
                     .body(stream.readAllBytes());
         } catch (IOException e) {
             log.error("读取控制台页面脚本 {} 失败", name, e);

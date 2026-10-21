@@ -66,11 +66,11 @@ ask('① setup.js 不含 SETUP_STEPS[ 与 SETUP_STEPS.length', () => {
   }
 });
 
-ask("② setup.js 含 CONSOLE + '/assets/' 与 withPluginSteps(", () => {
+ask("② setup.js 按模块地址载入插件步并使用 withPluginSteps(", () => {
   const text = src('setup.js');
-  // 插件步脚本的地址从带部署前缀的控制台根拼；写死 /config 的话，配了前缀的部署取不到脚本
-  if (!text.includes("CONSOLE + '/assets/'")) {
-    throw new Error("缺少 CONSOLE + '/assets/'");
+  // 升级后首页与向导必须使用同一版本的脚本，模块地址也须保留部署前缀。
+  if (!text.includes("import(new URL(meta.script, import.meta.url).href)")) {
+    throw new Error("插件步脚本未沿用当前模块的版本目录");
   }
   if (text.includes("'/config/assets/'")) {
     throw new Error("仍写死 '/config/assets/'，配了部署前缀时插件步脚本取不到");

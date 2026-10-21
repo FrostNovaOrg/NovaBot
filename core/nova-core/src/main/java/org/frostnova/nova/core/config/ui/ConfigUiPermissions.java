@@ -19,6 +19,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/assets/{name}");
+        add(entries, Access.EVERYONE, Subject.NONE, "GET /config/assets/{version}/{name}");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/manual/{name}");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/manual/images/{name}");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/auth/state");

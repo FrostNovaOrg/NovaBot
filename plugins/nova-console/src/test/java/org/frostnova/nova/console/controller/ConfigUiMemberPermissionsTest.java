@@ -28,6 +28,7 @@ class ConfigUiMemberPermissionsTest {
             GET /config
             GET /config/
             GET /config/assets/{name}
+            GET /config/assets/{version}/{name}
             GET /config/manual/{name}
             GET /config/manual/images/{name}
             GET auth/state
@@ -182,8 +183,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(111, mappings.size());
-        assertEquals(21, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(60, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(112, mappings.size());
+        assertEquals(22, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(60, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));
@@ -316,7 +317,7 @@ class ConfigUiMemberPermissionsTest {
     private static MockHttpServletRequestBuilder request(String route, String uid, ConfigUiAccount account) {
         String[] pair = route.split(" ", 2);
         String path = pair[1].replace("{platform}", "bilibili").replace("{uid}", uid)
-                .replace("{start}", "1").replace("{name}", "core.js").replace("{id}", "member")
+                .replace("{version}", "1792497600000").replace("{start}", "1").replace("{name}", "core.js").replace("{id}", "member")
                 .replace("{fingerprint}", "test");
         var req = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(
                 org.springframework.http.HttpMethod.valueOf(pair[0]), path)

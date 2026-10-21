@@ -38,6 +38,10 @@ class MemberConsoleFrontendTest {
     @ParameterizedTest @ValueSource(strings = {"loading-member-auth/state", "loading-member-status", "loading-member-pages", "loading-auth/state", "loading-status", "loading-login", "loading-pages", "sidebar-admin", "sidebar-member", "nav", "home", "setup", "today", "personal", "identity", "streamers", "admin", "legacy", "unknown"})
     void rendersConsoleForCurrentAccount(String mode) throws Exception { run(mode); }
 
+    // 升级缓存、慢网和重试会阻断首屏或重复导航；正常入口还须取消页面后备提示。
+    @ParameterizedTest @ValueSource(strings = {"slow-plugins", "retry-plugins", "retry-member-plugins", "plugin-version", "plugin-version-next", "missing-main", "fallback-started"})
+    void startupRecoversWithoutDuplicatePages(String mode) throws Exception { run(mode); }
+
     // 成员首屏和主播页误调管理接口时，失败对象会被当成空数据，必须用实际权限层拦出这种请求。
     @Test void actualFrontendRequestsPassMemberPermissions() throws Exception {
         String output = run("requests");

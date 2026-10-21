@@ -7,6 +7,7 @@ import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.util.IpMatcher;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -16,12 +17,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 /**
@@ -31,6 +34,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * {@code onRequest} 是请求上的 context path，平时与前者相同，转发头能把它改成别的。
  */
 final class ConfigUiPrefixPages {
+    static final String ASSET_VERSION = "1792497600000";
     private ConfigUiPrefixPages() {
     }
 
@@ -113,8 +117,12 @@ final class ConfigUiPrefixPages {
     }
 
     @SuppressWarnings("unchecked")
-    private static ConfigUiController controller() {
+    static ConfigUiController controller() {
         NovaCoreProperties properties = new NovaCoreProperties();
+        var build = new Properties();
+        build.setProperty("time", ASSET_VERSION);
+        ObjectProvider<BuildProperties> builds = mock(ObjectProvider.class);
+        when(builds.getIfAvailable()).thenReturn(new BuildProperties(build));
         return new ConfigUiController(
                 mock(ConfigurationMetadataService.class),
                 mock(ConfigurationFileService.class),
@@ -136,7 +144,7 @@ final class ConfigUiPrefixPages {
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class),
                 mock(org.frostnova.nova.core.protocol.EventStreamTokenService.class),
-                mock(ObjectProvider.class),
+                builds,
                 mock(org.frostnova.nova.core.sender.PushGate.class),
                 mock(org.frostnova.nova.core.service.LiveDataService.class),
                 mock(org.frostnova.nova.core.timeline.TimelineStore.class),

@@ -798,7 +798,7 @@ class ConfigUiAgreementGateTest {
         assertNotNull(chain.getRequest(),
                 "阳性对照：这一条不通过，上面那两条「没同意就进不去」说明不了任何事");
         assertEquals(200, response.getStatus(), "同意之后就该直接进控制台");
-        assertTrue(response.getContentAsString().contains("/config/assets/app.css"),
+        assertTrue(response.getContentAsString().matches("(?s).*/config/assets/[^/\"]+/app\\.css.*"),
                 "拿到的该是控制台首页（它取外部样式表），不是自足的那张登录页");
         assertFalse(response.getContentAsString().contains("id=\"agreement\""), "协议面板不该再出现");
     }
