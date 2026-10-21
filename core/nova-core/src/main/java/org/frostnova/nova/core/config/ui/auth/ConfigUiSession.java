@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui.auth;
 
 import lombok.Getter;
+import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -23,6 +24,14 @@ public class ConfigUiSession {
      * 会话标识，写入 Cookie
      */
     private final String id;
+
+    private final String accountId;
+
+    @Getter(lombok.AccessLevel.NONE)
+    private final OidcClient.Login oidcLogin;
+
+    /** Server-only refresh context; never included in HTTP responses. */
+    public OidcClient.Login oidcLogin() { return oidcLogin; }
 
     /**
      * 该会话的 CSRF 令牌
@@ -107,7 +116,15 @@ public class ConfigUiSession {
 
     ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel,
                     String passkeyCredentialId) {
+        this(id, csrfToken, issuedAt, expiresAt, clientIp, channel, passkeyCredentialId, ConfigUiAccount.LOCAL_ID, null);
+    }
+
+    ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel,
+                    String passkeyCredentialId, String accountId,
+                    OidcClient.Login oidcLogin) {
         this.id = id;
+        this.accountId = accountId;
+        this.oidcLogin = oidcLogin;
         this.csrfToken = csrfToken;
         this.issuedAt = issuedAt;
         this.expiresAt = expiresAt;
@@ -180,7 +197,7 @@ public class ConfigUiSession {
      */
     synchronized ConfigUiSession renew(String id, String csrfToken, Instant now) {
         ConfigUiSession renewed = new ConfigUiSession(id, csrfToken, issuedAt, expiresAt, clientIp, channel,
-                passkeyCredentialId);
+                passkeyCredentialId, accountId, oidcLogin);
         renewed.lastSeenAt = now;
         renewed.totpSetupDismissed = totpSetupDismissed;
         renewed.passwordChecks = passwordChecks;
@@ -210,7 +227,9 @@ public class ConfigUiSession {
          * 与 {@link #PASSWORD} 分开记而不是并进去：这条路<b>不经二次验证</b>，
          * 而使用协议的同意记录里那一行要说得出「当时是怎么进来的」。
          */
-        PASSKEY("passkey");
+        PASSKEY("passkey"),
+
+        OIDC("oidc");
 
         private final String wire;
 

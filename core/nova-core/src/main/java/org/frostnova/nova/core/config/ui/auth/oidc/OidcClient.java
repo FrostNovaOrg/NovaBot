@@ -45,7 +45,7 @@ import static org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind.*;
 public final class OidcClient {
     private static final Duration LOGIN_TTL = Duration.ofMinutes(5);
     private static final int MAX_PENDING_LOGINS = 1024;
-    private static final Set<String> TERMINAL_ERRORS = Set.of("invalid_grant", "invalid_client", "unauthorized_client");
+
     private final SecureRandom random = new SecureRandom();
     private final Map<String, Transaction> transactions = new HashMap<>();
     private final boolean enabled;
@@ -81,7 +81,7 @@ public final class OidcClient {
 
     public boolean isEnabled() { return enabled; }
 
-    /** Optional destination for a future account-management link; no console route is installed. */
+    /** Optional destination exposed by the administrator account list. */
     public Optional<URI> managementUri() {
         return managementUri.isBlank() ? Optional.empty()
                 : Optional.of(OidcJson.https(managementUri, "management-uri", CONFIGURATION));
@@ -89,7 +89,7 @@ public final class OidcClient {
 
     /**
      * Creates a five-minute, one-use transaction held in memory independently of the local session cookie.
-     * A future HTTP integration must bind this authorization to the initiating browser with its own
+     * The HTTP integration must bind this authorization to the initiating browser with its own
      * short-lived SameSite=Lax correlation cookie (and pass state only to the intended callback).
      */
     public Authorization startLogin(HttpServletRequest request) {
@@ -109,10 +109,14 @@ public final class OidcClient {
                         "state", state, "nonce", nonce, "challenge", challenge(verifier))).toUri();
         synchronized (transactions) {
             transactions.values().removeIf(transaction -> !clock.instant().isBefore(transaction.expiresAt()));
-            if (transactions.size() >= MAX_PENDING_LOGINS) throw new OidcException(INVALID_LOGIN, "OIDC too many pending logins");
-            transactions.put(state, new Transaction(nonce, verifier, callback, expiry));
+            if (transactions.size() >= MAX_PENDING_LOGINS) throw new OidcException(PROVIDER_UNAVAILABLE, "OIDC too many pending logins");
+            transactions.put(state, new Transaction(nonce, verifier, callback, expiry, discovery.responseIssuerRequired()));
         }
         return new Authorization(authorization, state, expiry);
+    }
+
+    public void cancelLogin(String state) {
+        synchronized (transactions) { transactions.remove(state); }
     }
 
     /** Consumes state before exchange, including on any failed callback. callbackIssuer is null when iss is absent. */
@@ -125,6 +129,7 @@ public final class OidcClient {
         if (transaction == null || !clock.instant().isBefore(transaction.expiresAt())) {
             throw new OidcException(INVALID_LOGIN, "OIDC invalid, expired or already consumed state");
         }
+        if (transaction.responseIssuerRequired() && callbackIssuer == null) throw new OidcException(INVALID_LOGIN, "OIDC missing callback iss");
         if (callbackIssuer != null && !issuer.equals(callbackIssuer)) throw new OidcException(INVALID_LOGIN, "OIDC callback iss mismatch");
         if (code == null || code.isBlank()) throw new OidcException(INVALID_LOGIN, "OIDC missing authorization code");
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -138,7 +143,7 @@ public final class OidcClient {
     }
 
     /**
-     * Refreshes a previous verified login. TOKEN_REJECTED means a definitive OAuth refusal;
+     * Refreshes a previous verified login. TOKEN_REJECTED means invalid_grant; CONFIGURATION means a client error;
      * PROVIDER_UNAVAILABLE means connectivity, throttling or server failure and must not force logout.
      * A new ID token is optional, but if supplied it must still identify the same issuer and subject.
      */
@@ -165,14 +170,14 @@ public final class OidcClient {
 
     /** No forwarded headers are parsed here. Scheme/host/port use the servlet request, prefix uses the servlet context. */
     private URI callbackUri(HttpServletRequest request) {
-        if (!redirectUri.isBlank()) return OidcJson.https(redirectUri, "redirect-uri", CONFIGURATION);
+        if (!redirectUri.isBlank()) return OidcJson.callback(redirectUri);
         int port = request.getServerPort();
         String scheme = request.getScheme();
         boolean defaultPort = "https".equals(scheme) && port == 443 || "http".equals(scheme) && port == 80;
         try {
             URI uri = UriComponentsBuilder.newInstance().scheme(scheme).host(request.getServerName())
                     .port(defaultPort ? -1 : port).path(ConfigUiPrefix.consolePath(request) + "/api/oidc/callback").build().toUri();
-            return OidcJson.https(uri.toString(), "redirect-uri", CONFIGURATION);
+            return OidcJson.callback(uri.toString());
         } catch (IllegalArgumentException error) {
             throw new OidcException(CONFIGURATION, "OIDC cannot derive redirect-uri from request");
         }
@@ -222,7 +227,8 @@ public final class OidcClient {
 
     private static OidcException tokenError(JSONObject json) {
         String error = OidcJson.text(json, "error", true, PROVIDER_ERROR);
-        if (TERMINAL_ERRORS.contains(error)) return new OidcException(TOKEN_REJECTED, "OIDC token request rejected: " + error, error);
+        if (Set.of("invalid_client", "unauthorized_client").contains(error)) return new OidcException(CONFIGURATION, "OIDC client configuration rejected", error);
+        if ("invalid_grant".equals(error)) return new OidcException(TOKEN_REJECTED, "OIDC token request rejected: " + error, error);
         if (Set.of("temporarily_unavailable", "server_error").contains(error)) {
             return new OidcException(PROVIDER_UNAVAILABLE, "OIDC token endpoint temporarily unavailable", error);
         }
@@ -254,7 +260,7 @@ public final class OidcClient {
 
     private static String orEmpty(String value) { return value == null ? "" : value; }
 
-    private record Transaction(String nonce, String verifier, URI callback, Instant expiresAt) {
+    private record Transaction(String nonce, String verifier, URI callback, Instant expiresAt, boolean responseIssuerRequired) {
         @Override public String toString() { return "OIDC transaction [redacted]"; }
     }
 
@@ -263,7 +269,11 @@ public final class OidcClient {
     }
 
     /** Only issuer plus subject form the identity key. Name and email are display attributes. */
-    public record Identity(String issuer, String subject, String name, String email) { }
+    public record Identity(String issuer, String subject, String name, String email, String sid) {
+        public Identity(String issuer, String subject, String name, String email) {
+            this(issuer, subject, name, email, null);
+        }
+    }
 
     public record Tokens(String accessToken, String idToken, String refreshToken, Long expiresIn) {
         @Override public String toString() { return "OIDC tokens [redacted]"; }

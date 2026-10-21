@@ -62,6 +62,7 @@ novabot:
         redirect-uri: https://console.example.com/config/api/oidc/callback
         management-uri: https://accounts.example.com/members
       agreement:
+        accepted-actor: Example Admin
         accepted-version: 71
         accepted-at: "2026-01-02T03:04:05"
         accepted-by: password

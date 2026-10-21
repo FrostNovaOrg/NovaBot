@@ -67,7 +67,7 @@ final class OidcTokenValidator {
                 throw invalid("nonce");
             }
         }
-        return new OidcClient.Identity(issuer, subject, display(claims, "name"), display(claims, "email"));
+        return new OidcClient.Identity(issuer, subject, display(claims, "name"), display(claims, "email"), display(claims, "sid"));
     }
 
     private static String display(JSONObject claims, String name) {
