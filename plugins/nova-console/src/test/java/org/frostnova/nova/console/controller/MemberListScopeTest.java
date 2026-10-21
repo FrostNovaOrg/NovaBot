@@ -131,6 +131,39 @@ class MemberListScopeTest {
         };
     }
 
+    // 停用主播仍在配置名单中，但不能在成员首页显示为在播。
+    @Test void memberLiveExcludesDisabledStreamers() throws Exception {
+        var raw = JSONArray.parseArray(Files.readString(file));
+        raw.getJSONObject(0).put("enabled", false);
+        Files.writeString(file, raw.toJSONString());
+        when(source.getAllUsers()).thenReturn(List.of(user(B, "Other B", SHARED, OTHER)));
+        use(MEMBER);
+        assertEquals(1, config.status().getJSONArray("users").size());
+        assertTrue(config.status().getJSONArray("live").isEmpty());
+    }
+
+    // 成员首页的推送目标数必须与管理员相同，停用通道不计入。
+    @Test void memberTargetCountMatchesActiveAdminTargets() throws Exception {
+        var raw = JSONArray.parseArray(Files.readString(file));
+        var targets = raw.getJSONObject(0).getJSONArray("targets");
+        targets.add(JSONObject.of("platform", "qq", "type", 1, "num", 89999, "enabled", false));
+        Files.writeString(file, raw.toJSONString());
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        int expected = config.status().getJSONArray("users").getJSONObject(0).getIntValue("targets");
+        use(MEMBER);
+        assertEquals(expected, config.status().getJSONArray("users").getJSONObject(0).getIntValue("targets"));
+    }
+
+    // 今日卡必须出现在成员 pages 清单中，否则名下推送计数没有展示入口。
+    @Test @SuppressWarnings("unchecked") void todayCardIsIncludedForMembers() {
+        ObjectProvider<ConsolePageProvider> providers = mock(ObjectProvider.class);
+        when(providers.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(new TodayHomeCardProvider()));
+        ReflectionTestUtils.setField(config, "pageProviders", providers);
+        use(MEMBER);
+        assertEquals(List.of("today"), config.pages().getJSONArray("pages").stream()
+                .map(item -> ((JSONObject)item).getString("id")).toList());
+    }
+
     // 管理员各列表逐字段对照原有响应，只归一化随运行变化的时刻和资源读数。
     @Test void adminListsKeepOriginalFields() throws Exception {
         recorder.recordSuccess("qq", "群 " + SHARED, "A push", 1);
@@ -223,7 +256,7 @@ class MemberListScopeTest {
         }
         use(MEMBER);
         assertEquals(A, config.status().getJSONArray("users").getJSONObject(0).getLongValue("uid"));
-        assertEquals(List.of(A), config.status().getJSONArray("live").stream()
+        assertEquals(disableUser ? List.of() : List.of(A), config.status().getJSONArray("live").stream()
                 .map(item -> ((JSONObject)item).getLongValue("uid")).toList());
         assertEquals(A, config.datasourceUsers().getJSONArray("users").getJSONObject(0).getLongValue("uid"));
         assertEquals(A, streamers.streamers().getJSONArray("streamers").getJSONObject(0).getLongValue("uid"));

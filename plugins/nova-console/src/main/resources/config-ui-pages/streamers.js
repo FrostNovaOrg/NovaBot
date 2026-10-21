@@ -14,6 +14,7 @@
  * 从地址栏直接进某一场与点一行进去会渲染出两种结果。
  */
 
+import {store} from './store.js';
 import {$, api, CONSOLE, el, esc, request, say} from './core.js';
 import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis, createAudienceRing, openDrawer, releaseComponents} from './streamers-components.js';
 import {
@@ -1804,6 +1805,7 @@ function renderBanner() {
   const old = $('#sd-banner');
   if (old) old.remove();
 
+  if (store.role === 'MEMBER') return;
   const text = totalDataBanner(runtime);
   if (!text || where.view !== 'detail') return;
 

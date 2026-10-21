@@ -1,6 +1,7 @@
 /** 设置页成员管理。账号权限与敏感操作的校验由接口执行。 */
 import {api, el} from './core.js';
 import {ask} from './confirm.js';
+import {store} from './store.js';
 
 let memberAuth = {};
 const LOCAL_ID = 'local-admin';
@@ -12,7 +13,7 @@ export function setMemberAuthState(state) {
 }
 
 export function memberGroup() {
-  if (memberAuth.role !== 'ADMIN') return null;
+  if (store.role === 'MEMBER') return null;
   const box = el('section', 'group setgrp members-group');
   box.dataset.grp = 'members';
   box.dataset.ui = 'members';
@@ -198,7 +199,7 @@ function accountRow(tbody, account, options, optionsReady, state, refresh) {
 
 export async function renderMembers(box, state) {
   box.replaceChildren();
-  if (state.role !== 'ADMIN') return;
+  if (store.role === 'MEMBER') return;
   text(box, 'h2', '成员');
   if (!state.oidcEnabled) {
     text(box, 'p', '在设置页的统一登录配置里填好账户中心地址、客户端编号和密钥，即可开启统一登录并管理成员。', 'hint');

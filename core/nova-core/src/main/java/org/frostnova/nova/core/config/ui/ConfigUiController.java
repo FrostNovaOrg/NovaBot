@@ -2248,7 +2248,8 @@ public class ConfigUiController {
         for (var user : new ConfigUiConfiguredUsers(properties).users(dataSource.getAllUsers())) {
             if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid())) continue;
             users.add(JSONObject.of("uid", user.getUid(), "uname", streamerNames.uname(user), "roomId", user.getRoomId(),
-                    "platform", user.getPlatform(), "enabled", user.getEnabled(), "targets", user.getTargets().size()));
+                    "platform", user.getPlatform(), "enabled", user.getEnabled(), "targets", user.getTargets().stream()
+                            .filter(target -> !Boolean.FALSE.equals(target.getEnabled())).count()));
         }
         return JSONObject.of("success", true, "users", users, "locked", authService.isEnabled(),
                 "pushEnabled", properties.getPush().isEnabled(), "totalDataAvailable", liveDataService.supportsTotalData(),
@@ -2395,7 +2396,7 @@ public class ConfigUiController {
         boolean member = ConfigUiAccess.memberAccount() != null;
         var users = member ? new ConfigUiConfiguredUsers(properties).users(dataSource.getAllUsers()) : dataSource.getAllUsers();
         users.forEach(user -> {
-            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid()) || (!member && Boolean.FALSE.equals(user.getEnabled()))) {
+            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid()) || Boolean.FALSE.equals(user.getEnabled())) {
                 return;
             }
             if (!liveDataService.getLiveStatus(user.getPlatform(), user.getUid()).orElse(false)) {

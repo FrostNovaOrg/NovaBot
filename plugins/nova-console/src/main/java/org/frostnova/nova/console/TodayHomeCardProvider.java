@@ -42,6 +42,11 @@ public class TodayHomeCardProvider implements ConsolePageProvider {
     }
 
     @Override
+    public boolean memberAccessible() {
+        return true;
+    }
+
+    @Override
     public ConsolePageSlot slot() {
         return ConsolePageSlot.HOME_CARD;
     }

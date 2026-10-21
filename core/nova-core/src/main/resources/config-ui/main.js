@@ -29,6 +29,20 @@ import {clearIssuedToken, loadTokens} from './tokens.js';
  * 现在它是运行期的一张清单——核心只知道「有几页、叫什么、脚本在哪」，页里做什么与它无关。
  */
 const pages = [];
+const accessiblePages = new Set(['home']);
+
+/** 身份到达后再显示导航与首页，避免成员先看到实例管理入口。 */
+function applyRoleView() {
+  if (store.role !== 'MEMBER') return;
+  document.querySelectorAll('#nav a').forEach(link => {
+    if (link.dataset.page !== 'home') link.remove();
+  });
+  for (const selector of ['.runbox', '.verline', '#home-banner', '#home-todo',
+    '.home-connections', '#home-probes', '#cfg-path', '#plugin-adv']) {
+    const node = $(selector);
+    if (node) node.style.display = 'none';
+  }
+}
 
 /**
  * 落在连接页上的那一档，与服务端下发的 slot 取值一致
@@ -81,7 +95,13 @@ const topPageIds = new Set();
 async function mountPages() {
   let list = [];
   try {
-    list = (await api('/pages')).pages || [];
+    const response = await api('/pages');
+    list = response.pages || [];
+    if (store.role === 'MEMBER') {
+      (response.accessiblePages || []).forEach(id => accessiblePages.add(id));
+      list = list.filter(meta => meta.slot === SLOT_HOME_CARD
+        || (meta.slot === SLOT_TOP && accessiblePages.has(meta.id)));
+    }
   } catch (e) {
     // 取不到清单只是没有平台页，控制台其余部分照常
     return;
@@ -328,69 +348,71 @@ export async function load(how) {
   say('加载中…');
   const notes = [];
   try {
-    const [s, v, channels] = await Promise.all([
-      api('/schema'), api('/values'),
-      api('/alert/channels').catch(() => ({channels: []})),
-    ]);
-    store.alertChannels = channels.channels || [];
-    store.schema = s.groups || [];
-    // 归不了组的那几项单独收着，由设置页摆在最上面一块里，见 store.ungrouped
-    store.ungrouped = s.ungrouped || [];
-    // 生效时机摊平成一张表：底部改动条要按键查，而字段表是按分组套着的
-    store.effects = {};
-    for (const g of store.schema) {
-      for (const f of g.fields) store.effects[f.name] = f.effect;
-    }
-    // 发出之前这台机器上已经存下的值：下面对账「发出之后又改回原值」要按它还原。
-    // 必须赶在 store.values 换掉之前取，换掉之后取到的已经是发出去的那一份
-    const priorValues = store.values || {};
-    store.values = v.values || {};
-    // 哪几项是按旧位置生效的，要跟着值一起进来：值与它的出处分开取，两次之间配置一变就对不上了
-    store.legacy = v.legacy || {};
-    store.locked = v.locked || {};
-    store.fontTables = v.fontTables || {};
-    // 设置页保存那一趟会把它真发出去的那份草稿带进来（sentDrafts）：此刻的草稿与那份
-    // 逐项对账——对得上的已经存上、清掉；对不上的（发出之后又改的）没存上，照旧算
-    // 没保存的改动，重画出来、下次保存再发。不带这一位（初次载入、放弃）时草稿照旧整个清零
-    const sentDrafts = how && how.sentDrafts;
-    const kept = {};
-    if (sentDrafts) {
-      for (const name of Object.keys(store.dirty)) {
-        if (store.dirty[name] !== sentDrafts[name]) kept[name] = store.dirty[name];
+    if (store.role !== 'MEMBER') {
+      const [s, v, channels] = await Promise.all([
+        api('/schema'), api('/values'),
+        api('/alert/channels').catch(() => ({channels: []})),
+      ]);
+      store.alertChannels = channels.channels || [];
+      store.schema = s.groups || [];
+      // 归不了组的那几项单独收着，由设置页摆在最上面一块里，见 store.ungrouped
+      store.ungrouped = s.ungrouped || [];
+      // 生效时机摊平成一张表：底部改动条要按键查，而字段表是按分组套着的
+      store.effects = {};
+      for (const g of store.schema) {
+        for (const f of g.fields) store.effects[f.name] = f.effect;
       }
-      // 发出去的这几项此刻草稿里没有的，是使用者在回包之前改回了发出前的值（或者撤回了清除）：
-      // 服务端此刻存的是发出去的那一份，那一下改回去的不算数，发出前的值要重新算作草稿——
-      // 留进 kept、改动条照常数它、屏上画成它、下次保存把它发出去
-      const fieldNamed = name => {
-        for (const g of store.schema) {
-          for (const f of g.fields) if (f.name === name) return f;
+      // 发出之前这台机器上已经存下的值：下面对账「发出之后又改回原值」要按它还原。
+      // 必须赶在 store.values 换掉之前取，换掉之后取到的已经是发出去的那一份
+      const priorValues = store.values || {};
+      store.values = v.values || {};
+      // 哪几项是按旧位置生效的，要跟着值一起进来：值与它的出处分开取，两次之间配置一变就对不上了
+      store.legacy = v.legacy || {};
+      store.locked = v.locked || {};
+      store.fontTables = v.fontTables || {};
+      // 设置页保存那一趟会把它真发出去的那份草稿带进来（sentDrafts）：此刻的草稿与那份
+      // 逐项对账——对得上的已经存上、清掉；对不上的（发出之后又改的）没存上，照旧算
+      // 没保存的改动，重画出来、下次保存再发。不带这一位（初次载入、放弃）时草稿照旧整个清零
+      const sentDrafts = how && how.sentDrafts;
+      const kept = {};
+      if (sentDrafts) {
+        for (const name of Object.keys(store.dirty)) {
+          if (store.dirty[name] !== sentDrafts[name]) kept[name] = store.dirty[name];
         }
-        for (const f of store.ungrouped) if (f.name === name) return f;
-        return null;
-      };
-      for (const name of Object.keys(sentDrafts)) {
-        // 草稿里还挂着值的（回包前改成第三个值）是本人刚敲进去的，不在这条对账的范围里
-        if (store.dirty[name] !== undefined) continue;
-        const field = fieldNamed(name);
-        // 机密项改回留空是另一回事：留空＝没动，可发出去的那个值已经存上了。
-        // 旧值界面手里根本没有（后端只给遮罩），还原不出来——不留草稿，只说清存上的是哪一份
-        if (field && field.sensitive && sentDrafts[name] !== CLEAR) {
-          notes.push('「' + (field.label || name) + '」在保存过程中被改回留空，已保存的是提交时的值；'
-            + '如需恢复原值，请重新填写。');
-          continue;
+        // 发出去的这几项此刻草稿里没有的，是使用者在回包之前改回了发出前的值（或者撤回了清除）：
+        // 服务端此刻存的是发出去的那一份，那一下改回去的不算数，发出前的值要重新算作草稿——
+        // 留进 kept、改动条照常数它、屏上画成它、下次保存把它发出去
+        const fieldNamed = name => {
+          for (const g of store.schema) {
+            for (const f of g.fields) if (f.name === name) return f;
+          }
+          for (const f of store.ungrouped) if (f.name === name) return f;
+          return null;
+        };
+        for (const name of Object.keys(sentDrafts)) {
+          // 草稿里还挂着值的（回包前改成第三个值）是本人刚敲进去的，不在这条对账的范围里
+          if (store.dirty[name] !== undefined) continue;
+          const field = fieldNamed(name);
+          // 机密项改回留空是另一回事：留空＝没动，可发出去的那个值已经存上了。
+          // 旧值界面手里根本没有（后端只给遮罩），还原不出来——不留草稿，只说清存上的是哪一份
+          if (field && field.sensitive && sentDrafts[name] !== CLEAR) {
+            notes.push('「' + (field.label || name) + '」在保存过程中被改回留空，已保存的是提交时的值；'
+              + '如需恢复原值，请重新填写。');
+            continue;
+          }
+          // 还原成发出前的值：已存的值原样，没存过时按默认值。与 settings.js 里 valuesOf
+          // 那把尺同口径——对不上的话，还原出来的草稿与那一行原来显示的字就不一样
+          kept[name] = priorValues[name] !== undefined && priorValues[name] !== null
+            ? String(priorValues[name])
+            : (field && field.defaultValue !== null && field.defaultValue !== undefined
+              ? defaultValue(field) : '');
         }
-        // 还原成发出前的值：已存的值原样，没存过时按默认值。与 settings.js 里 valuesOf
-        // 那把尺同口径——对不上的话，还原出来的草稿与那一行原来显示的字就不一样
-        kept[name] = priorValues[name] !== undefined && priorValues[name] !== null
-          ? String(priorValues[name])
-          : (field && field.defaultValue !== null && field.defaultValue !== undefined
-            ? defaultValue(field) : '');
       }
+      store.dirty = kept;
+      const here = parseHash();
+      renderGeneral();
+      focusCard(here.name, here.card);
     }
-    store.dirty = kept;
-    const here = parseHash();
-    renderGeneral();
-    focusCard(here.name, here.card);
 
     // 各供数方那一份与这一趟并行取：它们要赶在下面 refreshPages 之前进来，
     // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍。
@@ -415,7 +437,7 @@ export async function load(how) {
     const [st, h] = await Promise.all([api('/status'), api('/handlers'), platformsLoad]);
     // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus
     renderStatus(st);
-    renderConfigPath(st.configPath);
+    if (store.role !== 'MEMBER') renderConfigPath(st.configPath);
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
@@ -432,7 +454,7 @@ export async function load(how) {
     // 首页要四份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，
     // 画出来的是更新的一份，不会与这里的运行状态互相矛盾
     refreshHome();
-    fillBotForms();
+    if (store.role !== 'MEMBER') fillBotForms();
 
     if (quiet) say('');
   } catch (e) {
@@ -512,6 +534,10 @@ function parseHash() {
   const name = parts[0] || 'home';
   const card = /^card=([A-Za-z0-9_-]+)$/.exec(query);
   const known = PAGE_TAB[name] || topPageIds.has(name);
+  if (store.role === 'MEMBER' && (!accessiblePages.has(name)
+    || (name !== 'home' && !topPageIds.has(name)))) {
+    return {name: 'home', sub: '', tail: '', card: '', redirect: '#/home'};
+  }
 
   return {
     name: known ? name : 'home',
@@ -558,10 +584,11 @@ function focusCard(name, card, fresh) {
  * @return {boolean} 已经改了地址、调用方不该再画首页
  */
 export function considerSetupRedirect(status, login) {
+  if (store.role === 'MEMBER') return false;
   homeStatus = status || null;
   homeLogin = login || null;
   const {name} = parseHash();
-  if (shouldOpenSetup(homeStatus, homeLogin) && name === 'home' && !later) {
+  if (store.role !== 'MEMBER' && shouldOpenSetup(homeStatus, homeLogin) && name === 'home' && !later) {
     location.hash = '#/setup';
     return true;
   }
@@ -576,6 +603,7 @@ export function considerSetupRedirect(status, login) {
  * @param withData 是否顺带重取本页的数据。首屏那一次只摆版式，数据由随后的整体载入取
  */
 function applyRoute(withData = true) {
+  if (store.authReady === false) return;
   // 认地址栏原文，不认解析后落到哪一页：认不出的地址会被画成首页，
   // 说明若跟着去首页那一章，点进去就不是这一页的章
   const manual = $('#side-manual');
@@ -597,7 +625,7 @@ function applyRoute(withData = true) {
   //
   // 看的是五步完成了 0 步，不是配置文件在不在。同意协议会写出 application.yml，
   // 按文件在不在判的话，刚装好的机器会停在空首页。
-  if (shouldOpenSetup(homeStatus, homeLogin) && name === 'home' && !later) {
+  if (store.role !== 'MEMBER' && shouldOpenSetup(homeStatus, homeLogin) && name === 'home' && !later) {
     location.hash = '#/setup';
     return;
   }
@@ -732,27 +760,27 @@ $('#logout-all').addEventListener('click', async () => {
   await api('/auth/logout?all=true', {method: 'POST'});
   location.reload();
 });
-// 先注入 DOM 再绑定，否则 bindBotForm 取到的是 null
-$('#bot-form').innerHTML = botFormHtml('bot');
-bindBotForm('bot');
-
 // 机器人自己的界面入口。凭据没配好、或适配器不在场就不显示这一块——
 // 显示了点进去才报错，比不显示更难懂。地址由适配器在 /api/bot/console 回包里给。
 let botHref = '';
-api('/bot/console')
-  .then(state => {
-    if (state.configured && state.href) {
-      botHref = state.href;
-      $('#bot-entry').style.display = '';
-    }
-  })
-  .catch(() => {});
+function loadBotConsole() {
+  return api('/bot/console')
+    .then(state => {
+      if (state.configured && state.href) {
+        botHref = state.href;
+        $('#bot-entry').style.display = '';
+      }
+    })
+    .catch(() => {});
+}
 $('#bot-open').addEventListener('click', () => { if (botHref) location.href = botHref; });
 
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 api('/auth/state')
   .then(state => {
+    store.role = state.role;
+    applyRoleView();
     store.csrfToken = state.csrfToken || '';
     // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
     store.totpRequired = !!state.totpRequired;
@@ -770,19 +798,21 @@ api('/auth/state')
   })
   .catch(() => {})
   // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
-  .then(() => Promise.all([
-    api('/status').catch(() => null),
-    api('/login').catch(() => null),
-  ]).then(([status, login]) => {
-    homeStatus = status;
-    homeLogin = login;
-  }))
+  .then(() => {
+    if (store.role !== 'MEMBER') {
+      $('#bot-form').innerHTML = botFormHtml('bot');
+      bindBotForm('bot');
+      loadBotConsole();
+    }
+    return Promise.all([
+      api('/status').catch(() => null),
+      store.role === 'MEMBER' ? Promise.resolve(null) : api('/login').catch(() => null),
+    ]).then(([status, login]) => {
+      homeStatus = status;
+      homeLogin = login;
+    });
+  })
   // 插件页要先挂上去，随后那一趟整体载入才有东西可刷
-  .finally(() => mountPages().finally(() => { applyRoute(); load(); }));
+  .finally(() => mountPages().finally(() => { store.authReady = true; applyRoute(); load(); }));
 
-// 先按地址栏摆好版式，不等接口回来
-//
-// 把这一步一并放进上面那条链里的话，接口慢或者不通时屏幕上一页都不显示——
-// 六个 .page 默认都是收起的，而「哪一页该展开」这件事本身不需要任何接口就知道。
-// 这一趟只摆版式不取数据：数据由上面那条链走完之后的整体载入去取
-applyRoute(false);
+// 页面在身份和插件清单到达后由 applyRoute 显示。

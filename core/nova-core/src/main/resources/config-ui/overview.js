@@ -232,6 +232,15 @@ async function pluginFacts(status, login) {
  * @param pluginDone 插件步事实
  */
 function renderHome(status, login, timeline, pages, pluginDone) {
+  if (store.role === 'MEMBER') {
+    const model = homeModel({users: status.users, live: status.live}, null, timeline);
+    model.now.paused = false;
+    model.events = model.events.filter(event => !event.href);
+    model.eventsEmpty = '当天没有记录。';
+    renderNow(model);
+    renderStrip(model);
+    return;
+  }
   const model = homeModel(status, login, timeline, pages, pluginDone, store.vocab);
   renderBanner(model);
   renderLinkMap(model);
@@ -255,10 +264,10 @@ function renderHome(status, login, timeline, pages, pluginDone) {
 export async function refreshHome() {
   try {
     const [status, login, timeline, problems] = await Promise.all([
-      api('/status'), api('/login'), api('/timeline?date=' + today()),
+      api('/status'), store.role === 'MEMBER' ? Promise.resolve(null) : api('/login'), api('/timeline?date=' + today()),
       api('/timeline?date=' + today() + '&problems=true').catch(() => null),
     ]);
-    const extra = await pluginFacts(status, login);
+    const extra = store.role === 'MEMBER' ? {pages: [], pluginDone: {}} : await pluginFacts(status, login);
     if (considerSetupRedirect(status, login)) return status;
     renderStatus(status);
     renderHome(status, login, Object.assign({}, timeline, {problems}), extra.pages, extra.pluginDone);
@@ -330,6 +339,10 @@ export function healthRows(list, emptyText) {
  * @param data /api/status 回包
  */
 export function renderStatus(data) {
+  if (store.role === 'MEMBER') {
+    pageStatus(data);
+    return;
+  }
   renderVersion(data.version);
   renderUpdate(data.update);
 
@@ -380,6 +393,7 @@ function renderDiskRow(el, runtime) {
 // 走整页重取而不是单取一次 /status：自检之后屏幕上的链路、待办、横条都该是这一刻的，
 // 只更新一句结论的话，结论说「2 项异常」而上面几块还画着上一次的样子
 export async function runSelfTest() {
+  if (store.role === 'MEMBER') return;
   $('#home-probe-details').open = true;
   $('#selftest-run').disabled = true;
   say('自检中…');
@@ -447,6 +461,7 @@ function toggleUpdatePop() {
  * 一件刚说了先不提醒的事。
  */
 async function skipUpdate(version) {
+  if (store.role === 'MEMBER') return;
   const btn = $('#update-skip');
   btn.disabled = true;
   try {
