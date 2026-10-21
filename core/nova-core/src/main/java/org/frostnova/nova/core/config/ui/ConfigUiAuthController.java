@@ -79,6 +79,8 @@ public class ConfigUiAuthController {
 
     private static final String AGREEMENT_BY_PROPERTY = "novabot.core.config-ui.agreement.accepted-by";
 
+    private static final String AGREEMENT_ACTOR_PROPERTY = "novabot.core.config-ui.agreement.accepted-actor";
+
     private final ConfigUiAuthService authService;
 
     private final ConfigurationFileService fileService;
@@ -131,20 +133,21 @@ public class ConfigUiAuthController {
         result.put("agreementRequired", ConfigUiAgreement.required(agreement));
         result.put("agreementVersion", ConfigUiAgreement.VERSION);
 
-        // 不再看 isEnabled：未配口令的那一形态本来就没有会话，问一句返回空而已，
-        // 而拿它当前提会让「凭启动令牌换来的会话」在这条接口上显示成未登录
-        Optional<ConfigUiSession> session = authService.validate(sessionId(request));
+        Optional<ConfigUiSession> session = authService.isEnabled()
+                ? authService.validate(sessionId(request)) : Optional.empty();
+        var account = request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount recognized
+                ? recognized : session.map(authService::account).orElse(null);
 
-        result.put("authenticated", session.isPresent());
+        result.put("authenticated", account != null);
         // CSRF 令牌只发给已经持有该会话的人，它本身不是秘密，但发给未登录者没有任何意义
-        session.ifPresent(value -> {
-            result.put("csrfToken", value.getCsrfToken());
-            var account = authService.account(value);
+        session.ifPresent(value -> result.put("csrfToken", value.getCsrfToken()));
+        if (account != null) {
             result.put("accountId", account.id());
             result.put("role", account.role().name());
             result.put("displayName", account.displayName());
-            result.put("loginMethod", value.getChannel().wire());
-        });
+            result.put("loginMethod", session.map(value -> value.getChannel().wire())
+                    .orElseGet(() -> String.valueOf(request.getAttribute(ConfigUiSecurityFilter.CHANNEL_ATTRIBUTE))));
+        }
 
         // 已登录但还没绑验证器时提示去绑，本次登录按掉过就不再提
         result.put("totpSetupNeeded", authService.totpPending()
@@ -250,15 +253,17 @@ public class ConfigUiAuthController {
 
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
-        agreement.setAcceptedBy(ConfigUiAccess.actor() + " (" + channel.wire() + ")");
+        agreement.setAcceptedBy(channel.wire());
+        agreement.setAcceptedActor(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount account
+                ? account.displayName() : "本地管理员");
 
         // 🔴 <b>写不进去也照常放行</b>：人已经看过并点了同意，这件事已经发生了；
         // 写盘失败的后果只是下次启动还要再点一次，而反过来让一次写盘失败把人挡在控制台外面，
         // 是把一件小事办成了故障。撤回那一侧的取舍正好相反，见 {@link #revokeAgreement}
-        if (persistAgreement(ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy())) {
-            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}, 通道 {}, 来源 {}",
+        if (persistAgreement(ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy(), agreement.getAcceptedActor())) {
+            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}, 通道 {}, 来源 {}, 确认人 {}",
                     ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy(),
-                    request.getRemoteAddr());
+                    request.getRemoteAddr(), ConfigUiAccess.actor());
         } else {
             log.warn("配置界面的使用协议同意记录未能保存, 下次启动会再次要求确认");
         }
@@ -305,7 +310,7 @@ public class ConfigUiAuthController {
 
         // 落盘用的是「未签」那一组值，而不是内存里当前那一组：先改内存再写、写失败再改回来的话，
         // 中间那一小段时间里别的请求读到的是一个并没有发生的撤回
-        if (!persistAgreement(0, "", "")) {
+        if (!persistAgreement(0, "", "", "")) {
             result.put("success", false);
             result.put("message", "保存失败，同意记录未作修改");
             return ResponseEntity.internalServerError().body(result);
@@ -314,6 +319,7 @@ public class ConfigUiAuthController {
         agreement.setAcceptedVersion(0);
         agreement.setAcceptedAt("");
         agreement.setAcceptedBy("");
+        agreement.setAcceptedActor("");
         authService.logout(sessionId(request));
 
         log.warn("配置界面: 已撤回对使用协议的同意, 控制台自此要求重新确认, 通道 {}, 来源 {}",
@@ -330,7 +336,7 @@ public class ConfigUiAuthController {
      * 同意与撤回<b>共用这一条写路</b>：各写一份的话，「撤回要不要连时间一起抹掉」这件事
      * 迟早会有两个答案，而多留下的那一行是一份指向已被撤回的同意的凭据。
      * <p>
-     * 收的是三个显式的值而不是读内存里那一份：撤回要先落盘再改内存（写不进去就当没撤过），
+     * 收的是显式的值而不是读内存里那一份：撤回要先落盘再改内存（写不进去就当没撤过），
      * 读内存的写法逼着调用方先改后写，而那正是这一侧不能接受的顺序。
      * <p>
      * 通道写进配置，来源 IP 只写进日志：配置文件里那三行是给使用者看的凭据，
@@ -338,9 +344,10 @@ public class ConfigUiAuthController {
      * @param version 要写下的版本号，撤回时为 0
      * @param acceptedAt 要写下的时间，撤回时为空串
      * @param acceptedBy 要写下的通道，撤回时为空串
+     * @param acceptedActor 要写下的确认人，撤回时为空串
      * @return 真的写进文件时为 true
      */
-    private boolean persistAgreement(int version, String acceptedAt, String acceptedBy) {
+    private boolean persistAgreement(int version, String acceptedAt, String acceptedBy, String acceptedActor) {
         if (fileService == null) {
             return false;
         }
@@ -349,6 +356,7 @@ public class ConfigUiAuthController {
         changes.put(AGREEMENT_VERSION_PROPERTY, String.valueOf(version));
         changes.put(AGREEMENT_TIME_PROPERTY, acceptedAt);
         changes.put(AGREEMENT_BY_PROPERTY, acceptedBy);
+        changes.put(AGREEMENT_ACTOR_PROPERTY, acceptedActor);
 
         try {
             fileService.write(changes);

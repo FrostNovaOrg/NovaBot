@@ -10,12 +10,16 @@ import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.*;
 import org.frostnova.nova.core.config.ui.auth.*;
+import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
+import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyStore;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.util.IpMatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationContext;
@@ -57,22 +61,24 @@ class ConsoleAccountsTest extends OidcTestSupport {
         properties.getConfigUi().getAuth().setPassword(LowIterationPasswordHash.of("example password"));
         properties.getConfigUi().getAuth().setTotp(false);
         properties.getConfigUi().getAgreement().setAcceptedVersion(ConfigUiAgreement.VERSION);
-        properties.getConfigUi().getAgreement().setAcceptedBy("本地管理员 (password)");
+        properties.getConfigUi().getAgreement().setAcceptedBy("password");
         state = new NovaStateStore(properties);
         accounts = new ConfigUiAccountStore(state);
         sessions = new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(24));
-        var throttle = new LoginThrottle(100, Duration.ofMinutes(15));
+        var throttle = new LoginThrottle(5, Duration.ofMinutes(15));
         auth = new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessions, throttle, null);
         auth.setAccounts(accounts);
         auth.setOidcClient(client);
         configFile = directory.resolve("application.yml");
         Files.writeString(configFile, "novabot:\n  core:\n    config-ui:\n      oidc:\n        issuer: https://accounts.example.com/tenant\n");
         var files = new ConfigurationFileService(configFile);
-        var filter = new ConfigUiSecurityFilter("test-operator", new IpMatcher(List.of("127.0.0.1")), auth,
+        var filter = new ConfigUiSecurityFilter("test-operator", new IpMatcher(List.of("127.0.0.0/8")), auth,
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement());
         mvc = MockMvcBuilders.standaloneSetup(new ConfigUiAuthController(auth, files, properties),
+                        new ConfigUiPasskeyController(new PasskeyService(new PasskeyStore(state), auth), properties, auth),
                         new ConfigUiAccountController(accounts, auth, client),
-                        new ConfigUiOidcController(client, auth, accounts, throttle, properties), values(files))
+                        new ConfigUiOidcController(client, auth, accounts, properties), values(files))
+                .addInterceptors(new ConfigUiApiInterceptor(auth))
                 .addFilters(filter).build();
     }
 
@@ -80,7 +86,8 @@ class ConsoleAccountsTest extends OidcTestSupport {
     private ConfigUiController values(ConfigurationFileService files) {
         var metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getKnownTypes()).thenReturn(Map.of("novabot.core.config-ui.oidc.issuer", "java.lang.String",
-                "novabot.core.config-ui.oidc.enabled", "java.lang.Boolean"));
+                "novabot.core.config-ui.oidc.enabled", "java.lang.Boolean",
+                "novabot.core.push.enabled", "java.lang.Boolean"));
         return new ConfigUiController(metadata, files, properties,
                 mock(org.frostnova.nova.core.datasource.AbstractDataSource.class), mock(ObjectProvider.class),
                 mock(ConfigurationValidator.class), mock(org.frostnova.nova.core.service.NovaSenderService.class),
@@ -150,6 +157,146 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 .andExpect(jsonPath("$.role").value("MEMBER"))
                 .andExpect(jsonPath("$.displayName").value("Example Member"))
                 .andExpect(jsonPath("$.loginMethod").value("oidc"));
+    }
+
+    // 成员把地址编码或加路径参数，也不能读写配置或撤回协议；部署前缀不能改变这道限制。
+    @ParameterizedTest
+    @ValueSource(strings = {"GET /config/%61pi/values", "POST /config/%61pi/values",
+            "GET /config;x=1/api/values", "GET /config/api;x=1/values", "GET /config/api/values;x=1",
+            "GET /config//api/values", "GET /config/./api/values", "GET /config/x/../api/values",
+            "GET /config%2Fapi%2Fvalues", "GET /config/%61pi/event-tokens", "GET /config/%61pi/datasource",
+            "GET /config/%61pi/datasource/users", "GET /config/%61pi/accounts",
+            "POST /config/%61pi/auth/agreement/revoke"})
+    void memberCannotBypassApiGuardWithAlternatePaths(String target) throws Exception {
+        var session = oidcSession(enabledMember());
+        for (String prefix : List.of("", "/app")) {
+            perform(alternatePath(target, prefix), session).andExpect(result ->
+                    assertTrue(List.of(400, 403).contains(result.getResponse().getStatus()),
+                            target + " prefix=" + prefix + " status=" + result.getResponse().getStatus()));
+        }
+        assertEquals(ConfigUiAgreement.VERSION, properties.getConfigUi().getAgreement().getAcceptedVersion());
+        assertFalse(Files.readString(configFile).contains("enabled: false"));
+    }
+
+    // 未登录的人改写地址也不能碰到配置处理器，避免路径修复意外放开匿名访问。
+    @ParameterizedTest
+    @ValueSource(strings = {"GET /config/%61pi/values", "POST /config/%61pi/values",
+            "GET /config;x=1/api/values", "GET /config/api;x=1/values", "GET /config/api/values;x=1",
+            "GET /config//api/values", "GET /config/./api/values", "GET /config/x/../api/values",
+            "GET /config%2Fapi%2Fvalues", "GET /config/%61pi/event-tokens", "GET /config/%61pi/datasource",
+            "GET /config/%61pi/datasource/users", "GET /config/%61pi/accounts",
+            "POST /config/%61pi/auth/agreement/revoke"})
+    void anonymousCannotBypassApiGuardWithAlternatePaths(String target) throws Exception {
+        for (String prefix : List.of("", "/app")) {
+            mvc.perform(alternatePath(target, prefix)).andExpect(result ->
+                    assertTrue(List.of(400, 401, 403).contains(result.getResponse().getStatus())));
+        }
+    }
+
+    // 单个 IP 刷统一登录不能挡住本地管理员从相同或其它 IP 输入正确口令。
+    @Test
+    void oidcStartsNeverConsumePasswordLoginBudget() throws Exception {
+        for (int i = 0; i < 25; i++) mvc.perform(fromIp(get("/config/api/oidc/login"), "127.0.0.9"));
+        passwordLogin("127.0.0.8");
+        passwordLogin("127.0.0.9");
+    }
+
+    // 统一登录回调错误不能锁住这个 IP 的口令登录，包括用户在账户中心取消登录。
+    @Test
+    void oidcCallbackErrorsNeverLockPasswordLogin() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            mvc.perform(get("/config/api/oidc/callback").param("error", "access_denied"));
+        }
+        passwordLogin("127.0.0.1");
+    }
+
+    // 单个 IP 的统一登录发起次数必须先受限，给其它 IP 留下全局额度。
+    @Test
+    void oidcStartLimitsOneIpBeforeGlobalBudgetIsExhausted() throws Exception {
+        int started = 0;
+        int busy = 0;
+        for (int i = 0; i < 25; i++) {
+            var result = mvc.perform(fromIp(get("/config/api/oidc/login"), "127.0.0.9")).andReturn();
+            String location = result.getResponse().getRedirectedUrl();
+            if ("/config?oidc=busy".equals(location)) busy++;
+            else {
+                assertTrue(location.startsWith(ISSUER + "/authorize?"));
+                started++;
+            }
+        }
+        assertTrue(started > 0 && started < 20, "一个 IP 必须先于全局 20 次额度被限制");
+        assertTrue(busy > 0);
+        mvc.perform(fromIp(get("/config/api/oidc/login"), "127.0.0.8"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(ISSUER + "/authorize?")));
+    }
+
+    // 令牌脚本反复调用不该新增会话、写运行状态或制造登录日志，状态仍应识别本地管理员。
+    @Test
+    void tokenModeRequestsDoNotIssueSessionsOrWriteStateOrLogLogin() throws Exception {
+        auth.applyPasswordHash(null);
+        Logger logger = (Logger) LoggerFactory.getLogger(ConfigUiAuthService.class);
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            for (int i = 0; i < 5; i++) {
+                mvc.perform(get("/config/api/auth/state").header("Authorization", "Bearer test-operator"))
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.authenticated").value(true))
+                        .andExpect(jsonPath("$.role").value("ADMIN"))
+                        .andExpect(jsonPath("$.accountId").value(LOCAL_ID))
+                        .andExpect(jsonPath("$.displayName").value("本地管理员"))
+                        .andExpect(jsonPath("$.loginMethod").value("operator-token"))
+                        .andExpect(result -> assertNull(result.getResponse().getCookie(ConfigUiSecurityFilter.SESSION_COOKIE)));
+            }
+            assertEquals(0, sessions.revokeAll(), "令牌请求不能新增会话");
+            assertFalse(Files.exists(directory.resolve("state.json")), "令牌请求不能写状态文件");
+            assertTrue(appender.list.stream().noneMatch(event -> event.getFormattedMessage().contains("配置界面登录")));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    // 已登录成员也能切换登录方式，公开登录口应与匿名请求有相同结果。
+    @Test
+    void memberCanUsePublicLoginEndpointsAndLoadPages() throws Exception {
+        var session = oidcSession(enabledMember());
+        perform(post("/config/api/auth/login").content("{\"password\":\"example password\"}"), session)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+        perform(get("/config/api/oidc/login"), session).andExpect(status().isFound())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith(ISSUER + "/authorize?")));
+        perform(get("/config/api/oidc/callback"), session).andExpect(redirectedUrl("/config?oidc=failed"));
+        for (String path : List.of("/config/api/auth/passkey/login/options", "/config/api/auth/passkey/login/verify")) {
+            int anonymousStatus = mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("{}")
+                            .header("Host", "console.example.com").header("Origin", "https://console.example.com").secure(true))
+                    .andReturn().getResponse().getStatus();
+            perform(post(path).content("{}"), session).andExpect(status().is(anonymousStatus));
+            assertNotEquals(403, anonymousStatus);
+        }
+        for (String path : List.of("/config", "/config/assets/core.js")) {
+            perform(get(path), session).andExpect(status().isOk());
+        }
+    }
+
+    // 协议确认方式保留旧版可读的通道名，确认人单独保存，统一登录管理员显示自己的名字。
+    @Test
+    void agreementStoresChannelSeparatelyFromActor() throws Exception {
+        var local = auth.issueForPassword("127.0.0.1");
+        perform(post("/config/api/auth/agreement/accept"), local).andExpect(status().isOk());
+        var saved = new ConfigurationFileService(configFile).read();
+        assertEquals("password", saved.get("novabot.core.config-ui.agreement.accepted-by"));
+        assertEquals("本地管理员", saved.get("novabot.core.config-ui.agreement.accepted-actor"));
+        var member = enabledMember();
+        accounts.role(member.id(), Role.ADMIN);
+        perform(post("/config/api/auth/agreement/accept"), oidcSession(accounts.require(member.id())))
+                .andExpect(status().isOk());
+        saved = new ConfigurationFileService(configFile).read();
+        assertEquals("oidc", saved.get("novabot.core.config-ui.agreement.accepted-by"));
+        assertEquals("Example Member", saved.get("novabot.core.config-ui.agreement.accepted-actor"));
+        perform(post("/config/api/auth/agreement/revoke"), local).andExpect(status().isOk());
+        assertNull(new ConfigurationFileService(configFile).read()
+                .get("novabot.core.config-ui.agreement.accepted-actor"));
     }
 
     // 成员反复登录不能挤掉管理员，退出全部设备也只能影响自己。
@@ -452,6 +599,11 @@ class ConsoleAccountsTest extends OidcTestSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value(ConfigUiAccess.LOCAL_REQUIRED));
+        mvc.perform(post("/config/api/values").param("token", "")
+                        .cookie(new Cookie("starbot_config_token", "test-operator"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value(ConfigUiAccess.LOCAL_REQUIRED));
         mvc.perform(post("/config/api/values").param("token", "test-operator")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"novabot.core.config-ui.oidc.issuer\":\"https://other.example.com\"}"))
@@ -512,8 +664,28 @@ class ConsoleAccountsTest extends OidcTestSupport {
 
     private org.springframework.test.web.servlet.ResultActions perform(MockHttpServletRequestBuilder builder, ConfigUiSession session) throws Exception {
         return mvc.perform(builder.contentType(MediaType.APPLICATION_JSON)
+                .header("Host", "console.example.com").header("Origin", "https://console.example.com")
+                .secure(true).with(request -> { request.setScheme("https"); request.setServerPort(443); return request; })
                 .cookie(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, session.getId()))
                 .header(ConfigUiSecurityFilter.CSRF_HEADER, session.getCsrfToken()));
+    }
+
+    private MockHttpServletRequestBuilder alternatePath(String target, String prefix) {
+        String[] parts = target.split(" ", 2);
+        URI uri = URI.create(prefix + parts[1]);
+        return (parts[0].equals("POST") ? post(uri) : get(uri)).contextPath(prefix)
+                .header("Host", "console.example.com").header("Origin", "https://console.example.com")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"novabot.core.push.enabled\":\"false\"}");
+    }
+
+    private MockHttpServletRequestBuilder fromIp(MockHttpServletRequestBuilder builder, String ip) {
+        return builder.with(request -> { request.setRemoteAddr(ip); return request; });
+    }
+
+    private void passwordLogin(String ip) throws Exception {
+        mvc.perform(fromIp(post("/config/api/auth/login"), ip).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"example password\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
     }
 
     private Flow start(ConfigUiSession local) throws Exception {

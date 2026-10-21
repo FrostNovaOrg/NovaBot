@@ -8,7 +8,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
-import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
+import org.frostnova.nova.core.config.ui.auth.OidcLoginThrottle;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcException;
 import org.frostnova.nova.core.lang.SecureToken;
@@ -44,15 +44,14 @@ public class ConfigUiOidcController {
     private final OidcClient client;
     private final ConfigUiAuthService auth;
     private final ConfigUiAccountStore accounts;
-    private final LoginThrottle throttle;
+    private final OidcLoginThrottle throttle = new OidcLoginThrottle();
     private final NovaCoreProperties.ConfigUi.Agreement agreement;
 
     public ConfigUiOidcController(OidcClient client, ConfigUiAuthService auth, ConfigUiAccountStore accounts,
-                                  LoginThrottle throttle, NovaCoreProperties properties) {
+                                  NovaCoreProperties properties) {
         this.client = client;
         this.auth = auth;
         this.accounts = accounts;
-        this.throttle = throttle;
         this.agreement = properties.getConfigUi().getAgreement();
     }
 
@@ -117,7 +116,6 @@ public class ConfigUiOidcController {
                 sweep();
                 transaction = pending.get(state);
                 if (transaction == null || !SecureToken.verify(transaction.correlation(), cookie(request))) {
-                    throttle.recordFailure(request.getRemoteAddr(), Instant.now());
                     result(request, response, "failed");
                     return;
                 }
@@ -126,7 +124,6 @@ public class ConfigUiOidcController {
             response.addHeader(HttpHeaders.SET_COOKIE, correlation("", request, 0));
             if (request.getParameter("error") != null) {
                 client.cancelLogin(state);
-                throttle.recordFailure(request.getRemoteAddr(), Instant.now());
                 result(request, response, switch (request.getParameter("error")) {
                     case "access_denied" -> "denied";
                     case "invalid_client", "unauthorized_client" -> "configuration";
@@ -182,8 +179,6 @@ public class ConfigUiOidcController {
                         .httpOnly(true).secure(request.isSecure()).sameSite("Strict")
                         .path(ConfigUiPrefix.consolePath(request)).build().toString());
             }
-            throttle.recordSuccess(request.getRemoteAddr());
-            throttle.refundGlobal();
             // Commit the Strict cookie on a same-origin document before the next top-level navigation.
             String target = HtmlUtils.htmlEscape(ConfigUiPrefix.consolePath(request));
             response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
@@ -194,7 +189,6 @@ public class ConfigUiOidcController {
                     + "<meta http-equiv=\"refresh\" content=\"0;url=" + target + "\"><title>登录成功</title>"
                     + "<a href=\"" + target + "\">进入控制台</a></html>");
         } catch (OidcException error) {
-            throttle.recordFailure(request.getRemoteAddr(), Instant.now());
             result(request, response, errorResult(error));
         } catch (IllegalStateException error) {
             result(request, response, "busy");
@@ -212,10 +206,7 @@ public class ConfigUiOidcController {
     }
 
     private boolean acquire(HttpServletRequest request) {
-        Instant now = Instant.now();
-        if (!throttle.remainingLockout(request.getRemoteAddr(), now).isZero() || !throttle.tryAcquireGlobal(now)) return false;
-        if (!throttle.tryAcquireSlot()) return false;
-        return true;
+        return throttle.tryAcquire(request.getRemoteAddr(), Instant.now());
     }
 
     private void sweep() {

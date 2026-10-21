@@ -522,4 +522,15 @@ class OidcClientTest extends OidcTestSupport {
         assertEquals(config.getRedirectUri(), query(begin().uri().getRawQuery()).get("redirect_uri"));
     }
 
+    // 外网 HTTP 回调会让授权码明文过网，即使其它登录设置正确也必须拒绝。
+    @Test
+    void rejectsHttpCallbackOutsideLoopback() {
+        config.setRedirectUri("http://console.example.com/config/api/oidc/callback");
+        var error = assertThrows(OidcException.class, () -> {
+            client = new OidcClient(config, http, clock);
+            begin();
+        });
+        assertEquals(OidcException.Kind.CONFIGURATION, error.kind());
+    }
+
 }

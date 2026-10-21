@@ -622,6 +622,14 @@ public class NovaCoreProperties {
             @ConfigLabel("协议同意 · 通道")
             @ConfigLevel(ConfigLevel.Level.COMMON)
             private String acceptedBy = "";
+
+            /**
+             * 同意协议的管理员显示名，留空表示旧记录未保存确认人；不参与协议有效性判断。
+             */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("协议同意 · 确认人")
+            @ConfigLevel(ConfigLevel.Level.COMMON)
+            private String acceptedActor = "";
         }
 
         /**

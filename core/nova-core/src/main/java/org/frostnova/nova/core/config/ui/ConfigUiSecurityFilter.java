@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Locale;
 
 /**
  * 配置界面安全过滤器
@@ -83,7 +84,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 口令形态才需要这几条公开：登录页要先问「要不要登录」再提交口令，这两步都发生在
      * 认出人之前。令牌形态没有登录页，公开它们等于把进门钥匙从地址栏里拿掉。
      */
-    private static final Set<String> PUBLIC_API = Set.of(
+    static final Set<String> PUBLIC_API = Set.of(
             ConfigUiController.BASE_PATH + "/api/oidc/login",
             ConfigUiController.BASE_PATH + "/api/oidc/callback",
             ConfigUiController.BASE_PATH + "/api/auth/state",
@@ -151,6 +152,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String clientIp = request.getRemoteAddr();
 
+        String rawPath = request.getRequestURI().toLowerCase(Locale.ROOT);
+        if (rawPath.contains(";") || rawPath.contains("\\") || rawPath.contains("%2f")
+                || rawPath.contains("%5c") || rawPath.contains("//")
+                || Arrays.stream(rawPath.split("/", -1)).anyMatch(part -> part.equals(".") || part.equals(".."))) {
+            reject(request, response, HttpStatus.BAD_REQUEST, "请求路径不正确");
+            return;
+        }
+
         if (!ipMatcher.matches(clientIp)) {
             log.warn("配置界面拒绝了来自 {} 的访问: 来源 IP 不在白名单内", clientIp);
             reject(request, response, HttpStatus.FORBIDDEN, "来源 IP 不在白名单内");
@@ -185,7 +194,6 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         Optional<ConfigUiSession> session = authService.validate(cookie(request, SESSION_COOKIE));
         if (session.isPresent()) {
             establish(request, session.get());
-            if (memberDenied(request, response)) return;
         }
         if (PUBLIC_API.contains(path(request))) {
             chain.doFilter(request, response);
@@ -238,7 +246,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         String path = path(request);
         if (account.role() == ConfigUiAccount.Role.MEMBER
                 && path.startsWith(ConfigUiController.BASE_PATH + "/api/")
-                && !path.equals(ConfigUiController.BASE_PATH + "/api/auth/state")
+                && !PUBLIC_API.contains(path)
                 && !path.equals(ConfigUiController.BASE_PATH + "/api/auth/logout")) {
             reject(request, response, HttpStatus.FORBIDDEN, "成员暂时不能使用这一项");
             return true;
@@ -366,17 +374,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         request.setAttribute(CHANNEL_ATTRIBUTE, ConfigUiSession.Channel.OPERATOR_TOKEN.wire());
         request.setAttribute(ConfigUiAccess.ACCOUNT,
                 ConfigUiAccount.local(java.time.Instant.now()));
-        Optional<ConfigUiSession> tokenSession = authService.validate(cookie(request, SESSION_COOKIE))
-                .filter(value -> ConfigUiAccount.LOCAL_ID.equals(value.getAccountId()));
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (request.getParameter("token") != null || authorization != null
-                && authorization.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
-            ConfigUiSession issued = authService.issueForOperator(clientIp);
-            response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(issued.getId(), request));
-            tokenSession = Optional.of(issued);
-        }
-        request.setAttribute(ConfigUiAccess.FRESH_LOCAL, false);
-        tokenSession.ifPresent(value -> establish(request, value));
+        request.setAttribute(ConfigUiAccess.FRESH_LOCAL, SecureToken.verify(token, explicitToken(request)));
 
         // 使用协议这道闸对令牌形态同样有效。未配口令时，凭令牌进来就是这套面板的「登录」，
         // 只拦口令那一形态等于绝大多数单机使用者一次协议也看不到。
@@ -495,6 +493,11 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * @return 令牌，不存在时返回 null
      */
     private String extractToken(HttpServletRequest request) {
+        String explicit = explicitToken(request);
+        return explicit != null ? explicit : cookie(request, TOKEN_COOKIE);
+    }
+
+    private String explicitToken(HttpServletRequest request) {
         String parameter = request.getParameter("token");
         if (parameter != null && !parameter.isBlank()) {
             return parameter.strip();
@@ -505,7 +508,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             return authorization.substring(BEARER_PREFIX.length()).strip();
         }
 
-        return cookie(request, TOKEN_COOKIE);
+        return null;
     }
 
     /**
