@@ -23,6 +23,13 @@ novabot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（T
 novabot.core.config-ui.auth.totp|java.lang.Boolean|true|是否要求二次验证。默认要求；只有密码的面板开到公网时，安全完全押在一个密码上。改完立即生效。
 novabot.core.config-ui.backup-keep|java.lang.Integer|10|配置文件备份保留份数，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
 novabot.core.config-ui.enabled|java.lang.Boolean|true|是否启用配置界面。
+novabot.core.config-ui.oidc.client-id|java.lang.String||在账户中心登记的客户端 ID。
+novabot.core.config-ui.oidc.client-secret|java.lang.String||客户端密钥；按机密字段保存和遮掩，仅用于 client_secret_basic。
+novabot.core.config-ui.oidc.enabled|java.lang.Boolean|false|是否启用外部账户中心客户端；不改变现有管理员登录方式。
+novabot.core.config-ui.oidc.issuer|java.lang.String||账户中心的 HTTPS issuer，必须与发现文档逐字相同；留空时不启用。
+novabot.core.config-ui.oidc.management-uri|java.lang.String||账户中心管理页地址，供成员管理跳转使用，可留空。
+novabot.core.config-ui.oidc.redirect-uri|java.lang.String||回调地址；留空时按请求的协议、主机、端口和应用前缀推导。
+novabot.core.config-ui.oidc.scopes|java.lang.String|openid profile email offline_access|空格分隔的授权范围，必须包含 openid。
 novabot.core.config-ui.token|java.lang.String||配置界面访问令牌。留空时每次启动自动生成一个随机令牌；没设登录密码时，带令牌的访问地址打在启动日志里。需要从其他机器访问时在这里填一个随机串。
 novabot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版。关掉后侧栏与首页的新版提醒都不再出现；程序不会自己更新，这是得知该换新版了的唯一入口。
 novabot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址，默认指向发布仓的 latest release 接口；自建镜像时改这里。取不到时静默跳过，不变成控制台故障。

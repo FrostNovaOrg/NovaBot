@@ -53,6 +53,14 @@ novabot:
         idle-hours: 62
         max-failures: 63
         lockout-minutes: 64
+      oidc:
+        enabled: true
+        issuer: https://accounts.example.com/tenant
+        client-id: sample-console
+        client-secret: sample-client-secret
+        scopes: openid profile
+        redirect-uri: https://console.example.com/config/api/oidc/callback
+        management-uri: https://accounts.example.com/members
       agreement:
         accepted-version: 71
         accepted-at: "2026-01-02T03:04:05"
