@@ -197,11 +197,12 @@ class ChannelSettingsIntegrationTest {
         } finally { logger.detachAppender(logs); logs.stop(); }
     }
 
-    // 写盘后的审计失败不能让设置不生效，也不能让保存接口报错。
+    // 写盘后的审计运行时异常不能阻止设置生效和成功回包，警告应保留原因。
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
-    void failedAuditStillReloadsAndReturnsSuccess(boolean error) throws Exception {
-        Throwable failure = error ? new AssertionError("name unavailable") : new IllegalStateException("name unavailable");
+    void failedAuditStillReloadsAndReturnsSuccess(boolean argumentFailure) throws Exception {
+        RuntimeException failure = argumentFailure ? new IllegalArgumentException("name unavailable")
+                : new IllegalStateException("name unavailable");
         when(source.getAllUsers()).thenThrow(failure);
         var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DatasourceChannelStore.class);
         var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
@@ -220,6 +221,9 @@ class ChannelSettingsIntegrationTest {
             assertEquals(1, logs.list.size());
             assertEquals(ch.qos.logback.classic.Level.WARN, logs.list.get(0).getLevel());
             assertTrue(logs.list.get(0).getFormattedMessage().contains("审计"));
+            assertNotNull(logs.list.get(0).getThrowableProxy());
+            assertEquals(failure.getMessage(), logs.list.get(0).getThrowableProxy().getMessage());
+            assertEquals(failure.getClass().getName(), logs.list.get(0).getThrowableProxy().getClassName());
         } finally { logger.detachAppender(logs); logs.stop(); }
     }
 

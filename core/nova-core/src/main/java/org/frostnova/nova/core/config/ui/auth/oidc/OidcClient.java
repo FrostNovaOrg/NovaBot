@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui.auth.oidc;
 
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPrefix;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,7 @@ import static org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind.*;
  * Settings are captured at construction and changes take effect after restart.
  */
 @Component
+@Slf4j
 public final class OidcClient {
     private static final Duration LOGIN_TTL = Duration.ofMinutes(5);
     private static final int MAX_PENDING_LOGINS = 1024;
@@ -56,7 +58,7 @@ public final class OidcClient {
     private final String clientSecret;
     private final String scopes;
     private final String redirectUri;
-    private final String managementUri;
+    private final Optional<URI> managementUri;
     private final RestTemplate http;
     private final Clock clock;
     private final OidcProvider provider;
@@ -73,7 +75,7 @@ public final class OidcClient {
         clientSecret = orEmpty(config.getClientSecret());
         scopes = orEmpty(config.getScopes());
         redirectUri = orEmpty(config.getRedirectUri());
-        managementUri = orEmpty(config.getManagementUri());
+        managementUri = readManagementUri(config.getManagementUri());
         enabled = config.isEnabled() && !issuer.isBlank();
         this.http = http;
         this.clock = clock;
@@ -85,8 +87,22 @@ public final class OidcClient {
 
     /** Optional destination exposed by the administrator account list. */
     public Optional<URI> managementUri() {
-        return managementUri.isBlank() ? Optional.empty()
-                : Optional.of(OidcJson.https(managementUri, "management-uri", CONFIGURATION));
+        return managementUri;
+    }
+
+    /** Uses the same HTTPS rules for stored settings and settings-page validation. */
+    public static Optional<URI> parseManagementUri(String value) {
+        return value == null || value.isBlank() ? Optional.empty()
+                : Optional.of(OidcJson.https(value, "management-uri", CONFIGURATION));
+    }
+
+    private static Optional<URI> readManagementUri(String value) {
+        try {
+            return parseManagementUri(value);
+        } catch (OidcException error) {
+            log.warn("novabot.core.config-ui.oidc.management-uri 无效，已按留空处理；请填写 https:// 开头的完整地址，或者留空");
+            return Optional.empty();
+        }
     }
 
     /**

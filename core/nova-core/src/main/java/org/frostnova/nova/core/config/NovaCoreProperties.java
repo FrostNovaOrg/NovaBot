@@ -480,7 +480,7 @@ public class NovaCoreProperties {
         private final Auth auth = new Auth();
 
         /**
-         * 外部 OpenID Connect 客户端配置；尚未接入控制台登录。
+         * 外部 OpenID Connect 客户端配置。
          */
         @Getter
         private final Oidc oidc = new Oidc();
@@ -492,7 +492,7 @@ public class NovaCoreProperties {
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("统一登录 · 客户端开关")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
-            @ConfigSummary("客户端底座开关，尚未接入登录页面。")
+            @ConfigSummary("开启口令登录后，打开此开关并填写 Issuer，登录页会显示“使用统一登录”；使用前还须填好客户端 ID 和密钥。口令登录照旧。")
             private boolean enabled = false;
 
             /** 账户中心的 HTTPS issuer，必须与发现文档逐字相同；留空时不启用。 */
@@ -534,7 +534,7 @@ public class NovaCoreProperties {
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("统一登录 · 账户管理页")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
-            @ConfigSummary("可留空。")
+            @ConfigSummary("可留空；要填就填 https:// 开头的完整地址。留空时不显示“账户中心”和“新建成员”。")
             private String managementUri = "";
         }
 

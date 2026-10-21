@@ -6,6 +6,8 @@ import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLevel;
 import org.frostnova.nova.core.properties.ConfigFormat;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
+import org.frostnova.nova.core.config.ui.auth.oidc.OidcException;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
 import org.frostnova.nova.core.config.ui.page.ConsolePages;
@@ -1169,7 +1171,12 @@ public class ConfigUiController {
         // 再由出图那侧兜底，翻配置的人看不见这里出过界。删除不问取值范围——没有新值要验
         Map<String, String> toValidate = new LinkedHashMap<>(normalized);
         toValidate.values().removeIf(Objects::isNull);
-        List<String> outOfRange = runtimeApplier.validateValues(toValidate);
+        List<String> outOfRange = new ArrayList<>(runtimeApplier.validateValues(toValidate));
+        try {
+            OidcClient.parseManagementUri(toValidate.get("novabot.core.config-ui.oidc.management-uri"));
+        } catch (OidcException error) {
+            outOfRange.add("novabot.core.config-ui.oidc.management-uri（统一登录 · 账户管理页）：请填写 https:// 开头的完整地址，或者留空");
+        }
         if (!outOfRange.isEmpty()) {
             result.put("success", false);
             result.put("issues", outOfRange);
