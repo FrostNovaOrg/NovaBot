@@ -3,6 +3,7 @@ package org.frostnova.nova.console.controller;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
 import org.frostnova.nova.core.health.PushActivityRecorder;
@@ -84,12 +85,12 @@ public class PushController {
         // 而两条路在界面上看起来是同一个开关
         Map<String, String> change = Map.of("novabot.core.push.enabled", String.valueOf(enabled));
         runtimeApplier.applyAndTrack(change);
+        log.info("{} 已{}全局推送", ConfigUiAccess.actor(), enabled ? "恢复" : "暂停");
 
         try {
             fileService.write(change);
             result.put("success", true);
             result.put("message", enabled ? "已恢复推送" : "已暂停全部推送");
-            log.info("配置界面已{}全局推送", enabled ? "恢复" : "暂停");
         } catch (IOException e) {
             // 内存中的开关已生效，仅是没能持久化，如实告知而不是笼统报失败
             log.error("持久化全局推送开关失败", e);
@@ -199,7 +200,7 @@ public class PushController {
 
         result.put("success", true);
         result.put("message", "已保存，使用默认模板的通道将同步更新");
-        log.info("配置界面已更新默认模板: {}", className);
+        log.info("{} 已更新默认模板: {}", ConfigUiAccess.actor(), className);
         return ResponseEntity.ok(result);
     }
 

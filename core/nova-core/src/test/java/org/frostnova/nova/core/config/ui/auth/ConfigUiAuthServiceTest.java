@@ -66,6 +66,25 @@ class ConfigUiAuthServiceTest {
                 new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15)), null);
     }
 
+    // 删掉口令又立即设回去时，统一登录的人不能继续使用原来的会话。
+    @Test
+    void removingPasswordImmediatelyRevokesAllOidcSessions() {
+        var properties = new NovaCoreProperties.ConfigUi.Auth();
+        properties.setPassword(PASSWORD_HASH);
+        var sessions = new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2));
+        var auth = new ConfigUiAuthService(properties, sessions, new LoginThrottle(5, Duration.ofMinutes(15)), null);
+        var login = new org.frostnova.nova.core.config.ui.auth.oidc.OidcClient.Login(null,
+                new org.frostnova.nova.core.config.ui.auth.oidc.OidcClient.Tokens("access-secret", "id-secret", "refresh-secret", 3600L), "nonce");
+        var oidc = sessions.issueForAccount(IP, Instant.now(), ConfigUiSession.Channel.OIDC, null, "admin", login);
+        var second = sessions.issueForAccount(IP, Instant.now(), ConfigUiSession.Channel.OIDC, null, ConfigUiAccount.LOCAL_ID, login);
+        var local = auth.issueForPassword(IP);
+        auth.applyPasswordHash(null);
+        auth.applyPasswordHash(PASSWORD_HASH);
+        assertTrue(sessions.validate(oidc.getId(), Instant.now()).isEmpty(), "OIDC session must be revoked immediately");
+        assertTrue(sessions.validate(second.getId(), Instant.now()).isEmpty());
+        assertTrue(sessions.validate(local.getId(), Instant.now()).isPresent());
+    }
+
     @Test
     @DisplayName("未配置口令时不启用登录")
     void disabledWithoutPassword() {

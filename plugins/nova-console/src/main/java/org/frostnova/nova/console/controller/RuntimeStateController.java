@@ -8,6 +8,8 @@ import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
+import org.frostnova.nova.core.config.ui.ConfigUiAudit;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.ChannelSettings;
@@ -125,7 +127,10 @@ public class RuntimeStateController {
             boolean one = disabled ? settings.disable(platform, type, num, key) : settings.enable(platform, type, num, key);
             if (one) changed.add(key);
         }
-        if (!changed.isEmpty()) store.save();
+        if (!changed.isEmpty()) {
+            store.save();
+            log.info("{} 将会话 {}:{}:{} 的命令 {} {}", ConfigUiAccess.actor(), platform, type.getCode(), num, changed, disabled ? "禁用" : "启用");
+        }
         return changed;
     }
 
@@ -334,7 +339,7 @@ public class RuntimeStateController {
             else target.put("revenueVisible", visible);
         });
         if (count == 0) return ok(fail(result, noChannels(type)));
-        log.info("配置界面将会话 {} 的金额可见性设为 {}", describe(type, num), visible == null ? "默认" : visible);
+        log.info("{} 将会话 {}:{}:{} 的金额可见性设为 {}", ConfigUiAccess.actor(), platform, type.getCode(), num, visible == null ? "默认" : visible);
 
         result.put("success", true);
         result.put("message", describe(type, num) + " 的金额"
@@ -411,7 +416,7 @@ public class RuntimeStateController {
             case CUSTOM -> "已设为 " + start.trim() + "–" + end.trim();
             case OFF -> "已改为「本会话不静音」";
         };
-        log.info("配置界面将会话 {} 的静音时段{}", describe(type, num), phrase);
+        log.info("{} 将会话 {}:{}:{} 的静音时段{}", ConfigUiAccess.actor(), platform, type.getCode(), num, phrase);
 
         result.put("success", true);
         result.put("message", describe(type, num) + " 的静音时段" + phrase);
@@ -541,7 +546,7 @@ public class RuntimeStateController {
         if (userUid == null) {
             int removed = subscriptions.clear(platform, num, streamerUid, type);
             store.save();
-            log.info("配置界面清空了会话 {} 中主播 {} 的{}订阅名单, 共 {} 人", num, streamerUid, typeName(type), removed);
+            log.info("{} 清空了会话 {} 中主播 {} 的{}订阅名单, 共 {} 人", ConfigUiAccess.actor(), platform + ":1:" + num, subscriptionStreamer(streamerUid), typeName(type), removed);
             result.put("success", true);
             result.put("message", "已清空名单，移除 " + removed + " 人");
             return result;
@@ -549,10 +554,14 @@ public class RuntimeStateController {
 
         subscriptions.unsubscribe(platform, num, streamerUid, type, userUid);
         store.save();
-        log.info("配置界面移除了会话 {} 中 {} 对主播 {} 的{}订阅", num, userUid, streamerUid, typeName(type));
+        log.info("{} 移除了会话 {} 中 {} 对主播 {} 的{}订阅", ConfigUiAccess.actor(), platform + ":1:" + num, userUid, subscriptionStreamer(streamerUid), typeName(type));
         result.put("success", true);
         result.put("message", "已移除 " + userUid);
         return result;
+    }
+
+    private String subscriptionStreamer(Long uid) {
+        return ConfigUiAudit.streamer(dataSource, "bilibili", String.valueOf(uid));
     }
 
     /**

@@ -1,6 +1,9 @@
 package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSONArray;
+import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
+import org.frostnova.nova.core.config.ui.ConfigUiAudit;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
@@ -24,6 +27,7 @@ import java.util.function.Consumer;
 
 /** 通道设置与按主播保存共用同一把锁和文件格式。 */
 @Service
+@Slf4j
 public class DatasourceChannelStore {
     public static final Object LOCK = new Object();
     private final NovaCoreProperties properties;
@@ -38,15 +42,19 @@ public class DatasourceChannelStore {
     }
 
     public boolean update(Consumer<JSONArray> change, boolean backup) {
-        return update(change, backup, false);
+        return update(change, backup, false, ConfigUiAccess.actor());
+    }
+
+    public boolean update(Consumer<JSONArray> change, boolean backup, String actor) {
+        return update(change, backup, false, actor);
     }
 
     /** 升级只校验本次新增的通道字段，未填完的旧配置不能阻止启动。 */
     public boolean migrate(Consumer<JSONArray> change) {
-        return update(change, true, true);
+        return update(change, true, true, null);
     }
 
-    private boolean update(Consumer<JSONArray> change, boolean backup, boolean migration) {
+    private boolean update(Consumer<JSONArray> change, boolean backup, boolean migration, String actor) {
         synchronized (LOCK) {
             Path path = Path.of(properties.getDatasource().getJsonPath());
             try {
@@ -64,10 +72,42 @@ public class DatasourceChannelStore {
                 if (backup && Files.exists(path)) new TimestampedFileBackup(path, Clock.systemDefaultZone())
                         .backupForSave(properties.getConfigUi().getBackupKeep());
                 DurableFiles.replace(path, after);
+                if (!migration) audit(JSONArray.parseArray(before), users, actor);
                 if (dataSource instanceof JsonDataSource json) json.reload();
                 return true;
             } catch (IOException e) {
                 throw new IllegalStateException("保存推送配置失败", e);
+            }
+        }
+    }
+
+    private void audit(JSONArray before, JSONArray after, String actor) {
+        for (int i = 0; i < Math.min(before.size(), after.size()); i++) {
+            JSONObject user = after.getJSONObject(i);
+            JSONArray targets = user.getJSONArray("targets");
+            JSONArray previous = before.getJSONObject(i).getJSONArray("targets");
+            if (targets == null || previous == null) continue;
+            for (int j = 0; j < Math.min(targets.size(), previous.size()); j++) {
+                JSONObject target = targets.getJSONObject(j);
+                JSONObject old = previous.getJSONObject(j);
+                for (String key : List.of("revenueVisible", "quietHours", "disabledCommands")) {
+                    if (Objects.equals(old.get(key), target.get(key))) continue;
+                    String setting = switch (key) {
+                        case "revenueVisible" -> "金额可见性";
+                        case "quietHours" -> "静音";
+                        default -> "命令开关";
+                    };
+                    Object value = target.get(key);
+                    String description = value == null ? "默认" : value.toString();
+                    if ("quietHours".equals(key) && value instanceof JSONObject quiet
+                            && "custom".equals(quiet.getString("mode"))) {
+                        description = quiet.getString("start") + "–" + quiet.getString("end");
+                    }
+                    log.info("{} 把会话 {}:{}:{} 里主播 {} 的{}改成 {}", actor,
+                            target.getString("platform"), target.getInteger("type"), target.getLong("num"),
+                            ConfigUiAudit.streamer(dataSource, user.getString("platform"), user.getString("uid")),
+                            setting, description);
+                }
             }
         }
     }

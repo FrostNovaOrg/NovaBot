@@ -40,6 +40,11 @@ public class MailAlertChannel implements AlertChannel {
     }
 
     @Override
+    public String auditDestination() {
+        return "邮件收件人 " + properties.getMail().getDefaultTo();
+    }
+
+    @Override
     public boolean isAvailable() {
         return AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(), smtpHost);
     }
