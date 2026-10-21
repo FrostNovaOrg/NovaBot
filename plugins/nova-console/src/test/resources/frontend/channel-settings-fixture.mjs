@@ -177,6 +177,33 @@ await test('通道跟随全局、全局正在静音，通道行看不出在静�
   assert.ok(channelRowQuiet(), '服务端判跟随全局的甲通道正在静音，通道行应出「静音中」');
   quietGlobal = undefined;
 });
+await test('管理员照问号说明与禁用提示，以为点名问一位关了命令的主播会收到不带名字的回话，跟群里实际回话对不上', async () => {
+  disk = initial(); sessionDisabled = [];
+  disk[0].targets[0].disabledCommands = ['直播报告'];
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await open(1);
+  const help = idNode('push-right').querySelectorAll('button').find(node => node.getAttribute('aria-label') === '命令：查看说明');
+  assert.ok(help, '命令那一行应有问号说明');
+  const hadWindow = 'window' in globalThis;
+  if (!hadWindow) globalThis.window = {innerWidth: 1280, innerHeight: 800};
+  help.isConnected = true;
+  help.getBoundingClientRect = () => ({top: 100, bottom: 120, left: 100, right: 120});
+  try {
+    await help.click();
+    const tip = idNode('body').querySelectorAll('[role="tooltip"]').find(node => !node.hidden);
+    assert.ok(tip, '点问号应展开说明');
+    const warn = idNode('push-right').querySelectorAll('.n-err').find(node => text(node).includes('直播报告'));
+    assert.ok(warn, '甲关了直播报告，命令那一行应出禁用提示');
+    for (const [where, said] of [['问号说明', tip.textContent], ['禁用提示', text(warn)]]) {
+      // 点名时回话带主播名（BilibiliStreamerCommand 点名分支），没点名且各位都关了才不带名字
+      assert.match(said, /点名[^；。]*本群已关闭「主播名」的「命令名」/, where + '应写出点名时回话带主播名');
+      assert.match(said, /没点名[^；。]*本群已关闭「命令名」命令/, where + '应写明只有没点名时回话才不带名字');
+    }
+  } finally {
+    if (!hadWindow) delete globalThis.window;
+  }
+});
 await push.leave();
-console.log('跑了 8 格，红 ' + failures.length + ' 格');
+console.log('跑了 9 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;
