@@ -152,20 +152,87 @@ class ChannelSettingsMigrationTest {
         assertTrue(logged("qq:2:100"));
     }
 
+    @Test @DisplayName("一个群的旧命令记录损坏，不应让所有群的设置每次启动都迁不过来")
+    void malformedCommandRecordOnlySkipsThatSetting() throws Exception {
+        var users = JSONArray.parseArray(Files.readString(file));
+        target(users, 1).put("num", 200);
+        Files.writeString(file, users.toJSONString());
+        revenue.set("qq", PushTargetType.GROUP, 200L, true);
+        quiet.set("qq", PushTargetType.GROUP, 200L, SessionQuietHoursService.Mode.OFF, null, null);
+        state.write(CommandSettingsService.NAMESPACE, data -> {
+            data.put("qq:1:100", "broken");
+            data.put("qq:1:200", JSONObject.of("直播报告", 1));
+        });
+        String oldCommands = state.namespace(CommandSettingsService.NAMESPACE).toJSONString();
+
+        migration.migrate();
+
+        var migrated = JSONArray.parseArray(Files.readString(file));
+        assertTrue(target(migrated, 0).getBooleanValue("revenueVisible"), "坏命令记录不能挡住金额迁移");
+        assertEquals("custom", target(migrated, 0).getJSONObject("quietHours").getString("mode"));
+        assertFalse(target(migrated, 0).containsKey("disabledCommands"));
+        assertTrue(target(migrated, 1).getBooleanValue("revenueVisible"), "别的群应照常迁移");
+        assertEquals("off", target(migrated, 1).getJSONObject("quietHours").getString("mode"));
+        assertEquals(List.of("直播报告"), target(migrated, 1).getList("disabledCommands", String.class));
+        assertTrue(state.namespace(ChannelSettingsMigration.NAMESPACE).containsKey(ChannelSettingsMigration.MIGRATED_KEY));
+        assertEquals(oldCommands, state.namespace(CommandSettingsService.NAMESPACE).toJSONString());
+        assertTrue(logged("qq:1:100") && logged(CommandSettingsService.NAMESPACE), "应说明跳过了哪个群的哪一项");
+        verify(source, times(1)).reload();
+    }
+
+    @Test @DisplayName("旧金额整段损坏，不应让各群的静音和命令每次启动都迁不过来")
+    void malformedRevenueNamespaceOnlySkipsRevenue() throws Exception {
+        var users = JSONArray.parseArray(Files.readString(file));
+        target(users, 1).put("num", 200);
+        Files.writeString(file, users.toJSONString());
+        quiet.set("qq", PushTargetType.GROUP, 200L, SessionQuietHoursService.Mode.OFF, null, null);
+        state.write(CommandSettingsService.NAMESPACE, data -> data.put("qq:1:200", JSONObject.of("直播报告", 1)));
+        state.save();
+        var stateFile = dir.resolve("state.json");
+        var saved = JSONObject.parseObject(Files.readString(stateFile));
+        saved.put(RevenueVisibilityService.NAMESPACE, "broken");
+        Files.writeString(stateFile, saved.toJSONString());
+        var loaded = new NovaStateStore(properties());
+        loaded.onApplicationReadyEvent();
+        try {
+            new ChannelSettingsMigration(loaded, channels, new RevenueVisibilityService(loaded),
+                    new SessionQuietHoursService(loaded)).migrate();
+            var migrated = JSONArray.parseArray(Files.readString(file));
+            for (int i = 0; i < 2; i++) {
+                assertFalse(target(migrated, i).containsKey("revenueVisible"));
+                assertNotNull(target(migrated, i).getJSONObject("quietHours"), "坏金额记录不能挡住静音迁移");
+                assertEquals(i == 0 ? "custom" : "off", target(migrated, i).getJSONObject("quietHours").getString("mode"),
+                        "坏金额记录不能挡住静音迁移");
+                assertEquals(List.of("直播报告"), target(migrated, i).getList("disabledCommands", String.class));
+            }
+            assertTrue(loaded.namespace(ChannelSettingsMigration.NAMESPACE).containsKey(ChannelSettingsMigration.MIGRATED_KEY));
+            assertEquals("broken", JSONObject.parseObject(Files.readString(stateFile)).get(RevenueVisibilityService.NAMESPACE));
+            assertTrue(logged(RevenueVisibilityService.NAMESPACE), "应说明跳过了旧金额记录");
+            verify(source, times(1)).reload();
+        } finally { loaded.onContextClosedEvent(); }
+    }
+
     @ParameterizedTest
-    @CsvSource({"7:00,07:00,follow", "23:00:00,07:00:00,custom", "23:00:05,07:00:10,custom", "23:00,23:00,off", "'',07:00,off"})
+    @CsvSource({"7:00,07:00,off", "23:00:00,07:00:00,custom", "23:00:05,07:00:10,custom", "23:00,23:00,off", "'',07:00,off"})
     @DisplayName("旧静音格式不让升级启动失败，有效秒数归一，原来不静音的仍不静音")
     void legacyQuietTimesDoNotBlockStartup(String start, String end, String expected) throws Exception {
         quiet.set("qq", PushTargetType.GROUP, 100L, SessionQuietHoursService.Mode.CUSTOM, start, end);
         assertDoesNotThrow(migration::migrate);
         var q = target(JSONArray.parseArray(Files.readString(file)), 0).getJSONObject("quietHours");
-        if (expected.equals("follow")) { assertNull(q); assertTrue(logged("无效")); }
-        else {
-            assertEquals(expected, q.getString("mode"));
-            if (expected.equals("custom")) {
-                assertEquals(LocalTime.parse(start).toString(), q.getString("start"));
-                assertEquals(LocalTime.parse(end).toString(), q.getString("end"));
-            }
+        assertNotNull(q, "旧版不静音的写法不能迁成跟全局");
+        assertEquals(expected, q.getString("mode"));
+        if (expected.equals("custom")) {
+            assertEquals(LocalTime.parse(start).toString(), q.getString("start"));
+            assertEquals(LocalTime.parse(end).toString(), q.getString("end"));
+        }
+        if (start.equals("7:00")) {
+            assertTrue(logged("无效"));
+            var props = properties();
+            props.getPush().setQuietStart("00:00");
+            props.getPush().setQuietEnd("23:59");
+            var channel = new PushTarget();
+            channel.setQuietHours(q.toJavaObject(PushTarget.QuietHours.class));
+            assertTrue(new PushGate(props).allowedAt(LocalTime.NOON, channel), "旧版不跟全局静音的行为应保留");
         }
     }
 

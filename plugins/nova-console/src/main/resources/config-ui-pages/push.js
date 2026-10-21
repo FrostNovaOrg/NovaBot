@@ -1287,7 +1287,7 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1298,8 +1298,8 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
-  if ((session && (session.disabled || []).length)) {
-    title.appendChild(pill('已禁用 ' + session.disabled.length + ' 条命令', 'err'));
+  if (session.disabledCount) {
+    title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
   main.appendChild(title);
 
@@ -1329,7 +1329,7 @@ function channelRow(user, target) {
 // ---- 通道级：四段 ----
 
 function renderChannelLevel(host, user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const name = channelName(session, target, directory);
 
   const head = card(host, null, null);
@@ -1789,7 +1789,7 @@ function sectionSession(host, user, target, session) {
   const settings = el('div');
   box.appendChild(settings);
   const render = () => {
-    const current = channelSession(session, target);
+    const current = channelSession(session, target, user);
     const commands = (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     settings.innerHTML = '';

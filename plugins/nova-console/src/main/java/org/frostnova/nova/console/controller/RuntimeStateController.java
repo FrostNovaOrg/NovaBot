@@ -645,8 +645,10 @@ public class RuntimeStateController {
         for (PushUser user : dataSource.getAllUsers()) {
             for (PushTarget target : user.getTargets()) {
                 String key = rowKey(target.getPlatform(), target.getType(), target.getNum());
-                sessions.computeIfAbsent(key, k -> session(target.getPlatform(), target.getNum(),
+                JSONObject session = sessions.computeIfAbsent(key, k -> session(target.getPlatform(), target.getNum(),
                         target.getType(), true));
+                session.getJSONArray("channels").add(JSONObject.of("streamerPlatform", user.getPlatform(),
+                        "streamerUid", user.getUid(), "quietActive", pushGate.inQuietHoursFor(target)));
                 streamers.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(displayName(user));
             }
         }
@@ -719,6 +721,7 @@ public class RuntimeStateController {
         item.put("typeCode", typeCode(type));
         item.put("configured", configured);
         item.put("streamers", List.of());
+        item.put("channels", new JSONArray());
         item.put("disabled", List.of());
         item.put("menuHidden", menuHidden(platform, num, type));
         item.put("menuNotes", menuNotes(platform, num, type));

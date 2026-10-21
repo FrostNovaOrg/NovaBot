@@ -30,6 +30,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -93,6 +94,48 @@ class SessionQuietHoursSurfaceTest {
                 new PushGate(properties, quiet));
         channels = new ChannelSettingsFile(properties, dataSource); channels.attach(result);
         return result;
+    }
+
+    @Test
+    @DisplayName("同群甲正在静音、乙不静音时，推送页应分别读到各自状态，跟全局也由闸门判")
+    void stateCarriesQuietActivityForEachChannel() {
+        var a = dataSource.getAllUsers().get(0);
+        var custom = new PushTarget.QuietHours();
+        custom.setMode("custom");
+        custom.setStart(aroundNow()[0]);
+        custom.setEnd(aroundNow()[1]);
+        a.getTargets().get(0).setQuietHours(custom);
+        var b = new PushUser();
+        b.setPlatform("bilibili");
+        b.setUid(2L);
+        var off = new PushTarget.QuietHours();
+        off.setMode("off");
+        var target = new PushTarget();
+        target.setPlatform(PLATFORM);
+        target.setType(PushTargetType.GROUP);
+        target.setNum(GROUP);
+        target.setQuietHours(off);
+        b.getTargets().add(target);
+        when(dataSource.getAllUsers()).thenReturn(List.of(a, b));
+        quietHours.set(PLATFORM, PushTargetType.GROUP, GROUP, SessionQuietHoursService.Mode.OFF, null, null);
+        properties.getPush().setQuietStart(aroundNow()[0]);
+        properties.getPush().setQuietEnd(aroundNow()[1]);
+        properties.getPush().setEnabled(false);
+
+        var statuses = session(controller.state()).getJSONArray("channels");
+        assertNotNull(statuses, "每个会话应带各主播的通道静音状态");
+        assertEquals(2, statuses.size());
+        assertEquals("bilibili", statuses.getJSONObject(0).getString("streamerPlatform"));
+        assertEquals(1L, statuses.getJSONObject(0).getLongValue("streamerUid"));
+        assertTrue(statuses.getJSONObject(0).getBooleanValue("quietActive"));
+        assertEquals(2L, statuses.getJSONObject(1).getLongValue("streamerUid"));
+        assertFalse(statuses.getJSONObject(1).getBooleanValue("quietActive"), "关闭全局推送不代表通道正在静音");
+
+        target.setQuietHours(null);
+        assertTrue(session(controller.state()).getJSONArray("channels").getJSONObject(1).getBooleanValue("quietActive"));
+        properties.getPush().setQuietStart(null);
+        properties.getPush().setQuietEnd(null);
+        assertFalse(session(controller.state()).getJSONArray("channels").getJSONObject(1).getBooleanValue("quietActive"));
     }
 
     @Test

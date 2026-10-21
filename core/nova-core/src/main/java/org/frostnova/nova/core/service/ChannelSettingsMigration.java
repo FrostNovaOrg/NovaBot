@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
 import java.util.List;
+import java.util.function.Supplier;
 
 /** 升级时将会话设置复制到现有通道，保留旧状态供回退使用。 */
 @Service
@@ -80,11 +81,11 @@ public class ChannelSettingsMigration {
             return;
         }
         PushTargetType type = PushTargetType.of(code);
-        Boolean visible = revenue.explicit(platform, type, num);
+        String key = SessionKey.of(platform, type, num);
+        Boolean visible = readLegacy(RevenueVisibilityService.NAMESPACE, key, () -> revenue.explicit(platform, type, num));
         if (visible != null && visible != revenue.defaultFor(type)) target.put("revenueVisible", visible);
-        var setting = quiet.get(platform, type, num);
-        setting = normalizeQuiet(setting);
-        if (setting.mode() != SessionQuietHoursService.Mode.FOLLOW) {
+        var setting = readLegacy(SessionQuietHoursService.NAMESPACE, key, () -> normalizeQuiet(quiet.get(platform, type, num)));
+        if (setting != null && setting.mode() != SessionQuietHoursService.Mode.FOLLOW) {
             JSONObject q = new JSONObject().fluentPut("mode", setting.mode().key());
             if (setting.mode() == SessionQuietHoursService.Mode.CUSTOM) {
                 q.put("start", setting.start());
@@ -92,11 +93,24 @@ public class ChannelSettingsMigration {
             }
             target.put("quietHours", q);
         }
-        String key = SessionKey.of(platform, type, num);
-        JSONObject old = state.read(CommandSettingsService.NAMESPACE, key, data -> data.getJSONObject(key)).orElse(null);
+        JSONObject old = readLegacy(CommandSettingsService.NAMESPACE, key,
+                () -> state.read(CommandSettingsService.NAMESPACE, key, data -> data.getJSONObject(key)).orElse(null));
         if (old != null) {
             var disabled = old.keySet().stream().filter(ChannelSettings.COMMAND_KEYS::contains).sorted().toList();
             if (!disabled.isEmpty()) target.put("disabledCommands", disabled);
+        }
+    }
+
+    private <T> T readLegacy(String namespace, String key, Supplier<T> reader) {
+        try {
+            if (state.isMalformed(namespace)) {
+                log.warn("旧设置 {} 不是对象，跳过会话 {} 的这一项", namespace, key);
+                return null;
+            }
+            return reader.get();
+        } catch (RuntimeException e) {
+            log.warn("会话 {} 的旧设置 {} 读不出，跳过这一项: {}", key, namespace, e.toString());
+            return null;
         }
     }
 
@@ -114,9 +128,9 @@ public class ChannelSettingsMigration {
             return new SessionQuietHoursService.Setting(setting.platform(), setting.type(), setting.num(), setting.mode(),
                     LocalTime.parse(start).toString(), LocalTime.parse(end).toString());
         } catch (java.time.format.DateTimeParseException e) {
-            log.warn("会话 {} 的旧静音时段 {}–{} 无效，迁移时按默认处理", SessionKey.of(setting.platform(), setting.type(), setting.num()), start, end);
+            log.warn("会话 {} 的旧静音时段 {}–{} 无效，迁移为不静音", SessionKey.of(setting.platform(), setting.type(), setting.num()), start, end);
             return new SessionQuietHoursService.Setting(setting.platform(), setting.type(), setting.num(),
-                    SessionQuietHoursService.Mode.FOLLOW, null, null);
+                    SessionQuietHoursService.Mode.OFF, null, null);
         }
     }
 }

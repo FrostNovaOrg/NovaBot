@@ -195,6 +195,14 @@ class ChannelSettingsSurfaceTest {
     // ── 写：成批开关 ────────────────────────────────────────────────────
 
     @Test
+    @DisplayName("通道命令计数要包含群插件命令，不能算入只供回退的旧主播命令记录")
+    void sessionDisabledCommandsExcludeLegacyStreamerRecords() {
+        when(settings.all()).thenReturn(List.of(new CommandSettingsService.Disabled(PLATFORM,
+                PushTargetType.GROUP, GROUP_NUM, List.of("天气", "直播报告", "菜单", "启用命令", "禁用命令"))));
+        assertEquals(List.of("天气"), sessionOf(PushTargetType.GROUP, GROUP_NUM).getJSONArray("disabled"));
+    }
+
+    @Test
     @DisplayName("阳：成批启用照数改，并逐条落到命令开关服务上")
     void batchEnableChangesEveryNamedCommand() {
         channels.disable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, List.of("直播报告", "数据排行榜"));

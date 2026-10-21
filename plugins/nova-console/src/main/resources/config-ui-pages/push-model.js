@@ -670,13 +670,17 @@ export function commandSummary(commands, session, totalDataAvailable) {
  * @param session 会话
  * @return 摘要
  */
-export function channelSession(session, target) {
+export function channelSession(session, target, user) {
   const quiet = target.quietHours || {};
+  const channel = ((session || {}).channels || []).find(item => user
+    && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
     revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
     revenueExplicit: typeof target.revenueVisible === 'boolean',
     disabled: target.disabledCommands || [],
-    quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: false};
+    // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
+    disabledCount: new Set([...(target.disabledCommands || []), ...((session || {}).disabled || [])]).size,
+    quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: !!channel?.quietActive};
 }
 
 export function revenueSummary(session) {

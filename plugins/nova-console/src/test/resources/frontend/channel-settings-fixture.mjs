@@ -9,6 +9,7 @@ const initial = () => [1, 2].map(uid => ({platform: 'p', uid, enabled: true,
 let disk = initial();
 const version = user => JSON.stringify(user);
 const requests = [];
+let sessionDisabled = [];
 const response = payload => ({status: 200, json: async () => copy(payload)});
 globalThis.fetch = async (path, options = {}) => {
   const url = String(path).replace('/config/api', '');
@@ -26,7 +27,9 @@ globalThis.fetch = async (path, options = {}) => {
     return response({success: true, user, version: version(user)});
   }
   if (url === '/state') return response({sessions: [{platform: 'q', typeCode: 1, num: 100,
-    revenueVisible: true, disabled: [], menuHidden: []}], commands: [
+    revenueVisible: true, disabled: sessionDisabled, menuHidden: [], quietActive: true,
+    channels: [{streamerPlatform: 'p', streamerUid: 1, quietActive: true},
+      {streamerPlatform: 'p', streamerUid: 2, quietActive: false}]}], commands: [
     {name: '直播报告', category: '数据查询', disableable: true, channelScoped: true},
     {name: '天气', category: '天气查询', disableable: true, channelScoped: false},
     {name: '菜单', category: '命令管理', disableable: false},
@@ -45,6 +48,9 @@ async function open(uid) {
 }
 function input(label) {
   return idNode('push-right').querySelectorAll('input').find(node => node.getAttribute('aria-label') === label);
+}
+function text(node) {
+  return node.textContent + (node.innerHTML || '').replace(/<[^>]*>/g, '') + (node.children || []).map(text).join('');
 }
 const failures = [];
 async function test(problem, run) {
@@ -93,6 +99,31 @@ await test('QQ 先关过甲命令时，页面保存保留草稿并提示重新�
   assert.ok(push.changeCount() > 0);
   assert.match(idNode('push-conflict').textContent, /重新载入/);
 });
+await test('同群甲通道正在静音时显示静音中，乙通道不静音时不显示', async () => {
+  disk = initial();
+  disk[0].targets[0].quietHours = {mode: 'custom', start: '00:00', end: '23:59'};
+  disk[1].targets[0].quietHours = {mode: 'off'};
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await open(1);
+  assert.ok(text(idNode('push-right')).includes('00:00–23:59 · 静音中'), '甲应显示服务端给出的通道静音状态');
+  await open(2);
+  assert.equal(text(idNode('push-right')).includes('· 静音中'), false, '乙不能使用群或甲的静音状态');
+});
+await test('群里关了插件命令时通道行显示计数，再关本通道的直播报告后计数增加', async () => {
+  disk = initial();
+  disk[1].targets[0].disabledCommands = ['直播报告'];
+  sessionDisabled = ['天气'];
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await push.showPush('1');
+  assert.ok(text(idNode('push-right')).includes('已禁用 1 条命令'), '插件命令应计入通道行');
+  await push.showPush('2');
+  assert.ok(text(idNode('push-right')).includes('已禁用 2 条命令'), '通道和群插件命令应合计');
+  await open(2);
+  assert.equal(input('天气'), undefined, '通道命令开关仍只列主播命令');
+  assert.equal(text(idNode('push-right')).includes('但这些命令已不存在'), false, '群插件命令不能当作失效的通道开关');
+});
 await push.leave();
-console.log('跑了 3 格，红 ' + failures.length + ' 格');
+console.log('跑了 5 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;

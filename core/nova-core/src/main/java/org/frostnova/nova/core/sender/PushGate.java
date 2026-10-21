@@ -52,6 +52,11 @@ public class PushGate {
         return allowedAt(LocalTime.now(), target);
     }
 
+    /** 当前通道是否静音；控制台与推送使用同一份判定，不受全局推送开关影响。 */
+    public boolean inQuietHoursFor(org.frostnova.nova.core.model.PushTarget target) {
+        return inQuietHoursAt(LocalTime.now(), target);
+    }
+
     public boolean allowedAt(LocalTime now, org.frostnova.nova.core.model.PushTarget target) {
         return initialized && properties.getPush().isEnabled() && !inQuietHoursAt(now, target);
     }
