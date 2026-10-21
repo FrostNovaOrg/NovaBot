@@ -253,7 +253,7 @@ export function templateState(target, handlers) {
   for (const handler of handlers || []) {
     const message = messageOf(target, handler);
     if (!message || message.enabled === false) continue;
-    if (paramsDiffer(message.params, handler)) changed.push(handler.className);
+    if (message._custom ?? paramsDiffer(message.params, handler)) changed.push(handler.className);
   }
   return {custom: changed.length > 0, changed};
 }

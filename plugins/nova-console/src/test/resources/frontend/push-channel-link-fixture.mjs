@@ -1,3 +1,4 @@
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 同一个号既是群又是好友时：点哪一个，右栏开的就是哪一个
  *
@@ -264,7 +265,7 @@ globalThis.fetch = (path, opt) => {
   const url = String(path);
 
   if (method === 'GET') {
-    if (url.endsWith('/datasource')) return ok({content: datasourceBody()});
+    if (url.includes('/datasource')) return ok(datasourceRead(url, datasourceBody()));
     if (url.endsWith('/state')) return ok({
       commands: [], sessions: sessionsList(), subscriptions: [], incomplete: [], totalDataAvailable: true,
     });

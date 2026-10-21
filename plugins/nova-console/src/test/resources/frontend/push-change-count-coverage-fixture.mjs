@@ -1,3 +1,5 @@
+import {installPushDom} from './push-test-dom.mjs';
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 推送页那个 N 算得全不全：每一类可改的字段，改一处都得被 changeCount() 数进去
  *
@@ -42,34 +44,13 @@ async function ask(name, fn) {
 
 // —— 假页面与假接口 ——
 
-const nodes = {};
-
-function node(selector) {
-  const id = String(selector).replace(/^#/, '');
-  if (!nodes[id]) {
-    nodes[id] = {id, textContent: '', className: '', disabled: false, style: {display: ''}};
-  }
-  return nodes[id];
-}
-
-/** 改动条现在还会往 <html> 上挂一个类，假页面得给得出这个落点 */
-const htmlClasses = new Set();
-
-globalThis.document = {
-  querySelector: node,
-  documentElement: {
-    classList: {
-      toggle: (name, on) => { if (on) htmlClasses.add(name); else htmlClasses.delete(name); },
-      contains: name => htmlClasses.has(name),
-    },
-  },
-};
+installPushDom();
 
 let datasourceBody = '';
 
 globalThis.fetch = (path, opt) => {
   const method = ((opt || {}).method || 'GET').toUpperCase();
-  const answer = method === 'GET' ? {content: datasourceBody} : {success: true, message: '已保存'};
+  const answer = method === 'GET' ? datasourceRead(path, datasourceBody) : {success: true, message: '已保存'};
   return Promise.resolve({status: 200, json: () => Promise.resolve(answer)});
 };
 
@@ -97,6 +78,7 @@ try {
 async function freshLoad() {
   datasourceBody = JSON.stringify(datasource());
   await push.reload();
+  await push.showPush('1', '');
   if (push.changeCount() !== 0) {
     throw new Error('刚载入就报出改动，这一趟的读数不作数');
   }
@@ -230,7 +212,8 @@ await ask('② 同一位主播下改两处仍算一处：N 是主播数不是字
  * 不设这一格的话，手写的分类表会给后来的写口签一张免检——「不在表里」与「查过了」
  * 在读数上是同一个样子。
  */
-const MARK_DIRTY_CALLS = 11;
+// Reloading one streamer updates the saved snapshot; the conflict fixture checks that path.
+const MARK_DIRTY_CALLS = 12;
 
 await ask('③ 分母闸：push.js 的 markDirty() 调用点数没变', () => {
   const text = readFileSync(join(pages, 'push.js'), 'utf8');

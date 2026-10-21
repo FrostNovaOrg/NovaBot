@@ -27,6 +27,7 @@ import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.sender.PushGate;
+import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
@@ -71,6 +72,10 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.TreeMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -1741,6 +1746,12 @@ public class ConfigUiController {
      */
     @GetMapping("/api/datasource")
     public JSONObject datasource() {
+        synchronized (DATASOURCE_LOCK) {
+            return readDatasource();
+        }
+    }
+
+    private JSONObject readDatasource() {
         JSONObject result = new JSONObject();
 
         try {
@@ -1768,6 +1779,12 @@ public class ConfigUiController {
      */
     @PostMapping("/api/datasource")
     public ResponseEntity<JSONObject> saveDatasource(@RequestBody JSONObject body) {
+        synchronized (DATASOURCE_LOCK) {
+            return writeDatasource(body);
+        }
+    }
+
+    private ResponseEntity<JSONObject> writeDatasource(JSONObject body) {
         JSONObject result = new JSONObject();
 
         String content = body.getString("content");
@@ -1808,6 +1825,203 @@ public class ConfigUiController {
         }
 
         return ResponseEntity.ok(result);
+    }
+
+    private static final Object DATASOURCE_LOCK = new Object();
+
+    private static final String DATASOURCE_CONFLICT = "这位主播的配置刚被别人改过，请重新载入";
+
+    /** 导航只带身份、开关、通知类型和模板是否自定义，不带消息正文与参数。 */
+    @GetMapping("/api/datasource/users")
+    public JSONObject datasourceUsers() {
+        synchronized (DATASOURCE_LOCK) {
+            try {
+                JSONArray summaries = new JSONArray();
+                for (Object item : readDatasourceUsers()) {
+                    JSONObject user = (JSONObject) item;
+                    JSONObject summary = fields(user, "platform", "uid", "enabled", "roomId");
+                    JSONArray targets = new JSONArray();
+                    for (Object entry : user.getJSONArray("targets") == null ? new JSONArray() : user.getJSONArray("targets")) {
+                        JSONObject target = (JSONObject) entry;
+                        JSONObject brief = fields(target, "platform", "type", "num", "enabled");
+                        JSONArray messages = new JSONArray();
+                        for (Object messageEntry : target.getJSONArray("messages") == null ? new JSONArray() : target.getJSONArray("messages")) {
+                            JSONObject message = (JSONObject) messageEntry;
+                            messages.add(fields(message, "handler", "enabled").fluentPut("_custom", datasourceMessageCustom(message)));
+                        }
+                        brief.put("messages", messages);
+                        targets.add(brief);
+                    }
+                    summary.put("targets", targets);
+                    summaries.add(summary);
+                }
+                return new JSONObject().fluentPut("success", true).fluentPut("users", summaries);
+            } catch (IOException | RuntimeException e) {
+                return datasourceError("读取推送配置 datasource.json 失败: " + e.getMessage());
+            }
+        }
+    }
+
+    @GetMapping("/api/datasource/users/{platform}/{uid}")
+    public JSONObject datasourceUser(@PathVariable String platform, @PathVariable String uid) {
+        return readDatasourceUser(platform, uid, false);
+    }
+
+    @GetMapping("/api/datasource/users/{platform}/{uid}/version")
+    public JSONObject datasourceUserVersion(@PathVariable String platform, @PathVariable String uid) {
+        return readDatasourceUser(platform, uid, true);
+    }
+
+    private JSONObject readDatasourceUser(String platform, String uid, boolean versionOnly) {
+        synchronized (DATASOURCE_LOCK) {
+            try {
+                JSONObject user = findDatasourceUser(readDatasourceUsers(), platform, uid);
+                if (user == null) return datasourceError("未找到这位主播，请重新载入").fluentPut("missing", true);
+                JSONObject result = new JSONObject().fluentPut("success", true).fluentPut("version", datasourceVersion(user));
+                if (!versionOnly) result.put("user", user);
+                return result;
+            } catch (IOException | RuntimeException e) {
+                return datasourceError("读取推送配置 datasource.json 失败: " + e.getMessage());
+            }
+        }
+    }
+
+    @PostMapping("/api/datasource/users")
+    public ResponseEntity<JSONObject> addDatasourceUser(@RequestBody JSONObject body) {
+        return changeDatasourceUser(null, null, body, "add");
+    }
+
+    @PostMapping("/api/datasource/users/{platform}/{uid}")
+    public ResponseEntity<JSONObject> saveDatasourceUser(@PathVariable String platform, @PathVariable String uid,
+                                                        @RequestBody JSONObject body) {
+        return changeDatasourceUser(platform, uid, body, "save");
+    }
+
+    @PostMapping("/api/datasource/users/{platform}/{uid}/delete")
+    public ResponseEntity<JSONObject> deleteDatasourceUser(@PathVariable String platform, @PathVariable String uid,
+                                                          @RequestBody JSONObject body) {
+        return changeDatasourceUser(platform, uid, body, "delete");
+    }
+
+    private ResponseEntity<JSONObject> changeDatasourceUser(String platform, String uid, JSONObject body, String action) {
+        synchronized (DATASOURCE_LOCK) {
+            try {
+                JSONObject replacement = body.getJSONObject("user");
+                if ("add".equals(action)) {
+                    if (replacement == null || replacement.getString("platform") == null || replacement.getString("uid") == null) {
+                        return ResponseEntity.badRequest().body(datasourceError("请提供主播的平台与 uid"));
+                    }
+                    platform = replacement.getString("platform");
+                    uid = replacement.getString("uid");
+                }
+                JSONArray users = readDatasourceUsers();
+                JSONObject current = findDatasourceUser(users, platform, uid);
+                if ("add".equals(action) ? current != null
+                        : current == null || !datasourceVersion(current).equals(body.getString("version"))) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(datasourceError("add".equals(action) ? "这位主播已经添加过了" : DATASOURCE_CONFLICT)
+                            .fluentPut("conflict", true));
+                }
+                if (!"delete".equals(action) && (replacement == null
+                        || !Objects.equals(platform, replacement.getString("platform"))
+                        || !Objects.equals(uid, replacement.getString("uid")))) {
+                    return ResponseEntity.badRequest().body(datasourceError("主播的平台与 uid 不可更改"));
+                }
+                if ("delete".equals(action)) users.remove(current);
+                else if (current == null) users.add(replacement);
+                else users.set(users.indexOf(current), replacement);
+
+                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", formatDatasource(users, 0)));
+                if (response.getBody().getBooleanValue("success") && !"delete".equals(action)) {
+                    response.getBody().put("version", datasourceVersion(replacement));
+                }
+                return response;
+            } catch (IOException | RuntimeException e) {
+                return ResponseEntity.ok(datasourceError("保存推送配置失败: " + e.getMessage()));
+            }
+        }
+    }
+
+    private boolean datasourceMessageCustom(JSONObject message) {
+        String name = message.getString("handler");
+        if (name == null) return false;
+        var handler = handlerService.getHandler(name);
+        JSONObject params = message.getJSONObject("params");
+        if (handler.isEmpty() || params == null) return false;
+        JSONObject defaults = templateDefaults.paramsOf(handler.get());
+        Set<String> known = new LinkedHashSet<>(defaults.keySet());
+        handler.get().options().forEach(option -> known.add(option.key()));
+        known.add(AtMode.PARAM_KEY);
+        return params.entrySet().stream().anyMatch(entry -> known.contains(entry.getKey())
+                && (!defaults.containsKey(entry.getKey())
+                || !Objects.equals(String.valueOf(entry.getValue()), String.valueOf(defaults.get(entry.getKey())))));
+    }
+
+    private JSONArray readDatasourceUsers() throws IOException {
+        Path path = Path.of(properties.getDatasource().getJsonPath());
+        String content = Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "[]";
+        if (content.startsWith("\uFEFF")) content = content.substring(1);
+        if (content.isBlank()) return new JSONArray();
+        JSONArray users = JSONArray.parseArray(content);
+        if (users == null) throw new IllegalArgumentException("配置应为数组");
+        return users;
+    }
+
+    /** 与推送页 JSON.stringify 的两格缩进一致，保留 null 与空容器，不写展示字段。 */
+    private String formatDatasource(Object value, int depth) {
+        String indent = "  ".repeat(depth);
+        String childIndent = indent + "  ";
+        if (value instanceof Map<?, ?> map) {
+            List<String> fields = new ArrayList<>();
+            map.forEach((key, item) -> {
+                if (!String.valueOf(key).startsWith("_")) {
+                    fields.add(childIndent + JSONObject.toJSONString(key) + ": " + formatDatasource(item, depth + 1));
+                }
+            });
+            return fields.isEmpty() ? "{}" : "{\n" + String.join(",\n", fields) + "\n" + indent + "}";
+        }
+        if (value instanceof List<?> list) {
+            List<String> items = list.stream().map(item -> childIndent + formatDatasource(item, depth + 1)).toList();
+            return items.isEmpty() ? "[]" : "[\n" + String.join(",\n", items) + "\n" + indent + "]";
+        }
+        return JSONObject.toJSONString(value);
+    }
+
+    private JSONObject findDatasourceUser(JSONArray users, String platform, String uid) {
+        for (Object entry : users) {
+            JSONObject user = (JSONObject) entry;
+            if (Objects.equals(platform, user.getString("platform")) && Objects.equals(uid, user.getString("uid"))) return user;
+        }
+        return null;
+    }
+
+    private JSONObject fields(JSONObject source, String... keys) {
+        JSONObject result = new JSONObject();
+        for (String key : keys) if (source.containsKey(key)) result.put(key, source.get(key));
+        return result;
+    }
+
+    private JSONObject datasourceError(String message) {
+        return new JSONObject().fluentPut("success", false).fluentPut("message", message);
+    }
+
+    /** 对象键序与空白不影响版本，数组顺序及所有配置字段都参与摘要。 */
+    private Object canonicalDatasource(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sorted = new TreeMap<>();
+            map.forEach((key, item) -> sorted.put(String.valueOf(key), canonicalDatasource(item)));
+            return sorted;
+        }
+        if (value instanceof List<?> list) return list.stream().map(this::canonicalDatasource).toList();
+        return value;
+    }
+
+    private String datasourceVersion(JSONObject user) {
+        try {
+            byte[] bytes = JSONObject.toJSONString(canonicalDatasource(user)).getBytes(StandardCharsets.UTF_8);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**

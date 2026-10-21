@@ -851,7 +851,7 @@ export function templateAdoption(users, handler, terms) {
       if (!message || message.enabled === false) continue;
 
       const row = {uid: user.uid, platform: target.platform, num: target.num, type: Number(target.type)};
-      (isDefault(message.params, handler) ? following : custom).push(row);
+      ((message._custom === undefined ? isDefault(message.params, handler) : !message._custom) ? following : custom).push(row);
     }
   }
   return {following, custom};

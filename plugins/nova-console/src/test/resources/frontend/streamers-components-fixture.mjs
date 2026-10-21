@@ -132,6 +132,24 @@ await check('按日点选图隔天有数时每个有效日都有可见标记', (
     assertVisible();
   }
 });
+// 看 30 天时，孤立一天没有线段帮助辨认，密集图上的小点几乎看不见。
+await check('31 个日期中的孤立日半径为 3，相连点仍为 1.7', () => {
+  const records = Array.from({length: 31}, (_, i) => ({
+    start: i * 86400000, end: (i + 1) * 86400000, label: String(i + 1),
+    value: i === 14 || i === 16 ? null : i,
+  }));
+  for (const onSelect of [undefined, () => {}]) {
+    const chart = ui.createChart(host(), {points: records, onSelect});
+    const hits = byClass(chart.element, 'sc-chart-hit');
+    const dots = byClass(chart.element, 'sc-point').filter(dot => dot.getAttribute('cx') != null);
+    const isolatedX = hits.find(hit => hit.dataset.index === '15').getAttribute('cx');
+    assert.equal(dots.find(dot => dot.getAttribute('cx') === isolatedX).getAttribute('r'), '3', '孤立日应保持可见');
+    if (!onSelect) {
+      const connectedX = hits.find(hit => hit.dataset.index === '1').getAttribute('cx');
+      assert.equal(dots.find(dot => dot.getAttribute('cx') === connectedX).getAttribute('r'), '1.7', '相连点保留密集尺寸');
+    }
+  }
+});
 // 日期轴压缩后，点选仍须钻取原始日期，且不得修改调用方数组。
 await check('隐藏未播后点选原日期', () => {
   let selected;

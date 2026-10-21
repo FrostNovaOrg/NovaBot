@@ -190,12 +190,13 @@ try {
   const handlers = [{className: 'Live', platform: 'sample'},
     {className: 'Weekly', defaultEnabled: false}, {className: 'Other', platform: 'other'}];
   let saved = [];
-  const fn = new Function('store', 'draft', 'options', 'pushEntries', 'setPushEntries',
-    'api', 'serializePush', 'say', 'markPushSaved', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
+  const fn = new Function('store', 'draft', 'options', 'api', 'acceptAddedPushUser',
+    'say', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
     bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
       {handlerList: handlers}, {streamer: {platform: 'sample', uid: 1}, targets: ['group']},
-      [{key: 'group', sender: 'qq-onebot', type: 1, num: 1001}], () => [], value => { saved = value; },
-      async () => ({success: true}), () => '', () => {}, () => {}, () => {}, model.defaultMessages, () => {}, {});
+      [{key: 'group', sender: 'qq-onebot', type: 1, num: 1001}],
+      async () => ({success: true, version: 'new'}), user => { saved = [user]; },
+      () => {}, () => {}, model.defaultMessages, () => {}, {});
   await fn();
   eq(saved[0].targets[0].messages, [{handler: 'Live'}], '向导新目标运营周报默认关闭');
   const push = readFileSync(join(pages, 'push.js'), 'utf8');
@@ -209,6 +210,27 @@ try {
   add(user); added.onPick({platform: 'qq-onebot', type: 1, num: 1001});
   eq(user.targets[0].messages, saved[0].targets[0].messages, '添加通道与向导默认订阅相同');
 } catch (e) { eq('error:' + e.message, 'ok', '默认订阅能执行'); }
+
+try {
+  const model = await import('../../../main/resources/config-ui-pages/push-model.js');
+  let posted;
+  let accepted;
+  const save = new Function('store', 'draft', 'options', 'api', 'acceptAddedPushUser',
+    'say', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen',
+    bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
+    {handlerList: []}, {streamer: {platform: 'sample', uid: 1, uname: '主播', roomId: 10}, targets: []}, [],
+    async (path, opts) => {
+      posted = {path, body: JSON.parse(opts.body)};
+      return {success: true, version: 'new'};
+    }, (user, version) => { accepted = {user, version}; },
+    () => {}, () => {}, model.defaultMessages, () => {}, {});
+  await save();
+  eq(posted, {path: '/datasource/users', body: {user: {uid: 1, platform: 'sample', enabled: true, targets: []}}},
+    '向导只提交新增主播的配置，不提交展示字段');
+  eq(accepted.version, 'new', '新增主播带回版本供推送页继续编辑');
+  eq(accepted.user._uname, '主播', '向导新增后保留展示昵称');
+  eq(accepted.user._roomId, 10, '向导新增后保留展示房间号');
+} catch (e) { eq('error:' + e.message, 'ok', '向导新增配置能执行'); }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

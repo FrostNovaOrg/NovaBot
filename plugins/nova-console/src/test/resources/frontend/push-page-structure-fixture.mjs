@@ -1,3 +1,4 @@
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 推送页这一批改完之后，三处不能跟着没了
  *
@@ -250,7 +251,7 @@ globalThis.fetch = (path, opt) => {
   const url = String(path);
 
   if (method === 'GET') {
-    if (url.endsWith('/datasource')) return ok({content: JSON.stringify([{
+    if (url.includes('/datasource')) return ok(datasourceRead(url, JSON.stringify([{
       platform: 'bilibili', uid: 1, _uname: '甲', enabled: true,
       targets: [{
         platform: PLATFORM, type: 1, num: GROUP_NUM, enabled: true,
@@ -268,7 +269,7 @@ globalThis.fetch = (path, opt) => {
       targets: [{platform: PLATFORM, type: 1, num: 654321, enabled: true, messages: []}],
     }, {
       platform: 'bilibili', uid: 4, _uname: '丁', enabled: true, targets: [],
-    }])});
+    }])));
     if (url.endsWith('/state')) return ok({
       commands: [], sessions: [SESSION], subscriptions: [], incomplete: [],
       totalDataAvailable: false,
@@ -387,7 +388,7 @@ await ask('③ 群／好友那一行不再挂「N 类关着」「N 条命令被�
 
 // 故障：添加通道时看不出群已经在推谁，也不知道群设置由多位主播共用。
 await ask('添加通道写明群设置共用并列出其他主播', async () => {
-  push.showPush('3', '');
+  await push.showPush('3', '');
   push.renderStreamers();
   const add = rightPane().find(node => node.textContent === '＋ 添加通道');
   if (!add) throw new Error('没有添加通道按钮');

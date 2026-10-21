@@ -90,7 +90,7 @@ async function decorate(pushData, routes) {
   };
   const store = {platforms: ['bilibili']};
   const fn = new Function('api', 'store', 'renderStreamers', 'pushData',
-    'const paintTree = renderStreamers; let nameLookups = new Set();\n' + decorateSrc + '\nreturn decoratePushData;')(api, store, () => {}, pushData);
+    'let datasourceGeneration = 0; const userVersions = new Map(), userLoads = new Map(), conflictedUsers = new Set(); const userKey = user => user.platform + ":" + user.uid; const picked = {}; const showPush = async () => {}; const paintTree = renderStreamers; let nameLookups = new Set();\n' + decorateSrc + '\nreturn decoratePushData;')(api, store, () => {}, pushData);
   await fn();
   return calls;
 }
@@ -175,7 +175,7 @@ const knownName = uname => path => {
   const calls = [];
   const api = async (path, opts) => {
     calls.push(path);
-    if (path === '/datasource') return {content: JSON.stringify(saved)};
+    if (path === '/datasource/users') return {success: true, users: saved};
     if (path === '/streamer/lookup') {
       const {platform, uid} = JSON.parse(opts.body);
       return uid === '8' ? liveMiss() : {success: true, uname: platform + uid};
@@ -185,12 +185,12 @@ const knownName = uname => path => {
   };
   let drafts = 1;
   const functions = [
-    'async function reload()', 'function serializePush', 'function dropDisplayOnly',
+    'async function reload(', 'function serializePush', 'function dropDisplayOnly',
     'function pushChangeCount', 'function changeCount', 'async function decoratePushData',
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const page = new Function('api', 'store', 'initial', 'clearSessionDrafts',
     'sessionDraftCount', 'renderStreamers', 'say',
-    'const paintTree = renderStreamers; let nameLookups = new Set(); let pushData = initial; let pushSaved = "[]"; let pageLive = true;\n' + functions
+    'let datasourceGeneration = 0; const userVersions = new Map(), userLoads = new Map(), conflictedUsers = new Set(); const userKey = user => user.platform + ":" + user.uid; const picked = {}; const showPush = async () => {}; const paintTree = renderStreamers; let nameLookups = new Set(); let pushData = initial; let pushSaved = "[]"; let pageLive = true;\n' + functions
     + '\nreturn {reload, serializePush, changeCount, entries: () => pushData};')(
     api, {platforms: ['bilibili', 'other']}, initial, () => { drafts = 0; },
     () => drafts, () => {},
@@ -200,7 +200,7 @@ const knownName = uname => path => {
   eq(pushTree(page.entries(), [], [], {}).map(u => u.name), expectedNames,
     '⑦ 放弃后左树保留原名，并补全缺失昵称，同号不同平台分别显示');
   eq(page.entries().map(streamerName), expectedNames, '⑦ 通道头部使用的主播名保持一致');
-  eq(calls, ['/datasource', '/streamer/lookup', '/streamer/lookup', '/streamer/lookup',
+  eq(calls, ['/datasource/users', '/streamer/lookup', '/streamer/lookup', '/streamer/lookup',
     '/streamer/name?platform=bilibili&uid=8'], '⑦ 已知昵称不再查询，缺失昵称仍先现场查再退回');
   eq(page.changeCount(), 0, '⑦ 放弃并补名后仍为零处改动');
   eq(JSON.parse(page.serializePush()), saved, '⑦ 昵称等展示字段不进入保存内容');
@@ -221,9 +221,9 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   const noop = () => {};
   const api = async (path, opts) => {
     calls.push(path);
-    if (path === '/datasource') {
+    if (path === '/datasource/users') {
       if (slowPlatforms) await Promise.all(pending);
-      return {content: JSON.stringify(saved)};
+      return {success: true, users: saved};
     }
     if (path === '/platforms') {
       if (slowPlatforms) await platformsReady;
@@ -238,12 +238,12 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   };
   const pushFns = [
     'function refresh(', 'function leave(', 'function routeFromHash(',
-    'async function loadPushPage(', 'async function reload()', 'function serializePush',
+    'async function loadPushPage(', 'async function reload(', 'function serializePush',
     'function dropDisplayOnly', 'async function decoratePushData',
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const push = new Function('api', 'store', 'location', 'showPush', 'paintTree', 'renderStreamers',
     'clearSessionDrafts', 'closeDrawer', 'say', 'targetOptions', 'buildDirectory',
-    'let nameLookups = new Set(); let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
+    'let datasourceGeneration = 0; const userVersions = new Map(), userLoads = new Map(), conflictedUsers = new Set(); const userKey = user => user.platform + ":" + user.uid; const picked = {}; let nameLookups = new Set(); let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
     + pushFns + '\nreturn {refresh, reload, leave, entries: () => pushData};')(
     api, store, location, () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
     () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },

@@ -1,7 +1,7 @@
 /**
  * 向导「第一位主播，推到哪」这一步（{@code setup_step} 槽）
  *
- * 这一步做的三件事——查一位主播、挑几个推送目标、把这两样写进 /datasource——全是产品形态，
+ * 这一步做的三件事——查一位主播、挑几个推送目标、把这两样写进 /datasource/users——全是产品形态，
  * 不是壳。所以它随控制台插件走：卸掉本插件之后向导少这一步，而不是留一步点进去查不到任何东西。
  *
  * <b>放行与落盘都由本文件自己判</b>（见 next）：宿主对插件步一律放行，它不知道
@@ -16,7 +16,7 @@
 import {ask} from './confirm.js';
 import {api, el, esc, markDirty, say} from './core.js';
 import {targetOptions} from './links-model.js';
-import {markPushSaved, pushEntries, renderStreamers, serializePush, setPushEntries, STREAMER_INPUT_HINT}
+import {acceptAddedPushUser, renderStreamers, STREAMER_INPUT_HINT}
   from './push.js';
 import {store} from './store.js';
 import {defaultMessages} from './push-model.js';
@@ -387,34 +387,29 @@ async function saveStreamer() {
     .filter(Boolean)
     .map(item => ({platform: item.sender, type: item.type, num: item.num, enabled: true, messages}));
 
-  const before = pushEntries();
-  // 回上一步改完再走一遍是正当走法，因此同一位主播先去重再加——
-  // 不去重的话，配置文件里会出现两条同 uid 的记录，而那台机器每场直播推两遍
-  setPushEntries(before
-    .filter(user => !(Number(user.uid) === Number(one.uid) && user.platform === one.platform))
-    .concat([{
-      uid: one.uid, platform: one.platform, enabled: true, targets,
-      _uname: one.uname, _roomId: one.roomId, _face: one.face,
-    }]));
-
+  const user = {uid: one.uid, platform: one.platform, enabled: true, targets};
+  const key = one.platform + ':' + one.uid;
+  // 只更新本次向导已添加的主播；列表里原有的主播仍走新增判重。
+  const savedVersions = draft.savedVersions || (draft.savedVersions = new Map());
+  const updating = savedVersions.has(key);
+  const path = '/datasource/users' + (updating
+    ? '/' + encodeURIComponent(one.platform) + '/' + encodeURIComponent(one.uid) : '');
   try {
-    const res = await api('/datasource', {
+    const res = await api(path, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content: serializePush()}),
+      body: JSON.stringify({user, version: savedVersions.get(key)}),
     });
     if (!res.success) {
-      setPushEntries(before);
       say(res.message || '主播配置未能保存', 'err');
       return false;
     }
+    savedVersions.set(key, res.version);
+    acceptAddedPushUser({...user, _uname: one.uname, _roomId: one.roomId, _face: one.face}, res.version);
   } catch (e) {
-    setPushEntries(before);
     say('主播配置未能保存：' + e.message, 'err');
     return false;
   }
 
-  // 快照跟着走，否则推送页那条改动条会显示「还有 1 处没保存」——而它已经存下去了
-  markPushSaved();
   renderStreamers();
   markDirty();
   // 末步「发一条试试」只在刚选定的这几个目标里挑：这一步要验的正是那条路通不通，

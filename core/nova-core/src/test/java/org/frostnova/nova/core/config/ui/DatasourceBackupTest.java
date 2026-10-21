@@ -32,9 +32,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -63,6 +68,10 @@ class DatasourceBackupTest {
 
     private TimelineStore timeline;
 
+    private ConfigurationValidator validator;
+
+    private org.frostnova.nova.core.service.NovaEventHandlerService handlerService;
+
     private final AtomicInteger ticks = new AtomicInteger();
 
     @BeforeEach
@@ -73,7 +82,7 @@ class DatasourceBackupTest {
         properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(datasource.toString());
 
-        ConfigurationValidator validator = mock(ConfigurationValidator.class);
+        validator = mock(ConfigurationValidator.class);
         when(validator.validateDatasource(anyString(), any())).thenReturn(List.of());
 
         NovaSenderService senderService = mock(NovaSenderService.class);
@@ -87,6 +96,7 @@ class DatasourceBackupTest {
         when(healthProbes.orderedStream()).thenReturn(Stream.empty());
 
         timeline = mock(TimelineStore.class);
+        handlerService = mock(org.frostnova.nova.core.service.NovaEventHandlerService.class);
 
         Clock clock = mock(Clock.class);
         when(clock.getZone()).thenReturn(ZoneOffset.UTC);
@@ -103,7 +113,7 @@ class DatasourceBackupTest {
                 mock(org.frostnova.nova.core.sender.NovaMessageSender.class),
                 mock(ObjectProvider.class),
                 mock(org.frostnova.nova.core.health.PushActivityRecorder.class),
-                mock(org.frostnova.nova.core.service.NovaEventHandlerService.class),
+                handlerService,
                 mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class),
                 mock(ConfigurationLevelResolver.class),
                 new ConfigurationLabelResolver(mock(org.springframework.context.ApplicationContext.class)),
@@ -118,7 +128,7 @@ class DatasourceBackupTest {
                 mock(org.frostnova.nova.core.service.LiveDataService.class),
                 timeline,
                 mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new NovaCoreProperties()),
+                new PushTemplateDefaults(properties),
                 mock(UpdateCheckService.class),
                 mock(AlertService.class),
                 clock);
@@ -268,6 +278,238 @@ class DatasourceBackupTest {
                 event.detail().get("reason"), "detail 该说人话并点出是哪一份: " + event.detail());
         assertEquals(TimelineEvent.Level.WARN, event.level());
         assertEquals("没留备份", event.type().getDescription());
+    }
+
+    // 手改文件的人只改一个字段时，不应看到整份文件的格式和 null 一起变化。
+    @Test
+    void savingOneFieldKeepsLegacyFormattingAndNulls() throws Exception {
+        String original = """
+                [
+                  {
+                    "uid": 1,
+                    "platform": "bilibili",
+                    "enabled": true,
+                    "targets": [],
+                    "extra": null
+                  },
+                  {
+                    "platform": "bilibili",
+                    "uid": 2,
+                    "targets": [],
+                    "extension": {
+                      "text": "保留文本与 \\"引号\\"",
+                      "values": [
+                        null,
+                        {},
+                        []
+                      ]
+                    }
+                  }
+                ]""";
+        Files.writeString(datasource, original);
+        Path before = dir.resolve("before.json");
+        Files.writeString(before, original);
+        JSONObject read = controller.datasourceUser("bilibili", "1");
+        read.getJSONObject("user").put("enabled", false);
+
+        assertTrue(saveUser("1", read.getString("version"), read.getJSONObject("user"))
+                .getBody().getBooleanValue("success"));
+        Process diff = new ProcessBuilder("git", "diff", "--no-index", "--", before.toString(), datasource.toString())
+                .redirectErrorStream(true).start();
+        System.out.print(new String(diff.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+        assertTrue(diff.waitFor(10, TimeUnit.SECONDS));
+        assertEquals(1, diff.exitValue());
+        assertEquals(original.replace("\"enabled\": true", "\"enabled\": false"), Files.readString(datasource));
+    }
+
+    // 重复添加应明确说已经添加，避免用户反复重新载入。
+    @Test
+    void duplicateAdditionExplainsThatStreamerAlreadyExists() throws IOException {
+        seedTwoUsers();
+        JSONObject user = controller.datasourceUser("bilibili", "1").getJSONObject("user");
+        byte[] before = Files.readAllBytes(datasource);
+        ResponseEntity<JSONObject> response = controller.addDatasourceUser(new JSONObject().fluentPut("user", user));
+        assertEquals(409, response.getStatusCode().value());
+        assertEquals("这位主播已经添加过了", response.getBody().getString("message"));
+        assertArrayEquals(before, Files.readAllBytes(datasource));
+        assertEquals(0, stampedBackupNames().size());
+    }
+
+    // 新装或手动清空文件后，推送页应显示空列表，向导应能添加第一位主播。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", " \n\t\r ", "\uFEFF", "\uFEFF \n\t\r "})
+    void emptyFileListsNoStreamersAndAcceptsFirstAddition(String content) throws IOException {
+        Files.writeString(datasource, content);
+        JSONObject directory = controller.datasourceUsers();
+        assertTrue(directory.getBooleanValue("success"), directory.toString());
+        assertEquals(new JSONArray(), directory.getJSONArray("users"));
+        // 旧读取接口仍原样返回文件内容。
+        assertEquals(content, controller.datasource().getString("content"));
+        JSONObject added = controller.addDatasourceUser(new JSONObject().fluentPut("user", JSONArray.parseArray(users(1)).get(0)))
+                .getBody();
+        assertTrue(added.getBooleanValue("success"), added.toString());
+        assertEquals(1, controller.datasourceUsers().getJSONArray("users").size());
+    }
+
+    @Test
+    void staleVersionDoesNotWriteAnyBytesOrBackup() throws IOException {
+        seedTwoUsers();
+        JSONObject read = controller.datasourceUser("bilibili", "1");
+        JSONObject changed = read.getJSONObject("user").clone();
+        changed.put("enabled", false);
+        assertTrue(saveUser("1", read.getString("version"), changed).getBody().getBooleanValue("success"));
+        byte[] before = Files.readAllBytes(datasource);
+        int backups = stampedBackupNames().size();
+
+        ResponseEntity<JSONObject> rejected = saveUser("1", read.getString("version"), read.getJSONObject("user"));
+
+        assertEquals(409, rejected.getStatusCode().value());
+        assertTrue(rejected.getBody().getBooleanValue("conflict"));
+        assertEquals("这位主播的配置刚被别人改过，请重新载入", rejected.getBody().getString("message"));
+        assertArrayEquals(before, Files.readAllBytes(datasource));
+        assertEquals(backups, stampedBackupNames().size());
+    }
+
+    @Test
+    void replacingOneUserKeepsEveryOtherFieldAndReturnsNewVersion() throws IOException {
+        seedTwoUsers();
+        JSONObject untouched = JSONArray.parseArray(Files.readString(datasource)).getJSONObject(1);
+        JSONObject read = controller.datasourceUser("bilibili", "1");
+        JSONObject changed = read.getJSONObject("user");
+        changed.getJSONArray("targets").getJSONObject(0).put("enabled", false);
+        JSONObject result = saveUser("1", read.getString("version"), changed).getBody();
+
+        assertTrue(result.getBooleanValue("success"));
+        assertEquals(untouched, JSONArray.parseArray(Files.readString(datasource)).getJSONObject(1));
+        assertNotEquals(read.getString("version"), result.getString("version"));
+        assertEquals(result.getString("version"), controller.datasourceUserVersion("bilibili", "1").getString("version"));
+        assertEquals(1, stampedBackupNames().size());
+    }
+
+    @Test
+    void concurrentUpdatesOfDifferentUsersBothPersist() throws Exception {
+        seedTwoUsers();
+        JSONObject first = controller.datasourceUser("bilibili", "1");
+        JSONObject second = controller.datasourceUser("bilibili", "2");
+        first.getJSONObject("user").put("enabled", false);
+        second.getJSONObject("user").put("enabled", false);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var a = pool.submit(() -> {
+                ready.countDown();
+                assertTrue(start.await(10, TimeUnit.SECONDS));
+                return saveUser("1", first.getString("version"), first.getJSONObject("user"));
+            });
+            var b = pool.submit(() -> {
+                ready.countDown();
+                assertTrue(start.await(10, TimeUnit.SECONDS));
+                return saveUser("2", second.getString("version"), second.getJSONObject("user"));
+            });
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            assertTrue(a.get(15, TimeUnit.SECONDS).getBody().getBooleanValue("success"));
+            assertTrue(b.get(15, TimeUnit.SECONDS).getBody().getBooleanValue("success"));
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
+        }
+        JSONArray users = JSONArray.parseArray(Files.readString(datasource));
+        assertFalse(users.getJSONObject(0).getBooleanValue("enabled"));
+        assertFalse(users.getJSONObject(1).getBooleanValue("enabled"));
+    }
+
+    @Test
+    void addAndDeleteUseValidationAndRejectDuplicatesAndStaleDeletion() throws IOException {
+        seedTwoUsers();
+        JSONObject user = JSONArray.parseArray(users(3)).getJSONObject(0);
+        JSONObject added = controller.addDatasourceUser(new JSONObject().fluentPut("user", user)).getBody();
+        assertTrue(added.getBooleanValue("success"));
+        byte[] before = Files.readAllBytes(datasource);
+        assertEquals(409, controller.addDatasourceUser(new JSONObject().fluentPut("user", user)).getStatusCode().value());
+        assertEquals(409, controller.deleteDatasourceUser("bilibili", "3", new JSONObject().fluentPut("version", "old")).getStatusCode().value());
+        assertArrayEquals(before, Files.readAllBytes(datasource));
+        assertTrue(controller.deleteDatasourceUser("bilibili", "3", new JSONObject().fluentPut("version", added.getString("version")))
+                .getBody().getBooleanValue("success"));
+        assertEquals(2, JSONArray.parseArray(Files.readString(datasource)).size());
+    }
+
+    @Test
+    void invalidUserAndIdentityChangeDoNotWrite() throws IOException {
+        seedTwoUsers();
+        JSONObject read = controller.datasourceUser("bilibili", "1");
+        byte[] before = Files.readAllBytes(datasource);
+        JSONObject user = read.getJSONObject("user");
+        user.put("uid", 9);
+        assertFalse(saveUser("1", read.getString("version"), user).getBody().getBooleanValue("success"));
+        user.put("uid", 1);
+        when(validator.validateDatasource(anyString(), any())).thenReturn(List.of("invalid target"));
+        JSONObject result = saveUser("1", read.getString("version"), user).getBody();
+        assertFalse(result.getBooleanValue("success"));
+        assertEquals(List.of("invalid target"), result.getJSONArray("issues"));
+        assertArrayEquals(before, Files.readAllBytes(datasource));
+        assertEquals(0, stampedBackupNames().size());
+    }
+
+    @Test
+    void versionIgnoresFormattingAndObjectKeyOrderButIncludesUnknownFields() throws IOException {
+        seedTwoUsers();
+        String original = controller.datasourceUserVersion("bilibili", "1").getString("version");
+        JSONArray users = JSONArray.parseArray(Files.readString(datasource));
+        JSONObject user = users.getJSONObject(0);
+        JSONObject reordered = new JSONObject();
+        user.keySet().stream().sorted(java.util.Comparator.reverseOrder()).forEach(key -> reordered.put(key, user.get(key)));
+        users.set(0, reordered);
+        Files.writeString(datasource, users.toJSONString(com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat));
+        assertEquals(original, controller.datasourceUserVersion("bilibili", "1").getString("version"));
+        reordered.put("extra", "changed");
+        Files.writeString(datasource, users.toJSONString());
+        assertNotEquals(original, controller.datasourceUserVersion("bilibili", "1").getString("version"));
+    }
+
+    @Test
+    void directoryContainsAllUsersWithoutTemplateTextOrUnknownFields() throws IOException {
+        seedTwoUsers();
+        JSONObject result = controller.datasourceUsers();
+        assertTrue(result.getBooleanValue("success"));
+        assertEquals(2, result.getJSONArray("users").size());
+        String summary = result.toJSONString();
+        assertFalse(summary.contains("private-template"));
+        assertFalse(summary.contains("extension"));
+        assertFalse(summary.contains("params"));
+        assertTrue(controller.datasourceUser("bilibili", "1").toJSONString().contains("private-template"));
+    }
+
+    @Test
+    void summaryReportsCustomTemplatesUsingCurrentDefaultsAndKeepsOnlyDisplayFields() throws IOException {
+        seedTwoUsers();
+        var handler = mock(org.frostnova.nova.core.handler.NovaEventHandler.class);
+        when(handlerService.getHandler("test.Handler")).thenReturn(java.util.Optional.of(handler));
+        when(handler.getDefaultParams()).thenReturn(new JSONObject().fluentPut("message", "private-template"));
+        JSONObject summary = controller.datasourceUsers().getJSONArray("users").getJSONObject(0);
+        JSONObject message = summary.getJSONArray("targets").getJSONObject(0).getJSONArray("messages").getJSONObject(0);
+        assertFalse(message.getBooleanValue("_custom"));
+        when(handler.getDefaultParams()).thenReturn(new JSONObject().fluentPut("message", "new default"));
+        summary = controller.datasourceUsers().getJSONArray("users").getJSONObject(0);
+        message = summary.getJSONArray("targets").getJSONObject(0).getJSONArray("messages").getJSONObject(0);
+        assertTrue(message.getBooleanValue("_custom"));
+        assertFalse(message.containsKey("params"));
+        assertFalse(summary.containsKey("version"));
+    }
+
+    private void seedTwoUsers() throws IOException {
+        Files.writeString(datasource, """
+                [ {"platform":"bilibili","uid":1,"enabled":true,"extension":{"keep":[1,2]},
+                   "targets":[{"platform":"qq","type":1,"num":12345,"enabled":true,
+                     "messages":[{"handler":"test.Handler","params":{"message":"private-template"}}]}]},
+                  {"platform":"bilibili","uid":2,"enabled":true,"extension":{"keep":[3,4]},"targets":[]} ]
+                """);
+    }
+
+    private ResponseEntity<JSONObject> saveUser(String uid, String version, JSONObject user) {
+        return controller.saveDatasourceUser("bilibili", uid, new JSONObject().fluentPut("version", version).fluentPut("user", user));
     }
 
     private void tick() {

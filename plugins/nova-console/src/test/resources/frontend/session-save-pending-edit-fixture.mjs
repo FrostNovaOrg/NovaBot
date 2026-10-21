@@ -1,3 +1,4 @@
+import {datasourceRead} from './datasource-read.mjs';
 /**
  * 本群设置：点保存之后、回包之前又改的那一档，不许被当成已存
  *
@@ -284,7 +285,7 @@ globalThis.fetch = (path, opt) => {
   const url = String(path);
 
   if (method === 'GET') {
-    if (url.endsWith('/datasource')) return ok({content: datasourceBody()});
+    if (url.includes('/datasource')) return ok(datasourceRead(url, datasourceBody()));
     if (url.endsWith('/state')) return ok(clone(mock.state));
     if (url.includes('/push-history')) return ok({records: []});
     if (url.includes('/at-all/quota')) return ok({bots: [], sessions: []});
