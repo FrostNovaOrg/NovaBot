@@ -1973,8 +1973,8 @@ public class ConfigUiController {
         JSONArray oldTargets = current.getJSONArray("targets");
         JSONArray targets = replacement.getJSONArray("targets");
         if (targets == null) return null;
-        for (Object value : targets) {
-            JSONObject target = (JSONObject) value;
+        for (int index = 0; index < targets.size(); index++) {
+            JSONObject target = targets.getJSONObject(index);
             boolean existing = oldTargets != null && oldTargets.stream().map(item -> (JSONObject) item).anyMatch(old ->
                     Objects.equals(old.getString("platform"), target.getString("platform"))
                     && Objects.equals(old.getInteger("type"), target.getInteger("type"))
@@ -2377,8 +2377,10 @@ public class ConfigUiController {
     private JSONArray liveNow() {
         JSONArray items = new JSONArray();
 
-        dataSource.getAllUsers().forEach(user -> {
-            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid()) || Boolean.FALSE.equals(user.getEnabled())) {
+        boolean member = ConfigUiAccess.memberAccount() != null;
+        var users = member ? new ConfigUiConfiguredUsers(properties).users(dataSource.getAllUsers()) : dataSource.getAllUsers();
+        users.forEach(user -> {
+            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid()) || (!member && Boolean.FALSE.equals(user.getEnabled()))) {
                 return;
             }
             if (!liveDataService.getLiveStatus(user.getPlatform(), user.getUid()).orElse(false)) {

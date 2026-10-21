@@ -20,6 +20,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.request.*;
 import java.nio.file.*;
 import java.time.*;
@@ -27,6 +28,8 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class MemberListScopeTest {
     static final long A = 71001, B = 72002, SHARED = 81001, OTHER = 82002;
@@ -213,6 +216,9 @@ class MemberListScopeTest {
         }
         use(MEMBER);
         assertEquals(A, config.status().getJSONArray("users").getJSONObject(0).getLongValue("uid"));
+        assertEquals(List.of(A), config.status().getJSONArray("live").stream()
+                .map(item -> ((JSONObject)item).getLongValue("uid")).toList());
+        assertEquals(A, config.datasourceUsers().getJSONArray("users").getJSONObject(0).getLongValue("uid"));
         assertEquals(A, streamers.streamers().getJSONArray("streamers").getJSONObject(0).getLongValue("uid"));
         assertEquals(1, quota.quota().getJSONArray("sessions").size());
     }
@@ -272,19 +278,23 @@ class MemberListScopeTest {
     }
 
     // 机器人已有的群和好友可以新增，校验不能把成员加通道一律挡住。
-    @Test void memberCanAddVerifiedGroupAndFriend() {
+    @Test void memberCanAddVerifiedGroupAndFriend() throws Exception {
         var lookup = mock(PushTargetLookup.class);
         when(lookup.supports("qq")).thenReturn(true);
         when(lookup.lookup(eq("qq"), any(), eq(89999L), eq(MEMBER))).thenReturn(new PushTargetLookup.Result(true, "Target", null));
         @SuppressWarnings("unchecked") ObjectProvider<PushTargetLookup> lookups = mock(ObjectProvider.class);
         when(lookups.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(lookup));
         ReflectionTestUtils.setField(config, "targetLookups", lookups);
+        var mvc = MockMvcBuilders.standaloneSetup(config)
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
         use(MEMBER);
         for (int type : List.of(1, 0)) {
             var loaded = config.datasourceUser("bilibili", String.valueOf(A));
             loaded.getJSONObject("user").getJSONArray("targets").add(JSONObject.of("platform", "qq", "type", type, "num", 89999, "messages", new JSONArray()));
-            assertTrue(config.saveDatasourceUser("bilibili", String.valueOf(A), JSONObject.of("user", loaded.get("user"), "version", loaded.get("version")))
-                    .getBody().getBooleanValue("success"));
+            mvc.perform(post("/config/api/datasource/users/bilibili/" + A)
+                    .requestAttr(ConfigUiAccess.ACCOUNT, MEMBER).contentType("application/json")
+                    .content(JSONObject.of("user", loaded.get("user"), "version", loaded.get("version")).toJSONString()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
         }
         verify(lookup).lookup("qq", PushTargetType.GROUP, 89999L, MEMBER);
         verify(lookup).lookup("qq", PushTargetType.FRIEND, 89999L, MEMBER);
@@ -301,14 +311,18 @@ class MemberListScopeTest {
         @SuppressWarnings("unchecked") ObjectProvider<PushTargetLookup> lookups = mock(ObjectProvider.class);
         when(lookups.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(lookup));
         ReflectionTestUtils.setField(config, "targetLookups", lookups);
+        var mvc = MockMvcBuilders.standaloneSetup(config)
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
         use(MEMBER);
         var loaded = config.datasourceUser("bilibili", String.valueOf(A));
         var replacement = loaded.getJSONObject("user");
         replacement.getJSONArray("targets").add(JSONObject.of("platform", "qq", "type", 1, "num", 89999, "messages", new JSONArray()));
         String before = Files.readString(file);
-        var result = config.saveDatasourceUser("bilibili", String.valueOf(A), JSONObject.of("user", replacement, "version", loaded.get("version")));
-        assertEquals(400, result.getStatusCode().value());
-        assertTrue(result.getBody().getString("message").contains("89999"));
+        mvc.perform(post("/config/api/datasource/users/bilibili/" + A)
+                .requestAttr(ConfigUiAccess.ACCOUNT, MEMBER).contentType("application/json")
+                .content(JSONObject.of("user", replacement, "version", loaded.get("version")).toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("89999")));
         assertEquals(before, Files.readString(file));
         verify(directory).snapshot("qq", true);
         assertTrue(lookup.lookup("qq", PushTargetType.GROUP, 89998, MEMBER).message().contains("刚查过"));
