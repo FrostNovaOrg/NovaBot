@@ -17,3 +17,4 @@ appendix-a-measurements.md
 appendix-b-advanced.md
 appendix-c-security-and-resources.md
 appendix-d-migrate-from-starbot.md
+appendix-e-oidc.md
