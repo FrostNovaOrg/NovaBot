@@ -92,26 +92,30 @@ NovaBot 的“统一登录 · 回调地址”可以留空，此时从收到请�
 
 ## 装一个现成的开源账户系统（以 Keycloak 为例）
 
-以下参照 **Keycloak 26** 的概念与英文设置名；不同小版本的页签位置可能不同。数据库、安装、HTTPS 证书和反向代理按 [Keycloak 官方入门文档](https://www.keycloak.org/guides#getting-started)、[生产配置](https://www.keycloak.org/server/configuration-production)、[TLS 配置](https://www.keycloak.org/server/enabletls)和[反向代理配置](https://www.keycloak.org/server/reverseproxy)完成。账户中心对外地址示例统一用 `https://accounts.example.com`；不要直接拿 HTTP 开发模式去接 NovaBot，即使两者在同一台机器上。
+以下按 **Keycloak 26.8** 的英文界面写；26.0–26.5 有两处位置不同，在对应步骤里注明。数据库、安装、HTTPS 证书和反向代理按 [Keycloak 官方入门文档](https://www.keycloak.org/guides#getting-started)、[生产配置](https://www.keycloak.org/server/configuration-production)、[TLS 配置](https://www.keycloak.org/server/enabletls)和[反向代理配置](https://www.keycloak.org/server/reverseproxy)完成。账户中心对外地址示例统一用 `https://accounts.example.com`；不要直接拿 HTTP 开发模式去接 NovaBot，即使两者在同一台机器上。
 
 ### 建 realm 与客户端
 
-1. 用 Keycloak 管理员进入管理台，创建独立的 realm（`Create realm`），例如命名为 `novabot`，并切换到这个 realm。后面的用户和客户端都建在这里。
+1. 用 Keycloak 管理员进入管理台，在左栏点 `Manage realms` → `Create realm`，弹窗里填 `Realm name`（例如 `novabot`），点 `Create`，并切换到这个 realm。这个入口从 26.2 起使用；26.0–26.1 在左栏顶上的 realm 下拉里点 `Create realm`。后面的用户和客户端都建在这里。
 2. 到 `Clients`，选择 `Create client`；`Client type` 选 `OpenID Connect`，`Client ID` 填 `novabot-console`。
-3. 打开 `Client authentication`，启用 `Standard flow`（标准授权码流程）。如果设置 PKCE 的 `Proof Key for Code Exchange Code Challenge Method`，选 `S256`，不要选其他挑战方法。
+3. `Client authentication` 默认关闭，要打开，打开后客户端才有 `Credentials` 页签。启用 `Standard flow`（标准授权码流程）。建议同时要求 PKCE，因为 NovaBot 每次登录都会带 S256 挑战：26.6 起，在 `Capability config` 里打开 `Require PKCE`（一开就是 S256），再确认 `PKCE Method` 是 `S256`；26.3–26.5 在同一处把 `PKCE Method` 选 `S256`；26.0–26.2 则在客户端建好后，到 `Advanced` 页签 → `Advanced settings`，把 `Proof Key for Code Exchange Code Challenge Method` 选 `S256`。
 4. 在 `Valid redirect URIs` 填完整回调地址，例如 `https://console.example.com/config/api/oidc/callback`。有 `/app` 前缀就填 `https://console.example.com/app/config/api/oidc/callback`。保存客户端。
-5. 如需后台登出，在 `Backchannel logout URL` 填对应的 `https://console.example.com/config/api/oidc/backchannel-logout`，并打开 `Backchannel logout session required`，使登出通知带会话 `sid`；也核对登录时的身份令牌含 `sid`。有应用前缀时两处地址都要带上它。
-6. 在客户端 `Credentials` 中确认 `Client Authenticator` 使用 `Client Id and Secret`，复制 `Client secret`，与 `Client ID` 一起填回 NovaBot。NovaBot 会以 `client_secret_basic` 发送密钥，不能把客户端配成不需要密钥的公开客户端。
+5. 如需后台登出，等客户端建好后，进入 `Settings` 页签的 `Logout settings` 一节；新建向导里没有这些项。先关掉 `Front channel logout`，新客户端默认开着它；开着时，26.1 起看不到下面几项，而且任何 26.x 都不会给这个客户端发后台登出。在 `Backchannel logout URL` 填对应的 `https://console.example.com/config/api/oidc/backchannel-logout`。`Backchannel logout session required` 默认开启，保持开着，登出通知才带会话 `sid`；也核对登录时的身份令牌含 `sid`。`Backchannel logout revoke offline sessions` 默认关闭，保持默认。有应用前缀时，回调和后台登出地址都要带上它。
+6. 在客户端 `Credentials` 中确认 `Client Authenticator` 使用 `Client Id and Secret`，复制 `Client Secret`，与 `Client ID` 一起填回 NovaBot。NovaBot 会以 `client_secret_basic` 发送密钥，不能把客户端配成不需要密钥的公开客户端。
 
-后台登出能否接通还取决于账户中心能否访问控制台、IP 白名单及令牌内容。尤其要按前面的表核对 `exp` 等字段；如果所用版本签发的登出令牌缺少必填项，NovaBot 会拒绝，不能只填一个 URL 就当作已经接通。此时可先不启用后台登出，用刷新复核，并在联调时解决令牌兼容问题。
+Keycloak 26 的登出令牌带齐前面表里的各项：头里的 `typ` 是 `logout+jwt`，有 `iat`、`jti`、`events`、`sub`，不带 `nonce`，`exp` 是签发后 120 秒。`sid` 只在 `Backchannel logout session required` 开着时才带；关掉就只剩 `sub`，NovaBot 会注销这个身份的全部统一登录会话。
+
+两台机器都要开启自动对时。登出令牌签发 2 分钟就过期，NovaBot 只容 60 秒钟差：Keycloak 的钟比 NovaBot 快 1 分钟以上，或者慢 3 分钟上下，后台登出就会被拒。后台登出能否接通还取决于账户中心能否访问控制台、IP 白名单。
 
 ### 核对签名、资料与离线访问
 
-1. 保留或选择 `RS256` 作为身份令牌签名算法（`ID Token Signature Algorithm`），不要改成 NovaBot 不支持的算法。
-2. 在客户端的 `Client scopes` 中核对 `profile`、`email`，以及用于离线访问的 `offline_access`。资料映射要把 `name` 和 `email` 加进身份令牌；若调整映射，核对 `Add to ID token` 已开启。需要时让用户拥有 realm 的 `offline_access` 角色，并允许这个客户端使用该角色；按 Keycloak 的离线访问策略申请刷新凭据。
-3. 到 `Users`，用 `Add user` 建一个试用账号，填好 `Username`、`First name`、`Last name`、`Email`；在用户的 `Credentials` 中设置登录密码。标准资料映射会根据名字生成 `name`，只填用户名不足以让 NovaBot 显示这个名字。
+1. 到客户端 `Advanced` 页签 → `Fine grain OpenID Connect configuration`，找到 `ID token signature algorithm`。留空就用 realm 默认的 `RS256`，留空或选 `RS256` 都行；下拉里的 `PS256`、`HS256` 等算法 NovaBot 不支持。登出令牌也用这个算法签。
+2. 在客户端的 `Client scopes` 中核对 `profile`、`email`，以及用于离线访问的 `offline_access`。新 realm 里，`profile`、`email` 是 `Default`，`offline_access` 是 `Optional`；NovaBot 默认的授权范围点名要了 `offline_access`，所以能拿到离线刷新凭据。用户默认就有 `offline_access` 角色（含在 `default-roles-<realm 名>` 里），一般不用另配。资料映射要把 `name` 和 `email` 加进身份令牌；若调整映射，核对 `Add to ID token` 已开启。
+3. 到 `Users` 建一个试用账号：空 realm 里按钮叫 `Create new user`，有了用户以后才是 `Add user`。填好 `Username`、`First name`、`Last name`、`Email`；`First name`、`Last name` 至少填一个，身份令牌里才有 `name`，只填用户名不足以让 NovaBot 显示这个名字；不填 `Email` 就没有 `email`。到用户的 `Credentials` 页签 → `Set password` 设置登录密码；弹窗里的 `Temporary` 默认开启，用户第一次登录时要先改密码，试用账号可以关掉。
 
-关于资料映射、离线访问和登出设置，参照 [Keycloak 26 管理手册](https://www.keycloak.org/docs/26.0.8/server_admin/index.html)。不要只核对输入框：实际登录后还应确认身份令牌带名字、邮箱，且账户中心确实签发了刷新凭据。
+在 Keycloak 里停用或删除用户以后，刷新凭据会以 `invalid_grant` 被拒，NovaBot 复核时几分钟内就让这个人下线。
+
+关于资料映射、离线访问和登出设置，参照 [Keycloak 最新版管理手册](https://www.keycloak.org/docs/latest/server_admin/index.html)。不要只核对输入框：实际登录后还应确认身份令牌带名字、邮箱，且账户中心确实签发了刷新凭据。
 
 ### 把地址填回 NovaBot
 
