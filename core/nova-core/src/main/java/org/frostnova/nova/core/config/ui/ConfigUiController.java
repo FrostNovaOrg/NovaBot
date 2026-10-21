@@ -1947,6 +1947,7 @@ public class ConfigUiController {
     private JSONArray readDatasourceUsers() throws IOException {
         Path path = Path.of(properties.getDatasource().getJsonPath());
         String content = Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "[]";
+        if (content.startsWith("\uFEFF")) content = content.substring(1);
         if (content.isBlank()) return new JSONArray();
         JSONArray users = JSONArray.parseArray(content);
         if (users == null) throw new IllegalArgumentException("配置应为数组");

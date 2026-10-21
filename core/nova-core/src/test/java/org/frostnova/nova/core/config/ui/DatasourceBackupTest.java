@@ -337,7 +337,7 @@ class DatasourceBackupTest {
 
     // 新装或手动清空文件后，推送页应显示空列表，向导应能添加第一位主播。
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"", " \n\t\r "})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", " \n\t\r ", "\uFEFF", "\uFEFF \n\t\r "})
     void emptyFileListsNoStreamersAndAcceptsFirstAddition(String content) throws IOException {
         Files.writeString(datasource, content);
         JSONObject directory = controller.datasourceUsers();

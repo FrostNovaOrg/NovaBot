@@ -16,7 +16,7 @@ const version = user => JSON.stringify(user);
 const response = payload => ({status: 200, json: async () => copy(payload)});
 globalThis.fetch = async (path, options = {}) => {
   const url = String(path).replace('/config/api', '');
-  requests.push({url, method: options.method || 'GET'});
+  requests.push({url, method: options.method || 'GET', body: options.body && JSON.parse(options.body)});
   if (options.method === 'POST') {
     if (beforePost) { const run = beforePost; beforePost = null; run(); }
     if (reject) return response({success: false, message: reject});
@@ -30,7 +30,9 @@ globalThis.fetch = async (path, options = {}) => {
       return response({success: true, version: version(body.user)});
     } else {
       const user = disk.find(user => url === '/datasource/users/p/' + user.uid);
-      assert.equal(body.version, version(user), '向导应保留其他主播的版本');
+      if (body.version !== version(user)) {
+        return response({success: false, conflict: true, message: '这位主播的配置刚被别人改过，请重新载入'});
+      }
       disk[disk.indexOf(user)] = body.user;
       return response({success: true, version: version(body.user)});
     }
@@ -45,14 +47,17 @@ globalThis.fetch = async (path, options = {}) => {
 };
 function wizard(uid = 3) {
   const messages = [];
+  const draft = {streamer: {platform: 'p', uid, uname: '新增主播'}, targets: ['g1']};
+  const targets = [{key: 'g1', sender: 'qq', type: 1, num: 111},
+    {key: 'g2', sender: 'qq', type: 1, num: 222}];
   const names = ['store', 'draft', 'options', 'pushEntries', 'setPushEntries', 'api',
     'serializePush', 'say', 'markPushSaved', 'reload', 'renderStreamers', 'defaultMessages',
     'markDirty', 'seen', 'acceptAddedPushUser'];
-  const values = [{handlerList: []}, {streamer: {platform: 'p', uid, uname: '新增主播'}, targets: []}, [],
+  const values = [{handlerList: []}, draft, targets,
     push.pushEntries, push.setPushEntries, async (url, opts) => (await fetch('/config/api' + url, opts)).json(),
     push.serializePush, text => messages.push(text), push.markPushSaved, push.reload,
     () => {}, defaultMessages, () => {}, {}, push.acceptAddedPushUser];
-  return {save: new Function(...names, saveSource + '\nreturn saveStreamer;')(...values), messages};
+  return {save: new Function(...names, saveSource + '\nreturn saveStreamer;')(...values), messages, draft};
 }
 async function reset(users = initial()) {
   disk = users; requests = []; beforePost = null; reject = null;
@@ -121,6 +126,63 @@ await test('向导重复添加明确提示已经添加，不覆盖现有主播',
   assert.equal(await flow.save(), false);
   assert.ok(flow.messages.includes('这位主播已经添加过了'));
   assert.deepEqual(disk, initial());
+});
+// 照向导提示退回改选目标后，应能保存新目标，并继续保留别人的草稿。
+await test('向导退回改选 g2 后能重存，连续重存使用最新版本', async () => {
+  await reset(); await openB();
+  push.pushEntries().find(user => user.uid === 2).enabled = false;
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  const firstVersion = version(disk.find(user => user.uid === 3));
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  assert.deepEqual(disk.find(user => user.uid === 3).targets.map(target => target.num), [222]);
+  assert.deepEqual(push.pushEntries().find(user => user.uid === 3).targets.map(target => target.num), [222]);
+  assert.equal(push.changeCount(), 1);
+  assert.equal(push.pushEntries().find(user => user.uid === 2).enabled, false);
+  const secondVersion = version(disk.find(user => user.uid === 3));
+  flow.draft.targets = ['g1'];
+  assert.equal(await flow.save(), true);
+  const writes = requests.filter(request => request.method === 'POST');
+  assert.deepEqual(writes.map(request => request.url), ['/datasource/users',
+    '/datasource/users/p/3', '/datasource/users/p/3']);
+  assert.equal(writes[1].body.version, firstVersion);
+  assert.equal(writes[2].body.version, secondVersion);
+  assert.equal(push.changeCount(), 1);
+});
+// 返回后别人已经修改这位主播时，应提示重新载入，不能覆盖那次保存。
+await test('向导重存版本冲突时保留盘上内容和上次版本', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  const firstVersion = version(disk.find(user => user.uid === 3));
+  disk.find(user => user.uid === 3).extra = '别人保存的内容';
+  const before = copy(disk);
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), false);
+  assert.ok(flow.messages.some(text => text.includes('重新载入')));
+  assert.deepEqual(disk, before);
+  assert.equal(requests.at(-1).body.version, firstVersion);
+  assert.equal(await flow.save(), false);
+  assert.equal(requests.at(-1).body.version, firstVersion);
+});
+// 向导新增后立即在推送页编辑，应能保存，无需重新载入获取版本。
+await test('向导刚加的主播在推送页修改后能直接保存', async () => {
+  await reset();
+  assert.equal(await wizard().save(), true);
+  const addedVersion = version(disk.find(user => user.uid === 3));
+  const requestCount = requests.length;
+  push.pushEntries().find(user => user.uid === 3).enabled = false;
+  await push.save();
+  assert.equal(disk.find(user => user.uid === 3).enabled, false);
+  assert.equal(push.changeCount(), 0);
+  const afterSave = requests.slice(requestCount);
+  assert.equal(afterSave.some(request => request.url === '/datasource/users/p/3' && request.method === 'GET'), false);
+  const writes = afterSave.filter(request => request.method === 'POST');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].url, '/datasource/users/p/3');
+  assert.equal(writes[0].method, 'POST');
+  assert.equal(writes[0].body.version, addedVersion);
 });
 await push.leave();
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

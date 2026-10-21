@@ -388,15 +388,22 @@ async function saveStreamer() {
     .map(item => ({platform: item.sender, type: item.type, num: item.num, enabled: true, messages}));
 
   const user = {uid: one.uid, platform: one.platform, enabled: true, targets};
+  const key = one.platform + ':' + one.uid;
+  // 只更新本次向导已添加的主播；列表里原有的主播仍走新增判重。
+  const savedVersions = draft.savedVersions || (draft.savedVersions = new Map());
+  const updating = savedVersions.has(key);
+  const path = '/datasource/users' + (updating
+    ? '/' + encodeURIComponent(one.platform) + '/' + encodeURIComponent(one.uid) : '');
   try {
-    const res = await api('/datasource/users', {
+    const res = await api(path, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({user}),
+      body: JSON.stringify({user, version: savedVersions.get(key)}),
     });
     if (!res.success) {
       say(res.message || '主播配置未能保存', 'err');
       return false;
     }
+    savedVersions.set(key, res.version);
     acceptAddedPushUser({...user, _uname: one.uname, _roomId: one.roomId, _face: one.face}, res.version);
   } catch (e) {
     say('主播配置未能保存：' + e.message, 'err');

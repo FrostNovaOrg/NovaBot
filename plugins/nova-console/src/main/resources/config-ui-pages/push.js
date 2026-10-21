@@ -2122,12 +2122,19 @@ export function markPushSaved(snapshot) {
   pushSaved = snapshot === undefined ? serializePush() : snapshot;
 }
 
-/** 向导新增成功后只合入这一位，其他主播的草稿、快照与版本继续保留。 */
+/** 向导保存成功后只合入这一位，其他主播的草稿、快照与版本继续保留。 */
 export function acceptAddedPushUser(user, version) {
   const key = userKey(user);
   const existing = pushData.find(item => userKey(item) === key);
   // 本地可能已有尚未提交的同身份草稿；保留它，让后续保存按新版本更新。
   if (!existing) pushData.push(user);
+  else {
+    const saved = JSON.parse(pushSaved).find(item => userKey(item) === key);
+    // 返回向导重选目标后同步未编辑的主播；本地已有的改动继续保留。
+    if (JSON.stringify(existing, dropDisplayOnly) === JSON.stringify(saved)) {
+      pushData[pushData.indexOf(existing)] = user;
+    }
+  }
   userVersions.set(key, version);
   updateSavedUser(key, user);
 }
