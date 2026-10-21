@@ -230,7 +230,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
             "GET /config;x=1/api/values", "GET /config/api;x=1/values", "GET /config/api/values;x=1",
             "GET /config//api/values", "GET /config/./api/values", "GET /config/x/../api/values",
             "GET /config%2Fapi%2Fvalues", "GET /config/%61pi/event-tokens", "GET /config/%61pi/datasource",
-            "GET /config/%61pi/datasource/users", "GET /config/%61pi/accounts",
+            "POST /config/%61pi/datasource/users", "GET /config/%61pi/accounts",
             "POST /config/%61pi/auth/agreement/revoke"})
     void memberCannotBypassApiGuardWithAlternatePaths(String target) throws Exception {
         var session = oidcSession(enabledMember());
@@ -241,6 +241,33 @@ class ConsoleAccountsTest extends OidcTestSupport {
         }
         assertEquals(ConfigUiAgreement.VERSION, properties.getConfigUi().getAgreement().getAcceptedVersion());
         assertFalse(Files.readString(configFile).contains("enabled: false"));
+    }
+
+    // 编码路径和部署前缀不能绕过成员列表裁剪，同群别的主播仍不可见。
+    @ParameterizedTest
+    @ValueSource(strings = {"GET /config/api/datasource/users", "GET /config/%61pi/datasource/users"})
+    void memberListsRemainScopedWithAlternatePaths(String target) throws Exception {
+        var member = enabledMember();
+        accounts.streamers(member.id(), List.of("bilibili:71001"));
+        var session = oidcSession(accounts.require(member.id()));
+        Path datasource = directory.resolve("datasource.json");
+        properties.getDatasource().setJsonPath(datasource.toString());
+        Files.writeString(datasource, """
+                [{"platform":"bilibili","uid":71001,"enabled":false,
+                  "targets":[{"platform":"qq","type":1,"num":81001}]},
+                 {"platform":"bilibili","uid":72002,
+                  "targets":[{"platform":"qq","type":1,"num":81001},
+                             {"platform":"qq","type":1,"num":82002}]}]
+                """);
+        for (String prefix : List.of("", "/app")) {
+            perform(alternatePath(target, prefix), session).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.users.length()").value(1))
+                    .andExpect(jsonPath("$.users[0].uid").value(71001))
+                    .andExpect(jsonPath("$.users[0].enabled").value(false))
+                    .andExpect(jsonPath("$.users[0].targets.length()").value(1))
+                    .andExpect(jsonPath("$.users[0].targets[0].num").value(81001));
+        }
     }
 
     // 未登录的人改写地址也不能碰到配置处理器，避免路径修复意外放开匿名访问。

@@ -39,7 +39,6 @@ class ConfigUiMemberPermissionsTest {
             GET oidc/callback
             POST oidc/backchannel-logout
             GET auth/agreement
-            GET pages
             GET vocab
             GET platforms
             GET session-check
@@ -70,6 +69,17 @@ class ConfigUiMemberPermissionsTest {
             GET weekly-report/{platform}/{uid}/preview
             POST weekly-report/{platform}/{uid}/trial
             POST report/preview
+            """);
+    private static final Set<String> FILTERED = routes("""
+            GET pages
+            GET datasource/users
+            GET status
+            GET timeline
+            GET streamers
+            GET state
+            GET push-history
+            GET at-all/quota
+            GET bot/targets/lookup
             """);
     private static final Set<String> ADMIN = routes("""
             GET /config/napcat-bootstrap
@@ -112,8 +122,6 @@ class ConfigUiMemberPermissionsTest {
             POST datasource/users
             POST datasource/users/{platform}/{uid}/delete
             POST version/skip
-            GET datasource/users
-            GET status
             GET alert/channels
             POST alert/test
             POST setup/test-sent
@@ -121,7 +129,6 @@ class ConfigUiMemberPermissionsTest {
             POST setup/rerun/consumed
             GET engineering-log
             GET timeline/days
-            GET timeline
             POST push/toggle
             POST templates
             POST state/command
@@ -131,10 +138,6 @@ class ConfigUiMemberPermissionsTest {
             POST state/binding
             GET analytics
             GET analytics/sessions
-            GET streamers
-            GET state
-            GET push-history
-            GET at-all/quota
             GET bot/console
             POST napcat/credential
             GET bot/targets
@@ -177,18 +180,20 @@ class ConfigUiMemberPermissionsTest {
 
     // 新接口忘了指定权限时，覆盖检查必须报出它，运行时仍默认只给管理员。
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
-        var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN);
+        var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(110, mappings.size());
-        assertEquals(22, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(67, ADMIN.size());
+        assertEquals(111, mappings.size());
+        assertEquals(21, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(60, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));
         SCOPED.forEach(route -> assertEquals(ConfigUiPermissions.Access.STREAMER, entries.get(route).access(), route));
+        FILTERED.forEach(route -> assertEquals("FILTERED", entries.get(route).access().name(), route));
         ADMIN.forEach(route -> assertEquals(ConfigUiPermissions.Access.ADMIN, entries.get(route).access(), route));
         System.out.println("Config handlers: " + mappings.size() + "; everyone="
                 + entries.values().stream().filter(rule -> rule.access() == ConfigUiPermissions.Access.EVERYONE).count()
                 + "; streamer=" + entries.values().stream().filter(rule -> rule.access() == ConfigUiPermissions.Access.STREAMER).count()
+                + "; filtered=" + entries.values().stream().filter(rule -> rule.access().name().equals("FILTERED")).count()
                 + "; admin=" + entries.values().stream().filter(rule -> rule.access() == ConfigUiPermissions.Access.ADMIN).count());
     }
 
@@ -218,13 +223,12 @@ class ConfigUiMemberPermissionsTest {
 
     // 登录、资源和公共选项对成员开放，避免成员进来以后界面所需接口全被拒绝。
     @Test void everySharedHandlerAllowsMembers() throws Exception {
-        for (String route : EVERYONE) mvc.perform(request(route, "1", MEMBER)).andExpect(status().isOk());
+        for (String route : java.util.stream.Stream.concat(EVERYONE.stream(), FILTERED.stream()).toList()) mvc.perform(request(route, "1", MEMBER)).andExpect(status().isOk());
     }
 
-    // 暂不开放的列表不能提前泄露别人的主播、群或推送记录。
-    @Test @DisplayName("暂按只管理员的列表保持拒绝成员") void temporaryAdminListsRemainDenied() throws Exception {
-        for (String path : List.of("datasource/users", "status", "timeline", "streamers", "state", "push-history",
-                "at-all/quota", "bot/targets"))
+    // 全群名单、刷新、登录及日期总数仍不能向成员开放。
+    @Test void instanceListsRemainDenied() throws Exception {
+        for (String path : List.of("bot/targets", "timeline/days", "login"))
             mvc.perform(request("GET " + API + path, "1", MEMBER)).andExpect(status().isForbidden());
         mvc.perform(request("POST " + API + "bot/targets/refresh", "1", MEMBER)).andExpect(status().isForbidden());
     }

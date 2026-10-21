@@ -103,8 +103,9 @@ public class TimelineController {
             return result;
         }
 
-        TimelineStore.Result found = store.query(new TimelineStore.Filter(
-                day, problems, parsedCategory, parsedType, streamer, channel, q, limit), from);
+        TimelineStore.Filter filter = new TimelineStore.Filter(day, problems, parsedCategory, parsedType, streamer, channel, q, limit);
+        TimelineStore.Result found = ConfigUiAccess.memberAccount() == null ? store.query(filter, from)
+                : store.query(filter, from, ConfigUiAccess::visible);
 
         result.put("date", day == null ? null : day.toString());
         result.put("problemsOnly", problems);
@@ -135,7 +136,7 @@ public class TimelineController {
         result.put("retentionDays", store.retentionDays());
         // 告警开着没有：告警栏空着时，「筛没了」与「告警已关」是两回事，
         // 而只有这一条能分开它们——关着时是不往时间线里记的
-        result.put("alertEnabled", store.alertEnabled());
+        if (ConfigUiAccess.memberAccount() == null) result.put("alertEnabled", store.alertEnabled());
 
         return result;
     }
@@ -179,7 +180,7 @@ public class TimelineController {
         // 药丸上那个数每点一次筛选变一次，看着像「这一类只剩这么点了」
         Map<TimelineCategory, Integer> perCategory = new EnumMap<>(TimelineCategory.class);
         if (day != null) {
-            for (Map.Entry<TimelineEventType, Integer> entry : store.countsOn(day).entrySet()) {
+            for (Map.Entry<TimelineEventType, Integer> entry : (ConfigUiAccess.memberAccount() == null ? store.countsOn(day) : store.countsOn(day, ConfigUiAccess::visible)).entrySet()) {
                 perCategory.merge(entry.getKey().getCategory(), entry.getValue(), Integer::sum);
             }
         }

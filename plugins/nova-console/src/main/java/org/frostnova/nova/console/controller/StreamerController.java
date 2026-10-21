@@ -188,6 +188,7 @@ public class StreamerController {
 
         JSONArray items = new JSONArray();
         for (StreamerDirectory.Entry entry : entries) {
+            if (!org.frostnova.nova.core.config.ui.ConfigUiAccess.visible(entry.platform(), entry.uid())) continue;
             String key = key(entry.platform(), entry.uid());
             List<LiveSession> sessions = byStreamer.getOrDefault(key, List.of());
 
@@ -206,7 +207,7 @@ public class StreamerController {
         // ⚠️ 上面的名单只圈了「推送配置里的」。从配置里删掉的主播，他过去的场次仍在归档里，
         // 运营分析那一页照样列得出来。两处圈法不同时，只报一个数会让人以为这就是全部，
         // 因此把差集本身点名报出来——不是报个数，是报「是谁」
-        result.put("notConfigured", notConfigured(entries, byStreamer));
+        if (org.frostnova.nova.core.config.ui.ConfigUiAccess.memberAccount() == null) result.put("notConfigured", notConfigured(entries, byStreamer));
 
         return result;
     }

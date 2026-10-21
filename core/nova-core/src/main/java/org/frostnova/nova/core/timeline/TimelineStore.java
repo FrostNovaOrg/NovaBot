@@ -228,6 +228,11 @@ public class TimelineStore implements TimelineWriter, SmartLifecycle {
      * @return 查询结果
      */
     public Result query(@NonNull Filter filter, Cursor cursor) {
+        return query(filter, cursor, event -> true);
+    }
+
+    /** Apply visibility before counting, collecting options, and paginating. */
+    public Result query(@NonNull Filter filter, Cursor cursor, java.util.function.Predicate<TimelineEvent> visible) {
         int limit = filter.limit() <= 0 ? DEFAULT_LIMIT : Math.min(filter.limit(), MAX_LIMIT);
 
         List<TimelineEvent> hits = new ArrayList<>();
@@ -242,6 +247,7 @@ public class TimelineStore implements TimelineWriter, SmartLifecycle {
             // 文件里是按发生顺序追加的，倒着走就是从近到远
             for (int i = events.size() - 1; i >= 0; i--) {
                 TimelineEvent event = events.get(i);
+                if (!visible.test(event)) continue;
 
                 // 筛选框里的可选项取自这几天<b>全部</b>事件，不受当前筛选影响：
                 // 跟着筛一起缩水的话，选了某位主播之后通道那一栏就只剩他推过的那几个，
@@ -292,9 +298,13 @@ public class TimelineStore implements TimelineWriter, SmartLifecycle {
      * @return 各类型的条数，没有发生过的类型不在表里
      */
     public Map<TimelineEventType, Integer> countsOn(@NonNull LocalDate day) {
+        return countsOn(day, event -> true);
+    }
+
+    public Map<TimelineEventType, Integer> countsOn(@NonNull LocalDate day, java.util.function.Predicate<TimelineEvent> visible) {
         Map<TimelineEventType, Integer> counts = new EnumMap<>(TimelineEventType.class);
         for (TimelineEvent event : readDay(day)) {
-            counts.merge(event.type(), 1, Integer::sum);
+            if (visible.test(event)) counts.merge(event.type(), 1, Integer::sum);
         }
         return counts;
     }

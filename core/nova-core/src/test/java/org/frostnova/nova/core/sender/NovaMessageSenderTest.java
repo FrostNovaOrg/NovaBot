@@ -381,6 +381,31 @@ class NovaMessageSenderTest {
                 new FirstPushTipService(new org.frostnova.nova.core.service.NovaStateStore(properties)));
     }
 
+    // 推送消息发送时必须从通道记下主播；成功、失败、送达不明都能按主播筛到。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"success", "failure", "uncertain"})
+    void deliveryRecordsCarryTheChannelStreamer(String outcome) {
+        HttpUtil http = mock(HttpUtil.class);
+        JSONObject response = JSONObject.of("code", outcome.equals("success") ? 0 : -1, "message", "delivery");
+        if (outcome.equals("uncertain")) response.put(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
+        when(http.postJson(anyString(), anyMap(), anyMap())).thenReturn(response);
+        java.util.List<org.frostnova.nova.core.timeline.TimelineEvent> events = new java.util.ArrayList<>();
+        var recorder = new PushActivityRecorder(events::add);
+        var user = new org.frostnova.nova.core.model.PushUser(); user.setPlatform("bilibili"); user.setUid(71001L); user.setUname("Owner A");
+        var channel = new org.frostnova.nova.core.model.PushTarget(); channel.setUser(user);
+        Message message = message(); message.setChannel(channel);
+        sender(http, new NovaCoreProperties(), null, recorder).sendNow(message);
+        assertEquals(1, recorder.getHistory().size());
+        assertEquals("bilibili", recorder.getHistory().get(0).streamerPlatform());
+        assertEquals(71001L, recorder.getHistory().get(0).streamerUid());
+        assertEquals("Owner A", events.get(0).streamer());
+        assertEquals("71001", events.get(0).detail().get("streamerUid"));
+        assertEquals("bilibili", events.get(0).detail().get("streamerPlatform"));
+        sender(http, new NovaCoreProperties(), null, recorder).sendNow(message());
+        assertNull(recorder.getHistory().get(0).streamerUid());
+        assertNull(events.get(1).streamer());
+    }
+
     /**
      * 进程内直调（任务 7a）
      * <p>

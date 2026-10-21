@@ -1,0 +1,543 @@
+{
+  "status": {
+    "success": true,
+    "health": [],
+    "users": [
+      {
+        "uid": 71001,
+        "uname": "Owner A",
+        "roomId": null,
+        "platform": "bilibili",
+        "enabled": true,
+        "targets": 1
+      },
+      {
+        "uid": 72002,
+        "uname": "Other B",
+        "roomId": null,
+        "platform": "bilibili",
+        "enabled": true,
+        "targets": 2
+      }
+    ],
+    "runtime": {
+      "heapUsedMb": null,
+      "heapMaxMb": null,
+      "threads": null,
+      "processors": null,
+      "diskFreeMb": null,
+      "diskLevel": null
+    },
+    "version": "",
+    "configPath": null,
+    "streamerLimit": 10,
+    "pushEnabled": true,
+    "restartPending": [],
+    "senders": [],
+    "locked": false,
+    "totalDataAvailable": false,
+    "quiet": {
+      "active": false,
+      "start": "",
+      "end": ""
+    },
+    "live": [
+      {
+        "uid": 71001,
+        "uname": "Owner A",
+        "roomId": null,
+        "platform": "bilibili",
+        "since": null
+      },
+      {
+        "uid": 72002,
+        "uname": "Other B",
+        "roomId": null,
+        "platform": "bilibili",
+        "since": null
+      }
+    ],
+    "today": {
+      "sent": 1,
+      "failed": 1
+    },
+    "queue": {
+      "pending": 0,
+      "dropped": 0
+    },
+    "alerts": {
+      "webhook": false
+    }
+  },
+  "datasource/users": {
+    "success": true,
+    "users": [
+      {
+        "platform": "bilibili",
+        "uid": 71001,
+        "enabled": true,
+        "targets": [
+          {
+            "platform": "qq",
+            "type": 1,
+            "num": 81001,
+            "enabled": true,
+            "messages": []
+          }
+        ]
+      },
+      {
+        "platform": "bilibili",
+        "uid": 72002,
+        "enabled": true,
+        "targets": [
+          {
+            "platform": "qq",
+            "type": 1,
+            "num": 81001,
+            "enabled": true,
+            "messages": []
+          },
+          {
+            "platform": "qq",
+            "type": 1,
+            "num": 82002,
+            "enabled": true,
+            "messages": []
+          }
+        ]
+      }
+    ]
+  },
+  "streamers": {
+    "success": true,
+    "streamers": [
+      {
+        "platform": "bilibili",
+        "uid": 71001,
+        "uname": "Owner A",
+        "face": null,
+        "roomId": null,
+        "status": "COLLECT_ONLY",
+        "statusText": "只采集不推送",
+        "enabled": true,
+        "pushing": false,
+        "living": true,
+        "since": null,
+        "summary": {
+          "days": 7,
+          "sessions": 0,
+          "durationSeconds": 0,
+          "lastStart": null
+        },
+        "series": [
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          }
+        ]
+      },
+      {
+        "platform": "bilibili",
+        "uid": 72002,
+        "uname": "Other B",
+        "face": null,
+        "roomId": null,
+        "status": "COLLECT_ONLY",
+        "statusText": "只采集不推送",
+        "enabled": true,
+        "pushing": false,
+        "living": true,
+        "since": null,
+        "summary": {
+          "days": 7,
+          "sessions": 0,
+          "durationSeconds": 0,
+          "lastStart": null
+        },
+        "series": [
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          },
+          {
+            "date": "date",
+            "sessions": 0,
+            "durationSeconds": 0
+          }
+        ]
+      }
+    ],
+    "total": 2,
+    "days": 7,
+    "statuses": [
+      {
+        "name": "LIVE",
+        "text": "在播"
+      },
+      {
+        "name": "OFFLINE",
+        "text": "未开播"
+      },
+      {
+        "name": "COLLECT_ONLY",
+        "text": "只采集不推送"
+      },
+      {
+        "name": "DISABLED",
+        "text": "已停用"
+      }
+    ],
+    "notConfigured": []
+  },
+  "state": {
+    "success": true,
+    "commands": [],
+    "sessions": [
+      {
+        "platform": "qq",
+        "num": 81001,
+        "type": "群",
+        "typeCode": 1,
+        "configured": true,
+        "streamers": [
+          "Owner A",
+          "Other B"
+        ],
+        "channels": [
+          {
+            "streamerPlatform": "bilibili",
+            "streamerUid": 71001,
+            "quietActive": false
+          },
+          {
+            "streamerPlatform": "bilibili",
+            "streamerUid": 72002,
+            "quietActive": false
+          }
+        ],
+        "disabled": [],
+        "menuHidden": [],
+        "menuNotes": {},
+        "revenueVisible": false,
+        "revenueExplicit": true,
+        "quietMode": "follow",
+        "quietStart": null,
+        "quietEnd": null,
+        "quietActive": false
+      },
+      {
+        "platform": "qq",
+        "num": 82002,
+        "type": "群",
+        "typeCode": 1,
+        "configured": true,
+        "streamers": [
+          "Other B"
+        ],
+        "channels": [
+          {
+            "streamerPlatform": "bilibili",
+            "streamerUid": 72002,
+            "quietActive": false
+          }
+        ],
+        "disabled": [],
+        "menuHidden": [],
+        "menuNotes": {},
+        "revenueVisible": false,
+        "revenueExplicit": true,
+        "quietMode": "follow",
+        "quietStart": null,
+        "quietEnd": null,
+        "quietActive": false
+      }
+    ],
+    "subscriptions": [],
+    "incomplete": [],
+    "totalDataAvailable": false,
+    "quietGlobal": {
+      "start": "",
+      "end": ""
+    }
+  },
+  "timeline": {
+    "success": true,
+    "date": null,
+    "problemsOnly": false,
+    "category": null,
+    "type": null,
+    "streamer": null,
+    "channel": null,
+    "q": null,
+    "events": [
+      {
+        "at": "time",
+        "type": "PUSH_FAILED",
+        "typeText": "推送失败",
+        "category": "PUSH",
+        "categoryText": "推送",
+        "level": "error",
+        "streamer": null,
+        "channel": "群 82002",
+        "text": "推送失败：failure",
+        "detail": {
+          "platform": "qq",
+          "summary": "B push",
+          "elapsed_ms": "1"
+        }
+      }
+    ],
+    "matched": 2,
+    "returned": 1,
+    "truncated": true,
+    "limit": 1,
+    "nextCursor": "2026-10-21:1",
+    "types": [
+      {
+        "name": "PUSH_MUTED",
+        "text": "静音丢弃"
+      },
+      {
+        "name": "PUSH_PAUSED",
+        "text": "暂停丢弃"
+      },
+      {
+        "name": "PUSH_BLOCKED_WORD",
+        "text": "屏蔽词挡下"
+      },
+      {
+        "name": "PUSH_SENT",
+        "text": "推送成功"
+      },
+      {
+        "name": "PUSH_FAILED",
+        "text": "推送失败"
+      },
+      {
+        "name": "PUSH_UNCERTAIN",
+        "text": "送达不明"
+      },
+      {
+        "name": "AT_ALL_SKIPPED",
+        "text": "未 @ 全体"
+      },
+      {
+        "name": "LIVE_ON",
+        "text": "开播"
+      },
+      {
+        "name": "LIVE_OFF",
+        "text": "下播"
+      },
+      {
+        "name": "PROBE_CHANGED",
+        "text": "状态变化"
+      },
+      {
+        "name": "LOGIN_LOST",
+        "text": "登录失效"
+      },
+      {
+        "name": "COMMAND_EXECUTED",
+        "text": "命令执行"
+      },
+      {
+        "name": "COMMAND_UNKNOWN",
+        "text": "认不出的命令"
+      },
+      {
+        "name": "COMMAND_COOLED_DOWN",
+        "text": "冷却忽略"
+      },
+      {
+        "name": "ALERT_SENT",
+        "text": "告警发出"
+      },
+      {
+        "name": "ALERT_FAILED",
+        "text": "告警发不出"
+      },
+      {
+        "name": "ALERT_UNCERTAIN",
+        "text": "告警送达不明"
+      },
+      {
+        "name": "SETTINGS_APPLIED",
+        "text": "设置即时生效"
+      },
+      {
+        "name": "SETTINGS_RESTART_PENDING",
+        "text": "设置待重启"
+      },
+      {
+        "name": "SYSTEM_STARTED",
+        "text": "启动"
+      },
+      {
+        "name": "SYSTEM_STOPPING",
+        "text": "停止"
+      },
+      {
+        "name": "BACKUP_PRUNED",
+        "text": "清理旧备份"
+      },
+      {
+        "name": "BACKUP_SKIPPED",
+        "text": "没留备份"
+      }
+    ],
+    "categories": [
+      {
+        "name": "PUSH",
+        "text": "推送"
+      },
+      {
+        "name": "LIVE",
+        "text": "直播"
+      },
+      {
+        "name": "LINK",
+        "text": "连接"
+      },
+      {
+        "name": "COMMAND",
+        "text": "命令"
+      },
+      {
+        "name": "ALERT",
+        "text": "告警"
+      },
+      {
+        "name": "SETTINGS",
+        "text": "设置"
+      },
+      {
+        "name": "SYSTEM",
+        "text": "系统"
+      }
+    ],
+    "streamers": [],
+    "channels": [
+      "群 81001",
+      "群 82002"
+    ],
+    "retentionDays": 14,
+    "alertEnabled": true
+  },
+  "push-history": {
+    "success": true,
+    "records": [
+      {
+        "at": "time",
+        "platform": "qq",
+        "target": "群 82002",
+        "summary": "B push",
+        "success": false,
+        "reason": "failure",
+        "uncertain": false
+      },
+      {
+        "at": "time",
+        "platform": "qq",
+        "target": "群 81001",
+        "summary": "A push",
+        "success": true,
+        "reason": null,
+        "uncertain": false
+      }
+    ]
+  },
+  "at-all/quota": {
+    "success": true,
+    "date": "date",
+    "bots": [
+      {
+        "platform": "qq",
+        "platformName": null,
+        "used": 0,
+        "limit": 10,
+        "limited": true
+      }
+    ],
+    "sessions": [
+      {
+        "platform": "qq",
+        "platformName": null,
+        "num": 81001,
+        "used": 0,
+        "limit": 20,
+        "limited": true
+      },
+      {
+        "platform": "qq",
+        "platformName": null,
+        "num": 82002,
+        "used": 0,
+        "limit": 20,
+        "limited": true
+      }
+    ]
+  },
+  "pages": {
+    "success": true,
+    "pages": []
+  }
+}

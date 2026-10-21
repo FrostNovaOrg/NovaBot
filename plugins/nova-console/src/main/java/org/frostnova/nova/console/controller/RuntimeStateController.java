@@ -103,6 +103,13 @@ public class RuntimeStateController {
     @Autowired
     private org.frostnova.nova.core.service.DatasourceChannelStore channelStore;
 
+    @Autowired(required = false)
+    private org.frostnova.nova.core.config.ui.ConfigUiConfiguredUsers configured;
+
+    private List<PushUser> configuredUsers() {
+        return configured == null ? new ArrayList<>(dataSource.getAllUsers()) : configured.users(dataSource.getAllUsers());
+    }
+
     private int changeChannels(JSONObject body, String platform, PushTargetType type, Long num,
                                java.util.function.Consumer<JSONObject> change) {
         return channelStore.change(platform, type, num, body.getString("streamerPlatform"), body.getLong("streamerUid"), change);
@@ -651,7 +658,8 @@ public class RuntimeStateController {
         Map<String, JSONObject> sessions = new LinkedHashMap<>();
         Map<String, Set<String>> streamers = new LinkedHashMap<>();
 
-        for (PushUser user : dataSource.getAllUsers()) {
+        for (PushUser user : configuredUsers()) {
+            if (!ConfigUiAccess.visible(user.getPlatform(), user.getUid())) continue;
             for (PushTarget target : user.getTargets()) {
                 String key = rowKey(target.getPlatform(), target.getType(), target.getNum());
                 JSONObject session = sessions.computeIfAbsent(key, k -> session(target.getPlatform(), target.getNum(),
@@ -684,6 +692,7 @@ public class RuntimeStateController {
         // 金额可见性没有「未设置」这一档好展示：界面上的开关要么开要么关，
         // 因此这里把默认值也算出来给它，另用 revenueExplicit 标出这份值究竟是人配的还是默认的
         sessions.forEach((key, item) -> {
+            if (ConfigUiAccess.memberAccount() != null) return;
             String platform = item.getString("platform");
             Long num = item.getLong("num");
             PushTargetType type = PushTargetType.of(item.getIntValue("typeCode"));
@@ -701,7 +710,9 @@ public class RuntimeStateController {
             item.put("quietActive", pushGate.inQuietHoursFor(platform, type, num));
         });
 
-        List<JSONObject> sorted = new ArrayList<>(sessions.values());
+        List<JSONObject> sorted = sessions.values().stream()
+                .filter(item -> ConfigUiAccess.memberAccount() == null || !item.getJSONArray("channels").isEmpty())
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         sorted.sort(Comparator.comparing((JSONObject item) -> item.getString("platform"))
                 .thenComparing(item -> item.getLongValue("num"))
                 .thenComparing(item -> -item.getIntValue("typeCode")));
@@ -884,6 +895,7 @@ public class RuntimeStateController {
         JSONArray items = new JSONArray();
 
         for (AtSubscriptionService.Subscription item : subscriptions.all()) {
+            if (!ConfigUiAccess.visible("bilibili", item.streamerUid())) continue;
             JSONObject json = new JSONObject();
             json.put("platform", item.platform());
             json.put("num", item.num());
@@ -911,7 +923,13 @@ public class RuntimeStateController {
     private JSONArray incompleteList() {
         JSONArray items = new JSONArray();
 
+        JSONArray raw = configured == null ? new JSONArray() : configured.raw();
         for (AbstractDataSource.IncompleteEntry entry : dataSource.getIncompleteEntries()) {
+            if (ConfigUiAccess.memberAccount() != null) {
+                int index = entry.index() - 1;
+                if (index < 0 || index >= raw.size() || !(raw.get(index) instanceof JSONObject user)
+                        || !ConfigUiAccess.visible(user.getString("platform"), org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.positiveDecimal(user.get("uid")))) continue;
+            }
             JSONObject json = new JSONObject();
             json.put("index", entry.index());
             json.put("fields", entry.fields());
@@ -930,7 +948,7 @@ public class RuntimeStateController {
      */
     private String streamerName(long uid) {
         return dataSource.getAllUsers().stream()
-                .filter(user -> user.getUid() != null && user.getUid() == uid)
+                .filter(user -> "bilibili".equals(user.getPlatform()) && user.getUid() != null && user.getUid() == uid)
                 .map(this::displayName)
                 .findFirst()
                 .orElse(null);

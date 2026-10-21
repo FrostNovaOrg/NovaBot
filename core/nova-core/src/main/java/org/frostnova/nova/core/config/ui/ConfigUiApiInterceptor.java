@@ -54,6 +54,7 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String path = ConfigUiPermissions.pattern(request);
         if (!path.equals(ConfigUiController.BASE_PATH) && !path.startsWith(ConfigUiController.BASE_PATH + "/")) return true;
+        request.setAttribute(ConfigUiAccess.PLATFORMS, platforms);
         var rule = ConfigUiPermissions.rule(request);
         if (auth.isEnabled() && ConfigUiSecurityFilter.PUBLIC_API.contains(path)
                 && rule.access() == ConfigUiPermissions.Access.EVERYONE) return true;

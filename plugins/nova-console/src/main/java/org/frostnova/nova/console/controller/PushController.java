@@ -217,6 +217,7 @@ public class PushController {
 
         JSONArray records = new JSONArray();
         activityRecorder.getHistory().forEach(record -> {
+            if (!ConfigUiAccess.visible(record.streamerPlatform(), record.streamerUid())) return;
             JSONObject item = new JSONObject();
             item.put("at", HISTORY_TIME.format(record.at()));
             item.put("platform", record.platform());
@@ -225,6 +226,10 @@ public class PushController {
             item.put("success", record.success());
             item.put("reason", record.reason());
             item.put("uncertain", record.uncertain());
+            if (record.streamerPlatform() != null && record.streamerUid() != null) {
+                item.put("streamerPlatform", record.streamerPlatform());
+                item.put("streamerUid", record.streamerUid());
+            }
             records.add(item);
         });
 

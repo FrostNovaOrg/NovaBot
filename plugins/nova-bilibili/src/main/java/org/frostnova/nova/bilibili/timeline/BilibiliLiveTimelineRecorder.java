@@ -95,6 +95,8 @@ public class BilibiliLiveTimelineRecorder {
 
             timeline.record(TimelineEvent.of(type, TimelineEvent.Level.INFO)
                     .streamer(name)
+                    .detail("streamerPlatform", platform)
+                    .detail("streamerUid", String.valueOf(source.getUid()))
                     .text(name + verb)
                     .detail("uid", String.valueOf(source.getUid()))
                     .detail("room", source.getRoomIdString())
