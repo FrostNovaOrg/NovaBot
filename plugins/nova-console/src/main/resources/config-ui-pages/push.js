@@ -10,9 +10,7 @@
  * 打开页面挨个点着看，而其中好几档（命令被群管理员关掉、累计数据没开、群名取不到）
  * 在真机上凑齐一次的代价极高。
  *
- * 号码一律从机器人自己给的名单里挑，本页没有任何一个手填号码的格子：填错一位数不会有
- * 任何报错，消息只是发去了别处。认目标那一步走 links-model.js 的 resolveTarget，
- * 与「发一条试试」「初始设置第 4 步」是同一份判法。
+ * 管理员从机器人给的名单里挑目标；成员输入完整号码，精确查到后才能添加。
  */
 
 import {ask, keepTabInside} from './confirm.js';
@@ -33,6 +31,8 @@ import {store} from './store.js';
 import {detailHash} from './streamers-model.js';
 import {buildLayoutEditor, buildTemplateEditor} from './template.js';
 import {restoreDefaults, templateAdoption} from './template-model.js';
+
+const isMember = () => store.role === 'MEMBER';
 
 const PAGE_STYLE = `
 /* ==================== QQ 推送 ====================
@@ -458,7 +458,7 @@ export function render(section) {
         <label for="push-nav">选择主播或推送通道</label>
         <div class="pnarrow-actions">
           <a class="lnkbtn" href="#/push/default">默认模板</a>
-          <button type="button" class="lnkbtn" id="push-add-streamer-narrow">＋ 添加主播</button>
+          ${isMember() ? '' : '<button type="button" class="lnkbtn" id="push-add-streamer-narrow">＋ 添加主播</button>'}
         </div>
       </div>
       <select id="push-nav"></select>
@@ -467,7 +467,7 @@ export function render(section) {
       <aside class="ptree">
         <div class="ptop">
           <a class="lnkbtn" id="push-default-tpl" href="#/push/default">默认模板</a>
-          <button type="button" id="push-add-streamer">＋ 添加主播</button>
+          ${isMember() ? '' : '<button type="button" id="push-add-streamer">＋ 添加主播</button>'}
         </div>
         <div class="ptree-t">主播</div>
         <div id="push-tree"></div>
@@ -517,8 +517,8 @@ function bindShell() {
     // 尾段原样接回去：通道身份里带着平台名，别按冒号截断
     location.hash = parts[0] === 's' ? '#/push/' + parts[1] : '#/push/' + parts[1] + '/' + parts.slice(2).join(':');
   });
-  $('#push-add-streamer').addEventListener('click', addStreamer);
-  $('#push-add-streamer-narrow').addEventListener('click', addStreamer);
+  $('#push-add-streamer')?.addEventListener('click', addStreamer);
+  $('#push-add-streamer-narrow')?.addEventListener('click', addStreamer);
   $('#push-drawer-close').addEventListener('click', closeDrawer);
   $('#push-drawer').addEventListener('click', event => {
     if (event.target === $('#push-drawer')) closeDrawer();
@@ -784,10 +784,24 @@ export async function loadPushPage() {
   }
 
   try {
-    const [groups, friends] = await Promise.all([
-      api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
-    options = targetOptions(groups, friends);
-    directory = buildDirectory(options);
+    if (isMember()) {
+      options = [];
+      directory = {};
+      const targets = new Map(pushData.flatMap(user => user.targets || []).map(target => [channelTail(target), target]));
+      for (const [key, target] of targets) {
+        try {
+          const found = await lookupTarget(target.platform, Number(target.type) === 1 ? 'group' : 'friend', target.num);
+          if (found.success && found.found) directory[key] = {name: found.name || found.nickname || ''};
+        } catch (e) {
+          // 查不到名称时仍显示已配置的号码。
+        }
+      }
+    } else {
+      const [groups, friends] = await Promise.all([
+        api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
+      options = targetOptions(groups, friends);
+      directory = buildDirectory(options);
+    }
   } catch (e) {
     options = [];
     directory = {};
@@ -818,7 +832,8 @@ function paintTree() {
   nav.innerHTML = '<option value="">通道一览</option><option value="default">默认模板</option>';
 
   if (!tree.length) {
-    host.innerHTML = '<p class="hint">暂无主播，请点击上方「＋ 添加主播」开始配置。</p>';
+    host.innerHTML = isMember() ? '<p class="hint">暂无分配给你的主播。</p>'
+      : '<p class="hint">暂无主播，请点击上方「＋ 添加主播」开始配置。</p>';
     nav.value = picked.uid === 'default' ? 'default' : '';
     return;
   }
@@ -990,7 +1005,8 @@ function renderIndex(host) {
 
   if (!rows.length) {
     box.appendChild(el('p', 'hint')).textContent =
-      '暂无推送通道。请先在左侧添加主播，再为其选择群或好友。';
+      isMember() ? '暂无推送通道。请打开你名下的主播，为其添加群或好友通道。'
+        : '暂无推送通道。请先在左侧添加主播，再为其选择群或好友。';
   } else {
     // 通知按标签换行，优先利用卡片宽度；很窄时只在表格容器内横滚。
     const wrap = el('div', 'tblwrap');
@@ -1031,6 +1047,7 @@ function renderIndex(host) {
  * 仅列仍生效的会话命令开关与提醒订阅，供查看和清理。
  */
 function renderStranded(host) {
+  if (isMember()) return;
   const rows = strandedSessions(pushData, runtime.sessions);
   if (!rows.length) return;
 
@@ -1070,12 +1087,24 @@ function renderStranded(host) {
  */
 function renderDefaultTemplates(host) {
   const box = card(host, '默认模板',
-    '使用默认模板的通道随此处同步更新。如需单独调整某个通道，请在该通道中直接修改；修改后该通道不再随默认模板更新。');
+    isMember() ? '默认模板由管理员维护，这里只能看。'
+      : '使用默认模板的通道随此处同步更新。如需单独调整某个通道，请在该通道中直接修改；修改后该通道不再随默认模板更新。');
 
   const handlers = (store.handlerList || []).filter(item => (item.placeholders || []).length);
   if (!handlers.length) {
     box.appendChild(el('p', 'hint')).textContent =
       '暂无带文字模板的通知，请检查对应插件是否已加载。';
+    return;
+  }
+
+  if (isMember()) {
+    buildTemplateEditor(box, {
+      handlers, editable: false,
+      base: handler => handler.factoryParams || handler.defaultParams,
+      paramsOf: overridesOf,
+      context: {isGroup: true, admin: null, terms: store.vocab}, channelLabel: '群聊',
+    });
+    renderAdoption(host, handlers);
     return;
   }
 
@@ -1147,6 +1176,7 @@ function overridesOf(handler) {
 
 /** 把改过的默认模板存下去 */
 async function saveDefaults(handler, params, button) {
+  if (isMember()) return;
   button.disabled = true;
   button.textContent = '保存中…';
   try {
@@ -1195,7 +1225,8 @@ async function reloadHandlers() {
 /** 谁在用默认、谁自定义了 */
 function renderAdoption(host, handlers) {
   const box = card(host, '默认模板使用情况',
-    '在上方修改默认模板后，下列使用默认模板的通道将同步更新；已自定义的通道不受影响。');
+    isMember() ? '使用默认模板的通道会随管理员的修改同步更新；已自定义的通道不受影响。'
+      : '在上方修改默认模板后，下列使用默认模板的通道将同步更新；已自定义的通道不受影响。');
 
   for (const handler of handlers) {
     const rows = templateAdoption(pushData, handler, store.vocab);
@@ -1256,7 +1287,7 @@ function renderStreamerLevel(host, user) {
     markDirty();
     location.hash = '#/push';
   });
-  side.appendChild(remove);
+  if (!isMember()) side.appendChild(remove);
   head.appendChild(side);
   box.appendChild(head);
 
@@ -1299,7 +1330,8 @@ function renderStreamerLevel(host, user) {
       const current = (Array.isArray(user[key]) ? user[key] : [])
         .map(value => String(value).trim()).filter(Boolean);
       // 空行不算改动，也不为原本缺失的字段添加空数组。
-      if (JSON.stringify(entries) !== JSON.stringify(current)) user[key] = entries;
+      if ((Object.hasOwn(user, key) && !Array.isArray(user[key]))
+        || JSON.stringify(entries) !== JSON.stringify(current)) user[key] = entries;
       markDirty();
     });
     field.appendChild(input);
@@ -1456,7 +1488,8 @@ function sectionNotices(host, user, target, session) {
   const group = Number(target.type) === 1;
   recent.textContent = group ? '本群最近推送' : '该好友最近推送';
   box.appendChild(recent);
-  if (group) box.appendChild(el('p', 'hint')).textContent = '推送到本群的所有主播均计算在内。';
+  if (isMember()) box.appendChild(el('p', 'hint')).textContent = '只列你名下主播的推送。';
+  else if (group) box.appendChild(el('p', 'hint')).textContent = '推送到本群的所有主播均计算在内。';
 
   const rows = recentPushes(pushHistory, session, 5);
   if (!rows.length) {
@@ -1670,7 +1703,7 @@ function sectionTemplate(host, user, target, session) {
 /** 机器人在这个群里是不是管理员。名单取不到时为 null，预览据此不画划掉线 */
 function adminOf(target) {
   const known = directory[target.platform + '|' + Number(target.type) + '|' + target.num];
-  return known ? known.admin : null;
+  return known?.admin ?? null;
 }
 
 /** 段 3：按推送类型顺序逐类显示配置；只有报告版式监听金额草稿。 */
@@ -1817,16 +1850,17 @@ function sectionSession(host, user, target, session) {
   box.appendChild(settings);
   const render = () => {
     const current = channelSession(session, target, user);
+    const baseline = JSON.parse(pushSaved).find(saved => userKey(saved) === userKey(user))?.targets?.find(saved =>
+      saved.platform === target.platform && Number(saved.type) === Number(target.type) && String(saved.num) === String(target.num)) || {};
     const commands = (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     settings.innerHTML = '';
     sessionSettings(settings, {
       channel: true, repaint: render, session: current, target, commands, subscriptions,
-      baseline: JSON.parse(pushSaved).find(saved => userKey(saved) === userKey(user))?.targets?.find(saved =>
-        saved.platform === target.platform && Number(saved.type) === Number(target.type) && String(saved.num) === String(target.num)) || {},
+      baseline,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
       summary: {
-        revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal),
+        revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal, baseline.quietHours || {mode: 'follow'}),
         command: commandSummary(commands, current, runtime.totalDataAvailable),
         subscription: subscriptionSummary(subscriptions, current),
         atAll: atAllStatus(quota, current, target, directory),
@@ -1988,12 +2022,92 @@ function pickTarget(opts) {
   });
 }
 
+function lookupTarget(platform, type, num) {
+  return api('/bot/targets/lookup?' + new URLSearchParams({platform, type, num: String(num)}));
+}
+
+/** 成员只查询输入的完整号码，不读取或展示机器人会话名单。 */
+function pickMemberTarget(opts) {
+  const platform = opts.user.targets?.[0]?.platform
+    || pushData.flatMap(user => user.targets || [])[0]?.platform
+    || runtime.sessions?.[0]?.platform || store.senderList?.[0];
+  const numberLabel = term('bot.target.group', '群号') + '或 ' + term('bot.target.user', '用户号');
+  openDrawer(opts.title, '填写完整的' + numberLabel + '，查到后再添加。', body => {
+    const kind = el('select');
+    kind.setAttribute('aria-label', '会话类型');
+    kind.innerHTML = '<option value="group">群</option><option value="friend">好友</option>';
+    kind.value = 'group';
+    body.appendChild(kind);
+    const number = el('input');
+    number.type = 'text';
+    number.inputMode = 'numeric';
+    number.setAttribute('aria-label', '完整的' + numberLabel);
+    number.placeholder = '完整的' + numberLabel;
+    body.appendChild(number);
+    const go = el('button', 'primary');
+    go.type = 'button';
+    go.textContent = '查';
+    body.appendChild(go);
+    const out = el('div');
+    out.setAttribute('aria-live', 'polite');
+    body.appendChild(out);
+    let revision = 0;
+    const valid = () => /^[1-9]\d*$/.test(number.value);
+    const invalid = '请填写完整的' + numberLabel + '，开头不能是 0';
+    const changed = () => {
+      revision++;
+      go.disabled = false;
+      out.innerHTML = '';
+      if (number.value && !valid()) out.textContent = invalid;
+    };
+    number.addEventListener('input', changed);
+    kind.addEventListener('change', changed);
+    go.addEventListener('click', async () => {
+      out.innerHTML = '';
+      if (!valid()) { out.textContent = invalid; return; }
+      if (!platform) { out.textContent = '没有可用的推送平台，请联系管理员。'; return; }
+      const attempt = ++revision;
+      const num = number.value;
+      const type = kind.value;
+      go.disabled = true;
+      try {
+        const found = await lookupTarget(platform, type, num);
+        if (attempt !== revision) return;
+        if (!found.success || !found.found) {
+          out.textContent = found.message || '未查到这个会话';
+          return;
+        }
+        const hit = {platform, type: type === 'group' ? 1 : 0, num: found.num};
+        const key = channelTail(hit);
+        const name = found.name || found.nickname || String(found.num);
+        directory[key] = {name};
+        out.appendChild(el('p')).textContent = name;
+        if (found.message) out.appendChild(el('p', 'hint')).textContent = found.message;
+        const add = el('button', 'primary');
+        add.type = 'button';
+        add.textContent = '加上';
+        add.disabled = opts.taken.includes(key);
+        add.addEventListener('click', () => {
+          if (attempt !== revision || opts.taken.includes(key)) return;
+          closeDrawer();
+          opts.onPick(hit);
+        });
+        out.appendChild(add);
+      } catch (e) {
+        if (attempt === revision) out.textContent = e.message;
+      } finally {
+        if (attempt === revision) go.disabled = false;
+      }
+    });
+  });
+}
+
 /** 给某位主播添加一个通道 */
 function addChannel(user) {
   const taken = (user.targets || [])
     .map(item => item.platform + '|' + Number(item.type) + '|' + item.num);
 
-  pickTarget({
+  (isMember() ? pickMemberTarget : pickTarget)({
     title: '给「' + streamerName(user) + '」添加通道',
     lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。群的设置（金额显示、静音、命令开关等）由推送到该群的所有主播共用。',
     user,
@@ -2142,6 +2256,7 @@ const setupVersions = new Map();
 export function trackSetupVersions(key, versions) { setupVersions.set(key, versions); }
 
 export function acceptAddedPushUser(user, version) {
+  user = {...user, _summary: true};
   const key = userKey(user);
   const existing = pushData.find(item => userKey(item) === key);
   let acceptVersion = !existing;
