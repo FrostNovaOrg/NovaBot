@@ -10,6 +10,7 @@ let disk = initial();
 const version = user => JSON.stringify(user);
 const requests = [];
 let sessionDisabled = [];
+const quietByUid = {1: true, 2: false};
 const response = payload => ({status: 200, json: async () => copy(payload)});
 globalThis.fetch = async (path, options = {}) => {
   const url = String(path).replace('/config/api', '');
@@ -28,8 +29,8 @@ globalThis.fetch = async (path, options = {}) => {
   }
   if (url === '/state') return response({sessions: [{platform: 'q', typeCode: 1, num: 100,
     revenueVisible: true, disabled: sessionDisabled, menuHidden: [], quietActive: true,
-    channels: [{streamerPlatform: 'p', streamerUid: 1, quietActive: true},
-      {streamerPlatform: 'p', streamerUid: 2, quietActive: false}]}], commands: [
+    channels: [{streamerPlatform: 'p', streamerUid: 1, quietActive: quietByUid[1]},
+      {streamerPlatform: 'p', streamerUid: 2, quietActive: quietByUid[2]}]}], commands: [
     {name: '直播报告', category: '数据查询', disableable: true, channelScoped: true},
     {name: '天气', category: '天气查询', disableable: true, channelScoped: false},
     {name: '菜单', category: '命令管理', disableable: false},
@@ -124,6 +125,33 @@ await test('群里关了插件命令时通道行显示计数，再关本通道�
   assert.equal(input('天气'), undefined, '通道命令开关仍只列主播命令');
   assert.equal(text(idNode('push-right')).includes('但这些命令已不存在'), false, '群插件命令不能当作失效的通道开关');
 });
+await test('通道明明在静音，主播页的通道行一眼看不出，以为推送坏了', async () => {
+  const rowQuiet = () => {
+    const rows = idNode('push-right').querySelectorAll('.rowcard');
+    assert.equal(rows.length, 1, '主播页应列出这位主播的那一条通道');
+    return rows.some(row => text(row).includes('静音中'));
+  };
+  disk = initial(); sessionDisabled = [];
+  disk[0].targets[0].quietHours = {mode: 'custom', start: '00:00', end: '23:59'};
+  disk[1].targets[0].quietHours = {mode: 'off'};
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await push.showPush('1');
+  assert.ok(rowQuiet(), '服务端判甲通道正在静音，通道行应出「静音中」');
+  await push.showPush('2');
+  assert.equal(rowQuiet(), false, '乙通道不在静音，通道行不应出「静音中」');
+  // 草稿改了静音档位：服务端那份判定说的是已存的档位，与通道页摘要同样不再采用
+  push.pushEntries().find(user => user.uid === 1).targets[0].quietHours = {mode: 'off'};
+  await push.showPush('1');
+  assert.equal(rowQuiet(), false, '未保存的静音档位不能配上已存档位的「静音中」');
+  // 没设静音时段：服务端判不在静音
+  disk = initial(); quietByUid[1] = false;
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await push.showPush('1');
+  assert.equal(rowQuiet(), false, '没设静音时段时通道行不应出「静音中」');
+  quietByUid[1] = true;
+});
 await push.leave();
-console.log('跑了 5 格，红 ' + failures.length + ' 格');
+console.log('跑了 6 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;

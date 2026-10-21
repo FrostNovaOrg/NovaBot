@@ -390,7 +390,7 @@ await ask('添加通道写明群设置共用并列出其他主播', async () => 
   same(rows[0].innerHTML.includes(' · 正在推送 甲、乙'), true, '已有推送的群列出主播');
   same(rows[1].innerHTML.includes('正在推送'), false, '没人推的群不写主播');
   same(rows[2].innerHTML.includes('正在推送'), false, '好友不写主播');
-  same(idNode('push-drawer-lead').textContent.includes('群的设置（金额显示、静音、命令开关等）由推送到该群的所有主播共用。'),
+  same(idNode('push-drawer-lead').textContent.includes('通道设置（金额可见、静音时段、命令开关）每条通道各一份，不影响同群的其他主播。'),
     true, '添加前的共用说明');
   push.closeDrawer();
 });
