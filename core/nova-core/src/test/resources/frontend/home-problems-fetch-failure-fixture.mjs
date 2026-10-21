@@ -43,6 +43,15 @@ class Node {
     this.innerHTML = '';
     this.textContent = '';
     this.className = '';
+    this.classList = {
+      toggle: (name, force) => {
+        const names = new Set(this.className.split(/\s+/).filter(Boolean));
+        const on = force === undefined ? !names.has(name) : !!force;
+        if (on) names.add(name); else names.delete(name);
+        this.className = [...names].join(' ');
+        return on;
+      },
+    };
     this.style = {display: ''};
     this.disabled = false;
     this.dataset = {};

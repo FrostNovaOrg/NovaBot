@@ -30,6 +30,12 @@ const PAGE_STYLE = `
 #st-list a.rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;color:inherit;text-decoration:none}
 #st-list a.rowcard:hover{background:var(--soft)}
 #st-list a.rowcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.st-list-scope{margin:12px 0 0;color:var(--dim);font-size:12px;line-height:1.6}
+.st-group-heading{margin:18px 0 4px;padding-top:16px;border-top:1px solid var(--line);font-size:14px}
+.st-group-heading:first-child{margin-top:0;padding-top:0;border-top:0}
+.st-group-heading small{display:block;margin-top:5px;color:var(--dim);font-size:12px;font-weight:400;line-height:1.6}
+.sd-loading{margin:0;color:var(--dim);font-size:14px;line-height:1.7}
+#sd-body>.sd-loading{padding:24px 0}
 #sd-live .live-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #sd-live .live-head h3{margin:0}
 #sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
@@ -58,7 +64,7 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent-text
 #sd-audience th,#sd-audience td{white-space:nowrap;height:auto}
 #sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500;text-decoration:none}
 #sd-audience td a,#sd-audience td a:visited{color:var(--accent-text)}
-.sd-area-table td a,.sd-area-table td a:visited{color:rgb(0,0,238);font-weight:400;text-decoration:none}
+.sd-area-table td a,.sd-area-table td a:visited{color:var(--accent-text);font-weight:400;text-decoration:none}
 :is(#sd-body,.sc-drawer){min-width:0}
 #sx-body img{max-width:100%;height:auto}
 
@@ -98,11 +104,11 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 .sd-session-quality{text-align:right}.sd-session-quality .sd-cell-note{margin-top:3px;white-space:nowrap}
 .sd-trend-coverage{white-space:nowrap;text-align:left}
 .sd-trend-table{overflow-x:auto;min-width:0;max-width:100%}.sd-trend-table table{min-width:480px}
-.sd-period-link,.sd-period-link:visited{color:rgb(0,0,238);text-decoration:none}
+.sd-period-link,.sd-period-link:visited{color:var(--accent-text);text-decoration:none}
 .sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
 .sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:13px}
 .sd-pagination>span{margin:0 auto 0 0;color:var(--dim)}
-.sd-pagination a,.sd-pagination a:visited{color:rgb(0,0,238);text-decoration:none}
+.sd-pagination a,.sd-pagination a:visited{color:var(--accent-text);text-decoration:none}
 .sd-interaction-bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
 .sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
@@ -138,7 +144,9 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 .sd-entry-table th{font-weight:500;color:var(--dim)}
 .sd-entry-table th:first-child,.sd-entry-table td:first-child{text-align:left}
 .sd-entry-table small{display:block;margin-top:3px;font-size:11px;color:var(--dim)}
-.sd-session-filters .sd-clear-filter,.sd-session-filters .sd-clear-filter:visited{color:rgb(0,0,238);font-size:15px;text-decoration:underline}
+.sd-session-filters .sd-clear-filter,.sd-session-filters .sd-clear-filter:visited{color:var(--accent-text);font-size:15px;text-decoration:underline}
+:is(.sd-area-table td a,.sd-period-link,.sd-pagination a,.sd-clear-filter,.sd-person-link):hover{text-decoration:underline;text-underline-offset:3px}
+:is(#sd-body,.sc-drawer) a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
 #sd-head .sh-nm{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #sd-head .sh-nm>.pill{flex-shrink:0}
 #sd-banner{padding:9px 13px;border:0;border-left:3px solid var(--accent);background:var(--soft);border-radius:var(--r-ctl);font-size:13px;color:var(--dim);margin:0 0 16px}
@@ -204,7 +212,8 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 .sd-audience-group strong{font-size:15px;color:var(--text)}
 .sd-audience-group[aria-current=page]{border-color:var(--accent);background:var(--soft)}
 #sd-audience-summary .sd-ring-link{font-size:11px;color:var(--accent-text)}
-#sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:rgb(0,0,238);text-decoration:none;font-size:14px}
+#sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:var(--accent-text);text-decoration:none;font-size:14px}
+#sd-audience .sd-person-link:hover{text-decoration:underline;text-underline-offset:3px}
 .sd-scroll-hint{font-size:12px;color:var(--dim);margin:7px 0 0}
 .sd-session-note{font-size:12px;color:var(--dim);margin:8px 0 0}
 .sd-slot-top a{background:var(--ground);text-align:left}
@@ -248,9 +257,10 @@ export function render(section) {
       <div class="nv-card hcard">
         <h3>全部主播 <span class="h-note" id="st-window"></span></h3>
         <div class="stats" id="st-all"></div>
+        <p class="st-list-scope">在册人数包含停用主播；场次与时长仅汇总启用主播。统计日为 06:00—次日 06:00。</p>
       </div>
       <div class="nv-card hcard">
-        <h3>每位主播 <span class="h-note">右侧折线为最近几天每天的场次</span></h3>
+        <h3>主播列表 <span class="h-note">右侧折线为最近几个统计日的场次</span></h3>
         <div id="st-list"></div>
       </div>
       <div id="st-unlisted"></div>
@@ -359,7 +369,17 @@ export function syncStreamersView() {
   kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
   viewGeneration++;
   stopLiveRefresh();
-  where = parseStreamersHash(location.hash);
+  const next = parseStreamersHash(location.hash);
+  const changingStreamer = next.view === 'detail'
+    && (where.view !== 'detail' || where.platform !== next.platform || where.uid !== next.uid);
+  where = next;
+  if (changingStreamer) {
+    // 换主播时立即撤掉旧身份的链接，避免加载期间点回上一位主播。
+    detail = null; insightsData = null; periodAudience = null;
+    $('#sv-detail').setAttribute('aria-busy', 'true');
+    $('#sd-head').innerHTML = '<p class="sd-loading" role="status">正在加载主播资料…</p>';
+    $('#sd-body').innerHTML = '<p class="sd-loading">正在读取该主播的运营数据…</p>';
+  }
   $('#sv-list').style.display = where.view === 'list' ? '' : 'none';
   $('#sv-detail').style.display = where.view === 'detail' ? '' : 'none';
   $('#sv-session').style.display = where.view === 'session' ? '' : 'none';
@@ -432,14 +452,14 @@ async function loadList() {
 
   const list = data.streamers || [];
   const days = data.days || 0;
-  $('#st-window').textContent = days ? '最近 ' + days + ' 天' : '';
+  $('#st-window').textContent = days ? '最近 ' + days + ' 个统计日' : '';
 
   const totals = summaryTotals(list, days);
   $('#st-all').innerHTML = [
-    [String(totals.total), '在册主播'],
+    [String(totals.total), '在册主播（含停用）'],
     [String(totals.living), '正在直播'],
-    [String(totals.sessions), '最近 ' + totals.days + ' 天场次'],
-    [fmtDuration(totals.durationSeconds), '最近 ' + totals.days + ' 天时长'],
+    [String(totals.sessions), '启用主播 · 近 ' + totals.days + ' 天场次'],
+    [fmtDuration(totals.durationSeconds), '启用主播 · 近 ' + totals.days + ' 天时长'],
   ].map(([value, label]) => '<div class="stat"><div class="stat-v">' + esc(value)
     + '</div><div class="stat-l">' + esc(label) + '</div></div>').join('');
 
@@ -470,32 +490,46 @@ function renderRows(list, days) {
     return;
   }
 
-  for (const one of list) {
-    const row = el('a', 'rowcard');
-    row.href = detailHash(one.platform, one.uid);
-    row.setAttribute('aria-label', one.uname || String(one.uid));
+  // 仅按接口已有状态分组，汇总仍由 summaryTotals 保持原统计规则。
+  const enabled = list.filter(one => one.status !== 'DISABLED');
+  const disabled = list.filter(one => one.status === 'DISABLED');
+  for (const group of [{title: '启用主播', rows: enabled}, {title: '停用主播', rows: disabled}]) {
+    if (!group.rows.length) continue;
+    const heading = el('h4', 'st-group-heading');
+    heading.textContent = group.title;
+    if (group.rows === disabled) {
+      const note = el('small');
+      note.textContent = '历史场次仍可查看；以下场次与时长不计入上方汇总。';
+      heading.appendChild(note);
+    }
+    host.appendChild(heading);
+    for (const one of group.rows) {
+      const row = el('a', 'rowcard');
+      row.href = detailHash(one.platform, one.uid);
+      row.setAttribute('aria-label', one.uname || String(one.uid));
 
-    const main = el('div', 'rc-main');
-    const name = el('div', 'rc-nm');
-    name.textContent = one.uname || String(one.uid);
-    name.appendChild(chip(one));
-    main.appendChild(name);
+      const main = el('div', 'rc-main');
+      const name = el('div', 'rc-nm');
+      name.textContent = one.uname || String(one.uid);
+      name.appendChild(chip(one));
+      main.appendChild(name);
 
-    const sub = el('div', 'rc-sub');
-    // 直播间号与 uid 一并写出：群里的人报的是直播间号，控制台里配的是 uid，
-    // 两者对不上时，只显示其中一个的那一行谁也认不出是不是同一位
-    sub.textContent = 'uid ' + one.uid + (one.roomId ? ' · 直播间 ' + one.roomId : '')
-      + ' · ';
-    const summary = el('span');
-    summary.textContent = rowSubtitle(one, days);
-    summary.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
-    sub.appendChild(summary);
-    main.appendChild(sub);
-    row.appendChild(main);
+      const sub = el('div', 'rc-sub');
+      // 直播间号与 uid 一并写出：群里的人报的是直播间号，控制台里配的是 uid，
+      // 两者对不上时，只显示其中一个的那一行谁也认不出是不是同一位
+      sub.textContent = 'uid ' + one.uid + (one.roomId ? ' · 直播间 ' + one.roomId : '')
+        + ' · ';
+      const summary = el('span');
+      summary.textContent = rowSubtitle(one, days);
+      summary.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
+      sub.appendChild(summary);
+      main.appendChild(sub);
+      row.appendChild(main);
 
-    row.appendChild(spark(one.series));
+      row.appendChild(spark(one.series));
 
-    host.appendChild(row);
+      host.appendChild(row);
+    }
   }
 }
 
@@ -619,10 +653,15 @@ async function loadDetail() {
     if (generation !== viewGeneration || !liveActive) return;
     detail = response;
   } catch (e) {
+    if (generation !== viewGeneration || !liveActive) return;
+    $('#sv-detail').removeAttribute('aria-busy');
+    $('#sd-head').innerHTML = '';
+    $('#sd-body').innerHTML = '<p class="empty">' + esc('主播详情加载失败：' + e.message) + '</p>';
     say('主播详情加载失败：' + e.message, 'err');
     return;
   }
 
+  $('#sv-detail').removeAttribute('aria-busy');
   if (!detail.success) {
     $('#sd-head').innerHTML = '';
     $('#sd-body').innerHTML = '<p class="empty">' + esc(detail.message || '没有该主播的记录。') + '</p>';
