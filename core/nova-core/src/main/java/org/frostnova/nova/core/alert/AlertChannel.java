@@ -75,6 +75,11 @@ public interface AlertChannel {
         return List.of();
     }
 
+    /** 用于审计的收件位置，不能包含凭据或带密钥的地址。 */
+    default String auditDestination() {
+        return name();
+    }
+
     /**
      * 一次发送的结果
      * @param status 结局

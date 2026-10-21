@@ -114,10 +114,14 @@ public class EventStreamTokenService {
      * @return 口令明文，<b>仅此一次</b>
      */
     public synchronized String issue(@NonNull String label) {
+        return issue(label, "本地管理员");
+    }
+
+    public synchronized String issue(@NonNull String label, @NonNull String actor) {
         String token = SecureToken.generate();
         EventStreamToken record = new EventStreamToken(hash(token), label, System.currentTimeMillis(), 0);
         append(record);
-        log.info("已签发一把事件流只读口令: {} (指纹 {})", label, SecureToken.fingerprint(token));
+        log.info("{} 已签发一把事件流只读口令 (指纹 {})", actor, SecureToken.fingerprint(token));
         return token;
     }
 
@@ -137,6 +141,10 @@ public class EventStreamTokenService {
 
     /** 吊销并返回本次断开的连接数；写盘失败时不通知连接。 */
     public synchronized RevocationResult revokeAndDisconnect(@NonNull String fingerprint) {
+        return revokeAndDisconnect(fingerprint, "本地管理员");
+    }
+
+    public synchronized RevocationResult revokeAndDisconnect(@NonNull String fingerprint, @NonNull String actor) {
         List<EventStreamToken> all = list();
         List<String> revokedHashes = new ArrayList<>();
         boolean found = false;
@@ -160,8 +168,8 @@ public class EventStreamTokenService {
                     disconnected += listener.applyAsInt(hash);
                 }
             }
-            log.warn("已吊销一把事件流只读口令: 指纹 {}, 已断开使用该口令的 {} 个连接",
-                    fingerprint, disconnected);
+            log.warn("{} 已吊销一把事件流只读口令: 指纹 {}, 已断开使用该口令的 {} 个连接",
+                    actor, fingerprint, disconnected);
         }
         return new RevocationResult(found, disconnected);
     }

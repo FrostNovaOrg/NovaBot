@@ -70,6 +70,23 @@ class ChannelSettingsMigrationTest {
 
     boolean logged(String text) { return migrationLog.list.stream().anyMatch(event -> event.getFormattedMessage().contains(text)); }
 
+    // 类型错的金额和命令记录不能悄悄丢掉，日志要能定位会话与设置，迁移仍继续。
+    @Test
+    void wrongLegacyTypesAreLoggedAndSkipped() throws Exception {
+        state.write(RevenueVisibilityService.NAMESPACE, data -> data.put("qq:1:100", "yes"));
+        state.write(CommandSettingsService.NAMESPACE, data -> data.put("qq:1:100", new JSONArray()));
+        migration.migrate();
+        var migrated = target(JSONArray.parseArray(Files.readString(file)), 0);
+        assertFalse(migrated.containsKey("revenueVisible"));
+        assertFalse(migrated.containsKey("disabledCommands"));
+        assertEquals("custom", migrated.getJSONObject("quietHours").getString("mode"));
+        for (String namespace : List.of(RevenueVisibilityService.NAMESPACE, CommandSettingsService.NAMESPACE)) {
+            assertTrue(migrationLog.list.stream().map(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(line -> line.contains("qq:1:100") && line.contains(namespace)
+                            && line.contains("类型不对") && line.contains("跳过")), namespace);
+        }
+    }
+
     @Test @DisplayName("升级后两位主播保留群设置，停用通道也保留，旧状态完全不变")
     void copiesAllExistingChannelsOnce() throws Exception {
         String oldRevenue = state.namespace(RevenueVisibilityService.NAMESPACE).toJSONString();

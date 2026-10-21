@@ -536,6 +536,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      */
     public void applyPasswordHash(String hashed) {
         this.passwordHash = hashed;
+        if (hashed == null) sessions.revokeAllOidc();
         log.info("配置界面的登录口令已更换");
     }
 

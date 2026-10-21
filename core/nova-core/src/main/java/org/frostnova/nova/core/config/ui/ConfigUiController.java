@@ -1187,6 +1187,7 @@ public class ConfigUiController {
             changedKeys.forEach(key -> applied.put(key, normalized.get(key) == null ? "" : normalized.get(key)));
             List<String> restartRequired = runtimeApplier.applyAndTrack(applied);
 
+            log.info("{} 存了控制台设置，改动项 {}", ConfigUiAccess.actor(), changedKeys);
             int changed = changedKeys.size();
             int restart = restartRequired.size();
 
@@ -1365,7 +1366,7 @@ public class ConfigUiController {
         }
 
         try {
-            String token = eventStreamTokens.issue(label.trim());
+            String token = eventStreamTokens.issue(label.trim(), ConfigUiAccess.actor());
             result.put("success", true);
             result.put("token", token);
             result.put("message", "这是该令牌唯一一次显示，请立即复制保存；关闭后无法再次查看");
@@ -1390,7 +1391,7 @@ public class ConfigUiController {
     public JSONObject revokeEventToken(@PathVariable String fingerprint) {
         JSONObject result = new JSONObject();
         try {
-            EventStreamTokenService.RevocationResult revoked = eventStreamTokens.revokeAndDisconnect(fingerprint);
+            EventStreamTokenService.RevocationResult revoked = eventStreamTokens.revokeAndDisconnect(fingerprint, ConfigUiAccess.actor());
             boolean found = revoked.found();
             result.put("success", found);
             result.put("message", found
@@ -1537,6 +1538,7 @@ public class ConfigUiController {
 
         try {
             fileService.writeListItemFields(listKey, 0, applied.configuration());
+            log.info("{} 存了机器人连接", ConfigUiAccess.actor());
             result.put("success", true);
             result.put("message", applied.live()
                     ? "已保存，此连接已建立：" + applied.detail()
@@ -1627,7 +1629,7 @@ public class ConfigUiController {
             provider.get().logout();
             result.put("success", true);
             result.put("message", "已退出登录，请扫描新的二维码重新登录");
-            log.info("配置界面已退出 {} 的登录", platform);
+            log.info("{} 退出了平台 {} 的登录", ConfigUiAccess.actor(), platform);
         } catch (Exception e) {
             log.error("退出 {} 的登录失败", platform, e);
             result.put("success", false);
@@ -1682,6 +1684,7 @@ public class ConfigUiController {
             return result;
         }
 
+        log.info("{} 向会话 {}:{}:{} 发送测试消息", ConfigUiAccess.actor(), platform, type, num);
         try {
             JSONObject raw = null;
             JSONObject failure = null;
@@ -1782,11 +1785,11 @@ public class ConfigUiController {
     @PostMapping("/api/datasource")
     public ResponseEntity<JSONObject> saveDatasource(@RequestBody JSONObject body) {
         synchronized (DATASOURCE_LOCK) {
-            return writeDatasource(body);
+            return writeDatasource(body, "覆盖了整份推送配置");
         }
     }
 
-    private ResponseEntity<JSONObject> writeDatasource(JSONObject body) {
+    private ResponseEntity<JSONObject> writeDatasource(JSONObject body, String action) {
         JSONObject result = new JSONObject();
 
         String content = body.getString("content");
@@ -1818,7 +1821,7 @@ public class ConfigUiController {
 
             result.put("success", true);
             result.put("message", "已保存，配置已生效");
-            log.info("配置界面已更新推送配置");
+            log.info("{} {}", ConfigUiAccess.actor(), action);
         } catch (IOException e) {
             log.error("保存推送配置失败", e);
             result.put("success", false);
@@ -1927,11 +1930,16 @@ public class ConfigUiController {
                         || !Objects.equals(uid, replacement.getString("uid")))) {
                     return ResponseEntity.badRequest().body(datasourceError("主播的平台与 uid 不可更改"));
                 }
+                String description = switch (action) {
+                    case "add" -> "加了主播 ";
+                    case "delete" -> "删了主播 ";
+                    default -> "存了主播 ";
+                } + ConfigUiAudit.streamer(dataSource, platform, uid) + ("delete".equals(action) ? "" : " 的推送配置");
                 if ("delete".equals(action)) users.remove(current);
                 else if (current == null) users.add(replacement);
                 else users.set(users.indexOf(current), replacement);
 
-                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", formatDatasource(users, 0)));
+                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", formatDatasource(users, 0)), description);
                 if (response.getBody().getBooleanValue("success") && !"delete".equals(action)) {
                     response.getBody().put("version", datasourceVersion(replacement));
                 }

@@ -251,7 +251,7 @@ public class ConfigUiAuthController {
         }
 
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
-        agreement.setAcceptedAt(OffsetDateTime.now().toString());
+        agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString());
         agreement.setAcceptedBy(channel.wire());
         agreement.setAcceptedActor(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount account
                 ? account.displayName() : "本地管理员");
