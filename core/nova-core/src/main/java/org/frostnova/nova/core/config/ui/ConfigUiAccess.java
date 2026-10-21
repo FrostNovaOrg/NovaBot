@@ -3,6 +3,7 @@ package org.frostnova.nova.core.config.ui;
 import jakarta.servlet.http.HttpServletRequest;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
+import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -11,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Identity established by the console filter for this request. */
 public final class ConfigUiAccess {
     public static final String ACCOUNT = "nova.console.account";
+    public static final String PLATFORMS = "nova.console.platforms";
     public static final String SESSION = "nova.console.session";
     public static final String FRESH_LOCAL = "nova.console.fresh-local";
     public static final String LOCAL_REQUIRED = "这一步要先用本地方式重新登录";
@@ -40,15 +42,17 @@ public final class ConfigUiAccess {
 
     public static boolean visible(String platform, Long uid) {
         var member = memberAccount();
-        return member == null || org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.owns(member, platform, uid);
+        var request = request();
+        var platforms = request != null && request.getAttribute(PLATFORMS) instanceof DataSourceServiceRegistry registry
+                ? registry.platforms() : java.util.List.<String>of();
+        return member == null || org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.owns(member, platform, uid, platforms);
     }
 
     public static boolean visible(org.frostnova.nova.core.timeline.TimelineEvent event) {
         var member = memberAccount();
         if (member == null) return true;
         if (event.streamer() == null) return false;
-        return org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.owns(member,
-                event.detail().get("streamerPlatform"),
+        return visible(event.detail().get("streamerPlatform"),
                 org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.positiveDecimal(event.detail().get("streamerUid")));
     }
 

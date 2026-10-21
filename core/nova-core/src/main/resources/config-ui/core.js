@@ -266,6 +266,12 @@ export function changeCount() {
   return source ? source.changeCount() : 0;
 }
 
+/** 退出会丢掉各页草稿，沿用设置项与插件页已有的计数方式。 */
+export function hasUnsavedChanges() {
+  return Object.keys(store.dirty).length > 0
+    || [...changeSources.values()].some(source => source.changeCount() > 0);
+}
+
 /**
  * 这一项改了要不要重启才生效
  *

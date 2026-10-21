@@ -4,7 +4,7 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, CONSOLE, currentChangeSource, el, esc, markDirty, phrase, registerChangeSource, reloadChangeSources, say,
+import {$, api, CONSOLE, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say,
   term} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
@@ -12,6 +12,8 @@ import {loadLog, stopFollow, syncLogView} from './log.js';
 import {manualHref} from './manual-link.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
+import {setMemberAuthState} from './settings-members.js';
+import {renderPersonalMenu} from './personal-menu.js';
 import {CLEAR, defaultValue} from './settings-model.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
   from './settings.js';
@@ -723,13 +725,10 @@ $('#set-search').addEventListener('input', filterSettings);
 $('#only-changed').addEventListener('change', filterSettings);
 $('#show-keys').addEventListener('change', toggleKeyNames);
 
-$('#logout').addEventListener('click', async () => {
-  await api('/auth/logout', {method: 'POST'});
-  location.reload();
-});
 $('#logout-all').addEventListener('click', async () => {
   if (!await ask({title: '退出全部设备？',
-    body: '所有设备上的控制台登录都将失效，包括当前设备。'})) return;
+    body: (hasUnsavedChanges() ? '有未保存的改动，退出后将丢失。' : '')
+      + '所有设备上的控制台登录都将失效，包括当前设备。'})) return;
   await api('/auth/logout?all=true', {method: 'POST'});
   location.reload();
 });
@@ -763,6 +762,8 @@ api('/auth/state')
     // 「登录与安全」那一组要按这几位决定摆哪一版（改口令还是重设口令、开关在哪一档），
     // 因此必须赶在下面那趟整体载入之前交进去——那一趟里就要画它了
     setAuthState(state);
+    setMemberAuthState(state);
+    renderPersonalMenu($('#personal-menu'), state);
     // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
     // 那道门开着这件事没有任何其它现象
     $('#op-banner').style.display = state.operatorSession ? '' : 'none';

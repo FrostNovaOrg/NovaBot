@@ -53,6 +53,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
     private ConfigUiAuthService auth;
     private MockMvc mvc;
     private Path configFile;
+    private org.frostnova.nova.core.datasource.DataSourceServiceRegistry platforms;
 
     @BeforeEach
     void console() throws Exception {
@@ -62,6 +63,8 @@ class ConsoleAccountsTest extends OidcTestSupport {
         properties.getConfigUi().getAuth().setTotp(false);
         properties.getConfigUi().getAgreement().setAcceptedVersion(ConfigUiAgreement.VERSION);
         properties.getConfigUi().getAgreement().setAcceptedBy("password");
+        platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
         state = new NovaStateStore(properties);
         accounts = new ConfigUiAccountStore(state);
         sessions = new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(24));
@@ -76,9 +79,9 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement());
         mvc = MockMvcBuilders.standaloneSetup(new ConfigUiAuthController(auth, files, properties),
                         new ConfigUiPasskeyController(new PasskeyService(new PasskeyStore(state), auth), properties, auth),
-                        new ConfigUiAccountController(accounts, auth, client),
+                        new ConfigUiAccountController(accounts, auth, client, platforms),
                         new ConfigUiOidcController(client, auth, accounts, properties), values(files))
-                .addInterceptors(new ConfigUiApiInterceptor(auth))
+                .addInterceptors(new ConfigUiApiInterceptor(auth, properties, platforms))
                 .addFilters(filter).build();
     }
 
@@ -87,6 +90,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
         var metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getKnownTypes()).thenReturn(Map.of("novabot.core.config-ui.oidc.issuer", "java.lang.String",
                 "novabot.core.config-ui.oidc.enabled", "java.lang.Boolean",
+                "novabot.core.config-ui.oidc.management-uri", "java.lang.String",
                 "novabot.core.push.enabled", "java.lang.Boolean"));
         return new ConfigUiController(metadata, files, properties,
                 mock(org.frostnova.nova.core.datasource.AbstractDataSource.class), mock(ObjectProvider.class),
@@ -103,6 +107,67 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 mock(org.frostnova.nova.core.sender.PushGate.class), mock(org.frostnova.nova.core.service.LiveDataService.class),
                 mock(org.frostnova.nova.core.timeline.TimelineStore.class), auth, new PushTemplateDefaults(properties),
                 mock(UpdateCheckService.class));
+    }
+
+    // 管理地址少写一个 s 后，已登录管理员仍能取到登录态与成员列表，并且只警告一次。
+    @Test
+    void invalidManagementUriDoesNotBreakAuthenticatedConsoleAndWarnsOnce() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(OidcClient.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            config.setManagementUri("http://accounts.example.com/manage");
+            rebuildClient();
+            console();
+            var member = enabledMember();
+            var session = oidcSession(accounts.role(member.id(), Role.ADMIN));
+            for (int i = 0; i < 3; i++) {
+                perform(get("/config/api/auth/state"), session).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.oidcEnabled").value(true))
+                        .andExpect(jsonPath("$.csrfToken").isNotEmpty())
+                        .andExpect(jsonPath("$.managementUri").value(""));
+                perform(get("/config/api/accounts"), session).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.managementUri").value(""));
+            }
+            var warnings = logs.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
+            assertEquals(1, warnings.size());
+            String warning = warnings.get(0).getFormattedMessage();
+            assertTrue(warning.contains("novabot.core.config-ui.oidc.management-uri"));
+            assertTrue(warning.contains("https://") && warning.contains("完整地址") && warning.contains("留空"));
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
+    // 地址填错要在保存时指出具体设置，宽松键名也不能绕过校验，整批配置保持原样。
+    @ParameterizedTest
+    @ValueSource(strings = {"http://accounts.example.com/manage", "accounts.example.com/manage",
+            "https://user@accounts.example.com/manage", "https://accounts.example.com/manage#fragment",
+            "https://accounts.example.com:0/manage", "https://accounts.example.com:65536/manage", "https:///manage"})
+    void invalidManagementUriRejectsWholeSettingsBatch(String address) throws Exception {
+        String before = Files.readString(configFile);
+        var local = auth.issueForPassword("127.0.0.1");
+        for (String key : List.of("novabot.core.config-ui.oidc.management-uri", "novabot.core.configUI.oidc.management_uri")) {
+            perform(post("/config/api/values").content(JSONObject.toJSONString(Map.of(key, address,
+                            "novabot.core.push.enabled", "false"))), local)
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("novabot.core.config-ui.oidc.management-uri")))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("https://")))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("完整地址")))
+                    .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("留空")));
+            assertEquals(before, Files.readString(configFile), "无效管理地址不能写入同批的任何项");
+        }
+    }
+
+    // 留空关闭管理入口，或者填好 HTTPS 地址，都应能通过设置页正常保存。
+    @Test
+    void blankAndHttpsManagementUrisCanBeSaved() throws Exception {
+        var local = auth.issueForPassword("127.0.0.1");
+        for (String address : List.of("https://accounts.example.com/manage", "")) {
+            perform(post("/config/api/values").content(JSONObject.toJSONString(Map.of(
+                            "novabot.core.configUI.oidc.management_uri", address))), local)
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+            assertEquals(address, new ConfigurationFileService(configFile).read()
+                    .getOrDefault("novabot.core.config-ui.oidc.management-uri", ""));
+        }
     }
 
     // 在账户中心自行注册的人必须先登记，管理员启用后才能拿到控制台会话。
@@ -445,18 +510,37 @@ class ConsoleAccountsTest extends OidcTestSupport {
     }
 
     // 管理员填错指定主播时整份名单不动，避免一次误填丢掉已有授权。
-    @Test
-    void invalidStreamerAssignmentsLeaveTheListUnchanged() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"BILIBILI:1", "哔哩:1", "bilibili:01", "unknown:1", "streamer-old", ":1",
+            "bilibili:", "bilibili:0", "bilibili:-1", "bilibili:1.5", "bilibili:9223372036854775808", "bilibili:1:2", " :1"})
+    void invalidStreamerAssignmentsLeaveTheListUnchanged(String invalid) throws Exception {
         var member = enabledMember();
         accounts.streamers(member.id(), List.of("bilibili:1"));
         var local = auth.issueForPassword("127.0.0.1");
-        for (String invalid : List.of("streamer-old", ":1", "bilibili:", "bilibili:0", "bilibili:-1",
-                "bilibili:1.5", "bilibili:9223372036854775808", "bilibili:1:2", " :1")) {
+        perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                .content(JSONObject.of("streamers", List.of("bilibili:2", invalid)).toJSONString()), local)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("指定主播格式不正确"));
+        assertEquals(List.of("bilibili:1"), accounts.require(member.id()).streamers());
+    }
+
+    // 名单接受当前已加载的平台及标准编号，平台卸载后不能继续新增授权。
+    @Test
+    void assignmentsUseLoadedPlatformsWithExactSpelling() throws Exception {
+        var member = enabledMember();
+        var local = auth.issueForPassword("127.0.0.1");
+        perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                .content("{\"streamers\":[\"bilibili:1\"]}"), local)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.account.streamers[0]").value("bilibili:1"));
+        when(platforms.platforms()).thenReturn(List.of("Example"));
+        perform(post("/config/api/accounts/" + member.id() + "/streamers")
+                .content("{\"streamers\":[\"Example:1\"]}"), local)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.account.streamers[0]").value("Example:1"));
+        for (String value : List.of("example:1", "bilibili:1")) {
             perform(post("/config/api/accounts/" + member.id() + "/streamers")
-                    .content(JSONObject.of("streamers", List.of("bilibili:2", invalid)).toJSONString()), local)
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("指定主播格式不正确"));
-            assertEquals(List.of("bilibili:1"), accounts.require(member.id()).streamers());
+                    .content(JSONObject.of("streamers", List.of(value)).toJSONString()), local)
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("指定主播格式不正确"));
+            assertEquals(List.of("Example:1"), accounts.require(member.id()).streamers());
         }
     }
 
@@ -465,7 +549,7 @@ class ConsoleAccountsTest extends OidcTestSupport {
     void legacyStreamerAssignmentsAreListedButGrantNoAccess() throws Exception {
         var member = enabledMember();
         var record = ConfigUiAccountStore.json(member);
-        record.put("streamers", List.of("streamer-old", "bilibili:bad", "bilibili:0"));
+        record.put("streamers", List.of("streamer-old", "bilibili:bad", "bilibili:0", "BILIBILI:1", "哔哩:1", "bilibili:01", "unknown:1"));
         state.write(ConfigUiAccountStore.NAMESPACE, data -> data.put(member.id(), record));
         assertTrue(state.trySave());
         var restored = new NovaStateStore(properties);

@@ -37,8 +37,10 @@ class OneBotTargetLookupTest {
         when(directory.cachedSnapshot("qq")).thenReturn(snapshot());
         when(directory.snapshot("qq", false)).thenReturn(snapshot());
         when(directory.snapshot("qq", true)).thenReturn(snapshot());
+        var platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
         mvc = MockMvcBuilders.standaloneSetup(new OneBotTargetLookupController(lookup))
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms)).build();
     }
     OneBotTargetDirectory.Snapshot snapshot() {
         return new OneBotTargetDirectory.Snapshot("qq", List.of(new OneBotTargetDirectory.Group(81001, "Shared group", 12, true)),

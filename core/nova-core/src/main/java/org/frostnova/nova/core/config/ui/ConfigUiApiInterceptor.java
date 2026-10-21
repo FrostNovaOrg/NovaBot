@@ -9,6 +9,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.service.DatasourceChannelStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,15 +32,17 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
     public static final String MEMBER_DENIED = "成员不能使用这一项";
     private final ConfigUiAuthService auth;
     private final NovaCoreProperties properties;
+    private final DataSourceServiceRegistry platforms;
 
     public ConfigUiApiInterceptor(ConfigUiAuthService auth) {
-        this(auth, null);
+        this(auth, null, new DataSourceServiceRegistry(java.util.List.of()));
     }
 
     @Autowired
-    public ConfigUiApiInterceptor(ConfigUiAuthService auth, NovaCoreProperties properties) {
+    public ConfigUiApiInterceptor(ConfigUiAuthService auth, NovaCoreProperties properties, DataSourceServiceRegistry platforms) {
         this.auth = auth;
         this.properties = properties;
+        this.platforms = platforms;
     }
 
     @Override
@@ -51,6 +54,7 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String path = ConfigUiPermissions.pattern(request);
         if (!path.equals(ConfigUiController.BASE_PATH) && !path.startsWith(ConfigUiController.BASE_PATH + "/")) return true;
+        request.setAttribute(ConfigUiAccess.PLATFORMS, platforms);
         var rule = ConfigUiPermissions.rule(request);
         if (auth.isEnabled() && ConfigUiSecurityFilter.PUBLIC_API.contains(path)
                 && rule.access() == ConfigUiPermissions.Access.EVERYONE) return true;
@@ -75,7 +79,7 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
             platform = mvcParameter(request, "platform", String.class);
             uid = mvcParameter(request, "uid", Long.class);
         } else return true; // Body subjects are checked after HTTP message conversion.
-        if (!ConfigUiStreamerId.owns(account, platform, uid)) {
+        if (!ConfigUiStreamerId.owns(account, platform, uid, platforms.platforms())) {
             return reject(response, 404, ConfigUiMemberBodyAdvice.MISSING_STREAMER);
         }
         if (path.equals(ConfigUiController.BASE_PATH + "/api/weekly-report/{platform}/{uid}/trial")

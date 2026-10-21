@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.handler;
 
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -29,7 +30,6 @@ import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -97,7 +97,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         JSONObject params = pushMessage.getParamsJsonObject();
         PushTarget target = pushMessage.getTarget();
 
-        if (!shouldPush(event, params)) {
+        if (!shouldPush(event, params, target.getUser())) {
             return;
         }
 
@@ -146,7 +146,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
      * @param params 推送参数
      * @return 是否需要推送
      */
-    private boolean shouldPush(BilibiliDynamicUpdateEvent event, JSONObject params) {
+    private boolean shouldPush(BilibiliDynamicUpdateEvent event, JSONObject params, PushUser user) {
         String type = event.getDynamic().getType();
 
         JSONArray whiteList = params.getJSONArray("white_list");
@@ -178,10 +178,15 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         // 屏蔽词放在类型白名单、黑名单和「只推转发自己动态」之后。
         // 前面几道已经跳过的动态，各会话名单不同，记不记这一行也就不同——
         // 要的就是这样：只有这个词真把推送挡住了，才记「屏蔽词挡下」。
-        String blocked = hitBlockedWord(event.getDynamic());
+        String blocked = hitBlockedWord(event.getDynamic(), properties.getDynamic().getBlockWords());
+        String scope = "全实例";
+        if (blocked == null && user != null) {
+            blocked = hitBlockedWord(event.getDynamic(), user.getDynamicBlockWords());
+            scope = "这位主播自己的";
+        }
         if (blocked != null) {
-            log.info("{} 的动态命中屏蔽词 {}, 跳过推送", event.getSource().getUname(), blocked);
-            recordBlockedWord(event, blocked);
+            log.info("{} 的动态命中屏蔽词 {}（{}）, 跳过推送", event.getSource().getUname(), blocked, scope);
+            recordBlockedWord(event, blocked, scope);
             return false;
         }
 
@@ -199,8 +204,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
      * @param dynamic 动态
      * @return 命中的词
      */
-    private String hitBlockedWord(Dynamic dynamic) {
-        List<String> words = properties.getDynamic().getBlockWords();
+    private String hitBlockedWord(Dynamic dynamic, List<String> words) {
         if (words == null || words.isEmpty()) {
             return null;
         }
@@ -233,15 +237,16 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
      * @param event 动态更新事件
      * @param word 命中的词
      */
-    private void recordBlockedWord(BilibiliDynamicUpdateEvent event, String word) {
+    private void recordBlockedWord(BilibiliDynamicUpdateEvent event, String word, String scope) {
         Dynamic dynamic = event.getDynamic();
         String id = dynamic.getId();
         synchronized (blockedRecorded) {
             if (id != null) {
-                if (blockedRecorded.contains(id)) {
+                String key = event.getPlatform() + ":" + event.getSource().getUid() + ":" + id;
+                if (blockedRecorded.contains(key)) {
                     return;
                 }
-                blockedRecorded.add(id);
+                blockedRecorded.add(key);
             }
         }
 
@@ -253,8 +258,9 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
                 .streamer(streamer)
                 .detail("streamerPlatform", event.getPlatform())
                 .detail("streamerUid", String.valueOf(event.getSource().getUid()))
-                .text("命中屏蔽词「" + word + "」，没有推送" + streamer + "的这条动态")
+                .text("命中" + scope + "屏蔽词「" + word + "」，没有推送" + streamer + "的这条动态")
                 .detail("word", word)
+                .detail("scope", scope)
                 .detail("url", url)
                 .build());
     }

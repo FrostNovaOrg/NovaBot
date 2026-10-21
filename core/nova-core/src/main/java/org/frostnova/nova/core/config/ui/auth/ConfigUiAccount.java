@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.config.ui.auth;
 
+import org.frostnova.nova.core.config.ui.ConfigUiAudit;
+
 import java.time.Instant;
 import java.util.List;
 
@@ -27,10 +29,7 @@ public record ConfigUiAccount(String id, Role role, Status status, String displa
     }
 
     public String actor() {
-        return LOCAL_ID.equals(id) ? "本地管理员" : safe(displayName) + " (" + id + ")";
+        return LOCAL_ID.equals(id) ? "本地管理员" : ConfigUiAudit.safe(displayName) + " (" + id + ")";
     }
 
-    private static String safe(String text) {
-        return text == null ? "" : text.replaceAll("[\\p{Cntrl}\\p{Zl}\\p{Zp}]", " ");
-    }
 }

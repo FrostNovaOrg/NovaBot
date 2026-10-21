@@ -1,5 +1,8 @@
 package org.frostnova.nova.bilibili.service;
 
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.bilibili.util.DanmuWordCloudFrequencies;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.live.BilibiliCaptainEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliCommanderEvent;
@@ -36,7 +39,6 @@ import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -151,6 +153,13 @@ public class BilibiliLiveStatsAggregator {
      * 读词云屏蔽词用，切词时把屏蔽词整个留下。不带它构造时照常切词
      */
     private final NovaBilibiliProperties properties;
+
+    private AbstractDataSource dataSource;
+
+    @Autowired(required = false)
+    public void setDataSource(AbstractDataSource dataSource) {
+        this.dataSource = dataSource;
+    }
 
     public BilibiliLiveStatsAggregator(LiveDataService liveDataService, LiveDetailArchive details) {
         this(liveDataService, details, null);
@@ -776,6 +785,11 @@ public class BilibiliLiveStatsAggregator {
         }
         List<String> blockWords = properties == null || properties.getLive() == null
                 ? List.of() : properties.getLive().getWordCloudBlockWords();
+        if (dataSource != null) {
+            List<String> own = dataSource.getUser(event.getPlatform(), event.getSource().getUid())
+                    .map(PushUser::getWordCloudBlockWords).orElse(List.of());
+            blockWords = DanmuWordCloudFrequencies.combine(blockWords, own);
+        }
         for (String word : DanmuWordUtil.extractWords(text, blockWords)) {
             liveDataService.incrementLiveWordFrequency(event.getPlatform(), event.getSource().getUid(), word);
         }

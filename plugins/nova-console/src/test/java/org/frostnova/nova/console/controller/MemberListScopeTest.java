@@ -29,6 +29,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class MemberListScopeTest {
@@ -39,6 +40,7 @@ class MemberListScopeTest {
     Path file;
     NovaCoreProperties props;
     AbstractDataSource source;
+    DataSourceServiceRegistry platforms;
     ConfigUiController config;
     RuntimeStateController runtime;
     StreamerController streamers;
@@ -58,6 +60,8 @@ class MemberListScopeTest {
         JSONArray rawUsers = JSONArray.parseArray(JSON.toJSONString(List.of(a, b)));
         for (Object value : rawUsers) for (Object entry : ((JSONObject)value).getJSONArray("targets")) ((JSONObject)entry).put("type", 1);
         Files.writeString(file, rawUsers.toJSONString());
+        platforms = mock(DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
         source = mock(AbstractDataSource.class);
         when(source.getAllUsers()).thenReturn(List.of(a, b));
         timeline = new TimelineStore(props);
@@ -102,9 +106,10 @@ class MemberListScopeTest {
         }
         u.setTargets(targets); return u;
     }
-    static void use(ConfigUiAccount account) {
+    void use(ConfigUiAccount account) {
         var request = new MockHttpServletRequest();
         if (account != null) request.setAttribute(ConfigUiAccess.ACCOUNT, account);
+        request.setAttribute(ConfigUiAccess.PLATFORMS, platforms);
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
     }
     @AfterEach void cleanup() { RequestContextHolder.resetRequestAttributes(); }
@@ -185,11 +190,13 @@ class MemberListScopeTest {
     @Test @SuppressWarnings("unchecked") void pagesAdvertiseOnlyAccessibleNavigation() {
         ObjectProvider<ConsolePageProvider> pages = mock(ObjectProvider.class);
         var adminPage = mock(ConsolePageProvider.class);
-        when(adminPage.id()).thenReturn("admin-tools"); when(adminPage.script()).thenReturn("admin-tools.js");
-        when(adminPage.slot()).thenReturn(ConsolePageSlot.SETTINGS); when(adminPage.assets()).thenReturn(List.of());
+        when(adminPage.id()).thenReturn("admin-tools"); when(adminPage.displayName()).thenReturn("Admin tools");
+        when(adminPage.script()).thenReturn("admin-tools.js");
+        when(adminPage.slot()).thenReturn(ConsolePageSlot.TOP); when(adminPage.assets()).thenReturn(List.of());
         when(pages.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(new StreamersConsolePageProvider(), new PushConsolePageProvider(), adminPage));
         ReflectionTestUtils.setField(config, "pageProviders", pages);
         var before = config.pages();
+        assertTrue(before.getJSONArray("pages").stream().map(item -> ((JSONObject)item).getString("id")).toList().contains("admin-tools"));
         use(MEMBER);
         var result = config.pages();
         assertEquals(List.of("home", "push", "streamers"), result.getList("accessiblePages", String.class));
@@ -277,6 +284,96 @@ class MemberListScopeTest {
         assertEquals(3, runtime.state().getJSONArray("subscriptions").size());
     }
 
+
+    // 旧的非规范授权与未加载平台不能在列表中授权；规范授权在平台加载后才能看到主播。
+    @ParameterizedTest @ValueSource(strings = {"status", "datasource/users", "streamers", "state", "timeline", "push-history", "at-all/quota"})
+    void listOwnershipMatchesLoadedPlatformsAndCanonicalAssignments(String endpoint) throws Exception {
+        var a = user(1, "Owner A", SHARED);
+        var users = JSONArray.parseArray(Files.readString(file));
+        users.getJSONObject(0).put("uid", 1);
+        Files.writeString(file, users.toJSONString());
+        when(source.getAllUsers()).thenReturn(List.of(a, user(B, "Other B", SHARED, OTHER)));
+        recorder.recordSuccess("qq", "群 " + SHARED, "A push", 1, a.getTargets().get(0));
+        var mvc = MockMvcBuilders.standaloneSetup(config, runtime, streamers, quota, push, new TimelineController(timeline))
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), props, platforms)).build();
+        var legacy = assigned("bilibili:01");
+        var canonical = assigned("bilibili:01", "bilibili:1");
+        assertScopedLists(mvc, endpoint, legacy, false);
+        assertScopedLists(mvc, endpoint, canonical, true);
+        assertScopedLists(mvc, endpoint, assigned("Bilibili:1"), false);
+        when(platforms.platforms()).thenReturn(List.of());
+        assertScopedLists(mvc, endpoint, canonical, false);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
+        assertScopedLists(mvc, endpoint, canonical, true);
+    }
+
+    private ConfigUiAccount assigned(String... ids) {
+        return new ConfigUiAccount("member-a", ConfigUiAccount.Role.MEMBER, ConfigUiAccount.Status.ENABLED,
+                "Member A", null, null, null, List.of(ids), Instant.EPOCH, null, true);
+    }
+
+    private void assertScopedLists(org.springframework.test.web.servlet.MockMvc mvc, String endpoint,
+                                   ConfigUiAccount account, boolean visible) throws Exception {
+        var result = mvc.perform(get("/config/api/" + endpoint).requestAttr(ConfigUiAccess.ACCOUNT, account))
+                .andExpect(status().isOk()).andReturn();
+        var json = JSONObject.parseObject(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        concealed(json);
+        String key = switch (endpoint) {
+            case "status", "datasource/users" -> "users";
+            case "streamers" -> "streamers";
+            case "state", "at-all/quota" -> "sessions";
+            case "timeline" -> "events";
+            case "push-history" -> "records";
+            default -> throw new IllegalArgumentException(endpoint);
+        };
+        assertEquals(visible ? 1 : 0, json.getJSONArray(key).size(), endpoint + " assignments=" + account.streamers() + " loaded=" + platforms.platforms());
+        if (endpoint.equals("status")) {
+            assertEquals(visible ? 1 : 0, json.getJSONArray("live").size());
+            assertEquals(visible ? 1 : 0, json.getJSONObject("today").getIntValue("sent"));
+        }
+        if (endpoint.equals("timeline")) {
+            assertEquals(visible ? List.of("Owner A") : List.of(), json.getList("streamers", String.class));
+            assertEquals(visible ? List.of("群 " + SHARED) : List.of(), json.getList("channels", String.class));
+        }
+    }
+
+    // 缺失请求平台注册表时不能把成员名下主播当成已加载平台的数据放行。
+    @Test void missingRegistryConcealsMemberLists() {
+        use(MEMBER);
+        ConfigUiAccess.request().removeAttribute(ConfigUiAccess.PLATFORMS);
+        for (String endpoint : List.of("status", "datasource/users", "streamers", "state", "timeline", "push-history", "at-all/quota")) {
+            var result = response(endpoint);
+            assertFalse(result.toJSONString().contains("Owner A"), endpoint);
+        }
+    }
+
+    // 时间线大类计数只统计成员主播；别人的推送、直播和无主播旧事件不能混入计数。
+    @Test void timelineCategoryCountsOnlyIncludeOwnedStreamerEvents() {
+        var a = user(A, "Owner A", SHARED).getTargets().get(0);
+        var b = user(B, "Other B", SHARED, OTHER).getTargets().get(1);
+        for (int i = 0; i < 2; i++) recorder.recordSuccess("qq", "群 " + SHARED, "A push", 1, a);
+        for (int i = 0; i < 3; i++) recorder.recordFailure("qq", "群 " + OTHER, "B push", "error", 1, b);
+        recorder.recordSuccess("qq", "legacy", "legacy push", 1);
+        timeline.record(TimelineEvent.of(TimelineEventType.LIVE_ON, TimelineEvent.Level.INFO).streamer("Other B")
+                .detail("streamerPlatform", "bilibili").detail("streamerUid", String.valueOf(B)).build());
+        var controller = new TimelineController(timeline);
+        use(MEMBER);
+        var member = controller.timeline(LocalDate.now().toString(), false, null, "PUSH_SENT", null, null, null, 1, null);
+        assertCategoryCounts(member, Map.of("PUSH", 2));
+        assertEquals(2, member.getIntValue("matched"));
+        assertEquals(1, member.getIntValue("returned"));
+        use(ConfigUiAccount.local(Instant.EPOCH));
+        assertCategoryCounts(controller.timeline(LocalDate.now().toString(), false, null, "PUSH_SENT", null, null, null, 1, null),
+                Map.of("PUSH", 6, "LIVE", 1));
+    }
+
+    private void assertCategoryCounts(JSONObject json, Map<String, Integer> expected) {
+        for (Object value : json.getJSONArray("categories")) {
+            var category = (JSONObject)value;
+            assertEquals(expected.getOrDefault(category.getString("name"), 0), category.getInteger("count"), category.getString("name"));
+        }
+    }
+
     // 机器人已有的群和好友可以新增，校验不能把成员加通道一律挡住。
     @Test void memberCanAddVerifiedGroupAndFriend() throws Exception {
         var lookup = mock(PushTargetLookup.class);
@@ -286,7 +383,7 @@ class MemberListScopeTest {
         when(lookups.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(lookup));
         ReflectionTestUtils.setField(config, "targetLookups", lookups);
         var mvc = MockMvcBuilders.standaloneSetup(config)
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), props, platforms)).build();
         use(MEMBER);
         for (int type : List.of(1, 0)) {
             var loaded = config.datasourceUser("bilibili", String.valueOf(A));
@@ -312,7 +409,7 @@ class MemberListScopeTest {
         when(lookups.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(lookup));
         ReflectionTestUtils.setField(config, "targetLookups", lookups);
         var mvc = MockMvcBuilders.standaloneSetup(config)
-                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class))).build();
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), props, platforms)).build();
         use(MEMBER);
         var loaded = config.datasourceUser("bilibili", String.valueOf(A));
         var replacement = loaded.getJSONObject("user");

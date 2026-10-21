@@ -178,6 +178,55 @@ class ChannelSettingsIntegrationTest {
         }
     }
 
+    // 成员可改主播名字，控制字符不能把一次通道设置伪造成多条审计日志。
+    @Test
+    void streamerNameCannotInjectAuditLines() {
+        users.get(0).setUname("甲\n伪造\r\t\u2028\u2029名字");
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DatasourceChannelStore.class);
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            var response = runtime().setRevenueVisibility(JSONObject.of("platform", "qq", "type", 1, "num", 100,
+                    "streamerPlatform", "bilibili", "streamerUid", 10001, "visible", true));
+            assertEquals(200, response.getStatusCode().value());
+            assertTrue(response.getBody().getBooleanValue("success"));
+            assertEquals(1, logs.list.size());
+            String line = logs.list.get(0).getFormattedMessage();
+            assertTrue(line.contains("甲 伪造    名字"), line);
+            assertFalse(java.util.regex.Pattern.compile("[\\p{Cntrl}\\p{Zl}\\p{Zp}]").matcher(line).find(), line);
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
+    // 写盘后的审计运行时异常不能阻止设置生效和成功回包，警告应保留原因。
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void failedAuditStillReloadsAndReturnsSuccess(boolean argumentFailure) throws Exception {
+        RuntimeException failure = argumentFailure ? new IllegalArgumentException("name unavailable")
+                : new IllegalStateException("name unavailable");
+        when(source.getAllUsers()).thenThrow(failure);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DatasourceChannelStore.class);
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(runtime()).build();
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/config/api/state/revenue")
+                    .contentType("application/json").content(JSONObject.of("platform", "qq", "type", 1, "num", 100,
+                            "streamerPlatform", "bilibili", "streamerUid", 10001, "visible", true).toJSONString()))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.success").value(true));
+            assertTrue(JSONArray.parseArray(Files.readString(file)).getJSONObject(0).getJSONArray("targets")
+                    .getJSONObject(0).getBooleanValue("revenueVisible"));
+            verify(source).reload();
+            assertTrue(target(0).getRevenueVisible());
+            assertEquals(1, logs.list.size());
+            assertEquals(ch.qos.logback.classic.Level.WARN, logs.list.get(0).getLevel());
+            assertTrue(logs.list.get(0).getFormattedMessage().contains("审计"));
+            assertNotNull(logs.list.get(0).getThrowableProxy());
+            assertEquals(failure.getMessage(), logs.list.get(0).getThrowableProxy().getMessage());
+            assertEquals(failure.getClass().getName(), logs.list.get(0).getThrowableProxy().getClassName());
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
     static void assertAudit(ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logs,
                             String actor, String target, String action) {
         assertFalse(logs.list.stream().anyMatch(event -> event.getFormattedMessage().contains("console-token-secret")));

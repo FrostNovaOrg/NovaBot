@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
+import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
@@ -23,11 +25,13 @@ public class ConfigUiAccountController {
     private final ConfigUiAccountStore accounts;
     private final ConfigUiAuthService auth;
     private final OidcClient oidc;
+    private final DataSourceServiceRegistry registry;
 
-    public ConfigUiAccountController(ConfigUiAccountStore accounts, ConfigUiAuthService auth, OidcClient oidc) {
+    public ConfigUiAccountController(ConfigUiAccountStore accounts, ConfigUiAuthService auth, OidcClient oidc, DataSourceServiceRegistry registry) {
         this.accounts = accounts;
         this.auth = auth;
         this.oidc = oidc;
+        this.registry = registry;
     }
 
     @GetMapping
@@ -76,6 +80,11 @@ public class ConfigUiAccountController {
     public JSONObject streamers(@PathVariable String id, @RequestBody StreamerChange change, HttpServletRequest request) {
         var actor = ConfigUiAccess.admin(request);
         if (change.streamers() == null) throw new IllegalArgumentException("指定主播不能为空");
+        var platforms = registry.platforms();
+        if (change.streamers().stream().anyMatch(value -> {
+            var streamer = ConfigUiStreamerId.parse(value);
+            return streamer == null || !platforms.contains(streamer.platform());
+        })) throw new IllegalArgumentException("指定主播格式不正确");
         synchronized (accounts) {
             var target = accounts.streamers(id, change.streamers());
             log.info("配置界面账号设指定主播: {} → {}", actor.actor(), target.actor());

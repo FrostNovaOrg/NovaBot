@@ -72,7 +72,13 @@ public class DatasourceChannelStore {
                 if (backup && Files.exists(path)) new TimestampedFileBackup(path, Clock.systemDefaultZone())
                         .backupForSave(properties.getConfigUi().getBackupKeep());
                 DurableFiles.replace(path, after);
-                if (!migration) audit(JSONArray.parseArray(before), users, actor);
+                if (!migration) {
+                    try {
+                        audit(JSONArray.parseArray(before), users, actor);
+                    } catch (RuntimeException error) {
+                        log.warn("通道设置审计失败，配置已保存，将继续重载", error);
+                    }
+                }
                 if (dataSource instanceof JsonDataSource json) json.reload();
                 return true;
             } catch (IOException e) {

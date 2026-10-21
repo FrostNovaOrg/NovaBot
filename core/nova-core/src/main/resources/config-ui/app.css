@@ -61,6 +61,25 @@ body{margin:0;background:var(--ground);color:var(--text);
 #auth-actions button{background:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:5px 12px;cursor:pointer;color:var(--dim);font-size:13px;font-family:inherit;text-align:left}
 #auth-actions button:hover{color:var(--accent);border-color:var(--accent)}
+.personal-menu{min-width:0;max-width:100%}
+.personal-menu summary{display:list-item;list-style-position:inside;overflow-wrap:anywhere}
+.personal-menu-items{display:flex;flex-direction:column;gap:6px;padding-top:6px}
+.personal-menu-items .side-link{justify-content:flex-start}
+.personal-menu-items [hidden]{display:none}
+.member-result{color:var(--err);white-space:pre-wrap;overflow-wrap:anywhere}
+.member-result:empty{display:none}
+.members-intro{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.members-table-wrap{overflow-x:auto}
+.members-table{width:100%;border-collapse:collapse;font-size:13px}
+.members-table th,.members-table td{text-align:left;vertical-align:top;padding:12px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.members-table th{white-space:nowrap;color:var(--dim)}
+.members-table .hint{margin:6px 0;min-width:100px}
+.member-actions{min-width:200px}
+.member-actions button{margin:3px}
+.member-streamers{border:1px solid var(--line);border-radius:var(--r-ctl);padding:8px;max-height:240px;overflow-y:auto}
+.member-streamers[hidden]{display:none}
+.member-streamers label{display:flex;align-items:baseline;gap:6px;padding:5px 0}
+.member-streamers input{flex:none}
 /* 宽屏：底部几个入口竖排、一样宽、文字一律靠左，读起来是一列而不是散落的几枚；
    退出那组与上面隔一条线，免得顺手点到。版本行不设定位基准，药丸面板仍从整格头顶长出来 */
 @media (min-width:960px){
