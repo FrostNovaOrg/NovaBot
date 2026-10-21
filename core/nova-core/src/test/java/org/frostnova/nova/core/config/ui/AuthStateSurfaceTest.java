@@ -69,6 +69,17 @@ class AuthStateSurfaceTest {
         return request;
     }
 
+    // 当前账号没有显示名时，个人菜单依赖自己的邮箱；未登录不能泄漏邮箱。
+    @Test void stateIncludesOnlyAuthenticatedAccountsOwnEmail() {
+        var request = request("127.0.0.1");
+        request.setAttribute(ConfigUiAccess.ACCOUNT, new org.frostnova.nova.core.config.ui.auth.ConfigUiAccount(
+                "member-a", org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.Role.MEMBER,
+                org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.Status.ENABLED, null,
+                "member@example.com", null, null, java.util.List.of(), java.time.Instant.EPOCH, null, true));
+        assertEquals("member@example.com", controller.state(request).getString("email"));
+        assertFalse(controller.state(request("127.0.0.1")).containsKey("email"));
+    }
+
     // 已登录的人要能找到账户中心，地址必须与账号列表使用同一个来源。
     @Test
     void authenticatedOidcSetupExposesManagementUri() {

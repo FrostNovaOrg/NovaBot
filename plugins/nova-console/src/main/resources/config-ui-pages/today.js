@@ -39,11 +39,11 @@ let seen = {status: null, quota: null};
 export function render(container) {
   box = container;
   box.innerHTML = '<div class="stats" id="today-stats"></div>'
-    + '<div class="quickbar">'
+    + (store.role === 'MEMBER' ? '' : '<div class="quickbar">'
     + '<button id="toggle-push" type="button">…</button>'
     + '<span id="push-hint"></span>'
-    + '</div>';
-  box.querySelector('#toggle-push').addEventListener('click', togglePush);
+    + '</div>');
+  box.querySelector('#toggle-push')?.addEventListener('click', togglePush);
   paint();
 }
 
@@ -69,7 +69,7 @@ export async function refresh() {
 /** 三个数格与开关，按此刻手里这两份回包重画 */
 function paint() {
   if (!box) return;
-  const model = todayModel(seen.status, seen.quota);
+  const model = todayModel(seen.status, seen.quota, store.role);
   const cells = [
     {value: model.sent, label: '推送（条）'},
     {value: model.failed, label: '失败（条）'},
@@ -92,6 +92,8 @@ function paint() {
     });
   }
 
+  if (store.role === 'MEMBER') return;
+
   // 开关的字与那句提示由同一位算出来，不各写各的：分叉时按钮写着「暂停全部推送」
   // 而旁边那句写着「已暂停」，两句话说的是相反的事
   pushOn = model.pushOn;
@@ -109,6 +111,7 @@ function paint() {
  * 只拨开关的话，屏幕上会出现「已暂停」与一段绿灯并存的画面。
  */
 export async function togglePush() {
+  if (store.role === 'MEMBER') return;
   const next = !pushOn;
   const toggle = box && box.querySelector('#toggle-push');
   if (toggle) toggle.disabled = true;

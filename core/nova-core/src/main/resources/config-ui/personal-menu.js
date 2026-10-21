@@ -6,7 +6,7 @@ export function renderPersonalMenu(box, state) {
   box.hidden = !state.authenticated;
   if (!state.authenticated) return;
   const summary = box.querySelector('#personal-name');
-  summary.textContent = state.accountId === 'local-admin' ? '本地管理员' : state.displayName;
+  summary.textContent = state.accountId === 'local-admin' ? '本地管理员' : (state.displayName || state.email || state.accountId);
   const account = box.querySelector('#account-center');
   account.hidden = !(state.loginMethod === 'oidc' && state.managementUri);
   if (!account.hidden) {

@@ -68,11 +68,11 @@ function run(open, name, later) {
   const location = {hash: '#/home'};
   const parseHash = () => ({name});
   const shouldOpenSetup = () => open;
-  const make = new Function('location', 'parseHash', 'shouldOpenSetup', 'later',
+  const make = new Function('location', 'parseHash', 'shouldOpenSetup', 'later', 'store',
     'let homeStatus = null;\nlet homeLogin = null;\n'
     + body.replace('export function', 'function')
     + '\nreturn considerSetupRedirect;');
-  const fn = make(location, parseHash, shouldOpenSetup, later);
+  const fn = make(location, parseHash, shouldOpenSetup, later, {});
   const ret = fn({}, {});
   return {hash: location.hash, ret};
 }

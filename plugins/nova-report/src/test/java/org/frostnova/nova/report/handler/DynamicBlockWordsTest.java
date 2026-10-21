@@ -134,6 +134,35 @@ class DynamicBlockWordsTest {
         timeline.clear();
     }
 
+    // 自家屏蔽词事件必须经过真实时间线接口对成员可见，只有昵称不足以确认归属。
+    @Test void blockedWordEventRemainsVisibleToItsMember(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        var handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+        handler.handle(event(dynamicWithText("今晚发" + WORD)), messageTo(GROUP));
+        var props = new NovaCoreProperties();
+        props.getLive().setLiveDataPath(dir.resolve("live.json").toString());
+        var store = new org.frostnova.nova.core.timeline.TimelineStore(props);
+        timeline.forEach(store::record);
+        var platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+        when(platforms.platforms()).thenReturn(List.of("bilibili"));
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setAttribute(org.frostnova.nova.core.config.ui.ConfigUiAccess.PLATFORMS, platforms);
+        request.setAttribute(org.frostnova.nova.core.config.ui.ConfigUiAccess.ACCOUNT,
+                new org.frostnova.nova.core.config.ui.auth.ConfigUiAccount("member-a",
+                        org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.Role.MEMBER,
+                        org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.Status.ENABLED,
+                        "Member A", null, null, null, List.of("bilibili:" + UID), java.time.Instant.EPOCH, null, true));
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+        try {
+            var result = new org.frostnova.nova.core.config.ui.TimelineController(store)
+                    .timeline(null, false, null, null, null, null, null, 20, null);
+            assertEquals(1, result.getJSONArray("events").size(), "成员应看到自家屏蔽词事件");
+            assertEquals("PUSH_BLOCKED_WORD", result.getJSONArray("events").getJSONObject(0).getString("type"));
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
     // 抓的问题：甲自己的词没有挡住，或挡到了乙的动态。
     @Test
     void streamerWordsOnlyBlockTheirOwner() {

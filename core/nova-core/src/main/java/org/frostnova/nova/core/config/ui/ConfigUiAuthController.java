@@ -145,6 +145,7 @@ public class ConfigUiAuthController {
             result.put("accountId", account.id());
             result.put("role", account.role().name());
             result.put("displayName", account.displayName());
+            result.put("email", account.email());
             result.put("loginMethod", session.map(value -> value.getChannel().wire())
                     .orElseGet(() -> String.valueOf(request.getAttribute(ConfigUiSecurityFilter.CHANNEL_ATTRIBUTE))));
         }

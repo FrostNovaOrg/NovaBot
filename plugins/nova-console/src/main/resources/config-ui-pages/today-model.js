@@ -23,11 +23,16 @@ import {esc} from './core.js';
  * {@code limited} 为假时不画分母：上限是 0 或负数在配额服务里都是「不限」，
  * 画成 3/0 会让人以为今天已经用完了。
  * @param quota /api/at-all/quota 回包；没有或失败时传 null
+ * @param role 当前账号身份；成员只汇总名下群会话，不显示机器人总额度
  * @return {{value: string, label: string, details: object[], more: number}}
  */
-export function atAllTile(quota) {
+export function atAllTile(quota, role) {
   const empty = {value: '—', label: '@全体成员 已用', details: [], more: 0};
   if (!quota || quota.success === false) return empty;
+  if (role === 'MEMBER') {
+    if (!Array.isArray(quota.sessions)) return empty;
+    return {...empty, value: String(quota.sessions.reduce((sum, item) => sum + Number(item.used || 0), 0))};
+  }
 
   const bots = Array.isArray(quota.bots) ? quota.bots : [];
   if (!bots.length) return empty;
@@ -99,14 +104,15 @@ export function todayAtAllMarkup(tile, expanded) {
  * 后者说的是「这台机器此刻无从谈起」。
  * @param status /api/status 回包
  * @param quota /api/at-all/quota 回包；没有或失败时传 null
+ * @param role 当前账号身份；成员只汇总名下群会话，不显示机器人总额度
  * @return {{sent: number, failed: number, atAll: object, pushOn: boolean}}
  */
-export function todayModel(status, quota) {
+export function todayModel(status, quota, role) {
   const state = status || {};
   return {
     sent: (state.today && state.today.sent) || 0,
     failed: (state.today && state.today.failed) || 0,
-    atAll: atAllTile(quota),
+    atAll: atAllTile(quota, role),
     // 三态里只有明确的 false 才算暂停：缺这一栏（回包还没到）不许读成「已暂停」，
     // 那会让开关先画成「恢复推送」再自己变回去
     pushOn: state.pushEnabled !== false,

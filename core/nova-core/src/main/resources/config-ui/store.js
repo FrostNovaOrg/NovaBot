@@ -10,6 +10,10 @@
  * 「改动条的供数方」交给核心，见 core.js 的 registerChangeSource。
  */
 export const store = {
+  /** 当前账号身份，来自 /auth/state；只有 MEMBER 使用成员界面。 */
+  role: null,
+  /** 身份与页面清单到达之后才处理路由。 */
+  authReady: false,
   /** 配置项字段表，按设置页的八个组组织，来自编译期生成的元数据 */
   schema: [],
   /**

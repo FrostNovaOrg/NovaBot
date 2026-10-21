@@ -70,10 +70,11 @@ function subject(file, reply = {}, confirm = true) {
   };
   const src = read(file).replace(/^import .*?;\s*$/gm, '').replace(/export /g, '');
   const exports = file === 'settings-members.js' ? '{renderMembers, memberGroup, setMemberAuthState}' : '{renderPersonalMenu}';
-  const mod = new Function('el', 'api', 'ask', 'window', 'hasUnsavedChanges', src + '\nreturn ' + exports)(
+  const shared = {role: 'ADMIN'};
+  const mod = new Function('el', 'api', 'ask', 'window', 'hasUnsavedChanges', 'store', src + '\nreturn ' + exports)(
     (tag, cls) => new Node(tag, cls), api,
-    async options => { questions.push(options); return confirm; }, window, () => dirty > 0);
-  return {...mod, box, requests, questions, opened, window, setDirty: value => { dirty = value; }};
+    async options => { questions.push(options); return confirm; }, window, () => dirty > 0, shared);
+  return {...mod, store: shared, box, requests, questions, opened, window, setDirty: value => { dirty = value; }};
 }
 async function members(reply, confirm) {
   const s = subject('settings-members.js', reply, confirm);
@@ -215,7 +216,7 @@ await check('未开统一登录时只有开启说明', async () => {
 });
 // 抓成员能看到管理区，页面还偷偷请求全部账号。
 await check('成员不渲染成员区，也不请求账号列表', async () => {
-  const s = subject('settings-members.js'); s.setMemberAuthState({...base, role: 'MEMBER'});
+  const s = subject('settings-members.js'); s.store.role = 'MEMBER'; s.setMemberAuthState({...base, role: 'MEMBER'});
   assert.equal(s.memberGroup(), null); await s.renderMembers(s.box, {...base, role: 'MEMBER'});
   assert.equal(s.requests.length, 0); assert.equal(s.box.textContent, '');
 });
