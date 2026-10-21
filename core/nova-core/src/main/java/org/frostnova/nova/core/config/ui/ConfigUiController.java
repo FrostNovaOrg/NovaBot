@@ -1805,7 +1805,7 @@ public class ConfigUiController {
             result.put("success", false);
             result.put("message", "推送配置有误，已拒绝保存");
             result.put("issues", issues);
-            return ResponseEntity.ok(result);
+            return ResponseEntity.badRequest().body(result);
         }
 
         // 超员在数据源那一层也拦得住，但那层只会拒收并写一行日志：界面照样回「已保存」，
@@ -1936,6 +1936,14 @@ public class ConfigUiController {
                         || !Objects.equals(platform, replacement.getString("platform"))
                         || !Objects.equals(uid, replacement.getString("uid")))) {
                     return ResponseEntity.badRequest().body(datasourceError("主播的平台与 uid 不可更改"));
+                }
+                if ("save".equals(action)) {
+                    // 摘要与向导可能没有名单字段；只有显式提供（包括空数组）才替换。
+                    for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+                        if (!replacement.containsKey(field) && current.containsKey(field)) {
+                            replacement.put(field, current.get(field));
+                        }
+                    }
                 }
                 String description = switch (action) {
                     case "add" -> "加了主播 ";

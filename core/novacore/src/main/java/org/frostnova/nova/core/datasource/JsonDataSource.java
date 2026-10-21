@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.datasource;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.properties.DatasourceProperties;
@@ -12,13 +13,11 @@ import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.lang.CollectionUtil;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-
 import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
-
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -243,6 +242,9 @@ public class JsonDataSource extends AbstractDataSource {
                 user.setEnabled(userObject.getBoolean("enabled"));
             }
             user.setTargets(new ArrayList<>());
+            user.setDynamicBlockWords(readUserList(userObject, "dynamicBlockWords"));
+            user.setWordCloudBlockWords(readUserList(userObject, "wordCloudBlockWords"));
+            user.setWordCloudExcludeUids(readUserList(userObject, "wordCloudExcludeUids"));
 
             if (userObject.containsKey("targets")) {
                 for (JSONObject targetObject : userObject.getJSONArray("targets").toList(JSONObject.class)) {
@@ -415,6 +417,21 @@ public class JsonDataSource extends AbstractDataSource {
 
         scheduler.shutdownNow();
         executor.shutdownNow();
+    }
+
+    private static List<String> readUserList(JSONObject user, String field) {
+        try {
+            Object value = user.get(field);
+            if (value == null) return new ArrayList<>();
+            if (!(value instanceof JSONArray list)
+                    || list.stream().anyMatch(item -> !(item instanceof String))) {
+                throw new IllegalArgumentException("必须为字符串数组");
+            }
+            return list.toList(String.class);
+        } catch (RuntimeException e) {
+            log.warn("主播 {}:{} 的 {} 读不出，按空名单处理: {}", user.get("platform"), user.get("uid"), field, e.getMessage());
+            return new ArrayList<>();
+        }
     }
 
     private static void readChannelSetting(JSONObject target, String field, Runnable read) {

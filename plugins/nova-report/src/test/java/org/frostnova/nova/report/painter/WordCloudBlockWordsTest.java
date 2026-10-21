@@ -1,5 +1,14 @@
 package org.frostnova.nova.report.painter;
 
+import com.alibaba.fastjson2.JSON;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.bilibili.service.BilibiliLiveStatsAggregator;
+import org.frostnova.nova.core.service.LiveDetailArchive;
+import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
+import org.frostnova.nova.core.model.UserInfo;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import java.util.concurrent.atomic.AtomicReference;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
@@ -23,7 +32,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
-
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -35,7 +43,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -86,6 +93,144 @@ class WordCloudBlockWordsTest {
         buildInfo.setProperty("artifact", "nova-core");
         buildInfo.setProperty("name", "NovaBot");
         factory = new NovaCommonPainterFactory(new BuildProperties(buildInfo), core, fontUtil);
+    }
+
+    // 抓的问题：甲的多字词被切碎挡不住，或把乙的词云也挡了。
+    @Test
+    void streamerPhraseSurvivesCollectionAndOnlyFiltersOwnReport() {
+        String phrase = "原神启动";
+        var user = JSON.parseObject(
+                "{\"wordCloudBlockWords\":[\"原神启动\"]}", PushUser.class);
+        var source = mock(AbstractDataSource.class);
+        when(source.getUser(PLATFORM, STREAMER)).thenReturn(Optional.of(user));
+        LiveDataService data = sessionData(true);
+        var aggregator = new BilibiliLiveStatsAggregator(data, mock(LiveDetailArchive.class), properties(List.of(), List.of()));
+        CapturePainter painter = painter(data, List.of(), List.of("全局屏蔽"));
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AbstractDataSource.class, () -> source);
+            context.refresh();
+            context.getAutowireCapableBeanFactory().autowireBean(aggregator);
+            context.getAutowireCapableBeanFactory().autowireBean(painter);
+            aggregator.onDanmu(new BilibiliDanmuEvent(streamer(),
+                    new UserInfo(HUMAN, "观众甲", null), phrase + "了 唱歌", phrase + "了 唱歌"));
+            Map<String, Integer> words = data.getLiveWordFrequencies(PLATFORM, STREAMER);
+            assertTrue(words.containsKey(phrase), "直播中多字屏蔽词被切碎: " + words);
+            assertFalse(placed(painter.layoutWordCloud(PLATFORM, STREAMER, words)).contains(phrase));
+            assertTrue(placed(painter.layoutWordCloud(PLATFORM, STREAMER + 1, words)).contains(phrase));
+            Map<String, Integer> sample = Map.of(phrase, 5, "全局屏蔽", 4, "唱歌", 3);
+            assertEquals(List.of("唱歌"), placed(painter.layoutWordCloud(PLATFORM, STREAMER, sample)));
+            CaptureReplay replay = replay(sample, properties(List.of(), List.of("全局屏蔽")));
+            context.getAutowireCapableBeanFactory().autowireBean(replay);
+            assertTrue(replay.render(cloudOnly()).isPresent(), "历史报告重画失败");
+            assertEquals(List.of("唱歌"), oneCloud(replay.drawn), "历史重画未叠加当前主播名单");
+        }
+    }
+
+    // 抓的问题：全实例和主播同时设置多字词时，只保住一份，另一份切碎后漏进词云。
+    @Test
+    void collectionKeepsBothGlobalAndStreamerPhrasesWhole() {
+        String global = "星穹铁道";
+        String own = "原神启动";
+        for (String phrase : List.of(global, own)) {
+            assertFalse(DanmuWordUtil.extractWords(phrase + "了").contains(phrase), "测试词应原本会被切碎");
+        }
+        var source = mock(AbstractDataSource.class);
+        when(source.getUser(PLATFORM, STREAMER)).thenReturn(Optional.of(JSON.parseObject(
+                "{\"wordCloudBlockWords\":[\"原神启动\"]}", PushUser.class)));
+        LiveDataService data = sessionData(true);
+        var aggregator = new BilibiliLiveStatsAggregator(data, mock(LiveDetailArchive.class),
+                properties(List.of(), List.of(global)));
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AbstractDataSource.class, () -> source);
+            context.refresh();
+            context.getAutowireCapableBeanFactory().autowireBean(aggregator);
+            for (long uid : List.of(STREAMER, STREAMER + 1)) {
+                aggregator.onDanmu(new BilibiliDanmuEvent(new LiveStreamerInfo(uid, "主播", ROOM, null),
+                        new UserInfo(HUMAN, "观众", null), global + "了 " + own + "了 唱歌",
+                        global + "了 " + own + "了 唱歌"));
+            }
+            Map<String, Integer> first = data.getLiveWordFrequencies(PLATFORM, STREAMER);
+            assertTrue(first.containsKey(global), "全实例词被切碎: " + first);
+            assertTrue(first.containsKey(own), "主播词被切碎: " + first);
+            Map<String, Integer> other = data.getLiveWordFrequencies(PLATFORM, STREAMER + 1);
+            assertTrue(other.containsKey(global), "全实例词未用于乙: " + other);
+            assertFalse(other.containsKey(own), "甲的分词名单影响乙: " + other);
+        }
+    }
+
+    // 抓的问题：历史报告入口没传入推送配置，重画时仍冒出主播现在已屏蔽的词。
+    @Test
+    void historicalRedrawerUsesCurrentGlobalAndStreamerLists() {
+        var current = new AtomicReference<>(new PushUser());
+        var source = mock(AbstractDataSource.class);
+        when(source.getUser(PLATFORM, STREAMER)).thenAnswer(call -> Optional.of(current.get()));
+        var properties = properties(List.of(), List.of("全局屏蔽"));
+        var history = new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties()));
+        var images = new ReportImageDiskCache(temp.resolve("image-cache"));
+        var detail = new LiveDetail(LiveDetail.VERSION, PLATFORM, STREAMER, "主播甲", ROOM,
+                START, START + 3_600_000L, 3_600L, Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of("全局屏蔽", 4, "原神启动", 3, "唱歌", 2), List.of(), List.of(), List.of(), Map.of(), List.of());
+        var redrawer = new org.frostnova.nova.report.service.BilibiliLiveReportRedrawer(
+                factory, quietApi(), fontUtil, properties, history, images);
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AbstractDataSource.class, () -> source);
+            context.refresh();
+            context.getAutowireCapableBeanFactory().autowireBean(redrawer);
+            byte[] before = redrawer.redraw(detail).orElseThrow();
+            current.set(JSON.parseObject("{\"wordCloudBlockWords\":[\"原神启动\"]}", PushUser.class));
+            byte[] after = redrawer.redraw(detail).orElseThrow();
+            assertFalse(java.util.Arrays.equals(before, after), "当前名单变化后，历史图仍相同");
+            var expected = new CaptureReplay(factory, quietApi(), fontUtil, properties, history, detail, images);
+            expected.setDataSource(source);
+            byte[] reference = expected.render(new BilibiliLiveReportOptions()).orElseThrow();
+            assertEquals(List.of("唱歌"), oneCloud(expected.drawn), "两份当前名单都应过滤");
+            org.junit.jupiter.api.Assertions.assertArrayEquals(reference, after, "历史入口画的图未采用当前两份名单");
+        }
+    }
+
+    // 抓的问题：甲排除观众后报告仍含其弹幕，修改两份名单后又用了旧重算结果。
+    @Test
+    void streamerExclusionsAndWordsInvalidateRecountWithoutAffectingOthers() throws Exception {
+        writeDanmu(List.of(danmu(BOT, "迎客机", "欢迎"), danmu(BOT, "迎客机", "欢迎"),
+                danmu(HUMAN, "观众甲", "原神启动了"), danmu(HUMAN, "观众甲", "唱歌"),
+                danmu(999L, "观众乙", "全局排除")));
+        LiveDataService data = sessionData(false);
+        stored(data, "欢迎", 2); stored(data, "唱歌", 1);
+        data.setLiveStartTime(PLATFORM, STREAMER + 1, START);
+        data.setLiveEndTime(PLATFORM, STREAMER + 1, START + 3_600_000L);
+        Path other = temp.resolve("details").resolve(PLATFORM + "-" + (STREAMER + 1) + "-" + START);
+        Files.createDirectories(other);
+        Files.copy(temp.resolve("details").resolve(PLATFORM + "-" + STREAMER + "-" + START).resolve("danmu.jsonl"),
+                other.resolve("danmu.jsonl"));
+        var user = new AtomicReference<>(JSON.parseObject(
+                "{\"wordCloudExcludeUids\":[\"" + BOT + "\"],\"wordCloudBlockWords\":[\"原神启动\"]}",
+                PushUser.class));
+        var source = mock(AbstractDataSource.class);
+        when(source.getUser(PLATFORM, STREAMER)).thenAnswer(call -> Optional.ofNullable(user.get()));
+        CapturePainter painter = painter(data, List.of("999"), List.of());
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AbstractDataSource.class, () -> source);
+            context.refresh();
+            context.getAutowireCapableBeanFactory().autowireBean(painter);
+            Map<String, Integer> first = painter.frequenciesForWordCloud(PLATFORM, STREAMER);
+            assertFalse(first.containsKey("欢迎"), "被排除观众的弹幕仍在: " + first);
+            assertFalse(first.containsKey("全局"), "主播名单覆盖了全实例排除名单");
+            assertTrue(painter.paint(PLATFORM, streamer(), cloudOnly()).isPresent());
+            assertEquals(List.of("唱歌"), oneCloud(painter.drawn));
+            System.out.println("WORD_CLOUD_BEFORE: " + data.getLiveWordFrequencies(PLATFORM, STREAMER));
+            System.out.println("WORD_CLOUD_AFTER: " + first);
+            System.out.println("WORD_CLOUD_DRAWN: " + oneCloud(painter.drawn));
+            assertTrue(first.containsKey("原神启动"));
+            assertEquals(2, painter.frequenciesForWordCloud(PLATFORM, STREAMER + 1).get("欢迎"), "甲的排除名单影响了乙");
+            user.set(JSON.parseObject("{\"wordCloudExcludeUids\":[\"" + BOT + "\"]}",
+                    PushUser.class));
+            Map<String, Integer> changedWords = painter.frequenciesForWordCloud(PLATFORM, STREAMER);
+            assertFalse(changedWords.containsKey("原神启动"), "屏蔽词修改仍命中旧缓存");
+            user.set(new PushUser());
+            assertEquals(2, painter.frequenciesForWordCloud(PLATFORM, STREAMER).get("欢迎"), "排除名单修改仍命中旧缓存");
+            user.set(null);
+            assertEquals(2, painter.frequenciesForWordCloud(PLATFORM, STREAMER).get("欢迎"), "删除主播后应只用全实例名单");
+        }
     }
 
     /**

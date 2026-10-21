@@ -140,6 +140,125 @@ class DatasourceBackupTest {
                 clock);
     }
 
+    // 抓的问题：合法的三份名单不能保存，或保存甲时改了乙。
+    @Test
+    void validStreamerListsSaveThroughUserEndpoint() throws IOException {
+        seedTwoUsers();
+        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        JSONObject current = controller.datasourceUser("bilibili", "1");
+        JSONObject other = controller.datasourceUser("bilibili", "2").getJSONObject("user");
+        JSONObject user = current.getJSONObject("user");
+        user.put("dynamicBlockWords", java.util.Collections.nCopies(500, "词"));
+        user.put("wordCloudBlockWords", List.of("😀".repeat(50)));
+        user.put("wordCloudExcludeUids", List.of(" 123 ", "9".repeat(50)));
+        var response = saveUser("1", current.getString("version"), user);
+        assertEquals(200, response.getStatusCode().value());
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toString());
+        JSONObject saved = controller.datasourceUser("bilibili", "1").getJSONObject("user");
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            assertEquals(user.getJSONArray(field), saved.getJSONArray(field));
+        }
+        assertEquals(other, controller.datasourceUser("bilibili", "2").getJSONObject("user"));
+    }
+
+    // 抓的问题：非法名单显示保存成功，或拒绝后仍改动文件。
+    @Test
+    void invalidStreamerListsReturn400WithoutWriting() throws IOException {
+        seedTwoUsers();
+        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        byte[] before = Files.readAllBytes(datasource);
+        JSONObject current = controller.datasourceUser("bilibili", "1");
+        String version = current.getString("version");
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            List<List<String>> invalid = new java.util.ArrayList<>(List.of(
+                    java.util.Collections.nCopies(501, "1"), List.of("a".repeat(51)), List.of("  ")));
+            if (field.equals("wordCloudExcludeUids")) invalid.addAll(List.of(List.of("abc"), List.of("0"), List.of("-1")));
+            for (List<String> values : invalid) {
+                JSONObject user = JSONObject.parseObject(current.getJSONObject("user").toJSONString());
+                user.put(field, values);
+                ResponseEntity<JSONObject> response = saveUser("1", version, user);
+                assertEquals(400, response.getStatusCode().value(), field + values.size());
+                String issues = response.getBody().getJSONArray("issues").toString();
+                assertTrue(issues.contains("uid 1") && issues.contains(field) && issues.contains("第 "), issues);
+                assertArrayEquals(before, Files.readAllBytes(datasource));
+            }
+        }
+    }
+
+    // 抓的问题：重新载入后向导只持有摘要，再存一次把三份名单抹掉。
+    @Test
+    void missingListsPreserveStoredValuesForAdminAndMemberButEmptyArraysClear() throws Exception {
+        for (var role : List.of(ConfigUiAccount.Role.ADMIN, ConfigUiAccount.Role.MEMBER)) {
+            seedTwoUsers();
+            var account = new ConfigUiAccount("editor", role, ConfigUiAccount.Status.ENABLED,
+                    "Editor", null, null, null, List.of("bilibili:1"), Instant.EPOCH, null, true);
+            var platforms = mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class);
+            when(platforms.platforms()).thenReturn(List.of("bilibili"));
+            var mvc = MockMvcBuilders.standaloneSetup(controller)
+                    .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms)).build();
+            JSONObject lists = JSONObject.parseObject("""
+                    {"dynamicBlockWords":[" 回放 "],"wordCloudBlockWords":["原神启动"],"wordCloudExcludeUids":["123"]}
+                    """);
+            var read = controller.datasourceUser("bilibili", "1");
+            read.getJSONObject("user").putAll(lists);
+            assertTrue(saveUser("1", read.getString("version"), read.getJSONObject("user"))
+                    .getBody().getBooleanValue("success"));
+            var other = controller.datasourceUser("bilibili", "2").getJSONObject("user");
+            JSONObject summary = controller.datasourceUsers().getJSONArray("users").getJSONObject(0);
+            assertFalse(summary.containsKey("dynamicBlockWords"), "列表只能提供摘要");
+            var request = new JSONObject().fluentPut("user", summary)
+                    .fluentPut("version", controller.datasourceUserVersion("bilibili", "1").getString("version"));
+            mvc.perform(post("/config/api/datasource/users/bilibili/1")
+                    .requestAttr(ConfigUiAccess.ACCOUNT, account).contentType("application/json").content(request.toJSONString()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+            var saved = controller.datasourceUser("bilibili", "1");
+            for (String field : lists.keySet()) assertEquals(lists.getJSONArray(field), saved.getJSONObject("user").getJSONArray(field), role + " " + field);
+            assertFalse(saved.getJSONObject("user").containsKey("extension"), "其他字段仍整对象替换");
+            var clear = saved.getJSONObject("user");
+            for (String field : lists.keySet()) clear.put(field, new JSONArray());
+            mvc.perform(post("/config/api/datasource/users/bilibili/1")
+                    .requestAttr(ConfigUiAccess.ACCOUNT, account).contentType("application/json")
+                    .content(new JSONObject().fluentPut("user", clear).fluentPut("version", saved.getString("version")).toJSONString()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+            var emptied = controller.datasourceUser("bilibili", "1").getJSONObject("user");
+            for (String field : lists.keySet()) assertEquals(new JSONArray(), emptied.getJSONArray(field));
+            assertEquals(other, controller.datasourceUser("bilibili", "2").getJSONObject("user"));
+        }
+    }
+
+    // 抓的问题：手改成 null 后不能保存；其他错误类型却被放过并写进文件。
+    @Test
+    void nullListsSaveButOtherInvalidTypesStillReturn400WithoutWriting() throws IOException {
+        seedTwoUsers();
+        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
+            var current = controller.datasourceUser("bilibili", "1");
+            // 直接构造显式 null，避免请求序列化省掉 null 的键。
+            var user = current.getJSONObject("user");
+            user.put(field, null);
+            var response = saveUser("1", current.getString("version"), user);
+            assertEquals(200, response.getStatusCode().value(), field + ": " + response.getBody());
+            assertTrue(response.getBody().getBooleanValue("success"));
+            byte[] before = Files.readAllBytes(datasource);
+            current = controller.datasourceUser("bilibili", "1");
+            assertTrue(current.getJSONObject("user").containsKey(field));
+            org.junit.jupiter.api.Assertions.assertNull(current.getJSONObject("user").get(field));
+            for (Object bad : List.of("回放", 123, JSONArray.of(123))) {
+                user = JSONObject.parseObject(current.getJSONObject("user").toJSONString());
+                user.put(field, bad);
+                response = saveUser("1", current.getString("version"), user);
+                assertEquals(400, response.getStatusCode().value(), field + ": " + bad);
+                String issues = response.getBody().getJSONArray("issues").toString();
+                assertTrue(issues.contains("uid 1") && issues.contains(field), issues);
+                if (bad instanceof JSONArray) assertTrue(issues.contains("第 1 条"), issues);
+                assertArrayEquals(before, Files.readAllBytes(datasource));
+            }
+        }
+    }
+
     @Test
     @DisplayName("保存两次应留下两份带时间戳的备份")
     void savingTwiceLeavesTwoStampedBackups() throws IOException {

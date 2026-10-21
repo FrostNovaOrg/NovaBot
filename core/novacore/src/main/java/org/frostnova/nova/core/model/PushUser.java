@@ -51,6 +51,15 @@ public class PushUser {
      */
     private List<PushTarget> targets = new ArrayList<>();
 
+    /** 动态屏蔽词，与全实例名单叠加。 */
+    private List<String> dynamicBlockWords = new ArrayList<>();
+
+    /** 词云屏蔽词，与全实例名单叠加。 */
+    private List<String> wordCloudBlockWords = new ArrayList<>();
+
+    /** 词云排除的观众 UID。 */
+    private List<String> wordCloudExcludeUids = new ArrayList<>();
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -80,7 +89,10 @@ public class PushUser {
                 return false;
             }
         }
-        return Objects.equals(uid, other.uid) && Objects.equals(uname, other.uname) && Objects.equals(roomId, other.roomId) && Objects.equals(face, other.face) && Objects.equals(platform, other.platform);
+        return Objects.equals(uid, other.uid) && Objects.equals(uname, other.uname) && Objects.equals(roomId, other.roomId) && Objects.equals(face, other.face) && Objects.equals(platform, other.platform)
+                && Objects.equals(dynamicBlockWords, other.dynamicBlockWords)
+                && Objects.equals(wordCloudBlockWords, other.wordCloudBlockWords)
+                && Objects.equals(wordCloudExcludeUids, other.wordCloudExcludeUids);
     }
 
     /**

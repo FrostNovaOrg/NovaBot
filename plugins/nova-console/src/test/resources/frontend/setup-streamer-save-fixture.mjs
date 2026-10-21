@@ -12,6 +12,12 @@ const saveSource = source.slice(source.indexOf('async function saveStreamer()'))
 const copy = value => JSON.parse(JSON.stringify(value));
 const initial = () => [{platform: 'p', uid: 2, enabled: true, targets: [], extra: null}];
 let disk, requests, beforePost, reject;
+const listKeys = ['dynamicBlockWords', 'wordCloudBlockWords', 'wordCloudExcludeUids'];
+const fields = (value, keys) => Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
+const summary = user => ({...fields(user, ['platform', 'uid', 'enabled', 'roomId']),
+  targets: (user.targets || []).map(target => ({...fields(target, ['platform', 'type', 'num', 'enabled']),
+    messages: (target.messages || []).map(message => ({...fields(message, ['handler', 'enabled']),
+      _custom: !!message.params && Object.keys(message.params).length > 0}))}))});
 const version = user => JSON.stringify(user);
 const response = payload => ({status: 200, json: async () => copy(payload)});
 globalThis.fetch = async (path, options = {}) => {
@@ -19,7 +25,7 @@ globalThis.fetch = async (path, options = {}) => {
   requests.push({url, method: options.method || 'GET', body: options.body && JSON.parse(options.body)});
   if (options.method === 'POST') {
     if (beforePost) { const run = beforePost; beforePost = null; run(); }
-    if (reject) return response({success: false, message: reject});
+    if (reject) return {...response(typeof reject === 'string' ? {success: false, message: reject} : reject), status: 400};
     const body = JSON.parse(options.body);
     if (url === '/datasource') disk = JSON.parse(body.content);
     else if (url === '/datasource/users') {
@@ -33,13 +39,20 @@ globalThis.fetch = async (path, options = {}) => {
       if (!user || body.version !== version(user)) {
         return response({success: false, conflict: true, missing: !user, message: '这位主播的配置刚被别人改过，请重新载入'});
       }
+      // 保存接口仅为这三个字段保留缺失键；Java 接口测试同时验证该约定。
+      for (const key of listKeys) if (!Object.hasOwn(body.user, key) && Object.hasOwn(user, key)) body.user[key] = user[key];
+      for (const key of listKeys) {
+        if (Array.isArray(body.user[key]) && body.user[key].some(value => typeof value === 'string' && !value.trim())) {
+          return {...response({success: false, message: '名单不能含空行'}), status: 400};
+        }
+      }
       disk[disk.indexOf(user)] = body.user;
       return response({success: true, version: version(body.user)});
     }
     return response({success: true});
   }
   if (url === '/datasource') return response({success: true, content: JSON.stringify(disk)});
-  if (url === '/datasource/users') return response({success: true, users: disk});
+  if (url === '/datasource/users') return response({success: true, users: disk.map(summary)});
   const user = disk.find(user => url === '/datasource/users/p/' + user.uid);
   if (user) return response({success: true, user, version: version(user)});
   if (url === '/state') return response({sessions: [], incomplete: []});
@@ -214,6 +227,141 @@ await test('向导重存 g2 后，推送页旧的 g1 草稿保存必须冲突', 
   assert.equal(disk.find(user => user.uid === 3).targets[0].num, 222);
   assert.equal(disk.find(user => user.uid === 3).enabled, true);
   assert.ok(push.changeCount() > 0);
+});
+await test('向导重存目标时保留在推送页保存的三份屏蔽名单', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+  Object.assign(push.pushEntries().find(user => user.uid === 3), lists);
+  await push.save();
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  for (const [key, value] of Object.entries(lists)) assert.deepEqual(disk.find(user => user.uid === 3)[key], value);
+});
+// 抓的问题：推送页重载只剩摘要时，向导再存把盘上名单抹掉。
+await test('重新载入摘要后向导重存仍保留三份名单，显式空数组才能清空', async () => {
+  await reset();
+  const flow = wizard();
+  assert.equal(await flow.save(), true);
+  const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+  Object.assign(push.pushEntries().find(user => user.uid === 3), lists);
+  await push.save();
+  await push.reload();
+  const brief = push.pushEntries().find(user => user.uid === 3);
+  for (const key of listKeys) assert.equal(Object.hasOwn(brief, key), false);
+  flow.draft.targets = ['g2'];
+  assert.equal(await flow.save(), true);
+  for (const key of listKeys) {
+    assert.equal(Object.hasOwn(requests.at(-1).body.user, key), false);
+    assert.deepEqual(disk.find(user => user.uid === 3)[key], lists[key]);
+  }
+  Object.assign(push.pushEntries().find(user => user.uid === 3), Object.fromEntries(listKeys.map(key => [key, []])));
+  assert.equal(await flow.save(), true);
+  for (const key of listKeys) assert.deepEqual(disk.find(user => user.uid === 3)[key], []);
+});
+
+// 抓的问题：只多敲回车就算改动，或行末、中间的空行导致保存失败。
+await test('三个框都丢弃空白行，只有回车不算改动，真实词条能保存', async () => {
+  for (const existing of [false, true]) {
+    const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+    await reset([{...initial()[0], ...(existing ? lists : {})}]);
+    await openB();
+    for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+      input.value += '\n  \n';
+      await input.dispatchEvent({type: 'input', target: input});
+    }
+    assert.equal(push.changeCount(), 0, '只有回车不能算未保存改动');
+    for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+      const key = input.getAttribute('data-block-list');
+      input.value = '  ' + lists[key][0] + '  \r\n\r\n  \r\n456\r\n';
+      await input.dispatchEvent({type: 'input', target: input});
+      assert.deepEqual(push.pushEntries()[0][key], [lists[key][0], '456']);
+    }
+    assert.equal(push.changeCount(), 1);
+    await push.save();
+    assert.equal(push.changeCount(), 0, '空行不应导致保存被拒绝');
+    for (const key of listKeys) assert.deepEqual(disk[0][key], [lists[key][0], '456']);
+  }
+});
+
+// 抓的问题：打完词回车或中间空一行，提交空串导致服务端拒绝保存。
+await test('行末回车和中间空行不进入提交名单', async () => {
+  await reset(); await openB();
+  const lists = {dynamicBlockWords: ['回放', '唱歌'], wordCloudBlockWords: ['原神启动', '星穹铁道'], wordCloudExcludeUids: ['123', '456']};
+  for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+    const key = input.getAttribute('data-block-list');
+    input.value = '  ' + lists[key][0] + '  \r\n\r\n  \r\n' + lists[key][1] + '\r\n';
+    await input.dispatchEvent({type: 'input', target: input});
+  }
+  await push.save();
+  const submitted = requests.findLast(request => request.method === 'POST').body.user;
+  for (const key of listKeys) assert.deepEqual(submitted[key], lists[key]);
+  assert.equal(push.changeCount(), 0);
+  for (const key of listKeys) assert.deepEqual(disk[0][key], lists[key]);
+});
+
+// 抓的问题：手改名单为字符串、null 或数字后，主播设置区整个画不出来。
+await test('非数组名单按空框显示，三个框和其他设置始终可用', async () => {
+  for (const value of ['回放', null, 123]) {
+    await reset([{...initial()[0], ...Object.fromEntries(listKeys.map(key => [key, value]))}]);
+    await openB();
+    const inputs = document.querySelector('#push-right').querySelectorAll('textarea');
+    assert.equal(inputs.length, 3);
+    for (const input of inputs) assert.equal(input.value, '');
+    assert.equal(push.changeCount(), 0, '显示坏值不应擅自改文件');
+  }
+});
+
+await test('主播页面读改存名单，切换页面保留草稿，冲突后保留输入，修改通道不清空名单', async () => {
+  const lists = {dynamicBlockWords: ['回放'], wordCloudBlockWords: ['原神启动'], wordCloudExcludeUids: ['123']};
+  await reset([{...initial()[0], ...lists, targets: [{platform: 'qq', type: 1, num: 111, enabled: true, messages: []}]}]);
+  await openB();
+  const inputs = document.querySelector('#push-right').querySelectorAll('textarea');
+  assert.equal(inputs.length, 3);
+  for (const input of inputs) {
+    const key = input.getAttribute('data-block-list');
+    assert.equal(input.value, lists[key].join('\n'));
+    input.value += '\n456';
+    await input.dispatchEvent({type: 'input', target: input});
+  }
+  assert.equal(push.changeCount(), 1);
+  await push.showPush('', '');
+  await push.showPush('2', '');
+  assert.ok(document.querySelector('#push-right').querySelectorAll('textarea').every(input => input.value.includes('456')));
+  disk[0].extra = '别人修改';
+  await push.save();
+  assert.equal(push.changeCount(), 1);
+  assert.ok(document.querySelector('#push-conflict').textContent.includes('重新载入'));
+  for (const key of Object.keys(lists)) assert.deepEqual(push.pushEntries()[0][key], [...lists[key], '456']);
+  await reset([{...initial()[0], ...lists, targets: [{platform: 'qq', type: 1, num: 111, enabled: true, messages: []}]}]);
+  await openB();
+  push.pushEntries()[0].targets[0].enabled = false;
+  await push.save();
+  for (const [key, value] of Object.entries(lists)) assert.deepEqual(disk[0][key], value);
+  await openB();
+  const changed = {dynamicBlockWords: ['新词', '另一个词'], wordCloudBlockWords: ['新屏蔽词'], wordCloudExcludeUids: ['456']};
+  for (const input of document.querySelector('#push-right').querySelectorAll('textarea')) {
+    input.value = changed[input.getAttribute('data-block-list')].join('\n');
+    await input.dispatchEvent({type: 'input', target: input});
+  }
+  await push.save();
+  for (const [key, value] of Object.entries(changed)) assert.deepEqual(disk[0][key], value);
+  assert.equal(push.changeCount(), 0);
+});
+await test('非法名单保存失败后说明哪份第几条，并保留可修正的草稿', async () => {
+  await reset(); await openB();
+  const input = document.querySelector('#push-right').querySelectorAll('textarea')[2];
+  input.value = 'abc';
+  await input.dispatchEvent({type: 'input', target: input});
+  reject = {success: false, message: '推送配置有误，已拒绝保存',
+    issues: ['第 1 个主播（p, uid 2）的词云排除名单（wordCloudExcludeUids）第 1 条必须为正整数']};
+  const before = copy(disk);
+  await push.save();
+  const status = document.querySelector('#status-text').textContent;
+  assert.ok(status.includes('wordCloudExcludeUids') && status.includes('第 1 条'), status);
+  assert.deepEqual(disk, before);
+  assert.equal(push.changeCount(), 1);
 });
 await push.leave();
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

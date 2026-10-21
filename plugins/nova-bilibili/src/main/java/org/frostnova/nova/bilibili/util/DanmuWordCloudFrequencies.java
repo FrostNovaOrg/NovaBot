@@ -1,9 +1,9 @@
 package org.frostnova.nova.bilibili.util;
 
+import java.util.ArrayList;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
-
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +17,14 @@ import java.util.Set;
  */
 public final class DanmuWordCloudFrequencies {
     private DanmuWordCloudFrequencies() {
+    }
+
+    /** 全实例名单与主播名单叠加，不修改原名单。 */
+    public static List<String> combine(List<String> global, List<String> streamer) {
+        ArrayList<String> result = new ArrayList<>();
+        if (global != null) result.addAll(global);
+        if (streamer != null) result.addAll(streamer);
+        return result;
     }
 
     /**

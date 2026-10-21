@@ -191,12 +191,12 @@ try {
     {className: 'Weekly', defaultEnabled: false}, {className: 'Other', platform: 'other'}];
   let saved = [];
   const fn = new Function('store', 'draft', 'options', 'api', 'acceptAddedPushUser',
-    'say', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen', 'trackSetupVersions',
+    'say', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen', 'trackSetupVersions', 'pushEntries',
     bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
       {handlerList: handlers}, {streamer: {platform: 'sample', uid: 1}, targets: ['group']},
       [{key: 'group', sender: 'qq-onebot', type: 1, num: 1001}],
       async () => ({success: true, version: 'new'}), user => { saved = [user]; },
-      () => {}, () => {}, model.defaultMessages, () => {}, {}, () => {});
+      () => {}, () => {}, model.defaultMessages, () => {}, {}, () => {}, () => []);
   await fn();
   eq(saved[0].targets[0].messages, [{handler: 'Live'}], '向导新目标运营周报默认关闭');
   const push = readFileSync(join(pages, 'push.js'), 'utf8');
@@ -216,14 +216,14 @@ try {
   let posted;
   let accepted;
   const save = new Function('store', 'draft', 'options', 'api', 'acceptAddedPushUser',
-    'say', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen', 'trackSetupVersions',
+    'say', 'renderStreamers', 'defaultMessages', 'markDirty', 'seen', 'trackSetupVersions', 'pushEntries',
     bracedFrom(src, 'async function saveStreamer(') + '\nreturn saveStreamer;')(
     {handlerList: []}, {streamer: {platform: 'sample', uid: 1, uname: '主播', roomId: 10}, targets: []}, [],
     async (path, opts) => {
       posted = {path, body: JSON.parse(opts.body)};
       return {success: true, version: 'new'};
     }, (user, version) => { accepted = {user, version}; },
-    () => {}, () => {}, model.defaultMessages, () => {}, {}, () => {});
+    () => {}, () => {}, model.defaultMessages, () => {}, {}, () => {}, () => []);
   await save();
   eq(posted, {path: '/datasource/users', body: {user: {uid: 1, platform: 'sample', enabled: true, targets: []}}},
     '向导只提交新增主播的配置，不提交展示字段');
