@@ -1,3 +1,4 @@
+import {phrase} from '../../../main/resources/config-ui/core.js';
 /**
  * 直接打开或刷新设置页：QQ 告警卡存在，配置项留在卡内。
  * 执行 main.js 的 load、设置页 buildGroup 和告警卡绘制，接口使用本地响应。
@@ -141,9 +142,9 @@ function loadUi(store, api) {
   const acStart = src.indexOf(marker);
   if (start < 0 || acStart < 0 || !block) throw new Error('no slice');
   const body = src.slice(start, acStart + block.length).replace(/^export /gm, '');
-  return new Function('store', 'api', 'el', 'term', 'markDirty', 'mailAlertConfigured', 'MASK', 'CLEAR', 'secretDraft',
+  return new Function('store', 'api', 'el', 'term', 'phrase', 'markDirty', 'mailAlertConfigured', 'MASK', 'CLEAR', 'secretDraft',
     body + '\nreturn {cardFields, alertCards};')(
-    store, api, makeEl, (_k, fallback) => fallback, () => {}, loadMailConfigured(), MASK, CLEAR, secretDraft);
+    store, api, makeEl, (_k, fallback) => fallback, phrase, () => {}, loadMailConfigured(), MASK, CLEAR, secretDraft);
 }
 
 function collect(root, test, out) {

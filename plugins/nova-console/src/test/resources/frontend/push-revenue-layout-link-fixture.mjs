@@ -290,7 +290,7 @@ const reasonOf = label => {
 };
 const captionText = () => {
   const node = allNodes(page()).find(item => item.tagName === 'p'
-    && item.textContent.startsWith('按本群金额可见设置预览'));
+    && item.textContent.startsWith('按这条通道的金额可见设置预览'));
   return node ? node.textContent : null;
 };
 const revenueSwitch = () => allNodes(page())
@@ -353,8 +353,8 @@ await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留�
     if (input.disabled !== true) throw new Error('「' + label + '」在隐藏金额的会话里仍可点');
     const why = reasonOf(label);
     if (!why) throw new Error('「' + label + '」灰掉却没写原因');
-    if (!why.includes('本群设置') || !why.includes('金额可见')) {
-      throw new Error('「' + label + '」的原因没指向「本群设置」的金额开关：' + why);
+    if (!why.includes('通道设置') || !why.includes('金额可见')) {
+      throw new Error('「' + label + '」的原因没指向「通道设置」的金额开关：' + why);
     }
   }
   const note = reasonOf('礼物列表');
@@ -391,14 +391,14 @@ await ask('② 草稿拨到显示金额（还没保存）：四项当场可点�
   const guard = layoutInput('本场开通大航海名单');
   if (!guard || guard.disabled !== true) throw new Error('草稿拨到显示后「本场开通大航海名单」该转灰');
   const guardWhy = reasonOf('本场开通大航海名单');
-  if (!guardWhy || !guardWhy.includes('本群设置') || !guardWhy.includes('金额可见')) {
+  if (!guardWhy || !guardWhy.includes('通道设置') || !guardWhy.includes('金额可见')) {
     throw new Error('转灰的大航海名单没写指向金额开关的原因：' + guardWhy);
   }
   const body = lastPreviewBody();
   if (!body || body.revenueVisible !== true) {
     throw new Error('预览请求没带上草稿的金额设定：' + JSON.stringify(body));
   }
-  same(captionText(), '按本群金额可见设置预览：显示', '图下说明');
+  same(captionText(), '按这条通道的金额可见设置预览：显示', '图下说明');
 });
 
 await ask('③ 草稿拨回隐藏（不保存）：灰的亮回来，预览与说明也跟着回', async () => {
@@ -417,7 +417,7 @@ await ask('③ 草稿拨回隐藏（不保存）：灰的亮回来，预览与�
   if (!body || body.revenueVisible !== false) {
     throw new Error('拨回后预览请求没带隐藏的草稿值：' + JSON.stringify(body));
   }
-  same(captionText(), '按本群金额可见设置预览：隐藏', '图下说明');
+  same(captionText(), '按这条通道的金额可见设置预览：隐藏', '图下说明');
 });
 
 await ask('④ 灰掉的那些格：存着的值不动，「自定义」的判法也不变', async () => {

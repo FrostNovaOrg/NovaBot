@@ -9,7 +9,7 @@
  * 卡里的内容由插件自己填。写死一个平台名，这一页就替一件可能没装的东西立了张卡。
  */
 
-import {$, api, el, esc, phrase, say, term} from './core.js';
+import {$, api, el, esc, phrase, say} from './core.js';
 import {cardAnchor, linksModel, resolveTarget, targetOptions} from './links-model.js';
 import {renderStatus} from './overview.js';
 import {renderTokens} from './tokens.js';
@@ -237,7 +237,8 @@ function renderTestResult(res, targetText) {
     + '<li>确认机器人账号是否在线：查看本页上方的机器人卡片。账号离线时接口仍可正常调用，但消息无人接收。</li>'
     + '<li>无需检查首页的「暂停全部推送」与静音时段：测试消息立即直接发送，不进入推送队列，'
     + '不受这两项限制；发送失败说明链路本身存在问题。</li>'
-    + '<li>查看 ' + esc(term('bot.family', '机器人程序')) + ' 的运行日志：地址与 Token 均正确但仍无法发送时，原因通常只记录在它自己的日志中。</li>'
+    + '<li>' + phrase('bot.family', v => '查看 ' + esc(v) + ' 的运行日志', '查看机器人程序的运行日志')
+    + '：地址与 Token 均正确但仍无法发送时，原因通常只记录在它自己的日志中。</li>'
     + '</ul>'
     + (res.raw ? '<p class="tr-advice">接口原始响应：' + esc(JSON.stringify(res.raw)) + '</p>' : '');
 }

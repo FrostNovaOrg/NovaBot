@@ -3,7 +3,7 @@
  *
  * 把 /api/datasource（推送配置）、/api/state（这些会话此刻听不听话）、/api/handlers、
  * /api/push-history、/api/at-all/quota 与机器人自己给的群与好友名单，算成屏幕上那棵树、
- * 通道页四段与「本群设置」那四行摘要。
+ * 通道页四段与「通道设置」那四行摘要。
  *
  * 刻意不碰 DOM，也不发请求。这一页要在好几种情形下都说得对——通道没配过、群名取不到、
  * 累计数据没开、命令被群管理员关掉、状态文件里留着一个已经不推的群——而这些情形在真机上
@@ -591,7 +591,7 @@ function hiddenReason(command, hidden, totalDataAvailable) {
 }
 
 /**
- * 「本群设置」第 2 行：命令那一行的摘要
+ * 「通道设置」第 2 行：命令那一行的摘要
  *
  * 数目按<b>菜单里真列出来的条数</b>算，不按命令总数算：没开累计存储的机器上，
  * 带「总」字的两条在群里本来就不出现，摘要仍写 14 的话，屏幕上的数与群里数出来的对不上。
@@ -666,7 +666,7 @@ export function commandSummary(commands, session, totalDataAvailable) {
 }
 
 /**
- * 「本群设置」第 1 行：金额可见
+ * 「通道设置」第 1 行：金额可见
  * @param session 会话
  * @return 摘要
  */
@@ -693,9 +693,9 @@ export function revenueSummary(session) {
 }
 
 /**
- * 「本群设置」静音时段那一行的摘要
+ * 「通道设置」静音时段那一行的摘要
  *
- * 三档：跟全局（默认，没设过的会话都是这一档）、本会话自己的时段、本会话不静音。
+ * 三档：跟全局（默认，没设过的通道都是这一档）、本通道自己的时段、本通道不静音。
  * 「静音中」认的是服务端给的 quietActive，不拿起止在这里自己算：判定只留闸门那一份，
  * 两边各算一份的话，屏幕上写着「静音中」、推送却照发（或反过来）。
  * @param session 会话
@@ -715,9 +715,9 @@ export function quietSummary(session, global, savedQuiet) {
 
   let text;
   if (mode === 'off') {
-    text = '本会话不静音';
+    text = '本通道不静音';
   } else if (mode === 'custom') {
-    text = '本会话 ' + start + '–' + end;
+    text = '本通道 ' + start + '–' + end;
   } else {
     text = '使用全局设置' + (g.start && g.end ? '（' + g.start + '–' + g.end + '）' : '（设置页未设置静音时段）');
   }
@@ -756,7 +756,7 @@ export function previewRequestBody(params, target, revenueVisible, user) {
 }
 
 /**
- * 本群此刻存着的金额可见（不含草稿）
+ * 这条通道此刻存着的金额可见（不含草稿）
  *
  * 有会话跟会话；没有会话按类型默认（群聊隐藏、私聊显示）。预览图旁那一行说明
  * 与版式区灰不灰都以它为底，草稿另由调用处盖上来——两处各算一份底数的话，
@@ -773,9 +773,9 @@ export function savedRevenueVisible(session, target) {
 }
 
 /**
- * 预览图旁那一行：按本群金额可见画：隐藏／显示
+ * 预览图旁那一行：按这条通道的金额可见画：隐藏／显示
  *
- * 有会话时跟本群设置走；没有会话时按类型默认（群聊隐藏、私聊显示）。
+ * 有会话时跟通道设置走；没有会话时按类型默认（群聊隐藏、私聊显示）。
  * 带上草稿值时按草稿说——图按草稿画，话也按草稿讲，两头一齐。
  * @param session 当前会话，可为空
  * @param target 当前通道，可为空
@@ -785,11 +785,11 @@ export function savedRevenueVisible(session, target) {
 export function previewRevenueCaption(session, target, revenueVisible) {
   const visible = revenueVisible === undefined
     ? savedRevenueVisible(session, target) : !!revenueVisible;
-  return '按本群金额可见设置预览：' + (visible ? '显示' : '隐藏');
+  return '按这条通道的金额可见设置预览：' + (visible ? '显示' : '隐藏');
 }
 
 /**
- * 「本群设置」第 3 行：提醒订阅
+ * 「通道设置」第 3 行：提醒订阅
  *
  * 按订阅类型分行报人数。改「谁会被 @」不在这一行——那一档配在通道的模板里，
  * 是这一条通知的事，不是这个群的事。
@@ -819,7 +819,7 @@ export function subscriptionSummary(subscriptions, session) {
 }
 
 /**
- * 「本群设置」第 4 行：@全体成员 的状态行
+ * 「通道设置」第 4 行：@全体成员 的状态行
  *
  * 这一行不是设置，是三个事实：今天这个群用掉几次、这个账号今天一共用掉几次、
  * 机器人在这个群里是不是管理员。前两个来自额度接口，第三个来自机器人自己给的群名单。

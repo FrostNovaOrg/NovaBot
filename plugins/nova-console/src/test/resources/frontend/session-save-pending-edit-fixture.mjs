@@ -2,8 +2,8 @@ import {datasourceRead} from './datasource-read.mjs';
 /**
  * 本群设置：点保存之后、回包之前又改的那一档，不许被当成已存
  *
- * 用户那头的故障：静音时段从「跟全局」选成「本会话不静音」，点保存，接口还没回来，
- * 又选成「本会话自己的时段」。回包一到改动条说存好了，再点保存也不发后面那一档。
+ * 用户那头的故障：静音时段从「跟全局」选成「本通道不静音」，点保存，接口还没回来，
+ * 又选成「本通道自己的时段」。回包一到改动条说存好了，再点保存也不发后面那一档。
  * 它从没进过状态文件，刷新页面就退回「跟全局」。
  * 根子在 done()：那一笔回包时清的是草稿槽位「此刻」这一份，而写请求发出去的是
  * 点下保存那一刻那一份——挂着的那段时间里换成的新草稿被一并抹掉了。
@@ -416,12 +416,12 @@ async function fresh() {
   mock.requests.length = 0;
 }
 
-await ask('① 静音从「使用全局设置」改成「本会话不静音」、点保存，回包前又改成「本会话自定义时段」：这一档还在，下次保存发出去', async () => {
+await ask('① 静音从「使用全局设置」改成「本通道不静音」、点保存，回包前又改成「本通道自定义时段」：这一档还在，下次保存发出去', async () => {
   if (!push || !sessions || !model) throw new Error('产品码没载入，无从量起');
   await fresh();
 
-  // A→B：选「本会话不静音」，这是要存的那一档
-  choose(inputByLabel(host, '本会话不静音'), '本会话不静音');
+  // A→B：选「本通道不静音」，这是要存的那一档
+  choose(inputByLabel(host, '本通道不静音'), '本通道不静音');
   await settle();
   if (push.changeCount() !== 1) {
     throw new Error('改完一档该算 1 处，实测 ' + push.changeCount());
@@ -433,8 +433,8 @@ await ask('① 静音从「使用全局设置」改成「本会话不静音」�
   await settle();
   if (!quietPosts().length) throw new Error('点下保存就该把静音写出去，实测一条都没发');
 
-  // 这段时间里又选「本会话自己的时段」并填上起止：这一档还没存上
-  choose(inputByLabel(host, '本会话自定义时段'), '本会话自定义时段');
+  // 这段时间里又选「本通道自己的时段」并填上起止：这一档还没存上
+  choose(inputByLabel(host, '本通道自定义时段'), '本通道自定义时段');
   await settle();
   // 起止各拨一下即整段重画一次，两框得各找各的——拿旧框拨只会写进旧那一份草稿
   const start = inputByLabel(host, '静音开始');
@@ -543,7 +543,7 @@ await ask('② 收入可见：保存途中改回原值，存完它仍是草稿�
 await ask('③ 静音时段：保存途中改回原值，存完它仍是草稿、值是改回的那个，改动条 1 处', async () => {
   if (!push || !sessions || !model || !drafts) throw new Error('产品码没载入，无从量起');
   await revertDuringSave(
-    () => choose(inputByLabel(host, '本会话不静音'), '本会话不静音'),
+    () => choose(inputByLabel(host, '本通道不静音'), '本通道不静音'),
     () => choose(inputByLabel(host, '使用全局设置'), '使用全局设置'),
     {mode: 'follow', start: '', end: ''},
     () => drafts.quietDraft(TARGET), '/state/quiet');

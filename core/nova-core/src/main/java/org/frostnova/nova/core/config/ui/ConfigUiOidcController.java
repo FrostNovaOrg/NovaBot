@@ -57,7 +57,7 @@ public class ConfigUiOidcController {
 
     @GetMapping("/oidc/login")
     public void login(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        start(request, response, null);
+        start(request, response, null, "1".equals(request.getParameter("create")));
     }
 
     @PostMapping("/accounts/local/bind")
@@ -69,14 +69,14 @@ public class ConfigUiOidcController {
             response.sendError(403, "只有本地管理员可以绑定身份");
             return;
         }
-        start(request, response, ConfigUiAccess.session(request).getId());
+        start(request, response, ConfigUiAccess.session(request).getId(), false);
     }
 
-    private void start(HttpServletRequest request, HttpServletResponse response, String sessionId) throws IOException {
+    private void start(HttpServletRequest request, HttpServletResponse response, String sessionId, boolean create) throws IOException {
         if (!auth.oidcEnabled()) { response.setStatus(404); return; }
         if (!acquire(request)) { result(request, response, "busy"); return; }
         try {
-            var authorization = client.startLogin(request);
+            var authorization = create ? client.startLogin(request, true) : client.startLogin(request);
             String correlation = SecureToken.generate();
             synchronized (pending) {
                 sweep();

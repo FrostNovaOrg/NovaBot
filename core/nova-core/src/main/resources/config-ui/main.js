@@ -4,8 +4,7 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say,
-  term} from './core.js';
+import {$, api, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
@@ -336,13 +335,13 @@ function applyConnectionVocab() {
   }
   const hint = $('#card-bot .lc-body > p.hint');
   if (hint) {
-    hint.innerHTML = '机器人指 ' + esc(term('bot.impl.hint', '机器人程序'))
-      + '，NovaBot 通过它将消息发送到 ' + esc(term('bot.platform', '聊天平台'))
+    hint.innerHTML = phrase('bot.impl.hint', v => '机器人指 ' + esc(v), '机器人指机器人程序')
+      + phrase('bot.platform', v => '，NovaBot 通过它将消息发送到 ' + esc(v), '，NovaBot 通过它将消息发送到聊天平台')
       + '。两个 Token 留空时<b>保留原值</b>，不会被清空。';
   }
   const entryHint = $('#bot-entry p.hint');
   if (entryHint) {
-    entryHint.innerHTML = '扫码登录 ' + esc(term('bot.platform', '聊天平台'))
+    entryHint.innerHTML = phrase('bot.platform', v => '扫码登录 ' + esc(v), '扫码登录聊天平台')
       + '、查看运行日志等操作需在'
       + phrase('bot.impl', v => ' ' + esc(v) + ' 界面', '机器人界面')
       + '中完成。已登录本控制台时<b>无需再次登录</b>，打开时将自动完成登录。';

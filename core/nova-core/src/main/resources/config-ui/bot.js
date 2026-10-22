@@ -2,7 +2,7 @@
  * 机器人页：连接参数表单与测试消息
  */
 
-import {$, api, term} from './core.js';
+import {$, api, phrase} from './core.js';
 
 // 同一文档里不能有两个相同 id，因此按前缀生成 DOM，逻辑仍只写一份。
 // label 的 for 接上各框的 id：点标签定位得到框，读屏也念得出框的名字——
@@ -10,11 +10,11 @@ import {$, api, term} from './core.js';
 export function botFormHtml(p) {
   return '<div class="row"><label for="' + p + '-addr">地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
     + '<div class="row"><label for="' + p + '-hport">HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
-    + '<div class="row"><label for="' + p + '-htoken">HTTP Token</label><input id="' + p + '-htoken" placeholder="与 '
-    + term('bot.family', '机器人程序') + ' 中的配置保持一致"></div>'
+    + '<div class="row"><label for="' + p + '-htoken">HTTP Token</label><input id="' + p + '-htoken" placeholder="'
+    + phrase('bot.family', v => '与 ' + v + ' 中的配置保持一致', '与机器人程序中的配置保持一致') + '"></div>'
     + '<div class="row"><label for="' + p + '-wport">WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
-    + '<div class="row"><label for="' + p + '-wtoken">WS Token</label><input id="' + p + '-wtoken" placeholder="与 '
-    + term('bot.family', '机器人程序') + ' 中的配置保持一致"></div>'
+    + '<div class="row"><label for="' + p + '-wtoken">WS Token</label><input id="' + p + '-wtoken" placeholder="'
+    + phrase('bot.family', v => '与 ' + v + ' 中的配置保持一致', '与机器人程序中的配置保持一致') + '"></div>'
     + '<div class="row"><button id="' + p + '-test" type="button">测试连接</button>'
     + '<button id="' + p + '-save" type="button" disabled>保存</button></div>'
     + '<div class="out" id="' + p + '-out"></div>';

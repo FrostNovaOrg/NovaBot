@@ -29,7 +29,7 @@ const STATION_ICONS = {
  * @param key 站名，与连接页那侧认的一致：platform / self / bot
  */
 function station(key, seg) {
-  const state = {ok: '正常', warn: '需要关注', err: '连接异常', off: '未启用'}[seg.level] || '状态未知';
+  const state = seg.stateText || {ok: '正常', warn: '需要关注', err: '连接异常', off: '未启用'}[seg.level] || '状态未知';
   return '<button class="lm-st" type="button" data-goto="' + esc(key)
     + '" aria-label="' + esc(seg.station + '，' + state + '，' + seg.sub)
     + '" title="' + esc(seg.caption || state) + '">'
@@ -385,7 +385,7 @@ function renderDiskRow(el, runtime) {
 }
 
 // 命令开关、订阅名单与「哪几条推送配置没填完」那三块随推送页改版挪去了通道页的
-// 「本群设置」那一段（见 sessions.js）：它们讲的是某一个群此刻听不听话，
+// 「通道设置」那一段（见 sessions.js）：它们讲的是某一个群此刻听不听话，
 // 而这一页答的是「现在好不好」。取那份状态的那一趟也跟着搬走了，见 push.js 的 loadPushPage。
 
 // 「运行自检」把整页重取一遍并给出结论。异常项本就在探针那一栏里逐条列着，

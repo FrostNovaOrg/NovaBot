@@ -555,12 +555,14 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
     chain.bot.level = 'off';
   } else if (state.pushEnabled === false) {
     chain.bot.level = 'off';
-    chain.bot.caption = '推送已暂停 · 期间的消息不发送、不补发';
+    chain.bot.stateText = '已暂停';
+    chain.bot.caption = '已暂停 · 期间的消息不发送、不补发';
   } else if (state.quiet && state.quiet.active) {
     // 静音期间这一段判熄灯而不是判正常：链路本身通着，是这一段此刻按配置不走消息，
     // 而绿灯会让人以为「推送在正常发出去」
     chain.bot.level = 'off';
-    chain.bot.caption = '静音 · ' + state.quiet.start + ' – ' + state.quiet.end + ' 期间的推送不发送、不补发；运营周报顺延到静音结束后发送';
+    chain.bot.stateText = '静音中';
+    chain.bot.caption = '静音中 · ' + state.quiet.start + ' – ' + state.quiet.end + ' 期间的推送不发送、不补发；运营周报顺延到静音结束后发送';
   }
 
   return {

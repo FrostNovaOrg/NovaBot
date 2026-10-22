@@ -10,7 +10,7 @@
  * 而页脚那句「共 N 条」说的还是服务端那个数——屏幕上的两个数字对不上。
  */
 
-import {$, api, clock, el, esc, phrase, say, today, term} from './core.js';
+import {$, api, clock, el, esc, phrase, say, today} from './core.js';
 import {
   ENG_LEVELS, catBarItems, clearEngBlock, emptyStateView, engAtBottom, engCopyText, engEmptyChips,
   engEmptyText, engFootText, engFollowing, engQuery, engSegments, hasFilter, logHash, newerDay,
@@ -668,7 +668,8 @@ async function renderBotLogEntry() {
   if (box.childElementCount || box.textContent) return;
 
   box.textContent = phrase('bot.impl',
-    v => term('bot.platform', '聊天平台') + ' 机器人（' + v + '）的日志不在此处，请在其自身的界面中查看。',
+    v => phrase('bot.platform', p => p + ' 机器人（' + v + '）', '机器人（' + v + '）')
+      + '的日志不在此处，请在其自身的界面中查看。',
     '机器人的日志不在此处，请在机器人自身的界面中查看。');
   let state;
   try {

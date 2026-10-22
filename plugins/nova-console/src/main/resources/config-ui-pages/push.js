@@ -6,7 +6,7 @@
  * refresh 按地址栏取数、leave 离开本页时收起抽屉。
  *
  * 本文件只管把 push-model.js 算好的东西摆上屏幕。树上标什么记号、模板算默认还是自定义、
- * 「本群设置」那四行摘要写什么，一律在那边判——判断留在这里的话，那几档就只能靠人
+ * 「通道设置」那四行摘要写什么，一律在那边判——判断留在这里的话，那几档就只能靠人
  * 打开页面挨个点着看，而其中好几档（命令被群管理员关掉、累计数据没开、群名取不到）
  * 在真机上凑齐一次的代价极高。
  *
@@ -14,7 +14,7 @@
  */
 
 import {ask, keepTabInside} from './confirm.js';
-import {$, api, CONSOLE, el, esc, markDirty, request, say, term} from './core.js';
+import {$, api, CONSOLE, el, esc, markDirty, phrase, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
@@ -187,7 +187,7 @@ const PAGE_STYLE = `
 .tplbody{margin:0 0 8px;padding:9px 11px;background:var(--ground);border:1px solid var(--line);
   border-radius:var(--r-ctl);font-family:var(--mono);font-size:13.5px;white-space:pre-wrap;
   word-break:break-all}
-/* 本群设置：四行摘要 */
+/* 通道设置：四行摘要 */
 .crow{border-top:1px solid var(--line)}
 .crow:first-of-type{border-top:none}
 .crow>summary{display:flex;align-items:baseline;gap:10px;padding:10px 0;cursor:pointer;
@@ -607,7 +607,7 @@ function paintConflict() {
     const saved = JSON.parse(pushSaved).find(item => userKey(item) === userKey(user));
     const hasDraft = JSON.stringify(user, dropDisplayOnly) !== JSON.stringify(saved, dropDisplayOnly);
     if ((hasDraft || sessionDraftCount() > 0) && !await ask({title: '丢弃未保存的草稿？',
-      body: '重新载入会丢弃这位主播尚未保存的修改，本群设置草稿保留。'})) return;
+      body: '重新载入会丢弃这位主播尚未保存的修改，包括通道设置里的金额可见、静音时段和命令开关；提醒订阅的改动保留。'})) return;
     try {
       const res = await api(userPath(user));
       if (!res.missing && (!res.success || !res.user || !res.version)) throw new Error(res.message || '重新载入失败');
@@ -1360,6 +1360,10 @@ function channelRow(user, target) {
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
+  // 与段 4 静音那一行的「静音中」同一份判法：认服务端的 quietActive，草稿改过档位时不认
+  if (quietSummary(session, runtime.quietGlobal, savedQuiet(user, target)).active) {
+    title.appendChild(pill('静音中', 'warn'));
+  }
   main.appendChild(title);
 
   const sub = el('div', 'rc-sub');
@@ -1412,7 +1416,7 @@ function renderChannelLevel(host, user, target) {
   remove.addEventListener('click', async () => {
     if (!await ask({title: '移除该通道？',
       body: '不再向 ' + name + ' 推送「' + streamerName(user) + '」'
-        + '。该群的本群设置将保留，其他主播的推送不受影响。'})) return;
+        + '。这条通道的通道设置（金额可见、静音时段、命令开关）将一并删除，「@我」订阅名单保留；其他主播的推送不受影响。'})) return;
     user.targets.splice(user.targets.indexOf(target), 1);
     markDirty();
     location.hash = '#/push/' + user.uid;
@@ -1842,6 +1846,17 @@ function layoutPreviewRenderer(target, revenueVisible, user) {
   };
 }
 
+/** 这条通道已保存的那一份，没存过时是空对象 */
+function savedTarget(user, target) {
+  return JSON.parse(pushSaved).find(saved => userKey(saved) === userKey(user))?.targets?.find(saved =>
+    saved.platform === target.platform && Number(saved.type) === Number(target.type) && String(saved.num) === String(target.num)) || {};
+}
+
+/** 这条通道已保存的静音档位 */
+function savedQuiet(user, target) {
+  return savedTarget(user, target).quietHours || {mode: 'follow'};
+}
+
 /** 段 4：当前主播的通道设置。 */
 function sectionSession(host, user, target, session) {
   const box = sectionHead(host, 4, '通道设置', Number(target.type) === 1
@@ -1850,8 +1865,7 @@ function sectionSession(host, user, target, session) {
   box.appendChild(settings);
   const render = () => {
     const current = channelSession(session, target, user);
-    const baseline = JSON.parse(pushSaved).find(saved => userKey(saved) === userKey(user))?.targets?.find(saved =>
-      saved.platform === target.platform && Number(saved.type) === Number(target.type) && String(saved.num) === String(target.num)) || {};
+    const baseline = savedTarget(user, target);
     const commands = (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     settings.innerHTML = '';
@@ -1860,7 +1874,7 @@ function sectionSession(host, user, target, session) {
       baseline,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
       summary: {
-        revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal, baseline.quietHours || {mode: 'follow'}),
+        revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal, savedQuiet(user, target)),
         command: commandSummary(commands, current, runtime.totalDataAvailable),
         subscription: subscriptionSummary(subscriptions, current),
         atAll: atAllStatus(quota, current, target, directory),
@@ -2034,7 +2048,7 @@ function pickMemberTarget(opts) {
     ...(runtime.sessions || []).map(session => session.platform),
     ...(store.senderList || []),
   ].filter(Boolean))];
-  const numberLabel = term('bot.target.group', '群号') + '或 ' + term('bot.target.user', '用户号');
+  const numberLabel = term('bot.target.group', '群号') + phrase('bot.target.user', v => '或 ' + v, '或用户号');
   openDrawer(opts.title, '填写完整的' + numberLabel + '，查到后再添加。', body => {
     const sender = platformNames.length > 1 ? el('select') : null;
     if (sender) {
@@ -2133,7 +2147,7 @@ function addChannel(user) {
 
   (isMember() ? pickMemberTarget : pickTarget)({
     title: '给「' + streamerName(user) + '」添加通道',
-    lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。群的设置（金额显示、静音、命令开关等）由推送到该群的所有主播共用。',
+    lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。通道设置（金额可见、静音时段、命令开关）每条通道各一份，不影响同群的其他主播。',
     user,
     taken,
     onPick: hit => {
@@ -2380,7 +2394,7 @@ function pushChangeCount() {
 }
 
 /**
- * 本页此刻有几处改过还没保存：推送配置那一份按主播算，本群设置那一份按改动项算
+ * 本页此刻有几处改过还没保存：推送配置那一份按主播算，通道设置那一份按改动项算
  *
  * 这是宿主改动条问本页的三件事之一（另两件是 save 与 reload），见 core.js 的
  * registerChangeSource。宿主不知道这个数是怎么算出来的，也不该知道。
@@ -2402,7 +2416,7 @@ export function changeCount() {
  */
 export async function reload(options) {
   const keepSessionDrafts = options?.keepSessionDrafts === true;
-  // 「放弃」是整页一起还原：本群设置那份草稿与推送配置那份一并丢
+  // 「放弃」是整页一起还原：通道设置那份草稿与推送配置那份一并丢
   if (!keepSessionDrafts) clearSessionDrafts();
   const knownNames = new Map((pushData || []).filter(user => user._uname)
     .map(user => [user.platform + ':' + user.uid, user]));
@@ -2433,15 +2447,15 @@ export async function reload(options) {
 }
 
 /**
- * 把两段草稿写回去：推送配置 → datasource.json，本群设置 → 状态接口
+ * 把两段草稿写回去：推送配置 → datasource.json，通道设置 → 状态接口
  *
- * 两段分开写，哪段没改动就整段不发：本群设置干净时不该碰状态文件，
+ * 两段分开写，哪段没改动就整段不发：通道设置干净时不该碰状态文件，
  * 推送配置干净时也不该重写 datasource.json。
  * 任一段失败都不撤另一段已经写成的；没写成的那一段草稿留着，下次保存再发。
  * 清空订阅名单那一笔自带二次确认，确认没过的那一笔跳过、其余照写。
  *
  * 状态栏写的是这一趟真正落地了什么：成的那一段显示服务端回的那句（两段都成就两句并列），
- * 本群设置一处没改时不论推送那段成败都不提它——那一段根本没发过请求。
+ * 通道设置一处没改时不论推送那段成败都不提它——那一段根本没发过请求。
  */
 export async function save() {
   $('#save').disabled = true;
@@ -2532,11 +2546,11 @@ export async function save() {
           stateMsgs.push(res.message || '已保存');
         } else {
           stateOk = false;
-          notes.push(res.message || '本群设置保存失败');
+          notes.push(res.message || '提醒订阅保存失败');
         }
       } catch (e) {
         stateOk = false;
-        notes.push('本群设置保存失败：' + e.message);
+        notes.push('提醒订阅保存失败：' + e.message);
       }
     }
   }
@@ -2554,16 +2568,16 @@ export async function save() {
   } else if (pushOk && !stateOk) {
     const parts = [];
     if (pushTried && pushMsg) parts.push(pushMsg);
-    parts.push('本群设置保存失败' + (notes.length ? '：' + notes.join('；') : ''));
+    parts.push('提醒订阅保存失败' + (notes.length ? '：' + notes.join('；') : ''));
     say(parts.join(' · '), 'err');
   } else if (!pushOk && stateOk) {
     // 成的那段与败的那句并列：塞进括号里跟着失败那句走的话，存上的东西会被读成没存上。
-    // 本群设置一处没动时（stateWrote 为 0）不提它——那一段根本没发过请求
+    // 通道设置一处没动时（stateWrote 为 0）不提它——那一段根本没发过请求
     const parts = ['推送配置保存失败' + (notes.length ? '：' + notes.join('；') : '')];
-    if (stateWrote > 0) parts.push('本群设置已保存' + (statePhrase ? '（' + statePhrase + '）' : ''));
+    if (stateWrote > 0) parts.push('提醒订阅已保存' + (statePhrase ? '（' + statePhrase + '）' : ''));
     say(parts.join(' · '), 'err');
   } else {
-    say('推送配置与本群设置均保存失败：' + notes.join('；'), 'err');
+    say('推送配置与提醒订阅均保存失败：' + notes.join('；'), 'err');
   }
   markDirty();
   try {
