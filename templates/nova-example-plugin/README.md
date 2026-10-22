@@ -122,7 +122,7 @@ NovaBot 插件使用 Maven 进行依赖管理, 插件可以依赖其他第三方
 <dependency>
     <groupId>org.frostnova.nova</groupId>
     <artifactId>nova-core</artifactId>
-    <version>6.0.0-beta.5</version>
+    <version>6.0.0</version>
 </dependency>
 ```
 
