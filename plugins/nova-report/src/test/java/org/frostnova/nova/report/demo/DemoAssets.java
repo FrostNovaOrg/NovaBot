@@ -101,8 +101,11 @@ public final class DemoAssets {
 
     static final String ROSTER_FILE = "roster.txt";
 
-    /** 开播时刻写死，词云种子与时长才两次相同 */
-    static final long START_MILLIS = 1_704_067_200_000L;
+    /**
+     * 开播时刻写死，词云种子与时长才两次相同。
+     * 演示场次离重出那天不能超过 400 天，超了两段缺口一记就被清掉，报告上「采集缺口」那句就没了
+     */
+    static final long START_MILLIS = 1_792_368_000_000L;
 
     static final long DURATION_MILLIS = 90L * 60_000L;
 
@@ -484,8 +487,8 @@ public final class DemoAssets {
         data.setLiveEndTime(platform, STREAMER_UID, end);
 
         // 采集缺口两个成因各留一段：停机（维护）与本房断线（断流）是两格账，各记各的。
-        // 一格里不记第二段——每记新的一段都会先清掉 30 天前的旧段，而演示场次在 2024 年，
-        // 再记也留不下来。这样报告上「采集缺口」那句话两个成因的分栏都看得到
+        // 一格里不记第二段——每段都是先记后清，比现在早 400 天以上的一记就清掉，
+        // 演示场次一旧，记了也留不下来。这样报告上「采集缺口」那句话两个成因的分栏都看得到
         data.recordDowntime(START_MILLIS + 30 * 60_000L, START_MILLIS + 32 * 60_000L, LiveGap.Reason.MAINTENANCE);
         data.recordRoomOutage(platform, STREAMER_UID, START_MILLIS + 70 * 60_000L,
                 START_MILLIS + 71 * 60_000L + 20_000L);
