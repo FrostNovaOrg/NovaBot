@@ -282,21 +282,21 @@ function revenueRow(host, ctx) {
 
 // ---- 2 静音时段 ----
 
-/** 选「本会话自己的时段」又从没填过时，起止先借全局那一对，全局也没设就给一对常见的 */
+/** 选「本通道自己的时段」又从没填过时，起止先借全局那一对，全局也没设就给一对常见的 */
 const QUIET_FALLBACK = {start: '23:00', end: '08:00'};
 
 const QUIET_MODES = [
-  {mode: 'follow', label: '使用全局设置', hint: '使用设置页中的全局静音时段。未单独设置过的会话均为此项。'},
-  {mode: 'custom', label: '本会话自定义时段', hint: '此会话按下方的起止时间静音，不受全局静音时段影响。可跨零点。'},
-  {mode: 'off', label: '本会话不静音', hint: '全局处于静音时，推往此会话的消息照常发送。'},
+  {mode: 'follow', label: '使用全局设置', hint: '使用设置页中的全局静音时段。未单独设置过的通道均为此项。'},
+  {mode: 'custom', label: '本通道自定义时段', hint: '这条通道按下方的起止时间静音，不受全局静音时段影响。可跨零点。'},
+  {mode: 'off', label: '本通道不静音', hint: '全局处于静音时，推往这条通道的消息照常发送。'},
 ];
 
 function quietRow(host, ctx) {
   const summary = ctx.summary.quiet;
   const body = row(host, ctx, '静音时段', summary.text,
-    '静音期间推往此会话的开播、下播、报告、动态与命令回复将直接丢弃，不会补发，'
+    '静音期间推往这条通道的开播、下播、报告、动态与命令回复将直接丢弃，不会补发，'
     + '时间线上记为「静音丢弃」。运营周报除外：顺延到静音结束后发送。开始与结束时间不能相同，相同时保存会被拒绝；'
-    + '如需全天照常发送，请选择「本会话不静音」。设置页的全局推送开关关闭时一律不发送；告警不受静音影响。');
+    + '如需全天照常发送，请选择「本通道不静音」。设置页的全局推送开关关闭时一律不发送；告警不受静音影响。');
 
   const saved = {mode: summary.mode, start: summary.start, end: summary.end};
   const wanted = (ctx.channel ? null : quietDraft(ctx.target)) || saved;

@@ -284,7 +284,7 @@ public class NovaCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("静音时段 · 开始")
-        @ConfigSummary("任一端留空即停用全局静音（单独设置了静音时段的会话不受影响）；告警照常发送。")
+        @ConfigSummary("任一端留空即停用全局静音（单独设置了静音时段的通道不受影响）；告警照常发送。")
         @ConfigFormat(ConfigFormat.Format.TIME_OF_DAY)
         private String quietStart = "";
 
