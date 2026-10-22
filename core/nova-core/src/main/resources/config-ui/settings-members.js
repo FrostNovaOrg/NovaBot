@@ -1,5 +1,5 @@
 /** 设置页成员管理。账号权限与敏感操作的校验由接口执行。 */
-import {api, el} from './core.js';
+import {$, api, el} from './core.js';
 import {ask} from './confirm.js';
 import {store} from './store.js';
 
@@ -19,6 +19,15 @@ export function memberGroup() {
   box.dataset.ui = 'members';
   renderMembers(box, memberAuth);
   return box;
+}
+
+/** 成员不计入配置改动，搜索时按整组内容匹配。 */
+export function filterMembers(query, onlyChanged) {
+  const box = $('.members-group');
+  if (!box) return;
+  const q = String(query || '').trim().toLowerCase();
+  const hit = !onlyChanged && (!q || (box.textContent || '').toLowerCase().includes(q));
+  box.classList.toggle('hide', !hit);
 }
 
 function text(parent, tag, value, cls = '') {

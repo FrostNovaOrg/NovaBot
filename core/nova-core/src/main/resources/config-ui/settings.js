@@ -14,7 +14,7 @@ import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards, openCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
-import {memberGroup} from './settings-members.js';
+import {filterMembers, memberGroup} from './settings-members.js';
 import {CLEAR, advancedShown, arrangeGroups, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf,
   isChanged, isDangerous, dangerOf, isVisible, secretDraft, timeOfDay, timeOfDayValue}
   from './settings-model.js';
@@ -1017,9 +1017,10 @@ export function filterSettings() {
 
   shown += filterCards(query, onlyChanged);
   shown += filterAuthCards(query, onlyChanged);
+  filterMembers(query, onlyChanged);
 
   // 一组里一项都不剩就把整组收起来，否则屏幕上留着一串空标题。
-  // 界面组（data-ui）底下没有配置行，不参与这道收起——它永远该露着。
+  // 界面组与自行筛选的组（data-ui）不在这里按配置行数收起。
   for (const group of document.querySelectorAll('.setgrp:not([data-ui])')) {
     const any = group.querySelectorAll('.setitem:not(.hide), .alcard:not(.hide)').length;
     group.classList.toggle('hide', any === 0);

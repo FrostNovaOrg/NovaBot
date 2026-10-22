@@ -19,7 +19,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
+import {$, api, el, esc, markDirty, phrase, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerBlockedReason, registerPasskey} from './passkeys.js';
 import {setAuthState} from './settings-auth.js';
@@ -658,8 +658,8 @@ function invalidateBot(draft) {
 
 function stepBot(host) {
   heading(host, titleOf('bot'),
-    '机器人指 ' + term('bot.impl.hint', '机器人程序')
-    + '，NovaBot 通过它将消息发送到 ' + term('bot.platform', '聊天平台')
+    phrase('bot.impl.hint', v => '机器人指 ' + v, '机器人指机器人程序')
+    + phrase('bot.platform', v => '，NovaBot 通过它将消息发送到 ' + v, '，NovaBot 通过它将消息发送到聊天平台')
     + '。此步骤不可跳过。');
 
   const at = draft.bot;

@@ -127,6 +127,19 @@ const CASES = [
       probe('BOT', 'OK', '机器人在线'),
     ], {pushEnabled: false}),
     want: {platform: 'ok', self: 'ok', bot: 'off'},
+    botState: '已暂停',
+  },
+  {
+    name: '静音生效：机器人灰灯并说明静音中',
+    body: status([], {quiet: {active: true, start: '22:00', end: '08:00'}}),
+    want: {platform: 'off', self: 'off', bot: 'off'},
+    botState: '静音中',
+  },
+  {
+    name: '尚未配置：机器人仍写未启用',
+    body: status([], {senders: [], users: [], pushEnabled: false}),
+    want: {platform: 'off', self: 'off', bot: 'off'},
+    botState: '未启用',
   },
 ];
 
@@ -190,6 +203,7 @@ if (typeof refreshHome === 'function') {
     for (const key of ['platform', 'self', 'bot']) {
       const where = item.name + ' · ' + key + ' 站';
       const level = item.want[key];
+      const word = key === 'bot' && item.botState || STATE_WORD[level];
       const st = stationOf(html, key);
       eq(st != null, true, where + '画出来了');
       if (!st) continue;
@@ -201,12 +215,16 @@ if (typeof refreshHome === 'function') {
         eq(lamps[0].rest.includes('aria-hidden="true"'), true, where + '的灯对读屏藏起来');
       }
 
+      if (key === 'bot' && item.botState) {
+        eq(st.whole.includes('>' + word + '</span>'), true, where + '格上写着' + word);
+        if (word !== '未启用') eq((attr(st.open, 'title') || '').includes(word), true, where + '悬停说明含' + word);
+      }
       const label = attr(st.open, 'aria-label');
       eq(label != null, true, where + '的按钮带 aria-label');
       if (label != null) {
-        eq(label.includes(STATE_WORD[level]), true,
-          where + '的 aria-label 写着「' + STATE_WORD[level] + '」，实为「' + label + '」');
-        const others = Object.entries(STATE_WORD).filter(([lv]) => lv !== level).map(([, w]) => w);
+        eq(label.includes(word), true,
+          where + '的 aria-label 写着「' + word + '」，实为「' + label + '」');
+        const others = [...Object.values(STATE_WORD), '已暂停', '静音中'].filter(w => w !== word);
         eq(others.filter(w => label.includes(w)), [], where + '的 aria-label 不写别的状态');
       }
     }

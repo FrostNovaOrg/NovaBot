@@ -1,3 +1,4 @@
+import {phrase} from '../../../main/resources/config-ui/core.js';
 /**
  * 连接页机器人表单：五个输入框各有自己的名字
  *
@@ -7,7 +8,7 @@
  * 五个输入框逐一对照：每个框都有一个 label[for] 对上它的 id（id 一个不许改，
  * 取值的那几处按 id 找），且五个标签文字互不相同。
  *
- * botFormHtml 切段注入 term 后真执行，产出的 HTML 浅解析成节点再数。
+ * botFormHtml 切段注入 phrase 后真执行，产出的 HTML 浅解析成节点再数。
  * 由 BotFormLabelsTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
@@ -158,8 +159,8 @@ if (!body) {
   console.log('  红：bot.js 里切不出 botFormHtml');
   process.exit(1);
 }
-const botFormHtml = new Function('term', body.replace(/^export\s+/, '') + '\nreturn botFormHtml;')(
-  (key, fallback) => fallback);
+const botFormHtml = new Function('phrase', body.replace(/^export\s+/, '') + '\nreturn botFormHtml;')(
+  phrase);
 
 for (const p of ['s1', 'bot']) {
   const host = new MiniNode('div');

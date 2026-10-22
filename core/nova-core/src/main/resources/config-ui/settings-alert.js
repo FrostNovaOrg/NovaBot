@@ -10,7 +10,7 @@
  * 三者在配置文件上都长得完全正常，而它们的共同后果是真出事那天没有人收到告警。
  */
 
-import {$, api, el, markDirty, term} from './core.js';
+import {$, api, el, markDirty, phrase, term} from './core.js';
 import {store} from './store.js';
 import {mailAlertConfigured} from './alert-model.js';
 
@@ -535,8 +535,8 @@ async function recipientPicker(box, pill, fields) {
   const currentKey = num ? platform + '|' + type + '|' + num : '';
 
   const options = [];
-  // 空档要能选回来：配过之后想撤掉这一路，除了选「不通过 机器人 发送」没有别的路
-  options.push({key: '', text: '不通过 ' + term('bot.platform', '机器人') + ' 发送'});
+  // 空档要能选回来：配过之后想撤掉这一路，除了选「不通过机器人发送」没有别的路
+  options.push({key: '', text: phrase('bot.platform', v => '不通过 ' + v + ' 发送', '不通过机器人发送')});
   if (currentKey) options.push({key: currentKey, text: '当前：' + (platform || '未知平台') + ' '
     + (String(type) === '1' ? '群' : '好友') + ' ' + num});
 
@@ -594,7 +594,7 @@ export function alertCards() {
   for (const ch of store.alertChannels || []) {
     if (!ch.recipient || ch.recipient.length === 0) continue;
     const x = shell(ch.id, ch.name || term('bot.platform', '机器人'), '通过机器人自身的推送链路发送。'
-      + term('bot.platform', '机器人') + ' 掉线时，此通道同时失效，'
+      + phrase('bot.platform', v => v + ' 掉线时，此通道同时失效，', '机器人掉线时，此通道同时失效，')
       + '而那正是最需要收到告警的时刻，因此请勿只配置此通道。');
     recipientPicker(x.body, x.pill, ch.recipient);
     wrap.appendChild(x.card);
@@ -687,8 +687,8 @@ export function alertCards() {
   wrap.appendChild(hook.card);
 
   // ---- 邮件 ----
-  const mail = shell('mail', '邮件', '送达较慢，但不受 ' + term('bot.platform', '机器人')
-    + ' 掉线影响。发件授权码须填写邮箱授权码，而非登录密码。');
+  const mail = shell('mail', '邮件', phrase('bot.platform', v => '送达较慢，但不受 ' + v + ' 掉线影响。', '送达较慢，但不受机器人掉线影响。')
+    + '发件授权码须填写邮箱授权码，而非登录密码。');
   // 药丸说的是运行值，编辑框显示的是文件值，两栏会差：不注明的话，
   // 「文件里明明填着」与「药丸说未配置」同屏，看起来像坏了
   const runtimeNote = el('span', 'hint');
