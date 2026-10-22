@@ -14,7 +14,8 @@
 #   dependencies[].vulnerabilities[].cvssv3.baseScore
 #
 # 用法：high-cvss.sh <报告.json> [阈值，默认 7]
-# 输出：每行 `<依赖文件>\t<CVE>\t<分数>`；无命中时无输出、退出码仍为 0
+# 输出：每行 `<依赖文件>\t<CVE>\t<分数>`；无命中时无输出、退出码仍为 0。
+# CI 的汇总只数行数，不公开这些行（缘由见 summarize-dependency-check.sh 开头）
 set -euo pipefail
 
 report="${1:?用法: high-cvss.sh <报告.json> [阈值]}"

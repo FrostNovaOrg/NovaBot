@@ -72,11 +72,20 @@ jobs:
   dependency-check:
     name: 依赖漏洞扫描
     runs-on: ubuntu-latest
-    # 温库带增量更新的整 job 近几回不到 3 分钟，但从零建库要把整个 NVD 数据集
-    # 拉下来（见下面「取回漏洞库存档」那步的注释），是几十分钟量级的事；
-    # 60 分钟日常绰绰有余、从零建库也装得下，真卡住的早死早省
-    timeout-minutes: 60
-    # 漏洞库是一套随 NVD 数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
+    # 数据源慢、连不上时最久的是扫描步，它另有自己的 20 分钟上限（理由见那步的
+    # 注释），到点只是那一步失败、汇总步亮黄。job 级上限兜的是其余步骤（检出、
+    # 装 JDK、取缓存、装构建插件、存回、汇总）：实测扫描步之前的各步合计 20 秒
+    # （run 39771847117，11:36:28 → 11:36:48），之后的各步约 6 秒；Maven 缓存冷时
+    # 要重下依赖，会久些。27＝20 分钟扫描＋7 分钟留给它们。
+    # 两头都有约束：
+    #   比扫描步宽——不宽出这一截，扫描步拖到头时整个 job 先被停，汇总步跑不到，
+    #     整次 CI 判 cancelled；
+    #   比 30 分钟窄——发版推送脚本推上去后最多等整次 CI 30 分钟
+    #     （tools/release/ci-status.sh 的 CI_MAX=1800），过了就不再等、按等待超时
+    #     退出，哪怕 CI 稍后转绿。别的步骤真卡住时，27 分钟也让这个 job 先于它出
+    #     结论（构建 job 的上限另见文件开头那段）。
+    timeout-minutes: 27
+    # 漏洞库是一套随漏洞数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
     # 插件说明里查不到 dataDirectory 的默认值：不显式指定，库就落在插件的隐式位置，
     # 没法给它配专用缓存——setup-java 那条 maven 缓存的键跟着 pom 摘要走，pom 一改
     # 就换键，混在里面的漏洞库跟着重置；放进 checkout 出来的树里则会混进汇总步
@@ -124,13 +133,14 @@ jobs:
 
       # 缓存键按 UTC 日期逐日换新：同一天的重跑共享同一份存档，跨天自动开新的；
       # restore-keys 前缀兜底＝哪怕隔了些天，也先取回最近一份，扫描时只补增量。
-      # 从零建库要把整个 NVD 数据集拉下来，是这一 job 里最耗时、最容易超时的一段
+      # 从零建库要把整个漏洞数据集拉下来，是这一 job 里最耗时、最容易超时的一段；
+      # 增量更新只取上回之后改过的条目，对数据源免费额度的压力也最小
       - name: 记下当天日期做缓存键
         id: today
         run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       # 取与存拆成两步（cache/restore 与 cache/save）：一体的 actions/cache 在 job
-      # 收尾无条件保存，而扫描步带 continue-on-error——缺密钥、NVD 超时、下载到一半
+      # 收尾无条件保存，而扫描步带 continue-on-error——缺密钥、数据源超时、下载到一半
       # 断掉时 job 仍算成功，后置保存照样把当天那份空的或半截的库存进缓存。
       # 缓存键存下就不能覆盖：当天重跑都还原这份坏库，次日 restore-keys 又可能
       # 取回它，报告缺数据或接连失败，运行页却只见黄、看不出根子在缓存。
@@ -154,6 +164,30 @@ jobs:
         # 之下**没有任何效果**——阈值再低也拦不住构建，却让读到它的人以为
         # CVSS≥8 会被拦下。**配置在撒谎比配置缺失更糟**，已删除。
         continue-on-error: true
+        # 步级上限：数据源再慢或连不上，到点停的只是这一步。runner 把步级超时
+        # 记为失败（不是取消），continue-on-error 再把它改记成功、outcome 留
+        # failure——与扫描命令自己退非零是同一条路，job 不判败，后面的「存回」
+        # 看 outcome 不存半截库，汇总步照常跑、亮黄字「没扫成」。
+        # GitHub 文档对两者各有一句——continue-on-error："Prevents a job from failing
+        # when a step fails."；timeout-minutes："The maximum number of minutes to run
+        # the step before killing the process."——但没说两者合用时怎么算，所以出处
+        # 以 actions/runner 源码为准：
+        #   https://github.com/actions/runner/blob/a3df03d35a925d4e832af530442be1eea7412df4/src/Runner.Worker/StepsRunner.cs
+        #     :313 SetTimeout 给这一步上闹钟；:322 catch (OperationCanceledException)，
+        #     :324-325 判的是这一步的令牌被取消、job 的没被取消（即步级超时），
+        #     :328 记 "The action '…' has timed out after N minutes."，
+        #     :329 Result = TaskResult.Failed；TaskResult.Canceled 只在 :336 的 else
+        #     分支（job 被取消）；:353 调 ApplyContinueOnError
+        #   https://github.com/actions/runner/blob/b6d10b59c178914d331bcf03823133d5f9e366bb/src/Runner.Worker/ExecutionContext.cs
+        #     :1433 ApplyContinueOnError；:1435 Result 不是 Failed 就直接返回；
+        #     :1455-1456 Outcome = Result; Result = TaskResult.Succeeded
+        # 取 20 分钟：上一回绿的扫描步 1 分 37 秒（run 39185792921，01:32:41 →
+        # 01:34:18），20 分钟仍是实测的十来倍，盖住数据源一时变慢；更慢的那种
+        # （换源前 NVD 曾慢到一页 12.9 MB 60 秒只到 1.5 MB，把整个 job 拖满 60 分钟
+        # 被停）多等也等不出来，不如这一步认栽、下回从同一份旧库再补。上限还受
+        # job 级那 27 分钟管着，理由见 job 开头的注释。
+        # 缓存被清空、要从零建库时 20 分钟未必够：那时会接连亮黄，看得见
+        timeout-minutes: 20
         # 出 JSON 不出 CSV：CSV 的描述字段含逗号，任何按分隔符切列的读法都会错位，
         # 而错位的表现是「没找到高危」——与真的没有高危一模一样
         # 插件版本钉死在 13.0.0：坐标不带版本时 Maven 每次解析成 13.x 的最新版，
@@ -182,26 +216,47 @@ jobs:
         # 绑着 node／npm（控制台前端是不经构建的 ES module），唯一会拉起 node 的
         # 是 JUnit 夹具，-DskipTests 之下走不到
         #
-        # 密钥只经环境变量进扫描步：插件说明点名直接用 -DnvdApiKey 递值会让 Maven
-        # 调试日志把密钥打出来（GHSA-qqhq-8r2c-c3f5），并写明 CI 场景的推荐传法是
+        # 数据源：VulnCheck 的 NVD 兼容接口（与 NVD API 2.0 同路径、同参数、同返回
+        # 结构），经 nvdApiEndpoint 换掉插件默认的 NVD 地址。出处（13.0.0 源码）：
+        #   插件 BaseDependencyCheckMojo.java:1044 的 @Parameter(property = "nvdApiEndpoint")，
+        #     :2483 写进 Settings.KEYS.NVD_API_ENDPOINT；
+        #   core 的 data/update/NvdApiDataSource.java:293-296 读它交给
+        #     NvdCveClientBuilder.withEndpoint，没给才用 NVD 默认地址
+        #
+        # 令牌只经环境变量进扫描步：插件说明点名直接用 -DnvdApiKey 递值会让 Maven
+        # 调试日志把它打出来（GHSA-qqhq-8r2c-c3f5），并写明 CI 场景的推荐传法是
         # nvdApiKeyEnvironmentVariable。命令行里这个 -D 带的只是环境变量的名字、
-        # 不是值——命令行会原样进日志，值由 Actions 从仓库密钥库注入 env
+        # 不是值——命令行会原样进日志，值由 Actions 从仓库密钥库注入 env。
+        # 令牌在请求里走的是 apiKey 请求头，正是 VulnCheck 文档认的两种放法之一：
+        #   插件 BaseDependencyCheckMojo.java:1032 的 @Parameter(property =
+        #     "nvdApiKeyEnvironmentVariable")，:2489-2491 按这个名字取环境变量的值
+        #     写进插件的 API 密钥设置项；
+        #   core 的 NvdApiDataSource.java:303-306 读它交给 NvdCveClientBuilder.withApiKey；
+        #   open-vulnerability-clients 9.0.6（13.0.0 父 pom 钉的版本）的
+        #     client/nvd/NvdCveClient.java:78 API_KEY_NAME = "apiKey"，
+        #     :294-295 builder.addHeader(API_KEY_NAME, apiKey)
+        #
+        # 公开仓的运行日志谁都能看，而 VulnCheck 的条款不许把它的数据免费转给他人：
+        # 日志里不列分数、描述，也不列「某依赖有某漏洞」。
+        # 插件默认在扫完后按依赖逐条列出漏洞编号（core 的
+        # agent/DependencyCheckScanAgent.java:1070 showSummary），showSummary=false
+        # 关掉的就是这一段。出处：插件 BaseDependencyCheckMojo.java:398 的
+        # @Parameter(property = "showSummary", defaultValue = "true")，:2953-2955
+        # 只在它为真时调用上面那个方法。
+        # 关不掉的：个别出错路径的报错行里仍可能带出单个 CVE 编号（core 的
+        # data/update/nvd/api/NvdApiProcessor.java:121 某条入库失败时、
+        # data/nvdcve/CveDB.java:1493／1553／1727 主键重复时）。编号是 CVE 计划公开
+        # 分配的标识，不带 VulnCheck 的数据内容，所以不另做日志过滤。
+        # 同理，整份报告不再落附件：公开仓的附件任何登录用户都能下，报告里全是
+        # VulnCheck 的数据；它只留在运行器磁盘上，供汇总步数数，job 结束即没
         env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B -Pinstall package org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DossIndexAnalyzerEnabled=false -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
-
-      # 报告不落附件就留不住：job summary 只贴高危摘录，整份 JSON（含未过阈值的
-      # 条目与依赖明细）只在运行器磁盘上，job 一结束就没了，事后想逐条核对已无处
-      # 可取。扫描没扫成也要传：扫描步 continue-on-error，失败被吞，这里 if: always()
-      # 照样执行，有几份传几份；一份都没有也不算错（if-no-files-found: ignore）——
-      # 空附件与汇总步的黄字一样，是「这次没扫成」的证据，不是要绕过的错
-      - name: 上传漏洞扫描报告
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: dependency-check-reports
-          path: '**/dependency-check-report.json'
-          if-no-files-found: ignore
+          VULNCHECK_API_TOKEN: ${{ secrets.VULNCHECK_API_TOKEN }}
+        run: >-
+          mvn -B -Pinstall package org.owasp:dependency-check-maven:13.0.0:check
+          -Dformat=JSON -DskipTests -DossIndexAnalyzerEnabled=false -DshowSummary=false
+          -DnvdApiEndpoint=https://api.vulncheck.com/rest/json/cves/2.0
+          -DnvdApiKeyEnvironmentVariable=VULNCHECK_API_TOKEN
+          -DdataDirectory="$DC_DATA_DIR"
 
       # 扫成才存：库没建全就存，存下的半截库比没有缓存更糟（缘由见上面取那步的
       # 注释）。两个条件缺一不可——扫描没扫成（outcome 不是 success）不存；
@@ -214,26 +269,30 @@ jobs:
           path: ${{ env.DC_DATA_DIR }}
           key: ${{ steps.dc-cache.outputs.cache-primary-key }}
 
-      # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
+      # 不阻断，但不能让高危悄悄溜过去：计数显式贴到 job summary，同一行也打进日志。
       # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
+      # 公开的只有计数（缘由见扫描步 showSummary 那段注释）：哪条、哪个依赖，
+      # 要看就在本机自己扫一遍。
       # 汇总与验单的逻辑在 .github/scripts/summarize-dependency-check.sh：
       # 报告要先过结构检查、份数要与根 pom 推得的应出数对账，坏了缺了逐份
       # 点名并亮 ::warning::，绝不把「判不动」说成「未发现」。
       # 这一步先确认检查脚本本身是好的（阳性对照），再看它报什么——检查脚本
       # 失灵时，解析坏掉的表现与真的没有漏洞完全一样；整套做法与理由写在
       # 脚本开头的注释里
-      - name: 高危漏洞进 job summary
+      - name: 漏洞计数进 job summary
         if: always()
         env:
           # 扫描步骤的 continue-on-error 让 job 永远绿着；outcome 是它被豁免前的
           # 真实结果，「这次扫没扫成」要靠它判断，不能靠 job 结论
           SCAN_OUTCOME: ${{ steps.scan.outcome }}
-          # 只用来判空、绝不回显：密钥缺失是「没扫成」最常见的成因，
+          # 只用来判空、绝不回显：令牌缺失是「没扫成」最常见的成因，
           # 值得在运行页上单独点名，但值本身一个字节都不能落到日志里
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-          # 本次配置的数据来源一句话，与上面扫描命令里的分析器开关同源；
+          VULNCHECK_API_TOKEN: ${{ secrets.VULNCHECK_API_TOKEN }}
+          # 本次配置的数据来源一句话，与上面扫描命令里的接口地址、分析器开关同源；
           # 汇总脚本原样贴进 job summary，读的人才知道这轮看了哪些库
-          SCAN_SOURCES: '漏洞数据取自 NVD；Sonatype OSS Index 分析器已显式关闭（未配其凭据）'
+          SCAN_SOURCES: '漏洞数据取自 VulnCheck 的 NVD 兼容接口；Sonatype OSS Index 分析器已显式关闭（未配其凭据）'
+          # 来源署名：VulnCheck 免费版要求注明数据出处，原文照贴进 job summary
+          SCAN_ATTRIBUTION: '漏洞数据来自 VulnCheck（https://vulncheck.com）'
         run: |
           set -euo pipefail
           chmod +x .github/scripts/high-cvss.sh .github/scripts/no-cvssv3.sh .github/scripts/summarize-dependency-check.sh
