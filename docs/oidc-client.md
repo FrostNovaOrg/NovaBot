@@ -18,7 +18,7 @@
 
 未填写回调地址时，使用 servlet 请求的 scheme、serverName、serverPort，加容器配置的 context path 和 `/config/api/oidc/callback`；默认 HTTPS 端口 443 和默认 HTTP 端口 80 均省略。例如请求来源为 `https://console.example.com`、应用前缀为 `/app` 时，结果为 `https://console.example.com/app/config/api/oidc/callback`。客户端不自行解析 Forwarded 或 X-Forwarded-* 头；代理部署建议显式填写对外 HTTPS 地址。回调接口为 `/config/api/oidc/callback`。回调地址的 HTTP 仅允许回环地址（127.0.0.1、::1、localhost），其余必须 HTTPS。
 
-`startLogin(request)` 返回授权地址、state 和过期时间。state、nonce、code_verifier 均由 SecureRandom 生成，各含 256 位随机数。事务在服务器内存保存 5 分钟，最多同时保留 1024 个；重启会丢弃事务。`completeLogin(state, code, callbackIssuer)` 在任何令牌请求前原子消费 state，包括失败的回调。未收到 iss 参数时传 null；发现文档声明支持授权响应 iss 时缺失也拒绝，收到时必须逐字匹配 issuer。
+`startLogin(request)` 返回授权地址、state 和过期时间。state、nonce、code_verifier 均由 SecureRandom 生成，各含 256 位随机数。事务在服务器内存保存 10 分钟，最多同时保留 1024 个；重启会丢弃事务。`completeLogin(state, code, callbackIssuer)` 在任何令牌请求前原子消费 state，包括失败的回调。未收到 iss 参数时传 null；发现文档声明支持授权响应 iss 时缺失也拒绝，收到时必须逐字匹配 issuer。
 
 浏览器流程使用独立、短期的 HttpOnly、SameSite=Lax 关联 Cookie 绑定发起登录的浏览器，在调用 completeLogin 前核对；Secure 跟随请求连接。现有 SameSite=Strict 管理员会话 Cookie 不承担这个用途。Login 及其中的令牌和 nonce 只在服务端保存，不序列化给浏览器，也不写日志。
 

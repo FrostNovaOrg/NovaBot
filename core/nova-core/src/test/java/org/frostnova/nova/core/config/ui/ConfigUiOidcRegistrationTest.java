@@ -26,6 +26,7 @@ class ConfigUiOidcRegistrationTest extends OidcTestSupport {
         var controller = new ConfigUiOidcController(client, auth, null, new NovaCoreProperties());
         var ordinary = new MockHttpServletResponse();
         controller.login(request(), ordinary);
+        assertTrue(ordinary.getHeader("Set-Cookie").contains("Max-Age=600"));
         String url = ordinary.getRedirectedUrl();
         var query = query(java.net.URI.create(url).getRawQuery());
         assertEquals(ISSUER + "/authorize?response_type=code&client_id=console-client"
@@ -38,6 +39,7 @@ class ConfigUiOidcRegistrationTest extends OidcTestSupport {
         var registration = new MockHttpServletResponse();
         controller.login(request, registration);
         assertEquals("create", query(java.net.URI.create(registration.getRedirectedUrl()).getRawQuery()).get("prompt"));
+        assertTrue(registration.getHeader("Set-Cookie").contains("Max-Age=600"));
     }
     @Test
     void unsupportedOrRemovedCreateFallsBackToOrdinaryLogin() throws Exception {

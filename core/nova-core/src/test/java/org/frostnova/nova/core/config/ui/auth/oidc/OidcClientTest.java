@@ -250,9 +250,18 @@ class OidcClientTest extends OidcTestSupport {
     }
 
     @Test
+    void acceptsCallbackAfterSevenMinutes() {
+        var authorization = begin();
+        clock.advance(Duration.ofMinutes(7));
+        assertEquals("subject-17", complete(authorization).identity().subject());
+        assertEquals(1, provider.tokenRequests);
+        assertRejected("state", () -> complete(authorization));
+    }
+
+    @Test
     void rejectsExpiredStateBeforeCallingTokenEndpoint() {
         var authorization = begin();
-        clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+        clock.advance(Duration.ofMinutes(11));
         assertRejected("state", () -> complete(authorization));
         assertEquals(0, provider.tokenRequests);
     }
@@ -297,7 +306,7 @@ class OidcClientTest extends OidcTestSupport {
     void boundsPendingTransactionsAndReclaimsExpiredEntries() {
         for (int i = 0; i < 1024; i++) begin();
         assertRejected("pending", this::begin);
-        clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+        clock.advance(Duration.ofMinutes(11));
         assertEquals("subject-17", complete(begin()).identity().subject());
     }
 
