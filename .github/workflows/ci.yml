@@ -231,7 +231,7 @@ jobs:
         #   插件 BaseDependencyCheckMojo.java:1032 的 @Parameter(property =
         #     "nvdApiKeyEnvironmentVariable")，:2489-2491 按这个名字取环境变量的值
         #     写进插件的 API 密钥设置项；
-        #   core 的 NvdApiDataSource.java:303-305 读它交给 NvdCveClientBuilder.withApiKey；
+        #   core 的 NvdApiDataSource.java:303-306 读它交给 NvdCveClientBuilder.withApiKey；
         #   open-vulnerability-clients 9.0.6（13.0.0 父 pom 钉的版本）的
         #     client/nvd/NvdCveClient.java:78 API_KEY_NAME = "apiKey"，
         #     :294-295 builder.addHeader(API_KEY_NAME, apiKey)
