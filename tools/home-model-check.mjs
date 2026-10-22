@@ -266,7 +266,7 @@ const quietModel = homeModel(status({quiet: {active: true, start: '23:00', end: 
 if (quietModel.banner.text !== '静音时段 23:00 – 08:00 · 期间的推送不发送，也不会补发；运营周报顺延到静音结束后发送')
   bad.push('静音提示缺少运营周报顺延说明');
 if (quietModel.banner.action.text !== '修改静音时段') bad.push('静音操作名称不一致');
-if (quietModel.chain.bot.caption !== '静音 · 23:00 – 08:00 期间的推送不发送、不补发；运营周报顺延到静音结束后发送')
+if (quietModel.chain.bot.caption !== '静音中 · 23:00 – 08:00 期间的推送不发送、不补发；运营周报顺延到静音结束后发送')
   bad.push('静音链路缺少运营周报顺延说明');
 
 if (bad.length || hrefBad.length) {

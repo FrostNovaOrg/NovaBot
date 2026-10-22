@@ -29,7 +29,7 @@ const STATION_ICONS = {
  * @param key 站名，与连接页那侧认的一致：platform / self / bot
  */
 function station(key, seg) {
-  const state = {ok: '正常', warn: '需要关注', err: '连接异常', off: '未启用'}[seg.level] || '状态未知';
+  const state = seg.stateText || {ok: '正常', warn: '需要关注', err: '连接异常', off: '未启用'}[seg.level] || '状态未知';
   return '<button class="lm-st" type="button" data-goto="' + esc(key)
     + '" aria-label="' + esc(seg.station + '，' + state + '，' + seg.sub)
     + '" title="' + esc(seg.caption || state) + '">'

@@ -18,6 +18,10 @@ class Node {
     this.tagName = tag; this.className = cls; this.children = []; this.dataset = {};
     this.listeners = {}; this.attributes = {}; this.hidden = false; this.disabled = false;
     this.checked = false; this._text = '';
+    const classes = new Set(cls.split(/\s+/).filter(Boolean));
+    this.classList = {contains: name => classes.has(name), toggle: (name, on) => {
+      if (on) classes.add(name); else classes.delete(name);
+    }};
   }
   set textContent(value) { this._text = String(value); this.children = []; }
   get textContent() { return this._text + this.children.map(n => n.textContent).join(''); }
@@ -69,11 +73,11 @@ function subject(file, reply = {}, confirm = true) {
     return {success: true};
   };
   const src = read(file).replace(/^import .*?;\s*$/gm, '').replace(/export /g, '');
-  const exports = file === 'settings-members.js' ? '{renderMembers, memberGroup, setMemberAuthState}' : '{renderPersonalMenu}';
+  const exports = file === 'settings-members.js' ? '{renderMembers, memberGroup, setMemberAuthState, filterMembers: typeof filterMembers === "function" ? filterMembers : undefined}' : '{renderPersonalMenu}';
   const shared = {role: 'ADMIN'};
-  const mod = new Function('el', 'api', 'ask', 'window', 'hasUnsavedChanges', 'store', src + '\nreturn ' + exports)(
+  const mod = new Function('el', 'api', 'ask', 'window', 'hasUnsavedChanges', 'store', '$', src + '\nreturn ' + exports)(
     (tag, cls) => new Node(tag, cls), api,
-    async options => { questions.push(options); return confirm; }, window, () => dirty > 0, shared);
+    async options => { questions.push(options); return confirm; }, window, () => dirty > 0, shared, () => box);
   return {...mod, store: shared, box, requests, questions, opened, window, setDirty: value => { dirty = value; }};
 }
 async function members(reply, confirm) {
@@ -262,6 +266,32 @@ await check('成员区和个人菜单接到页面与登录态', async () => {
     ['main.js', /renderPersonalMenu\(/], ['index.html', /id="personal-menu"/],
     ['personal-menu.js', /hasUnsavedChanges\(\)/], ['core.js', /export function hasUnsavedChanges\(/]]) {
     assert.ok(pattern.test(read(file)), file + ' 缺少 ' + pattern);
+  }
+});
+
+await check('成员组与目录随搜索和仅显示已修改项收起', async () => {
+  const s = await members();
+  const link = new Node();
+  link.getAttribute = () => 'members';
+  const controls = {'#set-search': {value: ''}, '#only-changed': {checked: false}, '#set-count': new Node()};
+  const document = {
+    querySelectorAll: selector => selector === '#grp-nav [data-grp-link]' ? [link] : [],
+    querySelector: selector => selector.startsWith('.setgrp[') ? s.box : null,
+  };
+  const source = read('settings.js');
+  const body = source.slice(source.indexOf('export function filterSettings()'), source.indexOf('\n/**', source.indexOf('export function filterSettings()'))).replace('export ', '');
+  const filter = new Function('$', 'document', 'store', 'closeHelp', 'filterCards', 'filterAuthCards',
+    'filterMembers', 'advancedShown', 'filterKey', 'watchCurrentGroup', 'arranged',
+    'let advancedDismissed = null, advancedChosen = false;\n' + body + '\nreturn filterSettings;')(
+      key => controls[key] || null, document, {schema: [], ungrouped: []}, () => {}, () => 0, () => 0,
+      s.filterMembers, () => false, () => '', () => {}, {common: [], advanced: []});
+  for (const [query, changed, visible] of [['静音', false, false], ['成员', false, true],
+    ['enabled@example.com', false, true], ['', false, true], ['', true, false], ['成员', true, false]]) {
+    controls['#set-search'].value = query;
+    controls['#only-changed'].checked = changed;
+    filter();
+    assert.equal(!s.box.classList.contains('hide'), visible, '成员组：' + query + '/' + changed);
+    assert.equal(!link.classList.contains('hide'), visible, '目录：' + query + '/' + changed);
   }
 });
 

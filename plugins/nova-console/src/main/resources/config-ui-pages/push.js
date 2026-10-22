@@ -14,7 +14,7 @@
  */
 
 import {ask, keepTabInside} from './confirm.js';
-import {$, api, CONSOLE, el, esc, markDirty, request, say, term} from './core.js';
+import {$, api, CONSOLE, el, esc, markDirty, phrase, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
@@ -2048,7 +2048,7 @@ function pickMemberTarget(opts) {
     ...(runtime.sessions || []).map(session => session.platform),
     ...(store.senderList || []),
   ].filter(Boolean))];
-  const numberLabel = term('bot.target.group', '群号') + '或 ' + term('bot.target.user', '用户号');
+  const numberLabel = term('bot.target.group', '群号') + phrase('bot.target.user', v => '或 ' + v, '或用户号');
   openDrawer(opts.title, '填写完整的' + numberLabel + '，查到后再添加。', body => {
     const sender = platformNames.length > 1 ? el('select') : null;
     if (sender) {
