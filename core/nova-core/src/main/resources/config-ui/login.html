@@ -289,6 +289,16 @@
   // 二次验证开着没有。由 /api/auth/state 下发
   let totp = false;
   let oidcEnabled = false;
+  let oidcResult = null;
+  let focusedButton = '';
+  let otherMethodToggleRequested = false;
+
+  // 异步探测与解锁只在使用者尚未操作、焦点仍在上次自动放置的位置时跟随。
+  let userInteracted = false;
+  let lastAutomaticFocus = document.activeElement;
+  for (const event of ['keydown', 'input', 'pointerdown', 'mousedown', 'touchstart', 'click']) {
+    document.addEventListener(event, () => { userInteracted = true; }, {capture: true, once: true});
+  }
   let oidcCreateSupported = false;
 
   // 这个来源还要被锁多少秒。它每秒往下走，走到 0 就把表单放开
@@ -326,7 +336,7 @@
    * 判定写在这里的话，八格里只有使用者日常见到的那一格测得着
    */
   function paint() {
-    const view = loginView({hasPasskey, totpRequired: totp, lockedSeconds, oidcEnabled, oidcCreateSupported});
+    const view = loginView({hasPasskey, totpRequired: totp, lockedSeconds, oidcEnabled, oidcCreateSupported, oidcResult});
 
     $('#oidc-field').classList.toggle('hidden', !view.oidc);
     $('#oidc-create-field').classList.toggle('hidden', !view.oidcCreate);
@@ -345,11 +355,9 @@
     $('#pwd-fold').classList.toggle('bare', !view.passwordFolded);
     if (!view.passwordFolded) $('#pwd-fold').open = true;
     else if (!folded) {
-      $('#pwd-fold').open = false;
+      $('#pwd-fold').open = view.passwordInitiallyOpen;
       folded = true;
-      // 折的这一下会把口令框收起来，而光标此刻正在里面——不接着把它放到主按钮上，
-      // 使用者按下的第一个键会落到一个看不见的输入框里
-      $('#' + view.firstButton).focus();
+      if (!view.passwordInitiallyOpen) $('#' + view.firstButton).focus();
     }
     $('#code-field').classList.toggle('hidden', !view.code);
 
@@ -360,11 +368,27 @@
     for (const id of Object.keys(controls)) {
       $('#' + id).disabled = controls[id];
     }
+    // 初画与通行密钥探测完成后，按模型选择可见、可用的首个入口。
+    if (folded && focusedButton !== view.firstButton) {
+      const control = $('#' + view.firstButton);
+      const mayFollow = !view.passwordInitiallyOpen
+        || (!userInteracted && document.activeElement === lastAutomaticFocus);
+      if (mayFollow && !control.disabled && (view.firstButton === 'oidc' || !view.otherMethodsFolded || $('#pwd-fold').open)) {
+        control.focus();
+        lastAutomaticFocus = document.activeElement;
+      }
+      focusedButton = view.firstButton;
+    }
   }
 
   function focusOtherMethod() {
-    const view = loginView({hasPasskey, oidcEnabled});
+    const requested = otherMethodToggleRequested;
+    otherMethodToggleRequested = false;
+    const view = loginView({hasPasskey, oidcEnabled, oidcResult});
     if (!view.otherMethodsFolded || !$('#pwd-fold').open) return;
+    // 初始展开也会排队派发 toggle；只有手动展开或仍可自动跟随时才移动焦点。
+    if (view.passwordInitiallyOpen && !requested
+        && (userInteracted || document.activeElement !== lastAutomaticFocus)) return;
     const control = $('#' + view.otherMethodsFirstControl);
     if (!control.disabled) control.focus();
   }
@@ -402,6 +426,7 @@
       bound: '统一登录身份已绑定'
     };
     const result = new URLSearchParams(location.search).get('oidc');
+    oidcResult = result;
     if (Object.prototype.hasOwnProperty.call(oidcMessages, result)) $('#msg').textContent = oidcMessages[result];
     totp = !!state.totpRequired;
     lockedSeconds = Number(state.lockedSeconds) || 0;
@@ -560,6 +585,7 @@
   $('#oidc').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login'; });
   $('#oidc-create').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login?create=1'; });
   $('#passkey').addEventListener('click', loginWithPasskey);
+  $('#login-fold-label').addEventListener('click', () => { otherMethodToggleRequested = true; });
   $('#pwd-fold').addEventListener('toggle', focusOtherMethod);
 
   // 忘记口令说明页。与登录卡互斥显示，不另开一张页面——
