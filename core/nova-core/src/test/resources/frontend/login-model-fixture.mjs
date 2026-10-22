@@ -211,49 +211,76 @@ const focusOtherMethod = loginHtml.match(/^  function focusOtherMethod\(\) \{[\s
 const passwordSubmit = loginHtml.match(/^  \$\('#form'\)\.addEventListener\('submit', async e => \{[\s\S]*?^  }\);/m)?.[0];
 if (!focusOtherMethod) throw new Error('登录页缺少 focusOtherMethod');
 const toggleListener = loginHtml.match(/^  \$\('#pwd-fold'\)\.addEventListener\('toggle', focusOtherMethod\);/m)?.[0] || '';
+const foldClickListener = loginHtml.match(/^  \$\('#login-fold-label'\)\.addEventListener\('click',.*$/m)?.[0] || '';
 if (!paint || !showLogin || !passwordSubmit) throw new Error('登录页缺少 paint 或 showLogin');
+
+function loginPage({oidcEnabled = true, hasPasskey = false, supported, lockedSeconds = 0,
+  oidcResult = 'local_required'} = {}) {
+  const elements = new Map();
+  const document = new EventTarget();
+  document.body = {id: ''};
+  document.activeElement = document.body;
+  for (const match of loginHtml.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
+    const events = new EventTarget();
+    const classes = new Set(match[0].match(/\bclass="([^"]*)"/)?.[1].split(' ') || []);
+    elements.set('#' + match[1], {
+      addEventListener: events.addEventListener.bind(events),
+      dispatchEvent: events.dispatchEvent.bind(events),
+      insertBefore(child) { child.parentElement = this; },
+      id: match[1], textContent: '', value: '',
+      disabled: false, open: match[0].includes(' open'),
+      focus() { if (!this.disabled) document.activeElement = this; },
+      classList: {
+        contains: name => classes.has(name),
+        toggle(name, force) {
+          if (force) classes.add(name); else classes.delete(name);
+        },
+      },
+    });
+  }
+  const $ = selector => elements.get(selector);
+  $('#passkey-field').parentElement = $('#login');
+  const requests = [];
+  let submitPassword;
+  const state = {oidcEnabled, oidcCreateSupported: supported, lockedSeconds, totpRequired: true};
+  const context = {
+    $, document, loginView, loginControlState, state, URLSearchParams,
+    location: {search: oidcResult ? '?oidc=' + oidcResult : ''}, show: selector => $(selector).classList.toggle('hidden', false),
+    tick() {}, offerPasskey() {}, markInvalidCredentials() {},
+    CONSOLE: '/config', fetch: async (url, options) => {
+      requests.push({url, body: JSON.parse(options.body)});
+      return {json: async () => ({success: false, credentialsRejected: true, message: '密码或验证码不正确'})};
+    },
+  };
+  const declarations = loginHtml.slice(loginHtml.indexOf('  let hasPasskey ='), loginHtml.indexOf('  // 凭据里的'));
+  runInNewContext(`${declarations}
+  hasPasskey = ${hasPasskey};
+  ${paint}
+  ${focusOtherMethod}
+  ${foldClickListener}
+  ${toggleListener}
+  ${showLogin}
+  showLogin(state);`, context);
+  const form = $('#form');
+  const listen = form.addEventListener;
+  form.addEventListener = (name, handler) => {
+    submitPassword = handler;
+    listen(name, event => { event.completion = handler(event); });
+  };
+  runInNewContext(passwordSubmit, context);
+  return {$, document, context, requests, submitPassword: event => submitPassword(event),
+    focus: () => document.activeElement.id,
+    paint: source => runInNewContext(source, context)};
+}
 
 for (const oidcEnabled of [false, true]) {
   for (const hasPasskey of [false, true]) {
     for (const supported of [undefined, false, true]) {
       for (const lockedSeconds of [0, 90]) {
         for (const oidcResult of ['', 'local_required', 'failed', 'pending', 'denied', 'bound']) {
-          const elements = new Map();
-          let focused = '';
-          for (const match of loginHtml.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
-            const events = new EventTarget();
-            const classes = new Set(match[0].match(/\bclass="([^"]*)"/)?.[1].split(' ') || []);
-            elements.set('#' + match[1], {
-              addEventListener: events.addEventListener.bind(events),
-              dispatchEvent: events.dispatchEvent.bind(events),
-              insertBefore(child) { child.parentElement = this; },
-              textContent: '', value: '',
-              disabled: false, open: match[0].includes(' open'),
-              focus() { focused = match[1]; },
-              classList: {
-                contains: name => classes.has(name),
-                toggle(name, force) {
-                  if (force) classes.add(name); else classes.delete(name);
-                },
-              },
-            });
-          }
-          const $ = selector => elements.get(selector);
-          $('#passkey-field').parentElement = $('#login');
-          let submitPassword;
-          $('#form').addEventListener = (name, handler) => { submitPassword = handler; };
+          const page = loginPage({oidcEnabled, hasPasskey, supported, lockedSeconds, oidcResult});
+          const {$, context, submitPassword} = page;
           const state = {oidcEnabled, oidcCreateSupported: supported, lockedSeconds, totpRequired: true};
-          const context = {
-            $, loginView, loginControlState, state, URLSearchParams,
-            location: {search: oidcResult ? '?oidc=' + oidcResult : ''}, show: selector => $(selector).classList.toggle('hidden', false),
-            tick() {}, offerPasskey() {}, markInvalidCredentials() {},
-            CONSOLE: '/config', fetch: async () => ({json: async () => ({
-              success: false, credentialsRejected: true, message: '密码或验证码不正确'
-            })}),
-          };
-          runInNewContext(`let hasPasskey = ${hasPasskey}, folded = false, totp = false,
-            lockedSeconds = 0, oidcEnabled = false, oidcCreateSupported = false, oidcResult = null, focusedButton = '';
-            ${paint}\n${focusOtherMethod}\n${toggleListener}\n${passwordSubmit}\n${showLogin}\nshowLogin(state);`, context);
           const label = JSON.stringify(state) + ', passkey=' + hasPasskey + ', result=' + oidcResult;
           const localRequired = oidcEnabled && oidcResult === 'local_required';
           eq($('#oidc-field').classList.contains('hidden'), !oidcEnabled, '统一登录显隐 ' + label);
@@ -268,16 +295,17 @@ for (const oidcEnabled of [false, true]) {
           eq($('#pwd-fold').classList.contains('bare'), !(oidcEnabled || hasPasskey), '摘要行显隐 ' + label);
           eq($('#passkey-or').classList.contains('hidden'), !(hasPasskey && !oidcEnabled), '分隔线显隐 ' + label);
           if (oidcEnabled || hasPasskey) {
-            eq(focused, localRequired && !lockedSeconds ? (hasPasskey ? 'passkey' : 'password') : (oidcEnabled ? 'oidc' : 'passkey'), '焦点落在首颗可见按钮 ' + label);
+            eq(page.focus(), localRequired && !lockedSeconds ? (hasPasskey ? 'passkey' : 'password') : (oidcEnabled ? 'oidc' : 'passkey'), '焦点落在首颗可见按钮 ' + label);
             $('#pwd-fold').open = false;
             $('#pwd-fold').dispatchEvent(new Event('toggle'));
             runInNewContext('paint();', context);
             eq($('#pwd-fold').open, false, '手动收起后重画仍收起 ' + label);
-            focused = oidcEnabled ? 'oidc' : focused;
+            if (oidcEnabled) $('#oidc').focus();
             $('#pwd-fold').open = true;
             if (oidcEnabled) {
+              $('#login-fold-label').dispatchEvent(new Event('click'));
               $('#pwd-fold').dispatchEvent(new Event('toggle'));
-              eq(focused, lockedSeconds > 0 ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
+              eq(page.focus(), lockedSeconds > 0 ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
                 '展开后聚焦可用的首个本地控件 ' + label);
             }
             await submitPassword({preventDefault() {}});
@@ -290,16 +318,102 @@ for (const oidcEnabled of [false, true]) {
             runInNewContext('lockedSeconds = state.lockedSeconds; paint();', context);
             eq($('#pwd-fold').open, true, '重画不收起手动展开的口令 ' + label);
           }
-          if (localRequired && !hasPasskey) {
-            runInNewContext('hasPasskey = true; paint();', context);
-            eq(focused, lockedSeconds ? 'oidc' : 'passkey', '稍后探测到通行密钥后焦点跟随可用入口 ' + label);
-          }
           for (const id of CONTROL_IDS) eq($('#' + id).disabled, lockedSeconds > 0, '锁定控件 ' + id + label);
           for (const id of ['oidc', 'oidc-create']) eq($('#' + id).disabled, false, '统一登录不受本地锁定影响 ' + id + label);
         }
       }
     }
   }
+}
+
+// 晚到的探测与解锁只能在使用者尚未操作、焦点仍在原处时自动跟随。
+function interact(page, type) {
+  page.document.dispatchEvent(new Event(type));
+}
+
+async function typeKeys(page, text) {
+  for (const key of text) {
+    interact(page, 'keydown');
+    if (page.focus() === 'password') {
+      page.$('#password').value += key;
+      interact(page, 'input');
+    }
+  }
+}
+
+async function pressEnter(page) {
+  interact(page, 'keydown');
+  if (page.focus() === 'password') {
+    const event = new Event('submit', {cancelable: true});
+    page.$('#form').dispatchEvent(event);
+    await event.completion;
+  }
+}
+
+{
+  const page = loginPage();
+  page.paint('hasPasskey = true; paint();');
+  eq(page.focus(), 'passkey', '未操作时晚到的通行密钥探测跟随首个入口');
+}
+{
+  const page = loginPage();
+  await typeKeys(page, 'abc');
+  page.paint('hasPasskey = true; paint();');
+  eq(page.focus(), 'password', '已输入时晚到的通行密钥探测保留口令焦点');
+  await typeKeys(page, 'def');
+  eq(page.$('#password').value, 'abcdef', '晚到探测后继续输入仍进入口令框');
+  await pressEnter(page);
+  eq(page.requests, [{url: '/config/api/auth/login', body: {password: 'abcdef', code: ''}}],
+    '晚到探测后回车提交完整口令');
+}
+for (const hasPasskey of [false, true]) {
+  const page = loginPage({hasPasskey, lockedSeconds: 90});
+  page.paint('lockedSeconds = 0; paint();');
+  eq(page.focus(), hasPasskey ? 'passkey' : 'password', '未操作时解锁跟随本地入口 passkey=' + hasPasskey);
+}
+for (const type of ['keydown', 'input', 'pointerdown', 'mousedown', 'touchstart', 'click']) {
+  for (const unlock of [false, true]) {
+    const page = loginPage({lockedSeconds: unlock ? 90 : 0});
+    const before = page.focus();
+    interact(page, type);
+    page.paint(unlock ? 'lockedSeconds = 0; paint();' : 'hasPasskey = true; paint();');
+    eq(page.focus(), before, '操作后不自动挪焦点 event=' + type + ', unlock=' + unlock);
+  }
+}
+for (const unlock of [false, true]) {
+  const page = loginPage({lockedSeconds: unlock ? 90 : 0});
+  page.$('#forgot').focus();
+  page.paint(unlock ? 'lockedSeconds = 0; paint();' : 'hasPasskey = true; paint();');
+  eq(page.focus(), 'forgot', '焦点已离开原处时不自动挪回 unlock=' + unlock);
+}
+// 初始展开排队的 toggle 也不能打断已经开始的输入；手动开合仍由 toggle 聚焦。
+{
+  const page = loginPage();
+  await typeKeys(page, 'abc');
+  page.paint('hasPasskey = true; paint();');
+  page.$('#pwd-fold').dispatchEvent(new Event('toggle'));
+  eq(page.focus(), 'password', '初始展开的延后 toggle 不打断输入');
+  page.$('#pwd-fold').open = false;
+  page.$('#pwd-fold').dispatchEvent(new Event('toggle'));
+  page.$('#login-fold-label').dispatchEvent(new Event('click'));
+  interact(page, 'click');
+  page.$('#pwd-fold').open = true;
+  page.$('#pwd-fold').dispatchEvent(new Event('toggle'));
+  eq(page.focus(), 'passkey', '操作后手动展开仍聚焦首个本地入口');
+}
+{
+  const page = loginPage();
+  interact(page, 'keydown');
+  page.$('#login-fold-label').focus();
+  page.$('#pwd-fold').dispatchEvent(new Event('toggle'));
+  eq(page.focus(), 'login-fold-label', '焦点移到摘要行后初始 toggle 仍不挪走焦点');
+}
+for (const oidcResult of ['', 'local_required', 'failed']) {
+  const page = loginPage({oidcEnabled: false, oidcResult});
+  await typeKeys(page, 'abc');
+  page.paint('hasPasskey = true; paint();');
+  eq(page.$('#pwd-fold').open, false, '无统一登录时晚到探测仍折起口令 result=' + oidcResult);
+  eq(page.focus(), 'passkey', '无统一登录时晚到探测保留原有焦点行为 result=' + oidcResult);
 }
 
 // ---------- 报数 ----------

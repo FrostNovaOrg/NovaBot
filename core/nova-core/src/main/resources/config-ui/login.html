@@ -291,6 +291,14 @@
   let oidcEnabled = false;
   let oidcResult = null;
   let focusedButton = '';
+  let otherMethodToggleRequested = false;
+
+  // 异步探测与解锁只在使用者尚未操作、焦点仍在上次自动放置的位置时跟随。
+  let userInteracted = false;
+  let lastAutomaticFocus = document.activeElement;
+  for (const event of ['keydown', 'input', 'pointerdown', 'mousedown', 'touchstart', 'click']) {
+    document.addEventListener(event, () => { userInteracted = true; }, {capture: true, once: true});
+  }
   let oidcCreateSupported = false;
 
   // 这个来源还要被锁多少秒。它每秒往下走，走到 0 就把表单放开
@@ -363,16 +371,24 @@
     // 初画与通行密钥探测完成后，按模型选择可见、可用的首个入口。
     if (folded && focusedButton !== view.firstButton) {
       const control = $('#' + view.firstButton);
-      if (!control.disabled && (view.firstButton === 'oidc' || !view.otherMethodsFolded || $('#pwd-fold').open)) {
+      const mayFollow = !view.passwordInitiallyOpen
+        || (!userInteracted && document.activeElement === lastAutomaticFocus);
+      if (mayFollow && !control.disabled && (view.firstButton === 'oidc' || !view.otherMethodsFolded || $('#pwd-fold').open)) {
         control.focus();
+        lastAutomaticFocus = document.activeElement;
       }
       focusedButton = view.firstButton;
     }
   }
 
   function focusOtherMethod() {
-    const view = loginView({hasPasskey, oidcEnabled});
+    const requested = otherMethodToggleRequested;
+    otherMethodToggleRequested = false;
+    const view = loginView({hasPasskey, oidcEnabled, oidcResult});
     if (!view.otherMethodsFolded || !$('#pwd-fold').open) return;
+    // 初始展开也会排队派发 toggle；只有手动展开或仍可自动跟随时才移动焦点。
+    if (view.passwordInitiallyOpen && !requested
+        && (userInteracted || document.activeElement !== lastAutomaticFocus)) return;
     const control = $('#' + view.otherMethodsFirstControl);
     if (!control.disabled) control.focus();
   }
@@ -569,6 +585,7 @@
   $('#oidc').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login'; });
   $('#oidc-create').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login?create=1'; });
   $('#passkey').addEventListener('click', loginWithPasskey);
+  $('#login-fold-label').addEventListener('click', () => { otherMethodToggleRequested = true; });
   $('#pwd-fold').addEventListener('toggle', focusOtherMethod);
 
   // 忘记口令说明页。与登录卡互斥显示，不另开一张页面——
