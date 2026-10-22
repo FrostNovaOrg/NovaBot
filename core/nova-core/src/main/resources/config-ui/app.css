@@ -66,10 +66,11 @@ body{margin:0;background:var(--ground);color:var(--text);
 .personal-menu-items{display:flex;flex-direction:column;gap:6px;padding-top:6px}
 .personal-menu-items .side-link{justify-content:flex-start}
 .personal-menu-items [hidden]{display:none}
+#personal-about{margin:6px 0;overflow-wrap:anywhere}
 .member-result{color:var(--err);white-space:pre-wrap;overflow-wrap:anywhere}
 .member-result:empty{display:none}
-.members-intro{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-.members-table-wrap{overflow-x:auto}
+.members-intro{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:0 16px}
+.members-table-wrap{overflow-x:auto;padding:0 8px}
 .members-table{width:100%;border-collapse:collapse;font-size:13px}
 .members-table th,.members-table td{text-align:left;vertical-align:top;padding:12px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 .members-table th{white-space:nowrap;color:var(--dim)}

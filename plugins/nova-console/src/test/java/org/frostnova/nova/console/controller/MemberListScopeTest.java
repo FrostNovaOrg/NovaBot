@@ -202,7 +202,7 @@ class MemberListScopeTest {
         JSONObject member = response(endpoint);
         assertTrue(member.getBooleanValue("success"));
         concealed(member);
-        if (endpoint.equals("status")) for (String key : List.of("health", "runtime", "version", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
+        if (endpoint.equals("status")) for (String key : List.of("health", "runtime", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
             assertFalse(member.containsKey(key), key);
         if (endpoint.equals("streamers")) assertFalse(member.containsKey("notConfigured"));
         if (endpoint.equals("at-all/quota")) assertFalse(member.containsKey("bots"));
@@ -228,8 +228,23 @@ class MemberListScopeTest {
         var member = config.status();
         assertEquals(List.of("qq-onebot", "qq-secondary"), member.getList("senders", String.class));
         assertEquals(admin.get("senders"), member.get("senders"));
-        for (String key : List.of("health", "runtime", "version", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
+        for (String key : List.of("health", "runtime", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
             assertFalse(member.containsKey(key), key);
+    }
+
+    @Test void memberStatusIncludesPublicBuildVersion() {
+        var properties = new Properties();
+        properties.setProperty("version", "1.2.3");
+        var build = new org.springframework.boot.info.BuildProperties(properties);
+        @SuppressWarnings("unchecked")
+        var provider = (ObjectProvider<org.springframework.boot.info.BuildProperties>)dependencies.get(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(build);
+        var admin = config.status();
+        use(MEMBER);
+        assertEquals("1.2.3", config.status().getString("version"));
+        assertEquals(admin.get("version"), config.status().get("version"));
+        when(provider.getIfAvailable()).thenReturn(null);
+        assertEquals("", config.status().getString("version"));
     }
 
     // 主播和运行状态都没有通道时，页面须使用成员 status 的平台查号、添加并保存第一个通道。

@@ -313,9 +313,11 @@ const SOURCE_URL = 'https://github.com/FrostNovaOrg/NovaBot';
  * @param version 当前版本，没有则不显示
  */
 function renderAbout(version) {
-  $('#about-line').innerHTML = esc(version ? 'NovaBot v' + version : 'NovaBot')
+  const about = esc(version ? 'NovaBot v' + version : 'NovaBot')
     + ' · AGPL-3.0 · 源码 <a href="' + SOURCE_URL + '"' + extAttrs(SOURCE_URL) + '>'
     + esc(SOURCE_URL) + '</a>';
+  $('#about-line').innerHTML = about;
+  $('#personal-about').innerHTML = about;
 }
 
 /**
@@ -339,12 +341,12 @@ export function healthRows(list, emptyText) {
  * @param data /api/status 回包
  */
 export function renderStatus(data) {
+  renderVersion(data.version);
+  renderUpdate(store.role === 'MEMBER' ? null : data.update);
   if (store.role === 'MEMBER') {
     pageStatus(data);
     return;
   }
-  renderVersion(data.version);
-  renderUpdate(data.update);
 
   const runtime = data.runtime || {};
   $('#run-mem').textContent = runtime.heapUsedMb + ' / ' + runtime.heapMaxMb + ' MB';

@@ -251,8 +251,9 @@ const PAGE_STYLE = `
 .dw-nm{font-size:14.5px;color:var(--text)}
 .dw-sub{font-size:12.5px;color:var(--dim)}
 .dw-tag{font-size:12px;color:var(--dim)}
-.dwform{display:grid;gap:8px;margin-bottom:12px}
-.dwform input,.dwform select{background:var(--ground);color:var(--text);border:1px solid var(--line);
+.dwform{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-bottom:12px}
+.dwform input,.dwform select,.dwform button{height:38px}
+.dwform input,.dwform select{min-width:0;width:100%;box-sizing:border-box;background:var(--ground);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:8px 10px;font-size:14px;font-family:inherit}
 .dwout{font-size:13.5px;color:var(--dim)}
 .dwfound{display:grid;gap:4px;background:var(--soft);border:1px solid var(--softline);
@@ -2050,6 +2051,8 @@ function pickMemberTarget(opts) {
   ].filter(Boolean))];
   const numberLabel = term('bot.target.group', '群号') + phrase('bot.target.user', v => '或 ' + v, '或用户号');
   openDrawer(opts.title, '填写完整的' + numberLabel + '，查到后再添加。', body => {
+    const form = el('div', 'dwform');
+    body.appendChild(form);
     const sender = platformNames.length > 1 ? el('select') : null;
     if (sender) {
       sender.setAttribute('aria-label', '推送平台');
@@ -2060,23 +2063,23 @@ function pickMemberTarget(opts) {
         sender.appendChild(option);
       }
       sender.value = platformNames[0];
-      body.appendChild(sender);
+      form.appendChild(sender);
     }
     const kind = el('select');
     kind.setAttribute('aria-label', '会话类型');
     kind.innerHTML = '<option value="group">群</option><option value="friend">好友</option>';
     kind.value = 'group';
-    body.appendChild(kind);
+    form.appendChild(kind);
     const number = el('input');
     number.type = 'text';
     number.inputMode = 'numeric';
     number.setAttribute('aria-label', '完整的' + numberLabel);
     number.placeholder = '完整的' + numberLabel;
-    body.appendChild(number);
+    form.appendChild(number);
     const go = el('button', 'primary');
     go.type = 'button';
     go.textContent = '查';
-    body.appendChild(go);
+    form.appendChild(go);
     const out = el('div');
     out.setAttribute('aria-live', 'polite');
     body.appendChild(out);

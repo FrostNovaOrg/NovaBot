@@ -2226,8 +2226,7 @@ public class ConfigUiController {
         // 写死一份的表现是升级之后侧栏还显示旧版本，而没有任何东西会发现这件事。
         // 从源码直接跑（未经打包）时没有 build-info，此时回空串：界面上那一格空着，
         // 比显示一个编出来的版本号要好
-        BuildProperties build = buildProperties.getIfAvailable();
-        result.put("version", build == null ? "" : Optional.ofNullable(build.getVersion()).orElse(""));
+        result.put("version", buildVersion());
         // 该提示的新版：侧栏药丸、点开的小面板与首页那条软待办共用这一块。没有新版时整块不下发——
         // 这类字段的读法是「缺席即没有」，与 queue 那种「键必须在、值可以为 0」不是同一种约定，
         // 多发一个空对象只会让界面多一种两头都没定义的中间态。
@@ -2267,6 +2266,11 @@ public class ConfigUiController {
         return result;
     }
 
+    private String buildVersion() {
+        BuildProperties build = buildProperties.getIfAvailable();
+        return build == null ? "" : Optional.ofNullable(build.getVersion()).orElse("");
+    }
+
     private JSONObject memberStatus() {
         JSONArray users = new JSONArray();
         for (var user : new ConfigUiConfiguredUsers(properties).users(dataSource.getAllUsers())) {
@@ -2275,7 +2279,7 @@ public class ConfigUiController {
                     "platform", user.getPlatform(), "enabled", user.getEnabled(), "targets", user.getTargets().stream()
                             .filter(target -> !Boolean.FALSE.equals(target.getEnabled())).count()));
         }
-        return JSONObject.of("success", true, "users", users, "locked", authService.isEnabled(),
+        return JSONObject.of("success", true, "version", buildVersion(), "users", users, "locked", authService.isEnabled(),
                 "pushEnabled", properties.getPush().isEnabled(), "totalDataAvailable", liveDataService.supportsTotalData(),
                 "senders", senderService.getSenderNames().stream().sorted().toList(),
                 "quiet", quiet(), "live", liveNow(), "today", todayPushCounts());
