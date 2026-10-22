@@ -94,6 +94,18 @@ for (const oidcEnabled of [false, true]) {
   }
 }
 
+// 要求本地重登时，管理员应直接看到本地入口，摘要仍可收起。
+for (const oidcEnabled of [false, true]) {
+  for (const hasPasskey of [false, true]) {
+    for (const oidcResult of ['', 'local_required', 'failed', 'pending', 'denied', 'bound']) {
+      const v = loginView({oidcEnabled, hasPasskey, oidcResult});
+      eq(!!v.passwordInitiallyOpen, oidcEnabled && oidcResult === 'local_required',
+        '本地重登初始展开 oidc=' + oidcEnabled + ', passkey=' + hasPasskey + ', result=' + oidcResult);
+      eq(v.passwordFolded, oidcEnabled || hasPasskey, '本地重登保留摘要与开合');
+    }
+  }
+}
+
 // ---------- 二、锁定判定 ----------
 eq(loginView({lockedSeconds: 0}).locked, false, '剩 0 秒不算锁定');
 eq(loginView({lockedSeconds: 1}).locked, true, '剩 1 秒就算锁定');
@@ -195,79 +207,96 @@ eq((await passkeyResult(0)).entered, true, '通行密钥正常验证仍进入控
 
 const paint = loginHtml.match(/^  function paint\(\) \{[\s\S]*?^  }/m)?.[0];
 const showLogin = loginHtml.match(/^  function showLogin\(state\) \{[\s\S]*?^  }/m)?.[0];
-const focusOtherMethod = loginHtml.match(/^  function focusOtherMethod\(\) \{[\s\S]*?^  }/m)?.[0] || '';
+const focusOtherMethod = loginHtml.match(/^  function focusOtherMethod\(\) \{[\s\S]*?^  }/m)?.[0];
 const passwordSubmit = loginHtml.match(/^  \$\('#form'\)\.addEventListener\('submit', async e => \{[\s\S]*?^  }\);/m)?.[0];
+if (!focusOtherMethod) throw new Error('登录页缺少 focusOtherMethod');
+const toggleListener = loginHtml.match(/^  \$\('#pwd-fold'\)\.addEventListener\('toggle', focusOtherMethod\);/m)?.[0] || '';
 if (!paint || !showLogin || !passwordSubmit) throw new Error('登录页缺少 paint 或 showLogin');
 
 for (const oidcEnabled of [false, true]) {
   for (const hasPasskey of [false, true]) {
     for (const supported of [undefined, false, true]) {
       for (const lockedSeconds of [0, 90]) {
-        const elements = new Map();
-        let focused = '';
-        for (const match of loginHtml.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
-          const classes = new Set(match[0].match(/\bclass="([^"]*)"/)?.[1].split(' ') || []);
-          elements.set('#' + match[1], {
-            insertBefore(child) { child.parentElement = this; },
-            textContent: '', value: '',
-            disabled: false, open: match[0].includes(' open'),
-            focus() { focused = match[1]; },
-            classList: {
-              contains: name => classes.has(name),
-              toggle(name, force) {
-                if (force) classes.add(name); else classes.delete(name);
+        for (const oidcResult of ['', 'local_required', 'failed', 'pending', 'denied', 'bound']) {
+          const elements = new Map();
+          let focused = '';
+          for (const match of loginHtml.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
+            const events = new EventTarget();
+            const classes = new Set(match[0].match(/\bclass="([^"]*)"/)?.[1].split(' ') || []);
+            elements.set('#' + match[1], {
+              addEventListener: events.addEventListener.bind(events),
+              dispatchEvent: events.dispatchEvent.bind(events),
+              insertBefore(child) { child.parentElement = this; },
+              textContent: '', value: '',
+              disabled: false, open: match[0].includes(' open'),
+              focus() { focused = match[1]; },
+              classList: {
+                contains: name => classes.has(name),
+                toggle(name, force) {
+                  if (force) classes.add(name); else classes.delete(name);
+                },
               },
-            },
-          });
-        }
-        const $ = selector => elements.get(selector);
-        $('#passkey-field').parentElement = $('#login');
-        let submitPassword;
-        $('#form').addEventListener = (name, handler) => { submitPassword = handler; };
-        const state = {oidcEnabled, oidcCreateSupported: supported, lockedSeconds, totpRequired: true};
-        const context = {
-          $, loginView, loginControlState, state, URLSearchParams,
-          location: {search: ''}, show: selector => $(selector).classList.toggle('hidden', false),
-          tick() {}, offerPasskey() {}, markInvalidCredentials() {},
-          CONSOLE: '/config', fetch: async () => ({json: async () => ({
-            success: false, credentialsRejected: true, message: '密码或验证码不正确'
-          })}),
-        };
-        runInNewContext(`let hasPasskey = ${hasPasskey}, folded = false, totp = false,
-          lockedSeconds = 0, oidcEnabled = false, oidcCreateSupported = false;
-          ${paint}\n${focusOtherMethod}\n${passwordSubmit}\n${showLogin}\nshowLogin(state);`, context);
-        const label = JSON.stringify(state) + ', passkey=' + hasPasskey;
-        eq($('#oidc-field').classList.contains('hidden'), !oidcEnabled, '统一登录显隐 ' + label);
-        eq($('#passkey-field').parentElement === $(oidcEnabled ? '#local-passkey' : '#login'),
-          true, '通行密钥与说明位于正确的折内或卡片上 ' + label);
-        eq($('#login-fold-label')?.textContent, oidcEnabled ? '其他登录方式' : '使用密码登录', '折叠入口文案 ' + label);
-        eq($('#oidc-create-field').classList.contains('hidden'), !(oidcEnabled && !!supported), '注册显隐 ' + label);
-        eq($('#passkey-field').classList.contains('hidden'), !hasPasskey, '通行密钥显隐 ' + label);
-        eq($('#passkey').classList.contains('secondary'), oidcEnabled && hasPasskey, '通行密钥样式 ' + label);
-        eq($('#submit').classList.contains('secondary'), oidcEnabled, '口令提交样式 ' + label);
-        eq($('#pwd-fold').open, !(oidcEnabled || hasPasskey), '口令折叠 ' + label);
-        eq($('#pwd-fold').classList.contains('bare'), !(oidcEnabled || hasPasskey), '摘要行显隐 ' + label);
-        eq($('#passkey-or').classList.contains('hidden'), !(hasPasskey && !oidcEnabled), '分隔线显隐 ' + label);
-        if (oidcEnabled || hasPasskey) {
-          eq(focused, oidcEnabled ? 'oidc' : 'passkey', '焦点落在首颗可见按钮 ' + label);
-          $('#pwd-fold').open = true;
-          if (oidcEnabled && focusOtherMethod) {
-            runInNewContext('focusOtherMethod();', context);
-            eq(focused, lockedSeconds > 0 ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
-              '展开后聚焦可用的首个本地控件 ' + label);
+            });
           }
-          await submitPassword({preventDefault() {}});
-          eq($('#pwd-fold').open, true, '口令失败后输入框仍展开 ' + label);
-          eq($('#msg').textContent.includes('密码或验证码'), true, '口令失败提示保留 ' + label);
-          eq($('#msg').classList.contains('hidden'), false, '口令失败提示可见 ' + label);
-          runInNewContext('totp = true; lockedSeconds = 90; paint(); lockedSeconds--; paint();', context);
-          eq($('#pwd-fold').open, true, '验证码与倒计时重画不收起 ' + label);
-          eq($('#code-field').classList.contains('hidden'), false, '动态验证码仍可见 ' + label);
-          runInNewContext('lockedSeconds = state.lockedSeconds; paint();', context);
-          eq($('#pwd-fold').open, true, '重画不收起手动展开的口令 ' + label);
+          const $ = selector => elements.get(selector);
+          $('#passkey-field').parentElement = $('#login');
+          let submitPassword;
+          $('#form').addEventListener = (name, handler) => { submitPassword = handler; };
+          const state = {oidcEnabled, oidcCreateSupported: supported, lockedSeconds, totpRequired: true};
+          const context = {
+            $, loginView, loginControlState, state, URLSearchParams,
+            location: {search: oidcResult ? '?oidc=' + oidcResult : ''}, show: selector => $(selector).classList.toggle('hidden', false),
+            tick() {}, offerPasskey() {}, markInvalidCredentials() {},
+            CONSOLE: '/config', fetch: async () => ({json: async () => ({
+              success: false, credentialsRejected: true, message: '密码或验证码不正确'
+            })}),
+          };
+          runInNewContext(`let hasPasskey = ${hasPasskey}, folded = false, totp = false,
+            lockedSeconds = 0, oidcEnabled = false, oidcCreateSupported = false, oidcResult = null, focusedButton = '';
+            ${paint}\n${focusOtherMethod}\n${toggleListener}\n${passwordSubmit}\n${showLogin}\nshowLogin(state);`, context);
+          const label = JSON.stringify(state) + ', passkey=' + hasPasskey + ', result=' + oidcResult;
+          const localRequired = oidcEnabled && oidcResult === 'local_required';
+          eq($('#oidc-field').classList.contains('hidden'), !oidcEnabled, '统一登录显隐 ' + label);
+          eq($('#passkey-field').parentElement === $(oidcEnabled ? '#local-passkey' : '#login'),
+            true, '通行密钥与说明位于正确的折内或卡片上 ' + label);
+          eq($('#login-fold-label')?.textContent, oidcEnabled ? '其他登录方式' : '使用密码登录', '折叠入口文案 ' + label);
+          eq($('#oidc-create-field').classList.contains('hidden'), !(oidcEnabled && !!supported), '注册显隐 ' + label);
+          eq($('#passkey-field').classList.contains('hidden'), !hasPasskey, '通行密钥显隐 ' + label);
+          eq($('#passkey').classList.contains('secondary'), oidcEnabled && hasPasskey, '通行密钥样式 ' + label);
+          eq($('#submit').classList.contains('secondary'), oidcEnabled, '口令提交样式 ' + label);
+          eq($('#pwd-fold').open, localRequired || !(oidcEnabled || hasPasskey), '口令折叠 ' + label);
+          eq($('#pwd-fold').classList.contains('bare'), !(oidcEnabled || hasPasskey), '摘要行显隐 ' + label);
+          eq($('#passkey-or').classList.contains('hidden'), !(hasPasskey && !oidcEnabled), '分隔线显隐 ' + label);
+          if (oidcEnabled || hasPasskey) {
+            eq(focused, localRequired && !lockedSeconds ? (hasPasskey ? 'passkey' : 'password') : (oidcEnabled ? 'oidc' : 'passkey'), '焦点落在首颗可见按钮 ' + label);
+            $('#pwd-fold').open = false;
+            $('#pwd-fold').dispatchEvent(new Event('toggle'));
+            runInNewContext('paint();', context);
+            eq($('#pwd-fold').open, false, '手动收起后重画仍收起 ' + label);
+            focused = oidcEnabled ? 'oidc' : focused;
+            $('#pwd-fold').open = true;
+            if (oidcEnabled) {
+              $('#pwd-fold').dispatchEvent(new Event('toggle'));
+              eq(focused, lockedSeconds > 0 ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
+                '展开后聚焦可用的首个本地控件 ' + label);
+            }
+            await submitPassword({preventDefault() {}});
+            eq($('#pwd-fold').open, true, '口令失败后输入框仍展开 ' + label);
+            eq($('#msg').textContent.includes('密码或验证码'), true, '口令失败提示保留 ' + label);
+            eq($('#msg').classList.contains('hidden'), false, '口令失败提示可见 ' + label);
+            runInNewContext('totp = true; lockedSeconds = 90; paint(); lockedSeconds--; paint();', context);
+            eq($('#pwd-fold').open, true, '验证码与倒计时重画不收起 ' + label);
+            eq($('#code-field').classList.contains('hidden'), false, '动态验证码仍可见 ' + label);
+            runInNewContext('lockedSeconds = state.lockedSeconds; paint();', context);
+            eq($('#pwd-fold').open, true, '重画不收起手动展开的口令 ' + label);
+          }
+          if (localRequired && !hasPasskey) {
+            runInNewContext('hasPasskey = true; paint();', context);
+            eq(focused, lockedSeconds ? 'oidc' : 'passkey', '稍后探测到通行密钥后焦点跟随可用入口 ' + label);
+          }
+          for (const id of CONTROL_IDS) eq($('#' + id).disabled, lockedSeconds > 0, '锁定控件 ' + id + label);
+          for (const id of ['oidc', 'oidc-create']) eq($('#' + id).disabled, false, '统一登录不受本地锁定影响 ' + id + label);
         }
-        for (const id of CONTROL_IDS) eq($('#' + id).disabled, lockedSeconds > 0, '锁定控件 ' + id + label);
-        for (const id of ['oidc', 'oidc-create']) eq($('#' + id).disabled, false, '统一登录不受本地锁定影响 ' + id + label);
       }
     }
   }
