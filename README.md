@@ -4,9 +4,9 @@
 
 <h3>哔哩哔哩直播运营助手</h3>
 
-<p>看直播数据、出下播报告、推送开播和动态通知；主播本人和公会运营可以各自登录，自己设置推送、查看数据。</p>
+<p>看直播数据、出下播报告、推送开播、下播和动态通知；主播本人和公会运营可以各自登录，自己设置推送、查看数据。</p>
 
-<p><sub>A Bilibili live-streaming operations assistant: stream data, post-stream reports, and go-live and feed notifications; streamers and guild staff can each sign in to set up their own notifications and check their own data.</sub></p>
+<p><sub>A Bilibili live-streaming operations assistant: stream data, post-stream reports, and go-live, stream-end and feed notifications; streamers and guild staff can each sign in to set up their own notifications and check their own data.</sub></p>
 
 <p>简体中文 · <a href="README.en.md">English</a></p>
 <p>
@@ -40,7 +40,7 @@
 <tr>
 <td width="50%" valign="top">
 <b>数据</b><br>
-主播页一页看完概况与较上期涨跌、近期趋势、开播日历、开播时段和本期观众。配置全在浏览器里完成，首页看今天推了什么，出问题有健康自检和修复建议。
+主播页一页看完本期表现与较上期、近期趋势、开播日历、开播时段和本期观众。
 </td>
 <td width="50%" valign="top">
 <b>报告</b><br>
@@ -50,16 +50,18 @@
 <tr>
 <td width="50%" valign="top">
 <b>推送</b><br>
-开播、下播、动态更新推到 QQ 群和好友，每条「这位主播推到这个群」的通道各设模板、金额显示、静音时段与命令开关，每位主播还有自己的屏蔽名单。下播后还能播报这一场的上舰与礼物，门槛按通道设。
+开播、下播、动态更新推到 QQ 群和好友，每条『这位主播推到这个群』的通道各设模板、金额显示、静音时段与命令开关，每位主播还有自己的屏蔽名单。主播不在播时有人上舰或送礼，也能在群里播报道谢，门槛按通道设。
 </td>
 <td width="50%" valign="top">
 <b>多账号</b><br>
-接上统一登录后，主播本人或公会运营各自登录，只能看和改分给自己的主播；管理员负责授权和分配，改动都有日志。
+接上统一登录账户中心后，主播本人或公会运营各自登录，只能看和改分给自己的主播；管理员负责授权和分配，改动都有日志。
 </td>
 </tr>
 </table>
 
-**扩展**：直播间事件可以推给本机上的其它程序，也可以自己写插件去接弹幕、礼物和上舰。
+**控制台**：配置全在浏览器里完成，首页看今天推了什么，出问题有健康自检和修复建议。
+
+**扩展**：直播间事件可以推给本机上的其他程序，也可以自己写插件去接弹幕、礼物和上舰。
 
 <p align="center">
 <a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="下播报告图：数据卡片、互动曲线、礼物与排行、弹幕词云（示例数据）" width="100%"></a>
@@ -68,7 +70,7 @@
 </p>
 
 > [!NOTE]
-> NovaBot 面向中小型公会、个人势主播及其运营人员，由公会或主播自己架设，用来照看自有或已获授权的直播间。它不做风控对抗，也不适合未经授权的大规模采集。拿不准是否适合你，先读[第 1 章](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html)。
+> NovaBot 面向中小型公会、个人势主播及其运营人员，用来照看自有或已获授权的直播间。它不做风控对抗，也不适合未经授权的大规模采集。拿不准是否适合你，先读[第 1 章](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html)。
 
 ## 快速开始
 

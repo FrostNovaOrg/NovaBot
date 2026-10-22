@@ -4,7 +4,7 @@
 
 <h3>Bilibili live-streaming operations assistant</h3>
 
-<p>Tracks stream data, generates post-stream reports, and sends go-live and feed notifications;<br>streamers and guild staff can each sign in to set up their own notifications and check their own data.</p>
+<p>Tracks stream data, generates post-stream reports, and sends go-live, stream-end and feed notifications;<br>streamers and guild staff can each sign in to set up their own notifications and check their own data.</p>
 
 <p><a href="README.md">简体中文</a> · English</p>
 <p>
@@ -38,7 +38,7 @@
 <tr>
 <td width="50%" valign="top">
 <b>Data</b><br>
-Each streamer's page shows the overview with change against the previous period, the recent trend, a broadcast calendar, broadcast time slots and the period's audience. All configuration is done in the browser; the home page shows what was pushed today, and when something goes wrong there is a health self-check with suggested fixes.
+Each streamer's page shows this period's performance against the previous one, the recent trend, a broadcast calendar, broadcast time slots and this period's audience.
 </td>
 <td width="50%" valign="top">
 <b>Reports</b><br>
@@ -48,14 +48,16 @@ A data report image is generated automatically when a stream ends, and a weekly 
 <tr>
 <td width="50%" valign="top">
 <b>Notifications</b><br>
-Go-live, stream-end and feed updates are pushed to QQ groups and friends; each channel, meaning "this streamer pushed to this group", has its own template, amount display, quiet hours and command switches, and each streamer has their own block list. After a stream ends, the guard memberships and gifts of that stream can also be announced, with a threshold set per channel.
+Go-live, stream-end and feed updates are pushed to QQ groups and friends; each channel, meaning "this streamer pushed to this group", has its own template, amount display, quiet hours and command switches, and each streamer has their own block list. When someone buys a guard membership or sends a gift while the streamer is offline, a thank-you can also be announced in the group, with a threshold set per channel.
 </td>
 <td width="50%" valign="top">
 <b>Multiple accounts</b><br>
-With single sign-on connected, streamers and guild staff each sign in and can only view and change the streamers assigned to them; the administrator grants access and assigns streamers, and every change is logged.
+With a single sign-on account center connected, streamers and guild staff each sign in and can only view and change the streamers assigned to them; the administrator grants access and assigns streamers, and every change is logged.
 </td>
 </tr>
 </table>
+
+**Console**: all configuration is done in the browser; the home page shows what was pushed today, and when something goes wrong there is a health self-check with suggested fixes.
 
 **Extensions**: live room events can be forwarded to other programs on the same machine, and you can write your own plugins to handle danmaku, gifts and guard memberships.
 
@@ -66,7 +68,7 @@ With single sign-on connected, streamers and guild staff each sign in and can on
 </p>
 
 > [!NOTE]
-> NovaBot is meant for small and mid-sized guilds, independent streamers and the people who run their channels. The guild or streamer hosts it themselves, to look after live rooms they own or are authorized to manage. It does not try to get around the platform's risk controls, and it is not suited to unauthorized large-scale data collection. If you are not sure whether it fits your case, read [Chapter 1](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html) first.
+> NovaBot is meant for small and mid-sized guilds, independent streamers and the people who run their channels. It is used to look after live rooms they own or are authorized to manage. It does not try to get around the platform's risk controls, and it is not suited to unauthorized large-scale data collection. If you are not sure whether it fits your case, read [Chapter 1](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html) first.
 
 ## Quick start
 
