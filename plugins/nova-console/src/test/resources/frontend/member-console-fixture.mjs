@@ -114,7 +114,7 @@ const location = {_hash: mode === 'nav' ? '#/settings' : '#/home', reload() {},
 };
 const window = {location, addEventListener: (name, fn) => { (events[name] ||= []).push(fn); }, scrollTo() {}};
 const own = {uid: 71001, platform: 'bilibili', uname: 'Owner A', enabled: true, targets: 3};
-const memberStatus = {success: true, users: [own], live: [{...own, roomId: 81001}], today: {sent: 2, failed: 1}, locked: false, pushEnabled: false, totalDataAvailable: false, quiet: {}};
+const memberStatus = {success: true, version: '1.2.3', users: [own], live: [{...own, roomId: 81001}], today: {sent: 2, failed: 1}, locked: false, pushEnabled: false, totalDataAvailable: false, quiet: {}};
 const adminStatus = {...memberStatus, version: '1.2.3', runtime: {heapUsedMb: 12, heapMaxMb: 64, threads: 8}, health: [], senders: [], alerts: {}};
 const requests = [], errors = [];
 const auth = {authenticated: true, enabled: true, accountId: 'member-a', role, email: 'member@example.com'};
@@ -302,6 +302,36 @@ if (mode.startsWith('sidebar-')) await check('身份前隐藏管理导航 ' + ro
   const shown = ['log','links','settings'].filter(id => visible($('#nav').querySelector('[data-page="' + id + '"]')));
   assert.deepEqual(shown, role === 'ADMIN' ? ['log','links','settings'] : []);
 });
+if (mode === 'source') {
+  const sourceUrl = /const SOURCE_URL = '([^']+)'/.exec(readFileSync(resolve(core, 'overview.js'), 'utf8'))[1];
+  await check('成员侧栏保留源码入口', () => {
+    assert.ok(visible($('.verline')));
+    assert.equal($('#side-source').href, sourceUrl);
+    assert.equal($('#side-version').textContent, 'NovaBot 1.2.3');
+    assert.equal($('#personal-menu').querySelector('#personal-about a').href, sourceUrl);
+    assert.ok(!visible($('.runbox')));
+  });
+  for (const version of ['1.2.3', undefined]) await check('成员源码说明与版本 ' + version, () => {
+    overview.renderStatus({...memberStatus, version, update: {latestVersion: '9.9.9'}});
+    assert.equal($('#side-version').textContent, version ? 'NovaBot ' + version : 'NovaBot');
+    const about = $('#personal-menu').querySelector('#personal-about');
+    assert.ok(about);
+    assert.match(about.textContent, /AGPL-3.0.*源码/);
+    assert.ok(about.textContent.startsWith(version ? 'NovaBot v' + version : 'NovaBot ·'));
+    const link = about.querySelector('a');
+    assert.equal(link.href, sourceUrl);
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
+    assert.equal(link.getAttribute('referrerpolicy'), 'no-referrer');
+  });
+  await check('成员不显示升级提示', () => {
+    $('#side-update').style.display = '';
+    $('#update-pop').style.display = '';
+    overview.renderStatus({...memberStatus, update: {latestVersion: '9.9.9'}});
+    assert.equal($('#side-update').style.display, 'none');
+    assert.equal($('#update-pop').style.display, 'none');
+  });
+}
 // 成员点击全部事件会被弹回首页，因此首页不能提供这个死链；管理员仍需保留。
 if (mode === 'home' || mode === 'admin') await check('全部事件入口 ' + role, () => {
   assert.equal(visible($('#home-events').querySelector('a')), role === 'ADMIN');
@@ -317,7 +347,7 @@ if (mode === 'nav') await check('成员导航与直接地址', async () => {
 if (mode === 'home') await check('成员首页只画名下直播与事件', async () => {
   await overview.refreshHome();
   const text = walk(document).filter(visible).map(node => node.ownText).join('');
-  assert.doesNotMatch(text, /undefined|0 项全部正常|堆内存|线程|磁盘剩余|健康自检|连接状态|1\.2\.3/);
+  assert.doesNotMatch(text, /undefined|0 项全部正常|堆内存|线程|磁盘剩余|健康自检|连接状态/);
   assert.match($('#now-box').textContent, /Owner A/); assert.doesNotMatch($('#now-box').textContent, /Other B|推送已暂停/);
   assert.match($('#home-timeline').textContent, /自家屏蔽词事件/);
   assert.ok(!visible($('#cfg-path')), '成员不显示配置文件路径');

@@ -43,7 +43,7 @@ function applyRoleView() {
   document.querySelectorAll('#nav a').forEach(link => {
     if (!accessiblePages.has(link.dataset.page)) link.remove();
   });
-  for (const selector of ['.runbox', '.verline', '#home-banner', '#home-todo',
+  for (const selector of ['.runbox', '#home-banner', '#home-todo',
     '.home-connections', '#home-all-events', '#home-probes', '#cfg-path', '#plugin-adv']) {
     const node = $(selector);
     if (node) node.style.display = 'none';

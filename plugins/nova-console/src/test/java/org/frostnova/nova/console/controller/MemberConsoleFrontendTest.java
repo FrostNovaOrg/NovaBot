@@ -35,7 +35,7 @@ class MemberConsoleFrontendTest {
     }
 
     // 成员可见导航、首页、今日卡、名字和主播横幅都应按共享身份绘制，管理员保留原行为。
-    @ParameterizedTest @ValueSource(strings = {"loading-member-auth/state", "loading-member-status", "loading-member-pages", "loading-auth/state", "loading-status", "loading-login", "loading-pages", "sidebar-admin", "sidebar-member", "nav", "home", "setup", "today", "personal", "identity", "streamers", "admin", "legacy", "unknown"})
+    @ParameterizedTest @ValueSource(strings = {"loading-member-auth/state", "loading-member-status", "loading-member-pages", "loading-auth/state", "loading-status", "loading-login", "loading-pages", "sidebar-admin", "sidebar-member", "source", "nav", "home", "setup", "today", "personal", "identity", "streamers", "admin", "legacy", "unknown"})
     void rendersConsoleForCurrentAccount(String mode) throws Exception { run(mode); }
 
     // 升级缓存、慢网和重试会阻断首屏或重复导航；正常入口还须取消页面后备提示。
