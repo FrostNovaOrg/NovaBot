@@ -87,7 +87,7 @@ public class ConfigUiOidcController {
                 }
                 pending.put(authorization.state(), new Pending(correlation, sessionId, authorization.expiresAt()));
             }
-            response.addHeader(HttpHeaders.SET_COOKIE, correlation(correlation, request, 300));
+            response.addHeader(HttpHeaders.SET_COOKIE, correlation(correlation, request, OidcClient.LOGIN_TTL));
             response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             if (sessionId == null) {
                 response.sendRedirect(authorization.uri().toASCIIString());
@@ -121,7 +121,7 @@ public class ConfigUiOidcController {
                 }
                 pending.remove(state);
             }
-            response.addHeader(HttpHeaders.SET_COOKIE, correlation("", request, 0));
+            response.addHeader(HttpHeaders.SET_COOKIE, correlation("", request, Duration.ZERO));
             if (request.getParameter("error") != null) {
                 client.cancelLogin(state);
                 result(request, response, switch (request.getParameter("error")) {
@@ -242,9 +242,9 @@ public class ConfigUiOidcController {
                 .filter(c -> COOKIE.equals(c.getName())).map(Cookie::getValue).findFirst().orElse(null);
     }
 
-    private static String correlation(String value, HttpServletRequest request, int maxAge) {
+    private static String correlation(String value, HttpServletRequest request, Duration maxAge) {
         return ResponseCookie.from(COOKIE, value).path(ConfigUiPrefix.consolePath(request))
-                .httpOnly(true).secure(request.isSecure()).sameSite("Lax").maxAge(Duration.ofSeconds(maxAge)).build().toString();
+                .httpOnly(true).secure(request.isSecure()).sameSite("Lax").maxAge(maxAge).build().toString();
     }
 
     private static String errorResult(OidcException error) {

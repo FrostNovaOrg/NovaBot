@@ -45,7 +45,7 @@ import static org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind.*;
 @Component
 @Slf4j
 public final class OidcClient {
-    private static final Duration LOGIN_TTL = Duration.ofMinutes(5);
+    public static final Duration LOGIN_TTL = Duration.ofMinutes(10);
     private static final int MAX_PENDING_LOGINS = 1024;
 
     private final SecureRandom random = new SecureRandom();
@@ -118,7 +118,7 @@ public final class OidcClient {
     }
 
     /**
-     * Creates a five-minute, one-use transaction held in memory independently of the local session cookie.
+     * Creates a ten-minute, one-use transaction held in memory independently of the local session cookie.
      * The HTTP integration must bind this authorization to the initiating browser with its own
      * short-lived SameSite=Lax correlation cookie (and pass state only to the intended callback).
      */
