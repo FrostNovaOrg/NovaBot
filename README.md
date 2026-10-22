@@ -2,11 +2,11 @@
 
 <img src="docs/assets/logo.svg" alt="NovaBot" height="72">
 
-<h3>哔哩哔哩直播与动态推送机器人</h3>
+<h3>哔哩哔哩直播运营助手</h3>
 
-<p>开播、下播、发动态，第一时间推到 QQ 群和好友；<br>下播自动出一张数据报告图，配置全在浏览器里完成。</p>
+<p>看直播数据、出下播报告、推送开播、下播和动态通知；主播本人和公会运营可以各自登录，自己设置推送、查看数据。</p>
 
-<p><sub>Bilibili live &amp; feed notifier for QQ via OneBot, with a web console and post-stream report images.</sub></p>
+<p><sub>A Bilibili live-streaming operations assistant: stream data, post-stream reports, and go-live, stream-end and feed notifications; streamers and guild staff can each sign in to set up their own notifications and check their own data.</sub></p>
 
 <p>简体中文 · <a href="README.en.md">English</a></p>
 <p>
@@ -28,9 +28,9 @@
 
 <br>
 
-<a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="下播报告图：数据卡片、互动曲线、礼物与排行、弹幕词云（示例数据）" width="100%"></a>
+<a href="docs/assets/console-showcase.png"><img src="docs/assets/console-showcase.png" alt="控制台：左为消息模板编辑器与消息预览，右为主播页的本期表现、近期趋势与本期观众（示例数据）" width="100%"></a>
 
-<p><sub>一场直播结束后自动生成的报告图（示例数据，点开看原图）</sub></p>
+<p><sub>左边拖块拼消息模板、实时预览；右边是主播页的本期表现、近期趋势与本期观众（示例数据）</sub></p>
 
 </div>
 
@@ -39,30 +39,34 @@
 <table>
 <tr>
 <td width="50%" valign="top">
-<b>推送</b><br>
-开播、下播、动态更新三类通知。同一位主播可以推给多个群或好友，消息模板按推送目标各配，静音时段全局设一项，另可按群或好友会话单独设。
+<b>数据</b><br>
+主播页一页看完本期表现与较上期、近期趋势、开播日历、开播时段和本期观众。
 </td>
 <td width="50%" valign="top">
 <b>报告</b><br>
-下播自动出一张数据报告图，按周或按月看趋势。群里 @ 机器人也能查数据、拉排行榜、要一张实时图。
+下播自动出一张数据报告图，每周一还能给群或好友发一份运营周报。群里 @ 机器人也能查数据、拉排行榜、要一张实时图。
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<b>控制台</b><br>
-加主播、改模板、发测试消息都在浏览器里完成。首页看今天推了什么，出问题有健康自检和修复建议。
+<b>推送</b><br>
+开播、下播、动态更新推到 QQ 群和好友，每条『这位主播推到这个群』的通道各设模板、金额显示、静音时段与命令开关，每位主播还有自己的屏蔽名单。主播不在播时有人上舰或送礼，也能在群里播报道谢，门槛按通道设。
 </td>
 <td width="50%" valign="top">
-<b>扩展</b><br>
-直播间事件可以推给本机上的其它程序，也可以自己写插件去接弹幕、礼物和上舰。
+<b>多账号</b><br>
+接上统一登录账户中心后，主播本人或公会运营各自登录，只能看和改分给自己的主播；管理员负责授权和分配，改动都有日志。
 </td>
 </tr>
 </table>
 
+**控制台**：配置全在浏览器里完成，首页看今天推了什么，出问题有健康自检和修复建议。
+
+**扩展**：直播间事件可以推给本机上的其他程序，也可以自己写插件去接弹幕、礼物和上舰。
+
 <p align="center">
-<img src="docs/assets/console-showcase.png" alt="控制台：消息模板编辑器与按月趋势（示例数据）" width="100%">
+<a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="下播报告图：数据卡片、互动曲线、礼物与排行、弹幕词云（示例数据）" width="100%"></a>
 <br>
-<sub>控制台里拖块拼消息模板、右侧实时预览；每位主播按周 / 按月看趋势（示例数据）</sub>
+<sub>一场直播结束后自动生成的报告图（示例数据，点开看原图）</sub>
 </p>
 
 > [!NOTE]
@@ -91,6 +95,8 @@ cd NovaBot && ./install.sh
 | 看下播报告与趋势 | [第 9 章　看播得怎么样](https://frostnovaorg.github.io/NovaBot/09-stream-reports.html) |
 | 升级与备份 | [第 13 章　升级与备份](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html) |
 | 遇到问题 | [第 14 章　遇到问题怎么办](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html) |
+| 让主播和运营自己登录管理 | [第 15 章　成员：让主播和公会运营自己管理](https://frostnovaorg.github.io/NovaBot/15-members.html) |
+| 接统一登录 | [附录 E　接统一登录账户中心](https://frostnovaorg.github.io/NovaBot/appendix-e-oidc.html) |
 
 其余章节见[用户手册目录](https://frostnovaorg.github.io/NovaBot/index.html)。问题与建议请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot@<版本>` 的相关片段。
 

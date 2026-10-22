@@ -197,7 +197,7 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 
 | 文件 | 谁写 | 内容 | 丢了会怎样 |
 |---|---|---|---|
-| `state.json` | `NovaStateStore` | 各群禁用了哪些命令、`@我` 订阅名单；旧版本留下的账号绑定记录还在文件里，但已不再写入、也没人读 | 群成员的设置全部回到默认 |
+| `state.json` | `NovaStateStore` | 控制台的账号（含统一登录身份与成员的指定主播）、通行密钥、`@我` 订阅名单、第三方插件命令的按群开关等；旧版本留下的账号绑定记录还在文件里，但已不再写入、也没人读 | 成员账号与通行密钥丢失，只剩本地管理员；群里的订阅与插件命令开关回到默认 |
 | `sessions.jsonl` | `LiveSessionArchive` | 每场直播的时长与全部指标 | **运营分析的历史永久消失，补不回来** |
 | `data.json` | `DefaultLiveDataService` | 本场与累计的直播数据 | 累计数据归零 |
 
@@ -206,7 +206,8 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 - **`state.json` 不是每次改动都写盘。** `NovaStateStore.write()` 只改内存；
   整份状态默认每 300 秒写回一次（`novabot.core.live.auto-save-live-data-interval`），
   退出前再写一次。控制台上的开关改动会当场 `save()` 落盘；
-  聊天里产生的禁用与订阅只进内存，最多晚一个保存周期才落盘
+  聊天里开关主播命令时，开关记在这位主播的推送通道上，由 `DatasourceChannelStore` 当场写进推送配置文件；
+  第三方插件命令的按群开关与 `@我` 订阅只进内存，最多晚一个保存周期才落盘
 - **`sessions.jsonl` 只追加，不改写**。选每行一条 JSON 而非放进 Redis，是因为
   追加写没有读改写周期，程序崩在中途也毁不掉既有记录；而且体量很小、人能直接看
 - **归档必须发生在下播那一刻**。本场数据会在**下次开播时清零**，
