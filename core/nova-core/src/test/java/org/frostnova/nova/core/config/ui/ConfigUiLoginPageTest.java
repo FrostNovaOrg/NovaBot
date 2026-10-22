@@ -28,6 +28,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("登录页装配")
 class ConfigUiLoginPageTest {
     @Test
+    @DisplayName("其他登录方式只需展开一次，统一登录后没有或分隔")
+    void localMethodsShareOneFold() throws IOException {
+        String html = ConfigUiLoginPage.html("");
+        String fold = html.substring(html.indexOf("<details id=\"pwd-fold\""),
+                html.indexOf("</details>") + "</details>".length());
+        assertTrue(fold.contains("id=\"local-passkey\""));
+        assertTrue(fold.indexOf("id=\"local-passkey\"") < fold.indexOf("id=\"form\""));
+        assertEquals(1, fold.split("<details", -1).length - 1, "展开后不能再套一折");
+        String oidc = html.substring(html.indexOf("<div id=\"oidc-field\""),
+                html.indexOf("<div id=\"passkey-field\""));
+        assertFalse(oidc.contains("class=\"or\""));
+        assertTrue(html.contains("addEventListener('toggle', focusOtherMethod)"));
+    }
+
+    @Test
     @DisplayName("统一登录主按钮在口令表单之前，注册沿用登录入口")
     void oidcEntryPrecedesPasswordForm() throws IOException {
         String html = ConfigUiLoginPage.html("");

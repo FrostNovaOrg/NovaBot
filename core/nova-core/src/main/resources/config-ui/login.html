@@ -128,6 +128,8 @@
       color: var(--accent); text-align: center;
     }
     details.bare > summary { display: none }
+    details.other-methods { margin-top: 16px }
+    #local-passkey > #passkey-field { margin-bottom: 14px }
     .links { margin-top: 16px; display: flex; gap: 14px; justify-content: center }
     .lnk {
       width: auto; padding: 0; background: none; border: none; font-weight: 400;
@@ -184,7 +186,6 @@
       <button type="button" id="oidc-create" class="secondary">用统一身份注册</button>
       <p class="note">第一次来？先在账户中心注册，注册完会回到这里登记，等管理员授权后就能用。</p>
     </div>
-    <p class="or">或</p>
   </div>
 
   <!--
@@ -200,7 +201,8 @@
   </div>
 
   <details id="pwd-fold" class="bare" open>
-    <summary>使用密码登录</summary>
+    <summary id="login-fold-label">使用密码登录</summary>
+    <div id="local-passkey"></div>
     <form id="form" autocomplete="on">
       <!--
         单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
@@ -328,6 +330,12 @@
 
     $('#oidc-field').classList.toggle('hidden', !view.oidc);
     $('#oidc-create-field').classList.toggle('hidden', !view.oidcCreate);
+    $('#login-fold-label').textContent = view.foldLabel;
+    $('#pwd-fold').classList.toggle('other-methods', view.otherMethodsFolded);
+    const passkeyParent = view.otherMethodsFolded ? $('#local-passkey') : $('#login');
+    if ($('#passkey-field').parentElement !== passkeyParent) {
+      passkeyParent.insertBefore($('#passkey-field'), view.otherMethodsFolded ? null : $('#pwd-fold'));
+    }
     $('#passkey').classList.toggle('secondary', view.passkeySecondary);
     $('#submit').classList.toggle('secondary', view.passwordSecondary);
     $('#passkey-or').classList.toggle('hidden', !view.passkeyDivider);
@@ -352,6 +360,13 @@
     for (const id of Object.keys(controls)) {
       $('#' + id).disabled = controls[id];
     }
+  }
+
+  function focusOtherMethod() {
+    const view = loginView({hasPasskey, oidcEnabled});
+    if (!view.otherMethodsFolded || !$('#pwd-fold').open) return;
+    const control = $('#' + view.otherMethodsFirstControl);
+    if (!control.disabled) control.focus();
   }
 
   /**
@@ -545,6 +560,7 @@
   $('#oidc').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login'; });
   $('#oidc-create').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login?create=1'; });
   $('#passkey').addEventListener('click', loginWithPasskey);
+  $('#pwd-fold').addEventListener('toggle', focusOtherMethod);
 
   // 忘记口令说明页。与登录卡互斥显示，不另开一张页面——
   // 那一串令牌贴完就要立刻用，中间隔一次跳转只会多一处贴错的机会

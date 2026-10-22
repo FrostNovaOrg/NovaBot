@@ -42,7 +42,7 @@ export function lockText(seconds) {
 /**
  * 登录页此刻该长什么样
  *
- * 统一登录启用时优先显示，口令折到下面；注册入口取决于账户中心的能力。
+ * 统一登录启用时优先显示，通行密钥和口令收进「其他登录方式」；注册入口取决于账户中心的能力。
  * 其他规则：
  * <ul>
  *   <li><b>登记过通行密钥</b>——摆出主按钮，口令那条路折起来成为第二条路。
@@ -55,7 +55,8 @@ export function lockText(seconds) {
  * @param state 登录状态，取自 /api/auth/state 再补上「这台机器登记过通行密钥没有」
  * @return {{passkey: boolean, passwordFolded: boolean, code: boolean, locked: boolean,
  *   disabled: boolean, lockText: string, oidc: boolean, oidcCreate: boolean,
- *   passkeySecondary: boolean, passwordSecondary: boolean, passkeyDivider: boolean, firstButton: string}} 显隐与文案
+ *   passkeySecondary: boolean, passwordSecondary: boolean, passkeyDivider: boolean, firstButton: string,
+ *   otherMethodsFolded: boolean, foldLabel: string, otherMethodsFirstControl: string}} 显隐与文案
  */
 export function loginView(state) {
   const s = state || {};
@@ -68,6 +69,9 @@ export function loginView(state) {
     passkey,
     oidc,
     oidcCreate: oidc && !!s.oidcCreateSupported,
+    otherMethodsFolded: oidc,
+    foldLabel: oidc ? '其他登录方式' : '使用密码登录',
+    otherMethodsFirstControl: passkey ? 'passkey' : 'password',
     passkeySecondary: passkey && oidc,
     passwordSecondary: oidc,
     passkeyDivider: passkey && !oidc,
