@@ -72,13 +72,18 @@ jobs:
   dependency-check:
     name: 依赖漏洞扫描
     runs-on: ubuntu-latest
-    # 温库带增量更新的整 job 近几回不到 3 分钟。数据源慢、连不上时最久的是扫描步，
-    # 它另有自己的 30 分钟上限（理由见那步的注释），到点只是那一步失败、汇总步亮黄。
-    # job 级上限只兜扫描步以外的步骤（检出、装 JDK、取缓存、装构建插件、汇总），
-    # 温缓存下它们合起来也只占那 3 分钟里的零头，冷缓存要重下依赖会久些——
-    # 45＝30＋15 分钟留给它们。job 级上限若不比扫描步宽出这一截，扫描步拖到头时
-    # 整个 job 先被停，汇总步跑不到，整次 CI 判 cancelled
-    timeout-minutes: 45
+    # 数据源慢、连不上时最久的是扫描步，它另有自己的 20 分钟上限（理由见那步的
+    # 注释），到点只是那一步失败、汇总步亮黄。job 级上限兜的是其余步骤（检出、
+    # 装 JDK、取缓存、装构建插件、存回、汇总）：实测扫描步之前的各步合计 20 秒
+    # （run 39771847117，11:36:28 → 11:36:48），之后的各步约 6 秒；Maven 缓存冷时
+    # 要重下依赖，会久些。27＝20 分钟扫描＋7 分钟留给它们。
+    # 两头都有约束：
+    #   比扫描步宽——不宽出这一截，扫描步拖到头时整个 job 先被停，汇总步跑不到，
+    #     整次 CI 判 cancelled；
+    #   比 30 分钟窄——发版推送脚本推上去后最多等整次 CI 30 分钟
+    #     （tools/release/ci-status.sh 的 CI_MAX=1800），过了就不再等、按等待超时
+    #     退出，哪怕 CI 稍后转绿。别的步骤真卡住时，27 分钟也让整次 CI 先于它出结论
+    timeout-minutes: 27
     # 漏洞库是一套随漏洞数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
     # 插件说明里查不到 dataDirectory 的默认值：不显式指定，库就落在插件的隐式位置，
     # 没法给它配专用缓存——setup-java 那条 maven 缓存的键跟着 pom 摘要走，pom 一改
@@ -161,16 +166,27 @@ jobs:
         # 步级上限：数据源再慢或连不上，到点停的只是这一步。runner 把步级超时
         # 记为失败（不是取消），continue-on-error 再把它改记成功、outcome 留
         # failure——与扫描命令自己退非零是同一条路，job 不判败，后面的「存回」
-        # 看 outcome 不存半截库，汇总步照常跑、亮黄字「没扫成」。出处：actions/runner
-        # 的 src/Runner.Worker/StepsRunner.cs（RunStepAsync 里超时的 catch 置
-        # TaskResult.Failed；随后 continue-on-error 只改写 Failed 的那段）：
-        # https://github.com/actions/runner/blob/main/src/Runner.Worker/StepsRunner.cs
-        # 取 30 分钟：温库带增量更新的整 job 近几回不到 3 分钟，这一步占其大头，
-        # 30 分钟是十倍余量，盖住数据源一时变慢；更慢的那种（换源前 NVD 曾慢到一页
-        # 12.8 MB 60 秒只到 1.5 MB，把整个 job 拖满 60 分钟被停）多等也等不出来，
-        # 不如这一步认栽、下回从同一份旧库再补。
-        # 缓存被清空、要从零建库时 30 分钟未必够：那时会接连亮黄，看得见
-        timeout-minutes: 30
+        # 看 outcome 不存半截库，汇总步照常跑、亮黄字「没扫成」。
+        # GitHub 文档对两者各有一句——continue-on-error："Prevents a job from failing
+        # when a step fails."；timeout-minutes："The maximum number of minutes to run
+        # the step before killing the process."——但没说两者合用时怎么算，所以出处
+        # 以 actions/runner 源码为准：
+        #   https://github.com/actions/runner/blob/a3df03d35a925d4e832af530442be1eea7412df4/src/Runner.Worker/StepsRunner.cs
+        #     :313 SetTimeout 给这一步上闹钟；:322 catch (OperationCanceledException)，
+        #     :324-325 判的是这一步的令牌被取消、job 的没被取消（即步级超时），
+        #     :328 记 "The action '…' has timed out after N minutes."，
+        #     :329 Result = TaskResult.Failed；TaskResult.Canceled 只在 :336 的 else
+        #     分支（job 被取消）；:353 调 ApplyContinueOnError
+        #   https://github.com/actions/runner/blob/b6d10b59c178914d331bcf03823133d5f9e366bb/src/Runner.Worker/ExecutionContext.cs
+        #     :1433 ApplyContinueOnError；:1435 Result 不是 Failed 就直接返回；
+        #     :1455-1456 Outcome = Result; Result = TaskResult.Succeeded
+        # 取 20 分钟：上一回绿的扫描步 1 分 37 秒（run 39185792921，01:32:41 →
+        # 01:34:18），20 分钟仍是实测的十来倍，盖住数据源一时变慢；更慢的那种
+        # （换源前 NVD 曾慢到一页 12.9 MB 60 秒只到 1.5 MB，把整个 job 拖满 60 分钟
+        # 被停）多等也等不出来，不如这一步认栽、下回从同一份旧库再补。上限还受
+        # job 级那 27 分钟管着，理由见 job 开头的注释。
+        # 缓存被清空、要从零建库时 20 分钟未必够：那时会接连亮黄，看得见
+        timeout-minutes: 20
         # 出 JSON 不出 CSV：CSV 的描述字段含逗号，任何按分隔符切列的读法都会错位，
         # 而错位的表现是「没找到高危」——与真的没有高危一模一样
         # 插件版本钉死在 13.0.0：坐标不带版本时 Maven 每次解析成 13.x 的最新版，
@@ -220,12 +236,17 @@ jobs:
         #     :294-295 builder.addHeader(API_KEY_NAME, apiKey)
         #
         # 公开仓的运行日志谁都能看，而 VulnCheck 的条款不许把它的数据免费转给他人：
-        # 日志里只许有计数，不许有漏洞编号、分数，也不许有「某依赖有某漏洞」。
+        # 日志里不列分数、描述，也不列「某依赖有某漏洞」。
         # 插件默认在扫完后按依赖逐条列出漏洞编号（core 的
         # agent/DependencyCheckScanAgent.java:1070 showSummary），showSummary=false
-        # 关掉这一段。出处：插件 BaseDependencyCheckMojo.java:398 的
+        # 关掉的就是这一段。出处：插件 BaseDependencyCheckMojo.java:398 的
         # @Parameter(property = "showSummary", defaultValue = "true")，:2953-2955
-        # 只在它为真时调用上面那个方法。同理，整份报告不再落附件：公开仓的附件
+        # 只在它为真时调用上面那个方法。
+        # 关不掉的：个别出错路径的报错行里仍可能带出单个 CVE 编号（core 的
+        # data/update/nvd/api/NvdApiProcessor.java:121 某条入库失败时、
+        # data/nvdcve/CveDB.java:1493／1553／1727 主键重复时）。编号是 CVE 计划公开
+        # 分配的标识，不带 VulnCheck 的数据内容，所以不另做日志过滤。
+        # 同理，整份报告不再落附件：公开仓的附件
         # 任何登录用户都能下，报告里全是 VulnCheck 的数据；它只留在运行器磁盘上，
         # 供汇总步数数，job 结束即没
         env:
