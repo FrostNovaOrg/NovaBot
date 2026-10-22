@@ -74,6 +74,26 @@ for (const hasPasskey of [false, true]) {
     hasPasskey, '关闭统一登录后保留原有折叠规则');
 }
 
+// 统一登录与通行密钥的四种组合：本地入口的位置、摘要与初始焦点。
+for (const oidcEnabled of [false, true]) {
+  for (const hasPasskey of [false, true]) {
+    const v = loginView({oidcEnabled, hasPasskey});
+    eq({otherMethodsFolded: v.otherMethodsFolded, passkey: v.passkey,
+      passwordFolded: v.passwordFolded, foldLabel: v.foldLabel,
+      passkeySecondary: v.passkeySecondary, passwordSecondary: v.passwordSecondary,
+      passkeyDivider: v.passkeyDivider, firstButton: v.firstButton,
+      otherMethodsFirstControl: v.otherMethodsFirstControl},
+    {otherMethodsFolded: oidcEnabled, passkey: hasPasskey,
+      passwordFolded: oidcEnabled || hasPasskey,
+      foldLabel: oidcEnabled ? '其他登录方式' : '使用密码登录',
+      passkeySecondary: oidcEnabled && hasPasskey, passwordSecondary: oidcEnabled,
+      passkeyDivider: hasPasskey && !oidcEnabled,
+      firstButton: oidcEnabled ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
+      otherMethodsFirstControl: hasPasskey ? 'passkey' : 'password'},
+    '登录入口组合 oidc=' + oidcEnabled + ', passkey=' + hasPasskey);
+  }
+}
+
 // ---------- 二、锁定判定 ----------
 eq(loginView({lockedSeconds: 0}).locked, false, '剩 0 秒不算锁定');
 eq(loginView({lockedSeconds: 1}).locked, true, '剩 1 秒就算锁定');
@@ -127,9 +147,9 @@ for (const id of CONTROL_IDS) eq(freeControls[id], false, '未锁定时 ' + id +
 // 登录成功后要去的地方。安全过滤器把登录页原地吐在 /config 上（地址栏不变），
 // 因此「当前已经是那个地址、只是带个片段」时，replace 落在同址上只做片段导航，
 // 页面不重取，人进不了控制台——那一档要改成整页重载。
-eq(landing('http://h/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
-eq(landing('http://h/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
-eq(landing('http://h/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
+eq(landing('https://accounts.example.com/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
+eq(landing('https://accounts.example.com/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
+eq(landing('https://accounts.example.com/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
 
 // 断网时通行密钥登录不能露出浏览器的英文；取消和设备错误仍按各自原因处理。
 const loginHtml = readFileSync(new URL('../../../main/resources/config-ui/login.html', import.meta.url), 'utf8');
@@ -175,7 +195,9 @@ eq((await passkeyResult(0)).entered, true, '通行密钥正常验证仍进入控
 
 const paint = loginHtml.match(/^  function paint\(\) \{[\s\S]*?^  }/m)?.[0];
 const showLogin = loginHtml.match(/^  function showLogin\(state\) \{[\s\S]*?^  }/m)?.[0];
-if (!paint || !showLogin) throw new Error('登录页缺少 paint 或 showLogin');
+const focusOtherMethod = loginHtml.match(/^  function focusOtherMethod\(\) \{[\s\S]*?^  }/m)?.[0] || '';
+const passwordSubmit = loginHtml.match(/^  \$\('#form'\)\.addEventListener\('submit', async e => \{[\s\S]*?^  }\);/m)?.[0];
+if (!paint || !showLogin || !passwordSubmit) throw new Error('登录页缺少 paint 或 showLogin');
 
 for (const oidcEnabled of [false, true]) {
   for (const hasPasskey of [false, true]) {
@@ -186,6 +208,8 @@ for (const oidcEnabled of [false, true]) {
         for (const match of loginHtml.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
           const classes = new Set(match[0].match(/\bclass="([^"]*)"/)?.[1].split(' ') || []);
           elements.set('#' + match[1], {
+            insertBefore(child) { child.parentElement = this; },
+            textContent: '', value: '',
             disabled: false, open: match[0].includes(' open'),
             focus() { focused = match[1]; },
             classList: {
@@ -197,17 +221,26 @@ for (const oidcEnabled of [false, true]) {
           });
         }
         const $ = selector => elements.get(selector);
+        $('#passkey-field').parentElement = $('#login');
+        let submitPassword;
+        $('#form').addEventListener = (name, handler) => { submitPassword = handler; };
         const state = {oidcEnabled, oidcCreateSupported: supported, lockedSeconds, totpRequired: true};
         const context = {
           $, loginView, loginControlState, state, URLSearchParams,
           location: {search: ''}, show: selector => $(selector).classList.toggle('hidden', false),
-          tick() {}, offerPasskey() {},
+          tick() {}, offerPasskey() {}, markInvalidCredentials() {},
+          CONSOLE: '/config', fetch: async () => ({json: async () => ({
+            success: false, credentialsRejected: true, message: '密码或验证码不正确'
+          })}),
         };
         runInNewContext(`let hasPasskey = ${hasPasskey}, folded = false, totp = false,
           lockedSeconds = 0, oidcEnabled = false, oidcCreateSupported = false;
-          ${paint}\n${showLogin}\nshowLogin(state);`, context);
+          ${paint}\n${focusOtherMethod}\n${passwordSubmit}\n${showLogin}\nshowLogin(state);`, context);
         const label = JSON.stringify(state) + ', passkey=' + hasPasskey;
         eq($('#oidc-field').classList.contains('hidden'), !oidcEnabled, '统一登录显隐 ' + label);
+        eq($('#passkey-field').parentElement === $(oidcEnabled ? '#local-passkey' : '#login'),
+          true, '通行密钥与说明位于正确的折内或卡片上 ' + label);
+        eq($('#login-fold-label')?.textContent, oidcEnabled ? '其他登录方式' : '使用密码登录', '折叠入口文案 ' + label);
         eq($('#oidc-create-field').classList.contains('hidden'), !(oidcEnabled && !!supported), '注册显隐 ' + label);
         eq($('#passkey-field').classList.contains('hidden'), !hasPasskey, '通行密钥显隐 ' + label);
         eq($('#passkey').classList.contains('secondary'), oidcEnabled && hasPasskey, '通行密钥样式 ' + label);
@@ -218,7 +251,19 @@ for (const oidcEnabled of [false, true]) {
         if (oidcEnabled || hasPasskey) {
           eq(focused, oidcEnabled ? 'oidc' : 'passkey', '焦点落在首颗可见按钮 ' + label);
           $('#pwd-fold').open = true;
-          runInNewContext('paint();', context);
+          if (oidcEnabled && focusOtherMethod) {
+            runInNewContext('focusOtherMethod();', context);
+            eq(focused, lockedSeconds > 0 ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
+              '展开后聚焦可用的首个本地控件 ' + label);
+          }
+          await submitPassword({preventDefault() {}});
+          eq($('#pwd-fold').open, true, '口令失败后输入框仍展开 ' + label);
+          eq($('#msg').textContent.includes('密码或验证码'), true, '口令失败提示保留 ' + label);
+          eq($('#msg').classList.contains('hidden'), false, '口令失败提示可见 ' + label);
+          runInNewContext('totp = true; lockedSeconds = 90; paint(); lockedSeconds--; paint();', context);
+          eq($('#pwd-fold').open, true, '验证码与倒计时重画不收起 ' + label);
+          eq($('#code-field').classList.contains('hidden'), false, '动态验证码仍可见 ' + label);
+          runInNewContext('lockedSeconds = state.lockedSeconds; paint();', context);
           eq($('#pwd-fold').open, true, '重画不收起手动展开的口令 ' + label);
         }
         for (const id of CONTROL_IDS) eq($('#' + id).disabled, lockedSeconds > 0, '锁定控件 ' + id + label);

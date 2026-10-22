@@ -34,6 +34,26 @@ eq(view({hasPasskey: true, totpRequired: true}),
 eq(view({hasPasskey: true, lockedSeconds: 90}),
   {passkey: true, folded: true, code: false, disabled: true}, '有钥·无码·锁定——通行密钥那条路也禁');
 
+// 统一登录与通行密钥的四种组合：本地入口的位置、摘要与初始焦点。
+for (const oidcEnabled of [false, true]) {
+  for (const hasPasskey of [false, true]) {
+    const v = loginView({oidcEnabled, hasPasskey});
+    eq({otherMethodsFolded: v.otherMethodsFolded, passkey: v.passkey,
+      passwordFolded: v.passwordFolded, foldLabel: v.foldLabel,
+      passkeySecondary: v.passkeySecondary, passwordSecondary: v.passwordSecondary,
+      passkeyDivider: v.passkeyDivider, firstButton: v.firstButton,
+      otherMethodsFirstControl: v.otherMethodsFirstControl},
+    {otherMethodsFolded: oidcEnabled, passkey: hasPasskey,
+      passwordFolded: oidcEnabled || hasPasskey,
+      foldLabel: oidcEnabled ? '其他登录方式' : '使用密码登录',
+      passkeySecondary: oidcEnabled && hasPasskey, passwordSecondary: oidcEnabled,
+      passkeyDivider: hasPasskey && !oidcEnabled,
+      firstButton: oidcEnabled ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
+      otherMethodsFirstControl: hasPasskey ? 'passkey' : 'password'},
+    '登录入口组合 oidc=' + oidcEnabled + ', passkey=' + hasPasskey);
+  }
+}
+
 // —— 档二：锁定判定 ——
 eq(loginView({lockedSeconds: 0}).locked, false, '剩 0 秒不算锁定');
 eq(loginView({lockedSeconds: 1}).locked, true, '剩 1 秒就算锁定');
@@ -48,15 +68,15 @@ eq(lockText(60).includes('输入正确也会被拒绝'), true, '文案说明锁�
 eq(lockText(7) === lockText(8), false, '不同剩余时长给出不同文案');
 
 // —— 档四：落点 ——
-eq(landing('http://h/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
-eq(landing('http://h/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
-eq(landing('http://h/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
+eq(landing('https://accounts.example.com/config#/settings', '#/settings', '/config').reload, true, '同址带片段：replace 只做片段导航，须改重载');
+eq(landing('https://accounts.example.com/config', '', '/config'), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
+eq(landing('https://accounts.example.com/config?token=x', '', '/config').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
 // 配了部署前缀：落点是带前缀的控制台根，不落回裸的 /config
-eq(landing('http://h/novabot/config#/settings', '#/settings', '/novabot/config'),
+eq(landing('https://accounts.example.com/novabot/config#/settings', '#/settings', '/novabot/config'),
   {reload: true, url: '/novabot/config#/settings'}, '带前缀同址带片段：落点带前缀，须改重载');
-eq(landing('http://h/novabot/config', '', '/novabot/config'),
+eq(landing('https://accounts.example.com/novabot/config', '', '/novabot/config'),
   {reload: false, url: '/novabot/config'}, '带前缀无片段：落点是 /novabot/config，不重载');
-eq(landing('http://h/config#/settings', '#/settings', '/novabot/config'),
+eq(landing('https://accounts.example.com/config#/settings', '#/settings', '/novabot/config'),
   {reload: false, url: '/novabot/config#/settings'}, '现址没前缀而控制台带前缀：不算同址，照常整页导航');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
