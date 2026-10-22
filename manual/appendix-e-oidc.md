@@ -82,7 +82,7 @@ NovaBot 的“统一登录 · 回调地址”可以留空，此时从收到请�
 | 统一登录 · 客户端密钥 | `client-secret` | 填该客户端的密钥，用于 `client_secret_basic`。已有密钥时，留空或保持遮掩值表示不修改已保存的密钥。 |
 | 统一登录 · 授权范围 | `scopes` | 默认 `openid profile email offline_access`；空格分隔，必须包含 `openid`。建议保留默认四项。 |
 | 统一登录 · 回调地址 | `redirect-uri` | 填上一节在账户中心登记的完整回调地址；留空时由请求推导，反向代理后面建议显式填。回环地址允许 HTTP，其余必须 HTTPS。 |
-| 统一登录 · 账户管理页 | `management-uri` | 可留空；要填就填以 `https://` 开头的完整管理页地址，不能含用户名、密码或 `#` 片段。例如 `https://accounts.example.com/admin/novabot/console/`。 |
+| 统一登录 · 账户管理页 | `management-uri` | 可留空；要填就填以 `https://` 开头的完整管理页地址，不能含用户名、密码或 `#` 片段。填账户中心里管理用户、新建账号的网页地址，不是以 `/.well-known/openid-configuration` 结尾的发现文档地址。例如 `https://accounts.example.com/admin/novabot/console/`。 |
 
 重启后，登录页会多一个“使用统一登录”。口令登录照旧保留；账户中心出问题时，管理员仍可用控制台自己的口令进来处理。
 

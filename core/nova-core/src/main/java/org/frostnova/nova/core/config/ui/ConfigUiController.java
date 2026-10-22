@@ -1213,7 +1213,7 @@ public class ConfigUiController {
         try {
             OidcClient.parseManagementUri(toValidate.get("novabot.core.config-ui.oidc.management-uri"));
         } catch (OidcException error) {
-            outOfRange.add("novabot.core.config-ui.oidc.management-uri（统一登录 · 账户管理页）：请填写 https:// 开头的完整地址，或者留空");
+            outOfRange.add("novabot.core.config-ui.oidc.management-uri（统一登录 · 账户管理页）：" + error.getMessage());
         }
         if (!outOfRange.isEmpty()) {
             result.put("success", false);

@@ -534,7 +534,7 @@ public class NovaCoreProperties {
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("统一登录 · 账户管理页")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
-            @ConfigSummary("可留空；要填就填 https:// 开头的完整地址。留空时不显示“账户中心”和“新建成员”。")
+            @ConfigSummary("填账户中心里管理用户、新建账号的网页地址，即在浏览器打开就能建账号的页面；不是发现文档地址。可留空，留空时不显示“账户中心”和“新建成员”。请填 https:// 开头的完整地址。")
             private String managementUri = "";
         }
 

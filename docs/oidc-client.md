@@ -12,7 +12,7 @@
 | `client-secret` | 空 | client_secret_basic 使用的密钥 |
 | `scopes` | `openid profile email offline_access` | 空格分隔，必须包含 openid |
 | `redirect-uri` | 空 | 显式回调地址；HTTP 仅允许回环地址 |
-| `management-uri` | 空 | 供成员管理跳转使用，可不填 |
+| `management-uri` | 空 | 填账户中心里管理用户、新建账号的网页地址，不是以 `/.well-known/openid-configuration` 结尾的发现文档地址；可留空，留空时不显示“账户中心”和“新建成员”。要填就填以 `https://` 开头的完整地址 |
 
 关闭开关或 issuer 留空时，客户端不访问账户中心。密钥通过现有 SensitiveFields 遮掩，经通用配置保存入口修改这组设置时，要求签发未满 10 分钟的本地登录会话；修改后重启生效。遮掩值和留空不会覆盖旧密钥，显式清除仍遵循现有机密配置规则。
 

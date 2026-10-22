@@ -137,6 +137,55 @@ class ConsoleAccountsTest extends OidcTestSupport {
         } finally { logger.detachAppender(logs); logs.stop(); }
     }
 
+    @Test
+    void discoveryManagementUriRejectsSettingsWithoutWriting() throws Exception {
+        String before = Files.readString(configFile);
+        var local = auth.issueForPassword("127.0.0.1");
+        for (String address : List.of("https://accounts.example.com/.well-known/openid-configuration",
+                "https://accounts.example.com/tenant/.well-known/other-document")) {
+            for (String key : List.of("novabot.core.config-ui.oidc.management-uri", "novabot.core.configUI.oidc.management_uri")) {
+                var result = perform(post("/config/api/values").content(JSONObject.toJSONString(Map.of(
+                        key, address, "novabot.core.push.enabled", "false"))), local).andReturn();
+                assertEquals(before, Files.readString(configFile), "发现文档地址不能写入同批的任何项");
+                assertEquals(400, result.getResponse().getStatus());
+                var body = JSONObject.parseObject(result.getResponse().getContentAsString());
+                assertFalse(body.getBooleanValue("success"));
+                String issue = body.getJSONArray("issues").getString(0);
+                assertTrue(issue.contains("novabot.core.config-ui.oidc.management-uri"));
+                assertTrue(issue.contains("这是统一登录的发现文档地址，不是管理页"));
+                assertTrue(issue.contains("请填账户中心里管理用户、新建账号的那个网页地址，或者留空"));
+            }
+        }
+    }
+
+    @Test
+    void storedDiscoveryManagementUriIsEmptyAndWarnsOnce() throws Exception {
+        new ConfigurationFileService(configFile).write(Map.of("novabot.core.config-ui.oidc.management-uri",
+                "https://accounts.example.com/.well-known/openid-configuration"));
+        config.setManagementUri(new ConfigurationFileService(configFile).read()
+                .get("novabot.core.config-ui.oidc.management-uri"));
+        Logger logger = (Logger) LoggerFactory.getLogger(OidcClient.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            rebuildClient();
+            assertTrue(client.managementUri().isEmpty());
+            console();
+            var session = oidcSession(accounts.role(enabledMember().id(), Role.ADMIN));
+            for (int i = 0; i < 3; i++) {
+                perform(get("/config/api/auth/state"), session).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.managementUri").value(""));
+                perform(get("/config/api/accounts"), session).andExpect(status().isOk())
+                        .andExpect(jsonPath("$.managementUri").value(""));
+            }
+            var warnings = logs.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
+            assertEquals(1, warnings.size());
+            String warning = warnings.get(0).getFormattedMessage();
+            assertTrue(warning.contains("novabot.core.config-ui.oidc.management-uri"));
+            assertTrue(warning.contains("发现文档地址") && warning.contains("已按留空处理"));
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
     // 地址填错要在保存时指出具体设置，宽松键名也不能绕过校验，整批配置保持原样。
     @ParameterizedTest
     @ValueSource(strings = {"http://accounts.example.com/manage", "accounts.example.com/manage",
