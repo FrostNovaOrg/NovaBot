@@ -28,6 +28,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("登录页装配")
 class ConfigUiLoginPageTest {
     @Test
+    @DisplayName("统一登录主按钮在口令表单之前，注册沿用登录入口")
+    void oidcEntryPrecedesPasswordForm() throws IOException {
+        String html = ConfigUiLoginPage.html("");
+        assertTrue(html.indexOf("id=\"oidc\"") < html.indexOf("id=\"form\""), "统一登录入口应排在口令表单前");
+        assertFalse(html.matches("(?s).*id=\"oidc\"[^>]*class=\"[^\"]*lnk.*"), "统一登录应使用主按钮样式");
+        assertTrue(html.indexOf("id=\"oidc\"") < html.indexOf("id=\"oidc-create\""));
+        assertTrue(html.indexOf("id=\"oidc-create\"") < html.indexOf("id=\"passkey\""));
+        assertTrue(html.contains("用统一身份注册"));
+        assertTrue(html.contains("第一次来？先在账户中心注册，注册完会回到这里登记，等管理员授权后就能用。"));
+        assertTrue(html.contains("/api/oidc/login?create=1"));
+    }
+
+    @Test
     @DisplayName("真发出去的那张页面里带着判定脚本，且占位不留残迹")
     void realPageCarriesTheModel() throws IOException {
         String html = ConfigUiLoginPage.html("");

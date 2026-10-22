@@ -114,6 +114,7 @@ public class ConfigUiAuthController {
         result.put("enabled", authService.isEnabled());
         result.put("totpRequired", authService.totpRequired());
         result.put("oidcEnabled", authService.oidcEnabled());
+        result.put("oidcCreateSupported", authService.oidcCreateSupported());
 
         // 配置文件在不在。界面进首页该不该转到初始设置<b>不再看这一位</b>：同意使用协议
         // 就会写出 application.yml，按文件在不在判的话刚装好的机器会停在空首页。

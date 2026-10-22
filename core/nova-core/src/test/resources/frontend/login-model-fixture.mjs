@@ -58,6 +58,22 @@ for (const [state, expected, name] of CELLS) eq(view(state), expected, '矩阵 '
 eq(view({hasPasskey: true, totpRequired: true}).passkey,
   view({hasPasskey: true, totpRequired: false}).passkey, '通行密钥按钮不受二次验证影响');
 
+for (const hasPasskey of [false, true]) {
+  for (const oidcCreateSupported of [undefined, false, true]) {
+    const v = loginView({oidcEnabled: true, oidcCreateSupported, hasPasskey});
+    eq(v.oidc, true, '统一登录显示');
+    eq(v.oidcCreate, !!oidcCreateSupported, '注册只在支持 create 时显示');
+    eq(v.passwordFolded, true, '统一登录启用时口令折起');
+    eq(v.passkeySecondary, hasPasskey, '统一登录时通行密钥为次按钮');
+    eq(v.firstButton, 'oidc', '折起后聚焦第一颗可见按钮');
+  }
+}
+eq(loginView({oidcCreateSupported: true}).oidcCreate, false, '关闭统一登录时注册不出');
+for (const hasPasskey of [false, true]) {
+  eq(loginView({hasPasskey, oidcEnabled: false, oidcCreateSupported: true}).passwordFolded,
+    hasPasskey, '关闭统一登录后保留原有折叠规则');
+}
+
 // ---------- 二、锁定判定 ----------
 eq(loginView({lockedSeconds: 0}).locked, false, '剩 0 秒不算锁定');
 eq(loginView({lockedSeconds: 1}).locked, true, '剩 1 秒就算锁定');
@@ -156,6 +172,61 @@ eq((await passkeyResult(0, {name: 'NotAllowedError', message: 'cancelled'})).tex
 eq((await passkeyResult(0, new Error('设备不可用'))).text, '无法使用通行密钥：设备不可用', '通行密钥设备错误保留原因');
 eq((await passkeyResult(0, new TypeError('设备参数错误'))).text, '无法使用通行密钥：设备参数错误', '非请求的 TypeError 保留原因');
 eq((await passkeyResult(0)).entered, true, '通行密钥正常验证仍进入控制台');
+
+const paint = loginHtml.match(/^  function paint\(\) \{[\s\S]*?^  }/m)?.[0];
+const showLogin = loginHtml.match(/^  function showLogin\(state\) \{[\s\S]*?^  }/m)?.[0];
+if (!paint || !showLogin) throw new Error('登录页缺少 paint 或 showLogin');
+
+for (const oidcEnabled of [false, true]) {
+  for (const hasPasskey of [false, true]) {
+    for (const supported of [undefined, false, true]) {
+      for (const lockedSeconds of [0, 90]) {
+        const elements = new Map();
+        let focused = '';
+        for (const match of loginHtml.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
+          const classes = new Set(match[0].match(/\bclass="([^"]*)"/)?.[1].split(' ') || []);
+          elements.set('#' + match[1], {
+            disabled: false, open: match[0].includes(' open'),
+            focus() { focused = match[1]; },
+            classList: {
+              contains: name => classes.has(name),
+              toggle(name, force) {
+                if (force) classes.add(name); else classes.delete(name);
+              },
+            },
+          });
+        }
+        const $ = selector => elements.get(selector);
+        const state = {oidcEnabled, oidcCreateSupported: supported, lockedSeconds, totpRequired: true};
+        const context = {
+          $, loginView, loginControlState, state, URLSearchParams,
+          location: {search: ''}, show: selector => $(selector).classList.toggle('hidden', false),
+          tick() {}, offerPasskey() {},
+        };
+        runInNewContext(`let hasPasskey = ${hasPasskey}, folded = false, totp = false,
+          lockedSeconds = 0, oidcEnabled = false, oidcCreateSupported = false;
+          ${paint}\n${showLogin}\nshowLogin(state);`, context);
+        const label = JSON.stringify(state) + ', passkey=' + hasPasskey;
+        eq($('#oidc-field').classList.contains('hidden'), !oidcEnabled, '统一登录显隐 ' + label);
+        eq($('#oidc-create-field').classList.contains('hidden'), !(oidcEnabled && !!supported), '注册显隐 ' + label);
+        eq($('#passkey-field').classList.contains('hidden'), !hasPasskey, '通行密钥显隐 ' + label);
+        eq($('#passkey').classList.contains('secondary'), oidcEnabled && hasPasskey, '通行密钥样式 ' + label);
+        eq($('#submit').classList.contains('secondary'), oidcEnabled, '口令提交样式 ' + label);
+        eq($('#pwd-fold').open, !(oidcEnabled || hasPasskey), '口令折叠 ' + label);
+        eq($('#pwd-fold').classList.contains('bare'), !(oidcEnabled || hasPasskey), '摘要行显隐 ' + label);
+        eq($('#passkey-or').classList.contains('hidden'), !(hasPasskey && !oidcEnabled), '分隔线显隐 ' + label);
+        if (oidcEnabled || hasPasskey) {
+          eq(focused, oidcEnabled ? 'oidc' : 'passkey', '焦点落在首颗可见按钮 ' + label);
+          $('#pwd-fold').open = true;
+          runInNewContext('paint();', context);
+          eq($('#pwd-fold').open, true, '重画不收起手动展开的口令 ' + label);
+        }
+        for (const id of CONTROL_IDS) eq($('#' + id).disabled, lockedSeconds > 0, '锁定控件 ' + id + label);
+        for (const id of ['oidc', 'oidc-create']) eq($('#' + id).disabled, false, '统一登录不受本地锁定影响 ' + id + label);
+      }
+    }
+  }
+}
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

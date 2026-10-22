@@ -42,7 +42,8 @@ export function lockText(seconds) {
 /**
  * 登录页此刻该长什么样
  *
- * 三条规则各管一维，互不牵连：
+ * 统一登录启用时优先显示，口令折到下面；注册入口取决于账户中心的能力。
+ * 其他规则：
  * <ul>
  *   <li><b>登记过通行密钥</b>——摆出主按钮，口令那条路折起来成为第二条路。
  *       没登记过就一个字也不提：一个点了必然失败的按钮，比没有这个按钮更让人不知所措</li>
@@ -53,17 +54,25 @@ export function lockText(seconds) {
  * </ul>
  * @param state 登录状态，取自 /api/auth/state 再补上「这台机器登记过通行密钥没有」
  * @return {{passkey: boolean, passwordFolded: boolean, code: boolean, locked: boolean,
- *   disabled: boolean, lockText: string}} 显隐与文案
+ *   disabled: boolean, lockText: string, oidc: boolean, oidcCreate: boolean,
+ *   passkeySecondary: boolean, passwordSecondary: boolean, passkeyDivider: boolean, firstButton: string}} 显隐与文案
  */
 export function loginView(state) {
   const s = state || {};
   const seconds = Math.floor(Number(s.lockedSeconds) || 0);
   const locked = seconds > 0;
   const passkey = !!s.hasPasskey;
+  const oidc = !!s.oidcEnabled;
 
   return {
     passkey,
-    passwordFolded: passkey,
+    oidc,
+    oidcCreate: oidc && !!s.oidcCreateSupported,
+    passkeySecondary: passkey && oidc,
+    passwordSecondary: oidc,
+    passkeyDivider: passkey && !oidc,
+    firstButton: oidc ? 'oidc' : (passkey ? 'passkey' : 'password'),
+    passwordFolded: passkey || oidc,
     code: !!s.totpRequired,
     locked,
     disabled: locked,

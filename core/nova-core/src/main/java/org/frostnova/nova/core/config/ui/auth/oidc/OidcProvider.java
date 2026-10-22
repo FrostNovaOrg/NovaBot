@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind.*;
 
@@ -38,11 +39,14 @@ import static org.frostnova.nova.core.config.ui.auth.oidc.OidcException.Kind.*;
 @lombok.extern.slf4j.Slf4j
 final class OidcProvider {
     private static final Duration CACHE_TTL = Duration.ofHours(1);
+    private static final Duration DISCOVERY_RETRY_INTERVAL = Duration.ofSeconds(30);
     private static final Duration KEY_REFRESH_INTERVAL = Duration.ofSeconds(30);
     private final String issuer;
     private final RestTemplate http;
     private final Clock clock;
-    private Discovery discovery;
+    private volatile Discovery discovery;
+    private final AtomicBoolean discoveryLoading = new AtomicBoolean();
+    private volatile Instant nextDiscoveryAttempt = Instant.MIN;
     private Instant discoveryExpires = Instant.MIN;
     private Map<String, SigningKey> keys = Map.of();
     private Instant keysExpire = Instant.MIN;
@@ -52,6 +56,27 @@ final class OidcProvider {
         this.issuer = issuer;
         this.http = http;
         this.clock = clock;
+    }
+
+    /** Never waits for discovery I/O or its monitor; stale metadata still describes known capabilities. */
+    boolean createSupported() {
+        Discovery known = discovery;
+        if (known != null) return known.createSupported();
+        if (!clock.instant().isBefore(nextDiscoveryAttempt) && discoveryLoading.compareAndSet(false, true)) {
+            nextDiscoveryAttempt = clock.instant().plus(DISCOVERY_RETRY_INTERVAL);
+            Thread loader = new Thread(() -> {
+                try {
+                    discovery();
+                } catch (RuntimeException error) {
+                    log.debug("OIDC discovery prefetch failed");
+                } finally {
+                    discoveryLoading.set(false);
+                }
+            }, "oidc-discovery");
+            loader.setDaemon(true);
+            loader.start();
+        }
+        return false;
     }
 
     synchronized Discovery discovery() {
@@ -65,7 +90,8 @@ final class OidcProvider {
             throw new OidcException(PROVIDER_ERROR, "OIDC discovery issuer does not exactly match configured issuer");
         }
         var fresh = new Discovery(endpoint(json, "authorization_endpoint"), endpoint(json, "token_endpoint"),
-                endpoint(json, "jwks_uri"), Boolean.TRUE.equals(json.get("authorization_response_iss_parameter_supported")));
+                endpoint(json, "jwks_uri"), Boolean.TRUE.equals(json.get("authorization_response_iss_parameter_supported")),
+                json.get("prompt_values_supported") instanceof JSONArray prompts && prompts.contains("create"));
         supports(json, "response_types_supported", "code");
         supports(json, "code_challenge_methods_supported", "S256");
         supports(json, "token_endpoint_auth_methods_supported", "client_secret_basic");
@@ -216,6 +242,6 @@ final class OidcProvider {
         }
     }
 
-    record Discovery(URI authorization, URI token, URI jwks, boolean responseIssuerRequired) { }
+    record Discovery(URI authorization, URI token, URI jwks, boolean responseIssuerRequired, boolean createSupported) { }
     record SigningKey(String algorithm, PublicKey publicKey) { }
 }

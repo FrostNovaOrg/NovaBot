@@ -160,10 +160,12 @@ public abstract class OidcTestSupport {
         public Runnable tokenHook = () -> {};
         public boolean tokenTimeout;
         public int tokenStatus = 200;
-        public int discoveryRequests;
+        public volatile int discoveryRequests;
+        public Runnable discoveryHook = () -> {};
         public int keyRequests;
         public int tokenRequests;
         public boolean responseIssuerSupported;
+        public List<String> prompts = List.of();
         public boolean discoveryUnavailable;
         public boolean keysUnavailable;
         public boolean tokenUnavailable;
@@ -215,11 +217,13 @@ public abstract class OidcTestSupport {
             String url = request.getURI().toString();
             if (url.equals(ISSUER + "/.well-known/openid-configuration")) {
                 discoveryRequests++;
+                discoveryHook.run();
                 assertEquals(HttpMethod.GET, request.getMethod());
                 if (discoveryUnavailable) throw new IOException("discovery unavailable");
                 return response(Map.of("issuer", discoveryIssuer, "authorization_endpoint", ISSUER + "/authorize",
                         "token_endpoint", tokenEndpoint, "jwks_uri", ISSUER + "/jwks",
-                        "authorization_response_iss_parameter_supported", responseIssuerSupported), 200);
+                        "authorization_response_iss_parameter_supported", responseIssuerSupported,
+                        "prompt_values_supported", prompts), 200);
             }
             if (url.equals(ISSUER + "/jwks")) {
                 keyRequests++;

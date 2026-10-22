@@ -85,6 +85,9 @@ public final class OidcClient {
 
     public boolean isEnabled() { return enabled; }
 
+    /** Cached provider capability; an initial lookup is scheduled without blocking the caller. */
+    public boolean createSupported() { return enabled && provider.createSupported(); }
+
     /** Optional destination exposed by the administrator account list. */
     public Optional<URI> managementUri() {
         return managementUri;
@@ -120,6 +123,10 @@ public final class OidcClient {
      * short-lived SameSite=Lax correlation cookie (and pass state only to the intended callback).
      */
     public Authorization startLogin(HttpServletRequest request) {
+        return startLogin(request, false);
+    }
+
+    public Authorization startLogin(HttpServletRequest request, boolean create) {
         requireEnabled();
         URI callback = callbackUri(request);
         var discovery = provider.discovery();
@@ -127,12 +134,13 @@ public final class OidcClient {
         String nonce = randomValue();
         String verifier = randomValue();
         Instant expiry = clock.instant().plus(LOGIN_TTL);
-        URI authorization = UriComponentsBuilder.fromUri(discovery.authorization())
+        var builder = UriComponentsBuilder.fromUri(discovery.authorization())
                 .queryParam("response_type", "code").queryParam("client_id", "{client}")
                 .queryParam("redirect_uri", "{redirect}").queryParam("scope", "{scope}")
                 .queryParam("state", "{state}").queryParam("nonce", "{nonce}")
-                .queryParam("code_challenge", "{challenge}").queryParam("code_challenge_method", "S256")
-                .encode().buildAndExpand(Map.of("client", clientId, "redirect", callback.toString(), "scope", scopes,
+                .queryParam("code_challenge", "{challenge}").queryParam("code_challenge_method", "S256");
+        if (create && discovery.createSupported()) builder.queryParam("prompt", "create");
+        URI authorization = builder.encode().buildAndExpand(Map.of("client", clientId, "redirect", callback.toString(), "scope", scopes,
                         "state", state, "nonce", nonce, "challenge", challenge(verifier))).toUri();
         synchronized (transactions) {
             transactions.values().removeIf(transaction -> !clock.instant().isBefore(transaction.expiresAt()));
