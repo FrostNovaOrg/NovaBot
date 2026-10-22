@@ -2,9 +2,9 @@
 
 <img src="docs/assets/logo.svg" alt="NovaBot" height="72">
 
-<h3>Bilibili live stream and feed notification bot</h3>
+<h3>Bilibili live-streaming operations assistant</h3>
 
-<p>Pushes go-live, stream-end and new-post notifications to QQ groups and friends as soon as they happen;<br>generates a data report image automatically when a stream ends, with all configuration done in the browser, and lets you bring in others to help manage your streamers.</p>
+<p>Tracks stream data, generates post-stream reports, and sends go-live and feed notifications;<br>streamers and guild staff can each sign in to set up their own notifications and check their own data.</p>
 
 <p><a href="README.md">简体中文</a> · English</p>
 <p>
@@ -26,9 +26,9 @@
 
 <br>
 
-<a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="Stream report image: stat cards, engagement curve, gifts and rankings, danmaku word cloud (sample data)" width="100%"></a>
+<a href="docs/assets/console-showcase.png"><img src="docs/assets/console-showcase.png" alt="Console: message template editor and preview on the left; a streamer page's period stats, recent trend and period audience on the right (sample data)" width="100%"></a>
 
-<p><sub>The report image generated automatically after a stream ends (sample data; click to see the full-size image)</sub></p>
+<p><sub>Build message templates from drag-and-drop blocks with a live preview (left); a streamer page with period stats, recent trend and period audience (right) (sample data)</sub></p>
 
 </div>
 
@@ -37,34 +37,36 @@
 <table>
 <tr>
 <td width="50%" valign="top">
-<b>Notifications</b><br>
-Going live, ending a stream and feed updates can all be pushed, and one streamer can be pushed to several groups or friends. Each channel, meaning "this streamer pushed to this group", has its own template, amount display, quiet hours and command switches, and can follow the one global quiet-hours setting instead; each streamer also has their own block list.
+<b>Data</b><br>
+Each streamer's page shows the overview with change against the previous period, the recent trend, a broadcast calendar, broadcast time slots and the period's audience. All configuration is done in the browser; the home page shows what was pushed today, and when something goes wrong there is a health self-check with suggested fixes.
 </td>
 <td width="50%" valign="top">
 <b>Reports</b><br>
-A data report image is generated automatically when a stream ends, and a weekly operations report can go out every Monday; each streamer's page shows the overview and trends on one page, with a broadcast calendar. Mentioning the bot with @ in a group also lets you look up data, pull leaderboards, or ask for a live image.
+A data report image is generated automatically when a stream ends, and a weekly operations report can go out to groups or friends every Monday. Mentioning the bot with @ in a group also lets you look up data, pull leaderboards, or ask for a live image.
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<b>Console</b><br>
-Adding streamers, editing templates and sending test messages are all done in the browser. The home page shows what was pushed today, and when something goes wrong there is a health self-check with suggested fixes. You can also let others sign in through single sign-on and manage only the streamers you assign to them; see [Chapter 15](https://frostnovaorg.github.io/NovaBot/15-members.html).
+<b>Notifications</b><br>
+Go-live, stream-end and feed updates are pushed to QQ groups and friends; each channel, meaning "this streamer pushed to this group", has its own template, amount display, quiet hours and command switches, and each streamer has their own block list. After a stream ends, the guard memberships and gifts of that stream can also be announced, with a threshold set per channel.
 </td>
 <td width="50%" valign="top">
-<b>Extensions</b><br>
-Live room events can be forwarded to other programs on the same machine, and you can write your own plugins to handle danmaku, gifts and guard memberships.
+<b>Multiple accounts</b><br>
+With single sign-on connected, streamers and guild staff each sign in and can only view and change the streamers assigned to them; the administrator grants access and assigns streamers, and every change is logged.
 </td>
 </tr>
 </table>
 
+**Extensions**: live room events can be forwarded to other programs on the same machine, and you can write your own plugins to handle danmaku, gifts and guard memberships.
+
 <p align="center">
-<img src="docs/assets/console-showcase.png" alt="Console: message template editor and monthly trends (sample data)" width="100%">
+<a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="Stream report image: stat cards, engagement curve, gifts and rankings, danmaku word cloud (sample data)" width="100%"></a>
 <br>
-<sub>Build message templates from drag-and-drop blocks in the console, with a live preview on the right; view each streamer's trends by week / by month (sample data)</sub>
+<sub>The report image generated automatically after a stream ends (sample data; click to see the full-size image)</sub>
 </p>
 
 > [!NOTE]
-> NovaBot is meant for small and mid-sized guilds, independent streamers and the people who run their channels, to look after live rooms they own or are authorized to manage. It does not try to get around the platform's risk controls, and it is not suited to unauthorized large-scale data collection. If you are not sure whether it fits your case, read [Chapter 1](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html) first.
+> NovaBot is meant for small and mid-sized guilds, independent streamers and the people who run their channels. The guild or streamer hosts it themselves, to look after live rooms they own or are authorized to manage. It does not try to get around the platform's risk controls, and it is not suited to unauthorized large-scale data collection. If you are not sure whether it fits your case, read [Chapter 1](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html) first.
 
 ## Quick start
 
@@ -91,7 +93,7 @@ The user manual and the console interface are currently available in Chinese onl
 | See stream reports and trends | [Chapter 9: How your streams went](https://frostnovaorg.github.io/NovaBot/09-stream-reports.html) |
 | Upgrade and back up | [Chapter 13: Upgrades and backups](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html) |
 | Solve a problem | [Chapter 14: What to do when something goes wrong](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html) |
-| Have someone help manage my streamers | [Chapter 15: Members: getting others to help manage your streamers](https://frostnovaorg.github.io/NovaBot/15-members.html) |
+| Let streamers and staff sign in and manage their own | [Chapter 15: Members: letting streamers and guild staff manage their own](https://frostnovaorg.github.io/NovaBot/15-members.html) |
 | Connect single sign-on | [Appendix E: Connecting a single sign-on account center](https://frostnovaorg.github.io/NovaBot/appendix-e-oidc.html) |
 
 For the other chapters, see the [user manual contents](https://frostnovaorg.github.io/NovaBot/index.html). For problems and suggestions, please open an [Issue](../../issues) and attach the relevant excerpt from the console's Logs page (「日志」) or from `journalctl -u novabot@<version>`.
