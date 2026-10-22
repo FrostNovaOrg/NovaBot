@@ -92,6 +92,10 @@
       color: var(--on-accent); cursor: pointer; background: var(--accent);
       border: none; border-radius: var(--r-ctl);
     }
+    button.secondary {
+      color: var(--text); background: var(--surface); border: 1px solid var(--line);
+    }
+    button.secondary:hover { border-color: var(--accent) }
     button:disabled { opacity: .45; cursor: not-allowed }
     .lead { margin: 8px 0 0; font-size:13px; color: var(--dim) }
     .note { margin: 6px 0 0; font-size:13px; color: var(--dim) }
@@ -107,6 +111,7 @@
       margin: 16px 0; font-size:13px; color: var(--dim); text-align: center;
       display: flex; align-items: center; gap: 10px;
     }
+    p.or.hidden { display: none }
     p.or::before, p.or::after { content: ""; flex: 1; height: 1px; background: var(--line) }
     /* 口令那条路折起来时才有摘要行；摊开时（没登记过通行密钥）摘要整行不出。
        折着时它是这条路的入口，做成与主按钮同宽的次级按钮形，而不是一行小字 */
@@ -173,16 +178,25 @@
   <!-- 锁定横条。文案含实值剩余时间，由 lockText 现算，见 login-model.js -->
   <div class="banner hidden" id="lock"></div>
 
+  <div id="oidc-field" class="hidden">
+    <button type="button" id="oidc">使用统一登录</button>
+    <div id="oidc-create-field" class="hidden" style="margin-top:14px">
+      <button type="button" id="oidc-create" class="secondary">用统一身份注册</button>
+      <p class="note">第一次来？先在账户中心注册，注册完会回到这里登记，等管理员授权后就能用。</p>
+    </div>
+    <p class="or">或</p>
+  </div>
+
   <!--
     通行密钥这条路。默认藏着，由脚本问过服务端「这台机器登记过没有」之后才摆出来——
     一个点了必然失败的按钮，比没有这个按钮更让人不知所措。
-    登记过时它是主按钮，口令那条路折到下面去。
+    登记过时口令那条路折到下面去；启用统一登录时它改为次按钮。
   -->
   <div id="passkey-field" class="hidden">
     <button type="button" id="passkey">使用通行密钥登录</button>
     <p class="lead">通过本机的指纹、面容或手机确认即可登录，无需输入密码，也无需动态验证码。</p>
     <p class="note">通行密钥与当前访问地址绑定，更换地址（例如从局域网地址改为域名）后需重新登记。</p>
-    <p class="or">或</p>
+    <p class="or" id="passkey-or">或</p>
   </div>
 
   <details id="pwd-fold" class="bare" open>
@@ -210,7 +224,6 @@
       <button type="submit" id="submit" style="margin-top:14px">登录</button>
     </form>
   </details>
-  <button type="button" id="oidc" class="lnk hidden" style="width:100%;margin-top:14px">使用统一登录</button>
 
   <div class="msg" id="msg" role="alert"></div>
 
@@ -273,6 +286,8 @@
 
   // 二次验证开着没有。由 /api/auth/state 下发
   let totp = false;
+  let oidcEnabled = false;
+  let oidcCreateSupported = false;
 
   // 这个来源还要被锁多少秒。它每秒往下走，走到 0 就把表单放开
   let lockedSeconds = 0;
@@ -309,7 +324,13 @@
    * 判定写在这里的话，八格里只有使用者日常见到的那一格测得着
    */
   function paint() {
-    const view = loginView({hasPasskey, totpRequired: totp, lockedSeconds});
+    const view = loginView({hasPasskey, totpRequired: totp, lockedSeconds, oidcEnabled, oidcCreateSupported});
+
+    $('#oidc-field').classList.toggle('hidden', !view.oidc);
+    $('#oidc-create-field').classList.toggle('hidden', !view.oidcCreate);
+    $('#passkey').classList.toggle('secondary', view.passkeySecondary);
+    $('#submit').classList.toggle('secondary', view.passwordSecondary);
+    $('#passkey-or').classList.toggle('hidden', !view.passkeyDivider);
 
     $('#passkey-field').classList.toggle('hidden', !view.passkey);
     // 折起来时摘要行才出现；摊开的那一档整行不出，否则页面上多一个点了没意义的开合
@@ -320,7 +341,7 @@
       folded = true;
       // 折的这一下会把口令框收起来，而光标此刻正在里面——不接着把它放到主按钮上，
       // 使用者按下的第一个键会落到一个看不见的输入框里
-      $('#passkey').focus();
+      $('#' + view.firstButton).focus();
     }
     $('#code-field').classList.toggle('hidden', !view.code);
 
@@ -351,9 +372,10 @@
   }
 
   function showLogin(state) {
-    $('#oidc').classList.toggle('hidden', !state.oidcEnabled);
+    oidcEnabled = !!state.oidcEnabled;
+    oidcCreateSupported = !!state.oidcCreateSupported;
     const oidcMessages = {
-      pending: '已登记，请等管理员授权',
+      pending: '已登记，请等管理员授权。管理员授权后，再点「使用统一登录」进来即可。',
       disabled: '账号已停用，请联系管理员',
       agreement: '管理员还没同意使用协议',
       configuration: '统一登录的客户端配置有误，请联系管理员',
@@ -372,7 +394,7 @@
     show('#login');
     paint();
     tick();
-    if (!$('#password').disabled) $('#password').focus();
+    if (!folded && !$('#password').disabled) $('#password').focus();
     offerPasskey();
   }
 
@@ -521,6 +543,7 @@
   bindPasswordReveal($('#password'), $('#password-reveal'));
 
   $('#oidc').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login'; });
+  $('#oidc-create').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login?create=1'; });
   $('#passkey').addEventListener('click', loginWithPasskey);
 
   // 忘记口令说明页。与登录卡互斥显示，不另开一张页面——
