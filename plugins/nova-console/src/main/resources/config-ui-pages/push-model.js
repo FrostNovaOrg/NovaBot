@@ -695,7 +695,7 @@ export function revenueSummary(session) {
 /**
  * 「通道设置」静音时段那一行的摘要
  *
- * 三档：跟全局（默认，没设过的会话都是这一档）、本会话自己的时段、本会话不静音。
+ * 三档：跟全局（默认，没设过的通道都是这一档）、本通道自己的时段、本通道不静音。
  * 「静音中」认的是服务端给的 quietActive，不拿起止在这里自己算：判定只留闸门那一份，
  * 两边各算一份的话，屏幕上写着「静音中」、推送却照发（或反过来）。
  * @param session 会话
@@ -715,9 +715,9 @@ export function quietSummary(session, global, savedQuiet) {
 
   let text;
   if (mode === 'off') {
-    text = '本会话不静音';
+    text = '本通道不静音';
   } else if (mode === 'custom') {
-    text = '本会话 ' + start + '–' + end;
+    text = '本通道 ' + start + '–' + end;
   } else {
     text = '使用全局设置' + (g.start && g.end ? '（' + g.start + '–' + g.end + '）' : '（设置页未设置静音时段）');
   }

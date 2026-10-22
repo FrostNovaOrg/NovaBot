@@ -259,7 +259,7 @@ const cases = {
       assert.equal(text(root()).includes('· 静音中'), false);
       const back = input('静音开始'); back.value = '00:00'; await back.dispatchEvent({type: 'change'});
       assert.ok(text(root()).includes('00:00–23:59 · 静音中'));
-      const off = input('本会话不静音'); off.checked = true; await off.dispatchEvent({type: 'change'});
+      const off = input('本通道不静音'); off.checked = true; await off.dispatchEvent({type: 'change'});
       assert.equal(text(root()).includes('· 静音中'), false);
       await push.reload(); await open(1, 'qq-onebot|1|81001'); assert.ok(text(root()).includes('00:00–23:59 · 静音中'));
     }
@@ -305,7 +305,7 @@ const cases = {
     if (button(drawer(), '查')) { await lookup('82002'); await button(drawer(), '加上').click(); }
     await open(1, 'qq-onebot|1|81001');
     const revenue = input('直播收益等金额'); revenue.checked = true; await revenue.dispatchEvent({type: 'change'});
-    const off = input('本会话不静音'); off.checked = true; await off.dispatchEvent({type: 'change'});
+    const off = input('本通道不静音'); off.checked = true; await off.dispatchEvent({type: 'change'});
     const command = input('直播报告'); command.checked = false; await command.dispatchEvent({type: 'change'});
     await push.save();
     writeFileSync(process.env.PUSH_TRACE, JSON.stringify(requests));
