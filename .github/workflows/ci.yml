@@ -82,7 +82,8 @@ jobs:
     #     整次 CI 判 cancelled；
     #   比 30 分钟窄——发版推送脚本推上去后最多等整次 CI 30 分钟
     #     （tools/release/ci-status.sh 的 CI_MAX=1800），过了就不再等、按等待超时
-    #     退出，哪怕 CI 稍后转绿。别的步骤真卡住时，27 分钟也让整次 CI 先于它出结论
+    #     退出，哪怕 CI 稍后转绿。别的步骤真卡住时，27 分钟也让这个 job 先于它出
+    #     结论（构建 job 的上限另见文件开头那段）。
     timeout-minutes: 27
     # 漏洞库是一套随漏洞数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
     # 插件说明里查不到 dataDirectory 的默认值：不显式指定，库就落在插件的隐式位置，
@@ -246,9 +247,8 @@ jobs:
         # data/update/nvd/api/NvdApiProcessor.java:121 某条入库失败时、
         # data/nvdcve/CveDB.java:1493／1553／1727 主键重复时）。编号是 CVE 计划公开
         # 分配的标识，不带 VulnCheck 的数据内容，所以不另做日志过滤。
-        # 同理，整份报告不再落附件：公开仓的附件
-        # 任何登录用户都能下，报告里全是 VulnCheck 的数据；它只留在运行器磁盘上，
-        # 供汇总步数数，job 结束即没
+        # 同理，整份报告不再落附件：公开仓的附件任何登录用户都能下，报告里全是
+        # VulnCheck 的数据；它只留在运行器磁盘上，供汇总步数数，job 结束即没
         env:
           VULNCHECK_API_TOKEN: ${{ secrets.VULNCHECK_API_TOKEN }}
         run: >-
