@@ -90,17 +90,26 @@ public final class OidcClient {
         return managementUri;
     }
 
-    /** Uses the same HTTPS rules for stored settings and settings-page validation. */
+    /** Uses the same management-page rules for stored settings and settings-page validation. */
     public static Optional<URI> parseManagementUri(String value) {
-        return value == null || value.isBlank() ? Optional.empty()
-                : Optional.of(OidcJson.https(value, "management-uri", CONFIGURATION));
+        if (value == null || value.isBlank()) return Optional.empty();
+        URI uri;
+        try {
+            uri = OidcJson.https(value, "management-uri", CONFIGURATION);
+        } catch (OidcException error) {
+            throw new OidcException(CONFIGURATION, "请填写 https:// 开头的完整地址，或者留空");
+        }
+        if (uri.getPath().contains("/.well-known/")) {
+            throw new OidcException(CONFIGURATION, "这是统一登录的发现文档地址，不是管理页；请填账户中心里管理用户、新建账号的那个网页地址，或者留空");
+        }
+        return Optional.of(uri);
     }
 
     private static Optional<URI> readManagementUri(String value) {
         try {
             return parseManagementUri(value);
         } catch (OidcException error) {
-            log.warn("novabot.core.config-ui.oidc.management-uri 无效，已按留空处理；请填写 https:// 开头的完整地址，或者留空");
+            log.warn("novabot.core.config-ui.oidc.management-uri 无效，已按留空处理；{}", error.getMessage());
             return Optional.empty();
         }
     }
