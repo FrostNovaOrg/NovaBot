@@ -59,6 +59,27 @@ const TYPES = {
 };
 
 class CannotRun extends Error {}
+/** 结果目录里已有同名文件：整轮停下，不在某一轮里当作失败记掉 */
+class NameTaken extends CannotRun {}
+
+/** 结果文件一律新建，不覆盖：同名的已经在那里就停下，那个文件不动。 */
+function openNew(file) {
+  try {
+    return fs.openSync(file, 'wx');
+  } catch (e) {
+    if (e.code === 'EEXIST') throw new NameTaken(`结果目录里已经有同名的文件，没有覆盖它：${path.resolve(file)}`);
+    throw e;
+  }
+}
+
+function writeNew(file, data) {
+  const fd = openNew(file);
+  try {
+    fs.writeFileSync(fd, data);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
 function main() {
   const {values} = parseArgs({options: {
@@ -72,7 +93,15 @@ function main() {
     throw new CannotRun(`导出目录里没有 config/index.html：${demo}`);
   }
   fs.mkdirSync(values.out, {recursive: true});
-  return run({demo, chrome: values.chrome, out: path.resolve(values.out), profile: path.resolve(values.profile)});
+  // 结果文件按 --out 原样拼路径写；run.sh 先进入结果目录再传 .，写入就落在它核过的那个目录里。
+  // 浏览器按自己被起的路径找随附文件，经符号链接或带 .. 的路径起会找不到，所以用真实路径。
+  let chrome;
+  try {
+    chrome = fs.realpathSync(values.chrome);
+  } catch (e) {
+    throw new CannotRun(`浏览器不存在：${values.chrome}`);
+  }
+  return run({demo, chrome, out: values.out, profile: path.resolve(values.profile)});
 }
 
 /** 调试协议客户端：每条消息是一段 JSON，以 \0 结尾 */
@@ -165,7 +194,7 @@ class FifoReader extends EventEmitter {
  * 起浏览器。调试协议走两条 FIFO：fd 3 浏览器读、fd 4 浏览器写。
  * FIFO 以读写方式打开，另一端还没人时 open 也不会卡住。
  */
-async function launch(chrome, profile, logFile) {
+async function launch(chrome, profile, log, logFile) {
   fs.mkdirSync(profile);
   const toBrowser = path.join(profile, 'cdp-in');
   const fromBrowser = path.join(profile, 'cdp-out');
@@ -179,7 +208,6 @@ async function launch(chrome, profile, logFile) {
   const weWrite = fs.openSync(toBrowser, O_WRONLY);
   const weRead = fs.openSync(fromBrowser, O_RDWR | fs.constants.O_NONBLOCK);
   const browserWrites = fs.openSync(fromBrowser, O_WRONLY);
-  const log = fs.openSync(logFile, 'a');
 
   const args = [
     '--headless',
@@ -213,7 +241,7 @@ async function launch(chrome, profile, logFile) {
   } catch (e) {
     throw new CannotRun(`起不了浏览器：${e.message}`);
   }
-  for (const fd of [browserReads, browserWrites, log]) fs.closeSync(fd);
+  for (const fd of [browserReads, browserWrites]) fs.closeSync(fd);
   const input = new FifoReader(weRead);
   const output = fs.createWriteStream(toBrowser, {fd: weWrite});
   const cdp = new Cdp(input, output);
@@ -434,7 +462,7 @@ function joinPng(files, destination) {
   }
   const header = Buffer.from(first.header);
   header.writeUInt32BE(pieces.reduce((sum, p) => sum + p.height, 0), 4);
-  fs.writeFileSync(destination, Buffer.concat([
+  writeNew(destination, Buffer.concat([
     Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', header),
     pngChunk('IDAT', deflateSync(Buffer.concat(pieces.map(p => p.rows)))), pngChunk('IEND', Buffer.alloc(0)),
   ]));
@@ -454,13 +482,14 @@ async function capture(cdp, sessionId, out, page, size, color) {
     const shot = await cdp.send('Page.captureScreenshot', {format: 'png', captureBeyondViewport: true,
       clip: {x: 0, y, width, height: Math.min(step, height - y), scale: 1}}, sessionId, SHOT_LIMIT_MS);
     const file = path.join(out, `${base}${tiled ? '-' + (files.length + 1) : ''}.png`);
-    fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
+    writeNew(file, Buffer.from(shot.data, 'base64'));
     files.push(file);
   }
   if (tiled) {
     try {
       joinPng(files, path.join(out, `${base}.png`));
     } catch (e) {
+      if (e instanceof NameTaken) throw e;
       return {tiles: files.length, joined: false, problem: `${base}：拼图失败（${e.message}），保留分块`};
     }
   }
@@ -582,6 +611,7 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
       try {
         round.shots = await capture(cdp, sessionId, out, page, size, color);
       } catch (e) {
+        if (e instanceof NameTaken) throw e;
         // 有的环境里截图一直不回，浏览器也跟着不再应答（见 README）。这一轮的检查结果照留。
         round.shotError = e.message;
       }
@@ -635,9 +665,19 @@ function summarize(rounds, version, shotProblem) {
 }
 
 async function run({demo, chrome, out, profile}) {
-  const log = path.join(out, 'browser.log');
+  // 日志只打开这一次，换浏览器时接着写同一个文件，不再按名字重新打开
+  const logFile = path.resolve(out, 'browser.log');
+  const log = openNew(path.join(out, 'browser.log'));
+  try {
+    return await runAll({demo, chrome, out, profile, log, logFile});
+  } finally {
+    fs.closeSync(log);
+  }
+}
+
+async function runAll({demo, chrome, out, profile, log, logFile}) {
   let launches = 0;
-  let browser = await launch(chrome, path.join(profile, String(++launches)), log);
+  let browser = await launch(chrome, path.join(profile, String(++launches)), log, logFile);
   let shotProblem = null;
   const rounds = [];
   try {
@@ -652,10 +692,11 @@ async function run({demo, chrome, out, profile}) {
                 + '换一个浏览器接着查，之后各轮照查但不截图';
               process.stderr.write(`截图：${shotProblem}\n`);
               await browser.stop();
-              browser = await launch(chrome, path.join(profile, String(++launches)), log);
+              browser = await launch(chrome, path.join(profile, String(++launches)), log, logFile);
             }
           } catch (e) {
             // 浏览器没了就整轮跑不下去；只是这一轮的某条命令出错，记成这一轮失败
+            if (e instanceof NameTaken) throw e;
             if (browser.cdp.closed) throw browser.cdp.closed;
             round = {page: screen[0], width: size.name, color, failures: [`检查出错：${e.message}`],
               notes: {unrecorded: new Set(), consoleErrors: new Set(), blocked: new Set(), landed: new Set()}};
@@ -669,7 +710,7 @@ async function run({demo, chrome, out, profile}) {
     await browser.stop();
   }
   const {text, failed} = summarize(rounds, browser.version, shotProblem);
-  fs.writeFileSync(path.join(out, 'summary.txt'), text);
+  writeNew(path.join(out, 'summary.txt'), text);
   process.stdout.write(text);
   return failed ? 1 : 0;
 }

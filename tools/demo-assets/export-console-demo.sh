@@ -14,7 +14,8 @@ import shutil
 import sys
 from pathlib import Path
 
-root, dest = Path(sys.argv[1]), Path(sys.argv[2]).resolve()
+# Resolve both sides, so a checkout reached through a symlink still compares paths alike.
+root, dest = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
 demo = root / 'tools/demo-assets/console-demo'
 index = json.loads((demo / 'data/index.json').read_text())
 # Check every response before touching the destination.

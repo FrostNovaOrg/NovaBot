@@ -9,7 +9,7 @@
 			"method":"GET",
 			"path":"/config/api/datasource/users",
 			"query":"",
-			"sha256":"7693ca9870e070c5d27285991e45b6d52868cfcc188133e763efb4c091fe6547",
+			"sha256":"4b463518a40832621d94419d6683722a6c01176c846de2b5a528ae525a1489b4",
 			"status":200
 		},
 		{

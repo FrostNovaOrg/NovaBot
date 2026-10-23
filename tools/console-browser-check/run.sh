@@ -51,19 +51,32 @@ dir_is_empty() {
     return 0
 }
 
-# 先核结果目录：这一步在启动浏览器、写任何文件之前做完。
-# 本工具不删任何文件，也不覆盖别人的东西。给了 --out 时，目录不存在就建它，是空目录就照用；
+# 后面会进入结果目录，相对路径要先换成绝对路径。
+here=$(pwd)
+case "$chrome" in
+    ''|/*) ;;
+    *) chrome=$here/$chrome ;;
+esac
+tmp=${TMPDIR:-/tmp}
+case "$tmp" in
+    /*) ;;
+    *) tmp=$here/$tmp ;;
+esac
+
+# 先核结果目录：这一步在启动浏览器、写任何结果文件之前做完。
+# 本工具不删结果目录里的任何东西。给了 --out 时，目录不存在就建它，是空目录就照用；
 # 别的（里面已经有文件，隐藏文件也算；或者那条路不是目录）一律拒跑，说清是哪个目录、为什么、
 # 怎么办（自己清空，或换一个目录）。
+# 先进入目录、再核进去的这一个：核过之后这条路就算被换成别处，写入也还落在核过的目录里，
+# 因为之后一律用相对路径，不再按 --out 的路径重新找。
 if [ "$out_given" = yes ]; then
-    case "$out" in
-        /*) ;;
-        *) out=$(pwd)/$out ;;
-    esac
     if [ -e "$out" ] || [ -L "$out" ]; then
         [ -d "$out" ] || cannot_run "--out 指向的不是目录：${out}。它一点没动。请用 --out 换一个目录"
-        dir_is_empty "$out" || cannot_run "结果目录里已经有文件（隐藏文件也算），本工具不删也不动里面的东西：${out}。请自己把这个目录清空，或者用 --out 换一个别的目录"
+    else
+        mkdir -p "$out" || cannot_run "建不了结果目录：${out}"
     fi
+    cd -P "$out" || cannot_run "进不了结果目录：${out}"
+    dir_is_empty . || cannot_run "结果目录里已经有文件（隐藏文件也算），本工具不删也不动里面的东西：${out}。请自己把这个目录清空，或者用 --out 换一个别的目录"
 fi
 
 command -v node >/dev/null 2>&1 || cannot_run "没有找到 node，需要 node 22 或更高版本"
@@ -74,26 +87,32 @@ major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null) || major=0
 command -v python3 >/dev/null 2>&1 || cannot_run "没有找到 python3，导出演示要用它"
 command -v bash >/dev/null 2>&1 || cannot_run "没有找到 bash，导出演示要用它"
 
-if [ "$out_given" = yes ]; then
-    mkdir -p "$out" || cannot_run "建不了结果目录：${out}"
-    out=$(cd "$out" && pwd)
-else
-    out=$(mktemp -d "${TMPDIR:-/tmp}/nova-console-browser-check.XXXXXX") || cannot_run "建不了结果目录"
+if [ "$out_given" = no ]; then
+    out=$(mktemp -d "${tmp}/nova-console-browser-check.XXXXXX") || cannot_run "建不了结果目录"
+    cd -P "$out" || cannot_run "进不了结果目录：${out}"
 fi
+# 只用来给人看是哪个目录；写入都用相对路径。用外部的 pwd 向系统问当前目录：
+# 有的 sh 内置 pwd 记的是 cd 那一刻的路径，目录被挪走后会指错地方。
+out=$(env pwd -P)
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/nova-console-check.XXXXXX") || cannot_run "建不了临时目录"
+work=$(mktemp -d "${tmp}/nova-console-check.XXXXXX") || cannot_run "建不了临时目录"
 # work 是本工具自己建的临时目录（导出的演示副本、浏览器的临时用户目录），跑完只清这一个。
 trap 'rm -rf "${work}"' EXIT
 trap 'exit 2' HUP INT TERM
 
-if ! bash "$ROOT/tools/demo-assets/export-console-demo.sh" "${work}/demo" >"${out}/export.log" 2>&1; then
-    cat "${out}/export.log" >&2
+# 结果文件只新建、不覆盖：同名的已经在那里，重定向就失败，那个文件不动。
+set -C
+command exec 3>export.log || cannot_run "结果目录里已经有 export.log，没有覆盖它：${out}/export.log"
+if ! bash "$ROOT/tools/demo-assets/export-console-demo.sh" "${work}/demo" >&3 2>&1; then
+    exec 3>&-
+    cat export.log >&2
     cannot_run "导出离线演示失败（输出见上，也存在 ${out}/export.log）"
 fi
+exec 3>&-
 mkdir "${work}/profile" || cannot_run "建不了浏览器的临时用户目录"
 
 node "$ROOT/tools/console-browser-check/check.mjs" \
-    --demo "${work}/demo" --chrome "$chrome" --out "$out" --profile "${work}/profile"
+    --demo "${work}/demo" --chrome "$chrome" --out . --profile "${work}/profile"
 status=$?
-echo "结果目录：${out}"
+echo "结果目录：$(env pwd -P)"
 exit "$status"
