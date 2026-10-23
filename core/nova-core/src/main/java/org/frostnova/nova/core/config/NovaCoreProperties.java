@@ -523,11 +523,11 @@ public class NovaCoreProperties {
             @ConfigSummary("空格分隔，必须包含 openid。")
             private String scopes = "openid profile email offline_access";
 
-            /** 回调地址；留空时按请求的协议、主机、端口和应用前缀推导。 */
+            /** 回调地址，须与账户中心登记的值一致；留空时只在用本机地址打开控制台时按请求推导。 */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("统一登录 · 回调地址")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
-            @ConfigSummary("留空时由请求推导回调地址；反向代理建议显式填写。回环地址（127.0.0.1、::1、localhost）允许 HTTP，其余必须 HTTPS。")
+            @ConfigSummary("填在账户中心登记的完整回调地址。留空时只有用 localhost、127.0.0.1 或 ::1 打开控制台才能用统一登录。回环地址允许 HTTP，其余必须 HTTPS。")
             private String redirectUri = "";
 
             /** 账户中心管理页地址，供成员管理跳转使用，可留空。 */

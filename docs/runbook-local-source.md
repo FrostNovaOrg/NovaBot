@@ -1,6 +1,6 @@
 # 在本机把真源跑起来
 
-给要对接[事件输出](../manual/appendix-b-advanced.md)的下游用：**零凭据**，不用扫码、不用配 QQ 机器人，
+给要对接[事件输出](../manual/appendix-b-advanced.md)的下游用：不用扫码、不用配 QQ 机器人，
 十分钟内在自己的 Mac 或 Linux 上跑出一条真实的直播事件流。
 
 全程只读，不会推送任何消息，也不会碰你的哔哩哔哩账号——匿名模式压根不读凭据。
@@ -47,6 +47,10 @@ novabot:
       enabled: true           # ← 打开事件输出
       path: /nova/events
 ```
+
+浏览器面板需在 `novabot.core.event-stream.allowed-origins` 填写页面来源，修改后重启。
+页面来源按浏览器实际值填写，默认端口 80/443 通常省略；IPv6 主机须保留方括号，域名使用 ASCII 写法（国际化域名先转为 Punycode），不加末尾斜线。
+保存时会检查写法；启动时若配置格式不合，事件输出暂停，程序和控制台照常启动，可在设置中修改后重启。
 
 `datasource.json` 包里也不带，在工作目录里自己新建，填一个房间的**主播 uid**（不是房间号）：
 
@@ -97,7 +101,7 @@ java -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar
 日志里这四行说明一切正常：
 
 ```
-事件输出已启用, 地址: ws://127.0.0.1:<server.port>/nova/events, 仅接受本机连接
+事件输出已启用, 路径 /nova/events, 需在连接后首帧出示只读口令
 匿名模式：个人主播的直播间实测只能拿到约一成弹幕（七格实测 8.8%~12.5%）…
 动态推送与自动关注已禁用: 当前为匿名模式，它们必须有登录态
 NovaBilibili 已就绪（匿名模式）
@@ -116,13 +120,10 @@ ws://127.0.0.1:7830/nova/events
 **只接受回环连接**，且这一点与 `server.address` 无关——即使监听地址改成 `0.0.0.0`，
 事件流也只认本机。要从别的机器读就自己建 SSH 隧道。
 
-> 🔴 **本节的时序只覆盖 `require-token: false`**（第 2 节那份配置就是）。
-> 开了口令时服务端**不会先发 `hello`**，照本节写的客户端会卡住——
-> 见本节末尾「[开了口令时的时序](#开了口令时的时序)」。
-
-握手后服务端立刻发 `hello`，里面有 `sessionId`、`capabilities`、`lastSeq`、`bufferedFrom`，
-以及一个协议之外的 `notes` 数组——那里写着我们与协议文档的口径差异（点赞未聚合、
-`isAdmin` 的真实含义等）。**排查问题前先读它**。
+在控制台「连接 → 外部面板」签发只读口令，放入客户端进程的 `NOVA_EVENT_TOKEN` 环境变量。
+事件输出始终要求口令，连接后先按下方示例发送首帧；成功后服务端发送 `hello`，里面有
+`sessionId`、`capabilities`、`lastSeq`、`bufferedFrom`，以及协议之外的 `notes` 数组。
+浏览器客户端还须按[用户手册附录 B](../manual/appendix-b-advanced.md)登记页面来源并重启。
 
 想回补就在 **2 秒内**发 `resume`；不发的话服务端到点自动转入实时流。
 迟到的 `resume` 会收到一份新的 `hello`：采纳新的 `lastSeq`，记一次补不回来的断档；
@@ -132,10 +133,11 @@ ws://127.0.0.1:7830/nova/events
 一个 30 行的最小客户端：
 
 ```python
-import json, websockets, asyncio          # pip install websockets
+import json, os, websockets, asyncio      # pip install websockets
 
 async def main():
     async with websockets.connect("ws://127.0.0.1:7830/nova/events") as ws:
+        await ws.send(json.dumps({"kind": "auth", "token": os.environ["NOVA_EVENT_TOKEN"]}))
         async for raw in ws:
             msg = json.loads(raw)
             if msg["kind"] == "ping":
@@ -148,10 +150,9 @@ asyncio.run(main())
 
 **`pong` 必须回。** 三个心跳周期（45 秒）不回话，服务端会把你当成已经死掉的连接断开。
 
-### 开了口令时的时序
+### 连接时序
 
-上面那份客户端在 `require-token: true` 下会**卡住不动，直到 10 秒后被断开**——
-它在等 `hello`，而服务端在等它先开口。**开了口令时服务端在认证成功前什么都不发。**
+客户端在连接后先发送口令，再等待 `hello`：
 
 ```
 1. 连上                              服务端静默，不发 hello
@@ -159,12 +160,6 @@ asyncio.run(main())
 3. ← {"kind":"hello", …}             认证成功后才发
 4. → {"kind":"resume","data":{"fromSeq":<n>}}   想回补就在收到 hello 后 2 秒内
 5. ← 实时事件
-```
-
-上面那个最小客户端补一句就能用——在 `async with` 之后、`async for` 之前：
-
-```python
-        await ws.send(json.dumps({"kind": "auth", "token": TOKEN}))
 ```
 
 `token` 是唯一必填项，带上 `v` 也可以（本端不校验它）。几个容易踩的点：
@@ -175,8 +170,8 @@ asyncio.run(main())
 - **认证之前除 `auth` 外一律不理会**，`resume` 尤其：它能问出缓冲窗口从哪一条起，
   那是关于这个部署的信息。所以 `resume` 只能排在 `hello` 之后。
 - **2 秒的回补窗口从 `hello` 发出那一刻起算**，不和 10 秒认证窗口抢时间。
-- **别把口令放进握手**：`Sec-WebSocket-Protocol`、`Authorization` 一律拒收（HTTP 400），
-  `?token=` 也不接受。
+- 口令只填在首帧，握手不要填写 `Authorization`、`nova.token.` 开头的子协议或口令查询参数（HTTP 400）。
+  普通子协议和其他查询参数照常使用，完整约定见[事件源协议 §1](protocol.md#1-传输与端点)。
 
 口令怎么签见[用户手册附录 B](../manual/appendix-b-advanced.md)。
 

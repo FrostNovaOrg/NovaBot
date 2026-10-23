@@ -11,12 +11,12 @@
 | `client-id` | 空 | 账户中心登记的客户端 ID |
 | `client-secret` | 空 | client_secret_basic 使用的密钥 |
 | `scopes` | `openid profile email offline_access` | 空格分隔，必须包含 openid |
-| `redirect-uri` | 空 | 显式回调地址；HTTP 仅允许回环地址 |
+| `redirect-uri` | 空 | 回调地址，与账户中心登记的值相同；留空时只在用回环地址打开控制台时推导。HTTP 仅允许回环地址 |
 | `management-uri` | 空 | 填账户中心里管理用户、新建账号的网页地址，不是以 `/.well-known/openid-configuration` 结尾的发现文档地址；可留空，留空时不显示“账户中心”和“新建成员”。要填就填以 `https://` 开头的完整地址 |
 
 关闭开关或 issuer 留空时，客户端不访问账户中心。密钥通过现有 SensitiveFields 遮掩，经通用配置保存入口修改这组设置时，要求签发未满 10 分钟的本地登录会话；修改后重启生效。遮掩值和留空不会覆盖旧密钥，显式清除仍遵循现有机密配置规则。
 
-未填写回调地址时，使用 servlet 请求的 scheme、serverName、serverPort，加容器配置的 context path 和 `/config/api/oidc/callback`；默认 HTTPS 端口 443 和默认 HTTP 端口 80 均省略。例如请求来源为 `https://console.example.com`、应用前缀为 `/app` 时，结果为 `https://console.example.com/app/config/api/oidc/callback`。客户端不自行解析 Forwarded 或 X-Forwarded-* 头；代理部署建议显式填写对外 HTTPS 地址。回调接口为 `/config/api/oidc/callback`。回调地址的 HTTP 仅允许回环地址（127.0.0.1、::1、localhost），其余必须 HTTPS。
+除本机试用外都要填写回调地址，填浏览器能访问的完整地址，并与账户中心登记的值逐字相同，例如 `https://console.example.com/app/config/api/oidc/callback`。未填写时，只有 serverName 为 `127.0.0.1`、`::1` 或 `localhost` 的请求会推导回调地址：使用 servlet 请求的 scheme、serverName、serverPort，加容器配置的 context path 和 `/config/api/oidc/callback`，默认 HTTPS 端口 443 和默认 HTTP 端口 80 均省略，例如 `http://localhost:8080/app/config/api/oidc/callback`；其他地址发起登录时按客户端配置有误处理，并在日志里提示填写 `redirect-uri`。启用统一登录而未填写回调地址时，启动日志和管理员控制台各页顶部均会提示：到「设置 → 高级选项 → 登录与安全 · 高级」里的「统一登录 · 回调地址」填写与账户中心登记的完全一致的完整回调地址，保存后重启；填好并重启后提示消失。客户端不自行解析 Forwarded 或 X-Forwarded-* 头。回调接口为 `/config/api/oidc/callback`。回调地址的 HTTP 仅允许回环地址（127.0.0.1、::1、localhost），其余必须 HTTPS。
 
 `startLogin(request)` 返回授权地址、state 和过期时间。state、nonce、code_verifier 均由 SecureRandom 生成，各含 256 位随机数。事务在服务器内存保存 10 分钟，最多同时保留 1024 个；重启会丢弃事务。`completeLogin(state, code, callbackIssuer)` 在任何令牌请求前原子消费 state，包括失败的回调。未收到 iss 参数时传 null；发现文档声明支持授权响应 iss 时缺失也拒绝，收到时必须逐字匹配 issuer。
 

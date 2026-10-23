@@ -832,6 +832,8 @@ function startConsole() {
       // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
       // 那道门开着这件事没有任何其它现象
       $('#op-banner').style.display = state.operatorSession ? '' : 'none';
+      $('#session-check-notice').style.display = state.role === 'ADMIN' && state.sessionCheckSetupNeeded ? '' : 'none';
+      $('#oidc-callback-notice').style.display = state.role === 'ADMIN' && state.oidcCallbackSetupNeeded ? '' : 'none';
     })
     .catch(() => {})
     // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」

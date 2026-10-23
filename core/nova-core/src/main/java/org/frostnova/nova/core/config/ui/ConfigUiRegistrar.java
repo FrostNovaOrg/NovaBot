@@ -132,7 +132,8 @@ public class ConfigUiRegistrar {
      * @return 过滤器注册信息
      */
     @Bean
-    public FilterRegistrationBean<ConfigUiSecurityFilter> configUiSecurityFilterRegistration(ConfigUiAuthService authService) {
+    public FilterRegistrationBean<ConfigUiSecurityFilter> configUiSecurityFilterRegistration(
+            ConfigUiAuthService authService, ConfigUiApiInterceptor interceptor) {
         IpMatcher ipMatcher = new IpMatcher(properties.getConfigUi().getAllowIps());
         if (ipMatcher.isEmpty()) {
             log.error("配置界面的 IP 白名单为空, 所有访问都将被拒绝, 请检查 novabot.core.config-ui.allow-ips 配置");
@@ -140,7 +141,7 @@ public class ConfigUiRegistrar {
 
         FilterRegistrationBean<ConfigUiSecurityFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService,
-                properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement()));
+                properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), interceptor::recordSessionCheckUse));
         registration.addUrlPatterns(ConfigUiController.BASE_PATH, ConfigUiController.BASE_PATH + "/*");
         registration.setOrder(FILTER_ORDER);
         registration.setName("configUiSecurityFilter");
