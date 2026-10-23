@@ -5,7 +5,8 @@ export function botFieldsHtml(p, parameters = {}, tokenType = 'text') {
   const input = (key, label, value, type = 'text', hint = '') =>
     '<div class="bot-field"><label for="' + p + '-' + key + '">' + label + '</label>'
     + '<input id="' + p + '-' + key + '" type="' + type + '" value="' + esc(value)
-    + '" autocomplete="off"' + (key.endsWith('port') ? ' inputmode="numeric"' : '')
+    + '" autocomplete="' + (key.endsWith('token') ? 'new-password' : 'off') + '"'
+    + (key.endsWith('port') ? ' inputmode="numeric"' : '')
     + (hint ? ' placeholder="' + hint + '"' : '') + '></div>';
   return '<div class="bot-fields">'
     + input('addr', '地址', parameters.address ?? '127.0.0.1')

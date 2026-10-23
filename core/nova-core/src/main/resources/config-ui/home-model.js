@@ -488,7 +488,10 @@ function shortStrip(timeline) {
   const total = (problems && typeof problems.matched === 'number') ? problems.matched : bad.length;
   const groups = new Map();
   for (const item of bad) {
-    const key = JSON.stringify([item.level, item.type, item.text, item.streamer, item.channel, item.detail]);
+    const detail = item.detail || {};
+    // 只按失败类型、目标与原因合并；耗时、消息摘要等单次详情保留最近一份。
+    const key = JSON.stringify([item.level, item.type, item.text, item.streamer, item.channel,
+      detail.platform, detail.streamerPlatform, detail.streamerUid, detail.reason]);
     const previous = groups.get(key);
     const count = previous ? previous.count + 1 : 1;
     groups.set(key, {...(previous && previous.at > item.at ? previous : item), count, group: 'attention'});

@@ -124,7 +124,8 @@ export function render(host, ctx, adding = false) {
   result = el('div', 'su-r');
 
   const users = ((seen.status || {}).users || []);
-  if (users.length && !adding && !draft.streamer) {
+  const saved = draft.streamer && draft.savedVersions?.has(draft.streamer.platform + ':' + draft.streamer.uid);
+  if (users.length && !adding && (!draft.streamer || saved)) {
     host.appendChild(note('ok', '已完成 · 已配置 ' + users.length + ' 位主播'));
     const list = el('ul', 'su-existing');
     users.forEach(one => {
@@ -140,6 +141,7 @@ export function render(host, ctx, adding = false) {
     add.type = 'button';
     add.textContent = '再加一个';
     add.addEventListener('click', () => {
+      draft.streamer = null;
       host.innerHTML = '';
       render(host, ctx, true);
     });

@@ -199,7 +199,7 @@ function renderStrip(model) {
       + '<div class="tl-t">' + esc(clock(item.at)) + '</div>'
       + '<div class="tl-rail"><span class="d ' + level + '"></span><span class="l"></span></div>'
       + '<div class="tl-c"><div class="tl-hd"><span>' + esc(item.text) + '</span>'
-      + (item.group === 'attention' ? '<span class="tl-x">×' + item.count + '，最近 ' + esc(clock(item.at)) + '</span>' : '')
+      + (item.group === 'attention' && item.count > 1 ? '<span class="tl-x">×' + item.count + '，最近 ' + esc(clock(item.at)) + '</span>' : '')
       + (where ? '<span class="tl-x">' + esc(where) + '</span>' : '')
       + '</div></div></div>';
   }).join('');

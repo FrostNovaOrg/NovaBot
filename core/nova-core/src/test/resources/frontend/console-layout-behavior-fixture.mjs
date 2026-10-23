@@ -15,6 +15,31 @@ function compile(src, names, deps) {
     + '\nreturn ' + names.at(-1).match(/function (\w+)/)[1] + ';')(...Object.values(deps));
 }
 if (mode === 'home') {
+  // 用户故障：机器人掉线时，同一个群的同一种失败在首页刷成一长串。
+  const timeout = {type:'PUSH_FAILED', level:'error', text:'推送失败：连接超时', channel:'群 A', streamer:'主播 A'};
+  const failures = [500, 900, 300].map((at, i) => ({...timeout, at,
+    detail:{platform:'bot', streamerPlatform:'site', streamerUid:'7', elapsed_ms:String(100 + i)}}));
+  const grouped = homeModel({}, {}, {events:failures}).events;
+  check(() => assert.equal(grouped.length, 1, '只有耗时不同的同种失败应合成一张卡'));
+  check(() => assert.equal(grouped[0].count, 3, '合并次数应包含每次不同耗时的失败'));
+  check(() => assert.equal(grouped[0].at, 900, '合并卡取最近时间，不依赖输入顺序'));
+  check(() => assert.equal(grouped[0].detail.elapsed_ms, '101', '保留最近一次的详情'));
+  const separate = [
+    {...failures[0], channel:'群 B'},
+    {...failures[0], text:'推送失败：权限不足'},
+    {...failures[0], detail:{...failures[0].detail, platform:'another-bot'}},
+    {...failures[0], detail:{...failures[0].detail, streamerUid:'8'}},
+    {...failures[0], detail:{...failures[0].detail, reason:'另一原因'}},
+  ];
+  check(() => assert.equal(homeModel({}, {}, {events:[failures[0], ...separate]}).events.length, 6,
+    '不同目标、原因或平台的失败仍各自显示'));
+  const strip = el('div');
+  const renderStrip = compile(read('overview.js'), ['function renderStrip('], {
+    $:()=>strip, esc:String, clock:String,
+  });
+  renderStrip({events:[grouped[0], {...separate[0], count:1, group:'attention'}]});
+  check(() => assert.match(strip.textContent, /×3，最近 900/));
+  check(() => assert.doesNotMatch(strip.textContent, /×1(?:，|\D|$)/, '单次失败不应标注 ×1'));
   const failure = {type: 'AT_ALL_FAILED', level: 'warn', text: '@全体成员 未发出', channel: '群 A'};
   const events = [900, 300, 700, 500].map(at => ({...failure, at}));
   events.push({...failure, at: 800, channel: '群 B'});
@@ -78,22 +103,74 @@ if (mode === 'home') {
   check(() => assert.equal(skip, null, '已有登录不应再催选择免登录'));
   check(() => assert.ok(account.querySelector('a'), '已登录后仍可换账号'));
   const plugin = readFileSync(new URL('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/setup-streamer.js', import.meta.url), 'utf8');
+  // 用户故障：引导里点「再加一个」后底栏消失，加的主播存不下来。
   const users = [{platform:'site', uid:7, uname:'已有主播'}];
-  const store = {platforms:['site']}; const draft = {streamer:null, targets:[]};
-  const render = compile(plugin, ['function note(', 'function field(', 'export function render('], {
-    el, store, draft, STREAMER_INPUT_HINT:'uid', esc:String, paintFound() {}, loadOptions:async()=>{},
-    detailHash: (platform, uid) => '#/streamers/'+platform+'/'+uid,
+  const {defaultMessages} = await import('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/push-model.js');
+  const deps = {
+    el, store:{platforms:['site'], handlerList:[]}, STREAMER_INPUT_HINT:'uid', esc:String,
+    detailHash:(platform, uid) => '#/streamers/'+platform+'/'+uid,
+    targetOptions:()=>[{key:'g1', sender:'bot', type:1, num:42, text:'群 A'}],
+    api:async (path, opts) => {
+      if (path.startsWith('/bot/targets')) return [];
+      if (path === '/streamer/lookup') return {success:true, uid:8, uname:'新增主播'};
+      assert.equal(path, '/datasource/users');
+      const {user} = JSON.parse(opts.body);
+      check(() => assert.deepEqual(user, {platform:'site', uid:8, enabled:true,
+        targets:[{platform:'bot', type:1, num:42, enabled:true, messages:[]}]}));
+      users.push({...user, uname:'新增主播'});
+      return {success:true, version:'saved'};
+    },
+    pushEntries:()=>[], defaultMessages, trackSetupVersions(){}, acceptAddedPushUser(){},
+    renderStreamers(){}, markDirty(){}, say:assert.fail,
+  };
+  const functions = ['function note(', 'function field(', 'function invalidateStreamer(',
+    'async function loadOptions(', 'export function render(', 'function paintFound(',
+    'function targetPicker(', 'export async function next(', 'function stop(', 'async function saveStreamer('];
+  const mod = new Function(...Object.keys(deps),
+    'let seen = {}, result, options = []; const draft = {streamer:null, targets:[]};\n'
+    + functions.map(name=>bracedFrom(plugin, name).replace(/^export /, '')).join('\n')
+    + '\nreturn {render, next};')(...Object.values(deps));
+  const host = el('div');
+  const step = {key:'streamer', plugin:true};
+  const ctx = () => ({status:{users}});
+  let finished = false;
+  const renderPlugin = compile(src, ['function foot(', 'function renderPlugin('], {
+    el, pluginMods:{streamer:mod}, pluginCtx:ctx, facts:[false, true], current:1,
+    steps:[{}, step, {}], note:deps.el, syncFoot(){}, skipPlugin(){},
+    pluginNext:()=>mod.next(ctx()), refreshFacts:async()=>{}, finishStep:()=>{finished=true;},
+    goStep(){},
   });
-  const host = el('div'); render(host, {status:{users}});
+  renderPlugin(host, step);
   check(() => assert.match(host.textContent, /已有主播/));
   check(() => assert.equal(host.querySelector('input'), null, '已配主播时先显示现状'));
-  const next = compile(plugin, ['export async function next('], {store, draft});
-  const allowed = await next({status:{users}});
+  const allowed = await mod.next(ctx());
   check(() => assert.equal(allowed, true, '已有主播可以直接继续，无需重新添加'));
   const add = host.querySelector('button');
   check(() => assert.match(add?.textContent || '', /再加一个/));
   add.click();
   check(() => assert.ok(host.querySelector('input'), '再加一个仍可打开输入框'));
+  check(() => assert.ok(host.querySelector('#setup-back'), '再加一个后必须保留上一步'));
+  check(() => assert.ok(host.querySelector('#setup-next'), '再加一个后必须保留下一步以保存主播'));
+  host.querySelector('#setup-uid').value = '8';
+  await host.querySelector('#setup-lookup').listeners.click[0]();
+  const deadline = Date.now() + 10000;
+  let target;
+  while (!(target = host.querySelectorAll('input').find(input=>input.type === 'checkbox'))) {
+    assert.ok(Date.now() < deadline, '查询后可以选择推送目标');
+    await new Promise(resolve=>setImmediate(resolve));
+  }
+  target.checked = true;
+  target.listeners.change[0]();
+  await host.querySelector('#setup-next').listeners.click[0]();
+  check(() => assert.equal(finished, true, '新主播保存成功后继续下一步'));
+  check(() => assert.deepEqual(users.map(user=>user.uid), [7, 8], '原有主播保留，新主播已保存'));
+  host.innerHTML = '';
+  renderPlugin(host, step);
+  check(() => assert.match(host.textContent, /已完成.*2 位主播/));
+  check(() => assert.match(host.textContent, /已有主播.*新增主播/));
+  check(() => assert.equal(host.querySelector('input'), null, '返回已完成步骤先显示最新名单'));
+  host.querySelector('button').click();
+  check(() => assert.equal(host.querySelector('#setup-uid').value, '', '再添加时查询新的主播'));
 } else if (mode === 'login') {
   const src = read('login.html');
   document.body.innerHTML = src.slice(src.indexOf('<body>')+6, src.indexOf('<script type="module">'));

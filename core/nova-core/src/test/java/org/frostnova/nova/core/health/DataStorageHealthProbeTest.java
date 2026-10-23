@@ -52,8 +52,8 @@ class DataStorageHealthProbeTest {
         // 没配外部存储是正常的部署形态，不是故障——标红只会让人对告警麻木
         assertEquals(HealthStatus.Level.OK, status.level());
         assertTrue(status.summary().contains("只有本场数据"), status.summary());
-        // 键名要出现在这句话里：使用者拿着它才搜得到设置页上那一项
-        assertTrue(status.summary().contains("spring.data.redis.host"), status.summary());
+        // 设置路径让使用者能直接找到对应输入项。
+        assertTrue(status.summary().contains("设置 › 采集 › 累计数据 Redis · 地址"), status.summary());
         assertTrue(status.summary().contains("不用重启"), status.summary());
     }
 

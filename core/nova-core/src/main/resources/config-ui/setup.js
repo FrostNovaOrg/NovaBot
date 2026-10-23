@@ -309,7 +309,9 @@ function renderPlugin(host, step) {
     host.appendChild(note('warn', '此步骤的界面未能加载'));
   } else {
     try {
-      mod.render(host, pluginCtx());
+      const content = el('div');
+      host.appendChild(content);
+      mod.render(content, pluginCtx());
     } catch (e) {
       host.appendChild(note('warn', '此步骤的界面未能加载'));
     }
