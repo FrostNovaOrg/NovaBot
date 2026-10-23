@@ -137,6 +137,20 @@ if (process.argv[2] === 'idle') {
 } else if (process.argv[2] === 'typing') {
   // 在设置框里打字：每个字一次按键，30 秒内只问一次登录状态
   const asked = () => requests.filter(request => request.path === '/auth/state').length;
+  // 管理员连续输入时，规则清单也应只请求一次。
+  role = 'ADMIN';
+  await advance(now + 30000);
+  requests.length = 0;
+  for (let i = 0; i < 50; i++) {
+    await document.dispatch('keydown');
+    await advance(now + 100);
+  }
+  await document.dispatch('click');
+  const noticeAsked = requests.filter(request => request.path === '/exec/notice').length;
+  console.log('管理员 50 次按键后规则清单查询 ' + noticeAsked + ' 次');
+  check(noticeAsked === 1);
+  check(asked() === 1);
+
   await advance(now + 30000);
   requests.length = 0;
   const first = now;

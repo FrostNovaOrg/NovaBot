@@ -206,6 +206,21 @@ caught('② 选 web 存下的值与文本框里敲 web 存下的一字不差', (
     '③ 配置文件里存着候选表以外的写法时照样留着，不替人改掉');
 }
 
+// 目标类型显示群与好友，保存的仍为原来的数字，切回原值不算改动。
+caught('目标类型的显示名与存值分开', () => {
+  const name = 'novabot.adapter.onebot.alert.type';
+  const p = page({[name]: 0});
+  const row = p.build(fieldOf({name, widget: 'integer', defaultValue: 0,
+    choices: ['1', '0'], choiceLabels: {'1': '群', '0': '好友'}}));
+  const select = collect(row, 'select')[0];
+  eq(collect(row, 'option').map(o => [o.value, o.textContent]), [['1', '群'], ['0', '好友']],
+    '目标类型显示名');
+  choose(select, '1');
+  eq(p.store.dirty[name], '1', '群仍保存为 1');
+  choose(select, '0');
+  eq(p.store.dirty[name], undefined, '选回好友不再有改动');
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

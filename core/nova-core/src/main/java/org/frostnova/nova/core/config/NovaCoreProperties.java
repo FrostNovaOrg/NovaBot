@@ -601,7 +601,7 @@ public class NovaCoreProperties {
         @Setter
         public static class Agreement {
             /**
-             * 已同意的协议版本号，单位：版，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
+             * 已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
              */
             // 协议文案改版时版本号加一，此处记着的旧版本即刻失效——否则改了文案等于没改，没有人会再看到它。
             @ConfigEffect(ConfigEffect.Effect.RESTART)

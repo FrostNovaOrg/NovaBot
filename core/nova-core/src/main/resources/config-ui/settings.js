@@ -370,7 +370,7 @@ function buildControl(field, value, cell) {
     for (const choice of options) {
       const option = el('option');
       option.value = choice;
-      option.textContent = choice;
+      option.textContent = field.choiceLabels?.[choice] ?? choice;
       select.appendChild(option);
     }
     select.value = value;

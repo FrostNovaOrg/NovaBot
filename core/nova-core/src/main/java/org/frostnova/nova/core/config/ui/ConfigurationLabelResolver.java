@@ -141,6 +141,23 @@ public class ConfigurationLabelResolver {
         return choices;
     }
 
+    /** 候选值的显示名，值本身仍由 getChoices 提供。 */
+    public Map<String, Map<String, String>> getChoiceLabels() {
+        Map<String, Map<String, String>> result = new HashMap<>();
+        for (Map.Entry<String, Field> entry : ConfigurationPropertyFields.scan(context).entrySet()) {
+            ConfigChoices marked = entry.getValue().getAnnotation(ConfigChoices.class);
+            if (marked == null || marked.labels().length == 0) continue;
+            Map<String, String> labels = new HashMap<>();
+            String[] values = marked.value();
+            String[] names = marked.labels();
+            for (int i = 0; i < values.length; i++) {
+                labels.put(values[i], i < names.length ? names[i] : values[i]);
+            }
+            result.put(entry.getKey(), Map.copyOf(labels));
+        }
+        return Map.copyOf(result);
+    }
+
     /**
      * 获取配置项名到声明次序的映射
      * <p>

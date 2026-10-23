@@ -1022,6 +1022,18 @@ await ask('下播编辑保存去掉旧提醒且保留档值', async () => {
   same(editor.params().message.includes('{at'), false, '新输入的提醒也在保存时移除');
 });
 
+// 好友通道实发会省略提醒，卡片正文与预览也应省略，打开时保留模板。
+await ask('好友正文自带提醒时卡片与预览按实发显示', async () => {
+  for (const message of ['前{at}后', '前{at=all}后']) {
+    const initial = {at_mode: 'subscribers', message};
+    const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: false, admin: true}, initial);
+    same(editor.params(), initial, '存着的模板不动');
+    same(textOf(editor.host.querySelector('.tpl-cards')).includes('@'), false, '卡片没有提醒');
+    same(textOf(editor.host.querySelector('.tpl-pv')).includes('@'), false, '预览没有提醒');
+    same(!!editor.host.querySelector('.tpl-preview-note'), false, '没有提醒说明');
+  }
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

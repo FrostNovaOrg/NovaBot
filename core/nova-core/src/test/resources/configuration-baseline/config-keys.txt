@@ -13,7 +13,7 @@ novabot.core.config-ui.agreement.accepted-actor-record|java.lang.String||确认�
 novabot.core.config-ui.agreement.accepted-actor|java.lang.String||同意协议的管理员显示名，留空表示旧记录未保存确认人；不参与协议有效性判断。
 novabot.core.config-ui.agreement.accepted-at|java.lang.String||同意协议的时间，ISO 格式，留空表示尚未同意；只作凭据，不参与任何判断。
 novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的：password 是输过密码后同意，operator-token 是凭启动令牌进来后同意。留空表示说不出是谁点的，下次登录会再确认一次。
-novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号，单位：版，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
+novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
 novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|<null>|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。
 novabot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时，多久没操作自动退出。
 novabot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟，反复触发逐次翻倍。
@@ -81,12 +81,12 @@ novabot.core.push.quiet-start|java.lang.String||静音时段的开始时间，�
 novabot.core.sender|java.util.List<org.frostnova.nova.core.model.Sender>|<null>|非插件实现的推送平台配置。
 novabot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，单位：天，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
 server.address|java.lang.String|127.0.0.1|服务监听的地址。默认 127.0.0.1 表示仅允许本机连接；改为 0.0.0.0 会将控制台与推送接口暴露到网络，此时务必配置反向代理、来源 IP 白名单与登录密码。
-server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，单位：号，默认 7827。
-spring.data.redis.database|java.lang.Integer|0|Redis 数据库编号，单位：号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。
+server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，默认 7827。
+spring.data.redis.database|java.lang.Integer|0|Redis 数据库编号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。
 spring.data.redis.host|java.lang.String|<null>|累计数据存储使用的 Redis 地址。填写后才有跨场次数据，留空时带「总」的查询不可用；只需本机可访问，请勿暴露到公网。修改后即时生效。
 spring.data.redis.password|java.lang.String|<null>|Redis 密码，未设密码时留空。
-spring.data.redis.port|java.lang.Integer|6379|Redis 端口，单位：号，默认 6379。
+spring.data.redis.port|java.lang.Integer|6379|Redis 端口，默认 6379。
 spring.mail.host|java.lang.String|<null>|邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。
 spring.mail.password|java.lang.String|<null>|SMTP 密码或授权码；多数邮箱需要填写「授权码」，而非登录密码。
-spring.mail.port|java.lang.Integer|<null>|SMTP 端口，单位：号，如 465（SSL）或 587（STARTTLS）。
+spring.mail.port|java.lang.Integer|<null>|SMTP 端口，如 465（SSL）或 587（STARTTLS）。
 spring.mail.username|java.lang.String|<null>|SMTP 登录账号，通常为发件邮箱地址。

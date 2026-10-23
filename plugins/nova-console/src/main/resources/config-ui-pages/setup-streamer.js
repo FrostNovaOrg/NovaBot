@@ -441,6 +441,13 @@ async function saveStreamer() {
       return false;
     }
     savedVersions.set(key, res.version);
+    // 状态刷新失败时，返回这一步仍能看到刚保存的主播。
+    if (seen.status) {
+      const users = seen.status.users || [];
+      const index = users.findIndex(item => item.platform === one.platform && String(item.uid) === String(one.uid));
+      const saved = {...(index < 0 ? {} : users[index]), ...one, targets: targets.length, enabled: true};
+      seen.status.users = index < 0 ? [...users, saved] : users.map((item, i) => i === index ? saved : item);
+    }
     acceptAddedPushUser({...user, _uname: one.uname, _roomId: one.roomId, _face: one.face}, res.version);
   } catch (e) {
     say('主播配置未能保存：' + e.message, 'err');

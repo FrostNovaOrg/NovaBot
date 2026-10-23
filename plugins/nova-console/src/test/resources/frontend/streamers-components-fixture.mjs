@@ -594,6 +594,17 @@ await check('卡片指标与观众环保留输入', () => {
   assert.ok(Number(arcs[0].getAttribute('stroke-dasharray').split(' ')[0]) > Number(arcs[1].getAttribute('stroke-dasharray').split(' ')[0]));
 });
 
+// 观众数四舍五入进到一亿时应换单位，悬停仍读完整人数。
+await check('观众环进位后选择单位且保留完整人数', () => {
+  for (const [total, expected] of [[99949999, '9995.0 万'], [99950000, '1.0 亿'],
+    [99999999, '1.0 亿'], [100000000, '1.0 亿'], [10000, '1.0 万'], [9999, '9999']]) {
+    const ring = ui.createAudienceRing({first: total, returning: 0, total}, host());
+    const count = byClass(ring, 'sc-audience-label')[0].children[1];
+    assert.equal(count.textContent, expected + '人', String(total));
+    assert.equal(count.title, String(total) + ' 人');
+  }
+});
+
 // 低于一万的中间刻度不能突然换成原数，读数不受刻度简写影响。
 await check('最大刻度17071时纵轴非零刻度统一为万', () => {
   const chart = ui.createChart(host(), {points: [{start: 100, end: 200, value: 17071}]});

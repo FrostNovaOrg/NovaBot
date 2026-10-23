@@ -195,7 +195,7 @@ export function buildTemplateEditor(host, options) {
   }
 
   function previewContext() {
-    return {...(opts.context || {}), supportsAt: supportsAt(state.spec), supportsSubscribers: state.spec.all.includes('{at}')};
+    return {...(opts.context || {}), supportsAt: supportsAt(state.spec) && opts.context?.isGroup !== false, supportsSubscribers: state.spec.all.includes('{at}')};
   }
 
   // ---- 调色板 ----
@@ -328,6 +328,7 @@ export function buildTemplateEditor(host, options) {
   function paintBody(body, card, cardIndex) {
     body.innerHTML = '';
     card.blocks.forEach(block => {
+      if (AT_LITERALS.includes(block.key) && !previewContext().supportsAt) return;
       if (block.kind === 'text') {
         const span = el('span', 'tpl-t');
         span.textContent = block.text;

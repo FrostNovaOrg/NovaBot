@@ -954,6 +954,7 @@ public class ConfigUiController {
         Map<String, ConfigurationLabelResolver.Summary> summaries = labelResolver.getSummaries();
         Map<String, ConfigFormat.Format> formats = labelResolver.getFormats();
         Map<String, List<String>> choices = labelResolver.getChoices();
+        Map<String, Map<String, String>> choiceLabels = labelResolver.getChoiceLabels();
         Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
         Map<String, ConfigurationDangerResolver.Danger> dangers = dangerResolver.getDangers();
 
@@ -984,6 +985,7 @@ public class ConfigUiController {
             // 只认几种写法的项：界面摆两项选择而不是自由文本框，存的仍是原来那几个字
             List<String> markedChoices = choices.get(field.name());
             item.put("choices", markedChoices == null ? null : new JSONArray(markedChoices));
+            item.put("choiceLabels", choiceLabels.get(field.name()));
             item.put("unit", unitOf(field.description()));
             item.put("defaultValue", field.defaultValue());
             // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
