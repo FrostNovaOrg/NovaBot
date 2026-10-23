@@ -80,7 +80,7 @@ if (!decorateSrc) {
  * 用假接口跑一趟 decoratePushData
  * @param routes 按路径给回包的函数，路径不带查询串；抛错即模拟网络失败
  */
-async function decorate(pushData, routes) {
+async function decorate(pushData, routes, repaint = () => {}) {
   const calls = [];
   const api = async (path, opts) => {
     calls.push(path);
@@ -90,7 +90,7 @@ async function decorate(pushData, routes) {
   };
   const store = {platforms: ['bilibili']};
   const fn = new Function('api', 'store', 'renderStreamers', 'pushData',
-    'let datasourceGeneration = 0; const userVersions = new Map(), userLoads = new Map(), conflictedUsers = new Set(); const userKey = user => user.platform + ":" + user.uid; const picked = {}; const showPush = async () => {}; const paintTree = renderStreamers; let nameLookups = new Set();\n' + decorateSrc + '\nreturn decoratePushData;')(api, store, () => {}, pushData);
+    'let datasourceGeneration = 0; const userVersions = new Map(), userLoads = new Map(), conflictedUsers = new Set(); const userKey = user => user.platform + ":" + user.uid; const picked = {}; const showPush = async () => {}; const paintTree = renderStreamers; let nameLookups = new Set();\n' + decorateSrc + '\nreturn decoratePushData;')(api, store, repaint, pushData);
   await fn();
   return calls;
 }
@@ -109,7 +109,10 @@ const knownName = uname => path => {
 // ① 现场查回失败、程序手上有昵称（归档里的）→ 显示该昵称，不显示 uid
 {
   const user = {uid: 7, platform: 'bilibili'};
-  await decorate([user], {'/streamer/lookup': liveMiss, '/streamer/name': knownName('归档里的昵称')});
+  const paints = [];
+  await decorate([user], {'/streamer/lookup': liveMiss, '/streamer/name': knownName('归档里的昵称')},
+    () => paints.push(streamerName(user)));
+  eq(paints, ['归档里的昵称'], '① 现场失败保留已知昵称，只重画一次');
   eq(streamerName(user), '归档里的昵称', '① 现场查回失败、手上有昵称 → 显示归档昵称');
 }
 
@@ -140,15 +143,18 @@ const knownName = uname => path => {
   eq([streamerName(a), streamerName(b)], ['uid 7', '现查回来的'], '④ 退路也抛错 → 这位照旧显示 uid，另一位不受连累');
 }
 
-// ⑤ 现场查回来了 → 用现查的名，不再问退路
+// ⑤ 先查已知昵称，现场查回来了以后用现查的名
 {
   const user = {uid: 7, platform: 'bilibili'};
+  const paints = [];
   const calls = await decorate([user], {
-    '/streamer/lookup': () => ({success: true, uid: 7, uname: '现查回来的', roomId: 22}),
+    '/streamer/lookup': () => ({success: true, uid: 7, uname: '现查回来的', roomId: 22, face: 'avatar'}),
     '/streamer/name': knownName('归档里的旧名'),
-  });
-  eq([streamerName(user), calls.some(p => p.startsWith('/streamer/name'))], ['现查回来的', false],
-    '⑤ 现场查回来了 → 用现查的名且不问退路');
+  }, () => paints.push([streamerName(user), user._roomId, user._face]));
+  eq(paints, [['归档里的旧名', undefined, undefined], ['现查回来的', 22, 'avatar']],
+    '⑤ 已知昵称与现场结果各重画一次，并补全房间号与头像');
+  eq([streamerName(user), calls.some(p => p.startsWith('/streamer/name'))], ['现查回来的', true],
+    '⑤ 先查已知昵称，最终使用现场查回的名字');
 }
 
 // ⑥ 添加主播那张确认小卡只认现场查回来的：那一份函数里不出现退路接口
@@ -200,8 +206,9 @@ const knownName = uname => path => {
   eq(pushTree(page.entries(), [], [], {}).map(u => u.name), expectedNames,
     '⑦ 放弃后左树保留原名，并补全缺失昵称，同号不同平台分别显示');
   eq(page.entries().map(streamerName), expectedNames, '⑦ 通道头部使用的主播名保持一致');
-  eq(calls, ['/datasource/users', '/streamer/lookup', '/streamer/lookup', '/streamer/lookup',
-    '/streamer/name?platform=bilibili&uid=8'], '⑦ 已知昵称不再查询，缺失昵称仍先现场查再退回');
+  eq(calls, ['/datasource/users', '/streamer/name?platform=bilibili&uid=8',
+    '/streamer/name?platform=bilibili&uid=9', '/streamer/name?platform=other&uid=7',
+    '/streamer/lookup', '/streamer/lookup', '/streamer/lookup'], '⑦ 已知昵称不再查询，缺失昵称先补已知名再现场查');
   eq(page.changeCount(), 0, '⑦ 放弃并补名后仍为零处改动');
   eq(JSON.parse(page.serializePush()), saved, '⑦ 昵称等展示字段不进入保存内容');
 }
@@ -337,13 +344,13 @@ for (const page of ['home', 'streamers', 'log', 'links', 'settings']) {
   eq(counts(), [6, 6], '⑪ 放弃后的整体刷新不重复查名');
 }
 
-// ⑫ 从首页进入推送页，补到名字才整页重画，重画时名字已全部写入。
+// ⑫ 从首页进入推送页，每位主播补到名字时重画，后续刷新不重复。
 for (const missingNames of [false, true]) {
   const page = await consolePage('#/home', false, missingNames);
   page.repaints.length = 0;
   await page.enter();
-  eq(page.repaints, missingNames ? [[null, null]] : [[null, null], ['主播7', '主播8']],
-    '⑫ 首页进入推送页，' + (missingNames ? '查名失败不追加整页重画' : '补名完成后整页重画恰好一次'));
+  eq(page.repaints, missingNames ? [[null, null]] : [[null, null], ['主播7', null], ['主播7', '主播8']],
+    '⑫ 首页进入推送页，' + (missingNames ? '查名失败不追加整页重画' : '每位主播补名后各重画一次'));
   page.repaints.length = 0;
   await page.refresh();
   eq(page.repaints, [], '⑫ 已有名字或已试过时不追加整页重画');

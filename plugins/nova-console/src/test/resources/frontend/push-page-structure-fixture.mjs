@@ -20,6 +20,7 @@ import {datasourceRead} from './datasource-read.mjs';
  */
 
 import {register} from 'node:module';
+import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -222,7 +223,9 @@ globalThis.location = {hash: '', href: '', replace(v) { this.hash = String(v); }
 const PLATFORM = 'qq-onebot';
 const GROUP_NUM = 123456;
 
-const mock = {requests: []};
+const mock = {requests: [], slowNames: false};
+let releaseLookup;
+const lookupReady = new Promise(resolve => { releaseLookup = resolve; });
 
 function ok(payload) {
   return Promise.resolve({status: 200, json: () => Promise.resolve(payload)});
@@ -249,6 +252,13 @@ globalThis.fetch = (path, opt) => {
   const method = ((opt || {}).method || 'GET').toUpperCase();
   mock.requests.push({path: String(path), method, body: (opt || {}).body});
   const url = String(path);
+
+  if (url.includes('/streamer/lookup')) return lookupReady.then(ok);
+  if (url.includes('/streamer/name?')) return ok({success: true, uname: '甲'});
+  if (mock.slowNames && url.includes('/datasource')) return ok(datasourceRead(url, JSON.stringify([{
+    platform: 'bilibili', uid: 99001, enabled: true,
+    targets: [{platform: PLATFORM, type: 1, num: GROUP_NUM, enabled: true, messages: []}],
+  }])));
 
   if (method === 'GET') {
     if (url.includes('/datasource')) return ok(datasourceRead(url, JSON.stringify([{
@@ -393,6 +403,54 @@ await ask('添加通道写明通道设置各条一份并列出其他主播', asy
   same(idNode('push-drawer-lead').textContent.includes('通道设置（金额可见、静音时段、命令开关）每条通道各一份，不影响同群的其他主播。'),
     true, '添加前的通道设置说明');
   push.closeDrawer();
+});
+
+
+await ask('手机通道一览每格有列名，并在 600px 以下改成卡片', async () => {
+  push.showPush('', '');
+  const table = rightPane().find(node => classesOf(node).includes('channel-index'));
+  if (!table) throw new Error('没有通道一览');
+  const labels = [...table.innerHTML.matchAll(/<td\b([^>]*)>/g)]
+    .map(match => /data-label="([^"]*)"/.exec(match[1])?.[1] || '');
+  const expected = ['主播', '通道', '号码', '已启用通知', '模板'];
+  same(labels, Array.from({length: 3}, () => expected).flat(), '每行五格的列名');
+  const source = readFileSync(join(pages, 'push.js'), 'utf8');
+  const mobile = /@media\s*\(max-width:600px\)\s*\{([\s\S]*?)\n\}/.exec(source)?.[1] || '';
+  same(/\.channel-index\s*\{[^}]*min-width:\s*0[;}]?/.test(mobile), true, '手机取消表格最小宽度');
+  same(/\.channel-index\s*\{[^}]*display:\s*block/.test(mobile), true, '手机表格改成块状');
+  same(/\.channel-index thead\s*\{[^}]*display:\s*none/.test(mobile), true, '手机隐藏表头');
+  same(mobile.includes('content:attr(data-label)'), true, '手机单元格显示列名');
+});
+
+// 首次打开时现场查询尚未返回，也应在左树与通道一览看到已知昵称。
+await ask('现场查询等待期间先显示已知昵称，返回后更新昵称', async () => {
+  push.leave();
+  mock.slowNames = true;
+  store.platforms = ['bilibili'];
+  await push.reload();
+  push.showPush('', '');
+  const loading = push.loadPushPage();
+  let before;
+  try {
+    const deadline = Date.now() + 3000;
+    while (!mock.requests.some(req => req.path.includes('/streamer/lookup'))) {
+      if (Date.now() > deadline) throw new Error('现场查询未发出');
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    const names = () => {
+      const tree = allNodes(idNode('push-tree')).map(node => node.textContent + node.innerHTML).join(' ');
+      const table = rightPane().find(node => classesOf(node).includes('channel-index'));
+      return [tree, (table?.innerHTML || '').replace(/<[^>]*>/g, '')];
+    };
+    before = names().map(text => [text.includes('甲'), text.includes('99001')]);
+    releaseLookup({success: true, uname: '甲二', roomId: 22, face: 'avatar'});
+    await loading;
+    same({before, after: names().map(text => text.includes('甲二'))},
+      {before: [[true, false], [true, false]], after: [true, true]}, '左树与通道一览的昵称');
+  } finally {
+    releaseLookup({success: false});
+    await loading;
+  }
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
