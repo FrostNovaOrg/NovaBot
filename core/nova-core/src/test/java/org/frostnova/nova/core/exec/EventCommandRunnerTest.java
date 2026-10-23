@@ -5,6 +5,7 @@ import org.frostnova.nova.core.event.live.common.LiveOnEvent;
 import org.frostnova.nova.core.event.live.common.SuperChatEvent;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -23,19 +24,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 事件命令测试
- * <p>
- * 这是整个项目里唯一一处能执行任意程序的地方，而喂给它的数据（昵称、弹幕正文）
- * <b>完全由陌生人决定</b>。首要的用例不是「功能能不能用」，而是
- * 「一个精心构造的昵称能不能让它多执行一条命令」。
  */
 @DisplayName("事件触发外部命令")
 class EventCommandRunnerTest {
     private static final String PLATFORM = "bilibili";
 
-    /**
-     * 一个企图逃逸成第二条命令的昵称
-     */
-    private static final String MALICIOUS = "测试主播; rm -rf ~ #";
+    private static final String SAMPLE_NAME = "测试主播; rm -rf ~ #";
 
     @TempDir
     Path dir;
@@ -50,6 +44,11 @@ class EventCommandRunnerTest {
         runner = new EventCommandRunner(properties);
     }
 
+    @AfterEach
+    void close() {
+        runner.shutdown();
+    }
+
     private LiveOnEvent event(String uname) {
         return new LiveOnEvent(PLATFORM, new LiveStreamerInfo(19142561034510L, uname, 47121903112096L));
     }
@@ -62,12 +61,12 @@ class EventCommandRunnerTest {
     }
 
     @Test
-    @DisplayName("恶意昵称替换后仍是一个参数，不会变成第二条命令")
-    void maliciousNameStaysOneArgument() {
-        List<String> command = runner.resolve(List.of("/bin/echo", "{uname}"), event(MALICIOUS));
+    @DisplayName("昵称替换后保留为一个参数")
+    void retainsNameAsOneArgument() {
+        List<String> command = runner.resolve(List.of("/bin/echo", "{uname}"), event(SAMPLE_NAME));
 
         assertEquals(2, command.size(), "参数个数不该因昵称内容而变化");
-        assertEquals(MALICIOUS, command.get(1), "昵称应原样成为一个参数");
+        assertEquals(SAMPLE_NAME, command.get(1), "昵称应原样成为一个参数");
     }
 
     @Test
@@ -119,9 +118,9 @@ class EventCommandRunnerTest {
     }
 
     @Test
-    @DisplayName("端到端：恶意昵称原样作为一个参数抵达脚本，未被拆成命令")
+    @DisplayName("脚本收到完整的昵称参数")
     @DisabledOnOs(OS.WINDOWS)
-    void maliciousNameReachesScriptAsSingleArgument() throws Exception {
+    void passesNameAsSingleArgument() throws Exception {
         Path output = dir.resolve("args.txt");
         Path script = script("""
                 #!/bin/sh
@@ -135,10 +134,10 @@ class EventCommandRunnerTest {
         properties.getExec().getRules().add(
                 rule("LiveOnEvent", script.toString(), output.toString(), "{uname}", "尾参数"));
 
-        runner.onEvent(event(MALICIOUS));
+        runner.onEvent(event(SAMPLE_NAME));
 
         waitForFile(output);
-        assertEquals(List.of(MALICIOUS, "尾参数"), Files.readAllLines(output, StandardCharsets.UTF_8),
+        assertEquals(List.of(SAMPLE_NAME, "尾参数"), Files.readAllLines(output, StandardCharsets.UTF_8),
                 "脚本收到的应当是两个参数，且第一个原样等于那个昵称");
     }
 

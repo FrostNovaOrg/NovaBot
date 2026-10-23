@@ -40,12 +40,12 @@ novabot.core.datasource.json-path|java.lang.String|datasource.json|推送配置�
 novabot.core.event-stream.allowed-origins|java.util.List<java.lang.String>|<null>|浏览器页面来源列表。填写完整的 http 或 https 来源（协议、主机及可选端口），不带路径；默认空表。未携带 Origin 的本机程序照常连接。
 novabot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数，单位：条，全部房间共用。房间多或热闹就调大，否则重连时会补不上；每条约数 KB，调大前先掂量内存。
 novabot.core.event-stream.enabled|java.lang.Boolean|false|是否启用事件输出。默认关闭；启用后只接受本机连接，流里有观众的昵称与消费金额，别暴露到公网。
-novabot.core.event-stream.handshake-timeout-ms|java.lang.Integer|10000|握手开始后等待连接建立的时间，单位：毫秒，默认 10000。 正整数，修改后重启；其他值使用默认值。
-novabot.core.event-stream.io-timeout-ms|java.lang.Integer|10000|单次写入及关闭等待的时间，单位：毫秒，默认 10000。 正整数，修改后重启；其他值使用默认值。
-novabot.core.event-stream.max-concurrent-handshakes|java.lang.Integer|64|同时进行的握手数，单位：个，默认 64。 正整数，修改后重启；其他值使用默认值。
-novabot.core.event-stream.max-connections-per-source|java.lang.Integer|128|同一对端地址的连接数，单位：个，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启；其他值使用默认值。
-novabot.core.event-stream.max-connections|java.lang.Integer|256|同时保留的事件输出连接数，单位：个，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启；其他值使用默认值。
-novabot.core.event-stream.max-pending-connections|java.lang.Integer|128|等待首帧的连接数，单位：个，默认 128，包含握手中的连接。 正整数，修改后重启；其他值使用默认值。
+novabot.core.event-stream.handshake-timeout-ms|java.lang.Integer|10000|握手开始后等待连接建立的时间，单位：毫秒，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
+novabot.core.event-stream.io-timeout-ms|java.lang.Integer|10000|单次写入及关闭等待的时间，单位：毫秒，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
+novabot.core.event-stream.max-concurrent-handshakes|java.lang.Integer|64|同时进行的握手数，单位：个，默认 64。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
+novabot.core.event-stream.max-connections-per-source|java.lang.Integer|128|同一对端地址的连接数，单位：个，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
+novabot.core.event-stream.max-connections|java.lang.Integer|256|同时保留的事件输出连接数，单位：个，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
+novabot.core.event-stream.max-pending-connections|java.lang.Integer|128|等待首帧的连接数，单位：个，默认 128，包含握手中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
 novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路径，与配置界面共用服务端口。
 novabot.core.event-stream.require-token|java.lang.Boolean|true|事件输出始终要求只读访问令牌。此键保留兼容已有配置，填写 false 也按 true 运行。令牌由控制台签发，客户端在连接后的第一帧出示。
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令。

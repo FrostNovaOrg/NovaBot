@@ -4,6 +4,7 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
+import {renderExecNotice} from './exec-notice.js';
 import {$, api, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
@@ -795,6 +796,28 @@ function loadBotConsole() {
 }
 $('#bot-open').addEventListener('click', () => { if (botHref) location.href = botHref; });
 
+// 根据当前身份与本次启动请求更新规则提醒
+let execNoticeVersion = 0;
+function loadExecNotice(attempt = startupAttempt, role) {
+  const version = ++execNoticeVersion;
+  if (!attempt?.active) return Promise.resolve();
+  const options = {signal: attempt.controller.signal};
+  const identity = role === undefined ? api('/auth/state', options).then(state => state.role) : Promise.resolve(role);
+  const current = () => attempt.active && version === execNoticeVersion;
+  return identity.then(role => {
+    if (!current()) return;
+    if (role !== 'ADMIN') {
+      renderExecNotice($('#exec-notice'), null);
+      return;
+    }
+    return api('/exec/notice', options).then(data => {
+      if (current()) renderExecNotice($('#exec-notice'), data);
+    });
+  }).catch(() => {
+    if (current()) renderExecNotice($('#exec-notice'), null);
+  });
+}
+
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 let startupAttempt;
@@ -819,6 +842,7 @@ function startConsole() {
     .then(state => {
       if (!attempt.active) return;
       store.role = state.role;
+      loadExecNotice(attempt, state.role);
       applyRoleView();
       store.csrfToken = state.csrfToken || '';
       // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
@@ -837,7 +861,9 @@ function startConsole() {
       $('#session-check-notice').style.display = state.role === 'ADMIN' && state.sessionCheckSetupNeeded ? '' : 'none';
       $('#oidc-callback-notice').style.display = state.role === 'ADMIN' && state.oidcCallbackSetupNeeded ? '' : 'none';
     })
-    .catch(() => {})
+    .catch(() => {
+      if (attempt.active) loadExecNotice(attempt, null);
+    })
     // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
     .then(() => {
       if (!attempt.active) return;
@@ -871,5 +897,11 @@ function startConsole() {
 }
 $('#startup-retry').addEventListener('click', startConsole);
 startConsole();
+window.addEventListener('focus', () => loadExecNotice());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') loadExecNotice();
+});
+document.addEventListener('click', () => loadExecNotice());
+document.addEventListener('keydown', () => loadExecNotice());
 
 // 页面在身份和插件清单到达后由 applyRoute 显示。

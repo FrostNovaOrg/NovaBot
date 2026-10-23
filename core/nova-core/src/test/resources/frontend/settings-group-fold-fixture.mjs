@@ -129,6 +129,7 @@ function page(fields, query, onlyChanged, values) {
   const count = node('span');
   const controls = {
     '#set-search': search, '#only-changed': only, '#set-count': count,
+    '#grp-nav': {dataset: {solo: 'push'}},
     '#adv-groups': null, '#settings-danger': null, '#adv-nav': null, '#show-advanced': null,
   };
   const document = {
@@ -149,7 +150,7 @@ function page(fields, query, onlyChanged, values) {
     'let advancedDismissed = null, advancedChosen = false;\n' + body + '\nreturn filterSettings;')(
     key => controls[key] ?? null, document, store, () => {}, () => 0, () => 0, () => 0,
     () => false, () => '', () => {}, {common: [{fields}], advanced: []}, isVisible, valuesOf);
-  return {group, rows, filterSettings};
+  return {group, rows, search, only, filterSettings};
 }
 
 const fields = [
@@ -169,7 +170,7 @@ const fields = [
 {
   const p = page(fields, '重试间隔');
   p.filterSettings();
-  eq({fold: p.group.dataset.fold, groupHidden: p.group.classList.contains('hide'),
+  eq({fold: p.group.dataset.fold, groupHidden: p.group.classList.contains('hide') || p.group.classList.contains('solo-hide'),
     rows: p.rows.map(r => r.classList.contains('hide') ? '藏' : '见')},
     {fold: '0', groupHidden: false, rows: ['见', '藏']},
     '① 搜「重试间隔」：收着的那一组放出来，命中的那行看得见，没命中的照旧藏');
@@ -188,18 +189,20 @@ const fields = [
     '② 只看改过：收着的那一组放出来，改过的那行看得见');
 }
 
-// ---------- ③ 筛完回到原来的收放 ----------
-{
+// ---------- ③ 在同一页清掉搜索，保留搜索前的收放 ----------
+for (const folded of ['1', '0', undefined]) {
   const p = page(fields, '重试间隔');
+  if (folded === undefined) delete p.group.dataset.fold;
+  else p.group.dataset.fold = folded;
   p.filterSettings();
   const opened = p.group.dataset.fold;
-  const clear = page(fields, '');
-  clear.group.dataset.fold = '1';
-  clear.filterSettings();
-  eq({searching: opened, afterClear: clear.group.dataset.fold,
-    rows: clear.rows.map(r => r.classList.contains('hide') ? '藏' : '见')},
-    {searching: '0', afterClear: '1', rows: ['见', '见']},
-    '③ 筛完回到原来的收放：手机上仍是收着的，各行恢复');
+  p.filterSettings();
+  p.search.value = '';
+  p.filterSettings();
+  eq({searching: opened, afterClear: p.group.dataset.fold,
+    rows: p.rows.map(r => r.classList.contains('hide') ? '藏' : '见')},
+    {searching: '0', afterClear: folded, rows: ['见', '见']},
+    '③ 清掉搜索后恢复原收放，包含手机默认收起与连续筛选');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

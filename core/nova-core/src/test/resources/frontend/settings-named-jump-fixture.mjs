@@ -304,7 +304,7 @@ const alertSrc = src('settings-alert.js');
 function wire(hash) {
   build(alertSrc);
   const given = {
-    $, document: fakeDocument, window: fakeWindow, store,
+    $, el: node, document: fakeDocument, window: fakeWindow, store,
     isVisible, advancedShown, canonicalValue, defaultValue, secretDraft,
     filterCards: page.alertFns.filterCards, openCards: page.alertFns.openCards,
     filterAuthCards: () => 0, closeHelp() {}, watchCurrentGroup() {}, headerHeight: () => 0,
@@ -321,10 +321,12 @@ function wire(hash) {
     cut(settingsSrc, 'export function filterSettings('),
     cut(settingsSrc, 'function filterKey('),
     cut(settingsSrc, 'function showAdvanced('),
+    cut(settingsSrc, 'function toggleAdvanced('),
+    cut(settingsSrc, 'function buildNavLink('),
     cut(mainSrc, 'function focusCard('),
     cut(mainSrc, 'function applyRoute('),
     cut(mainSrc, 'export async function load('),
-  ], ['focusGroup', 'filterSettings', 'applyRoute', 'load']);
+  ], ['focusGroup', 'filterSettings', 'applyRoute', 'load', 'buildNavLink', 'toggleAdvanced']);
   // 设置页重画那一步：真 renderGeneral 拆了重建，末尾按框里此刻的搜索词筛一遍。这里只留筛那一下
   given.renderGeneral = () => fns.filterSettings();
   return fns;
@@ -332,7 +334,7 @@ function wire(hash) {
 
 /** 眼前看得见吗：自己和祖先都没挂 hide */
 function seen(n) {
-  for (let x = n; x; x = x.parentElement) if (x.classList.contains('hide')) return false;
+  for (let x = n; x; x = x.parentElement) if (x.classList.contains('hide') || x.classList.contains('solo-hide')) return false;
   return true;
 }
 
@@ -392,6 +394,28 @@ await guard('④', () => {
   typeSearch(fns, 'quiet');
   fns.focusGroup('push');
   eq(page.search.value, 'quiet', '④ 对照：设置页里点组目录，搜索词照旧留着');
+});
+
+// 点目录只看推送后，仍能打开高级和从首页跳到告警，不能留下空白。
+await guard('目录选择与后续导航', () => {
+  const fns = wire({now: {name: 'settings', card: ''}});
+  const link = fns.buildNavLink({group: 'push', title: '推送'});
+  link.listeners.click[0]();
+  eq({push: seen(page.pushGroup), alert: seen(page.alertGroup)},
+    {push: true, alert: false}, '目录选择只显示选中的组');
+  typeSearch(fns, '告警');
+  eq(seen(page.alertGroup.kids[0]), true, '搜索可显示目录选择隐藏的其他组');
+  typeSearch(fns, '');
+  fns.toggleAdvanced();
+  eq({advanced: seen(page.adv), row: seen(page.collectGroup.kids[0])},
+    {advanced: true, row: true}, '选择一组后仍能打开高级并查看其中的项');
+});
+
+await guard('从首页跳到另一组', () => {
+  const fns = wire({now: {name: 'settings', card: ''}});
+  fns.buildNavLink({group: 'push', title: '推送'}).listeners.click[0]();
+  fns.focusGroup('alert', true, true);
+  eq(seen(page.alertGroup.kids[0]), true, '先选择推送组，再从首页点名跳到告警，目标仍可见');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

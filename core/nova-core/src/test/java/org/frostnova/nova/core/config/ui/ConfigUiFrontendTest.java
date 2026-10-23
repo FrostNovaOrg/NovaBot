@@ -403,7 +403,7 @@ class ConfigUiFrontendTest {
                     continue;
                 }
                 for (String imported : m.group(1).split(",")) {
-                    String wanted = imported.strip();
+                    String wanted = imported.strip().split("\\s+as\\s+", 2)[0];
                     if (!wanted.isEmpty() && !exports.get(target).contains(wanted)) {
                         bad.add(name + " 从 " + target + " 引入了 " + wanted + "，但那边没有 export 它");
                     }

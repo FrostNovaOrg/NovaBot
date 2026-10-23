@@ -31,6 +31,12 @@ const BOT_KEY = 'bot';
 const PANEL_KEY = 'panel';
 
 /**
+ * 设置页上登记页面来源的那一项，以及跳过去的地址（服务组）
+ */
+const ORIGIN_SETTING = '「设置 → 高级选项 → 服务 → 事件输出 · 页面来源」';
+const ORIGIN_SETTING_HREF = '#/settings?card=svc';
+
+/**
  * 平台卡的标识前缀
  *
  * 加前缀是因为它与插件的页签标识同源，而页签标识是插件自己填的——
@@ -202,14 +208,55 @@ function queueText(status, level) {
 }
 
 /**
+ * 事件输出此刻要在外部面板卡上说的那一句
+ *
+ * 正常运行时不说：那是常态，与队列为空时不报积压同一条。
+ * 暂停优先于「有未登记的来源来连」：暂停时根本不接连接，也就不会有后者。
+ * @param stream /api/event-tokens 回包里的 stream
+ * @return {string} 要说的话，无可说时为空串
+ */
+function streamLine(stream) {
+  if (stream.state === 'paused') {
+    return '事件输出已暂停：页面来源配置格式不合。请在' + ORIGIN_SETTING + '中修改，然后重启';
+  }
+  if (stream.state === 'running' && stream.unlistedOrigin) {
+    return '未登记的页面来源 ' + stream.unlistedOrigin + ' 最近来连接过，已被拒绝。如需让它连接，请在'
+      + ORIGIN_SETTING + '中添加，然后重启';
+  }
+  return '';
+}
+
+/**
  * 外部面板那张卡
  *
  * 「一把有效的都没有」与「还没签发过」不是同一句话：前者是撤干净了，后者是从没用过这条路。
  * 两种情形下外部面板都连不上，而该做的事不一样——前者要想清楚是不是撤错了，后者只需签一把。
+ *
+ * 事件输出暂停、或有未登记的浏览器页面来源来连时，那一句排在最前，并给一个去设置的链接；
+ * 暂停时外部面板一律连不上，灯判红。
+ * @param tokens 只读口令清单
+ * @param stream 事件输出此刻的运行情况，{state, unlistedOrigin}
+ * @return 卡片视图模型
+ */
+function panelCard(tokens, stream) {
+  const card = tokenCard(tokens);
+  const line = streamLine(stream || {});
+  if (!line) return card;
+
+  return Object.assign(card, {
+    level: stream.state === 'paused' ? 'err' : card.level,
+    note: line,
+    advice: card.note,
+    action: {text: '前往设置', href: ORIGIN_SETTING_HREF},
+  });
+}
+
+/**
+ * 外部面板卡上只看令牌的那一部分
  * @param tokens 只读口令清单
  * @return 卡片视图模型
  */
-function panelCard(tokens) {
+function tokenCard(tokens) {
   const active = tokens.filter(item => item.active).length;
   const revoked = tokens.length - active;
   const base = {key: PANEL_KEY, kind: 'panel', title: '外部面板',
@@ -235,16 +282,17 @@ function panelCard(tokens) {
  * @param cards 插件登记的连接卡，[{id, displayName}]
  * @param tokens 只读口令清单，来自 /api/event-tokens
  * @param botTitle 机器人卡标题，由调用点传入
+ * @param stream 事件输出此刻的运行情况，来自 /api/event-tokens 的 stream
  * @return 连接页视图模型
  */
-export function linksModel(status, login, cards, tokens, botTitle) {
+export function linksModel(status, login, cards, tokens, botTitle, stream) {
   const state = status || {};
   const accounts = ((login || {}).accounts) || [];
   const list = (cards || []).map(card => platformCard(card, state, accounts));
 
   // 平台卡在前：定稿的顺序是「先连上直播平台，再连上机器人，最后才谈把事件送到外面去」，
   // 这也正是使用者第一次配置时的先后
-  return {cards: list.concat([botCard(state, botTitle), panelCard(tokens || [])])};
+  return {cards: list.concat([botCard(state, botTitle), panelCard(tokens || [], stream)])};
 }
 
 /**

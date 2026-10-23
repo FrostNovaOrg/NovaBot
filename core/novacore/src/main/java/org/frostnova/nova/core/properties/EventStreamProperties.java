@@ -72,41 +72,51 @@ public class EventStreamProperties {
     @ConfigSummary("所有房间共享；增大缓冲会增加内存占用。")
     private int bufferSize = 2000;
 
-    /** 同时保留的事件输出连接数，单位：个，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启；其他值使用默认值。 */
+    /** 同时保留的事件输出连接数，单位：个，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 连接总数")
     @ConfigSummary("同时保留的事件输出连接数，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启。")
     private int maxConnections = 256;
 
-    /** 等待首帧的连接数，单位：个，默认 128，包含握手中的连接。 正整数，修改后重启；其他值使用默认值。 */
+    /** 等待首帧的连接数，单位：个，默认 128，包含握手中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 等待首帧的连接数")
     @ConfigSummary("等待首帧的连接数，默认 128，包含握手中的连接。 正整数，修改后重启。")
     private int maxPendingConnections = 128;
 
-    /** 同一对端地址的连接数，单位：个，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启；其他值使用默认值。 */
+    /** 同一对端地址的连接数，单位：个，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 每来源连接数")
     @ConfigSummary("同一对端地址的连接数，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启。")
     private int maxConnectionsPerSource = 128;
 
-    /** 同时进行的握手数，单位：个，默认 64。 正整数，修改后重启；其他值使用默认值。 */
+    /** 同时进行的握手数，单位：个，默认 64。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 同时握手数")
     @ConfigSummary("同时进行的握手数，默认 64。 正整数，修改后重启。")
     private int maxConcurrentHandshakes = 64;
 
-    /** 握手开始后等待连接建立的时间，单位：毫秒，默认 10000。 正整数，修改后重启；其他值使用默认值。 */
+    /** 握手开始后等待连接建立的时间，单位：毫秒，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 握手等待毫秒数")
     @ConfigSummary("握手开始后等待连接建立的时间，默认 10000 毫秒。 正整数，修改后重启。")
     private int handshakeTimeoutMs = 10000;
 
-    /** 单次写入及关闭等待的时间，单位：毫秒，默认 10000。 正整数，修改后重启；其他值使用默认值。 */
+    /** 单次写入及关闭等待的时间，单位：毫秒，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出 · 写入与关闭等待毫秒数")
     @ConfigSummary("单次写入及关闭等待的时间，默认 10000 毫秒。 正整数，修改后重启。")
     private int ioTimeoutMs = 10000;
+
+    /**
+     * 页面来源里主机名最长几个字符（域名的上限）
+     */
+    private static final int HOST_LENGTH = 253;
+
+    /**
+     * 一条页面来源最长几个字符：{@code https://}、最长的主机名与 {@code :65535} 加起来。更长的值按格式不合处理
+     */
+    private static final int ORIGIN_LENGTH = "https://".length() + HOST_LENGTH + ":65535".length();
 
     /** 校验页面来源列表，格式不合时抛出含说明的异常。 */
     public static void validateAllowedOrigins(List<String> origins) {
@@ -115,14 +125,40 @@ public class EventStreamProperties {
         }
     }
 
+    /**
+     * 去掉页面来源里的默认端口（http 的 80、https 的 443）
+     * <p>
+     * 浏览器发来的来源从不带默认端口，带着它存进去的那一条就永远对不上。
+     * 格式不合的值原样返回，由 {@link #validateAllowedOrigins} 去报。
+     * @param value 一条页面来源
+     * @return 去掉默认端口后的写法；没有默认端口时原样返回
+     */
+    public static String withoutDefaultPort(String value) {
+        if (!validOrigin(value)) {
+            return value;
+        }
+        URI uri = URI.create(value);
+        boolean http = "http".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 80;
+        boolean https = "https".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 443;
+        return http || https ? value.substring(0, value.lastIndexOf(':')) : value;
+    }
+
+    /**
+     * @param value 一条取值
+     * @return 是完整的 http 或 https 来源时为 {@code true}
+     */
+    public static boolean isOrigin(String value) {
+        return validOrigin(value);
+    }
+
     private static boolean validOrigin(String value) {
-        if (value == null) {
+        if (value == null || value.length() > ORIGIN_LENGTH) {
             return false;
         }
         try {
             URI uri = URI.create(value);
             return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    && uri.getHost() != null && uri.getRawUserInfo() == null
+                    && uri.getHost() != null && uri.getHost().length() <= HOST_LENGTH && uri.getRawUserInfo() == null
                     && uri.getRawPath().isEmpty() && uri.getRawQuery() == null && uri.getRawFragment() == null
                     && uri.getPort() >= -1 && uri.getPort() <= 65535;
         } catch (IllegalArgumentException e) {

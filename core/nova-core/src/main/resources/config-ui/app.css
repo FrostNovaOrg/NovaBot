@@ -71,12 +71,12 @@ body{margin:0;background:var(--ground);color:var(--text);
 #personal-about{margin:6px 0;overflow-wrap:anywhere}
 .member-result{color:var(--err);white-space:pre-wrap;overflow-wrap:anywhere}
 .member-result:empty{display:none}
-.members-intro{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:0 16px}
+.members-intro{display:flex;align-items:flex-start;flex-direction:column;gap:12px;margin-bottom:12px;padding:0 16px}
 /* 成员名单：每位成员一张横排卡片行，按钮另起一行不与五栏抢宽；
    窄屏上整张卡竖着叠、每格头顶带栏目名，按钮落在卡底，不用横着滚去找 */
 .members-list{padding:0 16px;font-size:var(--fs-sm)}
 .member-head,.member-card{display:grid;align-items:start;text-align:left;gap:8px 16px;
-  grid-template-columns:minmax(0,2.2fr) minmax(0,.7fr) minmax(0,.7fr) minmax(0,1.8fr) minmax(0,1.2fr)}
+  grid-template-columns:minmax(0,2.2fr) minmax(6em,.7fr) minmax(4em,.7fr) minmax(0,1.8fr) minmax(0,1.2fr)}
 .member-head{padding:0 12px 8px;color:var(--dim);font-size:var(--fs-xs);border-bottom:1px solid var(--line)}
 .member-head span:last-child{grid-column:1/-1}
 .member-card{padding:12px;border-bottom:1px solid var(--line)}

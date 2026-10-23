@@ -5,7 +5,7 @@
  * 那是照程序结构摆的：使用者要办一件事（「让它别在半夜发消息」），得先猜这件事
  * 在代码里归哪个类管。现在组由服务端那张表给（见 ConfigurationGroups），
  * 每一项按服务端标的级别分进常用或高级：高级默认收着，由组目录最底下的「高级选项」显示；
- * 每一项旁边标着改完什么时候生效，行内只留一句短说明，整段说明在问号里。
+ * 需要重启的项旁边留出生效提醒，行内只留一句短说明，整段说明在问号里。
  */
 
 import {ask} from './confirm.js';
@@ -152,6 +152,8 @@ export function focusGroup(id, open, fresh) {
  * 只改框里的值不会触发它们的监听，因此这里自己筛：不筛的话框是空的，行却还按旧搜索藏着。
  */
 function clearFilters() {
+  const nav = $('#grp-nav');
+  if (nav && nav.dataset) nav.dataset.solo = '';
   const search = $('#set-search');
   const onlyChanged = $('#only-changed');
   if (search) search.value = '';
@@ -744,7 +746,7 @@ function buildGroup(group) {
   const title = el('h2');
   // 组名即折页钮：窄屏上各组默认收着，只留组名与「改过 n 项」（见 app.css），
   // 点名字才摊开。收放记在 data-fold 上，搜到这一组时 filterSettings 先放开、筛完再复原
-  const toggle = el('button', 'grp-head');
+  const toggle = el('button', 'lnkbtn grp-head');
   toggle.type = 'button';
   const name = el('span');
   name.textContent = group.title;
@@ -765,7 +767,7 @@ function buildGroup(group) {
   if (group.description) {
     const desc = el('div', 'card-desc');
     desc.textContent = group.description;
-    box.appendChild(desc);
+    body.appendChild(desc);
   }
 
   for (const field of group.fields) {
@@ -961,6 +963,8 @@ function showAdvanced() {
  * 改了搜索词再重新算。
  */
 function toggleAdvanced() {
+  const nav = $('#grp-nav');
+  if (nav && nav.dataset) nav.dataset.solo = '';
   const region = $('#adv-groups');
   const visible = !!region && !region.classList.contains('hide');
   advancedChosen = !visible;
@@ -1124,11 +1128,12 @@ export function filterSettings() {
     group.classList.toggle('hide', any === 0);
     if (filtering) {
       if (any > 0) {
-        if (group.dataset.fold === '1') group.dataset.foldWas = '1';
+        if (group.dataset.foldWas === undefined) group.dataset.foldWas = group.dataset.fold ?? '';
         group.dataset.fold = '0';
       }
     } else if (group.dataset.foldWas !== undefined) {
-      group.dataset.fold = group.dataset.foldWas;
+      if (group.dataset.foldWas === '') delete group.dataset.fold;
+      else group.dataset.fold = group.dataset.foldWas;
       delete group.dataset.foldWas;
     }
   }

@@ -359,6 +359,39 @@ class EventConnectionBudgetTest {
     }
 
     @Test
+    void handshakeWindowNoticeOncePerFiveSeconds() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger("org.frostnova.nova.core.protocol.EventConnectionLimits");
+        ListAppender<ILoggingEvent> messages = new ListAppender<>();
+        messages.start();
+        logger.addAppender(messages);
+        try {
+            setup(Map.of("handshake-timeout-ms", 20));
+            java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong();
+            org.springframework.test.util.ReflectionTestUtils.setField(endpoint.connectionLimits(), "clock",
+                    (java.util.function.LongSupplier) now::get);
+            java.util.function.LongSupplier notices = () -> messages.list.stream()
+                    .filter(event -> event.getFormattedMessage().contains("handshake-timeout-ms")).count();
+
+            for (int i = 0; i < 20; i++) assertTrue(new Attempt("127.0.0.1").accepted);
+            await(() -> poolUnchecked().getCompletedTaskCount() >= 20);
+            assertEquals(1, notices.getAsLong());
+
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(4900));
+            assertTrue(new Attempt("127.0.0.1").accepted);
+            await(() -> poolUnchecked().getCompletedTaskCount() >= 21);
+            assertEquals(1, notices.getAsLong());
+
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(200));
+            assertTrue(new Attempt("127.0.0.1").accepted);
+            await(() -> poolUnchecked().getCompletedTaskCount() >= 22);
+            assertEquals(2, notices.getAsLong());
+        } finally {
+            logger.detachAppender(messages);
+            messages.stop();
+        }
+    }
+
+    @Test
     void closingPoolsHaveSeparateAllowances() throws Exception {
         setup(Map.of("max-connections", 3));
         assertEquals(2, pool("closers").getMaximumPoolSize());

@@ -17,6 +17,7 @@ import org.frostnova.nova.core.alert.AlertChannel;
 import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.EventStreamToken;
+import org.frostnova.nova.core.protocol.EventStreamStatus;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
 import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -297,6 +298,16 @@ public class ConfigUiController {
 
     @Autowired(required = false)
     private ObjectProvider<PushTargetLookup> targetLookups = emptyProvider(PushTargetLookup.class);
+
+    /**
+     * 事件输出的运行情况。没装配事件输出的场合（多数测试）为 {@code null}，按「没开」显示
+     */
+    private EventStreamStatus eventStreamStatus;
+
+    @Autowired(required = false)
+    void setEventStreamStatus(EventStreamStatus eventStreamStatus) {
+        this.eventStreamStatus = eventStreamStatus;
+    }
 
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -1255,11 +1266,18 @@ public class ConfigUiController {
         } catch (OidcException error) {
             outOfRange.add("novabot.core.config-ui.oidc.management-uri（统一登录 · 账户管理页）：" + error.getMessage());
         }
-        String origins = toValidate.get(EventStreamProperties.PREFIX + ".allowed-origins");
+        String originsKey = EventStreamProperties.PREFIX + ".allowed-origins";
+        String origins = toValidate.get(originsKey);
         if (origins != null) {
+            List<String> list = java.util.Arrays.stream(origins.split("\n"))
+                    .filter(value -> !value.isBlank()).map(String::strip).toList();
             try {
-                EventStreamProperties.validateAllowedOrigins(
-                        java.util.Arrays.stream(origins.split("\n")).filter(value -> !value.isBlank()).map(String::strip).toList());
+                EventStreamProperties.validateAllowedOrigins(list);
+                // 浏览器发来的来源不带默认端口，带着 :80、:443 存进去的那一条永远对不上，存之前去掉
+                List<String> stored = list.stream().map(EventStreamProperties::withoutDefaultPort).toList();
+                if (!stored.equals(list)) {
+                    normalized.put(originsKey, String.join("\n", stored));
+                }
             } catch (IllegalArgumentException error) {
                 outOfRange.add(error.getMessage());
             }
@@ -1415,7 +1433,23 @@ public class ConfigUiController {
         }
         result.put("success", true);
         result.put("tokens", items);
+        result.put("stream", eventStreamState());
         return result;
+    }
+
+    /**
+     * 事件输出此刻的运行情况，给连接页外部面板卡用
+     * @return state：off / running / paused；unlistedOrigin：最近来连而没登记的页面来源，没有时不带
+     */
+    private JSONObject eventStreamState() {
+        JSONObject stream = new JSONObject();
+        EventStreamStatus.State state = eventStreamStatus == null
+                ? EventStreamStatus.State.OFF : eventStreamStatus.state();
+        stream.put("state", state.name().toLowerCase(Locale.ROOT));
+        if (eventStreamStatus != null && eventStreamStatus.unlistedOrigin() != null) {
+            stream.put("unlistedOrigin", eventStreamStatus.unlistedOrigin());
+        }
+        return stream;
     }
 
     /**
