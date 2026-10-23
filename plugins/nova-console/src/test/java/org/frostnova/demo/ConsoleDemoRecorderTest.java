@@ -98,6 +98,7 @@ public class ConsoleDemoRecorderTest {
         if (method.equals("POST")) request.contentType("application/json").content(requestBody == null ? "{}" : JSON.toJSONString(sortedJson(requestBody)));
         query.forEach((k, v) -> request.queryParam(k, v));
         org.springframework.mock.web.MockHttpServletResponse response;
+        long previewStarted = System.nanoTime();
         try {
             response = mvc.perform(request).andReturn().getResponse();
         } catch (jakarta.servlet.ServletException error) {
@@ -109,6 +110,9 @@ public class ConsoleDemoRecorderTest {
                     .requestAttr(jakarta.servlet.RequestDispatcher.ERROR_EXCEPTION, error.getCause()))
                     .andReturn().getResponse();
         }
+        if (method.equals("POST") && path.startsWith("/weekly-report/") && path.endsWith("/preview"))
+            System.out.printf(java.util.Locale.ROOT, "WEEKLY_PREVIEW_MS %s %.3f%n", path,
+                    (System.nanoTime() - previewStarted) / 1_000_000.0);
         byte[] bytes = response.getContentAsByteArray();
         if (path.equals("/status")) {
             // Keep the controller response, replacing only the local deployment path.
@@ -404,7 +408,19 @@ public class ConsoleDemoRecorderTest {
                 String wp = "/weekly-report/" + platform + "/" + uid;
                 JSONObject status = capture(wp + "/status", query);
                 assertTrue(status.getString("status").contains("已发出"), "previous weekly delivery");
-                if (user.getBooleanValue("enabled")) capture(wp + "/preview", query);
+                if (user.getBooleanValue("enabled")) for (boolean visible : new boolean[]{false, true}) {
+                    var body = JSONObject.of("platform", target.get("platform"), "type", target.get("type"),
+                            "num", target.get("num"), "revenueVisible", visible);
+                    var draft = org.frostnova.nova.core.service.WeeklyReportLayout.defaults();
+                    draft.putAll(body);
+                    draft.put("streamerPlatform", platform); draft.put("streamerUid", user.get("uid"));
+                    draft.put("reportPalette", target.get("reportPalette"));
+                    captureRequest("POST", wp + "/preview", new JSONObject(draft));
+                    if (String.valueOf(uid).equals("990000000101") && target.getLongValue("num") == 990000000301L && !visible) {
+                        draft.put("audience", false);
+                        captureRequest("POST", wp + "/preview", draft);
+                    }
+                }
             }
         }
         System.out.println("RECORDED " + entries.size() + " responses (MockMvc bodies; local config path replaced)");
@@ -426,7 +442,7 @@ public class ConsoleDemoRecorderTest {
                 catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
             }).sum();
         }
-        assertTrue(imageBytes <= 2_100_000, "PNG budget: " + imageBytes);
+        assertTrue(imageBytes <= 2_500_000, "PNG budget: " + imageBytes);
         meta.put("responses", entries);
         Files.writeString(output.resolve("index.json"), JSON.toJSONString(sortedJson(meta), com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat) + "\n");
         assertTrue(bytes + Files.size(output.resolve("index.json")) <= 8_000_000, "data budget");

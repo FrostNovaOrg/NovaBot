@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @DisplayName("运营周报只读预览接口")
@@ -57,7 +58,7 @@ class WeeklyReportApiTest {
                 snapshots, new LiveDetailArchive(props), catalogs, mock(ObjectProvider.class),
                 Clock.fixed(Instant.parse("2026-10-12T02:00:00Z"), ZoneOffset.UTC));
         renderer = mock(WeeklyReportRenderer.class); when(renderer.platform()).thenReturn("bilibili");
-        when(renderer.render(any(), any(), any())).thenReturn(new byte[]{(byte)137, 80, 78, 71});
+        when(renderer.render(any(), any(), any(), any())).thenReturn(new byte[]{(byte)137, 80, 78, 71});
         injectRenderer();
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -71,6 +72,64 @@ class WeeklyReportApiTest {
         archive.append(new LiveSession("bilibili", 1L, "主播示例", 2L, start.toEpochMilli(), start.plusSeconds(600).toEpochMilli(),
                 600, Map.of("gift_value", 1234.5, "danmu_count", 8901d), Map.of(), LiveEndReason.NORMAL,
                 List.of(), 0, Map.of("enter_users", List.of(9200000001L)), 0, Map.of(), Map.of()));
+    }
+
+    @Test @DisplayName("编辑器以草稿预览上周真数据")
+    void draftPreview() throws Exception {
+        archive(Instant.parse("2026-10-05T00:00:00Z"));
+        mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
+        mvc.perform(post("/config/api/weekly-report/bilibili/1/preview")
+                .contentType("application/json").content("{\"audience\":false,\"revenueVisible\":true}"))
+                .andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+    }
+
+    @Test @DisplayName("预览按草稿、主播自己的已存通道、默认依次回落，不借用别人的通道")
+    void draftSavedAndDefaultPrecedence() throws Exception {
+        archive(Instant.parse("2026-10-05T00:00:00Z"));
+        var user = new PushUser(); user.setPlatform("bilibili"); user.setUid(1L);
+        var own = new PushTarget(); own.setPlatform("qq-onebot"); own.setType(PushTargetType.GROUP); own.setNum(1001L);
+        own.setRevenueVisible(true); own.setReportPalette("night");
+        var notice = new PushMessage(); notice.setHandler(WeeklyReportPushHandler.class.getName());
+        notice.setParams("{\"audience\":false,\"card_duration\":false}");
+        own.setMessages(List.of(notice)); user.setTargets(List.of(own));
+        var other = new PushUser(); other.setPlatform("bilibili"); other.setUid(2L); other.setTargets(List.of(own));
+        when(source.getAllUsers()).thenReturn(List.of(user, other));
+        mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
+        String path = "/config/api/weekly-report/bilibili/1/preview";
+        mvc.perform(post(path).contentType("application/json")
+                .content("{\"platform\":\"qq-onebot\",\"type\":1,\"num\":1001}"))
+                .andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+        verify(renderer).render(any(), argThat(d -> d.metrics().containsKey("revenue")), eq("night"),
+                argThat(l -> !l.enabled("audience") && !l.cardEnabled("card_duration") && l.enabled("days")));
+        clearInvocations(renderer);
+        mvc.perform(post(path).contentType("application/json")
+                .content("{\"platform\":\"qq-onebot\",\"type\":1,\"num\":1001,\"audience\":true,\"revenueVisible\":false,\"reportPalette\":null}"))
+                .andExpect(status().isOk());
+        verify(renderer).render(any(), argThat(d -> !d.metrics().containsKey("revenue")), eq("pink-blue"),
+                argThat(l -> l.enabled("audience") && !l.cardEnabled("card_duration")));
+        assertFalse(WeeklyReportLayout.savedParams(own).getBooleanValue("audience"));
+        user.setTargets(List.of()); clearInvocations(renderer);
+        mvc.perform(post(path).contentType("application/json")
+                .content("{\"platform\":\"qq-onebot\",\"type\":1,\"num\":1001}"))
+                .andExpect(status().isOk());
+        verify(renderer).render(any(), argThat(d -> !d.metrics().containsKey("revenue")), eq("pink-blue"),
+                eq(WeeklyReportLayout.of(null)));
+    }
+
+    @Test @DisplayName("周一凌晨确认框的日期与实际统计周一致")
+    void confirmationWeekUsesServerStatisticsDay() throws Exception {
+        var delivery = targetReports();
+        ReflectionTestUtils.setField(delivery, "clock", Clock.fixed(Instant.parse("2026-10-25T19:00:00Z"), ZoneOffset.UTC));
+        mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(delivery)).build();
+        mvc.perform(get("/config/api/weekly-report/bilibili/1/status")
+                .param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.previousWeek").value("10月12日至10月18日"));
+        archive(Instant.parse("2026-10-13T00:00:00Z"));
+        archive(Instant.parse("2026-10-20T00:00:00Z"));
+        var target = new PushTarget(); target.setPlatform("qq-onebot"); target.setType(PushTargetType.GROUP); target.setNum(1001L);
+        delivery.trial("bilibili", 1L, target);
+        verify(renderer).render(any(), argThat(d -> d.firstDay().equals(LocalDate.of(2026, 10, 12))
+                && d.lastDay().equals(LocalDate.of(2026, 10, 18)) && d.metrics().get("sessions").intValue() == 1), any(), any());
     }
 
     @Test @DisplayName("周报取数保留前周场次与边界快照，比较与概况一致")
@@ -119,9 +178,9 @@ class WeeklyReportApiTest {
         String raw = mvc.perform(get("/config/api/streamers/bilibili/1/weekly-report"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertTrue(JSON.parseObject(raw).getString("summary").contains("没有记录到开播"));
-        verify(renderer, never()).render(any(), any(), any());
+        verify(renderer, never()).render(any(), any(), any(), any());
         archive(Instant.parse("2026-10-05T00:00:00Z"));
-        when(renderer.render(any(), any(), any())).thenThrow(new IllegalStateException("image unavailable"));
+        when(renderer.render(any(), any(), any(), any())).thenThrow(new IllegalStateException("image unavailable"));
         raw = mvc.perform(get("/config/api/streamers/bilibili/1/weekly-report"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var text = JSON.parseObject(raw).getString("text");
@@ -161,8 +220,8 @@ class WeeklyReportApiTest {
         delivery.trial("bilibili", 1L, target);
         verify(sender).sendNow(outgoing.capture());
         assertEquals(JSON.parseObject(json).getString("summary"), outgoing.getValue().getContent().split("\n", 2)[1]);
-        var targetJson = mvc.perform(get("/config/api/weekly-report/bilibili/1/preview")
-                .param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001").param("format", "json"))
+        var targetJson = mvc.perform(post("/config/api/weekly-report/bilibili/1/preview").contentType("application/json")
+                .content("{\"platform\":\"qq-onebot\",\"type\":1,\"num\":1001}").param("format", "json"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertEquals(JSON.parseObject(json).getString("summary"), JSON.parseObject(targetJson).getString("summary"));
     }
@@ -183,7 +242,7 @@ class WeeklyReportApiTest {
         var user = new PushUser(); user.setUid(1L); user.setPlatform("bilibili");
         user.setUname("{at=all}测试[CQ:at,qq=all]");
         when(source.getAllUsers()).thenReturn(List.of(user));
-        if (!image) when(renderer.render(any(), any(), any())).thenReturn(null);
+        if (!image) when(renderer.render(any(), any(), any(), any())).thenReturn(null);
         var sender = mock(NovaMessageSender.class);
         var delivery = new WeeklyReportDeliveryService(source,
                 (WeeklyReportContentService) ReflectionTestUtils.getField(controller, "weeklyReports"),
@@ -206,37 +265,37 @@ class WeeklyReportApiTest {
     }
     @ParameterizedTest(name = "文字预览：{0}")
     @ValueSource(strings = {"empty", "renderer-failed", "renderer-missing"})
-    @DisplayName("推送页无图预览展示摘要与文字，不展示原始JSON")
+    @DisplayName("无图时编辑器预览返回真实摘要与文字")
     void targetTextPreview(String mode) throws Exception {
         var user = new PushUser(); user.setUid(1L); user.setPlatform("bilibili"); user.setUname("主播示例");
         when(source.getAllUsers()).thenReturn(List.of(user));
         if (!mode.equals("empty")) archive(Instant.parse("2026-10-05T00:00:00Z"));
-        if (mode.equals("renderer-failed")) when(renderer.render(any(), any(), any())).thenThrow(new IllegalStateException("sample render failure"));
+        if (mode.equals("renderer-failed")) when(renderer.render(any(), any(), any(), any())).thenThrow(new IllegalStateException("sample render failure"));
         if (mode.equals("renderer-missing")) when(renderer.platform()).thenReturn("sample");
         mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
-        String url = "/config/api/weekly-report/bilibili/1/preview";
-        var page = mvc.perform(get(url).param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
-                .andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith("text/html"))
+        var raw = mvc.perform(post("/config/api/weekly-report/bilibili/1/preview").contentType("application/json").content("{}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imageAvailable").value(false))
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-        var raw = mvc.perform(get(url).param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001").param("format", "json"))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var json = JSON.parseObject(raw);
-        assertTrue(page.contains(json.getString("summary")));
-        assertTrue(org.springframework.web.util.HtmlUtils.htmlUnescape(page).contains(json.getString("text")));
-        assertTrue(page.contains("<pre")); assertFalse(page.contains("\"data\"")); assertFalse(json.containsKey("data"));
+        assertTrue(json.getString("summary").startsWith("主播示例 上周"));
+        assertFalse(json.getString("text").isBlank());
+        if (mode.equals("empty")) {
+            assertTrue(json.getString("text").contains("没有记录到开播"));
+            verify(renderer, never()).render(any(), any(), any(), any());
+        }
     }
     @Test @DisplayName("推送页有图预览仍显示PNG")
     void targetImagePreview() throws Exception {
         archive(Instant.parse("2026-10-05T00:00:00Z"));
         mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
-        mvc.perform(get("/config/api/weekly-report/bilibili/1/preview").param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
+        mvc.perform(post("/config/api/weekly-report/bilibili/1/preview").contentType("application/json").content("{}"))
                 .andExpect(status().isOk()).andExpect(content().contentType("image/png"));
     }
     @Test @DisplayName("推送页不存在的主播预览返回共用404提示")
     void targetMissingPreview() throws Exception {
         var expected = controller.streamer("bilibili", 1L, "week", 1, 0).getBody().getString("message");
         mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
-        var raw = mvc.perform(get("/config/api/weekly-report/bilibili/1/preview").param("pushPlatform", "qq-onebot").param("type", "1").param("num", "1001"))
+        var raw = mvc.perform(post("/config/api/weekly-report/bilibili/1/preview").contentType("application/json").content("{}"))
                 .andExpect(status().isNotFound()).andReturn().getResponse().getContentAsString();
         assertEquals(expected, JSON.parseObject(raw).getString("message"));
     }

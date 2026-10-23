@@ -75,13 +75,21 @@
     let body = {};
     try { body = JSON.parse(options.body || '{}'); } catch (_) { /* no JSON body */ }
     const ok = extra => json({success: true, message, ...extra});
-    if (path === '/report/preview' || path === '/streamer/lookup') {
+    const reportPreview = path === '/report/preview' || /^\/weekly-report\/[^/]+\/\d+\/preview$/.test(path);
+    if (reportPreview || path === '/streamer/lookup') {
       const row = responses.get(key('POST', '/config/api' + path, '', body));
       if (row) return read(row);
-      if (path === '/report/preview') {
+      if (reportPreview) {
+        const withoutPalette = {...body};
+        if (withoutPalette.reportPalette === null) delete withoutPalette.reportPalette;
+        const exact = responses.get(key('POST', '/config/api' + path, '', withoutPalette));
+        if (exact) return read(exact);
         const defaults = Object.fromEntries(['platform', 'type', 'num', 'revenueVisible']
           .filter(name => Object.hasOwn(body, name)).map(name => [name, body[name]]));
-        const fallback = responses.get(key('POST', '/config/api' + path, '', defaults));
+        const fallback = responses.get(key('POST', '/config/api' + path, '', defaults))
+          || (path.startsWith('/weekly-report/') && recording.responses.find(item => item.method === 'POST'
+            && item.path === '/config/api' + path && item.body?.audience !== false
+            && Object.entries(defaults).every(([name, value]) => item.body?.[name] === value)));
         if (fallback) {
           notice('演示模式：预览显示录制的默认版式，改动不会重新绘制');
           return read(fallback);

@@ -2004,9 +2004,11 @@ class ConfigUiFrontendTest {
                 bad.add(PUSH_VIEW + " 没有调用 " + endpoint + "，那一块此刻空着而不说为什么");
             }
         }
-        if (!view.contains("CONSOLE + '" + REPORT_PREVIEW_PATH + "'")) {
-            bad.add(PUSH_VIEW + " 没有调用 " + REPORT_PREVIEW_PATH
-                    + "，「报告长什么样」那一段就只剩一排开关，而所见即所得的意义正是那张图");
+        String preview = functionBodyAny(view, "layoutPreviewRenderer");
+        if (!preview.contains("'" + REPORT_PREVIEW_PATH.substring("/api".length()) + "'")
+                || !preview.contains("'/weekly-report/'") || !preview.contains("'/preview'")
+                || !preview.contains("request(CONSOLE + '/api' + path")) {
+            bad.add(PUSH_VIEW + " 没有按通知类型调用下播报告与运营周报的预览接口，图片版式改动无法预览");
         }
         String draft = pages.getOrDefault(PUSH_SESSION_DRAFT, "");
         if (draft.isBlank()) {

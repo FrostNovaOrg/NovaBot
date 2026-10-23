@@ -81,6 +81,17 @@ class RecordingTest(unittest.TestCase):
             for visible in (False, True):
                 self.assertIn(dict(platform='qq-onebot', type=kind, num=num, revenueVisible=visible), bodies)
 
+    def test_weekly_draft_previews(self):
+        previews = [row for row in ROWS if '/weekly-report/' in row['path'] and row['path'].endswith('/preview')]
+        self.assertTrue(previews)
+        self.assertTrue(all(row['method'] == 'POST' for row in previews))
+        self.assertTrue(any(row.get('body', {}).get('audience') is False for row in previews))
+        self.assertTrue(any(row['contentType'].startswith('image/png') for row in previews))
+        empty = next(row for row in previews if '/990000000103/' in row['path'])
+        text = json.loads((DATA.parent / empty['file']).read_text())
+        self.assertIn('没有记录到开播', text['text'])
+        self.assertFalse(text['imageAvailable'])
+
     def test_recorded_nickname_fallback(self):
         streamers = next(row for row in ROWS if row['path'] == '/config/api/streamers')
         users = json.loads((DATA.parent / streamers['file']).read_text())['streamers']

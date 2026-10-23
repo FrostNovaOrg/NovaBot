@@ -180,8 +180,13 @@ public final class WeeklyReport {
     }
 
     public static String comparisonExplanation(Data d) {
+        return comparisonExplanation(d, List.of("durationSeconds", "revenue", "messages", "audience", "interactionAudience"));
+    }
+
+    public static String comparisonExplanation(Data d, List<String> keys) {
+        if (keys.isEmpty()) return "";
         var reasons = new java.util.LinkedHashSet<String>();
-        for (String key : List.of("durationSeconds", "revenue", "messages", "audience", "interactionAudience")) {
+        for (String key : keys) {
             var c = d.comparisons().get(key);
             if (c != null && c.reason() != null) reasons.add(c.reason().replace("本期", "本周").replace("上期", "上周"));
         }

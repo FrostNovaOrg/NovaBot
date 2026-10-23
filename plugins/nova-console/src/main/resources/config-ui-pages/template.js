@@ -1186,12 +1186,16 @@ export function buildLayoutEditor(host, options) {
     redraw();
   }
 
+  let previewRevision = 0;
+
   /** 照当前这套版式画一张 */
   function redraw() {
     if (!preview) return;
+    const current = ++previewRevision;
     image.innerHTML = '';
     image.appendChild(el('p', 'hint')).textContent = '正在生成预览…';
     opts.render((opts.paramsOf ? opts.paramsOf() : null) || {}).then(url => {
+      if (current !== previewRevision) return;
       image.innerHTML = '';
       if (!url) {
         // 画不出来时说明白，不留一块白：一块白与「这套版式什么都不显示」长得一样
@@ -1199,11 +1203,17 @@ export function buildLayoutEditor(host, options) {
           '无法获取此类通知的预览，请检查对应插件是否已加载。改动仍可正常保存。';
         return;
       }
+      if (url.text) {
+        image.appendChild(el('p', 'hint')).textContent = url.summary;
+        if (url.text !== url.summary) image.appendChild(el('pre')).textContent = url.text;
+        return;
+      }
       const node = el('img', 'rep-shot');
       node.src = url;
       node.alt = '按当前版式生成的报告预览';
       image.appendChild(node);
     }).catch(err => {
+      if (current !== previewRevision) return;
       image.innerHTML = '';
       image.appendChild(el('p', 'hint')).textContent = '预览图读取失败：' + err.message;
     });

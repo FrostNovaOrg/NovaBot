@@ -84,10 +84,10 @@
 	},
 	"restartPending":[],
 	"runtime":{
-		"diskFreeMb":59375,
+		"diskFreeMb":58984,
 		"diskLevel":"ok",
 		"heapMaxMb":4096,
-		"heapUsedMb":137,
+		"heapUsedMb":298,
 		"processors":10,
 		"threads":28
 	},

@@ -1,5 +1,6 @@
 package org.frostnova.nova.console.controller;
 
+import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiAudit;
@@ -17,10 +18,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.nio.charset.StandardCharsets;
-import org.springframework.web.util.HtmlUtils;
 
-/** 推送目标旁的周报状态、按会话金额设置预览与发送上一周的报告。 */
+/** 通道的周报状态、按草稿预览与发送上一周的报告。 */
 @Slf4j
 @NovaComponent
 @RestController
@@ -49,30 +48,27 @@ public class WeeklyReportPushController {
     public Map<String, Object> status(@PathVariable String platform, @PathVariable Long uid,
             @RequestParam String pushPlatform, @RequestParam int type, @RequestParam Long num) {
         return Map.of("success", true, "status", reports.status(WeeklyReportDeliveryService.key(
-                platform, uid, target(pushPlatform, type, num))));
+                platform, uid, target(pushPlatform, type, num))), "previousWeek", reports.previousWeek());
     }
-    @GetMapping("/preview")
+    @PostMapping("/preview")
     public ResponseEntity<?> preview(@PathVariable String platform, @PathVariable Long uid,
-            @RequestParam String pushPlatform, @RequestParam int type, @RequestParam Long num,
+            @RequestBody(required = false) JSONObject draft,
             @RequestParam(defaultValue = "png") String format) {
         if (!format.equals("png") && !format.equals("json"))
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "请选择 png 或 json"));
-        var found = reports.preview(platform, uid, target(pushPlatform, type, num));
+        var identity = new PushTarget();
+        identity.setType(PushTargetType.GROUP);
+        if (draft != null) {
+            identity.setPlatform(draft.getString("platform"));
+            identity.setNum(draft.getLong("num"));
+            if (draft.getInteger("type") != null) identity.setType(PushTargetType.of(draft.getInteger("type")));
+        }
+        var found = reports.preview(platform, uid, identity, draft);
         if (found.isEmpty()) return ResponseEntity.status(404).body(Map.of("success", false,
                 "message", StreamerController.MISSING_STREAMER));
         var preview = found.get();
         if (format.equals("png") && preview.image() != null)
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.IMAGE_PNG).body(preview.image());
-        if (format.equals("png")) {
-            String html = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\">"
-                    + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-                    + "<title>运营周报预览</title><style>body{max-width:52rem;margin:2rem auto;padding:0 1rem;"
-                    + "font-family:system-ui,sans-serif;line-height:1.7}pre{white-space:pre-wrap;font:inherit}</style>"
-                    + "<h1>运营周报预览</h1><p>" + HtmlUtils.htmlEscape(preview.summary())
-                    + "</p><pre>" + HtmlUtils.htmlEscape(preview.text()) + "</pre></html>";
-            return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                    .contentType(new MediaType("text", "html", StandardCharsets.UTF_8)).body(html);
-        }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Map.of("success", true,
                 "summary", preview.summary(), "text", preview.text(),
                 "imageAvailable", preview.image() != null));

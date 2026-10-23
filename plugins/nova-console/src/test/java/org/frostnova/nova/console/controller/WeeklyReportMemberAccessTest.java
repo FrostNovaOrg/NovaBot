@@ -42,6 +42,21 @@ class WeeklyReportMemberAccessTest {
         mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(reports)).addInterceptors(gate).build();
     }
 
+    @Test @DisplayName("成员可预览自己的主播图片，其他主播与不存在的主播均隐藏")
+    void draftPreviewOnlyForOwnedStreamer() throws Exception {
+        var preview = mock(org.frostnova.nova.core.analytics.WeeklyReport.Preview.class);
+        when(preview.image()).thenReturn(new byte[]{1, 2, 3});
+        when(reports.preview(eq("bilibili"), eq(1L), any(), any())).thenReturn(java.util.Optional.of(preview));
+        mvc.perform(post("/config/api/weekly-report/bilibili/1/preview")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member).contentType("application/json").content("{\"audience\":false}"))
+                .andExpect(status().isOk()).andExpect(content().contentType("image/png"));
+        clearInvocations(reports);
+        for (int uid : List.of(2, 3)) mvc.perform(post("/config/api/weekly-report/bilibili/" + uid + "/preview")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member).contentType("application/json").content("{}"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("没有这位主播"));
+        verifyNoInteractions(reports);
+    }
+
     // 成员只能把自家周报发往这位主播配置过的通道，包括暂时停用的通道。
     @Test void trialOnlyUsesOwnedStreamersOwnTargets() throws Exception {
         send(member, "1", "qq-onebot", "1", "1001").andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
