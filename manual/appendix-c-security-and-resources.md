@@ -72,6 +72,10 @@ ss -tlnp | grep -E ':(3000|3001|6099)\b'
 改成 `true` 重启，用启动日志里的地址进去改完再改回 `false`。
 这个启动令牌**等同于密码加验证器**，而且走地址栏、会进反向代理的访问日志，平日里不要开着。
 
+启动日志里的地址按 `INFO` 级别输出。日志只看错误或已关闭时，先把
+`novabot.core.log.console` 或 `novabot.core.log.file` 临时改为 `INFO` 后重启，
+用完把日志设置改回原值，并把 `novabot.core.config-ui.auth.operator-token` 改回 `false`。
+
 ## 观众数据与金额
 
 程序会按用户记录直播间内的互动量（弹幕条数、礼物价值等），用于排行榜，

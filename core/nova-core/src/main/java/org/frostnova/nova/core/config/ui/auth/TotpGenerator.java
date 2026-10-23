@@ -30,7 +30,7 @@ public final class TotpGenerator {
     /**
      * 时间步长（秒）
      */
-    private static final long STEP_SECONDS = 30;
+    static final long STEP_SECONDS = 30;
 
     /**
      * 验证码位数
@@ -40,7 +40,7 @@ public final class TotpGenerator {
     /**
      * 前后各容忍几个时间窗
      */
-    private static final int WINDOW = 1;
+    static final int WINDOW = 1;
 
     /**
      * 密钥字节数。RFC 4226 要求至少 128 位，推荐 160 位

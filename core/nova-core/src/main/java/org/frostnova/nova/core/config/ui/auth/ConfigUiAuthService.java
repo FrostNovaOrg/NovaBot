@@ -20,9 +20,12 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.PropertySource;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -184,6 +187,12 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     private static final Duration BUSY_RETRY_AFTER = Duration.ofSeconds(5);
 
     /**
+     * 提示里服务器时间的写法
+     */
+    private static final DateTimeFormatter TOTP_CLOCK_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            .withZone(ZoneId.systemDefault());
+
+    /**
      * 改口令时同一把会话连错几次旧口令，就注销这一把
      * <p>
      * 取 5，与登录锁定的默认次数相同：手滑输错一两次不受影响，一时想不起口令的人也有几次机会。
@@ -244,13 +253,19 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     private volatile String totpSecret;
 
     /**
-     * 已用过的动态码时间步。单用户面板只有一个账号，登录与代签发共用这一格。
-     * <p>
-     * {@code null} 表示还没用过。消费时按单调递增拦：同一格或更早的格一律拒。
-     * <b>启动时按自己那把钟把当格标成用过</b>，见构造器——只记在内存里，
-     * 重启后若从 null 起，重启前 60～90 秒内刚用过的码还能再登一次。
+     * 独立构造且没有文件服务时使用的二次验证进度。
      */
     private Long lastUsedTotpStep;
+
+    private final TotpStepStore totpSteps;
+
+    private boolean totpStartupNotice;
+
+    private boolean totpRuntimeNotice;
+
+    private boolean totpStorageNotice;
+
+    private boolean totpClockNotice;
 
     /**
      * 消费时间步时用的锁，避免两趟同时通过校验后都写上同一格
@@ -313,13 +328,10 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
         this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
 
-        // 🔴 启动时就把当格标成用过的：这一格只活在内存里，重启后从「没用过」起的话，
-        // 重启前 60～90 秒内刚用过的码还能再登一次——而那枚码正躺在截图、自动填充里。
-        // 不落盘：落盘要把这格写在凭据旁边，写坏了没人看得出来，而漏掉它的代价只是要等下一格。
-        // 当格被挡下的码照旧报「密码或验证码不正确」、照旧记一次失败（见 checkCredentials）：
-        // 另说「码已用过」等于告诉对方口令是对的。二次验证关了照旧清空这一格；
-        // 绑定换了密钥则把它记成核中那一格（见 activateTotp）。
         this.lastUsedTotpStep = TotpGenerator.currentStep(clock.get());
+        this.totpSteps = fileService == null ? null : new TotpStepStore(
+                () -> Path.of(fileService.describeConfigPath()), lastUsedTotpStep,
+                () -> TotpGenerator.currentStep(clock.get()));
 
         if (isEnabled() && this.totpEnabled && this.totpSecret == null) {
             log.warn("配置界面已启用口令登录但尚未绑定验证器, 请在界面上完成绑定");
@@ -469,32 +481,33 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     }
 
     /**
-     * 启用已确认的密钥
-     * <p>
-     * 顺带把二次验证这一位拨到开：绑定这个动作本身就是「我要用二次验证」的意思，
-     * 而两者分开落的话，会出现「绑好了却还是不问码」——那是最难被发现的一种失效，
-     * 因为它看起来一切正常。
-     * <p>
-     * <b>核中的那一格记成用过，且记在换上新密钥之前。</b>作废旧格与记下这一格合成一步、
-     * 同一把锁里做完，然后才换密钥、拨开关：次序反了就会留一道缝——换上新密钥之后，
-     * 登录那条路一读就用上它（{@code totpSecret} 是 volatile），从换密钥到记格之间
-     * 看得到新密钥的登录还看不到这一格被用过，绑定核过的那枚码就能登进一次，
-     * 而这枚码正躺在截图、验证器的输入框与自动填充里。合成一步是为了不露出中间态：
-     * 拆成「作废旧格」「记下这一格」两次拿锁的话，并发的登录能插在两锁之间
-     * 把这一格自己消费掉、同样拿核过的那枚码登进一次。
-     * <p>
-     * 记格只在办成绑定时做——码不对、存盘失败那两趟不烧码，用户才在同一格里重试得了。
-     * <p>
-     * 本会话的待绑密钥一并清掉：绑完了它们就都成了没人要的旧码。
-     * @param session 当前会话。现在只有绑定那条路（{@code ConfigUiAuthController}）调这里，
-     *                传的就是当前会话；不经绑定直接落密钥时可传 null——那种调用没有会话，
-     *                也就没有要清的待绑密钥，密钥照落
+     * 保存已确认密钥的进度，然后启用密钥并清理本会话的待绑信息。
+     * @param session 当前会话，可为 null
      * @param secret Base32 密钥
-     * @param verifiedStep 核中那枚码所在的时间步，由 {@link #verifyPending} 交出
+     * @param verifiedStep 已确认的时间步
      */
     public void activateTotp(ConfigUiSession session, String secret, long verifiedStep) {
-        // 作废旧格、记下核中那一格：合成一步、同一把锁里做完，放在换密钥与拨开关之前
+        activateTotp(session, secret, verifiedStep, () -> { });
+    }
+
+    /**
+     * 保存进度与配置后启用密钥。配置未保存成功时保留待绑信息，供再次提交。
+     * @param session 当前会话，可为 null
+     * @param secret Base32 密钥
+     * @param verifiedStep 已确认的时间步
+     * @param saveConfiguration 保存配置的操作
+     */
+    public void activateTotp(ConfigUiSession session, String secret, long verifiedStep, Runnable saveConfiguration) {
         synchronized (totpConsumeLock) {
+            if (totpSteps != null) {
+                try {
+                    totpSteps.record(secret, verifiedStep);
+                } catch (IOException | RuntimeException e) {
+                    noteTotpStorage();
+                    throw new IllegalStateException("二次验证记录未能保存");
+                }
+            }
+            saveConfiguration.run();
             lastUsedTotpStep = verifiedStep;
         }
         this.totpSecret = secret;
@@ -523,7 +536,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             return false;
         }
         Long step = TotpGenerator.matchingStep(secret, code, clock.get());
-        return step != null && consumeTotpStep(step);
+        return step != null && consumeTotpStep(secret, step);
     }
 
     /**
@@ -889,7 +902,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             }
 
             // 口令错的那一趟不能把码烧掉：上面两个都过了才消费这一格
-            if (step != null && !consumeTotpStep(step)) {
+            if (step != null && !consumeTotpStep(secret, step)) {
                 throttle.recordFailure(clientIp, now);
                 log.warn("配置界面登录失败, 来源: {}", clientIp);
                 return new CredentialCheck(Verdict.BAD_CREDENTIALS, Duration.ZERO);
@@ -1169,8 +1182,18 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * @param step 命中的时间步
      * @return 消费成功为 true，已经用过为 false
      */
-    private boolean consumeTotpStep(long step) {
+    private boolean consumeTotpStep(String secret, long step) {
         synchronized (totpConsumeLock) {
+            if (totpSteps != null) {
+                try {
+                    boolean consumed = totpSteps.consume(secret, step);
+                    noteTotpClock(false);
+                    return consumed;
+                } catch (IOException | RuntimeException e) {
+                    noteTotpStorage();
+                    return false;
+                }
+            }
             if (lastUsedTotpStep != null && step <= lastUsedTotpStep) {
                 return false;
             }
@@ -1191,6 +1214,63 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
         }
     }
 
+    private void initializeTotpSteps() {
+        synchronized (totpConsumeLock) {
+            if (totpSteps != null && isEnabled() && totpRequired()) {
+                try {
+                    totpSteps.initialize(totpSecret);
+                    noteTotpClock(true);
+                } catch (IOException | RuntimeException e) {
+                    noteTotpStorage(true);
+                }
+            }
+        }
+    }
+
+    private void noteTotpStorage() {
+        noteTotpStorage(false);
+    }
+
+    private boolean takeTotpNotice(boolean startup) {
+        if (startup ? totpStartupNotice : totpRuntimeNotice) {
+            return false;
+        }
+        if (startup) {
+            totpStartupNotice = true;
+        } else {
+            totpRuntimeNotice = true;
+        }
+        return true;
+    }
+
+    private void noteTotpStorage(boolean startup) {
+        if (!totpStorageNotice && takeTotpNotice(startup)) {
+            totpStorageNotice = true;
+            log.error("二次验证记录暂时无法读写，请让程序可读写 {} 及其所在目录，文件内容不完整时从备份恢复，完成后重试。",
+                    totpSteps.path());
+        }
+    }
+
+    /**
+     * 记录里最近一次登录的时间晚于服务器当前时间时，说明要等多久、急用时怎么进入。
+     */
+    private void noteTotpClock(boolean startup) {
+        Instant usableFrom = totpSteps.laterThanClockUntil();
+        if (usableFrom == null) {
+            return;
+        }
+        if (!totpClockNotice && takeTotpNotice(startup)) {
+            totpClockNotice = true;
+            long seconds = Duration.between(clock.get(), usableFrom).getSeconds();
+            log.error("服务器当前时间早于二次验证记录里最近一次登录的时间，服务器时钟可能往回校正过；"
+                            + "在服务器时间追上之前，用验证器登录会失败。约 {} 分钟后（服务器时间 {} 以后）恢复正常登录。"
+                            + "急需进入时，把 novabot.core.config-ui.auth.operator-token 改成 true 后重启，"
+                            + "用启动日志里的地址进入；日志只看错误或已关闭时，先把 novabot.core.log.console 或 "
+                            + "novabot.core.log.file 临时改为 INFO 后重启，用完把这些设置改回原值并把 operator-token 改回 false。",
+                    (seconds + 59) / 60, TOTP_CLOCK_TIME.format(usableFrom));
+        }
+    }
+
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }
@@ -1202,6 +1282,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      */
     @Override
     public void start() {
+        initializeTotpSteps();
         if (!hashWriteAttempted) {
             hashWriteAttempted = true;
             if (plaintextToReplace != null) {
