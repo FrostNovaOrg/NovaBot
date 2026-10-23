@@ -96,12 +96,13 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
                     EventStreamProperties.PREFIX);
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
         }
-        endpoint = new NovaEventEndpoint(stream, tokenService);
+        endpoint = new NovaEventEndpoint(stream, tokenService, NovaEventEndpoint.Timings.DEFAULT, properties);
 
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(endpoint, new DefaultHandshakeHandler());
         handler.getHandshakeInterceptors().add(new LoopbackOnly());
         handler.getHandshakeInterceptors().add(new NoCredentialsInHandshake());
         handler.getHandshakeInterceptors().add(origins);
+        handler.getHandshakeInterceptors().add(endpoint.connectionLimits());
 
         log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", properties.getPath());
         if (tokenService.list().stream().noneMatch(EventStreamToken::active)) {

@@ -5,6 +5,8 @@ import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.properties.EventStreamProperties;
+import org.springframework.web.socket.adapter.standard.StandardWebSocketSession;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -18,8 +20,10 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
@@ -182,13 +186,15 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      * 一旦有一个任务等在某条连接的锁上，全局 ping、别人的认证闸、别人的 goLive 一起停。
      * 参见 {@link Client#writeDirect} 为什么用自己的锁而不是这个对象的监视器。
      */
-    private final ScheduledExecutorService heartbeats =
-            Executors.newSingleThreadScheduledExecutor(daemon("nova-event-heartbeat"));
+    private final ScheduledThreadPoolExecutor heartbeats =
+            new ScheduledThreadPoolExecutor(1, daemon("nova-event-heartbeat"));
+
+    private final EventConnectionLimits limits;
 
     /**
      * 每个连接一个发送线程
      */
-    private final ExecutorService senders = Executors.newCachedThreadPool(daemon("nova-event-sender"));
+    private final ExecutorService senders;
 
     /**
      * {@link #closers} 的线程数
@@ -201,7 +207,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      * 那种连接从来没有下行，关它不必另起一条发送线程；线程数固定，
      * 同一时刻到点断开的连接再多，也只排在这几条线程上。
      */
-    private final ExecutorService closers = Executors.newFixedThreadPool(CLOSER_THREADS, daemon("nova-event-closer"));
+    private final ExecutorService closers;
+
+    private final ExecutorService activeClosers;
 
     private volatile boolean running = true;
 
@@ -239,14 +247,33 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      * @param timings 时限组。生产不走这个构造器，见 {@link Timings}
      */
     NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens, Timings timings) {
+        this(stream, tokens, timings, new EventStreamProperties());
+    }
+
+    NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens, Timings timings,
+                      EventStreamProperties properties) {
         this.stream = stream;
         this.tokens = tokens;
         this.timings = timings;
+        heartbeats.setRemoveOnCancelPolicy(true);
+        limits = new EventConnectionLimits(properties, heartbeats);
+        senders = new ThreadPoolExecutor(0, (int) Math.min(Integer.MAX_VALUE, 2L * limits.maxConnections),
+                60, TimeUnit.SECONDS, new SynchronousQueue<>(), daemon("nova-event-sender"));
+        closers = closingPool("nova-event-closer");
+        activeClosers = new ThreadPoolExecutor(0, limits.maxConnections, 60, TimeUnit.SECONDS,
+                new SynchronousQueue<>(), daemon("nova-event-sender-close"));
         this.outboxCapacity = stream.getCapacity() + OUTBOX_HEADROOM;
         if (tokens != null) {
             tokens.addRevocationListener(revocationListener);
         }
     }
+
+    private ExecutorService closingPool(String name) {
+        return new ThreadPoolExecutor(CLOSER_THREADS, CLOSER_THREADS, 0, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(limits.maxConnections), daemon(name));
+    }
+
+    EventConnectionLimits connectionLimits() { return limits; }
 
     private volatile boolean heartbeatsStarted;
 
@@ -277,6 +304,8 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      */
     private final class Client implements NovaEventStream.Subscriber {
         private final WebSocketSession session;
+
+        private final EventConnectionLimits.Reservation reservation;
 
         /**
          * 握手时的最大序号。转入实时流时从它接着补，窗口期内的消息因此不会丢
@@ -324,20 +353,23 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          */
         private final Object writeMutex = new Object();
 
-        private ScheduledFuture<?> grace;
+        private volatile ScheduledFuture<?> grace;
 
         /**
          * 未认证超时。认证通过或连接关闭时取消
          */
-        private ScheduledFuture<?> authDeadline;
+        private volatile ScheduledFuture<?> authDeadline;
 
         /**
          * 发送线程已经起了没有，见 {@link #startPump}
          */
         private volatile boolean pumping;
 
-        private Client(WebSocketSession session, long helloSeq, boolean authenticated) {
+        private Client(WebSocketSession session, long helloSeq, boolean authenticated,
+                       EventConnectionLimits.Reservation reservation) {
             this.session = session;
+            this.reservation = reservation;
+            if (authenticated) reservation.authenticated();
             this.helloSeq = helloSeq;
             this.authenticated = authenticated;
         }
@@ -380,6 +412,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 EventStreamTokenService.Verdict verdict = tokens.authenticate(presented, hash -> {
                     tokenHash = hash;
                     authenticated = true;
+                    reservation.authenticated();
                     if (authDeadline != null) {
                         authDeadline.cancel(false);
                     }
@@ -389,7 +422,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                     }
                     NovaEventStream.State state = stream.snapshot();
                     send(hello(state));
-                    grace = heartbeats.schedule(() -> goLive(state.lastSeq()), timings.resumeGrace(), TimeUnit.MILLISECONDS);
+                    scheduleGrace(state.lastSeq());
                     log.info("事件流客户端 {} 已通过口令认证", session.getId());
                 });
                 if (verdict == EventStreamTokenService.Verdict.OK) {
@@ -423,6 +456,12 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             if (!enqueue(frame.json())) {
                 closeAsync(CloseStatus.SERVICE_OVERLOAD.withReason("客户端消费过慢"));
             }
+        }
+
+        private void scheduleGrace(long fromSeq) {
+            ScheduledFuture<?> task = heartbeats.schedule(() -> goLive(fromSeq), timings.resumeGrace(), TimeUnit.MILLISECONDS);
+            grace = task;
+            if (closed) task.cancel(false);
         }
 
         /**
@@ -464,7 +503,10 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 pumping = true;
                 return true;
             } catch (RejectedExecutionException e) {
-                // 正在关停，池子不收活了：这条连接也发不出东西，直接关掉
+                if (running && !senders.isShutdown()) {
+                    log.warn("事件输出发送暂忙，请稍后重连；可调大 {}.max-connections 后重启",
+                            EventStreamProperties.PREFIX);
+                }
                 close(CloseStatus.GOING_AWAY);
                 return false;
             }
@@ -524,8 +566,11 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 session.sendMessage(new TextMessage(json));
                 return true;
             } catch (IOException | IllegalStateException e) {
-                // 发不出去就是这条连接没救了。这里只记 debug: 关掉面板是常事，
-                // 每次都打 warn 只会淹没真正的问题
+                // 记录写入结果并结束这条连接
+                if (ioTimedOut(e)) {
+                    log.warn("事件输出写入未完成，已结束该连接；如需更长等待，可调大 {}.io-timeout-ms 后重启",
+                            EventStreamProperties.PREFIX);
+                }
                 log.debug("事件流向 {} 发送失败, 关闭该连接", session.getId(), e);
                 close(CloseStatus.SERVER_ERROR);
                 return false;
@@ -589,7 +634,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         }
 
         /**
-         * 同上，但**发关闭帧那一步**交给发送线程池，并回报**这一次是不是真的由它关上的**
+         * 发关闭帧交给收尾线程池，并返回本次是否开始关闭
          * <p>
          * 关一条 WebSocket 要发一帧关闭帧，那是一次<b>阻塞写</b>；落在一条写不动的连接上，
          * 调用方的线程就停在那儿。给心跳线程用的就是这一支：那条线程是<b>全局共享的单线程</b>，
@@ -609,7 +654,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 return false;
             }
             try {
-                (pumping ? senders : closers).execute(() -> sendCloseFrame(status));
+                (pumping ? activeClosers : closers).execute(() -> sendCloseFrame(status));
             } catch (RejectedExecutionException e) {
                 // 正在关停，池子不收活了。这时阻不阻塞已经无所谓，就地关掉。
                 sendCloseFrame(status);
@@ -641,21 +686,53 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             try {
                 session.close(status);
             } catch (IOException | IllegalStateException e) {
+                if (ioTimedOut(e)) {
+                    log.warn("事件输出关闭未完成；如需更长等待，可调大 {}.io-timeout-ms 后重启",
+                            EventStreamProperties.PREFIX);
+                }
                 log.debug("关闭事件流客户端 {} 失败", session.getId(), e);
+            } finally {
+                clients.remove(session.getId(), this);
+                reservation.release();
             }
+        }
+    }
+
+    private static boolean ioTimedOut(Throwable failure) {
+        for (int depth = 0; failure != null && depth < 8; depth++, failure = failure.getCause()) {
+            if (failure instanceof java.net.SocketTimeoutException
+                    || failure instanceof java.util.concurrent.TimeoutException) return true;
+        }
+        return false;
+    }
+
+    private void configureWriteWindow(WebSocketSession session) {
+        if (session instanceof StandardWebSocketSession standard) {
+            Map<String, Object> settings = standard.getNativeSession().getUserProperties();
+            settings.put("org.apache.tomcat.websocket.BLOCKING_SEND_TIMEOUT", (long) limits.ioTimeout);
+            settings.put("org.apache.tomcat.websocket.SESSION_CLOSE_TIMEOUT", (long) limits.ioTimeout);
+            settings.put("org.apache.tomcat.websocket.ABNORMAL_SESSION_CLOSE_SEND_TIMEOUT", (long) limits.ioTimeout);
         }
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        if (!running) {
+        configureWriteWindow(session);
+        EventConnectionLimits.Reservation reservation = limits.claim(session.getAttributes(), session.getRemoteAddress());
+        if (!running || reservation == null) {
+            if (reservation != null) reservation.release();
+            try {
+                session.close(CloseStatus.SERVICE_OVERLOAD.withReason("事件输出暂忙，请稍后重连"));
+            } catch (IOException | IllegalStateException e) {
+                log.debug("关闭事件输出连接失败", e);
+            }
             return;
         }
 
         // helloSeq 与 hello 里的 lastSeq 必须是同一个数: 转入实时流时从它接着补，
         // 两者不一致就意味着客户端要么缺一条要么重一条
         NovaEventStream.State state = stream.snapshot();
-        Client client = new Client(session, state.lastSeq(), tokens == null);
+        Client client = new Client(session, state.lastSeq(), tokens == null, reservation);
         clients.put(session.getId(), client);
 
         if (tokens != null) {
@@ -665,6 +742,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             // 而这次改用认证帧，要的正是把这两件事分开。
             client.authDeadline = heartbeats.schedule(
                     () -> client.closeUnauthenticated(), timings.authTimeout(), TimeUnit.MILLISECONDS);
+            if (client.closed) client.authDeadline.cancel(false);
             log.info("事件流客户端 {} 已连接, 等待认证帧, 当前连接数 {}", session.getId(), clients.size());
             return;
         }
@@ -673,7 +751,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             return;
         }
         client.send(hello(state));
-        client.grace = heartbeats.schedule(() -> client.goLive(client.helloSeq), timings.resumeGrace(), TimeUnit.MILLISECONDS);
+        client.scheduleGrace(client.helloSeq);
 
         log.info("事件流客户端 {} 已连接, 当前连接数 {}", session.getId(), clients.size());
     }
@@ -740,7 +818,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         if (client == null) {
             return;
         }
-        client.beginClose();
+        if (client.beginClose()) {
+            client.reservation.release();
+        }
 
         log.info("事件流客户端 {} 已断开 ({}), 当前连接数 {}", session.getId(), status.getCode(), clients.size());
     }
@@ -760,11 +840,12 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      */
     public void shutdown() {
         running = false;
+        limits.stop();
         if (tokens != null) {
             tokens.removeRevocationListener(revocationListener);
         }
         for (Client client : clients.values()) {
-            client.close(CloseStatus.GOING_AWAY);
+            client.closeAsync(CloseStatus.GOING_AWAY);
         }
         clients.clear();
         heartbeats.shutdownNow();
@@ -775,18 +856,23 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         //    宽限有上限：写不动的那条本来就发不出去，等它也没有意义。
         senders.shutdown();
         closers.shutdown();
+        activeClosers.shutdown();
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SHUTDOWN_DRAIN_MS);
         try {
             if (!senders.awaitTermination(SHUTDOWN_DRAIN_MS, TimeUnit.MILLISECONDS)) {
                 senders.shutdownNow();
             }
-            // 两个池子合用同一段宽限，不各等一段
+            // 各线程池共用同一段宽限
             if (!closers.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
                 closers.shutdownNow();
+            }
+            if (!activeClosers.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
+                activeClosers.shutdownNow();
             }
         } catch (InterruptedException e) {
             senders.shutdownNow();
             closers.shutdownNow();
+            activeClosers.shutdownNow();
             Thread.currentThread().interrupt();
         }
     }
