@@ -59,11 +59,47 @@ case "$out/" in
 esac
 mkdir -p "$out" || cannot_run "建不了结果目录：$out"
 out=$(cd "$out" && pwd)
-# 只清本脚本写的几样，免得上一次的截图冒充这一次的
-rm -f "$out"/*.png "$out/summary.txt" "$out/browser.log" "$out/export.log"
+owned=$out/.console-browser-check-owned
+
+# 只清本工具上一次写的文件，别人放进结果目录的东西一律不动。
+# owned 里是上次写的每个文件的 cksum，对得上才算本工具写的；截图按文件名认。
+if [ -f "$owned" ]; then
+    while read -r sum size name; do
+        case "$name" in
+            ''|.|..|*/*) continue ;;
+        esac
+        [ -f "$out/$name" ] || continue
+        [ "$(cksum < "$out/$name")" = "$sum $size" ] && rm -f "$out/$name"
+    done < "$owned"
+fi
+rm -f "$owned"
+for png in "$out"/*.png; do
+    [ -f "$png" ] || continue
+    if printf '%s\n' "${png##*/}" | grep -Eq \
+        '^(home|push|streamers|log|links|settings|setup|login|napcat-bootstrap)-(1440|390)-(light|dark)(-[0-9]+)?\.png$'
+    then
+        rm -f "$png"
+    fi
+done
+
+# 这三个名字每次跑都要写。已有不是本工具写的文件占着时宁可不跑，也不覆盖别人的东西。
+taken=
+for name in summary.txt browser.log export.log; do
+    [ -e "$out/$name" ] && taken="$taken $name"
+done
+[ -z "$taken" ] || cannot_run "结果目录里有不是本工具写的文件，占着本工具要用的名字：${taken# }（目录：${out}）。不能覆盖别人的文件。请把它们移走或删掉，或者用 --out 换一个结果目录"
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/nova-console-check.XXXXXX") || cannot_run "建不了临时目录"
-trap 'rm -rf "$work"' EXIT
+
+# 跑完把这次写的文件记进 owned，下一次只清这些。
+record_owned() {
+    : > "$owned"
+    for name in export.log browser.log summary.txt; do
+        [ -f "$out/$name" ] || continue
+        (cd "$out" && cksum "$name") >> "$owned"
+    done
+}
+trap 'record_owned; rm -rf "$work"' EXIT
 trap 'exit 2' HUP INT TERM
 
 if ! bash "$ROOT/tools/demo-assets/export-console-demo.sh" "$work/demo" >"$out/export.log" 2>&1; then

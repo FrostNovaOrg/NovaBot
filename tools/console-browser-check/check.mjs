@@ -244,7 +244,9 @@ async function launch(chrome, profile, logFile) {
     return {cdp, stop, version: version.product};
   } catch (e) {
     await stop();
-    throw new CannotRun(`浏览器没有应答调试协议：${e.message}；日志见 ${logFile}`);
+    // 浏览器退出的说明里已经写了日志在哪，就不再写一遍
+    const where = e.message.includes('日志见') ? '' : `；日志见 ${logFile}`;
+    throw new CannotRun(`浏览器没有应答调试协议：${e.message}${where}`);
   }
 }
 

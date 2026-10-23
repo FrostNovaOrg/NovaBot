@@ -33,6 +33,12 @@ sh tools/console-browser-check/run.sh --chrome /path/to/chrome-headless-shell
 可用 `--out 目录` 换结果目录，默认 `target/console-browser-check/`。结果目录在仓库里时必须被
 git 忽略，跑完还会再核一次，跑出来的东西不会进提交。
 
+每次跑之前会清掉上一次的结果，只清本工具自己写的文件：`summary.txt`、`browser.log`、
+`export.log` 以 `.console-browser-check-owned` 名单为准（名单里记着每个文件的 cksum，对得上
+才算本工具写的），截图按文件名认（`<页>-<宽>-<色>[-<序号>].png`）。别人放进结果目录的文件一律
+不删。若结果目录里已有不是本工具写的 `summary.txt`、`browser.log` 或 `export.log`，脚本拒绝
+运行（退码 2），并说明是哪个目录、哪些名字被占着、该把它们移走还是换一个 `--out` 目录。
+
 脚本先把离线演示（`tools/demo-assets/export-console-demo.sh`）导出到临时目录，再用 node
 跑 `check.mjs`。共 9 个界面 × 2 种宽度 × 2 种颜色，36 轮：
 
@@ -82,7 +88,9 @@ macOS 上浏览器以 `--single-process` 启动（默认的多进程起法在沙
   `合计 36 轮：通过 X，失败 Y`；再按页列出只列出、不判失败的几类，括号里是出现的轮数；
 - `<页>-<宽>-<色>.png`：整页截图，例如 `home-390-dark.png`；
 - macOS 另外保留 `<页>-<宽>-<色>-<序号>.png`，序号从 1 起，按从上到下的顺序排列；
-- `browser.log`：浏览器自己的输出；`export.log`：导出演示的输出。
+- `browser.log`：浏览器自己的输出；`export.log`：导出演示的输出；
+- `.console-browser-check-owned`：上面三个日志与小结的名单（名字加 cksum），下一次跑凭它只清
+  本工具自己写的文件。
 
 ### macOS 分块截图
 
