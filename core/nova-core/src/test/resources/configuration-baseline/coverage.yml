@@ -115,4 +115,6 @@ novabot:
       enabled: true
       path: /coverage/events
       require-token: true
+      allowed-origins:
+        - https://panel.example
       buffer-size: 131

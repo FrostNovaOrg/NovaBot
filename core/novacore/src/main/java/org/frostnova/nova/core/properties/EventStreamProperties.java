@@ -4,6 +4,10 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 事件输出（本地 WebSocket 事件流）的配置
  * <p>
@@ -43,18 +47,20 @@ public class EventStreamProperties {
     private String path = "/nova/events";
 
     /**
-     * 是否要求出示只读访问令牌。默认关闭；本机装了反向代理就必须打开——除非代理会传来访客的真实地址、且本程序开启了 server.forward-headers-strategy，否则经它转来的连接在程序看来像本机，不开等于没有鉴权。令牌由控制台签发，只能读事件流。
+     * 事件输出始终要求只读访问令牌。此键保留兼容已有配置，填写 false 也按 true 运行。令牌由控制台签发，客户端在连接后的第一帧出示。
      */
-    // 反代与本程序同机、未送 X-Forwarded-* 时，转发来的连接源地址就是回环；反过来，
-    // 反代送了 X-Forwarded-* 而程序开着 server.forward-headers-strategy 时，回环判据
-    // 看到的是真实客户端 IP，会把反代自己挡在门外（2026-08-13 生产实测，症状是握手
-    // 回空的 200）。两种形态下「只接受本机连接」都不再等于「人在这台机器上」。
-    // 口令只读事件流：不给服务器 shell，不给配置控制台。本机 runbook 与本地开发
-    // 靠「本机进程直连」，因此默认关。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出要求只读访问令牌")
-    @ConfigSummary("本机部署了反向代理时必须开启：除非代理会传来访客的真实地址、且本程序已按此识别来源，否则经代理转入的连接都会被当成本机连接。")
-    private boolean requireToken = false;
+    @ConfigSummary("始终要求只读访问令牌；此键填写 false 也按 true 运行。客户端在连接后的第一帧出示令牌。")
+    private boolean requireToken = true;
+
+    /**
+     * 浏览器页面来源列表。填写完整的 http 或 https 来源（协议、主机及可选端口），不带路径；默认空表。未携带 Origin 的本机程序照常连接。
+     */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 页面来源")
+    @ConfigSummary("填写页面的完整来源，如 https://panel.example 或 http://localhost:7830，不带路径；修改后重启。")
+    private List<String> allowedOrigins = new ArrayList<>();
 
     /**
      * 断线回补的缓冲条数，全部房间共用。房间多或热闹就调大，否则重连时会补不上；每条约数 KB，调大前先掂量内存。
@@ -65,4 +71,26 @@ public class EventStreamProperties {
     @ConfigLabel("事件输出 · 回补缓冲条数")
     @ConfigSummary("所有房间共享；增大缓冲会增加内存占用。")
     private int bufferSize = 2000;
+
+    /** 校验页面来源列表，格式不合时抛出含说明的异常。 */
+    public static void validateAllowedOrigins(List<String> origins) {
+        if (origins == null || origins.stream().anyMatch(value -> !validOrigin(value))) {
+            throw new IllegalArgumentException("事件输出页面来源请填写完整的 http 或 https 来源，不带路径、末尾斜线或通配符");
+        }
+    }
+
+    private static boolean validOrigin(String value) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(value);
+            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null && uri.getRawUserInfo() == null
+                    && uri.getRawPath().isEmpty() && uri.getRawQuery() == null && uri.getRawFragment() == null
+                    && uri.getPort() >= -1 && uri.getPort() <= 65535;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
 }

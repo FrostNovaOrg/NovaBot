@@ -18,6 +18,7 @@ import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.EventStreamToken;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
+import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.datasource.MonitorLimit;
@@ -1214,6 +1215,15 @@ public class ConfigUiController {
             OidcClient.parseManagementUri(toValidate.get("novabot.core.config-ui.oidc.management-uri"));
         } catch (OidcException error) {
             outOfRange.add("novabot.core.config-ui.oidc.management-uri（统一登录 · 账户管理页）：" + error.getMessage());
+        }
+        String origins = toValidate.get(EventStreamProperties.PREFIX + ".allowed-origins");
+        if (origins != null) {
+            try {
+                EventStreamProperties.validateAllowedOrigins(
+                        java.util.Arrays.stream(origins.split("\n")).filter(value -> !value.isBlank()).map(String::strip).toList());
+            } catch (IllegalArgumentException error) {
+                outOfRange.add(error.getMessage());
+            }
         }
         if (!outOfRange.isEmpty()) {
             result.put("success", false);

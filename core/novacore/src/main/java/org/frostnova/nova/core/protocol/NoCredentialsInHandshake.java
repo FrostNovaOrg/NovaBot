@@ -8,7 +8,11 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 拒收任何把口令带在握手里的连接
@@ -42,6 +46,10 @@ class NoCredentialsInHandshake implements HandshakeInterceptor {
      */
     private static final String LEGACY_SUBPROTOCOL_PREFIX = "nova.token.";
 
+    private static final Set<String> QUERY_NAMES = Set.of("token", "accesstoken", "idtoken",
+            "refreshtoken", "readonlytoken", "password", "secret", "clientsecret", "authorization",
+            "credential", "credentials", "apikey", "auth");
+
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler handler, Map<String, Object> attributes) {
@@ -68,6 +76,23 @@ class NoCredentialsInHandshake implements HandshakeInterceptor {
                 if (item.trim().startsWith(LEGACY_SUBPROTOCOL_PREFIX)) {
                     return true;
                 }
+            }
+        }
+        String query = request.getURI().getRawQuery();
+        if (query == null || query.isEmpty()) {
+            return false;
+        }
+        for (String item : query.split("[&;]")) {
+            int separator = item.indexOf('=');
+            String name = separator < 0 ? item : item.substring(0, separator);
+            try {
+                name = URLDecoder.decode(name, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT)
+                        .replace("_", "").replace("-", "");
+            } catch (IllegalArgumentException e) {
+                return true;
+            }
+            if (QUERY_NAMES.contains(name)) {
+                return true;
             }
         }
         return false;
