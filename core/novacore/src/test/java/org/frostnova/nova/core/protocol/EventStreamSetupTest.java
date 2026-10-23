@@ -25,8 +25,15 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.server.support.WebSocketHttpRequestHandler;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -189,6 +196,30 @@ class EventStreamSetupTest {
         check(Map.of("allowed-origins[0]", "http://panel.example:443"), new String[]{"http://panel.example"}, false);
     }
 
+    @Test
+    void defaultPortRequestValues() throws Exception {
+        for (String configured : List.of("https://panel.example", "https://panel.example:443")) {
+            Map<String, Object> values = Map.of("allowed-origins[0]", configured);
+            check(values, new String[]{"https://panel.example"}, true);
+            check(values, new String[]{"https://panel.example:443"}, true);
+            check(values, new String[]{"HTTPS://Panel.Example:443"}, true);
+            check(values, new String[]{"https://panel.example:80"}, false);
+            check(values, new String[]{"https://panel.example:8443"}, false);
+        }
+        for (String configured : List.of("http://localhost", "http://localhost:80")) {
+            Map<String, Object> values = Map.of("allowed-origins[0]", configured);
+            check(values, new String[]{"http://localhost"}, true);
+            check(values, new String[]{"http://localhost:80"}, true);
+            check(values, new String[]{"http://localhost:443"}, false);
+        }
+        Map<String, Object> otherPort = Map.of("allowed-origins[0]", "https://panel.example:8443");
+        check(otherPort, new String[]{"https://panel.example:8443"}, true);
+        check(otherPort, new String[]{"https://panel.example"}, false);
+        check(otherPort, new String[]{"https://panel.example:443"}, false);
+        check(Map.of("allowed-origins[0]", "https://panel.example:80"), new String[]{"https://panel.example:80"}, true);
+        check(Map.of("allowed-origins[0]", "http://panel.example:443"), new String[]{"http://panel.example:443"}, true);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"*", "null", "https://*.example", "https://panel.example/path",
             "https://panel.example?view=1", "https://user@panel.example", "file:///panel", "",
@@ -287,6 +318,82 @@ class EventStreamSetupTest {
         }
         assertFalse(status.unlisted("https://more.example"));
         assertEquals("https://more.example", status.unlistedOrigin());
+    }
+
+    @Test
+    void unlistedOriginNoteLimitUnderConcurrentRequests() throws Exception {
+        int requests = 64;
+        ExecutorService pool = Executors.newFixedThreadPool(requests);
+        try {
+            for (int trial = 0; trial < 300; trial++) {
+                EventStreamStatus status = new EventStreamStatus();
+                for (int i = 0; i < EventStreamStatus.ORIGIN_LIMIT - 1; i++) {
+                    status.unlisted("https://panel" + i + ".example");
+                }
+                CountDownLatch start = new CountDownLatch(1);
+                List<Future<Boolean>> notes = new ArrayList<>();
+                for (int i = 0; i < requests; i++) {
+                    String origin = "https://trial" + trial + "-" + i + ".example";
+                    notes.add(pool.submit(() -> {
+                        start.await();
+                        return status.unlisted(origin);
+                    }));
+                }
+                start.countDown();
+                int logged = 0;
+                for (Future<Boolean> note : notes) {
+                    if (note.get(30, TimeUnit.SECONDS)) {
+                        logged++;
+                    }
+                }
+                Set<?> remembered = (Set<?>) org.springframework.test.util.ReflectionTestUtils
+                        .getField(status, "loggedOrigins");
+                assertEquals(1, logged, "trial " + trial);
+                assertEquals(EventStreamStatus.ORIGIN_LIMIT, remembered.size(), "trial " + trial);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void longOriginNote() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(EventHandshakeOrigins.class);
+        ListAppender<ILoggingEvent> messages = new ListAppender<>();
+        messages.start();
+        logger.addAppender(messages);
+        NovaEventStreamConfiguration configuration = new NovaEventStreamConfiguration();
+        try {
+            WebSocketHttpRequestHandler handler = handler(configuration, null,
+                    Map.of("allowed-origins[0]", "https://panel.example"));
+            String longOrigin = "https://" + "a".repeat(4096) + ".example";
+            for (int i = 0; i < 3; i++) {
+                assertFalse(accepted(handler, longOrigin + i));
+            }
+            assertFalse(accepted(handler, "https://other.example:" + "0".repeat(4096) + "8443"));
+            assertFalse(accepted(handler, "https://panel.example:" + "0".repeat(4096) + "443"));
+            assertTrue(messages.list.isEmpty(), messages.list.size() + " messages");
+            assertNull(configuration.eventStreamStatus().unlistedOrigin());
+
+            String host = (("a".repeat(62) + ".").repeat(3) + "b".repeat(55) + ".example");
+            String origin = "https://" + host;
+            assertEquals(260, origin.length());
+            assertFalse(accepted(handler, origin));
+            assertEquals(1, messages.list.size());
+            assertTrue(messages.list.get(0).getFormattedMessage().contains(origin));
+            assertEquals(origin, configuration.eventStreamStatus().unlistedOrigin());
+        } finally {
+            configuration.destroy();
+            logger.detachAppender(messages);
+            messages.stop();
+        }
+        NovaEventStreamConfiguration paused = new NovaEventStreamConfiguration();
+        try {
+            assertNull(handler(paused, null, Map.of("allowed-origins[0]", "https://" + "a".repeat(254))));
+            assertEquals(EventStreamStatus.State.PAUSED, paused.eventStreamStatus().state());
+        } finally {
+            paused.destroy();
+        }
     }
 
     @Test

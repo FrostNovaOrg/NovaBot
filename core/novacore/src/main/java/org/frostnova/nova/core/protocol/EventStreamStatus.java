@@ -1,7 +1,7 @@
 package org.frostnova.nova.core.protocol;
 
+import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 事件输出此刻的运行情况，供控制台连接页那张外部面板卡显示
@@ -30,7 +30,8 @@ public class EventStreamStatus {
 
     private volatile String unlistedOrigin;
 
-    private final Set<String> loggedOrigins = ConcurrentHashMap.newKeySet();
+    /** 只在 {@link #unlisted} 里、持本对象的锁读写：数量判断与加入得是一步，几路同时来也不超上限 */
+    private final Set<String> loggedOrigins = new HashSet<>();
 
     public State state() {
         return state;
@@ -52,7 +53,7 @@ public class EventStreamStatus {
      * @param origin 规整后的页面来源
      * @return 该来源本次运行头一回出现、需要写一条日志时为 {@code true}
      */
-    boolean unlisted(String origin) {
+    synchronized boolean unlisted(String origin) {
         unlistedOrigin = origin;
         return loggedOrigins.size() < ORIGIN_LIMIT && loggedOrigins.add(origin);
     }

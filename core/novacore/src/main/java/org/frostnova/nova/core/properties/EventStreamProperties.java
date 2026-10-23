@@ -72,6 +72,16 @@ public class EventStreamProperties {
     @ConfigSummary("所有房间共享；增大缓冲会增加内存占用。")
     private int bufferSize = 2000;
 
+    /**
+     * 页面来源里主机名最长几个字符（域名的上限）
+     */
+    private static final int HOST_LENGTH = 253;
+
+    /**
+     * 一条页面来源最长几个字符：{@code https://}、最长的主机名与 {@code :65535} 加起来。更长的值按格式不合处理
+     */
+    private static final int ORIGIN_LENGTH = "https://".length() + HOST_LENGTH + ":65535".length();
+
     /** 校验页面来源列表，格式不合时抛出含说明的异常。 */
     public static void validateAllowedOrigins(List<String> origins) {
         if (origins == null || origins.stream().anyMatch(value -> !validOrigin(value))) {
@@ -106,13 +116,13 @@ public class EventStreamProperties {
     }
 
     private static boolean validOrigin(String value) {
-        if (value == null) {
+        if (value == null || value.length() > ORIGIN_LENGTH) {
             return false;
         }
         try {
             URI uri = URI.create(value);
             return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    && uri.getHost() != null && uri.getRawUserInfo() == null
+                    && uri.getHost() != null && uri.getHost().length() <= HOST_LENGTH && uri.getRawUserInfo() == null
                     && uri.getRawPath().isEmpty() && uri.getRawQuery() == null && uri.getRawFragment() == null
                     && uri.getPort() >= -1 && uri.getPort() <= 65535;
         } catch (IllegalArgumentException e) {

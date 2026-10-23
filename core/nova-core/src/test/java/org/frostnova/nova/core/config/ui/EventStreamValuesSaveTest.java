@@ -125,6 +125,18 @@ class EventStreamValuesSaveTest {
         assertEquals(before, Files.readString(config));
     }
 
+    @Test
+    void longValues() throws Exception {
+        String before = Files.readString(config);
+        assertEquals(400, controller.save(Map.of(KEY, "https://" + "a".repeat(254))).getStatusCode().value());
+        assertEquals(400, controller.save(Map.of(KEY, "https://" + "a".repeat(4096) + ".example"))
+                .getStatusCode().value());
+        assertEquals(before, Files.readString(config));
+        String longest = "https://" + ("a".repeat(62) + ".").repeat(3) + "b".repeat(56) + ".example:65535";
+        assertEquals(200, controller.save(Map.of(KEY, longest)).getStatusCode().value());
+        assertEquals(longest, new ConfigurationFileService(config).read().get(KEY));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"https://panel.example", "http://localhost:7830", "http://[::1]:7830",
             "https://panel.example\nhttp://localhost:7830", "  https://panel.example  \n\n", ""})
