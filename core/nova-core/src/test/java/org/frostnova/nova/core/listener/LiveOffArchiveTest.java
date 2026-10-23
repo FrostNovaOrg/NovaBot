@@ -213,12 +213,16 @@ class LiveOffArchiveTest {
     @DisplayName("高能时刻按弹幕原文的分钟密度算，付费留言不算在内")
     void highlightsComeFromRawDanmu() {
         liveData.setLiveStartTime(PLATFORM, UID, START);
-        // 前 30 分钟每分钟 2 条，第 12 分钟塞 40 条——那一分钟才是高能
+        // 前 30 分钟每分钟 2 条，第 12 分钟那一格塞 40 条——那一分钟才是高能。
+        // 40 条以格起点为准落在中段（格起点加 30 秒，每条错开 1 毫秒）：紧贴 START + 12 分
+        // 往后排的话落点跟着 START 走，START 落在分钟最后 40 毫秒里时这 40 条会被切进相邻两格
+        long highlightBucket = bucket(START + 12 * MINUTE);
         for (int minute = 0; minute < 30; minute++) {
             int count = minute == 12 ? 40 : 2;
             for (int i = 0; i < count; i++) {
+                long at = minute == 12 ? highlightBucket + MINUTE / 2 + i : START + minute * MINUTE + i;
                 details.appendDanmu(PLATFORM, UID, START, new DanmuRecord(
-                        START + minute * MINUTE + i, 19338207415562L, "观众甲", "话", DanmuRecord.Type.DANMU));
+                        at, 19338207415562L, "观众甲", "话", DanmuRecord.Type.DANMU));
             }
         }
         // 付费留言堆在第 20 分钟：它若被算进密度，这一分钟会挤掉真正的高能
