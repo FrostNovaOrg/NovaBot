@@ -128,6 +128,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/bot/targets");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/bot/targets/refresh");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/bot/targets/lookup");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/exec/notice");
         ENTRIES = Collections.unmodifiableMap(entries);
     }
 

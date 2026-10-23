@@ -4,6 +4,7 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
+import {renderExecNotice} from './exec-notice.js';
 import {$, api, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
@@ -793,6 +794,13 @@ function loadBotConsole() {
 }
 $('#bot-open').addEventListener('click', () => { if (botHref) location.href = botHref; });
 
+// 外部程序触发规则待调整时的常驻提醒。清单是启动检查时定下的，取不到就不显示
+function loadExecNotice() {
+  return api('/exec/notice')
+    .then(data => renderExecNotice($('#exec-notice'), data))
+    .catch(() => renderExecNotice($('#exec-notice'), null));
+}
+
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 let startupAttempt;
@@ -843,6 +851,7 @@ function startConsole() {
         $('#bot-form').innerHTML = botFormHtml('bot');
         bindBotForm('bot');
         loadBotConsole();
+        loadExecNotice();
       }
       return Promise.all([
         api('/status', {signal: attempt.controller.signal}).catch(() => null),

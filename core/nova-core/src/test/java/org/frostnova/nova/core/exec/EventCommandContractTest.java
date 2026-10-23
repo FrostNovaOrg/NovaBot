@@ -132,6 +132,59 @@ class EventCommandContractTest {
         }
     }
 
+    @Test
+    void listsRulesToAdjustAfterStartup() {
+        properties.getExec().setEnabled(true);
+        properties.getExec().getRules().add(rule(List.of("tool", "--", "{uname}")));
+        properties.getExec().getRules().add(rule(Arrays.asList(null, "{uname}", "value")));
+        properties.getExec().getRules().add(rule(List.of("tool", "{uname}")));
+        NovaCoreProperties.ExecRule disabled = rule(List.of("tool", "{uname}"));
+        disabled.setEnabled(false);
+        properties.getExec().getRules().add(disabled);
+        properties.getExec().getRules().add(rule(List.of("tool", "--name={uname}")));
+        assertEquals(List.of(), runner.rulesToAdjust());
+        publishReady();
+        assertEquals(List.of(new EventCommandRunner.RuleToAdjust(1, "LiveOnEvent"),
+                new EventCommandRunner.RuleToAdjust(2, "LiveOnEvent")), runner.rulesToAdjust());
+    }
+
+    @Test
+    void listsNothingForCurrentConfiguration() {
+        properties.getExec().setEnabled(true);
+        properties.getExec().getRules().add(rule(List.of("tool", "-q", "--", "{uname}")));
+        properties.getExec().getRules().add(rule(List.of("tool", "--name={uname}")));
+        properties.getExec().getRules().add(rule(null));
+        publishReady();
+        assertEquals(List.of(), runner.rulesToAdjust());
+    }
+
+    @Test
+    void listsNothingWhileDisabled() {
+        properties.getExec().getRules().add(rule(List.of("{uname}")));
+        publishReady();
+        assertEquals(List.of(), runner.rulesToAdjust());
+    }
+
+    @Test
+    void logsSkippedRuleOncePerRun() {
+        properties.getExec().setEnabled(true);
+        properties.getExec().getRules().add(rule(List.of("{uname}")));
+        properties.getExec().getRules().add(rule(List.of("tool", "{uname}")));
+        for (int i = 0; i < 3; i++) {
+            runner.onEvent(event("-sample"));
+        }
+        List<String> skipped = warnings();
+        assertEquals(2, skipped.size());
+        assertTrue(skipped.get(0).contains("novabot.core.exec.rules[0]"));
+        assertTrue(skipped.get(1).contains("novabot.core.exec.rules[1]"));
+        for (String line : skipped) {
+            assertTrue(line.contains("跳过"));
+            assertTrue(line.contains("附录 B"));
+        }
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) ReflectionTestUtils.getField(runner, "executor");
+        assertEquals(0, executor.getTaskCount());
+    }
+
     static Stream<List<String>> formsToAdjust() {
         return Stream.of(
                 List.of("tool", "{uname}"),
