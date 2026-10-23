@@ -76,36 +76,42 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         long http412 = metrics.count(BilibiliRiskMetrics.Kind.HTTP_412, WEEK);
         if (http412 >= THRESHOLD_412) {
             problems.add("7 天内真实 HTTP 412 " + cappedCountText(http412) + " 次");
-            advices.add("已达到重新评估真实浏览器方案的触发条件（≥3 次/7 天），请报产品侧决策");
+            advices.add("B 站开始拒绝本机的请求，多半是被风控拦下了；浏览器里打开 B 站正常的话，"
+                    + "更能确定是本程序被拦。先更新到最新版本；还没恢复就去「日志」页看详情；"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long code352 = metrics.count(BilibiliRiskMetrics.Kind.CODE_352, HOUR);
         if (code352 >= THRESHOLD_352) {
             problems.add("1 小时内业务码 -352 " + cappedCountText(code352) + " 次");
-            advices.add("请求被风控限流。先查是不是自己的重连风暴打出来的——"
-                    + "看同期长连接 1006 次数，若同时飙升则是自伤而非平台主动风控");
+            advices.add("B 站在限制本机的请求频率。多半是本机自己反复断线重连把请求量顶上去的："
+                    + "看这条读数里 1006 断线次数是不是也涨了，一起涨就先解决断线问题；"
+                    + "否则先更新到最新版本，还没恢复就去「日志」页看详情，问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long code509 = metrics.count(BilibiliRiskMetrics.Kind.CODE_509, HOUR);
         if (code509 >= THRESHOLD_509) {
             problems.add("1 小时内业务码 -509 " + cappedCountText(code509) + " 次");
-            advices.add("请求过于频繁。先看轮询间隔与同期 1006 次数，"
-                    + "确认不是自己的重连风暴把请求量顶上去的");
+            advices.add("B 站嫌本机请求太密。先看轮询间隔是不是调得太小，"
+                    + "再看这条读数里 1006 断线次数是不是也涨了——涨了就是本机反复断线重连顶上去的，先解决断线；"
+                    + "否则先更新到最新版本，还没恢复就去「日志」页看详情，问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long code401 = metrics.count(BilibiliRiskMetrics.Kind.CODE_401, DAY);
         if (code401 >= THRESHOLD_401) {
             problems.add("24 小时内业务码 -401 " + cappedCountText(code401) + " 次");
-            advices.add("请求被要求验证。先核对登录态是否已过期，"
-                    + "过期只需重新扫码；登录态正常仍成串出现的才要报产品侧");
+            advices.add("B 站要求本机重新验证身份。先看连接页「哔哩哔哩」卡的登录状态，掉登录时重新扫码就好；"
+                    + "登录没掉却还成串出现的，先更新到最新版本，还没恢复就去「日志」页看详情，"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long gaia = metrics.count(BilibiliRiskMetrics.Kind.GAIA, DAY);
         if (gaia > 0) {
             problems.add("24 小时内风控质询/验证码 " + cappedCountText(gaia) + " 次");
-            advices.add("出现质询说明请求已被判定为异常客户端，"
+            advices.add("B 站对本机出了验证（验证码或质询），说明请求已被当成异常客户端，"
                     + metrics.lastDetail(BilibiliRiskMetrics.Kind.GAIA).map(d -> "最近一次：" + d + "。").orElse("")
-                    + "请报产品侧，不要自行尝试绕过");
+                    + "不要自行尝试绕过。先更新到最新版本；还没恢复就去「日志」页看详情；"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long missing = metrics.count(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING, DAY);
@@ -114,14 +120,17 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
             advices.add("粉丝数、粉丝团、大航海三项快照有接口取不到，"
                     + metrics.lastDetail(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING).map(d -> "最近一次：" + d + "。").orElse("")
                     + "表现是下播报告里对应的卡片直接消失，数值不会变成 0。"
-                    + "常见原因是接口端点被平台下线");
+                    + "常见原因是平台把这个取数接口关了。先更新到最新版本；还没恢复就去「日志」页看详情；"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long disconnects = metrics.count(BilibiliRiskMetrics.Kind.DISCONNECT_1006, HOUR);
         if (disconnects >= THRESHOLD_1006) {
             problems.add("1 小时内长连接 1006 断线 " + cappedCountText(disconnects) + " 次");
-            advices.add("成串的秒级断线通常是握手被拒后反复重连。"
-                    + "检查登录态是否正常，以及建连是否绕过了全局连接闸门");
+            advices.add("连着断线多半是连上去就被 B 站踢下来、于是反复重连。"
+                    + "先看连接页「哔哩哔哩」卡的登录状态，掉登录时重新扫码就好；"
+                    + "登录没问题就先更新到最新版本，还没恢复就去「日志」页看详情，"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         long unknownOp = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, DAY);
@@ -131,7 +140,9 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
                     .map(Instant::toString)
                     .orElse("?");
             problems.add("协议层出现未知操作码 " + opDetail + "（最近 " + lastSeen + "）");
-            advices.add("多半是 B 站长连协议改了，看日志并抓语料");
+            advices.add("B 站发来的直播消息里出现了这一版认不出的类型，弹幕礼物可能收不全。"
+                    + "先更新到最新版本；还没恢复就去「日志」页看详情；"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         // 与未知操作码同档：版本号不认识意味着可能解不开平台新出的压缩格式
@@ -142,7 +153,9 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
                     .map(Instant::toString)
                     .orElse("?");
             problems.add("协议层出现未知协议版本 " + verDetail + "（最近 " + lastSeen + "）");
-            advices.add("不认识的版本号会当裸负载处理，压缩格式改了会整批丢消息；看日志并抓语料");
+            advices.add("B 站改了消息格式，这一版解不开，遇到时整批消息都会丢，弹幕礼物可能成批收不到。"
+                    + "先更新到最新版本；还没恢复就去「日志」页看详情；"
+                    + "问题一直在就到项目的 GitHub 问题区反馈");
         }
 
         String unknownCmdLine = unknownCmdSummaryLine();
