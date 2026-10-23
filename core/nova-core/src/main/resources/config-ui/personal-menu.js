@@ -2,6 +2,33 @@
 import {api, hasUnsavedChanges} from './core.js';
 import {ask} from './confirm.js';
 
+/**
+ * 手机顶栏上的「我的」：点一下摊开使用说明、账号与退出，再点、按 Esc 或点别处收起
+ *
+ * 宽屏上这颗按钮不显示、面板照常摊在侧栏底部，开合只在窄屏上看得出来。
+ * 页里缺这两块（比如只建了一部分页面的测试）时什么也不做。
+ * @param toggle 「我的」按钮
+ * @param panel 收进去的那一块
+ */
+export function bindMineMenu(toggle, panel) {
+  if (!toggle || !panel) return;
+  const setOpen = open => {
+    panel.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+  toggle.addEventListener('click', () => setOpen(!panel.classList.contains('open')));
+  panel.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !panel.classList.contains('open')) return;
+    setOpen(false);
+    toggle.focus();
+  });
+  document.addEventListener('click', event => {
+    if (!panel.classList.contains('open')) return;
+    if (toggle.contains(event.target) || panel.contains(event.target)) return;
+    setOpen(false);
+  });
+}
+
 export function renderPersonalMenu(box, state) {
   box.hidden = !state.authenticated;
   if (!state.authenticated) return;

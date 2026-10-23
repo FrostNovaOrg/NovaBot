@@ -13,7 +13,7 @@ import {$, api, el, esc, markDirty, reloadChangeSources, saveTarget, say, switch
 import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards, openCards} from './settings-alert.js';
-import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
+import {agreementDangerZone, authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
 import {filterMembers, memberGroup} from './settings-members.js';
 import {CLEAR, advancedShown, arrangeGroups, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf,
   isChanged, isDangerous, dangerOf, isVisible, secretDraft, timeOfDay, timeOfDayValue}
@@ -307,7 +307,7 @@ function buildControl(field, value, cell) {
     input.type = 'password';
     input.value = value;
     input.autocomplete = 'new-password';
-    const eye = el('button');
+    const eye = el('button', 'ghost sm');
     eye.type = 'button';
     wrap.append(input, eye);
     bindPasswordReveal(input, eye, field.label);
@@ -837,6 +837,9 @@ export function renderGeneral() {
     box.appendChild(region);
   }
 
+  // 危险操作排在整页最底下，跟着「登录与安全」那一组出现（撤回同意本来在那一组的协议行里）
+  if ([...common, ...advanced].some(group => group.group === AUTH_GROUP)) box.appendChild(agreementDangerZone());
+
   buildNav(common, advanced);
   filterSettings();
 }
@@ -1032,6 +1035,9 @@ export function filterSettings() {
   const advancedVisible = advancedShown({matches, filtering, chosen: advancedChosen,
     dismissed: filtering && advancedDismissed === filterKey()});
   if (region) region.classList.toggle('hide', !advancedVisible);
+  // 危险操作不是配置项，筛的时候整块收起，免得搜什么都在页底立着一颗红按钮
+  const danger = $('#settings-danger');
+  if (danger) danger.classList.toggle('hide', filtering);
   // 目录里高级那一段与高级区同开同合：搜到高级里的项、点名跳进高级时一起出来
   const advancedNav = $('#adv-nav');
   if (advancedNav) advancedNav.classList.toggle('hide', !advancedVisible);

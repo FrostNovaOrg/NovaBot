@@ -69,7 +69,20 @@ function rule(css, selector) {
   return end < 0 ? {} : decls(css.slice(open + 1, end));
 }
 
+// 字号一律引档位变量（var(--fs-…)），档位定义在 app.css 旁边那份 product-ui.css 里
+let tokensCss = '';
+try {
+  tokensCss = readFileSync(join(dirname(coreCssPath), 'product-ui.css'), 'utf8');
+} catch {
+  tokensCss = '';
+}
+
 function px(value) {
+  const token = String(value || '').trim().match(/^var\((--[\w-]+)\)$/);
+  if (token) {
+    const def = tokensCss.match(new RegExp(token[1] + '\\s*:\\s*(-?[\\d.]+)px'));
+    return def ? Number(def[1]) : null;
+  }
   const m = String(value || '').match(/^(-?[\d.]+)(px)?$/);
   return m ? Number(m[1]) : null;
 }

@@ -12,7 +12,7 @@ import {manualHref} from './manual-link.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
 import {setMemberAuthState} from './settings-members.js';
-import {renderPersonalMenu} from './personal-menu.js';
+import {bindMineMenu, renderPersonalMenu} from './personal-menu.js';
 import {CLEAR, defaultValue} from './settings-model.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
   from './settings.js';
@@ -182,7 +182,7 @@ function registerPageChangeSource(page) {
  * @return {HTMLElement} 插件往里渲染的容器
  */
 function mountSettingsPage(meta, slot) {
-  const button = el('button');
+  const button = el('button', 'ghost sm');
   button.type = 'button';
   button.dataset.tab = meta.id;
   button.textContent = meta.displayName;
@@ -770,6 +770,8 @@ $('#selftest-run').addEventListener('click', runSelfTest);
 $('#set-search').addEventListener('input', filterSettings);
 $('#only-changed').addEventListener('change', filterSettings);
 $('#show-keys').addEventListener('change', toggleKeyNames);
+
+bindMineMenu($('#mine-toggle'), $('#mine-panel'));
 
 $('#logout-all').addEventListener('click', async () => {
   if (!await ask({title: '退出全部设备？',

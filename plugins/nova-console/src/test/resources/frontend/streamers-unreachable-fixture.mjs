@@ -5,7 +5,7 @@ import {enhance, installCharts} from './streamers-dom.mjs';
  * 请求根本没到服务器时，浏览器只抛一个 TypeError，原话随浏览器而异（Failed to fetch、Load failed……）。
  * 这里在假 DOM 上真跑主播页，让假 fetch 照浏览器那样抛，量三处：
  * 正在直播卡的刷新、某一场报告图的取图、宿主 api() 的拒绝原因。
- * 服务器真回了带 message 的错误时，那句话照常显示——这一格是对照，防止修法把服务器的原话也一并换掉。
+ * 正在直播卡是后台刷新：失败时不论哪种原因都只说「刷新失败，稍后自动重试」，不拼原话。
  */
 import {register} from 'node:module';
 import assert from 'node:assert/strict';
@@ -91,10 +91,11 @@ await check('连不上服务器：正在直播卡的刷新失败提示是中文�
   assert.ok(error, '应当有一行刷新失败的提示');
   console.log('正在直播卡：' + error.textContent);
   assert.doesNotMatch(error.textContent, /Failed to fetch/);
-  assert.match(error.textContent, /^刷新失败：无法连接到服务器/);
+  assert.match(error.textContent, /^刷新失败，稍后自动重试/);
 });
 
-await check('服务器回了带 message 的错误：正在直播卡照常显示那句话', async () => {
+// 正在直播卡是后台刷新：失败时屏幕上只有那句短话，服务器的原话与浏览器的原话一样不拼进去
+await check('服务器回了带 message 的错误：正在直播卡也只说那句短话', async () => {
   mode = 'error';
   page.leave();
   location.hash = '#/streamers/sample/1';
@@ -102,7 +103,8 @@ await check('服务器回了带 message 的错误：正在直播卡照常显示�
   const error = flatten(nodes.get('sd-live')).find(one => one.className === 'live-error');
   assert.ok(error, '应当有一行刷新失败的提示');
   console.log('正在直播卡：' + error.textContent);
-  assert.match(error.textContent, /^刷新失败：直播数据暂不可用：样例原因/);
+  assert.match(error.textContent, /^刷新失败，稍后自动重试/);
+  assert.doesNotMatch(error.textContent, /样例原因/);
 });
 
 await check('连不上服务器：某一场的报告图取图失败提示是中文，不含 Failed to fetch', async () => {

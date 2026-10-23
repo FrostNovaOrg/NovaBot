@@ -380,7 +380,12 @@ await section('设置页不平铺协议全文', async () => {
   const view = row.querySelector('#agreement-view');
   eq(!!view, true, '有一颗查看全文按钮');
   eq(textOf(view), '查看全文', '按钮上写的是查看全文');
-  eq(!!row.querySelector('#agreement-revoke'), true, '撤回同意仍原样留着');
+  // 撤回同意挪到了设置页最底下的危险操作区（agreementDangerZone），不再挨着「查看全文」
+  eq(!!row.querySelector('#agreement-revoke'), false, '撤回同意不在这一行，在页底的危险操作区');
+  const auth = readFileSync(join(ui, 'settings-auth.js'), 'utf8');
+  const zoneSrc = bracedFrom(auth, 'export function agreementDangerZone');
+  eq(zoneSrc.includes("'agreement-revoke'") && zoneSrc.includes('revokeAgreement('), true,
+    '危险操作区里有撤回同意那颗按钮，点了走 revokeAgreement');
   eq(!!row.querySelector('#agreement-record'), true, '已同意第 N 版那一行仍原样留着');
 });
 

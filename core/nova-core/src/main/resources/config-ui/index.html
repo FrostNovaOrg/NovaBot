@@ -42,6 +42,12 @@
       <div class="brand-mark"><img src="{{nova-prefix}}/config/assets/{{nova-asset-version}}/icon.svg" alt="NovaBot"></div>
       <div class="brand-name">NovaBot</div>
     </div>
+    <!--
+      手机上的「我的」：使用说明、账号与退出收进这一颗，和 Logo 同一行，导航独占下一行。
+      宽屏上它不显示，下面 #mine-panel 里的几块照旧摆在侧栏底部（见 app.css 的窄屏段）。
+      开合由 personal-menu.js 的 bindMineMenu 管。
+    -->
+    <button type="button" class="ghost sm mine-toggle" id="mine-toggle" aria-expanded="false" aria-controls="mine-panel">我的</button>
     <nav class="nav" id="nav">
       <a href="#/home" data-page="home"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M6.2 14V9h3.6v5"/></svg>首页</a>
       <a href="#/log" data-page="log" style="display:none"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.6" cy="3.8" r="1.3"/><circle cx="3.6" cy="8" r="1.3"/><circle cx="3.6" cy="12.2" r="1.3"/><path d="M7 3.8h6.4M7 8h6.4M7 12.2h4.2"/></svg>日志</a>
@@ -68,6 +74,7 @@
       源码那枚的图标是 GitHub 的官方标（Octicons mark-github，MIT），内嵌在页面里，
       运行时不向网上取任何东西。
     -->
+    <div class="mine-panel" id="mine-panel">
     <div class="side-foot">
       <!--
         使用说明不进上面那条导航：它不是一页，点了打开自带的那份手册。
@@ -94,20 +101,21 @@
         <summary id="personal-name" class="side-link"></summary>
         <div class="personal-menu-items">
           <a id="account-center" class="side-link" target="_blank" rel="noopener noreferrer" hidden>账户中心</a>
-          <button type="button" id="logout" data-action="logout">退出</button>
+          <button type="button" class="ghost sm" id="logout" data-action="logout">退出</button>
           <p id="personal-about" class="hint"></p>
           <p id="personal-result" class="member-result" role="status"></p>
         </div>
       </details>
       <!-- 怀疑 Cookie 泄漏时的收回手段。没有它就只能重启进程，而重启会断开全部直播间长连接 -->
-      <button type="button" id="logout-all">退出全部设备</button>
+      <button type="button" class="ghost sm" id="logout-all">退出全部设备</button>
+    </div>
     </div>
   </aside>
 
   <main id="main">
   <div id="startup" class="nv-card">
     <p id="startup-message" role="status">正在加载…</p>
-    <button id="startup-retry" type="button" style="display:none">重试</button>
+    <button id="startup-retry" class="primary" type="button" style="display:none">重试</button>
   </div>
 
   <!-- 校验问题在哪一页都可能出现，故置于各页之外共用 -->
@@ -166,7 +174,7 @@
           <div class="nv-card hcard home-health" id="home-probes">
             <div class="home-health-head">
               <div><h3>健康自检</h3><p id="home-health-summary">检查结果加载中…</p></div>
-              <button id="selftest-run" type="button">立即自检</button>
+              <button id="selftest-run" class="ghost sm" type="button">立即自检</button>
             </div>
             <details id="home-probe-details">
               <summary>查看全部检查项 <span id="home-probe-count"></span></summary>
@@ -200,7 +208,7 @@
       <div class="nv-card hcard">
         <div class="log-toolbar">
           <div class="backups" id="log-daybar"></div>
-          <a class="daystep" id="log-eng-open" href="#/log/eng">工程日志 →</a>
+          <a class="nv-btn2 sm" id="log-eng-open" href="#/log/eng">工程日志 →</a>
         </div>
 
         <label class="switch"><input type="checkbox" id="log-only">
@@ -223,7 +231,7 @@
           <span>主播</span><select id="log-streamer" aria-label="按主播筛选"></select>
           <span>群 / 私聊</span><select id="log-channel" aria-label="按通道筛选"></select>
           <input type="search" id="log-q" placeholder="搜索主播、群或关键字" aria-label="搜索日志">
-          <button type="button" id="log-clear" style="display:none">清除筛选</button>
+          <button type="button" class="ghost sm" id="log-clear" style="display:none">清除筛选</button>
         </div>
 
         <div class="tl" id="log-list"></div>
@@ -236,7 +244,7 @@
     <div id="logeng" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="log-back" href="#/log">‹ 返回日志</a>
+          <a class="nv-btn2 sm" id="log-back" href="#/log">‹ 返回日志</a>
           <p class="hint" style="margin:8px 0 0">NovaBot 程序自身的运行日志，用于排查问题；日常查看请使用日志页的时间线。
             口令与 Cookie 等内容在显示前已打码。</p>
         </div>
@@ -272,8 +280,8 @@
           -->
           <label class="switch"><input type="checkbox" id="eng-follow" checked>
             <span>跟随最新</span></label>
-          <button type="button" id="eng-copy">复制当前日志</button>
-          <button type="button" id="eng-reload">重新读取</button>
+          <button type="button" class="ghost sm" id="eng-copy">复制当前日志</button>
+          <button type="button" class="ghost sm" id="eng-reload">重新读取</button>
         </div>
         <div class="eng" id="eng-body"></div>
         <p class="hint" id="eng-foot" style="margin:8px 0 0"></p>
@@ -332,8 +340,8 @@
         <div class="lc-body">
           <div class="backups" id="selftest">
             <select id="test-target" aria-label="发送目标"></select>
-            <button id="test-refresh" type="button">刷新列表</button>
-            <button id="test-send" type="button">发送</button>
+            <button id="test-refresh" class="ghost sm" type="button">刷新列表</button>
+            <button id="test-send" class="primary sm" type="button">发送</button>
           </div>
           <p class="hint" id="test-hint" style="margin:0"></p>
           <div class="issues" id="test-result"></div>
