@@ -270,6 +270,8 @@ public class JsonDataSource extends AbstractDataSource {
                     readChannelSetting(targetObject, "revenueVisible", () -> target.setRevenueVisible(targetObject.getBoolean("revenueVisible")));
                     readChannelSetting(targetObject, "quietHours", () -> target.setQuietHours(targetObject.getObject("quietHours", PushTarget.QuietHours.class)));
                     readChannelSetting(targetObject, "disabledCommands", () -> target.setDisabledCommands(targetObject.getList("disabledCommands", String.class)));
+                    // 存的是预设 id，认不认得留给画图那一侧：认不出的照默认模板的配色出图，并在日志里说一句
+                    readChannelSetting(targetObject, "reportPalette", () -> target.setReportPalette(targetObject.getString("reportPalette")));
                     target.setMessages(new ArrayList<>());
                     user.getTargets().add(target);
 

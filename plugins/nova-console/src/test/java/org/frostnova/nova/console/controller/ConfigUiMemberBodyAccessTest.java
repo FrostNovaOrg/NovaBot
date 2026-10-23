@@ -41,7 +41,7 @@ class ConfigUiMemberBodyAccessTest {
         var runtime = new RuntimeStateController(null, null, subscriptions, mock(NovaStateStore.class),
                 mock(AbstractDataSource.class), null, null, null, null, null);
         painter = mock(BilibiliLiveReportPreviewPainter.class);
-        when(painter.render(any())).thenReturn(Optional.of(new byte[]{1, 2, 3}));
+        when(painter.render(any(), any())).thenReturn(Optional.of(new byte[]{1, 2, 3}));
         mvc = MockMvcBuilders.standaloneSetup(new StreamerLookupController(registry), runtime,
                 new BilibiliReportLayoutController(painter, mock(RevenueVisibilityService.class)))
                 .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry))

@@ -136,6 +136,59 @@ class ReportPaletteTest {
                 () -> assertMedalColorPreserved(defaultImage, customImage, text, 0, "text"));
     }
 
+    // 用户故障：换了配色，粉丝牌上的字也变了色，和 B 站上显示的不一样
+    @Test
+    void medalNameTextKeepsPlatformColorUnderEveryPreset() throws Exception {
+        Color text = new Color(215, 35, 55);
+        for (var preset : ReportPalette.PRESETS) {
+            int named = medalTextPixels("示例牌", text, preset.palette());
+            int unnamed = medalTextPixels("", text, preset.palette());
+            System.out.println("MEDAL_NAME " + preset.id() + " named=" + named + " unnamed=" + unnamed);
+            // 牌名的字按平台给的颜色画，有牌名的那张就多出这几个字的笔画
+            assertTrue(named - unnamed > 20, preset.name() + "：牌名文字没按平台颜色画，named="
+                    + named + " unnamed=" + unnamed);
+        }
+    }
+
+    private static int medalTextPixels(String name, Color text, ReportPalette palette) throws Exception {
+        var painter = new BilibiliLiveReportPreviewPainter(factory, mock(BilibiliApiUtil.class), fonts,
+                new NovaBilibiliProperties(), mock(LiveRoomInfoHistory.class)) {
+            @Override
+            protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
+                var medal = new GuardMedal(name, 20, true, new Color(12, 210, 87), new Color(25, 65, 225),
+                        new Color(236, 173, 22), text, null);
+                return Optional.of(List.of(new GuardMember(19604318752096L, "示例观众", 3, 1000, medal)));
+            }
+        };
+        var image = ImageIO.read(new ByteArrayInputStream(
+                painter.render(new BilibiliLiveReportOptions(), palette).orElseThrow()));
+        return countColorPixels(image, text, 0);
+    }
+
+    @Test
+    void weeklyRendererDrawsThePresetItIsGiven() throws Exception {
+        var data = WeeklyReport.calculate("示例主播", List.of(), List.of(), Instant.parse("2026-10-12T02:00:00Z"),
+                new BilibiliLiveMetricCatalog().insights(), true);
+        var painter = new BilibiliWeeklyReportPainter(factory, mock(BilibiliApiUtil.class), new NovaBilibiliProperties());
+        assertEquals(ReportPalette.NIGHT.background(), dominant(painter.render(STREAMER, data, "night")));
+        // 认不出的 id 照默认模板，默认模板没改过即粉蓝
+        assertEquals(ReportPalette.PINK_BLUE.background(), dominant(painter.render(STREAMER, data, "sakura")));
+        // 不带配色的旧入口照旧是经典
+        assertArrayEquals(painter.render(STREAMER, data), painter.render(STREAMER, data, "classic"));
+    }
+
+    private static Color dominant(byte[] png) throws Exception {
+        var image = ImageIO.read(new ByteArrayInputStream(png));
+        var counts = new java.util.HashMap<Integer, Integer>();
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int pixel = image.getRGB(x, y);
+                if ((pixel >>> 24) == 255) counts.merge(pixel & 0xFFFFFF, 1, Integer::sum);
+            }
+        }
+        return new Color(counts.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey());
+    }
+
     private static void assertMedalColorPreserved(BufferedImage defaultImage, BufferedImage customImage,
                                                   Color color, int tolerance, String role) {
         int defaultPixels = countColorPixels(defaultImage, color, tolerance);

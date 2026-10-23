@@ -27,6 +27,7 @@ import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -116,7 +117,7 @@ class DynamicBlockWordsTest {
 
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
         when(subscriptions.list(anyString(), anyLong(), anyLong(), anyString())).thenReturn(List.of());
-        when(painter.paint(any())).thenReturn(Optional.empty());
+        when(painter.paint(any(), any())).thenReturn(Optional.empty());
 
         Logger logger = (Logger) LoggerFactory.getLogger(BilibiliDynamicPushHandler.class);
         logger.setLevel(Level.INFO);
@@ -419,6 +420,7 @@ class DynamicBlockWordsTest {
         context.registerBean(NovaBilibiliProperties.class, () -> properties);
         context.registerBean(TimelineWriter.class, () -> timeline::add);
         context.registerBean(StreamerNames.class, StreamerNames::none);
+        context.registerBean(ReportPalettes.class, ReportPalettes::factory);
         context.register(BilibiliDynamicPushHandler.class);
         context.refresh();
         return context.getBean(BilibiliDynamicPushHandler.class);

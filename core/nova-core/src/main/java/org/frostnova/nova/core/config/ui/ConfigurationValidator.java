@@ -198,6 +198,11 @@ public class ConfigurationValidator {
                 }
             }
         }
+        // 认不认得这个 id 不在这里判：读到不认识的 id 时照默认模板的配色出图，不至于存不进去
+        Object palette = target.get("reportPalette");
+        if (palette != null && (!(palette instanceof String id) || id.isBlank())) {
+            issues.add(at + "的 reportPalette 必须为配色 id 或 null");
+        }
         Object disabled = target.get("disabledCommands");
         if (disabled != null) {
             if (!(disabled instanceof JSONArray list)) issues.add(at + "的 disabledCommands 必须为用法名数组或 null");

@@ -50,7 +50,7 @@ class BilibiliRoomDataCommandTest {
 
         ArgumentCaptor<BilibiliDataQueryPainter.Header> header =
                 ArgumentCaptor.forClass(BilibiliDataQueryPainter.Header.class);
-        verify(fixture.painter).paintCards(header.capture(), any(), nullable(String.class));
+        verify(fixture.painter).paintCards(header.capture(), any(), nullable(String.class), any());
         assertEquals("主播{名字}", header.getValue().title());
     }
 
@@ -155,7 +155,7 @@ class BilibiliRoomDataCommandTest {
                 .thenReturn(danmuUsers);
 
         BilibiliDataQueryPainter painter = mock(BilibiliDataQueryPainter.class);
-        when(painter.paintCards(any(), any(), nullable(String.class))).thenReturn(Optional.of("QUJD"));
+        when(painter.paintCards(any(), any(), nullable(String.class), any())).thenReturn(Optional.of("QUJD"));
 
         RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
         when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
@@ -167,7 +167,7 @@ class BilibiliRoomDataCommandTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards =
                 ArgumentCaptor.forClass(List.class);
-        verify(painter).paintCards(any(), cards.capture(), nullable(String.class));
+        verify(painter).paintCards(any(), cards.capture(), nullable(String.class), any());
         for (BilibiliDataQueryPainter.DataCard card : cards.getValue()) {
             if (card.label().startsWith("弹幕")) {
                 return card.label();
@@ -231,7 +231,7 @@ class BilibiliRoomDataCommandTest {
             when(liveDataService.getLiveMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(1);
 
             painter = mock(BilibiliDataQueryPainter.class);
-            when(painter.paintCards(any(), any(), nullable(String.class))).thenReturn(Optional.of("QUJD"));
+            when(painter.paintCards(any(), any(), nullable(String.class), any())).thenReturn(Optional.of("QUJD"));
 
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
             when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(showRevenue);
@@ -242,7 +242,7 @@ class BilibiliRoomDataCommandTest {
 
         String capturedFootnote() {
             ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-            verify(painter).paintCards(any(), any(), footnote.capture());
+            verify(painter).paintCards(any(), any(), footnote.capture(), any());
             return footnote.getValue();
         }
 
@@ -250,7 +250,7 @@ class BilibiliRoomDataCommandTest {
             @SuppressWarnings("unchecked")
             ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards =
                     ArgumentCaptor.forClass(List.class);
-            verify(painter).paintCards(any(), cards.capture(), nullable(String.class));
+            verify(painter).paintCards(any(), cards.capture(), nullable(String.class), any());
             for (BilibiliDataQueryPainter.DataCard card : cards.getValue()) {
                 if (card.label().startsWith("盲盒")) {
                     return card;

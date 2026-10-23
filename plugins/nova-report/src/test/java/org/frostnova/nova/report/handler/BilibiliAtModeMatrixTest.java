@@ -336,7 +336,7 @@ class BilibiliAtModeMatrixTest {
             }
 
             BilibiliDynamicPainter painter = mock(BilibiliDynamicPainter.class);
-            when(painter.paint(any())).thenReturn(Optional.empty());
+            when(painter.paint(any(), any())).thenReturn(Optional.empty());
             new BilibiliDynamicPushHandler(api, painter, collector, subscriptions, mock(LiveDataService.class),
                     new NovaBilibiliProperties(), TimelineWriter.NONE)
                     .handle(new BilibiliDynamicUpdateEvent(source, mock(Dynamic.class), "发布了动态",

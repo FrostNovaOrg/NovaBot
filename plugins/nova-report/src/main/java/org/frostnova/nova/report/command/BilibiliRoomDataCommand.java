@@ -106,7 +106,7 @@ public class BilibiliRoomDataCommand extends BilibiliScopedDataCommand {
 
         // 没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁：
         // 图里虽然也有主播名，但看图的人未必会去核对，而猜错了的那次正是最该被核对的
-        return withNotice(resolved, painter.paintCards(header, cards, footnote(scope, platform, uid))
+        return withNotice(resolved, painter.paintCards(header, cards, footnote(scope, platform, uid), palette(context))
                 .map(CommandReply::image)
                 .orElseGet(this::paintFailed));
     }

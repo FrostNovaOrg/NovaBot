@@ -57,7 +57,7 @@ class WeeklyReportApiTest {
                 snapshots, new LiveDetailArchive(props), catalogs, mock(ObjectProvider.class),
                 Clock.fixed(Instant.parse("2026-10-12T02:00:00Z"), ZoneOffset.UTC));
         renderer = mock(WeeklyReportRenderer.class); when(renderer.platform()).thenReturn("bilibili");
-        when(renderer.render(any(), any())).thenReturn(new byte[]{(byte)137, 80, 78, 71});
+        when(renderer.render(any(), any(), any())).thenReturn(new byte[]{(byte)137, 80, 78, 71});
         injectRenderer();
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -119,9 +119,9 @@ class WeeklyReportApiTest {
         String raw = mvc.perform(get("/config/api/streamers/bilibili/1/weekly-report"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertTrue(JSON.parseObject(raw).getString("summary").contains("没有记录到开播"));
-        verify(renderer, never()).render(any(), any());
+        verify(renderer, never()).render(any(), any(), any());
         archive(Instant.parse("2026-10-05T00:00:00Z"));
-        when(renderer.render(any(), any())).thenThrow(new IllegalStateException("image unavailable"));
+        when(renderer.render(any(), any(), any())).thenThrow(new IllegalStateException("image unavailable"));
         raw = mvc.perform(get("/config/api/streamers/bilibili/1/weekly-report"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var text = JSON.parseObject(raw).getString("text");
@@ -183,7 +183,7 @@ class WeeklyReportApiTest {
         var user = new PushUser(); user.setUid(1L); user.setPlatform("bilibili");
         user.setUname("{at=all}测试[CQ:at,qq=all]");
         when(source.getAllUsers()).thenReturn(List.of(user));
-        if (!image) when(renderer.render(any(), any())).thenReturn(null);
+        if (!image) when(renderer.render(any(), any(), any())).thenReturn(null);
         var sender = mock(NovaMessageSender.class);
         var delivery = new WeeklyReportDeliveryService(source,
                 (WeeklyReportContentService) ReflectionTestUtils.getField(controller, "weeklyReports"),
@@ -211,7 +211,7 @@ class WeeklyReportApiTest {
         var user = new PushUser(); user.setUid(1L); user.setPlatform("bilibili"); user.setUname("主播示例");
         when(source.getAllUsers()).thenReturn(List.of(user));
         if (!mode.equals("empty")) archive(Instant.parse("2026-10-05T00:00:00Z"));
-        if (mode.equals("renderer-failed")) when(renderer.render(any(), any())).thenThrow(new IllegalStateException("sample render failure"));
+        if (mode.equals("renderer-failed")) when(renderer.render(any(), any(), any())).thenThrow(new IllegalStateException("sample render failure"));
         if (mode.equals("renderer-missing")) when(renderer.platform()).thenReturn("sample");
         mvc = MockMvcBuilders.standaloneSetup(new WeeklyReportPushController(targetReports())).build();
         String url = "/config/api/weekly-report/bilibili/1/preview";

@@ -82,7 +82,7 @@ class BilibiliRankingCommandTest {
 
         liveDataService = mock(LiveDataService.class);
         painter = mock(BilibiliDataQueryPainter.class);
-        when(painter.paintRanking(any(), any(), anyInt(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.paintRanking(any(), any(), anyInt(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         // 画手是替身时量高度回 0，也就是「量得下」：本类不测高度截行，那归 BilibiliRankingHeightLimitTest
         when(painter.measureRankingHeight(any(), anyInt(), any())).thenReturn(0);
 
@@ -103,7 +103,7 @@ class BilibiliRankingCommandTest {
 
         ArgumentCaptor<BilibiliDataQueryPainter.Header> header =
                 ArgumentCaptor.forClass(BilibiliDataQueryPainter.Header.class);
-        verify(painter).paintRanking(header.capture(), any(), eq(1), any(), any());
+        verify(painter).paintRanking(header.capture(), any(), eq(1), any(), any(), any());
         assertEquals("本场数据 · " + uname + "的直播间", header.getValue().subtitle());
     }
 
@@ -114,7 +114,7 @@ class BilibiliRankingCommandTest {
 
         assertTrue(reply.content().contains("弹幕"));
         assertTrue(reply.content().contains("盲盒盈亏"));
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -153,7 +153,7 @@ class BilibiliRankingCommandTest {
             assertTrue(reply.content().contains("不展示"), board + "：" + reply.content());
             assertTrue(reply.content().contains("「测试主播」的金额相关榜单"), board + "：" + reply.content());
         }
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -164,7 +164,7 @@ class BilibiliRankingCommandTest {
 
         command.execute(context("弹幕"));
 
-        verify(painter).paintRanking(any(), any(), eq(1), any(), any());
+        verify(painter).paintRanking(any(), any(), eq(1), any(), any(), any());
     }
 
     @Test
@@ -186,7 +186,7 @@ class BilibiliRankingCommandTest {
 
         command.execute(context("SC"));
 
-        verify(painter).paintRanking(any(), any(), eq(1), any(), any());
+        verify(painter).paintRanking(any(), any(), eq(1), any(), any(), any());
     }
 
     @Test
@@ -197,7 +197,7 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("礼物"));
 
         assertTrue(reply.content().contains("还没有"));
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -211,7 +211,7 @@ class BilibiliRankingCommandTest {
 
         assertTrue(reply.content().contains("认不出发送者"), reply.content());
         assertFalse(reply.content().contains("还没有"), reply.content());
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -222,7 +222,7 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("弹幕"));
 
         assertTrue(reply.content().contains("还没有"), reply.content());
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -236,7 +236,7 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("弹幕", "总"));
 
         assertEquals("测试主播的直播间累计弹幕认不出发送者，没有排行", reply.content());
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -255,7 +255,7 @@ class BilibiliRankingCommandTest {
 
         assertAll(
                 () -> verify(liveDataService).getLiveUserRanking(anyString(), eq(OTHER), anyString(), anyInt()),
-                () -> verify(painter).paintRanking(any(), any(), eq(1), any(), any())
+                () -> verify(painter).paintRanking(any(), any(), eq(1), any(), any(), any())
         );
     }
 
@@ -268,7 +268,7 @@ class BilibiliRankingCommandTest {
 
         ArgumentCaptor<List<UserScore>> rows = captor();
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture(), any());
         assertAll(
                 () -> assertEquals(37, rows.getValue().size(), "一张图要列全 37 人"),
                 () -> assertTrue(footnote.getValue().contains("前 37 名 · 共 37 人"), footnote.getValue()),
@@ -285,7 +285,7 @@ class BilibiliRankingCommandTest {
 
         ArgumentCaptor<List<UserScore>> rows = captor();
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture(), any());
         assertAll(
                 () -> assertEquals(50, rows.getValue().size(), "默认列前 50 名"),
                 () -> assertTrue(footnote.getValue().contains("前 50 名 · 共 80 人"), footnote.getValue()),
@@ -301,7 +301,7 @@ class BilibiliRankingCommandTest {
         command.execute(context("弹幕"));
 
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture(), any());
         assertAll(
                 () -> assertFalse(footnote.getValue().contains("其余"), footnote.getValue()),
                 () -> assertTrue(footnote.getValue().contains("前 50 名 · 共 50 人"), footnote.getValue())
@@ -318,7 +318,7 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("弹幕", "2"));
 
         ArgumentCaptor<List<UserScore>> rows = captor();
-        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), any());
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), any(), any());
         assertAll(
                 () -> assertEquals(37, rows.getValue().size(), "「2」不是页码，出的是同一张全量长图"),
                 () -> assertFalse(reply.content().contains("没有配置"), "「2」不该当主播：" + reply.content()),
@@ -335,7 +335,7 @@ class BilibiliRankingCommandTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<DoubleFunction<String>> scoreText = ArgumentCaptor.forClass(DoubleFunction.class);
-        verify(painter).paintRanking(any(), any(), anyInt(), scoreText.capture(), any());
+        verify(painter).paintRanking(any(), any(), anyInt(), scoreText.capture(), any(), any());
         DoubleFunction<String> fmt = scoreText.getValue();
 
         assertAll(
@@ -406,7 +406,7 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("云山"));
 
         assertTrue(reply.content().contains("请指明要看哪张榜"), reply.content());
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any(), any());
     }
 
     /**
@@ -415,7 +415,7 @@ class BilibiliRankingCommandTest {
     private void assertGiftBoardOfYunshan() {
         ArgumentCaptor<BilibiliDataQueryPainter.Header> header =
                 ArgumentCaptor.forClass(BilibiliDataQueryPainter.Header.class);
-        verify(painter).paintRanking(header.capture(), any(), eq(1), any(), any());
+        verify(painter).paintRanking(header.capture(), any(), eq(1), any(), any(), any());
         assertAll(
                 () -> assertEquals("礼物排行榜", header.getValue().title()),
                 () -> assertTrue(header.getValue().subtitle().contains("云山"), header.getValue().subtitle())

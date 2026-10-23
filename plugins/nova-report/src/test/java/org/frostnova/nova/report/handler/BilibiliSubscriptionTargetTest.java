@@ -64,7 +64,7 @@ class BilibiliSubscriptionTargetTest {
     @DisplayName("动态私聊：好友与群同号时 {at} 为空，群仍带订阅名单")
     void dynamicFriendDoesNotUseGroupSubscriptions() {
         BilibiliDynamicPainter painter = mock(BilibiliDynamicPainter.class);
-        when(painter.paint(any())).thenReturn(Optional.empty());
+        when(painter.paint(any(), any())).thenReturn(Optional.empty());
         Dynamic dynamic = new Dynamic();
         dynamic.setId("1");
         dynamic.setType("DYNAMIC_TYPE_DRAW");

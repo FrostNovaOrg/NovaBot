@@ -69,7 +69,7 @@ class BilibiliRankingRevenueBoardTest {
 
         liveDataService = mock(LiveDataService.class);
         painter = mock(BilibiliDataQueryPainter.class);
-        when(painter.paintRanking(any(), any(), anyInt(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.paintRanking(any(), any(), anyInt(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         when(painter.measureRankingHeight(any(), anyInt(), any())).thenReturn(0);
 
         command = new BilibiliRankingCommand(dataSource, mock(BilibiliStreamerChoice.class),
@@ -88,7 +88,7 @@ class BilibiliRankingRevenueBoardTest {
         command.execute(context("流水"));
 
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture(), any());
         List<String> red = new java.util.ArrayList<>();
         try {
             assertTrue(footnote.getValue().contains("前 2 名 · 共 2 人"), footnote.getValue());
@@ -125,7 +125,7 @@ class BilibiliRankingRevenueBoardTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<UserScore>> rows = ArgumentCaptor.forClass((Class) List.class);
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture(), any());
         List<String> red = new java.util.ArrayList<>();
         try {
             assertTrue(footnote.getValue().contains("共 2 人"),
@@ -167,7 +167,7 @@ class BilibiliRankingRevenueBoardTest {
         command.execute(context("流水", "总"));
 
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture(), any());
         List<String> red = new java.util.ArrayList<>();
         try {
             assertTrue(footnote.getValue().contains("5.7.8"), "累计说明要写清从哪一版起才记：" + footnote.getValue());

@@ -17,6 +17,8 @@ import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.report.painter.BilibiliOfflineRewardDigestPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -59,20 +61,33 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
 
     private final StreamerNames names;
 
+    private final ReportPalettes palettes;
+
+    private final PaintOnce drawn = new PaintOnce();
+
     public BilibiliOfflineRewardDigestPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                                   RevenueVisibilityService revenueVisibility,
                                                   BilibiliOfflineRewardDigestPainter painter) {
         this(api, sender, revenueVisibility, painter, StreamerNames.none());
     }
 
+    public BilibiliOfflineRewardDigestPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
+                                                  RevenueVisibilityService revenueVisibility,
+                                                  BilibiliOfflineRewardDigestPainter painter,
+                                                  StreamerNames names) {
+        this(api, sender, revenueVisibility, painter, names, ReportPalettes.factory());
+    }
+
     /**
      * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     * @param palettes 各通道的报告图配色
      */
     @Autowired
     public BilibiliOfflineRewardDigestPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                                   RevenueVisibilityService revenueVisibility,
                                                   BilibiliOfflineRewardDigestPainter painter,
-                                                  StreamerNames names) {
+                                                  StreamerNames names, ReportPalettes palettes) {
+        this.palettes = palettes;
         this.api = api;
         this.sender = sender;
         this.revenueVisibility = revenueVisibility;
@@ -83,7 +98,8 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
     @Override
     public void handle(NovaExternalBaseEvent baseEvent, PushMessage pushMessage) {
         JSONObject params = pushMessage.getParamsJsonObject();
-        BilibiliOfflineRewardDigestEvent event = forTarget((BilibiliOfflineRewardDigestEvent) baseEvent, params);
+        int threshold = threshold(params);
+        BilibiliOfflineRewardDigestEvent event = forTarget((BilibiliOfflineRewardDigestEvent) baseEvent, threshold);
         if (event.getContributions().isEmpty()) {
             return;
         }
@@ -95,7 +111,10 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
 
         // 画图失败时改发文字版，而不是什么都不发——与下播报告同一条退路：
         // 这一阵谁送了什么不能跟着图片一起消失
-        Optional<String> image = painter.paint(event, showRevenue);
+        // 这一张只随门槛、金额可见性与配色变：三项相同的通道共用
+        ReportPalette.Preset palette = palettes.forChannel(target);
+        Optional<String> image = drawn.get(baseEvent, threshold + "|" + showRevenue + "|" + palette.id(),
+                () -> painter.paint(event, showRevenue, palette.palette()));
         String picture = image
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
@@ -113,7 +132,7 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
         PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
     }
 
-    private BilibiliOfflineRewardDigestEvent forTarget(BilibiliOfflineRewardDigestEvent original, JSONObject params) {
+    private static int threshold(JSONObject params) {
         int threshold = (int) THRESHOLD.defaultValue();
         try {
             Integer stored = params.getInteger(THRESHOLD.key());
@@ -123,6 +142,10 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
         } catch (RuntimeException e) {
             log.warn("打赏播报门槛无效，使用默认值 {}", threshold);
         }
+        return threshold;
+    }
+
+    private BilibiliOfflineRewardDigestEvent forTarget(BilibiliOfflineRewardDigestEvent original, int threshold) {
         long thresholdFen = threshold * 100L;
         List<BilibiliOfflineRewardDigestEvent.Contribution> people = new ArrayList<>(original.getContributions().stream()
                 .filter(person -> person.getGuardLevel() != null || (person.getGifts() != null && !person.getGifts().isEmpty()

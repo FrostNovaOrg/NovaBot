@@ -39,6 +39,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/handlers");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/templates");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/report/layout-options");
+        add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/report/palettes");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/datasource/users/{platform}/{uid}");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/datasource/users/{platform}/{uid}/version");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/datasource/users/{platform}/{uid}");
@@ -113,6 +114,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/timeline");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/push/toggle");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/templates");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/report/palettes/default");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/command");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/commands");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/revenue");

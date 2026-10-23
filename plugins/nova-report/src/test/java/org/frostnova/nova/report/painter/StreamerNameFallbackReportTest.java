@@ -136,12 +136,12 @@ class StreamerNameFallbackReportTest {
     @DisplayName("「直播报告」命令、主播在播：交给画手的主播名是最近一场的昵称")
     void reportCommandPaintsWithArchivedName() {
         BilibiliLiveReportPainter painter = mock(BilibiliLiveReportPainter.class);
-        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
 
         reportCommand(true, painter).execute(context());
 
         ArgumentCaptor<LiveStreamerInfo> source = ArgumentCaptor.forClass(LiveStreamerInfo.class);
-        verify(painter).paint(anyString(), source.capture(), any());
+        verify(painter).paint(anyString(), source.capture(), any(), any());
         assertEquals("最近的昵称", source.getValue().getUname());
         assertEquals(UID, source.getValue().getUid());
     }
@@ -185,7 +185,7 @@ class StreamerNameFallbackReportTest {
     @DisplayName("下播报告推送：{uname} 写最近一场的昵称")
     void reportPushNamesTheStreamer() {
         BilibiliLiveReportPainter painter = mock(BilibiliLiveReportPainter.class);
-        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
         BilibiliLiveReportPushHandler handler =
                 new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility, names);

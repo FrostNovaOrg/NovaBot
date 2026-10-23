@@ -78,7 +78,7 @@ class ChannelSettingsIntegrationTest {
         live = mock(LiveDataService.class);
         when(live.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(true));
         painter = mock(BilibiliLiveReportPainter.class);
-        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         var choice = mock(BilibiliStreamerChoice.class);
         report = new BilibiliLiveReportCommand(source, choice, live, painter, revenue);
         ranking = new BilibiliRankingCommand(source, choice, live, mock(BilibiliDataQueryPainter.class), revenue, new NovaBilibiliProperties());
@@ -508,7 +508,7 @@ class ChannelSettingsIntegrationTest {
             handler.handle(new BilibiliLiveOffEvent(new LiveStreamerInfo(users.get(i).getUid(), users.get(i).getUname(), 1L)), message);
         }
         var options = org.mockito.ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
-        verify(painter, times(4)).paint(anyString(), any(), options.capture());
+        verify(painter, times(4)).paint(anyString(), any(), options.capture(), any());
         assertEquals(List.of(false, false, true, true), options.getAllValues().stream().map(BilibiliLiveReportOptions::isShowRevenue).toList());
         assertTrue(ranking.execute(context("数据排行榜", "礼物", "甲")).content().contains("不展示「甲」的金额相关榜单"));
         var visibleReply = ranking.execute(context("数据排行榜", "礼物", "乙")).content();

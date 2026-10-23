@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.HandlerOption;
@@ -58,6 +59,14 @@ public class PushTemplateDefaults {
      * 文件名。与推送配置同目录
      */
     static final String FILE_NAME = "template-defaults.json";
+
+    /**
+     * 报告图配色在这份文件里的键，值是预设 id
+     * <p>
+     * 与处理器那些键同住一份文件，但它不属于任何一类通知：报告图配色按通道选，
+     * 默认模板上只有一项。处理器的键都是带点的全类名，这个不带点，两者撞不上。
+     */
+    static final String REPORT_PALETTE_KEY = "reportPalette";
 
     /**
      * 模板里的占位符：从 <code>{</code> 到<b>最近一个</b> <code>}</code>
@@ -165,7 +174,40 @@ public class PushTemplateDefaults {
      */
     public JSONObject all() {
         synchronized (lock) {
-            return load().clone();
+            JSONObject all = load().clone();
+            // 这一支答的是「哪几类通知改过」，报告图配色不是一类通知，由 reportPalette() 答
+            all.remove(REPORT_PALETTE_KEY);
+            return all;
+        }
+    }
+
+    /**
+     * 默认模板里的报告图配色
+     * @return 存着的预设 id；没改过时为 null
+     */
+    public String reportPalette() {
+        synchronized (lock) {
+            Object stored = load().get(REPORT_PALETTE_KEY);
+            return stored instanceof String id && !id.isBlank() ? id : null;
+        }
+    }
+
+    /**
+     * 改默认模板里的报告图配色
+     * <p>
+     * 认不认得这个 id 由调用方判：哪几套配色可选，是画图那一侧的事。
+     * @param id 预设 id；null 或空串即回到出厂
+     * @return 问题清单，为空即已写盘
+     */
+    public List<String> saveReportPalette(String id) {
+        synchronized (lock) {
+            JSONObject data = load().clone();
+            if (id == null || id.isBlank()) {
+                data.remove(REPORT_PALETTE_KEY);
+            } else {
+                data.put(REPORT_PALETTE_KEY, id);
+            }
+            return write(data, "报告图配色");
         }
     }
 
@@ -207,23 +249,33 @@ public class PushTemplateDefaults {
             } else {
                 data.put(className, wanted);
             }
+            return write(data, className);
+        }
+    }
 
-            Path path = path();
-            try {
-                Path parent = path.getParent();
-                if (parent != null) {
-                    Files.createDirectories(parent);
-                }
-                DurableFiles.replace(path, data.toJSONString());
-                cache = data;
-                log.info("默认模板已更新: {}", className);
-            } catch (IOException e) {
-                log.error("保存默认模板 {} 失败", path, e);
-                // 缓存不推进：写盘没成，内存里就不许显示成已经改了。
-                // 两边分叉时屏幕上一切正常，而重启之后改动凭空消失
-                cache = null;
-                return List.of("写入 " + path + " 失败: " + e.getMessage());
+    /**
+     * 把整份默认模板写盘，调用方必须持锁
+     * @param data 整份内容
+     * @param what 改的是哪一项，记日志用
+     * @return 问题清单，为空即已写盘
+     */
+    private List<String> write(JSONObject data, String what) {
+        Path path = path();
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
             }
+            // 带上 WriteNulls：fastjson2 默认丢掉值为 null 的项，存一处会把文件里无关的空值项一并抹掉
+            DurableFiles.replace(path, data.toJSONString(JSONWriter.Feature.WriteNulls));
+            cache = data;
+            log.info("默认模板已更新: {}", what);
+        } catch (IOException e) {
+            log.error("保存默认模板 {} 失败", path, e);
+            // 缓存不推进：写盘没成，内存里就不许显示成已经改了。
+            // 两边分叉时屏幕上一切正常，而重启之后改动凭空消失
+            cache = null;
+            return List.of("写入 " + path + " 失败: " + e.getMessage());
         }
         return List.of();
     }

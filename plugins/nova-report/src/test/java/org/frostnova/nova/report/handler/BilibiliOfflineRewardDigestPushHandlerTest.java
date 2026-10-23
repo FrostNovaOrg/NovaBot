@@ -27,6 +27,7 @@ import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.painter.BilibiliOfflineRewardDigestPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -348,7 +349,8 @@ class BilibiliOfflineRewardDigestPushHandlerTest {
         BilibiliOfflineRewardDigestPainter failing = new BilibiliOfflineRewardDigestPainter(
                 factory, api, new NovaBilibiliProperties()) {
             @Override
-            public Optional<String> paint(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
+            public Optional<String> paint(BilibiliOfflineRewardDigestEvent event, boolean showRevenue,
+                                          ReportPalette palette) {
                 return Optional.empty();
             }
         };
