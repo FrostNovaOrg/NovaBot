@@ -6,7 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 字符串配置项只认哪几种写法
+ * 配置项只认哪几种写法
  * <p>
  * 类型只说得出「这是一串字」。可同样是一串字，扫码登录方式只认 {@code tv} 与 {@code web}
  * 两种：界面上给自由文本框的话，手一滑填出别的字，保存后那条路当场走不通，还得回配置文件里
@@ -26,4 +26,10 @@ public @interface ConfigChoices {
      * @return 候选写法
      */
     String[] value();
+
+    /**
+     * 与候选值同序的显示名；未提供的显示名沿用候选值。
+     * @return 界面显示名
+     */
+    String[] labels() default {};
 }

@@ -580,7 +580,8 @@ export function createAudienceRing({first, returning, total, format = display}, 
     segment.append(name, count); composition.append(segment);
   }
   const caption = element('div', 'sc-audience-label');
-  const compact = finite(total) && total >= 100000000 ? (total / 100000000).toFixed(1) + ' 亿' : finite(total) && total >= 10000 ? (total / 10000).toFixed(1) + ' 万' : format(total);
+  const rounded = Math.round(total / 100000) * 100000;
+  const compact = finite(total) && rounded >= 100000000 ? (total / 100000000).toFixed(1) + ' 亿' : finite(total) && total >= 10000 ? (total / 10000).toFixed(1) + ' 万' : format(total);
   const count = element('strong', total >= 1000000 ? 'sc-audience-large' : '', compact);
   count.title = finite(total) ? format(total) + ' 人' : compact;
   if (finite(total)) count.append(element('small', '', '人'));

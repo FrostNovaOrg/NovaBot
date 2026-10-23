@@ -38,12 +38,12 @@ public final class ExternalConfigurationFields {
                 "累计数据 Redis · 地址",
                 "累计数据存储使用的 Redis 地址。填写后才有跨场次数据，留空时带「总」的查询不可用；只需本机可访问，请勿暴露到公网。修改后即时生效。");
         put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                6379, "累计数据 Redis · 端口", "Redis 端口，单位：号，默认 6379。");
+                6379, "累计数据 Redis · 端口", "Redis 端口，默认 6379。");
         put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 密码",
                 "Redis 密码，未设密码时留空。");
         put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                0, "累计数据 Redis · 数据库编号", "Redis 数据库编号，单位：号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。");
+                0, "累计数据 Redis · 数据库编号", "Redis 数据库编号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 novabot.core.mail.default-to，在界面上找得到；
@@ -53,7 +53,7 @@ public final class ExternalConfigurationFields {
                 "邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。");
         put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 端口",
-                "SMTP 端口，单位：号，如 465（SSL）或 587（STARTTLS）。");
+                "SMTP 端口，如 465（SSL）或 587（STARTTLS）。");
         put("spring.mail.username", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 账号",
                 "SMTP 登录账号，通常为发件邮箱地址。");
@@ -65,7 +65,7 @@ public final class ExternalConfigurationFields {
         // 监听地址是四个危险项之一，界面上得有它才谈得上围栏；此前它压根不在界面上，
         // 于是「把接口暴露到网络」这件事只能在服务器上改文件完成，控制台连提醒的机会都没有
         put("server.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                7827, "服务端口", "控制台与事件流共用的服务端口，单位：号，默认 7827。");
+                7827, "服务端口", "控制台与事件流共用的服务端口，默认 7827。");
         put("server.address", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "127.0.0.1", "监听地址", "服务监听的地址。默认 127.0.0.1 表示仅允许本机连接；"
                         + "改为 0.0.0.0 会将控制台与推送接口暴露到网络，"

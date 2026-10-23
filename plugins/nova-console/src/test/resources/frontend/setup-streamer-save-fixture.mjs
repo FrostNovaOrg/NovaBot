@@ -58,7 +58,7 @@ globalThis.fetch = async (path, options = {}) => {
   if (url === '/state') return response({sessions: [], incomplete: []});
   return response({success: true});
 };
-function wizard(uid = 3) {
+function wizard(uid = 3, ctx = {}) {
   const messages = [];
   const draft = {streamer: {platform: 'p', uid, uname: '新增主播'}, targets: ['g1']};
   const targets = [{key: 'g1', sender: 'qq', type: 1, num: 111},
@@ -69,7 +69,7 @@ function wizard(uid = 3) {
   const values = [{handlerList: []}, draft, targets,
     push.pushEntries, push.setPushEntries, async (url, opts) => (await fetch('/config/api' + url, opts)).json(),
     push.serializePush, text => messages.push(text), push.markPushSaved, push.reload,
-    () => {}, defaultMessages, () => {}, {}, push.acceptAddedPushUser, push.trackSetupVersions];
+    () => {}, defaultMessages, () => {}, ctx, push.acceptAddedPushUser, push.trackSetupVersions];
   return {save: new Function(...names, saveSource + '\nreturn saveStreamer;')(...values), messages, draft};
 }
 async function reset(users = initial()) {
@@ -93,6 +93,37 @@ async function test(name, run) {
   try { await run(); console.log('PASS ' + name); }
   catch (error) { failures.push(name); console.log('FAIL ' + name + ': ' + error.message); }
 }
+// 保存后真实状态读取失败，再画主播步仍应包含刚保存的人。
+await test('保存后状态读取失败，返回主播步能看到新增主播', async () => {
+  await reset();
+  const seen = {status: {users: [{platform: 'p', uid: 2, uname: '原有主播'}]}};
+  const flow = wizard(3, seen);
+  assert.equal(await flow.save(), true);
+  const setupSource = readFileSync(new URL('../../../../../../core/nova-core/src/main/resources/config-ui/setup.js', import.meta.url), 'utf8');
+  const refreshSource = setupSource.slice(setupSource.indexOf('async function refreshFacts()'),
+    setupSource.indexOf('async function refreshAuthState()'));
+  const reads = [];
+  const refresh = new Function('seen', 'api', refreshSource + '\nreturn refreshFacts;')(seen, async path => {
+    reads.push(path);
+    if (path === '/status') throw new Error('status unavailable');
+    return {};
+  });
+  await refresh();
+  assert.ok(reads.includes('/status'), '实际执行状态读取失败');
+  assert.deepEqual(disk.map(user => user.uid), [2, 3], '保存已经成功');
+  const renderSource = source.slice(source.indexOf('export function render('), source.indexOf('function paintFound('))
+    .replace('export function', 'function');
+  const el = (tag, cls) => { const node = document.createElement(tag); node.className = cls || ''; return node; };
+  const render = new Function('draft', 'seen', 'el', 'note', 'detailHash',
+    'let result;\n' + renderSource + '\nreturn render;')(flow.draft, seen, el,
+    (_, text) => { const node = el('div'); node.textContent = text; return node; }, () => '#/streamers');
+  const host = el('div');
+  render(host, seen);
+  const text = node => node.textContent + node.children.map(text).join('');
+  assert.ok(text(host).includes('新增主播'), text(host));
+  assert.ok(text(host).includes('原有主播'), text(host));
+});
+
 await test('跑向导添加 C 后，B 的未保存改动和改动计数仍在，随后能单独保存', async () => {
   await reset(); await openB();
   push.pushEntries().find(user => user.uid === 2).enabled = false;

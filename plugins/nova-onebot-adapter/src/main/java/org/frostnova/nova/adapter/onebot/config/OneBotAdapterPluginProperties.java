@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.onebot.config;
 
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.properties.ConfigEffect;
+import org.frostnova.nova.core.properties.ConfigChoices;
 import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.properties.ConfigSummary;
 import org.frostnova.nova.core.properties.ConfigLevel;
@@ -253,7 +254,7 @@ public class OneBotAdapterPluginProperties {
         private String platform = "";
 
         /**
-         * 告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字，单位：0／1；不要填 2，发不出去。改完立即生效。
+         * 告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字。改完立即生效。
          */
         // 取值与 PushTargetType 的 code 对应：GROUP 是 1，FRIEND 是 0。
         // 与平台名、号码同进退：三项合起来才是一个收件地址，只让其中一项立刻生效，
@@ -262,10 +263,11 @@ public class OneBotAdapterPluginProperties {
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("机器人告警 · 目标类型")
         @ConfigSummary("1 = 群，0 = 好友。")
+        @ConfigChoices(value = {"1", "0"}, labels = {"群", "好友"})
         private int type = 0;
 
         /**
-         * 接收告警的群号或用户号，单位：号；改完立即生效，不必重启。
+         * 接收告警的群号或用户号；改完立即生效，不必重启。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)

@@ -1,6 +1,6 @@
-novabot.adapter.onebot.alert.num|java.lang.Long|<null>|接收告警的群号或用户号，单位：号；改完立即生效，不必重启。
+novabot.adapter.onebot.alert.num|java.lang.Long|<null>|接收告警的群号或用户号；改完立即生效，不必重启。
 novabot.adapter.onebot.alert.platform|java.lang.String||接收告警的推送平台名，留空则不通过机器人告警。改完立即生效，不必重启。
-novabot.adapter.onebot.alert.type|java.lang.Integer|0|告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字，单位：0／1；不要填 2，发不出去。改完立即生效。
+novabot.adapter.onebot.alert.type|java.lang.Integer|0|告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字。改完立即生效。
 novabot.adapter.onebot.base-url|java.lang.String|/onebot|OneBot 推送接口的统一路径前缀。
 novabot.adapter.onebot.detect.enable-http-detect|java.lang.Boolean|true|是否启用 HTTP 服务可用性检测。关掉后 OneBot 实现中途挂掉不会被察觉，表现为消息发不出去且无人告知。
 novabot.adapter.onebot.detect.enable-websocket-detect|java.lang.Boolean|true|是否启用长连接存活检测。长连接可能看着还在、其实收不到数据，要靠多久没收到心跳来发现。
