@@ -302,7 +302,7 @@ def timeline_lines(now):
 
 
 def log_lines(now, muted_minute, failed_minute):
-    # Same line shape as logback-spring.xml writes:
+    # Same line shape as logback.xml writes:
     #   %d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:-} --- [%20.20t] %-40.40logger{39} : %msg%n
     pid = "41000"
 

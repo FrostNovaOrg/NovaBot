@@ -234,7 +234,7 @@ class ConfigurationConsistencyTest {
         String field = fieldNameOf(name);
         String capitalized = Character.toUpperCase(field.charAt(0)) + field.substring(1);
 
-        // getter / isser 调用，或完整属性名出现在 @ConditionalOnProperty、@Value、logback-spring.xml 等处
+        // getter / isser 调用，或完整属性名出现在 @ConditionalOnProperty、@Value、logback.xml 等处
         return List.of("get" + capitalized + "()", "is" + capitalized + "()", name);
     }
 

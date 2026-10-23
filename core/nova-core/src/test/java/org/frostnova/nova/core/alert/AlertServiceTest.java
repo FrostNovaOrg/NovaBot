@@ -410,7 +410,7 @@ class AlertServiceTest {
     /**
      * 点「发一条测试」往工程日志里写了什么
      * <p>
-     * 量的是<b>落盘的那一份文本</b>：按生产 logback-spring.xml 里工程日志那个 appender 的模式
+     * 量的是<b>落盘的那一份文本</b>：按生产 logback.xml 里工程日志那个 appender 的模式
      * 渲染出来再看，不是只看日志调用传了什么参数——异常作为末参交给日志框架时会附上栈迹，
      * 而翻工程日志的人每点一次就看到一大段堆栈，读到的是「出大错了」。
      */
@@ -419,7 +419,7 @@ class AlertServiceTest {
     class TestLog {
 
         /**
-         * 照 logback-spring.xml 里 RollingFile（工程日志）那个 appender 的模式，只略去 PID 一栏
+         * 照 logback.xml 里 RollingFile（工程日志）那个 appender 的模式，只略去 PID 一栏
          */
         private static final String PATTERN =
                 "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p --- [%20.20t] %-40.40logger{39} : %msg%n";

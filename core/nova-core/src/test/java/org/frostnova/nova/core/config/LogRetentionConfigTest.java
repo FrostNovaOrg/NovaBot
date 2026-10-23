@@ -80,7 +80,7 @@ class LogRetentionConfigTest {
     }
 
     private String logbackXml() throws IOException {
-        return Files.readString(root().resolve("core/nova-core/src/main/resources/logback-spring.xml"),
+        return Files.readString(root().resolve("core/nova-core/src/main/resources/logback.xml"),
                 StandardCharsets.UTF_8);
     }
 

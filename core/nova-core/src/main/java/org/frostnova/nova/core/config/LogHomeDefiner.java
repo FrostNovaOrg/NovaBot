@@ -10,7 +10,7 @@ import java.util.function.Function;
  * 日志落点守卫（logback 的 {@code LOG_HOME}）
  * <p>
  * 三棵日志树（{@code logs/}、{@code EventDebug/}、{@code NetworkDebug/}）在
- * {@code logback-spring.xml} 里写的都是<b>相对路径</b>，于是它们和运行时数据是同一个洞的两半：
+ * {@code logback.xml} 里写的都是<b>相对路径</b>，于是它们和运行时数据是同一个洞的两半：
  * 从仓库工作树里跑起来，日志就落进仓库目录树。而日志比那四个数据文件<b>更容易触发</b>——
  * 跑一次 {@code mvn test} 就有，不用启动程序；实测三个模块下各写一份。
  * 日志里有观众 uid、昵称与房间号。

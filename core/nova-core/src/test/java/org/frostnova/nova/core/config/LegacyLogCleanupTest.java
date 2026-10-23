@@ -61,7 +61,7 @@ class LegacyLogCleanupTest {
     /** 量这把尺的「今天」。写死它，跨零点跑也不会变色 */
     private static final LocalDate TODAY = LocalDate.of(2026, 9, 25);
 
-    /** 真 logback-spring.xml 里那棵树的形状：${LOG_HOME} 后头紧跟着的是树名 */
+    /** 真 logback.xml 里那棵树的形状：${LOG_HOME} 后头紧跟着的是树名 */
     private static final Pattern TREE_OF_XML = Pattern.compile(
             "<fileNamePattern>\\$\\{LOG_HOME}/([^/]+)/");
 
@@ -407,7 +407,7 @@ class LegacyLogCleanupTest {
     /**
      * 保留天数从正在写的滚动策略上读，不另抄一份。
      * <p>
-     * 先照真 {@code logback-spring.xml} 起一遍（树名与天数都从那份文件里取），
+     * 先照真 {@code logback.xml} 起一遍（树名与天数都从那份文件里取），
      * 再把天数换成另一组数起一遍：天数若是在代码里写死的，后一遍就会答出前一遍的数。
      */
     @Test
@@ -454,15 +454,15 @@ class LegacyLogCleanupTest {
     }
 
     /**
-     * 从本模块 {@code src/main/resources/logback-spring.xml} 取三棵树的形状，把其中的日志根目录换成沙盘。
+     * 从本模块 {@code src/main/resources/logback.xml} 取三棵树的形状，把其中的日志根目录换成沙盘。
      * 树名用「${LOG_HOME}/ 后头那一段」认，与被测那侧走的路径不是同一条，
      * 两边对得上才算量过了。
      * 按测试进程的工作目录去找：构建时工作目录就是本模块，不必把模块目录名写进源码。
      */
     private static List<Shape> realShapes(Path logHome) throws IOException {
-        Path xmlPath = Path.of("src/main/resources/logback-spring.xml");
+        Path xmlPath = Path.of("src/main/resources/logback.xml");
         if (!Files.isRegularFile(xmlPath)) {
-            throw new IllegalStateException("找不到 logback-spring.xml，工作目录 " + Path.of("").toAbsolutePath());
+            throw new IllegalStateException("找不到 logback.xml，工作目录 " + Path.of("").toAbsolutePath());
         }
         String xml = Files.readString(xmlPath, StandardCharsets.UTF_8);
         List<Shape> shapes = new ArrayList<>();
@@ -491,7 +491,7 @@ class LegacyLogCleanupTest {
     }
 
     /**
-     * 起法照 {@code logback-spring.xml}：滚动器埋在异步件底下，不拆开这层就什么也读不到。
+     * 起法照 {@code logback.xml}：滚动器埋在异步件底下，不拆开这层就什么也读不到。
      * 附到不同名字的 logger 上，好让「同一个滚动器被几个 logger 共用」这条也被量到
      */
     private static void attach(LoggerContext context, String name, String fileNamePattern, int maxHistory) {

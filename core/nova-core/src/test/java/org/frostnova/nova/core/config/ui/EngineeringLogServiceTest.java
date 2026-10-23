@@ -139,7 +139,7 @@ class EngineeringLogServiceTest {
     /**
      * 翻别的日子读的是<b>那一天那份文件</b>
      * <p>
-     * 落点由 {@code logback-spring.xml} 里那条 {@code fileNamePattern} 定，因此这里量的是
+     * 落点由 {@code logback.xml} 里那条 {@code fileNamePattern} 定，因此这里量的是
      * 「按模板算得对不对」，而不是「今天这台机器的日志在哪」——后者随 LOG_HOME 变，
      * 拿它当判据就是把此刻的盘面钉进判据里。
      */
@@ -154,7 +154,7 @@ class EngineeringLogServiceTest {
         assertEquals(Path.of("/tmp/nova/logs/2026-08/novabot-2026-08-31.log"),
                 EngineeringLogService.fileOn(pattern, LocalDate.of(2026, 8, 31)).orElse(null));
 
-        // 模板里没有日期占位符时算出来的是个常量。这一路在现行 logback-spring.xml 下走不到
+        // 模板里没有日期占位符时算出来的是个常量。这一路在现行 logback.xml 下走不到
         // （不按天滚动的部署根本不给模板，见 pattern()），此处钉的是这个纯函数自己的口径
         assertEquals(Path.of("/tmp/nova/starbot.log"),
                 EngineeringLogService.fileOn("/tmp/nova/starbot.log", LocalDate.of(2026, 9, 1))

@@ -276,7 +276,7 @@
                                                 <exclude>application.yml</exclude>
                                                 <exclude>application-dev.yml</exclude>
                                                 <exclude>banner.txt</exclude>
-                                                <exclude>logback-spring.xml</exclude>
+                                                <exclude>logback.xml</exclude>
                                             </excludes>
                                         </resource>
                                     </resources>
@@ -307,7 +307,7 @@
                                                 <include>application.yml</include>
                                                 <include>application-dev.yml</include>
                                                 <include>banner.txt</include>
-                                                <include>logback*.xml</include>
+                                                <include>logback.xml</include>
                                             </includes>
                                         </fileset>
                                     </filesets>

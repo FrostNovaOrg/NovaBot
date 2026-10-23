@@ -3,6 +3,11 @@
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
     <!--
+        此配置必须保留 logback.xml 文件名，不要改名。
+        Spring 接手前，普通 Logback 先读取它，保证配置损坏、Spring 无法启动时，
+        启动失败和安全模式的日志仍按下面的配置写入文件。
+        早期读取产生的两条 springProperty 未知属性告警是已知行为；Spring 接手后会识别它们。
+
         🔴 defaultValue 不是可选的。配置项 novabot.core.log.console / .file 的模板默认是**留空**，
         留空时这两个变量根本没有定义，${fileLogLevel} 会被替换成字面量
         「fileLogLevel_IS_UNDEFINED」，而 ThresholdFilter 解析不了它时会退回 DEBUG。

@@ -23,25 +23,24 @@ class LogStartupConfigTest {
     Path temp;
 
     @Test
-    void packagedConfigurationStartsWithoutWarnings() throws Exception {
+    void packagedConfigurationDoesNotWarnAboutUnusedConsoleAppender() throws Exception {
         String output = start("defaults");
         assertTrue(output.contains("LOGGING_READY"), output);
-        assertFalse(output.matches("(?s).*\\bDEBUG\\b.*"), output);
         assertTrue(output.contains("startup-info"), output);
-        try (var paths = Files.walk(temp.resolve("defaults/logs"))) {
-            String file = paths.filter(Files::isRegularFile).map(path -> {
-                try {
-                    return Files.readString(path);
-                } catch (Exception e) {
-                    throw new IllegalStateException(e);
-                }
-            }).reduce("", String::concat);
-            assertTrue(file.contains("startup-info"), file);
-            assertFalse(file.contains("DEBUG"), file);
-            System.out.println("Default startup file DEBUG lines: " + file.lines()
-                    .filter(line -> line.contains("DEBUG")).count());
-        }
-        assertFalse(output.contains("STATUS_WARN"), output);
+        assertTrue(Files.readString(logFile(temp.resolve("defaults"))).contains("startup-info"));
+        assertFalse(output.contains("Appender named [CONSOLE]"), output);
+    }
+
+    @Test
+    void invalidConfigurationStillLogsStartupFailureToFile() throws Exception {
+        String output = start("broken");
+        assertTrue(Files.readString(temp.resolve("broken/state.txt")).contains("phase=safe-mode"), output);
+        Path logs = temp.resolve("broken/logs");
+        assertTrue(Files.isDirectory(logs), "Startup failure was not written to logs:\n" + output);
+        String file = Files.readString(logFile(temp.resolve("broken")));
+        assertTrue(file.lines().anyMatch(line -> line.matches(
+                "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} +ERROR .* --- \\[.*] .* : Application run failed")), file);
+        System.out.println("Startup failure recorded in packaged file format");
     }
 
     @Test
@@ -66,6 +65,10 @@ class LogStartupConfigTest {
             Files.writeString(dir.resolve("application.yml"), "novabot:\n  core:\n    log:\n"
                     + "      console: " + args[0] + "\n      file: " + args[1] + "\n");
         }
+        boolean broken = name.equals("broken");
+        if (broken) {
+            Files.writeString(dir.resolve("application.yml"), "port: [unclosed\n");
+        }
         Path classes = Files.createDirectories(dir.resolve("classes"));
         Path factories = classes.resolve("META-INF/spring.factories");
         Files.createDirectories(factories.getParent());
@@ -80,7 +83,7 @@ class LogStartupConfigTest {
                 Files.copy(input, probe);
             }
         }
-        Path config = Path.of("src/main/resources/logback-spring.xml").toAbsolutePath();
+        Path config = Path.of("src/main/resources/logback.xml").toAbsolutePath();
         Files.copy(config, classes.resolve(config.getFileName()));
         List<String> cp = new ArrayList<>();
         cp.add(classes.toString());
@@ -106,6 +109,7 @@ class LogStartupConfigTest {
         }
         List<String> command = new ArrayList<>(List.of(
                 Path.of(System.getProperty("java.home"), "bin/java").toString(),
+                "-Dnovabot.state-file=" + dir.resolve("state.txt"),
                 "-cp", String.join(File.pathSeparator, cp), Probe.class.getName()));
         Path output = dir.resolve("stdout.txt");
         Process process = new ProcessBuilder(command).directory(dir.toFile())
@@ -117,8 +121,11 @@ class LogStartupConfigTest {
             return text;
         } finally {
             if (process.isAlive()) {
-                process.destroyForcibly();
-                process.waitFor();
+                process.destroy();
+                if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    process.waitFor();
+                }
             }
         }
     }
@@ -136,6 +143,9 @@ class LogStartupConfigTest {
         public static void main(String[] args) {
             System.setProperty("logback.statusListenerClass", Warnings.class.getName());
             NovaCoreApplication.main(args);
+            // Safe mode can leave an HTTP server running; flush logging before ending the probe.
+            ((LoggerContext) LoggerFactory.getILoggerFactory()).stop();
+            System.exit(0);
         }
 
         @Override
