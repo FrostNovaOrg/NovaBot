@@ -3,7 +3,7 @@
  *
  * 量三件事，都是源码里写了才成立、漏写页面上照样能用：
  *   paint 是否按 loginControlState 遍历挂 disabled；
- *   登录页内联 .secret button 与 app.css 那一份数字是否相同；
+ *   登录页内联 .secret button 与控制台那颗眼睛按钮（app.css 里叠出来的）数字是否相同；
  *   加主播空输入句与 placeholder 是否同一条常量（推送页与初始设置页）。
  *
  * 眼睛落点改由 password-reveal-fixture 运行期登记。
@@ -74,8 +74,9 @@ const paint = paintStart >= 0 && paintEnd > paintStart ? login.slice(paintStart,
 eq(paint.includes('loginControlState('), true, 'paint 问 loginControlState');
 eq(/for\s*\(\s*const id of Object\.keys\(/.test(paint), true, 'paint 遍历挂 disabled');
 
-function secretButtonProps(css) {
-  const match = css.match(/(?:^|[\n}])\s*\.secret button\s*\{([^}]+)\}/);
+function ruleProps(css, selector) {
+  const quoted = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = css.match(new RegExp('(?:^|[\\n}])\\s*' + quoted + '\\s*\\{([^}]+)\\}'));
   if (!match) return null;
   const out = {};
   for (const part of match[1].split(';')) {
@@ -88,10 +89,26 @@ function secretButtonProps(css) {
   return out;
 }
 
-const loginSecret = secretButtonProps(login);
-const appSecret = secretButtonProps(read('app.css'));
+// 控制台的眼睛按钮是小号次按钮（class="ghost sm"），落在 .secret 里再收一下宽度。
+// 它画出来的数值由四条规则按先后叠成：按钮基样 → 次按钮 → 小号 → .secret button；
+// 字号写的是档位变量，到 product-ui.css 里解成像素（登录页不载那两份样式，只能抄数）
+const app = read('app.css');
+const tokens = read('product-ui.css');
+const layers = [':is(button,a):is(.primary,.ghost,.danger),.nv-btn,.nv-btn2', ':is(button,a).ghost,.nv-btn2',
+  ':is(button,a).sm', '.secret button'].map(selector => ruleProps(app, selector));
+const appSecret = layers.every(Boolean) ? Object.assign({}, ...layers) : null;
+if (appSecret) {
+  for (const [name, value] of Object.entries(appSecret)) {
+    const token = /^var\((--fs-[\w-]+)\)$/.exec(value);
+    const px = token && new RegExp(token[1] + '\\s*:\\s*([\\d.]+px)').exec(tokens);
+    if (px) appSecret[name] = px[1];
+  }
+}
+const loginSecret = ruleProps(login, '.secret button');
 eq(!!loginSecret && !!appSecret, true, '两份 .secret button 都找得到');
-eq(loginSecret, appSecret, '.secret button 数值与 app.css 相同');
+const drawn = loginSecret && appSecret
+  ? Object.fromEntries(Object.keys(loginSecret).map(name => [name, appSecret[name]])) : null;
+eq(loginSecret, drawn, '.secret button 数值与控制台那颗眼睛按钮（app.css 叠出来的）相同');
 
 const push = readFileSync(join(pages, 'push.js'), 'utf8');
 eq(/export const STREAMER_INPUT_HINT\s*=/.test(push), true, 'push.js 导出 STREAMER_INPUT_HINT');

@@ -244,7 +244,7 @@ export function buildTemplateEditor(host, options) {
     cards.innerHTML = '';
     state.cards.forEach((card, index) => cards.appendChild(cardNode(card, index)));
 
-    const add = el('button', 'tpl-add');
+    const add = el('button', 'ghost sm tpl-add');
     add.type = 'button';
     add.textContent = '⊕ 添加一条消息';
     add.disabled = !opts.editable;

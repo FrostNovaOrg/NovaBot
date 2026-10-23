@@ -81,7 +81,7 @@ function issueFormHtml() {
           + ' placeholder="验证器应用中的 6 位数字" autocomplete="one-time-code"></div>'
         : '')
 
-    + '<div class="row"><label></label><button type="button" id="tk-issue">签发令牌</button></div>'
+    + '<div class="row"><label></label><button type="button" class="primary" id="tk-issue">签发令牌</button></div>'
     + '<div class="out" id="tk-msg"></div>'
     + '<div id="token-issued"></div>';
 }
@@ -140,8 +140,8 @@ function showIssued(token, label) {
     + '之后无法再次取回。遗失后只能吊销并重新签发。</p>'
     + '<div class="secret">'
     + '<input id="tk-value" type="password" readonly>'
-    + '<button type="button" id="tk-copy">复制</button>'
-    + '<button type="button" id="tk-reveal">显示</button>'
+    + '<button type="button" class="ghost sm" id="tk-copy">复制</button>'
+    + '<button type="button" class="ghost sm" id="tk-reveal">显示</button>'
     + '</div>'
     + '<span class="status" id="tk-copy-msg">令牌默认隐藏，无需显示即可复制，直播过程中也可安全操作</span>'
     + '</div>';
@@ -203,7 +203,7 @@ function renderTokenList(tokens) {
         + '<td>' + fmtTime(token.issuedAt) + '</td>'
         + '<td>' + (token.active ? '有效' : '已吊销 · ' + fmtTime(token.revokedAt)) + '</td>'
         + '<td class="act">' + (token.active
-            ? '<button type="button" data-fp="' + esc(token.fingerprint) + '">吊销</button>' : '')
+            ? '<button type="button" class="ghost sm" data-fp="' + esc(token.fingerprint) + '">吊销</button>' : '')
         + '</td></tr>').join('')
     + '</tbody></table>'
     // 指纹不是秘密（是口令的哈希前缀），列出来是为了对账：鉴权失败的日志里印的就是它，

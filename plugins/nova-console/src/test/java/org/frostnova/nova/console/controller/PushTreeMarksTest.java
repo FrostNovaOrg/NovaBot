@@ -39,8 +39,13 @@ class PushTreeMarksTest {
     void pushTreeMarksStayOnOneLine() throws IOException, InterruptedException, URISyntaxException {
         URL url = PushTreeMarksTest.class.getClassLoader().getResource("config-ui/app.css");
         assertNotNull(url, "核心界面的 app.css 不在本模块测试的类路径上，这一格什么也没量");
+        // 字号档位定义在 product-ui.css。两份各取各的：类路径上那一份在 jar 里时，
+        // 拷出来的 app.css 旁边没有它，按「同一目录下」去找会落空
+        URL tokens = PushTreeMarksTest.class.getClassLoader().getResource("config-ui/product-ui.css");
+        assertNotNull(tokens, "核心界面的 product-ui.css 不在本模块测试的类路径上，字号档位解不出来");
         FrontendFixture.runFromModule(FIXTURE.toString(), "推送页左树小标",
-                Map.of("APP_CSS", absolutePathOf(url).toString()));
+                Map.of("APP_CSS", absolutePathOf(url).toString(),
+                        "TOKENS_CSS", absolutePathOf(tokens).toString()));
     }
 
     /**

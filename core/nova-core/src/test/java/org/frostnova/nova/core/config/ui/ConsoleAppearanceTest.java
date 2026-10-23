@@ -14,12 +14,12 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 控制台外观五件：去顶栏、退出挪侧栏底、品牌位居中、字号大一号、界面三钮左缩进
+ * 控制台外观：去顶栏、退出挪侧栏底（窄屏收进「我的」）、品牌位居中、界面三钮左缩进
  * <p>
  * 只为说得出用户故障的格立测试，一格一种故障：
  * <ul>
- *   <li>窄屏横条里没有退出入口 → 手机上退不出登录；</li>
- *   <li>窄屏退出块与导航同排 → 手机上导航被挤得点不到；</li>
+ *   <li>窄屏横条里没有退出入口、或「我的」打不开 → 手机上退不出登录；</li>
+ *   <li>窄屏 Logo 与「我的」挤不下一行、或退出块占了横条里的行 → 手机上导航被挤得点不到、正文被推下去；</li>
  *   <li>「界面」三钮与下方设置项左缩进不一致 → 按钮贴边；</li>
  *   <li>点目录的落点让出不该让的位 → 宽屏上组标题停偏；让位量写死 → 换台设备、改一下字号又不准；</li>
  *   <li>落点与高亮各量各的吸顶高度 → 窄屏上点某一组亮的是上一组。</li>
@@ -70,6 +70,22 @@ class ConsoleAppearanceTest {
                         "退出块在 " + hiddenOnNarrow + " 里，窄屏被一起藏掉，手机上退不出登录");
             }
         }
+
+        // 窄屏上退出块收在「我的」里：那颗按钮得在、得指着装退出块的面板，
+        // 面板摊开时得真显示出来，且点那颗按钮真会摊开（脚本接上了）
+        assertTrue(side.contains("id=\"mine-toggle\"") && side.contains("aria-controls=\"mine-panel\""),
+                "侧栏里没有指向 #mine-panel 的「我的」按钮，手机上找不到退出入口");
+        assertTrue(isNestedInside(html, ".mine-panel", "auth-actions"),
+                "退出块不在 #mine-panel 里，「我的」摊开也看不到它");
+        assertTrue(!cssBlockIn(narrow, "#mine-toggle").contains("display:none"),
+                "窄屏样式把「我的」藏掉了，手机上退不出登录");
+        assertTrue(cssBlockIn(narrow, ".mine-panel.open").contains("display:flex"),
+                "窄屏上「我的」摊开（.mine-panel.open）时面板没有显示出来");
+        String menu = read("personal-menu.js");
+        assertTrue(menu.contains("export function bindMineMenu") && menu.contains("classList.toggle('open'"),
+                "personal-menu.js 里没有给面板挂 open 的 bindMineMenu，点「我的」不会摊开");
+        assertTrue(read("main.js").contains("bindMineMenu($('#mine-toggle'), $('#mine-panel'))"),
+                "main.js 没有把「我的」接上 bindMineMenu");
     }
 
     /**
@@ -174,18 +190,20 @@ class ConsoleAppearanceTest {
     }
 
     /**
-     * 窄屏退出块不与导航抢横条那一行
+     * 窄屏顶部：第一行 Logo 与「我的」，导航独占第二行，退出块不占横条里的行
      * <p>
-     * 故障：手机上导航被挤得点不到。退出钮与品牌、导航同排时，两枚按钮按内容宽
-     * 占住右端，四条导航只剩几十像素宽，横滚也点不准。量法：按 390px 视口、
-     * 从样式现读字号与内边距，估导航那一行还剩多宽，与各条导航的自然宽比。
-     * 文字宽按「汉字＝字号、拉丁≈0.62×字号」上估——估宽不估窄，放得下才算放下。
+     * 故障：手机上每页顶部要占一大截才到正文，或导航被挤得点不到。使用说明、账号、退出全部设备
+     * 各占一行时，正文要往下推一百五十像素；退出钮与导航同排时，导航只剩几十像素宽。
+     * 量法：按 390px 视口、从样式现读字号（字号档位从 product-ui.css 解出来）与内边距，
+     * 估第一行 Logo 加「我的」放不放得下；导航那一行按独占整行估；退出块所在的面板须是浮出来的
+     * （position:absolute），不占横条里的行。文字宽按「汉字＝字号、拉丁≈0.62×字号」上估——估宽不估窄。
      */
     @Test
-    @DisplayName("窄屏 390 宽下导航不被退出块挤掉")
-    void narrowExitRowDoesNotSqueezeNav() throws IOException {
+    @DisplayName("窄屏 390 宽下 Logo 与「我的」同一行，导航独占一行，退出块不占行")
+    void narrowTopBarKeepsLogoAndMineOnOneRow() throws IOException {
         String html = read("index.html");
         String css = read("app.css");
+        String tokens = read("product-ui.css");
         String narrow = narrowMediaBlock(css);
         assertTrue(!narrow.isBlank(), "app.css 里没有 ≤959px 那段窄屏样式，这一格此刻什么也没量");
 
@@ -193,57 +211,62 @@ class ConsoleAppearanceTest {
         String navNarrow = require(cssBlockIn(narrow, ".nav"), "窄屏 .nav");
         String navA = require(cssBlockIn(narrow, ".nav a"), "窄屏 .nav a");
         String brandNarrow = require(cssBlockIn(narrow, ".brand"), "窄屏 .brand");
-        String auth = require(cssBlockIn(narrow, "#auth-actions"), "窄屏 #auth-actions");
-        String authBtn = require(cssBlockIn(narrow, "#auth-actions button"), "窄屏 #auth-actions button");
+        String toggleNarrow = require(cssBlockIn(narrow, "#mine-toggle"), "窄屏 #mine-toggle");
+        String panelNarrow = require(cssBlockIn(narrow, ".mine-panel"), "窄屏 .mine-panel");
         String brandBase = require(cssBlock(css, ".brand"), ".brand");
         String markBase = require(cssBlock(css, ".brand-mark"), ".brand-mark");
         String nameBase = require(cssBlock(css, ".brand-name"), ".brand-name");
         String navBase = require(cssBlock(css, ".nav"), ".nav");
         String navABase = require(cssBlock(css, ".nav a"), ".nav a");
-        String authBase = require(cssBlock(css, "#auth-actions"), "#auth-actions");
-        String authBtnBase = require(cssBlock(css, "#auth-actions button"), "#auth-actions button");
+        String buttonBase = require(cssBlock(css, ":is(button,a):is(.primary,.ghost,.danger),.nv-btn,.nv-btn2"), "按钮基样");
+        String small = require(cssBlock(css, ":is(button,a).sm"), "小号按钮");
 
         int inner = 390 - pick(padSide(side, 3), 0) - pick(padSide(side, 1), 0);
         int colGap = pick(gap(side, true), gap(side, false));
 
         // 品牌位：图标 ＋ 与名字的间隙 ＋ 名字 ＋ 右内边距
-        int brandW = requirePx(px(markBase, "width"), ".brand-mark 宽")
+        int brandW = requirePx(px(markBase, "width", tokens), ".brand-mark 宽")
                 + pick(gap(brandNarrow, true), gap(brandBase, true))
-                + textW(brandName(html), requirePx(px(nameBase, "font-size"), ".brand-name 字号"))
+                + textW(brandName(html), requirePx(px(nameBase, "font-size", tokens), ".brand-name 字号"))
                 + pick(padSide(brandNarrow, 1), padSide(brandBase, 1));
 
-        // 导航各条自然宽：字宽 ＋ 左右内边距，条与条之间一个 gap
+        // 「我的」：小号次按钮，字宽 ＋ 左右内边距 ＋ 边框
+        Matcher label = Pattern.compile("id=\"mine-toggle\"[^>]*>([^<]*)<").matcher(html);
+        assertTrue(label.find(), "index.html 里找不到「我的」按钮");
+        int toggleFs = requirePx(px(small, "font-size", tokens), "小号按钮字号");
+        int toggleW = textW(label.group(1).trim(), toggleFs) + padSide(small, 3) + padSide(small, 1)
+                + borderPx(cssBlock(css, ":is(button,a).ghost,.nv-btn2")) * 2;
+        assertTrue(padSide(small, 3) >= 0 && padSide(small, 1) >= 0, "取不到小号按钮的左右内边距: " + small.strip());
+        assertTrue(!buttonBase.isBlank(), "按钮基样是空的");
+
+        List<String> bad = new ArrayList<>();
+        if (!toggleNarrow.contains("margin-left:auto")) {
+            bad.add("窄屏「我的」没有推到 Logo 那一行的右端（margin-left:auto）");
+        }
+        if (brandW + colGap + toggleW > inner) {
+            bad.add("Logo " + brandW + "px 加「我的」" + toggleW + "px 超出 390 宽可有的 " + inner + "px，挤不下一行");
+        }
+
+        // 导航独占一行：放得下就不横滚，放不下也只在自己那一行里横滚
+        if (!(navNarrow.contains("flex:1 1 100%") || navNarrow.contains("flex-basis:100%"))) {
+            bad.add("窄屏导航不是独占一行（flex-basis 100%），会和 Logo、「我的」抢同一行");
+        }
         List<String> navLabels = navLabels(html);
         assertTrue(navLabels.size() >= 2, "index.html 里数不出导航条目，分母是空的");
-        int navFs = pick(px(navA, "font-size"), requirePx(px(navABase, "font-size"), ".nav a 字号"));
+        int navFs = pick(px(navA, "font-size", tokens), requirePx(px(navABase, "font-size", tokens), ".nav a 字号"));
         int navPad = pick(padSide(navA, 3), padSide(navABase, 3)) + pick(padSide(navA, 1), padSide(navABase, 1));
         int navGap = pick(gap(navNarrow, true), gap(navBase, true));
         int navW = (navLabels.size() - 1) * navGap;
-        for (String label : navLabels) navW += textW(label, navFs) + navPad;
-
-        // 退出两钮自然宽：字宽 ＋ 左右内边距 ＋ 边框
-        List<String> authLabels = authLabels(html);
-        assertTrue(authLabels.size() >= 1, "index.html 里数不出退出按钮，分母是空的");
-        int authFs = pick(px(authBtn, "font-size"), requirePx(px(authBtnBase, "font-size"), "退出钮字号"));
-        int authPad = pick(padSide(authBtn, 3), padSide(authBtnBase, 3)) + pick(padSide(authBtn, 1), padSide(authBtnBase, 1));
-        int authGap = pick(gap(auth, true), gap(authBase, true));
-        int border = borderPx(authBtnBase) * 2;
-        int authW = Math.max(0, authLabels.size() - 1) * authGap;
-        for (String label : authLabels) authW += textW(label, authFs) + authPad + border;
-
-        boolean sameRow = !authOnOwnRow(side, auth);
-        int navAvail = inner - brandW - colGap - (sameRow ? authW + colGap : 0);
-
-        List<String> bad = new ArrayList<>();
-        if (navW > navAvail) {
-            bad.add("导航要 " + navW + "px，横条一行里只剩 " + navAvail + "px"
-                    + (sameRow ? "（退出钮 " + authW + "px 同排抢位）" : "")
-                    + "——手机上导航被挤得点不到");
+        for (String one : navLabels) navW += textW(one, navFs) + navPad;
+        if (navW > inner) {
+            bad.add("导航要 " + navW + "px，独占一行也只有 " + inner + "px——手机上导航被挤得点不到");
         }
-        if (authW > inner) {
-            bad.add("两个退出钮 " + authW + "px 超出 390 宽可有的 " + inner + "px，放不下就滚出屏外");
+
+        // 退出块所在的面板浮在横条下面，不占行
+        if (!panelNarrow.contains("position:absolute")) {
+            bad.add("窄屏「我的」面板不是浮出来的（position:absolute），摊开时会把横条撑高、把正文推下去");
         }
-        assertTrue(bad.isEmpty(), "窄屏 390px 下横条放不下:\n  " + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "窄屏 390px 下顶部排不下:\n  " + String.join("\n  ", bad));
     }
 
     /** 从函数声明处取函数体（左花括号起到配对的右花括号） */
@@ -305,10 +328,16 @@ class ConsoleAppearanceTest {
         return narrow >= 0 ? narrow : base;
     }
 
-    /** 取一段 CSS 里某属性的像素数；没有该属性返回 -1 */
-    private static int px(String block, String prop) {
-        Matcher m = Pattern.compile("(?<![\\w-])" + Pattern.quote(prop) + "\\s*:\\s*(\\d+(?:\\.\\d+)?)px").matcher(block);
-        return m.find() ? (int) Math.round(Double.parseDouble(m.group(1))) : -1;
+    /**
+     * 取一段 CSS 里某属性的像素数；写的是 var(--x) 时到 product-ui.css 里解出那个变量的像素数
+     * （字号一律引档位变量）；没有该属性、或变量解不出像素时返回 -1
+     */
+    private static int px(String block, String prop, String tokens) {
+        Matcher m = Pattern.compile("(?<![\\w-])" + Pattern.quote(prop) + "\\s*:\\s*(?:(\\d+(?:\\.\\d+)?)px|var\\((--[\\w-]+)\\))").matcher(block);
+        if (!m.find()) return -1;
+        if (m.group(1) != null) return (int) Math.round(Double.parseDouble(m.group(1)));
+        Matcher t = Pattern.compile("(?<![\\w-])" + Pattern.quote(m.group(2)) + "\\s*:\\s*(\\d+(?:\\.\\d+)?)px").matcher(tokens);
+        return t.find() ? (int) Math.round(Double.parseDouble(t.group(1))) : -1;
     }
 
     /** 边框宽（单边）；没有写死像素边框返回 0 */
@@ -348,13 +377,6 @@ class ConsoleAppearanceTest {
         return column ? raw(parts[1]) : raw(parts[0]);
     }
 
-    /** 退出块是不是独占一行：同排的话它就挤在导航右边 */
-    private static boolean authOnOwnRow(String side, String auth) {
-        if (side.contains("flex-direction:column") || side.contains("display:grid")) return true;
-        return side.contains("flex-wrap:wrap")
-                && (auth.contains("flex-basis:100%") || auth.contains("width:100%") || auth.contains("flex:0 0 100%"));
-    }
-
     /** 估一段文字的宽：汉字按 1.0×字号、其余按 0.62×字号（偏宽，放得下才算放下） */
     private static int textW(String text, int fs) {
         double w = 0;
@@ -375,13 +397,6 @@ class ConsoleAppearanceTest {
         int end = html.indexOf("</nav>", start);
         assertTrue(start >= 0 && end > start, "index.html 里找不到侧栏导航");
         return textsBetween(html.substring(start, end), "<a", "</a>");
-    }
-
-    private static List<String> authLabels(String html) {
-        int start = html.indexOf("id=\"auth-actions\"");
-        int end = html.indexOf("</div>", start);
-        assertTrue(start >= 0 && end > start, "index.html 里找不到退出块");
-        return textsBetween(html.substring(start, end), "<button", "</button>");
     }
 
     /** 取一段标记里每个开闭标签之间的文字（内部子标签剥掉） */

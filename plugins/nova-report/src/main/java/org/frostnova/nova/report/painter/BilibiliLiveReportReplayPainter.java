@@ -96,16 +96,46 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
      * @return PNG 字节，画不出来时为空
      */
     public Optional<byte[]> render(BilibiliLiveReportOptions options) {
+        return render(options, ReportPalette.DEFAULT);
+    }
+
+    public Optional<byte[]> render(BilibiliLiveReportOptions options, ReportPalette palette) {
         // 昵称取归档里记的那个（当时的值），空了退回 UID：图上写一个 null 比写一串数字更糟。
         // 头像地址传空——它只会走到被覆写掉的那个口子里，不会真去取
         String uname = detail.uname() == null || detail.uname().isBlank()
                 ? "UID " + detail.uid() : detail.uname();
         LiveStreamerInfo streamer = new LiveStreamerInfo(detail.uid(), uname, detail.roomId(), null);
-        return paint(detail.platform(), streamer, options)
+        return paint(detail.platform(), streamer, options, palette)
                 .map(base64 -> Base64.getDecoder().decode(base64));
     }
 
     // ================ 向外部要资料的口子：一律不联网 ================
+
+    @Override
+    protected BufferedImage loadCover(LiveStreamerInfo source, ReportPalette palette) {
+        return palette == ReportPalette.DEFAULT ? loadCover(source) : PainterPlaceholder.banner(palette);
+    }
+
+    @Override
+    protected BufferedImage faceImage(LiveStreamerInfo source, ReportPalette palette) {
+        return palette == ReportPalette.DEFAULT ? faceImage(source) : PainterPlaceholder.face(palette);
+    }
+
+    @Override
+    protected BufferedImage avatar(String url, ReportPalette palette) {
+        return palette == ReportPalette.DEFAULT ? avatar(url) : PainterPlaceholder.rankingFace(palette);
+    }
+
+    @Override
+    protected BufferedImage guardIcon(String url, ReportPalette palette) {
+        return guardIcon(url, GUARD_ICON_SIZE, palette);
+    }
+
+    @Override
+    protected BufferedImage guardIcon(String url, int size, ReportPalette palette) {
+        BufferedImage icon = guardIcon(url, size);
+        return icon == guardMark && palette != ReportPalette.DEFAULT ? PainterPlaceholder.guardIcon(palette) : icon;
+    }
 
     @Override
     protected BufferedImage loadCover(LiveStreamerInfo source) {

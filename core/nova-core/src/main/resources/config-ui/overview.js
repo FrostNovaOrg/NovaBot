@@ -79,7 +79,7 @@ function renderBanner(model) {
   // 只画有去处的那一条。没有去处的横条只说事，不办事——「已暂停」那一条要办的事
   // 已经随「今日」卡去了控制台插件，画一颗这里点不动的按钮比不画更费解
   if (banner.action && banner.action.href) {
-    const go = el('a', 'b-sp');
+    const go = el('a', 'b-sp nv-btn2 sm');
     go.href = banner.action.href;
     go.textContent = banner.action.text;
     row.appendChild(go);
@@ -101,7 +101,7 @@ function renderTodos(model) {
       '<div class="todo">'
       + '<span class="tb' + (item.soft ? ' soft' : '') + '">' + (item.soft ? 'i' : '!') + '</span>'
       + '<span class="tt"><b>' + esc(item.title) + '</b><p>' + esc(item.body) + '</p></span>'
-      + (item.href ? '<a href="' + esc(item.href) + '"' + extAttrs(item.href) + '>' + esc(item.action) + '</a>' : '')
+      + (item.href ? '<a class="nv-btn2 sm" href="' + esc(item.href) + '"' + extAttrs(item.href) + '>' + esc(item.action) + '</a>' : '')
       + '</div>').join('')
     + '</div>';
 }
@@ -443,8 +443,8 @@ function renderUpdate(update) {
     + '</div>'
     + '<p class="up-note">控制台不提供在线更新：请在服务器上替换 jar 文件并重启。</p>'
     + '<div class="up-actions">'
-    + (notesLink ? '<a href="' + esc(update.url) + '"' + notesLink + '>查看完整更新说明 ↗</a>' : '')
-    + '<button type="button" id="update-skip">此版本不再提醒</button>'
+    + (notesLink ? '<a class="lnkbtn" href="' + esc(update.url) + '"' + notesLink + '>查看完整更新说明 ↗</a>' : '')
+    + '<button type="button" class="ghost sm" id="update-skip">此版本不再提醒</button>'
     + '</div>';
 
   $('#update-skip').addEventListener('click', () => skipUpdate(update.latestVersion));

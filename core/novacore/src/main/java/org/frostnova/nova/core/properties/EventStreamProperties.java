@@ -72,6 +72,42 @@ public class EventStreamProperties {
     @ConfigSummary("所有房间共享；增大缓冲会增加内存占用。")
     private int bufferSize = 2000;
 
+    /** 同时保留的事件输出连接数，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 连接总数")
+    @ConfigSummary("同时保留的事件输出连接数，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启。")
+    private int maxConnections = 256;
+
+    /** 等待首帧的连接数，默认 128，包含握手中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 等待首帧的连接数")
+    @ConfigSummary("等待首帧的连接数，默认 128，包含握手中的连接。 正整数，修改后重启。")
+    private int maxPendingConnections = 128;
+
+    /** 同一对端地址的连接数，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 每来源连接数")
+    @ConfigSummary("同一对端地址的连接数，默认 128；经同一代理接入的连接共用此额度。 正整数，修改后重启。")
+    private int maxConnectionsPerSource = 128;
+
+    /** 同时进行的握手数，默认 64。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 同时握手数")
+    @ConfigSummary("同时进行的握手数，默认 64。 正整数，修改后重启。")
+    private int maxConcurrentHandshakes = 64;
+
+    /** 握手开始后等待连接建立的时间，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 握手等待毫秒数")
+    @ConfigSummary("握手开始后等待连接建立的时间，默认 10000 毫秒。 正整数，修改后重启。")
+    private int handshakeTimeoutMs = 10000;
+
+    /** 单次写入及关闭等待的时间，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。 */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 写入与关闭等待毫秒数")
+    @ConfigSummary("单次写入及关闭等待的时间，默认 10000 毫秒。 正整数，修改后重启。")
+    private int ioTimeoutMs = 10000;
+
     /**
      * 页面来源里主机名最长几个字符（域名的上限）
      */

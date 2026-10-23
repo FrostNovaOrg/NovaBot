@@ -38,7 +38,16 @@
   /* 字体与尺寸：不随主题变，只在这里定义一次 */
   --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
   --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
-  --fs:16px; --lh:1.6;
+  /* 字号只有六档，写字号一律引这六个，不写像素（控制台样式与各页脚本里内嵌的样式都一样）：
+       --fs-xs  12  角标、表头、图表刻度、最小的附注
+       --fs-sm  13  说明文字、次要信息、小号按钮
+       --fs-md  14  正文、输入框、大号按钮
+       --fs-lg  16  卡片标题、抽屉标题、页面底字
+       --fs-xl  20  页内大标题、次一级的大数字
+       --fs-xxl 24  统计大数字
+     要用档外的字号时归到最近一档，正好在两档中间的归小的那档。 */
+  --fs-xs:12px; --fs-sm:13px; --fs-md:14px; --fs-lg:16px; --fs-xl:20px; --fs-xxl:24px;
+  --fs:var(--fs-lg); --lh:1.6;
   --r-card:14px; --r-ctl:8px; --r-pill:999px;
 }
 @media (prefers-color-scheme:dark){

@@ -42,11 +42,15 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     @Override public String platform() { return "bilibili"; }
 
     @Override public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data) {
-        CommonPainter p = factory.create(WIDTH, 1200, true);
+        return render(streamer, data, ReportPalette.DEFAULT);
+    }
+
+    public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, ReportPalette palette) {
+        CommonPainter p = factory.create(WIDTH, 1200, true, palette);
         p.setPos(MARGIN, MARGIN);
         drawSimpleHeader(p, streamer.getUname(), faceImage(api, streamer), "运营周报");
-        p.drawSection(date(data.firstDay()) + "（周一）至 " + date(data.lastDay()) + "（周日）", COLOR_TEXT);
-        p.drawTip(WeeklyReport.activity(data), COLOR_TIP);
+        p.drawSection(date(data.firstDay()) + "（周一）至 " + date(data.lastDay()) + "（周日）", p.palette().text());
+        p.drawTip(WeeklyReport.activity(data), p.palette().tip());
         p.movePos(0, 16);
         int top = p.getY();
         var cards = WeeklyReport.cards(data);
@@ -54,8 +58,8 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             var c = cards.get(i);
             int x = MARGIN + i % CARD_COLUMNS * (CARD_WIDTH + CARD_GAP);
             int y = top + i / CARD_COLUMNS * (WEEKLY_CARD_HEIGHT + CARD_GAP);
-            Color color = c.changeRatio() == null || Math.abs(c.changeRatio()) < .005 ? COLOR_TIP
-                    : c.changeRatio() > 0 ? COLOR_UP : COLOR_DOWN;
+            Color color = c.changeRatio() == null || Math.abs(c.changeRatio()) < .005 ? p.palette().tip()
+                    : c.changeRatio() > 0 ? p.palette().up() : p.palette().down();
             drawCard(p, c.value(), c.label(), c.note(), color, x, y);
         }
         p.setPos(MARGIN, top + 2 * (WEEKLY_CARD_HEIGHT + CARD_GAP) + 8);
@@ -65,21 +69,21 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         drawCalendar(p, data);
         drawSessions(p, data);
         if (!WeeklyReport.coverage(data).isEmpty()) {
-            p.drawTextWithStyle(List.of(new TextWithStyle(WeeklyReport.coverage(data), 20, COLOR_TIP, Font.PLAIN)), null, true, MARGIN);
+            p.drawTextWithStyle(List.of(new TextWithStyle(WeeklyReport.coverage(data), 20, p.palette().tip(), Font.PLAIN)), null, true, MARGIN);
         }
         smallLine(p, "数字只算记录到的数据，采集缺口不补估。");
         p.movePos(0, 20);
         logo.draw(p, properties);
         p.drawCopyright(MARGIN);
         p.movePos(0, 10);
-        p.createSolidRoundedRectangleBackground(Color.WHITE, CANVAS_RADIUS);
+        p.createSolidRoundedRectangleBackground(p.palette().background(), CANVAS_RADIUS);
         return Base64.getDecoder().decode(p.base64().orElseThrow(() -> new IllegalStateException("PNG 编码失败")));
     }
 
     private static String date(LocalDate d) { return d.getMonthValue() + " 月 " + d.getDayOfMonth() + " 日"; }
 
     private static void smallLine(CommonPainter p, String text) {
-        p.drawTextWithStyle(List.of(new TextWithStyle(text, 20, COLOR_TIP, Font.PLAIN)), null, true, MARGIN);
+        p.drawTextWithStyle(List.of(new TextWithStyle(text, 20, p.palette().tip(), Font.PLAIN)), null, true, MARGIN);
         p.movePos(0, 12);
     }
 
@@ -99,14 +103,14 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         String metric = data.chartMetric();
         boolean money = metric.equals("revenue");
         boolean duration = metric.equals("durationSeconds");
-        p.drawSection(duration ? "每天直播时长（小时）" : money ? "每天流水（元）" : "每天弹幕（条）", COLOR_TEXT);
+        p.drawSection(duration ? "每天直播时长（小时）" : money ? "每天流水（元）" : "每天弹幕（条）", p.palette().text());
         int top = p.getY() + 32;
         int base = top + 150;
         int slot = CONTENT_WIDTH / 7;
         double max = data.daily().stream().filter(d -> d.sessions() > 0)
                 .map(d -> d.metrics().get(metric)).filter(java.util.Objects::nonNull)
                 .mapToDouble(Number::doubleValue).filter(Double::isFinite).max().orElse(0);
-        p.drawRectangle(MARGIN, base, CONTENT_WIDTH, 2, COLOR_CARD);
+        p.drawRectangle(MARGIN, base, CONTENT_WIDTH, 2, p.palette().card());
         var numbers = new DecimalFormat("#,##0.#", DecimalFormatSymbols.getInstance(Locale.ROOT));
         numbers.setRoundingMode(RoundingMode.HALF_UP);
         var segment = new ArrayList<Point>();
@@ -119,11 +123,11 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             if (known) {
                 segment.add(new Point(x, base - height));
             } else {
-                if (segment.size() > 1) p.drawPolyline(List.copyOf(segment), COLOR_NAME, 3);
+                if (segment.size() > 1) p.drawPolyline(List.copyOf(segment), p.palette().accent(), 3);
                 segment.clear();
             }
         }
-        if (segment.size() > 1) p.drawPolyline(List.copyOf(segment), COLOR_NAME, 3);
+        if (segment.size() > 1) p.drawPolyline(List.copyOf(segment), p.palette().accent(), 3);
         for (int i = 0; i < 7; i++) {
             var d = data.daily().get(i);
             Number value = d.metrics().get(metric);
@@ -131,62 +135,62 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             boolean known = d.sessions() > 0 && value != null && Double.isFinite(value.doubleValue());
             if (known) {
                 int height = max > 0 ? (int) Math.round(value.doubleValue() / max * 150) : 0;
-                p.drawRoundedRectangle(x - 5, base - height - 5, 10, 10, 10, COLOR_NAME);
+                p.drawRoundedRectangle(x - 5, base - height - 5, 10, 10, 10, p.palette().accent());
                 double v = duration ? value.doubleValue() / 3600 : value.doubleValue();
                 String label = numbers.format(new BigDecimal(Double.toString(v)).setScale(1, RoundingMode.HALF_UP));
-                centered(p, label, 18, COLOR_TEXT, x, base - height - 32);
+                centered(p, label, 18, p.palette().text(), x, base - height - 32);
             }
-            centered(p, List.of("周一", "周二", "周三", "周四", "周五", "周六", "周日").get(i), 20, COLOR_TEXT, x, base + 16);
+            centered(p, List.of("周一", "周二", "周三", "周四", "周五", "周六", "周日").get(i), 20, p.palette().text(), x, base + 16);
             LocalDate day = LocalDate.parse(d.date());
-            centered(p, day.getMonthValue() + "/" + day.getDayOfMonth(), 16, COLOR_TIP, x, base + 46);
+            centered(p, day.getMonthValue() + "/" + day.getDayOfMonth(), 16, p.palette().tip(), x, base + 46);
             if (!known) {
                 boolean confirmedOff = data.calendar().items().stream()
                         .anyMatch(dayStatus -> dayStatus.date().equals(d.date()) && "off".equals(dayStatus.status()));
                 String label = d.sessions() > 0 ? "无数据" : confirmedOff ? "未播" : "说不准";
-                centered(p, label, 16, COLOR_TIP, x, base + 72);
+                centered(p, label, 16, p.palette().tip(), x, base + 72);
             }
         }
         p.setPos(MARGIN, base + 116);
     }
 
     void drawAudience(CommonPainter p, WeeklyReport.Data data) {
-        p.drawSection("本周观众", COLOR_TEXT);
+        p.drawSection("本周观众", p.palette().text());
         int top = p.getY() + 14;
         int diameter = 210;
         int ringX = MARGIN + 16;
         int center = ringX + diameter / 2;
-        Color returningColor = new Color(0x69A9CC);
-        p.drawArc(ringX, top + 12, diameter, 90, -360, 22, COLOR_CARD);
+        Color returningColor = p.palette().returningAudience();
+        p.drawArc(ringX, top + 12, diameter, 90, -360, 22, p.palette().card());
         Number audience = data.metrics().get("audience");
         var c = data.composition();
         if (c != null && c.firstRecorded() + c.returning() > 0) {
             double first = c.firstRecorded() * 360.0 / (c.firstRecorded() + c.returning());
-            p.drawArc(ringX, top + 12, diameter, 90, -first, 22, COLOR_NAME);
+            p.drawArc(ringX, top + 12, diameter, 90, -first, 22, p.palette().accent());
             p.drawArc(ringX, top + 12, diameter, 90 - first, -(360 - first), 22, returningColor);
         }
-        centered(p, "本周去重观众", 20, COLOR_TIP, center, top + 75);
+        centered(p, "本周去重观众", 20, p.palette().tip(), center, top + 75);
         centered(p, audience == null ? "暂无数据" : String.format(Locale.ROOT, "%,d 人", audience.longValue()),
-                32, COLOR_TEXT, center, top + 113);
+                32, p.palette().text(), center, top + 113);
         int right = MARGIN + 280;
         int blockWidth = (CONTENT_WIDTH - 296) / 2;
         for (int i = 0; i < 2; i++) {
             int x = right + i * (blockWidth + 16);
-            Color color = i == 0 ? COLOR_NAME : returningColor;
-            p.drawRoundedRectangle(x, top, blockWidth, 118, CARD_RADIUS, COLOR_CARD);
+            Color color = i == 0 ? p.palette().accent() : returningColor;
+            p.drawRoundedRectangle(x, top, blockWidth, 118, CARD_RADIUS, p.palette().card());
             text(p, i == 0 ? "本周首次记录" : "历史回访", 21, color, x + 14, top + 14, blockWidth - 28);
             Integer n = c == null ? null : i == 0 ? c.firstRecorded() : c.returning();
             text(p, n == null ? "暂无数据" : String.format(Locale.ROOT, "%,d 人 · 占 %s", n,
-                    percent(n, c.firstRecorded() + c.returning())), 20, COLOR_TEXT, x + 14, top + 64, blockWidth - 28);
+                    percent(n, c.firstRecorded() + c.returning())), 20, p.palette().text(), x + 14, top + 64, blockWidth - 28);
         }
         Number interaction = data.metrics().get("interactionAudience");
         String active = "本周互动观众 " + (interaction == null ? "暂无数据" : String.format(Locale.ROOT, "%,d 人", interaction.longValue()))
                 + " · 占观众 " + (interaction == null || audience == null ? "暂无数据" : percent(interaction.doubleValue(), audience.doubleValue()));
-        text(p, active, 21, COLOR_TEXT, right, top + 146, CONTENT_WIDTH - 280);
+        text(p, active, 21, p.palette().text(), right, top + 146, CONTENT_WIDTH - 280);
         int barWidth = CONTENT_WIDTH - 280;
-        p.drawRoundedRectangle(right, top + 194, barWidth, 12, 12, COLOR_CARD);
+        p.drawRoundedRectangle(right, top + 194, barWidth, 12, 12, p.palette().card());
         if (interaction != null && audience != null && audience.doubleValue() > 0) {
             int fill = (int) Math.round(barWidth * Math.min(1, interaction.doubleValue() / audience.doubleValue()));
-            if (fill > 0) p.drawRoundedRectangle(right, top + 194, fill, 12, 12, COLOR_NAME);
+            if (fill > 0) p.drawRoundedRectangle(right, top + 194, fill, 12, 12, p.palette().accent());
         }
         p.setPos(MARGIN, top + 254);
         smallLine(p, "首次记录指系统里第一次记录到，不等于第一次观看直播。");
@@ -197,21 +201,21 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     }
 
     void drawCalendar(CommonPainter p, WeeklyReport.Data data) {
-        p.drawSection("开播日历 · 近 5 周", COLOR_TEXT);
+        p.drawSection("开播日历 · 近 5 周", p.palette().text());
         LocalDate first = data.lastDay().minusDays(34);
-        p.drawTip(shortDate(first) + " – " + shortDate(data.lastDay()), COLOR_TIP);
+        p.drawTip(shortDate(first) + " – " + shortDate(data.lastDay()), p.palette().tip());
         int top = p.getY() + 14;
         int gap = 8;
         int height = 64;
-        Color recorded = new Color(252, 159, 186);
-        Color off = new Color(250, 251, 252);
-        Color unknown = new Color(225, 228, 231);
-        Color border = new Color(210, 215, 220);
+        Color recorded = p.palette().calendarRecorded();
+        Color off = p.palette().calendarOff();
+        Color unknown = p.palette().calendarUnknown();
+        Color border = p.palette().calendarBorder();
         for (int column = 0; column < 7; column++) {
             int x = MARGIN + column * (CONTENT_WIDTH + gap) / 7;
             int width = (column + 1) * (CONTENT_WIDTH + gap) / 7 - column * (CONTENT_WIDTH + gap) / 7 - gap;
             centered(p, List.of("周一", "周二", "周三", "周四", "周五", "周六", "周日").get(column),
-                    22, COLOR_TEXT, x + width / 2, top);
+                    22, p.palette().text(), x + width / 2, top);
         }
         int gridTop = top + 38;
         for (int i = 0; i < data.calendar().items().size(); i++) {
@@ -223,9 +227,9 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             Color fill = switch (day.status()) { case "recorded" -> recorded; case "off" -> off; default -> unknown; };
             boolean reportWeek = !LocalDate.parse(day.date()).isBefore(data.firstDay());
             int inset = reportWeek ? 2 : 1;
-            p.drawRoundedRectangle(x, y, width, height, 8, reportWeek ? COLOR_TEXT : border);
+            p.drawRoundedRectangle(x, y, width, height, 8, reportWeek ? p.palette().text() : border);
             p.drawRoundedRectangle(x + inset, y + inset, width - inset * 2, height - inset * 2, 6, fill);
-            centered(p, shortDate(LocalDate.parse(day.date())), 26, COLOR_TEXT, x + width / 2, y + 15);
+            centered(p, shortDate(LocalDate.parse(day.date())), 26, p.palette().text(), x + width / 2, y + 15);
         }
         int legendTop = gridTop + 5 * (height + gap) + 10;
         var totals = WeeklyReport.calendarTotals(data);
@@ -237,9 +241,9 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             int x = MARGIN + i * (blockWidth + CARD_GAP);
             p.drawRoundedRectangle(x, legendTop + 3, 22, 22, 4, border);
             p.drawRoundedRectangle(x + 1, legendTop + 4, 20, 20, 3, colors.get(i));
-            text(p, labels.get(i), 21, COLOR_TEXT, x + 32, legendTop, blockWidth - 32);
-            p.drawRoundedRectangle(x, legendTop + 42, blockWidth, 60, 12, COLOR_CARD);
-            centered(p, counts.get(i) + "天 " + labels.get(i), 23, COLOR_TEXT, x + blockWidth / 2, legendTop + 57);
+            text(p, labels.get(i), 21, p.palette().text(), x + 32, legendTop, blockWidth - 32);
+            p.drawRoundedRectangle(x, legendTop + 42, blockWidth, 60, 12, p.palette().card());
+            centered(p, counts.get(i) + "天 " + labels.get(i), 23, p.palette().text(), x + blockWidth / 2, legendTop + 57);
         }
         p.setPos(MARGIN, legendTop + 122);
         smallLine(p, "说不准＝那天没录到开播，但监看不完整（停机、断线，或在监看记录开始之前），不按没播算。");
@@ -248,20 +252,20 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     private static String shortDate(LocalDate day) { return day.getMonthValue() + "/" + day.getDayOfMonth(); }
 
     void drawSessions(CommonPainter p, WeeklyReport.Data data) {
-        p.drawSection("本周场次 · " + data.metrics().get("sessions") + " 场", COLOR_TEXT);
+        p.drawSection("本周场次 · " + data.metrics().get("sessions") + " 场", p.palette().text());
         for (var row : data.sessionRows()) {
             int y = p.getY() + 8;
             var details = detailLines(p, row.details());
             int height = 80 + details.size() * 30;
-            p.drawRoundedRectangle(MARGIN, y, CONTENT_WIDTH, height, CARD_RADIUS, COLOR_CARD);
-            text(p, row.startedAt(), 22, COLOR_TIP, MARGIN + 16, y + 14, 135);
-            int badgeWidth = Math.max(80, p.getStringWidthAndHeight(new TextWithStyle(row.badge(), 18, COLOR_TIP, Font.PLAIN)).getFirst() + 24);
+            p.drawRoundedRectangle(MARGIN, y, CONTENT_WIDTH, height, CARD_RADIUS, p.palette().card());
+            text(p, row.startedAt(), 22, p.palette().tip(), MARGIN + 16, y + 14, 135);
+            int badgeWidth = Math.max(80, p.getStringWidthAndHeight(new TextWithStyle(row.badge(), 18, p.palette().tip(), Font.PLAIN)).getFirst() + 24);
             int badgeX = WIDTH - MARGIN - badgeWidth - 14;
-            text(p, row.title(), 24, COLOR_TEXT, MARGIN + 165, y + 12, badgeX - MARGIN - 185);
-            p.drawRoundedRectangle(badgeX, y + 14, badgeWidth, 32, 12, Color.WHITE);
-            centered(p, row.badge(), 18, COLOR_TIP, badgeX + badgeWidth / 2, y + 16);
+            text(p, row.title(), 24, p.palette().text(), MARGIN + 165, y + 12, badgeX - MARGIN - 185);
+            p.drawRoundedRectangle(badgeX, y + 14, badgeWidth, 32, 12, p.palette().sessionBadge());
+            centered(p, row.badge(), 18, p.palette().tip(), badgeX + badgeWidth / 2, y + 16);
             for (int i = 0; i < details.size(); i++)
-                text(p, details.get(i), 20, COLOR_TEXT, MARGIN + 16, y + 64 + i * 30, CONTENT_WIDTH - 32);
+                text(p, details.get(i), 20, p.palette().text(), MARGIN + 16, y + 64 + i * 30, CONTENT_WIDTH - 32);
             p.setPos(MARGIN, y + height + 14);
         }
         if (data.hiddenSessions() > 0) smallLine(p, "另有 " + data.hiddenSessions() + " 场未列出");
@@ -273,7 +277,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         String line = "";
         for (String field : details.split(" · ")) {
             String next = line.isEmpty() ? field : line + " · " + field;
-            if (!line.isEmpty() && p.getStringWidthAndHeight(new TextWithStyle(next, 20, COLOR_TEXT, Font.PLAIN)).getFirst() > CONTENT_WIDTH - 32) {
+            if (!line.isEmpty() && p.getStringWidthAndHeight(new TextWithStyle(next, 20, p.palette().text(), Font.PLAIN)).getFirst() > CONTENT_WIDTH - 32) {
                 lines.add(line);
                 line = field;
             } else line = next;

@@ -358,7 +358,7 @@ await ask('正在直播卡从本场名录取中文名和单位，未命名指标
 });
 
 // 故障：失败时把已有本场数清空或变成 0，检查时刻混成数据更新时间。
-await ask('⑤ 刷新失败保留本场数与服务端原话，数据更新时间和检查时刻分开', async () => {
+await ask('⑤ 刷新失败保留本场数，只说短话不拼原话，数据更新时间和检查时刻分开', async () => {
   await overview();
   const original = textOf(liveCard());
   for (const expected of ['正在直播', '123', '12.50 元', 'unknown_metric', '42 人',
@@ -368,13 +368,15 @@ await ask('⑤ 刷新失败保留本场数与服务端原话，数据更新时�
   liveFailure = '暂时读不到本场数据';
   await clickRefresh();
   const failed = textOf(liveCard());
-  for (const expected of ['123', '12.50 元', '刷新失败：' + liveFailure,
+  for (const expected of ['123', '12.50 元', '刷新失败，稍后自动重试',
     '当前显示的是 12:35:07 的数据', '数据截至 2026/10/14 12:34', '检查于 12:35:07']) {
     if (!failed.includes(expected)) throw new Error('失败后缺少 ' + expected);
   }
+  if (failed.includes(liveFailure)) throw new Error('后台刷新失败不该拼服务端原话：' + liveFailure);
   liveFailure = '网络错误';
   await clickRefresh();
-  if (!textOf(liveCard()).includes('刷新失败：网络错误')) throw new Error('网络错误没有显示');
+  if (!textOf(liveCard()).includes('刷新失败，稍后自动重试')) throw new Error('网络错误时没有那句短话');
+  if (textOf(liveCard()).includes('网络错误')) throw new Error('后台刷新失败不该拼原话：网络错误');
   liveFailure = '';
   await clickRefresh();
   if (textOf(liveCard()).includes('刷新失败')) throw new Error('恢复后失败说明没消失');
@@ -462,7 +464,7 @@ await ask('⑩ 详情已显示新一场时清掉前一场数据，不把旧场�
 });
 
 // 故障：服务端回默认 500 错误包后，正在直播卡片消失，已有数值和失败原因都看不到。
-await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，并说明失败原因', async () => {
+await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，只说短话不拼原因', async () => {
   await overview();
   try {
     for (const [status, body, reason] of [
@@ -477,10 +479,11 @@ await ask('⑪ 服务端错误或无效成功回包保留卡片与本场数，�
       await clickRefresh();
       same(liveCard().hidden, false, '服务端错误后卡片仍可见');
       const text = textOf(liveCard());
-      for (const expected of ['321', '21 人', '刷新失败：' + reason,
+      for (const expected of ['321', '21 人', '刷新失败，稍后自动重试',
         '当前显示的是 12:35:07 的数据', '数据截至 2026/10/14 12:34', '检查于 12:35:07']) {
         if (!text.includes(expected)) throw new Error('服务端错误后缺少 ' + expected);
       }
+      if (text.includes('刷新失败：') || text.includes(reason)) throw new Error('服务端错误后拼了原因：' + reason);
     }
   } finally {
     liveHttpReply = null;

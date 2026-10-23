@@ -204,14 +204,6 @@ public class BilibiliLiveReportPainter {
     private static final String GUARD_ICON_CAPTAIN =
             "https://i0.hdslb.com/bfs/live/143f5ec3003b4080d1b5f817a9efdca46d631945.png";
 
-    private static final Color GUARD_COLOR_GOVERNOR = new Color(0xE6, 0xB4, 0x22);
-
-    private static final Color GUARD_COLOR_COMMANDER = new Color(0xA7, 0x73, 0xF1);
-
-    private static final Color GUARD_COLOR_CAPTAIN = new Color(0x3F, 0xB4, 0xF6);
-
-    private static final Color GUARD_COLOR_UNKNOWN = new Color(0x9E, 0x9E, 0x9E);
-
     /**
      * 排行榜昵称的可用宽度，单位像素
      * <p>
@@ -249,21 +241,6 @@ public class BilibiliLiveReportPainter {
     private static final int CLOUD_MAX_WORDS = 72;
 
     /**
-     * 配色自 {@link ReportSharedStyle} 起，与打赏播报图共用一份，这里只是引过来
-     */
-    private static final Color COLOR_NAME = ReportSharedStyle.COLOR_NAME;
-
-    private static final Color COLOR_TIP = ReportSharedStyle.COLOR_TIP;
-
-    private static final Color COLOR_TEXT = ReportSharedStyle.COLOR_TEXT;
-
-    /**
-     * 卡片底色。包内可见：版式判据要靠它认出「哪几行落在卡片带里」，
-     * 否则同样的 x 区间会撞上封面横幅与排行榜的比例条
-     */
-    static final Color COLOR_CARD = ReportSharedStyle.COLOR_CARD;
-
-    /**
      * 互动曲线的高度与像素列宽
      */
     private static final int CURVE_HEIGHT = 90;
@@ -290,37 +267,6 @@ public class BilibiliLiveReportPainter {
     private static final int CURVE_GAP_HATCH_PERIOD = 10;
 
     private static final int CURVE_GAP_HATCH_WIDTH = 3;
-
-    /**
-     * 各条曲线的配色，礼物沿用主题粉（{@link #COLOR_NAME}）
-     */
-    private static final Color COLOR_CURVE_WATCHED = new Color(110, 199, 122);
-
-    /**
-     * 盈亏榜里亏了的那几行比例条的颜色：照「红涨绿跌」用绿，取看过人数曲线那个绿
-     */
-    private static final Color COLOR_LOSS = COLOR_CURVE_WATCHED;
-
-    /**
-     * 在线人数折线的配色。包内可见：像素判据要靠它认出折线而不是面积
-     */
-    static final Color COLOR_CURVE_ONLINE = new Color(255, 99, 132);
-
-    /**
-     * 弹幕曲线的配色。包内可见：像素判据要靠它认出「哪几列画的是面积」，
-     * 而斜纹区与贴地面积区的区别正是「这一点是不是面积色」
-     */
-    static final Color COLOR_CURVE_DANMU = new Color(0, 174, 236);
-
-    /**
-     * 采集缺口的斜纹色与边界线色。包内可见，理由同 {@link #COLOR_CURVE_DANMU}
-     * <p>
-     * 刻意取中性浅灰而不取任何一条曲线的同色系：斜纹说的是「这一段没有数据」，
-     * 它一旦长得像某条曲线，就会被读成那条曲线的一段取值。
-     */
-    static final Color COLOR_CURVE_GAP_HATCH = new Color(206, 212, 218);
-
-    static final Color COLOR_CURVE_GAP_EDGE = new Color(168, 178, 188);
 
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
@@ -604,8 +550,12 @@ public class BilibiliLiveReportPainter {
      * @return 报告图片的 Base64 编码，绘制失败时为空
      */
     public Optional<String> paint(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+        return paint(platform, source, options, ReportPalette.DEFAULT);
+    }
+
+    public Optional<String> paint(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options, ReportPalette palette) {
         try {
-            CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true);
+            CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true, palette);
             painter.setPos(MARGIN, MARGIN);
 
             drawHeader(painter, platform, source, options);
@@ -639,7 +589,7 @@ public class BilibiliLiveReportPainter {
             painter.movePos(0, 10);
 
             // 该调用同时把画布裁剪至实际内容高度并铺上背景，必须在全部内容绘制完毕后执行
-            painter.createSolidRoundedRectangleBackground(Color.WHITE, CANVAS_RADIUS);
+            painter.createSolidRoundedRectangleBackground(painter.palette().background(), CANVAS_RADIUS);
 
             return painter.base64();
         } catch (Exception e) {
@@ -655,9 +605,9 @@ public class BilibiliLiveReportPainter {
      */
     private void drawHeader(CommonPainter painter, String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
         int top = painter.getY();
-        BufferedImage cover = options.isCover() ? loadCover(source) : null;
+        BufferedImage cover = options.isCover() ? loadCover(source, painter.palette()) : null;
 
-        BufferedImage face = faceImage(source);
+        BufferedImage face = faceImage(source, painter.palette());
 
         if (cover != null) {
             painter.drawImage(cover, new Point(MARGIN, top));
@@ -670,9 +620,9 @@ public class BilibiliLiveReportPainter {
             }
 
             int textX = avatarX + AVATAR_SIZE + 22;
-            painter.drawSection(unameWithin(painter, unameOf(platform, source), textX), COLOR_NAME,
+            painter.drawSection(unameWithin(painter, unameOf(platform, source), textX), painter.palette().streamerName(),
                     new Point(textX, top + COVER_HEIGHT + 4));
-            painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + COVER_HEIGHT + 52));
+            painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), painter.palette().tip(), new Point(textX, top + COVER_HEIGHT + 52));
 
             painter.setPos(MARGIN, top + COVER_HEIGHT + AVATAR_SIZE + 16);
             return;
@@ -706,14 +656,14 @@ public class BilibiliLiveReportPainter {
         String duration = Optional.of(durationText(platform, uid)).filter(StringUtil::isNotBlank).orElse("未知");
 
         List<TextWithStyle> line = new ArrayList<>();
-        line.add(new TextWithStyle("直播时长 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
-        line.add(new TextWithStyle(duration, CommonPainter.TEXT_FONT_SIZE, COLOR_TEXT, Font.BOLD));
+        line.add(new TextWithStyle("直播时长 ", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN));
+        line.add(new TextWithStyle(duration, CommonPainter.TEXT_FONT_SIZE, painter.palette().text(), Font.BOLD));
 
         // 采集缺口紧跟在时长后面，而不是塞进页脚：报告上每个数字都受它影响，
         // 看到时长的人必须同时看到「这段时间里有一截没在采」，以及那一截是怎么来的
         String gap = collectionGapText(platform, uid);
         if (!gap.isEmpty()) {
-            line.add(new TextWithStyle("（" + gap + "）", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+            line.add(new TextWithStyle("（" + gap + "）", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN));
         }
 
         // 与停机缺口同一个道理：图片没送到是主播能感知的差异，
@@ -721,7 +671,7 @@ public class BilibiliLiveReportPainter {
         long imageDegraded = count(platform, uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT);
         if (imageDegraded > 0) {
             line.add(new TextWithStyle("    ⚠ 有 " + imageDegraded + " 条推送的图片未送达",
-                    CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+                    CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN));
         }
 
         painter.drawTextWithStyle(wrapAtSegments(painter, line, MARGIN), null, true, MARGIN);
@@ -961,7 +911,7 @@ public class BilibiliLiveReportPainter {
      */
     private boolean cardLabelFits(CommonPainter painter, String label) {
         int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
-        return painter.getStringWidthAndHeight(new TextWithStyle(label, 22, COLOR_TIP, Font.PLAIN)).getFirst() <= usable;
+        return painter.getStringWidthAndHeight(new TextWithStyle(label, 22, painter.palette().tip(), Font.PLAIN)).getFirst() <= usable;
     }
 
     /**
@@ -1002,7 +952,7 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle("本场变化", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.drawTextWithStyle(List.of(new TextWithStyle("本场变化", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
         painter.movePos(0, 6);
 
         int startY = painter.getY();
@@ -1072,7 +1022,7 @@ public class BilibiliLiveReportPainter {
             return;
         }
 
-        List<Curve> curves = buildCurves(platform, uid, options);
+        List<Curve> curves = buildCurves(platform, uid, options, painter.palette());
 
         // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
@@ -1089,7 +1039,7 @@ public class BilibiliLiveReportPainter {
 
             if (first) {
                 painter.movePos(0, 10);
-                painter.drawTextWithStyle(List.of(new TextWithStyle("互动曲线", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+                painter.drawTextWithStyle(List.of(new TextWithStyle("互动曲线", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
                 painter.movePos(0, 6);
                 first = false;
             }
@@ -1112,20 +1062,24 @@ public class BilibiliLiveReportPainter {
      * 从成品图上反推不出「峰值文案里有没有金额」。
      */
     List<Curve> buildCurves(String platform, Long uid, BilibiliLiveReportOptions options) {
+        return buildCurves(platform, uid, options, ReportPalette.DEFAULT);
+    }
+
+    private List<Curve> buildCurves(String platform, Long uid, BilibiliLiveReportOptions options, ReportPalette palette) {
         // 不展示金额时，流水曲线保留形状但不标峰值。
         // 面积图按自身峰值归一化，画出来的是「什么时候热闹」，本身不含任何绝对数值——
         // 这恰好是最适合给大群看的东西，整条删掉反而丢了氛围
         DoubleFunction<String> money = options.isShowRevenue() ? peak -> "¥" + yuan(peak) + "/分" : null;
 
         List<Curve> curves = new ArrayList<>();
-        curves.add(new Curve("弹幕", BilibiliLiveMetric.DANMU_COUNT, COLOR_CURVE_DANMU,
+        curves.add(new Curve("弹幕", BilibiliLiveMetric.DANMU_COUNT, palette.curveDanmu(),
                 peak -> Math.round(peak) + " 条/分"));
-        curves.add(new Curve("流水", null, COLOR_NAME, money, revenueSeries(platform, uid)));
+        curves.add(new Curve("流水", null, palette.curveRevenue(), money, revenueSeries(platform, uid)));
         // 看过人数是累计值，画出来是一条只升不降的线——它的**斜率**才是「什么时候在涨人」。
         // 峰值标的是本场最终看过多少人，因此文案是「人看过」而不是「人/分」
-        curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
+        curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, palette.curveWatched(),
                 peak -> Math.round(peak) + " 人看过"));
-        curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
+        curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, palette.curveOnline(),
                 peak -> Math.round(peak) + " 人", true));
         return curves;
     }
@@ -1171,7 +1125,7 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle("高能时刻", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.drawTextWithStyle(List.of(new TextWithStyle("高能时刻", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
         painter.movePos(0, 6);
 
         for (int i = 0; i < highlights.size(); i++) {
@@ -1186,16 +1140,16 @@ public class BilibiliLiveReportPainter {
     private void drawHighlightRow(CommonPainter painter, int rank, LiveHighlightFinder.Highlight highlight, long start) {
         int y = painter.getY();
 
-        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, painter.palette().rank(rank), Font.BOLD)),
                 new Point(MARGIN + 4, y + 6));
 
         painter.drawTextWithStyle(List.of(
-                        new TextWithStyle(offsetText(highlight.at(), Optional.of(start)), 24, COLOR_TEXT, Font.BOLD),
-                        new TextWithStyle("  " + CLOCK_FORMAT.format(Instant.ofEpochMilli(highlight.at())), 22, COLOR_TIP, Font.PLAIN)),
+                        new TextWithStyle(offsetText(highlight.at(), Optional.of(start)), 24, painter.palette().text(), Font.BOLD),
+                        new TextWithStyle("  " + CLOCK_FORMAT.format(Instant.ofEpochMilli(highlight.at())), 22, painter.palette().tip(), Font.PLAIN)),
                 new Point(MARGIN + 40, y + 6));
 
         painter.drawTextWithStyle(List.of(
-                        new TextWithStyle(Math.round(highlight.value()) + " 条/分", 24, COLOR_CURVE_DANMU, Font.BOLD)),
+                        new TextWithStyle(Math.round(highlight.value()) + " 条/分", 24, painter.palette().curveDanmu(), Font.BOLD)),
                 new Point(MARGIN + CONTENT_WIDTH - 130, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
@@ -1249,10 +1203,10 @@ public class BilibiliLiveReportPainter {
         }
 
         List<TextWithStyle> title = new ArrayList<>();
-        title.add(new TextWithStyle(curve.title, 24, COLOR_TEXT, Font.PLAIN));
+        title.add(new TextWithStyle(curve.title, 24, painter.palette().text(), Font.PLAIN));
         // peakText 为 null 表示这条曲线的峰值是金额且本会话不展示金额，只留标题
         if (curve.peakText != null) {
-            title.add(new TextWithStyle("　峰值 " + curve.peakText.apply(peak), 22, COLOR_TIP, Font.PLAIN));
+            title.add(new TextWithStyle("　峰值 " + curve.peakText.apply(peak), 22, painter.palette().tip(), Font.PLAIN));
         }
         painter.drawTextWithStyle(title, new Point(MARGIN, top));
 
@@ -1278,11 +1232,11 @@ public class BilibiliLiveReportPainter {
 
         // 短缺口保留数据，在实际时间位置叠一道细线；连续中断只标一次。
         for (int x : shortGapPixels(gaps, start, buckets, columns, missing)) {
-            painter.drawRectangle(x, chartTop, 1, CURVE_HEIGHT, COLOR_CURVE_GAP_EDGE);
+            painter.drawRectangle(x, chartTop, 1, CURVE_HEIGHT, painter.palette().curveGapEdge());
         }
 
         // 基线压在面积下沿，给曲线一个明确的落脚点
-        painter.drawRectangle(MARGIN, baseline, CONTENT_WIDTH, 2, COLOR_CARD);
+        painter.drawRectangle(MARGIN, baseline, CONTENT_WIDTH, 2, painter.palette().card());
         painter.setPos(MARGIN, baseline + 16);
     }
 
@@ -1372,13 +1326,13 @@ public class BilibiliLiveReportPainter {
                     new Point(c - bottom, bottom));
             List<Point> clipped = clipToColumns(stripe, left, right);
             if (clipped.size() >= 3) {
-                painter.drawPolygon(clipped, COLOR_CURVE_GAP_HATCH);
+                painter.drawPolygon(clipped, painter.palette().curveGapHatch());
             }
         }
 
         // 边界线最后画，压在斜纹上：缺口起止于何时，比斜纹本身更该看得清
-        painter.drawRectangle(left, top, 1, height, COLOR_CURVE_GAP_EDGE);
-        painter.drawRectangle(right - 1, top, 1, height, COLOR_CURVE_GAP_EDGE);
+        painter.drawRectangle(left, top, 1, height, painter.palette().curveGapEdge());
+        painter.drawRectangle(right - 1, top, 1, height, painter.palette().curveGapEdge());
     }
 
     /**
@@ -1747,7 +1701,7 @@ public class BilibiliLiveReportPainter {
 
         painter.movePos(0, 10);
         painter.drawTextWithStyle(List.of(
-                new TextWithStyle("收到的礼物", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+                new TextWithStyle("收到的礼物", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
         painter.movePos(0, 8);
 
         int y = painter.getY();
@@ -1758,7 +1712,7 @@ public class BilibiliLiveReportPainter {
             if (line instanceof ReceivedGiftLayout.OverflowLine overflow) {
                 painter.setPos(MARGIN, y);
                 painter.drawTextWithStyle(List.of(
-                        new TextWithStyle(overflow.text(), CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+                        new TextWithStyle(overflow.text(), CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
                 y = painter.getY();
                 continue;
             }
@@ -1796,18 +1750,18 @@ public class BilibiliLiveReportPainter {
         int columns = Math.max(tiers.size(), 1);
         int cellWidth = (CONTENT_WIDTH - GIFT_CELL_GAP * (columns - 1)) / columns;
         int nameHeight = painter.getStringWidthAndHeight(
-                new TextWithStyle("礼物", GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getSecond();
+                new TextWithStyle("礼物", GIFT_NAME_SIZE, painter.palette().text(), Font.PLAIN)).getSecond();
         int countHeight = painter.getStringWidthAndHeight(
-                new TextWithStyle("×1", GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getSecond();
+                new TextWithStyle("×1", GIFT_COUNT_SIZE, painter.palette().tip(), Font.PLAIN)).getSecond();
         int x = MARGIN;
         if (tiers.size() < columns) {
             x += (CONTENT_WIDTH - cellWidth * tiers.size() - GIFT_CELL_GAP * (tiers.size() - 1)) / 2;
         }
         for (GuardTierCell tier : tiers) {
             String url = defaultGuardIconUrl(tier.level());
-            BufferedImage icon = url == null ? null : guardIcon(url, GUARD_GIFT_ICON_SIZE);
+            BufferedImage icon = url == null ? null : guardIcon(url, GUARD_GIFT_ICON_SIZE, painter.palette());
             if (icon == null) {
-                icon = solidCircle(guardColor(tier.level()), GUARD_GIFT_ICON_SIZE);
+                icon = solidCircle(painter.palette().guard(tier.level()), GUARD_GIFT_ICON_SIZE);
             }
             drawIconCell(painter, x, y, cellWidth, GUARD_GIFT_ICON_SIZE, icon,
                     tier.name(), "×" + tier.count(), nameHeight, countHeight);
@@ -1826,17 +1780,17 @@ public class BilibiliLiveReportPainter {
         painter.drawImage(icon, new Point(x + Math.max(0, (cellWidth - iconSize) / 2), y));
 
         String name = painter.truncateToWidth(
-                new TextWithStyle(rawName == null ? "" : rawName, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN),
+                new TextWithStyle(rawName == null ? "" : rawName, GIFT_NAME_SIZE, painter.palette().text(), Font.PLAIN),
                 Math.max(1, cellWidth - 4));
         int nameWidth = painter.getStringWidthAndHeight(
-                new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
+                new TextWithStyle(name, GIFT_NAME_SIZE, painter.palette().text(), Font.PLAIN)).getFirst();
         int nameY = y + iconSize + 6;
-        painter.drawTextWithStyle(List.of(new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(name, GIFT_NAME_SIZE, painter.palette().text(), Font.PLAIN)),
                 new Point(x + Math.max(0, (cellWidth - nameWidth) / 2), nameY));
 
         int countWidth = painter.getStringWidthAndHeight(
-                new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getFirst();
-        painter.drawTextWithStyle(List.of(new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)),
+                new TextWithStyle(countText, GIFT_COUNT_SIZE, painter.palette().tip(), Font.PLAIN)).getFirst();
+        painter.drawTextWithStyle(List.of(new TextWithStyle(countText, GIFT_COUNT_SIZE, painter.palette().tip(), Font.PLAIN)),
                 new Point(x + Math.max(0, (cellWidth - countWidth) / 2), nameY + nameHeight + 2));
     }
 
@@ -1862,16 +1816,16 @@ public class BilibiliLiveReportPainter {
         int iconSize = row.iconSize();
         int cellWidth = (CONTENT_WIDTH - GIFT_CELL_GAP * (row.columns() - 1)) / row.columns();
         int nameHeight = painter.getStringWidthAndHeight(
-                new TextWithStyle("礼物", GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getSecond();
+                new TextWithStyle("礼物", GIFT_NAME_SIZE, painter.palette().text(), Font.PLAIN)).getSecond();
         int countHeight = painter.getStringWidthAndHeight(
-                new TextWithStyle("×1", GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getSecond();
+                new TextWithStyle("×1", GIFT_COUNT_SIZE, painter.palette().tip(), Font.PLAIN)).getSecond();
         int shown = row.gifts().size();
         int x = MARGIN;
         if (shown > 0 && shown < row.columns()) {
             x += (CONTENT_WIDTH - cellWidth * shown - GIFT_CELL_GAP * (shown - 1)) / 2;
         }
         for (LiveGiftTotal gift : row.gifts()) {
-            BufferedImage icon = giftPicture(gift, iconSize);
+            BufferedImage icon = giftPicture(painter, gift, iconSize);
             drawIconCell(painter, x, y, cellWidth, iconSize, icon,
                     gift.name(), "×" + gift.count(), nameHeight, countHeight);
             x += cellWidth + GIFT_CELL_GAP;
@@ -1882,10 +1836,10 @@ public class BilibiliLiveReportPainter {
     /**
      * 礼物图标。取不到时画圆角方块，里面是礼物名的第一个字。
      */
-    private BufferedImage giftPicture(LiveGiftTotal gift, int size) {
+    private BufferedImage giftPicture(CommonPainter painter, LiveGiftTotal gift, int size) {
         BufferedImage fetched = giftIcon(gift.url());
         if (fetched == null) {
-            return giftPlaceholder(gift.name(), size);
+            return giftPlaceholder(painter, gift.name(), size);
         }
         BufferedImage scaled = ImageUtil.resize(fetched, size, size);
         return ImageUtil.maskToRoundedRectangle(scaled, Math.max(8, size / 5));
@@ -1977,15 +1931,15 @@ public class BilibiliLiveReportPainter {
     /**
      * 圆角方块占位，正中写礼物名的第一个字
      */
-    private BufferedImage giftPlaceholder(String name, int size) {
+    private BufferedImage giftPlaceholder(CommonPainter painter, String name, int size) {
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        graphics.setColor(new Color(255, 236, 242));
+        graphics.setColor(painter.palette().tagBackground());
         graphics.fillRoundRect(0, 0, size, size, Math.max(8, size / 5), Math.max(8, size / 5));
         String letter = firstCharacter(name);
         if (!letter.isEmpty()) {
-            graphics.setColor(COLOR_NAME);
+            graphics.setColor(painter.palette().accent());
             graphics.setFont(fontUtil.findFontForCharacter(letter.codePointAt(0))
                     .deriveFont(Font.BOLD, size * 0.42f));
             FontMetrics metrics = graphics.getFontMetrics();
@@ -2097,11 +2051,11 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle(title, CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.drawTextWithStyle(List.of(new TextWithStyle(title, CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
         if (note != null) {
             // 开自动折行：这句话一行放不下，而不折行的写法会把它画到画布外面，且不报错
             painter.drawTextWithStyle(
-                    List.of(new TextWithStyle(note, CommonPainter.TIP_FONT_SIZE, COLOR_TIP, Font.PLAIN)),
+                    List.of(new TextWithStyle(note, CommonPainter.TIP_FONT_SIZE, painter.palette().tip(), Font.PLAIN)),
                     null, true, MARGIN);
         }
         painter.movePos(0, 6);
@@ -2133,26 +2087,26 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle("醒目留言名单", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.drawTextWithStyle(List.of(new TextWithStyle("醒目留言名单", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
         painter.movePos(0, 6);
 
         for (SuperChatEntry entry : entries) {
             int y = painter.getY();
 
             painter.drawTextWithStyle(List.of(
-                            new TextWithStyle(truncate(painter, entry.uname()), 24, COLOR_TEXT, Font.PLAIN)),
+                            new TextWithStyle(truncate(painter, entry.uname()), 24, painter.palette().text(), Font.PLAIN)),
                     new Point(MARGIN, y + 6));
 
             String label = "¥" + yuan(entry.total()) + " · " + entry.count() + " 条";
             int labelWidth = painter.getStringWidthAndHeight(
-                    new TextWithStyle(label, 24, COLOR_TEXT, Font.PLAIN)).getFirst();
-            painter.drawTextWithStyle(List.of(new TextWithStyle(label, 24, COLOR_TEXT, Font.PLAIN)),
+                    new TextWithStyle(label, 24, painter.palette().text(), Font.PLAIN)).getFirst();
+            painter.drawTextWithStyle(List.of(new TextWithStyle(label, 24, painter.palette().text(), Font.PLAIN)),
                     new Point(Math.max(MARGIN, WIDTH - MARGIN - labelWidth), y + 6));
 
             int height = RANKING_ROW_HEIGHT;
             if (!entry.joinedText().isBlank()) {
                 // 一行放不下就截断：原文是氛围不是证据，截断比换行成小作文更像一张名单
-                TextWithStyle text = new TextWithStyle(entry.joinedText(), 20, COLOR_TIP, Font.PLAIN);
+                TextWithStyle text = new TextWithStyle(entry.joinedText(), 20, painter.palette().tip(), Font.PLAIN);
                 text.setText(painter.truncateToWidth(text, CONTENT_WIDTH));
                 painter.drawTextWithStyle(List.of(text), new Point(MARGIN, y + RANKING_ROW_HEIGHT - 8));
                 height = RANKING_ROW_HEIGHT + 30;
@@ -2229,10 +2183,10 @@ public class BilibiliLiveReportPainter {
 
         painter.movePos(0, 10);
         painter.drawTextWithStyle(List.of(new TextWithStyle(guardRosterTitle(fetched, options.getGuardListLimit()),
-                CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+                CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
         if (fetched.isEmpty()) {
             painter.drawTextWithStyle(
-                    List.of(new TextWithStyle("名单暂时拉不到", 24, COLOR_TEXT, Font.PLAIN)),
+                    List.of(new TextWithStyle("名单暂时拉不到", 24, painter.palette().text(), Font.PLAIN)),
                     null, true, MARGIN);
             painter.movePos(0, 8);
             return;
@@ -2289,7 +2243,7 @@ public class BilibiliLiveReportPainter {
 
     private int nicknameWidth(CommonPainter painter, String name) {
         return painter.getStringWidthAndHeight(
-                new TextWithStyle(name == null ? "" : UserText.singleLine(name), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
+                new TextWithStyle(name == null ? "" : UserText.singleLine(name), ROSTER_NAME_SIZE, painter.palette().text(), Font.PLAIN)).getFirst();
     }
 
     private int badgeWidth(CommonPainter painter, GuardMember member) {
@@ -2307,7 +2261,7 @@ public class BilibiliLiveReportPainter {
             return 0;
         }
         return painter.getStringWidthAndHeight(
-                new TextWithStyle(text, MEDAL_FONT_SIZE, COLOR_TEXT, style)).getFirst();
+                new TextWithStyle(text, MEDAL_FONT_SIZE, painter.palette().text(), style)).getFirst();
     }
 
     /**
@@ -2321,7 +2275,7 @@ public class BilibiliLiveReportPainter {
         int nameMax = slotWidth - badge.getWidth() - ROSTER_NAME_GAP
                 - (marked ? ROSTER_TAG_GAP + ROSTER_TAG_WIDTH : 0);
         TextWithStyle name = new TextWithStyle(
-                member.name() == null ? "" : UserText.singleLine(member.name()), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN);
+                member.name() == null ? "" : UserText.singleLine(member.name()), ROSTER_NAME_SIZE, painter.palette().text(), Font.PLAIN);
         name.setText(painter.truncateToWidth(name, Math.max(0, nameMax)));
         painter.drawTextWithStyle(List.of(name), new Point(x + badge.getWidth() + ROSTER_NAME_GAP, y + 6));
 
@@ -2338,12 +2292,12 @@ public class BilibiliLiveReportPainter {
      * 不写死像素——换了字体它也还包得住
      */
     private void drawRosterTag(CommonPainter painter, int x, int y) {
-        TextWithStyle text = new TextWithStyle("本场", ROSTER_TAG_FONT_SIZE, COLOR_NAME, Font.PLAIN);
+        TextWithStyle text = new TextWithStyle("本场", ROSTER_TAG_FONT_SIZE, painter.palette().accent(), Font.PLAIN);
         int textWidth = painter.getStringWidthAndHeight(text).getFirst();
         int padding = 8;
         int width = textWidth + padding * 2;
         painter.drawRoundedRectangle(x, y, width, ROSTER_TAG_HEIGHT,
-                ROSTER_TAG_HEIGHT / 2, new Color(255, 236, 242));
+                ROSTER_TAG_HEIGHT / 2, painter.palette().tagBackground());
         painter.drawTextWithStyle(List.of(text), new Point(x + padding, y + 2));
     }
 
@@ -2358,9 +2312,9 @@ public class BilibiliLiveReportPainter {
     private static final int ROSTER_TAG_GAP = 6;
 
     private BufferedImage rosterBadge(CommonPainter painter, GuardMember member) {
-        BufferedImage icon = guardIconImage(member);
+        BufferedImage icon = guardIconImage(painter, member);
         if (icon == null) {
-            icon = solidCircle(guardColor(member.level()), GUARD_ICON_SIZE);
+            icon = solidCircle(painter.palette().guard(member.level()), GUARD_ICON_SIZE);
         }
         GuardMedal medal = member.medal();
         if (medal == null) {
@@ -2370,14 +2324,14 @@ public class BilibiliLiveReportPainter {
         return medal.lit() ? badge : grayscale(badge);
     }
 
-    private BufferedImage guardIconImage(GuardMember member) {
+    private BufferedImage guardIconImage(CommonPainter painter, GuardMember member) {
         String url = null;
         if (member.medal() != null && StringUtil.isNotBlank(member.medal().guardIcon())) {
             url = member.medal().guardIcon();
         } else {
             url = defaultGuardIconUrl(member.level());
         }
-        return url == null ? null : guardIcon(url);
+        return url == null ? null : guardIcon(url, painter.palette());
     }
 
     private static String defaultGuardIconUrl(int level) {
@@ -2391,19 +2345,6 @@ public class BilibiliLiveReportPainter {
             return GUARD_ICON_CAPTAIN;
         }
         return null;
-    }
-
-    private static Color guardColor(int level) {
-        if (level == 1) {
-            return GUARD_COLOR_GOVERNOR;
-        }
-        if (level == 2) {
-            return GUARD_COLOR_COMMANDER;
-        }
-        if (level == 3) {
-            return GUARD_COLOR_CAPTAIN;
-        }
-        return GUARD_COLOR_UNKNOWN;
     }
 
     /**
@@ -2558,7 +2499,7 @@ public class BilibiliLiveReportPainter {
         int widest = 0;
         for (String label : labels) {
             int width = painter.getStringWidthAndHeight(
-                    new TextWithStyle(label, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)).getFirst();
+                    new TextWithStyle(label, RANKING_SCORE_FONT, painter.palette().text(), Font.PLAIN)).getFirst();
             widest = Math.max(widest, width);
         }
         if (widest <= RANKING_SCORE_SLOT) {
@@ -2577,25 +2518,25 @@ public class BilibiliLiveReportPainter {
                                  String scoreLabel, int scoreSlot) {
         int y = painter.getY();
 
-        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, painter.palette().rank(rank), Font.BOLD)),
                 new Point(MARGIN + 4, y + 6));
 
         // 头像取不到就空着位置：让各行的昵称仍然左端对齐，比逐行错开好看
         int avatarX = MARGIN + 40;
-        BufferedImage avatar = avatar(user.userFace());
+        BufferedImage avatar = avatar(user.userFace(), painter.palette());
         if (avatar != null) {
             painter.drawImage(avatar, new Point(avatarX, y + (RANKING_ROW_HEIGHT - RANKING_AVATAR_SIZE) / 2));
         }
 
         int nameX = avatarX + RANKING_AVATAR_SIZE + 10;
-        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(painter, user.displayName()), 24, COLOR_TEXT, Font.PLAIN)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(painter, user.displayName()), 24, painter.palette().text(), Font.PLAIN)),
                 new Point(nameX, y + 6));
 
         // 比例条从昵称右侧的固定起点画到得分左边。槽宽由这一榜最宽的得分决定，各行相同。
         // 不超过默认槽时不收窄；再宽就按字宽留出空隙，长文案才不会压在条子右端上
         int barX = MARGIN + 300;
         int barWidth = Math.max(RANKING_BAR_HEIGHT, CONTENT_WIDTH - 300 - scoreSlot);
-        painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
+        painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, painter.palette().card());
 
         // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度。
         // 长短不分赚亏，颜色分：亏了的画绿，否则一眼看去亏得多的像是排得高
@@ -2603,14 +2544,14 @@ public class BilibiliLiveReportPainter {
         int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
         if (filled > 0) {
             painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
-                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? COLOR_LOSS : rankColor(rank));
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? painter.palette().loss() : painter.palette().rank(rank));
         }
 
         // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：位数多的长文案
         // 会画出右边距外（数再长一两位就被画布截掉）。与醒目留言名单的合计文案同一写法
         int scoreWidth = painter.getStringWidthAndHeight(
-                new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)).getFirst();
-        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)),
+                new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, painter.palette().text(), Font.PLAIN)).getFirst();
+        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, painter.palette().text(), Font.PLAIN)),
                 new Point(WIDTH - MARGIN - scoreWidth, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
@@ -2625,6 +2566,10 @@ public class BilibiliLiveReportPainter {
      * 它与 {@link #loadCover} 同属「向外部要资料的口子」那一族（见该段的说明），
      * 位置留在各自的上下文里没搬走——搬过去只会让读画法的人多跳一次。
      */
+    protected BufferedImage avatar(String url, ReportPalette palette) {
+        return avatar(url);
+    }
+
     protected BufferedImage avatar(String url) {
         if (StringUtil.isBlank(url)) {
             return null;
@@ -2644,6 +2589,14 @@ public class BilibiliLiveReportPainter {
      * 与 {@link #giftIcon} 同一路：取不到就记住这次失败，失败不写本机。
      * 预览与历史重画覆写这一口，不向外取图。
      */
+    protected BufferedImage guardIcon(String url, ReportPalette palette) {
+        return guardIcon(url);
+    }
+
+    protected BufferedImage guardIcon(String url, int size, ReportPalette palette) {
+        return guardIcon(url, size);
+    }
+
     protected BufferedImage guardIcon(String url) {
         return guardIcon(url, GUARD_ICON_SIZE);
     }
@@ -2672,14 +2625,6 @@ public class BilibiliLiveReportPainter {
     /**
      * 名次配色：前三名依次为金、银、铜，其余用主题粉
      */
-    private Color rankColor(int rank) {
-        return switch (rank) {
-            case 1 -> new Color(240, 173, 78);
-            case 2 -> new Color(160, 174, 192);
-            case 3 -> new Color(205, 133, 96);
-            default -> new Color(251, 168, 193);
-        };
-    }
 
     /**
      * 截断过长的昵称，避免顶到比例条
@@ -2690,7 +2635,7 @@ public class BilibiliLiveReportPainter {
      * {@code substring} 会把 emoji 劈成半个代理项，而昵称里 emoji 很常见。
      */
     private String truncate(CommonPainter painter, String name) {
-        return painter.truncateToWidth(new TextWithStyle(UserText.singleLine(name), 24, COLOR_TEXT, Font.PLAIN), NAME_MAX_WIDTH);
+        return painter.truncateToWidth(new TextWithStyle(UserText.singleLine(name), 24, painter.palette().text(), Font.PLAIN), NAME_MAX_WIDTH);
     }
 
     /**
@@ -2815,10 +2760,10 @@ public class BilibiliLiveReportPainter {
         Map<String, Integer> frequencies = frequenciesForWordCloud(platform, uid);
 
         try {
-            BufferedImage cloud = paintWordCloud(platform, uid, frequencies);
+            BufferedImage cloud = paintWordCloud(platform, uid, frequencies, painter.palette());
 
             painter.movePos(0, 6);
-            painter.drawTextWithStyle(List.of(new TextWithStyle("弹幕词云", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+            painter.drawTextWithStyle(List.of(new TextWithStyle("弹幕词云", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
             painter.movePos(0, 8);
             painter.drawImage(ImageUtil.maskToRoundedRectangle(cloud, CARD_RADIUS));
         } catch (Exception e) {
@@ -2833,7 +2778,11 @@ public class BilibiliLiveReportPainter {
      * 从成品图上反推「哪几个像素是哪个词」做不到
      */
     BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
-        WordCloud cloud = composeWordCloud(platform, uid, frequencies);
+        return paintWordCloud(platform, uid, frequencies, ReportPalette.DEFAULT);
+    }
+
+    BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies, ReportPalette palette) {
+        WordCloud cloud = composeWordCloud(platform, uid, frequencies, palette);
 
         // 放不下的词被静默丢掉，报告看上去仍然完整——「这一场少了几十个词」只有日志说得出来。
         // 恰一行：每丢一个词打一行会把日志刷爆，一行不打就是静默
@@ -2843,14 +2792,14 @@ public class BilibiliLiveReportPainter {
                     platform, uid, total, cloud.layout().dropped());
         }
 
-        return cloudRenderer().render(cloud.layout(), CONTENT_WIDTH, cloud.height());
+        return cloudRenderer().render(cloud.layout(), CONTENT_WIDTH, cloud.height(), palette);
     }
 
     /**
      * 排一次词云版式
      */
     WordCloudLayout.Result layoutWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
-        return composeWordCloud(platform, uid, frequencies).layout();
+        return composeWordCloud(platform, uid, frequencies, ReportPalette.DEFAULT).layout();
     }
 
     /**
@@ -2867,7 +2816,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 收词、定高、排版，三件事一趟做完
      */
-    private WordCloud composeWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+    private WordCloud composeWordCloud(String platform, Long uid, Map<String, Integer> frequencies, ReportPalette palette) {
         // 🔴 词频相同时按词本身排，且排序要落在 limit 之前：只按词频排的话，
         // 尾部同频的那一批里究竟哪几个进得了前 72 名，由 Map 的遍历顺序决定。
         // 屏蔽词也在 limit 之前挑掉，让出的位子由后面的词补上。
@@ -2885,7 +2834,7 @@ public class BilibiliLiveReportPainter {
 
         int height = WordCloudLayout.recommendedHeight(words.size(), CLOUD_HEIGHT);
         return new WordCloud(height, WordCloudLayout.layout(words, CONTENT_WIDTH, height,
-                cloudSeed(platform, uid), cloudRenderer()));
+                cloudSeed(platform, uid), cloudRenderer(), palette));
     }
 
     /**
@@ -2918,7 +2867,7 @@ public class BilibiliLiveReportPainter {
         int ringSize = AVATAR_SIZE + AVATAR_RING * 2;
         BufferedImage ring = new BufferedImage(ringSize, ringSize, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = ring.createGraphics();
-        graphics.setColor(Color.WHITE);
+        graphics.setColor(painter.palette().avatarRing());
         graphics.fillRect(0, 0, ringSize, ringSize);
         graphics.dispose();
         painter.drawImage(ImageUtil.maskToCircle(ring), new Point(x - AVATAR_RING, y - AVATAR_RING));
@@ -2930,6 +2879,10 @@ public class BilibiliLiveReportPainter {
      * <p>
      * 属「向外部要资料的口子」那一族，见该段的说明。
      */
+    protected BufferedImage loadCover(LiveStreamerInfo source, ReportPalette palette) {
+        return loadCover(source);
+    }
+
     protected BufferedImage loadCover(LiveStreamerInfo source) {
         if (source.getRoomId() == null) {
             return null;
@@ -3146,6 +3099,10 @@ public class BilibiliLiveReportPainter {
     /**
      * 主播头像：取地址、下图、裁成圆形，实现见 {@link ReportSharedStyle#faceImage}
      */
+    protected BufferedImage faceImage(LiveStreamerInfo source, ReportPalette palette) {
+        return faceImage(source);
+    }
+
     protected BufferedImage faceImage(LiveStreamerInfo source) {
         return ReportSharedStyle.faceImage(api, source);
     }

@@ -212,3 +212,13 @@ asyncio.run(main())
 
 `Ctrl-C` 即可，优雅停机实测 0.7 秒。工作目录下会留下 `data.json`、`state.json`、
 `logs/`，直接删掉整个目录就干净了。**不会有 `cookies.json`** —— 匿名模式从头到尾没碰过凭据。
+
+## 连接数量与等待时间
+
+现有配置可直接使用，无需增加部署步骤。`novabot.core.event-stream` 下的默认值：
+`max-connections: 256`、`max-pending-connections: 128`、`max-connections-per-source: 128`、
+`max-concurrent-handshakes: 64`、`handshake-timeout-ms: 10000`、`io-timeout-ms: 10000`。
+同一代理或隧道接入的面板共用每来源额度，一条连接可接收全部房间。
+新握手返回 HTTP 503 时，按 `Retry-After: 5` 至少等 5 秒再试；日志会给出可调整的键，
+需要更多面板时调大对应额度后重启。所有值填写正整数，零或负数使用默认值并记日志。
+写入等待到期后按原有序号重新连接与回补。完整约定见[事件源协议 §1](protocol.md#1-传输与端点)。
