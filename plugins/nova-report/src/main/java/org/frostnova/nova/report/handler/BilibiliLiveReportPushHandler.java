@@ -106,7 +106,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 () -> painter.paint(event.getPlatform(), event.getSource(), options, palette.palette()));
 
         if (liveData != null) liveData.getLiveStartTime(event.getPlatform(), event.getSource().getUid())
-                .ifPresent(start -> image.ifPresent(base64 -> rendered.put(event.getPlatform(), event.getSource().getUid(),
+                .ifPresent(start -> image.ifPresent(base64 -> rendered.putOriginal(event.getPlatform(), event.getSource().getUid(),
                         start, options, palette.palette(), base64)));
 
         String report = image
