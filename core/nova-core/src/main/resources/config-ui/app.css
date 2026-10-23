@@ -344,8 +344,9 @@ html.nobar #main{padding-bottom:20px}
 .grp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;
   margin:0;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .grp-head:hover{color:var(--accent-text)}
-/* 「改过 n 项」：这一组里与默认值不同的行数，一项没改过就整块不显示 */
-.grp-changed{font-size:var(--fs-xs);color:var(--accent);border:1px solid var(--accent);
+/* 「改过 n 项」：这一组里与默认值不同的行数，一项没改过就整块不显示。
+   描边与状态胶囊一样只取四成，字仍是满色 */
+.grp-changed{font-size:var(--fs-xs);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
   border-radius:var(--r-pill);padding:0 6px;line-height:16px;white-space:nowrap}
 .grp-changed:empty{display:none}
 .card-desc{padding:10px 16px 0;font-size:var(--fs-sm);color:var(--dim);line-height:1.6}
@@ -368,8 +369,8 @@ html.nobar #main{padding-bottom:20px}
 /* 触屏上手指比鼠标粗，问号放大一档 */
 @media (pointer:coarse){.settings-help{width:28px;height:28px;cursor:pointer}}
 /* 「已改」＝与默认值不同。它与「改了还没保存」（.field.changed 那层底色）是两件事 */
-.chgdot{font-size:var(--fs-xs);color:var(--accent);border:1px solid var(--accent);border-radius:var(--r-pill);
-  padding:0 6px;line-height:16px}
+.chgdot{font-size:var(--fs-xs);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
+  border-radius:var(--r-pill);padding:0 6px;line-height:16px}
 .defline{font-size:var(--fs-xs);color:var(--dim);margin-top:5px}
 /* 键名默认收着：使用者认人话名，而运维手里的报错信息里只有键名 */
 .keyname{display:none;margin-top:5px;font-family:var(--mono);font-size:var(--fs-xs);color:var(--dim);
