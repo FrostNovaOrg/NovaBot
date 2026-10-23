@@ -242,6 +242,12 @@ public class BilibiliReportLayoutController {
             JSONObject item = new JSONObject();
             item.put("id", preset.id());
             item.put("name", preset.name());
+            ReportPalette palette = preset.palette();
+            item.put("colors", JSONObject.of(
+                    "background", colorHex(palette.background()),
+                    "card", colorHex(palette.card()),
+                    "text", colorHex(palette.text()),
+                    "accent", colorHex(palette.accent())));
             items.add(item);
         }
 
@@ -252,6 +258,10 @@ public class BilibiliReportLayoutController {
         result.put("stored", paletteSettings.storedDefault());
         result.put("factory", ReportPaletteSettings.FACTORY_DEFAULT);
         return result;
+    }
+
+    private static String colorHex(java.awt.Color color) {
+        return String.format(Locale.ROOT, "#%06x", color.getRGB() & 0xffffff);
     }
 
     /**

@@ -57,7 +57,7 @@ globalThis.fetch = async (url, opts = {}) => {
   else if (url.includes('/bot/targets?type=group')) result = {items: [
     {sender: 'qq', num: 11, name: '相同群'}, {sender: 'qq', num: 12, name: '新群'}]};
   else if (url.includes('/bot/targets?type=friend')) result = {items: [
-    {sender: 'qq', num: 21, name: '已有好友'}, {sender: 'qq', num: 22, name: '新好友'}]};
+    {sender: 'qq', num: 21, nickname: '已有好友'}, {sender: 'qq', num: 22, nickname: '新好友'}]};
   return {status: 200, json: async () => result};
 };
 await push.loadPushPage();
@@ -94,7 +94,8 @@ await check('保存条只随当前通知的改动出现，恢复操作独立在�
   assert.equal(bar.hidden, true);
   await byText('开播通知').click();
   assert.equal(bar.hidden, false);
-  const reset = byText('恢复出厂默认');
+  const reset = right().find(node => node.tagName === 'button' && node.textContent.startsWith('恢复「'));
+  assert.equal(reset.textContent, '恢复「开播通知」的出厂默认');
   assert.notEqual(reset.parentNode, bar);
   assert.ok(reset.className.includes('lnkbtn'));
 });
@@ -117,14 +118,15 @@ await check('保存失败保留草稿，重试只保存当前通知', async () =
 // 故障：恢复文字链不再确认、恢复错通知，或把尚未保存的草稿一起存下去。
 await check('恢复仍先确认，只恢复当前通知，取消不写入', async () => {
   await byText('下播通知').click();
+  assert.ok(byText('恢复「下播通知」的出厂默认'));
   await edit();
   const before = posts.length;
-  let pending = byText('恢复出厂默认').click();
+  let pending = right().find(node => node.tagName === 'button' && node.textContent.startsWith('恢复「')).click();
   const dialog = document.body.querySelector('.ask');
   await dialog.dispatchEvent({type: 'click', target: dialog.querySelector('[data-act="no"]')});
   await pending;
   assert.equal(posts.length, before);
-  pending = byText('恢复出厂默认').click();
+  pending = right().find(node => node.tagName === 'button' && node.textContent.startsWith('恢复「')).click();
   await dialog.dispatchEvent({type: 'click', target: dialog.querySelector('[data-act="yes"]')});
   await pending;
   await waitFor(() => posts.length === before + 1 && byText('保存默认模板')?.disabled);
@@ -160,6 +162,21 @@ await check('群和好友各自分组，已添加在组末；两类添加都选�
     assert.equal(location.hash, '#/push/1/qq|' + type + '|' + num);
     assert.equal(idNode('push-drawer').hidden, true);
   }
+});
+
+await check('搜索只命中好友时不保留空群标题，两组都空时显示提示', async () => {
+  await push.showPush('1', '');
+  await byText('＋ 添加通道').click();
+  const body = idNode('push-drawer-body');
+  const search = body.querySelector('input');
+  search.value = '新好友';
+  await search.dispatchEvent({type: 'input', target: search});
+  assert.deepEqual(body.querySelectorAll('h4').map(node => node.textContent), ['好友 1 个']);
+  search.value = 'missing';
+  await search.dispatchEvent({type: 'input', target: search});
+  assert.equal(body.querySelectorAll('h4').length, 0);
+  assert.ok(all(body).some(node => node.textContent.includes('未找到匹配')));
+  push.closeDrawer();
 });
 
 // 故障：小窗口左树消失后无法辨认并切换主播和通道。

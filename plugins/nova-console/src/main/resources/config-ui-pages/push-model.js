@@ -746,6 +746,7 @@ export function previewRequestBody(params, target, revenueVisible, user) {
     return body;
   }
   if (user) { body.streamerPlatform = user.platform; body.streamerUid = user.uid; }
+  body.reportPalette = target.reportPalette || null;
   body.platform = target.platform;
   if (target.type != null && target.type !== '') {
     body.type = Number(target.type);

@@ -284,7 +284,7 @@ public class ConsoleDemoRecorderTest {
                 "/alert/channels", "/bot/console", "/handlers", "/login", "/pages", "/platforms", "/schema",
                 "/status", "/values", "/vocab", "/event-tokens", "/setup/bot", "/setup/state", "/datasource",
                 "/state", "/push-history", "/at-all/quota", "/templates", "/timeline/days", "/streamers",
-                "/report/layout-options")) {
+                "/report/layout-options", "/report/palettes")) {
             JSONObject body = capture(path);
             if (path.equals("/auth/passkeys")) assertEquals(2, body.getJSONArray("passkeys").size());
             if (path.equals("/event-tokens")) assertEquals(2, body.getJSONArray("tokens").size());

@@ -6,6 +6,7 @@ import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportReplayPainter;
 import org.frostnova.nova.report.painter.ReportImageDiskCache;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -49,6 +50,9 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
     @Autowired(required = false)
     private AbstractDataSource dataSource;
 
+    @Autowired(required = false)
+    private ReportPalettes palettes = ReportPalettes.factory();
+
     @Autowired
     public BilibiliLiveReportRedrawer(NovaCommonPainterFactory factory, BilibiliApiUtil api, FontUtil fontUtil,
                                       NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory,
@@ -85,7 +89,7 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
             painter.setDataSource(dataSource);
             // 全默认版式，数据卡片各张的开关不看，顺序也一样：重画的这一场不属于哪个推送目标，
             // 没有哪一份版式算它的；按某个群挑过的卡来画，看的人会以为那几项这场没有数据
-            return painter.render(new BilibiliLiveReportOptions());
+            return painter.render(new BilibiliLiveReportOptions(), palettes.byDefault().palette());
         } catch (Exception e) {
             log.error("重新绘制 {} 的历史报告失败", detail.uname(), e);
             return Optional.empty();

@@ -182,7 +182,8 @@ class WordCloudBlockWordsTest {
             assertFalse(java.util.Arrays.equals(before, after), "当前名单变化后，历史图仍相同");
             var expected = new CaptureReplay(factory, quietApi(), fontUtil, properties, history, detail, images);
             expected.setDataSource(source);
-            byte[] reference = expected.render(new BilibiliLiveReportOptions()).orElseThrow();
+            byte[] reference = expected.render(new BilibiliLiveReportOptions(),
+                    ReportPalettes.factory().byDefault().palette()).orElseThrow();
             assertEquals(List.of("唱歌"), oneCloud(expected.drawn), "两份当前名单都应过滤");
             org.junit.jupiter.api.Assertions.assertArrayEquals(reference, after, "历史入口画的图未采用当前两份名单");
         }

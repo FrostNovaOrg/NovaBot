@@ -738,6 +738,7 @@ class StreamerApiTest {
 
         assertEquals(200, response.getStatusCode().value());
         assertEquals(MediaType.IMAGE_PNG, response.getHeaders().getContentType());
+        assertEquals("no-store", response.getHeaders().getCacheControl());
         assertArrayEquals(redrawn, (byte[]) response.getBody());
         assertEquals(1, redrawnFrom.size());
         assertEquals(todayStart, redrawnFrom.get(0).startTime(),

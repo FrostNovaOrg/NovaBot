@@ -115,6 +115,48 @@ class BilibiliLiveReportReplayPainterTest {
     }
 
     @Test
+    void historicalReportFollowsCurrentDefaultAndClassicKeepsEveryPixel(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws IOException {
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
+        var defaults = new org.frostnova.nova.core.service.PushTemplateDefaults(properties);
+        var palettes = new ReportPalettes(new org.frostnova.nova.core.service.ReportPaletteSettings(defaults));
+        var redrawer = new org.frostnova.nova.report.service.BilibiliLiveReportRedrawer(
+                factory, api, fontUtil, new NovaBilibiliProperties(), roomInfoHistory, ReportImageDiskCache.none());
+        var beans = new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+        beans.registerSingleton("reportPalettes", palettes);
+        var injection = new org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor();
+        injection.setBeanFactory(beans);
+        injection.processInjection(redrawer);
+        assertTrue(defaults.saveReportPalette("warm").isEmpty());
+        BufferedImage warm = image(redrawer.redraw(detail()).orElseThrow());
+        assertEquals(0, pixelDifferences(image(painter(detail()).render(new BilibiliLiveReportOptions(),
+                ReportPalette.WARM).orElseThrow()), warm), "历史报告没有使用默认模板的暖阳配色");
+        assertTrue(defaults.saveReportPalette("night").isEmpty());
+        BufferedImage night = image(redrawer.redraw(detail()).orElseThrow());
+        assertEquals(0, pixelDifferences(image(painter(detail()).render(new BilibiliLiveReportOptions(),
+                ReportPalette.NIGHT).orElseThrow()), night), "切换默认配色后返回了旧图");
+        assertTrue(defaults.saveReportPalette("classic").isEmpty());
+        BufferedImage classic = image(redrawer.redraw(detail()).orElseThrow());
+        BufferedImage previous = image(redraw(new BilibiliLiveReportOptions()));
+        long differing = pixelDifferences(previous, classic);
+        System.out.println("HISTORICAL_CLASSIC_DIFF " + classic.getWidth() + "x" + classic.getHeight() + " differing=" + differing);
+        assertEquals(0, differing, "经典配色与改动前的历史报告不同");
+        verifyNoInteractions(api, roomInfoHistory);
+    }
+
+    private static long pixelDifferences(BufferedImage expected, BufferedImage actual) {
+        assertEquals(expected.getWidth(), actual.getWidth());
+        assertEquals(expected.getHeight(), actual.getHeight());
+        long differing = 0;
+        for (int y = 0; y < expected.getHeight(); y++) {
+            for (int x = 0; x < expected.getWidth(); x++) {
+                if (expected.getRGB(x, y) != actual.getRGB(x, y)) differing++;
+            }
+        }
+        return differing;
+    }
+
+    @Test
     @DisplayName("③ 同一份数据、同一套版式：重画图与下播出图像素尺寸相同")
     void redrawnImageHasSameSize() throws IOException {
         BufferedImage live = image(paintLive(new BilibiliLiveReportOptions()));
