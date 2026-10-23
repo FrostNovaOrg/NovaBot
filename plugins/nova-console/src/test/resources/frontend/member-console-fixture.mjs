@@ -136,7 +136,7 @@ const fetch = async (url, options = {}) => {
   pending--; return {status: path === '/login' ? 403 : 200, json: async () => body};
 };
 const context = vm.createContext({document, location, window, fetch, console, URL, URLSearchParams, Date, Set, Map, Promise,
-  setTimeout: startupTimeout, clearTimeout: id => { if (recovery) timers.delete(id); else if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval: (...args) => { const timer = setInterval(...args); timer.unref(); return timer; }, clearInterval, AbortController});
+  setTimeout: startupTimeout, clearTimeout: id => { if (recovery) timers.delete(id); else if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval: (...args) => { const timer = setInterval(...args); timer.unref(); return timer; }, clearInterval, AbortController, performance});
 const stubs = {
   'bot.js': ['bindBotForm','botFormHtml','fillBotForms'],
   'links.js': ['focusStation','loadTargets','mountLinkCard','refreshLinks','sendTestMessage'],
