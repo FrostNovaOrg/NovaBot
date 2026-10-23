@@ -101,7 +101,7 @@ export function totpSwitchView(state) {
  */
 function attachEye(input) {
   const wrap = el('div', 'secret');
-  const eye = el('button');
+  const eye = el('button', 'ghost sm');
   eye.type = 'button';
   input.parentNode.insertBefore(wrap, input);
   wrap.append(input, eye);
@@ -308,8 +308,8 @@ async function enrollFlow(flow, result, settle) {
       + '<div class="totp-confirm">'
       + '<input id="totp-enroll-pwd" type="password" placeholder="当前密码" autocomplete="current-password">'
       + '<input id="totp-enroll-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
-      + '<button type="button" id="totp-enroll-ok">确认启用</button>'
-      + '<button type="button" id="totp-enroll-no">取消</button>'
+      + '<button type="button" class="primary sm" id="totp-enroll-ok">确认启用</button>'
+      + '<button type="button" class="ghost sm" id="totp-enroll-no">取消</button>'
       + '</div></div></div>';
 
     $('#totp-enroll-no').addEventListener('click', () => settle(false));
@@ -337,8 +337,8 @@ function disableFlow(flow, result, settle) {
     + '<div class="totp-confirm">'
     + '<input id="totp-off-pwd" type="password" placeholder="当前密码" autocomplete="current-password">'
     + '<input id="totp-off-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
-    + '<button type="button" id="totp-off-ok">确认关闭</button>'
-    + '<button type="button" id="totp-off-no">取消</button>'
+    + '<button type="button" class="primary sm" id="totp-off-ok">确认关闭</button>'
+    + '<button type="button" class="ghost sm" id="totp-off-no">取消</button>'
     + '</div>';
 
   $('#totp-off-no').addEventListener('click', () => settle(true));
@@ -381,8 +381,8 @@ async function renderTotpSetup() {
     + '<div class="totp-confirm">'
     + '<input id="totp-pwd" type="password" placeholder="当前密码" autocomplete="current-password">'
     + '<input id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
-    + '<button type="button" id="totp-enroll">确认绑定</button>'
-    + '<button type="button" id="totp-skip">暂不绑定</button>'
+    + '<button type="button" class="primary sm" id="totp-enroll">确认绑定</button>'
+    + '<button type="button" class="ghost sm" id="totp-skip">暂不绑定</button>'
     + '</div><span class="status" id="totp-msg"></span>'
     + '</div></div>';
 
@@ -536,13 +536,11 @@ function acceptedLine() {
  * 而这件事从界面上完全看不出来。整篇平铺在设置页上也不行：要翻过它才看得见下面的设置，
  * 而真正想读协议的人本来就是专程来的——给一颗按钮，点开在弹层里读。
  *
- * 撤回那颗按钮是红的，且要过一次确认：撤回把整台机器打回未签态，所有人都要重新同意
- * 才进得了控制台。一次误点之后<b>什么也没坏</b>，只是全体被关在门外——那看起来像面板故障，
- * 没人会想到是自己刚才碰了一下。
+ * 撤回那颗按钮不在这一行：它在设置页最底下的「危险操作」区（见 agreementDangerZone）。
  */
 function agreementCard() {
   const box = authRow('auth-agreement', '使用协议',
-    '撤回后，所有用户需重新同意协议才能进入控制台。');
+    '本机已同意的协议版本与时间。撤回同意在本页最底下的「危险操作」里。');
   box.cell.className = 'agreement-actions';
   keyLine(box.meta, AGREEMENT_VERSION_KEY);
   keyLine(box.meta, AGREEMENT_TIME_KEY);
@@ -559,22 +557,43 @@ function agreementCard() {
   }));
   box.cell.appendChild(view);
 
+  const record = el('div', 'desc');
+  record.id = 'agreement-record';
+  record.textContent = acceptedLine();
+  box.row.appendChild(record);
+  return box.row;
+}
+
+/**
+ * 设置页最底下的「危险操作」区：撤回对使用协议的同意
+ *
+ * 单独放在页底，不和「查看全文」这类常用动作挨着，也不在页上压过别的操作。
+ * 按钮是危险按钮（红字红描边），且要过一次确认：撤回把整台机器打回未签态，所有人都要重新同意
+ * 才进得了控制台。一次误点之后<b>什么也没坏</b>，只是全体被关在门外——那看起来像面板故障，
+ * 没人会想到是自己刚才碰了一下。搜索或「只看改过的」时整块收起（filterSettings 里切）。
+ * @return {HTMLElement} 那一块
+ */
+export function agreementDangerZone() {
+  const zone = el('section', 'group danger-zone');
+  zone.id = 'settings-danger';
+  const head = el('h2');
+  head.textContent = '危险操作';
+  zone.appendChild(head);
+
+  const box = authRow('agreement-danger', '撤回对使用协议的同意',
+    '撤回后，所有用户需重新同意协议才能进入控制台，当前登录会话将立即结束。');
+  box.row.className = 'field';
   const button = el('button', 'danger');
   button.type = 'button';
   button.id = 'agreement-revoke';
   button.textContent = '撤回同意';
   box.cell.appendChild(button);
 
-  const record = el('div', 'desc');
-  record.id = 'agreement-record';
-  record.textContent = acceptedLine();
-  box.row.appendChild(record);
-
   const result = el('div', 'al-r');
   box.row.appendChild(result);
-
   button.addEventListener('click', () => revokeAgreement(button, result));
-  return box.row;
+  zone.appendChild(box.row);
+  return zone;
 }
 
 /**

@@ -344,7 +344,7 @@ function shell(id, title, desc) {
   const foot = el('div', 'al-f');
   // 结果在按钮上方：字一长若折到按钮下面，这一张卡的按钮会被顶上去，三张卡不再齐平
   const result = el('span', 'al-r');
-  const test = el('button', 'ghost');
+  const test = el('button', 'ghost sm');
   test.type = 'button';
   test.textContent = '发送测试告警';
   test.addEventListener('click', () => sendTest(id, test));

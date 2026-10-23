@@ -113,7 +113,7 @@ public class OneBotHealthProbe implements HealthProbe {
                         + "，最慢 " + item.getValue().getLatency().max().map(this::format).orElse("未知")
                         + "），接口仍然通，但带图的推送可能因超时被丢弃。"
                         + "先用 curl 直接调一次 OneBot 实现：curl 快而本程序慢，说明慢在本程序这一侧"
-                        + "（查过的方向：cgroup 内存软上限节流、GC、线程占满），两边都慢才是 OneBot 实现的问题");
+                        + "（多半是本机内存或 CPU 不够用），两边都慢才是 OneBot 实现的问题");
             }
         }
 

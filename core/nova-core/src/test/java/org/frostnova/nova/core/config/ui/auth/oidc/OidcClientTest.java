@@ -1,5 +1,9 @@
 package org.frostnova.nova.core.config.ui.auth.oidc;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -9,7 +13,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.mock.http.client.MockClientHttpRequest;
@@ -312,12 +320,15 @@ class OidcClientTest extends OidcTestSupport {
 
     @Test
     void doesNotUseForwardedHeadersAsCallbackConfiguration() {
+        config.setRedirectUri("");
+        rebuildClient();
         var request = request();
+        request.setServerName("localhost");
         request.addHeader("X-Forwarded-Host", "other.example.com");
         request.addHeader("X-Forwarded-Proto", "http");
         request.addHeader("X-Forwarded-Prefix", "/other");
         var authorization = client.startLogin(request);
-        assertEquals("https://console.example.com/app/config/api/oidc/callback",
+        assertEquals("https://localhost/app/config/api/oidc/callback",
                 query(authorization.uri().getRawQuery()).get("redirect_uri"));
     }
 
@@ -558,6 +569,86 @@ class OidcClientTest extends OidcTestSupport {
             begin();
         });
         assertEquals(OidcException.Kind.CONFIGURATION, error.kind());
+    }
+
+    // 回调地址留空时，用本机地址打开控制台仍按请求推导。
+    @ParameterizedTest
+    @ValueSource(strings = {"127.0.0.1", "[::1]", "localhost", "LOCALHOST"})
+    void derivesCallbackForLocalAddressWhenUnset(String host) {
+        config.setRedirectUri("");
+        rebuildClient();
+        var request = request();
+        request.setScheme("http");
+        request.setServerName(host);
+        request.setServerPort(8080);
+        assertEquals("http://" + host + ":8080/app/config/api/oidc/callback",
+                query(client.startLogin(request).uri().getRawQuery()).get("redirect_uri"));
+    }
+
+    // 回调地址留空时，其他地址打开控制台要求先填回调地址，提示里给出配置项名。
+    @ParameterizedTest
+    @ValueSource(strings = {"console.example.com", "192.0.2.10", "localhost.example.com"})
+    void requiresConfiguredCallbackForOtherAddresses(String host) {
+        config.setRedirectUri("");
+        rebuildClient();
+        var request = request();
+        request.setServerName(host);
+        Logger logger = (Logger) LoggerFactory.getLogger(OidcClient.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            var error = assertThrows(OidcException.class, () -> client.startLogin(request));
+            assertEquals(OidcException.Kind.CONFIGURATION, error.kind());
+            assertTrue(error.getMessage().contains("redirect-uri"), error.getMessage());
+            assertEquals(1, logs.list.size());
+            assertTrue(logs.list.get(0).getFormattedMessage().contains("novabot.core.config-ui.oidc.redirect-uri"));
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
+    // 填了回调地址时，无论从哪个地址打开都用填的值。
+    @ParameterizedTest
+    @ValueSource(strings = {"console.example.com", "other.example.com", "localhost"})
+    void configuredCallbackIsUsedForEveryAddress(String host) {
+        var request = request();
+        request.setServerName(host);
+        assertEquals(config.getRedirectUri(), query(client.startLogin(request).uri().getRawQuery()).get("redirect_uri"));
+    }
+
+    // 启用统一登录而回调地址留空时，启动提示一次去填哪一项；填了或没启用时不提示。
+    @Test
+    void startupNoticeAsksForCallbackOnlyWhenUnset() {
+        Logger logger = (Logger) LoggerFactory.getLogger(OidcClient.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start(); logger.addAppender(logs);
+        try {
+            config.setRedirectUri("");
+            rebuildClient();
+            publishReady();
+            assertEquals(1, logs.list.size());
+            assertEquals(Level.WARN, logs.list.get(0).getLevel());
+            String notice = logs.list.get(0).getFormattedMessage();
+            assertTrue(notice.contains("novabot.core.config-ui.oidc.redirect-uri") && notice.contains("回调地址"), notice);
+            for (String text : List.of("设置 → 高级选项 → 登录与安全 · 高级", "统一登录 · 回调地址", "完全一致", "重启")) {
+                assertTrue(notice.contains(text));
+            }
+
+            config.setRedirectUri(CALLBACK);
+            rebuildClient();
+            publishReady();
+            config.setRedirectUri("");
+            config.setEnabled(false);
+            rebuildClient();
+            publishReady();
+            assertEquals(1, logs.list.size());
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
+    private void publishReady() {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(OidcClient.class, () -> client);
+            context.refresh();
+            context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0], context, Duration.ZERO));
+        }
     }
 
 }

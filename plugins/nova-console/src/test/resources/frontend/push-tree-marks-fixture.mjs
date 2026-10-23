@@ -69,7 +69,25 @@ function rule(css, selector) {
   return end < 0 ? {} : decls(css.slice(open + 1, end));
 }
 
+// 字号一律引档位变量（var(--fs-…)），档位定义在核心的 product-ui.css 里。
+// 壳经 TOKENS_CSS 递进来；没递时按源码树里 app.css 的邻居找。读不出就红：
+// 解不出档位时字号读成空，量的就不是字宽了
+const tokensCssPath = process.env.TOKENS_CSS || join(dirname(coreCssPath), 'product-ui.css');
+let tokensCss;
+try {
+  tokensCss = readFileSync(tokensCssPath, 'utf8');
+} catch {
+  console.log('跑了 1 格，红 1 格');
+  console.log('  红：核心的 product-ui.css 取不到（指着 ' + tokensCssPath + '）');
+  process.exit(1);
+}
+
 function px(value) {
+  const token = String(value || '').trim().match(/^var\((--[\w-]+)\)$/);
+  if (token) {
+    const def = tokensCss.match(new RegExp(token[1] + '\\s*:\\s*(-?[\\d.]+)px'));
+    return def ? Number(def[1]) : null;
+  }
   const m = String(value || '').match(/^(-?[\d.]+)(px)?$/);
   return m ? Number(m[1]) : null;
 }

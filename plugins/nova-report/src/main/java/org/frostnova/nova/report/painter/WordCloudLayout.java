@@ -25,10 +25,6 @@ final class WordCloudLayout {
     record Placement(String text, int rank, int fontSize, Rectangle box, Color color) {}
     record Result(List<Placement> placements, Rectangle bounds, double fillRatio, int dropped) {}
     interface Measurer { Dimension measure(String text, int fontSize); }
-    private static final Color[] PALETTE = {
-        new Color(0xE0479E), new Color(0x7A4DFF), new Color(0xA38BFF),
-        new Color(0x00A6D6), new Color(0x6E6A86), new Color(0xF2A93B)
-    };
     // 相对锚点只随名次生效，不硬编码任何词。横坐标放宽到约 .05～.95 这条带里，让词往两侧铺。
     private static final double[][] ANCHORS = {
         {.50,.49}, {.76,.29}, {.24,.66}, {.27,.27}, {.84,.63},
@@ -49,6 +45,10 @@ final class WordCloudLayout {
         return Math.min(maxHeight,preferred);
     }
     static Result layout(List<Word> words, int width, int height, long seed, Measurer measurer) {
+        return layout(words, width, height, seed, measurer, ReportPalette.DEFAULT);
+    }
+
+    static Result layout(List<Word> words, int width, int height, long seed, Measurer measurer, ReportPalette palette) {
         Map<String,Integer> merged=new TreeMap<>();
         if(words!=null) for(Word w:words) {
             if(w==null || w.text()==null || w.text().isBlank() || w.count()<=0) continue;
@@ -60,16 +60,16 @@ final class WordCloudLayout {
         sorted.sort(Comparator.comparingInt(Word::count).reversed().thenComparing(Word::text));
         if (sorted.isEmpty() || width <= 2*FRAME_MARGIN || height <= 2*FRAME_MARGIN)
             return new Result(List.of(), new Rectangle(), 0, sorted.size());
-        if(sorted.size()<=12) return sparse(sorted,width,height,seed,measurer);
-        return dense(sorted,width,height,seed,measurer);
+        if(sorted.size()<=12) return sparse(sorted,width,height,seed,measurer,palette);
+        return dense(sorted,width,height,seed,measurer,palette);
     }
     /** 排完量外接框宽：不到版面八成五就整体放大字号重排，放不下再照缩放档往下缩保词。 */
-    private static Result dense(List<Word> sorted,int width,int height,long seed,Measurer measurer) {
+    private static Result dense(List<Word> sorted,int width,int height,long seed,Measurer measurer,ReportPalette palette) {
         double target=width*.85;
         Result best = null;
         int prevWidth = -1;
         for (double scale : new double[]{1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8}) {
-            Result r = place(sorted,width,height,seed,measurer,scale);
+            Result r = place(sorted,width,height,seed,measurer,scale,palette);
             best = wider(best, r);
             if (r.dropped()>0) break;
             if (r.bounds().width>=target) return r;
@@ -78,7 +78,7 @@ final class WordCloudLayout {
         }
         if (best!=null && best.dropped()==0) return best;
         for (double scale : new double[]{1.0, .94, .88, .78, .68, .58, .48}) {
-            Result r = place(sorted,width,height,seed,measurer,scale);
+            Result r = place(sorted,width,height,seed,measurer,scale,palette);
             if (best == null || r.placements().size() > best.placements().size()) best=r;
             if (r.dropped()==0) break;
         }
@@ -108,12 +108,12 @@ final class WordCloudLayout {
         return r.bounds().width>=best.bounds().width?r:best;
     }
     /** 少词时用短行词团，每行限宽放开到版面满宽；排完同样量外接框宽度决定要不要放大字号。 */
-    private static Result sparse(List<Word> words,int width,int height,long seed,Measurer measurer) {
+    private static Result sparse(List<Word> words,int width,int height,long seed,Measurer measurer,ReportPalette palette) {
         double target=width*.85;
         Result best=null;
         int prevWidth=-1;
         for(double scale:new double[]{1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.8}) {
-            Result r=rows(words,width,height,seed,measurer,scale);
+            Result r=rows(words,width,height,seed,measurer,scale,palette);
             if(r==null) break;
             best=wider(best,r);
             if(r.dropped()>0) break;
@@ -123,7 +123,7 @@ final class WordCloudLayout {
         }
         if(best!=null && best.dropped()==0) return best;
         for(double scale:new double[]{1.0,.88,.76,.64}) {
-            Result r=rows(words,width,height,seed,measurer,scale);
+            Result r=rows(words,width,height,seed,measurer,scale,palette);
             if(r==null) continue;
             if(best==null || r.dropped()<best.dropped()) best=r;
             if(r.dropped()==0) break;
@@ -131,7 +131,7 @@ final class WordCloudLayout {
         return best==null?new Result(List.of(),new Rectangle(),0,words.size()):best;
     }
     /** 一趟行排；整团竖着放不下时回 null。 */
-    private static Result rows(List<Word> words,int width,int height,long seed,Measurer measurer,double scale) {
+    private static Result rows(List<Word> words,int width,int height,long seed,Measurer measurer,double scale,ReportPalette palette) {
         List<Placement> list=new ArrayList<>();
         List<List<Placement>> rows=new ArrayList<>();List<Placement> row=new ArrayList<>();
         int max=words.get(0).count(),min=words.get(words.size()-1).count();
@@ -149,7 +149,7 @@ final class WordCloudLayout {
             while(d.width>rowLimit && size>FONT_SIZE_MIN) d=measurer.measure(label,--size);
             if(d.width<=0 || d.height<=0 || d.width>rowLimit) continue;
             if(!row.isEmpty() && used+22+d.width>rowLimit) {rows.add(row);row=new ArrayList<>();used=0;}
-            row.add(new Placement(label,i+1,size,new Rectangle(0,0,d.width,d.height),color(i,seed)));
+            row.add(new Placement(label,i+1,size,new Rectangle(0,0,d.width,d.height),color(i,seed,palette)));
             used+=d.width+(row.size()>1?22:0);
         }
         if(!row.isEmpty())rows.add(row);
@@ -172,7 +172,7 @@ final class WordCloudLayout {
         }
         return new Result(List.copyOf(list),bounds,(double)bounds.width*bounds.height/(width*(double)height),words.size()-list.size());
     }
-    private static Result place(List<Word> words,int width,int height,long seed,Measurer measurer,double scale) {
+    private static Result place(List<Word> words,int width,int height,long seed,Measurer measurer,double scale,ReportPalette palette) {
         List<Placement> placed = new ArrayList<>();
         Random random = new Random(seed);
         int max=words.get(0).count(), min=words.get(words.size()-1).count();
@@ -215,7 +215,7 @@ final class WordCloudLayout {
                     if(score<bestScore) {bestScore=score;best=box;}
                 }
             }
-            if(best!=null) placed.add(new Placement(label,i+1,size,best,color(i,seed)));
+            if(best!=null) placed.add(new Placement(label,i+1,size,best,color(i,seed,palette)));
         }
         if(words.size()>=40) refineInterior(placed,width,height);
         Rectangle bounds=new Rectangle();
@@ -294,14 +294,14 @@ final class WordCloudLayout {
         }
         return true;
     }
-    private static Color color(int index,long seed) {
-        if(index<3) return PALETTE[0];
-        if(index<10) return PALETTE[1];
+    private static Color color(int index,long seed,ReportPalette palette) {
+        if(index<3) return palette.wordCloud().get(0);
+        if(index<10) return palette.wordCloud().get(1);
         // 六种在册颜色保持不变；中尾词交错分配，橙色缩减为约每12词一个。
         int slot=Math.floorMod(index+(int)(seed%12),12);
-        if(slot==0) return PALETTE[5];
-        if(slot==3 || slot==8) return PALETTE[3];
-        if(slot==5 || slot==10) return PALETTE[2];
-        return PALETTE[4];
+        if(slot==0) return palette.wordCloud().get(5);
+        if(slot==3 || slot==8) return palette.wordCloud().get(3);
+        if(slot==5 || slot==10) return palette.wordCloud().get(2);
+        return palette.wordCloud().get(4);
     }
 }

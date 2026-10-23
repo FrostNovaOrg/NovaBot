@@ -38,7 +38,7 @@ function text(parent, tag, value, cls = '') {
 }
 
 function button(parent, label, action, callback) {
-  const node = text(parent, 'button', label, 'nv-btn2');
+  const node = text(parent, 'button', label, 'nv-btn2 sm');
   node.type = 'button';
   node.dataset.action = action;
   node.addEventListener('click', callback);

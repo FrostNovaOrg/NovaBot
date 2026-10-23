@@ -69,7 +69,7 @@ export async function loadPasskeys(box, addButton) {
   box.innerHTML = notice + '<table><thead><tr><th>名称</th><th>登记时间</th><th>上次使用</th><th></th></tr></thead><tbody>'
     + list.map(item => '<tr><td>' + esc(item.name) + '</td><td>' + time(item.createdAt) + '</td><td>'
       + (item.lastUsedAt ? time(item.lastUsedAt) : '尚未使用')
-      + '</td><td><button type="button" class="ghost" data-id="' + esc(item.id) + '">删除</button></td></tr>').join('')
+      + '</td><td><button type="button" class="ghost sm" data-id="' + esc(item.id) + '">删除</button></td></tr>').join('')
     + '</tbody></table>';
   const table = box.querySelector('table');
   table.style.width = 'max-content';
@@ -110,7 +110,7 @@ export async function registerBlockedReason() {
  */
 function attachEyeForAsk(input) {
   const wrap = el('div', 'secret');
-  const eye = el('button');
+  const eye = el('button', 'ghost sm');
   eye.type = 'button';
   eye.id = 'pwd-passkey-current-reveal';
   input.parentNode.insertBefore(wrap, input);

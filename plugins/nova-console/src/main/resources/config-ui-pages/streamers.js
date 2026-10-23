@@ -20,7 +20,7 @@ import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis,
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
   monitoringDayText, monitoringPeriodText,
-  detailHash, fmtDuration, fmtWholeGap, fmtMetric,
+  dailyFanChanges, trendCoverageBadge, detailHash, fmtDuration, fmtWholeGap, fmtMetric,
   gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle,
   slotCell, slotLabel, slotRangeDays, slotTopText,
@@ -29,18 +29,21 @@ import {
 
 const PAGE_STYLE = `
 #st-list a.rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;color:inherit;text-decoration:none}
-#st-list a.rowcard:hover{background:var(--soft)}
+#st-list a.rowcard:hover{background:var(--soft);border-color:var(--accent)}
+.st-identity{color:var(--faint)}
+.st-row-arrow{font-size:var(--fs-xl);color:var(--accent-text)}
+.st-spark-scope{font-size:var(--fs-xs);color:var(--dim)}
 #st-list a.rowcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.st-list-scope{margin:12px 0 0;color:var(--dim);font-size:12px;line-height:1.6}
-.st-group-heading{margin:18px 0 4px;padding-top:16px;border-top:1px solid var(--line);font-size:14px}
+.st-list-scope{margin:12px 0 0;color:var(--dim);font-size:var(--fs-xs);line-height:1.6}
+.st-group-heading{margin:18px 0 4px;padding-top:16px;border-top:1px solid var(--line);font-size:var(--fs-md)}
 .st-group-heading:first-child{margin-top:0;padding-top:0;border-top:0}
-.st-group-heading small{display:block;margin-top:5px;color:var(--dim);font-size:12px;font-weight:400;line-height:1.6}
-.sd-loading{margin:0;color:var(--dim);font-size:14px;line-height:1.7}
+.st-group-heading small{display:block;margin-top:5px;color:var(--dim);font-size:var(--fs-xs);font-weight:400;line-height:1.6}
+.sd-loading{margin:0;color:var(--dim);font-size:var(--fs-md);line-height:1.7}
 #sd-body>.sd-loading{padding:24px 0}
 #sd-live .live-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #sd-live .live-head h3{margin:0}
-#sd-live .live-times,#sd-live .live-error{font-size:12px;color:var(--dim);margin:10px 0 0}
-#sd-live .live-error{color:var(--err,var(--dim))}
+#sd-live .live-times,#sd-live .live-error{font-size:var(--fs-xs);color:var(--dim);margin:10px 0 0}
+#sd-live .live-error{color:var(--dim)}
 .spark{width:88px;height:26px;flex:none;color:var(--dim)}
 .spark.up{color:var(--accent-text)}
 a.lgpill{text-decoration:none}
@@ -51,19 +54,19 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent-text
 :is(#sd-body,.sc-drawer) tbody tr:hover{background:var(--soft)}
 :is(#sd-body,.sc-drawer) .start-slots{min-width:0;max-width:100%;box-sizing:border-box}
 :is(#sd-body,.sc-drawer) .slot-scroll{overflow-x:auto;max-width:100%;margin-top:14px}
-:is(#sd-body,.sc-drawer) .slot-grid{border-collapse:collapse;table-layout:fixed;min-width:920px;width:100%;font-size:12px}
-:is(#sd-body,.sc-drawer) .slot-grid th,:is(#sd-body,.sc-drawer) .slot-grid td{padding:3px;text-align:center;font-size:12px}
+:is(#sd-body,.sc-drawer) .slot-grid{border-collapse:collapse;table-layout:fixed;min-width:920px;width:100%;font-size:var(--fs-xs)}
+:is(#sd-body,.sc-drawer) .slot-grid th,:is(#sd-body,.sc-drawer) .slot-grid td{padding:3px;text-align:center;font-size:var(--fs-xs)}
 :is(#sd-body,.sc-drawer) .slot-grid th:first-child{width:52px;box-sizing:border-box}
 :is(#sd-body,.sc-drawer) .slot-grid button{display:block;box-sizing:border-box;width:100%;min-height:64px;padding:8px 4px;border:1px solid var(--line);border-radius:6px;color:inherit;background:transparent;cursor:pointer;font:inherit;white-space:nowrap}
 :is(#sd-body,.sc-drawer) .slot-grid button:focus-visible{outline:2px solid var(--accent)}
-:is(#sd-body,.sc-drawer) .slot-grid small{display:block;margin-top:6px;font-size:10px;color:var(--dim)}
+:is(#sd-body,.sc-drawer) .slot-grid small{display:block;margin-top:6px;font-size:var(--fs-xs);color:var(--dim)}
 :is(#sd-body,.sc-drawer) .slot-unit{white-space:nowrap;margin:14px 0 0}
 :is(#sd-body,.sc-drawer) .start-slots .lgpills{flex-wrap:wrap}
 #sd-audience{min-width:0;max-width:100%;box-sizing:border-box}
 #sd-audience .audience-scroll{overflow-x:auto;max-width:100%}
 #sd-audience table{min-width:700px}
 #sd-audience th,#sd-audience td{white-space:nowrap;height:auto}
-#sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:12px;font-weight:500;text-decoration:none}
+#sd-audience th,#sd-audience th a,#sd-audience th a:visited{color:var(--dim);font-size:var(--fs-xs);font-weight:500;text-decoration:none}
 #sd-audience td a,#sd-audience td a:visited{color:var(--accent-text)}
 .sd-area-table td a,.sd-area-table td a:visited{color:var(--accent-text);font-weight:400;text-decoration:none}
 :is(#sd-body,.sc-drawer){min-width:0}
@@ -73,8 +76,9 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent-text
 .sd-toolbar .hint{margin:0}
 .sd-cumulative{border:1px solid var(--line);border-radius:var(--r-ctl,10px);padding:12px 16px;margin:14px 0;background:var(--surface)}
 .sd-scope summary,.sd-cumulative summary,#sd-more summary{cursor:pointer;color:var(--dim)}
-details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;color:var(--dim)}
+details.sd-scope{margin:0;padding:0;border:0}.sd-scope p{margin:10px 0 0;font-size:var(--fs-sm);color:var(--dim)}
 .sd-columns{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,1fr);gap:16px;margin-top:16px}
+.sd-columns>#sd-recent-card{align-self:start}
 .sd-columns>.sc-card{min-width:0;margin:0;display:flex;flex-direction:column}
 #sd-trend{scroll-margin-top:82px}
 #sd-trend-content{display:flex;flex:1;flex-direction:column}
@@ -83,7 +87,7 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 .sd-slot-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0;list-style:none}
 .sd-slot-top a{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:8px;padding:12px;color:inherit;text-decoration:none}
 .sd-slot-top a:hover{border-color:var(--accent)}
-.sd-slot-top strong{font-size:19px}
+.sd-slot-top strong{font-size:var(--fs-xl)}
 .sd-slot-top small{color:var(--dim)}
 #sd-insights .sc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
 #sd-insights .sc-kpi[role=button]{cursor:pointer}
@@ -93,144 +97,146 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:13px;c
 #sd-more{margin-top:14px}#sd-more .sc-kpis{margin-top:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
 .sd-trend-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px}
 .sd-trend-controls .lgpills{display:flex;gap:4px;flex-wrap:wrap}
-.sd-trend-controls label{display:flex;align-items:center;gap:6px;font-size:12px}
+.sd-trend-controls label{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs)}
 .sd-trend-controls button[aria-pressed=true]{color:var(--accent-text);border-color:var(--accent);background:var(--soft)}
 .sd-trend-controls button:disabled{opacity:.45;cursor:default}
-.sd-trend-daily{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}.sd-trend-daily strong{font-size:13px}.sd-trend-note{font-size:12px;color:var(--dim);line-height:1.7}
-.sd-trend-hide{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
-.sd-scope,.sd-recording{border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:10px 13px;margin:0 0 16px;color:var(--dim);font-size:13px}
+.sd-trend-daily{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}.sd-trend-daily strong{font-size:var(--fs-sm)}.sd-trend-note{font-size:var(--fs-xs);color:var(--dim);line-height:1.7}
+.sd-trend-hide{font-size:var(--fs-xs);color:var(--dim);display:flex;align-items:center;gap:6px}
+.sd-scope,.sd-recording{border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:10px 13px;margin:0 0 16px;color:var(--dim);font-size:var(--fs-sm)}
 .sd-recording summary{cursor:pointer;color:var(--text)}.sd-recording ul{margin:10px 0 0;padding-left:20px}
-.sd-cell-note{display:block;font-size:11px;color:var(--dim)}
-.sd-kpi-recorded{font-size:10px;font-weight:400;color:var(--dim);white-space:nowrap;margin-left:5px}
+.sd-cell-note{display:block;font-size:var(--fs-xs);color:var(--dim)}
+.sd-kpi-recorded{font-size:var(--fs-xs);font-weight:400;color:var(--dim);white-space:nowrap;margin-left:5px}
 .sd-session-quality{text-align:right}.sd-session-quality .sd-cell-note{margin-top:3px;white-space:nowrap}
 .sd-trend-coverage{white-space:nowrap;text-align:left}
 .sd-trend-table{overflow-x:auto;min-width:0;max-width:100%}.sd-trend-table table{min-width:480px}
 .sd-period-link,.sd-period-link:visited{color:var(--accent-text);text-decoration:none}
 .sd-trend-table tbody tr[role=link]{cursor:pointer}.sd-trend-table tr:focus-visible{outline:2px solid var(--accent)}
-.sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:13px}
+.sd-pagination{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:12px;padding-top:14px;font-size:var(--fs-sm)}
 .sd-pagination>span{margin:0 auto 0 0;color:var(--dim)}
 .sd-pagination a,.sd-pagination a:visited{color:var(--accent-text);text-decoration:none}
 .sd-interaction-bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
 .sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
 .sd-current-live[hidden]{display:none}
-#sd-live .live-head{flex-wrap:wrap;gap:8px}#sd-live .live-head h3{font-size:13px}
-#sd-live .live-head button{margin-left:auto;padding:4px 9px;font-size:11px}
-.sd-live-badge{font-size:11px;color:var(--accent-text);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
-#sd-live .live-times{margin:7px 0 10px;font-size:11px;line-height:1.6}
+/* 「正在直播」是「当前直播与最近归档」那一块里嵌的小卡，块标题由外面那一块给，这里只是小卡里的小标题，所以比卡片标题小一档 */
+#sd-live .live-head{flex-wrap:wrap;gap:8px}#sd-live .live-head h3{font-size:var(--fs-sm)}
+#sd-live .live-head button{margin-left:auto}
+.sd-live-badge{font-size:var(--fs-xs);color:var(--accent-text);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+#sd-live .live-times{margin:7px 0 10px;font-size:var(--fs-xs);line-height:1.6}
 .sd-live-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0}
-.sd-live-metrics div{min-width:0}.sd-live-metrics dt{font-size:11px;color:var(--dim);margin-bottom:3px}
-.sd-live-metrics dd{margin:0;font-size:15px;font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-.sd-live-details{margin-top:10px;font-size:11px}.sd-live-details summary{cursor:pointer;color:var(--accent-text)}
-#sd-live .live-status{min-height:4.8em;margin:10px 0 0;font-size:10px;line-height:1.6}
+.sd-live-metrics div{min-width:0}.sd-live-metrics dt{font-size:var(--fs-xs);color:var(--dim);margin-bottom:3px}
+.sd-live-metrics dd{margin:0;font-size:var(--fs-md);font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.sd-live-details{margin-top:10px;font-size:var(--fs-xs)}.sd-live-details summary{cursor:pointer;color:var(--accent-text)}
+#sd-live .live-status{min-height:4.8em;margin:10px 0 0;font-size:var(--fs-xs);line-height:1.6}
 #sd-audience-summary [role=link]{cursor:pointer}#sd-audience-summary [role=link]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #sd-live .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 0}
 #sd-live .kv dt{color:var(--dim)}#sd-live .kv dd{margin:0;text-align:right}
 .sd-recent-row{display:grid;gap:5px;padding:9px 0;color:inherit;text-decoration:none}
 .sd-recent-row+.sd-recent-row{border-top:1px solid var(--line)}
-.sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:12px}.sd-recent-row:hover{color:var(--accent-text)}
+.sd-recent-row span,.sd-recent-row small{color:var(--dim);font-size:var(--fs-xs)}.sd-recent-row:hover{color:var(--accent-text)}
 .sc-drawer table{width:100%;border-collapse:collapse}.sc-drawer th,.sc-drawer td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
 .sc-drawer .nv-card{background:var(--surface);padding:16px;border-radius:10px}
-.sc-drawer .nv-card h3{font-size:17px}
-.sc-drawer thead th{font-size:12px;font-weight:500;color:var(--dim)}
+.sc-drawer .nv-card h3{font-size:var(--fs-lg)}
+.sc-drawer thead th{font-size:var(--fs-xs);font-weight:500;color:var(--dim)}
 .sc-drawer .sd-area-compare{border-radius:14px;padding:14px 16px}
 .sc-drawer .sd-entry-rhythm{min-width:0;max-width:100%;box-sizing:border-box;border-radius:14px;padding:14px 16px}
-.sd-entry-rhythm h4{font-size:13px;font-weight:500;margin:14px 0 8px;color:var(--dim)}
-.sd-entry-rhythm .hint{font-size:12px;line-height:1.65}
+.sd-entry-rhythm h4{font-size:var(--fs-sm);font-weight:500;margin:14px 0 8px;color:var(--dim)}
+.sd-entry-rhythm .hint{font-size:var(--fs-xs);line-height:1.65}
 .sd-entry-details{min-width:0;margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
-.sd-entry-details summary{cursor:pointer;font-size:13px;color:var(--dim);overflow-wrap:anywhere}
+.sd-entry-details summary{cursor:pointer;font-size:var(--fs-sm);color:var(--dim);overflow-wrap:anywhere}
 .sd-entry-scroll{max-width:100%;min-width:0;overflow-x:auto;margin-top:10px;overscroll-behavior-x:contain}
-.sd-entry-table{width:100%;min-width:560px;border-collapse:collapse;font-size:12px}
+.sd-entry-table{width:100%;min-width:560px;border-collapse:collapse;font-size:var(--fs-xs)}
 .sd-entry-table th,.sd-entry-table td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
 .sd-entry-table th{font-weight:500;color:var(--dim)}
 .sd-entry-table th:first-child,.sd-entry-table td:first-child{text-align:left}
-.sd-entry-table small{display:block;margin-top:3px;font-size:11px;color:var(--dim)}
-.sd-session-filters .sd-clear-filter,.sd-session-filters .sd-clear-filter:visited{color:var(--accent-text);font-size:15px;text-decoration:underline}
+.sd-entry-table small{display:block;margin-top:3px;font-size:var(--fs-xs);color:var(--dim)}
 :is(.sd-area-table td a,.sd-period-link,.sd-pagination a,.sd-clear-filter,.sd-person-link):hover{text-decoration:underline;text-underline-offset:3px}
 :is(#sd-body,.sc-drawer) a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
 #sd-head .sh-nm{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #sd-head .sh-nm>.pill{flex-shrink:0}
-#sd-banner{padding:9px 13px;border:0;border-left:3px solid var(--accent);background:var(--soft);border-radius:var(--r-ctl);font-size:13px;color:var(--dim);margin:0 0 16px}
-#sd-trend .sc-chart-readout{font-size:12px}
-.sd-detail-link,.sd-detail-link:visited{color:var(--accent-text);font-size:12px;text-decoration:none;background:none;border:0;padding:4px 0}
+#sd-banner{padding:9px 13px;border:0;border-left:3px solid var(--accent);background:var(--soft);border-radius:var(--r-ctl);font-size:var(--fs-sm);color:var(--dim);margin:0 0 16px}
+#sd-trend .sc-chart-readout{font-size:var(--fs-xs)}
+.sd-detail-link{padding:4px 0}
 .sc-section-head>.sd-detail-link{flex-shrink:0;text-align:right}
-.sd-detail-link:hover{text-decoration:underline}
-.sd-toolbar .nv-pill,.sd-trend-controls .nv-pill,.sd-slot-controls .nv-pill{padding:5px 12px;font-size:13px;min-height:32px;background:var(--ground);box-sizing:border-box}
-.sd-toolbar strong{font-size:13px}
-.sd-scope summary{font-size:13px;color:var(--text)}
-#sd-more summary{font-size:13px;color:var(--text)}
+.sd-toolbar .nv-pill,.sd-trend-controls .nv-pill,.sd-slot-controls .nv-pill{padding:5px 12px;font-size:var(--fs-sm);min-height:32px;background:var(--ground);box-sizing:border-box}
+.sd-toolbar strong{font-size:var(--fs-sm)}
+.sd-meta{display:flex;align-items:baseline;gap:8px;flex-basis:100%;font-size:var(--fs-xs);color:var(--dim)}
+.sd-meta .hint{font-size:var(--fs-xs)}
+.sd-scope{position:relative;flex-shrink:0}
+.sd-scope summary{font-size:var(--fs-xs);color:var(--accent-text);list-style:none;border:1px solid var(--line);border-radius:50%;width:20px;text-align:center}
+.sd-scope summary::-webkit-details-marker{display:none}
+.sd-scope-content{position:absolute;right:0;top:28px;z-index:5;width:min(600px,calc(100vw - 60px));max-height:420px;overflow:auto;box-sizing:border-box;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-ctl);box-shadow:var(--shadow)}
+#sd-more summary{font-size:var(--fs-sm);color:var(--text)}
 #sd-insights #sd-more .sc-kpi{padding:10px;min-height:73px;box-sizing:border-box}
-#sd-insights #sd-more .sc-kpi-value{font-size:19px}
+#sd-insights #sd-more .sc-kpi-value{font-size:var(--fs-xl)}
 #sd-more .sc-kpi-delta:empty{display:none}
 .sd-toolbar a[aria-current=page]{border-color:color-mix(in srgb,var(--accent) 25%,var(--surface))}
-.sd-history .hint{font-size:13px;color:var(--dim);margin:0 0 4px;line-height:1.6}
 #sd-insights .sc-kpis{gap:8px}
 #sd-insights .sc-kpi{padding:11px 12px;background:var(--ground)}
-#sd-insights .sc-kpi-value{font-size:21px;letter-spacing:-.6px;overflow-wrap:normal;word-break:keep-all;white-space:nowrap}
+#sd-insights .sc-kpi-value{font-size:var(--fs-xl);letter-spacing:-.6px;overflow-wrap:normal;word-break:keep-all;white-space:nowrap}
 .sd-trend-controls>.hint{margin:0}
-.sd-trend-controls select,.sd-slot-controls select,.sd-session-filters input{width:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--r-ctl,8px);background:var(--ground);color:var(--text);padding:7px 10px;font-size:14px;min-height:32px;box-sizing:border-box}
+.sd-trend-controls select,.sd-slot-controls select,.sd-session-filters input{width:auto;max-width:100%;border:1px solid var(--line);border-radius:var(--r-ctl,8px);background:var(--ground);color:var(--text);padding:7px 10px;font-size:var(--fs-md);min-height:32px;box-sizing:border-box}
 .sd-trend-controls select,.sd-slot-controls select{appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23838391' stroke-width='1.5'/%3E%3C/svg%3E");background-position:right 10px center;background-repeat:no-repeat}
-.sd-trend-hide input{width:16px;height:16px;accent-color:var(--accent)}
+.sd-trend-hide input{width:16px;height:16px}
 .sd-trend-daily strong{font-weight:400;color:var(--dim)}
-.sd-comparison{position:relative;margin-left:auto;color:var(--dim);font-size:12px}
+.sd-comparison{position:relative;margin-left:auto;color:var(--dim);font-size:var(--fs-xs)}
 .sd-comparison summary{cursor:pointer;padding:4px 0}
 .sd-comparison-body{position:absolute;z-index:5;right:0;top:100%;width:min(420px,calc(100vw - 60px));max-height:340px;overflow:auto;box-sizing:border-box;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:14px;box-shadow:var(--shadow)}
 .sd-comparison-body p{margin:0 0 10px}
 .sd-comparison-body p:last-child{margin-bottom:0}
-.sd-audience-value{display:flex;justify-content:space-between;align-items:baseline;gap:6px}.sd-audience-share{align-self:flex-end;color:var(--dim);font-size:11px}
+.sd-audience-value{display:flex;justify-content:space-between;align-items:baseline;gap:6px}.sd-audience-share{align-self:flex-end;color:var(--dim);font-size:var(--fs-xs)}
 .sd-interaction{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;padding:12px;border:1px solid var(--line);border-radius:var(--r-ctl,8px);background:var(--ground);text-decoration:none;color:var(--text)}
-.sd-interaction-head{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
-.sd-interaction-head small{display:block;font-size:11px;color:var(--dim);margin-top:4px}
-.sd-interaction-head strong{font-size:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.sd-interaction>small{align-self:center;white-space:nowrap;font-size:11px;color:var(--dim)}
-.sd-audience-note{font-size:11px;margin:10px 0 0;line-height:1.7}
+.sd-interaction-head{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:var(--fs-sm)}
+.sd-interaction-head small{display:block;font-size:var(--fs-xs);color:var(--dim);margin-top:4px}
+.sd-interaction-head strong{font-size:var(--fs-xl);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sd-interaction>small{align-self:center;white-space:nowrap;font-size:var(--fs-xs);color:var(--dim)}
+.sd-audience-note{font-size:var(--fs-xs);margin:10px 0 0;line-height:1.7}
 .sd-recent{display:flex;flex-direction:column;flex:1;min-width:0}
 .sd-recent-row{flex:1}
-.sd-recent h4{font-size:10px;font-weight:400;color:var(--dim);margin:10px 0 2px}
+.sd-recent h4{font-size:var(--fs-xs);font-weight:400;color:var(--dim);margin:10px 0 2px}
 .sd-recent-row{grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:8px}
 .sd-recent-time,.sd-recent-main{display:flex;flex-direction:column;gap:5px;min-width:0}
-.sd-recent-main>span{font-size:13px;color:var(--text);overflow-wrap:anywhere}
-.sd-recent-row small{font-size:11px}
-.sd-gap-badge{display:inline-block;white-space:nowrap;background:var(--soft);color:var(--accent-text)!important;border:0;border-radius:999px;padding:2px 7px;font-size:11px!important}
-.sd-drawer-heading{min-width:0}.sd-drawer-context{font-size:12px;color:var(--dim);line-height:1.6;margin:6px 0 0}
+.sd-recent-main>span{font-size:var(--fs-sm);color:var(--text);overflow-wrap:anywhere}
+.sd-recent-row small{font-size:var(--fs-xs)}
+.sd-gap-badge{display:inline-block;white-space:nowrap;background:var(--soft);color:var(--accent-text)!important;border:0;border-radius:999px;padding:2px 7px;font-size:var(--fs-xs)!important}
+.sd-drawer-heading{min-width:0}.sd-drawer-context{font-size:var(--fs-xs);color:var(--dim);line-height:1.6;margin:6px 0 0}
 .sd-session-filters,.sd-slot-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-.sd-session-filters label,.sd-slot-controls label{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
-.sd-session-list>h3{font-size:17px}
+.sd-session-filters label,.sd-slot-controls label{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:var(--fs-sm)}
+.sd-session-list>h3{font-size:var(--fs-lg)}
 .sd-session-row{display:block;padding:13px 0;color:var(--text);text-decoration:none}
 .sd-session-row+.sd-session-row{border-top:1px solid var(--line)}
 .sd-session-row:hover{background:var(--soft)}
 .sd-session-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sd-session-row-head{display:grid;grid-template-columns:155px minmax(0,1fr) 14px;gap:12px;align-items:baseline}
-.sd-session-date{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
-.sd-session-row-head strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
-.sd-session-arrow{font-size:20px;line-height:1;text-align:right;color:var(--accent-text)}
+.sd-session-date{font-size:var(--fs-xs);color:var(--dim);font-variant-numeric:tabular-nums}
+.sd-session-row-head strong{font-size:var(--fs-md);font-weight:600;overflow-wrap:anywhere}
+.sd-session-arrow{font-size:var(--fs-xl);line-height:1;text-align:right;color:var(--accent-text)}
 .sd-session-row-body{display:grid;grid-template-columns:minmax(0,1fr) 158px;align-items:center;gap:10px;margin-top:9px}
 .sd-session-row-body>.sd-gap-badge{justify-self:end}
 .sd-session-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;flex:1;margin:0}
-.sd-session-metrics dt{font-size:11px;color:var(--dim)}.sd-session-metrics dd{font-size:13px;margin:2px 0 0;font-variant-numeric:tabular-nums}
+.sd-session-metrics dt{font-size:var(--fs-xs);color:var(--dim)}.sd-session-metrics dd{font-size:var(--fs-sm);margin:2px 0 0;font-variant-numeric:tabular-nums}
 .sd-audience-groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
-.sd-audience-group{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:9px 10px;background:var(--ground);color:var(--text);text-decoration:none;font-size:12px}
-.sd-audience-group strong{font-size:15px;color:var(--text)}
+.sd-audience-group{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:var(--r-ctl,8px);padding:9px 10px;background:var(--ground);color:var(--text);text-decoration:none;font-size:var(--fs-xs)}
+.sd-audience-group strong{font-size:var(--fs-md);color:var(--text)}
 .sd-audience-group[aria-current=page]{border-color:var(--accent);background:var(--soft)}
-#sd-audience-summary .sd-ring-link{font-size:11px;color:var(--accent-text)}
-#sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:var(--accent-text);text-decoration:none;font-size:14px}
+#sd-audience-summary .sd-ring-link{font-size:var(--fs-xs);color:var(--accent-text)}
+#sd-audience .sd-person-link,#sd-audience .sd-person-link:visited{color:var(--accent-text);text-decoration:none;font-size:var(--fs-md)}
 #sd-audience .sd-person-link:hover{text-decoration:underline;text-underline-offset:3px}
-.sd-scroll-hint{font-size:12px;color:var(--dim);margin:7px 0 0}
-.sd-session-note{font-size:12px;color:var(--dim);margin:8px 0 0}
+.sd-scroll-hint{font-size:var(--fs-xs);color:var(--dim);margin:7px 0 0}
+.sd-session-note{font-size:var(--fs-xs);color:var(--dim);margin:8px 0 0}
 .sd-slot-top a{background:var(--ground);text-align:left}
-.sd-slot-title{display:flex;align-items:center;gap:7px;font-size:12px}
+.sd-slot-title{display:flex;align-items:center;gap:7px;font-size:var(--fs-xs)}
 .sd-slot-title>small{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:var(--soft);color:var(--accent-text);flex-shrink:0}
-.sd-slot-top strong{font-size:24px;font-variant-numeric:tabular-nums}
-.sd-slot-top strong small{font-size:11px;font-weight:400}
-.sd-slot-sample{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;color:var(--dim);font-size:11px}
+.sd-slot-top strong{font-size:var(--fs-xxl);font-variant-numeric:tabular-nums}
+.sd-slot-top strong small{font-size:var(--fs-xs);font-weight:400}
+.sd-slot-sample{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;color:var(--dim);font-size:var(--fs-xs)}
 .sd-slot-sample>span{color:var(--accent-text)}
-:is(#sd-body,.sc-drawer) .slot-grid button{background:var(--ground);font-size:12px;min-height:56px}
-:is(#sd-body,.sc-drawer) .slot-grid button[data-low=true]{color:var(--dim);font-size:11px}
-.sd-slot-heading{font-size:15px;margin:14px 0 4px}
-.sd-slot-method{font-size:12px;line-height:1.6;margin:4px 0}
-.sd-slot-scope{font-size:11px;margin:6px 0 12px}
-.sd-detail-scope{font-size:13px;color:var(--dim);margin:4px 0 10px;overflow-wrap:anywhere}
-@media(max-width:560px){.sd-session-quality{text-align:left}.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:19px;white-space:nowrap}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
+:is(#sd-body,.sc-drawer) .slot-grid button{background:var(--ground);font-size:var(--fs-xs);min-height:56px}
+:is(#sd-body,.sc-drawer) .slot-grid button[data-low=true]{color:var(--dim);font-size:var(--fs-xs)}
+.sd-slot-heading{font-size:var(--fs-md);margin:14px 0 4px}
+.sd-slot-method{font-size:var(--fs-xs);line-height:1.6;margin:4px 0}
+.sd-slot-scope{font-size:var(--fs-xs);margin:6px 0 12px}
+@media(max-width:560px){.sd-session-quality{text-align:left}.sd-session-row-head{grid-template-columns:minmax(0,1fr) 14px;gap:5px 12px}.sd-session-date,.sd-session-row-head strong{grid-column:1}.sd-session-arrow{grid-column:2;grid-row:1 / span 2}.sd-session-row-body{grid-template-columns:minmax(0,1fr);gap:8px}.sd-session-metrics{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}.sd-audience-groups{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-insights .sc-kpi-value{font-size:var(--fs-xl);white-space:nowrap}.sd-recent-row{grid-template-columns:76px minmax(0,1fr);gap:8px}.sd-recent-row>.sd-gap-badge{grid-column:2;justify-self:start;margin-top:-7px}.sd-comparison{flex-shrink:0}}
 @media(min-width:1280px){#sd-insights-content>.sc-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:900px){.sd-columns{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:560px){.sd-slot-top{grid-template-columns:1fr}#sd-insights .sc-kpis,#sd-more .sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#sd-trend .sc-chart svg{height:180px}.sd-toolbar{gap:4px}.sd-toolbar .nv-pill{padding:5px 9px;white-space:nowrap}.sd-toolbar .hint{width:100%;margin:4px 0 0}}
@@ -269,7 +275,7 @@ export function render(section) {
     <div id="sv-detail" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="sd-back" href="#/streamers">‹ 返回主播列表</a>
+          <a class="lnkbtn" id="sd-back" href="#/streamers">‹ 返回主播列表</a>
         </div>
       </div>
       <div class="nv-card hcard" id="sd-head"></div>
@@ -278,7 +284,7 @@ export function render(section) {
     <div id="sv-session" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="sx-back" href="#/streamers">‹ 返回场次列表</a>
+          <a class="lnkbtn" id="sx-back" href="#/streamers">‹ 返回场次列表</a>
         </div>
       </div>
       <h3 class="cat-title" id="sx-title">场次</h3>
@@ -315,6 +321,13 @@ let livePending = null;
 let liveKey = '';
 let live = null;
 let liveError = '';
+
+/**
+ * 后台刷新失败时屏幕上那一句。数据照留，不拼浏览器或服务器的原话、不标红。
+ * 原因不往浏览器控制台打（前端一律不打印，见 ConfigUiFrontendTest 的口令守卫）：
+ * 服务器回的错误服务端自己记在工程日志里，连不上的那种请求根本没到服务器
+ */
+const REFRESH_FAILED = '刷新失败，稍后自动重试';
 
 function stopLiveRefresh() {
   if (liveTimer !== null) clearInterval(liveTimer);
@@ -518,16 +531,19 @@ function renderRows(list, days) {
       const sub = el('div', 'rc-sub');
       // 直播间号与 uid 一并写出：群里的人报的是直播间号，控制台里配的是 uid，
       // 两者对不上时，只显示其中一个的那一行谁也认不出是不是同一位
-      sub.textContent = 'uid ' + one.uid + (one.roomId ? ' · 直播间 ' + one.roomId : '')
-        + ' · ';
       const summary = el('span');
       summary.textContent = rowSubtitle(one, days);
       summary.title = '一天从早上 6 点算起，凌晨 0–6 点开播的场次算在前一天';
       sub.appendChild(summary);
+      const identity = el('span', 'st-identity');
+      identity.textContent = ' · uid ' + one.uid + (one.roomId ? ' · 直播间 ' + one.roomId : '');
+      sub.appendChild(identity);
       main.appendChild(sub);
       row.appendChild(main);
 
       row.appendChild(spark(one.series));
+      const arrow = el('span', 'st-row-arrow'); arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
+      row.appendChild(arrow);
 
       host.appendChild(row);
     }
@@ -546,13 +562,15 @@ function spark(series) {
   const box = el('div');
   box.style.cssText = 'display:flex;gap:10px;align-items:center;flex:0 0 auto';
 
-  const points = seriesValues(series, 'sessions');
-  const total = points.reduce((sum, one) => sum + one, 0);
+  const points = seriesValues(series, 'sessions', statisticalDate(Date.now()));
+  box.title = '折线截至昨天；场次合计含今天已归档的场次';
+  const total = seriesValues(series, 'sessions').reduce((sum, one) => sum + one, 0);
   const text = el('div');
   const value = el('div', 'rc-sub');
   value.style.marginTop = '0';
   value.textContent = total + ' 场';
   text.appendChild(value);
+  const scope = el('small', 'st-spark-scope'); scope.textContent = '折线至昨天'; text.appendChild(scope);
   box.appendChild(text);
 
   const geometry = sparkline(points);
@@ -649,25 +667,41 @@ async function loadDetail() {
   const path = '/streamers/' + encodeURIComponent(where.platform) + '/'
     + encodeURIComponent(where.uid) + (query ? '?' + query : '');
 
+  // 页面上已经画着这一位：后台重取失败（连不上，或服务器回了错误包）不抹数据，也不拼原话标红
+  const showing = () => detail?.success && detail.platform === where.platform
+    && String(detail.uid) === String(where.uid);
+  let response;
   try {
-    const response = await api(path);
-    if (generation !== viewGeneration || !liveActive) return;
-    detail = response;
+    response = await api(path);
   } catch (e) {
     if (generation !== viewGeneration || !liveActive) return;
     $('#sv-detail').removeAttribute('aria-busy');
+    if (showing()) {
+      say(REFRESH_FAILED);
+      startLiveRefresh();
+      return;
+    }
     $('#sd-head').innerHTML = '';
     $('#sd-body').innerHTML = '<p class="empty">' + esc('主播详情加载失败：' + e.message) + '</p>';
     say('主播详情加载失败：' + e.message, 'err');
     return;
   }
+  if (generation !== viewGeneration || !liveActive) return;
 
   $('#sv-detail').removeAttribute('aria-busy');
-  if (!detail.success) {
+  if (!response?.success) {
+    if (showing()) {
+      say(REFRESH_FAILED);
+      startLiveRefresh();
+      return;
+    }
+    detail = response;
     $('#sd-head').innerHTML = '';
-    $('#sd-body').innerHTML = '<p class="empty">' + esc(detail.message || '没有该主播的记录。') + '</p>';
+    $('#sd-body').innerHTML = '<p class="empty">' + esc(response?.message || '没有该主播的记录。') + '</p>';
     return;
   }
+  detail = response;
+  if ($('#status-text')?.textContent === REFRESH_FAILED) say('');
 
   renderHead();
   const key = where.platform + '/' + where.uid;
@@ -728,23 +762,6 @@ function renderHead() {
   head.appendChild(side);
 
   host.appendChild(head);
-}
-
-function renderHistory(data) {
-  const host = $('#sd-body').querySelector('.sd-history');
-  if (!host) return;
-  host.innerHTML = '';
-  const valid = value => Number.isFinite(value) && value > 0;
-  const first = detail.overview?.firstStart;
-  if (valid(first) && valid(data?.to) && first <= data.to) {
-    const history = el('p', 'hint');
-    history.textContent = '可用历史：' + pageTime(first) + ' — ' + pageTime(data.to) + ' · Asia/Shanghai';
-    host.appendChild(history);
-  }
-  if (valid(data?.from) && valid(data?.to)) {
-    const scope = el('p', 'hint'); scope.textContent = '统计日 06:00–次日06:00 · Asia/Shanghai';
-    host.appendChild(scope);
-  }
 }
 
 function audienceHash(changes = {}) {
@@ -942,7 +959,6 @@ function renderStartSlots(host) {
   select.value = slotsMetric;
   select.addEventListener('change', () => { slotsMetric = select.value; renderSlotsDrawer(); });
   metrics.appendChild(select); controls.appendChild(metrics);
-  const scope = el('p', 'hint sd-detail-scope'); scope.textContent = '历史节奏 · 独立观察范围：' + intervalText(slotsData?.from, slotsData?.to); host.appendChild(scope);
   renderRecording(host, slotsData);
   const topHead = el('h4', 'sd-slot-heading'); topHead.textContent = '表现较好的开播时段'; card.appendChild(topHead);
   const method = el('p', 'hint sd-slot-method'); method.textContent = '按实际开播时间所属的星期与时段分组，以整场总量 ÷ 有效直播总时长比较效率；不表示该两小时内的产出。'; card.appendChild(method);
@@ -1198,7 +1214,7 @@ function updateHideOffLinks() {
 }
 
 function panelLink(label, panel, changes = {}) {
-  const link = el('a', 'sd-detail-link');
+  const link = el('a', 'lnkbtn sd-detail-link');
   link.textContent = label;
   link.href = dashboardHash({panel, page: 1, from: null, to: null, starts: null, source: panel === 'sessions' ? 'dashboard' : null, sourceDay: null, sourceArea: null, dateFrom: null, dateTo: null, ...changes});
   return link;
@@ -1229,7 +1245,6 @@ async function openDetailDrawer() {
     }
   });
   if (panel === 'audience') {
-    const scope = el('p', 'hint sd-detail-scope'); scope.id = 'sd-audience-scope'; current.body.appendChild(scope);
     renderRecording(current.body, insightsData); updateDrawerScope();
     const host = el('div'); host.id = 'sd-audience'; current.body.appendChild(host);
     await loadAudience();
@@ -1255,12 +1270,30 @@ async function openDetailDrawer() {
         const note = el('p', 'hint');
         current.fans = fans; current.fansNote = note;
         current.body.appendChild(note); updateDrawerScope();
-        createChart(current.body, {title: '粉丝数', format: value => value == null ? '—' : fmtMetric(value) + ' 人', points: (fans.points || []).map(point => ({start: point.at, end: point.at, label: insightsTime(point.at), value: point.value}))});
+        createChart(current.body, {title: '粉丝数', fitRange: true, integerTicks: true, format: value => value == null ? '—' : fmtMetric(value) + ' 人', points: (fans.points || []).map(point => ({start: point.at, end: point.at, label: insightsTime(point.at), value: point.value}))});
+        renderDailyFans(current.body, fans.points);
       }
     } catch (error) {
       if (generation === drawerGeneration && liveActive) current.body.textContent = '读取失败：' + error.message;
     }
   }
+}
+
+function renderDailyFans(host, points) {
+  const section = createSection('每日净增', '按 06:00 换日，比较相邻统计日末次有效快照；首日或缺少前一天快照时不补估。今天尚未结束。', host);
+  const table = el('table'), head = el('thead'), row = el('tr');
+  for (const name of ['统计日', '末次粉丝数', '净增']) { const th = el('th'); th.textContent = name; row.appendChild(th); }
+  head.appendChild(row); table.appendChild(head);
+  const body = el('tbody');
+  for (const day of dailyFanChanges(points).reverse()) {
+    const tr = el('tr');
+    for (const value of [day.date + (day.date === statisticalDate(Date.now()) ? '（今天）' : ''), fmtMetric(day.value),
+      day.change == null ? '—' : (day.change > 0 ? '+' : '') + fmtMetric(day.change)]) {
+      const cell = el('td'); cell.textContent = value; tr.appendChild(cell);
+    }
+    body.appendChild(tr);
+  }
+  table.appendChild(body); section.box.appendChild(table);
 }
 
 function pageTime(at, year = true) {
@@ -1313,8 +1346,6 @@ function updateDrawerScope() {
   if (!detailDrawer) return;
   if (detailDrawer.body.querySelector('.sd-recording'))
     renderRecording(detailDrawer.body, where.panel === 'start-slots' ? slotsData : insightsData);
-  const audienceScope = detailDrawer.body.querySelector('#sd-audience-scope');
-  if (audienceScope) audienceScope.textContent = '本期名单 · 与总览全页范围一致：' + intervalText(insightsData?.from, insightsData?.to);
   const head = detailDrawer.dialog.querySelector('.sc-drawer-head');
   let heading = head.querySelector('.sd-drawer-heading');
   if (!heading) {
@@ -1334,7 +1365,7 @@ function updateDrawerScope() {
     : where.panel === 'start-slots' ? slotsMetric === 'revenue' ? '每小时流水' : '每小时弹幕' : '';
   if (detailDrawer.fansNote) {
     const fans = detailDrawer.fans;
-    detailDrawer.fansNote.textContent = intervalText(from, to) + ' · 净增 ' + (fans.change == null ? '暂无数据' : fmtMetric(fans.change) + ' 人')
+    detailDrawer.fansNote.textContent = '净增 ' + (fans.change == null ? '暂无数据' : fmtMetric(fans.change) + ' 人')
       + (fans.points?.length ? ' · 快照 ' + pageTime(fans.points.at(-1).at, false) : ' · 缺少有效快照')
       + (fans.partial ? ' · 可用快照未覆盖整个范围' : '');
   }
@@ -1375,12 +1406,18 @@ function renderToolbar(data, error) {
   }
   const interval = el('span', 'hint');
   interval.textContent = error ? '读取失败：' + error : data ? '本期统计：' + intervalText(data.from, data.to ?? Date.now()) : '正在读取本期日期…';
-  host.appendChild(interval);
+  const first = detail.overview?.firstStart;
+  interval.textContent += (Number.isFinite(first) && first > 0 && Number.isFinite(data?.to) && first <= data.to ? ' · 可用历史自 ' + pageTime(first) : '')
+    + ' · 统计日 06:00–次日06:00 · Asia/Shanghai';
+  const meta = el('div', 'sd-meta'); meta.appendChild(interval);
+  const scope = el('details', 'sd-scope'); scope.id = 'sd-scope'; meta.appendChild(scope);
+  host.appendChild(meta);
 }
 
 function renderScope(data = {}, error) {
   const scope = $('#sd-scope'); scope.innerHTML = '';
-  const summary = el('summary'); summary.textContent = '统计口径' + (data.sessions != null ? ' · 归档 ' + fmtMetric(data.sessions) + ' 场 · 名单完整 ' + fmtMetric(data.coverage?.complete ?? 0) + ' 场' : ''); scope.appendChild(summary);
+  const summary = el('summary'); summary.textContent = '?'; summary.setAttribute('aria-label', '统计口径'); summary.title = '统计口径'; scope.appendChild(summary);
+  const content = el('div', 'sd-scope-content'); scope.appendChild(content);
   const failure = error ? '读取失败：' + error : null;
   const previous = data.previous?.from != null && data.previous?.to != null
     ? intervalText(data.previous.from, data.previous.to) : null;
@@ -1390,12 +1427,13 @@ function renderScope(data = {}, error) {
     '近 ' + where.days + ' 天＝含今天的 ' + where.days + ' 个统计日；统计日从早上 6 点起（东八区）。',
     '较上期＝往前挪 ' + where.days + ' 天、长度相同的一段。场次与整场指标按开播统计日归入，不拆分跨日金额。',
     '观众按已有名单去重；首次记录指第一次被记录，不一定是第一次观看。',
+    ...(data.sessions != null ? ['归档 ' + fmtMetric(data.sessions) + ' 场 · 名单完整 ' + fmtMetric(data.coverage?.complete ?? 0) + ' 场'] : []),
     coverageText(data.coverage),
     ...(data.capture ? ['归档采集覆盖 ' + durationCoverage(data) + ' · 缺口合计 ' + fmtWholeGap(data.capture.gapSeconds) + ' · 有缺口 ' + fmtMetric(data.capture.gapSessions) + ' 场'] : []),
     ...(data.monitoring ? [monitoringPeriodText(data.monitoring, '本期'), monitoringPeriodText(data.previous?.monitoring, '上期')] : []),
   ];
   if (!comparisonExplanation(data).count && data.comparisonNote) lines.push(data.comparisonNote);
-  for (const text of lines.filter(Boolean)) { const line = el('p', 'hint'); line.textContent = text; scope.appendChild(line); }
+  for (const text of lines.filter(Boolean)) { const line = el('p', 'hint'); line.textContent = text; content.appendChild(line); }
 }
 
 function performanceHint() {
@@ -1403,7 +1441,7 @@ function performanceHint() {
 }
 
 function renderDashboardHints(data, error) {
-  renderHistory(data); renderArchiveLink(data, error);
+  renderArchiveLink(data, error);
   const from = data?.from;
   const to = data?.to ?? Date.now();
   const moment = at => {
@@ -1426,9 +1464,7 @@ function renderDashboardHints(data, error) {
 
 function renderDashboard() {
   const host = $('#sd-body'); host.innerHTML = '';
-  host.appendChild(el('div', 'sd-history'));
   const toolbar = el('div', 'sd-toolbar'); toolbar.id = 'sd-toolbar'; host.appendChild(toolbar);
-  const scope = el('details', 'sd-scope'); scope.id = 'sd-scope'; host.appendChild(scope);
   const performance = createSection('本期表现', performanceHint(), host).box; performance.id = 'sd-insights';
   const performanceBody = el('div'); performanceBody.id = 'sd-insights-content'; performance.appendChild(performanceBody);
   const columns = el('div', 'sd-columns'); host.appendChild(columns);
@@ -1443,7 +1479,7 @@ function renderDashboard() {
   calendar.header.appendChild(panelLink('查看历史节奏', 'start-slots'));
   const calendarBody = el('div'); calendarBody.id = 'sd-calendar'; calendar.box.appendChild(calendarBody);
   const sessions = createSection('当前直播与最近归档', '正在读取本期日期…', columns); sessions.box.id = 'sd-recent-card';
-  const archiveLink = el('a', 'sd-detail-link sd-archive-link'); archiveLink.textContent = '正在读取归档场数…'; sessions.header.appendChild(archiveLink);
+  const archiveLink = el('a', 'lnkbtn sd-detail-link sd-archive-link'); archiveLink.textContent = '正在读取归档场数…'; sessions.header.appendChild(archiveLink);
   const current = el('div', 'sd-current-live'); current.id = 'sd-live'; sessions.box.appendChild(current);
   renderLive(); sessions.box.appendChild(recentCard());
   const cumulative = el('details', 'sd-cumulative');
@@ -1772,14 +1808,12 @@ async function loadTrendDrawer(current) {
         row.appendChild(cell);
       }
       const coverage = el('td', 'sd-trend-coverage');
-      coverage.textContent = bucket.sessions > 0 ? '采集 ' + durationCoverage(bucket) : '采集暂无数据';
-      if (period === 'day') {
-        const monitoring = el('span', 'sd-cell-note'); monitoring.textContent = monitoringDayText(bucket);
-        coverage.appendChild(monitoring);
-      }
-      const list = el('span', 'sd-cell-note');
-      list.textContent = '名单完整 ' + fmtMetric(bucket.coverage?.complete ?? 0) + '/' + fmtMetric(bucket.sessions) + ' 场';
-      coverage.appendChild(list); row.appendChild(coverage);
+      const badge = el('span', 'sd-gap-badge'); badge.textContent = trendCoverageBadge(bucket, period);
+      const details = [bucket.sessions > 0 ? '采集 ' + durationCoverage(bucket) : '采集暂无数据',
+        ...(period === 'day' ? [monitoringDayText(bucket)] : []),
+        '名单完整 ' + fmtMetric(bucket.coverage?.complete ?? 0) + '/' + fmtMetric(bucket.sessions) + ' 场'].join(' · ');
+      badge.title = details; badge.setAttribute('tabindex', '0'); badge.setAttribute('aria-label', badge.textContent + '：' + details);
+      coverage.appendChild(badge); row.appendChild(coverage);
       body.appendChild(row);
     }
     table.appendChild(body); scroll.appendChild(table);
@@ -1911,7 +1945,7 @@ function renderLive() {
   head.textContent = '正在直播';
   header.appendChild(head);
   const badge = el('span', 'sd-live-badge'); badge.textContent = '进行中'; header.appendChild(badge);
-  const refresh = el('button', 'nv-btn2');
+  const refresh = el('button', 'nv-btn2 sm');
   refresh.type = 'button';
   refresh.textContent = '刷新';
   refresh.addEventListener('click', loadLive);
@@ -1971,7 +2005,8 @@ function renderLive() {
   if (liveError) {
     const error = el('p', 'live-error');
     error.setAttribute('role', 'status');
-    error.textContent = '刷新失败：' + liveError + (live
+    // 原因不拼进来；后半句说明屏幕上的数是哪一刻的，新一场还没取到时不拿上一场的数冒充
+    error.textContent = REFRESH_FAILED + (live
       ? '，当前显示的是 ' + liveClock(live.checkedAt, true) + ' 的数据' : '，尚未获取到本场数据');
     card.appendChild(error);
   }
@@ -2071,7 +2106,7 @@ function sessionFilters(host, page) {
     input.value = where[key] == null ? '' : statisticalDate(Number(where[key]) - (key === 'dateTo' ? 1 : 0));
     inputs.push(input); wrapper.appendChild(input); controls.appendChild(wrapper);
   }
-  const apply = el('button', 'nv-btn2'); apply.type = 'button'; apply.textContent = '筛选';
+  const apply = el('button', 'nv-btn2 sm'); apply.type = 'button'; apply.textContent = '筛选';
   const error = el('span', 'hint'); error.setAttribute('role', 'status');
   apply.addEventListener('click', () => {
     const [first, last] = inputs.map(input => input.value);
@@ -2084,7 +2119,7 @@ function sessionFilters(host, page) {
   });
   controls.appendChild(apply);
   if (where.dateFrom != null || where.dateTo != null || where.from != null || where.to != null || where.starts != null) {
-    const clear = el('a', 'sd-clear-filter'); clear.textContent = '清除筛选';
+    const clear = el('a', 'lnkbtn sd-clear-filter'); clear.textContent = '清除筛选';
     clear.href = dashboardHash({dateFrom: null, dateTo: null, from: null, to: null, starts: null, source: null, sourceDay: null, sourceArea: null, page: null});
     controls.appendChild(clear);
   }

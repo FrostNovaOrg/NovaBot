@@ -12,7 +12,7 @@ import {manualHref} from './manual-link.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
 import {setMemberAuthState} from './settings-members.js';
-import {renderPersonalMenu} from './personal-menu.js';
+import {bindMineMenu, renderPersonalMenu} from './personal-menu.js';
 import {CLEAR, defaultValue} from './settings-model.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
   from './settings.js';
@@ -182,7 +182,7 @@ function registerPageChangeSource(page) {
  * @return {HTMLElement} 插件往里渲染的容器
  */
 function mountSettingsPage(meta, slot) {
-  const button = el('button');
+  const button = el('button', 'ghost sm');
   button.type = 'button';
   button.dataset.tab = meta.id;
   button.textContent = meta.displayName;
@@ -771,6 +771,8 @@ $('#set-search').addEventListener('input', filterSettings);
 $('#only-changed').addEventListener('change', filterSettings);
 $('#show-keys').addEventListener('change', toggleKeyNames);
 
+bindMineMenu($('#mine-toggle'), $('#mine-panel'));
+
 $('#logout-all').addEventListener('click', async () => {
   if (!await ask({title: '退出全部设备？',
     body: (hasUnsavedChanges() ? '有未保存的改动，退出后将丢失。' : '')
@@ -832,6 +834,8 @@ function startConsole() {
       // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
       // 那道门开着这件事没有任何其它现象
       $('#op-banner').style.display = state.operatorSession ? '' : 'none';
+      $('#session-check-notice').style.display = state.role === 'ADMIN' && state.sessionCheckSetupNeeded ? '' : 'none';
+      $('#oidc-callback-notice').style.display = state.role === 'ADMIN' && state.oidcCallbackSetupNeeded ? '' : 'none';
     })
     .catch(() => {})
     // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」

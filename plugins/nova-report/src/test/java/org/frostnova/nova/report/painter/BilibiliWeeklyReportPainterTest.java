@@ -256,6 +256,7 @@ class BilibiliWeeklyReportPainterTest {
     void liveCardCalls() throws Exception {
         var calls = new ArrayList<PaintCall>();
         var p = mock(CommonPainter.class, invocation -> {
+            if (invocation.getMethod().getName().equals("palette")) return ReportPalette.DEFAULT;
             String name = invocation.getMethod().getName();
             Object[] args = invocation.getArguments();
             if (name.equals("truncateToWidth")) {
@@ -329,7 +330,7 @@ class BilibiliWeeklyReportPainterTest {
             verify(p, atLeast(7)).drawTextWithStyle(texts.capture(), any(Point.class));
             var labels = texts.getAllValues().stream().map(row -> (TextWithStyle)row.get(0)).filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
             assertEquals(List.of("3.7", "0"), labels);
-            verify(p).drawPolyline(argThat(points -> points.size() == 2), eq(ReportSharedStyle.COLOR_NAME), eq(3));
+            verify(p).drawPolyline(argThat(points -> points.size() == 2), eq(ReportPalette.DEFAULT.streamerName()), eq(3));
         }
     }
 
@@ -338,7 +339,7 @@ class BilibiliWeeklyReportPainterTest {
         for (boolean visible : List.of(true, false)) {
             var p = spy(factory.create(900, 1200, true));
             var recordingFactory = mock(NovaCommonPainterFactory.class);
-            when(recordingFactory.create(900, 1200, true)).thenReturn(p);
+            when(recordingFactory.create(900, 1200, true, ReportPalette.DEFAULT)).thenReturn(p);
             new BilibiliWeeklyReportPainter(recordingFactory, api, new NovaBilibiliProperties()).render(streamer, data(visible));
             String raw = drawnText(p);
             for (String label : List.of("本周开播 5 天、共 5 场", "统计日 06:00–次日 06:00", "较上周 +",
@@ -390,7 +391,7 @@ class BilibiliWeeklyReportPainterTest {
                 new BilibiliLiveMetricCatalog().insights(), true);
         var p = spy(factory.create(900, 1200, true));
         var recordingFactory = mock(NovaCommonPainterFactory.class);
-        when(recordingFactory.create(900, 1200, true)).thenReturn(p);
+        when(recordingFactory.create(900, 1200, true, ReportPalette.DEFAULT)).thenReturn(p);
         new BilibiliWeeklyReportPainter(recordingFactory, api, new NovaBilibiliProperties()).render(streamer, data);
         String raw = drawnText(p);
         assertTrue(raw.contains("较上周 —"));
@@ -416,7 +417,7 @@ class BilibiliWeeklyReportPainterTest {
                     d.coverage(), d.daily(), d.chartMetric(), comparisons, null, d.sessionRows(), 0);
             var p = spy(factory.create(900, 1200, true));
             var recordingFactory = mock(NovaCommonPainterFactory.class);
-            when(recordingFactory.create(900, 1200, true)).thenReturn(p);
+            when(recordingFactory.create(900, 1200, true, ReportPalette.DEFAULT)).thenReturn(p);
             new BilibiliWeeklyReportPainter(recordingFactory, api, new NovaBilibiliProperties()).render(streamer, data);
             String explanation = "较上周：" + reason.replace("本期", "本周").replace("上期", "上周") + "，不比较。";
             assertEquals(explanation, WeeklyReport.comparisonExplanation(data));
@@ -467,10 +468,10 @@ class BilibiliWeeklyReportPainterTest {
         assertEquals(35, cells.size(), "不能漏日期或多画报告周之后的日期");
         assertEquals(5, cells.stream().map(i -> (Integer)i.getArgument(1)).distinct().count());
         assertEquals(7, cells.stream().map(i -> (Integer)i.getArgument(0)).distinct().count());
-        assertEquals(7, cells.stream().filter(i -> ReportSharedStyle.COLOR_TEXT.equals(i.getArgument(5))).count());
+        assertEquals(7, cells.stream().filter(i -> ReportPalette.DEFAULT.text().equals(i.getArgument(5))).count());
         for (int i = 0; i < cells.size(); i++) {
             var cell = cells.get(i);
-            assertEquals(i >= 28, ReportSharedStyle.COLOR_TEXT.equals(cell.getArgument(5)), "只有报告周描边");
+            assertEquals(i >= 28, ReportPalette.DEFAULT.text().equals(cell.getArgument(5)), "只有报告周描边");
             assertTrue((Integer)cell.getArgument(0) + (Integer)cell.getArgument(2) <= 865);
         }
         var texts = org.mockito.ArgumentCaptor.forClass(List.class);

@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPrefix;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -32,6 +34,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -53,6 +56,10 @@ public final class OidcClient {
     private final boolean enabled;
     private final Map<String, Instant> logoutIds = new HashMap<>();
     private static final int MAX_LOGOUT_IDS = 4096;
+    private static final Set<String> LOCAL_HOSTS = Set.of("127.0.0.1", "::1", "[::1]", "localhost");
+    private static final String CALLBACK_REQUIRED = "统一登录的回调地址（novabot.core.config-ui.oidc.redirect-uri）还没填："
+            + "现在只有用 localhost、127.0.0.1 或 ::1 打开控制台时才能用统一登录。请在「设置 → 高级选项 → 登录与安全 · 高级」"
+            + "里的「统一登录 · 回调地址」填写与账户中心登记的完全一致的完整回调地址，保存后重启。";
     private final String issuer;
     private final String clientId;
     private final String clientSecret;
@@ -84,6 +91,8 @@ public final class OidcClient {
     }
 
     public boolean isEnabled() { return enabled; }
+
+    public boolean callbackSetupNeeded() { return enabled && redirectUri.isBlank(); }
 
     /** Cached provider capability; an initial lookup is scheduled without blocking the caller. */
     public boolean createSupported() { return enabled && provider.createSupported(); }
@@ -226,9 +235,23 @@ public final class OidcClient {
         @Override public String toString() { return "OIDC logout [redacted]"; }
     }
 
-    /** No forwarded headers are parsed here. Scheme/host/port use the servlet request, prefix uses the servlet context. */
+    /** Says once at startup which setting to fill when the callback is left empty. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void reportCallbackSetting() {
+        if (callbackSetupNeeded()) log.warn(CALLBACK_REQUIRED);
+    }
+
+    /**
+     * Uses the configured callback when set. Left empty, the callback is derived only for a local address
+     * (127.0.0.1, ::1, localhost); other addresses need the setting. No forwarded headers are parsed here.
+     * Scheme/host/port use the servlet request, prefix uses the servlet context.
+     */
     private URI callbackUri(HttpServletRequest request) {
         if (!redirectUri.isBlank()) return OidcJson.callback(redirectUri);
+        if (!LOCAL_HOSTS.contains(request.getServerName().toLowerCase(Locale.ROOT))) {
+            log.warn(CALLBACK_REQUIRED);
+            throw new OidcException(CONFIGURATION, "OIDC redirect-uri must be configured for this address");
+        }
         int port = request.getServerPort();
         String scheme = request.getScheme();
         boolean defaultPort = "https".equals(scheme) && port == 443 || "http".equals(scheme) && port == 80;

@@ -48,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public abstract class OidcTestSupport {
     public static final String ISSUER = "https://accounts.example.com/tenant";
     public static final String CLIENT = "console-client";
+    public static final String CALLBACK = "https://console.example.com/app/config/api/oidc/callback";
     public final MutableClock clock = new MutableClock();
     public NovaCoreProperties.ConfigUi.Oidc config;
     public FakeProvider provider;
@@ -61,6 +62,7 @@ public abstract class OidcTestSupport {
         config.setIssuer(ISSUER);
         config.setClientId(CLIENT);
         config.setClientSecret("test:secret with spaces");
+        config.setRedirectUri(CALLBACK);
         provider = new FakeProvider();
         http = RestTemplateConfig.buildTemplate(Duration.ofSeconds(1), Duration.ofSeconds(1));
         // All requests terminate here, including discovery and key rotation. No socket is opened.

@@ -14,7 +14,6 @@ import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.awt.Color;
 import java.awt.Font;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
@@ -93,8 +92,12 @@ public class BilibiliOfflineRewardDigestPainter {
      * @return 图片的 Base64 编码，绘制失败时为空
      */
     public Optional<String> paint(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
+        return paint(event, showRevenue, ReportPalette.DEFAULT);
+    }
+
+    public Optional<String> paint(BilibiliOfflineRewardDigestEvent event, boolean showRevenue, ReportPalette palette) {
         try {
-            CommonPainter painter = factory.create(ReportSharedStyle.WIDTH, INITIAL_HEIGHT, true);
+            CommonPainter painter = factory.create(ReportSharedStyle.WIDTH, INITIAL_HEIGHT, true, palette);
             painter.setPos(ReportSharedStyle.MARGIN, ReportSharedStyle.MARGIN);
 
             BufferedImage face = ReportSharedStyle.faceImage(api, event.getSource());
@@ -107,7 +110,7 @@ public class BilibiliOfflineRewardDigestPainter {
             }
 
             if (event.getOmittedCount() > 0) {
-                painter.drawTextMultiLine(summary(event, showRevenue), ReportSharedStyle.COLOR_TEXT, ReportSharedStyle.MARGIN);
+                painter.drawTextMultiLine(summary(event, showRevenue), painter.palette().text(), ReportSharedStyle.MARGIN);
             }
             painter.movePos(0, 20);
             logoDrawer.draw(painter, properties);
@@ -115,7 +118,7 @@ public class BilibiliOfflineRewardDigestPainter {
             painter.movePos(0, 10);
 
             // 该调用同时把画布裁剪至实际内容高度并铺上背景，必须在全部内容绘制完毕后执行
-            painter.createSolidRoundedRectangleBackground(Color.WHITE, ReportSharedStyle.CANVAS_RADIUS);
+            painter.createSolidRoundedRectangleBackground(painter.palette().background(), ReportSharedStyle.CANVAS_RADIUS);
 
             return painter.base64();
         } catch (Exception e) {
@@ -174,10 +177,10 @@ public class BilibiliOfflineRewardDigestPainter {
         List<String> lines = bodyLines(person, showRevenue, headerAt);
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(lines.get(0),
-                CommonPainter.TEXT_FONT_SIZE, ReportSharedStyle.COLOR_NAME, Font.BOLD)));
+                CommonPainter.TEXT_FONT_SIZE, painter.palette().streamerName(), Font.BOLD)));
         for (int i = 1; i < lines.size(); i++) {
             // 礼物多的观众一行画不下，按版心宽度折行
-            painter.drawTextMultiLine(lines.get(i), ReportSharedStyle.COLOR_TEXT, ReportSharedStyle.MARGIN);
+            painter.drawTextMultiLine(lines.get(i), painter.palette().text(), ReportSharedStyle.MARGIN);
         }
         painter.movePos(0, PERSON_GAP);
     }

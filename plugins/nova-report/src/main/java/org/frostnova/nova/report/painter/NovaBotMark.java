@@ -29,10 +29,6 @@ final class NovaBotMark {
 
     private static final double BUBBLE_BOTTOM = 46;
 
-    private static final Color GRADIENT_START = new Color(0x7C, 0x5C, 0xFF);
-
-    private static final Color GRADIENT_END = new Color(0xFF, 0x5F, 0x9E);
-
     /** 副星的不透明度 */
     private static final float SECONDARY_STAR_OPACITY = 0.85f;
 
@@ -54,6 +50,10 @@ final class NovaBotMark {
      * @param bubbleHeight 气泡本体的高，像素
      */
     static void paint(Graphics2D graphics, double bubbleRight, double bubbleTop, double bubbleHeight) {
+        paint(graphics, bubbleRight, bubbleTop, bubbleHeight, ReportPalette.DEFAULT);
+    }
+
+    static void paint(Graphics2D graphics, double bubbleRight, double bubbleTop, double bubbleHeight, ReportPalette palette) {
         if (bubbleHeight <= 0) {
             return;
         }
@@ -65,10 +65,10 @@ final class NovaBotMark {
             g.translate(bubbleRight - BUBBLE_RIGHT * scale, bubbleTop - BUBBLE_TOP * scale);
             g.scale(scale, scale);
 
-            g.setPaint(bubbleGradient());
+            g.setPaint(bubbleGradient(palette));
             g.fill(BUBBLE);
 
-            g.setColor(Color.WHITE);
+            g.setColor(palette.markStar());
             g.fill(PRIMARY_STAR);
             g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, SECONDARY_STAR_OPACITY));
             g.fill(SECONDARY_STAR);
@@ -91,11 +91,11 @@ final class NovaBotMark {
      * 所以把 (0,0)→(1,1) 经外框的变换放上去，而不是直接连外框的两个角——
      * 后者的等色线与对角线垂直，和 SVG 画出来的不一样
      */
-    private static LinearGradientPaint bubbleGradient() {
+    private static LinearGradientPaint bubbleGradient(ReportPalette palette) {
         Rectangle2D box = BUBBLE.getBounds2D();
         AffineTransform toBox = new AffineTransform(box.getWidth(), 0, 0, box.getHeight(), box.getX(), box.getY());
         return new LinearGradientPaint(new Point2D.Double(0, 0), new Point2D.Double(1, 1),
-                new float[]{0f, 1f}, new Color[]{GRADIENT_START, GRADIENT_END},
+                new float[]{0f, 1f}, new Color[]{palette.markFrom(), palette.markTo()},
                 MultipleGradientPaint.CycleMethod.NO_CYCLE, MultipleGradientPaint.ColorSpaceType.SRGB, toBox);
     }
 

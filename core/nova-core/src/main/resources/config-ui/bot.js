@@ -15,8 +15,8 @@ export function botFormHtml(p) {
     + '<div class="row"><label for="' + p + '-wport">WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
     + '<div class="row"><label for="' + p + '-wtoken">WS Token</label><input id="' + p + '-wtoken" placeholder="'
     + phrase('bot.family', v => '与 ' + v + ' 中的配置保持一致', '与机器人程序中的配置保持一致') + '"></div>'
-    + '<div class="row"><button id="' + p + '-test" type="button">测试连接</button>'
-    + '<button id="' + p + '-save" type="button" disabled>保存</button></div>'
+    + '<div class="row"><button id="' + p + '-test" class="ghost" type="button">测试连接</button>'
+    + '<button id="' + p + '-save" class="primary" type="button" disabled>保存</button></div>'
     + '<div class="out" id="' + p + '-out"></div>';
 }
 

@@ -388,7 +388,7 @@ class BilibiliLiveReportPainterTest {
         dump("online-polyline", base64.get());
 
         BufferedImage image = imageOf(base64.get());
-        Color online = BilibiliLiveReportPainter.COLOR_CURVE_ONLINE;
+        Color online = ReportPalette.DEFAULT.curveOnline();
 
         int peakX = -1;
         int peakY = image.getHeight();
@@ -921,7 +921,7 @@ class BilibiliLiveReportPainterTest {
         int x = GAUGE_MARGIN + 2 * GAUGE_COLUMN_WIDTH;
         int bottom = -1;
         for (int y = 0; y < image.getHeight(); y++) {
-            if (isColor(image, x, y, BilibiliLiveReportPainter.COLOR_CURVE_DANMU)) {
+            if (isColor(image, x, y, ReportPalette.DEFAULT.curveDanmu())) {
                 bottom = y;
             }
         }
@@ -967,7 +967,7 @@ class BilibiliLiveReportPainterTest {
         // 而「先红」要的正是这三处各自红在哪
         assertAll(
                 // 取样点一：缺口里那一格（第 100 分钟）——它有数据，改之前这里画的是满格面积
-                () -> assertFalse(isColor(image, gapX, midY, BilibiliLiveReportPainter.COLOR_CURVE_DANMU),
+                () -> assertFalse(isColor(image, gapX, midY, ReportPalette.DEFAULT.curveDanmu()),
                         "缺口那一段不该画面积：那几分钟没在采，画成面积等于把没有说成有"),
                 // 取样点二：整条缺口带里应当看得见斜纹，且斜线是等间距的
                 () -> assertTrue(stripes.size() >= 3, "缺口带里应当量得到至少三道斜线, 实测 " + stripes.size() + " 道"),
@@ -979,11 +979,11 @@ class BilibiliLiveReportPainterTest {
                     }
                 },
                 // 取样点三：真没互动的那一段（第 50 分钟）——面积贴着基线，抬头看不见、低头看得见
-                () -> assertFalse(isColor(image, quietX, midY, BilibiliLiveReportPainter.COLOR_CURVE_DANMU),
+                () -> assertFalse(isColor(image, quietX, midY, ReportPalette.DEFAULT.curveDanmu()),
                         "没人说话的那几分钟不该有高面积"),
-                () -> assertTrue(isColor(image, quietX, baseline - 1, BilibiliLiveReportPainter.COLOR_CURVE_DANMU),
+                () -> assertTrue(isColor(image, quietX, baseline - 1, ReportPalette.DEFAULT.curveDanmu()),
                         "没人说话的那几分钟仍要画贴地面积：一片空白与斜纹区就分不出了"),
-                () -> assertFalse(isColor(image, quietX, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH),
+                () -> assertFalse(isColor(image, quietX, midY, ReportPalette.DEFAULT.curveGapHatch()),
                         "没人说话不是缺口, 不该画成斜纹"));
     }
 
@@ -1038,16 +1038,16 @@ class BilibiliLiveReportPainterTest {
         int baseline = baselineOf(image);
         assertAll(
                 () -> assertTrue(isColor(image, 35 + 50 * 2, baseline - 80,
-                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "短缺口列仍画数据"),
+                        ReportPalette.DEFAULT.curveDanmu()), "短缺口列仍画数据"),
                 () -> assertFalse(isColor(image, 35 + 2 * 2, baseline - 45,
-                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "短缺口列的峰值仍决定纵轴"),
+                        ReportPalette.DEFAULT.curveDanmu()), "短缺口列的峰值仍决定纵轴"),
                 () -> assertTrue(isColor(image, 35 + 125 * 2, baseline - 1,
-                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "长缺口开头只占 20 秒的边格保留面积"),
+                        ReportPalette.DEFAULT.curveDanmu()), "长缺口开头只占 20 秒的边格保留面积"),
                 () -> assertFalse(isColor(image, 35 + 240 * 2, baseline - 1,
-                        BilibiliLiveReportPainter.COLOR_CURVE_DANMU), "长缺口结尾占 40 秒的边格不画面积"));
+                        ReportPalette.DEFAULT.curveDanmu()), "长缺口结尾占 40 秒的边格不画面积"));
         boolean hatch = false;
         for (int x = 35 + 151 * 2; x < 35 + 265 * 2; x++) {
-            hatch |= isColor(image, x, baseline - 45, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH);
+            hatch |= isColor(image, x, baseline - 45, ReportPalette.DEFAULT.curveGapHatch());
         }
         assertTrue(hatch, "长缺口仍画斜纹");
     }
@@ -1093,18 +1093,18 @@ class BilibiliLiveReportPainterTest {
         List<Integer> lines = new ArrayList<>();
         int hatchPixels = 0;
         for (int x = GAUGE_MARGIN; x < GAUGE_MARGIN + GAUGE_CONTENT_WIDTH; x++) {
-            if (isColor(image, x, y, BilibiliLiveReportPainter.COLOR_CURVE_GAP_EDGE)) {
+            if (isColor(image, x, y, ReportPalette.DEFAULT.curveGapEdge())) {
                 lines.add(x);
             }
-            if (isColor(image, x, y, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH)) {
+            if (isColor(image, x, y, ReportPalette.DEFAULT.curveGapHatch())) {
                 hatchPixels++;
             }
         }
         assertEquals(0, hatchPixels, "秒级缺口不应画斜纹");
         assertEquals(List.of(58, 124, 176, 232, 288, 304), lines, "每次连续中断只画一道 1 px 细线");
         for (int x : lines) {
-            assertTrue(isColor(image, x - 1, y, BilibiliLiveReportPainter.COLOR_CURVE_DANMU));
-            assertTrue(isColor(image, x + 1, y, BilibiliLiveReportPainter.COLOR_CURVE_DANMU));
+            assertTrue(isColor(image, x - 1, y, ReportPalette.DEFAULT.curveDanmu()));
+            assertTrue(isColor(image, x + 1, y, ReportPalette.DEFAULT.curveDanmu()));
         }
         System.out.println("Short-gap rendering: lines=6, columns(0-based)=[11, 44, 70, 98, 126, 134], hatch runs=0");
     }
@@ -1120,9 +1120,9 @@ class BilibiliLiveReportPainterTest {
 
         List<Integer> stripes = new ArrayList<>();
         // 扫描起点若正落在一道斜线里，那一道算不出真正的起点，不计
-        boolean inside = isColor(image, bandFrom, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH);
+        boolean inside = isColor(image, bandFrom, midY, ReportPalette.DEFAULT.curveGapHatch());
         for (int x = bandFrom + 1; x < bandTo; x++) {
-            boolean hatch = isColor(image, x, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH);
+            boolean hatch = isColor(image, x, midY, ReportPalette.DEFAULT.curveGapHatch());
             if (hatch && !inside) {
                 stripes.add(x);
             }
