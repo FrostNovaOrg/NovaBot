@@ -1,17 +1,8 @@
 {
-	"commit":"ec2aeb64dcc3a60af55210a011da794fbaf1a56f",
+	"commit":"51484b77c2cda9c19aee0b136ae05987697c3be9",
 	"epochMs":1792382400000,
 	"recordedAt":"2026-10-19T12:00:00+08:00",
 	"responses":[
-		{
-			"contentType":"application/json",
-			"file":"data/datasource_users--e3b0c44298fc.json",
-			"method":"GET",
-			"path":"/config/api/datasource/users",
-			"query":"",
-			"sha256":"4b463518a40832621d94419d6683722a6c01176c846de2b5a528ae525a1489b4",
-			"status":200
-		},
 		{
 			"contentType":"application/json",
 			"file":"data/push-history--e3b0c44298fc.json",
@@ -27,7 +18,7 @@
 			"method":"GET",
 			"path":"/config/api/auth/state",
 			"query":"",
-			"sha256":"dd54caec86a853a8fbff7b4d2c5587e68b06916063b46192eba54756e6dc4f35",
+			"sha256":"92c023f01f658df1d1ddc35799ef2347147379eda16a0bd4423d33fddd14178b",
 			"status":200
 		},
 		{
@@ -81,7 +72,7 @@
 			"method":"GET",
 			"path":"/config/api/handlers",
 			"query":"",
-			"sha256":"f6229644d70e2cbb73ec2d110536ff904da871cd027c765dfc8d99e1857d9450",
+			"sha256":"980c2ef50963bf088259c7c48536718e45a388447aad32b5b08517f61491191c",
 			"status":200
 		},
 		{
@@ -117,7 +108,7 @@
 			"method":"GET",
 			"path":"/config/api/schema",
 			"query":"",
-			"sha256":"c630709d948cd148295bebef045e1cf51beb87b0e9402b8838c0daef50f77a19",
+			"sha256":"4576a329d081aac525bc41437b9986a1bb31bff0b33a0f4c9f353f6d99ff61b4",
 			"status":200
 		},
 		{
@@ -126,7 +117,7 @@
 			"method":"GET",
 			"path":"/config/api/status",
 			"query":"",
-			"sha256":"2159e8c2eb023b1ab617e42cf2d7c5b9d8ac07558903ff0db139473585ec01d7",
+			"sha256":"d75a120f6e0d306bdb97b90b751706b1aa5a4ef8d07f84247e2040a84f965200",
 			"status":200
 		},
 		{
@@ -153,7 +144,7 @@
 			"method":"GET",
 			"path":"/config/api/event-tokens",
 			"query":"",
-			"sha256":"8c41429feb9d960dc00f420cc11e5548d68c1a4e0e7c4217e8c6a11efdb39396",
+			"sha256":"b37d54a83a68720b7e66bb4abd66d7a73f23074f4d44df4e15d4e4f5599b597b",
 			"status":200
 		},
 		{
@@ -180,7 +171,25 @@
 			"method":"GET",
 			"path":"/config/api/datasource",
 			"query":"",
-			"sha256":"316b7deeed2267b4ae5a15a391736e405d3e7356aaf0507153fd92fbc6005c38",
+			"sha256":"8701ad54c9405e122d5dc4d4dd5e2e9a2836dc3ee2f5e21e97daf61875af5822",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users",
+			"query":"",
+			"sha256":"4b463518a40832621d94419d6683722a6c01176c846de2b5a528ae525a1489b4",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/exec_notice--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/exec/notice",
+			"query":"",
+			"sha256":"9b3e0520b5ca9e2a46ecb161fc47fef18f9fa5faf7f8d314eada75d246fa3f76",
 			"status":200
 		},
 		{
@@ -189,7 +198,7 @@
 			"method":"GET",
 			"path":"/config/api/state",
 			"query":"",
-			"sha256":"f76c0b302e992d00c663c09211a8496a5381d561f0db5aa77ce851628026c024",
+			"sha256":"d1fcb40735b3869be53e630d398d2c2085013398b24c0463a2b9701c2b6dddb3",
 			"status":200
 		},
 		{
@@ -198,7 +207,7 @@
 			"method":"GET",
 			"path":"/config/api/at-all/quota",
 			"query":"",
-			"sha256":"56f4afda7732bd1e1599bc103e915ce3008a2d8a1e2b77733f7fea1c35e08707",
+			"sha256":"a09ddc468dd5bc8dcf51519da16d68c5d15841cb085b9e8591ea2962d1011451",
 			"status":200
 		},
 		{
@@ -238,13 +247,22 @@
 			"status":200
 		},
 		{
+			"contentType":"application/json",
+			"file":"data/report_palettes--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/report/palettes",
+			"query":"",
+			"sha256":"2af34d1cc8c7de31a744748317448afc303d734444cc79928862ff2259014282",
+			"status":200
+		},
+		{
 			"body":{},
 			"contentType":"image/png",
 			"file":"data/report_preview--44136fa355b3.png",
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"f398b77a952ec8a58ef1c0ec67ded412fe472d8aba659d12404e39a03db13f26",
+			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
 			"status":200
 		},
 		{
@@ -259,7 +277,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"9cb6e427143a7a648ae9ac336f6efc9e87ee522275be7a8cff302acb74f1730e",
+			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
 			"status":200
 		},
 		{
@@ -274,7 +292,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"f398b77a952ec8a58ef1c0ec67ded412fe472d8aba659d12404e39a03db13f26",
+			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
 			"status":200
 		},
 		{
@@ -289,7 +307,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"9cb6e427143a7a648ae9ac336f6efc9e87ee522275be7a8cff302acb74f1730e",
+			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
 			"status":200
 		},
 		{
@@ -304,7 +322,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"f398b77a952ec8a58ef1c0ec67ded412fe472d8aba659d12404e39a03db13f26",
+			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
 			"status":200
 		},
 		{
@@ -319,7 +337,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"9cb6e427143a7a648ae9ac336f6efc9e87ee522275be7a8cff302acb74f1730e",
+			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
 			"status":200
 		},
 		{
@@ -334,7 +352,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"f398b77a952ec8a58ef1c0ec67ded412fe472d8aba659d12404e39a03db13f26",
+			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
 			"status":200
 		},
 		{
@@ -349,7 +367,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"9cb6e427143a7a648ae9ac336f6efc9e87ee522275be7a8cff302acb74f1730e",
+			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
 			"status":200
 		},
 		{
@@ -364,7 +382,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"f398b77a952ec8a58ef1c0ec67ded412fe472d8aba659d12404e39a03db13f26",
+			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
 			"status":200
 		},
 		{
@@ -747,6 +765,24 @@
 			"path":"/config/api/streamer/lookup",
 			"query":"",
 			"sha256":"1cd96f32540c64a1860389b78acbd4a7fa48c6e56ec604415916a552f4e4014e",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000101--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000101",
+			"query":"",
+			"sha256":"68a0bd27ba73ef0acf939e7d911ad13ed9a81ec78b55c95482254ada0dcd5aae",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000101_version--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000101/version",
+			"query":"",
+			"sha256":"9b98fe3fc3b9453adeebaf6a37c88174b942486488dc5750578d60cca8b5d99b",
 			"status":200
 		},
 		{
@@ -2834,7 +2870,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1791633900000/report",
 			"query":"",
-			"sha256":"6cf58957c07f2dc9b004c68a4daf93e8ec2a670c4a4a69d7417a5dfe3928aa2e",
+			"sha256":"54617f13b69d7e2fa280b17a1a2503f874c67fda6fff211e1def2e0cfb3ddbe3",
 			"status":200
 		},
 		{
@@ -2852,7 +2888,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792151700000/report",
 			"query":"",
-			"sha256":"6774718ad60761d77861634a92cc25e4393c81b79b6242a1c37e124f53d05968",
+			"sha256":"d5b0ee6effd5b222e4dd5ae409c11e0ddcb428eddd23d138226b0096357dddc5",
 			"status":200
 		},
 		{
@@ -2870,7 +2906,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792379400000/report",
 			"query":"",
-			"sha256":"bb104a465ac50269cb5ce8558b7beac2ade3f0ef66d4184b7c8fc816aa289573",
+			"sha256":"1304535523e90c7a1d828f8885af18e7dae53a87f6e65906bce3eccc93ff8641",
 			"status":200
 		},
 		{
@@ -2897,7 +2933,7 @@
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000101/preview",
 			"query":"num=990000000301&pushPlatform=qq-onebot&type=1",
-			"sha256":"4e43022bd7a145ade4d46c543793d299f917ff35a3677725f76201b3c4ea4b00",
+			"sha256":"b271bcd2552296c1e940bb31dfdb9497e1e63f45e2b31d2fba903634c2e87d49",
 			"status":200
 		},
 		{
@@ -2915,7 +2951,7 @@
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000101/preview",
 			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
-			"sha256":"4e43022bd7a145ade4d46c543793d299f917ff35a3677725f76201b3c4ea4b00",
+			"sha256":"b271bcd2552296c1e940bb31dfdb9497e1e63f45e2b31d2fba903634c2e87d49",
 			"status":200
 		},
 		{
@@ -2933,7 +2969,7 @@
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000101/preview",
 			"query":"num=990000000502&pushPlatform=qq-onebot&type=0",
-			"sha256":"a5f42ba40f83866cee04fe5b3be885daa7e16649b4cd5cb4382bb6e4657073c3",
+			"sha256":"75f0f09dfe486811e36a11ae1b66eb54f26ff12e6289f737ced34f742b6985be",
 			"status":200
 		},
 		{
@@ -2956,6 +2992,24 @@
 			"path":"/config/api/streamer/lookup",
 			"query":"",
 			"sha256":"b0fc4bdcff92399a3c90e25413626a046c50179c172ee564f7c9f0ad83cab683",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000102--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000102",
+			"query":"",
+			"sha256":"9639a2e05255ac02604cbc67ff88c36a82a5ff6ecc3c08e808685a900002ddbd",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000102_version--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000102/version",
+			"query":"",
+			"sha256":"b747655aff3d0bfe34df9f9e6aff9d9e6855fda01dafa82b04f11b2b681c2aac",
 			"status":200
 		},
 		{
@@ -8571,7 +8625,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791806400000/report",
 			"query":"",
-			"sha256":"504b1bdc170753a274eed2663672ad61866b6376326aa8aabf6ae554f314dd7a",
+			"sha256":"ec8ad29a300945bf06279c1578087746124f43c9e218fc1341db172d2e6758ee",
 			"status":200
 		},
 		{
@@ -8589,7 +8643,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792065600000/report",
 			"query":"",
-			"sha256":"0641acc3e5d6a34ae22ca9e60a10dd2e84d01ed5ae54243176c907cd9ca2870f",
+			"sha256":"20c3b0f8fa103948a035024d9a817d1220f3a37a243eca8bf1a9b85644c4639a",
 			"status":200
 		},
 		{
@@ -8607,7 +8661,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792324800000/report",
 			"query":"",
-			"sha256":"9014155696b55c9f3d2793e404e66353dc39ddc544789855754a0377893ecb75",
+			"sha256":"f3363234e2b2b52c1718c5436c13f298f1d791823ebe9cfd8292a81b51c530bb",
 			"status":200
 		},
 		{
@@ -8634,7 +8688,7 @@
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000102/preview",
 			"query":"num=990000000301&pushPlatform=qq-onebot&type=1",
-			"sha256":"a2ffbaa6422ad161d4e1f974a3c61ba60c4504e1aed14bda1d34a7197ea11df2",
+			"sha256":"36874cadf6b4f810ce10310a6aec5a70fab7629f67f94b11eb62d800d7e83502",
 			"status":200
 		},
 		{
@@ -8652,7 +8706,7 @@
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000102/preview",
 			"query":"num=990000000302&pushPlatform=qq-onebot&type=1",
-			"sha256":"a2ffbaa6422ad161d4e1f974a3c61ba60c4504e1aed14bda1d34a7197ea11df2",
+			"sha256":"36874cadf6b4f810ce10310a6aec5a70fab7629f67f94b11eb62d800d7e83502",
 			"status":200
 		},
 		{
@@ -8670,7 +8724,7 @@
 			"method":"GET",
 			"path":"/config/api/weekly-report/bilibili/990000000102/preview",
 			"query":"num=990000000303&pushPlatform=qq-onebot&type=1",
-			"sha256":"a2ffbaa6422ad161d4e1f974a3c61ba60c4504e1aed14bda1d34a7197ea11df2",
+			"sha256":"36874cadf6b4f810ce10310a6aec5a70fab7629f67f94b11eb62d800d7e83502",
 			"status":200
 		},
 		{
@@ -8693,6 +8747,24 @@
 			"path":"/config/api/streamer/lookup",
 			"query":"",
 			"sha256":"748a60ddfa1f00015f1167cd19820b3576d7801039696f4fc0eac564a1c2a30c",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000103--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000103",
+			"query":"",
+			"sha256":"f32df8ecba49df63daab4c6559f6c077a42bad58a9e9ff6103751f1f1e0b5976",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000103_version--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000103/version",
+			"query":"",
+			"sha256":"b4fb7ccedd47764a4fc2c03a269cbfea5b2b2e11552a93daad74a950e67b315d",
 			"status":200
 		},
 		{
@@ -10528,7 +10600,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786363200000/report",
 			"query":"",
-			"sha256":"dd99a53ec3336e8319ca9e47ba35b2610b9ff18ffe031f3cfa1f2ff4c3665c21",
+			"sha256":"afe84113bac3891c936e1ee179f51a70eee8ccc3f13d26fceccb529af8569e8c",
 			"status":200
 		},
 		{
@@ -10546,7 +10618,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786795200000/report",
 			"query":"",
-			"sha256":"62b7fd359ca516c00b595667a40a42b60a321469d638850ef991e6338a8c6595",
+			"sha256":"30cd197cc4dcc6a9e220ad9e54ee6218d389dadde0eb5a25fa9c951c2924b741",
 			"status":200
 		},
 		{
@@ -10596,6 +10668,24 @@
 			"path":"/config/api/streamer/lookup",
 			"query":"",
 			"sha256":"a1cfafdbb5bfa28292ee6f0bb372ca55ebbac75678556c006de26a306e8d2dde",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000104--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000104",
+			"query":"",
+			"sha256":"eba334307a0cfc3569378f6419d25904b94cbec6fc91cfafb4f350421b39cdc0",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/datasource_users_bilibili_990000000104_version--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users/bilibili/990000000104/version",
+			"query":"",
+			"sha256":"ac242973b2e7ef1085ac13eb18ff904fa9e5dfba4e9b1c80917a536423fe923d",
 			"status":200
 		},
 		{
@@ -12521,7 +12611,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000104/sessions/1791720000000/report",
 			"query":"",
-			"sha256":"ceab81f07d415649cda256176a668be7f45176678cdec90d353bec725bfd4dd2",
+			"sha256":"40abbccfb427a08f2780be4896a222bea29706347cdf630cc3c45601d077ec3f",
 			"status":200
 		},
 		{
@@ -12539,7 +12629,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000104/sessions/1792152000000/report",
 			"query":"",
-			"sha256":"fe5f591a11b5a07c19fcf544b40e5f74a262fb9abb30a101746fbbc85c09b7d2",
+			"sha256":"b0a8272e3a3e516ca48c37caab398581dafe61c18e65f294fa6bc1fa82f71b34",
 			"status":200
 		},
 		{
@@ -12558,15 +12648,6 @@
 			"path":"/config/api/weekly-report/bilibili/990000000104/status",
 			"query":"num=990000000303&pushPlatform=qq-onebot&type=1",
 			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1",
-			"status":200
-		},
-		{
-			"contentType":"application/json",
-			"file":"data/report_palettes--e3b0c44298fc.json",
-			"method":"GET",
-			"path":"/config/api/report/palettes",
-			"query":"",
-			"sha256":"2af34d1cc8c7de31a744748317448afc303d734444cc79928862ff2259014282",
 			"status":200
 		}
 	],

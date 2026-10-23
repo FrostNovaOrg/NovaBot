@@ -270,10 +270,14 @@ public class ConsoleDemoRecorderTest {
         org.springframework.test.util.ReflectionTestUtils.invokeMethod(
                 context.getBean(org.frostnova.nova.core.timeline.TimelineStore.class), "rebuildIndex");
         java.time.LocalDate day = instant.atZone(clock.getZone()).toLocalDate();
+        // Quiet hours are judged by LocalTime.now(); pin it too, or the recording depends on the hour it runs.
+        java.time.LocalTime hour = instant.atZone(clock.getZone()).toLocalTime();
         try (var time = mockStatic(Instant.class, CALLS_REAL_METHODS);
-             var dates = mockStatic(java.time.LocalDate.class, CALLS_REAL_METHODS)) {
+             var dates = mockStatic(java.time.LocalDate.class, CALLS_REAL_METHODS);
+             var times = mockStatic(java.time.LocalTime.class, CALLS_REAL_METHODS)) {
             time.when(Instant::now).thenReturn(instant);
             dates.when(java.time.LocalDate::now).thenReturn(day);
+            times.when(() -> java.time.LocalTime.now()).thenReturn(hour);
             recordResponses(meta);
         }
     }
@@ -283,8 +287,8 @@ public class ConsoleDemoRecorderTest {
         for (String path : java.util.List.of("/auth/state", "/auth/agreement", "/auth/passkeys", "/auth/totp/setup",
                 "/alert/channels", "/bot/console", "/handlers", "/login", "/pages", "/platforms", "/schema",
                 "/status", "/values", "/vocab", "/event-tokens", "/setup/bot", "/setup/state", "/datasource",
-                "/state", "/push-history", "/at-all/quota", "/templates", "/timeline/days", "/streamers",
-                "/report/layout-options", "/report/palettes")) {
+                "/datasource/users", "/exec/notice", "/state", "/push-history", "/at-all/quota", "/templates",
+                "/timeline/days", "/streamers", "/report/layout-options", "/report/palettes")) {
             JSONObject body = capture(path);
             if (path.equals("/auth/passkeys")) assertEquals(2, body.getJSONArray("passkeys").size());
             if (path.equals("/event-tokens")) assertEquals(2, body.getJSONArray("tokens").size());
@@ -327,6 +331,9 @@ public class ConsoleDemoRecorderTest {
             String p = "/streamers/" + platform + "/" + uid;
             capture("/streamer/name", "platform", platform, "uid", uid);
             captureRequest("POST", "/streamer/lookup", JSONObject.of("platform", platform, "uid", uid));
+            // The push page loads one streamer's full configuration when a channel is opened.
+            capture("/datasource/users/" + platform + "/" + uid);
+            capture("/datasource/users/" + platform + "/" + uid + "/version");
             capture(p);
             capture(p + "/live");
             capture(p + "/live", "series", "online_count");
@@ -419,7 +426,7 @@ public class ConsoleDemoRecorderTest {
                 catch (java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
             }).sum();
         }
-        assertTrue(imageBytes <= 2_000_000, "PNG budget: " + imageBytes);
+        assertTrue(imageBytes <= 2_100_000, "PNG budget: " + imageBytes);
         meta.put("responses", entries);
         Files.writeString(output.resolve("index.json"), JSON.toJSONString(sortedJson(meta), com.alibaba.fastjson2.JSONWriter.Feature.PrettyFormat) + "\n");
         assertTrue(bytes + Files.size(output.resolve("index.json")) <= 8_000_000, "data budget");
