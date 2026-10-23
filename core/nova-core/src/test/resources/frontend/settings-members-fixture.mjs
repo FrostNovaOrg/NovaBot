@@ -52,6 +52,7 @@ const entries = [account('local-admin', 'ADMIN', 'ENABLED'), account('enabled', 
 function subject(file, reply = {}, confirm = true) {
   const requests = [], questions = [], opened = [];
   const box = new Node();
+  const controls = {'#set-search': {value: ''}, '#only-changed': {checked: false}};
   if (file === 'personal-menu.js') {
     for (const [tag, id, label] of [['summary', 'personal-name', ''], ['a', 'account-center', '账户中心'],
       ['button', 'logout', '退出'], ['p', 'personal-result', '']]) {
@@ -77,8 +78,8 @@ function subject(file, reply = {}, confirm = true) {
   const shared = {role: 'ADMIN'};
   const mod = new Function('el', 'api', 'ask', 'window', 'hasUnsavedChanges', 'store', '$', src + '\nreturn ' + exports)(
     (tag, cls) => new Node(tag, cls), api,
-    async options => { questions.push(options); return confirm; }, window, () => dirty > 0, shared, () => box);
-  return {...mod, store: shared, box, requests, questions, opened, window, setDirty: value => { dirty = value; }};
+    async options => { questions.push(options); return confirm; }, window, () => dirty > 0, shared, selector => controls[selector] || box);
+  return {...mod, store: shared, controls, box, requests, questions, opened, window, setDirty: value => { dirty = value; }};
 }
 async function members(reply, confirm) {
   const s = subject('settings-members.js', reply, confirm);
@@ -86,6 +87,32 @@ async function members(reply, confirm) {
 }
 function row(s, id) { const n = walk(s.box).find(n => n.dataset.accountId === id); assert.ok(n, '缺少账号行 ' + id); return n; }
 
+// 抓已有搜索词时，成员读完或操作后重画仍被隐藏。
+await check('成员读完和停用后按当前搜索词重新显示', async () => {
+  let finishRead, notifyRead;
+  let reading = new Promise(resolve => { notifyRead = resolve; });
+  const s = subject('settings-members.js', {'/accounts': () => new Promise(resolve => {
+    finishRead = resolve;
+    notifyRead();
+  })});
+  s.controls['#set-search'].value = 'enabled@example.com';
+  const render = s.renderMembers(s.box, base);
+  s.filterMembers(s.controls['#set-search'].value, false);
+  assert.equal(s.box.classList.contains('hide'), true);
+  finishRead({success: true, accounts: entries});
+  await render;
+  assert.equal(s.box.classList.contains('hide'), false, '成员读完应显示邮箱匹配的组');
+
+  reading = new Promise(resolve => { notifyRead = resolve; });
+  const disable = find(row(s, 'enabled'), 'disable').click();
+  await reading;
+  s.filterMembers(s.controls['#set-search'].value, false);
+  assert.equal(s.box.classList.contains('hide'), true);
+  finishRead({success: true, accounts: entries.map(a => a.id === 'enabled' ? {...a, status: 'DISABLED'} : a)});
+  await disable;
+  assert.equal(s.box.classList.contains('hide'), false, '停用后重画应仍显示邮箱匹配的组');
+  assert.ok(s.requests.some(request => request.path === '/accounts/enabled/disable'));
+});
 // 抓管理员进设置后仍找不到等待授权的新成员，以及身份、状态或主播名字写错。
 await check('待授权排最前，身份状态和主播名字可辨认', async () => {
   const s = await members();

@@ -2084,8 +2084,10 @@ function pickMemberTarget(opts) {
     out.setAttribute('aria-live', 'polite');
     body.appendChild(out);
     let revision = 0;
+    const normalizedNumber = () => number.value.trim().replace(/[０-９]/g, digit =>
+      String.fromCharCode(digit.charCodeAt(0) - 0xFEE0));
     const invalid = () => {
-      const num = number.value.trim();
+      const num = normalizedNumber();
       if (!/^\d+$/.test(num)) return '请填写完整的' + numberLabel + '，只能填数字';
       if (num.startsWith('0')) return '请填写完整的' + numberLabel + '，开头不能是 0';
       return '';
@@ -2107,7 +2109,7 @@ function pickMemberTarget(opts) {
       const platform = sender ? sender.value : platformNames[0];
       if (!platform) { out.textContent = '没有可用的推送平台，请联系管理员。'; return; }
       const attempt = ++revision;
-      const num = number.value.trim();
+      const num = normalizedNumber();
       const type = kind.value;
       go.disabled = true;
       try {

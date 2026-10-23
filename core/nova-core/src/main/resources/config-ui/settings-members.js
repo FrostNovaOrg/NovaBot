@@ -212,6 +212,7 @@ export async function renderMembers(box, state) {
   text(box, 'h2', '成员');
   if (!state.oidcEnabled) {
     text(box, 'p', '在设置页的统一登录配置里填好账户中心地址、客户端编号和密钥，即可开启统一登录并管理成员。', 'hint');
+    filterMembers($('#set-search').value, $('#only-changed').checked);
     return;
   }
   const loading = text(box, 'p', '正在读取成员…', 'hint');
@@ -251,5 +252,7 @@ export async function renderMembers(box, state) {
     box.appendChild(scroll);
   } catch (error) {
     loading.textContent = failureMessage(error);
+  } finally {
+    filterMembers($('#set-search').value, $('#only-changed').checked);
   }
 }

@@ -169,6 +169,10 @@ const cases = {
     await lookup('  82002 \t');
     assert.ok(button(drawer(), '加上'));
     assert.equal(new URL(requests.at(-1).url, 'http://localhost').searchParams.get('num'), '82002');
+    await lookup('８２００２');
+    assert.ok(button(drawer(), '加上'));
+    assert.equal(new URL(requests.at(-1).url, 'http://localhost').searchParams.get('num'), '82002');
+    assert.equal(drawer().querySelector('input').value, '８２００２');
     noDirectory();
   },
   // 新分到的主播没有任何通道时，也必须能从成员 status 的平台添加第一个通道。
