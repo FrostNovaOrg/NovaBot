@@ -5,6 +5,15 @@
 	"responses":[
 		{
 			"contentType":"application/json",
+			"file":"data/datasource_users--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/datasource/users",
+			"query":"",
+			"sha256":"7693ca9870e070c5d27285991e45b6d52868cfcc188133e763efb4c091fe6547",
+			"status":200
+		},
+		{
+			"contentType":"application/json",
 			"file":"data/push-history--e3b0c44298fc.json",
 			"method":"GET",
 			"path":"/config/api/push-history",

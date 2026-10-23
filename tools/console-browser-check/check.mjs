@@ -9,7 +9,8 @@
 
 import {execFileSync, spawn} from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
+import {EventEmitter} from 'node:events';
+import {deflateSync, inflateSync} from 'node:zlib';
 import path from 'node:path';
 import {parseArgs} from 'node:util';
 
@@ -20,6 +21,8 @@ const COMMAND_LIMIT_MS = 30000;
 const SHOT_LIMIT_MS = 15000;
 // 极长的页面截到这里为止，免得截图超出浏览器的纹理上限
 const SHOT_MAX_HEIGHT = 16000;
+// macOS 的截图按实际输出像素分块；布局与设备像素比仍用本轮的原值。
+const SHOT_TILE_PIXELS = 480000;
 
 const SCREENS = [
   ['home', '/config/#/home'],
@@ -131,6 +134,33 @@ class Cdp {
   }
 }
 
+/** macOS 上用 net.Socket 读 FIFO 时，大截图响应会卡住；直接非阻塞读取。 */
+class FifoReader extends EventEmitter {
+  constructor(fd) {
+    super();
+    this.fd = fd;
+    const buffer = Buffer.alloc(65536);
+    this.timer = setInterval(() => {
+      try {
+        // 每次最多读 1 MiB，让协议超时和页面事件也有机会处理。
+        for (let total = 0; total < 1024 * 1024;) {
+          const n = fs.readSync(fd, buffer, 0, buffer.length, null);
+          if (!n) break;
+          total += n;
+          this.emit('data', Buffer.from(buffer.subarray(0, n)));
+        }
+      } catch (e) {
+        if (e.code !== 'EAGAIN' && e.code !== 'EWOULDBLOCK') this.emit('error', e);
+      }
+    }, 5);
+  }
+
+  destroy() {
+    clearInterval(this.timer);
+    fs.closeSync(this.fd);
+  }
+}
+
 /**
  * 起浏览器。调试协议走两条 FIFO：fd 3 浏览器读、fd 4 浏览器写。
  * FIFO 以读写方式打开，另一端还没人时 open 也不会卡住。
@@ -147,7 +177,7 @@ async function launch(chrome, profile, logFile) {
   const {O_RDWR, O_WRONLY} = fs.constants;
   const browserReads = fs.openSync(toBrowser, O_RDWR);
   const weWrite = fs.openSync(toBrowser, O_WRONLY);
-  const weRead = fs.openSync(fromBrowser, O_RDWR);
+  const weRead = fs.openSync(fromBrowser, O_RDWR | fs.constants.O_NONBLOCK);
   const browserWrites = fs.openSync(fromBrowser, O_WRONLY);
   const log = fs.openSync(logFile, 'a');
 
@@ -184,9 +214,11 @@ async function launch(chrome, profile, logFile) {
     throw new CannotRun(`起不了浏览器：${e.message}`);
   }
   for (const fd of [browserReads, browserWrites, log]) fs.closeSync(fd);
-  const input = new net.Socket({fd: weRead, readable: true, writable: false});
-  const output = new net.Socket({fd: weWrite, readable: false, writable: true});
+  const input = new FifoReader(weRead);
+  const output = fs.createWriteStream(toBrowser, {fd: weWrite});
   const cdp = new Cdp(input, output);
+  input.on('error', e => cdp.close(e));
+  output.on('error', e => cdp.close(e));
   const exited = new Promise(resolve => {
     child.on('error', error => {
       cdp.close(new CannotRun(`起不了浏览器：${error.message}`));
@@ -323,8 +355,115 @@ const INSPECT = `(() => {
     unrecordedNotice: text.includes('离线演示未录制'),
     viewport, content, culprits: culprits.slice(0, 3),
     url: location.pathname + location.search + location.hash,
+    loginVisible: !!document.querySelector('#login')?.getClientRects().length
+      && getComputedStyle(document.querySelector('#login')).visibility !== 'hidden',
   };
 })()`;
+
+// PNG 的校验与压缩只用 node 自带模块。Chromium 输出的 8 位 RGB/RGBA 可直接拼接。
+const CRC_TABLE = Array.from({length: 256}, (_, n) => {
+  for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
+  return n >>> 0;
+});
+
+function pngChunk(type, data) {
+  const name = Buffer.from(type);
+  let crc = 0xffffffff;
+  for (const byte of Buffer.concat([name, data])) crc = CRC_TABLE[(crc ^ byte) & 255] ^ (crc >>> 8);
+  const result = Buffer.alloc(data.length + 12);
+  result.writeUInt32BE(data.length);
+  name.copy(result, 4);
+  data.copy(result, 8);
+  result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, data.length + 8);
+  return result;
+}
+
+function pngRows(png) {
+  const signature = Buffer.from('89504e470d0a1a0a', 'hex');
+  if (!png.subarray(0, 8).equals(signature)) throw new Error('截图不是 PNG');
+  let header;
+  const compressed = [];
+  for (let offset = 8; offset + 12 <= png.length;) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString('ascii', offset + 4, offset + 8);
+    const data = png.subarray(offset + 8, offset + 8 + length);
+    if (data.length !== length) throw new Error('PNG 数据不完整');
+    if (type === 'IHDR') header = data;
+    if (type === 'IDAT') compressed.push(data);
+    offset += length + 12;
+  }
+  if (!header || header.length !== 13 || header[8] !== 8 || ![2, 6].includes(header[9])
+    || header[10] || header[11] || header[12]) throw new Error('不能拼接这种 PNG 编码');
+  const width = header.readUInt32BE(0), height = header.readUInt32BE(4);
+  const channels = header[9] === 6 ? 4 : 3;
+  const stride = width * channels;
+  const raw = inflateSync(Buffer.concat(compressed));
+  if (raw.length !== (stride + 1) * height) throw new Error('PNG 行数不符');
+  const rows = Buffer.alloc(raw.length);
+  for (let y = 0; y < height; y++) {
+    const start = y * (stride + 1);
+    const filter = raw[start];
+    if (filter > 4) throw new Error('不能识别 PNG 行滤镜');
+    // 输出每行都用 None 滤镜，分块边界不再依赖前一块的最后一行。
+    for (let x = 1; x <= stride; x++) {
+      const a = x > channels ? rows[start + x - channels] : 0;
+      const b = y ? rows[start + x - stride - 1] : 0;
+      const c = y && x > channels ? rows[start + x - stride - 1 - channels] : 0;
+      let predictor = 0;
+      if (filter === 1) predictor = a;
+      if (filter === 2) predictor = b;
+      if (filter === 3) predictor = Math.floor((a + b) / 2);
+      if (filter === 4) {
+        const value = a + b - c;
+        const pa = Math.abs(value - a), pb = Math.abs(value - b), pc = Math.abs(value - c);
+        predictor = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      }
+      rows[start + x] = (raw[start + x] + predictor) & 255;
+    }
+  }
+  return {header, width, height, rows};
+}
+
+function joinPng(files, destination) {
+  const pieces = files.map(file => pngRows(fs.readFileSync(file)));
+  const first = pieces[0];
+  if (pieces.some(p => p.width !== first.width || !p.header.subarray(8).equals(first.header.subarray(8)))) {
+    throw new Error('分块宽度或颜色格式不同');
+  }
+  const header = Buffer.from(first.header);
+  header.writeUInt32BE(pieces.reduce((sum, p) => sum + p.height, 0), 4);
+  fs.writeFileSync(destination, Buffer.concat([
+    Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(Buffer.concat(pieces.map(p => p.rows)))), pngChunk('IEND', Buffer.alloc(0)),
+  ]));
+}
+
+async function capture(cdp, sessionId, out, page, size, color) {
+  const metrics = await cdp.send('Page.getLayoutMetrics', {}, sessionId);
+  const content = metrics.cssContentSize || metrics.contentSize;
+  const width = Math.max(size.width, Math.ceil(content.width));
+  const height = Math.min(SHOT_MAX_HEIGHT, Math.max(size.height, Math.ceil(content.height)));
+  const base = `${page}-${size.name}-${color}`;
+  const tiled = process.platform === 'darwin';
+  const step = tiled ? Math.floor(SHOT_TILE_PIXELS / (width * size.scale ** 2)) : height;
+  if (step < 1) throw new Error('页面过宽，一行已超过截图分块上限');
+  const files = [];
+  for (let y = 0; y < height; y += step) {
+    const shot = await cdp.send('Page.captureScreenshot', {format: 'png', captureBeyondViewport: true,
+      clip: {x: 0, y, width, height: Math.min(step, height - y), scale: 1}}, sessionId, SHOT_LIMIT_MS);
+    const file = path.join(out, `${base}${tiled ? '-' + (files.length + 1) : ''}.png`);
+    fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
+    files.push(file);
+  }
+  if (tiled) {
+    try {
+      joinPng(files, path.join(out, `${base}.png`));
+    } catch (e) {
+      return {tiles: files.length, joined: false, problem: `${base}：拼图失败（${e.message}），保留分块`};
+    }
+  }
+  return {tiles: tiled ? files.length : 0, joined: true};
+}
 
 async function runRound(cdp, demo, out, shots, screen, size, color) {
   const [page, address] = screen;
@@ -398,7 +537,8 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
     if (size.mobile) await s('Emulation.setTouchEmulationEnabled', {enabled: true, maxTouchPoints: 5});
     await s('Emulation.setEmulatedMedia', {features: [{name: 'prefers-color-scheme', value: color}]});
     await s('Page.addScriptToEvaluateOnNewDocument', {source:
-      `try { localStorage.setItem('novabot-theme', ${JSON.stringify(color)}); } catch (e) {}`});
+      `try { localStorage.setItem('novabot-theme', ${JSON.stringify(color)}); } catch (e) {}\n`
+      + (page === 'login' ? 'window.NOVA_CONSOLE_DEMO_SIGNED_OUT = true;' : '')});
 
     loaded = false;
     const started = Date.now();
@@ -428,6 +568,9 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
         + ` 伸出 ${c.over}px`).join('、');
       round.failures.push(`横向溢出：页面宽 ${facts.content}px，视口 ${facts.viewport}px` + (who ? `；${who}` : ''));
     }
+    if (page === 'login' && (!facts?.loginVisible || facts.url !== address)) {
+      round.failures.push('登录页没有显示未登录表单');
+    }
     if (facts?.unrecordedNotice) round.notes.unrecorded.add('页面上出现「离线演示未录制」提示');
     if (facts && facts.url !== new URL(ORIGIN + address).pathname + new URL(ORIGIN + address).hash) {
       round.notes.landed.add(`打开后停在 ${facts.url}`);
@@ -435,13 +578,7 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
 
     if (shots) {
       try {
-        const metrics = await s('Page.getLayoutMetrics');
-        const content = metrics.cssContentSize || metrics.contentSize;
-        const shot = await cdp.send('Page.captureScreenshot', {format: 'png', captureBeyondViewport: true, clip: {
-          x: 0, y: 0, width: Math.max(size.width, Math.ceil(content.width)),
-          height: Math.min(SHOT_MAX_HEIGHT, Math.max(size.height, Math.ceil(content.height))), scale: 1}},
-        sessionId, SHOT_LIMIT_MS);
-        fs.writeFileSync(path.join(out, `${page}-${size.name}-${color}.png`), Buffer.from(shot.data, 'base64'));
+        round.shots = await capture(cdp, sessionId, out, page, size, color);
       } catch (e) {
         // 有的环境里截图一直不回，浏览器也跟着不再应答（见 README）。这一轮的检查结果照留。
         round.shotError = e.message;
@@ -456,7 +593,11 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
 
 function summarize(rounds, version, shotProblem) {
   const lines = [`浏览器：${version}`];
-  if (shotProblem) lines.push(`截图：${shotProblem}`);
+  const completed = rounds.filter(r => r.shots?.joined).length;
+  const pieces = rounds.reduce((sum, r) => sum + (r.shots?.tiles || 0), 0);
+  const mode = process.platform === 'darwin' ? `每块最多 ${SHOT_TILE_PIXELS} 像素，保留 ${pieces} 张分块，` : '';
+  lines.push(`截图：${mode}${completed} 轮已保存整页图${shotProblem ? '；' + shotProblem : ''}`);
+  for (const r of rounds) if (r.shots?.problem) lines.push(`  ${r.shots.problem}`);
   lines.push('');
   for (const r of rounds) {
     lines.push(`${r.page} ${r.width} ${r.color} ${r.failures.length ? '失败 ' + r.failures.join('；') : '通过'}`);
