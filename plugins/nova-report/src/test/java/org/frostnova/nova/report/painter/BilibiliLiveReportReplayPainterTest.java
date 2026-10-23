@@ -124,6 +124,9 @@ class BilibiliLiveReportReplayPainterTest {
                 factory, api, fontUtil, new NovaBilibiliProperties(), roomInfoHistory, ReportImageDiskCache.none());
         var beans = new org.springframework.beans.factory.support.DefaultListableBeanFactory();
         beans.registerSingleton("reportPalettes", palettes);
+        beans.registerSingleton("revenue", mock(org.frostnova.nova.core.service.RevenueVisibilityService.class));
+        beans.registerSingleton("templates", defaults);
+        beans.registerSingleton("handler", mock(org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler.class));
         var injection = new org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor();
         injection.setBeanFactory(beans);
         injection.processInjection(redrawer);

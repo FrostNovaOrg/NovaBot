@@ -8,6 +8,8 @@ import org.frostnova.nova.bilibili.handler.PushHandlerSupport;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
+import org.frostnova.nova.report.painter.LiveReportRenderCache;
+import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -48,6 +50,12 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
     private final StreamerNames names;
 
     private final ReportPalettes palettes;
+
+    @Autowired(required = false)
+    private LiveDataService liveData;
+
+    @Autowired(required = false)
+    private LiveReportRenderCache rendered = new LiveReportRenderCache();
 
     private final PaintOnce drawn = new PaintOnce();
 
@@ -97,6 +105,10 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
         Optional<String> image = drawn.get(event, JSON.toJSONString(options) + "|" + palette.id(),
                 () -> painter.paint(event.getPlatform(), event.getSource(), options, palette.palette()));
 
+        if (liveData != null) liveData.getLiveStartTime(event.getPlatform(), event.getSource().getUid())
+                .ifPresent(start -> image.ifPresent(base64 -> rendered.put(event.getPlatform(), event.getSource().getUid(),
+                        start, options, palette.palette(), base64)));
+
         String report = image
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
@@ -104,13 +116,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                     return MessagePlaceholders.escapeExternalText(painter.textReport(event.getPlatform(), event.getSource(), options));
                 });
 
-        String template = params.getString("message");
-        String content = template
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
-                .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
-                .replace("{report}", report);
-
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
+        PushHandlerSupport.send(sender, target, report);
     }
 
     @Override
@@ -182,15 +188,11 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
     @Override
     public Map<String, String> placeholderLabels() {
-        return Map.of(
-                "{uname}", "主播昵称",
-                "{report}", "直播报告",
-                "{url}", "直播间链接",
-                "{next}", "另起一条消息");
+        return Map.of();
     }
 
     @Override
     public List<String> placeholders() {
-        return List.of("{uname}", "{report}", "{url}", "{next}");
+        return List.of();
     }
 }

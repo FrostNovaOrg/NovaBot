@@ -36,4 +36,9 @@ public interface LiveReportRedrawer {
      * @return PNG 字节，画不出来时为空
      */
     Optional<byte[]> redraw(LiveDetail detail);
+
+    /** 按已保存的通道设置生成消息正文；实现应在画图失败时提供文字版。 */
+    default Optional<String> channelContent(LiveDetail detail, org.frostnova.nova.core.model.PushTarget channel) {
+        return Optional.empty();
+    }
 }

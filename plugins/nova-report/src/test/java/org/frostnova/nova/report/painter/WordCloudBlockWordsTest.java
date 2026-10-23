@@ -174,6 +174,12 @@ class WordCloudBlockWordsTest {
                 factory, quietApi(), fontUtil, properties, history, images);
         try (var context = new AnnotationConfigApplicationContext()) {
             context.registerBean(AbstractDataSource.class, () -> source);
+            context.registerBean(org.frostnova.nova.core.service.RevenueVisibilityService.class,
+                    () -> mock(org.frostnova.nova.core.service.RevenueVisibilityService.class));
+            context.registerBean(org.frostnova.nova.core.service.PushTemplateDefaults.class,
+                    () -> mock(org.frostnova.nova.core.service.PushTemplateDefaults.class));
+            context.registerBean(org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler.class,
+                    () -> mock(org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler.class));
             context.refresh();
             context.getAutowireCapableBeanFactory().autowireBean(redrawer);
             byte[] before = redrawer.redraw(detail).orElseThrow();

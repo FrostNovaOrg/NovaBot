@@ -438,18 +438,8 @@
 					"type":"INTEGER"
 				}
 			],
-			"placeholderLabels":{
-				"{next}":"另起一条消息",
-				"{report}":"直播报告",
-				"{uname}":"主播昵称",
-				"{url}":"直播间链接"
-			},
-			"placeholders":[
-				"{uname}",
-				"{report}",
-				"{url}",
-				"{next}"
-			],
+			"placeholderLabels":{},
+			"placeholders":[],
 			"platform":"bilibili",
 			"reportLayout":true
 		},

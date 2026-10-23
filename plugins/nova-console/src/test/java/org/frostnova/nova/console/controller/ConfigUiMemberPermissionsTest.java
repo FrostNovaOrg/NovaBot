@@ -70,6 +70,8 @@ class ConfigUiMemberPermissionsTest {
             GET weekly-report/{platform}/{uid}/status
             GET weekly-report/{platform}/{uid}/preview
             POST weekly-report/{platform}/{uid}/trial
+            GET live-report/{platform}/{uid}/latest
+            POST live-report/{platform}/{uid}/send-latest
             POST report/preview
             """);
     private static final Set<String> FILTERED = routes("""
@@ -187,8 +189,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(116, mappings.size());
-        assertEquals(23, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(63, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(118, mappings.size());
+        assertEquals(23, EVERYONE.size()); assertEquals(23, SCOPED.size()); assertEquals(63, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));
@@ -217,7 +219,7 @@ class ConfigUiMemberPermissionsTest {
     // 成员能到达自己的主播各口，别人的主播和不存在的主播回相同的内容。
     @Test void everyScopedHandlerAllowsOwnerAndConcealsOtherStreamers() throws Exception {
         for (String route : SCOPED) {
-            if (route.endsWith("/trial")) continue;
+            if (route.endsWith("/trial") || route.endsWith("/send-latest")) continue;
             mvc.perform(request(route, "1", MEMBER)).andExpect(status().isOk());
             var b = mvc.perform(request(route, "2", MEMBER)).andExpect(status().isNotFound()).andReturn();
             var c = mvc.perform(request(route, "3", MEMBER)).andExpect(status().isNotFound()).andReturn();
@@ -247,7 +249,7 @@ class ConfigUiMemberPermissionsTest {
     // 查主播的链接、非法编号、预览缺一半身份都不能用来探查别的主播。
     @Test void malformedSubjectsAndLookupLinksAreConcealed() throws Exception {
         for (String route : SCOPED) {
-            if (route.endsWith("/trial")) continue;
+            if (route.endsWith("/trial") || route.endsWith("/send-latest")) continue;
             mvc.perform(request(route, "bad", MEMBER)).andExpect(status().isNotFound());
         }
         for (String raw : List.of("https://space.bilibili.com/1", "https://live.bilibili.com/1", "0", "-1", "1.5"))

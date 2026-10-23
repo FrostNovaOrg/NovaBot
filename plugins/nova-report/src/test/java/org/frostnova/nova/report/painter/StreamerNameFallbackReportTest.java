@@ -182,8 +182,8 @@ class StreamerNameFallbackReportTest {
     }
 
     @Test
-    @DisplayName("下播报告推送：{uname} 写最近一场的昵称")
-    void reportPushNamesTheStreamer() {
+    @DisplayName("下播报告推送忽略旧昵称文字模板，只发图片")
+    void reportPushIgnoresLegacyNameText() {
         BilibiliLiveReportPainter painter = mock(BilibiliLiveReportPainter.class);
         when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
@@ -194,7 +194,7 @@ class StreamerNameFallbackReportTest {
         params.put("message", "{uname} 的下播报告");
         handler.handle(new BilibiliLiveOffEvent(source("")), pushMessage(params));
 
-        assertEquals("最近的昵称 的下播报告", sentContent());
+        assertEquals("{image_base64=QUJD}", sentContent());
     }
 
     @Test

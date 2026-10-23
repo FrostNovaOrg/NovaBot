@@ -293,7 +293,7 @@ const notice = (className, displayName, extra = {}) => ({
 // 开播与动态带两种 @ 占位符，与内置那两类一样：编辑器据此画「@ 谁」那一行
 const AT_PLACEHOLDERS = ['{uname}', '{at}', '{at=all}'];
 const LIVE_ON = notice('x.LiveOn', '开播通知', {placeholders: AT_PLACEHOLDERS});
-const REPORT = notice('x.Report', '下播报告', {reportLayout: true, options: [
+const REPORT = notice('org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler', '下播报告', {placeholders: [], reportLayout: true, options: [
   {key: 'cover', label: '直播间封面', description: '', type: 'BOOLEAN', defaultValue: true}]});
 const DIGEST = notice('x.Digest', '下播打赏播报', {options: [
   {key: 'reward_threshold_yuan', label: '播报门槛（元）', description: '', type: 'INTEGER',
@@ -494,7 +494,7 @@ await ask('⑤ 收起的「没开的 n 种」展开后能开，开了就回到�
   }, '没开的那几种');
 });
 
-// 故障：运营周报关着，「上次发出 · 预览 · 试发」照样摆着，看着像周报在发。
+// 故障：运营周报关着，「上次发出 · 预览 · 发送上一周的报告」照样摆着，看着像周报在发。
 await ask('⑥ 运营周报关着时不显示周报工具，开着时在它那一行里', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
   await paint(GROUP, [message(LIVE_ON)]);
@@ -549,6 +549,26 @@ await ask('⑨ 好友通道缺运行数据时，命令提示不说群', async ()
     '出现「群」字': [...text.matchAll(/.{0,8}群.{0,8}/g)].map(match => match[0]),
     '提示了拿不到菜单状态': text.includes('无法获取菜单状态'),
   }, {'出现「群」字': [], '提示了拿不到菜单状态': true}, '缺运行数据时的命令提示');
+});
+
+await ask('报告操作与图片编辑', async () => {
+  await paint(GROUP, [message(REPORT), message(WEEKLY)]);
+  same(all(rowOf(WEEKLY)).some(node => node.textContent === '发送上一周的报告'), true, '周报发送按钮');
+  same(all(rowOf(REPORT)).some(node => node.textContent === '发送上一份下播报告'), true, '下播发送按钮');
+  edit(REPORT);
+  same(all(rowOf(REPORT)).some(node => node.textContent === '文字' || hasClass(node, 'tpl-wrap')), false, '下播报告没有文字编辑');
+});
+
+await ask('旧报告文字保留，默认模板不提供下播报告文字编辑', async () => {
+  const legacy = '保留的旧文字{uname}{report}{at=all}';
+  await paint(GROUP, [message(REPORT, {message: legacy}), message(LIVE_ON)]);
+  if (!all(rowOf(REPORT)).some(node => hasClass(node, 'nrow-body'))) edit(REPORT);
+  change(inputOf('直播间封面'), false);
+  await push.save();
+  same(saved[0].targets[0].messages.find(item => item.handler === REPORT.className).params.message,
+    legacy, '保存版式后保留旧文字');
+  await push.showPush('default');
+  same(all(page()).some(node => node.tagName === 'button' && node.textContent === '下播报告'), false, '默认模板的通知清单');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

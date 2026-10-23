@@ -1087,6 +1087,18 @@ public class LiveDetailArchive implements SmartLifecycle {
         return result;
     }
 
+    /** 最近一场已有完整明细的下播报告，不包含正在采集的场次。 */
+    public Optional<LiveDetail> latest(String platform, Long uid) {
+        return list().stream()
+                .filter(one -> platform.equals(one.platform()) && uid.equals(one.uid()))
+                .sorted(Comparator.comparingLong(Archived::startTime).reversed())
+                .map(one -> read(platform, uid, one.startTime()))
+                .flatMap(Optional::stream)
+                .filter(one -> platform.equals(one.platform()) && uid.equals(one.uid())
+                        && one.endTime() > one.startTime())
+                .findFirst();
+    }
+
     /**
      * 一场已留档的明细
      * @param platform 直播平台
