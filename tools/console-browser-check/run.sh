@@ -3,12 +3,14 @@
 #
 # 用法：sh tools/console-browser-check/run.sh [--chrome 浏览器路径] [--out 结果目录]
 # 浏览器路径也可由环境变量 NOVA_CHROME 给出。
+# 不给 --out 时每次在系统临时目录下新建一个结果目录，跑完在末尾印出目录在哪。
 # 退码：0 全过；1 有失败；2 跑不起来。
 set -u
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 chrome=${NOVA_CHROME:-}
-out=$ROOT/target/console-browser-check
+out=
+out_given=no
 
 cannot_run() {
     echo "跑不起来：$*" >&2
@@ -24,11 +26,13 @@ while [ "$#" -gt 0 ]; do
             ;;
         --out)
             [ "$#" -ge 2 ] || cannot_run "--out 后面要跟结果目录"
+            [ -n "$2" ] || cannot_run "--out 后面要跟结果目录"
             out=$2
+            out_given=yes
             shift 2
             ;;
         -h|--help)
-            sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -36,6 +40,31 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+# 目录里只要有一个东西就算不空，隐藏文件也算。
+dir_is_empty() {
+    for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+        if [ -e "$entry" ] || [ -L "$entry" ]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+# 先核结果目录：这一步在启动浏览器、写任何文件之前做完。
+# 本工具不删任何文件，也不覆盖别人的东西。给了 --out 时，目录不存在就建它，是空目录就照用；
+# 别的（里面已经有文件，隐藏文件也算；或者那条路不是目录）一律拒跑，说清是哪个目录、为什么、
+# 怎么办（自己清空，或换一个目录）。
+if [ "$out_given" = yes ]; then
+    case "$out" in
+        /*) ;;
+        *) out=$(pwd)/$out ;;
+    esac
+    if [ -e "$out" ] || [ -L "$out" ]; then
+        [ -d "$out" ] || cannot_run "--out 指向的不是目录：${out}。它一点没动。请用 --out 换一个目录"
+        dir_is_empty "$out" || cannot_run "结果目录里已经有文件（隐藏文件也算），本工具不删也不动里面的东西：${out}。请自己把这个目录清空，或者用 --out 换一个别的目录"
+    fi
+fi
 
 command -v node >/dev/null 2>&1 || cannot_run "没有找到 node，需要 node 22 或更高版本"
 major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null) || major=0
@@ -45,80 +74,26 @@ major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null) || major=0
 command -v python3 >/dev/null 2>&1 || cannot_run "没有找到 python3，导出演示要用它"
 command -v bash >/dev/null 2>&1 || cannot_run "没有找到 bash，导出演示要用它"
 
-case "$out" in
-    /*) ;;
-    *) out=$(pwd)/$out ;;
-esac
-# 结果目录在仓库里时，必须落在 git 忽略的地方，跑出来的东西一样都不能被提交。
-# 先核再建，免得在仓库里留下一个空目录。
-case "$out/" in
-    "$ROOT"/*)
-        command -v git >/dev/null 2>&1 || cannot_run "结果目录在仓库里，却没有 git 可以核对它是否被忽略"
-        git -C "$ROOT" check-ignore -q "$out/" || cannot_run "结果目录没有被 git 忽略：$out"
-        ;;
-esac
-mkdir -p "$out" || cannot_run "建不了结果目录：$out"
-out=$(cd "$out" && pwd)
-owned=$out/.console-browser-check-owned
-
-# 只清本工具上一次写的文件，别人放进结果目录的东西一律不动。
-# owned 里是上次写的每个文件的 cksum，对得上才算本工具写的；截图按文件名认。
-if [ -f "$owned" ]; then
-    while read -r sum size name; do
-        case "$name" in
-            ''|.|..|*/*) continue ;;
-        esac
-        [ -f "$out/$name" ] || continue
-        [ "$(cksum < "$out/$name")" = "$sum $size" ] && rm -f "$out/$name"
-    done < "$owned"
+if [ "$out_given" = yes ]; then
+    mkdir -p "$out" || cannot_run "建不了结果目录：${out}"
+    out=$(cd "$out" && pwd)
+else
+    out=$(mktemp -d "${TMPDIR:-/tmp}/nova-console-browser-check.XXXXXX") || cannot_run "建不了结果目录"
 fi
-rm -f "$owned"
-for png in "$out"/*.png; do
-    [ -f "$png" ] || continue
-    if printf '%s\n' "${png##*/}" | grep -Eq \
-        '^(home|push|streamers|log|links|settings|setup|login|napcat-bootstrap)-(1440|390)-(light|dark)(-[0-9]+)?\.png$'
-    then
-        rm -f "$png"
-    fi
-done
-
-# 这三个名字每次跑都要写。已有不是本工具写的文件占着时宁可不跑，也不覆盖别人的东西。
-taken=
-for name in summary.txt browser.log export.log; do
-    [ -e "$out/$name" ] && taken="$taken $name"
-done
-[ -z "$taken" ] || cannot_run "结果目录里有不是本工具写的文件，占着本工具要用的名字：${taken# }（目录：${out}）。不能覆盖别人的文件。请把它们移走或删掉，或者用 --out 换一个结果目录"
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/nova-console-check.XXXXXX") || cannot_run "建不了临时目录"
-
-# 跑完把这次写的文件记进 owned，下一次只清这些。
-record_owned() {
-    : > "$owned"
-    for name in export.log browser.log summary.txt; do
-        [ -f "$out/$name" ] || continue
-        (cd "$out" && cksum "$name") >> "$owned"
-    done
-}
-trap 'record_owned; rm -rf "$work"' EXIT
+# work 是本工具自己建的临时目录（导出的演示副本、浏览器的临时用户目录），跑完只清这一个。
+trap 'rm -rf "${work}"' EXIT
 trap 'exit 2' HUP INT TERM
 
-if ! bash "$ROOT/tools/demo-assets/export-console-demo.sh" "$work/demo" >"$out/export.log" 2>&1; then
-    cat "$out/export.log" >&2
-    cannot_run "导出离线演示失败（输出见上，也存在 $out/export.log）"
+if ! bash "$ROOT/tools/demo-assets/export-console-demo.sh" "${work}/demo" >"${out}/export.log" 2>&1; then
+    cat "${out}/export.log" >&2
+    cannot_run "导出离线演示失败（输出见上，也存在 ${out}/export.log）"
 fi
-mkdir "$work/profile" || cannot_run "建不了浏览器的临时用户目录"
+mkdir "${work}/profile" || cannot_run "建不了浏览器的临时用户目录"
 
 node "$ROOT/tools/console-browser-check/check.mjs" \
-    --demo "$work/demo" --chrome "$chrome" --out "$out" --profile "$work/profile"
+    --demo "${work}/demo" --chrome "$chrome" --out "$out" --profile "${work}/profile"
 status=$?
-
-case "$out/" in
-    "$ROOT"/*)
-        leaked=$(git -C "$ROOT" ls-files --others --exclude-standard -- "$out")
-        if [ -n "$leaked" ]; then
-            echo "$leaked" >&2
-            cannot_run "上面这些结果文件没有被 git 忽略"
-        fi
-        ;;
-esac
+echo "结果目录：${out}"
 exit "$status"
