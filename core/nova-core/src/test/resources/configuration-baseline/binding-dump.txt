@@ -55,6 +55,7 @@ novabot.core.exec.max-concurrent=112
 novabot.core.exec.rules[0].command[0]=/bin/echo
 novabot.core.exec.rules[0].command[1]={event}
 novabot.core.exec.rules[0].enabled=false
+novabot.core.exec.rules[0].event-environment=false
 novabot.core.exec.rules[0].event=LiveOnEvent
 novabot.core.exec.timeout=111
 novabot.core.live.auto-save-live-data-interval=41
