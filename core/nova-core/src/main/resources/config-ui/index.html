@@ -129,7 +129,15 @@
     <a href="#/settings">去「设置 → 登录与安全」→</a>
   </div>
 
-  <!-- 外部程序触发规则待调整时的常驻提醒，只给管理员，内容由 exec-notice.js 按启动检查的清单画 -->
+  <div class="notice" id="oidc-callback-notice" style="display:none">
+    统一登录的回调地址还没填：请在「设置 → 高级选项 → 登录与安全 · 高级」里的「统一登录 · 回调地址」填写与账户中心登记的完全一致的完整回调地址，保存后重启。
+  </div>
+
+  <div class="notice" id="session-check-notice" style="display:none">
+    如用 NovaBot 会话接入管理后端，请将代理的会话检查地址改为 /config/api/admin-session-check（有部署前缀时，例如 /novabot，填写 /novabot/config/api/admin-session-check），并保留后端自身的登录与角色检查；改好代理配置并重启 NovaBot 后提示消失。
+  </div>
+
+  <!-- 外部程序触发规则待调整时的常驻提醒，只给管理员，内容由 exec-notice.js 按当前清单画 -->
   <div class="notice" id="exec-notice" style="display:none"></div>
 
   <!-- ============ 首页 #/home ============ -->

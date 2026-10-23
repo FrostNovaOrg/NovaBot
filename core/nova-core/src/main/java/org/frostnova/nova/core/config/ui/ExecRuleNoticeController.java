@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 外部程序触发规则的待调整清单
  * <p>
- * 控制台顶上那条提醒照这一份显示。清单是启动检查时定下的，改好配置并重启后为空。
+ * 控制台顶上那条提醒照这一份显示。清单按实际生效的配置与本次执行记录更新，改好配置并重启后为空。
  * 只给管理员，见 {@link ConfigUiPermissions}。
  */
 @RestController

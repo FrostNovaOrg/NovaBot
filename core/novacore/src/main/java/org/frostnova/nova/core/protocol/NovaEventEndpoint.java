@@ -190,6 +190,19 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      */
     private final ExecutorService senders = Executors.newCachedThreadPool(daemon("nova-event-sender"));
 
+    /**
+     * {@link #closers} 的线程数
+     */
+    static final int CLOSER_THREADS = 2;
+
+    /**
+     * 还没起发送线程的连接，关闭帧交给这里发
+     * <p>
+     * 那种连接从来没有下行，关它不必另起一条发送线程；线程数固定，
+     * 同一时刻到点断开的连接再多，也只排在这几条线程上。
+     */
+    private final ExecutorService closers = Executors.newFixedThreadPool(CLOSER_THREADS, daemon("nova-event-closer"));
+
     private volatile boolean running = true;
 
     /**
@@ -318,6 +331,11 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          */
         private ScheduledFuture<?> authDeadline;
 
+        /**
+         * 发送线程已经起了没有，见 {@link #startPump}
+         */
+        private volatile boolean pumping;
+
         private Client(WebSocketSession session, long helloSeq, boolean authenticated) {
             this.session = session;
             this.helloSeq = helloSeq;
@@ -366,6 +384,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                         authDeadline.cancel(false);
                     }
 
+                    if (!startPump()) {
+                        return;
+                    }
                     NovaEventStream.State state = stream.snapshot();
                     send(hello(state));
                     grace = heartbeats.schedule(() -> goLive(state.lastSeq()), timings.resumeGrace(), TimeUnit.MILLISECONDS);
@@ -428,6 +449,25 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             }
             log.warn("事件流客户端 {} 消费不过来, 队列已满 {} 条, 断开连接", session.getId(), outboxCapacity);
             return false;
+        }
+
+        /**
+         * 给这条连接起发送线程
+         * <p>
+         * 只在连接可以收数据之后才起：要求口令时那是认证通过的一刻，不要求时就是连上的一刻。
+         * 认证之前这条连接没有任何下行，为它占一条线程什么也换不来。
+         * @return 起来了为 {@code true}；池子不收活时为 {@code false}，此时连接已关
+         */
+        private boolean startPump() {
+            try {
+                senders.execute(this::pump);
+                pumping = true;
+                return true;
+            } catch (RejectedExecutionException e) {
+                // 正在关停，池子不收活了：这条连接也发不出东西，直接关掉
+                close(CloseStatus.GOING_AWAY);
+                return false;
+            }
         }
 
         /**
@@ -569,7 +609,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 return false;
             }
             try {
-                senders.execute(() -> sendCloseFrame(status));
+                (pumping ? senders : closers).execute(() -> sendCloseFrame(status));
             } catch (RejectedExecutionException e) {
                 // 正在关停，池子不收活了。这时阻不阻塞已经无所谓，就地关掉。
                 sendCloseFrame(status);
@@ -618,8 +658,6 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         Client client = new Client(session, state.lastSeq(), tokens == null);
         clients.put(session.getId(), client);
 
-        senders.execute(client::pump);
-
         if (tokens != null) {
             // 🔴 要求口令时，这里**什么都不发**。
             // hello 里带着 sessionId、能力集与口径差异，是关于这个部署的信息——
@@ -631,6 +669,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             return;
         }
 
+        if (!client.startPump()) {
+            return;
+        }
         client.send(hello(state));
         client.grace = heartbeats.schedule(() -> client.goLive(client.helloSeq), timings.resumeGrace(), TimeUnit.MILLISECONDS);
 
@@ -733,12 +774,19 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         //    会被连任务一起丢掉——对端一帧关闭帧都收不到，只看得见连接断了。
         //    宽限有上限：写不动的那条本来就发不出去，等它也没有意义。
         senders.shutdown();
+        closers.shutdown();
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SHUTDOWN_DRAIN_MS);
         try {
             if (!senders.awaitTermination(SHUTDOWN_DRAIN_MS, TimeUnit.MILLISECONDS)) {
                 senders.shutdownNow();
             }
+            // 两个池子合用同一段宽限，不各等一段
+            if (!closers.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
+                closers.shutdownNow();
+            }
         } catch (InterruptedException e) {
             senders.shutdownNow();
+            closers.shutdownNow();
             Thread.currentThread().interrupt();
         }
     }

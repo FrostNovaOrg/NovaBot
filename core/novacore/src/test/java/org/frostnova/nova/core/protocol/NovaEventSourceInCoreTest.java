@@ -12,6 +12,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 事件输出协议的真源必须由核心提供
@@ -47,13 +48,13 @@ class NovaEventSourceInCoreTest {
     }
 
     @Test
-    @DisplayName("默认值原样：路径仍是 /nova/events，默认仍不开、不要口令")
-    void defaultsUnchanged() {
+    @DisplayName("事件输出默认配置")
+    void defaults() {
         EventStreamProperties resolved = resolve(Map.of());
 
         assertEquals("/nova/events", resolved.getPath(), "端点路径不许改, 下游是照它连的");
         assertFalse(resolved.isEnabled(), "默认仍是关闭");
-        assertFalse(resolved.isRequireToken(), "默认仍不要求口令");
+        assertTrue(resolved.isRequireToken());
         assertEquals(2000, resolved.getBufferSize(), "默认缓冲条数不变");
         assertEquals(2, NovaEventEndpoint.PROTOCOL_VERSION, "协议版本不许随搬家改动");
     }

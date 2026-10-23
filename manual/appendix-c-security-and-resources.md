@@ -112,6 +112,39 @@ novabot:
 [SECURITY.md](https://github.com/FrostNovaOrg/NovaBot/blob/main/SECURITY.md) 的
 「关于反向代理」一节。
 
+### 让代理服务使用控制台会话
+
+代理可用 `GET /config/api/session-check` 检查会话是否有效；该接口接受所有有效角色。
+管理后端应使用 `GET /config/api/admin-session-check`，仅已启用的管理员返回 `204`。
+两者成功时均无响应体；未登录、会话过期、账号待授权或已停用时返回 `401`，
+管理员检查遇到成员时返回 `403`。尚未完成使用协议确认时也返回 `403`。
+本地口令、统一登录的管理员和启动令牌通道均可使用管理员检查。
+使用原有检查地址后，本次运行会记一条日志提醒，并在管理员网页控制台的各页顶部显示接入提醒。
+改好管理后端的代理检查地址并重启 NovaBot，且不再使用原有检查地址后，提醒不再出现。
+
+Nginx 接入管理后端的示例（端口与后端地址按实际部署填写）：
+
+```nginx
+location = /config/_admin-check {
+    internal;
+    proxy_pass http://127.0.0.1:7827/config/api/admin-session-check;
+    proxy_method GET;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Host $http_host;
+    proxy_set_header Cookie $http_cookie;
+}
+
+location /config/admin/ {
+    auth_request /config/_admin-check;
+    proxy_pass http://127.0.0.1:9000/;
+}
+```
+
+被代理服务的浏览器访问路径也应位于 `/config/` 下，会话 Cookie 才会随请求发送。
+若配置了 `server.servlet.context-path`，上述对外路径、检查地址与 `auth_request` 地址均加上该前缀。
+检查请求同样沿用来源 IP 白名单与会话活跃时间刷新约定。后端仍需执行自身的登录与角色检查。
+
 ### 挂在路径前缀下
 
 要把控制台挂在某个路径前缀下（例如 `https://example.com/novabot/config`），

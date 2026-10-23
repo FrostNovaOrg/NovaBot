@@ -17,6 +17,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,12 +63,14 @@ public class EventCommandRunner {
     private final Semaphore permits;
 
     /**
-     * 启动检查标出的待调整规则，控制台按它显示提醒
+     * 是否已完成启动检查
      */
-    private volatile List<RuleToAdjust> rulesToAdjust = List.of();
+    private volatile boolean configurationChecked;
+
+    private final Map<Integer, ObservedRule> observed = new ConcurrentHashMap<>();
 
     /**
-     * 本次运行中已记过跳过日志的规则序号，每条只记一次
+     * 本次运行中已提醒的规则序号，每条只记一次
      */
     private final Set<Integer> skipped = ConcurrentHashMap.newKeySet();
 
@@ -85,46 +88,51 @@ public class EventCommandRunner {
     /**
      * 启动时检查各条规则
      * <p>
-     * 第一项含占位符的规则提示改填固定路径；其余规则用一份示例事件按执行时的规则试算，
+     * 第一项含占位符的规则提示改填固定路径；其余规则用示例事件按执行时的规则试算，
      * 试算时会被跳过的才提示调整。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void checkConfiguration() {
+        configurationChecked = true;
+        rulesToAdjust();
+    }
+
+    /**
+     * 按实际生效的配置与本次执行记录列出待调整规则，按配置序号排列
+     */
+    public List<RuleToAdjust> rulesToAdjust() {
         NovaCoreProperties.Exec exec = properties.getExec();
         if (!exec.isEnabled()) {
-            rulesToAdjust = List.of();
-            return;
+            return List.of();
         }
         List<RuleToAdjust> marked = new ArrayList<>();
         NovaExternalBaseEvent sample = new NovaExternalBaseEvent("sample", new LiveStreamerInfo(1L, "-sample", 1L));
         for (int index = 0; index < exec.getRules().size(); index++) {
             NovaCoreProperties.ExecRule rule = exec.getRules().get(index);
-            if (!rule.isEnabled() || rule.getCommand() == null) {
+            if (!rule.isEnabled()) {
                 continue;
             }
-            String program = rule.getCommand().stream().filter(Objects::nonNull).findFirst().orElse(null);
-            if (program == null) {
-                continue;
-            }
-            if (firstField(program) >= 0) {
-                log.warn("请调整 novabot.core.exec.rules[{}].command：第一项请填写固定程序或脚本路径，"
-                        + "修改后重启；写法见使用说明附录 B", index);
+            List<String> command = rule.getCommand();
+            String program = command == null ? null : command.stream().filter(Objects::nonNull).findFirst().orElse(null);
+            boolean programField = program != null && firstField(program) >= 0;
+            ObservedRule previous = observed.get(index);
+            boolean wasSkipped = previous != null && Objects.equals(previous.command(), command)
+                    && Objects.equals(previous.event(), rule.getEvent());
+            if (wasSkipped || configurationChecked && program != null && resolve(command, sample).isEmpty()) {
                 marked.add(new RuleToAdjust(index, rule.getEvent()));
-            } else if (resolve(rule.getCommand(), sample).isEmpty()) {
-                log.warn("请调整 novabot.core.exec.rules[{}].command：事件参数请放在单列的固定 -- 之后，"
-                        + "或接在固定的选项名之后（如 --name={uname}、-n{uname}），也可改用 event-environment 读取事件；"
-                        + "修改后重启，写法见使用说明附录 B", index);
-                marked.add(new RuleToAdjust(index, rule.getEvent()));
+                if (skipped.add(index)) {
+                    if (programField) {
+                        log.warn("请调整 novabot.core.exec.rules[{}].command：第一项请填写固定程序或脚本路径，"
+                                + "修改后重启；写法见使用说明附录 B", index);
+                    } else {
+                        log.warn("请调整 novabot.core.exec.rules[{}].command：事件参数请放在单列的固定 -- 之后，"
+                                + "或接在固定的选项名之后（如 --name={uname}、-n{uname}），也可改用 event-environment 读取事件；"
+                                + "修改后重启，写法见使用说明附录 B", index);
+                    }
+                }
             }
         }
-        rulesToAdjust = List.copyOf(marked);
-    }
-
-    /**
-     * 启动检查标出的待调整规则，按在配置里的序号排列；未检查或没有时为空
-     */
-    public List<RuleToAdjust> rulesToAdjust() {
-        return rulesToAdjust;
+        return List.copyOf(marked);
     }
 
     /**
@@ -173,6 +181,7 @@ public class EventCommandRunner {
     private void submit(int index, NovaCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
         List<String> command = resolve(rule.getCommand(), event);
         if (command.isEmpty()) {
+            observed.put(index, new ObservedRule(rule.getCommand() == null ? null : new ArrayList<>(rule.getCommand()), rule.getEvent()));
             // 每条规则每次运行只记一次，免得事件密集时刷屏
             if (skipped.add(index)) {
                 log.warn("外部程序触发规则 novabot.core.exec.rules[{}]（事件 {}）已跳过：command 为空或需要按新写法调整。"
@@ -399,6 +408,9 @@ public class EventCommandRunner {
      * @param event 规则配置的事件名
      */
     public record RuleToAdjust(int index, String event) {
+    }
+
+    private record ObservedRule(List<String> command, String event) {
     }
 
     @PreDestroy

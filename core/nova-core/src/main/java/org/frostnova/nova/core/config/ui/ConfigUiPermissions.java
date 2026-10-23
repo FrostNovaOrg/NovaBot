@@ -83,6 +83,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "DELETE /config/api/accounts/{id}");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/accounts/local/bind");
         add(entries, Access.ADMIN, Subject.NONE, "DELETE /config/api/accounts/local/binding");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/admin-session-check");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/schema");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/values");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/values");

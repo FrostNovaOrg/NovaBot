@@ -11,6 +11,7 @@ import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -325,6 +326,75 @@ class EventCommandContractTest {
         var result = runner.resolve(List.of("tool", "{json}"), event);
         assertEquals("sample", JSON.parseObject(result.get(1)).getString("detail"));
         assertTrue(event.reads.get() > 0);
+    }
+
+    @ParameterizedTest(name = "{index}")
+    @ValueSource(strings = {"{platform}", "{uid}", "{room_id}", "{timestamp}"})
+    @DisplayName("规则未执行后控制台仍应列出待调整项")
+    void listsEverySkippedEventField(String field) {
+        properties.getExec().setEnabled(true);
+        var template = List.of("tool", field);
+        properties.getExec().getRules().add(rule(template));
+        runner.checkConfiguration();
+        assertTrue(runner.rulesToAdjust().isEmpty());
+        var value = new LiveOnEvent("-sample", new LiveStreamerInfo(-11L, "sample", -22L), Instant.ofEpochMilli(-123L));
+        assertTrue(runner.resolve(template, value).isEmpty());
+        runner.onEvent(value);
+        assertEquals(List.of(new EventCommandRunner.RuleToAdjust(0, "LiveOnEvent")), runner.rulesToAdjust());
+        runner.checkConfiguration();
+        assertEquals(1, warnings().size());
+    }
+
+    @Test
+    @DisplayName("可选内容变化后未执行的规则应有提醒")
+    void listsRulesForOptionalContentAfterExecution() {
+        properties.getExec().setEnabled(true);
+        var template = List.of("tool", "{json}-tail");
+        properties.getExec().getRules().add(rule(template));
+        runner.checkConfiguration();
+        assertTrue(runner.rulesToAdjust().isEmpty());
+        assertTrue(runner.resolve(template, event("a".repeat(9000))).isEmpty());
+        runner.onEvent(event("a".repeat(9000)));
+        assertEquals(1, runner.rulesToAdjust().size());
+        assertEquals(1, warnings().size());
+    }
+
+    @Test
+    @DisplayName("没有执行内容的规则被跳过后应有提醒")
+    void listsSkippedRulesWithoutAProgram() {
+        properties.getExec().setEnabled(true);
+        properties.getExec().getRules().add(rule(null));
+        runner.checkConfiguration();
+        runner.onEvent(event("sample"));
+        assertEquals(1, runner.rulesToAdjust().size());
+        assertEquals(1, warnings().size());
+    }
+
+    @Test
+    @DisplayName("规则启停与修改后提醒应跟随实际生效状态")
+    void noticeFollowsActiveRulesAndTheirOrder() {
+        properties.getExec().setEnabled(true);
+        var first = rule(List.of("tool", "{uname}"));
+        var second = rule(List.of("{uname}", "{uname}"));
+        first.setEnabled(false);
+        properties.getExec().getRules().addAll(List.of(first, second));
+        runner.checkConfiguration();
+        first.setEnabled(true);
+        assertEquals(List.of(new EventCommandRunner.RuleToAdjust(0, "LiveOnEvent"),
+                new EventCommandRunner.RuleToAdjust(1, "LiveOnEvent")), runner.rulesToAdjust());
+        assertEquals(2, warnings().size());
+        first.setEnabled(false);
+        assertEquals(List.of(new EventCommandRunner.RuleToAdjust(1, "LiveOnEvent")), runner.rulesToAdjust());
+        properties.getExec().setEnabled(false);
+        assertTrue(runner.rulesToAdjust().isEmpty());
+        properties.getExec().setEnabled(true);
+        first.setEnabled(true);
+        first.setCommand(List.of("tool", "--", "{uname}"));
+        second.setCommand(List.of("tool", "--name={uname}"));
+        assertTrue(runner.rulesToAdjust().isEmpty());
+        assertEquals(2, warnings().size());
+        runner.checkConfiguration();
+        assertTrue(runner.rulesToAdjust().isEmpty());
     }
 
     private List<String> warnings() {

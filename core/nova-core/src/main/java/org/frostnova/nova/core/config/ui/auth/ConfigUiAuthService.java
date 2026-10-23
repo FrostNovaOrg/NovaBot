@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 /**
@@ -257,6 +258,16 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     private final Object totpConsumeLock = new Object();
 
     /**
+     * 登录设置的代次：换口令、开关二次验证各进一代
+     * <p>
+     * 一趟登录签出的会话要与签发那一刻的登录设置相符。登录在核凭据之前记下代次，
+     * 签发之后再对一次，对不上就收回这一把，让人按现在的设置再登。
+     * <p>
+     * 🔴 <b>先改设置、再进代次</b>，次序不能反：读到新代次的登录必须同时看得到新设置。
+     */
+    private final AtomicLong policyGeneration = new AtomicLong();
+
+    /**
      * 取当前时刻。构造时注入是为了判据能把时间往前拨，
      * <b>而不是靠 sleep 去等一个真实的窗口</b>——那种判据慢到最后一定会被人关掉。
      * <p>
@@ -319,6 +330,8 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     public void setOidcClient(OidcClient oidc) { this.oidc = oidc; }
 
     public boolean oidcEnabled() { return isEnabled() && oidc != null && oidc.isEnabled(); }
+
+    public boolean oidcCallbackSetupNeeded() { return oidcEnabled() && oidc.callbackSetupNeeded(); }
 
     public boolean oidcCreateSupported() { return oidcEnabled() && oidc.createSupported(); }
 
@@ -489,6 +502,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             session.clearPendingSecrets();
         }
         this.totpEnabled = true;
+        policyGeneration.incrementAndGet();
         log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
     }
 
@@ -529,6 +543,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
         }
         this.totpEnabled = false;
         resetTotpConsume();
+        policyGeneration.incrementAndGet();
         log.warn("配置界面已关闭二次验证, 之后登录只校验口令");
     }
 
@@ -542,6 +557,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      */
     public void applyPasswordHash(String hashed) {
         this.passwordHash = hashed;
+        policyGeneration.incrementAndGet();
         if (hashed == null) sessions.revokeAllOidc();
         log.info("配置界面的登录口令已更换");
     }
@@ -896,11 +912,19 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
      * @return 登录结果
      */
     public LoginResult login(char[] password, String code, String clientIp) {
+        // 记在核凭据之前，签发之后再对，见 policyGeneration
+        long generation = policyGeneration.get();
         CredentialCheck check = checkCredentials(password, code, clientIp);
 
         return switch (check.verdict()) {
             case OK -> {
                 ConfigUiSession session = issueLocal(clientIp, ConfigUiSession.Channel.PASSWORD, null);
+                if (policyGeneration.get() != generation) {
+                    // 核对之后设置换了：收回这一把，让人按现在的设置再登
+                    sessions.revoke(session.getId());
+                    log.warn("配置界面登录期间登录方式被更改, 已收回这次签发的会话, 来源: {}", clientIp);
+                    yield LoginResult.failure();
+                }
                 log.info("配置界面登录成功, 来源: {}", clientIp);
                 yield LoginResult.success(session);
             }

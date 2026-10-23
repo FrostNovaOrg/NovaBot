@@ -39,6 +39,7 @@ novabot.core.config-ui.update.enabled=false
 novabot.core.config-ui.update.source=http://127.0.0.1:1/coverage-release
 novabot.core.datasource.json-auto-reload=false
 novabot.core.datasource.json-path=coverage-datasource.json
+novabot.core.event-stream.allowed-origins[0]=https://panel.example
 novabot.core.event-stream.buffer-size=131
 novabot.core.event-stream.enabled=true
 novabot.core.event-stream.path=/coverage/events

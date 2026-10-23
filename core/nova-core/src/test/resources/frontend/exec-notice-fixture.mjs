@@ -2,7 +2,7 @@
  * 外部程序触发规则待调整时，控制台顶上那条提醒
  *
  * 有待调整的规则时出现，逐条写出配置里的位置，指向使用说明附录 B 并说明改好后重启；
- * 清单为空、取不到或回包失败时不出现。另核接线：页面上有这块、主脚本只在非成员时取数并画它。
+ * 清单为空、取不到或回包失败时不出现。另核接线：页面上有这块、主脚本按当前身份取数并画它。
  *
  * 由 ExecNoticeFrontendTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -115,9 +115,94 @@ const html = readFileSync(join(ui, 'index.html'), 'utf8');
 const main = readFileSync(join(ui, 'main.js'), 'utf8');
 ok(/<div class="notice" id="exec-notice" style="display:none">/.test(html), '④ index.html 上有 #exec-notice');
 ok(/import \{renderExecNotice\} from '\.\/exec-notice\.js';/.test(main), '④ main.js 引入 renderExecNotice');
-ok(/api\('\/exec\/notice'\)[\s\S]{0,200}renderExecNotice\(\$\('#exec-notice'\)/.test(main),
-  '④ main.js 取 /exec/notice 并画进 #exec-notice');
-ok(/if \(store\.role !== 'MEMBER'\) \{[^}]*loadExecNotice\(\);/.test(main), '④ 只在非成员时取这份清单');
+
+
+ok(html.indexOf('id="oidc-callback-notice"') < html.indexOf('id="exec-notice"'), '④ 回调地址提醒在规则提醒上方');
+
+const source = main.slice(main.indexOf('function loadExecNotice('),
+  main.indexOf("$('#startup-retry').addEventListener"));
+const box = new MiniNode('div');
+const elements = new Map([['#exec-notice', box]]);
+const $ = key => {
+  if (!elements.has(key)) elements.set(key, new MiniNode('div'));
+  return elements.get(key);
+};
+let state = {role: 'ADMIN'};
+let pending;
+let requests = 0;
+const data = {success: true, rules: [{key: 'novabot.core.exec.rules[0]'}]};
+let noticeData = data;
+const noop = () => {};
+const dependencies = {
+  $, store: {}, renderExecNotice,
+  api: async path => {
+    if (path === '/auth/state') return state;
+    if (path === '/exec/notice') {
+      requests++;
+      return pending ? await pending : noticeData;
+    }
+    return {};
+  },
+  applyRoleView: noop, setAuthState: noop, setMemberAuthState: noop,
+  renderPersonalMenu: noop, bindBotForm: noop, botFormHtml: noop, loadBotConsole: noop,
+  mountPages: async () => {}, applyRoute: noop, load: noop,
+  setTimeout: noop, clearTimeout: noop,
+};
+const lifecycle = new Function(...Object.keys(dependencies),
+  'let homeStatus, homeLogin, execNoticeVersion = 0;\n' + source + '\nreturn {start: startConsole, refresh: loadExecNotice};')(...Object.values(dependencies));
+const start = lifecycle.start;
+await start();
+ok(shown(box), '⑤ 管理员有待调整规则时显示');
+state = {role: 'ADMIN', oidcCallbackSetupNeeded: true};
+await start();
+ok(shown(box) && shown($('#oidc-callback-notice')), '④ 两条提醒可以同时显示');
+noticeData = {success: true, rules: []};
+await lifecycle.refresh();
+ok(!shown(box) && shown($('#oidc-callback-notice')), '④ 规则清单为空不改变回调地址提醒');
+noticeData = data;
+await lifecycle.refresh();
+ok(shown(box) && shown($('#oidc-callback-notice')), '④ 规则提醒恢复不改变回调地址提醒');
+const administratorRequests = requests;
+state = {role: 'MEMBER'};
+await start();
+ok(!shown(box) && box.textContent === '', '⑤ 身份改为成员后清空提醒');
+ok(requests === administratorRequests, '⑤ 成员不取清单');
+state = {};
+await start();
+ok(!shown(box) && requests === administratorRequests, '⑤ 未登录不取清单且不留文字');
+state = {role: 'ADMIN'};
+await start();
+ok(shown(box), '⑤ 成员改为管理员后重新显示');
+let release;
+pending = new Promise(resolve => { release = resolve; });
+await start();
+state = {role: 'MEMBER'};
+await start();
+release(data);
+await pending;
+await Promise.resolve();
+ok(!shown(box) && box.textContent === '', '⑤ 身份变更前的回包不再显示');
+pending = null;
+state = {role: 'ADMIN'};
+await lifecycle.refresh();
+ok(shown(box), '⑤ 身份更新为管理员后刷新显示');
+state = {role: 'MEMBER'};
+await lifecycle.refresh();
+ok(!shown(box) && box.textContent === '', '⑤ 刷新时按当前身份清空提醒');
+state = {role: 'ADMIN'};
+pending = new Promise(resolve => { release = resolve; });
+const count = requests;
+const earlier = lifecycle.refresh();
+for (let i = 0; i < 50 && requests === count; i++) await Promise.resolve();
+ok(requests > count, '⑤ 已开始较早的清单请求');
+pending = null;
+noticeData = {success: true, rules: []};
+await lifecycle.refresh();
+release(data);
+await earlier;
+ok(!shown(box) && box.textContent === '', '⑤ 较早的回包不覆盖较新的清单');
+ok(main.includes("window.addEventListener('focus', () => loadExecNotice())"), '⑤ 回到页面时更新提醒');
+ok(/setInterval\([\s\S]*loadExecNotice\(\)/.test(main), '⑤ 页面打开时继续更新提醒');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

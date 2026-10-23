@@ -794,17 +794,28 @@ function loadBotConsole() {
 }
 $('#bot-open').addEventListener('click', () => { if (botHref) location.href = botHref; });
 
-// 外部程序触发规则待调整时的常驻提醒。清单是启动检查时定下的，取不到就不显示
-function loadExecNotice() {
-  return api('/exec/notice')
-    .then(data => renderExecNotice($('#exec-notice'), data))
-    .catch(() => renderExecNotice($('#exec-notice'), null));
+// 根据当前身份与本次启动请求更新规则提醒
+let execNoticeVersion = 0;
+function loadExecNotice(attempt = startupAttempt, role) {
+  const version = ++execNoticeVersion;
+  renderExecNotice($('#exec-notice'), null);
+  if (!attempt?.active) return Promise.resolve();
+  const options = {signal: attempt.controller.signal};
+  const identity = role === undefined ? api('/auth/state', options).then(state => state.role) : Promise.resolve(role);
+  const current = () => attempt.active && version === execNoticeVersion;
+  return identity.then(role => {
+    if (!current() || role !== 'ADMIN') return;
+    return api('/exec/notice', options).then(data => {
+      if (current()) renderExecNotice($('#exec-notice'), data);
+    });
+  }).catch(() => {});
 }
 
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 let startupAttempt;
 function startConsole() {
+  renderExecNotice($('#exec-notice'), null);
   if (startupAttempt) {
     startupAttempt.active = false;
     clearTimeout(startupAttempt.timer);
@@ -825,6 +836,7 @@ function startConsole() {
     .then(state => {
       if (!attempt.active) return;
       store.role = state.role;
+      loadExecNotice(attempt, state.role);
       applyRoleView();
       store.csrfToken = state.csrfToken || '';
       // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
@@ -840,6 +852,8 @@ function startConsole() {
       // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
       // 那道门开着这件事没有任何其它现象
       $('#op-banner').style.display = state.operatorSession ? '' : 'none';
+      $('#session-check-notice').style.display = state.role === 'ADMIN' && state.sessionCheckSetupNeeded ? '' : 'none';
+      $('#oidc-callback-notice').style.display = state.role === 'ADMIN' && state.oidcCallbackSetupNeeded ? '' : 'none';
     })
     .catch(() => {})
     // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
@@ -851,7 +865,6 @@ function startConsole() {
         $('#bot-form').innerHTML = botFormHtml('bot');
         bindBotForm('bot');
         loadBotConsole();
-        loadExecNotice();
       }
       return Promise.all([
         api('/status', {signal: attempt.controller.signal}).catch(() => null),
@@ -876,5 +889,10 @@ function startConsole() {
 }
 $('#startup-retry').addEventListener('click', startConsole);
 startConsole();
+window.addEventListener('focus', () => loadExecNotice());
+document.addEventListener('visibilitychange', () => loadExecNotice());
+setInterval(() => {
+  if (document.visibilityState !== 'hidden') loadExecNotice();
+}, 15000);
 
 // 页面在身份和插件清单到达后由 applyRoute 显示。

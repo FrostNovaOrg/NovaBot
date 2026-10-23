@@ -138,14 +138,23 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private final NovaCoreProperties.ConfigUi.Agreement agreement;
 
+    private final Runnable sessionCheckUsed;
+
     public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
                                   NovaCoreProperties.ConfigUi.Auth auth,
                                   NovaCoreProperties.ConfigUi.Agreement agreement) {
+        this(token, ipMatcher, authService, auth, agreement, () -> {});
+    }
+
+    ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
+                           NovaCoreProperties.ConfigUi.Auth auth,
+                           NovaCoreProperties.ConfigUi.Agreement agreement, Runnable sessionCheckUsed) {
         this.token = token;
         this.ipMatcher = ipMatcher;
         this.authService = authService;
         this.auth = auth;
         this.agreement = agreement;
+        this.sessionCheckUsed = sessionCheckUsed;
     }
 
     @Override
@@ -165,6 +174,10 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             log.warn("配置界面拒绝了来自 {} 的访问: 来源 IP 不在白名单内", clientIp);
             reject(request, response, HttpStatus.FORBIDDEN, "来源 IP 不在白名单内");
             return;
+        }
+
+        if (path(request).equals(ConfigUiController.BASE_PATH + "/api/session-check")) {
+            sessionCheckUsed.run();
         }
 
         if ((path(request).equals(ConfigUiController.BASE_PATH + "/api/oidc/login")
