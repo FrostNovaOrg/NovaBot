@@ -122,7 +122,7 @@ public class OneBotAdapterPluginProperties {
             private boolean enabled = true;
 
             /**
-             * 单个来源每分钟允许的请求数。
+             * 单个来源每分钟允许的请求数，单位：次／分。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("推送接口 · 每分钟请求数")
@@ -130,7 +130,7 @@ public class OneBotAdapterPluginProperties {
             private int permitsPerMinute = 600;
 
             /**
-             * 可容忍的瞬时突发请求数。
+             * 可容忍的瞬时突发请求数，单位：次。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("推送接口 · 突发请求数")
@@ -146,7 +146,7 @@ public class OneBotAdapterPluginProperties {
     @Setter
     public static class WebsocketThread {
         /**
-         * 线程池核心线程数。
+         * 线程池核心线程数，单位：线程。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("OneBot 线程池 · 核心线程数")
@@ -154,7 +154,7 @@ public class OneBotAdapterPluginProperties {
         private int corePoolSize = 2;
 
         /**
-         * 线程池最大线程数。
+         * 线程池最大线程数，单位：线程。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("OneBot 线程池 · 最大线程数")
@@ -162,7 +162,7 @@ public class OneBotAdapterPluginProperties {
         private int maxPoolSize = 16;
 
         /**
-         * 线程池任务队列容量。
+         * 线程池任务队列容量，单位：条。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("OneBot 线程池 · 队列容量")
@@ -194,7 +194,7 @@ public class OneBotAdapterPluginProperties {
         private boolean enableHttpDetect = true;
 
         /**
-         * 隔多少秒做一次 HTTP 服务可用性检测。
+         * 隔多少秒做一次 HTTP 服务可用性检测，单位：秒。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("OneBot 探测 · HTTP 周期")
@@ -202,7 +202,7 @@ public class OneBotAdapterPluginProperties {
         private int httpDetectInterval = 300;
 
         /**
-         * OneBot 接口调用超过多少毫秒判定为「慢」。只判通不通会漏掉一类故障：接口不报错但每次要几秒，带图的推送会超时被丢。设 0 或负数关闭这项判定。
+         * OneBot 接口调用超过多少毫秒判定为「慢」，单位：毫秒。只判通不通会漏掉一类故障：接口不报错但每次要几秒，带图的推送会超时被丢。设 0 或负数关闭这项判定。
          */
         // 默认 2000 毫秒是照实测定的：健康时（2026-08-08/09）中位 0.00 秒、p99 2.4 秒；
         // 退化时（2026-08-10，cgroup 内存节流）中位 2.83 秒、p90 10.4 秒。判据取最近
@@ -225,7 +225,7 @@ public class OneBotAdapterPluginProperties {
         private boolean enableWebsocketDetect = true;
 
         /**
-         * 长连接静默多少秒判定为失效。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报：实际不短于三个心跳周期；对方关了心跳时本项不生效。
+         * 长连接静默多少秒判定为失效，单位：秒。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报：实际不短于三个心跳周期；对方关了心跳时本项不生效。
          */
         // 按「多久没人发言」判断的话，半夜必然误报。实际超时不会小于三个心跳周期。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -253,7 +253,7 @@ public class OneBotAdapterPluginProperties {
         private String platform = "";
 
         /**
-         * 告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字；不要填 2，发不出去。改完立即生效。
+         * 告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字，单位：0／1；不要填 2，发不出去。改完立即生效。
          */
         // 取值与 PushTargetType 的 code 对应：GROUP 是 1，FRIEND 是 0。
         // 与平台名、号码同进退：三项合起来才是一个收件地址，只让其中一项立刻生效，
@@ -265,7 +265,7 @@ public class OneBotAdapterPluginProperties {
         private int type = 0;
 
         /**
-         * 接收告警的群号或用户号，改完立即生效，不必重启。
+         * 接收告警的群号或用户号，单位：号；改完立即生效，不必重启。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)

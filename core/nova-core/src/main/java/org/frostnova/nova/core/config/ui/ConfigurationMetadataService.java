@@ -147,6 +147,9 @@ public class ConfigurationMetadataService {
 
         mergeExternalFields(merged);
 
+        // 字段表本身按名字排序，这是它的规范顺序（找一项、比两份表都按这个来）。
+        // 界面上的先后不在这里定：设置页按「哪一段的 → 代码里怎么写的」排，
+        // 见 ConfigUiController#schema 与 ConfigurationLabelResolver#getOrders
         List<ConfigurationField> result = new ArrayList<>(merged.values());
         result.sort(Comparator.comparing(ConfigurationField::name));
 

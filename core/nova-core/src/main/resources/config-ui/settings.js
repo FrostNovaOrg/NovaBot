@@ -5,11 +5,11 @@
  * 那是照程序结构摆的：使用者要办一件事（「让它别在半夜发消息」），得先猜这件事
  * 在代码里归哪个类管。现在组由服务端那张表给（见 ConfigurationGroups），
  * 每一项按服务端标的级别分进常用或高级：高级默认收着，由组目录最底下的「高级选项」显示；
- * 每一项旁边标着改完什么时候生效，行内只留一句短说明，整段说明在问号里。
+ * 需要重启的项旁边留出生效提醒，行内只留一句短说明，整段说明在问号里。
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, markDirty, reloadChangeSources, saveTarget, say, switchControl} from './core.js';
+import {$, api, el, esc, markDirty as recordDirty, reloadChangeSources, saveTarget, say, switchControl} from './core.js';
 import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards, openCards} from './settings-alert.js';
@@ -40,6 +40,33 @@ let advancedDismissed = null;
 
 /** 这一次画出来的两半，计数与开合要用 */
 let arranged = {common: [], advanced: []};
+
+/**
+ * 各组标题上的「改过 n 项」：与默认值不同的行数，一项没有就整块不显示
+ *
+ * 数字由这里数、不是样式数：收起的组里行是 display:none，样式计数器数不着，
+ * 而那正是最需要这块牌子的时候（手机上一组只剩组名）。行改一次记一次账，
+ * 每次记账都过 markDirty，因此挂在那条路上就不用改建行的接口。
+ */
+function recountChanged() {
+  for (const group of document.querySelectorAll('.setgrp')) {
+    const badge = group.querySelector('.grp-changed');
+    if (!badge) continue;
+    const n = group.querySelectorAll('.setitem[data-changed="1"]').length;
+    badge.textContent = n ? '改过 ' + n + ' 项' : '';
+  }
+}
+
+/**
+ * 记一笔改动：底部的改动条与组上的「改过 n 项」一起跟着走
+ *
+ * 建行里的 markDirty 指的是这里，不是 core.js 那个纯记账的——夹具把建行切出来跑时，
+ * 传进去的是它自己的桩，这条路也就不会走到。
+ */
+function markDirty() {
+  recordDirty();
+  recountChanged();
+}
 
 /**
  * 滚动观察器：标出目录里当前这一组。重绘时拆掉再建，免得旧节点还挂着。
@@ -107,7 +134,12 @@ export function focusGroup(id, open, fresh) {
   if (target) {
     if (adv && adv.contains(target) && adv.classList.contains('hide')) showAdvanced();
     target.classList.remove('hide');
-    if (open) openCards(target);
+    if (open) {
+      // 窄屏上各组默认收着（见 app.css）：点名跳来时先把它放开，
+      // 否则滚到位也只看见一个组名，看起来像点了没反应
+      target.dataset.fold = '0';
+      openCards(target);
+    }
     const above = headerHeight();
     const top = window.scrollY + target.getBoundingClientRect().top - above;
     window.scrollTo(0, Math.max(0, top));
@@ -120,6 +152,8 @@ export function focusGroup(id, open, fresh) {
  * 只改框里的值不会触发它们的监听，因此这里自己筛：不筛的话框是空的，行却还按旧搜索藏着。
  */
 function clearFilters() {
+  const nav = $('#grp-nav');
+  if (nav && nav.dataset) nav.dataset.solo = '';
   const search = $('#set-search');
   const onlyChanged = $('#only-changed');
   if (search) search.value = '';
@@ -326,12 +360,40 @@ function buildControl(field, value, cell) {
     return input;
   }
 
+  // 只有两三个取值的项给选的，不再给自由填写的框：框收什么全凭手气，收错了
+  // 程序认不出又不报错。选出来的值与原先敲进去的逐字相同（tv／web 这类短字），
+  // 配置文件里的旧写法照旧认：不在名单里的现值补成多出来的一项，不悄悄换掉
+  if (Array.isArray(field.choices) && field.choices.length) {
+    const select = el('select');
+    const options = field.choices.slice();
+    if (value !== '' && !options.includes(value)) options.push(value);
+    for (const choice of options) {
+      const option = el('option');
+      option.value = choice;
+      option.textContent = choice;
+      select.appendChild(option);
+    }
+    select.value = value;
+    cell.appendChild(select);
+    return select;
+  }
+
   const input = el('input');
   input.type = (field.widget === 'integer' || field.widget === 'number') ? 'number' : 'text';
   // 文件位置用等宽字：l 与 1、O 与 0 认得出来。认法看服务端给的 format，机密与否不在这里判
   if (field.format === 'PATH') input.classList.add('setting-path');
   input.value = value;
-  cell.appendChild(input);
+  if (field.unit) {
+    // 单位收进框里右侧：框的宽度因此与没单位的一样，右缘齐得住，
+    // 不会一栏一个宽窄。textarea 与只读值不走这条，单位在行里另摆（见 buildRow）
+    const wrap = el('div', 'unitbox');
+    const unit = el('span', 'unit');
+    unit.textContent = field.unit;
+    wrap.append(input, unit);
+    cell.appendChild(wrap);
+  } else {
+    cell.appendChild(input);
+  }
   return input;
 }
 
@@ -415,20 +477,20 @@ function buildRow(field, groupAllRestart) {
   } else {
     input = buildControl(field, shown, cell);
   }
-  if (field.unit) {
+  // 单位收在框里（见 buildControl）；只读值旁边另摆一个，它没有框
+  if (field.unit && !input) {
     const unit = el('span', 'unit');
     unit.textContent = field.unit;
     cell.appendChild(unit);
-    // 数字／文本框把单位摆在右边；textarea 仍单独占一行，不改成横排
-    if (input && input.tagName === 'INPUT') {
-      cell.classList.add('cell', 'has-unit');
-    }
   }
   row.appendChild(cell);
 
-  if (!groupAllRestart) {
-    const effect = effectOf(field.effect);
-    const badge = el('span', 'badge ' + (effect.immediate ? 'now' : 'restart'));
+  // 生效标记只标「要重启」的那一项：保存条上已经有一句「n 处需重启生效」，
+  // 每行再顶一块「立即生效」的话，六十二项里五十多项挂的是同一块牌子，
+  // 真正要找的那几项反倒埋在里面
+  const effect = groupAllRestart ? null : effectOf(field.effect);
+  if (effect && !effect.immediate) {
+    const badge = el('span', 'badge restart');
     badge.textContent = effect.text;
     cell.appendChild(badge);
   }
@@ -679,22 +741,33 @@ function buildGroup(group) {
   // 从常用组里拆出来的「某组 · 高级」：哪几项由卡片摆，按原来那一组认
   const base = group.base || group.group;
 
+  const body = el('div', 'grp-body');
+
   const title = el('h2');
+  // 组名即折页钮：窄屏上各组默认收着，只留组名与「改过 n 项」（见 app.css），
+  // 点名字才摊开。收放记在 data-fold 上，搜到这一组时 filterSettings 先放开、筛完再复原
+  const toggle = el('button', 'lnkbtn grp-head');
+  toggle.type = 'button';
   const name = el('span');
   name.textContent = group.title;
-  title.appendChild(name);
+  toggle.appendChild(name);
   // 整组都要重启的组，牌子挂在组标题上，行里不再逐行标。混着的组（推送、告警）逐行标保留
   if (group.allRestart) {
     const pill = el('span', 'pill warn');
     pill.textContent = '本组设置修改后均需重启生效';
-    title.appendChild(pill);
+    toggle.appendChild(pill);
   }
+  // 「改过 n 项」的字由 markDirty 那条路数出来（见 recountChanged），
+  // 一项没改过就空着，样式把空牌子藏掉
+  const changed = el('span', 'grp-changed');
+  toggle.appendChild(changed);
+  title.appendChild(toggle);
   box.appendChild(title);
 
   if (group.description) {
     const desc = el('div', 'card-desc');
     desc.textContent = group.description;
-    box.appendChild(desc);
+    body.appendChild(desc);
   }
 
   for (const field of group.fields) {
@@ -703,11 +776,20 @@ function buildGroup(group) {
     // 口令、二次验证开关与它的密钥同理：这三项改的时候各有一道门要过
     // （旧口令、现在的验证码、先绑定），摊成普通行的话那三道门就只剩「填格子按保存」
     if (base === AUTH_GROUP && AUTH_CARD_FIELDS.has(field.name)) continue;
-    box.appendChild(buildRow(field, group.allRestart));
+    body.appendChild(buildRow(field, group.allRestart));
   }
 
-  if (group.group === ALERT_GROUP) box.appendChild(alertCards());
-  if (group.group === AUTH_GROUP) box.appendChild(authCards());
+  if (group.group === ALERT_GROUP) body.appendChild(alertCards());
+  if (group.group === AUTH_GROUP) body.appendChild(authCards());
+  box.appendChild(body);
+
+  toggle.addEventListener('click', () => {
+    // 收着没有统一记法（窄屏默认收、宽屏默认开，都只写在样式里），
+    // 因此收放按「此刻看不看得见」翻一格，不按 data-fold 自己推
+    const open = getComputedStyle(body).display !== 'none';
+    box.dataset.fold = open ? '1' : '0';
+    toggle.title = open ? '展开本组' : '收起本组';
+  });
   return box;
 }
 
@@ -747,7 +829,18 @@ function buildNavLink(group) {
   pill.type = 'button';
   pill.setAttribute('data-grp-link', group.group);
   pill.textContent = group.title;
-  pill.addEventListener('click', () => focusGroup(group.group));
+  pill.addEventListener('click', () => {
+    // 目录点名是「就看这一组」，与搜索那条路不同：一整页几十项里点名要的是
+    // 那一组独占屏幕。再点同一条目就都放出来。筛着东西时不走这条（见 filterSettings），
+    // 免得搜出来的行又被藏回去
+    const nav = $('#grp-nav');
+    if (nav && nav.dataset) {
+      const solo = String(nav.dataset.solo || '');
+      nav.dataset.solo = solo === group.group ? '' : group.group;
+    }
+    filterSettings();
+    focusGroup(group.group, true);
+  });
   return pill;
 }
 
@@ -842,6 +935,8 @@ export function renderGeneral() {
 
   buildNav(common, advanced);
   filterSettings();
+  // 行刚建完时 data-changed 已经标好（建行末尾那次 paint），组牌在这里数一遍
+  recountChanged();
 }
 
 /**
@@ -868,6 +963,8 @@ function showAdvanced() {
  * 改了搜索词再重新算。
  */
 function toggleAdvanced() {
+  const nav = $('#grp-nav');
+  if (nav && nav.dataset) nav.dataset.solo = '';
   const region = $('#adv-groups');
   const visible = !!region && !region.classList.contains('hide');
   advancedChosen = !visible;
@@ -1024,20 +1121,43 @@ export function filterSettings() {
 
   // 一组里一项都不剩就把整组收起来，否则屏幕上留着一串空标题。
   // 界面组与自行筛选的组（data-ui）不在这里按配置行数收起。
+  // 收着的组里有命中就先放开（窄屏上各组默认收着，见 app.css）：搜到了却收着，
+  // 与没搜到长得一样。筛完按原来收放复原，不因为搜过一次就把收起全放开了
   for (const group of document.querySelectorAll('.setgrp:not([data-ui])')) {
     const any = group.querySelectorAll('.setitem:not(.hide), .alcard:not(.hide)').length;
     group.classList.toggle('hide', any === 0);
+    if (filtering) {
+      if (any > 0) {
+        if (group.dataset.foldWas === undefined) group.dataset.foldWas = group.dataset.fold ?? '';
+        group.dataset.fold = '0';
+      }
+    } else if (group.dataset.foldWas !== undefined) {
+      if (group.dataset.foldWas === '') delete group.dataset.fold;
+      else group.dataset.fold = group.dataset.foldWas;
+      delete group.dataset.foldWas;
+    }
+  }
+
+  // 目录点名留下的「只看这一组」（见 buildNavLink）。它与 hide 分开记：
+  // 目录里那几条正是换一组的入口，不能跟着一起消失
+  const navBox = $('#grp-nav');
+  const solo = !filtering && navBox && navBox.dataset ? String(navBox.dataset.solo || '') : '';
+  for (const group of document.querySelectorAll('.setgrp')) {
+    group.classList.toggle('solo-hide', !!solo && group.dataset.grp !== solo);
   }
 
   const region = $('#adv-groups');
   const matches = region ? region.querySelectorAll('.setitem:not(.hide), .alcard:not(.hide)').length : 0;
   if (!filtering) advancedDismissed = null;
-  const advancedVisible = advancedShown({matches, filtering, chosen: advancedChosen,
-    dismissed: filtering && advancedDismissed === filterKey()});
+  // 只看某一组时高级区跟着那一组走：那一组在高级里就摆出来，不在就收着
+  const advancedVisible = solo
+    ? !!region && !!region.querySelector('.setgrp[data-grp="' + solo + '"]')
+    : advancedShown({matches, filtering, chosen: advancedChosen,
+      dismissed: filtering && advancedDismissed === filterKey()});
   if (region) region.classList.toggle('hide', !advancedVisible);
-  // 危险操作不是配置项，筛的时候整块收起，免得搜什么都在页底立着一颗红按钮
+  // 危险操作不是配置项，筛的时候与只看一组时整块收起，免得页底立着一颗不相干的红按钮
   const danger = $('#settings-danger');
-  if (danger) danger.classList.toggle('hide', filtering);
+  if (danger) danger.classList.toggle('hide', filtering || !!solo);
   // 目录里高级那一段与高级区同开同合：搜到高级里的项、点名跳进高级时一起出来
   const advancedNav = $('#adv-nav');
   if (advancedNav) advancedNav.classList.toggle('hide', !advancedVisible);

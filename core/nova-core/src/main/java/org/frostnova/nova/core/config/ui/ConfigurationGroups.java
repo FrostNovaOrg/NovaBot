@@ -234,4 +234,47 @@ public final class ConfigurationGroups {
     public static int orderOf(Group group) {
         return ALL.indexOf(group);
     }
+
+    /**
+     * 这个配置键按前缀排在第几档，从 0 起
+     * <p>
+     * 同一组里各项的先后先看这一档：它答的是「这一项属于哪一段」，
+     * 命中的仍是 {@link #groupOf} 认的那条最长前缀，档号就是那条前缀在本表里的登记次序。
+     * 核心前缀在前、插件申报的在后，于是「推送的开关」排在「内置推送平台」前面，
+     * 而「内置推送平台」又排在插件申报的那一项前面——按配置键的字母序则相反。
+     * @param name 配置键完整路径
+     * @return 档号，一条前缀也匹配不上时为 {@link Integer#MAX_VALUE}
+     */
+    public int rankOf(String name) {
+        if (name == null) {
+            return Integer.MAX_VALUE;
+        }
+
+        String hit = null;
+        int longest = -1;
+
+        for (String prefix : prefixes.keySet()) {
+            if (!name.equals(prefix) && !name.startsWith(prefix + ".")) {
+                continue;
+            }
+
+            if (prefix.length() > longest) {
+                longest = prefix.length();
+                hit = prefix;
+            }
+        }
+
+        if (hit == null) {
+            return Integer.MAX_VALUE;
+        }
+
+        int rank = 0;
+        for (String prefix : prefixes.keySet()) {
+            if (prefix.equals(hit)) {
+                return rank;
+            }
+            rank++;
+        }
+        return Integer.MAX_VALUE;
+    }
 }

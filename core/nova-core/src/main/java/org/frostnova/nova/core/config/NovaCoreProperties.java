@@ -122,7 +122,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Timeline {
         /**
-         * 事件时间线的保留天数，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
+         * 事件时间线的保留天数，单位：天，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
          */
         // 两周之前「某条推送失败过」已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -163,7 +163,7 @@ public class NovaCoreProperties {
         private int timeout = 30;
 
         /**
-         * 同时执行的命令数上限，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
+         * 同时执行的命令数上限，单位：条，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发 · 并发上限")
@@ -259,7 +259,7 @@ public class NovaCoreProperties {
         private boolean firstPushTip = true;
 
         /**
-         * 机器人账号每日最多 @全体成员 的次数，0 或负数不限制，额度由该账号推送的全部会话共享。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。
+         * 机器人账号每日最多 @全体成员 的次数，单位：次，0 或负数不限制，额度由该账号推送的全部会话共享。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。
          */
         // 这份额度由该账号推送的全部会话共享（实测：往一个群发一次，其他群看到的
         // 剩余次数同步减一）。默认 10 与平台实测值一致，它才是真正会先卡住的那一道。
@@ -270,7 +270,7 @@ public class NovaCoreProperties {
         private int atAllDailyLimit = 10;
 
         /**
-         * 单个群每日最多 @全体成员 的次数，0 或负数不限制；与账号那份额度是两个维度，通常先撞到的是账号额度。
+         * 单个群每日最多 @全体成员 的次数，单位：次，0 或负数不限制；与账号那份额度是两个维度，通常先撞到的是账号额度。
          */
         // 群的额度由群里所有有权限的人共用，机器人只是其中之一。默认 20 与平台实测值一致，
         // 本项是第二道保险。
@@ -385,7 +385,7 @@ public class NovaCoreProperties {
         private int retryInterval = 60;
 
         /**
-         * 待重投队列的容量上限。满了丢最旧的并在日志里说明，不静默截断。
+         * 待重投队列的容量上限，单位：条。满了丢最旧的并在日志里说明，不静默截断。
          */
         // 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -395,7 +395,7 @@ public class NovaCoreProperties {
         private int retryQueueSize = 50;
 
         /**
-         * 单条告警的最大重投次数，超过后放弃并写日志。
+         * 单条告警的最大重投次数，单位：次，超过后放弃并写日志。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重发 · 最多次数")
@@ -410,7 +410,8 @@ public class NovaCoreProperties {
     @Getter
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("内置推送平台")
-    @ConfigLevel(ConfigLevel.Level.COMMON)
+    // 结构复杂，控制台改不了（只能在配置文件里逐行填），不占常用区一整行；仍留在高级里可搜可跳
+    @ConfigLevel(ConfigLevel.Level.ADVANCED)
     private final List<Sender> sender = new ArrayList<>();
 
     /**
@@ -450,7 +451,7 @@ public class NovaCoreProperties {
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
-         * 配置文件备份保留份数，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
+         * 配置文件备份保留份数，单位：份，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
          */
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("备份保留份数")
@@ -600,7 +601,7 @@ public class NovaCoreProperties {
         @Setter
         public static class Agreement {
             /**
-             * 已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
+             * 已同意的协议版本号，单位：版，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
              */
             // 协议文案改版时版本号加一，此处记着的旧版本即刻失效——否则改了文案等于没改，没有人会再看到它。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -722,7 +723,7 @@ public class NovaCoreProperties {
             private int idleHours = 12;
 
             /**
-             * 连续登录失败多少次后锁定该来源 IP。
+             * 连续登录失败多少次后锁定该来源 IP，单位：次。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("连续登录失败锁定次数")
@@ -757,7 +758,7 @@ public class NovaCoreProperties {
         private List<String> fonts = new ArrayList<>();
 
         /**
-         * 画布不够用时一次扩展的高度（像素）；设得过大占内存，设得过小会频繁扩展拖慢速度。
+         * 画布不够用时一次扩展的高度，单位：像素；设得过大占内存，设得过小会频繁扩展拖慢速度。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("画布扩展步长")
@@ -770,7 +771,8 @@ public class NovaCoreProperties {
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("图片底部附加版权信息")
-        @ConfigLevel(ConfigLevel.Level.COMMON)
+        // 同上：结构复杂，控制台改不了，收进高级里
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary(value = "", details = false)
         private List<TextWithStyle> extraCopyrights = new ArrayList<>();
 

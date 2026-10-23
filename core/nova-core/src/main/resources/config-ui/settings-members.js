@@ -105,25 +105,38 @@ function streamerEditor(parent, account, options) {
   return fieldset;
 }
 
-function accountRow(tbody, account, options, optionsReady, state, refresh) {
-  const row = el('tr');
+/** 一格：窄屏上每格自己带栏目名（见 app.css 里 data-label 那条），宽屏上名字在表头 */
+function cellOf(parent, label) {
+  const node = el('div', 'member-cell');
+  node.dataset.label = label;
+  node.setAttribute('role', 'cell');
+  parent.appendChild(node);
+  return node;
+}
+
+function accountRow(list, account, options, optionsReady, state, refresh) {
+  const row = el('div', 'member-card');
   row.dataset.accountId = account.id;
-  const who = el('td');
+  row.setAttribute('role', 'row');
+  const who = cellOf(row, '显示名 / 邮箱');
   text(who, 'strong', account.displayName || account.email || account.id);
   text(who, 'div', account.email || '—', 'hint');
-  row.appendChild(who);
-  text(row, 'td', identity(account));
-  const status = text(row, 'td', statusText(account.status));
+  const kind = cellOf(row, '身份');
+  kind.textContent = identity(account);
+  const status = cellOf(row, '状态');
+  status.textContent = statusText(account.status);
   if (account.status === 'PENDING') text(status, 'p', '对方已经用统一登录进来过一次，等你授权。', 'hint');
-  const assigned = (account.streamers || []).map(key => options.find(option => option.key === key)?.name || key);
-  text(row, 'td', account.role === 'MEMBER' ? assigned.join('、') || '未指定主播' : '—');
-  const lastLogin = el('td');
+  const names = (account.streamers || []).map(key => options.find(option => option.key === key)?.name || key);
+  const assigned = cellOf(row, '指定主播');
+  assigned.textContent = account.role === 'MEMBER' ? names.join('、') || '未指定主播' : '—';
+  const lastLogin = cellOf(row, '最近登录');
   if (account.lastLoginAt) {
     const time = text(lastLogin, 'time', new Date(account.lastLoginAt).toLocaleString());
     time.dateTime = account.lastLoginAt;
   } else text(lastLogin, 'span', '尚未登录');
-  row.appendChild(lastLogin);
-  const actions = el('td', 'member-actions');
+  const actions = el('div', 'member-actions');
+  actions.dataset.label = '操作';
+  actions.setAttribute('role', 'cell');
   const result = el('p', 'member-result');
   result.setAttribute('role', 'status');
   result.setAttribute('aria-live', 'polite');
@@ -203,7 +216,7 @@ function accountRow(tbody, account, options, optionsReady, state, refresh) {
   }
   actions.appendChild(result);
   row.appendChild(actions);
-  tbody.appendChild(row);
+  list.appendChild(row);
 }
 
 export async function renderMembers(box, state, onRendered) {
@@ -233,23 +246,22 @@ export async function renderMembers(box, state, onRendered) {
       text(intro, 'p', '在设置页的统一登录配置里填上管理地址，「新建成员」按钮就能直接跳过去。', 'hint');
     }
     box.appendChild(intro);
-    const scroll = el('div', 'members-table-wrap');
-    const table = el('table', 'members-table');
-    const head = el('thead');
-    const titles = el('tr');
+    // 表格改成一张张横排的卡片行：宽屏上五栏并排、按钮另起一行，窄屏上整张卡竖着叠。
+    // 语义仍是一张表，用 role 标回去——显示改成块级布局后浏览器不再按表说了
+    const list = el('div', 'members-list');
+    list.setAttribute('role', 'table');
+    list.setAttribute('aria-label', '成员');
+    const head = el('div', 'member-head');
+    head.setAttribute('role', 'row');
     for (const title of ['显示名 / 邮箱', '身份', '状态', '指定主播', '最近登录', '操作']) {
-      text(titles, 'th', title).setAttribute('scope', 'col');
+      text(head, 'span', title).setAttribute('role', 'columnheader');
     }
-    head.appendChild(titles);
-    table.appendChild(head);
-    const body = el('tbody');
+    list.appendChild(head);
     const accounts = [...(result.accounts || [])].sort((a, b) => Number(b.status === 'PENDING') - Number(a.status === 'PENDING'));
     for (const account of accounts) {
-      accountRow(body, account, options, optionsReady, state, () => renderMembers(box, state, onRendered));
+      accountRow(list, account, options, optionsReady, state, () => renderMembers(box, state, onRendered));
     }
-    table.appendChild(body);
-    scroll.appendChild(table);
-    box.appendChild(scroll);
+    box.appendChild(list);
   } catch (error) {
     loading.textContent = failureMessage(error);
   } finally {

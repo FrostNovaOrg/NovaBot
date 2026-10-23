@@ -416,20 +416,26 @@ class ConsoleAppearanceTest {
         return out;
     }
 
-    /** 取 ≤959px 那段媒体查询的正文 */
+    /** 合并所有 ≤959px 媒体查询正文，不依赖页面样式块的先后顺序。 */
     private static String narrowMediaBlock(String css) {
-        int at = css.indexOf("@media (max-width:959px)");
-        if (at < 0) return "";
-        int open = css.indexOf('{', at);
-        int depth = 0;
-        for (int i = open; i < css.length(); i++) {
-            if (css.charAt(i) == '{') depth++;
-            else if (css.charAt(i) == '}') {
-                depth--;
-                if (depth == 0) return css.substring(open + 1, i);
+        StringBuilder blocks = new StringBuilder();
+        int from = 0;
+        while (true) {
+            int at = css.indexOf("@media (max-width:959px)", from);
+            if (at < 0) return blocks.toString();
+            int open = css.indexOf('{', at);
+            if (open < 0) return blocks.toString();
+            int depth = 1;
+            int end = open + 1;
+            while (end < css.length() && depth > 0) {
+                if (css.charAt(end) == '{') depth++;
+                else if (css.charAt(end) == '}') depth--;
+                end++;
             }
+            if (depth != 0) return blocks.toString();
+            blocks.append(css, open + 1, end - 1).append('\n');
+            from = end;
         }
-        return "";
     }
 
     /** 判断 target 是否嵌套在 class 为 outer 的 div 里（按 div 配对判） */

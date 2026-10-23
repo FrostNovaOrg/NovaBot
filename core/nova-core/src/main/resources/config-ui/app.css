@@ -71,14 +71,40 @@ body{margin:0;background:var(--ground);color:var(--text);
 #personal-about{margin:6px 0;overflow-wrap:anywhere}
 .member-result{color:var(--err);white-space:pre-wrap;overflow-wrap:anywhere}
 .member-result:empty{display:none}
-.members-intro{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:0 16px}
-.members-table-wrap{overflow-x:auto;padding:0 8px}
-.members-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
-.members-table th,.members-table td{text-align:left;vertical-align:top;padding:12px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
-.members-table th{white-space:nowrap;color:var(--dim)}
-.members-table .hint{margin:6px 0;min-width:100px}
-.member-actions{min-width:200px}
-.member-actions button{margin:3px}
+.members-intro{display:flex;align-items:flex-start;flex-direction:column;gap:12px;margin-bottom:12px;padding:0 16px}
+/* 成员名单：每位成员一张横排卡片行，按钮另起一行不与五栏抢宽；
+   窄屏上整张卡竖着叠、每格头顶带栏目名，按钮落在卡底，不用横着滚去找 */
+.members-list{padding:0 16px;font-size:var(--fs-sm)}
+.member-head,.member-card{display:grid;align-items:start;text-align:left;gap:8px 16px;
+  grid-template-columns:minmax(0,2.2fr) minmax(6em,.7fr) minmax(4em,.7fr) minmax(0,1.8fr) minmax(0,1.2fr)}
+.member-head{padding:0 12px 8px;color:var(--dim);font-size:var(--fs-xs);border-bottom:1px solid var(--line)}
+.member-head span:last-child{grid-column:1/-1}
+.member-card{padding:12px;border-bottom:1px solid var(--line)}
+.member-cell{min-width:0;overflow-wrap:anywhere}
+.member-card .hint{margin:4px 0 0;min-width:0}
+.member-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.member-actions button{margin:0}
+.member-actions .member-result,.member-actions .member-streamers{flex:1 1 100%}
+@media (max-width:959px){
+  .member-head{display:none}
+  .member-card{grid-template-columns:minmax(0,1fr);gap:10px}
+  .member-cell::before{content:attr(data-label);display:block;margin-bottom:2px;
+    color:var(--dim);font-size:var(--fs-xs)}
+}
+/* 通行密钥：宽屏照旧是表；窄屏上每行叠成一张卡，删除按钮在卡底 */
+#passkey-list table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+#passkey-list th,#passkey-list td{text-align:left;vertical-align:top;padding:12px 8px;
+  border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+#passkey-list th{white-space:nowrap;color:var(--dim)}
+#passkey-list td:last-child{width:1%;white-space:nowrap}
+@media (max-width:959px){
+  #passkey-list table,#passkey-list tbody,#passkey-list tr,#passkey-list td{display:block;width:auto}
+  #passkey-list thead{display:none}
+  #passkey-list tr{margin-bottom:10px;padding:12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
+  #passkey-list td{padding:0;border:0}
+  #passkey-list td[data-label]::before{content:attr(data-label);display:block;margin-bottom:2px;
+    color:var(--dim);font-size:var(--fs-xs)}
+}
 .member-streamers{border:1px solid var(--line);border-radius:var(--r-ctl);padding:8px;max-height:240px;overflow-y:auto}
 .member-streamers[hidden]{display:none}
 .member-streamers label{display:flex;align-items:baseline;gap:6px;padding:5px 0}
@@ -301,6 +327,24 @@ html.nobar #main{padding-bottom:20px}
 }
 .setgrp{scroll-margin-top:0}
 .setgrp>h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* 组折页：开着时正文在，收起时只剩组名与「改过 n 项」。窄屏上各组默认收着
+   （没标 data-fold="0" 就收），点组名才摊开；宽屏默认摊开，省得一屏只剩一排组名 */
+.setgrp>.grp-body{display:block}
+.setgrp[data-fold="1"]>.grp-body{display:none}
+@media (max-width:959px){
+  .setgrp:not([data-fold="0"])>.grp-body{display:none}
+}
+/* 只看某一组（目录点名留下，见 settings.js）：与 .hide 分开记，
+   目录里那几条正是换一组的入口，不能跟着一起消失 */
+.setgrp.solo-hide{display:none}
+/* 组名即折页钮：看着仍是标题行，点它收放 */
+.grp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;
+  margin:0;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.grp-head:hover{color:var(--accent-text)}
+/* 「改过 n 项」：这一组里与默认值不同的行数，一项没改过就整块不显示 */
+.grp-changed{font-size:var(--fs-xs);color:var(--accent);border:1px solid var(--accent);
+  border-radius:var(--r-pill);padding:0 6px;line-height:16px;white-space:nowrap}
+.grp-changed:empty{display:none}
 .card-desc{padding:10px 16px 0;font-size:var(--fs-sm);color:var(--dim);line-height:1.6}
 .si-hd{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .si-hd b{font-size:var(--fs-md);font-weight:600}
@@ -333,14 +377,12 @@ html.showkeys .keyname{display:block}
 .badge.now{color:var(--ok);border-color:var(--ok)}
 .badge.restart{color:var(--warn);border-color:var(--warn)}
 .unit{margin-left:8px;font-size:var(--fs-sm);color:var(--dim);white-space:nowrap}
-/* 有单位的输入行：两轨网格——框占余宽、单位贴框右；生效标记跨满两轨换到框
-   下方、起点对齐，宽度只到文字，不拉满整列。无单位的行不走这套 */
-.cell.has-unit{display:grid;grid-template-columns:1fr auto;align-items:start;gap:8px}
-.cell.has-unit input{width:auto;min-width:0}
-.cell.has-unit .unit{margin-left:0}
-.cell.has-unit .badge{grid-column:1/-1;justify-self:start}
-/* 机密项将来带单位时，清除钮与生效标记各自跨满两轨、各占一行、宽度只到文字（预防：现在没有这样的项） */
-.cell.has-unit .lnkbtn{grid-column:1/-1;justify-self:start}
+/* 单位收进框里右侧：框与没单位的一样宽、右缘齐得住，不再一栏一个宽窄。
+   只读值没有框，单位另摆在行里，仍走上面那条 .unit */
+.unitbox{position:relative;display:block}
+.unitbox input{width:100%;box-sizing:border-box;padding-right:2.8em}
+.unitbox .unit{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  margin:0;pointer-events:none}
 /* 布尔行：开关与生效标记同一行垂直居中。非布尔行的标记仍在输入框下方，走上面的 margin-top */
 .boolcell{display:inline-flex;align-items:center;gap:10px}
 .boolcell .badge{margin-top:0}
@@ -362,13 +404,22 @@ html.showkeys .keyname{display:block}
 .al-h b{font-size:var(--fs-md)}
 .al-d{margin:6px 0 10px;font-size:var(--fs-sm);color:var(--dim);line-height:1.6}
 .al-b{flex:1 1 auto}
-.al-fld{margin-bottom:10px}
-.al-fld label{display:block;font-size:var(--fs-sm);color:var(--dim);margin-bottom:4px}
+/* 三张告警卡与设置页各行同一套横排：栏目名在左、控件在右，不再一栏压一栏；
+   窄屏照 .field 那样叠回一列。说明与键名跟在栏目名那一列底下，与 .field 的说明同侧 */
+.al-fld{margin-bottom:10px;display:grid;align-items:start;gap:4px 16px;
+  grid-template-columns:minmax(180px,1fr) minmax(200px,280px)}
+.al-fld label{display:block;font-size:var(--fs-sm);color:var(--dim);margin:0}
 .al-fld input,.al-fld select{width:100%;padding:6px 9px;border:1px solid var(--line);
   border-radius:var(--r-ctl);background:var(--surface);color:var(--text);
   font-family:inherit;font-size:var(--fs-md)}
 .al-fld input:not([type=checkbox],[type=radio]):focus,.al-fld select:focus{outline:none;border-color:var(--accent)}
+.al-fld>.al-note,.al-fld>.keyname{grid-column:1;margin-top:0}
+.al-fld>.lnkbtn,.al-fld>.clearnote{grid-column:2}
 .al-note{font-size:var(--fs-xs);color:var(--dim);margin-top:4px;line-height:1.5}
+@media (max-width:680px){
+  .al-fld{grid-template-columns:1fr}
+  .al-fld>.al-note,.al-fld>.keyname,.al-fld>.lnkbtn,.al-fld>.clearnote{grid-column:auto}
+}
 .al-f{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-top:6px}
 .al-f .al-r{align-self:stretch}
 .al-f .al-r:empty{display:none}

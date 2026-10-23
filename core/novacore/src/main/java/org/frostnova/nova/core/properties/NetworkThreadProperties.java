@@ -14,7 +14,7 @@ import lombok.Setter;
 @Setter
 public class NetworkThreadProperties {
     /**
-     * 线程池核心线程数。
+     * 线程池核心线程数，单位：线程。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 核心线程数")
@@ -22,7 +22,7 @@ public class NetworkThreadProperties {
     private int corePoolSize = 4;
 
     /**
-     * 线程池最大线程数。
+     * 线程池最大线程数，单位：线程。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 最大线程数")
@@ -30,7 +30,7 @@ public class NetworkThreadProperties {
     private int maxPoolSize = 24;
 
     /**
-     * 线程池任务队列容量。
+     * 线程池任务队列容量，单位：条。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络线程池 · 队列容量")

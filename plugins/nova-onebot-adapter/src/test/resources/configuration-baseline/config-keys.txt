@@ -1,12 +1,12 @@
-novabot.adapter.onebot.alert.num|java.lang.Long|<null>|接收告警的群号或用户号，改完立即生效，不必重启。
+novabot.adapter.onebot.alert.num|java.lang.Long|<null>|接收告警的群号或用户号，单位：号；改完立即生效，不必重启。
 novabot.adapter.onebot.alert.platform|java.lang.String||接收告警的推送平台名，留空则不通过机器人告警。改完立即生效，不必重启。
-novabot.adapter.onebot.alert.type|java.lang.Integer|0|告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字；不要填 2，发不出去。改完立即生效。
+novabot.adapter.onebot.alert.type|java.lang.Integer|0|告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字，单位：0／1；不要填 2，发不出去。改完立即生效。
 novabot.adapter.onebot.base-url|java.lang.String|/onebot|OneBot 推送接口的统一路径前缀。
 novabot.adapter.onebot.detect.enable-http-detect|java.lang.Boolean|true|是否启用 HTTP 服务可用性检测。关掉后 OneBot 实现中途挂掉不会被察觉，表现为消息发不出去且无人告知。
 novabot.adapter.onebot.detect.enable-websocket-detect|java.lang.Boolean|true|是否启用长连接存活检测。长连接可能看着还在、其实收不到数据，要靠多久没收到心跳来发现。
-novabot.adapter.onebot.detect.http-detect-interval|java.lang.Integer|300|隔多少秒做一次 HTTP 服务可用性检测。
-novabot.adapter.onebot.detect.slow-threshold-millis|java.lang.Integer|2000|OneBot 接口调用超过多少毫秒判定为「慢」。只判通不通会漏掉一类故障：接口不报错但每次要几秒，带图的推送会超时被丢。设 0 或负数关闭这项判定。
-novabot.adapter.onebot.detect.websocket-silence-timeout|java.lang.Integer|120|长连接静默多少秒判定为失效。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报：实际不短于三个心跳周期；对方关了心跳时本项不生效。
+novabot.adapter.onebot.detect.http-detect-interval|java.lang.Integer|300|隔多少秒做一次 HTTP 服务可用性检测，单位：秒。
+novabot.adapter.onebot.detect.slow-threshold-millis|java.lang.Integer|2000|OneBot 接口调用超过多少毫秒判定为「慢」，单位：毫秒。只判通不通会漏掉一类故障：接口不报错但每次要几秒，带图的推送会超时被丢。设 0 或负数关闭这项判定。
+novabot.adapter.onebot.detect.websocket-silence-timeout|java.lang.Integer|120|长连接静默多少秒判定为失效，单位：秒。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报：实际不短于三个心跳周期；对方关了心跳时本项不生效。
 novabot.adapter.onebot.napcat.address|java.lang.String|http://127.0.0.1:6099|NapCat WebUI 的地址，默认本机回环；代登录要拿凭据去换凭据，别改成离开本机的地址。
 novabot.adapter.onebot.napcat.token-hash|java.lang.String||上一项换算出的哈希，程序自动写回，不必手填；NapCat 的登录接口收的就是这个形态。
 novabot.adapter.onebot.napcat.token|java.lang.String||NapCat WebUI 的令牌，填明文即可，启动时自动换成哈希写回、明文不留盘。哈希与令牌权限等同，别当成了加密就放松保管。
@@ -15,12 +15,12 @@ novabot.adapter.onebot.security.allow-ips|java.util.List<java.lang.String>|<null
 novabot.adapter.onebot.security.audit-log|java.lang.Boolean|true|是否输出鉴权失败的审计日志。
 novabot.adapter.onebot.security.enabled|java.lang.Boolean|true|是否启用推送接口安全校验，仅在完全可信的隔离网络中才建议关闭。
 novabot.adapter.onebot.security.fail-on-weak-config|java.lang.Boolean|false|推送接口令牌过弱（太短，或含常见词）时是否直接终止启动；只查这一项。默认只告警不拦，对外网可达的部署建议开。
-novabot.adapter.onebot.security.rate-limit.burst|java.lang.Integer|100|可容忍的瞬时突发请求数。
+novabot.adapter.onebot.security.rate-limit.burst|java.lang.Integer|100|可容忍的瞬时突发请求数，单位：次。
 novabot.adapter.onebot.security.rate-limit.enabled|java.lang.Boolean|true|是否启用推送接口频率限制。
-novabot.adapter.onebot.security.rate-limit.permits-per-minute|java.lang.Integer|600|单个来源每分钟允许的请求数。
+novabot.adapter.onebot.security.rate-limit.permits-per-minute|java.lang.Integer|600|单个来源每分钟允许的请求数，单位：次／分。
 novabot.adapter.onebot.security.trust-proxy|java.lang.Boolean|false|是否信任反向代理设置的 X-Forwarded-For／X-Real-IP 头；只有确实部署在反代之后才可开，否则来源 IP 可被伪造。
 novabot.adapter.onebot.senders|java.util.List<org.frostnova.nova.adapter.onebot.model.OneBotSender>|<null>|OneBot 推送平台列表。在「连接」页或设置引导里保存后立刻断开旧连接、连上新的，不必重启。
-novabot.adapter.onebot.websocket-thread.core-pool-size|java.lang.Integer|2|线程池核心线程数。
+novabot.adapter.onebot.websocket-thread.core-pool-size|java.lang.Integer|2|线程池核心线程数，单位：线程。
 novabot.adapter.onebot.websocket-thread.keep-alive-seconds|java.lang.Integer|300|非核心线程存活时间，单位：秒。
-novabot.adapter.onebot.websocket-thread.max-pool-size|java.lang.Integer|16|线程池最大线程数。
-novabot.adapter.onebot.websocket-thread.queue-capacity|java.lang.Integer|128|线程池任务队列容量。
+novabot.adapter.onebot.websocket-thread.max-pool-size|java.lang.Integer|16|线程池最大线程数，单位：线程。
+novabot.adapter.onebot.websocket-thread.queue-capacity|java.lang.Integer|128|线程池任务队列容量，单位：条。

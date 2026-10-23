@@ -56,7 +56,7 @@ public class LiveProperties {
     private int reconnectInterval = 300;
 
     /**
-     * 每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留。
+     * 每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，单位：天，0 表示永久保留。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 明细保留")
