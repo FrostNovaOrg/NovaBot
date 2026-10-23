@@ -294,6 +294,22 @@ const lastPreviewBody = () => {
   return posts.length ? JSON.parse(posts[posts.length - 1].body) : null;
 };
 
+/**
+ * 推送内容里那一种通知展开编辑：没展开就点它那一行的「编辑」
+ *
+ * 版式区与模板编辑器只画在展开的那一行里，一条通道同时只展开一行；展开哪一行记在页上，
+ * 重画之后照旧展开着。假 DOM 清不掉旧子节点时新画的接在后面，一律取最后一份
+ */
+function openNotice(className) {
+  const nodes = allNodes(page());
+  const row = nodes.filter(node => node.getAttribute && node.getAttribute('data-notice') === className).at(-1);
+  if (row && allNodes(row).some(node => String(node.className || '').split(/\s+/).includes('nrow-body'))) return;
+  const button = nodes.filter(node => node.tagName === 'button' && node.getAttribute
+    && node.getAttribute('data-notice-edit') === className).at(-1);
+  if (!button) throw new Error('推送内容里「' + className + '」那一行没有「编辑」');
+  button.dispatchEvent({type: 'click', target: button, preventDefault() {}, stopPropagation() {}});
+}
+
 async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
 }
@@ -303,8 +319,10 @@ function flip(input) {
   input.dispatchEvent({type: 'change', target: input});
 }
 
+/** 切到某个通道；带报告的通道顺手展开下播报告那一行——版式区只画在展开的那一行里 */
 async function paintChannel(num) {
   push.showPush('1', String(num));
+  if (num !== PLAIN_C) openNotice(HANDLER);
   await settle();
 }
 
@@ -338,7 +356,7 @@ await ask('① 切到不推的通道·从报告通道切到没有版式区的通
   if (!layoutInput('礼物列表')) throw new Error('报告通道该有版式区（「礼物列表」那一项没找到）');
   if (previewCount() !== 1) throw new Error('报告通道初画该恰好发一次预览请求，实测 ' + previewCount());
   await paintChannel(PLAIN_C);
-  if (!revenueSwitch()) throw new Error('没有版式区的通道里也该有「本群设置 · 金额可见」那一行');
+  if (!revenueSwitch()) throw new Error('没有版式区的通道里也该有「通道规则 · 金额可见」那一行');
   const before = previewCount();
   flip(revenueSwitch());
   await settle();

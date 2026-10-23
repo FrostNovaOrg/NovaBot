@@ -194,6 +194,11 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
     }
 
     @Override
+    public int displayOrder() {
+        return 40;
+    }
+
+    @Override
     public String description() {
         return "主播不在播时攒批播报打赏，下播后另行提醒下播前 10 秒内的打赏";
     }

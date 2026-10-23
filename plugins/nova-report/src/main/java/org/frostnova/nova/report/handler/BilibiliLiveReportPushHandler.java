@@ -148,6 +148,11 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
     }
 
     @Override
+    public int displayOrder() {
+        return 30;
+    }
+
+    @Override
     public String description() {
         return "主播结束直播时推送本场直播数据统计图";
     }

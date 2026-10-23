@@ -208,11 +208,8 @@ function esc(value) {
   return String(value ?? '');
 }
 
-function sectionHead(host) {
-  const box = el('div', 'nv-card');
-  host.appendChild(box);
-  return box;
-}
+/** 折叠开合的记忆与本尺无关：只要它不抛 */
+function keepChannelFold() {}
 
 function collect(node, acc) {
   if (!node) return acc;
@@ -233,20 +230,20 @@ function tablesOf(host) {
   return collect(host, []).filter(n => n.tag === 'table');
 }
 
-function loadSectionNotices(pushHistory) {
-  const body = bracedFrom(src, 'function sectionNotices');
-  if (!body) throw new Error('切不出 sectionNotices 整块');
+function loadRecentPushFold(pushHistory) {
+  const body = bracedFrom(src, 'function recentPushFold');
+  if (!body) throw new Error('切不出 recentPushFold 整块');
   return new Function(
-    'el', 'esc', 'sectionHead', 'noticeSwitches', 'store', 'pushHistory',
+    'el', 'esc', 'keepChannelFold', 'pushHistory',
     'recentPushes', 'pushChannelOf', 'isMember',
-    body + '\nreturn sectionNotices;')(
-    el, esc, sectionHead, () => [], {handlerList: []}, pushHistory,
+    body + '\nreturn recentPushFold;')(
+    el, esc, keepChannelFold, pushHistory,
     model.recentPushes, model.pushChannelOf, () => false);
 }
 
 function renderNotices(session, history) {
   const host = el('div');
-  loadSectionNotices(history)(host, {}, {...TARGET, type: session && session.type === '好友' ? 0 : 1}, session);
+  loadRecentPushFold(history)(host, {}, {...TARGET, type: session && session.type === '好友' ? 0 : 1}, session);
   return host;
 }
 
@@ -281,14 +278,14 @@ ask('② 空表提示句恰为本次启动以来那句', () => {
 // 标题应说明整个会话的范围，避免把其他主播的推送误认成当前通道的。
 ask('群最近推送写明所有主播与空表范围', () => {
   const host = renderNotices(SESSION, []);
-  eq(collect(host, []).find(n => n.tag === 'h4').textContent, '本群最近推送', '标题');
+  eq(collect(host, []).find(n => n.tag === 'summary').textContent, '本群最近推送（0 条）', '标题');
   eq(hintsOf(host).includes('推送到本群的所有主播均计算在内。'), true, '群范围说明');
   eq(hintsOf(host).includes(NEW_EMPTY), true, '群空表');
 });
 
 ask('好友最近推送标题与空表范围', () => {
   const host = renderNotices({...SESSION, type: '好友'}, []);
-  eq(collect(host, []).find(n => n.tag === 'h4').textContent, '该好友最近推送', '标题');
+  eq(collect(host, []).find(n => n.tag === 'summary').textContent, '该好友最近推送（0 条）', '标题');
   eq(hintsOf(host).includes('本次启动以来，暂无发给该好友的推送。'), true, '好友空表');
   eq(hintsOf(host).includes('推送到本群的所有主播均计算在内。'), false, '好友没有群说明');
 });

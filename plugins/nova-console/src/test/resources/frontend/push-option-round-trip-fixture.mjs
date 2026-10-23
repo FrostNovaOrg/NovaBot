@@ -361,6 +361,7 @@ const hasClass = (node, name) => String((node || {}).className || '').split(/\s+
 
 /** 版式区里带 aria-label 的最新一枚控件（开关或数字框）：改一下画一遍，取最新的 */
 function rowControl(label) {
+  openNotice(REPORT_HANDLER);
   const node = allNodes(page())
     .filter(item => item.tagName === 'input' && item.getAttribute('aria-label') === label).at(-1);
   if (!node) throw new Error('版式区没有「' + label + '」这一行');
@@ -383,6 +384,7 @@ function typeNumber(label, value) {
 
 /** @ 那一档换成哪一档 */
 function pickAt(mode) {
+  openNotice(TEXT_HANDLER);
   const node = allNodes(page()).filter(item => item.tagName === 'select' && item.id === 'tpl-at').at(-1);
   if (!node) throw new Error('模板编辑器里没有「@ 谁」那一档');
   node.value = mode;
@@ -390,15 +392,16 @@ function pickAt(mode) {
 }
 
 /**
- * 点某一段露着的「恢复默认」，再在确认弹层上点「确认」。layout 为真点段 3（报告版式），
- * 否则点段 2（文字模板）：两段的状态行同形，按状态行里说没说「版式」分。改一下画一遍，取最新的
+ * 点某一行露着的「恢复默认」，再在确认弹层上点「确认」。layout 为真点下播报告的版式，
+ * 否则点开播通知的文字：两处的状态行同形，按状态行里说没说「版式」分。改一下画一遍，取最新的
  */
 async function restoreDefault(layout) {
+  openNotice(layout ? REPORT_HANDLER : TEXT_HANDLER);
   const node = allNodes(page())
     .filter(item => item.tagName === 'button' && item.textContent === '恢复默认' && !item.hidden)
     .filter(item => String(((item.parentNode || {}).children || [])[0].innerHTML).includes('版式') === !!layout)
     .at(-1);
-  if (!node) throw new Error((layout ? '段 3' : '段 2') + '没有露着的「恢复默认」');
+  if (!node) throw new Error((layout ? '版式' : '文字') + '没有露着的「恢复默认」');
   node.click();
   await settle();
   const dialog = allNodes(document.body).find(item => hasClass(item, 'ask'));
@@ -417,6 +420,7 @@ const OFF = 'rep-zone-off';
 const ZONE_NAME = {[ON]: '已启用卡片', [OFF]: '未启用卡片'};
 
 function zone(which) {
+  openNotice(REPORT_HANDLER);
   const node = allNodes(page()).find(item => hasClass(item, which));
   if (!node) throw new Error('版式区没有「' + ZONE_NAME[which] + '」那一区');
   return node;
@@ -432,6 +436,7 @@ function chip(which, label) {
 }
 
 function killButton(label) {
+  openNotice(REPORT_HANDLER);
   const node = allNodes(page())
     .find(item => item.tagName === 'button' && item.getAttribute('aria-label') === '移除：' + label);
   if (!node) throw new Error('版式区没有「移除：' + label + '」按钮');
@@ -443,6 +448,22 @@ const messageOf = name => push.pushEntries()[0].targets[0].messages
   .find(item => item.handler === name) || null;
 const reportMessage = () => messageOf(REPORT_HANDLER);
 const textMessage = () => messageOf(TEXT_HANDLER);
+
+/**
+ * 推送内容里那一种通知展开编辑：没展开就点它那一行的「编辑」
+ *
+ * 版式区与模板编辑器只画在展开的那一行里，一条通道同时只展开一行；展开哪一行记在页上，
+ * 重画之后照旧展开着。假 DOM 清不掉旧子节点时新画的接在后面，一律取最后一份
+ */
+function openNotice(className) {
+  const nodes = allNodes(page());
+  const row = nodes.filter(node => node.getAttribute && node.getAttribute('data-notice') === className).at(-1);
+  if (row && allNodes(row).some(node => String(node.className || '').split(/\s+/).includes('nrow-body'))) return;
+  const button = nodes.filter(node => node.tagName === 'button' && node.getAttribute
+    && node.getAttribute('data-notice-edit') === className).at(-1);
+  if (!button) throw new Error('推送内容里「' + className + '」那一行没有「编辑」');
+  button.dispatchEvent({type: 'click', target: button, preventDefault() {}, stopPropagation() {}});
+}
 
 async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));

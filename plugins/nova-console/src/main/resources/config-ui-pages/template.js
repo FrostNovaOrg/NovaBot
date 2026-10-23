@@ -6,7 +6,7 @@
  * 一律在那边判——判断留在这里的话，那几档就只能靠人打开页面拖着试，
  * 而其中好几档（机器人不是管理员、模板里手写了 @、块拖进块）手点点不出来。
  *
- * 两处用它：通道页第 2 段「消息模板」，与左树顶「默认模板」。同一份编辑器、
+ * 两处用它：通道页各通知那一行的「文字」，与左树顶「默认模板」。同一份编辑器、
  * 同一套规矩，区别只在于改完之后写到哪儿去（见 buildTemplateEditor 的 onChange）。
  */
 
@@ -724,7 +724,7 @@ export function normalizedOrder(stored, defaultValue) {
  * 只会让人以为「配了没用」。
  * <p>
  * 版式项还带着「随金额」一栏（revenueVisibility／revenueNote，处理器自报）：
- * 当前会话的金额设定下不出图的项灰掉、写一句原因并指向「通道设置」的金额开关，
+ * 当前会话的金额设定下不出图的项灰掉、写一句原因并指向「通道规则」的金额开关，
  * 只变样的项不灰、加一句说明——不然使用者把「流水排行」调成前 10 名，
  * 图上永远没有这一榜，还以为是坏了。灰不灰读 opts.revenueVisible 现算的值
  * （会话存的设定＋草稿），草稿里拨了当场跟着变；存着的值不清不改。
@@ -810,8 +810,8 @@ export function buildLayoutEditor(host, options) {
   function whyText(option) {
     const note = option.revenueNote || '此项在当前金额可见设置下不显示';
     const how = option.revenueVisibility === 'ONLY_WHEN_HIDDEN'
-      ? '在下方「通道设置」的「金额可见」中关闭金额后才会显示'
-      : '在下方「通道设置」的「金额可见」中打开金额后才会显示';
+      ? '在下方「通道规则」的「金额可见」中关闭金额后才会显示'
+      : '在下方「通道规则」的「金额可见」中打开金额后才会显示';
     return note + '。' + how + '。';
   }
 

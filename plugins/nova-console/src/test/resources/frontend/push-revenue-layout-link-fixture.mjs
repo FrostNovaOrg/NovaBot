@@ -1,11 +1,11 @@
 /**
- * 版式区与「本群设置 · 金额可见」联动：不出图的项灰掉并写原因，草稿里拨了当场跟着变
+ * 版式区与「通道规则 · 金额可见」联动：不出图的项灰掉并写原因，草稿里拨了当场跟着变
  *
  * 用户那头的故障：群里设了不显示金额，再去版式里把「流水排行」调成前 10 名，
  * 图上永远没有这一榜——以为是坏了；反过来开着金额勾「本场开通大航海名单」，
  * 怎么勾也不出。版式区若不照当前的金额设定灰掉这些项，配了不出图与坏了就长得一样。
  *
- * 本尺<b>真跑</b>：假 DOM 与假 fetch 之外，整条通道页（含版式段与本群设置段）用的都是
+ * 本尺<b>真跑</b>：假 DOM 与假 fetch 之外，整条通道页（含下播报告那一行的版式与通道规则）用的都是
  * 产品码那一份——push.js 的 renderStreamers、template.js 的版式编辑器、sessions.js 的
  * 金额开关、session-draft.js 的草稿，一路都是真码。只查回包字段是不行的：字段在、
  * 灰不掉，照样绿。处理器清单喂成 /api/handlers 的形态（版式项带随金额栏与原因句）。
@@ -300,6 +300,22 @@ const lastPreviewBody = () => {
   return posts.length ? JSON.parse(posts[posts.length - 1].body) : null;
 };
 
+/**
+ * 推送内容里那一种通知展开编辑：没展开就点它那一行的「编辑」
+ *
+ * 版式区与模板编辑器只画在展开的那一行里，一条通道同时只展开一行；展开哪一行记在页上，
+ * 重画之后照旧展开着。假 DOM 清不掉旧子节点时新画的接在后面，一律取最后一份
+ */
+function openNotice(className) {
+  const nodes = allNodes(page());
+  const row = nodes.filter(node => node.getAttribute && node.getAttribute('data-notice') === className).at(-1);
+  if (row && allNodes(row).some(node => String(node.className || '').split(/\s+/).includes('nrow-body'))) return;
+  const button = nodes.filter(node => node.tagName === 'button' && node.getAttribute
+    && node.getAttribute('data-notice-edit') === className).at(-1);
+  if (!button) throw new Error('推送内容里「' + className + '」那一行没有「编辑」');
+  button.dispatchEvent({type: 'click', target: button, preventDefault() {}, stopPropagation() {}});
+}
+
 async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
 }
@@ -324,6 +340,7 @@ async function paintPage() {
     });
     push.showPush('1', String(TARGET.num));
     push.renderStreamers();
+    openNotice(HANDLER);
   }
   await settle();
 }
@@ -353,8 +370,8 @@ await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留�
     if (input.disabled !== true) throw new Error('「' + label + '」在隐藏金额的会话里仍可点');
     const why = reasonOf(label);
     if (!why) throw new Error('「' + label + '」灰掉却没写原因');
-    if (!why.includes('通道设置') || !why.includes('金额可见')) {
-      throw new Error('「' + label + '」的原因没指向「通道设置」的金额开关：' + why);
+    if (!why.includes('通道规则') || !why.includes('金额可见')) {
+      throw new Error('「' + label + '」的原因没指向「通道规则」的金额开关：' + why);
     }
   }
   const note = reasonOf('礼物列表');
@@ -379,7 +396,7 @@ await ask('① 会话隐藏金额时：礼物列表、流水排行、醒目留�
 await ask('② 草稿拨到显示金额（还没保存）：四项当场可点、大航海名单转灰，预览与图下说明都按草稿走', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   const toggle = revenueSwitch();
-  if (!toggle) throw new Error('本群设置里没找到金额开关');
+  if (!toggle) throw new Error('通道规则里没找到金额开关');
   if (toggle.checked !== false) throw new Error('金额开关初值该是关（会话设为隐藏金额）');
   flip(toggle);
   await settle();
@@ -391,7 +408,7 @@ await ask('② 草稿拨到显示金额（还没保存）：四项当场可点�
   const guard = layoutInput('本场开通大航海名单');
   if (!guard || guard.disabled !== true) throw new Error('草稿拨到显示后「本场开通大航海名单」该转灰');
   const guardWhy = reasonOf('本场开通大航海名单');
-  if (!guardWhy || !guardWhy.includes('通道设置') || !guardWhy.includes('金额可见')) {
+  if (!guardWhy || !guardWhy.includes('通道规则') || !guardWhy.includes('金额可见')) {
     throw new Error('转灰的大航海名单没写指向金额开关的原因：' + guardWhy);
   }
   const body = lastPreviewBody();
@@ -431,10 +448,10 @@ await ask('④ 灰掉的那些格：存着的值不动，「自定义」的判�
   }
 });
 
-await ask('⑤ 金额开关拨过两回，「本群设置」那一段不该越画越长', async () => {
+await ask('⑤ 金额开关拨过两回，通道规则、命令与本群状态不该越画越长', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
-  const rows = findAll(page(), '.crow').length;
-  same(rows, 4, '本群设置的行数（金额可见、静音时段、命令、提醒订阅四行折叠项）');
+  same({rules: findAll(page(), '.crule').length, folds: findAll(page(), '.crow').length},
+    {rules: 4, folds: 1}, '行数（金额可见、静音时段、@全体成员、提醒订阅四行，命令一块折叠项）');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
