@@ -12559,6 +12559,15 @@
 			"query":"num=990000000303&pushPlatform=qq-onebot&type=1",
 			"sha256":"71512cc95d2641c6910a25a9273a043f1dad8f20ba695b3e9dfe403b2cb228a1",
 			"status":200
+		},
+		{
+			"contentType":"application/json",
+			"file":"data/report_palettes--e3b0c44298fc.json",
+			"method":"GET",
+			"path":"/config/api/report/palettes",
+			"query":"",
+			"sha256":"2af34d1cc8c7de31a744748317448afc303d734444cc79928862ff2259014282",
+			"status":200
 		}
 	],
 	"timezone":"Asia/Shanghai",

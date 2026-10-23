@@ -233,6 +233,10 @@ const PAGE_STYLE = `
 .p-off-fold>summary:focus-visible,.p-recent>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .p-off-fold>.nrow:first-of-type{border-top:none}
 .p-off-fold .nrow-meta{flex-basis:100%}
+.report-palette-samples{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.report-palette-sample{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:var(--r-ctl);padding:10px}
+.report-palette-tile{padding:5px 12px;border-left:3px solid;border-radius:4px}
+.report-palette-samples~select{margin-right:10px;margin-bottom:10px}
 .p-revenue-scope{margin:0;color:var(--dim);font-size:var(--fs-xs)}
 .tplrow{padding:10px 0;border-top:1px solid var(--line)}
 .tplrow:first-of-type{border-top:none}
@@ -719,6 +723,8 @@ let directory = {};
 /** 挑选目标时那份原样的可选项，认目标要用它 */
 let options = [];
 
+let reportPalettes = null;
+
 /** 加主播格子上的提示，与空着按下时那句共用：两处各写一份就会各说各的 */
 export const STREAMER_INPUT_HINT = 'uid、直播间号，或粘贴空间／直播间链接';
 
@@ -833,6 +839,13 @@ export function renderStreamers() {
  * 也照样改得动——整趟判失败的话，屏幕上会只剩一句「载入失败」，配好的东西一个也看不见。
  */
 export async function loadPushPage() {
+  try {
+    const listed = await api('/report/palettes');
+    reportPalettes = listed.success && listed.presets?.length ? listed : null;
+  } catch (e) {
+    reportPalettes = null;
+  }
+
   try {
     runtime = await api('/state');
   } catch (e) {
@@ -1150,6 +1163,71 @@ function renderStranded(host) {
 
 // ---- 默认模板 ----
 
+function renderReportPalette(host) {
+  if (!reportPalettes) return;
+  const box = card(host, '报告图配色', '未单独选择配色的通道跟随这里；历史报告重画也使用这里的配色。');
+  const activeName = () => reportPalettes.presets.find(item => item.id === reportPalettes.default)?.name || '';
+  const current = el('p', 'hint');
+  current.textContent = '当前生效：' + activeName();
+  box.appendChild(current);
+  if (isMember()) return;
+  const samples = el('div', 'report-palette-samples');
+  const paintSamples = () => {
+    samples.innerHTML = '';
+    for (const preset of reportPalettes.presets) {
+      const sample = el('div', 'report-palette-sample');
+      const colors = preset.colors;
+      sample.style.backgroundColor = colors.background;
+      sample.style.color = colors.text;
+      const name = el('span');
+      name.textContent = preset.name + (preset.id === reportPalettes.default ? ' · 当前生效' : '');
+      sample.appendChild(name);
+      const tile = el('span', 'report-palette-tile');
+      tile.style.backgroundColor = colors.card;
+      tile.style.borderColor = colors.accent;
+      tile.textContent = '报告';
+      sample.appendChild(tile);
+      samples.appendChild(sample);
+    }
+  };
+  paintSamples();
+  box.appendChild(samples);
+  const select = el('select');
+  select.setAttribute('aria-label', '默认报告图配色');
+  for (const preset of reportPalettes.presets) {
+    const option = el('option');
+    option.value = preset.id;
+    option.textContent = preset.name;
+    select.appendChild(option);
+  }
+  select.value = reportPalettes.default;
+  box.appendChild(select);
+  const save = el('button', 'primary');
+  save.type = 'button';
+  save.textContent = '保存报告图配色';
+  save.disabled = true;
+  select.addEventListener('change', () => { save.disabled = select.value === reportPalettes.default; });
+  save.addEventListener('click', async () => {
+    const id = select.value;
+    save.disabled = true;
+    try {
+      const result = await api('/report/palettes/default', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id})});
+      if (result.success) {
+        reportPalettes.default = id;
+        reportPalettes.stored = id;
+        current.textContent = '当前生效：' + activeName();
+        paintSamples();
+      }
+      say(result.message || '保存失败', result.success ? 'ok' : 'err');
+    } catch (e) {
+      say('保存报告图配色失败：' + e.message, 'err');
+    }
+    save.disabled = select.value === reportPalettes.default;
+  });
+  box.appendChild(save);
+}
+
 /**
  * 默认模板：同一个编辑器，改的是「所有用默认的通道」那一份
  *
@@ -1160,6 +1238,7 @@ function renderStranded(host) {
  * 存整份的话，出厂默认此后再动这台机器一个也跟不上，而屏幕上它仍显示「默认」。
  */
 function renderDefaultTemplates(host) {
+  renderReportPalette(host);
   const box = card(host, '默认模板',
     isMember() ? '默认模板由管理员维护，这里只能看。'
       : '使用默认模板的通道随此处同步更新。如需单独调整某个通道，请在该通道中直接修改；修改后该通道不再随默认模板更新。');
@@ -1213,7 +1292,8 @@ function renderDefaultTemplates(host) {
 
   const reset = el('button', 'lnkbtn');
   reset.type = 'button';
-  reset.textContent = '恢复出厂默认';
+  const resetLabel = handler => '恢复「' + (handler.displayName || handler.className) + '」的出厂默认';
+  reset.textContent = resetLabel(currentHandler);
   reset.addEventListener('click', async () => {
     const name = currentHandler.displayName || currentHandler.className;
     if (!await ask({title: '恢复出厂默认？',
@@ -1235,6 +1315,7 @@ function renderDefaultTemplates(host) {
     channelLabel: '群聊',
     onSelect: handler => {
       currentHandler = handler;
+      reset.textContent = resetLabel(handler);
       save.disabled = !draft[handler.className];
       line.hidden = save.disabled;
       showReportNote(handler);
@@ -2171,6 +2252,7 @@ function channelSettings(hosts, user, target, session, paintSummary) {
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     for (const box of Object.values(hosts)) box.innerHTML = '';
     sessionSettings(hosts.rules, {
+      palettes: reportPalettes, onPaletteChange: () => renderStreamers(),
       channel: true, hosts, repaint: render, session: current, target, commands, subscriptions,
       baseline,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
@@ -2303,6 +2385,7 @@ function pickTarget(opts) {
       for (const [type, label] of [[1, '群'], [0, '好友']]) {
         const members = rows.filter(item => Number(item.type) === type)
           .sort((a, b) => Number((opts.taken || []).includes(a.key)) - Number((opts.taken || []).includes(b.key)));
+        if (!members.length) continue;
         const group = el('section', 'dw-target-group');
         group.appendChild(el('h4')).textContent = label + ' ' + members.length + ' 个';
         for (const item of members) {

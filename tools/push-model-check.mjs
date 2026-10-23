@@ -122,6 +122,15 @@ function record(target, summary, ok) {
 // 每档写明：改了哪几处回包（驱动字段），以及这一页该长成什么样（应）
 const CASES = [
   {
+    name: '报告预览按通道草稿配色，跟随默认保留 null 键',
+    run: () => {
+      const selected = previewRequestBody({}, {platform: 'qq', type: 1, num: 11, reportPalette: 'night'});
+      const follow = previewRequestBody({}, {platform: 'qq', type: 1, num: 11, reportPalette: null});
+      return {selected: selected.reportPalette, hasKey: Object.hasOwn(follow, 'reportPalette'), follow: follow.reportPalette};
+    },
+    expect: {selected: 'night', hasKey: true, follow: null},
+  },
+  {
     name: '正常',
     run: () => {
       const u = user();

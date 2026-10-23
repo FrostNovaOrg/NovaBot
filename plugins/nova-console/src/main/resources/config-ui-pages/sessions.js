@@ -96,6 +96,7 @@ export function sessionSettings(host, ctx) {
   };
   revenueRow(hosts.rules, ctx);
   quietRow(hosts.rules, ctx);
+  if (ctx.channel && ctx.palettes) paletteRow(hosts.rules, ctx);
   commandRow(hosts.commands, ctx);
   if (Number(ctx.target.type) === 1) {
     atAllRow(hosts.status, ctx);
@@ -308,6 +309,32 @@ function revenueRow(host, ctx) {
       + (Number(ctx.target.type) === 0 ? '私聊显示' : '群聊隐藏、私聊显示') + '）') + '</p>';
   line.appendChild(text);
   body.appendChild(line);
+}
+
+function paletteRow(host, ctx) {
+  const {presets, default: defaultId} = ctx.palettes;
+  const name = presets.find(item => item.id === defaultId)?.name || '';
+  const follow = '跟随默认模板（现为' + name + '）';
+  const body = rule(host, '报告图配色',
+    presets.find(item => item.id === ctx.target.reportPalette)?.name || follow,
+    '对推送到这条通道的所有图片生效，修改后按页面底部的保存。');
+  const select = el('select');
+  select.setAttribute('aria-label', '通道报告图配色');
+  for (const item of [{id: '', name: follow}, ...presets]) {
+    const option = el('option');
+    option.value = item.id;
+    option.textContent = item.name;
+    select.appendChild(option);
+  }
+  select.value = ctx.target.reportPalette || '';
+  select.addEventListener('change', () => {
+    const id = select.value || null;
+    if (id === (ctx.baseline?.reportPalette || null)) restoreChannelField(ctx, 'reportPalette');
+    else ctx.target.reportPalette = id;
+    markDirty();
+    ctx.onPaletteChange();
+  });
+  body.appendChild(select);
 }
 
 // ---- 2 静音时段 ----

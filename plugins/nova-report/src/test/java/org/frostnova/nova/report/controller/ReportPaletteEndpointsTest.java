@@ -169,6 +169,34 @@ class ReportPaletteEndpointsTest {
     }
 
     @Test
+    void swatchesUseThePainterPresetColors() {
+        JSONArray presets = controller.palettes().getJSONArray("presets");
+        for (int i = 0; i < presets.size(); i++) {
+            var palette = ReportPalette.PRESETS.get(i).palette();
+            JSONObject colors = presets.getJSONObject(i).getJSONObject("colors");
+            org.junit.jupiter.api.Assertions.assertNotNull(colors, "色样缺少出图预设的颜色");
+            assertEquals(hex(palette.background()), colors.getString("background"));
+            assertEquals(hex(palette.card()), colors.getString("card"));
+            assertEquals(hex(palette.text()), colors.getString("text"));
+            assertEquals(hex(palette.accent()), colors.getString("accent"));
+        }
+    }
+
+    private static String hex(java.awt.Color color) {
+        return String.format("#%06x", color.getRGB() & 0xffffff);
+    }
+
+    @Test
+    void warmDefaultSurvivesReload() {
+        assertTrue(controller.saveDefaultPalette(JSONObject.of("id", "warm")).getBody().getBooleanValue("success"));
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
+        var settings = new ReportPaletteSettings(new PushTemplateDefaults(properties));
+        controller.setPalettes(settings, new ReportPalettes(settings));
+        assertEquals("warm", controller.palettes().getString("default"));
+    }
+
+    @Test
     @DisplayName("不认识的 id 不存：一个字也不写")
     void rejectsUnknownId() {
         var response = controller.saveDefaultPalette(JSONObject.of("id", "sakura"));
