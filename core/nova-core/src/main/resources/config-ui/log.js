@@ -214,9 +214,9 @@ function renderDayBar() {
 /** 翻到某一天的按钮。没有那一天时是个按不动的按钮，而不是干脆不画——位置得留着 */
 function step(label, date) {
   return date
-    ? '<a class="daystep" href="' + esc(logHash(Object.assign({}, filters, {date}), today())) + '">'
+    ? '<a class="nv-btn2 sm" href="' + esc(logHash(Object.assign({}, filters, {date}), today())) + '">'
       + esc(label) + '</a>'
-    : '<button type="button" class="daystep" disabled>' + esc(label) + '</button>';
+    : '<button type="button" class="ghost sm" disabled>' + esc(label) + '</button>';
 }
 
 /** 这一天一共有几条（不看筛选），供空态那句话分辨「空日」与「筛没了」 */
@@ -372,7 +372,7 @@ function renderFoot(found) {
   foot.appendChild(count);
   if (!found.truncated) return;
 
-  const more = el('button', 'daystep');
+  const more = el('button', 'ghost sm');
   more.type = 'button';
   more.textContent = '加载更早的记录';
   more.addEventListener('click', () => loadEvents(true));
@@ -473,10 +473,10 @@ function renderEngJump(found) {
   bar.appendChild(text);
 
   const back = el('div');
-  const toList = el('a', 'daystep');
+  const toList = el('a', 'lnkbtn');
   toList.textContent = '‹ 返回日志';
   toList.setAttribute('href', logHash(Object.assign({}, filters, {view: 'timeline', at: ''}), today()));
-  const toLatest = el('a', 'daystep');
+  const toLatest = el('a', 'lnkbtn');
   toLatest.textContent = '返回最新';
   toLatest.setAttribute('href', logHash(Object.assign({}, filters, {at: ''}), today()));
   toLatest.style.marginLeft = '8px';
@@ -679,7 +679,7 @@ async function renderBotLogEntry() {
     return;
   }
   box.insertAdjacentHTML('beforeend',
-    '<div style="margin-top:8px"><a class="daystep" id="eng-bot-open" '
+    '<div style="margin-top:8px"><a class="lnkbtn" id="eng-bot-open" '
     + 'href="' + esc(state.href) + '" target="_blank" rel="noopener noreferrer">'
     + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
     + '</a>'

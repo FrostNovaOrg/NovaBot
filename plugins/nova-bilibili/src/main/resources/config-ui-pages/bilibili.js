@@ -77,7 +77,7 @@ function renderAccounts(accounts) {
       ? '<img alt="登录二维码" src="data:image/png;base64,' + esc(a.qrCode) + '">'
       : (a.loggedIn ? '' : '<div class="qrwait">正在生成二维码，请稍候</div>');
     const action = a.loggedIn
-      ? '<button type="button" data-logout="' + esc(a.platform) + '">退出登录并重新扫码</button>'
+      ? '<button type="button" class="ghost sm" data-logout="' + esc(a.platform) + '">退出登录并重新扫码</button>'
       : '';
     const tip = a.loggedIn
       ? '<span>如需更换账号，或怀疑凭据已泄露，可退出登录：本机保存的凭据将被清除，并立即生成新的登录二维码。</span>'

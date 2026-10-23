@@ -605,7 +605,7 @@ function subscriptionDrawer(ctx) {
       head.innerHTML = '<b>' + esc(sub.streamerName) + ' · ' + esc(sub.typeName) + '提醒</b>'
         + '<span>' + sub.users.length + ' 人订阅</span>';
 
-      const clear = el('button', 'ghost danger');
+      const clear = el('button', 'ghost danger sm');
       clear.type = 'button';
       clear.textContent = clearPending ? '撤销清空' : '清空';
       clear.addEventListener('click', () => {

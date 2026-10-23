@@ -40,7 +40,7 @@ export function render(container) {
   box = container;
   box.innerHTML = '<div class="stats" id="today-stats"></div>'
     + (store.role === 'MEMBER' ? '' : '<div class="quickbar">'
-    + '<button id="toggle-push" type="button">…</button>'
+    + '<button id="toggle-push" class="ghost sm" type="button">…</button>'
     + '<span id="push-hint"></span>'
     + '</div>');
   box.querySelector('#toggle-push')?.addEventListener('click', togglePush);
