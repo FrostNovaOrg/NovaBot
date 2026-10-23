@@ -1073,44 +1073,55 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 带单位那一行的生效标记要换到框的下一行，但宽度只包住自己的文字，
-     * 跟无单位行的短标签一个样。
+     * 数字项的单位收进框里右侧，框宽与没单位的一样，不再一栏一个宽窄。
      * <p>
-     * 用户故障：带单位的数字项，「立即生效／重启生效」标签被拉满整列宽，
-     * 看着是一整条长标签，跟别项不一样。根因是单位行曾用整列宽的弹性基准
-     * （{@code flex:1 1 100%}）把标记挤到下一行，副作用是标记自身也被拉满。
-     * 现在单位行是两轨网格：框占余宽、单位贴框右同在第一轨行，标记跨两轨
-     * 独占下一行、起点对齐，宽度只到文字为止。
+     * 用户故障：数字框有的带单位有的不带，单位另占一格时一列里宽窄不一、右缘参差，
+     * 输入框对不齐。现在单位压在框内右侧（{@code .unitbox}），框自身照旧占满
+     * 控件那一栏；框里给单位留了空位，字不会压到单位底下。
      */
     @Test
-    @DisplayName("单位行生效标记换到框下方，宽度只到文字为止，不拉满整列")
-    void unitRowBadgeWrapsBelowTheInputAtTextWidth() throws IOException {
+    @DisplayName("数字框的单位收在框里右侧，框宽与无单位的一致")
+    void unitSitsInsideTheInputOnTheRight() throws IOException {
         String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
 
         List<String> bad = new ArrayList<>();
-        String row = cssBlock(css, ".cell.has-unit");
-        if (row.isBlank()) {
-            bad.add("app.css 没有 .cell.has-unit，单位行布局整套丢了");
-        } else if (!row.contains("grid-template-columns:1fr auto")
-                && !row.contains("grid-template-columns: 1fr auto")) {
-            bad.add(".cell.has-unit 不是「1fr auto」两轨网格，框与单位的排法不对: " + row.strip());
+        String box = cssBlock(css, ".unitbox");
+        if (box.isBlank()) {
+            bad.add("app.css 没有 .unitbox，单位没跟框裹在一起");
+        } else if (!box.contains("position:relative") && !box.contains("position: relative")) {
+            bad.add(".unitbox 不是定位基准，框里的单位贴不到右侧: " + box.strip());
         }
-        String badge = cssBlock(css, ".cell.has-unit .badge");
-        if (badge.isBlank()) {
-            bad.add("app.css 没有 .cell.has-unit .badge，单位行的标记会跟单位挤同一行");
+        String input = cssBlock(css, ".unitbox input");
+        if (input.isBlank()) {
+            bad.add("app.css 没有 .unitbox input，框宽与没单位的对不齐");
         } else {
-            if (badge.contains("1 1 100%")) {
-                bad.add("单位行的标记仍吃整列宽的弹性基准，自身被拉满整列: " + badge.strip());
+            if (!input.contains("padding-right")) {
+                bad.add(".unitbox input 没给单位留出右侧空位，字会压到单位底下: " + input.strip());
             }
-            if (!badge.contains("grid-column:1/-1") && !badge.contains("grid-column: 1 / -1")) {
-                bad.add("单位行的标记没有跨满两轨，换不到框的下一行: " + badge.strip());
+            if (!input.contains("box-sizing:border-box") && !input.contains("box-sizing: border-box")) {
+                bad.add(".unitbox input 不是 border-box，留了空位后框会比没单位的宽: " + input.strip());
             }
-            if (!badge.contains("justify-self:start") && !badge.contains("justify-self: start")) {
-                bad.add("单位行的标记没有起点对齐，宽度不止文字: " + badge.strip());
+        }
+        String unit = cssBlock(css, ".unitbox .unit");
+        if (unit.isBlank()) {
+            bad.add("app.css 没有 .unitbox .unit，单位会掉出框外另占一行");
+        } else {
+            if (!unit.contains("position:absolute") && !unit.contains("position: absolute")) {
+                bad.add(".unitbox .unit 不是贴在框里，框宽又会被它撑开: " + unit.strip());
             }
+            if (!unit.contains("right:")) {
+                bad.add(".unitbox .unit 没有靠右，收进框里就没了着落: " + unit.strip());
+            }
+            if (!unit.contains("pointer-events:none") && !unit.contains("pointer-events: none")) {
+                bad.add(".unitbox .unit 不是纯展示，点它会抢走框的焦点: " + unit.strip());
+            }
+        }
+        String old = cssBlock(css, ".cell.has-unit");
+        if (!old.isBlank()) {
+            bad.add("app.css 还留着 .cell.has-unit 两轨排法，框与单位又会一栏一个宽窄: " + old.strip());
         }
 
-        assertTrue(bad.isEmpty(), "单位行生效标记排布不对:\n  " + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "数字框单位排布不对:\n  " + String.join("\n  ", bad));
     }
 
     /**
@@ -3547,7 +3558,8 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 通行密钥列表必须外包横向滚动容器，表本身按内容宽、且不窄于一行。
+     * 通行密钥列表必须外包横向滚动容器；表本身撑满一行，窄屏上叠成卡，
+     * 不再写死 {@code width:max-content}——那会让表宽过屏幕，删除按钮被挤到屏幕外。
      * <p>
      * 四列（名字／登记时间／上次使用／删除）并排时最小宽大约 450px，
      * 不包 {@code .tblwrap} 就会撑出设置组。三问各自记下，末尾一起红。
@@ -3582,10 +3594,16 @@ class ConfigUiFrontendTest {
         }
 
         try {
-            assertTrue(passkeys.contains("max-content"),
-                    "passkeys.js 的表没有 width max-content，过宽时仍会挤列");
-            assertTrue(passkeys.contains("minWidth") || passkeys.contains("min-width"),
-                    "passkeys.js 的表没有 min-width 100%，窄屏时表会缩得比一行还窄");
+            assertFalse(passkeys.contains("max-content"),
+                    "passkeys.js 又给表写死 width:max-content，表会宽过屏幕，删除按钮被挤到屏幕外");
+            String table = cssBlock(css, "#passkey-list table");
+            assertFalse(table.isBlank(), "app.css 没有 #passkey-list table，表的宽窄没人管");
+            assertTrue(table.contains("width:100%") || table.contains("width: 100%"),
+                    "#passkey-list table 不是撑满一行，窄屏时表会缩得比一行还窄: " + table.strip());
+            assertTrue(css.contains("#passkey-list tr{") && css.contains("#passkey-list thead{display:none}"),
+                    "窄屏上通行密钥的表没有叠成卡（行变块、表头收起），还是要横着滚去找删除按钮");
+            assertTrue(css.contains("#passkey-list td[data-label]::before"),
+                    "叠成卡后各格没有栏目名，两格时间分不出哪格是登记哪格是使用");
         } catch (AssertionError e) {
             reds.add("③ " + e.getMessage());
         }

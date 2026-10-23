@@ -1,6 +1,7 @@
 package org.frostnova.nova.bilibili.config;
 
 import org.frostnova.nova.core.config.ConfigDanger;
+import org.frostnova.nova.core.properties.ConfigChoices;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.properties.ConfigSummary;
@@ -45,7 +46,7 @@ public class NovaBilibiliProperties {
     @Setter
     public static class BilibiliThread {
         /**
-         * B 站定时任务共用的调度线程数，直播间心跳、重连、动态轮询与备用直播推送都在这些线程上运行。小于 2 按 2 算。
+         * B 站定时任务共用的调度线程数，单位：线程；直播间心跳、重连、动态轮询与备用直播推送都在这些线程上运行。小于 2 按 2 算。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站定时任务 · 调度线程数")
@@ -106,7 +107,7 @@ public class NovaBilibiliProperties {
         private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
-         * 网络出错或只读接口暂时失败时，这一轮最多试几次。被拦下改等冷却，不看这项。
+         * 网络出错或只读接口暂时失败时，这一轮最多试几次，单位：次。被拦下改等冷却，不看这项。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 最多重试次数")
@@ -114,7 +115,7 @@ public class NovaBilibiliProperties {
         private int apiRetryMaxTimes = 3;
 
         /**
-         * 上一项那种当次重试，两次请求之间等的毫秒数。被拦下后的等待不看这项。
+         * 上一项那种当次重试，两次请求之间等的毫秒数，单位：毫秒。被拦下后的等待不看这项。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 重试间隔")
@@ -218,6 +219,7 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("扫码登录方式")
         @ConfigSummary("tv 支持自动续期；web 方式在凭据到期后需重新扫码。")
+        @ConfigChoices({"tv", "web"})
         private String qrCodeLoginMode = "tv";
     }
 
@@ -273,7 +275,7 @@ public class NovaBilibiliProperties {
         private int liveRoomReconnectInterval = 1000;
 
         /**
-         * 数据包解压后允许的最大字节数，非正数回退到默认 32MB；正常包只有几十 KB，这是防异常大包的防御上限，小内存机器可调小。
+         * 数据包解压后允许的最大字节数，单位：字节；非正数回退到默认 32MB；正常包只有几十 KB，这是防异常大包的防御上限，小内存机器可调小。
          */
         // 做成可配的理由是内存——默认堆 -Xmx512m，而这个上限允许单次解压吃掉
         // 32 MB 连续字节数组，在小内存机器上防御上限自己就可能是那根稻草。
@@ -284,7 +286,7 @@ public class NovaBilibiliProperties {
         private int maxDecompressedBytes = 32 * 1024 * 1024;
 
         /**
-         * 递归展开压缩包的最大层数，非正数回退到默认 3；正常数据不超过一层。
+         * 递归展开压缩包的最大层数，单位：层；非正数回退到默认 3；正常数据不超过一层。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("数据包解压 · 最大层数")
@@ -341,7 +343,7 @@ public class NovaBilibiliProperties {
         private int autoDetectLiveRoomRiskInterval = 60;
 
         /**
-         * 连续多少个检查周期在播、有人进出却没收到一条弹幕礼物，才算异常；调小会把短暂安静误当成异常。算作异常也不马上提醒：先重连一次，重连后从零重新数满这么多个周期，仍然没有才往下判；接着去网页上查同一段时间（周期乘窗口数）有没有新弹幕，网页上也没有就按房间安静处理、之后十分钟里不再判，网页上有或者查不到，才在首页自检与日志里提醒；收到的消息解析不出时不查网页，直接提醒。所以从房间安静到提醒，至少要数满两轮再加一次重连，不是周期与窗口数相乘那么长。
+         * 连续多少个检查周期在播、有人进出却没收到一条弹幕礼物，才算异常，单位：个；调小会把短暂安静误当成异常。算作异常也不马上提醒：先重连一次，重连后从零重新数满这么多个周期，仍然没有才往下判；接着去网页上查同一段时间（周期乘窗口数）有没有新弹幕，网页上也没有就按房间安静处理、之后十分钟里不再判，网页上有或者查不到，才在首页自检与日志里提醒；收到的消息解析不出时不查网页，直接提醒。所以从房间安静到提醒，至少要数满两轮再加一次重连，不是周期与窗口数相乘那么长。
          */
         // 本项取代了原先的 auto-detect-live-room-risk-ratio（进房消息占比阈值）。
         // 那个判据 2026-08-07 被实测证伪：热门房间人来人往、进房消息天然刷屏，
@@ -472,7 +474,7 @@ public class NovaBilibiliProperties {
         private boolean autoSaveImage = false;
 
         /**
-         * 动态发布超过多少分钟就不推了，防止首次启动补推大量历史动态。
+         * 动态发布超过多少分钟就不推了，单位：分钟；防止首次启动补推大量历史动态。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -521,7 +523,7 @@ public class NovaBilibiliProperties {
         public static final String HEIGHT_LIMIT_LABEL = "排行榜 · 整图高度上限";
 
         /**
-         * 排行榜一张图最多列多少名；榜上人多时图末写「其余 N 名未列出」，高度不够时还会再少列。保存后立刻生效。
+         * 排行榜一张图最多列多少名，单位：名；榜上人多时图末写「其余 N 名未列出」，高度不够时还会再少列。保存后立刻生效。
          */
         // 不填也能用（默认 50）。
         @ConfigLevel(ConfigLevel.Level.COMMON)

@@ -942,6 +942,7 @@ public class ConfigUiController {
         Map<String, String> labels = labelResolver.getLabels();
         Map<String, ConfigurationLabelResolver.Summary> summaries = labelResolver.getSummaries();
         Map<String, ConfigFormat.Format> formats = labelResolver.getFormats();
+        Map<String, List<String>> choices = labelResolver.getChoices();
         Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
         Map<String, ConfigurationDangerResolver.Danger> dangers = dangerResolver.getDangers();
 
@@ -969,6 +970,9 @@ public class ConfigUiController {
             // 值的种类（一天里的时刻、文件位置）。界面据此换控件或换字体，不另记一张键名表
             ConfigFormat.Format format = formats.get(field.name());
             item.put("format", format == null ? null : format.name());
+            // 只认几种写法的项：界面摆两项选择而不是自由文本框，存的仍是原来那几个字
+            List<String> markedChoices = choices.get(field.name());
+            item.put("choices", markedChoices == null ? null : new JSONArray(markedChoices));
             item.put("unit", unitOf(field.description()));
             item.put("defaultValue", field.defaultValue());
             // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
@@ -1001,8 +1005,16 @@ public class ConfigUiController {
             }
         }
 
+        // 组内按「哪一段的 → 代码里怎么写的」排，不按配置键的字母序：
+        // 字母序会把「静音时段 · 结束」排到「开始」前面、把 Redis 的「数据库」排到「地址」前面，
+        // 也会把推送组的开关挤到第四——人找一项看的是它管什么，不是键名怎么拼
+        Map<String, Integer> orders = labelResolver.getOrders();
+        Map<ConfigurationGroups.Group, JSONArray> ordered = new LinkedHashMap<>();
+        buckets.forEach((group, items) -> ordered.put(group, byMeaning(items, groupTable, orders)));
+        JSONArray orderedOrphans = byMeaning(orphans, groupTable, orders);
+
         JSONArray groups = new JSONArray();
-        buckets.forEach((group, items) -> {
+        ordered.forEach((group, items) -> {
             JSONObject node = new JSONObject();
             node.put("group", group.id());
             node.put("title", group.title());
@@ -1023,7 +1035,34 @@ public class ConfigUiController {
         result.put("groups", groups);
         // 归不了组的单列一栏而不是并进某一组：并进去之后界面照样显示，
         // 于是「这一项还没人给它安排位置」这件事在跑起来的程序上再也看不见
-        result.put("ungrouped", orphans);
+        result.put("ungrouped", orderedOrphans);
+        return result;
+    }
+
+    /**
+     * 组内的先后：先看这项属于哪一段（前缀在分组表里的登记次序），再看代码里怎么写的（声明次序），
+     * 同一处声明的按配置键兜底
+     * @param items 这一组的项
+     * @param groupTable 分组表，取前缀档号
+     * @param orders 声明次序
+     * @return 排好序的项，{@code order} 一栏按排好的先后重写
+     */
+    private static JSONArray byMeaning(JSONArray items, ConfigurationGroups groupTable,
+            Map<String, Integer> orders) {
+        List<JSONObject> sorted = new ArrayList<>();
+        for (Object item : items) {
+            sorted.add((JSONObject) item);
+        }
+        sorted.sort(Comparator
+                .comparingInt((JSONObject item) -> groupTable.rankOf(item.getString("name")))
+                .thenComparingInt(item -> orders.getOrDefault(item.getString("name"), Integer.MAX_VALUE))
+                .thenComparing(item -> item.getString("name")));
+        JSONArray result = new JSONArray();
+        for (int i = 0; i < sorted.size(); i++) {
+            JSONObject item = sorted.get(i);
+            item.put("order", i);
+            result.add(item);
+        }
         return result;
     }
 

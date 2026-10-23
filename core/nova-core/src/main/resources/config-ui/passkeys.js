@@ -66,14 +66,13 @@ export async function loadPasskeys(box, addButton) {
     return;
   }
 
+  // data-label 给窄屏那张卡上的分格写栏目名：表头一收起来就靠它认这一格是什么（见 app.css）
   box.innerHTML = notice + '<table><thead><tr><th>名称</th><th>登记时间</th><th>上次使用</th><th></th></tr></thead><tbody>'
-    + list.map(item => '<tr><td>' + esc(item.name) + '</td><td>' + time(item.createdAt) + '</td><td>'
+    + list.map(item => '<tr><td data-label="名称">' + esc(item.name) + '</td><td data-label="登记时间">'
+      + time(item.createdAt) + '</td><td data-label="上次使用">'
       + (item.lastUsedAt ? time(item.lastUsedAt) : '尚未使用')
       + '</td><td><button type="button" class="ghost sm" data-id="' + esc(item.id) + '">删除</button></td></tr>').join('')
     + '</tbody></table>';
-  const table = box.querySelector('table');
-  table.style.width = 'max-content';
-  table.style.minWidth = '100%';
 
   // 回调带上当次的容器与按钮：删除之后要重画的就是接线这一张，不认「最近一次」
   box.querySelectorAll('button[data-id]').forEach(
