@@ -49,6 +49,12 @@ mvn -Pinstall test
 它红了先看是不是真的漏了什么，而不是先想怎么让它变绿——这个测试已经拦下过两次真实的回归。
 详见[架构说明](docs/architecture.md#三条不变量)。
 
+## 更新日志
+
+有使用者可见的改动时，在 `changelog.d/<类>/<英文小写短名>.md` 放一两句说明，不加开头的 `- `。
+类为 `added`、`changed`、`fixed`、`security`；具体用法见[碎片说明](changelog.d/README.md)。
+发版前运行 `tools/release/set-version.sh VER`，统一版本号并合并碎片，再将改动提交、合进主线。
+
 ## 提交
 
 - 提交信息使用中文，说明改动的意图
