@@ -36,6 +36,7 @@ import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.awt.image.IndexColorModel;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -441,9 +442,29 @@ public final class DemoAssets {
     private static BufferedImage indexed(BufferedImage source) {
         BufferedImage out = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_BYTE_INDEXED);
         Graphics2D graphics = out.createGraphics();
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, out.getWidth(), out.getHeight());
         graphics.drawImage(source, 0, 0, null);
         graphics.dispose();
-        return out;
+
+        // 默认调色板的 86、230 都是 #666666，腾出重复的一项存透明色，保留其余颜色。
+        int transparent = 230;
+        IndexColorModel palette = (IndexColorModel) out.getColorModel();
+        int[] colors = new int[palette.getMapSize()];
+        palette.getRGBs(colors);
+        colors[transparent] = 0;
+        IndexColorModel withAlpha = new IndexColorModel(8, colors.length, colors, 0,
+                true, transparent, out.getRaster().getTransferType());
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                if ((source.getRGB(x, y) >>> 24) == 0) {
+                    out.getRaster().setSample(x, y, 0, transparent);
+                } else if (out.getRaster().getSample(x, y, 0) == transparent) {
+                    out.getRaster().setSample(x, y, 0, 86);
+                }
+            }
+        }
+        return new BufferedImage(withAlpha, out.getRaster(), false, null);
     }
 
     private static void writePng(BufferedImage source, Path path) throws IOException {
