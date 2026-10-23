@@ -570,7 +570,7 @@ class StandbyAfterGateTest {
             throw new IOException("找不到仓库根，正式日志配置没法定位");
         }
         try (java.util.stream.Stream<Path> walk = Files.walk(repo)) {
-            return walk.filter(path -> "logback.xml".equals(path.getFileName().toString()))
+            return walk.filter(path -> "logback-spring.xml".equals(path.getFileName().toString()))
                     .filter(path -> path.toString().contains("src" + java.io.File.separator + "main"))
                     .findFirst()
                     .orElseThrow(() -> new IOException("找不到正式日志配置"))

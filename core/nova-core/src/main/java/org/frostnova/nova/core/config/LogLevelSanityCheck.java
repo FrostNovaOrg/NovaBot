@@ -12,7 +12,7 @@ import java.util.List;
  * 启动时检查日志级别配置有没有落进那个「留空即 DEBUG」的坑
  *
  * <h2>坑长什么样</h2>
- * {@code logback.xml} 用 {@code <springProperty defaultValue="INFO">} 读这两项。
+ * {@code logback-spring.xml} 用 {@code <springProperty defaultValue="INFO">} 读这两项。
  * 但 <b>「配置项留空」与「配置项不存在」不是一回事</b>：
  * 整行删掉时属性确实缺失，{@code defaultValue} 生效；而 YAML 里写成
  * {@code file:} 后面什么都不填时，属性是<b>存在的、值是空串</b>，

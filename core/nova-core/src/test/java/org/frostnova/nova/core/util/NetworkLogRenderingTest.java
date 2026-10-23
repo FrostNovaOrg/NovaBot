@@ -37,7 +37,7 @@ class NetworkLogRenderingTest {
     private static final String JCT = "abc123def456ghi789";
 
     /**
-     * 照生产 logback.xml 里网络日志那个 appender 的模式，末尾的 %ex 就是栈迹
+     * 照生产 logback-spring.xml 里网络日志那个 appender 的模式，末尾的 %ex 就是栈迹
      */
     private static final String PATTERN = "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p --- %msg%n%ex";
 

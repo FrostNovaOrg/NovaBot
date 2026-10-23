@@ -93,7 +93,7 @@ class HttpHeaderCredentialLeakTest {
     private static final String URL = "http://127.0.0.1:1/probe";
 
     /**
-     * 照生产 logback.xml 里网络日志那个 appender 的模式；栈迹由 logback 接在行末
+     * 照生产 logback-spring.xml 里网络日志那个 appender 的模式；栈迹由 logback 接在行末
      */
     private static final String PATTERN = "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p --- [%20.20t] : %msg%n";
 

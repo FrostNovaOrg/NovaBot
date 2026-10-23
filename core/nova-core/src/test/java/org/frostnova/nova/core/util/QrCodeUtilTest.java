@@ -264,19 +264,19 @@ class QrCodeUtilTest {
         }
 
         /**
-         * 🔴 这个类的全限定名写死在 {@code logback.xml} 里：控制台的码要用一个不带时间戳、
+         * 🔴 这个类的全限定名写死在 {@code logback-spring.xml} 里：控制台的码要用一个不带时间戳、
          * 不带级别前缀的专用输出口打，否则每行前面顶着一截前缀，码就扫不出来了。
          * <p>
          * 于是「谁来打这几行」不是实现细节——搬类、改名、或者把打印挪到另一个类里，
          * 都会让码在控制台里变成扫不出来的样子，而且不报任何错。
          * <p>
-         * 从源码目录读而不是从类路径读：{@code install} 那档构建把 {@code logback.xml}
+         * 从源码目录读而不是从类路径读：{@code install} 那档构建把 {@code logback-spring.xml}
          * 排除在产物之外（它是运行期配置，不该塞进给插件用的库里），类路径上取不到。
          */
         @Test
         @DisplayName("打印必须出自日志配置点名的那个记录器")
         void printingLoggerIsTheOneNamedInLogbackConfig() throws IOException {
-            Path config = Path.of("src/main/resources/logback.xml");
+            Path config = Path.of("src/main/resources/logback-spring.xml");
             assertTrue(Files.isRegularFile(config), "找不到日志配置: " + config.toAbsolutePath());
 
             assertTrue(Files.readString(config).contains("\"" + QrCodeUtil.class.getName() + "\""),

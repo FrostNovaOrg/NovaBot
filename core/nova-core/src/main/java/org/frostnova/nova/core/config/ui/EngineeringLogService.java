@@ -50,7 +50,7 @@ import java.util.regex.Pattern;
  * 远程部署的人手里往往只有这个控制台。
  *
  * <h2>路径从 logback 那里问，不写死也不另配一个键</h2>
- * 日志落在哪由 {@code logback.xml} 与 {@link org.frostnova.nova.core.config.LogHomeDefiner} 共同决定，
+ * 日志落在哪由 {@code logback-spring.xml} 与 {@link org.frostnova.nova.core.config.LogHomeDefiner} 共同决定，
  * 后者还会在从工作树里跑起来时改写落点。在这里再写一份路径推导，
  * 两份分叉的那天表现是<b>这一页安静地显示另一个文件的内容</b>——它照样有行、照样滚，
  * 只是与这台机器此刻在写的那一份无关。
@@ -163,7 +163,7 @@ public class EngineeringLogService {
     private static final int SCAN_BLOCK = 256 * 1024;
 
     /**
-     * 一行日志的行首级别，与 {@code logback.xml} 里那个 pattern 对应
+     * 一行日志的行首级别，与 {@code logback-spring.xml} 里那个 pattern 对应
      * <p>
      * 与界面那一侧的行首判定同形（{@code log-model.js} 的 {@code HEAD}）：两头各自认的话，
      * 同一份日志在服务端与浏览器上会被切成两种段，而两边都报绿。
@@ -183,7 +183,7 @@ public class EngineeringLogService {
             "(?i)\\b(set-cookie|cookie|proxy-authorization|authorization)(\\s*[:=]\\s*)\\S.*");
 
     /**
-     * 一行日志的行首时刻，与 {@code logback.xml} 里那个 pattern 对应
+     * 一行日志的行首时刻，与 {@code logback-spring.xml} 里那个 pattern 对应
      * <p>
      * 认不出来只意味着这一行没有自己的时刻（堆栈那几行就是），不影响它显示——
      * 换了 pattern 之后表现是「看这一刻」定位不准，而每一行都还在。
@@ -267,7 +267,7 @@ public class EngineeringLogService {
     /**
      * 某一天那份日志文件
      * <p>
-     * 「翻别的日子」要的那一份。落点由 {@code logback.xml} 里那条 {@code fileNamePattern} 定，
+     * 「翻别的日子」要的那一份。落点由 {@code logback-spring.xml} 里那条 {@code fileNamePattern} 定，
      * 这里<b>拿它自己去算</b>而不是在这边再拼一遍路径：拼一遍的那份迟早与模板分叉，
      * 而分叉的表现是这一页安静地显示另一个文件的内容——它照样有行、照样能滚。
      * <p>
@@ -290,7 +290,7 @@ public class EngineeringLogService {
      * 模板里那两处日期（月份目录与文件名）用的是同一个时刻，而它们的格式各写各的。
      * <p>
      * ⚠️ 模板带压缩后缀（{@code .gz}）时算出来的是压缩包的路径，这一页读不了它——
-     * 表现是那一天显示「没有记录」。现行 {@code logback.xml} 不压缩，改成压缩的那天要连这里一起改。
+     * 表现是那一天显示「没有记录」。现行 {@code logback-spring.xml} 不压缩，改成压缩的那天要连这里一起改。
      * @param pattern 落点模板，即 {@code fileNamePattern} 的原文
      * @param day 哪一天
      * @return 文件路径；模板为空或算不出来时为空
