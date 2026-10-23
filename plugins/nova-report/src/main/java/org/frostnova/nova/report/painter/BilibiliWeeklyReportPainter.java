@@ -1,5 +1,9 @@
 package org.frostnova.nova.report.painter;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
+import com.github.benmanes.caffeine.cache.Ticker;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.WeeklyReport;
@@ -14,6 +18,8 @@ import org.springframework.stereotype.Component;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Point;
+import java.awt.image.BufferedImage;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -23,6 +29,7 @@ import java.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 import static org.frostnova.nova.report.painter.ReportSharedStyle.*;
 
@@ -34,6 +41,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     private final NovaBilibiliProperties properties;
     private final Logo logo = new Logo();
     private final ReportPalettes palettes;
+    private final Cache<Long, Optional<BufferedImage>> avatars;
 
     public BilibiliWeeklyReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                       NovaBilibiliProperties properties) {
@@ -43,10 +51,28 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     @Autowired
     public BilibiliWeeklyReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                       NovaBilibiliProperties properties, ReportPalettes palettes) {
+        this(factory, api, properties, palettes, Ticker.systemTicker());
+    }
+
+    BilibiliWeeklyReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
+                               NovaBilibiliProperties properties, ReportPalettes palettes, Ticker ticker) {
         this.factory = factory;
         this.api = api;
         this.properties = properties;
         this.palettes = palettes;
+        // 预览和两种发送共用这个绘图器；失败也缓存，避免编辑时反复等待接口重试。
+        this.avatars = Caffeine.newBuilder().maximumSize(256).ticker(ticker)
+                .expireAfter(new Expiry<Long, Optional<BufferedImage>>() {
+                    @Override public long expireAfterCreate(Long uid, Optional<BufferedImage> image, long now) {
+                        return (image.isPresent() ? Duration.ofHours(1) : Duration.ofMinutes(1)).toNanos();
+                    }
+                    @Override public long expireAfterUpdate(Long uid, Optional<BufferedImage> image, long now, long remaining) {
+                        return expireAfterCreate(uid, image, now);
+                    }
+                    @Override public long expireAfterRead(Long uid, Optional<BufferedImage> image, long now, long remaining) {
+                        return remaining;
+                    }
+                }).build();
     }
 
     @Override public String platform() { return "bilibili"; }
@@ -76,7 +102,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, ReportPalette palette, WeeklyReportLayout layout) {
         CommonPainter p = factory.create(WIDTH, 1200, true, palette);
         p.setPos(MARGIN, MARGIN);
-        drawSimpleHeader(p, streamer.getUname(), faceImage(api, streamer), "运营周报");
+        drawSimpleHeader(p, streamer.getUname(), weeklyAvatar(streamer), "运营周报");
         p.drawSection(date(data.firstDay()) + "（周一）至 " + date(data.lastDay()) + "（周日）", p.palette().text());
         p.drawTip(WeeklyReport.activity(data), p.palette().tip());
         p.movePos(0, 16);
@@ -113,6 +139,11 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         p.movePos(0, 10);
         p.createSolidRoundedRectangleBackground(p.palette().background(), CANVAS_RADIUS);
         return Base64.getDecoder().decode(p.base64().orElseThrow(() -> new IllegalStateException("PNG 编码失败")));
+    }
+
+    private BufferedImage weeklyAvatar(LiveStreamerInfo streamer) {
+        if (streamer.getUid() == null) return faceImage(api, streamer);
+        return avatars.get(streamer.getUid(), uid -> Optional.ofNullable(faceImage(api, streamer))).orElse(null);
     }
 
     private static String date(LocalDate d) { return d.getMonthValue() + " 月 " + d.getDayOfMonth() + " 日"; }
