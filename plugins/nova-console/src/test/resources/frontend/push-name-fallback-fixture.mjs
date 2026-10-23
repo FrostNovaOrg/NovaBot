@@ -157,6 +157,18 @@ const knownName = uname => path => {
     '⑤ 先查已知昵称，最终使用现场查回的名字');
 }
 
+// 现场查成功但没有昵称时，仍保留已知名，并补全房间号与头像。
+{
+  const user = {uid: 7, platform: 'bilibili'};
+  const paints = [];
+  await decorate([user], {
+    '/streamer/name': knownName('甲'),
+    '/streamer/lookup': () => ({success: true, roomId: 22, face: 'avatar'}),
+  }, () => paints.push([streamerName(user), user._roomId, user._face]));
+  eq(paints, [['甲', undefined, undefined], ['甲', 22, 'avatar']],
+    '现场成功但缺昵称时保留已知名，房间号与头像照常补全');
+}
+
 // ⑥ 添加主播那张确认小卡只认现场查回来的：那一份函数里不出现退路接口
 {
   const at = src.indexOf('/streamer/lookup');

@@ -422,6 +422,19 @@ await ask('手机通道一览每格有列名，并在 600px 以下改成卡片',
   same(mobile.includes('content:attr(data-label)'), true, '手机单元格显示列名');
 });
 
+// 长名称和多行通知需要撑开单元格，避免文字压到下一格。
+await ask('手机通道卡片单元格随内容增高', async () => {
+  const source = readFileSync(join(pages, 'push.js'), 'utf8');
+  const mobile = /@media\s*\(max-width:600px\)\s*\{([\s\S]*?)\n\}/.exec(source)?.[1] || '';
+  const cell = /\.channel-index td\s*\{([^}]*)\}/.exec(mobile)?.[1] || '';
+  const declarations = Object.fromEntries([...cell.matchAll(/([\w-]+)\s*:\s*([^;]+)/g)]
+    .map(match => [match[1], match[2].trim()]));
+  same(declarations.height, 'auto', '手机单元格高度随内容增长');
+  same([declarations['min-width'], declarations['max-width'], declarations['white-space'],
+    declarations.overflow, declarations['overflow-wrap']],
+  ['0', 'none', 'normal', 'visible', 'anywhere'], '手机单元格允许收窄和换行');
+});
+
 // 首次打开时现场查询尚未返回，也应在左树与通道一览看到已知昵称。
 await ask('现场查询等待期间先显示已知昵称，返回后更新昵称', async () => {
   push.leave();

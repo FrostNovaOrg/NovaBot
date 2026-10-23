@@ -157,7 +157,7 @@ const PAGE_STYLE = `
   .channel-index tbody{display:block}
   .channel-index tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
     gap:8px 12px;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
-  .channel-index td{display:block;min-width:0;max-width:none;padding:0;border:0;
+  .channel-index td{display:block;height:auto;min-width:0;max-width:none;padding:0;border:0;
     white-space:normal;overflow:visible;overflow-wrap:anywhere}
   .channel-index td:nth-child(n+3){grid-column:1/-1}
   .channel-index td::before{content:attr(data-label);display:block;margin-bottom:3px;
