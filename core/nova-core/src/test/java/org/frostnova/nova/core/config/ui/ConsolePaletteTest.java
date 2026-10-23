@@ -60,8 +60,8 @@ class ConsolePaletteTest {
             "pink-blue", Map.of(
                     "light", base("#F8F5FA #FFFFFF #ECE4EE #241B30 #685E76 #CC3775 #1E88D2 #137148 #8A5A00 #C42A16 #E0337E"
                             + " #F29BBF #1E88D2 #CC3775 #E39A1B #1FA866 #7B5BE0 #736A80 #FFFFFF #FFFFFF #B42A66 #FFFFFF #776D85"),
-                    "dark", base("#131420 #1C1D2C #2D2F45 #ECEBF6 #A9A6C2 #FF80B4 #5DB8F5 #3FD490 #F5C04F #FF7A5C #FF6FA9"
-                            + " #FFB3D2 #5DB8F5 #FF80B4 #F5C04F #3FD490 #A58CFF #9C99B5 #131420 #131420 #FF80B4 #131420 #8F8CA8")),
+                    "dark", base("#121417 #1A1C21 #2C3038 #E8EAEE #A3A9B4 #FF80B4 #5DB8F5 #3FD490 #F5C04F #FF7A5C #FF6FA9"
+                            + " #FFB3D2 #5DB8F5 #FF80B4 #F5C04F #3FD490 #A58CFF #9C99B5 #121417 #121417 #FF80B4 #121417 #8C929E")),
             "warm", Map.of(
                     "light", base("#FAF6F1 #FFFFFF #EDE3D8 #2B2119 #6C5F53 #B4520E #C8742C #1C7040 #7A6100 #C01B3C #A6379E"
                             + " #F2B07A #C75F14 #C0447E #D9A21B #3C9A4F #2B8C9E #7A6E63 #FFFFFF #FFFFFF #A3480A #FFFFFF #796B5E"),
@@ -256,7 +256,7 @@ class ConsolePaletteTest {
      * (前景, 背景, 下限)。背景写成 "x/y" 表示 x 叠在 y 上
      * <p>
      * 统一样式里那几处也由这张表管着：单选框、勾选框的强调色与键盘焦点框是 --accent
-     * （落在 --surface 上要 4.5、--ground 上要 3），关着的开关描的那一圈是 --dim（落在 --surface 上要 4.5）
+     * （落在 --surface 上要 4.5、--ground 上要 3）。关着的开关那一圈由 {@link ConsoleSwitchStateTest} 量
      */
     private static final String[][] PAIRS = {
             {"text", "ground", "4.5"}, {"text", "surface", "4.5"},
