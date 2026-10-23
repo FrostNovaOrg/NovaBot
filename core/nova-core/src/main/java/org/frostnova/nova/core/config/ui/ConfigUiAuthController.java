@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
@@ -458,23 +459,29 @@ public class ConfigUiAuthController {
             return ResponseEntity.badRequest().body(result);
         }
 
-        // 先落盘再启用：反过来的话，写文件失败会让界面说「绑好了」而重启后又要重新绑，
-        // 中间这段时间登录要输的还是一个没人记得的密钥。
-        // 开关那一位与密钥一起写：只写密钥的话，从设置页拨开的那一次重启后又变回关着。
-        // 核过的那枚码记成用过也在启用那一步：这两趟失败都不烧码，用户同一格里还重试得了
+        // 保存进度与配置，再启用密钥。
         try {
-            fileService.write(new LinkedHashMap<>(Map.of(
-                    ConfigUiAuthService.TOTP_SECRET_PROPERTY, match.secret(),
-                    ConfigUiAuthService.TOTP_PROPERTY, "true")));
-        } catch (IOException e) {
-            log.error("写入二次验证密钥失败", e);
+            authService.activateTotp(session, match.secret(), match.step(), () -> {
+                try {
+                    fileService.write(new LinkedHashMap<>(Map.of(
+                            ConfigUiAuthService.TOTP_SECRET_PROPERTY, match.secret(),
+                            ConfigUiAuthService.TOTP_PROPERTY, "true")));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        } catch (UncheckedIOException e) {
+            log.error("写入二次验证密钥失败", e.getCause());
             authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
-            result.put("message", "保存失败: " + fileService.describeSaveFailure(e));
+            result.put("message", "保存失败: " + fileService.describeSaveFailure(e.getCause()));
+            return ResponseEntity.internalServerError().body(result);
+        } catch (IllegalStateException e) {
+            authService.succeedSensitiveTotp(request.getRemoteAddr());
+            result.put("success", false);
+            result.put("message", "保存失败，请检查二次验证记录文件及其所在目录后重试");
             return ResponseEntity.internalServerError().body(result);
         }
-
-        authService.activateTotp(session, match.secret(), match.step());
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         result.put("success", true);
         result.put("message", "已绑定，下次登录时需输入动态验证码");

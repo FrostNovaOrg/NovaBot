@@ -14,6 +14,8 @@ cookies.json.plain.bak
 # 仓库根的运行期配置。程序第一次保存设置时写在工作目录。
 # 只锚仓库根这一份，源码树与发行模板里的同名示例不在此列。
 /application.yml
+*.totp-state
+*.totp-state.tmp
 # 保存配置时的备份。名形为 原文件名.yyyyMMdd-HHmmss.bak，
 # 同一秒第二份起为 原文件名.yyyyMMdd-HHmmss-2.bak。
 /*.????????-??????.bak

@@ -271,6 +271,12 @@ sudo systemctl enable novabot@<上一版>
 
 **从 5.4 及以后升级，配置一般直接沿用**，`application.yml` 与 `datasource.json` 保留原样。
 
+启用控制台二次验证的实例，首次启动会自动在主配置文件旁创建
+`<主配置文件名>.totp-state`（默认是 `application.yml.totp-state`），之后换版保留此文件。
+通常无需手工操作；单独挂载配置文件或主配置目录只读的部署，需要为此文件及其所在目录
+提供可写的持久化存储。只有记录文件无法读写或内容不完整时，启动日志与终端才会提示处理方法；
+处理后可直接重试。未启用二次验证的实例无需调整。
+
 升级到金额显示、静音时段、命令开关按通道各设的版本时，第一次启动会把原来按群存的这三样
 照抄进 `datasource.json` 里这个群下的每一条通道，群里看到的和升级前一样；改写前先自动备份一份。
 原来的记录还留在 `state.json` 里，退回旧版时照旧用得上。第三方插件的命令开关不抄，仍按群存。
@@ -331,6 +337,8 @@ sudo systemctl enable --now novabot-backup.timer
 - 数据：`data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl`
   与 `details/`、`timeline/` 两个目录
 - 配置：`application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`
+- 二次验证：主配置文件旁的 `<主配置文件名>.totp-state`，默认是 `application.yml.totp-state`，
+  与主配置文件一起备份、恢复；主配置放在别处的，也一并备份那个目录里的此文件
 - 备份里若有明文迁成加密时留下的 `cookies.json.plain.bak`，不用拷回，程序不读它。它是明文凭据，
   备份只增不删，安装目录里删掉了备份里也还留着——恢复后确认能正常登录，就把备份里那份也删掉
 - 程序件别拷回：一键安装的程序在 `releases/` 下，备份不同步 `releases/`，本来就带不上；
