@@ -59,6 +59,10 @@
       const state = JSON.parse(new TextDecoder().decode(body));
       Object.assign(state, {authenticated: true, totpRequired: false, totpSetupNeeded: false,
         totpEnabled: false, agreementRequired: false});
+      // Only the exported demo reads this switch, set before scripts by the browser check.
+      if (window.NOVA_CONSOLE_DEMO_SIGNED_OUT === true) {
+        Object.assign(state, {enabled: true, authenticated: false, csrfToken: null});
+      }
       return json(state);
     }
     return new Response(body, {status: row.status, headers: {'Content-Type': row.contentType}});
