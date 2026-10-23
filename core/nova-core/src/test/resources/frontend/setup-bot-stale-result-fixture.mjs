@@ -1,3 +1,5 @@
+import {botFieldsHtml} from '../../../main/resources/config-ui/bot-fields.js';
+import {MiniNode} from './layout-dom.mjs';
 /**
  * 初始设置第 2 步：测试连接还没回来时改了参数，旧结果不得存下改过的参数
  *
@@ -69,21 +71,9 @@ function bracedFrom(src, marker) {
 }
 
 function fakeEl(cls) {
-  return {
-    id: '',
-    disabled: false,
-    textContent: '',
-    className: cls || '',
-    listeners: {},
-    children: [],
-    addEventListener(type, fn) {
-      if (!this.listeners[type]) this.listeners[type] = [];
-      this.listeners[type].push(fn);
-    },
-    appendChild(child) {
-      this.children.push(child);
-    },
-  };
+  const node = new MiniNode('div');
+  node.className = cls || '';
+  return node;
 }
 
 /** 草稿取源码里那一份初值；页面零件与接口换成桩 */
@@ -101,14 +91,12 @@ function loadStep() {
   const calls = [];
   let release = null;
   const deps = {
+    botFieldsHtml,
     seen: {status: {senders: [{}]}},
     el: (tag, cls) => {
       const node = fakeEl(cls);
       made.push(node);
       return node;
-    },
-    field: (host, label, id, type, value, onInput) => {
-      inputs[id] = onInput;
     },
     heading: () => {},
     titleOf: () => '',
@@ -134,6 +122,15 @@ function loadStep() {
   const run = new Function(...names,
     pieces.join(';\n') + '\nreturn {draft, stepBot};')(...names.map(n => deps[n]));
   run.stepBot(fakeEl());
+  for (const node of made) {
+    for (const input of node.querySelectorAll('input')) {
+      inputs[input.id] = value => {
+        input.value = value;
+        input.dispatchEvent({type: 'input', target: input});
+      };
+    }
+  }
+
   const test = made.find(node => node.id === 'setup-test-bot');
   const result = made.find(node => node.className === 'su-r');
   return {draft: run.draft, inputs, calls, test, result, answer: res => release(res)};

@@ -28,7 +28,8 @@ export function bindMineMenu(toggle, panel) {
   panel.addEventListener('keydown', closeOnEscape);
   document.addEventListener('click', event => {
     if (!panel.classList.contains('open')) return;
-    if (toggle.contains(event.target) || panel.contains(event.target)) return;
+    if (toggle.contains(event.target) || panel.contains(event.target)
+      || event.target.closest?.('.ask')) return;
     setOpen(false);
   });
 }

@@ -342,20 +342,18 @@ function renderEvents(events, append) {
     const jump = logHash(Object.assign({}, filters,
       {view: 'eng', at: clock(item.at)}), today());
 
-    return '<div class="tl-row' + tone + '">'
-      + '<div class="tl-t">' + esc(clock(item.at)) + '</div>'
-      + '<div class="tl-rail"><span class="d ' + level + '"></span><span class="l"></span></div>'
-      + '<div class="tl-c"><div class="tl-hd"><span>' + esc(item.text || item.typeText) + '</span>'
+    return '<details class="tl-row tl-event' + tone + '"><summary>'
+      + '<span class="tl-t">' + esc(clock(item.at)) + '</span>'
+      + '<span class="tl-rail"><span class="d ' + level + '"></span><span class="l"></span></span>'
+      + '<span class="tl-c"><span class="tl-hd"><span>' + esc(item.text || item.typeText) + '</span>'
       + '<span class="tl-x">' + esc(item.typeText) + '</span>'
       + (where ? '<span class="tl-x">' + esc(where) + '</span>' : '')
-      + '</div>'
-      + (detail.length
-        ? '<details class="tl-d"><summary>详情</summary><dl class="kv">'
-          + detail.map(([key, value]) => '<dt>' + esc(key) + '</dt><dd>' + esc(value) + '</dd>').join('')
-          + '</dl></details>'
-        : '')
+      + '</span></span></summary><div class="tl-detail">'
+      + (detail.length ? '<dl class="kv">'
+        + detail.map(([key, value]) => '<dt>' + esc(key) + '</dt><dd>' + esc(value) + '</dd>').join('')
+        + '</dl>' : '')
       + '<a class="tl-go" href="' + esc(jump) + '">在工程日志中查看此刻 →</a>'
-      + '</div></div>';
+      + '</div></details>';
   }).join(''));
 }
 
@@ -679,11 +677,10 @@ async function renderBotLogEntry() {
     return;
   }
   box.insertAdjacentHTML('beforeend',
-    '<div style="margin-top:8px"><a class="lnkbtn" id="eng-bot-open" '
+    ' <a class="lnkbtn" id="eng-bot-open" '
     + 'href="' + esc(state.href) + '" target="_blank" rel="noopener noreferrer">'
     + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
-    + '</a>'
-    + '<span class="dim"> 地址由 NovaBot 自动获取，无需填写。</span></div>');
+    + '</a>');
 }
 
 // ============ 绑定 ============

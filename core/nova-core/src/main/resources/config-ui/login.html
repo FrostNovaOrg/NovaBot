@@ -31,6 +31,7 @@
       --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
       --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
       --r-card:14px; --r-ctl:8px;
+      --fs-xs:12px; --fs-sm:13px; --fs-md:14px; --fs-lg:16px; --fs-xl:20px; --fs-xxl:24px;
     }
     @media (prefers-color-scheme:dark){
       :root:not([data-theme="light"]){
@@ -55,7 +56,7 @@
     body {
       margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
       background: var(--ground); color: var(--text); font-family: var(--font);
-      font-size:16px; line-height: 1.6;
+      font-size:var(--fs-lg); line-height: 1.6;
     }
     .card, section {
       width: 340px; max-width: calc(100vw - 32px); padding: 26px 24px;
@@ -69,11 +70,11 @@
       width: 26px; height: 26px; border-radius: var(--r-ctl); overflow: hidden; flex: none;
     }
     .brand-mark svg { width: 100%; height: 100%; display: block }
-    h1 { margin: 0; font-size:17px; font-weight: 700; position: relative; top: -3px }
-    p.sub { margin: 0 0 20px; font-size:13.5px; color: var(--dim) }
-    label { display: block; margin-bottom: 6px; font-size:13.5px; color: var(--dim) }
+    h1 { margin: 0; font-size:var(--fs-lg); font-weight: 700; position: relative; top: -3px }
+    p.sub { margin: 0 0 20px; font-size:var(--fs-sm); color: var(--dim) }
+    label { display: block; margin-bottom: 6px; font-size:var(--fs-sm); color: var(--dim) }
     input {
-      width: 100%; padding: 8px 11px; font-size:15px; font-family: inherit;
+      width: 100%; padding: 8px 11px; font-size:var(--fs-md); font-family: inherit;
       border: 1px solid var(--line); border-radius: var(--r-ctl);
       background: var(--surface); color: var(--text);
     }
@@ -85,32 +86,32 @@
     .secret input { flex: 1; min-width: 0 }
     .secret button {
       background: var(--surface); color: var(--text); border: 1px solid var(--line);
-      border-radius: var(--r-ctl); padding: 4px 12px; font-size:13px; cursor: pointer;
+      border-radius: var(--r-ctl); padding: 4px 12px; font-size:var(--fs-sm); cursor: pointer;
       font-family: inherit; flex: none; width: auto;
     }
     .secret button:hover { border-color: var(--accent); color: var(--accent) }
     button {
-      width: 100%; padding: 9px; font-size:15px; font-family: inherit; font-weight: 600;
+      width: 100%; padding: 9px; font-size:var(--fs-md); font-family: inherit; font-weight: 600;
       color: var(--on-accent); cursor: pointer; background: var(--accent);
       border: none; border-radius: var(--r-ctl);
     }
-    button.secondary {
+    button.ghost {
       color: var(--text); background: var(--surface); border: 1px solid var(--line);
     }
-    button.secondary:hover { border-color: var(--accent) }
+    button.ghost:hover { border-color: var(--accent) }
     button:disabled { opacity: .45; cursor: not-allowed }
-    .lead { margin: 8px 0 0; font-size:13px; color: var(--dim) }
-    .note { margin: 6px 0 0; font-size:13px; color: var(--dim) }
-    .msg { margin-top: 14px; font-size:13.5px; color: var(--err); min-height: 18px; text-align: center }
+    .lead { margin: 8px 0 0; font-size:var(--fs-sm); color: var(--dim) }
+    .note { margin: 6px 0 0; font-size:var(--fs-sm); color: var(--dim) }
+    .msg { margin-top: 14px; font-size:var(--fs-sm); color: var(--err); min-height: 18px; text-align: center }
     .hidden { display: none }
     /* 锁定横条。用警示色而不是错误色：这不是「你错了」，是「现在不受理」 */
     .banner {
-      margin-bottom: 16px; padding: 10px 12px; font-size:13.5px; line-height: 1.7;
+      margin-bottom: 16px; padding: 10px 12px; font-size:var(--fs-sm); line-height: 1.7;
       background: var(--warnsoft); border: 1px solid var(--warn); border-radius: var(--r-ctl);
     }
     /* 通行密钥与口令是两条路，中间给一条分隔 */
     p.or {
-      margin: 16px 0; font-size:13px; color: var(--dim); text-align: center;
+      margin: 16px 0; font-size:var(--fs-sm); color: var(--dim); text-align: center;
       display: flex; align-items: center; gap: 10px;
     }
     p.or.hidden { display: none }
@@ -118,7 +119,7 @@
     /* 口令那条路折起来时才有摘要行；摊开时（没登记过通行密钥）摘要整行不出。
        折着时它是这条路的入口，做成与主按钮同宽的次级按钮形，而不是一行小字 */
     details > summary {
-      display: block; text-align: center; padding: 9px; font-size:15px; font-weight: 600;
+      display: block; text-align: center; padding: 9px; font-size:var(--fs-md); font-weight: 600;
       color: var(--text); background: var(--surface); cursor: pointer; list-style: none;
       border: 1px solid var(--line); border-radius: var(--r-ctl); margin-bottom: 8px;
     }
@@ -126,23 +127,24 @@
     details > summary::-webkit-details-marker { display: none }
     /* 摊开之后头部收成小字：按钮形只在它还是「另一条路」的入口时才有意义 */
     details[open] > summary {
-      border: none; background: none; padding: 0; font-size:13.5px; font-weight: 400;
+      border: none; background: none; padding: 0; font-size:var(--fs-sm); font-weight: 400;
       color: var(--accent); text-align: center;
     }
     details.bare > summary { display: none }
     details.other-methods { margin-top: 16px }
     #local-passkey > #passkey-field { margin-bottom: 14px }
+    .password-block { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--ground) }
     .links { margin-top: 16px; display: flex; gap: 14px; justify-content: center }
-    .lnk {
+    .lnkbtn {
       width: auto; padding: 0; background: none; border: none; font-weight: 400;
-      color: var(--accent); font-size:13.5px; cursor: pointer;
+      color: var(--accent); font-size:var(--fs-sm); cursor: pointer; text-decoration: underline;
     }
-    ol { margin: 4px 0 16px; padding-left: 20px; font-size:13.5px; color: var(--dim); line-height: 1.9 }
+    ol { margin: 4px 0 16px; padding-left: 20px; font-size:var(--fs-sm); color: var(--dim); line-height: 1.9 }
     /* 正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
        长文案给一个滚动区，按钮始终留在卡片里看得见的位置 */
     #agreement-text {
       margin: 4px 0 20px; padding: 14px 16px; max-height: 46vh; overflow-y: auto;
-      white-space: pre-wrap; font-size:14px; line-height: 1.8; color: var(--dim);
+      white-space: pre-wrap; font-size:var(--fs-md); line-height: 1.8; color: var(--dim);
       background: var(--ground); border: 1px solid var(--line); border-radius: var(--r-ctl);
     }
     #token { font-family: var(--mono) }
@@ -183,10 +185,10 @@
   <div class="banner hidden" id="lock"></div>
 
   <div id="oidc-field" class="hidden">
-    <button type="button" id="oidc">使用统一登录</button>
+    <button type="button" id="oidc" class="primary">使用统一登录</button>
     <div id="oidc-create-field" class="hidden" style="margin-top:14px">
-      <button type="button" id="oidc-create" class="secondary">用统一身份注册</button>
-      <p class="note">第一次来？先在账户中心注册，注册完会回到这里登记，等管理员授权后就能用。</p>
+      <button type="button" id="oidc-create" class="lnkbtn">用统一身份注册</button>
+      <p class="note">注册后返回此处，等待管理员授权。</p>
     </div>
   </div>
 
@@ -197,15 +199,14 @@
   -->
   <div id="passkey-field" class="hidden">
     <button type="button" id="passkey">使用通行密钥登录</button>
-    <p class="lead">通过本机的指纹、面容或手机确认即可登录，无需输入密码，也无需动态验证码。</p>
-    <p class="note">通行密钥与当前访问地址绑定，更换地址（例如从局域网地址改为域名）后需重新登记。</p>
+    <p class="lead">使用指纹、面容或手机确认；更换访问地址需重新登记。</p>
     <p class="or" id="passkey-or">或</p>
   </div>
 
   <details id="pwd-fold" class="bare" open>
     <summary id="login-fold-label">使用密码登录</summary>
     <div id="local-passkey"></div>
-    <form id="form" autocomplete="on">
+    <form id="form" class="password-block" autocomplete="on">
       <!--
         单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
         这里放一个固定值的隐藏字段，仅用于让浏览器把口令记在一条可识别的记录上。
@@ -215,9 +216,9 @@
       <label for="password">密码</label>
       <div class="secret">
         <input type="password" id="password" name="password" autocomplete="current-password" required>
-        <button type="button" id="password-reveal">显示</button>
+        <button type="button" id="password-reveal" class="ghost sm">显示</button>
       </div>
-      <p class="note">请输入 <b>NovaBot 控制台</b>的密码，不是机器人程序的界面口令，两者相互独立。</p>
+      <p class="note">请输入 <b>NovaBot 控制台</b>密码，与机器人界面口令相互独立。</p>
 
       <div id="code-field" class="hidden" style="margin-top:14px">
         <label for="code">动态验证码</label>
@@ -225,21 +226,21 @@
                pattern="[0-9]*" maxlength="6" placeholder="验证器应用中的 6 位数字">
       </div>
 
-      <button type="submit" id="submit" style="margin-top:14px">登录</button>
+      <button type="submit" class="primary" id="submit" style="margin-top:14px">登录</button>
     </form>
   </details>
 
   <div class="msg" id="msg" role="alert"></div>
 
   <div class="links">
-    <button type="button" class="lnk" id="forgot">忘记密码？</button>
+    <button type="button" class="lnkbtn" id="forgot">忘记密码？</button>
     <!--
       排障说明在手册的「配置界面打不开」那一节。手册自带的那份要登录后才看得到，
       而会停在这张页上的恰恰是登不进去的人，所以这一条链的是站上那份。
       站上那份在站外：新开一页、不带本页窗口与来源。来源必须不给——
       这张页的地址栏里可能带着一次性令牌（?token=…），经 Referer 送出去就等于把门禁卡递了出去。
     -->
-    <a class="lnk" href="https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html#%E9%85%8D%E7%BD%AE%E7%95%8C%E9%9D%A2%E6%89%93%E4%B8%8D%E5%BC%80"
+    <a class="lnkbtn" href="https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html#%E9%85%8D%E7%BD%AE%E7%95%8C%E9%9D%A2%E6%89%93%E4%B8%8D%E5%BC%80"
        target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">登录故障排查</a>
   </div>
 </div>
@@ -262,7 +263,7 @@
   <button type="button" id="use-token" style="margin-top:14px">使用令牌进入</button>
   <div class="msg" id="forgot-msg"></div>
   <div class="links">
-    <button type="button" class="lnk" id="back">← 返回登录</button>
+    <button type="button" class="lnkbtn" id="back">← 返回登录</button>
   </div>
 </div>
 
@@ -348,8 +349,8 @@
     if ($('#passkey-field').parentElement !== passkeyParent) {
       passkeyParent.insertBefore($('#passkey-field'), view.otherMethodsFolded ? null : $('#pwd-fold'));
     }
-    $('#passkey').classList.toggle('secondary', view.passkeySecondary);
-    $('#submit').classList.toggle('secondary', view.passwordSecondary);
+    $('#passkey').classList.toggle('ghost', view.passkeySecondary);
+    $('#submit').classList.toggle('ghost', view.passwordSecondary);
     $('#passkey-or').classList.toggle('hidden', !view.passkeyDivider);
 
     $('#passkey-field').classList.toggle('hidden', !view.passkey);

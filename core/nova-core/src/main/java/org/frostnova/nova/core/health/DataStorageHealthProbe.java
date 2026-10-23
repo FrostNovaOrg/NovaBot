@@ -42,7 +42,7 @@ public class DataStorageHealthProbe implements HealthProbe {
     public HealthStatus check() {
         if (!storage.isConfigured()) {
             return HealthStatus.ok("只有本场数据；要跨场次的累计数据，"
-                    + "就在设置页「采集」组里填 spring.data.redis.host，填完即时生效，不用重启");
+                    + "在 设置 › 采集 › 累计数据 Redis · 地址 里填，填完即时生效，不用重启");
         }
 
         String target = storage.describeTarget();

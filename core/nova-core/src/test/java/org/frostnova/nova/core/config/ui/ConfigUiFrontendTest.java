@@ -1468,8 +1468,7 @@ class ConfigUiFrontendTest {
     private static final List<String> SETUP_CONTROLS = List.of(
             "setup-back", "setup-next", "setup-why", "setup-skip",
             "setup-lock", "setup-pwd", "setup-pwd2", "setup-passkey",
-            "setup-test-bot", "setup-addr", "setup-hport", "setup-wport",
-            "setup-htoken", "setup-wtoken",
+            "setup-test-bot",
             "setup-send-target", "setup-send", "setup-got", "setup-not-got", "setup-tips",
             "setup-defaults", "setup-enter");
 
@@ -1522,6 +1521,16 @@ class ConfigUiFrontendTest {
             }
             if (!scripts.contains("$('#" + id + "')")) {
                 bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        String botFields = sources.getOrDefault("bot-fields.js", "");
+        if (!view.contains("botFieldsHtml('setup', at, 'password')")) {
+            bad.add("设置引导没有使用共用的机器人连接字段");
+        }
+        for (String suffix : List.of("addr", "hport", "htoken", "wport", "wtoken")) {
+            if (!botFields.contains("input('" + suffix + "'")) {
+                bad.add("共用连接表单缺少字段 " + suffix);
             }
         }
 

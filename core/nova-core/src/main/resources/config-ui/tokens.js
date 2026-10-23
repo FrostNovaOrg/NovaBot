@@ -51,16 +51,8 @@ export function clearIssuedToken() {
 }
 
 function issueFormHtml() {
-  return '<p class="hint">签发只读访问令牌需<b>再次输入</b>控制台密码'
-    + (store.totpRequired ? '与动态验证码' : '')
-    + '。若仅凭当前已登录的会话即可签发，借用一台未锁屏的电脑就能签出令牌，'
-    + '而签出的令牌长期有效。签发属于低频操作，再次验证可杜绝这种情况。</p>'
-
-    + '<div class="row"><label for="tk-label">令牌名称</label>'
+  return '<div class="row"><label for="tk-label">令牌名称</label>'
     + '<input id="tk-label" name="label" maxlength="40" placeholder="例如：客厅的电脑" autocomplete="off"></div>'
-    + '<div class="row"><label></label><span class="hint" style="margin:0;flex:1;min-width:220px">'
-    + '名称将原样显示在下方列表中，日后单独吊销该令牌时以此识别。'
-    + '<b>请勿填写含真实姓名的设备名</b>，例如「某某的 MacBook」会将他人姓名保存在本服务器上。</span></div>'
 
     // 浏览器把紧挨着密码框的文本框当成登录名。「签给谁」里的名字会原样留在清单里，
     // 而这一页正叮嘱别填带真名的机器名。密码框前面放一个隐藏的用户名框，登录名只进这一框。

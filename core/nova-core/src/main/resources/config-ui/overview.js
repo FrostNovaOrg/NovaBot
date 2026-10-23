@@ -7,7 +7,7 @@
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
 import {extAttrs} from './manual-link.js';
-import {homeModel, stationHref} from './home-model.js';
+import {healthText, homeModel, stationHref} from './home-model.js';
 import {considerSetupRedirect, pageStatus, refreshPages} from './main.js';
 import {store} from './store.js';
 
@@ -170,8 +170,8 @@ function renderProbes(model) {
     ? model.probes.map(item =>
         '<div class="probe"><span class="lamp ' + esc(item.lamp) + ' p-lamp"></span>'
         + '<div class="p-nm">' + esc(item.name) + '</div>'
-        + '<div class="p-body"><div class="p-cc">' + esc(item.summary) + '</div>'
-        + (item.advice ? '<div class="p-ad">' + esc(item.advice) + '</div>' : '')
+        + '<div class="p-body"><div class="p-cc" title="' + esc(item.summary) + '">' + esc(healthText(item.summary)) + '</div>'
+        + (item.advice ? '<div class="p-ad">' + esc(healthText(item.advice)) + '</div>' : '')
         + '</div></div>').join('')
     : '<div class="empty">暂无可用探针</div>';
 }
@@ -184,17 +184,22 @@ function renderStrip(model) {
     return;
   }
 
+  let group = '';
   box.innerHTML = model.events.map(item => {
+    const label = item.group === 'attention' ? '需要处理' : '其他事件';
+    const heading = item.group !== group ? '<h4 class="event-group">' + label + '</h4>' : '';
+    group = item.group;
     if (item.href) {
-      return '<a class="tl-more" href="' + esc(item.href) + '">' + esc(item.text) + '</a>';
+      return heading + '<a class="tl-more" href="' + esc(item.href) + '">' + esc(item.text) + '</a>';
     }
     const level = item.level === 'error' ? 'error' : (item.level === 'warn' ? 'warn' : 'info');
     const tone = level === 'error' ? ' r-err' : (level === 'warn' ? ' r-warn' : '');
     const where = item.channel || item.streamer || '';
-    return '<div class="tl-row' + tone + '">'
+    return heading + '<div class="tl-row' + tone + '">'
       + '<div class="tl-t">' + esc(clock(item.at)) + '</div>'
       + '<div class="tl-rail"><span class="d ' + level + '"></span><span class="l"></span></div>'
       + '<div class="tl-c"><div class="tl-hd"><span>' + esc(item.text) + '</span>'
+      + (item.group === 'attention' && item.count > 1 ? '<span class="tl-x">×' + item.count + '，最近 ' + esc(clock(item.at)) + '</span>' : '')
       + (where ? '<span class="tl-x">' + esc(where) + '</span>' : '')
       + '</div></div></div>';
   }).join('');
@@ -267,6 +272,20 @@ export async function refreshHome() {
       api('/status'), store.role === 'MEMBER' ? Promise.resolve(null) : api('/login'), api('/timeline?date=' + today()),
       api('/timeline?date=' + today() + '&problems=true').catch(() => null),
     ]);
+    if (problems) {
+      try {
+        let cursor = problems.nextCursor;
+        const visited = new Set();
+        while (cursor && !visited.has(cursor)) {
+          visited.add(cursor);
+          const page = await api('/timeline?date=' + today() + '&problems=true&cursor=' + encodeURIComponent(cursor));
+          problems.events = (problems.events || []).concat(page.events || []);
+          cursor = page.nextCursor;
+        }
+      } catch (e) {
+        // 未能取全时仍保留已读记录，其余条数由日志入口说明。
+      }
+    }
     const extra = store.role === 'MEMBER' ? {pages: [], pluginDone: {}} : await pluginFacts(status, login);
     if (considerSetupRedirect(status, login)) return status;
     renderStatus(status);
@@ -330,8 +349,8 @@ export function healthRows(list, emptyText) {
     ? list.map(h =>
         '<div class="row"><span class="dot ' + esc(h.level) + '"></span>' +
         '<span class="who">' + esc(h.name) + '</span>' +
-        '<span class="sum">' + esc(h.summary) + '</span>' +
-        (h.advice ? '<span class="advice">' + esc(h.advice) + '</span>' : '') +
+        '<span class="sum" title="' + esc(h.summary) + '">' + esc(healthText(h.summary)) + '</span>' +
+        (h.advice ? '<span class="advice">' + esc(healthText(h.advice)) + '</span>' : '') +
         '</div>').join('')
     : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
 }

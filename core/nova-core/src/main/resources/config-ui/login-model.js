@@ -76,7 +76,7 @@ export function loginView(state) {
     foldLabel: oidc ? '其他登录方式' : '使用密码登录',
     otherMethodsFirstControl: passkey ? 'passkey' : 'password',
     passkeySecondary: passkey && oidc,
-    passwordSecondary: oidc,
+    passwordSecondary: false,
     passkeyDivider: passkey && !oidc,
     firstButton: oidc && (!passwordInitiallyOpen || locked) ? 'oidc' : (passkey ? 'passkey' : 'password'),
     passwordFolded: passkey || oidc,
