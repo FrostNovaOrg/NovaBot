@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 推送 main 与版本标签；main 推送完成后查询 CI 和依赖漏洞读数。
+# 推送 main 与版本标签；main 推送完成后查询 CI，并从 CI 运行日志读依赖漏洞计数。
 set -u
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR="$SCRIPT_DIR/../.."
@@ -14,7 +14,7 @@ usage() {
 默认推 main，只接受 main 和已存在的 v* 标签；树不净时拒绝推送。
 --pre-push-check CMD：推送前运行 CMD <仓根>，成功才推送。
 push.sh [--repo DIR] [--github-repo OWNER/NAME] --deps <提交>
---deps：只打印依赖漏洞读数，不推送；读数不影响 CI 退码。
+--deps：只打印依赖漏洞读数（取自该提交 CI 运行的日志），不推送；读数不影响 CI 退码。
 退码：1 树不净或推送失败；2 参数错误；3 推前检查失败；main 的其余退码同 ci-status.sh。
 HELP
 }
@@ -49,39 +49,25 @@ fi
 [[ "$GH_REPO_CI" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "🛑 GitHub 仓名要用 OWNER/NAME"; exit 2; }
 
 dependency_status() {
-  local full id tmp out rc m n p
+  local full id job log line
   full=$(git -C "$R" rev-parse -q --verify "${1}^{commit}" 2>/dev/null) \
-    || { echo "依赖漏洞：读不到／没扫全（主线仓里没有提交 ${1}）"; return 0; }
-  # 使用该提交最新一趟已完成的 push 运行附件。
+    || { echo "依赖漏洞：读不到（主线仓里没有提交 ${1}）"; return 0; }
+  # 使用该提交最新一趟已完成的 push 运行。
   id=$(gh run list -R "$GH_REPO_CI" --workflow ci.yml --commit "$full" --event push --status completed \
          --json databaseId --jq '.[0].databaseId // empty' 2>&1) \
-    || { echo "依赖漏洞：读不到／没扫全（gh 查不通：$(printf '%s' "$id" | tail -n 1 | cut -c1-160)）"; return 0; }
-  [ -n "$id" ] || { echo "依赖漏洞：读不到／没扫全（查不到提交 ${full:0:8} 跑完的 CI 运行）"; return 0; }
-  tmp=$(mktemp -d) || { echo "依赖漏洞：读不到／没扫全（建不了临时目录）"; return 0; }
-  # 复用该提交的汇总脚本与报告布局，保持和 CI 相同的条数及完整性检查。
-  mkdir -p "$tmp/w"
-  if ! git -C "$R" archive -o "$tmp/src.tar" "$full" .github pom.xml 2>/dev/null \
-       || ! tar -x -f "$tmp/src.tar" -C "$tmp/w" 2>/dev/null \
-       || [ ! -f "$tmp/w/.github/scripts/summarize-dependency-check.sh" ]; then
-    echo "依赖漏洞：读不到／没扫全（提交 ${full:0:8} 里取不出 .github/scripts/summarize-dependency-check.sh）"
-  elif ! gh run download "$id" -R "$GH_REPO_CI" -n dependency-check-reports -D "$tmp/r" > /dev/null 2>&1; then
-    echo "依赖漏洞：读不到／没扫全（run ${id} 的附件 dependency-check-reports 取不到）"
-  else
-    cp -R "$tmp/r/." "$tmp/w/"
-    out=$(cd "$tmp/w" && chmod +x .github/scripts/*.sh && env GITHUB_STEP_SUMMARY="$tmp/sum.md" SCAN_OUTCOME=success \
-            NVD_API_KEY=x SCAN_SOURCES='本机复算' bash .github/scripts/summarize-dependency-check.sh 2>&1); rc=$?
-    m=$(sed -n 's/^报告 \([0-9]*\) 份.*/\1/p' "$tmp/sum.md" 2>/dev/null | head -n 1)
-    n=$(sed -n 's/.*发现 \([0-9]*\) 条 CVSSv3.*/\1/p' "$tmp/sum.md" 2>/dev/null | head -n 1)
-    p=$(sed -n 's/.*报告有 \([0-9]*\) 项问题.*/\1/p' <<< "$out" | head -n 1)
-    if [ "$rc" != 0 ]; then echo "依赖漏洞：读不到／没扫全（CI 汇总脚本退 ${rc}：$(printf '%s' "$out" | tail -n 1 | cut -c1-160)）"
-    elif [ -n "$p" ] || grep -q '⚠️' "$tmp/sum.md"; then
-      echo "依赖漏洞：读不到／没扫全（CI 汇总：报告有 ${p:-?} 项问题，$(sed -n 's/.*（\(可判 [0-9]*\/[0-9]* 份\)）.*/\1/p' "$tmp/sum.md" | head -n 1)；可判的里高危 ${n:-0} 条）"
-    elif grep -q '✅ 本次未发现' "$tmp/sum.md"; then echo "依赖漏洞：高危 0 条（${m:-?} 份报告）"
-    elif [ -n "$n" ]; then echo "依赖漏洞：高危 ${n} 条（${m:-?} 份报告）"
-    else echo "依赖漏洞：读不到／没扫全（CI 汇总的结论读不出）"
-    fi
-  fi
-  rm -rf "$tmp"; return 0
+    || { echo "依赖漏洞：读不到（gh 查不通：$(printf '%s' "$id" | tail -n 1 | cut -c1-160)）"; return 0; }
+  [ -n "$id" ] || { echo "依赖漏洞：读不到（查不到提交 ${full:0:8} 跑完的 CI 运行）"; return 0; }
+  # CI 不公开扫描报告，计数行由 .github/scripts/summarize-dependency-check.sh 打进 job「依赖漏洞扫描」的日志。
+  job=$(gh run view "$id" -R "$GH_REPO_CI" --json jobs \
+          --jq '[.jobs[] | select(.name == "依赖漏洞扫描")][0].databaseId // empty' 2>/dev/null)
+  [ -n "$job" ] || { echo "依赖漏洞：读不到（run ${id} 里取不到 job「依赖漏洞扫描」）"; return 0; }
+  log=$(gh run view --job "$job" -R "$GH_REPO_CI" --log 2>/dev/null) \
+    || { echo "依赖漏洞：读不到（job ${job} 的日志取不到）"; return 0; }
+  # 日志行形如「job 名<TAB>步骤名<TAB>时间戳 正文」；job 名不带全角冒号，截到的是正文里那处。
+  line=$(printf '%s\n' "$log" | grep -F '依赖漏洞扫描：' | tail -n 1)
+  [ -n "$line" ] || { echo "依赖漏洞：读不到（job ${job} 的日志里没有「依赖漏洞扫描：」那一行）"; return 0; }
+  echo "依赖漏洞：${line#*依赖漏洞扫描：}"
+  return 0
 }
 if [ "$DEPS_ONLY" = 1 ]; then dependency_status "$DEPS_COMMIT"; exit 0; fi
 [ ${#refs[@]} -gt 0 ] || refs=(main)
