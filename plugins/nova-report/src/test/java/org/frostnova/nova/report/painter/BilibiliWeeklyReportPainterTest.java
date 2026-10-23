@@ -2,6 +2,9 @@ package org.frostnova.nova.report.painter;
 
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.frostnova.nova.bilibili.model.Up;
+import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.core.util.HttpUtil;
 import org.frostnova.nova.core.analytics.WeeklyReport;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerCalendar;
@@ -32,6 +35,8 @@ import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.*;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.PushTarget;
@@ -210,12 +215,85 @@ class BilibiliWeeklyReportPainterTest {
         for (String token : List.of("本周观众", "每天流水", "开播日历", "本周场次", "较上周", "名单：")) assertFalse(text.contains(token), token);
     }
 
+    @Test @DisplayName("防止关掉弹幕卡后，较上周仍在讲弹幕")
+    void comparisonDisappearsWithComparableMessageCard() {
+        var source = data(false);
+        var comparisons = Map.of(
+                "messages", new org.frostnova.nova.core.analytics.StreamerInsights.Comparison(.5, null, null),
+                "durationSeconds", new org.frostnova.nova.core.analytics.StreamerInsights.Comparison(
+                        null, "unavailable", "直播时长记录不完整"));
+        var d = new WeeklyReport.Data(source.streamerName(), source.firstDay(), source.lastDay(), source.metrics(),
+                source.fans(), source.composition(), source.coverage(), source.daily(), source.chartMetric(),
+                comparisons, null, source.sessionRows(), source.hiddenSessions(), source.calendar());
+        assertNotNull(d.comparisons().get("messages").changeRatio(), "数据必须有可比较的弹幕");
+        var values = WeeklyReportLayout.defaults();
+        for (String key : WeeklyReportLayout.CARD_KEYS) values.put(key, false);
+        values.put("card_messages", true);
+        String shown = drawnText(recordLayout(values, d));
+        assertTrue(shown.contains("弹幕"));
+        assertTrue(shown.contains("较上周 +"));
+        values.put("card_messages", false);
+        values.put("card_fans", true);
+        values.put("days", false);
+        values.put("sessions", false);
+        String hidden = drawnText(recordLayout(values, d));
+        assertFalse(hidden.contains("弹幕"));
+        assertFalse(hidden.contains("较上周"), "关闭卡片后不应留下它的比较或比较说明");
+    }
+
+    @Test @DisplayName("防止每改一下周报就去调 B 站接口：成功和失败都按主播缓存")
+    void avatarsAreCachedPerStreamer() {
+        assertAll(() -> checkAvatarCache(true), () -> checkAvatarCache(false));
+    }
+
+    void checkAvatarCache(boolean available) throws Exception {
+        BilibiliApiUtil client;
+        if (available) {
+            client = api;
+            when(client.getUpInfoByUid(1L)).thenReturn(new Up(1L, "主播示例", 2L, streamer.getFace()));
+        } else {
+            var http = mock(HttpUtil.class);
+            when(http.getJson(anyString(), anyMap())).thenThrow(new IllegalStateException("offline"));
+            client = spy(new BilibiliApiUtil(http, new NovaBilibiliProperties(), mock(BilibiliRiskMetrics.class)));
+        }
+        var ticks = new AtomicLong();
+        var renderer = new BilibiliWeeklyReportPainter(factory, client, new NovaBilibiliProperties(),
+                ReportPalettes.factory(), ticks::get);
+        var d = data(false);
+        for (int i = 0; i < 3; i++) {
+            // 周报资料不带头像地址；每次创建资料，确保按 uid 复用。
+            var source = new LiveStreamerInfo(1L, "主播示例", 2L);
+            long start = System.nanoTime();
+            byte[] image = renderer.render(source, d, i == 1 ? "night" : "classic", WeeklyReportLayout.of(null));
+            double seconds = (System.nanoTime() - start) / 1_000_000_000d;
+            if (!available) System.out.printf(Locale.ROOT, "MISSING_AVATAR_PREVIEW_%d: %.3f s%n", i + 1, seconds);
+            assertEquals(900, ImageIO.read(new java.io.ByteArrayInputStream(image)).getWidth());
+        }
+        verify(client, times(1)).getUpInfoByUid(1L);
+        verify(client, times(available ? 1 : 0)).getBilibiliImage(anyString());
+        var lifetime = available ? Duration.ofHours(1) : Duration.ofMinutes(1);
+        var source = new LiveStreamerInfo(1L, "主播示例", 2L);
+        ticks.set(lifetime.minusSeconds(1).toNanos());
+        renderer.render(source, d);
+        verify(client, times(1)).getUpInfoByUid(1L);
+        ticks.set(lifetime.toNanos());
+        renderer.render(source, d);
+        verify(client, times(2)).getUpInfoByUid(1L);
+        // 不同主播不能拿到前一位的缓存（包括失败结果）。
+        renderer.render(new LiveStreamerInfo(3L, "另一位主播", 4L), d);
+        verify(client, times(1)).getUpInfoByUid(3L);
+    }
+
     CommonPainter recordLayout(JSONObject values) {
+        return recordLayout(values, data(true));
+    }
+
+    CommonPainter recordLayout(JSONObject values, WeeklyReport.Data data) {
         var p = spy(factory.create(900, 1200, true));
         var recording = mock(NovaCommonPainterFactory.class);
         when(recording.create(900, 1200, true, ReportPalette.DEFAULT)).thenReturn(p);
         new BilibiliWeeklyReportPainter(recording, api, new NovaBilibiliProperties())
-                .render(streamer, data(true), "classic", WeeklyReportLayout.of(values));
+                .render(streamer, data, "classic", WeeklyReportLayout.of(values));
         return p;
     }
 

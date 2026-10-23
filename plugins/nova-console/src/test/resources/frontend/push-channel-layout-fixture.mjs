@@ -278,8 +278,14 @@ globalThis.location = {hash: '', href: '', replace() {}, reload() {}};
 
 // 预览图在浏览器里经 createObjectURL 变成 img 的 src，node 上没有这一对
 let blobSeq = 0;
-globalThis.URL.createObjectURL = () => 'blob:preview-' + (++blobSeq);
-globalThis.URL.revokeObjectURL = () => {};
+const previewBlobs = new Map();
+const revokedPreviews = [];
+globalThis.URL.createObjectURL = blob => {
+  const url = 'blob:preview-' + (++blobSeq);
+  previewBlobs.set(url, blob);
+  return url;
+};
+globalThis.URL.revokeObjectURL = url => revokedPreviews.push(url);
 
 
 // —— 假接口 ——
@@ -319,9 +325,12 @@ const SESSIONS = [
 const requests = [];
 let saved = [];
 let emptyWeeklyPreview = false;
+let delayedWeeklyPreviews = null;
 globalThis.fetch = async (path, opt = {}) => {
   const url = String(path);
   requests.push({url, opt});
+  if (delayedWeeklyPreviews && /\/weekly-report\/[^/]+\/\d+\/preview$/.test(url))
+    return new Promise(resolve => delayedWeeklyPreviews.push({resolve, body: JSON.parse(opt.body)}));
   if (emptyWeeklyPreview && /\/weekly-report\/[^/]+\/\d+\/preview$/.test(url))
     return {ok: true, headers: {get: () => 'application/json'}, json: async () => ({
       summary: '甲 上周没有记录到开播。', text: '甲 上周没有记录到开播。'})};
@@ -620,6 +629,33 @@ await ask('周报行提供图片编辑，草稿预览跟着变，保存与恢复
   await settle();
   await push.save();
   same(Object.keys(saved[0].targets[0].messages[0].params || {}), [], '恢复默认清除版式覆盖');
+});
+
+// 故障：快速改两下，第一次的回包晚到，预览停在旧的那张。
+await ask('周报连续修改后旧回包晚到，仍显示第二次的图片', async () => {
+  await paint(GROUP, [message(WEEKLY)]);
+  if (!inputOf('本周观众')) edit(WEEKLY);
+  const image = () => all(rowOf(WEEKLY)).find(node => node.tagName === 'img');
+  await waitFor(() => !!image(), '初始预览图片');
+  const delayed = [];
+  delayedWeeklyPreviews = delayed;
+  try {
+    change(inputOf('本周观众'), false);
+    await waitFor(() => delayed.length === 1, '第一次修改已发出');
+    change(inputOf('数据卡片'), false);
+    await waitFor(() => delayed.length === 2, '第二次修改已发出');
+    same(delayed.map(item => [item.body.audience, item.body.cards]), [[false, true], [false, false]], '两次草稿');
+    delayed[1].resolve({ok: true, blob: async () => 'second-preview'});
+    await waitFor(() => previewBlobs.get(image()?.src) === 'second-preview', '第二次图片显示');
+    const current = image().src;
+    delayed[0].resolve({ok: true, blob: async () => 'first-preview'});
+    await settle();
+    same(previewBlobs.get(image()?.src), 'second-preview', '旧回包不得替换新图');
+    same(revokedPreviews.includes(current), false, '旧回包不得撤销正在显示的新图');
+  } finally {
+    delayedWeeklyPreviews = null;
+    for (const item of delayed) item.resolve({ok: false});
+  }
 });
 
 await ask('上周没有记录时编辑器显示真实文字', async () => {
