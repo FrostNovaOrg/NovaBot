@@ -45,14 +45,13 @@ final class TotpStepStore {
             return;
         }
         long step = initialStep;
-        String content = "";
+        String content = null;
         try {
             content = Files.readString(path());
         } catch (NoSuchFileException absent) {
             // 第一次使用时建立进度文件。
         }
-        // 空文件同样按还没有记录处理。
-        if (!content.isBlank()) {
+        if (content != null) {
             if (!content.matches("1\n[0-9a-f]{64}\n[0-9]+\n")) {
                 throw new IOException("二次验证记录格式不正确");
             }
@@ -83,9 +82,9 @@ final class TotpStepStore {
         String id = keyId(secret);
         Path path = path();
         DurableFiles.replace(path, "1\n" + id + "\n" + step + "\n", DurableFiles.OWNER_ONLY);
+        restrictToOwner(path);
         keyId = id;
         lastStep = step;
-        restrictToOwner(path);
     }
 
     /**
@@ -99,16 +98,18 @@ final class TotpStepStore {
     }
 
     /**
-     * 把文件权限收到仅属主可读写；文件系统不支持权限位或改不了时保持原样。
+     * 把文件权限收到仅属主可读写；文件系统不支持权限位时保持原样。
      */
-    private static void restrictToOwner(Path path) {
+    private static void restrictToOwner(Path path) throws IOException {
         try {
-            if (!Files.getPosixFilePermissions(path).equals(DurableFiles.OWNER_ONLY)) {
-                Files.setPosixFilePermissions(path, DurableFiles.OWNER_ONLY);
+            if (Files.getPosixFilePermissions(path).equals(DurableFiles.OWNER_ONLY)) {
+                return;
             }
-        } catch (IOException | UnsupportedOperationException | SecurityException unchanged) {
+        } catch (UnsupportedOperationException unchanged) {
             // 保持原样。
+            return;
         }
+        Files.setPosixFilePermissions(path, DurableFiles.OWNER_ONLY);
     }
 
     private static String keyId(String secret) {

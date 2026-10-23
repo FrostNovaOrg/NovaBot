@@ -17,6 +17,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -35,6 +36,8 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -429,7 +432,7 @@ class TotpStateContinuityTest {
             breakState();
             clock.set(NOW.plusSeconds(30));
             assertFalse(login(auth, code(60)));
-            assertEquals(2, notices(events));
+            assertEquals(1, notices(events));
         } finally {
             releaseLog(events);
         }
@@ -449,7 +452,7 @@ class TotpStateContinuityTest {
             assertEquals(1, notices(events));
             breakState();
             assertFalse(login(auth, code(30)));
-            assertEquals(2, notices(events));
+            assertEquals(1, notices(events));
         } finally {
             releaseLog(events);
         }
@@ -469,7 +472,7 @@ class TotpStateContinuityTest {
             auth.activateTotp(session, SECRET, step);
             breakState();
             assertFalse(login(auth, code(30)));
-            assertEquals(2, notices(events));
+            assertEquals(1, notices(events));
         } finally {
             releaseLog(events);
         }
@@ -541,13 +544,13 @@ class TotpStateContinuityTest {
         Files.createFile(statePath());
         var auth = service(SECRET);
         auth.start();
-        assertTrue(login(auth, code(30)));
+        assertFalse(login(auth, code(30)));
         assertFalse(login(auth, code(30)));
         var restarted = service(SECRET);
         restarted.start();
         assertFalse(login(restarted, code(30)));
         clock.set(NOW.plusSeconds(30));
-        assertTrue(login(restarted, code(60)));
+        assertFalse(login(restarted, code(60)));
     }
 
     @Test
@@ -560,12 +563,12 @@ class TotpStateContinuityTest {
             assumeFalse(Files.isWritable(dir), "当前用户不受目录权限位限制");
             var auth = service(SECRET);
             auth.start();
-            assertTrue(login(auth, code(30)));
+            assertFalse(login(auth, code(30)));
             var restarted = service(SECRET);
             restarted.start();
             assertFalse(login(restarted, code(30)));
             clock.set(NOW.plusSeconds(30));
-            assertTrue(login(restarted, code(60)));
+            assertFalse(login(restarted, code(60)));
         } finally {
             Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"));
         }
@@ -580,6 +583,126 @@ class TotpStateContinuityTest {
         var auth = service(SECRET);
         auth.start();
         assertTrue(login(auth, code(30)));
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(statePath()));
+    }
+
+    @Test
+    void case26() throws Exception {
+        var auth = service(SECRET);
+        auth.start();
+        assertTrue(login(auth, code(30)));
+        auth.stop();
+        Files.writeString(statePath(), "");
+        var restarted = service(SECRET);
+        restarted.start();
+        assertFalse(login(restarted, code(30)));
+        assertEquals("", Files.readString(statePath()));
+    }
+
+    @Test
+    void case27() throws Exception {
+        var auth = service(SECRET);
+        auth.start();
+        assertTrue(login(auth, code(30)));
+        auth.stop();
+        Files.writeString(statePath(), "\n");
+        var restarted = service(SECRET);
+        restarted.start();
+        assertFalse(login(restarted, code(30)));
+        assertEquals("\n", Files.readString(statePath()));
+    }
+
+    @Test
+    void case28() throws Exception {
+        var events = captureLog();
+        try {
+            var auth = service(SECRET);
+            auth.start();
+            clock.set(NOW.plusSeconds(3600));
+            assertTrue(login(auth, code(3630)));
+            clock.set(NOW);
+            assertFalse(login(auth, code(30)));
+            breakState();
+            assertFalse(login(auth, code(30)));
+            assertEquals(1, notices(events) + clockNotices(events));
+            Files.delete(statePath());
+            clock.set(NOW.plusSeconds(3660));
+            assertTrue(login(auth, code(3660)));
+            clock.set(NOW);
+            assertFalse(login(auth, code(30)));
+            assertEquals(1, notices(events) + clockNotices(events));
+        } finally {
+            releaseLog(events);
+        }
+    }
+
+    @Test
+    void case29() {
+        var events = captureLog();
+        var errorsOnly = new ThresholdFilter();
+        errorsOnly.setLevel("ERROR");
+        errorsOnly.start();
+        events.addFilter(errorsOnly);
+        try {
+            clock.set(NOW.plusSeconds(3600));
+            var auth = service(SECRET);
+            auth.start();
+            assertTrue(login(auth, code(3630)));
+            clock.set(NOW);
+            service(SECRET).start();
+            String message = clockNoticeText(events);
+            assertTrue(message.contains("novabot.core.log.console"));
+            assertTrue(message.contains("novabot.core.log.file"));
+            assertTrue(message.contains("INFO"));
+            assertTrue(message.contains("改回"));
+            assertEquals(1, events.list.size());
+        } finally {
+            releaseLog(events);
+        }
+    }
+
+    @Test
+    void case30() throws Exception {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "文件系统不支持 POSIX 权限位");
+        var auth = service(SECRET);
+        auth.start();
+        Files.setPosixFilePermissions(statePath(), PosixFilePermissions.fromString("rw-r--r--"));
+        Files.createFile(statePath().resolveSibling(statePath().getFileName() + ".tmp"));
+        assertTrue(login(auth, code(30)));
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(statePath()));
+    }
+
+    @Test
+    void case31() throws Exception {
+        checkRecording(new IOException());
+    }
+
+    @Test
+    void case32() throws Exception {
+        checkRecording(new UnsupportedOperationException());
+    }
+
+    private void checkRecording(Exception failure) throws Exception {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "文件系统不支持 POSIX 权限位");
+        var auth = service(SECRET);
+        auth.start();
+        Files.setPosixFilePermissions(statePath(), PosixFilePermissions.fromString("rw-r--r--"));
+        Files.createFile(statePath().resolveSibling(statePath().getFileName() + ".tmp"));
+        var events = captureLog();
+        try (var files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.setPosixFilePermissions(statePath(),
+                    PosixFilePermissions.fromString("rw-------"))).thenThrow(failure);
+            Files.setPosixFilePermissions(statePath(), PosixFilePermissions.fromString("rw-r--r--"));
+            assertFalse(login(auth, code(30)));
+            assertFalse(login(auth, code(30)));
+            assertEquals(1, notices(events));
+        } finally {
+            releaseLog(events);
+        }
+        clock.set(NOW.plusSeconds(30));
+        assertTrue(login(auth, code(60)));
         assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(statePath()));
     }
 }

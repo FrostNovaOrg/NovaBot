@@ -259,6 +259,10 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
 
     private final TotpStepStore totpSteps;
 
+    private boolean totpStartupNotice;
+
+    private boolean totpRuntimeNotice;
+
     private boolean totpStorageNotice;
 
     private boolean totpClockNotice;
@@ -498,7 +502,6 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             if (totpSteps != null) {
                 try {
                     totpSteps.record(secret, verifiedStep);
-                    totpStorageNotice = false;
                 } catch (IOException | RuntimeException e) {
                     noteTotpStorage();
                     throw new IllegalStateException("二次验证记录未能保存");
@@ -1184,8 +1187,7 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             if (totpSteps != null) {
                 try {
                     boolean consumed = totpSteps.consume(secret, step);
-                    totpStorageNotice = false;
-                    noteTotpClock();
+                    noteTotpClock(false);
                     return consumed;
                 } catch (IOException | RuntimeException e) {
                     noteTotpStorage();
@@ -1217,17 +1219,32 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
             if (totpSteps != null && isEnabled() && totpRequired()) {
                 try {
                     totpSteps.initialize(totpSecret);
-                    totpStorageNotice = false;
-                    noteTotpClock();
+                    noteTotpClock(true);
                 } catch (IOException | RuntimeException e) {
-                    noteTotpStorage();
+                    noteTotpStorage(true);
                 }
             }
         }
     }
 
     private void noteTotpStorage() {
-        if (!totpStorageNotice) {
+        noteTotpStorage(false);
+    }
+
+    private boolean takeTotpNotice(boolean startup) {
+        if (startup ? totpStartupNotice : totpRuntimeNotice) {
+            return false;
+        }
+        if (startup) {
+            totpStartupNotice = true;
+        } else {
+            totpRuntimeNotice = true;
+        }
+        return true;
+    }
+
+    private void noteTotpStorage(boolean startup) {
+        if (!totpStorageNotice && takeTotpNotice(startup)) {
             totpStorageNotice = true;
             log.error("二次验证记录暂时无法读写，请让程序可读写 {} 及其所在目录，文件内容不完整时从备份恢复，完成后重试。",
                     totpSteps.path());
@@ -1237,19 +1254,19 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     /**
      * 记录里最近一次登录的时间晚于服务器当前时间时，说明要等多久、急用时怎么进入。
      */
-    private void noteTotpClock() {
+    private void noteTotpClock(boolean startup) {
         Instant usableFrom = totpSteps.laterThanClockUntil();
         if (usableFrom == null) {
-            totpClockNotice = false;
             return;
         }
-        if (!totpClockNotice) {
+        if (!totpClockNotice && takeTotpNotice(startup)) {
             totpClockNotice = true;
             long seconds = Duration.between(clock.get(), usableFrom).getSeconds();
             log.error("服务器当前时间早于二次验证记录里最近一次登录的时间，服务器时钟可能往回校正过；"
                             + "在服务器时间追上之前，用验证器登录会失败。约 {} 分钟后（服务器时间 {} 以后）恢复正常登录。"
                             + "急需进入时，把 novabot.core.config-ui.auth.operator-token 改成 true 后重启，"
-                            + "用启动日志里的地址进入，用完改回 false。",
+                            + "用启动日志里的地址进入；日志只看错误或已关闭时，先把 novabot.core.log.console 或 "
+                            + "novabot.core.log.file 临时改为 INFO 后重启，用完把这些设置改回原值并把 operator-token 改回 false。",
                     (seconds + 59) / 60, TOTP_CLOCK_TIME.format(usableFrom));
         }
     }
