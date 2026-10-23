@@ -105,7 +105,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         int slot = CONTENT_WIDTH / 7;
         double max = data.daily().stream().filter(d -> d.sessions() > 0)
                 .map(d -> d.metrics().get(metric)).filter(java.util.Objects::nonNull)
-                .mapToDouble(Number::doubleValue).max().orElse(0);
+                .mapToDouble(Number::doubleValue).filter(Double::isFinite).max().orElse(0);
         p.drawRectangle(MARGIN, base, CONTENT_WIDTH, 2, COLOR_CARD);
         var numbers = new DecimalFormat("#,##0.#", DecimalFormatSymbols.getInstance(Locale.ROOT));
         numbers.setRoundingMode(RoundingMode.HALF_UP);
@@ -114,7 +114,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             var d = data.daily().get(i);
             Number value = d.metrics().get(metric);
             int x = MARGIN + i * slot + slot / 2;
-            boolean known = d.sessions() > 0 && value != null;
+            boolean known = d.sessions() > 0 && value != null && Double.isFinite(value.doubleValue());
             int height = known && max > 0 ? (int) Math.round(value.doubleValue() / max * 150) : 0;
             if (known) {
                 segment.add(new Point(x, base - height));
@@ -128,7 +128,7 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
             var d = data.daily().get(i);
             Number value = d.metrics().get(metric);
             int x = MARGIN + i * slot + slot / 2;
-            boolean known = d.sessions() > 0 && value != null;
+            boolean known = d.sessions() > 0 && value != null && Double.isFinite(value.doubleValue());
             if (known) {
                 int height = max > 0 ? (int) Math.round(value.doubleValue() / max * 150) : 0;
                 p.drawRoundedRectangle(x - 5, base - height - 5, 10, 10, 10, COLOR_NAME);
