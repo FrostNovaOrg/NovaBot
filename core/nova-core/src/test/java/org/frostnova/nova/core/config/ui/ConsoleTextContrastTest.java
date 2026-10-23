@@ -24,7 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 登录错误字、危险按钮上的字、淡底上的选中项与辅助字又看不清了（不到 WCAG 的 4.5:1）；
  * 日志页上今天没有条目的分类小标签，字看不清。
  * <p>
- * 读 product-ui.css 与 login.html 的三块色表（浅色、跟随系统的暗色、手动暗色），字色与底色
+ * 色表只有 product-ui.css 一份（登录页吐页时把它原样拼进去），三套配色各按浅色、跟随系统的暗色、
+ * 手动暗色经 {@link PaletteCss} 算出页面上真取到的值；字色与底色
  * 都从组件规则里现取 {@code color:var(--x)}、{@code background:var(--y)}，
  * 半透明底按 alpha 叠在下面那层上再算。规则改引了别的色，量的也跟着是新引的那个。
  * 规则里写了 opacity 的算量不出：它把字和底一起淡掉，色表里的字色已不是画出来的那个。
@@ -68,8 +69,6 @@ class ConsoleTextContrastTest {
     private static final List<Spot> LOGIN = List.of(
             new Spot("登录错误字", ".msg", List.of("surface")));
 
-    private static final Pattern TOKEN = Pattern.compile("--([a-z0-9-]+)\\s*:\\s*([^;]+);");
-
     private static final Pattern HEX = Pattern.compile("#([0-9a-fA-F]{6})");
 
     private static final Pattern RGBA = Pattern.compile(
@@ -83,23 +82,23 @@ class ConsoleTextContrastTest {
             "(?<![-\\w])background\\s*:\\s*var\\(--([a-z0-9-]+)\\)\\s*[;}]");
 
     @Test
-    @DisplayName("浅色、暗色两套主题下，状态字、错误字、危险按钮字与淡底上的字都到 4.5:1")
+    @DisplayName("三套配色的浅色、暗色下，状态字、错误字、危险按钮字与淡底上的字都到 4.5:1")
     void textStaysReadableInBothThemes() throws IOException {
         List<String> bad = new ArrayList<>();
         List<String> read = new ArrayList<>();
-        int measured = measure("app.css", "product-ui.css", APP, bad, read)
-                + measure("login.html", "login.html", LOGIN, bad, read);
+        int measured = measure("app.css", APP, bad, read)
+                + measure("login.html", LOGIN, bad, read);
 
         System.out.println("对比度读数：\n  " + String.join("\n  ", read));
-        assertTrue(measured >= (APP.size() + LOGIN.size()) * 3,
+        assertTrue(measured >= (APP.size() + LOGIN.size()) * PaletteCss.PALETTES.size() * 3,
                 "该量的组合没量全，只量了 " + measured + " 个:\n" + String.join("\n", bad));
         assertTrue(bad.isEmpty(), "这些字不到 " + MIN + ":1:\n" + String.join("\n", bad));
     }
 
-    private static int measure(String file, String paletteFile, List<Spot> spots,
+    private static int measure(String file, List<Spot> spots,
                                List<String> bad, List<String> read) throws IOException {
         String text = Files.readString(UI.resolve(file), StandardCharsets.UTF_8);
-        Map<String, Map<String, String>> themes = themes(paletteFile, Files.readString(UI.resolve(paletteFile), StandardCharsets.UTF_8), bad);
+        Map<String, Map<String, String>> themes = themes(Files.readString(UI.resolve("product-ui.css"), StandardCharsets.UTF_8));
         int measured = 0;
         for (Spot spot : spots) {
             String body = rule(text, spot.selector());
@@ -141,43 +140,20 @@ class ConsoleTextContrastTest {
     }
 
     /**
-     * 三块色表。暗色两块只重定义一部分时，没写的那几样照浅色那块继承
+     * 三套配色各三种明暗下，页面上真取到的值（键不带 -- 前缀）
      */
-    private static Map<String, Map<String, String>> themes(String file, String text, List<String> bad) {
+    private static Map<String, Map<String, String>> themes(String text) {
+        PaletteCss css = new PaletteCss(text);
         Map<String, Map<String, String>> out = new LinkedHashMap<>();
-        int lightAt = text.indexOf(":root{");
-        int media = text.indexOf("@media (prefers-color-scheme:dark)");
-        int systemAt = media < 0 ? -1 : text.indexOf(":root:not([data-theme=\"light\"]){", media);
-        int manualAt = text.indexOf(":root[data-theme=\"dark\"]{");
-        if (lightAt < 0 || systemAt < 0 || manualAt < 0) {
-            bad.add(file + " 三块色表没找全：浅色 " + lightAt + "，跟随系统的暗色 " + systemAt + "，手动暗色 " + manualAt);
-        }
-        Map<String, String> light = tokens(block(text, lightAt));
-        Map<String, String> systemDark = new LinkedHashMap<>(light);
-        systemDark.putAll(tokens(block(text, systemAt)));
-        Map<String, String> manualDark = new LinkedHashMap<>(light);
-        manualDark.putAll(tokens(block(text, manualAt)));
-        out.put("浅色", light);
-        out.put("跟随系统的暗色", systemDark);
-        out.put("手动暗色", manualDark);
-        return out;
-    }
-
-    private static String block(String text, int at) {
-        if (at < 0) {
-            return "";
-        }
-        int open = text.indexOf('{', at);
-        int close = text.indexOf('}', open);
-        return text.substring(open + 1, close);
-    }
-
-    private static Map<String, String> tokens(String block) {
-        Map<String, String> out = new LinkedHashMap<>();
-        // 去掉注释：注释里的「--paper 永远是白的」不是定义
-        Matcher m = TOKEN.matcher(block.replaceAll("(?s)/\\*.*?\\*/", ""));
-        while (m.find()) {
-            out.put(m.group(1), m.group(2).trim());
+        for (String palette : PaletteCss.PALETTES) {
+            for (Map.Entry<String, PaletteCss.State> mode : PaletteCss.modes(palette).entrySet()) {
+                if (mode.getKey().equals("系统深色下手动浅色")) continue;
+                Map<String, String> values = new LinkedHashMap<>();
+                css.resolved(mode.getValue()).forEach((name, value) -> {
+                    if (value != null) values.put(name.substring(2), value);
+                });
+                out.put(palette + " " + mode.getKey(), values);
+            }
         }
         return out;
     }

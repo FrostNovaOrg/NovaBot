@@ -538,7 +538,7 @@ tr:last-child td{border-bottom:none}
 .backups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:var(--fs-sm);color:var(--dim)}
 .backups select{background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 9px;font-size:var(--fs-sm)}
-/* 下拉框一律用自画的箭头，浅色、深色两档各配一色，见色表里的 --select-chevron。
+/* 下拉框一律用自画的箭头，每套配色的浅色、深色各配一色，见色表里的 --select-chevron。
    右侧给箭头留出位置，选项文字再长也不压到箭头上。
    认 body 而不只认 #app：推送页的抽屉、确认框为了盖住整页挂在 body 上，只认 #app 的话它们里面的
    下拉框还是浏览器原生的箭头。:is() 按括号里最重的 #app 计权重，各处 .xx select{background:…;padding:…}
@@ -740,10 +740,15 @@ details.adv .inner{padding:0 16px 16px}
 .pill.live{color:var(--live);border-color:var(--live)}
 .pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warnsoft)}
 .pill.ok{color:var(--ok);border-color:var(--ok);background:var(--oksoft)}
-/* 界面主题三态：一排药丸点一下就换，不进改动条 */
-.themechoice{display:flex;gap:8px;padding:4px 16px 12px}
-.themechoice .pill{padding:6px 14px;font-size:var(--fs-sm);cursor:pointer;font-family:inherit;
-  background:var(--surface)}
+/* 界面组：明暗三态与配色各一排药丸，点一下就换，不进改动条 */
+.themechoice{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:4px 16px 12px}
+.themechoice-name{min-width:3em;font-size:var(--fs-sm);color:var(--dim)}
+.themechoice .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;font-size:var(--fs-sm);
+  cursor:pointer;font-family:inherit;background:var(--surface)}
+/* 配色的色样：那一套自己的两种强调色斜着各占一半。--accent、--accent2 在色样上按它自己的
+   data-palette 重新取过（见 product-ui.css），所以三颗色样各是各的，不随当前配色变 */
+.palette-swatch{width:14px;height:14px;flex:none;border-radius:50%;border:1px solid var(--line);
+  background:linear-gradient(135deg,var(--accent) 50%,var(--accent2) 50%)}
 .themechoice .pill.cur{color:var(--accent-text);border-color:var(--accent);background:var(--soft)}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:var(--fs-sm);margin:8px 0 0}
 .kv dt{color:var(--dim)}

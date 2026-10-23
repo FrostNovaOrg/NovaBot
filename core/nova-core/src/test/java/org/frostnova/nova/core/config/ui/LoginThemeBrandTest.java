@@ -17,8 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 登录页由安全过滤器在 {@code /config/assets} 开门之前直接吐出来，因此它自成一张孤页：
  * 样式与图标都得自己带。控制台那边的 {@code theme.js} 与 {@code app.css} 这张页面引不到，
- * 主题那一手只能在 {@code <head>} 里用一小段同步脚本、按同一把偏好键设 {@code data-theme}，
- * token 也照三态再写一份。
+ * 主题那一手只能在 {@code <head>} 里用一小段同步脚本、按同一把偏好键设 {@code data-theme}；
+ * token 不另写，吐页时把 product-ui.css 原样拼进 {@code <style>}（见 {@link ConfigUiLoginPage}）。
  * <p>
  * 三类使用者会碰到的故障，一类一格：
  * <ul>
@@ -72,13 +72,15 @@ class LoginThemeBrandTest {
                 "登录页 head 里没有一段同步脚本在首帧前按偏好设 data-theme；"
                         + "选了深色的人到登录页仍是浅色");
 
-        // 三态缺一不可：手动深色、手动浅色时别被系统暗色盖掉、原生控件跟色
-        assertTrue(html.contains(":root[data-theme=\"dark\"]") || html.contains(":root[data-theme='dark']"),
+        // 三态缺一不可：手动深色、手动浅色时别被系统暗色盖掉、原生控件跟色。
+        // 量的是吐出去的那一页：token 在吐页时才拼进来，模板里没有
+        String page = ConfigUiLoginPage.html("");
+        assertTrue(page.contains(":root[data-theme=\"dark\"]") || page.contains(":root[data-theme='dark']"),
                 "登录页没有手动深色的 token 块，选了深色仍按系统色");
-        assertTrue(html.contains(":root:not([data-theme=\"light\"])")
-                        || html.contains(":root:not([data-theme='light'])"),
+        assertTrue(page.contains(":root:not([data-theme=\"light\"])")
+                        || page.contains(":root:not([data-theme='light'])"),
                 "登录页跟随系统的暗色块没排除手动浅色，系统暗色时选了浅色会被盖掉");
-        assertTrue(html.contains("color-scheme"),
+        assertTrue(page.contains("color-scheme"),
                 "登录页没写 color-scheme，表单控件的原生配色会与页面脱节");
     }
 

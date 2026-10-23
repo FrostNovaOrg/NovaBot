@@ -91,7 +91,7 @@ function ruleProps(css, selector) {
 
 // 控制台的眼睛按钮是小号次按钮（class="ghost sm"），落在 .secret 里再收一下宽度。
 // 它画出来的数值由四条规则按先后叠成：按钮基样 → 次按钮 → 小号 → .secret button；
-// 字号写的是档位变量，到 product-ui.css 里解成像素（登录页不载那两份样式，只能抄数）
+// 字号写的是档位变量，到 product-ui.css 里解成像素（登录页不载 app.css；product-ui.css 是吐页时原样拼进去的）
 const app = read('app.css');
 const tokens = read('product-ui.css');
 const layers = [':is(button,a):is(.primary,.ghost,.danger),.nv-btn,.nv-btn2', ':is(button,a).ghost,.nv-btn2',
@@ -108,7 +108,7 @@ const loginSecret = ruleProps(login, '.secret button');
 if (loginSecret) {
   for (const [name, value] of Object.entries(loginSecret)) {
     const token = /^var\((--fs-[\w-]+)\)$/.exec(value);
-    const px = token && new RegExp(token[1] + '\\s*:\\s*([\\d.]+px)').exec(login);
+    const px = token && new RegExp(token[1] + '\\s*:\\s*([\\d.]+px)').exec(tokens);
     if (px) loginSecret[name] = px[1];
   }
 }

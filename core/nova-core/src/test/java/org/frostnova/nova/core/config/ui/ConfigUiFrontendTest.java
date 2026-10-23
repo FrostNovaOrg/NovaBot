@@ -70,7 +70,7 @@ class ConfigUiFrontendTest {
      * 界面主题偏好那一把键：唯一允许写进浏览器存储的开口
      * <p>
      * 主题偏好不是秘密，要的就是刷新后还在。键名刻意避开任何像口令的词。
-     * 这一道缝只许走 THEME_KEY 一把键，且每一次 localStorage 出现都得是下面三种合法调用之一——
+     * 这一道缝只许走 THEME_KEY 与配色那一把（{@link #PALETTE_KEY}），且每一次 localStorage 出现都得是下面几种合法调用之一——
      * 注释里写成调用的样子不算（判在挖掉注释、留下字符串的码上），一行里另有一次写入也不跟着放行。
      * <p>
      * {@code getItem(主题键)} 只许在核心 theme.js、index.html、login.html；
@@ -93,6 +93,26 @@ class ConfigUiFrontendTest {
     private static final Pattern THEME_SET_CALL = Pattern.compile(
             "localStorage\\.setItem\\s*\\(\\s*" + THEME_KEY_TOKEN
                     + "\\s*,\\s*(?:THEME_LIGHT|THEME_DARK|'light'|\"light\"|'dark'|\"dark\")\\s*\\)");
+
+    /**
+     * 配色那一把键：与主题键同一种开口，同样不是秘密
+     * <p>
+     * {@code getItem(配色键)} 只许在核心 theme.js、index.html、login.html；
+     * {@code setItem(配色键, 值)} 只许在核心 theme.js，值只许三个配色 id 的常量或字面。没有 removeItem。
+     */
+    private static final String PALETTE_KEY = "novabot-palette";
+
+    /** 配色键：常量名，或它的字符串原文 */
+    private static final String PALETTE_KEY_TOKEN =
+            "(?:PALETTE_KEY|'" + PALETTE_KEY + "'|\"" + PALETTE_KEY + "\")";
+
+    private static final Pattern PALETTE_GET_CALL = Pattern.compile(
+            "localStorage\\.getItem\\s*\\(\\s*" + PALETTE_KEY_TOKEN + "\\s*\\)");
+
+    private static final Pattern PALETTE_SET_CALL = Pattern.compile(
+            "localStorage\\.setItem\\s*\\(\\s*" + PALETTE_KEY_TOKEN
+                    + "\\s*,\\s*(?:PALETTE_CLASSIC|PALETTE_PINK_BLUE|PALETTE_WARM"
+                    + "|'classic'|\"classic\"|'pink-blue'|\"pink-blue\"|'warm'|\"warm\")\\s*\\)");
 
     private static final Pattern LOCAL_STORAGE = Pattern.compile("localStorage");
 
@@ -538,7 +558,7 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 主题偏好那把键所在的 localStorage 调用：唯一放行的口子
+     * 主题偏好与配色那两把键所在的 localStorage 调用：唯一放行的口子
      * <p>
      * 认调用形状（键作第一参数、写入值只许四个字面），从 {@code localStorage} 那一处往右看，
      * 一次只认一回——同一行里还有别的写入不跟着放行。
@@ -547,10 +567,11 @@ class ConfigUiFrontendTest {
     private static boolean legalThemeCallAt(String name, String rest) {
         boolean coreThemeJs = name.equals("theme.js");
         boolean mayRead = coreThemeJs || name.equals("index.html") || name.equals("login.html");
-        if (THEME_GET_CALL.matcher(rest).lookingAt()) return mayRead;
+        if (THEME_GET_CALL.matcher(rest).lookingAt() || PALETTE_GET_CALL.matcher(rest).lookingAt()) return mayRead;
         if (!coreThemeJs) return false;
         return THEME_REMOVE_CALL.matcher(rest).lookingAt()
-                || THEME_SET_CALL.matcher(rest).lookingAt();
+                || THEME_SET_CALL.matcher(rest).lookingAt()
+                || PALETTE_SET_CALL.matcher(rest).lookingAt();
     }
 
     @Test

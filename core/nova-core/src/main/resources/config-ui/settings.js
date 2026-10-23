@@ -19,7 +19,10 @@ import {CLEAR, advancedShown, arrangeGroups, canonicalValue, currentGroupId, def
   isChanged, isDangerous, dangerOf, isVisible, secretDraft, timeOfDay, timeOfDayValue}
   from './settings-model.js';
 import {store} from './store.js';
-import {applyTheme, readTheme, subscribeTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT} from './theme.js';
+import {
+  applyPalette, applyTheme, PALETTE_CLASSIC, PALETTE_PINK_BLUE, PALETTE_WARM, readPalette, readTheme,
+  subscribePalette, subscribeTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT,
+} from './theme.js';
 
 /** 告警那一组的标识，它要额外接三张卡 */
 const ALERT_GROUP = 'alert';
@@ -670,7 +673,7 @@ function buildRow(field, groupAllRestart) {
 }
 
 /**
- * 界面主题那一组：深色／浅色／跟随系统
+ * 界面那一组：深色／浅色／跟随系统，以及配色：经典／粉蓝／暖阳
  *
  * 纯前端的偏好，只影响这一个浏览器，不进服务端配置、不进改动条。
  * 摆在组目录最上方：外观是进来第一眼的事，不该埋在工程用的组里。
@@ -690,10 +693,10 @@ function buildThemeGroup() {
   box.appendChild(title);
 
   const desc = el('div', 'card-desc');
-  desc.textContent = '可选择深色、浅色或跟随系统。此设置仅保存在当前浏览器中，不写入服务器配置。';
+  desc.textContent = '可选择深色、浅色或跟随系统，以及配色。此设置仅保存在当前浏览器中，不写入服务器配置。';
   box.appendChild(desc);
 
-  const row = el('div', 'themechoice');
+  const row = choiceRow('明暗');
   const current = readTheme();
   for (const [value, label] of [
     [THEME_AUTO, '跟随系统'],
@@ -710,7 +713,45 @@ function buildThemeGroup() {
     row.appendChild(btn);
   }
   box.appendChild(row);
+
+  // 配色与明暗互不相干：三套配色各有浅深，换哪一样都不动另一样
+  const paletteRow = choiceRow('配色');
+  const palette = readPalette();
+  for (const [value, label] of [
+    [PALETTE_CLASSIC, '经典'],
+    [PALETTE_PINK_BLUE, '粉蓝'],
+    [PALETTE_WARM, '暖阳'],
+  ]) {
+    const btn = el('button', 'pill' + (value === palette ? ' cur' : ''));
+    btn.type = 'button';
+    btn.setAttribute('data-palette-choice', value);
+    btn.setAttribute('aria-pressed', String(value === palette));
+    // 色样画的是那一套自己的强调色，不随当前配色变（见 product-ui.css 里 .palette-swatch 那条）
+    const swatch = el('span', 'palette-swatch');
+    swatch.setAttribute('data-palette', value);
+    swatch.setAttribute('aria-hidden', 'true');
+    btn.appendChild(swatch);
+    btn.appendChild(document.createTextNode(label));
+    btn.addEventListener('click', () => applyPalette(value));
+    paletteRow.appendChild(btn);
+  }
+  box.appendChild(paletteRow);
   return box;
+}
+
+/**
+ * 「界面」组里的一排选项，打头一个小标题，读屏念成一组
+ * @param name 这一排的名字
+ * @return {HTMLElement} 那一排
+ */
+function choiceRow(name) {
+  const row = el('div', 'themechoice');
+  row.setAttribute('role', 'group');
+  row.setAttribute('aria-label', name);
+  const head = el('span', 'themechoice-name');
+  head.textContent = name;
+  row.appendChild(head);
+  return row;
 }
 
 /**
@@ -729,6 +770,20 @@ function markThemeChoice(value) {
 }
 
 subscribeTheme(markThemeChoice);
+
+/**
+ * 配色换了：只改那三颗钮的亮暗。道理同 markThemeChoice，不重画设置页
+ * @param value 新的配色
+ */
+function markPaletteChoice(value) {
+  for (const btn of document.querySelectorAll('[data-palette-choice]')) {
+    const on = btn.getAttribute('data-palette-choice') === value;
+    btn.classList.toggle('cur', on);
+    btn.setAttribute('aria-pressed', String(on));
+  }
+}
+
+subscribePalette(markPaletteChoice);
 
 /**
  * 建出一组

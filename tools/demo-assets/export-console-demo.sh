@@ -55,8 +55,9 @@ shutil.copytree(demo / 'data', dest / 'console-demo/data')
 shutil.copyfile(demo / 'demo.js', dest / 'console-demo/demo.js')
 (dest / 'console-demo/recording.js').write_text('window.NOVA_CONSOLE_DEMO = ' + json.dumps(index, ensure_ascii=False, indent=2) + ';\n')
 injection = '<script src="/console-demo/recording.js"></script>\n<script src="/console-demo/demo.js"></script>\n'
-# The backend splices these scripts into the login page in place of the marker lines.
-splices = {'//@@password-reveal@@': 'password-reveal.js', '//@@login-model@@': 'login-model.js'}
+# The backend splices these scripts and the shared stylesheet into the login page in place of the marker lines.
+splices = {'//@@password-reveal@@': 'password-reveal.js', '//@@login-model@@': 'login-model.js',
+           '/*@@product-ui@@*/': 'product-ui.css'}
 def render(source):
     text = source.read_text()
     for marker, script in splices.items():
@@ -64,7 +65,7 @@ def render(source):
     # The static export has one fixed set of files, so asset URLs drop the version segment.
     text = (text.replace('{{nova-prefix}}', '').replace('{{nova-prefix:js}}', '')
             .replace('/{{nova-asset-version}}', ''))
-    leftover = re.search(r'\{\{nova-[^}]*\}\}|//@@[^@\s]*@@', text)
+    leftover = re.search(r'\{\{nova-[^}]*\}\}|//@@[^@\s]*@@|/\*@@[^@\s]*@@\*/', text)
     if leftover:
         raise SystemExit('Unhandled placeholder in ' + source.name + ': ' + leftover.group())
     return text.replace('</head>', injection + '</head>', 1)

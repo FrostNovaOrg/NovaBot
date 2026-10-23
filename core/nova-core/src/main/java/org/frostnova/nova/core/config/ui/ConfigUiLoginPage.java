@@ -19,6 +19,9 @@ import java.nio.charset.StandardCharsets;
  * <p>
  * 拼不上时<b>抛而不是静默略过</b>：少了那段脚本的登录页照样渲染得出来，只是点什么都不动，
  * 而那与「服务器没起来」在使用者眼里长得一样。
+ * <p>
+ * 色表同理：{@code product-ui.css} 原样拼进登录页的 {@code <style>}，登录页与控制台用的是同一份配色，
+ * 跟着本浏览器选过的配色与浅深走。
  */
 final class ConfigUiLoginPage {
     /**
@@ -32,11 +35,18 @@ final class ConfigUiLoginPage {
      */
     static final String REVEAL_MARKER = "//@@password-reveal@@";
 
+    /**
+     * 色表那一份。拼进 {@code <style>}：登录页不取外部资源，自带一份色表就会与控制台对不上
+     */
+    static final String PALETTE_MARKER = "/*@@product-ui@@*/";
+
     private static final String PAGE_RESOURCE = "config-ui/login.html";
 
     private static final String MODEL_RESOURCE = "config-ui/login-model.js";
 
     private static final String REVEAL_RESOURCE = "config-ui/password-reveal.js";
+
+    private static final String PALETTE_RESOURCE = "config-ui/product-ui.css";
 
     /**
      * 拼好的页面，前缀的占位还在。类路径资源在运行期不会变，因此只拼一次；
@@ -63,7 +73,7 @@ final class ConfigUiLoginPage {
             synchronized (ConfigUiLoginPage.class) {
                 if (composed == null) {
                     composed = compose(read(PAGE_RESOURCE), read(MODEL_RESOURCE),
-                            read(REVEAL_RESOURCE));
+                            read(REVEAL_RESOURCE), read(PALETTE_RESOURCE));
                 }
                 cached = composed;
             }
@@ -108,6 +118,25 @@ final class ConfigUiLoginPage {
         String withReveal = page.replaceFirst(java.util.regex.Pattern.quote(REVEAL_MARKER),
                 java.util.regex.Matcher.quoteReplacement(reveal));
         return compose(withReveal, model);
+    }
+
+    /**
+     * 把判定、口令框显示／隐藏与色表三段都拼进页面
+     * @param page 页面模板
+     * @param model 登录判定脚本
+     * @param reveal 口令框显示／隐藏脚本
+     * @param palette 色表 product-ui.css
+     * @return 拼好的页面
+     */
+    static String compose(String page, String model, String reveal, String palette) {
+        if (!page.contains(PALETTE_MARKER)) {
+            throw new IllegalStateException("登录页里找不到色表的占位 " + PALETTE_MARKER
+                    + "，拼不上它登录页没有颜色");
+        }
+
+        String withPalette = page.replaceFirst(java.util.regex.Pattern.quote(PALETTE_MARKER),
+                java.util.regex.Matcher.quoteReplacement(palette));
+        return compose(withPalette, model, reveal);
     }
 
     private static String read(String resource) throws IOException {

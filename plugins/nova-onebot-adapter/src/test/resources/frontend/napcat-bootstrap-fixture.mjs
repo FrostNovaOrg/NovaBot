@@ -4,7 +4,8 @@ import {runInNewContext} from 'node:vm';
 import {strict as assert} from 'node:assert';
 
 const html = readFileSync(new URL('../../../main/resources/config-ui-pages/napcat-bootstrap.html', import.meta.url), 'utf8');
-const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
+// 引导脚本在 body 里；head 里那一段只在首帧前设主题与配色，不归这里量
+const script = html.slice(html.indexOf('</head>')).match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
 if (!script) throw new Error('没有找到 NapCat 引导页脚本');
 
 async function bootstrap({offline, invalid = 0} = {}) {
