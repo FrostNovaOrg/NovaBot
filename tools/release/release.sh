@@ -42,7 +42,7 @@ auto 只许试装：读取 --host 上的 novabot@ 实例，在 X.Y.90 与 X.Y.91
 EOF
 }
 arg_stop(){ echo "🛑 停在：参数（$1）"; exit 2; }
-release_name_is_version(){ [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[1-9][0-9]*)?$ ]]; }
+source "$(dirname "${BASH_SOURCE[0]}")/version.sh"
 need_value(){ [ "$#" -ge 2 ] && [ -n "$2" ] && [[ "$2" != --* ]] || arg_stop "$1 缺少值"; }
 VER=""; REPO=""; SANDBOX=0; FROM=preflight; WAIT_MAX=360; NOWAIT=0
 TRIAL=0; SB_ROUTE=""; COMMIT=""; PUBLISH_ONLY=0; NOTES_CHECK=""; TARGET_FILE=""
@@ -300,21 +300,7 @@ if [ "$TRIAL" = 1 ]; then
   CURV=$(awk '/<parent>/{p=1} /<\/parent>/{p=0; next} !p && /<version>/{sub(/.*<version>/, ""); sub(/<\/version>.*/, ""); print; exit}' pom.xml)
   release_name_is_version "$CURV" || stop preflight "根 pom 版本号须如 5.9.3 或 6.0.0-beta.1（N 为正整数），读到「${CURV}」"
   [ "$CURV" != "$VER" ] || stop preflight "试装号 ${VER} 与现版本相同"
-  PAT=">${CURV//./\\.}<"
-  EXR=templates/nova-example-plugin/README.md
-  [ -f "$EXR" ] || stop preflight "克隆里没有 ${EXR}"
-  grep -q "$PAT" "$EXR" || stop preflight "${EXR} 里没有 ${CURV}（版本文件变了，人来看）"
-  n=0
-  while IFS= read -r p; do
-    grep -q "$PAT" "$p" || continue
-    sed -i '' "s#${PAT}#>${VER}<#g" "$p" || stop preflight "改不了 $p"
-    say "试装改版本号：${p}"
-    n=$((n+1))
-  done < <(git ls-files -- 'pom.xml' '*/pom.xml'; echo "$EXR")
-  [ "$n" -gt 1 ] || stop preflight "一份 pom 也没改到"
-  left=$(git ls-files -- 'pom.xml' '*/pom.xml' | while IFS= read -r p; do grep -l "$PAT" "$p"; done)
-  [ -z "$left" ] || stop preflight "改完仍有 pom 带 ${CURV}：${left}"
-  grep -q ">${VER//./\\.}<" "$EXR" && ! grep -q "$PAT" "$EXR" || stop preflight "改完 ${EXR} 不是 ${VER}"
+  release_set_version "$CURV" "$VER" "试装改版本号"
   git -c user.name='NovaBot trial' -c user.email='trial@localhost' commit -q -am "trial build ${VER}" || stop preflight "克隆里提交失败"
   git tag "$TAG" || stop preflight "克隆里打 ${TAG} 失败"
   say "试装：克隆 ${REPO}；${n} 件 ${CURV}→${VER}（$((n-1)) 份 pom＋${EXR}），提交 $(git rev-parse --short HEAD)、克隆内标签 ${TAG}（不推）"
@@ -341,11 +327,11 @@ HEAD=$(git rev-parse --short HEAD)
 if should preflight; then
   say "── preflight（HEAD ${HEAD}）"
   [ -z "$(git status --short)" ] || stop preflight "树不净：$(git status --short | wc -l | tr -d ' ') 件"
-  grep -qF "<version>${VER}</version>" pom.xml || stop preflight "根 pom 版本不是 ${VER}（先更新版本号）"
+  grep -qF "<version>${VER}</version>" pom.xml || stop preflight "根 pom 版本不是 ${VER}（先跑 tools/release/set-version.sh ${VER}，合进主线再发）"
   if [ "$TRIAL" = 1 ]; then
     say "试装：跳过 CHANGELOG 段、标签未有（v${VER} 上面已查，${TAG} 只在克隆里）、HEAD＝origin/main、CI、发行说明"
   else
-    changelog_has_version || stop preflight "CHANGELOG 无 ## [${VER}] 段"
+    changelog_has_version || stop preflight "CHANGELOG 无 ## [${VER}] 段（先跑 tools/release/set-version.sh ${VER}，合进主线再发）"
     if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then stop preflight "本地已有标签 ${TAG}（不覆盖；上趟停在发包留下的，同一提交走 --from package，改过代码先 git tag -d ${TAG}）"; fi
     if [ "$SANDBOX" = 0 ] && git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then stop preflight "远端已有标签 ${TAG}"; fi
     if [ "$SANDBOX" = 0 ]; then
