@@ -335,6 +335,11 @@ _THEME_BOOT = (
     "  if (mode === \"system\") document.documentElement.removeAttribute(\"data-theme\");\n"
     "  else document.documentElement.setAttribute(\"data-theme\", mode);\n"
     "  document.documentElement.setAttribute(\"data-mode\", mode);\n"
+    "  try {\n"
+    "    var palette = localStorage.getItem(\"novabot-palette\");\n"
+    "    if (palette === \"classic\" || palette === \"pink-blue\" || palette === \"warm\")\n"
+    "      document.documentElement.setAttribute(\"data-palette\", palette);\n"
+    "  } catch (e) {}\n"
     "})();\n"
     "</script>"
 )

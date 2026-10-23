@@ -49,6 +49,17 @@ test('控制台选的深色或浅色，手册首帧与按钮都用同一档', ()
   }
 });
 
+// 防止在控制台选了配色，打开手册时首帧却是默认的粉蓝；没选过或值不认得时不写配色。
+test('控制台选的配色，手册首帧照用；没选过时落在默认配色', () => {
+  for (const palette of ['classic', 'pink-blue', 'warm']) {
+    assert.equal(page(boot, { 'novabot-palette': palette }).attrs.get('data-palette'), palette);
+  }
+  for (const saved of [{}, { 'novabot-palette': 'purple' }]) {
+    assert.equal(page(boot, saved).attrs.has('data-palette'), false);
+  }
+  assert.equal(page(boot, { 'novabot-palette': 'warm' }, { denied: true }).attrs.has('data-palette'), false);
+});
+
 // 防止跟随系统或只存过旧手册选择时，手册写死一种主题。
 test('旧手册选择、空值和无效值回到系统，首帧不锁定深浅色', () => {
   for (const script of [boot, source]) {

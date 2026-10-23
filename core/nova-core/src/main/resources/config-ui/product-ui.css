@@ -1,42 +1,73 @@
-/* 设计 token —— 三态结构，必须照这个顺序写：
-     :root                                亮色，定义全部 token
-     @media (prefers-color-scheme:dark)   跟随系统的暗色，块内只重定义 token
-     :root[data-theme="dark"]             手动切到暗色，再定义一次
-   中间那块的选择器是 :root:not([data-theme="light"]) 而不是 :root——
-   否则系统是暗色、用户手动选了亮色时，媒体查询里的暗值会盖掉亮值。
-   组件规则一律只引 var(--x)，不在媒体查询里直接写色；
-   这三块之外，本文件不写十六进制色值。 */
+/* 设计 token。色表分三层，必须照下面的顺序写：
+   1. 取用：本文件开头的 :root。组件规则一律只引这里的 var(--x)，不认下面两层的名字。
+      每个颜色 --x 都写成 var(--dark-on,var(--l-x)) var(--light-on,var(--d-x))：
+      浅色时取 --l-x、深色时取 --d-x，取哪个由第 2 层的明暗开关定。
+   2. 明暗开关：--light-on、--dark-on 两把，总是一把开（值为空）、一把关（initial）。
+      开着的那把让它所在的 var() 什么都不留；关着的那把让 var() 落到逗号后面的那一份。
+      三处拨开关——默认浅色（:root）、跟随系统的深色、手动深色——只拨开关，不写颜色，
+      所以每套配色的深色值只写一份，跟随系统的深色与手动深色永远是同一套。
+      跟随系统那块的选择器是 :root:not([data-theme="light"]) 而不是 :root——
+      否则系统是深色、用户手动选了浅色时，媒体查询会把开关拨回深色。
+   3. 配色：每套一块，块里浅色写 --l-x、深色写 --d-x（同一块也给设置页的色样用，见 .palette-swatch）。没选过配色（根元素上没有 data-palette，
+      或者是认不出的值）落在 :root 那一块，即默认的「粉蓝」；选了别的由 <html data-palette>
+      压上去（经典 classic、暖阳 warm）。配色记在本浏览器，见 theme.js。
+      「经典」是改动前的那一套，一个值都不许动；粉蓝、暖阳的淡底、阴影、遮罩与下拉箭头
+      照经典的算法由底色算出（淡底取强调色等的透明版，深色遮罩取页底色压暗）。
+   登录页不取外部资源，吐页时把本文件原样拼进它的 <style>（见 ConfigUiLoginPage），两边是同一份。
+   这几块之外，本文件不写十六进制色值。 */
 :root{
   color-scheme:light dark;
-  --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6A6682;
-  --accent:#7A4DFF; --accent2:#E0479E;
-  --ok:#167349; --warn:#8E5909; --err:#CA1226; --live:#E0479E;
-  --soft:rgba(122,77,255,.08); --softline:rgba(122,77,255,.28);
-  --oksoft:rgba(22,115,73,.10); --warnsoft:rgba(142,89,9,.10); --errsoft:rgba(202,18,38,.08);
-  --shadow:0 1px 2px rgba(28,26,46,.04), 0 8px 24px rgba(28,26,46,.06);
+  --light-on: ; --dark-on:initial;
+  --ground:var(--dark-on,var(--l-ground)) var(--light-on,var(--d-ground));
+  --surface:var(--dark-on,var(--l-surface)) var(--light-on,var(--d-surface));
+  --line:var(--dark-on,var(--l-line)) var(--light-on,var(--d-line));
+  --text:var(--dark-on,var(--l-text)) var(--light-on,var(--d-text));
+  --dim:var(--dark-on,var(--l-dim)) var(--light-on,var(--d-dim));
+  --accent:var(--dark-on,var(--l-accent)) var(--light-on,var(--d-accent));
+  --accent2:var(--dark-on,var(--l-accent2)) var(--light-on,var(--d-accent2));
+  --ok:var(--dark-on,var(--l-ok)) var(--light-on,var(--d-ok));
+  --warn:var(--dark-on,var(--l-warn)) var(--light-on,var(--d-warn));
+  --err:var(--dark-on,var(--l-err)) var(--light-on,var(--d-err));
+  --live:var(--dark-on,var(--l-live)) var(--light-on,var(--d-live));
+  --soft:var(--dark-on,var(--l-soft)) var(--light-on,var(--d-soft));
+  --softline:var(--dark-on,var(--l-softline)) var(--light-on,var(--d-softline));
+  --oksoft:var(--dark-on,var(--l-oksoft)) var(--light-on,var(--d-oksoft));
+  --warnsoft:var(--dark-on,var(--l-warnsoft)) var(--light-on,var(--d-warnsoft));
+  --errsoft:var(--dark-on,var(--l-errsoft)) var(--light-on,var(--d-errsoft));
+  --shadow:var(--dark-on,var(--l-shadow)) var(--light-on,var(--d-shadow));
   --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
   --nav-ind:linear-gradient(180deg,var(--accent),var(--accent2));
-  --cloud3:#A38BFF;
-  --c-danmu:#7A4DFF; --c-gift:#E0479E; --c-sc:#F2A93B; --c-blind:#22B573;
-  --c-guard:#00A6D6; --c-view:#6E6A86;
-  --trend-up:var(--accent-text); --trend-down:var(--ok);
+  --cloud3:var(--dark-on,var(--l-cloud3)) var(--light-on,var(--d-cloud3));
+  --c-danmu:var(--dark-on,var(--l-c-danmu)) var(--light-on,var(--d-c-danmu));
+  --c-gift:var(--dark-on,var(--l-c-gift)) var(--light-on,var(--d-c-gift));
+  --c-sc:var(--dark-on,var(--l-c-sc)) var(--light-on,var(--d-c-sc));
+  --c-blind:var(--dark-on,var(--l-c-blind)) var(--light-on,var(--d-c-blind));
+  --c-guard:var(--dark-on,var(--l-c-guard)) var(--light-on,var(--d-c-guard));
+  --c-view:var(--dark-on,var(--l-c-view)) var(--light-on,var(--d-c-view));
+  /* 涨跌色：主播页「较上期」那一行。各套各定一份，与本套的「错误」「成功」色分得开 */
+  --trend-up:var(--dark-on,var(--l-trend-up)) var(--light-on,var(--d-trend-up));
+  --trend-down:var(--dark-on,var(--l-trend-down)) var(--light-on,var(--d-trend-down));
   /* 下面几个不在色表里，是这套界面自己需要的「纸」和压在色块上的字：
-     --paper   永远是白的那种底。二维码必须白底，暗色下换成任何深色都扫不出来；
+     --paper   永远是白的那种底，不随配色与明暗。二维码必须白底，暗色下换成任何深色都扫不出来；
                开关的滑块也用它，滑到强调色上时白点最容易看清。
      --on-accent 压在强调色填充上的字。暗色下强调色变浅，白字对比度不够，改用页底色。
      --on-err  压在错误色填充上的字（危险按钮），道理同 --on-accent。
      --accent-text 强调色拿来写字、又落在页底或淡底上时用的那一档：比 --accent 深一点，
                品牌渐变与主按钮照旧用 --accent。
      --on-status 压在成功色、警告色填充上的字（向导的步骤徽章），道理同 --on-accent。 */
-  --paper:#FFFFFF; --on-accent:#FFFFFF; --on-err:#FFFFFF; --accent-text:#6D3CFF; --on-status:#FFFFFF;
+  --paper:#FFFFFF;
+  --on-accent:var(--dark-on,var(--l-on-accent)) var(--light-on,var(--d-on-accent));
+  --on-err:var(--dark-on,var(--l-on-err)) var(--light-on,var(--d-on-err));
+  --accent-text:var(--dark-on,var(--l-accent-text)) var(--light-on,var(--d-accent-text));
+  --on-status:var(--dark-on,var(--l-on-status)) var(--light-on,var(--d-on-status));
   /* 比 --dim 再淡一档的字，落在 --surface 上仍到 4.5:1。日志页今天没有条目的分类小标签用它 */
-  --faint:#75718C;
-  /* 下拉框的箭头。画在 data URI 里引不到 var(--dim)，只好三块各写一份，色值与那一块的 --dim 相同 */
-  --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%236A6682' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --faint:var(--dark-on,var(--l-faint)) var(--light-on,var(--d-faint));
+  /* 下拉框的箭头。画在 data URI 里引不到 var(--dim)，只好每套配色的浅深各写一份，色值与那一份的 --dim 相同 */
+  --select-chevron:var(--dark-on,var(--l-select-chevron)) var(--light-on,var(--d-select-chevron));
   /* 盖在整页上的那层。亮色下压得轻些、暗色下压得重些：暗色本来就暗，
      用同一个值的话底下那一页几乎还是清清楚楚，看起来像面板浮在没被挡住的页面上 */
-  --overlay:rgba(28,26,46,.32);
-  /* 字体与尺寸：不随主题变，只在这里定义一次 */
+  --overlay:var(--dark-on,var(--l-overlay)) var(--light-on,var(--d-overlay));
+  /* 字体与尺寸：不随配色与明暗变，只在这里定义一次 */
   --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
   --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
   /* 字号只有六档，写字号一律引这六个，不写像素（控制台样式与各页脚本里内嵌的样式都一样）：
@@ -51,41 +82,118 @@
   --fs:var(--fs-lg); --lh:1.6;
   --r-card:14px; --r-ctl:8px; --r-pill:999px;
 }
+/* 明暗开关：跟随系统的深色、手动深色、手动浅色。只拨开关，不写颜色 */
 @media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#A5A0BF;
-    --accent:#A38BFF; --accent2:#F06AB8;
-    --ok:#3DD68C; --warn:#F7BC5B; --err:#FF6B7A; --live:#F06AB8;
-    --soft:rgba(163,139,255,.14); --softline:rgba(163,139,255,.38);
-    --oksoft:rgba(61,214,140,.16); --warnsoft:rgba(247,188,91,.16); --errsoft:rgba(255,107,122,.16);
-    --shadow:0 0 0 1px rgba(255,255,255,.05);
-    --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
-    --nav-ind:linear-gradient(180deg,var(--accent),var(--accent2));
-    --cloud3:#C4B5FF;
-    --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
-    --c-guard:#4CC9F0; --c-view:#9B96B5;
-    --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF; --on-status:#14121F;
-    --faint:#8A85A3;
-    --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A5A0BF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --overlay:rgba(10,8,18,.58);
-  }
+  :root:not([data-theme="light"]){--light-on:initial; --dark-on: ;}
 }
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#A5A0BF;
-  --accent:#A38BFF; --accent2:#F06AB8;
-  --ok:#3DD68C; --warn:#F7BC5B; --err:#FF6B7A; --live:#F06AB8;
-  --soft:rgba(163,139,255,.14); --softline:rgba(163,139,255,.38);
-  --oksoft:rgba(61,214,140,.16); --warnsoft:rgba(247,188,91,.16); --errsoft:rgba(255,107,122,.16);
-  --shadow:0 0 0 1px rgba(255,255,255,.05);
-  --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
-  --nav-ind:linear-gradient(180deg,var(--accent),var(--accent2));
-  --cloud3:#C4B5FF;
-  --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
-  --c-guard:#4CC9F0; --c-view:#9B96B5;
-  --paper:#FFFFFF; --on-accent:#14121F; --on-err:#14121F; --accent-text:#A38BFF; --on-status:#14121F;
-  --faint:#8A85A3;
-  --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A5A0BF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --overlay:rgba(10,8,18,.58);
-}
+:root[data-theme="dark"]{color-scheme:dark; --light-on:initial; --dark-on: ;}
 :root[data-theme="light"]{color-scheme:light}
+
+/* 设置页「配色」那三颗钮上的色样：每颗按自己的 data-palette 取那一套的原料，
+   在色样上把两种强调色重新取一次，三颗才各是各的、不随当前配色变。
+   明暗开关照旧从根元素继承，色样跟着当前的浅深走。这是取用层之外唯一引原料的地方 */
+.palette-swatch{
+  --accent:var(--dark-on,var(--l-accent)) var(--light-on,var(--d-accent));
+  --accent2:var(--dark-on,var(--l-accent2)) var(--light-on,var(--d-accent2));
+}
+
+/* 配色：粉蓝。没选过配色时就是它 */
+:root, .palette-swatch[data-palette="pink-blue"]{
+  /* 浅色 */
+  --l-ground:#F8F5FA; --l-surface:#FFFFFF; --l-line:#ECE4EE; --l-text:#241B30; --l-dim:#685E76;
+  --l-accent:#CC3775; --l-accent2:#1E88D2;
+  --l-ok:#137148; --l-warn:#8A5A00; --l-err:#C42A16; --l-live:#E0337E;
+  --l-soft:rgba(204,55,117,.08); --l-softline:rgba(204,55,117,.28);
+  --l-oksoft:rgba(19,113,72,.10); --l-warnsoft:rgba(138,90,0,.10); --l-errsoft:rgba(196,42,22,.08);
+  --l-shadow:0 1px 2px rgba(36,27,48,.04), 0 8px 24px rgba(36,27,48,.06);
+  --l-cloud3:#F29BBF;
+  --l-c-danmu:#1E88D2; --l-c-gift:#CC3775; --l-c-sc:#E39A1B; --l-c-blind:#1FA866;
+  --l-c-guard:#7B5BE0; --l-c-view:#736A80;
+  --l-trend-up:#A6267A; --l-trend-down:#1A6DB0;
+  --l-on-accent:#FFFFFF; --l-on-err:#FFFFFF; --l-accent-text:#B42A66; --l-on-status:#FFFFFF;
+  --l-faint:#776D85;
+  --l-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23685E76' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --l-overlay:rgba(36,27,48,.32);
+  /* 深色 */
+  --d-ground:#131420; --d-surface:#1C1D2C; --d-line:#2D2F45; --d-text:#ECEBF6; --d-dim:#A9A6C2;
+  --d-accent:#FF80B4; --d-accent2:#5DB8F5;
+  --d-ok:#3FD490; --d-warn:#F5C04F; --d-err:#FF7A5C; --d-live:#FF6FA9;
+  --d-soft:rgba(255,128,180,.14); --d-softline:rgba(255,128,180,.38);
+  --d-oksoft:rgba(63,212,144,.16); --d-warnsoft:rgba(245,192,79,.16); --d-errsoft:rgba(255,122,92,.16);
+  --d-shadow:0 0 0 1px rgba(255,255,255,.05);
+  --d-cloud3:#FFB3D2;
+  --d-c-danmu:#5DB8F5; --d-c-gift:#FF80B4; --d-c-sc:#F5C04F; --d-c-blind:#3FD490;
+  --d-c-guard:#A58CFF; --d-c-view:#9C99B5;
+  --d-trend-up:#F58AD0; --d-trend-down:#5DB8F5;
+  --d-on-accent:#131420; --d-on-err:#131420; --d-accent-text:#FF80B4; --d-on-status:#131420;
+  --d-faint:#8F8CA8;
+  --d-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A9A6C2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --d-overlay:rgba(10,11,18,.58);
+}
+/* 配色：经典。改动前的那一套，一个值都不许动 */
+:root[data-palette="classic"], .palette-swatch[data-palette="classic"]{
+  /* 浅色 */
+  --l-ground:#F5F4FA; --l-surface:#FFFFFF; --l-line:#E4E2EE; --l-text:#1C1A2E; --l-dim:#6A6682;
+  --l-accent:#7A4DFF; --l-accent2:#E0479E;
+  --l-ok:#167349; --l-warn:#8E5909; --l-err:#CA1226; --l-live:#E0479E;
+  --l-soft:rgba(122,77,255,.08); --l-softline:rgba(122,77,255,.28);
+  --l-oksoft:rgba(22,115,73,.10); --l-warnsoft:rgba(142,89,9,.10); --l-errsoft:rgba(202,18,38,.08);
+  --l-shadow:0 1px 2px rgba(28,26,46,.04), 0 8px 24px rgba(28,26,46,.06);
+  --l-cloud3:#A38BFF;
+  --l-c-danmu:#7A4DFF; --l-c-gift:#E0479E; --l-c-sc:#F2A93B; --l-c-blind:#22B573;
+  --l-c-guard:#00A6D6; --l-c-view:#6E6A86;
+  --l-trend-up:var(--accent-text); --l-trend-down:var(--ok);
+  --l-on-accent:#FFFFFF; --l-on-err:#FFFFFF; --l-accent-text:#6D3CFF; --l-on-status:#FFFFFF;
+  --l-faint:#75718C;
+  --l-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%236A6682' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --l-overlay:rgba(28,26,46,.32);
+  /* 深色 */
+  --d-ground:#14121F; --d-surface:#1D1A2B; --d-line:#2E2A42; --d-text:#ECEAF6; --d-dim:#A5A0BF;
+  --d-accent:#A38BFF; --d-accent2:#F06AB8;
+  --d-ok:#3DD68C; --d-warn:#F7BC5B; --d-err:#FF6B7A; --d-live:#F06AB8;
+  --d-soft:rgba(163,139,255,.14); --d-softline:rgba(163,139,255,.38);
+  --d-oksoft:rgba(61,214,140,.16); --d-warnsoft:rgba(247,188,91,.16); --d-errsoft:rgba(255,107,122,.16);
+  --d-shadow:0 0 0 1px rgba(255,255,255,.05);
+  --d-cloud3:#C4B5FF;
+  --d-c-danmu:#A38BFF; --d-c-gift:#F06AB8; --d-c-sc:#F7BC5B; --d-c-blind:#3DD68C;
+  --d-c-guard:#4CC9F0; --d-c-view:#9B96B5;
+  --d-trend-up:var(--accent-text); --d-trend-down:var(--ok);
+  --d-on-accent:#14121F; --d-on-err:#14121F; --d-accent-text:#A38BFF; --d-on-status:#14121F;
+  --d-faint:#8A85A3;
+  --d-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A5A0BF' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --d-overlay:rgba(10,8,18,.58);
+}
+/* 配色：暖阳。浅色的警告色比原定的深一点（#7E6500 → #7A6100）：组标题上那颗「本组设置修改后均需重启生效」
+   压在两层淡底上，原定那一档只到 4.41:1 */
+:root[data-palette="warm"], .palette-swatch[data-palette="warm"]{
+  /* 浅色 */
+  --l-ground:#FAF6F1; --l-surface:#FFFFFF; --l-line:#EDE3D8; --l-text:#2B2119; --l-dim:#6C5F53;
+  --l-accent:#B4520E; --l-accent2:#C8742C;
+  --l-ok:#1C7040; --l-warn:#7A6100; --l-err:#C01B3C; --l-live:#A6379E;
+  --l-soft:rgba(180,82,14,.08); --l-softline:rgba(180,82,14,.28);
+  --l-oksoft:rgba(28,112,64,.10); --l-warnsoft:rgba(122,97,0,.10); --l-errsoft:rgba(192,27,60,.08);
+  --l-shadow:0 1px 2px rgba(43,33,25,.04), 0 8px 24px rgba(43,33,25,.06);
+  --l-cloud3:#F2B07A;
+  --l-c-danmu:#C75F14; --l-c-gift:#C0447E; --l-c-sc:#D9A21B; --l-c-blind:#3C9A4F;
+  --l-c-guard:#2B8C9E; --l-c-view:#7A6E63;
+  --l-trend-up:#A3480A; --l-trend-down:#2B6CA3;
+  --l-on-accent:#FFFFFF; --l-on-err:#FFFFFF; --l-accent-text:#A3480A; --l-on-status:#FFFFFF;
+  --l-faint:#796B5E;
+  --l-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%236C5F53' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --l-overlay:rgba(43,33,25,.32);
+  /* 深色 */
+  --d-ground:#1A1511; --d-surface:#241E18; --d-line:#3A3128; --d-text:#F3ECE4; --d-dim:#BDB0A2;
+  --d-accent:#FF9E57; --d-accent2:#FFC48A;
+  --d-ok:#56CF84; --d-warn:#EFD35A; --d-err:#FF6470; --d-live:#DE80DC;
+  --d-soft:rgba(255,158,87,.14); --d-softline:rgba(255,158,87,.38);
+  --d-oksoft:rgba(86,207,132,.16); --d-warnsoft:rgba(239,211,90,.16); --d-errsoft:rgba(255,100,112,.16);
+  --d-shadow:0 0 0 1px rgba(255,255,255,.05);
+  --d-cloud3:#FFC79E;
+  --d-c-danmu:#FF9E57; --d-c-gift:#F27BAE; --d-c-sc:#EFD35A; --d-c-blind:#56CF84;
+  --d-c-guard:#55C2D6; --d-c-view:#A89C8F;
+  --d-trend-up:#FF9E57; --d-trend-down:#7FB2E5;
+  --d-on-accent:#1A1511; --d-on-err:#1A1511; --d-accent-text:#FF9E57; --d-on-status:#1A1511;
+  --d-faint:#9C8F82;
+  --d-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23BDB0A2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --d-overlay:rgba(14,12,9,.58);
+}

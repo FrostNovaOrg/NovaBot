@@ -27,17 +27,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （它带着 ghost 与 danger 两个类，宿主的 button.danger 写在 button.ghost 之后，底色取 danger 的），
  * 于是鼠标一放上去，字和底同色，按钮上什么字都看不见。
  * <p>
- * 量法照宿主那一份对比度尺：三块色表从宿主的 product-ui.css 里取（按类路径读，不写模块目录），
+ * 量法照宿主那一份对比度尺：三套配色各浅深两份从宿主的 product-ui.css 里取（按类路径读，不写模块目录），
  * 不悬停时的字色、底色取宿主的 {@code button.danger}，再按先宿主、后推送页的顺序叠上
- * 所有 {@code .danger:hover} 规则里写到的字色与底色，最后按 WCAG 公式算，三套主题都要到 4.5:1。
+ * 所有 {@code .danger:hover} 规则里写到的字色与底色，最后按 WCAG 公式算，三套配色的浅深都要到 4.5:1。
+ * <p>
+ * 色表的结构见 product-ui.css 文件头：配色块里浅色写 {@code --l-x}、深色写 {@code --d-x}，
+ * {@code --x} 由开头那块按明暗开关挑一个。这里直接读配色块的两份原料，
+ * 并核对开头那块确实是按这个写法挑的——挑法改了而这里还照旧读，量的就不是页面上的颜色了。
  */
 @DisplayName("推送页危险按钮悬停时的字")
 class PushDangerHoverContrastTest {
     private static final double MIN = 4.5;
 
     private static final Path PUSH = Path.of("src", "main", "resources", "config-ui-pages", "push.js");
-
-    private static final Pattern TOKEN = Pattern.compile("--([a-z0-9-]+)\\s*:\\s*([^;]+);");
 
     private static final Pattern HEX = Pattern.compile("#([0-9a-fA-F]{6})");
 
@@ -49,7 +51,7 @@ class PushDangerHoverContrastTest {
     private static final Pattern HOVER_RULE = Pattern.compile("(?m)^\\s*([^{}\\n]*\\.danger:hover[^{}\\n]*)\\{([^}]*)\\}");
 
     @Test
-    @DisplayName("浅色、暗色两套主题下，悬停时危险按钮的字到 4.5:1")
+    @DisplayName("三套配色的浅色、暗色下，悬停时危险按钮的字到 4.5:1")
     void dangerButtonTextStaysReadableOnHover() throws IOException {
         String app = hostCss("app.css");
         String push = Files.readString(PUSH, StandardCharsets.UTF_8);
@@ -77,8 +79,13 @@ class PushDangerHoverContrastTest {
             }
         }
 
-        Map<String, Map<String, String>> themes = themes(hostCss("product-ui.css"));
-        assertEquals(3, themes.size(), "三块色表没找全");
+        String palette = hostCss("product-ui.css");
+        for (String name : List.of(fg, bg)) {
+            assertTrue(palette.contains("--" + name + ":var(--dark-on,var(--l-" + name + ")) var(--light-on,var(--d-" + name + "));"),
+                    "product-ui.css 里 --" + name + " 不是按明暗开关从 --l-／--d- 两份里挑的，这里的读法对不上了");
+        }
+        Map<String, Map<String, String>> themes = themes(palette);
+        assertEquals(6, themes.size(), "三套配色的浅深没找全：" + themes.keySet());
         List<String> read = new ArrayList<>();
         List<String> bad = new ArrayList<>();
         for (Map.Entry<String, Map<String, String>> theme : themes.entrySet()) {
@@ -106,34 +113,29 @@ class PushDangerHoverContrastTest {
         return m.find() ? m.group(1) : null;
     }
 
-    /** 浅色、跟随系统的暗色、手动暗色；暗色两块没写的照浅色那块继承 */
+    /** 配色块的选择器：默认那一套挂在 :root 上，其余挂在 :root[data-palette="…"] 上（后面可能还跟着色样的选择器） */
+    private static final Pattern PALETTE_BLOCK = Pattern.compile(
+            "(?m)^:root(?:\\[data-palette=\"([a-z-]+)\"\\])?(?:,[^{\\n]*)?\\{([^}]*)\\}");
+
+    private static final Pattern RAW = Pattern.compile("--([ld])-([a-z0-9-]+)\\s*:\\s*([^;]+);");
+
+    /** 每套配色的浅色、深色两份：从配色块的 --l-x、--d-x 读出 x 的值 */
     private static Map<String, Map<String, String>> themes(String text) {
         Map<String, Map<String, String>> out = new LinkedHashMap<>();
-        int lightAt = text.indexOf(":root{");
-        int media = text.indexOf("@media (prefers-color-scheme:dark)");
-        int systemAt = media < 0 ? -1 : text.indexOf(":root:not([data-theme=\"light\"]){", media);
-        int manualAt = text.indexOf(":root[data-theme=\"dark\"]{");
-        if (lightAt < 0 || systemAt < 0 || manualAt < 0) {
-            return out;
-        }
-        Map<String, String> light = tokens(text, lightAt);
-        Map<String, String> systemDark = new LinkedHashMap<>(light);
-        systemDark.putAll(tokens(text, systemAt));
-        Map<String, String> manualDark = new LinkedHashMap<>(light);
-        manualDark.putAll(tokens(text, manualAt));
-        out.put("浅色", light);
-        out.put("跟随系统的暗色", systemDark);
-        out.put("手动暗色", manualDark);
-        return out;
-    }
-
-    private static Map<String, String> tokens(String text, int at) {
-        int open = text.indexOf('{', at);
-        String block = text.substring(open + 1, text.indexOf('}', open)).replaceAll("(?s)/\\*.*?\\*/", "");
-        Map<String, String> out = new LinkedHashMap<>();
-        Matcher m = TOKEN.matcher(block);
-        while (m.find()) {
-            out.put(m.group(1), m.group(2).trim());
+        Matcher block = PALETTE_BLOCK.matcher(text.replaceAll("(?s)/\\*.*?\\*/", ""));
+        while (block.find()) {
+            if (!block.group(2).contains("--l-")) {
+                continue;
+            }
+            String name = block.group(1) == null ? "默认（粉蓝）" : block.group(1);
+            Map<String, String> light = new LinkedHashMap<>();
+            Map<String, String> dark = new LinkedHashMap<>();
+            Matcher m = RAW.matcher(block.group(2));
+            while (m.find()) {
+                (m.group(1).equals("l") ? light : dark).put(m.group(2), m.group(3).trim());
+            }
+            out.put(name + " 浅色", light);
+            out.put(name + " 深色", dark);
         }
         return out;
     }

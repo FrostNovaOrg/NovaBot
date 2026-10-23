@@ -1,4 +1,5 @@
-// 在真浏览器里把控制台离线演示各页打开一遍：抓脚本异常、找不到的本地资源、白屏与手机宽横向溢出。
+// 在真浏览器里把控制台离线演示各页打开一遍：抓脚本异常、找不到的本地资源、白屏、手机宽横向溢出，
+// 以及选了的配色没落到页面上（颜色变量取不到、下拉框箭头不跟配色）。
 //
 // 不占端口、不建套接字：浏览器以 --remote-debugging-pipe 起，调试协议走两条命名管道（FIFO）；
 // 页面开在 http://localhost:8000/config/...，那里没有服务，每个请求都由 Fetch 域接住，
@@ -28,6 +29,7 @@ const SCREENS = [
   ['home', '/config/#/home'],
   ['push', '/config/#/push'],
   ['streamers', '/config/#/streamers'],
+  ['streamer', '/config/#/streamers/bilibili/990000000102'],
   ['log', '/config/#/log'],
   ['links', '/config/#/links'],
   ['settings', '/config/#/settings'],
@@ -40,6 +42,10 @@ const WIDTHS = [
   {name: '390', width: 390, height: 844, mobile: true, scale: 2},
 ];
 const COLORS = ['light', 'dark'];
+// 配色：默认的粉蓝各页都看；经典、暖阳只看首页与主播详情。配色只换颜色、不改排布，
+// 各页三套都看一遍是三倍的轮数，而多出来的那些轮抓的是同一类毛病
+const PALETTES = ['pink-blue', 'classic', 'warm'];
+const PALETTE_SCREENS = new Set(['home', 'streamer']);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -390,6 +396,45 @@ const INSPECT = `(() => {
   };
 })()`;
 
+// 选了的配色有没有落到页面上：根元素的 data-palette、颜色变量取不取得到、下拉框箭头是不是这一套的次要字色。
+// 变量取不到时 background-color 落回初值 rgba(0, 0, 0, 0)，页面看起来就是没颜色
+const PALETTE_PROBE = `(() => {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px';
+  (document.body || document.documentElement).appendChild(probe);
+  const color = name => {
+    probe.style.backgroundColor = 'var(' + name + ')';
+    return getComputedStyle(probe).backgroundColor;
+  };
+  const out = {palette: document.documentElement.getAttribute('data-palette'),
+    ground: color('--ground'), surface: color('--surface'), text: color('--text'), dim: color('--dim'),
+    accent: color('--accent'), err: color('--err')};
+  probe.style.backgroundColor = '';
+  probe.style.backgroundImage = 'var(--select-chevron)';
+  out.chevron = getComputedStyle(probe).backgroundImage;
+  probe.remove();
+  return out;
+})()`;
+
+/** rgb(1, 2, 3) → 010203；带透明度或认不出时返回 null */
+function opaqueHex(css) {
+  const m = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(css || '');
+  return m ? m.slice(1).map(v => Number(v).toString(16).padStart(2, '0')).join('').toUpperCase() : null;
+}
+
+function checkPalette(facts, palette) {
+  if (!facts) return ['配色：读不到页面上的颜色变量'];
+  const problems = [];
+  if (facts.palette !== palette) problems.push(`配色：根元素上是 ${facts.palette ?? '（没有）'}，应为 ${palette}`);
+  const missing = ['ground', 'surface', 'text', 'dim', 'accent', 'err'].filter(name => !opaqueHex(facts[name]));
+  if (missing.length) problems.push('配色：这些颜色变量取不到：' + missing.map(name => '--' + name).join('、'));
+  const dim = opaqueHex(facts.dim);
+  if (dim && !(facts.chevron || '').toUpperCase().includes('%23' + dim)) {
+    problems.push(`配色：下拉框箭头不是这一套的次要字色 #${dim}`);
+  }
+  return problems;
+}
+
 // PNG 的校验与压缩只用 node 自带模块。Chromium 输出的 8 位 RGB/RGBA 可直接拼接。
 const CRC_TABLE = Array.from({length: 256}, (_, n) => {
   for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
@@ -468,12 +513,12 @@ function joinPng(files, destination) {
   ]));
 }
 
-async function capture(cdp, sessionId, out, page, size, color) {
+async function capture(cdp, sessionId, out, page, size, palette, color) {
   const metrics = await cdp.send('Page.getLayoutMetrics', {}, sessionId);
   const content = metrics.cssContentSize || metrics.contentSize;
   const width = Math.max(size.width, Math.ceil(content.width));
   const height = Math.min(SHOT_MAX_HEIGHT, Math.max(size.height, Math.ceil(content.height)));
-  const base = `${page}-${size.name}-${color}`;
+  const base = `${page}-${size.name}-${palette}-${color}`;
   const tiled = process.platform === 'darwin';
   const step = tiled ? Math.floor(SHOT_TILE_PIXELS / (width * size.scale ** 2)) : height;
   if (step < 1) throw new Error('页面过宽，一行已超过截图分块上限');
@@ -496,10 +541,10 @@ async function capture(cdp, sessionId, out, page, size, color) {
   return {tiles: tiled ? files.length : 0, joined: true};
 }
 
-async function runRound(cdp, demo, out, shots, screen, size, color) {
+async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
   const [page, address] = screen;
   const round = {
-    page, width: size.name, color,
+    page, width: size.name, palette, color,
     failures: [],
     missing: new Set(),
     exceptions: [],
@@ -568,7 +613,8 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
     if (size.mobile) await s('Emulation.setTouchEmulationEnabled', {enabled: true, maxTouchPoints: 5});
     await s('Emulation.setEmulatedMedia', {features: [{name: 'prefers-color-scheme', value: color}]});
     await s('Page.addScriptToEvaluateOnNewDocument', {source:
-      `try { localStorage.setItem('novabot-theme', ${JSON.stringify(color)}); } catch (e) {}\n`
+      `try { localStorage.setItem('novabot-theme', ${JSON.stringify(color)});`
+      + ` localStorage.setItem('novabot-palette', ${JSON.stringify(palette)}); } catch (e) {}\n`
       + (page === 'login' ? 'window.NOVA_CONSOLE_DEMO_SIGNED_OUT = true;' : '')});
 
     loaded = false;
@@ -603,13 +649,16 @@ async function runRound(cdp, demo, out, shots, screen, size, color) {
       round.failures.push('登录页没有显示未登录表单');
     }
     if (facts?.unrecordedNotice) round.notes.unrecorded.add('页面上出现「离线演示未录制」提示');
+    const probe = (await s('Runtime.evaluate', {expression: PALETTE_PROBE, returnByValue: true})).result.value;
+    round.failures.push(...checkPalette(probe, palette));
+    round.colors = probe;
     if (facts && facts.url !== new URL(ORIGIN + address).pathname + new URL(ORIGIN + address).hash) {
       round.notes.landed.add(`打开后停在 ${facts.url}`);
     }
 
     if (shots) {
       try {
-        round.shots = await capture(cdp, sessionId, out, page, size, color);
+        round.shots = await capture(cdp, sessionId, out, page, size, palette, color);
       } catch (e) {
         if (e instanceof NameTaken) throw e;
         // 有的环境里截图一直不回，浏览器也跟着不再应答（见 README）。这一轮的检查结果照留。
@@ -632,10 +681,18 @@ function summarize(rounds, version, shotProblem) {
   for (const r of rounds) if (r.shots?.problem) lines.push(`  ${r.shots.problem}`);
   lines.push('');
   for (const r of rounds) {
-    lines.push(`${r.page} ${r.width} ${r.color} ${r.failures.length ? '失败 ' + r.failures.join('；') : '通过'}`);
+    lines.push(`${r.page} ${r.width} ${r.palette} ${r.color} ${r.failures.length ? '失败 ' + r.failures.join('；') : '通过'}`);
   }
   const failed = rounds.filter(r => r.failures.length).length;
   lines.push('', `合计 ${rounds.length} 轮：通过 ${rounds.length - failed}，失败 ${failed}`);
+
+  // 各套配色在首页上取到的几样颜色，只列出：三套该各是各的，一眼看得出有没有哪套没生效
+  lines.push('', '配色读数（首页 1440 宽，页底／强调色／次要字）：');
+  for (const r of rounds) {
+    if (r.page !== 'home' || r.width !== '1440' || !r.colors) continue;
+    lines.push(`  ${r.palette} ${r.color}：#${opaqueHex(r.colors.ground) ?? '?'}／#${opaqueHex(r.colors.accent) ?? '?'}`
+      + `／#${opaqueHex(r.colors.dim) ?? '?'}`);
+  }
 
   const kinds = [
     ['unrecorded', '演示没录的接口'],
@@ -681,30 +738,35 @@ async function runAll({demo, chrome, out, profile, log, logFile}) {
   let shotProblem = null;
   const rounds = [];
   try {
+    const plan = [];
     for (const screen of SCREENS) {
       for (const size of WIDTHS) {
-        for (const color of COLORS) {
-          let round;
-          try {
-            round = await runRound(browser.cdp, demo, out, !shotProblem, screen, size, color);
-            if (round.shotError) {
-              shotProblem = `从 ${round.page} ${round.width} ${round.color} 这一轮起截不了图（${round.shotError}），`
-                + '换一个浏览器接着查，之后各轮照查但不截图';
-              process.stderr.write(`截图：${shotProblem}\n`);
-              await browser.stop();
-              browser = await launch(chrome, path.join(profile, String(++launches)), log, logFile);
-            }
-          } catch (e) {
-            // 浏览器没了就整轮跑不下去；只是这一轮的某条命令出错，记成这一轮失败
-            if (e instanceof NameTaken) throw e;
-            if (browser.cdp.closed) throw browser.cdp.closed;
-            round = {page: screen[0], width: size.name, color, failures: [`检查出错：${e.message}`],
-              notes: {unrecorded: new Set(), consoleErrors: new Set(), blocked: new Set(), landed: new Set()}};
-          }
-          rounds.push(round);
-          process.stderr.write(`${round.page} ${round.width} ${round.color} ${round.failures.length ? '失败' : '通过'}\n`);
+        for (const palette of PALETTES) {
+          if (palette !== PALETTES[0] && !PALETTE_SCREENS.has(screen[0])) continue;
+          for (const color of COLORS) plan.push([screen, size, palette, color]);
         }
       }
+    }
+    for (const [screen, size, palette, color] of plan) {
+      let round;
+      try {
+        round = await runRound(browser.cdp, demo, out, !shotProblem, screen, size, palette, color);
+        if (round.shotError) {
+          shotProblem = `从 ${round.page} ${round.width} ${round.palette} ${round.color} 这一轮起截不了图（${round.shotError}），`
+            + '换一个浏览器接着查，之后各轮照查但不截图';
+          process.stderr.write(`截图：${shotProblem}\n`);
+          await browser.stop();
+          browser = await launch(chrome, path.join(profile, String(++launches)), log, logFile);
+        }
+      } catch (e) {
+        // 浏览器没了就整轮跑不下去；只是这一轮的某条命令出错，记成这一轮失败
+        if (e instanceof NameTaken) throw e;
+        if (browser.cdp.closed) throw browser.cdp.closed;
+        round = {page: screen[0], width: size.name, palette, color, failures: [`检查出错：${e.message}`],
+          notes: {unrecorded: new Set(), consoleErrors: new Set(), blocked: new Set(), landed: new Set()}};
+      }
+      rounds.push(round);
+      process.stderr.write(`${round.page} ${round.width} ${round.palette} ${round.color} ${round.failures.length ? '失败' : '通过'}\n`);
     }
   } finally {
     await browser.stop();

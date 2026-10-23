@@ -7,12 +7,17 @@
 <meta name="nova-prefix" content="{{nova-prefix}}">
 <title>NovaBot 控制台</title>
 <script>
-  // 界面主题偏好记在本浏览器里。首帧前设好 data-theme，免得先按系统色闪一下再切。
-  // 与 theme.js 同一把键、同一套取值；读不到或读出错一律跟系统。
+  // 界面主题与配色记在本浏览器里。首帧前设好 data-theme 与 data-palette，
+  // 免得先按系统色、默认的粉蓝画一下再切。与 theme.js 同两把键、同一套取值；
+  // 读不到或读出错，浅深跟系统、配色按粉蓝（product-ui.css 里没有 data-palette 时就是粉蓝）。
   try {
     var theme = localStorage.getItem('novabot-theme');
     if (theme === 'dark' || theme === 'light') {
       document.documentElement.setAttribute('data-theme', theme);
+    }
+    var palette = localStorage.getItem('novabot-palette');
+    if (palette === 'classic' || palette === 'pink-blue' || palette === 'warm') {
+      document.documentElement.setAttribute('data-palette', palette);
     }
   } catch (e) {}
 </script>

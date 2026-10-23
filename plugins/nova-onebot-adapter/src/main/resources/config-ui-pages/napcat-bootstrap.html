@@ -5,43 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>正在进入 NapCat</title>
+  <script>
+    // 界面主题与配色记在本浏览器里，与控制台同两把键、同一套取值（见核心的 theme.js）。
+    // 首帧前设好，免得先按系统色、默认的粉蓝画一下再切；读不到或读出错，浅深跟系统、配色按粉蓝。
+    try {
+      var theme = localStorage.getItem('novabot-theme');
+      if (theme === 'dark' || theme === 'light') {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+      var palette = localStorage.getItem('novabot-palette');
+      if (palette === 'classic' || palette === 'pink-blue' || palette === 'warm') {
+        document.documentElement.setAttribute('data-palette', palette);
+      }
+    } catch (e) {}
+  </script>
+  <!-- 色表用控制台那一份：这一页只给登录过的管理员，/config/assets 此刻开着门。
+       不带版本段的地址每次都会核一下新旧，升级后不会拿着旧色表 -->
+  <link rel="stylesheet" href="{{nova-prefix}}/config/assets/product-ui.css">
   <style>
+    /* 只引 var(--x)，不写色值：配色与浅深跟着本浏览器在控制台里选过的走 */
     * { box-sizing: border-box }
     body {
       margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      background: #f6f7f9; color: #333;
-      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--ground); color: var(--text); font-family: var(--font);
     }
     .box {
       width: 420px; max-width: calc(100vw - 32px); padding: 28px;
-      background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0, 0, 0, .06);
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--r-card); box-shadow: var(--shadow);
     }
-    h1 { margin: 0 0 6px; font-size: 17px }
-    p { margin: 0; font-size: 13px; color: #666; line-height: 1.7 }
-    p.err { color: #f56c6c }
-    .steps { margin-top: 14px; font-size: 12.5px; color: #999 }
-    a { color: #fb7299 }
+    h1 { margin: 0 0 6px; font-size: var(--fs-lg) }
+    p { margin: 0; font-size: var(--fs-sm); color: var(--dim); line-height: 1.7 }
+    p.err { color: var(--err) }
+    .steps { margin-top: 14px; font-size: var(--fs-xs); color: var(--faint) }
+    a { color: var(--accent-text) }
     /* 托住内层的形态：整屏一张 iframe，外层只留一条提示位 */
-    body.mounted { display: block; background: #fff }
+    body.mounted { display: block; background: var(--ground) }
     body.mounted .box { display: none }
     #frame { display: none; border: 0; width: 100vw; height: 100vh }
     body.mounted #frame { display: block }
+    /* 提示条压在 NapCat 页面上：淡底是半透明的，先垫一层不透明的面色，底下的字才不会透上来 */
     #banner {
       display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
-      padding: 10px 14px; font-size: 13px; line-height: 1.6;
-      background: #fdf6ec; color: #b88230; border-top: 1px solid #f5dab1;
+      padding: 10px 14px; font-size: var(--fs-sm); line-height: 1.6;
+      background: linear-gradient(var(--warnsoft), var(--warnsoft)), var(--surface);
+      color: var(--warn); border-top: 1px solid var(--warn);
     }
     #banner.show { display: block }
     #banner button {
-      float: right; margin-left: 12px; border: 0; border-radius: 4px;
-      padding: 4px 10px; cursor: pointer; background: #b88230; color: #fff; font-size: 12px;
-    }
-    @media (prefers-color-scheme: dark) {
-      body { background: #1b1c1f; color: #e5e6eb }
-      .box { background: #26272b; box-shadow: none }
-      p { color: #909399 }
-      body.mounted { background: #1b1c1f }
-      #banner { background: #2b2417; color: #e6a23c; border-top-color: #4a3d24 }
+      float: right; margin-left: 12px; border: 0; border-radius: var(--r-ctl);
+      padding: 4px 10px; cursor: pointer; background: var(--warn); color: var(--on-status);
+      font-size: var(--fs-xs); font-family: inherit;
     }
   </style>
 </head>
