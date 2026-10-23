@@ -290,19 +290,23 @@ const notice = (className, displayName, extra = {}) => ({
   defaultParams: {message: '{uname} ' + displayName}, factoryParams: {message: '{uname} ' + displayName},
   options: [], reportLayout: false, defaultEnabled: true, ...extra,
 });
-const LIVE_ON = notice('x.LiveOn', '开播通知');
+// 开播与动态带两种 @ 占位符，与内置那两类一样：编辑器据此画「@ 谁」那一行
+const AT_PLACEHOLDERS = ['{uname}', '{at}', '{at=all}'];
+const LIVE_ON = notice('x.LiveOn', '开播通知', {placeholders: AT_PLACEHOLDERS});
 const REPORT = notice('x.Report', '下播报告', {reportLayout: true, options: [
   {key: 'cover', label: '直播间封面', description: '', type: 'BOOLEAN', defaultValue: true}]});
 const DIGEST = notice('x.Digest', '下播打赏播报', {options: [
   {key: 'reward_threshold_yuan', label: '播报门槛（元）', description: '', type: 'INTEGER',
     defaultValue: 50, min: 0, max: 1000000}]});
-const DYNAMIC = notice('x.Dynamic', '动态通知');
+const DYNAMIC = notice('x.Dynamic', '动态通知', {placeholders: AT_PLACEHOLDERS});
 const WEEKLY = notice('org.frostnova.nova.core.handler.WeeklyReportPushHandler', '运营周报',
   {placeholders: [], defaultParams: {}, factoryParams: {}, defaultEnabled: false});
 const HANDLERS = [LIVE_ON, REPORT, DIGEST, DYNAMIC, WEEKLY];
 
 const GROUP = {platform: 'qq', type: 1, num: 12345, enabled: true};
 const FRIEND = {platform: 'qq', type: 0, num: 67890, enabled: true};
+// 运行数据里没有这一位：机器人没连上、或刚加的好友，命令那一块拿不到菜单状态
+const STRANGER = {platform: 'qq', type: 0, num: 67891, enabled: true};
 const COMMANDS = [{name: '直播报告', category: '数据查询', description: '查本场', disableable: true, channelScoped: true}];
 const SESSIONS = [
   {platform: 'qq', num: 12345, type: '群', typeCode: 1, disabled: [], menuHidden: [], menuNotes: {}},
@@ -512,6 +516,39 @@ await ask('⑦ 页头摘要点「命令 n 条可用」：命令那一块展开',
   const before = fold.open;
   jump.click();
   same({text: jump.textContent, before, after: fold.open}, {text: '命令 1 条可用', before: false, after: true}, '跳到命令');
+});
+
+// 故障：好友通道展开开播通知，还能看到 @全体成员那几档（只是变灰），和「仅 @ 在本群发送过……」
+// 「私聊不支持 @全体成员。」这类说法；好友里根本没有这回事。看完存一遍，存下的值也不能变。
+await ask('⑧ 好友通道展开开播通知、动态通知：不出现 @全体成员与群的说法，存下的值不变', async () => {
+  if (!push) throw new Error('push.js 没载入，无从量起');
+  const list = [message(LIVE_ON, {message: '{uname} 开播通知', at_mode: 'all'}), message(DYNAMIC)];
+  await paint(FRIEND, list);
+  const seen = {};
+  for (const handler of [LIVE_ON, DYNAMIC]) {
+    edit(handler);
+    const row = rowOf(handler);
+    if (!all(row).some(item => hasClass(item, 'tpl-wrap'))) throw new Error(handler.displayName + ' 展开后没有编辑器');
+    const text = textOf(row);
+    seen[handler.displayName] = {
+      '出现「群」字': [...text.matchAll(/.{0,8}群.{0,8}/g)].map(match => match[0]),
+      '出现 @全体成员': [...text.matchAll(/.{0,8}@全体成员.{0,8}/g)].map(match => match[0]),
+      '「@ 谁」的选项': all(row).filter(item => item.tagName === 'option').map(item => item.textContent),
+    };
+  }
+  const want = {'出现「群」字': [], '出现 @全体成员': [], '「@ 谁」的选项': []};
+  same({seen, stored: messages()}, {seen: {'开播通知': want, '动态通知': want}, stored: list}, '好友通道的编辑区');
+});
+
+// 故障：好友这一位不在运行数据里时，命令那一块写着「不代表群里实际列出的命令」，好友里没有群。
+await ask('⑨ 好友通道缺运行数据时，命令提示不说群', async () => {
+  if (!push) throw new Error('push.js 没载入，无从量起');
+  await paint(STRANGER, [message(LIVE_ON)]);
+  const text = textOf(page());
+  same({
+    '出现「群」字': [...text.matchAll(/.{0,8}群.{0,8}/g)].map(match => match[0]),
+    '提示了拿不到菜单状态': text.includes('无法获取菜单状态'),
+  }, {'出现「群」字': [], '提示了拿不到菜单状态': true}, '缺运行数据时的命令提示');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

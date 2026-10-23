@@ -285,10 +285,10 @@ novabot:
       # rules:
       #   - event: LiveOnEvent      # 事件类名，简名或全限定名皆可，沿继承链匹配，
       #                             # 因此填 LiveOnEvent 可同时命中各平台的具体开播事件
-      #     command:                # ⚠️ 第一项是可执行文件，其余各项是独立参数，不是一整行命令。
-      #       - /opt/scripts/record.sh    # 想用管道、重定向请自己写脚本文件再填它的路径——
-      #       - "{room_id}"                # 把命令拼成一行交给 shell，等于让昵称和弹幕有机会变成命令
-      #       - "{uname}"
+      #     command:                # ⚠️ 第一项填固定的程序或脚本路径，其余各项是独立参数，不是一整行命令。
+      #       - /opt/scripts/record.sh    # 想用管道、重定向请自己写脚本文件再填它的路径
+      #       - "{room_id}"
+      #       - "--name={uname}"           # 昵称接在固定的选项名之后；其他写法见使用说明附录 B
       #     # 可用占位符：{event} {platform} {uid} {uname} {room_id} {timestamp} {json}
 
     alert:

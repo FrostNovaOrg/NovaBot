@@ -200,13 +200,17 @@ public class NovaCoreProperties {
          * 命令与参数
          * <p>
          * <b>第一项是可执行文件，其余各项是独立参数——不是一整行命令。</b>
-         * 想用管道、重定向之类的 shell 特性，请自己写一个脚本文件再在这里填它的路径；
-         * 把命令拼成一行交给 shell 执行，等于让弹幕内容有机会变成命令。
+         * 程序与脚本路径填写固定值。事件参数的写法见使用说明附录 B。
          * <p>
          * 支持的占位符：{@code {event}} {@code {platform}} {@code {uid}}
          * {@code {uname}} {@code {room_id}} {@code {timestamp}} {@code {json}}。
          */
         private List<String> command = new ArrayList<>();
+
+        /**
+         * 为子进程设置 NOVABOT_EVENT_JSON 环境变量，内容与 {json} 相同。
+         */
+        private boolean eventEnvironment = false;
     }
 
     /**

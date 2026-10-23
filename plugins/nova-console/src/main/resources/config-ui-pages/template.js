@@ -219,7 +219,8 @@ export function buildTemplateEditor(host, options) {
       palette.appendChild(button);
     }
     atControls.innerHTML = '';
-    if (supportsAt(state.spec)) atControls.appendChild(atNode());
+    // 私聊里没有 @ 谁这回事：整行不画，而不是画三档灰掉的选项。@ 那一档不动，存下的值照旧
+    if (supportsAt(state.spec) && previewContext().isGroup !== false) atControls.appendChild(atNode());
   }
 
   /** 点一下调色板：插到最后一次落过光标的地方，没落过就贴到第一张卡末尾 */
@@ -455,7 +456,7 @@ export function buildTemplateEditor(host, options) {
       const option = el('option');
       option.value = mode.key;
       option.textContent = mode.label;
-      option.disabled = mode.key !== 'subscribers' && (ctx.admin === false || ctx.isGroup === false);
+      option.disabled = mode.key !== 'subscribers' && ctx.admin === false;
       if (mode.key === displayMode) option.selected = true;
       select.appendChild(option);
     }
@@ -484,11 +485,10 @@ export function buildTemplateEditor(host, options) {
       palette.appendChild(block);
     }
     if (note) row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
-    if (ctx.admin === false || ctx.isGroup === false) {
-      row.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
-        ? '私聊不支持 @全体成员。'
-        : subscribers ? '机器人不是本群管理员，两档 @全体成员 均不可选。'
-          : '机器人不是本群管理员，无法选择 @全体成员。';
+    if (ctx.admin === false) {
+      row.appendChild(el('p', 'tpl-at-warning xs')).textContent = subscribers
+        ? '机器人不是本群管理员，两档 @全体成员 均不可选。'
+        : '机器人不是本群管理员，无法选择 @全体成员。';
     }
     return row;
   }
@@ -651,7 +651,9 @@ export function buildTemplateEditor(host, options) {
     }
 
     const plan = atPlan(state.cards, state.atMode, previewContext());
-    if (bubbles.some(bubble => bubble.atDropped) || plan.dropped) {
+    // 私聊的预览本来就不画 @，再说一句「省略 @全体成员」就成了群里的说法
+    const group = previewContext().isGroup !== false;
+    if (group && (bubbles.some(bubble => bubble.atDropped) || plan.dropped)) {
       preview.appendChild(el('p', 'tpl-preview-note xs dim')).textContent = plan.fallback
         ? '发送时改为 @订阅者，正文正常发送。'
         : '发送时省略 @全体成员，正文正常发送。';

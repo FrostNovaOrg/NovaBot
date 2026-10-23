@@ -450,7 +450,7 @@ function commandRow(host, ctx) {
   if (!summary.menuKnown) {
     body.appendChild(el('div', 'note n-warn')).textContent =
       '此会话不在推送配置中，无法获取菜单状态：以下各行仅按本机整体能力标注，'
-      + '不代表群里实际列出的命令。';
+      + (group ? '不代表群里实际列出的命令。' : '不代表私聊里实际列出的命令。');
   }
 
   const unusable = [];

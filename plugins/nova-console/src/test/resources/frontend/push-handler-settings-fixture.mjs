@@ -491,7 +491,7 @@ await ask('通知行跟随推送类型顺序，规则、状态与危险操作在
   const rows = all(page()).filter(item => hasClass(item, 'nrow')).map(item => item.getAttribute('data-notice'));
   same(rows, [digest.className, report.className], '通知行顺序');
   const titles = all(page()).filter(item => item.tagName === 'h3').map(item => item.textContent);
-  same(titles, ['推送内容', '通道规则', '本群状态（只读）', '危险操作'], '各块顺序');
+  same(titles, ['推送内容', '通道规则', '本群状态', '危险操作'], '各块顺序');
 });
 for (const [name, chosen] of [['只开下播报告', [report]], ['只开下播打赏播报', [digest]], ['两样都开', [report, digest]]]) {
   await paint(chosen.map(item => message(item)));

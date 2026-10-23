@@ -123,6 +123,8 @@ const base = '#/streamers/sample/1';
 const drawer = () => flatten(document.body).find(n => n.className === 'sc-drawer');
 const load = async hash => { location.hash = hash; await page.refresh(); };
 const textOf = node => flatten(node).map(n => n.textContent + n.innerHTML).join(' ');
+const coverageHints = () => flatten(drawer()).filter(n => n.tagName === 'td' && n.className === 'sd-trend-coverage').map(n => n.children[0].title).join(' ');
+const scopeLines = () => nodes.get('sd-scope').querySelector('.sd-scope-content').children.map(n => n.textContent);
 const sessionRows = () => flatten(drawer()).filter(n => n.className === 'sd-session-row');
 const sessionMetric = (row, label) => {
   assert.ok(row, '须列出目标场次卡');
@@ -547,7 +549,7 @@ await check('本期构成暂无数据时，悬停提示说明实际缺少名单�
   }
   assert.deepEqual(titles, scenarios.map(scenario => scenario.title), '本期无名单时不得归因为历史记录起点');
 });
-await check('五项指标沿用较上期判法，红涨绿跌持平无色', async () => {
+await check('五项指标沿用较上期判法，涨跌用独立颜色且持平无色', async () => {
   compositionScenario = {comparisons: {durationSeconds: {changeRatio: 0}, revenue: {changeRatio: .12},
     messages: {changeRatio: -.05}, audience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'},
     interactionAudience: {reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}}};
@@ -555,7 +557,7 @@ await check('五项指标沿用较上期判法，红涨绿跌持平无色', asyn
   const all = flatten(nodes.get('sd-insights'));
   const lines = all.filter(n => n.className.includes('sc-kpi-delta') && n.textContent.startsWith('较上期'));
   assert.deepEqual(lines.map(n => [n.textContent, n.style.color]), [
-    ['较上期持平', ''], ['较上期 +12%', 'var(--err)'], ['较上期 −5%', 'var(--ok)']]);
+    ['较上期持平', ''], ['较上期 +12%', 'var(--trend-up)'], ['较上期 −5%', 'var(--trend-down)']]);
   assert.equal(all.filter(n => n.className === 'sc-kpi' && n.attrs.role === 'button').length, 6);
 });
 await check('对比说明默认折叠，按原因列指标，展开后显示参考说明', async () => {
@@ -580,15 +582,15 @@ await check('只有旧名单参考说明时仍可展开，无说明时清除旧�
   await page.refresh();
   assert.ok(!flatten(nodes.get('sd-scope')).some(n => n.textContent.includes('仅供参考')), '无说明时不留旧说明');
 });
-await check('完整名单的观众与互动观众都显示较上期，涨红跌绿', async () => {
+await check('完整名单的观众与互动观众都显示较上期及独立涨跌色', async () => {
   for (const sign of [1, -1]) {
     compositionScenario = {audience: 112, interactionAudience: 95, coverage: {complete: 2},
       comparisons: {audience: {changeRatio: sign * .12}, interactionAudience: {changeRatio: sign * -.05}}};
     await page.refresh();
     const cells = flatten(nodes.get('sd-insights')).filter(n => n.className === 'sc-kpi');
     for (const [label, text, color] of [
-      ['观众', sign > 0 ? '较上期 +12%' : '较上期 −12%', sign > 0 ? 'var(--err)' : 'var(--ok)'],
-      ['互动观众', sign > 0 ? '较上期 −5%' : '较上期 +5%', sign > 0 ? 'var(--ok)' : 'var(--err)'],
+      ['观众', sign > 0 ? '较上期 +12%' : '较上期 −12%', sign > 0 ? 'var(--trend-up)' : 'var(--trend-down)'],
+      ['互动观众', sign > 0 ? '较上期 −5%' : '较上期 +5%', sign > 0 ? 'var(--trend-down)' : 'var(--trend-up)'],
     ]) {
       const cell = cells.find(n => n.attrs['aria-label'] === label);
       assert.ok(cell, label + '格应存在');
@@ -608,7 +610,7 @@ await check('观众页显示人数六列及范围分组排序分页链接', asyn
   assert.match(text, /回访 25/);
   assert.match(text, /30\.50/);
   assert.match(text, /首次 2026/);
-  assert.doesNotMatch(text, /名单：完整 2 场/);
+  assert.doesNotMatch(textOf(card), /名单：完整 2 场/, '名单表不重复显示总览口径');
   const links = all.filter(n => n.tagName === 'a');
   for (const query of [
     'days=30&group=returning&sort=attendance&page=1',
@@ -947,7 +949,8 @@ await check('趋势覆盖逐桶读取且折叠条使用全页范围', async () =
       await load(base + '?panel=trend&period=' + period);
       assert.match(textOf(drawer()), /已记录数据 · 时长覆盖 99\.72% · 名单完整 2\/3 场 · 有缺口 1 场/);
       const row = flatten(drawer()).find(n => n.tagName === 'tr' && n.children[0]?.tagName === 'td');
-      assert.match(textOf(row.children.at(-1)), /采集 99\.58%.*名单完整 1\/2 场/);
+      assert.equal(row.children.at(-1).children[0].textContent, '缺 50%');
+      assert.match(row.children.at(-1).children[0].title, /采集 99\.58%.*名单完整 1\/2 场/);
     }
   } finally { compositionScenario = null; }
 });
@@ -970,10 +973,10 @@ await check('今天六小时监看完整显示监测100%', async () => {
   bucket.monitoring = {recording: true, watchedSeconds: 21600, elapsedSeconds: 21600}; bucket.status = 'off';
   try {
     page.leave(); await load(base + '?panel=trend&period=day');
-    assert.match(textOf(drawer()), /监测 100% · 确认没播/);
+    assert.match(coverageHints(), /监测 100% · 确认没播/);
     for (const period of ['week', 'month']) {
       await load(base + '?panel=trend&period=' + period);
-      assert.doesNotMatch(textOf(drawer()), /监测 .* · 确认没播/);
+      assert.doesNotMatch(coverageHints(), /监测 .* · 确认没播/);
     }
   } finally { delete bucket.monitoring; delete bucket.status; }
 });
@@ -984,7 +987,7 @@ await check('监测未知与零覆盖分开显示', async () => {
     for (const recording of [false, true]) {
       bucket.monitoring = {recording, watchedSeconds: 0, elapsedSeconds: 21600}; bucket.status = 'unknown';
       page.leave(); await load(base + '?panel=trend&period=day');
-      assert.ok(textOf(drawer()).includes(recording ? '监测 0.00% · 说不准' : '监测未知 · 说不准'));
+      assert.ok(coverageHints().includes(recording ? '监测 0.00% · 说不准' : '监测未知 · 说不准'));
     }
   } finally { delete bucket.monitoring; delete bucket.status; }
 });
@@ -996,7 +999,7 @@ await check('监测状态词及百分比向下截断', async () => {
     for (const [status, word] of [['recorded', '有直播'], ['off', '确认没播'], ['unknown', '说不准']]) {
       bucket.monitoring = {recording: true, watchedSeconds: 999999, elapsedSeconds: 1000000}; bucket.status = status;
       page.leave(); await load(base + '?panel=trend&period=day');
-      assert.ok(textOf(drawer()).includes('监测 99.99% · ' + word));
+      assert.ok(coverageHints().includes('监测 99.99% · ' + word));
     }
   } finally { delete bucket.monitoring; delete bucket.status; }
 });
@@ -1044,7 +1047,7 @@ for (const [gap, expected] of [[59, '59 秒'], [60, '1 分'], [3.217, '3 秒'],
     compositionScenario = {monitoring, previous: {monitoring}, capture: {gapSeconds: gap, gapSessions: 1}};
     try {
       page.leave(); await load(base);
-      const lines = nodes.get('sd-scope').children.map(n => n.textContent);
+      const lines = scopeLines();
       const prefix = kind === 'monitoring' ? '监测缺口 ' : '缺口合计 ';
       const actual = lines.filter(line => line.includes(prefix)).map(line => line.split(prefix)[1].split(' · ')[0]);
       assert.deepEqual(actual, kind === 'monitoring' ? [expected, expected] : [expected], prefix + '得到' + JSON.stringify(actual) + '，应为' + expected);
@@ -1136,9 +1139,9 @@ await check('折叠条切按周及其他控件后仍唯一且在控件后', asyn
     const body = flatten(drawer()).find(n => n.className === 'sc-drawer-body');
     const bars = flatten(body).filter(n => n.className === 'sd-recording');
     assert.equal(bars.length, 1, panel + '折叠条只能有一个');
-    const scope = body.children.findIndex(n => n.className.includes('sd-detail-scope'));
-    assert.equal(body.children.indexOf(bars[0]), scope + 1, panel + '折叠条须跟在范围行后');
-    if (panel === 'audience') assert.ok(body.children[scope].textContent.startsWith('本期名单 · 与总览全页范围一致：'));
+    assert.equal(body.children.indexOf(bars[0]), panel === 'audience' ? 0 : 1, panel + '折叠条须跟在控件后');
+    assert.ok(!body.children.some(n => n.className.includes('sd-detail-scope')), '范围统一在抽屉标题下显示');
+    assert.ok(flatten(drawer()).some(n => n.className === 'sd-drawer-context' && n.textContent.includes('Asia/Shanghai')), '标题下须保留范围');
   }
 });
 // 使用不同的本期、上期边界，防止对比范围误用本期或漏掉一端。
@@ -1148,7 +1151,7 @@ await check('统计口径头两行完整使用本期和上期接口边界', asyn
   try {
     page.leave(); await load(base + '?days=7');
     const scope = nodes.get('sd-scope'); scope.open = true;
-    const lines = scope.children.slice(1).map(n => n.textContent);
+    const lines = scopeLines();
     console.log('SCOPE_SAMPLE: ' + lines.join(' | '));
     assert.deepEqual(lines.slice(0, 2), [
       '全页范围：2026/10/10 06:00 — 2026/10/16 12:34（不含结束时刻） · Asia/Shanghai',
@@ -1156,7 +1159,7 @@ await check('统计口径头两行完整使用本期和上期接口边界', asyn
     // 回包没有上期时，不能把已经读完的统计范围继续写成正在读取。
     compositionScenario.previous = null;
     page.leave(); await load(base + '?days=7');
-    assert.equal(nodes.get('sd-scope').children[2].textContent, '对比范围：—', '无上期回包后须显示破折号');
+    assert.equal(scopeLines()[1], '对比范围：—', '无上期回包后须显示破折号');
   } finally { compositionScenario = null; }
 });
 // 读不到整页数据时，统计口径头两行不能停在读取中，须写明与工具条那行一样的失败原因。
@@ -1164,7 +1167,7 @@ await check('读取失败后统计口径头两行写明原因不写读取中', a
   insightsFailure = true;
   try {
     page.leave(); await load(base + '?days=7');
-    const lines = nodes.get('sd-scope').children.slice(1).map(n => n.textContent);
+    const lines = scopeLines();
     console.log('SCOPE_ERROR_SAMPLE: ' + lines.slice(0, 2).join(' | '));
     assert.ok(textOf(nodes.get('sd-toolbar')).includes('读取失败：archive unavailable'), '工具条那行须写失败原因');
     assert.ok(!lines[0].includes('正在读取'), '全页范围不得写正在读取，实际：' + lines[0]);
@@ -1180,7 +1183,7 @@ await check('上期缺起止时刻时对比范围写破折号', async () => {
       {to: Date.parse('2026-10-10T06:00:00+08:00')}, {}]) {
       compositionScenario = {from: Date.parse('2026-10-10T06:00:00+08:00'), to: Date.parse('2026-10-16T12:34:00+08:00'), previous};
       page.leave(); await load(base + '?days=7');
-      const lines = nodes.get('sd-scope').children.slice(1).map(n => n.textContent);
+      const lines = scopeLines();
       console.log('SCOPE_PREVIOUS_SAMPLE: ' + lines[1]);
       assert.ok(!lines[1].includes('正在读取'), '上期缺起止时刻不得写正在读取，实际：' + lines[1]);
       assert.equal(lines[1], '对比范围：—', '上期缺起止时刻须写破折号');

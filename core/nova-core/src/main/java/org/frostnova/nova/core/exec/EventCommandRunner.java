@@ -7,6 +7,7 @@ import org.frostnova.nova.core.model.LiveStreamerInfo;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -26,25 +31,8 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * 事件触发外部命令
- * <p>
- * 打开的是那类我们想不到的用法：开播时启动录播、上舰时写一行台账、被切流时给自己发条提醒。
- * 与其为每一种猜测各做一个功能，不如给出一个能接任何东西的出口。
- *
- * <h2>为什么不经过 shell</h2>
- * 命令以<b>参数数组</b>执行，绝不走 {@code sh -c}。事件里带的是主播昵称、弹幕正文这类
- * 完全由陌生人决定的内容，一旦拼进命令行字符串，一个昵称叫 {@code ; rm -rf ~} 的观众
- * 就能让脚本执行任意命令。走参数数组时，这段文本无论长什么样都只是<b>一个参数</b>，
- * 注入在结构上就不成立——这不是过滤得够不够干净的问题，是根本不给它机会。
- *
- * <h2>其余几条约束</h2>
- * <ul>
- *     <li><b>默认关闭。</b>这是个能执行任意程序的口子，得由使用者明确打开。</li>
- *     <li><b>有超时。</b>脚本卡住不会拖住任何东西，到点结束的是命令本身；它拉起的程序不受影响，会继续运行。</li>
- *     <li><b>有并发上限。</b>弹幕这类事件一秒能来几十条，没有上限的话一次刷屏
- *         就等于一次 fork 炸弹。超限直接丢弃并留下日志，而不是排成一条越积越长的队——
- *         等到十分钟后才执行的「开播时启动录播」没有任何意义。</li>
- *     <li><b>在独立线程池里跑。</b>事件分发是同步的，脚本跑得慢不该连累推送。</li>
- * </ul>
+ * <p>命令按参数数组在独立线程池执行，使用固定程序名，并检查参数格式。
+ * 默认关闭，执行时间与并发数由配置指定。
  */
 @Slf4j
 @Component
@@ -61,6 +49,9 @@ public class EventCommandRunner {
      */
     private static final int MAX_JSON_CHARS = 8000;
 
+    private static final List<String> FIELDS = List.of(
+            "{event}", "{platform}", "{uid}", "{uname}", "{room_id}", "{timestamp}", "{json}");
+
     private final NovaCoreProperties properties;
 
     private final ExecutorService executor;
@@ -70,6 +61,18 @@ public class EventCommandRunner {
      * 而不是排在队尾等到事件早已过期才执行
      */
     private final Semaphore permits;
+
+    /**
+     * 是否已完成启动检查
+     */
+    private volatile boolean configurationChecked;
+
+    private final Map<Integer, ObservedRule> observed = new ConcurrentHashMap<>();
+
+    /**
+     * 本次运行中已提醒的规则序号，每条只记一次
+     */
+    private final Set<Integer> skipped = ConcurrentHashMap.newKeySet();
 
     @Autowired
     public EventCommandRunner(NovaCoreProperties properties) {
@@ -83,6 +86,56 @@ public class EventCommandRunner {
     }
 
     /**
+     * 启动时检查各条规则
+     * <p>
+     * 第一项含占位符的规则提示改填固定路径；其余规则用示例事件按执行时的规则试算，
+     * 试算时会被跳过的才提示调整。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void checkConfiguration() {
+        configurationChecked = true;
+        rulesToAdjust();
+    }
+
+    /**
+     * 按实际生效的配置与本次执行记录列出待调整规则，按配置序号排列
+     */
+    public List<RuleToAdjust> rulesToAdjust() {
+        NovaCoreProperties.Exec exec = properties.getExec();
+        if (!exec.isEnabled()) {
+            return List.of();
+        }
+        List<RuleToAdjust> marked = new ArrayList<>();
+        NovaExternalBaseEvent sample = new NovaExternalBaseEvent("sample", new LiveStreamerInfo(1L, "-sample", 1L));
+        for (int index = 0; index < exec.getRules().size(); index++) {
+            NovaCoreProperties.ExecRule rule = exec.getRules().get(index);
+            if (!rule.isEnabled()) {
+                continue;
+            }
+            List<String> command = rule.getCommand();
+            String program = command == null ? null : command.stream().filter(Objects::nonNull).findFirst().orElse(null);
+            boolean programField = program != null && firstField(program) >= 0;
+            ObservedRule previous = observed.get(index);
+            boolean wasSkipped = previous != null && Objects.equals(previous.command(), command)
+                    && Objects.equals(previous.event(), rule.getEvent());
+            if (wasSkipped || configurationChecked && program != null && resolve(command, sample).isEmpty()) {
+                marked.add(new RuleToAdjust(index, rule.getEvent()));
+                if (skipped.add(index)) {
+                    if (programField) {
+                        log.warn("请调整 novabot.core.exec.rules[{}].command：第一项请填写固定程序或脚本路径，"
+                                + "修改后重启；写法见使用说明附录 B", index);
+                    } else {
+                        log.warn("请调整 novabot.core.exec.rules[{}].command：事件参数请放在单列的固定 -- 之后，"
+                                + "或接在固定的选项名之后（如 --name={uname}、-n{uname}），也可改用 event-environment 读取事件；"
+                                + "修改后重启，写法见使用说明附录 B", index);
+                    }
+                }
+            }
+        }
+        return List.copyOf(marked);
+    }
+
+    /**
      * 事件到达时执行匹配的命令
      */
     @EventListener
@@ -92,9 +145,11 @@ public class EventCommandRunner {
             return;
         }
 
-        for (NovaCoreProperties.ExecRule rule : exec.getRules()) {
+        List<NovaCoreProperties.ExecRule> rules = exec.getRules();
+        for (int index = 0; index < rules.size(); index++) {
+            NovaCoreProperties.ExecRule rule = rules.get(index);
             if (rule.isEnabled() && matches(rule, event)) {
-                submit(rule, event);
+                submit(index, rule, event);
             }
         }
     }
@@ -123,10 +178,16 @@ public class EventCommandRunner {
     /**
      * 提交一次执行
      */
-    private void submit(NovaCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
+    private void submit(int index, NovaCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
         List<String> command = resolve(rule.getCommand(), event);
         if (command.isEmpty()) {
-            log.warn("事件命令规则 {} 没有配置可执行的命令, 已跳过", rule.getEvent());
+            observed.put(index, new ObservedRule(rule.getCommand() == null ? null : new ArrayList<>(rule.getCommand()), rule.getEvent()));
+            // 每条规则每次运行只记一次，免得事件密集时刷屏
+            if (skipped.add(index)) {
+                log.warn("外部程序触发规则 novabot.core.exec.rules[{}]（事件 {}）已跳过：command 为空或需要按新写法调整。"
+                        + "请按使用说明附录 B 修改这条规则的 command 后重启；本次运行中这条规则再被跳过时不再记录",
+                        index, rule.getEvent());
+            }
             return;
         }
 
@@ -135,9 +196,10 @@ public class EventCommandRunner {
             return;
         }
 
+        String eventJson = rule.isEventEnvironment() ? json(event) : null;
         executor.execute(() -> {
             try {
-                run(command, rule);
+                run(command, rule, eventJson);
             } finally {
                 permits.release();
             }
@@ -157,31 +219,74 @@ public class EventCommandRunner {
 
         LiveStreamerInfo source = event.getSource();
         List<String> command = new ArrayList<>(template.size());
+        boolean options = true;
         for (String argument : template) {
             if (argument == null) {
                 continue;
             }
-            command.add(argument
+            int field = firstField(argument);
+            if (command.isEmpty() && field >= 0) {
+                return List.of();
+            }
+            String value = argument
                     .replace("{event}", event.getClass().getSimpleName())
                     .replace("{platform}", nullToEmpty(event.getPlatform()))
                     .replace("{uid}", source == null ? "" : nullToEmpty(source.getUid()))
                     .replace("{uname}", source == null ? "" : nullToEmpty(source.getUname()))
                     .replace("{room_id}", source == null ? "" : nullToEmpty(source.getRoomId()))
-                    .replace("{timestamp}", String.valueOf(event.getTimestamp()))
-                    .replace("{json}", json(event)));
+                    .replace("{timestamp}", String.valueOf(event.getTimestamp()));
+            if (value.contains("{json}")) {
+                value = value.replace("{json}", json(event));
+            }
+            if (!command.isEmpty()) {
+                if (argument.equals("--")) {
+                    options = false;
+                } else if (options && field >= 0 && value.length() > 1 && value.startsWith("-")
+                        && !namesOption(argument, field)) {
+                    return List.of();
+                }
+            }
+            command.add(value);
         }
         return command;
+    }
+
+    private static int firstField(String argument) {
+        int start = argument.indexOf('{');
+        while (start >= 0) {
+            for (String field : FIELDS) {
+                if (argument.startsWith(field, start)) {
+                    return start;
+                }
+            }
+            start = argument.indexOf('{', start + 1);
+        }
+        return -1;
+    }
+
+    /**
+     * 第一个占位符之前的固定部分是否已写完选项名：单个 - 加选项字母，或 --选项名=
+     */
+    private static boolean namesOption(String argument, int field) {
+        if (argument.startsWith("--")) {
+            int equals = argument.indexOf('=');
+            return equals > 2 && equals < field;
+        }
+        return field > 1;
     }
 
     /**
      * 执行一次命令
      */
-    private void run(List<String> command, NovaCoreProperties.ExecRule rule) {
+    private void run(List<String> command, NovaCoreProperties.ExecRule rule, String eventJson) {
         int timeout = Math.max(1, properties.getExec().getTimeout());
         Process process = null;
 
         try {
             ProcessBuilder builder = new ProcessBuilder(command);
+            if (eventJson != null) {
+                builder.environment().put("NOVABOT_EVENT_JSON", eventJson);
+            }
             builder.redirectErrorStream(true);
             // 命令不该从任何地方读输入：脚本一旦等在 stdin 上就会一直挂到超时
             builder.redirectInput(ProcessBuilder.Redirect.from(nullDevice()));
@@ -295,6 +400,17 @@ public class EventCommandRunner {
      */
     private static File nullDevice() {
         return new File(System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null");
+    }
+
+    /**
+     * 一条待调整的规则
+     * @param index 在 novabot.core.exec.rules 里的序号
+     * @param event 规则配置的事件名
+     */
+    public record RuleToAdjust(int index, String event) {
+    }
+
+    private record ObservedRule(List<String> command, String event) {
     }
 
     @PreDestroy

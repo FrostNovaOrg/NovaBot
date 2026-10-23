@@ -50,6 +50,7 @@ const PAGE_STYLE = `
   cursor:pointer;text-align:left}
 .tnode:hover{background:var(--soft)}
 .tnode.on{background:var(--soft);font-weight:600}
+.ptop .tnode{text-decoration:none;color:var(--text)}
 .tnode.tchan{padding-left:24px;font-size:var(--fs-sm)}
 .tnode .caret{width:14px;flex:none;color:var(--dim);font-size:var(--fs-xs)}
 .tnode .tn-ico{flex:none;width:18px;height:18px;border-radius:var(--r-ctl);background:var(--soft);
@@ -71,7 +72,7 @@ const PAGE_STYLE = `
 .pright{min-width:0}
 /* 窄屏：左树摆不下，改成上面那个下拉。树不是「藏起来」而是换了一种画法——
    直接横过来摆的话，正文只剩半屏宽，而通道页每一块都是整行的开关 */
-@media (max-width:1200px){
+@media (max-width:900px){
   .pushwrap{display:block}
   .ptree{display:none}
   .pnarrow{display:block}
@@ -107,8 +108,10 @@ const PAGE_STYLE = `
 .sav{width:40px;height:40px;border-radius:50%;flex:none;background:var(--line);object-fit:cover}
 .sh-m{flex:1 1 180px;min-width:0}
 .sh-nm{font-size:var(--fs-lg);font-weight:600}
+.sh-nm .lnkbtn{margin-left:10px;font-size:var(--fs-sm);font-weight:400}
 .sh-id{color:var(--dim);font-size:var(--fs-sm)}
 .sh-side{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.streamer-block-lists .field{grid-template-columns:minmax(0,1fr);gap:6px;padding:12px 0}
 /* 通道行 */
 .rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;
   border-top:1px solid var(--line)}
@@ -290,8 +293,12 @@ const PAGE_STYLE = `
 .dwlist{display:grid;gap:4px}
 .dwrow{display:grid;gap:1px;text-align:left;background:none;border:1px solid transparent;
   border-radius:var(--r-ctl);padding:8px 10px;cursor:pointer;font-family:inherit}
-.dwrow:hover:not(:disabled){background:var(--soft);border-color:var(--softline)}
-.dwrow:disabled{cursor:not-allowed;opacity:.5}
+.dwrow:hover:not(.taken){background:var(--soft);border-color:var(--softline)}
+.dw-target-group h4{margin:14px 0 6px;font-size:var(--fs-sm);color:var(--dim)}
+.dw-target-row{display:flex;align-items:center;gap:10px;cursor:default}
+.dw-target-row>div{flex:1;min-width:0;overflow-wrap:anywhere}
+.dw-target-row>.ghost{flex:none}
+.dw-target-row.taken{opacity:.6}
 .dw-nm{font-size:var(--fs-md);color:var(--text)}
 .dw-sub{font-size:var(--fs-xs);color:var(--dim)}
 .dw-tag{font-size:var(--fs-xs);color:var(--dim)}
@@ -325,6 +332,15 @@ const PAGE_STYLE = `
 .tpl-tab.on{border-color:var(--softline);background:var(--soft);color:var(--accent)}
 .tpl-note{margin:0 0 8px}
 .tpl-note[hidden]{display:none}
+.default-savebar{position:sticky;bottom:16px;z-index:4;display:flex;justify-content:flex-end;
+  padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-ctl);box-shadow:var(--shadow)}
+.default-savebar[hidden]{display:none}
+html:not(.nobar):not(.chromeless) .default-savebar{bottom:90px}
+.default-reset{margin:16px 0;text-align:right}
+.template-adoption{width:100%;font-size:var(--fs-sm)}
+.template-adoption th,.template-adoption td{white-space:normal;overflow-wrap:anywhere;vertical-align:top}
+.template-adoption summary{cursor:pointer;color:var(--accent)}
+.template-adoption ul{padding-left:18px;margin:6px 0}
 /* 调色板 */
 .tpl-pal{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px;
   background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
@@ -507,8 +523,8 @@ export function render(section) {
     <div class="pushwrap">
       <aside class="ptree">
         <div class="ptop">
-          <a class="nv-btn2 sm" id="push-default-tpl" href="#/push/default">默认模板</a>
-          ${isMember() ? '' : '<button type="button" class="ghost sm" id="push-add-streamer">＋ 添加主播</button>'}
+          <a class="lnkbtn tnode" id="push-default-tpl" href="#/push/default">默认模板</a>
+          ${isMember() ? '' : '<button type="button" class="lnkbtn tnode" id="push-add-streamer">＋ 添加主播</button>'}
         </div>
         <div class="ptree-t">主播</div>
         <div id="push-tree"></div>
@@ -880,6 +896,11 @@ function paintTree() {
   const host = $('#push-tree');
   const nav = $('#push-nav');
   const tree = pushTree(pushData, runtime.sessions, store.handlerList, directory);
+  const defaults = $('#push-default-tpl');
+  if (defaults) {
+    defaults.className = 'lnkbtn tnode' + (picked.uid === 'default' ? ' on' : '');
+    defaults.setAttribute('aria-current', picked.uid === 'default' ? 'page' : 'false');
+  }
 
   host.innerHTML = '';
   nav.innerHTML = '<option value="">通道一览</option><option value="default">默认模板</option>';
@@ -906,7 +927,7 @@ function paintTree() {
       }
     }
     for (const channel of streamer.channels) {
-      nav.appendChild(navOption('c:' + streamer.uid + ':' + channelTail(channel), '　└ ' + channel.name));
+      nav.appendChild(navOption('c:' + streamer.uid + ':' + channelTail(channel), streamer.name + ' › ' + channel.name));
     }
 
     host.appendChild(group);
@@ -1150,20 +1171,38 @@ function renderDefaultTemplates(host) {
     return;
   }
 
+  const reportNote = el('p', 'hint tpl-preview-note');
+  reportNote.hidden = true;
+  reportNote.appendChild(document.createTextNode('图片版式在通道页里调。'));
+  const reportLink = el('a', 'lnkbtn');
+  reportLink.href = '#/push';
+  reportLink.textContent = '选择通道 →';
+  reportNote.appendChild(reportLink);
+  const showReportNote = handler => {
+    reportNote.hidden = !(handler.placeholders || []).includes('{report}');
+    const user = pushData.find(user => (user.targets || []).some(target => messageOf(target, handler)));
+    const target = user?.targets.find(target => messageOf(target, handler));
+    reportLink.href = target ? '#/push/' + user.uid + '/' + channelTail(target) : '#/push';
+    reportLink.textContent = target ? '前往通道 →' : '选择通道 →';
+  };
+
   if (isMember()) {
     buildTemplateEditor(box, {
       handlers, editable: false,
       base: handler => handler.factoryParams || handler.defaultParams,
       paramsOf: overridesOf,
       context: {isGroup: true, admin: null, terms: store.vocab}, channelLabel: '群聊',
+      onSelect: showReportNote,
     });
+    box.querySelector('.tpl-right').appendChild(reportNote);
     renderAdoption(host, handlers);
     return;
   }
 
   // 这一页的草稿不进底部那条改动条：它存的不是推送配置，走的是自己的保存按钮
   const draft = {};
-  const line = el('div', 'tplstate');
+  const line = el('div', 'default-savebar');
+  line.hidden = true;
   const save = el('button', 'primary');
   save.type = 'button';
   save.textContent = '保存默认模板';
@@ -1172,7 +1211,7 @@ function renderDefaultTemplates(host) {
 
   let currentHandler = handlers[0];
 
-  const reset = el('button', 'ghost');
+  const reset = el('button', 'lnkbtn');
   reset.type = 'button';
   reset.textContent = '恢复出厂默认';
   reset.addEventListener('click', async () => {
@@ -1180,10 +1219,8 @@ function renderDefaultTemplates(host) {
     if (!await ask({title: '恢复出厂默认？',
       body: '「' + name + '」的默认模板将恢复为出厂设置，使用默认模板的通道将同步恢复。'})) return;
     delete draft[currentHandler.className];
-    saveDefaults(currentHandler, {}, save);
+    await saveDefaults(currentHandler, {}, save);
   });
-  line.appendChild(reset);
-  box.appendChild(line);
 
   save.addEventListener('click', () => saveDefaults(currentHandler,
     draft[currentHandler.className] || overridesOf(currentHandler), save));
@@ -1199,16 +1236,28 @@ function renderDefaultTemplates(host) {
     onSelect: handler => {
       currentHandler = handler;
       save.disabled = !draft[handler.className];
+      line.hidden = save.disabled;
+      showReportNote(handler);
     },
     onChange: (handler, params) => {
       currentHandler = handler;
-      draft[handler.className] = params;
-      save.disabled = false;
+      const saved = overridesOf(handler);
+      const keys = new Set([...Object.keys(saved), ...Object.keys(params)]);
+      const changed = [...keys].some(key => String(saved[key]) !== String(params[key]));
+      if (changed) draft[handler.className] = params;
+      else delete draft[handler.className];
+      save.disabled = !changed;
+      line.hidden = !changed;
       save.textContent = '保存默认模板';
     },
   });
+  box.querySelector('.tpl-right').appendChild(reportNote);
 
   renderAdoption(host, handlers);
+  const resetLine = el('div', 'default-reset');
+  resetLine.appendChild(reset);
+  host.appendChild(resetLine);
+  host.appendChild(line);
 }
 
 /**
@@ -1281,27 +1330,40 @@ function renderAdoption(host, handlers) {
     isMember() ? '使用默认模板的通道会随管理员的修改同步更新；已自定义的通道不受影响。'
       : '在上方修改默认模板后，下列使用默认模板的通道将同步更新；已自定义的通道不受影响。');
 
+  const table = el('table', 'ptable template-adoption');
+  table.innerHTML = '<thead><tr><th>通知类型</th><th>用默认</th><th>自定义</th><th>通道名单</th></tr></thead>';
+  const body = el('tbody');
   for (const handler of handlers) {
     const rows = templateAdoption(pushData, handler, store.vocab);
-    const item = el('div', 'tplrow');
-    item.appendChild(el('b')).textContent = handler.displayName || handler.className;
-    item.appendChild(el('p', 'hint')).textContent =
-      '使用默认 ' + rows.following.length + ' 个通道 · 自定义 ' + rows.custom.length + ' 个通道';
-    if (rows.following.length) {
-      item.appendChild(el('p', 'xs dim')).textContent = '同步更新：' + describe(rows.following);
+    const item = el('tr');
+    item.appendChild(el('td')).textContent = handler.displayName || handler.className;
+    item.appendChild(el('td')).textContent = rows.following.length + ' 个';
+    item.appendChild(el('td')).textContent = rows.custom.length + ' 个';
+    const cell = el('td');
+    const details = el('details');
+    details.appendChild(el('summary')).textContent = '查看名单';
+    for (const [label, channels] of [['使用默认 · 同步更新', rows.following], ['自定义 · 不受影响', rows.custom]]) {
+      details.appendChild(el('p', 'xs dim')).textContent = label + '（' + channels.length + ' 个）';
+      const list = el('ul');
+      for (const row of channels) {
+        list.appendChild(el('li')).textContent = describe([row]);
+      }
+      details.appendChild(list);
     }
-    if (rows.custom.length) {
-      item.appendChild(el('p', 'xs dim')).textContent = '不受影响：' + describe(rows.custom);
-    }
-    box.appendChild(item);
+    cell.appendChild(details);
+    item.appendChild(cell);
+    body.appendChild(item);
   }
+  table.appendChild(body);
+  box.appendChild(table);
 }
 
 /** 把几个通道写成一句话，取的是屏幕上那个名字而不是号 */
 function describe(rows) {
   return rows.map(row => {
     const session = sessionOf(runtime.sessions, row.platform, row.num, row.type);
-    return channelName(session, row, directory);
+    const user = pushData.find(item => String(item.uid) === String(row.uid));
+    return streamerName(user || {uid: row.uid}) + ' › ' + channelName(session, row, directory);
   }).join('、');
 }
 
@@ -1312,10 +1374,18 @@ function renderStreamerLevel(host, user) {
   const head = el('div', 'shead');
   head.innerHTML = (user._face
       ? '<img class="sav" referrerpolicy="no-referrer" src="' + esc(user._face) + '" alt="">'
-      : '<span class="sav"></span>')
-    + '<div class="sh-m"><div class="sh-nm">' + esc(streamerName(user)) + '</div>'
-    + '<div class="sh-id">uid ' + esc(user.uid)
-    + (user._roomId ? ' · 直播间 ' + esc(user._roomId) : '') + '</div></div>';
+      : '<span class="sav"></span>');
+  const meta = el('div', 'sh-m');
+  const name = el('div', 'sh-nm');
+  name.appendChild(document.createTextNode(streamerName(user)));
+  const dataLink = el('a', 'lnkbtn');
+  dataLink.href = detailHash(user.platform, user.uid);
+  dataLink.textContent = '看数据 →';
+  name.appendChild(dataLink);
+  meta.appendChild(name);
+  meta.appendChild(el('div', 'sh-id')).textContent = 'uid ' + user.uid
+    + (user._roomId ? ' · 直播间 ' + user._roomId : '');
+  head.appendChild(meta);
 
   const side = el('div', 'sh-side');
   const enable = el('label', 'switch');
@@ -1350,7 +1420,8 @@ function renderStreamerLevel(host, user) {
   list.appendChild(add);
 
   const lists = card(host, '这位主播自己的屏蔽名单',
-    '设置页里还有一份全实例的，两份合起来用；这里只能多挡，挡不掉那一份里的。');
+    '这里的词和设置页的全局词一起生效');
+  lists.className += ' streamer-block-lists';
   for (const [key, title] of [['dynamicBlockWords', '动态屏蔽词'],
     ['wordCloudBlockWords', '词云屏蔽词'], ['wordCloudExcludeUids', '词云排除的观众 uid']]) {
     const field = el('div', 'field');
@@ -1376,12 +1447,6 @@ function renderStreamerLevel(host, user) {
     field.appendChild(input);
     lists.appendChild(field);
   }
-
-  const data = card(host, '主播数据', '场次、趋势及每一场的详细报告均可在主播页查看。');
-  const link = el('a', 'lnkbtn');
-  link.href = detailHash(user.platform, user.uid);
-  link.textContent = '打开 ' + streamerName(user) + ' 的数据 →';
-  data.appendChild(link);
 
   // 删除挪到页底单独一块：不和「启用」开关挨着（手机上手指容易碰错），也不压过页上常用的操作
   if (!isMember()) {
@@ -1430,9 +1495,13 @@ function channelRow(user, target) {
   main.appendChild(sub);
 
   const tags = el('div', 'rc-tg');
-  for (const item of switches) {
-    tags.appendChild(pill(item.displayName + (item.on ? ' 已启用' : ' 已停用'), item.on ? 'ok' : ''));
+  const enabled = switches.filter(item => item.on);
+  for (const item of enabled) {
+    tags.appendChild(pill(item.displayName, 'ok'));
   }
+  if (!enabled.length) tags.appendChild(el('span', 'xs dim')).textContent = '全部停用';
+  else if (enabled.length < switches.length) tags.appendChild(el('span', 'xs dim')).textContent =
+    '另 ' + (switches.length - enabled.length) + ' 项未开';
   main.appendChild(tags);
   row.appendChild(main);
 
@@ -1489,7 +1558,8 @@ function renderChannelLevel(host, user, target) {
   rules.appendChild(rulesBody);
   const commands = el('div', 'nv-card hcard psec p-commands');
   host.appendChild(commands);
-  const status = block(host, group ? '本群状态（只读）' : '该好友状态（只读）', null);
+  // 不标「只读」：提醒订阅旁边的「管理名单」能清人，只有 @全体成员 那一行是只能看的
+  const status = block(host, group ? '本群状态' : '该好友状态', null);
   const statusBody = el('div', 'crules');
   status.appendChild(statusBody);
   recentPushFold(status, user, target, session);
@@ -2230,37 +2300,50 @@ function pickTarget(opts) {
         return;
       }
 
-      for (const item of rows) {
-        const taken = (opts.taken || []).includes(item.key);
-        const otherStreamers = item.type === 1 ? pushData
-          .filter(user => user !== opts.user && (user.targets || []).some(target =>
-            target.platform === item.sender && Number(target.type) === 1
-            && String(target.num) === String(item.num)))
-          .map(streamerName) : [];
-        const pushing = otherStreamers.length
-          ? ' · 正在推送 ' + otherStreamers.slice(0, 3).join('、')
-            + (otherStreamers.length > 3 ? '等 ' + otherStreamers.length + ' 位' : '')
-          : '';
-        const row = el('button', 'dwrow' + (taken ? ' taken' : ''));
-        row.type = 'button';
-        row.disabled = taken;
-        row.innerHTML = '<span class="dw-nm">' + esc(item.name || item.num) + '</span>'
-          + '<span class="dw-sub">' + (item.type === 1
-            ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
-          + esc(item.num)
-          + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
-          + (item.admin ? ' · 机器人为管理员' : '') + esc(pushing) + '</span>'
-          + (taken ? '<span class="dw-tag">已添加</span>' : '');
-        row.addEventListener('click', () => {
-          const hit = resolveTarget(options, item.key);
-          if (!hit.ok) {
-            say(hit.reason, 'err');
-            return;
-          }
-          closeDrawer();
-          opts.onPick(hit);
-        });
-        list.appendChild(row);
+      for (const [type, label] of [[1, '群'], [0, '好友']]) {
+        const members = rows.filter(item => Number(item.type) === type)
+          .sort((a, b) => Number((opts.taken || []).includes(a.key)) - Number((opts.taken || []).includes(b.key)));
+        const group = el('section', 'dw-target-group');
+        group.appendChild(el('h4')).textContent = label + ' ' + members.length + ' 个';
+        for (const item of members) {
+          const taken = (opts.taken || []).includes(item.key);
+          const otherStreamers = item.type === 1 ? pushData
+            .filter(user => user !== opts.user && (user.targets || []).some(target =>
+              target.platform === item.sender && Number(target.type) === 1
+              && String(target.num) === String(item.num)))
+            .map(streamerName) : [];
+          const pushing = otherStreamers.length
+            ? ' · 正在推送 ' + otherStreamers.slice(0, 3).join('、')
+              + (otherStreamers.length > 3 ? '等 ' + otherStreamers.length + ' 位' : '')
+            : '';
+          const row = el('div', 'dwrow dw-target-row' + (taken ? ' taken' : ''));
+          const description = el('div');
+          description.innerHTML = '<div class="dw-nm">' + esc(item.name || item.num) + '</div>'
+            + '<div class="dw-sub">' + (item.type === 1
+              ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
+            + esc(item.num)
+            + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
+            + (item.admin ? ' · 机器人为管理员' : '') + esc(pushing) + '</div>';
+          row.appendChild(description);
+          const add = el('button', 'ghost sm');
+          add.type = 'button';
+          add.disabled = taken;
+          add.textContent = taken ? '已添加' : '添加';
+          add.setAttribute('aria-label', taken ? (item.name || item.num) + ' 已添加' : '添加' + label + ' ' + (item.name || item.num));
+          add.addEventListener('click', () => {
+            if (taken) return;
+            const hit = resolveTarget(options, item.key);
+            if (!hit.ok) {
+              say(hit.reason, 'err');
+              return;
+            }
+            closeDrawer();
+            opts.onPick(hit);
+          });
+          row.appendChild(add);
+          group.appendChild(row);
+        }
+        list.appendChild(group);
       }
     };
 

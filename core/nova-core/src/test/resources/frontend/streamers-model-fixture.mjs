@@ -25,7 +25,7 @@ const {
   detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
   gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, reportPath, reportView, rowSubtitle,
-  seriesValues, sessionHash, sessionTitle, snapshotRows, sparkline,
+  dailyFanChanges, trendCoverageBadge, seriesValues, sessionHash, sessionTitle, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } = await import('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/streamers-model.js');
 
@@ -135,6 +135,26 @@ eq(seriesValues(SERIES, 'durationSeconds'), [0, 7200, 0, 3600, 0, 0, 10800], '�
 eq(seriesValues([{date: '2026-09-04'}], 'sessions'), [0],
   '旧版服务端没给这一栏时当 0，不当 undefined——画出来会是一条断掉的线');
 eq(seriesValues(null, 'sessions'), [], '整栏都没有时是空的');
+
+// 当天还没结束、直播还没归档时，折线不能把当天的低值画成全员下滑。
+eq(seriesValues([...SERIES, {date: '2026-09-05', sessions: 0}], 'sessions', '2026-09-05'),
+  [0, 2, 0, 1, 0, 0, 3], '小折线只画已结束的统计日，不受今天未归档影响');
+eq(seriesValues(SERIES, 'sessions', '2026-09-05'), [0, 2, 0, 1, 0, 0, 3],
+  '末点已经是昨天时不能再丢一天');
+
+// 每日净增只能比较相邻统计日的末次快照；缺一天不能把多天差值冒充单日净增。
+const fanAt = date => Date.parse(date + 'T12:00:00+08:00');
+eq(dailyFanChanges?.([{at: fanAt('2026-10-10'), value: 2000},
+  {at: fanAt('2026-10-11'), value: 2003}, {at: fanAt('2026-10-11') + 1000, value: 2002},
+  {at: fanAt('2026-10-13'), value: 2008}]),
+  [{date: '2026-10-10', value: 2000, change: null}, {date: '2026-10-11', value: 2002, change: 2},
+    {date: '2026-10-13', value: 2008, change: null}], '每日净增使用日末快照且不补估缺日');
+const completeBucket = {sessions: 2, durationSeconds: 100, capture: {effectiveSeconds: 100},
+  coverage: {complete: 2}, monitoring: {recording: true, elapsedSeconds: 100, watchedSeconds: 100}};
+eq(trendCoverageBadge?.(completeBucket, 'day'), '完整', '覆盖徽章须综合采集、监测与名单');
+eq(trendCoverageBadge?.({...completeBucket, capture: {effectiveSeconds: 99}}, 'day'), '缺 1%', '有采集缺口不能标完整');
+eq(trendCoverageBadge?.({...completeBucket, coverage: {complete: 1}}, 'day'), '缺 50%', '名单缺口不能藏在完整徽章后');
+eq(trendCoverageBadge?.({...completeBucket, monitoring: null}, 'day'), '未知', '监测未知不能误写完整');
 
 const SPARK = sparkline([0, 2, 0, 1, 0, 0, 3]);
 eq([SPARK.width, SPARK.height], [88, 26], '折线的画布');
@@ -313,12 +333,12 @@ eq(audienceSort('revenue', 'name'), 'revenue', '昵称表头不参与排序');
 eq(coverageText({complete: 1, anonymous: 2, unknown: 3, missing: 4}),
   '名单：完整 1 场；含无法识别的观众 2 场（这几场的人数偏少）；完整性未知 3 场（升级到 6.0 之前开播的场次未记录此项）；没有名单 4 场', '名单情况与概况共用一句话');
 
-eq(insightsComparison?.({changeRatio: .12}), {text: '较上期 +12%', color: 'var(--err)'},
-  '概况上涨显示较上期与红色');
-eq(insightsComparison?.({changeRatio: -.05}), {text: '较上期 −5%', color: 'var(--ok)'},
-  '概况下降显示负百分比与绿色');
+eq(insightsComparison?.({changeRatio: .12}), {text: '较上期 +12%', color: 'var(--trend-up)'},
+  '上涨使用独立涨色，不能误用错误色');
+eq(insightsComparison?.({changeRatio: -.05}), {text: '较上期 −5%', color: 'var(--trend-down)'},
+  '下降使用独立跌色');
 eq(insightsComparison?.({changeRatio: .003}), {text: '较上期持平', color: ''}, '概况小于半个百分点持平不上色');
-eq(insightsComparison?.({changeRatio: -.005}), {text: '较上期 −1%', color: 'var(--ok)'}, '概况负半个百分点四舍五入');
+eq(insightsComparison?.({changeRatio: -.005}), {text: '较上期 −1%', color: 'var(--trend-down)'}, '概况负半个百分点四舍五入');
 eq(insightsComparison?.({reasonCode: 'PREVIOUS_ZERO', reason: '上期为 0'}), null,
   '未比较的格子不显示原因或百分比');
 eq(insightsComparison?.(undefined), null, '没有对比结果时不造持平');
