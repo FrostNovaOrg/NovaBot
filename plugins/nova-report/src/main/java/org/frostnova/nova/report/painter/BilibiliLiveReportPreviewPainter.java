@@ -107,11 +107,41 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
      * @return PNG 字节，画不出来时为空
      */
     public Optional<byte[]> render(BilibiliLiveReportOptions options) {
-        return paint(BilibiliPlatform.BILIBILI.id(), PREVIEW_STREAMER, options)
+        return render(options, ReportPalette.DEFAULT);
+    }
+
+    public Optional<byte[]> render(BilibiliLiveReportOptions options, ReportPalette palette) {
+        return paint(BilibiliPlatform.BILIBILI.id(), PREVIEW_STREAMER, options, palette)
                 .map(base64 -> Base64.getDecoder().decode(base64));
     }
 
     // ================ 向外部要资料的口子：一律用本地夹具顶上 ================
+
+    @Override
+    protected BufferedImage loadCover(LiveStreamerInfo source, ReportPalette palette) {
+        return palette == ReportPalette.DEFAULT ? loadCover(source) : PainterPlaceholder.banner(palette);
+    }
+
+    @Override
+    protected BufferedImage faceImage(LiveStreamerInfo source, ReportPalette palette) {
+        return palette == ReportPalette.DEFAULT ? faceImage(source) : PainterPlaceholder.face(palette);
+    }
+
+    @Override
+    protected BufferedImage avatar(String url, ReportPalette palette) {
+        return palette == ReportPalette.DEFAULT ? avatar(url) : PainterPlaceholder.rankingFace(palette);
+    }
+
+    @Override
+    protected BufferedImage guardIcon(String url, ReportPalette palette) {
+        return guardIcon(url, GUARD_ICON_SIZE, palette);
+    }
+
+    @Override
+    protected BufferedImage guardIcon(String url, int size, ReportPalette palette) {
+        BufferedImage icon = guardIcon(url, size);
+        return icon == guardMark && palette != ReportPalette.DEFAULT ? PainterPlaceholder.guardIcon(palette) : icon;
+    }
 
     @Override
     protected BufferedImage loadCover(LiveStreamerInfo source) {

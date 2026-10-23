@@ -2,6 +2,7 @@ package org.frostnova.nova.report.factory;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.report.painter.CommonPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.util.FontUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.info.BuildProperties;
@@ -10,7 +11,7 @@ import org.springframework.stereotype.Component;
 /**
  * NovaBot 绘图器工厂
  * <p>
- * 绘图器要三样东西才画得全：版本号（画在版权行上）、配置（版面尺寸与配色）、字体表（挑字与量宽）。
+ * 绘图器要三样东西才画得全：版本号（画在版权行上）、配置（画布扩展等绘图选项）、字体表（挑字与量宽）。
  * 报告图那一路自己不持有这三样，全靠这里在造绘图器时一并塞进去——
  * 少塞一样不会在造的时候报错，会等到画到那一处时才炸。
  * <p>
@@ -52,5 +53,11 @@ public class NovaCommonPainterFactory {
      */
     public CommonPainter create(int width, int height, boolean autoExpand) {
         return new CommonPainter(buildProperties, properties, fontUtil, width, height, autoExpand);
+    }
+    /** 创建使用指定配色的新画布。 */
+    public CommonPainter create(int width, int height, boolean autoExpand, ReportPalette palette) {
+        java.util.Objects.requireNonNull(palette, "palette");
+        if (palette == ReportPalette.DEFAULT) return create(width, height, autoExpand);
+        return new CommonPainter(buildProperties, properties, fontUtil, width, height, autoExpand, palette);
     }
 }

@@ -18,14 +18,8 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 /**
- * 各报告图共用的版面件：宽度与留边、页头、标识图、配色
- * <p>
- * 下播报告先有的这一套，打赏播报图随后照用。此前页头、标识图、配色都是
- * {@link BilibiliLiveReportPainter} 一家的私有件，第二张图要用就只得抄一份——
- * 两份各改各的，图与图会慢慢长得不像一个程序出的。收在这里之后只有一份：
- * 改宽度、换配色，所有报告图一起变。
- * <p>
- * 下播报告的旧常量与私有方法改为引用本类，画出的字节不变；新图直接取用。
+ * 各报告图共用的版面件：宽度与留边、页头、数值卡片、标识图。
+ * 颜色从当前画布的 {@link CommonPainter#palette()} 获取。
  */
 @Slf4j
 public final class ReportSharedStyle {
@@ -59,25 +53,6 @@ public final class ReportSharedStyle {
      */
     public static final int LOGO_HEIGHT = 45;
 
-    /**
-     * 名字的主题粉
-     */
-    public static final Color COLOR_NAME = new Color(251, 114, 153);
-
-    /**
-     * 提示的浅灰
-     */
-    public static final Color COLOR_TIP = new Color(153, 162, 170);
-
-    /**
-     * 正文深灰
-     */
-    public static final Color COLOR_TEXT = new Color(51, 51, 51);
-
-    /** 与控制台浅色主题一致：上涨红、下跌绿。 */
-    public static final Color COLOR_UP = new Color(0xCA1226);
-    public static final Color COLOR_DOWN = new Color(0x167349);
-
     public static final int CARD_COLUMNS = 3;
     public static final int CARD_GAP = 18;
     public static final int CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
@@ -85,7 +60,6 @@ public final class ReportSharedStyle {
     public static final int WEEKLY_CARD_HEIGHT = 196;
     public static final int CARD_RADIUS = 16;
     public static final int CARD_TEXT_INSET = 20;
-    public static final Color COLOR_CARD = new Color(246, 247, 249);
 
     /** 与下播报告一致的数值卡片，文字按内宽截断。 */
     public static void drawCard(CommonPainter painter, String valueText, String labelText, int x, int y) {
@@ -93,19 +67,19 @@ public final class ReportSharedStyle {
     }
 
     private static void drawCard(CommonPainter painter, String valueText, String labelText, int x, int y, int height) {
-        painter.drawRoundedRectangle(x, y, CARD_WIDTH, height, CARD_RADIUS, COLOR_CARD);
+        painter.drawRoundedRectangle(x, y, CARD_WIDTH, height, CARD_RADIUS, painter.palette().card());
         int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
-        TextWithStyle value = new TextWithStyle(valueText, 34, COLOR_TEXT, Font.BOLD);
+        TextWithStyle value = new TextWithStyle(valueText, 34, painter.palette().text(), Font.BOLD);
         value.setText(painter.truncateToWidth(value, usable));
         painter.drawTextWithStyle(java.util.List.of(value), new Point(x + CARD_TEXT_INSET, y + 16));
-        TextWithStyle label = new TextWithStyle(labelText, 22, COLOR_TIP, Font.PLAIN);
+        TextWithStyle label = new TextWithStyle(labelText, 22, painter.palette().tip(), Font.PLAIN);
         label.setText(painter.truncateToWidth(label, usable));
         painter.drawTextWithStyle(java.util.List.of(label), new Point(x + CARD_TEXT_INSET, y + 68));
     }
 
     /** 周报卡片加高，为标签与补充说明留出间距。 */
     public static void drawCard(CommonPainter painter, String value, String label, String note, int x, int y) {
-        drawCard(painter, value, label, note, COLOR_TIP, x, y);
+        drawCard(painter, value, label, note, painter.palette().tip(), x, y);
     }
 
     public static void drawCard(CommonPainter painter, String value, String label, String note, Color noteColor, int x, int y) {
@@ -151,8 +125,8 @@ public final class ReportSharedStyle {
         if (face != null) {
             painter.drawImage(face, new Point(MARGIN, top));
         }
-        painter.drawSection(unameWithin(painter, uname, textX), COLOR_NAME, new Point(textX, top + 8));
-        painter.drawTip(subtitle, COLOR_TIP, new Point(textX, top + 58));
+        painter.drawSection(unameWithin(painter, uname, textX), painter.palette().streamerName(), new Point(textX, top + 8));
+        painter.drawTip(subtitle, painter.palette().tip(), new Point(textX, top + 58));
         painter.setPos(MARGIN, top + AVATAR_SIZE + 30);
     }
 
@@ -168,7 +142,7 @@ public final class ReportSharedStyle {
     public static String unameWithin(CommonPainter painter, String uname, int textX) {
         return painter.truncateToWidth(
                 new TextWithStyle(Optional.ofNullable(UserText.singleLine(uname)).orElse("未知主播"),
-                        CommonPainter.SECTION_FONT_SIZE, COLOR_NAME, Font.BOLD),
+                        CommonPainter.SECTION_FONT_SIZE, painter.palette().streamerName(), Font.BOLD),
                 WIDTH - MARGIN - textX);
     }
 

@@ -62,8 +62,6 @@ public class CommonPainter {
 
     public static final int TIP_FONT_SIZE = 25;
 
-    public static final Color COLOR_LINK = new Color(23, 139, 207);
-
     /**
      * 发布仓地址，画在每张图底部的版权行里
      * <p>
@@ -83,13 +81,20 @@ public class CommonPainter {
      */
     public static final String ELLIPSIS = "…";
 
-    /**
-     * 初始化绘图器
-     * @param width 画布宽度
-     * @param height 画布高度
-     * @param autoExpand 是否自动扩展画布高度
-     */
+    private final ReportPalette palette;
+
+    public ReportPalette palette() {
+        return palette;
+    }
+
+    /** 创建使用默认报告配色的画布。 */
     public CommonPainter(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil, int width, int height, boolean autoExpand) {
+        this(buildProperties, properties, fontUtil, width, height, autoExpand, ReportPalette.DEFAULT);
+    }
+
+    public CommonPainter(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil,
+                         int width, int height, boolean autoExpand, ReportPalette palette) {
+        this.palette = Objects.requireNonNull(palette, "palette");
         this.buildProperties = buildProperties;
         this.properties = properties;
         this.fontUtil = fontUtil;
@@ -357,7 +362,6 @@ public class CommonPainter {
         return this;
     }
 
-
     /**
      * 在当前绘图坐标绘制一张图片，并自动移动绘图坐标至下次绘图适合位置
      * @param image 图片
@@ -440,7 +444,7 @@ public class CommonPainter {
         BufferedImage border = new BufferedImage(image.getWidth() + (width * 2), image.getHeight() + (width * 2), BufferedImage.TYPE_INT_ARGB);
         Graphics2D draw = border.createGraphics();
         draw.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        draw.setColor(color != null ? color : Color.BLACK);
+        draw.setColor(color != null ? color : palette.defaultText());
         draw.setStroke(new BasicStroke(width));
         draw.draw(new RoundRectangle2D.Float(0, 0, image.getWidth(), image.getHeight(), radius, radius));
         draw.dispose();
@@ -461,7 +465,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawChapter(@NonNull String chapter) {
-        return drawTextWithStyle(List.of(new TextWithStyle(chapter, CHAPTER_FONT_SIZE, Color.BLACK, Font.BOLD)));
+        return drawTextWithStyle(List.of(new TextWithStyle(chapter, CHAPTER_FONT_SIZE, palette.defaultText(), Font.BOLD)));
     }
 
     /**
@@ -483,7 +487,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawChapter(@NonNull String chapter, Point drawLocation) {
-        return drawTextWithStyle(List.of(new TextWithStyle(chapter, CHAPTER_FONT_SIZE, Color.BLACK, Font.BOLD)), drawLocation);
+        return drawTextWithStyle(List.of(new TextWithStyle(chapter, CHAPTER_FONT_SIZE, palette.defaultText(), Font.BOLD)), drawLocation);
     }
 
     /**
@@ -505,7 +509,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawSection(@NonNull String section) {
-        return drawTextWithStyle(List.of(new TextWithStyle(section, SECTION_FONT_SIZE, Color.BLACK, Font.BOLD)));
+        return drawTextWithStyle(List.of(new TextWithStyle(section, SECTION_FONT_SIZE, palette.defaultText(), Font.BOLD)));
     }
 
     /**
@@ -527,7 +531,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawSection(@NonNull String section, Point drawLocation) {
-        return drawTextWithStyle(List.of(new TextWithStyle(section, SECTION_FONT_SIZE, Color.BLACK, Font.BOLD)), drawLocation);
+        return drawTextWithStyle(List.of(new TextWithStyle(section, SECTION_FONT_SIZE, palette.defaultText(), Font.BOLD)), drawLocation);
     }
 
     /**
@@ -549,7 +553,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawText(@NonNull String text) {
-        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, Color.BLACK, Font.PLAIN)));
+        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, palette.defaultText(), Font.PLAIN)));
     }
 
     /**
@@ -571,7 +575,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawText(@NonNull String text, Point drawLocation) {
-        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, Color.BLACK, Font.PLAIN)), drawLocation);
+        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, palette.defaultText(), Font.PLAIN)), drawLocation);
     }
 
     /**
@@ -593,7 +597,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawTip(@NonNull String tip) {
-        return drawTextWithStyle(List.of(new TextWithStyle(tip, TIP_FONT_SIZE, Color.LIGHT_GRAY, Font.PLAIN)));
+        return drawTextWithStyle(List.of(new TextWithStyle(tip, TIP_FONT_SIZE, palette.defaultTip(), Font.PLAIN)));
     }
 
     /**
@@ -615,7 +619,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawTip(@NonNull String tip, Point drawLocation) {
-        return drawTextWithStyle(List.of(new TextWithStyle(tip, TIP_FONT_SIZE, Color.LIGHT_GRAY, Font.PLAIN)), drawLocation);
+        return drawTextWithStyle(List.of(new TextWithStyle(tip, TIP_FONT_SIZE, palette.defaultTip(), Font.PLAIN)), drawLocation);
     }
 
     /**
@@ -638,7 +642,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawTextMultiLine(@NonNull String text, int marginRight) {
-        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, Color.BLACK, Font.PLAIN)), null, true, marginRight);
+        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, palette.defaultText(), Font.PLAIN)), null, true, marginRight);
     }
 
     /**
@@ -662,7 +666,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawTextMultiLine(@NonNull String text, Point drawLocation, int marginRight) {
-        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, Color.BLACK, Font.PLAIN)), drawLocation, true, marginRight);
+        return drawTextWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, palette.defaultText(), Font.PLAIN)), drawLocation, true, marginRight);
     }
 
     /**
@@ -730,7 +734,7 @@ public class CommonPainter {
             Font originalFont = this.draw.getFont();
 
             try {
-                this.draw.setColor(text.getColor() != null ? text.getColor() : Color.BLACK);
+                this.draw.setColor(text.hasExplicitColor() ? text.getColor() : palette.defaultText());
 
                 for (int i = 0; i < text.getText().length(); ) {
                     int codePoint = text.getText().codePointAt(i);
@@ -788,7 +792,7 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawTextRight(@NonNull String text, int marginRight) {
-        return drawTextRightWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, Color.BLACK, Font.PLAIN)), null, marginRight, null);
+        return drawTextRightWithStyle(List.of(new TextWithStyle(text, TEXT_FONT_SIZE, palette.defaultText(), Font.PLAIN)), null, marginRight, null);
     }
 
     /**
@@ -926,7 +930,7 @@ public class CommonPainter {
         CopyrightLine layout = copyrightLineLayout();
         int textX = this.width - marginRight - layout.textWidth();
         if (this.width - marginRight - layout.width() >= marginRight) {
-            NovaBotMark.paint(this.draw, textX + layout.markRight(), top + layout.capTop(), layout.capHeight());
+            NovaBotMark.paint(this.draw, textX + layout.markRight(), top + layout.capTop(), layout.capHeight(), palette);
         }
 
         for (List<TextWithStyle> line : extraMiddle) {
@@ -949,7 +953,7 @@ public class CommonPainter {
      */
     private TextWithStyle copyrightLine() {
         return new TextWithStyle("NovaBot v" + buildProperties.getVersion() + " · " + REPOSITORY,
-                TIP_FONT_SIZE, Color.LIGHT_GRAY, Font.PLAIN);
+                TIP_FONT_SIZE, palette.defaultTip(), Font.PLAIN);
     }
 
     /**
@@ -1310,7 +1314,7 @@ public class CommonPainter {
         } else {
             this.draw.setFont(fontUtil.findFontForCharacter(codePoint).deriveFont(Font.PLAIN, Objects.requireNonNullElse(size, TEXT_FONT_SIZE)));
         }
-        this.draw.setColor(color != null ? color : Color.BLACK);
+        this.draw.setColor(color != null ? color : palette.defaultText());
         FontMetrics metrics = this.draw.getFontMetrics();
         int charWidth = metrics.stringWidth(charStr);
         int charHeight = metrics.getHeight();

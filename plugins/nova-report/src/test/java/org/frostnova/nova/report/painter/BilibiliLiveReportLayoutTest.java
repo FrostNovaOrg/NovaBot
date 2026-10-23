@@ -539,7 +539,7 @@ class BilibiliLiveReportLayoutTest {
         for (int y = 0; y < image.getHeight(); y++) {
             // 只认第一张卡片左内缘正好是卡片底色的那些行。
             // 换成「不是页底色就算」会把封面横幅与排行榜的比例条一起收进来（试过，9759 个假墨点）
-            if (image.getRGB(MARGIN + 6, y) != BilibiliLiveReportPainter.COLOR_CARD.getRGB()) {
+            if (image.getRGB(MARGIN + 6, y) != ReportPalette.DEFAULT.card().getRGB()) {
                 continue;
             }
 

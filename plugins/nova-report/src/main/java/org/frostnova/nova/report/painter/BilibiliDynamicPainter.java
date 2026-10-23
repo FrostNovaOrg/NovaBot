@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
@@ -63,17 +62,6 @@ public class BilibiliDynamicPainter {
     private static final int AVATAR_SIZE = 100;
 
     /**
-     * 转发动态的原动态背景色
-     */
-    private static final Color ORIGIN_BACKGROUND = new Color(244, 245, 247);
-
-    private static final Color COLOR_NAME = new Color(251, 114, 153);
-
-    private static final Color COLOR_TIP = new Color(153, 162, 170);
-
-    private static final Color COLOR_TEXT = new Color(51, 51, 51);
-
-    /**
      * 底部 logo 的绘制高度
      */
     private static final int LOGO_HEIGHT = 45;
@@ -110,8 +98,12 @@ public class BilibiliDynamicPainter {
      * @return 图片的 Base64 编码，绘制失败时返回空
      */
     public Optional<String> paint(Dynamic dynamic) {
+        return paint(dynamic, ReportPalette.DEFAULT);
+    }
+
+    public Optional<String> paint(Dynamic dynamic, ReportPalette palette) {
         try {
-            CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true);
+            CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true, palette);
             painter.setPos(MARGIN, MARGIN);
 
             drawHeader(painter, dynamic);
@@ -132,7 +124,7 @@ public class BilibiliDynamicPainter {
             painter.movePos(0, 10);
 
             // 该调用同时把画布裁剪至实际内容高度并铺上背景，必须在全部内容绘制完毕后执行
-            painter.createSolidRoundedRectangleBackground(Color.WHITE, CANVAS_RADIUS);
+            painter.createSolidRoundedRectangleBackground(painter.palette().background(), CANVAS_RADIUS);
 
             return properties.getDynamic().isAutoSaveImage()
                     ? painter.saveAndGetBase64(imagePath(dynamic))
@@ -155,8 +147,8 @@ public class BilibiliDynamicPainter {
                 .map(face -> ImageUtil.maskToCircle(ImageUtil.resize(face, AVATAR_SIZE, AVATAR_SIZE)))
                 .ifPresent(face -> painter.drawImage(face, new Point(MARGIN, top)));
 
-        painter.drawSection(UserText.singleLine(dynamic.getAuthorName().orElse("未知用户")), COLOR_NAME, new Point(textX, top + 8));
-        painter.drawTip(dynamic.getPublishTime().map(TIME_FORMATTER::format).orElse(""), COLOR_TIP, new Point(textX, top + 58));
+        painter.drawSection(UserText.singleLine(dynamic.getAuthorName().orElse("未知用户")), painter.palette().streamerName(), new Point(textX, top + 8));
+        painter.drawTip(dynamic.getPublishTime().map(TIME_FORMATTER::format).orElse(""), painter.palette().tip(), new Point(textX, top + 58));
 
         painter.setPos(MARGIN, top + AVATAR_SIZE + 20);
     }
@@ -175,7 +167,7 @@ public class BilibiliDynamicPainter {
         int marginRight = painter.getImage().getWidth() - painter.getX() - contentWidth;
 
         for (String line : dynamic.linesToPaint()) {
-            painter.drawTextMultiLine(line, COLOR_TEXT, Math.max(0, marginRight));
+            painter.drawTextMultiLine(line, painter.palette().text(), Math.max(0, marginRight));
             painter.movePos(0, 10);
         }
 
@@ -346,13 +338,13 @@ public class BilibiliDynamicPainter {
         int boxWidth = WIDTH - MARGIN * 2;
         int padding = 20;
 
-        CommonPainter box = factory.create(boxWidth, INITIAL_HEIGHT, true);
+        CommonPainter box = factory.create(boxWidth, INITIAL_HEIGHT, true, painter.palette());
         box.setPos(padding, padding);
-        box.drawText("@" + UserText.singleLine(origin.getAuthorName().orElse("未知用户")), COLOR_TIP);
+        box.drawText("@" + UserText.singleLine(origin.getAuthorName().orElse("未知用户")), painter.palette().tip());
         box.movePos(0, 8);
         drawContent(box, origin, boxWidth - padding * 2);
         box.movePos(0, padding);
-        box.createSolidRoundedRectangleBackground(ORIGIN_BACKGROUND, 12);
+        box.createSolidRoundedRectangleBackground(painter.palette().originBackground(), 12);
 
         BufferedImage image = box.getBufferedImage();
 

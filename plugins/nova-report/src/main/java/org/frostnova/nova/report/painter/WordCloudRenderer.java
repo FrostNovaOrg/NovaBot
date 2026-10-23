@@ -2,7 +2,6 @@ package org.frostnova.nova.report.painter;
 
 import org.frostnova.nova.report.util.FontUtil;
 
-import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -161,6 +160,10 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
      * 按排版结果出一张透明底的词云图
      */
     BufferedImage render(WordCloudLayout.Result result, int width, int height) {
+        return render(result, width, height, ReportPalette.DEFAULT);
+    }
+
+    BufferedImage render(WordCloudLayout.Result result, int width, int height, ReportPalette palette) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
         applyHints(graphics);
@@ -169,7 +172,7 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
                 String label="暂无有效弹幕词";
                 Composed c=compose(label,20);
                 draw(graphics,new WordCloudLayout.Placement(label,0,20,
-                    new Rectangle((width-c.width)/2,(height-c.height)/2,c.width,c.height),new Color(0x6E6A86)));
+                    new Rectangle((width-c.width)/2,(height-c.height)/2,c.width,c.height),palette.wordCloudEmpty()));
             }
             for (WordCloudLayout.Placement placement : result.placements()) {
                 draw(graphics, placement);
