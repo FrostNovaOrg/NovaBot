@@ -824,7 +824,7 @@ export function renderGeneral() {
   if (orphans) box.appendChild(orphans);
 
   for (const group of common) box.appendChild(buildGroup(group));
-  const members = memberGroup();
+  const members = memberGroup(filterSettings);
   if (members) box.appendChild(members);
 
   // 高级默认收着，由组目录最底下的「高级选项」摆出来。收着就是整块不显示，不是一道折页：

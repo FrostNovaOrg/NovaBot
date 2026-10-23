@@ -87,6 +87,24 @@ async function members(reply, confirm) {
 }
 function row(s, id) { const n = walk(s.box).find(n => n.dataset.accountId === id); assert.ok(n, '缺少账号行 ' + id); return n; }
 
+function settingsFilter(s) {
+  const link = new Node();
+  link.getAttribute = () => 'members';
+  const controls = {...s.controls, '#set-count': new Node()};
+  const document = {
+    querySelectorAll: selector => selector === '#grp-nav [data-grp-link]' ? [link] : [],
+    querySelector: selector => selector.startsWith('.setgrp[') ? s.box : null,
+  };
+  const source = read('settings.js');
+  const body = source.slice(source.indexOf('export function filterSettings()'), source.indexOf('\n/**', source.indexOf('export function filterSettings()'))).replace('export ', '');
+  const filter = new Function('$', 'document', 'store', 'closeHelp', 'filterCards', 'filterAuthCards',
+    'filterMembers', 'advancedShown', 'filterKey', 'watchCurrentGroup', 'arranged',
+    'let advancedDismissed = null, advancedChosen = false;\n' + body + '\nreturn filterSettings;')(
+      key => controls[key] || null, document, {schema: [], ungrouped: []}, () => {}, () => 0, () => 0,
+      s.filterMembers, () => false, () => '', () => {}, {common: [], advanced: []});
+  return {filter, link};
+}
+
 // 抓已有搜索词时，成员读完或操作后重画仍被隐藏。
 await check('成员读完和停用后按当前搜索词重新显示', async () => {
   let finishRead, notifyRead;
@@ -96,22 +114,41 @@ await check('成员读完和停用后按当前搜索词重新显示', async () =
     notifyRead();
   })});
   s.controls['#set-search'].value = 'enabled@example.com';
-  const render = s.renderMembers(s.box, base);
-  s.filterMembers(s.controls['#set-search'].value, false);
+  const {filter, link} = settingsFilter(s);
+  const render = s.renderMembers(s.box, base, filter);
+  filter();
   assert.equal(s.box.classList.contains('hide'), true);
   finishRead({success: true, accounts: entries});
   await render;
   assert.equal(s.box.classList.contains('hide'), false, '成员读完应显示邮箱匹配的组');
+  assert.equal(link.classList.contains('hide'), false, '成员读完应显示目录链接');
 
   reading = new Promise(resolve => { notifyRead = resolve; });
   const disable = find(row(s, 'enabled'), 'disable').click();
   await reading;
-  s.filterMembers(s.controls['#set-search'].value, false);
+  filter();
   assert.equal(s.box.classList.contains('hide'), true);
+  assert.equal(link.classList.contains('hide'), true);
   finishRead({success: true, accounts: entries.map(a => a.id === 'enabled' ? {...a, status: 'DISABLED'} : a)});
   await disable;
   assert.equal(s.box.classList.contains('hide'), false, '停用后重画应仍显示邮箱匹配的组');
+  assert.equal(link.classList.contains('hide'), false, '停用后重画应仍显示目录链接');
   assert.ok(s.requests.some(request => request.path === '/accounts/enabled/disable'));
+});
+// 抓读取失败后错误信息匹配搜索词，但成员组或目录仍被隐藏。
+await check('成员读取失败后按错误提示显示成员组与目录', async () => {
+  let finishRead;
+  const s = subject('settings-members.js', {'/accounts': () => new Promise(resolve => { finishRead = resolve; })});
+  s.controls['#set-search'].value = '账户服务暂时不可用';
+  const {filter, link} = settingsFilter(s);
+  const render = s.renderMembers(s.box, base, filter);
+  filter();
+  assert.equal(s.box.classList.contains('hide'), true);
+  assert.equal(link.classList.contains('hide'), true);
+  finishRead({success: false, message: '账户服务暂时不可用'});
+  await render;
+  assert.equal(s.box.classList.contains('hide'), false, '读失败后应显示错误提示匹配的组');
+  assert.equal(link.classList.contains('hide'), false, '读失败后应显示目录链接');
 });
 // 抓管理员进设置后仍找不到等待授权的新成员，以及身份、状态或主播名字写错。
 await check('待授权排最前，身份状态和主播名字可辨认', async () => {
@@ -289,7 +326,7 @@ await check('确认后与无草稿时可退出', async () => {
 });
 // 抓模块写好了但设置页、登录态或侧栏从未接上。
 await check('成员区和个人菜单接到页面与登录态', async () => {
-  for (const [file, pattern] of [['settings.js', /memberGroup\(\)/], ['main.js', /setMemberAuthState\(state\)/],
+  for (const [file, pattern] of [['settings.js', /memberGroup\(filterSettings\)/], ['main.js', /setMemberAuthState\(state\)/],
     ['main.js', /renderPersonalMenu\(/], ['index.html', /id="personal-menu"/],
     ['personal-menu.js', /hasUnsavedChanges\(\)/], ['core.js', /export function hasUnsavedChanges\(/]]) {
     assert.ok(pattern.test(read(file)), file + ' 缺少 ' + pattern);
@@ -298,20 +335,8 @@ await check('成员区和个人菜单接到页面与登录态', async () => {
 
 await check('成员组与目录随搜索和仅显示已修改项收起', async () => {
   const s = await members();
-  const link = new Node();
-  link.getAttribute = () => 'members';
-  const controls = {'#set-search': {value: ''}, '#only-changed': {checked: false}, '#set-count': new Node()};
-  const document = {
-    querySelectorAll: selector => selector === '#grp-nav [data-grp-link]' ? [link] : [],
-    querySelector: selector => selector.startsWith('.setgrp[') ? s.box : null,
-  };
-  const source = read('settings.js');
-  const body = source.slice(source.indexOf('export function filterSettings()'), source.indexOf('\n/**', source.indexOf('export function filterSettings()'))).replace('export ', '');
-  const filter = new Function('$', 'document', 'store', 'closeHelp', 'filterCards', 'filterAuthCards',
-    'filterMembers', 'advancedShown', 'filterKey', 'watchCurrentGroup', 'arranged',
-    'let advancedDismissed = null, advancedChosen = false;\n' + body + '\nreturn filterSettings;')(
-      key => controls[key] || null, document, {schema: [], ungrouped: []}, () => {}, () => 0, () => 0,
-      s.filterMembers, () => false, () => '', () => {}, {common: [], advanced: []});
+  const {filter, link} = settingsFilter(s);
+  const controls = s.controls;
   for (const [query, changed, visible] of [['静音', false, false], ['成员', false, true],
     ['enabled@example.com', false, true], ['', false, true], ['', true, false], ['成员', true, false]]) {
     controls['#set-search'].value = query;

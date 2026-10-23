@@ -12,12 +12,12 @@ export function setMemberAuthState(state) {
   memberAuth = {...state};
 }
 
-export function memberGroup() {
+export function memberGroup(onRendered) {
   if (store.role === 'MEMBER') return null;
   const box = el('section', 'group setgrp members-group');
   box.dataset.grp = 'members';
   box.dataset.ui = 'members';
-  renderMembers(box, memberAuth);
+  renderMembers(box, memberAuth, onRendered);
   return box;
 }
 
@@ -206,13 +206,13 @@ function accountRow(tbody, account, options, optionsReady, state, refresh) {
   tbody.appendChild(row);
 }
 
-export async function renderMembers(box, state) {
+export async function renderMembers(box, state, onRendered) {
   box.replaceChildren();
   if (store.role === 'MEMBER') return;
   text(box, 'h2', '成员');
   if (!state.oidcEnabled) {
     text(box, 'p', '在设置页的统一登录配置里填好账户中心地址、客户端编号和密钥，即可开启统一登录并管理成员。', 'hint');
-    filterMembers($('#set-search').value, $('#only-changed').checked);
+    onRendered?.();
     return;
   }
   const loading = text(box, 'p', '正在读取成员…', 'hint');
@@ -245,7 +245,7 @@ export async function renderMembers(box, state) {
     const body = el('tbody');
     const accounts = [...(result.accounts || [])].sort((a, b) => Number(b.status === 'PENDING') - Number(a.status === 'PENDING'));
     for (const account of accounts) {
-      accountRow(body, account, options, optionsReady, state, () => renderMembers(box, state));
+      accountRow(body, account, options, optionsReady, state, () => renderMembers(box, state, onRendered));
     }
     table.appendChild(body);
     scroll.appendChild(table);
@@ -253,6 +253,6 @@ export async function renderMembers(box, state) {
   } catch (error) {
     loading.textContent = failureMessage(error);
   } finally {
-    filterMembers($('#set-search').value, $('#only-changed').checked);
+    onRendered?.();
   }
 }
