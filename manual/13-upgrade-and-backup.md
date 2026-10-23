@@ -293,6 +293,13 @@ novabot:
       cookie-path: cookies.json
 ```
 
+**用了统一登录、而“统一登录 · 回调地址”（`novabot.core.config-ui.oidc.redirect-uri`）留空的**，
+升级后请在「设置 → 高级选项 → 登录与安全 · 高级」里的「统一登录 · 回调地址」
+填写与账户中心登记的完全一致的完整回调地址，保存后重启。
+没填时启动日志会有一条 WARN，管理员打开控制台后，各页顶部也会有同样的填写提醒；
+填好并重启后提醒消失。留空时只有用 `localhost`、`127.0.0.1` 或 `::1` 打开控制台才能用统一登录。
+详见[附录 E](appendix-e-oidc.md)。
+
 个别整节挪过位置的设置，根键还是 `starbot:` 时挪位那条提醒不会出。先按那条 WARN
 把根键改成 `novabot:`、改完重启；下一次启动，还写在旧位置的整节才会被点名。
 从上游 StarBot 迁移还有别的差异，见[附录 D](appendix-d-migrate-from-starbot.md)。
