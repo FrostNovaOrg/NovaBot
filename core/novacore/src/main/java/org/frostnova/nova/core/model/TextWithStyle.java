@@ -41,7 +41,8 @@ public class TextWithStyle {
     public TextWithStyle(String text, int size) {
         this.text = text;
         this.size = size;
-        this.color = Color.BLACK;
+        // 未指定颜色时由绘制器按当前配色取默认文字色。
+        this.color = null;
         this.style = Font.PLAIN;
     }
 

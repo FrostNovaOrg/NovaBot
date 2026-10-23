@@ -490,11 +490,11 @@ class WordCloudBlockWordsTest {
         }
 
         @Override
-        BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+        BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies, ReportPalette palette) {
             WordCloudLayout.Result layout = layoutWordCloud(platform, uid, frequencies);
             layouts.add(layout);
             drawn.add(placed(layout));
-            return super.paintWordCloud(platform, uid, frequencies);
+            return super.paintWordCloud(platform, uid, frequencies, palette);
         }
     }
 
@@ -508,9 +508,9 @@ class WordCloudBlockWordsTest {
         }
 
         @Override
-        BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+        BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies, ReportPalette palette) {
             drawn.add(placed(layoutWordCloud(platform, uid, frequencies)));
-            return super.paintWordCloud(platform, uid, frequencies);
+            return super.paintWordCloud(platform, uid, frequencies, palette);
         }
     }
 }

@@ -105,7 +105,7 @@ class CommonPainterLinkColorPixelTest {
     @DisplayName("🔴 真出的那张图里没有链接色像素；同时印出最近的像素有多远")
     void cleanImageHasNoLinkColorPixels() {
         BufferedImage image = cleanImage();
-        LinkColorPixels.Reading reading = LinkColorPixels.read(image, CommonPainter.COLOR_LINK, TOLERANCE);
+        LinkColorPixels.Reading reading = LinkColorPixels.read(image, ReportPalette.DEFAULT.link(), TOLERANCE);
 
         // 先证这一格量得到东西：一张全透明的图上，下面那条断言会白白通过
         assertTrue(reading.visible() > 0, "图上一个可见像素都没有，这一格什么都没量到");
@@ -120,7 +120,7 @@ class CommonPainterLinkColorPixelTest {
     @DisplayName("🔴 把地址改用链接色画，计数必须为红")
     void addressDrawnBackIsCounted() {
         BufferedImage image = imageWithAddressDrawnBack();
-        LinkColorPixels.Reading reading = LinkColorPixels.read(image, CommonPainter.COLOR_LINK, TOLERANCE);
+        LinkColorPixels.Reading reading = LinkColorPixels.read(image, ReportPalette.DEFAULT.link(), TOLERANCE);
 
         assertTrue(reading.within() > 0,
                 "地址用链接色画上去了，链接色像素却一枚都没数到：" + describe(reading));
@@ -134,11 +134,11 @@ class CommonPainterLinkColorPixelTest {
         BufferedImage image = imageWithAddressDrawnBack();
 
         // 容差取负数，任何距离都不可能落进去。若这样它还数出东西，那红就不是比出来的
-        LinkColorPixels.Reading blind = LinkColorPixels.read(image, CommonPainter.COLOR_LINK, -1);
+        LinkColorPixels.Reading blind = LinkColorPixels.read(image, ReportPalette.DEFAULT.link(), -1);
         assertEquals(0, blind.within(), "容差为负还能数到像素，说明它压根没在比");
 
         // 容差取 0：只认一模一样的颜色。地址原本就是用链接色画的，所以这里仍该有
-        LinkColorPixels.Reading exact = LinkColorPixels.read(image, CommonPainter.COLOR_LINK, 0);
+        LinkColorPixels.Reading exact = LinkColorPixels.read(image, ReportPalette.DEFAULT.link(), 0);
         assertTrue(exact.within() > 0, "地址就是用链接色画的，容差 0 也该数得到");
 
         System.out.println("容差 -1　" + describe(blind));
@@ -149,13 +149,13 @@ class CommonPainterLinkColorPixelTest {
     @DisplayName("🔴 那个「会动的数」真的会动：画一笔相近的蓝，距离掉下来而计数不动")
     void nearestDistanceMovesWhenSomethingGetsCloser() {
         LinkColorPixels.Reading before =
-                LinkColorPixels.read(cleanImage(), CommonPainter.COLOR_LINK, TOLERANCE);
+                LinkColorPixels.read(cleanImage(), ReportPalette.DEFAULT.link(), TOLERANCE);
 
         // 一个明显更近、但仍在容差之外的蓝
         Color nearerBlue = new Color(
-                CommonPainter.COLOR_LINK.getRed() + TOLERANCE + 20,
-                CommonPainter.COLOR_LINK.getGreen(),
-                CommonPainter.COLOR_LINK.getBlue());
+                ReportPalette.DEFAULT.link().getRed() + TOLERANCE + 20,
+                ReportPalette.DEFAULT.link().getGreen(),
+                ReportPalette.DEFAULT.link().getBlue());
 
         BufferedImage painted = cleanImage();
         Graphics2D g = painted.createGraphics();
@@ -164,7 +164,7 @@ class CommonPainterLinkColorPixelTest {
         g.dispose();
 
         LinkColorPixels.Reading after =
-                LinkColorPixels.read(painted, CommonPainter.COLOR_LINK, TOLERANCE);
+                LinkColorPixels.read(painted, ReportPalette.DEFAULT.link(), TOLERANCE);
 
         assertTrue(after.nearest() < before.nearest(),
                 "画了一笔更近的蓝，最近距离却没掉：" + describe(before) + " → " + describe(after));
@@ -173,7 +173,7 @@ class CommonPainterLinkColorPixelTest {
 
         // 反过来：不画那一笔，距离维持原值。否则「掉下来」也可能只是每跑一次都不一样
         LinkColorPixels.Reading again =
-                LinkColorPixels.read(cleanImage(), CommonPainter.COLOR_LINK, TOLERANCE);
+                LinkColorPixels.read(cleanImage(), ReportPalette.DEFAULT.link(), TOLERANCE);
         assertEquals(before.nearest(), again.nearest(), "同一张干净图两次读数不一致");
 
         System.out.println("干净图最近 " + before.nearest()
@@ -185,9 +185,9 @@ class CommonPainterLinkColorPixelTest {
     @DisplayName("🔴 读数四件齐印：阳性数、阴性数、判次、尺的 sha256")
     void printsAllFourReadings() throws IOException, NoSuchAlgorithmException {
         LinkColorPixels.Reading clean =
-                LinkColorPixels.read(cleanImage(), CommonPainter.COLOR_LINK, TOLERANCE);
+                LinkColorPixels.read(cleanImage(), ReportPalette.DEFAULT.link(), TOLERANCE);
         LinkColorPixels.Reading dirty =
-                LinkColorPixels.read(imageWithAddressDrawnBack(), CommonPainter.COLOR_LINK, TOLERANCE);
+                LinkColorPixels.read(imageWithAddressDrawnBack(), ReportPalette.DEFAULT.link(), TOLERANCE);
 
         // 取不到就让这一格红：一份来路不明的读数，比没有读数坏
         assertTrue(Files.isRegularFile(GAUGE_SOURCE),
@@ -200,14 +200,14 @@ class CommonPainterLinkColorPixelTest {
                 + "，由 drawCopyright(20) 出图；可见像素 " + clean.visible() + "／" + clean.total());
         System.out.println("  链接色画　　" + dirty.within() + " 枚（最近 " + dirty.nearest() + "）");
         System.out.println("  真出的图　　" + clean.within() + " 枚（最近 " + clean.nearest() + "）");
-        System.out.println("  🔴 这个 0 是结构性的：COLOR_LINK 生产面只有一处声明、零处使用");
+        System.out.println("  🔴 这个 0 是结构性的：默认链接色未用于版权行");
         System.out.println("     （测试面在用，本组判据自己就拿它当目标色——所以别把它读成「全树没人碰」）。");
         System.out.println("     它买到的是「版权行没画成链接色」，不是「图干净」——会动的数是上面那个「最近」。");
         // 容差取这个值不是抄来的：两个方向都量一遍，让读的人自己看见它为什么落在中间
         System.out.println("  容差两个方向：");
         for (int t : new int[]{0, 10, 20, 40, 80, 120, 146, 147, 160}) {
-            LinkColorPixels.Reading c = LinkColorPixels.read(cleanImage(), CommonPainter.COLOR_LINK, t);
-            LinkColorPixels.Reading d = LinkColorPixels.read(imageWithAddressDrawnBack(), CommonPainter.COLOR_LINK, t);
+            LinkColorPixels.Reading c = LinkColorPixels.read(cleanImage(), ReportPalette.DEFAULT.link(), t);
+            LinkColorPixels.Reading d = LinkColorPixels.read(imageWithAddressDrawnBack(), ReportPalette.DEFAULT.link(), t);
             System.out.println("    容差 " + t + "：链接色画 " + d.within() + " 枚，真出的图 " + c.within() + " 枚"
                     + (c.within() > 0 ? "  ← 真出的图开始被误收" : ""));
         }
@@ -222,7 +222,7 @@ class CommonPainterLinkColorPixelTest {
                 if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
-                int d = LinkColorPixels.distance(argb, CommonPainter.COLOR_LINK);
+                int d = LinkColorPixels.distance(argb, ReportPalette.DEFAULT.link());
                 if (d <= 0 || d > TOLERANCE) {
                     continue;
                 }
@@ -255,7 +255,7 @@ class CommonPainterLinkColorPixelTest {
                 }
                 int argb = image.getRGB(nx, ny);
                 if (((argb >>> 24) & 0xFF) != 0
-                        && LinkColorPixels.distance(argb, CommonPainter.COLOR_LINK) == 0) {
+                        && LinkColorPixels.distance(argb, ReportPalette.DEFAULT.link()) == 0) {
                     return true;
                 }
             }
@@ -303,7 +303,7 @@ class CommonPainterLinkColorPixelTest {
                                            List<List<TextWithStyle>> extraBottom,
                                            int marginRight) {
             super.drawCopyright(extraMiddle, extraBottom, marginRight);
-            return drawTextRight(ADDRESS_AS_LINK, COLOR_LINK, marginRight);
+            return drawTextRight(ADDRESS_AS_LINK, ReportPalette.DEFAULT.link(), marginRight);
         }
     }
 }

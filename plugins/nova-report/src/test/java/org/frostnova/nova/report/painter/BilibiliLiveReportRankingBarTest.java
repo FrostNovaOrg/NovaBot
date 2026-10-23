@@ -183,7 +183,7 @@ class BilibiliLiveReportRankingBarTest {
      * 底条配上同一行最靠右的那段字。那段就是得分：名次和昵称都在它左边。
      */
     private List<Row> scoreRows() {
-        int card = BilibiliLiveReportPainter.COLOR_CARD.getRGB();
+        int card = ReportPalette.DEFAULT.card().getRGB();
         List<Row> rows = new ArrayList<>();
         for (Bar track : bars) {
             if (track.height != BAR_HEIGHT || track.rgb != card) {

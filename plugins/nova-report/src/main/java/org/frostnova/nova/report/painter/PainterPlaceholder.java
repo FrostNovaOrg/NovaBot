@@ -2,7 +2,6 @@ package org.frostnova.nova.report.painter;
 
 import org.frostnova.nova.report.util.ImageUtil;
 
-import java.awt.Color;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -24,18 +23,15 @@ final class PainterPlaceholder {
     }
 
     /**
-     * 占位图的配色：与报告主色系接近但明显是占位，免得被当成真封面
-     */
-    private static final Color FROM = new Color(203, 213, 225);
-
-    private static final Color TO = new Color(148, 163, 184);
-
-    /**
      * 封面横幅位的占位图，已裁成与真封面同样的圆角
      */
     static BufferedImage banner() {
+        return banner(ReportPalette.DEFAULT);
+    }
+
+    static BufferedImage banner(ReportPalette palette) {
         return ImageUtil.maskToRoundedRectangle(
-                gradient(BilibiliLiveReportPainter.CONTENT_WIDTH, BilibiliLiveReportPainter.COVER_HEIGHT),
+                gradient(BilibiliLiveReportPainter.CONTENT_WIDTH, BilibiliLiveReportPainter.COVER_HEIGHT, palette),
                 BilibiliLiveReportPainter.CANVAS_RADIUS - 5);
     }
 
@@ -43,34 +39,46 @@ final class PainterPlaceholder {
      * 主播头像位的占位图
      */
     static BufferedImage face() {
+        return face(ReportPalette.DEFAULT);
+    }
+
+    static BufferedImage face(ReportPalette palette) {
         return ImageUtil.maskToCircle(
-                gradient(BilibiliLiveReportPainter.AVATAR_SIZE, BilibiliLiveReportPainter.AVATAR_SIZE));
+                gradient(BilibiliLiveReportPainter.AVATAR_SIZE, BilibiliLiveReportPainter.AVATAR_SIZE, palette));
     }
 
     /**
      * 排行榜头像位的占位图
      */
     static BufferedImage rankingFace() {
+        return rankingFace(ReportPalette.DEFAULT);
+    }
+
+    static BufferedImage rankingFace(ReportPalette palette) {
         return ImageUtil.maskToCircle(gradient(
-                BilibiliLiveReportPainter.RANKING_AVATAR_SIZE, BilibiliLiveReportPainter.RANKING_AVATAR_SIZE));
+                BilibiliLiveReportPainter.RANKING_AVATAR_SIZE, BilibiliLiveReportPainter.RANKING_AVATAR_SIZE, palette));
     }
 
     /**
      * 大航海标志位的占位图
      */
     static BufferedImage guardIcon() {
+        return guardIcon(ReportPalette.DEFAULT);
+    }
+
+    static BufferedImage guardIcon(ReportPalette palette) {
         return ImageUtil.maskToCircle(gradient(
-                BilibiliLiveReportPainter.GUARD_ICON_SIZE, BilibiliLiveReportPainter.GUARD_ICON_SIZE));
+                BilibiliLiveReportPainter.GUARD_ICON_SIZE, BilibiliLiveReportPainter.GUARD_ICON_SIZE, palette));
     }
 
     /**
      * 画一张斜向渐变
      */
-    private static BufferedImage gradient(int width, int height) {
+    private static BufferedImage gradient(int width, int height, ReportPalette palette) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        graphics.setPaint(new GradientPaint(0, 0, FROM, width, height, TO));
+        graphics.setPaint(new GradientPaint(0, 0, palette.placeholderFrom(), width, height, palette.placeholderTo()));
         graphics.fillRect(0, 0, width, height);
         graphics.dispose();
         return image;

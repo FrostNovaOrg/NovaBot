@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.HttpStatusCodeException;
 
-import java.awt.Color;
 import java.awt.Font;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
@@ -105,19 +104,6 @@ public class BilibiliDataQueryPainter {
 
     private static final int BAR_X = 330;
 
-    private static final Color COLOR_NAME = new Color(251, 114, 153);
-
-    private static final Color COLOR_TIP = new Color(153, 162, 170);
-
-    private static final Color COLOR_TEXT = new Color(51, 51, 51);
-
-    private static final Color COLOR_CARD = new Color(246, 247, 249);
-
-    /**
-     * 盈亏榜里亏了的那几行比例条的颜色，与下播报告同一个绿
-     */
-    private static final Color COLOR_LOSS = new Color(110, 199, 122);
-
     private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
@@ -190,8 +176,12 @@ public class BilibiliDataQueryPainter {
      * @return 图片的 Base64 编码，绘制失败时为空
      */
     public Optional<String> paintCards(Header header, List<DataCard> cards, String footnote) {
+        return paintCards(header, cards, footnote, ReportPalette.DEFAULT);
+    }
+
+    public Optional<String> paintCards(Header header, List<DataCard> cards, String footnote, ReportPalette palette) {
         prefetchAvatars(List.of(headerFace(header)));
-        return render(header, footnote, painter -> drawCards(painter, cards));
+        return render(header, footnote, palette, painter -> drawCards(painter, cards));
     }
 
     /**
@@ -205,9 +195,14 @@ public class BilibiliDataQueryPainter {
      */
     public Optional<String> paintRanking(Header header, List<UserScore> rows, int startRank,
                                          DoubleFunction<String> scoreText, String footnote) {
+        return paintRanking(header, rows, startRank, scoreText, footnote, ReportPalette.DEFAULT);
+    }
+
+    public Optional<String> paintRanking(Header header, List<UserScore> rows, int startRank,
+                                         DoubleFunction<String> scoreText, String footnote, ReportPalette palette) {
         // 先把表头与名次行的头像一起并发取回来，整图最多等 {@link #AVATAR_WAIT_MILLIS}；到点没取到的画空位
         prefetchAvatars(avatarRequests(header, rows));
-        return render(header, footnote, painter -> drawRanking(painter, rows, startRank, scoreText));
+        return render(header, footnote, palette, painter -> drawRanking(painter, rows, startRank, scoreText));
     }
 
     /**
@@ -263,7 +258,7 @@ public class BilibiliDataQueryPainter {
             // 开自动折行而不是 drawTip：drawTip 不折行，而脚注要装口径说明这类整句，
             // 一行放不下就会画到画布外面去——只是画布外，报错都不会有
             painter.drawTextWithStyle(
-                    List.of(new TextWithStyle(footnote, CommonPainter.TIP_FONT_SIZE, COLOR_TIP, Font.PLAIN)),
+                    List.of(new TextWithStyle(footnote, CommonPainter.TIP_FONT_SIZE, painter.palette().tip(), Font.PLAIN)),
                     null, true, MARGIN);
         }
 
@@ -275,9 +270,9 @@ public class BilibiliDataQueryPainter {
     /**
      * 出图的骨架：头部、正文、脚注、署名与背景
      */
-    private Optional<String> render(Header header, String footnote, Consumer<CommonPainter> body) {
+    private Optional<String> render(Header header, String footnote, ReportPalette palette, Consumer<CommonPainter> body) {
         try {
-            CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true);
+            CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true, palette);
             painter.setPos(MARGIN, MARGIN);
 
             drawHeader(painter, header);
@@ -285,7 +280,7 @@ public class BilibiliDataQueryPainter {
             drawFootnoteAndCopyright(painter, footnote);
 
             // 该调用同时把画布裁剪至实际内容高度并铺上背景，必须在全部内容绘制完毕后执行
-            painter.createSolidRoundedRectangleBackground(Color.WHITE, CANVAS_RADIUS);
+            painter.createSolidRoundedRectangleBackground(painter.palette().background(), CANVAS_RADIUS);
 
             return painter.base64();
         } catch (Exception e) {
@@ -314,10 +309,10 @@ public class BilibiliDataQueryPainter {
         }
 
         // 标题在数据命令里是主播昵称，用户自己起的名字里可能带换行
-        painter.drawSection(UserText.singleLine(header.title()), COLOR_NAME, new Point(textX, top + 6));
+        painter.drawSection(UserText.singleLine(header.title()), painter.palette().streamerName(), new Point(textX, top + 6));
         if (StringUtil.isNotBlank(header.subtitle())) {
             // 排行榜的副标题里嵌着主播昵称（「本场数据 · 某某的直播间」）
-            painter.drawTip(UserText.singleLine(header.subtitle()), COLOR_TIP, new Point(textX, top + 54));
+            painter.drawTip(UserText.singleLine(header.subtitle()), painter.palette().tip(), new Point(textX, top + 54));
         }
 
         painter.setPos(MARGIN, top + headerBlockHeight(face != null));
@@ -337,11 +332,11 @@ public class BilibiliDataQueryPainter {
             int x = MARGIN + (i % CARD_COLUMNS) * (CARD_WIDTH + CARD_GAP);
             int y = startY + (i / CARD_COLUMNS) * (CARD_HEIGHT + CARD_GAP);
 
-            painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-            TextWithStyle value = new TextWithStyle(card.value(), 32, COLOR_TEXT, Font.BOLD);
+            painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, painter.palette().card());
+            TextWithStyle value = new TextWithStyle(card.value(), 32, painter.palette().text(), Font.BOLD);
             value.setText(fitCardText(painter, value));
             painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 14));
-            TextWithStyle label = new TextWithStyle(card.label(), 20, COLOR_TIP, Font.PLAIN);
+            TextWithStyle label = new TextWithStyle(card.label(), 20, painter.palette().tip(), Font.PLAIN);
             label.setText(fitCardText(painter, label));
             painter.drawTextWithStyle(List.of(label), new Point(x + CARD_TEXT_INSET, y + 62));
         }
@@ -403,7 +398,7 @@ public class BilibiliDataQueryPainter {
      * 头像圆盖住，名次读不出来。列宽跟着最大可能的位数走
      */
     private static int rankColumnWidth(CommonPainter painter) {
-        return painter.getStringWidthAndHeight(new TextWithStyle("300", 24, COLOR_TEXT, Font.BOLD)).getFirst();
+        return painter.getStringWidthAndHeight(new TextWithStyle("300", 24, painter.palette().text(), Font.BOLD)).getFirst();
     }
 
     /**
@@ -425,7 +420,7 @@ public class BilibiliDataQueryPainter {
                                 DoubleFunction<String> scoreText, RowLayout layout) {
         int y = painter.getY();
 
-        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, painter.palette().rank(rank), Font.BOLD)),
                 new Point(MARGIN + RANK_TEXT_X, y + 6));
 
         // 头像取不到就空着位置，让各行昵称仍然左端对齐
@@ -436,12 +431,12 @@ public class BilibiliDataQueryPainter {
         }
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(painter, displayName(user), layout.nameMaxWidth()),
-                        24, COLOR_TEXT, Font.PLAIN)),
+                        24, painter.palette().text(), Font.PLAIN)),
                 new Point(MARGIN + layout.nameX(), y + 6));
 
         int barX = MARGIN + BAR_X;
         int barWidth = CONTENT_WIDTH - BAR_X - 140;
-        painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
+        painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, painter.palette().card());
 
         // 盈亏榜可能出现负分或榜首为 0，按绝对值取比例并留一段最小可见长度。
         // 长短不分赚亏，颜色分：亏了的画绿，与下播报告一致
@@ -449,10 +444,10 @@ public class BilibiliDataQueryPainter {
         int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
         if (filled > 0) {
             painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
-                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? COLOR_LOSS : rankColor(rank));
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, user.score() < 0 ? painter.palette().loss() : painter.palette().rank(rank));
         }
 
-        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreText.apply(user.score()), 24, COLOR_TEXT, Font.PLAIN)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreText.apply(user.score()), 24, painter.palette().text(), Font.PLAIN)),
                 new Point(barX + barWidth + 14, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
@@ -745,14 +740,6 @@ public class BilibiliDataQueryPainter {
     /**
      * 名次配色：前三名依次为金、银、铜，其余用主题粉
      */
-    private Color rankColor(int rank) {
-        return switch (rank) {
-            case 1 -> new Color(240, 173, 78);
-            case 2 -> new Color(160, 174, 192);
-            case 3 -> new Color(205, 133, 96);
-            default -> new Color(251, 168, 193);
-        };
-    }
 
     /**
      * 榜单上的展示名：昵称未记录时退回 uid，总比留白强
@@ -769,7 +756,7 @@ public class BilibiliDataQueryPainter {
      * 顺带解决 {@code substring} 把 emoji 劈成半个代理项的问题——昵称里 emoji 很常见
      */
     private String truncate(CommonPainter painter, String name, int nameMaxWidth) {
-        return painter.truncateToWidth(new TextWithStyle(UserText.singleLine(name), 24, COLOR_TEXT, Font.PLAIN), nameMaxWidth);
+        return painter.truncateToWidth(new TextWithStyle(UserText.singleLine(name), 24, painter.palette().text(), Font.PLAIN), nameMaxWidth);
     }
 
     /**
