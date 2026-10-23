@@ -2,39 +2,6 @@
 	"handlers":[
 		{
 			"aliases":[
-				"com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
-			],
-			"attachments":[],
-			"className":"org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
-			"defaultEnabled":true,
-			"defaultParams":{
-				"at_all":false,
-				"message":"{uname} 直播结束了，本场直播时长 {time}"
-			},
-			"description":"主播结束直播时推送",
-			"displayName":"下播通知",
-			"factoryParams":{
-				"at_all":false,
-				"message":"{uname} 直播结束了，本场直播时长 {time}"
-			},
-			"options":[],
-			"placeholderLabels":{
-				"{next}":"另起一条消息",
-				"{time}":"本场直播时长",
-				"{uname}":"主播昵称",
-				"{url}":"直播间链接"
-			},
-			"placeholders":[
-				"{uname}",
-				"{time}",
-				"{url}",
-				"{next}"
-			],
-			"platform":"bilibili",
-			"reportLayout":false
-		},
-		{
-			"aliases":[
 				"com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
 			],
 			"attachments":[
@@ -76,63 +43,33 @@
 		},
 		{
 			"aliases":[
-				"com.starlwr.bot.core.handler.WeeklyReportPushHandler"
+				"com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
 			],
 			"attachments":[],
-			"className":"org.frostnova.nova.core.handler.WeeklyReportPushHandler",
-			"defaultEnabled":false,
-			"defaultParams":{},
-			"description":"每周一 10:00 发送上一周（周一 6:00 至下周一 6:00）的统计图与摘要；遇静音时段顺延到静音结束后发送；隐藏金额的会话不显示金额",
-			"displayName":"运营周报",
-			"factoryParams":{},
-			"options":[],
-			"placeholderLabels":{},
-			"placeholders":[],
-			"platform":"",
-			"reportLayout":false
-		},
-		{
-			"aliases":[
-				"com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler",
-				"com.starlwr.bot.report.handler.BilibiliDynamicPushHandler"
-			],
-			"attachments":[
-				"{picture}"
-			],
-			"className":"org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+			"className":"org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
 			"defaultEnabled":true,
 			"defaultParams":{
-				"black_list":[],
-				"message":"{uname} {action}\n{url}{picture}",
-				"only_self_origin":false,
-				"white_list":[]
+				"at_all":false,
+				"message":"{uname} 直播结束了，本场直播时长 {time}"
 			},
-			"description":"主播发布新动态时推送",
-			"displayName":"动态通知",
+			"description":"主播结束直播时推送",
+			"displayName":"下播通知",
 			"factoryParams":{
-				"black_list":[],
-				"message":"{uname} {action}\n{url}{picture}",
-				"only_self_origin":false,
-				"white_list":[]
+				"at_all":false,
+				"message":"{uname} 直播结束了，本场直播时长 {time}"
 			},
 			"options":[],
 			"placeholderLabels":{
-				"{action}":"动态动作",
-				"{at=all}":"@全体成员",
-				"{at}":"@订阅者",
 				"{next}":"另起一条消息",
-				"{picture}":"动态图片",
+				"{time}":"本场直播时长",
 				"{uname}":"主播昵称",
-				"{url}":"动态链接"
+				"{url}":"直播间链接"
 			},
 			"placeholders":[
 				"{uname}",
-				"{action}",
+				"{time}",
 				"{url}",
-				"{picture}",
-				"{at}",
-				"{next}",
-				"{at=all}"
+				"{next}"
 			],
 			"platform":"bilibili",
 			"reportLayout":false
@@ -502,6 +439,69 @@
 				"{next}"
 			],
 			"platform":"bilibili",
+			"reportLayout":false
+		},
+		{
+			"aliases":[
+				"com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler",
+				"com.starlwr.bot.report.handler.BilibiliDynamicPushHandler"
+			],
+			"attachments":[
+				"{picture}"
+			],
+			"className":"org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+			"defaultEnabled":true,
+			"defaultParams":{
+				"black_list":[],
+				"message":"{uname} {action}\n{url}{picture}",
+				"only_self_origin":false,
+				"white_list":[]
+			},
+			"description":"主播发布新动态时推送",
+			"displayName":"动态通知",
+			"factoryParams":{
+				"black_list":[],
+				"message":"{uname} {action}\n{url}{picture}",
+				"only_self_origin":false,
+				"white_list":[]
+			},
+			"options":[],
+			"placeholderLabels":{
+				"{action}":"动态动作",
+				"{at=all}":"@全体成员",
+				"{at}":"@订阅者",
+				"{next}":"另起一条消息",
+				"{picture}":"动态图片",
+				"{uname}":"主播昵称",
+				"{url}":"动态链接"
+			},
+			"placeholders":[
+				"{uname}",
+				"{action}",
+				"{url}",
+				"{picture}",
+				"{at}",
+				"{next}",
+				"{at=all}"
+			],
+			"platform":"bilibili",
+			"reportLayout":false
+		},
+		{
+			"aliases":[
+				"com.starlwr.bot.core.handler.WeeklyReportPushHandler"
+			],
+			"attachments":[],
+			"className":"org.frostnova.nova.core.handler.WeeklyReportPushHandler",
+			"defaultEnabled":false,
+			"defaultParams":{},
+			"description":"每周一 10:00 发送上一周（周一 6:00 至下周一 6:00）的统计图与摘要；遇静音时段顺延到静音结束后发送；隐藏金额的会话不显示金额",
+			"displayName":"运营周报",
+			"factoryParams":{},
+			"options":[],
+			"placeholderLabels":{},
+			"placeholders":[],
+			"platform":"",
 			"reportLayout":false
 		}
 	],

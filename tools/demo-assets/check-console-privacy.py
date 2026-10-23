@@ -55,18 +55,20 @@ def inspect(text):
         if value.isdigit() and value not in IDS:
             hits.add('identity ' + value + ' is not declared synthetic')
 
-    def walk(value, users=False, series=False):
+    def walk(value, users=False, series=False, choices=False):
         if isinstance(value, dict):
             for name, child in value.items():
                 normal = normal_key(name)
                 if normal in IDENTITY_KEYS:
                     identity(child)
-                if name.isdigit() and not (series and re.fullmatch(r'\d{13}', name)):
+                # Setting choices such as 0/1 are option values; QQ numbers have at least 5 digits.
+                if name.isdigit() and not (series and re.fullmatch(r'\d{13}', name)) \
+                        and not (choices and len(name) <= 4):
                     identity(name)
                 if name.startswith('qq-onebot:'):
                     for part in name.split(':')[1:]:
                         identity(part)
-                walk(child, users or name == 'userSets', series or name == 'series')
+                walk(child, users or name == 'userSets', series or name == 'series', name == 'choiceLabels')
         elif isinstance(value, list):
             for child in value:
                 if users:

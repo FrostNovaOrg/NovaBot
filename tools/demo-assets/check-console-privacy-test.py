@@ -57,6 +57,15 @@ class ConsolePrivacyTest(unittest.TestCase):
                       {'series': {'uid': 271828}}):
             self.assertTrue(privacy.inspect(json.dumps(value)))
 
+    def test_short_choice_values_are_not_account_ids(self):
+        self.assertEqual([], privacy.inspect(json.dumps({'choiceLabels': {'0': '好友', '1': '群'}},
+                                                        ensure_ascii=False)))
+        for value in ({'choiceLabels': {'27182': 'x'}},
+                      {'choiceLabels': {'271828': 'x'}},
+                      {'labels': {'0': 'x'}}):
+            with self.subTest(value=value):
+                self.assertTrue(privacy.inspect(json.dumps(value)))
+
 
 if __name__ == '__main__':
     unittest.main()

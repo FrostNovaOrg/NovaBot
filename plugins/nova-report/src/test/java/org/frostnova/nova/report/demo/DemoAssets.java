@@ -16,8 +16,10 @@ import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
+import org.frostnova.nova.core.service.ReportPaletteSettings;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.util.FontUtil;
 import org.frostnova.nova.report.util.ImageUtil;
 import org.springframework.boot.info.BuildProperties;
@@ -72,6 +74,15 @@ public final class DemoAssets {
     static final int REPORT_WIDTH = 1200;
 
     static final long REPORT_MAX_BYTES = 600 * 1024L;
+
+    static final String MANUAL_FULL_FILE = "09-stream-report.png";
+
+    static final String MANUAL_TOP_FILE = "01-stream-report-top.png";
+
+    /**
+     * 开头那一截的高度：截到数据卡第四行露出一角
+     */
+    static final int MANUAL_TOP_HEIGHT = 1340;
 
     static final long STREAMER_UID = 100_000_001L;
 
@@ -185,6 +196,27 @@ public final class DemoAssets {
     }
 
     static Rendered render(Path demoDir, Path reportPng, FontUtil fonts) throws IOException {
+        return render(demoDir, reportPng, fonts, ReportPalette.DEFAULT);
+    }
+
+    /**
+     * 手册用的两张：整张报告图与它开头那一截，配色取出厂默认。
+     * README 的 docs/assets/report-demo.png 不经这里，仍是上面那一版
+     */
+    static ManualRendered renderManual(Path demoDir, Path imagesDir, FontUtil fonts) throws IOException {
+        ReportPalette palette = ReportPalette.preset(ReportPaletteSettings.FACTORY_DEFAULT)
+                .orElseThrow(() -> new IOException("factory default palette not found: "
+                        + ReportPaletteSettings.FACTORY_DEFAULT))
+                .palette();
+        Rendered full = render(demoDir, imagesDir.resolve(MANUAL_FULL_FILE), fonts, palette);
+        BufferedImage image = ImageIO.read(full.path().toFile());
+        int height = Math.min(MANUAL_TOP_HEIGHT, image.getHeight());
+        Path top = imagesDir.resolve(MANUAL_TOP_FILE);
+        writePng(image.getSubimage(0, 0, image.getWidth(), height), top);
+        return new ManualRendered(full, top, image.getWidth(), height);
+    }
+
+    static Rendered render(Path demoDir, Path reportPng, FontUtil fonts, ReportPalette palette) throws IOException {
         Files.createDirectories(reportPng.getParent());
         DemoReportPainter painter = demoPainter(demoDir, fonts);
         String version = projectVersion(repoRoot());
@@ -194,7 +226,7 @@ public final class DemoAssets {
         Optional<String> base64 = painter.paint(
                 BilibiliPlatform.BILIBILI.id(),
                 new LiveStreamerInfo(STREAMER_UID, STREAMER_A, ROOM_ID, "demo-face-0"),
-                BilibiliLiveReportOptions.of(params, true));
+                BilibiliLiveReportOptions.of(params, true), palette);
         if (base64.isEmpty()) {
             throw new IOException("BilibiliLiveReportPainter.paint returned empty");
         }
@@ -625,6 +657,9 @@ public final class DemoAssets {
      * 隐藏金额那一版出图与两版文字报告
      */
     record HiddenRendered(Path path, int width, int height, long bytes, String shownText, String hiddenText) {
+    }
+
+    record ManualRendered(Rendered full, Path top, int topWidth, int topHeight) {
     }
 
     /**
