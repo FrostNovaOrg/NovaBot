@@ -144,6 +144,9 @@ public class ConfigUiAuthController {
         if (account != null) {
             if (account.role() == ConfigUiAccount.Role.ADMIN) {
                 result.put("oidcCallbackSetupNeeded", authService.oidcCallbackSetupNeeded());
+                if (Boolean.TRUE.equals(request.getAttribute(ConfigUiApiInterceptor.SESSION_CHECK_USED))) {
+                    result.put("sessionCheckSetupNeeded", true);
+                }
             }
             if (authService.oidcEnabled()) result.put("managementUri", authService.oidcManagementUri());
             result.put("accountId", account.id());

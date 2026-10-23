@@ -133,6 +133,10 @@
     统一登录的回调地址还没填：请在「设置 → 高级选项 → 登录与安全 · 高级」里的「统一登录 · 回调地址」填写与账户中心登记的完全一致的完整回调地址，保存后重启。
   </div>
 
+  <div class="notice" id="session-check-notice" style="display:none">
+    如用 NovaBot 会话接入管理后端，请将代理的会话检查地址改为 /config/api/admin-session-check（有部署前缀时，例如 /novabot，填写 /novabot/config/api/admin-session-check），并保留后端自身的登录与角色检查；改好代理配置并重启 NovaBot 后提示消失。
+  </div>
+
   <!-- ============ 首页 #/home ============ -->
   <!--
     首页回答一个问题：现在好不好。
