@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.protocol;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -421,7 +422,7 @@ class EventConnectionBudgetTest {
         endpoint.afterConnectionEstablished(session);
         var worker = Executors.newSingleThreadExecutor();
         try {
-            worker.submit(endpoint::shutdown).get(3, TimeUnit.SECONDS);
+            assertDoesNotThrow(() -> worker.submit(endpoint::shutdown).get(3, TimeUnit.SECONDS));
             assertTrue(entered.await(10, TimeUnit.SECONDS));
             await(() -> poolUnchecked().isTerminated());
             assertTrue(pool("activeClosers").isTerminated());
@@ -490,7 +491,8 @@ class EventConnectionBudgetTest {
     void stoppedEndpointHasNoNewHandshake() throws Exception {
         setup(Map.of());
         endpoint.shutdown();
-        assertFalse(new Attempt("127.0.0.1").accepted);
+        Attempt next = assertDoesNotThrow(() -> new Attempt("127.0.0.1"));
+        assertFalse(next.accepted);
     }
 
     @Test
@@ -634,6 +636,63 @@ class EventConnectionBudgetTest {
             logger.detachAppender(messages);
             messages.stop();
             assertTrue(original.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void handshakeWindowMessage() throws Exception {
+        var logger = (Logger) LoggerFactory.getLogger("org.frostnova.nova.core.protocol.EventConnectionLimits");
+        ListAppender<ILoggingEvent> messages = new ListAppender<>();
+        messages.start();
+        logger.addAppender(messages);
+        try {
+            setup(Map.of("handshake-timeout-ms", 30));
+            new Attempt("127.0.0.1").complete(true);
+            await(() -> poolUnchecked().getCompletedTaskCount() > 0);
+            assertTrue(messages.list.stream().filter(event -> event.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(text -> text.contains("handshake-timeout-ms") && text.contains("重启")));
+        } finally {
+            logger.detachAppender(messages);
+            messages.stop();
+        }
+    }
+
+    @Test
+    void defaultValueMessages() {
+        var logger = (Logger) LoggerFactory.getLogger("org.frostnova.nova.core.protocol.EventConnectionLimits");
+        ListAppender<ILoggingEvent> messages = new ListAppender<>();
+        messages.start();
+        logger.addAppender(messages);
+        try {
+            setup(Map.of("max-connections", 0, "max-pending-connections", 0,
+                    "max-connections-per-source", 0, "max-concurrent-handshakes", 0,
+                    "handshake-timeout-ms", 0, "io-timeout-ms", 0));
+            for (String key : List.of("max-connections", "max-pending-connections",
+                    "max-connections-per-source", "max-concurrent-handshakes",
+                    "handshake-timeout-ms", "io-timeout-ms")) {
+                assertTrue(messages.list.stream().filter(event -> event.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .anyMatch(text -> text.contains("." + key + " ")
+                                && text.contains("默认值") && text.contains("重启")));
+            }
+        } finally {
+            logger.detachAppender(messages);
+            messages.stop();
+        }
+    }
+
+    @Test
+    void shutdownReturnsReservations() throws Exception {
+        setup(Map.of());
+        for (int i = 0; i < 4; i++) assertTrue(new Attempt("127.0.0.1").accepted);
+        endpoint.shutdown();
+        var limits = org.springframework.test.util.ReflectionTestUtils.getField(endpoint, "limits");
+        for (String field : List.of("connections", "pending")) {
+            assertEquals(0, org.springframework.test.util.ReflectionTestUtils.getField(limits, field));
+        }
+        for (String field : List.of("sources", "handshakes")) {
+            assertTrue(((Map<?, ?>) org.springframework.test.util.ReflectionTestUtils.getField(limits, field)).isEmpty());
         }
     }
 
