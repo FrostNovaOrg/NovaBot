@@ -14,6 +14,10 @@ async function main() {
     ['preview.png', new Uint8Array([137, 80, 78, 71])],
     ['hidden.png', new Uint8Array([137, 80, 78, 72])],
     ['lookup.json', '{"success":false,"message":"未查到主播"}'],
+    ['users.json', '{"success":true,"users":[{"platform":"bilibili","uid":1,"targets":[{"num":7}]},'
+      + '{"platform":"bilibili","uid":2,"targets":[{"num":8}]}]}'],
+    ['user1.json', '{"success":true,"version":"v1","user":{"platform":"bilibili","uid":1,'
+      + '"targets":[{"num":7,"disabledCommands":["sample"]}]}}'],
   ]);
   const rows = [
     ['GET', '/auth/state', '', 'auth.json', 200, 'application/json'],
@@ -35,6 +39,10 @@ async function main() {
     body: {...channel, revenueVisible: false}, file: 'data/hidden.png', status: 200, contentType: 'image/png'});
   rows.push({method: 'POST', path: '/config/api/weekly-report/bilibili/1/preview', query: '',
     body: {...channel, revenueVisible: false, audience: false}, file: 'data/preview.png', status: 200, contentType: 'image/png'});
+  for (const [path, file] of [['/datasource/users', 'users.json'], ['/datasource/users/bilibili/1', 'user1.json']]) {
+    rows.push({method: 'GET', path: '/config/api' + path, query: '', file: 'data/' + file, status: 200,
+      contentType: 'application/json'});
+  }
   const timers = new Map();
   const events = [], nodes = new Map(), warnings = [], network = [], opened = [];
   const document = {
@@ -72,6 +80,11 @@ async function main() {
   equal((await context.fetch(new Request('http://localhost/config/api/auth/state'))).status, 200);
   const lookup = await request('/streamer/lookup', {method: 'POST', body: '{"uid":"1","platform":"bilibili"}'});
   equal((await lookup.json()).message, '未查到主播');
+  // A recorded streamer keeps its channel settings; the navigation list has none of them.
+  const recordedUser = await (await request('/datasource/users/bilibili/1')).json();
+  equal(recordedUser.version, 'v1'); equal(recordedUser.user.targets[0].disabledCommands, ['sample']);
+  const listedUser = await (await request('/datasource/users/bilibili/2')).json();
+  equal(listedUser.version, 'demo'); equal(listedUser.user.targets[0].num, 8);
   equal(nodes.get('console-demo-notice').hidden, true);
   const before = network.length;
   for (const method of ['POST', 'PUT', 'DELETE']) {
