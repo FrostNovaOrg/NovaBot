@@ -15,8 +15,8 @@ export const COMPONENT_STYLE = `
 .sc-kpi-label{font-size:var(--fs-sm);color:var(--dim);margin-bottom:7px}
 .sc-kpi-value{font-size:var(--fs-xxl);font-weight:650;line-height:1.25;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .sc-kpi-delta{font-size:var(--fs-xs);min-height:1.55em;margin-top:6px;color:var(--dim)}
-.sc-kpi-delta.sc-up{color:var(--ok)}
-.sc-kpi-delta.sc-down{color:var(--err)}
+.sc-kpi-delta.sc-up{color:var(--trend-up)}
+.sc-kpi-delta.sc-down{color:var(--trend-down)}
 .sc-chart{position:relative;min-width:0;color:var(--text);display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:8px}
 .sc-chart-plot{display:contents}
 .sc-chart-scale{min-width:48px;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;padding:14px 0 26px;text-align:right;color:var(--dim);font-size:var(--fs-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -87,6 +87,8 @@ export const COMPONENT_STYLE = `
 .sc-audience-label{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0}
 .sc-audience-label small{color:var(--dim);font-size:var(--fs-xs)}
 .sc-audience-label strong{font-size:var(--fs-xxl);line-height:1.3;font-variant-numeric:tabular-nums}
+.sc-audience-label strong.sc-audience-large{font-size:var(--fs-xl)}
+.sc-audience-label strong small{display:block;text-align:center}
 .sc-audience-label strong small,.sc-audience-segment strong small{font-size:var(--fs-xs);color:var(--dim);font-weight:400}
 .sc-audience-composition{display:grid;gap:9px;min-width:0}
 .sc-audience-segment{display:flex;flex-direction:column;gap:7px;padding:10px 11px;border:1px solid var(--line);background:var(--ground);border-radius:var(--r-ctl);min-width:0}
@@ -94,7 +96,7 @@ export const COMPONENT_STYLE = `
 .sc-audience-segment i{width:7px;height:7px;border-radius:50%;background:color-mix(in srgb,var(--accent) 84%,var(--dim))}
 .sc-audience-segment.sc-returning i{background:color-mix(in srgb,var(--accent2) 74%,var(--dim))}
 .sc-audience-segment strong{font-size:var(--fs-xl);line-height:1.2;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-.sc-drawer{position:fixed;inset:0 0 0 auto;display:none;margin:0;width:min(820px,92vw);max-width:none;height:100dvh;max-height:none;padding:0;border:0;border-left:1px solid var(--line);background:var(--ground);color:var(--text);box-shadow:var(--shadow);overflow:hidden;font-family:var(--font)}
+.sc-drawer{position:fixed;inset:0 0 0 auto;display:none;margin:0;width:min(1000px,96vw);max-width:none;height:100dvh;max-height:none;padding:0;border:0;border-left:1px solid var(--line);background:var(--ground);color:var(--text);box-shadow:var(--shadow);overflow:hidden;font-family:var(--font)}
 .sc-drawer[open]{display:flex;flex-direction:column}
 .sc-drawer::backdrop{background:var(--overlay)}
 .sc-drawer-head{display:flex;flex:0 0 auto;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line);background:var(--surface)}
@@ -155,13 +157,15 @@ export function createChart(host, {
   points = [], title = '趋势', period = 'day', hideOff = false,
   isOff = point => point.status === 'off', format = chartNumber, onSelect,
   canSelect = point => !Number.isFinite(point.sessions) || point.sessions > 0,
-  label = null, tickLabel = null,
+  label = null, tickLabel = null, fitRange = false, integerTicks = false,
 } = {}) {
   const deferred = period === 'day' && typeof onSelect === 'function';
   const shown = period === 'day' && hideOff ? points.filter(point => !isOff(point) && finite(point.value)) : [...points];
   const samples = shown.map(point => point.value).filter(finite);
-  const min = Math.min(0, ...samples);
-  const max = Math.max(0, ...samples) || (min === 0 ? 1 : 0);
+  const low = Math.min(...samples), high = Math.max(...samples);
+  const padding = Math.max(1, (high - low) * .1);
+  const min = fitRange ? Math.max(0, Math.floor(low - padding)) : Math.min(0, ...samples);
+  const max = fitRange ? Math.ceil(high + padding) : Math.max(0, ...samples) || (min === 0 ? 1 : 0);
   const span = max - min || 1;
   const wrap = element('div', 'sc-chart');
   if (!samples.length) {
@@ -270,12 +274,15 @@ export function createChart(host, {
       return shown.reduce((nearest, _, index) => Math.abs(x(index) - at) < Math.abs(x(nearest) - at) ? index : nearest, 0);
     };
     if (samples.length) {
-      for (let i = 0; i < 4; i++) {
-        const value = max - i * span / 3;
-        scale.append(element('span', '', axisNumber(value, Math.max(Math.abs(min), Math.abs(max)) >= 10000)));
+      const tickCount = integerTicks ? Math.min(4, Math.floor(span) + 1) : 4;
+      for (let i = 0; i < tickCount; i++) {
+        const raw = max - i * span / (tickCount - 1);
+        const value = integerTicks ? Math.round(raw) : raw;
+        scale.append(element('span', '', integerTicks ? new Intl.NumberFormat('zh-CN', {maximumFractionDigits: 0}).format(value)
+          : axisNumber(value, Math.max(Math.abs(min), Math.abs(max)) >= 10000)));
         svg.append(svgElement('line', {x1: left, x2: left + width, y1: y(value), y2: y(value), class: 'sc-grid'}));
       }
-      svg.append(svgElement('line', {x1: left, x2: left + width, y1: y(0), y2: y(0), class: 'sc-zero'}));
+      if (min <= 0 && max >= 0) svg.append(svgElement('line', {x1: left, x2: left + width, y1: y(0), y2: y(0), class: 'sc-zero'}));
     }
     if (period === 'day') {
       let path = '', connected = false;
@@ -573,7 +580,9 @@ export function createAudienceRing({first, returning, total, format = display}, 
     segment.append(name, count); composition.append(segment);
   }
   const caption = element('div', 'sc-audience-label');
-  const count = element('strong', '', format(total));
+  const compact = finite(total) && total >= 100000000 ? (total / 100000000).toFixed(1) + ' 亿' : finite(total) && total >= 10000 ? (total / 10000).toFixed(1) + ' 万' : format(total);
+  const count = element('strong', total >= 1000000 ? 'sc-audience-large' : '', compact);
+  count.title = finite(total) ? format(total) + ' 人' : compact;
   if (finite(total)) count.append(element('small', '', '人'));
   caption.append(element('small', '', '本期观众'), count);
   ring.append(svg, caption); wrap.append(ring, composition); host?.append(wrap); return wrap;

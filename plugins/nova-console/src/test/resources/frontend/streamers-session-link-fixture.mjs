@@ -696,14 +696,14 @@ for (const [period, start, end, label, expected] of [
 // 缺少任一边界时不能编造历史起点或截止时刻。
 await ask('可用历史只显示真实起止', async () => {
   historyStart = null; await overview();
-  same(textOf(node('sd-body')).includes('可用历史：'), false, '无归档不显示历史');
+  same(textOf(node('sd-body')).includes('可用历史自 '), false, '无归档不显示历史');
   historyStart = Date.parse('2026-08-01T10:00:00+08:00'); await overview();
-  same(textOf(node('sd-body')).includes('可用历史：2026/08/01 10:00 — 2026/10/16 08:40 · Asia/Shanghai'), true, '真实历史范围');
+  same(textOf(node('sd-body')).includes('可用历史自 2026/08/01 10:00'), true, '合并说明保留真实历史起点');
   same(textOf(node('sd-body')).includes('统计日 06:00–次日06:00 · Asia/Shanghai'), true, '统计日说明');
   const saved = cutoff;
   try {
     cutoff = null; await overview();
-    same(textOf(node('sd-body')).includes('可用历史：'), false, '缺截止时刻不显示历史');
+    same(textOf(node('sd-body')).includes('可用历史自 '), false, '缺截止时刻不显示历史');
   } finally { cutoff = saved; }
 });
 
