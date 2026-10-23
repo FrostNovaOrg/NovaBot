@@ -397,9 +397,9 @@ await ask('添加通道写明通道设置各条一份并列出其他主播', asy
   if (!add) throw new Error('没有添加通道按钮');
   add.click();
   const rows = allNodes(idNode('push-drawer-body')).filter(node => classesOf(node).includes('dwrow'));
-  same(rows[0].innerHTML.includes(' · 正在推送 甲、乙'), true, '已有推送的群列出主播');
-  same(rows[1].innerHTML.includes('正在推送'), false, '没人推的群不写主播');
-  same(rows[2].innerHTML.includes('正在推送'), false, '好友不写主播');
+  same(rows[0].children[0].innerHTML.includes(' · 正在推送 甲、乙'), true, '已有推送的群列出主播');
+  same(rows[1].children[0].innerHTML.includes('正在推送'), false, '没人推的群不写主播');
+  same(rows[2].children[0].innerHTML.includes('正在推送'), false, '好友不写主播');
   same(idNode('push-drawer-lead').textContent.includes('通道设置（金额可见、静音时段、命令开关）每条通道各一份，不影响同群的其他主播。'),
     true, '添加前的通道设置说明');
   push.closeDrawer();
