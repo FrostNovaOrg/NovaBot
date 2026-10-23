@@ -40,7 +40,7 @@ public final class TotpGenerator {
     /**
      * 前后各容忍几个时间窗
      */
-    private static final int WINDOW = 1;
+    static final int WINDOW = 1;
 
     /**
      * 密钥字节数。RFC 4226 要求至少 128 位，推荐 160 位

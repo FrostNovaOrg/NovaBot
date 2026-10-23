@@ -316,7 +316,8 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
 
         this.lastUsedTotpStep = TotpGenerator.currentStep(clock.get());
         this.totpSteps = fileService == null ? null : new TotpStepStore(
-                () -> Path.of(fileService.describeConfigPath()), lastUsedTotpStep);
+                () -> Path.of(fileService.describeConfigPath()), lastUsedTotpStep,
+                () -> TotpGenerator.currentStep(clock.get()), ConfigUiAuthService::noteTotpStepAdjusted);
 
         if (isEnabled() && this.totpEnabled && this.totpSecret == null) {
             log.warn("配置界面已启用口令登录但尚未绑定验证器, 请在界面上完成绑定");
@@ -1216,11 +1217,14 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
     private void noteTotpStorage() {
         if (!totpStorageNotice) {
             totpStorageNotice = true;
-            String message = "二次验证记录暂时无法读写，请让程序可读写 " + totpSteps.path()
-                    + " 及其所在目录，文件内容不完整时从备份恢复，完成后重试。";
-            log.warn(message);
-            System.err.println(message);
+            log.warn("二次验证记录暂时无法读写，请让程序可读写 {} 及其所在目录，文件内容不完整时从备份恢复，完成后重试。",
+                    totpSteps.path());
         }
+    }
+
+    private static void noteTotpStepAdjusted() {
+        log.warn("二次验证记录里的时间晚于服务器当前时间，服务器时钟可能刚校正过；已按当前时间继续，"
+                + "无需处理，用验证器上的新验证码登录即可。");
     }
 
     private static String blankToNull(String value) {

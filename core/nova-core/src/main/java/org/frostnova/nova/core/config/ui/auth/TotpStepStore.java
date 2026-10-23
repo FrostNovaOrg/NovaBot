@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -17,12 +18,22 @@ import java.util.function.Supplier;
 final class TotpStepStore {
     private final Supplier<Path> configPath;
     private final long initialStep;
+    private final LongSupplier currentStep;
+    private final Runnable stepAdjusted;
     private String keyId;
     private long lastStep;
 
-    TotpStepStore(Supplier<Path> configPath, long initialStep) {
+    /**
+     * @param configPath 主配置文件路径
+     * @param initialStep 启动时的时间步
+     * @param currentStep 当前时间步
+     * @param stepAdjusted 记录的时间步晚于当前时间、已按当前时间继续时调用
+     */
+    TotpStepStore(Supplier<Path> configPath, long initialStep, LongSupplier currentStep, Runnable stepAdjusted) {
         this.configPath = configPath;
         this.initialStep = initialStep;
+        this.currentStep = currentStep;
+        this.stepAdjusted = stepAdjusted;
     }
 
     Path path() {
@@ -54,11 +65,12 @@ final class TotpStepStore {
         } catch (NoSuchFileException absent) {
             // 第一次使用时建立进度文件。
         }
-        record(secret, step);
+        record(secret, withinCurrentTime(step));
     }
 
     boolean consume(String secret, long step) throws IOException {
         initialize(secret);
+        lastStep = withinCurrentTime(lastStep);
         if (step <= lastStep) {
             return false;
         }
@@ -71,6 +83,18 @@ final class TotpStepStore {
         DurableFiles.replace(path(), "1\n" + id + "\n" + step + "\n", DurableFiles.OWNER_ONLY);
         keyId = id;
         lastStep = step;
+    }
+
+    /**
+     * 晚于当前时间所能接受的最后一步时，改为当前时间步。
+     */
+    private long withinCurrentTime(long step) {
+        long now = currentStep.getAsLong();
+        if (step <= now + TotpGenerator.WINDOW) {
+            return step;
+        }
+        stepAdjusted.run();
+        return now;
     }
 
     private static String keyId(String secret) {

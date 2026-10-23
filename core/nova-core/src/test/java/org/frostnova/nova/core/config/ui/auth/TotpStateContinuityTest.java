@@ -17,8 +17,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
@@ -28,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -66,6 +69,28 @@ class TotpStateContinuityTest {
 
     private boolean login(ConfigUiAuthService service, String code) {
         return service.login(PASSWORD.toCharArray(), code, "192.0.2.1").success();
+    }
+
+    private long notices(ListAppender<ILoggingEvent> events) {
+        return events.list.stream().filter(event ->
+                event.getFormattedMessage().contains(statePath().toString())).count();
+    }
+
+    private ListAppender<ILoggingEvent> captureLog() {
+        var events = new ListAppender<ILoggingEvent>();
+        events.start();
+        ((Logger) LoggerFactory.getLogger(ConfigUiAuthService.class)).addAppender(events);
+        return events;
+    }
+
+    private void releaseLog(ListAppender<ILoggingEvent> events) {
+        ((Logger) LoggerFactory.getLogger(ConfigUiAuthService.class)).detachAppender(events);
+        events.stop();
+    }
+
+    private void breakState() throws Exception {
+        Files.deleteIfExists(statePath());
+        Files.createDirectory(statePath());
     }
 
     @Test
@@ -218,18 +243,17 @@ class TotpStateContinuityTest {
         try (var capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
             System.setErr(capture);
             service(SECRET).start();
-            assertEquals("", output.toString(StandardCharsets.UTF_8));
+            assertEquals(0, notices(events));
             Files.deleteIfExists(statePath());
             Files.createDirectory(statePath());
             var auth = service(SECRET);
             auth.start();
-            String first = output.toString(StandardCharsets.UTF_8);
-            assertTrue(first.contains("可读写"));
-            assertTrue(first.contains(statePath().toString()));
-            assertEquals(1, events.list.stream().filter(event ->
-                    event.getFormattedMessage().contains(statePath().toString())).count());
+            assertEquals(1, notices(events));
+            assertTrue(events.list.stream().anyMatch(event ->
+                    event.getFormattedMessage().contains("可读写")));
             assertFalse(login(auth, code(30)));
-            assertEquals(first, output.toString(StandardCharsets.UTF_8));
+            assertEquals(1, notices(events));
+            assertFalse(output.toString(StandardCharsets.UTF_8).contains(statePath().toString()));
         } finally {
             System.setErr(original);
             logger.detachAppender(events);
@@ -315,5 +339,112 @@ class TotpStateContinuityTest {
         auth.start();
         assertTrue(login(auth, null));
         verify(files, never()).describeConfigPath();
+    }
+
+    @Test
+    void case14() {
+        var events = captureLog();
+        try {
+            clock.set(NOW.plusSeconds(3600));
+            var auth = service(SECRET);
+            auth.start();
+            assertTrue(login(auth, code(3630)));
+            auth.stop();
+            clock.set(NOW.plusSeconds(30));
+            var restarted = service(SECRET);
+            restarted.start();
+            assertTrue(events.list.stream().anyMatch(event ->
+                    event.getFormattedMessage().contains("时钟")));
+            assertTrue(login(restarted, code(60)));
+            assertFalse(login(restarted, code(60)));
+            restarted.stop();
+            assertFalse(login(service(SECRET), code(60)));
+        } finally {
+            releaseLog(events);
+        }
+    }
+
+    @Test
+    void case15() {
+        var auth = service(SECRET);
+        auth.start();
+        clock.set(NOW.plusSeconds(3600));
+        assertTrue(login(auth, code(3600)));
+        clock.set(NOW.plusSeconds(30));
+        assertTrue(login(auth, code(60)));
+        assertFalse(login(auth, code(60)));
+        clock.set(NOW.plusSeconds(60));
+        assertTrue(login(auth, code(90)));
+    }
+
+    @Test
+    void case16() throws Exception {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "文件系统不支持 POSIX 权限位");
+        var auth = service(SECRET);
+        auth.start();
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(statePath()));
+        assertTrue(login(auth, code(30)));
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(statePath()));
+    }
+
+    @Test
+    void case17() throws Exception {
+        var events = captureLog();
+        try {
+            var auth = service(SECRET);
+            auth.start();
+            breakState();
+            assertFalse(login(auth, code(30)));
+            assertEquals(1, notices(events));
+            Files.delete(statePath());
+            assertTrue(login(auth, code(30)));
+            breakState();
+            clock.set(NOW.plusSeconds(30));
+            assertFalse(login(auth, code(60)));
+            assertEquals(2, notices(events));
+        } finally {
+            releaseLog(events);
+        }
+    }
+
+    @Test
+    void case18() throws Exception {
+        var events = captureLog();
+        try {
+            breakState();
+            var auth = service(SECRET);
+            auth.start();
+            assertEquals(1, notices(events));
+            Files.delete(statePath());
+            auth.stop();
+            auth.start();
+            assertEquals(1, notices(events));
+            breakState();
+            assertFalse(login(auth, code(30)));
+            assertEquals(2, notices(events));
+        } finally {
+            releaseLog(events);
+        }
+    }
+
+    @Test
+    void case19() throws Exception {
+        var events = captureLog();
+        try {
+            var auth = service(null);
+            var session = auth.issueForPassword("192.0.2.1");
+            breakState();
+            long step = TotpGenerator.currentStep(NOW);
+            assertThrows(IllegalStateException.class, () -> auth.activateTotp(session, SECRET, step));
+            assertEquals(1, notices(events));
+            Files.delete(statePath());
+            auth.activateTotp(session, SECRET, step);
+            breakState();
+            assertFalse(login(auth, code(30)));
+            assertEquals(2, notices(events));
+        } finally {
+            releaseLog(events);
+        }
     }
 }
