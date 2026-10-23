@@ -114,6 +114,7 @@ details.sd-scope{margin-bottom:14px}.sd-scope p{margin:10px 0 0;font-size:var(--
 .sd-interaction-bar span{display:block;height:100%;background:var(--accent)}
 .sd-current-live{padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--soft);margin:4px 0 10px}
 .sd-current-live[hidden]{display:none}
+/* 「正在直播」是「当前直播与最近归档」那一块里嵌的小卡，块标题由外面那一块给，这里只是小卡里的小标题，所以比卡片标题小一档 */
 #sd-live .live-head{flex-wrap:wrap;gap:8px}#sd-live .live-head h3{font-size:var(--fs-sm)}
 #sd-live .live-head button{margin-left:auto}
 .sd-live-badge{font-size:var(--fs-xs);color:var(--accent-text);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
@@ -267,7 +268,7 @@ export function render(section) {
     <div id="sv-detail" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="sd-back" href="#/streamers">‹ 返回主播列表</a>
+          <a class="lnkbtn" id="sd-back" href="#/streamers">‹ 返回主播列表</a>
         </div>
       </div>
       <div class="nv-card hcard" id="sd-head"></div>
@@ -276,7 +277,7 @@ export function render(section) {
     <div id="sv-session" style="display:none">
       <div class="loghead">
         <div>
-          <a class="daystep" id="sx-back" href="#/streamers">‹ 返回场次列表</a>
+          <a class="lnkbtn" id="sx-back" href="#/streamers">‹ 返回场次列表</a>
         </div>
       </div>
       <h3 class="cat-title" id="sx-title">场次</h3>
@@ -654,15 +655,16 @@ async function loadDetail() {
   const path = '/streamers/' + encodeURIComponent(where.platform) + '/'
     + encodeURIComponent(where.uid) + (query ? '?' + query : '');
 
+  // 页面上已经画着这一位：后台重取失败（连不上，或服务器回了错误包）不抹数据，也不拼原话标红
+  const showing = () => detail?.success && detail.platform === where.platform
+    && String(detail.uid) === String(where.uid);
+  let response;
   try {
-    const response = await api(path);
-    if (generation !== viewGeneration || !liveActive) return;
-    detail = response;
+    response = await api(path);
   } catch (e) {
     if (generation !== viewGeneration || !liveActive) return;
     $('#sv-detail').removeAttribute('aria-busy');
-    // 页面上已经画着这一位：后台重取失败不抹数据，也不拼原话标红
-    if (detail?.success && detail.platform === where.platform && String(detail.uid) === String(where.uid)) {
+    if (showing()) {
       say(REFRESH_FAILED);
       return;
     }
@@ -671,13 +673,20 @@ async function loadDetail() {
     say('主播详情加载失败：' + e.message, 'err');
     return;
   }
+  if (generation !== viewGeneration || !liveActive) return;
 
   $('#sv-detail').removeAttribute('aria-busy');
-  if (!detail.success) {
+  if (!response?.success) {
+    if (showing()) {
+      say(REFRESH_FAILED);
+      return;
+    }
+    detail = response;
     $('#sd-head').innerHTML = '';
-    $('#sd-body').innerHTML = '<p class="empty">' + esc(detail.message || '没有该主播的记录。') + '</p>';
+    $('#sd-body').innerHTML = '<p class="empty">' + esc(response?.message || '没有该主播的记录。') + '</p>';
     return;
   }
+  detail = response;
 
   renderHead();
   const key = where.platform + '/' + where.uid;

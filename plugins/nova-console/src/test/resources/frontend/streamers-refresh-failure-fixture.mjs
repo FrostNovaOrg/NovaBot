@@ -58,12 +58,13 @@ globalThis.setInterval = fn => { tick = fn; return 1; };
 globalThis.clearInterval = () => { tick = null; };
 
 const response = (json, status = 200) => ({status, ok: status >= 200 && status < 300, json: async () => json});
-/** 'ok' 一切照常；'down' 照浏览器那样抛 TypeError；'error' 回 500 带一句服务器的话 */
+/** 'ok' 一切照常；'down' 照浏览器那样抛 TypeError；'error' 回 500、'refused' 回 200 带 success:false，都带一句服务器的话 */
 let mode = 'ok';
 globalThis.fetch = async url => {
   const text = String(url);
   if (mode === 'down') throw new TypeError('Failed to fetch');
   if (mode === 'error') return response({success: false, message: '样例服务器原因'}, 500);
+  if (mode === 'refused') return response({success: false, message: '样例服务器原因'});
   if (text.includes('/live?')) return response({success: true, living: true, since: Date.now() - 60000,
     checkedAt: Date.now(), dataAt: Date.now(), metrics: {}, series: {}});
   if (text.includes('/insights?')) return response({success: true, insights: {metricsKnown: false, daily: []}});
@@ -119,6 +120,42 @@ await check('刷新失败那一行不用错误色', async () => {
   assert.match(css, /\.live-error/, '主播页样式里应当有 .live-error 那一条');
   const rules = css.split('}').filter(rule => /\.live-error/.test(rule.split('{')[0]));
   for (const rule of rules) assert.doesNotMatch(rule, /var\(--err/, '这条把刷新失败标成了红字：' + rule.trim());
+});
+
+// 服务器回了错误包（HTTP 错误码，或 200 带 success:false）：和连不上走同一路。
+// 'error' 是 500，'refused' 是 200 带 success:false，两种都带一句服务器的话
+for (const [kind, label] of [['error', 'HTTP 500'], ['refused', 'success:false']]) {
+  await check('详情重取时服务器回错误包（' + label + '）：资料照留，页脚只说那句短话', async () => {
+    mode = 'ok';
+    page.leave();
+    location.hash = '#/streamers/sample/1';
+    await page.refresh();
+    assert.match(textOf(nodes.get('sd-head')), /样例主播/, '第一次应当画出主播名');
+    // 前面几格留在页脚的那句先擦掉，量到的才是这一趟说的
+    status().textContent = '';
+    status().className = 'status';
+    mode = kind;
+    await page.refresh();
+    console.log('页脚（' + label + '）：' + status().textContent + '（' + status().className + '）');
+    assert.equal(status().textContent, SHORT);
+    assert.doesNotMatch(status().className, /\berr\b/, '后台刷新失败不该用错误色');
+    assert.match(textOf(nodes.get('sd-head')), /样例主播/, '已画出的主播资料不该被抹掉');
+    assert.doesNotMatch(textOf(nodes.get('sd-body')), /样例服务器原因/, '已画出的详情不该被换成服务器的原话');
+  });
+}
+
+await check('首次打开就失败（页面上还没有这一位的资料）：照旧显示失败原因', async () => {
+  mode = 'ok';
+  page.leave();
+  location.hash = '#/streamers/sample/2';
+  mode = 'error';
+  await page.refresh();
+  assert.match(textOf(nodes.get('sd-body')), /样例服务器原因/, '首次失败应当说出原因');
+  mode = 'down';
+  page.leave();
+  location.hash = '#/streamers/sample/3';
+  await page.refresh();
+  assert.match(textOf(nodes.get('sd-body')), /主播详情加载失败：无法连接到服务器/, '首次连不上应当说出原因');
 });
 
 page.leave();

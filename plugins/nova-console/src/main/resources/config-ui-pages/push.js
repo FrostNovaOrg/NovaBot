@@ -126,8 +126,6 @@ const PAGE_STYLE = `
 .ch-nm{font-size:var(--fs-lg);font-weight:600}
 .ch-id{color:var(--dim);font-size:var(--fs-sm)}
 .chead .ghost{margin-left:auto}
-.chead .channel-remove{margin-left:auto;color:var(--dim);text-decoration:none;padding:5px 0}
-.chead .channel-remove:hover{color:var(--err);text-decoration:underline}
 .channel-remove:focus-visible,.p-editor-fold>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 /* 开关一行：左边开关、右边名字与一句说明 */
 /* 字号分四档，从重到轻依次是栏目名、行名、摘要、说明：
@@ -1420,7 +1418,7 @@ function renderChannelLevel(host, user, target) {
     ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
   line.appendChild(num);
 
-  const remove = el('button', 'lnkbtn channel-remove');
+  const remove = el('button', 'ghost danger sm channel-remove');
   remove.type = 'button';
   remove.textContent = '移除通道';
   remove.addEventListener('click', async () => {

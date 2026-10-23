@@ -78,6 +78,8 @@
       background: var(--surface); color: var(--text);
     }
     input:focus { outline: none; border-color: var(--accent) }
+    /* 焦点框与控制台同一种（app.css 的 :focus-visible），本页不加载 app.css，在这里补上 */
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
     input:disabled { background: var(--ground); color: var(--dim) }
     .secret { display: flex; gap: 6px; align-items: center }
     .secret input { flex: 1; min-width: 0 }

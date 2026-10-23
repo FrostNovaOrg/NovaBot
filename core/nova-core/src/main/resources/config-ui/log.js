@@ -473,10 +473,10 @@ function renderEngJump(found) {
   bar.appendChild(text);
 
   const back = el('div');
-  const toList = el('a', 'daystep');
+  const toList = el('a', 'lnkbtn');
   toList.textContent = '‹ 返回日志';
   toList.setAttribute('href', logHash(Object.assign({}, filters, {view: 'timeline', at: ''}), today()));
-  const toLatest = el('a', 'daystep');
+  const toLatest = el('a', 'lnkbtn');
   toLatest.textContent = '返回最新';
   toLatest.setAttribute('href', logHash(Object.assign({}, filters, {at: ''}), today()));
   toLatest.style.marginLeft = '8px';
@@ -679,7 +679,7 @@ async function renderBotLogEntry() {
     return;
   }
   box.insertAdjacentHTML('beforeend',
-    '<div style="margin-top:8px"><a class="daystep" id="eng-bot-open" '
+    '<div style="margin-top:8px"><a class="lnkbtn" id="eng-bot-open" '
     + 'href="' + esc(state.href) + '" target="_blank" rel="noopener noreferrer">'
     + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
     + '</a>'

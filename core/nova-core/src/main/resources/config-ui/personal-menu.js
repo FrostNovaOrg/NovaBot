@@ -17,11 +17,15 @@ export function bindMineMenu(toggle, panel) {
     toggle.setAttribute('aria-expanded', String(open));
   };
   toggle.addEventListener('click', () => setOpen(!panel.classList.contains('open')));
-  panel.addEventListener('keydown', event => {
+  // 点开后焦点还在按钮上，所以按钮与面板都要听 Esc。不挂在 document 上：
+  // 退出时弹的确认框也用 Esc，它关掉后要把焦点还给面板里那颗「退出」
+  const closeOnEscape = event => {
     if (event.key !== 'Escape' || !panel.classList.contains('open')) return;
     setOpen(false);
     toggle.focus();
-  });
+  };
+  toggle.addEventListener('keydown', closeOnEscape);
+  panel.addEventListener('keydown', closeOnEscape);
   document.addEventListener('click', event => {
     if (!panel.classList.contains('open')) return;
     if (toggle.contains(event.target) || panel.contains(event.target)) return;
