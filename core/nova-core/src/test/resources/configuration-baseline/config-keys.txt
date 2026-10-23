@@ -30,7 +30,7 @@ novabot.core.config-ui.oidc.client-secret|java.lang.String||客户端密钥；�
 novabot.core.config-ui.oidc.enabled|java.lang.Boolean|false|是否启用外部账户中心客户端；不改变现有管理员登录方式。
 novabot.core.config-ui.oidc.issuer|java.lang.String||账户中心的 HTTPS issuer，必须与发现文档逐字相同；留空时不启用。
 novabot.core.config-ui.oidc.management-uri|java.lang.String||账户中心管理页地址，供成员管理跳转使用，可留空。
-novabot.core.config-ui.oidc.redirect-uri|java.lang.String||回调地址；留空时按请求的协议、主机、端口和应用前缀推导。
+novabot.core.config-ui.oidc.redirect-uri|java.lang.String||回调地址，须与账户中心登记的值一致；留空时只在用本机地址打开控制台时按请求推导。
 novabot.core.config-ui.oidc.scopes|java.lang.String|openid profile email offline_access|空格分隔的授权范围，必须包含 openid。
 novabot.core.config-ui.token|java.lang.String||配置界面访问令牌。留空时每次启动自动生成一个随机令牌；没设登录密码时，带令牌的访问地址打在启动日志里。需要从其他机器访问时在这里填一个随机串。
 novabot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版。关掉后侧栏与首页的新版提醒都不再出现；程序不会自己更新，这是得知该换新版了的唯一入口。

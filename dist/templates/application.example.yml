@@ -358,5 +358,5 @@ novabot:
         client-id: ""
         client-secret: ""          # 机密；设置页遮掩，留空保存时保持旧值
         scopes: openid profile email offline_access
-        redirect-uri: ""           # 留空按请求来源、应用前缀及 /config/api/oidc/callback 推导
+        redirect-uri: ""           # 填账户中心登记的完整回调地址；留空时只有用本机地址打开控制台才能用统一登录
         management-uri: ""         # 账户中心管理页，可留空
