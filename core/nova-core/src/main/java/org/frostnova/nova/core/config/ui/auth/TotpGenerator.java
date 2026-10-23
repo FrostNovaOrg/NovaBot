@@ -30,7 +30,7 @@ public final class TotpGenerator {
     /**
      * 时间步长（秒）
      */
-    private static final long STEP_SECONDS = 30;
+    static final long STEP_SECONDS = 30;
 
     /**
      * 验证码位数

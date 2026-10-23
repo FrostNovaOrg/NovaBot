@@ -8,6 +8,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -19,7 +20,6 @@ final class TotpStepStore {
     private final Supplier<Path> configPath;
     private final long initialStep;
     private final LongSupplier currentStep;
-    private final Runnable stepAdjusted;
     private String keyId;
     private long lastStep;
 
@@ -27,13 +27,11 @@ final class TotpStepStore {
      * @param configPath 主配置文件路径
      * @param initialStep 启动时的时间步
      * @param currentStep 当前时间步
-     * @param stepAdjusted 记录的时间步晚于当前时间、已按当前时间继续时调用
      */
-    TotpStepStore(Supplier<Path> configPath, long initialStep, LongSupplier currentStep, Runnable stepAdjusted) {
+    TotpStepStore(Supplier<Path> configPath, long initialStep, LongSupplier currentStep) {
         this.configPath = configPath;
         this.initialStep = initialStep;
         this.currentStep = currentStep;
-        this.stepAdjusted = stepAdjusted;
     }
 
     Path path() {
@@ -47,8 +45,14 @@ final class TotpStepStore {
             return;
         }
         long step = initialStep;
+        String content = "";
         try {
-            String content = Files.readString(path());
+            content = Files.readString(path());
+        } catch (NoSuchFileException absent) {
+            // 第一次使用时建立进度文件。
+        }
+        // 空文件同样按还没有记录处理。
+        if (!content.isBlank()) {
             if (!content.matches("1\n[0-9a-f]{64}\n[0-9]+\n")) {
                 throw new IOException("二次验证记录格式不正确");
             }
@@ -62,15 +66,12 @@ final class TotpStepStore {
             if (id.equals(parts[1])) {
                 step = Math.max(step, savedStep);
             }
-        } catch (NoSuchFileException absent) {
-            // 第一次使用时建立进度文件。
         }
-        record(secret, withinCurrentTime(step));
+        record(secret, step);
     }
 
     boolean consume(String secret, long step) throws IOException {
         initialize(secret);
-        lastStep = withinCurrentTime(lastStep);
         if (step <= lastStep) {
             return false;
         }
@@ -80,21 +81,34 @@ final class TotpStepStore {
 
     void record(String secret, long step) throws IOException {
         String id = keyId(secret);
-        DurableFiles.replace(path(), "1\n" + id + "\n" + step + "\n", DurableFiles.OWNER_ONLY);
+        Path path = path();
+        DurableFiles.replace(path, "1\n" + id + "\n" + step + "\n", DurableFiles.OWNER_ONLY);
         keyId = id;
         lastStep = step;
+        restrictToOwner(path);
     }
 
     /**
-     * 晚于当前时间所能接受的最后一步时，改为当前时间步。
+     * 记录的时间步晚于当前时间所能接受的最后一步时，返回验证器上的验证码重新可用的时刻；否则为 null。
      */
-    private long withinCurrentTime(long step) {
-        long now = currentStep.getAsLong();
-        if (step <= now + TotpGenerator.WINDOW) {
-            return step;
+    Instant laterThanClockUntil() {
+        if (keyId == null || lastStep <= currentStep.getAsLong() + TotpGenerator.WINDOW) {
+            return null;
         }
-        stepAdjusted.run();
-        return now;
+        return Instant.ofEpochSecond((lastStep + 1) * TotpGenerator.STEP_SECONDS);
+    }
+
+    /**
+     * 把文件权限收到仅属主可读写；文件系统不支持权限位或改不了时保持原样。
+     */
+    private static void restrictToOwner(Path path) {
+        try {
+            if (!Files.getPosixFilePermissions(path).equals(DurableFiles.OWNER_ONLY)) {
+                Files.setPosixFilePermissions(path, DurableFiles.OWNER_ONLY);
+            }
+        } catch (IOException | UnsupportedOperationException | SecurityException unchanged) {
+            // 保持原样。
+        }
     }
 
     private static String keyId(String secret) {

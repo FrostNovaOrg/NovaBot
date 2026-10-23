@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui.auth;
 
 import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.filter.ThresholdFilter;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.mock;
@@ -74,6 +76,15 @@ class TotpStateContinuityTest {
     private long notices(ListAppender<ILoggingEvent> events) {
         return events.list.stream().filter(event ->
                 event.getFormattedMessage().contains(statePath().toString())).count();
+    }
+
+    private long clockNotices(ListAppender<ILoggingEvent> events) {
+        return events.list.stream().filter(event -> event.getFormattedMessage().contains("时钟")).count();
+    }
+
+    private String clockNoticeText(ListAppender<ILoggingEvent> events) {
+        return events.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(message -> message.contains("时钟")).findFirst().orElse("");
     }
 
     private ListAppender<ILoggingEvent> captureLog() {
@@ -353,12 +364,19 @@ class TotpStateContinuityTest {
             clock.set(NOW.plusSeconds(30));
             var restarted = service(SECRET);
             restarted.start();
-            assertTrue(events.list.stream().anyMatch(event ->
-                    event.getFormattedMessage().contains("时钟")));
-            assertTrue(login(restarted, code(60)));
+            assertEquals(1, clockNotices(events));
+            assertTrue(clockNoticeText(events).contains("61 分钟"));
+            assertTrue(clockNoticeText(events).contains("operator-token"));
             assertFalse(login(restarted, code(60)));
+            assertEquals(1, clockNotices(events));
+            clock.set(NOW.plusSeconds(3660));
+            assertTrue(login(restarted, code(3660)));
             restarted.stop();
-            assertFalse(login(service(SECRET), code(60)));
+            clock.set(NOW.plusSeconds(3690));
+            var later = service(SECRET);
+            later.start();
+            assertTrue(login(later, code(3720)));
+            assertEquals(1, clockNotices(events));
         } finally {
             releaseLog(events);
         }
@@ -366,15 +384,24 @@ class TotpStateContinuityTest {
 
     @Test
     void case15() {
-        var auth = service(SECRET);
-        auth.start();
-        clock.set(NOW.plusSeconds(3600));
-        assertTrue(login(auth, code(3600)));
-        clock.set(NOW.plusSeconds(30));
-        assertTrue(login(auth, code(60)));
-        assertFalse(login(auth, code(60)));
-        clock.set(NOW.plusSeconds(60));
-        assertTrue(login(auth, code(90)));
+        var events = captureLog();
+        try {
+            var auth = service(SECRET);
+            auth.start();
+            clock.set(NOW.plusSeconds(3600));
+            assertTrue(login(auth, code(3600)));
+            assertEquals(0, clockNotices(events));
+            clock.set(NOW.plusSeconds(30));
+            assertFalse(login(auth, code(60)));
+            assertFalse(login(auth, code(60)));
+            assertEquals(1, clockNotices(events));
+            assertTrue(clockNoticeText(events).contains("60 分钟"));
+            clock.set(NOW.plusSeconds(3630));
+            assertTrue(login(auth, code(3630)));
+            assertEquals(1, clockNotices(events));
+        } finally {
+            releaseLog(events);
+        }
     }
 
     @Test
@@ -446,5 +473,113 @@ class TotpStateContinuityTest {
         } finally {
             releaseLog(events);
         }
+    }
+
+    @Test
+    void case20() {
+        clock.set(NOW.plusSeconds(3600));
+        var auth = service(SECRET);
+        auth.start();
+        assertTrue(login(auth, code(3630)));
+        auth.stop();
+        clock.set(NOW.plusSeconds(30));
+        service(SECRET).start();
+        clock.set(NOW.plusSeconds(3600));
+        var restarted = service(SECRET);
+        restarted.start();
+        assertFalse(login(restarted, code(3630)));
+        clock.set(NOW.plusSeconds(3660));
+        assertTrue(login(restarted, code(3660)));
+    }
+
+    @Test
+    void case21() {
+        var auth = service(SECRET);
+        auth.start();
+        clock.set(NOW.plusSeconds(3600));
+        assertTrue(login(auth, code(3630)));
+        clock.set(NOW.plusSeconds(30));
+        login(auth, code(60));
+        clock.set(NOW.plusSeconds(3600));
+        assertFalse(login(auth, code(3630)));
+        clock.set(NOW.plusSeconds(3660));
+        assertTrue(login(auth, code(3660)));
+    }
+
+    @Test
+    void case22() throws Exception {
+        var events = captureLog();
+        var errorsOnly = new ThresholdFilter();
+        errorsOnly.setLevel("ERROR");
+        errorsOnly.start();
+        events.addFilter(errorsOnly);
+        try {
+            var auth = service(SECRET);
+            auth.start();
+            assertTrue(login(auth, code(30)));
+            auth.stop();
+            service(SECRET).start();
+            assertEquals(0, events.list.size());
+            breakState();
+            service(SECRET).start();
+            assertEquals(1, notices(events));
+            Files.delete(statePath());
+            clock.set(NOW.plusSeconds(3600));
+            var fast = service(SECRET);
+            fast.start();
+            assertTrue(login(fast, code(3630)));
+            clock.set(NOW.plusSeconds(30));
+            service(SECRET).start();
+            assertEquals(1, clockNotices(events));
+        } finally {
+            releaseLog(events);
+        }
+    }
+
+    @Test
+    void case23() throws Exception {
+        Files.createFile(statePath());
+        var auth = service(SECRET);
+        auth.start();
+        assertTrue(login(auth, code(30)));
+        assertFalse(login(auth, code(30)));
+        var restarted = service(SECRET);
+        restarted.start();
+        assertFalse(login(restarted, code(30)));
+        clock.set(NOW.plusSeconds(30));
+        assertTrue(login(restarted, code(60)));
+    }
+
+    @Test
+    void case24() throws Exception {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "文件系统不支持 POSIX 权限位");
+        Files.writeString(statePath(), "\n");
+        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-x------"));
+        try {
+            assumeFalse(Files.isWritable(dir), "当前用户不受目录权限位限制");
+            var auth = service(SECRET);
+            auth.start();
+            assertTrue(login(auth, code(30)));
+            var restarted = service(SECRET);
+            restarted.start();
+            assertFalse(login(restarted, code(30)));
+            clock.set(NOW.plusSeconds(30));
+            assertTrue(login(restarted, code(60)));
+        } finally {
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"));
+        }
+    }
+
+    @Test
+    void case25() throws Exception {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "文件系统不支持 POSIX 权限位");
+        service(SECRET).start();
+        Files.setPosixFilePermissions(statePath(), PosixFilePermissions.fromString("rw-r--r--"));
+        var auth = service(SECRET);
+        auth.start();
+        assertTrue(login(auth, code(30)));
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(statePath()));
     }
 }
