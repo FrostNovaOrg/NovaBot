@@ -152,6 +152,16 @@ const PAGE_STYLE = `
 @media (max-width:600px){
   .pnarrow-top{align-items:flex-start;flex-direction:column}
   .weekly-report-tools{margin-left:0}
+  .channel-index{min-width:0;display:block}
+  .channel-index thead{display:none}
+  .channel-index tbody{display:block}
+  .channel-index tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:8px 12px;margin-bottom:12px;padding:12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
+  .channel-index td{display:block;height:auto;min-width:0;max-width:none;padding:0;border:0;
+    white-space:normal;overflow:visible;overflow-wrap:anywhere}
+  .channel-index td:nth-child(n+3){grid-column:1/-1}
+  .channel-index td::before{content:attr(data-label);display:block;margin-bottom:3px;
+    color:var(--dim);font-size:12px}
 }
 /* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
    使用者会以为这条命令不存在，而它只是在这个会话里不列 */
@@ -1009,19 +1019,19 @@ function renderIndex(host) {
       isMember() ? '暂无推送通道。请打开你名下的主播，为其添加群或好友通道。'
         : '暂无推送通道。请先在左侧添加主播，再为其选择群或好友。';
   } else {
-    // 通知按标签换行，优先利用卡片宽度；很窄时只在表格容器内横滚。
+    // 通知按标签换行；手机宽度下每条通道改成卡片。
     const wrap = el('div', 'tblwrap');
     const table = el('table', 'ptable channel-index');
     table.innerHTML = '<thead><tr><th scope="col">主播</th><th scope="col">通道</th><th scope="col">号码</th>'
       + '<th scope="col">已启用通知</th><th scope="col">模板</th></tr></thead><tbody>'
-      + rows.map(row => '<tr><td><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row))
+      + rows.map(row => '<tr><td data-label="主播"><a href="#/push/' + esc(row.uid) + '/' + esc(channelTail(row))
         + '" aria-label="' + esc(row.streamer + ' → ' + row.name) + '">' + esc(row.streamer) + '</a></td>'
-        + '<td>' + esc(row.name) + '</td>'
-        + '<td class="n">' + esc(row.num) + '</td>'
-        + '<td class="p-notices">' + (row.on.length ? '<span class="p-notice-tags">'
+        + '<td data-label="通道">' + esc(row.name) + '</td>'
+        + '<td class="n" data-label="号码">' + esc(row.num) + '</td>'
+        + '<td class="p-notices" data-label="已启用通知">' + (row.on.length ? '<span class="p-notice-tags">'
           + row.on.map(name => '<span class="p-notice-tag">' + esc(name) + '</span>').join('')
           + '</span>' : '<span class="dim">全部停用</span>') + '</td>'
-        + '<td>' + (row.custom ? '自定义' : '默认') + '</td></tr>').join('')
+        + '<td data-label="模板">' + (row.custom ? '自定义' : '默认') + '</td></tr>').join('')
       + '</tbody>';
     // 原生链接提供 Tab、回车与读屏名称；其余单元格点击走同一地址，无定位覆盖层。
     table.addEventListener('click', event => {
@@ -2595,13 +2605,12 @@ export async function save() {
 /**
  * 配置文件里只有 uid，昵称要另行补全才显示得出来
  *
- * 先现场去平台查；查不回（断网、被风控）时退回程序手上已有的昵称——内存里的，
- * 或最近一场归档里的，与运行状态页、主播页同一种取法。都没有才照 uid 显示。
+ * 先用程序手上已有的昵称，再现场去平台查昵称、房间号与头像。
+ * 现场查失败时保留已有昵称；两处都没有才照 uid 显示。
  * @param {boolean} repaint 补全后是否立即重画；重取配置时由宿主统一重画
  */
 export async function decoratePushData(repaint = true) {
   const attempted = nameLookups;
-  let named = false;
   await Promise.all((pushData || []).map(async user => {
     // 补昵称要靠对应平台的数据源服务，没注册的平台查不了，照 uid 显示就是
     if (user._uname || !(store.platforms || []).includes(user.platform)) return;
@@ -2609,32 +2618,30 @@ export async function decoratePushData(repaint = true) {
     if (attempted.has(key)) return;
     attempted.add(key);
     try {
+      const known = await api('/streamer/name?platform=' + encodeURIComponent(user.platform)
+        + '&uid=' + encodeURIComponent(String(user.uid)));
+      if (known.success && known.uname) {
+        user._uname = known.uname;
+        if (repaint) renderStreamers();
+      }
+    } catch (e) {
+      // 已知昵称取不到，仍继续现场查询
+    }
+    try {
       const res = await api('/streamer/lookup', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({platform: user.platform, uid: String(user.uid)}),
       });
       if (res.success) {
-        user._uname = res.uname;
-        if (user._uname) named = true;
+        if (res.uname) user._uname = res.uname;
         user._roomId = res.roomId;
         user._face = res.face;
-        return;
+        if (repaint) renderStreamers();
       }
     } catch (e) {
-      // 现场查失败，往下退回手上已有的昵称
-    }
-    try {
-      const known = await api('/streamer/name?platform=' + encodeURIComponent(user.platform)
-        + '&uid=' + encodeURIComponent(String(user.uid)));
-      if (known.success) {
-        user._uname = known.uname;
-        if (user._uname) named = true;
-      }
-    } catch (e) {
-      // 补全失败不影响配置本身，仍以 uid 展示
+      // 现场查失败时保留先前补上的昵称
     }
   }));
-  if (repaint && named) renderStreamers();
 }
 
 /**
