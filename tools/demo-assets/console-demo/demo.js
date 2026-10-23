@@ -152,6 +152,10 @@
       if (method === 'GET') {
         const userPath = path.match(/^\/config\/api\/datasource\/users\/([^/]+)\/(\d+)(\/version)?$/);
         if (userPath) {
+          // The recorded per-streamer response carries the channel settings (disabled commands, quiet hours);
+          // the list is only a navigation summary, so it is the fallback for streamers that were not recorded.
+          const recorded = responses.get(key('GET', path, url.search));
+          if (recorded) return read(recorded);
           const row = responses.get(key('GET', '/config/api/datasource/users', ''));
           const users = (await (await read(row)).json()).users || [];
           const user = users.find(one => one.platform === userPath[1] && String(one.uid) === userPath[2]);

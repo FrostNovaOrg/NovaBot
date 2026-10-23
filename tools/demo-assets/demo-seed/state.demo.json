@@ -1,9 +1,4 @@
 {
-  "DisabledCommands": {
-    "qq-onebot:990000000301": {
-      "数据排行榜": 1
-    }
-  },
   "AtSubscriptions": {
     "qq-onebot:990000000301:990000000101:live": {
       "990000000401": 1,

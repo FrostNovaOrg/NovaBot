@@ -32,6 +32,9 @@
             "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
             "enabled": true
           }
+        ],
+        "disabledCommands": [
+          "数据排行榜"
         ]
       },
       {
@@ -125,6 +128,9 @@
             "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
             "enabled": false
           }
+        ],
+        "disabledCommands": [
+          "数据排行榜"
         ]
       },
       {
