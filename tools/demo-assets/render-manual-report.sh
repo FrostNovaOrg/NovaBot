@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Render the two report images used by the manual from the synthetic demo
 # session, in the factory default palette:
-#   manual/images/09-stream-report.png      the whole report
-#   manual/images/01-stream-report-top.png  its top 1340 rows
-# Usage: bash tools/demo-assets/render-manual-report.sh
+#   09-stream-report.png      the whole report
+#   01-stream-report-top.png  its top 1340 rows
+# Usage: bash tools/demo-assets/render-manual-report.sh [--publish]
 #
-# Runs DemoAssetsTest#writesManualReportImages with -Dmanual.publish=true.
-# Without that flag the images go to target/demo-assets/manual. The README
-# sample docs/assets/report-demo.png is not touched; see render-report.sh.
+# By default the images go to target/demo-assets/manual and manual/images is
+# not touched; compare them there first. --publish writes them into
+# manual/images instead, replacing the two files.
+#
+# Runs DemoAssetsTest#writesManualReportImages (with -Dmanual.publish=true
+# under --publish). The README sample docs/assets/report-demo.png is not
+# touched; see render-report.sh.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -30,12 +34,18 @@ pick_java_home() {
     echo "no usable java (need 17+)" >&2
     exit 1
 }
+PUBLISH=false
+case "${1:-}" in
+    '') ;;
+    --publish) PUBLISH=true ;;
+    *) echo "usage: render-manual-report.sh [--publish]" >&2; exit 2 ;;
+esac
 pick_java_home
 
 cd "$ROOT"
 exec env JAVA_HOME="$JAVA_HOME" mvn -B -f "$ROOT/pom.xml" \
     -pl :novacore,:nova-core,:nova-bilibili,:nova-report \
-    -Dmanual.publish=true \
+    -Dmanual.publish="$PUBLISH" \
     -Dtest='DemoAssetsTest#writesManualReportImages' \
     -Dsurefire.failIfNoSpecifiedTests=false \
     test

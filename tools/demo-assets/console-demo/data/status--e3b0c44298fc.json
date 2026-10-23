@@ -87,7 +87,7 @@
 		"diskFreeMb":58984,
 		"diskLevel":"ok",
 		"heapMaxMb":4096,
-		"heapUsedMb":298,
+		"heapUsedMb":163,
 		"processors":10,
 		"threads":28
 	},
