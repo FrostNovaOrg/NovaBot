@@ -60,13 +60,14 @@ globalThis.clearInterval = () => { tick = null; };
 const response = (json, status = 200) => ({status, ok: status >= 200 && status < 300, json: async () => json});
 /** 'ok' 一切照常；'down' 照浏览器那样抛 TypeError；'error' 回 500、'refused' 回 200 带 success:false，都带一句服务器的话 */
 let mode = 'ok';
+let liveReads = 0;
 globalThis.fetch = async url => {
   const text = String(url);
   if (mode === 'down') throw new TypeError('Failed to fetch');
   if (mode === 'error') return response({success: false, message: '样例服务器原因'}, 500);
   if (mode === 'refused') return response({success: false, message: '样例服务器原因'});
-  if (text.includes('/live?')) return response({success: true, living: true, since: Date.now() - 60000,
-    checkedAt: Date.now(), dataAt: Date.now(), metrics: {}, series: {}});
+  if (text.includes('/live?')) { liveReads++; return response({success: true, living: true, since: Date.now() - 60000,
+    checkedAt: Date.now(), dataAt: Date.now(), metrics: {}, series: {}}); }
   if (text.includes('/insights?')) return response({success: true, insights: {metricsKnown: false, daily: []}});
   if (text.endsWith('/status')) return response({});
   return response({success: true, platform: 'sample', uid: 1, uname: '样例主播', configured: true, living: true,
@@ -90,6 +91,26 @@ await check('详情重取失败：页脚只说那句短话，不带原话、不�
   assert.match(textOf(nodes.get('sd-head')), /样例主播/, '已画出的主播资料不该被抹掉');
   assert.doesNotMatch(textOf(nodes.get('sd-body')), /加载失败/, '已画出的详情不该被换成一句失败');
 });
+
+// 整页刷新失败不能让正在直播卡永久停止轮询；恢复后也不能继续显示旧失败提示。
+for (const kind of ['down', 'error', 'refused']) {
+  await check('整页刷新失败后直播卡继续自动刷新（' + kind + '）', async () => {
+    mode = 'ok'; page.leave(); await page.refresh();
+    mode = kind; await page.refresh();
+    assert.ok(tick, '刷新失败一次后正在直播卡不能停止自动刷新');
+    mode = 'ok';
+    const before = liveReads;
+    await tick();
+    assert.equal(liveReads, before + 1, '定时器应实际重新请求直播数据');
+    assert.match(textOf(nodes.get('sd-live')), /正在直播/, '恢复联网后定时器仍应更新直播卡');
+  });
+  await check('整页刷新恢复成功清除页脚旧失败提示（' + kind + '）', async () => {
+    mode = kind; await page.refresh();
+    assert.equal(status().textContent, SHORT);
+    mode = 'ok'; await page.refresh();
+    assert.equal(status().textContent, '', '资料重取成功后不能继续提示刷新失败');
+  });
+}
 
 await check('正在直播卡定时刷新失败：只说那句短话', async () => {
   mode = 'ok';

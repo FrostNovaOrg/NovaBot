@@ -19,6 +19,7 @@
   --cloud3:#A38BFF;
   --c-danmu:#7A4DFF; --c-gift:#E0479E; --c-sc:#F2A93B; --c-blind:#22B573;
   --c-guard:#00A6D6; --c-view:#6E6A86;
+  --trend-up:var(--accent-text); --trend-down:var(--ok);
   /* 下面几个不在色表里，是这套界面自己需要的「纸」和压在色块上的字：
      --paper   永远是白的那种底。二维码必须白底，暗色下换成任何深色都扫不出来；
                开关的滑块也用它，滑到强调色上时白点最容易看清。

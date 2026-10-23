@@ -81,6 +81,17 @@ await check('纵轴大数简写且读数保留单位', () => {
   assert.equal(byClass(chart.element, 'sc-chart-scale')[0].children[0].textContent, '8.8万', '大数刻度应简写成一位小数的万');
   assert.ok(byClass(chart.element, 'sc-chart-readout')[0].textContent.includes('87745.80 元'), '刻度格式不能改掉读数精度与单位');
 });
+// 粉丝变化不能被零起点压平，也不能出现半个人的纵轴刻度。
+await check('粉丝图按数据范围起轴且刻度为整数', () => {
+  const chart = ui.createChart(host(), {fitRange: true, integerTicks: true,
+    points: [2001, 2004, 2002].map((value, i) => ({start: i, end: i + 1, value}))});
+  const ticks = byClass(chart.element, 'sc-chart-scale')[0].children.map(n => n.textContent);
+  assert.ok(ticks.every(tick => !tick.includes('.')), '人数刻度不能带小数');
+  assert.ok(Number(ticks.at(-1).replaceAll(',', '')) >= 2000, '粉丝纵轴应靠近实际范围');
+  const dots = byClass(chart.element, 'sc-point').map(n => Number(n.getAttribute('cy')));
+  assert.ok(Math.max(...dots) - Math.min(...dots) > 50, '三人的变化应清楚可见');
+});
+
 // 缺测不能变成零点，否则曲线会凭空跌到零；真实的零必须保留。
 await check('缺测断线且真实零保留', () => {
   const chart = ui.createChart(host(), {points});

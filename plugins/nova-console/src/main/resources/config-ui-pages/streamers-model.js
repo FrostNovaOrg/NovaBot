@@ -241,10 +241,11 @@ export function uncoveredStatuses(statuses) {
  * 少一点画出来的折线比真的连贯，而「哪几天没播」正是这条线要看的东西。
  * @param series 接口给的 [{date, sessions, durationSeconds}]
  * @param key 画哪一项，sessions 或 durationSeconds
+ * @param beforeDate 只取此统计日之前的点；省略时保留全部
  * @return {number[]} 逐日取值
  */
-export function seriesValues(series, key) {
-  return (series || []).map(point => Number((point || {})[key || 'sessions']) || 0);
+export function seriesValues(series, key, beforeDate) {
+  return (series || []).filter(point => !beforeDate || point?.date < beforeDate).map(point => Number((point || {})[key || 'sessions']) || 0);
 }
 
 /**
@@ -584,7 +585,7 @@ export function insightsComparison(comparison) {
   const percent = Math.round(Math.abs(ratio) * 100);
   if (Math.abs(ratio) < .005) return {text: '较上期持平', color: ''};
   return {text: '较上期 ' + (ratio > 0 ? '+' : '−') + percent + '%',
-    color: ratio > 0 ? 'var(--err)' : 'var(--ok)'};
+    color: ratio > 0 ? 'var(--trend-up)' : 'var(--trend-down)'};
 }
 
 export function comparisonExplanation(data) {
@@ -686,4 +687,35 @@ export function metricRecorded(data, key) {
     return data.sessions > 0 && data.coverage?.complete !== data.sessions;
   return ['revenue', 'messages', 'follows', 'revenuePerHour', 'messagesPerHour'].includes(key)
     && data.capture?.gapSessions > 0;
+}
+
+/** 相邻统计日的末次有效快照差；缺日不补估。 */
+export function dailyFanChanges(points = []) {
+  const days = new Map();
+  const dateFormat = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'});
+  for (const point of [...(points || [])].sort((a, b) => a.at - b.at)) {
+    if (!Number.isFinite(point.at) || !Number.isFinite(point.value)) continue;
+    const date = dateFormat.format(new Date(point.at - 6 * 3600000));
+    days.set(date, point.value);
+  }
+  let previous = null;
+  return [...days].map(([date, value]) => {
+    const change = previous && Date.parse(date) - Date.parse(previous.date) === 86400000 ? value - previous.value : null;
+    previous = {date, value};
+    return {date, value, change};
+  });
+}
+
+/** 用最短的覆盖标记保留最明显的缺口；未知不当作完整。 */
+export function trendCoverageBadge(bucket, period) {
+  const rates = [];
+  if (bucket.sessions > 0) {
+    rates.push(parseFloat(durationCoverage(bucket)));
+    rates.push(bucket.coverage?.complete == null ? NaN : bucket.coverage.complete / bucket.sessions * 100);
+  }
+  if (period === 'day') rates.push(parseFloat(monitoringCoverage(bucket.monitoring)));
+  const known = rates.filter(Number.isFinite);
+  const missing = known.length ? Math.ceil(100 - Math.min(...known)) : 0;
+  if (missing > 0) return '缺 ' + missing + '%';
+  return rates.length && known.length === rates.length ? '完整' : '未知';
 }
