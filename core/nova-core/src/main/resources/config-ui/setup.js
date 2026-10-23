@@ -19,6 +19,7 @@
  */
 
 import {ask} from './confirm.js';
+import {botFieldsHtml} from './bot-fields.js';
 import {$, api, el, esc, markDirty, phrase, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerBlockedReason, registerPasskey} from './passkeys.js';
@@ -315,7 +316,7 @@ function renderPlugin(host, step) {
   }
   // skippable 可以是一个串，那就是按钮上要写的字（「先不加主播」这类）；
   // 只当真假用的话，每一个许跳过的插件步都只能写「跳过」，而跳过它各自意味着什么并不相同
-  const skippable = (mod && mod.skippable) || false;
+  const skippable = !facts[current] && ((mod && mod.skippable) || false);
   step.skippable = skippable;
   foot(host, skippable ? () => skipPlugin(step) : null,
     typeof skippable === 'string' ? skippable : '跳过', async () => {
@@ -670,12 +671,14 @@ function stepBot(host) {
     result.className = 'su-r';
     syncFoot();
   };
-  const row = el('div', 'su-row');
-  field(row, '地址', 'setup-addr', 'text', at.address, v => { at.address = v; retest(); });
-  field(row, 'HTTP 端口', 'setup-hport', 'text', at.httpPort, v => { at.httpPort = v; retest(); });
-  field(row, 'WS 端口', 'setup-wport', 'text', at.wsPort, v => { at.wsPort = v; retest(); });
-  field(row, 'HTTP Token', 'setup-htoken', 'password', at.httpToken, v => { at.httpToken = v; retest(); });
-  field(row, 'WS Token', 'setup-wtoken', 'password', at.wsToken, v => { at.wsToken = v; retest(); });
+  const row = el('div');
+  row.innerHTML = botFieldsHtml('setup', at, 'password');
+  for (const [id, key] of Object.entries({addr: 'address', hport: 'httpPort', htoken: 'httpToken', wport: 'wsPort', wtoken: 'wsToken'})) {
+    row.querySelector('#setup-' + id).addEventListener('input', event => {
+      at[key] = event.target.value;
+      retest();
+    });
+  }
   host.appendChild(row);
 
   const test = el('button', 'ghost');
@@ -780,7 +783,8 @@ function stepAccount(host) {
   }
 
   accounts.forEach(one => host.appendChild(accountCard(one)));
-  foot(host, chooseAnonymous, '暂不登录，使用免登录模式', null);
+  const loggedIn = accounts.every(one => one.loggedIn || one.disabledReason);
+  foot(host, loggedIn ? null : chooseAnonymous, '暂不登录，使用免登录模式', null);
   schedulePoll(accounts);
 }
 
@@ -818,6 +822,10 @@ function accountCard(one) {
     card.appendChild(note('ok', '已登录'
       + (one.accountId ? ' · 账号 ' + one.accountId : '')
       + (one.credentialNote ? ' · ' + one.credentialNote : '')));
+    const change = el('a', 'lnkbtn');
+    change.href = '#/links';
+    change.textContent = '换账号';
+    card.appendChild(change);
     return card;
   }
 

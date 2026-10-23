@@ -1,3 +1,4 @@
+import {botFieldsHtml} from '../../../main/resources/config-ui/bot-fields.js';
 import {phrase} from '../../../main/resources/config-ui/core.js';
 /**
  * 连接页机器人表单：五个输入框各有自己的名字
@@ -159,8 +160,8 @@ if (!body) {
   console.log('  红：bot.js 里切不出 botFormHtml');
   process.exit(1);
 }
-const botFormHtml = new Function('phrase', body.replace(/^export\s+/, '') + '\nreturn botFormHtml;')(
-  phrase);
+const botFormHtml = new Function('botFieldsHtml', 'phrase', body.replace(/^export\s+/, '') + '\nreturn botFormHtml;')(
+  botFieldsHtml, phrase);
 
 for (const p of ['s1', 'bot']) {
   const host = new MiniNode('div');

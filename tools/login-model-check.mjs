@@ -46,7 +46,7 @@ for (const oidcEnabled of [false, true]) {
     {otherMethodsFolded: oidcEnabled, passkey: hasPasskey,
       passwordFolded: oidcEnabled || hasPasskey,
       foldLabel: oidcEnabled ? '其他登录方式' : '使用密码登录',
-      passkeySecondary: oidcEnabled && hasPasskey, passwordSecondary: oidcEnabled,
+      passkeySecondary: oidcEnabled && hasPasskey, passwordSecondary: false,
       passkeyDivider: hasPasskey && !oidcEnabled,
       firstButton: oidcEnabled ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
       otherMethodsFirstControl: hasPasskey ? 'passkey' : 'password'},

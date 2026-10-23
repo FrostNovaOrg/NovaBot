@@ -1,3 +1,5 @@
+import {botFieldsHtml} from '../../../main/resources/config-ui/bot-fields.js';
+import {MiniNode} from './layout-dom.mjs';
 /**
  * 初始设置第 2 步：自动保存还没回来时改了参数，改过的那份不得记成「与盘上一致」
  *
@@ -71,21 +73,9 @@ function bracedFrom(src, marker) {
 }
 
 function fakeEl(cls) {
-  return {
-    id: '',
-    disabled: false,
-    textContent: '',
-    className: cls || '',
-    listeners: {},
-    children: [],
-    addEventListener(type, fn) {
-      if (!this.listeners[type]) this.listeners[type] = [];
-      this.listeners[type].push(fn);
-    },
-    appendChild(child) {
-      this.children.push(child);
-    },
-  };
+  const node = new MiniNode('div');
+  node.className = cls || '';
+  return node;
 }
 
 /** 草稿取源码里那一份初值；页面零件与接口换成桩，保存请求挂着等放行 */
@@ -108,14 +98,12 @@ function loadStep() {
   let release = null;
   let fail = null;
   const deps = {
+    botFieldsHtml,
     seen: {status: {senders: [{}]}},
     el: (tag, cls) => {
       const node = fakeEl(cls);
       made.push(node);
       return node;
-    },
-    field: (host, label, id, type, value, onInput) => {
-      inputs[id] = onInput;
     },
     heading: () => {},
     titleOf: () => '',
@@ -145,6 +133,15 @@ function loadStep() {
     pieces.join(';\n') + '\nreturn {draft, stepBot, botDraftMatchesSaved, syncBotDraft, applyBotOkFromFacts};')(
     ...names.map(n => deps[n]));
   run.stepBot(fakeEl());
+  for (const node of made) {
+    for (const input of node.querySelectorAll('input')) {
+      inputs[input.id] = value => {
+        input.value = value;
+        input.dispatchEvent({type: 'input', target: input});
+      };
+    }
+  }
+
   const test = made.find(node => node.id === 'setup-test-bot');
   return {run, draft: run.draft, inputs, calls, test, answerSave: res => release(res), failSave: err => fail(err)};
 }

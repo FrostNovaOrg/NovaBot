@@ -191,7 +191,7 @@
           </div>
         </div>
         <div class="nv-card hcard" id="home-events">
-          <h3>今日事件 <span class="h-note">失败与告警优先</span></h3>
+          <h3>今日事件</h3>
           <div class="tl" id="home-timeline"></div>
           <div class="tl-foot" id="home-all-events"><a href="#/log">查看全部事件 →</a></div>
         </div>
@@ -254,14 +254,13 @@
         <div>
           <a class="nv-btn2 sm" id="log-back" href="#/log">‹ 返回日志</a>
           <p class="hint" style="margin:8px 0 0">NovaBot 程序自身的运行日志，用于排查问题；日常查看请使用日志页的时间线。
-            口令与 Cookie 等内容在显示前已打码。</p>
+            口令与 Cookie 等内容在显示前已打码。<span id="eng-bot"></span></p>
         </div>
         <!--
           机器人自己的日志不进控制台：把别人的日志代理进来，
           等于替一个我们既管不着、也说不清它写了什么的程序背书。这里只留一个去它自己界面的入口，
           凭据没配好时整块只剩上面那句话——一个点了才知道不能用的按钮，比没有那个按钮更费解。
         -->
-        <div class="note" id="eng-bot"></div>
       </div>
 
       <div class="nv-card hcard">
@@ -288,8 +287,8 @@
           -->
           <label class="switch"><input type="checkbox" id="eng-follow" checked>
             <span>跟随最新</span></label>
-          <button type="button" class="ghost sm" id="eng-copy">复制当前日志</button>
-          <button type="button" class="ghost sm" id="eng-reload">重新读取</button>
+          <div class="eng-actions"><button type="button" class="ghost sm" id="eng-copy">复制当前日志</button>
+          <button type="button" class="ghost sm" id="eng-reload">重新读取</button></div>
         </div>
         <div class="eng" id="eng-body"></div>
         <p class="hint" id="eng-foot" style="margin:8px 0 0"></p>
@@ -368,8 +367,8 @@
         <div class="lc-hd"><span class="lamp"></span><b>外部面板</b><span class="lc-cap"></span></div>
         <div class="lc-note"></div>
         <div class="lc-body">
-          <p class="hint">外部面板连接事件流需要只读访问令牌。该令牌<b>仅可读取</b>开播、弹幕等事件，
-            无法修改任何配置，也无法登录本控制台。</p>
+          <p class="hint">为外部面板签发只读令牌，连接开播、弹幕等事件。</p>
+          <details class="token-help"><summary aria-label="外部面板令牌说明">?</summary><p class="hint">令牌仅可读取事件，无法修改配置或登录控制台。签发时需再次输入控制台密码，启用二次验证时也需动态验证码；令牌明文只显示一次，请妥善保存。名称用于日后识别和吊销令牌，请使用不含真实姓名的设备别名。</p></details>
 
           <h4 class="lc-h">签发新令牌</h4>
           <div class="fbox" id="token-issue"></div>

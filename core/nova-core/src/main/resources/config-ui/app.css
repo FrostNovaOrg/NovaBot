@@ -720,7 +720,7 @@ details.adv .inner{padding:0 16px 16px}
 .probe{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start}
 .probe:last-child{border-bottom:none}
 .probe .p-lamp{margin-top:6px}
-.probe .p-nm{flex:0 0 108px;font-size:var(--fs-md);font-weight:500}
+.probe .p-nm{flex:0 0 10em;white-space:nowrap;font-size:var(--fs-md);font-weight:500}
 .probe .p-body{flex:1 1 auto;min-width:0}
 .probe .p-cc{font-size:var(--fs-md)}
 .probe .p-ad{font-size:var(--fs-sm);color:var(--dim);margin-top:3px;line-height:1.55}
@@ -888,3 +888,33 @@ details.adv .inner{padding:0 16px 16px}
   background:var(--ground);border:1px solid var(--line);border-radius:var(--r-ctl)}
 .ask-doc[hidden]{display:none}
 .ask-card-doc{width:min(640px,100%)}
+
+/* 连接参数在两处使用同一份排布。 */
+.bot-fields{width:100%;max-width:660px;display:grid;gap:12px;margin-bottom:12px}
+.bot-field{min-width:0;display:flex;flex-direction:column;gap:4px}
+.bot-field label{font-size:var(--fs-sm);color:var(--dim)}
+.bot-field input{width:100%;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font:inherit;font-size:var(--fs-md)}
+.bot-protocol{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:12px}
+#setup-send{margin-top:10px}
+.event-group{margin:14px 0 6px;font-size:var(--fs-md);color:var(--dim)}
+.tl-event{display:block}
+.tl-event>summary{display:flex;gap:11px;align-items:flex-start;cursor:pointer;list-style:none}
+.tl-event>summary::-webkit-details-marker{display:none}
+.tl-event>summary:hover .tl-hd,.tl-event[open]>summary .tl-hd{color:var(--accent-text)}
+.tl-event>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-ctl)}
+.tl-detail{margin:0 0 12px 80px;font-size:var(--fs-sm)}
+.tl-detail .kv{margin:0}
+.token-help{font-size:var(--fs-sm);margin:-6px 0 12px}
+.token-help>summary{cursor:pointer;color:var(--accent-text);width:max-content}
+.eng-actions{display:flex;gap:8px;flex-wrap:wrap}
+#eng-tools{gap:6px}
+#eng-tools input[type=search]{flex:1 1 100px;min-width:90px;width:100px}
+#eng-tools input[type=date]{width:136px}
+#eng-tools .lgpills{gap:4px}
+#eng-tools .lgpill{padding:2px 7px}
+#eng-tools .eng-actions{margin-left:auto;flex:none}
+#logeng .loghead{display:block;margin-bottom:16px}
+@media(max-width:560px){
+  .bot-protocol{grid-template-columns:minmax(0,1fr)}
+  .tl-detail{margin-left:0}
+}

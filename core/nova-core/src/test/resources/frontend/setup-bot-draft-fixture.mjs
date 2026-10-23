@@ -151,17 +151,13 @@ try {
 }
 eq(after, false, '① invalidateBot({botOk:true}) → botOk===false');
 
-// ② stepBot 内 invalidateBot( ≥5 次，或五个 field( 末参皆经它
+// 每个共享输入栏的监听都使旧测试结果作废。
 const step = bracedFrom(setupSrc, 'function stepBot');
-const nInv = (step.match(/invalidateBot\(/g) || []).length;
-const fields = fieldCalls(step);
-const viaDirect = fields.length === 5 && fields.every(c => lastArg(c).includes('invalidateBot'));
-const viaRetest = fields.length === 5
-  && fields.every(c => lastArg(c).includes('retest'))
-  && nInv >= 1
-  && step.includes('const retest');
-eq(nInv >= 5 || viaDirect || viaRetest, true,
-  '② stepBot 内 invalidateBot( ≥5 或五个 field( 末参皆经它');
+eq(step.includes("botFieldsHtml('setup', at, 'password')")
+  && step.includes("row.querySelector('#setup-' + id).addEventListener('input'")
+  && step.includes('at[key] = event.target.value;') && step.includes('retest();')
+  && step.includes('invalidateBot(draft);'), true,
+  '共享的五个输入栏都使旧测试结果作废');
 
 // ③ 阳性对照：第 2 步校验真执行，botOk:false → stop、botOk:true → pass
 eq(

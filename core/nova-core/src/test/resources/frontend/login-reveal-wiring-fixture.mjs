@@ -105,6 +105,13 @@ if (appSecret) {
   }
 }
 const loginSecret = ruleProps(login, '.secret button');
+if (loginSecret) {
+  for (const [name, value] of Object.entries(loginSecret)) {
+    const token = /^var\((--fs-[\w-]+)\)$/.exec(value);
+    const px = token && new RegExp(token[1] + '\\s*:\\s*([\\d.]+px)').exec(login);
+    if (px) loginSecret[name] = px[1];
+  }
+}
 eq(!!loginSecret && !!appSecret, true, '两份 .secret button 都找得到');
 const drawn = loginSecret && appSecret
   ? Object.fromEntries(Object.keys(loginSecret).map(name => [name, appSecret[name]])) : null;
