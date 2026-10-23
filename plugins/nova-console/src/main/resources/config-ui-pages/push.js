@@ -460,6 +460,7 @@ html:not(.nobar):not(.chromeless) .default-savebar{bottom:90px}
 .rep-img{padding:10px;background:var(--ground);border:1px solid var(--line);
   border-radius:var(--r-ctl);min-height:120px}
 .rep-shot{display:block;width:100%;height:auto;border-radius:6px}
+.rep-img pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:var(--fs-sm);text-align:left}
 .rep-view>.hint{margin:8px 2px 0;font-size:var(--fs-sm);color:var(--dim)}
 @media (max-width:900px){
   .tpl-wrap,.rep-wrap{grid-template-columns:minmax(0,1fr)}
@@ -2067,7 +2068,7 @@ function noticeOptions(host, item, handler, user, target, session, syncMeta) {
       syncState();
       syncMeta();
     },
-    render: preview ? layoutPreviewRenderer(target, draftVisible, user) : null,
+    render: preview ? layoutPreviewRenderer(target, draftVisible, user, handler) : null,
   });
   if (preview) {
     onRevenueDraftChange(() => {
@@ -2128,15 +2129,6 @@ function reportDestination(target, session) {
     + '」（' + target.platform + '，' + target.num + '）';
 }
 
-function previousReportWeek() {
-  const date = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7 - 7);
-  const format = day => (day.getUTCMonth() + 1) + '月' + day.getUTCDate() + '日';
-  const start = format(date);
-  date.setUTCDate(date.getUTCDate() + 6);
-  return start + '至' + format(date);
-}
-
 function liveReportActions(host, user, target, session) {
   const path = '/live-report/' + encodeURIComponent(user.platform) + '/' + user.uid;
   const query = '?pushPlatform=' + encodeURIComponent(target.platform)
@@ -2185,21 +2177,17 @@ function weeklyReportActions(host, user, target, session) {
   update();
   const actions = el('div', 'weekly-report-actions');
   tools.appendChild(actions);
-  const preview = el('a', 'lnkbtn');
-  preview.textContent = '预览';
-  preview.href = CONSOLE + '/api' + path + '/preview' + query;
-  preview.target = '_blank';
-  preview.rel = 'noopener';
-  actions.appendChild(preview);
   const trial = el('button', 'ghost sm');
   trial.type = 'button';
   trial.textContent = '发送上一周的报告';
   trial.addEventListener('click', async () => {
-    if (!await ask({title: '发送上一周的报告？', danger: false,
-      body: '将把上一周（' + previousReportWeek() + '，东八区）的运营周报发送到'
-        + reportDestination(target, session) + '。这会真实发送消息，不影响周一的定时发送。'})) return;
     trial.disabled = true;
     try {
+      const current = await api(path + '/status' + query);
+      if (!current.success || !current.previousWeek) throw new Error('无法读取报告期间');
+      if (!await ask({title: '发送上一周的报告？', danger: false,
+        body: '将把上一周（' + current.previousWeek + '，东八区）的运营周报发送到'
+          + reportDestination(target, session) + '。这会真实发送消息，按此通道已保存的版式、金额可见和配色生成，不影响周一的定时发送。'})) return;
       const res = await api(path + '/trial' + query, {method: 'POST'});
       say(res.message, res.success ? 'ok' : 'err');
     } catch (err) { say('发送上一周的报告失败：' + err.message, 'err'); }
@@ -2257,26 +2245,54 @@ function toggleNotice(target, className, on) {
  * 的图地址，新图还没载完时预览那一块就白了。
  * @param target 当前通道
  * @param revenueVisible 算金额可见性的那一支（含草稿），画的时候现取
- * @return {Function} 收版式参数，回图片地址；请求失败时抛错，服务端画不出来时为空
+ * @return {Function} 收版式参数，回图片地址或文字内容；请求失败时抛错
  */
-function layoutPreviewRenderer(target, revenueVisible, user) {
+function layoutPreviewRenderer(target, revenueVisible, user, handler) {
   let url = null;
-  return async params => {
-    const res = await request(CONSOLE + '/api/report/preview', {
+  let revision = 0;
+  let timer = null;
+  let pending = null;
+  const weekly = handler.className === 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
+  const path = weekly ? '/weekly-report/' + encodeURIComponent(user.platform) + '/' + user.uid + '/preview'
+    : '/report/preview';
+  const draw = async (body, current) => {
+    const res = await request(CONSOLE + '/api' + path, {
       method: 'POST',
       headers: Object.assign({'Content-Type': 'application/json'},
         store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
-      body: JSON.stringify(previewRequestBody(params, target, revenueVisible(), user)),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) return '';
+    if (!res.ok || current !== revision) return '';
+    if (weekly && res.headers?.get('Content-Type')?.includes('application/json')) {
+      const text = await res.json();
+      return {text: text.text, summary: text.summary};
+    }
     try {
+      const blob = await res.blob();
+      if (current !== revision) return '';
       // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里
       if (url) URL.revokeObjectURL(url);
-      url = URL.createObjectURL(await res.blob());
+      url = URL.createObjectURL(blob);
       return url;
     } catch (e) {
       return '';
     }
+  };
+  return params => {
+    const current = ++revision;
+    const effective = weekly ? Object.assign(Object.fromEntries((handler.options || []).map(item =>
+      [item.key, item.defaultValue ?? item.default])), params) : params;
+    const body = previewRequestBody(effective, target, revenueVisible(), user);
+    if (!weekly) return draw(body, current);
+    clearTimeout(timer);
+    if (pending) pending('');
+    return new Promise((resolve, reject) => {
+      pending = resolve;
+      timer = setTimeout(() => {
+        pending = null;
+        draw(body, current).then(resolve, reject);
+      }, 250);
+    });
   };
 }
 

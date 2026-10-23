@@ -58,7 +58,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.STREAMER, Subject.LOOKUP, "POST /config/api/streamer/lookup");
         add(entries, Access.STREAMER, Subject.SUBSCRIPTION, "POST /config/api/state/subscription");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/weekly-report/{platform}/{uid}/status");
-        add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/weekly-report/{platform}/{uid}/preview");
+        add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/weekly-report/{platform}/{uid}/preview");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/weekly-report/{platform}/{uid}/trial");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/live-report/{platform}/{uid}/latest");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/live-report/{platform}/{uid}/send-latest");

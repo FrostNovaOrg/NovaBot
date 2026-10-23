@@ -69,6 +69,11 @@ public class WeeklyReportContentService {
      */
     public Optional<WeeklyReport.Preview> preview(String platform, Long uid, Instant now, boolean showRevenue,
                                                   String palette) {
+        return preview(platform, uid, now, showRevenue, palette, WeeklyReportLayout.of(null));
+    }
+
+    public Optional<WeeklyReport.Preview> preview(String platform, Long uid, Instant now, boolean showRevenue,
+                                                 String palette, WeeklyReportLayout layout) {
         var sessions = archive.find(0, Long.MAX_VALUE).stream()
                 .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid()))
                 .sorted(Comparator.comparingLong(org.frostnova.nova.core.model.LiveSession::startTime)).toList();
@@ -99,6 +104,6 @@ public class WeeklyReportContentService {
         var data = report.withCalendar(calendar);
         return Optional.of(WeeklyReport.preview(data, () -> renderers.orderedStream()
                 .filter(r -> platform.equals(r.platform())).findFirst()
-                .map(r -> r.render(identity, data, palette)).orElse(null)));
+                .map(r -> r.render(identity, data, palette, layout)).orElse(null)));
     }
 }

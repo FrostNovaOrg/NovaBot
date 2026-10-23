@@ -3,7 +3,11 @@ package org.frostnova.nova.core.handler;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.model.PushMessage;
+import org.frostnova.nova.core.model.HandlerOption;
+import org.frostnova.nova.core.service.WeeklyReportLayout;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /** 订阅入口；周报由定时任务投递，不由直播事件触发。 */
 @Component
@@ -13,7 +17,11 @@ public class WeeklyReportPushHandler implements NovaEventHandler {
     }
     @Override public void handle(NovaExternalBaseEvent event, PushMessage message) {}
     @Override public Class<? extends NovaExternalBaseEvent> getEventType() { return WeeklyReportEvent.class; }
-    @Override public JSONObject getDefaultParams() { return new JSONObject(); }
+    @Override public JSONObject getDefaultParams() { return WeeklyReportLayout.defaults(); }
+    @Override public boolean reportLayout() { return true; }
+    @Override public List<HandlerOption> options() {
+        return WeeklyReportLayout.OPTIONS;
+    }
     @Override public boolean defaultEnabled() { return false; }
     @Override public String displayName() { return "运营周报"; }
     @Override public int displayOrder() { return 60; }

@@ -137,7 +137,7 @@ public class WeeklyReportDeliveryService {
             if (!store.enroll(due, enrolled, now)) return;
         }
         startupPending = false;
-        // 同一期、同一位主播发往几个通道时，金额可见性与配色都相同的那几个共用一张图
+        // 同一期、同一位主播发往几个通道时，金额可见性、配色与版式都相同的那几个共用一张图
         Map<String, WeeklyReport.Preview> drawn = new HashMap<>();
         for (var record : store.records()) {
             if (!store.ensureSaved()) return;
@@ -205,10 +205,11 @@ public class WeeklyReportDeliveryService {
         boolean visible = revenue.isVisible(target);
         // 按解析之后的那一套认同一张图：存了不认识的 id 的通道与默认模板那一套画出来一样
         String palette = content.resolvePalette(parts[0], palettes.idFor(target));
-        String key = parts[0] + ":" + parts[1] + ":" + period.toEpochMilli() + ":" + visible + ":" + palette;
+        var layout = WeeklyReportLayout.of(WeeklyReportLayout.savedParams(target));
+        String key = parts[0] + ":" + parts[1] + ":" + period.toEpochMilli() + ":" + visible + ":" + palette + ":" + layout;
         var report = drawn.get(key);
         if (report == null) {
-            report = content.preview(parts[0], Long.valueOf(parts[1]), period, visible, palette)
+            report = content.preview(parts[0], Long.valueOf(parts[1]), period, visible, palette, layout)
                     .orElseThrow(() -> new IllegalArgumentException("没有这位主播的记录"));
             drawn.put(key, report);
         }
@@ -226,9 +227,24 @@ public class WeeklyReportDeliveryService {
                 .filter(Objects::nonNull).findFirst().orElse(identity);
     }
 
-    public Optional<WeeklyReport.Preview> preview(String platform, Long uid, PushTarget target) {
+    public Optional<WeeklyReport.Preview> preview(String platform, Long uid, PushTarget target, JSONObject draft) {
         PushTarget channel = savedChannel(platform, uid, target);
-        return content.preview(platform, uid, clock.instant(), revenue.isVisible(channel), palettes.idFor(channel));
+        var params = WeeklyReportLayout.savedParams(channel);
+        if (draft != null) params.putAll(draft);
+        Boolean visible = draft == null ? null : draft.getBoolean("revenueVisible");
+        String palette = draft != null && draft.containsKey("reportPalette")
+                ? draft.getString("reportPalette") : palettes.idFor(channel);
+        if (palette == null || palette.isBlank()) palette = palettes.defaultId();
+        return content.preview(platform, uid, clock.instant(), visible == null ? revenue.isVisible(channel) : visible,
+                palette, WeeklyReportLayout.of(params));
+    }
+
+    public String previousWeek() {
+        var range = WeeklyReport.previousWeek(clock.instant());
+        var first = range.from().atZone(ZONE).toLocalDate();
+        var last = range.to().atZone(ZONE).toLocalDate().minusDays(1);
+        var format = DateTimeFormatter.ofPattern("M月d日");
+        return first.format(format) + "至" + last.format(format);
     }
     public JSONObject trial(String platform, Long uid, PushTarget target) {
         PushTarget channel = savedChannel(platform, uid, target);

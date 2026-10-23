@@ -110,6 +110,37 @@ class WeeklyReportDeliveryServiceTest {
     String key() { return WeeklyReportDeliveryService.key("sample", 1L, target()); }
     Status status() { return store.records().get(0).status(); }
 
+    @Test @DisplayName("周报提供图片版式，定时与手动发送均传入通道的版式")
+    void deliveryUsesChannelLayout() {
+        assertTrue(new WeeklyReportPushHandler().reportLayout());
+        assertFalse(new WeeklyReportPushHandler().options().isEmpty());
+        target().getMessages().get(0).setParamsJsonObject(JSONObject.of("audience", false));
+        service.check(false);
+        service.trial("sample", 1L, target());
+        var draws = mockingDetails(renderer).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("render")).toList();
+        assertEquals(2, draws.size());
+        for (var draw : draws) {
+            assertEquals(4, draw.getArguments().length, "发送必须向绘图器传递版式");
+            assertTrue(draw.getArgument(3).toString().contains("audience=false"));
+        }
+    }
+
+    @Test @DisplayName("同主播两个通道版式不同，不共用周报图片")
+    void differentLayoutsHaveSeparateImages() {
+        var second = user(1L, 1002L, true).getTargets().get(0);
+        second.setUser(users.get(0));
+        second.getMessages().get(0).setParamsJsonObject(JSONObject.of("audience", false));
+        users.get(0).getTargets().add(second);
+        when(renderer.render(any(), any(), any(), any())).thenAnswer(i ->
+                new byte[]{(byte) (((WeeklyReportLayout) i.getArgument(3)).enabled("audience") ? 1 : 2)});
+        service.check(false);
+        assertEquals(2, sent.size());
+        assertNotEquals(sent.get(0).getContent(), sent.get(1).getContent(), "两个群应收到各自版式的图片");
+        assertEquals(2, mockingDetails(renderer).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("render")).count(), "不同版式要分别出图");
+    }
+
     @Test @DisplayName("甲的静音不能拦乙的周报，真实闸门只将甲留到静音结束")
     void quietUsesRealChannelGate() {
         var state = new NovaStateStore(props);
@@ -140,7 +171,7 @@ class WeeklyReportDeliveryServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(gate, "dataSource", source);
         reopen(); service.check(false);
         var data = org.mockito.ArgumentCaptor.forClass(org.frostnova.nova.core.analytics.WeeklyReport.Data.class);
-        verify(renderer, times(2)).render(any(), data.capture(), any());
+        verify(renderer, times(2)).render(any(), data.capture(), any(), any());
         assertEquals(List.of(false, true), data.getAllValues().stream().map(d -> d.metrics().containsKey("revenue")).toList());
         assertEquals(2, sent.size());
         assertFalse(sent.get(0).getContent().contains("流水"));
@@ -163,11 +194,11 @@ class WeeklyReportDeliveryServiceTest {
         addChannel(1003L, null);
         service = new WeeklyReportDeliveryService(source, content, revenue, sender, gate, store, clock,
                 new ReportPaletteSettings(new PushTemplateDefaults(props)));
-        when(renderer.render(any(), any(), any())).thenReturn(new byte[]{1});
+        when(renderer.render(any(), any(), any(), any())).thenReturn(new byte[]{1});
         service.check(false);
         assertEquals(3, sent.size(), "三个通道各收到一份");
         var palettes = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(renderer, times(2)).render(any(), any(), palettes.capture());
+        verify(renderer, times(2)).render(any(), any(), palettes.capture(), any());
         System.out.println("WEEKLY_RENDERS " + palettes.getAllValues() + " for " + sent.size() + " channels");
         assertEquals(List.of("night", "pink-blue"), palettes.getAllValues());
         assertEquals(sent.get(0).getContent(), sent.get(1).getContent(), "夜幕的两个通道收到同一张");
@@ -185,12 +216,12 @@ class WeeklyReportDeliveryServiceTest {
             String id = i.getArgument(0);
             return Set.of("classic", "pink-blue", "warm", "night").contains(id) ? id : settings.defaultId();
         });
-        when(renderer.render(any(), any(), any())).thenReturn(new byte[]{1});
+        when(renderer.render(any(), any(), any(), any())).thenReturn(new byte[]{1});
         service = new WeeklyReportDeliveryService(source, content, revenue, sender, gate, store, clock, settings);
         service.check(false);
         assertEquals(2, sent.size(), "两个通道各收到一份");
         var palettes = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(renderer, atLeastOnce()).render(any(), any(), palettes.capture());
+        verify(renderer, atLeastOnce()).render(any(), any(), palettes.capture(), any());
         System.out.println("WEEKLY_FALLBACK renders=" + palettes.getAllValues());
         assertEquals(1, palettes.getAllValues().size(), "出图次数");
         assertEquals("night", palettes.getValue());
@@ -206,15 +237,15 @@ class WeeklyReportDeliveryServiceTest {
         service = new WeeklyReportDeliveryService(source, content, revenue, sender, gate, store, clock, settings);
         service.check(false);
         var palettes = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(renderer, times(2)).render(any(), any(), palettes.capture());
+        verify(renderer, times(2)).render(any(), any(), palettes.capture(), any());
         assertEquals(List.of("classic", "warm"), palettes.getAllValues());
 
         var identity = new PushTarget(); identity.setPlatform("qq-onebot");
         identity.setType(PushTargetType.GROUP); identity.setNum(1002L);
         clearInvocations(renderer);
-        service.preview("sample", 1L, identity).orElseThrow();
+        service.preview("sample", 1L, identity, null).orElseThrow();
         service.trial("sample", 1L, identity);
-        verify(renderer, times(2)).render(any(), any(), eq("warm"));
+        verify(renderer, times(2)).render(any(), any(), eq("warm"), any());
     }
 
     @Test @DisplayName("周报预览只带通道身份时仍使用该主播保存的金额设置")
@@ -222,9 +253,9 @@ class WeeklyReportDeliveryServiceTest {
         target().setRevenueVisible(true);
         var identity = new PushTarget(); identity.setPlatform(target().getPlatform());
         identity.setType(target().getType()); identity.setNum(target().getNum());
-        service.preview("sample", 1L, identity).orElseThrow();
+        service.preview("sample", 1L, identity, null).orElseThrow();
         var data = org.mockito.ArgumentCaptor.forClass(org.frostnova.nova.core.analytics.WeeklyReport.Data.class);
-        verify(renderer).render(any(), data.capture(), any());
+        verify(renderer).render(any(), data.capture(), any(), any());
         assertTrue(data.getValue().metrics().containsKey("revenue"), "显示金额的通道预览应保留收益");
     }
 
@@ -234,7 +265,7 @@ class WeeklyReportDeliveryServiceTest {
         var preview = content.preview("sample", 1L, clock.instant(), false).orElseThrow();
         assertEquals("莜娜Yuna 上周（10 月 5 日至 11 日）共直播 1 场、0 小时 10 分，弹幕 8,901 条，观众 0 人。", preview.summary());
         var identity = org.mockito.ArgumentCaptor.forClass(LiveStreamerInfo.class);
-        verify(renderer).render(identity.capture(), any(), any());
+        verify(renderer).render(identity.capture(), any(), any(), any());
         assertEquals("莜娜Yuna", identity.getValue().getUname());
         System.out.println("NAMED_SUMMARY: " + preview.summary());
     }
@@ -262,7 +293,7 @@ class WeeklyReportDeliveryServiceTest {
     @DisplayName("主播名中的占位符在定时和试发正文中只作为转义文字")
     void externalNameIsEscaped(boolean image, boolean trial) {
         users.get(0).setUname("{at=all}测试{next}{image_url=https://example.test/a.png}[CQ:at,qq=all]");
-        if (image) when(renderer.render(any(), any(), any())).thenReturn(new byte[]{1});
+        if (image) when(renderer.render(any(), any(), any(), any())).thenReturn(new byte[]{1});
         Message message;
         if (trial) {
             service.trial("sample", 1L, target());
@@ -282,7 +313,7 @@ class WeeklyReportDeliveryServiceTest {
         var preview = content.preview("sample", 1L, clock.instant(), false).orElseThrow();
         assertTrue(preview.summary().startsWith("主播示例 "), preview.summary());
         var identity = org.mockito.ArgumentCaptor.forClass(LiveStreamerInfo.class);
-        verify(renderer).render(identity.capture(), any(), any());
+        verify(renderer).render(identity.capture(), any(), any(), any());
         assertEquals("主播示例", identity.getValue().getUname());
         users.add(user(2L, 1002L, true));
         var empty = content.preview("sample", 2L, clock.instant(), false).orElseThrow();

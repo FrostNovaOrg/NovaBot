@@ -31,6 +31,10 @@ async function main() {
   }
   rows.push({method: 'POST', path: '/config/api/streamer/lookup', query: '',
     body: {platform: 'bilibili', uid: '1'}, file: 'data/lookup.json', status: 200, contentType: 'application/json'});
+  rows.push({method: 'POST', path: '/config/api/weekly-report/bilibili/1/preview', query: '',
+    body: {...channel, revenueVisible: false}, file: 'data/hidden.png', status: 200, contentType: 'image/png'});
+  rows.push({method: 'POST', path: '/config/api/weekly-report/bilibili/1/preview', query: '',
+    body: {...channel, revenueVisible: false, audience: false}, file: 'data/preview.png', status: 200, contentType: 'image/png'});
   const timers = new Map();
   const events = [], nodes = new Map(), warnings = [], network = [], opened = [];
   const document = {
@@ -83,6 +87,13 @@ async function main() {
     equal(reply.success, false); equal(reply.message.includes('演示'), true);
   }
   equal((await (await context.fetch('/nova/readonly-token', {method: 'POST'})).json()).message.includes('演示'), true);
+  const weekly = await request('/weekly-report/bilibili/1/preview', {method: 'POST',
+    body: JSON.stringify({...channel, revenueVisible: false, audience: false, reportPalette: null})});
+  equal(weekly.headers.get('Content-Type'), 'image/png');
+  equal([...new Uint8Array(await weekly.arrayBuffer())], [137, 80, 78, 71]);
+  const weeklyFallback = await request('/weekly-report/bilibili/1/preview', {method: 'POST',
+    body: JSON.stringify({...channel, revenueVisible: false, cards: false})});
+  equal([...new Uint8Array(await weeklyFallback.arrayBuffer())], [137, 80, 78, 72]);
   const preview = await request('/report/preview', {method: 'POST', body: '{}'});
   equal(preview.headers.get('Content-Type'), 'image/png');
   equal(Array.from(new Uint8Array(await preview.arrayBuffer())), [137, 80, 78, 71]);

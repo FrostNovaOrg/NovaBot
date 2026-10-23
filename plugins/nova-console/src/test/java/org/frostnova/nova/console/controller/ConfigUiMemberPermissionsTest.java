@@ -68,7 +68,7 @@ class ConfigUiMemberPermissionsTest {
             POST streamer/lookup
             POST state/subscription
             GET weekly-report/{platform}/{uid}/status
-            GET weekly-report/{platform}/{uid}/preview
+            POST weekly-report/{platform}/{uid}/preview
             POST weekly-report/{platform}/{uid}/trial
             GET live-report/{platform}/{uid}/latest
             POST live-report/{platform}/{uid}/send-latest

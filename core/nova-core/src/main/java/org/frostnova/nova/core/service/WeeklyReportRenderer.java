@@ -16,6 +16,11 @@ public interface WeeklyReportRenderer {
         return render(streamer, data);
     }
 
+    /** 按通道版式画；未支持版式的扩展沿用原有绘图入口。 */
+    default byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, String palette, WeeklyReportLayout layout) {
+        return render(streamer, data, palette);
+    }
+
     /**
      * 这个 id 实际按哪一套画
      * <p>

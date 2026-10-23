@@ -6,6 +6,7 @@ import org.frostnova.nova.core.analytics.WeeklyReport;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.service.WeeklyReportRenderer;
+import org.frostnova.nova.core.service.WeeklyReportLayout;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -64,7 +65,15 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         return palettes.forId(palette).id();
     }
 
+    @Override public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, String palette, WeeklyReportLayout layout) {
+        return render(streamer, data, palettes.forId(palette).palette(), layout);
+    }
+
     public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, ReportPalette palette) {
+        return render(streamer, data, palette, WeeklyReportLayout.of(null));
+    }
+
+    public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, ReportPalette palette, WeeklyReportLayout layout) {
         CommonPainter p = factory.create(WIDTH, 1200, true, palette);
         p.setPos(MARGIN, MARGIN);
         drawSimpleHeader(p, streamer.getUname(), faceImage(api, streamer), "运营周报");
@@ -72,7 +81,8 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
         p.drawTip(WeeklyReport.activity(data), p.palette().tip());
         p.movePos(0, 16);
         int top = p.getY();
-        var cards = WeeklyReport.cards(data);
+        var allCards = WeeklyReport.cards(data);
+        var cards = layout.visibleCards().stream().map(key -> allCards.get(WeeklyReportLayout.CARD_KEYS.indexOf(key))).toList();
         for (int i = 0; i < cards.size(); i++) {
             var c = cards.get(i);
             int x = MARGIN + i % CARD_COLUMNS * (CARD_WIDTH + CARD_GAP);
@@ -81,13 +91,19 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
                     : c.changeRatio() > 0 ? p.palette().up() : p.palette().down();
             drawCard(p, c.value(), c.label(), c.note(), color, x, y);
         }
-        p.setPos(MARGIN, top + 2 * (WEEKLY_CARD_HEIGHT + CARD_GAP) + 8);
-        if (!WeeklyReport.comparisonExplanation(data).isEmpty()) smallLine(p, WeeklyReport.comparisonExplanation(data));
-        drawDays(p, data);
-        drawAudience(p, data);
-        drawCalendar(p, data);
-        drawSessions(p, data);
-        if (!WeeklyReport.coverage(data).isEmpty()) {
+        int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;
+        p.setPos(MARGIN, top + rows * (WEEKLY_CARD_HEIGHT + CARD_GAP) + (rows > 0 ? 8 : 0));
+        var metrics = List.of("durationSeconds", data.chartMetric().equals("revenue") ? "revenue" : "sessions",
+                "messages", "audience", "interactionAudience", "fans");
+        var comparable = layout.visibleCards().stream().map(key -> metrics.get(WeeklyReportLayout.CARD_KEYS.indexOf(key)))
+                .filter(key -> !key.equals("sessions") && !key.equals("fans")).toList();
+        String explanation = WeeklyReport.comparisonExplanation(data, comparable);
+        if (!explanation.isEmpty()) smallLine(p, explanation);
+        if (layout.enabled("days")) drawDays(p, data);
+        if (layout.enabled("audience")) drawAudience(p, data);
+        if (layout.enabled("calendar")) drawCalendar(p, data);
+        if (layout.enabled("sessions")) drawSessions(p, data);
+        if (layout.audienceCoverage() && !WeeklyReport.coverage(data).isEmpty()) {
             p.drawTextWithStyle(List.of(new TextWithStyle(WeeklyReport.coverage(data), 20, p.palette().tip(), Font.PLAIN)), null, true, MARGIN);
         }
         smallLine(p, "数字只算记录到的数据，采集缺口不补估。");

@@ -300,7 +300,10 @@ const DIGEST = notice('x.Digest', '下播打赏播报', {options: [
     defaultValue: 50, min: 0, max: 1000000}]});
 const DYNAMIC = notice('x.Dynamic', '动态通知', {placeholders: AT_PLACEHOLDERS});
 const WEEKLY = notice('org.frostnova.nova.core.handler.WeeklyReportPushHandler', '运营周报',
-  {placeholders: [], defaultParams: {}, factoryParams: {}, defaultEnabled: false});
+  {placeholders: [], defaultParams: {cards: true, audience: true}, factoryParams: {cards: true, audience: true},
+    defaultEnabled: false, reportLayout: true, options: [
+      {key: 'cards', label: '数据卡片', type: 'BOOLEAN', defaultValue: true},
+      {key: 'audience', label: '本周观众', type: 'BOOLEAN', defaultValue: true}]});
 const HANDLERS = [LIVE_ON, REPORT, DIGEST, DYNAMIC, WEEKLY];
 
 const GROUP = {platform: 'qq', type: 1, num: 12345, enabled: true};
@@ -315,11 +318,15 @@ const SESSIONS = [
 
 const requests = [];
 let saved = [];
+let emptyWeeklyPreview = false;
 globalThis.fetch = async (path, opt = {}) => {
   const url = String(path);
   requests.push({url, opt});
-  if (url.endsWith('/api/report/preview')) return {ok: true, blob: async () => 'image'};
-  if (url.includes('/weekly-report/')) return {status: 200, json: async () => ({success: true, status: '上次 10/19 10:00 已发出'})};
+  if (emptyWeeklyPreview && /\/weekly-report\/[^/]+\/\d+\/preview$/.test(url))
+    return {ok: true, headers: {get: () => 'application/json'}, json: async () => ({
+      summary: '甲 上周没有记录到开播。', text: '甲 上周没有记录到开播。'})};
+  if (url.endsWith('/api/report/preview') || /\/weekly-report\/[^/]+\/\d+\/preview$/.test(url)) return {ok: true, blob: async () => 'image'};
+  if (url.includes('/weekly-report/')) return {status: 200, json: async () => ({success: true, status: '上次 10/19 10:00 已发出', previousWeek: '10月12日至10月18日'})};
   if (url.includes('/datasource')) {
     if (opt.method === 'POST') {
       saved = [JSON.parse(opt.body).user];
@@ -494,7 +501,7 @@ await ask('⑤ 收起的「没开的 n 种」展开后能开，开了就回到�
   }, '没开的那几种');
 });
 
-// 故障：运营周报关着，「上次发出 · 预览 · 发送上一周的报告」照样摆着，看着像周报在发。
+// 故障：运营周报关着，状态与发送工具照样摆着，看着像周报在发。
 await ask('⑥ 运营周报关着时不显示周报工具，开着时在它那一行里', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
   await paint(GROUP, [message(LIVE_ON)]);
@@ -569,6 +576,75 @@ await ask('旧报告文字保留，默认模板不提供下播报告文字编辑
     legacy, '保存版式后保留旧文字');
   await push.showPush('default');
   same(all(page()).some(node => node.tagName === 'button' && node.textContent === '下播报告'), false, '默认模板的通知清单');
+});
+
+async function waitFor(test, label) {
+  const deadline = Date.now() + 5000;
+  while (!test()) {
+    if (Date.now() > deadline) throw new Error('等待超时：' + label);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+await ask('周报行提供图片编辑，草稿预览跟着变，保存与恢复默认都生效', async () => {
+  await paint(GROUP, [message(WEEKLY)]);
+  same(!!editOf(WEEKLY), true, '周报编辑按钮');
+  same(all(rowOf(WEEKLY)).some(node => node.tagName === 'a' && node.textContent === '预览'), false, '没有独立预览链接');
+  edit(WEEKLY);
+  const previews = () => requests.filter(item => /\/weekly-report\/bilibili\/1\/preview$/.test(item.url));
+  await waitFor(() => previews().length === 1, '首次周报预览');
+  requests.length = 0;
+  change(inputOf('本周观众'), false);
+  await waitFor(() => previews().length === 1, '改开关后的草稿预览');
+  same(previews()[0].opt.method, 'POST', '周报预览方法');
+  const body = JSON.parse(previews()[0].opt.body);
+  same({audience: body.audience, cards: body.cards, platform: body.platform, num: body.num, revenueVisible: body.revenueVisible},
+    {audience: false, cards: true, platform: 'qq', num: 12345, revenueVisible: false}, '预览草稿与通道');
+  same(requests.some(item => item.url.endsWith('/report/preview')), false, '周报不用下播示例');
+  requests.length = 0;
+  change(inputOf('本周观众'), true);
+  change(inputOf('本周观众'), false);
+  change(inputOf('本周观众'), true);
+  await waitFor(() => previews().length === 1, '连续修改只请求最后一次');
+  same(JSON.parse(previews()[0].opt.body).audience, true, '回到默认时也显式覆盖已保存的值');
+  requests.length = 0;
+  change(inputOf('本周观众'), false);
+  await waitFor(() => previews().length === 1, '恢复自定义预览');
+  await push.save();
+  same(saved[0].targets[0].messages[0].params.audience, false, '保存到本条通道');
+  if (!inputOf('本周观众')) edit(WEEKLY);
+  const reset = all(rowOf(WEEKLY)).find(node => node.tagName === 'button' && node.textContent === '恢复默认');
+  reset.click();
+  const dialog = all(document.body).find(node => hasClass(node, 'ask') && !node.hidden);
+  dialog.dispatchEvent(fakeEvent('click', dialog.querySelector('[data-act="yes"]')));
+  await settle();
+  await push.save();
+  same(Object.keys(saved[0].targets[0].messages[0].params || {}), [], '恢复默认清除版式覆盖');
+});
+
+await ask('上周没有记录时编辑器显示真实文字', async () => {
+  emptyWeeklyPreview = true;
+  try {
+    await paint(GROUP, [message(WEEKLY)]);
+    if (!inputOf('本周观众')) edit(WEEKLY);
+    await waitFor(() => textOf(rowOf(WEEKLY)).includes('甲 上周没有记录到开播。'), '无记录的文字预览');
+    same(all(rowOf(WEEKLY)).some(node => node.tagName === 'img'), false, '无记录不使用示例图');
+  } finally { emptyWeeklyPreview = false; }
+});
+
+await ask('浏览器时钟错误时周报发送确认框仍照后端期间显示', async () => {
+  await paint(GROUP, [message(WEEKLY)]);
+  const send = all(rowOf(WEEKLY)).find(node => node.tagName === 'button' && node.textContent === '发送上一周的报告');
+  const localNow = Date.now;
+  Date.now = () => localNow() + 60 * 86400000;
+  try {
+    send.click();
+    await waitFor(() => all(document.body).some(node => hasClass(node, 'ask') && !node.hidden), '周报确认框');
+    const dialog = all(document.body).find(node => hasClass(node, 'ask') && !node.hidden);
+    same(textOf(dialog).includes('10月12日至10月18日'), true, '服务器提供的统计周');
+    dialog.dispatchEvent(fakeEvent('click', dialog.querySelector('[data-act="no"]')));
+    await settle();
+  } finally { Date.now = localNow; }
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
