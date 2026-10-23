@@ -150,7 +150,8 @@ class BilibiliRankingCommandTest {
             CommandReply reply = command.execute(context(board));
 
             // 说清是「本会话不展示」而不是「没这张榜」，否则只会被反复重试
-            assertTrue(reply.content().contains("不展示金额"), board + "：" + reply.content());
+            assertTrue(reply.content().contains("不展示"), board + "：" + reply.content());
+            assertTrue(reply.content().contains("「测试主播」的金额相关榜单"), board + "：" + reply.content());
         }
         verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
     }

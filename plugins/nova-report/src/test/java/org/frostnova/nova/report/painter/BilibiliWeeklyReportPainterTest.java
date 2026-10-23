@@ -210,6 +210,41 @@ class BilibiliWeeklyReportPainterTest {
         }
     }
 
+    @Test @DisplayName("日图非有限数按无数据处理，其余日期照常绘制")
+    void nonFiniteDailyValuesHaveNoDataLabels() {
+        var source = data(false);
+        var values = List.of(10d, Double.NaN, 30d, Double.POSITIVE_INFINITY, 50d, 60d, 70d);
+        var days = new ArrayList<WeeklyReport.Day>();
+        for (int i = 0; i < 7; i++) days.add(new WeeklyReport.Day(source.daily().get(i).date(), 1,
+                Map.of("messages", values.get(i))));
+        var chart = new WeeklyReport.Data(source.streamerName(), source.firstDay(), source.lastDay(),
+                source.metrics(), source.fans(), source.composition(), source.coverage(), days, "messages");
+        assertNotNull(assertDoesNotThrow(() -> painter.render(streamer, chart)));
+
+        var p = spy(factory.create(900, 1200, true)); p.setPos(35, 35);
+        painter.drawDays(p, chart);
+        var texts = org.mockito.ArgumentCaptor.forClass(List.class);
+        var positions = org.mockito.ArgumentCaptor.forClass(Point.class);
+        verify(p, atLeastOnce()).drawTextWithStyle(texts.capture(), positions.capture());
+        var labels = texts.getAllValues().stream().map(row -> (TextWithStyle) row.get(0))
+                .filter(t -> t.getSize() == 18).map(TextWithStyle::getText).toList();
+        assertEquals(List.of("10", "30", "50", "60", "70"), labels);
+        var missingCenters = new ArrayList<Integer>();
+        for (int i = 0; i < texts.getAllValues().size(); i++) {
+            var text = (TextWithStyle) texts.getAllValues().get(i).get(0);
+            if (text.getText().equals("无数据")) missingCenters.add(positions.getAllValues().get(i).x
+                    - p.getStringWidthAndHeight(text).getFirst() / 2);
+        }
+        assertEquals(List.of(35 + 118 + 59, 35 + 3 * 118 + 59), missingCenters);
+        var lines = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(p).drawPolyline(lines.capture(), any(Color.class), eq(3));
+        var line = lines.getValue();
+        assertEquals(3, line.size());
+        assertEquals(35 + 4 * 118 + 59, ((Point) line.get(0)).x);
+        assertEquals(43, ((Point) line.get(0)).y - ((Point) line.get(2)).y);
+        verify(p, times(5)).drawRoundedRectangle(anyInt(), anyInt(), eq(10), eq(10), eq(10), any(Color.class));
+    }
+
     record TextCall(String text, Font font, int size, Color color, int style) {
         static TextCall of(TextWithStyle t) {
             return new TextCall(t.getText(), t.getFont(), t.getSize(), t.getColor(), t.getStyle());

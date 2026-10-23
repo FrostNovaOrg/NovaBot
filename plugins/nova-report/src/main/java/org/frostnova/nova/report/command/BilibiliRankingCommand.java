@@ -136,7 +136,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         if (board.money && !revenue) {
             // 说清是「本会话不展示」而不是「没这张榜」，否则只会被反复重试
-            return CommandReply.of("本会话不展示金额相关的榜单，可查：" + Board.names(false));
+            return CommandReply.of("本会话不展示「" + nameOf(resolved.streamer()) + "」的金额相关榜单，可查：" + Board.names(false));
         }
 
 

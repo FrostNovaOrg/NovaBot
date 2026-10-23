@@ -510,8 +510,10 @@ class ChannelSettingsIntegrationTest {
         var options = org.mockito.ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
         verify(painter, times(4)).paint(anyString(), any(), options.capture());
         assertEquals(List.of(false, false, true, true), options.getAllValues().stream().map(BilibiliLiveReportOptions::isShowRevenue).toList());
-        assertTrue(ranking.execute(context("数据排行榜", "礼物", "甲")).content().contains("不展示金额"));
-        assertFalse(ranking.execute(context("数据排行榜", "礼物", "乙")).content().contains("不展示金额"));
+        assertTrue(ranking.execute(context("数据排行榜", "礼物", "甲")).content().contains("不展示「甲」的金额相关榜单"));
+        var visibleReply = ranking.execute(context("数据排行榜", "礼物", "乙")).content();
+        assertFalse(visibleReply.contains("不展示"));
+        assertFalse(visibleReply.contains("金额相关榜单"));
     }
 
     @Test @DisplayName("甲静音不会阻止乙推送或菜单，两位都静音才停菜单，全局关闭仍拦一切")
