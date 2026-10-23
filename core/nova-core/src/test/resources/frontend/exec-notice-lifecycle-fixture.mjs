@@ -89,6 +89,7 @@ const dependencies = {
   setTimeout: (callback, delay) => schedule(callback, delay, false),
   clearTimeout: id => timers.delete(id),
   setInterval: (callback, delay) => schedule(callback, delay, true),
+  performance: {now: () => now},
 };
 const lifecycle = new Function(...Object.keys(dependencies),
   'let homeStatus, homeLogin;\n' + source + '\nreturn {start: startConsole, refresh: loadExecNotice};')
@@ -106,9 +107,11 @@ if (process.argv[2] === 'idle') {
   console.log('elapsed ' + now);
 } else if (process.argv[2] === 'activity') {
   check(shown());
+  // 操作隔 30 秒才再刷一次；切回页面不等，连着切回也次次都刷
   for (const [target, event] of [[document, 'click'], [document, 'keydown'],
-    [window, 'focus'], [document, 'visibilitychange']]) {
+    [document, 'visibilitychange']]) {
     for (const nextRole of ['MEMBER', undefined, 'MEMBER', 'ADMIN']) {
+      if (event !== 'visibilitychange') await advance(now + 30000);
       role = nextRole;
       requests.length = 0;
       await target.dispatch(event);
@@ -124,12 +127,43 @@ if (process.argv[2] === 'idle') {
   document.visibilityState = 'visible';
   let release;
   pending = new Promise(resolve => { release = resolve; });
+  await advance(now + 30000);
   await document.dispatch('click');
   role = 'MEMBER';
-  await window.dispatch('focus');
+  await document.dispatch('visibilitychange');
   release({success: true, rules});
   await settle();
   check(!shown() && box.textContent === '');
+} else if (process.argv[2] === 'typing') {
+  // 在设置框里打字：每个字一次按键，30 秒内只问一次登录状态
+  const asked = () => requests.filter(request => request.path === '/auth/state').length;
+  await advance(now + 30000);
+  requests.length = 0;
+  const first = now;
+  for (let i = 0; i < 50; i++) {
+    await document.dispatch('keydown');
+    if (i === 0) role = 'MEMBER';
+    await advance(now + 100);
+  }
+  await document.dispatch('click');
+  console.log('50 次按键后登录状态查询 ' + asked() + ' 次');
+  check(asked() === 1);
+  check(shown());
+  await advance(first + 29999);
+  await document.dispatch('keydown');
+  check(asked() === 1);
+  await advance(first + 30000);
+  await document.dispatch('keydown');
+  console.log('过 30 秒后再按一次，共 ' + asked() + ' 次');
+  check(asked() === 2);
+  check(!shown() && box.textContent === '');
+} else if (process.argv[2] === 'focus') {
+  // 没人操作，只是窗口获得焦点（比如别的窗口关掉了）
+  await advance(now + 60000);
+  requests.length = 0;
+  await window.dispatch('focus');
+  console.log('窗口获得焦点后请求 ' + requests.length + ' 次');
+  check(requests.length === 0);
 } else if (process.argv[2] === 'stable') {
   const original = [...box.children];
   box.writes = 0;

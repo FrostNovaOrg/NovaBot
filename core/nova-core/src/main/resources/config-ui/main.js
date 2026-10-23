@@ -798,9 +798,11 @@ $('#bot-open').addEventListener('click', () => { if (botHref) location.href = bo
 
 // 根据当前身份与本次启动请求更新规则提醒
 let execNoticeVersion = 0;
+let execNoticeRefreshedAt = -Infinity;
 function loadExecNotice(attempt = startupAttempt, role) {
   const version = ++execNoticeVersion;
   if (!attempt?.active) return Promise.resolve();
+  execNoticeRefreshedAt = performance.now();
   const options = {signal: attempt.controller.signal};
   const identity = role === undefined ? api('/auth/state', options).then(state => state.role) : Promise.resolve(role);
   const current = () => attempt.active && version === execNoticeVersion;
@@ -897,11 +899,15 @@ function startConsole() {
 }
 $('#startup-retry').addEventListener('click', startConsole);
 startConsole();
-window.addEventListener('focus', () => loadExecNotice());
+// 切回页面立即刷新。点击、按键隔 30 秒才刷一次，打字时不至于每个字都发请求。
+// 不听窗口 focus：没人操作时它也会来，切回页面已由 visibilitychange 管住
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'hidden') loadExecNotice();
 });
-document.addEventListener('click', () => loadExecNotice());
-document.addEventListener('keydown', () => loadExecNotice());
+const refreshExecNoticeOnActivity = () => {
+  if (performance.now() - execNoticeRefreshedAt >= 30000) loadExecNotice();
+};
+document.addEventListener('click', refreshExecNoticeOnActivity);
+document.addEventListener('keydown', refreshExecNoticeOnActivity);
 
 // 页面在身份和插件清单到达后由 applyRoute 显示。

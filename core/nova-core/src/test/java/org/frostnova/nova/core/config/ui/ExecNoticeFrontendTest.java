@@ -60,6 +60,18 @@ class ExecNoticeFrontendTest {
     }
 
     @Test
+    @DisplayName("连续打字时 30 秒内只刷新一次提醒")
+    void typingRefreshesAtMostOncePerInterval() throws IOException, InterruptedException {
+        FrontendFixture.run(FrontendFixture.fixture("exec-notice-lifecycle-fixture.mjs"), "连续按键", "typing");
+    }
+
+    @Test
+    @DisplayName("没人操作时窗口获得焦点不发请求")
+    void windowFocusAloneSendsNothing() throws IOException, InterruptedException {
+        FrontendFixture.run(FrontendFixture.fixture("exec-notice-lifecycle-fixture.mjs"), "窗口焦点", "focus");
+    }
+
+    @Test
     @DisplayName("内容相同的提醒在刷新期间保持原样")
     void unchangedNoticeStaysInPlace() throws IOException, InterruptedException {
         FrontendFixture.run(FrontendFixture.fixture("exec-notice-lifecycle-fixture.mjs"), "提醒刷新", "stable");
