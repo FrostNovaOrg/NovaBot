@@ -734,7 +734,7 @@ public class CommonPainter {
             Font originalFont = this.draw.getFont();
 
             try {
-                this.draw.setColor(text.getColor() != null ? text.getColor() : palette.defaultText());
+                this.draw.setColor(text.hasExplicitColor() ? text.getColor() : palette.defaultText());
 
                 for (int i = 0; i < text.getText().length(); ) {
                     int codePoint = text.getText().codePointAt(i);

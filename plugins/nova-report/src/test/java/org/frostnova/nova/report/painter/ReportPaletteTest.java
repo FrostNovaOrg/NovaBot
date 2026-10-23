@@ -26,6 +26,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.time.Instant;
@@ -111,25 +112,50 @@ class ReportPaletteTest {
 
     @Test
     void platformMedalColorsSurviveCustomPalette() throws Exception {
-        Color platformColor = new Color(12, 210, 87);
+        Color start = new Color(12, 210, 87);
+        Color end = new Color(25, 65, 225);
+        Color border = new Color(236, 173, 22);
+        Color text = new Color(215, 35, 55);
         var painter = new BilibiliLiveReportPreviewPainter(factory, mock(BilibiliApiUtil.class), fonts,
                 new NovaBilibiliProperties(), mock(LiveRoomInfoHistory.class)) {
             @Override
             protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
-                var medal = new GuardMedal("示例牌", 20, true, platformColor, platformColor,
-                        platformColor, platformColor, null);
+                var medal = new GuardMedal("示例牌", 20, true, start, end, border, text, null);
                 return Optional.of(List.of(new GuardMember(19604318752096L, "示例观众", 3, 1000, medal)));
             }
         };
-        var bytes = painter.render(new BilibiliLiveReportOptions(), singleInk(INK)).orElseThrow();
-        var image = ImageIO.read(new ByteArrayInputStream(bytes));
-        int preserved = 0;
+        var options = new BilibiliLiveReportOptions();
+        var defaultImage = ImageIO.read(new ByteArrayInputStream(painter.render(options).orElseThrow()));
+        var customImage = ImageIO.read(new ByteArrayInputStream(
+                painter.render(options, singleInk(INK)).orElseThrow()));
+        // The bar interpolates between its endpoints; the outline and glyphs contain solid pixels.
+        assertAll(
+                () -> assertMedalColorPreserved(defaultImage, customImage, start, 32, "gradient start"),
+                () -> assertMedalColorPreserved(defaultImage, customImage, end, 32, "gradient end"),
+                () -> assertMedalColorPreserved(defaultImage, customImage, border, 0, "border"),
+                () -> assertMedalColorPreserved(defaultImage, customImage, text, 0, "text"));
+    }
+
+    private static void assertMedalColorPreserved(BufferedImage defaultImage, BufferedImage customImage,
+                                                  Color color, int tolerance, String role) {
+        int defaultPixels = countColorPixels(defaultImage, color, tolerance);
+        int customPixels = countColorPixels(customImage, color, tolerance);
+        assertTrue(customPixels > 5, role + " pixels must remain visible: " + customPixels);
+        assertEquals(defaultPixels, customPixels, role + " pixels must survive a palette change");
+    }
+
+    private static int countColorPixels(BufferedImage image, Color color, int tolerance) {
+        int count = 0;
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
-                if (image.getRGB(x, y) == platformColor.getRGB()) preserved++;
+                int pixel = image.getRGB(x, y);
+                if ((pixel >>> 24) == 255
+                        && Math.abs(((pixel >> 16) & 255) - color.getRed()) <= tolerance
+                        && Math.abs(((pixel >> 8) & 255) - color.getGreen()) <= tolerance
+                        && Math.abs((pixel & 255) - color.getBlue()) <= tolerance) count++;
             }
         }
-        assertTrue(preserved > 100, "platform medal colors must remain visible");
+        return count;
     }
 
     @Test
@@ -188,13 +214,38 @@ class ReportPaletteTest {
     @Test
     void implicitTextColorComesFromTheCanvasAndExplicitColorIsPreserved() throws Exception {
         var palette = singleInk(INK);
-        var painter = factory.create(500, 150, true, palette);
         var implicit = new TextWithStyle("默认文字", 30);
-        assertNull(implicit.getColor());
-        painter.drawTextWithStyle(List.of(implicit));
+        assertEquals(Color.BLACK, implicit.getColor());
+        var unset = new TextWithStyle();
+        unset.setText("默认文字");
+        unset.setSize(30);
+        assertNull(unset.getColor());
+        for (var text : List.of(implicit, unset)) {
+            var painter = factory.create(500, 150, true, palette);
+            painter.drawTextWithStyle(List.of(text));
+            painter.createSolidRoundedRectangleBackground(palette.background(), 0);
+            assertInk(png(painter.base64().orElseThrow()), INK);
+        }
+        var explicitTexts = List.of(new TextWithStyle("平台文字", 30, Color.BLUE),
+                new TextWithStyle("平台文字", 30, Color.BLUE, Font.BOLD),
+                new TextWithStyle("平台文字", fonts.primaryFont(), 30, Color.BLUE, Font.BOLD));
+        for (var text : explicitTexts) {
+            assertEquals(Color.BLUE, text.getColor());
+            assertTextInk(text, palette, Color.BLUE);
+        }
+        assertTextInk(new TextWithStyle("平台文字", 30, Color.BLACK), palette, Color.BLACK);
+        for (var text : List.of(implicit, unset, explicitTexts.get(0), explicitTexts.get(1), explicitTexts.get(2))) {
+            text.setColor(Color.RED);
+            assertEquals(Color.RED, text.getColor());
+            assertTextInk(text, palette, Color.RED);
+        }
+    }
+
+    private static void assertTextInk(TextWithStyle text, ReportPalette palette, Color color) throws Exception {
+        var painter = factory.create(500, 150, true, palette);
+        painter.drawTextWithStyle(List.of(text));
         painter.createSolidRoundedRectangleBackground(palette.background(), 0);
-        assertInk(png(painter.base64().orElseThrow()), INK);
-        var explicit = new TextWithStyle("平台文字", 30, Color.BLUE);
-        assertEquals(Color.BLUE, explicit.getColor());
+        var image = ImageIO.read(new ByteArrayInputStream(png(painter.base64().orElseThrow())));
+        assertTrue(countColorPixels(image, color, 0) > 10, "explicit text color must remain visible");
     }
 }
