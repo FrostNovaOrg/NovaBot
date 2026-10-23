@@ -631,20 +631,22 @@ await ask('⑥ 保存本群设置与「恢复这些命令」：请求体都带�
   }, '请求体');
 });
 
-// 故障：点「打开 甲 的数据 →」落到整个主播列表，还得在列表里再找一遍这位主播
-await ask('⑦ 主播那一页的「打开 … 的数据 →」指到这位主播的详情', async () => {
+// 故障：点「看数据 →」落到整个主播列表，还得在列表里再找一遍这位主播。
+await ask('⑦ 主播名旁的「看数据 →」指到这位主播的详情', async () => {
   if (!push || !streamersModel) throw new Error('push.js 或 streamers-model.js 没载入，无从量起');
   await openHash('#/push/1');
   const link = allNodes(idNode('push-right'))
-    .find(node => node.tagName === 'a' && /^打开 .* 的数据 →$/.test(node.textContent));
-  if (!link) throw new Error('主播那一页没有「打开 … 的数据 →」');
+    .find(node => node.tagName === 'a' && node.textContent === '看数据 →');
+  if (!link) throw new Error('主播那一页没有「看数据 →」');
   same({
     '链接的地址': link.href,
     '与主播页拼地址的那一份一致': link.href === streamersModel.detailHash('bilibili', 1),
+    '放在主播名旁': classesOf(link.parentNode).includes('sh-nm'),
   }, {
     '链接的地址': '#/streamers/bilibili/1',
     '与主播页拼地址的那一份一致': true,
-  }, '「打开 甲 的数据 →」');
+    '放在主播名旁': true,
+  }, '「看数据 →」');
 });
 
 /** 状态栏此刻那句话 */
