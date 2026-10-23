@@ -6,7 +6,7 @@
  * refresh 按地址栏取数、leave 离开本页时收起抽屉。
  *
  * 本文件只管把 push-model.js 算好的东西摆上屏幕。树上标什么记号、模板算默认还是自定义、
- * 「通道设置」那四行摘要写什么，一律在那边判——判断留在这里的话，那几档就只能靠人
+ * 通道页各块的摘要写什么，一律在那边判——判断留在这里的话，那几档就只能靠人
  * 打开页面挨个点着看，而其中好几档（命令被群管理员关掉、累计数据没开、群名取不到）
  * 在真机上凑齐一次的代价极高。
  *
@@ -18,7 +18,7 @@ import {$, api, CONSOLE, el, esc, markDirty, phrase, request, say, term} from '.
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
-  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, optionStates, previewRequestBody,
+  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
   previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
@@ -71,15 +71,15 @@ const PAGE_STYLE = `
 .pnarrow-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .pright{min-width:0}
 /* 窄屏：左树摆不下，改成上面那个下拉。树不是「藏起来」而是换了一种画法——
-   直接横过来摆的话，正文只剩半屏宽，而通道页四段每一段都是整行的开关 */
+   直接横过来摆的话，正文只剩半屏宽，而通道页每一块都是整行的开关 */
 @media (max-width:900px){
   .pushwrap{display:block}
   .ptree{display:none}
   .pnarrow{display:block}
 }
 .psec>h3{display:flex;align-items:center;gap:8px}
-.psec-n{flex:none;width:20px;height:20px;border-radius:50%;background:var(--soft);
-  color:var(--accent);font-size:var(--fs-xs);display:inline-flex;align-items:center;justify-content:center}
+.psec>h3:focus{outline:none}
+.psec>h3:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .psec h4{margin:18px 0 6px;font-size:var(--fs-sm);font-weight:600;color:var(--dim)}
 .ptable{margin-bottom:8px}
 .ptable td.n{font-variant-numeric:tabular-nums;color:var(--dim)}
@@ -99,8 +99,8 @@ const PAGE_STYLE = `
   border-radius:var(--r-pill);padding:1px 7px;font-size:var(--fs-xs);line-height:1.65;white-space:nowrap}
 .ptable .good{color:var(--ok)}
 .ptable .bad{color:var(--err)}
-/* 最近推送那张表：只在卡片里横着滚，不把整页顶宽。表本身撑到内容宽，
-   窄屏上就地横滚——整页一横滚，左树与底下的保存条跟着被推出屏外 */
+/* 最近推送那张表：只在卡片里横着滚，不把整页顶宽。表本身撑到内容宽——
+   整页一横滚，左树与底下的保存条跟着被推出屏外。手机上每条拆成两行，见下方 600px 那段 */
 .push-history-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .push-history-scroll>.ptable{width:max-content;min-width:100%}
 /* 主播级的头 */
@@ -124,12 +124,49 @@ const PAGE_STYLE = `
 .rc-tg{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
 .rc-side{display:flex;align-items:center;gap:8px;flex:none}
 .addrow{width:100%;margin-top:10px}
-/* 通道级的头 */
-.chead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* 通道级的头：返回、通道名与号一行，下面一行摘要，每一项点了跳到对应那一块 */
+.chead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ch-sep{color:var(--dim)}
 .ch-nm{font-size:var(--fs-lg);font-weight:600}
 .ch-id{color:var(--dim);font-size:var(--fs-sm)}
-.chead .ghost{margin-left:auto}
-.channel-remove:focus-visible,.p-editor-fold>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.ch-sum{display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;margin-top:8px;color:var(--dim)}
+.ch-sum .lnkbtn{font-size:var(--fs-sm)}
+.ch-dot{color:var(--dim);font-size:var(--fs-sm)}
+.channel-remove:focus-visible,.nrow-edit:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* 推送内容：一种通知一行，点「编辑」就在这一行下面展开 */
+.nrow{border-top:1px solid var(--line)}
+.nrow:first-child{border-top:none}
+.nrow-h{display:flex;align-items:center;gap:10px;padding:9px 0;min-height:38px}
+.nrow-h>.switch{flex:none}
+.nrow-t{flex:1;min-width:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 12px}
+.nrow-t>b{font-size:var(--fs-md);font-weight:600}
+.nrow-meta{color:var(--dim);font-size:var(--fs-xs)}
+.nrow-edit{flex:none;font-size:var(--fs-sm)}
+.nrow.open>.nrow-h>.nrow-t>b{color:var(--accent)}
+.nrow-body{padding:2px 0 14px 48px;min-width:0}
+.nrow-body>.hint{margin:0 0 8px}
+.nrow-tabs{margin-bottom:10px}
+/* 通道规则与只读状态：标题、摘要与问号一行，控件紧跟在下面 */
+.crule{padding:10px 0;border-top:1px solid var(--line)}
+.crule:first-child{border-top:none}
+.crule-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.crule-b{padding-top:4px;min-width:0}
+.crule-b>.swrow{border-top:none;padding:4px 0}
+.crule-b>.ghost{margin-top:6px}
+.quiet-modes{display:flex;flex-wrap:wrap;gap:6px 18px;padding:4px 0}
+.quiet-mode{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer}
+.session-quiet-times{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 2px 22px;
+  font-size:var(--fs-sm)}
+.rule-note{margin:4px 0 0;color:var(--dim);font-size:var(--fs-xs)}
+.crule .st-w{margin:4px 0 0;color:var(--err);font-size:var(--fs-sm)}
+/* 命令那一块：整块是一层折叠，标题与卡片标题同一号字 */
+.p-commands>.crow{border-top:none}
+.p-commands>.crow>summary{padding:0}
+.p-commands>.crow>summary .cr-t{font-size:var(--fs-lg)}
+.p-commands>.crow>.cr-body{padding:10px 0 0}
+.cg-more{flex:none;margin-left:auto;align-self:center;color:var(--dim);font-size:var(--fs-xs)}
+/* 危险操作 */
+.danger-zone>.channel-remove{margin-top:4px}
 /* 开关一行：左边开关、右边名字与一句说明 */
 /* 字号分四档，从重到轻依次是栏目名、行名、摘要、说明：
    四下里挤成同一号字时，一眼扫过去分不出「哪一行是我要改的」与「这句只是解释」 */
@@ -140,13 +177,21 @@ const PAGE_STYLE = `
 .swtxt b{font-weight:600;font-size:var(--fs-sm)}
 .swtxt .dim{color:var(--dim);font-weight:400;font-size:var(--fs-xs)}
 .swtxt p{margin:2px 0 0;color:var(--dim);font-size:var(--fs-xs)}
-.weekly-report-tools{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 10px 48px;
-  padding:10px 12px;background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
-.weekly-report-tools>.hint{flex:1 1 180px;margin:0;font-size:var(--fs-xs)}
-.weekly-report-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.weekly-report-tools{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px}
+.weekly-report-tools>.hint{margin:0;font-size:var(--fs-xs)}
+.weekly-report-actions{display:inline-flex;align-items:center;flex-wrap:wrap;gap:12px}
 @media (max-width:600px){
   .pnarrow-top{align-items:flex-start;flex-direction:column}
-  .weekly-report-tools{margin-left:0}
+  .nrow-body{padding-left:0}
+  /* 最近推送：每条拆成两行，时间与结果一行、内容一行，不必在卡片里横滑 */
+  .push-history-scroll>.push-history{display:block;width:100%;min-width:0}
+  .push-history thead{display:none}
+  .push-history tbody{display:block}
+  .push-history tr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;padding:8px 0;
+    border-top:1px solid var(--line)}
+  .push-history td{display:block;height:auto;min-width:0;max-width:none;padding:0;border:0;
+    white-space:normal;overflow:visible;overflow-wrap:anywhere}
+  .push-history td.ph-sum{grid-column:1/-1;grid-row:2}
   .channel-index{min-width:0;display:block}
   .channel-index thead{display:none}
   .channel-index tbody{display:block}
@@ -158,7 +203,7 @@ const PAGE_STYLE = `
   .channel-index td::before{content:attr(data-label);display:block;margin-bottom:3px;
     color:var(--dim);font-size:var(--fs-xs)}
 }
-/* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
+/* 群里本来就不列的那几条：收进「不适用」，淡下去但仍然看得见。整行藏掉的话，
    使用者会以为这条命令不存在，而它只是在这个会话里不列 */
 .swrow.dimmed{opacity:.6}
 .cmdmark{margin-left:8px;font-size:var(--fs-xs);color:var(--dim);font-weight:400}
@@ -176,23 +221,25 @@ const PAGE_STYLE = `
 .tplstate>span:first-child{flex:1 1 auto}
 /* 未改动时状态行旁那句小字：改过它就收起、换「恢复默认」出场 */
 .tplstate .tplfree{color:var(--dim);font-size:var(--fs-xs)}
-.p-editor-fold{margin-top:10px;border-top:1px solid var(--line)}
-.p-editor-fold>summary{display:flex;align-items:center;gap:8px;padding:11px 0 2px;cursor:pointer;
+/* 没开的那几种、最近推送：一层原生折叠，默认收起 */
+.p-off-fold,.p-recent{border-top:1px solid var(--line)}
+.p-recent{margin-top:4px}
+.p-off-fold>summary,.p-recent>summary{display:flex;align-items:center;gap:8px;padding:11px 0 2px;cursor:pointer;
   list-style:none;font-size:var(--fs-sm);font-weight:500}
-.p-editor-fold>summary::-webkit-details-marker{display:none}
-.p-editor-fold>summary::before{content:"▸";color:var(--dim);font-size:var(--fs-xs)}
-.p-editor-fold[open]>summary::before{content:"▾"}
-.p-editor-fold>summary::after{content:"展开";margin-left:auto;color:var(--dim);font-size:var(--fs-xs);font-weight:400}
-.p-editor-fold[open]>summary::after{content:"收起"}
-.p-editor-fold[open]>summary{padding-bottom:8px}
-.p-editor-body{min-width:0}
-.psec>.p-revenue-scope{margin:0;color:var(--dim);font-size:var(--fs-xs)}
+.p-off-fold>summary::-webkit-details-marker,.p-recent>summary::-webkit-details-marker{display:none}
+.p-off-fold>summary::before,.p-recent>summary::before{content:"▸";color:var(--dim);font-size:var(--fs-xs)}
+.p-off-fold[open]>summary::before,.p-recent[open]>summary::before{content:"▾"}
+.p-off-fold[open]>summary,.p-recent[open]>summary{padding-bottom:6px}
+.p-off-fold>summary:focus-visible,.p-recent>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.p-off-fold>.nrow:first-of-type{border-top:none}
+.p-off-fold .nrow-meta{flex-basis:100%}
+.p-revenue-scope{margin:0;color:var(--dim);font-size:var(--fs-xs)}
 .tplrow{padding:10px 0;border-top:1px solid var(--line)}
 .tplrow:first-of-type{border-top:none}
 .tplbody{margin:0 0 8px;padding:9px 11px;background:var(--ground);border:1px solid var(--line);
   border-radius:var(--r-ctl);font-family:var(--mono);font-size:var(--fs-sm);white-space:pre-wrap;
   word-break:break-all}
-/* 通道设置：四行摘要 */
+/* 折叠的一行摘要（命令那一块用它） */
 .crow{border-top:1px solid var(--line)}
 .crow:first-of-type{border-top:none}
 .crow>summary{display:flex;align-items:baseline;gap:10px;padding:10px 0;cursor:pointer;
@@ -207,8 +254,9 @@ const PAGE_STYLE = `
 .cgroup{border-top:1px solid var(--line);padding:2px 0}
 .cgroup>summary.swrow{border-top:none;cursor:pointer;list-style:none;align-items:flex-start}
 .cgroup>summary.swrow::-webkit-details-marker{display:none}
-.cgroup>summary.swrow::after{content:"▸";color:var(--dim);flex:none;margin-left:auto;
+.cgroup>summary.swrow::after{content:"▸";color:var(--dim);flex:none;margin-left:4px;
   align-self:center;font-size:var(--fs-xs)}
+.cmd-na>summary.swrow::after{margin-left:auto}
 .cgroup[open]>summary.swrow::after{content:"▾"}
 .cfine{padding-left:24px}
 /* 每行末尾那颗问号：点开、再点关上；键盘 Tab 得到、Esc 关得掉，读屏按按钮念标题 */
@@ -228,12 +276,6 @@ const PAGE_STYLE = `
 .strand{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;
   border-top:1px solid var(--line);font-size:var(--fs-sm)}
 .strand:first-of-type{border-top:none}
-/* @全体成员：状态行，不是设置 */
-.statline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);
-  padding:10px 0 2px;font-size:var(--fs-sm)}
-.statline .st-nm{flex:none;min-width:76px;font-weight:600;font-size:var(--fs-md)}
-.statline .st-v{color:var(--dim)}
-.statline .st-w{flex-basis:100%;color:var(--err)}
 /* 挑选面板：盖住整页，一次只问一件事 */
 /* 危险确认：盖住整页，一次只问一件事。z-index 高于挑选面板，避免抽屉还开着时确认被挡住 */
 .drawer{position:fixed;inset:0;background:var(--overlay);display:flex;justify-content:flex-end;
@@ -341,7 +383,6 @@ html:not(.nobar):not(.chromeless) .default-savebar{bottom:90px}
   border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font:inherit}
 .tpl-at-warning{flex:1 0 100%;margin:3px 0 0;color:var(--warn);line-height:1.6}
 .tpl-preview-note{margin:8px 0 0;line-height:1.6}
-.template-diff{font-size:var(--fs-sm);margin:6px 0}
 @media(pointer:coarse){
   .tpl-at-s{min-height:42px}
 }
@@ -693,8 +734,17 @@ let lostChannelOf = '';
 /** 树上展开了哪几位主播。收起状态不进地址栏——它是「翻到哪儿了」，不是「在看哪一个」 */
 const expanded = new Set();
 
-/** 通道的编辑区展开状态只保留在本次页面会话中，不写入配置或草稿。 */
-const editorFolds = new Set();
+/**
+ * 通道页上哪一行通知展开着编辑：通道键 → {className, view}（view 是文字还是设置那一页）。一条通道同时只展开一行。
+ * 与下面那份折叠开合一样只记在本次页面会话里，不写入配置或草稿
+ */
+const openNotices = new Map();
+
+/** 通道页上几处折叠（没开的通知、最近推送）此刻摊开着的那些 */
+const channelFolds = new Set();
+
+/** 推送内容那一列此刻画着的各行「编辑」：重画后焦点要跟到新的那一颗上 */
+const editButtons = new Map();
 
 /**
  * 通道在地址里怎么写
@@ -1433,7 +1483,7 @@ function channelRow(user, target) {
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
-  // 与段 4 静音那一行的「静音中」同一份判法：认服务端的 quietActive，草稿改过档位时不认
+  // 与通道规则里静音那一行的「静音中」同一份判法：认服务端的 quietActive，草稿改过档位时不认
   if (quietSummary(session, runtime.quietGlobal, savedQuiet(user, target)).active) {
     title.appendChild(pill('静音中', 'warn'));
   }
@@ -1466,131 +1516,517 @@ function channelRow(user, target) {
   return row;
 }
 
-// ---- 通道级：四段 ----
+// ---- 通道级 ----
 
+/**
+ * 通道页：页头与摘要 → 推送内容 → 通道规则 → 群内命令 → 本群状态 → 危险操作
+ *
+ * 一种通知的开关、文字、图片版式与设置全在它自己那一行里，点「编辑」就地展开。
+ * 从前按「开关／文字／版式／规则」分段，改一次下播报告要在三段之间来回滚、展开两个折叠；
+ * 使用者心里想的是「下播报告怎么发」，不是「模板在第几段」。
+ * 这一页不是向导，各块不编号。
+ */
 function renderChannelLevel(host, user, target) {
   const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const name = channelName(session, target, directory);
+  const group = Number(target.type) === 1;
 
+  // 页头：返回与通道名在同一行，不另起一行面包屑——两样说的是同一件事
   const head = card(host, null, null);
   const line = el('div', 'chead');
   const back = el('a', 'lnkbtn');
   back.href = '#/push/' + user.uid;
   back.textContent = '‹ ' + streamerName(user);
   line.appendChild(back);
+  line.appendChild(el('span', 'ch-sep')).textContent = '›';
   const title = el('span', 'ch-nm');
   title.textContent = name;
   line.appendChild(title);
   line.appendChild(pill(typeName(session, target)));
   const num = el('span', 'ch-id');
-  num.textContent = (Number(target.type) === 1
-    ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
+  num.textContent = (group ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
   line.appendChild(num);
+  head.appendChild(line);
+  const summary = el('div', 'ch-sum');
+  head.appendChild(summary);
 
-  const remove = el('button', 'ghost danger sm channel-remove');
+  const notices = block(host, '推送内容', null);
+  const noticeList = el('div', 'nlist');
+  notices.appendChild(noticeList);
+  const rules = block(host, '通道规则', group ? '只作用于这位主播在本群的推送' : '只作用于这位主播与该好友的推送');
+  const rulesBody = el('div', 'crules');
+  rules.appendChild(rulesBody);
+  const commands = el('div', 'nv-card hcard psec p-commands');
+  host.appendChild(commands);
+  // 不标「只读」：提醒订阅旁边的「管理名单」能清人，只有 @全体成员 那一行是只能看的
+  const status = block(host, group ? '本群状态' : '该好友状态', null);
+  const statusBody = el('div', 'crules');
+  status.appendChild(statusBody);
+  recentPushFold(status, user, target, session);
+
+  const danger = card(host, '危险操作', null);
+  danger.className += ' danger-zone';
+  const remove = el('button', 'danger channel-remove');
   remove.type = 'button';
-  remove.textContent = '移除通道';
+  remove.textContent = '移除这个通道';
   remove.addEventListener('click', async () => {
     if (!await ask({title: '移除该通道？',
       body: '不再向 ' + name + ' 推送「' + streamerName(user) + '」'
-        + '。这条通道的通道设置（金额可见、静音时段、命令开关）将一并删除，「@我」订阅名单保留；其他主播的推送不受影响。'})) return;
+        + '。这条通道的通道设置（金额可见、静音时段、命令开关）将一并删除'
+        + (group ? '，「@我」订阅名单保留' : '') + '；其他主播的推送不受影响。'})) return;
     user.targets.splice(user.targets.indexOf(target), 1);
     markDirty();
     location.hash = '#/push/' + user.uid;
   });
-  line.appendChild(remove);
-  head.appendChild(line);
-  head.appendChild(el('p', 'hint')).textContent = streamerName(user) + ' → ' + name;
+  danger.appendChild(remove);
 
-  sectionNotices(host, user, target, session);
-  sectionTemplate(host, user, target, session);
-  sectionOptions(host, user, target, session);
-  sectionSession(host, user, target, session);
+  const paintSummary = () => channelSummary(summary, user, target, {notices, rules, commands});
+  paintNotices(noticeList, user, target, session, paintSummary);
+  channelSettings({rules: rulesBody, commands, status: statusBody}, user, target, session, paintSummary);
 }
 
-/** 段头：一个序号加一句话 */
-function sectionHead(host, index, title, desc) {
+/** 一块卡片：标题加一句可选的说明。标题可被页头摘要跳到 */
+function block(host, title, desc) {
   const box = el('div', 'nv-card hcard psec');
   const head = el('h3');
-  head.innerHTML = '<span class="psec-n">' + index + '</span>' + esc(title);
+  head.textContent = title;
+  head.setAttribute('tabindex', '-1');
   box.appendChild(head);
   if (desc) box.appendChild(el('p', 'hint')).textContent = desc;
   host.appendChild(box);
   return box;
 }
 
-/** 只收起占空间的编辑区，默认状态和适用范围仍留在卡片外层。 */
-function editorFold(host, user, target, name, title) {
-  const key = user.uid + ':' + target.platform + ':' + target.type + ':' + target.num + ':' + name;
-  const fold = el('details', 'p-editor-fold');
-  fold.open = editorFolds.has(key);
-  fold.appendChild(el('summary')).textContent = title;
-  const body = el('div', 'p-editor-body');
-  fold.appendChild(body);
+/** 通道页用得上的命令：关得掉、又按通道各存一份的那些 */
+function channelCommands() {
+  return (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
+}
+
+/**
+ * 页头下的一行摘要：已开几种 · 静音 · 金额 · 命令
+ *
+ * 每一项都能点，点了跳到对应的那一块（命令那块顺手展开）。数按「存着的 + 草稿」现算，
+ * 拨了规则、开了一种通知，这一行当场跟着变。
+ */
+function channelSummary(box, user, target, blocks) {
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const on = noticeSwitches(user, target, store.handlerList).filter(item => item.on).length;
+  const quiet = quietSummary(session, runtime.quietGlobal, savedQuiet(user, target));
+  const command = commandSummary(channelCommands(), session, runtime.totalDataAvailable);
+  const quietWord = quiet.mode === 'off' ? '不静音'
+    : quiet.mode === 'custom' ? '自定义 ' + quiet.start + '–' + quiet.end : '跟随全局';
+  const parts = [
+    ['已开 ' + on + ' 种', blocks.notices],
+    ['静音：' + quietWord + (quiet.active ? '（静音中）' : ''), blocks.rules],
+    ['金额：' + (revenueSummary(session).visible ? '显示' : '隐藏'), blocks.rules],
+    ['命令 ' + command.usable + ' 条可用', blocks.commands],
+  ];
+  box.innerHTML = '';
+  parts.forEach(([text, to], index) => {
+    if (index) box.appendChild(el('span', 'ch-dot')).textContent = '·';
+    const jump = el('button', 'lnkbtn sm');
+    jump.type = 'button';
+    jump.textContent = text;
+    jump.addEventListener('click', () => jumpTo(to));
+    box.appendChild(jump);
+  });
+}
+
+/** 跳到页内某一块：收着的命令块先展开，焦点落在那一块的标题上 */
+function jumpTo(box) {
+  const fold = box.querySelector('details');
+  if (String(box.className).split(/\s+/).includes('p-commands') && fold) fold.open = true;
+  const heading = box.querySelector('h3') || box.querySelector('summary');
+  if (typeof box.scrollIntoView === 'function') box.scrollIntoView({behavior: 'smooth', block: 'start'});
+  if (heading && typeof heading.focus === 'function') heading.focus({preventScroll: true});
+}
+
+/** 这条通道在页内记开合用的键：主播 + 会话身份 */
+function channelFoldKey(user, target) {
+  return user.uid + ':' + target.platform + ':' + target.type + ':' + target.num;
+}
+
+/** 折叠项记住开合：切走再回来、或改了一处整块重画后照旧 */
+function keepChannelFold(fold, user, target, name) {
+  const key = channelFoldKey(user, target) + ':' + name;
+  fold.open = channelFolds.has(key);
   fold.addEventListener('toggle', () => {
     if (!fold.isConnected) return;
-    if (fold.open) editorFolds.add(key);
-    else editorFolds.delete(key);
+    if (fold.open) channelFolds.add(key);
+    else channelFolds.delete(key);
   });
-  host.appendChild(fold);
+}
+
+/**
+ * 推送内容：开着的每种通知一行，没开的收进末尾「没开的 n 种」
+ *
+ * 同时只展开一行编辑：两行同时摊开时，页面又回到「找了半天才找到我在改哪一种」。
+ * 只有展开的那一行建编辑器，收着的不建：几份模板编辑器同时挂在页上，
+ * 预览、拖放与改动条会各认各的一份。
+ */
+function paintNotices(list, user, target, session, paintSummary) {
+  // 换了一行展开，旧那份版式编辑器作废：不摘掉的话，拨金额开关时它还会按旧那一行白发一次预览
+  onRevenueDraftChange(null);
+  list.innerHTML = '';
+  editButtons.clear();
+  const key = channelFoldKey(user, target);
+  const switches = noticeSwitches(user, target, store.handlerList);
+  const on = switches.filter(item => item.on);
+  const off = switches.filter(item => !item.on);
+  const open = openNotices.get(key);
+  if (open && !on.some(item => item.className === open.className && (item.hasTemplate || item.hasOptions))) {
+    openNotices.delete(key);
+  }
+  const repaint = () => {
+    paintNotices(list, user, target, session, paintSummary);
+    paintSummary();
+  };
+
+  if (!switches.length) {
+    list.appendChild(el('p', 'hint')).textContent = '暂无已加载的推送处理器，请检查对应插件是否已加载。';
+    return;
+  }
+  if (!on.length) {
+    list.appendChild(el('p', 'hint')).textContent =
+      '此通道暂未开启任何通知。展开下方「没开的 ' + off.length + ' 种」即可开启。';
+  }
+  for (const item of on) list.appendChild(noticeRow(item, user, target, session, repaint));
+
+  if (off.length) {
+    const fold = el('details', 'p-off-fold');
+    keepChannelFold(fold, user, target, 'off');
+    fold.appendChild(el('summary')).textContent = '没开的 ' + off.length + ' 种';
+    for (const item of off) fold.appendChild(noticeRow(item, user, target, session, repaint));
+    list.appendChild(fold);
+  }
+}
+
+/** 通知那一行的开关 */
+function noticeSwitch(item, target) {
+  const label = el('label', 'switch');
+  label.innerHTML = '<input type="checkbox"' + (item.on ? ' checked' : '') + '>';
+  const input = label.querySelector('input');
+  input.setAttribute('aria-label', item.displayName);
+  input.addEventListener('change', event => toggleNotice(target, item.className, event.target.checked));
+  return label;
+}
+
+/**
+ * 一行一种通知
+ *
+ * 开着的：开关、名字、一句现状（文字跟不跟默认、图片版式、门槛这类设置的值）与「编辑」。
+ * 关着的：开关、名字与一句说明，没有「编辑」——关着的那一种改了模板也不会有人收到。
+ */
+function noticeRow(item, user, target, session, repaint) {
+  const handler = (store.handlerList || []).find(entry => entry.className === item.className) || {};
+  const key = channelFoldKey(user, target);
+  const editable = item.on && (item.hasTemplate || item.hasOptions);
+  const open = editable && openNotices.get(key)?.className === item.className;
+  const row = el('div', 'nrow' + (open ? ' open' : ''));
+  row.setAttribute('data-notice', item.className);
+
+  const line = el('div', 'nrow-h');
+  line.appendChild(noticeSwitch(item, target));
+  const text = el('div', 'nrow-t');
+  text.appendChild(el('b')).textContent = item.displayName;
+  const meta = el('span', 'nrow-meta');
+  const syncMeta = () => { meta.textContent = item.on ? noticeMeta(item, handler, target) : item.description; };
+  syncMeta();
+  text.appendChild(meta);
+  line.appendChild(text);
+  if (item.on && item.className === WEEKLY_REPORT) weeklyReportActions(text, user, target);
+
+  if (editable) {
+    const edit = el('button', 'lnkbtn nrow-edit');
+    edit.type = 'button';
+    edit.textContent = open ? '收起 ▾' : '编辑 ▸';
+    edit.setAttribute('aria-expanded', String(open));
+    edit.setAttribute('aria-label', (open ? '收起' : '编辑') + item.displayName);
+    edit.setAttribute('data-notice-edit', item.className);
+    edit.addEventListener('click', () => {
+      if (open) openNotices.delete(key);
+      else openNotices.set(key, {className: item.className, view: item.hasTemplate ? 'text' : 'options'});
+      repaint();
+      // 重画后按钮换了一个，焦点跟到新的那一个上，不掉回页首
+      const again = editButtons.get(item.className);
+      if (again && typeof again.focus === 'function') again.focus();
+    });
+    editButtons.set(item.className, edit);
+    line.appendChild(edit);
+  }
+  row.appendChild(line);
+
+  if (open) row.appendChild(noticeEditor(item, handler, user, target, session, syncMeta, repaint));
+  return row;
+}
+
+/** 推送页上「运营周报」那一类：它的工具（上次发出、预览、试发）只在开着时摆在它那一行里 */
+const WEEKLY_REPORT = 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
+
+/** 开着那一行的现状：文字跟不跟默认、图片版式、设置项的值，各一小段 */
+function noticeMeta(item, handler, target) {
+  const parts = [];
+  if (item.hasTemplate) parts.push('文字：' + (templateState(target, [handler]).custom ? '自定义' : '跟随默认'));
+  if (item.hasLayout) {
+    parts.push('图片版式：' + (layoutState(target, [handler]).custom ? '自定义' : '默认'));
+  } else if (item.hasOptions) {
+    const params = (messageOf(target, handler) || {}).params || {};
+    const options = (handler.options || []).filter(option => String(option.type).toUpperCase() !== 'ORDER');
+    // 设置项少时直接写值（「播报门槛（元） 50」），多了只说改没改过：一行写不下一串值
+    if (options.length && options.length <= 2) {
+      for (const option of options) {
+        const value = params[option.key] ?? option.defaultValue;
+        parts.push((option.label || option.key) + ' ' + (typeof value === 'boolean' ? (value ? '开' : '关') : value));
+      }
+    } else {
+      parts.push('设置：' + (layoutState(target, [handler]).custom ? '自定义' : '默认'));
+    }
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * 展开那一行的编辑区：既有文字又有版式（或设置）的，分〔文字〕〔图片版式〕两个标签
+ */
+function noticeEditor(item, handler, user, target, session, syncMeta, repaint) {
+  const key = channelFoldKey(user, target);
+  const state = openNotices.get(key);
+  const body = el('div', 'nrow-body');
+  if (item.description) body.appendChild(el('p', 'hint')).textContent = item.description;
+
+  const views = item.hasTemplate && item.hasOptions
+    ? [['text', '文字'], ['options', item.hasLayout ? '图片版式' : '设置']] : [];
+  const view = views.length ? state.view : (item.hasTemplate ? 'text' : 'options');
+  if (views.length) {
+    const bar = el('div', 'tpl-tabs nrow-tabs');
+    bar.setAttribute('role', 'tablist');
+    for (const [name, label] of views) {
+      const button = el('button', 'tpl-tab' + (name === view ? ' on' : ''));
+      button.type = 'button';
+      button.textContent = label;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(name === view));
+      button.addEventListener('click', () => {
+        if (name === view) return;
+        state.view = name;
+        repaint();
+      });
+      bar.appendChild(button);
+    }
+    body.appendChild(bar);
+  }
+
+  if (view === 'text') noticeTemplate(body, handler, target, session, syncMeta);
+  else noticeOptions(body, item, handler, user, target, session, syncMeta);
   return body;
 }
 
-/** 段 1：推送类型 */
-function sectionNotices(host, user, target, session) {
-  const box = sectionHead(host, 1, '推送类型', '选择以下事件发生时是否向此通道发送通知');
-  const switches = noticeSwitches(user, target, store.handlerList);
+/** 这一种通知的文字模板：状态一句、「恢复默认」只恢复这一种 */
+function noticeTemplate(host, handler, target, session, syncMeta) {
+  const name = handler.displayName || handler.className;
+  const line = el('div', 'tplstate');
+  const label = el('span');
 
-  if (!switches.length) {
-    box.appendChild(el('p', 'hint')).textContent =
-      '暂无已加载的推送处理器，请检查对应插件是否已加载。';
-  }
+  // 未改动时状态行旁的小字：先把「改过就不再跟着默认走」说在改之前——
+  // 等到改完才发现回不去默认，与改不了是一样地堵人
+  const free = el('span', 'tplfree');
+  free.textContent = '可直接修改；修改后这种通知不再随默认模板更新，可随时恢复默认';
 
-  for (const item of switches) {
-    const row = el('div', 'swrow');
-    const label = el('label', 'switch');
-    label.innerHTML = '<input type="checkbox"' + (item.on ? ' checked' : '') + '>';
-    label.querySelector('input').addEventListener('change', event => {
-      toggleNotice(target, item.className, event.target.checked);
-    });
-    row.appendChild(label);
-
-    const text = el('div', 'swtxt');
-    text.innerHTML = '<b>' + esc(item.displayName) + '</b>'
-      + '<p>' + esc(item.description) + '</p>';
-    row.appendChild(text);
-    box.appendChild(row);
-    if (item.className === 'org.frostnova.nova.core.handler.WeeklyReportPushHandler') {
-      weeklyReportActions(box, user, target);
+  // 「恢复默认」只在与默认不同时出现。改了第一下就得出场、改回相同就得收起，
+  // 而这只能靠改状态行自己这几个节点：整块重画会把正在打字的输入框焦点弄丢
+  const act = el('button', 'ghost sm');
+  act.type = 'button';
+  act.textContent = '恢复默认';
+  act.addEventListener('click', async () => {
+    // 「恢复默认」丢得掉使用者写了很久的东西，因此先问一句，并说清丢的是什么
+    if (!await ask({title: '恢复默认？',
+      body: '此通道「' + name + '」的文字模板将恢复为默认，自定义的内容将会丢失。'
+        + '此后默认模板的修改将同步应用到此通道。'})) return;
+    const message = messageOf(target, handler);
+    if (message) {
+      // 与编辑器的 onChange 同一条规矩：恢复完空了、而快照里这条消息本来就没有 params 这一键的，
+      // 把键也删掉（见 savedMessageHasParams）
+      const params = restoreDefaults(message.params, handler);
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
     }
+    markDirty();
+    renderStreamers();
+  });
+
+  const syncState = () => {
+    const custom = templateState(target, [handler]).custom;
+    label.innerHTML = '文字：<b>' + (custom ? '自定义' : '跟随默认') + '</b>' + (custom ? ' · 与默认不同' : ' ✓');
+    free.hidden = custom;
+    act.hidden = !custom;
+  };
+  syncState();
+  line.appendChild(label);
+  line.appendChild(free);
+  line.appendChild(act);
+  const toDefault = el('a', 'lnkbtn');
+  toDefault.href = '#/push/default';
+  toDefault.textContent = '查看默认模板';
+  line.appendChild(toDefault);
+  host.appendChild(line);
+
+  buildTemplateEditor(host, {
+    handlers: [handler],
+    // 默认就能改，不传锁态；编辑器本身仍支持锁态（template.js 那一套），留给要用它的地方
+    editable: true,
+    paramsOf: item => (messageOf(target, item) || {}).params || {},
+    context: {
+      isGroup: Number(target.type) === 1,
+      admin: adminOf(target),
+      terms: store.vocab,
+    },
+    channelLabel: channelName(session, target, directory),
+    onChange: (item, params) => {
+      const message = messageOf(target, item);
+      if (!message) return;
+      // 改完 params 空了、而快照里这条消息本来就没有 params 这一键的，把键也删掉，回到
+      // 原来的形状——不然改动条会平白多记一处（见 savedMessageHasParams）
+      if (Object.keys(params).length || savedMessageHasParams(target, item)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
+      markDirty();
+      syncState();
+      syncMeta();
+    },
+  });
+}
+
+/** 机器人在这个群里是不是管理员。名单取不到时为 null，预览据此不画划掉线 */
+function adminOf(target) {
+  const known = directory[target.platform + '|' + Number(target.type) + '|' + target.num];
+  return known?.admin ?? null;
+}
+
+/** 这一种通知的图片版式或设置；只有报告版式监听金额草稿 */
+function noticeOptions(host, item, handler, user, target, session, syncMeta) {
+  const name = handler.displayName || handler.className;
+  const preview = item.hasLayout;
+
+  const line = el('div', 'tplstate');
+  const label = el('span');
+
+  // 与文字那一页同一条规矩：改了第一下当场出现、改回相同当场收起，只动状态行这几个节点
+  const act = el('button', 'ghost sm');
+  act.type = 'button';
+  act.textContent = '恢复默认';
+  act.addEventListener('click', async () => {
+    if (!await ask({title: '恢复默认？',
+      body: preview
+        ? '此通道的报告版式将恢复为默认，自定义的版式设置将会丢失。'
+          + '此后默认版式的修改将同步应用到此通道。'
+        : '此通道的「' + name + '」设置将恢复为默认，自定义的设置将会丢失。'})) return;
+    const message = messageOf(target, handler);
+    if (message) {
+      // 与文字模板的「恢复默认」同理（见 savedMessageHasParams）
+      const params = restoredLayoutParams(message.params, handler);
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
+    }
+    markDirty();
+    renderStreamers();
+  });
+
+  const syncState = () => {
+    const now = layoutState(target, [handler]);
+    label.innerHTML = (preview ? '当前版式' : '当前设置') + '：<b>'
+      + (now.custom ? '自定义' : '默认') + '</b>';
+    act.hidden = !now.custom;
+  };
+  syncState();
+  line.appendChild(label);
+  line.appendChild(act);
+  host.appendChild(line);
+
+  // 金额可见按「会话存的＋草稿」现算：草稿里拨了（还没保存），灰不灰、预览图与
+  // 图下说明都当场跟着变——不然开关旁说按草稿画、图上还是存的设定，两头各说各话
+  const draftVisible = () => target.revenueVisible ?? (Number(target.type) === 0);
+
+  const revenueScope = preview ? el('p', 'p-revenue-scope') : null;
+  const syncRevenueScope = () => {
+    if (revenueScope) revenueScope.textContent = previewRevenueCaption(session, target, draftVisible());
+  };
+  if (revenueScope) {
+    syncRevenueScope();
+    host.appendChild(revenueScope);
   }
+  const editor = buildLayoutEditor(host, {
+    // 与文字那一页同理：默认就能改，不传锁态
+    editable: true,
+    preview,
+    items: handler.options || [],
+    paramsOf: () => (messageOf(target, handler) || {}).params || {},
+    caption: preview ? () => previewRevenueCaption(session, target, draftVisible()) : null,
+    revenueVisible: preview ? draftVisible : null,
+    onChange: params => {
+      const message = messageOf(target, handler);
+      if (!message) return;
+      // 与文字那一页同一条规矩：改完 params 空了、而快照里这条消息本来就没有 params 这一键的，
+      // 把键也删掉，回到原来的形状（见 savedMessageHasParams）
+      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
+        message.params = params;
+      } else {
+        delete message.params;
+      }
+      markDirty();
+      syncState();
+      syncMeta();
+    },
+    render: preview ? layoutPreviewRenderer(target, draftVisible, user) : null,
+  });
+  if (preview) {
+    onRevenueDraftChange(() => {
+      syncRevenueScope();
+      editor.repaint();
+    });
+  }
+}
 
-  const recent = el('h4');
+/**
+ * 本群状态里的「最近推送」：默认收起，展开是最近 5 条与去日志页看全部的链接
+ *
+ * 只读的东西不放在推送内容里：从前它夹在通知开关下面，开关一多就被推出一屏之外。
+ */
+function recentPushFold(host, user, target, session) {
   const group = Number(target.type) === 1;
-  recent.textContent = group ? '本群最近推送' : '该好友最近推送';
-  box.appendChild(recent);
-  if (isMember()) box.appendChild(el('p', 'hint')).textContent = '只列你名下主播的推送。';
-  else if (group) box.appendChild(el('p', 'hint')).textContent = '推送到本群的所有主播均计算在内。';
-
   const rows = recentPushes(pushHistory, session, 5);
+  const fold = el('details', 'p-recent');
+  keepChannelFold(fold, user, target, 'recent');
+  fold.appendChild(el('summary')).textContent = (group ? '本群最近推送' : '该好友最近推送')
+    + '（' + rows.length + ' 条）';
+  if (isMember()) fold.appendChild(el('p', 'hint')).textContent = '只列你名下主播的推送。';
+  else if (group) fold.appendChild(el('p', 'hint')).textContent = '推送到本群的所有主播均计算在内。';
+
   if (!rows.length) {
-    box.appendChild(el('p', 'hint')).textContent = session && session.type
+    fold.appendChild(el('p', 'hint')).textContent = session && session.type
       ? (group ? '本次启动以来，暂无发往本群的推送。'
         : '本次启动以来，暂无发给该好友的推送。')
       : '此通道尚未加载，无法获取其推送记录。';
   } else {
-    const table = el('table', 'ptable');
+    const table = el('table', 'ptable push-history');
     table.innerHTML = '<thead><tr><th>时间</th><th>内容</th><th>结果</th></tr></thead><tbody>'
-      + rows.map(row => '<tr><td>' + esc(row.at) + '</td>'
-        + '<td title="' + esc(row.summary) + '">' + esc(row.summary) + '</td>'
-        + '<td>' + (row.success ? '<span class="good">成功</span>'
+      + rows.map(row => '<tr><td class="ph-at">' + esc(row.at) + '</td>'
+        + '<td class="ph-sum" title="' + esc(row.summary) + '">' + esc(row.summary) + '</td>'
+        + '<td class="ph-res">' + (row.success ? '<span class="good">成功</span>'
           : row.uncertain ? '<span>送达状态未知（可能已发出，未重发）：' + esc(row.reason || '未知原因') + '</span>'
           : '<span class="bad">失败：' + esc(row.reason || '未知原因') + '</span>') + '</td></tr>').join('')
       + '</tbody>';
-    // 表只在卡片里横着滚，不把整页顶宽：窄屏上整页一横滚，左树与底下的保存条跟着推出屏外
+    // 宽屏上表只在卡片里横着滚，不把整页顶宽；手机上每条拆成两行（见样式），不必横滑
     const scroll = el('div', 'push-history-scroll');
     scroll.appendChild(table);
-    box.appendChild(scroll);
+    fold.appendChild(scroll);
   }
 
   const channel = pushChannelOf(session);
@@ -1599,8 +2035,9 @@ function sectionNotices(host, user, target, session) {
     // 落在推送栏而不是全部栏：开播、下播记录不属任何群，落进全部栏会被「只看这个群」筛掉
     more.href = '#/log?cat=PUSH&chan=' + encodeURIComponent(channel);
     more.textContent = '在日志页查看全部 →';
-    box.appendChild(more);
+    fold.appendChild(more);
   }
+  host.appendChild(fold);
 }
 
 /** 运营周报的操作只作用于当前主播和当前通道。 */
@@ -1678,215 +2115,6 @@ function toggleNotice(target, className, on) {
   renderStreamers();
 }
 
-/** 段 2：消息模板 */
-function sectionTemplate(host, user, target, session) {
-  const box = sectionHead(host, 2, '消息模板', '一张卡片即一条消息，花括号变量块可拖动');
-  // 只列这个通道<b>开着</b>的那几类：关着的那一类改了模板也不会有人收到，
-  // 而屏幕上它与改好了长得一样
-  const on = noticeSwitches(user, target, store.handlerList)
-    .filter(item => item.hasTemplate && item.on)
-    .map(item => item.className);
-  const handlers = (store.handlerList || []).filter(item => on.includes(item.className));
-  const state = templateState(target, store.handlerList);
-
-  const line = el('div', 'tplstate');
-  const label = el('span');
-
-  // 未改动时状态行旁的小字：这一段默认就能改，先把「改过就不再跟着默认走」说在改之前——
-  // 等到改完才发现回不去默认，与改不了是一样地堵人
-  const free = el('span', 'tplfree');
-  free.textContent = '可直接修改；修改后此通道不再随默认模板更新，可随时恢复默认';
-
-  // 「恢复默认」只在与默认不同时出现。改了第一下就得出场、改回相同就得收起，
-  // 而这只能靠改状态行自己这几个节点：整段重画会把正在打字的输入框焦点弄丢
-  const act = el('button', 'ghost sm');
-  act.type = 'button';
-  act.textContent = '恢复默认';
-  act.addEventListener('click', async () => {
-    // 「恢复默认」丢得掉使用者写了很久的东西，因此先问一句，并说清丢的是什么
-    if (!await ask({title: '恢复默认？',
-      body: '此通道的消息模板将恢复为默认，自定义的内容将会丢失。'
-        + '此后默认模板的修改将同步应用到此通道。'})) return;
-    for (const message of target.messages || []) {
-      // 按主名与旧名一起认：老配置里写着旧名的那一条按主名找不着，「恢复默认」会静静地跳过它，
-      // 而屏幕上这个通道已经写着「默认模板」
-      const handler = handlerOf(message, store.handlerList);
-      if (!handler || !(handler.placeholders || []).length) continue;
-      // 与编辑器的 onChange 同一条规矩：恢复完空了、而快照里这条消息本来就没有 params 这一键的，
-      // 把键也删掉（见 savedMessageHasParams）
-      const params = restoreDefaults(message.params, handler);
-      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
-        message.params = params;
-      } else {
-        delete message.params;
-      }
-    }
-    markDirty();
-    renderStreamers();
-  });
-
-  /** 状态行那一排跟着判法走：默认／自定义、小字、「恢复默认」出现还是收起 */
-  const syncState = () => {
-    const now = templateState(target, store.handlerList);
-    label.innerHTML = '当前模板：<b>' + (now.custom ? '自定义' : '默认模板') + '</b>'
-      + (now.custom ? ' · 与默认不同' : ' ✓');
-    free.hidden = now.custom;
-    act.hidden = !now.custom;
-  };
-  syncState();
-  line.appendChild(label);
-  line.appendChild(free);
-  line.appendChild(act);
-
-  const toDefault = el('a', 'lnkbtn');
-  toDefault.href = '#/push/default';
-  toDefault.textContent = '查看默认模板';
-  line.appendChild(toDefault);
-  box.appendChild(line);
-
-  if (state.custom) {
-    const which = (store.handlerList || [])
-      .filter(item => state.changed.includes(item.className))
-      .map(item => item.displayName || item.className);
-    box.appendChild(el('div', 'note template-diff')).textContent = '与默认模板不同的通知：' + which.join('、');
-  }
-
-  const editorHost = editorFold(box, user, target, 'template', '模板编辑与消息预览');
-  buildTemplateEditor(editorHost, {
-    handlers,
-    // 这一段默认就能改，不传锁态；编辑器本身仍支持锁态（template.js 那一套），留给要用它的地方
-    editable: true,
-    emptyNote: '此通道未启用任何带文字模板的通知。未启用的通知即使修改模板也不会有人收到，'
-      + '因此此处不列出；请先在上方「推送类型」中启用。',
-    paramsOf: handler => (messageOf(target, handler) || {}).params || {},
-    context: {
-      isGroup: Number(target.type) === 1,
-      admin: adminOf(target),
-      terms: store.vocab,
-    },
-    channelLabel: channelName(session, target, directory),
-    onChange: (handler, params) => {
-      const message = messageOf(target, handler);
-      if (!message) return;
-      // 改完 params 空了、而快照里这条消息本来就没有 params 这一键的，把键也删掉，回到
-      // 原来的形状——不然改动条会平白多记一处（见 savedMessageHasParams）
-      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
-        message.params = params;
-      } else {
-        delete message.params;
-      }
-      markDirty();
-      syncState();
-    },
-  });
-}
-
-/** 机器人在这个群里是不是管理员。名单取不到时为 null，预览据此不画划掉线 */
-function adminOf(target) {
-  const known = directory[target.platform + '|' + Number(target.type) + '|' + target.num];
-  return known?.admin ?? null;
-}
-
-/** 段 3：按推送类型顺序逐类显示配置；只有报告版式监听金额草稿。 */
-function sectionOptions(host, user, target, session) {
-  const previews = [];
-  for (const state of optionStates(user, target, store.handlerList)) {
-    const editor = sectionHandlerOptions(host, user, target, session, state);
-    if (state.preview) previews.push(editor);
-  }
-  if (previews.length) onRevenueDraftChange(() => {
-    for (const editor of previews) editor.repaint();
-  });
-}
-
-function sectionHandlerOptions(host, user, target, session, state) {
-  const handler = state.handler || {};
-  const name = handler.displayName || handler.className;
-  const box = sectionHead(host, 3, name + (state.preview ? '版式' : '设置'), null);
-
-  const line = el('div', 'tplstate');
-  const label = el('span');
-
-  // 与段 2 同一条规矩：改了第一下当场出现、改回相同当场收起，只动状态行这几个节点
-  const act = el('button', 'ghost sm');
-  act.type = 'button';
-  act.textContent = '恢复默认';
-  act.addEventListener('click', async () => {
-    if (!await ask({title: '恢复默认？',
-      body: state.preview
-        ? '此通道的报告版式将恢复为默认，自定义的版式设置将会丢失。'
-          + '此后默认版式的修改将同步应用到此通道。'
-        : '此通道的「' + name + '」设置将恢复为默认，自定义的设置将会丢失。'})) return;
-    const message = messageOf(target, handler);
-    if (message) {
-      // 与段 2 的「恢复默认」同理（见 savedMessageHasParams）
-      const params = restoredLayoutParams(message.params, handler);
-      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
-        message.params = params;
-      } else {
-        delete message.params;
-      }
-    }
-    markDirty();
-    renderStreamers();
-  });
-
-  const syncState = () => {
-    const now = layoutState(target, [handler]);
-    label.innerHTML = (state.preview ? '当前版式' : '当前设置') + '：<b>'
-      + (now.custom ? '自定义' : '默认') + '</b>';
-    act.hidden = !now.custom;
-  };
-  syncState();
-  line.appendChild(label);
-  line.appendChild(act);
-  box.appendChild(line);
-
-  // 金额可见按「会话存的＋草稿」现算：草稿里拨了（还没保存），灰不灰、预览图与
-  // 图下说明都当场跟着变——不然开关旁说按草稿画、图上还是存的设定，两头各说各话
-  const draftVisible = () => target.revenueVisible ?? (Number(target.type) === 0);
-
-  // 收起预览时，当前金额可见范围仍在状态行下方；与预览图共用现成的判法。
-  const revenueScope = state.preview ? el('p', 'p-revenue-scope') : null;
-  const syncRevenueScope = () => {
-    if (revenueScope) revenueScope.textContent = previewRevenueCaption(session, target, draftVisible());
-  };
-  if (revenueScope) {
-    syncRevenueScope();
-    box.appendChild(revenueScope);
-  }
-  const editorHost = editorFold(box, user, target, 'options:' + handler.className,
-    state.preview ? '版式编辑与报告预览' : '通知详细设置');
-  const editor = buildLayoutEditor(editorHost, {
-    // 与段 2 同理：这一段默认就能改，不传锁态
-    editable: true,
-    preview: state.preview,
-    items: handler.options || [],
-    paramsOf: () => (messageOf(target, handler) || {}).params || {},
-    caption: state.preview ? () => previewRevenueCaption(session, target, draftVisible()) : null,
-    revenueVisible: state.preview ? draftVisible : null,
-    onChange: params => {
-      const message = messageOf(target, handler);
-      if (!message) return;
-      // 与段 2 同一条规矩：改完 params 空了、而快照里这条消息本来就没有 params 这一键的，
-      // 把键也删掉，回到原来的形状（见 savedMessageHasParams）
-      if (Object.keys(params).length || savedMessageHasParams(target, handler)) {
-        message.params = params;
-      } else {
-        delete message.params;
-      }
-      markDirty();
-      syncState();
-    },
-    render: state.preview ? layoutPreviewRenderer(target, draftVisible, user) : null,
-  });
-
-  return {repaint() {
-    syncRevenueScope();
-    editor.repaint();
-  }};
-}
-
 /**
  * 给一个版式编辑器配一支「按当前这套版式画一张」（buildLayoutEditor 的 render 用）
  *
@@ -1934,20 +2162,16 @@ function savedQuiet(user, target) {
   return savedTarget(user, target).quietHours || {mode: 'follow'};
 }
 
-/** 段 4：当前主播的通道设置。 */
-function sectionSession(host, user, target, session) {
-  const box = sectionHead(host, 4, '通道设置', Number(target.type) === 1
-    ? '只作用于这位主播在本群的推送和命令' : '只作用于这位主播与该好友');
-  const settings = el('div');
-  box.appendChild(settings);
+/** 通道规则、命令与只读状态：草稿一变，三块与页头那一行摘要一起重画 */
+function channelSettings(hosts, user, target, session, paintSummary) {
   const render = () => {
     const current = channelSession(session, target, user);
     const baseline = savedTarget(user, target);
-    const commands = (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
+    const commands = channelCommands();
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
-    settings.innerHTML = '';
-    sessionSettings(settings, {
-      channel: true, repaint: render, session: current, target, commands, subscriptions,
+    for (const box of Object.values(hosts)) box.innerHTML = '';
+    sessionSettings(hosts.rules, {
+      channel: true, hosts, repaint: render, session: current, target, commands, subscriptions,
       baseline,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
       summary: {
@@ -1958,6 +2182,7 @@ function sectionSession(host, user, target, session) {
       },
       groups: commandGroups(commands, current, runtime.totalDataAvailable),
     });
+    paintSummary();
   };
   render();
 }

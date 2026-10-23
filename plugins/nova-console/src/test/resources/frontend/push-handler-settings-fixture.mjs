@@ -1,5 +1,8 @@
 import {datasourceRead} from './datasource-read.mjs';
-/** 每类通知的设置各自可见、独立保存与恢复；配置项由真实处理器经接口传入。 */
+/**
+ * 每类通知的设置各自可见、独立保存与恢复；配置项由真实处理器经接口传入。
+ * 设置与版式画在各自那一行里，展开哪一行、切到「设置／图片版式」标签再量。
+ */
 import {register} from 'node:module';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -291,7 +294,29 @@ const all = root => {
   return [root, ...root.children.flatMap(all)];
 };
 const page = () => idNode('push-right');
-const section = name => all(page()).find(item => item.tagName === 'h3' && item.innerHTML.endsWith(name))?.parentNode;
+const rowOf = className => all(page()).find(item => item.getAttribute('data-notice') === className
+  && hasClass(item, 'nrow'));
+/** 推送内容里那一行展开编辑：没展开就点它的「编辑」 */
+function openNotice(className) {
+  const row = rowOf(className);
+  if (row && all(row).some(item => hasClass(item, 'nrow-body'))) return;
+  const button = all(page()).find(item => item.tagName === 'button' && item.getAttribute('data-notice-edit') === className);
+  if (!button) throw new Error('「' + className + '」那一行没有「编辑」');
+  button.click();
+}
+/**
+ * 某一种通知的设置或版式（「下播报告版式」「下播打赏播报设置」这样叫）：展开它那一行，
+ * 有标签时切到「设置／图片版式」那一页，返回那一行
+ */
+function section(name) {
+  const handler = (store.handlerList || []).find(item => name.startsWith(item.displayName));
+  if (!handler) return undefined;
+  openNotice(handler.className);
+  const tab = all(rowOf(handler.className)).find(item => item.tagName === 'button' && hasClass(item, 'tpl-tab')
+    && ['设置', '图片版式'].includes(item.textContent));
+  if (tab && !hasClass(tab, 'on')) tab.click();
+  return rowOf(handler.className);
+}
 const previewCount = box => all(box).filter(item => hasClass(item, 'rep-view')).length;
 const hasClass = (node, name) => String(node.className).split(/\s+/).includes(name);
 const previewRequests = () => requests.filter(item => item.url.endsWith('/api/report/preview'));
@@ -324,23 +349,26 @@ async function until(read, what) {
   }
 }
 
-// 抓两类同时订阅时只有第一类配置可见；平台、停用状态与别名也应按推送类型的口径筛选。
-await ask('模型：所有启用配置按推送类型顺序列出', async () => {
+// 抓两类同时订阅时只有第一类能编辑；平台、停用状态与别名也应按推送类型的口径筛选。
+await ask('所有启用的通知各有一行可编辑，按推送类型顺序', async () => {
   const list = [digest, report, {...plugin, platform: 'other'}];
-  const states = model.optionStates(user, {...target, messages: [message(report), message(digest), message(plugin)]}, list);
-  same(states.map(item => [item.className, item.preview]), [[digest.className, false], [report.className, true]], '配置集合');
+  await paint([message(report), message(digest), message(plugin)], list);
+  const editable = () => all(page()).filter(item => item.tagName === 'button' && item.getAttribute('data-notice-edit'))
+    .map(item => item.getAttribute('data-notice-edit'));
+  same(editable(), [digest.className, report.className], '可编辑的行');
   const alias = {...digest, aliases: ['old.Digest']};
-  same(model.optionStates(user, {...target, messages: [{handler: 'old.Digest', params: {reward_threshold_yuan: 200}},
-    {...message(report), enabled: false}]}, [report, alias]).map(item => [item.className, item.custom]),
-    [[digest.className, true]], '旧名和停用');
+  await paint([{handler: 'old.Digest', params: {reward_threshold_yuan: 200}}, {...message(report), enabled: false}],
+    [report, alias]);
+  same(editable(), [digest.className], '旧名和停用');
+  same(all(rowOf(digest.className)).some(item => item.textContent.includes('播报门槛（元） 200')), true, '旧名那一条的门槛');
 });
 // 抓恢复默认删错消息、删掉模板或其他插件参数。
 await ask('模型：恢复只删除本类配置键', async () => {
   const input = {reward_threshold_yuan: 200, message: '保留', extra: 7};
   same(model.restoredLayoutParams(input, digest), {message: '保留', extra: 7}, '恢复结果');
   same(input.reward_threshold_yuan, 200, '原参数未修改');
-  const states = model.optionStates(user, {...target, messages: [message(report, {cover: false}), message(digest, model.restoredLayoutParams(input, digest))]}, handlers);
-  same(states.map(item => item.custom), [true, false], '各类独立状态');
+  const restored = {...target, messages: [message(report, {cover: false}), message(digest, model.restoredLayoutParams(input, digest))]};
+  same([report, digest].map(item => model.layoutState(restored, [item]).custom), [true, false], '各类独立状态');
 });
 // 抓两类都订时门槛项找不到，或默认不是处理器声明的 50。
 await ask('两类同时订阅：报告预览和门槛 50 同时可见', async () => {
@@ -457,16 +485,18 @@ await ask('未声明的插件按设置画且不请求报告预览', async () => 
   same(previewRequests().length, 0, '插件预览请求');
   same(control(section('额外通知设置'), '重试次数').value, '3', '插件配置项');
 });
-// 抓多配置块顺序与推送类型列表不一致。
-await ask('配置块跟随推送类型顺序，通道设置最后', async () => {
+// 抓通知行顺序与推送类型列表不一致，或规则、状态插到推送内容前面。
+await ask('通知行跟随推送类型顺序，规则、状态与危险操作在后', async () => {
   await paint([message(report), message(digest)], [digest, report]);
-  const titles = all(page()).filter(item => item.tagName === 'h3').map(item => item.innerHTML.replace(/<[^>]+>/g, ''));
-  same(titles, ['1推送类型', '2消息模板', '3下播打赏播报设置', '3下播报告版式', '4通道设置'], '段落顺序');
+  const rows = all(page()).filter(item => hasClass(item, 'nrow')).map(item => item.getAttribute('data-notice'));
+  same(rows, [digest.className, report.className], '通知行顺序');
+  const titles = all(page()).filter(item => item.tagName === 'h3').map(item => item.textContent);
+  same(titles, ['推送内容', '通道规则', '本群状态', '危险操作'], '各块顺序');
 });
 for (const [name, chosen] of [['只开下播报告', [report]], ['只开下播打赏播报', [digest]], ['两样都开', [report, digest]]]) {
   await paint(chosen.map(item => message(item)));
-  console.log(name + '：' + all(page()).filter(item => item.tagName === 'h3')
-    .map(item => item.innerHTML.replace(/<[^>]+>/g, '')).join(' → '));
+  console.log(name + '：' + all(page()).filter(item => hasClass(item, 'nrow') && !hasClass(item.parentNode, 'p-off-fold'))
+    .map(item => all(item).find(child => child.tagName === 'b').textContent).join(' → '));
 }
 console.log('跑了 ' + checks + ' 格，' + failures.length + ' 格红');
 for (const failure of failures) console.log('红 ' + failure);

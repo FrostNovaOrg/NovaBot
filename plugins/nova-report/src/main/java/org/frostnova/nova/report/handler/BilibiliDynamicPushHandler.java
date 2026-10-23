@@ -332,6 +332,11 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     }
 
     @Override
+    public int displayOrder() {
+        return 50;
+    }
+
+    @Override
     public String description() {
         return "主播发布新动态时推送";
     }

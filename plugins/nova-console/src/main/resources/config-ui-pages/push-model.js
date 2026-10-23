@@ -3,7 +3,7 @@
  *
  * 把 /api/datasource（推送配置）、/api/state（这些会话此刻听不听话）、/api/handlers、
  * /api/push-history、/api/at-all/quota 与机器人自己给的群与好友名单，算成屏幕上那棵树、
- * 通道页四段与「通道设置」那四行摘要。
+ * 通道页各块（推送内容、通道规则、命令、本群状态）与页头那一行摘要。
  *
  * 刻意不碰 DOM，也不发请求。这一页要在好几种情形下都说得对——通道没配过、群名取不到、
  * 累计数据没开、命令被群管理员关掉、状态文件里留着一个已经不推的群——而这些情形在真机上
@@ -299,19 +299,6 @@ export function layoutState(target, handlers) {
 }
 
 /**
- * 当前通道各类通知的配置块，与推送类型使用同一份平台筛选和列表顺序。
- * 配置值与默认状态各自按对应消息计算；只有明确声明 reportLayout 的才带报告预览。
- */
-export function optionStates(user, target, handlers) {
-  return noticeSwitches(user, target, handlers)
-    .filter(notice => notice.on && notice.hasOptions)
-    .map(notice => {
-      const handler = (handlers || []).find(item => item.className === notice.className);
-      return {...layoutState(target, [handler]), preview: notice.hasLayout};
-    });
-}
-
-/**
  * 一份推送参数与默认比，有没有不一样的地方
  *
  * 🔴 只有处理器<b>哪都不认得</b>的键不算差异：版式项删掉之后，老通道参数里那个键还躺着，
@@ -591,7 +578,7 @@ function hiddenReason(command, hidden, totalDataAvailable) {
 }
 
 /**
- * 「通道设置」第 2 行：命令那一行的摘要
+ * 命令那一块的摘要
  *
  * 数目按<b>菜单里真列出来的条数</b>算，不按命令总数算：没开累计存储的机器上，
  * 带「总」字的两条在群里本来就不出现，摘要仍写 14 的话，屏幕上的数与群里数出来的对不上。
@@ -654,6 +641,8 @@ export function commandSummary(commands, session, totalDataAvailable) {
 
   return {
     listed: listed.length, total: list.length,
+    // 菜单里列着、又至少还有一格答得出话的命令条数：通道页页头摘要里「命令 n 条可用」的那个 n
+    usable: listed.length - fullyOff,
     menuKnown: menuKnown(session),
     offNames, strayNames,
     // 一键恢复只管上面点名的那几条：残留另有自己的一块与自己的按钮，
@@ -666,7 +655,7 @@ export function commandSummary(commands, session, totalDataAvailable) {
 }
 
 /**
- * 「通道设置」第 1 行：金额可见
+ * 通道规则：金额可见
  * @param session 会话
  * @return 摘要
  */
@@ -688,12 +677,22 @@ export function revenueSummary(session) {
   const explicit = !!(session || {}).revenueExplicit;
   return {
     visible, explicit,
-    text: (visible ? '显示金额' : '隐藏金额') + (explicit ? '' : '（默认：群聊隐藏、私聊显示）'),
+    text: (visible ? '显示金额' : '隐藏金额') + (explicit ? '' : '（默认：' + revenueDefault(session) + '）'),
   };
 }
 
 /**
- * 「通道设置」静音时段那一行的摘要
+ * 金额可见的默认那一句：好友会话只说私聊那一半，不在好友通道里讲群聊怎样
+ * @param session 会话，取 typeCode；认不出类型时两半都说
+ * @return {string} 那一句
+ */
+function revenueDefault(session) {
+  const type = (session || {}).typeCode;
+  return type !== undefined && type !== null && Number(type) === 0 ? '私聊显示' : '群聊隐藏、私聊显示';
+}
+
+/**
+ * 通道规则：静音时段那一行的摘要
  *
  * 三档：跟全局（默认，没设过的通道都是这一档）、本通道自己的时段、本通道不静音。
  * 「静音中」认的是服务端给的 quietActive，不拿起止在这里自己算：判定只留闸门那一份，
@@ -789,7 +788,7 @@ export function previewRevenueCaption(session, target, revenueVisible) {
 }
 
 /**
- * 「通道设置」第 3 行：提醒订阅
+ * 本群状态：提醒订阅
  *
  * 按订阅类型分行报人数。改「谁会被 @」不在这一行——那一档配在通道的模板里，
  * 是这一条通知的事，不是这个群的事。
@@ -819,7 +818,7 @@ export function subscriptionSummary(subscriptions, session) {
 }
 
 /**
- * 「通道设置」第 4 行：@全体成员 的状态行
+ * 本群状态：@全体成员 那一行
  *
  * 这一行不是设置，是三个事实：今天这个群用掉几次、这个账号今天一共用掉几次、
  * 机器人在这个群里是不是管理员。前两个来自额度接口，第三个来自机器人自己给的群名单。

@@ -1,10 +1,12 @@
 /**
- * 通道详情「消息长什么样」「报告长什么样」两段：默认就能改，「恢复默认」改过才出现
+ * 通道详情里一种通知的「文字」与「图片版式」：展开那一行就能改，「恢复默认」改过才出现
  *
  * 从前这两段锁着：先点「改为自定义」才解锁编辑器，而解锁态只活在当次页面里、不进
  * 配置；改完一项「恢复默认」也不出现，想改回去的人找不到路。现在两段默认可改，
  * 与默认不同时「恢复默认」当场出现、改回相同就收起。出现与收起只动状态行那几个
  * 节点，不整段重画——整段重画会把输入框的焦点弄丢。
+ *
+ * 文字与版式分在各自那一行里，同时只展开一行：量哪一样就先点那一行的「编辑」。
  *
  * 本尺真跑：假 DOM 上把整页通道详情画出来，改动从真编辑器的真控件事件里走
  * （@ 那一档的下拉、版式开关），不是只 includes 一段字样。量的是产品码判默认／
@@ -154,18 +156,28 @@ function all(root, pred) {
 /** 通道详情画在 #push-right 里 */
 const page = () => node('push-right');
 
-/** 按段头找那一段的卡片 */
-function section(mark) {
-  const head = all(page(), item => item.tagName === 'h3' && item.innerHTML.includes(mark))[0];
-  return head ? head.parentNode : null;
+/**
+ * 某一种通知那一行，已展开编辑：没展开就点它的「编辑」
+ *
+ * 假 DOM 的 innerHTML 只是摆着的字符串，清不掉子节点，重画之后新画的那一份接在后面，
+ * 因此一律取最后一份
+ */
+function openRow(className) {
+  const row = () => all(page(), item => item.attrs && item.attrs['data-notice'] === className).at(-1) || null;
+  const current = row();
+  if (current && all(current, item => String(item.className).includes('nrow-body')).length) return current;
+  const button = all(page(), item => item.tagName === 'button' && item.attrs['data-notice-edit'] === className).at(-1);
+  if (!button) return null;
+  fire(button, 'click', {});
+  return row();
 }
 
-const tpl = () => section('消息模板');
-const lay = () => section('下播报告版式');
+const tpl = () => openRow(LIVE);
+const lay = () => openRow(REPORT);
 
 /** 状态行上「本通道用的是」那一句 */
 const stateLabel = box =>
-  all(box, item => item.tagName === 'span' && (String(item.innerHTML).includes('当前模板') || String(item.innerHTML).includes('当前版式')))[0];
+  all(box, item => item.tagName === 'span' && (String(item.innerHTML).includes('文字：') || String(item.innerHTML).includes('当前版式')))[0];
 
 /** 「恢复默认」出现没有：得有这颗按钮，且没藏着 */
 const restoreVisible = box =>
@@ -206,10 +218,10 @@ function fire(control, kind, event) {
 
 // ---- 未改动：两段都不锁，也没有多余的那一步 ----
 
-await ask('① 段 2 默认就能改：块按得动、@ 档换得动、正文可编辑', async () => {
+await ask('① 文字默认就能改：块按得动、@ 档换得动、正文可编辑', async () => {
   if (!push) throw new Error('push.js 没载入，无从量起');
   const box = tpl();
-  if (!box) throw new Error('没画出来「消息模板」那一段');
+  if (!box) throw new Error('「开播通知」那一行展不开');
   const blocks = all(box, item => String(item.className).includes('tpl-blk'));
   const bodies = all(box, item => String(item.className).includes('tpl-c-body'));
   same({
@@ -219,41 +231,41 @@ await ask('① 段 2 默认就能改：块按得动、@ 档换得动、正文可
     '正文可编辑': bodies.length > 0 && bodies.every(item => item.contentEditable === 'true'),
   }, {
     '块至少列了两枚': true, '块都没灰': true, '@ 档没灰': true, '正文可编辑': true,
-  }, '段 2 锁态');
+  }, '文字锁态');
 });
 
-await ask('② 段 3 默认就能改：版式开关不带 disabled', async () => {
+await ask('② 图片版式默认就能改：版式开关不带 disabled', async () => {
   const box = lay();
-  if (!box) throw new Error('没画出来「报告长什么样」那一段');
+  if (!box) throw new Error('「下播报告」那一行展不开');
   const rows = all(box, item => item.tagName === 'label'
     && item.innerHTML.includes('type="checkbox"'));
   same(rows.length >= 1 && rows.every(item => !item.innerHTML.includes('disabled')),
     true, '版式开关锁态');
 });
 
-await ask('③ 两段都没有「改为自定义」这一步', async () => {
-  same({'段 2 没有': !mentions(tpl(), '改为自定义'), '段 3 没有': !mentions(lay(), '改为自定义')},
-    {'段 2 没有': true, '段 3 没有': true}, '改为自定义');
+await ask('③ 文字与版式都没有「改为自定义」这一步', async () => {
+  same({'文字没有': !mentions(tpl(), '改为自定义'), '版式没有': !mentions(lay(), '改为自定义')},
+    {'文字没有': true, '版式没有': true}, '改为自定义');
 });
 
-await ask('④ 未改动时两段都没有「恢复默认」', async () => {
-  same({'段 2 没有': !restoreVisible(tpl()), '段 3 没有': !restoreVisible(lay())},
-    {'段 2 没有': true, '段 3 没有': true}, '恢复默认');
+await ask('④ 未改动时文字与版式都没有「恢复默认」', async () => {
+  same({'文字没有': !restoreVisible(tpl()), '版式没有': !restoreVisible(lay())},
+    {'文字没有': true, '版式没有': true}, '恢复默认');
 });
 
-await ask('⑤ 未改动时状态行旁有小字：可直接修改，改过随时可恢复', async () => {
+await ask('⑤ 未改动时文字状态行旁有小字：可直接修改，改过随时可恢复', async () => {
   const note2 = freeNote(tpl());
   const note3 = freeNote(lay());
   same({
-    '段 2 有': !!note2 && !note2.hidden,
-    '段 3 无说明': !note3,
-    '段 3 说的是版式': stateLabel(lay()).innerHTML.includes('当前版式：<b>默认</b>'),
-  }, {'段 2 有': true, '段 3 无说明': true, '段 3 说的是版式': true}, '未改动的小字');
+    '文字有': !!note2 && !note2.hidden,
+    '版式无说明': !note3,
+    '版式说的是版式': stateLabel(lay()).innerHTML.includes('当前版式：<b>默认</b>'),
+  }, {'文字有': true, '版式无说明': true, '版式说的是版式': true}, '未改动的小字');
 });
 
 // ---- 改一项：「恢复默认」当场出现 ----
 
-await ask('⑥ 段 2 改一项（@ 档换一档）→「恢复默认」出现、状态行说自定义', async () => {
+await ask('⑥ 文字改一项（@ 档换一档）→「恢复默认」出现、状态行说自定义', async () => {
   fire(atSelect(), 'change', {target: {value: 'all'}});
   const label = stateLabel(tpl());
   const note = freeNote(tpl());
@@ -261,10 +273,10 @@ await ask('⑥ 段 2 改一项（@ 档换一档）→「恢复默认」出现、
     '恢复默认出现': restoreVisible(tpl()),
     '状态行说自定义': !!label && label.innerHTML.includes('自定义'),
     '小字收起': note ? note.hidden : false,
-  }, {'恢复默认出现': true, '状态行说自定义': true, '小字收起': true}, '段 2 改后');
+  }, {'恢复默认出现': true, '状态行说自定义': true, '小字收起': true}, '文字改后');
 });
 
-await ask('⑦ 段 3 改一项（版式开关拨一下）→「恢复默认」出现、状态行说自定义版式', async () => {
+await ask('⑦ 版式改一项（版式开关拨一下）→「恢复默认」出现、状态行说自定义版式', async () => {
   fire(layoutToggle(), 'change', {target: {checked: false}});
   const label = stateLabel(lay());
   const note = freeNote(lay());
@@ -272,29 +284,28 @@ await ask('⑦ 段 3 改一项（版式开关拨一下）→「恢复默认」�
     '恢复默认出现': restoreVisible(lay()),
     '状态行说自定义版式': !!label && label.innerHTML.includes('当前版式：<b>自定义</b>'),
     '小字收起': !note,
-  }, {'恢复默认出现': true, '状态行说自定义版式': true, '小字收起': true}, '段 3 改后');
+  }, {'恢复默认出现': true, '状态行说自定义版式': true, '小字收起': true}, '版式改后');
 });
 
 // ---- 改回默认值：收起 ----
 
-await ask('⑧ 改回默认值：两段「恢复默认」都收起、状态行回默认、小字回来', async () => {
-  // 两段共用一只参数袋，各段的状态行跟自己那一段的改动走：先收版式、后收模板，
-  // 让最后一下同步到的是两段都回默认的终态
+await ask('⑧ 改回默认值：文字与版式的「恢复默认」都收起、状态行回默认、小字回来', async () => {
+  // 改回默认之后各展开一次那一行，读的是按存着的参数重新画出来的状态行
   fire(layoutToggle(), 'change', {target: {checked: true}});
   fire(atSelect(), 'change', {target: {value: 'subscribers'}});
-  const label2 = stateLabel(tpl());
-  const label3 = stateLabel(lay());
-  const note2 = freeNote(tpl());
-  const note3 = freeNote(lay());
+  const text = tpl();
+  const textState = {restore: restoreVisible(text), label: stateLabel(text), note: freeNote(text)};
+  const layout = lay();
+  const layoutState = {restore: restoreVisible(layout), label: stateLabel(layout), note: freeNote(layout)};
   same({
-    '段 2 收起': !restoreVisible(tpl()),
-    '段 3 收起': !restoreVisible(lay()),
-    '段 2 回默认': !!label2 && label2.innerHTML.includes('默认模板'),
-    '段 3 回默认': !!label3 && label3.innerHTML.includes('当前版式：<b>默认</b>'),
-    '两段小字回来': !!note2 && !note2.hidden && !note3,
+    '文字收起': !textState.restore,
+    '版式收起': !layoutState.restore,
+    '文字回默认': !!textState.label && textState.label.innerHTML.includes('跟随默认'),
+    '版式回默认': !!layoutState.label && layoutState.label.innerHTML.includes('当前版式：<b>默认</b>'),
+    '小字回来': !!textState.note && !textState.note.hidden && !layoutState.note,
   }, {
-    '段 2 收起': true, '段 3 收起': true, '段 2 回默认': true,
-    '段 3 回默认': true, '两段小字回来': true,
+    '文字收起': true, '版式收起': true, '文字回默认': true,
+    '版式回默认': true, '小字回来': true,
   }, '改回默认后');
 });
 
@@ -303,12 +314,12 @@ await ask('⑧ 改回默认值：两段「恢复默认」都收起、状态行�
 /** 确认框那一层：confirm.js 挂在 body 上的那个节点，正文在它的 p 里 */
 const dialog = () => all(document.body, item => item.className === 'ask')[0] || null;
 
-await ask('⑨ 段 3「恢复默认」的确认框说清自定义的版式会丢失', async () => {
+await ask('⑨ 版式「恢复默认」的确认框说清自定义的版式会丢失', async () => {
   // 恢复默认把处理器自报的每个版式键从参数里删掉（restoredLayoutParams），改过的值不留底
   fire(layoutToggle(), 'change', {target: {checked: false}});
   const button = all(lay(), item => item.tagName === 'button' && item.textContent === '恢复默认')
     .find(item => !item.hidden);
-  if (!button) throw new Error('改过版式后段 3 没有「恢复默认」');
+  if (!button) throw new Error('改过版式后版式那一页没有「恢复默认」');
   fire(button, 'click', {});
   const box = dialog();
   const body = box ? String((box.found['p'] || {}).textContent) : '';

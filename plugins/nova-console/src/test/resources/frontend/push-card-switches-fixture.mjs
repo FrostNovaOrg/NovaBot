@@ -409,6 +409,22 @@ function expectState(word, what) {
   }
 }
 
+/**
+ * 推送内容里那一种通知展开编辑：没展开就点它那一行的「编辑」
+ *
+ * 版式区与模板编辑器只画在展开的那一行里，一条通道同时只展开一行；展开哪一行记在页上，
+ * 重画之后照旧展开着。假 DOM 清不掉旧子节点时新画的接在后面，一律取最后一份
+ */
+function openNotice(className) {
+  const nodes = allNodes(page());
+  const row = nodes.filter(node => node.getAttribute && node.getAttribute('data-notice') === className).at(-1);
+  if (row && allNodes(row).some(node => String(node.className || '').split(/\s+/).includes('nrow-body'))) return;
+  const button = nodes.filter(node => node.tagName === 'button' && node.getAttribute
+    && node.getAttribute('data-notice-edit') === className).at(-1);
+  if (!button) throw new Error('推送内容里「' + className + '」那一行没有「编辑」');
+  button.dispatchEvent({type: 'click', target: button, preventDefault() {}, stopPropagation() {}});
+}
+
 async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
 }
@@ -429,6 +445,7 @@ async function paintPage(params) {
   push.setRuntimeState({sessions: [SESSION], commands: [], subscriptions: [], incomplete: []});
   push.showPush('1', String(TARGET.num));
   push.renderStreamers();
+  openNotice(HANDLER);
   await settle();
 }
 
@@ -820,11 +837,10 @@ await ask('仅全体类提醒方式选全体后能切回订阅档', async () => 
   editor.choose('subscribers');
 });
 
-// 故障：非管理员或私聊仍能选择发不出去的全体提醒，或打开编辑器就改掉原有设置。
+// 故障：非管理员仍能选择发不出去的全体提醒，或打开编辑器就改掉原有设置。
 await ask('全体提醒按群权限变灰，已选值和存值保留', async () => {
   for (const [context, disabled, reason] of [
     [{isGroup: true, admin: false}, [false, true, true], '机器人不是本群管理员，两档 @全体成员 均不可选。'],
-    [{isGroup: false, admin: true}, [false, true, true], '私聊不支持 @全体成员。'],
     [{isGroup: true, admin: null}, [false, false, false], ''],
   ]) {
     const initial = {at_mode: 'all', message: '前{at=all}后'};
@@ -837,6 +853,17 @@ await ask('全体提醒按群权限变灰，已选值和存值保留', async () 
     editor.choose('subscribers');
     same(editor.host.querySelector('#tpl-at').children.map(node => node.disabled), disabled, '换走后的禁用状态');
   }
+});
+
+// 故障：私聊里摆着三档灰掉的 @ 选项和「私聊不支持 @全体成员」，或不画之后把原先那一档改掉了。
+await ask('私聊不画「@ 谁」那一行，存值保留', async () => {
+  const initial = {at_mode: 'all', message: '前{at=all}后'};
+  const editor = reminderEditor(['{at}', '{at=all}'], {isGroup: false, admin: true}, initial);
+  same({
+    picker: !!editor.host.querySelector('#tpl-at'),
+    row: !!editor.host.querySelector('.tpl-at'),
+    params: editor.params(),
+  }, {picker: false, row: false, params: initial}, '私聊的 @ 那一行');
 });
 
 // 界面切回订阅档后，正文不能留下会使发送端仍提醒全体的旧块。
@@ -887,7 +914,7 @@ await ask('仅全体类非管理员提示只说全体一档', async () => {
   same(warning.parentNode === editor.host.querySelector('.tpl-at'), true, '提示跟随下拉行');
   same(editor.host.querySelector('#tpl-at').children.map(node => node.disabled), [false, true], '全体档禁用');
   const privateEditor = reminderEditor(['{at=all}'], {isGroup: false, admin: true});
-  same(privateEditor.host.querySelector('.tpl-at-warning').textContent, '私聊不支持 @全体成员。', '私聊提示');
+  same(!!privateEditor.host.querySelector('.tpl-at-warning'), false, '私聊不出禁用提示');
 });
 
 // 故障：可用的 @ 块消失、不可操作，或名称和操作提示与其他块不一致。

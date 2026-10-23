@@ -411,6 +411,22 @@ function expectState(word, what) {
   }
 }
 
+/**
+ * 推送内容里那一种通知展开编辑：没展开就点它那一行的「编辑」
+ *
+ * 版式区与模板编辑器只画在展开的那一行里，一条通道同时只展开一行；展开哪一行记在页上，
+ * 重画之后照旧展开着。假 DOM 清不掉旧子节点时新画的接在后面，一律取最后一份
+ */
+function openNotice(className) {
+  const nodes = allNodes(page());
+  const row = nodes.filter(node => node.getAttribute && node.getAttribute('data-notice') === className).at(-1);
+  if (row && allNodes(row).some(node => String(node.className || '').split(/\s+/).includes('nrow-body'))) return;
+  const button = nodes.filter(node => node.tagName === 'button' && node.getAttribute
+    && node.getAttribute('data-notice-edit') === className).at(-1);
+  if (!button) throw new Error('推送内容里「' + className + '」那一行没有「编辑」');
+  button.dispatchEvent({type: 'click', target: button, preventDefault() {}, stopPropagation() {}});
+}
+
 async function settle() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
 }
@@ -431,6 +447,7 @@ async function paintPage(params) {
   push.setRuntimeState({sessions: [SESSION], commands: [], subscriptions: [], incomplete: []});
   push.showPush('1', String(TARGET.num));
   push.renderStreamers();
+  openNotice(HANDLER);
   await settle();
 }
 

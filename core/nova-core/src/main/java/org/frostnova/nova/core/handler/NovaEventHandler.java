@@ -98,6 +98,18 @@ public interface NovaEventHandler extends PushMessageHandler {
     }
 
     /**
+     * 界面上排第几，小的在前
+     * <p>
+     * 配置界面列通知的几处（通道一览、主播页、默认模板、通道页）都按这个数排，
+     * 内置的几种按一场直播的先后报：开播 10、下播 20、下播报告 30、下播打赏播报 40、动态 50、
+     * 运营周报 60。不报的排在它们后面，同数的按全类名排，每次顺序一样。
+     * @return 排序值，默认 1000
+     */
+    default int displayOrder() {
+        return 1000;
+    }
+
+    /**
      * 一句话说明该处理器在什么时候推送什么
      * @return 说明
      */
