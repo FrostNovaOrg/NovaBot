@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /** 事件输出连接的额度与握手登记。 */
 @Slf4j
@@ -31,6 +32,8 @@ final class EventConnectionLimits implements HandshakeInterceptor {
     private final Map<String, Integer> sources = new HashMap<>();
     private final Map<ServerHttpRequest, Reservation> handshakes = new IdentityHashMap<>();
     private final Map<String, Long> notices = new HashMap<>();
+    /** 提示限频用的时钟，纳秒 */
+    LongSupplier clock = System::nanoTime;
     private int connections;
     private int pending;
     private boolean stopped;
@@ -52,11 +55,17 @@ final class EventConnectionLimits implements HandshakeInterceptor {
         return fallback;
     }
 
-    private void full(String key, int value) {
-        long now = System.nanoTime();
+    /** 同一种提示 5 秒内只记一条：这一条该略过时返回 {@code true}。 */
+    private boolean quiet(String key) {
+        long now = clock.getAsLong();
         Long previous = notices.get(key);
-        if (previous != null && now - previous < TimeUnit.SECONDS.toNanos(5)) return;
+        if (previous != null && now - previous < TimeUnit.SECONDS.toNanos(5)) return true;
         notices.put(key, now);
+        return false;
+    }
+
+    private void full(String key, int value) {
+        if (quiet(key)) return;
         log.warn("事件输出当前额度已用完（{}={}），请稍后重连；需要更多连接时可调大 {}.{} 后重启",
                 key, value, EventStreamProperties.PREFIX, key);
     }
@@ -102,8 +111,10 @@ final class EventConnectionLimits implements HandshakeInterceptor {
     private synchronized void expire(Reservation reservation) {
         if (reservation.claimed || reservation.released) return;
         reservation.expired = true;
-        log.warn("事件输出握手等待已到 {} 毫秒，请稍后重连；可调整 {}.handshake-timeout-ms 后重启",
-                handshakeTimeout, EventStreamProperties.PREFIX);
+        if (!quiet("handshake-timeout-ms")) {
+            log.warn("事件输出握手等待已到 {} 毫秒，请稍后重连；可调整 {}.handshake-timeout-ms 后重启",
+                    handshakeTimeout, EventStreamProperties.PREFIX);
+        }
         if (!reservation.handshaking) reservation.release();
     }
 
