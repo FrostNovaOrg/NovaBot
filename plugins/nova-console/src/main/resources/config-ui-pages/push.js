@@ -307,7 +307,7 @@ const PAGE_STYLE = `
 .dw-sub{font-size:var(--fs-xs);color:var(--dim)}
 .dw-tag{font-size:var(--fs-xs);color:var(--dim)}
 .dwform{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-bottom:12px}
-.dwform input,.dwform select{height:38px}
+.dwform input,.dwform select{height:36px}
 .dwform input,.dwform select{min-width:0;width:100%;box-sizing:border-box;background:var(--ground);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:8px 10px;font-size:var(--fs-md);font-family:inherit}
 .dwout{font-size:var(--fs-sm);color:var(--dim)}

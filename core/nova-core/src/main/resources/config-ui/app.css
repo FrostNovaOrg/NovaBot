@@ -7,9 +7,10 @@
 .nv-pill{display:inline-flex;align-items:center;border:1px solid var(--line);
   border-radius:var(--r-pill);padding:1px 9px;font-size:var(--fs-xs);color:var(--dim);
   background:var(--surface)}
-.nv-pill.ok{border-color:var(--ok);color:var(--ok);background:var(--oksoft)}
-.nv-pill.warn{border-color:var(--warn);color:var(--warn);background:var(--warnsoft)}
-.nv-pill.err{border-color:var(--err);color:var(--err);background:var(--errsoft)}
+/* 状态胶囊、徽标：字用状态色，描边只取它的四成，整圈满色的框比字还抢眼 */
+.nv-pill.ok{border-color:color-mix(in srgb,var(--ok) 40%,transparent);color:var(--ok);background:var(--oksoft)}
+.nv-pill.warn{border-color:color-mix(in srgb,var(--warn) 40%,transparent);color:var(--warn);background:var(--warnsoft)}
+.nv-pill.err{border-color:color-mix(in srgb,var(--err) 40%,transparent);color:var(--err);background:var(--errsoft)}
 .nv-pill.acc{border-color:var(--softline);color:var(--accent-text);background:var(--soft)}
 .nv-soft{background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
 
@@ -265,11 +266,13 @@ html.nobar #main{padding-bottom:20px}
 .field .legacy{color:var(--err);font-size:var(--fs-xs);margin-top:4px;line-height:1.5}
 .field input[type=text],.field input[type=password],.field input[type=number],.field input[type=time],.session-quiet-times input[type=time],.field textarea{width:100%;padding:6px 9px;
   border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);
-  font-family:inherit;font-size:var(--fs-md)}
+  font-family:inherit;font-size:var(--fs-md);min-height:36px}
 .field textarea{min-height:60px;font-family:var(--mono);resize:vertical}
+/* 枚举项的下拉框与同一列的文本框一样宽；样子取下拉框的公共底样 */
+.field select{width:100%}
 .field input:not([type=checkbox],[type=radio]):focus,.session-quiet-times input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
 /* 静音时段这类时刻项：时间框，数字等宽免得改一位整行抽动；旁边「清空」另起一行 */
-.field input[type=time],.session-quiet-times input[type=time]{min-height:34px;font-variant-numeric:tabular-nums}
+.field input[type=time],.session-quiet-times input[type=time]{font-variant-numeric:tabular-nums}
 .session-quiet-times input[type=time]{width:auto}
 .field .time-clear{display:block;margin-top:6px}
 /* 文件位置：等宽字，l 与 1、O 与 0 认得出来 */
@@ -341,8 +344,9 @@ html.nobar #main{padding-bottom:20px}
 .grp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;
   margin:0;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .grp-head:hover{color:var(--accent-text)}
-/* 「改过 n 项」：这一组里与默认值不同的行数，一项没改过就整块不显示 */
-.grp-changed{font-size:var(--fs-xs);color:var(--accent);border:1px solid var(--accent);
+/* 「改过 n 项」：这一组里与默认值不同的行数，一项没改过就整块不显示。
+   描边与状态胶囊一样只取四成，字仍是满色 */
+.grp-changed{font-size:var(--fs-xs);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
   border-radius:var(--r-pill);padding:0 6px;line-height:16px;white-space:nowrap}
 .grp-changed:empty{display:none}
 .card-desc{padding:10px 16px 0;font-size:var(--fs-sm);color:var(--dim);line-height:1.6}
@@ -365,8 +369,8 @@ html.nobar #main{padding-bottom:20px}
 /* 触屏上手指比鼠标粗，问号放大一档 */
 @media (pointer:coarse){.settings-help{width:28px;height:28px;cursor:pointer}}
 /* 「已改」＝与默认值不同。它与「改了还没保存」（.field.changed 那层底色）是两件事 */
-.chgdot{font-size:var(--fs-xs);color:var(--accent);border:1px solid var(--accent);border-radius:var(--r-pill);
-  padding:0 6px;line-height:16px}
+.chgdot{font-size:var(--fs-xs);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);
+  border-radius:var(--r-pill);padding:0 6px;line-height:16px}
 .defline{font-size:var(--fs-xs);color:var(--dim);margin-top:5px}
 /* 键名默认收着：使用者认人话名，而运维手里的报错信息里只有键名 */
 .keyname{display:none;margin-top:5px;font-family:var(--mono);font-size:var(--fs-xs);color:var(--dim);
@@ -374,8 +378,8 @@ html.nobar #main{padding-bottom:20px}
 html.showkeys .keyname{display:block}
 .badge{display:inline-block;margin-top:8px;font-size:var(--fs-xs);border-radius:var(--r-pill);
   padding:1px 8px;border:1px solid var(--line);color:var(--dim)}
-.badge.now{color:var(--ok);border-color:var(--ok)}
-.badge.restart{color:var(--warn);border-color:var(--warn)}
+.badge.now{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.badge.restart{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
 .unit{margin-left:8px;font-size:var(--fs-sm);color:var(--dim);white-space:nowrap}
 /* 单位收进框里右侧：框与没单位的一样宽、右缘齐得住，不再一栏一个宽窄。
    只读值没有框，单位另摆在行里，仍走上面那条 .unit */
@@ -411,7 +415,7 @@ html.showkeys .keyname{display:block}
 .al-fld label{display:block;font-size:var(--fs-sm);color:var(--dim);margin:0}
 .al-fld input,.al-fld select{width:100%;padding:6px 9px;border:1px solid var(--line);
   border-radius:var(--r-ctl);background:var(--surface);color:var(--text);
-  font-family:inherit;font-size:var(--fs-md)}
+  font-family:inherit;font-size:var(--fs-md);min-height:36px}
 .al-fld input:not([type=checkbox],[type=radio]):focus,.al-fld select:focus{outline:none;border-color:var(--accent)}
 .al-fld>.al-note,.al-fld>.keyname{grid-column:1;margin-top:0}
 .al-fld>.lnkbtn,.al-fld>.clearnote{grid-column:2}
@@ -453,10 +457,11 @@ details.al-fold>.al-f{padding:0 14px 14px}
 .totp-flow:not(:empty){margin-top:12px;margin-bottom:10px;padding-top:12px;border-top:1px solid var(--line)}
 .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
 /* 关着的开关要看得出来：轨道底色是分隔线那一档，落在白底、深底上都只有 1.2:1 左右，
-   单靠它分不出开关。于是关态轨道再描一圈 --dim（画在里面，不改尺寸），滑块带一圈浅阴影；
-   开着时轨道整块是强调色，描边随之换成同色 */
+   单靠它分不出开关。于是关态轨道再描一圈（画在里面，不改尺寸），滑块带一圈浅阴影；
+   那一圈取次要字色与分隔线各半：整圈 --dim 在一页开关里太扎眼，各半仍有 2:1 以上，轮廓看得出来。
+   开着时轨道整块是强调色，描边随之换成同色。门槛见 ConsoleSwitchStateTest */
 .switch input{appearance:none;width:38px;height:22px;border-radius:var(--r-pill);background:var(--line);
-  box-shadow:inset 0 0 0 1px var(--dim);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dim) 50%,var(--line));
   position:relative;cursor:pointer;transition:background .15s,box-shadow .15s;margin:0}
 .switch input:checked{background:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
@@ -477,7 +482,7 @@ details.al-fold>.al-f{padding:0 14px 14px}
    主按钮   .primary、.nv-btn     实心强调色。一块里最多一个，给这一块最常用的那一步
    次按钮   .ghost、.nv-btn2      描边。其余要按的按钮都是它
    文字链   .lnkbtn               强调色字加下划线，不带框。行内的轻动作（清空、恢复默认、查看明细）
-   危险按钮 .danger（含 .ghost.danger）  红字红描边，不整块填红：页面上最醒目的该是最常用的那一步，
+   危险按钮 .danger（含 .ghost.danger）  红字、淡红描边，悬停时描边才满红，不整块填红：页面上最醒目的该是最常用的那一步，
                                  真正拦住误点的是它后面那道二次确认。删除主播、撤回同意这类整页级的
                                  危险操作放在页底单独的「危险操作」区（.danger-zone）
    尺寸只分两档：大号是默认，小号加 .sm（行内、工具条里、卡片角上的按钮）。
@@ -492,10 +497,10 @@ details.al-fold>.al-f{padding:0 14px 14px}
 :is(button,a).primary:hover:not(:disabled),.nv-btn:hover:not(:disabled){filter:brightness(1.05)}
 :is(button,a).ghost,.nv-btn2{background:var(--surface);color:var(--text);border:1px solid var(--line)}
 :is(button,a).ghost:hover:not(:disabled),.nv-btn2:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-button.danger{background:var(--surface);color:var(--err);border:1px solid currentColor}
+button.danger{background:var(--surface);color:var(--err);border:1px solid color-mix(in srgb,var(--err) 40%,transparent)}
 /* 带着 ghost 与 danger 两个类的那颗（推送页、通道页的删除）：与上面同一副长相。
    两个类各写一条、权重相同时，后写的那条会盖掉前一条，所以单给这一对写一条更重的 */
-button.ghost.danger{background:var(--surface);color:var(--err);border:1px solid currentColor}
+button.ghost.danger{background:var(--surface);color:var(--err);border:1px solid color-mix(in srgb,var(--err) 40%,transparent)}
 button.danger:hover:not(:disabled),button.ghost.danger:hover:not(:disabled){color:var(--err);border-color:currentColor;
   box-shadow:inset 0 0 0 1px currentColor}
 :is(button,a):is(.primary,.ghost,.danger):disabled,.nv-btn:disabled,.nv-btn2:disabled{opacity:.45;cursor:not-allowed}
@@ -538,6 +543,13 @@ tr:last-child td{border-bottom:none}
 .backups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:var(--fs-sm);color:var(--dim)}
 .backups select{background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 9px;font-size:var(--fs-sm)}
+/* 下拉框的底样：边框、圆角、底色、左内边距、高度与设置页的文本框同一副，跟着配色与明暗走。
+   高度 36px 与大号按钮（约 35.6px）齐平，设置页、告警卡、抽屉里的文本框也是这一档。
+   写成 :where(select) 不占权重：各页为排布单写的宽度、底色照样盖得过它（抽屉、窄屏导航那几处）；
+   没单写过的（通道规则与默认模板里的报告图配色、设置页的枚举项）就是这一副，不再是浏览器默认的直角灰框 */
+:where(select){min-height:36px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--r-ctl);
+  background-color:var(--ground);color:var(--text);font-family:inherit;font-size:var(--fs-md);line-height:1.4}
+:where(select):focus{outline:none;border-color:var(--accent)}
 /* 下拉框一律用自画的箭头，每套配色的浅色、深色各配一色，见色表里的 --select-chevron。
    右侧给箭头留出位置，选项文字再长也不压到箭头上。
    认 body 而不只认 #app：推送页的抽屉、确认框为了盖住整页挂在 body 上，只认 #app 的话它们里面的
@@ -737,9 +749,9 @@ details.adv .inner{padding:0 16px 16px}
 .dotlive{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--live);flex:none}
 .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--r-pill);
   border:1px solid var(--line);font-size:var(--fs-xs);color:var(--dim);white-space:nowrap}
-.pill.live{color:var(--live);border-color:var(--live)}
-.pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warnsoft)}
-.pill.ok{color:var(--ok);border-color:var(--ok);background:var(--oksoft)}
+.pill.live{color:var(--live);border-color:color-mix(in srgb,var(--live) 40%,transparent)}
+.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:var(--warnsoft)}
+.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:var(--oksoft)}
 /* 界面组：明暗三态与配色各一排药丸，点一下就换，不进改动条 */
 .themechoice{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:4px 16px 12px}
 .themechoice-name{min-width:3em;font-size:var(--fs-sm);color:var(--dim)}
@@ -935,9 +947,9 @@ details.adv .inner{padding:0 16px 16px}
   background:var(--ground);color:var(--text);font-family:inherit;font-size:var(--fs-md)}
 .ask-fld input:focus{outline:none;border-color:var(--accent)}
 .ask-act{display:flex;justify-content:flex-end;gap:8px}
-/* 确认框里危险那一问的「确认」：与别处的危险按钮同一副长相，红字红描边，不整块填红 */
-.ask-ok{background:var(--surface);color:var(--err);border-color:currentColor;font-weight:400}
-.ask-ok:hover:not(:disabled){filter:none;box-shadow:inset 0 0 0 1px currentColor}
+/* 确认框里危险那一问的「确认」：与别处的危险按钮同一副长相，红字淡红描边，悬停才满红，不整块填红 */
+.ask-ok{background:var(--surface);color:var(--err);border-color:color-mix(in srgb,var(--err) 40%,transparent);font-weight:400}
+.ask-ok:hover:not(:disabled){filter:none;border-color:currentColor;box-shadow:inset 0 0 0 1px currentColor}
 /* 只读长文：同一只弹层换一副样子——正文给滚动区，只留一颗关闭 */
 .ask-doc{max-height:56vh;overflow-y:auto;white-space:pre-wrap;margin:0 0 18px;
   padding:12px 14px;font-size:var(--fs-sm);line-height:1.8;color:var(--dim);

@@ -15,7 +15,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * 控制台的下拉框一律用自画的箭头，挂在 body 下的抽屉里那个也一样
+ * 控制台的下拉框一律用自画的箭头，挂在 body 下的抽屉里那个也一样；没被哪页单独写过样式的下拉框，
+ * 圆角、边框、底色、内边距与高度也与设置页的文本框一副样子
  * <p>
  * 抓的故障：装了两个直播平台，点「＋ 添加主播」，抽屉里挑平台的下拉框还是浏览器原生的箭头。
  * 箭头规则从前只认 #app 里面的下拉框，而抽屉为了盖住整页挂在 body 上。
@@ -27,20 +28,40 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * <p>
  * 「由 JUnit 拉起 node、找不到 node 时红而不是跳过」这两条规矩见 {@link FrontendFixture}。
  */
-@DisplayName("下拉框箭头覆盖到抽屉")
+@DisplayName("下拉框箭头与样子的覆盖面")
 class SelectChevronCoverageTest {
     /**
      * 相对本模块目录；测试在模块目录下跑
      */
     private static final Path FIXTURE = Path.of("src/test/resources/frontend/select-chevron-coverage-fixture.mjs");
 
+    /**
+     * 没单写过样式的下拉框那一份夹具，同样相对本模块目录
+     */
+    private static final Path LOOK_FIXTURE = Path.of("src/test/resources/frontend/select-look-coverage-fixture.mjs");
+
     @Test
     @DisplayName("「添加主播」抽屉里的下拉框与页里的用同一条箭头规则")
     void drawerSelectUsesTheSameChevron() throws IOException, InterruptedException, URISyntaxException {
+        FrontendFixture.runFromModule(FIXTURE.toString(), "下拉框箭头覆盖到抽屉",
+                Map.of("APP_CSS", appCss().toString()));
+    }
+
+    /**
+     * 抓的故障：通道页「通道规则」与推送页默认模板里的报告图配色、设置页的枚举项，
+     * 显示成浏览器默认的直角灰框，比同排的框矮，换深色也不跟着变
+     */
+    @Test
+    @DisplayName("通道规则、默认模板里的报告图配色与设置页的枚举项，与设置页的文本框一副样子")
+    void unstyledSelectsGetTheSharedLook() throws IOException, InterruptedException, URISyntaxException {
+        FrontendFixture.runFromModule(LOOK_FIXTURE.toString(), "下拉框的公共样子",
+                Map.of("APP_CSS", appCss().toString()));
+    }
+
+    private static Path appCss() throws IOException, URISyntaxException {
         URL url = SelectChevronCoverageTest.class.getClassLoader().getResource("config-ui/app.css");
         assertNotNull(url, "核心界面的 app.css 不在本模块测试的类路径上，这一格什么也没量");
-        FrontendFixture.runFromModule(FIXTURE.toString(), "下拉框箭头覆盖到抽屉",
-                Map.of("APP_CSS", absolutePathOf(url).toString()));
+        return absolutePathOf(url);
     }
 
     /**

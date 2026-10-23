@@ -114,8 +114,8 @@
   --l-faint:#776D85;
   --l-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23685E76' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --l-overlay:rgba(36,27,48,.32);
-  /* 深色 */
-  --d-ground:#131420; --d-surface:#1C1D2C; --d-line:#2D2F45; --d-text:#ECEBF6; --d-dim:#A9A6C2;
+  /* 深色。底面与字取中性、略偏蓝的灰：淡底是粉色的透明叠上去的，底色带紫的话叠出来整片发紫 */
+  --d-ground:#121417; --d-surface:#1A1C21; --d-line:#2C3038; --d-text:#E8EAEE; --d-dim:#A3A9B4;
   --d-accent:#FF80B4; --d-accent2:#5DB8F5;
   --d-ok:#3FD490; --d-warn:#F5C04F; --d-err:#FF7A5C; --d-live:#FF6FA9;
   --d-soft:rgba(255,128,180,.14); --d-softline:rgba(255,128,180,.38);
@@ -123,12 +123,12 @@
   --d-shadow:0 0 0 1px rgba(255,255,255,.05);
   --d-cloud3:#FFB3D2;
   --d-c-danmu:#5DB8F5; --d-c-gift:#FF80B4; --d-c-sc:#F5C04F; --d-c-blind:#3FD490;
-  --d-c-guard:#A58CFF; --d-c-view:#9C99B5;
+  --d-c-guard:#A58CFF; --d-c-view:#9B9EA5;
   --d-trend-up:#F58AD0; --d-trend-down:#5DB8F5;
-  --d-on-accent:#131420; --d-on-err:#131420; --d-accent-text:#FF80B4; --d-on-status:#131420;
-  --d-faint:#8F8CA8;
-  --d-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A9A6C2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --d-overlay:rgba(10,11,18,.58);
+  --d-on-accent:#121417; --d-on-err:#121417; --d-accent-text:#FF80B4; --d-on-status:#121417;
+  --d-faint:#8C929E;
+  --d-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2l4 4 4-4' fill='none' stroke='%23A3A9B4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --d-overlay:rgba(10,11,13,.58);
 }
 /* 配色：经典。改动前的那一套，一个值都不许动 */
 :root[data-palette="classic"], .palette-swatch[data-palette="classic"]{
