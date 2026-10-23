@@ -20,7 +20,7 @@ import java.util.Map;
 import java.nio.charset.StandardCharsets;
 import org.springframework.web.util.HtmlUtils;
 
-/** 推送目标旁的周报状态、按会话金额设置预览与试发。 */
+/** 推送目标旁的周报状态、按会话金额设置预览与发送上一周的报告。 */
 @Slf4j
 @NovaComponent
 @RestController
@@ -80,15 +80,15 @@ public class WeeklyReportPushController {
     @PostMapping("/trial")
     public Map<String, Object> trial(@PathVariable String platform, @PathVariable Long uid,
             @RequestParam String pushPlatform, @RequestParam int type, @RequestParam Long num) {
-        log.info("{} 向会话 {}:{}:{} 试发主播 {} 的周报", ConfigUiAccess.actor(), pushPlatform, type, num,
+        log.info("{} 向会话 {}:{}:{} 发送主播 {} 上一周的运营周报", ConfigUiAccess.actor(), pushPlatform, type, num,
                 dataSource == null ? platform + ":" + uid : ConfigUiAudit.streamer(dataSource, platform, String.valueOf(uid)));
         try {
             var raw = reports.trial(platform, uid, target(pushPlatform, type, num));
             boolean ok = raw != null && Integer.valueOf(0).equals(raw.getInteger("code"));
-            return Map.of("success", ok, "message", ok ? "已发送，请到对应会话中确认是否收到"
-                    : "试发失败：" + (raw == null ? "消息未发出" : raw.getString("message")));
+            return Map.of("success", ok, "message", ok ? "上一周的报告已发送，请到对应会话中确认是否收到"
+                    : "发送上一周的报告失败：" + (raw == null ? "消息未发出" : raw.getString("message")));
         } catch (RuntimeException e) {
-            return Map.of("success", false, "message", "试发失败：" + e.getMessage());
+            return Map.of("success", false, "message", "发送上一周的报告失败：" + e.getMessage());
         }
     }
 }

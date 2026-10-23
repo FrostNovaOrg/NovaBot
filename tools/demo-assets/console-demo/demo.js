@@ -120,6 +120,7 @@
     if (['/push/toggle', '/datasource', '/templates', '/login/logout', '/state/command',
       '/state/revenue', '/state/quiet', '/state/subscription', '/auth/agreement/revoke'].includes(path)
       || /^\/weekly-report\/[^/]+\/\d+\/trial$/.test(path)
+      || /^\/live-report\/[^/]+\/\d+\/send-latest$/.test(path)
       || /^\/event-tokens\/[^/]+\/revoke$/.test(path)
       || /^\/auth\/passkeys\/[^/]+$/.test(path)) return ok();
     return null;
@@ -141,6 +142,24 @@
     }
     if (url.origin === location.origin && path.startsWith('/config/api/')) {
       if (method === 'GET') {
+        const userPath = path.match(/^\/config\/api\/datasource\/users\/([^/]+)\/(\d+)(\/version)?$/);
+        if (userPath) {
+          const row = responses.get(key('GET', '/config/api/datasource/users', ''));
+          const users = (await (await read(row)).json()).users || [];
+          const user = users.find(one => one.platform === userPath[1] && String(one.uid) === userPath[2]);
+          return user ? json({success: true, user, version: 'demo'})
+            : json({success: false, message: '没有这位主播'}, 404);
+        }
+        const latest = path.match(/^\/config\/api\/live-report\/([^/]+)\/(\d+)\/latest$/);
+        if (latest) {
+          const sessions = '/config/api/streamers/' + latest[1] + '/' + latest[2] + '/sessions';
+          const rows = recording.responses.filter(row => row.method === 'GET' && row.path === sessions);
+          const batches = await Promise.all(rows.map(async row => (await (await read(row)).json()).sessions?.items || []));
+          const completed = batches.flat().filter(one => one.hasReport && one.endTime > one.startTime)
+            .sort((a, b) => b.startTime - a.startTime);
+          return json(completed.length ? {success: true, startTime: completed[0].startTime}
+            : {success: false, message: '还没有可发的下播报告'});
+        }
         const row = responses.get(key(method, path, url.search));
         if (row) return read(row);
       } else if (['POST', 'PUT', 'DELETE'].includes(method)) {

@@ -38,7 +38,7 @@ const presets = ['classic', 'pink-blue', 'warm', 'night'].map((id, i) => ({id,
 let defaultId = 'pink-blue';
 const HANDLER = 'x.Report';
 store.handlerList = [{className: HANDLER, displayName: '下播报告', aliases: [],
-  placeholders: ['{report}'], attachments: [], factoryParams: {}, defaultParams: {},
+  placeholders: [], attachments: [], factoryParams: {}, defaultParams: {},
   reportLayout: true, options: [{key: 'cover', label: '封面', type: 'BOOLEAN', defaultValue: true}]}];
 store.role = 'ADMIN';
 store.platforms = [];

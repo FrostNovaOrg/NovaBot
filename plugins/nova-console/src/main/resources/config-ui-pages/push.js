@@ -1815,7 +1815,8 @@ function noticeRow(item, user, target, session, repaint) {
   syncMeta();
   text.appendChild(meta);
   line.appendChild(text);
-  if (item.on && item.className === WEEKLY_REPORT) weeklyReportActions(text, user, target);
+  if (item.on && item.className === WEEKLY_REPORT) weeklyReportActions(text, user, target, session);
+  if (item.on && item.className === LIVE_REPORT) liveReportActions(text, user, target, session);
 
   if (editable) {
     const edit = el('button', 'lnkbtn nrow-edit');
@@ -1841,8 +1842,9 @@ function noticeRow(item, user, target, session, repaint) {
   return row;
 }
 
-/** 推送页上「运营周报」那一类：它的工具（上次发出、预览、试发）只在开着时摆在它那一行里 */
+/** 推送页上「运营周报」那一类：它的工具（上次发出、预览、发送上一周的报告）只在开着时摆在它那一行里 */
 const WEEKLY_REPORT = 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
+const LIVE_REPORT = 'org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler';
 
 /** 开着那一行的现状：文字跟不跟默认、图片版式、设置项的值，各一小段 */
 function noticeMeta(item, handler, target) {
@@ -2121,8 +2123,53 @@ function recentPushFold(host, user, target, session) {
   host.appendChild(fold);
 }
 
+function reportDestination(target, session) {
+  return (Number(target.type) === 1 ? '群「' : '好友「') + channelName(session, target, directory)
+    + '」（' + target.platform + '，' + target.num + '）';
+}
+
+function previousReportWeek() {
+  const date = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7 - 7);
+  const format = day => (day.getUTCMonth() + 1) + '月' + day.getUTCDate() + '日';
+  const start = format(date);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return start + '至' + format(date);
+}
+
+function liveReportActions(host, user, target, session) {
+  const path = '/live-report/' + encodeURIComponent(user.platform) + '/' + user.uid;
+  const query = '?pushPlatform=' + encodeURIComponent(target.platform)
+    + '&type=' + Number(target.type) + '&num=' + target.num;
+  const tools = el('div', 'weekly-report-tools');
+  const actions = el('div', 'weekly-report-actions');
+  const send = el('button', 'ghost sm');
+  send.type = 'button';
+  send.textContent = '发送上一份下播报告';
+  send.addEventListener('click', async () => {
+    send.disabled = true;
+    try {
+      const latest = await api(path + '/latest');
+      if (!latest.success) { say(latest.message, 'err'); return; }
+      const when = new Date(latest.startTime).toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+      if (!await ask({title: '发送上一份下播报告？', danger: false,
+        body: '将把' + when + '（东八区）开播的那一场下播报告发送到' + reportDestination(target, session)
+          + '。这会真实发送消息，按此通道已保存的版式、金额可见和配色生成，不影响下一场下播的正常推送。'})) return;
+      const res = await api(path + '/send-latest' + query + '&start=' + latest.startTime, {method: 'POST'});
+      say(res.message, res.success ? 'ok' : 'err');
+    } catch (err) { say('发送上一份下播报告失败：' + err.message, 'err'); }
+    finally { send.disabled = false; }
+  });
+  actions.appendChild(send);
+  tools.appendChild(actions);
+  host.appendChild(tools);
+}
+
 /** 运营周报的操作只作用于当前主播和当前通道。 */
-function weeklyReportActions(host, user, target) {
+function weeklyReportActions(host, user, target, session) {
   const path = '/weekly-report/' + encodeURIComponent(user.platform) + '/' + user.uid;
   const query = '?pushPlatform=' + encodeURIComponent(target.platform)
     + '&type=' + Number(target.type) + '&num=' + target.num;
@@ -2146,15 +2193,16 @@ function weeklyReportActions(host, user, target) {
   actions.appendChild(preview);
   const trial = el('button', 'ghost sm');
   trial.type = 'button';
-  trial.textContent = '试发';
+  trial.textContent = '发送上一周的报告';
   trial.addEventListener('click', async () => {
-    if (!await ask({title: '试发运营周报？', danger: false,
-      body: '立即把上周的周报发到这个会话？这是试发，不影响周一的定时发送。'})) return;
+    if (!await ask({title: '发送上一周的报告？', danger: false,
+      body: '将把上一周（' + previousReportWeek() + '，东八区）的运营周报发送到'
+        + reportDestination(target, session) + '。这会真实发送消息，不影响周一的定时发送。'})) return;
     trial.disabled = true;
     try {
       const res = await api(path + '/trial' + query, {method: 'POST'});
       say(res.message, res.success ? 'ok' : 'err');
-    } catch (err) { say('试发失败：' + err.message, 'err'); }
+    } catch (err) { say('发送上一周的报告失败：' + err.message, 'err'); }
     finally { trial.disabled = false; }
   });
   actions.appendChild(trial);

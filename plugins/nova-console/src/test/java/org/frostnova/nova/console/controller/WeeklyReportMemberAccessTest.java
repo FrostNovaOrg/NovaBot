@@ -49,7 +49,7 @@ class WeeklyReportMemberAccessTest {
         for (String[] target : List.of(new String[]{"qq-onebot", "1", "2002"},
                 new String[]{"other", "1", "1001"}, new String[]{"qq-onebot", "0", "1001"})) {
             send(member, "1", target[0], target[1], target[2]).andExpect(status().isForbidden())
-                    .andExpect(jsonPath("$.message").value("只能试发到这位主播自己的通道"));
+                    .andExpect(jsonPath("$.message").value("只能发送到这位主播自己的通道"));
         }
         verifyNoInteractions(reports);
     }

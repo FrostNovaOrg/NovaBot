@@ -96,9 +96,10 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
         if (!ConfigUiStreamerId.owns(account, platform, uid, platforms.platforms())) {
             return reject(response, 404, ConfigUiMemberBodyAdvice.MISSING_STREAMER);
         }
-        if (path.equals(ConfigUiController.BASE_PATH + "/api/weekly-report/{platform}/{uid}/trial")
+        if ((path.equals(ConfigUiController.BASE_PATH + "/api/weekly-report/{platform}/{uid}/trial")
+                || path.equals(ConfigUiController.BASE_PATH + "/api/live-report/{platform}/{uid}/send-latest"))
                 && !ownTarget(platform, uid, request)) {
-            return reject(response, 403, "只能试发到这位主播自己的通道");
+            return reject(response, 403, "只能发送到这位主播自己的通道");
         }
         return true;
     }

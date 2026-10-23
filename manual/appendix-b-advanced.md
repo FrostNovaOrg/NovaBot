@@ -13,8 +13,10 @@
 | `org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler` | 开播通知 | 开播 | `{uname}` `{title}` `{cover}` `{url}` `{at}` `{next}` `{at=all}` |
 | `org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler` | 下播通知 | 下播 | `{uname}` `{time}` `{url}` `{next}` `{at=all}` |
 | `org.frostnova.nova.report.handler.BilibiliDynamicPushHandler` | 动态通知 | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` `{at}` `{next}` `{at=all}` |
-| `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | 下播 | `{uname}` `{report}` `{url}` `{next}` `{at=all}` |
+| `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | 下播 | 只发图，旧文字模板不再生效；画图失败时发文字版报告 |
 | `org.frostnova.nova.report.handler.BilibiliOfflineRewardDigestPushHandler` | 下播打赏播报 | 不在播时有人上舰或送礼够格，攒完一阵（见[第 6 章](06-add-streamer-and-push.md#下播打赏播报)） | `{uname}` `{list}` `{url}` `{picture}` `{next}` `{at=all}` |
+
+推送页的「试发」已改为「发送上一周的报告」，下播报告新增「发送上一份下播报告」。两者都只发往当前通道，确认后真实发送，不影响后续定时周报或下播推送。
 
 **前缀不止一种**：动态通知、下播报告与下播打赏播报住在报告插件里（`org.frostnova.nova.report.handler.`），
 其余两个在哔哩哔哩插件里。`{next}` 的意思是「从这里分成两条消息」——在界面的模板

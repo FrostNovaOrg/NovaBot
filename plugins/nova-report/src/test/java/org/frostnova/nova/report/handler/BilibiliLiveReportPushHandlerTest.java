@@ -84,7 +84,7 @@ class BilibiliLiveReportPushHandlerTest {
         for (int i = 0; i < segments.size(); i++) {
             assertEquals("text", segments.getJSONObject(i).getString("type"), "外来文字只能显示为文字: " + content);
         }
-        assertEquals("｛at=all｝｛report｝|舰长｛at=123｝｛image_path=/opt/a.png｝｛next｝", content);
+        assertEquals("舰长｛at=123｝｛image_path=/opt/a.png｝｛next｝", content);
     }
 
     @Test
@@ -215,10 +215,42 @@ class BilibiliLiveReportPushHandlerTest {
         handler.handle(event(), message);
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender).send(captor.capture());
-        assertEquals(template.contains("前") ? "前正文后" : "正文", captor.getValue().getContent(), "下播不提醒且不发空段");
+        assertEquals("{image_base64=QUJD}", captor.getValue().getContent(), "下播报告忽略旧文字与提醒");
         assertFalse(handler.placeholders().contains("{at=all}"));
         assertFalse(handler.placeholderLabels().containsKey("{at=all}"));
         assertEquals(mode, message.getParamsJsonObject().getString("at_mode"), "存值不变");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"{uname}{report}{url}", "只发文字", "", "{report}{next}{report}"})
+    void savedTextTemplatesNeverChangeImageOnlyDelivery(String template) {
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
+        PushMessage message = pushMessage();
+        message.getParamsJsonObject().put("message", template);
+        handler.handle(event(), message);
+        ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(sent.capture());
+        assertEquals("{image_base64=QUJD}", sent.getValue().getContent());
+        assertEquals(template, message.getParamsJsonObject().getString("message"));
+        assertTrue(handler.placeholders().isEmpty());
+    }
+
+    @Test
+    void completedReportPopulatesCacheForTheSavedAppearance() {
+        var cache = new org.frostnova.nova.report.painter.LiveReportRenderCache();
+        var data = mock(org.frostnova.nova.core.service.LiveDataService.class);
+        when(data.getLiveStartTime("bilibili", 10001L)).thenReturn(Optional.of(100L));
+        org.springframework.test.util.ReflectionTestUtils.setField(handler, "liveData", data);
+        org.springframework.test.util.ReflectionTestUtils.setField(handler, "rendered", cache);
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
+        var message = pushMessage();
+        handler.handle(event(), message);
+        var options = BilibiliLiveReportOptions.of(message.getParamsJsonObject(), false);
+        var palette = org.frostnova.nova.report.painter.ReportPalettes.factory().forChannel(message.getTarget()).palette();
+        assertEquals("QUJD", cache.get("bilibili", 10001L, 100, options, palette).orElseThrow());
+        assertTrue(cache.get("bilibili", 10001L, 101, options, palette).isEmpty());
+        assertTrue(cache.get("bilibili", 10001L, 100,
+                BilibiliLiveReportOptions.of(message.getParamsJsonObject(), true), palette).isEmpty());
     }
 
     private BilibiliLiveOffEvent event() {

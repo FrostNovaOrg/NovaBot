@@ -72,7 +72,7 @@
 			"method":"GET",
 			"path":"/config/api/handlers",
 			"query":"",
-			"sha256":"980c2ef50963bf088259c7c48536718e45a388447aad32b5b08517f61491191c",
+			"sha256":"87a387595164d166d032fd136fbbc64ab753aa4b4f70ef8f4cccb7d654e1d218",
 			"status":200
 		},
 		{
