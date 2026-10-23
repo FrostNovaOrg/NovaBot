@@ -268,18 +268,17 @@ class EngineeringLogServiceTest {
                 "2026-09-04 20:07:04.221 ERROR 1 --- [main] x : 登录返回 _token=abcdef123456",
                 "2026-09-04 20:07:05.221 ERROR 1 --- [main] x : Cookie: SESSDATA=xxxyyy; bili_jct=zzz");
 
-        long start = System.nanoTime();
         List<String> lines = service.tail(file, 50).lines();
-        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        long elapsedMs = bestOfFiveMs(() -> service.tail(file, 50));
 
-        System.out.println("一行 " + run.length() + " 字的无分隔长串，读尾部实测 " + elapsedMs + " 毫秒");
+        System.out.println("一行 " + run.length() + " 字的无分隔长串，读尾部热身后五趟最快 " + elapsedMs + " 毫秒");
         assertEquals(3, lines.size());
         assertFalse(lines.get(1).contains("abcdef123456"),
                 "键名头一个字符不是字母的，照样要遮住：" + lines.get(1));
         assertTrue(lines.get(1).contains("_token="), "键名还在，看得出它本来是个令牌");
         assertMasked(lines.get(2), "xxxyyy");
         assertMasked(lines.get(2), "zzz");
-        assertTrue(elapsedMs < 2000, "读尾部本该一眨眼的事，实测 " + elapsedMs + " 毫秒");
+        assertTrue(elapsedMs < 2000, "读尾部本该一眨眼的事，热身后五趟最快还有 " + elapsedMs + " 毫秒");
     }
 
     @Test
@@ -296,7 +295,7 @@ class EngineeringLogServiceTest {
 
     @Test
     @DisplayName("一层套一层的长串, 打码不许一层比一层慢")
-    void masksLayeredPairsInLinearTime() {
+    void masksLayeredPairsInLinearTime() throws IOException {
         // 「a=a=a=…」这种层层套的串：里层的键值对照样轮到自己被查，
         // 但不许为每一层把剩下的整段值再吃一遍——那样几万字一行就要等上十几秒
         List<String> shapes = List.of(
@@ -304,14 +303,41 @@ class EngineeringLogServiceTest {
                 "x:".repeat(80_000) + "x",
                 hexRun(40_000));
         for (String shape : shapes) {
-            long start = System.nanoTime();
             String masked = EngineeringLogService.mask(shape);
-            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            long elapsedMs = bestOfFiveMs(() -> EngineeringLogService.mask(shape));
             System.out.println("一层套一层 " + shape.length() + " 字（开头 "
-                    + shape.substring(0, 8) + "…），打码实测 " + elapsedMs + " 毫秒");
+                    + shape.substring(0, 8) + "…），打码热身后五趟最快 " + elapsedMs + " 毫秒");
             assertEquals(shape, masked, "键名不是凭据的照原样；得到开头：" + masked.substring(0, 40));
-            assertTrue(elapsedMs < 500, "几万字一行本该一眨眼，实测 " + elapsedMs + " 毫秒");
+            assertTrue(elapsedMs < 500, "几万字一行本该一眨眼，热身后五趟最快还有 " + elapsedMs + " 毫秒");
         }
+    }
+
+    /**
+     * 先白跑两趟热身，再量五趟取最短，量法与同族 masksDeeplyLayeredCredentialLinesQuickly 一致
+     * <p>
+     * 单量头一趟时，量进去的是类装载、解释器起步与机器忙闲，不是被测这一趟本身的快慢，
+     * 机器一挤就误报。而真退化的慢是趟趟都在的慢，热身与取最短救不了它，照样红。
+     * @return 五趟里最快那一趟的毫秒数
+     */
+    private static long bestOfFiveMs(Timed timed) throws IOException {
+        for (int warmup = 0; warmup < 2; warmup++) {
+            timed.run();
+        }
+        long bestMs = Long.MAX_VALUE;
+        for (int round = 0; round < 5; round++) {
+            long start = System.nanoTime();
+            timed.run();
+            bestMs = Math.min(bestMs, (System.nanoTime() - start) / 1_000_000);
+        }
+        return bestMs;
+    }
+
+    /**
+     * 被量的那一趟
+     */
+    @FunctionalInterface
+    private interface Timed {
+        void run() throws IOException;
     }
 
     /**
@@ -416,25 +442,22 @@ class EngineeringLogServiceTest {
                 huge,
                 "2026-09-04 20:09:01.100  INFO 1 --- [main] x : 后一行");
 
-        long start = System.nanoTime();
         List<String> lines = service.tail(file, 10).lines();
-        long tailMs = (System.nanoTime() - start) / 1_000_000;
+        long tailMs = bestOfFiveMs(() -> service.tail(file, 10));
         assertTrue(lines.get(1).contains("已截去"), "截掉了多少要写明");
-        assertTrue(tailMs < 2000, "读尾部本该一眨眼的事，实测 " + tailMs + " 毫秒");
+        assertTrue(tailMs < 2000, "读尾部本该一眨眼的事，热身后五趟最快还有 " + tailMs + " 毫秒");
 
-        start = System.nanoTime();
         List<String> appended = service.since(file, 0L).lines();
-        long sinceMs = (System.nanoTime() - start) / 1_000_000;
+        long sinceMs = bestOfFiveMs(() -> service.since(file, 0L));
         assertTrue(appended.get(1).contains("已截去"), "跟随同样先截再打");
-        assertTrue(sinceMs < 2000, "跟随本该一眨眼的事，实测 " + sinceMs + " 毫秒");
+        assertTrue(sinceMs < 2000, "跟随本该一眨眼的事，热身后五趟最快还有 " + sinceMs + " 毫秒");
 
-        start = System.nanoTime();
         EngineeringLogService.Window window = service.around(file, LocalTime.of(20, 7), 2);
-        long aroundMs = (System.nanoTime() - start) / 1_000_000;
+        long aroundMs = bestOfFiveMs(() -> service.around(file, LocalTime.of(20, 7), 2));
         assertTrue(window.lines().get(window.highlight()).contains("已截去"), "定位同样先截再打");
-        assertTrue(aroundMs < 2000, "定位本该一眨眼的事，实测 " + aroundMs + " 毫秒");
+        assertTrue(aroundMs < 2000, "定位本该一眨眼的事，热身后五趟最快还有 " + aroundMs + " 毫秒");
 
-        System.out.println("一行 90 万字层层套的串：尾读 " + tailMs + " 毫秒，跟随 "
+        System.out.println("一行 90 万字层层套的串，热身后五趟最快：尾读 " + tailMs + " 毫秒，跟随 "
                 + sinceMs + " 毫秒，定位 " + aroundMs + " 毫秒");
     }
 
