@@ -18,19 +18,23 @@ const APPENDIX = `${CONSOLE}/manual/appendix-b-advanced.html`;
  */
 export function renderExecNotice(box, data) {
   const rules = data && data.success && Array.isArray(data.rules) ? data.rules : [];
-  box.textContent = '';
   if (!rules.length) {
-    box.style.display = 'none';
+    if (box.textContent) box.textContent = '';
+    if (box.style.display !== 'none') box.style.display = 'none';
     return false;
   }
   const names = rules.map(rule => rule.event ? rule.key + '（事件 ' + rule.event + '）' : rule.key).join('、');
-  const text = document.createElement('span');
-  text.textContent = '外部程序触发有 ' + rules.length + ' 条规则需要调整：' + names
+  const message = '外部程序触发有 ' + rules.length + ' 条规则需要调整：' + names
     + '。调整之前，这些规则可能被跳过不执行。请按使用说明附录 B 修改这些规则的 command，改好后重启。';
-  const link = document.createElement('a');
-  link.href = APPENDIX;
-  link.textContent = '打开附录 B →';
-  box.append(text, ' ', link);
-  box.style.display = '';
+  if (box.textContent !== message + ' 打开附录 B →') {
+    const text = document.createElement('span');
+    text.textContent = message;
+    const link = document.createElement('a');
+    link.href = APPENDIX;
+    link.textContent = '打开附录 B →';
+    box.textContent = '';
+    box.append(text, ' ', link);
+  }
+  if (box.style.display !== '') box.style.display = '';
   return true;
 }

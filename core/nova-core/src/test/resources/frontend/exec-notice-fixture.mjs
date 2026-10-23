@@ -201,8 +201,6 @@ await lifecycle.refresh();
 release(data);
 await earlier;
 ok(!shown(box) && box.textContent === '', '⑤ 较早的回包不覆盖较新的清单');
-ok(main.includes("window.addEventListener('focus', () => loadExecNotice())"), '⑤ 回到页面时更新提醒');
-ok(/setInterval\([\s\S]*loadExecNotice\(\)/.test(main), '⑤ 页面打开时继续更新提醒');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

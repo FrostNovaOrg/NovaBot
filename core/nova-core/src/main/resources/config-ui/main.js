@@ -798,24 +798,28 @@ $('#bot-open').addEventListener('click', () => { if (botHref) location.href = bo
 let execNoticeVersion = 0;
 function loadExecNotice(attempt = startupAttempt, role) {
   const version = ++execNoticeVersion;
-  renderExecNotice($('#exec-notice'), null);
   if (!attempt?.active) return Promise.resolve();
   const options = {signal: attempt.controller.signal};
   const identity = role === undefined ? api('/auth/state', options).then(state => state.role) : Promise.resolve(role);
   const current = () => attempt.active && version === execNoticeVersion;
   return identity.then(role => {
-    if (!current() || role !== 'ADMIN') return;
+    if (!current()) return;
+    if (role !== 'ADMIN') {
+      renderExecNotice($('#exec-notice'), null);
+      return;
+    }
     return api('/exec/notice', options).then(data => {
       if (current()) renderExecNotice($('#exec-notice'), data);
     });
-  }).catch(() => {});
+  }).catch(() => {
+    if (current()) renderExecNotice($('#exec-notice'), null);
+  });
 }
 
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 let startupAttempt;
 function startConsole() {
-  renderExecNotice($('#exec-notice'), null);
   if (startupAttempt) {
     startupAttempt.active = false;
     clearTimeout(startupAttempt.timer);
@@ -855,7 +859,9 @@ function startConsole() {
       $('#session-check-notice').style.display = state.role === 'ADMIN' && state.sessionCheckSetupNeeded ? '' : 'none';
       $('#oidc-callback-notice').style.display = state.role === 'ADMIN' && state.oidcCallbackSetupNeeded ? '' : 'none';
     })
-    .catch(() => {})
+    .catch(() => {
+      if (attempt.active) loadExecNotice(attempt, null);
+    })
     // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
     .then(() => {
       if (!attempt.active) return;
@@ -890,9 +896,10 @@ function startConsole() {
 $('#startup-retry').addEventListener('click', startConsole);
 startConsole();
 window.addEventListener('focus', () => loadExecNotice());
-document.addEventListener('visibilitychange', () => loadExecNotice());
-setInterval(() => {
+document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'hidden') loadExecNotice();
-}, 15000);
+});
+document.addEventListener('click', () => loadExecNotice());
+document.addEventListener('keydown', () => loadExecNotice());
 
 // 页面在身份和插件清单到达后由 applyRoute 显示。
