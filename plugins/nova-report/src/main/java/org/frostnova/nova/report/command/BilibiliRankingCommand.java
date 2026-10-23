@@ -198,7 +198,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         // 理由同「直播间数据」：没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁
         return withNotice(resolved, painter.paintRanking(header, rows, 1, board.scoreText,
-                        footnote(shown, total, board, scope, note))
+                        footnote(shown, total, board, scope, note), palette(context))
                 .map(CommandReply::image)
                 .orElseGet(this::paintFailed));
     }

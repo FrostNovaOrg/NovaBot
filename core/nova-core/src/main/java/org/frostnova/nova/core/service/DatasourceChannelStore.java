@@ -96,11 +96,12 @@ public class DatasourceChannelStore {
             for (int j = 0; j < Math.min(targets.size(), previous.size()); j++) {
                 JSONObject target = targets.getJSONObject(j);
                 JSONObject old = previous.getJSONObject(j);
-                for (String key : List.of("revenueVisible", "quietHours", "disabledCommands")) {
+                for (String key : List.of("revenueVisible", "quietHours", "disabledCommands", "reportPalette")) {
                     if (Objects.equals(old.get(key), target.get(key))) continue;
                     String setting = switch (key) {
                         case "revenueVisible" -> "金额可见性";
                         case "quietHours" -> "静音";
+                        case "reportPalette" -> "报告图配色";
                         default -> "命令开关";
                     };
                     Object value = target.get(key);

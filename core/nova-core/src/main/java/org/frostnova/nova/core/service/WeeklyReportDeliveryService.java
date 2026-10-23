@@ -41,20 +41,28 @@ public class WeeklyReportDeliveryService {
     private final PushGate gate;
     private final WeeklyReportDeliveryStore store;
     private final Clock clock;
+    private final ReportPaletteSettings palettes;
     private ThreadPoolTaskScheduler scheduler;
     private boolean started;
     private boolean startupPending;
 
     @Autowired
     public WeeklyReportDeliveryService(AbstractDataSource source, WeeklyReportContentService content,
-            RevenueVisibilityService revenue, NovaMessageSender sender, PushGate gate, NovaCoreProperties properties) {
+            RevenueVisibilityService revenue, NovaMessageSender sender, PushGate gate, NovaCoreProperties properties,
+            ReportPaletteSettings palettes) {
         this(source, content, revenue, sender, gate,
                 new WeeklyReportDeliveryStore(Path.of(properties.getLive().getLiveDataPath())
-                        .toAbsolutePath().resolveSibling("weekly-report-deliveries.json")), Clock.systemUTC());
+                        .toAbsolutePath().resolveSibling("weekly-report-deliveries.json")), Clock.systemUTC(), palettes);
     }
     public WeeklyReportDeliveryService(AbstractDataSource source, WeeklyReportContentService content,
             RevenueVisibilityService revenue, NovaMessageSender sender, PushGate gate,
             WeeklyReportDeliveryStore store, Clock clock) {
+        this(source, content, revenue, sender, gate, store, clock, ReportPaletteSettings.factory());
+    }
+    public WeeklyReportDeliveryService(AbstractDataSource source, WeeklyReportContentService content,
+            RevenueVisibilityService revenue, NovaMessageSender sender, PushGate gate,
+            WeeklyReportDeliveryStore store, Clock clock, ReportPaletteSettings palettes) {
+        this.palettes = palettes;
         this.source = source;
         this.content = content;
         this.revenue = revenue;
@@ -129,6 +137,8 @@ public class WeeklyReportDeliveryService {
             if (!store.enroll(due, enrolled, now)) return;
         }
         startupPending = false;
+        // 同一期、同一位主播发往几个通道时，金额可见性与配色都相同的那几个共用一张图
+        Map<String, WeeklyReport.Preview> drawn = new HashMap<>();
         for (var record : store.records()) {
             if (!store.ensureSaved()) return;
             if (record.status() != Status.READY && record.status() != Status.QUIET) continue;
@@ -144,7 +154,7 @@ public class WeeklyReportDeliveryService {
             } else if (!gate.allowedFor(target)) {
                 if (record.status() != Status.QUIET) store.update(record, Status.QUIET, "静音中", now);
             } else {
-                deliver(record, target, now);
+                deliver(record, target, now, drawn);
             }
         }
         store.observe(new ArrayList<>(targets.keySet()), now);
@@ -163,11 +173,11 @@ public class WeeklyReportDeliveryService {
                 .equals(subscription) && !Boolean.FALSE.equals(t.getEnabled()));
         return targetExists ? "运营周报订阅已停用" : "推送目标已停用或移除";
     }
-    private void deliver(Delivery record, PushTarget target, Instant now) {
+    private void deliver(Delivery record, PushTarget target, Instant now, Map<String, WeeklyReport.Preview> drawn) {
         Message message;
         try {
             // 用本期到点的时刻固定统计周，周一六点后顺延也不会跳到下一统计周。
-            message = message(record.subscription(), target, Instant.ofEpochMilli(record.dueAt()));
+            message = message(record.subscription(), target, Instant.ofEpochMilli(record.dueAt()), drawn);
         } catch (RuntimeException e) {
             store.update(record, Status.FAILED, "周报生成失败：" + e.getMessage(), now);
             return;
@@ -189,11 +199,19 @@ public class WeeklyReportDeliveryService {
     private synchronized void result(Delivery sending, Status status, String reason) {
         store.update(sending, status, reason, clock.instant());
     }
-    private Message message(String subscription, PushTarget target, Instant period) {
+    private Message message(String subscription, PushTarget target, Instant period,
+                            Map<String, WeeklyReport.Preview> drawn) {
         var parts = subscription.split(":");
         boolean visible = revenue.isVisible(target);
-        var report = content.preview(parts[0], Long.valueOf(parts[1]), period, visible)
-                .orElseThrow(() -> new IllegalArgumentException("没有这位主播的记录"));
+        // 按解析之后的那一套认同一张图：存了不认识的 id 的通道与默认模板那一套画出来一样
+        String palette = content.resolvePalette(parts[0], palettes.idFor(target));
+        String key = parts[0] + ":" + parts[1] + ":" + period.toEpochMilli() + ":" + visible + ":" + palette;
+        var report = drawn.get(key);
+        if (report == null) {
+            report = content.preview(parts[0], Long.valueOf(parts[1]), period, visible, palette)
+                    .orElseThrow(() -> new IllegalArgumentException("没有这位主播的记录"));
+            drawn.put(key, report);
+        }
         String text = MessagePlaceholders.escapeExternalText(report.image() == null ? report.text() : report.summary());
         String body = report.image() == null ? text : "{image_base64="
                 + Base64.getEncoder().encodeToString(report.image()) + "}\n" + text;
@@ -209,12 +227,12 @@ public class WeeklyReportDeliveryService {
     }
 
     public Optional<WeeklyReport.Preview> preview(String platform, Long uid, PushTarget target) {
-        return content.preview(platform, uid, clock.instant(),
-                revenue.isVisible(savedChannel(platform, uid, target)));
+        PushTarget channel = savedChannel(platform, uid, target);
+        return content.preview(platform, uid, clock.instant(), revenue.isVisible(channel), palettes.idFor(channel));
     }
     public JSONObject trial(String platform, Long uid, PushTarget target) {
         PushTarget channel = savedChannel(platform, uid, target);
-        return sender.sendNow(message(key(platform, uid, channel), channel, clock.instant()));
+        return sender.sendNow(message(key(platform, uid, channel), channel, clock.instant(), new HashMap<>()));
     }
     public String status(String subscription) {
         String warning = store.warning();

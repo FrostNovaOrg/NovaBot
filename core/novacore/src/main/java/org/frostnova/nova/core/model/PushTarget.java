@@ -57,6 +57,9 @@ public class PushTarget {
     /** 被关闭的命令用法名；null 或空列表表示全开。 */
     private List<String> disabledCommands;
 
+    /** 报告图配色的预设 id；null 跟默认模板走。 */
+    private String reportPalette;
+
     @Getter
     @Setter
     public static class QuietHours {
@@ -102,6 +105,7 @@ public class PushTarget {
         return equals(other) && messages.equals(other.messages)
                 && Objects.equals(revenueVisible, other.revenueVisible)
                 && Objects.equals(quietHours, other.quietHours)
-                && Objects.equals(disabledCommands, other.disabledCommands);
+                && Objects.equals(disabledCommands, other.disabledCommands)
+                && Objects.equals(reportPalette, other.reportPalette);
     }
 }

@@ -11,6 +11,8 @@ import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
@@ -67,20 +69,33 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
 
     private final StreamerNames names;
 
+    private final ReportPalettes palettes;
+
+    private final PaintOnce drawn = new PaintOnce();
+
     public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
                                       AtSubscriptionService subscriptions, LiveDataService liveDataService,
                                       NovaBilibiliProperties properties, TimelineWriter timeline) {
         this(api, painter, sender, subscriptions, liveDataService, properties, timeline, StreamerNames.none());
     }
 
+    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
+                                      AtSubscriptionService subscriptions, LiveDataService liveDataService,
+                                      NovaBilibiliProperties properties, TimelineWriter timeline,
+                                      StreamerNames names) {
+        this(api, painter, sender, subscriptions, liveDataService, properties, timeline, names, ReportPalettes.factory());
+    }
+
     /**
      * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     * @param palettes 各通道的报告图配色
      */
     @Autowired
     public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
                                       AtSubscriptionService subscriptions, LiveDataService liveDataService,
                                       NovaBilibiliProperties properties, TimelineWriter timeline,
-                                      StreamerNames names) {
+                                      StreamerNames names, ReportPalettes palettes) {
+        this.palettes = palettes;
         this.api = api;
         this.painter = painter;
         this.sender = sender;
@@ -101,7 +116,8 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
             return;
         }
 
-        String picture = painter.paint(event.getDynamic())
+        ReportPalette.Preset palette = palettes.forChannel(target);
+        String picture = drawn.get(event, palette.id(), () -> painter.paint(event.getDynamic(), palette.palette()))
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElse("");
 

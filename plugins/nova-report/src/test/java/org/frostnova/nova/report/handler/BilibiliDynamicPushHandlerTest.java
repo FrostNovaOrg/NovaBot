@@ -83,13 +83,13 @@ class BilibiliDynamicPushHandlerTest {
         // 昵称接口不可用时回退到事件携带的昵称，本组不关心接口路径
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
         when(subscriptions.list(anyString(), anyLong(), anyLong(), anyString())).thenReturn(List.of());
-        when(painter.paint(any())).thenReturn(Optional.of("ZmFrZS1pbWFnZQ=="));
+        when(painter.paint(any(), any())).thenReturn(Optional.of("ZmFrZS1pbWFnZQ=="));
     }
 
     @Test
     @DisplayName("动态昵称、动作与链接中的占位符不会提醒、发图或被后续替换")
     void sourcePlaceholdersStayText() {
-        when(painter.paint(any())).thenReturn(Optional.empty());
+        when(painter.paint(any(), any())).thenReturn(Optional.empty());
         PushMessage message = pushMessage();
         message.getParamsJsonObject().put("message", "{uname}|{action}|{url}|{picture}{at}");
         handler.handle(new BilibiliDynamicUpdateEvent(

@@ -4,12 +4,15 @@ import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerCommand;
 import org.frostnova.nova.bilibili.model.BilibiliDataScope;
 import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 
@@ -32,6 +35,11 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
     protected final BilibiliDataQueryPainter painter;
 
     private final RevenueVisibilityService revenueVisibility;
+
+    /**
+     * 各通道的报告图配色。命令回的图按发问的这个会话所在的通道画
+     */
+    private ReportPalettes palettes = ReportPalettes.factory();
 
     protected BilibiliScopedDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
                                         LiveDataService liveDataService,
@@ -59,6 +67,18 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
 
     protected boolean revenueVisible(CommandContext context) {
         return revenueVisibility.isVisible(context.getChannel());
+    }
+
+    /**
+     * 本会话的报告图配色：该主播推到这里的那个通道选的那一套，没有这个通道时为默认模板的
+     */
+    protected ReportPalette palette(CommandContext context) {
+        return palettes.forChannel(context.getChannel()).palette();
+    }
+
+    @Autowired
+    public void setPalettes(ReportPalettes palettes) {
+        this.palettes = palettes;
     }
 
     /**

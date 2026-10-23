@@ -4,6 +4,7 @@ import lombok.Builder;
 import java.awt.Color;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /** 报告图配色。每张画布持有一份不可变配色，平台返回的粉丝牌颜色保持原样。 */
 @Builder(toBuilder = true)
@@ -95,6 +96,174 @@ public record ReportPalette(
             new Color(0x6E6A86),
             List.of(new Color(0xE0479E), new Color(0x7A4DFF), new Color(0xA38BFF),
                     new Color(0x00A6D6), new Color(0x6E6A86), new Color(0xF2A93B)));
+
+    /** 经典：既有报告图的样子，就是 {@link #DEFAULT}。 */
+    public static final ReportPalette CLASSIC = DEFAULT;
+
+    /** 粉蓝：近白微粉的底、淡蓝卡片，粉色主调、蓝色辅调。 */
+    public static final ReportPalette PINK_BLUE = builder()
+            .background(new Color(0xFFFBFD))
+            .card(new Color(0xF1F5FC))
+            .text(new Color(0x262B36))
+            .tip(new Color(0x5E6878))
+            .streamerName(new Color(0xD2386F))
+            .accent(new Color(0xC23468))
+            .curveRevenue(new Color(0xE0568A))
+            .up(new Color(0xC22A52))
+            .down(new Color(0x1D7553))
+            .defaultText(new Color(0x262B36))
+            .defaultTip(new Color(0x687386))
+            .link(new Color(0x2366B5))
+            .originBackground(new Color(0xF3F6FB))
+            .loss(new Color(0x5BB98C))
+            .curveWatched(new Color(0x7B6FE0))
+            .curveOnline(new Color(0xE0568A))
+            .curveDanmu(new Color(0x2A7FCC))
+            .curveGapHatch(new Color(0xD6DDE8))
+            .curveGapEdge(new Color(0xA5B1C3))
+            .tagBackground(new Color(0xFEEFF5))
+            .avatarRing(new Color(0xFFFFFF))
+            .sessionBadge(new Color(0xFFFFFF))
+            .rankFirst(new Color(0xDA3E78))
+            .rankSecond(new Color(0x3477CC))
+            .rankThird(new Color(0x8560D0))
+            .rankOther(new Color(0x7D8899))
+            .returningAudience(new Color(0x6FA6E6))
+            .calendarRecorded(new Color(0xF9C4D7))
+            .calendarOff(new Color(0xF7F9FC))
+            .calendarUnknown(new Color(0xE3E9F1))
+            .calendarBorder(new Color(0xD2DAE5))
+            .guardGovernor(DEFAULT.guardGovernor())
+            .guardCommander(DEFAULT.guardCommander())
+            .guardCaptain(DEFAULT.guardCaptain())
+            .guardUnknown(DEFAULT.guardUnknown())
+            .placeholderFrom(new Color(0xF7D5E2))
+            .placeholderTo(new Color(0xC3D8F2))
+            .markFrom(new Color(0x3E86DA))
+            .markTo(new Color(0xE0568A))
+            .markStar(new Color(0xFFFFFF))
+            .wordCloudEmpty(new Color(0x687386))
+            .wordCloud(List.of(new Color(0xD2386F), new Color(0x3477CC), new Color(0x7D57C9),
+                    new Color(0x15789F), new Color(0x5E6878), new Color(0xB8541F)))
+            .build();
+
+    /** 暖阳：奶油色的底、杏色卡片，橙与砖红为主调，深棕文字。 */
+    public static final ReportPalette WARM = builder()
+            .background(new Color(0xFFF9F2))
+            .card(new Color(0xFBEEDF))
+            .text(new Color(0x3A2A1F))
+            .tip(new Color(0x76594A))
+            .streamerName(new Color(0xBF4E16))
+            .accent(new Color(0xA84A16))
+            .curveRevenue(new Color(0xE07A2E))
+            .up(new Color(0xB8322A))
+            .down(new Color(0x2F6E3B))
+            .defaultText(new Color(0x3A2A1F))
+            .defaultTip(new Color(0x7C6252))
+            .link(new Color(0x9A4A12))
+            .originBackground(new Color(0xFCF1E4))
+            .loss(new Color(0x8DBE7A))
+            .curveWatched(new Color(0xD9A23A))
+            .curveOnline(new Color(0xD2603A))
+            .curveDanmu(new Color(0xB8562A))
+            .curveGapHatch(new Color(0xEFDCC8))
+            .curveGapEdge(new Color(0xC9AE95))
+            .tagBackground(new Color(0xFEEEDF))
+            .avatarRing(new Color(0xFFFFFF))
+            .sessionBadge(new Color(0xFFFCF8))
+            .rankFirst(new Color(0xC2620E))
+            .rankSecond(new Color(0x8C6E5C))
+            .rankThird(new Color(0xB4472E))
+            .rankOther(new Color(0x967A68))
+            .returningAudience(new Color(0xE9B06A))
+            .calendarRecorded(new Color(0xF7C08C))
+            .calendarOff(new Color(0xFFF6EC))
+            .calendarUnknown(new Color(0xEEDFCF))
+            .calendarBorder(new Color(0xE2CDB8))
+            .guardGovernor(DEFAULT.guardGovernor())
+            .guardCommander(DEFAULT.guardCommander())
+            .guardCaptain(DEFAULT.guardCaptain())
+            .guardUnknown(DEFAULT.guardUnknown())
+            .placeholderFrom(new Color(0xFBE0C6))
+            .placeholderTo(new Color(0xF0BE92))
+            .markFrom(new Color(0xE9853A))
+            .markTo(new Color(0xD24F5E))
+            .markStar(new Color(0xFFFFFF))
+            .wordCloudEmpty(new Color(0x7C6252))
+            .wordCloud(List.of(new Color(0xC2501A), new Color(0xD0731B), new Color(0xA85A3A),
+                    new Color(0x8E6418), new Color(0x76594A), new Color(0xB23A4E)))
+            .build();
+
+    /** 夜幕：深蓝灰的底、浅色文字，粉、蓝、金点缀，适合夜里看。 */
+    public static final ReportPalette NIGHT = builder()
+            .background(new Color(0x161A23))
+            .card(new Color(0x222835))
+            .text(new Color(0xE9ECF3))
+            .tip(new Color(0xA6AEC0))
+            .streamerName(new Color(0xFF8FB8))
+            .accent(new Color(0xFF85B0))
+            .curveRevenue(new Color(0xFF85B0))
+            .up(new Color(0xFF7A8A))
+            .down(new Color(0x4CD39B))
+            .defaultText(new Color(0xE9ECF3))
+            .defaultTip(new Color(0x949DB1))
+            .link(new Color(0x76BCFF))
+            .originBackground(new Color(0x1F2430))
+            .loss(new Color(0x4CC38C))
+            .curveWatched(new Color(0x5FD49C))
+            .curveOnline(new Color(0xFF7A9E))
+            .curveDanmu(new Color(0x55C6F5))
+            .curveGapHatch(new Color(0x343B4C))
+            .curveGapEdge(new Color(0x5A6379))
+            .tagBackground(new Color(0x3D2636))
+            .avatarRing(new Color(0x161A23))
+            .sessionBadge(new Color(0x2E3545))
+            .rankFirst(new Color(0xFFC75A))
+            .rankSecond(new Color(0xC7D0DD))
+            .rankThird(new Color(0xEBA77C))
+            .rankOther(new Color(0x8790A4))
+            .returningAudience(new Color(0x7FB0F0))
+            .calendarRecorded(new Color(0x7E3553))
+            .calendarOff(new Color(0x1E2330))
+            .calendarUnknown(new Color(0x2B3242))
+            .calendarBorder(new Color(0x3A4257))
+            .guardGovernor(DEFAULT.guardGovernor())
+            .guardCommander(DEFAULT.guardCommander())
+            .guardCaptain(DEFAULT.guardCaptain())
+            .guardUnknown(DEFAULT.guardUnknown())
+            .placeholderFrom(new Color(0x2B3243))
+            .placeholderTo(new Color(0x485268))
+            .markFrom(new Color(0x8C7CFF))
+            .markTo(new Color(0xFF6FA6))
+            .markStar(new Color(0xFFFFFF))
+            .wordCloudEmpty(new Color(0xA6AEC0))
+            .wordCloud(List.of(new Color(0xFF85B0), new Color(0xA895FF), new Color(0xC9BCFF),
+                    new Color(0x55C6F5), new Color(0xA6AEC0), new Color(0xFFC266)))
+            .build();
+
+    /** 具名预设，按展示顺序。id 供存储，name 供展示。 */
+    public static final List<Preset> PRESETS = List.of(
+            new Preset("classic", "经典", CLASSIC),
+            new Preset("pink-blue", "粉蓝", PINK_BLUE),
+            new Preset("warm", "暖阳", WARM),
+            new Preset("night", "夜幕", NIGHT));
+
+    /**
+     * 按存储用的 id 找预设
+     * @param id 预设 id，可为 null
+     * @return 认不出时为空
+     */
+    public static Optional<Preset> preset(String id) {
+        return PRESETS.stream().filter(preset -> preset.id().equals(id)).findFirst();
+    }
+
+    public record Preset(String id, String name, ReportPalette palette) {
+        public Preset {
+            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(palette, "palette");
+        }
+    }
 
     public ReportPalette {
         Objects.requireNonNull(background, "background");

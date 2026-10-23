@@ -4,6 +4,11 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPreviewPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
+import org.frostnova.nova.report.painter.ReportPalettes;
+import org.frostnova.nova.core.config.ui.ConfigUiAccess;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.service.ReportPaletteSettings;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.HandlerOption;
@@ -55,12 +60,30 @@ public class BilibiliReportLayoutController {
 
     static final String PREVIEW_PATH = ConfigUiController.BASE_PATH + "/api/report/preview";
 
+    static final String PALETTES_PATH = ConfigUiController.BASE_PATH + "/api/report/palettes";
+
+    static final String DEFAULT_PALETTE_PATH = PALETTES_PATH + "/default";
+
     private final BilibiliLiveReportPreviewPainter preview;
 
     private final RevenueVisibilityService revenueVisibility;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.frostnova.nova.core.datasource.AbstractDataSource dataSource;
+
+    private ReportPaletteSettings paletteSettings = ReportPaletteSettings.factory();
+
+    private ReportPalettes palettes = ReportPalettes.factory();
+
+    /**
+     * @param paletteSettings 默认模板里的报告图配色
+     * @param palettes 各通道的报告图配色
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setPalettes(ReportPaletteSettings paletteSettings, ReportPalettes palettes) {
+        this.paletteSettings = paletteSettings;
+        this.palettes = palettes;
+    }
 
     public BilibiliReportLayoutController(BilibiliLiveReportPreviewPainter preview,
                                           RevenueVisibilityService revenueVisibility) {
@@ -118,7 +141,7 @@ public class BilibiliReportLayoutController {
     public ResponseEntity<byte[]> preview(@RequestBody(required = false) JSONObject params) {
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenueFor(params));
 
-        Optional<byte[]> image = preview.render(options);
+        Optional<byte[]> image = preview.render(options, paletteFor(params).palette());
         if (image.isEmpty()) {
             // 画不出来时不回一张空图：一张 0 字节的 PNG 在界面上就是一块白，
             // 而使用者会以为是这套版式什么都不显示
@@ -151,10 +174,45 @@ public class BilibiliReportLayoutController {
             return draft;
         }
 
+        PushTarget channel = channelOf(body);
+        return channel == null || revenueVisibility.isVisible(channel);
+    }
+
+    /**
+     * 这份预览用哪一套配色
+     * <p>
+     * 与金额同一个先后：草稿里选了还没保存的（reportPalette）最先，其次是这个通道存着的，
+     * 没带通道时为默认模板的。草稿值只管这一张图。
+     * <p>
+     * 请求体里带着这一项、而值是空（null、空串或只有空格），说的是草稿里改回了「跟默认模板走」，
+     * 按默认模板画；不能当成没带这一项，落到通道存着的那一套——那正是使用者刚刚改掉的。
+     * @param body 请求体，可为空
+     * @return 配色
+     */
+    private ReportPalette.Preset paletteFor(JSONObject body) {
+        if (body == null) {
+            return palettes.byDefault();
+        }
+        if (body.containsKey("reportPalette")) {
+            String draft = body.getString("reportPalette");
+            return draft == null || draft.isBlank() ? palettes.byDefault() : palettes.forId(draft);
+        }
+        return palettes.forChannel(channelOf(body));
+    }
+
+    /**
+     * 请求体里带的通道
+     * <p>
+     * type 缺省时按群聊处理——不确定就按更保守的那一边。
+     * 通道在配置里找不到时给一个只带会话类型的空通道：金额按会话类型的默认，配色按默认模板。
+     * @param body 请求体
+     * @return 没带通道（platform／num）时为 null
+     */
+    private PushTarget channelOf(JSONObject body) {
         String platform = body.getString("platform");
         Long num = body.getLong("num");
         if (platform == null || platform.isBlank() || num == null) {
-            return true;
+            return null;
         }
 
         Integer typeCode = body.getInteger("type");
@@ -165,8 +223,63 @@ public class BilibiliReportLayoutController {
                 : dataSource.getUser(streamerPlatform, uid).orElse(null);
         var channel = org.frostnova.nova.core.model.ChannelSettings.target(user, platform, type, num);
         if (channel == null) {
-            channel = new org.frostnova.nova.core.model.PushTarget(); channel.setType(type);
+            channel = new PushTarget(); channel.setType(type);
         }
-        return revenueVisibility.isVisible(channel);
+        return channel;
+    }
+
+    /**
+     * 可选的报告图配色，与默认模板里选的那一套
+     * <p>
+     * {@code default} 是此刻生效的那一套，{@code stored} 是默认模板里存着的（没改过时为 null），
+     * {@code factory} 是出厂那一套：「改过没有」与「恢复出厂」靠后两项分。
+     * @return 配色清单
+     */
+    @GetMapping(value = PALETTES_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
+    public JSONObject palettes() {
+        JSONArray items = new JSONArray();
+        for (ReportPalette.Preset preset : ReportPalette.PRESETS) {
+            JSONObject item = new JSONObject();
+            item.put("id", preset.id());
+            item.put("name", preset.name());
+            items.add(item);
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("presets", items);
+        result.put("default", palettes.byDefault().id());
+        result.put("stored", paletteSettings.storedDefault());
+        result.put("factory", ReportPaletteSettings.FACTORY_DEFAULT);
+        return result;
+    }
+
+    /**
+     * 改默认模板里的报告图配色。没另选过的通道随之一起变
+     * @param body 请求体，id 为预设 id；为空即回到出厂
+     * @return 保存结果
+     */
+    @PostMapping(value = DEFAULT_PALETTE_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<JSONObject> saveDefaultPalette(@RequestBody(required = false) JSONObject body) {
+        String id = body == null ? null : body.getString("id");
+        JSONObject result = new JSONObject();
+        if (id != null && !id.isBlank() && ReportPalette.preset(id).isEmpty()) {
+            result.put("success", false);
+            result.put("message", "没有名为 " + id + " 的报告图配色，可选的是: "
+                    + String.join("、", ReportPalette.PRESETS.stream().map(ReportPalette.Preset::id).toList()));
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        var issues = paletteSettings.saveDefault(id);
+        if (!issues.isEmpty()) {
+            result.put("success", false);
+            result.put("message", String.join("；", issues));
+            return ResponseEntity.ok(result);
+        }
+
+        log.info("{} 已把默认模板的报告图配色改成 {}", ConfigUiAccess.actor(), palettes.byDefault().name());
+        result.put("success", true);
+        result.put("message", "已保存，没另选配色的通道将同步更新");
+        return ResponseEntity.ok(result);
     }
 }

@@ -67,7 +67,7 @@ class BilibiliReportLayoutControllerTest {
         when(source.getUser("bilibili", 10001L)).thenReturn(java.util.Optional.of(user));
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "dataSource", source);
 
-        when(preview.render(any())).thenReturn(Optional.of(FAKE_PNG));
+        when(preview.render(any(), any())).thenReturn(Optional.of(FAKE_PNG));
     }
 
     @Test
@@ -163,7 +163,7 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(params);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
-                !options.isCover() && options.getDanmuRanking() == 20));
+                !options.isCover() && options.getDanmuRanking() == 20), any());
     }
 
     @Test
@@ -178,7 +178,7 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(body);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
-                !options.isShowRevenue()));
+                !options.isShowRevenue()), any());
     }
 
     @Test
@@ -187,7 +187,7 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(new JSONObject());
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(
-                BilibiliLiveReportOptions::isShowRevenue));
+                BilibiliLiveReportOptions::isShowRevenue), any());
     }
 
     @Test
@@ -204,7 +204,7 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(body);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(
-                BilibiliLiveReportOptions::isShowRevenue));
+                BilibiliLiveReportOptions::isShowRevenue), any());
     }
 
     @Test
@@ -213,13 +213,13 @@ class BilibiliReportLayoutControllerTest {
         ResponseEntity<byte[]> response = controller.preview(null);
 
         assertEquals(200, response.getStatusCode().value());
-        verify(preview).render(org.mockito.ArgumentMatchers.argThat(BilibiliLiveReportOptions::isCover));
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(BilibiliLiveReportOptions::isCover), any());
     }
 
     @Test
     @DisplayName("🔴 画不出来时回 500，不回一张空图")
     void previewFailsLoudly() {
-        when(preview.render(any())).thenReturn(Optional.empty());
+        when(preview.render(any(), any())).thenReturn(Optional.empty());
 
         ResponseEntity<byte[]> response = controller.preview(new JSONObject());
 
@@ -242,7 +242,7 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(body);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(
-                BilibiliLiveReportOptions::isShowRevenue));
+                BilibiliLiveReportOptions::isShowRevenue), any());
 
         // 存着的设定没被这一张动过：不带草稿值的下一张仍按存的隐藏画
         JSONObject plain = new JSONObject();
@@ -253,7 +253,7 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(plain);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
-                !options.isShowRevenue()));
+                !options.isShowRevenue()), any());
     }
 
     @Test
@@ -270,6 +270,6 @@ class BilibiliReportLayoutControllerTest {
         controller.preview(body);
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
-                !options.isShowRevenue()));
+                !options.isShowRevenue()), any());
     }
 }

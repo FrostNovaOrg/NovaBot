@@ -7,6 +7,7 @@ import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.service.WeeklyReportRenderer;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.awt.Color;
@@ -31,18 +32,36 @@ public class BilibiliWeeklyReportPainter implements WeeklyReportRenderer {
     private final BilibiliApiUtil api;
     private final NovaBilibiliProperties properties;
     private final Logo logo = new Logo();
+    private final ReportPalettes palettes;
 
     public BilibiliWeeklyReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                       NovaBilibiliProperties properties) {
+        this(factory, api, properties, ReportPalettes.factory());
+    }
+
+    @Autowired
+    public BilibiliWeeklyReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
+                                      NovaBilibiliProperties properties, ReportPalettes palettes) {
         this.factory = factory;
         this.api = api;
         this.properties = properties;
+        this.palettes = palettes;
     }
 
     @Override public String platform() { return "bilibili"; }
 
     @Override public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data) {
         return render(streamer, data, ReportPalette.DEFAULT);
+    }
+
+    /** 核心按通道解析出的预设 id；认不出时照默认模板的配色。 */
+    @Override public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, String palette) {
+        return render(streamer, data, palettes.forId(palette).palette());
+    }
+
+    /** 认不出的 id 照默认模板的那一套画，答的就是那一套。 */
+    @Override public String paletteId(String palette) {
+        return palettes.forId(palette).id();
     }
 
     public byte[] render(LiveStreamerInfo streamer, WeeklyReport.Data data, ReportPalette palette) {

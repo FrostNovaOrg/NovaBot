@@ -223,7 +223,7 @@ class BilibiliRankingLongImageTest {
 
         ArgumentCaptor<List<UserScore>> rows = captor();
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(which).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        verify(which).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture(), any());
         return new Rendered(decode(reply), rows.getValue(), footnote.getValue());
     }
 

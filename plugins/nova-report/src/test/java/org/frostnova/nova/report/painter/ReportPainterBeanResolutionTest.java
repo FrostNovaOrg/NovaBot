@@ -99,6 +99,7 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
         beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));
         beans.registerSingleton("streamerNames", StreamerNames.none());
+        beans.registerSingleton("reportPalettes", ReportPalettes.factory());
 
         registerAsComponentScanDoes(BilibiliLiveReportPainter.class);
         registerAsComponentScanDoes(BilibiliLiveReportPreviewPainter.class);

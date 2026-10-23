@@ -1,12 +1,15 @@
 package org.frostnova.nova.report.handler;
 
 import org.frostnova.nova.core.model.MessagePlaceholders;
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.handler.PushHandlerSupport;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
@@ -44,23 +47,35 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
     private final StreamerNames names;
 
+    private final ReportPalettes palettes;
+
+    private final PaintOnce drawn = new PaintOnce();
+
     public BilibiliLiveReportPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                          BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility) {
         this(api, sender, painter, revenueVisibility, StreamerNames.none());
     }
 
+    public BilibiliLiveReportPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
+                                         BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility,
+                                         StreamerNames names) {
+        this(api, sender, painter, revenueVisibility, names, ReportPalettes.factory());
+    }
+
     /**
      * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     * @param palettes 各通道的报告图配色
      */
     @Autowired
     public BilibiliLiveReportPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                          BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility,
-                                         StreamerNames names) {
+                                         StreamerNames names, ReportPalettes palettes) {
         this.api = api;
         this.sender = sender;
         this.painter = painter;
         this.revenueVisibility = revenueVisibility;
         this.names = names;
+        this.palettes = palettes;
     }
 
     @Override
@@ -77,7 +92,10 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
         // 此前占位符被替换成空串会让整条消息成为空白、发送环节直接跳过——
         // 主播看到的是「这场没有报告」，而真相是「报告画不出来」
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenue);
-        Optional<String> image = painter.paint(event.getPlatform(), event.getSource(), options);
+        // 画法按解析后的版式认：模板文字不同而版式相同的两个通道，画出来是同一张
+        ReportPalette.Preset palette = palettes.forChannel(target);
+        Optional<String> image = drawn.get(event, JSON.toJSONString(options) + "|" + palette.id(),
+                () -> painter.paint(event.getPlatform(), event.getSource(), options, palette.palette()));
 
         String report = image
                 .map(base64 -> "{image_base64=" + base64 + "}")

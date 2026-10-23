@@ -88,7 +88,7 @@ class BilibiliLiveReportCommandTest {
         CommandReply reply = fixture.command.execute(context());
 
         assertEquals("主播甲 现在没在直播", reply.content());
-        verify(fixture.painter, never()).paint(anyString(), any(), any());
+        verify(fixture.painter, never()).paint(anyString(), any(), any(), any());
     }
 
     @Test
@@ -215,7 +215,7 @@ class BilibiliLiveReportCommandTest {
                     Optional.of(living.contains((int) ((Long) invocation.getArgument(1) - 10000L))));
 
             painter = mock(BilibiliLiveReportPainter.class);
-            when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+            when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
 
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
             when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
@@ -229,7 +229,7 @@ class BilibiliLiveReportCommandTest {
 
         private void capture() {
             if (!captured) {
-                verify(painter).paint(anyString(), source.capture(), options.capture());
+                verify(painter).paint(anyString(), source.capture(), options.capture(), any());
                 captured = true;
             }
         }

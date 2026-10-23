@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.command.BilibiliStreamerCommand;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
+import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -36,6 +37,16 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
     private final BilibiliLiveReportPainter painter;
 
     private final RevenueVisibilityService revenueVisibility;
+
+    /**
+     * 各通道的报告图配色。回的图按发问的这个会话所在的通道画
+     */
+    private ReportPalettes palettes = ReportPalettes.factory();
+
+    @Autowired
+    public void setPalettes(ReportPalettes palettes) {
+        this.palettes = palettes;
+    }
 
     @Autowired
     public BilibiliLiveReportCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
@@ -81,7 +92,7 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
 
         return withNotice(resolved, painter.paint(BilibiliPlatform.BILIBILI.id(),
                         new LiveStreamerInfo(streamer.getUid(), unameOf(streamer), streamer.getRoomId(), streamer.getFace()),
-                        options)
+                        options, palettes.forChannel(context.getChannel()).palette())
                 .map(CommandReply::image)
                 .orElseGet(() -> CommandReply.of("报告绘制失败, 请查看日志")));
     }

@@ -139,7 +139,7 @@ class BilibiliRankingHeightLimitTest {
 
         ArgumentCaptor<List<UserScore>> rows = captor();
         ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture(), any());
         int painted = heightOfImage(reply);
         assertAll(
                 () -> assertEquals(FITS, rows.getValue().size(), "只画装得下的那些名次"),
@@ -171,7 +171,7 @@ class BilibiliRankingHeightLimitTest {
 
             ArgumentCaptor<List<UserScore>> rows = captor();
             ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
-            verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+            verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture(), any());
 
             int painted = heightOfImage(reply);
             // 生效的上限是「配置值」与「一张最小的图」里高的那个，按真出图高度量

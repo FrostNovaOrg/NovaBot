@@ -47,6 +47,7 @@ class ConfigUiMemberPermissionsTest {
             GET handlers
             GET templates
             GET report/layout-options
+            GET report/palettes
             """);
     private static final Set<String> SCOPED = routes("""
             GET datasource/users/{platform}/{uid}
@@ -86,6 +87,7 @@ class ConfigUiMemberPermissionsTest {
             GET /config/napcat-bootstrap
             GET /config/napcat-bootstrap/napcat-resume.js
             POST auth/agreement/accept
+            POST report/palettes/default
             POST auth/agreement/revoke
             GET auth/totp/setup
             POST auth/totp/enroll
@@ -185,8 +187,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(114, mappings.size());
-        assertEquals(22, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(62, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(116, mappings.size());
+        assertEquals(23, EVERYONE.size()); assertEquals(21, SCOPED.size()); assertEquals(63, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));

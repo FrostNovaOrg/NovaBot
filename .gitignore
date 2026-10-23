@@ -94,3 +94,6 @@ NetworkDebug/
 # 不带路径的 dist/ 会误伤别处同名目录）
 /manual/dist/
 
+
+# 报告图配色样张（tools/demo-assets/render-report-themes.sh 现生成，不入仓）
+/samples/report-themes/
