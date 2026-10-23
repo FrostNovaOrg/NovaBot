@@ -118,3 +118,9 @@ novabot:
       allowed-origins:
         - https://panel.example
       buffer-size: 131
+      max-connections: 132
+      max-pending-connections: 133
+      max-connections-per-source: 134
+      max-concurrent-handshakes: 135
+      handshake-timeout-ms: 136
+      io-timeout-ms: 137
