@@ -67,7 +67,7 @@
 			"name":"数据存储",
 			"reason":"",
 			"scope":"SYSTEM",
-			"summary":"只有本场数据；要跨场次的累计数据，就在设置页「采集」组里填 spring.data.redis.host，填完即时生效，不用重启"
+			"summary":"只有本场数据；要跨场次的累计数据，在 设置 › 采集 › 累计数据 Redis · 地址 里填，填完即时生效，不用重启"
 		}
 	],
 	"live":[],
@@ -78,18 +78,18 @@
 		"pending":0
 	},
 	"quiet":{
-		"active":false,
+		"active":true,
 		"end":"13:30",
 		"start":"11:30"
 	},
 	"restartPending":[],
 	"runtime":{
-		"diskFreeMb":64453,
+		"diskFreeMb":59375,
 		"diskLevel":"ok",
 		"heapMaxMb":4096,
-		"heapUsedMb":200,
+		"heapUsedMb":137,
 		"processors":10,
-		"threads":30
+		"threads":28
 	},
 	"senders":[
 		"qq-onebot"

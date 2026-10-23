@@ -7,6 +7,7 @@
 			],
 			"available":true,
 			"category":"提醒订阅",
+			"channelScoped":true,
 			"description":"查看提醒订阅名单，可带「开播」或「动态」",
 			"disableable":true,
 			"groupOnly":true,
@@ -30,6 +31,7 @@
 			],
 			"available":true,
 			"category":"提醒订阅",
+			"channelScoped":true,
 			"description":"开关动态提醒：没订就订上，订了就取消",
 			"disableable":true,
 			"groupOnly":true,
@@ -51,6 +53,7 @@
 			"aliases":[],
 			"available":true,
 			"category":"命令管理",
+			"channelScoped":false,
 			"description":"在本群启用某个命令",
 			"disableable":false,
 			"groupOnly":true,
@@ -70,6 +73,7 @@
 			],
 			"available":true,
 			"category":"提醒订阅",
+			"channelScoped":true,
 			"description":"开关开播提醒：没订就订上，订了就取消",
 			"disableable":true,
 			"groupOnly":true,
@@ -93,6 +97,7 @@
 			],
 			"available":true,
 			"category":"数据查询",
+			"channelScoped":true,
 			"description":"查各榜单排行，带「总」出历次累计",
 			"disableable":true,
 			"groupOnly":false,
@@ -114,6 +119,7 @@
 			"aliases":[],
 			"available":true,
 			"category":"数据查询",
+			"channelScoped":true,
 			"description":"查看正在直播主播的实时数据报告",
 			"disableable":true,
 			"groupOnly":false,
@@ -133,6 +139,7 @@
 			],
 			"available":true,
 			"category":"数据查询",
+			"channelScoped":true,
 			"description":"查询直播间的整体数据，带「总」出历次累计",
 			"disableable":true,
 			"groupOnly":false,
@@ -154,6 +161,7 @@
 			"aliases":[],
 			"available":true,
 			"category":"命令管理",
+			"channelScoped":false,
 			"description":"在本群禁用某个命令",
 			"disableable":false,
 			"groupOnly":true,
@@ -174,6 +182,7 @@
 			],
 			"available":true,
 			"category":"命令管理",
+			"channelScoped":false,
 			"description":"列出可用命令",
 			"disableable":false,
 			"groupOnly":false,
@@ -195,10 +204,20 @@
 	},
 	"sessions":[
 		{
-			"configured":true,
-			"disabled":[
-				"数据排行榜"
+			"channels":[
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000101
+				},
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000102
+				}
 			],
+			"configured":true,
+			"disabled":[],
 			"menuHidden":[],
 			"menuNotes":{
 				"数据排行榜":"带「总」查累计要先开累计数据",
@@ -206,7 +225,7 @@
 			},
 			"num":990000000301,
 			"platform":"qq-onebot",
-			"quietActive":false,
+			"quietActive":true,
 			"quietMode":"follow",
 			"revenueExplicit":true,
 			"revenueVisible":false,
@@ -218,6 +237,23 @@
 			"typeCode":1
 		},
 		{
+			"channels":[
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000101
+				},
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000102
+				},
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000103
+				}
+			],
 			"configured":true,
 			"disabled":[],
 			"menuHidden":[],
@@ -227,7 +263,7 @@
 			},
 			"num":990000000302,
 			"platform":"qq-onebot",
-			"quietActive":false,
+			"quietActive":true,
 			"quietMode":"follow",
 			"revenueExplicit":false,
 			"revenueVisible":false,
@@ -240,6 +276,46 @@
 			"typeCode":1
 		},
 		{
+			"channels":[
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000102
+				},
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000104
+				}
+			],
+			"configured":true,
+			"disabled":[],
+			"menuHidden":[],
+			"menuNotes":{
+				"数据排行榜":"带「总」查累计要先开累计数据",
+				"直播间数据":"带「总」查累计要先开累计数据"
+			},
+			"num":990000000303,
+			"platform":"qq-onebot",
+			"quietActive":true,
+			"quietMode":"follow",
+			"revenueExplicit":false,
+			"revenueVisible":false,
+			"streamers":[
+				"演示主播常青",
+				"演示主播休眠"
+			],
+			"type":"群",
+			"typeCode":1
+		},
+		{
+			"channels":[
+				{
+					"quietActive":true,
+					"streamerPlatform":"bilibili",
+					"streamerUid":990000000101
+				}
+			],
 			"configured":true,
 			"disabled":[],
 			"menuHidden":[
@@ -255,7 +331,7 @@
 			},
 			"num":990000000502,
 			"platform":"qq-onebot",
-			"quietActive":false,
+			"quietActive":true,
 			"quietMode":"follow",
 			"revenueExplicit":false,
 			"revenueVisible":true,

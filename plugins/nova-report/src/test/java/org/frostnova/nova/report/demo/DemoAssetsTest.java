@@ -152,6 +152,44 @@ class DemoAssetsTest {
     }
 
     @Test
+    @DisplayName("手册两张报告图写进 target/demo-assets/manual，仅 -Dmanual.publish=true 时落 manual/images；开头那截与整张同源")
+    void writesManualReportImages() throws Exception {
+        boolean publish = Boolean.parseBoolean(System.getProperty("manual.publish", "false"));
+        Path root = DemoAssets.repoRoot();
+        Path images = publish
+                ? root.resolve("manual").resolve("images")
+                : root.resolve("target").resolve("demo-assets").resolve("manual");
+        Path demo = root.resolve("target").resolve("demo-assets").resolve("demo");
+        DemoAssets.generate(demo, fonts);
+        DemoAssets.ManualRendered rendered = DemoAssets.renderManual(demo, images, fonts);
+        List<String> red = new ArrayList<>();
+        try {
+            assertEquals(DemoAssets.REPORT_WIDTH, rendered.full().width(), "full width");
+            assertTrue(rendered.full().bytes() <= DemoAssets.REPORT_MAX_BYTES, "bytes " + rendered.full().bytes());
+            assertEquals(DemoAssets.REPORT_WIDTH, rendered.topWidth(), "top width");
+            assertEquals(DemoAssets.MANUAL_TOP_HEIGHT, rendered.topHeight(), "top height");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            BufferedImage full = ImageIO.read(rendered.full().path().toFile());
+            BufferedImage top = ImageIO.read(rendered.top().toFile());
+            for (int y = 0; y < top.getHeight(); y += 7) {
+                for (int x = 0; x < top.getWidth(); x += 7) {
+                    if (full.getRGB(x, y) != top.getRGB(x, y)) {
+                        fail("top differs at " + x + "," + y);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
     @DisplayName("隐藏金额那一版：同一份演示数据出图不超体积，文字版无金额符号、显示金额那版有")
     void hiddenSessionRenderStaysUnderCapAndTextsMatchVisibility(@TempDir Path dir) throws Exception {
         Path demo = dir.resolve("demo");
