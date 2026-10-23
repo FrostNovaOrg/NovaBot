@@ -30,6 +30,11 @@ import java.util.Objects;
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigurer {
     public static final String MEMBER_DENIED = "成员不能使用这一项";
+    static final String SESSION_CHECK_USED = "novabot.config-ui.session-check-used";
+    private static final String CONNECTION_INSTRUCTIONS = "如用 NovaBot 会话接入管理后端，请将代理的会话检查地址改为 /config/api/admin-session-check"
+            + "（有部署前缀时，例如 /novabot，填写 /novabot/config/api/admin-session-check），"
+            + "并保留后端自身的登录与角色检查；改好代理配置并重启 NovaBot 后提示消失。";
+    private final java.util.concurrent.atomic.AtomicBoolean sessionCheckUsed = new java.util.concurrent.atomic.AtomicBoolean();
     private final ConfigUiAuthService auth;
     private final NovaCoreProperties properties;
     private final DataSourceServiceRegistry platforms;
@@ -54,6 +59,13 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String path = ConfigUiPermissions.pattern(request);
         if (!path.equals(ConfigUiController.BASE_PATH) && !path.startsWith(ConfigUiController.BASE_PATH + "/")) return true;
+        if (path.equals(ConfigUiController.BASE_PATH + "/api/session-check")
+                && sessionCheckUsed.compareAndSet(false, true)) {
+            org.slf4j.LoggerFactory.getLogger(ConfigUiApiInterceptor.class).warn(CONNECTION_INSTRUCTIONS);
+        }
+        if (path.equals(ConfigUiController.BASE_PATH + "/api/auth/state") && sessionCheckUsed.get()) {
+            request.setAttribute(SESSION_CHECK_USED, true);
+        }
         request.setAttribute(ConfigUiAccess.PLATFORMS, platforms);
         var rule = ConfigUiPermissions.rule(request);
         if (auth.isEnabled() && ConfigUiSecurityFilter.PUBLIC_API.contains(path)

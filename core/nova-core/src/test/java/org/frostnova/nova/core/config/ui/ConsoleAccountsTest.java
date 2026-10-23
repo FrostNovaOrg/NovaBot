@@ -922,6 +922,149 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 .andExpect(jsonPath("$.authorizationUrl").value(org.hamcrest.Matchers.startsWith(ISSUER + "/authorize?")));
     }
 
+    @Test
+    void sessionCheckKeepsExistingResults() throws Exception {
+        var member = enabledMember();
+        perform(get("/config/api/session-check"), oidcSession(member))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        perform(get("/config/api/session-check"), auth.issueForPassword("127.0.0.1"))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        var admin = accounts.role(member.id(), Role.ADMIN);
+        perform(get("/config/api/session-check"), oidcSession(admin))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        mvc.perform(get("/config/api/session-check")).andExpect(status().isUnauthorized());
+        checkInactiveSessions("/config/api/session-check");
+        auth.applyPasswordHash(null);
+        mvc.perform(get("/config/api/session-check").header("Authorization", "Bearer test-operator"))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+    }
+
+    @Test
+    void administratorCheckFollowsAccountState() throws Exception {
+        var member = enabledMember();
+        var session = oidcSession(member);
+        perform(get("/config/api/admin-session-check"), session).andExpect(status().isForbidden());
+        accounts.role(member.id(), Role.ADMIN);
+        perform(get("/config/api/admin-session-check"), session)
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        accounts.role(member.id(), Role.MEMBER);
+        perform(get("/config/api/admin-session-check"), session).andExpect(status().isForbidden());
+        checkInactiveSessions("/config/api/admin-session-check");
+        mvc.perform(get("/config/api/admin-session-check")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void administratorCheckSupportsLocalAndPrefixedRequests() throws Exception {
+        var session = auth.issueForPassword("127.0.0.1");
+        perform(get("/config/api/admin-session-check"), session)
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        perform(head("/app/config/api/admin-session-check").contextPath("/app"), session)
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        properties.getConfigUi().getAgreement().setAcceptedVersion(0);
+        perform(get("/config/api/admin-session-check"), session).andExpect(status().isForbidden());
+        properties.getConfigUi().getAgreement().setAcceptedVersion(ConfigUiAgreement.VERSION);
+        properties.getConfigUi().getAuth().setOperatorToken(true);
+        mvc.perform(get("/config/api/admin-session-check").header("Authorization", "Bearer test-operator"))
+                .andExpect(status().isNoContent());
+        auth.applyPasswordHash(null);
+        mvc.perform(get("/config/api/admin-session-check").header("Authorization", "Bearer test-operator"))
+                .andExpect(status().isNoContent());
+    }
+
+    private static final String CONNECTION_NOTICE = "如用 NovaBot 会话接入管理后端，请将代理的会话检查地址改为 /config/api/admin-session-check"
+            + "（有部署前缀时，例如 /novabot，填写 /novabot/config/api/admin-session-check），"
+            + "并保留后端自身的登录与角色检查；改好代理配置并重启 NovaBot 后提示消失。";
+
+    @Test
+    void existingCheckProvidesOneLogEntryAndAdministratorNotice() throws Exception {
+        var logger = (Logger) LoggerFactory.getLogger(ConfigUiApiInterceptor.class);
+        var entries = new ListAppender<ILoggingEvent>();
+        entries.start();
+        logger.addAppender(entries);
+        var output = new java.io.ByteArrayOutputStream();
+        var original = System.err;
+        try (var consoleOutput = new java.io.PrintStream(output, true, java.nio.charset.StandardCharsets.UTF_8)) {
+            System.setErr(consoleOutput);
+            var admin = auth.issueForPassword("127.0.0.1");
+            perform(get("/config/api/session-check"), oidcSession(enabledMember()))
+                    .andExpect(status().isNoContent());
+            perform(get("/config/api/auth/state"), admin)
+                    .andExpect(jsonPath("$.sessionCheckSetupNeeded").value(true));
+            for (int i = 0; i < 3; i++) {
+                perform(get("/app/config/api/session-check").contextPath("/app"), admin)
+                        .andExpect(status().isNoContent());
+                perform(get("/config/api/auth/state"), admin)
+                        .andExpect(jsonPath("$.sessionCheckSetupNeeded").value(true));
+            }
+            var warnings = entries.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
+            assertEquals(1, warnings.size());
+            assertEquals(CONNECTION_NOTICE, warnings.get(0).getFormattedMessage());
+            assertFalse(output.toString(java.nio.charset.StandardCharsets.UTF_8).contains(CONNECTION_NOTICE));
+            perform(get("/config/api/auth/state"), oidcSession(enabledMember()))
+                    .andExpect(jsonPath("$.sessionCheckSetupNeeded").doesNotExist());
+            mvc.perform(get("/config/api/auth/state"))
+                    .andExpect(jsonPath("$.sessionCheckSetupNeeded").doesNotExist());
+            console();
+            admin = auth.issueForPassword("127.0.0.1");
+            perform(get("/config/api/admin-session-check"), admin).andExpect(status().isNoContent());
+            perform(get("/config/api/auth/state"), admin)
+                    .andExpect(jsonPath("$.sessionCheckSetupNeeded").doesNotExist());
+            assertEquals(1, entries.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).count());
+        } finally {
+            System.setErr(original);
+            logger.detachAppender(entries);
+            entries.stop();
+        }
+    }
+
+    @Test
+    void ordinaryRequestsDoNotProvideConnectionNotice() throws Exception {
+        var logger = (Logger) LoggerFactory.getLogger(ConfigUiApiInterceptor.class);
+        var entries = new ListAppender<ILoggingEvent>();
+        entries.start();
+        logger.addAppender(entries);
+        try {
+            var admin = auth.issueForPassword("127.0.0.1");
+            perform(get("/config/api/admin-session-check"), admin).andExpect(status().isNoContent());
+            perform(get("/config/api/values"), admin).andExpect(status().isOk());
+            perform(get("/config/api/auth/state"), admin)
+                    .andExpect(jsonPath("$.sessionCheckSetupNeeded").doesNotExist());
+            assertTrue(entries.list.stream().noneMatch(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN));
+        } finally {
+            logger.detachAppender(entries);
+            entries.stop();
+        }
+    }
+
+    @Test
+    void consoleRendersConnectionNoticeFromLoginState() throws Exception {
+        var states = new com.alibaba.fastjson2.JSONArray();
+        var admin = auth.issueForPassword("127.0.0.1");
+        states.add(JSONObject.parseObject(perform(get("/config/api/auth/state"), admin)
+                .andReturn().getResponse().getContentAsString()));
+        perform(get("/config/api/session-check"), admin).andExpect(status().isNoContent());
+        states.add(JSONObject.parseObject(perform(get("/config/api/auth/state"), admin)
+                .andReturn().getResponse().getContentAsString()));
+        states.add(JSONObject.parseObject(perform(get("/config/api/auth/state"), oidcSession(enabledMember()))
+                .andReturn().getResponse().getContentAsString()));
+        console();
+        states.add(JSONObject.parseObject(perform(get("/config/api/auth/state"), auth.issueForPassword("127.0.0.1"))
+                .andReturn().getResponse().getContentAsString()));
+        FrontendFixture.run(Path.of("src/test/resources/frontend/console-session-notice-fixture.mjs").toAbsolutePath().toString(),
+                "会话检查接入提示", states.toJSONString(), CONNECTION_NOTICE);
+    }
+
+    private void checkInactiveSessions(String path) throws Exception {
+        var pending = accounts.register(new OidcClient.Identity(ISSUER, "subject-pending", "Example", null), Instant.now());
+        var pendingSession = sessions.issueForAccount("127.0.0.1", Instant.now(), ConfigUiSession.Channel.OIDC,
+                null, pending.id(), null);
+        perform(get(path), pendingSession).andExpect(status().isUnauthorized());
+        var account = accounts.role(enabledMember().id(), Role.ADMIN);
+        var session = oidcSession(account);
+        accounts.status(account.id(), Status.DISABLED);
+        perform(get(path), session).andExpect(status().isUnauthorized());
+    }
+
     private ConfigUiAccount member() {
         return accounts.list().stream().filter(a -> !LOCAL_ID.equals(a.id())).findFirst().orElseThrow();
     }
