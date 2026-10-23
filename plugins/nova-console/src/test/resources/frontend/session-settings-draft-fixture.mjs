@@ -590,9 +590,10 @@ function quietPosts() {
   return statePosts().filter(item => item.path.endsWith('/state/quiet'));
 }
 
-/** 摘要行里标题为 title 的那一行写的字 */
+/** 摘要行里标题为 title 的那一行写的字：折叠项的 summary，或摊开那几行规则的头一行 */
 function summaryText(scope, title) {
-  const heads = allNodes(scope).filter(node => node.tagName === 'summary');
+  const heads = allNodes(scope).filter(node => node.tagName === 'summary'
+    || String(node.className || '').split(/\s+/).includes('crule-h'));
   const head = heads.find(node => node.innerHTML.includes('<span class="cr-t">' + title + '</span>'));
   if (!head) return null;
   const match = /<span class="cr-sum">([^<]*)<\/span>/.exec(head.innerHTML);

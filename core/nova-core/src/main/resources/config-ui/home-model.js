@@ -478,18 +478,7 @@ function now(status, chain, fresh) {
   };
 }
 
-/**
- * 「今天发生了什么」短条
- *
- * 失败与告警置顶，整段不超过八条。多出来的失败与告警收成一行，
- * 写还有几条失败或告警，点了去日志页。普通记录不计入这一行。
- * 失败没把八条占满时，其余按时间补进去，普通记录最多六条。
- * 条数按当天全部失败与告警来数。时间线最近一页装不下的那些也要算上，
- * 否则开播下播多的那一天，首页会像没出过事。显示的仍是最新的几条。
- * 首页只留这一段，筛选、搜索、翻天都在日志页——两处各摆一套筛选，改了一处另一处就开始骗人。
- * @param timeline /api/timeline 回包；problems 为当天失败与告警（另取的那一份）
- * @return 要显示的事件；溢出时末行带 href，点了去日志页
- */
+/** 今日事件分组：同一目标、同一原因的失败合并，卡片时间取最近一次。 */
 function shortStrip(timeline) {
   const events = (timeline && timeline.events) || [];
   const problems = timeline && timeline.problems;
@@ -497,13 +486,49 @@ function shortStrip(timeline) {
     ? problems.events
     : events.filter(item => item.level && item.level !== 'info');
   const total = (problems && typeof problems.matched === 'number') ? problems.matched : bad.length;
-  const rest = events.filter(item => !item.level || item.level === 'info');
-  const limit = 8;
-  if (total > limit) {
-    const shown = bad.slice(0, limit - 1);
-    return shown.concat([{text: '另有 ' + (total - shown.length) + ' 条失败或告警', href: '#/log'}]);
+  const groups = new Map();
+  for (const item of bad) {
+    const detail = item.detail || {};
+    // 只按失败类型、目标与原因合并；耗时、消息摘要等单次详情保留最近一份。
+    const key = JSON.stringify([item.level, item.type, item.text, item.streamer, item.channel,
+      detail.platform, detail.streamerPlatform, detail.streamerUid, detail.reason]);
+    const previous = groups.get(key);
+    const count = previous ? previous.count + 1 : 1;
+    groups.set(key, {...(previous && previous.at > item.at ? previous : item), count, group: 'attention'});
   }
-  return bad.concat(rest.slice(0, Math.max(0, Math.min(6, limit - bad.length))));
+  const sorted = [...groups.values()].sort((a, b) => b.at - a.at);
+  const limit = 8;
+  const overflow = sorted.length > limit || total > bad.length;
+  const shown = sorted.slice(0, overflow ? limit - 1 : limit);
+  if (overflow) {
+    const hidden = total - shown.reduce((n, item) => n + item.count, 0);
+    return shown.concat([{text: '另有 ' + hidden + ' 条失败或告警', href: '#/log', group: 'attention'}]);
+  }
+  const rest = events.filter(item => !item.level || item.level === 'info')
+    .slice().sort((a, b) => b.at - a.at)
+    .slice(0, Math.max(0, Math.min(6, limit - shown.length)))
+    .map(item => ({...item, group: 'other'}));
+  return shown.concat(rest);
+}
+
+/** 展示时解释诊断码，原始读数仍可放在提示中。 */
+export function healthText(text) {
+  const raw = String(text || '');
+  const counts = /^412 (至少 \d+|\d+) 次\/7 天，-352 (至少 \d+|\d+) 次\/时，-509 (至少 \d+|\d+) 次\/时，-401 (至少 \d+|\d+) 次\/日，质询 (至少 \d+|\d+) 次\/日，快照缺失 (至少 \d+|\d+) 次\/日，1006 (至少 \d+|\d+) 次\/时（(至少 \d+|\d+) 次\/日）/;
+  const readable = raw.replace(counts, (_, ...parts) => {
+    const labels = ['近 7 天请求被拦截', '近 1 小时被限流', '近 1 小时请求过于频繁', '近 24 小时需重新验证身份',
+      '近 24 小时遇到验证', '近 24 小时开播快照缺失', '近 1 小时直播连接异常断开', '近 24 小时直播连接异常断开'];
+    const lines = labels.flatMap((label, i) => parts[i] === '0' ? [] : [label + ' ' + parts[i] + ' 次']);
+    return lines.length ? lines.join('；') : '近 7 天没有被风控';
+  });
+  return readable
+    .replace(/412 /g, '请求被拦截 ').replace(/-352 /g, '请求被限流 ')
+    .replace(/-509 /g, '请求过于频繁 ').replace(/-401 /g, '需重新验证身份 ')
+    .replace(/1006 断线次数/g, '直播连接异常断开的次数')
+    .replace(/1006 /g, '直播连接异常断开 ')
+    .replace(/真实 HTTP 请求被拦截/g, '请求被拦截')
+    .replace(/业务码 /g, '').replace(/长连接 直播连接异常断开/g, '直播连接异常断开')
+    .replace(/spring\.data\.redis\.host/g, '设置 › 采集 › 累计数据 Redis · 地址');
 }
 
 /**

@@ -119,9 +119,35 @@ async function loadOptions() {
  * @param host 宿主给的容器
  * @param ctx {status, login, api, pickTargets}
  */
-export function render(host, ctx) {
+export function render(host, ctx, adding = false) {
   seen = ctx || {};
   result = el('div', 'su-r');
+
+  const users = ((seen.status || {}).users || []);
+  const saved = draft.streamer && draft.savedVersions?.has(draft.streamer.platform + ':' + draft.streamer.uid);
+  if (users.length && !adding && (!draft.streamer || saved)) {
+    host.appendChild(note('ok', '已完成 · 已配置 ' + users.length + ' 位主播'));
+    const list = el('ul', 'su-existing');
+    users.forEach(one => {
+      const row = el('li');
+      const link = el('a', 'lnkbtn');
+      link.href = detailHash(one.platform, one.uid);
+      link.textContent = one.uname || String(one.uid);
+      row.appendChild(link);
+      list.appendChild(row);
+    });
+    host.appendChild(list);
+    const add = el('button', 'ghost');
+    add.type = 'button';
+    add.textContent = '再加一个';
+    add.addEventListener('click', () => {
+      draft.streamer = null;
+      host.innerHTML = '';
+      render(host, ctx, true);
+    });
+    host.appendChild(add);
+    return;
+  }
 
   const head = el('div', 'su-h');
   head.textContent = '添加主播与推送目标';
@@ -309,6 +335,7 @@ export async function done(ctx) {
  */
 export async function next(ctx) {
   seen = ctx || seen;
+  if (!draft.streamer && (((seen.status || {}).users || []).length > 0)) return true;
   if (store.platforms == null) {
     // 清单还没到：既不放行也不当没装——放行的话这一步什么都没存就过了，
     // 当没装的话装着插件的人会被白白放去配下一步。拦下并说清在等什么

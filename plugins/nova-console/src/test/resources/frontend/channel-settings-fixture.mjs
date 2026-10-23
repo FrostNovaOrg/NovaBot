@@ -183,8 +183,8 @@ await test('管理员照问号说明与禁用提示，以为点名问一位关�
   await push.reload();
   push.setRuntimeState(await (await fetch('/config/api/state')).json());
   await open(1);
-  const help = idNode('push-right').querySelectorAll('button').find(node => node.getAttribute('aria-label') === '命令：查看说明');
-  assert.ok(help, '命令那一行应有问号说明');
+  const help = idNode('push-right').querySelectorAll('button').find(node => node.getAttribute('aria-label') === '群内命令：查看说明');
+  assert.ok(help, '群内命令那一块应有问号说明');
   const hadWindow = 'window' in globalThis;
   if (!hadWindow) globalThis.window = {innerWidth: 1280, innerHeight: 800};
   help.isConnected = true;

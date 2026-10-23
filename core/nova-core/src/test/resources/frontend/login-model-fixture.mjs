@@ -86,7 +86,7 @@ for (const oidcEnabled of [false, true]) {
     {otherMethodsFolded: oidcEnabled, passkey: hasPasskey,
       passwordFolded: oidcEnabled || hasPasskey,
       foldLabel: oidcEnabled ? '其他登录方式' : '使用密码登录',
-      passkeySecondary: oidcEnabled && hasPasskey, passwordSecondary: oidcEnabled,
+      passkeySecondary: oidcEnabled && hasPasskey, passwordSecondary: false,
       passkeyDivider: hasPasskey && !oidcEnabled,
       firstButton: oidcEnabled ? 'oidc' : (hasPasskey ? 'passkey' : 'password'),
       otherMethodsFirstControl: hasPasskey ? 'passkey' : 'password'},
@@ -289,8 +289,8 @@ for (const oidcEnabled of [false, true]) {
           eq($('#login-fold-label')?.textContent, oidcEnabled ? '其他登录方式' : '使用密码登录', '折叠入口文案 ' + label);
           eq($('#oidc-create-field').classList.contains('hidden'), !(oidcEnabled && !!supported), '注册显隐 ' + label);
           eq($('#passkey-field').classList.contains('hidden'), !hasPasskey, '通行密钥显隐 ' + label);
-          eq($('#passkey').classList.contains('secondary'), oidcEnabled && hasPasskey, '通行密钥样式 ' + label);
-          eq($('#submit').classList.contains('secondary'), oidcEnabled, '口令提交样式 ' + label);
+          eq($('#passkey').classList.contains('ghost'), oidcEnabled && hasPasskey, '通行密钥样式 ' + label);
+          eq($('#submit').classList.contains('ghost'), false, '口令提交样式 ' + label);
           eq($('#pwd-fold').open, localRequired || !(oidcEnabled || hasPasskey), '口令折叠 ' + label);
           eq($('#pwd-fold').classList.contains('bare'), !(oidcEnabled || hasPasskey), '摘要行显隐 ' + label);
           eq($('#passkey-or').classList.contains('hidden'), !(hasPasskey && !oidcEnabled), '分隔线显隐 ' + label);

@@ -170,6 +170,11 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
     }
 
     @Override
+    public int displayOrder() {
+        return 10;
+    }
+
+    @Override
     public String description() {
         return "主播开始直播时推送";
     }

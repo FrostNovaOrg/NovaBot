@@ -51,7 +51,7 @@ class ConfigUiLoginPageTest {
         assertTrue(html.indexOf("id=\"oidc\"") < html.indexOf("id=\"oidc-create\""));
         assertTrue(html.indexOf("id=\"oidc-create\"") < html.indexOf("id=\"passkey\""));
         assertTrue(html.contains("用统一身份注册"));
-        assertTrue(html.contains("第一次来？先在账户中心注册，注册完会回到这里登记，等管理员授权后就能用。"));
+        assertTrue(html.contains("注册后返回此处，等待管理员授权。"));
         assertTrue(html.contains("/api/oidc/login?create=1"));
     }
 

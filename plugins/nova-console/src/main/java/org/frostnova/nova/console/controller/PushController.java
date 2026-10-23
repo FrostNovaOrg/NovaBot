@@ -6,6 +6,7 @@ import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
+import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
@@ -122,31 +123,37 @@ public class PushController {
         Map<String, List<String>> legacyNames = handlerService.getLegacyClassNames();
 
         JSONArray items = new JSONArray();
-        handlerService.getRegisteredHandlers().forEach((className, handler) -> {
-            JSONObject item = new JSONObject();
-            item.put("className", className);
-            // 没有旧名时给一张空表而不是不给这一栏：缺栏与空表在前端 `|| []` 底下长得一样，
-            // 而「这个处理器没搬过家」与「这一版后端还不答这一问」要人做的事不是同一件
-            item.put("aliases", legacyNames.getOrDefault(className, List.of()));
-            item.put("displayName", handler.displayName());
-            item.put("defaultEnabled", handler.defaultEnabled());
-            item.put("description", handler.description());
-            item.put("platform", handler.platform());
-            item.put("placeholders", handler.placeholders());
-            item.put("placeholderLabels", handler.placeholderLabels());
-            item.put("attachments", handler.attachmentPlaceholders());
-            // 「默认」是这台机器此刻的默认（出厂默认盖上控制台改过的那几个键），
-            // 不是出厂默认：界面拿它判「这个通道用的是默认还是自定义」，
-            // 拿出厂默认去判的话，改过默认模板之后每一个通道都会显示成「自定义」
-            item.put("defaultParams", templateDefaults.paramsOf(handler));
-            // 出厂默认另给一份：默认模板那一页要答「这一项改过没有」与「恢复出厂」
-            item.put("factoryParams", handler.getDefaultParams());
-            item.put("options", handler.options());
-            item.put("reportLayout", handler.reportLayout());
-            items.add(item);
-        });
+        // 按处理器自报的先后排（一场直播从开播到周报），同数的按类名：界面列通知的几处都照这个顺序画
+        handlerService.getRegisteredHandlers().entrySet().stream()
+                .sorted(Comparator.comparingInt((Map.Entry<String, NovaEventHandler> entry) ->
+                                entry.getValue().displayOrder())
+                        .thenComparing(Map.Entry::getKey))
+                .forEach(entry -> {
+                String className = entry.getKey();
+                NovaEventHandler handler = entry.getValue();
+                JSONObject item = new JSONObject();
+                item.put("className", className);
+                // 没有旧名时给一张空表而不是不给这一栏：缺栏与空表在前端 `|| []` 底下长得一样，
+                // 而「这个处理器没搬过家」与「这一版后端还不答这一问」要人做的事不是同一件
+                item.put("aliases", legacyNames.getOrDefault(className, List.of()));
+                item.put("displayName", handler.displayName());
+                item.put("defaultEnabled", handler.defaultEnabled());
+                item.put("description", handler.description());
+                item.put("platform", handler.platform());
+                item.put("placeholders", handler.placeholders());
+                item.put("placeholderLabels", handler.placeholderLabels());
+                item.put("attachments", handler.attachmentPlaceholders());
+                // 「默认」是这台机器此刻的默认（出厂默认盖上控制台改过的那几个键），
+                // 不是出厂默认：界面拿它判「这个通道用的是默认还是自定义」，
+                // 拿出厂默认去判的话，改过默认模板之后每一个通道都会显示成「自定义」
+                item.put("defaultParams", templateDefaults.paramsOf(handler));
+                // 出厂默认另给一份：默认模板那一页要答「这一项改过没有」与「恢复出厂」
+                item.put("factoryParams", handler.getDefaultParams());
+                item.put("options", handler.options());
+                item.put("reportLayout", handler.reportLayout());
+                items.add(item);
+            });
 
-        items.sort(Comparator.comparing(item -> ((JSONObject) item).getString("className")));
         result.put("handlers", items);
         return result;
     }
@@ -182,7 +189,7 @@ public class PushController {
         JSONObject result = new JSONObject();
 
         String className = body.getString("className");
-        Optional<org.frostnova.nova.core.handler.NovaEventHandler> handler =
+        Optional<NovaEventHandler> handler =
                 className == null ? Optional.empty() : handlerService.getHandler(className);
         if (handler.isEmpty()) {
             result.put("success", false);

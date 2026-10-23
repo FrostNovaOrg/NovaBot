@@ -331,14 +331,12 @@ const allNodes = scope => {
   return out;
 };
 
-/** 右区里那类通知的开关：按标题字找「推什么」那一行 */
+/** 右区里那类通知的开关：推送内容那一列里，读屏名字就是这类通知的名字 */
 function noticeSwitch(name) {
   for (const row of allNodes(idNode('push-right'))) {
-    if (row.tagName !== 'div' || !classesOf(row).includes('swrow')) continue;
-    const txt = row.children.find(child => classesOf(child).includes('swtxt'));
-    if (txt && String(txt.innerHTML).includes('<b>' + name + '</b>')) {
-      return row.querySelector('input') || null;
-    }
+    if (row.tagName !== 'div' || !classesOf(row).includes('nrow')) continue;
+    const input = allNodes(row).find(node => node.tagName === 'input' && node.getAttribute('aria-label') === name);
+    if (input) return input;
   }
   return null;
 }

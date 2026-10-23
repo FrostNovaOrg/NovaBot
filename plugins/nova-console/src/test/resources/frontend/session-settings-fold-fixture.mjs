@@ -1,14 +1,14 @@
 /**
- * 第 4 段「本群设置」：栏目开合记住、命令分类原生折叠、问号说明开得了也关得了
+ * 通道规则、命令与本群状态：命令那一块开合记住、命令分类原生折叠、问号说明开得了也关得了
  *
- * 用户那头的毛病：展开的栏目切到别的通道再回来又收起了，连改几处每改一处都得再展开一次；
+ * 用户那头的毛病：展开的命令切到别的通道再回来又收起了，连改几处每改一处都得再展开一次；
  * 命令开关要先点「细调」才看得见，还以为整组没有开关；几行长说明摊在段里占掉大半屏。
  *
- * 这里量的是三件：切到别的通道再回来开合状态照旧；命令分类是原生 details 折叠、
+ * 这里量的是三件：切到别的通道再回来命令那一块的开合照旧（两条规则本来就摊开）；命令分类是原生 details 折叠、
  * 没有「细调／收起」按钮、每类标着「当前群共用」（好友会话写「当前会话共用」）；
  * 各行的问号说明键盘开得了关得了、读屏念得出、手机上点得开。
  *
- * 本尺真跑：假 DOM 之外，画第 4 段用的是产品码那一份（sessions.js 的 sessionSettings）。
+ * 本尺真跑：假 DOM 之外，画这几块用的是产品码那一份（sessions.js 的 sessionSettings）。
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 由 SessionSettingsFoldFixtureTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -302,12 +302,12 @@ function allNodes(scope) {
 }
 
 /**
- * 某一行折叠项：标题写着 title 的那个 details
- * 组名写在 summary 的 innerHTML 里，假 DOM 不把那段拆成文本节点，按字串认
+ * 某一行：标题写着 title 的那个折叠项（details.crow）或摊开的规则、状态行（div.crule）
+ * 组名写在头一行的 innerHTML 里，假 DOM 不把那段拆成文本节点，按字串认
  */
 function rowOf(host, title) {
-  return allNodes(host).find(node => classesOf(node).includes('crow')
-    && allNodes(node).some(child => child.tagName === 'summary'
+  return allNodes(host).find(node => (classesOf(node).includes('crow') || classesOf(node).includes('crule'))
+    && allNodes(node).some(child => (child.tagName === 'summary' || classesOf(child).includes('crule-h'))
       && String(child.innerHTML || '').includes('<span class="cr-t">' + title + '</span>'))) || null;
 }
 
@@ -329,16 +329,21 @@ function setOpen(details, open) {
   details.dispatchEvent({type: 'toggle', target: details});
 }
 
-const ROWS = ['金额可见', '静音时段', '命令', '提醒订阅'];
+const ROWS = ['金额可见', '静音时段', '群内命令', '提醒订阅'];
+
+/** 折起来的那几行：两条规则与状态行本来就摊开，只有命令那一块折 */
+const FOLDS = ['群内命令'];
 
 const hostA = paint(GROUP_A);
 const hostB = paint(GROUP_B);
 const hostFriend = paint(FRIEND);
 
-await ask('① 展开的栏目切到别的通道再回来仍是展开的', async () => {
+await ask('① 展开的命令切到别的通道再回来仍是展开的，两条规则不折', async () => {
   if (!sessions) throw new Error('sessions.js 没载入，无从量起');
+  const rules = ['金额可见', '静音时段'].map(title => (rowOf(hostA, title) || {}).tagName);
+  same(rules, ['div', 'div'], '两条规则是摊开的行而不是折叠项');
   const opened = [];
-  for (const title of ROWS) {
+  for (const title of FOLDS) {
     const row = rowOf(hostA, title);
     if (!row) throw new Error('「' + title + '」那一行没画出来');
     setOpen(row, true);
@@ -351,7 +356,7 @@ await ask('① 展开的栏目切到别的通道再回来仍是展开的', async
 
   const kept = {};
   const lost = {};
-  for (const title of ROWS) {
+  for (const title of FOLDS) {
     kept[title + '切回来后仍摊开着'] = !!(rowOf(back, title) || {}).open;
     lost[title + '在别的通道自己收着'] = !((rowOf(away, title) || {}).open);
   }
@@ -361,8 +366,8 @@ await ask('① 展开的栏目切到别的通道再回来仍是展开的', async
     ...kept, ...lost,
   }, {
     '切走前那几行都摊开着': true,
-    ...Object.fromEntries(ROWS.map(title => [title + '切回来后仍摊开着', true])),
-    ...Object.fromEntries(ROWS.map(title => [title + '在别的通道自己收着', true])),
+    ...Object.fromEntries(FOLDS.map(title => [title + '切回来后仍摊开着', true])),
+    ...Object.fromEntries(FOLDS.map(title => [title + '在别的通道自己收着', true])),
   }, '开合状态');
 });
 

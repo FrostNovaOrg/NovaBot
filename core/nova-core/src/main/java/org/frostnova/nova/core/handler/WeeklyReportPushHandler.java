@@ -16,6 +16,7 @@ public class WeeklyReportPushHandler implements NovaEventHandler {
     @Override public JSONObject getDefaultParams() { return new JSONObject(); }
     @Override public boolean defaultEnabled() { return false; }
     @Override public String displayName() { return "运营周报"; }
+    @Override public int displayOrder() { return 60; }
     @Override public String description() {
         return "每周一 10:00 发送上一周（周一 6:00 至下周一 6:00）的统计图与摘要；遇静音时段顺延到静音结束后发送；隐藏金额的会话不显示金额";
     }

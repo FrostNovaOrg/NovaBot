@@ -3,12 +3,12 @@ import {datasourceRead} from './datasource-read.mjs';
  * 推送页这一批改完之后，三处不能跟着没了
  *
  * 用户那头的毛病：窄屏上「本群最近推送」那张表把整页撑宽；页顶、通道一览、通道页头
- * 那三段长说明与第 4 段里那句重复，删的时候容易把讲清「共用」的那句一起删掉；左树上
+ * 那三段长说明与「通道规则」里那句重复，删的时候容易把讲清作用范围的那句一起删掉；左树上
  * 群／好友那一行从前挂着「N 类关着」「N 条命令被关」两枚小标，这一批删掉了，
  * 删的时候别把主播那一行的「已停用」「只采集，不推送」一起抹了，也别把群行那两枚又挂回去。
  *
- * 这里量的是三件：表外面包着只在卡片里横向滚的那一层（真宽度留到测试机上量）；
- * 第 4 段那句共用说明仍在、有几位主播时列出名字；群／好友那一行不挂那两枚小标，
+ * 这里量的是三件：表外面包着只在卡片里横向滚的那一层（真宽度留到测试机上量），
+ * 那一层收在「本群状态」卡片的「最近推送」折叠里；「通道规则」那句作用范围说明仍在；群／好友那一行不挂那两枚小标，
  * 主播那一行的两颗照在。
  *
  * 本尺真跑：假 DOM 与假 fetch 之外，整条通道页与左树走的都是产品码那一份
@@ -346,20 +346,23 @@ await ask('① 「本群最近推送」那张表外面包着只在卡片里横�
   const table = rightPane().find(node => classesOf(node).includes('ptable') && node.tagName === 'table');
   if (!table) throw new Error('通道页上没有画出最近推送那张表（推送记录没进来？）');
   const wrap = table.parentNode;
+  const fold = wrap && wrap.parentNode;
   same({
     '表外面包着滚动层': !!wrap && classesOf(wrap).includes('push-history-scroll'),
-    '滚动层贴着卡片放': !!wrap && !!wrap.parentNode && classesOf(wrap.parentNode).includes('nv-card'),
+    '滚动层收在最近推送那一层折叠里': !!fold && fold.tagName === 'details' && classesOf(fold).includes('p-recent'),
+    '折叠放在卡片里': !!fold && !!fold.parentNode && classesOf(fold.parentNode).includes('nv-card'),
   }, {
     '表外面包着滚动层': true,
-    '滚动层贴着卡片放': true,
+    '滚动层收在最近推送那一层折叠里': true,
+    '折叠放在卡片里': true,
   }, '最近推送表的滚动层');
 });
 
-await ask('② 第 4 段说明只作用于当前主播通道，不再宣称修改全部主播', async () => {
+await ask('② 通道规则说明只作用于当前主播通道，不再宣称修改全部主播', async () => {
   if (!push) throw new Error('push.js 未载入');
   const text = rightPane().map(node => node.textContent + node.innerHTML).join(' ');
-  if (!text.includes('通道设置')) throw new Error('缺少通道设置标题');
-  if (!text.includes('只作用于这位主播在本群的推送和命令')) throw new Error('缺少通道范围说明');
+  if (!text.includes('通道规则')) throw new Error('缺少通道规则标题');
+  if (!text.includes('只作用于这位主播在本群的推送')) throw new Error('缺少通道范围说明');
   if (text.includes('在此修改将同时作用于全部主播')) throw new Error('仍显示旧的共用说明');
 });
 

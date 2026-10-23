@@ -6,7 +6,7 @@
  * 一律在那边判——判断留在这里的话，那几档就只能靠人打开页面拖着试，
  * 而其中好几档（机器人不是管理员、模板里手写了 @、块拖进块）手点点不出来。
  *
- * 两处用它：通道页第 2 段「消息模板」，与左树顶「默认模板」。同一份编辑器、
+ * 两处用它：通道页各通知那一行的「文字」，与左树顶「默认模板」。同一份编辑器、
  * 同一套规矩，区别只在于改完之后写到哪儿去（见 buildTemplateEditor 的 onChange）。
  */
 
@@ -219,7 +219,8 @@ export function buildTemplateEditor(host, options) {
       palette.appendChild(button);
     }
     atControls.innerHTML = '';
-    if (supportsAt(state.spec)) atControls.appendChild(atNode());
+    // 私聊里没有 @ 谁这回事：整行不画，而不是画三档灰掉的选项。@ 那一档不动，存下的值照旧
+    if (supportsAt(state.spec) && previewContext().isGroup !== false) atControls.appendChild(atNode());
   }
 
   /** 点一下调色板：插到最后一次落过光标的地方，没落过就贴到第一张卡末尾 */
@@ -455,7 +456,7 @@ export function buildTemplateEditor(host, options) {
       const option = el('option');
       option.value = mode.key;
       option.textContent = mode.label;
-      option.disabled = mode.key !== 'subscribers' && (ctx.admin === false || ctx.isGroup === false);
+      option.disabled = mode.key !== 'subscribers' && ctx.admin === false;
       if (mode.key === displayMode) option.selected = true;
       select.appendChild(option);
     }
@@ -484,11 +485,10 @@ export function buildTemplateEditor(host, options) {
       palette.appendChild(block);
     }
     if (note) row.appendChild(el('span', 'tpl-at-note xs dim')).textContent = note;
-    if (ctx.admin === false || ctx.isGroup === false) {
-      row.appendChild(el('p', 'tpl-at-warning xs')).textContent = ctx.isGroup === false
-        ? '私聊不支持 @全体成员。'
-        : subscribers ? '机器人不是本群管理员，两档 @全体成员 均不可选。'
-          : '机器人不是本群管理员，无法选择 @全体成员。';
+    if (ctx.admin === false) {
+      row.appendChild(el('p', 'tpl-at-warning xs')).textContent = subscribers
+        ? '机器人不是本群管理员，两档 @全体成员 均不可选。'
+        : '机器人不是本群管理员，无法选择 @全体成员。';
     }
     return row;
   }
@@ -651,7 +651,9 @@ export function buildTemplateEditor(host, options) {
     }
 
     const plan = atPlan(state.cards, state.atMode, previewContext());
-    if (bubbles.some(bubble => bubble.atDropped) || plan.dropped) {
+    // 私聊的预览本来就不画 @，再说一句「省略 @全体成员」就成了群里的说法
+    const group = previewContext().isGroup !== false;
+    if (group && (bubbles.some(bubble => bubble.atDropped) || plan.dropped)) {
       preview.appendChild(el('p', 'tpl-preview-note xs dim')).textContent = plan.fallback
         ? '发送时改为 @订阅者，正文正常发送。'
         : '发送时省略 @全体成员，正文正常发送。';
@@ -724,7 +726,7 @@ export function normalizedOrder(stored, defaultValue) {
  * 只会让人以为「配了没用」。
  * <p>
  * 版式项还带着「随金额」一栏（revenueVisibility／revenueNote，处理器自报）：
- * 当前会话的金额设定下不出图的项灰掉、写一句原因并指向「通道设置」的金额开关，
+ * 当前会话的金额设定下不出图的项灰掉、写一句原因并指向「通道规则」的金额开关，
  * 只变样的项不灰、加一句说明——不然使用者把「流水排行」调成前 10 名，
  * 图上永远没有这一榜，还以为是坏了。灰不灰读 opts.revenueVisible 现算的值
  * （会话存的设定＋草稿），草稿里拨了当场跟着变；存着的值不清不改。
@@ -810,8 +812,8 @@ export function buildLayoutEditor(host, options) {
   function whyText(option) {
     const note = option.revenueNote || '此项在当前金额可见设置下不显示';
     const how = option.revenueVisibility === 'ONLY_WHEN_HIDDEN'
-      ? '在下方「通道设置」的「金额可见」中关闭金额后才会显示'
-      : '在下方「通道设置」的「金额可见」中打开金额后才会显示';
+      ? '在下方「通道规则」的「金额可见」中关闭金额后才会显示'
+      : '在下方「通道规则」的「金额可见」中打开金额后才会显示';
     return note + '。' + how + '。';
   }
 
