@@ -55,14 +55,16 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
         registry.addInterceptor(this);
     }
 
+    void recordSessionCheckUse() {
+        if (sessionCheckUsed.compareAndSet(false, true)) {
+            org.slf4j.LoggerFactory.getLogger(ConfigUiApiInterceptor.class).warn(CONNECTION_INSTRUCTIONS);
+        }
+    }
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String path = ConfigUiPermissions.pattern(request);
         if (!path.equals(ConfigUiController.BASE_PATH) && !path.startsWith(ConfigUiController.BASE_PATH + "/")) return true;
-        if (path.equals(ConfigUiController.BASE_PATH + "/api/session-check")
-                && sessionCheckUsed.compareAndSet(false, true)) {
-            org.slf4j.LoggerFactory.getLogger(ConfigUiApiInterceptor.class).warn(CONNECTION_INSTRUCTIONS);
-        }
         if (path.equals(ConfigUiController.BASE_PATH + "/api/auth/state") && sessionCheckUsed.get()) {
             request.setAttribute(SESSION_CHECK_USED, true);
         }

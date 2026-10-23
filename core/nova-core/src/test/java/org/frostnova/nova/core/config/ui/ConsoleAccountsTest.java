@@ -75,13 +75,14 @@ class ConsoleAccountsTest extends OidcTestSupport {
         configFile = directory.resolve("application.yml");
         Files.writeString(configFile, "novabot:\n  core:\n    config-ui:\n      oidc:\n        issuer: https://accounts.example.com/tenant\n");
         var files = new ConfigurationFileService(configFile);
+        var interceptor = new ConfigUiApiInterceptor(auth, properties, platforms);
         var filter = new ConfigUiSecurityFilter("test-operator", new IpMatcher(List.of("127.0.0.0/8")), auth,
-                properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement());
+                properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), interceptor::recordSessionCheckUse);
         mvc = MockMvcBuilders.standaloneSetup(new ConfigUiAuthController(auth, files, properties),
                         new ConfigUiPasskeyController(new PasskeyService(new PasskeyStore(state), auth), properties, auth),
                         new ConfigUiAccountController(accounts, auth, client, platforms),
                         new ConfigUiOidcController(client, auth, accounts, properties), values(files))
-                .addInterceptors(new ConfigUiApiInterceptor(auth, properties, platforms))
+                .addInterceptors(interceptor)
                 .addFilters(filter).build();
     }
 
@@ -974,6 +975,35 @@ class ConsoleAccountsTest extends OidcTestSupport {
     private static final String CONNECTION_NOTICE = "如用 NovaBot 会话接入管理后端，请将代理的会话检查地址改为 /config/api/admin-session-check"
             + "（有部署前缀时，例如 /novabot，填写 /novabot/config/api/admin-session-check），"
             + "并保留后端自身的登录与角色检查；改好代理配置并重启 NovaBot 后提示消失。";
+
+    @Test
+    void existingCheckBeforeLoginProvidesAdministratorNotice() throws Exception {
+        properties.getConfigUi().setToken("example-proxy-session-token-0123456789");
+        var interceptor = new ConfigUiApiInterceptor(auth, properties, platforms);
+        var registrar = new ConfigUiRegistrar(properties,
+                mock(org.springframework.boot.web.server.context.WebServerApplicationContext.class));
+        var filter = registrar.configUiSecurityFilterRegistration(auth, interceptor).getFilter();
+        mvc = MockMvcBuilders.standaloneSetup(new ConfigUiAuthController(auth,
+                        new ConfigurationFileService(configFile), properties), values(new ConfigurationFileService(configFile)))
+                .addInterceptors(interceptor).addFilters(filter).build();
+        var logger = (Logger) LoggerFactory.getLogger(ConfigUiApiInterceptor.class);
+        var entries = new ListAppender<ILoggingEvent>();
+        entries.start();
+        logger.addAppender(entries);
+        try {
+            mvc.perform(get("/app/config/api/session-check").contextPath("/app"))
+                    .andExpect(status().isUnauthorized());
+            perform(get("/config/api/auth/state"), auth.issueForPassword("127.0.0.1"))
+                    .andExpect(jsonPath("$.sessionCheckSetupNeeded").value(true));
+            mvc.perform(head("/config/api/session-check")).andExpect(status().isUnauthorized());
+            var warnings = entries.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).toList();
+            assertEquals(1, warnings.size());
+            assertEquals(CONNECTION_NOTICE, warnings.get(0).getFormattedMessage());
+        } finally {
+            logger.detachAppender(entries);
+            entries.stop();
+        }
+    }
 
     @Test
     void existingCheckProvidesOneLogEntryAndAdministratorNotice() throws Exception {
