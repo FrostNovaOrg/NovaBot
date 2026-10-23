@@ -144,8 +144,8 @@ class BilibiliRiskHealthProbeTest {
             assertTrue(status.summary().contains("op=9"), "summary 应带 op=N，实际: " + status.summary());
             assertTrue(status.summary().contains("op=9（最近 "), "摘要应含 op=…（最近 ，实际: " + status.summary());
             assertFalse(status.summary().contains("首见"), "不得写首见，实际: " + status.summary());
-            assertTrue(status.advice().contains("长连协议") || status.advice().contains("语料"),
-                    "advice 应提示协议改了并抓语料，实际: " + status.advice());
+            assertTrue(status.advice().contains("更新") && status.advice().contains("日志"),
+                    "advice 仍要告诉使用者接下来该做什么（更新版本、看日志），实际: " + status.advice());
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
         }

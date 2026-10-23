@@ -28,7 +28,7 @@ class NovaEventStreamProxyAddressTest {
             EventStreamProperties properties = new EventStreamProperties();
             properties.setEnabled(true);
             SimpleUrlHandlerMapping mapping = (SimpleUrlHandlerMapping) configuration.novaEventStreamHandlerMapping(
-                    properties, new NovaEventStream(10), null);
+                    properties, new NovaEventStream(10), org.mockito.Mockito.mock(EventStreamTokenService.class));
             WebSocketHttpRequestHandler handler = (WebSocketHttpRequestHandler) mapping.getUrlMap().get(properties.getPath());
             MockHttpServletRequest request = new MockHttpServletRequest("GET", properties.getPath());
             request.setRemoteAddr("127.0.0.1");

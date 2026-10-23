@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.protocol;
 
 import org.frostnova.nova.core.properties.EventStreamProperties;
+import org.frostnova.nova.core.model.EventStreamToken;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -87,27 +88,26 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
         }
 
-        // 要求口令时把口令服务交给端点：认证发生在连接建立之后的第一帧，不在握手里
-        endpoint = new NovaEventEndpoint(stream, properties.isRequireToken() ? tokenService : null);
+        EventHandshakeOrigins origins;
+        try {
+            origins = new EventHandshakeOrigins(properties.getAllowedOrigins());
+        } catch (IllegalArgumentException e) {
+            log.error("事件输出暂停：页面来源配置格式不合，请在控制台设置中修改 {}.allowed-origins 后重启",
+                    EventStreamProperties.PREFIX);
+            return new SimpleUrlHandlerMapping(Map.of(), ORDER);
+        }
+        endpoint = new NovaEventEndpoint(stream, tokenService);
 
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(endpoint, new DefaultHandshakeHandler());
         handler.getHandshakeInterceptors().add(new LoopbackOnly());
-        // 无论开不开口令都装：它拦的是「把凭据塞进握手」这个动作本身。
-        // 只在开口令时装的话，没开口令的部署仍会把旧客户端的口令原样记进代理日志
         handler.getHandshakeInterceptors().add(new NoCredentialsInHandshake());
+        handler.getHandshakeInterceptors().add(origins);
 
-        if (properties.isRequireToken()) {
-            log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", properties.getPath());
-        } else {
-            log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", properties.getPath());
-            // 这条提示存在的理由：反代与本程序同机、且反代未送 X-Forwarded-* 时，
-            // 转发过来的连接源地址就是回环，
-            // 「只接受本机连接」届时不再等于「人在这台机器上」——装了反代却没开这个开关，
-            // 表面上一切正常，实际上门是敞开的
-            log.warn("事件输出未要求口令。⚠️ 这台机器上若装了反向代理, 必须打开 "
-                    + EventStreamProperties.PREFIX + ".require-token: "
-                    + "反代若未送 X-Forwarded-*, 转发过来的连接源地址就是回环, "
-                    + "「只接受本机连接」将不再拦得住任何人");
+        log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", properties.getPath());
+        if (tokenService.list().stream().noneMatch(EventStreamToken::active)) {
+            log.warn("事件输出客户端请在控制台「连接 → 外部面板」签发只读口令并在连接后首帧发送；"
+                    + "浏览器面板还需在 " + EventStreamProperties.PREFIX + ".allowed-origins 填写页面来源后重启；"
+                    + "require-token: false 也按 true 运行，连接地址和握手头中不填写口令");
         }
         return new SimpleUrlHandlerMapping(Map.of(properties.getPath(), handler), ORDER);
     }
