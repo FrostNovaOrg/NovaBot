@@ -9,6 +9,7 @@ fi
 python3 - "$ROOT" "$1" <<'PY'
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -34,6 +35,8 @@ assets = dest / 'config/assets'
 assets.mkdir(parents=True)
 sources = [root / 'core/nova-core/src/main/resources/config-ui']
 sources += sorted((root / 'plugins').glob('*/src/main/resources/config-ui-pages'))
+# HTML files are page templates; the backend renders them and never serves them as assets.
+templates = {}
 for source in sources:
     for file in sorted(source.iterdir()):
         if file.name.startswith('.'):
@@ -41,21 +44,34 @@ for source in sources:
         if not file.is_file():
             raise SystemExit('Unexpected asset directory: ' + str(file))
         target = assets / file.name
-        if target.exists():
+        if target.exists() or file.name in templates:
             raise SystemExit('Duplicate console asset: ' + file.name)
+        if file.suffix == '.html':
+            templates[file.name] = file
+            continue
         shutil.copyfile(file, target)
 shutil.copytree(demo / 'data', dest / 'console-demo/data')
 shutil.copyfile(demo / 'demo.js', dest / 'console-demo/demo.js')
 (dest / 'console-demo/recording.js').write_text('window.NOVA_CONSOLE_DEMO = ' + json.dumps(index, ensure_ascii=False, indent=2) + ';\n')
 injection = '<script src="/console-demo/recording.js"></script>\n<script src="/console-demo/demo.js"></script>\n'
+# The backend splices these scripts into the login page in place of the marker lines.
+splices = {'//@@password-reveal@@': 'password-reveal.js', '//@@login-model@@': 'login-model.js'}
 def render(source):
-    text = source.read_text().replace('{{nova-prefix}}', '').replace('{{nova-prefix:js}}', '')
+    text = source.read_text()
+    for marker, script in splices.items():
+        text = text.replace(marker, (assets / script).read_text(), 1)
+    # The static export has one fixed set of files, so asset URLs drop the version segment.
+    text = (text.replace('{{nova-prefix}}', '').replace('{{nova-prefix:js}}', '')
+            .replace('/{{nova-asset-version}}', ''))
+    leftover = re.search(r'\{\{nova-[^}]*\}\}|//@@[^@\s]*@@', text)
+    if leftover:
+        raise SystemExit('Unhandled placeholder in ' + source.name + ': ' + leftover.group())
     return text.replace('</head>', injection + '</head>', 1)
-page = render(sources[0] / 'index.html')
+page = render(templates['index.html'])
 (dest / 'index.html').write_text(page)
 (dest / 'config/index.html').write_text(page)
-for name, source in [('login', sources[0] / 'login.html'),
-                     ('napcat-bootstrap', assets / 'napcat-bootstrap.html')]:
+for name, source in [('login', templates['login.html']),
+                     ('napcat-bootstrap', templates['napcat-bootstrap.html'])]:
     directory = dest / 'config' / name
     directory.mkdir()
     (directory / 'index.html').write_text(render(source))
