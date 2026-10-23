@@ -48,6 +48,8 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
 
     private volatile boolean running;
 
+    private final EventStreamStatus status = new EventStreamStatus();
+
     /**
      * 解析事件输出配置，按现行键 {@code novabot.core.event-stream} 绑出。
      * @param environment 运行环境
@@ -59,6 +61,15 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
         Binder binder = Binder.get(environment);
         binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(properties));
         return properties;
+    }
+
+    /**
+     * 事件输出此刻的运行情况，控制台连接页读它
+     * @return 运行情况
+     */
+    @Bean
+    public EventStreamStatus eventStreamStatus() {
+        return status;
     }
 
     /**
@@ -85,13 +96,15 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
     public HandlerMapping novaEventStreamHandlerMapping(EventStreamProperties properties, NovaEventStream stream,
                                                         EventStreamTokenService tokenService) {
         if (!properties.isEnabled()) {
+            status.state(EventStreamStatus.State.OFF);
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
         }
 
         EventHandshakeOrigins origins;
         try {
-            origins = new EventHandshakeOrigins(properties.getAllowedOrigins());
+            origins = new EventHandshakeOrigins(properties.getAllowedOrigins(), status);
         } catch (IllegalArgumentException e) {
+            status.state(EventStreamStatus.State.PAUSED);
             log.error("事件输出暂停：页面来源配置格式不合，请在控制台设置中修改 {}.allowed-origins 后重启",
                     EventStreamProperties.PREFIX);
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
@@ -103,6 +116,7 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
         handler.getHandshakeInterceptors().add(new NoCredentialsInHandshake());
         handler.getHandshakeInterceptors().add(origins);
 
+        status.state(EventStreamStatus.State.RUNNING);
         log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", properties.getPath());
         if (tokenService.list().stream().noneMatch(EventStreamToken::active)) {
             log.warn("事件输出客户端请在控制台「连接 → 外部面板」签发只读口令并在连接后首帧发送；"

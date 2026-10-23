@@ -321,4 +321,84 @@ if (negReds.length) {
   negReds.forEach(line => console.error('  ' + line));
   process.exit(1);
 }
-console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过');
+// ── 外部面板卡上的事件输出状态 ─────────────────────────────────────────
+// 暂停、有未登记的页面来源来连，这两种要在卡上说出来；正常运行与没开时什么都不加。
+// 「什么都不加」也逐格比：多出一句「运行中」与少说一句暂停，同样是这张卡说错了话
+const streamReds = [];
+function panelOf(stream) {
+  return linksModel(status('in', 'ok'), login('in'), ONE_CARD, TOKENS_ONE, undefined, stream)
+    .cards.find(c => c.kind === 'panel');
+}
+function panelText(card) {
+  return [card.caption, card.note, card.advice].join(' ');
+}
+function askStream(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    streamReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+
+const QUIET = panelOf(undefined);
+for (const [name, stream] of [['正常运行', {state: 'running'}], ['没开', {state: 'off'}], ['没带状态', undefined]]) {
+  askStream(name + '时不加话', () => {
+    const card = panelOf(stream);
+    if (panelText(card) !== panelText(QUIET) || card.level !== QUIET.level || card.action) {
+      throw new Error('实得「' + panelText(card) + '」灯 ' + card.level);
+    }
+    if (panelText(card).includes('事件输出') || panelText(card).includes('页面来源')) {
+      throw new Error('多说了一句：「' + panelText(card) + '」');
+    }
+  });
+}
+
+askStream('暂停时说暂停、去哪改、改后重启，灯红', () => {
+  const card = panelOf({state: 'paused'});
+  const text = panelText(card);
+  for (const word of ['已暂停', '事件输出 · 页面来源', '重启']) {
+    if (!text.includes(word)) throw new Error('没说「' + word + '」，实得「' + text + '」');
+  }
+  if (card.level !== 'err') throw new Error('灯该红，实得 ' + card.level);
+  if (!card.action || card.action.href !== '#/settings?card=svc') {
+    throw new Error('该给去服务组的链接，实得 ' + JSON.stringify(card.action));
+  }
+  if (!text.includes('有效令牌 1 个')) throw new Error('令牌那句被挤掉了：「' + text + '」');
+});
+
+askStream('未登记来源来连时说是哪个、去哪登记、登记后重启', () => {
+  const card = panelOf({state: 'running', unlistedOrigin: 'https://other.example'});
+  const text = panelText(card);
+  for (const word of ['https://other.example', '未登记', '事件输出 · 页面来源', '重启']) {
+    if (!text.includes(word)) throw new Error('没说「' + word + '」，实得「' + text + '」');
+  }
+  if (text.includes('已暂停')) throw new Error('没暂停却说了暂停：「' + text + '」');
+  if (card.level !== QUIET.level) throw new Error('灯不该变，实得 ' + card.level);
+});
+
+askStream('令牌全无且暂停时两句都在', () => {
+  const card = linksModel(status('in', 'ok'), login('in'), ONE_CARD, [], undefined, {state: 'paused'})
+    .cards.find(c => c.kind === 'panel');
+  const text = panelText(card);
+  if (!text.includes('已暂停') || !text.includes('尚未签发') || !text.includes('有效的令牌')) {
+    throw new Error('实得「' + text + '」');
+  }
+});
+
+// 模型算对了而页面没把 stream 交进来，卡上照样什么都不说
+askStream('links.js 把 /api/event-tokens 的 stream 交给模型', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const links = readFileSync(join(root, 'core/nova-core/src/main/resources/config-ui/links.js'), 'utf8');
+  if (!/api\('\/event-tokens'\)[\s\S]*linksModel\([^;]*tokens\.stream\)/.test(links)) {
+    throw new Error('links.js 调 linksModel 时没带 tokens.stream');
+  }
+});
+
+console.log('事件输出状态\t跑了 7 格\t红 ' + streamReds.length + ' 格\t' + (streamReds.length ? '红' : '绿'));
+if (streamReds.length) {
+  console.error('\n事件输出状态对不上 ' + streamReds.length + ' 处：');
+  streamReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}
+
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过');

@@ -20,7 +20,8 @@ class EventStreamGuideTest {
         for (String file : new String[]{"docs/protocol.md", "docs/runbook-local-source.md",
                 "manual/appendix-b-advanced.md", "manual/13-upgrade-and-backup.md"}) {
             String text = Files.readString(root().resolve(file));
-            assertTrue(text.contains("默认端口"), file);
+            assertTrue(text.contains("默认端口 80/443 会自动去掉"), file);
+            assertFalse(text.contains("通常省略"), file);
             assertTrue(text.contains("Punycode"), file);
             assertTrue(text.contains("IPv6"), file);
             assertTrue(text.contains("方括号"), file);

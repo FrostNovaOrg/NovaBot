@@ -79,6 +79,32 @@ public class EventStreamProperties {
         }
     }
 
+    /**
+     * 去掉页面来源里的默认端口（http 的 80、https 的 443）
+     * <p>
+     * 浏览器发来的来源从不带默认端口，带着它存进去的那一条就永远对不上。
+     * 格式不合的值原样返回，由 {@link #validateAllowedOrigins} 去报。
+     * @param value 一条页面来源
+     * @return 去掉默认端口后的写法；没有默认端口时原样返回
+     */
+    public static String withoutDefaultPort(String value) {
+        if (!validOrigin(value)) {
+            return value;
+        }
+        URI uri = URI.create(value);
+        boolean http = "http".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 80;
+        boolean https = "https".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 443;
+        return http || https ? value.substring(0, value.lastIndexOf(':')) : value;
+    }
+
+    /**
+     * @param value 一条取值
+     * @return 是完整的 http 或 https 来源时为 {@code true}
+     */
+    public static boolean isOrigin(String value) {
+        return validOrigin(value);
+    }
+
     private static boolean validOrigin(String value) {
         if (value == null) {
             return false;

@@ -96,7 +96,7 @@ export async function refreshLinks() {
 
     renderStatus(status);
     model = linksModel(status, login, linkCards, tokens.tokens || [],
-      phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人'));
+      phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人'), tokens.stream);
     model.cards.forEach(paint);
     renderTokens(tokens.tokens || []);
     scrollToWanted();

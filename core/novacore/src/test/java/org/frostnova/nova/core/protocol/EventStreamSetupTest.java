@@ -176,6 +176,19 @@ class EventStreamSetupTest {
         check(values, new String[]{"https://panel.example/path"}, false);
     }
 
+    @Test
+    void defaultPortConfiguration() throws Exception {
+        Map<String, Object> values = Map.of("allowed-origins[0]", "https://panel.example:443",
+                "allowed-origins[1]", "http://localhost:80", "allowed-origins[2]", "http://[::1]:80");
+        check(values, new String[]{"https://panel.example"}, true);
+        check(values, new String[]{"http://localhost"}, true);
+        check(values, new String[]{"http://[::1]"}, true);
+        check(values, new String[]{"http://panel.example"}, false);
+        check(values, new String[]{"https://localhost"}, false);
+        check(Map.of("allowed-origins[0]", "https://panel.example:80"), new String[]{"https://panel.example"}, false);
+        check(Map.of("allowed-origins[0]", "http://panel.example:443"), new String[]{"http://panel.example"}, false);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"*", "null", "https://*.example", "https://panel.example/path",
             "https://panel.example?view=1", "https://user@panel.example", "file:///panel", "",
@@ -185,9 +198,95 @@ class EventStreamSetupTest {
         try {
             assertNull(handler(configuration, null, Map.of("allowed-origins[0]", value)));
             assertNull(org.springframework.test.util.ReflectionTestUtils.getField(configuration, "endpoint"));
+            assertEquals(EventStreamStatus.State.PAUSED, configuration.eventStreamStatus().state());
         } finally {
             configuration.destroy();
         }
+    }
+
+    @Test
+    void runningState() {
+        NovaEventStreamConfiguration configuration = new NovaEventStreamConfiguration();
+        try {
+            assertNotNull(handler(configuration, null, Map.of("allowed-origins[0]", "https://panel.example")));
+            assertEquals(EventStreamStatus.State.RUNNING, configuration.eventStreamStatus().state());
+        } finally {
+            configuration.destroy();
+        }
+    }
+
+    @Test
+    void offState() {
+        NovaEventStreamConfiguration configuration = new NovaEventStreamConfiguration();
+        EventStreamProperties properties = configuration.eventStreamProperties(new StandardEnvironment());
+        assertTrue(((SimpleUrlHandlerMapping) configuration.novaEventStreamHandlerMapping(properties,
+                new NovaEventStream(10), mock(EventStreamTokenService.class))).getUrlMap().isEmpty());
+        assertEquals(EventStreamStatus.State.OFF, configuration.eventStreamStatus().state());
+    }
+
+    @Test
+    void unlistedOriginNote() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(EventHandshakeOrigins.class);
+        ListAppender<ILoggingEvent> messages = new ListAppender<>();
+        messages.start();
+        logger.addAppender(messages);
+        NovaEventStreamConfiguration configuration = new NovaEventStreamConfiguration();
+        try {
+            WebSocketHttpRequestHandler handler = handler(configuration, null,
+                    Map.of("allowed-origins[0]", "https://panel.example"));
+            assertFalse(accepted(handler, "https://other.example"));
+            assertFalse(accepted(handler, "https://other.example"));
+            assertEquals("https://other.example", configuration.eventStreamStatus().unlistedOrigin());
+            assertFalse(accepted(handler, "http://localhost:7830"));
+            assertEquals("http://localhost:7830", configuration.eventStreamStatus().unlistedOrigin());
+
+            List<String> notes = messages.list.stream().filter(message -> message.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage).toList();
+            assertEquals(2, notes.size(), String.join("\n", notes));
+            assertTrue(notes.get(0).contains("https://other.example"));
+            assertTrue(notes.get(1).contains("http://localhost:7830"));
+            for (String note : notes) {
+                assertTrue(note.contains("未登记"));
+                assertTrue(note.contains("事件输出 · 页面来源"));
+                assertTrue(note.contains("重启"));
+            }
+        } finally {
+            configuration.destroy();
+            logger.detachAppender(messages);
+            messages.stop();
+        }
+    }
+
+    @Test
+    void noUnlistedOriginNote() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(EventHandshakeOrigins.class);
+        ListAppender<ILoggingEvent> messages = new ListAppender<>();
+        messages.start();
+        logger.addAppender(messages);
+        NovaEventStreamConfiguration configuration = new NovaEventStreamConfiguration();
+        try {
+            WebSocketHttpRequestHandler handler = handler(configuration, null,
+                    Map.of("allowed-origins[0]", "https://panel.example"));
+            assertTrue(accepted(handler, "https://panel.example"));
+            assertTrue(accepted(handler));
+            assertFalse(accepted(handler, "null"));
+            assertNull(configuration.eventStreamStatus().unlistedOrigin());
+            assertTrue(messages.list.isEmpty(), messages.list.toString());
+        } finally {
+            configuration.destroy();
+            logger.detachAppender(messages);
+            messages.stop();
+        }
+    }
+
+    @Test
+    void unlistedOriginNoteLimit() {
+        EventStreamStatus status = new EventStreamStatus();
+        for (int i = 0; i < EventStreamStatus.ORIGIN_LIMIT; i++) {
+            assertTrue(status.unlisted("https://panel" + i + ".example"));
+        }
+        assertFalse(status.unlisted("https://more.example"));
+        assertEquals("https://more.example", status.unlistedOrigin());
     }
 
     @Test
@@ -199,27 +298,34 @@ class EventStreamSetupTest {
         NovaEventStreamConfiguration configuration = new NovaEventStreamConfiguration();
         try {
             WebSocketHttpRequestHandler handler = handler(configuration, null, values);
-            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/nova/events");
-            request.setRemoteAddr("127.0.0.1");
-            for (String origin : origins) {
-                request.addHeader("Origin", origin);
-            }
             MockHttpServletResponse response = new MockHttpServletResponse();
-            boolean accepted = true;
-            for (var interceptor : handler.getHandshakeInterceptors()) {
-                if (!interceptor.beforeHandshake(new ServletServerHttpRequest(request),
-                        new ServletServerHttpResponse(response), handler.getWebSocketHandler(), new HashMap<>())) {
-                    accepted = false;
-                    break;
-                }
-            }
-            assertEquals(expected, accepted);
+            assertEquals(expected, accepted(handler, response, origins));
             if (!expected) {
                 assertEquals(403, response.getStatus());
             }
         } finally {
             configuration.destroy();
         }
+    }
+
+    private static boolean accepted(WebSocketHttpRequestHandler handler, String... origins) throws Exception {
+        return accepted(handler, new MockHttpServletResponse(), origins);
+    }
+
+    private static boolean accepted(WebSocketHttpRequestHandler handler, MockHttpServletResponse response,
+                                    String... origins) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/nova/events");
+        request.setRemoteAddr("127.0.0.1");
+        for (String origin : origins) {
+            request.addHeader("Origin", origin);
+        }
+        for (var interceptor : handler.getHandshakeInterceptors()) {
+            if (!interceptor.beforeHandshake(new ServletServerHttpRequest(request),
+                    new ServletServerHttpResponse(response), handler.getWebSocketHandler(), new HashMap<>())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static WebSocketHttpRequestHandler handler(NovaEventStreamConfiguration configuration,

@@ -1,18 +1,21 @@
 package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.protocol.EventStreamStatus;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class EventStreamValuesSaveTest {
     private static final String KEY = "novabot.core.event-stream.allowed-origins";
@@ -75,6 +78,7 @@ class EventStreamValuesSaveTest {
             assertTrue(mapping.getUrlMap().isEmpty());
             var console = context.getBean(ConfigUiController.class);
             assertTrue(console.values().getBooleanValue("success"));
+            assertEquals("paused", console.listEventTokens().getJSONObject("stream").getString("state"));
             assertTrue(console.save(Map.of(KEY, "https://panel.example")).getBody().getBooleanValue("success"));
         }
         try (var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
@@ -87,6 +91,25 @@ class EventStreamValuesSaveTest {
             assertFalse(context.getBean("novaEventStreamHandlerMapping",
                     org.springframework.web.servlet.handler.SimpleUrlHandlerMapping.class).getUrlMap().isEmpty());
         }
+    }
+
+    @Test
+    void streamStateInTokenList() {
+        assertEquals("off", controller.listEventTokens().getJSONObject("stream").getString("state"));
+
+        EventStreamStatus status = mock(EventStreamStatus.class);
+        when(status.state()).thenReturn(EventStreamStatus.State.RUNNING);
+        controller.setEventStreamStatus(status);
+        var stream = controller.listEventTokens().getJSONObject("stream");
+        assertEquals("running", stream.getString("state"));
+        assertFalse(stream.containsKey("unlistedOrigin"));
+
+        when(status.unlistedOrigin()).thenReturn("https://other.example");
+        assertEquals("https://other.example",
+                controller.listEventTokens().getJSONObject("stream").getString("unlistedOrigin"));
+
+        when(status.state()).thenReturn(EventStreamStatus.State.PAUSED);
+        assertEquals("paused", controller.listEventTokens().getJSONObject("stream").getString("state"));
     }
 
     @ParameterizedTest
@@ -111,5 +134,27 @@ class EventStreamValuesSaveTest {
         assertTrue(response.getBody().getBooleanValue("success"));
         String saved = new ConfigurationFileService(config).read().get(KEY);
         assertEquals(value.strip(), saved == null ? "" : saved);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "https://panel.example:443|https://panel.example",
+            "http://localhost:80|http://localhost",
+            "http://[::1]:80|http://[::1]",
+            "HTTPS://Panel.Example:443|HTTPS://Panel.Example",
+            "https://panel.example:8443|https://panel.example:8443",
+            "https://panel.example:80|https://panel.example:80",
+            "http://panel.example:443|http://panel.example:443"})
+    void defaultPortValues(String value, String expected) throws Exception {
+        var response = controller.save(Map.of(KEY, value));
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(expected, new ConfigurationFileService(config).read().get(KEY));
+    }
+
+    @Test
+    void defaultPortInList() throws Exception {
+        assertEquals(200, controller.save(Map.of(KEY, "https://panel.example:443\nhttp://localhost:7830"))
+                .getStatusCode().value());
+        assertEquals("https://panel.example\nhttp://localhost:7830", new ConfigurationFileService(config).read().get(KEY));
     }
 }
