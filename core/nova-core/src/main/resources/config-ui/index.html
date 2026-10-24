@@ -172,12 +172,12 @@
 
       <div class="nv-card hcard home-connections">
         <div class="home-section-head"><h3>连接状态</h3><a href="#/links">管理连接 →</a></div>
-        <div class="linkmap" id="linkmap"></div>
+        <div class="linkmap" id="linkmap"><span class="content-loading" role="status"><span class="content-loading-text">连接状态加载中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></div>
       </div>
 
       <div class="nv-card hcard home-now" id="home-now">
         <h3>当前直播</h3>
-        <div id="now-box"></div>
+        <div id="now-box"><span class="content-loading" role="status"><span class="content-loading-text">当前直播加载中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></div>
       </div>
 
       <!--
@@ -189,18 +189,18 @@
           <div id="home-plugin-cards"></div>
           <div class="nv-card hcard home-health" id="home-probes">
             <div class="home-health-head">
-              <div><h3>健康自检</h3><p id="home-health-summary">检查结果加载中…</p></div>
+              <div><h3>健康自检</h3><p id="home-health-summary"><span class="content-loading content-loading-inline" role="status"><span class="content-loading-text">检查结果加载中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></p></div>
               <button id="selftest-run" class="ghost sm" type="button">立即自检</button>
             </div>
             <details id="home-probe-details">
               <summary>查看全部检查项 <span id="home-probe-count"></span></summary>
-              <div id="probe-list"></div>
+              <div id="probe-list"><span class="content-loading" role="status"><span class="content-loading-text">检查结果加载中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></div>
             </details>
           </div>
         </div>
         <div class="nv-card hcard" id="home-events">
           <h3>今日事件</h3>
-          <div class="tl" id="home-timeline"></div>
+          <div class="tl" id="home-timeline"><span class="content-loading" role="status"><span class="content-loading-text">今日事件加载中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></div>
           <div class="tl-foot" id="home-all-events"><a href="#/log">查看全部事件 →</a></div>
         </div>
       </div>
@@ -423,7 +423,7 @@
         而控制台随之一同挂掉——远程部署时人就被挡在门外。要直接改文件请到服务器上改，
         写坏之后的正门是安全模式（程序起不来时它接管端口）。
       -->
-      <p class="cfgpath">配置文件路径：<code id="cfg-path" title="点击复制">读取中…</code>。如需直接修改，请在服务器上编辑该文件；控制台不提供文件编辑，修改后需重启生效。</p>
+      <p class="cfgpath">配置文件路径：<code id="cfg-path" title="点击复制"><span class="content-loading content-loading-inline" role="status"><span class="content-loading-text">读取中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></code>。如需直接修改，请在服务器上编辑该文件；控制台不提供文件编辑，修改后需重启生效。</p>
       <!--
         许可与源码地址。AGPL-3.0 要求使用者能拿到这个程序对应的源码，而「使用者」常常
         只见得到这张控制台——只写在仓库的 README 里，等于只告诉了已经找到仓库的那些人。
@@ -470,7 +470,7 @@
       <p class="hint">按步骤检查安全、连接与推送配置。</p>
       <div class="su-body">
         <nav class="su-rail" id="setup-steps" aria-label="设置引导步骤"></nav>
-        <div class="su-panel" id="setup-main">载入中…</div>
+        <div class="su-panel" id="setup-main"><span class="content-loading" role="status"><span class="content-loading-text">载入中…</span><span class="content-loading-bars" aria-hidden="true"><span class="content-loading-bar"></span><span class="content-loading-bar"></span><span class="content-loading-bar"></span></span></span></div>
       </div>
     </div>
   </section>

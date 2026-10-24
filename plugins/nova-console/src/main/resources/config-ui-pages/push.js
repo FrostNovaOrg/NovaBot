@@ -14,7 +14,7 @@
  */
 
 import {ask, keepTabInside} from './confirm.js';
-import {$, api, CONSOLE, el, esc, markDirty, phrase, request, say, term} from './core.js';
+import {$, api, clearLoading, CONSOLE, el, esc, loadingHtml, markDirty, phrase, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
@@ -813,7 +813,7 @@ export async function showPush(uid, tail) {
   const user = pushData.find(item => String(item.uid) === String(picked.uid));
   if (user?._summary) {
     try { await loadUser(user); renderStreamers(); }
-    catch (e) { say(e.message, 'err'); }
+    catch (e) { clearLoading($('#push-right')); say(e.message, 'err'); }
   }
 }
 
@@ -1046,7 +1046,7 @@ function paintRight() {
   }
 
   if (user._summary) {
-    host.appendChild(el('p', 'hint')).textContent = '主播配置载入中…';
+    host.innerHTML = loadingHtml('主播配置载入中…');
     return;
   }
 

@@ -14,7 +14,7 @@
  */
 
 import {ask} from './confirm.js';
-import {api, el, esc, markDirty, say} from './core.js';
+import {api, el, esc, loadingHtml, markDirty, say} from './core.js';
 import {targetOptions} from './links-model.js';
 import {acceptAddedPushUser, trackSetupVersions, renderStreamers, pushEntries, STREAMER_INPUT_HINT}
   from './push.js';
@@ -163,9 +163,12 @@ export function render(host, ctx, adding = false) {
     // /platforms 后到，说错了的话使用者会去装一个其实已经装了的插件。
     // 取失败时话要换成「没取到、可以怎么办」：挂在「正在载入」上的人会一直等下去。
     // 回话那块跟着画出来：清单没到时「下一步」拦人，理由要写在这里
-    host.appendChild(store.platformsError
-      ? note('warn', platformsFailedText(store.platformsError))
-      : note('', '正在加载直播平台列表…'));
+    if (store.platformsError) host.appendChild(note('warn', platformsFailedText(store.platformsError)));
+    else {
+      const loading = note('', '正在加载直播平台列表…');
+      loading.innerHTML = loadingHtml('正在加载直播平台列表…');
+      host.appendChild(loading);
+    }
     host.appendChild(result);
     return;
   }
