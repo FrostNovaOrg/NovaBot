@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.util.List;
 
 /** 智能助手的模型连接与额度配置，密钥单独加密保存。 */
 @Getter
@@ -50,6 +51,27 @@ public class AssistantProperties {
     @ConfigLabel("输出单价")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private BigDecimal priceOutputYuanPerMillion = new BigDecimal("8.6");
+
+    /** 一问最多执行的只读查数次数。 */
+    @ConfigLabel("每问查数次数上限")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int maxToolCalls = 6;
+    /** 一问各轮累计的输入 token 上限。 */
+    @ConfigLabel("每问累计输入上限")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int maxQuestionTokens = 30000;
+    /** 拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。 */
+    @ConfigLabel("观众拒绝名单")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private List<Long> excludedUids = List.of();
+
+    public void setMaxToolCalls(int value) { maxToolCalls = positive(value); }
+    public void setMaxQuestionTokens(int value) { maxQuestionTokens = positive(value); }
+    public void setExcludedUids(List<Long> value) {
+        if (value == null || value.stream().anyMatch(uid -> uid == null || uid <= 0))
+            throw new IllegalArgumentException("观众拒绝名单请填写正整数编号");
+        excludedUids = List.copyOf(value);
+    }
 
     public void setMonthlyBudgetYuan(BigDecimal value) {
         if (value == null || value.signum() <= 0) throw new IllegalArgumentException("智能助手每月金额上限必须大于 0");

@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.console.controller.LiveSessionJson;
 import org.frostnova.nova.console.controller.StreamerController;
 import org.frostnova.nova.core.analytics.LiveDetail;
+import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -306,6 +307,54 @@ public class AssistantQueryService {
         var result = JSON.parseObject(JSON.toJSONString(response.getBody(), com.alibaba.fastjson2.JSONWriter.Feature.WriteNulls));
         result.put("source", origin);
         boundSupportingLists(result);
+        return result;
+    }
+
+    /** 仅供本机文字去身份使用，不向模型公开。 */
+    public Map<Long, Set<String>> localAudience(String platform, Long uid, List<Long> excluded) {
+        if (!validIdentity(platform, uid)) throw new AssistantException("主播标识无效");
+        Map<Long, Set<String>> result = new HashMap<>();
+        var sessions = new ArrayList<>(archive.find(0, Long.MAX_VALUE).stream()
+                .filter(s -> platform.equals(s.platform()) && !uid.equals(s.uid()) && !excluded.isEmpty()).toList());
+        sessions.addAll(sessionsOf(platform, uid));
+        for (var session : sessions) {
+            if (Thread.currentThread().isInterrupted()) throw new AssistantException("智能助手提问已中止");
+            boolean ownRoom = uid.equals(session.uid());
+            java.util.function.BiConsumer<Long, String> add = (person, name) -> {
+                if (person == null || uid.equals(person) || !ownRoom && !excluded.contains(person)) return;
+                var names = result.computeIfAbsent(person, ignored -> new HashSet<>());
+                if (name != null && !name.isBlank()) names.add(name);
+            };
+            if (session.userSets() != null) session.userSets().values().forEach(people -> people.forEach(person -> add.accept(person, null)));
+            details.read(platform, session.uid(), session.startTime()).ifPresent(detail -> {
+                if (detail.rankings() != null) detail.rankings().values().forEach(ranking ->
+                        ranking.forEach(person -> add.accept(person.userUid(), person.userName())));
+            });
+            for (String name : List.of("danmu.jsonl", "events.jsonl")) {
+                try (var lines = JsonlFiles.lines(file(platform, session.uid(), session.startTime(), name))) {
+                    var rows = lines.iterator();
+                    while (rows.hasNext()) {
+                        if (Thread.currentThread().isInterrupted()) throw new AssistantException("智能助手提问已中止");
+                        var row = parse(rows.next());
+                        if (row != null && row.get("uid") instanceof Number) add.accept(row.getLong("uid"), row.getString("uname"));
+                    }
+                } catch (NoSuchFileException ignored) {
+                    // 未保存原文的场次仍可从名单和明细读取身份。
+                } catch (IOException | UncheckedIOException error) {
+                    throw new AssistantException("智能助手无法读取本地观众身份，请稍后再试");
+                }
+            }
+        }
+        var current = live.getLiveMetricUserSets(platform, uid);
+        current.forEach((metric, people) -> {
+            people.stream().filter(person -> !uid.equals(person)).forEach(person -> result.computeIfAbsent(person, ignored -> new HashSet<>()));
+            live.getLiveUserRanking(platform, uid, metric, Integer.MAX_VALUE).forEach(person -> {
+                if (person.userUid() != null && !uid.equals(person.userUid())) {
+                    var names = result.computeIfAbsent(person.userUid(), ignored -> new HashSet<>());
+                    if (person.userName() != null && !person.userName().isBlank()) names.add(person.userName());
+                }
+            });
+        });
         return result;
     }
 

@@ -10,6 +10,10 @@ novabot:
     monthly-budget-yuan: 45.5
     daily-questions-per-account: 12
     max-answer-tokens: 500
+    max-tool-calls: 4
+    max-question-tokens: 24000
+    excluded-uids:
+      - 900000001
     price-input-yuan-per-million: 3.1
     price-cached-input-yuan-per-million: 0.1
     price-output-yuan-per-million: 9.2

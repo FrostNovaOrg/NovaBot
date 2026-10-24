@@ -350,6 +350,34 @@ class AssistantQueryServiceTest {
         assertFalse(revenue.getBooleanValue("concentrated"));
     }
 
+    // 抓住本地身份查询遗漏历史昵称、未入选观众、当前观众，或混入其他主播。
+    @Test void localAudienceIncludesArchivedAndCurrentIdentities() {
+        append(start, 60, 0);
+        details.appendDanmu(platform, uid, start, new DanmuRecord(start, 9300000022L,
+                "合成旧昵称", "原话", DanmuRecord.Type.DANMU));
+        details.appendDanmu(platform, uid, start, new DanmuRecord(start + 1, 9300000022L,
+                "合成新昵称", "原话", DanmuRecord.Type.DANMU));
+        details.store(detail(Map.of(), Map.of("revenue_users", List.of(new UserScore(9300000023L, "合成榜单观众", 42)))));
+        archive.append(new LiveSession(platform, 9300000099L, "其他主播", 2L, start, start + 60000, 60,
+                Map.of(), Map.of(), LiveEndReason.NORMAL, List.of(), 0,
+                Map.of("enter_users", List.of(9300000088L)), 0, Map.of(), Map.of()));
+        when(live.getLiveStatus(platform, uid)).thenReturn(Optional.of(true));
+        when(live.getLiveStartTime(platform, uid)).thenReturn(Optional.of(now));
+        when(live.getLiveMetricUserSets(platform, uid)).thenReturn(Map.of("enter_users", List.of(9300000024L)));
+        when(live.getLiveUserRanking(platform, uid, "enter_users", Integer.MAX_VALUE))
+                .thenReturn(List.of(new UserScore(9300000024L, "合成当前观众", 1)));
+        details.appendDanmu(platform, 9300000099L, start, new DanmuRecord(start, 9300000089L,
+                "合成拒绝昵称", "原话", DanmuRecord.Type.DANMU));
+        var identities = query.localAudience(platform, uid, List.of(9300000089L));
+        assertEquals(Set.of("合成拒绝昵称"), identities.get(9300000089L));
+        assertTrue(identities.containsKey(9300000021L));
+        assertEquals(Set.of("合成旧昵称", "合成新昵称"), identities.get(9300000022L));
+        assertEquals(Set.of("合成榜单观众"), identities.get(9300000023L));
+        assertEquals(Set.of("合成当前观众"), identities.get(9300000024L));
+        assertFalse(identities.containsKey(9300000088L));
+        assertFalse(identities.containsKey(uid));
+    }
+
     Map<String, String> fileContents() throws Exception {
         var result = new TreeMap<String, String>();
         try (var files = Files.walk(dir)) {

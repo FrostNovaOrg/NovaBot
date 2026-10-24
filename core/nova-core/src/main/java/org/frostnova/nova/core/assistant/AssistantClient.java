@@ -14,6 +14,8 @@ import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.function.Function;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,13 +41,18 @@ public final class AssistantClient {
     private final AssistantProperties properties;
     private final AssistantKeyStore keys;
     private final AssistantUsageStore usage;
-    private final RestTemplate template;
+    private final Function<Duration, RestTemplate> templates;
 
     public AssistantClient(AssistantProperties properties, AssistantKeyStore keys, AssistantUsageStore usage, RestTemplate template) {
+        this(properties, keys, usage, timeout -> template);
+    }
+
+    public AssistantClient(AssistantProperties properties, AssistantKeyStore keys, AssistantUsageStore usage,
+                           Function<Duration, RestTemplate> templates) {
         this.properties = properties;
         this.keys = keys;
         this.usage = usage;
-        this.template = template;
+        this.templates = templates;
     }
 
     public synchronized Status status() {
@@ -84,13 +91,19 @@ public final class AssistantClient {
     public final class Question implements AutoCloseable {
         private final String account;
         private boolean started;
+        private boolean sent;
         private boolean closed;
         private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
 
         private Question(String account) { this.account = account; }
 
-        public Response complete(Request request) {
+        public Response complete(Request request) { return complete(request, Duration.ofSeconds(90)); }
+
+        /** 调用方把整问的剩余时间传入，网络等待不能越过整问截止时刻。 */
+        public Response complete(Request request, Duration timeout) {
+            if (timeout == null || timeout.compareTo(Duration.ofMillis(1)) < 0)
+                throw new AssistantException("智能助手本次提问已超时，请问得具体一点");
             synchronized (AssistantClient.this) {
                 if (closed) throw new AssistantException("这一问已经结束");
                 if (inFlight) throw new AssistantException("这一问正在请求大模型服务，请等待返回");
@@ -101,11 +114,13 @@ public final class AssistantClient {
                 inFlight = true;
             }
             try {
-                return send(request, properties.getMaxAnswerTokens(), null, this);
+                return send(request, properties.getMaxAnswerTokens(), null, this, timeout);
             } finally {
                 synchronized (AssistantClient.this) { inFlight = false; }
             }
         }
+
+        public boolean hasSent() { synchronized (AssistantClient.this) { return sent; } }
 
         public BigDecimal totalCostYuan() { synchronized (AssistantClient.this) { return total; } }
 
@@ -116,7 +131,7 @@ public final class AssistantClient {
         if (candidate == null && !keys.isSet()) throw new AssistantException("尚未设置智能助手模型密钥");
         usage.requireReadable();
         send(new Request(List.of(JSONObject.of("role", "user", "content", "回复好")), List.of(), "none", 0),
-                Math.min(8, properties.getMaxAnswerTokens()), candidate, null);
+                Math.min(8, properties.getMaxAnswerTokens()), candidate, null, Duration.ofSeconds(20));
     }
 
     private List<String> missing() {
@@ -144,7 +159,7 @@ public final class AssistantClient {
         }
     }
 
-    private Response send(Request request, int maxTokens, String candidate, Question question) {
+    private Response send(Request request, int maxTokens, String candidate, Question question, Duration timeout) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         if (candidate == null) keys.authorize(headers); else headers.setBearerAuth(candidate);
@@ -153,6 +168,10 @@ public final class AssistantClient {
                     "tools", request.tools() == null ? List.of() : request.tools(),
                     "tool_choice", request.toolChoice() == null ? "auto" : request.toolChoice(),
                     "max_tokens", maxTokens, "temperature", request.temperature(), "stream", false);
+            RestTemplate template = templates.apply(timeout);
+            if (question != null) {
+                synchronized (AssistantClient.this) { question.sent = true; }
+            }
             byte[] bytes = template.exchange(properties.getBaseUrl().replaceAll("/+$", "") + "/chat/completions",
                     HttpMethod.POST, new HttpEntity<>(body.toJSONString(), headers), byte[].class).getBody();
             if (bytes == null) throw new AssistantException("大模型服务返回了空响应");

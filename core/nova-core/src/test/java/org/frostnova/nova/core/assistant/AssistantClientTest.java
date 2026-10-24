@@ -62,6 +62,30 @@ class AssistantClientTest {
                         + tokens + "}", MediaType.APPLICATION_JSON));
     }
 
+    // 抓住发送状态把仅通过可用性检查的提问当作已经发出。
+    @Test void transmissionStateChangesOnlyWhenRequestIsSent() {
+        properties.setBaseUrl("https://model.example/v1");
+        server.expect(requestTo("https://model.example/v1/chat/completions"))
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
+        try (var question = client.beginQuestion("member")) {
+            assertFalse(question.hasSent());
+            assertThrows(AssistantException.class, () -> question.complete(request(), java.time.Duration.ZERO));
+            assertFalse(question.hasSent());
+            question.complete(request());
+            assertTrue(question.hasSent());
+        }
+        server.verify();
+    }
+
+    // 抓住剩余时间不足一毫秒被网络工厂取整为无限等待，或超时后仍发送请求。
+    @Test void subMillisecondDeadlineStopsBeforeSending() {
+        try (var question = client.beginQuestion("first")) {
+            assertThrows(AssistantException.class, () -> question.complete(request(), java.time.Duration.ofNanos(1)));
+        }
+        assertEquals(0, usage.questionsToday().getOrDefault("first", 0));
+        server.verify();
+    }
+
     // 抓住月金额达到上限后仍向模型发请求的花费失控。
     @Test void monthlyBudgetStopsBeforeNetwork() {
         usage.addCost(new BigDecimal("30"));
