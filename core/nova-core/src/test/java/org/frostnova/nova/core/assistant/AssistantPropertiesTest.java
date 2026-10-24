@@ -1,6 +1,13 @@
 package org.frostnova.nova.core.assistant;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.frostnova.nova.core.properties.ConfigChoices;
+import org.frostnova.nova.core.properties.ConfigEffect;
+import org.frostnova.nova.core.properties.ConfigLabel;
+import org.frostnova.nova.core.properties.ConfigLevel;
+import org.springframework.beans.BeanWrapperImpl;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -8,9 +15,37 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class AssistantPropertiesTest {
+    @Test void thinkingDefaultsAndChoicesAreAvailableToSettings() {
+        var field = assertDoesNotThrow(() -> AssistantProperties.class.getDeclaredField("thinking"));
+        assertEquals("off", new BeanWrapperImpl(new AssistantProperties()).getPropertyValue("thinking"));
+        assertEquals("思考强度", field.getAnnotation(ConfigLabel.class).value());
+        assertEquals(ConfigLevel.Level.COMMON, field.getAnnotation(ConfigLevel.class).value());
+        assertEquals(ConfigEffect.Effect.RESTART, field.getAnnotation(ConfigEffect.class).value());
+        assertArrayEquals(new String[]{"off", "low", "high", "max"}, field.getAnnotation(ConfigChoices.class).value());
+        assertArrayEquals(new String[]{"关闭", "低", "高", "最高"}, field.getAnnotation(ConfigChoices.class).labels());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"off", "low", "high", "max"})
+    void bindingAcceptsThinkingChoices(String thinking) {
+        var binder = new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.thinking", thinking)));
+        var bound = binder.bind("novabot.assistant", Bindable.of(AssistantProperties.class));
+        assertTrue(bound.isBound());
+        assertEquals(thinking, new BeanWrapperImpl(bound.get()).getPropertyValue("thinking"));
+    }
+
+    @ParameterizedTest @NullAndEmptySource @ValueSource(strings = {"medium", "HIGH", " low "})
+    void setterRejectsUnknownThinkingChoices(String thinking) throws Exception {
+        var setter = assertDoesNotThrow(() -> AssistantProperties.class.getMethod("setThinking", String.class));
+        var error = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> setter.invoke(new AssistantProperties(), thinking)).getCause();
+        assertInstanceOf(IllegalArgumentException.class, error);
+        assertTrue(error.getMessage().contains("思考强度"));
+        assertTrue(error.getMessage().contains("关闭"));
+    }
+
     // 抓住配置绑定接受零或负数预算，导致金额上限无效。
     @ParameterizedTest
     @ValueSource(strings = {"0", "-1", "-0.01"})

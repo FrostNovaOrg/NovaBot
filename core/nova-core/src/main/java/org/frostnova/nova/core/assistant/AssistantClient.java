@@ -192,7 +192,18 @@ public final class AssistantClient {
                     "tool_choice", request.toolChoice() == null ? "auto" : request.toolChoice(),
                     "max_tokens", maxTokens, "temperature", request.temperature(), "stream", false);
             if ("api.deepseek.com".equalsIgnoreCase(URI.create(properties.getBaseUrl()).getHost())) {
-                body.put("thinking", JSONObject.of("type", "disabled"));
+                String thinking = question == null ? "off" : properties.getThinking();
+                body.put("thinking", JSONObject.of("type", "off".equals(thinking) ? "disabled" : "enabled"));
+                if (!"off".equals(thinking)) {
+                    body.put("reasoning_effort", thinking);
+                    int allowance = switch (thinking) {
+                        case "low" -> 4000;
+                        case "high" -> 16000;
+                        case "max" -> 32000;
+                        default -> throw new IllegalArgumentException("智能助手思考强度无效");
+                    };
+                    body.put("max_tokens", (long) maxTokens + allowance);
+                }
             }
             RestTemplate template = templates.apply(timeout);
             if (question != null) {
@@ -250,6 +261,12 @@ public final class AssistantClient {
     private static Usage parseUsage(JSONObject json) {
         if (json == null) throw new AssistantException("大模型服务未返回用量，无法计算花费");
         long output = count(json, "completion_tokens");
+        JSONObject completionDetails = json.getJSONObject("completion_tokens_details");
+        if (completionDetails != null && completionDetails.containsKey("reasoning_tokens")) {
+            long reasoning = count(completionDetails, "reasoning_tokens");
+            // completion_tokens 通常已含思考 token；只有思考数大于它时才相加，避免重复计费。
+            if (reasoning > output) output = Math.addExact(output, reasoning);
+        }
         long hit;
         long miss;
         if (json.containsKey("prompt_cache_hit_tokens") && json.containsKey("prompt_cache_miss_tokens")) {

@@ -2,6 +2,7 @@ package org.frostnova.nova.core.assistant;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.frostnova.nova.core.properties.ConfigChoices;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.properties.ConfigLevel;
@@ -31,6 +32,12 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private String model = "deepseek-flash";
+    /** 模型回答前先想一想的程度，默认关闭。关闭最快、最省；开得越高，回答前想得越久、花费越多（思考的字也按输出计价），也更容易超时。低／高／最高会在回答输出上限之外分别增加 4000／16000／32000 token 供思考使用。只对 DeepSeek 接口生效，换用别家接口时不发送这一项。 */
+    @ConfigLabel("思考强度")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigChoices(value = {"off", "low", "high", "max"}, labels = {"关闭", "低", "高", "最高"})
+    private String thinking = "off";
     /** 每月金额上限，单位：元，必须大于 0，按东八区自然月计算。 */
     @ConfigLabel("每月金额上限")
     @ConfigLevel(ConfigLevel.Level.COMMON)
@@ -100,6 +107,12 @@ public class AssistantProperties {
     public void setModel(String value) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("智能助手模型名称不能为空");
         model = value;
+    }
+
+    public void setThinking(String value) {
+        if (value == null || !List.of("off", "low", "high", "max").contains(value))
+            throw new IllegalArgumentException("智能助手思考强度请选择关闭（off）、低（low）、高（high）或最高（max）");
+        thinking = value;
     }
 
     public void setDailyQuestionsPerAccount(int value) { dailyQuestionsPerAccount = positive(value); }

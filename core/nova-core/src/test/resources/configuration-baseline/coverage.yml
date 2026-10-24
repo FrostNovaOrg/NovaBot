@@ -7,6 +7,7 @@ novabot:
     enabled: true
     base-url: https://model.example/v1
     model: sample-model
+    thinking: high
     monthly-budget-yuan: 45.5
     daily-questions-per-account: 12
     answer-limit: 500
