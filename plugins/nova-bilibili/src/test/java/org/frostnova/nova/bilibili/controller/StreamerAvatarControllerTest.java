@@ -124,6 +124,21 @@ class StreamerAvatarControllerTest {
                 .andExpect(status().isOk()).andExpect(content().bytes(PNG));
     }
 
+    // SVG 可在直接打开头像地址时执行同源脚本，拒绝后也必须缓存失败。
+    @Test void svgAvatarIsNotFoundAndCached() throws Exception {
+        upstream.expect(requestTo(URL)).andRespond(withSuccess(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>",
+                MediaType.parseMediaType("image/svg+xml")));
+        for (int i = 0; i < 2; i++) mvc.perform(as(MEMBER, PATH)).andExpect(status().isNotFound());
+    }
+
+    // 即使成功返回位图，直接打开时也应禁止脚本和其他资源。
+    @Test void successfulAvatarHasRestrictiveContentSecurityPolicy() throws Exception {
+        image();
+        mvc.perform(as(MEMBER, PATH)).andExpect(status().isOk()).andExpect(content().bytes(PNG))
+                .andExpect(header().string("Content-Security-Policy", "default-src 'none'; sandbox"));
+    }
+
     // 漏登记权限会让已授权成员也拿不到头像。
     @Test void authorizedMemberReadsAvatarAndIgnoresRequestUrl() throws Exception {
         image();
