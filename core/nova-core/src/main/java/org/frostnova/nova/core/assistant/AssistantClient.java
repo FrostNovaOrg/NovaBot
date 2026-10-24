@@ -26,8 +26,12 @@ import java.util.Map;
  * 每轮返回的用量立即落盘，包括后续消息解析失败的情况，避免中途退出漏记。
  */
 public final class AssistantClient {
-    public static final String ACKNOWLEDGEMENT_VERSION = "2026-10-24-v1";
-    public static final String ACKNOWLEDGEMENT_TEXT = "开启后，每次有人提问，NovaBot 会把这位主播的直播数据发给上面配置的模型服务商，可能包括汇总数字、截断的弹幕原话、观众昵称和金额。数据发出后由该服务商按它的条款处理，开启和配置智能助手的人对此负责。";
+    public static final String ACKNOWLEDGEMENT_VERSION = "2026-10-24-v2";
+    public static final String ACKNOWLEDGEMENT_TEXT = """
+            开启后，每次有人提问，NovaBot 会把提问和回答要用到的直播数据，经你填的密钥发给所配置的模型服务商（{接口地址}）处理，适用它自己的协议和隐私政策。默认只发汇总数字、礼物与打赏的汇总金额、贡献者代号及占比和少量截断的弹幕原话；观众昵称换成代号，观众的账号编号不发。
+            发不发、发给谁由你决定，也由你负责；调用费用由你和模型服务商结算。
+            智能助手的回答可能出错，只供参考，数字以报告里的原始数据为准。
+            如需在国内办理备案、登记等手续，由你自己办；回答旁的「由人工智能生成」提示请保留。""";
 
     public record Request(List<JSONObject> messages, List<JSONObject> tools, Object toolChoice, double temperature) { }
     public record Usage(long cachedInputTokens, long uncachedInputTokens, long outputTokens) { }
@@ -37,6 +41,8 @@ public final class AssistantClient {
                          int dailyQuestionsPerAccount, Map<String, Integer> questionsToday,
                          AssistantUsageStore.Acknowledgement acknowledgement,
                          String acknowledgementVersion, String acknowledgementText) { }
+
+    public record State(boolean enabled, boolean available, List<String> reasons, int questionsLeftToday) { }
 
     private final AssistantProperties properties;
     private final AssistantKeyStore keys;
@@ -56,11 +62,23 @@ public final class AssistantClient {
     }
 
     public synchronized Status status() {
-        List<String> missing = missing();
+        List<String> missing = unavailable().stream().map(AssistantException::getMessage).toList();
         return new Status(properties.isEnabled(), missing.isEmpty(), missing, keys.isSet(), keys.masked(),
                 properties.getBaseUrl(), properties.getModel(), usage.spentYuan(), properties.getMonthlyBudgetYuan(),
                 properties.getDailyQuestionsPerAccount(), usage.questionsToday(), usage.acknowledgement(),
-                ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT);
+                ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT.replace("{接口地址}", properties.getBaseUrl()));
+    }
+
+    /** 只读的账号可用状态，不发送请求，也不占用提问次数。 */
+    public synchronized State state(String account) {
+        var reasons = new ArrayList<>(unavailable().stream().map(AssistantException::reason).toList());
+        int left = usage.problem() == null
+                ? Math.max(0, properties.getDailyQuestionsPerAccount() - usage.questionsToday().getOrDefault(account, 0)) : 0;
+        if (usage.problem() == null) {
+            if (left == 0) reasons.add("daily_limit");
+            if (usage.spentYuan().compareTo(properties.getMonthlyBudgetYuan()) >= 0) reasons.add("monthly_budget");
+        }
+        return new State(properties.isEnabled(), reasons.isEmpty(), List.copyOf(reasons), left);
     }
 
     public synchronized void acknowledge(String actor) { usage.acknowledge(actor, ACKNOWLEDGEMENT_VERSION); }
@@ -103,7 +121,7 @@ public final class AssistantClient {
         /** 调用方把整问的剩余时间传入，网络等待不能越过整问截止时刻。 */
         public Response complete(Request request, Duration timeout) {
             if (timeout == null || timeout.compareTo(Duration.ofMillis(1)) < 0)
-                throw new AssistantException("智能助手本次提问已超时，请问得具体一点");
+                throw new AssistantException("timeout", "智能助手本次提问已超时，请问得具体一点");
             synchronized (AssistantClient.this) {
                 if (closed) throw new AssistantException("这一问已经结束");
                 if (inFlight) throw new AssistantException("这一问正在请求大模型服务，请等待返回");
@@ -128,28 +146,32 @@ public final class AssistantClient {
     }
 
     private void probe(String candidate) {
-        if (candidate == null && !keys.isSet()) throw new AssistantException("尚未设置智能助手模型密钥");
+        if (candidate == null && !keys.isSet()) throw new AssistantException("no_key", "尚未设置智能助手模型密钥");
         usage.requireReadable();
         send(new Request(List.of(JSONObject.of("role", "user", "content", "回复好")), List.of(), "none", 0),
                 Math.min(8, properties.getMaxAnswerTokens()), candidate, null, Duration.ofSeconds(20));
     }
 
-    private List<String> missing() {
-        List<String> missing = new ArrayList<>();
-        if (usage.problem() != null) missing.add(usage.problem());
-        if (!properties.isEnabled()) missing.add("智能助手总开关已关闭");
-        if (!keys.isSet()) missing.add("尚未设置智能助手模型密钥");
-        var accepted = usage.acknowledgement();
-        if (accepted == null || !ACKNOWLEDGEMENT_VERSION.equals(accepted.version())
-                || accepted.actor() == null || accepted.actor().isBlank() || accepted.at() == null || accepted.at().isBlank()) {
-            missing.add("尚未确认当前版本的智能助手配置者说明");
+    private List<AssistantException> unavailable() {
+        var missing = new ArrayList<AssistantException>();
+        if (!properties.isEnabled()) missing.add(new AssistantException("disabled", "智能助手总开关已关闭"));
+        if (!keys.isSet()) missing.add(new AssistantException("no_key", "尚未设置智能助手模型密钥"));
+        if (usage.problem() != null) {
+            missing.add(new AssistantException("usage_unreadable", usage.problem()));
+        } else {
+            var accepted = usage.acknowledgement();
+            if (accepted == null || !ACKNOWLEDGEMENT_VERSION.equals(accepted.version())
+                    || accepted.actor() == null || accepted.actor().isBlank() || accepted.at() == null || accepted.at().isBlank()) {
+                missing.add(new AssistantException("not_acknowledged", "尚未确认当前版本的智能助手配置者说明"));
+            }
         }
         return List.copyOf(missing);
     }
 
     private void requireAvailable() {
-        List<String> missing = missing();
-        if (!missing.isEmpty()) throw new AssistantException(String.join("；", missing));
+        var missing = unavailable();
+        if (!missing.isEmpty()) throw new AssistantException(missing.get(0).reason(),
+                String.join("；", missing.stream().map(AssistantException::getMessage).toList()));
     }
 
     private static void validate(Request request) {
@@ -191,12 +213,12 @@ public final class AssistantClient {
             return new Response(message.getString("content"), List.copyOf(tools), tokens, cost);
         } catch (HttpStatusCodeException error) {
             int status = error.getStatusCode().value();
-            if (status == 401 || status == 403) throw new AssistantException("模型密钥不正确或没有访问权限");
-            if (status == 402) throw new AssistantException("模型服务余额不足，请检查服务商账户");
-            if (status == 429) throw new AssistantException("模型服务额度不足或请求过多，请稍后再试");
+            if (status == 401 || status == 403) throw new AssistantException("key_rejected", "模型密钥不正确或没有访问权限");
+            if (status == 402) throw new AssistantException("provider_balance", "模型服务余额不足，请检查服务商账户");
+            if (status == 429) throw new AssistantException("provider_busy", "模型服务额度不足或请求过多，请稍后再试");
             throw new AssistantException("大模型服务出错，请稍后再试");
         } catch (ResourceAccessException error) {
-            throw new AssistantException("连接大模型服务超时或网络不可用，请稍后再试");
+            throw new AssistantException("network", "连接大模型服务超时或网络不可用，请稍后再试");
         } catch (RestClientException error) {
             throw new AssistantException("大模型服务出错，请稍后再试");
         } catch (AssistantException error) { throw error; }

@@ -59,19 +59,21 @@ public final class AssistantUsageStore {
     synchronized String problem() { return problem; }
 
     synchronized void requireReadable() {
-        if (problem != null) throw new AssistantException(problem);
+        if (problem != null) throw new AssistantException("usage_unreadable", problem);
     }
 
     synchronized void checkBudget(AssistantProperties properties) {
         requireReadable();
         rollOver();
-        if (spent.compareTo(properties.getMonthlyBudgetYuan()) >= 0) throw new AssistantException("本月智能助手额度已用完");
+        if (spent.compareTo(properties.getMonthlyBudgetYuan()) >= 0) throw new AssistantException("monthly_budget", "本月智能助手额度已用完");
     }
 
     synchronized void checkQuestion(String account, AssistantProperties properties) {
-        checkBudget(properties);
+        requireReadable();
+        rollOver();
         if (account == null || account.isBlank()) throw new AssistantException("提问账号不能为空");
-        if (questions.getOrDefault(account, 0) >= properties.getDailyQuestionsPerAccount()) throw new AssistantException("今天的提问次数用完了");
+        if (questions.getOrDefault(account, 0) >= properties.getDailyQuestionsPerAccount()) throw new AssistantException("daily_limit", "今天的提问次数用完了");
+        checkBudget(properties);
     }
 
     synchronized void startQuestion(String account, AssistantProperties properties) {
@@ -115,5 +117,5 @@ public final class AssistantUsageStore {
         } catch (Exception error) { throw storageError(); }
     }
 
-    private static AssistantException storageError() { return new AssistantException("智能助手用量文件无法读写，请检查后再试"); }
+    private static AssistantException storageError() { return new AssistantException("usage_unreadable", "智能助手用量文件无法读写，请检查后再试"); }
 }

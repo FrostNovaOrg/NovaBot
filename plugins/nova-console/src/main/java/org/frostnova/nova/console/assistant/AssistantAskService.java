@@ -43,6 +43,14 @@ public class AssistantAskService {
     private record AudienceKey(String platform, Long uid) { }
     private record AudienceEntry(Set<Long> excluded, Instant loadedAt, Map<Long, Set<String>> identities) { }
     private final ConcurrentMap<AudienceKey, AudienceEntry> audienceCache = new ConcurrentHashMap<>();
+    private static final Duration AUDIENCE_TTL = Duration.ofMinutes(10);
+    private final ConcurrentMap<AudienceKey, CompletableFuture<AudienceEntry>> audienceLoads = new ConcurrentHashMap<>();
+    private final ExecutorService audienceExecutor = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "assistant-audience");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final ScheduledExecutorService audienceCleanup;
     private final ExecutorService queryExecutor = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
             new LinkedBlockingQueue<>(), runnable -> {
                 Thread thread = new Thread(runnable, "assistant-query");
@@ -58,16 +66,37 @@ public class AssistantAskService {
 
     public AssistantAskService(AssistantQueryService queries, AssistantClient client, AssistantProperties properties,
                                AssistantLocalStore local, Clock clock) {
+        this(queries, client, properties, local, clock, Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "assistant-audience-cleanup");
+            thread.setDaemon(true);
+            return thread;
+        }));
+    }
+
+    AssistantAskService(AssistantQueryService queries, AssistantClient client, AssistantProperties properties,
+                        AssistantLocalStore local, Clock clock, ScheduledExecutorService audienceCleanup) {
         this.queries = queries;
         this.client = client;
         this.properties = properties;
         this.local = local;
         this.clock = clock;
+        this.audienceCleanup = audienceCleanup;
+        audienceCleanup.scheduleWithFixedDelay(this::evictExpiredAudience, 10, 10, TimeUnit.MINUTES);
     }
 
-    @PreDestroy public void close() { queryExecutor.shutdownNow(); }
+    @PreDestroy public void close() {
+        audienceCleanup.shutdownNow();
+        audienceExecutor.shutdownNow();
+        audienceLoads.values().forEach(task -> task.cancel(true));
+        audienceLoads.clear();
+        audienceCache.clear();
+        queryExecutor.shutdownNow();
+    }
+
+    public AssistantClient.State state(String account) { return client.state(account); }
 
     public JSONObject ask(String platform, Long uid, String account, JSONObject request) {
+        evictExpiredAudience();
         validate(request);
         var budget = new Budget();
         var excluded = List.copyOf(properties.getExcludedUids());
@@ -86,6 +115,8 @@ public class AssistantAskService {
         messages.add(JSONObject.of("role", "user", "content", JSONObject.of("question", request.getString("question"),
                 "history", history).toJSONString()));
         String answer = "";
+        boolean answered = false;
+        String reason = null;
         BigDecimal cost = BigDecimal.ZERO;
         List<String> unverified = List.of();
         AssistantClient.Question question = null;
@@ -98,8 +129,15 @@ public class AssistantAskService {
                         || budget.remaining(35).isZero();
                 AssistantClient.Response response = complete(question, messages, privacy, finish, budget);
                 tokens = Math.addExact(tokens, Math.addExact(response.usage().cachedInputTokens(), response.usage().uncachedInputTokens()));
-                if (response.content() != null && !response.content().isBlank()) answer = response.content();
-                if (finish || response.toolCalls().isEmpty()) break;
+                if (finish || response.toolCalls().isEmpty()) {
+                    if (response.content() != null && !response.content().isBlank()) {
+                        answer = response.content();
+                        answered = true;
+                    } else if (!finish) {
+                        throw new AssistantException("大模型服务返回了空响应");
+                    }
+                    break;
+                }
                 JSONArray accepted = new JSONArray();
                 var results = new ArrayList<JSONObject>();
                 // 单轮也有上限，防止异常响应塞入大量工具调用撑大上下文。
@@ -121,6 +159,8 @@ public class AssistantAskService {
                             numbers.include(data);
                         }
                     } catch (RuntimeException error) {
+                        if (error instanceof AssistantException assistant && "audience_unavailable".equals(assistant.reason()))
+                            throw assistant;
                         // 未知工具、参数或查询错误都只返回固定说明，不把异常原文发给模型。
                         calls++;
                         data = JSONObject.of("source", "查数服务", "reason", "没有这份数据，请检查工具名与参数");
@@ -132,19 +172,33 @@ public class AssistantAskService {
                 messages.add(JSONObject.of("role", "assistant", "content", response.content(), "tool_calls", accepted));
                 messages.addAll(results);
             }
-            if (answer.isBlank()) answer = FALLBACK;
+            if (!answered) {
+                if (budget.remaining(55).isZero())
+                    throw new AssistantException("timeout", "智能助手本次提问已超时，请问得具体一点");
+                throw new AssistantException("too_much_data", FALLBACK);
+            }
             answer = privacy.mask(answer);
             unverified = numbers.unverified(answer);
             if (!unverified.isEmpty() && !budget.remaining(55).isZero()) {
                 messages.add(JSONObject.of("role", "assistant", "content", answer));
                 messages.add(JSONObject.of("role", "user", "content", "这些数字在本问工具数据中核对不上：" + String.join("、", unverified)
                         + "。请重写一次，只许用本问工具给出的数字，缺少就说没有这份数据，不再查数。"));
-                AssistantClient.Response rewritten = complete(question, messages, privacy, true, budget);
-                if (rewritten.content() != null && !rewritten.content().isBlank()) answer = privacy.mask(rewritten.content());
-                unverified = numbers.unverified(answer);
+                try {
+                    AssistantClient.Response rewritten = complete(question, messages, privacy, true, budget);
+                    if (rewritten.content() != null && !rewritten.content().isBlank()) {
+                        String rewrittenAnswer = privacy.mask(rewritten.content());
+                        List<String> rewrittenUnverified = numbers.unverified(rewrittenAnswer);
+                        answer = rewrittenAnswer;
+                        unverified = rewrittenUnverified;
+                    }
+                } catch (RuntimeException error) {
+                    // 重写失败时保留已经脱敏的回答和待核对数字，花费仍由整问累计。
+                }
             }
         } catch (AssistantException error) {
-            if (answer.isBlank()) answer = error.getMessage();
+            answered = false;
+            answer = error.getMessage();
+            reason = error.reason();
             unverified = numbers.unverified(answer);
         } finally {
             if (question != null) {
@@ -155,10 +209,13 @@ public class AssistantAskService {
         }
         if (answer.isBlank()) answer = FALLBACK;
         var status = client.status();
-        return JSONObject.of("answer", privacy.display(answer), "answerForHistory", answer, "label", "由人工智能生成",
+        var result = JSONObject.of("answered", answered, "answer", privacy.display(answer), "answerForHistory", answer,
                 "steps", steps, "unverifiedNumbers", unverified, "costYuan", cost, "remaining", JSONObject.of(
                         "questionsToday", Math.max(0, status.dailyQuestionsPerAccount() - status.questionsToday().getOrDefault(account, 0)),
                         "spentYuan", status.spentYuan(), "monthlyBudgetYuan", status.monthlyBudgetYuan()));
+        if (answered) result.put("label", "由人工智能生成");
+        else result.put("reason", reason);
+        return result;
     }
 
     private AssistantClient.Response complete(AssistantClient.Question question, List<JSONObject> messages,
@@ -178,31 +235,59 @@ public class AssistantAskService {
         return question.complete(new AssistantClient.Request(outgoing, AssistantTools.definitions(), finish ? "none" : "auto", 0.3), budget.remaining(55));
     }
 
-    private Map<Long, Set<String>> localAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
-        Set<Long> exclusions = Set.copyOf(excluded);
-        return audienceCache.compute(new AudienceKey(platform, uid), (key, cached) -> {
-            if (cached != null && cached.excluded().equals(exclusions)) {
-                Duration age = Duration.between(cached.loadedAt(), clock.instant());
-                if (!age.isNegative() && age.compareTo(Duration.ofMinutes(10)) < 0) return cached;
-            }
-            // 仅缓存完整读取的结果；失败时继续拒答，下一问重新尝试读取。
-            var identities = new HashMap<Long, Set<String>>();
-            loadAudience(platform, uid, excluded, budget).forEach((person, names) -> identities.put(person, Set.copyOf(names)));
-            return new AudienceEntry(exclusions, clock.instant(), Map.copyOf(identities));
-        }).identities();
+    void evictExpiredAudience() {
+        Instant now = clock.instant();
+        audienceCache.entrySet().removeIf(entry -> expired(entry.getValue(), now));
     }
 
-    private Map<Long, Set<String>> loadAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
-        Future<Map<Long, Set<String>>> future = queryExecutor.submit(
-                () -> queries.localAudience(platform, uid, excluded));
-        try {
-            return future.get(Math.max(1, budget.remaining(35).toMillis()), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
-            throw new AssistantException("智能助手提问已中止");
-        } catch (ExecutionException | TimeoutException error) {
-            throw new AssistantException("智能助手无法核对本地观众身份，请稍后再试");
-        } finally { future.cancel(true); }
+    private boolean expired(AudienceEntry entry, Instant now) {
+        Duration age = Duration.between(entry.loadedAt(), now);
+        return age.isNegative() || age.compareTo(AUDIENCE_TTL) >= 0;
+    }
+
+    private Map<Long, Set<String>> localAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
+        AudienceKey key = new AudienceKey(platform, uid);
+        Set<Long> exclusions = Set.copyOf(excluded);
+        while (true) {
+            AudienceEntry cached = audienceCache.get(key);
+            if (cached != null && cached.excluded().equals(exclusions) && !expired(cached, clock.instant()))
+                return cached.identities();
+            // 只在映射中登记任务，文件读取在独立线程中进行，哈希冲突也不会让主播互相等待。
+            var candidate = new CompletableFuture<AudienceEntry>();
+            CompletableFuture<AudienceEntry> loading = audienceLoads.putIfAbsent(key, candidate);
+            if (loading == null) {
+                loading = candidate;
+                audienceExecutor.execute(() -> {
+                    try {
+                        AudienceEntry entry = audienceCache.get(key);
+                        if (entry == null || !entry.excluded().equals(exclusions) || expired(entry, clock.instant())) {
+                            var identities = new HashMap<Long, Set<String>>();
+                            queries.localAudience(platform, uid, excluded).forEach(
+                                    (person, names) -> identities.put(person, Set.copyOf(names)));
+                            entry = new AudienceEntry(exclusions, clock.instant(), Map.copyOf(identities));
+                        }
+                        if (!audienceExecutor.isShutdown()) audienceCache.put(key, entry);
+                        audienceLoads.remove(key, candidate);
+                        candidate.complete(entry);
+                    } catch (RuntimeException error) {
+                        // 失败不缓存，下一问可以重新读取。
+                        audienceLoads.remove(key, candidate);
+                        candidate.completeExceptionally(error);
+                    }
+                });
+            }
+            try {
+                AudienceEntry entry = loading.get(Math.max(1, budget.remaining(35).toMillis()), TimeUnit.MILLISECONDS);
+                if (entry.excluded().equals(exclusions)) return entry.identities();
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssistantException("audience_unavailable", "智能助手提问已中止");
+            } catch (ExecutionException | TimeoutException | CancellationException error) {
+                throw new AssistantException("audience_unavailable", "智能助手无法核对本地观众身份，请稍后再试");
+            }
+            if (budget.remaining(35).isZero())
+                throw new AssistantException("audience_unavailable", "智能助手无法核对本地观众身份，请稍后再试");
+        }
     }
 
     private JSONObject query(String platform, Long uid, String name, JSONObject args, Budget budget) {
