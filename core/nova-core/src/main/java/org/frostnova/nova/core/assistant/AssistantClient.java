@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.function.Function;
@@ -35,7 +36,7 @@ public final class AssistantClient {
 
     public record Request(List<JSONObject> messages, List<JSONObject> tools, Object toolChoice, double temperature) { }
     public record Usage(long cachedInputTokens, long uncachedInputTokens, long outputTokens) { }
-    public record Response(String content, List<JSONObject> toolCalls, Usage usage, BigDecimal costYuan) { }
+    public record Response(String content, String reasoningContent, List<JSONObject> toolCalls, Usage usage, BigDecimal costYuan) { }
     public record Status(boolean enabled, boolean available, List<String> missing, boolean keySet, String maskedKey,
                          String baseUrl, String model, BigDecimal spentYuan, BigDecimal monthlyBudgetYuan,
                          int dailyQuestionsPerAccount, Map<String, Integer> questionsToday,
@@ -190,12 +191,16 @@ public final class AssistantClient {
                     "tools", request.tools() == null ? List.of() : request.tools(),
                     "tool_choice", request.toolChoice() == null ? "auto" : request.toolChoice(),
                     "max_tokens", maxTokens, "temperature", request.temperature(), "stream", false);
+            if ("api.deepseek.com".equalsIgnoreCase(URI.create(properties.getBaseUrl()).getHost())) {
+                body.put("thinking", JSONObject.of("type", "disabled"));
+            }
             RestTemplate template = templates.apply(timeout);
             if (question != null) {
                 synchronized (AssistantClient.this) { question.sent = true; }
             }
+            // 用字节发送，避免 HTTP 客户端诊断日志输出包含思考内容的请求正文。
             byte[] bytes = template.exchange(properties.getBaseUrl().replaceAll("/+$", "") + "/chat/completions",
-                    HttpMethod.POST, new HttpEntity<>(body.toJSONString(), headers), byte[].class).getBody();
+                    HttpMethod.POST, new HttpEntity<>(body.toJSONString().getBytes(StandardCharsets.UTF_8), headers), byte[].class).getBody();
             if (bytes == null) throw new AssistantException("大模型服务返回了空响应");
             JSONObject json = JSON.parseObject(new String(bytes, StandardCharsets.UTF_8));
             Usage tokens = parseUsage(json.getJSONObject("usage"));
@@ -210,7 +215,7 @@ public final class AssistantClient {
             redact(message, secret);
             JSONArray calls = message.getJSONArray("tool_calls");
             List<JSONObject> tools = calls == null ? List.of() : calls.toJavaList(JSONObject.class);
-            return new Response(message.getString("content"), List.copyOf(tools), tokens, cost);
+            return new Response(message.getString("content"), message.getString("reasoning_content"), List.copyOf(tools), tokens, cost);
         } catch (HttpStatusCodeException error) {
             int status = error.getStatusCode().value();
             if (status == 401 || status == 403) throw new AssistantException("key_rejected", "模型密钥不正确或没有访问权限");
