@@ -453,6 +453,28 @@ public class HttpUtil {
         return request(url, HttpMethod.GET, httpEntity, byte[].class, timedTemplate(fetchTimeout));
     }
 
+    /** 原始图片及其响应类型，供同源图片接口使用。 */
+    public record ImageBytes(MediaType contentType, byte[] bytes) { }
+
+    /** 限时读取图片，在读入内存前检查类型，并限制实际读取的字节数。 */
+    public Optional<ImageBytes> getImageBytes(String url, Map<String, String> headers,
+                                              Duration fetchTimeout, int maxBytes) {
+        if (maxBytes <= 0 || maxBytes == Integer.MAX_VALUE) throw new IllegalArgumentException("maxBytes");
+        HttpHeaders httpHeaders = new HttpHeaders();
+        headers.forEach(httpHeaders::add);
+        checkHeaderValue(new HttpEntity<>(httpHeaders));
+        return timedTemplate(fetchTimeout).execute(url, HttpMethod.GET,
+                request -> request.getHeaders().addAll(httpHeaders), response -> {
+                    MediaType type = response.getHeaders().getContentType();
+                    if (!response.getStatusCode().is2xxSuccessful() || type == null
+                            || !"image".equalsIgnoreCase(type.getType()) || type.isWildcardSubtype()
+                            || response.getHeaders().getContentLength() > maxBytes) return Optional.empty();
+                    byte[] bytes = response.getBody().readNBytes(maxBytes + 1);
+                    if (bytes.length == 0 || bytes.length > maxBytes) return Optional.empty();
+                    return Optional.of(new ImageBytes(type, bytes));
+                });
+    }
+
     /**
      * 读取图片的同步 HTTP GET 请求
      * @param url URL
