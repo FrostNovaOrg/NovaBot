@@ -1832,7 +1832,7 @@ function noticeRow(item, user, target, session, repaint) {
       repaint();
       // 重画后按钮换了一个，焦点跟到新的那一个上，不掉回页首
       const again = editButtons.get(item.className);
-      if (again && typeof again.focus === 'function') again.focus();
+      if (again && typeof again.focus === 'function') again.focus({preventScroll: true});
     });
     editButtons.set(item.className, edit);
     line.appendChild(edit);
@@ -2374,7 +2374,7 @@ export function openDrawer(title, lead, build) {
   drawer.hidden = false;
   // 正文里没有可填可点的控件时，焦点落在标题上（标题带 tabindex=-1），不落在「关闭」上
   const first = firstUsable(body) || $('#push-drawer-title');
-  first.focus();
+  first.focus({preventScroll: true});
 }
 
 /**
@@ -2388,7 +2388,7 @@ export function closeDrawer() {
   $('#push-drawer-body').innerHTML = '';
   const opener = drawerOpener;
   drawerOpener = null;
-  if (wasOpen && opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
+  if (wasOpen && opener && opener.isConnected && typeof opener.focus === 'function') opener.focus({preventScroll: true});
 }
 
 /**

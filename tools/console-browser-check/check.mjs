@@ -435,6 +435,60 @@ function checkPalette(facts, palette) {
   return problems;
 }
 
+// 用归档充足的演示主播量实际布局；滚到趋势卡后通过真实控件改变视图。
+const STREAMER_INTERACTIONS = `(async () => {
+  const wait = async predicate => {
+    const deadline = performance.now() + 12000;
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error('等待主播视图超时');
+      await new Promise(requestAnimationFrame);
+    }
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  };
+  const rect = selector => document.querySelector(selector).getBoundingClientRect();
+  const rows = [...document.querySelectorAll('#sd-recent .sd-recent-row')].filter(row => row.getClientRects().length);
+  const last = rows.at(-1).getBoundingClientRect();
+  const geometry = {bottomDifference: Math.abs(rect('#sd-calendar-card').bottom - rect('#sd-recent-card').bottom),
+    rows: rows.length, bottomSpace: rect('#sd-recent-card').bottom - last.bottom, rowHeight: last.height,
+    heading: document.querySelector('#sd-recent h4').textContent};
+  document.querySelector('#sd-trend').scrollIntoView({block: 'start'});
+  await wait(() => scrollY > 200);
+  const position = scrollY;
+  const movements = [];
+  const step = async (name, action, ready) => {
+    window.scrollTo(0, position);
+    action();
+    await wait(ready);
+    movements.push({name, before: position, after: scrollY, difference: Math.abs(scrollY - position)});
+  };
+  const checkbox = '#sd-trend input[type=checkbox]';
+  const checked = document.querySelector(checkbox).checked;
+  await step('隐藏未播与无效日期', () => document.querySelector(checkbox).click(),
+    () => document.querySelector(checkbox).checked !== checked && location.hash.includes('hideOff=1'));
+  document.querySelector('#sd-calendar .sc-calendar-recorded').click();
+  await step('打开场次抽屉', () => document.querySelector('#sd-calendar .sc-calendar-selection button').click(),
+    () => document.querySelector('dialog.sc-drawer[open] .sd-session-filters'));
+  await step('关闭场次抽屉', () => document.querySelector('.sc-drawer-close').click(),
+    () => !document.querySelector('dialog.sc-drawer[open]') && !location.hash.includes('panel='));
+  window.scrollTo(0, 0);
+  return {geometry, movements};
+})()`;
+
+async function checkStreamerInteractions(s, round) {
+  const response = await s('Runtime.evaluate', {expression: STREAMER_INTERACTIONS, returnByValue: true, awaitPromise: true});
+  if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+  const {geometry, movements} = response.result.value;
+  round.interactions = {geometry, movements};
+  if (geometry.bottomDifference > 1 || geometry.bottomSpace >= geometry.rowHeight
+    || geometry.heading !== '最近 ' + geometry.rows + ' 场归档') {
+    round.failures.push('主播双卡布局：' + JSON.stringify(geometry));
+  }
+  for (const movement of movements) if (movement.difference > 2) {
+    round.failures.push('页内滚动：' + JSON.stringify(movement));
+  }
+}
+
 // PNG 的校验与压缩只用 node 自带模块。Chromium 输出的 8 位 RGB/RGBA 可直接拼接。
 const CRC_TABLE = Array.from({length: 256}, (_, n) => {
   for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
@@ -652,6 +706,9 @@ async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
     const probe = (await s('Runtime.evaluate', {expression: PALETTE_PROBE, returnByValue: true})).result.value;
     round.failures.push(...checkPalette(probe, palette));
     round.colors = probe;
+    if (page === 'streamer' && size.width === 1440 && palette === PALETTES[0] && color === 'light') {
+      await checkStreamerInteractions(s, round);
+    }
     if (facts && facts.url !== new URL(ORIGIN + address).pathname + new URL(ORIGIN + address).hash) {
       round.notes.landed.add(`打开后停在 ${facts.url}`);
     }
@@ -685,6 +742,10 @@ function summarize(rounds, version, shotProblem) {
   }
   const failed = rounds.filter(r => r.failures.length).length;
   lines.push('', `合计 ${rounds.length} 轮：通过 ${rounds.length - failed}，失败 ${failed}`);
+  for (const r of rounds) if (r.interactions) {
+    lines.push('主播双卡布局：' + JSON.stringify(r.interactions.geometry));
+    for (const movement of r.interactions.movements) lines.push('页内滚动：' + JSON.stringify(movement));
+  }
 
   // 各套配色在首页上取到的几样颜色，只列出：三套该各是各的，一眼看得出有没有哪套没生效
   lines.push('', '配色读数（首页 1440 宽，页底／强调色／次要字）：');

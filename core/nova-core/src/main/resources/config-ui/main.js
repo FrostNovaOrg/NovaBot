@@ -514,6 +514,22 @@ const TAB_HASH = {
 
 /** 上一次落在哪个路由。离开某页时要收的尾巴据此判断 */
 let route = '';
+let routeIdentity = '';
+
+// 筛选、折叠或重画可能暂时把页面缩短。保留本页已经占用的高度，
+// 浏览器就不会在新内容回来前把滚动位置夹到页顶；切页时释放。
+function holdPageHeight() {
+  const page = document.querySelector('.page.on');
+  if (page) {
+    page.style.overflowAnchor = 'none';
+    page.style.minHeight = page.getBoundingClientRect().height + 'px';
+  }
+}
+for (const type of ['click', 'input', 'change']) {
+  document.addEventListener(type, event => {
+    if (event.target.closest?.('.page.on')) holdPageHeight();
+  }, true);
+}
 
 /**
  * 使用者按过「稍后再说」没有
@@ -655,6 +671,13 @@ function applyRoute(withData = true) {
   const plugin = name === 'settings' && sub
     ? pages.find(item => item.meta.id === sub && item.meta.slot === SLOT_SETTINGS) : null;
   const topPage = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === name);
+  // 顶级插件页用路径区分主播、场次、通道；问号后面只记本页视图。
+  // 日志的时间线与工程日志也是同一页里的视图。
+  const identity = topPage ? location.hash.split('?')[0] : name + (plugin ? '/' + sub : '');
+  const changingPage = routeIdentity !== identity;
+  if (changingPage) document.querySelectorAll('.page').forEach(page => { page.style.minHeight = ''; });
+  else holdPageHeight();
+  routeIdentity = identity;
 
   // 离开「连接」页就把刚签发的口令从 DOM 里抹掉。界面上写着「离开本页后无法再次查看」，
   // 这一行就是那句话的实现——留着它，那句话只是句话
@@ -693,7 +716,11 @@ function applyRoute(withData = true) {
   store.tab = plugin ? plugin.meta.id : (topPage ? topPage.meta.id : PAGE_TAB[name]);
 
   // 窄屏上导航是横向滚动的，靠右的项会落在视野外。选中却看不见等于没有选中标记
-  $('#nav a[aria-current="page"]')?.scrollIntoView({inline: 'center', block: 'nearest'});
+  const nav = $('#nav');
+  const selected = $('#nav a[aria-current="page"]');
+  if (nav && selected && nav.scrollWidth > nav.clientWidth) {
+    nav.scrollLeft = selected.offsetLeft - (nav.clientWidth - selected.offsetWidth) / 2;
+  }
 
   // 要看哪一块得赶在取数之前记下：真正滚过去是在卡画完之后，
   // 此刻卡上还是上一刻的高度，滚了也白滚
@@ -721,7 +748,7 @@ function applyRoute(withData = true) {
   else if (name === 'settings') { renderGeneral(); focusCard(name, card, true); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
-  if (!card) window.scrollTo(0, 0);
+  if (!card && changingPage) window.scrollTo(0, 0);
 }
 
 /**
