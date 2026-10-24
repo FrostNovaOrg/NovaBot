@@ -244,18 +244,20 @@ export function currentGroupId(groups, viewportTop, viewportHeight, headerHeight
  * 另起一组「某组 · 高级」，BASIC／COMMON 留在常用。界面上不另记一张写着键名的名单——
  * 那张名单只能由核心来写，插件新加的键会落在名单外，而落错了不会有任何提示。
  *
- * 由卡片摆的项（告警的三张卡、登录与安全的几张卡）跟着卡走：卡挂在常用那一组上，
+ * 由卡片摆的项（告警、登录与安全）跟着卡走：卡挂在常用那一组上，
  * 这几项要是按级别算进高级，行里摘掉了、数目却记在高级那边，两边对不上。
  * 旧后端没给 level 的项按常用摆：把它们藏起来，比多露几项更难察觉。
  * 「整组都要重启」那枚牌子按拆出来的两半各自重算，服务端算的是整组。
  * @param groups 组表，来自 /api/schema 的 groups；不改动它
  * @param carded (组标识, 配置键) => 这一项是否由卡片摆，可不传
+ * @param hasCards (组标识) => 这一组是否挂卡；有卡时常用区保留组，即使没有普通项
  * @return {{common: Array, advanced: Array}} 两半，各按组表原来的顺序
  */
-export function arrangeGroups(groups, carded) {
+export function arrangeGroups(groups, carded, hasCards) {
   const common = [];
   const advanced = [];
   const held = typeof carded === 'function' ? carded : () => false;
+  const cards = typeof hasCards === 'function' ? hasCards : () => false;
   const part = (group, fields, extra) => Object.assign({}, group, {
     fields,
     allRestart: fields.length > 0 && fields.every(field => field.effect !== 'IMMEDIATE'),
@@ -272,7 +274,7 @@ export function arrangeGroups(groups, carded) {
       const high = field.level === 'ADVANCED' && !held(group.group, field.name);
       (high ? extra : basic).push(field);
     }
-    if (basic.length) common.push(part(group, basic, {}));
+    if (basic.length || cards(group.group)) common.push(part(group, basic, {}));
     if (extra.length) {
       advanced.push(part(group, extra, {
         group: group.group + '-advanced', title: group.title + ' · 高级', advanced: true, base: group.group,

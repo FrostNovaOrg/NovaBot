@@ -981,7 +981,8 @@ export function renderGeneral() {
   // 常用／高级按服务端给每一项标的级别分，界面上不另记名单（见 arrangeGroups）。
   // 由卡片摆的项跟着卡留在常用那一组上
   arranged = arrangeGroups(store.schema, (group, name) =>
-    (group === ALERT_GROUP && cardFields().has(name)) || (group === AUTH_GROUP && AUTH_CARD_FIELDS.has(name)));
+    (group === ALERT_GROUP && cardFields().has(name)) || (group === AUTH_GROUP && AUTH_CARD_FIELDS.has(name)),
+    group => group === ALERT_GROUP || group === AUTH_GROUP || group === 'assistant');
   const {common, advanced} = arranged;
 
   // 界面组排最上：纯前端偏好，不是这台机器的配置

@@ -132,7 +132,7 @@ public final class AssistantClient {
                 inFlight = true;
             }
             try {
-                return send(request, properties.getMaxAnswerTokens(), null, this, timeout);
+                return send(request, properties.getAnswerLimit(), null, this, timeout);
             } finally {
                 synchronized (AssistantClient.this) { inFlight = false; }
             }
@@ -149,7 +149,7 @@ public final class AssistantClient {
         if (candidate == null && !keys.isSet()) throw new AssistantException("no_key", "尚未设置智能助手模型密钥");
         usage.requireReadable();
         send(new Request(List.of(JSONObject.of("role", "user", "content", "回复好")), List.of(), "none", 0),
-                Math.min(8, properties.getMaxAnswerTokens()), candidate, null, Duration.ofSeconds(20));
+                Math.min(8, properties.getAnswerLimit()), candidate, null, Duration.ofSeconds(20));
     }
 
     private List<AssistantException> unavailable() {
