@@ -13,12 +13,12 @@ import java.util.Map;
  * 此前设置页是按配置键的前缀自动分组的——{@code novabot.core.push} 一组、
  * {@code novabot.core.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
  * 使用者要办一件事（「让它别在半夜发消息」），得先猜这件事在代码里归哪个类管。
- * 这里改成按「要办的事」分组，常用六组在上，工程用的两组整组算高级。
- * 常用六组里各项另按 {@code @ConfigLevel} 分：标了高级的也收进高级，由界面组目录最底下的钮显示。
+ * 这里改成按「要办的事」分组，常用七组在上，工程用的两组整组算高级。
+ * 常用七组里各项另按 {@code @ConfigLevel} 分：标了高级的也收进高级，由界面组目录最底下的钮显示。
  *
  * <h2>为什么是闭集</h2>
  *
- * 组是写死的八个，映射由前缀表给出。<b>新加的配置键如果一条前缀也匹配不上，它就没有组</b>——
+ * 组是写死的九个，映射由前缀表给出。<b>新加的配置键如果一条前缀也匹配不上，它就没有组</b>——
  * 接口上那一项的 {@code group} 为空，构建期那道判据当场点名。反过来做（匹配不上就丢进
  * 「其他」）看起来更稳妥，实际是给每一个新键签了张免检牌：它会静静地待在「其他」里，
  * 而没有任何东西会再提起这件事。
@@ -43,7 +43,7 @@ public final class ConfigurationGroups {
     }
 
     /**
-     * 常用六组，顺序即界面上的顺序
+     * 常用七组，顺序即界面上的顺序
      */
     public static final Group PUSH = new Group("push", "推送",
             "推送的发送时段与发送数量。", false);
@@ -63,6 +63,9 @@ public final class ConfigurationGroups {
     public static final Group AUTH = new Group("auth", "登录与安全",
             "控制台的访问方式与登录安全。", false);
 
+    public static final Group ASSISTANT = new Group("assistant", "智能助手",
+            "智能助手的模型连接、提问次数与金额上限。", false);
+
     /**
      * 高级两组，整组默认收起
      */
@@ -73,10 +76,10 @@ public final class ConfigurationGroups {
             "控制台的服务端口与监听地址，以及各处的连接、线程与超时设置。", true);
 
     /**
-     * 八个组，顺序即界面顺序
+     * 九个组，顺序即界面顺序
      */
     private static final List<Group> ALL =
-            List.of(PUSH, ALERT, COMMAND, COLLECT, REPORT, AUTH, LOG_DEBUG, SERVICE);
+            List.of(PUSH, ALERT, COMMAND, COLLECT, REPORT, AUTH, ASSISTANT, LOG_DEBUG, SERVICE);
 
     /**
      * 核心自有前缀表。插件前缀由 {@link ConfigurationGroupContributor} 申报，不写在这里。
@@ -157,6 +160,9 @@ public final class ConfigurationGroups {
         // ---- 登录与安全 ----
         map(map, NovaBotPrefixes.CORE + ".config-ui", AUTH);
 
+        // ---- 智能助手 ----
+        map(map, "novabot.assistant", ASSISTANT);
+
         // ---- 日志与调试 ----
         map(map, NovaBotPrefixes.CORE + ".log", LOG_DEBUG);
         map(map, NovaBotPrefixes.CORE + ".timeline", LOG_DEBUG);
@@ -180,7 +186,7 @@ public final class ConfigurationGroups {
     }
 
     /**
-     * 八个组，按界面顺序
+     * 九个组，按界面顺序
      * @return 组清单
      */
     public static List<Group> all() {
