@@ -302,6 +302,8 @@ export async function refreshHome() {
     refreshPages();
     return status;
   } catch (e) {
+    const summary = $('#home-health-summary');
+    if (summary?.querySelector('.content-loading')) summary.textContent = '未获取到';
     clearLoading($('#page-home'));
     say('首页加载失败：' + e.message, 'err');
     return null;

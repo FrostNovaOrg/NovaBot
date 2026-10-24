@@ -17,6 +17,12 @@ class ContentLoadingTest {
     }
 
     @Test
+    @DisplayName("整体取数失败后首页与设置页收起占位，两处摘要显示未获取到")
+    void failedLoadClearsBothPages() throws Exception {
+        FrontendFixture.run(java.nio.file.Path.of("src/test/resources/frontend/content-loading-fixture.mjs").toAbsolutePath().toString(), "整体取数失败反馈", "load-failure");
+    }
+
+    @Test
     @DisplayName("占位延迟显现、跟随配色，减少动态效果时停止流光")
     void loadingAppearance() throws Exception {
         FrontendFixture.run(java.nio.file.Path.of("src/test/resources/frontend/content-loading-fixture.mjs").toAbsolutePath().toString(), "加载占位样式", "appearance");

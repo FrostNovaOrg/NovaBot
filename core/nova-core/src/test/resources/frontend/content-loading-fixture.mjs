@@ -1,4 +1,5 @@
 // 用户故障：换页后取数还没完成，卡片内容区空着，没有任何加载提示。
+// 失败后应收起占位，并在配置路径与健康摘要写明未获取到，避免留下空白。
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {MiniNode, bracedFrom} from './layout-dom.mjs';
@@ -111,6 +112,7 @@ if (process.argv[2] === 'cards') {
   await home();
   check('首页失败', () => {
     assert.equal($('#page-home').querySelector('.content-loading'), null);
+    assert.equal($('#home-health-summary').textContent, '未获取到');
     assert.match(message, /首页加载失败：断网/);
   });
   const retry = home();
@@ -134,6 +136,28 @@ if (process.argv[2] === 'cards') {
   check('推送配置失败', () => {
     assert.equal(!!host.querySelector('.content-loading'), false, '失败后加载占位仍未收起');
     assert.match(message, /主播配置载入失败/);
+  });
+} else if (process.argv[2] === 'load-failure') {
+  let reject, message, kind;
+  const pending = new Promise((ok, no) => { reject = no; });
+  const load = compile(read('main.js'), 'export async function load(', {
+    $, api: () => pending, store: {role: 'ADMIN'}, clearLoading,
+    say: (text, type) => { message = text; kind = type; }, markDirty() {},
+  });
+  const task = load();
+  const initiallyLoading = ['page-home', 'page-settings'].map(id => !!$('#' + id).querySelector('.content-loading'));
+  reject(new Error('断网'));
+  await task;
+  check('整体取数失败后两页收起占位并保留失败提示', () => {
+    assert.deepEqual(initiallyLoading, [true, true], '取数期间两页应有加载占位');
+    for (const id of ['page-home', 'page-settings']) {
+      assert.equal(!!$('#' + id).querySelector('.content-loading'), false, id + ': 失败后加载占位仍未收起');
+    }
+    for (const id of ['cfg-path', 'home-health-summary']) {
+      assert.equal($('#' + id).textContent, '未获取到', id + ': 失败后缺少文字提示');
+    }
+    assert.match(message, /加载失败.*断网/);
+    assert.equal(kind, 'err');
   });
 } else {
   const css = read('app.css');
