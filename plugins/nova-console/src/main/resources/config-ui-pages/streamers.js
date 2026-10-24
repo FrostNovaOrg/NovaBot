@@ -15,7 +15,7 @@
  */
 
 import {store} from './store.js';
-import {$, api, CONSOLE, el, esc, request, say} from './core.js';
+import {$, api, CONSOLE, el, esc, loadingHtml, request, say} from './core.js';
 import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis, createAudienceRing, openDrawer, releaseComponents} from './streamers-components.js';
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
@@ -38,8 +38,6 @@ const PAGE_STYLE = `
 .st-group-heading{margin:18px 0 4px;padding-top:16px;border-top:1px solid var(--line);font-size:var(--fs-md)}
 .st-group-heading:first-child{margin-top:0;padding-top:0;border-top:0}
 .st-group-heading small{display:block;margin-top:5px;color:var(--dim);font-size:var(--fs-xs);font-weight:400;line-height:1.6}
-.sd-loading{margin:0;color:var(--dim);font-size:var(--fs-md);line-height:1.7}
-#sd-body>.sd-loading{padding:24px 0}
 #sd-live .live-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #sd-live .live-head h3{margin:0}
 #sd-live .live-times,#sd-live .live-error{font-size:var(--fs-xs);color:var(--dim);margin:10px 0 0}
@@ -393,8 +391,8 @@ export function syncStreamersView() {
     // 换主播时立即撤掉旧身份的链接，避免加载期间点回上一位主播。
     detail = null; insightsData = null; periodAudience = null;
     $('#sv-detail').setAttribute('aria-busy', 'true');
-    $('#sd-head').innerHTML = '<p class="sd-loading" role="status">正在加载主播资料…</p>';
-    $('#sd-body').innerHTML = '<p class="sd-loading">正在读取该主播的运营数据…</p>';
+    $('#sd-head').innerHTML = loadingHtml('正在加载主播资料…');
+    $('#sd-body').innerHTML = loadingHtml('正在读取该主播的运营数据…');
   }
   $('#sv-list').style.display = where.view === 'list' ? '' : 'none';
   $('#sv-detail').style.display = where.view === 'detail' ? '' : 'none';

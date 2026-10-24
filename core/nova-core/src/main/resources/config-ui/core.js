@@ -88,6 +88,20 @@ export const el = (t, c) => { const e = document.createElement(t); if (c) e.clas
 // 主播昵称等内容来自各平台的接口，属于外部数据，拼进 innerHTML 前必须转义
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/** 与静态页面共用的加载占位；行内位置保持原来一行的高度。 */
+export function loadingHtml(text = '内容加载中…', inline = false) {
+  return '<span class="content-loading' + (inline ? ' content-loading-inline' : '') + '" role="status">'
+    + '<span class="content-loading-text">' + esc(text) + '</span>'
+    + '<span class="content-loading-bars" aria-hidden="true">'
+    + '<span class="content-loading-bar"></span><span class="content-loading-bar"></span>'
+    + '<span class="content-loading-bar"></span></span></span>';
+}
+
+/** 取数失败时只收起占位，原有内容与错误提示由各页保留。 */
+export function clearLoading(container) {
+  container?.querySelectorAll('.content-loading').forEach(node => node.remove());
+}
+
 /**
  * 插件申报的人话词。没有供这个键时用中性兜底，界面不自带平台名。
  * @param {string} key 词表键

@@ -1,5 +1,22 @@
 /* 色表在 product-ui.css；组件规则一律只引 var(--x)，本文件不写十六进制色值。 */
 
+/* 内容区预留三行；仅条纹延后显现，快速回包不会闪一下。 */
+.content-loading{display:block;position:relative;width:100%;max-width:100%}
+.content-loading-text{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip-path:inset(50%);white-space:nowrap;border:0}
+.content-loading-bars{display:grid;gap:10px;visibility:hidden;animation:content-loading-reveal 0s 150ms forwards}
+.content-loading-bar{display:block;height:14px;border-radius:var(--r-ctl);
+  background:linear-gradient(100deg,var(--line) 25%,var(--surface) 45%,var(--line) 65%);
+  background-size:240% 100%;animation:content-loading-shimmer 2.4s ease-in-out 150ms infinite}
+.content-loading-bar:nth-child(2){width:82%}
+.content-loading-bar:last-child{width:60%}
+.content-loading-inline{display:inline-block;width:8em;vertical-align:middle}
+.content-loading-inline .content-loading-bars{display:flex;gap:4px}
+.content-loading-inline .content-loading-bar{height:.75em;flex:1;min-width:0}
+@keyframes content-loading-reveal{to{visibility:visible}}
+@keyframes content-loading-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+@media (prefers-reduced-motion:reduce){.content-loading-bar{animation:none}}
+
 /* 组件基类。本轮只把样式备好，页面结构一处未动，由后续各页改造时挂上去。 */
 .nv-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
   box-shadow:var(--shadow)}

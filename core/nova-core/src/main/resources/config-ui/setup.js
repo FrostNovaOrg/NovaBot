@@ -20,7 +20,7 @@
 
 import {ask} from './confirm.js';
 import {botFieldsHtml} from './bot-fields.js';
-import {$, api, el, esc, markDirty, phrase, say} from './core.js';
+import {$, api, el, esc, loadingHtml, markDirty, phrase, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerBlockedReason, registerPasskey} from './passkeys.js';
 import {setAuthState} from './settings-auth.js';
@@ -205,7 +205,7 @@ async function collectPluginDone() {
  */
 export async function openSetup() {
   const main = $('#setup-main');
-  main.textContent = '正在加载…';
+  main.innerHTML = loadingHtml('正在加载…');
   loadOptions();
 
   try {

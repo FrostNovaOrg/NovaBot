@@ -24,6 +24,7 @@
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {loadingHtml} from '../../../../../../core/nova-core/src/main/resources/config-ui/core.js';
 
 const pages = join(dirname(fileURLToPath(import.meta.url)),
   '../../../main/resources/config-ui-pages');
@@ -139,9 +140,9 @@ try {
   }
   render = cutFn('export function render(',
     ['el', 'esc', 'note', 'field', 'STREAMER_INPUT_HINT', 'store', 'draft', 'paintFound', 'loadOptions',
-      'platformsFailedText'],
+      'platformsFailedText', 'loadingHtml'],
     [el, esc, note, field, STREAMER_INPUT_HINT, store, draft, paintFound, async () => {},
-      platformsFailedText]);
+      platformsFailedText, loadingHtml]);
   next = cutFn('export async function next(',
     ['store', 'draft', 'STREAMER_INPUT_HINT', 'stop', 'saveStreamer', 'platformsFailedText'],
     [store, draft, STREAMER_INPUT_HINT, stop, () => { saveStreamerCalls.push(1); return true; },

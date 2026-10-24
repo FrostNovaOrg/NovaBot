@@ -1,4 +1,4 @@
-import {phrase} from '../../../main/resources/config-ui/core.js';
+import {clearLoading, phrase} from '../../../main/resources/config-ui/core.js';
 /**
  * 直接打开或刷新设置页：QQ 告警卡存在，配置项留在卡内。
  * 执行 main.js 的 load、设置页 buildGroup 和告警卡绘制，接口使用本地响应。
@@ -213,10 +213,10 @@ for (const [card, channelFailure, statusFailure] of [['', false], ['alert', fals
   const load = loadAsyncFn(readFileSync(join(ui, 'main.js'), 'utf8'), 'function load(',
     ['say', 'api', 'store', 'renderGeneral', 'parseHash', 'focusCard', 'reloadChangeSources',
       'renderStatus', 'renderConfigPath', 'refreshPages', 'refreshHome', 'fillBotForms',
-      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived', 'CLEAR', 'defaultValue'],
+      'applyConnectionVocab', 'markDirty', 'notePlatformsArrived', 'CLEAR', 'defaultValue', '$', 'clearLoading'],
     [noop, api, store, () => { root = buildGroup(group); }, () => ({name: 'settings', card}),
       (_name, target) => { if (target === 'alert') openCards(root); }, async () => true,
-      noop, noop, noop, noop, noop, noop, noop, noop, CLEAR, defaultValue], 'how');
+      noop, noop, noop, noop, noop, noop, noop, noop, CLEAR, defaultValue, () => null, clearLoading], 'how');
   try {
     await load();
     await new Promise(resolve => setImmediate(resolve));

@@ -9,7 +9,7 @@
  * 卡里的内容由插件自己填。写死一个平台名，这一页就替一件可能没装的东西立了张卡。
  */
 
-import {$, api, el, esc, phrase, say} from './core.js';
+import {$, api, el, esc, loadingHtml, phrase, say} from './core.js';
 import {cardAnchor, linksModel, resolveTarget, targetOptions} from './links-model.js';
 import {renderStatus} from './overview.js';
 import {renderTokens} from './tokens.js';
@@ -148,6 +148,7 @@ let options = [];
 export async function loadTargets(force) {
   const pick = $('#test-target');
   pick.innerHTML = '<option value="">正在加载…</option>';
+  $('#test-hint').innerHTML = loadingHtml('正在加载…', true);
   $('#test-send').disabled = true;
 
   try {

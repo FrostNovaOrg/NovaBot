@@ -5,7 +5,7 @@
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {renderExecNotice} from './exec-notice.js';
-import {$, api, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
+import {$, api, clearLoading, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
@@ -478,6 +478,12 @@ export async function load(how) {
 
     if (quiet) say('');
   } catch (e) {
+    for (const id of ['cfg-path', 'home-health-summary']) {
+      const box = $('#' + id);
+      if (box?.querySelector('.content-loading')) box.textContent = '未获取到';
+    }
+    clearLoading($('#page-home'));
+    clearLoading($('#page-settings'));
     say('加载失败：' + e.message, 'err');
   }
   markDirty();

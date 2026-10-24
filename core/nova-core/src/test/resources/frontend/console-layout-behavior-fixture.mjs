@@ -58,6 +58,7 @@ if (mode === 'home') {
     let captured;
     const source = read('overview.js');
     const refreshHome = compile(source, ['export async function refreshHome()'], {
+      $: () => null,
       api: async path => {
         if (path === '/status') return {};
         if (path.includes('cursor=')) {

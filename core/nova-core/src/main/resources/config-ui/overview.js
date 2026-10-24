@@ -5,7 +5,7 @@
  * 哪一段该是什么颜色，一律在那边判——判断留在这里的话，八档对照就只能靠人点开页面看。
  */
 
-import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
+import {$, api, clearLoading, clock, el, esc, loadingHtml, markDirty, say, today} from './core.js';
 import {extAttrs} from './manual-link.js';
 import {healthText, homeModel, stationHref} from './home-model.js';
 import {considerSetupRedirect, pageStatus, refreshPages} from './main.js';
@@ -267,6 +267,15 @@ function renderHome(status, login, timeline, pages, pluginDone) {
  * @return 这一趟取到的运行状态，取不到时为 null
  */
 export async function refreshHome() {
+  // 已有内容留在原位；失败后重试时，空下来的内容区重新给出加载反馈。
+  for (const [id, text, inline] of [
+    ['linkmap', '连接状态加载中…'], ['now-box', '当前直播加载中…'],
+    ['home-health-summary', '检查结果加载中…', true], ['probe-list', '检查结果加载中…'],
+    ['home-timeline', '今日事件加载中…'],
+  ]) {
+    const box = $('#' + id);
+    if (box && !box.textContent.trim() && !box.innerHTML) box.innerHTML = loadingHtml(text, inline);
+  }
   try {
     const [status, login, timeline, problems] = await Promise.all([
       api('/status'), store.role === 'MEMBER' ? Promise.resolve(null) : api('/login'), api('/timeline?date=' + today()),
@@ -293,6 +302,9 @@ export async function refreshHome() {
     refreshPages();
     return status;
   } catch (e) {
+    const summary = $('#home-health-summary');
+    if (summary?.querySelector('.content-loading')) summary.textContent = '未获取到';
+    clearLoading($('#page-home'));
     say('首页加载失败：' + e.message, 'err');
     return null;
   }
