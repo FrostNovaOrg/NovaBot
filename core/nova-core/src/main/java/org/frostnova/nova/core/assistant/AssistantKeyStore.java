@@ -37,6 +37,14 @@ public final class AssistantKeyStore {
         } catch (Exception error) { throw storageError(); }
     }
 
+    synchronized void prepareForSave() {
+        if (Files.exists(masterPath) || !Files.exists(encryptedPath)) return;
+        try {
+            Files.delete(encryptedPath);
+            master(true);
+        } catch (Exception error) { throw storageError(); }
+    }
+
     synchronized void save(String value) {
         validate(value);
         byte[] plain = value.getBytes(StandardCharsets.UTF_8);

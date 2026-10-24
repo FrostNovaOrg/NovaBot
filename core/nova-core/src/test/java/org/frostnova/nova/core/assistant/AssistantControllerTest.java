@@ -1,8 +1,5 @@
 package org.frostnova.nova.core.assistant;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiAgreement;
 import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
@@ -13,7 +10,6 @@ import org.frostnova.nova.core.util.IpMatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -118,16 +114,12 @@ class AssistantControllerTest {
 
     // 抓住请求格式错误或诊断日志把输入密钥带出来。
     @Test void malformedKeyInputDoesNotLeakIntoDiagnostics() throws Exception {
-        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        Level previous = root.getLevel();
-        var logs = new ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
-        logs.start(); root.addAppender(logs); root.setLevel(Level.TRACE);
-        try {
+        try (var logs = new AssistantLogCapture()) {
             String response = mvc.perform(authorized(post("/config/api/assistant/key")).content("{\"key\":\"" + SECRET))
                     .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
             assertFalse(response.contains(SECRET));
-            assertTrue(logs.list.stream().noneMatch(event -> event.getFormattedMessage().contains(SECRET)));
-        } finally { root.setLevel(previous); root.detachAppender(logs); logs.stop(); }
+            logs.assertNoSecret(SECRET);
+        }
         server.verify();
     }
 

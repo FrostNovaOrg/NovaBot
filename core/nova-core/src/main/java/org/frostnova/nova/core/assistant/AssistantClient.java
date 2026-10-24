@@ -60,17 +60,19 @@ public final class AssistantClient {
 
     public synchronized void deleteKey() { keys.clear(); }
 
-    /** 管理员的连接诊断只发送固定短句，可在总开关关闭或尚未确认时配置密钥，也受额度限制。 */
-    public synchronized void validateAndSaveKey(String account, String candidate) {
+    /** 管理员的连接诊断只发送固定短句，不占提问次数，不受提问额度限制，花费照常记账。 */
+    public void validateAndSaveKey(String account, String candidate) {
         AssistantKeyStore.validate(candidate);
-        probe(account, candidate);
+        usage.requireReadable();
+        keys.prepareForSave();
+        probe(candidate);
         keys.save(candidate);
     }
 
-    /** 使用当前设置做连接诊断，同样要求开启、设置密钥和确认；花费和次数照常记账。 */
-    public synchronized void testSettings(String account) {
+    /** 使用当前设置做连接诊断，同样要求开启、设置密钥和确认；只记花费，不占提问次数。 */
+    public void testSettings(String account) {
         requireAvailable();
-        probe(account, null);
+        probe(null);
     }
 
     public synchronized Question beginQuestion(String account) {
@@ -83,6 +85,7 @@ public final class AssistantClient {
         private final String account;
         private boolean started;
         private boolean closed;
+        private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
 
         private Question(String account) { this.account = account; }
@@ -90,11 +93,17 @@ public final class AssistantClient {
         public Response complete(Request request) {
             synchronized (AssistantClient.this) {
                 if (closed) throw new AssistantException("这一问已经结束");
+                if (inFlight) throw new AssistantException("这一问正在请求大模型服务，请等待返回");
                 requireAvailable();
                 validate(request);
                 usage.checkBudget(properties);
                 if (!started) { usage.startQuestion(account, properties); started = true; }
+                inFlight = true;
+            }
+            try {
                 return send(request, properties.getMaxAnswerTokens(), null, this);
+            } finally {
+                synchronized (AssistantClient.this) { inFlight = false; }
             }
         }
 
@@ -103,15 +112,16 @@ public final class AssistantClient {
         @Override public void close() { synchronized (AssistantClient.this) { closed = true; } }
     }
 
-    private void probe(String account, String candidate) {
+    private void probe(String candidate) {
         if (candidate == null && !keys.isSet()) throw new AssistantException("尚未设置智能助手模型密钥");
-        usage.startQuestion(account, properties);
+        usage.requireReadable();
         send(new Request(List.of(JSONObject.of("role", "user", "content", "回复好")), List.of(), "none", 0),
                 Math.min(8, properties.getMaxAnswerTokens()), candidate, null);
     }
 
     private List<String> missing() {
         List<String> missing = new ArrayList<>();
+        if (usage.problem() != null) missing.add(usage.problem());
         if (!properties.isEnabled()) missing.add("智能助手总开关已关闭");
         if (!keys.isSet()) missing.add("尚未设置智能助手模型密钥");
         var accepted = usage.acknowledgement();
@@ -149,7 +159,9 @@ public final class AssistantClient {
             JSONObject json = JSON.parseObject(new String(bytes, StandardCharsets.UTF_8));
             Usage tokens = parseUsage(json.getJSONObject("usage"));
             BigDecimal cost = cost(tokens);
-            if (question != null) question.total = question.total.add(cost);
+            if (question != null) {
+                synchronized (AssistantClient.this) { question.total = question.total.add(cost); }
+            }
             usage.addCost(cost);
             JSONObject message = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
             String secret = headers.getFirst(HttpHeaders.AUTHORIZATION).substring(7);

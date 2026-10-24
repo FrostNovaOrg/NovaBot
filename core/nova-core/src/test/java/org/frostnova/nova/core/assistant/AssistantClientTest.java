@@ -1,14 +1,10 @@
 package org.frostnova.nova.core.assistant;
 
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -22,6 +18,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
@@ -85,16 +84,24 @@ class AssistantClientTest {
 
     // 抓住接口、日志、异常或盘上文件泄露模型密钥。
     @Test void secretNeverAppearsInStatusLogsErrorsOrFiles() throws Exception {
-        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        Level previous = root.getLevel();
-        ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logs = new ListAppender<>();
-        logs.start(); root.addAppender(logs); root.setLevel(Level.TRACE);
-        try {
+        try (var logs = new AssistantLogCapture()) {
+            reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+            reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
             server.expect(requestTo("https://api.deepseek.com/chat/completions"))
-                    .andRespond(withStatus(HttpStatus.UNAUTHORIZED).body(SECRET));
-            AssistantException error = assertThrows(AssistantException.class, () -> client.testSettings("admin"));
-            assertFalse(error.toString().contains(SECRET));
-            assertNull(error.getCause());
+                    .andRespond(withStatus(HttpStatus.UNAUTHORIZED).body("provider response " + SECRET));
+            server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                    .andRespond(withServerError().body("provider response " + SECRET));
+            server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                    .andRespond(withException(new SocketTimeoutException("transport detail " + SECRET)));
+            server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                    .andRespond(withStatus(HttpStatus.PAYMENT_REQUIRED).body("provider response " + SECRET));
+            keys.clear();
+            client.validateAndSaveKey("admin", SECRET);
+            client.testSettings("admin");
+            for (int i = 0; i < 4; i++) {
+                AssistantException error = assertThrows(AssistantException.class, () -> client.testSettings("admin"));
+                assertSafeError(error);
+            }
             assertFalse(JSON.toJSONString(client.status()).contains(SECRET));
             assertEquals("test-s…90", client.status().maskedKey());
             try (var files = Files.list(directory)) {
@@ -104,8 +111,8 @@ class AssistantClientTest {
                 }
             }
             assertTrue(new AssistantKeyStore(directory).isSet());
-            assertTrue(logs.list.stream().noneMatch(event -> event.getFormattedMessage().contains(SECRET)));
-        } finally { root.setLevel(previous); root.detachAppender(logs); logs.stop(); }
+            logs.assertNoSecret(SECRET);
+        }
         server.verify();
     }
 
@@ -117,6 +124,7 @@ class AssistantClientTest {
         assertThrows(AssistantException.class, () -> client.validateAndSaveKey("admin", SECRET));
         assertFalse(keys.isSet());
         assertFalse(client.status().available());
+        assertTrue(usage.questionsToday().isEmpty());
         server.verify();
     }
 
@@ -168,11 +176,120 @@ class AssistantClientTest {
     // 抓住超时或服务端错误后自动重试造成的重复花费。
     @Test void timeoutAndServerErrorSendOnlyOnce() {
         server.expect(requestTo("https://api.deepseek.com/chat/completions"))
-                .andRespond(withException(new SocketTimeoutException(SECRET)));
+                .andRespond(withException(new SocketTimeoutException("transport detail " + SECRET)));
         server.expect(requestTo("https://api.deepseek.com/chat/completions"))
-                .andRespond(withServerError().body(SECRET));
-        assertTrue(assertThrows(AssistantException.class, () -> client.testSettings("admin")).getMessage().contains("超时"));
-        assertTrue(assertThrows(AssistantException.class, () -> client.testSettings("admin")).getMessage().contains("出错"));
+                .andRespond(withServerError().body("provider response " + SECRET));
+        AssistantException timeout = assertThrows(AssistantException.class, () -> client.testSettings("admin"));
+        AssistantException serverError = assertThrows(AssistantException.class, () -> client.testSettings("admin"));
+        assertTrue(timeout.getMessage().contains("超时"));
+        assertTrue(serverError.getMessage().contains("出错"));
+        assertSafeError(timeout);
+        assertSafeError(serverError);
+        server.verify();
+    }
+
+    private static void assertSafeError(AssistantException error) {
+        assertFalse(error.toString().contains(SECRET));
+        assertFalse(error.getMessage().contains("provider response"));
+        assertFalse(error.getMessage().contains("transport detail"));
+        assertNull(error.getCause());
+    }
+
+    // 抓住网络请求持锁，导致提问在途时设置页、确认和删除密钥被阻塞。
+    @Test void settingsReturnWhileQuestionIsInFlight() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        server.expect(requestTo("https://api.deepseek.com/chat/completions")).andRespond(request -> {
+            entered.countDown();
+            try {
+                if (!release.await(15, TimeUnit.SECONDS)) throw new AssertionError("response was not released");
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(error);
+            }
+            return withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],"
+                    + "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON)
+                    .createResponse(request);
+        });
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var response = executor.submit(() -> {
+                try (var question = client.beginQuestion("first")) { return question.complete(request()); }
+            });
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            var settings = executor.submit(() -> {
+                assertTrue(client.status().available());
+                client.acknowledge("second-admin");
+                client.deleteKey();
+            });
+            settings.get(1, TimeUnit.SECONDS);
+            assertFalse(keys.isSet());
+            assertEquals("second-admin", usage.acknowledgement().actor());
+            release.countDown();
+            assertEquals("好", response.get(10, TimeUnit.SECONDS).content());
+            assertTrue(usage.spentYuan().signum() > 0);
+        } finally {
+            release.countDown();
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+        server.verify();
+    }
+
+    // 抓住试调被提问额度拦住或占用管理员每日次数，同时确保试调花费仍记账。
+    @Test void diagnosticsBypassQuestionLimitsButRecordCosts() {
+        properties.setDailyQuestionsPerAccount(1);
+        usage.startQuestion("admin", properties);
+        usage.addCost(new BigDecimal("30"));
+        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+        client.validateAndSaveKey("admin", SECRET);
+        client.testSettings("admin");
+        assertEquals(java.util.Map.of("admin", 1), usage.questionsToday());
+        assertEquals(0, new BigDecimal("30.0000612").compareTo(usage.spentYuan()));
+        assertEquals(0, usage.spentYuan().compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
+        server.verify();
+    }
+
+    // 抓住主密钥丢失但旧密文仍在时，重新设置密钥仍然失败。
+    @Test void savingKeyRecoversFromMissingMaster() throws Exception {
+        Files.delete(directory.resolve("assistant-master.key"));
+        assertFalse(keys.isSet());
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andExpect(request -> {
+                    assertTrue(Files.exists(directory.resolve("assistant-master.key")));
+                    assertFalse(Files.exists(directory.resolve("assistant-key.enc")));
+                })
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],"
+                        + "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
+        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+        client.validateAndSaveKey("admin", SECRET);
+        var restarted = new AssistantClient(properties, new AssistantKeyStore(directory),
+                new AssistantUsageStore(directory, clock), template);
+        assertTrue(restarted.status().available());
+        restarted.testSettings("admin");
+        server.verify();
+    }
+
+    // 抓住用量文件损坏导致启动失败，或悄悄清零后继续发送请求。
+    @Test void corruptUsageAllowsStartupButBlocksCalls() throws Exception {
+        Path path = directory.resolve("assistant-usage.json");
+        String broken = "{broken usage";
+        Files.writeString(path, broken);
+        var damagedUsage = assertDoesNotThrow(() -> new AssistantUsageStore(directory, clock));
+        var damaged = new AssistantClient(properties, keys, damagedUsage, template);
+        assertFalse(damaged.status().available());
+        assertTrue(String.join("；", damaged.status().missing()).contains("用量文件无法读取"));
+        assertNull(damaged.status().spentYuan());
+        assertTrue(assertThrows(AssistantException.class, () -> damaged.beginQuestion("first"))
+                .getMessage().contains("用量文件无法读取"));
+        assertThrows(AssistantException.class, () -> damaged.testSettings("admin"));
+        assertThrows(AssistantException.class, () -> damaged.validateAndSaveKey("admin", SECRET));
+        assertThrows(AssistantException.class, () -> damaged.acknowledge("admin"));
+        properties.setEnabled(false);
+        assertFalse(damaged.status().available());
+        assertDoesNotThrow(() -> new AssistantUsageStore(directory, clock));
+        assertEquals(broken, Files.readString(path));
         server.verify();
     }
 
