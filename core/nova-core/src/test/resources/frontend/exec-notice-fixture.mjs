@@ -143,7 +143,7 @@ const dependencies = {
     }
     return {};
   },
-  applyRoleView: noop, setAuthState: noop, setMemberAuthState: noop,
+  applyRoleView: noop, applySingleStreamerView: noop, setAuthState: noop, setMemberAuthState: noop,
   renderPersonalMenu: noop, bindBotForm: noop, botFormHtml: noop, loadBotConsole: noop,
   mountPages: async () => {}, applyRoute: noop, load: noop,
   setTimeout: noop, clearTimeout: noop,

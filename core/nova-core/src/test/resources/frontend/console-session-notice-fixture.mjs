@@ -29,7 +29,7 @@ async function render(state) {
   const dependencies = {
     renderExecNotice: noop, loadExecNotice: noop,
     $, api: async path => path === '/auth/state' ? state : {}, store: {},
-    applyRoleView: noop, setAuthState: noop, setMemberAuthState: noop,
+    applyRoleView: noop, applySingleStreamerView: noop, setAuthState: noop, setMemberAuthState: noop,
     renderPersonalMenu: noop, bindBotForm: noop, botFormHtml: noop, loadBotConsole: noop,
     mountPages: async () => {}, applyRoute: noop, load: noop,
     setTimeout: noop, clearTimeout: noop,
