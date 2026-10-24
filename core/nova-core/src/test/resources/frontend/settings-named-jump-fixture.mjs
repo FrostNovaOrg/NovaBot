@@ -307,7 +307,7 @@ function wire(hash) {
     $, el: node, document: fakeDocument, window: fakeWindow, store,
     isVisible, advancedShown, canonicalValue, defaultValue, secretDraft,
     filterCards: page.alertFns.filterCards, openCards: page.alertFns.openCards,
-    filterAuthCards: () => 0, closeHelp() {}, watchCurrentGroup() {}, headerHeight: () => 0,
+    filterAuthCards: () => 0, filterAssistantCards: () => 0, closeHelp() {}, watchCurrentGroup() {}, headerHeight: () => 0,
     focusStation() {}, location: {hash: ''}, parseHash: () => hash.now, pages: [],
     route: 'home', later: false, homeStatus: null, homeLogin: null, shouldOpenSetup: () => false,
     arranged: {common: [], advanced: [{group: 'collect-advanced', fields: [{}]}]},

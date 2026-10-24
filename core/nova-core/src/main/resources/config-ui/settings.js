@@ -14,6 +14,7 @@ import {load, refreshPages} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards, openCards} from './settings-alert.js';
 import {agreementDangerZone, authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
+import {assistantCards, confirmAssistantEnable, filterAssistantCards} from './settings-assistant.js';
 import {filterMembers, memberGroup} from './settings-members.js';
 import {CLEAR, advancedShown, arrangeGroups, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf,
   isChanged, isDangerous, dangerOf, isVisible, secretDraft, timeOfDay, timeOfDayValue}
@@ -651,6 +652,23 @@ function buildRow(field, groupAllRestart) {
       paint();
       return;
     }
+    if (field.name === 'novabot.assistant.enabled' && now === 'true' && previous !== 'true') {
+      input.disabled = true;
+      try {
+        if (!await confirmAssistantEnable()) {
+          write(previous);
+          paint();
+          return;
+        }
+      } catch (error) {
+        write(previous);
+        paint();
+        say(error.message, 'err');
+        return;
+      } finally {
+        input.disabled = false;
+      }
+    }
     if (field.widget === 'boolean') input.syncLabel();
     record();
   };
@@ -836,6 +854,7 @@ function buildGroup(group) {
 
   if (group.group === ALERT_GROUP) body.appendChild(alertCards());
   if (group.group === AUTH_GROUP) body.appendChild(authCards());
+  if (group.group === 'assistant') body.appendChild(assistantCards(filterSettings));
   box.appendChild(body);
 
   toggle.addEventListener('click', () => {
@@ -1172,6 +1191,7 @@ export function filterSettings() {
 
   shown += filterCards(query, onlyChanged);
   shown += filterAuthCards(query, onlyChanged);
+  shown += filterAssistantCards(query, onlyChanged);
   filterMembers(query, onlyChanged);
 
   // 一组里一项都不剩就把整组收起来，否则屏幕上留着一串空标题。

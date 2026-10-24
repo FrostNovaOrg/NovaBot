@@ -283,7 +283,7 @@ function wire() {
   const given = {
     $, el: node, document: fakeDocument, store, arranged,
     isVisible, advancedShown, canonicalValue, defaultValue, secretDraft,
-    filterCards: () => 0, filterAuthCards: () => 0, closeHelp() {}, watchCurrentGroup() {},
+    filterCards: () => 0, filterAuthCards: () => 0, filterAssistantCards: () => 0, closeHelp() {}, watchCurrentGroup() {},
     focusGroup() {}, ADVANCED_EYE: '<svg></svg>',
     advancedChosen: false, advancedDismissed: null,
   };
