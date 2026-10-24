@@ -38,7 +38,7 @@ class MemberConsoleFrontendTest {
     @ParameterizedTest @ValueSource(strings = {"loading-member-auth/state", "loading-member-status", "loading-member-pages", "loading-member-streamers", "loading-auth/state", "loading-status", "loading-login", "loading-pages", "sidebar-admin", "sidebar-member", "source", "nav", "home", "setup", "today", "personal", "identity", "streamers", "admin", "legacy", "unknown"})
     void rendersConsoleForCurrentAccount(String mode) throws Exception { run(mode); }
 
-    @ParameterizedTest @ValueSource(strings = {"single-enabled", "single-disabled", "single-prefix", "single-avatar-error", "single-narrow",
+    @ParameterizedTest @ValueSource(strings = {"single-enabled", "single-no-attention", "single-live", "single-disabled", "single-prefix", "single-avatar-error", "single-narrow",
             "unchanged-multiple", "unchanged-zero", "unchanged-admin-one"})
     void singleStreamerMemberAndUnchangedAccounts(String mode) throws Exception { run(mode); }
 

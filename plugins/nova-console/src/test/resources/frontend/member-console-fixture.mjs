@@ -17,6 +17,7 @@ class Element {
   constructor(tag = 'div') {
     this.tagName = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.style = {};
     this.listeners = {}; this.className = ''; this.hidden = false; this.ownText = '';
+    this.style.setProperty = (key, value) => { this.style[key] = String(value); };
     this.classList = {toggle: (name, force) => {
       const names = new Set(this.className.split(/\s+/).filter(Boolean));
       const on = force === undefined ? !names.has(name) : force;
@@ -42,7 +43,7 @@ class Element {
   getAttribute(key) { return key === 'href' ? this.href : key.startsWith('data-') ? this.dataset[key.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] : this.attrs[key]; }
   removeAttribute(key) { delete this.attrs[key]; }
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
-  scrollIntoView() {} focus() {} contains(node) { return walk(this).includes(node); }
+  scrollIntoView(options) { this.scrollOptions = options; } focus() {} contains(node) { return walk(this).includes(node); }
   get firstChild() { return this.children[0]; }
   get lastChild() { return this.children.at(-1); }
   get textContent() { return this.ownText + this.children.map(node => node.textContent).join(''); }
@@ -121,6 +122,13 @@ const own = {uid: 71001, platform: 'bilibili', uname: 'Owner A', enabled: true, 
 let assigned = single || mode === 'unchanged-admin-one' ? [{...own, status: mode === 'single-disabled' ? 'DISABLED' : 'OFFLINE', face: 'https://external.example/avatar.jpg'}]
   : mode === 'unchanged-multiple' ? [own, {...own, uid: 71002}] : [];
 let eventText = '自家屏蔽词事件';
+let needsAttention = mode !== 'single-no-attention';
+let releaseTimeline;
+let holdTimeline = false;
+const ownDetail = {success: true, ...own, configured: true, living: mode === 'single-live',
+  face: '/config/api/streamers/bilibili/71001/avatar', since: Date.now() - 60000, overview: {}};
+let liveRevenue = 12;
+const intervals = new Map();
 const memberStatus = {success: true, version: '1.2.3', users: [own], live: [{...own, roomId: 81001}], today: {sent: 2, failed: 1}, locked: false, pushEnabled: false, totalDataAvailable: false, quiet: {}};
 const adminStatus = {...memberStatus, version: '1.2.3', runtime: {heapUsedMb: 12, heapMaxMb: 64, threads: 8}, health: [], senders: [], alerts: {}};
 const requests = [], errors = [];
@@ -131,19 +139,30 @@ const fetch = async (url, options = {}) => {
   pending++; requests.push([options.method || 'GET', String(url)]);
   const path = String(url).split('/api')[1] || '';
   if (hold && path === heldPath) { pending--; await new Promise(done => { releaseHeld = done; }); pending++; }
+  if (holdTimeline && path.startsWith('/timeline') && !path.includes('problems=true')) {
+    await new Promise(done => { releaseTimeline = done; });
+  }
+  const problem = {at: Date.now(), type: 'PUSH_BLOCKED_WORD', level: 'warn', streamer: 'Owner A', text: eventText};
+  const timeline = needsAttention ? [problem, {...problem, at: problem.at - 1},
+    {...problem, type: 'PUSH_FAILED', text: '另一条失败', level: 'error'}] : [];
   const body = path === '/auth/state' ? auth : path === '/status' ? (role === 'MEMBER' ? memberStatus : adminStatus)
     : path === '/pages' ? {pages, accessiblePages: ['home', 'push', 'streamers']}
-    : path.startsWith('/timeline') ? {events: [{at: Date.now(), type: 'PUSH_BLOCKED_WORD', level: 'WARN', streamer: 'Owner A', text: eventText}]}
+    : path.startsWith('/timeline') ? {events: path.includes('problems=true') ? timeline : [...timeline,
+      {at: Date.now(), type: 'LIVE_START', level: 'info', text: '开始直播'}]}
+    : single && path === '/streamers/bilibili/71001' ? ownDetail
+    : single && path.startsWith('/streamers/bilibili/71001/live?') ? {success: true, living: ownDetail.living,
+      since: ownDetail.since, revenue: liveRevenue, messages: 34, metrics: {online_count: 56}, series: {}}
     : path === '/login' ? {success: false, message: '成员不能使用这一项'}
     : path === '/at-all/quota' ? {success: true, sessions: [{platform: 'qq', num: 81001, used: 3, remaining: 7}], bots: []}
     : path === '/streamers' ? {success: true, streamers: assigned, days: 7}
     : path.startsWith('/streamers/') ? {success: false, message: '暂无归档'}
     : {success: true};
   if (path === '/status' && location.hash.includes('/streamers/')) await new Promise(done => setImmediate(done));
-  pending--; return {status: path === '/login' ? 403 : path.startsWith('/streamers/') ? 404 : 200, json: async () => body};
+  pending--; return {status: path === '/login' ? 403 : path.startsWith('/streamers/') && !body.success ? 404 : 200, json: async () => body};
 };
 const context = vm.createContext({document, location, window, fetch, console, URL, URLSearchParams, Date, Set, Map, Promise,
-  setTimeout: startupTimeout, clearTimeout: id => { if (recovery) timers.delete(id); else if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval: (...args) => { const timer = setInterval(...args); timer.unref(); return timer; }, clearInterval, AbortController, performance});
+  setTimeout: startupTimeout, clearTimeout: id => { if (recovery) timers.delete(id); else if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval: (fn, ms) => { const id = ++nextTimer; intervals.set(id, {fn, ms}); return id; },
+  clearInterval: id => intervals.delete(id), ResizeObserver: class { observe() {} disconnect() {} }, AbortController, performance});
 const stubs = {
   'bot.js': ['bindBotForm','botFormHtml','fillBotForms'],
   'links.js': ['focusStation','loadTargets','mountLinkCard','refreshLinks','sendTestMessage'],
@@ -412,8 +431,93 @@ if (['admin', 'legacy', 'unknown'].includes(mode)) await check('管理员保留�
   assert.equal($('#run-mem').textContent, '12 / 64 MB'); assert.ok($('#toggle-push'));
   assert.ok(requests.some(([,path]) => path.endsWith('/schema')));
 });
+const appCss = readFileSync(resolve(core, 'app.css'), 'utf8');
+function cssRule(css, selector) {
+  return [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .find(([, selectors]) => selectors.split(',').some(part => part.trim() === selector))?.[2].trim() || '';
+}
 // 单主播成员不该先面对只有一行的列表，首页入口与推送总览也应直接落到本人。
 if (single) {
+  // 单主播成员的直播数据页曾在顶上堆两张首页卡，今日事件还紧贴主播卡。
+  await check('直播数据以抬头开头、今日事件在页底且卡片相隔 16px', () => {
+    const detail = $('#sv-detail');
+    const blocks = detail.children.filter(node => node.tagName !== 'text' && visible(node));
+    assert.ok(!visible($('#home-now')), '直播数据不再重复显示当前直播卡');
+    assert.deepEqual(blocks.map(node => node.id), [
+      ...(mode === 'single-disabled' ? ['sd-disabled'] : []), 'sd-head',
+      ...(needsAttention ? ['sd-event-hint'] : []), 'sd-body', 'sd-member-home']);
+    assert.equal($('#home-events').parentNode, blocks.at(-1));
+    assert.match($('#sd-head').textContent, /Owner A/);
+    assert.equal($('#sd-head').querySelector('a').href, '#/push/71001');
+    assert.ok($('#sd-head').querySelector('img'));
+    assert.ok($('#sd-toolbar')); assert.ok($('#sd-insights'));
+    assert.deepEqual($('#sd-body').querySelector('.sd-columns').children.map(node => node.id),
+      ['sd-trend', 'sd-period-audience', 'sd-calendar-card', 'sd-recent-card']);
+    assert.ok($('#sd-body').querySelector('.sd-cumulative'));
+    assert.ok(detail.classList.contains('sd-member-detail'));
+    const css = $('#streamers-page-style').textContent;
+    assert.match(cssRule(css, '.sd-member-detail'), /display:grid/);
+    assert.match(cssRule(css, '.sd-member-detail'), /grid-template-columns:minmax\(0,1fr\)/);
+    assert.match(cssRule(css, '.sd-member-detail'), /gap:16px/);
+    for (const id of ['sd-head', 'sd-disabled', 'sd-event-hint'])
+      assert.match(cssRule(css, '.sd-member-detail>#' + id), /margin:0(?:;|$)/);
+    assert.match(cssRule(css, '.sd-member-detail>#sd-body>:first-child'), /margin-top:0/);
+    assert.match(cssRule(css, '.sd-member-detail>#sd-body>:last-child'), /margin-bottom:0/);
+    assert.match(cssRule(appCss, '.hcard'), /margin-bottom:16px/);
+    assert.equal(cssRule(appCss, '#home-events'), '', '首页零底边距不可再影响详情页');
+    if (mode === 'single-narrow') {
+      assert.equal(window.innerWidth, 390);
+      assert.match(css, /@media\(max-width:900px\)\{\.sd-columns\{grid-template-columns:minmax\(0,1fr\)\}\}/);
+    }
+  });
+  await check('需要处理按合并后的两条提示，查看只滚动且提示与事件一起更新', async () => {
+    const hint = $('#sd-event-hint');
+    assert.ok(hint);
+    assert.equal(visible(hint), needsAttention);
+    assert.equal($('#home-timeline').querySelectorAll('a').length, 0, '成员事件不提供链接');
+    if (needsAttention) {
+      assert.match(hint.textContent, /今天有 2 条事件需要处理/);
+      assert.match($('#home-timeline').textContent, /×2/);
+      assert.match($('#home-timeline').textContent, /需要处理/);
+      assert.match($('#home-timeline').textContent, /其他事件/);
+      const button = hint.querySelector('button');
+      assert.equal(button.textContent, '查看'); assert.equal(button.type, 'button');
+      assert.equal(hint.querySelector('a'), null);
+      const hash = location.hash, before = requests.length;
+      for (const fn of button.listeners.click || []) fn();
+      assert.equal(location.hash, hash); assert.equal(requests.length, before);
+      assert.equal($('#home-events').scrollOptions.block, 'start');
+    }
+    const previous = $('#home-timeline').textContent;
+    const previousHint = hint.textContent;
+    holdTimeline = true; needsAttention = !needsAttention;
+    const refreshing = overview.refreshHome();
+    assert.ok(releaseTimeline);
+    assert.equal($('#home-timeline').textContent, previous);
+    assert.equal(hint.textContent, previousHint);
+    assert.equal(visible(hint), !needsAttention);
+    holdTimeline = false; releaseTimeline();
+    await refreshing; await settle();
+    assert.equal(visible(hint), needsAttention);
+    assert.equal($('#home-timeline').textContent.includes('需要处理'), needsAttention);
+    if (needsAttention) assert.match(hint.textContent, /今天有 2 条事件需要处理/);
+    assert.equal($('#home-timeline').querySelectorAll('a').length, 0);
+    needsAttention = !needsAttention;
+    await overview.refreshHome(); await settle();
+  });
+  if (mode === 'single-live') await check('正在直播小卡保留流水弹幕在线峰值并每 15 秒刷新', async () => {
+    const card = $('#sd-live');
+    assert.ok(visible(card)); assert.equal(card.parentNode.id, 'sd-recent-card');
+    for (const word of ['正在直播', '流水', '12', '弹幕', '34', '在线峰值', '56']) assert.ok(card.textContent.includes(word), word);
+    const timer = [...intervals.values()].find(item => item.ms === 15000);
+    assert.ok(timer, '直播刷新仍使用 15 秒定时器');
+    const before = requests.filter(([, url]) => url.includes('/live?')).length;
+    const eventsBefore = requests.filter(([, url]) => url.includes('/timeline?')).length;
+    liveRevenue = 99; await timer.fn(); await settle();
+    assert.equal(requests.filter(([, url]) => url.includes('/live?')).length, before + 1);
+    assert.equal(requests.filter(([, url]) => url.includes('/timeline?')).length, eventsBefore);
+    assert.ok(card.textContent.includes('99'));
+  });
   await check('单主播成员打开控制台无需再点一人列表', async () => {
     assert.equal(location.hash, '#/streamers/bilibili/71001');
     const links = $('#nav').querySelectorAll('a').filter(visible);
@@ -422,18 +526,18 @@ if (single) {
     assert.ok(visible($('#side-manual')));
     assert.ok(visible($('#sv-detail'))); assert.ok(!visible($('#sv-list')));
     assert.ok(!visible($('#sd-back')));
-    assert.ok(visible($('#home-now'))); assert.ok(visible($('#home-events')));
+    assert.ok(!visible($('#home-now'))); assert.ok(visible($('#home-events')));
     assert.equal($('#nav').querySelector('[data-page="streamers"]').getAttribute('aria-current'), 'page');
-    assert.equal($('#home-now').parentNode.id, 'sd-member-home');
+    assert.equal($('#home-now').parentNode.id, 'overview');
     assert.equal($('#home-events').parentNode.id, 'sd-member-home');
-    assert.equal($('#sv-detail').children.find(node => node.tagName !== 'text').id, 'sd-member-home');
-    assert.match($('#now-box').textContent, /Owner A/);
-    assert.match($('#home-timeline').textContent, /自家屏蔽词事件/);
+    assert.equal($('#sv-detail').children.filter(node => node.tagName !== 'text' && visible(node))[0].id, mode === 'single-disabled' ? 'sd-disabled' : 'sd-head');
+    if (needsAttention) assert.match($('#home-timeline').textContent, /自家屏蔽词事件/);
     assert.equal(visible($('#sd-disabled')), mode === 'single-disabled');
     if (mode === 'single-disabled') assert.match($('#sd-disabled').textContent, /这位主播已停用，请联系管理员/);
     const oldEvents = $('#home-events'); eventText = '新事件';
     await overview.refreshHome(); await settle();
-    assert.equal($('#home-events'), oldEvents); assert.match($('#home-timeline').textContent, /新事件/);
+    assert.equal($('#home-events'), oldEvents);
+    if (needsAttention) assert.match($('#home-timeline').textContent, /新事件/);
     for (const hash of ['#/home', '#/streamers', '#/push']) {
       await go(hash);
       assert.equal(location.hash, hash === '#/push' ? '#/push/71001' : '#/streamers/bilibili/71001');
@@ -475,10 +579,17 @@ if (unchanged) await check('照旧：' + mode, async () => {
   const links = $('#nav').querySelectorAll('a').filter(visible).map(a => a.dataset.page);
   assert.deepEqual(links, role === 'ADMIN' ? ['home','log','links','push','streamers','settings'] : ['home','push','streamers']);
   assert.equal($('.brand-name').textContent, 'NovaBot');
+  assert.ok(visible($('#home-now'))); assert.ok(visible($('#home-events')));
+  assert.ok($('.home-primary').contains($('#home-events')));
+  assert.match(cssRule(appCss, '#page-home #home-events') || cssRule(appCss, '#home-events'), /margin-bottom:0/);
+  assert.equal(cssRule(appCss, '.home-primary'), 'display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:16px;align-items:start;margin-bottom:16px');
+  assert.equal(cssRule(appCss, '.home-primary-column'), 'display:grid;gap:16px;min-width:0');
   await go('#/streamers'); assert.equal(location.hash, '#/streamers'); assert.ok(visible($('#sv-list')));
   await go('#/streamers/bilibili/71001'); assert.ok(visible($('#sd-back')));
   await go('#/push'); assert.equal(location.hash, '#/push');
   assert.equal($('#home-now').parentNode.id, 'overview');
+  assert.equal($('#sd-event-hint'), null); assert.equal($('#sd-member-home'), null);
+  assert.ok(!$('#sv-detail').classList.contains('sd-member-detail'));
 });
 for (const [method, path] of requests) console.log('REQUEST ' + method + ' ' + path);
 console.log('跑了 ' + checks + ' 格，红 ' + failed + ' 格');

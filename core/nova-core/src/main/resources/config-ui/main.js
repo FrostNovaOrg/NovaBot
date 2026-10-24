@@ -86,7 +86,7 @@ function applySingleStreamerView() {
   mark.appendChild(avatar);
 
   const home = $('#sd-member-home');
-  if (home) home.append($('#home-now'), $('#home-events'));
+  if (home) home.append($('#home-events'));
 }
 
 /**
