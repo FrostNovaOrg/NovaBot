@@ -10,6 +10,7 @@ novabot.assistant.price-cached-input-yuan-per-million=0.1
 novabot.assistant.price-input-yuan-per-million=3.1
 novabot.assistant.price-output-yuan-per-million=9.2
 novabot.assistant.question-input-limit=24000
+novabot.assistant.thinking=high
 novabot.core.alert.convergence-interval=81
 novabot.core.alert.enabled=false
 novabot.core.alert.retry-interval=83

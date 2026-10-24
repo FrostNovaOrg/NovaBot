@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -96,6 +97,75 @@ class AssistantAskServiceTest {
                 .filter(m -> "tool".equals(m.getString("role"))).findFirst().orElseThrow();
     }
     private String alias(long uid) { return local.alias("bilibili", uid); }
+
+    @ParameterizedTest
+    @CsvSource({
+            "https://api.deepseek.com, true",
+            "https://api.deepseek.com, false",
+            "https://example.com/v1, true",
+            "https://example.com/v1, false"
+    })
+    void reasoningIsReturnedOnlyWithinTheSameQuestion(String baseUrl, boolean withReasoning) throws Exception {
+        properties.setBaseUrl(baseUrl);
+        String toolReasoning = "tool reasoning remains private\n\t";
+        String answerReasoning = "answer reasoning remains private\n\t";
+        String finalReasoning = "final reasoning remains private";
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        JSONObject first = call("revenue", JSONObject.of("start", 123));
+        JSONObject second = JSONObject.of("content", "流水9999");
+        JSONObject third = JSONObject.of("content", "总流水1000（场次归档）");
+        if (withReasoning) {
+            first.put("reasoning_content", toolReasoning);
+            second.put("reasoning_content", answerReasoning);
+            third.put("reasoning_content", finalReasoning);
+        }
+        replies.add(first);
+        replies.add(second);
+        replies.add(third);
+        onSend = () -> {
+            if (sent.size() < 2 || !withReasoning) return;
+            var assistants = sent.get(sent.size() - 1).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                    .filter(m -> "assistant".equals(m.getString("role"))).toList();
+            if (!assistants.get(0).containsKey("reasoning_content")
+                    || sent.size() == 3 && !assistants.get(1).containsKey("reasoning_content")) providerStatus = 400;
+        };
+        JSONObject result = ask();
+        assertEquals(true, result.get("answered"));
+        assertEquals("总流水1000（场次归档）", result.getString("answer"));
+        assertEquals(3, sent.size());
+        for (int round = 1; round < 3; round++) {
+            var assistants = sent.get(round).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                    .filter(m -> "assistant".equals(m.getString("role"))).toList();
+            assertEquals(round, assistants.size());
+            for (int index = 0; index < assistants.size(); index++) {
+                JSONObject message = assistants.get(index);
+                assertEquals(withReasoning, message.containsKey("reasoning_content"));
+                if (withReasoning) assertEquals(index == 0 ? toolReasoning : answerReasoning, message.getString("reasoning_content"));
+            }
+        }
+        assertFalse(result.toJSONString().contains("reasoning"));
+        try (var files = Files.list(directory)) {
+            for (Path file : files.toList()) assertFalse(Files.readString(file).contains("reasoning"));
+        }
+        onSend = () -> { };
+        properties.setBaseUrl("https://other.example/v1");
+        replies.add(JSONObject.of("content", "没有这份数据"));
+        assertEquals(true, ask().get("answered"));
+        assertFalse(sent.get(3).toJSONString().contains("reasoning"));
+    }
+
+    @Test void reasoningKeyEchoIsMaskedBeforeReturningToProvider() {
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        JSONObject first = call("revenue", JSONObject.of("start", 123));
+        first.put("reasoning_content", "provider echoed " + SECRET);
+        replies.add(first);
+        replies.add(JSONObject.of("content", "总流水1000（场次归档）"));
+        assertEquals(true, ask().get("answered"));
+        JSONObject assistant = sent.get(1).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(m -> "assistant".equals(m.getString("role"))).findFirst().orElseThrow();
+        assertEquals("provider echoed [已遮掩]", assistant.getString("reasoning_content"));
+        assertFalse(sent.get(1).toJSONString().contains(SECRET));
+    }
 
     // 抓住成员查询未分配主播时仍调用模型、泄露其他主播的数据。
     @Test void memberCannotAskAboutOtherStreamer() throws Exception {

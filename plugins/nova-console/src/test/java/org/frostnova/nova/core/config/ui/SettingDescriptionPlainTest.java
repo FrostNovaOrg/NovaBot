@@ -39,9 +39,11 @@ class SettingDescriptionPlainTest {
      * NapCat：使用者安装的 QQ 机器人程序。
      * WebUI：NapCat 自带的网页管理界面，地址和令牌是填给它的。
      * NovaBot：本程序的产品名。
+     * DeepSeek：智能助手的模型服务产品名，设置页、手册和配置者说明沿用这个名字。
      * WebSocket：连接方式，配事件输出和心跳时会碰到。
      */
     private static final Map<String, String> ALLOWED = Map.of(
+            "DeepSeek", "智能助手的模型服务产品名，设置页、手册和配置者说明沿用这个名字",
             "WebSocket", "连接方式，配事件输出和心跳时会碰到",
             "NovaBot", "本程序的产品名",
             "WebUI", "NapCat 自带的网页管理界面，地址和令牌是填给它的",
@@ -69,7 +71,7 @@ class SettingDescriptionPlainTest {
         for (Map.Entry<String, String> allowed : ALLOWED.entrySet()) {
             assertFalse(allowed.getValue().isBlank(), allowed.getKey() + " 放行了却没写为什么");
         }
-        assertTrue(jargon("用 OneBot 连 NapCat 的 WebUI，走 WebSocket").isEmpty(),
+        assertTrue(jargon("用 DeepSeek 回答，用 OneBot 连 NapCat 的 WebUI，走 WebSocket").isEmpty(),
                 "产品名不该被当成开发术语");
         assertFalse(jargon("见 BackupAtAllAspect").isEmpty(), "类名应当被抓住");
         assertFalse(jargon("见 @ConditionalOnProperty").isEmpty(), "注解应当被抓住");

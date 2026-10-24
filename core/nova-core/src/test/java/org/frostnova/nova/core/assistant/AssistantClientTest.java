@@ -5,6 +5,13 @@ import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -18,6 +25,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -106,6 +114,79 @@ class AssistantClientTest {
                 .andExpect(header("Authorization", "Bearer " + SECRET))
                 .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\",\"tool_calls\":[]}}],\"usage\":"
                         + tokens + "}", MediaType.APPLICATION_JSON));
+    }
+
+    static java.util.stream.Stream<Arguments> thinkingRequests() {
+        return Map.of("https://api.deepseek.com", true, "https://API.DEEPSEEK.COM/v1/", true,
+                        "https://example.com/v1", false, "https://api.deepseek.com.example.com/v1", false,
+                        "https://example.com/api.deepseek.com", false).entrySet().stream()
+                .flatMap(endpoint -> java.util.stream.Stream.of("question", "save", "test")
+                        .flatMap(operation -> java.util.stream.Stream.of("off", "low", "high", "max")
+                                .map(thinking -> Arguments.of(endpoint.getKey(), endpoint.getValue(), operation, thinking))));
+    }
+
+    @ParameterizedTest @MethodSource("thinkingRequests")
+    void thinkingOptionIsScopedToDeepSeekForQuestionsAndProbes(String baseUrl, boolean deepSeek, String operation, String thinking) {
+        properties.setBaseUrl(baseUrl);
+        properties.setAnswerLimit(1234);
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.thinking", thinking)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        for (int i = 0; i < ("question".equals(operation) ? 2 : 1); i++) {
+            server.expect(requestTo(baseUrl.replaceAll("/+$", "") + "/chat/completions"))
+                    .andExpect(request -> {
+                        JSONObject body = JSON.parseObject(((org.springframework.mock.http.client.MockClientHttpRequest) request).getBodyAsString());
+                        boolean enabled = deepSeek && "question".equals(operation) && !"off".equals(thinking);
+                        if (deepSeek) {
+                            assertNotNull(body.getJSONObject("thinking"));
+                            assertEquals(enabled ? "enabled" : "disabled", body.getJSONObject("thinking").getString("type"));
+                        } else assertFalse(body.containsKey("thinking"));
+                        int allowance = 0;
+                        if (enabled) {
+                            assertEquals(thinking, body.getString("reasoning_effort"));
+                            allowance = switch (thinking) {
+                                case "low" -> 4000;
+                                case "high" -> 16000;
+                                case "max" -> 32000;
+                                default -> throw new AssertionError(thinking);
+                            };
+                        } else assertFalse(body.containsKey("reasoning_effort"));
+                        assertEquals("question".equals(operation) ? 1234 + allowance : 8, body.getIntValue("max_tokens"));
+                    })
+                    .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
+        }
+        switch (operation) {
+            case "save" -> client.validateAndSaveKey("admin", SECRET);
+            case "test" -> client.testSettings("admin");
+            case "question" -> {
+                try (var question = client.beginQuestion("member")) {
+                    question.complete(request());
+                    question.complete(request());
+                }
+            }
+            default -> fail("Unknown operation: " + operation);
+        }
+        server.verify();
+    }
+
+    @Test void reasoningIsRedactedAndKeptOutOfLogsAndUsage() throws Exception {
+        String reasoning = "private provider reasoning " + SECRET;
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message",
+                                JSONObject.of("content", "好", "reasoning_content", reasoning))),
+                        "usage", JSONObject.of("prompt_tokens", 10, "completion_tokens", 1)).toJSONString(), MediaType.APPLICATION_JSON));
+        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+        try (var logs = new AssistantLogCapture(); var question = client.beginQuestion("member")) {
+            var response = question.complete(request());
+            assertEquals("private provider reasoning [已遮掩]", response.reasoningContent());
+            question.complete(new AssistantClient.Request(List.of(JSONObject.of("role", "assistant", "content", response.content(),
+                    "reasoning_content", response.reasoningContent())), List.of(), "none", 0.3));
+            logs.assertNoSecret("private provider reasoning");
+            logs.assertNoSecret(SECRET);
+        }
+        try (var files = Files.list(directory)) {
+            for (Path file : files.toList()) assertFalse(Files.readString(file).contains("private provider reasoning"));
+        }
+        server.verify();
     }
 
     // 抓住发送状态把仅通过可用性检查的提问当作已经发出。
@@ -371,6 +452,21 @@ class AssistantClientTest {
             assertEquals(0, new BigDecimal("2.20").compareTo(question.totalCostYuan()));
         }
         assertEquals(0, new BigDecimal("2.20").compareTo(client.status().spentYuan()));
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"100, 40, 100, 0.00086", "100, 160, 260, 0.002236", "100, 100, 100, 0.00086"})
+    void reasoningTokensAreBilledOnce(long completion, long reasoning, long expectedOutput, String expectedCost) {
+        reply(JSONObject.of("prompt_tokens", 0, "completion_tokens", completion,
+                "completion_tokens_details", JSONObject.of("reasoning_tokens", reasoning)).toJSONString());
+        try (var question = client.beginQuestion("member")) {
+            var response = question.complete(request());
+            assertEquals(expectedOutput, response.usage().outputTokens());
+            assertEquals(0, new BigDecimal(expectedCost).compareTo(response.costYuan()));
+            assertEquals(0, response.costYuan().compareTo(question.totalCostYuan()));
+        }
+        assertEquals(0, new BigDecimal(expectedCost).compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
         server.verify();
     }
 

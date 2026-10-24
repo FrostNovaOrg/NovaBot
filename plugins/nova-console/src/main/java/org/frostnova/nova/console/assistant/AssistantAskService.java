@@ -115,6 +115,7 @@ public class AssistantAskService {
         messages.add(JSONObject.of("role", "user", "content", JSONObject.of("question", request.getString("question"),
                 "history", history).toJSONString()));
         String answer = "";
+        String answerReasoning = null;
         boolean answered = false;
         String reason = null;
         BigDecimal cost = BigDecimal.ZERO;
@@ -132,6 +133,7 @@ public class AssistantAskService {
                 if (finish || response.toolCalls().isEmpty()) {
                     if (response.content() != null && !response.content().isBlank()) {
                         answer = response.content();
+                        answerReasoning = response.reasoningContent();
                         answered = true;
                     } else if (!finish) {
                         throw new AssistantException("大模型服务返回了空响应");
@@ -169,7 +171,9 @@ public class AssistantAskService {
                     accepted.add(JSONObject.of("id", id, "type", "function", "function", JSONObject.of("name", name, "arguments", args.toJSONString())));
                     results.add(JSONObject.of("role", "tool", "tool_call_id", id, "content", JSON.toJSONString(data, JSONWriter.Feature.WriteNulls)));
                 }
-                messages.add(JSONObject.of("role", "assistant", "content", response.content(), "tool_calls", accepted));
+                JSONObject assistant = assistantMessage(response.content(), response.reasoningContent());
+                assistant.put("tool_calls", accepted);
+                messages.add(assistant);
                 messages.addAll(results);
             }
             if (!answered) {
@@ -180,7 +184,7 @@ public class AssistantAskService {
             answer = privacy.mask(answer);
             unverified = numbers.unverified(answer);
             if (!unverified.isEmpty() && !budget.remaining(55).isZero()) {
-                messages.add(JSONObject.of("role", "assistant", "content", answer));
+                messages.add(assistantMessage(answer, answerReasoning));
                 messages.add(JSONObject.of("role", "user", "content", "这些数字在本问工具数据中核对不上：" + String.join("、", unverified)
                         + "。请重写一次，只许用本问工具给出的数字，缺少就说没有这份数据，不再查数。"));
                 try {
@@ -216,6 +220,12 @@ public class AssistantAskService {
         if (answered) result.put("label", "由人工智能生成");
         else result.put("reason", reason);
         return result;
+    }
+
+    private static JSONObject assistantMessage(String content, String reasoningContent) {
+        JSONObject message = JSONObject.of("role", "assistant", "content", content);
+        if (reasoningContent != null) message.put("reasoning_content", reasoningContent);
+        return message;
     }
 
     private AssistantClient.Response complete(AssistantClient.Question question, List<JSONObject> messages,
