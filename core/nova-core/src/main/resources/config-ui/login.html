@@ -27,6 +27,7 @@
        那一行占位上（见 ConfigUiLoginPage），配色、浅深与控制台是同一份字节，跟着本浏览器选过的走。
        本页只引 var(--x)，不写色值。 */
     /*@@product-ui@@*/
+/*@@loading-ui@@*/
 
     * { box-sizing: border-box }
     body {
@@ -142,6 +143,11 @@
           d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
   </symbol>
 </defs></svg>
+<div id="login-startup" class="nova-loading">
+  <svg class="nova-loading-mark" viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg>
+  <p role="status">正在检查登录状态…</p>
+  <span class="nova-loading-spinner" aria-hidden="true"></span>
+</div>
 <section id="agreement" class="hidden">
   <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>NovaBot 使用协议</h1></div>
   <p class="sub">访问控制台前，请阅读并同意以下使用协议</p>
@@ -161,9 +167,9 @@
   <div class="banner hidden" id="lock"></div>
 
   <div id="oidc-field" class="hidden">
-    <button type="button" id="oidc" class="primary">使用统一登录</button>
+    <button type="button" id="oidc" class="primary"><span role="status">使用统一登录</span></button>
     <div id="oidc-create-field" class="hidden" style="margin-top:14px">
-      <button type="button" id="oidc-create" class="lnkbtn">用统一身份注册</button>
+      <button type="button" id="oidc-create" class="lnkbtn"><span role="status">用统一身份注册</span></button>
       <p class="note">注册后返回此处，等待管理员授权。</p>
     </div>
   </div>
@@ -530,6 +536,7 @@
   }
 
   function apply(state) {
+    hide('#login-startup');
     csrfToken = state.csrfToken || null;
 
     // 认出来是谁了没有。未配口令的那一形态里没有会话可言，
@@ -557,12 +564,32 @@
     .then(apply)
     // 状态问不到时把口令表单摆出来：这样人至少看得见「无法连接到服务器」，
     // 而不是对着一张什么都没有的白页
-    .catch(() => { show('#login'); paint(); });
+    .catch(() => { hide('#login-startup'); show('#login'); paint(); });
 
   bindPasswordReveal($('#password'), $('#password-reveal'));
 
-  $('#oidc').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login'; });
-  $('#oidc-create').addEventListener('click', () => { location.href = CONSOLE + '/api/oidc/login?create=1'; });
+  function resetOidcButtons() {
+    for (const [id, label] of [['oidc', '使用统一登录'], ['oidc-create', '用统一身份注册']]) {
+      const button = $('#' + id);
+      button.disabled = false;
+      button.classList.remove('nova-pending');
+      button.querySelector('[role="status"]').textContent = label;
+    }
+  }
+
+  function startOidc(id, url) {
+    if ($('#oidc').disabled || $('#oidc-create').disabled) return;
+    $('#oidc').disabled = true;
+    $('#oidc-create').disabled = true;
+    const button = $('#' + id);
+    button.querySelector('[role="status"]').textContent = '正在前往账户中心…';
+    button.classList.add('nova-pending');
+    location.href = url;
+  }
+
+  window.addEventListener('pageshow', resetOidcButtons);
+  $('#oidc').addEventListener('click', () => startOidc('oidc', CONSOLE + '/api/oidc/login'));
+  $('#oidc-create').addEventListener('click', () => startOidc('oidc-create', CONSOLE + '/api/oidc/login?create=1'));
   $('#passkey').addEventListener('click', loginWithPasskey);
   $('#login-fold-label').addEventListener('click', () => { otherMethodToggleRequested = true; });
   $('#pwd-fold').addEventListener('toggle', focusOtherMethod);

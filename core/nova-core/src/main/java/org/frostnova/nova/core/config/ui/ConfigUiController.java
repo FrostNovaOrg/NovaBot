@@ -745,7 +745,8 @@ public class ConfigUiController {
             return ResponseEntity.ok()
                     .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
                     .cacheControl(CacheControl.noStore())
-                    .body(ConfigUiPrefix.render(new String(stream.readAllBytes(), StandardCharsets.UTF_8),
+                    .body(ConfigUiPrefix.render(ConfigUiLoadingPage.withPalette(
+                                    new String(stream.readAllBytes(), StandardCharsets.UTF_8)),
                             ConfigUiPrefix.of(request)).replace("{{nova-asset-version}}",
                             ConfigUiPrefix.attribute(assetVersion())));
         }

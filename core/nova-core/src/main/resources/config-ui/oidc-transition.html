@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="refresh" content="0;url={{console-path}}">
+  <title>登录成功</title>
+  <script>
+    // 界面主题与配色记在本浏览器里。首帧前设好 data-theme 与 data-palette，
+    // 免得先按系统色、默认的粉蓝画一下再切。与 theme.js 同两把键、同一套取值；
+    // 读不到或读出错，浅深跟系统、配色按粉蓝（product-ui.css 里没有 data-palette 时就是粉蓝）。
+    try {
+      var theme = localStorage.getItem('novabot-theme');
+      if (theme === 'dark' || theme === 'light') {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+      var palette = localStorage.getItem('novabot-palette');
+      if (palette === 'classic' || palette === 'pink-blue' || palette === 'warm') {
+        document.documentElement.setAttribute('data-palette', palette);
+      }
+    } catch (e) {}
+  </script>
+  <style>
+/*@@product-ui@@*/
+/*@@loading-ui@@*/
+  </style>
+</head>
+<body class="nova-transition">
+<svg width="0" height="0" aria-hidden="true" class="nova-mark-defs"><defs>
+  <linearGradient id="novaGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#7C5CFF"/>
+    <stop offset="1" stop-color="#FF5F9E"/>
+  </linearGradient>
+  <symbol id="novabot-mark" viewBox="0 0 64 64">
+    <path fill="url(#novaGrad)"
+          d="M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z"/>
+    <path fill="#fff"
+          d="M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z"/>
+    <path fill="#fff" fill-opacity=".85"
+          d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
+  </symbol>
+</defs></svg>
+<div class="nova-loading">
+  <svg class="nova-loading-mark" viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg>
+  <p role="status">登录成功，正在进入控制台…</p>
+  <span class="nova-loading-spinner" aria-hidden="true"></span>
+  <a href="{{console-path}}">进入控制台</a>
+</div>
+</body>
+</html>

@@ -72,8 +72,8 @@ final class ConfigUiLoginPage {
         if (cached == null) {
             synchronized (ConfigUiLoginPage.class) {
                 if (composed == null) {
-                    composed = compose(read(PAGE_RESOURCE), read(MODEL_RESOURCE),
-                            read(REVEAL_RESOURCE), read(PALETTE_RESOURCE));
+                    composed = ConfigUiLoadingPage.withLoadingStyles(compose(read(PAGE_RESOURCE), read(MODEL_RESOURCE),
+                            read(REVEAL_RESOURCE), read(PALETTE_RESOURCE)));
                 }
                 cached = composed;
             }

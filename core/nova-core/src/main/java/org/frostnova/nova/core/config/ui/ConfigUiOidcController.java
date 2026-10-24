@@ -181,13 +181,12 @@ public class ConfigUiOidcController {
             }
             // Commit the Strict cookie on a same-origin document before the next top-level navigation.
             String target = HtmlUtils.htmlEscape(ConfigUiPrefix.consolePath(request));
+            String html = ConfigUiLoadingPage.transition(target);
             response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             response.setHeader("Referrer-Policy", "no-referrer");
-            response.setHeader("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+            response.setHeader("Content-Security-Policy", ConfigUiLoadingPage.contentSecurityPolicy(html));
             response.setContentType("text/html;charset=UTF-8");
-            response.getWriter().write("<!doctype html><html lang=\"zh-CN\"><meta charset=\"UTF-8\">"
-                    + "<meta http-equiv=\"refresh\" content=\"0;url=" + target + "\"><title>登录成功</title>"
-                    + "<a href=\"" + target + "\">进入控制台</a></html>");
+            response.getWriter().write(html);
         } catch (OidcException error) {
             result(request, response, errorResult(error));
         } catch (IllegalStateException error) {
