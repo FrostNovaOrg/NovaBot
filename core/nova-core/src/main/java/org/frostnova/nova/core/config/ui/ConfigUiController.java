@@ -942,7 +942,7 @@ public class ConfigUiController {
      * <p>
      * 分组不再按配置键的前缀自动切（那样切出来的是<b>程序的结构</b>，二十余组，
      * 使用者要办一件事得先猜它归哪个类管），而是按 {@link ConfigurationGroups} 那张表
-     * 落到「要办的事」上：常用六组在前，工程用的两组标了 {@code advanced}、整组算高级；
+     * 落到「要办的事」上：常用七组在前，工程用的两组标了 {@code advanced}、整组算高级；
      * 其余组里每一项另带 {@code level}，界面据此把标了高级的项也收进高级。
      * 一条前缀也匹配不上的配置项<b>不会被塞进任何一组</b>——它的 {@code group} 为空，
      * 构建期那道判据会点名，而不是让它安静地待在一个「其他」里。
@@ -959,7 +959,7 @@ public class ConfigUiController {
         Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
         Map<String, ConfigurationDangerResolver.Danger> dangers = dangerResolver.getDangers();
 
-        // 组是闭集，先按组开好桶再往里放：这样八个组的先后由那张表定，
+        // 组是闭集，先按组开好桶再往里放：这样九个组的先后由那张表定，
         // 而不是由「哪一组的第一个配置项先出现」定
         ConfigurationGroups groupTable = ConfigurationGroups.of(groupContributors.orderedStream().toList());
         Map<ConfigurationGroups.Group, JSONArray> buckets = new LinkedHashMap<>();

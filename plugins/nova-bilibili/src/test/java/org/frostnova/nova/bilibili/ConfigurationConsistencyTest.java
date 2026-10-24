@@ -636,7 +636,7 @@ class ConfigurationConsistencyTest {
     }
 
     @Test
-    @DisplayName("八个组每组都有配置项，没有点开是空的组")
+    @DisplayName("九个组每组都有配置项，没有点开是空的组")
     void noEmptyGroup() {
         Set<String> names = displayedProperties();
         ConfigurationGroups groups = groups();
