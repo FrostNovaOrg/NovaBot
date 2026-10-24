@@ -28,6 +28,8 @@
 #       核心模块 src/main/java/**/*.java（模块目录现找，不写死名字）
 #   (b) BOOT-INF/classes/** 里非 class 的 → 该模块 src/main/resources/**
 #       减去 pom 排除的 application-dev.yml（不得进包）
+#       包根 META-INF/ 下白名单外的非 .class 条目 → 该模块 src/main/resources/META-INF/**，
+#       因为 Spring Boot 重打包会把资源目录中的 META-INF 留在包根。
 #   (c) 白名单（少一条第一趟就一片红，人会把名单放宽到尺失去判别力）：
 #       org/springframework/boot/loader/、BOOT-INF/lib/、BOOT-INF/classpath.idx、
 #       BOOT-INF/layers.idx、META-INF/maven/、根 META-INF/ 的 MANIFEST.MF／
@@ -635,6 +637,12 @@ scan_core_entries() {
                 fi
                 mark_extra "核心条目" "$entry" "不在源码" "$quiet"
                 continue
+                ;;
+            META-INF/*.class) ;;
+            META-INF/*)
+                if [ -f "$res_root/$entry" ]; then
+                    continue
+                fi
                 ;;
         esac
         mark_extra "核心条目" "$entry" "不在源码" "$quiet"
