@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 部署前缀（server.servlet.context-path），没配时为空。服务端吐页时写进来，core.js 从这里取 -->
 <meta name="nova-prefix" content="{{nova-prefix}}">
@@ -21,6 +22,10 @@
     }
   } catch (e) {}
 </script>
+<style>
+/*@@product-ui@@*/
+/*@@loading-ui@@*/
+</style>
 <script>
   window.novaStartupTimer = setTimeout(function () {
     var message = document.getElementById('startup-message');
@@ -118,8 +123,24 @@
   </aside>
 
   <main id="main">
-  <div id="startup" class="nv-card">
+<svg width="0" height="0" aria-hidden="true" class="nova-mark-defs"><defs>
+  <linearGradient id="novaGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#7C5CFF"/>
+    <stop offset="1" stop-color="#FF5F9E"/>
+  </linearGradient>
+  <symbol id="novabot-mark" viewBox="0 0 64 64">
+    <path fill="url(#novaGrad)"
+          d="M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z"/>
+    <path fill="#fff"
+          d="M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z"/>
+    <path fill="#fff" fill-opacity=".85"
+          d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
+  </symbol>
+</defs></svg>
+  <div id="startup" class="nova-loading">
+    <svg class="nova-loading-mark" viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg>
     <p id="startup-message" role="status">正在加载…</p>
+    <span class="nova-loading-spinner" aria-hidden="true"></span>
     <button id="startup-retry" class="primary" type="button" style="display:none">重试</button>
   </div>
 

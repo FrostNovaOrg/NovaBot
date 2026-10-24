@@ -1,0 +1,27 @@
+/* 登录、跳转与控制台首屏共用的加载画面。 */
+html { background: var(--ground); color: var(--text) }
+.nova-mark-defs { position: absolute }
+.nova-transition {
+  margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--ground); color: var(--text); font-family: var(--font);
+  font-size: var(--fs-lg); line-height: 1.6;
+}
+.nova-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 48px 24px; min-height: min(60vh, 440px); text-align: center;
+  background: var(--ground); color: var(--dim); font-family: var(--font);
+}
+.nova-loading-mark { width: 56px; height: 56px; flex: none }
+.nova-loading p { margin: 0; font-size: var(--fs-md) }
+.nova-loading a { color: var(--accent-text); font-size: var(--fs-sm) }
+.nova-loading-spinner, .nova-pending::after {
+  content: ""; display: inline-block; width: 16px; height: 16px; flex: none;
+  border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+  animation: nova-loading-spin 1.4s linear infinite;
+}
+.nova-pending::after { margin-left: 8px; vertical-align: middle; border-color: currentColor; border-right-color: transparent }
+button.nova-pending:disabled { background: var(--line); color: var(--dim); opacity: 1; cursor: wait }
+@keyframes nova-loading-spin { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) {
+  .nova-loading-spinner, .nova-pending::after { animation: none }
+}

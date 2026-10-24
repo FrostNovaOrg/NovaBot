@@ -73,7 +73,7 @@ class ConfigUiFrontendTest {
      * 这一道缝只许走 THEME_KEY 与配色那一把（{@link #PALETTE_KEY}），且每一次 localStorage 出现都得是下面几种合法调用之一——
      * 注释里写成调用的样子不算（判在挖掉注释、留下字符串的码上），一行里另有一次写入也不跟着放行。
      * <p>
-     * {@code getItem(主题键)} 只许在核心 theme.js、index.html、login.html；
+     * {@code getItem(主题键)} 只许在核心 theme.js、index.html、login.html、oidc-transition.html；
      * {@code removeItem(主题键)} 与 {@code setItem(主题键, 值)} 只许在核心 theme.js，
      * 值只许 THEME_LIGHT、THEME_DARK、'light'、'dark' 四个字面。
      * sessionStorage 与 console. 仍然一律不许。
@@ -97,7 +97,7 @@ class ConfigUiFrontendTest {
     /**
      * 配色那一把键：与主题键同一种开口，同样不是秘密
      * <p>
-     * {@code getItem(配色键)} 只许在核心 theme.js、index.html、login.html；
+     * {@code getItem(配色键)} 只许在核心 theme.js、index.html、login.html、oidc-transition.html；
      * {@code setItem(配色键, 值)} 只许在核心 theme.js，值只许三个配色 id 的常量或字面。没有 removeItem。
      */
     private static final String PALETTE_KEY = "novabot-palette";
@@ -562,11 +562,12 @@ class ConfigUiFrontendTest {
      * <p>
      * 认调用形状（键作第一参数、写入值只许四个字面），从 {@code localStorage} 那一处往右看，
      * 一次只认一回——同一行里还有别的写入不跟着放行。
-     * 写与清只许核心 theme.js（插件页目录里同名文件不沾光）；读另许 index.html 与 login.html 的 head 脚本。
+     * 写与清只许核心 theme.js（插件页目录里同名文件不沾光）；读另许三个入口页的 head 脚本。
      */
     private static boolean legalThemeCallAt(String name, String rest) {
         boolean coreThemeJs = name.equals("theme.js");
-        boolean mayRead = coreThemeJs || name.equals("index.html") || name.equals("login.html");
+        boolean mayRead = coreThemeJs || name.equals("index.html") || name.equals("login.html")
+                || name.equals("oidc-transition.html");
         if (THEME_GET_CALL.matcher(rest).lookingAt() || PALETTE_GET_CALL.matcher(rest).lookingAt()) return mayRead;
         if (!coreThemeJs) return false;
         return THEME_REMOVE_CALL.matcher(rest).lookingAt()

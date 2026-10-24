@@ -22,7 +22,13 @@ import org.springframework.mock.web.MockServletContext;
 import org.springframework.web.filter.ForwardedHeaderFilter;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -116,6 +122,56 @@ class ConfigUiOidcRedirectTest extends OidcTestSupport {
         provider.challenge = query.get("code_challenge");
         provider.redirect = query.get("redirect_uri");
         return new Browser(query.get("state"), response.getCookie(ConfigUiOidcController.COOKIE));
+    }
+
+    // 成功回调不能闪白；哈希与实际内联字节不符时，浏览器会拦掉主题和样式。
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", "/novabot"})
+    void successfulCallbackCarriesThemeWithExactCspHashes(String prefix) throws Exception {
+        var account = mock(ConfigUiAccount.class);
+        when(account.status()).thenReturn(ConfigUiAccount.Status.ENABLED);
+        when(accounts.register(any(), any())).thenReturn(account);
+        var session = mock(ConfigUiSession.class);
+        when(session.getId()).thenReturn("test-session");
+        when(auth.issueForOidc(any(), any(), any())).thenReturn(session);
+        var request = callback(start(false), prefix);
+        request.addHeader("X-Forwarded-Prefix", "/evil");
+        var response = new MockHttpServletResponse();
+        controller.callback(request, response);
+        assertEquals(200, response.getStatus());
+        String html = response.getContentAsString();
+        assertTrue(html.contains("novabot-theme"), "成功回调缺少主题脚本，会闪白");
+        assertTrue(html.contains("novabot-palette"));
+        assertTrue(html.contains(Files.readString(FrontendFixture.frontendDir().resolve("product-ui.css"))));
+        assertTrue(html.contains("background: var(--ground)"));
+        assertTrue(html.indexOf("<script>") < html.indexOf("<style>"), "主题选择必须在绘制样式前完成");
+        assertTrue(html.contains("class=\"nova-loading-mark\""));
+        assertTrue(html.contains("class=\"nova-loading-spinner\""));
+        assertTrue(html.contains("role=\"status\">登录成功，正在进入控制台…"));
+        assertTrue(html.contains("content=\"0;url=" + prefix + "/config\""));
+        assertTrue(html.contains("href=\"" + prefix + "/config\">进入控制台</a>"));
+        assertFalse(html.contains("/evil"));
+        StringBuilder expected = new StringBuilder("default-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+        for (String tag : new String[]{"style", "script"}) {
+            var blocks = Pattern.compile("<" + tag + ">([\\s\\S]*?)</" + tag + ">").matcher(html);
+            assertTrue(blocks.find(), "缺少内联 " + tag);
+            String digest = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256")
+                    .digest(blocks.group(1).getBytes(StandardCharsets.UTF_8)));
+            expected.append("; ").append(tag).append("-src 'sha256-").append(digest).append("'");
+            assertFalse(blocks.find(), "每种内联块只保留一份");
+        }
+        assertEquals(expected.toString(), response.getHeader("Content-Security-Policy"));
+        assertEquals("no-store", response.getHeader("Cache-Control"));
+        assertEquals("no-referrer", response.getHeader("Referrer-Policy"));
+        assertTrue(response.getHeaders("Set-Cookie").stream().anyMatch(value ->
+                value.contains("test-session") && value.contains("SameSite=Strict")
+                        && value.contains("Path=" + prefix + "/config")));
+        var raw = new StringBuilder("HTTP/1.1 " + response.getStatus() + "\n");
+        for (String name : response.getHeaderNames()) {
+            for (String value : response.getHeaders(name)) raw.append(name).append(": ").append(value).append('\n');
+        }
+        Path output = Path.of("target", "oidc-transition" + (prefix.isEmpty() ? "" : "-prefixed") + ".http");
+        Files.writeString(output, raw.append('\n').append(html), StandardCharsets.UTF_8);
     }
 
     private MockHttpServletRequest callback(Browser browser, String prefix) {
