@@ -515,7 +515,7 @@ export function render(section) {
   section.innerHTML = `
     <div class="note" id="push-conflict" role="alert" hidden></div>
     <div id="sess-incomplete"></div>
-    <div class="pnarrow">
+    ${store.singleStreamer ? '' : `<div class="pnarrow">
       <div class="pnarrow-top">
         <label for="push-nav">选择主播或推送通道</label>
         <div class="pnarrow-actions">
@@ -525,15 +525,16 @@ export function render(section) {
       </div>
       <select id="push-nav"></select>
     </div>
-    <div class="pushwrap">
-      <aside class="ptree">
+    `}
+    <div class="pushwrap"${store.singleStreamer ? ' style="display:block"' : ''}>
+      ${store.singleStreamer ? '' : `<aside class="ptree">
         <div class="ptop">
           <a class="lnkbtn tnode" id="push-default-tpl" href="#/push/default">默认模板</a>
           ${isMember() ? '' : '<button type="button" class="lnkbtn tnode" id="push-add-streamer">＋ 添加主播</button>'}
         </div>
         <div class="ptree-t">主播</div>
         <div id="push-tree"></div>
-      </aside>
+      </aside>`}
       <div class="pright" id="push-right"></div>
     </div>`;
   bindShell();
@@ -571,7 +572,7 @@ export function leave() {
 }
 
 function bindShell() {
-  $('#push-nav').addEventListener('change', event => {
+  $('#push-nav')?.addEventListener('change', event => {
     const value = event.target.value;
     if (!value) { location.hash = '#/push'; return; }
     if (value === 'default') { location.hash = '#/push/default'; return; }
@@ -909,6 +910,7 @@ export function setRuntimeState(data) {
 function paintTree() {
   const host = $('#push-tree');
   const nav = $('#push-nav');
+  if (!host || !nav) return;
   const tree = pushTree(pushData, runtime.sessions, store.handlerList, directory);
   const defaults = $('#push-default-tpl');
   if (defaults) {

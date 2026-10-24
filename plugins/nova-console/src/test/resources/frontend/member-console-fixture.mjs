@@ -8,9 +8,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../..
 const core = resolve(root, 'core/nova-core/src/main/resources/config-ui');
 const plugin = resolve(root, 'plugins/nova-console/src/main/resources/config-ui-pages');
 const mode = process.argv[2] || 'requests';
+const single = mode.startsWith('single-');
+const unchanged = mode.startsWith('unchanged-');
 const recovery = ['slow-plugins', 'retry-plugins', 'retry-member-plugins', 'plugin-version', 'plugin-version-next', 'missing-main', 'fallback-started'].includes(mode);
 const startup = mode.startsWith('loading-') || mode.startsWith('sidebar-');
-const role = mode === 'retry-member-plugins' ? 'MEMBER' : (recovery || mode === 'sidebar-admin' || (mode.startsWith('loading-') && !mode.startsWith('loading-member-')) || mode === 'admin') ? 'ADMIN' : mode === 'legacy' ? undefined : mode === 'unknown' ? 'OTHER' : 'MEMBER';
+const role = mode === 'retry-member-plugins' ? 'MEMBER' : (recovery || mode === 'sidebar-admin' || (mode.startsWith('loading-') && !mode.startsWith('loading-member-')) || mode === 'admin' || mode === 'unchanged-admin-one') ? 'ADMIN' : mode === 'legacy' ? undefined : mode === 'unknown' ? 'OTHER' : 'MEMBER';
 class Element {
   constructor(tag = 'div') {
     this.tagName = tag; this.children = []; this.attrs = {}; this.dataset = {}; this.style = {};
@@ -23,7 +25,7 @@ class Element {
     }, add: name => this.classList.toggle(name, true), remove: name => this.classList.toggle(name, false),
     contains: name => this.className.split(/\s+/).includes(name)};
   }
-  appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+  appendChild(child) { child.remove(); child.parentNode = this; this.children.push(child); return child; }
   append(...children) { children.forEach(child => this.appendChild(typeof child === 'string' ? Object.assign(new Element('text'), {textContent: child}) : child)); }
   insertBefore(child, before) { child.parentNode = this; const at = this.children.indexOf(before); this.children.splice(at < 0 ? this.children.length : at, 0, child); }
   remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); }
@@ -37,7 +39,7 @@ class Element {
     if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
     if (key === 'style') for (const pair of value.split(';')) { const [k,v] = pair.split(':'); if (k && v) this.style[k.trim()] = v.trim(); }
   }
-  getAttribute(key) { return key === 'href' ? this.href : this.attrs[key]; }
+  getAttribute(key) { return key === 'href' ? this.href : key.startsWith('data-') ? this.dataset[key.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] : this.attrs[key]; }
   removeAttribute(key) { delete this.attrs[key]; }
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
   scrollIntoView() {} focus() {} contains(node) { return walk(this).includes(node); }
@@ -84,6 +86,8 @@ document.createElement = tag => new Element(tag);
 document.createElementNS = (_, tag) => new Element(tag);
 document.documentElement = document.querySelector('html');
 document.head = document.querySelector('head'); document.body = document.querySelector('body');
+const prefix = mode === 'single-prefix' ? '/novabot' : '';
+document.querySelector('meta[name="nova-prefix"]').content = prefix;
 const $ = selector => document.querySelector(selector);
 const visible = node => !!node && !node.hidden && node.style.display !== 'none' && (!node.classList.contains('page') || node.classList.contains('on')) && (!node.parentNode || visible(node.parentNode));
 const events = {};
@@ -112,8 +116,11 @@ const location = {_hash: mode === 'nav' ? '#/settings' : '#/home', reload() {},
     Promise.resolve().then(() => { for (const fn of events.hashchange || []) fn(); });
   },
 };
-const window = {location, addEventListener: (name, fn) => { (events[name] ||= []).push(fn); }, scrollTo() {}};
+const window = {innerWidth: mode === 'single-narrow' ? 390 : 1280, location, addEventListener: (name, fn) => { (events[name] ||= []).push(fn); }, scrollTo() {}};
 const own = {uid: 71001, platform: 'bilibili', uname: 'Owner A', enabled: true, targets: 3};
+let assigned = single || mode === 'unchanged-admin-one' ? [{...own, status: mode === 'single-disabled' ? 'DISABLED' : 'OFFLINE', face: 'https://external.example/avatar.jpg'}]
+  : mode === 'unchanged-multiple' ? [own, {...own, uid: 71002}] : [];
+let eventText = '自家屏蔽词事件';
 const memberStatus = {success: true, version: '1.2.3', users: [own], live: [{...own, roomId: 81001}], today: {sent: 2, failed: 1}, locked: false, pushEnabled: false, totalDataAvailable: false, quiet: {}};
 const adminStatus = {...memberStatus, version: '1.2.3', runtime: {heapUsedMb: 12, heapMaxMb: 64, threads: 8}, health: [], senders: [], alerts: {}};
 const requests = [], errors = [];
@@ -126,14 +133,14 @@ const fetch = async (url, options = {}) => {
   if (hold && path === heldPath) { pending--; await new Promise(done => { releaseHeld = done; }); pending++; }
   const body = path === '/auth/state' ? auth : path === '/status' ? (role === 'MEMBER' ? memberStatus : adminStatus)
     : path === '/pages' ? {pages, accessiblePages: ['home', 'push', 'streamers']}
-    : path.startsWith('/timeline') ? {events: [{at: Date.now(), type: 'PUSH_BLOCKED_WORD', level: 'WARN', streamer: 'Owner A', text: '自家屏蔽词事件'}]}
+    : path.startsWith('/timeline') ? {events: [{at: Date.now(), type: 'PUSH_BLOCKED_WORD', level: 'WARN', streamer: 'Owner A', text: eventText}]}
     : path === '/login' ? {success: false, message: '成员不能使用这一项'}
     : path === '/at-all/quota' ? {success: true, sessions: [{platform: 'qq', num: 81001, used: 3, remaining: 7}], bots: []}
-    : path === '/streamers' ? {success: true, streamers: [], days: 7}
+    : path === '/streamers' ? {success: true, streamers: assigned, days: 7}
     : path.startsWith('/streamers/') ? {success: false, message: '暂无归档'}
     : {success: true};
   if (path === '/status' && location.hash.includes('/streamers/')) await new Promise(done => setImmediate(done));
-  pending--; return {status: path === '/login' ? 403 : 200, json: async () => body};
+  pending--; return {status: path === '/login' ? 403 : path.startsWith('/streamers/') ? 404 : 200, json: async () => body};
 };
 const context = vm.createContext({document, location, window, fetch, console, URL, URLSearchParams, Date, Set, Map, Promise,
   setTimeout: startupTimeout, clearTimeout: id => { if (recovery) timers.delete(id); else if (id === 'startup') startupTimer = null; else clearTimeout(id); }, setInterval: (...args) => { const timer = setInterval(...args); timer.unref(); return timer; }, clearInterval, AbortController, performance});
@@ -404,6 +411,74 @@ if (['admin', 'legacy', 'unknown'].includes(mode)) await check('管理员保留�
   assert.deepEqual(Array.from($('#nav').querySelectorAll('a')).filter(visible).map(a => a.dataset.page), ['home','log','links','push','streamers','settings']);
   assert.equal($('#run-mem').textContent, '12 / 64 MB'); assert.ok($('#toggle-push'));
   assert.ok(requests.some(([,path]) => path.endsWith('/schema')));
+});
+// 单主播成员不该先面对只有一行的列表，首页入口与推送总览也应直接落到本人。
+if (single) {
+  await check('单主播成员打开控制台无需再点一人列表', async () => {
+    assert.equal(location.hash, '#/streamers/bilibili/71001');
+    const links = $('#nav').querySelectorAll('a').filter(visible);
+    assert.deepEqual(links.map(a => a.textContent), ['直播数据', '推送设置']);
+    assert.deepEqual(links.map(a => a.href), ['#/streamers/bilibili/71001', '#/push/71001']);
+    assert.ok(visible($('#side-manual')));
+    assert.ok(visible($('#sv-detail'))); assert.ok(!visible($('#sv-list')));
+    assert.ok(!visible($('#sd-back')));
+    assert.ok(visible($('#home-now'))); assert.ok(visible($('#home-events')));
+    assert.equal($('#nav').querySelector('[data-page="streamers"]').getAttribute('aria-current'), 'page');
+    assert.equal($('#home-now').parentNode.id, 'sd-member-home');
+    assert.equal($('#home-events').parentNode.id, 'sd-member-home');
+    assert.equal($('#sv-detail').children.find(node => node.tagName !== 'text').id, 'sd-member-home');
+    assert.match($('#now-box').textContent, /Owner A/);
+    assert.match($('#home-timeline').textContent, /自家屏蔽词事件/);
+    assert.equal(visible($('#sd-disabled')), mode === 'single-disabled');
+    if (mode === 'single-disabled') assert.match($('#sd-disabled').textContent, /这位主播已停用，请联系管理员/);
+    const oldEvents = $('#home-events'); eventText = '新事件';
+    await overview.refreshHome(); await settle();
+    assert.equal($('#home-events'), oldEvents); assert.match($('#home-timeline').textContent, /新事件/);
+    for (const hash of ['#/home', '#/streamers', '#/push']) {
+      await go(hash);
+      assert.equal(location.hash, hash === '#/push' ? '#/push/71001' : '#/streamers/bilibili/71001');
+    }
+    const before = requests.filter(([, url]) => url.includes('/timeline?')).length;
+    await go('#/streamers/bilibili/71001');
+    assert.ok(requests.filter(([, url]) => url.includes('/timeline?')).length > before, '再次打开直播数据应刷新事件');
+  });
+  await check('侧栏头像同源、圆形首字回退与部署前缀', async () => {
+    assert.equal($('.brand-name').textContent, 'Owner A');
+    const mark = $('.brand-mark'); const avatar = mark.querySelector('img');
+    assert.ok(mark.classList.contains('brand-streamer'));
+    assert.equal(avatar.src, prefix + '/config/api/streamers/bilibili/71001/avatar');
+    assert.equal(avatar.style.display, 'none', '加载成功前不露破图');
+    const fallback = mark.querySelector('span'); assert.equal(fallback.textContent, 'O');
+    assert.ok(visible(fallback));
+    if (mode === 'single-avatar-error') {
+      for (const fn of avatar.listeners.error || []) fn();
+      assert.ok(!visible(mark.querySelector('img'))); assert.ok(visible(fallback));
+    } else {
+      for (const fn of avatar.listeners.load || []) fn();
+      assert.ok(visible(avatar)); assert.ok(!visible(fallback));
+      for (const fn of avatar.listeners.error || []) fn();
+      assert.ok(!visible(mark.querySelector('img'))); assert.ok(visible(fallback));
+    }
+    assert.ok(!requests.some(([, url]) => url.startsWith('https://external.example')));
+    assert.ok(requests.every(([, url]) => url.startsWith(prefix + '/config/api/')));
+    assert.ok($('#side-manual').href.startsWith(prefix + '/config/manual/'));
+  });
+  await check('单主播成员打开别人地址照旧显示服务端错误', async () => {
+    await go('#/streamers/bilibili/79999');
+    assert.equal(location.hash, '#/streamers/bilibili/79999');
+    assert.ok(requests.some(([, url]) => url.endsWith('/streamers/bilibili/79999')));
+    assert.match($('#sd-body').textContent, /暂无归档/);
+  });
+}
+if (unchanged) await check('照旧：' + mode, async () => {
+  assert.equal(location.hash, '#/home');
+  const links = $('#nav').querySelectorAll('a').filter(visible).map(a => a.dataset.page);
+  assert.deepEqual(links, role === 'ADMIN' ? ['home','log','links','push','streamers','settings'] : ['home','push','streamers']);
+  assert.equal($('.brand-name').textContent, 'NovaBot');
+  await go('#/streamers'); assert.equal(location.hash, '#/streamers'); assert.ok(visible($('#sv-list')));
+  await go('#/streamers/bilibili/71001'); assert.ok(visible($('#sd-back')));
+  await go('#/push'); assert.equal(location.hash, '#/push');
+  assert.equal($('#home-now').parentNode.id, 'overview');
 });
 for (const [method, path] of requests) console.log('REQUEST ' + method + ' ' + path);
 console.log('跑了 ' + checks + ' 格，红 ' + failed + ' 格');

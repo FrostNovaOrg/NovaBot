@@ -12,6 +12,8 @@
 export const store = {
   /** 当前账号身份，来自 /auth/state；只有 MEMBER 使用成员界面。 */
   role: null,
+  /** 成员的可见主播恰好一位时，保存本次启动从 /streamers 取到的身份。 */
+  singleStreamer: null,
   /** 身份与页面清单到达之后才处理路由。 */
   authReady: false,
   /** 配置项字段表，按设置页的八个组组织，来自编译期生成的元数据 */

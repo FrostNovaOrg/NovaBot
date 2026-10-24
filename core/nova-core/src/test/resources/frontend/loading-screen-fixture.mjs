@@ -133,7 +133,7 @@ const start = runInNewContext(startSource + '\n' + retryBinding + '\nstartConsol
   },
   setTimeout(callback, ms) { const timer = {callback, ms}; timers.push(timer); return timer; },
   clearTimeout(timer) { if (timer) timer.cleared = true; },
-  loadExecNotice: noop, applyRoleView: noop, setAuthState: noop, setMemberAuthState: noop,
+  loadExecNotice: noop, applyRoleView: noop, applySingleStreamerView: noop, setAuthState: noop, setMemberAuthState: noop,
   renderPersonalMenu: noop, botFormHtml: noop, bindBotForm: noop, loadBotConsole: noop,
   mountPages: async () => {}, applyRoute: noop, load: noop,
 });
