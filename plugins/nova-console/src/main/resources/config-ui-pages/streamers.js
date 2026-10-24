@@ -419,12 +419,13 @@ export function loadStreamers() {
     && JSON.stringify(where) !== JSON.stringify(next)) {
     const rangeChanged = where.days !== next.days;
     const hideChanged = where.hideOff !== next.hideOff;
+    const viewport = drawerViewport(next);
     where = next;
     insightsHideOff = where.hideOff === '1';
     if (hideChanged) renderDailyTrend();
     if (hideChanged) updateHideOffLinks();
     if (rangeChanged) insightsData = null;
-    const jobs = [openDetailDrawer()];
+    const jobs = [openDetailDrawer(viewport)];
     if (rangeChanged) jobs.push(loadDashboard());
     return Promise.all(jobs);
   }
@@ -1231,7 +1232,21 @@ function closeDetailDrawer() {
   drawerChanging = false;
 }
 
-async function openDetailDrawer() {
+function drawerViewport(next) {
+  if (!detailDrawer || where.panel !== next.panel) return null;
+  const body = detailDrawer.body;
+  const pager = body.querySelector('.sd-pagination');
+  const bounds = body.getBoundingClientRect();
+  const pagerBounds = pager?.getBoundingClientRect();
+  // 翻页时对齐正在看的翻页栏；其他视图变化保留抽屉的阅读位置。
+  const paging = where.page !== next.page && Object.keys(where).every(key => key === 'page' || where[key] === next[key]);
+  return {top: body.scrollTop, left: body.scrollLeft,
+    pagerEnd: pagerBounds ? pagerBounds.bottom + body.scrollTop - bounds.top : null,
+    pagerTop: paging && pagerBounds && pagerBounds.bottom > bounds.top && pagerBounds.top < bounds.bottom
+      ? pagerBounds.top : null};
+}
+
+async function openDetailDrawer(viewport = null) {
   closeDetailDrawer();
   const titles = {audience: '本期观众名单', 'start-slots': '开播节奏明细', sessions: '直播场次', fans: '粉丝变化', trend: '趋势明细'};
   const panel = where.panel;
@@ -1278,6 +1293,20 @@ async function openDetailDrawer() {
     } catch (error) {
       if (generation === drawerGeneration && liveActive) current.body.textContent = '读取失败：' + error.message;
     }
+  }
+  if (viewport && detailDrawer === current) {
+    const pager = current.body.querySelector('.sd-pagination');
+    const offset = viewport.pagerTop != null && pager ? pager.getBoundingClientRect().top - viewport.pagerTop : viewport.top;
+    const pagerEnd = pager ? pager.getBoundingClientRect().bottom - current.body.getBoundingClientRect().top : null;
+    const remaining = offset - (current.body.scrollHeight - current.body.clientHeight);
+    if (viewport.pagerTop != null && pagerEnd >= viewport.pagerEnd && remaining > 0) {
+      // 短页返回长页时补足滚动余量，避免翻页栏被页底的滚动边界推走。
+      const padding = parseFloat(getComputedStyle(current.body).paddingBottom);
+      current.body.style.paddingBottom = (padding + remaining) + 'px';
+    }
+    // 内容变短时由浏览器收回真实页底，不额外撑高抽屉。
+    current.body.scrollTop = offset;
+    current.body.scrollLeft = viewport.left;
   }
 }
 

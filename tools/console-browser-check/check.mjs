@@ -522,6 +522,42 @@ const VIEW_HELPERS = `
   };
 `;
 
+const DRAWER_PAGINATION = `(async () => {
+  ${VIEW_HELPERS}
+  document.querySelector('#sd-body a[href*="panel=trend"]').click();
+  const drawer = () => document.querySelector('dialog.sc-drawer[open]');
+  const pager = () => drawer()?.querySelector('.sd-pagination');
+  const next = () => [...(pager()?.querySelectorAll('a') || [])].find(link => link.textContent.includes('下一页'));
+  await wait(() => next());
+  next().scrollIntoView({block: 'center'});
+  await frame(); await frame();
+  const before = next().getBoundingClientRect().top;
+  const scrollBefore = drawer().querySelector('.sc-drawer-body').scrollTop;
+  next().click();
+  await wait(() => pager()?.textContent.includes('第 2/'));
+  await finish();
+  const control = next();
+  const after = control.getBoundingClientRect().top;
+  const body = drawer().querySelector('.sc-drawer-body');
+  const bounds = body.getBoundingClientRect(), button = control.getBoundingClientRect();
+  const facts = {name: '趋势明细周期翻页', before, after, difference: Math.abs(after - before),
+    inView: button.top >= bounds.top && button.bottom <= bounds.bottom && inView(control),
+    scrollBefore, scrollAfter: body.scrollTop};
+  drawer().querySelector('.sc-drawer-close').click();
+  await wait(() => !drawer() && !location.hash.includes('panel='));
+  await finish();
+  window.scrollTo(0, 0);
+  return facts;
+})()`;
+
+async function checkDrawerPagination(s, round) {
+  const response = await s('Runtime.evaluate', {expression: DRAWER_PAGINATION, returnByValue: true, awaitPromise: true});
+  if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+  const facts = response.result.value;
+  round.drawerPagination = facts;
+  if (!facts.inView || facts.difference > 2) round.failures.push('抽屉翻页：' + JSON.stringify(facts));
+}
+
 const PUSH_COLLAPSE = `(async () => {
   ${VIEW_HELPERS}
   location.hash = '#/push/990000000101/990000000301';
@@ -804,6 +840,7 @@ async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
     round.colors = probe;
     if (page === 'streamer' && size.width === 1440 && palette === PALETTES[0] && color === 'light') {
       await checkStreamerInteractions(s, round);
+      await checkDrawerPagination(s, round);
     }
     if (size.width === 1440 && palette === PALETTES[0] && color === 'light') {
       if (page === 'push') await checkCollapse(s, round, PUSH_COLLAPSE, '收起群内命令');
@@ -847,6 +884,7 @@ function summarize(rounds, version, shotProblem) {
     for (const movement of r.interactions.movements) lines.push('页内滚动：' + JSON.stringify(movement));
   }
   for (const r of rounds) if (r.collapse) lines.push('页面收起：' + JSON.stringify(r.collapse));
+  for (const r of rounds) if (r.drawerPagination) lines.push('抽屉翻页：' + JSON.stringify(r.drawerPagination));
 
   // 各套配色在首页上取到的几样颜色，只列出：三套该各是各的，一眼看得出有没有哪套没生效
   lines.push('', '配色读数（首页 1440 宽，页底／强调色／次要字）：');
