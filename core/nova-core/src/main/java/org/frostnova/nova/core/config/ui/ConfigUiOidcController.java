@@ -258,7 +258,8 @@ public class ConfigUiOidcController {
     private static void result(HttpServletRequest request, HttpServletResponse response, String result) throws IOException {
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.setHeader("Referrer-Policy", "no-referrer");
-        response.sendRedirect(ConfigUiPrefix.consolePath(request) + "?oidc=" + result);
+        response.setStatus(HttpServletResponse.SC_FOUND);
+        response.setHeader(HttpHeaders.LOCATION, ConfigUiPrefix.consolePath(request) + "?oidc=" + result);
     }
 
     private record Pending(String correlation, String sessionId, Instant expiresAt) {
