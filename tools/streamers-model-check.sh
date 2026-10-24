@@ -42,7 +42,7 @@ fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个：一次传一串时，后面那些是「查过了」还是「没轮到」分不出来
-for f in "$PAGES"/streamers-model.js "$PAGES"/streamers-components.js "$PAGES"/streamers.js; do
+for f in "$PAGES"/streamers-model.js "$PAGES"/streamers-components.js "$PAGES"/streamers-assistant.js "$PAGES"/streamers.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else

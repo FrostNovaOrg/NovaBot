@@ -47,6 +47,7 @@ if (process.argv[2] === 'cards') {
     const get = key => { if (!nodes.has(key)) nodes.set(key, new MiniNode('div')); return nodes.get(key); };
     compile(read('streamers.js', plugin), 'export function syncStreamersView(', {
       $: get, closeDetailDrawer() {}, releaseComponents() {}, kpiResizeObserver: null, recentResizeObserver: null,
+      assistantEntry: null,
       viewGeneration: 0, stopLiveRefresh() {}, parseStreamersHash: () => ({view: 'detail', platform: 'site', uid: '1'}),
       store: {singleStreamer: {platform: 'site', uid: '1'}},
       location: {}, where: {view: 'list'}, detail: null, insightsData: null, periodAudience: null, loadingHtml,

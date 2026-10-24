@@ -109,7 +109,7 @@ export function parseStreamersHash(hash) {
     else if (key === 'days' && ['7', '30', '90', '180', '360'].includes(value)) state.days = Number(value);
     else if (key === 'group' && ['all', 'first', 'returning', 'interaction'].includes(value)) state.group = value;
     else if (key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
-    else if (key === 'panel' && ['audience', 'start-slots', 'sessions', 'fans', 'trend'].includes(value)) state.panel = value;
+    else if (key === 'panel' && ['audience', 'start-slots', 'sessions', 'fans', 'trend', 'assistant'].includes(value)) state.panel = value;
     else if (key === 'section' && value === 'trend') state.panel = 'trend';
     else if (['from', 'to', 'dateFrom', 'dateTo'].includes(key) && DIGITS.test(value)) state[key] = value;
     else if (key === 'starts' && /^(\d+(,\d+)*)?$/.test(value)) state.starts = value;
@@ -174,7 +174,7 @@ function decode(text) {
 export function detailHash(platform, uid, pane, query) {
   const base = '#/streamers/' + encodeURIComponent(platform) + '/' + encodeURIComponent(uid);
   const params = new URLSearchParams(query || '');
-  if (['sessions', 'start-slots', 'audience', 'fans', 'trend'].includes(pane)) params.set('panel', pane);
+  if (['sessions', 'start-slots', 'audience', 'fans', 'trend', 'assistant'].includes(pane)) params.set('panel', pane);
   const suffix = params.toString();
   return suffix ? base + '?' + suffix : base;
 }

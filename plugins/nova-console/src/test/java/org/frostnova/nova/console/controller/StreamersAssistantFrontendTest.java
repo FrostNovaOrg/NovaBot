@@ -1,0 +1,49 @@
+package org.frostnova.nova.console.controller;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+
+class StreamersAssistantFrontendTest {
+    private void run(String name) throws Exception {
+        FrontendFixture.runFromModule("src/test/resources/frontend/streamers-assistant-fixture.mjs",
+                "智能助手", Map.of("ASSISTANT_CASE", name));
+    }
+
+    @Test
+    @DisplayName("失败说明不能被当成模型结论，状态变化会禁用输入")
+    void failuresHaveNoLabelOrCopy() throws Exception {
+        run("failures");
+    }
+
+    @Test
+    @DisplayName("追问只带最近三条成功回答，关闭与切范围不丢对话")
+    void historyContainsOnlyThreeSuccessfulTurns() throws Exception {
+        run("history");
+    }
+
+    @Test
+    @DisplayName("弹幕中的网页片段按纯文本显示，不执行网页代码")
+    void remoteTextCannotBecomeMarkup() throws Exception {
+        run("text");
+    }
+
+    @Test
+    @DisplayName("复制和手动复制都保留人工智能提示句")
+    void copiesAlwaysIncludeNotice() throws Exception {
+        run("copy");
+    }
+
+    @Test
+    @DisplayName("成员看不到花费和设置入口，不可用原因合并重复提示")
+    void membersHaveNoCostsOrSettingsLinks() throws Exception {
+        run("member");
+    }
+
+    @Test
+    @DisplayName("总开关关闭或读取失败时隐藏成员入口，管理员仍有入口")
+    void headerEntryFollowsRoleAndEnabledState() throws Exception {
+        run("entry");
+    }
+}
