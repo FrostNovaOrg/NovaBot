@@ -26,7 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.anything;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AssistantAskServiceTest {
@@ -39,6 +40,9 @@ class AssistantAskServiceTest {
     private AssistantLocalStore local;
     private final List<JSONObject> sent = new ArrayList<>();
     private final Deque<JSONObject> replies = new ArrayDeque<>();
+    private RuntimeException providerFailure;
+    private int providerStatus = 200;
+    private String providerBody;
     private Runnable onSend = () -> { };
     private long inputTokens = 100;
     private final List<Duration> timeouts = new ArrayList<>();
@@ -55,6 +59,10 @@ class AssistantAskServiceTest {
         server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(), anything()).andRespond(request -> {
             sent.add(JSON.parseObject(((MockClientHttpRequest) request).getBodyAsString()));
             onSend.run();
+            if (providerFailure != null) throw providerFailure;
+            if (providerStatus != 200) return org.springframework.test.web.client.response.MockRestResponseCreators
+                    .withStatus(org.springframework.http.HttpStatus.valueOf(providerStatus)).createResponse(request);
+            if (providerBody != null) return withSuccess(providerBody, MediaType.APPLICATION_JSON).createResponse(request);
             JSONObject message = replies.isEmpty() ? JSONObject.of("content", "没有这份数据") : replies.removeFirst();
             return withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message", message)),
                     "usage", JSONObject.of("prompt_tokens", inputTokens, "completion_tokens", 10)).toJSONString(),
@@ -112,6 +120,8 @@ class AssistantAskServiceTest {
         replies.add(JSONObject.of("content", "总流水1000（场次归档）"));
         var result = ask();
         assertEquals("由人工智能生成", result.getString("label"));
+        assertEquals(true, result.get("answered"));
+        assertFalse(result.containsKey("reason"));
         assertTrue(result.getBigDecimal("costYuan").signum() > 0);
         assertEquals(19, result.getJSONObject("remaining").getIntValue("questionsToday"));
         assertEquals("revenue", result.getJSONArray("steps").getJSONObject(0).getString("function"));
@@ -222,14 +232,64 @@ class AssistantAskServiceTest {
         assertEquals("none", sent.get(2).getString("tool_choice"));
     }
 
+    @Test void rewriteNetworkFailurePreservesOriginalAnswerAndCost() {
+        onSend = () -> {
+            if (sent.size() == 3) providerFailure = new org.springframework.web.client.ResourceAccessException("offline");
+        };
+        assertRewriteFailurePreservesOriginalAnswer(2);
+    }
+
+    @ParameterizedTest @MethodSource("providerFailures")
+    void rewriteProviderFailurePreservesOriginalAnswerAndCost(int status, String reason) {
+        onSend = () -> { if (sent.size() == 3) providerStatus = status; };
+        assertRewriteFailurePreservesOriginalAnswer(2);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "{}", "{\"choices\":[{\"message\":{\"content\":\"流水1000\"}}]}",
+            "{\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10}}"
+    })
+    void rewriteIncompleteResponsePreservesOriginalAnswerAndRecordedCost(String body) {
+        onSend = () -> { if (sent.size() == 3) providerBody = body; };
+        assertRewriteFailurePreservesOriginalAnswer(body.contains("usage") ? 3 : 2);
+    }
+
+    private void assertRewriteFailurePreservesOriginalAnswer(int chargedResponses) {
+        properties.setPriceInputYuanPerMillion(new java.math.BigDecimal("1"));
+        properties.setPriceOutputYuanPerMillion(new java.math.BigDecimal("2"));
+        var spentBefore = client.status().spentYuan();
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        String original = "流水9999（场次归档）";
+        replies.add(JSONObject.of("content", original));
+        var result = ask();
+        assertEquals(true, result.get("answered"));
+        assertEquals(original, result.getString("answer"));
+        assertEquals(original, result.getString("answerForHistory"));
+        assertEquals("由人工智能生成", result.getString("label"));
+        assertFalse(result.containsKey("reason"));
+        assertEquals(List.of("9999"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        var expectedCost = new java.math.BigDecimal("0.00012").multiply(java.math.BigDecimal.valueOf(chargedResponses));
+        assertEquals(0, expectedCost.compareTo(result.getBigDecimal("costYuan")));
+        assertEquals(0, expectedCost.compareTo(client.status().spentYuan().subtract(spentBefore)));
+        assertEquals(3, sent.size());
+        assertEquals("none", sent.get(2).getString("tool_choice"));
+        assertEquals(19, result.getJSONObject("remaining").getIntValue("questionsToday"));
+        var records = assertDoesNotThrow(() -> Files.readAllLines(directory.resolve("assistant-transmissions.jsonl")));
+        assertEquals(1, records.size());
+        assertEquals(0, expectedCost.compareTo(JSON.parseObject(records.get(0)).getBigDecimal("costYuan")));
+    }
+
     // 抓住每日次数或本月额度用尽之后还发模型请求。
     @Test void exhaustedAllowancesReturnClientExplanationWithoutSending() throws Exception {
         properties.setDailyQuestionsPerAccount(1);
         ask(); sent.clear();
-        assertEquals("今天的提问次数用完了", ask().getString("answer"));
+        assertFailure(ask(), "daily_limit", "今天的提问次数用完了");
         assertTrue(sent.isEmpty());
+        properties.setDailyQuestionsPerAccount(20);
         properties.setMonthlyBudgetYuan(new java.math.BigDecimal("0.0000001"));
-        assertEquals("本月智能助手额度已用完", ask().getString("answer"));
+        assertFailure(ask(), "monthly_budget", "本月智能助手额度已用完");
         assertTrue(sent.isEmpty());
     }
 
@@ -334,17 +394,17 @@ class AssistantAskServiceTest {
     // 抓住未开启、未确认或未设置密钥时仍发送请求。
     @Test void unavailableAssistantReturnsFixedExplanation() throws Exception {
         properties.setEnabled(false);
-        assertEquals("智能助手总开关已关闭", ask().getString("answer"));
+        assertFailure(ask(), "disabled", "智能助手总开关已关闭");
         assertTrue(sent.isEmpty());
         properties.setEnabled(true);
         client.deleteKey();
-        assertEquals("尚未设置智能助手模型密钥", ask().getString("answer"));
+        assertFailure(ask(), "no_key", "尚未设置智能助手模型密钥");
         assertTrue(sent.isEmpty());
         var unconfirmed = new AssistantClient(properties, new AssistantKeyStore(directory),
                 new AssistantUsageStore(directory.resolve("unconfirmed"), clock), new RestTemplate());
         service.close();
         service = new AssistantAskService(queries, unconfirmed, properties, local, clock);
-        assertTrue(ask().getString("answer").contains("尚未确认当前版本的智能助手配置者说明"));
+        assertFailure(ask(), "no_key", "尚未设置智能助手模型密钥；尚未确认当前版本的智能助手配置者说明");
         assertTrue(sent.isEmpty());
     }
 
@@ -554,7 +614,7 @@ class AssistantAskServiceTest {
         when(queries.localAudience("bilibili", 1L, List.of())).thenThrow(new AssistantException("无法读取"));
         JSONObject request = JSONObject.of("question", "991234560 的表现");
         for (int attempt = 0; attempt < 2; attempt++) {
-            assertEquals("智能助手无法核对本地观众身份，请稍后再试", ask(request).getString("answer"));
+            assertFailure(ask(request), "audience_unavailable", "智能助手无法核对本地观众身份，请稍后再试");
             assertTrue(sent.isEmpty());
             assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
         }
@@ -624,6 +684,300 @@ class AssistantAskServiceTest {
         properties.setMonthlyBudgetYuan(new java.math.BigDecimal("0.0000001"));
         ask();
         assertEquals(before, Files.readString(log));
+    }
+
+
+    private void assertFailure(JSONObject result, String reason, String answer) {
+        assertEquals(false, result.get("answered"));
+        assertEquals(reason, result.getString("reason"));
+        assertFalse(result.containsKey("label"));
+        assertEquals(answer, result.getString("answer"));
+    }
+
+    static java.util.stream.Stream<Arguments> providerFailures() {
+        return java.util.stream.Stream.of(
+                Arguments.of(401, "key_rejected"), Arguments.of(403, "key_rejected"),
+                Arguments.of(402, "provider_balance"), Arguments.of(429, "provider_busy"),
+                Arguments.of(500, "provider_error"));
+    }
+
+    @ParameterizedTest @MethodSource("providerFailures")
+    void providerFailuresHaveReasonsWithoutAiLabel(int status, String reason) {
+        providerStatus = status;
+        var result = ask();
+        assertEquals(false, result.get("answered"));
+        assertEquals(reason, result.getString("reason"));
+        assertFalse(result.containsKey("label"));
+    }
+
+    @Test void networkFailureHasReasonWithoutAiLabel() {
+        providerFailure = new org.springframework.web.client.ResourceAccessException("offline");
+        assertFailure(ask(), "network", "连接大模型服务超时或网络不可用，请稍后再试");
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "", "{}", "{\"usage\":{}}",
+            "{\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}",
+            "{\"choices\":[{\"message\":{}}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}"
+    })
+    void incompleteProviderResponseHasReasonWithoutAiLabel(String body) {
+        providerBody = body;
+        var result = ask();
+        assertEquals(false, result.get("answered"));
+        assertEquals("provider_error", result.getString("reason"));
+        assertFalse(result.containsKey("label"));
+    }
+
+    @Test void noModelAnswerHasTooMuchDataReason() {
+        properties.setMaxToolCalls(1);
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", " "));
+        assertFailure(ask(), "too_much_data", "这个问题要查的数据太多，请问得具体一点");
+    }
+
+    @Test void elapsedQuestionWithoutAnswerHasTimeoutReason() {
+        onSend = () -> clock.now = clock.now.plusSeconds(56);
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        assertFailure(ask(), "timeout", "智能助手本次提问已超时，请问得具体一点");
+    }
+
+    @Test void firstUnavailableReasonWins() {
+        properties.setEnabled(false);
+        client.deleteKey();
+        var result = ask();
+        assertEquals(false, result.get("answered"));
+        assertEquals("disabled", result.getString("reason"));
+        assertFalse(result.containsKey("label"));
+    }
+
+    private org.springframework.test.web.servlet.MockMvc mvc() {
+        var registry = mock(DataSourceServiceRegistry.class);
+        when(registry.platforms()).thenReturn(List.of("bilibili"));
+        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service)).addInterceptors(
+                new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry)).build();
+    }
+
+    private void useUnreadableUsage() throws Exception {
+        Files.writeString(directory.resolve("assistant-usage.json"), "{}");
+        client = new AssistantClient(properties, new AssistantKeyStore(directory), new AssistantUsageStore(directory, clock),
+                timeout -> { throw new AssertionError("Unreadable usage must prevent model requests"); });
+        service.close();
+        service = new AssistantAskService(queries, client, properties, local, clock);
+    }
+
+    @Test void unreadableUsageAskReportsStorageFailureBeforeUnknownAcknowledgement() throws Exception {
+        useUnreadableUsage();
+        mvc().perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json")
+                .content("{\"question\":\"表现怎样\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(false))
+                .andExpect(jsonPath("$.reason").value("usage_unreadable"))
+                .andExpect(jsonPath("$.answer").value("智能助手用量文件无法读取，请检查后再试"))
+                .andExpect(jsonPath("$.label").doesNotExist());
+        properties.setEnabled(false);
+        client.deleteKey();
+        assertEquals("disabled", ask().getString("reason"));
+        properties.setEnabled(true);
+        assertEquals("no_key", ask().getString("reason"));
+        assertTrue(sent.isEmpty());
+        assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
+        assertEquals("{}", Files.readString(directory.resolve("assistant-usage.json")));
+        verifyNoInteractions(queries);
+    }
+
+    @Test void unreadableUsageStateOmitsUnknownAcknowledgement() throws Exception {
+        useUnreadableUsage();
+        mvc().perform(get("/config/api/streamers/bilibili/1/assistant/state")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.reasons.length()").value(1))
+                .andExpect(jsonPath("$.reasons[0]").value("usage_unreadable"))
+                .andExpect(jsonPath("$.questionsLeftToday").value(0));
+        assertTrue(sent.isEmpty());
+        assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
+        assertEquals("{}", Files.readString(directory.resolve("assistant-usage.json")));
+        verifyNoInteractions(queries);
+    }
+
+    private ConfigUiAccount member() {
+        return new ConfigUiAccount("member", ConfigUiAccount.Role.MEMBER, ConfigUiAccount.Status.ENABLED,
+                "Member", null, null, null, List.of("bilibili:1"), Instant.EPOCH, null, true);
+    }
+
+    @Test void memberStateIsScopedAndDoesNotSendOrConsumeQuestions() throws Exception {
+        var mvc = mvc();
+        for (int attempt = 0; attempt < 2; attempt++) mvc.perform(get("/config/api/streamers/bilibili/1/assistant/state")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true)).andExpect(jsonPath("$.available").value(true))
+                .andExpect(jsonPath("$.reasons").isEmpty()).andExpect(jsonPath("$.questionsLeftToday").value(20))
+                .andExpect(jsonPath("$.spentYuan").doesNotExist()).andExpect(jsonPath("$.monthlyBudgetYuan").doesNotExist());
+        mvc.perform(get("/config/api/streamers/bilibili/2/assistant/state")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isNotFound());
+        mvc.perform(get("/config/api/streamers/bilibili/1/assistant/state")).andExpect(status().isUnauthorized());
+        assertTrue(sent.isEmpty());
+        assertTrue(client.status().questionsToday().isEmpty());
+        assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
+        verifyNoInteractions(queries);
+    }
+
+    @Test void stateReportsAllReasonsAndOwnDailyAllowance() throws Exception {
+        properties.setDailyQuestionsPerAccount(1);
+        ask();
+        properties.setEnabled(false);
+        client.deleteKey();
+        properties.setMonthlyBudgetYuan(new java.math.BigDecimal("0.0000001"));
+        mvc().perform(get("/config/api/streamers/bilibili/1/assistant/state")
+                .requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.reasons", org.hamcrest.Matchers.containsInAnyOrder("disabled", "no_key", "daily_limit", "monthly_budget")))
+                .andExpect(jsonPath("$.questionsLeftToday").value(0));
+    }
+
+    @Test void memberAnswerHidesInstanceSpendingWhileAdminKeepsIt() throws Exception {
+        var mvc = mvc();
+        mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member())
+                .contentType("application/json").content("{\"question\":\"表现怎样\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.remaining.questionsToday").value(19))
+                .andExpect(jsonPath("$.remaining.spentYuan").doesNotExist())
+                .andExpect(jsonPath("$.remaining.monthlyBudgetYuan").doesNotExist())
+                .andExpect(jsonPath("$.costYuan").isNumber());
+        mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
+                .contentType("application/json").content("{\"question\":\"表现怎样\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.remaining.spentYuan").isNumber())
+                .andExpect(jsonPath("$.remaining.monthlyBudgetYuan").isNumber());
+    }
+
+    @Test void blockedAudienceReadDoesNotBlockAnotherStreamerWithCollidingKey() throws Exception {
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(queries.localAudience("bilibili", 1L, List.of())).thenAnswer(invocation -> {
+            started.countDown();
+            if (!release.await(15, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("read not released");
+            return Map.of();
+        });
+        long otherUid = 4294967296L;
+        assertEquals(Long.hashCode(1L), Long.hashCode(otherUid));
+        var callers = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var first = callers.submit(() -> ask(JSONObject.of("question", "991234560 的表现")));
+            assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            var second = callers.submit(() -> service.ask("bilibili", otherUid, "other", JSONObject.of("question", "991234560 的表现")));
+            var result = second.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(true, result.get("answered"));
+            release.countDown();
+            assertEquals(true, first.get(5, java.util.concurrent.TimeUnit.SECONDS).get("answered"));
+        } finally {
+            release.countDown();
+            callers.shutdownNow();
+            assertTrue(callers.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @Test void expiredAudienceEntriesAreEvictedWithoutAnotherQuestion() throws Exception {
+        service.close();
+        var scheduler = mock(java.util.concurrent.ScheduledExecutorService.class);
+        var constructor = AssistantAskService.class.getDeclaredConstructor(AssistantQueryService.class,
+                AssistantClient.class, AssistantProperties.class, AssistantLocalStore.class, Clock.class,
+                java.util.concurrent.ScheduledExecutorService.class);
+        constructor.setAccessible(true);
+        service = constructor.newInstance(queries, client, properties, local, clock, scheduler);
+        var cleanup = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).scheduleWithFixedDelay(cleanup.capture(), eq(10L), eq(10L), eq(java.util.concurrent.TimeUnit.MINUTES));
+        ask(JSONObject.of("question", "991234560 的表现"));
+        var field = AssistantAskService.class.getDeclaredField("audienceCache");
+        field.setAccessible(true);
+        var cache = (Map<?, ?>) field.get(service);
+        assertEquals(1, cache.size());
+        clock.now = clock.now.plusSeconds(599);
+        cleanup.getValue().run();
+        assertEquals(1, cache.size());
+        clock.now = clock.now.plusSeconds(2);
+        cleanup.getValue().run();
+        assertTrue(cache.isEmpty());
+        service.close();
+        verify(scheduler).shutdownNow();
+    }
+
+    @Test void everyQuestionEvictsOtherStreamersExpiredAudienceEntries() throws Exception {
+        ask(JSONObject.of("question", "991234560 的表现"));
+        clock.now = clock.now.plusSeconds(601);
+        service.ask("bilibili", 2L, "member", JSONObject.of("question", "表现怎样"));
+        var field = AssistantAskService.class.getDeclaredField("audienceCache");
+        field.setAccessible(true);
+        assertTrue(((Map<?, ?>) field.get(service)).isEmpty());
+    }
+
+    @Test void audienceCleanupUsesDaemonAndStopsOnClose() throws Exception {
+        var field = AssistantAskService.class.getDeclaredField("audienceCleanup");
+        field.setAccessible(true);
+        var scheduler = (java.util.concurrent.ScheduledExecutorService) field.get(service);
+        assertTrue(scheduler.submit(() -> Thread.currentThread().isDaemon()).get(5, java.util.concurrent.TimeUnit.SECONDS));
+        service.close();
+        assertTrue(scheduler.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+    }
+
+    @Test void sharedAudienceReadRespectsEachQuestionsDeadline() throws Exception {
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(queries.localAudience("bilibili", 1L, List.of())).thenAnswer(invocation -> {
+            started.countDown();
+            if (!release.await(15, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("read not released");
+            return Map.of();
+        });
+        var shortClockReads = new java.util.concurrent.atomic.AtomicInteger();
+        Clock deadlineClock = new Clock() {
+            @Override public ZoneId getZone() { return clock.getZone(); }
+            @Override public Clock withZone(ZoneId zone) { return this; }
+            @Override public Instant instant() {
+                return Thread.currentThread().getName().equals("short-question") && shortClockReads.incrementAndGet() > 2
+                        ? clock.instant().plusSeconds(35) : clock.instant();
+            }
+        };
+        service.close();
+        service = new AssistantAskService(queries, client, properties, local, deadlineClock);
+        var first = new java.util.concurrent.FutureTask<>(() -> ask(JSONObject.of("question", "991234560 的表现")));
+        var second = new java.util.concurrent.FutureTask<>(() -> ask(JSONObject.of("question", "991234560 的表现")));
+        var firstThread = new Thread(first, "long-question");
+        var secondThread = new Thread(second, "short-question");
+        try {
+            firstThread.start();
+            assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            secondThread.start();
+            assertFailure(second.get(5, java.util.concurrent.TimeUnit.SECONDS), "audience_unavailable",
+                    "智能助手无法核对本地观众身份，请稍后再试");
+            assertFalse(first.isDone());
+            release.countDown();
+            assertEquals(true, first.get(5, java.util.concurrent.TimeUnit.SECONDS).get("answered"));
+            verify(queries, times(1)).localAudience("bilibili", 1L, List.of());
+        } finally {
+            release.countDown();
+            firstThread.join(5000);
+            secondThread.join(5000);
+            assertFalse(firstThread.isAlive());
+            assertFalse(secondThread.isAlive());
+        }
+    }
+
+    @Test void identityFailureWhileMaskingModelAnswerIsARefusal() {
+        when(queries.localAudience("bilibili", 1L, List.of())).thenThrow(new AssistantException("无法读取"));
+        replies.add(JSONObject.of("content", "991234560 的表现"));
+        assertFailure(ask(), "audience_unavailable", "智能助手无法核对本地观众身份，请稍后再试");
+    }
+
+    @Test void refusalIsHttp200AndMalformedQuestionRemains400() throws Exception {
+        properties.setEnabled(false);
+        var mvc = mvc();
+        mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member())
+                .contentType("application/json").content("{\"question\":\"表现怎样\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(false))
+                .andExpect(jsonPath("$.reason").value("disabled")).andExpect(jsonPath("$.label").doesNotExist());
+        mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member())
+                .contentType("application/json").content("{}")).andExpect(status().isBadRequest());
+        mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                .contentType("application/json").content("{\"question\":\"表现怎样\"}")).andExpect(status().isUnauthorized());
     }
 
     static class MutableClock extends Clock {

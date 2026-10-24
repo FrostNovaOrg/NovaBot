@@ -49,6 +49,52 @@ class AssistantClientTest {
         client.acknowledge("admin");
     }
 
+    @Test void acknowledgementDescribesCurrentPayloadAndUsesConfiguredEndpoint() {
+        properties.setBaseUrl("https://model.example/v1");
+        var status = client.status();
+        assertEquals("2026-10-24-v2", status.acknowledgementVersion());
+        assertEquals("""
+                开启后，每次有人提问，NovaBot 会把提问和回答要用到的直播数据，经你填的密钥发给所配置的模型服务商（https://model.example/v1）处理，适用它自己的协议和隐私政策。默认只发汇总数字、礼物与打赏的汇总金额、贡献者代号及占比和少量截断的弹幕原话；观众昵称换成代号，观众的账号编号不发。
+                发不发、发给谁由你决定，也由你负责；调用费用由你和模型服务商结算。
+                智能助手的回答可能出错，只供参考，数字以报告里的原始数据为准。
+                如需在国内办理备案、登记等手续，由你自己办；回答旁的「由人工智能生成」提示请保留。""", status.acknowledgementText());
+        properties.setBaseUrl("https://other.example/api");
+        assertTrue(client.status().acknowledgementText().contains("（https://other.example/api）"));
+    }
+
+    @Test void currentAcknowledgementIsRequiredAndStateIsReadOnly() {
+        var unconfirmed = new AssistantClient(properties, keys, new AssistantUsageStore(directory.resolve("new"), clock), template);
+        assertEquals(List.of("not_acknowledged"), unconfirmed.state("member").reasons());
+        assertEquals("not_acknowledged", assertThrows(AssistantException.class,
+                () -> unconfirmed.beginQuestion("member")).reason());
+        assertFalse(Files.exists(directory.resolve("new/assistant-usage.json")));
+        server.verify();
+    }
+
+    @Test void unreadableUsageDoesNotReportUnknownAcknowledgement() throws Exception {
+        Files.writeString(directory.resolve("assistant-usage.json"), "{}");
+        var unreadable = new AssistantClient(properties, keys, new AssistantUsageStore(directory, clock), template);
+        var state = unreadable.state("member");
+        assertFalse(state.available());
+        assertEquals(List.of("usage_unreadable"), state.reasons());
+        assertEquals(0, state.questionsLeftToday());
+        assertEquals("usage_unreadable", assertThrows(AssistantException.class,
+                () -> unreadable.beginQuestion("member")).reason());
+        assertEquals("{}", Files.readString(directory.resolve("assistant-usage.json")));
+        server.verify();
+    }
+
+    @Test void dailyLimitPrecedesMonthlyBudgetWhenBothAreExhausted() {
+        properties.setDailyQuestionsPerAccount(1);
+        usage.startQuestion("member", properties);
+        usage.addCost(properties.getMonthlyBudgetYuan());
+        assertEquals("daily_limit", assertThrows(AssistantException.class, () -> client.beginQuestion("member")).reason());
+        assertEquals(List.of("daily_limit", "monthly_budget"), client.state("member").reasons());
+        assertEquals(0, client.state("member").questionsLeftToday());
+        assertEquals(1, client.state("other").questionsLeftToday());
+        server.verify();
+    }
+
     private AssistantClient.Request request() {
         return new AssistantClient.Request(List.of(JSONObject.of("role", "user", "content", "你好")),
                 List.of(), "auto", 0.2);
