@@ -145,10 +145,10 @@ function page(fields, query, onlyChanged, values) {
   const body = bracedFrom(src, 'function filterSettings(');
   if (!body) throw new Error('切不出 filterSettings');
   const filterSettings = new Function('$', 'document', 'store', 'closeHelp', 'filterCards',
-    'filterAuthCards', 'filterMembers', 'advancedShown', 'filterKey', 'watchCurrentGroup', 'arranged',
+    'filterAuthCards', 'filterAssistantCards', 'filterMembers', 'advancedShown', 'filterKey', 'watchCurrentGroup', 'arranged',
     'isVisible', 'valuesOf',
     'let advancedDismissed = null, advancedChosen = false;\n' + body + '\nreturn filterSettings;')(
-    key => controls[key] ?? null, document, store, () => {}, () => 0, () => 0, () => 0,
+    key => controls[key] ?? null, document, store, () => {}, () => 0, () => 0, () => 0, () => 0,
     () => false, () => '', () => {}, {common: [{fields}], advanced: []}, isVisible, valuesOf);
   return {group, rows, search, only, filterSettings};
 }

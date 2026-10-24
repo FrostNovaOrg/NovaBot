@@ -97,10 +97,10 @@ function settingsFilter(s) {
   };
   const source = read('settings.js');
   const body = source.slice(source.indexOf('export function filterSettings()'), source.indexOf('\n/**', source.indexOf('export function filterSettings()'))).replace('export ', '');
-  const filter = new Function('$', 'document', 'store', 'closeHelp', 'filterCards', 'filterAuthCards',
+  const filter = new Function('$', 'document', 'store', 'closeHelp', 'filterCards', 'filterAuthCards', 'filterAssistantCards',
     'filterMembers', 'advancedShown', 'filterKey', 'watchCurrentGroup', 'arranged',
     'let advancedDismissed = null, advancedChosen = false;\n' + body + '\nreturn filterSettings;')(
-      key => controls[key] || null, document, {schema: [], ungrouped: []}, () => {}, () => 0, () => 0,
+      key => controls[key] || null, document, {schema: [], ungrouped: []}, () => {}, () => 0, () => 0, () => 0,
       s.filterMembers, () => false, () => '', () => {}, {common: [], advanced: []});
   return {filter, link};
 }

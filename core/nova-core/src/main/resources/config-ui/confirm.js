@@ -188,7 +188,7 @@ function finish(ok) {
 /**
  * 问一句。同一时刻只弹一层：上一层还开着时先按取消收掉。
  * 带 fields 时确认返回各栏 id→值，取消返回 null；不带则仍是 true／false。
- * @param spec {title: string, body: string, fields?: Array, danger?: boolean}
+ * @param spec {title: string, body: string, fields?: Array, danger?: boolean, confirmText?: string}
  * @return {Promise<boolean|object|null>}
  */
 export function ask(spec) {
@@ -205,6 +205,7 @@ export function ask(spec) {
     });
     resolve = r;
     paint();
+    if (wanted.confirmText) root.querySelector('[data-act="yes"]').textContent = wanted.confirmText;
   });
 }
 
