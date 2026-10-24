@@ -35,6 +35,7 @@ final class AssistantPrivacy {
         this.excluded = Set.copyOf(excluded);
         this.streamerUid = streamerUid;
         this.audience = audience;
+        knownUids.add(streamerUid.toString());
         excluded.forEach(uid -> knownUids.add(uid.toString()));
         names.putAll(local.nicknames());
         names.forEach((alias, name) -> replacements.put(name, alias));

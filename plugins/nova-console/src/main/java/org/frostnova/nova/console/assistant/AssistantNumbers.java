@@ -8,9 +8,10 @@ import java.util.regex.Pattern;
 /** 只核对本问已发送的工具数据；代号中的十六进制数字不属于事实陈述。 */
 final class AssistantNumbers {
     private static final Pattern ALIAS = Pattern.compile("观众-[0-9a-fA-F]{6}");
-    private static final Pattern NUMBER = Pattern.compile("[-+]?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?([%％]?)");
+    private static final Pattern NUMBER = Pattern.compile("(?:(?<![0-9])[-+])?(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?(?:[eE][-+]?\\d+)?([%％]?)");
     private static final Pattern DATE_TIME = Pattern.compile(
-            "(?<![0-9])(?:[0-9]{4}[-/][0-9]{1,2}[-/][0-9]{1,2}|[0-9]{1,2}[-/][0-9]{1,2}"
+            "(?<![0-9])(?:[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2}"
+                    + "|[0-9]{4}年(?:[0-9]{1,2}月(?:[0-9]{1,2}日)?)?|[0-9]{1,2}[-/][0-9]{1,2}"
                     + "|[0-9]{1,2}月[0-9]{1,2}日|[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?)(?![0-9])");
     private final List<BigDecimal> known = new ArrayList<>();
 

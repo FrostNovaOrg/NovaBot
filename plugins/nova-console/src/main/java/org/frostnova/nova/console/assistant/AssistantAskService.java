@@ -40,6 +40,9 @@ public class AssistantAskService {
     private final AssistantProperties properties;
     private final AssistantLocalStore local;
     private final Clock clock;
+    private record AudienceKey(String platform, Long uid) { }
+    private record AudienceEntry(Set<Long> excluded, Instant loadedAt, Map<Long, Set<String>> identities) { }
+    private final ConcurrentMap<AudienceKey, AudienceEntry> audienceCache = new ConcurrentHashMap<>();
     private final ExecutorService queryExecutor = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
             new LinkedBlockingQueue<>(), runnable -> {
                 Thread thread = new Thread(runnable, "assistant-query");
@@ -67,8 +70,9 @@ public class AssistantAskService {
     public JSONObject ask(String platform, Long uid, String account, JSONObject request) {
         validate(request);
         var budget = new Budget();
-        var privacy = new AssistantPrivacy(local, platform, uid, properties.getExcludedUids(),
-                () -> localAudience(platform, uid, budget));
+        var excluded = List.copyOf(properties.getExcludedUids());
+        var privacy = new AssistantPrivacy(local, platform, uid, excluded,
+                () -> localAudience(platform, uid, excluded, budget));
         var numbers = new AssistantNumbers();
         var steps = new JSONArray();
         var toolNames = new ArrayList<String>();
@@ -174,9 +178,23 @@ public class AssistantAskService {
         return question.complete(new AssistantClient.Request(outgoing, AssistantTools.definitions(), finish ? "none" : "auto", 0.3), budget.remaining(55));
     }
 
-    private Map<Long, Set<String>> localAudience(String platform, Long uid, Budget budget) {
+    private Map<Long, Set<String>> localAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
+        Set<Long> exclusions = Set.copyOf(excluded);
+        return audienceCache.compute(new AudienceKey(platform, uid), (key, cached) -> {
+            if (cached != null && cached.excluded().equals(exclusions)) {
+                Duration age = Duration.between(cached.loadedAt(), clock.instant());
+                if (!age.isNegative() && age.compareTo(Duration.ofMinutes(10)) < 0) return cached;
+            }
+            // 仅缓存完整读取的结果；失败时继续拒答，下一问重新尝试读取。
+            var identities = new HashMap<Long, Set<String>>();
+            loadAudience(platform, uid, excluded, budget).forEach((person, names) -> identities.put(person, Set.copyOf(names)));
+            return new AudienceEntry(exclusions, clock.instant(), Map.copyOf(identities));
+        }).identities();
+    }
+
+    private Map<Long, Set<String>> loadAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
         Future<Map<Long, Set<String>>> future = queryExecutor.submit(
-                () -> queries.localAudience(platform, uid, properties.getExcludedUids()));
+                () -> queries.localAudience(platform, uid, excluded));
         try {
             return future.get(Math.max(1, budget.remaining(35).toMillis()), TimeUnit.MILLISECONDS);
         } catch (InterruptedException error) {

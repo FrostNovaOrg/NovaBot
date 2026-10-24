@@ -9,6 +9,9 @@ import org.frostnova.nova.core.config.ui.auth.*;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -432,18 +435,130 @@ class AssistantAskServiceTest {
         assertTrue(sent.toString().contains("主播名怎样"));
     }
 
-    // 抓住日期时刻误报、按错误精度比较小数、百分数及负数。
+    // 抓住日期时刻误报，以及小数舍入精度或舍入方式错误。
     @Test void datesTimesAndAnswerPrecisionAvoidUnnecessaryRewrite() {
-        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档", "share", 0.32145,
-                "value", 32.145, "fansChange", -10));
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档", "value", 32.145));
         replies.add(call("revenue", JSONObject.of("start", 123)));
-        replies.add(JSONObject.of("content", "2026-10-24、2026/10/24、10-24、10月24日，20:56、20:56:30，32.15%、32.1%，掉粉 -10 人"));
+        replies.add(JSONObject.of("content", "2026-10-24、2026/10/24、10-24、10月24日，20:56、20:56:30，32.15%、32.1%"));
         var result = ask();
         assertTrue(result.getJSONArray("unverifiedNumbers").isEmpty());
         assertEquals(2, sent.size());
         var numbers = new AssistantNumbers();
         numbers.include(JSONObject.of("value", 32.145, "other", 8888));
         assertEquals(List.of("32.2%", "9999"), numbers.unverified("32.1% 32.2% 9999"));
+    }
+
+    static java.util.stream.Stream<Arguments> numberCases() {
+        return java.util.stream.Stream.of(
+                Arguments.of("同接在 1200-1500 之间", List.of(1200, 1500), List.of()),
+                Arguments.of("第 1000-2000 名", List.of(1000, 2000), List.of()),
+                Arguments.of("3～5 场", List.of(3, 5), List.of()),
+                Arguments.of("掉粉 -25 人", List.of(-25), List.of()),
+                Arguments.of("32.1%", List.of(0.32145), List.of()),
+                Arguments.of("2026年10月24日、2026.10.24、10/24", List.of(), List.of()),
+                Arguments.of("2026年10月", List.of(), List.of()),
+                Arguments.of("2026年", List.of(), List.of()),
+                Arguments.of("同接 1200~1500、1200～1500、1200至1500、1200到1500", List.of(1200, 1500), List.of()),
+                Arguments.of("变化 -3.5%", List.of(-0.035), List.of()),
+                Arguments.of("9999", List.of(8888), List.of("9999")));
+    }
+
+    // 抓住区间被误当负数、新日期误报，以及缺少负号或比例换算导致额外重写。
+    @ParameterizedTest @MethodSource("numberCases")
+    void numberFormatsUseOnlyTheirOwnSources(String answer, List<Number> values, List<String> expected) {
+        var numbers = new AssistantNumbers();
+        numbers.include(values);
+        assertEquals(expected, numbers.unverified(answer));
+        when(queries.session("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档", "values", values));
+        replies.add(call("session", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", answer));
+        replies.add(JSONObject.of("content", answer));
+        var result = ask();
+        assertEquals(expected, result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        assertEquals(expected.isEmpty() ? 2 : 3, sent.size());
+    }
+
+    // 抓住主播自己的编号从问题、历史问题、场次标题和观众原话漏出。
+    @Test void streamerIdentifierIsHiddenInEveryFreeTextField() {
+        long uid = 991234561L;
+        String text = "主播名 " + uid;
+        when(queries.sessions("bilibili", uid, 7, 3)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("uid", uid, "uname", "主播名", "title", text))));
+        when(queries.danmu("bilibili", uid, 123L, 123L, 456L, 30)).thenReturn(JSONObject.of("source", "弹幕归档", "items", JSONArray.of(
+                JSONObject.of("uid", 991234567L, "uname", "测试观众甲", "text", text))));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 3)));
+        replies.add(call("danmu", JSONObject.of("start", 123, "fromAt", 123, "toAt", 456)));
+        service.ask("bilibili", uid, "member", JSONObject.of("question", text, "history", List.of(
+                JSONObject.of("question", text, "answerForHistory", text))));
+        assertEquals(3, sent.size());
+        for (JSONObject request : sent) {
+            assertFalse(request.toJSONString().contains(Long.toString(uid)));
+            JSONObject user = JSON.parseObject(request.getJSONArray("messages").getJSONObject(1).getString("content"));
+            assertEquals("主播名 [编号已隐藏]", user.getString("question"));
+            assertEquals("主播名 [编号已隐藏]", user.getJSONArray("history").getJSONObject(0).getString("question"));
+            assertEquals("主播名 [编号已隐藏]", user.getJSONArray("history").getJSONObject(0).getString("answerForHistory"));
+        }
+        var tools = sent.get(2).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(message -> "tool".equals(message.getString("role")))
+                .map(message -> JSON.parseObject(message.getString("content"))).toList();
+        assertEquals("主播名 [编号已隐藏]", tools.get(0).getJSONArray("items").getJSONObject(0).getString("title"));
+        assertEquals("主播名 [编号已隐藏]", tools.get(1).getJSONObject("audienceQuotes").getJSONArray("items").getJSONObject(0).getString("text"));
+        assertTrue(local.nicknames().values().stream().noneMatch("主播名"::equals));
+    }
+
+    // 抓住同一主播重复提问时重读身份文件，或缓存失效后仍使用旧身份。
+    @Test void localAudienceIsCachedForTenMinutes() {
+        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
+        JSONObject request = JSONObject.of("question", "991234560 的表现");
+        ask(request);
+        clock.now = clock.now.plusSeconds(599);
+        ask(request);
+        verify(queries, times(1)).localAudience("bilibili", 1L, List.of());
+        assertFalse(sent.toString().contains("991234560"));
+        clock.now = clock.now.plusSeconds(1);
+        ask(request);
+        verify(queries, times(2)).localAudience("bilibili", 1L, List.of());
+    }
+
+    // 抓住拒绝名单修改后仍复用旧昵称和编号缓存。
+    @Test void changedExclusionsReloadLocalAudienceImmediately() {
+        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of());
+        ask(JSONObject.of("question", "991234560 的表现"));
+        properties.setExcludedUids(List.of(998765432L));
+        when(queries.localAudience("bilibili", 1L, List.of(998765432L))).thenReturn(Map.of(998765432L, Set.of("拒绝旧昵称")));
+        sent.clear();
+        ask(JSONObject.of("question", "拒绝旧昵称的表现"));
+        ask(JSONObject.of("question", "拒绝旧昵称的表现"));
+        verify(queries, times(1)).localAudience("bilibili", 1L, List.of());
+        verify(queries, times(1)).localAudience("bilibili", 1L, List.of(998765432L));
+        assertFalse(sent.toString().contains("拒绝旧昵称"));
+    }
+
+    // 抓住不同平台或主播共用身份缓存，导致已知编号漏出。
+    @Test void localAudienceCacheIsScopedToPlatformAndStreamer() {
+        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
+        when(queries.localAudience("bilibili", 2L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
+        when(queries.localAudience("other", 1L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
+        JSONObject request = JSONObject.of("question", "991234560 的表现");
+        ask(request);
+        service.ask("bilibili", 2L, "member", request);
+        service.ask("other", 1L, "member", request);
+        verify(queries).localAudience("bilibili", 1L, List.of());
+        verify(queries).localAudience("bilibili", 2L, List.of());
+        verify(queries).localAudience("other", 1L, List.of());
+        assertFalse(sent.toString().contains("991234560"));
+    }
+
+    // 抓住一问已开始但本地查数失败、模型未发送时仍写发送记录，并防止失败被缓存。
+    @Test void lookupFailureBeforeFirstSendDoesNotRecordTransmission() {
+        when(queries.localAudience("bilibili", 1L, List.of())).thenThrow(new AssistantException("无法读取"));
+        JSONObject request = JSONObject.of("question", "991234560 的表现");
+        for (int attempt = 0; attempt < 2; attempt++) {
+            assertEquals("智能助手无法核对本地观众身份，请稍后再试", ask(request).getString("answer"));
+            assertTrue(sent.isEmpty());
+            assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
+        }
+        verify(queries, times(2)).localAudience("bilibili", 1L, List.of());
     }
 
     // 抓住工作线程仍忙时第三个查数被拒，并确认单轮三次查数都得到真实结果。
