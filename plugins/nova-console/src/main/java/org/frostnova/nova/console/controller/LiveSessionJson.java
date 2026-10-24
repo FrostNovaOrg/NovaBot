@@ -16,7 +16,7 @@ import org.frostnova.nova.core.model.RoomInfoSnapshot;
  * 下面那几条「空不等于零」的规矩只会被改对其中一处，另一处继续把
  * 历史场次显示成「零观众」。
  */
-final class LiveSessionJson {
+public final class LiveSessionJson {
     private LiveSessionJson() {
     }
 
@@ -25,7 +25,7 @@ final class LiveSessionJson {
      * @param session 场次
      * @return 界面用的 JSON
      */
-    static JSONObject of(LiveSession session) {
+    public static JSONObject of(LiveSession session) {
         JSONObject item = new JSONObject();
         item.put("platform", session.platform());
         item.put("uid", session.uid());
