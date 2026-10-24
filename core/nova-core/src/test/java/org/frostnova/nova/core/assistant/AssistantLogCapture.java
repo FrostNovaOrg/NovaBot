@@ -4,19 +4,27 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxyUtil;
-import ch.qos.logback.core.read.ListAppender;
+import ch.qos.logback.core.AppenderBase;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 同时捕获框架和项目日志，覆盖不向根日志传递的项目日志配置。 */
+/** 同时捕获框架和项目日志；写入时保存消息和异常，抓住日志参数随后被修改而掩盖的密钥泄露。 */
 final class AssistantLogCapture implements AutoCloseable {
     private final Map<Logger, Level> levels = new LinkedHashMap<>();
-    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+    private final List<String> messages = new CopyOnWriteArrayList<>();
+    private final AppenderBase<ILoggingEvent> logs = new AppenderBase<>() {
+        @Override protected void append(ILoggingEvent event) {
+            messages.add(event.getFormattedMessage() + (event.getThrowableProxy() == null ? ""
+                    : ThrowableProxyUtil.asString(event.getThrowableProxy())));
+        }
+    };
     private static final String MARKER = "assistant diagnostic capture active";
 
     AssistantLogCapture() {
@@ -31,10 +39,8 @@ final class AssistantLogCapture implements AutoCloseable {
     }
 
     void assertNoSecret(String secret) {
-        assertTrue(logs.list.stream().anyMatch(event -> event.getFormattedMessage().contains(MARKER)));
-        for (ILoggingEvent event : logs.list) {
-            String text = event.getFormattedMessage() + (event.getThrowableProxy() == null ? ""
-                    : ThrowableProxyUtil.asString(event.getThrowableProxy()));
+        assertTrue(messages.stream().anyMatch(text -> text.contains(MARKER)));
+        for (String text : messages) {
             assertFalse(text.contains(secret));
             assertFalse(text.toLowerCase(Locale.ROOT).contains("authorization"));
         }
