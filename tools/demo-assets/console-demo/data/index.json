@@ -1,5 +1,5 @@
 {
-	"commit":"2bb6f6d1e8ece612d08ea7844c15f7963cfa1eeb",
+	"commit":"96e576c991edd4fc1f52f2aae8f96eb866255138",
 	"epochMs":1792382400000,
 	"recordedAt":"2026-10-19T12:00:00+08:00",
 	"responses":[
@@ -18,7 +18,7 @@
 			"method":"GET",
 			"path":"/config/api/auth/state",
 			"query":"",
-			"sha256":"92c023f01f658df1d1ddc35799ef2347147379eda16a0bd4423d33fddd14178b",
+			"sha256":"ef57c0b8df813e1840b751773bbd8c7dbccdf14ae98ca6a1c8a8127fe3c9ddba",
 			"status":200
 		},
 		{
@@ -27,7 +27,7 @@
 			"method":"GET",
 			"path":"/config/api/auth/agreement",
 			"query":"",
-			"sha256":"6b70b8f36ba5a682afa0d0cee9f2de0356fcc62194c5a7a2e9663573fdcc8d92",
+			"sha256":"8e4a9960c24eeb301e6d7df306672d93e3090971a67ebab4f3ef1a4c19a48472",
 			"status":200
 		},
 		{
@@ -117,7 +117,7 @@
 			"method":"GET",
 			"path":"/config/api/status",
 			"query":"",
-			"sha256":"dfb4c85c947cc0966cadc1f2e0ea98bffc931e50382239c1317e5596f1d9a908",
+			"sha256":"e6b118caa49f74f9771e49e17501ccbfd74eea7d680b738eb0299e4943922b3c",
 			"status":200
 		},
 		{
@@ -126,7 +126,7 @@
 			"method":"GET",
 			"path":"/config/api/values",
 			"query":"",
-			"sha256":"1bb5c8f7a10919cd460e560b85f5819853e1717c6c2513916da5bec6df3d4549",
+			"sha256":"70f716ea1b731aaa38e4990da8c70cac1b1537b23b66bf19531a8d56b12f51af",
 			"status":200
 		},
 		{

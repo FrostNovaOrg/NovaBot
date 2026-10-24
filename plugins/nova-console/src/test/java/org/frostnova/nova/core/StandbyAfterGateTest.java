@@ -460,7 +460,7 @@ class StandbyAfterGateTest {
                 + "      detail-retention-days: 1\n"
                 + "    config-ui:\n"
                 + "      agreement:\n"
-                + "        accepted-version: 1\n"
+                + "        accepted-version: " + org.frostnova.nova.core.config.ui.ConfigUiAgreement.VERSION + "\n"
                 + "        accepted-by: local\n", StandardCharsets.UTF_8);
     }
 
