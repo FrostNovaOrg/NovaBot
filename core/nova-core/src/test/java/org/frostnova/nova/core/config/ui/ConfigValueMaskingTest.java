@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -196,6 +197,25 @@ class ConfigValueMaskingTest {
         JSONObject result = controller.values();
         assertTrue(result.getBooleanValue("success"), "读配置本身不该失败");
         return result.getJSONObject("values");
+    }
+
+    @Test
+    @DisplayName("首次保存智能助手开启与额度后，重新读取保留开关并显示额度原值")
+    void firstAssistantSaveKeepsEnabledAndReadableLimits() throws IOException {
+        start("server:\n  port: 7827\n");
+        assertFalse(values().containsKey("novabot.assistant.enabled"));
+
+        var response = controller.save(Map.of(
+                "novabot.assistant.enabled", "true",
+                "novabot.assistant.answer-limit", "800",
+                "novabot.assistant.question-input-limit", "30000"));
+        assertTrue(response.getBody().getBooleanValue("success"), response.toString());
+        assertEquals("true", new ConfigurationFileService(config).read().get("novabot.assistant.enabled"));
+
+        JSONObject reloaded = values();
+        assertEquals("true", reloaded.getString("novabot.assistant.enabled"));
+        assertEquals("800", reloaded.getString("novabot.assistant.answer-limit"));
+        assertEquals("30000", reloaded.getString("novabot.assistant.question-input-limit"));
     }
 
     @Test

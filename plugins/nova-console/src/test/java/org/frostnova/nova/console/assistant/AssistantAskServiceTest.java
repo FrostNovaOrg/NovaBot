@@ -166,7 +166,7 @@ class AssistantAskServiceTest {
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans"), names);
         assertEquals(0.3, sent.get(0).getDoubleValue("temperature"));
-        assertEquals(properties.getMaxAnswerTokens(), sent.get(0).getIntValue("max_tokens"));
+        assertEquals(properties.getAnswerLimit(), sent.get(0).getIntValue("max_tokens"));
     }
 
     // 抓住恶意弹幕变成高权限指令、泄露密钥或越过原话长度上限。
@@ -197,7 +197,7 @@ class AssistantAskServiceTest {
 
     // 抓住累计输入超限后继续查数，或一问各轮用量没有累加。
     @Test void cumulativeInputStopsFurtherQueries() throws Exception {
-        properties.setMaxQuestionTokens(1500);
+        properties.setQuestionInputLimit(1500);
         inputTokens = 800;
         when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
         for (int i = 0; i < 4; i++) replies.add(call("revenue", JSONObject.of("start", 123)));

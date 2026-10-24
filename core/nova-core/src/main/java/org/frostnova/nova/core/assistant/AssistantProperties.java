@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
+import org.frostnova.nova.core.properties.ConfigLevel;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
@@ -17,28 +18,33 @@ import java.util.List;
 public class AssistantProperties {
     /** 是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。 */
     @ConfigLabel("启用智能助手")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean enabled = false;
     /** 模型接口地址，兼容 /chat/completions 格式的接口。 */
     @ConfigLabel("模型接口地址")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private String baseUrl = "https://api.deepseek.com";
     /** 模型名称，默认 deepseek-flash。 */
     @ConfigLabel("模型名称")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private String model = "deepseek-flash";
     /** 每月金额上限，单位：元，必须大于 0，按东八区自然月计算。 */
     @ConfigLabel("每月金额上限")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private BigDecimal monthlyBudgetYuan = new BigDecimal("30");
     /** 每个账号每天最多提问次数，按东八区自然日计算。 */
     @ConfigLabel("每个账号每日提问次数")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int dailyQuestionsPerAccount = 20;
     /** 一次模型回答的输出 token 上限。 */
     @ConfigLabel("回答输出上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private int maxAnswerTokens = 800;
+    private int answerLimit = 800;
     /** 未命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。 */
     @ConfigLabel("未命中缓存的输入单价")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -59,14 +65,14 @@ public class AssistantProperties {
     /** 一问各轮累计的输入 token 上限。 */
     @ConfigLabel("每问累计输入上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private int maxQuestionTokens = 30000;
+    private int questionInputLimit = 30000;
     /** 拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。 */
     @ConfigLabel("观众拒绝名单")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private List<Long> excludedUids = List.of();
 
     public void setMaxToolCalls(int value) { maxToolCalls = positive(value); }
-    public void setMaxQuestionTokens(int value) { maxQuestionTokens = positive(value); }
+    public void setQuestionInputLimit(int value) { questionInputLimit = positive(value); }
     public void setExcludedUids(List<Long> value) {
         if (value == null || value.stream().anyMatch(uid -> uid == null || uid <= 0))
             throw new IllegalArgumentException("观众拒绝名单请填写正整数编号");
@@ -97,7 +103,7 @@ public class AssistantProperties {
     }
 
     public void setDailyQuestionsPerAccount(int value) { dailyQuestionsPerAccount = positive(value); }
-    public void setMaxAnswerTokens(int value) { maxAnswerTokens = positive(value); }
+    public void setAnswerLimit(int value) { answerLimit = positive(value); }
     public void setPriceInputYuanPerMillion(BigDecimal value) { priceInputYuanPerMillion = price(value); }
     public void setPriceCachedInputYuanPerMillion(BigDecimal value) { priceCachedInputYuanPerMillion = price(value); }
     public void setPriceOutputYuanPerMillion(BigDecimal value) { priceOutputYuanPerMillion = price(value); }

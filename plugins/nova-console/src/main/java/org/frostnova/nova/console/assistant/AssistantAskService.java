@@ -125,7 +125,7 @@ public class AssistantAskService {
             int calls = 0;
             long tokens = 0;
             while (!budget.remaining(55).isZero()) {
-                boolean finish = calls >= properties.getMaxToolCalls() || tokens >= properties.getMaxQuestionTokens()
+                boolean finish = calls >= properties.getMaxToolCalls() || tokens >= properties.getQuestionInputLimit()
                         || budget.remaining(35).isZero();
                 AssistantClient.Response response = complete(question, messages, privacy, finish, budget);
                 tokens = Math.addExact(tokens, Math.addExact(response.usage().cachedInputTokens(), response.usage().uncachedInputTokens()));
@@ -148,7 +148,7 @@ public class AssistantAskService {
                     JSONObject data;
                     try {
                         args = AssistantTools.arguments(name, JSON.parseObject(function.getString("arguments")));
-                        if (calls >= properties.getMaxToolCalls() || tokens >= properties.getMaxQuestionTokens() || budget.remaining(35).isZero()) {
+                        if (calls >= properties.getMaxToolCalls() || tokens >= properties.getQuestionInputLimit() || budget.remaining(35).isZero()) {
                             data = JSONObject.of("source", "查数限制", "reason", "已到查数上限，请用已有数据直接作答");
                         } else {
                             calls++;
