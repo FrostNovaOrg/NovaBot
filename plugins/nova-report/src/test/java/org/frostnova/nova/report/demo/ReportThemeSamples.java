@@ -47,7 +47,11 @@ final class ReportThemeSamples {
             "classic", "升级前推送出去的样子，白底、粉色主播名，曲线与名次各用各的颜色；想要原来的样子就选它。",
             "pink-blue", "出厂默认的一套：近白微粉的底、淡蓝卡片，粉色为主、蓝色为辅，名次依次是粉、蓝、紫。",
             "warm", "奶油色的底、杏色卡片，橙与砖红为主调，文字用深棕。",
-            "night", "深蓝灰的底、浅色文字，粉、蓝、金点缀，头像描边用底色，适合夜里看。");
+            "night", "深蓝灰的底、浅色文字，粉、蓝、金点缀，头像描边用底色，适合夜里看。",
+            "mint", "近白薄荷底、浅绿卡片，深绿主调、青绿点缀。",
+            "ocean", "近白蓝底、浅蓝卡片，深蓝主调、海蓝点缀。",
+            "violet", "近白紫底、淡紫卡片，深紫主调、兰紫点缀。",
+            "ink", "白底、浅灰卡片，黑白灰区分层次，文字与数字保持高对比度。");
 
     record Check(String group, String label, double min,
                  Function<ReportPalette, Color> foreground, Function<ReportPalette, Color> background) {
@@ -70,7 +74,7 @@ final class ReportThemeSamples {
         System.out.println("wrote " + root.relativize(page) + " bytes=" + bytes);
     }
 
-    /** 出 12 张图，写网页，返回网页字节数。超过 {@link #PAGE_MAX_BYTES} 抛错。 */
+    /** 出 24 张图，写网页，返回网页字节数。超过 {@link #PAGE_MAX_BYTES} 抛错。 */
     static long write(Path page, Path demoDir, FontUtil fonts) throws IOException {
         var fixtures = new ReportSampleFixtures(demoDir, fonts);
         var cells = new ArrayList<List<String>>();
@@ -189,7 +193,7 @@ final class ReportThemeSamples {
                 .append(".chip{display:inline-block;width:12px;height:12px;border:1px solid #888;vertical-align:-1px;margin-right:2px;}\n")
                 .append("</style>\n</head>\n<body>\n")
                 .append("<h1>报告图配色样张</h1>\n")
-                .append("<p>同一份演示数据，按四套配色各出三种报告图。图已等比缩到宽 ").append(SAMPLE_WIDTH)
+                .append("<p>同一份演示数据，按八套配色各出三种报告图。图已等比缩到宽 ").append(SAMPLE_WIDTH)
                 .append(" 像素。人名、标题、数字都是虚构的演示数据。粉丝牌颜色来自平台数据，不随配色变。</p>\n");
         for (var preset : presets) {
             out.append("<p><b>").append(preset.name()).append("</b>：").append(DESCRIPTIONS.get(preset.id())).append("</p>\n");

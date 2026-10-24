@@ -138,13 +138,13 @@ class ReportPaletteEndpointsTest {
     }
 
     @Test
-    @DisplayName("配色清单：四套按展示顺序，标出此刻生效的、存着的与出厂的")
+    @DisplayName("配色清单：八套按展示顺序，标出此刻生效的、存着的与出厂的")
     void listsPresetsAndTheDefault() {
         JSONObject listed = controller.palettes();
         JSONArray presets = listed.getJSONArray("presets");
-        assertEquals(List.of("classic", "pink-blue", "warm", "night"),
+        assertEquals(List.of("classic", "pink-blue", "warm", "night", "mint", "ocean", "violet", "ink"),
                 presets.stream().map(item -> ((JSONObject) item).getString("id")).toList());
-        assertEquals(List.of("经典", "粉蓝", "暖阳", "夜幕"),
+        assertEquals(List.of("经典", "粉蓝", "暖阳", "夜幕", "薄荷", "海蓝", "星紫", "墨白"),
                 presets.stream().map(item -> ((JSONObject) item).getString("name")).toList());
         assertEquals("pink-blue", listed.getString("default"));
         assertNull(listed.get("stored"));

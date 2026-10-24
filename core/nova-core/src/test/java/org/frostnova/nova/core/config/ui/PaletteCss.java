@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * 色表改了结构而这里还按老结构算，比报错更糟。
  */
 final class PaletteCss {
-    /** 三套配色，与 theme.js、报告图配色的 id 一致；第一套是没选过时的默认 */
+    /** 三套配色与 theme.js 一致，界面配色的 id 都在报告图配色里；第一套是没选过时的默认 */
     static final List<String> PALETTES = List.of("pink-blue", "classic", "warm");
 
     /** 没选过配色时落到的那一套 */
