@@ -35,8 +35,19 @@ class MemberConsoleFrontendTest {
     }
 
     // 成员可见导航、首页、今日卡、名字和主播横幅都应按共享身份绘制，管理员保留原行为。
-    @ParameterizedTest @ValueSource(strings = {"loading-member-auth/state", "loading-member-status", "loading-member-pages", "loading-auth/state", "loading-status", "loading-login", "loading-pages", "sidebar-admin", "sidebar-member", "source", "nav", "home", "setup", "today", "personal", "identity", "streamers", "admin", "legacy", "unknown"})
+    @ParameterizedTest @ValueSource(strings = {"loading-member-auth/state", "loading-member-status", "loading-member-pages", "loading-member-streamers", "loading-auth/state", "loading-status", "loading-login", "loading-pages", "sidebar-admin", "sidebar-member", "source", "nav", "home", "setup", "today", "personal", "identity", "streamers", "admin", "legacy", "unknown"})
     void rendersConsoleForCurrentAccount(String mode) throws Exception { run(mode); }
+
+    @ParameterizedTest @ValueSource(strings = {"single-enabled", "single-disabled", "single-prefix", "single-avatar-error", "single-narrow",
+            "unchanged-multiple", "unchanged-zero", "unchanged-admin-one"})
+    void singleStreamerMemberAndUnchangedAccounts(String mode) throws Exception { run(mode); }
+
+    // 重新打开控制台后应重新数授权名单，不能沿用上一回的一人或多人界面。
+    @Test void authorizationChangesApplyOnNextReload() throws Exception {
+        run("single-enabled");
+        run("unchanged-multiple");
+        run("single-enabled");
+    }
 
     // 升级缓存、慢网和重试会阻断首屏或重复导航；正常入口还须取消页面后备提示。
     @ParameterizedTest @ValueSource(strings = {"slow-plugins", "retry-plugins", "retry-member-plugins", "plugin-version", "plugin-version-next", "missing-main", "fallback-started"})

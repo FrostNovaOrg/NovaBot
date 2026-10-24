@@ -91,7 +91,7 @@ async function open(uid = 1, tail = '') {
   }
 }
 async function reset(role = 'MEMBER') {
-  await push.leave(); store.role = role; disk = initial(); requests = []; reject = false;
+  await push.leave(); store.singleStreamer = null; store.role = role; disk = initial(); requests = []; reject = false;
   store.handlerList = []; push.render(shell);
   await push.reload(); await push.loadPushPage(); await open();
 }
@@ -108,6 +108,29 @@ function noDirectory() {
   assert.deepEqual(requests.filter(req => /^\/config\/api\/bot\/targets(?:\?|$|\/refresh)/.test(req.url)), [], '成员不应请求整张名单或刷新');
 }
 const cases = {
+  // 单主播成员的推送页不该保留只有一个名字的侧栏或手机选择框。
+  single: async () => {
+    await reset(); store.singleStreamer = {platform: 'bilibili', uid: 1};
+    for (const width of [1280, 390]) {
+      window.innerWidth = width;
+      push.render(shell); await open();
+      assert.ok(!shell.querySelector('.ptree'), width + ' 宽不出主播左栏');
+      assert.ok(!shell.querySelector('.pnarrow'), width + ' 宽不出下拉框');
+      assert.equal(shell.querySelector('#push-nav'), null);
+      assert.ok(button(root(), '＋ 添加通道'), '直接打开主播一级设置');
+      await open(1, 'qq-onebot|1|81001');
+      assert.ok(input('直播收益等金额'), '仍能进入通道设置');
+    }
+  },
+  unchanged: async () => {
+    for (const [role, count] of [['ADMIN', 1], ['MEMBER', 2], ['MEMBER', 0]]) {
+      await reset(role); disk = count === 0 ? [] : count === 2 ? [...initial(), {...initial()[0], uid: 2}] : initial();
+      await push.reload(); await push.showPush('');
+      assert.ok(shell.querySelector('.ptree')); assert.ok(shell.querySelector('#push-nav'));
+      if (!count) assert.match(text(shell.querySelector('#push-tree')), /暂无分配给你的主播/);
+      else assert.match(text(root()), /通道一览/);
+    }
+  },
   // 成员看见加删入口，操作到保存才被权限拒绝。
   controls: async () => {
     await reset();

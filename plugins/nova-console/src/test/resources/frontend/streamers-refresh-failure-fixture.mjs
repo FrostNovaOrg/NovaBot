@@ -75,6 +75,14 @@ globalThis.fetch = async url => {
 };
 
 const page = await import('../../../main/resources/config-ui-pages/streamers.js');
+if (process.env.SINGLE_STREAMER === 'true') {
+  const {store} = await import('../../../../../../core/nova-core/src/main/resources/config-ui/store.js');
+  store.role = 'MEMBER';
+  store.singleStreamer = {platform: 'sample', uid: 1, status: 'DISABLED'};
+  element('div').id = 'sd-member-home';
+  nodes.get('sd-back').remove();
+}
+
 const flatten = n => [n, ...n.children.flatMap(flatten)];
 const textOf = n => flatten(n).map(one => one.textContent + one.innerHTML).join('\n');
 const status = () => nodes.get('status-text');

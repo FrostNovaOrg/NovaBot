@@ -33,7 +33,7 @@ class PushMemberPageTest {
     // 各格在脚本入口说明对应的用户故障，运行真实页面的事件与请求。
     @ParameterizedTest
     @ValueSource(strings = {"controls", "defaults", "exact", "invalid", "platforms", "duplicate", "rejected", "names",
-            "stranded", "recent", "quiet", "wizard", "malformed"})
+            "stranded", "recent", "quiet", "wizard", "malformed", "single", "unchanged"})
     void pageBehaviour(String scenario) throws Exception {
         FrontendFixture.runFromModule(FIXTURE, scenario, Map.of("PUSH_CASE", scenario));
     }

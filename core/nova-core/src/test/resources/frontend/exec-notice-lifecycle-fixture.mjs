@@ -83,7 +83,7 @@ const dependencies = {
     if (path === '/exec/notice') return pending ? await pending : {success: true, rules};
     return {};
   },
-  applyRoleView: noop, setAuthState: noop, setMemberAuthState: noop,
+  applyRoleView: noop, applySingleStreamerView: noop, setAuthState: noop, setMemberAuthState: noop,
   renderPersonalMenu: noop, bindBotForm: noop, botFormHtml: noop, loadBotConsole: noop,
   mountPages: async () => {}, applyRoute: noop, load: noop,
   setTimeout: (callback, delay) => schedule(callback, delay, false),

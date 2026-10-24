@@ -27,6 +27,8 @@ import {
   snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } from './streamers-model.js';
 
+export {detailHash};
+
 const PAGE_STYLE = `
 #st-list a.rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;color:inherit;text-decoration:none}
 #st-list a.rowcard:hover{background:var(--soft);border-color:var(--accent)}
@@ -271,11 +273,13 @@ export function render(section) {
       <div id="st-unlisted"></div>
     </div>
     <div id="sv-detail" style="display:none">
-      <div class="loghead">
+      ${store.singleStreamer ? '<div id="sd-member-home">'
+        + (store.singleStreamer.status === 'DISABLED' ? '<p class="note" id="sd-disabled">这位主播已停用，请联系管理员</p>' : '')
+        + '</div>' : `<div class="loghead">
         <div>
           <a class="lnkbtn" id="sd-back" href="#/streamers">‹ 返回主播列表</a>
         </div>
-      </div>
+      </div>`}
       <div class="nv-card hcard" id="sd-head"></div>
       <div id="sd-body"></div>
     </div>
@@ -394,6 +398,9 @@ export function syncStreamersView() {
     $('#sd-head').innerHTML = loadingHtml('正在加载主播资料…');
     $('#sd-body').innerHTML = loadingHtml('正在读取该主播的运营数据…');
   }
+  const home = $('#sd-member-home');
+  if (home && store.singleStreamer) home.style.display = where.view === 'detail'
+    && where.platform === store.singleStreamer.platform && String(where.uid) === String(store.singleStreamer.uid) ? '' : 'none';
   $('#sv-list').style.display = where.view === 'list' ? '' : 'none';
   $('#sv-detail').style.display = where.view === 'detail' ? '' : 'none';
   $('#sv-session').style.display = where.view === 'session' ? '' : 'none';
@@ -662,7 +669,7 @@ let detail = null;
 
 async function loadDetail() {
   const generation = viewGeneration;
-  $('#sd-back').setAttribute('href', '#/streamers');
+  $('#sd-back')?.setAttribute('href', '#/streamers');
 
   const query = '';
   const path = '/streamers/' + encodeURIComponent(where.platform) + '/'

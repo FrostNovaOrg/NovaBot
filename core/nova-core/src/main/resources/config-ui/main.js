@@ -5,7 +5,7 @@
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {renderExecNotice} from './exec-notice.js';
-import {$, api, clearLoading, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
+import {$, api, CONSOLE, clearLoading, currentChangeSource, el, esc, hasUnsavedChanges, markDirty, phrase, registerChangeSource, reloadChangeSources, say} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
@@ -49,6 +49,44 @@ function applyRoleView() {
     const node = $(selector);
     if (node) node.style.display = 'none';
   }
+}
+
+/** 单主播成员以本人为控制台入口，身份只取服务端已过滤的名单。 */
+function applySingleStreamerView() {
+  const one = store.singleStreamer;
+  if (!one) return;
+  const streamers = pages.find(page => page.meta.id === 'streamers');
+  one.detailHash = streamers?.module.detailHash?.(one.platform, one.uid);
+  if (!one.detailHash) return;
+  const nav = $('#nav');
+  const data = nav.querySelector('[data-page="streamers"]');
+  const push = nav.querySelector('[data-page="push"]');
+  if (!data || !push) return;
+  data.href = one.detailHash;
+  data.innerHTML = navIcon(streamers.meta);
+  data.append('直播数据');
+  push.href = '#/push/' + one.uid;
+  push.innerHTML = navIcon(pages.find(page => page.meta.id === 'push').meta);
+  push.append('推送设置');
+  nav.replaceChildren(data, push);
+
+  const name = one.uname || String(one.uid);
+  $('.brand-name').textContent = name;
+  const mark = $('.brand-mark');
+  mark.classList.add('brand-streamer');
+  const initial = el('span');
+  initial.textContent = Array.from(name)[0];
+  mark.replaceChildren(initial);
+  const avatar = el('img');
+  avatar.alt = '';
+  avatar.style.display = 'none';
+  avatar.addEventListener('load', () => { avatar.style.display = ''; initial.style.display = 'none'; });
+  avatar.addEventListener('error', () => { avatar.remove(); initial.style.display = ''; });
+  avatar.src = CONSOLE + '/api/streamers/' + encodeURIComponent(one.platform) + '/' + encodeURIComponent(one.uid) + '/avatar';
+  mark.appendChild(avatar);
+
+  const home = $('#sd-member-home');
+  if (home) home.append($('#home-now'), $('#home-events'));
 }
 
 /**
@@ -625,7 +663,12 @@ function parseHash() {
   const known = PAGE_TAB[name] || topPageIds.has(name);
   if (store.role === 'MEMBER' && (!accessiblePages.has(name)
     || (name !== 'home' && !topPageIds.has(name)))) {
-    return {name: 'home', sub: '', tail: '', card: '', redirect: '#/home'};
+    return {name: 'home', sub: '', tail: '', card: '', redirect: store.singleStreamer?.detailHash || '#/home'};
+  }
+
+  const single = store.singleStreamer;
+  if (single?.detailHash && (name === 'home' || ((name === 'streamers' || name === 'push') && !parts[1]))) {
+    return {name, sub: '', tail: '', card: '', redirect: name === 'push' ? '#/push/' + single.uid : single.detailHash};
   }
 
   return {
@@ -796,7 +839,9 @@ function applyRoute(withData = true) {
   // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
   else if (name === 'setup') holdPageHeight(openSetup());
   else if (topPage) {
-    api('/status').then(renderStatus); callPage(topPage, 'refresh', {sub, tail});
+    if (store.singleStreamer && name === 'streamers') refreshHome();
+    else api('/status').then(renderStatus);
+    callPage(topPage, 'refresh', {sub, tail});
     holdPageHeight(topPage.renderTask);
   }
   else if (plugin) {
@@ -966,10 +1011,12 @@ function startConsole() {
       return Promise.all([
         api('/status', {signal: attempt.controller.signal}).catch(() => null),
         store.role === 'MEMBER' ? Promise.resolve(null) : api('/login', {signal: attempt.controller.signal}).catch(() => null),
-      ]).then(([status, login]) => {
+        store.role === 'MEMBER' ? api('/streamers', {signal: attempt.controller.signal}).catch(() => null) : Promise.resolve(null),
+      ]).then(([status, login, visible]) => {
         if (!attempt.active) return;
         homeStatus = status;
         homeLogin = login;
+        store.singleStreamer = visible?.streamers?.length === 1 ? {...visible.streamers[0]} : null;
       });
     })
     // 插件页要先挂上去，随后那一趟整体载入才有东西可刷
@@ -977,6 +1024,7 @@ function startConsole() {
       if (!attempt.active) return;
       await mountPages(attempt);
       if (!attempt.active) return;
+      applySingleStreamerView();
       clearTimeout(attempt.timer);
       $('#startup').style.display = 'none';
       store.authReady = true;

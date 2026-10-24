@@ -16,6 +16,13 @@ import org.junit.jupiter.api.Test;
 class StreamersRefreshFailureTest {
 
     @Test
+    @DisplayName("单主播成员移除返回链接后，停用主播的详情和直播刷新仍可用")
+    void singleMemberKeepsDetailAndRefresh() throws Exception {
+        FrontendFixture.runFromModule("src/test/resources/frontend/streamers-refresh-failure-fixture.mjs",
+                "单主播成员详情与刷新", java.util.Map.of("SINGLE_STREAMER", "true"));
+    }
+
+    @Test
     @DisplayName("后台刷新失败只说「刷新失败，稍后自动重试」，不带原话、不标红、数据照留")
     void backgroundRefreshFailureIsShort() throws Exception {
         FrontendFixture.runFromModule("src/test/resources/frontend/streamers-refresh-failure-fixture.mjs",
