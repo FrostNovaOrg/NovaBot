@@ -13,7 +13,7 @@ public final class ConfigUiAgreement {
     /**
      * 当前协议版本
      */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     /**
      * 协议文案所在的类路径资源
