@@ -27,6 +27,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -931,6 +932,27 @@ public class BilibiliApiUtil {
         return data;
     }
 
+    /** 图片登录凭据只发给 B 站自己的 HTTPS 主机，不改动调用方的请求头。 */
+    private static Map<String, String> imageHeaders(String url, Map<String, String> headers) {
+        boolean cookieAllowed = false;
+        try {
+            URI uri = URI.create(url);
+            if ("https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null) {
+                String host = uri.getHost().toLowerCase(Locale.ROOT);
+                cookieAllowed = List.of("hdslb.com", "biliimg.com", "bilibili.com").stream()
+                        .anyMatch(domain -> host.equals(domain) || host.endsWith("." + domain));
+            }
+        } catch (IllegalArgumentException ignored) {
+            // 地址无效时也先移除凭据，取图失败仍由原有调用路径处理。
+        }
+        if (cookieAllowed) {
+            return headers;
+        }
+        Map<String, String> filtered = new HashMap<>(headers);
+        filtered.keySet().removeIf("Cookie"::equalsIgnoreCase);
+        return filtered;
+    }
+
     /**
      * 获取图片
      * @param url 图片地址
@@ -944,7 +966,7 @@ public class BilibiliApiUtil {
     public Optional<HttpUtil.ImageBytes> getBilibiliImageBytes(String url, int maxBytes) {
         if (StringUtil.isBlank(url)) return Optional.empty();
         try {
-            return http.getImageBytes(url, getBilibiliHeaders(), FETCH_IMAGE_TIMEOUT, maxBytes);
+            return http.getImageBytes(url, imageHeaders(url, getBilibiliHeaders()), FETCH_IMAGE_TIMEOUT, maxBytes);
         } catch (Exception e) {
             return Optional.empty();
         }
@@ -962,7 +984,7 @@ public class BilibiliApiUtil {
         }
 
         try {
-            return http.getBufferedImage(url, headers);
+            return http.getBufferedImage(url, imageHeaders(url, headers));
         } catch (Exception e) {
             log.debug("获取图片 {} 失败: {}", url, e.getMessage());
             return Optional.empty();
@@ -995,7 +1017,7 @@ public class BilibiliApiUtil {
         }
 
         try {
-            return Optional.of(http.fetchBufferedImage(url, headers, FETCH_IMAGE_TIMEOUT));
+            return Optional.of(http.fetchBufferedImage(url, imageHeaders(url, headers), FETCH_IMAGE_TIMEOUT));
         } catch (HttpStatusCodeException e) {
             int status = e.getStatusCode().value();
             if (status == 404 || status == 410) {
@@ -1025,7 +1047,7 @@ public class BilibiliApiUtil {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
-        return http.asyncGetBufferedImage(url, headers)
+        return http.asyncGetBufferedImage(url, imageHeaders(url, headers))
                 .exceptionally(e -> {
                     log.debug("异步获取图片 {} 失败: {}", url, e.getMessage());
                     return Optional.empty();
