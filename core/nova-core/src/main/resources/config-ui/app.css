@@ -696,7 +696,7 @@ details.adv .inner{padding:0 16px 16px}
 .home-primary{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:16px;align-items:start;margin-bottom:16px}
 .home-primary>*{min-width:0}
 .home-primary-column{display:grid;gap:16px;min-width:0}
-#home-plugin-cards>.hcard:last-child,#home-events,#home-probes{margin-bottom:0}
+#home-plugin-cards>.hcard:last-child,#page-home #home-events,#home-probes{margin-bottom:0}
 #home-plugin-cards:empty{display:none}
 #home-plugin-cards .stats{grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px}
 #home-plugin-cards .stat{padding:10px 12px}

@@ -176,6 +176,23 @@ function renderProbes(model) {
     : '<div class="empty">暂无可用探针</div>';
 }
 
+/** 单主播成员的提示与页底事件共用合并后的数据。 */
+function renderMemberEventHint(model) {
+  const hint = $('#sd-event-hint');
+  if (hint) {
+    const count = model.events.filter(item => item.group === 'attention').length;
+    hint.hidden = count === 0;
+    hint.innerHTML = count ? '今天有 ' + count + ' 条事件需要处理 ' : '';
+    if (count) {
+      const view = el('button', 'nv-btn2 sm');
+      view.type = 'button';
+      view.textContent = '查看';
+      view.addEventListener('click', () => $('#home-events').scrollIntoView({block: 'start', behavior: 'smooth'}));
+      hint.appendChild(view);
+    }
+  }
+}
+
 /** 今天发生了什么：失败与告警置顶的那几条 */
 function renderStrip(model) {
   const box = $('#home-timeline');
@@ -244,6 +261,7 @@ function renderHome(status, login, timeline, pages, pluginDone) {
     model.eventsEmpty = '当天没有记录。';
     renderNow(model);
     renderStrip(model);
+    renderMemberEventHint(model);
     return;
   }
   const model = homeModel(status, login, timeline, pages, pluginDone, store.vocab);
