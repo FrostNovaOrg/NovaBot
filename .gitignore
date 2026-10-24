@@ -9,6 +9,12 @@ cookies.json
 cookies.enc
 # 加密密钥。它与 cookies.json 合起来等同于账号密码，同样不能进仓库
 cookies.key
+/assistant-key.enc
+/assistant-master.key
+/assistant-usage.json
+/assistant-key.enc.tmp
+/assistant-master.key.tmp
+/assistant-usage.json.tmp
 # 明文凭据迁移为加密存储时留下的备份
 cookies.json.plain.bak
 # 仓库根的运行期配置。程序第一次保存设置时写在工作目录。

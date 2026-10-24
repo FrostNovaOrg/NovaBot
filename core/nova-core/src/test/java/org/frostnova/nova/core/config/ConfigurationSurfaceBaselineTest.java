@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config;
 
 import org.frostnova.nova.core.config.ui.ConfigurationMetadataService;
+import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -101,9 +102,13 @@ class ConfigurationSurfaceBaselineTest {
         EventStreamProperties stream = new EventStreamProperties();
         binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(stream));
 
+        AssistantProperties assistant = new AssistantProperties();
+        binder.bind("novabot.assistant", Bindable.ofInstance(assistant));
+
         List<String> actual = new ArrayList<>();
         collect("novabot.core", core, actual);
         collect(EventStreamProperties.PREFIX, stream, actual);
+        collect("novabot.assistant", assistant, actual);
         Collections.sort(actual);
         writeActual(BINDING_FILE, actual);
 

@@ -3,6 +3,16 @@
 # 用不同的值是有意的：写成默认值的键，绑没绑上看起来一模一样。
 # 这里的值只在测试里用，与发行模板 dist/templates/application.example.yml 无关。
 novabot:
+  assistant:
+    enabled: true
+    base-url: https://model.example/v1
+    model: sample-model
+    monthly-budget-yuan: 45.5
+    daily-questions-per-account: 12
+    max-answer-tokens: 500
+    price-input-yuan-per-million: 3.1
+    price-cached-input-yuan-per-million: 0.1
+    price-output-yuan-per-million: 9.2
   core:
     network-thread:
       core-pool-size: 3

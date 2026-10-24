@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.config.ui;
 
+import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -29,10 +30,11 @@ class ConfigurationEffectResolverTest {
      * 事件输出那一节要单独登记：它的绑定不走绑定根，是自己一个 bean
      * （见 {@code NovaEventStreamConfiguration}）。少登记它的话，
      * 这把尺看到的字段表就少了四项，而它不会因此报红。
+     * 智能助手配置也要单独登记：它由 {@code AssistantConfiguration} 登记为独立 bean，不走绑定根。
      */
     private AnnotationConfigApplicationContext context() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.register(NovaCoreProperties.class, EventStreamProperties.class);
+        context.register(NovaCoreProperties.class, EventStreamProperties.class, AssistantProperties.class);
         context.refresh();
         return context;
     }

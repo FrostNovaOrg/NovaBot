@@ -17,14 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 设置页分组表的判据
  * <p>
- * 界面上那八个组的先后<b>就是这张表的先后</b>——前端照着 {@code /schema} 回的顺序渲染，
- * 不自己排。因此「六组的顺序对不对」在这里量得到，不必等到把页面打开。
+ * 界面上那九个组的先后<b>就是这张表的先后</b>——前端照着 {@code /schema} 回的顺序渲染，
+ * 不自己排。因此「七组的顺序对不对」在这里量得到，不必等到把页面打开。
  * 反过来说，这一格量不到的是「渲染出来的 DOM 真的是这个顺序吗」，那要在跑起来的界面上看。
  */
 @DisplayName("设置页分组表")
 class ConfigurationGroupsTest {
     @Test
-    @DisplayName("常用六组在前，顺序是 推送→告警→命令与权限→采集→报告外观→登录与安全")
+    @DisplayName("常用七组在前，顺序是 推送→告警→命令与权限→采集→报告外观→登录与安全→智能助手")
     void commonGroupsComeFirstInOrder() {
         List<String> common = new ArrayList<>();
         for (ConfigurationGroups.Group group : ConfigurationGroups.all()) {
@@ -33,7 +33,7 @@ class ConfigurationGroupsTest {
             }
         }
 
-        assertEquals(List.of("push", "alert", "cmd", "collect", "report", "auth"), common,
+        assertEquals(List.of("push", "alert", "cmd", "collect", "report", "auth", "assistant"), common,
                 "常用组的顺序变了。它就是界面上从上往下的顺序，改它等于改版式");
     }
 
@@ -74,7 +74,7 @@ class ConfigurationGroupsTest {
             ids.add(group.id());
         }
 
-        assertEquals(8, ids.size(), "组是闭集，八个");
+        assertEquals(9, ids.size(), "组是闭集，九个");
     }
 
     @Test

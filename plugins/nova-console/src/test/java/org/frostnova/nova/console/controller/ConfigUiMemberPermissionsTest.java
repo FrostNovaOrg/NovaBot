@@ -87,6 +87,11 @@ class ConfigUiMemberPermissionsTest {
             GET bot/targets/lookup
             """);
     private static final Set<String> ADMIN = routes("""
+            GET assistant/status
+            POST assistant/key
+            DELETE assistant/key
+            POST assistant/test
+            POST assistant/acknowledge
             GET /config/napcat-bootstrap
             GET /config/napcat-bootstrap/napcat-resume.js
             POST auth/agreement/accept
@@ -190,8 +195,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(119, mappings.size());
-        assertEquals(23, EVERYONE.size()); assertEquals(24, SCOPED.size()); assertEquals(63, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(124, mappings.size());
+        assertEquals(23, EVERYONE.size()); assertEquals(24, SCOPED.size()); assertEquals(68, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));

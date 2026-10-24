@@ -1,3 +1,12 @@
+novabot.assistant.base-url|java.lang.String|https://api.deepseek.com|模型接口地址，兼容 /chat/completions 格式的接口。
+novabot.assistant.daily-questions-per-account|java.lang.Integer|20|每个账号每天最多提问次数，按东八区自然日计算。
+novabot.assistant.enabled|java.lang.Boolean|false|是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。
+novabot.assistant.max-answer-tokens|java.lang.Integer|800|一次模型回答的输出 token 上限。
+novabot.assistant.model|java.lang.String|deepseek-flash|模型名称，默认 deepseek-flash。
+novabot.assistant.monthly-budget-yuan|java.math.BigDecimal|30|每月金额上限，单位：元，必须大于 0，按东八区自然月计算。
+novabot.assistant.price-cached-input-yuan-per-million|java.math.BigDecimal|0.05|命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
+novabot.assistant.price-input-yuan-per-million|java.math.BigDecimal|2.2|未命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
+novabot.assistant.price-output-yuan-per-million|java.math.BigDecimal|8.6|输出单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒。故障往往持续存在，不收敛会反复推同一条，让人对告警脱敏。
 novabot.core.alert.enabled|java.lang.Boolean|true|是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
 novabot.core.alert.retry-interval|java.lang.Integer|60|发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投。需要告警时往往正是发不出去的时候，所以失败后要自动重投。

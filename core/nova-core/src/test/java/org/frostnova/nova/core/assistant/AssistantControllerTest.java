@@ -1,0 +1,142 @@
+package org.frostnova.nova.core.assistant;
+
+import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.ui.ConfigUiAgreement;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
+import org.frostnova.nova.core.util.IpMatcher;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.client.RestTemplate;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class AssistantControllerTest {
+    @TempDir Path directory;
+    private static final String SECRET = "test-secret-9876543210";
+    private MockMvc mvc;
+    private ConfigUiAuthService auth;
+    private ConfigUiSession session;
+    private MockRestServiceServer server;
+    private AssistantKeyStore keys;
+    private AssistantClient client;
+
+    @BeforeEach void setup() {
+        var properties = new AssistantProperties();
+        properties.setEnabled(true);
+        keys = new AssistantKeyStore(directory);
+        var template = new RestTemplate();
+        server = MockRestServiceServer.bindTo(template).build();
+        client = new AssistantClient(properties, keys, new AssistantUsageStore(directory, Clock.systemUTC()), template);
+        auth = mock(ConfigUiAuthService.class);
+        session = mock(ConfigUiSession.class);
+        when(session.getCsrfToken()).thenReturn("test-csrf-token");
+        when(session.getChannel()).thenReturn(ConfigUiSession.Channel.PASSWORD);
+        when(auth.isEnabled()).thenReturn(true);
+        when(auth.validate(any())).thenReturn(Optional.of(session));
+        when(auth.account(session)).thenReturn(ConfigUiAccount.local(Instant.EPOCH));
+        var agreement = new NovaCoreProperties.ConfigUi.Agreement();
+        agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
+        agreement.setAcceptedBy("password");
+        var filter = new ConfigUiSecurityFilter("unused-token", new IpMatcher(List.of("127.0.0.1")), auth,
+                new NovaCoreProperties.ConfigUi.Auth(), agreement);
+        mvc = MockMvcBuilders.standaloneSetup(new AssistantController(client)).addFilters(filter).build();
+    }
+
+    private MockHttpServletRequestBuilder authorized(MockHttpServletRequestBuilder request) {
+        return request.header("X-CSRF-Token", "test-csrf-token").contentType(MediaType.APPLICATION_JSON);
+    }
+
+    private void successfulProbe() {
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andExpect(header("Authorization", "Bearer " + SECRET))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath("$.max_tokens").value(8))
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
+    }
+
+    // 抓住保存、查询、试调、确认或删除接口返回明文，或新密钥未验证就保存。
+    @Test void managementFlowKeepsSecretEncryptedAndRecordsActor() throws Exception {
+        successfulProbe(); successfulProbe();
+        String saved = mvc.perform(authorized(post("/config/api/assistant/key")).content("{\"key\":\"" + SECRET + "\"}"))
+                .andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.success").value(true))
+                .andReturn().getResponse().getContentAsString();
+        assertFalse(saved.contains(SECRET));
+        mvc.perform(authorized(post("/config/api/assistant/acknowledge"))).andExpect(status().isOk());
+        String current = mvc.perform(get("/config/api/assistant/status")).andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.available").value(true))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.maskedKey").value("test-s…10"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.acknowledgement.actor").value("local-admin"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.acknowledgement.version").value(AssistantClient.ACKNOWLEDGEMENT_VERSION))
+                .andReturn().getResponse().getContentAsString();
+        assertFalse(current.contains(SECRET));
+        assertFalse(Files.readString(directory.resolve("assistant-key.enc")).contains(SECRET));
+        mvc.perform(authorized(post("/config/api/assistant/test"))).andExpect(status().isOk());
+        mvc.perform(authorized(delete("/config/api/assistant/key"))).andExpect(status().isOk());
+        mvc.perform(get("/config/api/assistant/status")).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.available").value(false));
+        assertFalse(keys.isSet());
+        server.verify();
+    }
+
+    // 抓住错误密钥试调失败后仍落盘，或将服务端原文返回给管理员。
+    @Test void failedKeyProbeReturnsSafeReasonWithoutSaving() throws Exception {
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).body(SECRET));
+        String response = mvc.perform(authorized(post("/config/api/assistant/key")).content("{\"key\":\"" + SECRET + "\"}"))
+                .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(response.contains("密钥"));
+        assertFalse(response.contains(SECRET));
+        assertFalse(keys.isSet());
+        assertFalse(client.status().available());
+        server.verify();
+    }
+
+    // 抓住请求格式错误或诊断日志把输入密钥带出来。
+    @Test void malformedKeyInputDoesNotLeakIntoDiagnostics() throws Exception {
+        try (var logs = new AssistantLogCapture()) {
+            String response = mvc.perform(authorized(post("/config/api/assistant/key")).content("{\"key\":\"" + SECRET))
+                    .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
+            assertFalse(response.contains(SECRET));
+            logs.assertNoSecret(SECRET);
+        }
+        server.verify();
+    }
+
+    // 抓住任意写接口漏掉 CSRF 校验，或者成员能够操作模型设置。
+    @Test void everyMutationNeedsCsrfAndEveryRouteNeedsAdmin() throws Exception {
+        for (var mutation : List.of(post("/config/api/assistant/key"), delete("/config/api/assistant/key"),
+                post("/config/api/assistant/test"), post("/config/api/assistant/acknowledge"))) {
+            mvc.perform(mutation.contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isForbidden());
+        }
+        var member = new ConfigUiAccount("member", ConfigUiAccount.Role.MEMBER, ConfigUiAccount.Status.ENABLED,
+                "member", null, null, null, List.of(), Instant.EPOCH, null, true);
+        when(auth.account(session)).thenReturn(member);
+        for (var route : List.of(get("/config/api/assistant/status"), post("/config/api/assistant/key"),
+                delete("/config/api/assistant/key"), post("/config/api/assistant/test"), post("/config/api/assistant/acknowledge"))) {
+            mvc.perform(authorized(route).content("{}")).andExpect(status().isForbidden());
+        }
+        server.verify();
+    }
+}
