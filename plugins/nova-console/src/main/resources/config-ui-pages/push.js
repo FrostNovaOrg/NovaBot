@@ -23,7 +23,7 @@ import {
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
-import {renderIncomplete, sessionSettings} from './sessions.js';
+import {renderIncomplete, sessionSettings, setReportPalette} from './sessions.js';
 import {
   clearSessionDrafts, onRevenueDraftChange, revenueDraft, sessionDraftCount, sessionWrites,
 } from './session-draft.js';
@@ -237,6 +237,13 @@ const PAGE_STYLE = `
 .report-palette-sample{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:var(--r-ctl);padding:10px}
 .report-palette-tile{padding:5px 12px;border-left:3px solid;border-radius:4px}
 .report-palette-samples~select{margin-right:10px;margin-bottom:10px}
+.report-palette-choices{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.report-palette-choice{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;font-size:var(--fs-xs)}
+.report-palette-choice[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
+.report-palette-choice:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.report-palette-swatch{width:14px;height:14px;border:1px solid;border-radius:3px;flex:none}
+.rep-img{position:relative}
+.rep-updating{position:absolute;top:8px;right:8px;margin:0;padding:4px 8px;border-radius:var(--r-ctl);background:var(--surface);color:var(--dim);font-size:var(--fs-xs)}
 .p-revenue-scope{margin:0;color:var(--dim);font-size:var(--fs-xs)}
 .tplrow{padding:10px 0;border-top:1px solid var(--line)}
 .tplrow:first-of-type{border-top:none}
@@ -726,6 +733,8 @@ let directory = {};
 let options = [];
 
 let reportPalettes = null;
+let changeChannelPalette = () => {};
+let repaintPalettePreview = () => {};
 
 /** 加主播格子上的提示，与空着按下时那句共用：两处各写一份就会各说各的 */
 export const STREAMER_INPUT_HINT = 'uid、直播间号，或粘贴空间／直播间链接';
@@ -1033,6 +1042,8 @@ function paintRight() {
   // 旧的那屏连着版式编辑器一起作废。金额草稿的重画监听是单槽位，不在这里摘掉的话，
   // 切走（含切到没有版式区的通道）后拨金额开关，已离开的编辑器还会按旧通道白发一次预览
   onRevenueDraftChange(null);
+  changeChannelPalette = () => {};
+  repaintPalettePreview = () => {};
   const lost = lostChannelOf;
   lostChannelOf = '';
 
@@ -1751,6 +1762,7 @@ function keepChannelFold(fold, user, target, name) {
 function paintNotices(list, user, target, session, paintSummary) {
   // 换了一行展开，旧那份版式编辑器作废：不摘掉的话，拨金额开关时它还会按旧那一行白发一次预览
   onRevenueDraftChange(null);
+  repaintPalettePreview = () => {};
   list.innerHTML = '';
   editButtons.clear();
   const key = channelFoldKey(user, target);
@@ -2048,10 +2060,12 @@ function noticeOptions(host, item, handler, user, target, session, syncMeta) {
     syncRevenueScope();
     host.appendChild(revenueScope);
   }
+  const paletteChoices = preview && reportPalettes ? reportPaletteChoices(user, target) : null;
   const editor = buildLayoutEditor(host, {
     // 与文字那一页同理：默认就能改，不传锁态
     editable: true,
     preview,
+    previewControls: paletteChoices?.node,
     items: handler.options || [],
     paramsOf: () => (messageOf(target, handler) || {}).params || {},
     caption: preview ? () => previewRevenueCaption(session, target, draftVisible()) : null,
@@ -2073,11 +2087,53 @@ function noticeOptions(host, item, handler, user, target, session, syncMeta) {
     render: preview ? layoutPreviewRenderer(target, draftVisible, user, handler) : null,
   });
   if (preview) {
+    repaintPalettePreview = () => {
+      paletteChoices?.sync();
+      editor.repaint();
+    };
     onRevenueDraftChange(() => {
       syncRevenueScope();
       editor.repaint();
     });
   }
+}
+
+// 成员收到的推送数据已经由服务端按主播归属筛选，通道设置沿用这份可编辑范围。
+function channelPaletteEditable(user, target) {
+  return pushData.includes(user) && !user._summary && (user.targets || []).includes(target);
+}
+
+/** 放在报告预览正上方，切换时保留编辑器与当前焦点。 */
+function reportPaletteChoices(user, target) {
+  const node = el('div', 'report-palette-choices');
+  node.setAttribute('role', 'group');
+  node.setAttribute('aria-label', '预览报告图配色');
+  const defaultPreset = reportPalettes.presets.find(item => item.id === reportPalettes.default);
+  const items = [{id: '', name: '跟随默认（' + (defaultPreset?.name || '') + '）',
+    colors: defaultPreset?.colors}, ...reportPalettes.presets];
+  const buttons = items.map(item => {
+    const button = el('button', 'ghost report-palette-choice');
+    button.type = 'button';
+    button.setAttribute('data-report-palette', item.id);
+    button.disabled = !channelPaletteEditable(user, target);
+    const swatch = el('span', 'report-palette-swatch');
+    swatch.setAttribute('aria-hidden', 'true');
+    swatch.style.backgroundColor = item.colors?.background || '';
+    swatch.style.borderColor = item.colors?.accent || '';
+    swatch.style.boxShadow = 'inset 5px 0 ' + (item.colors?.card || 'transparent');
+    button.appendChild(swatch);
+    button.appendChild(el('span')).textContent = item.name;
+    button.addEventListener('click', () => {
+      if (!button.disabled && item.id !== (target.reportPalette || '')) changeChannelPalette(item.id || null);
+    });
+    node.appendChild(button);
+    return button;
+  });
+  const sync = () => buttons.forEach((button, i) => {
+    button.setAttribute('aria-pressed', String(items[i].id === (target.reportPalette || '')));
+  });
+  sync();
+  return {node, sync};
 }
 
 /**
@@ -2317,8 +2373,9 @@ function channelSettings(hosts, user, target, session, paintSummary) {
     const commands = channelCommands();
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     for (const box of Object.values(hosts)) box.innerHTML = '';
-    sessionSettings(hosts.rules, {
-      palettes: reportPalettes, onPaletteChange: () => renderStreamers(),
+    const ctx = {
+      palettes: reportPalettes, editable: channelPaletteEditable(user, target),
+      onPaletteChange: () => { render(); repaintPalettePreview(); },
       channel: true, hosts, repaint: render, session: current, target, commands, subscriptions,
       baseline,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
@@ -2329,7 +2386,9 @@ function channelSettings(hosts, user, target, session, paintSummary) {
         atAll: atAllStatus(quota, current, target, directory),
       },
       groups: commandGroups(commands, current, runtime.totalDataAvailable),
-    });
+    };
+    changeChannelPalette = id => setReportPalette(ctx, id);
+    sessionSettings(hosts.rules, ctx);
     paintSummary();
   };
   render();

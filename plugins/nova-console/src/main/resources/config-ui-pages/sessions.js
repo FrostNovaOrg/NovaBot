@@ -327,14 +327,20 @@ function paletteRow(host, ctx) {
     select.appendChild(option);
   }
   select.value = ctx.target.reportPalette || '';
+  select.disabled = ctx.editable === false;
   select.addEventListener('change', () => {
-    const id = select.value || null;
-    if (id === (ctx.baseline?.reportPalette || null)) restoreChannelField(ctx, 'reportPalette');
-    else ctx.target.reportPalette = id;
-    markDirty();
-    ctx.onPaletteChange();
+    setReportPalette(ctx, select.value || null);
   });
   body.appendChild(select);
+}
+
+/** 两个配色入口共用通道草稿；选回原值时保留原来的字段形状。 */
+export function setReportPalette(ctx, id) {
+  if (ctx.editable === false) return;
+  if (id === (ctx.baseline?.reportPalette || null)) restoreChannelField(ctx, 'reportPalette');
+  else ctx.target.reportPalette = id;
+  markDirty();
+  ctx.onPaletteChange();
 }
 
 // ---- 2 静音时段 ----

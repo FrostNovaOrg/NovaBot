@@ -749,6 +749,7 @@ export function normalizedOrder(stored, defaultValue) {
  * @param host 挂在哪
  * @param options paramsOf/editable/onChange 三项与 buildTemplateEditor 同形，另加
  *        preview（是否显示报告预览，默认 true）、items（配置项清单）、render（按当前这套版式画一张的那一支）、
+ *        previewControls（可选，放在预览图上方的控件）、
  *        caption（图下那行说明，可为函数：按草稿现说，每次重画时重取）、
  *        revenueVisible（算当前金额可见性的函数，含草稿；不传则不灰任何项）
  * @return {{repaint: Function}} repaint：金额草稿变了之类的外部变化进来时，整段重画一遍
@@ -761,6 +762,7 @@ export function buildLayoutEditor(host, options) {
   if (preview) controls.id = 'rep-options';
   box.appendChild(controls);
   const view = el('div', 'rep-view');
+  if (preview && opts.previewControls) view.appendChild(opts.previewControls);
   const image = el('div', 'rep-img');
   image.id = 'rep-preview';
   view.appendChild(image);
@@ -1192,8 +1194,18 @@ export function buildLayoutEditor(host, options) {
   function redraw() {
     if (!preview) return;
     const current = ++previewRevision;
-    image.innerHTML = '';
-    image.appendChild(el('p', 'hint')).textContent = '正在生成预览…';
+    if (opts.previewControls) {
+      let status = image.querySelector('.rep-updating');
+      if (!status) {
+        status = el('p', 'rep-updating');
+        status.setAttribute('role', 'status');
+        image.appendChild(status);
+      }
+      status.textContent = '更新中…';
+    } else {
+      image.innerHTML = '';
+      image.appendChild(el('p', 'hint')).textContent = '正在生成预览…';
+    }
     opts.render((opts.paramsOf ? opts.paramsOf() : null) || {}).then(url => {
       if (current !== previewRevision) return;
       image.innerHTML = '';

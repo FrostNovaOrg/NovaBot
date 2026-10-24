@@ -36,20 +36,27 @@ const presets = ['classic', 'pink-blue', 'warm', 'night'].map((id, i) => ({id,
   name: ['经典', '粉蓝', '暖阳', '夜幕'][i],
   colors: {background: '#123456', card: '#234567', text: '#345678', accent: '#456789'}}));
 let defaultId = 'pink-blue';
+let holdPreviews = false;
+const pendingPreviews = [];
+const WEEKLY = 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
 const HANDLER = 'x.Report';
 store.handlerList = [{className: HANDLER, displayName: '下播报告', aliases: [],
   placeholders: [], attachments: [], factoryParams: {}, defaultParams: {},
   reportLayout: true, options: [{key: 'cover', label: '封面', type: 'BOOLEAN', defaultValue: true}]}];
+store.handlerList.push({...store.handlerList[0], className: WEEKLY, displayName: '周报'});
 store.role = 'ADMIN';
 store.platforms = [];
 const user = {uid: 1, platform: 'bilibili', _uname: '主播甲', targets: [
-  {platform: 'qq', type: 1, num: 11, messages: [{handler: HANDLER}]}]};
+  {platform: 'qq', type: 1, num: 11, messages: [{handler: HANDLER}, {handler: WEEKLY}]}]};
 let savedUser = structuredClone(user);
-globalThis.URL.createObjectURL = () => 'blob:preview';
+globalThis.URL.createObjectURL = blob => 'blob:' + blob.palette;
 globalThis.URL.revokeObjectURL = () => {};
 globalThis.fetch = async (url, opts = {}) => {
   const body = opts.body ? JSON.parse(opts.body) : null;
   requests.push({url, body, method: opts.method || 'GET'});
+  if (holdPreviews && url.endsWith('/preview')) {
+    return new Promise(resolve => pendingPreviews.push({body, resolve}));
+  }
   let result = {success: true};
   if (url.endsWith('/report/palettes/default')) {
     defaultId = body.id || 'pink-blue';
@@ -125,6 +132,40 @@ for (const id of ['night', 'warm', null]) {
     await push.reload();
     await push.showPush('1', 'qq|1|11');
     assert.equal(select('通道报告图配色').value, id || '');
+  });
+}
+for (const handler of [HANDLER, WEEKLY]) {
+  await check('快速切换配色后旧图晚到，仍显示最后选择：' + handler, async () => {
+    await push.reload();
+    await push.showPush('1', 'qq|1|11');
+    const edit = right().find(node => node.getAttribute('data-notice-edit') === handler);
+    if (edit.getAttribute('aria-expanded') !== 'true') await edit.click();
+    const tab = byText('图片版式');
+    if (tab) await tab.click();
+    const choice = id => right().find(node => node.getAttribute('data-report-palette') === id);
+    assert.ok(choice('night'), '预览上方缺少配色选择');
+    holdPreviews = true;
+    pendingPreviews.length = 0;
+    await choice('night').click();
+    await waitFor(() => pendingPreviews.some(row => row.body.reportPalette === 'night'));
+    await choice('warm').click();
+    await waitFor(() => pendingPreviews.some(row => row.body.reportPalette === 'warm'));
+    const finish = async id => {
+      const row = pendingPreviews.find(row => row.body.reportPalette === id);
+      let read = false;
+      row.resolve({ok: true, status: 200, headers: {get: () => 'image/png'},
+        blob: async () => { read = true; return {palette: id}; }});
+      // Wait until the response handler has run, including discarded responses.
+      await new Promise(resolve => setImmediate(resolve));
+      return read;
+    };
+    await finish('warm');
+    await waitFor(() => right().some(node => node.tagName === 'img' && node.src === 'blob:warm'));
+    await finish('night');
+    const shots = right().filter(node => node.className === 'rep-shot');
+    assert.equal(shots.length, 1);
+    assert.equal(shots[0].src, 'blob:warm', '晚到的旧图覆盖了最后选择');
+    holdPreviews = false;
   });
 }
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
