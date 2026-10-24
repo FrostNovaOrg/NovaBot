@@ -940,6 +940,16 @@ public class BilibiliApiUtil {
         return getBilibiliImage(url, getBilibiliHeaders());
     }
 
+    /** 获取有大小上限的原始图片，保留源站图片类型。 */
+    public Optional<HttpUtil.ImageBytes> getBilibiliImageBytes(String url, int maxBytes) {
+        if (StringUtil.isBlank(url)) return Optional.empty();
+        try {
+            return http.getImageBytes(url, getBilibiliHeaders(), FETCH_IMAGE_TIMEOUT, maxBytes);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
     /**
      * 获取图片
      * @param url 图片地址
