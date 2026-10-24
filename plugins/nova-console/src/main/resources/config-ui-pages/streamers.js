@@ -17,6 +17,7 @@
 import {store} from './store.js';
 import {$, api, CONSOLE, el, esc, loadingHtml, request, say} from './core.js';
 import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis, createAudienceRing, openDrawer, releaseComponents} from './streamers-components.js';
+import {mountAssistant, mountAssistantEntry} from './streamers-assistant.js';
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
   monitoringDayText, monitoringPeriodText,
@@ -310,6 +311,7 @@ export function refresh() {
 
 /** 离开本页时把报告图的临时地址撤掉 */
 export function leave() {
+  assistantEntry?.destroy(); assistantEntry = null;
   closeDetailDrawer();
   releaseComponents();
   kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
@@ -330,6 +332,8 @@ let livePending = null;
 let liveKey = '';
 let live = null;
 let liveError = '';
+let assistantEntry = null;
+let assistantDrawer = null;
 
 /**
  * 后台刷新失败时屏幕上那一句。数据照留，不拼浏览器或服务器的原话、不标红。
@@ -387,6 +391,7 @@ let reportUrl = '';
  * 两件事合成一个函数的话，直接打开某一场的地址会先闪一下列表。
  */
 export function syncStreamersView() {
+  assistantEntry?.destroy(); assistantEntry = null;
   closeDetailDrawer();
   releaseComponents();
   kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
@@ -437,6 +442,7 @@ export function loadStreamers() {
     const hideChanged = where.hideOff !== next.hideOff;
     const viewport = drawerViewport(next);
     where = next;
+    assistantEntry?.updateHref(dashboardHash({panel: 'assistant'}));
     insightsHideOff = where.hideOff === '1';
     if (hideChanged) renderDailyTrend();
     if (hideChanged) updateHideOffLinks();
@@ -741,6 +747,7 @@ async function loadDetail() {
 }
 
 function renderHead() {
+  assistantEntry?.destroy();
   const host = $('#sd-head');
   host.innerHTML = '';
 
@@ -778,6 +785,7 @@ function renderHead() {
   push.href = '#/push/' + encodeURIComponent(detail.uid);
   push.textContent = '推送设置';
   side.appendChild(push);
+  assistantEntry = mountAssistantEntry(side, where, dashboardHash({panel: 'assistant'}));
   head.appendChild(side);
 
   host.appendChild(head);
@@ -1240,6 +1248,7 @@ function panelLink(label, panel, changes = {}) {
 }
 
 function closeDetailDrawer() {
+  assistantDrawer?.destroy(); assistantDrawer = null;
   slotsEntryChart?.destroy(); slotsEntryChart = null;
   drawerGeneration++;
   drawerChanging = true;
@@ -1264,7 +1273,7 @@ function drawerViewport(next) {
 
 async function openDetailDrawer(viewport = null) {
   closeDetailDrawer();
-  const titles = {audience: '本期观众名单', 'start-slots': '开播节奏明细', sessions: '直播场次', fans: '粉丝变化', trend: '趋势明细'};
+  const titles = {audience: '本期观众名单', 'start-slots': '开播节奏明细', sessions: '直播场次', fans: '粉丝变化', trend: '趋势明细', assistant: '智能助手'};
   const panel = where.panel;
   if (!titles[panel]) return;
   detailDrawer = openDrawer({title: titles[panel]});
@@ -1272,12 +1281,16 @@ async function openDetailDrawer(viewport = null) {
   updateDrawerScope();
   current.dialog.addEventListener('close', () => {
     if (!drawerChanging && detailDrawer === current) {
+      assistantDrawer?.destroy(); assistantDrawer = null;
       detailDrawer = null;
       drawerGeneration++;
       location.hash = dashboardHash({panel: null, page: null, group: null, sort: null, from: null, to: null, starts: null, source: null, sourceDay: null, sourceArea: null, dateFrom: null, dateTo: null, period: null, metric: null, mode: null});
     }
   });
-  if (panel === 'audience') {
+  if (panel === 'assistant') {
+    assistantDrawer = mountAssistant(current.body, where);
+    await assistantDrawer.ready;
+  } else if (panel === 'audience') {
     renderRecording(current.body, insightsData); updateDrawerScope();
     const host = el('div'); host.id = 'sd-audience'; current.body.appendChild(host);
     await loadAudience();
@@ -1390,7 +1403,7 @@ function renderRecording(host, data) {
 }
 
 function updateDrawerScope() {
-  if (!detailDrawer) return;
+  if (!detailDrawer || where.panel === 'assistant') return;
   if (detailDrawer.body.querySelector('.sd-recording'))
     renderRecording(detailDrawer.body, where.panel === 'start-slots' ? slotsData : insightsData);
   const head = detailDrawer.dialog.querySelector('.sc-drawer-head');

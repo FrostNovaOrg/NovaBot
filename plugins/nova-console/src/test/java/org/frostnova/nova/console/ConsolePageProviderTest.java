@@ -38,8 +38,8 @@ class ConsolePageProviderTest {
 
         try {
             assertEquals("streamers.js", page.script(), "主脚本必须是 streamers.js");
-            assertEquals(List.of("streamers-model.js", "streamers-components.js"), page.assets(),
-                    "模型与展示组件必须登记，否则 import 解析到 404");
+            assertEquals(List.of("streamers-model.js", "streamers-components.js", "streamers-assistant.js"), page.assets(),
+                    "模型、展示组件与问答抽屉必须登记，否则 import 解析到 404");
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }
@@ -48,6 +48,7 @@ class ConsolePageProviderTest {
             assertReadable("config-ui-pages/streamers.js");
             assertReadable("config-ui-pages/streamers-model.js");
             assertReadable("config-ui-pages/streamers-components.js");
+            assertReadable("config-ui-pages/streamers-assistant.js");
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
         }
