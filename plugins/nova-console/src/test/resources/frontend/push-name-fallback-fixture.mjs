@@ -278,10 +278,10 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   const scope = {api, store, location, pages, SLOT_TOP: 'top', SLOT_SETTINGS: 'settings',
     PAGE_TAB: {home: 'home', log: 'log', links: 'links', settings: 'general'},
     TAB_HASH: {}, topPageIds: new Set(['push', 'streamers']),
-    route: '', homeStatus: {}, homeLogin: {}, later: false,
+    route: '', routeIdentity: '', homeStatus: {}, homeLogin: {}, later: false,
     shouldOpenSetup: () => false, manualHref: () => '',
     $: () => ({scrollIntoView: noop}),
-    document: {querySelectorAll: () => [], documentElement: {classList: {toggle: noop}}},
+    document: {querySelector: () => null, querySelectorAll: () => [], documentElement: {classList: {toggle: noop}}},
     window: {scrollTo: noop}, clearTimeout,
     reloadChangeSources: async () => { await push.reload(); releasePlatforms(); },
   };
@@ -290,7 +290,7 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
     'clearIssuedToken', 'stopFollow', 'stopSetupPolling', 'stopWatchingGroups', 'syncLogView',
     'loadTokens', 'refreshLinks', 'loadTargets', 'loadLog', 'openSetup']) scope[key] = noop;
   scope.say = (message, level) => { if (level === 'err') throw new Error(message); };
-  const hostFns = ['function callPage(', 'function refreshPages(', 'function parseHash(',
+  const hostFns = ['function holdPageHeight(', 'function callPage(', 'function refreshPages(', 'function parseHash(',
     'function applyRoute(', 'async function load(']
     .map(marker => bracedFrom(hostSrc, marker)).join('\n');
   const host = new Function('scope', 'with (scope) { ' + hostFns

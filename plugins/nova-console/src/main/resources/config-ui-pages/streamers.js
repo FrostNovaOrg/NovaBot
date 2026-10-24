@@ -78,7 +78,6 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent-text
 .sd-scope summary,.sd-cumulative summary,#sd-more summary{cursor:pointer;color:var(--dim)}
 details.sd-scope{margin:0;padding:0;border:0}.sd-scope p{margin:10px 0 0;font-size:var(--fs-sm);color:var(--dim)}
 .sd-columns{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,1fr);gap:16px;margin-top:16px}
-.sd-columns>#sd-recent-card{align-self:start}
 .sd-columns>.sc-card{min-width:0;margin:0;display:flex;flex-direction:column}
 #sd-trend{scroll-margin-top:82px}
 #sd-trend-content{display:flex;flex:1;flex-direction:column}
@@ -193,6 +192,7 @@ details.sd-scope{margin:0;padding:0;border:0}.sd-scope p{margin:10px 0 0;font-si
 .sd-audience-note{font-size:var(--fs-xs);margin:10px 0 0;line-height:1.7}
 .sd-recent{display:flex;flex-direction:column;flex:1;min-width:0}
 .sd-recent-row{flex:1}
+@media(min-width:901px){#sd-recent{contain:size}.sd-recent-row{flex:none}}
 .sd-recent h4{font-size:var(--fs-xs);font-weight:400;color:var(--dim);margin:10px 0 2px}
 .sd-recent-row{grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:8px}
 .sd-recent-time,.sd-recent-main{display:flex;flex-direction:column;gap:5px;min-width:0}
@@ -305,6 +305,7 @@ export function leave() {
   closeDetailDrawer();
   releaseComponents();
   kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
+  recentResizeObserver?.disconnect(); recentResizeObserver = null;
   liveActive = false;
   viewGeneration++;
   stopLiveRefresh();
@@ -381,6 +382,7 @@ export function syncStreamersView() {
   closeDetailDrawer();
   releaseComponents();
   kpiResizeObserver?.disconnect(); kpiResizeObserver = null;
+  recentResizeObserver?.disconnect(); recentResizeObserver = null;
   viewGeneration++;
   stopLiveRefresh();
   const next = parseStreamersHash(location.hash);
@@ -417,12 +419,13 @@ export function loadStreamers() {
     && JSON.stringify(where) !== JSON.stringify(next)) {
     const rangeChanged = where.days !== next.days;
     const hideChanged = where.hideOff !== next.hideOff;
+    const viewport = drawerViewport(next);
     where = next;
     insightsHideOff = where.hideOff === '1';
     if (hideChanged) renderDailyTrend();
     if (hideChanged) updateHideOffLinks();
     if (rangeChanged) insightsData = null;
-    const jobs = [openDetailDrawer()];
+    const jobs = [openDetailDrawer(viewport)];
     if (rangeChanged) jobs.push(loadDashboard());
     return Promise.all(jobs);
   }
@@ -1229,7 +1232,21 @@ function closeDetailDrawer() {
   drawerChanging = false;
 }
 
-async function openDetailDrawer() {
+function drawerViewport(next) {
+  if (!detailDrawer || where.panel !== next.panel) return null;
+  const body = detailDrawer.body;
+  const pager = body.querySelector('.sd-pagination');
+  const bounds = body.getBoundingClientRect();
+  const pagerBounds = pager?.getBoundingClientRect();
+  // 翻页时对齐正在看的翻页栏；其他视图变化保留抽屉的阅读位置。
+  const paging = where.page !== next.page && Object.keys(where).every(key => key === 'page' || where[key] === next[key]);
+  return {top: body.scrollTop, left: body.scrollLeft,
+    pagerEnd: pagerBounds ? pagerBounds.bottom + body.scrollTop - bounds.top : null,
+    pagerTop: paging && pagerBounds && pagerBounds.bottom > bounds.top && pagerBounds.top < bounds.bottom
+      ? pagerBounds.top : null};
+}
+
+async function openDetailDrawer(viewport = null) {
   closeDetailDrawer();
   const titles = {audience: '本期观众名单', 'start-slots': '开播节奏明细', sessions: '直播场次', fans: '粉丝变化', trend: '趋势明细'};
   const panel = where.panel;
@@ -1276,6 +1293,20 @@ async function openDetailDrawer() {
     } catch (error) {
       if (generation === drawerGeneration && liveActive) current.body.textContent = '读取失败：' + error.message;
     }
+  }
+  if (viewport && detailDrawer === current) {
+    const pager = current.body.querySelector('.sd-pagination');
+    const offset = viewport.pagerTop != null && pager ? pager.getBoundingClientRect().top - viewport.pagerTop : viewport.top;
+    const pagerEnd = pager ? pager.getBoundingClientRect().bottom - current.body.getBoundingClientRect().top : null;
+    const remaining = offset - (current.body.scrollHeight - current.body.clientHeight);
+    if (viewport.pagerTop != null && pagerEnd >= viewport.pagerEnd && remaining > 0) {
+      // 短页返回长页时补足滚动余量，避免翻页栏被页底的滚动边界推走。
+      const padding = parseFloat(getComputedStyle(current.body).paddingBottom);
+      current.body.style.paddingBottom = (padding + remaining) + 'px';
+    }
+    // 内容变短时由浏览器收回真实页底，不额外撑高抽屉。
+    current.body.scrollTop = offset;
+    current.body.scrollLeft = viewport.left;
   }
 }
 
@@ -1463,6 +1494,7 @@ function renderDashboardHints(data, error) {
 }
 
 function renderDashboard() {
+  recentResizeObserver?.disconnect(); recentResizeObserver = null;
   const host = $('#sd-body'); host.innerHTML = '';
   const toolbar = el('div', 'sd-toolbar'); toolbar.id = 'sd-toolbar'; host.appendChild(toolbar);
   const performance = createSection('本期表现', performanceHint(), host).box; performance.id = 'sd-insights';
@@ -1482,6 +1514,8 @@ function renderDashboard() {
   const archiveLink = el('a', 'lnkbtn sd-detail-link sd-archive-link'); archiveLink.textContent = '正在读取归档场数…'; sessions.header.appendChild(archiveLink);
   const current = el('div', 'sd-current-live'); current.id = 'sd-live'; sessions.box.appendChild(current);
   renderLive(); sessions.box.appendChild(recentCard());
+  recentResizeObserver = new ResizeObserver(fitRecent);
+  for (const box of [columns, calendar.box, sessions.box, current]) recentResizeObserver.observe(box);
   const cumulative = el('details', 'sd-cumulative');
   const title = el('summary'); title.textContent = '累计数据'; cumulative.appendChild(title);
   renderOverview(cumulative); host.appendChild(cumulative);
@@ -2076,25 +2110,56 @@ function sessionRevenue(item, page) {
     ? page.revenueKeys.reduce((sum, key) => sum + (item.metrics[key] || 0), 0) : null;
 }
 
+let recentResizeObserver = null;
+
+// 列表不参与额外高度的计算，避免加一行又把网格撑高、从而继续加行。
+// 最低高度保留原来的 5 行（在播 3 行），剩余空间只放得下整行才显示。
+function fitRecent() {
+  const host = $('#sd-recent');
+  if (!host || !host.getClientRects().length) return;
+  const base = isLiving() ? 3 : 5;
+  const wide = window.matchMedia('(min-width:901px)').matches;
+  const rows = [...host.querySelectorAll('.sd-recent-row')];
+  if (wide) for (const item of (detail.sessions?.items || []).slice(rows.length)) {
+    const row = recentRow(item); host.appendChild(row); rows.push(row);
+  }
+  rows.forEach((row, index) => { row.style.display = index < base ? '' : 'none'; });
+  host.style.minHeight = '';
+  if (wide && rows.length) {
+    const last = rows[Math.min(base, rows.length) - 1];
+    host.style.minHeight = (last.getBoundingClientRect().bottom - host.getBoundingClientRect().top) + 'px';
+    const bottom = host.getBoundingClientRect().bottom;
+    for (const row of rows.slice(base)) {
+      row.style.display = '';
+      if (row.getBoundingClientRect().bottom > bottom + 0.5) { row.style.display = 'none'; break; }
+    }
+  }
+  const count = rows.filter(row => row.style.display !== 'none').length;
+  host.querySelector('h4').textContent = '最近 ' + count + ' 场归档';
+}
+
 function renderRecent(host) {
   const items = (detail.sessions?.items || []).slice(0, isLiving() ? 3 : 5);
   const title = el('h4'); title.textContent = '最近 ' + items.length + ' 场归档'; host.appendChild(title);
   if (!items.length) { const note = el('p', 'hint'); note.textContent = '暂无已归档的场次。每场直播下播时会自动归档一条记录。'; host.appendChild(note); }
-  for (const item of items) {
-    const link = el('a', 'sd-recent-row'); link.href = sessionHash(item.platform, item.uid, item.startTime);
-    const left = el('div', 'sd-recent-time');
-    const time = el('span'); time.textContent = pageTime(item.startTime, false);
-    const duration = el('small'); duration.textContent = fmtDuration(item.durationSeconds); left.append(time, duration);
-    const middle = el('div', 'sd-recent-main');
-    const title = el('span'); title.textContent = sessionTitle(item).title || '未记录标题';
-    const metrics = el('small');
-    const money = sessionRevenue(item, detail.sessions || {});
-    const messages = item.metrics?.[detail.sessions?.messageKey];
-    metrics.textContent = '流水 ' + fmtMetric(money, {money: true}) + (money == null ? '' : ' 元') + ' · 弹幕 ' + fmtMetric(messages);
-    if (item.interrupted) metrics.textContent += ' · ' + item.endReasonText;
-    middle.append(title, metrics); link.append(left, middle, gapBadge(item)); host.appendChild(link);
-  }
+  for (const item of items) host.appendChild(recentRow(item));
   return host;
+}
+
+function recentRow(item) {
+  const link = el('a', 'sd-recent-row'); link.href = sessionHash(item.platform, item.uid, item.startTime);
+  const left = el('div', 'sd-recent-time');
+  const time = el('span'); time.textContent = pageTime(item.startTime, false);
+  const duration = el('small'); duration.textContent = fmtDuration(item.durationSeconds); left.append(time, duration);
+  const middle = el('div', 'sd-recent-main');
+  const title = el('span'); title.textContent = sessionTitle(item).title || '未记录标题';
+  const metrics = el('small');
+  const money = sessionRevenue(item, detail.sessions || {});
+  const messages = item.metrics?.[detail.sessions?.messageKey];
+  metrics.textContent = '流水 ' + fmtMetric(money, {money: true}) + (money == null ? '' : ' 元') + ' · 弹幕 ' + fmtMetric(messages);
+  if (item.interrupted) metrics.textContent += ' · ' + item.endReasonText;
+  middle.append(title, metrics); link.append(left, middle, gapBadge(item));
+  return link;
 }
 
 function sessionFilters(host, page) {

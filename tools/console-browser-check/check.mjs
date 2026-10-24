@@ -435,6 +435,192 @@ function checkPalette(facts, palette) {
   return problems;
 }
 
+// 用归档充足的演示主播量实际布局；滚到趋势卡后通过真实控件改变视图。
+const STREAMER_INTERACTIONS = `(async () => {
+  const wait = async predicate => {
+    const deadline = performance.now() + 12000;
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error('等待主播视图超时');
+      await new Promise(requestAnimationFrame);
+    }
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  };
+  const rect = selector => document.querySelector(selector).getBoundingClientRect();
+  const rows = [...document.querySelectorAll('#sd-recent .sd-recent-row')].filter(row => row.getClientRects().length);
+  const last = rows.at(-1).getBoundingClientRect();
+  const geometry = {bottomDifference: Math.abs(rect('#sd-calendar-card').bottom - rect('#sd-recent-card').bottom),
+    rows: rows.length, bottomSpace: rect('#sd-recent-card').bottom - last.bottom, rowHeight: last.height,
+    heading: document.querySelector('#sd-recent h4').textContent};
+  document.querySelector('#sd-trend').scrollIntoView({block: 'start'});
+  await wait(() => scrollY > 200);
+  let position = scrollY;
+  const movements = [];
+  const step = async (name, action, ready, selector) => {
+    window.scrollTo(0, position);
+    const beforeTop = rect(selector).top;
+    action();
+    await wait(ready);
+    const afterTop = rect(selector).top;
+    movements.push({name, before: position, after: scrollY, difference: Math.abs(scrollY - position),
+      controlDifference: Math.abs(afterTop - beforeTop), inView: rect(selector).bottom > 0 && afterTop < innerHeight});
+  };
+  const checkbox = '#sd-trend input[type=checkbox]';
+  const checked = document.querySelector(checkbox).checked;
+  await step('隐藏未播与无效日期', () => document.querySelector(checkbox).click(),
+    () => document.querySelector(checkbox).checked !== checked && location.hash.includes('hideOff=1'), checkbox);
+  document.querySelector('#sd-calendar .sc-calendar-recorded').click();
+  const opener = '#sd-calendar .sc-calendar-selection button';
+  document.querySelector(opener).scrollIntoView({block: 'center'});
+  await wait(() => rect(opener).top < innerHeight);
+  position = scrollY;
+  await step('打开场次抽屉', () => document.querySelector(opener).click(),
+    () => document.querySelector('dialog.sc-drawer[open] .sd-session-filters'), opener);
+  await step('关闭场次抽屉', () => document.querySelector('.sc-drawer-close').click(),
+    () => !document.querySelector('dialog.sc-drawer[open]') && !location.hash.includes('panel='), opener);
+  window.scrollTo(0, 0);
+  return {geometry, movements};
+})()`;
+
+async function checkStreamerInteractions(s, round) {
+  const response = await s('Runtime.evaluate', {expression: STREAMER_INTERACTIONS, returnByValue: true, awaitPromise: true});
+  if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+  const {geometry, movements} = response.result.value;
+  round.interactions = {geometry, movements};
+  if (geometry.bottomDifference > 1 || geometry.bottomSpace >= geometry.rowHeight
+    || geometry.heading !== '最近 ' + geometry.rows + ' 场归档') {
+    round.failures.push('主播双卡布局：' + JSON.stringify(geometry));
+  }
+  for (const movement of movements) if (!movement.inView || movement.controlDifference > 2) {
+    round.failures.push('页内滚动：' + JSON.stringify(movement));
+  }
+}
+
+// 等重画和临时保高结束，再量真实内容；旧版保高不释放时也留下读数。
+const VIEW_HELPERS = `
+  const frame = () => new Promise(requestAnimationFrame);
+  const wait = async predicate => {
+    const deadline = performance.now() + 12000;
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error('等待页面控件超时');
+      await frame();
+    }
+    await frame(); await frame();
+  };
+  const finish = async () => {
+    const deadline = performance.now() + 5000;
+    while (document.querySelector('.page.on').style.minHeight && performance.now() < deadline) await frame();
+    await frame(); await frame();
+  };
+  const visible = el => !!el?.getClientRects().length;
+  const inView = el => visible(el) && el.getBoundingClientRect().bottom > 0
+    && el.getBoundingClientRect().top < innerHeight;
+  const bottomSpace = () => {
+    const page = document.querySelector('.page.on');
+    const bottom = Math.max(...[...page.children].filter(visible).map(el => el.getBoundingClientRect().bottom));
+    return Math.max(0, document.documentElement.scrollHeight - (bottom + scrollY));
+  };
+`;
+
+const DRAWER_PAGINATION = `(async () => {
+  ${VIEW_HELPERS}
+  document.querySelector('#sd-body a[href*="panel=trend"]').click();
+  const drawer = () => document.querySelector('dialog.sc-drawer[open]');
+  const pager = () => drawer()?.querySelector('.sd-pagination');
+  const next = () => [...(pager()?.querySelectorAll('a') || [])].find(link => link.textContent.includes('下一页'));
+  await wait(() => next());
+  next().scrollIntoView({block: 'center'});
+  await frame(); await frame();
+  const before = next().getBoundingClientRect().top;
+  const scrollBefore = drawer().querySelector('.sc-drawer-body').scrollTop;
+  next().click();
+  await wait(() => pager()?.textContent.includes('第 2/'));
+  await finish();
+  const control = next();
+  const after = control.getBoundingClientRect().top;
+  const body = drawer().querySelector('.sc-drawer-body');
+  const bounds = body.getBoundingClientRect(), button = control.getBoundingClientRect();
+  const facts = {name: '趋势明细周期翻页', before, after, difference: Math.abs(after - before),
+    inView: button.top >= bounds.top && button.bottom <= bounds.bottom && inView(control),
+    scrollBefore, scrollAfter: body.scrollTop};
+  drawer().querySelector('.sc-drawer-close').click();
+  await wait(() => !drawer() && !location.hash.includes('panel='));
+  await finish();
+  window.scrollTo(0, 0);
+  return facts;
+})()`;
+
+async function checkDrawerPagination(s, round) {
+  const response = await s('Runtime.evaluate', {expression: DRAWER_PAGINATION, returnByValue: true, awaitPromise: true});
+  if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+  const facts = response.result.value;
+  round.drawerPagination = facts;
+  if (!facts.inView || facts.difference > 2) round.failures.push('抽屉翻页：' + JSON.stringify(facts));
+}
+
+const PUSH_COLLAPSE = `(async () => {
+  ${VIEW_HELPERS}
+  location.hash = '#/push/990000000101/990000000301';
+  const selector = '.crow > summary';
+  await wait(() => visible(document.querySelector(selector)));
+  document.querySelector(selector).click();
+  await wait(() => document.querySelector(selector)?.parentElement.open);
+  await finish();
+  document.querySelector(selector).scrollIntoView({block: 'start'});
+  window.scrollBy(0, -80);
+  await frame(); await frame();
+  const before = document.querySelector(selector).getBoundingClientRect().top;
+  const scrollBefore = scrollY;
+  const scrollLimitBefore = document.documentElement.scrollHeight - innerHeight;
+  document.querySelector(selector).click();
+  await wait(() => !document.querySelector(selector)?.parentElement.open);
+  await finish();
+  const control = document.querySelector(selector);
+  const after = control.getBoundingClientRect().top;
+  return {before, after, difference: Math.abs(after - before), inView: inView(control),
+    scrollBefore, scrollAfter: scrollY, scrollLimitBefore,
+    bottomSpace: bottomSpace(),
+    minHeight: document.querySelector('.page.on').style.minHeight,
+    overflowAnchor: document.querySelector('.page.on').style.overflowAnchor};
+})()`;
+
+const SETTINGS_COLLAPSE = `(async () => {
+  ${VIEW_HELPERS}
+  const toggle = () => document.querySelector('#show-advanced');
+  await wait(() => visible(toggle()));
+  toggle().click();
+  await wait(() => toggle().getAttribute('aria-expanded') === 'true');
+  await finish();
+  window.scrollTo(0, document.documentElement.scrollHeight - innerHeight);
+  await frame(); await frame();
+  const before = toggle().getBoundingClientRect().top;
+  const scrollBefore = scrollY;
+  toggle().click();
+  await wait(() => toggle().getAttribute('aria-expanded') === 'false');
+  await finish();
+  const after = toggle().getBoundingClientRect().top;
+  return {before, after, difference: Math.abs(after - before), inView: inView(toggle()),
+    scrollBefore, scrollAfter: scrollY, visibleSettings: [...document.querySelectorAll('.setitem')].filter(inView).length,
+    bottomSpace: bottomSpace(), minHeight: document.querySelector('.page.on').style.minHeight,
+    overflowAnchor: document.querySelector('.page.on').style.overflowAnchor};
+})()`;
+
+async function checkCollapse(s, round, expression, name) {
+  const response = await s('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true});
+  if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+  const facts = response.result.value;
+  round.collapse = {name, ...facts};
+  // 真正缩短到页底时允许位置随之收回；控件必须仍然可见。
+  const clamped = facts.scrollAfter < facts.scrollBefore
+    && facts.scrollAfter + 900 >= (await s('Page.getLayoutMetrics')).cssContentSize.height - 2;
+  if (!facts.inView || (!clamped && facts.difference > 2) || facts.bottomSpace > 100
+    || (facts.scrollLimitBefore !== undefined && facts.scrollBefore < facts.scrollLimitBefore / 2)
+    || (facts.visibleSettings !== undefined && facts.visibleSettings < 1)
+    || facts.minHeight || facts.overflowAnchor === 'none') {
+    round.failures.push(name + '：' + JSON.stringify(facts));
+  }
+}
+
 // PNG 的校验与压缩只用 node 自带模块。Chromium 输出的 8 位 RGB/RGBA 可直接拼接。
 const CRC_TABLE = Array.from({length: 256}, (_, n) => {
   for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
@@ -652,6 +838,14 @@ async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
     const probe = (await s('Runtime.evaluate', {expression: PALETTE_PROBE, returnByValue: true})).result.value;
     round.failures.push(...checkPalette(probe, palette));
     round.colors = probe;
+    if (page === 'streamer' && size.width === 1440 && palette === PALETTES[0] && color === 'light') {
+      await checkStreamerInteractions(s, round);
+      await checkDrawerPagination(s, round);
+    }
+    if (size.width === 1440 && palette === PALETTES[0] && color === 'light') {
+      if (page === 'push') await checkCollapse(s, round, PUSH_COLLAPSE, '收起群内命令');
+      if (page === 'settings') await checkCollapse(s, round, SETTINGS_COLLAPSE, '收起高级选项');
+    }
     if (facts && facts.url !== new URL(ORIGIN + address).pathname + new URL(ORIGIN + address).hash) {
       round.notes.landed.add(`打开后停在 ${facts.url}`);
     }
@@ -685,6 +879,12 @@ function summarize(rounds, version, shotProblem) {
   }
   const failed = rounds.filter(r => r.failures.length).length;
   lines.push('', `合计 ${rounds.length} 轮：通过 ${rounds.length - failed}，失败 ${failed}`);
+  for (const r of rounds) if (r.interactions) {
+    lines.push('主播双卡布局：' + JSON.stringify(r.interactions.geometry));
+    for (const movement of r.interactions.movements) lines.push('页内滚动：' + JSON.stringify(movement));
+  }
+  for (const r of rounds) if (r.collapse) lines.push('页面收起：' + JSON.stringify(r.collapse));
+  for (const r of rounds) if (r.drawerPagination) lines.push('抽屉翻页：' + JSON.stringify(r.drawerPagination));
 
   // 各套配色在首页上取到的几样颜色，只列出：三套该各是各的，一眼看得出有没有哪套没生效
   lines.push('', '配色读数（首页 1440 宽，页底／强调色／次要字）：');
