@@ -286,7 +286,8 @@ function mountHomeCard(meta) {
  */
 function callPage(page, hook, ...args) {
   try {
-    page.module[hook]?.(...args);
+    // 路由据异步绘制任务的完成时机释放临时高度。
+    page.renderTask = page.module[hook]?.(...args);
     return true;
   } catch (e) {
     say(page.meta.displayName + ' 页面发生错误：' + e.message, 'err');
@@ -516,14 +517,61 @@ const TAB_HASH = {
 let route = '';
 let routeIdentity = '';
 
-// 筛选、折叠或重画可能暂时把页面缩短。保留本页已经占用的高度，
-// 浏览器就不会在新内容回来前把滚动位置夹到页顶；切页时释放。
-function holdPageHeight() {
-  const page = document.querySelector('.page.on');
-  if (page) {
-    page.style.overflowAnchor = 'none';
-    page.style.minHeight = page.getBoundingClientRect().height + 'px';
+// 只在这一轮重画期间保高：同步绘制等布局稳定，异步绘制等回包后的绘制完成。
+// 两秒后无论如何释放，让真正变短的内容自然收回页底，并恢复浏览器的滚动锚定。
+function holdPageHeight(task) {
+  if (task === false) {
+    holdPageHeight.current?.release();
+    return;
   }
+  if (arguments.length) {
+    holdPageHeight.current?.track(task);
+    return;
+  }
+  const page = document.querySelector('.page.on');
+  if (!page) return;
+  if (holdPageHeight.current?.page === page) {
+    holdPageHeight.current.settle();
+    return;
+  }
+  holdPageHeight.current?.release();
+  const minHeight = page.style.minHeight;
+  const overflowAnchor = page.style.overflowAnchor;
+  let pending = 0;
+  let frame = 0;
+  let timer;
+  let active = true;
+  const release = () => {
+    if (!active) return;
+    active = false;
+    clearTimeout(timer);
+    cancelAnimationFrame(frame);
+    observer.disconnect();
+    page.style.overflowAnchor = overflowAnchor;
+    page.style.minHeight = minHeight;
+    holdPageHeight.current = null;
+  };
+  const settle = () => {
+    cancelAnimationFrame(frame);
+    if (!active || pending) return;
+    // 留两帧给 hashchange、ResizeObserver 和绘制后补入的内容。
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(release); });
+  };
+  const track = promise => {
+    if (!active || !promise?.then) return;
+    pending++;
+    cancelAnimationFrame(frame);
+    const done = () => { pending--; settle(); };
+    Promise.resolve(promise).then(done, done);
+  };
+  const observer = new MutationObserver(settle);
+  page.style.minHeight = page.getBoundingClientRect().height + 'px';
+  page.style.overflowAnchor = 'none';
+  observer.observe(page, {childList: true, subtree: true, attributes: true, characterData: true});
+  holdPageHeight.current = {page, release, settle, track};
+  // 给浏览器调度留一点余量，不把保护拖过两秒。
+  timer = setTimeout(release, 1800);
+  settle();
 }
 for (const type of ['click', 'input', 'change']) {
   document.addEventListener(type, event => {
@@ -675,7 +723,7 @@ function applyRoute(withData = true) {
   // 日志的时间线与工程日志也是同一页里的视图。
   const identity = topPage ? location.hash.split('?')[0] : name + (plugin ? '/' + sub : '');
   const changingPage = routeIdentity !== identity;
-  if (changingPage) document.querySelectorAll('.page').forEach(page => { page.style.minHeight = ''; });
+  if (changingPage) holdPageHeight(false);
   else holdPageHeight();
   routeIdentity = identity;
 
@@ -731,18 +779,24 @@ function applyRoute(withData = true) {
 
   clearTimeout(store.accountTimer);
   // 首页四份数据一起取，见 refreshHome
-  if (name === 'home') { refreshHome(); refreshPages(); }
+  if (name === 'home') { holdPageHeight(refreshHome()); refreshPages(); }
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
   // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
-  else if (name === 'links') { loadTokens(); refreshLinks(); refreshPages(); loadTargets(false); }
+  else if (name === 'links') { loadTokens(); holdPageHeight(refreshLinks()); refreshPages(); holdPageHeight(loadTargets(false)); }
   // 翻天、改筛选、进出工程日志走的都是改地址栏这一条路，因此每次进来都重取：
   // 日志页的「现在是哪一天、筛了什么」全部只存在地址栏里，本页自己不记
   else if (name === 'log') loadLog();
   // 每次进入都重问一遍这台机器现在什么样：上一趟离开之后使用者可能去别处上了锁、加了主播，
   // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
-  else if (name === 'setup') openSetup();
-  else if (topPage) { api('/status').then(renderStatus); callPage(topPage, 'refresh', {sub, tail}); }
-  else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
+  else if (name === 'setup') holdPageHeight(openSetup());
+  else if (topPage) {
+    api('/status').then(renderStatus); callPage(topPage, 'refresh', {sub, tail});
+    holdPageHeight(topPage.renderTask);
+  }
+  else if (plugin) {
+    api('/status').then(renderStatus); callPage(plugin, 'refresh');
+    holdPageHeight(plugin.renderTask);
+  }
   // 每次进入都按当下的 store.values 重画一遍：首页那个推送总开关改完不刷新就切过来时，
   // 这一页画的还是启动那一刻的值，而屏幕上看不出它是旧的
   else if (name === 'settings') { renderGeneral(); focusCard(name, card, true); }

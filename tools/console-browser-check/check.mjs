@@ -454,23 +454,30 @@ const STREAMER_INTERACTIONS = `(async () => {
     heading: document.querySelector('#sd-recent h4').textContent};
   document.querySelector('#sd-trend').scrollIntoView({block: 'start'});
   await wait(() => scrollY > 200);
-  const position = scrollY;
+  let position = scrollY;
   const movements = [];
-  const step = async (name, action, ready) => {
+  const step = async (name, action, ready, selector) => {
     window.scrollTo(0, position);
+    const beforeTop = rect(selector).top;
     action();
     await wait(ready);
-    movements.push({name, before: position, after: scrollY, difference: Math.abs(scrollY - position)});
+    const afterTop = rect(selector).top;
+    movements.push({name, before: position, after: scrollY, difference: Math.abs(scrollY - position),
+      controlDifference: Math.abs(afterTop - beforeTop), inView: rect(selector).bottom > 0 && afterTop < innerHeight});
   };
   const checkbox = '#sd-trend input[type=checkbox]';
   const checked = document.querySelector(checkbox).checked;
   await step('隐藏未播与无效日期', () => document.querySelector(checkbox).click(),
-    () => document.querySelector(checkbox).checked !== checked && location.hash.includes('hideOff=1'));
+    () => document.querySelector(checkbox).checked !== checked && location.hash.includes('hideOff=1'), checkbox);
   document.querySelector('#sd-calendar .sc-calendar-recorded').click();
-  await step('打开场次抽屉', () => document.querySelector('#sd-calendar .sc-calendar-selection button').click(),
-    () => document.querySelector('dialog.sc-drawer[open] .sd-session-filters'));
+  const opener = '#sd-calendar .sc-calendar-selection button';
+  document.querySelector(opener).scrollIntoView({block: 'center'});
+  await wait(() => rect(opener).top < innerHeight);
+  position = scrollY;
+  await step('打开场次抽屉', () => document.querySelector(opener).click(),
+    () => document.querySelector('dialog.sc-drawer[open] .sd-session-filters'), opener);
   await step('关闭场次抽屉', () => document.querySelector('.sc-drawer-close').click(),
-    () => !document.querySelector('dialog.sc-drawer[open]') && !location.hash.includes('panel='));
+    () => !document.querySelector('dialog.sc-drawer[open]') && !location.hash.includes('panel='), opener);
   window.scrollTo(0, 0);
   return {geometry, movements};
 })()`;
@@ -484,8 +491,97 @@ async function checkStreamerInteractions(s, round) {
     || geometry.heading !== '最近 ' + geometry.rows + ' 场归档') {
     round.failures.push('主播双卡布局：' + JSON.stringify(geometry));
   }
-  for (const movement of movements) if (movement.difference > 2) {
+  for (const movement of movements) if (!movement.inView || movement.controlDifference > 2) {
     round.failures.push('页内滚动：' + JSON.stringify(movement));
+  }
+}
+
+// 等重画和临时保高结束，再量真实内容；旧版保高不释放时也留下读数。
+const VIEW_HELPERS = `
+  const frame = () => new Promise(requestAnimationFrame);
+  const wait = async predicate => {
+    const deadline = performance.now() + 12000;
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error('等待页面控件超时');
+      await frame();
+    }
+    await frame(); await frame();
+  };
+  const finish = async () => {
+    const deadline = performance.now() + 5000;
+    while (document.querySelector('.page.on').style.minHeight && performance.now() < deadline) await frame();
+    await frame(); await frame();
+  };
+  const visible = el => !!el?.getClientRects().length;
+  const inView = el => visible(el) && el.getBoundingClientRect().bottom > 0
+    && el.getBoundingClientRect().top < innerHeight;
+  const bottomSpace = () => {
+    const page = document.querySelector('.page.on');
+    const bottom = Math.max(...[...page.children].filter(visible).map(el => el.getBoundingClientRect().bottom));
+    return Math.max(0, document.documentElement.scrollHeight - (bottom + scrollY));
+  };
+`;
+
+const PUSH_COLLAPSE = `(async () => {
+  ${VIEW_HELPERS}
+  location.hash = '#/push/990000000101/990000000301';
+  const selector = '.crow > summary';
+  await wait(() => visible(document.querySelector(selector)));
+  document.querySelector(selector).click();
+  await wait(() => document.querySelector(selector)?.parentElement.open);
+  await finish();
+  document.querySelector(selector).scrollIntoView({block: 'start'});
+  window.scrollBy(0, -80);
+  await frame(); await frame();
+  const before = document.querySelector(selector).getBoundingClientRect().top;
+  const scrollBefore = scrollY;
+  const scrollLimitBefore = document.documentElement.scrollHeight - innerHeight;
+  document.querySelector(selector).click();
+  await wait(() => !document.querySelector(selector)?.parentElement.open);
+  await finish();
+  const control = document.querySelector(selector);
+  const after = control.getBoundingClientRect().top;
+  return {before, after, difference: Math.abs(after - before), inView: inView(control),
+    scrollBefore, scrollAfter: scrollY, scrollLimitBefore,
+    bottomSpace: bottomSpace(),
+    minHeight: document.querySelector('.page.on').style.minHeight,
+    overflowAnchor: document.querySelector('.page.on').style.overflowAnchor};
+})()`;
+
+const SETTINGS_COLLAPSE = `(async () => {
+  ${VIEW_HELPERS}
+  const toggle = () => document.querySelector('#show-advanced');
+  await wait(() => visible(toggle()));
+  toggle().click();
+  await wait(() => toggle().getAttribute('aria-expanded') === 'true');
+  await finish();
+  window.scrollTo(0, document.documentElement.scrollHeight - innerHeight);
+  await frame(); await frame();
+  const before = toggle().getBoundingClientRect().top;
+  const scrollBefore = scrollY;
+  toggle().click();
+  await wait(() => toggle().getAttribute('aria-expanded') === 'false');
+  await finish();
+  const after = toggle().getBoundingClientRect().top;
+  return {before, after, difference: Math.abs(after - before), inView: inView(toggle()),
+    scrollBefore, scrollAfter: scrollY, visibleSettings: [...document.querySelectorAll('.setitem')].filter(inView).length,
+    bottomSpace: bottomSpace(), minHeight: document.querySelector('.page.on').style.minHeight,
+    overflowAnchor: document.querySelector('.page.on').style.overflowAnchor};
+})()`;
+
+async function checkCollapse(s, round, expression, name) {
+  const response = await s('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true});
+  if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+  const facts = response.result.value;
+  round.collapse = {name, ...facts};
+  // 真正缩短到页底时允许位置随之收回；控件必须仍然可见。
+  const clamped = facts.scrollAfter < facts.scrollBefore
+    && facts.scrollAfter + 900 >= (await s('Page.getLayoutMetrics')).cssContentSize.height - 2;
+  if (!facts.inView || (!clamped && facts.difference > 2) || facts.bottomSpace > 100
+    || (facts.scrollLimitBefore !== undefined && facts.scrollBefore < facts.scrollLimitBefore / 2)
+    || (facts.visibleSettings !== undefined && facts.visibleSettings < 1)
+    || facts.minHeight || facts.overflowAnchor === 'none') {
+    round.failures.push(name + '：' + JSON.stringify(facts));
   }
 }
 
@@ -709,6 +805,10 @@ async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
     if (page === 'streamer' && size.width === 1440 && palette === PALETTES[0] && color === 'light') {
       await checkStreamerInteractions(s, round);
     }
+    if (size.width === 1440 && palette === PALETTES[0] && color === 'light') {
+      if (page === 'push') await checkCollapse(s, round, PUSH_COLLAPSE, '收起群内命令');
+      if (page === 'settings') await checkCollapse(s, round, SETTINGS_COLLAPSE, '收起高级选项');
+    }
     if (facts && facts.url !== new URL(ORIGIN + address).pathname + new URL(ORIGIN + address).hash) {
       round.notes.landed.add(`打开后停在 ${facts.url}`);
     }
@@ -746,6 +846,7 @@ function summarize(rounds, version, shotProblem) {
     lines.push('主播双卡布局：' + JSON.stringify(r.interactions.geometry));
     for (const movement of r.interactions.movements) lines.push('页内滚动：' + JSON.stringify(movement));
   }
+  for (const r of rounds) if (r.collapse) lines.push('页面收起：' + JSON.stringify(r.collapse));
 
   // 各套配色在首页上取到的几样颜色，只列出：三套该各是各的，一眼看得出有没有哪套没生效
   lines.push('', '配色读数（首页 1440 宽，页底／强调色／次要字）：');
