@@ -1,7 +1,10 @@
 novabot.assistant.base-url=https://model.example/v1
 novabot.assistant.daily-questions-per-account=12
 novabot.assistant.enabled=true
+novabot.assistant.excluded-uids[0]=900000001
 novabot.assistant.max-answer-tokens=500
+novabot.assistant.max-question-tokens=24000
+novabot.assistant.max-tool-calls=4
 novabot.assistant.model=sample-model
 novabot.assistant.monthly-budget-yuan=45.5
 novabot.assistant.price-cached-input-yuan-per-million=0.1

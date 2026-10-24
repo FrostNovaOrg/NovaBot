@@ -19,8 +19,12 @@ public class AssistantConfiguration {
     AssistantUsageStore assistantUsageStore() { return new AssistantUsageStore(Path.of("."), Clock.systemUTC()); }
 
     @Bean
+    AssistantLocalStore assistantLocalStore() { return new AssistantLocalStore(Path.of("."), Clock.systemUTC()); }
+
+    @Bean
     AssistantClient assistantClient(AssistantProperties properties, AssistantKeyStore keys, AssistantUsageStore usage) {
         return new AssistantClient(properties, keys, usage,
-                RestTemplateConfig.buildTemplate(Duration.ofSeconds(10), Duration.ofSeconds(90)));
+                timeout -> RestTemplateConfig.buildTemplate(
+                        timeout.compareTo(Duration.ofSeconds(10)) < 0 ? timeout : Duration.ofSeconds(10), timeout));
     }
 }
