@@ -33,18 +33,18 @@ class ReportThemeSamplesTest {
     }
 
     @Test
-    @DisplayName("四套预设按经典、粉蓝、暖阳、夜幕排列，经典就是不带配色的入口用的那一套")
+    @DisplayName("八套预设按经典、粉蓝、暖阳、夜幕、薄荷、海蓝、星紫、墨白排列，经典就是不带配色的入口用的那一套")
     void presetsAreNamedAndClassicIsDefault() {
         assertSame(ReportPalette.DEFAULT, ReportPalette.CLASSIC);
         var presets = ReportPalette.PRESETS;
-        assertEquals(List.of("classic", "pink-blue", "warm", "night"), presets.stream().map(ReportPalette.Preset::id).toList());
-        assertEquals(List.of("经典", "粉蓝", "暖阳", "夜幕"), presets.stream().map(ReportPalette.Preset::name).toList());
+        assertEquals(List.of("classic", "pink-blue", "warm", "night", "mint", "ocean", "violet", "ink"), presets.stream().map(ReportPalette.Preset::id).toList());
+        assertEquals(List.of("经典", "粉蓝", "暖阳", "夜幕", "薄荷", "海蓝", "星紫", "墨白"), presets.stream().map(ReportPalette.Preset::name).toList());
         assertSame(ReportPalette.CLASSIC, presets.get(0).palette());
         assertEquals(presets.size(), new HashSet<>(presets.stream().map(ReportPalette.Preset::palette).toList()).size());
     }
 
     @Test
-    @DisplayName("新增三套的每组文字与底色都达到对比度下限")
+    @DisplayName("除经典外各套的每组文字与底色都达到对比度下限")
     void newPresetsMeetContrastMinimums() {
         var failures = new ArrayList<String>();
         for (var preset : ReportPalette.PRESETS) {
@@ -91,15 +91,15 @@ class ReportThemeSamplesTest {
     // 样张页不进仓，默认不出：要看时跑 tools/demo-assets/render-report-themes.sh
     @Test
     @EnabledIfSystemProperty(named = "report.themes.publish", matches = "true")
-    @DisplayName("样张页内嵌 12 张图、不引用外部资源、不超过 6 MB")
+    @DisplayName("样张页内嵌 24 张图、不引用外部资源、不超过 6 MB")
     void samplePageIsSelfContained(@TempDir Path dir) throws Exception {
         Path page = DemoAssets.repoRoot().resolve("samples").resolve("report-themes").resolve("index.html");
         long bytes = ReportThemeSamples.write(page, dir.resolve("demo"), fonts);
         System.out.println("SAMPLE_PAGE " + page.toAbsolutePath().normalize() + " bytes=" + bytes);
         String html = Files.readString(page, StandardCharsets.UTF_8);
         assertTrue(bytes <= ReportThemeSamples.PAGE_MAX_BYTES, "bytes=" + bytes);
-        assertEquals(12, Pattern.compile("src=\"data:image/jpeg;base64,").matcher(html).results().count());
-        assertEquals(12, Pattern.compile("src=\"").matcher(html).results().count());
+        assertEquals(24, Pattern.compile("src=\"data:image/jpeg;base64,").matcher(html).results().count());
+        assertEquals(24, Pattern.compile("src=\"").matcher(html).results().count());
         assertFalse(html.contains("http:") || html.contains("https:") || html.contains("url(") || html.contains("<link"),
                 "page must not reference external resources");
         for (var preset : ReportPalette.PRESETS) assertTrue(html.contains(preset.name()), preset.name());
