@@ -1,5 +1,6 @@
 package org.frostnova.nova.console.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.analytics.SessionRecapRenderer;
 import org.frostnova.nova.core.analytics.SessionRecapRenderer.*;
 import org.frostnova.nova.core.assistant.AssistantProperties;
@@ -16,6 +17,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /** 只保存渲染后的短文字，计算用的观众数据在一次生成结束后释放。 */
 @NovaComponent
+@Slf4j
 public class RecapPreviewService {
     private final LiveSessionArchive archive;
     private final AudienceLedgerService ledger;
@@ -56,6 +58,7 @@ public class RecapPreviewService {
                     .sorted(Comparator.comparingLong(Streamer::latestStart).reversed()
                             .thenComparing(Streamer::platform).thenComparingLong(Streamer::uid)).toList(), null);
         } catch (Exception failure) {
+            log.warn("读取小结样稿的已封存场次失败", failure);
             return new Streamers(false, List.of(), "读取已封存场次没成功，请稍后再试。");
         }
     }
@@ -67,13 +70,17 @@ public class RecapPreviewService {
         var task = new CompletableFuture<Versions>();
         var existing = running.putIfAbsent(key, task);
         if (existing == null) {
-            generation.lock();
             try {
-                task.complete(generate(key));
-            } catch (Exception failure) {
+                generation.lock();
+                try {
+                    task.complete(generate(key));
+                } finally {
+                    generation.unlock();
+                }
+            } catch (Throwable failure) {
                 task.complete(failedVersions("生成样稿没成功，请稍后再试。"));
+                log.warn("生成小结样稿失败，平台 {}，主播 {}", platform, uid, failure);
             } finally {
-                generation.unlock();
                 running.remove(key, task);
             }
         } else task = existing;
@@ -88,6 +95,7 @@ public class RecapPreviewService {
                     .filter(s -> key.platform().equals(s.platform()) && key.uid() == s.uid()).toList(),
                     Set.copyOf(properties.getExcludedUids()));
         } catch (Exception failure) {
+            log.warn("读取小结样稿的已封存场次失败，平台 {}，主播 {}", key.platform(), key.uid(), failure);
             return failedVersions("读取已封存场次没成功，请稍后再试。");
         }
         var cached = cache.get(key);
@@ -96,6 +104,7 @@ public class RecapPreviewService {
         try {
             ledger.updateStreamer(key.platform(), key.uid());
         } catch (Exception failure) {
+            log.warn("补齐小结样稿的观众账本失败，平台 {}，主播 {}", key.platform(), key.uid(), failure);
             return failedVersions("补齐观众账本没成功，请稍后再试。");
         }
         try {
@@ -123,6 +132,7 @@ public class RecapPreviewService {
             if (cache.size() > 32) cache.remove(cache.keySet().iterator().next());
             return versions;
         } catch (Exception failure) {
+            log.warn("计算或整理小结样稿失败，平台 {}，主播 {}", key.platform(), key.uid(), failure);
             return failedVersions("计算或整理小结没成功，请稍后再试。");
         }
     }

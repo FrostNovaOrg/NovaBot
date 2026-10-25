@@ -233,6 +233,50 @@ class RecapPreviewTest {
         });
     }
 
+    @Test @DisplayName("计算内存不足时同时打开的管理员也能收到失败说明，再次打开能重试")
+    void completesSharedFailureAfterErrorAndRetries() throws Exception {
+        session(HOST, START, "合成主播", true);
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(recaps.calculateBatch(eq("test"), eq(HOST), anyList())).thenAnswer(call -> {
+            entered.countDown();
+            assertTrue(release.await(15, TimeUnit.SECONDS));
+            throw new OutOfMemoryError("synthetic calculation failure");
+        }).thenReturn(List.of(result(START)));
+        var pool = Executors.newFixedThreadPool(2);
+        var secondThread = new AtomicReference<Thread>();
+        CompletableFuture<?> shared = null;
+        try {
+            var first = pool.submit(() -> service.preview("test", HOST, false));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            var running = (Map<?, ?>) ReflectionTestUtils.getField(service, "running");
+            shared = (CompletableFuture<?>) running.values().iterator().next();
+            var second = pool.submit(() -> {
+                secondThread.set(Thread.currentThread());
+                return service.preview("test", HOST, true);
+            });
+            awaitWaiting(secondThread);
+            release.countDown();
+            var secondResult = second.get(5, TimeUnit.SECONDS);
+            var firstResult = first.get(5, TimeUnit.SECONDS);
+            assertEquals(firstResult, secondResult);
+            assertFalse(secondResult.success());
+            assertTrue(secondResult.message().contains("生成样稿"));
+            assertTrue(secondResult.message().contains("稍后再试"));
+            assertFalse(secondResult.message().contains("synthetic"));
+            assertTrue(secondResult.sessions().isEmpty());
+            verify(recaps, times(1)).calculateBatch(eq("test"), eq(HOST), anyList());
+            assertTrue(service.preview("test", HOST, false).success());
+            verify(recaps, times(2)).calculateBatch(eq("test"), eq(HOST), anyList());
+        } finally {
+            release.countDown();
+            // 失败断言也须释放等待线程，避免测试结束后遗留挂起的请求。
+            if (shared != null) shared.completeExceptionally(new CancellationException());
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(20, TimeUnit.SECONDS));
+        }
+    }
+
     @Test @DisplayName("失败说明账本或计算哪步没成且能重试，避免堆栈出现在页面")
     void failuresAreReadableAndNotCached() throws Exception {
         session(HOST, START, "合成主播", true);

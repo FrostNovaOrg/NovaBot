@@ -104,19 +104,21 @@ public final class SessionRecapRenderer {
                 var recent = history.stream().filter(h -> h.session() < session)
                         .sorted(Comparator.comparingLong(History::session).reversed()).toList();
                 var recentSessions = recent.stream().map(History::session).distinct().limit(3).toList();
-                var selected = result.patterns().stream().filter(i -> ORDER.contains(i.key()))
+                var candidates = result.patterns().stream().filter(i -> ORDER.contains(i.key()))
                         .sorted(Comparator.comparingInt((Item i) -> strength(i.strength()))
                                 .thenComparingInt(i -> ORDER.indexOf(i.key())))
                         .filter(i -> !patternText(i).isEmpty())
-                        .filter(i -> {
-                            boolean allowed = recent.stream().filter(h -> recentSessions.contains(h.session()))
-                                .flatMap(h -> h.patterns().stream()).filter(p -> samePattern(i, p))
-                                .findFirst().map(p -> changed(i, p, options.showAmount())).orElse(true);
-                            if (!allowed) note(i.key(), "这条规律 3 场内说过，这次没说");
-                            return allowed;
-                        })
                         .collect(java.util.stream.Collectors.toMap(Item::key, i -> i, (a, b) -> a, java.util.LinkedHashMap::new))
-                        .values().stream().limit(2).toList();
+                        .values().stream().toList();
+                var selected = new ArrayList<Item>();
+                for (int rank = 0; rank < candidates.size() && selected.size() < 2; rank++) {
+                    var item = candidates.get(rank);
+                    boolean allowed = recent.stream().filter(h -> recentSessions.contains(h.session()))
+                            .flatMap(h -> h.patterns().stream()).filter(p -> samePattern(item, p))
+                            .findFirst().map(p -> changed(item, p, options.showAmount())).orElse(true);
+                    if (allowed) selected.add(item);
+                    else if (rank < 2) note(item.key(), "这条规律 3 场内说过，这次没说");
+                }
                 if (!selected.isEmpty()) {
                     lines.add(new Line(selected.stream().map(Item::key).toList(), "从你过去 "
                             + selected.stream().mapToInt(i -> i.sample().qualifiedSessions()).max().orElseThrow() + " 场里看到的"));

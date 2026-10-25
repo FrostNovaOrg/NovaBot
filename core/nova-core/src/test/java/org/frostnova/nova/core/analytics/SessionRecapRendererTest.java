@@ -26,6 +26,30 @@ class SessionRecapRendererTest {
         assertTrue(draft.notes().stream().anyMatch(n -> n.keys().contains("regulars_absent")
                 && n.text().contains("这条规律 3 场内说过，这次没说")));
     }
+
+    @ParameterizedTest @ValueSource(ints = {0, 2})
+    @DisplayName("只解释原本前两条被去重的规律，避免把排在后面的规律误说成因去重没说")
+    void explainsOnlyRepeatedPatternsInOriginalTopTwo(int repeatedIndex) {
+        var patterns = List.of(newcomer("strong"), regulars("strong", 16), slots("strong", 9, 8));
+        var repeated = patterns.get(repeatedIndex);
+        var previous = new History(START - DAY, List.of(new SpokenPattern(repeated.key(), repeated.values())));
+        var draft = render(result(List.of(), patterns), 2, true, Nicknames.MASKED, List.of(previous));
+        var explanations = draft.notes().stream()
+                .filter(n -> n.text().contains("这条规律 3 场内说过，这次没说")).toList();
+        assertTrue(draft.message().contains("常来的 30 位观众"));
+        if (repeatedIndex == 0) {
+            assertEquals(List.of("regulars_absent", "slot_compare"), selected(draft));
+            assertTrue(draft.message().contains("中位数是 200"));
+            assertFalse(draft.message().contains("第一次来就开口"));
+            assertEquals(List.of(new Line(List.of(repeated.key()), "这条规律 3 场内说过，这次没说")), explanations);
+        } else {
+            assertEquals(List.of("newcomer_speak_return", "regulars_absent"), selected(draft));
+            assertTrue(draft.message().contains("第一次来就开口"));
+            assertFalse(draft.message().contains("中位数是 200"));
+            assertTrue(explanations.isEmpty(), "第三条原本也不会说，不应解释成因去重没说");
+        }
+    }
+
     // All identities, nicknames and words are synthetic.
     static final long HOST = 910000001L, BASE = 920000001L;
     static final long START = ZonedDateTime.parse("2026-10-25T09:01:00+08:00").toInstant().toEpochMilli();
