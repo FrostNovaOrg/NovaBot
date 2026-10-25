@@ -221,10 +221,11 @@ public final class SessionRecapRenderer {
             context.nicknames().forEach((uid, name) -> owners.computeIfAbsent(name, k -> new HashSet<>()).add(uid));
             for (var entry : owners.entrySet())
                 if (entry.getValue().stream().anyMatch(excluded::contains) && !entry.getKey().isBlank()
-                        && word.contains(entry.getKey())) return "";
+                        && matchesNickname(word, entry.getKey())) return "";
             if (options.nicknames() == Nicknames.MASKED) {
                 for (String name : owners.keySet().stream().filter(SessionRecapRenderer::safe)
-                        .sorted(Comparator.comparingInt(String::length).reversed()).toList()) word = word.replace(name, mask(name));
+                        .sorted(Comparator.comparingInt(String::length).reversed()).toList())
+                    if (matchesNickname(word, name)) word = word.replace(name, mask(name));
             }
             return word;
         }
@@ -266,6 +267,9 @@ public final class SessionRecapRenderer {
     private static boolean safe(String text) {
         return text != null && !text.isBlank() && !text.equals("0") && text.codePoints().noneMatch(c -> Character.isISOControl(c)
                 || c == 0x2028 || c == 0x2029) && FORBIDDEN.stream().noneMatch(text::contains);
+    }
+    private static boolean matchesNickname(String word, String name) {
+        return word.equals(name) || (!GRAPHEME.matcher(name).matches() && word.contains(name));
     }
     private static String mask(String name) {
         var matcher = GRAPHEME.matcher(name);
