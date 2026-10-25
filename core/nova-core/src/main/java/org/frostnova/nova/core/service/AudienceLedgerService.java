@@ -2,6 +2,7 @@ package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.util.Fnv;
 import org.frostnova.nova.core.analytics.AudienceLedger;
 import org.frostnova.nova.core.analytics.AudienceLedger.Guard;
 import org.frostnova.nova.core.analytics.AudienceLedger.Row;
@@ -129,6 +130,52 @@ public class AudienceLedgerService {
             scanRows(streamer(root(), platform, uid).resolve(start + ".jsonl"), excluded(), result::add);
             return List.copyOf(result);
         }
+    }
+
+    /** 按给定场次顺序只读取观众编号、主播标记和开口标记，不物化整场观众行。 */
+    void scanAudience(String platform, long uid, List<Session> sessions, AudienceVisitor visitor) throws IOException {
+        validate(platform, uid);
+        synchronized (LOCK) {
+            recover();
+            long[] excluded = excluded().stream().mapToLong(Long::longValue).sorted().toArray();
+            var projection = new ArchiveProjection();
+            long viewerKey = Fnv.hashCode64("viewerUid"), streamerKey = Fnv.hashCode64("streamer"),
+                    spokeKey = Fnv.hashCode64("spoke");
+            for (Session session : sessions) {
+                visitor.start(session);
+                boolean[] first = {true};
+                try {
+                    projection.scan(streamer(root(), platform, uid).resolve(session.startTime() + ".jsonl"), reader -> {
+                        if (first[0]) {
+                            checkHeader(reader.read(Header.class));
+                            first[0] = false;
+                            return;
+                        }
+                        if (!reader.nextIfObjectStart()) throw new IOException("观众账本行不是对象");
+                        long viewer = 0;
+                        boolean host = false, spoke = false;
+                        while (!reader.nextIfObjectEnd()) {
+                            long key = reader.readFieldNameHashCode();
+                            if (key == viewerKey) viewer = reader.readInt64Value();
+                            else if (key == streamerKey) host = reader.readBoolValue();
+                            else if (key == spokeKey) spoke = reader.readBoolValue();
+                            else reader.skipValue();
+                        }
+                        if (viewer > 0 && java.util.Arrays.binarySearch(excluded, viewer) < 0) visitor.viewer(viewer, host, spoke);
+                    });
+                    if (first[0]) checkHeader(null);
+                } catch (NoSuchFileException absent) {
+                    // 与 sessionRows 一样，未入账场次没有观众行。
+                }
+                visitor.end();
+            }
+        }
+    }
+
+    interface AudienceVisitor {
+        void start(Session session);
+        void viewer(long uid, boolean streamer, boolean spoke);
+        void end() throws IOException;
     }
 
     /** 来场史按开播时刻升序，包含每次来场之前的场数、首次与上次场次。 */
@@ -377,6 +424,9 @@ public class AudienceLedgerService {
     }
     private Header header(String line) throws IOException {
         Header header = line == null ? null : JSON.parseObject(line, Header.class);
+        return checkHeader(header);
+    }
+    private Header checkHeader(Header header) throws IOException {
         if (header == null || header.version() != VERSION || header.session() == null)
             throw new IOException("观众账本格式不兼容或不完整，请整份重建");
         return header;

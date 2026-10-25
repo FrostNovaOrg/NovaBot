@@ -589,6 +589,51 @@ public class LiveDetailArchive implements SmartLifecycle {
         return result;
     }
 
+    /** 逐行读取事件，缺文件返回 false，空文件返回 true；读取失败向调用方抛出。 */
+    public boolean scanEvents(String platform, Long uid, long startTime,
+                              java.util.function.Consumer<JSONObject> consumer) throws IOException {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) return false;
+        try (Stream<String> lines = JsonlFiles.lines(dir.get().resolve(EVENT_FILE))) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                JSONObject event;
+                try {
+                    event = JSON.parseObject(line);
+                } catch (RuntimeException error) {
+                    log.debug("跳过无法解析的事件行");
+                    continue;
+                }
+                if (event != null) consumer.accept(event);
+            }
+            return true;
+        } catch (NoSuchFileException absent) {
+            return false;
+        } catch (java.io.UncheckedIOException error) {
+            throw error.getCause();
+        }
+    }
+
+    /** 批量统计复用读取缓冲区；事件的逐行容错与公开扫描入口相同。 */
+    boolean scanEvents(String platform, Long uid, long startTime, ArchiveProjection projection,
+                       java.util.function.Consumer<JSONObject> consumer) throws IOException {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) return false;
+        try {
+            projection.scanLines(dir.get().resolve(EVENT_FILE), reader -> {
+                JSONObject event;
+                try { event = reader.readJSONObject(); }
+                catch (RuntimeException invalid) {
+                    log.debug("跳过无法解析的事件行");
+                    return;
+                }
+                if (event != null) consumer.accept(event);
+            });
+            return true;
+        } catch (NoSuchFileException absent) {
+            return false;
+        }
+    }
+
     /**
      * 这一场有没有留下明细
      * <p>
