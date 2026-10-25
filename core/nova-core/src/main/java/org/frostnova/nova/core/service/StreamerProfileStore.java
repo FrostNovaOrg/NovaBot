@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -42,10 +44,26 @@ public class StreamerProfileStore {
 
     public synchronized StreamerProfile read(String platform, long uid) {
         Path path = path(platform, uid);
-        Status status = Files.exists(marker(path), LinkOption.NOFOLLOW_LINKS) ? Status.UNREADABLE : Status.READY;
+        Status status;
+        String content;
         try {
-            if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS)) return StreamerProfile.empty(status);
-            var root = JSON.parseObject(Files.readString(path));
+            try {
+                Files.readAttributes(marker(path), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                status = Status.UNREADABLE;
+            } catch (NoSuchFileException absent) {
+                status = Status.READY;
+            }
+            try {
+                content = Files.readString(path);
+            } catch (NoSuchFileException absent) {
+                return StreamerProfile.empty(status);
+            }
+        } catch (IOException | RuntimeException failure) {
+            log.warn("主播档案暂时读不出：{}，本次停止自动投递，下次重试", path);
+            return StreamerProfile.empty(Status.TEMPORARILY_UNREADABLE);
+        }
+        try {
+            var root = JSON.parseObject(content);
             if (root == null) throw new IOException("档案为空");
             long tier = number(root, "tier", false);
             if (tier != 1 && tier != 2) throw new IOException("档位不正确");
@@ -73,7 +91,7 @@ public class StreamerProfileStore {
                     loadedExclusions, paused, number(root, "pauseSetAt", true), status);
         } catch (IOException | RuntimeException failure) {
             // 先记状态再移原件；状态写不成时保留原件，下一次读取仍会报错。
-            log.warn("主播档案读不出：{}，使用空档案并停止自动投递", path);
+            log.warn("主播档案读不出：{}，使用空档案并停止自动投递；主播可在本人私聊说「恢复」，或在控制台点击「档案已核对，恢复」", path);
             try {
                 Files.createDirectories(directory);
                 DurableFiles.replace(marker(path), "UNREADABLE", DurableFiles.OWNER_ONLY);
@@ -100,9 +118,28 @@ public class StreamerProfileStore {
 
     /** 成功落盘后才向调用者返回；保留读错状态，设置命令不会悄悄恢复自动投递。 */
     public synchronized StreamerProfile update(String platform, long uid, UnaryOperator<StreamerProfile> change) throws IOException {
+        return update(platform, uid, change, false);
+    }
+
+    /** 主播明确恢复；坏件状态下从空档案重新开始，正常档案保留其他设置。 */
+    public synchronized StreamerProfile resume(String platform, long uid, long at) throws IOException {
+        return update(platform, uid, p -> new StreamerProfile(p.tier(), p.tierSetAt(), p.concerns(),
+                p.exclusions(), false, at, p.status()), true);
+    }
+
+    /** 控制台核对坏件后重置；重复提交不会清空已恢复的正常档案。 */
+    public synchronized StreamerProfile recover(String platform, long uid) throws IOException {
+        return update(platform, uid, UnaryOperator.identity(), true);
+    }
+
+    private StreamerProfile update(String platform, long uid, UnaryOperator<StreamerProfile> change,
+                                   boolean recover) throws IOException {
         StreamerProfile before = read(platform, uid);
-        StreamerProfile next = change.apply(before);
-        if (next.status() != before.status()) throw new IllegalArgumentException("不能通过设置清除档案读错状态");
+        if (before.status() == Status.TEMPORARILY_UNREADABLE) throw new IOException("档案暂时读不出");
+        StreamerProfile base = recover && before.status() == Status.UNREADABLE
+                ? StreamerProfile.empty(Status.READY) : before;
+        StreamerProfile next = change.apply(base);
+        if (next.status() != base.status()) throw new IllegalArgumentException("不能通过设置清除档案读错状态");
         if (next.equals(before)) return next;
         Path path = path(platform, uid);
         Files.createDirectories(directory);
@@ -117,6 +154,8 @@ public class StreamerProfileStore {
         if (Files.exists(path)) restrict(path);
         DurableFiles.replace(path, content, DurableFiles.OWNER_ONLY);
         restrict(path);
+        // 先把恢复后的档案写好，再清状态；任何一步失败都不能回报恢复成功。
+        if (recover) Files.deleteIfExists(marker(path));
         return next;
     }
 }

@@ -209,8 +209,8 @@ public class CommandDispatcher {
             return;
         }
 
-        // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
-        if (claimed == null && !acquireCooldown(event, type, name)) {
+        // 被认领的应答和按上下文匹配的固定说法不吃冷却，其余出声路径共用冷却
+        if (claimed == null && !(command instanceof ScopedCommand) && !acquireCooldown(event, type, name)) {
             return;
         }
 

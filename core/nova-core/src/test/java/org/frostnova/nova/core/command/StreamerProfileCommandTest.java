@@ -17,6 +17,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
@@ -187,6 +188,51 @@ class StreamerProfileCommandTest {
         assertEquals("好的", say("恢复")); assertEquals(0, legacyCalls);
         assertEquals("现有命令", send("private", OTHER, OTHER, "恢复"));
         assertEquals("现有命令", send("group", GROUP, SELF, "恢复")); assertEquals(2, legacyCalls);
+    }
+    @Test @DisplayName("坏件后说恢复应清掉读错状态，避免主播永久收不到小结")
+    void resumeClearsCorruptionAcrossRestart() throws Exception {
+        say("先别发了");
+        Files.writeString(profiles.path("bilibili", UID), "broken");
+        assertEquals(StreamerProfile.Status.UNREADABLE, profile().status());
+        say("最近在意 回访"); say("改成 2");
+        assertEquals("好的", say("恢复"));
+        var restored = new StreamerProfileStore(profiles.path("bilibili", UID).getParent()).read("bilibili", UID);
+        assertEquals(StreamerProfile.Status.READY, restored.status());
+        assertEquals(1, restored.tier()); assertNull(restored.tierSetAt());
+        assertFalse(restored.paused()); assertNotNull(restored.pauseSetAt());
+        assertTrue(restored.concerns().isEmpty()); assertTrue(restored.exclusions().isEmpty());
+    }
+    @Test @DisplayName("连续发送档案说法也要逐句生效，避免暂停在冷却中被丢掉")
+    void profilePhrasesBypassCooldown() {
+        assertEquals("现有命令", say("菜单"));
+        for (String phrase : List.of("改成 2", "先别发了", "你记得我什么", "恢复")) {
+            int before = replies.size();
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent("qq-onebot", "private", SELF, SELF, phrase, null, true));
+            assertEquals(before + 1, replies.size(), phrase);
+            if (phrase.equals("先别发了")) assertTrue(profile().paused());
+        }
+        assertEquals(2, profile().tier()); assertFalse(profile().paused());
+    }
+    @ParameterizedTest @ValueSource(strings = {"先别发了~", "先别发了～", "先别发了😊"})
+    @DisplayName("末尾波浪号和表情不应让暂停与恢复被当成闲聊")
+    void trailingSymbolsDoNotHideSettings(String phrase) {
+        assertEquals("好的，先不发了；回「恢复」就接着发", say(phrase));
+        assertTrue(profile().paused()); assertEquals("好的", say("恢复😊")); assertFalse(profile().paused());
+    }
+    @Test @DisplayName("本人菜单把档案说法合成一行，避免重复十二条相同说明")
+    void profileMenuIsOneLineOnlyForOwner() {
+        @SuppressWarnings("unchecked") ObjectProvider<CommandDispatcher> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(dispatcher);
+        var settings = new CommandSettingsService(new NovaStateStore(beans.getBean(NovaCoreProperties.class)));
+        var menu = new org.frostnova.nova.core.command.builtin.MenuCommand(provider, settings);
+        var owner = new CommandContext("qq-onebot", PushTargetType.FRIEND, SELF, SELF, "菜单", List.of(), "菜单");
+        String text = menu.execute(owner).content();
+        assertEquals(1, text.lines().filter(line -> line.startsWith("档案设置：")).count(), text);
+        assertFalse(text.contains("设置或查看自己的主播档案"));
+        for (String phrase : List.of("改成", "别提", "最近在意", "先别发了", "恢复", "你记得我什么", "忘掉"))
+            assertTrue(text.lines().filter(line -> line.startsWith("档案设置：")).findFirst().orElse("").contains(phrase));
+        var other = new CommandContext("qq-onebot", PushTargetType.FRIEND, OTHER, OTHER, "菜单", List.of(), "菜单");
+        assertFalse(menu.execute(other).content().contains("档案设置："));
     }
     private static class TestClock extends Clock {
         private Instant now = Instant.parse("2026-10-20T00:00:00Z");

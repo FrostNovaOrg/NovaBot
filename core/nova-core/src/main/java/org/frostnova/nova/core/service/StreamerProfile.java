@@ -5,7 +5,8 @@ import java.util.List;
 /** 只保存主播明确设置的条目，不保存私聊消息。时间使用毫秒时间戳；未设置时为空。 */
 public record StreamerProfile(int tier, Long tierSetAt, List<Concern> concerns,
                               List<Exclusion> exclusions, boolean paused, Long pauseSetAt, Status status) {
-    public enum Status { READY, UNREADABLE }
+    /** 只有 READY 允许自动投递；暂时读错不会落盘，下次读取重试。 */
+    public enum Status { READY, UNREADABLE, TEMPORARILY_UNREADABLE }
     public enum Pattern {
         newcomer_speak_return("新人开口", List.of("新人", "新观众", "开口")),
         regulars_absent("老观众", List.of("老观众", "常客", "老朋友")),

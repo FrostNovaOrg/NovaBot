@@ -18,6 +18,7 @@ import java.util.List;
 
 import static org.frostnova.nova.core.service.StreamerProfile.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class StreamerProfileStoreTest {
     private static final long UID = 990000000101L, TIME = 1792454400000L;
@@ -57,6 +58,8 @@ class StreamerProfileStoreTest {
             assertEquals(StreamerProfile.empty(Status.UNREADABLE), empty);
             assertEquals(1, appender.list.stream().filter(e -> e.getLevel() == Level.WARN && e.getFormattedMessage().contains("档案读不出")).count());
             assertTrue(appender.list.stream().noneMatch(e -> e.getFormattedMessage().contains(broken)));
+            assertTrue(appender.list.stream().anyMatch(e -> e.getFormattedMessage().contains("恢复")
+                    && e.getFormattedMessage().contains("档案已核对")), "告警必须说明恢复途径");
             List<Path> backups;
             try (var files = Files.list(dir)) { backups = files.filter(p -> p.getFileName().toString().contains(".bad-")).toList(); }
             assertEquals(1, backups.size()); assertEquals(broken, Files.readString(backups.get(0)));
@@ -88,6 +91,21 @@ class StreamerProfileStoreTest {
         var unavailable = new StreamerProfileStore(blocked);
         assertThrows(java.io.IOException.class, () -> unavailable.update("bilibili", UID,
                 p -> new StreamerProfile(2, TIME, List.of(), List.of(), true, TIME, p.status())));
+    }
+    @Test @DisplayName("暂时读取失败不移动好文件或永久停发，下次读取仍保留暂停和设置")
+    void temporaryReadFailureDoesNotQuarantine() throws Exception {
+        store.update("bilibili", UID, p -> populated());
+        Path file = store.path("bilibili", UID);
+        String original = Files.readString(file);
+        try (var files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.readString(file)).thenThrow(new java.io.IOException("temporary"));
+            assertEquals("TEMPORARILY_UNREADABLE", store.read("bilibili", UID).status().name());
+            assertThrows(java.io.IOException.class, () -> store.update("bilibili", UID,
+                    p -> new StreamerProfile(1, TIME, List.of(), List.of(), false, TIME, p.status())));
+        }
+        assertEquals(original, Files.readString(file));
+        try (var files = Files.list(dir)) { assertEquals(List.of(file), files.toList()); }
+        assertEquals(populated(), new StreamerProfileStore(dir).read("bilibili", UID));
     }
     private static StreamerProfile populated() {
         return new StreamerProfile(2, TIME, List.of(new Concern("回访", TIME + 1)),

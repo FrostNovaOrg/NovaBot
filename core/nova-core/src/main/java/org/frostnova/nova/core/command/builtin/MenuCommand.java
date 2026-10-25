@@ -5,6 +5,7 @@ import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.command.NovaCommand;
+import org.frostnova.nova.core.command.ScopedCommand;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.lang.StringUtil;
 import org.springframework.beans.factory.ObjectProvider;
@@ -102,9 +103,14 @@ public class MenuCommand implements NovaCommand {
         }
 
         StringBuilder text = new StringBuilder(usageLine(context)).append("\n\n可用命令：");
+        var summaries = new java.util.HashSet<String>();
         for (Map.Entry<String, List<NovaCommand>> entry : grouped.entrySet()) {
             text.append("\n\n【").append(entry.getKey()).append("】");
             for (NovaCommand command : entry.getValue()) {
+                if (command instanceof ScopedCommand scoped && scoped.menuSummary() != null) {
+                    if (summaries.add(scoped.menuSummary())) text.append("\n").append(scoped.menuSummary());
+                    continue;
+                }
                 text.append("\n").append(command.name());
                 if (StringUtil.isNotBlank(command.usage())) {
                     text.append(" ").append(command.usage());

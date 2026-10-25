@@ -115,16 +115,17 @@ public class StreamerProfileCommands {
     }
     public static String normalize(String value) {
         return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
-                .replaceAll("[\\p{P}\\p{Z}\\s]", "").toLowerCase(Locale.ROOT);
+                .replaceAll("[\\p{P}\\p{Z}\\p{S}\\p{Cf}\\s]", "").toLowerCase(Locale.ROOT);
     }
     private static String argument(String raw, String prefix) {
-        String gap = "[\\p{P}\\p{Z}\\s]*";
+        String gap = "[\\p{P}\\p{Z}\\p{S}\\p{Cf}\\s]*";
         String regex = "^" + gap + String.join(gap, prefix.split("")) + "[\\p{Z}\\s:：，,）)」』]*";
         return raw.replaceFirst(regex, "").strip();
     }
     public static String describe(StreamerProfile p) {
         var text = new StringBuilder();
-        if (p.status() == Status.UNREADABLE) text.append("档案读不出，自动发送已暂停。以下是目前能读到的设置。\n");
+        if (p.status() == Status.TEMPORARILY_UNREADABLE) return "档案暂时读不出，本次停发，请稍后重试";
+        if (p.status() == Status.UNREADABLE) text.append("档案读不出，自动发送已暂停。回「恢复」可重置档案并接着发。以下是目前能读到的设置。\n");
         text.append("档位：第 ").append(p.tier()).append(" 档（").append(time(p.tierSetAt())).append("）\n")
                 .append("是否暂停：").append(p.paused() ? "是" : "否").append("（").append(time(p.pauseSetAt())).append("）\n在意什么：");
         if (p.concerns().isEmpty()) text.append("无\n");
@@ -144,6 +145,7 @@ public class StreamerProfileCommands {
             public String name() { return name; }
             public List<String> aliases() { return aliases; }
             public String description() { return "设置或查看自己的主播档案"; }
+            public String menuSummary() { return "档案设置：改成 1／2、别提……、最近在意……、先别发了、恢复、你记得我什么、忘掉……"; }
             public boolean groupOnly() { return false; }
             public boolean disableable() { return false; }
             public boolean availableIn(CommandContext context) { return resolver.resolve(context).isPresent(); }
@@ -161,6 +163,10 @@ public class StreamerProfileCommands {
                 String arg = prefix ? argument(context.getRawText(), name) : "";
                 var result = new Result[1];
                 try {
+                    if (name.equals("恢复")) {
+                        store.resume(user.getPlatform(), user.getUid(), clock.millis());
+                        return CommandReply.of("好的");
+                    }
                     store.update(user.getPlatform(), user.getUid(), p -> {
                         result[0] = action.apply(p, arg, clock.millis()); return result[0].profile();
                     });
