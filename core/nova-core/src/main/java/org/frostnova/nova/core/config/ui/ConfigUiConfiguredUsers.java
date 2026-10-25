@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
+import org.frostnova.nova.core.datasource.StreamerSelfAssignments;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -26,7 +27,9 @@ public class ConfigUiConfiguredUsers {
                 String content = Files.readString(Path.of(properties.getDatasource().getJsonPath()));
                 if (content.startsWith("\uFEFF")) content = content.substring(1);
                 JSONArray users = JSONArray.parseArray(content.isBlank() ? "[]" : content);
-                return users == null ? new JSONArray() : users;
+                if (users == null) return new JSONArray();
+                StreamerSelfAssignments.normalize(users);
+                return users;
             } catch (java.io.IOException | RuntimeException e) {
                 return new JSONArray();
             }

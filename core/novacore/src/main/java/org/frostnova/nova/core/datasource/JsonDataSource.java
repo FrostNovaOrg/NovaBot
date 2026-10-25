@@ -226,7 +226,9 @@ public class JsonDataSource extends AbstractDataSource {
     protected List<PushUser> parse(String json) {
         List<PushUser> users = new ArrayList<>();
 
-        for (JSONObject userObject : JSON.parseArray(json).toList(JSONObject.class)) {
+        JSONArray rows = JSON.parseArray(json);
+        StreamerSelfAssignments.normalize(rows);
+        for (JSONObject userObject : rows.toList(JSONObject.class)) {
             for (String field : USER_REQUIRED_FIELDS.keySet()) {
                 if (!userObject.containsKey(field)) {
                     throw new DataSourceException("数据源 JSON 文件格式错误, " + field + " 字段缺失");

@@ -9,6 +9,8 @@ import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import org.frostnova.nova.core.datasource.StreamerSelfAssignments;
+import java.util.function.BiPredicate;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -52,6 +54,12 @@ public class ConfigurationValidator {
      * @return 问题列表，为空表示通过
      */
     public List<String> validateDatasource(String content, Set<String> knownPlatforms) {
+        return validateDatasource(content, knownPlatforms, null, (platform, uid) -> true);
+    }
+
+    /** 主播身份始终校验；其余只检查本次提交的主播及有效收件号码的冲突。 */
+    public List<String> validateDatasource(String content, Set<String> knownPlatforms, Set<String> submitted,
+                                           BiPredicate<String, Long> visible) {
         JSONArray users;
         try {
             users = JSON.parseArray(content);
@@ -65,7 +73,22 @@ public class ConfigurationValidator {
 
         List<String> issues = new ArrayList<>();
         Set<String> seenUsers = new HashSet<>();
-        Map<Long, String> selfOwners = new HashMap<>();
+        Map<Long, SelfOwner> selfOwners = new HashMap<>();
+        if (submitted != null) {
+            JSONArray peers = JSON.parseArray(users.toJSONString());
+            for (Object value : peers) {
+                if (value instanceof JSONObject user && submitted.contains(userKey(user))) user.remove("targets");
+            }
+            StreamerSelfAssignments.normalize(peers, ignored -> { });
+            for (int i = 0; i < peers.size(); i++) {
+                if (!(peers.get(i) instanceof JSONObject peer) || peer.getJSONArray("targets") == null) continue;
+                for (Object value : peer.getJSONArray("targets")) {
+                    if (value instanceof JSONObject target && Boolean.TRUE.equals(target.get("streamerSelf"))) {
+                        selfOwners.put(target.getLong("num"), owner(peer, i));
+                    }
+                }
+            }
+        }
         // 取「认得的」而不是「已注册的」：处理器换过包名之后，老配置里写的是旧名，
         // 运行期按别名回落照样认得出。这里若按主表拦，就成了「跑得起来却存不下去」——
         // 使用者被自己那份还能用的配置挡在保存之外，而界面不会告诉他该改哪儿
@@ -81,7 +104,6 @@ public class ConfigurationValidator {
             }
 
             String where = "第 " + (i + 1) + " 个主播";
-
             Long uid = user.getLong("uid");
             if (uid == null) {
                 issues.add(where + "缺少 uid，或 uid 不是数字");
@@ -96,27 +118,55 @@ public class ConfigurationValidator {
                 issues.add(where + "（uid " + uid + "）重复配置，同一平台下的同一 uid 只能出现一次");
             }
 
+            if (submitted != null && !submitted.contains(userKey(user))) continue;
+
             checkUserLists(user, where + "（" + platform + ", uid " + uid + "）", issues);
             String streamer = where + "（" + platform + ", uid " + uid + "）";
             checkTargets(user.getJSONArray("targets"), streamer, knownPlatforms, handlers, issues);
-            checkStreamerSelf(user.getJSONArray("targets"), streamer, selfOwners, issues);
+            checkStreamerSelf(user.getJSONArray("targets"), owner(user, i), selfOwners, visible, issues);
         }
 
         return issues;
     }
 
-    private void checkStreamerSelf(JSONArray targets, String streamer, Map<Long, String> owners, List<String> issues) {
+    /** 按主播比较内容，重排或格式化不算更改；新增主播总会校验。 */
+    public static Set<String> changedUsers(JSONArray before, JSONArray after) {
+        Map<String, JSONObject> old = new HashMap<>();
+        if (before != null) for (Object value : before) {
+            if (value instanceof JSONObject user) old.put(userKey(user), user);
+        }
+        Set<String> changed = new HashSet<>();
+        for (Object value : after) {
+            if (value instanceof JSONObject user && !Objects.equals(user, old.get(userKey(user)))) changed.add(userKey(user));
+        }
+        return changed;
+    }
+
+    private static String userKey(JSONObject user) { return user.getString("platform") + ":" + user.getString("uid"); }
+
+    private record SelfOwner(String label, String platform, Long uid) { }
+
+    private static SelfOwner owner(JSONObject user, int index) {
+        return new SelfOwner("第 " + (index + 1) + " 个主播（" + user.getString("platform") + ", uid " + user.getString("uid") + "）",
+                user.getString("platform"), user.getLong("uid"));
+    }
+
+    private void checkStreamerSelf(JSONArray targets, SelfOwner streamer, Map<Long, SelfOwner> owners,
+                                   BiPredicate<String, Long> visible, List<String> issues) {
         if (targets == null) return;
         int selected = 0;
         for (int i = 0; i < targets.size() && issues.size() < MAX_ISSUES; i++) {
             if (!(targets.get(i) instanceof JSONObject target) || !Boolean.TRUE.equals(target.get("streamerSelf"))) continue;
-            String at = streamer + "的第 " + (i + 1) + " 条通道（号码 " + target.getString("num") + "）";
+            String at = streamer.label() + "的第 " + (i + 1) + " 条通道（号码 " + target.getString("num") + "）";
             if (++selected > 1) issues.add(at + "：一位主播最多只能把一条好友通道标成主播本人");
             Long num = target.getLong("num");
             if (num == null) continue;
-            String owner = owners.putIfAbsent(num, streamer);
+            SelfOwner owner = owners.putIfAbsent(num, streamer);
             if (owner != null && !owner.equals(streamer)) {
-                issues.add(at + "：这个号码已在另一位主播（" + owner + "）那里标成主播本人，请先取消原来的标记");
+                String reason = visible.test(owner.platform(), owner.uid())
+                        ? "这个号码已在另一位主播（" + owner.label() + "）那里标成主播本人，请先取消原来的标记"
+                        : "这个号码已经是另一位主播的主播本人，换一个号，或请管理员处理";
+                issues.add(at + "：" + reason);
             }
         }
     }

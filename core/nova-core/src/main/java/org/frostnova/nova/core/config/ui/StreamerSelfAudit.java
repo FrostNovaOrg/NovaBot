@@ -3,6 +3,7 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.datasource.StreamerSelfAssignments;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -18,8 +19,12 @@ public final class StreamerSelfAudit {
 
     public static void record(JSONArray before, JSONArray after, String actor,
                               AbstractDataSource source, TimelineWriter timeline) {
-        Map<String, JSONObject> previous = index(before);
-        Map<String, JSONObject> current = index(after);
+        JSONArray previousRows = JSONArray.parseArray(before.toJSONString());
+        JSONArray currentRows = JSONArray.parseArray(after.toJSONString());
+        StreamerSelfAssignments.normalize(previousRows, ignored -> { });
+        StreamerSelfAssignments.normalize(currentRows, ignored -> { });
+        Map<String, JSONObject> previous = index(previousRows);
+        Map<String, JSONObject> current = index(currentRows);
         Map<String, JSONObject> all = new LinkedHashMap<>(previous);
         all.putAll(current);
         for (var entry : all.entrySet()) {

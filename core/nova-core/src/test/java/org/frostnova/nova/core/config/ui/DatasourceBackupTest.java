@@ -89,7 +89,7 @@ class DatasourceBackupTest {
         properties.getDatasource().setJsonPath(datasource.toString());
 
         validator = mock(ConfigurationValidator.class);
-        when(validator.validateDatasource(anyString(), any())).thenReturn(List.of());
+        when(validator.validateDatasource(anyString(), any(), any(), any())).thenReturn(List.of());
 
         NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSenderNames()).thenReturn(Set.of());
@@ -144,8 +144,8 @@ class DatasourceBackupTest {
     @Test
     void validStreamerListsSaveThroughUserEndpoint() throws IOException {
         seedTwoUsers();
-        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
-                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        when(validator.validateDatasource(anyString(), any(), any(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of(), call.getArgument(2), call.getArgument(3)));
         JSONObject current = controller.datasourceUser("bilibili", "1");
         JSONObject other = controller.datasourceUser("bilibili", "2").getJSONObject("user");
         JSONObject user = current.getJSONObject("user");
@@ -166,8 +166,8 @@ class DatasourceBackupTest {
     @Test
     void invalidStreamerListsReturn400WithoutWriting() throws IOException {
         seedTwoUsers();
-        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
-                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        when(validator.validateDatasource(anyString(), any(), any(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of(), call.getArgument(2), call.getArgument(3)));
         byte[] before = Files.readAllBytes(datasource);
         JSONObject current = controller.datasourceUser("bilibili", "1");
         String version = current.getString("version");
@@ -232,8 +232,8 @@ class DatasourceBackupTest {
     @Test
     void nullListsSaveButOtherInvalidTypesStillReturn400WithoutWriting() throws IOException {
         seedTwoUsers();
-        when(validator.validateDatasource(anyString(), any())).thenAnswer(call ->
-                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of()));
+        when(validator.validateDatasource(anyString(), any(), any(), any())).thenAnswer(call ->
+                new ConfigurationValidator(handlerService).validateDatasource(call.getArgument(0), Set.of(), call.getArgument(2), call.getArgument(3)));
         for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
             var current = controller.datasourceUser("bilibili", "1");
             // 直接构造显式 null，避免请求序列化省掉 null 的键。
@@ -570,7 +570,7 @@ class DatasourceBackupTest {
         user.put("uid", 9);
         assertFalse(saveUser("1", read.getString("version"), user).getBody().getBooleanValue("success"));
         user.put("uid", 1);
-        when(validator.validateDatasource(anyString(), any())).thenReturn(List.of("invalid target"));
+        when(validator.validateDatasource(anyString(), any(), any(), any())).thenReturn(List.of("invalid target"));
         JSONObject result = saveUser("1", read.getString("version"), user).getBody();
         assertFalse(result.getBooleanValue("success"));
         assertEquals(List.of("invalid target"), result.getJSONArray("issues"));

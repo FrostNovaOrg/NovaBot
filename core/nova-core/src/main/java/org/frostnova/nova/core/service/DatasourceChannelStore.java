@@ -14,6 +14,7 @@ import org.frostnova.nova.core.config.ui.ConfigurationValidator;
 import org.frostnova.nova.core.config.ui.TimestampedFileBackup;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.datasource.JsonDataSource;
+import org.frostnova.nova.core.datasource.StreamerSelfAssignments;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.springframework.stereotype.Service;
@@ -78,10 +79,15 @@ public class DatasourceChannelStore {
                 String after = ConfigUiController.formatDatasource(users, 0);
                 if (before.equals(after)) return false;
                 var issues = migration ? validateMigratedSettings(JSONArray.parseArray(before), JSONArray.parseArray(after))
-                        : validator.validateDatasource(after, Set.of());
+                        : validator.validateDatasource(after, Set.of(),
+                                ConfigurationValidator.changedUsers(JSONArray.parseArray(before), users), ConfigUiAccess::visible);
                 if (!issues.isEmpty()) throw new IllegalArgumentException(String.join("；", issues));
                 if (backup && Files.exists(path)) new TimestampedFileBackup(path, Clock.systemDefaultZone())
                         .backupForSave(properties.getConfigUi().getBackupKeep());
+                if (!migration) StreamerSelfAssignments.normalizeUnchanged(users,
+                        ConfigurationValidator.changedUsers(JSONArray.parseArray(before), users));
+                else StreamerSelfAssignments.omitUnconfirmed(users);
+                after = ConfigUiController.formatDatasource(users, 0);
                 DurableFiles.replace(path, after);
                 if (!migration) {
                     try {
