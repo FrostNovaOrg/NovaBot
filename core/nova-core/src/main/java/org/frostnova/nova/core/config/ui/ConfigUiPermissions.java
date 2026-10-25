@@ -44,6 +44,8 @@ public final class ConfigUiPermissions {
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/datasource/users/{platform}/{uid}/version");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/datasource/users/{platform}/{uid}");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}");
+        add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/profile");
+        add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/streamers/{platform}/{uid}/profile/recover");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/streamers/{platform}/{uid}/assistant/ask");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/assistant/state");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/avatar");

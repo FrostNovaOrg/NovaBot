@@ -18,6 +18,7 @@ import {store} from './store.js';
 import {$, api, CONSOLE, el, esc, loadingHtml, request, say} from './core.js';
 import {COMPONENT_STYLE, createChart, createCalendar, createSection, createKpis, createAudienceRing, openDrawer, releaseComponents} from './streamers-components.js';
 import {mountAssistant, mountAssistantEntry} from './streamers-assistant.js';
+import {mountProfile} from './streamers-profile.js';
 import {
   AUDIENCE_COLUMNS, audienceCells, audienceGroups, audienceSort, coverageText, durationCoverage, sessionCoverageText, metricRecorded,
   monitoringDayText, monitoringPeriodText,
@@ -311,6 +312,7 @@ export function refresh() {
 
 /** 离开本页时把报告图的临时地址撤掉 */
 export function leave() {
+  profileView?.destroy(); profileView = null;
   assistantEntry?.destroy(); assistantEntry = null;
   closeDetailDrawer();
   releaseComponents();
@@ -333,6 +335,7 @@ let liveKey = '';
 let live = null;
 let liveError = '';
 let assistantEntry = null;
+let profileView = null;
 let assistantDrawer = null;
 
 /**
@@ -391,6 +394,7 @@ let reportUrl = '';
  * 两件事合成一个函数的话，直接打开某一场的地址会先闪一下列表。
  */
 export function syncStreamersView() {
+  profileView?.destroy(); profileView = null;
   assistantEntry?.destroy(); assistantEntry = null;
   closeDetailDrawer();
   releaseComponents();
@@ -747,6 +751,7 @@ async function loadDetail() {
 }
 
 function renderHead() {
+  profileView?.destroy();
   assistantEntry?.destroy();
   const host = $('#sd-head');
   host.innerHTML = '';
@@ -789,6 +794,7 @@ function renderHead() {
   head.appendChild(side);
 
   host.appendChild(head);
+  profileView = mountProfile(host, where);
 }
 
 function audienceHash(changes = {}) {
