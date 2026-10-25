@@ -172,6 +172,18 @@ public class CommandDispatcher {
             return;
         }
 
+        CommandContext input = new CommandContext(event.getPlatform(), type, event.getNum(),
+                event.getSenderUid(), name, List.copyOf(parts), event.getText());
+        for (NovaCommand candidate : commands) {
+            if (candidate instanceof ScopedCommand scoped && scoped.matches(input)) {
+                command = candidate;
+                // 只记录注册的命令名，私聊参数不会进入冷却日志和时间线。
+                name = candidate.name();
+                parts = new ArrayList<>();
+                break;
+            }
+        }
+
         // 私聊里撞上仅限群聊的命令：按认不出处理，回菜单。
         // 菜单此时已按会话过滤，不会把这条用不了的命令再推荐一遍
         if (command != null && command.groupOnly() && !group) {
@@ -399,7 +411,7 @@ public class CommandDispatcher {
      */
     private NovaCommand find(String name) {
         for (NovaCommand command : commands) {
-            if (command.name().equals(name) || command.aliases().contains(name)) {
+            if (!(command instanceof ScopedCommand) && (command.name().equals(name) || command.aliases().contains(name))) {
                 return command;
             }
         }
