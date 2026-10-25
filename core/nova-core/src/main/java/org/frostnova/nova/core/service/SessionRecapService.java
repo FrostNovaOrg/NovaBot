@@ -76,7 +76,10 @@ public class SessionRecapService {
             }
         }
         var results = new HashMap<Long, Result>();
-        contexts.forEach((start, context) -> results.put(start, new Result(context.facts, context.patterns)));
+        for (var entry : contexts.entrySet()) {
+            var context = entry.getValue();
+            results.put(entry.getKey(), new Result(context.facts, context.patterns, context.presentation()));
+        }
         return starts.stream().map(start -> results.getOrDefault(start, new Result(List.of(), List.of()))).toList();
     }
 
@@ -92,6 +95,9 @@ public class SessionRecapService {
         final long[] excluded;
         final List<Item> facts = new ArrayList<>(), patterns = new ArrayList<>();
         final List<Evidence> ledgerEvidence = new ArrayList<>();
+        final Map<Long, String> nicknames = new HashMap<>();
+        final Map<String, java.util.Set<Long>> wordNicknameOwners = new HashMap<>();
+        Long previousSession;
 
         Context(Streamer streamer, long target, List<AudienceLedger.Session> history,
                 Map<Long, SessionMetrics> archived, long[] excluded) {
@@ -142,17 +148,31 @@ public class SessionRecapService {
                     .limit(3).toList();
             if (!gifters.isEmpty()) fact("top_gifters", Map.of("gift", gifters.stream().map(UserScore::score).toList()),
                     gifters.stream().map(UserScore::userUid).toList(), List.of(target), "detail:rankings.gift_users");
+            gifters.forEach(g -> {
+                if (g.userName() != null && !g.userName().isBlank()) nicknames.put(g.userUid(), g.userName());
+            });
             if (detail.words() != null && !detail.words().isEmpty()) {
                 var words = detail.words().entrySet().stream()
                         .sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
                         .limit(3).map(Map.Entry::getKey).toList();
                 fact("top_words", Map.of("words", words), List.of(), List.of(target), "detail:words");
+                // 只临时保留热词匹配所需的本场昵称，包括拒绝名单；不写入账本或去重记录。
+                if (detail.rankings() != null) for (var ranking : detail.rankings().values()) {
+                    if (ranking == null) continue;
+                    for (var user : ranking) {
+                        String name = user.userName();
+                        if (user.userUid() != null && user.userUid() > 0 && name != null && !name.isBlank()
+                                && words.stream().anyMatch(word -> word.contains(name)))
+                            wordNicknameOwners.computeIfAbsent(name, k -> new HashSet<>()).add(user.userUid());
+                    }
+                }
             }
         }
 
         boolean allowed(Long uid) { return uid != null && uid > 0 && uid != streamer.uid() && Arrays.binarySearch(excluded, uid) < 0; }
 
         void audience(AudienceScan scan) {
+            previousSession = scan.previous == null ? null : scan.previous.start;
             for (var session : history) ledgerEvidence.add(ledgerSource(session.startTime()));
             var starts = history.stream().map(AudienceLedger.Session::startTime).toList();
             var today = scan.usable ? scan.today : scan.previous;
@@ -292,7 +312,26 @@ public class SessionRecapService {
                         + (parts[0].equals("events") ? "events.jsonl" : "detail.json"), parts[1]);
             }).toList();
         }
-        Sample sample(List<Long> starts) { return new Sample(starts.size(), starts.stream().mapToLong(Long::longValue).min().orElse(target)); }
+        Presentation presentation() throws IOException {
+            // 最多展示三个名字；回来的总人数仍保存在事实名单中。
+            var wanted = new HashSet<Long>();
+            for (var item : facts) {
+                if (item.key().equals("returning_newcomers") || item.key().equals("top_gifters"))
+                    item.people().stream().filter(this::allowed).limit(3).forEach(wanted::add);
+            }
+            var names = new HashMap<Long, String>();
+            if (previousSession != null) names.putAll(ledger.sessionNicknames(streamer.platform(), streamer.uid(), previousSession, wanted));
+            names.putAll(nicknames);
+            names.putAll(ledger.sessionNicknames(streamer.platform(), streamer.uid(), target, wanted));
+            return new Presentation(target, history.size() - 1, history.get(history.size() - 1).listQuality(),
+                    previousSession, names, Arrays.stream(excluded).boxed().collect(java.util.stream.Collectors.toSet()),
+                    wordNicknameOwners);
+        }
+        Sample sample(List<Long> starts) {
+            var used = new HashSet<>(starts);
+            return new Sample(starts.size(), starts.stream().mapToLong(Long::longValue).min().orElse(target),
+                    (int) qualified.stream().filter(s -> used.contains(s.startTime())).count());
+        }
         void fact(String key, Map<String, Object> values, List<Long> people, List<Long> starts, String source) {
             facts.add(new Item(key, streamer, target, values, sample(starts), null, people, sources(starts, source)));
         }

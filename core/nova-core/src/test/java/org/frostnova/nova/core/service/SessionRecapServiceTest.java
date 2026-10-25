@@ -2,6 +2,7 @@ package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.analytics.SessionRecap;
+import org.frostnova.nova.core.analytics.SessionRecapRenderer;
 import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -130,9 +131,9 @@ class SessionRecapServiceTest {
                 "gifts", List.of(Map.of("name", "粉丝团灯牌", "count", 7, "price", 0.1),
                         Map.of("name", "Sample gift", "count", 90, "price", 2)),
                 "rankings", Map.of("gift_users", List.of(
-                        Map.of("uid", HOST, "score", 100), Map.of("uid", BASE, "score", 90),
-                        Map.of("uid", BASE + 1, "score", 8), Map.of("uid", BASE + 2, "score", 4),
-                        Map.of("uid", BASE + 3, "score", 2), Map.of("uid", BASE + 4, "score", 1))),
+                        Map.of("uid", HOST, "uname", "合成主播", "score", 100), Map.of("uid", BASE, "uname", "合成拒绝观众", "score", 90),
+                        Map.of("uid", BASE + 1, "uname", "合成观众甲", "score", 8), Map.of("uid", BASE + 2, "uname", "合成观众乙", "score", 4),
+                        Map.of("uid", BASE + 3, "uname", "合成观众丙", "score", 2), Map.of("uid", BASE + 4, "uname", "合成观众丁", "score", 1))),
                 "words", Map.of("sample-a", 9, "sample-b", 7, "sample-c", 5, "sample-d", 1)).toJSONString());
         Files.writeString(detail(at(10)).resolve("events.jsonl"), "{\"t\":\"follow\"}\n{\"t\":\"gift\"}\n{\"t\":\"follow\"}\n");
         privacy.setExcludedUids(List.of(BASE));
@@ -144,6 +145,11 @@ class SessionRecapServiceTest {
         assertEquals(List.of("sample-a", "sample-b", "sample-c"), item(result, "top_words").values().get("words"));
         assertEquals(0, number(item(result, "newcomers"), "newcomers"));
         assertTrue(result.facts().stream().allMatch(i -> !i.evidence().isEmpty()));
+        assertEquals(Map.of(BASE + 1, "合成观众甲", BASE + 2, "合成观众乙", BASE + 3, "合成观众丙"), result.presentation().nicknames());
+        var draft = SessionRecapRenderer.render(result,
+                new SessionRecapRenderer.Options(1, true, SessionRecapRenderer.Nicknames.ORIGINAL), List.of());
+        assertTrue(draft.message().contains("礼物前三：合成观众甲、合成观众乙、合成观众丙"));
+        assertFalse(draft.message().contains("合成拒绝观众"));
     }
 
     @Test @DisplayName("缺失数据不冒充零，查询不偷偷补账本")
@@ -164,6 +170,27 @@ class SessionRecapServiceTest {
         assertEquals(1, number(returning, "previousSpoke"));
         assertEquals(1, number(returning, "returned"));
         assertEquals(List.of(BASE), returning.people());
+    }
+
+    @Test @DisplayName("模板获得截至本场的名单质量日期与少量昵称，避免缺昵称或混入未来信息")
+    void presentationMetadata() throws Exception {
+        warmup();
+        add(10, List.of(BASE, BASE + 1), List.of(BASE, BASE + 1), "complete", 10, 1);
+        add(11, List.of(BASE), List.of(), "anonymous", 10, 1);
+        add(12, List.of(BASE, BASE + 1), List.of(), "complete", 10, 1);
+        privacy.setExcludedUids(List.of(BASE + 1));
+        var result = calculate(12);
+        assertNotNull(result.presentation());
+        assertEquals(at(12), result.presentation().start());
+        assertEquals(12, result.presentation().previousSessions());
+        assertEquals(at(10), result.presentation().previousSession());
+        assertEquals("complete", result.presentation().listQuality());
+        assertEquals(Map.of(BASE, "Sample viewer"), result.presentation().nicknames());
+        assertEquals(java.util.Set.of(BASE + 1), result.presentation().excludedUids());
+        assertEquals(12, item(result, "newcomers").sample().qualifiedSessions());
+        var earlier = service.calculate("test", HOST, at(11));
+        assertEquals("anonymous", earlier.presentation().listQuality());
+        assertEquals(11, earlier.presentation().previousSessions());
     }
 
     List<Long> group(int offset, int n) {
@@ -346,4 +373,50 @@ class SessionRecapServiceTest {
         Files.createDirectory(detail(at(0)).resolve("events.jsonl"));
         assertThrows(java.io.IOException.class, () -> service.calculate("test", HOST, at(0)));
     }
+
+    @Test @DisplayName("本场明细昵称热词受隐私选项保护，避免未点名与拒绝的观众原名泄漏")
+    void wordNicknamesFromDetail() throws Exception {
+        add(0, List.of(BASE, BASE + 1), List.of(), "complete", 10, 1);
+        Files.writeString(detail(at(0)).resolve("detail.json"), JSONObject.of(
+                "rankings", Map.of("enter_users", List.of(
+                        Map.of("uid", BASE, "uname", "合成拒绝观众", "score", 9),
+                        Map.of("uid", BASE + 1, "uname", "甲", "score", 8))),
+                "words", Map.of("合成拒绝观众", 9, "甲", 8, "合成热词", 7)).toJSONString());
+        privacy.setExcludedUids(List.of(BASE));
+        var result = calculate(0);
+        assertTrue(result.presentation().nicknames().isEmpty());
+        for (int level : List.of(1, 2)) for (boolean money : List.of(false, true))
+                for (var mode : SessionRecapRenderer.Nicknames.values()) {
+            var message = SessionRecapRenderer.render(result,
+                    new SessionRecapRenderer.Options(level, money, mode), List.of()).message();
+            assertFalse(message.contains("合成拒绝观众"));
+            if (mode == SessionRecapRenderer.Nicknames.MASKED) {
+                assertFalse(message.contains("甲"));
+                assertTrue(message.contains("*、合成热词"));
+            } else assertTrue(message.contains("甲"));
+        }
+        var addedExclusion = SessionRecapRenderer.render(result, new SessionRecapRenderer.Options(1, true,
+                SessionRecapRenderer.Nicknames.ORIGINAL, java.util.Set.of(BASE + 1)), List.of()).message();
+        assertFalse(addedExclusion.contains("甲"));
+        try (var paths = Files.walk(dir.resolve("audience-ledger"))) {
+            for (var path : paths.filter(Files::isRegularFile).toList())
+                assertFalse(Files.readString(path).contains("合成拒绝观众"));
+        }
+    }
+
+    @Test @DisplayName("实际PK与时段计算的小数金额收短，避免真实场次出现长小数")
+    void fractionalComputedMoney() throws Exception {
+        for (int day = 0; day < 6; day++) {
+            addAt(at(day) - 12 * 3_600_000L, List.of(), List.of(), "complete", 200, 12.700000000000001);
+            add(day, List.of(), List.of(), "complete", 100, 8.25);
+            pk(day, 50, 7);
+        }
+        var message = SessionRecapRenderer.render(calculate(5), new SessionRecapRenderer.Options(2, true,
+                SessionRecapRenderer.Nicknames.ORIGINAL), List.of()).message();
+        assertTrue(message.contains("PK 时每分钟礼物 1.7 元，不在 PK 时是 0.2 元"));
+        assertTrue(message.contains("礼物中位数 12.7 元对 8.3 元"));
+        assertFalse(message.contains("000000"));
+        assertFalse(message.contains("666666"));
+    }
+
 }

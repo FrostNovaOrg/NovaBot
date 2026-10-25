@@ -472,4 +472,18 @@ class AudienceLedgerServiceTest {
         ledger.updateStreamer("test", HOST);
         assertEquals(1, ledger.sessionRows("test", HOST, 1000).size());
     }
+
+    @Test @DisplayName("昵称投影再次过滤当前拒绝名单，避免旧账本昵称流入样稿")
+    void sessionNicknamesRespectCurrentExclusions() throws Exception {
+        append(session(1000, users(VIEWER, OTHER))); seal(1000);
+        Files.writeString(detail(1000).resolve("danmu.jsonl"),
+                JSONObject.of("uid", VIEWER, "uname", "合成观众甲", "type", "DANMU").toJSONString() + "\n"
+                + JSONObject.of("uid", OTHER, "uname", "合成观众乙", "type", "DANMU").toJSONString() + "\n");
+        ledger.updateStreamer("test", HOST);
+        var wanted = java.util.Set.of(VIEWER, OTHER);
+        assertEquals(Map.of(VIEWER, "合成观众甲", OTHER, "合成观众乙"), ledger.sessionNicknames("test", HOST, 1000, wanted));
+        privacy.setExcludedUids(List.of(VIEWER));
+        assertEquals(Map.of(OTHER, "合成观众乙"), ledger.sessionNicknames("test", HOST, 1000, wanted));
+    }
+
 }
