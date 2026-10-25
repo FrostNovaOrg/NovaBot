@@ -123,6 +123,40 @@ class SessionRecapServiceTest {
         assertEquals(10, number(item(result, "gift_rank"), "gift"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "\"12\""})
+    void ranksUseSameSessionsAsPage(String invalidValue) throws Exception {
+        for (int day = 0; day < 10; day++) add(day, List.of(), List.of(), "complete", day, day);
+        ledger.updateStreamer("test", HOST);
+        var path = dir.resolve("sessions.jsonl");
+        var lines = new ArrayList<>(Files.readAllLines(path));
+        var invalid = JSONObject.parseObject(lines.get(0));
+        invalid.getJSONObject("metrics").put("unused", invalidValue.equals("null") ? null : "12");
+        lines.set(0, com.alibaba.fastjson2.JSON.toJSONString(invalid, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
+        Files.write(path, lines);
+        var result = service.calculate("test", HOST, at(8));
+        assertEquals(8, number(item(result, "watched_rank"), "outOf"));
+        assertEquals(8, number(item(result, "gift_rank"), "outOf"));
+        var draft = SessionRecapRenderer.render(result,
+                new SessionRecapRenderer.Options(1, true, SessionRecapRenderer.Nicknames.ORIGINAL), List.of());
+        assertTrue(draft.message().contains("最近 8 场第 1"));
+    }
+
+    @Test @DisplayName("多条灯牌累加数量，避免把记录数或首条数量当作灯牌总数")
+    void sumsAllFanClubGiftCounts() throws Exception {
+        add(0, List.of(), List.of(), "complete", 1, 1);
+        Files.writeString(detail(at(0)).resolve("detail.json"), JSONObject.of("gifts", List.of(
+                Map.of("name", "粉丝团灯牌", "count", 2, "price", 0.1),
+                Map.of("name", "Sample gift", "count", 99, "price", 1),
+                Map.of("name", "粉丝团灯牌", "count", 7, "price", 0.2),
+                Map.of("name", "粉丝团灯牌套装", "count", 50, "price", 1))).toJSONString());
+        var result = calculate(0);
+        assertEquals(9, number(item(result, "fan_club"), "fanClub"));
+        var draft = SessionRecapRenderer.render(result,
+                new SessionRecapRenderer.Options(1, true, SessionRecapRenderer.Nicknames.ORIGINAL), List.of());
+        assertTrue(draft.message().contains("灯牌 9 个"));
+    }
+
     @Test @DisplayName("灯牌关注礼物榜热词复用封存报告数据，拒绝名单与主播不会被点名")
     void detailFactsAndPrivacy() throws Exception {
         warmup();
