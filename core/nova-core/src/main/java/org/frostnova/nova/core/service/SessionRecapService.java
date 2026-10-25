@@ -96,6 +96,7 @@ public class SessionRecapService {
         final List<Item> facts = new ArrayList<>(), patterns = new ArrayList<>();
         final List<Evidence> ledgerEvidence = new ArrayList<>();
         final Map<Long, String> nicknames = new HashMap<>();
+        final Map<String, java.util.Set<Long>> wordNicknameOwners = new HashMap<>();
         Long previousSession;
 
         Context(Streamer streamer, long target, List<AudienceLedger.Session> history,
@@ -155,6 +156,16 @@ public class SessionRecapService {
                         .sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
                         .limit(3).map(Map.Entry::getKey).toList();
                 fact("top_words", Map.of("words", words), List.of(), List.of(target), "detail:words");
+                // 只临时保留热词匹配所需的本场昵称，包括拒绝名单；不写入账本或去重记录。
+                if (detail.rankings() != null) for (var ranking : detail.rankings().values()) {
+                    if (ranking == null) continue;
+                    for (var user : ranking) {
+                        String name = user.userName();
+                        if (user.userUid() != null && user.userUid() > 0 && name != null && !name.isBlank()
+                                && words.stream().anyMatch(word -> word.contains(name)))
+                            wordNicknameOwners.computeIfAbsent(name, k -> new HashSet<>()).add(user.userUid());
+                    }
+                }
             }
         }
 
@@ -313,7 +324,8 @@ public class SessionRecapService {
             names.putAll(nicknames);
             names.putAll(ledger.sessionNicknames(streamer.platform(), streamer.uid(), target, wanted));
             return new Presentation(target, history.size() - 1, history.get(history.size() - 1).listQuality(),
-                    previousSession, names, Arrays.stream(excluded).boxed().collect(java.util.stream.Collectors.toSet()));
+                    previousSession, names, Arrays.stream(excluded).boxed().collect(java.util.stream.Collectors.toSet()),
+                    wordNicknameOwners);
         }
         Sample sample(List<Long> starts) {
             var used = new HashSet<>(starts);

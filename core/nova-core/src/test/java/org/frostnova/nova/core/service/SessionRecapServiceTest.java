@@ -373,4 +373,50 @@ class SessionRecapServiceTest {
         Files.createDirectory(detail(at(0)).resolve("events.jsonl"));
         assertThrows(java.io.IOException.class, () -> service.calculate("test", HOST, at(0)));
     }
+
+    @Test @DisplayName("本场明细昵称热词受隐私选项保护，避免未点名与拒绝的观众原名泄漏")
+    void wordNicknamesFromDetail() throws Exception {
+        add(0, List.of(BASE, BASE + 1), List.of(), "complete", 10, 1);
+        Files.writeString(detail(at(0)).resolve("detail.json"), JSONObject.of(
+                "rankings", Map.of("enter_users", List.of(
+                        Map.of("uid", BASE, "uname", "合成拒绝观众", "score", 9),
+                        Map.of("uid", BASE + 1, "uname", "甲", "score", 8))),
+                "words", Map.of("合成拒绝观众", 9, "甲", 8, "合成热词", 7)).toJSONString());
+        privacy.setExcludedUids(List.of(BASE));
+        var result = calculate(0);
+        assertTrue(result.presentation().nicknames().isEmpty());
+        for (int level : List.of(1, 2)) for (boolean money : List.of(false, true))
+                for (var mode : SessionRecapRenderer.Nicknames.values()) {
+            var message = SessionRecapRenderer.render(result,
+                    new SessionRecapRenderer.Options(level, money, mode), List.of()).message();
+            assertFalse(message.contains("合成拒绝观众"));
+            if (mode == SessionRecapRenderer.Nicknames.MASKED) {
+                assertFalse(message.contains("甲"));
+                assertTrue(message.contains("*、合成热词"));
+            } else assertTrue(message.contains("甲"));
+        }
+        var addedExclusion = SessionRecapRenderer.render(result, new SessionRecapRenderer.Options(1, true,
+                SessionRecapRenderer.Nicknames.ORIGINAL, java.util.Set.of(BASE + 1)), List.of()).message();
+        assertFalse(addedExclusion.contains("甲"));
+        try (var paths = Files.walk(dir.resolve("audience-ledger"))) {
+            for (var path : paths.filter(Files::isRegularFile).toList())
+                assertFalse(Files.readString(path).contains("合成拒绝观众"));
+        }
+    }
+
+    @Test @DisplayName("实际PK与时段计算的小数金额收短，避免真实场次出现长小数")
+    void fractionalComputedMoney() throws Exception {
+        for (int day = 0; day < 6; day++) {
+            addAt(at(day) - 12 * 3_600_000L, List.of(), List.of(), "complete", 200, 12.700000000000001);
+            add(day, List.of(), List.of(), "complete", 100, 8.25);
+            pk(day, 50, 7);
+        }
+        var message = SessionRecapRenderer.render(calculate(5), new SessionRecapRenderer.Options(2, true,
+                SessionRecapRenderer.Nicknames.ORIGINAL), List.of()).message();
+        assertTrue(message.contains("PK 时每分钟礼物 1.7 元，不在 PK 时是 0.2 元"));
+        assertTrue(message.contains("礼物中位数 12.7 元对 8.3 元"));
+        assertFalse(message.contains("000000"));
+        assertFalse(message.contains("666666"));
+    }
+
 }

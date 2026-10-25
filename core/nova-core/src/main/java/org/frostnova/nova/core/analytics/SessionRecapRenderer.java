@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.analytics;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -12,6 +13,7 @@ import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static org.frostnova.nova.core.analytics.SessionRecap.*;
 
@@ -21,6 +23,7 @@ public final class SessionRecapRenderer {
     private static final List<String> ORDER = List.of("newcomer_speak_return", "regulars_absent", "slot_compare", "pk_share");
     private static final List<String> SLOTS = List.of("凌晨", "上午", "下午", "晚上");
     private static final List<String> FORBIDDEN = List.of("因为", "导致", "所以", "由于");
+    private static final Pattern GRAPHEME = Pattern.compile("\\X");
     private static final ZoneOffset ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("MM/dd", Locale.ROOT).withZone(ZONE);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT).withZone(ZONE);
@@ -106,7 +109,7 @@ public final class SessionRecapRenderer {
                                 .thenComparingInt(i -> ORDER.indexOf(i.key())))
                         .filter(i -> !patternText(i).isEmpty())
                         .filter(i -> recent.stream().filter(h -> recentSessions.contains(h.session()))
-                                .flatMap(h -> h.patterns().stream()).filter(p -> p.key().equals(i.key()))
+                                .flatMap(h -> h.patterns().stream()).filter(p -> samePattern(i, p))
                                 .findFirst().map(p -> changed(i, p, options.showAmount())).orElse(true))
                         .collect(java.util.stream.Collectors.toMap(Item::key, i -> i, (a, b) -> a, java.util.LinkedHashMap::new))
                         .values().stream().limit(2).toList();
@@ -148,13 +151,13 @@ public final class SessionRecapRenderer {
 
         void metrics() {
             Item watched = facts.get("watched_rank"), gift = facts.get("gift_rank");
-            boolean w = positive(watched, "watched"), g = options.showAmount() && positive(gift, "gift");
+            boolean w = positive(watched, "watched"), g = options.showAmount() && positiveMoney(gift, "gift");
             if (!w && !g) return;
             int wr = w ? rank(watched) : 0, gr = g ? rank(gift) : 0;
-            boolean shared = wr > 0 && wr == gr;
-            String text = w ? "看过 " + num(watched, "watched") + " 人" + (!shared ? ranking(wr) : "") : "";
-            if (g) text += (w ? "、" : "") + "礼物 ¥" + num(gift, "gift") + (!shared ? ranking(gr) : "");
-            if (shared) text += "，都是最近 10 场第 " + wr;
+            boolean shared = wr > 0 && wr == gr && value(watched, "outOf") == value(gift, "outOf");
+            String text = w ? "看过 " + num(watched, "watched") + " 人" + (!shared ? ranking(watched) : "") : "";
+            if (g) text += (w ? "、" : "") + "礼物 ¥" + money(gift, "gift") + (!shared ? ranking(gift) : "");
+            if (shared) text += "，都是最近 " + num(watched, "outOf") + " 场第 " + wr;
             var keys = new ArrayList<String>();
             if (w) keys.add("watched_rank");
             if (g) keys.add("gift_rank");
@@ -194,7 +197,7 @@ public final class SessionRecapRenderer {
             var names = people.stream().map(context.nicknames()::get).filter(SessionRecapRenderer::safe)
                     .map(n -> options.nicknames() == Nicknames.MASKED ? mask(n) : n).limit(3).toList();
             if (names.isEmpty()) return "";
-            return String.join("、", names) + (people.size() > 3 ? "等 " + people.size() + " 位" : "");
+            return String.join("、", names) + (names.size() < people.size() ? "等 " + people.size() + " 位" : "");
         }
 
         void words() {
@@ -207,10 +210,14 @@ public final class SessionRecapRenderer {
 
         String word(String word) {
             if (context == null) return options.nicknames() == Nicknames.MASKED ? "" : word;
-            for (var entry : context.nicknames().entrySet())
-                if (excluded.contains(entry.getKey()) && !entry.getValue().isBlank() && word.contains(entry.getValue())) return "";
+            var owners = new HashMap<String, Set<Long>>();
+            context.wordNicknameOwners().forEach((name, uids) -> owners.put(name, new HashSet<>(uids)));
+            context.nicknames().forEach((uid, name) -> owners.computeIfAbsent(name, k -> new HashSet<>()).add(uid));
+            for (var entry : owners.entrySet())
+                if (entry.getValue().stream().anyMatch(excluded::contains) && !entry.getKey().isBlank()
+                        && word.contains(entry.getKey())) return "";
             if (options.nicknames() == Nicknames.MASKED) {
-                for (String name : context.nicknames().values().stream().filter(SessionRecapRenderer::safe)
+                for (String name : owners.keySet().stream().filter(SessionRecapRenderer::safe)
                         .sorted(Comparator.comparingInt(String::length).reversed()).toList()) word = word.replace(name, mask(name));
             }
             return word;
@@ -225,8 +232,8 @@ public final class SessionRecapRenderer {
                 case "regulars_absent" -> positive(i, "regulars", "absent") ? "常来的 " + num(i, "regulars") + " 位观众里，有 "
                         + num(i, "absent") + " 位最近 5 场都没出现。" : "";
                 case "slot_compare" -> slotText(i);
-                case "pk_share" -> options.showAmount() && positive(i, "pkGiftPerMin", "normalGiftPerMin", "pkSessions")
-                        ? "PK 时每分钟礼物 " + num(i, "pkGiftPerMin") + " 元，不在 PK 时是 " + num(i, "normalGiftPerMin")
+                case "pk_share" -> options.showAmount() && positiveMoney(i, "pkGiftPerMin", "normalGiftPerMin") && positive(i, "pkSessions")
+                        ? "PK 时每分钟礼物 " + money(i, "pkGiftPerMin") + " 元，不在 PK 时是 " + money(i, "normalGiftPerMin")
                         + " 元（" + num(i, "pkSessions") + " 场有 PK）。" : "";
                 default -> "";
             };
@@ -237,11 +244,11 @@ public final class SessionRecapRenderer {
                     || !positive(i, "sessionsA", "sessionsB", "watchedA", "watchedB")) return "";
             String text = i.values().get("slotA") + "场（" + num(i, "sessionsA") + " 场）看过人数的中位数是 " + num(i, "watchedA")
                     + "，" + i.values().get("slotB") + "场（" + num(i, "sessionsB") + " 场）是 " + num(i, "watchedB");
-            if (options.showAmount() && positive(i, "giftA", "giftB")) {
+            if (options.showAmount() && positiveMoney(i, "giftA", "giftB")) {
                 double a = value(i, "giftA"), b = value(i, "giftB");
                 text += Math.abs(a - b) / Math.min(a, b) < .2
-                        ? "；礼物差不多（" + num(i, "giftA") + " 元对 " + num(i, "giftB") + " 元）"
-                        : "；礼物中位数 " + num(i, "giftA") + " 元对 " + num(i, "giftB") + " 元";
+                        ? "；礼物差不多（" + money(i, "giftA") + " 元对 " + money(i, "giftB") + " 元）"
+                        : "；礼物中位数 " + money(i, "giftA") + " 元对 " + money(i, "giftB") + " 元";
             }
             return text + "。";
         }
@@ -254,7 +261,14 @@ public final class SessionRecapRenderer {
         return text != null && !text.isBlank() && !text.equals("0") && text.codePoints().noneMatch(c -> Character.isISOControl(c)
                 || c == 0x2028 || c == 0x2029) && FORBIDDEN.stream().noneMatch(text::contains);
     }
-    private static String mask(String name) { return new String(Character.toChars(name.codePointAt(0))) + "*"; }
+    private static String mask(String name) {
+        var matcher = GRAPHEME.matcher(name);
+        if (!matcher.find()) return "*";
+        String first = matcher.group();
+        int hidden = 0;
+        while (hidden < 2 && matcher.find()) hidden++;
+        return hidden == 0 ? "*" : first + "*".repeat(hidden);
+    }
     private static double value(Item item, String key) { return number(item == null ? Map.of() : item.values(), key); }
     private static double number(Map<String, Object> values, String key) {
         Object v = values.get(key);
@@ -265,6 +279,14 @@ public final class SessionRecapRenderer {
         return true;
     }
     private static String num(Item i, String key) { return BigDecimal.valueOf(value(i, key)).stripTrailingZeros().toPlainString(); }
+    // 与下播报告图一致：四舍五入到一位小数，整数省略小数位。
+    private static String money(Item i, String key) {
+        return BigDecimal.valueOf(value(i, key)).setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+    }
+    private static boolean positiveMoney(Item i, String... keys) {
+        for (String key : keys) if (!positive(i, key) || money(i, key).equals("0")) return false;
+        return true;
+    }
     private static String percent(Item i, String key) { return String.format(Locale.ROOT, "%.1f%%", value(i, key) * 100); }
     private static boolean percentages(Item i, String... keys) {
         for (String key : keys) if (!positive(i, key) || value(i, key) > 1 || percent(i, key).equals("0.0%")) return false;
@@ -274,10 +296,19 @@ public final class SessionRecapRenderer {
         double rank = value(i, "rank");
         return value(i, "outOf") >= 5 && rank >= 1 && rank <= 3 && rank == Math.rint(rank) ? (int) rank : 0;
     }
-    private static String ranking(int rank) { return rank > 0 ? "（最近 10 场第 " + rank + "）" : ""; }
+    private static String ranking(Item i) { return rank(i) > 0 ? "（最近 " + num(i, "outOf") + " 场第 " + rank(i) + "）" : ""; }
     private static int strength(String strength) {
         if (strength == null) return 3;
         return switch (strength) { case "strong" -> 0; case "medium" -> 1; case "weak" -> 2; default -> 3; };
+    }
+
+    private static boolean samePattern(Item item, SpokenPattern previous) {
+        if (!item.key().equals(previous.key())) return false;
+        if (!item.key().equals("slot_compare")) return true;
+        var now = item.values();
+        var old = previous.values();
+        return java.util.Objects.equals(now.get("slotA"), old.get("slotA")) && java.util.Objects.equals(now.get("slotB"), old.get("slotB"))
+                || java.util.Objects.equals(now.get("slotA"), old.get("slotB")) && java.util.Objects.equals(now.get("slotB"), old.get("slotA"));
     }
 
     private static boolean changed(Item item, SpokenPattern previous, boolean showAmount) {
@@ -290,7 +321,7 @@ public final class SessionRecapRenderer {
                     if (a != null && b != null) { old.put(prefix + "A", b); old.put(prefix + "B", a); }
                 }
             } else if (!java.util.Objects.equals(now.get("slotA"), old.get("slotA"))
-                    || !java.util.Objects.equals(now.get("slotB"), old.get("slotB"))) return false;
+                    || !java.util.Objects.equals(now.get("slotB"), old.get("slotB"))) return true;
         }
         String a = switch (item.key()) {
             case "newcomer_speak_return" -> "spokeReturn";

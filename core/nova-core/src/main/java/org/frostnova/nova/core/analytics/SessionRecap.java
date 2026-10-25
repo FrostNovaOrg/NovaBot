@@ -25,10 +25,17 @@ public final class SessionRecap {
     /** 返回全部规律候选，展示方负责挑选。事实的 strength 为 null。 */
     /** 模板需要的场次信息与少量展示昵称；拒绝名单仍由展示方再次检查。 */
     public record Presentation(long start, int previousSessions, String listQuality, Long previousSession,
-                               Map<Long, String> nicknames, Set<Long> excludedUids) {
+                               Map<Long, String> nicknames, Set<Long> excludedUids,
+                               Map<String, Set<Long>> wordNicknameOwners) {
+        public Presentation(long start, int previousSessions, String listQuality, Long previousSession,
+                            Map<Long, String> nicknames, Set<Long> excludedUids) {
+            this(start, previousSessions, listQuality, previousSession, nicknames, excludedUids, Map.of());
+        }
         public Presentation {
             nicknames = Map.copyOf(nicknames);
             excludedUids = Set.copyOf(excludedUids);
+            wordNicknameOwners = wordNicknameOwners.entrySet().stream().collect(
+                    java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> Set.copyOf(e.getValue())));
         }
     }
     public record Result(List<Item> facts, List<Item> patterns, Presentation presentation) {

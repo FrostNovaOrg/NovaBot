@@ -96,7 +96,7 @@ class SessionRecapRendererTest {
     void rankThresholds(int rank, int outOf, boolean shown) {
         var d = render(result(List.of(fact("watched_rank", Map.of("watched", 123, "rank", rank, "outOf", outOf))),
                 List.of()), 1, true, Nicknames.ORIGINAL, List.of());
-        assertEquals(shown, d.message().contains("最近 10 场第 " + rank));
+        assertEquals(shown, d.message().contains("最近 " + outOf + " 场第 " + rank));
         assertTrue(d.message().contains("看过 123 人"));
         assertFalse(d.message().contains("倒数"));
     }
@@ -106,7 +106,7 @@ class SessionRecapRendererTest {
         var d = render(result(List.of(fact("watched_rank", Map.of("watched", 123, "rank", 1, "outOf", 10)),
                 fact("gift_rank", Map.of("gift", 7, "rank", 3, "outOf", 8))), List.of()), 1, true, Nicknames.ORIGINAL, List.of());
         assertTrue(d.message().contains("看过 123 人（最近 10 场第 1）"));
-        assertTrue(d.message().contains("礼物 ¥7（最近 10 场第 3）"));
+        assertTrue(d.message().contains("礼物 ¥7（最近 8 场第 3）"));
         assertFalse(d.message().contains("都是"));
     }
 
@@ -302,4 +302,79 @@ class SessionRecapRendererTest {
         assertThrows(UnsupportedOperationException.class, () -> d.history().patterns().get(0).values().clear());
         assertEquals(START, d.history().session());
     }
+
+    @Test @DisplayName("金额沿用报告图的一位小数，避免主播收到浮点长尾")
+    void fractionalMoney() {
+        var pk = pattern("pk_share", "strong", Map.of("pkGiftPerMin", 50d / 30,
+                "normalGiftPerMin", 7d / 30, "pkSessions", 6), 6);
+        var d = render(result(List.of(fact("gift_rank", Map.of("gift", .1 + .2))),
+                List.of(pk, slots("strong", 12.700000000000001, 8.25))), 2, true, Nicknames.ORIGINAL, List.of());
+        assertTrue(d.message().contains("礼物 ¥0.3"));
+        assertTrue(d.message().contains("PK 时每分钟礼物 1.7 元，不在 PK 时是 0.2 元"));
+        assertTrue(d.message().contains("礼物中位数 12.7 元对 8.3 元"));
+        assertFalse(d.message().contains("000000"));
+        assertFalse(d.message().contains("666666"));
+        var whole = render(result(List.of(fact("gift_rank", Map.of("gift", 269d))), List.of()),
+                1, true, Nicknames.ORIGINAL, List.of());
+        assertEquals("· 礼物 ¥269", whole.message());
+    }
+
+    @ParameterizedTest @CsvSource({"甲,*", "A,*", "🐱,*", "🇨🇳,*", "甲乙,甲*", "Tom,T**",
+            "观众甲乙丙丁,观**", "🇨🇳中,🇨🇳*", "👨‍👩‍👧‍👦,*", "é,*"})
+    @DisplayName("按字形打码且单字全隐藏，避免截图仍能认出单字或表情昵称")
+    void masksGraphemes(String name, String masked) {
+        var r = new Result(List.of(fact("top_gifters", Map.of(), List.of(BASE)),
+                fact("returning_newcomers", Map.of("previousSpoke", 3, "returned", 1), List.of(BASE)),
+                fact("top_words", Map.of("words", List.of(name)))), List.of(),
+                new Presentation(START, 25, "complete", null, Map.of(BASE, name), Set.of()));
+        var d = render(r, 1, true, Nicknames.MASKED, List.of());
+        assertEquals(3, d.lines().size());
+        assertTrue(d.lines().stream().allMatch(l -> l.text().endsWith(masked)));
+        assertFalse(allText(d).contains(name));
+    }
+
+    @Test @DisplayName("昵称缺失时标明名单未列全，避免回来三位却像只有一位")
+    void incompleteNames() {
+        var r = new Result(List.of(fact("returning_newcomers", Map.of("previousSpoke", 5, "returned", 3),
+                List.of(BASE, BASE + 1, BASE + 2))), List.of(),
+                new Presentation(START, 25, "complete", null, Map.of(BASE, "观众甲"), Set.of()));
+        assertTrue(render(r, 1, true, Nicknames.ORIGINAL, List.of()).message().contains("回来了 3 位：观众甲等 3 位"));
+    }
+
+    @Test @DisplayName("名次写实际参与场数，避免七场记录被说成十场")
+    void actualRankWindow() {
+        var same = result(List.of(fact("watched_rank", Map.of("watched", 123, "rank", 2, "outOf", 7)),
+                fact("gift_rank", Map.of("gift", 8, "rank", 2, "outOf", 7))), List.of());
+        assertTrue(render(same, 1, true, Nicknames.ORIGINAL, List.of()).message().contains("都是最近 7 场第 2"));
+        assertTrue(render(same, 1, false, Nicknames.ORIGINAL, List.of()).message().contains("最近 7 场第 2"));
+        var different = result(List.of(same.facts().get(0), fact("gift_rank", Map.of("gift", 8, "rank", 2, "outOf", 6))), List.of());
+        var message = render(different, 1, true, Nicknames.ORIGINAL, List.of()).message();
+        assertTrue(message.contains("最近 7 场第 2"));
+        assertTrue(message.contains("最近 6 场第 2"));
+        assertFalse(message.contains("都是"));
+    }
+
+    @Test @DisplayName("换时段组合照说且各组合独立去重，避免新比较被旧时段压住")
+    void differentSlotGroups() {
+        var current = slots("strong", 9, 8);
+        var otherValues = new java.util.HashMap<>(current.values());
+        otherValues.put("slotB", "下午");
+        var other = pattern("slot_compare", "strong", otherValues, 13);
+        assertEquals(List.of("slot_compare"), selected(render(result(List.of(), List.of(current)), 2, true,
+                Nicknames.ORIGINAL, List.of(history(START - DAY, other)))));
+        assertTrue(selected(render(result(List.of(), List.of(current)), 2, true, Nicknames.ORIGINAL,
+                List.of(history(START - DAY, other), history(START - 2 * DAY, current)))).isEmpty());
+    }
+
+
+    @Test @DisplayName("接近的时段金额也收短，舍入为零的金额不展示，避免另一句式漏出长尾或零")
+    void similarAndRoundedZeroMoney() {
+        var similar = render(result(List.of(), List.of(slots("strong", 12.700000000000001, 12.25))),
+                2, true, Nicknames.ORIGINAL, List.of()).message();
+        assertTrue(similar.contains("礼物差不多（12.7 元对 12.3 元）"));
+        var tiny = render(result(List.of(fact("gift_rank", Map.of("gift", .01))),
+                List.of(pk("strong", .01), slots("strong", .01, .02))), 2, true, Nicknames.ORIGINAL, List.of()).message();
+        assertFalse(tiny.contains("礼物"));
+    }
+
 }
