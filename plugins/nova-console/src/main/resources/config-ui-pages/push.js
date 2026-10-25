@@ -1575,6 +1575,7 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
+  if (target.streamerSelf === true) title.appendChild(pill('主播本人', 'ok'));
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
@@ -1644,6 +1645,23 @@ function renderChannelLevel(host, user, target) {
   head.appendChild(line);
   const summary = el('div', 'ch-sum');
   head.appendChild(summary);
+  if (!group) {
+    const label = el('label');
+    const checkbox = el('input');
+    checkbox.type = 'checkbox';
+    checkbox.setAttribute('aria-label', '这是主播本人');
+    checkbox.checked = target.streamerSelf === true;
+    checkbox.addEventListener('change', () => {
+      target.streamerSelf = checkbox.checked;
+      markDirty();
+      renderStreamers();
+    });
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode('这是主播本人'));
+    head.appendChild(label);
+    head.appendChild(el('p', 'hint')).textContent =
+      '勾上后，私聊小结只会发到这个号，里面有观众昵称和场次数据。一位主播只能勾一条。';
+  }
 
   const notices = block(host, '推送内容', null);
   const noticeList = el('div', 'nlist');

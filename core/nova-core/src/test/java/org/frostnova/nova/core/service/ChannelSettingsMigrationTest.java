@@ -63,6 +63,19 @@ class ChannelSettingsMigrationTest {
                 JSONObject.of("直播报告", 1, "菜单", 1, "禁用命令", 1, "启用命令", 1)));
     }
 
+    // 已经设置主播本人通道后，升级不能再套回旧会话设置，也不能丢掉标记。
+    @Test void streamerSelfMarksChannelAsConfigured() throws Exception {
+        Files.writeString(file, """
+                [{"platform":"bilibili","uid":1,"targets":[
+                  {"platform":"qq","type":0,"num":81001,"streamerSelf":true}]}]
+                """);
+        revenue.set("qq", PushTargetType.FRIEND, 81001L, false);
+        migration.migrate();
+        var migrated = target(JSONArray.parseArray(Files.readString(file)), 0);
+        assertTrue(migrated.getBooleanValue("streamerSelf"));
+        assertFalse(migrated.containsKey("revenueVisible"), "已配置的通道不能套回旧会话设置");
+    }
+
     @AfterEach void detachLog() {
         ((Logger) LoggerFactory.getLogger(ChannelSettingsMigration.class)).detachAppender(migrationLog);
         migrationLog.stop();

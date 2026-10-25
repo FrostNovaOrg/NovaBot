@@ -267,6 +267,7 @@ public class JsonDataSource extends AbstractDataSource {
                     } else {
                         target.setEnabled(targetObject.getBoolean("enabled"));
                     }
+                    readChannelSetting(targetObject, "streamerSelf", () -> target.setStreamerSelf(Boolean.TRUE.equals(targetObject.get("streamerSelf"))));
                     readChannelSetting(targetObject, "revenueVisible", () -> target.setRevenueVisible(targetObject.getBoolean("revenueVisible")));
                     readChannelSetting(targetObject, "quietHours", () -> target.setQuietHours(targetObject.getObject("quietHours", PushTarget.QuietHours.class)));
                     readChannelSetting(targetObject, "disabledCommands", () -> target.setDisabledCommands(targetObject.getList("disabledCommands", String.class)));

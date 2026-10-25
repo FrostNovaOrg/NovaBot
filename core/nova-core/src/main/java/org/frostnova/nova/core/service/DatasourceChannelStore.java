@@ -4,6 +4,9 @@ import com.alibaba.fastjson2.JSONArray;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiAudit;
+import org.frostnova.nova.core.config.ui.StreamerSelfAudit;
+import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
@@ -33,9 +36,17 @@ public class DatasourceChannelStore {
     private final NovaCoreProperties properties;
     private final AbstractDataSource dataSource;
     private final ConfigurationValidator validator;
+    private final TimelineWriter timeline;
 
     public DatasourceChannelStore(NovaCoreProperties properties, AbstractDataSource dataSource,
                                   ConfigurationValidator validator) {
+        this(properties, dataSource, validator, TimelineWriter.NONE);
+    }
+
+    @Autowired
+    public DatasourceChannelStore(NovaCoreProperties properties, AbstractDataSource dataSource,
+                                  ConfigurationValidator validator, TimelineWriter timeline) {
+        this.timeline = timeline;
         this.properties = properties;
         this.dataSource = dataSource;
         this.validator = validator;
@@ -74,6 +85,7 @@ public class DatasourceChannelStore {
                 DurableFiles.replace(path, after);
                 if (!migration) {
                     try {
+                        StreamerSelfAudit.record(JSONArray.parseArray(before), users, actor, dataSource, timeline);
                         audit(JSONArray.parseArray(before), users, actor);
                     } catch (RuntimeException error) {
                         log.warn("通道设置审计失败，配置已保存，将继续重载", error);
@@ -96,9 +108,10 @@ public class DatasourceChannelStore {
             for (int j = 0; j < Math.min(targets.size(), previous.size()); j++) {
                 JSONObject target = targets.getJSONObject(j);
                 JSONObject old = previous.getJSONObject(j);
-                for (String key : List.of("revenueVisible", "quietHours", "disabledCommands", "reportPalette")) {
+                for (String key : List.of("revenueVisible", "quietHours", "disabledCommands", "reportPalette", "streamerSelf")) {
                     if (Objects.equals(old.get(key), target.get(key))) continue;
                     String setting = switch (key) {
+                        case "streamerSelf" -> "主播本人标记";
                         case "revenueVisible" -> "金额可见性";
                         case "quietHours" -> "静音";
                         case "reportPalette" -> "报告图配色";

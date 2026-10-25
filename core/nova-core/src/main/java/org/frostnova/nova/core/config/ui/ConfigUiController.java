@@ -1930,7 +1930,19 @@ public class ConfigUiController {
                 recordBackupOutcome(new TimestampedFileBackup(path, backupClock)
                         .backupForSave(properties.getConfigUi().getBackupKeep()));
             }
+            JSONArray previous;
+            try {
+                previous = readDatasourceUsers();
+            } catch (RuntimeException malformed) {
+                log.warn("旧推送配置无法解析，将以新配置记录主播本人标记", malformed);
+                previous = new JSONArray();
+            }
             DurableFiles.replace(path, content);
+            try {
+                StreamerSelfAudit.record(previous, JSONArray.parseArray(content), ConfigUiAccess.actor(), dataSource, timeline);
+            } catch (RuntimeException error) {
+                log.warn("主播本人标记时间线记录失败，配置已保存，将继续重载", error);
+            }
             if (dataSource instanceof org.frostnova.nova.core.datasource.JsonDataSource json) json.reload();
 
             result.put("success", true);
@@ -1962,7 +1974,7 @@ public class ConfigUiController {
                     JSONArray targets = new JSONArray();
                     for (Object entry : user.getJSONArray("targets") == null ? new JSONArray() : user.getJSONArray("targets")) {
                         JSONObject target = (JSONObject) entry;
-                        JSONObject brief = fields(target, "platform", "type", "num", "enabled");
+                        JSONObject brief = fields(target, "platform", "type", "num", "enabled", "streamerSelf");
                         JSONArray messages = new JSONArray();
                         for (Object messageEntry : target.getJSONArray("messages") == null ? new JSONArray() : target.getJSONArray("messages")) {
                             JSONObject message = (JSONObject) messageEntry;

@@ -12,8 +12,11 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -62,6 +65,7 @@ public class ConfigurationValidator {
 
         List<String> issues = new ArrayList<>();
         Set<String> seenUsers = new HashSet<>();
+        Map<Long, String> selfOwners = new HashMap<>();
         // 取「认得的」而不是「已注册的」：处理器换过包名之后，老配置里写的是旧名，
         // 运行期按别名回落照样认得出。这里若按主表拦，就成了「跑得起来却存不下去」——
         // 使用者被自己那份还能用的配置挡在保存之外，而界面不会告诉他该改哪儿
@@ -93,10 +97,28 @@ public class ConfigurationValidator {
             }
 
             checkUserLists(user, where + "（" + platform + ", uid " + uid + "）", issues);
-            checkTargets(user.getJSONArray("targets"), where, knownPlatforms, handlers, issues);
+            String streamer = where + "（" + platform + ", uid " + uid + "）";
+            checkTargets(user.getJSONArray("targets"), streamer, knownPlatforms, handlers, issues);
+            checkStreamerSelf(user.getJSONArray("targets"), streamer, selfOwners, issues);
         }
 
         return issues;
+    }
+
+    private void checkStreamerSelf(JSONArray targets, String streamer, Map<Long, String> owners, List<String> issues) {
+        if (targets == null) return;
+        int selected = 0;
+        for (int i = 0; i < targets.size() && issues.size() < MAX_ISSUES; i++) {
+            if (!(targets.get(i) instanceof JSONObject target) || !Boolean.TRUE.equals(target.get("streamerSelf"))) continue;
+            String at = streamer + "的第 " + (i + 1) + " 条通道（号码 " + target.getString("num") + "）";
+            if (++selected > 1) issues.add(at + "：一位主播最多只能把一条好友通道标成主播本人");
+            Long num = target.getLong("num");
+            if (num == null) continue;
+            String owner = owners.putIfAbsent(num, streamer);
+            if (owner != null && !owner.equals(streamer)) {
+                issues.add(at + "：这个号码已在另一位主播（" + owner + "）那里标成主播本人，请先取消原来的标记");
+            }
+        }
     }
 
     private void checkUserLists(JSONObject user, String where, List<String> issues) {
@@ -180,6 +202,12 @@ public class ConfigurationValidator {
     }
 
     private void checkChannelSettings(JSONObject target, String at, List<String> issues) {
+        Object self = target.get("streamerSelf");
+        String channel = at + "（号码 " + target.getString("num") + "）";
+        if (self != null && !(self instanceof Boolean)) issues.add(channel + "的主播本人标记必须为 true、false 或 null");
+        if (Boolean.TRUE.equals(self) && !Objects.equals(target.getInteger("type"), PushTargetType.FRIEND.getCode())) {
+            issues.add(channel + "：群通道不能标成主播本人");
+        }
         Object revenue = target.get("revenueVisible");
         if (revenue != null && !(revenue instanceof Boolean)) issues.add(at + "的 revenueVisible 必须为 true、false 或 null");
         Object quiet = target.get("quietHours");

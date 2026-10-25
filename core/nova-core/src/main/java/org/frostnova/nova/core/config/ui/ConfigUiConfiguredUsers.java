@@ -56,6 +56,7 @@ public class ConfigUiConfiguredUsers {
                     Integer type = targetRow.getInteger("type");
                     target.setType(type == null ? null : PushTargetType.of(type));
                     target.setEnabled(!Boolean.FALSE.equals(targetRow.getBoolean("enabled")));
+                    target.setStreamerSelf(Boolean.TRUE.equals(targetRow.get("streamerSelf")));
                     target.setQuietHours(targetRow.getObject("quietHours", PushTarget.QuietHours.class));
                     if (target.getPlatform() == null || target.getNum() == null || target.getType() == null
                             || target.getType() == PushTargetType.UNKNOWN) continue;
