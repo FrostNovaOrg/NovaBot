@@ -108,9 +108,13 @@ public final class SessionRecapRenderer {
                         .sorted(Comparator.comparingInt((Item i) -> strength(i.strength()))
                                 .thenComparingInt(i -> ORDER.indexOf(i.key())))
                         .filter(i -> !patternText(i).isEmpty())
-                        .filter(i -> recent.stream().filter(h -> recentSessions.contains(h.session()))
+                        .filter(i -> {
+                            boolean allowed = recent.stream().filter(h -> recentSessions.contains(h.session()))
                                 .flatMap(h -> h.patterns().stream()).filter(p -> samePattern(i, p))
-                                .findFirst().map(p -> changed(i, p, options.showAmount())).orElse(true))
+                                .findFirst().map(p -> changed(i, p, options.showAmount())).orElse(true);
+                            if (!allowed) note(i.key(), "这条规律 3 场内说过，这次没说");
+                            return allowed;
+                        })
                         .collect(java.util.stream.Collectors.toMap(Item::key, i -> i, (a, b) -> a, java.util.LinkedHashMap::new))
                         .values().stream().limit(2).toList();
                 if (!selected.isEmpty()) {

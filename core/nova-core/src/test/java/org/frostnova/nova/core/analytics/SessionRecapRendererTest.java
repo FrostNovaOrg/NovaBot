@@ -17,6 +17,15 @@ import static org.frostnova.nova.core.analytics.SessionRecapRenderer.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SessionRecapRendererTest {
+    @Test @DisplayName("规律被三场去重压下时给管理员解释，避免误以为没有算出规律")
+    void repeatedPatternHasAnExplanation() {
+        var current = result(facts(), List.of(regulars("strong", 16)));
+        var previous = new History(START - DAY, List.of(new SpokenPattern("regulars_absent", Map.of("regulars", 30, "absent", 16))));
+        var draft = render(current, 2, true, Nicknames.MASKED, List.of(previous));
+        assertTrue(draft.history().patterns().isEmpty());
+        assertTrue(draft.notes().stream().anyMatch(n -> n.keys().contains("regulars_absent")
+                && n.text().contains("这条规律 3 场内说过，这次没说")));
+    }
     // All identities, nicknames and words are synthetic.
     static final long HOST = 910000001L, BASE = 920000001L;
     static final long START = ZonedDateTime.parse("2026-10-25T09:01:00+08:00").toInstant().toEpochMilli();

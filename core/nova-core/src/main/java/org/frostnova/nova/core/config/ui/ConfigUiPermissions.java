@@ -126,6 +126,8 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/quiet");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/binding");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/recap-preview");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/recap-preview/{platform}/{uid}");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics/sessions");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/streamers");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/state");
