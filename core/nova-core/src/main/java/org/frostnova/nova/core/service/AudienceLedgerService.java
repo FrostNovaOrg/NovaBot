@@ -266,8 +266,16 @@ public class AudienceLedgerService {
                         if (!sealed(detail)) Files.deleteIfExists(target);
                         else {
                             String fingerprint = fingerprint(line);
-                            if (!Files.exists(target) || !fingerprint.equals(readHeader(target).sourceFingerprint()))
-                                build(target, detail, JSON.parseObject(line, LiveSession.class), excluded, fingerprint);
+                            if (!Files.exists(target) || !fingerprint.equals(readHeader(target).sourceFingerprint())) {
+                                LiveSession session = null;
+                                try {
+                                    session = JSON.parseObject(line, LiveSession.class);
+                                } catch (RuntimeException invalid) {
+                                    log.warn("观众账本跳过无效场次行 {}:{}: {}", source, ordinal + 1,
+                                            invalid.getClass().getSimpleName());
+                                }
+                                if (session != null) build(target, detail, session, excluded, fingerprint);
+                            }
                         }
                     }
                 }
@@ -328,12 +336,12 @@ public class AudienceLedgerService {
             Accumulator row = users.get(json.getLongValue("uid"));
             if (row == null) return;
             long at = json.getLongValue("at");
-            row.nickname(json.getString("un"), at);
+            String name = json.getString("un");
             String type = json.getString("t");
-            if ("follow".equals(type)) row.followed = true;
+            BigDecimal value = null;
+            Guard guard = null;
             if (Set.of("gift", "box", "guard").contains(type)) {
-                BigDecimal value = json.getBigDecimal("val");
-                if (value != null) row.giftYuan = row.giftYuan.add(value);
+                value = json.getBigDecimal("val");
             }
             if ("guard".equals(type)) {
                 int n = json.getIntValue("n");
@@ -341,8 +349,12 @@ public class AudienceLedgerService {
                 Long months = null;
                 if ("月".equals(unit)) months = (long) n;
                 else if ("年".equals(unit)) months = n * 12L;
-                row.guards.add(new Guard(at, json.getIntValue("lv"), n, unit, months));
+                guard = new Guard(at, json.getIntValue("lv"), n, unit, months);
             }
+            row.nickname(name, at);
+            if ("follow".equals(type)) row.followed = true;
+            if (value != null) row.giftYuan = row.giftYuan.add(value);
+            if (guard != null) row.guards.add(guard);
         });
         // A resumed marker appearing during the read means this was only an intermediate snapshot.
         if (!sealed(detail)) {
@@ -430,10 +442,13 @@ public class AudienceLedgerService {
         try (var lines = JsonlFiles.lines(path)) {
             for (String line : (Iterable<String>) lines::iterator) {
                 if (line.isBlank()) continue;
-                JSONObject json;
-                try { json = parse(line); }
-                catch (IOException invalid) { skipped++; continue; }
-                consumer.accept(json);
+                try {
+                    consumer.accept(parse(line));
+                } catch (UncheckedIOException failure) {
+                    throw failure.getCause();
+                } catch (IOException | RuntimeException invalid) {
+                    skipped++;
+                }
             }
         } catch (NoSuchFileException absent) {
             // Older archives may not have a message or event file.

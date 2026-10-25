@@ -14,6 +14,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
@@ -65,6 +67,41 @@ class LiveSessionArchiveTest {
         assertEquals(expected, archive.findMetrics("bilibili", STREAMER_UID, 2_000_000L));
         assertEquals(expected.subList(0, 1), archive.findMetrics("bilibili", STREAMER_UID, 1_000_000L));
         assertTrue(archive.findMetrics("other", STREAMER_UID, Long.MAX_VALUE).isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"metrics\":{\"watched_count\":null}}", "{\"metrics\":{\"watched_count\":\"12\"}}",
+            "{\"metrics\":{\"unused\":false}}", "{\"userCounts\":{\"enter_users\":\"3\"}}",
+            "{\"userCounts\":{\"enter_users\":null}}", "{\"roomId\":{}}",
+            "{\"maintenanceGapSeconds\":\"gap\"}", "{\"roomOutageSeconds\":{}}",
+            "{\"titles\":[{\"at\":\"later\"}]}", "{\"peaks\":{\"watched_count\":{\"at\":1,\"value\":\"many\"}}}"
+    })
+    void metricsRejectsRowsRejectedByPage(String fields) throws Exception {
+        var valid = JSONObject.of("platform", "test", "uid", 910000001L, "startTime", 1_000_000L,
+                "metrics", Map.of("watched_count", 10));
+        var invalid = JSONObject.parseObject(valid.toJSONString());
+        invalid.put("startTime", 2_000_000L);
+        invalid.putAll(JSONObject.parseObject(fields));
+        Files.writeString(dir.resolve("sessions.jsonl"), valid + "\n"
+                + JSON.toJSONString(invalid, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n"
+                + valid.fluentPut("startTime", 3_000_000L) + "\n");
+        var expected = archive.find(0, Long.MAX_VALUE).stream().map(LiveSession::startTime).toList();
+        assertEquals(List.of(1_000_000L, 3_000_000L), expected);
+        assertEquals(expected, archive.findMetrics("test", 910000001L, Long.MAX_VALUE).stream()
+                .map(LiveSessionArchive.SessionMetrics::startTime).toList());
+    }
+
+    @Test
+    void metricsKeepsToleratedLegacyFields() throws Exception {
+        var legacy = JSONObject.of("platform", "test", "uid", 910000001L, "startTime", 1000,
+                "userSets", Map.of("enter_users", List.of(920000001L, "viewer-x", Map.of())),
+                "endReason", "OLD_REASON", "anonymousCounts", Map.of("enter_users", "unknown"),
+                "peaks", Map.of("watched_count", Map.of("value", 5)));
+        Files.writeString(dir.resolve("sessions.jsonl"), legacy.toJSONString());
+        assertEquals(1, archive.find(0, Long.MAX_VALUE).size());
+        assertEquals(List.of(1000L), archive.findMetrics("test", 910000001L, Long.MAX_VALUE).stream()
+                .map(LiveSessionArchive.SessionMetrics::startTime).toList());
     }
 
     @Test

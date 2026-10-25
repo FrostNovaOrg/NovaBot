@@ -3,6 +3,7 @@ package org.frostnova.nova.core.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONReader;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.lang.BadLineNotice;
 import org.frostnova.nova.core.lang.BadLineNotice.FileState;
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
+import java.util.function.Function;
 
 /**
  * 直播场次归档
@@ -231,7 +233,7 @@ public class LiveSessionArchive {
         try {
             new ArchiveProjection().scanLines(path(), reader -> {
                 try {
-                    SessionMetrics session = reader.read(SessionMetrics.class);
+                    SessionMetrics session = projectMetrics(reader);
                     if (session != null && platform.equals(session.platform()) && Long.valueOf(uid).equals(session.uid())
                             && session.startTime() >= 0 && session.startTime() <= through) result.add(session);
                 } catch (RuntimeException invalid) {
@@ -251,6 +253,58 @@ public class LiveSessionArchive {
 
     record SessionMetrics(String platform, Long uid, long startTime, long endTime,
                           long durationSeconds, Map<String, Double> metrics) {}
+
+    /** 校验与主播页相同的字段类型，但不物化观众名单或无关扩展字段。 */
+    private SessionMetrics projectMetrics(JSONReader reader) {
+        if (reader.nextIfNull()) return null;
+        if (!reader.nextIfObjectStart()) throw new IllegalArgumentException("场次行不是对象");
+        JSONObject json = new JSONObject();
+        while (!reader.nextIfObjectEnd()) {
+            String key = reader.readFieldName();
+            switch (key) {
+                case "userSets" -> validateUserSets(reader);
+                case "platform", "uid", "uname", "roomId", "startTime", "endTime", "durationSeconds",
+                        "metrics", "userCounts", "endReason", "titles", "maintenanceGapSeconds",
+                        "roomOutageSeconds", "peaks", "anonymousCounts" -> json.put(key, reader.readAny());
+                default -> reader.skipValue();
+            }
+        }
+        // 这些字段不进入投影，但类型出错也会让主播页舍弃整场。
+        json.getString("uname");
+        json.getLong("roomId");
+        numberMap(json.getJSONObject("userCounts"), Number::intValue);
+        parseEndReason(json.getString("endReason"));
+        parseTitles(json.getJSONArray("titles"));
+        json.getLongValue("maintenanceGapSeconds");
+        json.getLongValue("roomOutageSeconds");
+        parsePeaks(json.getJSONObject("peaks"));
+        parseAnonymousCounts(json.getJSONObject("anonymousCounts"));
+        return new SessionMetrics(json.getString("platform"), json.getLong("uid"), json.getLongValue("startTime"),
+                json.getLongValue("endTime"), json.getLongValue("durationSeconds"),
+                numberMap(json.getJSONObject("metrics"), Number::doubleValue));
+    }
+
+    private void validateUserSets(JSONReader reader) {
+        if (!reader.nextIfObjectStart()) {
+            parseUserSets(JSONObject.of("users", reader.readAny()).getJSONObject("users"));
+            return;
+        }
+        while (!reader.nextIfObjectEnd()) {
+            reader.readFieldName();
+            if (reader.current() == '[') {
+                // 主播页逐项忽略非数字身份；投影只需确认名单是数组。
+                reader.skipValue();
+            } else {
+                JSONObject.of("users", reader.readAny()).getJSONArray("users");
+            }
+        }
+    }
+
+    private static <T> Map<String, T> numberMap(JSONObject raw, Function<Number, T> convert) {
+        Map<String, T> result = new HashMap<>();
+        if (raw != null) raw.forEach((key, value) -> result.put(key, convert.apply((Number) value)));
+        return result;
+    }
 
     /**
      * 读取指定时间区间内的场次，读不了时向上抛
@@ -368,17 +422,8 @@ public class LiveSessionArchive {
 
         try {
             JSONObject json = JSON.parseObject(line);
-            Map<String, Double> metrics = new HashMap<>();
-            JSONObject rawMetrics = json.getJSONObject("metrics");
-            if (rawMetrics != null) {
-                rawMetrics.forEach((key, value) -> metrics.put(key, ((Number) value).doubleValue()));
-            }
-
-            Map<String, Integer> userCounts = new HashMap<>();
-            JSONObject rawCounts = json.getJSONObject("userCounts");
-            if (rawCounts != null) {
-                rawCounts.forEach((key, value) -> userCounts.put(key, ((Number) value).intValue()));
-            }
+            Map<String, Double> metrics = numberMap(json.getJSONObject("metrics"), Number::doubleValue);
+            Map<String, Integer> userCounts = numberMap(json.getJSONObject("userCounts"), Number::intValue);
 
             return new LiveSession(
                     json.getString("platform"),

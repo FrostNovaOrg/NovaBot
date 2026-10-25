@@ -12,6 +12,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -291,6 +293,73 @@ class AudienceLedgerServiceTest {
     JSONObject header(long start) throws Exception {
         try (var reader = Files.newBufferedReader(shard(start))) {
             return JSON.parseObject(reader.readLine());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"uid\":{}}", "{\"uid\":\"viewer-x\"}",
+            "{\"uid\":920000001,\"at\":\"later\"}"
+    })
+    void skipsMistypedDanmuLine(String invalid) throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        append(session(2000, users(OTHER))); seal(2000);
+        Files.writeString(detail(1000).resolve("danmu.jsonl"), invalid + "\n"
+                + danmu(1100, "Sample viewer", "DANMU") + invalid + "\n"
+                + "{\"uid\":null}\n{}\n");
+        ledger.updateStreamer("test", HOST);
+        assertEquals(2, header(1000).getLongValue("skippedLines"));
+        assertEquals(0, header(2000).getLongValue("skippedLines"));
+        assertEquals(1, ledger.sessionRows("test", HOST, 1000).get(0).danmuCount());
+        var before = snapshot();
+        ledger.rebuild();
+        assertEquals(before, snapshot());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"uid\":{}}", "{\"uid\":\"viewer-x\"}",
+            "{\"uid\":920000001,\"at\":1400,\"un\":\"Invalid name\",\"t\":\"gift\",\"val\":\"coins\"}",
+            "{\"uid\":920000001,\"at\":1400,\"un\":\"Invalid name\",\"t\":\"guard\",\"val\":9,\"n\":\"many\"}",
+            "{\"uid\":920000001,\"at\":1400,\"un\":\"Invalid name\",\"t\":\"guard\",\"val\":9,\"n\":1,\"lv\":{}}"
+    })
+    void skipsWholeMistypedEventLine(String invalid) throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        Files.writeString(detail(1000).resolve("events.jsonl"),
+                invalid + "\n" + event(1200, "gift", "Sample viewer", Map.of("val", 2)) + invalid + "\n");
+        ledger.updateStreamer("test", HOST);
+        assertEquals(2, header(1000).getLongValue("skippedLines"));
+        var row = ledger.sessionRows("test", HOST, 1000).get(0);
+        assertEquals("Sample viewer", row.nickname());
+        assertEquals(0, new BigDecimal("2").compareTo(row.giftYuan()));
+        assertTrue(row.guards().isEmpty());
+        var before = snapshot();
+        ledger.rebuild();
+        assertEquals(before, snapshot());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"durationSeconds", "userSets"})
+    void skipsSessionConversionFailure(String field) throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        var invalid = session(2000, users(VIEWER));
+        invalid.put(field, field.equals("userSets") ? Map.of("enter_users", List.of(VIEWER, "viewer-x")) : "long");
+        append(invalid); seal(2000);
+        append(session(3000, users(OTHER))); seal(3000);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AudienceLedgerService.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            ledger.updateStreamer("test", HOST);
+            assertEquals(List.of(1000L, 3000L), ledger.sessions("test", HOST).stream().map(s -> s.startTime()).toList());
+            assertEquals(1, appender.list.stream().filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN).count());
+            assertEquals(0, header(1000).getLongValue("skippedLines"));
+            var before = snapshot();
+            ledger.rebuild();
+            assertEquals(before, snapshot());
+        } finally {
+            logger.detachAppender(appender);
         }
     }
 
