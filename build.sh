@@ -533,8 +533,8 @@ bash "$ROOT/tools/artifact-entry-check.sh" "$OUT"
 # ── [7/9] 界面视图模型 ──────────────────────────────────────────────────
 # 名单写死一处：少写一把，那一页的模型从此只靠人手跑，
 # 而「人手跑过」和「没跑」在构建日志上长得一样。任一红即本构建红。
-# 本树已有主播页那一把，名单十三把（首页／推送／连接／主播／日志／初始设置／模板／今日卡／
-# 设置／登录／告警／确认／只读口令）。
+# 本树已有主播页那一把，名单十四把（首页／推送／连接／主播／日志／初始设置／模板／今日卡／
+# 设置／登录／告警／确认／只读口令／小结样稿）。
 # 名单之后单跑向导插件步那一把：它量的是 setup.js／main.js 的接线，不是视图模型，
 # 名字也不是 *-model-check.sh，因此不进 MODEL_CHECKERS（这份名单只收视图模型的尺）。
 # 与第 3 步同理只在跑测试时跑：这几把都要 node，--skip-tests 的一键安装不该因为
@@ -556,6 +556,7 @@ if [ "$TESTS" = "1" ]; then
         alert-model-check.sh
         confirm-model-check.sh
         tokens-model-check.sh
+        recap-preview-model-check.sh
     )
     for checker in "${MODEL_CHECKERS[@]}"; do
         bash "$ROOT/tools/$checker"

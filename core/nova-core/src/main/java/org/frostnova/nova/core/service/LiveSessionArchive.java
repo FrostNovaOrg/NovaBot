@@ -193,6 +193,37 @@ public class LiveSessionArchive {
         }
     }
 
+    /** 已封存场次的轻量清单，不加载观众名单；同一场取最后归档的版本。 */
+    public List<ArchivedSession> sealedSessions() throws IOException {
+        var sessions = new java.util.LinkedHashMap<String, ArchivedSession>();
+        Path parent = path().toAbsolutePath().getParent();
+        FileState state = BadLineNotice.stateOf(path());
+        try {
+            new ArchiveProjection().scanLines(path(), reader -> {
+                ArchivedSession session;
+                try {
+                    session = reader.read(ArchivedSession.class);
+                } catch (RuntimeException invalid) {
+                    badLine.skipped(state, invalid);
+                    return;
+                }
+                if (session == null || session.platform() == null || !session.platform().matches("[A-Za-z0-9_-]{1,32}")
+                        || session.uid() <= 0 || session.startTime() < 0) return;
+                String key = session.platform() + "-" + session.uid() + "-" + session.startTime();
+                Path detail = parent.resolve("details").resolve(key);
+                if (Files.isRegularFile(detail.resolve("detail.json")) && !Files.exists(detail.resolve("resumed")))
+                    sessions.put(key, session);
+                else sessions.remove(key);
+            });
+        } catch (NoSuchFileException absent) {
+            return List.of();
+        }
+        return sessions.values().stream().sorted(java.util.Comparator.comparingLong(ArchivedSession::startTime)).toList();
+    }
+
+    public record ArchivedSession(String platform, long uid, String uname, long startTime, long endTime,
+                                  long durationSeconds) {}
+
     /** 小结只需场次时刻和指标；跳过完整观众名单，避免保留全历史名单。 */
     List<SessionMetrics> findMetrics(String platform, long uid, long through) {
         List<SessionMetrics> result = new ArrayList<>();
