@@ -51,6 +51,13 @@ public class PushTarget {
     /** 金额显示；null 使用群聊隐藏、好友显示的默认值。 */
     private Boolean revenueVisible;
 
+    /** 是否确认为主播本人；null 或 false 表示未确认。 */
+    private Boolean streamerSelf;
+
+    public Boolean getStreamerSelf() {
+        return Boolean.TRUE.equals(streamerSelf) ? Boolean.TRUE : null;
+    }
+
     /** 静音设置；null 跟随全局。 */
     private QuietHours quietHours;
 
@@ -103,6 +110,7 @@ public class PushTarget {
      */
     public boolean same(PushTarget other) {
         return equals(other) && messages.equals(other.messages)
+                && Boolean.TRUE.equals(streamerSelf) == Boolean.TRUE.equals(other.streamerSelf)
                 && Objects.equals(revenueVisible, other.revenueVisible)
                 && Objects.equals(quietHours, other.quietHours)
                 && Objects.equals(disabledCommands, other.disabledCommands)

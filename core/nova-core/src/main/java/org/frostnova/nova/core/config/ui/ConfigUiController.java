@@ -41,6 +41,7 @@ import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
+import org.frostnova.nova.core.datasource.StreamerSelfAssignments;
 import org.frostnova.nova.core.timeline.TimelineStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.QrCodeUtil;
@@ -1904,16 +1905,39 @@ public class ConfigUiController {
     }
 
     private ResponseEntity<JSONObject> writeDatasource(JSONObject body, String action) {
+        return writeDatasource(body, action, null);
+    }
+
+    private ResponseEntity<JSONObject> writeDatasource(JSONObject body, String action, Set<String> submitted) {
         JSONObject result = new JSONObject();
 
         String content = body.getString("content");
-        List<String> issues = validator.validateDatasource(content, senderService.getSenderNames());
+        JSONArray previous;
+        try {
+            previous = readDatasourceUsers();
+        } catch (IOException | RuntimeException malformed) {
+            log.warn("旧推送配置无法读取，将以新配置记录主播本人标记", malformed);
+            previous = new JSONArray();
+        }
+        if (submitted == null) {
+            try {
+                submitted = ConfigurationValidator.changedUsers(previous, JSONArray.parseArray(content));
+            } catch (RuntimeException malformed) {
+                // 格式错误仍由校验器给出可读说明。
+            }
+        }
+        List<String> issues = validator.validateDatasource(content, senderService.getSenderNames(), submitted, ConfigUiAccess::visible);
         if (!issues.isEmpty()) {
             result.put("success", false);
             result.put("message", "推送配置有误，已拒绝保存");
             result.put("issues", issues);
             return ResponseEntity.badRequest().body(result);
         }
+
+        JSONArray next = JSONArray.parseArray(content);
+        String supplied = next.toJSONString();
+        StreamerSelfAssignments.normalizeUnchanged(next, submitted == null ? Set.of() : submitted);
+        if (!supplied.equals(next.toJSONString())) content = formatDatasource(next, 0);
 
         // 超员在数据源那一层也拦得住，但那层只会拒收并写一行日志：界面照样回「已保存」，
         // 而多出来的几位从此不会被监控，使用者在界面上完全看不出来。所以保存这一步得自己说清楚
@@ -1931,6 +1955,11 @@ public class ConfigUiController {
                         .backupForSave(properties.getConfigUi().getBackupKeep()));
             }
             DurableFiles.replace(path, content);
+            try {
+                StreamerSelfAudit.record(previous, JSONArray.parseArray(content), ConfigUiAccess.actor(), dataSource, timeline);
+            } catch (RuntimeException error) {
+                log.warn("主播本人标记时间线记录失败，配置已保存，将继续重载", error);
+            }
             if (dataSource instanceof org.frostnova.nova.core.datasource.JsonDataSource json) json.reload();
 
             result.put("success", true);
@@ -1955,14 +1984,16 @@ public class ConfigUiController {
         synchronized (DATASOURCE_LOCK) {
             try {
                 JSONArray summaries = new JSONArray();
-                for (Object item : readDatasourceUsers()) {
+                JSONArray configured = readDatasourceUsers();
+                StreamerSelfAssignments.normalize(configured);
+                for (Object item : configured) {
                     JSONObject user = (JSONObject) item;
                     if (!ConfigUiAccess.visible(user.getString("platform"), user.getLong("uid"))) continue;
                     JSONObject summary = fields(user, "platform", "uid", "enabled", "roomId");
                     JSONArray targets = new JSONArray();
                     for (Object entry : user.getJSONArray("targets") == null ? new JSONArray() : user.getJSONArray("targets")) {
                         JSONObject target = (JSONObject) entry;
-                        JSONObject brief = fields(target, "platform", "type", "num", "enabled");
+                        JSONObject brief = fields(target, "platform", "type", "num", "enabled", "streamerSelf");
                         JSONArray messages = new JSONArray();
                         for (Object messageEntry : target.getJSONArray("messages") == null ? new JSONArray() : target.getJSONArray("messages")) {
                             JSONObject message = (JSONObject) messageEntry;
@@ -1994,10 +2025,14 @@ public class ConfigUiController {
     private JSONObject readDatasourceUser(String platform, String uid, boolean versionOnly) {
         synchronized (DATASOURCE_LOCK) {
             try {
-                JSONObject user = findDatasourceUser(readDatasourceUsers(), platform, uid);
+                JSONArray configured = readDatasourceUsers();
+                JSONObject user = findDatasourceUser(configured, platform, uid);
                 if (user == null) return datasourceError("未找到这位主播，请重新载入").fluentPut("missing", true);
                 JSONObject result = new JSONObject().fluentPut("success", true).fluentPut("version", datasourceVersion(user));
-                if (!versionOnly) result.put("user", user);
+                if (!versionOnly) {
+                    StreamerSelfAssignments.normalize(configured);
+                    result.put("user", user);
+                }
                 return result;
             } catch (IOException | RuntimeException e) {
                 return datasourceError("读取推送配置 datasource.json 失败: " + e.getMessage());
@@ -2066,9 +2101,9 @@ public class ConfigUiController {
                 else if (current == null) users.add(replacement);
                 else users.set(users.indexOf(current), replacement);
 
-                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", formatDatasource(users, 0)), description);
+                ResponseEntity<JSONObject> response = writeDatasource(new JSONObject().fluentPut("content", formatDatasource(users, 0)), description, Set.of(platform + ":" + uid));
                 if (response.getBody().getBooleanValue("success") && !"delete".equals(action)) {
-                    response.getBody().put("version", datasourceVersion(replacement));
+                    response.getBody().put("version", datasourceVersion(findDatasourceUser(readDatasourceUsers(), platform, uid)));
                 }
                 return response;
             } catch (IOException | RuntimeException e) {
