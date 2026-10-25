@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -58,6 +59,8 @@ public class StreamerProfileStore {
             } catch (NoSuchFileException absent) {
                 return StreamerProfile.empty(status);
             }
+        } catch (CharacterCodingException failure) {
+            return unreadable(path);
         } catch (IOException | RuntimeException failure) {
             log.warn("主播档案暂时读不出：{}，本次停止自动投递，下次重试", path);
             return StreamerProfile.empty(Status.TEMPORARILY_UNREADABLE);
@@ -90,20 +93,23 @@ public class StreamerProfileStore {
             return new StreamerProfile((int) tier, number(root, "tierSetAt", true), loadedConcerns,
                     loadedExclusions, paused, number(root, "pauseSetAt", true), status);
         } catch (IOException | RuntimeException failure) {
-            // 先记状态再移原件；状态写不成时保留原件，下一次读取仍会报错。
-            log.warn("主播档案读不出：{}，使用空档案并停止自动投递；主播可在本人私聊说「恢复」，或在控制台点击「档案已核对，恢复」", path);
-            try {
-                Files.createDirectories(directory);
-                DurableFiles.replace(marker(path), "UNREADABLE", DurableFiles.OWNER_ONLY);
-                restrict(marker(path));
-                restrict(path);
-                Path backup = DurableFiles.quarantine(path);
-                restrict(backup);
-            } catch (IOException | RuntimeException backupFailure) {
-                log.warn("主播档案坏件无法另存：{}", path);
-            }
-            return StreamerProfile.empty(Status.UNREADABLE);
+            return unreadable(path);
         }
+    }
+    private StreamerProfile unreadable(Path path) {
+        // 先记状态再移原件；状态写不成时保留原件，下一次读取仍会报错。
+        log.warn("主播档案读不出：{}，使用空档案并停止自动投递；主播可在本人私聊说「恢复」，或在控制台点击「档案已核对，恢复」", path);
+        try {
+            Files.createDirectories(directory);
+            DurableFiles.replace(marker(path), "UNREADABLE", DurableFiles.OWNER_ONLY);
+            restrict(marker(path));
+            restrict(path);
+            Path backup = DurableFiles.quarantine(path);
+            restrict(backup);
+        } catch (IOException | RuntimeException backupFailure) {
+            log.warn("主播档案坏件无法另存：{}", path);
+        }
+        return StreamerProfile.empty(Status.UNREADABLE);
     }
     private static Long number(JSONObject object, String key, boolean nullable) throws IOException {
         if (nullable && object.containsKey(key) && object.get(key) == null) return null;

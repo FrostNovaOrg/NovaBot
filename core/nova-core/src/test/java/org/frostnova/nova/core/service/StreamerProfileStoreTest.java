@@ -79,6 +79,27 @@ class StreamerProfileStoreTest {
         Files.writeString(store.path("bilibili", UID), content);
         assertEquals(Status.UNREADABLE, store.read("bilibili", UID).status());
     }
+    @Test @DisplayName("非 UTF-8 档案按坏件另存并告警，避免误判临时故障后无法恢复发送")
+    void invalidUtf8IsQuarantinedAndCanRecover() throws Exception {
+        Path file = store.path("bilibili", UID);
+        byte[] broken = {(byte) 0xFF, (byte) 0xFE, 0x78, (byte) 0xC3};
+        Files.write(file, broken);
+        var logger = (Logger) LoggerFactory.getLogger(StreamerProfileStore.class);
+        var appender = new ListAppender<ILoggingEvent>(); appender.start(); logger.addAppender(appender);
+        try {
+            assertEquals(Status.UNREADABLE, store.read("bilibili", UID).status());
+            assertTrue(appender.list.stream().anyMatch(e -> e.getLevel() == Level.WARN
+                    && e.getFormattedMessage().contains("档案读不出") && e.getFormattedMessage().contains("恢复")));
+            assertFalse(Files.exists(file));
+            List<Path> backups;
+            try (var files = Files.list(dir)) { backups = files.filter(p -> p.getFileName().toString().contains(".bad-")).toList(); }
+            assertEquals(1, backups.size()); assertArrayEquals(broken, Files.readAllBytes(backups.get(0)));
+            var restarted = new StreamerProfileStore(dir);
+            assertEquals(Status.UNREADABLE, restarted.read("bilibili", UID).status());
+            assertEquals(StreamerProfile.empty(Status.READY), restarted.recover("bilibili", UID));
+            assertEquals(StreamerProfile.empty(Status.READY), new StreamerProfileStore(dir).read("bilibili", UID));
+        } finally { logger.detachAppender(appender); appender.stop(); }
+    }
     @Test @DisplayName("程序调用也存不进第三档，不让后续投递读到未开放的档位")
     void unsupportedTierCannotBeStored() {
         assertThrows(IllegalArgumentException.class, () -> store.update("bilibili", UID,

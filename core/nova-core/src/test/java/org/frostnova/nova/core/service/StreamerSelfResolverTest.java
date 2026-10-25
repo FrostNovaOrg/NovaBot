@@ -42,6 +42,12 @@ class StreamerSelfResolverTest {
     void senderMustMatchConversation() {
         assertTrue(resolver.resolve(context(PushTargetType.FRIEND, SELF + 1)).isEmpty());
     }
+    @Test @DisplayName("别人的会话即使填本人发件号也不能认人，避免冒用主播号码修改设置")
+    void ownerSenderInAnotherConversationCannotResolve() {
+        var forged = new CommandContext("qq-onebot", PushTargetType.FRIEND, SELF + 1, SELF,
+                "改成", List.of("2"), "改成 2");
+        assertTrue(resolver.resolve(forged).isEmpty());
+    }
     @Test @DisplayName("会话必须是好友私聊，避免同号群消息冒充本人")
     void onlyFriendConversationCanResolve() {
         assertTrue(resolver.resolve(context(PushTargetType.GROUP, SELF)).isEmpty());

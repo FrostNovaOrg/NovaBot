@@ -213,6 +213,33 @@ class StreamerProfileCommandTest {
         }
         assertEquals(2, profile().tier()); assertFalse(profile().paused());
     }
+    @Test @DisplayName("非 UTF-8 坏件也能在本人私聊恢复，避免主播无法解除永久停发")
+    void resumeRecoversInvalidUtf8() throws Exception {
+        say("改成 2"); say("先别发了");
+        Files.write(profiles.path("bilibili", UID), new byte[]{(byte) 0xFF, (byte) 0xFE, 0x78, (byte) 0xC3});
+        assertEquals("好的", say("恢复"));
+        var restored = new StreamerProfileStore(profiles.path("bilibili", UID).getParent()).read("bilibili", UID);
+        assertEquals(StreamerProfile.Status.READY, restored.status());
+        assertEquals(1, restored.tier()); assertFalse(restored.paused()); assertNotNull(restored.pauseSetAt());
+    }
+    @Test @DisplayName("查看暂时读不出的档案应说明读取失败，避免误报成保存失败")
+    void recallReportsTemporaryReadFailure() {
+        Path file = profiles.path("bilibili", UID);
+        try (var files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.readString(file)).thenThrow(new java.io.IOException("temporary"));
+            String reply = say("你记得我什么");
+            assertTrue(reply.contains("档案暂时读不出"), reply);
+            assertTrue(reply.contains("稍后再试"), reply);
+            assertFalse(reply.contains("没能保存"), reply);
+        }
+    }
+    @ParameterizedTest @ValueSource(strings = {"\uFE0E", "\uFE0F"})
+    @DisplayName("带变体选择符的表情不应挡住暂停和恢复，避免设置被当成闲聊")
+    void emojiVariationSelectorsDoNotHideSettings(String selector) {
+        assertEquals("好的，先不发了；回「恢复」就接着发", say("先别发了☺" + selector));
+        assertTrue(profile().paused());
+        assertEquals("好的", say("恢复❤" + selector)); assertFalse(profile().paused());
+    }
     @ParameterizedTest @ValueSource(strings = {"先别发了~", "先别发了～", "先别发了😊"})
     @DisplayName("末尾波浪号和表情不应让暂停与恢复被当成闲聊")
     void trailingSymbolsDoNotHideSettings(String phrase) {

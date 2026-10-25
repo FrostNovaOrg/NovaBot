@@ -102,6 +102,14 @@ class StreamerProfileApiTest {
         assertEquals(2, profiles.read("bilibili", UID).tier()); assertTrue(profiles.read("bilibili", UID).paused());
         assertTrue(events.isEmpty());
     }
+    @Test @DisplayName("非 UTF-8 坏件可在控制台恢复，避免永久停发且恢复接口一直报错")
+    void authorizedRecoveryResetsInvalidUtf8() throws Exception {
+        Files.write(profiles.path("bilibili", UID), new byte[]{(byte) 0xFF, (byte) 0xFE, 0x78, (byte) 0xC3});
+        mvc.perform(post(URL + "/recover").requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.profile.status").value("READY"))
+                .andExpect(jsonPath("$.profile.tier").value(1)).andExpect(jsonPath("$.profile.paused").value(false));
+        assertEquals(StreamerProfile.empty(StreamerProfile.Status.READY), new StreamerProfileStore(dir).read("bilibili", UID));
+    }
     @Test @DisplayName("过期恢复按钮不能清空一份已经恢复的正常档案")
     void staleRecoveryKeepsReadySettings() throws Exception {
         var before = profiles.read("bilibili", UID);
