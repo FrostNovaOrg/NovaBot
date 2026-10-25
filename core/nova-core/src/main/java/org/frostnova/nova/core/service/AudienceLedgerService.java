@@ -14,6 +14,7 @@ import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -25,10 +26,14 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +47,7 @@ import java.util.function.Consumer;
  * 更新最多保留一场名单与聚合结果，不缓存全主播的弹幕或观众历史。
  */
 @Service
+@Slf4j
 public class AudienceLedgerService {
     private static final Object LOCK = new Object();
     private static final int VERSION = 1;
@@ -53,7 +59,7 @@ public class AudienceLedgerService {
         this.assistant = assistant;
     }
 
-    /** 仅补这位主播尚未入账的封存场次；同时清理所有主播的拒绝名单记录。 */
+    /** 补齐封存场次并刷新场次归档已变更的记录；同时清理所有主播的拒绝名单记录。 */
     public void updateStreamer(String platform, long uid) throws IOException {
         validate(platform, uid);
         synchronized (LOCK) {
@@ -155,12 +161,9 @@ public class AudienceLedgerService {
             long ordinal = 0;
             for (String line : (Iterable<String>) lines::iterator) {
                 if (!line.isBlank()) {
-                    JSONObject json = parse(line);
-                    String p = json.getString("platform");
-                    long u = json.getLongValue("uid");
-                    validate(p, u);
-                    if (platform == null || (platform.equals(p) && uid == u))
-                        latest.put(new Key(p, u, json.getLongValue("startTime")), ordinal);
+                    Key key = sourceKey(line, source, ordinal, true);
+                    if (key != null && (platform == null || (platform.equals(key.platform()) && uid == key.uid())))
+                        latest.put(key, ordinal);
                 }
                 ordinal++;
             }
@@ -173,14 +176,17 @@ public class AudienceLedgerService {
             long ordinal = 0;
             for (String line : (Iterable<String>) lines::iterator) {
                 if (!line.isBlank()) {
-                    JSONObject json = parse(line);
-                    Key key = new Key(json.getString("platform"), json.getLongValue("uid"), json.getLongValue("startTime"));
-                    Long last = latest.get(key);
-                    Path target = streamer(destination, key.platform(), key.uid()).resolve(key.start() + ".jsonl");
+                    Key key = sourceKey(line, source, ordinal, false);
+                    Long last = key == null ? null : latest.get(key);
                     if (last != null && last == ordinal) {
+                        Path target = streamer(destination, key.platform(), key.uid()).resolve(key.start() + ".jsonl");
                         Path detail = data().resolve("details").resolve(key.platform() + "-" + key.uid() + "-" + key.start());
                         if (!sealed(detail)) Files.deleteIfExists(target);
-                        else if (!Files.exists(target)) build(target, detail, JSON.parseObject(line, LiveSession.class), excluded);
+                        else {
+                            String fingerprint = fingerprint(line);
+                            if (!Files.exists(target) || !fingerprint.equals(readHeader(target).sourceFingerprint()))
+                                build(target, detail, JSON.parseObject(line, LiveSession.class), excluded, fingerprint);
+                        }
                     }
                 }
                 ordinal++;
@@ -190,33 +196,54 @@ public class AudienceLedgerService {
         }
     }
 
-    private void build(Path target, Path detail, LiveSession source, Set<Long> excluded) throws IOException {
+    private Key sourceKey(String line, Path path, long ordinal, boolean warn) {
+        try {
+            JSONObject json = parse(line);
+            String platform = json.getString("platform");
+            long uid = json.getLongValue("uid");
+            validate(platform, uid);
+            return new Key(platform, uid, json.getLongValue("startTime"));
+        } catch (IOException | RuntimeException invalid) {
+            if (warn) log.warn("观众账本跳过无效场次行 {}:{}: {}", path, ordinal + 1, invalid.getMessage());
+            return null;
+        }
+    }
+
+    private static String fingerprint(String line) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(line.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException(unavailable);
+        }
+    }
+
+    private void build(Path target, Path detail, LiveSession source, Set<Long> excluded, String fingerprint) throws IOException {
         Map<Long, Accumulator> users = new TreeMap<>();
         if (source.hasUserSets()) {
             source.userSets().values().forEach(list -> list.forEach(uid -> {
                 if (uid != null && uid > 0 && !excluded.contains(uid)) users.computeIfAbsent(uid, Accumulator::new);
             }));
         }
-        for (Long uid : source.userSet("enter_users")) if (users.containsKey(uid)) users.get(uid).entered = true;
-        for (Long uid : source.userSet("like_users")) if (users.containsKey(uid)) users.get(uid).liked = true;
+        for (Long uid : source.userSet("enter_users")) if (uid != null && users.containsKey(uid)) users.get(uid).entered = true;
+        for (Long uid : source.userSet("like_users")) if (uid != null && users.containsKey(uid)) users.get(uid).liked = true;
         JSONObject rankings = parse(Files.readString(detail.resolve("detail.json"))).getJSONObject("rankings");
         if (rankings != null && rankings.getJSONArray("enter_users") != null) {
             for (Object raw : rankings.getJSONArray("enter_users")) {
                 JSONObject user = (JSONObject) raw;
-                Accumulator row = users.get(user.getLong("uid"));
+                Accumulator row = users.get(user.getLongValue("uid"));
                 if (row != null) row.nickname(user.getString("uname"), Long.MIN_VALUE);
             }
         }
-        scanSource(detail.resolve("danmu.jsonl"), json -> {
-            Accumulator row = users.get(json.getLong("uid"));
+        long skipped = scanSource(detail.resolve("danmu.jsonl"), json -> {
+            Accumulator row = users.get(json.getLongValue("uid"));
             if (row == null) return;
             long at = json.getLongValue("at");
             row.nickname(json.getString("uname"), at);
             row.danmuCount++;
             row.firstDanmuAt = row.firstDanmuAt == null ? at : Math.min(at, row.firstDanmuAt);
         });
-        scanSource(detail.resolve("events.jsonl"), json -> {
-            Accumulator row = users.get(json.getLong("uid"));
+        skipped += scanSource(detail.resolve("events.jsonl"), json -> {
+            Accumulator row = users.get(json.getLongValue("uid"));
             if (row == null) return;
             long at = json.getLongValue("at");
             row.nickname(json.getString("un"), at);
@@ -236,7 +263,10 @@ public class AudienceLedgerService {
             }
         });
         // A resumed marker appearing during the read means this was only an intermediate snapshot.
-        if (!sealed(detail)) return;
+        if (!sealed(detail)) {
+            Files.deleteIfExists(target);
+            return;
+        }
         Session session = new Session(source.platform(), source.uid(), source.startTime(), source.hasUserSets(),
                 source.durationSeconds() > 600 && source.endReason() != LiveEndReason.UNCLOSED && source.hasUserSets(),
                 StreamerInsights.listQuality(source));
@@ -244,7 +274,7 @@ public class AudienceLedgerService {
         Path temp = target.resolveSibling(target.getFileName() + ".tmp");
         try {
             try (BufferedWriter writer = Files.newBufferedWriter(temp)) {
-                writeLine(writer, new Header(VERSION, session));
+                writeLine(writer, new Header(VERSION, session, fingerprint, skipped));
                 for (Accumulator row : users.values()) writeLine(writer, row.row(source));
             }
             move(temp, target);
@@ -313,14 +343,23 @@ public class AudienceLedgerService {
         }
     }
 
-    private void scanSource(Path path, Consumer<JSONObject> consumer) throws IOException {
+    private long scanSource(Path path, Consumer<JSONObject> consumer) throws IOException {
+        long skipped = 0;
         try (var lines = JsonlFiles.lines(path)) {
-            for (String line : (Iterable<String>) lines::iterator) if (!line.isBlank()) consumer.accept(parse(line));
+            for (String line : (Iterable<String>) lines::iterator) {
+                if (line.isBlank()) continue;
+                JSONObject json;
+                try { json = parse(line); }
+                catch (IOException invalid) { skipped++; continue; }
+                consumer.accept(json);
+            }
         } catch (NoSuchFileException absent) {
             // Older archives may not have a message or event file.
         } catch (UncheckedIOException failure) {
             throw failure.getCause();
         }
+        if (skipped > 0) log.warn("观众账本读取 {} 时跳过 {} 行损坏记录", path, skipped);
+        return skipped;
     }
 
     private static JSONObject parse(String line) throws IOException {
@@ -393,7 +432,7 @@ public class AudienceLedgerService {
         }
     }
     private record Key(String platform, long uid, long start) {}
-    public record Header(int version, Session session) {}
+    public record Header(int version, Session session, String sourceFingerprint, long skippedLines) {}
     public record StreamerIndex(int version, String platform, long streamerUid, long ledgerStart) {}
 
     private static final class Accumulator {

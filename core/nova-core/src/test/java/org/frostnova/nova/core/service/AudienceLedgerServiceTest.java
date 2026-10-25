@@ -6,6 +6,8 @@ import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveSession;
+import org.frostnova.nova.core.model.DanmuRecord;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,8 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
 
 class AudienceLedgerServiceTest {
     // All identities and nicknames in these archives are synthetic.
@@ -27,9 +31,10 @@ class AudienceLedgerServiceTest {
     @TempDir Path dir;
     AssistantProperties privacy;
     AudienceLedgerService ledger;
+    NovaCoreProperties properties;
 
     @BeforeEach void setup() {
-        var properties = new NovaCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("live.json").toString());
         privacy = new AssistantProperties();
         ledger = new AudienceLedgerService(properties, privacy);
@@ -96,16 +101,30 @@ class AudienceLedgerServiceTest {
         assertTrue(snapshot().values().stream().noneMatch(s -> s.contains("\"viewerUid\":" + VIEWER)));
     }
 
-    @Test @DisplayName("重建遇到坏归档保留原账本，避免一次失败丢掉全部历史")
+    @Test @DisplayName("重建遇到读取失败保留原账本，避免一次失败丢掉全部历史")
     void failedRebuildKeepsPreviousLedger() throws Exception {
         append(session(1000, users(VIEWER))); seal(1000);
         ledger.updateStreamer("test", HOST);
         var before = snapshot();
-        Files.writeString(detail(1000).resolve("events.jsonl"), "broken");
+        Files.createDirectory(detail(1000).resolve("events.jsonl"));
         assertThrows(java.io.IOException.class, ledger::rebuild);
         assertEquals(before, snapshot());
         assertFalse(Files.exists(dir.resolve("audience-ledger.building")));
         assertEquals(1, ledger.sessionRows("test", HOST, 1000).size());
+    }
+
+    @Test @DisplayName("重建写不进去时保留原账本并报错，避免磁盘故障清空全部历史")
+    void failedRebuildWriteKeepsPreviousLedger() throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        var before = snapshot();
+        Path temporary = dir.resolve("audience-ledger.building/test-" + HOST + "/1000.jsonl.tmp");
+        try (var mocked = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            mocked.when(() -> Files.newBufferedWriter(temporary)).thenThrow(new java.io.IOException("write unavailable"));
+            assertThrows(java.io.IOException.class, ledger::rebuild);
+        }
+        assertEquals(before, snapshot());
+        assertFalse(Files.exists(dir.resolve("audience-ledger.building")));
     }
 
     @Test @DisplayName("上舰单位缺失保留未知月数，避免虚报订阅期限")
@@ -263,5 +282,194 @@ class AudienceLedgerServiceTest {
         Files.writeString(detail(1000).resolve("danmu.jsonl"), "invalid");
         ledger.updateStreamer("test", HOST);
         assertEquals(before, snapshot());
+    }
+
+    Path shard(long start) {
+        return dir.resolve("audience-ledger/test-" + HOST + "/" + start + ".jsonl");
+    }
+
+    JSONObject header(long start) throws Exception {
+        try (var reader = Files.newBufferedReader(shard(start))) {
+            return JSON.parseObject(reader.readLine());
+        }
+    }
+
+    @Test @DisplayName("真实写入的 PK 行没有观众身份，避免打过 PK 的主播账本永久更新失败")
+    void pkEventsWithoutViewerDoNotBlockIndexing() throws Exception {
+        append(session(1000, users(VIEWER)));
+        var archive = new LiveDetailArchive(properties);
+        archive.appendEvent("test", HOST, 1000, 1100, "pk_open", Map.of(
+                "pk", 7, "tp", 1, "nc", 2, "ps", 1100, "pe", 1200,
+                "op", List.of(Map.of("u", OTHER, "r", 9))));
+        archive.appendEvent("test", HOST, 1000, 1200, "pk_settle", Map.of(
+                "pk", 7, "er", 0, "en", 1200, "mv", 3, "mr", 1, "rs", 1,
+                "op", List.of(Map.of("u", OTHER, "r", 9, "v", 2, "k", 2))));
+        archive.appendEvent("test", HOST, 1000, 1300, "gift", Map.of("uid", VIEWER, "val", 2));
+        seal(1000);
+        ledger.updateStreamer("test", HOST);
+        var row = ledger.sessionRows("test", HOST, 1000).get(0);
+        assertEquals(0, new BigDecimal("2").compareTo(row.giftYuan()));
+        var incremental = snapshot();
+        ledger.rebuild();
+        assertEquals(incremental, snapshot());
+    }
+
+    @Test @DisplayName("空发送者弹幕不属于任何观众，避免无身份弹幕卡住更新与重建")
+    void nullDanmuViewerDoesNotBlockIndexing() throws Exception {
+        append(session(1000, users(VIEWER)));
+        var archive = new LiveDetailArchive(properties);
+        archive.appendDanmu("test", HOST, 1000,
+                new DanmuRecord(1100, null, null, "Sample message", DanmuRecord.Type.DANMU));
+        archive.appendDanmu("test", HOST, 1000,
+                new DanmuRecord(1200, VIEWER, "Sample viewer", "Sample message", DanmuRecord.Type.DANMU));
+        seal(1000);
+        ledger.updateStreamer("test", HOST);
+        assertEquals(1, ledger.sessionRows("test", HOST, 1000).get(0).danmuCount());
+        var incremental = snapshot();
+        ledger.rebuild();
+        assertEquals(incremental, snapshot());
+    }
+
+    @Test @DisplayName("两次更新间续播再封存也刷新场次，避免半场人数与重建对不上")
+    void refreshesSessionResealedBetweenUpdates() throws Exception {
+        var first = session(1000, users(VIEWER));
+        first.put("endTime", 602000);
+        append(first); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        String fingerprint = header(1000).getString("sourceFingerprint");
+        new LiveDetailArchive(properties).reopen("test", HOST, 1000);
+        var last = session(1000, users(VIEWER, OTHER));
+        last.put("durationSeconds", 1201);
+        last.put("endTime", 1202000);
+        append(last);
+        seal(1000);
+        Files.delete(detail(1000).resolve("resumed"));
+        ledger.updateStreamer("test", HOST);
+        assertEquals(2, ledger.sessionRows("test", HOST, 1000).size());
+        assertNotEquals(fingerprint, header(1000).getString("sourceFingerprint"));
+        var incremental = snapshot();
+        ledger.rebuild();
+        assertEquals(incremental, snapshot());
+    }
+
+    @Test @DisplayName("跳过半行并逐场计数，避免一条损坏的弹幕或事件阻断所有历史")
+    void skipsMalformedDetailLinesAndRecordsCount() throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        append(session(2000, users(OTHER))); seal(2000);
+        Files.writeString(detail(1000).resolve("danmu.jsonl"),
+                "{\"uid\":\n" + danmu(1100, "Sample viewer", "DANMU") + "{\"at\":");
+        Files.writeString(detail(1000).resolve("events.jsonl"),
+                "broken\n" + event(1200, "gift", "Sample viewer", Map.of("val", 2)));
+        ledger.updateStreamer("test", HOST);
+        assertEquals(3, header(1000).getLongValue("skippedLines"));
+        assertEquals(0, header(2000).getLongValue("skippedLines"));
+        var row = ledger.sessionRows("test", HOST, 1000).get(0);
+        assertEquals(1, row.danmuCount());
+        assertEquals(0, new BigDecimal("2").compareTo(row.giftYuan()));
+        var incremental = snapshot();
+        ledger.rebuild();
+        assertEquals(incremental, snapshot());
+    }
+
+    @Test @DisplayName("跳过损坏或非法场次行，避免一个主播的坏归档挡住所有主播")
+    void skipsInvalidSessionLines() throws Exception {
+        for (var invalid : List.of(session(2000, users(VIEWER)), session(3000, users(VIEWER)),
+                session(4000, users(VIEWER)), session(5000, users(VIEWER)))) {
+            if (invalid.getLongValue("startTime") == 2000) invalid.put("platform", "../test");
+            else if (invalid.getLongValue("startTime") == 3000) invalid.put("uid", 0);
+            else if (invalid.getLongValue("startTime") == 4000) invalid.put("uid", -1);
+            else invalid.remove("platform");
+            append(invalid);
+        }
+        append(session(1000, users(VIEWER))); seal(1000);
+        var another = session(6000, users(OTHER));
+        another.put("uid", HOST + 1); append(another);
+        Path anotherDetail = Files.createDirectories(dir.resolve("details/test-" + (HOST + 1) + "-6000"));
+        Files.writeString(anotherDetail.resolve("detail.json"), "{}");
+        ledger.updateStreamer("test", HOST);
+        assertEquals(1, ledger.sessions("test", HOST).size());
+        ledger.rebuild();
+        assertEquals(1, ledger.sessions("test", HOST).size());
+        assertEquals(1, ledger.sessionRows("test", HOST + 1, 6000).size());
+    }
+
+    @Test @DisplayName("场次归档半行不吞掉后续完整场次，避免一个坏行让历史永远停在旧场")
+    void skipsMalformedSessionLines() throws Exception {
+        Files.writeString(dir.resolve("sessions.jsonl"), "{\"platform\":\n");
+        append(session(1000, users(VIEWER))); seal(1000);
+        Files.writeString(dir.resolve("sessions.jsonl"), "null\n{\"uid\":", StandardOpenOption.APPEND);
+        ledger.updateStreamer("test", HOST);
+        assertEquals(1, ledger.sessions("test", HOST).size());
+        var incremental = snapshot();
+        ledger.rebuild();
+        assertEquals(incremental, snapshot());
+    }
+
+    @Test @DisplayName("未登录身份不落盘，避免观众零被其他文件读取方当作真人")
+    void zeroViewerIsNeverWritten() throws Exception {
+        append(session(1000, users(0, VIEWER))); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        assertFalse(Files.readString(shard(1000)).contains("\"viewerUid\":0"));
+        ledger.rebuild();
+        assertFalse(Files.readString(shard(1000)).contains("\"viewerUid\":0"));
+    }
+
+    @Test @DisplayName("拒绝名单从首次入账就不落盘，避免拒绝分析的观众仍留下可读记录")
+    void excludedViewerIsNeverWritten() throws Exception {
+        privacy.setExcludedUids(List.of(VIEWER));
+        append(session(1000, users(VIEWER, OTHER))); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        assertFalse(Files.readString(shard(1000)).contains("\"viewerUid\":" + VIEWER));
+        ledger.rebuild();
+        assertFalse(Files.readString(shard(1000)).contains("\"viewerUid\":" + VIEWER));
+    }
+
+    @Test @DisplayName("清除无同名场次的临时副本，避免中断后留下拒绝分析观众的记录")
+    void removesOrphanTemporaryFiles() throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        Path orphan = shard(1000).resolveSibling("9999.jsonl.tmp");
+        Files.copy(shard(1000), orphan);
+        privacy.setExcludedUids(List.of(VIEWER));
+        ledger.updateStreamer("test", HOST);
+        assertFalse(Files.exists(orphan));
+    }
+
+    @Test @DisplayName("拒绝名单缩减明确要求重建，避免恢复分析后历史仍静默缺人")
+    void shrinkingExclusionsRequiresRebuild() throws Exception {
+        privacy.setExcludedUids(List.of(VIEWER));
+        append(session(1000, users(VIEWER))); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        privacy.setExcludedUids(List.of());
+        var error = assertThrows(java.io.IOException.class, () -> ledger.updateStreamer("test", HOST));
+        assertTrue(error.getMessage().contains("重建"));
+        assertTrue(ledger.sessionRows("test", HOST, 1000).isEmpty());
+        ledger.rebuild();
+        ledger.updateStreamer("test", HOST);
+        assertEquals(1, ledger.sessionRows("test", HOST, 1000).size());
+    }
+
+    @Test @DisplayName("读明细期间续播也不发布半场，避免读取结束前的封存状态被忽略")
+    void checksSealAgainAfterReadingDetails() throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        Path events = detail(1000).resolve("events.jsonl");
+        Path resumed = detail(1000).resolve("resumed");
+        Files.writeString(events, event(1200, "follow", "Sample viewer", Map.of()));
+        try (var mocked = mockStatic(JsonlFiles.class, CALLS_REAL_METHODS)) {
+            mocked.when(() -> JsonlFiles.lines(events)).thenAnswer(call -> {
+                java.util.stream.Stream<String> lines = (java.util.stream.Stream<String>) call.callRealMethod();
+                return lines.onClose(() -> {
+                    try { Files.writeString(resumed, ""); }
+                    catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+                });
+            });
+            ledger.updateStreamer("test", HOST);
+        }
+        assertTrue(Files.exists(resumed));
+        assertFalse(Files.exists(shard(1000)));
+        assertTrue(ledger.sessions("test", HOST).isEmpty());
+        Files.delete(resumed);
+        ledger.updateStreamer("test", HOST);
+        assertEquals(1, ledger.sessionRows("test", HOST, 1000).size());
     }
 }

@@ -16,7 +16,7 @@ audience-ledger/
 
 `index.json` 记录 `version`、`platform`、`streamerUid`、`ledgerStart`。起点是最早入账的场次，包含没有名单的旧场，不能理解为主播首次开播或观众第一次来过。`privacy.json` 保存本次更新已处理的拒绝名单编号，不保存昵称。
 
-每份场次 JSONL 首行是 `{version: 1, session: {...}}`。`session` 保存平台、主播编号、开播毫秒、`hasUserSets`、`qualified`、`listQuality`。后面的每行是一位观众在本场的记录，按观众编号升序排列。一个场次即使没有名单也有首行；不能通过后面没有观众行推断零人。缺失或空对象的 `userSets` 与 `LiveSession.hasUserSets()` 一致，表示缺名单；具有空数组名单的对象表示已记录名单但无人。
+每份场次 JSONL 首行是 `{version: 1, session: {...}, sourceFingerprint: "...", skippedLines: 0}`。`session` 保存平台、主播编号、开播毫秒、`hasUserSets`、`qualified`、`listQuality`。`sourceFingerprint` 是 `sessions.jsonl` 中该场最后一行的 UTF-8 内容（不含换行）的 SHA-256，覆盖结束时间、时长、结束原因和名单等所有字段；`skippedLines` 是读取本场弹幕与事件时跳过的损坏行数。后面的每行是一位观众在本场的记录，按观众编号升序排列。一个场次即使没有名单也有首行；不能通过后面没有观众行推断零人。缺失或空对象的 `userSets` 与 `LiveSession.hasUserSets()` 一致，表示缺名单；具有空数组名单的对象表示已记录名单但无人。
 
 观众行包含 `platform`、`streamerUid`、`startTime`、`viewerUid`、`nickname`、`streamer`、`entered`、`liked`、`spoke`、`firstDanmuAt`、`danmuCount`、`followed`、`giftYuan`、`guardLevel`、`guardMonths` 和逐次上舰的 `guards`。无昵称、无首条弹幕、无上舰等级时相应值为空。金额用十进制定点数累加，单位为元；月数只认归档声明的「月」和「年」，年乘十二，其他单位的月数未知。没有上舰时月数为零，只要有一次期限未知，合计月数也未知。逐次记录保留时刻、等级、原始数量、单位和换算月数；`guardLevel` 为本场最后一次上舰等级。
 
@@ -30,7 +30,7 @@ audience-ledger/
 
 | 方法 | 用途 |
 | --- | --- |
-| `updateStreamer(platform, uid)` | 补指定主播尚未入账的已封存场次；同时清除所有主播账本中的拒绝名单观众 |
+| `updateStreamer(platform, uid)` | 补指定主播尚未入账的已封存场次，刷新场次归档指纹有变化的场次；同时清除所有主播账本中的拒绝名单观众 |
 | `rebuild()` | 从当前归档整份重建所有主播的账本 |
 | `sessions(platform, uid)` | 按开播时刻升序返回场次属性，包括缺名单、不合格的场次 |
 | `ledgerStart(platform, uid)` | 返回最早入账场次；无场次时为空 |
@@ -41,7 +41,9 @@ audience-ledger/
 
 ## 统计口径
 
-只接受有 `detail.json`、没有 `resumed` 的场次，判法与 `LiveDetailArchive` 一致。已入账后又续播的场次，在下一次更新时撤下；再次封存后重新纳入。`sessions.jsonl` 同平台、同主播、同开播时刻重复时用最后一行。其余已入账场次不重读明细；修改原始封存归档后须整份重建才能反映修订。
+只接受有 `detail.json`、没有 `resumed` 的场次，判法与 `LiveDetailArchive` 一致，读完明细后还会再检查一次。已入账后又续播的场次，在下一次更新时撤下；再次封存后重新纳入。`sessions.jsonl` 同平台、同主播、同开播时刻重复时用最后一行。更新会比较首行的源归档指纹，变化时只重做这一场，因此续播与再封存都发生在两次更新之间时也能刷新。旧账本首行没有指纹时同样重做该场。指纹相同的已入账场次不重读明细；只修改明细而没有改变场次归档时须整份重建才能反映修订。
+
+`sessions.jsonl` 中损坏的 JSON 行、平台名不符合 `[A-Za-z0-9_-]{1,32}` 或主播编号不大于零的行会跳过并记日志，其他主播和场次继续处理。这些行无法可靠归属场次，不计入场次的 `skippedLines`。弹幕与事件文件中的损坏 JSON 行同样跳过，每场首行累计跳过数，并按文件记警告；空行忽略。没有观众编号或编号为 null 的行（例如 PK 事件、空发送者弹幕）不属于任何观众，直接忽略，不计作损坏行。真正的文件读取或写入失败仍向调用方抛错，整份重建失败保留旧账本。
 
 观众范围严格来自该场 `userSets` 所有名单的并集。编号零和拒绝名单中的观众不入账；主播本人保留并标记 `streamer=true`，后续新观众统计应排除。先取 `rankings.enter_users` 的昵称作为回退，再从弹幕和事件取时间最后的非空昵称；同毫秒以文件后行优先，两文件同毫秒时事件优先。弹幕文件中的所有类型都计入开口和条数，包括 `DANMU`、`EMOJI`、`SUPER_CHAT`。事件的 `follow` 表示关注；`gift`、`box`、`guard` 累加 `val`，不使用付款 `pay` 或盲盒盈亏 `pft`。
 
