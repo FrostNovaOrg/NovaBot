@@ -132,6 +132,41 @@ public class AudienceLedgerService {
         }
     }
 
+    /** 只保留指定观众的昵称，不物化整场观众行。 */
+    Map<Long, String> sessionNicknames(String platform, long uid, long start, Set<Long> viewers) throws IOException {
+        validate(platform, uid);
+        if (viewers.isEmpty()) return Map.of();
+        synchronized (LOCK) {
+            recover();
+            var result = new HashMap<Long, String>();
+            var excluded = excluded();
+            long uidKey = Fnv.hashCode64("viewerUid"), nameKey = Fnv.hashCode64("nickname");
+            boolean[] first = {true};
+            try {
+                new ArchiveProjection().scan(streamer(root(), platform, uid).resolve(start + ".jsonl"), reader -> {
+                    if (first[0]) {
+                        checkHeader(reader.read(Header.class)); first[0] = false; return;
+                    }
+                    if (!reader.nextIfObjectStart()) throw new IOException("观众账本行不是对象");
+                    long viewer = 0;
+                    String name = null;
+                    while (!reader.nextIfObjectEnd()) {
+                        long key = reader.readFieldNameHashCode();
+                        if (key == uidKey) viewer = reader.readInt64Value();
+                        else if (key == nameKey) name = reader.readString();
+                        else reader.skipValue();
+                    }
+                    if (viewer > 0 && viewer != uid && viewers.contains(viewer) && !excluded.contains(viewer)
+                            && name != null && !name.isBlank()) result.put(viewer, name);
+                });
+                if (first[0]) checkHeader(null);
+            } catch (NoSuchFileException absent) {
+                // 未入账场次没有可展示的昵称。
+            }
+            return Map.copyOf(result);
+        }
+    }
+
     /** 按给定场次顺序只读取观众编号、主播标记和开口标记，不物化整场观众行。 */
     void scanAudience(String platform, long uid, List<Session> sessions, AudienceVisitor visitor) throws IOException {
         validate(platform, uid);
