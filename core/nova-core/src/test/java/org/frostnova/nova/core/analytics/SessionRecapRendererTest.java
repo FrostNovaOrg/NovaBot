@@ -50,6 +50,19 @@ class SessionRecapRendererTest {
         }
     }
 
+    @Test @DisplayName("第一和第三条同时重复时只解释第一条，正文补上第二和第四条")
+    void explainsOnlyTopTwoWhenMultiplePatternsRepeat() {
+        var patterns = List.of(newcomer("strong"), regulars("strong", 16), slots("strong", 9, 8), pk("strong", 8));
+        var draft = render(result(List.of(), patterns), 2, true, Nicknames.MASKED,
+                List.of(history(START - DAY, patterns.get(0), patterns.get(2))));
+        assertEquals(List.of(new Line(List.of("newcomer_speak_return"), "这条规律 3 场内说过，这次没说")), draft.notes());
+        assertEquals(List.of("regulars_absent", "pk_share"), selected(draft));
+        assertEquals(List.of(List.of("regulars_absent"), List.of("pk_share")),
+                draft.lines().stream().skip(1).map(Line::keys).toList());
+        assertTrue(draft.message().contains("常来的 30 位观众"));
+        assertTrue(draft.message().contains("PK 时每分钟礼物 8 元"));
+    }
+
     // All identities, nicknames and words are synthetic.
     static final long HOST = 910000001L, BASE = 920000001L;
     static final long START = ZonedDateTime.parse("2026-10-25T09:01:00+08:00").toInstant().toEpochMilli();
@@ -361,9 +374,41 @@ class SessionRecapRendererTest {
                 fact("top_words", Map.of("words", List.of(name)))), List.of(),
                 new Presentation(START, 25, "complete", null, Map.of(BASE, name), Set.of()));
         var d = render(r, 1, true, Nicknames.MASKED, List.of());
-        assertEquals(3, d.lines().size());
-        assertTrue(d.lines().stream().allMatch(l -> l.text().endsWith(masked)));
+        assertEquals(List.of("· 上一场第一次来就开口的 3 位里，这一场回来了 1 位：" + masked,
+                "· 礼物前三：" + masked, "· 弹幕里说得最多的：" + masked),
+                d.lines().stream().map(Line::text).toList());
         assertFalse(allText(d).contains(name));
+    }
+
+    @Test @DisplayName("单字昵称不打乱普通热词，多个字形的昵称仍打码")
+    void maskedWordsKeepSingleGraphemeNicknameSubstrings() {
+        var r = new Result(List.of(fact("top_words", Map.of("words", List.of("哈哈哈", "好听", "观众乙来了")))),
+                List.of(), new Presentation(START, 25, "complete", null, Map.of(BASE, "哈"), Set.of(),
+                Map.of("好", Set.of(BASE + 1), "观众乙", Set.of(BASE + 2))));
+        assertEquals("· 弹幕里说得最多的：哈哈哈、好听、观**来了",
+                render(r, 1, true, Nicknames.MASKED, List.of()).message());
+    }
+
+    @ParameterizedTest @CsvSource({"哈,哈,*,''", "哈,哈哈哈,哈哈哈,哈哈哈", "好,好听,好听,好听",
+            "🐱,🐱,*,''", "🐱,🐱来了,🐱来了,🐱来了", "🇨🇳,🇨🇳,*,''", "🇨🇳,🇨🇳加油,🇨🇳加油,🇨🇳加油",
+            "👨‍👩‍👧‍👦,👨‍👩‍👧‍👦,*,''", "👨‍👩‍👧‍👦,👨‍👩‍👧‍👦来了,👨‍👩‍👧‍👦来了,👨‍👩‍👧‍👦来了",
+            "é,é,*,''", "é,é来了,é来了,é来了", "观众乙,观众乙来了,观**来了,''",
+            "🇨🇳中,🇨🇳中来了,🇨🇳*来了,''"})
+    @DisplayName("单字形昵称只匹配整条热词，多字形昵称仍匹配其中的部分")
+    void wordNicknameMatchingByGrapheme(String name, String word, String masked, String excludedWord) {
+        for (boolean detailOnly : List.of(false, true)) {
+            var context = new Presentation(START, 25, "complete", null,
+                    detailOnly ? Map.of() : Map.of(BASE, name), Set.of(),
+                    detailOnly ? Map.of(name, Set.of(BASE)) : Map.of());
+            var r = new Result(List.of(fact("top_words", Map.of("words", List.of(word)))), List.of(), context);
+            for (var mode : Nicknames.values()) for (boolean excluded : List.of(false, true)) {
+                var draft = SessionRecapRenderer.render(r,
+                        new Options(1, true, mode, excluded ? Set.of(BASE) : Set.of()), List.of());
+                String expected = excluded ? excludedWord : mode == Nicknames.MASKED ? masked : word;
+                assertEquals(expected.isEmpty() ? "" : "· 弹幕里说得最多的：" + expected, draft.message(),
+                        "name=" + name + ", word=" + word + ", mode=" + mode + ", excluded=" + excluded + ", detailOnly=" + detailOnly);
+            }
+        }
     }
 
     @Test @DisplayName("昵称缺失时标明名单未列全，避免回来三位却像只有一位")
