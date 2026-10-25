@@ -2,6 +2,10 @@
 
 `SessionRecapService.calculate(platform, uid, startTime)` 位于 `nova-core`，只读取已经建立的观众账本与归档，不更新账本。调用方应先调用 `AudienceLedgerService.updateStreamer`。未入账的目标场次返回空结果，读取账本或事件失败会抛出异常。
 
+样稿需要多场时可调用 `calculateBatch(platform, uid, starts)`，返回与输入顺序对应的 `List<Result>`；重复时刻保留，未入账的时刻返回空结果，空输入返回空列表。单场入口共用同一套计算。批量只扫描一次截至最后一个已入账目标的账本，在各目标处生成独立结果，不使用该目标之后的数据。
+
+计算按时间顺序读取账本所需字段，跳过昵称、礼物明细等无关内容。每位观众使用基本类型数组保存出现状态，仅保留最近五场名单和三个尚未成熟的新人批次，缓冲区循环复用。场次归档只投影时刻与指标，不保留全历史观众名单；事件计算在一次调用内共用读取缓冲区与逐场汇总，不建立跨调用缓存。
+
 结果类型是 `analytics.SessionRecap.Result`，包含 `facts` 与 `patterns`。计算返回全部达到条件的规律候选，后续展示方再选至多两条；这里不生成文字或发送消息。
 
 每个 `Item` 包含 `key`、`streamer(platform, uid)`、`session`（目标开播毫秒）、`values`、`sample(sessions, from)`、`people`、`evidence(path, selector)`。`strength` 仅规律有值，事实为 null。金额为元，比例为 0–1，时刻为毫秒。`from` 是实际使用场次的最早开播毫秒，证据路径相对直播归档根目录。涉及新人识别的样本包含此前用于排除已见观众的全部账本场次。

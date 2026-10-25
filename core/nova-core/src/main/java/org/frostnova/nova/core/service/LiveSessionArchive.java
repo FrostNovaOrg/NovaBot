@@ -193,6 +193,34 @@ public class LiveSessionArchive {
         }
     }
 
+    /** 小结只需场次时刻和指标；跳过完整观众名单，避免保留全历史名单。 */
+    List<SessionMetrics> findMetrics(String platform, long uid, long through) {
+        List<SessionMetrics> result = new ArrayList<>();
+        FileState state = BadLineNotice.stateOf(path());
+        try {
+            new ArchiveProjection().scanLines(path(), reader -> {
+                try {
+                    SessionMetrics session = reader.read(SessionMetrics.class);
+                    if (session != null && platform.equals(session.platform()) && Long.valueOf(uid).equals(session.uid())
+                            && session.startTime() >= 0 && session.startTime() <= through) result.add(session);
+                } catch (RuntimeException invalid) {
+                    badLine.skipped(state, invalid);
+                    // 本条投影失败不影响下一条归档。
+                }
+            });
+        } catch (NoSuchFileException absent) {
+            return List.of();
+        } catch (IOException | RuntimeException failure) {
+            badLine.skipped(state, failure);
+            return List.of();
+        }
+        result.sort((a, b) -> Long.compare(a.startTime(), b.startTime()));
+        return result;
+    }
+
+    record SessionMetrics(String platform, Long uid, long startTime, long endTime,
+                          long durationSeconds, Map<String, Double> metrics) {}
+
     /**
      * 读取指定时间区间内的场次，读不了时向上抛
      */

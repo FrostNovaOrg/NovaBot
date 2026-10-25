@@ -6,7 +6,7 @@ import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.SessionRecap;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.assistant.AssistantProperties;
-import org.frostnova.nova.core.model.LiveSession;
+import org.frostnova.nova.core.service.LiveSessionArchive.SessionMetrics;
 import org.frostnova.nova.core.model.UserScore;
 import org.springframework.stereotype.Service;
 
@@ -15,13 +15,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 
 import static org.frostnova.nova.core.analytics.SessionRecap.*;
@@ -45,32 +45,56 @@ public class SessionRecapService {
         this.properties = properties;
     }
 
-    public Result calculate(String platform, long uid, long start) throws IOException {
-        var history = ledger.sessions(platform, uid).stream().filter(s -> s.startTime() <= start).toList();
-        if (history.isEmpty() || history.get(history.size() - 1).startTime() != start)
-            return new Result(List.of(), List.of());
-        var archived = new TreeMap<Long, LiveSession>();
-        for (var session : sessions.find(0, start == Long.MAX_VALUE ? start : start + 1)) {
-            if (platform.equals(session.platform()) && Long.valueOf(uid).equals(session.uid()) && session.startTime() <= start)
-                archived.put(session.startTime(), session);
+    /** 一次扫描计算多个历史场次，结果与输入的开播时刻顺序相同；重复和未入账时刻也保留。 */
+    public List<Result> calculateBatch(String platform, long uid, List<Long> starts) throws IOException {
+        if (starts.isEmpty()) return List.of();
+        var allHistory = ledger.sessions(platform, uid);
+        var requested = new HashSet<>(starts);
+        int end = allHistory.size();
+        while (end > 0 && !requested.contains(allHistory.get(end - 1).startTime())) end--;
+        if (end == 0) return starts.stream().map(start -> new Result(List.of(), List.of())).toList();
+        var history = allHistory.subList(0, end);
+        long through = history.get(end - 1).startTime();
+        var archived = new TreeMap<Long, SessionMetrics>();
+        for (var session : sessions.findMetrics(platform, uid, through)) archived.put(session.startTime(), session);
+        long[] excluded = properties.getExcludedUids().stream().mapToLong(Long::longValue).sorted().toArray();
+        var contexts = new LinkedHashMap<Long, Context>();
+        var eventCache = new HashMap<Long, PkSummary>();
+        var eventReader = new ArchiveProjection();
+        for (int i = 0; i < history.size(); i++) {
+            long start = history.get(i).startTime();
+            if (!requested.contains(start)) continue;
+            var context = new Context(new Streamer(platform, uid), start, history.subList(0, i + 1), archived, excluded);
+            context.calculate();
+            contexts.put(start, context);
         }
-        var context = new Context(new Streamer(platform, uid), start, history, archived,
-                new HashSet<>(properties.getExcludedUids()));
-        context.calculate();
-        return new Result(context.facts, context.patterns);
+        if (!contexts.isEmpty()) {
+            ledger.scanAudience(platform, uid, history, new AudienceScan(uid, excluded, contexts));
+            for (var context : contexts.values()) {
+                context.slots();
+                context.pk(eventCache, eventReader);
+            }
+        }
+        var results = new HashMap<Long, Result>();
+        contexts.forEach((start, context) -> results.put(start, new Result(context.facts, context.patterns)));
+        return starts.stream().map(start -> results.getOrDefault(start, new Result(List.of(), List.of()))).toList();
+    }
+
+    public Result calculate(String platform, long uid, long start) throws IOException {
+        return calculateBatch(platform, uid, List.of(start)).get(0);
     }
 
     private final class Context {
         final Streamer streamer;
         final long target;
         final List<AudienceLedger.Session> history, qualified;
-        final Map<Long, LiveSession> archived;
-        final Set<Long> excluded;
+        final Map<Long, SessionMetrics> archived;
+        final long[] excluded;
         final List<Item> facts = new ArrayList<>(), patterns = new ArrayList<>();
         final List<Evidence> ledgerEvidence = new ArrayList<>();
 
         Context(Streamer streamer, long target, List<AudienceLedger.Session> history,
-                Map<Long, LiveSession> archived, Set<Long> excluded) {
+                Map<Long, SessionMetrics> archived, long[] excluded) {
             this.streamer = streamer;
             this.target = target;
             this.history = history;
@@ -79,17 +103,14 @@ public class SessionRecapService {
             qualified = history.stream().filter(SessionRecapService::qualified).toList();
         }
 
-        void calculate() throws IOException {
-            LiveSession today = archived.get(target);
+        void calculate() {
+            SessionMetrics today = archived.get(target);
             if (today != null && today.endTime() > today.startTime() && today.durationSeconds() > 0)
                 fact("duration", Map.of("start", today.startTime(), "end", today.endTime(),
                         "durationMinutes", today.durationSeconds() / 60d), List.of(), List.of(target), "sessions");
             rank("watched_rank", "watched", WATCHED);
             rank("gift_rank", "gift", GIFT);
             details.read(streamer.platform(), streamer.uid(), target).ifPresent(this::detailFacts);
-            audience();
-            slots();
-            pk();
         }
 
         void rank(String key, String valueKey, String metric) {
@@ -103,7 +124,7 @@ public class SessionRecapService {
         }
 
         Double metric(long start, String key) {
-            LiveSession session = archived.get(start);
+            SessionMetrics session = archived.get(start);
             if (session == null || session.metrics() == null) return null;
             Double value = session.metrics().get(key);
             return value != null && Double.isFinite(value) && value >= 0 ? value : null;
@@ -129,80 +150,52 @@ public class SessionRecapService {
             }
         }
 
-        boolean allowed(Long uid) { return uid != null && uid > 0 && uid != streamer.uid() && !excluded.contains(uid); }
+        boolean allowed(Long uid) { return uid != null && uid > 0 && uid != streamer.uid() && Arrays.binarySearch(excluded, uid) < 0; }
 
-        void audience() throws IOException {
-            // 每位观众仅保留累计计数；最多保留三个尚未成熟的新人批次。
-            Map<Long, Viewer> viewers = new HashMap<>();
-            var pending = new ArrayDeque<Cohort>();
-            var rates = new LinkedHashMap<Long, Double>();
-            long spokeN = 0, silentN = 0, spokeReturned = 0, silentReturned = 0;
-            Cohort previous = null, today = null;
-            int q = 0;
-            int olderCount = Math.max(0, qualified.size() - 5);
-            for (int index = 0; index < history.size(); index++) {
-                var session = history.get(index);
-                long start = session.startTime();
-                boolean usable = qualified(session);
-                var rows = ledger.sessionRows(streamer.platform(), streamer.uid(), start);
-                Set<Long> present = new HashSet<>(), spokenNew = new HashSet<>(), silentNew = new HashSet<>();
-                for (var row : rows) {
-                    if (row.streamer() || !allowed(row.viewerUid())) continue;
-                    long viewer = row.viewerUid();
-                    if (usable) {
-                        present.add(viewer);
-                        if (!viewers.containsKey(viewer) && index >= 10)
-                            (row.spoke() ? spokenNew : silentNew).add(viewer);
-                        Viewer state = viewers.computeIfAbsent(viewer, ignored -> new Viewer());
-                        if (q < olderCount) state.older++;
-                        else state.recent = true;
-                    } else viewers.computeIfAbsent(viewer, ignored -> new Viewer());
-                }
-                ledgerEvidence.add(ledgerSource(start));
-                if (!usable) continue;
-                for (Cohort cohort : pending) {
-                    cohort.observe(present);
-                }
-                if (pending.size() == 3) {
-                    Cohort mature = pending.removeFirst();
-                    if (mature.known) {
-                        spokeN += mature.spoken.size(); silentN += mature.silent.size();
-                        spokeReturned += mature.spokeReturned.size(); silentReturned += mature.silentReturned.size();
+        void audience(AudienceScan scan) {
+            for (var session : history) ledgerEvidence.add(ledgerSource(session.startTime()));
+            var starts = history.stream().map(AudienceLedger.Session::startTime).toList();
+            var today = scan.usable ? scan.today : scan.previous;
+            if (qualified(history.get(history.size() - 1))) {
+                if (scan.previous != null && scan.previous.known && scan.index >= 10) {
+                    var returned = new ArrayList<Long>();
+                    for (int i = 0; i < scan.previous.spoken.size; i++) {
+                        long viewer = scan.previous.spoken.values[i];
+                        if (scan.viewers.last[scan.viewers.slot(viewer)] == scan.q) returned.add(viewer);
                     }
+                    returned.sort(Long::compare);
+                    fact("returning_newcomers", Map.of("previousSpoke", scan.previous.spoken.size, "returned", returned.size()),
+                            returned, starts, "ledger");
                 }
-                today = new Cohort(start, spokenNew, silentNew, index >= 10);
-                if (today.known && today.size() > 0) rates.put(start, today.spoken.size() / (double) today.size());
-                if (start == target && previous != null && previous.known && index >= 10) {
-                    var returned = previous.spoken.stream().filter(present::contains).sorted().toList();
-                    fact("returning_newcomers", Map.of("previousSpoke", previous.spoken.size(), "returned", returned.size()),
-                            returned, history.stream().map(AudienceLedger.Session::startTime).toList(), "ledger");
-                }
-                if (start == target && today.known)
-                    fact("newcomers", Map.of("newcomers", today.size(), "newcomerSpoke", today.spoken.size()),
-                            List.of(), history.stream().map(AudienceLedger.Session::startTime).toList(), "ledger");
-                pending.addLast(today);
-                previous = today;
-                q++;
+                if (today.known)
+                    fact("newcomers", Map.of("newcomers", today.size(), "newcomerSpoke", today.spoken.size),
+                            List.of(), starts, "ledger");
             }
-            if (today != null && today.start == target && today.known && today.size() > 0 && spokeN >= 30 && silentN > 0) {
+            if (today != null && today.start == target && today.known && today.size() > 0 && scan.spokeN >= 30 && scan.silentN > 0) {
                 var usualWindow = tail(qualified.stream().filter(s -> s.startTime() < target).toList(), 10);
-                var usual = usualWindow.stream().map(s -> rates.get(s.startTime())).filter(java.util.Objects::nonNull).toList();
+                var usual = usualWindow.stream().map(s -> scan.rates.get(s.startTime())).filter(java.util.Objects::nonNull).toList();
                 if (!usual.isEmpty()) {
-                    double spokeReturn = spokeReturned / (double) spokeN, silentReturn = silentReturned / (double) silentN;
+                    double spokeReturn = scan.spokeReturned / (double) scan.spokeN;
+                    double silentReturn = scan.silentReturned / (double) scan.silentN;
                     pattern("newcomer_speak_return", Map.of("spokeReturn", spokeReturn, "silentReturn", silentReturn,
-                            "spokeN", spokeN, "silentN", silentN, "todayRate", today.spoken.size() / (double) today.size(),
-                            "usualRate", median(usual)), strength(spokeN, silentN, 30, spokeReturn, silentReturn),
-                            List.of(), history.stream().map(AudienceLedger.Session::startTime).toList(), ledgerEvidence);
+                            "spokeN", scan.spokeN, "silentN", scan.silentN, "todayRate", today.spoken.size / (double) today.size(),
+                            "usualRate", median(usual)), strength(scan.spokeN, scan.silentN, 30, spokeReturn, silentReturn),
+                            List.of(), starts, ledgerEvidence);
                 }
             }
-            var regulars = viewers.entrySet().stream().filter(e -> e.getValue().older >= 3
-                    && e.getValue().older * 5L >= olderCount * 2L).toList();
-            if (qualified.size() >= 5 && regulars.size() >= 10) {
-                var absent = regulars.stream().filter(e -> !e.getValue().recent)
-                        .sorted(Comparator.<Map.Entry<Long, Viewer>>comparingInt(e -> e.getValue().older).reversed()
-                                .thenComparing(Map.Entry::getKey)).map(Map.Entry::getKey).toList();
-                String strength = regulars.size() < 20 ? "weak" : absent.size() * 2 >= regulars.size() ? "strong" : "medium";
-                pattern("regulars_absent", Map.of("regulars", regulars.size(), "absent", absent.size()), strength,
+            int regulars = 0, olderCount = Math.max(0, qualified.size() - 5);
+            var absent = new ArrayList<Long>();
+            for (int i = 0; i < scan.viewers.keys.length; i++) {
+                if (scan.viewers.keys[i] == 0 || scan.viewers.older[i] < 3
+                        || scan.viewers.older[i] * 5L < olderCount * 2L) continue;
+                regulars++;
+                if (scan.viewers.last[i] <= olderCount) absent.add(scan.viewers.keys[i]);
+            }
+            if (qualified.size() >= 5 && regulars >= 10) {
+                absent.sort(Comparator.<Long>comparingInt(v -> scan.viewers.older[scan.viewers.slot(v)]).reversed()
+                        .thenComparingLong(Long::longValue));
+                String strength = regulars < 20 ? "weak" : absent.size() * 2 >= regulars ? "strong" : "medium";
+                pattern("regulars_absent", Map.of("regulars", regulars, "absent", absent.size()), strength,
                         absent, qualified.stream().map(AudienceLedger.Session::startTime).toList(), ledgerEvidence);
             }
         }
@@ -235,39 +228,26 @@ public class SessionRecapService {
             return starts.stream().map(s -> metric(s, key)).filter(java.util.Objects::nonNull).toList();
         }
 
-        void pk() throws IOException {
+        void pk(Map<Long, PkSummary> cache, ArchiveProjection eventReader) throws IOException {
             long pkMillis = 0, normalMillis = 0;
             BigDecimal pkGift = BigDecimal.ZERO, normalGift = BigDecimal.ZERO;
             int pkSessions = 0;
             List<Long> used = new ArrayList<>();
             for (var session : history) {
                 long start = session.startTime();
-                LiveSession archivedSession = archived.get(start);
                 if (start != target && !qualified(session)) continue;
-                var events = new EventTotals(start, archivedSession == null ? start : archivedSession.endTime());
-                boolean present = details.scanEvents(streamer.platform(), streamer.uid(), start, events::accept);
-                if (start == target && present)
-                    fact("follows", Map.of("follows", events.follows), List.of(), List.of(target), "events:t=follow");
-                if (!qualified(session) || !present || !events.open.isEmpty()
-                        || archivedSession == null || archivedSession.endTime() <= start) continue;
-                // 第二遍不积攒礼物流水，按合并后的 PK 区间归类每一笔金额。
-                var intervals = events.intervals();
-                final BigDecimal[] gifts = {BigDecimal.ZERO, BigDecimal.ZERO};
-                details.scanEvents(streamer.platform(), streamer.uid(), start, e -> {
-                    String type = e.getString("t");
-                    if (type == null || !List.of("gift", "box", "guard").contains(type)
-                            || e.get("at") == null || e.get("val") == null) return;
-                    long at = e.getLongValue("at");
-                    if (at < start || at >= archivedSession.endTime()) return;
-                    BigDecimal value = e.getBigDecimal("val");
-                    int group = intervals.stream().anyMatch(i -> at >= i[0] && at < i[1]) ? 0 : 1;
-                    gifts[group] = gifts[group].add(value);
-                });
-                long duration = intervals.stream().mapToLong(i -> i[1] - i[0]).sum();
-                if (duration > 0) pkSessions++;
-                pkMillis += duration;
-                normalMillis += archivedSession.endTime() - start - duration;
-                pkGift = pkGift.add(gifts[0]); normalGift = normalGift.add(gifts[1]);
+                PkSummary summary = cache.get(start);
+                if (summary == null) {
+                    summary = readPk(start, archived.get(start), qualified(session), eventReader);
+                    cache.put(start, summary);
+                }
+                if (start == target && summary.present)
+                    fact("follows", Map.of("follows", summary.follows), List.of(), List.of(target), "events:t=follow");
+                if (!summary.usable) continue;
+                if (summary.pkMillis > 0) pkSessions++;
+                pkMillis += summary.pkMillis;
+                normalMillis += summary.normalMillis;
+                pkGift = pkGift.add(summary.pkGift); normalGift = normalGift.add(summary.normalGift);
                 used.add(start);
             }
             if (pkSessions < 3 || pkMillis == 0 || normalMillis == 0) return;
@@ -275,6 +255,29 @@ public class SessionRecapService {
             double normalRate = normalGift.doubleValue() * 60_000 / normalMillis;
             pattern("pk_share", Map.of("pkSessions", pkSessions, "pkGiftPerMin", pkRate, "normalGiftPerMin", normalRate),
                     strength(pkSessions, pkSessions, 3, pkRate, normalRate), List.of(), used, sources(used, "events:pk_open,pk_settle,gift,box,guard"));
+        }
+
+        PkSummary readPk(long start, SessionMetrics archivedSession, boolean qualified, ArchiveProjection eventReader) throws IOException {
+            var events = new EventTotals(start, archivedSession == null ? start : archivedSession.endTime());
+            boolean present = details.scanEvents(streamer.platform(), streamer.uid(), start, eventReader, events::accept);
+            if (!qualified || !present || !events.open.isEmpty()
+                    || archivedSession == null || archivedSession.endTime() <= start)
+                return new PkSummary(present, events.follows, false, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+            var intervals = events.intervals();
+            final BigDecimal[] gifts = {BigDecimal.ZERO, BigDecimal.ZERO};
+            details.scanEvents(streamer.platform(), streamer.uid(), start, eventReader, e -> {
+                String type = e.getString("t");
+                if (type == null || !List.of("gift", "box", "guard").contains(type)
+                        || e.get("at") == null || e.get("val") == null) return;
+                long at = e.getLongValue("at");
+                if (at < start || at >= archivedSession.endTime()) return;
+                BigDecimal value = e.getBigDecimal("val");
+                int group = intervals.stream().anyMatch(i -> at >= i[0] && at < i[1]) ? 0 : 1;
+                gifts[group] = gifts[group].add(value);
+            });
+            long duration = intervals.stream().mapToLong(i -> i[1] - i[0]).sum();
+            return new PkSummary(present, events.follows, true, duration,
+                    archivedSession.endTime() - start - duration, gifts[0], gifts[1]);
         }
 
         Evidence ledgerSource(long start) {
@@ -312,18 +315,124 @@ public class SessionRecapService {
         double small = Math.min(a, b), big = Math.max(a, b);
         return big > 0 && big >= 2 * small ? "strong" : "medium";
     }
-    private static final class Viewer { int older; boolean recent; }
-    private static final class Cohort {
-        final long start;
-        final Set<Long> spoken, silent, spokeReturned = new HashSet<>(), silentReturned = new HashSet<>();
-        final boolean known;
-        Cohort(long start, Set<Long> spoken, Set<Long> silent, boolean known) {
-            this.start = start; this.spoken = spoken; this.silent = silent; this.known = known;
+    private record PkSummary(boolean present, long follows, boolean usable, long pkMillis,
+                             long normalMillis, BigDecimal pkGift, BigDecimal normalGift) {}
+
+    /** 一个观众只占一个 long 和两个 int；零键表示空槽。 */
+    private static final class Viewers {
+        long[] keys = new long[1024];
+        int[] older = new int[1024], last = new int[1024];
+        int size;
+        int slot(long key) {
+            long hash = key;
+            hash = (hash ^ (hash >>> 33)) * 0xff51afd7ed558ccdL;
+            hash = (hash ^ (hash >>> 33)) * 0xc4ceb9fe1a85ec53L;
+            int slot = (int) (hash ^ (hash >>> 33)) & (keys.length - 1);
+            while (keys[slot] != 0 && keys[slot] != key) slot = (slot + 1) & (keys.length - 1);
+            return slot;
         }
-        int size() { return spoken.size() + silent.size(); }
-        void observe(Set<Long> present) {
-            spoken.stream().filter(present::contains).forEach(spokeReturned::add);
-            silent.stream().filter(present::contains).forEach(silentReturned::add);
+        int ensure(long key) {
+            if ((size + 1) * 10L >= keys.length * 7L) grow();
+            int slot = slot(key);
+            if (keys[slot] == 0) { keys[slot] = key; size++; }
+            return slot;
+        }
+        void grow() {
+            long[] oldKeys = keys;
+            int[] oldOlder = older, oldLast = last;
+            keys = new long[oldKeys.length * 2];
+            older = new int[keys.length]; last = new int[keys.length];
+            for (int i = 0; i < oldKeys.length; i++) {
+                if (oldKeys[i] == 0) continue;
+                int slot = slot(oldKeys[i]);
+                keys[slot] = oldKeys[i]; older[slot] = oldOlder[i]; last[slot] = oldLast[i];
+            }
+        }
+    }
+    private static final class LongBuffer {
+        long[] values = new long[64];
+        int size;
+        void add(long value) {
+            if (size == values.length) values = Arrays.copyOf(values, size * 2);
+            values[size++] = value;
+        }
+    }
+    private static final class Cohort {
+        long start;
+        int q;
+        boolean known;
+        final LongBuffer spoken = new LongBuffer(), silent = new LongBuffer();
+        int size() { return spoken.size + silent.size; }
+        long returned(LongBuffer group, Viewers viewers) {
+            long count = 0;
+            for (int i = 0; i < group.size; i++) if (viewers.last[viewers.slot(group.values[i])] > q) count++;
+            return count;
+        }
+    }
+    /** 新人批次在第三个后续合格场次成熟，届时最后出现序号即可判定是否回来。 */
+    private final class AudienceScan implements AudienceLedgerService.AudienceVisitor {
+        final long host;
+        final long[] excluded;
+        final Map<Long, Context> contexts;
+        final Viewers viewers = new Viewers();
+        final ArrayDeque<LongBuffer> recent = new ArrayDeque<>();
+        final ArrayDeque<Cohort> pending = new ArrayDeque<>();
+        final Map<Long, Double> rates = new HashMap<>();
+        LongBuffer present = new LongBuffer();
+        Cohort today = new Cohort(), previous;
+        long spokeN, silentN, spokeReturned, silentReturned;
+        int index = -1, q;
+        AudienceLedger.Session session;
+        boolean usable;
+
+        AudienceScan(long host, long[] excluded, Map<Long, Context> contexts) {
+            this.host = host; this.excluded = excluded; this.contexts = contexts;
+        }
+        public void start(AudienceLedger.Session session) {
+            this.session = session;
+            index++;
+            usable = qualified(session);
+            if (!usable) return;
+            q++;
+            today.start = session.startTime(); today.q = q; today.known = index >= 10;
+            if (recent.size() == 5) {
+                present = recent.removeFirst();
+                for (int i = 0; i < present.size; i++) viewers.older[viewers.slot(present.values[i])]++;
+                present.size = 0;
+            }
+        }
+        public void viewer(long uid, boolean streamer, boolean spoke) {
+            if (streamer || uid == host || Arrays.binarySearch(excluded, uid) >= 0) return;
+            int slot = viewers.slot(uid);
+            boolean newcomer = viewers.keys[slot] == 0;
+            if (newcomer) slot = viewers.ensure(uid);
+            if (!usable) return;
+            present.add(uid);
+            viewers.last[slot] = q;
+            if (newcomer && today.known) (spoke ? today.spoken : today.silent).add(uid);
+        }
+        public void end() {
+            Cohort reusable = null;
+            if (usable) {
+                if (pending.size() == 3) {
+                    reusable = pending.removeFirst();
+                    if (reusable.known) {
+                        spokeN += reusable.spoken.size; silentN += reusable.silent.size;
+                        spokeReturned += reusable.returned(reusable.spoken, viewers);
+                        silentReturned += reusable.returned(reusable.silent, viewers);
+                    }
+                }
+                if (today.known && today.size() > 0) rates.put(today.start, today.spoken.size / (double) today.size());
+            }
+            Context context = contexts.get(session.startTime());
+            if (context != null) context.audience(this);
+            if (!usable) return;
+            previous = today;
+            pending.addLast(today);
+            today = reusable == null ? new Cohort() : reusable;
+            today.spoken.size = 0; today.silent.size = 0;
+            recent.addLast(present);
+            if (recent.size() < 5) present = new LongBuffer();
         }
     }
     private static final class EventTotals {

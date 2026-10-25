@@ -613,6 +613,27 @@ public class LiveDetailArchive implements SmartLifecycle {
         }
     }
 
+    /** 批量统计复用读取缓冲区；事件的逐行容错与公开扫描入口相同。 */
+    boolean scanEvents(String platform, Long uid, long startTime, ArchiveProjection projection,
+                       java.util.function.Consumer<JSONObject> consumer) throws IOException {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) return false;
+        try {
+            projection.scanLines(dir.get().resolve(EVENT_FILE), reader -> {
+                JSONObject event;
+                try { event = reader.readJSONObject(); }
+                catch (RuntimeException invalid) {
+                    log.debug("跳过无法解析的事件行");
+                    return;
+                }
+                if (event != null) consumer.accept(event);
+            });
+            return true;
+        } catch (NoSuchFileException absent) {
+            return false;
+        }
+    }
+
     /**
      * 这一场有没有留下明细
      * <p>

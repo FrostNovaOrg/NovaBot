@@ -52,6 +52,21 @@ class LiveSessionArchiveTest {
         archive = new LiveSessionArchive(properties);
     }
 
+    @Test @DisplayName("小结指标投影跳过大名单且逐行容错，避免节省内存后漏掉有效场次")
+    void metricsProjectionMatchesArchive() throws Exception {
+        var first = JSONObject.parseObject(JSON.toJSONString(session(1_000_000L, 3600)));
+        first.put("userSets", Map.of("enter_users", java.util.stream.LongStream
+                .range(920000000L, 920006500L).boxed().toList()));
+        first.put("extra", Map.of("text", "Sample \"viewer\"\n".repeat(6000), "nested", List.of(Map.of("a", true))));
+        var second = JSONObject.parseObject(JSON.toJSONString(session(2_000_000L, 1800)));
+        Files.writeString(dir.resolve("sessions.jsonl"), first + "\n{invalid\n\n" + second);
+        var expected = archive.find(0, 2_000_001L).stream().map(s -> new LiveSessionArchive.SessionMetrics(
+                s.platform(), s.uid(), s.startTime(), s.endTime(), s.durationSeconds(), s.metrics())).toList();
+        assertEquals(expected, archive.findMetrics("bilibili", STREAMER_UID, 2_000_000L));
+        assertEquals(expected.subList(0, 1), archive.findMetrics("bilibili", STREAMER_UID, 1_000_000L));
+        assertTrue(archive.findMetrics("other", STREAMER_UID, Long.MAX_VALUE).isEmpty());
+    }
+
     @Test
     @DisplayName("没有归档文件时应返回空表而非报错")
     void emptyWhenNoFile() {

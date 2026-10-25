@@ -313,6 +313,30 @@ class SessionRecapServiceTest {
         assertEquals(0, number(pattern, "normalGiftPerMin"));
     }
 
+    @Test @DisplayName("批量五场与各场独算完全相同，避免样稿回放共享状态后混入未来数据")
+    void batchMatchesIndividualReplays() throws Exception {
+        var regulars = group(0, 20);
+        for (int day = 0; day < 25; day++) {
+            var newcomers = group(100 + day * 100, 60);
+            var users = join(day < 15 ? regulars : regulars.subList(10, 20), newcomers);
+            if (day > 10) users = join(users, group(100 + (day - 1) * 100, 20));
+            addAt(at(day) - (day % 2) * 12 * 3_600_000L, users, newcomers.subList(0, 30),
+                    day == 22 ? "anonymous" : "complete", day + 1, day + 2);
+            if (day % 2 == 0) pk(day, 60, 30);
+        }
+        privacy.setExcludedUids(List.of(BASE));
+        ledger.updateStreamer("test", HOST);
+        var starts = java.util.stream.IntStream.range(20, 25)
+                .mapToObj(day -> at(day) - (day % 2) * 12 * 3_600_000L).toList();
+        var expected = new ArrayList<SessionRecap.Result>();
+        for (long start : starts) expected.add(service.calculate("test", HOST, start));
+        assertEquals(expected, service.calculateBatch("test", HOST, starts));
+        var reordered = List.of(starts.get(4), starts.get(0), at(99), starts.get(4));
+        assertEquals(List.of(expected.get(4), expected.get(0), new SessionRecap.Result(List.of(), List.of()),
+                expected.get(4)), service.calculateBatch("test", HOST, reordered));
+        assertEquals(List.of(), service.calculateBatch("test", HOST, List.of()));
+    }
+
     @Test @DisplayName("记录为空的事件文件可确认零关注，读取故障则报错以免显示假零")
     void emptyEventsAndReadFailure() throws Exception {
         add(0, List.of(), List.of(), "complete", 1, 1);
