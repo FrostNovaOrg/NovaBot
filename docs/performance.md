@@ -7,7 +7,7 @@
 
 ### 测量条件
 
-- 启动参数：`start.sh` 的默认值（`-Xms64m -Xmx512m -XX:+UseSerialGC -Xss256k`）
+- 启动参数：`start.sh` 的默认值（`-Xms64m -Xmx512m -XX:+UseSerialGC -Xss256k`）；Linux 上还会在本机 Java 支持时加上 `-XX:TrimNativeHeapInterval=60000`，此处 macOS 基线不启用它
 - 已加载插件：OneBot 适配器、NapCat 扩展、哔哩哔哩插件
 - **未配置任何主播**（`datasource.json` 为空数组），未登录哔哩哔哩账号
 - 采样方式：启动完成并静置约 40 秒后，每 4 秒读一次 `ps -o rss=`，取多次读数
@@ -126,6 +126,24 @@ GC 元数据与直接内存。按默认参数即 `512 + 192 + 150 ≈ 854M`，
 | `-Xms32m -Xmx320m` | 113 – 115 MB |
 
 64m 优于 32m 是因为后者在启动期会触发更多次 GC 扩堆。默认值已据此定为 64m。
+
+### Linux 定时归还原生内存
+
+`start.sh` 在 Linux 上默认加 `-XX:TrimNativeHeapInterval=60000`，让 JVM 每 60 秒
+把 glibc 的 malloc 池里已经不用的内存还给系统。添加前会用同一个 `java` 试跑
+`java -XX:TrimNativeHeapInterval=60000 -version`，丢弃输出；只有退码为 0 才添加，
+旧 Java 不认识选项时照常启动。其他系统不试跑，也不添加。
+
+Linux / 2 核 / 2 GB 内存 / OpenJDK 17.0.20，对照各跑 75 分钟：常驻内存从
+**507 MB 降到 455 MB**，少约 52 MB（约一成）；平均 CPU 从占一个核的 1.29% 到
+1.33%，在几轮之间的正常波动以内，未观察到额外代价。这组数据与上面的 macOS 空载基线条件不同。
+
+手动、systemd、容器均共用这份默认参数。用户的 `JAVA_OPTS` 排在默认值之后，
+如需关闭，手动运行可用（systemd 放进覆盖设置的 `Environment=`，容器用 `-e`）：
+
+```bash
+JAVA_OPTS="-XX:TrimNativeHeapInterval=0" ./start.sh
+```
 
 ### 测量方法上的两个坑
 

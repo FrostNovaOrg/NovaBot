@@ -59,6 +59,8 @@ ReadWritePaths=/opt/starbot
 # 再配合上面的 Restart=on-failure 就成了崩溃循环。
 # start.sh 的设置是 -Xmx512m + MaxMetaspaceSize=192m，加上线程栈、代码缓存与
 # 直接内存约 150M，合计约 854M——这是**装得下的下限，不是该配的值**。
+# start.sh 还在 Linux 且 Java 支持时启用 -XX:TrimNativeHeapInterval=60000，
+# 每 60 秒归还 glibc 池里的空闲内存，不改变上述容量下限；JAVA_OPTS="-XX:TrimNativeHeapInterval=0" 可关闭。
 # 想要更低的硬上限，应当同步调低 start.sh 里的 -Xmx，而不是只压这里。
 #
 # ⚠️ MemoryHigh 是节流，不是警戒线，必须设在「稳态峰值之上」。
