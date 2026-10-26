@@ -21,10 +21,15 @@ package org.frostnova.nova.core.model;
  * @param text 原文
  * @param type 类型
  * @param recovered 是否由断线后的历史查询补入
+ * @param value 付费留言金额（元），归档字段为 {@code val}；未知为 null，其他类型不写金额
  */
-public record DanmuRecord(long at, Long uid, String uname, String text, Type type, boolean recovered) {
+public record DanmuRecord(long at, Long uid, String uname, String text, Type type, boolean recovered, Double value) {
+    public DanmuRecord(long at, Long uid, String uname, String text, Type type, boolean recovered) {
+        this(at, uid, uname, text, type, recovered, null);
+    }
+
     public DanmuRecord(long at, Long uid, String uname, String text, Type type) {
-        this(at, uid, uname, text, type, false);
+        this(at, uid, uname, text, type, false, null);
     }
 
     /**

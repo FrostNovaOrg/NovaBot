@@ -235,7 +235,7 @@ class BilibiliGapRecoveryTest {
 
     @Test
     void superChatsOnlyRecoverNewIdsInsideGap() throws Exception {
-        // 用户故障：缺口里的醒目留言漏计，或收到过的编号再次计数。
+        // 用户故障：缺口里的醒目留言漏计、金额遗失，或收到过的编号再次计数。
         BilibiliSuperChatEvent live = new BilibiliSuperChatEvent(ROOM, user(), "实时留言", 30.0, FROM);
         live.setMessageId(100L);
         stats.onSuperChat(live);
@@ -249,6 +249,7 @@ class BilibiliGapRecoveryTest {
         assertEquals(80, data.getLiveUserMetric("bilibili", ROOM.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, 5000005L));
         var records = archive.readDanmu("bilibili", ROOM.getUid(), START);
         assertEquals(2, records.size());
+        assertEquals(List.of(30.0, 50.0), records.stream().map(org.frostnova.nova.core.model.DanmuRecord::value).toList());
         assertEquals(org.frostnova.nova.core.model.DanmuRecord.Type.SUPER_CHAT, records.get(1).type());
         assertTrue(records.get(1).recovered());
     }

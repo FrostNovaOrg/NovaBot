@@ -861,6 +861,42 @@ class BilibiliLiveStatsAggregatorTest {
 
     // ---------------------------------------------------------------- 弹幕原文留档
 
+    @ParameterizedTest(name = "recovered={0}")
+    @ValueSource(booleans = {false, true})
+    @DisplayName("实时与补录的醒目留言都能逐条查到付款金额，且与本场金额增量一致")
+    void superChatArchiveKeepsEachPayment(boolean recovered) throws Exception {
+        // 用户故障：事后只能看见总收入，查不到实时或补录的某条醒目留言付了多少。
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+        for (int i = 0; i < 2; i++) {
+            BilibiliSuperChatEvent event = new BilibiliSuperChatEvent(STREAMER,
+                    user(19338207415562L), "合成付费留言" + i, i == 0 ? 30.0 : 50.0,
+                    Instant.ofEpochMilli(start + (i + 1) * 1_000L));
+            event.setMessageId(100L + i);
+            double before = metric(BilibiliLiveMetric.SUPER_CHAT_VALUE);
+            if (recovered) {
+                assertTrue(aggregator.recoverSuperChat(event, start));
+            } else {
+                aggregator.onSuperChat(event);
+            }
+            List<String> lines = Files.readAllLines(dir.resolve("details")
+                    .resolve(PLATFORM + "-" + STREAMER.getUid() + "-" + start).resolve("danmu.jsonl"));
+            assertEquals(i + 1, lines.size());
+            JSONObject row = JSON.parseObject(lines.get(i));
+            assertEquals(event.getValue(), row.getDouble("val"), "单条金额必须可查");
+            assertEquals(metric(BilibiliLiveMetric.SUPER_CHAT_VALUE) - before, row.getDouble("val"),
+                    "归档金额与本场醒目留言金额使用相同单位和口径");
+            assertEquals(event.getTimestamp(), row.getLongValue("at"));
+            assertEquals(event.getSender().getUid(), row.getLong("uid"));
+            assertEquals(event.getSender().getUname(), row.getString("uname"));
+            assertEquals(event.getContent(), row.getString("text"));
+            assertEquals("SUPER_CHAT", row.getString("type"));
+            assertEquals(recovered, row.getBooleanValue("recovered"));
+            assertEquals(event.getValue(), details.readDanmu(PLATFORM, STREAMER.getUid(), start).get(i).value());
+        }
+    }
+
     @Test
     @DisplayName("弹幕原文逐条留下：文字、表情、付费留言各标各的类型")
     void keepsRawDanmuByType() {

@@ -55,6 +55,8 @@ import java.util.stream.Stream;
  * 目录里两份，分开的理由是<b>写入时机不同</b>：
  * <ul>
  *     <li>{@code danmu.jsonl} —— 弹幕原文，<b>直播过程中逐条追加</b>。
+ *         {@code SUPER_CHAT} 行可带 {@code val}（金额，元，与本场醒目留言金额同口径）；
+ *         旧行缺少金额表示未知，读取不改写，也不补零。其他类型不写金额。
  *         追加写没有读改写周期，程序崩在中途也只丢最后一条，
  *         而攒在内存里等下播一起写，崩一次就是整场原文没了。</li>
  *     <li>{@code detail.json} —— 曲线、排行、词频、高能、标题、缺口，<b>下播时整份落盘</b>。
@@ -885,6 +887,9 @@ public class LiveDetailArchive implements SmartLifecycle {
             json.put("recovered", true);
         }
         json.put("type", record.type() == null ? DanmuRecord.Type.DANMU.name() : record.type().name());
+        if (record.type() == DanmuRecord.Type.SUPER_CHAT && record.value() != null) {
+            json.put("val", record.value());
+        }
         return json;
     }
 
@@ -1061,7 +1066,8 @@ public class LiveDetailArchive implements SmartLifecycle {
                 type = DanmuRecord.Type.DANMU;
             }
             return new DanmuRecord(json.getLongValue("at"), json.getLong("uid"),
-                    json.getString("uname"), json.getString("text"), type, json.getBooleanValue("recovered"));
+                    json.getString("uname"), json.getString("text"), type, json.getBooleanValue("recovered"),
+                    type == DanmuRecord.Type.SUPER_CHAT ? json.getDouble("val") : null);
         } catch (Exception e) {
             log.debug("跳过弹幕原文里无法解析的一行: {}", e.getMessage());
             return null;
