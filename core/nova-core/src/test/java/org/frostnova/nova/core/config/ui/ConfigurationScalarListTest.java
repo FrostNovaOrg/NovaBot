@@ -115,6 +115,39 @@ class ConfigurationScalarListTest {
         assertEquals(before, Files.readString(config()));
     }
 
+    /** 抓的使用者故障：管理员号码中间的空白被转换器去掉，保存后悄悄变成另一个号码。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"6 7", "6\t7", "6\u20037", "6\f7"})
+    @DisplayName("管理员数字项内部有空白时拒绝整批保存，文件一字不动")
+    void adminItemWithInternalWhitespaceIsRejected(String invalid) throws IOException {
+        String key = "novabot.core.command.admins";
+        var service = service("server:\n  port: 7827\nnovabot:\n  core:\n    command:\n      admins: []\n");
+        byte[] before = Files.readAllBytes(config());
+        Map<String, String> changes = new LinkedHashMap<>();
+        changes.put("server.port", "7828");
+        changes.put(key, "5\n" + invalid);
+
+        IOException error = assertThrows(IOException.class, () -> service.write(changes));
+
+        assertTrue(error.getMessage().contains(key), error.getMessage());
+        assertTrue(error.getMessage().contains("第 2 项「" + invalid + "」"), error.getMessage());
+        assertTrue(error.getMessage().contains("不是有效的数字"), error.getMessage());
+        assertTrue(error.getMessage().contains("本批全部未保存"), error.getMessage());
+        assertArrayEquals(before, Files.readAllBytes(config()));
+    }
+
+    /** 抓的使用者故障：拒绝项内空白时，误把号码前后的空白也拒绝。 */
+    @Test
+    @DisplayName("数字项前后的空白仍可去掉并正常保存绑定")
+    void adminItemsAllowSurroundingWhitespace() throws IOException {
+        String key = "novabot.core.command.admins";
+        var service = service("novabot:\n  core:\n    command:\n      admins: []\n");
+
+        service.write(Map.of(key, " 5 \n\t6\u2003"));
+
+        assertEquals(List.of(5L, 6L), binder().bind(key, Bindable.listOf(Long.class)).orElseThrow(IllegalStateException::new));
+    }
+
     /** 抓的使用者故障：把已逐项填写的文字名单中的逗号拆开，破坏原本正确的一项。 */
     @ParameterizedTest
     @ValueSource(strings = {"\n        - a,b\n        - C", "[\"a,b\", C]"})

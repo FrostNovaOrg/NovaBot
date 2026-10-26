@@ -1013,6 +1013,10 @@ public class ConfigurationFileService implements SmartLifecycle {
         List<String> items = splitItems(value);
         for (int i = 0; i < items.size(); i++) {
             try {
+                // Spring 数字转换会去掉全部空白，项内空白必须先拒绝，避免号码被合并。
+                if (items.get(i).codePoints().anyMatch(Character::isWhitespace)) {
+                    throw new IllegalArgumentException();
+                }
                 ApplicationConversionService.getSharedInstance().convert(items.get(i), numberType);
             } catch (ConversionException | IllegalArgumentException e) {
                 throw new IOException("配置项 " + path + " 的第 " + (i + 1) + " 项「" + items.get(i)

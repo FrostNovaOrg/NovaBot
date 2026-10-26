@@ -184,6 +184,48 @@ class ExcludedViewersFileTest {
         }
     }
 
+    /** 抓的使用者故障：控制台把含空白的管理员号码保存为另一个号码，还提示保存成功。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"6 7", "6\t7"})
+    @DisplayName("控制台拒绝管理员号码中间的空白并指出第二项，整批不写入")
+    void consoleRejectsAdminItemWithInternalWhitespace(String invalid) throws Exception {
+        try (var context = start(List.of(11L))) {
+            String key = "novabot.core.command.admins";
+            byte[] before = Files.readAllBytes(config);
+
+            var response = controller(context).save(Map.of(key, "5\n" + invalid, "server.port", "7828"));
+
+            assertFalse(response.getBody().getBooleanValue("success"));
+            String message = response.getBody().getString("message");
+            assertTrue(message.contains(key), message);
+            assertTrue(message.contains("第 2 项「" + invalid + "」"), message);
+            assertTrue(message.contains("不是有效的数字"), message);
+            assertTrue(message.contains("本批全部未保存"), message);
+            assertArrayEquals(before, Files.readAllBytes(config));
+        }
+    }
+
+    /** 抓的使用者故障：观众拒绝名单报错没有位置和原文，多行名单中找不到填错的号码。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"6 7", "6\t7", "abc", "0"})
+    @DisplayName("观众拒绝名单校验指出实际行号和原文，设置与文件保持不动")
+    void invalidUidMessageIdentifiesLineAndOriginalValue(String invalid) throws Exception {
+        try (var context = start(List.of(11L))) {
+            byte[] originalConfig = Files.readAllBytes(config);
+            String originalExport = Files.readString(exported);
+
+            var response = controller(context).save(Map.of(KEY, "5\n\n" + invalid));
+
+            assertEquals(400, response.getStatusCode().value());
+            String message = response.getBody().getString("message");
+            assertTrue(message.contains("观众拒绝名单第 3 行「" + invalid + "」"), message);
+            assertTrue(message.contains("不是正整数编号"), message);
+            assertArrayEquals(originalConfig, Files.readAllBytes(config));
+            assertEquals(originalExport, Files.readString(exported));
+            assertEquals(List.of(11L), context.getBean(AssistantProperties.class).getExcludedUids());
+        }
+    }
+
     private JSONObject read() throws Exception {
         assertTrue(Files.isRegularFile(exported), "数据目录中应有当前拒绝名单文件");
         return JSON.parseObject(Files.readString(exported));
