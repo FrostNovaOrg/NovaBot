@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -88,15 +89,26 @@ public final class ExcludedViewersStore implements RuntimeConfigurationApplierCo
                 parse(value);
                 return null;
             } catch (IllegalArgumentException invalid) {
-                return "观众拒绝名单请每行填写一个正整数编号";
+                return invalid.getMessage();
             }
         });
     }
 
     private static List<Long> parse(String value) {
-        List<Long> result = value.lines().map(String::strip).filter(line -> !line.isEmpty())
-                .map(Long::parseLong).toList();
-        if (result.stream().anyMatch(uid -> uid <= 0)) throw new IllegalArgumentException();
-        return result;
+        List<String> lines = value.lines().toList();
+        List<Long> result = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String item = lines.get(i).strip();
+            if (item.isEmpty()) continue;
+            try {
+                long uid = Long.parseLong(item);
+                if (uid <= 0) throw new IllegalArgumentException();
+                result.add(uid);
+            } catch (IllegalArgumentException invalid) {
+                throw new IllegalArgumentException("观众拒绝名单第 " + (i + 1) + " 行「" + lines.get(i)
+                        + "」不是正整数编号", invalid);
+            }
+        }
+        return List.copyOf(result);
     }
 }
