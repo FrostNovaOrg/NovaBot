@@ -77,6 +77,7 @@ public class PreLiveReminderService {
 
     private record Streamer(String platform, long uid) {}
     private record Subscription(Streamer streamer, PushTarget target) {}
+    private record PendingReminder(String key, PushTarget target, ZonedDateTime due, String body) {}
 
     public synchronized void check() throws IOException {
         var now = clock.instant().atZone(ZONE);
@@ -99,16 +100,23 @@ public class PreLiveReminderService {
             sessions.computeIfAbsent(new Streamer(session.platform(), session.uid()), k -> new ArrayList<>()).add(session);
         }
         var material = new HashMap<Streamer, SessionRecapService.PreLiveAudience>();
+        var pending = new ArrayList<PendingReminder>();
         ledger.withRecoveredLedger(() -> {
             for (var subscription : subscriptions) {
-                try { check(subscription, sessions.getOrDefault(subscription.streamer(), List.of()), now, material); }
+                try { prepare(subscription, sessions.getOrDefault(subscription.streamer(), List.of()), now, material, pending); }
                 catch (IOException | RuntimeException failure) { log.warn("本轮开播前提醒未能生成", failure); }
             }
         });
+        // 入队可能同步执行被挤出消息的回调；发送和记录均在释放账本锁之后进行。
+        for (var reminder : pending) {
+            try { deliver(reminder); }
+            catch (RuntimeException failure) { log.warn("本轮开播前提醒未能发送", failure); }
+        }
     }
 
-    private void check(Subscription sub, List<LiveSessionArchive.ArchivedSession> history, ZonedDateTime now,
-                       Map<Streamer, SessionRecapService.PreLiveAudience> material) throws IOException {
+    private void prepare(Subscription sub, List<LiveSessionArchive.ArchivedSession> history, ZonedDateTime now,
+                         Map<Streamer, SessionRecapService.PreLiveAudience> material,
+                         List<PendingReminder> pending) throws IOException {
         var recent = history.stream().sorted(Comparator.comparingLong(LiveSessionArchive.ArchivedSession::startTime)
                 .reversed()).limit(10).toList();
         var usual = usualStart(recent);
@@ -137,21 +145,27 @@ public class PreLiveReminderService {
             }
             String body = render(audience, profile, who.uid(), new HashSet<>(assistant.getExcludedUids()));
             if (body.isBlank()) return;
-            var sendTime = clock.instant().atZone(ZONE);
-            if (sendTime.isBefore(due) || sendTime.isAfter(due.plusMinutes(10))) return;
-            LocalDate date = sendTime.toLocalDate();
-            Message message = Message.create(sub.target().getPlatform(), sub.target().getType(), sub.target().getNum(),
-                    MessagePlaceholders.escapeExternalText(body)).get(0);
-            message.setChannel(sub.target());
-            if (!store.reserve(key, date, dueDate)) return;
-            message.addOnSuccessCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.SENT));
-            message.addOnFailureCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.FAILED));
-            message.addOnUncertainCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN));
-            try {
-                if (sender.sendScheduled(message, sendTime.toLocalTime()) != null)
-                    store.result(key, date, dueDate, PreLiveReminderStore.Status.NOT_SENT);
-            } catch (RuntimeException failure) { store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN); }
+            pending.add(new PendingReminder(key, sub.target(), due, body));
         }
+    }
+
+    private void deliver(PendingReminder reminder) {
+        var sendTime = clock.instant().atZone(ZONE);
+        if (sendTime.isBefore(reminder.due()) || sendTime.isAfter(reminder.due().plusMinutes(10))) return;
+        LocalDate date = sendTime.toLocalDate(), dueDate = reminder.due().toLocalDate();
+        String key = reminder.key();
+        var target = reminder.target();
+        Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(),
+                MessagePlaceholders.escapeExternalText(reminder.body())).get(0);
+        message.setChannel(target);
+        if (!store.reserve(key, date, dueDate)) return;
+        message.addOnSuccessCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.SENT));
+        message.addOnFailureCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.FAILED));
+        message.addOnUncertainCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN));
+        try {
+            if (sender.sendScheduled(message, sendTime.toLocalTime()) != null)
+                store.result(key, date, dueDate, PreLiveReminderStore.Status.NOT_SENT);
+        } catch (RuntimeException failure) { store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN); }
     }
 
     /** 所有候选窗口以某场的开播时刻起始；同场数时取钟面上较早者。 */

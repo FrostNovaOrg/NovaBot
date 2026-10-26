@@ -9,6 +9,10 @@ import org.frostnova.nova.core.handler.PreLiveReminderPushHandler;
 import org.frostnova.nova.core.model.*;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.sender.PushGate;
+import org.frostnova.nova.core.sender.FirstPushTipService;
+import org.frostnova.nova.core.health.PushActivityRecorder;
+import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -17,7 +21,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.*;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -63,16 +71,118 @@ class PreLiveReminderLedgerTest {
     @DisplayName("二十位主播同时到点的合成归档测量，确认长历史不会拖延提醒")
     void measuresTwentyDueStreamers() throws Exception {
         var fixture = fixture(20, 200, 200);
-        long begin = System.nanoTime();
-        fixture.service().check();
-        long elapsed = (System.nanoTime() - begin) / 1_000_000;
-        assertEquals(20, fixture.sent().size());
-        System.out.println("Reminder round: streamers=20 sessionsPerStreamer=200 viewersPerSession=200 elapsedMs=" + elapsed);
+        var materialStarted = new CountDownLatch(1);
+        var readerStarted = new CountDownLatch(1);
+        doAnswer(call -> {
+            materialStarted.countDown();
+            assertTrue(readerStarted.await(10, TimeUnit.SECONDS), "账本读取线程未开始");
+            return call.callRealMethod();
+        }).when(fixture.recap()).preLiveAudience(anyString(), anyLong(), anyLong());
+        var reader = Executors.newSingleThreadExecutor();
+        try {
+            var wait = reader.submit(() -> {
+                assertTrue(materialStarted.await(10, TimeUnit.SECONDS), "提醒未开始取素材");
+                long begin = System.nanoTime();
+                readerStarted.countDown();
+                assertEquals(200, fixture.ledger().sessions("test", HOST).size());
+                return (System.nanoTime() - begin) / 1_000_000;
+            });
+            long begin = System.nanoTime();
+            fixture.service().check();
+            long elapsed = (System.nanoTime() - begin) / 1_000_000;
+            assertEquals(20, fixture.sent().size());
+            System.out.println("Reminder round: streamers=20 sessionsPerStreamer=200 viewersPerSession=200 elapsedMs="
+                    + elapsed + " ledgerReadWaitMs=" + wait.get(30, TimeUnit.SECONDS));
+        } finally {
+            reader.shutdownNow();
+            assertTrue(reader.awaitTermination(10, TimeUnit.SECONDS), "账本读取线程未退出");
+        }
     }
 
-    record Fixture(PreLiveReminderService service, AudienceLedgerService ledger, List<Message> sent) {}
+    @Test @DisplayName("满队列挤出小结时与小结读账本都能结束，避免提醒和控制台一起卡死")
+    void fullQueueCallbackDoesNotDeadlockLedger() throws Exception {
+        Path output = dir.resolve("lock-order-output.txt");
+        var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-javaagent:" + Path.of(org.mockito.Mockito.class.getProtectionDomain().getCodeSource().getLocation().toURI()),
+                "-cp", System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
+                LockOrderProbe.class.getName(), dir.toString()).redirectErrorStream(true).redirectOutput(output.toFile()).start();
+        try {
+            assertTrue(process.waitFor(45, TimeUnit.SECONDS), "锁顺序检查进程未结束");
+            assertEquals(0, process.exitValue(), Files.readString(output));
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                assertTrue(process.waitFor(10, TimeUnit.SECONDS), "锁顺序检查进程未退出");
+            }
+        }
+    }
+
+    public static class LockOrderProbe {
+        public static void main(String[] args) throws Exception {
+            var test = new PreLiveReminderLedgerTest();
+            test.dir = Path.of(args[0]);
+            var properties = new NovaCoreProperties(); properties.getPush().setEnabled(true);
+            var destinations = mock(NovaSenderService.class);
+            when(destinations.getSender("qq-onebot")).thenReturn(Optional.of(new Sender()));
+            var sender = new NovaMessageSender(mock(HttpUtil.class), destinations,
+                    new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties), TimelineWriter.NONE,
+                    new AtAllQuotaService(properties), mock(ObjectProvider.class), mock(FirstPushTipService.class));
+            var fixture = test.fixture(1, 12, 20, sender);
+            var recapDelivery = mock(SessionRecapDeliveryService.class);
+            var materialStarted = new CountDownLatch(1);
+            var recapHolding = new CountDownLatch(1);
+            var finished = new CountDownLatch(2);
+            var failure = new AtomicReference<Throwable>();
+            var callbackRan = new java.util.concurrent.atomic.AtomicBoolean();
+            var queue = new LinkedBlockingQueue<Message>(500);
+            var oldest = Message.create("qq-onebot", PushTargetType.FRIEND, 930000001L, "合成小结").get(0);
+            oldest.addOnFailureCallback(() -> {
+                synchronized (recapDelivery) { callbackRan.set(true); }
+            });
+            queue.add(oldest);
+            for (int i = 1; i < 500; i++)
+                queue.add(Message.create("qq-onebot", PushTargetType.FRIEND, 930000001L, "合成排队消息").get(0));
+            // 保持平台队列满载，不启动平台线程，直接覆盖真实的入队与挤出回调。
+            ReflectionTestUtils.setField(sender, "queueMap", new ConcurrentHashMap<>(Map.of("qq-onebot", queue)));
+            doAnswer(call -> {
+                materialStarted.countDown();
+                assertTrue(recapHolding.await(10, TimeUnit.SECONDS), "小结线程未持锁");
+                return call.callRealMethod();
+            }).when(fixture.recap()).preLiveAudience(anyString(), anyLong(), anyLong());
+            Thread round = new Thread(() -> {
+                try { fixture.service().check(); }
+                catch (Throwable error) { failure.compareAndSet(null, error); }
+                finally { finished.countDown(); }
+            }, "reminder-round");
+            Thread recap = new Thread(() -> {
+                try {
+                    assertTrue(materialStarted.await(10, TimeUnit.SECONDS), "提醒线程未开始取素材");
+                    synchronized (recapDelivery) {
+                        recapHolding.countDown();
+                        fixture.ledger().sessions("test", HOST);
+                    }
+                } catch (Throwable error) { failure.compareAndSet(null, error); }
+                finally { finished.countDown(); }
+            }, "recap-ledger-read");
+            // 旧实现死锁时也让独立进程退出，把失败报告给测试进程。
+            round.setDaemon(true); recap.setDaemon(true);
+            round.start(); recap.start();
+            assertTrue(finished.await(20, TimeUnit.SECONDS),
+                    "提醒与小结未在限时内结束: round=" + round.getState() + ", recap=" + recap.getState());
+            assertNull(failure.get(), () -> String.valueOf(failure.get()));
+            assertTrue(callbackRan.get(), "必须真正挤出最旧的小结并执行失败回调");
+            assertEquals(1, sender.getDroppedCount());
+            assertEquals(500, sender.getPendingCount());
+        }
+    }
+
+    record Fixture(PreLiveReminderService service, AudienceLedgerService ledger, SessionRecapService recap, List<Message> sent) {}
 
     Fixture fixture(int hosts, int sessions, int viewers) throws Exception {
+        return fixture(hosts, sessions, viewers, null);
+    }
+
+    Fixture fixture(int hosts, int sessions, int viewers, NovaMessageSender actualSender) throws Exception {
         var properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("live.json").toString());
         properties.getPush().setEnabled(true);
@@ -117,7 +227,7 @@ class PreLiveReminderLedgerTest {
         var ledger = new AudienceLedgerService(properties, privacy);
         ledger.rebuild();
         var archive = new LiveSessionArchive(properties);
-        var recap = new SessionRecapService(ledger, archive, new LiveDetailArchive(properties), privacy);
+        var recap = spy(new SessionRecapService(ledger, archive, new LiveDetailArchive(properties), privacy));
         var source = mock(AbstractDataSource.class); when(source.getAllUsers()).thenReturn(users);
         var live = mock(LiveDataService.class); when(live.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(false));
         var profiles = mock(StreamerProfileStore.class);
@@ -128,9 +238,10 @@ class PreLiveReminderLedgerTest {
             Message message = call.getArgument(0); sent.add(message);
             message.markDelivered("synthetic-reminder").forEach(Runnable::run); return null;
         }).when(sender).sendScheduled(any(), any());
-        var service = new PreLiveReminderService(source, archive, live, ledger, recap, profiles, privacy, sender,
+        var service = new PreLiveReminderService(source, archive, live, ledger, recap, profiles, privacy,
+                actualSender == null ? sender : actualSender,
                 new PushGate(properties), new PreLiveReminderStore(dir.resolve("pre-live-reminder-deliveries.json")),
                 Clock.fixed(TODAY.atTime(19, 0).atZone(ZONE).toInstant(), ZoneOffset.UTC));
-        return new Fixture(service, ledger, sent);
+        return new Fixture(service, ledger, recap, sent);
     }
 }
