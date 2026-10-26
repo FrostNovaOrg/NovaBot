@@ -224,7 +224,11 @@ public class LiveSessionArchive {
     }
 
     public record ArchivedSession(String platform, long uid, String uname, long startTime, long endTime,
-                                  long durationSeconds) {}
+                                  long durationSeconds, LiveEndReason endReason) {
+        public ArchivedSession(String platform, long uid, String uname, long startTime, long endTime, long durationSeconds) {
+            this(platform, uid, uname, startTime, endTime, durationSeconds, null);
+        }
+    }
 
     /** 小结只需场次时刻和指标；跳过完整观众名单，避免保留全历史名单。 */
     List<SessionMetrics> findMetrics(String platform, long uid, long through) {
