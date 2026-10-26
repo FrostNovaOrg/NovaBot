@@ -35,12 +35,12 @@ public record StreamerProfile(int tier, Long tierSetAt, List<Concern> concerns,
         if (tier != 1 && tier != 2) throw new IllegalArgumentException("档位只能是 1 或 2");
         if (status == null) throw new IllegalArgumentException("缺少档案状态");
         if ((tierSetAt != null && tierSetAt < 0) || (pauseSetAt != null && pauseSetAt < 0)
-                || (tier == 2 && tierSetAt == null) || (paused && pauseSetAt == null))
+                || (paused && pauseSetAt == null))
             throw new IllegalArgumentException("档案设置时间不正确");
         concerns = List.copyOf(concerns);
         exclusions = List.copyOf(exclusions);
     }
     public static StreamerProfile empty(Status status) {
-        return new StreamerProfile(1, null, List.of(), List.of(), false, null, status);
+        return new StreamerProfile(2, null, List.of(), List.of(), false, null, status);
     }
 }

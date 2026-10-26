@@ -80,7 +80,7 @@ class BilibiliGreetingFollowUpTest {
             dispatcher.onRemoteMessage(new NovaRemoteMessageEvent("qq-onebot", "private", target.getNum(), target.getNum(), "2", null, true));
             assertEquals(List.of("所选主播：" + other.getUid()), replies);
             assertNull(profiles.read("bilibili", owner.getUid()).tierSetAt());
-            assertEquals(1, profiles.read("bilibili", owner.getUid()).tier());
+            assertEquals(2, profiles.read("bilibili", owner.getUid()).tier());
             assertNotNull(greeting.claim(new CommandContext("qq-onebot", PushTargetType.FRIEND,
                     target.getNum(), target.getNum(), "2", List.of(), "2")));
             assertEquals(2, profiles.read("bilibili", owner.getUid()).tier());

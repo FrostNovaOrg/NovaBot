@@ -102,6 +102,35 @@ class SessionRecapDeliveryServiceTest {
                 StreamerProfile.Pattern.slot_compare, START)) : List.of(), false, null, StreamerProfile.Status.READY);
     }
 
+    @ParameterizedTest @ValueSource(strings = {"new", "legacy"})
+    @DisplayName("从未选档的新旧主播都收到规律段，避免默认档位未更新或升级后漏掉规律")
+    void unchosenTierIncludesPatterns(String kind) throws Exception {
+        profiles = new StreamerProfileStore(dir.resolve("profiles"));
+        if (kind.equals("legacy")) {
+            Files.createDirectories(dir.resolve("profiles"));
+            Files.writeString(profiles.path("test", user.getUid()), """
+                    {"tier":1,"tierSetAt":null,"concerns":[],"exclusions":[],"paused":false,"pauseSetAt":null}
+                    """);
+        }
+        reopen(); due();
+        assertEquals(Status.SENT, latest().status()); assertEquals(1, sent.size());
+        assertTrue(sent.get(0).getContent().contains("从你过去"));
+        assertTrue(sent.get(0).getContent().contains("中位数"));
+        assertNull(profiles.read("test", user.getUid()).tierSetAt());
+    }
+
+    @Test @DisplayName("明确选择第一档就不发送规律段，避免默认第二档覆盖她的选择")
+    void explicitTierOneOmitsPatterns() throws Exception {
+        profiles = new StreamerProfileStore(dir.resolve("profiles"));
+        profiles.update("test", user.getUid(), p -> new StreamerProfile(1, START, List.of(), List.of(),
+                false, null, p.status()));
+        reopen(); due();
+        assertEquals(Status.SENT, latest().status()); assertEquals(1, sent.size());
+        assertTrue(sent.get(0).getContent().contains("小结"));
+        assertFalse(sent.get(0).getContent().contains("从你过去"));
+        assertFalse(sent.get(0).getContent().contains("中位数"));
+    }
+
     @Test @DisplayName("下播满半小时发送一次，避免主播收不到或重复收到小结")
     void sendsOnceAtDueAndAfterRestart() throws Exception {
         seal(START, END, 3600, LiveEndReason.NORMAL); clock.at(DUE - 1); service.check();
@@ -349,7 +378,8 @@ class SessionRecapDeliveryServiceTest {
         assertTrue(trial(false, false).getBooleanValue("success"));
         assertFalse(outgoing.getValue().getContent().contains("中位数"));
         assertFalse(outgoing.getValue().getContent().contains("¥"));
-        when(profiles.read(anyString(), anyLong())).thenReturn(StreamerProfile.empty(StreamerProfile.Status.READY));
+        when(profiles.read(anyString(), anyLong())).thenReturn(new StreamerProfile(
+                1, START, List.of(), List.of(), false, null, StreamerProfile.Status.READY));
         assertTrue(trial(false, false).getBooleanValue("success"));
         assertFalse(outgoing.getValue().getContent().contains("中位数"));
     }

@@ -98,12 +98,19 @@ class StreamerProfileCommandTest {
         assertEquals("记下了：第 2 档", say("改成 2"));
         assertEquals(2, profile().tier()); assertNotNull(profile().tierSetAt());
     }
+    @Test @DisplayName("改成第一档跨重启保留档位和设定时间，避免默认第二档覆盖她的选择")
+    void ownerCanChooseTierOne() {
+        assertEquals("记下了：第 1 档", say("改成 1"));
+        var stored = new StreamerProfileStore(profiles.path("bilibili", UID).getParent()).read("bilibili", UID);
+        assertEquals(1, stored.tier()); assertNotNull(stored.tierSetAt());
+        assertEquals(profile().tierSetAt(), stored.tierSetAt());
+    }
     @Test @DisplayName("别人的私聊、群聊和号码不一致的消息不能修改主播设置")
     void otherConversationsKeepExistingRouting() {
-        assertEquals("现有命令", send("private", OTHER, OTHER, "改成 2"));
-        assertEquals("现有命令", send("group", GROUP, SELF, "改成 2"));
-        assertEquals("现有命令", send("private", SELF, OTHER, "改成 2"));
-        assertEquals(1, profile().tier()); assertNull(profile().tierSetAt());
+        assertEquals("现有命令", send("private", OTHER, OTHER, "改成 1"));
+        assertEquals("现有命令", send("group", GROUP, SELF, "改成 1"));
+        assertEquals("现有命令", send("private", SELF, OTHER, "改成 1"));
+        assertEquals(2, profile().tier()); assertNull(profile().tierSetAt());
         assertEquals("", send("private", 990000001003L, 990000001003L, "改成 2"));
     }
     @Test @DisplayName("取消本人标记后，原号码立即失去改设置的资格")
@@ -114,8 +121,8 @@ class StreamerProfileCommandTest {
     }
     @Test @DisplayName("停用通道或主播后不能再改设置，其他平台的同号码也不能认人")
     void disabledAndDifferentPlatformAreRejected() {
-        self.setEnabled(false); say("改成 2"); assertEquals(1, profile().tier());
-        self.setEnabled(true); user.setEnabled(false); say("改成 2"); assertEquals(1, profile().tier());
+        self.setEnabled(false); say("改成 1"); assertEquals(2, profile().tier());
+        self.setEnabled(true); user.setEnabled(false); say("改成 1"); assertEquals(2, profile().tier());
         user.setEnabled(true);
         assertTrue(resolver.resolve(new CommandContext("another", PushTargetType.FRIEND, SELF, SELF, "", List.of(), "2")).isEmpty());
     }
@@ -198,7 +205,7 @@ class StreamerProfileCommandTest {
         assertEquals("好的", say("恢复"));
         var restored = new StreamerProfileStore(profiles.path("bilibili", UID).getParent()).read("bilibili", UID);
         assertEquals(StreamerProfile.Status.READY, restored.status());
-        assertEquals(1, restored.tier()); assertNull(restored.tierSetAt());
+        assertEquals(2, restored.tier()); assertNull(restored.tierSetAt());
         assertFalse(restored.paused()); assertNotNull(restored.pauseSetAt());
         assertTrue(restored.concerns().isEmpty()); assertTrue(restored.exclusions().isEmpty());
     }
@@ -220,7 +227,7 @@ class StreamerProfileCommandTest {
         assertEquals("好的", say("恢复"));
         var restored = new StreamerProfileStore(profiles.path("bilibili", UID).getParent()).read("bilibili", UID);
         assertEquals(StreamerProfile.Status.READY, restored.status());
-        assertEquals(1, restored.tier()); assertFalse(restored.paused()); assertNotNull(restored.pauseSetAt());
+        assertEquals(2, restored.tier()); assertFalse(restored.paused()); assertNotNull(restored.pauseSetAt());
     }
     @Test @DisplayName("查看暂时读不出的档案应说明读取失败，避免误报成保存失败")
     void recallReportsTemporaryReadFailure() {
