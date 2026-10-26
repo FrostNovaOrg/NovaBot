@@ -109,15 +109,26 @@ class SessionRecapGreetingTest {
 
     private void enable() { target.getMessages().get(0).setEnabled(true); }
 
-    @Test @DisplayName("订阅打开后下一轮先问档位，避免主播不知道能选档")
+    @Test @DisplayName("招呼说明不回就按第二档发，避免主播不知道不回复会怎样")
     void greetsOnFirstEligibleRound() throws Exception {
         delivery.check(); assertTrue(sent.isEmpty());
         enable(); delivery.check(); delivery.check();
         assertEquals(1, sent.size());
         String text = sent.get(0).getContent();
-        for (String expected : List.of("你好，我是 Nova", "1　只要小结", "2　小结 +", "最近最在意什么", "先别发了"))
+        for (String expected : List.of("你好，我是 Nova", "1　只要小结",
+                "2　小结 + 从你过去直播里看到的规律（不回就按这个发）", "最近最在意什么", "先别发了"))
             assertTrue(text.contains(expected), text);
         assertFalse(text.contains("3　")); assertSame(target, sent.get(0).getChannel());
+    }
+
+    @Test @DisplayName("回招呼选择第一档后重启仍保留档位和时间，避免默认第二档覆盖回答")
+    void tierOneReplySurvivesRestartWithoutAnotherGreeting() throws Exception {
+        greet();
+        assertEquals("记下了：第 1 档", say("1"));
+        assertEquals(1, profile().tier()); assertEquals(clock.millis(), profile().tierSetAt());
+        reopen(); delivery.check();
+        assertEquals(1, profile().tier()); assertEquals(clock.millis(), profile().tierSetAt());
+        assertEquals(1, sent.size());
     }
 
     @Test @DisplayName("发过招呼重启不重发，避免每次启动都打扰主播")
@@ -271,7 +282,7 @@ class SessionRecapGreetingTest {
     @Test @DisplayName("第三档只说明当前档位且一次作废，避免误以为开放或重启后重复认领")
     void thirdTierDoesNotChangeProfileAndConsumesWindow() throws Exception {
         greet(); var before = profile();
-        assertEquals("第 3 档还没开放，先按第 1 档发", say("3")); assertEquals(before, profile());
+        assertEquals("第 3 档还没开放，先按第 2 档发", say("3")); assertEquals(before, profile());
         reopen(); assertEquals("原有处理", say("2")); assertEquals(before, profile());
     }
 

@@ -26,14 +26,42 @@ class StreamerProfileStoreTest {
     private StreamerProfileStore store;
     @BeforeEach void setUp() { store = new StreamerProfileStore(dir); }
 
-    @Test @DisplayName("新档案默认第一档且不暂停，平台和主播编号分别隔离")
+    @Test @DisplayName("新档案默认第二档且不暂停，避免未选档的主播仍收到第一档")
     void defaultsAndSubjectsStaySeparate() throws Exception {
         var fresh = store.read("bilibili", UID);
-        assertEquals(1, fresh.tier()); assertFalse(fresh.paused()); assertEquals(Status.READY, fresh.status());
+        assertEquals(2, fresh.tier()); assertNull(fresh.tierSetAt());
+        assertFalse(fresh.paused()); assertEquals(Status.READY, fresh.status());
         store.update("bilibili", UID, p -> populated());
         assertEquals(fresh, store.read("another", UID)); assertEquals(fresh, store.read("bilibili", UID + 1));
         assertNotEquals(store.path("bilibili", UID), store.path("another", UID));
         assertEquals(dir, store.path("../example", UID).getParent());
+    }
+    @ParameterizedTest @ValueSource(ints = {1, 2})
+    @DisplayName("未选档的档案读为第二档且不当作坏件，避免升级后仍发第一档或停发")
+    void unsetTierReadsAsDefaultWithoutQuarantine(int tier) throws Exception {
+        Path file = store.path("bilibili", UID);
+        String content = "{\"tier\":" + tier + ",\"tierSetAt\":null,\"concerns\":[],\"exclusions\":[],"
+                + "\"paused\":false,\"pauseSetAt\":null}";
+        Files.writeString(file, content);
+        var loaded = store.read("bilibili", UID);
+        assertEquals(Status.READY, loaded.status()); assertEquals(2, loaded.tier()); assertNull(loaded.tierSetAt());
+        assertEquals(content, Files.readString(file));
+        try (var files = Files.list(dir)) { assertEquals(List.of(file), files.toList()); }
+    }
+    @ParameterizedTest @ValueSource(ints = {1, 2})
+    @DisplayName("自己选过的档位及时间跨重启保留，避免选了第一档却被默认覆盖")
+    void explicitTierSurvivesRestart(int tier) throws Exception {
+        var selected = new StreamerProfile(tier, 0L, List.of(), List.of(), false, null, Status.READY);
+        store.update("bilibili", UID, p -> selected);
+        assertEquals(selected, new StreamerProfileStore(dir).read("bilibili", UID));
+    }
+    @Test @DisplayName("未选档的第二档也能保存其他设置，避免只记在意条目就使档案变成坏件")
+    void tierTwoWithoutSelectionTimeCanBePersisted() throws Exception {
+        var profile = new StreamerProfile(2, null, List.of(new Concern("回访", TIME)), List.of(),
+                false, null, Status.READY);
+        store.update("bilibili", UID, p -> profile);
+        assertEquals(profile, new StreamerProfileStore(dir).read("bilibili", UID));
+        assertTrue(JSON.parseObject(Files.readString(store.path("bilibili", UID))).containsKey("tierSetAt"));
     }
     @Test @DisplayName("重启后全部结构化设置与时间仍在，只存条目且文件仅属主可读写")
     void roundTripPersistsOnlyStructuredFields() throws Exception {
@@ -104,7 +132,7 @@ class StreamerProfileStoreTest {
     void unsupportedTierCannotBeStored() {
         assertThrows(IllegalArgumentException.class, () -> store.update("bilibili", UID,
                 p -> new StreamerProfile(3, TIME, List.of(), List.of(), false, null, Status.READY)));
-        assertEquals(1, store.read("bilibili", UID).tier());
+        assertEquals(2, store.read("bilibili", UID).tier());
     }
     @Test @DisplayName("磁盘写入失败须交给命令回复失败，不能返回保存成功")
     void writeFailureIsReported() throws Exception {
