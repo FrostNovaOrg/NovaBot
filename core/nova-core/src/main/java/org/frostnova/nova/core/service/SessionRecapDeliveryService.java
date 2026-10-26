@@ -47,6 +47,7 @@ public class SessionRecapDeliveryService {
     private final PushGate gate;
     private final SessionRecapDeliveryStore store;
     private final Clock clock;
+    private final SessionRecapGreetingService greetings;
     private ThreadPoolTaskScheduler scheduler;
     private boolean started;
 
@@ -54,18 +55,27 @@ public class SessionRecapDeliveryService {
     public SessionRecapDeliveryService(AbstractDataSource source, LiveSessionArchive archive, LiveDataService live,
             AudienceLedgerService ledger, SessionRecapService recap, StreamerProfileStore profiles,
             RevenueVisibilityService revenue, AssistantProperties assistant, NovaMessageSender sender,
-            PushGate gate, NovaCoreProperties properties) {
+            PushGate gate, NovaCoreProperties properties, SessionRecapGreetingService greetings) {
         this(source, archive, live, ledger, recap, profiles, revenue, assistant, sender, gate,
                 new SessionRecapDeliveryStore(Path.of(properties.getLive().getLiveDataPath()).toAbsolutePath()
-                        .resolveSibling("session-recap-deliveries.json")), Clock.systemUTC());
+                        .resolveSibling("session-recap-deliveries.json")), Clock.systemUTC(), greetings);
     }
     public SessionRecapDeliveryService(AbstractDataSource source, LiveSessionArchive archive, LiveDataService live,
             AudienceLedgerService ledger, SessionRecapService recap, StreamerProfileStore profiles,
             RevenueVisibilityService revenue, AssistantProperties assistant, NovaMessageSender sender,
             PushGate gate, SessionRecapDeliveryStore store, Clock clock) {
+        this(source, archive, live, ledger, recap, profiles, revenue, assistant, sender, gate, store, clock,
+                new SessionRecapGreetingService(new SessionRecapGreetingStore(store.greetingPath()), profiles,
+                        new StreamerSelfResolver(source), live, sender, gate, clock));
+    }
+    public SessionRecapDeliveryService(AbstractDataSource source, LiveSessionArchive archive, LiveDataService live,
+            AudienceLedgerService ledger, SessionRecapService recap, StreamerProfileStore profiles,
+            RevenueVisibilityService revenue, AssistantProperties assistant, NovaMessageSender sender,
+            PushGate gate, SessionRecapDeliveryStore store, Clock clock, SessionRecapGreetingService greetings) {
         this.source = source; this.archive = archive; this.live = live; this.ledger = ledger; this.recap = recap;
         this.profiles = profiles; this.revenue = revenue; this.assistant = assistant; this.sender = sender;
         this.gate = gate; this.store = store; this.clock = clock;
+        this.greetings = greetings;
     }
     @Order(100) @EventListener(ApplicationReadyEvent.class)
     public synchronized void start() {
@@ -105,6 +115,7 @@ public class SessionRecapDeliveryService {
         Instant now = clock.instant();
         var targets = active();
         if (!store.observe(targets.keySet(), now)) return;
+        for (var sub : targets.values()) greetings.greet(sub.platform(), sub.uid(), sub.target());
         var sealed = archive.sealedSessions();
         long cutoff = now.minus(Duration.ofDays(90)).toEpochMilli();
         for (var entry : targets.entrySet()) {

@@ -77,6 +77,7 @@ public final class SessionRecapDeliveryStore {
             }
         }
     }
+    Path greetingPath() { return path.resolveSibling("session-recap-greetings.json"); }
     private static void restrict(Path file) throws IOException {
         if (Files.isRegularFile(file) && Files.getFileAttributeView(file,
                 java.nio.file.attribute.PosixFileAttributeView.class) != null)
