@@ -9,6 +9,8 @@ import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.event.dynamic.NovaBaseDynamicEvent;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +83,8 @@ public class BilibiliDynamicService {
 
     private final TaskScheduler scheduler;
 
+    private final BilibiliDynamicArchive archive;
+
     /**
      * 已推送过的动态 ID
      */
@@ -125,12 +129,14 @@ public class BilibiliDynamicService {
                                   BilibiliAccountService accountService,
                                   NovaBilibiliProperties properties,
                                   ApplicationEventPublisher publisher,
-                                  @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
+                                  @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
+                                  BilibiliDynamicArchive archive) {
         this.api = api;
         this.accountService = accountService;
         this.properties = properties;
         this.publisher = publisher;
         this.scheduler = scheduler;
+        this.archive = archive;
     }
 
     /**
@@ -180,7 +186,13 @@ public class BilibiliDynamicService {
             return;
         }
 
-        Map<Long, Up> ups = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
+        var users = source.getUsers(BilibiliPlatform.BILIBILI.id());
+        Set<Long> archivedUids = users.stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                .filter(BilibiliDynamicService::hasDynamicPush)
+                .map(user -> user.getUid())
+                .collect(Collectors.toSet());
+        Map<Long, Up> ups = users.stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .map(Up::new)
                 .filter(up -> up.getUid() != null)
@@ -189,6 +201,11 @@ public class BilibiliDynamicService {
         Instant earliest = Instant.now().minus(Duration.ofMinutes(Math.max(1, properties.getDynamic().getPushMinutes())));
 
         for (Dynamic dynamic : dynamics) {
+            if (dynamic == null) continue;
+            Long authorUid = dynamic.getAuthorUid().orElse(null);
+            if (authorUid != null && archivedUids.contains(authorUid)) {
+                archive.append(authorUid, dynamic, System.currentTimeMillis());
+            }
             logDedupProbe(dynamic);
 
             if (dynamic.getId() == null || pushed.contains(dynamic.getId())) {
@@ -224,6 +241,15 @@ public class BilibiliDynamicService {
         }
 
         initialized = true;
+    }
+
+    private static boolean hasDynamicPush(PushUser user) {
+        return user.getTargets().stream()
+                .filter(target -> !Boolean.FALSE.equals(target.getEnabled()))
+                .flatMap(target -> target.getMessages().stream())
+                .filter(message -> !Boolean.FALSE.equals(message.getEnabled()))
+                .map(message -> message.getEventClass())
+                .anyMatch(type -> type != null && NovaBaseDynamicEvent.class.isAssignableFrom(type));
     }
 
     /**

@@ -83,7 +83,8 @@ class BilibiliDynamicServiceTest {
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers(anyString())).thenReturn(List.of(user));
 
-        BilibiliDynamicService service = new BilibiliDynamicService(api, accountService, properties, publisher, scheduler);
+        BilibiliDynamicService service = new BilibiliDynamicService(api, accountService, properties, publisher, scheduler,
+                mock(BilibiliDynamicArchive.class));
         service.start(dataSource);
 
         ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);

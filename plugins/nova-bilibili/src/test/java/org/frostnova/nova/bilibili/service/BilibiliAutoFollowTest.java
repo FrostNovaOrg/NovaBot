@@ -119,7 +119,7 @@ class BilibiliAutoFollowTest {
         NovaBilibiliProperties properties = new NovaBilibiliProperties();
         TaskScheduler scheduler = mock(TaskScheduler.class);
         service = new BilibiliDynamicService(api, account, properties, event -> {
-        }, scheduler);
+        }, scheduler, mock(BilibiliDynamicArchive.class));
         service.start(dataSource);
 
         ArgumentCaptor<Runnable> tasks = ArgumentCaptor.forClass(Runnable.class);
