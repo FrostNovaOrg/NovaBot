@@ -99,6 +99,10 @@ public class NovaMessageSender {
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
+    // 被挤掉的消息属于其他调用方，回调不能借用本次发送线程持有的服务锁。
+    private final ExecutorService droppedCallbacks = Executors.newSingleThreadExecutor(
+            task -> new Thread(task, "sender-dropped-callback"));
+
     private final Map<String, BlockingQueue<Message>> queueMap = new ConcurrentHashMap<>();
 
     private final Map<String, Future<?>> platformTasks = new ConcurrentHashMap<>();
@@ -217,7 +221,11 @@ public class NovaMessageSender {
 
             long total = droppedCount.incrementAndGet();
             dropped.setFailureReason("队列已满, 被挤掉");
-            runEach(dropped.markFailed(), dropped, "发送失败");
+            try {
+                droppedCallbacks.execute(() -> runEach(dropped.markFailed(), dropped, "发送失败"));
+            } catch (RejectedExecutionException e) {
+                log.warn("停机时丢弃被挤掉消息的失败回调: [{}]{}", dropped.getSequence(), dropped.getDisplay());
+            }
             log.warn("{} 平台的发送队列已满({} 条), 丢弃最旧的一条消息: [{}] {}: {}（累计丢弃 {} 条）",
                     message.getPlatform(), QUEUE_CAPACITY, dropped.getType().getStr(),
                     dropped.getNum(), dropped.getDisplay(), total);
@@ -488,6 +496,8 @@ public class NovaMessageSender {
      * <p>
      * 此前这个线程池既非 Spring 托管也无人关闭，停机时队列里待发的消息直接随进程消失。
      * 等待设有上限：停机不能因为某个平台一直发不出去而无限期拖下去。
+     * 被挤掉消息的失败回调另外最多等同样的时长；超时中断正在执行的回调，
+     * 丢弃尚未开始的回调并记日志，不借用停机线程同步补跑。
      */
     @PreDestroy
     public void shutdown() {
@@ -519,6 +529,17 @@ public class NovaMessageSender {
         }
 
         executor.shutdownNow();
+        droppedCallbacks.shutdown();
+        try {
+            if (!droppedCallbacks.awaitTermination(DRAIN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
+                int abandoned = droppedCallbacks.shutdownNow().size();
+                log.warn("停机时被挤掉消息的失败回调仍未完成, 已中断执行并丢弃 {} 个待执行回调", abandoned);
+            }
+        } catch (InterruptedException e) {
+            int abandoned = droppedCallbacks.shutdownNow().size();
+            log.warn("停机等待被挤掉消息的失败回调被中断, 丢弃 {} 个待执行回调", abandoned);
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
