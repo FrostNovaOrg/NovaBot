@@ -904,9 +904,9 @@ class ConfigurationFileServiceTest {
     void quotedListItemsUnescape() throws IOException {
         Files.writeString(config, "novabot:\n"
                 + "  core:\n"
-                + "    command:\n"
-                + "      admins: [\"a\\\"b\", 'it''s', \"c\\\\d\"]\n", StandardCharsets.UTF_8);
-        String key = "novabot.core.command.admins";
+                + "    paint:\n"
+                + "      fonts: [\"a\\\"b\", 'it''s', \"c\\\\d\"]\n", StandardCharsets.UTF_8);
+        String key = "novabot.core.paint.fonts";
         List<String> bad = new ArrayList<>();
 
         try {
@@ -920,8 +920,8 @@ class ConfigurationFileServiceTest {
             assertEquals("a\"b\nit's\nc\\d", service.read().get(key), "存一次再读回应是同样的值");
             Map<String, Object> whole = new Yaml().load(Files.readString(config, StandardCharsets.UTF_8));
             @SuppressWarnings("unchecked")
-            Map<String, Object> command = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) whole.get("novabot")).get("core")).get("command");
-            assertEquals("[a\"b, it's, c\\d]", String.valueOf(command.get("admins")), "写出的块序列本身也是合法的名单");
+            Map<String, Object> paint = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) whole.get("novabot")).get("core")).get("paint");
+            assertEquals("[a\"b, it's, c\\d]", String.valueOf(paint.get("fonts")), "写出的块序列本身也是合法的名单");
         } catch (AssertionError | IOException | RuntimeException e) {
             bad.add("② 转义存: " + e.getMessage());
         }

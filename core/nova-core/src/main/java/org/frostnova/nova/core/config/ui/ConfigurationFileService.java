@@ -13,11 +13,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.PropertySource;
+import org.springframework.core.convert.ConversionException;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
@@ -425,6 +427,7 @@ public class ConfigurationFileService implements SmartLifecycle {
             }
         }
         if (!needed) {
+            normalizeScalarLists(parsed, Map.of());
             return new Settled(Map.of(), lockEmptyItems(parsed, new LinkedHashMap<>()));
         }
 
@@ -544,14 +547,32 @@ public class ConfigurationFileService implements SmartLifecycle {
                         locked.put(key, LOCK_LIST_ITEM_MULTILINE);
                     }
                 } else {
-                    inherited.put(key, String.valueOf(value));
+                    inherited.put(key, isListSetting(key) && !hasLineBreak(String.valueOf(value))
+                            ? scalarListText(String.valueOf(value)) : String.valueOf(value));
                     if (hasLineBreak(String.valueOf(value))) {
                         locked.put(key, LOCK_MULTILINE);
                     }
                 }
             }
         }
+        normalizeScalarLists(parsed, locked);
         return new Settled(inherited, lockEmptyItems(parsed, locked));
+    }
+
+    /** 单值名单按 Spring 的逗号分隔规则回显；真正的序列及锁住的手写结构保持原样。 */
+    private void normalizeScalarLists(List<Line> parsed, Map<String, String> locked) {
+        for (Line line : parsed) {
+            if (line.path != null && isListSetting(line.path) && !line.isList()
+                    && !line.hidden && !line.flowUnreadable && !locked.containsKey(line.path)
+                    && line.value != null) {
+                line.value = scalarListText(line.value);
+            }
+        }
+    }
+
+    private String scalarListText(String value) {
+        String[] items = ApplicationConversionService.getSharedInstance().convert(value, String[].class);
+        return String.join("\n", items);
     }
 
     /**
@@ -964,6 +985,40 @@ public class ConfigurationFileService implements SmartLifecycle {
     private boolean isListSetting(String path) {
         String type = metadata.getKnownTypes().get(path);
         return "list".equals(new ConfigurationMetadataService.ConfigurationField(path, type, null, null).widget());
+    }
+
+    /** 按元数据的数字元素类型检查每行，避免保存成功后到下次启动才绑定失败。 */
+    private void rejectInvalidNumericListItems(String path, String value) throws IOException {
+        if (!isListSetting(path)) {
+            return;
+        }
+        String type = metadata.getKnownTypes().get(path);
+        String element = type.endsWith("[]") ? type.substring(0, type.length() - 2)
+                : type.contains("<") ? type.substring(type.indexOf('<') + 1, type.lastIndexOf('>')) : "";
+        Class<? extends Number> numberType = switch (element) {
+            case "java.lang.Byte", "byte" -> Byte.class;
+            case "java.lang.Short", "short" -> Short.class;
+            case "java.lang.Integer", "int" -> Integer.class;
+            case "java.lang.Long", "long" -> Long.class;
+            case "java.lang.Float", "float" -> Float.class;
+            case "java.lang.Double", "double" -> Double.class;
+            case "java.math.BigInteger" -> java.math.BigInteger.class;
+            case "java.math.BigDecimal" -> java.math.BigDecimal.class;
+            case "java.lang.Number" -> Number.class;
+            default -> null;
+        };
+        if (numberType == null) {
+            return;
+        }
+        List<String> items = splitItems(value);
+        for (int i = 0; i < items.size(); i++) {
+            try {
+                ApplicationConversionService.getSharedInstance().convert(items.get(i), numberType);
+            } catch (ConversionException | IllegalArgumentException e) {
+                throw new IOException("配置项 " + path + " 的第 " + (i + 1) + " 项「" + items.get(i)
+                        + "」不是有效的数字，本批全部未保存", e);
+            }
+        }
     }
 
     /**
@@ -2117,6 +2172,7 @@ public class ConfigurationFileService implements SmartLifecycle {
      */
     private boolean insert(List<String> lines, String path, String value) throws IOException {
         rejectUnsafeKeySegments(path);
+        rejectInvalidNumericListItems(path, value);
         String[] segments = path.split("\\.");
 
         // 自最深的祖先开始向上寻找已经存在的父节点
@@ -2293,7 +2349,8 @@ public class ConfigurationFileService implements SmartLifecycle {
      * @param value 换行分隔的新内容
      * @return 是否发生变更
      */
-    private boolean replaceList(List<String> lines, Line line, String value) {
+    private boolean replaceList(List<String> lines, Line line, String value) throws IOException {
+        rejectInvalidNumericListItems(line.path, value);
         // 界面读出的原样送回（名单里有空项时带空行）就是没改：不动文件。真改了才按下面去掉空行、整块重写
         List<String> asShown = new ArrayList<>();
         for (String item : value.split("\n", -1)) {
