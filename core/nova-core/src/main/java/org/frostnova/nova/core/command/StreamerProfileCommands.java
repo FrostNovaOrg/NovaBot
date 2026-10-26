@@ -54,7 +54,7 @@ public class StreamerProfileCommands {
     }
     private static Result reminderSetting(StreamerProfile p, String raw) {
         String text = normalize(raw, true);
-        if (text.startsWith("开播前提醒")) text = text.substring("开播前提醒".length()).strip();
+        if (text.startsWith("开播前提醒")) text = text.substring("开播前提醒".length()).strip().replaceFirst("^:+", "");
         if (text.equals("不要了") || text.equals("不要开播前提醒"))
             return new Result(reminderCopy(p, null, null, true),
                     "记下了：以后不发开播前提醒。想要了回「开播前提醒改到前 60 分钟」");

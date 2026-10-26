@@ -195,7 +195,13 @@ public class PreLiveReminderService {
         var history = store.history(WeeklyReportDeliveryService.key(platform, uid, identity));
         var now = clock.instant().atZone(ZONE);
         boolean unreadable = profile.status() != StreamerProfile.Status.READY;
-        boolean stopped = !subscribed(target) || profile.preLiveDisabled() || profile.paused()
+        boolean noSelfFriendChannel = target == null || target.getType() != PushTargetType.FRIEND
+                || !Boolean.TRUE.equals(target.getStreamerSelf());
+        boolean channelDisabled = target != null && Boolean.FALSE.equals(target.getEnabled());
+        boolean streamerDisabled = source.getAllUsers().stream().anyMatch(user -> platform.equals(user.getPlatform())
+                && Objects.equals(uid, user.getUid()) && Boolean.FALSE.equals(user.getEnabled()));
+        boolean stopped = noSelfFriendChannel || channelDisabled || streamerDisabled
+                || !subscribed(target) || profile.preLiveDisabled() || profile.paused()
                 || gate.blockedBy() == PushGate.Block.DISABLED || unreadable;
         var parts = new ArrayList<String>();
         parts.add(subscribed(target) ? "开播前提醒（私聊）已勾选" : "开播前提醒（私聊）没勾选，不会发");
@@ -223,12 +229,9 @@ public class PreLiveReminderService {
                 }
             } catch (IOException | RuntimeException failure) { parts.add("场次归档读不出，下一次暂时无法计算"); }
         }
-        if (target == null || target.getType() != PushTargetType.FRIEND || !Boolean.TRUE.equals(target.getStreamerSelf()))
-            parts.add("没有可用的主播本人好友通道，不会发");
-        else if (Boolean.FALSE.equals(target.getEnabled())) parts.add("通道已停用，不会发");
-        if (source.getAllUsers().stream().anyMatch(user -> platform.equals(user.getPlatform())
-                && Objects.equals(uid, user.getUid()) && Boolean.FALSE.equals(user.getEnabled())))
-            parts.add("主播已停用，不会发");
+        if (noSelfFriendChannel) parts.add("没有可用的主播本人好友通道，不会发");
+        else if (channelDisabled) parts.add("通道已停用，不会发");
+        if (streamerDisabled) parts.add("主播已停用，不会发");
         if (profile.preLiveDisabled()) parts.add("主播本人说过不要开播前提醒，不会发");
         if (profile.paused()) parts.add("已暂停（主播本人说过「先别发了」），不会发");
         if (gate.blockedBy() == PushGate.Block.DISABLED) parts.add("全局推送开关已关闭，不会发");

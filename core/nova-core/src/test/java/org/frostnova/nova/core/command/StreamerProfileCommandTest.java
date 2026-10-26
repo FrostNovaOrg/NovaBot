@@ -356,6 +356,27 @@ class StreamerProfileCommandTest {
         assertEquals(disabled ? null : 30, profile().preLiveLeadMinutes());
     }
 
+    @ParameterizedTest @CsvSource(delimiter = '|', value = {
+            "开播前提醒：不要了|开播前提醒不要了",
+            "开播前提醒:改到前 45 分钟|开播前提醒改到前 45 分钟",
+            "开播前提醒：每天19:00|开播前提醒每天19:00",
+            "开播前提醒：：不要了|开播前提醒不要了",
+            "开播前提醒：|开播前提醒"})
+    @DisplayName("开头词后带冒号仍能设置提醒，避免主播说不要了却继续收到")
+    void colonAfterReminderPrefixDoesNotLoseSettings(String phrase, String plain) {
+        String expected = say(plain);
+        var expectedProfile = profile();
+        assertEquals(expected, say(phrase));
+        assertEquals(expectedProfile, profile());
+    }
+
+    @Test @DisplayName("带开头词的抱怨照旧回用法且不改设置，避免误停主播的提醒")
+    void reminderComplaintDoesNotChangeSettings() {
+        var before = profile();
+        assertTrue(say("开播前提醒真烦").contains("时间要写成 19:00"));
+        assertEquals(before, profile());
+    }
+
     @ParameterizedTest @ValueSource(strings = {"每天都好累", "改到前面去"})
     @DisplayName("随口聊天仍可由追问认领，避免被提醒用法打断")
     void ordinaryConversationKeepsFollowUpRouting(String phrase) {
