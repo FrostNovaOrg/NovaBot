@@ -119,6 +119,8 @@ public class ConfigurationFileService implements SmartLifecycle {
      */
     private final Set<String> blankMeansAbsent;
 
+    private final ConfigurationMetadataService metadata;
+
     /**
      * 主监听地址键。完整集合见 {@link InetAddressText#ADDRESS_KEYS}。
      */
@@ -144,7 +146,7 @@ public class ConfigurationFileService implements SmartLifecycle {
         this(Path.of("application.yml"),
                 initialContent(metadata, context, contributors),
                 () -> properties.getConfigUi().getBackupKeep(), Clock.systemDefaultZone(), timeline,
-                contributors);
+                contributors, metadata);
     }
 
     private static Supplier<String> initialContent(ConfigurationMetadataService metadata,
@@ -227,12 +229,21 @@ public class ConfigurationFileService implements SmartLifecycle {
     ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep,
                              Clock clock, TimelineWriter timeline,
                              Collection<BotConnectionContributor> contributors) {
+        this(configPath, initialContent, backupKeep, clock, timeline, contributors,
+                new ConfigurationMetadataService());
+    }
+
+    private ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep,
+                                     Clock clock, TimelineWriter timeline,
+                                     Collection<BotConnectionContributor> contributors,
+                                     ConfigurationMetadataService metadata) {
         this.configPath = configPath;
         this.initialContent = initialContent;
         this.backups = new TimestampedFileBackup(configPath, clock);
         this.backupKeep = backupKeep;
         this.timeline = timeline;
         this.blankMeansAbsent = mergeBlankMeansAbsent(contributors);
+        this.metadata = metadata;
     }
 
     /**
@@ -938,12 +949,21 @@ public class ConfigurationFileService implements SmartLifecycle {
             }
 
             Line line = index.get(change.getKey());
-            // 文件里还没有这一项时，含换行的值会被当成字符串列表写入，那是合法的。
+            // 名单类型由配置元数据决定，旧文件里的单值写法不影响它接受多项。
+            // 未登记且文件里还没有的项，保留含换行时按名单写入的行为。
             // 跨行读不了的名单界面上一行一项，拒存由写口那句说实际情形
-            if (line != null && !line.isList() && !line.flowUnreadable && !locked.containsKey(change.getKey())) {
+            boolean scalar = line == null ? metadata.getKnownTypes().containsKey(change.getKey())
+                    : !line.isList() && !line.flowUnreadable;
+            if (!isListSetting(change.getKey()) && scalar && !locked.containsKey(change.getKey())) {
                 throw new IOException("配置项 " + change.getKey() + " 的值不能包含换行");
             }
         }
+    }
+
+    /** 与设置页的名单控件使用同一类型判断，包含插件提供的配置元数据。 */
+    private boolean isListSetting(String path) {
+        String type = metadata.getKnownTypes().get(path);
+        return "list".equals(new ConfigurationMetadataService.ConfigurationField(path, type, null, null).widget());
     }
 
     /**
@@ -1154,7 +1174,7 @@ public class ConfigurationFileService implements SmartLifecycle {
 
             // 引号包着的值启动时读到的就是界面上那个值，原样送回来就是没改：不动那一行，
             // 免得重新渲染换一种引号写法、把手写的原样冲掉还记成一次改动
-            if (line.quoted && change.getValue().equals(line.value)) {
+            if (line.quoted && change.getValue().equals(line.value) && !isListSetting(change.getKey())) {
                 continue;
             }
 
@@ -1169,6 +1189,17 @@ public class ConfigurationFileService implements SmartLifecycle {
                 throw new IOException("配置项 " + change.getKey()
                         + " 在配置文件里是引用别处一整块的别名" + (alias.isEmpty() ? "" : " " + alias)
                         + ", 填值会去掉引来的子项, 本批全部未保存, 请先在配置文件里改写这一项");
+            }
+
+            if (isListSetting(change.getKey())) {
+                if (hasNoValue(line.rawValue) && holdsChildren(lines, line)) {
+                    throw new IOException("配置项 " + change.getKey()
+                            + " 在配置文件里底下还挂着别的设置（往右缩进的那几行）, 填一个值会删掉它们, 本批全部未保存, 请先在配置文件里改写这一段");
+                }
+                if (replaceList(lines, line, change.getValue())) {
+                    changed.add(change.getKey());
+                }
+                continue;
             }
 
             // 键行带着续行的（跨行的值、块标量）连续行一起换掉：只换键那一行的话，续行并进新值。
@@ -2129,9 +2160,9 @@ public class ConfigurationFileService implements SmartLifecycle {
             String leaf = segments[segments.length - 1];
             List<String> items = splitItems(value);
 
-            if (items.size() > 1 || value.contains("\n")) {
-                // 多行值代表字符串列表，需写成 YAML 列表而非带引号的多行标量
-                inserted.add(" ".repeat(indent) + leaf + ":");
+            if (isListSetting(path) || items.size() > 1 || value.contains("\n")) {
+                // 名单即使只有一项也写成块序列；空名单仍用 []。
+                inserted.add(" ".repeat(indent) + leaf + (items.isEmpty() ? ": []" : ":"));
                 for (String item : items) {
                     inserted.add(" ".repeat(indent + INDENT) + "- " + render(item));
                 }
@@ -2155,8 +2186,8 @@ public class ConfigurationFileService implements SmartLifecycle {
             }
             String leaf = segments[segments.length - 1];
             List<String> items = splitItems(value);
-            if (items.size() > 1 || value.contains("\n")) {
-                inserted.add(" ".repeat(indent) + leaf + ":");
+            if (isListSetting(path) || items.size() > 1 || value.contains("\n")) {
+                inserted.add(" ".repeat(indent) + leaf + (items.isEmpty() ? ": []" : ":"));
                 for (String item : items) {
                     inserted.add(" ".repeat(indent + INDENT) + "- " + render(item));
                 }
@@ -2268,7 +2299,7 @@ public class ConfigurationFileService implements SmartLifecycle {
         for (String item : value.split("\n", -1)) {
             asShown.add(item.strip());
         }
-        if (asShown.equals(line.items)) {
+        if (line.isList() && asShown.equals(line.items)) {
             return false;
         }
 
@@ -2279,7 +2310,7 @@ public class ConfigurationFileService implements SmartLifecycle {
             }
         }
 
-        if (items.equals(line.items)) {
+        if (line.isList() && items.equals(line.items)) {
             return false;
         }
 
@@ -2298,9 +2329,9 @@ public class ConfigurationFileService implements SmartLifecycle {
             // 清空写成 [] 而不是裸键：键这一行保住列表身份，下一次想填回多项时
             // 才不会被当成标量拦下；对象列表清空走的也是这个写法
             lines.set(line.index, withEmptyListMarker(lines.get(line.index)));
-        } else if (line.flowInline) {
-            // 行内序列（单行写就或跨行收口）：键这一行上的方括号要让位给块序列——
-            // 方括号与「- 项」并存的那份文件整个解析不了；跨行时续行已在上面整块删去
+        } else if (line.flowInline || !line.isList()) {
+            // 行内序列或旧的单值名单：键行上的值要让位给块序列，
+            // 否则与「- 项」并存会让整份文件解析不了；续行已在上面整块删去
             lines.set(line.index, replaceValue(lines.get(line.index), "").stripTrailing());
         }
 

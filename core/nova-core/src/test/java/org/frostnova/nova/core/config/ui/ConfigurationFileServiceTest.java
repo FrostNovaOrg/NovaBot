@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.FileSystemResource;
 import org.yaml.snakeyaml.Yaml;
@@ -541,6 +544,69 @@ class ConfigurationFileServiceTest {
 
     // ============ 值里带换行 ============
 
+    /** 抓的使用者故障：名单先存一项后，再存多项被「值不能包含换行」拒绝。 */
+    @Test
+    @DisplayName("新名单先存一个 uid 再存三个：两次成功，启动绑定得到三个 uid")
+    void missingListCanGrowAfterSingleItemSave() throws IOException {
+        String key = "novabot.assistant.excluded-uids";
+        assertEquals(List.of(key), service.write(Map.of(key, "1")));
+        String firstSave = content();
+
+        assertEquals(List.of(key), service.write(Map.of(key, "1\n2\n3")));
+
+        assertTrue(firstSave.contains("excluded-uids:\n      - 1\n"), firstSave);
+        assertTrue(content().contains("excluded-uids:\n"), content());
+        assertEquals("1\n2\n3", service.read().get(key));
+        var sources = new YamlPropertySourceLoader().load("application", new FileSystemResource(config));
+        assertEquals(List.of(1L, 2L, 3L), new Binder(ConfigurationPropertySources.from(sources))
+                .bind(key, Bindable.listOf(Long.class)).orElseThrow(IllegalStateException::new));
+    }
+
+    /** 抓的使用者故障：旧文件把名单手写成单值后，控制台再也存不进多个 uid。 */
+    @Test
+    @DisplayName("旧名单手写成单值：能存两个 uid，并转换成每行一项且保留注释")
+    void legacyScalarListCanSaveMultipleItems() throws IOException {
+        Files.writeString(config, "novabot:\n  assistant:\n    excluded-uids: 5 # 观众名单\n");
+        String key = "novabot.assistant.excluded-uids";
+
+        assertEquals(List.of(key), service.write(Map.of(key, "6\n7")));
+
+        String header = content().lines().filter(line -> line.contains("excluded-uids:")).findFirst().orElseThrow();
+        assertEquals("excluded-uids:", header.substring(0, header.indexOf('#')).strip());
+        assertTrue(header.contains("# 观众名单"), header);
+        assertEquals("6\n7", service.read().get(key));
+        var sources = new YamlPropertySourceLoader().load("application", new FileSystemResource(config));
+        assertEquals(List.of(6L, 7L), new Binder(ConfigurationPropertySources.from(sources))
+                .bind(key, Bindable.listOf(Long.class)).orElseThrow(IllegalStateException::new));
+    }
+
+    /** 抓的使用者故障：名单只填一项就被写成单值，给下一次添加项目留下保存障碍。 */
+    @Test
+    @DisplayName("字体名单只存一项：新增和旧单值原样保存都写成每行一项")
+    void singleItemListIsWrittenAsBlockSequence() throws IOException {
+        String key = "novabot.core.paint.fonts";
+        assertEquals(List.of(key), service.write(Map.of(key, "Dialog")));
+        assertTrue(content().contains("fonts:\n        - Dialog\n"), content());
+        assertEquals("Dialog", service.read().get(key));
+
+        Files.writeString(config, "novabot:\n  core:\n    paint:\n      fonts: Dialog\n");
+        assertEquals(List.of(key), service.write(Map.of(key, "Dialog")));
+        assertTrue(content().contains("fonts:\n        - Dialog\n"), content());
+    }
+
+    /** 抓的使用者故障：名单清空后仍残留旧项，或者下一次填多项又被拒绝。 */
+    @Test
+    @DisplayName("名单清空仍写成空名单，之后还能再次填多项")
+    void clearedListCanBeFilledAgain() throws IOException {
+        String key = "novabot.core.config-ui.allow-ips";
+        service.write(Map.of(key, ""));
+        assertTrue(content().contains("allow-ips: []"), content());
+        assertEquals("", service.read().get(key));
+
+        service.write(Map.of(key, "127.0.0.1/32\n::1/128"));
+        assertEquals("127.0.0.1/32\n::1/128", service.read().get(key));
+    }
+
     @Test
     @DisplayName("标量值含换行时应当场拒绝，而不是写出一份解析不了的配置")
     void rejectsMultilineScalarValue() throws IOException {
@@ -552,7 +618,19 @@ class ConfigurationFileServiceTest {
                 () -> service.write(Map.of("novabot.core.push.quiet-start", "22:00\nevil")));
 
         assertTrue(error.getMessage().contains("novabot.core.push.quiet-start"), "报错要说清是哪一项: " + error.getMessage());
+        assertTrue(error.getMessage().contains("的值不能包含换行"), error.getMessage());
         assertEquals(before, content(), "拒绝时文件必须原样不动");
+    }
+
+    /** 抓的使用者故障：普通单值设置尚未落盘时，多行输入被误存成名单。 */
+    @Test
+    @DisplayName("普通单值设置尚未写入文件也拒绝多行值")
+    void rejectsMultilineForMissingScalarSetting() throws IOException {
+        String before = content();
+        IOException error = assertThrows(IOException.class,
+                () -> service.write(Map.of("novabot.assistant.model", "first\nsecond")));
+        assertTrue(error.getMessage().contains("novabot.assistant.model 的值不能包含换行"), error.getMessage());
+        assertEquals(before, content());
     }
 
     @Test
