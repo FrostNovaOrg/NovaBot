@@ -111,6 +111,10 @@ for (const role of ['ADMIN', 'MEMBER']) {
   assert.match(text(root()), /先勾『这是主播本人』/);
   assert.match(text(root()), /观众昵称和场次数据/);
   assert.equal(input('开播前提醒（私聊）')?.disabled, true, '非本人不能订阅开播前提醒');
+  // 防止提醒沿用普通说明，让主播不知道为什么不能开启。
+  const reminderRow = root().querySelector('[data-notice="org.frostnova.nova.core.handler.PreLiveReminderPushHandler"]');
+  assert.ok(reminderRow, '应显示开播前提醒这一行');
+  assert.match(text(reminderRow), /先勾『这是主播本人』/, '提醒这一行应说明如何开启');
   mark.checked = true;
   await mark.dispatchEvent({type: 'change', target: mark});
   assert.equal(input('下播小结（私聊）')?.disabled, false, '确认身份后能开启小结');

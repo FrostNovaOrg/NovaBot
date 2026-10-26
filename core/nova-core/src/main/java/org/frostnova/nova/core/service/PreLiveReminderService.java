@@ -99,10 +99,12 @@ public class PreLiveReminderService {
             sessions.computeIfAbsent(new Streamer(session.platform(), session.uid()), k -> new ArrayList<>()).add(session);
         }
         var material = new HashMap<Streamer, SessionRecapService.PreLiveAudience>();
-        for (var subscription : subscriptions) {
-            try { check(subscription, sessions.getOrDefault(subscription.streamer(), List.of()), now, material); }
-            catch (IOException | RuntimeException failure) { log.warn("本轮开播前提醒未能生成", failure); }
-        }
+        ledger.withRecoveredLedger(() -> {
+            for (var subscription : subscriptions) {
+                try { check(subscription, sessions.getOrDefault(subscription.streamer(), List.of()), now, material); }
+                catch (IOException | RuntimeException failure) { log.warn("本轮开播前提醒未能生成", failure); }
+            }
+        });
     }
 
     private void check(Subscription sub, List<LiveSessionArchive.ArchivedSession> history, ZonedDateTime now,

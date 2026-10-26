@@ -67,6 +67,8 @@ class PreLiveReminderServiceTest {
             assertTrue(Files.readString(file()).contains("SENDING"), "先保存发送意图再发送");
             m.markDelivered("synthetic-reminder").forEach(Runnable::run); return null;
         }).when(sender).sendScheduled(any(), any());
+        doAnswer(i -> { ((AudienceLedgerService.LedgerWork) i.getArgument(0)).run(); return null; })
+                .when(ledger).withRecoveredLedger(any());
         regularHistory(LocalTime.of(20, 0)); reopen();
     }
     Path file() { return dir.resolve("pre-live-reminder-deliveries.json"); }
@@ -115,6 +117,35 @@ class PreLiveReminderServiceTest {
         sealed.clear();
         for (int i = 1; i <= 10; i++) add(TODAY.minusDays(i), LocalTime.of(i * 2, 0), 3600);
         service.check(); assertTrue(sent.isEmpty());
+    }
+
+    @ParameterizedTest @ValueSource(ints = {4, 5})
+    @DisplayName("到点时四场不算惯常、五场才提醒，避免没规律打扰或刚够门槛却漏发")
+    void usualStartRequiresFiveSessionsAtDue(int clustered) throws Exception {
+        thresholdHistory(clustered);
+        at(TODAY, LocalTime.of(19, 0));
+        service.check();
+        assertEquals(clustered == 5 ? 1 : 0, sent.size());
+    }
+
+    @Test @DisplayName("到点也只看最近十场，避免较早的开播习惯触发过时提醒")
+    void olderSessionsCannotEstablishUsualStart() throws Exception {
+        thresholdHistory(3);
+        for (int i = 11; i <= 20; i++) add(TODAY.minusDays(i), LocalTime.of(20, 0), 3600);
+        at(TODAY, LocalTime.of(19, 0));
+        service.check();
+        assertTrue(sent.isEmpty());
+    }
+
+    void thresholdHistory(int clustered) {
+        sealed.clear();
+        // 上周同一天必在候选窗内，其他零散时刻互隔两小时。
+        add(TODAY.minusDays(7), LocalTime.of(20, 0), 3600);
+        for (int i = 1; i < clustered; i++) add(TODAY.minusDays(i), LocalTime.of(20, i * 10), 3600);
+        int scattered = 0;
+        for (int i = clustered; i <= 10; i++) {
+            if (i != 7) add(TODAY.minusDays(i), LocalTime.of(scattered++ * 2, 0), 3600);
+        }
     }
 
     @Test @DisplayName("只看最近十场满十分钟的本主播场次，避免别人的规律或短播触发提醒")
@@ -216,7 +247,9 @@ class PreLiveReminderServiceTest {
     @Test @DisplayName("已经在播不提醒，避免播着播着收到开播前提醒")
     void alreadyLive() throws Exception {
         when(live.getLiveStatus("test", HOST)).thenReturn(Optional.of(true));
-        service.check(); assertTrue(sent.isEmpty()); verifyNoInteractions(ledger);
+        service.check(); assertTrue(sent.isEmpty());
+        verify(ledger, never()).updateStreamer(anyString(), anyLong());
+        verifyNoInteractions(recap);
     }
 
     @Test @DisplayName("东八区静音时段不发，避免半夜吵醒主播")
