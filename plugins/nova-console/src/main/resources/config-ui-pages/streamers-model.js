@@ -111,6 +111,7 @@ export function parseStreamersHash(hash) {
     else if (key === 'sort' && ['attendance', 'revenue', 'recent'].includes(value)) state.sort = value;
     else if (key === 'panel' && ['audience', 'start-slots', 'sessions', 'fans', 'trend', 'assistant'].includes(value)) state.panel = value;
     else if (key === 'section' && value === 'trend') state.panel = 'trend';
+    else if (key === 'section' && value === 'profile') state.section = 'profile';
     else if (['from', 'to', 'dateFrom', 'dateTo'].includes(key) && DIGITS.test(value)) state[key] = value;
     else if (key === 'starts' && /^(\d+(,\d+)*)?$/.test(value)) state.starts = value;
     else if (key === 'source' && ['dashboard', 'calendar', 'trend', 'rhythm', 'area'].includes(value)) state.source = value;

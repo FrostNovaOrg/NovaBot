@@ -281,4 +281,139 @@ class SessionRecapDeliveryServiceTest {
         doAnswer(i -> { Message m = i.getArgument(0); m.markDelivered("synthetic-message").forEach(Runnable::run); return null; })
                 .when(sender).sendWeeklyReport(any()); service.check(); assertEquals(Status.SENT, latest().status());
     }
+    String consoleStatus() throws Exception {
+        return service.status("test", user.getUid(), target);
+    }
+    JSONObject trial(boolean paused, boolean quiet) throws Exception {
+        return JSONObject.from(service.trial("test", user.getUid(), target, paused, quiet));
+    }
+    @Test @DisplayName("没有记录时说明下一场何时发，避免管理员误以为订阅失效")
+    void consoleExplainsFirstSession() throws Exception {
+        assertEquals("还没有场次：下一场下播 30 分钟后发", consoleStatus());
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.EnumSource(Status.class)
+    @DisplayName("逐种状态展示场次与原因，避免管理员看不出是否送达或为什么没发")
+    void consoleExplainsEveryDelivery(Status status) throws Exception {
+        store.enroll(key(), START, DUE, clock.instant());
+        store.update(latest(), status, "合成原因", clock.instant());
+        String suffix = switch (status) {
+            case READY -> "等发，约 09:30 发";
+            case QUIET -> "静音中，静音结束后发";
+            case SENDING -> "正在发";
+            case SENT -> "已发";
+            case FAILED -> "没发出去（合成原因），不会自动重发";
+            case UNCERTAIN -> "不确定发出去没有，不会重发";
+            case NOT_SENT -> "没发：合成原因";
+            case EXPIRED -> "作废：合成原因";
+        };
+        assertEquals("10/01 上午场：" + suffix, consoleStatus());
+    }
+    @ParameterizedTest @ValueSource(strings = {"UNREADABLE", "TEMPORARILY_UNREADABLE"})
+    @DisplayName("坏档案和暂时读错都显示停发并拒绝试发，避免忽略别提或不知道要恢复")
+    void consoleStopsOnUnreadableProfile(String status) throws Exception {
+        seal(START, END, 3600, LiveEndReason.NORMAL);
+        when(profiles.read(anyString(), anyLong())).thenReturn(StreamerProfile.empty(StreamerProfile.Status.valueOf(status)));
+        assertEquals("档案读不出，已停发", consoleStatus());
+        var result = trial(true, true);
+        assertFalse(result.getBooleanValue("success"));
+        assertTrue(result.getString("message").contains("主播页核对恢复"));
+        verify(sender, never()).sendNow(any());
+    }
+    @Test @DisplayName("试发复用真发正文且记录和去重不变，避免之后漏发或重复讲过的规律")
+    void trialMatchesDeliveryWithoutChangingHistory() throws Exception {
+        when(profiles.read(anyString(), anyLong())).thenReturn(tierTwo(false));
+        assistant.setExcludedUids(List.of(920000001L));
+        seal(START, END, 3600, LiveEndReason.NORMAL); clock.at(END); service.check();
+        var before = store.records(); String disk = Files.readString(dir.resolve("session-recap-deliveries.json"));
+        var trials = new ArrayList<Message>();
+        when(sender.sendNow(any())).thenAnswer(i -> { trials.add(i.getArgument(0)); return JSONObject.of("code", 0); });
+        assertTrue(trial(false, false).getBooleanValue("success"));
+        assertEquals(1, trials.size()); assertSame(target, trials.get(0).getChannel());
+        assertTrue(trials.get(0).getContent().contains("中位数"));
+        assertFalse(trials.get(0).getContent().contains("测试观众甲"));
+        assertEquals(before, store.records()); assertEquals(disk, Files.readString(dir.resolve("session-recap-deliveries.json")));
+        clock.at(DUE); service.check();
+        assertEquals(sent.get(0).getContent(), trials.get(0).getContent());
+        assertEquals(Status.SENT, latest().status());
+        before = store.records(); assertTrue(trial(false, false).getBooleanValue("success"));
+        assertEquals(before, store.records());
+        nextSession(1); assertFalse(sent.get(1).getContent().contains("中位数"));
+    }
+    @Test @DisplayName("试发遵守隐藏金额、档位和别提，避免泄露金额或违背主播偏好")
+    void trialUsesSavedPrivacy() throws Exception {
+        seal(START, END, 3600, LiveEndReason.NORMAL);
+        when(profiles.read(anyString(), anyLong())).thenReturn(tierTwo(true));
+        when(revenue.isVisible(target)).thenReturn(false);
+        var outgoing = org.mockito.ArgumentCaptor.forClass(Message.class);
+        when(sender.sendNow(outgoing.capture())).thenReturn(JSONObject.of("code", 0));
+        assertTrue(trial(false, false).getBooleanValue("success"));
+        assertFalse(outgoing.getValue().getContent().contains("中位数"));
+        assertFalse(outgoing.getValue().getContent().contains("¥"));
+        when(profiles.read(anyString(), anyLong())).thenReturn(StreamerProfile.empty(StreamerProfile.Status.READY));
+        assertTrue(trial(false, false).getBooleanValue("success"));
+        assertFalse(outgoing.getValue().getContent().contains("中位数"));
+    }
+    @Test @DisplayName("暂停和静音分别确认后才试发，避免误点后打扰暂停中的主播或半夜吵醒她")
+    void trialRequiresEachConfirmation() throws Exception {
+        seal(START, END, 3600, LiveEndReason.NORMAL);
+        when(profiles.read(anyString(), anyLong())).thenReturn(new StreamerProfile(
+                1, null, List.of(), List.of(), true, START, StreamerProfile.Status.READY));
+        when(gate.inQuietHoursFor(target)).thenReturn(true);
+        assertEquals("要先确认", trial(false, false).getString("message"));
+        assertEquals("paused", trial(false, false).getString("confirmation"));
+        assertEquals("quiet", trial(true, false).getString("confirmation"));
+        verify(sender, never()).sendNow(any());
+        when(sender.sendNow(any())).thenReturn(JSONObject.of("code", 0));
+        assertTrue(trial(true, true).getBooleanValue("success"));
+        verify(sender, times(1)).sendNow(any());
+    }
+    @Test @DisplayName("静音中的未暂停档案也需确认，避免半夜直接调用接口吵醒主播")
+    void quietAloneRequiresConfirmation() throws Exception {
+        seal(START, END, 3600, LiveEndReason.NORMAL); when(gate.inQuietHoursFor(target)).thenReturn(true);
+        assertEquals("要先确认", trial(false, false).getString("message"));
+        verify(sender, never()).sendNow(any());
+    }
+    @ParameterizedTest @ValueSource(strings = {"group", "unmarked", "unknown", "other-streamer"})
+    @DisplayName("仅已保存的本人好友通道可试发，避免私密小结误发群或其他人")
+    void trialRejectsOtherDestinations(String kind) throws Exception {
+        seal(START, END, 3600, LiveEndReason.NORMAL);
+        if (kind.equals("group")) target.setType(PushTargetType.GROUP);
+        if (kind.equals("unmarked")) target.setStreamerSelf(false);
+        if (kind.equals("unknown")) user.setTargets(List.of());
+        if (kind.equals("other-streamer")) user.setUid(user.getUid() + 1);
+        var identity = new PushTarget(); identity.setPlatform(target.getPlatform()); identity.setType(target.getType());
+        identity.setNum(target.getNum()); identity.setStreamerSelf(true);
+        // 请求里即使伪造本人标记，也必须读取已保存的那一份。
+        var result = JSONObject.from(service.trial("test", 910000001L, identity, true, true));
+        assertFalse(result.getBooleanValue("success")); verify(sender, never()).sendNow(any());
+    }
+    @Test @DisplayName("跳过短场和非正常结束取最近可发场次，没有时明说，避免试发不完整小结")
+    void trialSelectsLatestEligibleSealedSession() throws Exception {
+        assertEquals("还没有能试发的场次", trial(false, false).getString("message"));
+        seal(START - 86400000, END - 86400000, 3600, LiveEndReason.NORMAL);
+        seal(START, END, 600, LiveEndReason.NORMAL);
+        sealed.add(new LiveSessionArchive.ArchivedSession("test", user.getUid() + 1, "另一位测试主播",
+                START + 5, END + 5, 3600, LiveEndReason.NORMAL));
+        seal(START + 1, END + 1, 599, LiveEndReason.NORMAL);
+        seal(START + 2, END + 2, 3600, LiveEndReason.UNCLOSED);
+        seal(START + 3, END + 3, 3600, LiveEndReason.CUT_OFF);
+        seal(START + 4, END + 4, 3600, LiveEndReason.ROOM_LOCK);
+        when(sender.sendNow(any())).thenReturn(JSONObject.of("code", 0));
+        assertTrue(trial(false, false).getBooleanValue("success"));
+        verify(recap).calculate("test", user.getUid(), START);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"generation", "rejected", "missing", "exception"})
+    @DisplayName("试发生成或发送失败如实提示且记录不变，避免误报送达或打乱真发")
+    void failedTrialLeavesRecordsUnchanged(String kind) throws Exception {
+        seal(START, END, 3600, LiveEndReason.NORMAL);
+        var before = store.records(); String disk = Files.readString(dir.resolve("session-recap-deliveries.json"));
+        if (kind.equals("generation")) when(recap.calculate(anyString(), anyLong(), anyLong())).thenThrow(new java.io.IOException("合成错误"));
+        if (kind.equals("rejected")) when(sender.sendNow(any())).thenReturn(JSONObject.of("code", 1));
+        if (kind.equals("exception")) when(sender.sendNow(any())).thenThrow(new IllegalStateException("合成错误"));
+        var result = trial(false, false);
+        assertFalse(result.getBooleanValue("success")); assertEquals("试发失败，请稍后重试", result.getString("message"));
+        assertEquals(before, store.records()); assertEquals(disk, Files.readString(dir.resolve("session-recap-deliveries.json")));
+    }
+
 }

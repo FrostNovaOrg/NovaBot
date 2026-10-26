@@ -22,18 +22,19 @@ export function mountProfile(host, identity) {
   };
   function render(profile) {
     body.textContent = '';
-    if (profile.status === 'TEMPORARILY_UNREADABLE') {
-      body.textContent = '档案暂时读不出，本次停发，请稍后重试'; return;
-    }
-    if (profile.status === 'UNREADABLE') {
-      const warning = el('p'); warning.textContent = '档案读不出，已停发。核对后可重置为第 1 档、不暂停，并清空在意和别提的条目。'; body.appendChild(warning);
+    if (profile.status === 'UNREADABLE' || profile.status === 'TEMPORARILY_UNREADABLE') {
+      const temporary = profile.status === 'TEMPORARILY_UNREADABLE';
+      const warning = el('p');
+      warning.textContent = temporary ? '档案暂时读不出，已停发。请稍后核对并重试，读出前不会发送。'
+        : '档案读不出，已停发。核对后可重置为第 1 档、不暂停，并清空在意和别提的条目。';
+      body.appendChild(warning);
       const button = el('button', 'nv-btn2'); button.type = 'button'; button.textContent = '档案已核对，恢复'; body.appendChild(button);
       const feedback = el('p'); feedback.setAttribute('role', 'status'); body.appendChild(feedback);
       button.onclick = async () => {
         if (!active || button.disabled) return;
         button.disabled = true; feedback.textContent = '正在恢复…';
         try {
-          const result = await api(path + '/recover', {method: 'POST'});
+          const result = temporary ? await api(path) : await api(path + '/recover', {method: 'POST'});
           if (!active) return;
           if (!result?.success || !result.profile) throw new Error('恢复失败');
           render(result.profile);
@@ -41,6 +42,7 @@ export function mountProfile(host, identity) {
           if (active) { feedback.textContent = '恢复失败，仍然停发，请稍后重试'; button.disabled = false; }
         }
       };
+      if (temporary) return;
     }
     line('档位', '第 ' + profile.tier + ' 档', profile.tierSetAt);
     line('是否暂停', profile.paused ? '是' : '否', profile.pauseSetAt);
@@ -57,6 +59,10 @@ export function mountProfile(host, identity) {
       if (!active) return;
       if (!result?.success || !result.profile) { body.textContent = '档案暂时看不到，请稍后重试'; return; }
       render(result.profile);
+      if (identity.section === 'profile') {
+        section.scrollIntoView?.({block: 'start'});
+        body.querySelector('button')?.focus();
+      }
     } catch {
       if (active) body.textContent = '档案暂时看不到，请稍后重试';
     }

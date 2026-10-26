@@ -27,6 +27,11 @@ public final class SessionRecapRenderer {
     private static final ZoneOffset ZONE = ZoneOffset.ofHours(8);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("MM/dd", Locale.ROOT).withZone(ZONE);
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT).withZone(ZONE);
+    /** 正文标题和控制台状态使用同一个场次叫法。 */
+    public static String sessionName(long startTime) {
+        var instant = Instant.ofEpochMilli(startTime);
+        return DATE.format(instant) + " " + SLOTS.get(instant.atOffset(ZONE).getHour() / 6) + "场";
+    }
     public enum Nicknames { ORIGINAL, MASKED }
     public record Options(int level, boolean showAmount, Nicknames nicknames, Set<Long> excludedUids) {
         public Options(int level, boolean showAmount, Nicknames nicknames) {
@@ -144,7 +149,7 @@ public final class SessionRecapRenderer {
             if (!positive(item, "start")) return;
             long start = (long) value(item, "start");
             var instant = Instant.ofEpochMilli(start);
-            String text = "【" + DATE.format(instant) + " " + SLOTS.get(instant.atOffset(ZONE).getHour() / 6) + "场小结】";
+            String text = "【" + sessionName(start) + "小结】";
             if (positive(item, "end") && value(item, "end") > start)
                 text += TIME.format(instant) + "–" + TIME.format(Instant.ofEpochMilli((long) value(item, "end")));
             if (positive(item, "durationMinutes")) {
