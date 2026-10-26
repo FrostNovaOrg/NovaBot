@@ -197,6 +197,19 @@ class PreLiveReminderServiceTest {
         }
     }
 
+    @Test @DisplayName("当天索取过后跨午夜检查不再生成或补发深夜提醒，避免主播同一到期日收到两条")
+    void requestedReminderBlocksLateDueDateButNotNextDay() throws Exception {
+        reminderProfile(null, "23:58", false);
+        at(TODAY, LocalTime.of(20, 0)); service.request(user, requestContext());
+        assertEquals(1, sent.size(), "准备开播应立即发出提醒");
+        at(TODAY.plusDays(1), LocalTime.of(0, 2)); reopen(); service.check();
+        assertEquals(1, sent.size(), "到期日已经索取过，跨午夜检查不能再发");
+        verify(recap, times(1)).preLiveAudience(eq("test"), eq(HOST), anyLong());
+        at(TODAY.plusDays(1), LocalTime.of(23, 58)); service.check();
+        assertEquals(2, sent.size(), "次日到期的提醒仍应照常发送");
+        verify(recap, times(2)).preLiveAudience(eq("test"), eq(HOST), anyLong());
+    }
+
     @Test @DisplayName("有惯常时间且上周今天播过才提醒，避免主播不知道今天该留意谁")
     void sendsBothSectionsAtDueOnceAcrossRestart() throws Exception {
         at(TODAY, LocalTime.of(18, 59)); service.check(); assertTrue(sent.isEmpty());
@@ -460,6 +473,36 @@ class PreLiveReminderServiceTest {
         assertFalse(status.contains("下一次：今天"), "未订阅时不能把条件时刻写成将会发送");
         assertTrue(status.contains("下一次：暂不会发（条件满足时为今天 19:00）"));
     }
+    @ParameterizedTest @ValueSource(strings = {"missing", "group", "self", "target", "user"})
+    @DisplayName("没有可用本人好友通道或通道与主播停用时下一次说明暂不会发，避免管理员以为到点就发")
+    void consoleDoesNotPromiseDeliveryForUnavailableChannelOrStreamer(String state) throws Exception {
+        reminderProfile(null, "19:00", false);
+        at(TODAY, LocalTime.of(18, 0));
+        String reason = switch (state) {
+            case "missing" -> { user.getTargets().clear(); yield "没有可用的主播本人好友通道，不会发"; }
+            case "group" -> { target.setType(PushTargetType.GROUP); yield "没有可用的主播本人好友通道，不会发"; }
+            case "self" -> { target.setStreamerSelf(false); yield "没有可用的主播本人好友通道，不会发"; }
+            case "target" -> { target.setEnabled(false); yield "通道已停用，不会发"; }
+            case "user" -> { user.setEnabled(false); yield "主播已停用，不会发"; }
+            default -> throw new IllegalArgumentException(state);
+        };
+        String status = consoleStatus();
+        assertTrue(status.contains("下一次：暂不会发（条件满足时为今天 19:00）"), status);
+        assertTrue(status.contains(reason), status);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"starting", "live"})
+    @DisplayName("启动和正在直播仍显示计划时刻，避免把暂时等待显示成长久停发")
+    void consoleKeepsPlannedTimeForTemporaryBlocks(String state) throws Exception {
+        reminderProfile(null, "19:00", false);
+        at(TODAY, LocalTime.of(18, 0));
+        if (state.equals("starting")) when(gate.isReady()).thenReturn(false);
+        else when(live.getLiveStatus("test", HOST)).thenReturn(Optional.of(true));
+        String status = consoleStatus();
+        assertTrue(status.contains("下一次：今天 19:00"), status);
+        assertTrue(status.contains(state.equals("starting") ? "机器人刚启动，暂时不会发" : "主播正在直播，暂时不会发"), status);
+    }
+
     @Test @DisplayName("默认提前六十分钟显示十九点并与实际发送对上，避免不知道何时收到")
     void consoleDueMatchesScheduler() throws Exception {
         at(TODAY, LocalTime.of(18, 59));
