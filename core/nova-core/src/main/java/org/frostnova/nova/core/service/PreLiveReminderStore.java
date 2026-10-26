@@ -53,6 +53,13 @@ public final class PreLiveReminderStore {
         return unreadable || deliveries.getOrDefault(subscription, Map.of()).containsKey(date.toString());
     }
 
+    /** 本人重复索取仍可发送；保留当天记录以阻止定时重复。 */
+    public synchronized boolean reserveRequested(String subscription, LocalDate date) {
+        if (unreadable) return false;
+        deliveries.computeIfAbsent(subscription, k -> new LinkedHashMap<>()).put(date.toString(), Status.SENDING);
+        return save();
+    }
+
     public synchronized boolean reserve(String subscription, LocalDate date) {
         return reserve(subscription, date, date);
     }

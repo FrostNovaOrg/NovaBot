@@ -51,14 +51,14 @@ class StreamerProfileStoreTest {
     @ParameterizedTest @ValueSource(ints = {1, 2})
     @DisplayName("自己选过的档位及时间跨重启保留，避免选了第一档却被默认覆盖")
     void explicitTierSurvivesRestart(int tier) throws Exception {
-        var selected = new StreamerProfile(tier, 0L, List.of(), List.of(), false, null, Status.READY);
+        var selected = new StreamerProfile(tier, 0L, List.of(), List.of(), false, null, null, null, false, Status.READY);
         store.update("bilibili", UID, p -> selected);
         assertEquals(selected, new StreamerProfileStore(dir).read("bilibili", UID));
     }
     @Test @DisplayName("未选档的第二档也能保存其他设置，避免只记在意条目就使档案变成坏件")
     void tierTwoWithoutSelectionTimeCanBePersisted() throws Exception {
         var profile = new StreamerProfile(2, null, List.of(new Concern("回访", TIME)), List.of(),
-                false, null, Status.READY);
+                false, null, null, null, false, Status.READY);
         store.update("bilibili", UID, p -> profile);
         assertEquals(profile, new StreamerProfileStore(dir).read("bilibili", UID));
         assertTrue(JSON.parseObject(Files.readString(store.path("bilibili", UID))).containsKey("tierSetAt"));
@@ -69,7 +69,8 @@ class StreamerProfileStoreTest {
         assertEquals(populated(), new StreamerProfileStore(dir).read("bilibili", UID));
         var file = store.path("bilibili", UID);
         var json = JSON.parseObject(Files.readString(file));
-        assertEquals(java.util.Set.of("tier", "tierSetAt", "concerns", "exclusions", "paused", "pauseSetAt"), json.keySet());
+        assertEquals(java.util.Set.of("tier", "tierSetAt", "concerns", "exclusions", "paused", "pauseSetAt",
+                "preLiveLeadMinutes", "preLiveDailyTime", "preLiveDisabled"), json.keySet());
         if (Files.getFileAttributeView(file, java.nio.file.attribute.PosixFileAttributeView.class) != null)
             assertEquals(DurableFiles.OWNER_ONLY, Files.getPosixFilePermissions(file));
         assertFalse(Files.exists(DurableFiles.temporary(file)));
@@ -95,7 +96,7 @@ class StreamerProfileStoreTest {
                 assertEquals(DurableFiles.OWNER_ONLY, Files.getPosixFilePermissions(backups.get(0)));
             var restarted = new StreamerProfileStore(dir);
             assertEquals(Status.UNREADABLE, restarted.read("bilibili", UID).status());
-            restarted.update("bilibili", UID, p -> new StreamerProfile(2, TIME, List.of(), List.of(), false, TIME, p.status()));
+            restarted.update("bilibili", UID, p -> new StreamerProfile(2, TIME, List.of(), List.of(), false, TIME, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()));
             assertEquals(Status.UNREADABLE, new StreamerProfileStore(dir).read("bilibili", UID).status());
         } finally { logger.detachAppender(appender); appender.stop(); }
     }
@@ -131,7 +132,7 @@ class StreamerProfileStoreTest {
     @Test @DisplayName("程序调用也存不进第三档，不让后续投递读到未开放的档位")
     void unsupportedTierCannotBeStored() {
         assertThrows(IllegalArgumentException.class, () -> store.update("bilibili", UID,
-                p -> new StreamerProfile(3, TIME, List.of(), List.of(), false, null, Status.READY)));
+                p -> new StreamerProfile(3, TIME, List.of(), List.of(), false, null, null, null, false, Status.READY)));
         assertEquals(2, store.read("bilibili", UID).tier());
     }
     @Test @DisplayName("磁盘写入失败须交给命令回复失败，不能返回保存成功")
@@ -139,7 +140,7 @@ class StreamerProfileStoreTest {
         Path blocked = dir.resolve("blocked"); Files.writeString(blocked, "occupied");
         var unavailable = new StreamerProfileStore(blocked);
         assertThrows(java.io.IOException.class, () -> unavailable.update("bilibili", UID,
-                p -> new StreamerProfile(2, TIME, List.of(), List.of(), true, TIME, p.status())));
+                p -> new StreamerProfile(2, TIME, List.of(), List.of(), true, TIME, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status())));
     }
     @Test @DisplayName("暂时读取失败不移动好文件或永久停发，下次读取仍保留暂停和设置")
     void temporaryReadFailureDoesNotQuarantine() throws Exception {
@@ -150,14 +151,25 @@ class StreamerProfileStoreTest {
             files.when(() -> Files.readString(file)).thenThrow(new java.io.IOException("temporary"));
             assertEquals("TEMPORARILY_UNREADABLE", store.read("bilibili", UID).status().name());
             assertThrows(java.io.IOException.class, () -> store.update("bilibili", UID,
-                    p -> new StreamerProfile(1, TIME, List.of(), List.of(), false, TIME, p.status())));
+                    p -> new StreamerProfile(1, TIME, List.of(), List.of(), false, TIME, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status())));
         }
         assertEquals(original, Files.readString(file));
         try (var files = Files.list(dir)) { assertEquals(List.of(file), files.toList()); }
         assertEquals(populated(), new StreamerProfileStore(dir).read("bilibili", UID));
     }
+    @Test @DisplayName("旧档案没有提醒键仍为 READY 且不移走，避免升级后小结全部停发")
+    void legacyProfileRemainsReady() throws Exception {
+        Path file = store.path("bilibili", UID);
+        Files.writeString(file, """
+                {"tier":1,"tierSetAt":1,"concerns":[],"exclusions":[],"paused":false,"pauseSetAt":null}
+                """);
+        assertEquals(Status.READY, store.read("bilibili", UID).status());
+        assertEquals(1, store.read("bilibili", UID).tier());
+        try (var files = Files.list(dir)) { assertEquals(List.of(file), files.toList()); }
+    }
+
     private static StreamerProfile populated() {
         return new StreamerProfile(2, TIME, List.of(new Concern("回访", TIME + 1)),
-                List.of(new Exclusion(Pattern.slot_compare, TIME + 2)), true, TIME + 3, Status.READY);
+                List.of(new Exclusion(Pattern.slot_compare, TIME + 2)), true, TIME + 3, 30, null, false, Status.READY);
     }
 }

@@ -99,7 +99,14 @@ class SessionRecapDeliveryServiceTest {
     }
     StreamerProfile tierTwo(boolean omit) {
         return new StreamerProfile(2, START, List.of(), omit ? List.of(new StreamerProfile.Exclusion(
-                StreamerProfile.Pattern.slot_compare, START)) : List.of(), false, null, StreamerProfile.Status.READY);
+                StreamerProfile.Pattern.slot_compare, START)) : List.of(), false, null, null, null, false, StreamerProfile.Status.READY);
+    }
+
+    @Test @DisplayName("不要开播前提醒仍发送下播小结，避免单独关闭误停小结")
+    void reminderOptOutDoesNotStopRecap() throws Exception {
+        when(profiles.read(anyString(), anyLong())).thenReturn(new StreamerProfile(2, null, List.of(), List.of(),
+                false, null, null, null, true, StreamerProfile.Status.READY));
+        due(); assertEquals(Status.SENT, latest().status()); assertEquals(1, sent.size());
     }
 
     @ParameterizedTest @ValueSource(strings = {"new", "legacy"})
@@ -123,7 +130,7 @@ class SessionRecapDeliveryServiceTest {
     void explicitTierOneOmitsPatterns() throws Exception {
         profiles = new StreamerProfileStore(dir.resolve("profiles"));
         profiles.update("test", user.getUid(), p -> new StreamerProfile(1, START, List.of(), List.of(),
-                false, null, p.status()));
+                false, null, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()));
         reopen(); due();
         assertEquals(Status.SENT, latest().status()); assertEquals(1, sent.size());
         assertTrue(sent.get(0).getContent().contains("小结"));
@@ -173,7 +180,7 @@ class SessionRecapDeliveryServiceTest {
     @DisplayName("短场、未关闭和暂停或坏档案不发，避免测试开播被打扰或忘记暂停")
     void recordsReasonsForNotSending(String kind) throws Exception {
         if (kind.equals("paused")) when(profiles.read(anyString(), anyLong())).thenReturn(new StreamerProfile(
-                1, null, List.of(), List.of(), true, START, StreamerProfile.Status.READY));
+                1, null, List.of(), List.of(), true, START, null, null, false, StreamerProfile.Status.READY));
         if (kind.equals("unreadable")) when(profiles.read(anyString(), anyLong()))
                 .thenReturn(StreamerProfile.empty(StreamerProfile.Status.UNREADABLE));
         seal(START, END, kind.equals("short") ? 599 : 3600,
@@ -379,7 +386,7 @@ class SessionRecapDeliveryServiceTest {
         assertFalse(outgoing.getValue().getContent().contains("中位数"));
         assertFalse(outgoing.getValue().getContent().contains("¥"));
         when(profiles.read(anyString(), anyLong())).thenReturn(new StreamerProfile(
-                1, START, List.of(), List.of(), false, null, StreamerProfile.Status.READY));
+                1, START, List.of(), List.of(), false, null, null, null, false, StreamerProfile.Status.READY));
         assertTrue(trial(false, false).getBooleanValue("success"));
         assertFalse(outgoing.getValue().getContent().contains("中位数"));
     }
@@ -387,7 +394,7 @@ class SessionRecapDeliveryServiceTest {
     void trialRequiresEachConfirmation() throws Exception {
         seal(START, END, 3600, LiveEndReason.NORMAL);
         when(profiles.read(anyString(), anyLong())).thenReturn(new StreamerProfile(
-                1, null, List.of(), List.of(), true, START, StreamerProfile.Status.READY));
+                1, null, List.of(), List.of(), true, START, null, null, false, StreamerProfile.Status.READY));
         when(gate.inQuietHoursFor(target)).thenReturn(true);
         assertEquals("要先确认", trial(false, false).getString("message"));
         assertEquals("paused", trial(false, false).getString("confirmation"));

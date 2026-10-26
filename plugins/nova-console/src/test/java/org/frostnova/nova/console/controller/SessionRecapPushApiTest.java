@@ -75,7 +75,7 @@ class SessionRecapPushApiTest {
     @Test @DisplayName("接口没有分别确认暂停和静音便不发，避免绕过页面打扰主播")
     void endpointRequiresBothConfirmations() throws Exception {
         when(profiles.read("test", UID)).thenReturn(new StreamerProfile(1, null, List.of(), List.of(),
-                true, 1L, StreamerProfile.Status.READY));
+                true, 1L, null, null, false, StreamerProfile.Status.READY));
         when(quiet.inQuietHoursFor(channel)).thenReturn(true);
         mvc.perform(trial()).andExpect(status().isOk()).andExpect(jsonPath("$.message").value("要先确认"))
                 .andExpect(jsonPath("$.confirmation").value("paused"));

@@ -8,7 +8,11 @@ import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.sender.NovaMessageSender;
-import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.*;
+import org.frostnova.nova.core.assistant.AssistantProperties;
+import org.frostnova.nova.core.handler.PreLiveReminderPushHandler;
+import org.frostnova.nova.core.model.PushMessage;
+import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.StreamerProfile;
 import org.frostnova.nova.core.service.StreamerProfileStore;
 import org.frostnova.nova.core.service.StreamerSelfResolver;
@@ -46,9 +50,15 @@ class StreamerProfileCommandTest {
     private final List<String> records = new ArrayList<>();
     private final TestClock clock = new TestClock();
     private int legacyCalls;
+    private NovaCoreProperties properties;
+    private PreLiveReminderService reminders;
+    private final CommandFollowUp fallback = mock(CommandFollowUp.class);
+    private SessionRecapService.PreLiveAudience audience = new SessionRecapService.PreLiveAudience(
+            List.of(990000003001L), List.of(), java.util.Map.of(990000003001L, "合成常客甲"));
+
 
     @BeforeEach void setUp() {
-        var properties = new NovaCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("live").toString());
         self = target(SELF, PushTargetType.FRIEND); self.setStreamerSelf(true);
         user = new PushUser(); user.setPlatform("bilibili"); user.setUid(UID);
@@ -58,16 +68,37 @@ class StreamerProfileCommandTest {
         var sender = mock(NovaMessageSender.class);
         doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).send(any());
         beans = new AnnotationConfigApplicationContext();
+        doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).sendRequested(any());
+        doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).sendScheduled(any(), any(), eq(true));
+        beans.registerBean(PreLiveReminderService.class, () -> {
+            var archive = mock(LiveSessionArchive.class);
+            long start = Instant.parse("2026-10-19T12:00:00Z").toEpochMilli();
+            try {
+                when(archive.sealedSessions()).thenReturn(List.of(new LiveSessionArchive.ArchivedSession(
+                        "bilibili", UID, "合成主播", start, start + 3600000, 3600, org.frostnova.nova.core.enums.LiveEndReason.NORMAL)));
+                var ledger = new AudienceLedgerService(properties, new AssistantProperties());
+                var recap = mock(SessionRecapService.class);
+                when(recap.preLiveAudience(anyString(), anyLong(), anyLong())).thenAnswer(i -> audience);
+                var live = mock(LiveDataService.class);
+                when(live.getLiveStatus(anyString(), anyLong())).thenReturn(java.util.Optional.of(true));
+                return new PreLiveReminderService(source, archive, live, ledger, recap, beans.getBean(StreamerProfileStore.class),
+                        new AssistantProperties(), sender, new PushGate(properties),
+                        new PreLiveReminderStore(dir.resolve("reminders.json")), clock);
+            } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+        });
         beans.registerBean(NovaCoreProperties.class, () -> properties);
         beans.registerBean(AbstractDataSource.class, () -> source);
         beans.register(StreamerProfileStore.class, StreamerSelfResolver.class, StreamerProfileCommands.class);
         beans.registerBean("menu", NovaCommand.class, () -> legacy("菜单"));
         beans.registerBean("legacy", NovaCommand.class, () -> legacy("恢复"));
+        beans.registerBean("prepareLegacy", NovaCommand.class, () -> legacy("准备开播"));
+        beans.registerBean("dailyLegacy", NovaCommand.class, () -> legacy("每天"));
         beans.refresh();
+        reminders = beans.getBean(PreLiveReminderService.class);
         profiles = beans.getBean(StreamerProfileStore.class);
         resolver = beans.getBean(StreamerSelfResolver.class);
         @SuppressWarnings("unchecked") ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
-        when(followUps.orderedStream()).thenAnswer(call -> List.<CommandFollowUp>of().stream());
+        when(followUps.orderedStream()).thenAnswer(call -> List.of(fallback).stream());
         TimelineWriter timeline = event -> records.add(event.toString());
         dispatcher = new CommandDispatcher(beans.getBeanProvider(NovaCommand.class), followUps,
                 new CommandSettingsService(new NovaStateStore(properties)), source, sender, properties, timeline, clock);
@@ -263,11 +294,82 @@ class StreamerProfileCommandTest {
         String text = menu.execute(owner).content();
         assertEquals(1, text.lines().filter(line -> line.startsWith("档案设置：")).count(), text);
         assertFalse(text.contains("设置或查看自己的主播档案"));
-        for (String phrase : List.of("改成", "别提", "最近在意", "先别发了", "恢复", "你记得我什么", "忘掉"))
+        for (String phrase : List.of("改成", "别提", "最近在意", "先别发了", "恢复", "你记得我什么", "忘掉", "开播前提醒", "每天 HH:MM", "准备开播"))
             assertTrue(text.lines().filter(line -> line.startsWith("档案设置：")).findFirst().orElse("").contains(phrase));
         var other = new CommandContext("qq-onebot", PushTargetType.FRIEND, OTHER, OTHER, "菜单", List.of(), "菜单");
         assertFalse(menu.execute(other).content().contains("档案设置："));
     }
+    @Test @DisplayName("提醒时间经过分发器设置且改档后仍保留，避免设置被接走或丢失")
+    void reminderSettingsSurviveOtherCommands() {
+        assertTrue(say("你记得我什么").contains("开播前提醒：惯常时间前 60 分钟（默认）"));
+        assertEquals("记下了：开播前 30 分钟提醒你", say("开播前提醒改到前 30 分钟"));
+        for (String phrase : List.of("改成 1", "别提PK", "最近在意 回访", "忘掉全部", "先别发了", "恢复")) say(phrase);
+        assertTrue(say("你记得我什么").contains("开播前提醒：惯常时间前 30 分钟"));
+        assertEquals("记下了：每天 19:00 提醒你", say("每天 19:00"));
+        assertTrue(say("你记得我什么").contains("开播前提醒：每天 19:00"));
+        assertEquals("记下了：以后不发开播前提醒。想要了回「开播前提醒改到前 60 分钟」", say("不要开播前提醒"));
+        say("先别发了"); say("恢复");
+        assertTrue(say("你记得我什么").contains("开播前提醒：不要了"));
+        assertEquals("记下了：开播前 60 分钟提醒你", say("改到前 60 分钟"));
+        assertTrue(say("你记得我什么").contains("开播前提醒：惯常时间前 60 分钟"));
+    }
+
+    @ParameterizedTest @CsvSource({"19:00,19:00", "19：00,19:00", "7:30,07:30", "19点,19:00", "19点30,19:30"})
+    @DisplayName("五种每天时间说法均由档案命令接住，避免被当成闲聊")
+    void reminderDailyTimePhrases(String input, String expected) {
+        assertEquals("记下了：每天 " + expected + " 提醒你", say("开播前提醒每天 " + input));
+        assertTrue(say("你记得我什么").contains("开播前提醒：每天 " + expected));
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"4", "181", "-5", "999999999999999999999"})
+    @DisplayName("提前分钟越界只回用法且档案不变，避免保存意外时刻")
+    void invalidLeadDoesNotChangeProfile(String input) {
+        var before = profile();
+        assertEquals("提前多少分钟要在 5 到 180 之间，比如「开播前提醒改到前 30 分钟」", say("改到前 " + input + " 分钟"));
+        assertEquals(before, profile());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"24:00", "19:60", "19", "七点", "19点30分", "19:0", "19-00", "19 00"})
+    @DisplayName("错误时间只回用法且档案不变，避免删掉标点后误设时间")
+    void invalidDailyTimeDoesNotChangeProfile(String input) {
+        var before = profile();
+        assertEquals("时间要写成 19:00 这样，比如「开播前提醒每天 19:00」", say("每天 " + input));
+        assertEquals(before, profile());
+    }
+
+    private void subscribeReminder() {
+        var subscription = new PushMessage(); subscription.setHandler(PreLiveReminderPushHandler.class.getName());
+        self.setMessages(List.of(subscription));
+    }
+
+    @Test @DisplayName("准备开播经分发器现发且能重复要，静音、暂停、不要了和在播均不拦，避免无人理或被接走")
+    void prepareRoutesAndRepeats() {
+        subscribeReminder();
+        properties.getPush().setQuietStart("00:00"); properties.getPush().setQuietEnd("23:59");
+        say("先别发了"); say("开播前提醒不要了");
+        String body = say("准备开播");
+        assertTrue(body.contains("【开播前提醒】"), body); assertTrue(body.contains("合成常客甲"));
+        assertEquals(body, say("准备开播"));
+        assertEquals(0, legacyCalls); verifyNoInteractions(fallback);
+    }
+
+    @Test @DisplayName("准备开播内容为空回明确说明，避免空消息或无人理")
+    void prepareEmptyAudienceExplains() {
+        subscribeReminder(); audience = new SessionRecapService.PreLiveAudience(List.of(), List.of(), java.util.Map.of());
+        assertEquals("这次没有要特别留意的：最近没有缺席的常客，上一场也没有第一次说话的新观众。", say("准备开播"));
+    }
+
+    @Test @DisplayName("未勾提醒订阅回开启方法，避免主播以为已开启")
+    void prepareNeedsSubscription() {
+        assertEquals("开播前提醒还没开，要请管理员在控制台给你这条私聊勾上「开播前提醒（私聊）」", say("准备开播"));
+    }
+
+    @Test @DisplayName("全局推送关时准备开播仍不发，避免关闭后消息外发")
+    void prepareRespectsGlobalSwitch() {
+        subscribeReminder(); properties.getPush().setEnabled(false);
+        assertEquals("", say("准备开播")); assertFalse(Files.exists(dir.resolve("reminders.json")));
+    }
+
     private static class TestClock extends Clock {
         private Instant now = Instant.parse("2026-10-20T00:00:00Z");
         public ZoneId getZone() { return ZoneOffset.UTC; }

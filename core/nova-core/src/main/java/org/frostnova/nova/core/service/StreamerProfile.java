@@ -4,7 +4,8 @@ import java.util.List;
 
 /** 只保存主播明确设置的条目，不保存私聊消息。时间使用毫秒时间戳；未设置时为空。 */
 public record StreamerProfile(int tier, Long tierSetAt, List<Concern> concerns,
-                              List<Exclusion> exclusions, boolean paused, Long pauseSetAt, Status status) {
+                              List<Exclusion> exclusions, boolean paused, Long pauseSetAt,
+                              Integer preLiveLeadMinutes, String preLiveDailyTime, boolean preLiveDisabled, Status status) {
     /** 只有 READY 允许自动投递；暂时读错不会落盘，下次读取重试。 */
     public enum Status { READY, UNREADABLE, TEMPORARILY_UNREADABLE }
     public enum Pattern {
@@ -37,10 +38,16 @@ public record StreamerProfile(int tier, Long tierSetAt, List<Concern> concerns,
         if ((tierSetAt != null && tierSetAt < 0) || (pauseSetAt != null && pauseSetAt < 0)
                 || (paused && pauseSetAt == null))
             throw new IllegalArgumentException("档案设置时间不正确");
+        if (preLiveLeadMinutes != null && (preLiveLeadMinutes < 5 || preLiveLeadMinutes > 180))
+            throw new IllegalArgumentException("提醒提前量不正确");
+        if (preLiveDailyTime != null && (!preLiveDailyTime.matches("(?:[01][0-9]|2[0-3]):[0-5][0-9]")))
+            throw new IllegalArgumentException("提醒时间不正确");
+        if (preLiveLeadMinutes != null && preLiveDailyTime != null)
+            throw new IllegalArgumentException("提醒时间不能同时设置");
         concerns = List.copyOf(concerns);
         exclusions = List.copyOf(exclusions);
     }
     public static StreamerProfile empty(Status status) {
-        return new StreamerProfile(2, null, List.of(), List.of(), false, null, status);
+        return new StreamerProfile(2, null, List.of(), List.of(), false, null, null, null, false, status);
     }
 }

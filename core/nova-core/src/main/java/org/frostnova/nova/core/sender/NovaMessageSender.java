@@ -164,7 +164,20 @@ public class NovaMessageSender {
 
     /** 定时提醒使用调用方所在时区的时刻，在入队前复查通道静音与全局开关。 */
     public PushGate.Block sendScheduled(Message message, java.time.LocalTime time) {
-        if (!pushGate.allowedAt(time, message.getChannel())) return pushGate.blockedBy();
+        return sendScheduled(message, time, false);
+    }
+
+    /** 本人指定的提醒时间可越过静音，全局开关仍在入队前检查。 */
+    public PushGate.Block sendScheduled(Message message, java.time.LocalTime time, boolean ignoreQuiet) {
+        if (ignoreQuiet ? !pushGate.alertsAllowed() : !pushGate.allowedAt(time, message.getChannel()))
+            return pushGate.blockedBy();
+        enqueue(message);
+        return null;
+    }
+
+    /** 本人主动索取的提醒只检查全局开关。 */
+    public PushGate.Block sendRequested(Message message) {
+        if (!pushGate.alertsAllowed()) return pushGate.blockedBy();
         enqueue(message);
         return null;
     }
