@@ -2278,7 +2278,7 @@ function sessionRecapActions(host, user, target) {
         const res = await api(path + '/trial' + query
           + (confirmPaused ? '&confirmPaused=true' : '') + (confirmQuiet ? '&confirmQuiet=true' : ''), {method: 'POST'});
         if (res.confirmation === 'paused' && !confirmPaused) {
-          if (!await ask({title: '试发最近一场', body: '她说过先别发了，确定还要发吗？', danger: false})) return;
+          if (!await ask({title: '试发最近一场', body: '主播本人说过先别发了，确定还要发吗？', danger: false})) return;
           confirmPaused = true;
         } else if (res.confirmation === 'quiet' && !confirmQuiet) {
           if (!await ask({title: '试发最近一场', body: '现在是这条通道的静音时段，确定现在发吗？', danger: false})) return;
@@ -2327,7 +2327,7 @@ function preLiveReminderActions(host, user, target) {
           + (confirmPaused ? '&confirmPaused=true' : '') + (confirmQuiet ? '&confirmQuiet=true' : '')
           + (confirmDisabled ? '&confirmDisabled=true' : ''), {method: 'POST'});
         if (res.confirmation === 'paused' && !confirmPaused) {
-          if (!await ask({title: '试发开播前提醒', body: '她说过先别发了，确定还要发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
+          if (!await ask({title: '试发开播前提醒', body: '主播本人说过先别发了，确定还要发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
           confirmPaused = true;
         } else if (res.confirmation === 'quiet' && !confirmQuiet) {
           if (!await ask({title: '试发开播前提醒', body: '现在是这条通道的静音时段，确定现在发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;

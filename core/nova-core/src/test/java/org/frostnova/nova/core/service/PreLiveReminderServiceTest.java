@@ -454,7 +454,11 @@ class PreLiveReminderServiceTest {
     @Test @DisplayName("没勾订阅仍说明不会发，避免管理员误以为已经开启")
     void consoleExplainsUnsubscribed() throws Exception {
         target.setMessages(List.of());
-        assertTrue(consoleStatus().contains("没勾选，不会发"));
+        String status = consoleStatus();
+        assertTrue(status.contains("没勾选，不会发"));
+        assertTrue(status.contains("主播的设置："));
+        assertFalse(status.contains("下一次：今天"), "未订阅时不能把条件时刻写成将会发送");
+        assertTrue(status.contains("下一次：暂不会发（条件满足时为今天 19:00）"));
     }
     @Test @DisplayName("默认提前六十分钟显示十九点并与实际发送对上，避免不知道何时收到")
     void consoleDueMatchesScheduler() throws Exception {
@@ -480,16 +484,20 @@ class PreLiveReminderServiceTest {
     @Test @DisplayName("本人说不要时状态说明且拒绝试发，避免违背本人意思")
     void consoleRespectsOptOut() throws Exception {
         reminderProfile(null, null, true);
-        assertTrue(consoleStatus().contains("她说过不要开播前提醒"));
+        String status = consoleStatus();
+        assertTrue(status.contains("主播本人说过不要开播前提醒"));
+        assertTrue(status.contains("下一次：暂无"));
         var result = consoleTrial(true, true, true);
         assertFalse(result.success());
-        assertEquals("她说过不要开播前提醒，试发也不发", result.message());
+        assertEquals("主播本人说过不要开播前提醒，试发也不发", result.message());
         verify(sender, never()).sendNow(any());
     }
     @Test @DisplayName("全局关闭先说明并要求确认，避免不知停发原因或误点打扰")
     void consoleRequiresGlobalConfirmation() throws Exception {
         when(gate.blockedBy()).thenReturn(PushGate.Block.DISABLED);
-        assertTrue(consoleStatus().contains("全局推送开关已关闭"));
+        String status = consoleStatus();
+        assertTrue(status.contains("全局推送开关已关闭"));
+        assertTrue(status.contains("下一次：暂不会发（条件满足时为今天 19:00）"));
         assertEquals("disabled", consoleTrial(false, false, false).confirmation());
         verify(sender, never()).sendNow(any());
         when(sender.sendNow(any())).thenReturn(com.alibaba.fastjson2.JSONObject.of("code", 0));
@@ -502,6 +510,7 @@ class PreLiveReminderServiceTest {
         var result = consoleTrial(false, false, false);
         assertTrue(result.success());
         assertTrue(result.message().contains("不记进发送记录，也不算当天那一条"));
+        assertTrue(result.message().contains("请确认主播是否收到"));
         assertFalse(Files.exists(file()));
         assertTrue(consoleStatus().contains("还没发过"));
         service.check(); assertEquals(1, sent.size());
@@ -523,7 +532,9 @@ class PreLiveReminderServiceTest {
     void consoleExplainsPauseAndQuietAndRequiresConfirmation() throws Exception {
         when(profiles.read("test", HOST)).thenReturn(profile(true));
         when(gate.inQuietHoursFor(target)).thenReturn(true);
-        assertTrue(consoleStatus().contains("已暂停（她说过「先别发了」）"));
+        String status = consoleStatus();
+        assertTrue(status.contains("已暂停（主播本人说过「先别发了」）"));
+        assertTrue(status.contains("下一次：暂不会发（条件满足时为今天 19:00）"));
         assertTrue(consoleStatus().contains("按提前量的提醒会被挡住"));
         assertEquals("paused", consoleTrial(false, false, false).confirmation());
         assertEquals("quiet", consoleTrial(true, false, false).confirmation());
@@ -541,6 +552,7 @@ class PreLiveReminderServiceTest {
         var result = service.status("test", HOST, target);
         assertTrue(result.profileUnreadable());
         assertTrue(result.status().contains("档案读不出，已停发"));
+        assertTrue(result.status().contains("下一次：暂无"));
         assertFalse(consoleTrial(true, true, true).success());
         verify(sender, never()).sendNow(any());
     }

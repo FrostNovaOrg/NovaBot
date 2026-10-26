@@ -57,7 +57,7 @@ replies.push({success: false, message: '要先确认', confirmation: 'paused'},
 confirmed.push(true, true);
 const button = nodes(host).find(node => node.tagName === 'button');
 await button.dispatchEvent({type: 'click', target: button});
-assert.deepEqual(prompts.map(prompt => prompt.body), ['她说过先别发了，确定还要发吗？', '现在是这条通道的静音时段，确定现在发吗？']);
+assert.deepEqual(prompts.map(prompt => prompt.body), ['主播本人说过先别发了，确定还要发吗？', '现在是这条通道的静音时段，确定现在发吗？']);
 const trials = calls.filter(call => call.options?.method === 'POST');
 assert.equal(trials.length, 3);
 assert.ok(!trials[0].path.includes('confirmPaused=true'));

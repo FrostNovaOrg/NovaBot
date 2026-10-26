@@ -47,6 +47,7 @@ confirmed.push(true, true, true);
 let button = nodes(host).find(n => n.tagName === 'button');
 await button.dispatchEvent({type: 'click', target: button});
 assert.equal(prompts.length, 3);
+assert.match(prompts[0].body, /主播本人说过先别发了/);
 for (const prompt of prompts) assert.match(prompt.body, /不记进发送记录，也不算当天那一条，当天定时的照常发/);
 assert.ok(calls.at(-1).path.includes('confirmDisabled=true'));
 assert.match(notices[0].message, /不记进发送记录/); checks++;
@@ -69,7 +70,7 @@ assert.equal(calls.filter(c => c.options?.method === 'POST').length, 1);
 finish({success: true, message: '已试发'}); await pending;
 assert.equal(button.disabled, false); checks++;
 // 防止将拒发显示成成功或向错误通道试发。
-for (const message of ['她说过不要开播前提醒，试发也不发', '档案读不出，已停发，请先去主播页核对恢复', '试发失败，请稍后重试']) {
+for (const message of ['主播本人说过不要开播前提醒，试发也不发', '档案读不出，已停发，请先去主播页核对恢复', '试发失败，请稍后重试']) {
   host = await mount(); replies.push({success: false, message});
   button = nodes(host).find(n => n.tagName === 'button');
   await button.dispatchEvent({type: 'click', target: button});

@@ -195,11 +195,13 @@ public class PreLiveReminderService {
         var history = store.history(WeeklyReportDeliveryService.key(platform, uid, identity));
         var now = clock.instant().atZone(ZONE);
         boolean unreadable = profile.status() != StreamerProfile.Status.READY;
+        boolean stopped = !subscribed(target) || profile.preLiveDisabled() || profile.paused()
+                || gate.blockedBy() == PushGate.Block.DISABLED || unreadable;
         var parts = new ArrayList<String>();
         parts.add(subscribed(target) ? "开播前提醒（私聊）已勾选" : "开播前提醒（私聊）没勾选，不会发");
-        parts.add("她的设置：" + (unreadable ? "档案读不出，暂时无法确认" :
+        parts.add("主播的设置：" + (unreadable ? "档案读不出，暂时无法确认" :
                 org.frostnova.nova.core.command.StreamerProfileCommands.describePreLiveReminder(profile)));
-        if (unreadable || history.unreadable()) parts.add("下一次：暂时无法确定");
+        if (unreadable || history.unreadable()) parts.add("下一次：暂无");
         else if (profile.preLiveDisabled()) parts.add("下一次：暂无");
         else {
             try {
@@ -214,8 +216,9 @@ public class PreLiveReminderService {
                             .filter(due -> profile.preLiveDailyTime() != null || !history.records().containsKey(
                                     due.isAfter(now) ? due.toLocalDate() : now.toLocalDate()))
                             .findFirst();
-                    parts.add(next.map(due -> "下一次：" + relativeDate(due.toLocalDate(), now.toLocalDate()) + " "
+                    parts.add(next.map(due -> relativeDate(due.toLocalDate(), now.toLocalDate()) + " "
                             + due.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
+                            .map(time -> "下一次：" + (stopped ? "暂不会发（条件满足时为" + time + "）" : time))
                             .orElse("下一次：今明两天没有符合条件的提醒"));
                 }
             } catch (IOException | RuntimeException failure) { parts.add("场次归档读不出，下一次暂时无法计算"); }
@@ -226,8 +229,8 @@ public class PreLiveReminderService {
         if (source.getAllUsers().stream().anyMatch(user -> platform.equals(user.getPlatform())
                 && Objects.equals(uid, user.getUid()) && Boolean.FALSE.equals(user.getEnabled())))
             parts.add("主播已停用，不会发");
-        if (profile.preLiveDisabled()) parts.add("她说过不要开播前提醒，不会发");
-        if (profile.paused()) parts.add("已暂停（她说过「先别发了」），不会发");
+        if (profile.preLiveDisabled()) parts.add("主播本人说过不要开播前提醒，不会发");
+        if (profile.paused()) parts.add("已暂停（主播本人说过「先别发了」），不会发");
         if (gate.blockedBy() == PushGate.Block.DISABLED) parts.add("全局推送开关已关闭，不会发");
         if (unreadable) parts.add("档案读不出，已停发");
         if (history.unreadable()) parts.add("发送记录读不出，已停发");
@@ -265,7 +268,7 @@ public class PreLiveReminderService {
         var profile = profiles.read(platform, uid);
         if (profile.status() != StreamerProfile.Status.READY)
             return new TrialResult(false, "档案读不出，已停发，请先去主播页核对恢复", "");
-        if (profile.preLiveDisabled()) return new TrialResult(false, "她说过不要开播前提醒，试发也不发", "");
+        if (profile.preLiveDisabled()) return new TrialResult(false, "主播本人说过不要开播前提醒，试发也不发", "");
         if (profile.paused() && !confirmPaused) return new TrialResult(false, "要先确认", "paused");
         if (gate.inQuietHoursFor(target) && !confirmQuiet) return new TrialResult(false, "要先确认", "quiet");
         if (gate.blockedBy() == PushGate.Block.DISABLED && !confirmDisabled)
@@ -282,7 +285,7 @@ public class PreLiveReminderService {
             message.setChannel(target);
             var response = sender.sendNow(message);
             boolean success = response != null && Integer.valueOf(0).equals(response.getInteger("code"));
-            return new TrialResult(success, success ? "已试发开播前提醒，请确认她是否收到。不记进发送记录，也不算当天那一条，当天定时的照常发"
+            return new TrialResult(success, success ? "已试发开播前提醒，请确认主播是否收到。不记进发送记录，也不算当天那一条，当天定时的照常发"
                     : "试发失败，请稍后重试", "");
         } catch (IOException | RuntimeException failure) { return new TrialResult(false, "提醒生成或试发失败，请稍后重试", ""); }
     }
