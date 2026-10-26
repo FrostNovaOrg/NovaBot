@@ -77,8 +77,8 @@ public class AssistantProperties {
     private int questionInputLimit = 30000;
     /** 拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。 */
     @ConfigLabel("观众拒绝名单")
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private List<Long> excludedUids = List.of();
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+    private volatile List<Long> excludedUids = List.of();
 
     public void setMaxToolCalls(int value) { maxToolCalls = positive(value); }
     public void setQuestionInputLimit(int value) { questionInputLimit = positive(value); }

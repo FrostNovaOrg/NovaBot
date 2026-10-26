@@ -11,6 +11,8 @@ import org.frostnova.nova.bilibili.config.BilibiliWordCloudExcludeApplier;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
 import org.frostnova.nova.core.config.ConfigDanger;
+import org.frostnova.nova.core.assistant.AssistantProperties;
+import org.frostnova.nova.core.assistant.ExcludedViewersStore;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.config.ui.ConfigurationGroupContributor;
@@ -468,6 +470,7 @@ class ConfigurationConsistencyTest {
      */
     private List<RuntimeConfigurationApplierContributor> applierContributors() {
         List<RuntimeConfigurationApplierContributor> contributors = new ArrayList<>();
+        contributors.add(new ExcludedViewersStore(new AssistantProperties(), Path.of("."), java.time.Clock.systemUTC()));
         contributors.add(new BilibiliWordCloudExcludeApplier());
         contributors.add(new BilibiliWordCloudBlockWordsApplier());
         contributors.add(new BilibiliDynamicBlockWordsApplier());
