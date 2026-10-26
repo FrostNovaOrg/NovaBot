@@ -1653,6 +1653,7 @@ function renderChannelLevel(host, user, target) {
     checkbox.checked = target.streamerSelf === true;
     checkbox.addEventListener('change', () => {
       target.streamerSelf = checkbox.checked;
+      if (!checkbox.checked) target.messages = (target.messages || []).filter(m => m.handler !== SESSION_RECAP);
       markDirty();
       renderStreamers();
     });
@@ -1821,6 +1822,7 @@ function noticeSwitch(item, target) {
   label.innerHTML = '<input type="checkbox"' + (item.on ? ' checked' : '') + '>';
   const input = label.querySelector('input');
   input.setAttribute('aria-label', item.displayName);
+  input.disabled = item.className === SESSION_RECAP && (Number(target.type) !== 0 || target.streamerSelf !== true);
   input.addEventListener('change', event => toggleNotice(target, item.className, event.target.checked));
   return label;
 }
@@ -1844,7 +1846,9 @@ function noticeRow(item, user, target, session, repaint) {
   const text = el('div', 'nrow-t');
   text.appendChild(el('b')).textContent = item.displayName;
   const meta = el('span', 'nrow-meta');
-  const syncMeta = () => { meta.textContent = item.on ? noticeMeta(item, handler, target) : item.description; };
+  const syncMeta = () => { meta.textContent = item.className === SESSION_RECAP
+    && (Number(target.type) !== 0 || target.streamerSelf !== true) ? '先勾『这是主播本人』'
+    : item.on ? noticeMeta(item, handler, target) : item.description; };
   syncMeta();
   text.appendChild(meta);
   line.appendChild(text);
@@ -1877,6 +1881,7 @@ function noticeRow(item, user, target, session, repaint) {
 
 /** 推送页上「运营周报」那一类：它的工具（上次发出、预览、发送上一周的报告）只在开着时摆在它那一行里 */
 const WEEKLY_REPORT = 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
+const SESSION_RECAP = 'org.frostnova.nova.core.handler.SessionRecapPushHandler';
 const LIVE_REPORT = 'org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler';
 
 /** 开着那一行的现状：文字跟不跟默认、图片版式、设置项的值，各一小段 */

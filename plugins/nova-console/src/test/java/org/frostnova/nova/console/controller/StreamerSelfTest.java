@@ -78,6 +78,35 @@ class StreamerSelfTest {
                 .contentType("application/json").content(loaded.toJSONString())).andReturn().getResponse();
     }
 
+    // 防止下播小结发给没有确认身份的好友或群，整份配置必须拒收。
+    @ParameterizedTest @ValueSource(ints = {0, 2})
+    void recapRequiresStreamerSelf(int index) throws Exception {
+        String before = Files.readString(file);
+        var loaded = load(1);
+        loaded.getJSONObject("user").getJSONArray("targets").getJSONObject(index)
+                .getJSONArray("messages").add(JSONObject.of("handler",
+                        "org.frostnova.nova.core.handler.SessionRecapPushHandler"));
+        var response = save(1, loaded, ConfigUiAccount.local(Instant.EPOCH));
+        assertEquals(400, response.getStatus(), response.getContentAsString());
+        assertTrue(response.getContentAsString().contains("主播本人"));
+        assertEquals(before, Files.readString(file));
+    }
+
+    // 已确认本人才能订阅，取消标记后不能把旧订阅一并保存。
+    @Test void recapAcceptsConfirmedFriendAndRejectsRemovingIdentity() throws Exception {
+        var loaded = load(1);
+        var target = loaded.getJSONObject("user").getJSONArray("targets").getJSONObject(0);
+        target.put("streamerSelf", true);
+        target.getJSONArray("messages").add(JSONObject.of("handler",
+                "org.frostnova.nova.core.handler.SessionRecapPushHandler"));
+        assertEquals(200, save(1, loaded, ConfigUiAccount.local(Instant.EPOCH)).getStatus());
+        String before = Files.readString(file);
+        loaded = load(1);
+        loaded.getJSONObject("user").getJSONArray("targets").getJSONObject(0).put("streamerSelf", false);
+        assertEquals(400, save(1, loaded, ConfigUiAccount.local(Instant.EPOCH)).getStatus());
+        assertEquals(before, Files.readString(file));
+    }
+
     // 防止小结发进群里、发给两个人，或让私聊中的同一号码对应两位主播。
     @ParameterizedTest @ValueSource(strings = {"group", "two", "shared", "invalid"})
     void rejectsUnsafeAssignmentsWithoutChangingFile(String kind) throws Exception {

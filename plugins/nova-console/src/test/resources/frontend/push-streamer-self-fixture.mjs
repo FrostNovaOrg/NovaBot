@@ -92,7 +92,8 @@ async function open(uid = 1, tail = '') {
 }
 async function reset(role = 'MEMBER') {
   await push.leave(); store.singleStreamer = null; store.role = role; disk = initial(); requests = []; reject = false;
-  store.handlerList = []; push.render(shell);
+  store.handlerList = [{className: 'org.frostnova.nova.core.handler.SessionRecapPushHandler',
+    displayName: '下播小结（私聊）', defaultEnabled: false, description: '下播后发送', platforms: []}]; push.render(shell);
   await push.reload(); await push.loadPushPage(); await open();
 }
 
@@ -104,10 +105,17 @@ for (const role of ['ADMIN', 'MEMBER']) {
   const mark = input('这是主播本人');
   assert.ok(mark, '好友通道应有主播本人勾选框');
   assert.equal(mark.checked, false, '旧配置默认没勾');
+  assert.equal(input('下播小结（私聊）')?.disabled, true, '未确认身份不能订阅小结');
+  assert.match(text(root()), /先勾『这是主播本人』/);
   assert.match(text(root()), /观众昵称和场次数据/);
   mark.checked = true;
   await mark.dispatchEvent({type: 'change', target: mark});
+  assert.equal(input('下播小结（私聊）')?.disabled, false, '确认身份后能开启小结');
+  const recap = input('下播小结（私聊）');
+  recap.checked = true;
+  await recap.dispatchEvent({type: 'change', target: recap});
   await push.save();
+  assert.equal(disk[0].targets[0].messages[0].handler, 'org.frostnova.nova.core.handler.SessionRecapPushHandler', '小结订阅应保存');
   assert.equal(disk[0].targets[0].streamerSelf, true, '勾选必须保存');
   await open();
   assert.match(text(root()), /主播本人/, '通道列表应标明接收人');
@@ -118,8 +126,10 @@ for (const role of ['ADMIN', 'MEMBER']) {
   await clear.dispatchEvent({type: 'change', target: clear});
   await push.save();
   assert.equal(disk[0].targets[0].streamerSelf, false, '取消必须保存');
+  assert.equal(disk[0].targets[0].messages.length, 0, '取消本人标记应同时取消小结订阅');
   await open(1, 'qq-onebot|1|82002');
   assert.equal(input('这是主播本人'), undefined, '群通道不能出现勾选框');
+  assert.equal(input('下播小结（私聊）')?.disabled, true, '群不能订阅小结');
   checks++;
 }
 console.log('跑了 ' + checks + ' 格，红 0 格');

@@ -258,6 +258,17 @@ public class ConfigurationValidator {
         if (Boolean.TRUE.equals(self) && !Objects.equals(target.getInteger("type"), PushTargetType.FRIEND.getCode())) {
             issues.add(channel + "：群通道不能标成主播本人");
         }
+        var messages = target.getJSONArray("messages");
+        if (messages != null && (!Boolean.TRUE.equals(self)
+                || !Objects.equals(target.getInteger("type"), PushTargetType.FRIEND.getCode()))) {
+            for (Object entry : messages) {
+                if (entry instanceof JSONObject message
+                        && "org.frostnova.nova.core.handler.SessionRecapPushHandler".equals(message.getString("handler"))) {
+                    issues.add(channel + "：下播小结（私聊）只能发给主播本人，请先勾『这是主播本人』");
+                    break;
+                }
+            }
+        }
         Object revenue = target.get("revenueVisible");
         if (revenue != null && !(revenue instanceof Boolean)) issues.add(at + "的 revenueVisible 必须为 true、false 或 null");
         Object quiet = target.get("quietHours");
