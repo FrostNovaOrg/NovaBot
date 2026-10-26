@@ -118,6 +118,20 @@ JAVA_OPTS="-Xmx256m" ./start.sh
 命令行上这样带的 `JAVA_OPTS` 只管手动运行；systemd 起的实例不吃命令行环境变量，
 要照下文把它放进覆盖设置。
 
+`start.sh` 在 Linux 上还默认开启 `-XX:TrimNativeHeapInterval=60000`，每 60 秒
+把 glibc 的 malloc 池里已经不用的内存还给系统。Linux / 2 核 / 2 GB / OpenJDK 17.0.20
+对照各跑 75 分钟，常驻内存从 507 MB 降到 455 MB，少约 52 MB（约一成）；
+平均 CPU 从占一个核的 1.29% 到 1.33%，在几轮之间的正常波动以内，未观察到额外代价。
+脚本先用同一个 `java` 试跑此选项，丢弃输出，只有退码为 0 才添加；旧 Java 不支持时
+照常启动，其他系统不试跑也不添加。如需关闭：
+
+```bash
+JAVA_OPTS="-XX:TrimNativeHeapInterval=0" ./start.sh
+```
+
+容器通过 `-e` 传入；systemd 将 `JAVA_OPTS` 放进下文覆盖设置的 `Environment=`。
+用户值排在默认值之后，能覆盖默认的 60000。
+
 注意 `-Xms` 会被提前提交，调大反而抬高常驻内存。
 若同时用 systemd 部署，调低 `-Xmx` 后记得一并调低 `MemoryHigh` / `MemoryMax`
 （算法见上一节）——反过来，只压 cgroup 上限而不动 `-Xmx`，会让进程在堆涨起来时被内核直接杀掉。
