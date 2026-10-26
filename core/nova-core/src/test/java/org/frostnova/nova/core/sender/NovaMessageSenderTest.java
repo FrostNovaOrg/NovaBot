@@ -33,6 +33,24 @@ import static org.mockito.Mockito.*;
  */
 @DisplayName("消息发送器")
 class NovaMessageSenderTest {
+    @Test @DisplayName("提醒入队使用东八区传入时刻复核静音，避免服务器时区不同仍吵醒主播")
+    void scheduledMessageUsesProvidedTime() {
+        var properties = new NovaCoreProperties();
+        properties.getPush().setEnabled(true);
+        properties.getPush().setQuietStart("23:00");
+        properties.getPush().setQuietEnd("07:00");
+        var sender = sender(mock(HttpUtil.class), properties);
+        var message = message();
+        var target = new org.frostnova.nova.core.model.PushTarget(); message.setChannel(target);
+        assertEquals(PushGate.Block.QUIET_HOURS, sender.sendScheduled(message, LocalTime.of(23, 20)));
+        assertEquals(0, sender.getPendingCount());
+        assertNull(sender.sendScheduled(message, LocalTime.of(19, 0)));
+        assertEquals(1, sender.getPendingCount());
+        properties.getPush().setEnabled(false);
+        assertEquals(PushGate.Block.DISABLED, sender.sendScheduled(message(), LocalTime.of(19, 0)));
+        assertEquals(1, sender.getPendingCount());
+    }
+
     private static final String PLATFORM = "qq-onebot";
 
     @Test
