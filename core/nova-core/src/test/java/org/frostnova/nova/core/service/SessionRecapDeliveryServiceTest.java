@@ -75,7 +75,7 @@ class SessionRecapDeliveryServiceTest {
     void reopen() {
         store = new SessionRecapDeliveryStore(dir.resolve("session-recap-deliveries.json"));
         service = new SessionRecapDeliveryService(source, archive, live, ledger, recap, profiles, revenue,
-                assistant, sender, gate, store, clock);
+                assistant, sender, gate, store, clock, mock(SessionRecapGreetingService.class));
     }
     String key() { return SessionRecapDeliveryService.key("test", user.getUid(), target); }
     SessionRecapDeliveryStore.Delivery latest() { return service.latest(key()).orElseThrow(); }
