@@ -90,7 +90,8 @@ public class StreamerProfileStore {
                 if (!uniquePatterns.add(pattern)) throw new IOException("别提的条目重复");
                 loadedExclusions.add(new Exclusion(pattern, number(entry, "setAt", false)));
             }
-            return new StreamerProfile((int) tier, number(root, "tierSetAt", true), loadedConcerns,
+            Long tierSetAt = number(root, "tierSetAt", true);
+            return new StreamerProfile(tierSetAt == null ? 2 : (int) tier, tierSetAt, loadedConcerns,
                     loadedExclusions, paused, number(root, "pauseSetAt", true), status);
         } catch (IOException | RuntimeException failure) {
             return unreadable(path);

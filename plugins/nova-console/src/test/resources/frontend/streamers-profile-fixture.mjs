@@ -58,9 +58,9 @@ await check('管理员和成员都看到设置与各自时间，页面只读且�
 });
 // 没设置过的字段不能凭空显示一个设置日期。
 await check('空档案显示默认档位、未设置时间和空条目', async () => {
-  payload = {success: true, profile: {tier: 1, paused: false, concerns: [], exclusions: [], status: 'READY'}};
+  payload = {success: true, profile: {tier: 2, paused: false, concerns: [], exclusions: [], status: 'READY'}};
   const host = new Element('div'); await mountProfile(host, identity).ready;
-  for (const word of ['第 1 档', '是否暂停：否', '尚未设置', '暂无']) assert.ok(host.textContent.includes(word));
+  for (const word of ['第 2 档', '是否暂停：否', '尚未设置', '暂无']) assert.ok(host.textContent.includes(word));
 });
 // 坏件不能看起来像已经恢复发送的正常档案。
 await check('档案读不出明确显示自动发送暂停', async () => {
@@ -96,11 +96,11 @@ await check('核对恢复按钮提交当前主播并显示恢复后的空档案'
     const host = new Element('div'); await mountProfile(host, identity).ready;
     const button = walk(host).find(node => node.tagName === 'button' && node.textContent.includes('档案已核对，恢复'));
     assert.ok(button, '缺少核对恢复按钮');
-    payload = {success: true, profile: {tier: 1, paused: false, concerns: [], exclusions: [], status: 'READY'}};
+    payload = {success: true, profile: {tier: 2, paused: false, concerns: [], exclusions: [], status: 'READY'}};
     await button.onclick();
     assert.equal(requests.at(-1).method, 'POST');
     assert.equal(requests.at(-1).url, '/config/api/streamers/bilibili/990000000101/profile/recover');
-    assert.match(host.textContent, /第 1 档/); assert.match(host.textContent, /是否暂停：否/);
+    assert.match(host.textContent, /第 2 档/); assert.match(host.textContent, /是否暂停：否/);
     assert.doesNotMatch(host.textContent, /读不出|已停发|核对|<img/);
   }
 });

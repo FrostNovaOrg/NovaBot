@@ -25,7 +25,7 @@ public class SessionRecapGreetingService implements CommandFollowUp {
     private static final String GREETING = """
             你好，我是 Nova。每场下播后我可以给你发一条小结，你想要哪种？
             1　只要小结
-            2　小结 + 从你过去直播里看到的规律
+            2　小结 + 从你过去直播里看到的规律（不回就按这个发）
             最近最在意什么也可以告诉我（比如涨粉、留住新人），我会多看这方面。
             以后随时回「改成 1」「别提开播时间」「先别发了」都行""";
     private static final Pattern CHOICE = Pattern.compile("^[\\p{Z}\\s]*([1-3１-３])(?:[\\p{P}\\p{Z}\\s]+(.*))?$", Pattern.DOTALL);

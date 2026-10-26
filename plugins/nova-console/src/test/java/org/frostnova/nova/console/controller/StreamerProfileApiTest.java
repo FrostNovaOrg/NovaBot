@@ -84,7 +84,7 @@ class StreamerProfileApiTest {
             mvc.perform(post(URL + "/recover").requestAttr(ConfigUiAccess.ACCOUNT, account))
                     .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
                     .andExpect(jsonPath("$.profile.status").value("READY"))
-                    .andExpect(jsonPath("$.profile.tier").value(1)).andExpect(jsonPath("$.profile.paused").value(false));
+                    .andExpect(jsonPath("$.profile.tier").value(2)).andExpect(jsonPath("$.profile.paused").value(false));
             assertEquals(StreamerProfile.empty(StreamerProfile.Status.READY), new StreamerProfileStore(dir).read("bilibili", UID));
             var event = events.get(events.size() - 1);
             assertEquals(account.actor(), event.detail().get("actor"));
@@ -107,7 +107,7 @@ class StreamerProfileApiTest {
         Files.write(profiles.path("bilibili", UID), new byte[]{(byte) 0xFF, (byte) 0xFE, 0x78, (byte) 0xC3});
         mvc.perform(post(URL + "/recover").requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.profile.status").value("READY"))
-                .andExpect(jsonPath("$.profile.tier").value(1)).andExpect(jsonPath("$.profile.paused").value(false));
+                .andExpect(jsonPath("$.profile.tier").value(2)).andExpect(jsonPath("$.profile.paused").value(false));
         assertEquals(StreamerProfile.empty(StreamerProfile.Status.READY), new StreamerProfileStore(dir).read("bilibili", UID));
     }
     @Test @DisplayName("过期恢复按钮不能清空一份已经恢复的正常档案")
