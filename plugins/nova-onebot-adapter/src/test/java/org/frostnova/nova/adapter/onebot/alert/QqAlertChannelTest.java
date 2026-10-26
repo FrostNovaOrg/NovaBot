@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -680,7 +681,7 @@ class QqAlertChannelTest {
         @DisplayName("⚠️ 队列挤掉走告警链 → 记发不出去，入重投")
         void queueSqueezeRecordsFailureAndEntersRetry() throws Exception {
             NovaCoreProperties core = new NovaCoreProperties();
-            List<TimelineEvent> recorded = new ArrayList<>();
+            List<TimelineEvent> recorded = new CopyOnWriteArrayList<>();
 
             Rig rig = rig(core, (headers, params) ->
                     new JSONObject().fluentPut("code", 0).fluentPut("id", "m1"), true);
@@ -703,6 +704,12 @@ class QqAlertChannelTest {
             service.alert("key1", "第一条", "内容");
             service.alert("key2", "第二条", "内容");
             service.alert("key3", "第三条", "内容");
+
+            // 失败回调先记时间线、再入重投，等入队后再检查两项结果。
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (service.pendingCount() == 0 && System.nanoTime() < deadline) {
+                TimeUnit.MILLISECONDS.sleep(10);
+            }
 
             assertTrue(recorded.stream().anyMatch(e -> e.text().contains("发不出去")),
                     "被挤掉的那条要记发不出去: " + recorded);
