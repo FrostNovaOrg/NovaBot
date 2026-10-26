@@ -22,8 +22,8 @@ import java.util.Map;
 @Slf4j
 @Service
 public class SessionRecapGreetingStore {
-    public enum Status { SENDING, SENT, UNCERTAIN }
-    public record Greeting(String key, long sentAt, Status status, boolean consumed) {}
+    public enum Status { SENDING, SENT, UNCERTAIN, RETRY }
+    public record Greeting(String key, long sentAt, Status status, boolean consumed, int failures, long retryAt) {}
     private final Path path;
     private Map<String, Greeting> records = new LinkedHashMap<>();
     private boolean unreadable;
@@ -49,7 +49,10 @@ public class SessionRecapGreetingStore {
                         || !(entry.get("sentAt") instanceof Number at) || at.longValue() < 0
                         || at.doubleValue() != at.longValue() || !(entry.get("consumed") instanceof Boolean consumed)
                         || !(entry.get("status") instanceof String status)) throw new IOException("招呼记录格式不正确");
-                if (records.putIfAbsent(key, new Greeting(key, at.longValue(), Status.valueOf(status), consumed)) != null)
+                long failures = retryNumber(entry, "failures"), retryAt = retryNumber(entry, "retryAt");
+                if (failures > 3) throw new IOException("招呼失败次数不正确");
+                if (records.putIfAbsent(key, new Greeting(key, at.longValue(), Status.valueOf(status), consumed,
+                        (int) failures, retryAt)) != null)
                     throw new IOException("招呼记录重复");
             }
         } catch (IOException | RuntimeException failure) {
@@ -58,26 +61,58 @@ public class SessionRecapGreetingStore {
         }
     }
 
-    public synchronized boolean contains(String key) { return unreadable || records.containsKey(key); }
+    private static long retryNumber(JSONObject entry, String field) throws IOException {
+        if (!entry.containsKey(field)) return 0;
+        if (!(entry.get(field) instanceof Number number) || number.longValue() < 0
+                || number.doubleValue() != number.longValue()) throw new IOException("招呼重试记录格式不正确");
+        return number.longValue();
+    }
+
+    public synchronized boolean eligible(String key, Instant now) {
+        var old = records.get(key);
+        return !unreadable && (old == null || (old.status() == Status.RETRY && old.failures() < 3
+                && now.toEpochMilli() >= old.retryAt()));
+    }
 
     public synchronized boolean begin(String key, Instant now) throws IOException {
-        if (contains(key)) return false;
-        replace(key, new Greeting(key, now.toEpochMilli(), Status.SENDING, false));
+        if (!eligible(key, now)) return false;
+        var old = records.get(key);
+        replace(key, new Greeting(key, now.toEpochMilli(), Status.SENDING, false,
+                old == null ? 0 : old.failures(), old == null ? 0 : old.retryAt()));
         return true;
     }
 
     public synchronized void complete(String key, Status status, Instant now) throws IOException {
         var old = records.get(key);
-        if (old == null) return;
-        replace(key, new Greeting(key, status == Status.SENT ? now.toEpochMilli() : old.sentAt(), status, old.consumed()));
+        if (old == null || old.status() != Status.SENDING) return;
+        replace(key, new Greeting(key, status == Status.SENT ? now.toEpochMilli() : old.sentAt(), status, old.consumed(),
+                old.failures(), old.retryAt()));
     }
 
-    /** 已确认没有进入发送队列或没有送达，留到下个合适时刻重试。 */
-    public synchronized void retry(String key) throws IOException { replace(key, null); }
+    /** 确认失败最多三次，后两次分别等待半小时和两小时；次数与到期时刻一起落盘。 */
+    public synchronized void failed(String key, Instant now) throws IOException {
+        var old = records.get(key);
+        if (old == null || old.status() != Status.SENDING) return;
+        int failures = old.failures() + 1;
+        long retryAt = now.plus(failures == 1 ? Duration.ofMinutes(30) : Duration.ofHours(2)).toEpochMilli();
+        replace(key, new Greeting(key, old.sentAt(), Status.RETRY, old.consumed(), failures, retryAt));
+    }
+
+    /** 静音或开关拦截没有尝试送达，不消耗失败次数。 */
+    public synchronized void defer(String key) throws IOException {
+        var old = records.get(key);
+        if (old == null || old.status() != Status.SENDING) return;
+        replace(key, new Greeting(key, old.sentAt(), Status.RETRY, old.consumed(), old.failures(), old.retryAt()));
+    }
 
     public synchronized boolean pending(String key, Instant now) {
+        return pending(key, now, null);
+    }
+
+    public synchronized boolean pending(String key, Instant now, Long tierSetAt) {
         var record = records.get(key);
-        return !unreadable && record != null && !record.consumed()
+        return !unreadable && record != null && record.status() != Status.RETRY && !record.consumed()
+                && (tierSetAt == null || tierSetAt <= record.sentAt())
                 && !now.isBefore(Instant.ofEpochMilli(record.sentAt()))
                 && now.isBefore(Instant.ofEpochMilli(record.sentAt()).plus(Duration.ofHours(24)));
     }
@@ -85,7 +120,7 @@ public class SessionRecapGreetingStore {
     public synchronized boolean consume(String key, Instant now) throws IOException {
         if (!pending(key, now)) return false;
         var old = records.get(key);
-        replace(key, new Greeting(key, old.sentAt(), old.status(), true));
+        replace(key, new Greeting(key, old.sentAt(), old.status(), true, old.failures(), old.retryAt()));
         return true;
     }
 
