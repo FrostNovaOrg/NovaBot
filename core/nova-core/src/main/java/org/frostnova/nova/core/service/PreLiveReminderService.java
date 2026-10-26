@@ -94,7 +94,7 @@ public class PreLiveReminderService {
                     subscriptions.add(new Subscription(new Streamer(user.getPlatform(), user.getUid()), target));
             }
         }
-        if (subscriptions.isEmpty() || gate.blockedBy() == PushGate.Block.DISABLED) return;
+        if (subscriptions.isEmpty() || !gate.isReady() || gate.blockedBy() == PushGate.Block.DISABLED) return;
         // 每轮只读取一次封存归档，按平台和主播分组，重复订阅共用计算素材。
         var sessions = new HashMap<Streamer, List<LiveSessionArchive.ArchivedSession>>();
         for (var session : archive.sealedSessions()) {
@@ -145,7 +145,8 @@ public class PreLiveReminderService {
         for (var due : dueTimes) {
             if (now.isBefore(due) || now.isAfter(due.plusMinutes(10))) continue;
             String key = WeeklyReportDeliveryService.key(who.platform(), who.uid(), sub.target());
-            if (store.contains(key, now.toLocalDate()) || store.contains(key, due.toLocalDate())) return;
+            if (store.contains(key, due.toLocalDate())
+                    || (profile.preLiveDailyTime() == null && store.contains(key, now.toLocalDate()))) return;
             if ((profile.preLiveDailyTime() == null && !gate.allowedAt(now.toLocalTime(), sub.target()))
                     || live.getLiveStatus(who.platform(), who.uid()).orElse(false)) return;
             var audience = material.get(who);
@@ -172,6 +173,10 @@ public class PreLiveReminderService {
                 && t.getType() == context.getType() && Objects.equals(t.getNum(), context.getNum())
                 && Objects.equals(t.getPlatform(), context.getPlatform()) && !Boolean.FALSE.equals(t.getEnabled()))
                 .findFirst().orElseThrow();
+        if (!gate.isReady()) {
+            requestedReply(target, "机器人刚启动，请过一会儿再说一次");
+            return;
+        }
         if (target.getMessages().stream().noneMatch(m -> !Boolean.FALSE.equals(m.getEnabled())
                 && PreLiveReminderPushHandler.class.getName().equals(m.handlerClassName()))) {
             requestedReply(target, "开播前提醒还没开，要请管理员在控制台给你这条私聊勾上「开播前提醒（私聊）」");
@@ -200,7 +205,7 @@ public class PreLiveReminderService {
     private void requestedReply(PushTarget target, String text) {
         Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(), text).get(0);
         message.setChannel(target); message.setReply(true);
-        sender.sendRequested(message);
+        sender.sendRequestedReply(message);
     }
 
     private void deliver(PendingReminder reminder) { deliver(reminder, false); }
@@ -209,13 +214,17 @@ public class PreLiveReminderService {
         var sendTime = clock.instant().atZone(ZONE);
         if (!requested && (sendTime.isBefore(reminder.due()) || sendTime.isAfter(reminder.due().plusMinutes(10)))) return;
         if (gate.blockedBy() == PushGate.Block.DISABLED) return;
-        LocalDate date = sendTime.toLocalDate(), dueDate = reminder.due().toLocalDate();
+        LocalDate dueDate = reminder.due().toLocalDate();
+        LocalDate date = !requested && reminder.ignoreQuiet() ? dueDate : sendTime.toLocalDate();
         String key = reminder.key();
         var target = reminder.target();
         Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(),
                 MessagePlaceholders.escapeExternalText(reminder.body())).get(0);
         message.setChannel(target); message.setReply(requested);
-        if (!(requested ? store.reserveRequested(key, date) : store.reserve(key, date, dueDate))) return;
+        if (!(requested ? store.reserveRequested(key, date) : store.reserve(key, date, dueDate))) {
+            if (requested) requestedReply(target, "发送记录暂时读不出，这次没发，请稍后再试");
+            return;
+        }
         message.addOnSuccessCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.SENT));
         message.addOnFailureCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.FAILED));
         message.addOnUncertainCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN));
@@ -223,7 +232,10 @@ public class PreLiveReminderService {
             var block = requested ? sender.sendRequested(message)
                     : reminder.ignoreQuiet() ? sender.sendScheduled(message, sendTime.toLocalTime(), true)
                     : sender.sendScheduled(message, sendTime.toLocalTime());
-            if (block != null) store.result(key, date, dueDate, PreLiveReminderStore.Status.NOT_SENT);
+            if (block != null) {
+                store.result(key, date, dueDate, PreLiveReminderStore.Status.NOT_SENT);
+                if (requested && !gate.isReady()) requestedReply(target, "机器人刚启动，请过一会儿再说一次");
+            }
         } catch (RuntimeException failure) { store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN); }
     }
 

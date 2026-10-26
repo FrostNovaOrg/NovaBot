@@ -61,6 +61,7 @@ class PreLiveReminderServiceTest {
         when(live.getLiveStatus("test", HOST)).thenReturn(Optional.of(false));
         when(profiles.read("test", HOST)).thenReturn(StreamerProfile.empty(StreamerProfile.Status.READY));
         when(gate.allowedAt(any(), eq(target))).thenReturn(true);
+        when(gate.isReady()).thenReturn(true);
         when(recap.preLiveAudience(eq("test"), eq(HOST), anyLong())).thenAnswer(i -> audience);
         doAnswer(i -> {
             Message m = i.getArgument(0); sent.add(m);
@@ -128,6 +129,7 @@ class PreLiveReminderServiceTest {
         sealed.clear(); add(TODAY.minusDays(1), LocalTime.of(10, 0), 3600);
         when(gate.allowedAt(any(), eq(target))).thenReturn(false);
         service.check(); assertEquals(1, sent.size());
+        verify(sender).sendScheduled(any(), eq(LocalTime.of(19, 0)), eq(true));
     }
 
     @Test @DisplayName("每天定时正在播也不发，避免直播中打扰")
@@ -158,8 +160,8 @@ class PreLiveReminderServiceTest {
         assertEquals(sent.get(0).getDisplay(), sent.get(1).getDisplay());
     }
 
-    @ParameterizedTest @ValueSource(strings = {"paused", "global", "late"})
-    @DisplayName("每天定时仍受暂停、全局开关和十分钟有效期约束，避免定时打扰")
+    @ParameterizedTest @ValueSource(strings = {"paused", "global", "starting", "late"})
+    @DisplayName("每天定时仍受就绪、暂停、全局开关和十分钟有效期约束，避免定时打扰")
     void dailyTimeKeepsOtherGuards(String state) throws Exception {
         reminderProfile(null, "19:00", false);
         switch (state) {
@@ -169,6 +171,7 @@ class PreLiveReminderServiceTest {
                         p.exclusions(), true, 0L, null, "19:00", false, p.status()));
             }
             case "global" -> when(gate.blockedBy()).thenReturn(PushGate.Block.DISABLED);
+            case "starting" -> when(gate.isReady()).thenReturn(false);
             case "late" -> at(TODAY, LocalTime.of(19, 11));
         }
         service.check(); assertTrue(sent.isEmpty());
@@ -178,6 +181,20 @@ class PreLiveReminderServiceTest {
     void dailyTimeOnlyOnce() throws Exception {
         reminderProfile(null, "19:00", false);
         service.check(); reopen(); service.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("深夜定时首次跨午夜检查后连续三天都收到，避免隔天漏提醒")
+    void dailyLateReminderOnlyConsumesDueDate() throws Exception {
+        reminderProfile(null, "23:58", false);
+        for (int day = 0; day < 3; day++) {
+            LocalDate dueDate = TODAY.plusDays(day);
+            at(dueDate.plusDays(1), LocalTime.of(0, 2));
+            reopen(); service.check();
+            assertEquals(day + 1, sent.size(), "每天的到期提醒都应发送");
+            assertTrue(Files.readString(file()).contains(dueDate.toString()));
+            assertFalse(Files.readString(file()).contains(dueDate.plusDays(1).toString()), "不占用发送日的定时名额");
+            reopen(); service.check(); assertEquals(day + 1, sent.size());
+        }
     }
 
     @Test @DisplayName("有惯常时间且上周今天播过才提醒，避免主播不知道今天该留意谁")

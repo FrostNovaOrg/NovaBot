@@ -44,14 +44,16 @@ public class StreamerProfileCommands {
     }
 
     @Bean ScopedCommand profileReminder() {
-        return command("开播前提醒", List.of("改到前", "每天", "不要开播前提醒"), true, text -> true,
+        return command("开播前提醒", List.of("改到前", "每天", "不要开播前提醒"), true,
+                text -> text.startsWith("开播前提醒") || text.equals("不要开播前提醒")
+                        || text.matches("改到前[+-]?[0-9].*|每天[0-9]+[:点].*"),
                 (p, arg, now) -> reminderSetting(p, arg));
     }
     @Bean ScopedCommand profilePrepare() {
         return command("准备开播", List.of(), false, text -> true, (p, arg, now) -> new Result(p, ""));
     }
     private static Result reminderSetting(StreamerProfile p, String raw) {
-        String text = raw.strip();
+        String text = normalize(raw, true);
         if (text.startsWith("开播前提醒")) text = text.substring("开播前提醒".length()).strip();
         if (text.equals("不要了") || text.equals("不要开播前提醒"))
             return new Result(reminderCopy(p, null, null, true),
@@ -162,8 +164,13 @@ public class StreamerProfileCommands {
         return new StreamerProfile(p.tier(), p.tierSetAt(), concerns, exclusions, paused, pauseSetAt, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status());
     }
     public static String normalize(String value) {
+        return normalize(value, false);
+    }
+    private static String normalize(String value, boolean reminder) {
+        // 提醒解析保留时间分隔符和数字正负号，其余仍按档案命令的规则归一化。
+        String removed = "[\\p{P}\\p{Z}\\p{S}\\p{Cf}\\s\uFE0E\uFE0F]";
         return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
-                .replaceAll("[\\p{P}\\p{Z}\\p{S}\\p{Cf}\\s\uFE0E\uFE0F]", "").toLowerCase(Locale.ROOT);
+                .replaceAll(reminder ? "[" + removed + "&&[^:+-]]" : removed, "").toLowerCase(Locale.ROOT);
     }
     private static String argument(String raw, String prefix) {
         String gap = "[\\p{P}\\p{Z}\\p{S}\\p{Cf}\\s]*";
@@ -204,7 +211,7 @@ public class StreamerProfileCommands {
             public boolean availableIn(CommandContext context) { return resolver.resolve(context).isPresent(); }
             public boolean matches(CommandContext context) {
                 if (!availableIn(context)) return false;
-                String text = normalize(context.getRawText());
+                String text = normalize(context.getRawText(), name.equals("开播前提醒"));
                 if (!extra.test(text)) return false;
                 return java.util.stream.Stream.concat(java.util.stream.Stream.of(name), aliases.stream())
                         .map(StreamerProfileCommands::normalize).anyMatch(n -> prefix ? text.startsWith(n) : text.equals(n));

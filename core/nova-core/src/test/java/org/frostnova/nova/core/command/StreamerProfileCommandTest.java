@@ -52,6 +52,9 @@ class StreamerProfileCommandTest {
     private int legacyCalls;
     private NovaCoreProperties properties;
     private PreLiveReminderService reminders;
+    private PushGate gate;
+    private AbstractDataSource source;
+    private NovaMessageSender sender;
     private final CommandFollowUp fallback = mock(CommandFollowUp.class);
     private SessionRecapService.PreLiveAudience audience = new SessionRecapService.PreLiveAudience(
             List.of(990000003001L), List.of(), java.util.Map.of(990000003001L, "合成常客甲"));
@@ -63,29 +66,16 @@ class StreamerProfileCommandTest {
         self = target(SELF, PushTargetType.FRIEND); self.setStreamerSelf(true);
         user = new PushUser(); user.setPlatform("bilibili"); user.setUid(UID);
         user.setTargets(List.of(self, target(OTHER, PushTargetType.FRIEND), target(GROUP, PushTargetType.GROUP)));
-        var source = mock(AbstractDataSource.class);
+        source = mock(AbstractDataSource.class);
         when(source.getAllUsers()).thenReturn(List.of(user));
-        var sender = mock(NovaMessageSender.class);
+        sender = mock(NovaMessageSender.class);
         doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).send(any());
         beans = new AnnotationConfigApplicationContext();
         doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).sendRequested(any());
+        doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).sendRequestedReply(any());
         doAnswer(call -> { replies.add(((Message) call.getArgument(0)).getContent()); return null; }).when(sender).sendScheduled(any(), any(), eq(true));
-        beans.registerBean(PreLiveReminderService.class, () -> {
-            var archive = mock(LiveSessionArchive.class);
-            long start = Instant.parse("2026-10-19T12:00:00Z").toEpochMilli();
-            try {
-                when(archive.sealedSessions()).thenReturn(List.of(new LiveSessionArchive.ArchivedSession(
-                        "bilibili", UID, "合成主播", start, start + 3600000, 3600, org.frostnova.nova.core.enums.LiveEndReason.NORMAL)));
-                var ledger = new AudienceLedgerService(properties, new AssistantProperties());
-                var recap = mock(SessionRecapService.class);
-                when(recap.preLiveAudience(anyString(), anyLong(), anyLong())).thenAnswer(i -> audience);
-                var live = mock(LiveDataService.class);
-                when(live.getLiveStatus(anyString(), anyLong())).thenReturn(java.util.Optional.of(true));
-                return new PreLiveReminderService(source, archive, live, ledger, recap, beans.getBean(StreamerProfileStore.class),
-                        new AssistantProperties(), sender, new PushGate(properties),
-                        new PreLiveReminderStore(dir.resolve("reminders.json")), clock);
-            } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
-        });
+        gate = new PushGate(properties);
+        beans.registerBean(PreLiveReminderService.class, this::reminderService);
         beans.registerBean(NovaCoreProperties.class, () -> properties);
         beans.registerBean(AbstractDataSource.class, () -> source);
         beans.register(StreamerProfileStore.class, StreamerSelfResolver.class, StreamerProfileCommands.class);
@@ -102,6 +92,22 @@ class StreamerProfileCommandTest {
         TimelineWriter timeline = event -> records.add(event.toString());
         dispatcher = new CommandDispatcher(beans.getBeanProvider(NovaCommand.class), followUps,
                 new CommandSettingsService(new NovaStateStore(properties)), source, sender, properties, timeline, clock);
+    }
+    private PreLiveReminderService reminderService() {
+        var archive = mock(LiveSessionArchive.class);
+        long start = Instant.parse("2026-10-19T12:00:00Z").toEpochMilli();
+        try {
+            when(archive.sealedSessions()).thenReturn(List.of(new LiveSessionArchive.ArchivedSession(
+                    "bilibili", UID, "合成主播", start, start + 3600000, 3600, org.frostnova.nova.core.enums.LiveEndReason.NORMAL)));
+            var ledger = new AudienceLedgerService(properties, new AssistantProperties());
+            var recap = mock(SessionRecapService.class);
+            when(recap.preLiveAudience(anyString(), anyLong(), anyLong())).thenAnswer(i -> audience);
+            var live = mock(LiveDataService.class);
+            when(live.getLiveStatus(anyString(), anyLong())).thenReturn(java.util.Optional.of(true));
+            return new PreLiveReminderService(source, archive, live, ledger, recap, beans.getBean(StreamerProfileStore.class),
+                    new AssistantProperties(), sender, gate,
+                    new PreLiveReminderStore(dir.resolve("reminders.json")), clock);
+        } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
     }
     @AfterEach void close() { beans.close(); }
     private NovaCommand legacy(String name) {
@@ -333,13 +339,63 @@ class StreamerProfileCommandTest {
     @DisplayName("错误时间只回用法且档案不变，避免删掉标点后误设时间")
     void invalidDailyTimeDoesNotChangeProfile(String input) {
         var before = profile();
-        assertEquals("时间要写成 19:00 这样，比如「开播前提醒每天 19:00」", say("每天 " + input));
+        assertEquals("时间要写成 19:00 这样，比如「开播前提醒每天 19:00」", say("开播前提醒每天 " + input));
         assertEquals(before, profile());
     }
 
     private void subscribeReminder() {
         var subscription = new PushMessage(); subscription.setHandler(PreLiveReminderPushHandler.class.getName());
         self.setMessages(List.of(subscription));
+    }
+
+    @ParameterizedTest @CsvSource({"'开播前提醒，不要了',true", "'改到前３０分钟',false"})
+    @DisplayName("标点和全角数字照常改提醒，避免平常打字习惯不被识别")
+    void reminderSettingsNormalizeTyping(String phrase, boolean disabled) {
+        assertTrue(say(phrase).startsWith("记下了"));
+        assertEquals(disabled, profile().preLiveDisabled());
+        assertEquals(disabled ? null : 30, profile().preLiveLeadMinutes());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"每天都好累", "改到前面去"})
+    @DisplayName("随口聊天仍可由追问认领，避免被提醒用法打断")
+    void ordinaryConversationKeepsFollowUpRouting(String phrase) {
+        when(fallback.claim(any())).thenReturn(CommandFollowUp.Claimed.answer(CommandReply.of("继续聊")));
+        assertEquals("继续聊", say(phrase));
+        verify(fallback).claim(any());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"每天都好累", "改到前面去"})
+    @DisplayName("没有追问认领的闲聊照旧回菜单，避免误回提醒用法")
+    void ordinaryConversationKeepsMenuRouting(String phrase) {
+        assertEquals("现有命令", say(phrase));
+        assertEquals(1, legacyCalls);
+        verify(fallback).claim(any());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"每天 24:00", "每天 19点30分", "每天 19：0"})
+    @DisplayName("像时间但格式不对仍回提醒用法，避免设错后误以为生效")
+    void malformedDailyShorthandExplains(String phrase) {
+        assertEquals("时间要写成 19:00 这样，比如「开播前提醒每天 19:00」", say(phrase));
+    }
+
+    @Test @DisplayName("启动未就绪时索取只回稍后再试，避免机器人没起好就发提醒")
+    void prepareBeforeReadyExplains() {
+        subscribeReminder();
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(gate, "starting");
+        assertEquals("机器人刚启动，请过一会儿再说一次", say("准备开播"));
+        assertFalse(Files.exists(dir.resolve("reminders.json")));
+        verify(sender, never()).sendRequested(any());
+    }
+
+    @Test @DisplayName("发送记录读不出时索取说明没发，避免主播说完无人回应")
+    void prepareWithUnreadableDeliveriesExplains() throws Exception {
+        subscribeReminder();
+        Files.writeString(dir.resolve("reminders.json"), "broken");
+        beans.getDefaultListableBeanFactory().destroySingleton("preLiveReminderService");
+        beans.getDefaultListableBeanFactory().registerSingleton("preLiveReminderService", reminderService());
+        assertEquals("发送记录暂时读不出，这次没发，请稍后再试", say("准备开播"));
+        assertEquals("broken", Files.readString(dir.resolve("reminders.json")));
+        verify(sender, never()).sendRequested(any());
     }
 
     @Test @DisplayName("准备开播经分发器现发且能重复要，静音、暂停、不要了和在播均不拦，避免无人理或被接走")
