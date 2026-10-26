@@ -123,25 +123,8 @@ public class PreLiveReminderService {
         var profile = profiles.read(who.platform(), who.uid());
         if (profile.status() != StreamerProfile.Status.READY || profile.paused() || profile.preLiveDisabled()
                 || gate.blockedBy() == PushGate.Block.DISABLED) return;
-        var recent = history.stream().sorted(Comparator.comparingLong(LiveSessionArchive.ArchivedSession::startTime)
-                .reversed()).limit(10).toList();
-        var dueTimes = new ArrayList<ZonedDateTime>();
-        if (profile.preLiveDailyTime() != null) {
-            // 昨日的定时也可能仍在跨午夜的十分钟有效期内。
-            for (int offset = -1; offset <= 0; offset++)
-                dueTimes.add(now.toLocalDate().plusDays(offset).atTime(LocalTime.parse(profile.preLiveDailyTime())).atZone(ZONE));
-        } else {
-            var usual = usualStart(recent);
-            if (usual.isEmpty()) return;
-            int lead = profile.preLiveLeadMinutes() == null ? 60 : profile.preLiveLeadMinutes();
-            for (int offset = -1; offset <= 1; offset++) {
-                var start = now.toLocalDate().plusDays(offset).atTime(usual.get()).atZone(ZONE);
-                var weekAgo = start.minusWeeks(1).toInstant();
-                if (history.stream().anyMatch(session -> session.startTime() >= weekAgo.toEpochMilli()
-                        && session.startTime() <= weekAgo.plus(Duration.ofHours(1)).toEpochMilli()))
-                    dueTimes.add(start.minusMinutes(lead));
-            }
-        }
+        var recent = recent(history);
+        var dueTimes = dueTimes(profile, history, now);
         for (var due : dueTimes) {
             if (now.isBefore(due) || now.isAfter(due.plusMinutes(10))) continue;
             String key = WeeklyReportDeliveryService.key(who.platform(), who.uid(), sub.target());
@@ -158,6 +141,150 @@ public class PreLiveReminderService {
             if (body.isBlank()) return;
             pending.add(new PendingReminder(key, sub.target(), due, body, profile.preLiveDailyTime() != null));
         }
+    }
+
+    private static List<LiveSessionArchive.ArchivedSession> recent(List<LiveSessionArchive.ArchivedSession> history) {
+        return history.stream().sorted(Comparator.comparingLong(LiveSessionArchive.ArchivedSession::startTime)
+                .reversed()).limit(10).toList();
+    }
+
+    /** 调度与控制台共用到点计算；包含跨午夜宽限期以及今天、明天的候选时刻。 */
+    private static List<ZonedDateTime> dueTimes(StreamerProfile profile,
+            List<LiveSessionArchive.ArchivedSession> history, ZonedDateTime now) {
+        var times = new ArrayList<ZonedDateTime>();
+        if (profile.preLiveDailyTime() != null) {
+            for (int offset = -1; offset <= 1; offset++)
+                times.add(now.toLocalDate().plusDays(offset).atTime(LocalTime.parse(profile.preLiveDailyTime())).atZone(ZONE));
+        } else {
+            var usual = usualStart(recent(history));
+            if (usual.isEmpty()) return times;
+            int lead = profile.preLiveLeadMinutes() == null ? 60 : profile.preLiveLeadMinutes();
+            for (int offset = -1; offset <= 2; offset++) {
+                var start = now.toLocalDate().plusDays(offset).atTime(usual.get()).atZone(ZONE);
+                var weekAgo = start.minusWeeks(1).toInstant();
+                if (history.stream().anyMatch(session -> session.startTime() >= weekAgo.toEpochMilli()
+                        && session.startTime() <= weekAgo.plus(Duration.ofHours(1)).toEpochMilli()))
+                    times.add(start.minusMinutes(lead));
+            }
+        }
+        return times.stream().sorted().toList();
+    }
+
+    private List<LiveSessionArchive.ArchivedSession> history(String platform, long uid) throws IOException {
+        return archive.sealedSessions().stream().filter(s -> s.platform().equals(platform) && s.uid() == uid
+                && s.durationSeconds() >= 600 && s.startTime() <= clock.millis()).toList();
+    }
+
+    private PushTarget target(String platform, long uid, PushTarget identity) {
+        return source.getAllUsers().stream()
+                .filter(user -> platform.equals(user.getPlatform()) && Objects.equals(uid, user.getUid()))
+                .map(user -> org.frostnova.nova.core.model.ChannelSettings.target(user, identity.getPlatform(),
+                        identity.getType(), identity.getNum())).filter(Objects::nonNull).findFirst().orElse(null);
+    }
+
+    private boolean subscribed(PushTarget target) {
+        return target != null && target.getMessages().stream().anyMatch(m -> !Boolean.FALSE.equals(m.getEnabled())
+                && PreLiveReminderPushHandler.class.getName().equals(m.handlerClassName()));
+    }
+
+    public record DeliveryStatus(String status, boolean profileUnreadable, boolean historyUnreadable) {}
+
+    public synchronized DeliveryStatus status(String platform, long uid, PushTarget identity) {
+        var target = target(platform, uid, identity);
+        var profile = profiles.read(platform, uid);
+        var history = store.history(WeeklyReportDeliveryService.key(platform, uid, identity));
+        var now = clock.instant().atZone(ZONE);
+        boolean unreadable = profile.status() != StreamerProfile.Status.READY;
+        var parts = new ArrayList<String>();
+        parts.add(subscribed(target) ? "开播前提醒（私聊）已勾选" : "开播前提醒（私聊）没勾选，不会发");
+        parts.add("她的设置：" + (unreadable ? "档案读不出，暂时无法确认" :
+                org.frostnova.nova.core.command.StreamerProfileCommands.describePreLiveReminder(profile)));
+        if (unreadable || history.unreadable()) parts.add("下一次：暂时无法确定");
+        else if (profile.preLiveDisabled()) parts.add("下一次：暂无");
+        else {
+            try {
+                var sessions = history(platform, uid);
+                if (profile.preLiveDailyTime() == null && usualStart(recent(sessions)).isEmpty())
+                    parts.add("惯常开播时间还没算出来，暂时不会按提前量发");
+                else {
+                    var next = dueTimes(profile, sessions, now).stream()
+                            .filter(due -> !now.isAfter(due.plusMinutes(10)))
+                            .filter(due -> !due.toLocalDate().isAfter(now.toLocalDate().plusDays(1)))
+                            .filter(due -> !history.records().containsKey(due.toLocalDate()))
+                            .filter(due -> profile.preLiveDailyTime() != null || !history.records().containsKey(
+                                    due.isAfter(now) ? due.toLocalDate() : now.toLocalDate()))
+                            .findFirst();
+                    parts.add(next.map(due -> "下一次：" + relativeDate(due.toLocalDate(), now.toLocalDate()) + " "
+                            + due.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
+                            .orElse("下一次：今明两天没有符合条件的提醒"));
+                }
+            } catch (IOException | RuntimeException failure) { parts.add("场次归档读不出，下一次暂时无法计算"); }
+        }
+        if (target == null || target.getType() != PushTargetType.FRIEND || !Boolean.TRUE.equals(target.getStreamerSelf()))
+            parts.add("没有可用的主播本人好友通道，不会发");
+        else if (Boolean.FALSE.equals(target.getEnabled())) parts.add("通道已停用，不会发");
+        if (source.getAllUsers().stream().anyMatch(user -> platform.equals(user.getPlatform())
+                && Objects.equals(uid, user.getUid()) && Boolean.FALSE.equals(user.getEnabled())))
+            parts.add("主播已停用，不会发");
+        if (profile.preLiveDisabled()) parts.add("她说过不要开播前提醒，不会发");
+        if (profile.paused()) parts.add("已暂停（她说过「先别发了」），不会发");
+        if (gate.blockedBy() == PushGate.Block.DISABLED) parts.add("全局推送开关已关闭，不会发");
+        if (unreadable) parts.add("档案读不出，已停发");
+        if (history.unreadable()) parts.add("发送记录读不出，已停发");
+        if (target != null && profile.preLiveDailyTime() == null && gate.inQuietHoursFor(target))
+            parts.add("现在是静音时段，按提前量的提醒会被挡住");
+        if (!gate.isReady()) parts.add("机器人刚启动，暂时不会发");
+        if (live.getLiveStatus(platform, uid).orElse(false)) parts.add("主播正在直播，暂时不会发");
+        if (history.unreadable()) parts.add("上一次：发送记录读不出");
+        else parts.add(history.records().entrySet().stream().max(Map.Entry.comparingByKey())
+                .map(last -> "上一次：" + last.getKey() + " " + switch (last.getValue()) {
+                    case SENDING -> "正在发";
+                    case SENT -> "已发";
+                    case FAILED -> "发送失败，不会自动重发";
+                    case UNCERTAIN -> "发送结果不明，不会自动重发";
+                    case NOT_SENT -> "没发出去";
+                }).orElse("还没发过"));
+        return new DeliveryStatus(String.join("；", parts), unreadable, history.unreadable());
+    }
+
+    private static String relativeDate(LocalDate date, LocalDate today) {
+        if (date.equals(today)) return "今天";
+        if (date.equals(today.plusDays(1))) return "明天";
+        if (date.equals(today.minusDays(1))) return "昨天";
+        return date.toString();
+    }
+
+    public record TrialResult(boolean success, String message, String confirmation) {}
+
+    /** 控制台试发只生成并发送正文，不登记记录，也不占定时名额。 */
+    public synchronized TrialResult trial(String platform, long uid, PushTarget identity,
+            boolean confirmPaused, boolean confirmQuiet, boolean confirmDisabled) {
+        var target = target(platform, uid, identity);
+        if (target == null || target.getType() != PushTargetType.FRIEND || !Boolean.TRUE.equals(target.getStreamerSelf()))
+            return new TrialResult(false, "只能试发到这位主播标了「主播本人」的好友通道", "");
+        var profile = profiles.read(platform, uid);
+        if (profile.status() != StreamerProfile.Status.READY)
+            return new TrialResult(false, "档案读不出，已停发，请先去主播页核对恢复", "");
+        if (profile.preLiveDisabled()) return new TrialResult(false, "她说过不要开播前提醒，试发也不发", "");
+        if (profile.paused() && !confirmPaused) return new TrialResult(false, "要先确认", "paused");
+        if (gate.inQuietHoursFor(target) && !confirmQuiet) return new TrialResult(false, "要先确认", "quiet");
+        if (gate.blockedBy() == PushGate.Block.DISABLED && !confirmDisabled)
+            return new TrialResult(false, "要先确认", "disabled");
+        try {
+            var recent = recent(history(platform, uid));
+            var body = new String[1];
+            ledger.withRecoveredLedger(() -> body[0] = render(audience(new Streamer(platform, uid), recent), profile, uid,
+                    new HashSet<>(assistant.getExcludedUids())));
+            if (body[0].isBlank()) return new TrialResult(false,
+                    "这次没有要特别留意的：最近没有缺席的常客，上一场也没有第一次说话的新观众。", "");
+            Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(),
+                    MessagePlaceholders.escapeExternalText(body[0])).get(0);
+            message.setChannel(target);
+            var response = sender.sendNow(message);
+            boolean success = response != null && Integer.valueOf(0).equals(response.getInteger("code"));
+            return new TrialResult(success, success ? "已试发开播前提醒，请确认她是否收到。不记进发送记录，也不算当天那一条，当天定时的照常发"
+                    : "试发失败，请稍后重试", "");
+        } catch (IOException | RuntimeException failure) { return new TrialResult(false, "提醒生成或试发失败，请稍后重试", ""); }
     }
 
     private SessionRecapService.PreLiveAudience audience(Streamer who, List<LiveSessionArchive.ArchivedSession> recent) throws IOException {

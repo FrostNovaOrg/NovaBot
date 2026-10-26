@@ -442,4 +442,179 @@ class PreLiveReminderServiceTest {
         verify(sender).sendScheduled(any(), any());
         assertTrue(Files.readString(file()).contains("UNCERTAIN"));
     }
+    // 状态与试发覆盖管理员最容易误判的订阅、时间和停发原因。
+    String consoleStatus() {
+        String status = service.status("test", HOST, target).status();
+        System.out.println("Reminder status: " + status);
+        return status;
+    }
+    PreLiveReminderService.TrialResult consoleTrial(boolean paused, boolean quiet, boolean disabled) {
+        return service.trial("test", HOST, target, paused, quiet, disabled);
+    }
+    @Test @DisplayName("没勾订阅仍说明不会发，避免管理员误以为已经开启")
+    void consoleExplainsUnsubscribed() throws Exception {
+        target.setMessages(List.of());
+        assertTrue(consoleStatus().contains("没勾选，不会发"));
+    }
+    @Test @DisplayName("默认提前六十分钟显示十九点并与实际发送对上，避免不知道何时收到")
+    void consoleDueMatchesScheduler() throws Exception {
+        at(TODAY, LocalTime.of(18, 59));
+        assertTrue(consoleStatus().contains("惯常时间前 60 分钟（默认）"));
+        assertTrue(consoleStatus().contains("下一次：今天 19:00"));
+        service.check(); assertTrue(sent.isEmpty());
+        at(TODAY, LocalTime.of(19, 0)); service.check(); assertEquals(1, sent.size());
+    }
+    @Test @DisplayName("不足五场解释惯常时间尚未算出，避免把正常等待当成故障")
+    void consoleExplainsInsufficientHistory() throws Exception {
+        sealed.clear();
+        for (int i = 1; i <= 4; i++) add(TODAY.minusDays(i), LocalTime.of(20, 0), 3600);
+        assertTrue(consoleStatus().contains("惯常开播时间还没算出来，暂时不会按提前量发"));
+    }
+    @Test @DisplayName("每天已发后显示明天及今天已发，避免状态与实际发送对不上")
+    void consoleShowsNextDayAndLatestDelivery() throws Exception {
+        reminderProfile(null, "19:00", false); service.check();
+        String status = consoleStatus();
+        assertTrue(status.contains("下一次：明天 19:00"));
+        assertTrue(status.contains("上一次：2026-10-26 已发"));
+    }
+    @Test @DisplayName("本人说不要时状态说明且拒绝试发，避免违背本人意思")
+    void consoleRespectsOptOut() throws Exception {
+        reminderProfile(null, null, true);
+        assertTrue(consoleStatus().contains("她说过不要开播前提醒"));
+        var result = consoleTrial(true, true, true);
+        assertFalse(result.success());
+        assertEquals("她说过不要开播前提醒，试发也不发", result.message());
+        verify(sender, never()).sendNow(any());
+    }
+    @Test @DisplayName("全局关闭先说明并要求确认，避免不知停发原因或误点打扰")
+    void consoleRequiresGlobalConfirmation() throws Exception {
+        when(gate.blockedBy()).thenReturn(PushGate.Block.DISABLED);
+        assertTrue(consoleStatus().contains("全局推送开关已关闭"));
+        assertEquals("disabled", consoleTrial(false, false, false).confirmation());
+        verify(sender, never()).sendNow(any());
+        when(sender.sendNow(any())).thenReturn(com.alibaba.fastjson2.JSONObject.of("code", 0));
+        assertTrue(consoleTrial(false, false, true).success());
+    }
+    @Test @DisplayName("试发正文同定时且不占当天名额，避免试发吃掉当天提醒")
+    void consoleTrialDoesNotConsumeScheduledDelivery() throws Exception {
+        reminderProfile(null, "19:00", false);
+        when(sender.sendNow(any())).thenReturn(com.alibaba.fastjson2.JSONObject.of("code", 0));
+        var result = consoleTrial(false, false, false);
+        assertTrue(result.success());
+        assertTrue(result.message().contains("不记进发送记录，也不算当天那一条"));
+        assertFalse(Files.exists(file()));
+        assertTrue(consoleStatus().contains("还没发过"));
+        service.check(); assertEquals(1, sent.size());
+        var captor = org.mockito.ArgumentCaptor.forClass(Message.class);
+        verify(sender).sendNow(captor.capture());
+        assertEquals(sent.get(0).getDisplay(), captor.getValue().getDisplay());
+    }
+    @Test @DisplayName("成员接口登记到负责主播范围，避免越权查看或发送别人的提醒")
+    void consolePermissionIsStreamerScoped() {
+        for (String endpoint : List.of("GET /config/api/pre-live-reminder/{platform}/{uid}/status",
+                "POST /config/api/pre-live-reminder/{platform}/{uid}/trial")) {
+            var rule = org.frostnova.nova.core.config.ui.ConfigUiPermissions.entries().get(endpoint);
+            assertNotNull(rule);
+            assertEquals(org.frostnova.nova.core.config.ui.ConfigUiPermissions.Access.STREAMER, rule.access());
+        }
+    }
+
+    @Test @DisplayName("暂停和静音逐项确认且每天定时不显示被静音挡住，避免误判停发原因")
+    void consoleExplainsPauseAndQuietAndRequiresConfirmation() throws Exception {
+        when(profiles.read("test", HOST)).thenReturn(profile(true));
+        when(gate.inQuietHoursFor(target)).thenReturn(true);
+        assertTrue(consoleStatus().contains("已暂停（她说过「先别发了」）"));
+        assertTrue(consoleStatus().contains("按提前量的提醒会被挡住"));
+        assertEquals("paused", consoleTrial(false, false, false).confirmation());
+        assertEquals("quiet", consoleTrial(true, false, false).confirmation());
+        verify(sender, never()).sendNow(any());
+        when(sender.sendNow(any())).thenReturn(com.alibaba.fastjson2.JSONObject.of("code", 0));
+        assertTrue(consoleTrial(true, true, false).success());
+        reminderProfile(null, "19:00", false);
+        assertFalse(consoleStatus().contains("静音"));
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"UNREADABLE", "TEMPORARILY_UNREADABLE"})
+    @DisplayName("两种档案读取失败都说明停发并拒绝试发，避免按错误默认设置打扰本人")
+    void consoleBlocksUnreadableProfiles(String status) throws Exception {
+        when(profiles.read("test", HOST)).thenReturn(StreamerProfile.empty(StreamerProfile.Status.valueOf(status)));
+        var result = service.status("test", HOST, target);
+        assertTrue(result.profileUnreadable());
+        assertTrue(result.status().contains("档案读不出，已停发"));
+        assertFalse(consoleTrial(true, true, true).success());
+        verify(sender, never()).sendNow(any());
+    }
+
+    @Test @DisplayName("发送记录损坏可见且状态只读，避免管理员把停发当成从没发过")
+    void consoleReportsUnreadableHistoryWithoutWriting() throws Exception {
+        Files.writeString(file(), "broken"); reopen();
+        var result = service.status("test", HOST, target);
+        assertTrue(result.historyUnreadable());
+        assertTrue(result.status().contains("发送记录读不出，已停发"));
+        assertFalse(result.status().contains("还没发过"));
+        assertEquals("broken", Files.readString(file()));
+        verifyNoInteractions(ledger, recap, sender);
+    }
+
+    @ParameterizedTest @ValueSource(ints = {30, 60, 180})
+    @DisplayName("不同提前量的状态和调度共用到点时刻，避免只在默认设置时对得上")
+    void consoleCustomLeadMatchesScheduler(int lead) throws Exception {
+        reminderProfile(lead, null, false);
+        var due = LocalTime.of(20, 0).minusMinutes(lead);
+        at(TODAY, due.minusMinutes(1));
+        assertTrue(consoleStatus().contains("下一次：今天 " + due));
+        service.check(); assertTrue(sent.isEmpty());
+        at(TODAY, due); service.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("跨午夜提醒日期与调度一致，避免提前量落到前一天却显示错日")
+    void consoleMidnightDueMatchesScheduler() throws Exception {
+        regularHistory(LocalTime.of(0, 20));
+        at(TODAY.minusDays(1), LocalTime.of(23, 19));
+        assertTrue(consoleStatus().contains("下一次：今天 23:20"));
+        service.check(); assertTrue(sent.isEmpty());
+        at(TODAY.minusDays(1), LocalTime.of(23, 20)); service.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("上周没播就直说今明没有计划，避免状态承诺实际不会发送的提醒")
+    void consoleRespectsLastWeekCondition() throws Exception {
+        sealed.removeIf(s -> {
+            var date = Instant.ofEpochMilli(s.startTime()).atZone(ZONE).toLocalDate();
+            return date.equals(TODAY.minusWeeks(1)) || date.equals(TODAY.plusDays(1).minusWeeks(1));
+        });
+        assertTrue(consoleStatus().contains("今明两天没有符合条件的提醒"));
+        service.check(); assertTrue(sent.isEmpty());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"SENDING", "SENT", "FAILED", "UNCERTAIN", "NOT_SENT"})
+    @DisplayName("上一次取日期最新而非插入顺序并标明结果，避免把失败说成已发")
+    void consoleShowsLatestHistoryStatus(String state) throws Exception {
+        var store = new PreLiveReminderStore(file());
+        var key = WeeklyReportDeliveryService.key("test", HOST, target);
+        store.reserve(key, TODAY);
+        store.result(key, TODAY, PreLiveReminderStore.Status.valueOf(state));
+        store.reserve(key, TODAY.minusDays(1));
+        store.result(key, TODAY.minusDays(1), PreLiveReminderStore.Status.SENT);
+        service = new PreLiveReminderService(source, archive, live, ledger, recap, profiles, privacy, sender, gate, store, clock);
+        String expected = switch (state) {
+            case "SENDING" -> "正在发";
+            case "SENT" -> "已发";
+            case "FAILED" -> "发送失败，不会自动重发";
+            case "UNCERTAIN" -> "发送结果不明，不会自动重发";
+            default -> "没发出去";
+        };
+        assertTrue(consoleStatus().contains("上一次：" + TODAY + " " + expected));
+    }
+
+    @Test @DisplayName("无正文或发送失败时如实返回且不登记历史，避免空提醒和谎报成功")
+    void consoleTrialHandlesEmptyAndFailedDelivery() throws Exception {
+        audience = new SessionRecapService.PreLiveAudience(List.of(), List.of(), Map.of());
+        assertFalse(consoleTrial(false, false, false).success());
+        verify(sender, never()).sendNow(any());
+        audience = new SessionRecapService.PreLiveAudience(List.of(920000001L), List.of(), Map.of(920000001L, "合成常客"));
+        when(sender.sendNow(any())).thenReturn(com.alibaba.fastjson2.JSONObject.of("code", 1));
+        assertFalse(consoleTrial(false, false, false).success());
+        assertFalse(Files.exists(file()));
+    }
+
 }

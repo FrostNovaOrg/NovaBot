@@ -67,6 +67,8 @@ public final class ConfigUiPermissions {
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/weekly-report/{platform}/{uid}/trial");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/session-recap/{platform}/{uid}/status");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/session-recap/{platform}/{uid}/trial");
+        add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/pre-live-reminder/{platform}/{uid}/status");
+        add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/pre-live-reminder/{platform}/{uid}/trial");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/live-report/{platform}/{uid}/latest");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/live-report/{platform}/{uid}/send-latest");
         add(entries, Access.STREAMER, Subject.PREVIEW, "POST /config/api/report/preview");

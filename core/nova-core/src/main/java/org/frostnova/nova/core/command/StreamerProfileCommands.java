@@ -190,11 +190,14 @@ public class StreamerProfileCommands {
         if (p.exclusions().isEmpty()) text.append("无");
         else for (var item : p.exclusions()) text.append("\n").append(item.type().label()).append("（").append(time(item.setAt())).append("）");
         text.append("\n开播前提醒：");
-        if (p.preLiveDisabled()) text.append("不要了");
-        else if (p.preLiveDailyTime() != null) text.append("每天 ").append(p.preLiveDailyTime());
-        else text.append("惯常时间前 ").append(p.preLiveLeadMinutes() == null ? 60 : p.preLiveLeadMinutes())
-                .append(" 分钟").append(p.preLiveLeadMinutes() == null ? "（默认）" : "");
-        return text.toString();
+        return text.append(describePreLiveReminder(p)).toString();
+    }
+
+    public static String describePreLiveReminder(StreamerProfile p) {
+        if (p.preLiveDisabled()) return "不要了";
+        if (p.preLiveDailyTime() != null) return "每天 " + p.preLiveDailyTime();
+        return "惯常时间前 " + (p.preLiveLeadMinutes() == null ? 60 : p.preLiveLeadMinutes())
+                + " 分钟" + (p.preLiveLeadMinutes() == null ? "（默认）" : "");
     }
     private static String time(Long timestamp) { return timestamp == null ? "默认，尚未设置" : TIME.format(Instant.ofEpochMilli(timestamp)); }
     private record Result(StreamerProfile profile, String reply) { }

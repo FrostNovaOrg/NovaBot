@@ -53,6 +53,17 @@ public final class PreLiveReminderStore {
         return unreadable || deliveries.getOrDefault(subscription, Map.of()).containsKey(date.toString());
     }
 
+    public record History(boolean unreadable, Map<LocalDate, Status> records) {
+        public History { records = Map.copyOf(records); }
+    }
+
+    /** 返回不可修改的快照，读取不会创建文件或改写发送记录。 */
+    public synchronized History history(String subscription) {
+        var records = new LinkedHashMap<LocalDate, Status>();
+        deliveries.getOrDefault(subscription, Map.of()).forEach((date, status) -> records.put(LocalDate.parse(date), status));
+        return new History(unreadable, records);
+    }
+
     /** 本人重复索取仍可发送；保留当天记录以阻止定时重复。 */
     public synchronized boolean reserveRequested(String subscription, LocalDate date) {
         if (unreadable) return false;
