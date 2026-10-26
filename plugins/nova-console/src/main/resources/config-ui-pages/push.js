@@ -1853,6 +1853,7 @@ function noticeRow(item, user, target, session, repaint) {
   text.appendChild(meta);
   line.appendChild(text);
   if (item.className === SESSION_RECAP) sessionRecapActions(text, user, target);
+  if (item.className === PRE_LIVE_REMINDER) preLiveReminderActions(text, user, target);
   if (item.on && item.className === WEEKLY_REPORT) weeklyReportActions(text, user, target, session);
   if (item.on && item.className === LIVE_REPORT) liveReportActions(text, user, target, session);
 
@@ -2277,11 +2278,63 @@ function sessionRecapActions(host, user, target) {
         const res = await api(path + '/trial' + query
           + (confirmPaused ? '&confirmPaused=true' : '') + (confirmQuiet ? '&confirmQuiet=true' : ''), {method: 'POST'});
         if (res.confirmation === 'paused' && !confirmPaused) {
-          if (!await ask({title: '试发最近一场', body: '她说过先别发了，确定还要发吗？', danger: false})) return;
+          if (!await ask({title: '试发最近一场', body: '主播本人说过先别发了，确定还要发吗？', danger: false})) return;
           confirmPaused = true;
         } else if (res.confirmation === 'quiet' && !confirmQuiet) {
           if (!await ask({title: '试发最近一场', body: '现在是这条通道的静音时段，确定现在发吗？', danger: false})) return;
           confirmQuiet = true;
+        } else {
+          say(res.message, res.success ? 'ok' : 'err');
+          return;
+        }
+      }
+    } catch { say('试发失败，请稍后重试', 'err'); }
+    finally { trial.disabled = false; }
+  });
+}
+
+function preLiveReminderActions(host, user, target) {
+  const path = '/pre-live-reminder/' + encodeURIComponent(user.platform) + '/' + user.uid;
+  const query = '?pushPlatform=' + encodeURIComponent(target.platform)
+    + '&type=' + Number(target.type) + '&num=' + target.num;
+  const tools = el('div', 'weekly-report-tools');
+  host.appendChild(tools);
+  const status = el('p', 'hint');
+  status.textContent = '正在读取开播前提醒状态…';
+  status.setAttribute('role', 'status');
+  tools.appendChild(status);
+  const recovery = el('a', 'lnkbtn');
+  recovery.href = '#/streamers/' + encodeURIComponent(user.platform) + '/' + user.uid + '?section=profile';
+  recovery.textContent = '去主播页点「档案已核对，恢复」';
+  recovery.hidden = true;
+  tools.appendChild(recovery);
+  api(path + '/status' + query).then(res => {
+    status.textContent = res.success ? res.status : '开播前提醒状态读取失败，请稍后重试';
+    recovery.hidden = !res.profileUnreadable;
+  }).catch(() => { status.textContent = '开播前提醒状态读取失败，请稍后重试'; });
+  const trial = el('button', 'ghost sm');
+  trial.type = 'button';
+  trial.textContent = '试发开播前提醒';
+  trial.disabled = Number(target.type) !== 0 || target.streamerSelf !== true;
+  tools.appendChild(trial);
+  trial.addEventListener('click', async () => {
+    if (trial.disabled) return;
+    trial.disabled = true;
+    let confirmPaused = false, confirmQuiet = false, confirmDisabled = false;
+    try {
+      for (;;) {
+        const res = await api(path + '/trial' + query
+          + (confirmPaused ? '&confirmPaused=true' : '') + (confirmQuiet ? '&confirmQuiet=true' : '')
+          + (confirmDisabled ? '&confirmDisabled=true' : ''), {method: 'POST'});
+        if (res.confirmation === 'paused' && !confirmPaused) {
+          if (!await ask({title: '试发开播前提醒', body: '主播本人说过先别发了，确定还要发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
+          confirmPaused = true;
+        } else if (res.confirmation === 'quiet' && !confirmQuiet) {
+          if (!await ask({title: '试发开播前提醒', body: '现在是这条通道的静音时段，确定现在发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
+          confirmQuiet = true;
+        } else if (res.confirmation === 'disabled' && !confirmDisabled) {
+          if (!await ask({title: '试发开播前提醒', body: '全局推送开关已关闭，确定现在发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
+          confirmDisabled = true;
         } else {
           say(res.message, res.success ? 'ok' : 'err');
           return;

@@ -62,4 +62,22 @@ class PreLiveReminderStoreTest {
         var store = new PreLiveReminderStore(parent.resolve("deliveries.json"));
         assertFalse(store.reserve("synthetic-subscription", today));
     }
+    @Test @DisplayName("发送记录查询只给不可修改的快照，避免控制台读取篡改历史或创建空记录")
+    void historyIsReadOnlySnapshot() throws Exception {
+        Path path = dir.resolve("deliveries.json");
+        var store = new PreLiveReminderStore(path);
+        var empty = store.history("synthetic-subscription");
+        assertFalse(empty.unreadable()); assertTrue(empty.records().isEmpty());
+        assertFalse(Files.exists(path));
+        store.reserve("synthetic-subscription", today);
+        var snapshot = store.history("synthetic-subscription");
+        String before = Files.readString(path);
+        assertEquals(PreLiveReminderStore.Status.SENDING, snapshot.records().get(today));
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.records().clear());
+        assertEquals(before, Files.readString(path));
+        store.result("synthetic-subscription", today, PreLiveReminderStore.Status.SENT);
+        assertEquals(PreLiveReminderStore.Status.SENDING, snapshot.records().get(today));
+        assertEquals(PreLiveReminderStore.Status.SENT, store.history("synthetic-subscription").records().get(today));
+    }
+
 }
