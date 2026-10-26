@@ -79,6 +79,45 @@ class SessionRecapServiceTest {
     boolean has(SessionRecap.Result result, String key) {
         return java.util.stream.Stream.concat(result.facts().stream(), result.patterns().stream()).anyMatch(i -> i.key().equals(key));
     }
+    @Test @DisplayName("提醒名单沿用常客口径并按发言数列新人，避免漏掉或错认今天可留意的人")
+    void preLiveAudienceNamesAndOrder() throws Exception {
+        var regulars = java.util.stream.LongStream.range(BASE + 1, BASE + 11).boxed().toList();
+        for (int day = 0; day < 5; day++) {
+            var present = day == 4 ? regulars.subList(1, regulars.size()) : regulars;
+            add(day, present, present, "complete", 10, 1);
+        }
+        for (int day = 5; day < 10; day++) add(day, List.of(), List.of(), "complete", 10, 1);
+        long quiet = BASE + 30, talkative = BASE + 31, excluded = BASE + 32;
+        add(10, List.of(quiet, talkative, excluded, HOST),
+                List.of(quiet, talkative, talkative, talkative, excluded, HOST), "complete", 10, 1);
+        privacy.setExcludedUids(List.of(excluded));
+        ledger.updateStreamer("test", HOST);
+        var audience = service.preLiveAudience("test", HOST, at(10));
+        var expected = new ArrayList<>(regulars.subList(1, regulars.size())); expected.add(BASE + 1);
+        assertEquals(expected, audience.absentRegulars());
+        assertEquals(List.of(talkative, quiet), audience.newSpeakers());
+        assertEquals("Sample viewer", audience.nicknames().get(BASE + 1));
+        assertEquals("Sample viewer", audience.nicknames().get(talkative));
+        assertFalse(audience.nicknames().containsKey(excluded));
+        assertFalse(audience.nicknames().containsKey(HOST));
+    }
+
+    @Test @DisplayName("记录不到十场或常客规律不足时不列名单，避免把熟人误叫新人")
+    void preLiveAudienceNeedsHistory() throws Exception {
+        add(0, List.of(BASE + 1), List.of(BASE + 1), "complete", 10, 1);
+        ledger.updateStreamer("test", HOST);
+        var audience = service.preLiveAudience("test", HOST, at(0));
+        assertTrue(audience.newSpeakers().isEmpty());
+        assertTrue(audience.absentRegulars().isEmpty());
+    }
+
+    @Test @DisplayName("新人事实提供首次开口名单，避免提醒漏掉上一场新朋友")
+    void newcomerFactIncludesSpeakers() throws Exception {
+        warmup();
+        add(10, List.of(BASE + 1, BASE + 2, BASE + 3), List.of(BASE + 1, BASE + 3), "complete", 10, 1);
+        assertEquals(java.util.Set.of(BASE + 1, BASE + 3),
+                new java.util.HashSet<>(item(calculate(10), "newcomers").people()));
+    }
     double number(SessionRecap.Item item, String key) { return ((Number) item.values().get(key)).doubleValue(); }
 
     @Test @DisplayName("安装不足十场不报新人和回流，避免把所有人说成新朋友")

@@ -87,6 +87,43 @@ public class SessionRecapService {
         return calculateBatch(platform, uid, List.of(start)).get(0);
     }
 
+    /** 开播前使用的两组观众；调用方负责更新账本，昵称仅在内存中使用。 */
+    public record PreLiveAudience(List<Long> absentRegulars, List<Long> newSpeakers, Map<Long, String> nicknames) {
+        public PreLiveAudience {
+            absentRegulars = List.copyOf(absentRegulars);
+            newSpeakers = List.copyOf(newSpeakers);
+            nicknames = Map.copyOf(nicknames);
+        }
+    }
+
+    public PreLiveAudience preLiveAudience(String platform, long uid, long start) throws IOException {
+        var result = calculate(platform, uid, start);
+        var absent = result.patterns().stream().filter(p -> p.key().equals("regulars_absent"))
+                .findFirst().map(Item::people).orElse(List.of());
+        var newcomers = result.facts().stream().filter(p -> p.key().equals("newcomers"))
+                .findFirst().map(Item::people).orElse(List.of());
+        var wanted = new HashSet<Long>(absent);
+        wanted.addAll(newcomers);
+        var names = new HashMap<Long, String>();
+        var counts = new HashMap<Long, Long>();
+        var speakers = new HashSet<>(newcomers);
+        if (!newcomers.isEmpty()) for (var row : ledger.sessionRows(platform, uid, start)) {
+            if (speakers.contains(row.viewerUid())) counts.put(row.viewerUid(), row.danmuCount());
+        }
+        var ordered = newcomers.stream().sorted(Comparator.<Long>comparingLong(v -> counts.getOrDefault(v, 0L))
+                .reversed().thenComparingLong(Long::longValue)).toList();
+        // 从近到远只查尚缺昵称的人，不保留全历史昵称表。
+        var history = ledger.sessions(platform, uid);
+        for (int i = history.size() - 1; i >= 0 && !wanted.isEmpty(); i--) {
+            long session = history.get(i).startTime();
+            if (session > start) continue;
+            var found = ledger.sessionNicknames(platform, uid, session, wanted);
+            names.putAll(found);
+            wanted.removeAll(found.keySet());
+        }
+        return new PreLiveAudience(absent, ordered, names);
+    }
+
     private final class Context {
         final Streamer streamer;
         final long target;
@@ -189,7 +226,7 @@ public class SessionRecapService {
                 }
                 if (today.known)
                     fact("newcomers", Map.of("newcomers", today.size(), "newcomerSpoke", today.spoken.size),
-                            List.of(), starts, "ledger");
+                            Arrays.stream(Arrays.copyOf(today.spoken.values, today.spoken.size)).boxed().toList(), starts, "ledger");
             }
             if (today != null && today.start == target && today.known && today.size() > 0 && scan.spokeN >= 30 && scan.silentN > 0) {
                 var usualWindow = tail(qualified.stream().filter(s -> s.startTime() < target).toList(), 10);

@@ -60,6 +60,32 @@ class AudienceLedgerServiceTest {
         return Map.of("enter_users", java.util.Arrays.stream(uids).boxed().toList());
     }
 
+    @Test @DisplayName("共用恢复检查遇到失败后仍恢复残件，避免临时文件留下被拒绝观众")
+    void sharedRecoveryResetsAfterFailure() throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        ledger.updateStreamer("test", HOST);
+        Path shard = dir.resolve("audience-ledger/test-" + HOST + "/1000.jsonl");
+        assertThrows(java.io.IOException.class, () -> ledger.withRecoveredLedger(() -> {
+            ledger.withRecoveredLedger(() -> assertEquals(1, ledger.sessions("test", HOST).size()));
+            throw new java.io.IOException("synthetic failure");
+        }));
+        Path copy = shard.resolveSibling("1000.jsonl.tmp");
+        Files.copy(shard, copy);
+        ledger.sessions("test", HOST);
+        assertFalse(Files.exists(copy));
+    }
+
+    @Test @DisplayName("连续两轮共用恢复检查仍清理新残件，避免临时副本留下被拒绝观众")
+    void sharedRecoveryResetsBetweenRounds() throws Exception {
+        append(session(1000, users(VIEWER))); seal(1000);
+        ledger.withRecoveredLedger(() -> ledger.updateStreamer("test", HOST));
+        Path shard = dir.resolve("audience-ledger/test-" + HOST + "/1000.jsonl");
+        Path copy = shard.resolveSibling("1000.jsonl.tmp");
+        Files.copy(shard, copy);
+        ledger.withRecoveredLedger(() -> assertEquals(1, ledger.sessions("test", HOST).size()));
+        assertFalse(Files.exists(copy), "第二轮必须重新恢复并清掉新残件");
+    }
+
     @Test @DisplayName("续播不入账，封存后入账，避免把半场当整场")
     void waitsForSeal() throws Exception {
         append(session(1000, users(VIEWER)));

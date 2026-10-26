@@ -263,8 +263,12 @@ public class ConfigurationValidator {
                 || !Objects.equals(target.getInteger("type"), PushTargetType.FRIEND.getCode()))) {
             for (Object entry : messages) {
                 if (entry instanceof JSONObject message
-                        && "org.frostnova.nova.core.handler.SessionRecapPushHandler".equals(message.getString("handler"))) {
-                    issues.add(channel + "：下播小结（私聊）只能发给主播本人，请先勾『这是主播本人』");
+                        && message.get("handler") instanceof String handler
+                        && Set.of("org.frostnova.nova.core.handler.SessionRecapPushHandler",
+                                "org.frostnova.nova.core.handler.PreLiveReminderPushHandler").contains(handler)) {
+                    String label = handler.endsWith(".PreLiveReminderPushHandler")
+                            ? "开播前提醒（私聊）" : "下播小结（私聊）";
+                    issues.add(channel + "：" + label + "只能发给主播本人，请先勾『这是主播本人』");
                     break;
                 }
             }

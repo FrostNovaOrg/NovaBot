@@ -54,6 +54,8 @@ public class AudienceLedgerService {
     private static final int VERSION = 1;
     private final NovaCoreProperties properties;
     private final AssistantProperties assistant;
+    private int recoveryDepth;
+    private boolean recoveryDone;
 
     public AudienceLedgerService(NovaCoreProperties properties, AssistantProperties assistant) {
         this.properties = properties;
@@ -71,6 +73,18 @@ public class AudienceLedgerService {
             writeStart(root(), platform, uid);
         }
     }
+
+    /** 同一轮读写共用首次访问时的恢复检查；持有账本锁，期间不会与更新或重建交错。 */
+    void withRecoveredLedger(LedgerWork work) throws IOException {
+        synchronized (LOCK) {
+            recoveryDepth++;
+            try { work.run(); }
+            finally { if (--recoveryDepth == 0) recoveryDone = false; }
+        }
+    }
+
+    @FunctionalInterface
+    interface LedgerWork { void run() throws IOException; }
 
     /** 整份重建成功后换上新目录；失败保留原账本。也可在删掉账本后调用。 */
     public void rebuild() throws IOException {
@@ -506,6 +520,7 @@ public class AudienceLedgerService {
             throw new IllegalArgumentException("平台或主播编号无效");
     }
     private void recover() throws IOException {
+        if (recoveryDepth > 0 && recoveryDone) return;
         deleteTree(sibling(".building"));
         Path previous = sibling(".previous");
         if (Files.exists(previous)) {
@@ -518,7 +533,9 @@ public class AudienceLedgerService {
                     Files.delete(file);
             }
         }
+        recoveryDone = recoveryDepth > 0;
     }
+
     private static void move(Path from, Path to) throws IOException {
         try { Files.move(from, to, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
         catch (AtomicMoveNotSupportedException unsupported) {

@@ -162,6 +162,13 @@ public class NovaMessageSender {
         return null;
     }
 
+    /** 定时提醒使用调用方所在时区的时刻，在入队前复查通道静音与全局开关。 */
+    public PushGate.Block sendScheduled(Message message, java.time.LocalTime time) {
+        if (!pushGate.allowedAt(time, message.getChannel())) return pushGate.blockedBy();
+        enqueue(message);
+        return null;
+    }
+
     /**
      * 将告警消息加入发送队列
      * <p>
