@@ -361,6 +361,45 @@ bash /opt/starbot/tools/data-backup.sh <数据目录> user@备份机:/var/backup
 容器是 `/app`。同步只增不删——目标上已有的文件不会被去掉；`reports/`、`releases/`
 与 `*.tmp` 不同步，`releases/` 里是各版本的程序，不算直播数据。
 
+**B 站动态文本归档**也在这个数据目录下的 `dynamics/bilibili-<uid>.jsonl`，每位主播一个文件，
+每行一条动态，只追加、永久保留。只记录已启用动态推送的主播在现有轮询中抓到的内容，
+不额外请求，也不补抓更早的动态。首次启动不推送的那批、过期不推送的动态、被屏蔽词挡下的动态
+都会记录；同一动态 id 只存一次，重启后也不重写。
+
+记录包含平台与主播 uid、动态 id 和 B 站类型、发布时间与首次抓取时间（毫秒）、正文全文、
+视频标题和简介、专栏或图文的标题和摘要，以及预约等附带对象的标题。
+表情写作 `[表情名]`，保留 @ 和话题文字；链接包含动态本身、正文网页和附带对象的页面链接。
+转发只另存一层原动态的作者 uid、id、类型、正文、附带对象文字和链接，不展开更深的转发。
+不保存图片、图片链接、封面、头像、视频文件或表情图片地址。读取时跳过坏行，写入失败只记警告，
+不影响推送。备份和恢复时把 `dynamics/` 一起带上。
+
+需要直接读取 JSONL 时，字段含义如下（缺失文字或时间记为 `null`，列表无内容时为空列表）：
+
+| 字段 | 含义 |
+|---|---|
+| `platform`、`uid` | 平台标识 `bilibili`、发布者 uid |
+| `id`、`type` | 动态 id 字符串、B 站原始类型字符串；未给类型时为 `UNKNOWN` |
+| `publishedAt`、`capturedAt` | 发布时间、首次成功归档时的抓取时间，均为 Unix 毫秒；没有发布时间时为 `null` |
+| `text` | 正文；优先使用 `desc`，没有正文时使用图文的 `opus.summary` |
+| `links` | 动态本身、正文网页及附带对象页面链接的去重列表，不包含原动态的链接 |
+| `objects` | 附带对象列表；每项有 `type`（如 `archive`、`article`、`opus`、`reserve`）、`title`、`description`（视频简介）、`summary`（专栏或图文摘要）、`links`（对象页面及其文字中的网页链接） |
+| `origin` | 原动态，非转发时为 `null`；有 `uid`、`id`、`type`、`text`、`links`、`objects`，含义同上，没有下一层 `origin` |
+
+按主播选取文件后，可按 `publishedAt` 筛选时间；发布时间未知的记录可用 `capturedAt`。
+链接只取文本和页面跳转字段，来源如下；以 `//` 开头的地址补为 `https://`，站内相对路径补齐站点。
+
+| 内容 | 链接来源 |
+|---|---|
+| 动态本身 | `Dynamic.getUrl()`，即 `https://t.bilibili.com/<id>` |
+| 正文、摘要 | 文字中的网页地址，以及 `rich_text_nodes` 中网页节点的 `jump_url`、`orig_text` |
+| 视频 | `major.archive.jump_url`；没有有效链接时用 `bvid`，再退到 `id` 组成视频页地址 |
+| 专栏 | `major.article.jump_url`；没有有效链接时用 `id` 组成专栏页地址 |
+| 图文 | `major.opus.jump_url`；没有有效链接时用 `id` 组成图文页地址 |
+| 直播间、开播动态 | `major.live.jump_url`；或解析 `major.live_rcmd.content`，取 `live_play_info.link`、`jump_url`；没有有效链接时用 `room_id` 组成直播间地址 |
+| 直播预约等附加对象 | `additional.reserve`、`ugc`、`common`、`vote` 的 `jump_url`、`button.jump_url`；没给链接则留空 |
+| 音频、番剧等其他对象 | `major.music`、`pgc`、`ugc_season`、`common` 的 `jump_url` |
+| 转发原动态 | 在原动态上按同样的规则提取，单独放在 `origin.links` 与 `origin.objects` |
+
 > [!WARNING] 同步是按目录走的。数据目录若与配置、凭据在同一个目录（三种装法默认都是），
 > `cookies.json`、`cookies.key`、`application.yml` 会一并被备出去。备份目的地要按
 > 存放凭据的标准保管；只想备数据的话，先把数据文件挪进一个子目录、在设置里把
@@ -379,7 +418,7 @@ sudo systemctl enable --now novabot-backup.timer
 **恢复**：先停服务，再从备份目录拷回数据与配置，不拷程序件；拷完再启动。
 
 - 数据：`data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl`
-  与 `details/`、`timeline/` 两个目录
+  与 `details/`、`timeline/`、`dynamics/` 三个目录
 - 配置：`application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`
 - 二次验证：主配置文件旁的 `<主配置文件名>.totp-state`，默认是 `application.yml.totp-state`，
   与主配置文件一起备份、恢复；主配置放在别处的，也一并备份那个目录里的此文件
