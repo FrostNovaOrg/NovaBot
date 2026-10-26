@@ -103,7 +103,7 @@ public class SessionRecapGreetingService implements CommandFollowUp {
                     concerns.removeIf(item -> item.text().equals(text));
                     concerns.add(new StreamerProfile.Concern(text, now.toEpochMilli()));
                 }
-                return new StreamerProfile(tier, now.toEpochMilli(), concerns, p.exclusions(), p.paused(), p.pauseSetAt(), p.status());
+                return new StreamerProfile(tier, now.toEpochMilli(), concerns, p.exclusions(), p.paused(), p.pauseSetAt(), p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status());
             });
             return Claimed.answer(CommandReply.of("记下了：第 " + tier + " 档" + (text.isBlank() ? "" :
                     "；最近在意：" + MessagePlaceholders.escapeExternalText(text))));

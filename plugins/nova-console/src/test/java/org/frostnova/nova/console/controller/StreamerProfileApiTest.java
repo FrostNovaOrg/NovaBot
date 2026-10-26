@@ -35,7 +35,7 @@ class StreamerProfileApiTest {
         profiles = new StreamerProfileStore(dir);
         profiles.update("bilibili", UID, p -> new StreamerProfile(2, TIME,
                 List.of(new StreamerProfile.Concern("回访", TIME)),
-                List.of(new StreamerProfile.Exclusion(StreamerProfile.Pattern.slot_compare, TIME)), true, TIME, p.status()));
+                List.of(new StreamerProfile.Exclusion(StreamerProfile.Pattern.slot_compare, TIME)), true, TIME, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()));
         var platforms = mock(DataSourceServiceRegistry.class); when(platforms.platforms()).thenReturn(List.of("bilibili"));
         mvc = MockMvcBuilders.standaloneSetup(new StreamerProfileController(profiles, events::add))
                 .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, platforms)).build();

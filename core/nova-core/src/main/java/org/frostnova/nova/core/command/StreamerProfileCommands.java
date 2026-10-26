@@ -2,6 +2,7 @@ package org.frostnova.nova.core.command;
 
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.service.StreamerProfile;
+import org.frostnova.nova.core.service.PreLiveReminderService;
 import org.frostnova.nova.core.service.StreamerProfileStore;
 import org.frostnova.nova.core.service.StreamerSelfResolver;
 import org.springframework.context.annotation.Bean;
@@ -30,13 +31,60 @@ public class StreamerProfileCommands {
     private final StreamerProfileStore store;
     private final StreamerSelfResolver resolver;
     private final Clock clock;
+    private final org.springframework.beans.factory.ObjectProvider<PreLiveReminderService> reminders;
 
     @org.springframework.beans.factory.annotation.Autowired
-    public StreamerProfileCommands(StreamerProfileStore store, StreamerSelfResolver resolver) {
-        this(store, resolver, Clock.systemUTC());
+    public StreamerProfileCommands(StreamerProfileStore store, StreamerSelfResolver resolver,
+            org.springframework.beans.factory.ObjectProvider<PreLiveReminderService> reminders) {
+        this(store, resolver, Clock.systemUTC(), reminders);
     }
-    StreamerProfileCommands(StreamerProfileStore store, StreamerSelfResolver resolver, Clock clock) {
-        this.store = store; this.resolver = resolver; this.clock = clock;
+    StreamerProfileCommands(StreamerProfileStore store, StreamerSelfResolver resolver, Clock clock,
+            org.springframework.beans.factory.ObjectProvider<PreLiveReminderService> reminders) {
+        this.store = store; this.resolver = resolver; this.clock = clock; this.reminders = reminders;
+    }
+
+    @Bean ScopedCommand profileReminder() {
+        return command("开播前提醒", List.of("改到前", "每天", "不要开播前提醒"), true, text -> true,
+                (p, arg, now) -> reminderSetting(p, arg));
+    }
+    @Bean ScopedCommand profilePrepare() {
+        return command("准备开播", List.of(), false, text -> true, (p, arg, now) -> new Result(p, ""));
+    }
+    private static Result reminderSetting(StreamerProfile p, String raw) {
+        String text = raw.strip();
+        if (text.startsWith("开播前提醒")) text = text.substring("开播前提醒".length()).strip();
+        if (text.equals("不要了") || text.equals("不要开播前提醒"))
+            return new Result(reminderCopy(p, null, null, true),
+                    "记下了：以后不发开播前提醒。想要了回「开播前提醒改到前 60 分钟」");
+        if (text.startsWith("改到前")) {
+            var match = java.util.regex.Pattern.compile("改到前\\s*([+-]?[0-9]+)\\s*分钟").matcher(text);
+            if (match.matches()) {
+                try {
+                    int lead = Integer.parseInt(match.group(1));
+                    if (lead >= 5 && lead <= 180) return new Result(reminderCopy(p, lead, null, false),
+                            "记下了：开播前 " + lead + " 分钟提醒你");
+                } catch (NumberFormatException ignored) { /* 超长数字也回同一条用法。 */ }
+            }
+            return new Result(p, "提前多少分钟要在 5 到 180 之间，比如「开播前提醒改到前 30 分钟」");
+        }
+        if (text.startsWith("每天")) {
+            String value = text.substring(2).strip();
+            var match = java.util.regex.Pattern.compile("([0-9]{1,2})(?:[:：]([0-9]{2})|点([0-9]{2})?)").matcher(value);
+            if (match.matches()) {
+                int hour = Integer.parseInt(match.group(1));
+                String minuteText = match.group(2) == null ? match.group(3) : match.group(2);
+                int minute = minuteText == null ? 0 : Integer.parseInt(minuteText);
+                if (hour < 24 && minute < 60) {
+                    String time = String.format(Locale.ROOT, "%02d:%02d", hour, minute);
+                    return new Result(reminderCopy(p, null, time, false), "记下了：每天 " + time + " 提醒你");
+                }
+            }
+        }
+        return new Result(p, "时间要写成 19:00 这样，比如「开播前提醒每天 19:00」");
+    }
+    private static StreamerProfile reminderCopy(StreamerProfile p, Integer lead, String daily, boolean disabled) {
+        return new StreamerProfile(p.tier(), p.tierSetAt(), p.concerns(), p.exclusions(), p.paused(), p.pauseSetAt(),
+                lead, daily, disabled, p.status());
     }
 
     @Bean ScopedCommand profileTier() {
@@ -45,7 +93,7 @@ public class StreamerProfileCommands {
             if (value.equals("3")) return new Result(p, "第 3 档还没开放，先按第 " + p.tier() + " 档发");
             if (!value.equals("1") && !value.equals("2")) return new Result(p, "可以说：改成 1、改成 2");
             int tier = Integer.parseInt(value);
-            return new Result(new StreamerProfile(tier, now, p.concerns(), p.exclusions(), p.paused(), p.pauseSetAt(), p.status()),
+            return new Result(new StreamerProfile(tier, now, p.concerns(), p.exclusions(), p.paused(), p.pauseSetAt(), p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()),
                     "记下了：第 " + tier + " 档");
         });
     }
@@ -111,7 +159,7 @@ public class StreamerProfileCommands {
         var names = new ArrayList<>(pattern.aliases()); names.add(pattern.label()); names.add(pattern.name()); return names;
     }
     private static StreamerProfile copy(StreamerProfile p, List<Concern> concerns, List<Exclusion> exclusions, boolean paused, Long pauseSetAt) {
-        return new StreamerProfile(p.tier(), p.tierSetAt(), concerns, exclusions, paused, pauseSetAt, p.status());
+        return new StreamerProfile(p.tier(), p.tierSetAt(), concerns, exclusions, paused, pauseSetAt, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status());
     }
     public static String normalize(String value) {
         return Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
@@ -134,6 +182,11 @@ public class StreamerProfileCommands {
         text.append("\n别提什么：");
         if (p.exclusions().isEmpty()) text.append("无");
         else for (var item : p.exclusions()) text.append("\n").append(item.type().label()).append("（").append(time(item.setAt())).append("）");
+        text.append("\n开播前提醒：");
+        if (p.preLiveDisabled()) text.append("不要了");
+        else if (p.preLiveDailyTime() != null) text.append("每天 ").append(p.preLiveDailyTime());
+        else text.append("惯常时间前 ").append(p.preLiveLeadMinutes() == null ? 60 : p.preLiveLeadMinutes())
+                .append(" 分钟").append(p.preLiveLeadMinutes() == null ? "（默认）" : "");
         return text.toString();
     }
     private static String time(Long timestamp) { return timestamp == null ? "默认，尚未设置" : TIME.format(Instant.ofEpochMilli(timestamp)); }
@@ -145,7 +198,7 @@ public class StreamerProfileCommands {
             public String name() { return name; }
             public List<String> aliases() { return aliases; }
             public String description() { return "设置或查看自己的主播档案"; }
-            public String menuSummary() { return "档案设置：改成 1／2、别提……、最近在意……、先别发了、恢复、你记得我什么、忘掉……"; }
+            public String menuSummary() { return "档案设置：改成 1／2、别提……、最近在意……、先别发了、恢复、你记得我什么、忘掉……、开播前提醒改到前 N 分钟（或改到前 N 分钟）、开播前提醒每天 HH:MM（或每天 HH:MM）、开播前提醒不要了（或不要开播前提醒）、准备开播"; }
             public boolean groupOnly() { return false; }
             public boolean disableable() { return false; }
             public boolean availableIn(CommandContext context) { return resolver.resolve(context).isPresent(); }
@@ -160,9 +213,13 @@ public class StreamerProfileCommands {
                 var owner = resolver.resolve(context);
                 if (owner.isEmpty() || !matches(context)) return CommandReply.none();
                 var user = owner.get();
-                String arg = prefix ? argument(context.getRawText(), name) : "";
+                String arg = name.equals("开播前提醒") ? context.getRawText() : prefix ? argument(context.getRawText(), name) : "";
                 var result = new Result[1];
                 try {
+                    if (name.equals("准备开播")) {
+                        reminders.getObject().request(user, context);
+                        return CommandReply.none();
+                    }
                     if (name.equals("你记得我什么")) {
                         return CommandReply.of(describe(store.read(user.getPlatform(), user.getUid())));
                     }

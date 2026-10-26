@@ -170,14 +170,14 @@ class SessionRecapGreetingTest {
     @DisplayName("自己设过任一档位就不再问，避免选过还被打招呼")
     void explicitTierSkipsGreeting(int tier) throws Exception {
         profiles.update("test", user.getUid(), p -> new StreamerProfile(tier, clock.millis(), p.concerns(),
-                p.exclusions(), false, null, p.status()));
+                p.exclusions(), false, null, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()));
         enable(); delivery.check(); assertTrue(sent.isEmpty());
     }
 
     @Test @DisplayName("暂停时不招呼，恢复后再问，避免违背先别发了")
     void pauseDefersGreetingUntilResume() throws Exception {
         profiles.update("test", user.getUid(), p -> new StreamerProfile(1, null, p.concerns(),
-                p.exclusions(), true, clock.millis(), p.status()));
+                p.exclusions(), true, clock.millis(), p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()));
         enable(); delivery.check(); assertTrue(sent.isEmpty());
         profiles.resume("test", user.getUid(), clock.millis()); delivery.check(); assertEquals(1, sent.size());
     }
@@ -186,7 +186,7 @@ class SessionRecapGreetingTest {
     @DisplayName("档案读不出时等恢复再招呼，避免带着坏档案打扰或永久漏问")
     void unreadableProfileDefersUntilRecovery(String kind) throws Exception {
         if (kind.equals("damaged")) {
-            profiles.update("test", user.getUid(), p -> new StreamerProfile(1, null, p.concerns(), p.exclusions(), true, clock.millis(), p.status()));
+            profiles.update("test", user.getUid(), p -> new StreamerProfile(1, null, p.concerns(), p.exclusions(), true, clock.millis(), p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()));
             Files.writeString(profiles.path("test", user.getUid()), "broken");
         } else {
             profiles = spy(profiles);

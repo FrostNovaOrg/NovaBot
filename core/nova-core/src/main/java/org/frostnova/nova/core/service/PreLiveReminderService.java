@@ -10,6 +10,8 @@ import org.frostnova.nova.core.handler.PreLiveReminderPushHandler;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.sender.PushGate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,7 +79,7 @@ public class PreLiveReminderService {
 
     private record Streamer(String platform, long uid) {}
     private record Subscription(Streamer streamer, PushTarget target) {}
-    private record PendingReminder(String key, PushTarget target, ZonedDateTime due, String body) {}
+    private record PendingReminder(String key, PushTarget target, ZonedDateTime due, String body, boolean ignoreQuiet) {}
 
     public synchronized void check() throws IOException {
         var now = clock.instant().atZone(ZONE);
@@ -117,54 +119,111 @@ public class PreLiveReminderService {
     private void prepare(Subscription sub, List<LiveSessionArchive.ArchivedSession> history, ZonedDateTime now,
                          Map<Streamer, SessionRecapService.PreLiveAudience> material,
                          List<PendingReminder> pending) throws IOException {
+        var who = sub.streamer();
+        var profile = profiles.read(who.platform(), who.uid());
+        if (profile.status() != StreamerProfile.Status.READY || profile.paused() || profile.preLiveDisabled()
+                || gate.blockedBy() == PushGate.Block.DISABLED) return;
         var recent = history.stream().sorted(Comparator.comparingLong(LiveSessionArchive.ArchivedSession::startTime)
                 .reversed()).limit(10).toList();
-        var usual = usualStart(recent);
-        if (usual.isEmpty()) return;
-        // 午夜后的开播可能在前一天提醒，按开播日期定位上周对应窗口。
-        for (int offset = 0; offset <= 1; offset++) {
-            var start = now.toLocalDate().plusDays(offset).atTime(usual.get()).atZone(ZONE);
-            var due = start.minusHours(1);
+        var dueTimes = new ArrayList<ZonedDateTime>();
+        if (profile.preLiveDailyTime() != null) {
+            // 昨日的定时也可能仍在跨午夜的十分钟有效期内。
+            for (int offset = -1; offset <= 0; offset++)
+                dueTimes.add(now.toLocalDate().plusDays(offset).atTime(LocalTime.parse(profile.preLiveDailyTime())).atZone(ZONE));
+        } else {
+            var usual = usualStart(recent);
+            if (usual.isEmpty()) return;
+            int lead = profile.preLiveLeadMinutes() == null ? 60 : profile.preLiveLeadMinutes();
+            for (int offset = -1; offset <= 1; offset++) {
+                var start = now.toLocalDate().plusDays(offset).atTime(usual.get()).atZone(ZONE);
+                var weekAgo = start.minusWeeks(1).toInstant();
+                if (history.stream().anyMatch(session -> session.startTime() >= weekAgo.toEpochMilli()
+                        && session.startTime() <= weekAgo.plus(Duration.ofHours(1)).toEpochMilli()))
+                    dueTimes.add(start.minusMinutes(lead));
+            }
+        }
+        for (var due : dueTimes) {
             if (now.isBefore(due) || now.isAfter(due.plusMinutes(10))) continue;
-            var weekAgo = start.minusWeeks(1).toInstant();
-            if (history.stream().noneMatch(s -> s.startTime() >= weekAgo.toEpochMilli()
-                    && s.startTime() <= weekAgo.plus(Duration.ofHours(1)).toEpochMilli())) continue;
-            var who = sub.streamer();
             String key = WeeklyReportDeliveryService.key(who.platform(), who.uid(), sub.target());
-            LocalDate dueDate = due.toLocalDate();
-            if (store.contains(key, now.toLocalDate()) || store.contains(key, dueDate)) return;
-            var profile = profiles.read(who.platform(), who.uid());
-            if (profile.status() != StreamerProfile.Status.READY || profile.paused()
-                    || !gate.allowedAt(now.toLocalTime(), sub.target())
+            if (store.contains(key, now.toLocalDate()) || store.contains(key, due.toLocalDate())) return;
+            if ((profile.preLiveDailyTime() == null && !gate.allowedAt(now.toLocalTime(), sub.target()))
                     || live.getLiveStatus(who.platform(), who.uid()).orElse(false)) return;
             var audience = material.get(who);
             if (audience == null) {
-                ledger.updateStreamer(who.platform(), who.uid());
-                audience = recap.preLiveAudience(who.platform(), who.uid(), recent.get(0).startTime());
+                audience = audience(who, recent);
                 material.put(who, audience);
             }
             String body = render(audience, profile, who.uid(), new HashSet<>(assistant.getExcludedUids()));
             if (body.isBlank()) return;
-            pending.add(new PendingReminder(key, sub.target(), due, body));
+            pending.add(new PendingReminder(key, sub.target(), due, body, profile.preLiveDailyTime() != null));
         }
     }
 
-    private void deliver(PendingReminder reminder) {
+    private SessionRecapService.PreLiveAudience audience(Streamer who, List<LiveSessionArchive.ArchivedSession> recent) throws IOException {
+        ledger.updateStreamer(who.platform(), who.uid());
+        if (recent.isEmpty()) return new SessionRecapService.PreLiveAudience(List.of(), List.of(), Map.of());
+        return recap.preLiveAudience(who.platform(), who.uid(), recent.get(0).startTime());
+    }
+
+    /** 本人当面索取，不受暂停、在播或静音影响，每次索取都可发送。 */
+    public synchronized void request(PushUser user, CommandContext context) throws IOException {
+        if (gate.blockedBy() == PushGate.Block.DISABLED) return;
+        var target = user.getTargets().stream().filter(t -> Boolean.TRUE.equals(t.getStreamerSelf())
+                && t.getType() == context.getType() && Objects.equals(t.getNum(), context.getNum())
+                && Objects.equals(t.getPlatform(), context.getPlatform()) && !Boolean.FALSE.equals(t.getEnabled()))
+                .findFirst().orElseThrow();
+        if (target.getMessages().stream().noneMatch(m -> !Boolean.FALSE.equals(m.getEnabled())
+                && PreLiveReminderPushHandler.class.getName().equals(m.handlerClassName()))) {
+            requestedReply(target, "开播前提醒还没开，要请管理员在控制台给你这条私聊勾上「开播前提醒（私聊）」");
+            return;
+        }
+        var who = new Streamer(user.getPlatform(), user.getUid());
+        var profile = profiles.read(who.platform(), who.uid());
+        if (profile.status() != StreamerProfile.Status.READY) {
+            requestedReply(target, "档案暂时读不出，请稍后再试");
+            return;
+        }
+        var recent = archive.sealedSessions().stream().filter(session -> session.platform().equals(who.platform())
+                && session.uid() == who.uid() && session.durationSeconds() >= 600 && session.startTime() <= clock.millis())
+                .sorted(Comparator.comparingLong(LiveSessionArchive.ArchivedSession::startTime).reversed()).limit(10).toList();
+        var body = new String[1];
+        ledger.withRecoveredLedger(() -> body[0] = render(audience(who, recent), profile, who.uid(),
+                new HashSet<>(assistant.getExcludedUids())));
+        if (body[0].isBlank()) {
+            requestedReply(target, "这次没有要特别留意的：最近没有缺席的常客，上一场也没有第一次说话的新观众。");
+            return;
+        }
+        deliver(new PendingReminder(WeeklyReportDeliveryService.key(who.platform(), who.uid(), target),
+                target, clock.instant().atZone(ZONE), body[0], true), true);
+    }
+
+    private void requestedReply(PushTarget target, String text) {
+        Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(), text).get(0);
+        message.setChannel(target); message.setReply(true);
+        sender.sendRequested(message);
+    }
+
+    private void deliver(PendingReminder reminder) { deliver(reminder, false); }
+
+    private void deliver(PendingReminder reminder, boolean requested) {
         var sendTime = clock.instant().atZone(ZONE);
-        if (sendTime.isBefore(reminder.due()) || sendTime.isAfter(reminder.due().plusMinutes(10))) return;
+        if (!requested && (sendTime.isBefore(reminder.due()) || sendTime.isAfter(reminder.due().plusMinutes(10)))) return;
+        if (gate.blockedBy() == PushGate.Block.DISABLED) return;
         LocalDate date = sendTime.toLocalDate(), dueDate = reminder.due().toLocalDate();
         String key = reminder.key();
         var target = reminder.target();
         Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(),
                 MessagePlaceholders.escapeExternalText(reminder.body())).get(0);
-        message.setChannel(target);
-        if (!store.reserve(key, date, dueDate)) return;
+        message.setChannel(target); message.setReply(requested);
+        if (!(requested ? store.reserveRequested(key, date) : store.reserve(key, date, dueDate))) return;
         message.addOnSuccessCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.SENT));
         message.addOnFailureCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.FAILED));
         message.addOnUncertainCallback(() -> store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN));
         try {
-            if (sender.sendScheduled(message, sendTime.toLocalTime()) != null)
-                store.result(key, date, dueDate, PreLiveReminderStore.Status.NOT_SENT);
+            var block = requested ? sender.sendRequested(message)
+                    : reminder.ignoreQuiet() ? sender.sendScheduled(message, sendTime.toLocalTime(), true)
+                    : sender.sendScheduled(message, sendTime.toLocalTime());
+            if (block != null) store.result(key, date, dueDate, PreLiveReminderStore.Status.NOT_SENT);
         } catch (RuntimeException failure) { store.result(key, date, dueDate, PreLiveReminderStore.Status.UNCERTAIN); }
     }
 

@@ -91,8 +91,14 @@ public class StreamerProfileStore {
                 loadedExclusions.add(new Exclusion(pattern, number(entry, "setAt", false)));
             }
             Long tierSetAt = number(root, "tierSetAt", true);
+            Long lead = root.containsKey("preLiveLeadMinutes") ? number(root, "preLiveLeadMinutes", true) : null;
+            if (lead != null && (lead < 5 || lead > 180)) throw new IOException("提醒提前量不正确");
+            Object daily = root.get("preLiveDailyTime");
+            if (daily != null && !(daily instanceof String)) throw new IOException("提醒时间不正确");
+            Object disabled = root.getOrDefault("preLiveDisabled", false);
+            if (!(disabled instanceof Boolean)) throw new IOException("提醒开关不正确");
             return new StreamerProfile(tierSetAt == null ? 2 : (int) tier, tierSetAt, loadedConcerns,
-                    loadedExclusions, paused, number(root, "pauseSetAt", true), status);
+                    loadedExclusions, paused, number(root, "pauseSetAt", true), lead == null ? null : lead.intValue(), (String) daily, (Boolean) disabled, status);
         } catch (IOException | RuntimeException failure) {
             return unreadable(path);
         }
@@ -131,7 +137,7 @@ public class StreamerProfileStore {
     /** 主播明确恢复；坏件状态下从空档案重新开始，正常档案保留其他设置。 */
     public synchronized StreamerProfile resume(String platform, long uid, long at) throws IOException {
         return update(platform, uid, p -> new StreamerProfile(p.tier(), p.tierSetAt(), p.concerns(),
-                p.exclusions(), false, at, p.status()), true);
+                p.exclusions(), false, at, p.preLiveLeadMinutes(), p.preLiveDailyTime(), p.preLiveDisabled(), p.status()), true);
     }
 
     /** 控制台核对坏件后重置；重复提交不会清空已恢复的正常档案。 */
@@ -156,6 +162,8 @@ public class StreamerProfileStore {
         root.put("tier", next.tier()); root.put("tierSetAt", next.tierSetAt());
         root.put("concerns", next.concerns()); root.put("exclusions", next.exclusions());
         root.put("paused", next.paused()); root.put("pauseSetAt", next.pauseSetAt());
+        root.put("preLiveLeadMinutes", next.preLiveLeadMinutes());
+        root.put("preLiveDailyTime", next.preLiveDailyTime()); root.put("preLiveDisabled", next.preLiveDisabled());
         // 空时间也写出，避免与缺字段的坏件混淆。
         String content = JSON.toJSONString(root, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue);
         if (Files.exists(path)) restrict(path);

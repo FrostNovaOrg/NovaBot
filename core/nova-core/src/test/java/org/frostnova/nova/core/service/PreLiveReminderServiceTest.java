@@ -69,6 +69,14 @@ class PreLiveReminderServiceTest {
         }).when(sender).sendScheduled(any(), any());
         doAnswer(i -> { ((AudienceLedgerService.LedgerWork) i.getArgument(0)).run(); return null; })
                 .when(ledger).withRecoveredLedger(any());
+        doAnswer(i -> {
+            Message m = i.getArgument(0); sent.add(m);
+            m.markDelivered("synthetic-reminder").forEach(Runnable::run); return null;
+        }).when(sender).sendScheduled(any(), any(), eq(true));
+        doAnswer(i -> {
+            Message m = i.getArgument(0); sent.add(m);
+            m.markDelivered("synthetic-reminder").forEach(Runnable::run); return null;
+        }).when(sender).sendRequested(any());
         regularHistory(LocalTime.of(20, 0)); reopen();
     }
     Path file() { return dir.resolve("pre-live-reminder-deliveries.json"); }
@@ -93,8 +101,83 @@ class PreLiveReminderServiceTest {
     void at(LocalDate date, LocalTime time) { clock.now = date.atTime(time).atZone(ZONE).toInstant(); }
     StreamerProfile profile(boolean paused, StreamerProfile.Pattern... omitted) {
         return new StreamerProfile(1, null, List.of(), Arrays.stream(omitted)
-                .map(p -> new StreamerProfile.Exclusion(p, 0)).toList(), paused, paused ? 0L : null,
-                StreamerProfile.Status.READY);
+                .map(p -> new StreamerProfile.Exclusion(p, 0)).toList(), paused, paused ? 0L : null, null, null, false, StreamerProfile.Status.READY);
+    }
+
+    void reminderProfile(Integer lead, String daily, boolean disabled) throws Exception {
+        var directory = dir.resolve("profiles"); Files.createDirectories(directory);
+        var real = new StreamerProfileStore(directory);
+        Files.writeString(real.path("test", HOST), com.alibaba.fastjson2.JSONObject.of(
+                "tier", 2, "tierSetAt", null, "concerns", List.of(), "exclusions", List.of(),
+                "paused", false, "pauseSetAt", null, "preLiveLeadMinutes", lead,
+                "preLiveDailyTime", daily, "preLiveDisabled", disabled).toJSONString(
+                        com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
+        when(profiles.read("test", HOST)).thenReturn(real.read("test", HOST));
+    }
+
+    @Test @DisplayName("前30分钟只在新时刻发，避免仍按默认提前一小时")
+    void customLeadReplacesDefault() throws Exception {
+        reminderProfile(30, null, false);
+        service.check(); assertTrue(sent.isEmpty());
+        at(TODAY, LocalTime.of(19, 30)); service.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("每天定时不受上周缺播、无惯常时间和静音阻拦，避免自己定的时间收不到")
+    void dailyTimeIgnoresHistoryScheduleAndQuietHours() throws Exception {
+        reminderProfile(null, "19:00", false);
+        sealed.clear(); add(TODAY.minusDays(1), LocalTime.of(10, 0), 3600);
+        when(gate.allowedAt(any(), eq(target))).thenReturn(false);
+        service.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("每天定时正在播也不发，避免直播中打扰")
+    void dailyTimeStillBlocksLive() throws Exception {
+        reminderProfile(null, "19:00", false);
+        when(live.getLiveStatus("test", HOST)).thenReturn(Optional.of(true));
+        service.check(); assertTrue(sent.isEmpty());
+    }
+
+    @Test @DisplayName("不要了停止定时提醒，避免又收到不要的提醒")
+    void disabledReminderStopsSchedule() throws Exception {
+        reminderProfile(null, null, true);
+        service.check(); assertTrue(sent.isEmpty());
+    }
+
+    org.frostnova.nova.core.command.CommandContext requestContext() {
+        return new org.frostnova.nova.core.command.CommandContext("qq-onebot", PushTargetType.FRIEND,
+                target.getNum(), target.getNum(), "准备开播", List.of(), "准备开播");
+    }
+
+    @Test @DisplayName("主动要过后当天定时不再发且重启仍记得，避免同天再打扰")
+    void requestedReminderConsumesScheduledDateButCanRepeat() throws Exception {
+        reminderProfile(null, "19:00", false);
+        at(TODAY, LocalTime.of(18, 0)); service.request(user, requestContext());
+        assertEquals(1, sent.size());
+        at(TODAY, LocalTime.of(19, 0)); reopen(); service.check(); assertEquals(1, sent.size());
+        service.request(user, requestContext()); assertEquals(2, sent.size());
+        assertEquals(sent.get(0).getDisplay(), sent.get(1).getDisplay());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"paused", "global", "late"})
+    @DisplayName("每天定时仍受暂停、全局开关和十分钟有效期约束，避免定时打扰")
+    void dailyTimeKeepsOtherGuards(String state) throws Exception {
+        reminderProfile(null, "19:00", false);
+        switch (state) {
+            case "paused" -> {
+                var p = profiles.read("test", HOST);
+                when(profiles.read("test", HOST)).thenReturn(new StreamerProfile(p.tier(), p.tierSetAt(), p.concerns(),
+                        p.exclusions(), true, 0L, null, "19:00", false, p.status()));
+            }
+            case "global" -> when(gate.blockedBy()).thenReturn(PushGate.Block.DISABLED);
+            case "late" -> at(TODAY, LocalTime.of(19, 11));
+        }
+        service.check(); assertTrue(sent.isEmpty());
+    }
+
+    @Test @DisplayName("每天定时发送后一天只发一次，避免五分钟检查重复发")
+    void dailyTimeOnlyOnce() throws Exception {
+        reminderProfile(null, "19:00", false);
+        service.check(); reopen(); service.check(); assertEquals(1, sent.size());
     }
 
     @Test @DisplayName("有惯常时间且上周今天播过才提醒，避免主播不知道今天该留意谁")
