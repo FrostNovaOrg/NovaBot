@@ -137,6 +137,65 @@ class LiveDetailArchiveTest {
     }
 
     @Test
+    @DisplayName("旧醒目留言缺金额仍能读取，原文件不变，再归档也不会变成零元")
+    void legacySuperChatKeepsUnknownPayment() throws Exception {
+        // 用户故障：升级后旧留言无法查看，或未知付款被误报为零元。
+        Path path = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START).resolve("danmu.jsonl");
+        Files.createDirectories(path.getParent());
+        String original = "{\"at\":" + START + ",\"uid\":19338207415562,\"uname\":\"合成观众\","
+                + "\"text\":\"旧留言\",\"type\":\"SUPER_CHAT\"}\n";
+        Files.writeString(path, original);
+
+        var records = archive.readDanmu(PLATFORM, UID, START);
+        assertEquals(List.of(new DanmuRecord(START, 19338207415562L, "合成观众", "旧留言",
+                DanmuRecord.Type.SUPER_CHAT)), records);
+        assertEquals(null, records.get(0).value(), "旧金额仍为未知");
+        assertEquals(records, archive.readDanmuPresent(PLATFORM, UID, START).orElseThrow());
+        assertEquals(original, Files.readString(path), "读取不能改写旧档");
+        archive.appendDanmu(PLATFORM, UID, START + 1, records.get(0));
+        JSONObject copied = JSON.parseObject(Files.readString(path.getParent().resolveSibling(
+                PLATFORM + "-" + UID + "-" + (START + 1)).resolve("danmu.jsonl")));
+        assertFalse(copied.containsKey("val"), "未知金额不能写成零元或空字段");
+    }
+
+    @Test
+    @DisplayName("逐条金额经过明细与导出读取仍保留，包括已知的零元")
+    void superChatPaymentSurvivesArchiveRead() throws Exception {
+        // 用户故障：金额已经落盘，却在明细读取或再次归档时丢失。
+        Path path = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START).resolve("danmu.jsonl");
+        Files.createDirectories(path.getParent());
+        String original = "{\"at\":" + START + ",\"text\":\"合成留言\",\"type\":\"SUPER_CHAT\",\"val\":30.5}\n"
+                + "{\"at\":" + (START + 1) + ",\"text\":\"合成零元留言\",\"type\":\"SUPER_CHAT\",\"val\":0}\n";
+        Files.writeString(path, original);
+        var records = archive.readDanmu(PLATFORM, UID, START);
+        assertEquals(2, records.size());
+        assertEquals(List.of(30.5, 0.0), records.stream().map(DanmuRecord::value).toList());
+        assertEquals(records, archive.readDanmuPresent(PLATFORM, UID, START).orElseThrow());
+        for (DanmuRecord record : records) archive.appendDanmu(PLATFORM, UID, START + 1, record);
+        List<String> copied = Files.readAllLines(path.getParent().resolveSibling(
+                PLATFORM + "-" + UID + "-" + (START + 1)).resolve("danmu.jsonl"));
+        assertEquals(30.5, JSON.parseObject(copied.get(0)).getDouble("val"));
+        assertEquals(0.0, JSON.parseObject(copied.get(1)).getDouble("val"));
+        assertEquals(original, Files.readString(path));
+    }
+
+    @Test
+    @DisplayName("普通弹幕与表情行保留原字段，未知金额的醒目留言也不写零元")
+    void otherTypesAndUnknownPaymentKeepTheirWireFields() throws Exception {
+        // 用户故障：升级后普通弹幕格式改变，或无金额的留言被记成免费留言。
+        archive.appendDanmu(PLATFORM, UID, START,
+                new DanmuRecord(START, UID, "合成观众", "合成文字", DanmuRecord.Type.DANMU));
+        archive.appendDanmu(PLATFORM, UID, START,
+                new DanmuRecord(START, UID, "合成观众", "合成表情", DanmuRecord.Type.EMOJI));
+        archive.appendDanmu(PLATFORM, UID, START,
+                new DanmuRecord(START, UID, "合成观众", "合成留言", DanmuRecord.Type.SUPER_CHAT));
+        Path path = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START).resolve("danmu.jsonl");
+        for (String line : Files.readAllLines(path)) {
+            assertEquals(Set.of("at", "uid", "uname", "text", "type"), JSON.parseObject(line).keySet());
+        }
+    }
+
+    @Test
     @DisplayName("事件流水：写读往返、封存后不写、缺场次空表")
     void eventStreamWriteReadSealAndMissing() {
         List<String> red = new ArrayList<>();

@@ -340,7 +340,7 @@ public class BilibiliLiveStatsAggregator {
         scoreUser(event, BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT, event.getSender(), 1);
         scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(), value);
         // 付费留言也是一句话，同样留原文；类型分开标，密度统计据此把它排除在外
-        recordDanmu(event, event.getSender(), event.getContent(), DanmuRecord.Type.SUPER_CHAT, recovered);
+        recordDanmu(event, event.getSender(), event.getContent(), DanmuRecord.Type.SUPER_CHAT, recovered, event.getValue());
     }
 
     /**
@@ -712,6 +712,11 @@ public class BilibiliLiveStatsAggregator {
 
     private void recordDanmu(NovaBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type,
                              boolean recovered) {
+        recordDanmu(event, sender, text, type, recovered, null);
+    }
+
+    private void recordDanmu(NovaBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type,
+                             boolean recovered, Double value) {
         if (event.getSource() == null || event.getSource().getUid() == null || StringUtil.isBlank(text)) {
             return;
         }
@@ -727,7 +732,7 @@ public class BilibiliLiveStatsAggregator {
                 sender == null ? null : sender.getUid(),
                 sender == null ? null : sender.getUname(),
                 text,
-                type, recovered));
+                type, recovered, value));
     }
 
     /** 与 {@link #recordDanmu} 同守卫：无开播时刻即不留。 */
