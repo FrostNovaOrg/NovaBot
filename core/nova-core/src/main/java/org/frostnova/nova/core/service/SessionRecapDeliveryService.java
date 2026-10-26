@@ -159,21 +159,8 @@ public class SessionRecapDeliveryService {
         SessionRecapRenderer.Draft draft;
         Message message;
         try {
-            ledger.updateStreamer(sub.platform(), sub.uid());
-            var material = recap.calculate(sub.platform(), sub.uid(), record.startTime());
-            var omitted = profile.exclusions().stream().map(e -> e.type().name()).toList();
-            var filtered = new SessionRecap.Result(material.facts(), material.patterns().stream()
-                    .filter(p -> !omitted.contains(p.key())).toList(), material.presentation());
-            String streamerPrefix = sub.platform() + ":" + sub.uid() + ":";
-            var history = store.records().stream().filter(r -> r.subscription().startsWith(streamerPrefix)
-                    && (r.status() == Status.SENT || r.status() == Status.UNCERTAIN)).map(Delivery::history).toList();
-            draft = SessionRecapRenderer.render(filtered, new SessionRecapRenderer.Options(profile.tier(),
-                    revenue.isVisible(sub.target()), SessionRecapRenderer.Nicknames.ORIGINAL,
-                    new HashSet<>(assistant.getExcludedUids())), history);
-            if (draft.message().isBlank()) throw new IllegalStateException("没有小结正文");
-            message = Message.create(sub.target().getPlatform(), sub.target().getType(), sub.target().getNum(),
-                    MessagePlaceholders.escapeExternalText(draft.message())).get(0);
-            message.setChannel(sub.target());
+            draft = draft(sub, profile, record.startTime());
+            message = message(sub.target(), draft);
         } catch (IOException | RuntimeException failure) {
             store.update(record, Status.FAILED, "小结生成失败", now); return;
         }
@@ -191,10 +178,81 @@ public class SessionRecapDeliveryService {
                     blocked.getDescription());
         } catch (RuntimeException failure) { result(sending, Status.UNCERTAIN, "发送结果不明"); }
     }
+    private SessionRecapRenderer.Draft draft(Subscription sub, StreamerProfile profile, long startTime) throws IOException {
+        ledger.updateStreamer(sub.platform(), sub.uid());
+        var material = recap.calculate(sub.platform(), sub.uid(), startTime);
+        var omitted = profile.exclusions().stream().map(e -> e.type().name()).toList();
+        var filtered = new SessionRecap.Result(material.facts(), material.patterns().stream()
+                .filter(p -> !omitted.contains(p.key())).toList(), material.presentation());
+        String streamerPrefix = sub.platform() + ":" + sub.uid() + ":";
+        var history = store.records().stream().filter(r -> r.subscription().startsWith(streamerPrefix)
+                && (r.status() == Status.SENT || r.status() == Status.UNCERTAIN)).map(Delivery::history).toList();
+        var draft = SessionRecapRenderer.render(filtered, new SessionRecapRenderer.Options(profile.tier(),
+                revenue.isVisible(sub.target()), SessionRecapRenderer.Nicknames.ORIGINAL,
+                new HashSet<>(assistant.getExcludedUids())), history);
+        if (draft.message().isBlank()) throw new IllegalStateException("没有小结正文");
+        return draft;
+    }
+    private Message message(PushTarget target, SessionRecapRenderer.Draft draft) {
+        Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(),
+                MessagePlaceholders.escapeExternalText(draft.message())).get(0);
+        message.setChannel(target);
+        return message;
+    }
+
+    public synchronized String status(String platform, long uid, PushTarget target) {
+        if (profiles.read(platform, uid).status() != StreamerProfile.Status.READY) return "档案读不出，已停发";
+        if (!store.warning().isEmpty()) return store.warning();
+        var last = latest(key(platform, uid, target));
+        if (last.isEmpty()) return "还没有场次：下一场下播 30 分钟后发";
+        var record = last.get();
+        return SessionRecapRenderer.sessionName(record.startTime()) + "：" + switch (record.status()) {
+            case READY -> "等发，约 " + java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                    .withZone(WeeklyReportDeliveryService.ZONE).format(Instant.ofEpochMilli(record.dueAt())) + " 发";
+            case QUIET -> "静音中，静音结束后发";
+            case SENDING -> "正在发";
+            case SENT -> "已发";
+            case FAILED -> "没发出去（" + record.reason() + "），不会自动重发";
+            case UNCERTAIN -> "不确定发出去没有，不会重发";
+            case NOT_SENT -> "没发：" + record.reason();
+            case EXPIRED -> "作废：" + record.reason();
+        };
+    }
+
+    public record TrialResult(boolean success, String message, String confirmation) {}
+
+    /** 只读发送历史；主动试发不登记状态，也不把试发过的规律算作此前说过。 */
+    public synchronized TrialResult trial(String platform, long uid, PushTarget identity,
+                                          boolean confirmPaused, boolean confirmQuiet) {
+        var target = source.getAllUsers().stream()
+                .filter(user -> platform.equals(user.getPlatform()) && Objects.equals(uid, user.getUid()))
+                .map(user -> org.frostnova.nova.core.model.ChannelSettings.target(user, identity.getPlatform(),
+                        identity.getType(), identity.getNum())).filter(Objects::nonNull).findFirst().orElse(null);
+        if (target == null || target.getType() != PushTargetType.FRIEND || !Boolean.TRUE.equals(target.getStreamerSelf()))
+            return new TrialResult(false, "只能试发到这位主播标了「主播本人」的好友通道", "");
+        var profile = profiles.read(platform, uid);
+        if (profile.status() != StreamerProfile.Status.READY)
+            return new TrialResult(false, "档案读不出，已停发，请先去主播页核对恢复", "");
+        try {
+            var session = archive.sealedSessions().stream()
+                    .filter(s -> s.platform().equals(platform) && s.uid() == uid && s.durationSeconds() >= 600
+                            && s.endReason() == LiveEndReason.NORMAL)
+                    .max(Comparator.comparingLong(LiveSessionArchive.ArchivedSession::startTime));
+            if (session.isEmpty()) return new TrialResult(false, "还没有能试发的场次", "");
+            if (profile.paused() && !confirmPaused) return new TrialResult(false, "要先确认", "paused");
+            if (gate.inQuietHoursFor(target) && !confirmQuiet) return new TrialResult(false, "要先确认", "quiet");
+            var draft = draft(new Subscription(platform, uid, target), profile, session.get().startTime());
+            var response = sender.sendNow(message(target, draft));
+            boolean success = response != null && Integer.valueOf(0).equals(response.getInteger("code"));
+            return new TrialResult(success, success ? "最近一场的小结已发送，请到这条通道确认是否收到" : "试发失败，请稍后重试", "");
+        } catch (IOException | RuntimeException failure) {
+            return new TrialResult(false, "试发失败，请稍后重试", "");
+        }
+    }
     private synchronized void result(Delivery record, Status status, String reason) {
         store.update(record, status, reason, clock.instant());
     }
-    /** 下一次控制台可直接读取最近场次的状态和原因。 */
+    /** 读取这条订阅最近场次的状态和原因。 */
     public Optional<Delivery> latest(String subscription) {
         return store.records().stream().filter(r -> r.subscription().equals(subscription))
                 .max(Comparator.comparingLong(Delivery::startTime));

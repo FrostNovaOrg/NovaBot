@@ -8,6 +8,9 @@ class Element {
   constructor(tag) { this.tagName = tag; this.children = []; this.style = {}; this.ownText = ''; }
   setAttribute(name, value) { this[name] = String(value); }
   appendChild(node) { node.parentNode = this; this.children.push(node); return node; }
+  querySelector(selector) { return walk(this).slice(1).find(node => node.tagName === selector) || null; }
+  focus() { document.activeElement = this; }
+  scrollIntoView() { this.scrolled = true; }
   remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(node => node !== this); this.parentNode = null; }
   set textContent(value) { this.children = []; this.ownText = String(value); }
   get textContent() { return this.ownText + this.children.map(node => node.textContent).join(''); }
@@ -109,12 +112,29 @@ await check('恢复失败保留停发提示和重试入口', async () => {
   failure = new TypeError('offline'); await button.onclick();
   assert.match(host.textContent, /已停发/); assert.match(host.textContent, /恢复失败/); assert.equal(button.disabled, false);
 });
-// 暂时故障不应诱导用户清空一份仍然完好的档案。
-await check('暂时读不出提示重试而不提供重置按钮', async () => {
+// 暂时故障恢复只重读，避免清空完好的档案，也避免从停发链接过来找不到恢复按钮。
+await check('暂时读不出时核对恢复只重读，不清空档案', async () => {
   payload = {success: true, profile: {...full, status: 'TEMPORARILY_UNREADABLE'}};
   const host = new Element('div'); await mountProfile(host, identity).ready;
   assert.match(host.textContent, /暂时读不出/); assert.match(host.textContent, /停发/);
-  assert.equal(walk(host).filter(node => node.tagName === 'button').length, 0);
+  const button = walk(host).find(node => node.tagName === 'button');
+  assert.equal(button.textContent, '档案已核对，恢复');
+  payload = {success: true, profile: full};
+  await button.onclick();
+  assert.equal(requests.at(-1).method, 'GET');
+  assert.match(host.textContent, /第 2 档/);
+  assert.match(host.textContent, /开播时间/);
+});
+// 推送页的恢复链接应滚到档案并聚焦按钮，避免进入主播页仍找不到恢复位置。
+await check('档案链接落到恢复按钮', async () => {
+  const {parseStreamersHash} = await import('../../../main/resources/config-ui-pages/streamers-model.js');
+  for (const status of ['UNREADABLE', 'TEMPORARILY_UNREADABLE']) {
+    payload = {success: true, profile: {...full, status}};
+    const state = parseStreamersHash('#/streamers/bilibili/990000000101?section=profile');
+    const host = new Element('div'); await mountProfile(host, state).ready;
+    assert.equal(host.children[0].scrolled, true);
+    assert.equal(document.activeElement.textContent, '档案已核对，恢复');
+  }
 });
 // 主播页必须实际挂载档案，而非只在单独测试组件时显示。
 await check('主播详情页实际挂上当前主播的档案', async () => {
