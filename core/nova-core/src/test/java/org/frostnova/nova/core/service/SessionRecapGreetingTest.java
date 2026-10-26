@@ -90,6 +90,7 @@ class SessionRecapGreetingTest {
             public CommandReply execute(CommandContext context) { return CommandReply.of("原有处理"); }
         });
         beans.refresh();
+        org.springframework.test.util.ReflectionTestUtils.setField(beans.getBean(StreamerProfileCommands.class), "clock", clock);
         dispatcher = new CommandDispatcher(beans.getBeanProvider(NovaCommand.class), beans.getBeanProvider(CommandFollowUp.class),
                 new CommandSettingsService(new NovaStateStore(properties)), source, sender, properties,
                 event -> events.add(event.toString()), clock);
@@ -132,6 +133,12 @@ class SessionRecapGreetingTest {
         delivery.check(); assertTrue(sent.isEmpty());
         when(live.getLiveStatus("test", user.getUid())).thenReturn(Optional.of(false));
         delivery.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("在播状态读不到也打招呼，避免个别主播永远收不到选档提示")
+    void unknownLiveStatusStillGreets() throws Exception {
+        when(live.getLiveStatus("test", user.getUid())).thenReturn(Optional.empty());
+        greet();
     }
 
     @Test @DisplayName("按通道静音结束时间打招呼，避免半夜吵醒主播")
@@ -224,16 +231,24 @@ class SessionRecapGreetingTest {
         assertEquals(2, new StreamerProfileStore(dir.resolve("profiles")).read("test", user.getUid()).tier());
     }
 
-    @ParameterizedTest @ValueSource(strings = {"１", "　１！　", " 1, ", "２", "2，"})
-    @DisplayName("全角数字和前后空白标点也能选档，避免输入法导致不认回答")
+    @ParameterizedTest @ValueSource(strings = {"１", "　１！　", " 1, ", "２", "2，", "2～", "2~", "2😊", "2❤️", "2\uFE0E", "2\uFE0F"})
+    @DisplayName("数字带全角标点波浪号或表情也能选档，避免常见回法不认回答")
     void acceptsFullWidthAndPunctuation(String answer) throws Exception {
         greet(); int tier = answer.contains("2") || answer.contains("２") ? 2 : 1;
         assertEquals("记下了：第 " + tier + " 档", say(answer)); assertEquals(tier, profile().tier());
         assertTrue(profile().concerns().isEmpty());
     }
 
-    @ParameterizedTest @ValueSource(strings = {"谢谢", "12", "21", "２１", "2多留住新人"})
-    @DisplayName("闲聊和连续数字照旧处理且不吃窗口，避免随口一句耗掉选档机会")
+    @ParameterizedTest @ValueSource(strings = {"2～多留住新人", "2、多留住新人", "2 多留住新人", "2，，多留住新人"})
+    @DisplayName("数字后可用波浪号标点或空格接在意，避免常见回法丢失档位和关注点")
+    void decoratedChoiceKeepsConcern(String answer) throws Exception {
+        greet(); say(answer);
+        assertEquals(2, profile().tier());
+        assertEquals(List.of(new StreamerProfile.Concern("多留住新人", clock.millis())), profile().concerns());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"谢谢", "12", "21", "２１", "2多留住新人", "1 2", "1.5", "1，2", "１．５", "1 ❤️ 2"})
+    @DisplayName("闲聊和多个数字不认领且保留窗口，避免误改档并把数字记成在意")
     void unrelatedTextDoesNotConsumeWindow(String text) throws Exception {
         greet(); assertEquals("原有处理", say(text)); assertNull(profile().tierSetAt());
         assertEquals("记下了：第 2 档", say("2"));
@@ -268,11 +283,19 @@ class SessionRecapGreetingTest {
         assertEquals("记下了：第 2 档", say("2"));
     }
 
-    @Test @DisplayName("第三档只说明当前档位且一次作废，避免误以为开放或重启后重复认领")
-    void thirdTierDoesNotChangeProfileAndConsumesWindow() throws Exception {
+    @Test @DisplayName("问第三档后仍可回第二档，避免一次询问就失去选档机会")
+    void thirdTierKeepsWindow() throws Exception {
         greet(); var before = profile();
         assertEquals("第 3 档还没开放，先按第 1 档发", say("3")); assertEquals(before, profile());
-        reopen(); assertEquals("原有处理", say("2")); assertEquals(before, profile());
+        reopen(); assertTrue(say("2").contains("第 2 档")); assertEquals(2, profile().tier());
+    }
+
+    @Test @DisplayName("窗口里主动改档后不再认领数字，避免随口数字覆盖刚改好的档位")
+    void explicitChangeEndsNumericClaim() throws Exception {
+        greet(); clock.now = clock.now.plusSeconds(1);
+        assertTrue(say("改成 1").contains("第 1 档"));
+        var before = profile(); reopen(); say("2");
+        assertEquals(before, profile());
     }
 
     @Test @DisplayName("数字后的在意最多三十个字且保留原话，避免截坏表情或保存整段私聊")
@@ -317,17 +340,63 @@ class SessionRecapGreetingTest {
         assertEquals("记下了：第 2 档", say("2"));
     }
 
-    @Test @DisplayName("已确认发送失败时下轮可再发，避免从未送达却永远不问档")
-    void confirmedFailureCanRetry() throws Exception {
+    @Test @DisplayName("发送失败只按间隔试三次且跨重启保留，避免删好友后一直重发和刷日志")
+    void confirmedFailureHasPersistentLimitAndBackoff() throws Exception {
         enable(); doAnswer(call -> {
+            sent.add(call.getArgument(0));
             ((Message) call.getArgument(0)).markFailed().forEach(Runnable::run); return null;
         }).when(sender).sendWeeklyReport(any());
-        delivery.check(); assertTrue(sent.isEmpty()); reopen();
+        delivery.check(); assertEquals(1, sent.size()); reopen();
+        clock.now = clock.now.plus(Duration.ofMinutes(30)).minusMillis(1);
+        delivery.check(); assertEquals(1, sent.size());
+        clock.now = clock.now.plusMillis(1); delivery.check(); assertEquals(2, sent.size()); reopen();
+        clock.now = clock.now.plus(Duration.ofHours(2)).minusMillis(1);
+        delivery.check(); assertEquals(2, sent.size());
+        clock.now = clock.now.plusMillis(1); delivery.check(); assertEquals(3, sent.size());
+        assertNull(greetings.claim(new CommandContext("qq-onebot", PushTargetType.FRIEND,
+                target.getNum(), target.getNum(), "2", List.of(), "2")));
+        reopen(); clock.now = clock.now.plus(Duration.ofDays(7)); delivery.check();
+        assertEquals(3, sent.size());
+        target.setNum(990000001002L); delivery.check(); assertEquals(4, sent.size());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"quiet", "disabled"})
+    @DisplayName("静音或关闭推送拦截不消耗失败机会，避免恢复推送后招呼再也不发")
+    void repeatedGateRejectionsDoNotCountAsFailures(String block) throws Exception {
+        enable();
+        doReturn(block.equals("quiet") ? PushGate.Block.QUIET_HOURS : PushGate.Block.DISABLED)
+                .when(sender).sendWeeklyReport(any());
+        for (int i = 0; i < 5; i++) { delivery.check(); clock.now = clock.now.plus(Duration.ofMinutes(5)); reopen(); }
         doAnswer(call -> {
-            Message message = call.getArgument(0); sent.add(message);
-            message.markDelivered("synthetic-greeting").forEach(Runnable::run); return null;
+            sent.add(call.getArgument(0));
+            ((Message) call.getArgument(0)).markFailed().forEach(Runnable::run); return null;
         }).when(sender).sendWeeklyReport(any());
         delivery.check(); assertEquals(1, sent.size());
+        clock.now = clock.now.plus(Duration.ofMinutes(30)); delivery.check(); assertEquals(2, sent.size());
+        clock.now = clock.now.plus(Duration.ofHours(2)); delivery.check(); assertEquals(3, sent.size());
+        reopen(); clock.now = clock.now.plus(Duration.ofDays(1)); delivery.check(); assertEquals(3, sent.size());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"quiet", "disabled"})
+    @DisplayName("重试时静音或关闭推送不清零已有失败次数，避免开关变化后又无限重发")
+    void gateRejectionPreservesEarlierFailures(String block) throws Exception {
+        enable();
+        org.mockito.stubbing.Answer<Object> fail = call -> {
+            sent.add(call.getArgument(0));
+            ((Message) call.getArgument(0)).markFailed().forEach(Runnable::run); return null;
+        };
+        doAnswer(fail).when(sender).sendWeeklyReport(any());
+        delivery.check(); assertEquals(1, sent.size());
+        clock.now = clock.now.plus(Duration.ofMinutes(30));
+        doReturn(block.equals("quiet") ? PushGate.Block.QUIET_HOURS : PushGate.Block.DISABLED)
+                .when(sender).sendWeeklyReport(any());
+        for (int i = 0; i < 5; i++) { delivery.check(); reopen(); }
+        doAnswer(fail).when(sender).sendWeeklyReport(any());
+        delivery.check(); assertEquals(2, sent.size());
+        clock.now = clock.now.plus(Duration.ofHours(2)).minusMillis(1);
+        delivery.check(); assertEquals(2, sent.size());
+        clock.now = clock.now.plusMillis(1); delivery.check(); assertEquals(3, sent.size());
+        reopen(); clock.now = clock.now.plus(Duration.ofDays(1)); delivery.check(); assertEquals(3, sent.size());
     }
 
     @Test @DisplayName("窗口以发送成功的落盘时刻开始，避免排队时间吃掉回复期限")
@@ -345,9 +414,57 @@ class SessionRecapGreetingTest {
         try (var files = mockStatic(DurableFiles.class, CALLS_REAL_METHODS)) {
             files.when(() -> DurableFiles.replace(eq(path), anyString(), eq(DurableFiles.OWNER_ONLY)))
                     .thenThrow(new java.io.IOException("synthetic"));
-            assertThrows(java.io.IOException.class, () -> delivery.check()); assertTrue(sent.isEmpty());
+            assertDoesNotThrow(() -> delivery.check()); assertTrue(sent.isEmpty());
         }
         delivery.check(); assertEquals(1, sent.size()); reopen(); delivery.check(); assertEquals(1, sent.size());
+    }
+
+    @Test @DisplayName("招呼记录写不进仍登记并到点发送小结，避免一个招呼故障拖住整轮小结")
+    void greetingSaveFailureDoesNotBlockRecap() throws Exception {
+        enable();
+        long start = clock.millis();
+        when(archive.sealedSessions()).thenReturn(List.of(new LiveSessionArchive.ArchivedSession("test", user.getUid(),
+                "测试主播", start, start + 3600000, 3600, LiveEndReason.NORMAL)));
+        when(recap.calculate("test", user.getUid(), start)).thenReturn(new SessionRecap.Result(List.of(new SessionRecap.Item(
+                "duration", new SessionRecap.Streamer("test", user.getUid()), start,
+                Map.of("start", start, "end", start + 3600000, "durationMinutes", 60),
+                new SessionRecap.Sample(1, start), "strong", List.of(), List.of())), List.of(), null));
+        Path path = dir.resolve("session-recap-greetings.json");
+        try (var files = mockStatic(DurableFiles.class, CALLS_REAL_METHODS)) {
+            files.when(() -> DurableFiles.replace(eq(path), anyString(), eq(DurableFiles.OWNER_ONLY)))
+                    .thenThrow(new java.io.IOException("synthetic"));
+            assertDoesNotThrow(() -> delivery.check());
+            assertEquals(1, new SessionRecapDeliveryStore(dir.resolve("session-recap-deliveries.json")).records().size());
+            clock.now = clock.now.plus(Duration.ofMinutes(90));
+            assertDoesNotThrow(() -> delivery.check());
+            assertEquals(1, sent.size()); assertFalse(sent.get(0).getContent().contains("你好，我是 Nova"));
+        }
+    }
+
+    @Test @DisplayName("一位主播的招呼运行异常不挡下一位，避免局部故障让其他主播也收不到招呼")
+    void runtimeFailureDoesNotBlockOtherGreetings() throws Exception {
+        enable();
+        var other = new PushUser(); other.setPlatform("test"); other.setUid(990000000102L);
+        var otherTarget = new PushTarget(); otherTarget.setPlatform("qq-onebot"); otherTarget.setType(PushTargetType.FRIEND);
+        otherTarget.setNum(990000001002L); otherTarget.setStreamerSelf(true); otherTarget.setUser(other);
+        otherTarget.setMessages(target.getMessages()); other.setTargets(List.of(otherTarget));
+        when(source.getAllUsers()).thenReturn(List.of(user, other));
+        when(live.getLiveStatus("test", user.getUid())).thenThrow(new IllegalStateException("synthetic"));
+        when(live.getLiveStatus("test", other.getUid())).thenReturn(Optional.of(false));
+        assertDoesNotThrow(() -> delivery.check());
+        assertEquals(List.of(otherTarget.getNum()), sent.stream().map(Message::getNum).toList());
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"SENT", "SENDING", "UNCERTAIN"})
+    @DisplayName("旧格式招呼记录仍可读且不重发，避免升级后重复问档或丢掉回答窗口")
+    void readsHistoryWithoutRetryFields(String status) throws Exception {
+        greet(); Path path = dir.resolve("session-recap-greetings.json");
+        var root = com.alibaba.fastjson2.JSON.parseObject(Files.readString(path));
+        var entry = root.getJSONArray("records").getJSONObject(0);
+        entry.remove("failures"); entry.remove("retryAt"); entry.put("status", status);
+        Files.writeString(path, root.toJSONString());
+        reopen(); delivery.check(); assertEquals(1, sent.size());
+        assertTrue(say("2").contains("第 2 档")); assertEquals(2, profile().tier());
     }
 
     @Test @DisplayName("认领状态存不成不能改档或假报成功，避免重启反复消费一个回答")

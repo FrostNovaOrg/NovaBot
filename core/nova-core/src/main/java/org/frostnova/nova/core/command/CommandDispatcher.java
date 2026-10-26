@@ -264,8 +264,7 @@ public class CommandDispatcher {
     /**
      * 问一圈有没有人认领这条认不出的消息
      * <p>
-     * 认领方按 Bean 的顺序依次问过去，头一个认领的说了算——同一条消息被两处认领本就是个错误，
-     * 而在这里挑一个「更合适的」只会让那个错误更难被发现。
+     * 认领方按 Spring 的优先级依次问过去，头一个认领的说了算；正在等回答的选主播追问先于招呼选档。
      * @return 认领结果，无人认领时为 null
      */
     private CommandFollowUp.Claimed claim(NovaRemoteMessageEvent event, PushTargetType type,
@@ -276,7 +275,7 @@ public class CommandDispatcher {
 
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), name, List.copyOf(args), event.getText());
-        for (CommandFollowUp followUp : followUps) {
+        for (CommandFollowUp followUp : followUps.orderedStream().toList()) {
             try {
                 CommandFollowUp.Claimed claimed = followUp.claim(context);
                 if (claimed != null) {

@@ -67,7 +67,7 @@ class StreamerProfileCommandTest {
         profiles = beans.getBean(StreamerProfileStore.class);
         resolver = beans.getBean(StreamerSelfResolver.class);
         @SuppressWarnings("unchecked") ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
-        when(followUps.iterator()).thenAnswer(call -> List.<CommandFollowUp>of().iterator());
+        when(followUps.orderedStream()).thenAnswer(call -> List.<CommandFollowUp>of().stream());
         TimelineWriter timeline = event -> records.add(event.toString());
         dispatcher = new CommandDispatcher(beans.getBeanProvider(NovaCommand.class), followUps,
                 new CommandSettingsService(new NovaStateStore(properties)), source, sender, properties, timeline, clock);

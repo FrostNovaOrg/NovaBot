@@ -115,7 +115,10 @@ public class SessionRecapDeliveryService {
         Instant now = clock.instant();
         var targets = active();
         if (!store.observe(targets.keySet(), now)) return;
-        for (var sub : targets.values()) greetings.greet(sub.platform(), sub.uid(), sub.target());
+        for (var sub : targets.values()) {
+            try { greetings.greet(sub.platform(), sub.uid(), sub.target()); }
+            catch (IOException | RuntimeException failure) { log.warn("下播小结招呼失败，继续检查其他招呼和小结", failure); }
+        }
         var sealed = archive.sealedSessions();
         long cutoff = now.minus(Duration.ofDays(90)).toEpochMilli();
         for (var entry : targets.entrySet()) {

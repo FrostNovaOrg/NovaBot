@@ -220,7 +220,7 @@ class FourCategoriesEndToEndTest {
 
         @SuppressWarnings("unchecked")
         ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
-        when(followUps.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
+        when(followUps.orderedStream()).thenAnswer(invocation -> List.<CommandFollowUp>of().stream());
 
         return new CommandDispatcher(commands, followUps,
                 new CommandSettingsService(new NovaStateStore(new NovaCoreProperties())),
