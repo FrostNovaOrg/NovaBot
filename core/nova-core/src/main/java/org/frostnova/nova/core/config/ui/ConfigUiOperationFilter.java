@@ -28,11 +28,15 @@ public class ConfigUiOperationFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             failed = false;
         } finally {
-            if (request.getAttribute(ACTION) != null
-                    || api && (ConfigUiOperationCatalog.operation(request) || failed || response.getStatus() >= 400)) {
+            var selected = request.getAttribute(ACTION) instanceof ConfigUiOperationCatalog.Action explicit
+                    ? explicit : ConfigUiOperationCatalog.action(request);
+            boolean rejectedRequest = failed || response.getStatus() >= 400 || request.getAttribute(REASON) != null;
+            boolean write = Set.of("POST", "PUT", "PATCH", "DELETE").contains(request.getMethod());
+            boolean login = Set.of("LOGIN", "OPERATOR_LOGIN", "OIDC_LOGIN_START", "OIDC_LOGIN", "ACCOUNT_BIND_COMPLETE",
+                    "PASSKEY_LOGIN_START", "PASSKEY_LOGIN").contains(selected.name());
+            if (login || api && (write || !rejectedRequest && ConfigUiOperationCatalog.operation(request))) {
                 try {
-                    var action = request.getAttribute(ACTION) instanceof ConfigUiOperationCatalog.Action explicit
-                            ? explicit : ConfigUiOperationCatalog.action(request);
+                    var action = selected;
                     Object recognized = request.getAttribute(ConfigUiAccess.ACCOUNT);
                     JSONObject actor = recognized instanceof ConfigUiAccount account
                             ? JSONObject.of("id", ConfigUiAudit.safe(account.id()),
@@ -40,7 +44,7 @@ public class ConfigUiOperationFilter extends OncePerRequestFilter {
                             : JSONObject.of("id", null, "displayName", "未识别", "role", null);
                     // 换取登录会话与随后的写操作是两次操作，各自保留结果。
                     if (action.name().equals("OPERATOR_LOGIN") && api
-                            && (ConfigUiOperationCatalog.operation(request) || failed || response.getStatus() >= 400)) {
+                            && (write || !rejectedRequest && ConfigUiOperationCatalog.operation(request))) {
                         store.append(JSONObject.of("actor", actor, "action", action.name(), "description", action.description(),
                                 "target", new JSONObject(), "result", "SUCCESS"));
                         action = ConfigUiOperationCatalog.action(request);

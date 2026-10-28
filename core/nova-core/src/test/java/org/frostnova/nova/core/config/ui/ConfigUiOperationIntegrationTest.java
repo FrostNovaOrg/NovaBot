@@ -168,31 +168,62 @@ class ConfigUiOperationIntegrationTest {
                 [{"platform":"bilibili","uid":123,"targets":[{"platform":"qq","type":1,"num":456,
                   "params":{"message":"private-template-value"}}]}]
                 """);
-        mvc(controller(properties)).perform(post("/config/api/datasource").requestAttr(ConfigUiAccess.ACCOUNT, admin)
+        var store = new org.frostnova.nova.core.service.DatasourceChannelStore(properties,
+                mock(org.frostnova.nova.core.datasource.AbstractDataSource.class), mock(ConfigurationValidator.class));
+        mvc(new DatasourceEndpoints(store)).perform(post("/config/api/datasource").requestAttr(ConfigUiAccess.ACCOUNT, admin)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"[]\"}"))
                 .andExpect(jsonPath("$.success").value(true));
+        assertEquals("[]", Files.readString(directory.resolve("datasource.json")).trim());
+        assertEquals(1, rows().size());
         var target = rows().get(0).getJSONObject("target");
+        assertNotNull(target.getJSONArray("streamers"), "保存服务必须补齐被移除的主播");
+        assertNotNull(target.getJSONArray("channels"), "保存服务必须补齐旧通道");
         assertEquals(JSONObject.of("platform", "bilibili", "uid", "123"), target.getJSONArray("streamers").getJSONObject(0));
         assertEquals(JSONObject.of("platform", "qq", "type", "1", "num", "456"), target.getJSONArray("channels").getJSONObject(0));
         assertFalse(target.toJSONString().contains("private-template-value"));
+    }
+
+    @org.springframework.web.bind.annotation.RestController
+    static class DatasourceEndpoints {
+        private final org.frostnova.nova.core.service.DatasourceChannelStore store;
+        DatasourceEndpoints(org.frostnova.nova.core.service.DatasourceChannelStore store) { this.store = store; }
+        @org.springframework.web.bind.annotation.PostMapping("/config/api/datasource")
+        JSONObject remove() {
+            store.update(com.alibaba.fastjson2.JSONArray::clear, false);
+            return JSONObject.of("success", true);
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"private-mail@example.invalid", "成员 private-mail@example.invalid（值班）"})
+    @DisplayName("成员的邮箱被写进操作记录：真实统一登录回调中的邮箱显示名必须隐去")
+    void oidcEmailDisplayNameIsMasked(String name) throws Exception {
+        oidcCallback(ConfigUiAccount.Status.ENABLED, name);
+        var row = rows().get(1);
+        assertEquals(name.replace("private-mail@example.invalid", "（邮箱已隐去）"), row.getJSONObject("actor").getString("displayName"));
+        assertFalse(row.toJSONString().contains("private-mail@example.invalid"));
     }
 
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(value = ConfigUiAccount.Status.class)
     @DisplayName("统一登录跳转把拒绝记为成功或丢失账号：记录回调账号及启用、待批准、停用结果")
     void oidcCallbackRecordsIdentityAndRedirectDenials(ConfigUiAccount.Status state) throws Exception {
+        oidcCallback(state, "小明");
+    }
+
+    private void oidcCallback(ConfigUiAccount.Status state, String name) throws Exception {
         var client = mock(OidcClient.class);
         when(authService.oidcEnabled()).thenReturn(true);
         properties.getConfigUi().getAgreement().setAcceptedVersion(ConfigUiAgreement.VERSION);
         properties.getConfigUi().getAgreement().setAcceptedBy("test");
         when(client.startLogin(any())).thenReturn(new OidcClient.Authorization(
                 java.net.URI.create("https://login.example/authorize"), "private-state", Instant.now().plusSeconds(120)));
-        var login = new OidcClient.Login(new OidcClient.Identity("private-issuer", "private-subject", "小明", "member@example.invalid"),
+        var login = new OidcClient.Login(new OidcClient.Identity("private-issuer", "private-subject", name, "member@example.invalid"),
                 new OidcClient.Tokens("private-access", "private-id", "private-refresh", 3600L), "private-nonce");
         when(client.completeLogin(any(), any(), any())).thenReturn(login);
-        var account = new ConfigUiAccount("member-7", ConfigUiAccount.Role.MEMBER, state, "小明", "member@example.invalid",
-                "private-issuer", "private-subject", List.of(), Instant.EPOCH, null, true);
-        when(accounts.register(any(), any())).thenReturn(account);
+        accounts = new ConfigUiAccountStore(new org.frostnova.nova.core.service.NovaStateStore(properties));
+        var account = accounts.register(login.identity(), Instant.now());
+        if (state != ConfigUiAccount.Status.PENDING) accounts.status(account.id(), state);
         var session = mock(ConfigUiSession.class);
         when(session.getId()).thenReturn("private-session");
         when(authService.issueForOidc(any(), any(), any())).thenReturn(session);
@@ -204,7 +235,7 @@ class ConfigUiOperationIntegrationTest {
                 .andExpect(status().is(state == ConfigUiAccount.Status.ENABLED ? 200 : 302));
         var row = rows().get(1);
         assertEquals("OIDC_LOGIN", row.getString("action"));
-        assertEquals("member-7", row.getJSONObject("actor").getString("id"));
+        assertEquals(account.id(), row.getJSONObject("actor").getString("id"));
         assertEquals(state == ConfigUiAccount.Status.ENABLED ? "SUCCESS" : "REJECTED", row.getString("result"));
         if (state != ConfigUiAccount.Status.ENABLED) assertFalse(row.getString("reason").isBlank());
         for (String secret : List.of("private-issuer", "private-subject", "member@example.invalid", "private-access",
@@ -217,6 +248,42 @@ class ConfigUiOperationIntegrationTest {
         mvc(controller(properties)).perform(get("/config/api/login").requestAttr(ConfigUiAccess.ACCOUNT, admin))
                 .andExpect(jsonPath("$.success").value(true));
         assertFalse(Files.exists(directory.resolve("console-audit")), "普通状态轮询不能生成操作记录");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "GET,values,false", "HEAD,values,false", "GET,auth/totp/setup,false",
+        "POST,values,true", "PUT,values,true", "PATCH,values,true", "DELETE,values,true",
+        "GET,oidc/login,true", "GET,oidc/callback,true", "POST,auth/login,true",
+        "POST,auth/passkey/login/options,true", "POST,auth/passkey/login/verify,true"
+    })
+    @DisplayName("扫描请求刷满记录或丢失拒绝操作：拒绝的读取不落盘，写入与登录尝试仍保留")
+    void rejectedReadsAreExcludedExceptLogin(String method, String route, boolean recorded) throws Exception {
+        var request = new org.springframework.mock.web.MockHttpServletRequest(method, "/config/api/" + route);
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        filter.doFilter(request, response, (req, res) -> {
+            req.setAttribute(ConfigUiOperationFilter.REASON, "权限不足");
+            ((jakarta.servlet.http.HttpServletResponse) res).setStatus(403);
+        });
+        if (recorded) {
+            assertEquals(1, rows().size());
+            assertEquals("REJECTED", rows().get(0).getString("result"));
+            assertEquals("权限不足", rows().get(0).getString("reason"));
+        } else assertFalse(Files.exists(directory.resolve("console-audit")));
+    }
+
+    @Test @DisplayName("用户自填对象泄露邮箱：设置键及嵌套对象的邮箱片段在写盘前隐去")
+    void userTextIsMaskedBeforeWriting() throws Exception {
+        var store = new ConfigUiOperationStore(properties);
+        store.append(JSONObject.of("actor", JSONObject.of("id", "member-7", "displayName", "负责人 <a@example.invalid>",
+                        "role", "MEMBER"), "target", JSONObject.of("keys", List.of("custom.b@example.invalid"),
+                        "nested", JSONObject.of("owner@example.invalid", "联系 c@example.invalid")),
+                "reason", "请联系 d@example.invalid"));
+        var row = rows().get(0);
+        assertEquals("member-7", row.getJSONObject("actor").getString("id"));
+        assertEquals("负责人 <（邮箱已隐去）>", row.getJSONObject("actor").getString("displayName"));
+        assertFalse(row.toJSONString().contains("@"));
+        assertTrue(row.toJSONString().contains("邮箱已隐去"));
     }
 
     @SuppressWarnings("unchecked")

@@ -41,8 +41,13 @@ class ConfigUiOperationStoreTest {
         for (String name : List.of("2025-06.jsonl", "2025-07.jsonl", "2025-08.jsonl", "2026-07.jsonl",
                 "2026-08.jsonl", "2025-13.jsonl", "notes.txt", "2025-01.jsonl.backup"))
             Files.writeString(folder.resolve(name), "old\n");
+        String julyRecord = JSONObject.of("timestamp", Instant.parse("2025-07-31T23:59:59.999Z").toEpochMilli()) + "\n";
+        Files.writeString(folder.resolve("2025-07.jsonl"), julyRecord);
         store(Instant.parse("2026-07-01T00:00:00Z")).prune();
         assertFalse(Files.exists(folder.resolve("2025-06.jsonl")));
+        assertTrue(Files.exists(folder.resolve("2025-07.jsonl")), "七月末的记录尚未满一年");
+        assertEquals(julyRecord, Files.readString(folder.resolve("2025-07.jsonl")));
+        store(Instant.parse("2026-08-01T00:00:00Z")).prune();
         assertFalse(Files.exists(folder.resolve("2025-07.jsonl")));
         assertEquals("old\n", Files.readString(folder.resolve("2025-08.jsonl")));
         assertTrue(Files.exists(folder.resolve("2026-07.jsonl")));
@@ -55,22 +60,34 @@ class ConfigUiOperationStoreTest {
     @Test @DisplayName("多人同时操作导致记录粘行或缺行：并发追加后每行都是完整对象")
     void concurrentOperationsRemainSeparateLines() throws Exception {
         var store = store(Instant.parse("2026-07-01T00:00:00Z"));
-        var executor = Executors.newFixedThreadPool(4);
+        var executor = Executors.newFixedThreadPool(20);
         try {
+            var start = new CyclicBarrier(20);
+            List<String> keys = java.util.stream.IntStream.range(0, 800)
+                    .mapToObj(i -> "novabot.core.setting." + i + "." + "x".repeat(64)).toList();
+            assertTrue(JSONObject.of("target", JSONObject.of("keys", keys)).toJSONString()
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 8192);
             List<Callable<Void>> calls = new ArrayList<>();
-            for (int i = 0; i < 40; i++) {
+            for (int i = 0; i < 160; i++) {
                 int id = i;
-                calls.add(() -> { store.append(JSONObject.of("operation", id)); return null; });
+                calls.add(() -> { start.await(90, TimeUnit.SECONDS);
+                    store.append(JSONObject.of("operation", id, "target", JSONObject.of("keys", keys)));
+                    return null; });
             }
-            for (var result : executor.invokeAll(calls, 30, TimeUnit.SECONDS)) result.get();
+            for (var result : executor.invokeAll(calls, 90, TimeUnit.SECONDS)) result.get();
         } finally {
             executor.shutdown();
-            assertTrue(executor.awaitTermination(30, TimeUnit.SECONDS));
+            assertTrue(executor.awaitTermination(90, TimeUnit.SECONDS));
         }
         Set<Integer> operations = new HashSet<>();
         var lines = Files.readAllLines(directory.resolve("console-audit/2026-07.jsonl"));
-        for (String line : lines) operations.add(JSONObject.parseObject(line).getInteger("operation"));
-        assertEquals(40, lines.size());
-        assertEquals(40, operations.size());
+        for (String line : lines) {
+            var row = JSONObject.parseObject(line);
+            assertEquals(800, row.getJSONObject("target").getJSONArray("keys").size());
+            assertTrue(line.endsWith("}"));
+            assertTrue(operations.add(row.getInteger("operation")), "记录不能重复");
+        }
+        assertEquals(160, lines.size());
+        assertEquals(160, operations.size());
     }
 }
