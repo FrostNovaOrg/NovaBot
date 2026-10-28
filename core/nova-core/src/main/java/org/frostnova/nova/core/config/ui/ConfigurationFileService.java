@@ -1138,6 +1138,7 @@ public class ConfigurationFileService implements SmartLifecycle {
 
     private synchronized List<String> write(Map<String, String> changes, boolean keepBackup) throws IOException {
         if (changes.isEmpty()) {
+            ConfigUiOperationAdvice.changedKeys(List.of());
             return List.of();
         }
         // 调用方送来的可以是不许改的表：rejectLockedChanges 要从本批剔除原样送回的继承项，先备一份可动的
@@ -1300,6 +1301,7 @@ public class ConfigurationFileService implements SmartLifecycle {
             log.info("配置界面已更新 {} 个配置项: {}, 操作者: {}", changed.size(), String.join(", ", changed), ConfigUiAccess.actor());
         }
 
+        ConfigUiOperationAdvice.changedKeys(changed);
         return List.copyOf(changed);
     }
 

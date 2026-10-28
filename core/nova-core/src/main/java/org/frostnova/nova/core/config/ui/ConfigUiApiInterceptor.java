@@ -73,11 +73,11 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
         if (auth.isEnabled() && ConfigUiSecurityFilter.PUBLIC_API.contains(path)
                 && rule.access() == ConfigUiPermissions.Access.EVERYONE) return true;
         if (!(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount account)) {
-            return reject(response, 401, "尚未登录");
+            return reject(request, response, 401, "尚未登录");
         }
         if (account.role() != ConfigUiAccount.Role.MEMBER) return true;
         if (rule.access() == ConfigUiPermissions.Access.ADMIN) {
-            return reject(response, 403, MEMBER_DENIED);
+            return reject(request, response, 403, MEMBER_DENIED);
         }
         if (rule.access() != ConfigUiPermissions.Access.STREAMER) return true;
         String platform;
@@ -94,12 +94,12 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
             uid = mvcParameter(request, "uid", Long.class);
         } else return true; // Body subjects are checked after HTTP message conversion.
         if (!ConfigUiStreamerId.owns(account, platform, uid, platforms.platforms())) {
-            return reject(response, 404, ConfigUiMemberBodyAdvice.MISSING_STREAMER);
+            return reject(request, response, 404, ConfigUiMemberBodyAdvice.MISSING_STREAMER);
         }
         if ((path.equals(ConfigUiController.BASE_PATH + "/api/weekly-report/{platform}/{uid}/trial")
                 || path.equals(ConfigUiController.BASE_PATH + "/api/live-report/{platform}/{uid}/send-latest"))
                 && !ownTarget(platform, uid, request)) {
-            return reject(response, 403, "只能发送到这位主播自己的通道");
+            return reject(request, response, 403, "只能发送到这位主播自己的通道");
         }
         return true;
     }
@@ -148,7 +148,8 @@ public class ConfigUiApiInterceptor implements HandlerInterceptor, WebMvcConfigu
         }
     }
 
-    private boolean reject(HttpServletResponse response, int status, String message) throws Exception {
+    private boolean reject(HttpServletRequest request, HttpServletResponse response, int status, String message) throws Exception {
+        request.setAttribute(ConfigUiOperationFilter.REASON, message);
         response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         JSONObject result = new JSONObject();

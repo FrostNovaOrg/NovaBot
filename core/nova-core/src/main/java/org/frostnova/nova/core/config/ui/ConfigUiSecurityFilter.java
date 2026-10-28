@@ -298,6 +298,8 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         // 使用协议这道闸不在这里：会话在协议同意之前什么也打不开（那道闸在下一步），
         // 而<b>不发会话反倒使人无从同意</b>——点同意得先被认出来是谁，认出来的凭据正是这把会话
         ConfigUiSession session = authService.issueForOperator(clientIp);
+        request.setAttribute(ConfigUiOperationFilter.ACTION,
+                new ConfigUiOperationCatalog.Action("OPERATOR_LOGIN", "使用启动令牌登录控制台", java.util.Map.of()));
         response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request));
 
         // 这条通道绕过了口令与二次验证，每次使用都要写审计记录，否则被人拿到令牌也看不出来
@@ -533,6 +535,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 浏览器直接访问时返回一段可读的 HTML，接口调用时返回 JSON。
      */
     private void reject(HttpServletRequest request, HttpServletResponse response, HttpStatus status, String message) throws IOException {
+        request.setAttribute(ConfigUiOperationFilter.REASON, message);
         response.setStatus(status.value());
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
 
