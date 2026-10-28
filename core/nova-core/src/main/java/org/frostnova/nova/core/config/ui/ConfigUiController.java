@@ -1296,6 +1296,7 @@ public class ConfigUiController {
 
         try {
             List<String> changedKeys = fileService.write(normalized);
+            ConfigUiOperationAdvice.changedKeys(changedKeys);
 
             // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用。
             // 删掉的那几项对运行时按「没有值」落地（空串）——写口里的 null 是删键，两处含义不同
@@ -1956,6 +1957,7 @@ public class ConfigUiController {
             }
             DurableFiles.replace(path, content);
             try {
+                ConfigUiOperationAdvice.datasourceChanged(previous, JSONArray.parseArray(content));
                 StreamerSelfAudit.record(previous, JSONArray.parseArray(content), ConfigUiAccess.actor(), dataSource, timeline);
             } catch (RuntimeException error) {
                 log.warn("主播本人标记时间线记录失败，配置已保存，将继续重载", error);

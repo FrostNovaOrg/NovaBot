@@ -156,11 +156,15 @@ public class ConfigUiOidcController {
                         return;
                     }
                     auth.logoutOidcAccount(ConfigUiAccount.LOCAL_ID);
+                    request.setAttribute(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.now()));
+                    request.setAttribute(ConfigUiOperationFilter.ACTION,
+                            new ConfigUiOperationCatalog.Action("ACCOUNT_BIND_COMPLETE", "完成本地管理员绑定", Map.of()));
                     log.info("配置界面账号绑定: 本地管理员 → 本地管理员");
                     result(request, response, "bound");
                     return;
                 }
                 ConfigUiAccount account = accounts.register(login.identity(), Instant.now());
+                request.setAttribute(ConfigUiAccess.ACCOUNT, account);
                 if (account.status() == ConfigUiAccount.Status.PENDING) {
                     result(request, response, "pending");
                     return;
@@ -255,6 +259,19 @@ public class ConfigUiOidcController {
     }
 
     private static void result(HttpServletRequest request, HttpServletResponse response, String result) throws IOException {
+        if (!"bound".equals(result)) {
+            request.setAttribute(ConfigUiOperationFilter.REASON, switch (result) {
+                case "pending" -> "账号等待管理员启用";
+                case "disabled" -> "账号已停用";
+                case "denied" -> "登录授权被拒绝";
+                case "agreement" -> "尚未同意使用协议";
+                case "local_required" -> "需要本地重新登录";
+                case "identity_in_use" -> "该身份已绑定账号";
+                case "configuration" -> "登录服务配置不正确";
+                case "busy" -> "登录服务暂不可用";
+                default -> "登录校验未通过";
+            });
+        }
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.setHeader("Referrer-Policy", "no-referrer");
         response.setStatus(HttpServletResponse.SC_FOUND);

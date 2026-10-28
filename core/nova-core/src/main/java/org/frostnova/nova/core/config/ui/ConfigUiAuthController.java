@@ -836,6 +836,7 @@ public class ConfigUiAuthController {
 
             result.put("success", true);
             result.put("csrfToken", outcome.session().getCsrfToken());
+            request.setAttribute(ConfigUiAccess.ACCOUNT, authService.account(outcome.session()));
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE, sessionCookie(outcome.session().getId(), request).toString())

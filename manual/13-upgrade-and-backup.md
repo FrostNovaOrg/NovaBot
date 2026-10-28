@@ -435,6 +435,118 @@ sudo systemctl enable --now novabot-backup.timer
 按上面备数据时会一起带上。换机器时少备了它，群里那些订阅就得重新订一遍。
 按主播的命令开关、金额可见、静音时段跟推送配置一起存在 `datasource.json`，随配置一起备。
 
+## 控制台操作记录
+
+数据目录下的 `console-audit/YYYY-MM.jsonl` 保存控制台操作记录，文件名按 **UTC 月份**划分，
+UTF-8 编码，每次操作一行 JSON，只追加。设置、主播与推送通道、成员管理、登录与退出、
+测试发送、模板、运行开关等操作都会记录；权限不足、登录失败或校验未通过也会留一行。
+普通成功查询不记录；主播本人标记的时间线记录照旧。这一版没有查看页面，可直接读取文件。
+
+保留当前月及之前十一个整月；启动、每天 UTC 零点和追加记录时清理更早的整月文件。
+写入或清理失败只在程序日志中警告，不影响原操作。备份时把 `console-audit/` 一起带上；
+备份脚本只增不删，备份目的地的旧月份需按自己的保留期限清理。
+
+每行字段如下，方便外部只读查询使用：
+
+| 字段 | 含义 |
+|---|---|
+| `timestamp` | 记录时刻，Unix 毫秒整数 |
+| `actor.id` | 已识别的控制台账号 id，本地管理员为 `local-admin`；未识别时为 `null` |
+| `actor.displayName` | 显示名；未识别时为「未识别」 |
+| `actor.role` | `ADMIN` 或 `MEMBER`；未识别时为 `null` |
+| `action` | 下表中的固定动作名 |
+| `description` | 一句中文动作说明，不包含提交值或消息正文 |
+| `target` | 涉及对象；没有可识别对象时为 `{}`，以下子字段按需出现 |
+| `target.streamers` | 主播列表，每项为 `platform`（平台标识）、`uid`（十进制字符串）；包含被删除的主播 |
+| `target.channels` | 通道列表，每项为 `platform`（推送平台）、`type`（通道种类代码字符串）、`num`（号码字符串）；包含移除的旧通道 |
+| `target.keys` | 设置键名列表；保存成功时仅包含实际改动项，没有改动时为 `[]` |
+| `target.accountId` | 成员管理所操作的账号 id |
+| `target.template` | 默认模板的处理器类名 |
+| `target.commands` | 所调整的命令名列表 |
+| `target.alertChannel` | 试发告警的通道标识，不含邮箱或收件地址 |
+| `target.subscriptionType`、`target.userUid` | 订阅类型 `live` 或 `dynamic`、被移除订阅者的 uid；清空名单时没有 `userUid` |
+| `result` | `SUCCESS`（成功）或 `REJECTED`（被拒绝或执行失败） |
+| `reason` | 失败原因或原因类别，仅失败时出现；不复制可能包含敏感信息的远端错误正文 |
+
+设置只保存键名，**不保存值**。记录不包含邮箱字段、登录身份的 issuer 或 subject、口令、
+令牌、密钥、消息正文、完整请求或回包。尚未识别身份的失败登录不冒记为本地管理员；
+统一登录回调能识别账号时，会记录该账号及待批准、停用等拒绝原因。
+在权限检查时就被拒绝的请求尚未读取正文，因此只记录当时可识别的路径、查询对象。
+
+固定动作名清单：
+
+| 动作名 | 中文说明 |
+|---|---|
+| `SETTINGS_SAVE` | 保存控制台设置 |
+| `BOT_SAVE` | 保存机器人连接 |
+| `BOT_TEST` | 测试机器人连接 |
+| `PLATFORM_LOGOUT` | 退出平台登录 |
+| `MESSAGE_TEST` | 发送测试消息 |
+| `DATASOURCE_SAVE` | 保存整份推送配置 |
+| `STREAMER_ADD` | 添加主播 |
+| `STREAMER_SAVE` | 保存主播与推送通道 |
+| `STREAMER_DELETE` | 删除主播 |
+| `PUSH_TOGGLE` | 暂停或恢复全局推送 |
+| `TEMPLATE_SAVE` | 保存默认模板 |
+| `COMMAND_SAVE` | 调整通道命令 |
+| `COMMANDS_SAVE` | 批量调整通道命令 |
+| `REVENUE_SAVE` | 调整通道金额可见性 |
+| `QUIET_SAVE` | 调整通道静音时段 |
+| `SUBSCRIPTION_REMOVE` | 移除或清空订阅 |
+| `BINDING_SAVE` | 调整通道主播绑定 |
+| `PROFILE_RECOVER` | 恢复主播画像 |
+| `ASSISTANT_ASK` | 使用主播智能助手 |
+| `WEEKLY_REPORT_SEND` | 发送运营周报 |
+| `WEEKLY_REPORT_PREVIEW` | 生成运营周报预览 |
+| `LIVE_REPORT_SEND` | 发送下播报告 |
+| `SESSION_RECAP_SEND` | 试发本场小结 |
+| `PRE_LIVE_REMINDER_SEND` | 试发开播预告 |
+| `NAPCAT_CREDENTIAL` | 换取机器人管理凭据 |
+| `PALETTE_SAVE` | 保存报告默认配色 |
+| `REPORT_PREVIEW` | 生成报告预览 |
+| `ALERT_TEST` | 试发告警 |
+| `ACCOUNT_ENABLE` | 启用成员 |
+| `ACCOUNT_DISABLE` | 停用成员 |
+| `ACCOUNT_ROLE` | 修改成员角色 |
+| `ACCOUNT_STREAMERS` | 分配成员主播 |
+| `ACCOUNT_DELETE` | 删除成员 |
+| `ACCOUNT_BIND` | 开始绑定本地管理员 |
+| `ACCOUNT_UNBIND` | 解除本地管理员绑定 |
+| `LOGIN` | 登录控制台 |
+| `LOGOUT` | 退出控制台 |
+| `OIDC_LOGIN_START` | 开始统一登录 |
+| `OIDC_LOGIN` | 完成统一登录或账号登记 |
+| `OIDC_LOGOUT` | 接收统一登录注销 |
+| `PASSKEY_LOGIN_START` | 开始通行密钥登录 |
+| `PASSKEY_LOGIN` | 完成通行密钥登录 |
+| `PASSKEY_REGISTER_START` | 开始登记通行密钥 |
+| `PASSKEY_REGISTER` | 登记通行密钥 |
+| `PASSKEY_DELETE` | 删除通行密钥 |
+| `TOTP_SETUP` | 开始绑定验证器 |
+| `TOTP_ENROLL` | 绑定验证器 |
+| `TOTP_DISABLE` | 关闭二次验证 |
+| `TOTP_SKIP` | 跳过绑定验证器 |
+| `PASSWORD_SET` | 设置登录口令 |
+| `PASSWORD_CHANGE` | 修改登录口令 |
+| `PASSWORD_RESET` | 重设登录口令 |
+| `AGREEMENT_ACCEPT` | 同意使用协议 |
+| `AGREEMENT_REVOKE` | 撤回使用协议 |
+| `EVENT_TOKEN_ISSUE` | 签发只读口令 |
+| `EVENT_TOKEN_REVOKE` | 吊销只读口令 |
+| `VERSION_SKIP` | 跳过版本提醒 |
+| `SETUP_TEST_SENT` | 记录初始测试发送 |
+| `SETUP_RERUN` | 重开设置引导 |
+| `SETUP_RERUN_CONSUME` | 确认重开设置引导 |
+| `TARGETS_REFRESH` | 刷新机器人会话 |
+| `STREAMER_LOOKUP` | 查询主播 |
+| `ASSISTANT_KEY_SAVE` | 保存智能助手密钥 |
+| `ASSISTANT_KEY_DELETE` | 清除智能助手密钥 |
+| `ASSISTANT_TEST` | 测试智能助手连接 |
+| `ASSISTANT_ACKNOWLEDGE` | 确认智能助手提示 |
+| `OPERATOR_LOGIN` | 使用启动令牌登录控制台 |
+| `ACCOUNT_BIND_COMPLETE` | 完成本地管理员绑定 |
+| `CONSOLE_OPERATION` | 其他控制台写操作，或被拒绝的查询 |
+
 ## 登录凭据会不会掉
 
 **一般不会。** 扫码登录走的是电视端接口，拿到的令牌有效期 180 天，到期前 30 天

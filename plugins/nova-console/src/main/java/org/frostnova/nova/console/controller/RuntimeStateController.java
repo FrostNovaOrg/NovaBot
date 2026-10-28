@@ -544,6 +544,7 @@ public class RuntimeStateController {
             return fail(result, "订阅类型只认开播（live）与动态（dynamic），收到的是「" + type + "」");
         }
 
+        org.frostnova.nova.core.config.ui.ConfigUiOperationAdvice.streamer("bilibili", streamerUid);
         Object rawUserUid = body.get("userUid");
         Long userUid = rawUserUid == null ? null : positiveSessionNum(rawUserUid);
         if (rawUserUid != null && userUid == null) {

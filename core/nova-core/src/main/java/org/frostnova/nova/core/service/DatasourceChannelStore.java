@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiAudit;
+import org.frostnova.nova.core.config.ui.ConfigUiOperationAdvice;
 import org.frostnova.nova.core.config.ui.StreamerSelfAudit;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,6 +92,7 @@ public class DatasourceChannelStore {
                 DurableFiles.replace(path, after);
                 if (!migration) {
                     try {
+                        ConfigUiOperationAdvice.datasourceChanged(JSONArray.parseArray(before), users);
                         StreamerSelfAudit.record(JSONArray.parseArray(before), users, actor, dataSource, timeline);
                         audit(JSONArray.parseArray(before), users, actor);
                     } catch (RuntimeException error) {
