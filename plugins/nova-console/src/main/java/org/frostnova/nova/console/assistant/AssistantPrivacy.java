@@ -7,10 +7,11 @@ import org.frostnova.nova.core.assistant.AssistantLocalStore;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.*;
+import java.util.function.LongFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 每问独立保存昵称映射，原始身份与逐人金额不会进入工具消息。 */
+/** 每问独立保存昵称映射，原始观众身份留在本机。 */
 final class AssistantPrivacy {
     private final AssistantLocalStore local;
     private final String platform;
@@ -83,9 +84,26 @@ final class AssistantPrivacy {
             result.put("contributors", items == null ? null : contributors);
             if (!contributors.isEmpty()) dataTypes.add("贡献者代号与占比 " + contributors.size() + " 位");
         }
+        if (AssistantAggregateRequest.NAME.equals(tool)) {
+            var columns = raw.getJSONArray("columns");
+            int audienceColumn = columns == null ? -1 : columns.indexOf("audience");
+            if (audienceColumn >= 0) {
+                var rows = raw.getJSONArray("rows");
+                var masked = result.getJSONArray("rows");
+                for (int i = 0; i < rows.size(); i++) {
+                    var cell = rows.getJSONArray(i).getJSONObject(audienceColumn);
+                    masked.getJSONArray(i).set(audienceColumn, mask(cell.getString("alias")));
+                }
+                if (!rows.isEmpty()) dataTypes.add("观众代号 " + rows.size() + " 行");
+            }
+        }
         dataTypes.add("汇总数字");
         return result;
     }
+
+    boolean canAttribute(Long uid) { return uid != null && uid > 0 && !excluded.contains(uid); }
+
+    LongFunction<String> aliases() { return local.aliases(platform); }
 
     private void learn(Object value) {
         if (value instanceof JSONObject row) {

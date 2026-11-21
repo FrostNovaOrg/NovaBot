@@ -41,7 +41,7 @@ import java.util.*;
 public class AssistantQueryService {
     private static final String SESSION_SOURCE = "场次归档，与主播页同一口径";
     private static final String DETAIL_SOURCE = "场次明细归档";
-    private static final int LINE_LIMIT = 500_000;
+    static final int LINE_LIMIT = 500_000;
     private static final int LIST_LIMIT = 120;
     private static final List<String> COMPARABLE = List.of("durationSeconds", "effectiveSeconds", "revenue", "messages", "audience", "peakOnline");
     private final StreamerController controller;
@@ -69,6 +69,20 @@ public class AssistantQueryService {
         this.properties = properties;
         this.catalogs = catalogs;
         this.clock = clock;
+    }
+
+    JSONObject aggregate(String platform, Long uid, JSONObject args, AssistantQueryContext context, AssistantPrivacy privacy) {
+        if (!validIdentity(platform, uid)) return AssistantAggregateQuery.rejected("筛选汇总", "请提供有效主播");
+        try {
+            var request = AssistantAggregateRequest.parse(args);
+            boolean sessions = request.kinds().contains(AssistantAggregateRequest.Kind.SESSION);
+            boolean living = live.getLiveStatus(platform, uid).orElse(false);
+            Long start = living ? live.getLiveStartTime(platform, uid).orElse(null) : null;
+            return new AssistantAggregateQuery(request, privacy).run(platform, uid, archive, sessions ? rules(platform) : null,
+                    (at, name) -> file(platform, uid, at, name), living, start, clock.instant(), context);
+        } catch (AssistantAggregateRequest.Invalid error) {
+            return AssistantAggregateQuery.rejected("筛选汇总", error.getMessage());
+        }
     }
 
     /** 最近 days 个统计日内开播的场次，包含已知开播时刻的当前场次。 */

@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -194,6 +195,38 @@ public class LiveSessionArchive {
         }
     }
 
+    /**
+     * 逐条访问指定主播和时间窗重叠的场次。下播时刻恰在窗口起点也会访问，以便查到该时刻的事件。
+     * 只读取调用方需要的名单，避免多场大房间的名单同时留在内存。
+     */
+    public void forEachOverlapping(String platform, long uid, long from, long to, boolean includeUserSets,
+                                   int maxLineChars, Consumer<LiveSession> visit) throws IOException {
+        Path file = path();
+        FileState state = BadLineNotice.stateOf(file);
+        try (Stream<String> lines = JsonlFiles.lines(file, maxLineChars)) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException();
+                LiveSession session = overlapping(line, state, platform, uid, from, to, includeUserSets);
+                if (session != null) visit.accept(session);
+            }
+        } catch (NoSuchFileException ignored) {
+            // 未产生场次归档。
+        }
+    }
+
+    private LiveSession overlapping(String line, FileState state, String platform, long uid, long from, long to,
+                                    boolean includeUserSets) {
+        try {
+            JSONObject json = JSON.parseObject(line);
+            if (json == null || !platform.equals(json.getString("platform")) || json.getLongValue("uid") != uid
+                    || json.getLongValue("startTime") >= to || json.getLongValue("endTime") < from) return null;
+            return parse(json, includeUserSets);
+        } catch (RuntimeException error) {
+            badLine.skipped(state, error);
+            return null;
+        }
+    }
+
     private static <T> Map<String, T> numberMap(JSONObject raw, Function<Number, T> convert) {
         Map<String, T> result = new HashMap<>();
         if (raw != null) raw.forEach((key, value) -> result.put(key, convert.apply((Number) value)));
@@ -315,11 +348,18 @@ public class LiveSessionArchive {
         }
 
         try {
-            JSONObject json = JSON.parseObject(line);
-            Map<String, Double> metrics = numberMap(json.getJSONObject("metrics"), Number::doubleValue);
-            Map<String, Integer> userCounts = numberMap(json.getJSONObject("userCounts"), Number::intValue);
+            return parse(JSON.parseObject(line), true);
+        } catch (Exception e) {
+            // 只记原因不记内容：一行里有观众 uid 名单
+            badLine.skipped(state, e);
+            return null;
+        }
+    }
 
-            return new LiveSession(
+    private LiveSession parse(JSONObject json, boolean includeUserSets) {
+        Map<String, Double> metrics = numberMap(json.getJSONObject("metrics"), Number::doubleValue);
+        Map<String, Integer> userCounts = numberMap(json.getJSONObject("userCounts"), Number::intValue);
+        return new LiveSession(
                     json.getString("platform"),
                     json.getLong("uid"),
                     json.getString("uname"),
@@ -337,7 +377,7 @@ public class LiveSessionArchive {
                     // F5 之前的记录没有名单。缺失读成空表，同样是「不知道」而不是「没人来」——
                     // 分析侧必须用 LiveSession.hasUserSets() 把两者分开，
                     // 否则历史场次会显示成「零观众」，与上面那条缺口读成 0 是同一类误读
-                    parseUserSets(json.getJSONObject("userSets")),
+                    includeUserSets ? parseUserSets(json.getJSONObject("userSets")) : Map.of(),
                     // 单房断线缺口。与上面的程序停机缺口分开存、不相加：
                     // 停机期间所有房间都在断，两段重叠，相加就是重复计数
                     json.getLongValue("roomOutageSeconds"),
@@ -347,11 +387,6 @@ public class LiveSessionArchive {
                     parsePeaks(json.getJSONObject("peaks")),
                     // 缺失读成 null 表示未记录；空表表示已记录且没有匿名事件。
                     parseAnonymousCounts(json.getJSONObject("anonymousCounts")));
-        } catch (Exception e) {
-            // 只记原因不记内容：一行里有观众 uid 名单
-            badLine.skipped(state, e);
-            return null;
-        }
     }
 
     /** 逐项保留有效的正整数次数，坏项不连累本场其余数据，缺失表示未知。 */

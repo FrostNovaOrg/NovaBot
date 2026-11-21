@@ -2,7 +2,7 @@
 
 入口为 `org.frostnova.nova.console.assistant.AssistantQueryService`，由 Spring 注入，沿用控制台现有启用条件。所有入口返回 fastjson2 `JSONObject`，前两个参数均为 `String platform, Long uid`，只读这一位主播。没有新增接口或配置。
 
-所有结果都有 `source`（中文数据出处）。无法提供数据时，对应数据字段为 null，`reason` 说明原因。空文件与不存在的文件不同：前者可以确认为零条，后者未知。时间为 Unix 毫秒，时长为秒，金额为元，比例 0.5 表示 50%。统计日边界沿用主播页。调用方序列化时应启用 `JSONWriter.Feature.WriteNulls`，保留未知值。
+所有结果都有 `source`（中文数据出处）。无法提供数据时，对应数据字段为 null，`reason` 说明原因。空文件与不存在的文件不同：前者可以确认为零条，后者未知。时间戳为 Unix 毫秒，时长为秒，金额为元，比例 0.5 表示 50%。统计日边界沿用主播页。调用方序列化时应启用 `JSONWriter.Feature.WriteNulls`，保留未知值。
 
 普通列表封装为 `{items, total, truncated}`：`items` 为返回内容，`total` 为裁剪前数量，`truncated` 表示没有展示全部内容。趋势、粉丝和贡献者保留其专用数组字段，在同一对象给出 `total`、`truncated`。周期结果的辅助列表保留原数组，在旁边追加 `<字段名>Total`、`<字段名>Truncated`；`daily` 至多 360 项，其他辅助列表至多 120 项。裁剪只改变返回列表，不改变统计数值。
 
@@ -173,3 +173,53 @@ JSONObject fans(String platform, Long uid, int days)
 ```
 
 直接复用 `StreamerController.fans`，days 与周期汇总相同。顶层为 `success`、`days`、`fans` 和公共出处字段。`fans.points` 为最近至多 120 个 `{at, value}` 快照；`total`、`truncated` 为裁剪前快照数和截断标记；`change` 为窗口内粉丝净变化；`partial` 表示快照不能完整覆盖窗口。没有任何可用数据时 fans 为 null，reason 说明原因。
+
+## 筛选与分组汇总
+
+模型工具 `aggregate` 查询已归档的 B 站事件和场次。主播由调用方绑定。问到数量、合计、排行和分布时优先使用这个工具，以工具计算的数字作答。
+
+| 参数 | 取值 |
+| --- | --- |
+| `kinds`（必填） | `gift` 礼物、`box` 盲盒、`guard` 上舰、`super_chat` 醒目留言、`follow` 关注、`pk_settle` PK 结算、`session` 场次。前四种可以合选，合选时只允许 `count`、`sum:amount`、`distinctAudience`。 |
+| `from`、`to`（必填） | `YYYY-MM-DD` 的统计日，首尾都含，最多 366 天。 |
+| `filters` | 至多 12 个 `{field, op, value}` 条件，须同时满足。取值见下表。 |
+| `groupBy` | 至多两个不同的键。`day` 为统计日，`week` 为该统计日所在周的周一日期，`month` 为该统计日所在月。`hour` 为北京时间钟点（0–23），`weekday` 为该统计日的星期几（周一为 1）。`session` 为开播时间戳，`kind` 为记录种类。也可用 `name`、`openedGiftName`、`audience`、`guardOperation`、`guardLevel`、`pkResult`。省略或传空数组时只汇总一次。 |
+| `metrics`（必填） | 1–8 个不同的汇总列。`count` 计记录条数，`distinctAudience` 计已识别的不同观众。`sum:quantity`、`sum:amount` 分别求个数和金额合计。场次的 `durationSeconds`、`effectiveSeconds`、`messages` 也支持 `sum:`。单选记录种类时，任一适用的数值字段都可用 `max:字段`、`min:字段`、`avg:字段`。 |
+| `sort` | `{by, direction}`，以选中的一个分组键或汇总列排序，方向为 `asc` 或 `desc`。默认按分组键升序，未知值始终在最后。并列按分组顺序固定排列，其中观众用本机顺序。 |
+| `limit` | 可选，排序后取前 1–50 行。省略时最多 59 条数据行，加上合计共 60 行。 |
+
+| 筛选字段 | 适用记录与取值 |
+| --- | --- |
+| `name`、`openedGiftName` | `name` 为礼物名或盒名，`openedGiftName` 为盒里开出的礼物名。支持 `eq`（等于）和 `contains`（包含），区分大小写。 |
+| `quantity` | 礼物、盲盒、上舰记录里的个数。 |
+| `amount` | 礼物、盲盒、上舰、醒目留言或场次的金额。 |
+| `pkMyVotes`、`pkOpponentVotes` | PK 结算时的本方票数、各对手票数之和。任一对手缺票数时，后者为未知。 |
+| `pkResult` | `win` 胜、`loss` 负、`draw` 平。 |
+| `guardOperation`、`guardLevel` | 上舰操作为 `open` 新开、`renew` 续费。等级为 `captain` 舰长、`commander` 提督、`governor` 总督。 |
+| `audience` | 礼物、盲盒、上舰、醒目留言、关注均可用已有的观众代号（`观众-xxxxxx`）筛选或分组。 |
+| `startTime`、`endTime`、`durationSeconds`、`effectiveSeconds` | 场次开播与下播时间戳、全场时长与有效采集秒数。 |
+| `messages`、`peakOnline`、`watched`、`sessionAudience` | 场次弹幕条数、在线峰值、看过人数、名单去重人数。 |
+
+数值条件填写数字，支持 `gt` 大于、`gte` 大于等于、`lt` 小于、`lte` 小于等于、`eq` 等于。PK 结果、上舰细分、观众代号只支持 `eq`。合选时，每个筛选和分组字段须适用于选中的所有种类。
+
+例如，查 11 月本方票数过 100 的胜场。
+
+```json
+{
+  "kinds": ["pk_settle"],
+  "from": "2026-11-01",
+  "to": "2026-11-30",
+  "filters": [
+    {"field": "pkResult", "op": "eq", "value": "win"},
+    {"field": "pkMyVotes", "op": "gt", "value": 100}
+  ],
+  "metrics": ["count"]
+}
+```
+
+- `columns` 为列名，`rows` 为数据行，`totals` 为同列顺序的合计行。没有匹配记录的分组（包括日期）省略。合计覆盖全部匹配记录，平均和去重人数按原始匹配记录重新计算。`groupCount` 为裁剪前行数，`truncated` 与 `truncationNote` 说明截断。
+- `from`、`to` 是实际采用的日期，`fromAt` 含起点，`toAtExclusive` 排除终点。北京时间早上 6 点切换统计日。事件按发生时刻归日，场次按开播时刻整场归日。跨早上 6 点的场次，付费事件和场次流水可能归入不同统计日，回答每天流水时说明采用的是事件发生日还是整场的开播日。`liveUnarchived` 标明时间窗内有未归档的在播场次，`liveNote` 说明这些数据未计入。
+- 礼物、盲盒、上舰、关注、PK 结算读 `events.jsonl`，醒目留言读 `danmu.jsonl` 中的 `SUPER_CHAT` 行，金额读 `val`，留言正文不出现在结果中。逐条文件在首次写入时创建。文件不存在时，若场次汇总明确为零，或已有 `detail.json` 封存标记且汇总无相应记录，则按空明细处理。其余缺少的文件跳过，`missingDetailsCount` 是受影响的场次数，`missingDetails` 最多列出 60 场的开播时刻和缺少的文件名。所需明细全缺时结果为 null。坏行跳过并计入 `invalidLines`。无法判断条件的记录计入 `unknownFilterRows`。命中但缺少汇总字段的记录计入 `unknownMetricRows`，受影响的汇总列返回 null。
+- 金额单位为元，按到手价值计算。盲盒用开出物价值，背包礼物也计入流水。场次使用控制台平台目录的流水口径。调用方通过 `AssistantQueryContext.amountVisible()` 提供可见范围，控制台允许查金额。金额隐藏时，金额条件和汇总返回「这里不显示金额」，纯计数查询仍可执行。
+- 发给模型的观众列只含代号，页面回答沿用本机映射恢复昵称。拒绝名单里的观众不会进入观众分组、代号筛选或去重人数。既未按观众分组，也未用代号筛选时，金额合计包含拒绝名单上的观众，与控制台流水的观众范围一致。按观众分组的金额合计会排除他们，两种合计因此可能不同。
+- 事件与醒目留言共用 500000 行扫描上限，包含读到的其他种类及坏行。超过后给出缩短日期的提示。超长归档行或分组超过内存上限时也返回原因。场次查询只读场次归档。

@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.function.LongFunction;
 
 /** 本机观众代号密钥及只含发送元数据的记录，与模型密钥使用同一目录。 */
 public final class AssistantLocalStore {
@@ -30,6 +31,21 @@ public final class AssistantLocalStore {
     }
 
     public synchronized String alias(String platform, Long uid) {
+        return encodeAlias(aliasMac(), platform + ":" + uid);
+    }
+
+    /** 为单次查询复用同一密钥；返回的编码器仅供该查询线程使用。 */
+    public LongFunction<String> aliases(String platform) {
+        Mac mac = aliasMac();
+        String prefix = platform + ":";
+        return uid -> encodeAlias(mac, prefix + uid);
+    }
+
+    private static String encodeAlias(Mac mac, String identity) {
+        return "观众-" + HexFormat.of().formatHex(mac.doFinal(identity.getBytes(StandardCharsets.UTF_8)), 0, 3);
+    }
+
+    private synchronized Mac aliasMac() {
         try {
             if (!Files.exists(aliasKey)) {
                 byte[] bytes = new byte[32];
@@ -42,7 +58,7 @@ public final class AssistantLocalStore {
             try {
                 Mac mac = Mac.getInstance("HmacSHA256");
                 mac.init(new SecretKeySpec(secret, "HmacSHA256"));
-                return "观众-" + HexFormat.of().formatHex(mac.doFinal((platform + ":" + uid).getBytes(StandardCharsets.UTF_8))).substring(0, 6);
+                return mac;
             } finally { java.util.Arrays.fill(secret, (byte) 0); }
         } catch (Exception error) { throw new AssistantException("智能助手观众代号密钥无法读写，请检查后再试"); }
     }
