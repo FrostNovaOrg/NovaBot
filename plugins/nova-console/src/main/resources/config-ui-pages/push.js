@@ -177,6 +177,7 @@ const PAGE_STYLE = `
 .swtxt b{font-weight:600;font-size:var(--fs-sm)}
 .swtxt .dim{color:var(--dim);font-weight:400;font-size:var(--fs-xs)}
 .swtxt p{margin:2px 0 0;color:var(--dim);font-size:var(--fs-xs)}
+.rule-switch .assistant-locked,.rule-switch .assistant-locked input{cursor:default}
 .weekly-report-tools{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px}
 .weekly-report-tools>.hint{margin:0;font-size:var(--fs-xs)}
 .weekly-report-actions{display:inline-flex;align-items:center;flex-wrap:wrap;gap:12px}
@@ -2378,7 +2379,7 @@ function channelSettings(hosts, user, target, session, paintSummary) {
       palettes: reportPalettes, editable: channelPaletteEditable(user, target),
       onPaletteChange: () => { render(); repaintPalettePreview(); },
       channel: true, hosts, repaint: render, session: current, target, commands, subscriptions,
-      baseline, assistantAvailable: assistantCommand?.available,
+      baseline, member: isMember(), assistantAvailable: assistantCommand?.available,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
       summary: {
         revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal, savedQuiet(user, target)),

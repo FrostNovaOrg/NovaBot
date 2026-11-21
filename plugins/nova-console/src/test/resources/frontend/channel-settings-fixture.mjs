@@ -43,6 +43,7 @@ globalThis.fetch = async (path, options = {}) => {
   return response({success: true});
 };
 const push = await import('../../../main/resources/config-ui-pages/push.js');
+const {store} = await import('../../../../../../core/nova-core/src/main/resources/config-ui/store.js');
 async function open(uid) {
   await push.showPush(String(uid), 'q|1|100');
   const deadline = Date.now() + 10000;
@@ -278,6 +279,37 @@ await test('保存同一通道的其他设置后问数开关丢失', async () =>
   await open(1);
   assert.equal(input('问数')?.checked, true, '重新载入仍显示开启');
 });
+await test('成员页面能把关着的问数开关拨开', async () => {
+  store.role = 'MEMBER';
+  disk = initial();
+  await push.reload();
+  await open(1);
+  const toggle = input('问数');
+  assert.equal(toggle.checked, false, '成员应看见关闭状态');
+  assert.equal(toggle.disabled, true, '成员不能拨开关着的问数开关');
+  assert.match(text(idNode('push-right')), /由管理员开启/);
+});
+await test('成员关掉问数时出现确认框，或关闭状态没有保存', async () => {
+  store.role = 'MEMBER';
+  disk = initial();
+  disk[0].targets[0].assistantEnabled = true;
+  await push.reload();
+  await open(1);
+  const toggle = input('问数');
+  assert.equal(toggle.checked, true);
+  assert.equal(toggle.disabled, false, '成员可以关闭已开启的问数');
+  toggle.checked = false;
+  const change = toggle.dispatchEvent({type: 'change'});
+  assert.ok(idNode('body').querySelector('.ask')?.hidden !== false, '关闭无需确认');
+  await change;
+  assert.equal(input('问数').checked, false);
+  await push.save();
+  assert.equal(disk[0].targets[0].assistantEnabled, false);
+  assert.equal(push.changeCount(), 0, '保存成功后应清除草稿');
+  await push.reload();
+  await open(1);
+  assert.equal(input('问数').checked, false, '重新载入仍显示关闭');
+});
 await push.leave();
-console.log('跑了 12 格，红 ' + failures.length + ' 格');
+console.log('跑了 14 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;

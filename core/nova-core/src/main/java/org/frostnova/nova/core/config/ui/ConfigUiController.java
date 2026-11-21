@@ -2070,7 +2070,7 @@ public class ConfigUiController {
                     return ResponseEntity.badRequest().body(datasourceError("主播的平台与 uid 不可更改"));
                 }
                 if ("save".equals(action) && ConfigUiAccess.memberAccount() != null) {
-                    String issue = validateNewTargets(current, replacement);
+                    String issue = validateMemberTargets(current, replacement);
                     if (issue != null) return ResponseEntity.badRequest().body(datasourceError(issue));
                 }
                 if ("save".equals(action)) {
@@ -2101,17 +2101,21 @@ public class ConfigUiController {
         }
     }
 
-    private String validateNewTargets(JSONObject current, JSONObject replacement) {
+    private String validateMemberTargets(JSONObject current, JSONObject replacement) {
         JSONArray oldTargets = current.getJSONArray("targets");
         JSONArray targets = replacement.getJSONArray("targets");
         if (targets == null) return null;
         for (int index = 0; index < targets.size(); index++) {
             JSONObject target = targets.getJSONObject(index);
-            boolean existing = oldTargets != null && oldTargets.stream().map(item -> (JSONObject) item).anyMatch(old ->
+            JSONObject previous = oldTargets == null ? null : oldTargets.stream().map(item -> (JSONObject) item).filter(old ->
                     Objects.equals(old.getString("platform"), target.getString("platform"))
                     && Objects.equals(old.getInteger("type"), target.getInteger("type"))
-                    && Objects.equals(old.getLong("num"), target.getLong("num")));
-            if (existing) continue;
+                    && Objects.equals(old.getLong("num"), target.getLong("num"))).findFirst().orElse(null);
+            if (Boolean.TRUE.equals(target.get("assistantEnabled"))
+                    && (previous == null || !Boolean.TRUE.equals(previous.get("assistantEnabled")))) {
+                return "问数开关只有管理员能打开";
+            }
+            if (previous != null) continue;
             String platform = target.getString("platform");
             Long num = org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId.positiveDecimal(target.get("num"));
             Integer code = target.getInteger("type");
