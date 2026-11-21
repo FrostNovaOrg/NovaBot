@@ -252,6 +252,33 @@ const checks = {
     selectedText = ''; navigator.clipboard = {async writeText() { throw new Error('denied'); }};
     await button(mounted.node, '复制').fire('click'); assert.equal(selectedText, expected);
   },
+  async charts() {
+    const mounted = await mount();
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jVuoAAAAASUVORK5CYII=';
+    reply = {...initialReply, images: [png, 'https://example.com/image.png']};
+    await ask(mounted);
+    const turn = byClass(mounted.node, 'sa-turn').at(-1);
+    const charts = byClass(turn, 'sa-charts')[0];
+    assert.ok(turn.children.indexOf(charts) > turn.children.indexOf(byClass(turn, 'sa-answer')[0]));
+    assert.equal(charts.querySelectorAll('img').length, 1);
+    const preview = charts.querySelector('button');
+    assert.equal(preview.querySelector('img').src, 'data:image/png;base64,' + png);
+    await preview.fire('click');
+    const dialog = mounted.node.querySelector('dialog');
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.querySelector('img').src, preview.querySelector('img').src);
+    await button(dialog, '查看原图尺寸').fire('click');
+    assert.equal(dialog.querySelector('.sa-chart-scroll').dataset.zoom, 'true');
+    await button(dialog, '适应屏幕').fire('click');
+    assert.equal(dialog.querySelector('.sa-chart-scroll').dataset.zoom, 'false');
+    await button(dialog, '关闭大图').fire('click');
+    assert.equal(dialog.open, false);
+    reply = {...initialReply, answer: '查到了资料。\n图没出来。'};
+    await ask(mounted, '画另一张');
+    assert.match(byClass(mounted.node, 'sa-turn').at(-1).textContent, /图没出来/);
+    assert.equal(byClass(mounted.node, 'sa-chart').length, 1);
+    assert.ok(!JSON.stringify(requests.at(-1).body).includes(png));
+  },
   // 后台即使回了费用字段，成员也不能看到金额或管理设置链接。
   async member() {
     store.role = 'MEMBER';

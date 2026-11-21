@@ -34,6 +34,17 @@ const STYLE = `
 .sa-turn summary{cursor:pointer;color:var(--accent-text);margin:10px 0}
 .sa-turn .nv-btn2{margin-top:8px}
 .sa-clear{justify-self:end}
+.sa-charts{display:grid;gap:10px;margin-top:10px}
+.sa-chart{display:block;width:min(100%,480px);padding:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:white;cursor:zoom-in}
+.sa-chart:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sa-chart img,.sa-chart-view img{display:block;width:100%;height:auto}
+.sa-chart-view{box-sizing:border-box;width:min(820px,calc(100% - 20px));max-height:calc(100% - 20px);padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--ground);color:var(--text);overflow:auto}
+.sa-chart-view::backdrop{background:#0009}
+.sa-chart-toolbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px}
+.sa-chart-scroll{max-height:calc(100dvh - 100px);overflow:auto}
+.sa-chart-scroll[data-zoom="true"] img{width:auto;max-width:none}
+@media (min-width:840px){.sa-chart-size{display:none}}
+@media (max-width:520px){.sa-chart-view{width:100%;max-width:100%;padding:10px 0}.sa-chart-toolbar{padding:0 10px}}
 `;
 
 function conversation({platform, uid}) {
@@ -122,7 +133,7 @@ async function copyAnswer(host, answer) {
   }
 }
 
-function renderTurn(host, turn) {
+function renderTurn(host, turn, openChart) {
   const box = el('section', 'sa-turn');
   host.appendChild(box);
   line(box, turn.question, 'sa-question');
@@ -141,6 +152,19 @@ function renderTurn(host, turn) {
   }
   line(box, result.answer, 'sa-answer');
   line(box, '由人工智能生成 · 仅供参考', 'sa-label');
+  if (Array.isArray(result.images)) {
+    const charts = el('div', 'sa-charts');
+    for (const png of result.images.slice(0, 2)) {
+      if (typeof png !== 'string' || !/^iVBORw0KGgo[A-Za-z0-9+/]*={0,2}$/.test(png)) continue;
+      const src = 'data:image/png;base64,' + png;
+      const preview = el('button', 'sa-chart'); preview.type = 'button';
+      const image = el('img'); image.src = src; image.alt = '查看图表大图'; image.loading = 'lazy';
+      preview.appendChild(image);
+      preview.addEventListener('click', () => openChart(src));
+      charts.appendChild(preview);
+    }
+    if (charts.firstChild) box.appendChild(charts);
+  }
   if (result.unverifiedNumbers?.length) line(box, '这几个数字没能在查到的数据里核对上：'
     + result.unverifiedNumbers.join('、') + '。请以报告为准。', 'hint');
   if (result.steps?.length) {
@@ -163,6 +187,26 @@ export function mountAssistant(host, identity) {
   const context = conversation(identity);
   const style = el('style'); style.textContent = STYLE;
   const root = el('div', 'sa-assistant');
+  const chartView = el('dialog', 'sa-chart-view'); chartView.setAttribute('aria-label', '智能助手图表');
+  const toolbar = el('div', 'sa-chart-toolbar');
+  const chartScroll = el('div', 'sa-chart-scroll');
+  const plot = el('img'); plot.alt = '智能助手图表 · 由人工智能生成';
+  const sizeChart = el('button', 'nv-btn2 sa-chart-size'); sizeChart.type = 'button';
+  const zoomChart = zoom => {
+    chartScroll.dataset.zoom = String(zoom);
+    sizeChart.textContent = zoom ? '适应屏幕' : '查看原图尺寸';
+  };
+  sizeChart.addEventListener('click', () => zoomChart(chartScroll.dataset.zoom !== 'true'));
+  const closeChart = el('button', 'nv-btn2'); closeChart.type = 'button'; closeChart.textContent = '关闭大图';
+  closeChart.addEventListener('click', () => chartView.close());
+  chartView.addEventListener('close', () => plot.removeAttribute('src'));
+  toolbar.append(sizeChart, closeChart); chartScroll.appendChild(plot);
+  chartView.append(toolbar, chartScroll);
+  const openChart = src => {
+    zoomChart(false);
+    plot.src = src; chartView.showModal();
+    chartScroll.scrollTop = chartScroll.scrollLeft = 0;
+  };
   const status = el('div'); status.setAttribute('role', 'status');
   const turns = el('div'); turns.setAttribute('aria-live', 'polite');
   const clear = el('button', 'nv-btn2 sa-clear'); clear.type = 'button'; clear.textContent = '清空对话';
@@ -177,7 +221,7 @@ export function mountAssistant(host, identity) {
   line(controls, '回答由人工智能生成，可能出错；数字以报告为准。', 'hint sa-disclaimer');
   controls.append(submit, remaining);
   form.appendChild(controls);
-  root.append(status, turns, form); host.replaceChildren(style, root);
+  root.append(status, turns, form, chartView); host.replaceChildren(style, root);
 
   const updateControls = () => {
     input.disabled = context.pending || context.state?.available !== true;
@@ -206,7 +250,7 @@ export function mountAssistant(host, identity) {
       }
     }
     turns.replaceChildren();
-    for (const turn of context.turns) renderTurn(turns, turn);
+    for (const turn of context.turns) renderTurn(turns, turn, openChart);
     clear.remove();
     if (context.turns.length) root.insertBefore(clear, form);
     updateControls();
@@ -245,5 +289,5 @@ export function mountAssistant(host, identity) {
   context.listeners.add(update);
   const ready = readState(context);
   update();
-  return {ready, destroy() { context.listeners.delete(update); }};
+  return {ready, destroy() { if (chartView.open) chartView.close(); context.listeners.delete(update); }};
 }

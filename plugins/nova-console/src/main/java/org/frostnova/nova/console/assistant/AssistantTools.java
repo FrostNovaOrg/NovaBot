@@ -36,7 +36,9 @@ final class AssistantTools {
                             + "观众或新老分组、代号筛选、去重观众人数及付费人数排除拒绝名单。其余金额合计包含拒绝名单上的观众，"
                             + "与控制台流水的观众范围一致。金额权限以调用方为准。"
                             + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
-                    AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED));
+                    AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED),
+            new Tool(AssistantChartRequest.NAME, AssistantChartRequest.DESCRIPTION,
+                    AssistantChartRequest.fields(), AssistantChartRequest.REQUIRED));
 
     static List<JSONObject> definitions(AssistantQueryContext context) {
         return TOOLS.stream().filter(tool -> context.amountVisible() || !"revenue".equals(tool.name()))
