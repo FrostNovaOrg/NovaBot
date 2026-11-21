@@ -262,7 +262,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
+			"sha256":"cb4eb96b08c66b661268c6965605a07b28d2e0e8f76d8ce76941d01f16d0f360",
 			"status":200
 		},
 		{
@@ -277,7 +277,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
+			"sha256":"e133e19745fbeac71e0fe3cf471fcc9d1bd09d4b088331f6f954912b6357901c",
 			"status":200
 		},
 		{
@@ -292,7 +292,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
+			"sha256":"cb4eb96b08c66b661268c6965605a07b28d2e0e8f76d8ce76941d01f16d0f360",
 			"status":200
 		},
 		{
@@ -307,7 +307,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
+			"sha256":"e133e19745fbeac71e0fe3cf471fcc9d1bd09d4b088331f6f954912b6357901c",
 			"status":200
 		},
 		{
@@ -322,7 +322,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
+			"sha256":"cb4eb96b08c66b661268c6965605a07b28d2e0e8f76d8ce76941d01f16d0f360",
 			"status":200
 		},
 		{
@@ -337,7 +337,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
+			"sha256":"e133e19745fbeac71e0fe3cf471fcc9d1bd09d4b088331f6f954912b6357901c",
 			"status":200
 		},
 		{
@@ -352,7 +352,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
+			"sha256":"cb4eb96b08c66b661268c6965605a07b28d2e0e8f76d8ce76941d01f16d0f360",
 			"status":200
 		},
 		{
@@ -367,7 +367,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"a57b4249d33150f7f64aec4aaa0942e5a36d4b8fe2f0dfbd9cb99a83e8096739",
+			"sha256":"e133e19745fbeac71e0fe3cf471fcc9d1bd09d4b088331f6f954912b6357901c",
 			"status":200
 		},
 		{
@@ -382,7 +382,7 @@
 			"method":"POST",
 			"path":"/config/api/report/preview",
 			"query":"",
-			"sha256":"fdc6f6be36401557d6ebc7c4befc69f252de15895e18647826772d11ee2de7b5",
+			"sha256":"cb4eb96b08c66b661268c6965605a07b28d2e0e8f76d8ce76941d01f16d0f360",
 			"status":200
 		},
 		{
@@ -2870,7 +2870,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1791633900000/report",
 			"query":"",
-			"sha256":"54617f13b69d7e2fa280b17a1a2503f874c67fda6fff211e1def2e0cfb3ddbe3",
+			"sha256":"c41e46411d1d1df9cf588ea81f92f2b677b94b6ca978eb5a6e49e6f3525b28f7",
 			"status":200
 		},
 		{
@@ -2888,7 +2888,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792151700000/report",
 			"query":"",
-			"sha256":"d5b0ee6effd5b222e4dd5ae409c11e0ddcb428eddd23d138226b0096357dddc5",
+			"sha256":"cd81323da3c43fdcd563dafe582ba71055bfb9be1c90c8d211ef006908b92ed0",
 			"status":200
 		},
 		{
@@ -2906,7 +2906,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792379400000/report",
 			"query":"",
-			"sha256":"1304535523e90c7a1d828f8885af18e7dae53a87f6e65906bce3eccc93ff8641",
+			"sha256":"dffc37f96fdd4cef0889a648a02cf3b594b362a32f8fb3591ceb3ccb20d16344",
 			"status":200
 		},
 		{
@@ -8801,7 +8801,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791806400000/report",
 			"query":"",
-			"sha256":"ec8ad29a300945bf06279c1578087746124f43c9e218fc1341db172d2e6758ee",
+			"sha256":"92875de03297a48902419c5e9d6107497fed9f0f492884fdf61847fe0de10e49",
 			"status":200
 		},
 		{
@@ -8819,7 +8819,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792065600000/report",
 			"query":"",
-			"sha256":"20c3b0f8fa103948a035024d9a817d1220f3a37a243eca8bf1a9b85644c4639a",
+			"sha256":"30c968b9288566e8817c5c9057b28fb3aa6a89b77505b78314f8ce50e0e17fd2",
 			"status":200
 		},
 		{
@@ -8837,7 +8837,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792324800000/report",
 			"query":"",
-			"sha256":"f3363234e2b2b52c1718c5436c13f298f1d791823ebe9cfd8292a81b51c530bb",
+			"sha256":"269d921dd70738a03854b96c67a386d73ddc1d6da094f7776352f1cad12b5618",
 			"status":200
 		},
 		{
@@ -10923,7 +10923,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786363200000/report",
 			"query":"",
-			"sha256":"afe84113bac3891c936e1ee179f51a70eee8ccc3f13d26fceccb529af8569e8c",
+			"sha256":"37ecfc18022e4e6ff294a61af3694f5c26b330799cfbbf9fb7156c554bc04d4f",
 			"status":200
 		},
 		{
@@ -10941,7 +10941,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786795200000/report",
 			"query":"",
-			"sha256":"30cd197cc4dcc6a9e220ad9e54ee6218d389dadde0eb5a25fa9c951c2924b741",
+			"sha256":"34e964b0b7210d99dfc7f9e24e5143ac1377713689d34307aae67763dbf91b9d",
 			"status":200
 		},
 		{
@@ -12983,7 +12983,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000104/sessions/1791720000000/report",
 			"query":"",
-			"sha256":"40abbccfb427a08f2780be4896a222bea29706347cdf630cc3c45601d077ec3f",
+			"sha256":"859c0898df93d2d6d9483e9475d061808a538de672d0270a3ac279f0380dc3af",
 			"status":200
 		},
 		{
@@ -13001,7 +13001,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000104/sessions/1792152000000/report",
 			"query":"",
-			"sha256":"b0a8272e3a3e516ca48c37caab398581dafe61c18e65f294fa6bc1fa82f71b34",
+			"sha256":"675c025733b661f5ce2bd239447aed8dee7104b045ec1a3255aab0280c8f9371",
 			"status":200
 		},
 		{

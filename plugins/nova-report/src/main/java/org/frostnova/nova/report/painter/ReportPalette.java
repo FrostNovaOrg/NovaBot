@@ -503,6 +503,18 @@ public record ReportPalette(
         if (wordCloud.size() != 6) throw new IllegalArgumentException("wordCloud requires six colors");
     }
 
+    Color curveGridOnBackground() {
+        return withAlpha(curveGapEdge, 88);
+    }
+
+    Color curveGridOnArea() {
+        return withAlpha(background, 64);
+    }
+
+    private static Color withAlpha(Color color, int alpha) {
+        return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
+    }
+
     public Color rank(int rank) {
         return switch (rank) {
             case 1 -> rankFirst;
