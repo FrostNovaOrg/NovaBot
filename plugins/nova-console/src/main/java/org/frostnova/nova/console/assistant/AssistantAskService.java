@@ -118,6 +118,7 @@ public class AssistantAskService {
         String answerReasoning = null;
         boolean answered = false;
         String reason = null;
+        AssistantException failure = null;
         BigDecimal cost = BigDecimal.ZERO;
         List<String> unverified = List.of();
         AssistantClient.Question question = null;
@@ -142,8 +143,12 @@ public class AssistantAskService {
                 }
                 JSONArray accepted = new JSONArray();
                 var results = new ArrayList<JSONObject>();
+                boolean replay = !response.continuation().isEmpty();
                 // 单轮也有上限，防止异常响应塞入大量工具调用撑大上下文。
-                for (JSONObject call : response.toolCalls().subList(0, Math.min(response.toolCalls().size(), Math.min(63, properties.getMaxToolCalls()) + 1))) {
+                int returnedCalls = response.toolCalls().size();
+                if (replay && returnedCalls > 64) throw new AssistantException("too_much_data", FALLBACK);
+                int includedCalls = replay ? returnedCalls : Math.min(returnedCalls, Math.min(63, properties.getMaxToolCalls()) + 1);
+                for (JSONObject call : response.toolCalls().subList(0, includedCalls)) {
                     JSONObject function = call.getJSONObject("function");
                     String name = function == null ? "unknown" : function.getString("name");
                     JSONObject args = new JSONObject();
@@ -168,12 +173,18 @@ public class AssistantAskService {
                         data = JSONObject.of("source", "查数服务", "reason", "没有这份数据，请检查工具名与参数");
                     }
                     String id = call.getString("id");
-                    accepted.add(JSONObject.of("id", id, "type", "function", "function", JSONObject.of("name", name, "arguments", args.toJSONString())));
+                    if (!replay) accepted.add(JSONObject.of("id", id, "type", "function", "function",
+                            JSONObject.of("name", name, "arguments", args.toJSONString())));
                     results.add(JSONObject.of("role", "tool", "tool_call_id", id, "content", JSON.toJSONString(data, JSONWriter.Feature.WriteNulls)));
                 }
                 JSONObject assistant = assistantMessage(response.content(), response.reasoningContent());
-                assistant.put("tool_calls", accepted);
-                messages.add(assistant);
+                if (replay) {
+                    if (!response.content().isBlank()) messages.add(assistant);
+                    messages.addAll(response.continuation());
+                } else {
+                    assistant.put("tool_calls", accepted);
+                    messages.add(assistant);
+                }
                 messages.addAll(results);
             }
             if (!answered) {
@@ -197,18 +208,22 @@ public class AssistantAskService {
                     }
                 } catch (RuntimeException error) {
                     // 重写失败时保留已经脱敏的回答和待核对数字，花费仍由整问累计。
+                    if (error instanceof AssistantException assistant) failure = assistant;
                 }
             }
         } catch (AssistantException error) {
             answered = false;
             answer = error.getMessage();
             reason = error.reason();
+            failure = error;
             unverified = numbers.unverified(answer);
         } finally {
             if (question != null) {
                 cost = question.totalCostYuan();
                 question.close();
-                if (question.hasSent()) local.record(account, platform, uid, toolNames, privacy.dataTypes(), cost);
+                String endpoint = question.sentEndpoint();
+                if (endpoint != null) local.record(account, platform, uid, toolNames, privacy.dataTypes(), cost, endpoint,
+                        endpoint.endsWith("/responses") ? failure : null);
             }
         }
         if (answer.isBlank()) answer = FALLBACK;
@@ -233,6 +248,10 @@ public class AssistantAskService {
         // 重新清理全部消息，避免原话中引用的昵称或编号进入后续轮次。
         var outgoing = new ArrayList<JSONObject>();
         for (JSONObject message : messages) {
+            if (!message.containsKey("role")) {
+                outgoing.add(message);
+                continue;
+            }
             JSONObject copy = JSON.parseObject(message.toJSONString());
             if (!"system".equals(copy.getString("role")) && copy.get("content") instanceof String content) {
                 boolean structured = "tool".equals(copy.getString("role"))

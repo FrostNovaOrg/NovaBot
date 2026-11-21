@@ -1,4 +1,5 @@
 novabot.assistant.answer-limit=500
+novabot.assistant.api-format=responses
 novabot.assistant.base-url=https://model.example/v1
 novabot.assistant.daily-questions-per-account=12
 novabot.assistant.enabled=true

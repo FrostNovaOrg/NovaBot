@@ -2,6 +2,7 @@ package org.frostnova.nova.core.assistant;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -54,9 +55,10 @@ public final class AssistantLocalStore {
 
     public synchronized java.util.Map<String, String> nicknames() { return java.util.Map.copyOf(nicknames); }
 
-    /** 调用方只传账号、主播、函数名、数据种类与费用，不接收任何问答或弹幕原文。 */
+    /** 记录发送元数据与固定错误字段。 */
     public synchronized void record(String account, String platform, Long uid, java.util.List<String> tools,
-                                    java.util.List<String> dataTypes, java.math.BigDecimal cost) {
+                                    java.util.List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
+                                    AssistantException failure) {
         try {
             Instant now = clock.instant();
             Instant cutoff = now.atZone(ZoneOffset.UTC).minusYears(3).toInstant();
@@ -70,8 +72,14 @@ public final class AssistantLocalStore {
                     });
                 }
             }
-            retained.append(JSONObject.of("at", now.toString(), "account", account, "platform", platform, "uid", uid,
-                    "tools", tools, "dataTypes", dataTypes, "costYuan", cost).toJSONString()).append('\n');
+            JSONObject entry = JSONObject.of("at", now.toString(), "account", account, "platform", platform, "uid", uid,
+                    "tools", tools, "dataTypes", dataTypes, "costYuan", cost, "endpoint", endpoint);
+            if (failure != null) {
+                entry.put("reason", failure.reason());
+                var error = failure.providerError();
+                if (error != null) entry.put("providerError", JSONObject.of("type", error.type(), "code", error.code(), "param", error.param()));
+            }
+            retained.append(entry.toJSONString(JSONWriter.Feature.WriteNulls)).append('\n');
             AssistantFiles.write(transmissions, retained.toString());
         } catch (Exception error) { throw new AssistantException("智能助手发送记录无法读写，请检查后再试"); }
     }

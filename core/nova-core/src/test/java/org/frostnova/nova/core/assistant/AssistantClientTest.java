@@ -14,6 +14,7 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
@@ -114,6 +115,133 @@ class AssistantClientTest {
                 .andExpect(header("Authorization", "Bearer " + SECRET))
                 .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\",\"tool_calls\":[]}}],\"usage\":"
                         + tokens + "}", MediaType.APPLICATION_JSON));
+    }
+
+    private void useResponses() {
+        properties.setBaseUrl("https://model.example/v1///");
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.api-format", "responses")))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+    }
+
+    private static final String RESPONSES_ANSWER = """
+            {"status":"completed","output":[
+              {"type":"reasoning","summary":[{"type":"summary_text","text":"不属于回答"}]},
+              {"type":"message","content":[
+                {"type":"output_text","text":"第一段"},
+                {"type":"refusal","refusal":"不属于回答"},
+                {"type":"output_text","text":"第二段"}]},
+              {"type":"message","content":[{"type":"output_text","text":"第三段"}]}
+            ],"usage":{"input_tokens":1000000,"input_tokens_details":{"cached_tokens":400000},
+              "output_tokens":100000,"output_tokens_details":{"reasoning_tokens":80000}}}
+            """;
+
+    // 抓住使用旧地址或发送不受支持的字段时，接口拒绝整轮查数。
+    @ParameterizedTest
+    @CsvSource({"off, 4800", "low, 4800", "high, 16800", "max, 32800"})
+    void responsesSendsDeveloperToolsAndEffortWithoutChatFields(String thinking, int limit) {
+        useResponses();
+        properties.setThinking(thinking);
+        var tools = List.of(JSONObject.of("type", "function", "function", JSONObject.of("name", "lookup",
+                "description", "查数", "parameters", JSONObject.of("type", "object"))));
+        var messages = List.of(JSONObject.of("role", "system", "content", "规则"), request().messages().get(0),
+                JSONObject.of("role", "assistant", "content", "之前的回答"));
+        server.expect(requestTo("https://model.example/v1/responses"))
+                .andRespond(outgoing -> {
+                    var body = JSON.parseObject(((MockClientHttpRequest) outgoing).getBodyAsString());
+                    if (body.containsKey("temperature") || body.containsKey("max_tokens"))
+                        return withStatus(HttpStatus.BAD_REQUEST).createResponse(outgoing);
+                    assertEquals(properties.getModel(), body.getString("model"));
+                    assertEquals(List.of(JSONObject.of("role", "developer", "content", "规则"), messages.get(1), messages.get(2)),
+                            body.getJSONArray("input"));
+                    assertEquals(List.of(JSONObject.of("type", "function", "name", "lookup", "description", "查数",
+                            "parameters", JSONObject.of("type", "object"))), body.getJSONArray("tools"));
+                    assertEquals(JSONObject.of("type", "function", "name", "lookup"), body.getJSONObject("tool_choice"));
+                    assertEquals(false, body.getBoolean("store"));
+                    assertEquals(List.of("reasoning.encrypted_content"), body.getJSONArray("include"));
+                    assertEquals(limit, body.getIntValue("max_output_tokens"));
+                    assertFalse(body.containsKey("previous_response_id"));
+                    if ("off".equals(thinking)) assertFalse(body.containsKey("reasoning"));
+                    else assertEquals(JSONObject.of("effort", thinking), body.getJSONObject("reasoning"));
+                    return withSuccess(RESPONSES_ANSWER, MediaType.APPLICATION_JSON).createResponse(outgoing);
+                });
+        try (var question = client.beginQuestion("member")) {
+            var request = new AssistantClient.Request(messages, tools,
+                    Map.of("type", "function", "function", Map.of("name", "lookup")), 0.3);
+            assertEquals("第一段第二段第三段", question.complete(request).content());
+        }
+        server.verify();
+    }
+
+    // 抓住思考 token 重复计价，导致月度限额过早用尽。
+    @Test void responsesBillsReasoningOnceAndLeavesMonthlyAllowance() {
+        useResponses();
+        properties.setMonthlyBudgetYuan(new BigDecimal("2.50"));
+        server.expect(requestTo("https://model.example/v1/responses"))
+                .andRespond(withSuccess(RESPONSES_ANSWER, MediaType.APPLICATION_JSON));
+        try (var question = client.beginQuestion("member")) {
+            var result = question.complete(request());
+            assertEquals(new AssistantClient.Usage(400000, 600000, 100000), result.usage());
+            assertEquals(0, new BigDecimal("2.20").compareTo(question.totalCostYuan()));
+        }
+        assertEquals(0, new BigDecimal("2.20").compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
+        assertTrue(client.state("member").available());
+        server.verify();
+    }
+
+    // 抓住保存密钥或测试连接时仍使用旧的接口或极小的输出限制。
+    @Test void responsesVerifiesAndSavesCandidateUsingConfiguredEndpoint() {
+        useResponses();
+        properties.setThinking("low");
+        for (int i = 0; i < 2; i++) {
+            server.expect(requestTo("https://model.example/v1/responses"))
+                    .andExpect(method(org.springframework.http.HttpMethod.POST))
+                    .andExpect(header("Authorization", "Bearer replacement-test-secret"))
+                    .andExpect(jsonPath("$.input[0].content").value("回复好"))
+                    .andExpect(jsonPath("$.max_output_tokens").value(4008))
+                    .andExpect(jsonPath("$.reasoning.effort").value("low"))
+                    .andExpect(jsonPath("$.tool_choice").value("none"))
+                    .andExpect(jsonPath("$.max_tokens").doesNotExist())
+                    .andExpect(jsonPath("$.temperature").doesNotExist())
+                    .andRespond(withSuccess(RESPONSES_ANSWER, MediaType.APPLICATION_JSON));
+        }
+        client.validateAndSaveKey("admin", "replacement-test-secret");
+        client.testSettings("admin");
+        assertTrue(client.status().questionsToday().isEmpty());
+        server.verify();
+    }
+
+    // 抓住服务商错误原文或回显的凭据进入诊断日志。
+    @Test void responsesLogsOnlySafeErrorFields() {
+        useResponses();
+        server.expect(requestTo("https://model.example/v1/responses")).andRespond(withBadRequest()
+                .contentType(MediaType.APPLICATION_JSON).body(JSONObject.of("error", JSONObject.of(
+                        "type", "invalid_request_error", "code", "unsupported_parameter",
+                        "param", SECRET, "message", "private provider message " + SECRET)).toJSONString()));
+        try (var logs = new AssistantLogCapture(); var question = client.beginQuestion("member")) {
+            var error = assertThrows(AssistantException.class, () -> question.complete(request()));
+            assertEquals("provider_error", error.reason());
+            logs.assertContains("type=invalid_request_error", "code=unsupported_parameter", "param=[已遮掩]");
+            logs.assertNoSecret(SECRET);
+            logs.assertNoSecret("private provider message");
+        }
+        server.verify();
+    }
+
+    // 抓住新版请求漏到默认 chat 上时，旧部署收到变化的字段。
+    @Test void defaultChatRequestKeepsEveryField() {
+        var messages = List.of(JSONObject.of("role", "system", "content", "规则"), request().messages().get(0));
+        var tools = List.of(JSONObject.of("type", "function", "function", JSONObject.of("name", "lookup")));
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andExpect(outgoing -> assertEquals(JSONObject.of("model", properties.getModel(), "messages", messages,
+                                "tools", tools, "tool_choice", "auto", "max_tokens", 800, "temperature", new BigDecimal("0.2"),
+                                "stream", false, "thinking", JSONObject.of("type", "disabled")),
+                        JSON.parseObject(((MockClientHttpRequest) outgoing).getBodyAsString())))
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}",
+                        MediaType.APPLICATION_JSON));
+        try (var question = client.beginQuestion("member")) {
+            assertEquals("好", question.complete(new AssistantClient.Request(messages, tools, null, 0.2)).content());
+        }
+        server.verify();
     }
 
     static java.util.stream.Stream<Arguments> thinkingRequests() {
