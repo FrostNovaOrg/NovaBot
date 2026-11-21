@@ -51,6 +51,7 @@ public class AssistantQueryService {
     private final NovaCoreProperties properties;
     private final ObjectProvider<LiveMetricCatalog> catalogs;
     private final Clock clock;
+    private final AssistantAudienceHistory audienceHistory = new AssistantAudienceHistory();
 
     @Autowired
     public AssistantQueryService(StreamerController controller, LiveSessionArchive archive, LiveDetailArchive details,
@@ -78,7 +79,8 @@ public class AssistantQueryService {
             boolean sessions = request.kinds().contains(AssistantAggregateRequest.Kind.SESSION);
             boolean living = live.getLiveStatus(platform, uid).orElse(false);
             Long start = living ? live.getLiveStartTime(platform, uid).orElse(null) : null;
-            return new AssistantAggregateQuery(request, privacy).run(platform, uid, archive, sessions ? rules(platform) : null,
+            return new AssistantAggregateQuery(request, privacy, audienceHistory, dataDirectory().resolve("sessions.jsonl"))
+                    .run(platform, uid, archive, sessions ? rules(platform) : null,
                     (at, name) -> file(platform, uid, at, name), living, start, clock.instant(), context);
         } catch (AssistantAggregateRequest.Invalid error) {
             return AssistantAggregateQuery.rejected("筛选汇总", error.getMessage());
@@ -575,9 +577,13 @@ public class AssistantQueryService {
 
     private Path file(String platform, Long uid, long start, String name) {
         // 与 LiveDetailArchive 的目录规则相同；只拼接经过校验的平台标识及数字。
-        Path parent = Path.of(properties.getLive().getLiveDataPath()).getParent();
-        return (parent == null ? Path.of("details") : parent.resolve("details"))
+        return dataDirectory().resolve("details")
                 .resolve(platform + "-" + uid + "-" + start).resolve(name);
+    }
+
+    private Path dataDirectory() {
+        Path parent = Path.of(properties.getLive().getLiveDataPath()).getParent();
+        return parent == null ? Path.of("") : parent;
     }
 
     private static JSONObject parse(String line) {

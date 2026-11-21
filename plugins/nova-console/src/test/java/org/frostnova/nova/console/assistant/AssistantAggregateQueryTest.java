@@ -404,6 +404,204 @@ class AssistantAggregateQueryTest {
         refused("超长明细", query(request(List.of("gift"), FROM, TO, "count")), "超长");
     }
 
+    // 抓住缺采分钟拉低在线平均、在线和看过人数的缺采数混用、跨钟点错误归组。
+    @Test void hourlyAverageSkipsMissingSamplesAndReportsCoverage() {
+        minuteFixture();
+        var result = query(request(List.of("minute"), "2026-10-24", TO, "avg:online", "avg:watched"),
+                "groupBy", List.of("hour"));
+        table("最近 30 天各钟点平均在线", result, List.of("hour", "avg:online", "avg:watched"), List.of(
+                Arrays.asList(19, 12, null), List.of(20, 25, 110), Arrays.asList(21, null, 120)),
+                List.of("合计", new BigDecimal("20.66666666666667"), 115));
+        assertEquals(22, result.getIntValue("expectedMinutes"));
+        assertEquals(JSONObject.of("online", 19, "watched", 20), result.getJSONObject("missingMinutes"));
+    }
+
+    // 抓住十分钟分组未从选中场次起算，或上一场混进这一场的峰值。
+    @Test void sessionBucketsUseTheSelectedOpeningMinute() {
+        minuteFixture();
+        long start = at("2026-11-21T19:57");
+        var request = request(List.of("minute"), "2026-11-21", TO, "max:online", "min:online");
+        request.put("groupBy", List.of("minute"));
+        request.put("bucketMinutes", 10);
+        request.put("filters", List.of(filter("startTime", "eq", start)));
+        var result = query(AssistantTools.arguments("aggregate", request));
+        table("昨晚每 10 分钟最高在线", result, List.of("minute", "max:online", "min:online"), List.of(
+                List.of(start, 20, 12), List.of(start + 600_000, 30, 30),
+                Arrays.asList(start + 1_200_000, null, null)), List.of("合计", 30, 12));
+    }
+
+    // 抓住漏掉表情弹幕、把醒目留言算入弹幕、跨日未重新去重或无记录日未计零。
+    @Test void dailyDanmuCountsTextAndEmojiWithDailyDistinctSpeakers() {
+        audienceFixture();
+        var result = query(request(List.of("danmu"), FROM, "2026-11-30", "count", "distinctAudience"),
+                "groupBy", List.of("day"));
+        var rows = new ArrayList<List<?>>(List.of(List.of(FROM, 3, 2), List.of("2026-11-02", 1, 1)));
+        for (int day = 3; day <= 30; day++) rows.add(List.of(LocalDate.of(2026, 11, day).toString(), 0, 0));
+        table("每天弹幕条数和发言人数", result, List.of("day", "count", "distinctAudience"), rows,
+                List.of("合计", 4, 2));
+    }
+
+    // 抓住关键词筛选漏算重复发言、误含醒目留言或把弹幕原文传入回包。
+    @Test void danmuKeywordFiltersLocallyAndReturnsOnlyAggregates() {
+        audienceFixture();
+        var result = query(request(List.of("danmu"), FROM, TO, "count", "distinctAudience"),
+                "filters", List.of(filter("text", "contains", "生日")));
+        table("含生日的弹幕", result, List.of("count", "distinctAudience"), List.of(List.of(2, 1)), List.of(2, 1));
+        assertFalse(result.toJSONString().contains("合成生日快乐"));
+    }
+
+    // 抓住只在查询日期内找首次出现，漏掉更早的进房名单、弹幕或送礼明细。
+    @Test void audienceAgeUsesAllHistoricalSourcesBeforeTheWindow() {
+        audienceFixture();
+        var result = query(audienceRequest("distinctAudience", "distinctPayingAudience", "sum:amount"));
+        table("本月新老观众", result, List.of("audienceAge", "distinctAudience", "distinctPayingAudience", "sum:amount"),
+                List.of(List.of("new", 3, 2, 116), List.of("returning", 4, 2, 92)), List.of("合计", 7, 4, 208));
+        assertEquals("2026-10-29", result.getString("historyFrom"));
+    }
+
+    // 抓住拒绝名单上的老观众进入新老分组的观众人数、付费人数或金额。
+    @Test void ageGroupsAndTotalsExcludeDeniedViewers() {
+        audienceFixture();
+        var result = query(audienceRequest("distinctAudience", "distinctPayingAudience", "sum:amount"),
+                AssistantQueryContext.CONSOLE, privacy(List.of(EXCLUDED)));
+        table("排除拒绝名单后的新老观众", result,
+                List.of("audienceAge", "distinctAudience", "distinctPayingAudience", "sum:amount"),
+                List.of(List.of("new", 3, 2, 116), List.of("returning", 3, 1, 22)), List.of("合计", 6, 3, 138));
+    }
+
+    // 抓住新老分组绕过金额权限，或禁止同时查不涉及金额的观众数与付费人数。
+    @Test void ageGroupingCannotBypassAmountVisibility() {
+        audienceFixture();
+        var privacy = privacy(List.of(EXCLUDED));
+        refused("金额隐藏时的新老金额", query(audienceRequest("sum:amount"), HIDDEN, privacy), "这里不显示金额");
+        var result = query(audienceRequest("distinctAudience", "distinctPayingAudience"), HIDDEN, privacy);
+        table("金额隐藏时的新老人数", result, List.of("audienceAge", "distinctAudience", "distinctPayingAudience"),
+                List.of(List.of("new", 3, 2), List.of("returning", 3, 1)), List.of("合计", 6, 3));
+        assertFalse(result.containsKey("amountBasis"));
+    }
+
+    // 抓住早于留档起点的查询失去数据起点说明，或把窗口外的观众放进结果。
+    @Test void earlierWindowStillReportsTheStreamerHistoryStart() {
+        audienceFixture();
+        var request = audienceRequest("distinctAudience", "distinctPayingAudience", "sum:amount");
+        request.put("from", "2026-10-01");
+        request.put("to", "2026-10-28");
+        var result = query(request);
+        table("早于最早记录的范围", result, List.of("audienceAge", "distinctAudience", "distinctPayingAudience", "sum:amount"),
+                List.of(), List.of("合计", 0, 0, 0));
+        assertEquals("2026-10-29", result.getString("historyFrom"));
+    }
+
+    // 抓住旧场补录或更早场次加入后复用过期的首次出现索引。
+    @Test void historyCacheInvalidatesForSidecarsAndSessionArchive() {
+        long older = at("2026-10-30T18:00");
+        summary(older, older + 10_000, 0, 0, 0);
+        summary(FIRST, FIRST + 10_000, 2, 0, 0);
+        gift(FIRST, FIRST + 1, 0, "合成礼物", 1, 1, 1);
+        gift(FIRST, FIRST + 2, 1, "合成礼物", 1, 1, 1);
+        var request = request(List.of("gift"), FROM, TO, "distinctAudience", "count");
+        request.put("groupBy", List.of("audienceAge"));
+        assertRow(List.of("new", 2, 2), query(request).getJSONArray("rows").getJSONArray(0));
+        assertEquals(0, query(request).getIntValue("historyScannedRecords"));
+
+        danmu(older, older + 1, 0, "合成补录弹幕", DanmuRecord.Type.DANMU, null);
+        var changed = query(request);
+        assertRow(List.of("new", 1, 1), changed.getJSONArray("rows").getJSONArray(0));
+        assertRow(List.of("returning", 1, 1), changed.getJSONArray("rows").getJSONArray(1));
+        assertTrue(changed.getIntValue("historyScannedRecords") > 0);
+
+        long earliest = at("2026-10-29T18:00");
+        summaryWithRoster(earliest, earliest + 10_000, Map.of("enter_users", List.of(VIEWER + 1)));
+        var backfilled = query(request);
+        assertEquals("2026-10-29", backfilled.getString("historyFrom"));
+        assertRow(List.of("returning", 2, 2), backfilled.getJSONArray("rows").getJSONArray(0));
+    }
+
+    // 抓住实收的零与缺采结果混淆，并核对跨早上 6 点的逐分钟统计日归属。
+    @Test void sampledZeroCountsAndMinuteDaysFollowTheStatisticsBoundary() {
+        long start = at("2026-11-02T05:59");
+        series(start, start + 180_000, Map.of(start, 11d, start + 60_000, 0d), Map.of());
+        var result = query(request(List.of("minute"), FROM, "2026-11-02", "avg:online"), "groupBy", List.of("day"));
+        table("逐分钟跨统计日", result, List.of("day", "avg:online"), List.of(
+                List.of(FROM, 11), List.of("2026-11-02", 0)), List.of("合计", new BigDecimal("5.5")));
+        assertEquals(1, result.getJSONObject("missingMinutes").getIntValue("online"));
+    }
+
+    // 抓住事件按分钟时丢掉无事件的分钟，或把整份文件缺失的分钟当成无事件。
+    @Test void eventMinutesSeparateEmptyFromUnavailableDetails() {
+        long incomplete = FIRST + 3_600_000;
+        summary(FIRST, FIRST + 120_000, 2, 0, 0);
+        summary(incomplete, incomplete + 60_000, 10, 0, 0);
+        gift(FIRST, FIRST + 1, 0, "合成礼物", 1, 2, 2);
+        var result = query(request(List.of("gift"), FROM, TO, "count", "sum:amount"),
+                "groupBy", List.of("session", "minute"));
+        table("逐分钟礼物条数与金额", result, List.of("session", "minute", "count", "sum:amount"), List.of(
+                List.of(FIRST, FIRST, 1, 2), List.of(FIRST, FIRST + 60_000, 0, 0),
+                Arrays.asList(incomplete, incomplete, null, null)), Arrays.asList("合计", null, 1, 2));
+    }
+
+    // 抓住分钟范围过大时逐格扫描或返回貌似完整的汇总。
+    @Test void minuteScanningUsesTheAggregateLimit() {
+        long start = at("2024-01-01T06:00");
+        summary(start, start + Duration.ofDays(366).toMillis(), 0, 0, 0);
+        refused("逐分钟超过上限", query(request(List.of("minute"), "2024-01-01", "2024-12-31", "avg:online")), "500000");
+    }
+
+    private void minuteFixture() {
+        long start = at("2026-11-21T19:57");
+        long end = start + 1_260_000;
+        // 21 格中的前 3 格在 19 点，接下来 18 格在 20 点。
+        series(start, end, Map.of(start, 12d, start + 180_000, 20d, start + 600_000, 30d),
+                Map.of(start + 180_000, 110d));
+        long later = at("2026-11-22T21:00");
+        series(later, later + 60_000, Map.of(), Map.of(later, 120d));
+        // 同一天但在查询统计日开始之前，不能混到钟点平均中。
+        long earlier = at("2026-10-24T05:59");
+        series(earlier, earlier + 60_000, Map.of(earlier, 999d), Map.of());
+    }
+
+    private void series(long start, long end, Map<Long, Double> online, Map<Long, Double> watched) {
+        summary(start, end, 0, 0, 0);
+        details.store(new LiveDetail(LiveDetail.VERSION, PLATFORM, ROOM, "合成主播", 1L, start, end,
+                (end - start) / 1000, Map.of(), Map.of(), Map.of("online_count", online, "watched_count", watched),
+                Map.of(), Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of()));
+    }
+
+    private void audienceFixture() {
+        long before = at("2026-10-30T05:59");
+        summaryWithRoster(before, before + 30_000, Map.of("enter_users", List.of(VIEWER, EXCLUDED)));
+        danmu(before, before + 1, 1, "合成旧弹幕", DanmuRecord.Type.DANMU, null);
+        gift(before, before + 2, 5, "合成历史礼物", 1, 1, 1);
+
+        summaryWithRoster(FIRST, at("2026-11-02T06:01"), Map.of("enter_users", List.of(VIEWER + 4)));
+        danmu(FIRST, FIRST + 1, 0, "合成生日快乐", DanmuRecord.Type.DANMU, null);
+        danmu(FIRST, FIRST + 2, 0, "生日蛋糕", DanmuRecord.Type.EMOJI, null);
+        danmu(FIRST, FIRST + 3, 1, "合成祝福", DanmuRecord.Type.DANMU, null);
+        danmu(FIRST, FIRST + 4, 3, "合成生日留言", DanmuRecord.Type.SUPER_CHAT, 100d);
+        danmu(FIRST, at("2026-11-02T06:00"), 0, "合成次日弹幕", DanmuRecord.Type.DANMU, null);
+        gift(FIRST, FIRST + 5, 0, "合成背包礼物", 1, 10, 0);
+        gift(FIRST, FIRST + 6, 1, "合成旧观众礼物", 1, 12, 12);
+        box(FIRST, FIRST + 7, 2, "合成盲盒", "合成开出物", 1, 16, 2);
+        gift(FIRST, FIRST + 8, 99, "合成礼物", 1, 70, 70);
+        event(FIRST, FIRST + 9, "follow", Map.of("uid", VIEWER + 5));
+    }
+
+    private void summaryWithRoster(long start, long end, Map<String, List<Long>> roster) {
+        archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, start, end, (end - start) / 1000,
+                Map.of(), Map.of(), null, List.of(), 0, roster, 0, Map.of()));
+    }
+
+    private void danmu(long start, long time, int person, String content, DanmuRecord.Type type, Double amount) {
+        details.appendDanmu(PLATFORM, ROOM, start, new DanmuRecord(time, VIEWER + person, "合成观众" + person,
+                content, type, false, amount));
+    }
+
+    private static JSONObject audienceRequest(String... metrics) {
+        var request = request(List.of("audience_activity"), FROM, "2026-11-30", metrics);
+        request.put("groupBy", List.of("audienceAge"));
+        return request;
+    }
+
     private void fixture() throws IOException {
         summary(CROSSING, at("2026-11-01T07:30"), 120, 0, 0);
         gift(CROSSING, at("2026-11-01T05:59"), 0, "合成早班礼物", 1, 90, 0);
