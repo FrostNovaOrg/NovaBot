@@ -52,6 +52,7 @@ import java.awt.image.BufferedImage;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -247,6 +248,20 @@ public class BilibiliLiveReportPainter {
 
     private static final int CURVE_COLUMN_WIDTH = 2;
 
+    private static final int CURVE_COLUMNS = CONTENT_WIDTH / CURVE_COLUMN_WIDTH;
+
+    private static final int CURVE_BOTTOM_SPACE = 16;
+
+    private static final int[] CURVE_TICK_MINUTES = {1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440};
+
+    private static final int CURVE_MAX_TICKS = 6;
+
+    private static final int CURVE_TICK_LABEL_SIZE = 20;
+
+    private static final int CURVE_TICK_LABEL_GAP = 8;
+
+    private static final int CURVE_TICK_ROW_HEIGHT = 26;
+
     /**
      * 在线人数折线的笔宽（像素）
      */
@@ -268,14 +283,19 @@ public class BilibiliLiveReportPainter {
 
     private static final int CURVE_GAP_HATCH_WIDTH = 3;
 
+    private static final ZoneId REPORT_ZONE = ZoneId.of("Asia/Shanghai");
+
     private static final DateTimeFormatter TIME_FORMATTER =
-            DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
+            DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(REPORT_ZONE);
+
+    private static final DateTimeFormatter DATE_FORMAT =
+            DateTimeFormatter.ofPattern("MM-dd").withZone(REPORT_ZONE);
 
     /**
      * 场次内的时刻只需要时分，日期由报告头部交代
      */
     private static final DateTimeFormatter CLOCK_FORMAT =
-            DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
+            DateTimeFormatter.ofPattern("HH:mm").withZone(REPORT_ZONE);
 
     private final NovaCommonPainterFactory factory;
 
@@ -1026,8 +1046,9 @@ public class BilibiliLiveReportPainter {
 
         // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
+        List<CurveTick> ticks = curveTicks(start.get(), end.get());
 
-        boolean first = true;
+        int lastBaseline = 0;
         for (Curve curve : curves) {
             // 流水那条的时序是合成出来的（三张金额时序逐分钟相加），buildCurves 已连曲线一起给
             Map<Long, Double> series = curve.series != null
@@ -1037,17 +1058,95 @@ public class BilibiliLiveReportPainter {
                 continue;
             }
 
-            if (first) {
-                painter.movePos(0, 10);
-                painter.drawTextWithStyle(List.of(new TextWithStyle("互动曲线", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
-                painter.movePos(0, 6);
-                first = false;
+            int baseline = drawCurve(painter, curve, series, start.get(), end.get(), gaps, ticks, lastBaseline == 0);
+            if (baseline != 0) {
+                lastBaseline = baseline;
             }
-            drawCurve(painter, curve, series, start.get(), end.get(), gaps);
         }
 
-        if (!first) {
+        if (lastBaseline != 0) {
+            if (!ticks.isEmpty()) {
+                drawCurveTimeAxis(painter, ticks, lastBaseline);
+                painter.movePos(0, CURVE_TICK_ROW_HEIGHT);
+            }
             painter.movePos(0, 8);
+        }
+    }
+
+    private record CurveTick(int column, String label, boolean midnight) {
+        boolean atEdge() {
+            return column == 0 || column == CURVE_COLUMNS;
+        }
+    }
+
+    private record CurveTickLabel(TextWithStyle text, int left, int right, int edgeDistance) {
+    }
+
+    /**
+     * 取北京时间钟面上不超过六个整刻度，起止时刻都纳入范围。
+     */
+    private static List<CurveTick> curveTicks(long start, long end) {
+        long offset = REPORT_ZONE.getRules().getOffset(Instant.ofEpochMilli(start)).getTotalSeconds() * 1000L;
+        long first = start;
+        long interval = 0;
+        for (int minutes : CURVE_TICK_MINUTES) {
+            interval = minutes * LiveDataService.SERIES_BUCKET_MILLIS;
+            first = start + Math.floorMod(-start - offset, interval);
+            if (end - first < CURVE_MAX_TICKS * interval) {
+                break;
+            }
+        }
+        // 超过六个整日刻度时，每隔若干天保留一个零点。
+        interval *= 1 + Math.max(0, end - first) / (CURVE_MAX_TICKS * interval);
+
+        int buckets = bucketCount(start, end);
+        long origin = gridStart(start);
+        List<CurveTick> ticks = new ArrayList<>(CURVE_MAX_TICKS);
+        int column = 0;
+        for (long at = first; at <= end; at += interval) {
+            int bucket = (int) ((at - origin) / LiveDataService.SERIES_BUCKET_MILLIS);
+            // 找到重采样时会取到这一格的第一列，分钟格被铺开或合并时都对得上。
+            while (bucket >= bucketRange(column, buckets, CURVE_COLUMNS)[1]) {
+                column++;
+            }
+            Instant instant = Instant.ofEpochMilli(at);
+            boolean midnight = instant.atZone(REPORT_ZONE).toLocalTime().equals(LocalTime.MIDNIGHT);
+            String label = (midnight ? DATE_FORMAT : CLOCK_FORMAT).format(instant);
+            ticks.add(new CurveTick(at == end ? CURVE_COLUMNS : column, label, midnight));
+        }
+        return ticks;
+    }
+
+    private void drawCurveTimeAxis(CommonPainter painter, List<CurveTick> ticks, int baseline) {
+        int rightEdge = MARGIN + CONTENT_WIDTH;
+        List<CurveTickLabel> labels = new ArrayList<>(ticks.size());
+        for (CurveTick tick : ticks) {
+            int x = columnX(tick.column());
+            if (!tick.atEdge()) {
+                painter.drawRectangle(x, baseline + 2, 1, 5, painter.palette().curveGapEdge());
+            }
+            Color color = tick.midnight() ? painter.palette().text() : painter.palette().tip();
+            TextWithStyle text = new TextWithStyle(tick.label(), CURVE_TICK_LABEL_SIZE, color, Font.PLAIN);
+            int width = painter.getStringWidthAndHeight(text).getFirst();
+            int left = Math.max(MARGIN, Math.min(x - width / 2, rightEdge - width));
+            int edgeDistance = Math.min(x - MARGIN, rightEdge - x);
+            labels.add(new CurveTickLabel(text, left, left + width, edgeDistance));
+        }
+
+        // 文字碰撞时优先保留离绘图区边缘更远的那个，参考线仍按原位置绘制。
+        labels.sort(Comparator.comparingInt(CurveTickLabel::edgeDistance).reversed());
+        List<CurveTickLabel> visible = new ArrayList<>(labels.size());
+        for (CurveTickLabel label : labels) {
+            boolean overlaps = visible.stream().anyMatch(other ->
+                    label.left() < other.right() + CURVE_TICK_LABEL_GAP
+                            && other.left() < label.right() + CURVE_TICK_LABEL_GAP);
+            if (!overlaps) {
+                visible.add(label);
+            }
+        }
+        visible.sort(Comparator.comparingInt(CurveTickLabel::left));
+        for (CurveTickLabel label : visible) {
+            painter.drawTextWithStyle(List.of(label.text()), new Point(label.left(), baseline + 7));
         }
     }
 
@@ -1180,11 +1279,9 @@ public class BilibiliLiveReportPainter {
      * 画成贴地的面积等于替它答了「没人来」，而真相可能是那会儿最热闹。
      * @param gaps 本场的采集缺口，已裁剪到 {@code [start, end)} 之内
      */
-    private void drawCurve(CommonPainter painter, Curve curve, Map<Long, Double> series,
-                           long start, long end, List<LiveGap> gaps) {
-        int top = painter.getY();
-
-        int columns = Math.max(1, CONTENT_WIDTH / CURVE_COLUMN_WIDTH);
+    private int drawCurve(CommonPainter painter, Curve curve, Map<Long, Double> series,
+                          long start, long end, List<LiveGap> gaps, List<CurveTick> ticks, boolean first) {
+        int columns = CURVE_COLUMNS;
         int buckets = bucketCount(start, end);
         boolean[] missing = gapColumns(gaps, start, buckets, columns);
         double[] values = curveColumnValues(curve.metric(), series, start, end, columns, missing);
@@ -1199,9 +1296,15 @@ public class BilibiliLiveReportPainter {
             }
         }
         if (peak == 0) {
-            return;
+            return 0;
         }
 
+        if (first) {
+            painter.movePos(0, 10);
+            painter.drawTextWithStyle(List.of(new TextWithStyle("互动曲线", CommonPainter.TEXT_FONT_SIZE, painter.palette().tip(), Font.PLAIN)));
+            painter.movePos(0, 6);
+        }
+        int top = painter.getY();
         List<TextWithStyle> title = new ArrayList<>();
         title.add(new TextWithStyle(curve.title, 24, painter.palette().text(), Font.PLAIN));
         // peakText 为 null 表示这条曲线的峰值是金额且本会话不展示金额，只留标题
@@ -1212,6 +1315,8 @@ public class BilibiliLiveReportPainter {
 
         int chartTop = top + 34;
         int baseline = chartTop + CURVE_HEIGHT;
+        Color backgroundGrid = painter.palette().curveGridOnBackground();
+        Color areaGrid = painter.palette().curveGridOnArea();
 
         // 按「有没有采到」把列切成一段一段：采到的画面积或折线，没采到的画斜纹
         int from = 0;
@@ -1220,12 +1325,21 @@ public class BilibiliLiveReportPainter {
             while (to + 1 < columns && missing[to + 1] == missing[from]) {
                 to++;
             }
+            boolean area = !missing[from] && !curve.polyline();
+            if (area) {
+                drawAreaRun(painter, values, peak, from, to, baseline, curve.color);
+            }
+            for (CurveTick tick : ticks) {
+                int column = tick.column();
+                if (!tick.atEdge() && column >= from && column <= to) {
+                    int fillTop = area ? baseline - areaHeight(values[column], peak) : baseline;
+                    drawCurveGridLine(painter, columnX(column), chartTop, fillTop, backgroundGrid, areaGrid);
+                }
+            }
             if (missing[from]) {
                 drawGapHatch(painter, columnX(from), columnX(to + 1), chartTop, baseline);
             } else if (curve.polyline()) {
                 drawLineRun(painter, values, peak, from, to, baseline, curve.color);
-            } else {
-                drawAreaRun(painter, values, peak, from, to, baseline, curve.color);
             }
             from = to + 1;
         }
@@ -1237,7 +1351,23 @@ public class BilibiliLiveReportPainter {
 
         // 基线压在面积下沿，给曲线一个明确的落脚点
         painter.drawRectangle(MARGIN, baseline, CONTENT_WIDTH, 2, painter.palette().card());
-        painter.setPos(MARGIN, baseline + 16);
+        painter.setPos(MARGIN, baseline + CURVE_BOTTOM_SPACE);
+        return baseline;
+    }
+
+    private static void drawCurveGridLine(CommonPainter painter, int x, int top, int fillTop,
+                                          Color backgroundGrid, Color areaGrid) {
+        // 空白处用淡缺口色，面积内部用淡底色。折线和缺口在参考线上方绘制。
+        for (int y = top; y < top + CURVE_HEIGHT; y += 10) {
+            int end = y + 5;
+            if (y < fillTop) {
+                painter.drawRectangle(x, y, 1, Math.min(end, fillTop) - y, backgroundGrid);
+            }
+            if (end > fillTop) {
+                int from = Math.max(y, fillTop);
+                painter.drawRectangle(x, from, 1, end - from, areaGrid);
+            }
+        }
     }
 
     /**
