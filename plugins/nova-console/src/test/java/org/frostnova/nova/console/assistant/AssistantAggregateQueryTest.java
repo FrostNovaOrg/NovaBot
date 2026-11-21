@@ -3,6 +3,7 @@ package org.frostnova.nova.console.assistant;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.assistant.AssistantClient;
@@ -106,6 +107,46 @@ class AssistantAggregateQueryTest {
                 List.of(List.of(FROM, 4), List.of("2026-11-02", 2)), List.of("合计", 6));
         request.put("filters", List.of(filter("openedGiftName", "contains", "银星")));
         assertNumber(6, query(request).getJSONArray("totals").get(0));
+    }
+
+    // 抓住无礼物的场次被报成缺明细，导致零变成 null 或缺失场次数虚高。
+    @Test void giftlessSessionsCountAsZeroWithoutInflatingMissingDetails() {
+        long empty = at("2026-11-15T18:00");
+        long end = empty + 10_000;
+        archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, empty, end, 10, Map.of(), Map.of()));
+        seal(empty, Map.of());
+        summary(MISSING, MISSING + 10_000, 21, 0, 0);
+        seal(MISSING, Map.of("gift_value", 21d));
+        long zero = at("2026-11-17T18:00");
+        summary(zero, zero + 10_000, 0, 0, 0);
+
+        var emptyOnly = query(request(List.of("gift"), "2026-11-15", "2026-11-15", "count", "sum:quantity"));
+        table("无礼物场次", emptyOnly, List.of("count", "sum:quantity"),
+                List.of(List.of(0, 0)), List.of(0, 0));
+        assertEquals(0, emptyOnly.getIntValue("missingDetailsCount"));
+        assertFalse(emptyOnly.containsKey("coverageNote"));
+
+        var mixed = query(request(List.of("gift"), "2026-11-15", "2026-11-17", "count"));
+        table("无礼物与缺明细场次", mixed, List.of("count"), List.of(List.of(0)), List.of(0));
+        assertEquals(1, mixed.getIntValue("missingDetailsCount"));
+        assertEquals(MISSING, mixed.getJSONArray("missingDetails").getJSONObject(0).getLongValue("session"));
+
+        var combined = query(request(List.of("gift", "super_chat"), "2026-11-16", "2026-11-16", "count"));
+        assertNumber(0, combined.getJSONArray("totals").get(0));
+        assertEquals(List.of("events.jsonl"), combined.getJSONArray("missingDetails").getJSONObject(0).getJSONArray("files"));
+    }
+
+    // 抓住凌晨事件的星期几与统计周错开，以及六点整仍被算到前一天。
+    @Test void eventWeekdayFollowsStatisticsDayAtMondayBoundary() {
+        long start = at("2026-11-08T23:30");
+        summary(start, at("2026-11-09T07:00"), 2, 0, 0);
+        gift(start, at("2026-11-09T05:59"), 0, "合成礼物", 1, 1, 1);
+        gift(start, at("2026-11-09T06:00"), 0, "合成礼物", 1, 1, 1);
+        var result = query(request(List.of("gift"), "2026-11-08", "2026-11-09", "count"),
+                "groupBy", List.of("week", "weekday"));
+        table("跨周凌晨礼物", result, List.of("week", "weekday", "count"),
+                List.of(List.of("2026-11-02", 7, 1), List.of("2026-11-09", 1, 1)),
+                Arrays.asList("合计", null, 2));
     }
 
     // 抓住礼物按消息条数排序，或截断前五时也把合计裁掉。
@@ -258,7 +299,7 @@ class AssistantAggregateQueryTest {
         table("场次其他字段", query(request), List.of("week", "weekday", "min:startTime", "max:endTime",
                         "sum:durationSeconds", "sum:effectiveSeconds", "sum:messages", "max:peakOnline",
                         "max:watched", "max:sessionAudience"),
-                List.of(List.of("2026-11-02", 1, start, end, 3600, 3420, 25, 33, 90, 3)),
+                List.of(List.of("2026-11-02", 7, start, end, 3600, 3420, 25, 33, 90, 3)),
                 Arrays.asList("合计", null, start, end, 3600, 3420, 25, 33, 90, 3));
     }
 
@@ -476,6 +517,11 @@ class AssistantAggregateQueryTest {
     private void summary(long start, long end, double gift, double guard, double chat) {
         archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, start, end, (end - start) / 1000,
                 Map.of("gift_value", gift, "guard_value", guard, "super_chat_value", chat), Map.of()));
+    }
+
+    private void seal(long start, Map<String, Double> metrics) {
+        details.store(new LiveDetail(LiveDetail.VERSION, PLATFORM, ROOM, "合成主播", 1L, start, start + 10_000,
+                10, metrics, Map.of(), Map.of(), Map.of(), Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of()));
     }
 
     private void gift(long start, long at, int person, String name, int quantity, int value, int paid) {

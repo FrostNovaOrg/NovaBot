@@ -140,7 +140,8 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
                                 "description", "数字字段填数字。pkResult 用 win/loss/draw，guardOperation 用 open/renew，"
                                         + "guardLevel 用 captain/commander/governor，audience 用现有观众代号。")), List.of("field", "op", "value")), 0, MAX_FILTERS),
                 "groupBy", array(choice(keys(Group.values(), g -> g.key),
-                        "依次为统计日 day、周一日期 week、自然月 month、北京时间钟点 hour、北京时间星期 weekday、开播毫秒 session、"
+                        "依次为统计日 day、统计日所在周的周一日期 week、统计日所在月 month、北京时间钟点 hour、"
+                                + "统计日的星期几 weekday（周一为 1）、开播毫秒 session、"
                                 + "记录种类 kind、名称 name、开出礼物 openedGiftName、观众代号 audience、上舰新开/续费 guardOperation、等级 guardLevel、PK 结果 pkResult。"), 0, 2),
                 "metrics", array(choice(List.copyOf(METRICS.keySet()),
                         "count 条数，distinctAudience 不同观众人数，sum:quantity 个数合计，sum:amount 金额合计，"

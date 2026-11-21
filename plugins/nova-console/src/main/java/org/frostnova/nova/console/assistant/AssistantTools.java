@@ -21,8 +21,11 @@ final class AssistantTools {
             new Tool("fans", "粉丝快照与变化", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
             new Tool(AssistantAggregateRequest.NAME,
                     "筛选已归档的记录并分组汇总。筛选条件同时满足，无记录的分组不出行。"
-                            + AssistantAggregateQuery.DAY_RULE + "。金额单位元，"
+                            + AssistantAggregateQuery.DAY_RULE + "。跨早上 6 点的场次，付费事件和场次流水可能归入不同统计日，"
+                            + "回答每天流水时说明采用的是事件发生日还是整场的开播日。金额单位元，"
                             + AssistantAggregateQuery.AMOUNT_BASIS + "。"
+                            + "既未按观众分组，也未用代号筛选时，金额合计包含拒绝名单上的观众，与控制台流水的观众范围一致。"
+                            + "按观众分组的金额合计会排除他们，两种合计因此可能不同。"
                             + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED));
 

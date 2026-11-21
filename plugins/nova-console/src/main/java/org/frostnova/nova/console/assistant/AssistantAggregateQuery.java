@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -34,6 +35,7 @@ final class AssistantAggregateQuery {
     static final String AMOUNT_BASIS = "到手价值，与控制台流水同口径。盲盒计开出物价值，背包礼物计入流水";
     private static final String EVENTS = "events.jsonl";
     private static final String DANMU = "danmu.jsonl";
+    private static final String DETAIL = "detail.json";
     private static final int TABLE_ROWS = 60;
     private static final int MAX_EVENT_CHARS = 16_384;
     private static final int MAX_SESSION_CHARS = 1_048_576;
@@ -57,7 +59,7 @@ final class AssistantAggregateQuery {
     private final Bucket total;
     private final JSONArray missingDetails = new JSONArray();
     private int missingDetailsCount;
-    private int filesRead;
+    private boolean hasAvailableDetails;
     private int linesScanned;
     private int invalidLines;
     private int unknownFilters;
@@ -130,14 +132,47 @@ final class AssistantAggregateQuery {
             if (!archived(session, liveStart) || !visited.add(start)) return;
             if (visited.size() > MAX_GROUPS) throw stateLimit();
             var missing = new JSONArray();
-            if (events && !scan(file.apply(start, EVENTS), start, false)) missing.add(EVENTS);
-            if (danmu && !scan(file.apply(start, DANMU), start, true)) missing.add(DANMU);
+            if (events) scanDetails(file.apply(start, EVENTS), session, false, missing);
+            if (danmu) scanDetails(file.apply(start, DANMU), session, true, missing);
             if (!missing.isEmpty()) {
                 missingDetailsCount++;
                 if (missingDetails.size() < TABLE_ROWS)
                     missingDetails.add(JSONObject.of("session", start, "files", missing));
             }
         });
+    }
+
+    private void scanDetails(Path path, LiveSession session, boolean danmu, JSONArray missing) {
+        if (scan(path, session.startTime(), danmu) || knownEmpty(path, session.metrics(), danmu)) {
+            hasAvailableDetails = true;
+        } else {
+            missing.add(path.getFileName().toString());
+        }
+    }
+
+    private boolean knownEmpty(Path path, Map<String, Double> metrics, boolean danmu) {
+        // 逐条归档在第一条记录到来时创建。封存过的场次可以没有这份文件。
+        boolean sealed = Files.isRegularFile(path.resolveSibling(DETAIL));
+        for (Kind kind : request.kinds()) {
+            if ((kind == Kind.SUPER_CHAT) != danmu) continue;
+            boolean recordedZero = false;
+            for (String key : switch (kind) {
+                case GIFT -> List.of("gift_value", "gift_paid");
+                case BOX -> List.of("box_count");
+                case GUARD -> List.of("guard_value", "captain_count", "commander_count", "governor_count");
+                case SUPER_CHAT -> List.of("super_chat_count", "super_chat_value");
+                case FOLLOW -> List.of("follow_count");
+                case PK, SESSION -> List.<String>of();
+            }) {
+                Double value = metrics.get(key);
+                if (value == null) continue;
+                // 汇总已有记录时，封存标记也无法说明逐条文件为空。
+                if (value != 0) return false;
+                recordedZero = true;
+            }
+            if (!recordedZero && !sealed) return false;
+        }
+        return true;
     }
 
     private boolean scan(Path path, long start, boolean danmu) {
@@ -150,7 +185,6 @@ final class AssistantAggregateQuery {
                 Row row = event(lines.next(), start, danmu);
                 if (row != null) collect(row);
             }
-            filesRead++;
             return true;
         } catch (NoSuchFileException ignored) {
             return false;
@@ -475,10 +509,10 @@ final class AssistantAggregateQuery {
             Instant instant = Instant.ofEpochMilli(at);
             var hour = instant.atZone(StatisticsDay.ZONE).truncatedTo(ChronoUnit.HOURS);
             var day = StatisticsDay.dateOf(instant);
-            var monday = day.minusDays(day.getDayOfWeek().getValue() - 1L);
+            int weekday = day.getDayOfWeek().getValue();
+            var monday = day.minusDays(weekday - 1L);
             clockGroups = new ClockGroups(hour.toInstant().toEpochMilli(), hour.plusHours(1).toInstant().toEpochMilli(),
-                    day.toString(), monday.toString(), YearMonth.from(day).toString(), hour.getHour(),
-                    hour.getDayOfWeek().getValue());
+                    day.toString(), monday.toString(), YearMonth.from(day).toString(), hour.getHour(), weekday);
         }
         return clockGroups;
     }
@@ -505,7 +539,7 @@ final class AssistantAggregateQuery {
         var columns = new JSONArray();
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));
-        boolean allMissing = missingDetailsCount > 0 && filesRead == 0;
+        boolean allMissing = missingDetailsCount > 0 && !hasAvailableDetails;
         var totals = new JSONArray();
         if (!request.groups().isEmpty()) totals.add("合计");
         if (request.groups().size() == 2) totals.add(null);
