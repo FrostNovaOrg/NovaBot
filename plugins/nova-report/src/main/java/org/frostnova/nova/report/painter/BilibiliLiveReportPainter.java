@@ -1112,7 +1112,7 @@ public class BilibiliLiveReportPainter {
             Instant instant = Instant.ofEpochMilli(at);
             boolean midnight = instant.atZone(REPORT_ZONE).toLocalTime().equals(LocalTime.MIDNIGHT);
             String label = (midnight ? DATE_FORMAT : CLOCK_FORMAT).format(instant);
-            ticks.add(new CurveTick(at == end ? CURVE_COLUMNS : column, label, midnight));
+            ticks.add(new CurveTick(column, label, midnight));
         }
         return ticks;
     }

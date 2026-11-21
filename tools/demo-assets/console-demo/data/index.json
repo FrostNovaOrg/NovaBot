@@ -2906,7 +2906,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000101/sessions/1792379400000/report",
 			"query":"",
-			"sha256":"ef2dbb3a841b49f3133c69305337a2e766c679bfb0e1848192aa70ba45d2b6b9",
+			"sha256":"dffc37f96fdd4cef0889a648a02cf3b594b362a32f8fb3591ceb3ccb20d16344",
 			"status":200
 		},
 		{
@@ -8801,7 +8801,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1791806400000/report",
 			"query":"",
-			"sha256":"76a5a5da57b77b683792a34f86396313130f1738eb13c0b5e295e140ab9d9b06",
+			"sha256":"92875de03297a48902419c5e9d6107497fed9f0f492884fdf61847fe0de10e49",
 			"status":200
 		},
 		{
@@ -8837,7 +8837,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000102/sessions/1792324800000/report",
 			"query":"",
-			"sha256":"c809428a143c02bd16a44cb3535da76345bc1f35c3c0834f9c1c8022c17ee6e0",
+			"sha256":"269d921dd70738a03854b96c67a386d73ddc1d6da094f7776352f1cad12b5618",
 			"status":200
 		},
 		{
@@ -10941,7 +10941,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000103/sessions/1786795200000/report",
 			"query":"",
-			"sha256":"693a328915c9a562760b93c5829998de85c75351b5cc915777c2db2c53a16400",
+			"sha256":"34e964b0b7210d99dfc7f9e24e5143ac1377713689d34307aae67763dbf91b9d",
 			"status":200
 		},
 		{
@@ -13001,7 +13001,7 @@
 			"method":"GET",
 			"path":"/config/api/streamers/bilibili/990000000104/sessions/1792152000000/report",
 			"query":"",
-			"sha256":"9254c05243c293b33bc0229168ec357b47e25068bdab7634609f6b1444eebbc9",
+			"sha256":"675c025733b661f5ce2bd239447aed8dee7104b045ec1a3255aab0280c8f9371",
 			"status":200
 		},
 		{

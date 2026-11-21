@@ -22,6 +22,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Point;
+import java.awt.geom.AffineTransform;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -97,6 +98,40 @@ class BilibiliLiveReportTimeAxisTest {
     }
 
     @Test
+    void endTickAndLabelAlignWithTheFinalMinutePeakInAShortSession() {
+        String end = "11-21T08:04:00";
+        Capture capture = paint("11-21T08:00:00", end, end, false, true);
+
+        Label label = capture.labels.stream().filter(candidate -> candidate.text().equals("08:04"))
+                .findFirst().orElseThrow();
+        int labelCenter = label.x() + (label.right() - label.x()) / 2;
+        assertEquals(capture.peakX, labelCenter, "08:04 应对准最后一分钟峰值的起点");
+        int top = capture.chartTops.get(0);
+        assertTrue(capture.rectangles.stream().anyMatch(rect -> rect.x() == labelCenter && rect.y() == top),
+                "最后一分钟的峰值起点应有竖向参考线");
+    }
+
+    @Test
+    void dropsTheOuterLabelWhenWideTimeLabelsOverlapButKeepsItsGridLine() {
+        FontUtil wideFonts = new FontUtil(new DefaultResourceLoader(), PROPERTIES) {
+            @Override
+            public Font findFontForCharacter(int codePoint) {
+                Font font = super.findFontForCharacter(codePoint);
+                return codePoint == ':' || Character.isDigit(codePoint)
+                        ? font.deriveFont(AffineTransform.getScaleInstance(2.5, 1)) : font;
+            }
+        };
+        wideFonts.init();
+        Capture capture = paint("11-21T07:59:00", "11-21T08:27:00", "11-21T08:00:00", false, true, wideFonts);
+
+        assertEquals(List.of("08:05", "08:10", "08:15", "08:20", "08:25"),
+                capture.labels.stream().map(Label::text).toList());
+        int top = capture.chartTops.get(0);
+        assertTrue(capture.rectangles.stream().anyMatch(rect -> rect.x() == capture.peakX && rect.y() == top),
+                "省略 08:00 文字后仍应保留该刻度的竖向参考线");
+    }
+
+    @Test
     void omitsGridLinesAtPlotEdgesAndSkipsAxisWhenCurvesAreOff() {
         String start = "11-21T08:00:00";
         String end = "11-21T09:30:00";
@@ -104,7 +139,7 @@ class BilibiliLiveReportTimeAxisTest {
         int top = shown.chartTops.get(0);
         List<Integer> gridLines = shown.rectangles.stream().filter(rect -> rect.y() == top)
                 .map(Segment::x).distinct().toList();
-        assertEquals(2, gridLines.size());
+        assertEquals(3, gridLines.size());
         assertTrue(gridLines.stream().allMatch(x -> x > LEFT && x < RIGHT));
 
         Capture hidden = paint(start, end, "11-21T08:30:00", false, false);
@@ -113,6 +148,11 @@ class BilibiliLiveReportTimeAxisTest {
     }
 
     private static Capture paint(String start, String end, String peak, boolean twoCurves, boolean interactionCurve) {
+        return paint(start, end, peak, twoCurves, interactionCurve, fonts);
+    }
+
+    private static Capture paint(String start, String end, String peak, boolean twoCurves, boolean interactionCurve,
+                                 FontUtil fonts) {
         DefaultLiveDataService data = new DefaultLiveDataService(PROPERTIES);
         data.setLiveStartTime(PLATFORM, UID, time(start));
         data.setLiveEndTime(PLATFORM, UID, time(end));
@@ -126,7 +166,7 @@ class BilibiliLiveReportTimeAxisTest {
         NovaCommonPainterFactory factory = new NovaCommonPainterFactory(build, PROPERTIES, fonts) {
             @Override
             public CommonPainter create(int width, int height, boolean autoExpand) {
-                capture[0] = new Capture(build, width, height, autoExpand);
+                capture[0] = new Capture(build, width, height, autoExpand, fonts);
                 return capture[0];
             }
         };
@@ -151,7 +191,7 @@ class BilibiliLiveReportTimeAxisTest {
         final List<Integer> chartTops = new ArrayList<>();
         int peakX = -1;
 
-        Capture(BuildProperties build, int width, int height, boolean autoExpand) {
+        Capture(BuildProperties build, int width, int height, boolean autoExpand, FontUtil fonts) {
             super(build, PROPERTIES, fonts, width, height, autoExpand);
         }
 
