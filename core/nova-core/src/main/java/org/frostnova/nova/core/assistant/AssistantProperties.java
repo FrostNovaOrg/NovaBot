@@ -57,11 +57,13 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int dailyQuestionsPerAccount = 20;
     /** 聊天中每位发问者每天最多提问次数，按东八区自然日计算。 */
-    @ConfigLabel("聊天账号每日提问次数")
+    @ConfigLabel("QQ 每位发问者每日提问次数")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int dailyQuestionsPerQqUser = 10;
     /** 每个聊天会话每天最多提问次数，按东八区自然日计算。 */
-    @ConfigLabel("聊天会话每日提问次数")
+    @ConfigLabel("QQ 每个聊天每日提问次数")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int dailyQuestionsPerQqSession = 50;
     /** 一次模型回答的输出 token 上限。 */

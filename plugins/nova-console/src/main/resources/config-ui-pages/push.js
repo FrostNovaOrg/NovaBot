@@ -677,7 +677,7 @@ function paintConflict() {
     const saved = JSON.parse(pushSaved).find(item => userKey(item) === userKey(user));
     const hasDraft = JSON.stringify(user, dropDisplayOnly) !== JSON.stringify(saved, dropDisplayOnly);
     if ((hasDraft || sessionDraftCount() > 0) && !await ask({title: '丢弃未保存的草稿？',
-      body: '重新载入会丢弃这位主播尚未保存的修改，包括通道设置里的金额可见、静音时段、报告图配色和命令开关；提醒订阅的改动保留。'})) return;
+      body: '重新载入会丢弃这位主播尚未保存的修改，包括通道设置里的金额可见、问数开关、静音时段、报告图配色和命令开关。提醒订阅的改动保留。'})) return;
     try {
       const res = await api(userPath(user));
       if (!res.missing && (!res.success || !res.user || !res.version)) throw new Error(res.message || '重新载入失败');
@@ -1667,7 +1667,7 @@ function renderChannelLevel(host, user, target) {
   remove.addEventListener('click', async () => {
     if (!await ask({title: '移除该通道？',
       body: '不再向 ' + name + ' 推送「' + streamerName(user) + '」'
-        + '。这条通道的通道设置（金额可见、静音时段、报告图配色和命令开关）将一并删除'
+        + '。这条通道的通道设置（金额可见、问数开关、静音时段、报告图配色和命令开关）将一并删除'
         + (group ? '，「@我」订阅名单保留' : '') + '；其他主播的推送不受影响。'})) return;
     user.targets.splice(user.targets.indexOf(target), 1);
     markDirty();
@@ -2371,13 +2371,14 @@ function channelSettings(hosts, user, target, session, paintSummary) {
     const current = channelSession(session, target, user);
     const baseline = savedTarget(user, target);
     const commands = channelCommands();
+    const assistantCommand = runtime.commands?.find(command => command.name === '问' && command.aliases?.includes('问数'));
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     for (const box of Object.values(hosts)) box.innerHTML = '';
     const ctx = {
       palettes: reportPalettes, editable: channelPaletteEditable(user, target),
       onPaletteChange: () => { render(); repaintPalettePreview(); },
       channel: true, hosts, repaint: render, session: current, target, commands, subscriptions,
-      baseline,
+      baseline, assistantAvailable: assistantCommand?.available,
       totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
       summary: {
         revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal, savedQuiet(user, target)),
@@ -2675,7 +2676,7 @@ function addChannel(user) {
 
   (isMember() ? pickMemberTarget : pickTarget)({
     title: '给「' + streamerName(user) + '」添加通道',
-    lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。通道设置（金额可见、静音时段、报告图配色和命令开关）每条通道各一份，不影响同群的其他主播。',
+    lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。通道设置（金额可见、问数开关、静音时段、报告图配色和命令开关）每条通道各一份，不影响同群的其他主播。',
     user,
     taken,
     onPick: hit => {

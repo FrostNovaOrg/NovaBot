@@ -1,6 +1,6 @@
 import {notifyRevenueChange} from './session-draft.js';
 /**
- * 通道页下半截：「通道规则」（金额可见、静音时段）、「群内命令」与「本群状态」里的
+ * 通道页下半截：「通道规则」、「群内命令」与「本群状态」里的
  * @全体成员 与提醒订阅
  *
  * 这几块讲的是「这个群此刻听不听话」，与上方「推送内容」的「往这个群推什么」是同一件事的两面，
@@ -8,7 +8,7 @@ import {notifyRevenueChange} from './session-draft.js';
  * 才看得出来。金额可见、静音时段、命令开关每条通道各一份，只作用于这位主播在这个群的推送和命令；
  * @全体成员 仍是本群各主播共用，只读显示。
  *
- * 规则、命令、只读状态分三块放：常改的两条规则默认摊开，命令默认收起，只读的另起一块。
+ * 规则、命令、只读状态分三块放：通道规则默认摊开，命令默认收起，只读的另起一块。
  * 混在一段里时，看一眼「这个群静不静音」要先翻过十几个命令开关。
  *
  * 改动与上方推送内容同一条保存纪律：先记进草稿、计入底部改动条，按「保存」才落盘，
@@ -79,7 +79,7 @@ export function renderIncomplete(entries) {
 /**
  * 通道规则、命令与只读状态那几块
  *
- * 两条规则（金额可见、静音时段）默认摊开：它们各只占一行，又是这条通道最常单独调的两件事。
+ * 通道规则默认摊开，便于直接调整。
  * 命令默认收起：十几个开关摊开要占大半屏，而它们难得一改。
  * 私聊没有 @全体成员，群成员自己订阅「@我」也只在群里有，好友通道不画这两行：
  * 画一行「私聊不支持」，读起来像这里还有一份额度。
@@ -95,6 +95,7 @@ export function sessionSettings(host, ctx) {
     if (ctx.repaint) ctx.repaint(); else sessionSettings(host, ctx);
   };
   revenueRow(hosts.rules, ctx);
+  if (ctx.channel) assistantRow(hosts.rules, ctx);
   quietRow(hosts.rules, ctx);
   if (ctx.channel && ctx.palettes) paletteRow(hosts.rules, ctx);
   commandRow(hosts.commands, ctx);
@@ -132,7 +133,7 @@ function row(host, ctx, title, summary, helpText) {
 /**
  * 一行摊开的规则或状态：标题、摘要与问号在头一行，控件紧跟在下面
  *
- * 与 row 同一套标题与摘要的写法，只是不折：规则就两条，折起来反倒多一下点击。
+ * 与 row 同一套标题与摘要的写法，控件直接显示。
  * @param kind 额外的类名，状态行给 cstat
  * @return {HTMLElement} 正文容器
  */
@@ -309,6 +310,47 @@ function revenueRow(host, ctx) {
       + (Number(ctx.target.type) === 0 ? '私聊显示' : '群聊隐藏、私聊显示') + '）') + '</p>';
   line.appendChild(text);
   body.appendChild(line);
+}
+
+function assistantRow(host, ctx) {
+  const enabled = ctx.session.assistantEnabled;
+  const original = ctx.baseline?.assistantEnabled === true;
+  const summary = (enabled ? '已开启' : '已关闭') + (enabled === original ? '' : ' · 未保存');
+  const body = rule(host, '问数', summary, '默认关闭。开关只作用于这位主播在当前群或私聊中的问答。');
+  const line = el('div', 'swrow rule-switch');
+  const label = el('label', 'switch');
+  const input = el('input');
+  input.type = 'checkbox';
+  input.checked = enabled;
+  input.disabled = ctx.editable === false;
+  input.setAttribute('aria-label', '问数');
+  label.appendChild(input);
+  line.appendChild(label);
+
+  const text = el('div', 'swtxt');
+  text.appendChild(el('b')).textContent = '允许使用「问」命令';
+  if (ctx.assistantAvailable === false) {
+    text.appendChild(el('p')).textContent = '智能助手未开启或未设置密钥，开了也不会回答';
+  }
+  line.appendChild(text);
+  body.appendChild(line);
+
+  input.addEventListener('change', async () => {
+    const next = input.checked;
+    if (next) {
+      input.checked = false;
+      if (!await ask({
+        title: '开启问数？',
+        body: '这个聊天里的人可以用「问 〈问题〉」让智能助手查这位主播的数据并回答。回答由人工智能生成。'
+          + '问题和查到的数据会发给设置里配置的模型服务。'
+          + '金额按这条通道的「金额可见」设置处理。每位发问者、每个聊天每天都有提问次数上限。',
+        confirmText: Number(ctx.target.type) === 1 ? '这是运营群，开启' : '开启',
+      })) return;
+    }
+    if (next === original) restoreChannelField(ctx, 'assistantEnabled');
+    else ctx.target.assistantEnabled = next;
+    refresh();
+  });
 }
 
 function paletteRow(host, ctx) {

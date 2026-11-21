@@ -1,0 +1,2 @@
+daily-questions-per-qq-user|QQ 每位发问者每日提问次数|COMMON|RESTART|integer|聊天中每位发问者每天最多提问次数，按东八区自然日计算。
+daily-questions-per-qq-session|QQ 每个聊天每日提问次数|COMMON|RESTART|integer|每个聊天会话每天最多提问次数，按东八区自然日计算。
