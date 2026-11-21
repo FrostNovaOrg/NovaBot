@@ -1,6 +1,5 @@
 package org.frostnova.nova.bilibili.util;
 
-import com.huaban.analysis.jieba.JiebaSegmenter;
 import org.frostnova.nova.core.lang.StringUtil;
 
 import java.util.ArrayList;
@@ -14,8 +13,8 @@ import java.util.regex.Pattern;
 /**
  * 弹幕分词工具
  * <p>
- * 用 jieba 的 Java 移植做中文分词，供弹幕词云统计词频。
- * 词典在首次使用时加载（约一秒），聚合器会在后台线程预热，避免拖慢首条弹幕的处理。
+ * 用 jieba 词典做中文分词，供弹幕词云统计词频。
+ * 词典在首次使用时加载，聚合器会在后台线程预热，避免拖慢首条弹幕的处理。
  */
 public final class DanmuWordUtil {
     /**
@@ -54,7 +53,7 @@ public final class DanmuWordUtil {
     /**
      * jieba 分词器，词典加载成本高，进程内共享一份；其分词方法本身线程安全
      */
-    private static final JiebaSegmenter SEGMENTER = new JiebaSegmenter();
+    private static final CompactJiebaSegmenter SEGMENTER = new CompactJiebaSegmenter();
 
     private DanmuWordUtil() {
     }
