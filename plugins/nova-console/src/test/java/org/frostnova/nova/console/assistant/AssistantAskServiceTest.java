@@ -429,6 +429,24 @@ class AssistantAskServiceTest {
         assertTrue(JSON.parseObject(toolMessage().getString("content")).getString("reason").contains("种类"));
     }
 
+    @Test
+    @DisplayName("隐藏金额的会话通过场次比较或流水工具绕过金额设置")
+    void restrictedQuestionWithholdsAmountFromLegacyTools() {
+        when(queries.session("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档",
+                "current", JSONObject.of("revenue", 576.42, "messages", 32),
+                "versusMedian", JSONObject.of("revenue", JSONObject.of("difference", 52.37))));
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        replies.add(call("session", JSONObject.of("start", 123)));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "这场表现怎样"),
+                new AssistantQueryContext(false));
+        assertTrue(result.getBooleanValue("answered"));
+        assertTrue(toolMessage().getString("content").contains("32"));
+        assertFalse(toolMessage().getString("content").contains("576.42"), "场次流水进入了模型请求");
+        assertFalse(toolMessage().getString("content").contains("52.37"), "场次比较给出了流水差额");
+        verify(queries, never()).revenue(anyString(), anyLong(), anyLong());
+    }
+
     // 抓住问答把调用方隐藏金额的上下文替换为控制台默认值，导致工具恢复金额。
     @Test void aggregateReceivesCallersAmountContext() {
         var hidden = new AssistantQueryContext(false);

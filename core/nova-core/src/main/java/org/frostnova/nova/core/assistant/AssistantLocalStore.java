@@ -3,6 +3,7 @@ package org.frostnova.nova.core.assistant;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
+import org.frostnova.nova.core.enums.PushTargetType;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -35,6 +36,18 @@ public final class AssistantLocalStore {
         return encodeAlias(aliasMac(), platform + ":" + uid);
     }
 
+    public record QqSource(String entry, String account, String sessionType, String sessionNum, String sessionKey) { }
+
+    public QqSource qqSource(String entry, String platform, PushTargetType type, long num, long asker) {
+        Mac mac = aliasMac();
+        String account = encodeAlias(mac, "问者-", "qq-asker:" + asker, 12);
+        boolean group = type == PushTargetType.GROUP;
+        String sessionType = group ? "group" : "friend";
+        // 好友会话号就是对方的账号，也用代号记录。
+        String sessionNum = group ? Long.toString(num) : encodeAlias(mac, "好友-", "qq-friend:" + num, 12);
+        return new QqSource(entry, account, sessionType, sessionNum, platform + ":" + sessionType + ":" + sessionNum);
+    }
+
     /** 为单次查询复用同一密钥；返回的编码器仅供该查询线程使用。 */
     public LongFunction<String> aliases(String platform) {
         Mac mac = aliasMac();
@@ -43,7 +56,11 @@ public final class AssistantLocalStore {
     }
 
     private static String encodeAlias(Mac mac, String identity) {
-        return "观众-" + HexFormat.of().formatHex(mac.doFinal(identity.getBytes(StandardCharsets.UTF_8)), 0, 3);
+        return encodeAlias(mac, "观众-", identity, 3);
+    }
+
+    private static String encodeAlias(Mac mac, String prefix, String identity, int bytes) {
+        return prefix + HexFormat.of().formatHex(mac.doFinal(identity.getBytes(StandardCharsets.UTF_8)), 0, bytes);
     }
 
     private synchronized Mac aliasMac() {
@@ -75,6 +92,12 @@ public final class AssistantLocalStore {
     public synchronized void record(String account, String platform, Long uid, java.util.List<String> tools,
                                     java.util.List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
                                     AssistantException failure) {
+        record(account, platform, uid, tools, dataTypes, cost, endpoint, failure, null);
+    }
+
+    public synchronized void record(String account, String platform, Long uid, java.util.List<String> tools,
+                                    java.util.List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
+                                    AssistantException failure, QqSource qq) {
         try {
             Instant now = clock.instant();
             Instant cutoff = now.atZone(ZoneOffset.UTC).minusYears(3).toInstant();
@@ -90,6 +113,11 @@ public final class AssistantLocalStore {
             }
             JSONObject entry = JSONObject.of("at", now.toString(), "account", account, "platform", platform, "uid", uid,
                     "tools", tools, "dataTypes", dataTypes, "costYuan", cost, "endpoint", endpoint);
+            if (qq != null) {
+                entry.put("entry", qq.entry());
+                entry.put("sessionType", qq.sessionType());
+                entry.put("sessionNum", qq.sessionNum());
+            }
             if (failure != null) {
                 entry.put("reason", failure.reason());
                 var error = failure.providerError();

@@ -13,7 +13,6 @@ import org.frostnova.nova.core.analytics.StreamerAudience;
 import org.frostnova.nova.core.analytics.StreamerStartAreas;
 import org.frostnova.nova.core.analytics.StreamerStartSlots;
 import org.frostnova.nova.core.analytics.StreamerEntryRhythm;
-import org.frostnova.nova.core.analytics.StreamerMonitoring;
 import org.frostnova.nova.core.service.StreamerCalendarService;
 import org.frostnova.nova.core.service.WeeklyReportContentService;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
@@ -127,6 +126,8 @@ public class StreamerController {
 
     private final StreamerCalendarService calendars;
 
+    private final StreamerStatistics statistics;
+
     @Autowired
     private WeeklyReportContentService weeklyReports;
 
@@ -165,6 +166,7 @@ public class StreamerController {
         this.redrawers = redrawers;
         this.clock = clock;
         this.calendars = new StreamerCalendarService(liveDataService);
+        this.statistics = new StreamerStatistics(dataSource, directory, liveDataService, archive, snapshots, catalogs, clock);
     }
 
     /**
@@ -267,46 +269,7 @@ public class StreamerController {
     @GetMapping("/{platform}/{uid}/insights")
     public ResponseEntity<JSONObject> insights(@PathVariable String platform, @PathVariable Long uid,
                                                @RequestParam(defaultValue = "30") String days) {
-        if (!List.of("7", "30", "90", "180", "360").contains(days)) {
-            JSONObject invalid = new JSONObject();
-            invalid.put("success", false);
-            invalid.put("message", "请选择近 7、30、90、180、360 天中的一个范围");
-            return ResponseEntity.badRequest().body(invalid);
-        }
-        String key = key(platform, uid);
-        List<LiveSession> sessions = groupByStreamer(archive.find(0, Long.MAX_VALUE))
-                .getOrDefault(key, List.of());
-        var entry = roster(loadedUsers()).stream()
-                .filter(item -> key.equals(key(item.platform(), item.uid()))).findFirst();
-        if (entry.isEmpty() && sessions.isEmpty()) {
-            return streamer(platform, uid, "week", 1, 0);
-        }
-        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
-                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
-        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
-        var sampled = snapshots.find(0, range.to().toEpochMilli()).stream()
-                .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid())).toList();
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("days", Integer.parseInt(days));
-        result.put("living", entry.map(StreamerDirectory.Entry::enabled).orElse(false)
-                && liveDataService.getLiveStatus(platform, uid).orElse(false));
-        var comparison = new StreamerInsights().compareRecent(sessions, sampled, Integer.parseInt(days),
-                Clock.fixed(range.to(), clock.getZone()), rules);
-        JSONObject insights = JSON.parseObject(JSON.toJSONString(comparison.current(), JSONWriter.Feature.WriteNulls));
-        long now = range.to().toEpochMilli();
-        var watched = liveDataService.monitoringIntervals(platform, uid, now);
-        var monitoring = new StreamerMonitoring(liveDataService.isMonitoringRecording(), watched, now);
-        Long proof = calendars.calculate(platform, uid, calendarEnabled(platform, uid), sessions, watched,
-                StatisticsDay.dateOf(range.to()), Integer.parseInt(days), Clock.fixed(range.to(), clock.getZone())).provableFrom();
-        insights.put("monitoring", monitoring.period(comparison.current().from(), comparison.current().to(), proof, Integer.parseInt(days)));
-        JSONObject previous = JSON.parseObject(JSON.toJSONString(comparison.previous(), JSONWriter.Feature.WriteNulls));
-        previous.put("monitoring", monitoring.period(comparison.previous().from(), comparison.previous().to(), proof, Integer.parseInt(days)));
-        insights.put("previous", previous);
-        insights.put("comparisons", comparison.comparisons());
-        insights.put("comparisonNote", comparison.comparisonNote());
-        result.put("insights", insights);
-        return ResponseEntity.ok(result);
+        return statistics.insights(platform, uid, days);
     }
 
     /** 本期观众的只读分页；观众标识仅在分析过程中使用。 */
@@ -347,11 +310,11 @@ public class StreamerController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
     }
 
-    private boolean validDays(String days) {
+    static boolean validDays(String days) {
         return List.of("7", "30", "90", "180", "360").contains(days);
     }
 
-    private ResponseEntity<JSONObject> invalidRange() {
+    static ResponseEntity<JSONObject> invalidRange() {
         return ResponseEntity.badRequest().body(JSONObject.of("success", false,
                 "message", "请选择近 7、30、90、180、360 天中的一个范围"));
     }
@@ -365,7 +328,7 @@ public class StreamerController {
                 .anyMatch(item -> platform.equals(item.platform()) && uid.equals(item.uid()));
     }
 
-    private ResponseEntity<JSONObject> missingStreamer() {
+    static ResponseEntity<JSONObject> missingStreamer() {
         return ResponseEntity.status(404).body(JSONObject.of("success", false, "message", MISSING_STREAMER));
     }
 
@@ -391,22 +354,7 @@ public class StreamerController {
     @GetMapping("/{platform}/{uid}/fans")
     public ResponseEntity<JSONObject> fans(@PathVariable String platform, @PathVariable Long uid,
                                            @RequestParam(defaultValue = "30") String days) {
-        if (!validDays(days)) return invalidRange();
-        if (!knownStreamer(platform, uid, sessionsOf(platform, uid))) return missingStreamer();
-        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
-        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
-                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
-        var sampled = snapshots.find(0, range.to().toEpochMilli()).stream()
-                .filter(s -> platform.equals(s.platform()) && uid.equals(s.uid())).toList();
-        JSONArray points = new JSONArray();
-        if (rules != null && rules.fansKey() != null) {
-            sampled.stream().filter(s -> s.at() >= range.from().toEpochMilli() && s.has(rules.fansKey()))
-                    .forEach(s -> points.add(JSONObject.of("at", s.at(), "value", s.metric(rules.fansKey()))));
-        }
-        var change = StreamerInsights.fans(sampled, range.from().toEpochMilli(), range.to().toEpochMilli(), rules);
-        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days), "fans",
-                JSONObject.of("points", points, "change", change == null ? null : change.change(),
-                        "partial", change == null || change.partial())));
+        return statistics.fans(platform, uid, days);
     }
 
     @GetMapping("/{platform}/{uid}/sessions")
@@ -448,44 +396,7 @@ public class StreamerController {
     public ResponseEntity<JSONObject> rangeTrend(@PathVariable String platform, @PathVariable Long uid,
                                                  @RequestParam(defaultValue = "day") String period,
                                                  @RequestParam(defaultValue = "30") String days) {
-        if (!validDays(days)) return invalidRange();
-        if (!List.of("day", "week", "month").contains(period)) {
-            return ResponseEntity.badRequest().body(JSONObject.of("success", false, "message", "请选择 day、week 或 month"));
-        }
-        var sessions = sessionsOf(platform, uid);
-        if (!knownStreamer(platform, uid, sessions)) return missingStreamer();
-        var metrics = catalogs.orderedStream().filter(c -> platform.equals(c.platform())).findFirst()
-                .map(LiveMetricCatalog::metrics).orElse(List.of());
-        Set<String> keys = new LinkedHashSet<>();
-        metrics.forEach(m -> keys.add(m.key()));
-        var range = StreamerInsights.recent(Integer.parseInt(days), clock);
-        var buckets = analytics.aggregate(sessions,
-                LiveSessionAnalytics.Period.valueOf(period.toUpperCase(java.util.Locale.ROOT)), keys, range.from(), range.to());
-        var rules = catalogs.orderedStream().filter(c -> platform.equals(c.platform()))
-                .map(LiveMetricCatalog::insights).filter(java.util.Objects::nonNull).findFirst().orElse(null);
-        var summaries = new StreamerInsights().trend(sessions, range.from(), range.to(),
-                LiveSessionAnalytics.Period.valueOf(period.toUpperCase(java.util.Locale.ROOT)), rules);
-        var items = LiveAnalyticsJson.toJson(buckets);
-        for (int i = 0; i < items.size(); i++) {
-            items.getJSONObject(i).putAll(JSON.parseObject(JSON.toJSONString(summaries.get(i), JSONWriter.Feature.WriteNulls)));
-        }
-        if ("day".equals(period)) {
-            long now = range.to().toEpochMilli();
-            var watched = liveDataService.monitoringIntervals(platform, uid, now);
-            var monitoring = new StreamerMonitoring(liveDataService.isMonitoringRecording(), watched, now);
-            var calendar = calendars.calculate(platform, uid, calendarEnabled(platform, uid), sessions, watched,
-                    StatisticsDay.dateOf(range.to()), Integer.parseInt(days), Clock.fixed(range.to(), clock.getZone()));
-            var statuses = new LinkedHashMap<String, String>();
-            calendar.items().forEach(day -> statuses.put(day.date(), day.status()));
-            for (int i = 0; i < items.size(); i++) {
-                var item = items.getJSONObject(i);
-                item.put("monitoring", monitoring.evidence(item.getLongValue("start"), item.getLongValue("end")));
-                item.put("status", statuses.get(StatisticsDay.dateOf(Instant.ofEpochMilli(item.getLongValue("start"))).toString()));
-            }
-        }
-        return ResponseEntity.ok(JSONObject.of("success", true, "days", Integer.parseInt(days), "trend",
-                JSONObject.of("period", period, "buckets", items,
-                        "metrics", describe(metrics), "metricsKnown", !metrics.isEmpty())));
+        return statistics.rangeTrend(platform, uid, period, days);
     }
 
     /** 开播时段表现：整场总量按有效直播时长折算，仅提供近90或180个统计日。 */

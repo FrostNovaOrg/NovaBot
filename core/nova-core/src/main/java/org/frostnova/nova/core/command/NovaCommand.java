@@ -159,6 +159,12 @@ public interface NovaCommand {
     }
 
     /**
+     * 在已配置的会话中，返回空回复可静默忽略命令，返回文本可提示本命令正在执行。
+     * 返回 null 时照常过冷却。文字回复仍须通过命令开关和权限检查。
+     */
+    default CommandReply beforeCooldown(CommandContext context) { return null; }
+
+    /**
      * 执行命令
      * @param context 执行上下文
      * @return 回复内容，为空则不回复

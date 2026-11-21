@@ -2,6 +2,8 @@ novabot.assistant.answer-limit|java.lang.Integer|800|一次模型回答的输出
 novabot.assistant.api-format|java.lang.String|chat|模型接口收发请求的格式。默认 /chat/completions，模型只在 /responses 上支持调工具时选 /responses。
 novabot.assistant.base-url|java.lang.String|https://api.deepseek.com|模型接口的基础地址，NovaBot 会按接口格式补上请求路径。
 novabot.assistant.daily-questions-per-account|java.lang.Integer|20|每个账号每天最多提问次数，按东八区自然日计算。
+novabot.assistant.daily-questions-per-qq-session|java.lang.Integer|50|每个聊天会话每天最多提问次数，按东八区自然日计算。
+novabot.assistant.daily-questions-per-qq-user|java.lang.Integer|10|聊天中每位发问者每天最多提问次数，按东八区自然日计算。
 novabot.assistant.enabled|java.lang.Boolean|false|是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。
 novabot.assistant.excluded-uids|java.util.List<java.lang.Long>|<null>|拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。
 novabot.assistant.max-tool-calls|java.lang.Integer|6|一问最多执行的只读查数次数。

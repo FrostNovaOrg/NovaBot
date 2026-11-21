@@ -268,6 +268,7 @@ public class JsonDataSource extends AbstractDataSource {
                         target.setEnabled(targetObject.getBoolean("enabled"));
                     }
                     readChannelSetting(targetObject, "revenueVisible", () -> target.setRevenueVisible(targetObject.getBoolean("revenueVisible")));
+                    if (targetObject.get("assistantEnabled") instanceof Boolean enabled) target.setAssistantEnabled(enabled);
                     readChannelSetting(targetObject, "quietHours", () -> target.setQuietHours(targetObject.getObject("quietHours", PushTarget.QuietHours.class)));
                     readChannelSetting(targetObject, "disabledCommands", () -> target.setDisabledCommands(targetObject.getList("disabledCommands", String.class)));
                     // 存的是预设 id，认不认得留给画图那一侧：认不出的照默认模板的配色出图，并在日志里说一句

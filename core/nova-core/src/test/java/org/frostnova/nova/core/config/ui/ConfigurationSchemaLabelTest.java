@@ -20,7 +20,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -46,6 +48,20 @@ class ConfigurationSchemaLabelTest {
             assertEquals("秒",
                     field(schema, "novabot.core.alert.convergence-interval").getString("unit"));
             assertNull(field(schema, "novabot.core.push.enabled").get("unit"));
+        }
+    }
+
+    @Test
+    @DisplayName("限额写入配置模板，设置页仍只列已有的智能助手控件")
+    void qqLimitsAreFileOnlySettings() throws IOException {
+        var metadata = new ConfigurationMetadataService();
+        String template = ConfigurationTemplate.render(metadata.getFields(), Map.of());
+        try (var context = context()) {
+            String schema = controller(context, metadata).schema().toJSONString();
+            for (String key : List.of("daily-questions-per-qq-session", "daily-questions-per-qq-user")) {
+                assertTrue(template.contains(key), key);
+                assertFalse(schema.contains(key), key);
+            }
         }
     }
 
