@@ -123,8 +123,10 @@ public class AssistantAskService {
                 "history", history).toJSONString()));
         String answer = "";
         String answerReasoning = null;
+        List<JSONObject> answerContinuation = List.of();
         boolean answered = false;
         String reason = null;
+        AssistantException failure = null;
         BigDecimal cost = BigDecimal.ZERO;
         List<String> unverified = List.of();
         AssistantClient.Question question = null;
@@ -141,6 +143,7 @@ public class AssistantAskService {
                     if (response.content() != null && !response.content().isBlank()) {
                         answer = response.content();
                         answerReasoning = response.reasoningContent();
+                        answerContinuation = response.continuation();
                         answered = true;
                     } else if (!finish) {
                         throw new AssistantException("大模型服务返回了空响应");
@@ -149,8 +152,12 @@ public class AssistantAskService {
                 }
                 JSONArray accepted = new JSONArray();
                 var results = new ArrayList<JSONObject>();
+                boolean replay = !response.continuation().isEmpty();
                 // 单轮也有上限，防止异常响应塞入大量工具调用撑大上下文。
-                for (JSONObject call : response.toolCalls().subList(0, Math.min(response.toolCalls().size(), Math.min(63, properties.getMaxToolCalls()) + 1))) {
+                int returnedCalls = response.toolCalls().size();
+                if (replay && returnedCalls > 64) throw new AssistantException("too_much_data", FALLBACK);
+                int includedCalls = replay ? returnedCalls : Math.min(returnedCalls, Math.min(63, properties.getMaxToolCalls()) + 1);
+                for (JSONObject call : response.toolCalls().subList(0, includedCalls)) {
                     JSONObject function = call.getJSONObject("function");
                     String name = function == null ? "unknown" : function.getString("name");
                     JSONObject args = new JSONObject();
@@ -179,12 +186,17 @@ public class AssistantAskService {
                         data = JSONObject.of("source", "查数服务", "reason", "没有这份数据，请检查工具名与参数");
                     }
                     String id = call.getString("id");
-                    accepted.add(JSONObject.of("id", id, "type", "function", "function", JSONObject.of("name", name, "arguments", args.toJSONString())));
+                    if (!replay) accepted.add(JSONObject.of("id", id, "type", "function", "function",
+                            JSONObject.of("name", name, "arguments", args.toJSONString())));
                     results.add(JSONObject.of("role", "tool", "tool_call_id", id, "content", JSON.toJSONString(data, JSONWriter.Feature.WriteNulls)));
                 }
-                JSONObject assistant = assistantMessage(response.content(), response.reasoningContent());
-                assistant.put("tool_calls", accepted);
-                messages.add(assistant);
+                if (replay) {
+                    messages.addAll(response.continuation());
+                } else {
+                    JSONObject assistant = assistantMessage(response.content(), response.reasoningContent());
+                    assistant.put("tool_calls", accepted);
+                    messages.add(assistant);
+                }
                 messages.addAll(results);
             }
             if (!answered) {
@@ -195,7 +207,8 @@ public class AssistantAskService {
             answer = privacy.mask(answer);
             unverified = numbers.unverified(answer);
             if (!unverified.isEmpty() && !budget.remaining(55).isZero()) {
-                messages.add(assistantMessage(answer, answerReasoning));
+                if (answerContinuation.isEmpty()) messages.add(assistantMessage(answer, answerReasoning));
+                else messages.addAll(answerContinuation);
                 messages.add(JSONObject.of("role", "user", "content", "这些数字在本问工具数据中核对不上：" + String.join("、", unverified)
                         + "。请重写一次，只许用本问工具给出的数字，缺少就说没有这份数据，不再查数。"));
                 try {
@@ -208,18 +221,22 @@ public class AssistantAskService {
                     }
                 } catch (RuntimeException error) {
                     // 重写失败时保留已经脱敏的回答和待核对数字，花费仍由整问累计。
+                    if (error instanceof AssistantException assistant) failure = assistant;
                 }
             }
         } catch (AssistantException error) {
             answered = false;
             answer = error.getMessage();
             reason = error.reason();
+            failure = error;
             unverified = numbers.unverified(answer);
         } finally {
             if (question != null) {
                 cost = question.totalCostYuan();
                 question.close();
-                if (question.hasSent()) local.record(account, platform, uid, toolNames, privacy.dataTypes(), cost);
+                String endpoint = question.sentEndpoint();
+                if (endpoint != null) local.record(account, platform, uid, toolNames, privacy.dataTypes(), cost, endpoint,
+                        endpoint.endsWith("/responses") ? failure : null);
             }
         }
         if (answer.isBlank()) answer = FALLBACK;
@@ -244,6 +261,11 @@ public class AssistantAskService {
         // 重新清理全部消息，避免原话中引用的昵称或编号进入后续轮次。
         var outgoing = new ArrayList<JSONObject>();
         for (JSONObject message : messages) {
+            // 来自 /responses 的条目保留原字段和 JSON 值，包括消息上的 phase。
+            if (!message.containsKey("role") || message.containsKey("type")) {
+                outgoing.add(message);
+                continue;
+            }
             JSONObject copy = JSON.parseObject(message.toJSONString());
             if (!"system".equals(copy.getString("role")) && copy.get("content") instanceof String content) {
                 boolean structured = "tool".equals(copy.getString("role"))

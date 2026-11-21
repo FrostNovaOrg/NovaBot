@@ -46,6 +46,10 @@ final class AssistantLogCapture implements AutoCloseable {
         }
     }
 
+    void assertContains(String... fields) {
+        assertTrue(messages.stream().anyMatch(line -> java.util.Arrays.stream(fields).allMatch(line::contains)));
+    }
+
     @Override public void close() {
         levels.forEach((logger, level) -> {
             logger.setLevel(level);
