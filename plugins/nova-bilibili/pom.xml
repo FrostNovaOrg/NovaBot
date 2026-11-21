@@ -56,10 +56,11 @@
             <artifactId>caffeine</artifactId>
         </dependency>
 
-        <!-- 弹幕词云的分词；排版与绘制见 painter/WordCloudLayout -->
+        <!-- 用完整的原版分词器校验词云分词结果 -->
         <dependency>
             <groupId>com.huaban</groupId>
             <artifactId>jieba-analysis</artifactId>
+            <scope>test</scope>
         </dependency>
 
     </dependencies>

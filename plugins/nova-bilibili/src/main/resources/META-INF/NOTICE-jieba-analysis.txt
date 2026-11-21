@@ -1,0 +1,11 @@
+jieba-analysis 1.0.2
+Huaban, Libin and contributors
+Copyright © 2013–2015. All rights reserved.
+https://github.com/huaban/jieba-analysis
+
+Licensed under the Apache License, Version 2.0 (LICENSE-jieba-analysis.txt).
+The complete dict.txt and prob_emit.txt resources come from the
+com.huaban:jieba-analysis:1.0.2 Maven artifact and are stored in gzip format
+without changes to their contents. NovaBot adapts the original dictionary loader
+and sentence segmentation to use an array trie, and the HMM decoder to use two
+score rows and array backtracking with the original scoring and tie rules.

@@ -126,3 +126,9 @@ AGPL-3.0 授予的是代码上的权利。「NovaBot」名称与本项目标识�
 --------------------------------------------------------------------------
 
 各依赖遵循其自身许可证，详见各依赖的 pom 声明。
+
+  jieba-analysis 1.0.2（Huaban、Libin 和贡献者，Apache-2.0）
+    https://github.com/huaban/jieba-analysis
+    弹幕分词沿用原始 dict.txt 和 prob_emit.txt，以 gzip 无损压缩后随 nova-bilibili
+    插件 jar 分发。词典读取、句子切分与 HMM 解码改为数组实现。许可全文与来源说明放在
+    META-INF/LICENSE-jieba-analysis.txt 和 META-INF/NOTICE-jieba-analysis.txt。
