@@ -10,6 +10,7 @@ let disk = initial();
 const version = user => JSON.stringify(user);
 const requests = [];
 let sessionDisabled = [];
+let assistantAvailable = false;
 const quietByUid = {1: true, 2: false};
 let quietGlobal;
 const response = payload => ({status: 200, json: async () => copy(payload)});
@@ -33,6 +34,7 @@ globalThis.fetch = async (path, options = {}) => {
     channels: [{streamerPlatform: 'p', streamerUid: 1, quietActive: quietByUid[1]},
       {streamerPlatform: 'p', streamerUid: 2, quietActive: quietByUid[2]}]}], commands: [
     {name: '直播报告', category: '数据查询', disableable: true, channelScoped: true},
+    {name: '问', aliases: ['问数'], category: '数据查询', available: assistantAvailable},
     {name: '天气', category: '天气查询', disableable: true, channelScoped: false},
     {name: '菜单', category: '命令管理', disableable: false},
     {name: '启用命令', category: '命令管理', disableable: false}, {name: '禁用命令', category: '命令管理', disableable: false}],
@@ -204,6 +206,78 @@ await test('管理员照问号说明与禁用提示，以为点名问一位关�
     if (!hadWindow) delete globalThis.window;
   }
 });
+await test('老通道没有问数字段时开关误显示为开', async () => {
+  disk = initial();
+  disk[1].targets[0].assistantEnabled = 'true';
+  await push.reload();
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  for (const uid of [1, 2]) {
+    await open(uid);
+    assert.equal(input('问数')?.checked, false, '只有布尔 true 才应显示为开启');
+  }
+  assert.match(text(idNode('push-right')), /智能助手未开启或未设置密钥/);
+  assistantAvailable = true;
+  push.setRuntimeState(await (await fetch('/config/api/state')).json());
+  await open(2);
+  assert.doesNotMatch(text(idNode('push-right')), /智能助手未开启或未设置密钥/);
+});
+await test('群通道未经运营群确认就启用了问数', async () => {
+  disk = initial();
+  await push.reload();
+  await open(1);
+  const beginEnable = () => {
+    const toggle = input('问数');
+    assert.ok(toggle, '通道规则应有问数开关');
+    toggle.checked = true;
+    return toggle.dispatchEvent({type: 'change'});
+  };
+  const pending = beginEnable();
+  const dialog = idNode('body').querySelector('.ask');
+  assert.equal(dialog?.hidden, false, '拨到开必须先显示确认框');
+  const cancel = dialog.querySelector('[data-act="no"]');
+  const confirm = dialog.querySelector('[data-act="yes"]');
+  assert.equal(cancel.textContent, '取消');
+  assert.equal(confirm.textContent, '这是运营群，开启');
+  for (const phrase of ['问 〈问题〉', '人工智能生成', '模型服务', '金额可见', '每位发问者、每个聊天每天']) {
+    assert.ok(dialog.querySelector('p').textContent.includes(phrase), phrase);
+  }
+  assert.notEqual(push.pushEntries()[0].targets[0].assistantEnabled, true, '确认之前不得进草稿');
+  assert.equal(push.changeCount(), 0);
+  await dialog.dispatchEvent({type: 'click', target: cancel});
+  await pending;
+  assert.equal(input('问数').checked, false, '取消后开关应退回关');
+  assert.equal(push.changeCount(), 0);
+
+  const accepted = beginEnable();
+  await dialog.dispatchEvent({type: 'click', target: confirm});
+  await accepted;
+  assert.equal(input('问数').checked, true);
+  await push.save();
+  assert.equal(disk[0].targets[0].assistantEnabled, true);
+  assert.equal(disk[1].targets[0].assistantEnabled, undefined, '同群的另一位主播仍关闭');
+
+  const toggle = input('问数');
+  toggle.checked = false;
+  await toggle.dispatchEvent({type: 'change'});
+  assert.equal(dialog.hidden, true, '关闭无需确认');
+  await push.save();
+  assert.equal(disk[0].targets[0].assistantEnabled, false);
+});
+await test('保存同一通道的其他设置后问数开关丢失', async () => {
+  disk = initial();
+  disk[0].targets[0].assistantEnabled = true;
+  await push.reload();
+  await open(1);
+  const revenue = input('直播收益等金额');
+  revenue.checked = true;
+  await revenue.dispatchEvent({type: 'change'});
+  await push.save();
+  assert.equal(disk[0].targets[0].revenueVisible, true, '金额确实保存了');
+  assert.equal(disk[0].targets[0].assistantEnabled, true, '已开启的问数仍应按布尔值保存');
+  await push.reload();
+  await open(1);
+  assert.equal(input('问数')?.checked, true, '重新载入仍显示开启');
+});
 await push.leave();
-console.log('跑了 9 格，红 ' + failures.length + ' 格');
+console.log('跑了 12 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;

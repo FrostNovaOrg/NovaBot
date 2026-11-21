@@ -666,6 +666,7 @@ export function channelSession(session, target, user) {
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
     revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
     revenueExplicit: typeof target.revenueVisible === 'boolean',
+    assistantEnabled: target.assistantEnabled === true,
     disabled: target.disabledCommands || [],
     // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
     disabledCount: new Set([...(target.disabledCommands || []), ...((session || {}).disabled || [])]).size,

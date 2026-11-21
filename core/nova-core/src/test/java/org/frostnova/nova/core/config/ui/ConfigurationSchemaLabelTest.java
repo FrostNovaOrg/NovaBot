@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
@@ -20,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -52,15 +52,23 @@ class ConfigurationSchemaLabelTest {
     }
 
     @Test
-    @DisplayName("限额写入配置模板，设置页仍只列已有的智能助手控件")
-    void qqLimitsAreFileOnlySettings() throws IOException {
+    @DisplayName("QQ 问数限额在智能助手普通设置中紧跟账号限额，保存后重启生效")
+    void qqLimitsAppearWithAccountLimit() throws IOException {
         var metadata = new ConfigurationMetadataService();
         String template = ConfigurationTemplate.render(metadata.getFields(), Map.of());
-        try (var context = context()) {
-            String schema = controller(context, metadata).schema().toJSONString();
-            for (String key : List.of("daily-questions-per-qq-session", "daily-questions-per-qq-user")) {
+        try (var context = context();
+             var baseline = getClass().getResourceAsStream("/configuration-baseline/assistant-qq-schema.txt")) {
+            JSONObject schema = controller(context, metadata).schema();
+            String prefix = "novabot.assistant.";
+            int order = field(schema, prefix + "daily-questions-per-account").getIntValue("order");
+            for (String line : new String(baseline.readAllBytes(), StandardCharsets.UTF_8).lines().toList()) {
+                String key = line.substring(0, line.indexOf('|'));
+                JSONObject item = field(schema, prefix + key);
                 assertTrue(template.contains(key), key);
-                assertFalse(schema.contains(key), key);
+                assertEquals("assistant", item.getString("group"), key);
+                assertEquals(++order, item.getIntValue("order"), key);
+                assertEquals(line, String.join("|", key, item.getString("label"), item.getString("level"),
+                        item.getString("effect"), item.getString("widget"), item.getString("description")));
             }
         }
     }
@@ -134,7 +142,7 @@ class ConfigurationSchemaLabelTest {
 
     private AnnotationConfigApplicationContext context() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.register(NovaCoreProperties.class, EventStreamProperties.class);
+        context.register(NovaCoreProperties.class, EventStreamProperties.class, AssistantProperties.class);
         context.refresh();
         return context;
     }

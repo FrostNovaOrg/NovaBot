@@ -451,7 +451,7 @@ await ask('④ 灰掉的那些格：存着的值不动，「自定义」的判�
 await ask('⑤ 金额开关拨过两回，通道规则、命令与本群状态不该越画越长', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   same({rules: findAll(page(), '.crule').length, folds: findAll(page(), '.crow').length},
-    {rules: 4, folds: 1}, '行数（金额可见、静音时段、@全体成员、提醒订阅四行，命令一块折叠项）');
+    {rules: 5, folds: 1}, '行数（金额可见、问数、静音时段、@全体成员、提醒订阅五行，命令一块折叠项）');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
