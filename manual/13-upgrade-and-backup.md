@@ -443,7 +443,7 @@ UTF-8 编码，每次操作一行 JSON，只追加。设置、主播与推送通
 除 HEAD 请求外，登录页、两步验证、通行密钥、统一登录回调这几条登录路径的尝试，无论成功或失败都记录。
 使用启动令牌访问时，校验成功记录 `OPERATOR_LOGIN`；令牌错误按普通被拒请求处理，
 被拒绝的写请求会记录，被拒绝的 GET、HEAD 不记录。HEAD 请求一律不记录。
-普通成功查询不记录；主播本人标记的时间线记录照旧。这一版没有查看页面，可直接读取文件。
+普通成功查询不记录。这一版没有查看页面，可直接读取文件。
 
 记录至少保留一年：保留当前月及之前十二个整月，等某个月最后一刻过去满一年才删除该月文件。
 例如 2025 年 7 月的文件在 2026 年 7 月仍保留，到 2026 年 8 月才删除。
@@ -500,13 +500,10 @@ UTF-8 编码，每次操作一行 JSON，只追加。设置、主播与推送通
 | `QUIET_SAVE` | 调整通道静音时段 |
 | `SUBSCRIPTION_REMOVE` | 移除或清空订阅 |
 | `BINDING_SAVE` | 调整通道主播绑定 |
-| `PROFILE_RECOVER` | 恢复主播画像 |
 | `ASSISTANT_ASK` | 使用主播智能助手 |
 | `WEEKLY_REPORT_SEND` | 发送运营周报 |
 | `WEEKLY_REPORT_PREVIEW` | 生成运营周报预览 |
 | `LIVE_REPORT_SEND` | 发送下播报告 |
-| `SESSION_RECAP_SEND` | 试发本场小结 |
-| `PRE_LIVE_REMINDER_SEND` | 试发开播预告 |
 | `NAPCAT_CREDENTIAL` | 换取机器人管理凭据 |
 | `PALETTE_SAVE` | 保存报告默认配色 |
 | `REPORT_PREVIEW` | 生成报告预览 |

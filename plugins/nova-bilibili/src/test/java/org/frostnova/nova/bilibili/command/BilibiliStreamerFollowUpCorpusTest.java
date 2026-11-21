@@ -312,7 +312,7 @@ class BilibiliStreamerFollowUpCorpusTest {
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
-            when(followUps.orderedStream()).thenAnswer(invocation -> List.of((CommandFollowUp) choice).stream());
+            when(followUps.iterator()).thenAnswer(invocation -> List.of((CommandFollowUp) choice).iterator());
 
             // 分发器与追问共用这一把钟：两者各读各的时间时，「过期之后重新问」那一行
             // 会撞在读真钟的那道冷却上，而撞上冷却与「追问表没清干净」在回复里长得一样（都是一个字不说）

@@ -95,7 +95,7 @@ class ConfigUiOperationAuditTest {
         "push/toggle,PUSH_TOGGLE", "templates,TEMPLATE_SAVE", "state/command,COMMAND_SAVE",
         "state/commands,COMMANDS_SAVE", "state/revenue,REVENUE_SAVE", "state/quiet,QUIET_SAVE",
         "state/subscription,SUBSCRIPTION_REMOVE", "state/binding,BINDING_SAVE",
-        "streamers/bilibili/123/profile/recover,PROFILE_RECOVER", "streamers/bilibili/123/assistant/ask,ASSISTANT_ASK",
+        "streamers/bilibili/123/assistant/ask,ASSISTANT_ASK",
         "weekly-report/bilibili/123/trial,WEEKLY_REPORT_SEND", "live-report/bilibili/123/send-latest,LIVE_REPORT_SEND",
         "napcat/credential,NAPCAT_CREDENTIAL", "report/palettes/default,PALETTE_SAVE", "alert/test,ALERT_TEST",
         "accounts/member-8/enable,ACCOUNT_ENABLE", "accounts/member-8/disable,ACCOUNT_DISABLE",

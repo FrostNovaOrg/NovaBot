@@ -1575,7 +1575,6 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
-  if (target.streamerSelf === true) title.appendChild(pill('主播本人', 'ok'));
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
@@ -1645,24 +1644,6 @@ function renderChannelLevel(host, user, target) {
   head.appendChild(line);
   const summary = el('div', 'ch-sum');
   head.appendChild(summary);
-  if (!group) {
-    const label = el('label');
-    const checkbox = el('input');
-    checkbox.type = 'checkbox';
-    checkbox.setAttribute('aria-label', '这是主播本人');
-    checkbox.checked = target.streamerSelf === true;
-    checkbox.addEventListener('change', () => {
-      target.streamerSelf = checkbox.checked;
-      if (!checkbox.checked) target.messages = (target.messages || []).filter(m => !STREAMER_PRIVATE_NOTICES.includes(m.handler));
-      markDirty();
-      renderStreamers();
-    });
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode('这是主播本人'));
-    head.appendChild(label);
-    head.appendChild(el('p', 'hint')).textContent =
-      '勾上后，私聊小结和开播前提醒只会发到这个号，里面有观众昵称和场次数据。一位主播只能勾一条。';
-  }
 
   const notices = block(host, '推送内容', null);
   const noticeList = el('div', 'nlist');
@@ -1822,7 +1803,6 @@ function noticeSwitch(item, target) {
   label.innerHTML = '<input type="checkbox"' + (item.on ? ' checked' : '') + '>';
   const input = label.querySelector('input');
   input.setAttribute('aria-label', item.displayName);
-  input.disabled = STREAMER_PRIVATE_NOTICES.includes(item.className) && (Number(target.type) !== 0 || target.streamerSelf !== true);
   input.addEventListener('change', event => toggleNotice(target, item.className, event.target.checked));
   return label;
 }
@@ -1846,14 +1826,10 @@ function noticeRow(item, user, target, session, repaint) {
   const text = el('div', 'nrow-t');
   text.appendChild(el('b')).textContent = item.displayName;
   const meta = el('span', 'nrow-meta');
-  const syncMeta = () => { meta.textContent = STREAMER_PRIVATE_NOTICES.includes(item.className)
-    && (Number(target.type) !== 0 || target.streamerSelf !== true) ? '先勾『这是主播本人』'
-    : item.on ? noticeMeta(item, handler, target) : item.description; };
+  const syncMeta = () => { meta.textContent = item.on ? noticeMeta(item, handler, target) : item.description; };
   syncMeta();
   text.appendChild(meta);
   line.appendChild(text);
-  if (item.className === SESSION_RECAP) sessionRecapActions(text, user, target);
-  if (item.className === PRE_LIVE_REMINDER) preLiveReminderActions(text, user, target);
   if (item.on && item.className === WEEKLY_REPORT) weeklyReportActions(text, user, target, session);
   if (item.on && item.className === LIVE_REPORT) liveReportActions(text, user, target, session);
 
@@ -1883,9 +1859,6 @@ function noticeRow(item, user, target, session, repaint) {
 
 /** 推送页上「运营周报」那一类：它的工具（上次发出、预览、发送上一周的报告）只在开着时摆在它那一行里 */
 const WEEKLY_REPORT = 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
-const SESSION_RECAP = 'org.frostnova.nova.core.handler.SessionRecapPushHandler';
-const PRE_LIVE_REMINDER = 'org.frostnova.nova.core.handler.PreLiveReminderPushHandler';
-const STREAMER_PRIVATE_NOTICES = [SESSION_RECAP, PRE_LIVE_REMINDER];
 const LIVE_REPORT = 'org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler';
 
 /** 开着那一行的现状：文字跟不跟默认、图片版式、设置项的值，各一小段 */
@@ -2243,106 +2216,6 @@ function liveReportActions(host, user, target, session) {
   actions.appendChild(send);
   tools.appendChild(actions);
   host.appendChild(tools);
-}
-
-function sessionRecapActions(host, user, target) {
-  const path = '/session-recap/' + encodeURIComponent(user.platform) + '/' + user.uid;
-  const query = '?pushPlatform=' + encodeURIComponent(target.platform)
-    + '&type=' + Number(target.type) + '&num=' + target.num;
-  const tools = el('div', 'weekly-report-tools');
-  host.appendChild(tools);
-  const status = el('p', 'hint');
-  status.textContent = '正在读取小结状态…';
-  status.setAttribute('role', 'status');
-  tools.appendChild(status);
-  const recovery = el('a', 'lnkbtn');
-  recovery.href = '#/streamers/' + encodeURIComponent(user.platform) + '/' + user.uid + '?section=profile';
-  recovery.textContent = '去主播页点「档案已核对，恢复」';
-  recovery.hidden = true;
-  tools.appendChild(recovery);
-  api(path + '/status' + query).then(res => {
-    status.textContent = res.success ? res.status : '小结状态读取失败，请稍后重试';
-    recovery.hidden = !res.profileUnreadable;
-  }).catch(() => { status.textContent = '小结状态读取失败，请稍后重试'; });
-  const trial = el('button', 'ghost sm');
-  trial.type = 'button';
-  trial.textContent = '试发最近一场';
-  trial.disabled = Number(target.type) !== 0 || target.streamerSelf !== true;
-  tools.appendChild(trial);
-  trial.addEventListener('click', async () => {
-    if (trial.disabled) return;
-    trial.disabled = true;
-    let confirmPaused = false, confirmQuiet = false;
-    try {
-      for (;;) {
-        const res = await api(path + '/trial' + query
-          + (confirmPaused ? '&confirmPaused=true' : '') + (confirmQuiet ? '&confirmQuiet=true' : ''), {method: 'POST'});
-        if (res.confirmation === 'paused' && !confirmPaused) {
-          if (!await ask({title: '试发最近一场', body: '主播本人说过先别发了，确定还要发吗？', danger: false})) return;
-          confirmPaused = true;
-        } else if (res.confirmation === 'quiet' && !confirmQuiet) {
-          if (!await ask({title: '试发最近一场', body: '现在是这条通道的静音时段，确定现在发吗？', danger: false})) return;
-          confirmQuiet = true;
-        } else {
-          say(res.message, res.success ? 'ok' : 'err');
-          return;
-        }
-      }
-    } catch { say('试发失败，请稍后重试', 'err'); }
-    finally { trial.disabled = false; }
-  });
-}
-
-function preLiveReminderActions(host, user, target) {
-  const path = '/pre-live-reminder/' + encodeURIComponent(user.platform) + '/' + user.uid;
-  const query = '?pushPlatform=' + encodeURIComponent(target.platform)
-    + '&type=' + Number(target.type) + '&num=' + target.num;
-  const tools = el('div', 'weekly-report-tools');
-  host.appendChild(tools);
-  const status = el('p', 'hint');
-  status.textContent = '正在读取开播前提醒状态…';
-  status.setAttribute('role', 'status');
-  tools.appendChild(status);
-  const recovery = el('a', 'lnkbtn');
-  recovery.href = '#/streamers/' + encodeURIComponent(user.platform) + '/' + user.uid + '?section=profile';
-  recovery.textContent = '去主播页点「档案已核对，恢复」';
-  recovery.hidden = true;
-  tools.appendChild(recovery);
-  api(path + '/status' + query).then(res => {
-    status.textContent = res.success ? res.status : '开播前提醒状态读取失败，请稍后重试';
-    recovery.hidden = !res.profileUnreadable;
-  }).catch(() => { status.textContent = '开播前提醒状态读取失败，请稍后重试'; });
-  const trial = el('button', 'ghost sm');
-  trial.type = 'button';
-  trial.textContent = '试发开播前提醒';
-  trial.disabled = Number(target.type) !== 0 || target.streamerSelf !== true;
-  tools.appendChild(trial);
-  trial.addEventListener('click', async () => {
-    if (trial.disabled) return;
-    trial.disabled = true;
-    let confirmPaused = false, confirmQuiet = false, confirmDisabled = false;
-    try {
-      for (;;) {
-        const res = await api(path + '/trial' + query
-          + (confirmPaused ? '&confirmPaused=true' : '') + (confirmQuiet ? '&confirmQuiet=true' : '')
-          + (confirmDisabled ? '&confirmDisabled=true' : ''), {method: 'POST'});
-        if (res.confirmation === 'paused' && !confirmPaused) {
-          if (!await ask({title: '试发开播前提醒', body: '主播本人说过先别发了，确定还要发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
-          confirmPaused = true;
-        } else if (res.confirmation === 'quiet' && !confirmQuiet) {
-          if (!await ask({title: '试发开播前提醒', body: '现在是这条通道的静音时段，确定现在发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
-          confirmQuiet = true;
-        } else if (res.confirmation === 'disabled' && !confirmDisabled) {
-          if (!await ask({title: '试发开播前提醒', body: '全局推送开关已关闭，确定现在发吗？不记进发送记录，也不算当天那一条，当天定时的照常发。', danger: false})) return;
-          confirmDisabled = true;
-        } else {
-          say(res.message, res.success ? 'ok' : 'err');
-          return;
-        }
-      }
-    } catch { say('试发失败，请稍后重试', 'err'); }
-    finally { trial.disabled = false; }
-  });
 }
 
 /** 运营周报的操作只作用于当前主播和当前通道。 */

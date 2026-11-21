@@ -447,7 +447,7 @@ class TimelineHookTest {
 
         @SuppressWarnings("unchecked")
         ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
-        when(followUps.orderedStream()).thenAnswer(invocation -> List.<CommandFollowUp>of().stream());
+        when(followUps.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
 
         NovaCoreProperties properties = new NovaCoreProperties();
         return new CommandDispatcher(commands, followUps,

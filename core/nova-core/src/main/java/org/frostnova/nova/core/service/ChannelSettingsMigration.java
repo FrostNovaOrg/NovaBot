@@ -72,7 +72,7 @@ public class ChannelSettingsMigration {
     }
 
     private void copy(JSONObject target) {
-        if (List.of("revenueVisible", "quietHours", "disabledCommands", "streamerSelf").stream().anyMatch(target::containsKey)) return;
+        if (List.of("revenueVisible", "quietHours", "disabledCommands").stream().anyMatch(target::containsKey)) return;
         String platform = target.getString("platform");
         Integer code = target.getInteger("type");
         Long num = target.getLong("num");

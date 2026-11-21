@@ -27,13 +27,10 @@ final class ConfigUiOperationCatalog {
         add("POST", "state/quiet", "QUIET_SAVE", "调整通道静音时段");
         add("POST", "state/subscription", "SUBSCRIPTION_REMOVE", "移除或清空订阅");
         add("POST", "state/binding", "BINDING_SAVE", "调整通道主播绑定");
-        add("POST", "streamers/{platform}/{uid}/profile/recover", "PROFILE_RECOVER", "恢复主播画像");
         add("POST", "streamers/{platform}/{uid}/assistant/ask", "ASSISTANT_ASK", "使用主播智能助手");
         add("POST", "weekly-report/{platform}/{uid}/trial", "WEEKLY_REPORT_SEND", "发送运营周报");
         add("POST", "weekly-report/{platform}/{uid}/preview", "WEEKLY_REPORT_PREVIEW", "生成运营周报预览");
         add("POST", "live-report/{platform}/{uid}/send-latest", "LIVE_REPORT_SEND", "发送下播报告");
-        add("POST", "session-recap/{platform}/{uid}/trial", "SESSION_RECAP_SEND", "试发本场小结");
-        add("POST", "pre-live-reminder/{platform}/{uid}/trial", "PRE_LIVE_REMINDER_SEND", "试发开播预告");
         add("POST", "napcat/credential", "NAPCAT_CREDENTIAL", "换取机器人管理凭据");
         add("POST", "report/palettes/default", "PALETTE_SAVE", "保存报告默认配色");
         add("POST", "report/preview", "REPORT_PREVIEW", "生成报告预览");

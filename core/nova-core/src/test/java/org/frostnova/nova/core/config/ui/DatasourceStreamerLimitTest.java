@@ -50,7 +50,7 @@ class DatasourceStreamerLimitTest {
 
         // 结构校验是另一条关卡，本组用例一律放行，只看语义这一关
         ConfigurationValidator validator = mock(ConfigurationValidator.class);
-        when(validator.validateDatasource(anyString(), any(), any(), any())).thenReturn(List.of());
+        when(validator.validateDatasource(anyString(), any(), any())).thenReturn(List.of());
 
         NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSenderNames()).thenReturn(Set.of());

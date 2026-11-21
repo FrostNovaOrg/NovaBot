@@ -226,9 +226,7 @@ public class JsonDataSource extends AbstractDataSource {
     protected List<PushUser> parse(String json) {
         List<PushUser> users = new ArrayList<>();
 
-        JSONArray rows = JSON.parseArray(json);
-        StreamerSelfAssignments.normalize(rows);
-        for (JSONObject userObject : rows.toList(JSONObject.class)) {
+        for (JSONObject userObject : JSON.parseArray(json).toList(JSONObject.class)) {
             for (String field : USER_REQUIRED_FIELDS.keySet()) {
                 if (!userObject.containsKey(field)) {
                     throw new DataSourceException("数据源 JSON 文件格式错误, " + field + " 字段缺失");
@@ -269,7 +267,6 @@ public class JsonDataSource extends AbstractDataSource {
                     } else {
                         target.setEnabled(targetObject.getBoolean("enabled"));
                     }
-                    readChannelSetting(targetObject, "streamerSelf", () -> target.setStreamerSelf(Boolean.TRUE.equals(targetObject.get("streamerSelf"))));
                     readChannelSetting(targetObject, "revenueVisible", () -> target.setRevenueVisible(targetObject.getBoolean("revenueVisible")));
                     readChannelSetting(targetObject, "quietHours", () -> target.setQuietHours(targetObject.getObject("quietHours", PushTarget.QuietHours.class)));
                     readChannelSetting(targetObject, "disabledCommands", () -> target.setDisabledCommands(targetObject.getList("disabledCommands", String.class)));

@@ -137,7 +137,7 @@ class CommandDispatcherCorpusTest {
     @SuppressWarnings("unchecked")
     static ObjectProvider<CommandFollowUp> noFollowUps() {
         ObjectProvider<CommandFollowUp> provider = mock(ObjectProvider.class);
-        when(provider.orderedStream()).thenAnswer(invocation -> List.<CommandFollowUp>of().stream());
+        when(provider.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
         return provider;
     }
 

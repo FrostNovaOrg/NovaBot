@@ -44,8 +44,6 @@ public final class ConfigUiPermissions {
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/datasource/users/{platform}/{uid}/version");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/datasource/users/{platform}/{uid}");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}");
-        add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/profile");
-        add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/streamers/{platform}/{uid}/profile/recover");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/streamers/{platform}/{uid}/assistant/ask");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/assistant/state");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/avatar");
@@ -65,10 +63,6 @@ public final class ConfigUiPermissions {
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/weekly-report/{platform}/{uid}/status");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/weekly-report/{platform}/{uid}/preview");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/weekly-report/{platform}/{uid}/trial");
-        add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/session-recap/{platform}/{uid}/status");
-        add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/session-recap/{platform}/{uid}/trial");
-        add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/pre-live-reminder/{platform}/{uid}/status");
-        add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/pre-live-reminder/{platform}/{uid}/trial");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/live-report/{platform}/{uid}/latest");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/live-report/{platform}/{uid}/send-latest");
         add(entries, Access.STREAMER, Subject.PREVIEW, "POST /config/api/report/preview");
@@ -132,8 +126,6 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/quiet");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/binding");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/recap-preview");
-        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/recap-preview/{platform}/{uid}");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics/sessions");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/streamers");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/state");

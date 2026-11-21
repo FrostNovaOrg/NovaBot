@@ -54,8 +54,6 @@ class ConfigUiMemberPermissionsTest {
             GET datasource/users/{platform}/{uid}/version
             POST datasource/users/{platform}/{uid}
             GET streamers/{platform}/{uid}
-            GET streamers/{platform}/{uid}/profile
-            POST streamers/{platform}/{uid}/profile/recover
             POST streamers/{platform}/{uid}/assistant/ask
             GET streamers/{platform}/{uid}/assistant/state
             GET streamers/{platform}/{uid}/avatar
@@ -75,10 +73,6 @@ class ConfigUiMemberPermissionsTest {
             GET weekly-report/{platform}/{uid}/status
             POST weekly-report/{platform}/{uid}/preview
             POST weekly-report/{platform}/{uid}/trial
-            GET session-recap/{platform}/{uid}/status
-            POST session-recap/{platform}/{uid}/trial
-            GET pre-live-reminder/{platform}/{uid}/status
-            POST pre-live-reminder/{platform}/{uid}/trial
             GET live-report/{platform}/{uid}/latest
             POST live-report/{platform}/{uid}/send-latest
             POST report/preview
@@ -157,8 +151,6 @@ class ConfigUiMemberPermissionsTest {
             POST state/quiet
             POST state/binding
             GET analytics
-            GET recap-preview
-            GET recap-preview/{platform}/{uid}
             GET analytics/sessions
             GET bot/console
             POST napcat/credential
@@ -205,8 +197,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(134, mappings.size());
-        assertEquals(23, EVERYONE.size()); assertEquals(32, SCOPED.size()); assertEquals(70, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(126, mappings.size());
+        assertEquals(23, EVERYONE.size()); assertEquals(26, SCOPED.size()); assertEquals(68, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));
