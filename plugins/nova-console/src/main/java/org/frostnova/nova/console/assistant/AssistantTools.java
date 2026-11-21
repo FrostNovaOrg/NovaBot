@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntPredicate;
 
 /** 工具只读，主播身份由调用方绑定。 */
 final class AssistantTools {
@@ -26,7 +27,8 @@ final class AssistantTools {
                             + AssistantAggregateQuery.MINUTE_RULE + "。"
                             + AssistantAggregateQuery.ZERO_RULE + "。弹幕只按 day 分组时逐日出行，逐条明细按 minute 分组时逐直播时段出行，"
                             + "其他分组无记录时省略。弹幕计文字与表情，醒目留言单列。"
-                            + AssistantAggregateQuery.HISTORY_RULE + "。回答新老观众问题时写明 historyFrom 留档起点。金额单位元，"
+                            + AssistantAggregateQuery.HISTORY_RULE + "。回答新老观众问题时写明 historyFrom 留档起点。"
+                            + "首次出现记录按主播从全部归档逐场建立。若提示还在建立，请转告进度并请用户稍后再问。金额单位元，"
                             + AssistantAggregateQuery.AMOUNT_BASIS + "。"
                             + "观众或新老分组、代号筛选、去重观众人数及付费人数排除拒绝名单。其余金额合计包含拒绝名单上的观众，"
                             + "与控制台流水的观众范围一致。金额权限以调用方为准。"
@@ -62,7 +64,7 @@ final class AssistantTools {
     }
 
     static JSONObject query(AssistantQueryService queries, String platform, Long uid, String name, JSONObject args,
-                            AssistantQueryContext context, AssistantPrivacy privacy) {
+                            AssistantQueryContext context, AssistantPrivacy privacy, IntPredicate pauseHistory) {
         return switch (name) {
             case "sessions" -> queries.sessions(platform, uid, args.getIntValue("days"), args.getIntValue("limit"));
             case "session" -> queries.session(platform, uid, args.getLongValue("start"));
@@ -72,7 +74,7 @@ final class AssistantTools {
             case "insights" -> queries.insights(platform, uid, args.getIntValue("days"));
             case "trend" -> queries.trend(platform, uid, args.getString("period"), args.getIntValue("days"));
             case "fans" -> queries.fans(platform, uid, args.getIntValue("days"));
-            case AssistantAggregateRequest.NAME -> queries.aggregate(platform, uid, args, context, privacy);
+            case AssistantAggregateRequest.NAME -> queries.aggregate(platform, uid, args, context, privacy, pauseHistory);
             default -> throw new IllegalArgumentException();
         };
     }

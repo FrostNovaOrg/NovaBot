@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.text.BreakIterator;
 import java.time.Clock;
 import java.util.*;
+import java.util.function.IntPredicate;
 
 /**
  * 智能助手的只读查数入口，时间均为毫秒，变化率为比例（0.5 表示 50%）。
@@ -73,6 +74,13 @@ public class AssistantQueryService {
     }
 
     JSONObject aggregate(String platform, Long uid, JSONObject args, AssistantQueryContext context, AssistantPrivacy privacy) {
+        long start = System.nanoTime();
+        return aggregate(platform, uid, args, context, privacy,
+                completed -> System.nanoTime() - start >= AssistantAudienceHistory.BUILD_NANOS);
+    }
+
+    JSONObject aggregate(String platform, Long uid, JSONObject args, AssistantQueryContext context,
+                         AssistantPrivacy privacy, IntPredicate pauseHistory) {
         if (!validIdentity(platform, uid)) return AssistantAggregateQuery.rejected("筛选汇总", "请提供有效主播");
         try {
             var request = AssistantAggregateRequest.parse(args);
@@ -81,7 +89,7 @@ public class AssistantQueryService {
             Long start = living ? live.getLiveStartTime(platform, uid).orElse(null) : null;
             return new AssistantAggregateQuery(request, privacy, audienceHistory, dataDirectory().resolve("sessions.jsonl"))
                     .run(platform, uid, archive, sessions ? rules(platform) : null,
-                    (at, name) -> file(platform, uid, at, name), living, start, clock.instant(), context);
+                    (at, name) -> file(platform, uid, at, name), living, start, clock.instant(), context, pauseHistory);
         } catch (AssistantAggregateRequest.Invalid error) {
             return AssistantAggregateQuery.rejected("筛选汇总", error.getMessage());
         }

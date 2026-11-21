@@ -19,15 +19,20 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.IntPredicate;
+import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 
 import static org.frostnova.nova.core.service.LiveDataService.SERIES_BUCKET_MILLIS;
 import static org.frostnova.nova.console.assistant.AssistantAggregateRequest.*;
+import static org.frostnova.nova.console.assistant.AssistantAudienceHistory.*;
+import static org.frostnova.nova.console.assistant.AssistantAudienceIndex.NO_DAY;
 
 /** 一次查询的流式汇总。内存中只保留分组状态、去重集合和有限的回包样本。 */
 final class AssistantAggregateQuery {
@@ -43,12 +48,9 @@ final class AssistantAggregateQuery {
     static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
             + "窗口内首次留档为新观众，窗口前首次留档为老观众。留档起点之前来过的人可能计作新观众";
     static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
-    private static final String EVENTS = "events.jsonl";
-    private static final String DANMU = "danmu.jsonl";
     private static final String DETAIL = "detail.json";
     private static final int TABLE_ROWS = 60;
     private static final int MAX_EVENT_CHARS = 16_384;
-    private static final int MAX_SESSION_CHARS = 1_048_576;
     private static final int MAX_GROUPS = 50_000;
     private static final int MAX_GROUP_TEXT_CHARS = 2_000_000;
     private static final Set<String> HISTORY_FIELDS = Set.of("at", "uid", "t", "type");
@@ -85,7 +87,7 @@ final class AssistantAggregateQuery {
     private boolean hasAvailableDetails;
     private int scanWork;
     private int linesScanned;
-    private int historyRecordsScanned;
+    private long historyRecordsScanned;
     private int expectedMinutes;
     private int missingOnline;
     private int missingWatched;
@@ -95,7 +97,7 @@ final class AssistantAggregateQuery {
     private int groupTextChars;
     private LongFunction<String> aliases;
     private ClockGroups clockGroups;
-    private AssistantAudienceHistory.Snapshot history;
+    private AssistantAudienceIndex.View history;
 
     AssistantAggregateQuery(AssistantAggregateRequest request, AssistantPrivacy privacy,
                             AssistantAudienceHistory historyCache, Path sessionsFile) {
@@ -128,17 +130,20 @@ final class AssistantAggregateQuery {
 
     JSONObject run(String platform, long uid, LiveSessionArchive archive, LiveMetricCatalog.Insights rules,
                    BiFunction<Long, String, Path> file, boolean living, Long liveStart, Instant now,
-                   AssistantQueryContext context) {
+                   AssistantQueryContext context, IntPredicate pauseHistory) {
         if (!context.amountVisible() && request.usesAmount()) return rejected(source(), HIDDEN_AMOUNT);
         if (!sessions && !"bilibili".equals(platform)) {
             return rejected(source(), series ? "此平台没有提供逐分钟人数序列" : "此平台没有提供这些事件明细");
         }
         boolean liveUnarchived = living && now.toEpochMilli() >= from
                 && (liveStart == null ? now.toEpochMilli() < to : liveStart < to);
-        try {
-            if (byAge) {
-                var key = new AssistantAudienceHistory.Key(platform, uid, liveStart, sessionsFile);
-                history = historyCache.load(key, snapshot -> scanHistory(platform, uid, archive, file, liveStart, snapshot));
+        var historyKey = new AssistantAudienceHistory.Key(platform, uid, liveStart == null ? 0 : liveStart, sessionsFile);
+        try (var historyResult = byAge ? historyCache.load(historyKey, archive, file, pauseHistory,
+                (session, changes) -> scanHistory(session, file, changes)) : null) {
+            if (historyResult != null) {
+                history = historyResult.view();
+                historyRecordsScanned = historyResult.scannedRecords();
+                if (history == null) return historyInProgress(historyResult);
             }
             if (sessions) {
                 Map<Long, Row> summaries = new HashMap<>();
@@ -154,7 +159,7 @@ final class AssistantAggregateQuery {
             } else {
                 scanEvents(platform, uid, archive, file, liveStart);
             }
-            if (history != null) history.checkUnchanged();
+            if (history != null) checkUnchanged(historyKey, file, history);
             return table(liveUnarchived, liveStart, context);
         } catch (Invalid error) {
             return rejected(source(), error.getMessage());
@@ -177,50 +182,47 @@ final class AssistantAggregateQuery {
         return startFilters.stream().allMatch(f -> f.comparison().matches(value.compareTo((BigDecimal) f.value())));
     }
 
-    private void scanHistory(String platform, long uid, LiveSessionArchive archive,
-                             BiFunction<Long, String, Path> file, Long liveStart,
-                             AssistantAudienceHistory.Snapshot snapshot) throws IOException {
-        var visited = new HashSet<Long>();
-        archive.forEachOverlapping(platform, uid, 0, Long.MAX_VALUE, true, MAX_SESSION_CHARS, session -> {
-            long start = session.startTime();
-            if (!archived(session, liveStart) || !visitSession(visited, start)) return;
-            snapshot.observe(start);
-            Set<Long> roster = roster(session, true);
-            scanHistoryFile(file.apply(start, EVENTS), false, roster, snapshot);
-            scanHistoryFile(file.apply(start, DANMU), true, roster, snapshot);
-            roster.forEach(person -> snapshot.observe(person, start));
-        });
+    private JSONObject historyInProgress(AssistantAudienceHistory.Result progress) {
+        int completed = progress.completedSessions(), total = progress.totalSessions();
+        var result = rejected(source(), "观众首次出现记录还在建立，已完成 " + completed + "/" + total + " 场，请稍后再问");
+        result.put("historyCompletedSessions", completed);
+        result.put("historyTotalSessions", total);
+        result.put("historyScannedRecords", progress.scannedRecords());
+        return result;
     }
 
-    private void scanHistoryFile(Path path, boolean danmu, Set<Long> roster, AssistantAudienceHistory.Snapshot snapshot) {
-        try {
-            snapshot.watch(path);
-        } catch (IOException error) {
-            throw new UncheckedIOException(error);
-        }
+    private void scanHistory(LiveSession session, BiFunction<Long, String, Path> file, Changes changes) {
+        long start = session.startTime();
+        changes.observe(start);
+        Set<Long> roster = roster(session, changes::count);
+        scanHistoryFile(file.apply(start, EVENTS), false, roster, changes);
+        scanHistoryFile(file.apply(start, DANMU), true, roster, changes);
+        roster.forEach(person -> changes.observe(person, start));
+    }
+
+    private void scanHistoryFile(Path path, boolean danmu, Set<Long> roster, Changes changes) {
         scan(path, line -> {
-            charge(1);
-            historyRecordsScanned++;
+            changes.count(1);
             try {
                 readDetail(line, HISTORY_FIELDS);
             } catch (RuntimeException error) {
-                snapshot.skipInvalidLine();
+                changes.skipInvalidLine();
                 return;
             }
             if (!timed(danmu)) return;
-            snapshot.observe(detail.at);
             if (detail.audience != null && detail.audience > 0) {
                 roster.remove(detail.audience);
-                snapshot.observe(detail.audience, detail.at);
+                changes.observe(detail.audience, detail.at);
+            } else {
+                changes.observe(detail.at);
             }
         });
     }
 
-    private Set<Long> roster(LiveSession session, boolean forHistory) {
+    private static Set<Long> roster(LiveSession session, LongConsumer count) {
         var roster = new HashSet<Long>();
         for (var people : session.userSets().values()) {
-            charge(people.size());
-            if (forHistory) historyRecordsScanned += people.size();
+            count.accept(people.size());
             for (Long person : people) if (person != null && person > 0) roster.add(person);
         }
         return roster;
@@ -325,7 +327,7 @@ final class AssistantAggregateQuery {
             long start = session.startTime();
             if (!archived(session, liveStart) || !selectedStart(start) || !visitSession(visited, start)) return;
             var missing = new JSONArray();
-            Set<Long> roster = audienceActivity ? roster(session, false) : null;
+            Set<Long> roster = audienceActivity ? roster(session, this::charge) : null;
             if (!events.isEmpty()) scanDetails(file.apply(start, EVENTS), session, events, false, missing, roster);
             if (!danmu.isEmpty()) scanDetails(file.apply(start, DANMU), session, danmu, true, missing, roster);
             if (audienceActivity && session.hasUserSets()) hasAvailableDetails = true;
@@ -394,8 +396,7 @@ final class AssistantAggregateQuery {
         if (Thread.currentThread().isInterrupted()) throw new Invalid("查数已中止");
         if (count > AssistantQueryService.LINE_LIMIT - scanWork) {
             String unit = series || byAge || audienceActivity || byMinute ? " 条" : " 行";
-            String suffix = byAge ? "或省略新老分组" : "";
-            throw new Invalid("明细超过 " + AssistantQueryService.LINE_LIMIT + unit + "扫描上限，请缩短时间范围" + suffix);
+            throw new Invalid("明细超过 " + AssistantQueryService.LINE_LIMIT + unit + "扫描上限，请缩短时间范围");
         }
         scanWork += (int) count;
     }
@@ -785,9 +786,14 @@ final class AssistantAggregateQuery {
     }
 
     private String age(long audience) {
-        long first = history.firstSeen(audience);
-        if (first == 0 || first >= to) throw new Invalid("无法核对观众首次留档，请稍后重试");
-        return first < from ? "returning" : "new";
+        try {
+            int first = history.firstDay(audience);
+            if (first == NO_DAY || first > request.to().toEpochDay())
+                throw new Invalid("无法核对观众首次留档，请稍后重试");
+            return first < request.from().toEpochDay() ? "returning" : "new";
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
+        }
     }
 
     private ClockGroups clockGroups(long at) {
@@ -865,11 +871,11 @@ final class AssistantAggregateQuery {
             result.put("zeroNote", ZERO_RULE);
         }
         if (byAge) {
-            long earliest = history.earliest();
-            result.put("historyFrom", earliest == 0 ? null : StatisticsDay.dateOf(Instant.ofEpochMilli(earliest)).toString());
-            result.put("historyNote", earliest == 0 ? "此主播暂无可用的历史留档。" + HISTORY_RULE : HISTORY_RULE);
+            int earliest = history.progress.earliestDay();
+            result.put("historyFrom", earliest == NO_DAY ? null : LocalDate.ofEpochDay(earliest).toString());
+            result.put("historyNote", earliest == NO_DAY ? "此主播暂无可用的历史留档。" + HISTORY_RULE : HISTORY_RULE);
             result.put("historyScannedRecords", historyRecordsScanned);
-            if (history.invalidLines() > 0) result.put("historyInvalidLines", history.invalidLines());
+            if (history.progress.invalidLines() > 0) result.put("historyInvalidLines", history.progress.invalidLines());
         }
         if (needsPaying) {
             result.put("payingAudienceBasis", "按正实扣去重可识别的付费观众。盲盒缺实扣时用存档盒价估算，醒目留言用存档金额。实扣无法判断时该组付费人数未知");

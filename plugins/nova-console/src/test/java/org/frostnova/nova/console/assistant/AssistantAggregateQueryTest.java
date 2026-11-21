@@ -24,10 +24,15 @@ import org.springframework.beans.factory.ObjectProvider;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.*;
 import java.util.*;
+import java.util.function.IntPredicate;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -54,15 +59,17 @@ class AssistantAggregateQueryTest {
     private AssistantQueryService service;
     private AssistantLocalStore local;
     private Clock clock;
+    private NovaCoreProperties properties;
+    private ObjectProvider<LiveMetricCatalog> catalogs;
 
     @BeforeEach @SuppressWarnings("unchecked")
     void setup() {
-        var properties = new NovaCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         archive = new LiveSessionArchive(properties);
         details = new LiveDetailArchive(properties);
         live = mock(LiveDataService.class);
-        ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
+        catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(i -> Stream.of(new BilibiliLiveMetricCatalog()));
         clock = Clock.fixed(Instant.ofEpochMilli(at("2026-11-22T21:00")), ZoneOffset.UTC);
         service = new AssistantQueryService(null, archive, details, live, properties, catalogs, clock);
@@ -517,6 +524,130 @@ class AssistantAggregateQueryTest {
         assertRow(List.of("returning", 2, 2), backfilled.getJSONArray("rows").getJSONArray(0));
     }
 
+    // 抓住窗口外的名单占光查询扫描额度，导致连只查一天也一直被拒。
+    @Test void historyBeyondScanLimitStillClassifiesANarrowWindow() throws IOException {
+        long older = at("2026-10-29T18:00");
+        var roster = IntStream.range(0, 5_000).mapToObj(i -> VIEWER + i).toList();
+        try (var out = Files.newBufferedWriter(dir.resolve("sessions.jsonl"))) {
+            for (int i = 0; i < 101; i++) {
+                long start = older + i * 60_000L;
+                out.write(JSON.toJSONString(rosterSession(ROOM, start, start + 10_000, Map.of("enter_users", roster))));
+                out.newLine();
+            }
+        }
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER, VIEWER + 5_000)));
+        var request = audienceRequest("distinctAudience");
+        request.put("to", FROM);
+        var result = query(request);
+        table("超过 50 万条历史的一天", result, List.of("audienceAge", "distinctAudience"),
+                List.of(List.of("new", 1), List.of("returning", 1)), List.of("合计", 2));
+        assertEquals(505_002, result.getIntValue("historyScannedRecords"));
+        assertEquals("2026-10-29", result.getString("historyFrom"));
+        assertEquals(0, query(request).getIntValue("historyScannedRecords"));
+
+        request.put("from", "2026-10-29");
+        refused("窗口内明细仍受限", query(request), "500000");
+    }
+
+    // 抓住首建遇到时限丢掉已完成的场，下一问一直从头读。
+    @Test void timeSliceResumesFromTheLastCompletedSession() {
+        long older = at("2026-10-29T18:00");
+        summaryWithRoster(older, older + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        summaryWithRoster(older + 20_000, older + 30_000, Map.of("enter_users", List.of(VIEWER + 1)));
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER, VIEWER + 1, VIEWER + 2)));
+        var request = audienceRequest("distinctAudience");
+        IntPredicate oneSessionPerQuestion = completed -> completed >= 1;
+        var first = query(request, oneSessionPerQuestion);
+        refused("首次出现记录首问", first, "还在建立");
+        assertEquals(1, first.getIntValue("historyCompletedSessions"));
+        assertEquals(3, first.getIntValue("historyTotalSessions"));
+        assertEquals(1, first.getIntValue("historyScannedRecords"));
+
+        restartService();
+        var second = query(request, oneSessionPerQuestion);
+        refused("首次出现记录第二问", second, "请稍后再问");
+        assertEquals(2, second.getIntValue("historyCompletedSessions"));
+        assertEquals(3, second.getIntValue("historyTotalSessions"));
+        assertEquals(1, second.getIntValue("historyScannedRecords"));
+
+        var third = query(request, oneSessionPerQuestion);
+        table("续建完成", third, List.of("audienceAge", "distinctAudience"),
+                List.of(List.of("new", 1), List.of("returning", 2)), List.of("合计", 3));
+        assertEquals(3, third.getIntValue("historyScannedRecords"));
+    }
+
+    // 抓住新归档漏记新观众，或把前一场的参与者和明细重新扫描。
+    @Test void newlyArchivedSessionOnlyAddsItsOwnHistory() {
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        gift(FIRST, FIRST + 1, 0, "合成礼物", 1, 1, 1);
+        var old = audienceRequest("distinctAudience");
+        assertEquals(2, query(old).getIntValue("historyScannedRecords"));
+
+        summaryWithRoster(GIFTS, GIFTS + 10_000, Map.of("enter_users", List.of(VIEWER, VIEWER + 1)));
+        var request = audienceRequest("distinctAudience");
+        request.put("from", "2026-11-12");
+        var result = query(request);
+        table("追加一场", result, List.of("audienceAge", "distinctAudience"),
+                List.of(List.of("new", 1), List.of("returning", 1)), List.of("合计", 2));
+        assertEquals(2, result.getIntValue("historyScannedRecords"));
+    }
+
+    // 抓住新实例或切回主播时重扫旧场，或误用另一位主播的首次出现记录。
+    @Test void completedHistorySurvivesRestartAndStreamerSwitch() {
+        long older = at("2026-10-29T18:00");
+        summaryWithRoster(older, older + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        long other = ROOM + 1;
+        archive.append(rosterSession(other, FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER))));
+        var request = audienceRequest("distinctAudience");
+        assertEquals(2, query(request).getIntValue("historyScannedRecords"));
+        var otherPrivacy = new AssistantPrivacy(local, PLATFORM, other, List.of(), Map::of);
+        var otherResult = service.aggregate(PLATFORM, other, request, AssistantQueryContext.CONSOLE, otherPrivacy);
+        assertRow(List.of("new", 1), otherResult.getJSONArray("rows").getJSONArray(0));
+        var switchedBack = query(request);
+        assertRow(List.of("returning", 1), switchedBack.getJSONArray("rows").getJSONArray(0));
+        assertEquals(0, switchedBack.getIntValue("historyScannedRecords"), "切回主播");
+
+        restartService();
+        var restarted = query(request);
+        assertRow(List.of("returning", 1), restarted.getJSONArray("rows").getJSONArray(0));
+        assertEquals(0, restarted.getIntValue("historyScannedRecords"), "新服务实例");
+        assertEquals(0, service.aggregate(PLATFORM, other, request, AssistantQueryContext.CONSOLE, otherPrivacy)
+                .getIntValue("historyScannedRecords"));
+    }
+
+    // 抓住续场替换旧名单后，已移除的首次出现仍把观众误判为老观众。
+    @Test void replacedSessionCanRemoveAnEarlierFirstAppearance() {
+        long older = at("2026-10-29T18:00");
+        summaryWithRoster(older, older + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        var request = audienceRequest("distinctAudience");
+        assertRow(List.of("returning", 1), query(request).getJSONArray("rows").getJSONArray(0));
+
+        summaryWithRoster(older, older + 20_000, Map.of("enter_users", List.of(VIEWER + 1)));
+        var replaced = query(request);
+        assertRow(List.of("new", 1), replaced.getJSONArray("rows").getJSONArray(0));
+        assertEquals(2, replaced.getIntValue("historyScannedRecords"));
+    }
+
+    // 抓住版本变化后误读旧索引，或把可重建的文件错误当作归档读取失败。
+    @Test void incompatibleHistoryVersionIsRebuiltFromArchives() throws IOException {
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        var request = audienceRequest("distinctAudience");
+        assertEquals(1, query(request).getIntValue("historyScannedRecords"));
+        Path index = dir.resolve("assistant-audience-history").resolve(PLATFORM + "-" + ROOM + ".index");
+        try (var channel = FileChannel.open(index, StandardOpenOption.WRITE)) {
+            var version = ByteBuffer.allocate(4).putInt(Integer.MAX_VALUE).flip();
+            channel.position(Integer.BYTES);
+            while (version.hasRemaining()) channel.write(version);
+        }
+        restartService();
+        var rebuilt = query(request);
+        assertRow(List.of("new", 1), rebuilt.getJSONArray("rows").getJSONArray(0));
+        assertEquals(1, rebuilt.getIntValue("historyScannedRecords"));
+        assertEquals(0, query(request).getIntValue("historyScannedRecords"));
+    }
+
     // 抓住实收的零与缺采结果混淆，并核对跨早上 6 点的逐分钟统计日归属。
     @Test void sampledZeroCountsAndMinuteDaysFollowTheStatisticsBoundary() {
         long start = at("2026-11-02T05:59");
@@ -587,8 +718,12 @@ class AssistantAggregateQueryTest {
     }
 
     private void summaryWithRoster(long start, long end, Map<String, List<Long>> roster) {
-        archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, start, end, (end - start) / 1000,
-                Map.of(), Map.of(), null, List.of(), 0, roster, 0, Map.of()));
+        archive.append(rosterSession(ROOM, start, end, roster));
+    }
+
+    private static LiveSession rosterSession(long room, long start, long end, Map<String, List<Long>> roster) {
+        return new LiveSession(PLATFORM, room, "合成主播", 1L, start, end, (end - start) / 1000,
+                Map.of(), Map.of(), null, List.of(), 0, roster, 0, Map.of());
     }
 
     private void danmu(long start, long time, int person, String content, DanmuRecord.Type type, Double amount) {
@@ -642,6 +777,16 @@ class AssistantAggregateQueryTest {
     }
 
     private JSONObject query(JSONObject request) { return query(request, AssistantQueryContext.CONSOLE, privacy(List.of())); }
+
+    private JSONObject query(JSONObject request, IntPredicate pauseHistory) {
+        var privacy = privacy(List.of());
+        return privacy.prepare("aggregate", service.aggregate(PLATFORM, ROOM, request,
+                AssistantQueryContext.CONSOLE, privacy, pauseHistory));
+    }
+
+    private void restartService() {
+        service = new AssistantQueryService(null, archive, details, live, properties, catalogs, clock);
+    }
 
     private JSONObject query(JSONObject request, String key, Object value) {
         var copy = new JSONObject(request);

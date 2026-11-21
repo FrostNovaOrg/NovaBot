@@ -80,6 +80,7 @@ state.json
 data.json
 sessions.jsonl
 snapshots.jsonl
+assistant-audience-history/
 # 保存时的临时文件，以及读坏后改名留下的原件。内容与上面那几份相同，不能进仓库。
 state.json.tmp
 data.json.tmp
