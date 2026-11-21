@@ -99,6 +99,9 @@ public final class AssistantClient {
 
     public synchronized void deleteKey() { keys.clear(); }
 
+    /** 菜单与命令接收只看总开关和密钥，额度与配置者确认由提问时检查。 */
+    public boolean isConfigured() { return properties.isEnabled() && keys.isSet(); }
+
     /** 管理员的连接诊断只发送固定短句，不占提问次数，不受提问额度限制，花费照常记账。 */
     public void validateAndSaveKey(String account, String candidate) {
         AssistantKeyStore.validate(candidate);
@@ -115,20 +118,32 @@ public final class AssistantClient {
     }
 
     public synchronized Question beginQuestion(String account) {
+        return beginQuestion(account, null);
+    }
+
+    public synchronized Question beginQqQuestion(AssistantLocalStore.QqSource qq) {
+        return beginQuestion(qq.account(), qq);
+    }
+
+    private Question beginQuestion(String account, AssistantLocalStore.QqSource qq) {
         requireAvailable();
-        usage.checkQuestion(account, properties);
-        return new Question(account);
+        usage.checkQuestion(account, qq, properties);
+        return new Question(account, qq);
     }
 
     public final class Question implements AutoCloseable {
         private final String account;
+        private final AssistantLocalStore.QqSource qq;
         private boolean started;
         private String sentEndpoint;
         private boolean closed;
         private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
 
-        private Question(String account) { this.account = account; }
+        private Question(String account, AssistantLocalStore.QqSource qq) {
+            this.account = account;
+            this.qq = qq;
+        }
 
         public Response complete(Request request) { return complete(request, Duration.ofSeconds(90)); }
 
@@ -142,7 +157,7 @@ public final class AssistantClient {
                 requireAvailable();
                 validate(request);
                 usage.checkBudget(properties);
-                if (!started) { usage.startQuestion(account, properties); started = true; }
+                if (!started) { usage.startQuestion(account, qq, properties); started = true; }
                 inFlight = true;
             }
             try {

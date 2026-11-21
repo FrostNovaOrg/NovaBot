@@ -453,7 +453,7 @@ class AssistantAggregateQueryTest {
 
     private JSONObject query(JSONObject request, AssistantQueryContext context, AssistantPrivacy privacy) {
         var raw = service.aggregate(PLATFORM, ROOM, request, context, privacy);
-        return privacy.prepare("aggregate", raw);
+        return privacy.prepare("aggregate", raw, AssistantQueryContext.CONSOLE);
     }
 
     private static JSONObject request(List<String> kinds, String from, String to, String... metrics) {

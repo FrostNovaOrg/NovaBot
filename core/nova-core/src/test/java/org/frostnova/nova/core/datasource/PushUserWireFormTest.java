@@ -24,8 +24,10 @@ import java.util.List;
 import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -119,6 +121,27 @@ class PushUserWireFormTest {
                         "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
                         "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler"),
                 target.getMessages().stream().map(PushMessage::getHandler).toList());
+    }
+
+    @Test
+    @DisplayName("旧通道缺字段时关闭问答，明确开启后能往返保存并触发配置更新")
+    void readsAssistantChannelOptInAndKeepsLegacyOff() throws IOException {
+        var dataSource = newDataSource();
+        var json = JSON.parseArray(resource(EXAMPLE));
+        var target = json.getJSONObject(0).getJSONArray("targets").getJSONObject(0);
+        json.getJSONObject(0).put("uid", 1L);
+        target.put("num", 30003L);
+        PushUser old = dataSource.parse(json.toJSONString()).get(0);
+        assertNull(old.getTargets().get(0).getAssistantEnabled());
+
+        target.put("assistantEnabled", true);
+        PushUser optedIn = dataSource.parse(json.toJSONString()).get(0);
+        assertEquals(Boolean.TRUE, optedIn.getTargets().get(0).getAssistantEnabled());
+        assertFalse(old.same(optedIn));
+        assertTrue(optedIn.same(dataSource.parse(JSON.toJSONString(List.of(optedIn))).get(0)));
+
+        target.put("assistantEnabled", "true");
+        assertNull(dataSource.parse(json.toJSONString()).get(0).getTargets().get(0).getAssistantEnabled());
     }
 
     @Test

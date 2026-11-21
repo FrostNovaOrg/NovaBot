@@ -23,6 +23,7 @@ public final class AssistantUsageStore {
     private String day;
     private BigDecimal spent = BigDecimal.ZERO;
     private Map<String, Integer> questions = new LinkedHashMap<>();
+    private Map<String, Integer> qqQuestions = new LinkedHashMap<>();
     private Acknowledgement acknowledgement;
     private String problem;
 
@@ -38,11 +39,8 @@ public final class AssistantUsageStore {
                 day = LocalDate.parse(json.getString("day")).toString();
                 spent = json.getBigDecimal("spentYuan");
                 if (spent == null || spent.signum() < 0 || json.getJSONObject("questions") == null) throw storageError();
-                for (var entry : json.getJSONObject("questions").entrySet()) {
-                    int value = new BigDecimal(entry.getValue().toString()).intValueExact();
-                    if (value < 0) throw storageError();
-                    questions.put(entry.getKey(), value);
-                }
+                readCounts(json.getJSONObject("questions"), questions);
+                if (json.containsKey("qqQuestions")) readCounts(json.getJSONObject("qqQuestions"), qqQuestions);
                 JSONObject accepted = json.getJSONObject("acknowledgement");
                 if (accepted != null) acknowledgement = new Acknowledgement(accepted.getString("actor"), accepted.getString("at"), accepted.getString("version"));
             } catch (Exception error) {
@@ -50,6 +48,14 @@ public final class AssistantUsageStore {
             }
         }
         rollOver();
+    }
+
+    private static void readCounts(JSONObject object, Map<String, Integer> counts) {
+        for (var entry : object.entrySet()) {
+            int value = new BigDecimal(entry.getValue().toString()).intValueExact();
+            if (value < 0) throw storageError();
+            counts.put(entry.getKey(), value);
+        }
     }
 
     public synchronized BigDecimal spentYuan() { rollOver(); return problem == null ? spent : null; }
@@ -68,19 +74,39 @@ public final class AssistantUsageStore {
         if (spent.compareTo(properties.getMonthlyBudgetYuan()) >= 0) throw new AssistantException("monthly_budget", "本月智能助手额度已用完");
     }
 
-    synchronized void checkQuestion(String account, AssistantProperties properties) {
+    synchronized void checkQuestion(String account, AssistantLocalStore.QqSource qq, AssistantProperties properties) {
         requireReadable();
         rollOver();
         if (account == null || account.isBlank()) throw new AssistantException("提问账号不能为空");
-        if (questions.getOrDefault(account, 0) >= properties.getDailyQuestionsPerAccount()) throw new AssistantException("daily_limit", "今天的提问次数用完了");
+        if (qq == null) {
+            if (questions.getOrDefault(account, 0) >= properties.getDailyQuestionsPerAccount())
+                throw new AssistantException("daily_limit", "今天的提问次数用完了");
+        } else {
+            if (qqQuestions.getOrDefault(qq.account(), 0) >= properties.getDailyQuestionsPerQqUser())
+                throw new AssistantException("qq_user_limit", "你的聊天账号今天的提问次数用完了");
+            if (qqQuestions.getOrDefault(qq.sessionKey(), 0) >= properties.getDailyQuestionsPerQqSession())
+                throw new AssistantException("qq_session_limit", "这个会话今天的提问次数用完了");
+        }
         checkBudget(properties);
     }
 
     synchronized void startQuestion(String account, AssistantProperties properties) {
-        checkQuestion(account, properties);
+        startQuestion(account, null, properties);
+    }
+
+    synchronized void startQuestion(String account, AssistantLocalStore.QqSource qq, AssistantProperties properties) {
+        checkQuestion(account, qq, properties);
+        if (qq != null) {
+            Map<String, Integer> updated = new LinkedHashMap<>(qqQuestions);
+            updated.merge(qq.account(), 1, Integer::sum);
+            updated.merge(qq.sessionKey(), 1, Integer::sum);
+            persist(spent, questions, updated, acknowledgement);
+            qqQuestions = updated;
+            return;
+        }
         Map<String, Integer> updated = new LinkedHashMap<>(questions);
         updated.merge(account, 1, Integer::sum);
-        persist(spent, updated, acknowledgement);
+        persist(spent, updated, qqQuestions, acknowledgement);
         questions = updated;
     }
 
@@ -89,7 +115,7 @@ public final class AssistantUsageStore {
         rollOver();
         if (cost == null || cost.signum() < 0) throw storageError();
         BigDecimal updated = spent.add(cost);
-        persist(updated, questions, acknowledgement);
+        persist(updated, questions, qqQuestions, acknowledgement);
         spent = updated;
     }
 
@@ -98,7 +124,7 @@ public final class AssistantUsageStore {
         rollOver();
         if (actor == null || actor.isBlank()) throw new AssistantException("确认人不能为空");
         Acknowledgement updated = new Acknowledgement(actor, clock.instant().toString(), version);
-        persist(spent, questions, updated);
+        persist(spent, questions, qqQuestions, updated);
         acknowledgement = updated;
     }
 
@@ -107,13 +133,17 @@ public final class AssistantUsageStore {
         LocalDate today = clock.instant().atZone(ZONE).toLocalDate();
         String currentMonth = YearMonth.from(today).toString();
         if (!currentMonth.equals(month)) { month = currentMonth; spent = BigDecimal.ZERO; }
-        if (!today.toString().equals(day)) { day = today.toString(); questions = new LinkedHashMap<>(); }
+        if (!today.toString().equals(day)) {
+            day = today.toString();
+            questions = new LinkedHashMap<>();
+            qqQuestions = new LinkedHashMap<>();
+        }
     }
 
-    private void persist(BigDecimal cost, Map<String, Integer> counts, Acknowledgement accepted) {
+    private void persist(BigDecimal cost, Map<String, Integer> counts, Map<String, Integer> qqCounts, Acknowledgement accepted) {
         try {
             AssistantFiles.write(path, JSONObject.of("version", 1, "month", month, "day", day,
-                    "spentYuan", cost, "questions", counts, "acknowledgement", accepted).toJSONString());
+                    "spentYuan", cost, "questions", counts, "qqQuestions", qqCounts, "acknowledgement", accepted).toJSONString());
         } catch (Exception error) { throw storageError(); }
     }
 

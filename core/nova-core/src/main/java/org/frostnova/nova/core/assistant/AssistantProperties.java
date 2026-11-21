@@ -56,6 +56,14 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int dailyQuestionsPerAccount = 20;
+    /** 聊天中每位发问者每天最多提问次数，按东八区自然日计算。 */
+    @ConfigLabel("聊天账号每日提问次数")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int dailyQuestionsPerQqUser = 10;
+    /** 每个聊天会话每天最多提问次数，按东八区自然日计算。 */
+    @ConfigLabel("聊天会话每日提问次数")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int dailyQuestionsPerQqSession = 50;
     /** 一次模型回答的输出 token 上限。 */
     @ConfigLabel("回答输出上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -130,6 +138,8 @@ public class AssistantProperties {
     }
 
     public void setDailyQuestionsPerAccount(int value) { dailyQuestionsPerAccount = positive(value); }
+    public void setDailyQuestionsPerQqUser(int value) { dailyQuestionsPerQqUser = positive(value); }
+    public void setDailyQuestionsPerQqSession(int value) { dailyQuestionsPerQqSession = positive(value); }
     public void setAnswerLimit(int value) { answerLimit = positive(value); }
     public void setPriceInputYuanPerMillion(BigDecimal value) { priceInputYuanPerMillion = price(value); }
     public void setPriceCachedInputYuanPerMillion(BigDecimal value) { priceCachedInputYuanPerMillion = price(value); }

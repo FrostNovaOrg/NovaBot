@@ -112,6 +112,10 @@ public class ConfigUiController {
      */
     public static final String BASE_PATH = "/config";
 
+    /** 目前通过配置文件设置的字段。 */
+    private static final Set<String> FILE_ONLY_FIELDS = Set.of("novabot.assistant.daily-questions-per-qq-user",
+            "novabot.assistant.daily-questions-per-qq-session");
+
     /**
      * 机器人连接信息在配置文件里所处的列表，由适配器申报。
      * <p>
@@ -967,6 +971,7 @@ public class ConfigUiController {
         JSONArray orphans = new JSONArray();
 
         for (ConfigurationMetadataService.ConfigurationField field : metadataService.getFields()) {
+            if (FILE_ONLY_FIELDS.contains(field.name())) continue;
             ConfigurationGroups.Group group = groupTable.groupOf(field.name());
 
             JSONObject item = new JSONObject();
