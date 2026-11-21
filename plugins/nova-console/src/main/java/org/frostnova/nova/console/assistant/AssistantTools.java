@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
 /** 工具只读，主播身份由调用方绑定。 */
 final class AssistantTools {
@@ -23,12 +24,17 @@ final class AssistantTools {
             new Tool("trend", "按天、周、月分桶的场次趋势", JSONObject.of("period", text("day、week、month"), "days", integer("7、30、90、180、360 天")), List.of("period", "days")),
             new Tool("fans", "粉丝快照与变化", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
             new Tool(AssistantAggregateRequest.NAME,
-                    "筛选已归档的记录并分组汇总。筛选条件同时满足，无记录的分组不出行。"
+                    "筛选已归档的记录并分组汇总。筛选条件同时满足。"
                             + AssistantAggregateQuery.DAY_RULE + "。跨早上 6 点的场次，付费事件和场次流水可能归入不同统计日，"
-                            + "回答每天流水时说明采用的是事件发生日还是整场的开播日。金额单位元，"
+                            + "回答每天流水时说明采用的是事件发生日还是整场的开播日。"
+                            + AssistantAggregateQuery.MINUTE_RULE + "。"
+                            + AssistantAggregateQuery.ZERO_RULE + "。弹幕只按 day 分组时逐日出行，逐条明细按 minute 分组时逐直播时段出行，"
+                            + "其他分组无记录时省略。弹幕计文字与表情，醒目留言单列。"
+                            + AssistantAggregateQuery.HISTORY_RULE + "。回答新老观众问题时写明 historyFrom 留档起点。"
+                            + "首次出现记录按主播从全部归档逐场建立。若提示还在建立，请转告进度并请用户稍后再问。金额单位元，"
                             + AssistantAggregateQuery.AMOUNT_BASIS + "。"
-                            + "既未按观众分组，也未用代号筛选时，金额合计包含拒绝名单上的观众，与控制台流水的观众范围一致。"
-                            + "按观众分组的金额合计会排除他们，两种合计因此可能不同。"
+                            + "观众或新老分组、代号筛选、去重观众人数及付费人数排除拒绝名单。其余金额合计包含拒绝名单上的观众，"
+                            + "与控制台流水的观众范围一致。金额权限以调用方为准。"
                             + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED));
 
@@ -67,8 +73,10 @@ final class AssistantTools {
     }
 
     static JSONObject query(AssistantQueryService queries, String platform, Long uid, String name, JSONObject args,
-                            AssistantQueryContext context, AssistantPrivacy privacy) {
-        if (AssistantAggregateRequest.NAME.equals(name)) return queries.aggregate(platform, uid, args, context, privacy);
+                            AssistantQueryContext context, AssistantPrivacy privacy, IntPredicate pauseHistory) {
+        if (AssistantAggregateRequest.NAME.equals(name)) {
+            return queries.aggregate(platform, uid, args, context, privacy, pauseHistory);
+        }
         Set<String> nonMonetaryMetrics = context.amountVisible() ? Set.of() : queries.nonMonetaryMetrics(platform);
         if (!context.amountVisible() && ("revenue".equals(name) || "curve".equals(name)
                 && !nonMonetaryMetrics.contains(curveMetric(args)))) {

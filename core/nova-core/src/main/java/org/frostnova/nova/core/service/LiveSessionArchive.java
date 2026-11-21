@@ -2,7 +2,9 @@ package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONFactory;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONReader;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.lang.BadLineNotice;
 import org.frostnova.nova.core.lang.BadLineNotice.FileState;
@@ -201,29 +203,77 @@ public class LiveSessionArchive {
      */
     public void forEachOverlapping(String platform, long uid, long from, long to, boolean includeUserSets,
                                    int maxLineChars, Consumer<LiveSession> visit) throws IOException {
+        forEachOverlappingRow(platform, uid, from, to, maxLineChars, row -> {
+            LiveSession session = row.read(includeUserSets);
+            if (session != null) visit.accept(session);
+        });
+    }
+
+    /** 访问场次原行和时间范围，调用方可在需要名单等字段时再解析。 */
+    public void forEachOverlappingRow(String platform, long uid, long from, long to, int maxLineChars,
+                                      Consumer<ArchiveRow> visit) throws IOException {
         Path file = path();
         FileState state = BadLineNotice.stateOf(file);
+        JSONReader.Context context = JSONFactory.createReadContext();
         try (Stream<String> lines = JsonlFiles.lines(file, maxLineChars)) {
             for (String line : (Iterable<String>) lines::iterator) {
                 if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException();
-                LiveSession session = overlapping(line, state, platform, uid, from, to, includeUserSets);
-                if (session != null) visit.accept(session);
+                ArchiveRow row = overlappingRow(line, state, context, platform, uid, from, to);
+                if (row != null) visit.accept(row);
             }
         } catch (NoSuchFileException ignored) {
             // 未产生场次归档。
         }
     }
 
-    private LiveSession overlapping(String line, FileState state, String platform, long uid, long from, long to,
-                                    boolean includeUserSets) {
-        try {
-            JSONObject json = JSON.parseObject(line);
-            if (json == null || !platform.equals(json.getString("platform")) || json.getLongValue("uid") != uid
-                    || json.getLongValue("startTime") >= to || json.getLongValue("endTime") < from) return null;
-            return parse(json, includeUserSets);
+    private ArchiveRow overlappingRow(String line, FileState state, JSONReader.Context context, String platform,
+                                      long uid, long from, long to) {
+        try (JSONReader reader = JSONReader.of(line, context)) {
+            if (!reader.nextIfObjectStart()) return null;
+            String rowPlatform = null;
+            long rowUid = 0, start = 0, end = 0;
+            while (!reader.nextIfObjectEnd()) {
+                switch (reader.readFieldName()) {
+                    case "platform" -> rowPlatform = reader.readString();
+                    case "uid" -> rowUid = reader.readInt64Value();
+                    case "startTime" -> start = reader.readInt64Value();
+                    case "endTime" -> end = reader.readInt64Value();
+                    default -> reader.skipValue();
+                }
+            }
+            if (!reader.isEnd() || !platform.equals(rowPlatform) || rowUid != uid || start >= to || end < from)
+                return null;
+            return new ArchiveRow(line, start, end, state);
         } catch (RuntimeException error) {
             badLine.skipped(state, error);
             return null;
+        }
+    }
+
+    public final class ArchiveRow {
+        private final String line;
+        private final long startTime;
+        private final long endTime;
+        private final FileState state;
+
+        private ArchiveRow(String line, long startTime, long endTime, FileState state) {
+            this.line = line;
+            this.startTime = startTime;
+            this.endTime = endTime;
+            this.state = state;
+        }
+
+        public String line() { return line; }
+        public long startTime() { return startTime; }
+        public long endTime() { return endTime; }
+
+        public LiveSession read(boolean includeUserSets) {
+            try {
+                return parse(JSON.parseObject(line), includeUserSets);
+            } catch (RuntimeException error) {
+                badLine.skipped(state, error);
+                return null;
+            }
         }
     }
 

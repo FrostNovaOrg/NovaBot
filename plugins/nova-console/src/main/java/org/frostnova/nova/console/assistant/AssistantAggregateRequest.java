@@ -11,19 +11,22 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to, List<Filter> filters,
-                                 List<Group> groups, List<Measure> measures, Sort sort, Integer limit) {
+                                 List<Group> groups, List<Measure> measures, Sort sort, Integer limit,
+                                 Integer bucketMinutes) {
     static final String NAME = "aggregate";
     static final String HIDDEN_AMOUNT = "这里不显示金额";
     static final List<String> REQUIRED = List.of("kinds", "from", "to", "metrics");
     private static final int MAX_FILTERS = 12;
     private static final int MAX_MEASURES = 8;
     private static final int MAX_LIMIT = 50;
+    private static final int MAX_BUCKET_MINUTES = 1440;
     private static final Pattern DATE = Pattern.compile("[0-9]{4}-[0-9]{2}-[0-9]{2}");
     private static final Pattern ALIAS = Pattern.compile("观众-[0-9a-fA-F]{6}");
 
     enum Kind {
         GIFT("gift"), BOX("box"), GUARD("guard"), SUPER_CHAT("super_chat"),
-        FOLLOW("follow"), PK("pk_settle"), SESSION("session");
+        FOLLOW("follow"), PK("pk_settle"), SESSION("session"), MINUTE("minute"), DANMU("danmu"),
+        AUDIENCE_ACTIVITY("audience_activity");
 
         final String key;
         Kind(String key) { this.key = key; }
@@ -32,21 +35,25 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
     enum Field {
         NAME("name", Kind.GIFT, Kind.BOX),
         OPENED_GIFT("openedGiftName", Kind.BOX),
-        AUDIENCE("audience", Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.SUPER_CHAT, Kind.FOLLOW),
+        AUDIENCE("audience", Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.SUPER_CHAT, Kind.FOLLOW,
+                Kind.DANMU, Kind.AUDIENCE_ACTIVITY),
+        TEXT("text", Kind.DANMU),
         GUARD_OPERATION("guardOperation", Kind.GUARD),
         GUARD_LEVEL("guardLevel", Kind.GUARD),
         PK_RESULT("pkResult", Kind.PK),
         QUANTITY("quantity", true, true, Kind.GIFT, Kind.BOX, Kind.GUARD),
-        AMOUNT("amount", true, true, Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.SUPER_CHAT, Kind.SESSION),
+        AMOUNT("amount", true, true, Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.SUPER_CHAT, Kind.SESSION,
+                Kind.AUDIENCE_ACTIVITY),
         MY_VOTES("pkMyVotes", true, false, Kind.PK),
         OPPONENT_VOTES("pkOpponentVotes", true, false, Kind.PK),
-        START("startTime", true, false, Kind.SESSION),
+        START("startTime", true, false, Kind.values()),
         END("endTime", true, false, Kind.SESSION),
         DURATION("durationSeconds", true, true, Kind.SESSION),
         EFFECTIVE("effectiveSeconds", true, true, Kind.SESSION),
         MESSAGES("messages", true, true, Kind.SESSION),
         PEAK_ONLINE("peakOnline", true, false, Kind.SESSION),
-        WATCHED("watched", true, false, Kind.SESSION),
+        ONLINE("online", true, false, Kind.MINUTE),
+        WATCHED("watched", true, false, Kind.SESSION, Kind.MINUTE),
         SESSION_AUDIENCE("sessionAudience", true, false, Kind.SESSION);
 
         final String key;
@@ -65,8 +72,8 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
 
     enum Group {
         DAY("day"), WEEK("week"), MONTH("month"), HOUR("hour"), WEEKDAY("weekday"),
-        SESSION("session"), KIND("kind"),
-        NAME(Field.NAME), OPENED_GIFT(Field.OPENED_GIFT), AUDIENCE(Field.AUDIENCE),
+        SESSION("session"), KIND("kind"), MINUTE("minute"),
+        NAME(Field.NAME), OPENED_GIFT(Field.OPENED_GIFT), AUDIENCE(Field.AUDIENCE), AUDIENCE_AGE("audienceAge", Field.AUDIENCE),
         GUARD_OPERATION(Field.GUARD_OPERATION), GUARD_LEVEL(Field.GUARD_LEVEL), PK_RESULT(Field.PK_RESULT);
 
         final String key;
@@ -94,13 +101,14 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
         }
     }
 
-    enum Operation { COUNT, DISTINCT, SUM, MAX, MIN, AVG }
+    enum Operation { COUNT, DISTINCT, DISTINCT_PAYING, SUM, MAX, MIN, AVG }
     record Filter(Field field, Comparison comparison, Object value) {}
     record Measure(String key, Operation operation, Field field) {}
     record Sort(String by, boolean descending) {}
 
     private static final Measure COUNT = new Measure("count", Operation.COUNT, null);
     private static final Measure DISTINCT = new Measure("distinctAudience", Operation.DISTINCT, null);
+    private static final Measure DISTINCT_PAYING = new Measure("distinctPayingAudience", Operation.DISTINCT_PAYING, null);
     private static final Map<String, Measure> METRICS = metrics();
     private static final List<String> PK_RESULTS = List.of("win", "loss", "draw");
     private static final List<String> GUARD_OPERATIONS = List.of("open", "renew");
@@ -109,7 +117,7 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
 
     private static Map<String, Measure> metrics() {
         var result = new LinkedHashMap<String, Measure>();
-        for (Measure measure : List.of(COUNT, DISTINCT)) result.put(measure.key(), measure);
+        for (Measure measure : List.of(COUNT, DISTINCT, DISTINCT_PAYING)) result.put(measure.key(), measure);
         for (Field field : Field.values()) {
             if (!field.numeric) continue;
             for (Operation operation : List.of(Operation.SUM, Operation.MAX, Operation.MIN, Operation.AVG)) {
@@ -125,26 +133,33 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
         return JSONObject.of(
                 "kinds", array(choice(keys(Kind.values(), k -> k.key),
                         "gift 礼物、box 盲盒、guard 上舰、super_chat 醒目留言、follow 关注、pk_settle PK 结算、session 场次。"
-                                + "只允许合选礼物、盲盒、上舰、醒目留言，合选时仅可用 count、sum:amount、distinctAudience。"), 1, 4),
+                                + "minute 逐分钟在线与看过人数，danmu 文字与表情弹幕，audience_activity 观众活动（含进房等名单及逐条记录）。"
+                                + "只允许合选礼物、盲盒、上舰、醒目留言，合选时可用 count、sum:amount、distinctAudience、distinctPayingAudience。"), 1, 4),
                 "from", string("开始统计日 YYYY-MM-DD，含当天"),
                 "to", string("结束统计日 YYYY-MM-DD，含当天，首尾合计最多 366 天"),
                 "filters", array(object(JSONObject.of(
                         "field", choice(keys(Field.values(), f -> f.key),
-                                "name 是礼物名或盒名，openedGiftName 是开出的礼物名，audience 是观众代号。"
+                                "name 是礼物名或盒名，openedGiftName 是开出的礼物名，audience 是观众代号，text 是弹幕文字或表情名。"
                                         + "amount 元、quantity 个数、pkMyVotes 本方票数、pkOpponentVotes 各对手票数之和。"
-                                        + "场次字段 startTime、endTime 为毫秒，durationSeconds、effectiveSeconds 为秒，"
-                                        + "messages 弹幕条数、peakOnline 在线峰值、watched 看过人数、sessionAudience 名单去重人数。"),
+                                        + "startTime 是场次开播毫秒，可用等于选定一场。endTime 为毫秒，durationSeconds、effectiveSeconds 为秒。"
+                                        + "场次有 messages 弹幕条数、peakOnline 在线峰值、watched 看过人数、sessionAudience 名单去重人数。"
+                                        + "minute 行有 online 在线人数和 watched 看过人数。"),
                         "op", choice(keys(Comparison.values(), c -> c.key),
-                                "名称用 eq（等于）或 contains（包含），数值用 eq、gt（大于）、gte（大于等于）、lt（小于）、lte（小于等于）。其余用 eq。"),
+                                "名称及弹幕文字用 eq（等于）或 contains（包含），数值用 eq、gt（大于）、gte（大于等于）、lt（小于）、lte（小于等于）。其余用 eq。"),
                         "value", JSONObject.of("anyOf", List.of(JSONObject.of("type", "string"), JSONObject.of("type", "number")),
                                 "description", "数字字段填数字。pkResult 用 win/loss/draw，guardOperation 用 open/renew，"
                                         + "guardLevel 用 captain/commander/governor，audience 用现有观众代号。")), List.of("field", "op", "value")), 0, MAX_FILTERS),
                 "groupBy", array(choice(keys(Group.values(), g -> g.key),
                         "依次为统计日 day、统计日所在周的周一日期 week、统计日所在月 month、北京时间钟点 hour、"
                                 + "统计日的星期几 weekday（周一为 1）、开播毫秒 session、"
-                                + "记录种类 kind、名称 name、开出礼物 openedGiftName、观众代号 audience、上舰新开/续费 guardOperation、等级 guardLevel、PK 结果 pkResult。"), 0, 2),
+                                + "记录种类 kind、名称 name、开出礼物 openedGiftName、观众代号 audience、上舰新开/续费 guardOperation、等级 guardLevel、PK 结果 pkResult。"
+                                + "audienceAge 按观众在该主播处的首次留档分为 new（窗口内）和 returning（窗口前）。"
+                                + "minute 从开播所在分钟起按 bucketMinutes 分组，只可搭配 session。"), 0, 2),
+                "bucketMinutes", JSONObject.of("type", "integer", "minimum", 1, "maximum", MAX_BUCKET_MINUTES,
+                        "description", "按 minute 分组时每组分钟数，默认 1"),
                 "metrics", array(choice(List.copyOf(METRICS.keySet()),
                         "count 条数，distinctAudience 不同观众人数，sum:quantity 个数合计，sum:amount 金额合计，"
+                                + "distinctPayingAudience 有实扣记录的不同付费观众人数。"
                                 + "max:字段、min:字段、avg:字段为最大、最小、平均。场次时长、有效时长、弹幕条数也可 sum:字段。"), 1, MAX_MEASURES),
                 "sort", object(JSONObject.of("by", string("使用一个已选择的分组键或汇总列，例如 sum:amount"),
                         "direction", choice(List.of("asc", "desc"), "升序 asc 或降序 desc")), List.of("by", "direction")),
@@ -168,22 +183,32 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
         for (Group group : groups) {
             if (group.field != null) requireField(group.field, kinds);
         }
+        boolean minuteGroup = groups.contains(Group.MINUTE);
+        if (minuteGroup && (kinds.contains(Kind.SESSION) || groups.stream().anyMatch(g -> g != Group.MINUTE && g != Group.SESSION)))
+            throw new Invalid("分钟分组用于逐分钟或逐条明细，只能搭配场次分组");
+        Integer bucketMinutes = null;
+        if (input.containsKey("bucketMinutes")) {
+            if (!minuteGroup) throw new Invalid("bucketMinutes 仅用于分钟分组");
+            bucketMinutes = boundedInteger(input.get("bucketMinutes"), MAX_BUCKET_MINUTES, "每组分钟数");
+        }
         var filters = list(input, "filters", "筛选条件", false, MAX_FILTERS).stream()
                 .map(item -> filter(item, kinds)).toList();
         var measures = list(input, "metrics", "汇总列", true, MAX_MEASURES).stream().map(item -> {
             Measure measure = item instanceof String text ? METRICS.get(text) : null;
             if (measure == null) throw new Invalid("未知汇总列");
-            if (combined && measure != COUNT && measure != DISTINCT
+            if (combined && measure != COUNT && measure != DISTINCT && measure != DISTINCT_PAYING
                     && !(measure.operation() == Operation.SUM && measure.field() == Field.AMOUNT))
-                throw new Invalid("合选记录种类只能汇总条数、金额或不同观众人数");
+                throw new Invalid("合选记录种类只能汇总条数、金额、不同观众人数或付费人数");
             if (measure == DISTINCT) requireField(Field.AUDIENCE, kinds);
+            if (measure == DISTINCT_PAYING && !PAID_KINDS.containsAll(kinds) && !kinds.contains(Kind.AUDIENCE_ACTIVITY))
+                throw new Invalid("付费人数适用于付费事件或观众活动");
             if (measure.field() != null) requireField(measure.field(), kinds);
             return measure;
         }).toList();
         if (new HashSet<>(measures).size() != measures.size()) throw new Invalid("汇总列不能重复");
         Sort sort = input.containsKey("sort") ? sort(input.get("sort"), groups, measures) : null;
-        Integer limit = input.containsKey("limit") ? limit(input.get("limit")) : null;
-        return new AssistantAggregateRequest(kinds, from, to, filters, groups, measures, sort, limit);
+        Integer limit = input.containsKey("limit") ? boundedInteger(input.get("limit"), MAX_LIMIT, "前 N 行") : null;
+        return new AssistantAggregateRequest(kinds, from, to, filters, groups, measures, sort, limit, bucketMinutes);
     }
 
     boolean usesAmount() {
@@ -200,6 +225,7 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
                 JSONObject.of("field", f.field().key, "op", f.comparison().key, "value", f.value())).toList());
         if (sort != null) args.put("sort", JSONObject.of("by", sort.by(), "direction", sort.descending() ? "desc" : "asc"));
         if (limit != null) args.put("limit", limit);
+        if (bucketMinutes != null) args.put("bucketMinutes", bucketMinutes);
         return args;
     }
 
@@ -219,7 +245,10 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
         }
         if (!(raw instanceof String value) || value.isBlank() || value.length() > 80)
             throw new Invalid("文字筛选需填写 1–80 字");
-        if (field == Field.NAME || field == Field.OPENED_GIFT) {
+        if (field == Field.TEXT) {
+            if (comparison != Comparison.EQ && comparison != Comparison.CONTAINS)
+                throw new Invalid("弹幕文字支持等于或包含");
+        } else if (field == Field.NAME || field == Field.OPENED_GIFT) {
             if (comparison != Comparison.EQ && comparison != Comparison.CONTAINS)
                 throw new Invalid("名称支持等于或包含");
         } else if (comparison != Comparison.EQ) {
@@ -257,14 +286,14 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
         return new Sort(by, "desc".equals(value.get("direction")));
     }
 
-    private static int limit(Object raw) {
+    private static int boundedInteger(Object raw, int max, String label) {
         if (raw instanceof Number number) {
             BigDecimal value = decimal(number);
             if (value != null && value.compareTo(BigDecimal.ONE) >= 0
-                    && value.compareTo(BigDecimal.valueOf(MAX_LIMIT)) <= 0 && value.stripTrailingZeros().scale() <= 0)
+                    && value.compareTo(BigDecimal.valueOf(max)) <= 0 && value.stripTrailingZeros().scale() <= 0)
                 return value.intValueExact();
         }
-        throw new Invalid("前 N 行需为 1–50 的整数");
+        throw new Invalid(label + "需为 1–" + max + " 的整数");
     }
 
     private static LocalDate date(Object raw) {

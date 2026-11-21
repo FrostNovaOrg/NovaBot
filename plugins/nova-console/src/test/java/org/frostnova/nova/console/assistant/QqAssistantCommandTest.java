@@ -3,6 +3,7 @@ package org.frostnova.nova.console.assistant;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.assistant.AssistantClient;
 import org.frostnova.nova.core.assistant.AssistantKeyStore;
@@ -21,8 +22,9 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
-import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveSession;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.sender.NovaMessageSender;
@@ -308,6 +310,64 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("群聊通用汇总保留在线采样、弹幕计数和新老人数，并拒绝隐藏的金额")
+    void qqAggregateKeepsArchiveMetricsAndAppliesChannelPrivacy() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        long returning = 9300000021L, newcomer = 9300000022L;
+        long start = START + Duration.ofHours(1).toMillis();
+        long end = start + Duration.ofMinutes(2).toMillis();
+        archive.append(new LiveSession(BILIBILI, FIRST, "测试主播甲", 1L, START, START + 1000, 1, Map.of(), Map.of()));
+        archive.append(new LiveSession(BILIBILI, FIRST, "测试主播甲", 1L, start, end, 120, Map.of(), Map.of()));
+        details.appendDanmu(BILIBILI, FIRST, START, new DanmuRecord(START + 1, returning, "测试观众甲",
+                "合成历史弹幕", DanmuRecord.Type.DANMU, false, null));
+        String quote = "合成生日祝福原文";
+        details.appendDanmu(BILIBILI, FIRST, start, new DanmuRecord(start + 1, newcomer, "测试观众乙",
+                quote, DanmuRecord.Type.DANMU, false, null));
+        details.appendDanmu(BILIBILI, FIRST, start, new DanmuRecord(start + 2, newcomer, "测试观众乙",
+                "合成生日蛋糕原文", DanmuRecord.Type.DANMU, false, null));
+        details.appendEvent(BILIBILI, FIRST, start, start + 3, "gift",
+                Map.of("uid", returning, "n", 1, "val", 73.25, "pay", 73.25));
+        details.store(new LiveDetail(LiveDetail.VERSION, BILIBILI, FIRST, "测试主播甲", 1L, start, end, 120,
+                Map.of(), Map.of(), Map.of("online_count", Map.of(start, 12d), "watched_count", Map.of(start, 30d)),
+                Map.of(), Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of()));
+
+        String day = "2026-11-07";
+        modelReplies.add(JSONObject.of("tool_calls", List.of(
+                aggregateCall("minutes", JSONObject.of("kinds", List.of("minute"), "from", day, "to", day,
+                        "metrics", List.of("avg:online", "avg:watched"))),
+                aggregateCall("danmu-count", JSONObject.of("kinds", List.of("danmu"), "from", day, "to", day,
+                        "metrics", List.of("count", "distinctAudience"), "filters",
+                        List.of(JSONObject.of("field", "text", "op", "contains", "value", "生日")))),
+                aggregateCall("audience-count", JSONObject.of("kinds", List.of("audience_activity"), "from", day, "to", day,
+                        "groupBy", List.of("audienceAge"), "metrics", List.of("distinctAudience", "distinctPayingAudience"))),
+                aggregateCall("audience-amount", JSONObject.of("kinds", List.of("audience_activity"), "from", day, "to", day,
+                        "groupBy", List.of("audienceAge"), "metrics", List.of("sum:amount"))))));
+        modelReplies.add(text("平均在线 12 人，看过 30 人。含生日的弹幕有 2 条、1 人发言。新老观众各 1 人。这里不显示金额。"));
+
+        group(ASKER, "问 这场在线、生日弹幕、新老观众和打赏怎样");
+        String reply = assertReply("在线 12 人", "看过 30 人", "2 条、1 人发言",
+                "新老观众各 1 人", "不显示金额", LABEL).getContent();
+        var tools = toolResults(requests.get(1));
+        var minutes = tools.get("minutes");
+        assertEquals(12d, minutes.getJSONArray("totals").getDoubleValue(0));
+        assertEquals(30d, minutes.getJSONArray("totals").getDoubleValue(1));
+        assertEquals(1, minutes.getJSONObject("missingMinutes").getIntValue("online"));
+        var danmu = tools.get("danmu-count");
+        assertEquals(JSONArray.of(2, 1), danmu.getJSONArray("totals"));
+        assertFalse(danmu.containsKey("audienceQuotes"));
+        var counts = tools.get("audience-count");
+        assertEquals(JSONArray.of(JSONArray.of("new", 1, 0), JSONArray.of("returning", 1, 1)), counts.getJSONArray("rows"));
+        assertEquals("2026-11-06", counts.getString("historyFrom"));
+        var amount = tools.get("audience-amount");
+        assertTrue(amount.getString("reason").contains("不显示金额"));
+        assertNull(amount.get("rows"));
+        for (String forbidden : List.of(quote, "合成生日蛋糕原文", "73.25")) {
+            assertFalse(requests.toString().contains(forbidden), forbidden);
+            assertFalse(reply.contains(forbidden), forbidden);
+        }
+    }
+
+    @Test
     @DisplayName("QQ 个人次数跨会话累计，重启后也保留，控制台仍可提问")
     void userLimitPersistsAcrossSessionsAndLeavesConsoleQuotaAlone() throws Exception {
         properties.setDailyQuestionsPerQqUser(1);
@@ -574,6 +634,12 @@ class QqAssistantCommandTest {
 
     private static JSONObject call(String name, JSONObject args) {
         return JSONObject.of("tool_calls", List.of(function(name, args)));
+    }
+
+    private static JSONObject aggregateCall(String id, JSONObject args) {
+        var call = function("aggregate", args);
+        call.put("id", id);
+        return call;
     }
 
     private static JSONObject function(String name, JSONObject args) {

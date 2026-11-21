@@ -19,37 +19,62 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.IntPredicate;
+import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 
+import static org.frostnova.nova.core.service.LiveDataService.SERIES_BUCKET_MILLIS;
 import static org.frostnova.nova.console.assistant.AssistantAggregateRequest.*;
+import static org.frostnova.nova.console.assistant.AssistantAudienceHistory.*;
+import static org.frostnova.nova.console.assistant.AssistantAudienceIndex.NO_DAY;
 
 /** 一次查询的流式汇总。内存中只保留分组状态、去重集合和有限的回包样本。 */
 final class AssistantAggregateQuery {
     static final String EVENT_SOURCE = "已归档的场次事件明细";
     static final String SESSION_SOURCE = "已归档的场次汇总";
+    static final String MINUTE_SOURCE = "已归档的场次逐分钟人数序列";
+    static final String DANMU_SOURCE = "已归档的场次弹幕明细";
+    static final String AUDIENCE_SOURCE = "已归档的观众名单、事件和弹幕明细";
     static final String DAY_RULE = "北京时间 06:00 换统计日，起止日期均含当天。事件按发生时刻，场次按开播时刻整场归入";
     static final String AMOUNT_BASIS = "到手价值，与控制台流水同口径。盲盒计开出物价值，背包礼物计入流水";
-    private static final String EVENTS = "events.jsonl";
-    private static final String DANMU = "danmu.jsonl";
+    static final String MINUTE_RULE = "在线和看过人数每 60 秒一格取最大，按格起点归组。平均和极值各自跳过缺采分钟，全缺时返回 null。"
+            + "缺采数按筛选读数前的直播分钟计算";
+    static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
+            + "窗口内首次留档为新观众，窗口前首次留档为老观众。留档起点之前来过的人可能计作新观众";
+    static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
     private static final String DETAIL = "detail.json";
     private static final int TABLE_ROWS = 60;
     private static final int MAX_EVENT_CHARS = 16_384;
-    private static final int MAX_SESSION_CHARS = 1_048_576;
     private static final int MAX_GROUPS = 50_000;
     private static final int MAX_GROUP_TEXT_CHARS = 2_000_000;
+    private static final Set<String> HISTORY_FIELDS = Set.of("at", "uid", "t", "type");
+    private static final List<Kind> AUDIENCE_EVENTS = List.of(Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.FOLLOW);
+    private static final List<Kind> AUDIENCE_DANMU = List.of(Kind.DANMU, Kind.SUPER_CHAT);
 
     private final AssistantAggregateRequest request;
     private final AssistantPrivacy privacy;
+    private final AssistantAudienceHistory historyCache;
+    private final Path sessionsFile;
     private final boolean sessions;
+    private final boolean series;
+    private final boolean audienceActivity;
+    private final boolean byAge;
     private final boolean needsDistinct;
+    private final boolean needsPaying;
     private final boolean byAudience;
+    private final boolean byMinute;
+    private final boolean danmuByDay;
     private final boolean usesSessionAudience;
+    private final List<Filter> startFilters;
     private final long from;
     private final long to;
+    private final long groupMillis;
     private final List<Field> numericFields;
     private final Set<Field> fields;
     private final Set<String> eventFields;
@@ -60,40 +85,66 @@ final class AssistantAggregateQuery {
     private final JSONArray missingDetails = new JSONArray();
     private int missingDetailsCount;
     private boolean hasAvailableDetails;
+    private int scanWork;
     private int linesScanned;
+    private long historyRecordsScanned;
+    private int expectedMinutes;
+    private int missingOnline;
+    private int missingWatched;
     private int invalidLines;
     private int unknownFilters;
     private int unknownValues;
     private int groupTextChars;
     private LongFunction<String> aliases;
     private ClockGroups clockGroups;
+    private AssistantAudienceIndex.View history;
 
-    AssistantAggregateQuery(AssistantAggregateRequest request, AssistantPrivacy privacy) {
+    AssistantAggregateQuery(AssistantAggregateRequest request, AssistantPrivacy privacy,
+                            AssistantAudienceHistory historyCache, Path sessionsFile) {
         this.request = request;
         this.privacy = privacy;
+        this.historyCache = historyCache;
+        this.sessionsFile = sessionsFile;
         sessions = request.kinds().contains(Kind.SESSION);
+        series = request.kinds().contains(Kind.MINUTE);
+        audienceActivity = request.kinds().contains(Kind.AUDIENCE_ACTIVITY);
+        byAge = request.groups().contains(Group.AUDIENCE_AGE);
         needsDistinct = request.measures().stream().anyMatch(m -> m.operation() == Operation.DISTINCT);
+        needsPaying = request.measures().stream().anyMatch(m -> m.operation() == Operation.DISTINCT_PAYING);
         byAudience = request.groups().contains(Group.AUDIENCE);
+        byMinute = request.groups().contains(Group.MINUTE);
+        danmuByDay = request.kinds().contains(Kind.DANMU) && request.groups().equals(List.of(Group.DAY));
+        groupMillis = SERIES_BUCKET_MILLIS * (request.bucketMinutes() == null ? 1 : request.bucketMinutes());
         from = StatisticsDay.startOf(request.from()).toEpochMilli();
         to = StatisticsDay.startOf(request.to().plusDays(1)).toEpochMilli();
+        startFilters = request.filters().stream().filter(f -> f.field() == Field.START).toList();
         numericFields = request.measures().stream().map(Measure::field).filter(Objects::nonNull).distinct().toList();
         fields = EnumSet.noneOf(Field.class);
         fields.addAll(numericFields);
         request.filters().forEach(filter -> fields.add(filter.field()));
         request.groups().stream().map(group -> group.field).filter(Objects::nonNull).forEach(fields::add);
         usesSessionAudience = fields.contains(Field.SESSION_AUDIENCE);
-        eventFields = sessions ? Set.of() : eventFields();
-        total = new Bucket(needsDistinct, numericFields.size());
+        eventFields = sessions || series ? Set.of() : eventFields();
+        total = new Bucket(needsDistinct, needsPaying, numericFields.size());
     }
 
     JSONObject run(String platform, long uid, LiveSessionArchive archive, LiveMetricCatalog.Insights rules,
                    BiFunction<Long, String, Path> file, boolean living, Long liveStart, Instant now,
-                   AssistantQueryContext context) {
+                   AssistantQueryContext context, IntPredicate pauseHistory) {
         if (!context.amountVisible() && request.usesAmount()) return rejected(source(), HIDDEN_AMOUNT);
-        if (!sessions && !"bilibili".equals(platform)) return rejected(source(), "此平台没有提供这些事件明细");
+        if (!sessions && !"bilibili".equals(platform)) {
+            return rejected(source(), series ? "此平台没有提供逐分钟人数序列" : "此平台没有提供这些事件明细");
+        }
         boolean liveUnarchived = living && now.toEpochMilli() >= from
                 && (liveStart == null ? now.toEpochMilli() < to : liveStart < to);
-        try {
+        var historyKey = new AssistantAudienceHistory.Key(platform, uid, liveStart == null ? 0 : liveStart, sessionsFile);
+        try (var historyResult = byAge ? historyCache.load(historyKey, archive, file, pauseHistory,
+                (session, changes) -> scanHistory(session, file, changes)) : null) {
+            if (historyResult != null) {
+                history = historyResult.view();
+                historyRecordsScanned = historyResult.scannedRecords();
+                if (history == null) return historyInProgress(historyResult);
+            }
             if (sessions) {
                 Map<Long, Row> summaries = new HashMap<>();
                 archive.forEachOverlapping(platform, uid, from, to, usesSessionAudience, MAX_SESSION_CHARS, session -> {
@@ -103,9 +154,12 @@ final class AssistantAggregateQuery {
                     }
                 });
                 summaries.values().forEach(this::collect);
+            } else if (series) {
+                scanMinutes(platform, uid, archive, file, liveStart);
             } else {
                 scanEvents(platform, uid, archive, file, liveStart);
             }
+            if (history != null) checkUnchanged(historyKey, file, history);
             return table(liveUnarchived, liveStart, context);
         } catch (Invalid error) {
             return rejected(source(), error.getMessage());
@@ -122,47 +176,195 @@ final class AssistantAggregateQuery {
                 && !Objects.equals(session.startTime(), liveStart);
     }
 
-    private void scanEvents(String platform, long uid, LiveSessionArchive archive,
-                            BiFunction<Long, String, Path> file, Long liveStart) throws IOException {
-        boolean danmu = request.kinds().contains(Kind.SUPER_CHAT);
-        boolean events = !danmu || request.kinds().size() > 1;
-        var visited = new HashSet<Long>();
-        archive.forEachOverlapping(platform, uid, from, to, false, MAX_SESSION_CHARS, session -> {
-            long start = session.startTime();
-            if (!archived(session, liveStart) || !visited.add(start)) return;
-            if (visited.size() > MAX_GROUPS) throw stateLimit();
-            var missing = new JSONArray();
-            if (events) scanDetails(file.apply(start, EVENTS), session, false, missing);
-            if (danmu) scanDetails(file.apply(start, DANMU), session, true, missing);
-            if (!missing.isEmpty()) {
-                missingDetailsCount++;
-                if (missingDetails.size() < TABLE_ROWS)
-                    missingDetails.add(JSONObject.of("session", start, "files", missing));
+    private boolean selectedStart(long start) {
+        if (startFilters.isEmpty()) return true;
+        var value = BigDecimal.valueOf(start);
+        return startFilters.stream().allMatch(f -> f.comparison().matches(value.compareTo((BigDecimal) f.value())));
+    }
+
+    private JSONObject historyInProgress(AssistantAudienceHistory.Result progress) {
+        int completed = progress.completedSessions(), total = progress.totalSessions();
+        var result = rejected(source(), "观众首次出现记录还在建立，已完成 " + completed + "/" + total + " 场，请稍后再问");
+        result.put("historyCompletedSessions", completed);
+        result.put("historyTotalSessions", total);
+        result.put("historyScannedRecords", progress.scannedRecords());
+        return result;
+    }
+
+    private void scanHistory(LiveSession session, BiFunction<Long, String, Path> file, Changes changes) {
+        long start = session.startTime();
+        changes.observe(start);
+        Set<Long> roster = roster(session, changes::count);
+        scanHistoryFile(file.apply(start, EVENTS), false, roster, changes);
+        scanHistoryFile(file.apply(start, DANMU), true, roster, changes);
+        roster.forEach(person -> changes.observe(person, start));
+    }
+
+    private void scanHistoryFile(Path path, boolean danmu, Set<Long> roster, Changes changes) {
+        scan(path, line -> {
+            changes.count(1);
+            try {
+                readDetail(line, HISTORY_FIELDS);
+            } catch (RuntimeException error) {
+                changes.skipInvalidLine();
+                return;
+            }
+            if (!timed(danmu)) return;
+            if (detail.audience != null && detail.audience > 0) {
+                roster.remove(detail.audience);
+                changes.observe(detail.audience, detail.at);
+            } else {
+                changes.observe(detail.at);
             }
         });
     }
 
-    private void scanDetails(Path path, LiveSession session, boolean danmu, JSONArray missing) {
-        if (scan(path, session.startTime(), danmu) || knownEmpty(path, session.metrics(), danmu)) {
+    private static Set<Long> roster(LiveSession session, LongConsumer count) {
+        var roster = new HashSet<Long>();
+        for (var people : session.userSets().values()) {
+            count.accept(people.size());
+            for (Long person : people) if (person != null && person > 0) roster.add(person);
+        }
+        return roster;
+    }
+
+    private static boolean visitSession(Set<Long> visited, long start) {
+        boolean fresh = visited.add(start);
+        if (visited.size() > MAX_GROUPS) throw stateLimit();
+        return fresh;
+    }
+
+    private void scanMinutes(String platform, long uid, LiveSessionArchive archive,
+                             BiFunction<Long, String, Path> file, Long liveStart) throws IOException {
+        var visited = new HashSet<Long>();
+        archive.forEachOverlapping(platform, uid, from, to, false, MAX_SESSION_CHARS, session -> {
+            long start = session.startTime();
+            if (!archived(session, liveStart) || !selectedStart(start) || !visitSession(visited, start)) return;
+            long first = firstMinute(start);
+            int minutes = minuteCount(session, first);
+            if (minutes == 0) return;
+            expectedMinutes += minutes;
+            var samples = readSamples(file.apply(start, DETAIL), first, minutes);
+            if (samples == null) addMissing(start, JSONArray.of(DETAIL));
+            else hasAvailableDetails = true;
+            for (int i = 0; i < minutes; i++) {
+                BigDecimal online = samples == null ? null : samples.online()[i];
+                BigDecimal watched = samples == null ? null : samples.watched()[i];
+                if (online == null) missingOnline++;
+                if (watched == null) missingWatched++;
+                if (Thread.currentThread().isInterrupted()) throw new Invalid("查数已中止");
+                collect(new Minute(start, first + i * SERIES_BUCKET_MILLIS, online, watched));
+            }
+        });
+    }
+
+    private AssistantMinuteSeries readSamples(Path path, long first, int count) {
+        try {
+            var samples = AssistantMinuteSeries.read(path, first, count);
+            if (samples == null) invalidLines++;
+            return samples;
+        } catch (NoSuchFileException ignored) {
+            return null;
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
+        }
+    }
+
+    private long firstMinute(long start) { return Math.max(from, minuteAt(start)); }
+
+    private int minuteCount(LiveSession session, long first) {
+        long end = Math.min(to, session.endTime());
+        if (end <= Math.max(from, session.startTime())) return 0;
+        long count = (end - 1 - first) / SERIES_BUCKET_MILLIS + 1;
+        charge(count);
+        return (int) count;
+    }
+
+    private static long minuteAt(long at) { return Math.floorDiv(at, SERIES_BUCKET_MILLIS) * SERIES_BUCKET_MILLIS; }
+
+    private long minuteGroup(long at, long start) {
+        long first = minuteAt(start);
+        return first + Math.floorDiv(at - first, groupMillis) * groupMillis;
+    }
+
+    private void seedEventMinutes(LiveSession session, boolean missing) {
+        long first = firstMinute(session.startTime());
+        int minutes = minuteCount(session, first);
+        if (minutes == 0) return;
+        long end = first + minutes * SERIES_BUCKET_MILLIS;
+        long start = session.startTime();
+        var groupKeys = request.groups();
+        for (long at = minuteGroup(first, start); at < end; at += groupMillis) {
+            Key key = groupKeys.get(0) == Group.SESSION ? new Key(start, at) : new Key(at, groupKeys.size() == 2 ? start : null);
+            groups.computeIfAbsent(key, this::bucket).incomplete |= missing;
+        }
+    }
+
+    private void markMissingDays(LiveSession session) {
+        var first = StatisticsDay.dateOf(Instant.ofEpochMilli(Math.max(from, session.startTime())));
+        var last = StatisticsDay.dateOf(Instant.ofEpochMilli(Math.min(to - 1, session.endTime())));
+        for (var day = first; !day.isAfter(last); day = day.plusDays(1)) {
+            groups.get(new Key(day.toString(), null)).incomplete = true;
+        }
+    }
+
+    private void addMissing(long start, JSONArray files) {
+        missingDetailsCount++;
+        if (missingDetails.size() < TABLE_ROWS) missingDetails.add(JSONObject.of("session", start, "files", files));
+    }
+
+    private void scanEvents(String platform, long uid, LiveSessionArchive archive,
+                            BiFunction<Long, String, Path> file, Long liveStart) throws IOException {
+        List<Kind> danmu = audienceActivity ? AUDIENCE_DANMU : request.kinds().stream().filter(AssistantAggregateQuery::isDanmu).toList();
+        List<Kind> events = audienceActivity ? AUDIENCE_EVENTS : request.kinds().stream().filter(k -> !isDanmu(k)).toList();
+        if (danmuByDay) {
+            for (var day = request.from(); !day.isAfter(request.to()); day = day.plusDays(1)) {
+                groups.computeIfAbsent(new Key(day.toString(), null), this::bucket);
+            }
+        }
+        var visited = new HashSet<Long>();
+        archive.forEachOverlapping(platform, uid, from, to, audienceActivity, MAX_SESSION_CHARS, session -> {
+            long start = session.startTime();
+            if (!archived(session, liveStart) || !selectedStart(start) || !visitSession(visited, start)) return;
+            var missing = new JSONArray();
+            Set<Long> roster = audienceActivity ? roster(session, this::charge) : null;
+            if (!events.isEmpty()) scanDetails(file.apply(start, EVENTS), session, events, false, missing, roster);
+            if (!danmu.isEmpty()) scanDetails(file.apply(start, DANMU), session, danmu, true, missing, roster);
+            if (audienceActivity && session.hasUserSets()) hasAvailableDetails = true;
+            if (roster != null && start >= from) roster.forEach(person -> collect(new Attendance(start, person)));
+            if (!missing.isEmpty()) addMissing(start, missing);
+            if (danmuByDay && !missing.isEmpty()) markMissingDays(session);
+            if (byMinute) seedEventMinutes(session, !missing.isEmpty());
+        });
+    }
+
+    private void scanDetails(Path path, LiveSession session, List<Kind> kinds, boolean danmu,
+                             JSONArray missing, Set<Long> roster) {
+        if (scan(path, line -> {
+            charge(1);
+            linesScanned++;
+            Row row = event(line, session.startTime(), danmu, roster);
+            if (row != null) collect(row);
+        }) || knownEmpty(path, session.metrics(), kinds)) {
             hasAvailableDetails = true;
         } else {
             missing.add(path.getFileName().toString());
         }
     }
 
-    private boolean knownEmpty(Path path, Map<String, Double> metrics, boolean danmu) {
+    private static boolean knownEmpty(Path path, Map<String, Double> metrics, List<Kind> kinds) {
         // 逐条归档在第一条记录到来时创建。封存过的场次可以没有这份文件。
         boolean sealed = Files.isRegularFile(path.resolveSibling(DETAIL));
-        for (Kind kind : request.kinds()) {
-            if ((kind == Kind.SUPER_CHAT) != danmu) continue;
+        for (Kind kind : kinds) {
             boolean recordedZero = false;
             for (String key : switch (kind) {
                 case GIFT -> List.of("gift_value", "gift_paid");
                 case BOX -> List.of("box_count");
                 case GUARD -> List.of("guard_value", "captain_count", "commander_count", "governor_count");
                 case SUPER_CHAT -> List.of("super_chat_count", "super_chat_value");
+                case DANMU -> List.of("danmu_count");
                 case FOLLOW -> List.of("follow_count");
-                case PK, SESSION -> List.<String>of();
+                case PK, SESSION, MINUTE, AUDIENCE_ACTIVITY -> List.<String>of();
             }) {
                 Double value = metrics.get(key);
                 if (value == null) continue;
@@ -175,15 +377,12 @@ final class AssistantAggregateQuery {
         return true;
     }
 
-    private boolean scan(Path path, long start, boolean danmu) {
+    private static boolean scan(Path path, Consumer<String> visit) {
         try (var stream = JsonlFiles.lines(path, MAX_EVENT_CHARS)) {
             var lines = stream.iterator();
             while (lines.hasNext()) {
                 if (Thread.currentThread().isInterrupted()) throw new Invalid("查数已中止");
-                if (++linesScanned > AssistantQueryService.LINE_LIMIT)
-                    throw new Invalid("明细超过 " + AssistantQueryService.LINE_LIMIT + " 行扫描上限，请缩短时间范围");
-                Row row = event(lines.next(), start, danmu);
-                if (row != null) collect(row);
+                visit.accept(lines.next());
             }
             return true;
         } catch (NoSuchFileException ignored) {
@@ -193,12 +392,32 @@ final class AssistantAggregateQuery {
         }
     }
 
-    private Row event(String line, long start, boolean danmu) {
-        try { readDetail(line); }
+    private void charge(long count) {
+        if (Thread.currentThread().isInterrupted()) throw new Invalid("查数已中止");
+        if (count > AssistantQueryService.LINE_LIMIT - scanWork) {
+            String unit = series || byAge || audienceActivity || byMinute ? " 条" : " 行";
+            throw new Invalid("明细超过 " + AssistantQueryService.LINE_LIMIT + unit + "扫描上限，请缩短时间范围");
+        }
+        scanWork += (int) count;
+    }
+
+    private boolean decode(String line, Set<String> keys) {
+        try { readDetail(line, keys); }
         catch (RuntimeException ignored) {
             invalidLines++;
-            return null;
+            return false;
         }
+        return true;
+    }
+
+    private boolean timed(boolean danmu) {
+        return (danmu ? detail.danmuType : detail.type) != null && detail.at != null && detail.at > 0;
+    }
+
+    private static boolean isDanmu(Kind kind) { return kind == Kind.SUPER_CHAT || kind == Kind.DANMU; }
+
+    private Row event(String line, long start, boolean danmu, Set<Long> roster) {
+        if (!decode(line, eventFields)) return null;
         String type = danmu ? detail.danmuType : detail.type;
         Kind kind = type == null ? null : switch (type) {
             case "gift" -> danmu ? null : Kind.GIFT;
@@ -207,15 +426,21 @@ final class AssistantAggregateQuery {
             case "follow" -> danmu ? null : Kind.FOLLOW;
             case "pk_settle" -> danmu ? null : Kind.PK;
             case "SUPER_CHAT" -> danmu ? Kind.SUPER_CHAT : null;
+            case "DANMU", "EMOJI" -> danmu ? Kind.DANMU : null;
             default -> null;
         };
-        if (kind == null || !request.kinds().contains(kind)) return null;
-        Long at = detail.at;
-        if (at == null || at <= 0) {
+        if (audienceActivity) {
+            if (detail.audience != null && timed(danmu)) {
+                roster.remove(detail.audience);
+                if (kind == null) kind = Kind.AUDIENCE_ACTIVITY;
+            }
+            if (kind == null || kind == Kind.PK && detail.audience == null) return null;
+        } else if (kind == null || !request.kinds().contains(kind)) return null;
+        if (detail.at == null || detail.at <= 0) {
             invalidLines++;
             return null;
         }
-        if (at < from || at >= to) return null;
+        if (detail.at < from || detail.at >= to) return null;
         detail.kind = kind;
         detail.start = start;
         return detail;
@@ -223,13 +448,15 @@ final class AssistantAggregateQuery {
 
     private Set<String> eventFields() {
         var keys = new HashSet<>(Set.of("at", "t", "type"));
-        if (needsDistinct) keys.add("uid");
+        if (needsDistinct || needsPaying || audienceActivity) keys.add("uid");
         if (byAudience) keys.addAll(List.of("un", "uname"));
+        if (needsPaying) keys.addAll(List.of("val", "pay", "bp"));
         for (Field field : fields) {
             keys.addAll(switch (field) {
                 case NAME -> List.of("gn", "bn");
                 case OPENED_GIFT -> List.of("gn");
                 case AUDIENCE -> List.of("uid");
+                case TEXT -> List.of("text");
                 case GUARD_OPERATION -> List.of("ot");
                 case GUARD_LEVEL -> List.of("lv");
                 case PK_RESULT -> List.of("rs");
@@ -237,6 +464,7 @@ final class AssistantAggregateQuery {
                 case AMOUNT -> List.of("val");
                 case MY_VOTES -> List.of("mv");
                 case OPPONENT_VOTES -> List.of("op");
+                case START -> List.of();
                 default -> throw new IllegalStateException();
             });
         }
@@ -244,14 +472,14 @@ final class AssistantAggregateQuery {
     }
 
     /** 跳过无关字段和留言原文，只解码当前查询用到的列。 */
-    private void readDetail(String line) {
+    private void readDetail(String line, Set<String> keys) {
         detail.clear();
         try (JSONReader reader = JSONReader.of(line, readerContext)) {
             if (!reader.nextIfObjectStart()) throw new IllegalArgumentException();
             while (!reader.nextIfObjectEnd()) {
                 String key = reader.readFieldName();
                 if (key == null) throw new IllegalArgumentException();
-                if (!eventFields.contains(key)) {
+                if (!keys.contains(key)) {
                     reader.skipValue();
                     continue;
                 }
@@ -262,6 +490,7 @@ final class AssistantAggregateQuery {
                     case "uid" -> detail.audience = integer(readNumber(reader));
                     case "un" -> detail.name = readText(reader);
                     case "uname" -> detail.danmuName = readText(reader);
+                    case "text" -> detail.text = readText(reader);
                     case "gn" -> detail.giftName = readText(reader);
                     case "bn" -> detail.boxName = readText(reader);
                     case "ot" -> detail.guardOperation = label(readNumber(reader), 1, "open", "renew");
@@ -269,6 +498,8 @@ final class AssistantAggregateQuery {
                     case "rs" -> detail.pkResult = label(readNumber(reader), 0, "loss", "win", "draw");
                     case "n" -> detail.quantity = number(readNumber(reader));
                     case "val" -> detail.amount = number(readNumber(reader));
+                    case "pay" -> detail.paid = number(readNumber(reader));
+                    case "bp" -> detail.boxPrice = number(readNumber(reader));
                     case "mv" -> detail.myVotes = number(readNumber(reader));
                     case "op" -> detail.opponentVotes = opponentVotes(reader);
                     default -> throw new IllegalStateException();
@@ -328,12 +559,38 @@ final class AssistantAggregateQuery {
         Object value(Field field);
         default Long audience() { return null; }
         default String nickname() { return null; }
+        default BigDecimal paid() { return BigDecimal.ZERO; }
     }
 
     private record Summary(long start, Map<Field, BigDecimal> values) implements Row {
         @Override public Kind kind() { return Kind.SESSION; }
         @Override public long at() { return start; }
         @Override public Object value(Field field) { return values.get(field); }
+    }
+
+    private record Minute(long start, long at, BigDecimal online, BigDecimal watched) implements Row {
+        @Override public Kind kind() { return Kind.MINUTE; }
+        @Override public Object value(Field field) {
+            return switch (field) {
+                case ONLINE -> online;
+                case WATCHED -> watched;
+                case START -> BigDecimal.valueOf(start);
+                default -> throw new IllegalStateException();
+            };
+        }
+    }
+
+    private record Attendance(long start, Long audience) implements Row {
+        @Override public Kind kind() { return Kind.AUDIENCE_ACTIVITY; }
+        @Override public long at() { return start; }
+        @Override public Object value(Field field) {
+            return switch (field) {
+                case AUDIENCE -> audience;
+                case AMOUNT -> BigDecimal.ZERO;
+                case START -> BigDecimal.valueOf(start);
+                default -> throw new IllegalStateException();
+            };
+        }
     }
 
     /** 每次只处理一行，分组状态会取走需要保留的值。 */
@@ -346,6 +603,7 @@ final class AssistantAggregateQuery {
         String danmuType;
         String name;
         String danmuName;
+        String text;
         String giftName;
         String boxName;
         String guardOperation;
@@ -353,6 +611,8 @@ final class AssistantAggregateQuery {
         String pkResult;
         BigDecimal quantity;
         BigDecimal amount;
+        BigDecimal paid;
+        BigDecimal boxPrice;
         BigDecimal myVotes;
         BigDecimal opponentVotes;
 
@@ -363,6 +623,7 @@ final class AssistantAggregateQuery {
             danmuType = null;
             name = null;
             danmuName = null;
+            text = null;
             giftName = null;
             boxName = null;
             guardOperation = null;
@@ -370,6 +631,8 @@ final class AssistantAggregateQuery {
             pkResult = null;
             quantity = null;
             amount = null;
+            paid = null;
+            boxPrice = null;
             myVotes = null;
             opponentVotes = null;
         }
@@ -381,8 +644,17 @@ final class AssistantAggregateQuery {
 
         @Override
         public String nickname() {
-            String nickname = kind == Kind.SUPER_CHAT ? danmuName : name;
+            String nickname = isDanmu(kind) ? danmuName : name;
             return nickname == null || nickname.length() > 128 ? null : nickname;
+        }
+
+        @Override public BigDecimal paid() {
+            return switch (kind) {
+                case GIFT, GUARD -> paid;
+                case BOX -> paid == null ? boxPrice : paid;
+                case SUPER_CHAT -> amount;
+                default -> BigDecimal.ZERO;
+            };
         }
 
         @Override
@@ -391,13 +663,18 @@ final class AssistantAggregateQuery {
                 case NAME -> kind == Kind.BOX ? boxName : giftName;
                 case OPENED_GIFT -> giftName;
                 case AUDIENCE -> audience;
+                case TEXT -> text;
                 case GUARD_OPERATION -> guardOperation;
                 case GUARD_LEVEL -> guardLevel;
                 case PK_RESULT -> pkResult;
                 case QUANTITY -> quantity;
-                case AMOUNT -> amount;
+                case AMOUNT -> switch (kind) {
+                    case GIFT, BOX, GUARD, SUPER_CHAT -> amount;
+                    default -> BigDecimal.ZERO;
+                };
                 case MY_VOTES -> myVotes;
                 case OPPONENT_VOTES -> opponentVotes;
+                case START -> BigDecimal.valueOf(start);
                 default -> throw new IllegalStateException();
             };
         }
@@ -433,7 +710,7 @@ final class AssistantAggregateQuery {
         catch (ArithmeticException ignored) { return null; }
     }
 
-    private static BigDecimal number(Object raw) {
+    static BigDecimal number(Object raw) {
         BigDecimal value = raw instanceof Number number ? decimal(number) : null;
         return value != null && value.precision() <= 30 && Math.abs((long) value.scale()) <= 18 ? value : null;
     }
@@ -459,13 +736,16 @@ final class AssistantAggregateQuery {
 
     private void collect(Row row) {
         Long audience = privacy.canAttribute(row.audience()) ? row.audience() : null;
-        if (byAudience && audience == null || !matches(row, audience)) return;
-        addCount(total, audience);
-        Bucket bucket = request.groups().isEmpty() ? null : groupBucket(row, audience);
-        boolean unknown = false;
+        if ((byAudience || byAge) && audience == null || !matches(row, audience)) return;
+        BigDecimal paid = needsPaying && audience != null ? row.paid() : BigDecimal.ZERO;
+        addCount(total, audience, paid);
+        Bucket bucket = request.groups().isEmpty() ? null : groupBucket(row);
+        if (bucket != null) addCount(bucket, audience, paid);
+        boolean unknown = paid == null || paid.signum() < 0;
         for (int i = 0; i < numericFields.size(); i++) {
-            var number = (BigDecimal) row.value(numericFields.get(i));
-            if (number == null) unknown = true;
+            Field field = numericFields.get(i);
+            var number = (BigDecimal) row.value(field);
+            if (number == null) unknown |= !isSample(field);
             else {
                 total.numbers[i].add(number);
                 if (bucket != null) bucket.numbers[i].add(number);
@@ -474,11 +754,10 @@ final class AssistantAggregateQuery {
         if (unknown) unknownValues++;
     }
 
-    private Bucket groupBucket(Row row, Long audience) {
+    private Bucket groupBucket(Row row) {
         var keys = request.groups();
         var key = new Key(group(keys.get(0), row), keys.size() == 2 ? group(keys.get(1), row) : null);
         Bucket bucket = groups.computeIfAbsent(key, this::bucket);
-        addCount(bucket, audience);
         if (byAudience && row.at() >= bucket.namedAt) {
             String name = row.nickname();
             if (name != null) {
@@ -499,9 +778,22 @@ final class AssistantAggregateQuery {
             case HOUR -> clockGroups(row.at()).hour();
             case WEEKDAY -> clockGroups(row.at()).weekday();
             case SESSION -> row.start();
+            case MINUTE -> minuteGroup(row.at(), row.start());
             case KIND -> row.kind().key;
+            case AUDIENCE_AGE -> age(row.audience());
             default -> row.value(group.field);
         };
+    }
+
+    private String age(long audience) {
+        try {
+            int first = history.firstDay(audience);
+            if (first == NO_DAY || first > request.to().toEpochDay())
+                throw new Invalid("无法核对观众首次留档，请稍后重试");
+            return first < request.from().toEpochDay() ? "returning" : "new";
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
+        }
     }
 
     private ClockGroups clockGroups(long at) {
@@ -522,16 +814,21 @@ final class AssistantAggregateQuery {
         if (key.first() instanceof String text) groupTextChars += text.length();
         if (key.second() instanceof String text) groupTextChars += text.length();
         checkTextBudget();
-        return new Bucket(needsDistinct && !byAudience, numericFields.size());
+        return new Bucket(needsDistinct && !byAudience, needsPaying, numericFields.size());
     }
 
     private void checkTextBudget() {
         if (groupTextChars > MAX_GROUP_TEXT_CHARS) throw stateLimit();
     }
 
-    private void addCount(Bucket bucket, Long audience) {
+    private static void addCount(Bucket bucket, Long audience, BigDecimal paid) {
         bucket.count++;
-        if (bucket.audience != null && audience != null) bucket.audience.add(audience);
+        if (audience == null) return;
+        if (bucket.audience != null) bucket.audience.add(audience);
+        if (bucket.paying != null) {
+            if (paid == null || paid.signum() < 0) bucket.unknownPaying = true;
+            else if (paid.signum() > 0) bucket.paying.add(audience);
+        }
     }
 
     private JSONObject table(boolean liveUnarchived, Long liveStart, AssistantQueryContext context) {
@@ -539,7 +836,7 @@ final class AssistantAggregateQuery {
         var columns = new JSONArray();
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));
-        boolean allMissing = missingDetailsCount > 0 && !hasAvailableDetails;
+        boolean allMissing = !series && missingDetailsCount > 0 && !hasAvailableDetails;
         var totals = new JSONArray();
         if (!request.groups().isEmpty()) totals.add("合计");
         if (request.groups().size() == 2) totals.add(null);
@@ -551,7 +848,7 @@ final class AssistantAggregateQuery {
             row.add(cell(ranked.key().first(), ranked.bucket(), request.groups().get(0)));
             if (request.groups().size() == 2)
                 row.add(cell(ranked.key().second(), ranked.bucket(), request.groups().get(1)));
-            appendMeasures(row, ranked.bucket(), false);
+            appendMeasures(row, ranked.bucket(), ranked.bucket().incomplete);
             rows.add(row);
         });
         int groupCount = request.groups().isEmpty() ? 1 : groups.size();
@@ -566,6 +863,23 @@ final class AssistantAggregateQuery {
         if (missingDetailsCount > missingDetails.size()) result.put("missingDetailsTruncated", true);
         if (missingDetailsCount > 0 || invalidLines > 0 || unknownFilters > 0 || unknownValues > 0)
             result.put("coverageNote", "缺失明细和无法读取的记录未计入。null 表示缺少完整数值");
+        if (series) {
+            result.put("expectedMinutes", expectedMinutes);
+            result.put("missingMinutes", JSONObject.of("online", missingOnline, "watched", missingWatched));
+            result.put("minuteNote", MINUTE_RULE);
+        } else if (byMinute || request.kinds().contains(Kind.DANMU)) {
+            result.put("zeroNote", ZERO_RULE);
+        }
+        if (byAge) {
+            int earliest = history.progress.earliestDay();
+            result.put("historyFrom", earliest == NO_DAY ? null : LocalDate.ofEpochDay(earliest).toString());
+            result.put("historyNote", earliest == NO_DAY ? "此主播暂无可用的历史留档。" + HISTORY_RULE : HISTORY_RULE);
+            result.put("historyScannedRecords", historyRecordsScanned);
+            if (history.progress.invalidLines() > 0) result.put("historyInvalidLines", history.progress.invalidLines());
+        }
+        if (needsPaying) {
+            result.put("payingAudienceBasis", "按正实扣去重可识别的付费观众。盲盒缺实扣时用存档盒价估算，醒目留言用存档金额。实扣无法判断时该组付费人数未知");
+        }
         if (liveUnarchived) {
             result.put("liveUnarchivedStart", liveStart);
             result.put("liveNote", "正在直播的场次还没归档，未计入");
@@ -589,9 +903,13 @@ final class AssistantAggregateQuery {
         return switch (measure.operation()) {
             case COUNT -> bucket.count;
             case DISTINCT -> bucket.audience == null ? 1 : bucket.audience.size();
-            default -> bucket.numbers[numericFields.indexOf(measure.field())].value(measure.operation(), bucket.count);
+            case DISTINCT_PAYING -> bucket.unknownPaying ? null : bucket.paying.size();
+            default -> bucket.numbers[numericFields.indexOf(measure.field())]
+                    .value(measure.operation(), bucket.count, isSample(measure.field()));
         };
     }
+
+    private boolean isSample(Field field) { return series && (field == Field.ONLINE || field == Field.WATCHED); }
 
     private List<Ranked> topRows(int limit) {
         Sort sort = request.sort();
@@ -621,7 +939,7 @@ final class AssistantAggregateQuery {
                         : new Key(key.first(), alias((Long) key.second()));
             }
             Object sortValue = null;
-            if (metric != null) sortValue = value(bucket, metric);
+            if (metric != null) sortValue = bucket.incomplete ? null : value(bucket, metric);
             else if (sort != null) sortValue = sort.by().equals(firstGroup.key) ? orderKey.first() : orderKey.second();
             var ranked = new Ranked(key, orderKey, bucket, sortValue);
             if (best.size() < limit) best.add(ranked);
@@ -645,7 +963,12 @@ final class AssistantAggregateQuery {
         return aliases.apply(uid);
     }
 
-    private String source() { return sessions ? SESSION_SOURCE : EVENT_SOURCE; }
+    private String source() {
+        if (sessions) return SESSION_SOURCE;
+        if (series) return MINUTE_SOURCE;
+        if (audienceActivity) return AUDIENCE_SOURCE;
+        return request.kinds().contains(Kind.DANMU) ? DANMU_SOURCE : EVENT_SOURCE;
+    }
 
     static JSONObject rejected(String source, String reason) {
         return JSONObject.of("source", source, "rows", null, "reason", reason);
@@ -660,12 +983,16 @@ final class AssistantAggregateQuery {
     private static final class Bucket {
         long count;
         final AudienceSet audience;
+        final AudienceSet paying;
         final Numeric[] numbers;
+        boolean incomplete;
+        boolean unknownPaying;
         String name;
         long namedAt;
 
-        Bucket(boolean distinct, int fields) {
+        Bucket(boolean distinct, boolean needsPaying, int fields) {
             audience = distinct ? new AudienceSet() : null;
+            paying = needsPaying ? new AudienceSet() : null;
             numbers = new Numeric[fields];
             Arrays.setAll(numbers, i -> new Numeric());
         }
@@ -680,27 +1007,20 @@ final class AssistantAggregateQuery {
 
         void add(long uid) {
             if (keys == null) keys = new long[4];
-            int index = slot(keys, uid);
+            int index = AssistantAudienceHistory.slot(keys, uid);
             if (keys[index] == uid) return;
             if (size == keys.length / 2) {
                 var larger = new long[keys.length * 2];
                 for (long key : keys) {
-                    if (key != 0) larger[slot(larger, key)] = key;
+                    if (key != 0) larger[AssistantAudienceHistory.slot(larger, key)] = key;
                 }
                 keys = larger;
-                index = slot(keys, uid);
+                index = AssistantAudienceHistory.slot(keys, uid);
             }
             keys[index] = uid;
             size++;
         }
 
-        private static int slot(long[] keys, long uid) {
-            long mixed = uid * 0x9e3779b97f4a7c15L;
-            int mask = keys.length - 1;
-            int index = (int) (mixed ^ (mixed >>> 32)) & mask;
-            while (keys[index] != 0 && keys[index] != uid) index = (index + 1) & mask;
-            return index;
-        }
     }
 
     private static final class Numeric {
@@ -716,8 +1036,8 @@ final class AssistantAggregateQuery {
             if (max == null || value.compareTo(max) > 0) max = value;
         }
 
-        BigDecimal value(Operation op, long count) {
-            if (known != count) return null;
+        BigDecimal value(Operation op, long count, boolean skipMissing) {
+            if (!skipMissing && known != count) return null;
             return switch (op) {
                 case SUM -> sum;
                 case MAX -> max;

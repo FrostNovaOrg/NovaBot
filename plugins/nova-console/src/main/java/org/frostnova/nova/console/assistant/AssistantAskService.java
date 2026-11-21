@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 /** 绑定单个主播的多轮问答，身份替换、限额与数字核对都在本机完成。 */
@@ -367,7 +368,8 @@ public class AssistantAskService {
 
     private JSONObject query(String platform, Long uid, String name, JSONObject args, AssistantQueryContext context,
                              AssistantPrivacy privacy, Budget budget) {
-        Future<JSONObject> future = queryExecutor.submit(() -> AssistantTools.query(queries, platform, uid, name, args, context, privacy));
+        Future<JSONObject> future = queryExecutor.submit(() ->
+                AssistantTools.query(queries, platform, uid, name, args, context, privacy, budget::pauseHistory));
         try {
             JSONObject result = future.get(Math.max(1, budget.remaining(35).toMillis()), TimeUnit.MILLISECONDS);
             return result == null ? JSONObject.of("source", "查数服务", "reason", "没有这份数据") : result;
@@ -398,9 +400,19 @@ public class AssistantAskService {
     private final class Budget {
         private final Instant start = clock.instant();
         private final long nanos = System.nanoTime();
+        private final AtomicLong historyStarted = new AtomicLong();
+
         Duration remaining(int seconds) {
             long elapsed = Math.max(Duration.between(start, clock.instant()).toNanos(), System.nanoTime() - nanos);
             return Duration.ofNanos(Math.max(0, TimeUnit.SECONDS.toNanos(seconds) - elapsed));
+        }
+
+        boolean pauseHistory(int completed) {
+            long current = System.nanoTime();
+            long started = historyStarted.updateAndGet(value -> value == 0 ? current : value);
+            // 预留写入索引和返回进度的时间，沿用整问已有的查数时限。
+            return current - started >= AssistantAudienceHistory.BUILD_NANOS
+                    || remaining(35).compareTo(Duration.ofSeconds(2)) <= 0;
         }
     }
 }

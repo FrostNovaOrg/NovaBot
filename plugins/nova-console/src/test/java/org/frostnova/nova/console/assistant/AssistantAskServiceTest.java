@@ -27,6 +27,7 @@ import org.springframework.web.client.RestTemplate;
 import java.nio.file.*;
 import java.time.*;
 import java.util.*;
+import java.util.function.IntPredicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -450,13 +451,35 @@ class AssistantAskServiceTest {
     // 抓住问答把调用方隐藏金额的上下文替换为控制台默认值，导致工具恢复金额。
     @Test void aggregateReceivesCallersAmountContext() {
         var hidden = new AssistantQueryContext(false);
-        when(queries.aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any()))
+        when(queries.aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any(), any()))
                 .thenReturn(JSONObject.of("source", "场次归档", "rows", null, "reason", "这里不显示金额"));
         replies.add(call("aggregate", JSONObject.of("kinds", List.of("session"),
                 "from", "2026-11-01", "to", "2026-11-30", "metrics", List.of("sum:amount"))));
         service.ask("bilibili", 1L, "member", JSONObject.of("question", "这个月流水多少"), hidden);
-        verify(queries).aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any());
+        verify(queries).aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any(), any());
         assertTrue(JSON.parseObject(toolMessage().getString("content")).getString("reason").contains("这里不显示金额"));
+    }
+
+    // 抓住历史建档耗尽整问的查数时间，导致模型收不到续建进度。
+    @Test void audienceHistoryGetsTimeToReturnProgressBeforeToolDeadline() {
+        when(queries.aggregate(eq("bilibili"), eq(1L), any(), any(), any(), any())).thenAnswer(call -> {
+            IntPredicate pause = call.getArgument(5);
+            assertFalse(pause.test(0));
+            clock.now = clock.now.plusSeconds(34);
+            assertTrue(pause.test(42));
+            return JSONObject.of("source", "观众归档", "rows", null,
+                    "reason", "观众首次出现记录还在建立，已完成 42/99 场，请稍后再问",
+                    "historyCompletedSessions", 42, "historyTotalSessions", 99);
+        });
+        replies.add(call("aggregate", JSONObject.of("kinds", List.of("audience_activity"),
+                "from", "2026-11-01", "to", "2026-11-30", "groupBy", List.of("audienceAge"),
+                "metrics", List.of("distinctAudience"))));
+        replies.add(JSONObject.of("content", "观众首次出现记录还在建立，请稍后再问"));
+        ask();
+        var progress = JSON.parseObject(toolMessage().getString("content"));
+        assertEquals(42, progress.getIntValue("historyCompletedSessions"));
+        assertEquals(99, progress.getIntValue("historyTotalSessions"));
+        assertTrue(progress.getString("reason").contains("请稍后再问"));
     }
 
     // 抓住恶意弹幕变成高权限指令、泄露密钥或越过原话长度上限。

@@ -29,6 +29,7 @@ import java.nio.file.Path;
 import java.text.BreakIterator;
 import java.time.Clock;
 import java.util.*;
+import java.util.function.IntPredicate;
 
 /**
  * 智能助手的只读查数入口，时间均为毫秒，变化率为比例（0.5 表示 50%）。
@@ -49,6 +50,7 @@ public class AssistantQueryService {
     private final NovaCoreProperties properties;
     private final ObjectProvider<LiveMetricCatalog> catalogs;
     private final Clock clock;
+    private final AssistantAudienceHistory audienceHistory = new AssistantAudienceHistory();
 
     @Autowired
     public AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
@@ -70,14 +72,22 @@ public class AssistantQueryService {
     }
 
     JSONObject aggregate(String platform, Long uid, JSONObject args, AssistantQueryContext context, AssistantPrivacy privacy) {
+        long start = System.nanoTime();
+        return aggregate(platform, uid, args, context, privacy,
+                completed -> System.nanoTime() - start >= AssistantAudienceHistory.BUILD_NANOS);
+    }
+
+    JSONObject aggregate(String platform, Long uid, JSONObject args, AssistantQueryContext context,
+                         AssistantPrivacy privacy, IntPredicate pauseHistory) {
         if (!validIdentity(platform, uid)) return AssistantAggregateQuery.rejected("筛选汇总", "请提供有效主播");
         try {
             var request = AssistantAggregateRequest.parse(args);
             boolean sessions = request.kinds().contains(AssistantAggregateRequest.Kind.SESSION);
             boolean living = live.getLiveStatus(platform, uid).orElse(false);
             Long start = living ? live.getLiveStartTime(platform, uid).orElse(null) : null;
-            return new AssistantAggregateQuery(request, privacy).run(platform, uid, archive, sessions ? rules(platform) : null,
-                    (at, name) -> file(platform, uid, at, name), living, start, clock.instant(), context);
+            return new AssistantAggregateQuery(request, privacy, audienceHistory, dataDirectory().resolve("sessions.jsonl"))
+                    .run(platform, uid, archive, sessions ? rules(platform) : null,
+                    (at, name) -> file(platform, uid, at, name), living, start, clock.instant(), context, pauseHistory);
         } catch (AssistantAggregateRequest.Invalid error) {
             return AssistantAggregateQuery.rejected("筛选汇总", error.getMessage());
         }
@@ -585,9 +595,13 @@ public class AssistantQueryService {
 
     private Path file(String platform, Long uid, long start, String name) {
         // 与 LiveDetailArchive 的目录规则相同；只拼接经过校验的平台标识及数字。
-        Path parent = Path.of(properties.getLive().getLiveDataPath()).getParent();
-        return (parent == null ? Path.of("details") : parent.resolve("details"))
+        return dataDirectory().resolve("details")
                 .resolve(platform + "-" + uid + "-" + start).resolve(name);
+    }
+
+    private Path dataDirectory() {
+        Path parent = Path.of(properties.getLive().getLiveDataPath()).getParent();
+        return parent == null ? Path.of("") : parent;
     }
 
     private static JSONObject parse(String line) {
