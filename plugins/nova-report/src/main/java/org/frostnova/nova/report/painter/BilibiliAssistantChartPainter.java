@@ -14,9 +14,14 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.IntStream;
 
 /** 智能助手的定幅数据图，沿用数据查询图的报告画布与配色。 */
 @NovaComponent
@@ -31,6 +36,10 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     private static final int LEFT = 113;
     private static final int RIGHT = WIDTH - MARGIN - 18;
     private static final int CATEGORY_WIDTH = 100;
+    private static final int CATEGORY_TOP = BOTTOM + 9;
+    private static final int LABEL_SIZE = 16;
+    private static final int MIN_LABEL_SIZE = 10;
+    private static final int ALL_BAR_LABELS = 12;
     private static final String NOTICE = "由人工智能生成";
     private static final List<Integer> STEPS = List.of(1, 2, 5, 10);
     private static final MathContext POSITION_PRECISION = MathContext.DECIMAL64;
@@ -81,24 +90,53 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         }
         if (chart.referenceLine() != null) drawReference(painter, scale, chart.referenceLine());
         int count = chart.rows().size();
-        var labels = new ArrayList<ValueLabel>();
+        var values = new ArrayList<PlotValue>();
+        var required = new LinkedHashSet<PlotValue>();
         for (int series = 0; series < chart.series().size(); series++) {
-            if (chart.type() == Type.LINE) drawLine(painter, chart, series, colors.get(series), scale, labels);
-            else drawBars(painter, chart, series, colors.get(series), scale, labels);
+            var labels = columnLabels(painter, chart, series, CONTENT_WIDTH - 6, MIN_LABEL_SIZE);
+            var points = new ArrayList<PlotValue>();
+            if (chart.type() == Type.LINE) {
+                drawLine(painter, chart, series, colors.get(series), scale, labels, points);
+                keepExtrema(points, required);
+            } else {
+                drawBars(painter, chart, series, colors.get(series), scale, labels, points);
+            }
+            values.addAll(points);
+        }
+        boolean bar = chart.type() == Type.BAR;
+        if (bar) {
+            keepExtrema(values, required);
+            values.stream().max(Comparator.comparingInt(PlotValue::row).thenComparingInt(PlotValue::x)).ifPresent(required::add);
+        }
+        boolean allBars = bar && values.size() <= ALL_BAR_LABELS;
+        drawValueLabels(painter, layoutValues(painter, chart, values, required, allBars));
+        if (bar) {
+            var requiredRows = required.stream().map(PlotValue::row).distinct().toList();
+            drawBarCategories(painter, chart, requiredRows, allBars);
+        } else {
+            for (int index : ticks(count, Type.LINE)) {
+                int x = x(index, count, Type.LINE);
+                painter.drawRectangle(x, BOTTOM, 1, 6, palette.curveGapEdge());
+                text(painter, chart.rows().get(index).category(), categoryLeft(x), CATEGORY_TOP, CATEGORY_WIDTH, 17, 16,
+                        muted(painter), Font.PLAIN, Align.CENTER, true);
+            }
+        }
+        text(painter, chart.xLabel(), MARGIN, 487, CONTENT_WIDTH, 18, 16, muted(painter), Font.PLAIN, Align.CENTER, true);
+    }
+
+    private void drawValueLabels(CommonPainter painter, List<ValueLabel> labels) {
+        for (ValueLabel label : labels) {
+            if (!label.shifted()) continue;
+            var bounds = label.bounds();
+            var point = label.point();
+            int edge = bounds.y > point.y() ? bounds.y : bounds.y + bounds.height;
+            painter.drawPolyline(List.of(new Point(point.x(), point.y()), new Point(point.x(), edge)), muted(painter), 1);
         }
         for (ValueLabel label : labels) {
             Rectangle bounds = label.bounds();
-            painter.drawRoundedRectangle(bounds.x, bounds.y, bounds.width, bounds.height, 5, palette.card());
-            text(painter, label.text(), bounds.x, bounds.y, bounds.width, 16, 16, palette.text(), Font.PLAIN, Align.CENTER, false);
+            painter.drawRoundedRectangle(bounds.x, bounds.y, bounds.width, bounds.height, 5, painter.palette().card());
+            drawCentered(painter, label.text(), bounds.x + bounds.width / 2, bounds.y);
         }
-
-        for (int index : ticks(count, chart.type())) {
-            int x = x(index, count, chart.type());
-            painter.drawRectangle(x, BOTTOM, 1, 6, palette.curveGapEdge());
-            text(painter, chart.rows().get(index).category(), categoryLeft(x), BOTTOM + 9, CATEGORY_WIDTH, 17, 16,
-                    muted(painter), Font.PLAIN, Align.CENTER, true);
-        }
-        text(painter, chart.xLabel(), MARGIN, 487, CONTENT_WIDTH, 18, 16, muted(painter), Font.PLAIN, Align.CENTER, true);
     }
 
     private void drawLegend(CommonPainter painter, Chart chart, List<Color> colors) {
@@ -122,7 +160,8 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         text(painter, number, RIGHT - numberWidth, 132, numberWidth, 17, 11, color, Font.BOLD, Align.RIGHT, false);
     }
 
-    private void drawLine(CommonPainter painter, Chart chart, int series, Color color, Scale scale, List<ValueLabel> labels) {
+    private void drawLine(CommonPainter painter, Chart chart, int series, Color color, Scale scale,
+                          List<String> labels, List<PlotValue> values) {
         var segment = new ArrayList<Point>();
         int count = chart.rows().size();
         for (int row = 0; row < count; row++) {
@@ -134,9 +173,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             }
             int x = x(row, count, Type.LINE), y = scale.y(value);
             segment.add(new Point(x, y));
-            if (count <= 10 || chart.series().size() == 1 && row % Math.max(1, count / 5) == 0 && count <= 45) {
-                placeValue(painter, value, x, y - 26, labels);
-            }
+            values.add(new PlotValue(row, x, y, value, labels.get(row), null));
         }
         drawSegment(painter, color, segment, count);
     }
@@ -148,7 +185,8 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         }
     }
 
-    private void drawBars(CommonPainter painter, Chart chart, int series, Color color, Scale scale, List<ValueLabel> labels) {
+    private void drawBars(CommonPainter painter, Chart chart, int series, Color color, Scale scale,
+                          List<String> labels, List<PlotValue> values) {
         int count = chart.rows().size();
         int seriesCount = chart.series().size();
         int width = Math.max(2, Math.min(40, (RIGHT - LEFT) * 4 / (5 * count * seriesCount)));
@@ -158,18 +196,189 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             if (value == null) continue;
             int center = x(row, count, Type.BAR) - (seriesCount * (width + 1)) / 2 + series * (width + 1) + width / 2;
             int y = scale.y(value);
-            painter.drawRoundedRectangle(center - width / 2, Math.min(y, zero), width,
-                    Math.max(2, Math.abs(zero - y)), Math.min(7, width), color);
-            if (count * seriesCount <= 16) placeValue(painter, value, center, y - 26, labels);
+            var bar = new Rectangle(center - width / 2, Math.min(y, zero), width, Math.max(2, Math.abs(zero - y)));
+            painter.drawRoundedRectangle(bar.x, bar.y, bar.width, bar.height, Math.min(7, width), color);
+            values.add(new PlotValue(row, center, y, value, labels.get(row), bar));
         }
     }
 
-    private void placeValue(CommonPainter painter, BigDecimal value, int x, int y, List<ValueLabel> labels) {
-        String label = number(value);
-        int width = line(painter, label, 16, painter.palette().text(), Font.PLAIN).width();
-        var bounds = new Rectangle(x - width / 2 - 3, y, width + 6, 23);
-        if (bounds.x < MARGIN || bounds.getMaxX() > WIDTH - MARGIN || labels.stream().anyMatch(other -> bounds.intersects(other.bounds()))) return;
-        labels.add(new ValueLabel(bounds, label));
+    private static void keepExtrema(List<PlotValue> values, Set<PlotValue> required) {
+        var byValue = Comparator.comparing(PlotValue::number);
+        values.stream().max(byValue).ifPresent(required::add);
+        values.stream().min(byValue).ifPresent(required::add);
+    }
+
+    private List<ValueLabel> layoutValues(CommonPainter painter, Chart chart, List<PlotValue> values,
+                                          Set<PlotValue> required, boolean allBars) {
+        var labels = new ArrayList<ValueLabel>();
+        var occupied = new ArrayList<>(values.stream().map(PlotValue::bar).filter(Objects::nonNull).toList());
+        int half = (RIGHT - LEFT) / 2;
+        if (chart.yLabel() != null && chart.series().size() > 1) occupied.add(new Rectangle(LEFT, 132, half, 23));
+        if (chart.referenceLine() != null) occupied.add(new Rectangle(RIGHT - half, 132, half, 23));
+        if (allBars) {
+            for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
+                labels.clear();
+                for (PlotValue value : values) placeValue(painter, value, size, labels, occupied);
+                if (labels.size() == values.size()) return labels;
+            }
+        }
+        labels.clear();
+        for (PlotValue value : required) {
+            if (fitValue(painter, value, labels, occupied) || shiftValue(painter, value, labels, occupied)) continue;
+            if (!fitValue(painter, value, labels, List.of())) shiftValue(painter, value, labels, List.of());
+        }
+        int count = chart.rows().size();
+        for (PlotValue value : values) {
+            if (required.contains(value)) continue;
+            if (allBars) {
+                if (!fitValue(painter, value, labels, occupied)) shiftValue(painter, value, labels, occupied);
+            } else if (chart.type() == Type.BAR ? count * chart.series().size() <= 16
+                    : count <= 10 || chart.series().size() == 1 && count <= 45 && value.row() % Math.max(1, count / 5) == 0) {
+                placeValue(painter, value, LABEL_SIZE, labels, occupied);
+            }
+        }
+        return labels;
+    }
+
+    private boolean fitValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Rectangle> occupied) {
+        for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
+            if (placeValue(painter, value, size, labels, occupied)) return true;
+        }
+        return false;
+    }
+
+    private boolean placeValue(CommonPainter painter, PlotValue value, int size, List<ValueLabel> labels, List<Rectangle> occupied) {
+        var text = line(painter, value.text(), size, painter.palette().text(), Font.PLAIN);
+        int height = size + 7;
+        int width = text.width() + 6;
+        if (width > CONTENT_WIDTH) return false;
+        var bounds = new Rectangle(centeredLeft(value.x(), width), value.y() - height - 3, width, height);
+        if (!valueFits(value, bounds, labels, occupied)) return false;
+        labels.add(new ValueLabel(bounds, text, value, false));
+        return true;
+    }
+
+    private boolean shiftValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Rectangle> occupied) {
+        var text = line(painter, value.text(), MIN_LABEL_SIZE, painter.palette().text(), Font.PLAIN);
+        int height = MIN_LABEL_SIZE + 7;
+        int width = text.width() + 6;
+        if (width > CONTENT_WIDTH) return false;
+        int left = centeredLeft(value.x(), width);
+        // 先保留离柱顶或折线点最近的空位，移开后用细线指回原位。
+        int top = value.y() - height - 3;
+        for (int offset = 1; offset <= BOTTOM - TOP + 26; offset++) {
+            for (int y : new int[]{top - offset, top + offset}) {
+                if (y < TOP - 26 || y + height > BOTTOM || y <= value.y() && y + height > value.y()) continue;
+                var bounds = new Rectangle(left, y, width, height);
+                if (valueFits(value, bounds, labels, occupied)) {
+                    labels.add(new ValueLabel(bounds, text, value, true));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean valueFits(PlotValue value, Rectangle bounds, List<ValueLabel> labels, List<Rectangle> occupied) {
+        return labels.stream().noneMatch(other -> bounds.intersects(other.bounds()))
+                && occupied.stream().noneMatch(area -> area != value.bar() && bounds.intersects(area));
+    }
+
+    private void drawBarCategories(CommonPainter painter, Chart chart, List<Integer> required, boolean allBars) {
+        int count = chart.rows().size();
+        var categories = new ArrayList<CategoryLabel>();
+        if (allBars) {
+            int width = (RIGHT - LEFT) / count - 4;
+            for (int index = 0; index < count; index++) {
+                var label = fitCategory(painter, chart, index, width);
+                if (label != null) categories.add(label);
+            }
+        }
+        if (categories.size() < count) {
+            var fitted = List.copyOf(categories);
+            categories.clear();
+            var ticks = ticks(count, Type.BAR);
+            for (int index : required) {
+                var label = fitted.stream().filter(category -> category.index() == index).findFirst()
+                        .orElseGet(() -> fitCategory(painter, chart, index, CATEGORY_WIDTH));
+                if (label != null && categoryFits(label, categories)) categories.add(label);
+            }
+            if (categories.size() < required.size()) {
+                categories.clear();
+                for (int index : required) staggerCategory(painter, chart, index, categories);
+            }
+            for (var label : fitted) {
+                if (!required.contains(label.index()) && categoryFits(label, categories)) categories.add(label);
+            }
+            var candidates = allBars ? IntStream.range(0, count).boxed().toList() : ticks;
+            for (int index : candidates) {
+                if (!allBars && categories.size() >= ticks.size()) break;
+                if (categories.stream().anyMatch(label -> label.index() == index)) continue;
+                var label = allBars ? fitCategory(painter, chart, index, CATEGORY_WIDTH)
+                        : singleCategory(painter, chart, index, CATEGORY_TOP, LABEL_SIZE);
+                if (label != null && categoryFits(label, categories)) categories.add(label);
+            }
+        }
+        for (CategoryLabel label : categories) {
+            painter.drawRectangle(x(label.index(), count, Type.BAR), BOTTOM, 1, 6, painter.palette().curveGapEdge());
+            for (int i = 0; i < label.lines().size(); i++) {
+                drawCentered(painter, label.lines().get(i), label.center(), label.top() + i * label.lineHeight());
+            }
+        }
+    }
+
+    private CategoryLabel fitCategory(CommonPainter painter, Chart chart, int index, int width) {
+        String category = chart.rows().get(index).category();
+        int center = x(index, chart.rows().size(), Type.BAR);
+        Color color = muted(painter);
+        for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
+            var single = line(painter, category, size, color, Font.PLAIN);
+            if (single.width() <= width) return new CategoryLabel(index, center, CATEGORY_TOP, size + 3, List.of(single));
+        }
+        for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
+            // 优先在词间换行，例如把日期和时刻分到两行。
+            for (int split = category.indexOf(' '); split >= 0; split = category.indexOf(' ', split + 1)) {
+                var label = splitCategory(painter, category, split, index, center, width, size, color);
+                if (label != null) return label;
+            }
+        }
+        for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
+            for (int split = category.offsetByCodePoints(0, 1); split < category.length();
+                 split = category.offsetByCodePoints(split, 1)) {
+                var label = splitCategory(painter, category, split, index, center, width, size, color);
+                if (label != null) return label;
+            }
+        }
+        return null;
+    }
+
+    private CategoryLabel splitCategory(CommonPainter painter, String category, int split, int index,
+                                        int center, int width, int size, Color color) {
+        var first = line(painter, category.substring(0, split).stripTrailing(), size, color, Font.PLAIN);
+        if (first.width() > width) return null;
+        var second = line(painter, category.substring(split).stripLeading(), size, color, Font.PLAIN);
+        if (second.width() > width) return null;
+        return new CategoryLabel(index, center, CATEGORY_TOP, size + 3, List.of(first, second));
+    }
+
+    private void staggerCategory(CommonPainter painter, Chart chart, int index, List<CategoryLabel> categories) {
+        for (int lane = 0; lane < 3; lane++) {
+            var label = singleCategory(painter, chart, index, CATEGORY_TOP + lane * (MIN_LABEL_SIZE + 3), MIN_LABEL_SIZE);
+            if (categoryFits(label, categories)) {
+                categories.add(label);
+                return;
+            }
+        }
+    }
+
+    private CategoryLabel singleCategory(CommonPainter painter, Chart chart, int index, int top, int size) {
+        var text = fitText(painter, chart.rows().get(index).category(), CATEGORY_WIDTH, size, size,
+                muted(painter), Font.PLAIN, true);
+        return new CategoryLabel(index, x(index, chart.rows().size(), Type.BAR), top, size + 3, List.of(text));
+    }
+
+    private static boolean categoryFits(CategoryLabel label, List<CategoryLabel> categories) {
+        return categories.stream().noneMatch(other -> label.bounds().intersects(other.bounds()));
     }
 
     private static List<Integer> ticks(int count, Type type) {
@@ -189,13 +398,31 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     }
 
     private static int categoryLeft(int x) {
-        return Math.max(MARGIN, Math.min(x - CATEGORY_WIDTH / 2, WIDTH - MARGIN - CATEGORY_WIDTH));
+        return centeredLeft(x, CATEGORY_WIDTH);
+    }
+
+    private static int centeredLeft(int x, int width) {
+        return Math.max(MARGIN, Math.min(x - width / 2, WIDTH - MARGIN - width));
     }
 
     private static int x(int row, int count, Type type) {
         if (count == 1) return (LEFT + RIGHT) / 2;
         if (type == Type.BAR) return LEFT + (2 * row + 1) * (RIGHT - LEFT) / (2 * count);
         return LEFT + 12 + row * (RIGHT - LEFT - 24) / (count - 1);
+    }
+
+    private List<String> columnLabels(CommonPainter painter, Chart chart, int series, int width, int size) {
+        var values = chart.rows().stream().map(row -> row.values().get(series).number()).toList();
+        int decimals = Math.max(0, values.stream().filter(Objects::nonNull).mapToInt(BigDecimal::scale).max().orElse(0));
+        var labels = values.stream().map(value -> value == null ? "" : value.setScale(decimals).toPlainString()).toList();
+        if (labels.stream().anyMatch(label -> line(painter, label, size, painter.palette().text(), Font.PLAIN).width() > width)) {
+            // 极端量级用科学记数法保留有效位，避免补零后超出可用宽度。
+            int precision = values.stream().filter(Objects::nonNull).map(BigDecimal::stripTrailingZeros)
+                    .mapToInt(BigDecimal::precision).max().orElseThrow();
+            String format = "%." + (precision - 1) + "e";
+            return values.stream().map(value -> value == null ? "" : String.format(Locale.ROOT, format, value)).toList();
+        }
+        return labels;
     }
 
     private void drawTable(CommonPainter painter, Chart chart) {
@@ -205,6 +432,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         int columns = chart.series().size() + 1;
         int first = columns == 2 ? 365 : CONTENT_WIDTH / columns + 26;
         int other = (CONTENT_WIDTH - first) / (columns - 1);
+        var labels = IntStream.range(0, columns - 1).mapToObj(col -> columnLabels(painter, chart, col, other - 17, 11)).toList();
         int rowHeight = Math.min(61, (TABLE_HEIGHT - 167 - start + header) / chart.rows().size());
         painter.drawRoundedRectangle(MARGIN, start, CONTENT_WIDTH, header, 14, palette.tagBackground());
         text(painter, chart.xLabel(), MARGIN + 17, start + 7, first - 24, 22, 17, palette.text(), Font.BOLD, Align.LEFT, true);
@@ -220,7 +448,11 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             text(painter, row.category(), MARGIN + 17, textY, first - 24, 22, 17, palette.text(), Font.PLAIN, Align.LEFT, true);
             for (int col = 0; col < row.values().size(); col++) {
                 var value = row.values().get(col);
-                text(painter, value.text(), MARGIN + first + col * other, textY, other - 17, 22, 11,
+                var number = value.number();
+                // 时间戳、整点等可能已有可读的文字格式。
+                String label = number != null && (value.text().equals(number.toPlainString()) || value.text().equals(number.toEngineeringString()))
+                        ? labels.get(col).get(i) : value.text();
+                text(painter, label, MARGIN + first + col * other, textY, other - 17, 22, 11,
                         palette.text(), Font.PLAIN, Align.RIGHT, value.number() == null);
             }
             y += rowHeight;
@@ -233,16 +465,39 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
 
     private enum Align { LEFT, CENTER, RIGHT }
     private record TextLine(List<TextWithStyle> runs, int width) { }
-    private record ValueLabel(Rectangle bounds, String text) { }
+    private record PlotValue(int row, int x, int y, BigDecimal number, String text, Rectangle bar) { }
+    private record ValueLabel(Rectangle bounds, TextLine text, PlotValue point, boolean shifted) { }
+    private record CategoryLabel(int index, int center, int top, int lineHeight, List<TextLine> lines) {
+        Rectangle bounds() {
+            int width = lines.stream().mapToInt(TextLine::width).max().orElseThrow() + 4;
+            return new Rectangle(centeredLeft(center, width), top, width, lineHeight * lines.size());
+        }
+    }
 
     private void text(CommonPainter painter, String text, int x, int y, int width, int size, int minimum,
                       Color color, int weight, Align align, boolean truncate) {
+        var line = fitText(painter, text, width, size, minimum, color, weight, truncate);
+        if (line == null) return;
+        int offset = switch (align) {
+            case LEFT -> 0;
+            case CENTER -> (width - line.width()) / 2;
+            case RIGHT -> width - line.width();
+        };
+        painter.drawTextWithStyle(line.runs(), new Point(x + offset, y));
+    }
+
+    private void drawCentered(CommonPainter painter, TextLine line, int center, int y) {
+        painter.drawTextWithStyle(line.runs(), new Point(centeredLeft(center, line.width()), y));
+    }
+
+    private TextLine fitText(CommonPainter painter, String text, int width, int size, int minimum,
+                             Color color, int weight, boolean truncate) {
         var line = line(painter, text, size, color, weight);
         while (line.width() > width && size > minimum) {
             line = line(painter, text, --size, color, weight);
         }
         if (line.width() > width) {
-            if (!truncate) return;
+            if (!truncate) return null;
             if (line.runs().size() == 1) {
                 var run = line.runs().get(0);
                 run.setText(painter.truncateToWidth(run, width));
@@ -253,15 +508,10 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
                     end = text.offsetByCodePoints(end, -1);
                     line = line(painter, text.substring(0, end) + CommonPainter.ELLIPSIS, size, color, weight);
                 } while (end > 0 && line.width() > width);
-                if (line.width() > width) return;
+                if (line.width() > width) return null;
             }
         }
-        int offset = switch (align) {
-            case LEFT -> 0;
-            case CENTER -> (width - line.width()) / 2;
-            case RIGHT -> width - line.width();
-        };
-        painter.drawTextWithStyle(line.runs(), new Point(x + offset, y));
+        return line;
     }
 
     private TextLine line(CommonPainter painter, String value, int size, Color color, int weight) {

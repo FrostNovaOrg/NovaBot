@@ -2,6 +2,7 @@ package org.frostnova.nova.report.painter;
 
 import org.frostnova.nova.core.assistant.AssistantChartRenderer.*;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,28 +13,65 @@ import org.springframework.core.io.DefaultResourceLoader;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
+import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 
 class BilibiliAssistantChartPainterTest {
     private static BilibiliAssistantChartPainter painter;
+    private static NovaCommonPainterFactory factory;
+    private static FontUtil fonts;
 
     @BeforeAll
     static void setUp() {
         System.setProperty("java.awt.headless", "true");
         var properties = new NovaCoreProperties();
         properties.getPaint().getFonts().add("Dialog");
-        var fonts = new FontUtil(new DefaultResourceLoader(), properties);
+        fonts = new FontUtil(new DefaultResourceLoader(), properties);
         fonts.init();
-        var factory = new NovaCommonPainterFactory(new BuildProperties(new Properties()), properties, fonts);
+        factory = new NovaCommonPainterFactory(new BuildProperties(new Properties()), properties, fonts);
         painter = new BilibiliAssistantChartPainter(factory, fonts);
+    }
+
+    @Test
+    @DisplayName("近十场流水的柱状图标出最高值和全部场次，金额统一保留小数位")
+    void tenBarsShowEveryValueAndCategoryIncludingThePeak() {
+        var amounts = List.of("800", "1040.51", "1044.18", "980.28", "989.36", "1180.52", "1199.99",
+                "512.34", "680.52", "930.71");
+        var rows = IntStream.range(0, amounts.size()).mapToObj(i -> new Row("11-" + (10 + i) + " 20:00",
+                List.of(new Value(amounts.get(i), new BigDecimal(amounts.get(i)))))).toList();
+        var canvas = spy(factory.create(760, 560));
+        var drawn = new ArrayList<String>();
+        doAnswer(call -> {
+            List<TextWithStyle> runs = call.getArgument(0);
+            drawn.add(String.join("", runs.stream().map(TextWithStyle::getText).toList()));
+            return call.callRealMethod();
+        }).when(canvas).drawTextWithStyle(anyList(), any(Point.class));
+        var recordingFactory = spy(factory);
+        doReturn(canvas).when(recordingFactory).create(760, 560);
+
+        var chart = new Chart(Type.BAR, "近十场直播流水", "场次", "金额（元）", List.of("流水"), rows, null, "合成归档", rows.size());
+        assertTrue(new BilibiliAssistantChartPainter(recordingFactory, fonts).render(chart).isPresent());
+
+        var categoriesDrawn = drawn.stream().filter(label -> label.startsWith("11-")).toList();
+        assertAll(
+                () -> assertTrue(drawn.contains("1199.99"), "最高一根应标出 1199.99"),
+                () -> assertEquals(10, categoriesDrawn.size(), () -> "画出的场次：" + categoriesDrawn),
+                () -> assertTrue(drawn.contains("800.00"), "整数金额应补足两位小数"),
+                () -> assertTrue(drawn.containsAll(amounts.subList(1, amounts.size())), "每根柱都应有数值标注"));
     }
 
     @Test
