@@ -27,7 +27,6 @@ final class ConfigUiOperationCatalog {
         add("POST", "state/quiet", "QUIET_SAVE", "调整通道静音时段");
         add("POST", "state/subscription", "SUBSCRIPTION_REMOVE", "移除或清空订阅");
         add("POST", "state/binding", "BINDING_SAVE", "调整通道主播绑定");
-        add("POST", "streamers/{platform}/{uid}/profile/recover", "PROFILE_RECOVER", "恢复主播画像");
         add("POST", "streamers/{platform}/{uid}/assistant/ask", "ASSISTANT_ASK", "使用主播智能助手");
         add("POST", "weekly-report/{platform}/{uid}/trial", "WEEKLY_REPORT_SEND", "发送运营周报");
         add("POST", "weekly-report/{platform}/{uid}/preview", "WEEKLY_REPORT_PREVIEW", "生成运营周报预览");

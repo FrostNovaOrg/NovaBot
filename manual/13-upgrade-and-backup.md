@@ -500,7 +500,6 @@ UTF-8 编码，每次操作一行 JSON，只追加。设置、主播与推送通
 | `QUIET_SAVE` | 调整通道静音时段 |
 | `SUBSCRIPTION_REMOVE` | 移除或清空订阅 |
 | `BINDING_SAVE` | 调整通道主播绑定 |
-| `PROFILE_RECOVER` | 恢复主播画像 |
 | `ASSISTANT_ASK` | 使用主播智能助手 |
 | `WEEKLY_REPORT_SEND` | 发送运营周报 |
 | `WEEKLY_REPORT_PREVIEW` | 生成运营周报预览 |
