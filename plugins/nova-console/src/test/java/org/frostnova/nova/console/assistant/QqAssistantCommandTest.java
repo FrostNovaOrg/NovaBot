@@ -170,6 +170,19 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("空问应直接给三条例子，不能选择主播、请求模型或扣次数")
+    void emptyCommandsGiveExamplesWithoutUsingQuota() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        for (String commandName : List.of("问", "问数")) {
+            group(ASKER, commandName);
+            assertReply("1–300 字", "问 这个月心动盲盒收了多少个", "问 最近 30 天各钟点平均在线", "问 上周送礼榜前十");
+        }
+        assertTrue(requests.isEmpty());
+        assertTrue(qqCounts().isEmpty());
+    }
+
+    @Test
     @DisplayName("群里的问数经过通用汇总查到真实夹具的盲盒个数，再发回原群")
     void answersMonthlyBoxCountFromArchivedEvents() throws Exception {
         var target = channel(GROUP, ROOM, true, false);
@@ -224,6 +237,10 @@ class QqAssistantCommandTest {
         assertReply("回序号", "1. 测试主播甲", "2. 测试主播乙");
         receive(GROUP, ROOM, OTHER, "2", false);
         assertTrue(replies.isEmpty());
+        assertTrue(requests.isEmpty());
+
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
         assertTrue(requests.isEmpty());
 
         modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
@@ -567,6 +584,98 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("编号续问不能借用同群其他人的选项或把选项带去另一个聊天或主播")
+    void numberedFollowUpsStayWithTheirAskerChatAndStreamer() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false), channel(FRIEND, ASKER, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？\n2. 周六那场的开播时间是什么？"));
+        group(ASKER, "问 测试主播甲最近在线怎么样");
+        assertReply("1. 周六那场的弹幕", "2. 周六那场的开播时间", LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        modelReplies.add(text("周日在线更高。\n1. 周日那场的弹幕有多少？"));
+        group(OTHER, "问 测试主播乙最近在线怎么样");
+        assertReply("1. 周日那场的弹幕", LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        receive(FRIEND, ASKER, ASKER, "问 1", false);
+        assertReply("没有可接着问");
+        assertEquals(2, requests.size());
+
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        group(ASKER, "问 2");
+        assertReply(LABEL);
+        assertEquals("周六那场的开播时间是什么？", userPayload(requests.get(2)).getString("question"));
+        assertEquals("测试主播甲最近在线怎么样", lastHistory().getJSONObject(0).getString("question"));
+        verify(queries).sessions(BILIBILI, FIRST, 7, 1);
+        verify(queries, never()).sessions(eq(BILIBILI), eq(SECOND), anyInt(), anyInt());
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
+        assertEquals(4, requests.size());
+    }
+
+    @Test
+    @DisplayName("选项换了发问人或金额可见设置、改问其他主播或已满十分钟时都不能调用模型或扣次数")
+    void invalidNumberedFollowUpsUseNoModelOrQuota() throws Exception {
+        var target = channel(GROUP, ROOM, true, true);
+        add(FIRST, "测试主播甲", target);
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        String options = "收入是否包含上舰？\n1. 含上舰的收入是多少？\n2. 不含上舰的收入是多少？";
+        modelReplies.add(text(options));
+        group(ASKER, "问 测试主播甲收入多少");
+        assertReply("收入是否包含上舰", "1. 含上舰", "2. 不含上舰");
+        awaitIdle(GROUP, ROOM);
+
+        group(OTHER, "问 1");
+        assertReply("没有可接着问");
+        target.setRevenueVisible(false);
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
+        assertEquals(1, requests.size());
+
+        target.setRevenueVisible(true);
+        modelReplies.add(text(options));
+        group(ASKER, "问 测试主播甲收入多少");
+        assertReply("1. 含上舰");
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 测试主播乙昨天播了吗");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
+        assertEquals(3, requests.size());
+
+        modelReplies.add(text(options));
+        group(ASKER, "问 测试主播甲收入多少");
+        assertReply("1. 含上舰");
+        awaitIdle(GROUP, ROOM);
+        clock.advance(Duration.ofMinutes(10).minusSeconds(4));
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
+        assertEquals(4, requests.size());
+        var source = local.qqSource("QQ", QQ, GROUP, ROOM, ASKER);
+        assertEquals(Map.of(source.account(), 4, source.sessionKey(), 4), qqCounts());
+    }
+
+    @Test
+    @DisplayName("三百字的回复应保留完整的下一问，选中后发送显示的那条")
+    void numberedFollowUpFitsInQqReply() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        String question = "周六那场的弹幕有多少？";
+        modelReplies.add(text("按：上周、在线人数\n" + "在线较高。".repeat(65) + "\n1. " + question));
+        group(ASKER, "问 上周在线怎么样");
+        String reply = assertReply("按：上周、在线人数", "1. " + question, LABEL).getContent();
+        assertEquals(300, reply.codePointCount(0, reply.length()));
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "问 1");
+        assertReply(LABEL);
+        assertEquals(question, userPayload(requests.get(1)).getString("question"));
+    }
+
+    @Test
     @DisplayName("追问沿用原会话的结果编号，文字先到，换发问人或超过十分钟时无法画旧数据")
     void chartFollowUpSendsTextThenImageAndCannotUseOtherOrExpiredResults() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
@@ -693,6 +802,10 @@ class QqAssistantCommandTest {
     }
 
     private JSONArray lastHistory() { return userPayload(requests.get(requests.size() - 1)).getJSONArray("history"); }
+
+    private JSONObject qqCounts() throws Exception {
+        return JSON.parseObject(Files.readString(directory.resolve("assistant-usage.json"))).getJSONObject("qqQuestions");
+    }
 
     private static JSONObject userPayload(JSONObject request) {
         return JSON.parseObject(request.getJSONArray("messages").getJSONObject(1).getString("content"));

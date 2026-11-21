@@ -52,6 +52,13 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private static final String BUSY = "上一个问题还在查，稍等";
     private static final String UNAVAILABLE = "智能助手暂时无法回答，请稍后再试";
     private static final String LABEL = "\n（由人工智能生成）";
+    private static final String NO_FOLLOW_UP = "没有可接着问的这个编号，请用「问 〈问题〉」提问";
+    private static final String USAGE = "请用「问 〈问题〉」发送 1–300 字的问题";
+    private static final String EXAMPLES = USAGE + """
+
+            问 这个月心动盲盒收了多少个
+            问 最近 30 天各钟点平均在线
+            问 上周送礼榜前十""";
     private static final int ANSWER_LIMIT = 300;
     private static final int ACK_SECONDS = 8;
     private static final Duration CHOICE_TTL = Duration.ofMinutes(2);
@@ -71,6 +78,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private final Clock clock;
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final Map<Asker, Choice> choices = new ConcurrentHashMap<>();
+    private final Map<Asker, PendingFollowUps> pendingFollowUps = new ConcurrentHashMap<>();
     private final Map<HistoryKey, List<Turn>> histories = new ConcurrentHashMap<>();
     private final ExecutorService workers = Executors.newCachedThreadPool(task -> daemon(task, "assistant-qq"));
     private final ScheduledThreadPoolExecutor reminders =
@@ -120,12 +128,16 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         if (inFlight.contains(session)) return CommandReply.of(BUSY);
 
         var asker = new Asker(session, context.getSenderUid());
-        choices.remove(asker);
         var all = candidates(context);
         var allowed = all.stream().filter(Candidate::allowed).toList();
         if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
 
         String question = String.join(" ", context.getArgs());
+        if (question.isBlank()) return CommandReply.of(EXAMPLES);
+        if (question.equals("1") || question.equals("2"))
+            return resumeFollowUp(context, asker, question.charAt(0) - '1');
+
+        choices.remove(asker);
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
         String first = context.arg(0);
         boolean fromChoice = first != null && first.startsWith(CHOSEN_UID_PREFIX);
@@ -135,13 +147,28 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         List<Candidate> named = leading == null ? namedIn(question, all) : List.of(leading);
         if (leading != null) question = String.join(" ", context.getArgs().subList(1, context.getArgs().size()));
         if (question.isBlank() || question.codePointCount(0, question.length()) > 300)
-            return CommandReply.of("请用「问 〈问题〉」发送 1–300 字的问题");
+            return CommandReply.of(USAGE);
         if (named.stream().anyMatch(item -> !item.allowed()))
             return CommandReply.of("这里没有为所点名的主播开启智能助手问答");
 
         var options = named.isEmpty() ? allowed : named;
-        if (options.size() > 1) return choose(asker, options, question);
-        return start(context, session, options.get(0).uid(), question);
+        if (options.size() > 1) {
+            pendingFollowUps.remove(asker);
+            return choose(asker, options, question);
+        }
+        return start(context, asker, options.get(0).uid(), question, null);
+    }
+
+    private CommandReply resumeFollowUp(CommandContext context, Asker asker, int index) {
+        var pending = pendingFollowUps.get(asker);
+        if (pending == null) return CommandReply.of(NO_FOLLOW_UP);
+        var target = allowedChannel(context, pending.uid());
+        if (!clock.instant().isBefore(pending.expires()) || target == null || visibility.isVisible(target) != pending.amountVisible()) {
+            pendingFollowUps.remove(asker, pending);
+            return CommandReply.of(NO_FOLLOW_UP);
+        }
+        if (index >= pending.questions().size()) return CommandReply.of(NO_FOLLOW_UP);
+        return start(context, asker, pending.uid(), pending.questions().get(index), pending);
     }
 
     private List<Candidate> candidates(CommandContext context) {
@@ -200,11 +227,17 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index), choice.question()));
     }
 
-    private CommandReply start(CommandContext context, String session, Long uid, String question) {
+    private CommandReply start(CommandContext context, Asker asker, Long uid, String question, PendingFollowUps selected) {
+        String session = asker.session();
         if (!inFlight.add(session)) return CommandReply.of(BUSY);
-        var active = new ActiveQuestion(context, uid);
+        if (selected == null) pendingFollowUps.remove(asker);
+        else if (!pendingFollowUps.remove(asker, selected)) {
+            inFlight.remove(session);
+            return CommandReply.of(NO_FOLLOW_UP);
+        }
+        var active = new ActiveQuestion(context, asker, uid);
         var work = new FutureTask<Void>(() -> {
-            active.finish(answer(context, session, uid, question));
+            active.finish(answer(context, session, uid, question, selected));
             return null;
         });
         try {
@@ -224,11 +257,13 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         return CommandReply.none();
     }
 
-    private QqAnswer answer(CommandContext context, String session, Long uid, String question) {
+    private QqAnswer answer(CommandContext context, String session, Long uid, String question, PendingFollowUps selected) {
         try {
             PushTarget target = allowedChannel(context, uid);
             if (target == null) return null;
             boolean amountVisible = visibility.isVisible(target);
+            if (selected != null && (selected.amountVisible() != amountVisible || !clock.instant().isBefore(selected.expires())))
+                return QqAnswer.text(NO_FOLLOW_UP);
             var source = local.qqSource("QQ", context.getPlatform(), context.getType(), context.getNum(), context.getSenderUid());
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
@@ -259,14 +294,31 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
                 text = text.substring(0, text.length() - chartFailure.length() - 1);
             }
             var images = result.getJSONArray("images");
-            return new QqAnswer(clip(text, ANSWER_LIMIT - tail.codePointCount(0, tail.length())) + tail,
-                    images == null ? List.of() : images.toJavaList(String.class), amountVisible);
+            int limit = ANSWER_LIMIT - tail.codePointCount(0, tail.length());
+            var followUps = answer.followUps();
+            String guidance = numberedGuidance(followUps);
+            int guidanceLength = guidance.codePointCount(0, guidance.length());
+            if (guidanceLength >= limit) {
+                guidance = "";
+                guidanceLength = 0;
+                followUps = List.of();
+            }
+            return new QqAnswer(clip(text, limit - guidanceLength) + guidance + tail,
+                    images == null ? List.of() : images.toJavaList(String.class), amountVisible,
+                    followUps.stream().map(AssistantAskService.FollowUp::question).toList());
         } catch (AssistantException error) {
             return QqAnswer.text(error.getMessage());
         } catch (RuntimeException error) {
             log.warn("QQ 智能助手问答失败", error);
             return QqAnswer.text(UNAVAILABLE);
         }
+    }
+
+    private static String numberedGuidance(List<AssistantAskService.FollowUp> options) {
+        if (options.isEmpty()) return "";
+        String first = "\n1. " + options.get(0).label();
+        if (options.size() == 1) return "\n回「问 1」接着问" + first;
+        return "\n回「问 1」或「问 2」接着问" + first + "\n2. " + options.get(1).label();
     }
 
     private List<Turn> recentHistory(HistoryKey key, boolean amountVisible) {
@@ -277,6 +329,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
 
     private void evictHistory() {
         Instant now = clock.instant();
+        pendingFollowUps.values().removeIf(pending -> !now.isBefore(pending.expires()));
         histories.forEach((key, turns) -> {
             var recent = turns.stream().filter(turn -> current(turn, now)).toList();
             if (recent.isEmpty()) histories.remove(key, turns);
@@ -323,17 +376,20 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         reminders.shutdownNow();
         workers.shutdownNow();
         histories.clear();
+        pendingFollowUps.clear();
     }
 
     private final class ActiveQuestion {
         private final CommandContext context;
+        private final Asker asker;
         private final Long uid;
         private boolean finished;
         private ScheduledFuture<?> ack;
         private ScheduledFuture<?> deadline;
 
-        private ActiveQuestion(CommandContext context, Long uid) {
+        private ActiveQuestion(CommandContext context, Asker asker, Long uid) {
             this.context = context;
+            this.asker = asker;
             this.uid = uid;
         }
 
@@ -353,7 +409,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         private void send(QqAnswer answer) {
             PushTarget target = allowedChannel(context, uid);
             if (target == null) return;
-            boolean hidden = answer.amountVisible() && !visibility.isVisible(target);
+            boolean amountVisible = visibility.isVisible(target);
+            boolean hidden = answer.amountVisible() && !amountVisible;
             String text = hidden ? AssistantAggregateRequest.HIDDEN_AMOUNT : answer.text();
             String content = MessagePlaceholders.escapeExternalText(text);
             if (!hidden) {
@@ -364,6 +421,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
                         message.setReply(true);
                         sender.send(message);
                     });
+            if (amountVisible == answer.amountVisible() && !answer.followUps().isEmpty())
+                pendingFollowUps.put(asker, new PendingFollowUps(uid, amountVisible, clock.instant().plus(HISTORY_TTL), answer.followUps()));
         }
     }
 
@@ -372,9 +431,10 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     }
     private record Asker(String session, long sender) { }
     private record Choice(List<String> uids, String question, Instant expires) { }
+    private record PendingFollowUps(Long uid, boolean amountVisible, Instant expires, List<String> questions) { }
     private record HistoryKey(String session, String account, Long uid) { }
     private record Turn(Instant at, boolean amountVisible, JSONObject content, List<AssistantChartResults.Result> results) { }
-    private record QqAnswer(String text, List<String> images, boolean amountVisible) {
-        static QqAnswer text(String text) { return text == null ? null : new QqAnswer(text, List.of(), false); }
+    private record QqAnswer(String text, List<String> images, boolean amountVisible, List<String> followUps) {
+        static QqAnswer text(String text) { return text == null ? null : new QqAnswer(text, List.of(), false, List.of()); }
     }
 }

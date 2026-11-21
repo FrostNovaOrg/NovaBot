@@ -102,7 +102,8 @@ try { ui = await import(moduleUrl); } catch (error) { importFailure = error; }
 const byClass = (node, name) => node.querySelectorAll('.' + name);
 const buttons = node => node.querySelectorAll('button');
 const button = (node, text) => buttons(node).find(item => item.textContent === text);
-const host = () => { const node = new Element('div'); document.body.append(node); return node; };
+const hosts = [];
+const host = () => { const node = new Element('div'); hosts.push(node); document.body.append(node); return node; };
 let uid = 10;
 async function mount(identity = {platform: 'sample', uid: ++uid}) {
   assert.ok(ui, '问答抽屉模块应能加载：' + (importFailure?.code || ''));
@@ -124,6 +125,37 @@ async function until(predicate, message) {
   }
 }
 const checks = {
+  async examples() {
+    const mounted = await mount();
+    const input = mounted.node.querySelector('textarea');
+    const examples = ['这个月心动盲盒收了多少个', '最近 30 天各钟点平均在线', '上周送礼榜前十'];
+    const before = requests.length;
+    for (const example of examples) assert.ok(button(mounted.node, example), '缺少示例：' + example);
+    await button(mounted.node, examples[0]).fire('click');
+    assert.equal(input.value, examples[0]);
+    assert.equal(document.activeElement, input);
+    assert.equal(requests.length, before);
+    assert.equal(button(mounted.node, '提问').disabled, false);
+    assert.ok(byClass(mounted.node, 'sa-examples')[0].hidden);
+  },
+  async followUps() {
+    const mounted = await mount();
+    const label = '周六那场的礼物有哪些？', question = '周六那场观众-abc123送了哪些礼物？';
+    reply = {...initialReply, answer: '按：上周、礼物、个数\n周六的礼物最多。',
+      followUps: [{label: '周六那场的弹幕多吗？', question: '周六那场的弹幕多吗？'}, {label, question}]};
+    await ask(mounted, '上周礼物怎么样？');
+    const buttonsBefore = byClass(mounted.node, 'sa-turn').at(-1);
+    assert.ok(button(buttonsBefore, '1. 周六那场的弹幕多吗？'));
+    const option = button(buttonsBefore, '2. ' + label);
+    assert.ok(option, '回答中的下一问应显示为可点的按钮');
+    reply = initialReply;
+    const before = requests.length;
+    await option.fire('click');
+    assert.equal(requests.length, before + 1);
+    assert.match(requests.at(-1).url, new RegExp('/sample/' + mounted.identity.uid + '/assistant/ask$'));
+    assert.deepEqual(requests.at(-1).body, {question, history: [{question: '上周礼物怎么样？', answerForHistory: '原样历史'}]});
+    assert.match(byClass(mounted.node, 'sa-turn').at(-1).textContent, new RegExp(label.replace('？', '')));
+  },
   // 错误若带结论标识或复制按钮，使用者会把失败说明当作模型回答。
   async failures() {
     const mounted = await mount();
@@ -386,6 +418,7 @@ for (const [name, check] of Object.entries(checks)) {
   navigator.clipboard = {async writeText(text) { copiedText = text; }};
   try { await check(); process.stdout.write('绿 ' + name + '\n'); }
   catch (error) { failures++; process.stdout.write('红 ' + name + '：' + error.stack + '\n'); }
+  finally { for (const node of hosts.splice(0)) node.remove(); }
 }
 process.stdout.write('跑了 ' + count + ' 格，红 ' + failures + ' 格\n');
 process.exitCode = failures ? 1 : 0;
