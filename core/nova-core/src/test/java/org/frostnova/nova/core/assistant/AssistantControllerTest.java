@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.assistant;
 
+import com.alibaba.fastjson2.JSON;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiAgreement;
 import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
@@ -10,25 +11,35 @@ import org.frostnova.nova.core.util.IpMatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.http.client.MockClientHttpRequest;
+import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -42,9 +53,10 @@ class AssistantControllerTest {
     private MockRestServiceServer server;
     private AssistantKeyStore keys;
     private AssistantClient client;
+    private AssistantProperties properties;
 
     @BeforeEach void setup() {
-        var properties = new AssistantProperties();
+        properties = new AssistantProperties();
         properties.setEnabled(true);
         keys = new AssistantKeyStore(directory);
         var template = new RestTemplate();
@@ -96,6 +108,35 @@ class AssistantControllerTest {
         mvc.perform(authorized(delete("/config/api/assistant/key"))).andExpect(status().isOk());
         mvc.perform(get("/config/api/assistant/status")).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.available").value(false));
         assertFalse(keys.isSet());
+        server.verify();
+    }
+
+    @Test void responsesProbeAcceptsOutputLimitForSavingKeyAndTestingConnection() throws Exception {
+        properties.setBaseUrl("https://model.example/v1");
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.api-format", "responses")))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        client.acknowledge("local-admin");
+        keys.save(SECRET);
+        String candidate = "replacement-test-secret";
+        var outputLimits = new ArrayList<Integer>();
+        server.expect(ExpectedCount.manyTimes(), requestTo("https://model.example/v1/responses"))
+                .andExpect(request -> outputLimits.add(JSON.parseObject(((MockClientHttpRequest) request).getBodyAsString())
+                        .getIntValue("max_output_tokens")))
+                .andRespond(withSuccess("""
+                        {"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],
+                         "usage":{"input_tokens":10,"output_tokens":256,"output_tokens_details":{"reasoning_tokens":256}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        var saved = mvc.perform(authorized(post("/config/api/assistant/key")).content("{\"key\":\"" + candidate + "\"}"));
+        var tested = mvc.perform(authorized(post("/config/api/assistant/test")));
+        var headers = new HttpHeaders();
+        new AssistantKeyStore(directory).authorize(headers);
+        assertAll(
+                () -> saved.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true)),
+                () -> tested.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true)),
+                () -> assertEquals("Bearer " + candidate, headers.getFirst(HttpHeaders.AUTHORIZATION)),
+                () -> assertEquals(List.of(256, 256), outputLimits),
+                () -> assertEquals(0, new BigDecimal("0.0044472").compareTo(client.status().spentYuan())));
         server.verify();
     }
 
