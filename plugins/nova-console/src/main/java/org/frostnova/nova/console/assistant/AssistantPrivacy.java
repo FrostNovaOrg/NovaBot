@@ -204,5 +204,15 @@ final class AssistantPrivacy {
         return text;
     }
 
+    String displayChart(String text) {
+        if ("[已隐藏]".equals(text)) return text;
+        return ALIAS.matcher(mask(text)).replaceAll(match -> {
+            String alias = match.group().toLowerCase(Locale.ROOT);
+            if ("[已隐藏]".equals(replacements.get(alias))) return "[已隐藏]";
+            String name = names.getOrDefault(alias, "[昵称未知]");
+            return Matcher.quoteReplacement(ALIAS.matcher(name).replaceAll("[昵称未知]"));
+        });
+    }
+
     List<String> dataTypes() { return List.copyOf(dataTypes); }
 }

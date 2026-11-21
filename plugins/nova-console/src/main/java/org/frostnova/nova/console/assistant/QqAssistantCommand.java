@@ -96,6 +96,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         this.sender = sender;
         this.clock = clock;
         reminders.setRemoveOnCancelPolicy(true);
+        reminders.scheduleWithFixedDelay(this::evictHistory, 1, 1, TimeUnit.MINUTES);
     }
 
     @Override public String name() { return "问"; }
@@ -209,7 +210,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         try {
             active.ack = reminders.schedule(active::acknowledge, ACK_SECONDS, TimeUnit.SECONDS);
             active.deadline = reminders.schedule(() -> {
-                if (active.finish("智能助手本次提问已超时，请问得具体一点")) work.cancel(true);
+                if (active.finish(QqAnswer.text("智能助手本次提问已超时，请问得具体一点"))) work.cancel(true);
             }, AssistantAskService.QUESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             workers.execute(() -> {
                 try { work.run(); }
@@ -223,7 +224,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         return CommandReply.none();
     }
 
-    private String answer(CommandContext context, String session, Long uid, String question) {
+    private QqAnswer answer(CommandContext context, String session, Long uid, String question) {
         try {
             PushTarget target = allowedChannel(context, uid);
             if (target == null) return null;
@@ -231,32 +232,60 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             var source = local.qqSource("QQ", context.getPlatform(), context.getType(), context.getNum(), context.getSenderUid());
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
-            var request = JSONObject.of("question", question, "history", history.stream().map(Turn::content).toList());
-            JSONObject result = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible);
+            var texts = history.stream().filter(turn -> turn.content() != null).map(Turn::content).toList();
+            var request = JSONObject.of("question", question, "history", texts.subList(Math.max(0, texts.size() - HISTORY_LIMIT), texts.size()));
+            var previousResults = history.stream().flatMap(turn -> turn.results().stream()).toList();
+            var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults);
+            JSONObject result = answer.response();
             PushTarget current = allowedChannel(context, uid);
             if (current == null || Thread.currentThread().isInterrupted()) return null;
-            if (!result.getBooleanValue("answered")) return result.getString("answer");
-            if (amountVisible && !visibility.isVisible(current)) return AssistantAggregateRequest.HIDDEN_AMOUNT;
+            boolean answered = result.getBooleanValue("answered");
+            if (amountVisible && !visibility.isVisible(current))
+                return QqAnswer.text(answered ? AssistantAggregateRequest.HIDDEN_AMOUNT : result.getString("answer"));
 
-            var turns = new ArrayList<>(history);
-            turns.add(new Turn(clock.instant(), amountVisible,
-                    JSONObject.of("question", question, "answerForHistory", clip(result.getString("answerForHistory"), ANSWER_LIMIT))));
-            histories.put(key, List.copyOf(turns.subList(Math.max(0, turns.size() - HISTORY_LIMIT), turns.size())));
-            return clip(result.getString("answer"), ANSWER_LIMIT - LABEL.length()) + LABEL;
+            if (answered || !answer.results().isEmpty()) {
+                var turns = new ArrayList<>(history);
+                var content = answered ? JSONObject.of("question", question, "answerForHistory",
+                        clip(result.getString("answerForHistory"), ANSWER_LIMIT)) : null;
+                turns.add(new Turn(clock.instant(), amountVisible, content, answer.results()));
+                histories.put(key, List.copyOf(turns));
+            }
+            if (!answered) return QqAnswer.text(result.getString("answer"));
+            String text = result.getString("answer");
+            String chartFailure = result.getString("chartFailure");
+            String tail = LABEL;
+            if (chartFailure != null) {
+                tail += "\n" + chartFailure;
+                text = text.substring(0, text.length() - chartFailure.length() - 1);
+            }
+            var images = result.getJSONArray("images");
+            return new QqAnswer(clip(text, ANSWER_LIMIT - tail.codePointCount(0, tail.length())) + tail,
+                    images == null ? List.of() : images.toJavaList(String.class), amountVisible);
         } catch (AssistantException error) {
-            return error.getMessage();
+            return QqAnswer.text(error.getMessage());
         } catch (RuntimeException error) {
             log.warn("QQ 智能助手问答失败", error);
-            return UNAVAILABLE;
+            return QqAnswer.text(UNAVAILABLE);
         }
     }
 
     private List<Turn> recentHistory(HistoryKey key, boolean amountVisible) {
         Instant now = clock.instant();
-        histories.values().removeIf(turns -> !now.isBefore(turns.get(turns.size() - 1).at().plus(HISTORY_TTL)));
         var turns = histories.getOrDefault(key, List.of());
-        return turns.stream().filter(turn -> turn.amountVisible() == amountVisible
-                && !now.isBefore(turn.at()) && now.isBefore(turn.at().plus(HISTORY_TTL))).toList();
+        return turns.stream().filter(turn -> turn.amountVisible() == amountVisible && current(turn, now)).toList();
+    }
+
+    private void evictHistory() {
+        Instant now = clock.instant();
+        histories.forEach((key, turns) -> {
+            var recent = turns.stream().filter(turn -> current(turn, now)).toList();
+            if (recent.isEmpty()) histories.remove(key, turns);
+            else if (recent.size() < turns.size()) histories.replace(key, turns, recent);
+        });
+    }
+
+    private static boolean current(Turn turn, Instant now) {
+        return !now.isBefore(turn.at()) && now.isBefore(turn.at().plus(HISTORY_TTL));
     }
 
     private PushTarget allowedChannel(CommandContext context, Long uid) {
@@ -293,6 +322,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     public void close() {
         reminders.shutdownNow();
         workers.shutdownNow();
+        histories.clear();
     }
 
     private final class ActiveQuestion {
@@ -308,23 +338,28 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         }
 
         synchronized void acknowledge() {
-            if (!finished) send("收到，正在查");
+            if (!finished) send(QqAnswer.text("收到，正在查"));
         }
 
-        synchronized boolean finish(String text) {
+        synchronized boolean finish(QqAnswer answer) {
             if (finished) return false;
             finished = true;
             if (ack != null) ack.cancel(false);
             if (deadline != null) deadline.cancel(false);
-            if (text != null) send(text);
+            if (answer != null) send(answer);
             return true;
         }
 
-        private void send(String text) {
+        private void send(QqAnswer answer) {
             PushTarget target = allowedChannel(context, uid);
             if (target == null) return;
-            Message.create(context.getPlatform(), context.getType(), context.getNum(),
-                    MessagePlaceholders.escapeExternalText(text)).forEach(message -> {
+            boolean hidden = answer.amountVisible() && !visibility.isVisible(target);
+            String text = hidden ? AssistantAggregateRequest.HIDDEN_AMOUNT : answer.text();
+            String content = MessagePlaceholders.escapeExternalText(text);
+            if (!hidden) {
+                for (String image : answer.images()) content += "{next}" + CommandReply.image(image).content();
+            }
+            Message.create(context.getPlatform(), context.getType(), context.getNum(), content).forEach(message -> {
                         message.setChannel(target);
                         message.setReply(true);
                         sender.send(message);
@@ -338,5 +373,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private record Asker(String session, long sender) { }
     private record Choice(List<String> uids, String question, Instant expires) { }
     private record HistoryKey(String session, String account, Long uid) { }
-    private record Turn(Instant at, boolean amountVisible, JSONObject content) { }
+    private record Turn(Instant at, boolean amountVisible, JSONObject content, List<AssistantChartResults.Result> results) { }
+    private record QqAnswer(String text, List<String> images, boolean amountVisible) {
+        static QqAnswer text(String text) { return text == null ? null : new QqAnswer(text, List.of(), false); }
+    }
 }

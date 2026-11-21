@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.assistant.AssistantClient;
+import org.frostnova.nova.core.assistant.AssistantChartRenderer;
 import org.frostnova.nova.core.assistant.AssistantKeyStore;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
 import org.frostnova.nova.core.assistant.AssistantProperties;
@@ -55,6 +56,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -95,6 +97,7 @@ class QqAssistantCommandTest {
     private AssistantClient client;
     private AssistantLocalStore local;
     private AssistantAskService service;
+    private AssistantChartRenderer chartRenderer;
     private AssistantQueryService queries;
     private LiveSessionArchive archive;
     private LiveDetailArchive details;
@@ -140,7 +143,8 @@ class QqAssistantCommandTest {
         queries = spy(new AssistantQueryService(null, archive, details,
                 mock(LiveDataService.class), core, catalogs, clock));
         local = new AssistantLocalStore(directory, clock);
-        service = new AssistantAskService(queries, client, properties, local, clock);
+        chartRenderer = mock(AssistantChartRenderer.class);
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer);
         command = new QqAssistantCommand(service, client, local, data, StreamerNames.none(),
                 new RevenueVisibilityService(new NovaStateStore(core)), settings, sender, clock);
         var dispatcherProvider = mockDispatcherProvider();
@@ -560,6 +564,78 @@ class QqAssistantCommandTest {
         group(ASKER, "问 测试主播甲今天怎么样");
         assertReply(LABEL);
         assertTrue(lastHistory().isEmpty());
+    }
+
+    @Test
+    @DisplayName("追问沿用原会话的结果编号，文字先到，换发问人或超过十分钟时无法画旧数据")
+    void chartFollowUpSendsTextThenImageAndCannotUseOtherOrExpiredResults() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("QUJD"));
+        doReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(JSONObject.of("startTime", START, "messages", 52))))
+                .when(queries).sessions(BILIBILI, FIRST, 7, 1);
+        var chart = call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次弹幕数"));
+
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        modelReplies.add(text("查到了这一场。"));
+        group(ASKER, "问 最近的场次");
+        assertReply("查到了", LABEL);
+        awaitIdle(GROUP, ROOM);
+        verifyNoInteractions(chartRenderer);
+
+        modelReplies.add(chart);
+        modelReplies.add(text("场次弹幕见图。"));
+        group(ASKER, "问 用刚才的数据画图");
+        var first = assertReply("见图", LABEL);
+        var image = assertReply("{image_base64=QUJD}");
+        assertSame(first, image.getPrevious());
+        assertEquals(ROOM, image.getNum());
+        var previous = userPayload(requests.get(2)).getJSONArray("previousResults").getJSONObject(0);
+        assertEquals(1, previous.getIntValue("resultNumber"));
+        assertTrue(previous.getJSONArray("chartColumns").contains("messages"));
+        verify(chartRenderer).render(argThat(spec -> spec.rows().get(0).values().get(0).number().intValueExact() == 52));
+        awaitIdle(GROUP, ROOM);
+
+        modelReplies.add(chart);
+        modelReplies.add(text("找不到数据。"));
+        group(OTHER, "问 用刚才的数据画图");
+        assertReply("图没出来", "结果编号");
+        assertFalse(userPayload(requests.get(4)).containsKey("previousResults"));
+        awaitIdle(GROUP, ROOM);
+
+        clock.advance(Duration.ofMinutes(10));
+        modelReplies.add(chart);
+        modelReplies.add(text("找不到数据。"));
+        group(ASKER, "问 再用刚才的数据画图");
+        var missing = assertReply("图没出来", "结果编号");
+        assertNull(missing.getNext());
+        assertFalse(userPayload(requests.get(6)).containsKey("previousResults"));
+        verifyNoMoreInteractions(chartRenderer);
+    }
+
+    @Test
+    @DisplayName("关掉金额权限后，上一问的金额结果不能通过图表发出")
+    void chartFollowUpCannotReuseAmountsAfterRevocation() throws Exception {
+        var target = channel(GROUP, ROOM, true, true);
+        add(FIRST, "测试主播甲", target);
+        doReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(JSONObject.of("startTime", START, "revenue", 615.75))))
+                .when(queries).sessions(BILIBILI, FIRST, 7, 1);
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        modelReplies.add(text("已有场次数据。"));
+        group(ASKER, "问 最近场次");
+        assertReply("已有", LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        target.setRevenueVisible(false);
+        modelReplies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("revenue"), "title", "流水")));
+        modelReplies.add(text("无法提供该图。"));
+        group(ASKER, "问 把之前那份查数画出来");
+        var response = assertReply("图没出来");
+        assertNull(response.getNext());
+        assertFalse(userPayload(requests.get(2)).containsKey("previousResults"));
+        assertFalse(requests.get(3).toJSONString().contains("615.75"));
+        verifyNoInteractions(chartRenderer);
     }
 
     private AssistantClient newClient() {

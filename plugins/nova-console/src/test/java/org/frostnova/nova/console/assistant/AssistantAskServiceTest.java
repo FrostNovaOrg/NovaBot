@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.file.*;
+import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import java.util.function.IntPredicate;
@@ -46,6 +47,7 @@ class AssistantAskServiceTest {
     private AssistantQueryService queries;
     private AssistantAskService service;
     private AssistantLocalStore local;
+    private AssistantChartRenderer chartRenderer;
     private final List<JSONObject> sent = new ArrayList<>();
     private final List<String> sentTo = new ArrayList<>();
     private final Deque<JSONObject> replies = new ArrayDeque<>();
@@ -92,7 +94,8 @@ class AssistantAskServiceTest {
         timeouts.clear();
         queries = mock(AssistantQueryService.class);
         local = new AssistantLocalStore(directory, clock);
-        service = new AssistantAskService(queries, client, properties, local, clock);
+        chartRenderer = mock(AssistantChartRenderer.class);
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer);
     }
 
     @AfterEach void close() { if (service != null) service.close(); }
@@ -113,6 +116,104 @@ class AssistantAskServiceTest {
                 .filter(m -> "tool".equals(m.getString("role"))).findFirst().orElseThrow();
     }
     private String alias(long uid) { return local.alias("bilibili", uid); }
+
+    // 抓住同一问的第二次查数覆盖第一次，或列拼错后画出别列的数据。
+    @Test void chartCallsReferenceNumberedResultAndItsColumns() {
+        when(queries.sessions("bilibili", 1L, 7, 2)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", 1794000000000L, "messages", 7, "audience", 31))));
+        when(queries.sessions("bilibili", 1L, 30, 2)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", 1794000000000L, "messages", 15, "audience", 43))));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 2)));
+        replies.add(call("sessions", JSONObject.of("days", 30, "limit", 2)));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 2, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("typo"), "title", "场次对比")));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        JSONObject result = ask();
+        var tools = sent.get(3).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(message -> "tool".equals(message.getString("role")))
+                .map(message -> JSON.parseObject(message.getString("content"))).toList();
+        assertEquals(List.of(1, 2), tools.subList(0, 2).stream().map(data -> data.getIntValue("resultNumber")).toList());
+        assertTrue(tools.get(1).getJSONArray("chartColumns").containsAll(List.of("startTime", "messages", "audience")));
+        assertTrue(tools.get(2).getString("reason").contains("列"));
+        assertTrue(result.getString("answer").contains("图没出来"));
+        assertFalse(result.containsKey("images"));
+        verifyNoInteractions(chartRenderer);
+    }
+
+    // 抓住编号或列对错后，图填进另一份结果的数值，或模型自行传数据覆盖查数结果。
+    @Test void chartsUseOnlyRequestedToolCellsAndStopAtTwo() {
+        when(queries.sessions("bilibili", 1L, 7, 2)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", 1794000000000L, "messages", 7, "audience", 31))));
+        when(queries.sessions("bilibili", 1L, 30, 2)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", 1794000000000L, "messages", 15, "audience", 43))));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("image-one"), Optional.of("image-two"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 2)));
+        replies.add(call("sessions", JSONObject.of("days", 30, "limit", 2)));
+        var chart = JSONObject.of("resultNumber", 2, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("audience", "messages"), "title", "场次\n对比");
+        replies.add(call("draw_chart", chart));
+        chart.put("resultNumber", 1);
+        replies.add(call("draw_chart", chart));
+        replies.add(call("draw_chart", chart));
+        replies.add(JSONObject.of("content", "场次对比见图。"));
+
+        JSONObject result = ask();
+        var captured = org.mockito.ArgumentCaptor.forClass(AssistantChartRenderer.Chart.class);
+        verify(chartRenderer, times(2)).render(captured.capture());
+        assertEquals(List.of("观众人数", "弹幕数"), captured.getAllValues().get(0).series());
+        assertEquals("场次 对比", captured.getAllValues().get(0).title());
+        assertEquals(List.of(List.of(new BigDecimal("43"), new BigDecimal("15")), List.of(new BigDecimal("31"), new BigDecimal("7"))),
+                captured.getAllValues().stream().map(value -> value.rows().get(0).values().stream()
+                        .map(AssistantChartRenderer.Value::number).toList()).toList());
+        assertEquals(List.of("image-one", "image-two"), result.getJSONArray("images").toJavaList(String.class));
+        assertFalse(sent.toString().contains("image-one"));
+        assertTrue(sent.get(5).toJSONString().contains("每问最多两张图"));
+
+        reset(chartRenderer);
+        chart.put("points", List.of(999));
+        replies.add(call("draw_chart", chart));
+        replies.add(JSONObject.of("content", "暂无图表。"));
+        assertTrue(ask().getString("answer").contains("图没出来"));
+        verifyNoInteractions(chartRenderer);
+    }
+
+    // 抓住隐藏金额时，查数返回的意外金额列还进入了绘图器，也验证截图可见的表头与参考线用语。
+    @Test void chartRejectsHiddenAmountBeforeRendering() {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", 1794000000000L, "messages", 7, "giftPaid", 999.75))));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "table", "xColumn", "giftPaid",
+                "yColumns", List.of("messages"), "title", "场次数据")));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "line", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次数据", "referenceLine", JSONObject.of("value", 500, "label", "流水目标"))));
+        replies.add(JSONObject.of("content", "这里只能给出场次计数。"));
+        JSONObject result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "展示场次"), new AssistantQueryContext(false));
+        var toolReplies = sent.get(3).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(message -> "tool".equals(message.getString("role")))
+                .map(message -> JSON.parseObject(message.getString("content"))).toList();
+        assertTrue(toolReplies.get(1).getString("reason").contains("涉及金额的列"));
+        assertTrue(toolReplies.get(2).getString("reason").contains("不能包含金额"));
+        assertTrue(result.getString("answer").contains("图没出来"));
+        assertFalse(result.containsKey("images"));
+        verifyNoInteractions(chartRenderer);
+    }
+
+    // 抓住报告模块画不出图时丢掉文字回答、返回坏图，或漏写图没出来的说明。
+    @Test void renderingFailureReturnsTextWithNotice() {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", 1794000000000L, "messages", 7))));
+        when(chartRenderer.render(any())).thenReturn(Optional.empty());
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次弹幕")));
+        replies.add(JSONObject.of("content", "已查到场次弹幕。"));
+        JSONObject result = ask();
+        assertTrue(result.getBooleanValue("answered"));
+        assertTrue(result.getString("answer").startsWith("已查到场次弹幕。"));
+        assertTrue(result.getString("answer").contains("图没出来"));
+        assertFalse(result.containsKey("images"));
+    }
 
     private void useResponses() {
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.api-format", "responses")))
@@ -417,7 +518,7 @@ class AssistantAskServiceTest {
         ask();
         var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
-        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate"), names);
+        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "draw_chart"), names);
         assertEquals(0.3, sent.get(0).getDoubleValue("temperature"));
         assertEquals(properties.getAnswerLimit(), sent.get(0).getIntValue("max_tokens"));
     }
@@ -1193,11 +1294,7 @@ class AssistantAskServiceTest {
     @Test void expiredAudienceEntriesAreEvictedWithoutAnotherQuestion() throws Exception {
         service.close();
         var scheduler = mock(java.util.concurrent.ScheduledExecutorService.class);
-        var constructor = AssistantAskService.class.getDeclaredConstructor(AssistantQueryService.class,
-                AssistantClient.class, AssistantProperties.class, AssistantLocalStore.class, Clock.class,
-                java.util.concurrent.ScheduledExecutorService.class);
-        constructor.setAccessible(true);
-        service = constructor.newInstance(queries, client, properties, local, clock, scheduler);
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer, scheduler);
         var cleanup = org.mockito.ArgumentCaptor.forClass(Runnable.class);
         verify(scheduler).scheduleWithFixedDelay(cleanup.capture(), eq(10L), eq(10L), eq(java.util.concurrent.TimeUnit.MINUTES));
         ask(JSONObject.of("question", "991234560 的表现"));

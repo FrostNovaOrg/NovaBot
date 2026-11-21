@@ -30,6 +30,12 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
+    @DisplayName("图在回答下方，点击可以放大，下一问不会把图片回传给模型")
+    void showsChartPreviewAndOpensFullImage() throws Exception {
+        run("charts");
+    }
+
+    @Test
     @DisplayName("复制和手动复制都保留人工智能提示句")
     void copiesAlwaysIncludeNotice() throws Exception {
         run("copy");
