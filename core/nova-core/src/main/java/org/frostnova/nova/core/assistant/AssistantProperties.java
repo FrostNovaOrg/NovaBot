@@ -23,7 +23,7 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean enabled = false;
-    /** 模型接口地址，兼容 /chat/completions 格式的接口。 */
+    /** 模型接口的基础地址，NovaBot 会按接口格式补上请求路径。 */
     @ConfigLabel("模型接口地址")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -33,9 +33,15 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private String model = "deepseek-flash";
-    /** 模型回答前先想一想的程度，默认关闭。关闭最快、最省；开得越高，回答前想得越久、花费越多（思考的字也按输出计价），也更容易超时。低／高／最高会在回答输出上限之外分别增加 4000／16000／32000 token 供思考使用。只对 DeepSeek 接口生效，换用别家接口时不发送这一项。 */
+    /** 模型接口收发请求的格式。默认 /chat/completions，模型只在 /responses 上支持调工具时选 /responses。 */
+    @ConfigLabel("接口格式")
+    @ConfigLevel(ConfigLevel.Level.ADVANCED)
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigChoices(value = {"chat", "responses"}, labels = {"/chat/completions", "/responses"})
+    private String apiFormat = "chat";
+    /** 模型回答前先想一想的程度。适用于 DeepSeek 接口和 /responses 格式。低／高／最高分别多留 4000／16000／32000 token。设为关闭时，/responses 使用模型默认强度，仍多留 4000 token。强度越高，回答前想得越久、花费越多，也更容易超时。 */
     @ConfigLabel("思考强度")
-    @ConfigSummary("默认关闭；越高回答前想得越久，越慢越贵，也更容易超时；只对 DeepSeek 生效。")
+    @ConfigSummary("适用于 DeepSeek 和 /responses。低／高／最高分别多留 4000／16000／32000 token。默认关闭，/responses 此时用模型默认强度。")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"off", "low", "high", "max"}, labels = {"关闭", "低", "高", "最高"})
@@ -50,6 +56,14 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int dailyQuestionsPerAccount = 20;
+    /** 聊天中每位发问者每天最多提问次数，按东八区自然日计算。 */
+    @ConfigLabel("聊天账号每日提问次数")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int dailyQuestionsPerQqUser = 10;
+    /** 每个聊天会话每天最多提问次数，按东八区自然日计算。 */
+    @ConfigLabel("聊天会话每日提问次数")
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int dailyQuestionsPerQqSession = 50;
     /** 一次模型回答的输出 token 上限。 */
     @ConfigLabel("回答输出上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -111,6 +125,12 @@ public class AssistantProperties {
         model = value;
     }
 
+    public void setApiFormat(String value) {
+        if (!"chat".equals(value) && !"responses".equals(value))
+            throw new IllegalArgumentException("智能助手接口格式请选择 chat 或 responses");
+        apiFormat = value;
+    }
+
     public void setThinking(String value) {
         if (value == null || !List.of("off", "low", "high", "max").contains(value))
             throw new IllegalArgumentException("智能助手思考强度请选择关闭（off）、低（low）、高（high）或最高（max）");
@@ -118,6 +138,8 @@ public class AssistantProperties {
     }
 
     public void setDailyQuestionsPerAccount(int value) { dailyQuestionsPerAccount = positive(value); }
+    public void setDailyQuestionsPerQqUser(int value) { dailyQuestionsPerQqUser = positive(value); }
+    public void setDailyQuestionsPerQqSession(int value) { dailyQuestionsPerQqSession = positive(value); }
     public void setAnswerLimit(int value) { answerLimit = positive(value); }
     public void setPriceInputYuanPerMillion(BigDecimal value) { priceInputYuanPerMillion = price(value); }
     public void setPriceCachedInputYuanPerMillion(BigDecimal value) { priceCachedInputYuanPerMillion = price(value); }

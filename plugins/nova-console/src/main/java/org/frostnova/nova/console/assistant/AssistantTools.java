@@ -1,9 +1,12 @@
 package org.frostnova.nova.console.assistant;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.IntPredicate;
 
 /** 工具只读，主播身份由调用方绑定。 */
@@ -35,8 +38,14 @@ final class AssistantTools {
                             + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED));
 
-    static List<JSONObject> definitions() {
-        return TOOLS.stream().map(t -> JSONObject.of("type", "function", "function", JSONObject.of("name", t.name(),
+    static List<JSONObject> definitions(AssistantQueryContext context) {
+        return TOOLS.stream().filter(tool -> context.amountVisible() || !"revenue".equals(tool.name()))
+                .map(tool -> !context.audienceQuotesVisible() && "danmu".equals(tool.name())
+                        ? new Tool(tool.name(), "本场时间窗弹幕条数与分类统计",
+                            JSONObject.of("start", tool.fields().get("start"), "fromAt", tool.fields().get("fromAt"),
+                                    "toAt", tool.fields().get("toAt")), tool.required())
+                        : tool)
+                .map(t -> JSONObject.of("type", "function", "function", JSONObject.of("name", t.name(),
                 "description", t.description(), "parameters", JSONObject.of("type", "object", "properties", t.fields(),
                         "required", t.required(), "additionalProperties", false)))).toList();
     }
@@ -65,7 +74,15 @@ final class AssistantTools {
 
     static JSONObject query(AssistantQueryService queries, String platform, Long uid, String name, JSONObject args,
                             AssistantQueryContext context, AssistantPrivacy privacy, IntPredicate pauseHistory) {
-        return switch (name) {
+        if (AssistantAggregateRequest.NAME.equals(name)) {
+            return queries.aggregate(platform, uid, args, context, privacy, pauseHistory);
+        }
+        Set<String> nonMonetaryMetrics = context.amountVisible() ? Set.of() : queries.nonMonetaryMetrics(platform);
+        if (!context.amountVisible() && ("revenue".equals(name) || "curve".equals(name)
+                && !nonMonetaryMetrics.contains(curveMetric(args)))) {
+            return JSONObject.of("source", "查数权限", "reason", AssistantAggregateRequest.HIDDEN_AMOUNT);
+        }
+        JSONObject result = switch (name) {
             case "sessions" -> queries.sessions(platform, uid, args.getIntValue("days"), args.getIntValue("limit"));
             case "session" -> queries.session(platform, uid, args.getLongValue("start"));
             case "curve" -> queries.curve(platform, uid, args.getLongValue("start"), args.getString("metric"), args.getIntValue("maxPoints", 120));
@@ -74,8 +91,53 @@ final class AssistantTools {
             case "insights" -> queries.insights(platform, uid, args.getIntValue("days"));
             case "trend" -> queries.trend(platform, uid, args.getString("period"), args.getIntValue("days"));
             case "fans" -> queries.fans(platform, uid, args.getIntValue("days"));
-            case AssistantAggregateRequest.NAME -> queries.aggregate(platform, uid, args, context, privacy, pauseHistory);
             default -> throw new IllegalArgumentException();
         };
+        return context.amountVisible() ? result : (JSONObject) withoutAmounts(result, nonMonetaryMetrics);
+    }
+
+    private static String curveMetric(JSONObject args) {
+        String metric = args.getString("metric");
+        return metric == null || metric.isBlank() ? "online_count" : metric;
+    }
+
+    private static Object withoutAmounts(Object value, Set<String> nonMonetaryMetrics) {
+        if (value instanceof Map<?, ?> fields) {
+            var result = new JSONObject();
+            fields.forEach((key, child) -> {
+                String name = key.toString();
+                switch (name) {
+                    case "revenue", "amount", "totalAmount", "titles" -> { }
+                    case "metrics", "peaks" -> result.put(name, countMetrics(child, nonMonetaryMetrics));
+                    default -> result.put(name, withoutAmounts(child, nonMonetaryMetrics));
+                }
+            });
+            return result;
+        }
+        if (value instanceof Collection<?> items) {
+            var result = new JSONArray();
+            items.forEach(item -> result.add(withoutAmounts(item, nonMonetaryMetrics)));
+            return result;
+        }
+        return value;
+    }
+
+    private static Object countMetrics(Object value, Set<String> nonMonetaryMetrics) {
+        if (value instanceof Map<?, ?> metrics) {
+            var result = new JSONObject();
+            metrics.forEach((key, metric) -> {
+                if (nonMonetaryMetrics.contains(key)) result.put(key.toString(), metric);
+            });
+            return result;
+        }
+        if (value instanceof JSONArray descriptions) {
+            var result = new JSONArray();
+            descriptions.forEach(item -> {
+                if (item instanceof JSONObject metric && !metric.getBooleanValue("money")
+                        && nonMonetaryMetrics.contains(metric.getString("key"))) result.add(metric);
+            });
+            return result;
+        }
+        return null;
     }
 }

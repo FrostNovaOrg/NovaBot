@@ -51,6 +51,9 @@ public class PushTarget {
     /** 金额显示；null 使用群聊隐藏、好友显示的默认值。 */
     private Boolean revenueVisible;
 
+    /** 此通道是否允许向智能助手问数。默认关闭。 */
+    private Boolean assistantEnabled;
+
     /** 静音设置；null 跟随全局。 */
     private QuietHours quietHours;
 
@@ -104,6 +107,7 @@ public class PushTarget {
     public boolean same(PushTarget other) {
         return equals(other) && messages.equals(other.messages)
                 && Objects.equals(revenueVisible, other.revenueVisible)
+                && Objects.equals(assistantEnabled, other.assistantEnabled)
                 && Objects.equals(quietHours, other.quietHours)
                 && Objects.equals(disabledCommands, other.disabledCommands)
                 && Objects.equals(reportPalette, other.reportPalette);

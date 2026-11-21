@@ -55,7 +55,8 @@ class AssistantQueryServiceTest {
         var clock = Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC);
         controller = new StreamerController(data, new StreamerDirectory(props), live, archive,
                 snapshots, details, catalogs, redrawers, clock);
-        query = new AssistantQueryService(controller, archive, details, live, props, catalogs, clock);
+        var statistics = new StreamerStatistics(data, new StreamerDirectory(props), live, archive, snapshots, catalogs, clock);
+        query = new AssistantQueryService(statistics, archive, details, live, props, catalogs, clock);
     }
 
     // 抓助手流水与主播页不一致，以及礼物价值与实扣混用。

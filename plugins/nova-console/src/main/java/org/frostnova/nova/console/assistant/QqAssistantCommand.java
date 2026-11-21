@@ -1,0 +1,342 @@
+package org.frostnova.nova.console.assistant;
+
+import com.alibaba.fastjson2.JSONObject;
+import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.assistant.AssistantClient;
+import org.frostnova.nova.core.assistant.AssistantException;
+import org.frostnova.nova.core.assistant.AssistantLocalStore;
+import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandFollowUp;
+import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.command.NovaCommand;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.ChannelSettings;
+import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.model.MessagePlaceholders;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.SessionKey;
+import org.frostnova.nova.core.service.StreamerNames;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+@Slf4j
+@NovaComponent
+public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
+    private static final String LIVE_PLATFORM = "bilibili";
+    private static final String CHANNEL_OFF = "这里还没开智能助手问答，请管理员在控制台的推送页开启";
+    private static final String BUSY = "上一个问题还在查，稍等";
+    private static final String UNAVAILABLE = "智能助手暂时无法回答，请稍后再试";
+    private static final String LABEL = "\n（由人工智能生成）";
+    private static final int ANSWER_LIMIT = 300;
+    private static final int ACK_SECONDS = 8;
+    private static final Duration CHOICE_TTL = Duration.ofMinutes(2);
+    private static final Duration HISTORY_TTL = Duration.ofMinutes(10);
+    private static final int HISTORY_LIMIT = 3;
+    private static final String CHOSEN_UID_PREFIX = "uid:";
+    private static final Pattern NUMBER = Pattern.compile("[0-9]+");
+
+    private final AssistantAskService assistant;
+    private final AssistantClient client;
+    private final AssistantLocalStore local;
+    private final AbstractDataSource dataSource;
+    private final StreamerNames names;
+    private final RevenueVisibilityService visibility;
+    private final CommandSettingsService settings;
+    private final NovaMessageSender sender;
+    private final Clock clock;
+    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
+    private final Map<Asker, Choice> choices = new ConcurrentHashMap<>();
+    private final Map<HistoryKey, List<Turn>> histories = new ConcurrentHashMap<>();
+    private final ExecutorService workers = Executors.newCachedThreadPool(task -> daemon(task, "assistant-qq"));
+    private final ScheduledThreadPoolExecutor reminders =
+            new ScheduledThreadPoolExecutor(1, task -> daemon(task, "assistant-qq-reminder"));
+
+    @Autowired
+    public QqAssistantCommand(AssistantAskService assistant, AssistantClient client, AssistantLocalStore local,
+                              AbstractDataSource dataSource, StreamerNames names, RevenueVisibilityService visibility,
+                              CommandSettingsService settings, NovaMessageSender sender) {
+        this(assistant, client, local, dataSource, names, visibility, settings, sender, Clock.systemUTC());
+    }
+
+    QqAssistantCommand(AssistantAskService assistant, AssistantClient client, AssistantLocalStore local,
+                       AbstractDataSource dataSource, StreamerNames names, RevenueVisibilityService visibility,
+                       CommandSettingsService settings, NovaMessageSender sender, Clock clock) {
+        this.assistant = assistant;
+        this.client = client;
+        this.local = local;
+        this.dataSource = dataSource;
+        this.names = names;
+        this.visibility = visibility;
+        this.settings = settings;
+        this.sender = sender;
+        this.clock = clock;
+        reminders.setRemoveOnCancelPolicy(true);
+    }
+
+    @Override public String name() { return "问"; }
+    @Override public List<String> aliases() { return List.of("问数"); }
+    @Override public String usage() { return "〈问题〉"; }
+    @Override public String description() { return "向智能助手问直播数据"; }
+    @Override public String category() { return "数据查询"; }
+    @Override public boolean groupOnly() { return false; }
+    @Override public boolean available() { return client.isConfigured(); }
+
+    @Override
+    public CommandReply beforeCooldown(CommandContext context) {
+        if (!available() || context.getSenderUid() == null) return CommandReply.none();
+        return inFlight.contains(session(context)) ? CommandReply.of(BUSY) : null;
+    }
+
+    @Override
+    public CommandReply execute(CommandContext context) {
+        if (!available() || context.getSenderUid() == null) return CommandReply.none();
+        String session = session(context);
+        if (inFlight.contains(session)) return CommandReply.of(BUSY);
+
+        var asker = new Asker(session, context.getSenderUid());
+        choices.remove(asker);
+        var all = candidates(context);
+        var allowed = all.stream().filter(Candidate::allowed).toList();
+        if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
+
+        String question = String.join(" ", context.getArgs());
+        // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
+        String first = context.arg(0);
+        boolean fromChoice = first != null && first.startsWith(CHOSEN_UID_PREFIX);
+        String leadingUid = fromChoice ? first.substring(CHOSEN_UID_PREFIX.length()) : first;
+        Candidate leading = all.stream().filter(item -> item.id().equals(leadingUid)).findFirst().orElse(null);
+        if (fromChoice && leading == null) return CommandReply.of("这里没有为所选主播开启智能助手问答");
+        List<Candidate> named = leading == null ? namedIn(question, all) : List.of(leading);
+        if (leading != null) question = String.join(" ", context.getArgs().subList(1, context.getArgs().size()));
+        if (question.isBlank() || question.codePointCount(0, question.length()) > 300)
+            return CommandReply.of("请用「问 〈问题〉」发送 1–300 字的问题");
+        if (named.stream().anyMatch(item -> !item.allowed()))
+            return CommandReply.of("这里没有为所点名的主播开启智能助手问答");
+
+        var options = named.isEmpty() ? allowed : named;
+        if (options.size() > 1) return choose(asker, options, question);
+        return start(context, session, options.get(0).uid(), question);
+    }
+
+    private List<Candidate> candidates(CommandContext context) {
+        var candidates = new ArrayList<Candidate>();
+        for (PushUser user : dataSource.getUsers(LIVE_PLATFORM)) {
+            if (user.getUid() == null || Boolean.FALSE.equals(user.getEnabled())) continue;
+            PushTarget target = channel(context, user);
+            if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user),
+                    Boolean.TRUE.equals(target.getAssistantEnabled())));
+        }
+        candidates.sort(Comparator.comparing(Candidate::uid));
+        return candidates;
+    }
+
+    private static List<Candidate> namedIn(String question, List<Candidate> candidates) {
+        var numbers = new HashSet<String>();
+        NUMBER.matcher(question).results().forEach(match -> numbers.add(match.group()));
+        var nicknames = candidates.stream().map(Candidate::nickname).filter(name -> name != null && !name.isBlank())
+                .distinct().sorted(Comparator.comparingInt(String::length).reversed()).map(Pattern::quote)
+                .collect(Collectors.joining("|"));
+        var matched = new HashSet<String>();
+        if (!nicknames.isEmpty()) Pattern.compile(nicknames).matcher(question).results().forEach(match -> matched.add(match.group()));
+        return candidates.stream().filter(item -> numbers.contains(item.id()) || matched.contains(item.nickname())).toList();
+    }
+
+    private CommandReply choose(Asker asker, List<Candidate> options, String question) {
+        Instant now = clock.instant();
+        choices.values().removeIf(choice -> !now.isBefore(choice.expires()));
+        choices.put(asker, new Choice(options.stream().map(Candidate::id).toList(), question, now.plus(CHOICE_TTL)));
+        StringBuilder text = new StringBuilder("请回序号选一位主播（2 分钟内有效）");
+        for (int i = 0; i < options.size(); i++) {
+            Candidate item = options.get(i);
+            text.append('\n').append(i + 1).append(". ");
+            if (item.nickname() != null && !item.nickname().isBlank())
+                text.append(MessagePlaceholders.escapeExternalText(item.nickname())).append(" · ");
+            text.append(item.id());
+        }
+        return CommandReply.of(text.toString());
+    }
+
+    @Override
+    public Claimed claim(CommandContext context) {
+        String word = context.getCommand();
+        if (context.getSenderUid() == null || !context.getArgs().isEmpty()
+                || word.length() > 9 || !NUMBER.matcher(word).matches()) return null;
+        var key = new Asker(session(context), context.getSenderUid());
+        Choice choice = choices.get(key);
+        if (choice == null) return null;
+        if (!clock.instant().isBefore(choice.expires())) {
+            choices.remove(key, choice);
+            return null;
+        }
+        int index = Integer.parseInt(word) - 1;
+        if (index < 0 || index >= choice.uids().size() || !choices.remove(key, choice)) return null;
+        // 保留所选 uid，即便答序号前已撤掉该主播。重跑时找不到该 uid 就不查。
+        return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index), choice.question()));
+    }
+
+    private CommandReply start(CommandContext context, String session, Long uid, String question) {
+        if (!inFlight.add(session)) return CommandReply.of(BUSY);
+        var active = new ActiveQuestion(context, uid);
+        var work = new FutureTask<Void>(() -> {
+            active.finish(answer(context, session, uid, question));
+            return null;
+        });
+        try {
+            active.ack = reminders.schedule(active::acknowledge, ACK_SECONDS, TimeUnit.SECONDS);
+            active.deadline = reminders.schedule(() -> {
+                if (active.finish("智能助手本次提问已超时，请问得具体一点")) work.cancel(true);
+            }, AssistantAskService.QUESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            workers.execute(() -> {
+                try { work.run(); }
+                finally { inFlight.remove(session); }
+            });
+        } catch (RejectedExecutionException error) {
+            active.finish(null);
+            inFlight.remove(session);
+            return CommandReply.of(UNAVAILABLE);
+        }
+        return CommandReply.none();
+    }
+
+    private String answer(CommandContext context, String session, Long uid, String question) {
+        try {
+            PushTarget target = allowedChannel(context, uid);
+            if (target == null) return null;
+            boolean amountVisible = visibility.isVisible(target);
+            var source = local.qqSource("QQ", context.getPlatform(), context.getType(), context.getNum(), context.getSenderUid());
+            var key = new HistoryKey(session, source.account(), uid);
+            var history = recentHistory(key, amountVisible);
+            var request = JSONObject.of("question", question, "history", history.stream().map(Turn::content).toList());
+            JSONObject result = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible);
+            PushTarget current = allowedChannel(context, uid);
+            if (current == null || Thread.currentThread().isInterrupted()) return null;
+            if (!result.getBooleanValue("answered")) return result.getString("answer");
+            if (amountVisible && !visibility.isVisible(current)) return AssistantAggregateRequest.HIDDEN_AMOUNT;
+
+            var turns = new ArrayList<>(history);
+            turns.add(new Turn(clock.instant(), amountVisible,
+                    JSONObject.of("question", question, "answerForHistory", clip(result.getString("answerForHistory"), ANSWER_LIMIT))));
+            histories.put(key, List.copyOf(turns.subList(Math.max(0, turns.size() - HISTORY_LIMIT), turns.size())));
+            return clip(result.getString("answer"), ANSWER_LIMIT - LABEL.length()) + LABEL;
+        } catch (AssistantException error) {
+            return error.getMessage();
+        } catch (RuntimeException error) {
+            log.warn("QQ 智能助手问答失败", error);
+            return UNAVAILABLE;
+        }
+    }
+
+    private List<Turn> recentHistory(HistoryKey key, boolean amountVisible) {
+        Instant now = clock.instant();
+        histories.values().removeIf(turns -> !now.isBefore(turns.get(turns.size() - 1).at().plus(HISTORY_TTL)));
+        var turns = histories.getOrDefault(key, List.of());
+        return turns.stream().filter(turn -> turn.amountVisible() == amountVisible
+                && !now.isBefore(turn.at()) && now.isBefore(turn.at().plus(HISTORY_TTL))).toList();
+    }
+
+    private PushTarget allowedChannel(CommandContext context, Long uid) {
+        if (!available() || settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), name()))
+            return null;
+        return dataSource.getUser(LIVE_PLATFORM, uid)
+                .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                .map(user -> channel(context, user)).filter(QqAssistantCommand::usable)
+                .filter(target -> Boolean.TRUE.equals(target.getAssistantEnabled())).orElse(null);
+    }
+
+    private static boolean usable(PushTarget target) { return target != null && !Boolean.FALSE.equals(target.getEnabled()); }
+
+    private static PushTarget channel(CommandContext context, PushUser user) {
+        return ChannelSettings.target(user, context.getPlatform(), context.getType(), context.getNum());
+    }
+
+    private static String session(CommandContext context) {
+        return SessionKey.require(context.getPlatform(), context.getType(), context.getNum());
+    }
+
+    private static String clip(String text, int limit) {
+        if (text.codePointCount(0, text.length()) <= limit) return text;
+        return text.substring(0, text.offsetByCodePoints(0, limit - 1)).stripTrailing() + "…";
+    }
+
+    private static Thread daemon(Runnable task, String name) {
+        Thread thread = new Thread(task, name);
+        thread.setDaemon(true);
+        return thread;
+    }
+
+    @PreDestroy
+    public void close() {
+        reminders.shutdownNow();
+        workers.shutdownNow();
+    }
+
+    private final class ActiveQuestion {
+        private final CommandContext context;
+        private final Long uid;
+        private boolean finished;
+        private ScheduledFuture<?> ack;
+        private ScheduledFuture<?> deadline;
+
+        private ActiveQuestion(CommandContext context, Long uid) {
+            this.context = context;
+            this.uid = uid;
+        }
+
+        synchronized void acknowledge() {
+            if (!finished) send("收到，正在查");
+        }
+
+        synchronized boolean finish(String text) {
+            if (finished) return false;
+            finished = true;
+            if (ack != null) ack.cancel(false);
+            if (deadline != null) deadline.cancel(false);
+            if (text != null) send(text);
+            return true;
+        }
+
+        private void send(String text) {
+            PushTarget target = allowedChannel(context, uid);
+            if (target == null) return;
+            Message.create(context.getPlatform(), context.getType(), context.getNum(),
+                    MessagePlaceholders.escapeExternalText(text)).forEach(message -> {
+                        message.setChannel(target);
+                        message.setReply(true);
+                        sender.send(message);
+                    });
+        }
+    }
+
+    private record Candidate(Long uid, String nickname, boolean allowed) {
+        String id() { return uid.toString(); }
+    }
+    private record Asker(String session, long sender) { }
+    private record Choice(List<String> uids, String question, Instant expires) { }
+    private record HistoryKey(String session, String account, Long uid) { }
+    private record Turn(Instant at, boolean amountVisible, JSONObject content) { }
+}

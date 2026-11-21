@@ -197,7 +197,20 @@ public class CommandDispatcher {
             return;
         }
 
-        // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
+        CommandContext probe = new CommandContext(event.getPlatform(), type, event.getNum(),
+                event.getSenderUid(), typedName, List.copyOf(parts), event.getText());
+        if (command != null) {
+            CommandReply early = command.beforeCooldown(probe);
+            if (early != null) {
+                if (!early.hasContent()) return;
+                if (disabledKeys(command, probe).isEmpty() && (!command.requiresAdmin() || isAdmin(event))) {
+                    reply(event, type, early.content());
+                    return;
+                }
+            }
+        }
+
+        // 常规命令共用这一份冷却。被认领的应答不再计一次。
         if (claimed == null && !acquireCooldown(event, type, name)) {
             return;
         }
@@ -218,14 +231,10 @@ public class CommandDispatcher {
             return;
         }
 
-        CommandContext probe = new CommandContext(event.getPlatform(), type, event.getNum(),
-                event.getSenderUid(), typedName, List.copyOf(parts), event.getText());
-        if (command.disableable() && !command.channelScoped()) {
-            List<String> keys = command.usageKeys(probe);
-            if (!keys.isEmpty() && keys.stream().allMatch(key -> settings.isDisabled(event.getPlatform(), type, event.getNum(), key))) {
-                reply(event, type, CommandContext.here(type) + "已关闭" + CommandContext.quoted(keys) + "命令");
-                return;
-            }
+        List<String> disabled = disabledKeys(command, probe);
+        if (!disabled.isEmpty()) {
+            reply(event, type, CommandContext.here(type) + "已关闭" + CommandContext.quoted(disabled) + "命令");
+            return;
         }
 
         boolean admin = isAdmin(event);
@@ -247,6 +256,13 @@ public class CommandDispatcher {
                     .detail("admin", admin ? "是" : "否")
                     .build());
         }
+    }
+
+    private List<String> disabledKeys(NovaCommand command, CommandContext context) {
+        if (!command.disableable() || command.channelScoped()) return List.of();
+        List<String> keys = command.usageKeys(context);
+        return keys.stream().allMatch(key -> settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), key))
+                ? keys : List.of();
     }
 
     /**

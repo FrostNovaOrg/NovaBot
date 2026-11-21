@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.console.controller.LiveSessionJson;
-import org.frostnova.nova.console.controller.StreamerController;
+import org.frostnova.nova.console.controller.StreamerStatistics;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
@@ -19,7 +19,6 @@ import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
@@ -38,14 +37,13 @@ import java.util.function.IntPredicate;
  */
 @Service
 @NovaComponent
-@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class AssistantQueryService {
     private static final String SESSION_SOURCE = "场次归档，与主播页同一口径";
     private static final String DETAIL_SOURCE = "场次明细归档";
     static final int LINE_LIMIT = 500_000;
     private static final int LIST_LIMIT = 120;
     private static final List<String> COMPARABLE = List.of("durationSeconds", "effectiveSeconds", "revenue", "messages", "audience", "peakOnline");
-    private final StreamerController controller;
+    private final StreamerStatistics statistics;
     private final LiveSessionArchive archive;
     private final LiveDetailArchive details;
     private final LiveDataService live;
@@ -55,16 +53,16 @@ public class AssistantQueryService {
     private final AssistantAudienceHistory audienceHistory = new AssistantAudienceHistory();
 
     @Autowired
-    public AssistantQueryService(StreamerController controller, LiveSessionArchive archive, LiveDetailArchive details,
+    public AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
                                  LiveDataService live, NovaCoreProperties properties,
                                  ObjectProvider<LiveMetricCatalog> catalogs) {
-        this(controller, archive, details, live, properties, catalogs, Clock.systemUTC());
+        this(statistics, archive, details, live, properties, catalogs, Clock.systemUTC());
     }
 
-    public AssistantQueryService(StreamerController controller, LiveSessionArchive archive, LiveDetailArchive details,
+    public AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
                                  LiveDataService live, NovaCoreProperties properties,
                                  ObjectProvider<LiveMetricCatalog> catalogs, Clock clock) {
-        this.controller = controller;
+        this.statistics = statistics;
         this.archive = archive;
         this.details = details;
         this.live = live;
@@ -291,7 +289,7 @@ public class AssistantQueryService {
     /** 直接复用主播页的本期、上期、比较、名单完整度和监听覆盖算法。 */
     public JSONObject insights(String platform, Long uid, int days) {
         return periodResult(platform, uid, days, "insights", "本期表现，与主播页同一算法",
-                () -> controller.insights(platform, uid, Integer.toString(days)));
+                () -> statistics.insights(platform, uid, Integer.toString(days)));
     }
 
     /** 与主播页同参数分桶，仅返回最近至多六十桶。 */
@@ -299,7 +297,7 @@ public class AssistantQueryService {
         String origin = "场次趋势，与主播页同一算法";
         if (!List.of("day", "week", "month").contains(period == null ? "" : period)) return missing(origin, "trend", "请选择 day、week、month");
         var result = periodResult(platform, uid, days, "trend", origin,
-                () -> controller.rangeTrend(platform, uid, period, Integer.toString(days)));
+                () -> statistics.rangeTrend(platform, uid, period, Integer.toString(days)));
         var data = result.getJSONObject("trend");
         if (data != null) cap(data, "buckets", 60, true);
         return result;
@@ -308,7 +306,7 @@ public class AssistantQueryService {
     /** 与主播页同参数的粉丝快照和变化；至多返回最近一百二十个点。 */
     public JSONObject fans(String platform, Long uid, int days) {
         var result = periodResult(platform, uid, days, "fans", "粉丝快照归档，与主播页同一算法",
-                () -> controller.fans(platform, uid, Integer.toString(days)));
+                () -> statistics.fans(platform, uid, Integer.toString(days)));
         var data = result.getJSONObject("fans");
         if (data != null) {
             cap(data, "points", LIST_LIMIT, true);
@@ -443,6 +441,18 @@ public class AssistantQueryService {
 
     private LiveMetricCatalog catalog(String platform) {
         return catalogs.orderedStream().filter(c -> platform.equals(c.platform()) && c.insights() != null).findFirst().orElse(null);
+    }
+
+    Set<String> nonMonetaryMetrics(String platform) {
+        var visible = new HashSet<>(List.of("online_count", "online_rank_count"));
+        var money = new HashSet<String>();
+        catalogs.orderedStream().filter(item -> platform.equals(item.platform())).forEach(item -> {
+            item.liveMetrics().forEach(metric -> (metric.money() ? money : visible).add(metric.key()));
+            item.snapshotMetrics().forEach(metric -> (metric.money() ? money : visible).add(metric.key()));
+            if (item.insights() != null) money.addAll(item.insights().revenueKeys());
+        });
+        visible.removeAll(money);
+        return visible;
     }
 
     private LiveMetricCatalog.Insights rules(String platform) {

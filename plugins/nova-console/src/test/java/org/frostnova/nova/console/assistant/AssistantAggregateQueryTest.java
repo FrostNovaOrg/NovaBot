@@ -779,9 +779,10 @@ class AssistantAggregateQueryTest {
     private JSONObject query(JSONObject request) { return query(request, AssistantQueryContext.CONSOLE, privacy(List.of())); }
 
     private JSONObject query(JSONObject request, IntPredicate pauseHistory) {
+        var context = AssistantQueryContext.CONSOLE;
         var privacy = privacy(List.of());
-        return privacy.prepare("aggregate", service.aggregate(PLATFORM, ROOM, request,
-                AssistantQueryContext.CONSOLE, privacy, pauseHistory));
+        var raw = service.aggregate(PLATFORM, ROOM, request, context, privacy, pauseHistory);
+        return privacy.prepare("aggregate", raw, context);
     }
 
     private void restartService() {
@@ -796,7 +797,7 @@ class AssistantAggregateQueryTest {
 
     private JSONObject query(JSONObject request, AssistantQueryContext context, AssistantPrivacy privacy) {
         var raw = service.aggregate(PLATFORM, ROOM, request, context, privacy);
-        return privacy.prepare("aggregate", raw);
+        return privacy.prepare("aggregate", raw, context);
     }
 
     private static JSONObject request(List<String> kinds, String from, String to, String... metrics) {

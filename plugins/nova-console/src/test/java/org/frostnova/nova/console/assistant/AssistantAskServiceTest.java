@@ -3,6 +3,7 @@ package org.frostnova.nova.console.assistant;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import org.frostnova.nova.core.assistant.*;
 import org.frostnova.nova.core.config.ui.*;
 import org.frostnova.nova.core.config.ui.auth.*;
@@ -13,6 +14,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -27,6 +32,7 @@ import java.util.function.IntPredicate;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.anything;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -41,7 +47,9 @@ class AssistantAskServiceTest {
     private AssistantAskService service;
     private AssistantLocalStore local;
     private final List<JSONObject> sent = new ArrayList<>();
+    private final List<String> sentTo = new ArrayList<>();
     private final Deque<JSONObject> replies = new ArrayDeque<>();
+    private final Deque<JSONObject> responsesReplies = new ArrayDeque<>();
     private RuntimeException providerFailure;
     private int providerStatus = 200;
     private String providerBody;
@@ -60,11 +68,17 @@ class AssistantAskServiceTest {
         var server = MockRestServiceServer.bindTo(template).build();
         server.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(), anything()).andRespond(request -> {
             sent.add(JSON.parseObject(((MockClientHttpRequest) request).getBodyAsString()));
+            sentTo.add(request.getURI().toString());
             onSend.run();
             if (providerFailure != null) throw providerFailure;
-            if (providerStatus != 200) return org.springframework.test.web.client.response.MockRestResponseCreators
-                    .withStatus(org.springframework.http.HttpStatus.valueOf(providerStatus)).createResponse(request);
+            if (providerStatus != 200) {
+                var failure = withStatus(HttpStatus.valueOf(providerStatus));
+                if (providerBody != null) failure.body(providerBody).contentType(MediaType.APPLICATION_JSON);
+                return failure.createResponse(request);
+            }
             if (providerBody != null) return withSuccess(providerBody, MediaType.APPLICATION_JSON).createResponse(request);
+            if (!responsesReplies.isEmpty()) return withSuccess(responsesReplies.removeFirst()
+                    .toJSONString(JSONWriter.Feature.WriteNulls), MediaType.APPLICATION_JSON).createResponse(request);
             JSONObject message = replies.isEmpty() ? JSONObject.of("content", "没有这份数据") : replies.removeFirst();
             return withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message", message)),
                     "usage", JSONObject.of("prompt_tokens", inputTokens, "completion_tokens", 10)).toJSONString(),
@@ -74,6 +88,7 @@ class AssistantAskServiceTest {
         client.validateAndSaveKey("member", SECRET);
         client.acknowledge("member");
         sent.clear();
+        sentTo.clear();
         timeouts.clear();
         queries = mock(AssistantQueryService.class);
         local = new AssistantLocalStore(directory, clock);
@@ -98,6 +113,173 @@ class AssistantAskServiceTest {
                 .filter(m -> "tool".equals(m.getString("role"))).findFirst().orElseThrow();
     }
     private String alias(long uid) { return local.alias("bilibili", uid); }
+
+    private void useResponses() {
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.api-format", "responses")))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+    }
+
+    private JSONObject responsesReply(JSONObject... items) {
+        return JSONObject.of("status", "completed", "output", List.of(items),
+                "usage", JSONObject.of("input_tokens", inputTokens, "output_tokens", 10));
+    }
+
+    private JSONObject responsesText(String text) {
+        return JSONObject.of("type", "message", "role", "assistant", "content",
+                List.of(JSONObject.of("type", "output_text", "text", text)));
+    }
+
+    // 假接口会拒收次序改变、内容改写或结果关联到错误 call_id 的续问。
+    @Test void responsesReplaysOrderedItemsAndMatchesEveryToolResultByCallId() throws Exception {
+        useResponses();
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档", "totalAmount", 1000));
+        when(queries.fans("bilibili", 1L, 7)).thenReturn(JSONObject.of("source", "粉丝快照"));
+        var items = List.of(
+                JSONObject.of("type", "reasoning", "id", "rs_1", "encrypted_content", "opaque-1", "summary", List.of()),
+                JSONObject.of("type", "function_call", "id", "fc_1", "call_id", "call-revenue", "name", "revenue",
+                        "arguments", "{ \"start\": 123 }", "status", "completed"),
+                JSONObject.of("type", "reasoning", "id", "rs_2", "encrypted_content", "opaque-2", "summary", List.of(), "status", null),
+                JSONObject.of("type", "function_call", "id", "fc_2", "call_id", "call-fans", "name", "fans",
+                        "arguments", "{ \"days\": 7 }"));
+        responsesReplies.add(responsesReply(items.toArray(JSONObject[]::new)));
+        responsesReplies.add(responsesReply(responsesText("总流水1000（场次归档）")));
+        onSend = () -> {
+            if (!sentTo.get(sent.size() - 1).endsWith("/responses")) providerStatus = 400;
+            if (sent.size() != 2 || providerStatus != 200) return;
+            var input = sent.get(1).getJSONArray("input");
+            if (input == null || input.size() != 8 || !items.equals(input.subList(2, 6))) {
+                providerStatus = 400;
+                return;
+            }
+            if (!"call-revenue".equals(input.getJSONObject(6).getString("call_id"))
+                    || !"call-fans".equals(input.getJSONObject(7).getString("call_id"))) providerStatus = 400;
+        };
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result.getString("answer"));
+        assertEquals("总流水1000（场次归档）", result.getString("answer"));
+        assertEquals(List.of("https://model.example/v1/responses", "https://model.example/v1/responses"), sentTo);
+        var input = sent.get(1).getJSONArray("input");
+        assertEquals(sent.get(0).getJSONArray("input"), input.subList(0, 2));
+        assertEquals("developer", input.getJSONObject(0).getString("role"));
+        for (int i = 6; i < 8; i++) assertEquals("function_call_output", input.getJSONObject(i).getString("type"));
+        assertEquals("场次归档", JSON.parseObject(input.getJSONObject(6).getString("output")).getString("source"));
+        assertEquals("粉丝快照", JSON.parseObject(input.getJSONObject(7).getString("output")).getString("source"));
+        var log = Files.readString(directory.resolve("assistant-transmissions.jsonl"));
+        assertEquals(sentTo.get(0), JSON.parseObject(log).getString("endpoint"));
+        assertFalse(log.contains("opaque-"));
+        assertFalse(log.contains("call-revenue"));
+    }
+
+    // 模型在调用工具前说过话时，假接口拒绝挪动条目或丢掉 phase 的续问。
+    @Test void responsesReplaysPrefaceInPlaceWithItsOriginalFields() {
+        useResponses();
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档", "totalAmount", 1000));
+        var preface = JSONObject.of("type", "message", "role", "assistant", "id", "msg_preface", "phase", "commentary",
+                "status", "completed", "content", List.of(JSONObject.of("type", "output_text", "text", "我先查一下", "annotations", null)));
+        var output = List.of(
+                JSONObject.of("type", "reasoning", "id", "rs_preface", "encrypted_content", "opaque", "summary", List.of()),
+                preface,
+                JSONObject.of("type", "function_call", "id", "fc_revenue", "call_id", "call-revenue",
+                        "name", "revenue", "arguments", "{ \"start\": 123 }"));
+        responsesReplies.add(responsesReply(output.toArray(JSONObject[]::new)));
+        responsesReplies.add(responsesReply(responsesText("总流水1000（场次归档）")));
+        onSend = () -> {
+            if (sent.size() != 2) return;
+            var input = sent.get(1).getJSONArray("input");
+            if (input == null || input.size() != 6 || !output.equals(input.subList(2, 5))) {
+                providerStatus = 400;
+                providerBody = "{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"output_mismatch\",\"param\":\"input\"}}";
+            }
+        };
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result.getString("reason"));
+        assertEquals("总流水1000（场次归档）", result.getString("answer"));
+        assertEquals(2, sent.size());
+        var toolResult = sent.get(1).getJSONArray("input").getJSONObject(5);
+        assertEquals("function_call_output", toolResult.getString("type"));
+        assertEquals("call-revenue", toolResult.getString("call_id"));
+    }
+
+    // 要求重写核对不上的数字时，原回答也要连同思考条目和 phase 送回。
+    @Test void responsesReplaysOriginalAnswerWhenRewritingUnverifiedNumbers() {
+        useResponses();
+        var draft = responsesText("总流水9999");
+        draft.put("phase", "final_answer");
+        var reasoning = JSONObject.of("type", "reasoning", "id", "rs_draft", "encrypted_content", "opaque", "summary", List.of());
+        responsesReplies.add(responsesReply(reasoning, draft));
+        responsesReplies.add(responsesReply(responsesText("没有这份数据")));
+
+        var result = ask();
+        assertEquals("没有这份数据", result.getString("answer"));
+        assertTrue(result.getJSONArray("unverifiedNumbers").isEmpty());
+        assertEquals(2, sent.size());
+        var rewrite = sent.get(1);
+        assertEquals("none", rewrite.getString("tool_choice"));
+        var input = rewrite.getJSONArray("input");
+        assertEquals(List.of(reasoning, draft), input.subList(2, 4));
+        assertTrue(input.getJSONObject(4).getString("content").contains("9999"));
+    }
+
+    private JSONObject exhaustedResponses() {
+        var reply = responsesReply(JSONObject.of("type", "reasoning", "encrypted_content", "opaque"));
+        reply.put("status", "incomplete");
+        reply.put("incomplete_details", JSONObject.of("reason", "max_output_tokens"));
+        return reply;
+    }
+
+    // 抓住空截断直接失败、重试未加倍、再次截断无限重试或漏记第一轮花费。
+    @ParameterizedTest @CsvSource({"false", "true"})
+    void responsesRetriesEmptyOutputLimitOnceAndAccountsForBothTries(boolean exhaustedAgain) throws Exception {
+        useResponses();
+        responsesReplies.add(exhaustedResponses());
+        responsesReplies.add(exhaustedAgain ? exhaustedResponses() : responsesReply(responsesText("有数据")));
+        var result = ask();
+        assertEquals(!exhaustedAgain, result.getBooleanValue("answered"));
+        assertEquals(2, sent.size());
+        assertEquals(4800, sent.get(0).getIntValue("max_output_tokens"));
+        assertEquals(8800, sent.get(1).getIntValue("max_output_tokens"));
+        assertEquals(sent.get(0).getJSONArray("input"), sent.get(1).getJSONArray("input"));
+        assertEquals(0, new java.math.BigDecimal("0.000612").compareTo(result.getBigDecimal("costYuan")));
+        assertEquals(1, client.status().questionsToday().get("member"));
+        assertTrue(timeouts.get(1).compareTo(timeouts.get(0)) < 0);
+        if (exhaustedAgain) {
+            assertEquals("max_output_tokens", result.getString("reason"));
+            assertTrue(result.getString("answerForHistory").contains("输出上限"));
+            var log = JSON.parseObject(Files.readString(directory.resolve("assistant-transmissions.jsonl")));
+            assertEquals("max_output_tokens", log.getString("reason"));
+        } else assertEquals("有数据", result.getString("answer"));
+    }
+
+    // 有可用文字的截断仍可作答，避免为同一句再付一次费用。
+    @Test void responsesDoesNotRetryIncompleteOutputWithText() {
+        useResponses();
+        var partial = exhaustedResponses();
+        partial.put("output", List.of(partial.getJSONArray("output").getJSONObject(0), responsesText("部分回答")));
+        responsesReplies.add(partial);
+        assertEquals("部分回答", ask().getString("answer"));
+        assertEquals(1, sent.size());
+    }
+
+    // 抓住发送记录漏掉可诊断的错误字段，或把服务原文中的密钥和数据写入日志。
+    @Test void responsesRecordsStructuredErrorAndActualEndpointWithoutKey() throws Exception {
+        useResponses();
+        providerStatus = 400;
+        providerBody = JSONObject.of("error", JSONObject.of("type", "invalid_request_error",
+                "code", "unsupported_parameter", "param", "temperature", "message", "private echo " + SECRET)).toJSONString();
+        var result = ask();
+        assertEquals(false, result.get("answered"));
+        assertEquals("provider_error", result.getString("reason"));
+        var log = Files.readString(directory.resolve("assistant-transmissions.jsonl"));
+        var row = JSON.parseObject(log);
+        assertEquals("https://model.example/v1/responses", row.getString("endpoint"));
+        assertEquals(JSONObject.of("type", "invalid_request_error", "code", "unsupported_parameter", "param", "temperature"),
+                row.getJSONObject("providerError"));
+        for (String forbidden : List.of(SECRET, "private echo")) {
+            assertFalse(log.contains(forbidden));
+            assertFalse(result.toJSONString().contains(forbidden));
+        }
+    }
 
     @ParameterizedTest
     @CsvSource({
@@ -246,6 +428,24 @@ class AssistantAskServiceTest {
                 "from", "2026-11-01", "to", "2026-11-30", "metrics", List.of("count"))));
         ask();
         assertTrue(JSON.parseObject(toolMessage().getString("content")).getString("reason").contains("种类"));
+    }
+
+    @Test
+    @DisplayName("隐藏金额的会话通过场次比较或流水工具绕过金额设置")
+    void restrictedQuestionWithholdsAmountFromLegacyTools() {
+        when(queries.session("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档",
+                "current", JSONObject.of("revenue", 576.42, "messages", 32),
+                "versusMedian", JSONObject.of("revenue", JSONObject.of("difference", 52.37))));
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        replies.add(call("session", JSONObject.of("start", 123)));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "这场表现怎样"),
+                new AssistantQueryContext(false));
+        assertTrue(result.getBooleanValue("answered"));
+        assertTrue(toolMessage().getString("content").contains("32"));
+        assertFalse(toolMessage().getString("content").contains("576.42"), "场次流水进入了模型请求");
+        assertFalse(toolMessage().getString("content").contains("52.37"), "场次比较给出了流水差额");
+        verify(queries, never()).revenue(anyString(), anyLong(), anyLong());
     }
 
     // 抓住问答把调用方隐藏金额的上下文替换为控制台默认值，导致工具恢复金额。
@@ -436,6 +636,7 @@ class AssistantAskServiceTest {
         assertEquals(1, text.lines().count());
         assertTrue(text.contains("弹幕原话 1 条"));
         assertTrue(text.contains("danmu"));
+        assertEquals("https://model.example/v1/chat/completions", JSON.parseObject(text).getString("endpoint"));
         for (String file : List.of("assistant-transmissions.jsonl", "assistant-alias.key")) {
             if (Files.getFileStore(directory).supportsFileAttributeView("posix"))
                 assertEquals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(directory.resolve(file)));
