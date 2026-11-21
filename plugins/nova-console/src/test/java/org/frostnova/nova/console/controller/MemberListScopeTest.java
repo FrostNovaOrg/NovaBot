@@ -164,26 +164,6 @@ class MemberListScopeTest {
                 .map(item -> ((JSONObject)item).getString("id")).toList());
     }
 
-    // 本人标记变动含账号和号码，和同类配置记录一样，只给负责该主播的成员查看。
-    @Test void streamerSelfTimelineIsLimitedToAssignedStreamers() {
-        for (long uid : new long[]{A, B}) {
-            timeline.record(TimelineEvent.of(TimelineEventType.STREAMER_SELF_CHANGED, TimelineEvent.Level.INFO)
-                    .streamer(uid == A ? "Owner A" : "Other B").channel("好友号 " + (uid == A ? SHARED : OTHER))
-                    .text("test-admin 为主播修改本人号码 " + (uid == A ? SHARED : OTHER))
-                    .detail("actor", "test-admin").detail("streamerPlatform", "bilibili")
-                    .detail("streamerUid", String.valueOf(uid)).build());
-        }
-        use(MEMBER);
-        var owned = response("timeline");
-        concealed(owned);
-        assertEquals(1, owned.getJSONArray("events").size());
-        assertTrue(owned.toJSONString().contains("test-admin"));
-        assertTrue(owned.toJSONString().contains(String.valueOf(SHARED)));
-        use(ConfigUiAccount.local(Instant.EPOCH));
-        assertEquals(2, new TimelineController(timeline).timeline(null, false, null, null, null, null, null, 50, null)
-                .getJSONArray("events").size());
-    }
-
     // 管理员各列表逐字段对照原有响应，只归一化随运行变化的时刻和资源读数。
     @Test void adminListsKeepOriginalFields() throws Exception {
         recorder.recordSuccess("qq", "群 " + SHARED, "A push", 1);

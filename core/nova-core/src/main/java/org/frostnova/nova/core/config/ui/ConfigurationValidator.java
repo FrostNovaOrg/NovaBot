@@ -9,8 +9,6 @@ import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import org.frostnova.nova.core.datasource.StreamerSelfAssignments;
-import java.util.function.BiPredicate;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -54,12 +52,11 @@ public class ConfigurationValidator {
      * @return 问题列表，为空表示通过
      */
     public List<String> validateDatasource(String content, Set<String> knownPlatforms) {
-        return validateDatasource(content, knownPlatforms, null, (platform, uid) -> true);
+        return validateDatasource(content, knownPlatforms, null);
     }
 
-    /** 主播身份始终校验；其余只检查本次提交的主播及有效收件号码的冲突。 */
-    public List<String> validateDatasource(String content, Set<String> knownPlatforms, Set<String> submitted,
-                                           BiPredicate<String, Long> visible) {
+    /** 始终校验所有主播的身份，其余字段只检查本次提交的主播。 */
+    public List<String> validateDatasource(String content, Set<String> knownPlatforms, Set<String> submitted) {
         JSONArray users;
         try {
             users = JSON.parseArray(content);
@@ -73,22 +70,6 @@ public class ConfigurationValidator {
 
         List<String> issues = new ArrayList<>();
         Set<String> seenUsers = new HashSet<>();
-        Map<Long, SelfOwner> selfOwners = new HashMap<>();
-        if (submitted != null) {
-            JSONArray peers = JSON.parseArray(users.toJSONString());
-            for (Object value : peers) {
-                if (value instanceof JSONObject user && submitted.contains(userKey(user))) user.remove("targets");
-            }
-            StreamerSelfAssignments.normalize(peers, ignored -> { });
-            for (int i = 0; i < peers.size(); i++) {
-                if (!(peers.get(i) instanceof JSONObject peer) || peer.getJSONArray("targets") == null) continue;
-                for (Object value : peer.getJSONArray("targets")) {
-                    if (value instanceof JSONObject target && Boolean.TRUE.equals(target.get("streamerSelf"))) {
-                        selfOwners.put(target.getLong("num"), owner(peer, i));
-                    }
-                }
-            }
-        }
         // 取「认得的」而不是「已注册的」：处理器换过包名之后，老配置里写的是旧名，
         // 运行期按别名回落照样认得出。这里若按主表拦，就成了「跑得起来却存不下去」——
         // 使用者被自己那份还能用的配置挡在保存之外，而界面不会告诉他该改哪儿
@@ -123,7 +104,6 @@ public class ConfigurationValidator {
             checkUserLists(user, where + "（" + platform + ", uid " + uid + "）", issues);
             String streamer = where + "（" + platform + ", uid " + uid + "）";
             checkTargets(user.getJSONArray("targets"), streamer, knownPlatforms, handlers, issues);
-            checkStreamerSelf(user.getJSONArray("targets"), owner(user, i), selfOwners, visible, issues);
         }
 
         return issues;
@@ -143,33 +123,6 @@ public class ConfigurationValidator {
     }
 
     private static String userKey(JSONObject user) { return user.getString("platform") + ":" + user.getString("uid"); }
-
-    private record SelfOwner(String label, String platform, Long uid) { }
-
-    private static SelfOwner owner(JSONObject user, int index) {
-        return new SelfOwner("第 " + (index + 1) + " 个主播（" + user.getString("platform") + ", uid " + user.getString("uid") + "）",
-                user.getString("platform"), user.getLong("uid"));
-    }
-
-    private void checkStreamerSelf(JSONArray targets, SelfOwner streamer, Map<Long, SelfOwner> owners,
-                                   BiPredicate<String, Long> visible, List<String> issues) {
-        if (targets == null) return;
-        int selected = 0;
-        for (int i = 0; i < targets.size() && issues.size() < MAX_ISSUES; i++) {
-            if (!(targets.get(i) instanceof JSONObject target) || !Boolean.TRUE.equals(target.get("streamerSelf"))) continue;
-            String at = streamer.label() + "的第 " + (i + 1) + " 条通道（号码 " + target.getString("num") + "）";
-            if (++selected > 1) issues.add(at + "：一位主播最多只能把一条好友通道标成主播本人");
-            Long num = target.getLong("num");
-            if (num == null) continue;
-            SelfOwner owner = owners.putIfAbsent(num, streamer);
-            if (owner != null && !owner.equals(streamer)) {
-                String reason = visible.test(owner.platform(), owner.uid())
-                        ? "这个号码已在另一位主播（" + owner.label() + "）那里标成主播本人，请先取消原来的标记"
-                        : "这个号码已经是另一位主播的主播本人，换一个号，或请管理员处理";
-                issues.add(at + "：" + reason);
-            }
-        }
-    }
 
     private void checkUserLists(JSONObject user, String where, List<String> issues) {
         for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {
@@ -252,27 +205,6 @@ public class ConfigurationValidator {
     }
 
     private void checkChannelSettings(JSONObject target, String at, List<String> issues) {
-        Object self = target.get("streamerSelf");
-        String channel = at + "（号码 " + target.getString("num") + "）";
-        if (self != null && !(self instanceof Boolean)) issues.add(channel + "的主播本人标记必须为 true、false 或 null");
-        if (Boolean.TRUE.equals(self) && !Objects.equals(target.getInteger("type"), PushTargetType.FRIEND.getCode())) {
-            issues.add(channel + "：群通道不能标成主播本人");
-        }
-        var messages = target.getJSONArray("messages");
-        if (messages != null && (!Boolean.TRUE.equals(self)
-                || !Objects.equals(target.getInteger("type"), PushTargetType.FRIEND.getCode()))) {
-            for (Object entry : messages) {
-                if (entry instanceof JSONObject message
-                        && message.get("handler") instanceof String handler
-                        && Set.of("org.frostnova.nova.core.handler.SessionRecapPushHandler",
-                                "org.frostnova.nova.core.handler.PreLiveReminderPushHandler").contains(handler)) {
-                    String label = handler.endsWith(".PreLiveReminderPushHandler")
-                            ? "开播前提醒（私聊）" : "下播小结（私聊）";
-                    issues.add(channel + "：" + label + "只能发给主播本人，请先勾『这是主播本人』");
-                    break;
-                }
-            }
-        }
         Object revenue = target.get("revenueVisible");
         if (revenue != null && !(revenue instanceof Boolean)) issues.add(at + "的 revenueVisible 必须为 true、false 或 null");
         Object quiet = target.get("quietHours");

@@ -424,10 +424,6 @@
         "text": "设置即时生效"
       },
       {
-        "name": "STREAMER_SELF_CHANGED",
-        "text": "主播本人标记变动"
-      },
-      {
         "name": "SETTINGS_RESTART_PENDING",
         "text": "设置待重启"
       },

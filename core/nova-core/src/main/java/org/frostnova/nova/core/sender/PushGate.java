@@ -41,8 +41,6 @@ public class PushGate {
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void ready() { initialized = true; }
 
-    public boolean isReady() { return initialized; }
-
     /** 无主播的回复：至少一个启用通道不静音时允许回复。 */
     public boolean allowedFor(org.frostnova.nova.core.model.Message message) {
         return message.getChannel() == null

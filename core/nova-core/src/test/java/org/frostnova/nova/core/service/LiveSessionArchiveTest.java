@@ -54,21 +54,6 @@ class LiveSessionArchiveTest {
         archive = new LiveSessionArchive(properties);
     }
 
-    @Test @DisplayName("小结指标投影跳过大名单且逐行容错，避免节省内存后漏掉有效场次")
-    void metricsProjectionMatchesArchive() throws Exception {
-        var first = JSONObject.parseObject(JSON.toJSONString(session(1_000_000L, 3600)));
-        first.put("userSets", Map.of("enter_users", java.util.stream.LongStream
-                .range(920000000L, 920006500L).boxed().toList()));
-        first.put("extra", Map.of("text", "Sample \"viewer\"\n".repeat(6000), "nested", List.of(Map.of("a", true))));
-        var second = JSONObject.parseObject(JSON.toJSONString(session(2_000_000L, 1800)));
-        Files.writeString(dir.resolve("sessions.jsonl"), first + "\n{invalid\n\n" + second);
-        var expected = archive.find(0, 2_000_001L).stream().map(s -> new LiveSessionArchive.SessionMetrics(
-                s.platform(), s.uid(), s.startTime(), s.endTime(), s.durationSeconds(), s.metrics())).toList();
-        assertEquals(expected, archive.findMetrics("bilibili", STREAMER_UID, 2_000_000L));
-        assertEquals(expected.subList(0, 1), archive.findMetrics("bilibili", STREAMER_UID, 1_000_000L));
-        assertTrue(archive.findMetrics("other", STREAMER_UID, Long.MAX_VALUE).isEmpty());
-    }
-
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"metrics\":{\"watched_count\":null}}", "{\"metrics\":{\"watched_count\":\"12\"}}",
@@ -77,7 +62,7 @@ class LiveSessionArchiveTest {
             "{\"maintenanceGapSeconds\":\"gap\"}", "{\"roomOutageSeconds\":{}}",
             "{\"titles\":[{\"at\":\"later\"}]}", "{\"peaks\":{\"watched_count\":{\"at\":1,\"value\":\"many\"}}}"
     })
-    void metricsRejectsRowsRejectedByPage(String fields) throws Exception {
+    void archiveSkipsMalformedRows(String fields) throws Exception {
         var valid = JSONObject.of("platform", "test", "uid", 910000001L, "startTime", 1_000_000L,
                 "metrics", Map.of("watched_count", 10));
         var invalid = JSONObject.parseObject(valid.toJSONString());
@@ -86,22 +71,19 @@ class LiveSessionArchiveTest {
         Files.writeString(dir.resolve("sessions.jsonl"), valid + "\n"
                 + JSON.toJSONString(invalid, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n"
                 + valid.fluentPut("startTime", 3_000_000L) + "\n");
-        var expected = archive.find(0, Long.MAX_VALUE).stream().map(LiveSession::startTime).toList();
-        assertEquals(List.of(1_000_000L, 3_000_000L), expected);
-        assertEquals(expected, archive.findMetrics("test", 910000001L, Long.MAX_VALUE).stream()
-                .map(LiveSessionArchive.SessionMetrics::startTime).toList());
+        var starts = archive.find(0, Long.MAX_VALUE).stream().map(LiveSession::startTime).toList();
+        assertEquals(List.of(1_000_000L, 3_000_000L), starts);
     }
 
     @Test
-    void metricsKeepsToleratedLegacyFields() throws Exception {
+    void archiveAcceptsLegacyFields() throws Exception {
         var legacy = JSONObject.of("platform", "test", "uid", 910000001L, "startTime", 1000,
                 "userSets", Map.of("enter_users", List.of(920000001L, "viewer-x", Map.of())),
                 "endReason", "OLD_REASON", "anonymousCounts", Map.of("enter_users", "unknown"),
                 "peaks", Map.of("watched_count", Map.of("value", 5)));
         Files.writeString(dir.resolve("sessions.jsonl"), legacy.toJSONString());
-        assertEquals(1, archive.find(0, Long.MAX_VALUE).size());
-        assertEquals(List.of(1000L), archive.findMetrics("test", 910000001L, Long.MAX_VALUE).stream()
-                .map(LiveSessionArchive.SessionMetrics::startTime).toList());
+        var starts = archive.find(0, Long.MAX_VALUE).stream().map(LiveSession::startTime).toList();
+        assertEquals(List.of(1000L), starts);
     }
 
     @Test

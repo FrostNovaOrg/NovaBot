@@ -172,18 +172,6 @@ public class CommandDispatcher {
             return;
         }
 
-        CommandContext input = new CommandContext(event.getPlatform(), type, event.getNum(),
-                event.getSenderUid(), name, List.copyOf(parts), event.getText());
-        for (NovaCommand candidate : commands) {
-            if (candidate instanceof ScopedCommand scoped && scoped.matches(input)) {
-                command = candidate;
-                // 只记录注册的命令名，私聊参数不会进入冷却日志和时间线。
-                name = candidate.name();
-                parts = new ArrayList<>();
-                break;
-            }
-        }
-
         // 私聊里撞上仅限群聊的命令：按认不出处理，回菜单。
         // 菜单此时已按会话过滤，不会把这条用不了的命令再推荐一遍
         if (command != null && command.groupOnly() && !group) {
@@ -209,8 +197,8 @@ public class CommandDispatcher {
             return;
         }
 
-        // 被认领的应答和按上下文匹配的固定说法不吃冷却，其余出声路径共用冷却
-        if (claimed == null && !(command instanceof ScopedCommand) && !acquireCooldown(event, type, name)) {
+        // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
+        if (claimed == null && !acquireCooldown(event, type, name)) {
             return;
         }
 
@@ -264,7 +252,8 @@ public class CommandDispatcher {
     /**
      * 问一圈有没有人认领这条认不出的消息
      * <p>
-     * 认领方按 Spring 的优先级依次问过去，头一个认领的说了算；正在等回答的选主播追问先于招呼选档。
+     * 认领方按 Bean 的顺序依次问过去，头一个认领的说了算——同一条消息被两处认领本就是个错误，
+     * 而在这里挑一个「更合适的」只会让那个错误更难被发现。
      * @return 认领结果，无人认领时为 null
      */
     private CommandFollowUp.Claimed claim(NovaRemoteMessageEvent event, PushTargetType type,
@@ -275,7 +264,7 @@ public class CommandDispatcher {
 
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), name, List.copyOf(args), event.getText());
-        for (CommandFollowUp followUp : followUps.orderedStream().toList()) {
+        for (CommandFollowUp followUp : followUps) {
             try {
                 CommandFollowUp.Claimed claimed = followUp.claim(context);
                 if (claimed != null) {
@@ -410,7 +399,7 @@ public class CommandDispatcher {
      */
     private NovaCommand find(String name) {
         for (NovaCommand command : commands) {
-            if (!(command instanceof ScopedCommand) && (command.name().equals(name) || command.aliases().contains(name))) {
+            if (command.name().equals(name) || command.aliases().contains(name)) {
                 return command;
             }
         }

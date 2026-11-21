@@ -33,30 +33,6 @@ import static org.mockito.Mockito.*;
  */
 @DisplayName("消息发送器")
 class NovaMessageSenderTest {
-    @Test @DisplayName("提醒入队使用东八区传入时刻复核静音，避免服务器时区不同仍吵醒主播")
-    void scheduledMessageUsesProvidedTime() {
-        var properties = new NovaCoreProperties();
-        properties.getPush().setEnabled(true);
-        properties.getPush().setQuietStart("23:00");
-        properties.getPush().setQuietEnd("07:00");
-        // 用无配置的发送目标观察入队入口，不启动平台发送线程。
-        var destinations = mock(NovaSenderService.class);
-        when(destinations.getSender(PLATFORM)).thenReturn(Optional.empty());
-        var sender = new NovaMessageSender(mock(HttpUtil.class), destinations,
-                new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties), TimelineWriter.NONE,
-                new org.frostnova.nova.core.service.AtAllQuotaService(properties), mock(ObjectProvider.class),
-                mock(FirstPushTipService.class));
-        var message = message();
-        var target = new org.frostnova.nova.core.model.PushTarget(); message.setChannel(target);
-        assertEquals(PushGate.Block.QUIET_HOURS, sender.sendScheduled(message, LocalTime.of(23, 20)));
-        verifyNoInteractions(destinations);
-        assertNull(sender.sendScheduled(message, LocalTime.of(19, 0)));
-        verify(destinations).getSender(PLATFORM);
-        properties.getPush().setEnabled(false);
-        assertEquals(PushGate.Block.DISABLED, sender.sendScheduled(message(), LocalTime.of(19, 0)));
-        verifyNoMoreInteractions(destinations);
-    }
-
     private static final String PLATFORM = "qq-onebot";
 
     @Test

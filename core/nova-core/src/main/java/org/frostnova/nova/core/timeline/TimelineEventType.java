@@ -124,9 +124,6 @@ public enum TimelineEventType {
      */
     SETTINGS_APPLIED("设置即时生效", TimelineCategory.SETTINGS),
 
-    /** 主播本人接收号码被设置、取消或更换。 */
-    STREAMER_SELF_CHANGED("主播本人标记变动", TimelineCategory.SETTINGS),
-
     /**
      * 保存下来了，但要等重启才生效
      */

@@ -27,18 +27,18 @@ import static org.mockito.Mockito.*;
 
 class NovaMessageSenderOverflowTest {
     @Test
-    @DisplayName("掉线积压满队列后，周报与下播小结持锁发送仍能结束，无需重启恢复")
+    @DisplayName("掉线积压满队列后，周报与通知持锁发送仍能结束，无需重启恢复")
     void overflowDoesNotDeadlockDeliveryServices() throws Exception {
         try (BlockedPlatform platform = new BlockedPlatform()) {
             ReentrantLock weeklyLock = new ReentrantLock();
-            ReentrantLock recapLock = new ReentrantLock();
-            CountDownLatch recapLocked = new CountDownLatch(1);
+            ReentrantLock noticeLock = new ReentrantLock();
+            CountDownLatch noticeLocked = new CountDownLatch(1);
             CountDownLatch firstCallbackStarted = new CountDownLatch(1);
             CountDownLatch callbacksDone = new CountDownLatch(2);
-            Message recap = message();
-            recap.addOnFailureCallback(() -> {
+            Message notice = message();
+            notice.addOnFailureCallback(() -> {
                 firstCallbackStarted.countDown();
-                takeLock(recapLock);
+                takeLock(noticeLock);
                 callbacksDone.countDown();
             });
             Message weekly = message();
@@ -46,16 +46,16 @@ class NovaMessageSenderOverflowTest {
                 takeLock(weeklyLock);
                 callbacksDone.countDown();
             });
-            platform.fill(recap, weekly);
+            platform.fill(notice, weekly);
 
             CountDownLatch callersDone = new CountDownLatch(2);
             AtomicReference<Throwable> error = new AtomicReference<>();
             Thread weeklyThread = caller(weeklyLock, () -> {
-                await(recapLocked);
+                await(noticeLocked);
                 platform.sender.send(message());
             }, callersDone, error);
-            Thread recapThread = caller(recapLock, () -> {
-                recapLocked.countDown();
+            Thread noticeThread = caller(noticeLock, () -> {
+                noticeLocked.countDown();
                 await(firstCallbackStarted);
                 // 并发积压补上 poll 留出的空位，让随后这次发送也必须挤出旧消息。
                 platform.sender.send(message());
@@ -63,18 +63,18 @@ class NovaMessageSenderOverflowTest {
             }, callersDone, error);
             try {
                 weeklyThread.start();
-                recapThread.start();
+                noticeThread.start();
                 assertTrue(callersDone.await(5, TimeUnit.SECONDS),
-                        "周报与下播小结持锁发送互等，两个定时任务不能恢复");
+                        "周报与通知持锁发送互等，两个定时任务不能恢复");
                 assertNull(error.get());
                 assertTrue(callbacksDone.await(5, TimeUnit.SECONDS), "两个被挤掉消息的失败回调应完成");
             } finally {
                 weeklyThread.interrupt();
-                recapThread.interrupt();
+                noticeThread.interrupt();
                 weeklyThread.join(10000);
-                recapThread.join(10000);
+                noticeThread.join(10000);
                 assertFalse(weeklyThread.isAlive());
-                assertFalse(recapThread.isAlive());
+                assertFalse(noticeThread.isAlive());
             }
         }
     }

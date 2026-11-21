@@ -48,7 +48,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @NovaComponent
-@org.springframework.core.annotation.Order(0)
 public class BilibiliStreamerChoice implements CommandFollowUp {
     /**
      * 追问的有效期。长到够人读完清单再打个数字，短到不会在半小时后被一句「3」突然翻出来

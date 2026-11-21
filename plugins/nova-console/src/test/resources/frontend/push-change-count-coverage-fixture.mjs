@@ -59,7 +59,7 @@ function datasource() {
   return [{
     platform: 'p', uid: 1, _uname: '甲', enabled: true,
     targets: [{
-      platform: 'q', type: 0, num: 12345, enabled: true,
+      platform: 'q', type: 1, num: 12345, enabled: true,
       messages: [{handler: 'x.LiveOn', params: {message: '开播了', width: 800}}],
     }],
   }];
@@ -123,12 +123,6 @@ const CASES = [
     change: users => {
       users[0].targets.push({platform: 'q', type: 1, num: 999, enabled: true, messages: []});
     },
-  },
-  {
-    name: '通道·主播本人标记（target.streamerSelf）',
-    at: 'push.js 的好友通道本人勾选框',
-    want: 1,
-    change: users => { users[0].targets[0].streamerSelf = true; },
   },
   {
     name: '通道·移除（user.targets.splice）',
@@ -226,7 +220,7 @@ await ask('② 同一位主播下改两处仍算一处：N 是主播数不是字
  * 在读数上是同一个样子。
  */
 // Reloading one streamer updates the saved snapshot; the conflict fixture checks that path.
-const MARK_DIRTY_CALLS = 14;
+const MARK_DIRTY_CALLS = 13;
 
 await ask('③ 分母闸：push.js 的 markDirty() 调用点数没变', () => {
   const text = readFileSync(join(pages, 'push.js'), 'utf8');

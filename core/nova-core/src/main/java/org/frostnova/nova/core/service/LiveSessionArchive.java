@@ -3,7 +3,6 @@ package org.frostnova.nova.core.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONReader;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.lang.BadLineNotice;
 import org.frostnova.nova.core.lang.BadLineNotice.FileState;
@@ -32,8 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.Stream;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * 直播场次归档
@@ -192,115 +191,6 @@ public class LiveSessionArchive {
             // 抛上去的话，主播页场次与趋势整页打不开
             log.error("读取直播场次归档失败", e);
             return List.of();
-        }
-    }
-
-    /** 已封存场次的轻量清单，不加载观众名单；同一场取最后归档的版本。 */
-    public List<ArchivedSession> sealedSessions() throws IOException {
-        var sessions = new java.util.LinkedHashMap<String, ArchivedSession>();
-        Path parent = path().toAbsolutePath().getParent();
-        FileState state = BadLineNotice.stateOf(path());
-        try {
-            new ArchiveProjection().scanLines(path(), reader -> {
-                ArchivedSession session;
-                try {
-                    session = reader.read(ArchivedSession.class);
-                } catch (RuntimeException invalid) {
-                    badLine.skipped(state, invalid);
-                    return;
-                }
-                if (session == null || session.platform() == null || !session.platform().matches("[A-Za-z0-9_-]{1,32}")
-                        || session.uid() <= 0 || session.startTime() < 0) return;
-                String key = session.platform() + "-" + session.uid() + "-" + session.startTime();
-                Path detail = parent.resolve("details").resolve(key);
-                if (Files.isRegularFile(detail.resolve("detail.json")) && !Files.exists(detail.resolve("resumed")))
-                    sessions.put(key, session);
-                else sessions.remove(key);
-            });
-        } catch (NoSuchFileException absent) {
-            return List.of();
-        }
-        return sessions.values().stream().sorted(java.util.Comparator.comparingLong(ArchivedSession::startTime)).toList();
-    }
-
-    public record ArchivedSession(String platform, long uid, String uname, long startTime, long endTime,
-                                  long durationSeconds, LiveEndReason endReason) {
-        public ArchivedSession(String platform, long uid, String uname, long startTime, long endTime, long durationSeconds) {
-            this(platform, uid, uname, startTime, endTime, durationSeconds, null);
-        }
-    }
-
-    /** 小结只需场次时刻和指标；跳过完整观众名单，避免保留全历史名单。 */
-    List<SessionMetrics> findMetrics(String platform, long uid, long through) {
-        List<SessionMetrics> result = new ArrayList<>();
-        FileState state = BadLineNotice.stateOf(path());
-        try {
-            new ArchiveProjection().scanLines(path(), reader -> {
-                try {
-                    SessionMetrics session = projectMetrics(reader);
-                    if (session != null && platform.equals(session.platform()) && Long.valueOf(uid).equals(session.uid())
-                            && session.startTime() >= 0 && session.startTime() <= through) result.add(session);
-                } catch (RuntimeException invalid) {
-                    badLine.skipped(state, invalid);
-                    // 本条投影失败不影响下一条归档。
-                }
-            });
-        } catch (NoSuchFileException absent) {
-            return List.of();
-        } catch (IOException | RuntimeException failure) {
-            badLine.skipped(state, failure);
-            return List.of();
-        }
-        result.sort((a, b) -> Long.compare(a.startTime(), b.startTime()));
-        return result;
-    }
-
-    record SessionMetrics(String platform, Long uid, long startTime, long endTime,
-                          long durationSeconds, Map<String, Double> metrics) {}
-
-    /** 校验与主播页相同的字段类型，但不物化观众名单或无关扩展字段。 */
-    private SessionMetrics projectMetrics(JSONReader reader) {
-        if (reader.nextIfNull()) return null;
-        if (!reader.nextIfObjectStart()) throw new IllegalArgumentException("场次行不是对象");
-        JSONObject json = new JSONObject();
-        while (!reader.nextIfObjectEnd()) {
-            String key = reader.readFieldName();
-            switch (key) {
-                case "userSets" -> validateUserSets(reader);
-                case "platform", "uid", "uname", "roomId", "startTime", "endTime", "durationSeconds",
-                        "metrics", "userCounts", "endReason", "titles", "maintenanceGapSeconds",
-                        "roomOutageSeconds", "peaks", "anonymousCounts" -> json.put(key, reader.readAny());
-                default -> reader.skipValue();
-            }
-        }
-        // 这些字段不进入投影，但类型出错也会让主播页舍弃整场。
-        json.getString("uname");
-        json.getLong("roomId");
-        numberMap(json.getJSONObject("userCounts"), Number::intValue);
-        parseEndReason(json.getString("endReason"));
-        parseTitles(json.getJSONArray("titles"));
-        json.getLongValue("maintenanceGapSeconds");
-        json.getLongValue("roomOutageSeconds");
-        parsePeaks(json.getJSONObject("peaks"));
-        parseAnonymousCounts(json.getJSONObject("anonymousCounts"));
-        return new SessionMetrics(json.getString("platform"), json.getLong("uid"), json.getLongValue("startTime"),
-                json.getLongValue("endTime"), json.getLongValue("durationSeconds"),
-                numberMap(json.getJSONObject("metrics"), Number::doubleValue));
-    }
-
-    private void validateUserSets(JSONReader reader) {
-        if (!reader.nextIfObjectStart()) {
-            parseUserSets(JSONObject.of("users", reader.readAny()).getJSONObject("users"));
-            return;
-        }
-        while (!reader.nextIfObjectEnd()) {
-            reader.readFieldName();
-            if (reader.current() == '[') {
-                // 主播页逐项忽略非数字身份；投影只需确认名单是数组。
-                reader.skipValue();
-            } else {
-                JSONObject.of("users", reader.readAny()).getJSONArray("users");
-            }
         }
     }
 

@@ -20,16 +20,6 @@ import static org.mockito.Mockito.*;
  */
 @DisplayName("配置内容校验")
 class ConfigurationValidatorTest {
-    @Test @DisplayName("开播前提醒拒绝群和非本人好友，避免观众名单发错人")
-    void preLiveReminderRequiresStreamerFriend() {
-        var validator = new ConfigurationValidator(mock(NovaEventHandlerService.class));
-        for (int type : List.of(0, 1)) for (boolean self : List.of(false, true)) {
-            var target = com.alibaba.fastjson2.JSONObject.of("type", type, "num", 930000001L,
-                    "streamerSelf", self, "messages", com.alibaba.fastjson2.JSONArray.of(
-                    com.alibaba.fastjson2.JSONObject.of("handler", "org.frostnova.nova.core.handler.PreLiveReminderPushHandler")));
-            assertEquals(type == 0 && self, validator.validateChannelSettings(target).isEmpty());
-        }
-    }
     private static final String HANDLER = "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler";
 
     private ConfigurationValidator validator;
