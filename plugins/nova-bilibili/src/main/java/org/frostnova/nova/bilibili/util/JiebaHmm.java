@@ -1,6 +1,7 @@
 /*
- * Adapted from FinalSeg and CharacterUtil in jieba-analysis 1.0.2 (Huaban and contributors),
- * licensed under Apache-2.0. See META-INF/LICENSE-jieba-analysis.txt.
+ * Adapted from FinalSeg and CharacterUtil in jieba-analysis 1.0.2.
+ * Copyright (C) 2013 Huaban Inc
+ * Licensed under Apache-2.0. See META-INF/LICENSE-jieba-analysis.txt.
  * NovaBot reads the original gzip-wrapped model and uses two score rows with array backtracking.
  */
 package org.frostnova.nova.bilibili.util;

@@ -1,6 +1,7 @@
 /*
- * Sentence segmentation adapted from jieba-analysis 1.0.2 (Huaban and contributors),
- * licensed under Apache-2.0. See META-INF/LICENSE-jieba-analysis.txt.
+ * Sentence segmentation adapted from jieba-analysis 1.0.2.
+ * Copyright (C) 2013 Huaban Inc
+ * Licensed under Apache-2.0. See META-INF/LICENSE-jieba-analysis.txt.
  * NovaBot scores routes directly over an array trie and delegates to the jieba HMM port.
  */
 package org.frostnova.nova.bilibili.util;

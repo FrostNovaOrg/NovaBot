@@ -64,6 +64,7 @@ class CompactJiebaSegmenterTest {
         List<String> texts = List.of(
                 "", " \t\r\n　", "！？……、#-&+._\t\n", "❤️🇨🇳👨‍👩‍👧🥳",
                 "𠮷野家𪚥汉字𠀀\ud800\udfff\ud800", "\u0000\b\u200b\u2028",
+                "鿐", "鿿", "啊鿐啊", "哈鿿哈", "\u9fa5\u9fa6",
                 "主播DOG开了3.14倍速 C++ C# AT&T 原神v2.0 ＡＢＣ１２３",
                 "B超 b超 4S店 4s店 江南Style 江南style I盘 IP地址", "研究生命起源，乒乓球拍卖完了",
                 "喵叽咔噜哒噗咕嘟蹦咔兽", "主播唱歌好听GG🥳！".repeat(4_000),
