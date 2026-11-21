@@ -230,13 +230,33 @@ class AssistantAskServiceTest {
     }
 
     // 抓住工具名单混入发送、修改或文件读取等有副作用的函数。
-    @Test void onlyEightReadOnlyToolsAreExposed() throws Exception {
+    @Test void onlyReadOnlyToolsAreExposed() throws Exception {
         ask();
         var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
-        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans"), names);
+        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate"), names);
         assertEquals(0.3, sent.get(0).getDoubleValue("temperature"));
         assertEquals(properties.getAnswerLimit(), sent.get(0).getIntValue("max_tokens"));
+    }
+
+    // 抓住助手无法调用通用汇总，或只收到笼统错误而无法纠正记录种类。
+    @Test void aggregateToolExplainsUnsupportedRecordKind() {
+        replies.add(call("aggregate", JSONObject.of("kinds", List.of("unavailable"),
+                "from", "2026-11-01", "to", "2026-11-30", "metrics", List.of("count"))));
+        ask();
+        assertTrue(JSON.parseObject(toolMessage().getString("content")).getString("reason").contains("种类"));
+    }
+
+    // 抓住问答把调用方隐藏金额的上下文替换为控制台默认值，导致工具恢复金额。
+    @Test void aggregateReceivesCallersAmountContext() {
+        var hidden = new AssistantQueryContext(false);
+        when(queries.aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any()))
+                .thenReturn(JSONObject.of("source", "场次归档", "rows", null, "reason", "这里不显示金额"));
+        replies.add(call("aggregate", JSONObject.of("kinds", List.of("session"),
+                "from", "2026-11-01", "to", "2026-11-30", "metrics", List.of("sum:amount"))));
+        service.ask("bilibili", 1L, "member", JSONObject.of("question", "这个月流水多少"), hidden);
+        verify(queries).aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any());
+        assertTrue(JSON.parseObject(toolMessage().getString("content")).getString("reason").contains("这里不显示金额"));
     }
 
     // 抓住恶意弹幕变成高权限指令、泄露密钥或越过原话长度上限。

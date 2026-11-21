@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import java.util.List;
 import java.util.Map;
 
-/** 工具清单只允许本页主播的八种只读查询，身份由本机路径绑定。 */
+/** 工具只读，主播身份由调用方绑定。 */
 final class AssistantTools {
     private record Tool(String name, String description, JSONObject fields, List<String> required) { }
     private static JSONObject integer(String description) { return JSONObject.of("type", "integer", "description", description); }
@@ -18,7 +18,13 @@ final class AssistantTools {
             new Tool("revenue", "本场流水合计与构成、贡献者代号及占比", JSONObject.of("start", integer("开播时刻，毫秒")), List.of("start")),
             new Tool("insights", "本期、上期与比较，含样本及监听覆盖", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
             new Tool("trend", "按天、周、月分桶的场次趋势", JSONObject.of("period", text("day、week、month"), "days", integer("7、30、90、180、360 天")), List.of("period", "days")),
-            new Tool("fans", "粉丝快照与变化", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")));
+            new Tool("fans", "粉丝快照与变化", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
+            new Tool(AssistantAggregateRequest.NAME,
+                    "筛选已归档的记录并分组汇总。筛选条件同时满足，无记录的分组不出行。"
+                            + AssistantAggregateQuery.DAY_RULE + "。金额单位元，"
+                            + AssistantAggregateQuery.AMOUNT_BASIS + "。"
+                            + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
+                    AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED));
 
     static List<JSONObject> definitions() {
         return TOOLS.stream().map(t -> JSONObject.of("type", "function", "function", JSONObject.of("name", t.name(),
@@ -28,6 +34,7 @@ final class AssistantTools {
 
     /** 白名单外参数不进入执行、步骤和后续模型请求。 */
     static JSONObject arguments(String name, JSONObject raw) {
+        if (AssistantAggregateRequest.NAME.equals(name)) return AssistantAggregateRequest.parse(raw).arguments();
         var tool = TOOLS.stream().filter(t -> t.name().equals(name)).findFirst().orElseThrow(IllegalArgumentException::new);
         JSONObject result = new JSONObject();
         for (Map.Entry<String, Object> field : tool.fields().entrySet()) {
@@ -47,7 +54,8 @@ final class AssistantTools {
         return result;
     }
 
-    static JSONObject query(AssistantQueryService queries, String platform, Long uid, String name, JSONObject args) {
+    static JSONObject query(AssistantQueryService queries, String platform, Long uid, String name, JSONObject args,
+                            AssistantQueryContext context, AssistantPrivacy privacy) {
         return switch (name) {
             case "sessions" -> queries.sessions(platform, uid, args.getIntValue("days"), args.getIntValue("limit"));
             case "session" -> queries.session(platform, uid, args.getLongValue("start"));
@@ -57,6 +65,7 @@ final class AssistantTools {
             case "insights" -> queries.insights(platform, uid, args.getIntValue("days"));
             case "trend" -> queries.trend(platform, uid, args.getString("period"), args.getIntValue("days"));
             case "fans" -> queries.fans(platform, uid, args.getIntValue("days"));
+            case AssistantAggregateRequest.NAME -> queries.aggregate(platform, uid, args, context, privacy);
             default -> throw new IllegalArgumentException();
         };
     }

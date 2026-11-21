@@ -1,8 +1,10 @@
 package org.frostnova.nova.core.lang;
 
 import java.io.BufferedReader;
+import java.io.FilterReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
@@ -65,10 +67,38 @@ public final class JsonlFiles {
      * {@link java.nio.file.NoSuchFileException}，读的途中出错抛 {@link UncheckedIOException}。
      */
     public static Stream<String> lines(Path file) throws IOException {
+        return lines(reader(file));
+    }
+
+    /** 有界读取；超长行以 {@link LineTooLongException} 结束本次读取。 */
+    public static Stream<String> lines(Path file, int maxChars) throws IOException {
+        Reader limited = new FilterReader(reader(file)) {
+            private int length;
+
+            @Override
+            public int read(char[] chars, int offset, int count) throws IOException {
+                int read = super.read(chars, offset, count);
+                for (int i = offset; i < offset + read; i++) {
+                    if (chars[i] == '\n' || chars[i] == '\r') length = 0;
+                    else if (++length > maxChars) throw new LineTooLongException();
+                }
+                return read;
+            }
+        };
+        return lines(limited);
+    }
+
+    public static final class LineTooLongException extends IOException {}
+
+    private static Reader reader(Path file) throws IOException {
         CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPLACE)
                 .onUnmappableCharacter(CodingErrorAction.REPLACE);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(Files.newInputStream(file), decoder));
+        return new InputStreamReader(Files.newInputStream(file), decoder);
+    }
+
+    private static Stream<String> lines(Reader input) {
+        BufferedReader reader = new BufferedReader(input);
         return reader.lines().onClose(() -> {
             try {
                 reader.close();
