@@ -169,6 +169,57 @@ class AssistantAskServiceTest {
         assertFalse(log.contains("call-revenue"));
     }
 
+    // 模型在调用工具前说过话时，假接口拒绝挪动条目或丢掉 phase 的续问。
+    @Test void responsesReplaysPrefaceInPlaceWithItsOriginalFields() {
+        useResponses();
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档", "totalAmount", 1000));
+        var preface = JSONObject.of("type", "message", "role", "assistant", "id", "msg_preface", "phase", "commentary",
+                "status", "completed", "content", List.of(JSONObject.of("type", "output_text", "text", "我先查一下", "annotations", null)));
+        var output = List.of(
+                JSONObject.of("type", "reasoning", "id", "rs_preface", "encrypted_content", "opaque", "summary", List.of()),
+                preface,
+                JSONObject.of("type", "function_call", "id", "fc_revenue", "call_id", "call-revenue",
+                        "name", "revenue", "arguments", "{ \"start\": 123 }"));
+        responsesReplies.add(responsesReply(output.toArray(JSONObject[]::new)));
+        responsesReplies.add(responsesReply(responsesText("总流水1000（场次归档）")));
+        onSend = () -> {
+            if (sent.size() != 2) return;
+            var input = sent.get(1).getJSONArray("input");
+            if (input == null || input.size() != 6 || !output.equals(input.subList(2, 5))) {
+                providerStatus = 400;
+                providerBody = "{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"output_mismatch\",\"param\":\"input\"}}";
+            }
+        };
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result.getString("reason"));
+        assertEquals("总流水1000（场次归档）", result.getString("answer"));
+        assertEquals(2, sent.size());
+        var toolResult = sent.get(1).getJSONArray("input").getJSONObject(5);
+        assertEquals("function_call_output", toolResult.getString("type"));
+        assertEquals("call-revenue", toolResult.getString("call_id"));
+    }
+
+    // 要求重写核对不上的数字时，原回答也要连同思考条目和 phase 送回。
+    @Test void responsesReplaysOriginalAnswerWhenRewritingUnverifiedNumbers() {
+        useResponses();
+        var draft = responsesText("总流水9999");
+        draft.put("phase", "final_answer");
+        var reasoning = JSONObject.of("type", "reasoning", "id", "rs_draft", "encrypted_content", "opaque", "summary", List.of());
+        responsesReplies.add(responsesReply(reasoning, draft));
+        responsesReplies.add(responsesReply(responsesText("没有这份数据")));
+
+        var result = ask();
+        assertEquals("没有这份数据", result.getString("answer"));
+        assertTrue(result.getJSONArray("unverifiedNumbers").isEmpty());
+        assertEquals(2, sent.size());
+        var rewrite = sent.get(1);
+        assertEquals("none", rewrite.getString("tool_choice"));
+        var input = rewrite.getJSONArray("input");
+        assertEquals(List.of(reasoning, draft), input.subList(2, 4));
+        assertTrue(input.getJSONObject(4).getString("content").contains("9999"));
+    }
+
     private JSONObject exhaustedResponses() {
         var reply = responsesReply(JSONObject.of("type", "reasoning", "encrypted_content", "opaque"));
         reply.put("status", "incomplete");

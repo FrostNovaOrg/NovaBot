@@ -7,6 +7,7 @@ import org.frostnova.nova.core.properties.ConfigChoices;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.properties.ConfigLevel;
+import org.frostnova.nova.core.properties.ConfigSummary;
 import org.springframework.beans.BeanWrapperImpl;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -44,6 +45,9 @@ class AssistantPropertiesTest {
         assertEquals(ConfigEffect.Effect.RESTART, field.getAnnotation(ConfigEffect.class).value());
         assertArrayEquals(new String[]{"off", "low", "high", "max"}, field.getAnnotation(ConfigChoices.class).value());
         assertArrayEquals(new String[]{"关闭", "低", "高", "最高"}, field.getAnnotation(ConfigChoices.class).labels());
+        String summary = field.getAnnotation(ConfigSummary.class).value();
+        assertTrue(summary.contains("4000／16000／32000 token"), summary);
+        assertTrue(summary.contains("/responses"), summary);
     }
 
     @ParameterizedTest @ValueSource(strings = {"off", "low", "high", "max"})

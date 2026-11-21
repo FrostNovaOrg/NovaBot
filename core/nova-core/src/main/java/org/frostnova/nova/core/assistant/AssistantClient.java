@@ -201,29 +201,32 @@ public final class AssistantClient {
         long startedAt = System.nanoTime();
         String baseUrl = properties.getBaseUrl();
         boolean responses = "responses".equals(properties.getApiFormat());
+        boolean probe = question == null;
         String endpoint = baseUrl.replaceAll("/+$", "") + (responses ? "/responses" : "/chat/completions");
         try {
             if (!responses) {
-                JSONObject body = chatBody(request, maxTokens, baseUrl, question == null ? "off" : properties.getThinking());
+                JSONObject body = chatBody(request, maxTokens, baseUrl, probe ? "off" : properties.getThinking());
                 return exchange(endpoint, body, false, candidate, question, timeout).response();
             }
-            String thinking = properties.getThinking();
-            // 关闭时仍使用模型默认思考强度，留出与低档相同的起始空间。
-            int allowance = switch (thinking) {
+            // 验证用短句，固定低强度并为思考和回复共留 256 token。
+            String thinking = probe ? "low" : properties.getThinking();
+            int allowance = probe ? 256 : switch (thinking) {
                 case "high" -> 16000;
                 case "max" -> 32000;
+                // 关闭时使用模型默认强度，留出与低档相同的空间。
                 default -> 4000;
             };
-            JSONObject body = responsesBody(request, (long) maxTokens + allowance, thinking);
+            long maxOutput = probe ? allowance : (long) maxTokens + allowance;
+            JSONObject body = responsesBody(request, maxOutput, thinking);
             Attempt first = exchange(endpoint, body, true, candidate, question, timeout);
             if (!first.outputLimitReached()) return first.response();
 
-            if (question != null) {
+            if (!probe) {
                 synchronized (this) { usage.checkBudget(properties); }
             }
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
             if (remaining.compareTo(Duration.ofMillis(1)) < 0) throw outputLimitFailure();
-            body.put(OUTPUT_LIMIT, maxTokens + 2L * allowance);
+            body.put(OUTPUT_LIMIT, maxOutput + allowance);
             Attempt retry = exchange(endpoint, body, true, candidate, question, remaining);
             if (retry.outputLimitReached()) throw outputLimitFailure();
             Response response = retry.response();
@@ -266,6 +269,10 @@ public final class AssistantClient {
     private JSONObject responsesBody(Request request, long maxOutput, String thinking) {
         var input = new ArrayList<JSONObject>();
         for (JSONObject item : request.messages()) {
+            if (item.containsKey("type")) {
+                input.add(item);
+                continue;
+            }
             input.add(switch (Objects.requireNonNullElse(item.getString("role"), "")) {
                 case "system" -> JSONObject.of("role", "developer", "content", item.get("content"));
                 case "tool" -> JSONObject.of("type", "function_call_output", "call_id", item.get("tool_call_id"),
@@ -342,6 +349,7 @@ public final class AssistantClient {
         var continuation = new ArrayList<JSONObject>();
         for (int i = 0; i < output.size(); i++) {
             JSONObject item = output.getJSONObject(i);
+            continuation.add(item);
             switch (Objects.requireNonNullElse(item.getString("type"), "")) {
                 case "message" -> {
                     for (Object part : item.getJSONArray("content")) {
@@ -349,13 +357,11 @@ public final class AssistantClient {
                                 && content.get("text") instanceof String segment) text.append(segment);
                     }
                 }
-                case "reasoning" -> continuation.add(item);
                 case "function_call" -> {
                     String id = item.getString("call_id");
                     if (id == null || id.isBlank()) throw new AssistantException("大模型服务返回的工具调用缺少 call_id");
                     calls.add(JSONObject.of("id", id, "type", "function", "function", JSONObject.of(
                             "name", item.get("name"), "arguments", item.get("arguments"))));
-                    continuation.add(item);
                 }
             }
         }

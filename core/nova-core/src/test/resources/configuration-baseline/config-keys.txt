@@ -11,7 +11,7 @@ novabot.assistant.price-cached-input-yuan-per-million|java.math.BigDecimal|0.05|
 novabot.assistant.price-input-yuan-per-million|java.math.BigDecimal|2.2|未命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.price-output-yuan-per-million|java.math.BigDecimal|8.6|输出单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.question-input-limit|java.lang.Integer|30000|一问各轮累计的输入 token 上限。
-novabot.assistant.thinking|java.lang.String|off|模型回答前先想一想的程度。适用于 DeepSeek 接口和 /responses 格式。设为关闭时 /responses 使用模型自己的默认强度。强度越高，回答前想得越久、花费越多，也更容易超时。
+novabot.assistant.thinking|java.lang.String|off|模型回答前先想一想的程度。适用于 DeepSeek 接口和 /responses 格式。低／高／最高分别多留 4000／16000／32000 token。设为关闭时，/responses 使用模型默认强度，仍多留 4000 token。强度越高，回答前想得越久、花费越多，也更容易超时。
 novabot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒。故障往往持续存在，不收敛会反复推同一条，让人对告警脱敏。
 novabot.core.alert.enabled|java.lang.Boolean|true|是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
 novabot.core.alert.retry-interval|java.lang.Integer|60|发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投。需要告警时往往正是发不出去的时候，所以失败后要自动重投。

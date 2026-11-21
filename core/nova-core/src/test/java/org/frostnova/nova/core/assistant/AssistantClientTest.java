@@ -188,7 +188,7 @@ class AssistantClientTest {
         server.verify();
     }
 
-    // 抓住保存密钥或测试连接时仍使用旧的接口或极小的输出限制。
+    // 抓住保存密钥或测试连接时使用旧接口或发错验证参数。
     @Test void responsesVerifiesAndSavesCandidateUsingConfiguredEndpoint() {
         useResponses();
         properties.setThinking("low");
@@ -197,7 +197,7 @@ class AssistantClientTest {
                     .andExpect(method(org.springframework.http.HttpMethod.POST))
                     .andExpect(header("Authorization", "Bearer replacement-test-secret"))
                     .andExpect(jsonPath("$.input[0].content").value("回复好"))
-                    .andExpect(jsonPath("$.max_output_tokens").value(4008))
+                    .andExpect(jsonPath("$.max_output_tokens").value(256))
                     .andExpect(jsonPath("$.reasoning.effort").value("low"))
                     .andExpect(jsonPath("$.tool_choice").value("none"))
                     .andExpect(jsonPath("$.max_tokens").doesNotExist())
@@ -207,6 +207,29 @@ class AssistantClientTest {
         client.validateAndSaveKey("admin", "replacement-test-secret");
         client.testSettings("admin");
         assertTrue(client.status().questionsToday().isEmpty());
+        server.verify();
+    }
+
+    // 抓住验证沿用最高思考强度和回答上限，超时后无法保存密钥。
+    @Test void responsesSavesKeyEvenWhenQuestionsUseMaxThinking() {
+        useResponses();
+        properties.setThinking("max");
+        properties.setAnswerLimit(2000);
+        String candidate = "new-test-secret";
+        server.expect(requestTo("https://model.example/v1/responses"))
+                .andExpect(header("Authorization", "Bearer " + candidate))
+                .andRespond(outgoing -> {
+                    var body = JSON.parseObject(((MockClientHttpRequest) outgoing).getBodyAsString());
+                    if (!JSONObject.of("effort", "low").equals(body.getJSONObject("reasoning"))
+                            || body.getIntValue("max_output_tokens") > 256) {
+                        throw new SocketTimeoutException("probe exceeded its short output budget");
+                    }
+                    return withSuccess(RESPONSES_ANSWER, MediaType.APPLICATION_JSON).createResponse(outgoing);
+                });
+        client.validateAndSaveKey("admin", candidate);
+        var headers = new org.springframework.http.HttpHeaders();
+        new AssistantKeyStore(directory).authorize(headers);
+        assertEquals("Bearer " + candidate, headers.getFirst("Authorization"));
         server.verify();
     }
 

@@ -116,6 +116,7 @@ public class AssistantAskService {
                 "history", history).toJSONString()));
         String answer = "";
         String answerReasoning = null;
+        List<JSONObject> answerContinuation = List.of();
         boolean answered = false;
         String reason = null;
         AssistantException failure = null;
@@ -135,6 +136,7 @@ public class AssistantAskService {
                     if (response.content() != null && !response.content().isBlank()) {
                         answer = response.content();
                         answerReasoning = response.reasoningContent();
+                        answerContinuation = response.continuation();
                         answered = true;
                     } else if (!finish) {
                         throw new AssistantException("大模型服务返回了空响应");
@@ -177,11 +179,10 @@ public class AssistantAskService {
                             JSONObject.of("name", name, "arguments", args.toJSONString())));
                     results.add(JSONObject.of("role", "tool", "tool_call_id", id, "content", JSON.toJSONString(data, JSONWriter.Feature.WriteNulls)));
                 }
-                JSONObject assistant = assistantMessage(response.content(), response.reasoningContent());
                 if (replay) {
-                    if (!response.content().isBlank()) messages.add(assistant);
                     messages.addAll(response.continuation());
                 } else {
+                    JSONObject assistant = assistantMessage(response.content(), response.reasoningContent());
                     assistant.put("tool_calls", accepted);
                     messages.add(assistant);
                 }
@@ -195,7 +196,8 @@ public class AssistantAskService {
             answer = privacy.mask(answer);
             unverified = numbers.unverified(answer);
             if (!unverified.isEmpty() && !budget.remaining(55).isZero()) {
-                messages.add(assistantMessage(answer, answerReasoning));
+                if (answerContinuation.isEmpty()) messages.add(assistantMessage(answer, answerReasoning));
+                else messages.addAll(answerContinuation);
                 messages.add(JSONObject.of("role", "user", "content", "这些数字在本问工具数据中核对不上：" + String.join("、", unverified)
                         + "。请重写一次，只许用本问工具给出的数字，缺少就说没有这份数据，不再查数。"));
                 try {
@@ -248,7 +250,8 @@ public class AssistantAskService {
         // 重新清理全部消息，避免原话中引用的昵称或编号进入后续轮次。
         var outgoing = new ArrayList<JSONObject>();
         for (JSONObject message : messages) {
-            if (!message.containsKey("role")) {
+            // 来自 /responses 的条目保留原字段和 JSON 值，包括消息上的 phase。
+            if (!message.containsKey("role") || message.containsKey("type")) {
                 outgoing.add(message);
                 continue;
             }

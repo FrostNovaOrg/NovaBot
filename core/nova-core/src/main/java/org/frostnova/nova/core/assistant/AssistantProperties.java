@@ -39,9 +39,9 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"chat", "responses"}, labels = {"/chat/completions", "/responses"})
     private String apiFormat = "chat";
-    /** 模型回答前先想一想的程度。适用于 DeepSeek 接口和 /responses 格式。设为关闭时 /responses 使用模型自己的默认强度。强度越高，回答前想得越久、花费越多，也更容易超时。 */
+    /** 模型回答前先想一想的程度。适用于 DeepSeek 接口和 /responses 格式。低／高／最高分别多留 4000／16000／32000 token。设为关闭时，/responses 使用模型默认强度，仍多留 4000 token。强度越高，回答前想得越久、花费越多，也更容易超时。 */
     @ConfigLabel("思考强度")
-    @ConfigSummary("默认关闭，/responses 此时用模型默认强度。越高越慢、越贵，也更容易超时。适用于 DeepSeek 和 /responses。")
+    @ConfigSummary("适用于 DeepSeek 和 /responses。低／高／最高分别多留 4000／16000／32000 token。默认关闭，/responses 此时用模型默认强度。")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"off", "low", "high", "max"}, labels = {"关闭", "低", "高", "最高"})
