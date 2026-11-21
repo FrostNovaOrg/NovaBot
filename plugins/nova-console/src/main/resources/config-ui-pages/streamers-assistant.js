@@ -4,6 +4,7 @@ import {api, el, say} from './core.js';
 const conversations = new Map();
 const settingsReasons = new Set(['disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'monthly_budget', 'key_rejected', 'provider_balance']);
 const stateReasons = new Set(['disabled', 'no_key', 'usage_unreadable', 'not_acknowledged', 'daily_limit', 'monthly_budget']);
+const questionExamples = ['这个月心动盲盒收了多少个', '最近 30 天各钟点平均在线', '上周送礼榜前十'];
 const adminReasons = {
   disabled: '智能助手还没开启。',
   no_key: '还没填模型密钥。',
@@ -33,6 +34,11 @@ const STYLE = `
 .sa-answer,.sa-copy-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .sa-turn summary{cursor:pointer;color:var(--accent-text);margin:10px 0}
 .sa-turn .nv-btn2{margin-top:8px}
+.sa-guidance{display:flex;gap:6px;flex-wrap:wrap}
+.sa-guidance[hidden]{display:none}
+.sa-guidance .nv-btn2{min-height:36px;max-width:100%;margin:0;white-space:normal;text-align:left;overflow-wrap:anywhere}
+.sa-examples{width:100%}
+.sa-follow-ups{margin-top:10px}
 .sa-clear{justify-self:end}
 .sa-charts{display:grid;gap:10px;margin-top:10px}
 .sa-chart{display:block;width:min(100%,480px);padding:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:white;cursor:zoom-in}
@@ -133,10 +139,10 @@ async function copyAnswer(host, answer) {
   }
 }
 
-function renderTurn(host, turn, openChart) {
+function renderTurn(host, turn, openChart, askFollowUp) {
   const box = el('section', 'sa-turn');
   host.appendChild(box);
-  line(box, turn.question, 'sa-question');
+  line(box, turn.label ?? turn.question, 'sa-question');
   if (turn.pending) {
     line(box, '正在查数并回答，最长约一分钟…', 'hint');
     return;
@@ -174,12 +180,26 @@ function renderTurn(host, turn, openChart) {
     for (const step of result.steps) line(fold, step.source, 'hint');
     box.appendChild(fold);
   }
+  const options = Array.isArray(result.followUps) ? result.followUps.slice(0, 2) : [];
   const copy = el('button', 'nv-btn2');
   copy.type = 'button'; copy.textContent = '复制';
-  copy.addEventListener('click', () => copyAnswer(box, result.answer));
+  copy.addEventListener('click', () => copyAnswer(box, [result.answer,
+    ...options.map((option, index) => `${index + 1}. ${option.label}`)].join('\n')));
   box.appendChild(copy);
   if (store.role !== 'MEMBER') line(box, '本问约 ¥' + money(result.costYuan)
     + ' · 本月已用 ¥' + money(result.remaining?.spentYuan) + '，上限 ¥' + money(result.remaining?.monthlyBudgetYuan), 'hint');
+  if (options.length) {
+    const guidance = el('div', askFollowUp ? 'sa-guidance sa-follow-ups' : 'sa-follow-ups');
+    guidance.setAttribute('role', 'group'); guidance.setAttribute('aria-label', '下一问');
+    options.forEach((option, index) => {
+      const label = `${index + 1}. ${option.label}`;
+      if (!askFollowUp) { line(guidance, label, 'hint'); return; }
+      const button = el('button', 'nv-btn2'); button.type = 'button'; button.textContent = label;
+      button.addEventListener('click', () => askFollowUp(option.question, option.label));
+      guidance.appendChild(button);
+    });
+    box.appendChild(guidance);
+  }
 }
 
 /** 对话只存在本页面内存；撤掉视图后，进行中的请求仍写回对应主播。 */
@@ -217,23 +237,37 @@ export function mountAssistant(host, identity) {
   input.value = context.draft;
   const submit = el('button', 'nv-btn'); submit.type = 'submit'; submit.textContent = '提问';
   const remaining = el('span', 'hint');
-  controls.appendChild(input);
+  const examples = el('div', 'sa-guidance sa-examples');
+  examples.setAttribute('role', 'group'); examples.setAttribute('aria-label', '提问示例');
+  for (const question of questionExamples) {
+    const example = el('button', 'nv-btn2'); example.type = 'button'; example.textContent = question;
+    example.addEventListener('click', () => {
+      input.value = question;
+      updateDraft();
+      input.focus();
+    });
+    examples.appendChild(example);
+  }
+  controls.append(input, examples);
   line(controls, '回答由人工智能生成，可能出错；数字以报告为准。', 'hint sa-disclaimer');
   controls.append(submit, remaining);
   form.appendChild(controls);
   root.append(status, turns, form, chartView); host.replaceChildren(style, root);
 
+  const canAsk = () => !context.pending && context.state?.available === true;
   const updateControls = () => {
-    input.disabled = context.pending || context.state?.available !== true;
+    input.disabled = !canAsk();
     submit.disabled = input.disabled || !context.draft.trim();
+    examples.hidden = input.disabled || Boolean(context.draft.trim());
     remaining.textContent = context.state?.available ? '今天还能问 ' + context.state.questionsLeftToday + ' 次' : '';
     clear.disabled = context.pending;
   };
-  input.addEventListener('input', () => {
+  const updateDraft = () => {
     input.value = [...input.value].slice(0, 300).join('');
     context.draft = input.value;
     updateControls();
-  });
+  };
+  input.addEventListener('input', updateDraft);
   const update = () => {
     status.replaceChildren();
     if (context.stateError) line(status, context.stateError, 'hint');
@@ -250,20 +284,20 @@ export function mountAssistant(host, identity) {
       }
     }
     turns.replaceChildren();
-    for (const turn of context.turns) renderTurn(turns, turn, openChart);
+    const latest = canAsk() ? context.turns.at(-1) : null;
+    for (const turn of context.turns) renderTurn(turns, turn, openChart, turn === latest ? askQuestion : null);
     clear.remove();
     if (context.turns.length) root.insertBefore(clear, form);
     updateControls();
   };
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
-    if (context.pending || context.state?.available !== true) return;
-    const question = [...input.value].slice(0, 300).join('');
+  const askQuestion = async (text, label) => {
+    if (!canAsk()) return;
+    const question = [...text].slice(0, 300).join('');
     if (!question.trim()) return;
     const history = context.turns.filter(turn => turn.result?.answered === true
       && typeof turn.result.answerForHistory === 'string' && turn.result.answerForHistory.length <= 16000)
       .slice(-3).map(turn => ({question: turn.question, answerForHistory: turn.result.answerForHistory}));
-    const turn = {question, pending: true};
+    const turn = {question, label, pending: true};
     context.turns.push(turn); context.pending = true; context.draft = ''; input.value = '';
     notify(context);
     try {
@@ -285,6 +319,10 @@ export function mountAssistant(host, identity) {
       turn.pending = false; context.pending = false;
       notify(context);
     }
+  };
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    return askQuestion(input.value);
   });
   context.listeners.add(update);
   const ready = readState(context);

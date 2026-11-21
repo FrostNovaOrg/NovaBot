@@ -102,6 +102,43 @@ class AssistantAskServiceTest {
 
     private JSONObject ask() { return ask(JSONObject.of("question", "这场表现怎样")); }
     private JSONObject ask(JSONObject request) { return service.ask("bilibili", 1L, "member", request); }
+
+    @Test
+    @DisplayName("编号格式变了、编号超出范围或选项只有乱字时，整段仍能当作普通回答展示")
+    void malformedFollowUpsStayInOrdinaryAnswerText() {
+        for (String tail : List.of("1、周六哪场在线最高？\n2. 周六的弹幕多吗？", "１．周六哪场在线最高？",
+                "1. 周六哪场在线最高？\n2) 周六的弹幕多吗？", "1. 周六哪场在线最高？\n1. 周六的弹幕多吗？",
+                "1. 周六哪场在线最高？\n2. 周六的弹幕多吗？\n3. 周六送礼多吗？", "1. ***!?",
+                "2. 周六哪场在线最高？", "1. 周六哪场在线最高？\n以上是场次归档的结果。")) {
+            String answer = "周六的在线更高。\n" + tail;
+            replies.add(JSONObject.of("content", answer));
+            var result = ask();
+            assertTrue(result.getBooleanValue("answered"));
+            assertEquals(answer, result.getString("answer"));
+            assertNull(result.get("followUps"), tail);
+        }
+    }
+
+    @Test
+    @DisplayName("口径和编号下一问要分别展示，选中时仍用观众代号，模型要收到引导规则")
+    void supportedFollowUpsAreStructuredForTheConsole() throws Exception {
+        String answer = "按：本月、礼物、个数合计\n周六的礼物最多。";
+        String first = "周六" + alias(991234567L) + "送了哪些礼物？", second = "周六送礼榜前十是谁？";
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", answer + "\n\n1. " + first + "\n2. " + second));
+        mvc().perform(post("/config/api/streamers/bilibili/1/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member())
+                        .contentType("application/json").content("{\"question\":\"礼物怎么样\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answer").value(answer))
+                .andExpect(jsonPath("$.followUps[0].label").value("周六测试观众甲送了哪些礼物？"))
+                .andExpect(jsonPath("$.followUps[0].question").value(first))
+                .andExpect(jsonPath("$.followUps[1].question").value(second));
+        String system = sent.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
+        for (String fragment : List.of("第一行", "最多两条", "1. ", "2. ", "这个录不到。能答的相近问题：", "300 字")) {
+            assertTrue(system.contains(fragment), fragment);
+        }
+    }
+
     private JSONObject call(String name, JSONObject args) {
         return JSONObject.of("content", null, "tool_calls", List.of(JSONObject.of("id", "call-" + replies.size(), "type", "function",
                 "function", JSONObject.of("name", name, "arguments", args.toJSONString()))));

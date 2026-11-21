@@ -18,6 +18,18 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
+    @DisplayName("输入框为空时点例子只能填入问题，不能直接扣一次提问")
+    void examplesFillTheDraftWithoutAsking() throws Exception {
+        run("examples");
+    }
+
+    @Test
+    @DisplayName("点击下一问按钮应带上同一主播的对话并直接提交选中的问题")
+    void followUpButtonsSubmitTheSelectedQuestion() throws Exception {
+        run("followUps");
+    }
+
+    @Test
     @DisplayName("追问只带最近三条成功回答，关闭与切范围不丢对话")
     void historyContainsOnlyThreeSuccessfulTurns() throws Exception {
         run("history");
