@@ -16,6 +16,7 @@ import org.frostnova.nova.core.timeline.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -477,6 +478,59 @@ class MemberListScopeTest {
     }
 
     // 成员新加机器人不在的群时应拒绝并保留文件，已退群的旧通道不阻止保存。
+    @DisplayName("成员直接请求开启群问数会动用管理员的模型额度并发送数据，整次保存必须拒绝")
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(booleans = false)
+    void memberCannotEnableGroupAssistantOrSaveOtherChanges(Boolean previouslyEnabled) throws Exception {
+        var users = JSONArray.parseArray(Files.readString(file));
+        var targets = users.getJSONObject(0).getJSONArray("targets");
+        targets.getJSONObject(0).put("assistantEnabled", true);
+        var group = JSONObject.of("platform", "qq", "num", OTHER, "type", 1, "messages", new JSONArray());
+        if (previouslyEnabled != null) group.put("assistantEnabled", previouslyEnabled);
+        targets.add(group);
+        Files.writeString(file, users.toJSONString());
+        String before = Files.readString(file);
+
+        var loaded = config.datasourceUser("bilibili", String.valueOf(A));
+        var replacement = loaded.getJSONObject("user");
+        var replacementTargets = replacement.getJSONArray("targets");
+        replacement.put("enabled", false);
+        replacementTargets.getJSONObject(0).put("assistantEnabled", false);
+        replacementTargets.getJSONObject(1).put("assistantEnabled", true);
+        var mvc = MockMvcBuilders.standaloneSetup(config)
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), props, platforms)).build();
+        mvc.perform(post("/config/api/datasource/users/bilibili/" + A)
+                .requestAttr(ConfigUiAccess.ACCOUNT, MEMBER).contentType("application/json")
+                .content(JSONObject.of("user", replacement, "version", loaded.get("version")).toJSONString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("问数"), org.hamcrest.Matchers.containsString("管理员"),
+                        org.hamcrest.Matchers.containsString("打开"))));
+        assertEquals(before, Files.readString(file));
+    }
+
+    @DisplayName("成员关闭已开启的群问数后应能保存")
+    @Test void memberCanSaveDisablingGroupAssistant() throws Exception {
+        var users = JSONArray.parseArray(Files.readString(file));
+        users.getJSONObject(0).getJSONArray("targets").getJSONObject(0).put("assistantEnabled", true);
+        Files.writeString(file, users.toJSONString());
+
+        var loaded = config.datasourceUser("bilibili", String.valueOf(A));
+        var replacement = loaded.getJSONObject("user");
+        replacement.getJSONArray("targets").getJSONObject(0).put("assistantEnabled", false);
+        var mvc = MockMvcBuilders.standaloneSetup(config)
+                .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), props, platforms)).build();
+        mvc.perform(post("/config/api/datasource/users/bilibili/" + A)
+                .requestAttr(ConfigUiAccess.ACCOUNT, MEMBER).contentType("application/json")
+                .content(JSONObject.of("user", replacement, "version", loaded.get("version")).toJSONString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        var saved = JSONArray.parseArray(Files.readString(file));
+        assertEquals(Boolean.FALSE, saved.getJSONObject(0).getJSONArray("targets").getJSONObject(0).get("assistantEnabled"));
+    }
+
     @Test void memberCannotSaveUnknownNewTargetButCanKeepExisting() throws Exception {
         var directory = mock(org.frostnova.nova.adapter.onebot.service.OneBotTargetDirectory.class);
         when(directory.supports("qq")).thenReturn(true);

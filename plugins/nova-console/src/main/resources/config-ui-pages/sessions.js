@@ -314,21 +314,23 @@ function revenueRow(host, ctx) {
 
 function assistantRow(host, ctx) {
   const enabled = ctx.session.assistantEnabled;
+  const locked = ctx.member && !enabled;
   const original = ctx.baseline?.assistantEnabled === true;
   const summary = (enabled ? '已开启' : '已关闭') + (enabled === original ? '' : ' · 未保存');
   const body = rule(host, '问数', summary, '默认关闭。开关只作用于这位主播在当前群或私聊中的问答。');
   const line = el('div', 'swrow rule-switch');
-  const label = el('label', 'switch');
+  const label = el('label', locked ? 'switch assistant-locked' : 'switch');
   const input = el('input');
   input.type = 'checkbox';
   input.checked = enabled;
-  input.disabled = ctx.editable === false;
+  input.disabled = ctx.editable === false || locked;
   input.setAttribute('aria-label', '问数');
   label.appendChild(input);
   line.appendChild(label);
 
   const text = el('div', 'swtxt');
   text.appendChild(el('b')).textContent = '允许使用「问」命令';
+  if (locked) text.appendChild(el('p')).textContent = '由管理员开启';
   if (ctx.assistantAvailable === false) {
     text.appendChild(el('p')).textContent = '智能助手未开启或未设置密钥，开了也不会回答';
   }
@@ -339,6 +341,7 @@ function assistantRow(host, ctx) {
     const next = input.checked;
     if (next) {
       input.checked = false;
+      if (ctx.member) return;
       if (!await ask({
         title: '开启问数？',
         body: '这个聊天里的人可以用「问 〈问题〉」让智能助手查这位主播的数据并回答。回答由人工智能生成。'
