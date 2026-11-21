@@ -219,11 +219,9 @@ public final class AssistantClient {
             long maxOutput = probe ? allowance : (long) maxTokens + allowance;
             JSONObject body = responsesBody(request, maxOutput, thinking);
             Attempt first = exchange(endpoint, body, true, candidate, question, timeout);
-            if (!first.outputLimitReached()) return first.response();
+            if (probe || !first.outputLimitReached()) return first.response();
 
-            if (!probe) {
-                synchronized (this) { usage.checkBudget(properties); }
-            }
+            synchronized (this) { usage.checkBudget(properties); }
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
             if (remaining.compareTo(Duration.ofMillis(1)) < 0) throw outputLimitFailure();
             body.put(OUTPUT_LIMIT, maxOutput + allowance);
@@ -311,8 +309,9 @@ public final class AssistantClient {
                 synchronized (this) { question.sentEndpoint = uri.toString(); }
             }
             // 用字节发送，避免 HTTP 客户端诊断日志输出包含思考内容的请求正文。
-            byte[] bytes = template.exchange(uri, HttpMethod.POST,
-                    new HttpEntity<>(serialized.getBytes(StandardCharsets.UTF_8), headers), byte[].class).getBody();
+            var received = template.exchange(uri, HttpMethod.POST,
+                    new HttpEntity<>(serialized.getBytes(StandardCharsets.UTF_8), headers), byte[].class);
+            byte[] bytes = received.getBody();
             if (bytes == null) throw new AssistantException("大模型服务返回了空响应");
             JSONObject json = JSON.parseObject(new String(bytes, StandardCharsets.UTF_8));
             Usage tokens = parseUsage(json.getJSONObject("usage"), responses);
@@ -321,7 +320,7 @@ public final class AssistantClient {
                 synchronized (this) { question.total = question.total.add(cost); }
             }
             usage.addCost(cost);
-            if (responses) return parseResponses(json, secret, tokens, cost);
+            if (responses) return parseResponses(json, secret, tokens, cost, question == null, received.getStatusCode().value());
             return new Attempt(parseChat(json, secret, tokens, cost), false);
         } catch (HttpStatusCodeException error) {
             throw providerFailure(error, responses, secret);
@@ -341,7 +340,8 @@ public final class AssistantClient {
         return new Response(message.getString("content"), message.getString("reasoning_content"), List.copyOf(tools), tokens, cost);
     }
 
-    private static Attempt parseResponses(JSONObject json, String secret, Usage tokens, BigDecimal cost) {
+    private static Attempt parseResponses(JSONObject json, String secret, Usage tokens, BigDecimal cost,
+                                          boolean probe, int statusCode) {
         JSONArray output = json.getJSONArray("output");
         redact(output, secret);
         var text = new StringBuilder();
@@ -365,12 +365,15 @@ public final class AssistantClient {
                 }
             }
         }
-        JSONObject incomplete = json.getJSONObject("incomplete_details");
+        boolean incomplete = "incomplete".equals(json.getString("status"));
+        JSONObject details = json.getJSONObject("incomplete_details");
+        boolean outputLimitReached = incomplete && details != null && OUTPUT_LIMIT.equals(details.getString("reason"));
+        if (probe && incomplete && (statusCode != 200 || !outputLimitReached)) {
+            throw new AssistantException("大模型服务返回的数据不完整，请稍后再试");
+        }
         String content = text.toString();
-        boolean outputLimitReached = "incomplete".equals(json.getString("status")) && incomplete != null
-                && OUTPUT_LIMIT.equals(incomplete.getString("reason")) && content.isBlank() && calls.isEmpty();
         var response = new Response(content, null, List.copyOf(calls), tokens, cost, List.copyOf(continuation));
-        return new Attempt(response, outputLimitReached);
+        return new Attempt(response, outputLimitReached && content.isBlank() && calls.isEmpty());
     }
 
     private static AssistantException providerFailure(HttpStatusCodeException error, boolean responses, String secret) {
