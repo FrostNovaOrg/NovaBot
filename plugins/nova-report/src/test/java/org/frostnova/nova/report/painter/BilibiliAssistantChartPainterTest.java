@@ -90,6 +90,27 @@ class BilibiliAssistantChartPainterTest {
         assertTrue(drawn.contains("10463.1"), drawn::toString);
     }
 
+    @Test
+    @DisplayName("平直折线的纵轴刻度重复，万亿级折线的纵轴刻度消失")
+    void verticalTicksRemainDistinctAndVisible() {
+        var flat = List.of(row("首场", 1), row("次场", 1), row("末场", 1));
+        var trillions = List.of(row("首场", 1_000_000_000_000L), row("次场", 2_000_000_000_000L),
+                row("末场", 3_000_000_000_000L));
+        assertAll(
+                () -> assertEquals(List.of("0.9", "0.95", "1", "1.05", "1.1"), verticalTicks(flat)),
+                () -> assertEquals(List.of("1E+12", "1.5E+12", "2E+12", "2.5E+12", "3E+12"), verticalTicks(trillions)));
+    }
+
+    private static List<String> verticalTicks(List<Row> rows) {
+        var chart = new Chart(Type.LINE, "直播数据", "场次", "平均在线", List.of("平均在线"),
+                rows, null, "合成归档", rows.size());
+        var drawing = record(chart);
+        return drawing.text().stream()
+                .filter(entry -> entry.position().x < 113 && entry.position().y >= 150 && entry.position().y <= 426)
+                .filter(entry -> drawing.labels().stream().noneMatch(box -> box.y == entry.position().y && box.contains(entry.position())))
+                .map(DrawnText::text).toList();
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("lineSamples")
     @DisplayName("每日和钟点折线的标注框会遮住其他点的圆心或盖住折线")

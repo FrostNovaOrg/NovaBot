@@ -96,7 +96,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         for (BigDecimal tick = scale.low(); tick.compareTo(scale.high()) <= 0; tick = tick.add(scale.step())) {
             int y = scale.y(tick);
             painter.drawRectangle(LEFT, y, RIGHT - LEFT + 1, 1, tick.signum() == 0 ? palette.curveGapEdge() : palette.calendarBorder());
-            text(painter, number(tick, decimalPlaces), MARGIN + 7, y - 12, tickWidth, 17, 10,
+            text(painter, tickLabel(tick), MARGIN + 7, y - 12, tickWidth, 17, 10,
                     muted(painter), Font.PLAIN, Align.RIGHT, false);
             if (!bar) occupied.add(new Rectangle(MARGIN + 7, y - 12, tickWidth, 22));
         }
@@ -574,6 +574,11 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     }
 
     private static Color muted(CommonPainter painter) { return painter.palette().tip().darker(); }
+
+    private static String tickLabel(BigDecimal value) {
+        var normalized = value.stripTrailingZeros();
+        return normalized.scale() > 8 || normalized.scale() < -8 ? normalized.toEngineeringString() : normalized.toPlainString();
+    }
 
     private static String number(BigDecimal value, int decimalPlaces) {
         if (value.scale() > decimalPlaces) value = value.setScale(decimalPlaces, RoundingMode.HALF_UP);
