@@ -35,7 +35,8 @@ import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
-import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +95,7 @@ class QqAssistantCommandTest {
     private final List<PushUser> users = new ArrayList<>();
     private final MutableClock clock = new MutableClock();
     private final BlockingQueue<Message> replies = new LinkedBlockingQueue<>();
+    private final List<TimelineEvent> timeline = new ArrayList<>();
     private final List<JSONObject> requests = new CopyOnWriteArrayList<>();
     private final ConcurrentLinkedQueue<JSONObject> modelReplies = new ConcurrentLinkedQueue<>();
     private Runnable modelWait = () -> { };
@@ -154,7 +156,7 @@ class QqAssistantCommandTest {
         var dispatcherProvider = mockDispatcherProvider();
         dispatcher = new CommandDispatcher(provider(List.of(command, new MenuCommand(dispatcherProvider, settings),
                 new EnableCommand(dispatcherProvider, settings), new DisableCommand(dispatcherProvider, settings))),
-                provider(List.<CommandFollowUp>of(command)), settings, data, sender, core, TimelineWriter.NONE, clock);
+                provider(List.<CommandFollowUp>of(command)), settings, data, sender, core, timeline::add, clock);
         when(dispatcherProvider.getIfAvailable()).thenReturn(dispatcher);
     }
 
@@ -171,6 +173,76 @@ class QqAssistantCommandTest {
         group(ASKER, "问 这个月心动盲盒多少个");
         assertReply("还没开智能助手问答", "推送页");
         assertTrue(requests.isEmpty());
+    }
+
+    @Test
+    @DisplayName("不带『问』字提问，机器人只回菜单（私聊）")
+    void friendQuestionWithoutCommand() throws Exception {
+        add(FIRST, "测试主播甲", channel(FRIEND, ASKER, true, true));
+        String question = "测试主播甲 最近四周的流水有什么变化";
+        modelReplies.add(text("近期直播流水有波动"));
+        receive(FRIEND, ASKER, ASKER, question, false);
+        Message answer = assertReply("流水有波动", LABEL);
+        assertEquals(FRIEND, answer.getType());
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
+        awaitIdle(FRIEND, ASKER);
+        receive(FRIEND, ASKER, ASKER, "这个月播了几场", false);
+        assertEquals(List.of(TimelineEventType.COMMAND_EXECUTED, TimelineEventType.COMMAND_COOLED_DOWN),
+                timeline.stream().map(TimelineEvent::type).toList());
+        assertEquals(1, requests.size());
+        assertTrue(replies.isEmpty());
+    }
+
+    @Test
+    @DisplayName("不带『问』字提问，机器人只回菜单（群聊）")
+    void mentionedGroupQuestionWithoutCommand() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        String question = "测试主播甲最近四周的流水有什么变化";
+        receive(GROUP, ROOM, ASKER, question, false);
+        assertTrue(replies.isEmpty());
+        assertTrue(requests.isEmpty());
+
+        modelReplies.add(text("近期直播流水有波动"));
+        receive(GROUP, ROOM, ASKER, question, true);
+        Message answer = assertReply("流水有波动", LABEL);
+        assertEquals(GROUP, answer.getType());
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
+    }
+
+    @Test
+    @DisplayName("没开问答的群里，打错命令却收不到菜单")
+    void unknownCommandKeepsMenuWhenAssistantIsOff() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, false, null));
+        group(ASKER, "本周播了几场");
+        assertReply("可用命令");
+        assertEquals(List.of(TimelineEventType.COMMAND_UNKNOWN), timeline.stream().map(TimelineEvent::type).toList());
+        assertTrue(requests.isEmpty());
+    }
+
+    @Test
+    @DisplayName("菜单后面多打了个全角空格，就不回菜单了")
+    void menuWithTrailingFullWidthSpace() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+
+        group(ASKER, "菜单\u3000");
+
+        assertReply("可用命令");
+        assertEquals(List.of(TimelineEventType.COMMAND_EXECUTED), timeline.stream().map(TimelineEvent::type).toList());
+        assertTrue(requests.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\u3000", "\u00a0"})
+    @DisplayName("问和问题之间的 Unicode 空格应分开命令与正文")
+    void explicitQuestionWithUnicodeSpace(String space) throws Exception {
+        add(FIRST, "莜娜", channel(GROUP, ROOM, true, false));
+        String question = "莜娜最近怎么样";
+        modelReplies.add(text("最近有开播。"));
+
+        group(ASKER, "问" + space + question);
+
+        assertReply("最近有开播", LABEL);
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
     }
 
     @Test
@@ -371,6 +443,7 @@ class QqAssistantCommandTest {
 
         modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
         receive(GROUP, ROOM, ASKER, "2", false);
+        assertReply("收到，查测试主播乙");
         assertReply(LABEL);
         verify(queries).sessions(BILIBILI, SECOND, 7, 1);
         assertEquals("最近播了几场", userPayload(requests.get(0)).getString("question"));
@@ -382,6 +455,64 @@ class QqAssistantCommandTest {
         receive(GROUP, ROOM, ASKER, "2", false);
         assertReply("所选主播", "问答");
         verify(queries, never()).sessions(eq(BILIBILI), eq(FIRST), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("回了序号，8 秒没动静，以为机器人没收到")
+    void selectedStreamerGetsImmediateAcknowledgmentOnly() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        var received = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        holdModel(received, release);
+
+        group(ASKER, "问 最近播了几场");
+        assertReply("回序号", "2. 测试主播乙");
+        try {
+            receive(GROUP, ROOM, ASKER, "2", false);
+            Message acknowledgment = replies.poll(5, TimeUnit.SECONDS);
+            assertNotNull(acknowledgment, "选完主播后没有立刻回复");
+            assertTrue(acknowledgment.getContent().contains("收到，查测试主播乙"), acknowledgment::getContent);
+            assertTrue(received.await(10, TimeUnit.SECONDS));
+            assertNull(replies.poll(11, TimeUnit.SECONDS), "选完主播后又收到查数提示");
+        } finally {
+            release.countDown();
+        }
+        assertReply(LABEL);
+    }
+
+    @Test
+    @DisplayName("重复发了序号，答完又冒出一份菜单")
+    void repeatedMentionedSelectionRepliesBusyAndNeverShowsMenu() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        var received = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        holdModel(received, release);
+
+        group(ASKER, "问 最近播了几场");
+        assertReply("回序号", "2. 测试主播乙");
+        try {
+            receive(GROUP, ROOM, ASKER, "2", false);
+            assertTrue(received.await(10, TimeUnit.SECONDS));
+            replies.clear();
+            receive(GROUP, ROOM, ASKER, "2", false);
+            assertTrue(replies.isEmpty());
+            group(ASKER, "2");
+            assertReply("上一个问题还在查", "稍等");
+        } finally {
+            release.countDown();
+        }
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "4");
+        assertReply("回序号", "2. 测试主播乙");
+        assertEquals(1, requests.size());
+        receive(GROUP, ROOM, ASKER, "2", false);
+        assertReply("收到，查测试主播乙");
+        assertReply(LABEL);
+        assertEquals(2, requests.size());
+        assertEquals("4", userPayload(requests.get(1)).getString("question"));
     }
 
     @Test
@@ -653,6 +784,8 @@ class QqAssistantCommandTest {
         assertReply("已禁用", "问");
         group(ASKER, "问数 本周播了吗");
         assertReply("已关闭", "问");
+        group(ASKER, "本周播了吗");
+        assertReply("已关闭", "问");
         assertTrue(target.getAssistantEnabled());
         assertTrue(requests.isEmpty());
     }
@@ -702,18 +835,11 @@ class QqAssistantCommandTest {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
         var received = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        modelWait = () -> {
-            received.countDown();
-            try {
-                assertTrue(release.await(30, TimeUnit.SECONDS), "测试未释放模型响应");
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                throw new AssertionError(error);
-            }
-        };
+        holdModel(received, release);
         try {
-            group(ASKER, "问 本月播过吗");
+            group(ASKER, "本月播过吗");
             assertTrue(received.await(10, TimeUnit.SECONDS));
+            assertTrue(replies.isEmpty());
             receive(GROUP, ROOM, OTHER, "问 本周播过吗", true);
             assertReply("上一个问题还在查", "稍等");
             assertReply("收到", "正在查");
@@ -757,6 +883,30 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("回答助手的反问（比如年份）却被当成编号拒绝")
+    void numericAnswerToClarificationKeepsHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        String question = "那一年的直播情况怎么样";
+        String clarification = "你想查哪一年？";
+        modelReplies.add(text(clarification));
+        group(ASKER, "问 " + question);
+        assertReply(clarification, LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        modelReplies.add(text("那年的开播比较频繁。"));
+        group(ASKER, "问 2025");
+
+        assertReply("开播比较频繁", LABEL);
+        assertEquals(2, requests.size());
+        var payload = userPayload(requests.get(1));
+        assertEquals("2025", payload.getString("question"));
+        var history = payload.getJSONArray("history");
+        assertEquals(1, history.size());
+        assertEquals(question, history.getJSONObject(0).getString("question"));
+        assertTrue(history.getJSONObject(0).getString("answerForHistory").contains(clarification));
+    }
+
+    @Test
     @DisplayName("编号续问不能借用同群其他人的选项或把选项带去另一个聊天或主播")
     void numberedFollowUpsStayWithTheirAskerChatAndStreamer() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false), channel(FRIEND, ASKER, true, false));
@@ -776,7 +926,7 @@ class QqAssistantCommandTest {
         assertEquals(2, requests.size());
 
         modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
-        group(ASKER, "问 2");
+        group(ASKER, "2");
         assertReply(LABEL);
         assertEquals("周六那场的开播时间是什么？", userPayload(requests.get(2)).getString("question"));
         assertEquals("测试主播甲最近在线怎么样", lastHistory().getJSONObject(0).getString("question"));
@@ -787,6 +937,38 @@ class QqAssistantCommandTest {
         group(ASKER, "问 1");
         assertReply("没有可接着问");
         assertEquals(4, requests.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"4", "４"})
+    @DisplayName("上一个问题答完后，@ 机器人发 4 或 ４ 应当作问题")
+    void fourIsAskedAsLiteralQuestion(String question) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        group(ASKER, "问 最近在线怎么样");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, question);
+
+        assertReply(LABEL);
+        assertEquals(2, requests.size());
+        assertEquals(question, userPayload(requests.get(1)).getString("question"));
+    }
+
+    @Test
+    @DisplayName("用全角数字可以接着问第二条建议")
+    void fullWidthNumberResumesSecondFollowUp() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        String question = "周六那场的开播时间是什么？";
+        modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？\n2. " + question));
+        group(ASKER, "问 最近在线怎么样");
+        assertReply("2. " + question, LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "２");
+
+        assertReply(LABEL);
+        assertEquals(question, userPayload(requests.get(1)).getString("question"));
     }
 
     @Test
@@ -1040,6 +1222,18 @@ class QqAssistantCommandTest {
     private void receive(PushTargetType type, long num, long actor, String text, boolean mention) {
         dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(QQ, type == GROUP ? "group" : "private",
                 num, actor, text, "admin", mention));
+    }
+
+    private void holdModel(CountDownLatch received, CountDownLatch release) {
+        modelWait = () -> {
+            received.countDown();
+            try {
+                assertTrue(release.await(30, TimeUnit.SECONDS), "测试未释放模型响应");
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(error);
+            }
+        };
     }
 
     private Message assertReply(String... words) throws InterruptedException {

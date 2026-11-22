@@ -7,10 +7,10 @@ import org.frostnova.nova.core.assistant.AssistantClient;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
 import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandFallback;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandSettingsService;
-import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.ChannelSettings;
 import org.frostnova.nova.core.model.Message;
@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @NovaComponent
-public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
+public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private static final String LIVE_PLATFORM = "bilibili";
     private static final String CHANNEL_OFF = "这里还没开智能助手问答，请管理员在控制台的推送页开启";
     private static final String BUSY = "上一个问题还在查，稍等";
@@ -65,6 +65,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private static final int HISTORY_LIMIT = 3;
     private static final String CHOSEN_UID_PREFIX = "uid:";
     private static final Pattern NUMBER = Pattern.compile("[0-9]+");
+    private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
+    private static final Pattern RAW_ORDINAL = Pattern.compile("\\p{IsWhite_Space}*" + ORDINAL.pattern() + "\\p{IsWhite_Space}*");
     private static final Pattern NON_HAN_EDGES = Pattern.compile("^[^\\p{IsHan}]+|[^\\p{IsHan}]+\\z");
     private static final Pattern QUESTION_PREFIX = Pattern.compile("^[\\p{IsWhite_Space}\\p{P}]+");
     private static final Set<String> QUERY_WORDS = Set.of(
@@ -128,6 +130,13 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     @Override public boolean available() { return client.isConfigured(); }
 
     @Override
+    public boolean acceptsFallback(CommandContext context) {
+        return available() && context.getSenderUid() != null && dataSource.getUsers(LIVE_PLATFORM).stream()
+                .filter(QqAssistantCommand::activeStreamer)
+                .anyMatch(user -> assistantEnabled(channel(context, user)));
+    }
+
+    @Override
     public CommandReply beforeCooldown(CommandContext context) {
         if (!available() || context.getSenderUid() == null) return CommandReply.none();
         return inFlight.contains(session(context)) ? CommandReply.of(BUSY) : null;
@@ -146,8 +155,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
 
         String question = String.join(" ", context.getArgs());
         if (question.isBlank()) return CommandReply.of(examples(allowed));
-        if (question.equals("1") || question.equals("2"))
-            return resumeFollowUp(context, asker, question.charAt(0) - '1');
+        if (question.equals("1") || question.equals("１")) return resumeFollowUp(context, asker, 0);
+        if (question.equals("2") || question.equals("２")) return resumeFollowUp(context, asker, 1);
 
         choices.remove(asker);
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
@@ -168,7 +177,11 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             pendingFollowUps.remove(asker);
             return choose(asker, options, question);
         }
-        return start(context, asker, options.get(0).uid(), question, null);
+        Candidate streamer = options.get(0);
+        String rawText = context.getRawText();
+        String chosenName = fromChoice && rawText != null && RAW_ORDINAL.matcher(rawText.trim()).matches()
+                ? streamer.displayName() : null;
+        return start(context, asker, streamer.uid(), question, null, chosenName);
     }
 
     private String examples(List<Candidate> allowed) {
@@ -193,13 +206,13 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             return CommandReply.of(NO_FOLLOW_UP);
         }
         if (index >= pending.questions().size()) return CommandReply.of(NO_FOLLOW_UP);
-        return start(context, asker, pending.uid(), pending.questions().get(index), pending);
+        return start(context, asker, pending.uid(), pending.questions().get(index), pending, null);
     }
 
     private List<Candidate> candidates(CommandContext context) {
         var candidates = new ArrayList<Candidate>();
         for (PushUser user : dataSource.getUsers(LIVE_PLATFORM)) {
-            if (user.getUid() == null || Boolean.FALSE.equals(user.getEnabled())) continue;
+            if (!activeStreamer(user)) continue;
             PushTarget target = channel(context, user);
             if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user), user.getRoomId(),
                     Boolean.TRUE.equals(target.getAssistantEnabled())));
@@ -289,7 +302,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     public Claimed claim(CommandContext context) {
         String word = context.getCommand();
         if (context.getSenderUid() == null || !context.getArgs().isEmpty()
-                || word.length() > 9 || !NUMBER.matcher(word).matches()) return null;
+                || word.length() > 9 || !ORDINAL.matcher(word).matches()) return null;
         var key = new Asker(session(context), context.getSenderUid());
         Choice choice = choices.get(key);
         if (choice == null) return null;
@@ -303,7 +316,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index), choice.question()));
     }
 
-    private CommandReply start(CommandContext context, Asker asker, Long uid, String question, PendingFollowUps selected) {
+    private CommandReply start(CommandContext context, Asker asker, Long uid, String question, PendingFollowUps selected,
+                               String chosenName) {
         String session = asker.session();
         if (!inFlight.add(session)) return CommandReply.of(BUSY);
         if (selected == null) pendingFollowUps.remove(asker);
@@ -317,7 +331,11 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             return null;
         });
         try {
-            active.ack = reminders.schedule(active::acknowledge, ACK_SECONDS, TimeUnit.SECONDS);
+            if (chosenName == null) {
+                active.ack = reminders.schedule(() -> active.acknowledge("收到，正在查"), ACK_SECONDS, TimeUnit.SECONDS);
+            } else {
+                active.acknowledge("收到，查" + chosenName);
+            }
             active.deadline = reminders.schedule(() -> {
                 if (active.finish(QqAnswer.text("智能助手本次提问已超时，请问得具体一点"))) work.cancel(true);
             }, AssistantAskService.QUESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -325,10 +343,11 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
                 try { work.run(); }
                 finally { inFlight.remove(session); }
             });
-        } catch (RejectedExecutionException error) {
+        } catch (RuntimeException error) {
             active.finish(null);
             inFlight.remove(session);
-            return CommandReply.of(UNAVAILABLE);
+            if (error instanceof RejectedExecutionException) return CommandReply.of(UNAVAILABLE);
+            throw error;
         }
         return CommandReply.none();
     }
@@ -424,9 +443,16 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         if (!available() || settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), name()))
             return null;
         return dataSource.getUser(LIVE_PLATFORM, uid)
-                .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
-                .map(user -> channel(context, user)).filter(QqAssistantCommand::usable)
-                .filter(target -> Boolean.TRUE.equals(target.getAssistantEnabled())).orElse(null);
+                .filter(QqAssistantCommand::activeStreamer)
+                .map(user -> channel(context, user)).filter(QqAssistantCommand::assistantEnabled).orElse(null);
+    }
+
+    private static boolean activeStreamer(PushUser user) {
+        return user.getUid() != null && !Boolean.FALSE.equals(user.getEnabled());
+    }
+
+    private static boolean assistantEnabled(PushTarget target) {
+        return usable(target) && Boolean.TRUE.equals(target.getAssistantEnabled());
     }
 
     private static boolean usable(PushTarget target) { return target != null && !Boolean.FALSE.equals(target.getEnabled()); }
@@ -472,8 +498,8 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             this.uid = uid;
         }
 
-        synchronized void acknowledge() {
-            if (!finished) send(QqAnswer.text("收到，正在查"));
+        synchronized void acknowledge(String text) {
+            if (!finished) send(QqAnswer.text(text));
         }
 
         synchronized boolean finish(QqAnswer answer) {
@@ -507,6 +533,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
 
     private record Candidate(Long uid, String nickname, Long roomId, boolean allowed) {
         String id() { return uid.toString(); }
+        String displayName() { return nickname == null || nickname.isBlank() ? id() : nickname; }
     }
     private record NameMatch(int start, int end, int length, boolean exact, Candidate candidate) {
         boolean overlapsStrongerMatch(NameMatch[] covered) {
