@@ -46,8 +46,9 @@ final class AssistantLogCapture implements AutoCloseable {
         }
     }
 
-    void assertContains(String... fields) {
-        assertTrue(messages.stream().anyMatch(line -> java.util.Arrays.stream(fields).allMatch(line::contains)));
+    String assertContains(String... fields) {
+        return messages.stream().filter(line -> java.util.Arrays.stream(fields).allMatch(line::contains))
+                .findFirst().orElseThrow(() -> new AssertionError("日志缺少 " + java.util.Arrays.toString(fields)));
     }
 
     @Override public void close() {

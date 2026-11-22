@@ -694,6 +694,47 @@ class AssistantAskServiceTest {
                 List.of(JSONObject.of("type", "output_text", "text", text)));
     }
 
+    // /responses 未关闭严格模式时，通用汇总的 uniqueItems 会让每问都收到 400。
+    @Test void responsesToolsOptOutOfStrictModeWhileChatToolsOmitIt() {
+        useResponses();
+        responsesReplies.add(responsesReply(responsesText("可以查数。")));
+        onSend = () -> {
+            if (!sentTo.get(sentTo.size() - 1).endsWith("/responses")) return;
+            var tools = sent.get(sent.size() - 1).getJSONArray("tools").toJavaList(JSONObject.class);
+            var aggregate = tools.stream().filter(tool -> "aggregate".equals(tool.getString("name"))).findFirst().orElseThrow();
+            if (!Boolean.FALSE.equals(aggregate.get("strict"))
+                    && aggregate.getJSONObject("parameters").getJSONObject("properties")
+                            .getJSONObject("kinds").getBooleanValue("uniqueItems")) {
+                providerStatus = 400;
+                providerBody = JSONObject.of("error", JSONObject.of("type", "invalid_request_error",
+                        "code", "invalid_json_schema", "param", "tools[8].parameters",
+                        "message", "uniqueItems is not supported in strict mode")).toJSONString();
+            }
+        };
+        try (var sqlite = mockStatic(AssistantSqlNative.class)) {
+            sqlite.when(AssistantSqlNative::available).thenReturn(true);
+            sqlite.when(AssistantSqlNative::version).thenReturn("3.34.1");
+            var response = ask();
+            assertTrue(response.getBooleanValue("answered"), response.getString("answer"));
+            properties.setApiFormat("chat");
+            assertTrue(ask().getBooleanValue("answered"));
+        }
+        assertEquals(List.of("https://model.example/v1/responses", "https://model.example/v1/chat/completions"), sentTo);
+        var responsesTools = sent.get(0).getJSONArray("tools").toJavaList(JSONObject.class);
+        var chatTools = sent.get(1).getJSONArray("tools").toJavaList(JSONObject.class);
+        assertEquals(12, responsesTools.size());
+        assertEquals(responsesTools.size(), chatTools.size());
+        for (int i = 0; i < responsesTools.size(); i++) {
+            var responsesTool = responsesTools.get(i);
+            var chatTool = chatTools.get(i);
+            var chatFunction = chatTool.getJSONObject("function");
+            assertEquals(chatFunction.getString("name"), responsesTool.getString("name"));
+            assertEquals(Boolean.FALSE, responsesTool.get("strict"), chatFunction.getString("name"));
+            assertFalse(chatTool.containsKey("strict"));
+            assertFalse(chatFunction.containsKey("strict"));
+        }
+    }
+
     // 假接口会拒收次序改变、内容改写或结果关联到错误 call_id 的续问。
     @Test void responsesReplaysOrderedItemsAndMatchesEveryToolResultByCallId() throws Exception {
         useResponses();
