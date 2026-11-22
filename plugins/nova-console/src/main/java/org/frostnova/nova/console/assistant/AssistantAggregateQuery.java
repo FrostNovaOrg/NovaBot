@@ -46,7 +46,9 @@ final class AssistantAggregateQuery {
     static final String MINUTE_RULE = "在线和看过人数每 60 秒一格取最大，按格起点归组。平均和极值各自跳过缺采分钟，全缺时返回 null。"
             + "缺采数按筛选读数前的直播分钟计算";
     static final String SESSION_COUNT_RULE = "按 hour 或 weekday 分组时，sessionCount 是有数据的不同直播场数。"
-            + "同时汇总在线和看过人数时，用 onlineSessionCount、watchedSessionCount 分别计各自有读数的场数";
+            + "同时汇总在线和看过人数时，用 onlineSessionCount、watchedSessionCount 分别计各自有读数的场数。"
+            + "常播钟点或星期分组的场数至少达到同类最多场数的一半，向上取整。"
+            + "durationSeconds、effectiveSeconds 的单位是秒，回答时换算成小时，保留一位小数";
     static final String KNOWN_AMOUNT_RULE = "knownAmountSubtotal 仅合计已知金额，完整合计仍未知。"
             + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按发生统计日列各类缺失条数";
     static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
@@ -54,6 +56,7 @@ final class AssistantAggregateQuery {
     static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
     private static final String DETAIL = "detail.json";
     private static final int TABLE_ROWS = 60;
+    private static final int DAY_ROWS = 92;
     private static final int MAX_EVENT_CHARS = 16_384;
     private static final int MAX_GROUPS = 50_000;
     private static final int MAX_GROUP_TEXT_CHARS = 2_000_000;
@@ -893,7 +896,8 @@ final class AssistantAggregateQuery {
     }
 
     private JSONObject table(boolean liveUnarchived, Long liveStart, AssistantQueryContext context) {
-        int limit = request.limit() == null ? TABLE_ROWS - 1 : request.limit();
+        int defaultLimit = request.groups().equals(List.of(Group.DAY)) ? DAY_ROWS : TABLE_ROWS - 1;
+        int limit = request.limit() == null ? defaultLimit : request.limit();
         var columns = new JSONArray();
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));

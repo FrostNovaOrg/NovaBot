@@ -20,6 +20,8 @@ import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.io.IOException;
@@ -171,6 +173,29 @@ class AssistantAggregateQueryTest {
         assertEquals(6, answer.getIntValue("groupCount"));
         assertTrue(answer.getBooleanValue("truncated"));
         assertTrue(answer.getString("truncationNote").contains("5"));
+    }
+
+    // 抓住逐日图在 90 天内提前断掉，或超过上限时遗漏截断说明。
+    @ParameterizedTest @CsvSource({"90, 90", "120, 92"})
+    void dayGroupingShowsTheWholeQuarterAndExplainsLongerTruncation(int days, int expectedRows) {
+        LocalDate from = LocalDate.parse(TO).minusDays(days - 1);
+        for (int index = 0; index < days; index++) {
+            long start = at(from.plusDays(index) + "T18:00");
+            summary(start, start + 10_000, 0, 0, 0);
+        }
+        var answer = query(request(List.of("session"), from.toString(), TO, "count"), "groupBy", List.of("day"));
+        var rows = answer.getJSONArray("rows");
+        assertEquals(days, answer.getIntValue("groupCount"));
+        assertEquals(expectedRows, rows.size());
+        assertEquals(from.toString(), rows.getJSONArray(0).getString(0));
+        assertEquals(from.plusDays(expectedRows - 1).toString(), rows.getJSONArray(expectedRows - 1).getString(0));
+        assertNumber(days, answer.getJSONArray("totals").get(1));
+        assertEquals(expectedRows < days, answer.getBooleanValue("truncated"));
+        if (expectedRows < days) {
+            assertTrue(answer.getString("truncationNote").contains(Integer.toString(expectedRows)));
+        } else {
+            assertFalse(answer.containsKey("truncationNote"));
+        }
     }
 
     // 抓住开打也被算成结算、胜负平归错，或正好 100 票的胜场被算进「过 100」。
@@ -422,18 +447,18 @@ class AssistantAggregateQueryTest {
         assertNull(allMissing.getJSONArray("totals").get(0));
     }
 
-    // 抓住分组回包超过行数限制，或裁掉的行漏出合计。
-    @Test void responseKeepsAtMostSixtyTableRowsIncludingTotal() throws IOException {
+    // 抓住复合分组超过原有行数限制，或裁掉的行漏出合计。
+    @Test void compoundGroupingKeepsAtMostSixtyRowsIncludingTotal() throws IOException {
         long start = at("2026-09-01T06:00");
         int days = 65;
         long day = Duration.ofDays(1).toMillis();
         summary(start, start + days * day, 0, 0, 0);
         for (int i = 0; i < days; i++) event(start, start + i * day, "follow", Map.of("uid", VIEWER));
         var result = query(request(List.of("follow"), "2026-09-01", "2026-11-04", "count"),
-                "groupBy", List.of("day"));
+                "groupBy", List.of("day", "weekday"));
         assertEquals(59, result.getJSONArray("rows").size());
         assertEquals(days, result.getIntValue("groupCount"));
-        assertEquals(days, result.getJSONArray("totals").getIntValue(1));
+        assertEquals(days, result.getJSONArray("totals").getIntValue(2));
         assertTrue(result.getBooleanValue("truncated"));
     }
 

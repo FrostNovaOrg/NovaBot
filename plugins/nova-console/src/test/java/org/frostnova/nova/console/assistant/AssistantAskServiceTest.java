@@ -1319,10 +1319,35 @@ class AssistantAskServiceTest {
         replies.add(JSONObject.of("content", "流水9999，前3名，贡献32.1%"));
         replies.add(JSONObject.of("content", "流水8888，前3名，贡献32.1%"));
         var result = ask();
-        assertEquals(List.of("8888"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        assertTrue(result.getString("answer").contains("9999"));
+        assertEquals(List.of("9999"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
         assertEquals(3, sent.size());
         assertTrue(sent.get(2).toJSONString().contains("9999"));
         assertEquals("none", sent.get(2).getString("tool_choice"));
+    }
+
+    // 抓住重写时丢掉已核对的合计或占比，并核对两者保留且数字改对时采用重写稿。
+    @ParameterizedTest @ValueSource(strings = {"本次未重新查数，无法重报数字。", "已知部分合计 1000 元（场次归档）。"})
+    void rewriteMustPreserveVerifiedNumbers(String incompleteRewrite) {
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        String original = "已知部分合计 1000 元，首位贡献 32.1%（场次归档）。次位贡献 99.9%，缺额未知。";
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", original));
+        replies.add(JSONObject.of("content", incompleteRewrite));
+        var kept = ask(JSONObject.of("question", "流水合计和缺额是什么？"));
+        assertEquals(List.of("99.9%"), kept.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        assertTrue(kept.getString("answer").contains("1000 元"));
+        assertTrue(kept.getString("answer").contains("32.1%"));
+
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", original));
+        replies.add(JSONObject.of("content", "合计 1,000 元，首位贡献 32.1％，次位贡献 21.0%（场次归档）。缺额未知。"));
+        var corrected = ask(JSONObject.of("question", "流水合计和缺额是什么？"));
+        assertTrue(corrected.getJSONArray("unverifiedNumbers").isEmpty());
+        assertTrue(corrected.getString("answer").contains("1,000 元"));
+        assertTrue(corrected.getString("answer").contains("32.1％"));
+        assertTrue(corrected.getString("answer").contains("21.0%"));
+        assertTrue(corrected.getString("answer").contains("缺额未知"));
     }
 
     @Test void rewriteNetworkFailurePreservesOriginalAnswerAndCost() {
@@ -1601,6 +1626,22 @@ class AssistantAskServiceTest {
         var numbers = new AssistantNumbers();
         numbers.include(JSONObject.of("value", 32.145, "other", 8888));
         assertEquals(List.of("32.2%", "9999"), numbers.unverified("32.1% 32.2% 9999"));
+    }
+
+    // 抓住日常写法的日期和时刻被标成待核对数字，同时确保没有来源的金额仍被标出。
+    @Test void dateAndTimeNumbersAreIgnoredButUnsupportedAmountsAreReported() {
+        String datesAndTimes = "11 月 1 日至 11 月 22 日（11-22、2026-11-22），周六 18:24（18 点 24 分）至 21 点。";
+        String answer = datesAndTimes + "流水 9876 元。";
+        replies.add(JSONObject.of("content", answer));
+        replies.add(JSONObject.of("content", answer));
+        var result = ask();
+        assertEquals(List.of("9876"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        assertTrue(result.getString("answer").contains("9876 元"));
+
+        sent.clear();
+        replies.add(JSONObject.of("content", datesAndTimes));
+        assertTrue(ask().getJSONArray("unverifiedNumbers").isEmpty());
+        assertEquals(1, sent.size());
     }
 
     static java.util.stream.Stream<Arguments> numberCases() {
