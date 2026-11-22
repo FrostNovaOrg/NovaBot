@@ -49,6 +49,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/assistant/memos");
         add(entries, Access.STREAMER, Subject.PATH, "POST /config/api/streamers/{platform}/{uid}/assistant/memos");
         add(entries, Access.STREAMER, Subject.PATH, "PUT /config/api/streamers/{platform}/{uid}/assistant/memos/{id}");
+        add(entries, Access.STREAMER, Subject.PATH, "DELETE /config/api/streamers/{platform}/{uid}/assistant/memos");
         add(entries, Access.STREAMER, Subject.PATH, "DELETE /config/api/streamers/{platform}/{uid}/assistant/memos/{id}");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/avatar");
         add(entries, Access.STREAMER, Subject.PATH, "GET /config/api/streamers/{platform}/{uid}/insights");

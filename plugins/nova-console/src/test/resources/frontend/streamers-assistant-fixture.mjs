@@ -78,7 +78,7 @@ let reply = {answered: true, label: '由人工智能生成', answer: '样例回�
 const initialReply = reply;
 let askError = null, httpStatus = 200;
 const requests = [];
-const memoFixtures = new Map(), memoWrites = [];
+const memoFixtures = new Map(), memoWrites = [], unreadableMemos = new Set();
 globalThis.fetch = async (url, options) => {
   const response = body => ({status: httpStatus, ok: httpStatus < 400, json: async () => body});
   if (url.endsWith('/assistant/state')) {
@@ -97,12 +97,16 @@ globalThis.fetch = async (url, options) => {
   if (match) {
     const [, uid, id] = match, method = options.method || 'GET';
     const date = '2026-11-22', items = memoFixtures.get(uid) || [];
+    if (method === 'GET' && unreadableMemos.has(uid)) {
+      return {status: 500, ok: false, json: async () => ({success: false, reason: 'memo_unreadable', message: '主播备忘读不出来'})};
+    }
     if (method !== 'GET') {
       const body = options.body && JSON.parse(options.body);
       memoWrites.push({uid, method, id, body, csrf: options.headers['X-CSRF-Token']});
       if (method === 'POST') items.push({id: 'next', createdOn: date, ...body});
       if (method === 'PUT') Object.assign(items.find(memo => memo.id === id), body);
-      if (method === 'DELETE') items.splice(items.findIndex(memo => memo.id === id), 1);
+      if (method === 'DELETE' && id) items.splice(items.findIndex(memo => memo.id === id), 1);
+      if (method === 'DELETE' && !id) unreadableMemos.delete(uid);
       memoFixtures.set(uid, items);
     }
     return response({success: true, today: date, items: structuredClone(items)});
@@ -197,6 +201,33 @@ const checks = {
     const other = await mount({platform: 'sample', uid: 82});
     assert.match(other.node.textContent, /还没有备忘/);
     assert.ok(!other.node.textContent.includes('🎁'));
+  },
+  async unreadableMemo() {
+    unreadableMemos.add('83');
+    const mounted = await mount({platform: 'sample', uid: 83});
+    const panel = byClass(mounted.node, 'sa-memos')[0];
+    assert.match(panel.textContent, /备忘读不出来/);
+    assert.ok(panel.querySelector('form').hidden);
+    await ask(mounted);
+    assert.equal(requests.length, 1);
+    assert.match(byClass(mounted.node, 'sa-answer')[0].textContent, /样例回答/);
+
+    const reset = button(panel, '清空重建');
+    assert.ok(reset && !reset.hidden);
+    await reset.fire('click');
+    const confirm = button(panel, '确认清空重建'), cancel = button(panel, '取消');
+    assert.equal(confirm.hidden, false);
+    assert.deepEqual(memoWrites, []);
+    await cancel.fire('click');
+    assert.equal(confirm.hidden, true);
+    assert.deepEqual(memoWrites, []);
+    await reset.fire('click');
+    await confirm.fire('click');
+    assert.deepEqual(memoWrites.map(({uid, method, id, csrf}) => ({uid, method, id, csrf})),
+      [{uid: '83', method: 'DELETE', id: undefined, csrf: 'sample-token'}]);
+    assert.match(panel.textContent, /还没有备忘/);
+    assert.equal(panel.querySelector('form').hidden, false);
+    assert.equal(reset.hidden, true);
   },
   async examples() {
     const mounted = await mount();

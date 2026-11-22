@@ -39,6 +39,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 
 class AssistantAskServiceTest {
     @TempDir Path directory;
@@ -141,6 +142,23 @@ class AssistantAskServiceTest {
     }
 
     @Test
+    @DisplayName("主播备忘文件损坏时，控制台仍能提问，答复提示跳过备忘且不把提示带进历史")
+    void corruptMemoDoesNotPreventAQuestionInTheConsole() throws Exception {
+        Path folder = Files.createDirectories(directory.resolve("assistant-memos"));
+        Files.writeString(folder.resolve("bilibili-1.json"), "[损坏的备忘");
+        var mvc = mvc();
+        replies.add(JSONObject.of("content", "周六的礼物最多。"));
+        mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member())
+                        .contentType("application/json").content("{\"question\":\"礼物怎么样\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true))
+                .andExpect(jsonPath("$.answer").value(containsString("周六的礼物最多")))
+                .andExpect(jsonPath("$.answer").value(containsString("备忘读不出来，这次没参考")))
+                .andExpect(jsonPath("$.answerForHistory").value("周六的礼物最多。"));
+        assertEquals(1, sent.size());
+        assertFalse(modelSystem(0).contains("损坏的备忘"));
+    }
+
+    @Test
     @DisplayName("第一次提问也会用本地档案把备忘里的观众昵称换成代号")
     void memoMasksViewerNicknamesBeforeTheFirstModelRequest() throws Exception {
         long viewer = 991234567L;
@@ -177,6 +195,30 @@ class AssistantAskServiceTest {
                 .andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].text").value("另一位主播的任务"));
         mvc.perform(post(own).requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json").content(initial))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("损坏的备忘可清空重建，重建请求不能清除可读的备忘或其他主播的备忘")
+    void corruptMemoCanBeResetOnlyForTheAssignedStreamer() throws Exception {
+        Path folder = Files.createDirectories(directory.resolve("assistant-memos"));
+        Files.writeString(folder.resolve("bilibili-1.json"), "[损坏的备忘");
+        Files.writeString(folder.resolve("bilibili-2.json"), "[另一位主播的损坏备忘");
+        var mvc = mvc();
+        String url = "/config/api/streamers/bilibili/1/assistant/memos";
+        mvc.perform(get(url).requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.reason").value("memo_unreadable"));
+        mvc.perform(delete("/config/api/streamers/bilibili/2/assistant/memos").requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isNotFound());
+        assertTrue(Files.exists(folder.resolve("bilibili-2.json")));
+        mvc.perform(delete(url).requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items").isEmpty());
+        mvc.perform(delete(url).requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isOk());
+        mvc.perform(post(url).requestAttr(ConfigUiAccess.ACCOUNT, member())
+                        .contentType("application/json").content("{\"text\":\"重新记录试播目标\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(delete(url).requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isConflict());
+        mvc.perform(get(url).requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].text").value("重新记录试播目标"));
     }
 
     @Test
@@ -248,6 +290,22 @@ class AssistantAskServiceTest {
             assertEquals(answer, result.getString("answer"));
             assertNull(result.get("followUps"), tail);
         }
+    }
+
+    @Test
+    @DisplayName("只有以问号结尾的编号段能生成下一问按钮，单条普通结果和混合编号都留在正文")
+    void onlyQuestionMarkedNumberedTailsBecomeFollowUps() {
+        for (String tail : List.of("1. 测试观众甲 10 个", "1. 谁送得最多？\n2. 测试观众乙 5 个")) {
+            String answer = "送礼排名\n" + tail;
+            replies.add(JSONObject.of("content", answer));
+            var result = ask();
+            assertTrue(result.getString("answer").contains(tail));
+            assertNull(result.get("followUps"));
+        }
+        replies.add(JSONObject.of("content", "送礼排名已列出。\n1. 谁送得最多?\n2. 送了哪些礼物？  "));
+        var result = ask();
+        assertEquals(2, ((List<?>) result.get("followUps")).size());
+        assertTrue(modelSystem(0).contains("每条都以「？」结尾"));
     }
 
     @Test

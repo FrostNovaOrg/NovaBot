@@ -144,14 +144,21 @@ function mountMemos(panel, path, updateExample) {
   form.append(textLabel, fields, actions);
   body.appendChild(form);
   const feedback = line(body, '', 'hint sa-memo-feedback'); feedback.setAttribute('role', 'status');
+  const resetWarning = line(body, '清空后，原有备忘无法恢复。', 'hint');
+  const recovery = el('div', 'sa-memo-actions');
   const retry = el('button', 'nv-btn2'); retry.type = 'button'; retry.textContent = '重试';
-  body.appendChild(retry);
+  const reset = el('button', 'nv-btn2'); reset.type = 'button'; reset.textContent = '清空重建';
+  const keepMemos = el('button', 'nv-btn2'); keepMemos.type = 'button'; keepMemos.textContent = '取消';
+  const resetMemos = el('button', 'danger'); resetMemos.type = 'button'; resetMemos.textContent = '确认清空重建';
+  recovery.append(retry, reset, keepMemos, resetMemos);
+  body.appendChild(recovery);
   panel.append(summary, body);
 
   let items = null, today = '', busy = false, editing = null;
+  let unreadable = false, confirmingReset = false;
   const active = memo => !memo.expiresOn || memo.expiresOn >= today;
   const updateForm = () => {
-    count.textContent = items ? `${items.length} / 10 条` : '';
+    count.textContent = unreadable ? '读不出来' : items ? `${items.length} / 10 条` : '';
     form.hidden = !items || (items.length >= 10 && !editing);
     input.disabled = deadline.disabled = busy;
     editLabel.textContent = editing ? '编辑备忘' : '新增备忘';
@@ -159,7 +166,10 @@ function mountMemos(panel, path, updateExample) {
     save.disabled = busy || !input.value.trim();
     cancel.hidden = !editing;
     cancel.disabled = busy;
-    retry.hidden = busy || Boolean(items);
+    retry.hidden = busy || Boolean(items) || confirmingReset;
+    reset.hidden = !unreadable || confirmingReset;
+    resetWarning.hidden = keepMemos.hidden = resetMemos.hidden = !confirmingReset;
+    reset.disabled = keepMemos.disabled = resetMemos.disabled = busy;
     for (const button of list.querySelectorAll('button')) button.disabled = busy;
   };
   const setEdit = memo => {
@@ -207,23 +217,37 @@ function mountMemos(panel, path, updateExample) {
   const requestMemos = async (method, id, data) => {
     if (busy) return;
     busy = true;
-    feedback.textContent = method === 'GET' ? '正在读取备忘…' : method === 'DELETE' ? '正在删除备忘…' : '正在保存备忘…';
+    const clearing = method === 'DELETE' && !id;
+    feedback.textContent = clearing ? '正在清空备忘…'
+      : method === 'GET' ? '正在读取备忘…' : method === 'DELETE' ? '正在删除备忘…' : '正在保存备忘…';
     updateForm();
     try {
       const url = path + '/memos' + (id ? '/' + encodeURIComponent(id) : '');
       const options = data ? {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)} : {method};
       const result = await api(url, options);
+      if (result.reason === 'memo_unreadable') {
+        unreadable = true;
+        items = null;
+        list.replaceChildren();
+        empty.textContent = '';
+        setEdit(null);
+        updateExample();
+      }
       if (result.success !== true || !Array.isArray(result.items)) throw new Error(result.message || '无法读取备忘');
       items = result.items;
       today = result.today;
-      if (method === 'POST' || method === 'PUT' || (method === 'DELETE' && id === editing)) setEdit(null);
+      unreadable = confirmingReset = false;
+      if (clearing || method === 'POST' || method === 'PUT' || (method === 'DELETE' && id === editing)) setEdit(null);
       renderList();
-      feedback.textContent = method === 'GET' ? '' : method === 'DELETE' ? '备忘已删除。' : '备忘已保存。';
+      feedback.textContent = clearing ? '备忘已清空，可以重新添加。'
+        : method === 'GET' ? '' : method === 'DELETE' ? '备忘已删除。' : '备忘已保存。';
     } catch (error) {
+      confirmingReset = false;
       feedback.textContent = error.message;
     } finally {
       busy = false;
       updateForm();
+      if (clearing && items) input.focus();
     }
   };
   input.addEventListener('input', () => {
@@ -238,6 +262,9 @@ function mountMemos(panel, path, updateExample) {
   });
   cancel.addEventListener('click', () => { setEdit(null); summary.focus(); });
   retry.addEventListener('click', () => requestMemos('GET'));
+  reset.addEventListener('click', () => { confirmingReset = true; updateForm(); keepMemos.focus(); });
+  keepMemos.addEventListener('click', () => { confirmingReset = false; updateForm(); reset.focus(); });
+  resetMemos.addEventListener('click', () => requestMemos('DELETE'));
   return requestMemos('GET');
 }
 

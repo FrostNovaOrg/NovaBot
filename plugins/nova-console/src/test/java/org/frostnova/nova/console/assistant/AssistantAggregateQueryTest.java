@@ -576,6 +576,24 @@ class AssistantAggregateQueryTest {
         assertEquals(3, third.getIntValue("historyScannedRecords"));
     }
 
+    // 首次出现记录写不进本机时，查询应说明原因，同一份归档仍能做普通查询。
+    @Test void unwritableAudienceHistoryDoesNotLookLikeAnUnreadableArchive() {
+        long older = at("2026-10-29T18:00");
+        summaryWithRoster(older, older + 10_000, Map.of("enter_users", List.of(VIEWER)));
+        summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER, VIEWER + 1)));
+        var request = audienceRequest("distinctAudience");
+        var result = query(request, completed -> {
+            if (completed == 1) assertDoesNotThrow(() -> Files.createFile(dir.resolve("assistant-audience-history")));
+            return false;
+        });
+        refused("无法保存首次出现记录", result, "观众首次出现记录写不进本机目录");
+        assertTrue(result.getString("reason").contains("新老分组暂时用不了"));
+        refused("首次出现记录目录仍不可写", query(request), "观众首次出现记录写不进本机目录");
+
+        var ordinary = query(request(List.of("audience_activity"), FROM, TO, "distinctAudience"));
+        assertRow(List.of(2), ordinary.getJSONArray("totals"));
+    }
+
     // 抓住新归档漏记新观众，或把前一场的参与者和明细重新扫描。
     @Test void newlyArchivedSessionOnlyAddsItsOwnHistory() {
         summaryWithRoster(FIRST, FIRST + 10_000, Map.of("enter_users", List.of(VIEWER)));

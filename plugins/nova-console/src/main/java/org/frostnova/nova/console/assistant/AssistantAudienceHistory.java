@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -100,7 +101,7 @@ final class AssistantAudienceHistory {
     }
 
     private static View ready(Path index, Key key, BiFunction<Long, String, Path> file) throws IOException {
-        View view = AssistantAudienceIndex.open(index);
+        View view = openIndex(index);
         if (view == null) return null;
         boolean keep = false;
         try {
@@ -109,6 +110,21 @@ final class AssistantAudienceHistory {
         } finally {
             if (!keep) view.close();
         }
+    }
+
+    private static View openIndex(Path path) throws IOException {
+        try {
+            return AssistantAudienceIndex.open(path);
+        } catch (IOException error) {
+            Path directory = path.getParent();
+            if (!Thread.currentThread().isInterrupted() && (!Files.isDirectory(directory) || !Files.isWritable(directory)))
+                throw indexNotWritable();
+            throw error;
+        }
+    }
+
+    private static AssistantAggregateRequest.Invalid indexNotWritable() {
+        return new AssistantAggregateRequest.Invalid("观众首次出现记录写不进本机目录，新老分组暂时用不了");
     }
 
     private static boolean matches(View view, Key key, FileStamp source, BiFunction<Long, String, Path> file)
@@ -188,7 +204,7 @@ final class AssistantAudienceHistory {
             this.key = key;
             this.file = file;
             source = FileStamp.read(key.sessionsFile);
-            base = AssistantAudienceIndex.open(path);
+            base = openIndex(path);
         }
 
         boolean ready() throws IOException { return matches(base, key, source, file); }
@@ -224,10 +240,15 @@ final class AssistantAudienceHistory {
             earliestDay = Math.min(earliestDay, changes.earliestDay);
             invalidLines += changes.invalidLines;
             var progress = new Progress(source, key.liveStart, complete, earliestDay, invalidLines, done);
-            AssistantAudienceIndex.save(path, progress, base, changes.sortedUids(), changes::firstDay);
+            try {
+                AssistantAudienceIndex.save(path, progress, base, changes.sortedUids(), changes::firstDay);
+            } catch (IOException error) {
+                if (Thread.currentThread().isInterrupted()) throw error;
+                throw indexNotWritable();
+            }
             close();
             changes = new Changes();
-            base = AssistantAudienceIndex.open(path);
+            base = openIndex(path);
             if (base == null) throw new IOException("无法读回观众首次出现记录");
         }
 

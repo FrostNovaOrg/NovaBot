@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.UUID;
 
 /** 主播备忘单独存放，只有控制台写入。 */
 public final class AssistantMemoStore {
+    public static final String UNREADABLE = "memo_unreadable";
     private static final int MAX_ITEMS = 10;
     private static final int MAX_TEXT = 60;
     private static final ZoneId DATE_ZONE = ZoneId.of("Asia/Shanghai");
@@ -70,6 +72,19 @@ public final class AssistantMemoStore {
         return write(file, items);
     }
 
+    public synchronized List<Memo> resetUnreadable(String platform, Long uid) {
+        Path file = file(platform, uid);
+        List<Memo> items;
+        try {
+            items = read(file);
+        } catch (AssistantException error) {
+            if (!UNREADABLE.equals(error.reason())) throw error;
+            return write(file, List.of());
+        }
+        if (!items.isEmpty()) throw new AssistantException("memo_readable", "备忘已经可以读取，请重新加载");
+        return List.of();
+    }
+
     private Path file(String platform, Long uid) {
         if (platform == null || !platform.matches("[A-Za-z0-9_-]{1,32}") || uid == null || uid <= 0)
             throw new AssistantException("主播标识无效");
@@ -86,8 +101,8 @@ public final class AssistantMemoStore {
             return new ArrayList<>(items);
         } catch (NoSuchFileException ignored) {
             return new ArrayList<>();
-        } catch (IOException | JSONException error) {
-            throw new AssistantException("memo_unavailable", "无法读取主播备忘，请检查本地文件");
+        } catch (IOException | JSONException | DateTimeException error) {
+            throw new AssistantException(UNREADABLE, "主播备忘读不出来，请检查本地文件");
         }
     }
 

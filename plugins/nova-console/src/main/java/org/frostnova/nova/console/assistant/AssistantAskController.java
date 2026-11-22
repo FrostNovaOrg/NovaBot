@@ -87,6 +87,11 @@ public class AssistantAskController {
         return memoResponse(memos.delete(platform, uid, id));
     }
 
+    @DeleteMapping("/memos")
+    public ResponseEntity<JSONObject> resetUnreadableMemos(@PathVariable String platform, @PathVariable Long uid) {
+        return memoResponse(memos.resetUnreadable(platform, uid));
+    }
+
     private ResponseEntity<JSONObject> memoResponse(List<AssistantMemoStore.Memo> items) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(JSONObject.of(
                 "success", true, "today", memos.today().toString(), "items", items.stream()
@@ -120,9 +125,10 @@ public class AssistantAskController {
     public ResponseEntity<JSONObject> error(AssistantException error) {
         HttpStatus status = switch (error.reason()) {
             case "memo_missing" -> HttpStatus.NOT_FOUND;
-            case "memo_unavailable" -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case AssistantMemoStore.UNREADABLE, "memo_unavailable" -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case "memo_readable" -> HttpStatus.CONFLICT;
             default -> HttpStatus.BAD_REQUEST;
         };
-        return ResponseEntity.status(status).body(JSONObject.of("success", false, "message", error.getMessage()));
+        return ResponseEntity.status(status).body(JSONObject.of("success", false, "reason", error.reason(), "message", error.getMessage()));
     }
 }
