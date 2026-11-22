@@ -298,12 +298,15 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             }
             if (!answered) return QqAnswer.text(result.getString("answer"));
             String text = result.getString("answer");
+            String memoNotice = result.getString("memoNotice");
+            if (memoNotice != null) text = text.substring(0, text.length() - memoNotice.length() - 1);
             String chartFailure = result.getString("chartFailure");
             String tail = LABEL;
             if (chartFailure != null) {
                 tail += "\n" + chartFailure;
                 text = text.substring(0, text.length() - chartFailure.length() - 1);
             }
+            if (memoNotice != null) tail = "\n" + memoNotice + tail;
             var images = result.getJSONArray("images");
             int limit = ANSWER_LIMIT - tail.codePointCount(0, tail.length());
             var followUps = answer.followUps();

@@ -30,6 +30,12 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
+    @DisplayName("备忘读不出来时面板能确认清空重建，取消不发送请求，期间仍然能提问")
+    void unreadableMemoPanelOffersConfirmedResetWithoutBlockingQuestions() throws Exception {
+        run("unreadableMemo");
+    }
+
+    @Test
     @DisplayName("点击下一问按钮应带上同一主播的对话并直接提交选中的问题")
     void followUpButtonsSubmitTheSelectedQuestion() throws Exception {
         run("followUps");

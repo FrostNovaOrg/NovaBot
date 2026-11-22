@@ -42,6 +42,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
@@ -200,6 +202,22 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("主播备忘文件损坏时，QQ 仍能提问并在限长回复末尾提示本次跳过备忘")
+    void corruptMemoDoesNotPreventAQuestionInQq() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        var folder = Files.createDirectories(directory.resolve("assistant-memos"));
+        Files.writeString(folder.resolve("bilibili-" + FIRST + ".json"), "[损坏的备忘");
+        modelReplies.add(text("这是查数结果。" + "在线较高。".repeat(65) + "\n1. 哪场在线最高？"));
+
+        group(ASKER, "问 最近开播怎么样");
+        String reply = assertReply("这是查数结果", "1. 哪场在线最高？", "备忘读不出来", "这次没参考", LABEL).getContent();
+        assertTrue(reply.indexOf("备忘读不出来") > reply.indexOf("1. 哪场在线最高？"));
+        assertTrue(reply.codePointCount(0, reply.length()) <= 300);
+        assertEquals(1, requests.size());
+        assertFalse(requests.get(0).toJSONString().contains("损坏的备忘"));
+    }
+
+    @Test
     @DisplayName("QQ 发来的记备忘请求和模型自己提出的写入工具都不能保存备忘")
     void qqAndTheModelCannotWriteMemos() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
@@ -335,6 +353,33 @@ class QqAssistantCommandTest {
             assertTrue(tools.get(name).getString("reason").contains("不显示金额"), name);
         verify(queries, never()).revenue(anyString(), anyLong(), anyLong());
         verify(queries, never()).curve(anyString(), anyLong(), anyLong(), anyString(), anyInt());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"五百多块", "一千来元", "五百余块钱", "三百几块", "几百元", "多于五百块", "五百多六十块",
+            "500 多块", "三千出头", "这场礼物价值三千出头（场次归档）", "来五百块", "超过五百块钱"})
+    @DisplayName("隐藏金额的 QQ 群不能收到模型用口语写出的礼物金额")
+    void hiddenGroupSuppressesColloquialAmounts(String amount) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        modelReplies.add(text(amount));
+        if (amount.startsWith("500")) modelReplies.add(text(amount)); // 数字核对重写后仍保留同样的金额。
+        group(ASKER, "问 这场礼物值多少");
+        assertFalse(assertReply("不显示金额", LABEL).getContent().contains(amount));
+    }
+
+    @Test
+    @DisplayName("隐藏金额的 QQ 群仍能看到中文约数写出的人数和场次")
+    void hiddenGroupStillShowsApproximateCounts() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        modelReplies.add(text("来了五百多人，播了三十多场，昨日累计看过人数三千出头。背景用了五百多块屏幕。"));
+        group(ASKER, "问 有多少人看过，播了多少场");
+        var reply = assertReply("五百多人", "三十多场", "三千出头", "五百多块屏幕", LABEL);
+        assertFalse(reply.getContent().contains("不显示金额"));
+        awaitIdle(GROUP, ROOM);
+
+        modelReplies.add(text("三千出头"));
+        group(ASKER, "问 昨天有多少人看过");
+        assertReply("三千出头", LABEL);
     }
 
     @Test
@@ -663,6 +708,23 @@ class QqAssistantCommandTest {
         group(ASKER, "问 1");
         assertReply("没有可接着问");
         assertEquals(4, requests.size());
+    }
+
+    @Test
+    @DisplayName("编号的送礼排行是正文，回复问 1 不会把榜首当问题提交或扣次数")
+    void numberedRankingIsNotAQuestionAndDoesNotConsumeAnotherTurn() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        modelReplies.add(text("送礼前两名\n1. 测试观众甲 10 个\n2. 测试观众乙 5 个"));
+        group(ASKER, "问 送礼前两名是谁");
+        var reply = assertReply("1. 测试观众甲 10 个", "2. 测试观众乙 5 个", LABEL);
+        assertFalse(reply.getContent().contains("接着问"), reply::getContent);
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
+        assertEquals(1, requests.size());
+        var source = local.qqSource("QQ", QQ, GROUP, ROOM, ASKER);
+        assertEquals(Map.of(source.account(), 1, source.sessionKey(), 1), qqCounts());
     }
 
     @Test
