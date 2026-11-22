@@ -131,10 +131,6 @@ class AssistantQueryServiceTest {
                 assertEquals(buckets.subList(Math.max(0, buckets.size() - 60), buckets.size()), normal(actual).getJSONArray("buckets"));
                 assertEquals(buckets.size(), actual.getIntValue("total"));
                 assertEquals(buckets.size() > 60, actual.getBooleanValue("truncated"));
-                if ("day".equals(period) && days == 30) {
-                    assertEquals(days, actual.getIntValue("total"));
-                    assertEquals(238d, actual.getJSONArray("buckets").getJSONObject(days - 2).getDoubleValue("revenue"));
-                }
             }
         }
     }
