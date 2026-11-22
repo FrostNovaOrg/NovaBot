@@ -244,6 +244,61 @@ class AssistantSqlQueryTest {
         assertEquals(7, samples.getJSONArray(1).getIntValue(1));
     }
 
+    // 给了中文轴名的单系列图，反而画不出来。
+    @Test
+    void singleSeriesAcceptsChineseLabelInPlaceOfUnknownSqlAlias() {
+        session(STREAMER, START, START + 600_000);
+        var data = visible(List.of("sessions"), "SELECT day, COUNT(*) AS row_count FROM sessions GROUP BY day");
+        assertEquals(1, rows(data).size());
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), data, AssistantQueryContext.CONSOLE);
+        assertAll(
+                () -> {
+                    for (String type : List.of("line", "bar", "table")) {
+                        var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", type,
+                                "xColumn", "day", "yColumns", List.of("row_count"), "title", "互动人数统计",
+                                "xLabel", "日期", "yLabel", "互动人数"));
+                        var chart = results.select(request, AssistantQueryContext.CONSOLE, privacy);
+                        assertEquals("日期", chart.xLabel(), type);
+                        assertEquals("互动人数", chart.yLabel(), type);
+                        assertEquals("1", chart.rows().get(0).values().get(0).text(), type);
+                    }
+                },
+                () -> {
+                    var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "bar",
+                            "xColumn", "day", "yColumns", List.of("row_count"), "title", "互动人数统计", "xLabel", "日期"));
+                    var error = assertThrows(AssistantChartRequest.Invalid.class,
+                            () -> results.select(request, AssistantQueryContext.CONSOLE, privacy));
+                    assertTrue(error.getMessage().contains("图上的名称要用中文：row_count"));
+                });
+    }
+
+    // 图表里的分类露出英文。
+    @Test
+    void chartsTranslateCategoriesUnderChineseSqlAliases() {
+        session(STREAMER, START, START + 600_000);
+        event(STREAMER, START, START + 1, "gift", VIEWER);
+        details.appendEvent(PLATFORM, STREAMER, START, START + 2, "pk_settle", Map.of("rs", 1));
+        details.appendEvent(PLATFORM, STREAMER, START, START + 3, "pk_settle", Map.of("rs", 0));
+        var kinds = visible(List.of("events"), "SELECT day, kind AS 记录类别 FROM events WHERE kind IN ('attendance', 'gift') ORDER BY kind");
+        var pk = visible(List.of("sessions"), "SELECT pk_result AS 对局结果, COUNT(*) AS 场数 FROM sessions GROUP BY pk_result");
+        assertEquals(2, rows(kinds).size());
+        assertEquals(1, rows(pk).size());
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), kinds, AssistantQueryContext.CONSOLE);
+        results.addSql(new JSONObject(), pk, AssistantQueryContext.CONSOLE);
+        var table = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "table",
+                "xColumn", "day", "yColumns", List.of("记录类别"), "title", "直播记录"));
+        var bar = AssistantChartRequest.parse(JSONObject.of("resultNumber", 2, "type", "bar",
+                "xColumn", "对局结果", "yColumns", List.of("场数"), "title", "对局场数"));
+
+        assertAll(
+                () -> assertEquals(List.of("名单到场", "礼物"), results.select(table, AssistantQueryContext.CONSOLE, privacy)
+                        .rows().stream().map(row -> row.values().get(0).text()).toList()),
+                () -> assertEquals("多种结果", results.select(bar, AssistantQueryContext.CONSOLE, privacy)
+                        .rows().get(0).category()));
+    }
+
     @Test
     @DisplayName("连续到场查询能连接场次、名单和逐条互动，并按人按场去重")
     void combinesArchivedAttendanceAcrossThreeSessions() {

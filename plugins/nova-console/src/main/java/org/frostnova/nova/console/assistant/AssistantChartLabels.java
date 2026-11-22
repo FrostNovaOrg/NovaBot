@@ -4,6 +4,7 @@ import org.frostnova.nova.core.enums.LiveEndReason;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
@@ -53,6 +54,7 @@ final class AssistantChartLabels {
                     "unknown", "名单完整性未知", "missing", "无名单")),
             Map.entry("endreason", Arrays.stream(LiveEndReason.values()).collect(
                     Collectors.toUnmodifiableMap(LiveEndReason::name, LiveEndReason::getDescription))));
+    private static final Map<String, String> CATEGORY_LABELS_BY_VALUE = categoryLabelsByValue();
 
     private AssistantChartLabels() {}
 
@@ -151,7 +153,21 @@ final class AssistantChartLabels {
     }
 
     static String category(String column, String text) {
-        return CATEGORY_LABELS.getOrDefault(normalize(column), Map.of()).getOrDefault(text, text);
+        var labels = CATEGORY_LABELS.getOrDefault(normalize(column), Map.of());
+        return labels.getOrDefault(text, CATEGORY_LABELS_BY_VALUE.getOrDefault(text, text));
+    }
+
+    private static Map<String, String> categoryLabelsByValue() {
+        var labels = new HashMap<String, String>();
+        var ambiguous = new HashSet<String>();
+        for (var field : CATEGORY_LABELS.values()) {
+            field.forEach((value, label) -> {
+                String previous = labels.putIfAbsent(value, label);
+                if (previous != null && !previous.equals(label)) ambiguous.add(value);
+            });
+        }
+        ambiguous.forEach(labels::remove);
+        return Map.copyOf(labels);
     }
 
     static String requireChinese(String text, String original, int max) {

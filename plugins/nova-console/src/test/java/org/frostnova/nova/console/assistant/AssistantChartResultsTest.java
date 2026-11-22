@@ -89,6 +89,10 @@ class AssistantChartResultsTest {
         args.put("title", "查询结果");
         args.put("yColumns", List.of("custom_metric"));
         assertRejected("custom_metric", () -> results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy()));
+
+        args.put("yLabel", "统计值");
+        args.put("yColumns", List.of("count", "custom_metric"));
+        assertRejected("custom_metric", () -> results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy()));
     }
 
     @Test void sqlTableLocalizesAttendanceAndMixedPkResults() {
@@ -102,6 +106,19 @@ class AssistantChartResultsTest {
         assertEquals(List.of("PK 结果"), chart.series());
         assertEquals("名单到场", chart.rows().get(0).category());
         assertEquals("多种结果", chart.rows().get(0).values().get(0).text());
+    }
+
+    @Test void categoryTranslationsUseTheColumnToResolveConflictingMeanings() {
+        var results = new AssistantChartResults(List.of());
+        var columns = List.of("list_quality", "status", "类别", "其他记录");
+        results.addSql(new JSONObject(), JSONObject.of("columns", columns,
+                "rows", JSONArray.of(JSONArray.of("unknown", "unknown", "unknown", "attendance_note"))), AssistantQueryContext.CONSOLE);
+        var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "table", "xColumn", "list_quality",
+                "yColumns", columns.subList(1, columns.size()), "title", "名单状态", "yLabel", "unused_label"));
+
+        var row = results.select(request, AssistantQueryContext.CONSOLE, privacy()).rows().get(0);
+        assertEquals("名单完整性未知", row.category());
+        assertEquals(List.of("说不准", "unknown", "attendance_note"), row.values().stream().map(value -> value.text()).toList());
     }
 
     @Test void sketchesLocalizeKnownLabelsAndRejectUnknownFieldNames() {

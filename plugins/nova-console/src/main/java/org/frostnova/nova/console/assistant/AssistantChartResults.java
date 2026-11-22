@@ -145,13 +145,17 @@ final class AssistantChartResults {
         }
         if (!table && points == 0) throw new Invalid("所选纵轴没有已知数值");
 
-        var series = request.yColumns().stream().map(column -> columnLabel(result, column)).toList();
+        boolean singleSeries = request.yColumns().size() == 1;
+        boolean showSeriesLabels = !singleSeries || request.yLabel() == null;
+        var series = request.yColumns().stream().map(column -> columnLabel(result, column, showSeriesLabels)).toList();
         var target = request.referenceLine();
-        String title = label(result, request.title(), MAX_TITLE, context, privacy);
-        String xLabel = request.xLabel() == null ? columnLabel(result, request.xColumn())
-                : label(result, request.xLabel(), MAX_LABEL, context, privacy);
-        String yLabel = label(result, request.yLabel(), MAX_LABEL, context, privacy);
-        if (target != null) target = new ReferenceLine(target.value(), label(result, target.label(), MAX_LABEL, context, privacy));
+        String title = label(result, request.title(), MAX_TITLE, true, context, privacy);
+        String xLabel = request.xLabel() == null ? columnLabel(result, request.xColumn(), true)
+                : label(result, request.xLabel(), MAX_LABEL, true, context, privacy);
+        String yLabel = label(result, request.yLabel(), MAX_LABEL, !table || singleSeries, context, privacy);
+        if (target != null) {
+            target = new ReferenceLine(target.value(), label(result, target.label(), MAX_LABEL, true, context, privacy));
+        }
         return new Chart(request.type(), title, xLabel, yLabel, series, List.copyOf(rows), target,
                 result.source() == null ? "" : clean(result.source(), 48), available);
     }
@@ -203,10 +207,11 @@ final class AssistantChartResults {
         return shown;
     }
 
-    private static String columnLabel(Result result, String column) {
+    private static String columnLabel(Result result, String column, boolean visible) {
         String name = clean(column, Integer.MAX_VALUE);
         String translated = translatedLabel(result, name);
-        return translated == null ? AssistantChartLabels.requireChinese(name, name, MAX_LABEL) : translated;
+        if (translated != null) return translated;
+        return visible ? AssistantChartLabels.requireChinese(name, name, MAX_LABEL) : clean(name, MAX_LABEL);
     }
 
     private static String translatedLabel(Result result, String name) {
@@ -218,13 +223,14 @@ final class AssistantChartResults {
         return metric == null || metric.isBlank() ? "online_count" : metric;
     }
 
-    private static String label(Result result, String text, int max, AssistantQueryContext context, AssistantPrivacy privacy) {
+    private static String label(Result result, String text, int max, boolean visible,
+                                AssistantQueryContext context, AssistantPrivacy privacy) {
         if (text == null) return null;
         String translated = translatedLabel(result, text);
         String display = translated == null ? privacy.displayChart(text) : translated;
         if (!context.amountVisible() && containsAmount(display))
             throw new Invalid(AssistantAggregateRequest.HIDDEN_AMOUNT + "，图表文字不能包含金额");
-        return AssistantChartLabels.requireChinese(display, privacy.mask(text), max);
+        return visible ? AssistantChartLabels.requireChinese(display, privacy.mask(text), max) : clean(display, max);
     }
 
     private static boolean containsAmount(String text) {
