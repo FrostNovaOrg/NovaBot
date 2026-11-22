@@ -28,7 +28,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +43,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -64,6 +67,12 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private static final int HISTORY_LIMIT = 3;
     private static final String CHOSEN_UID_PREFIX = "uid:";
     private static final Pattern NUMBER = Pattern.compile("[0-9]+");
+    private static final Pattern NON_HAN_EDGES = Pattern.compile("^[^\\p{IsHan}]+|[^\\p{IsHan}]+\\z");
+    private static final List<String> QUERY_WORDS = List.of(
+            "最近", "今天", "昨天", "前天", "昨晚", "今晚", "上周", "本周", "这周", "上月", "本月", "上个月", "这个月",
+            "流水", "直播", "弹幕", "观众", "粉丝", "礼物", "在线", "开播", "下播", "场次", "个数", "合计",
+            "心动盲盒", "盲盒", "钟点", "各钟点平均在线", "平均在线", "送礼榜前十", "前十",
+            "主播备忘", "备忘", "第一项", "目标", "目前", "完成", "多少", "收了", "播了", "多久", "几点", "几场", "怎么样", "变化");
 
     private final AssistantAskService assistant;
     private final AssistantClient client;
@@ -187,7 +196,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         for (PushUser user : dataSource.getUsers(LIVE_PLATFORM)) {
             if (user.getUid() == null || Boolean.FALSE.equals(user.getEnabled())) continue;
             PushTarget target = channel(context, user);
-            if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user),
+            if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user), user.getRoomId(),
                     Boolean.TRUE.equals(target.getAssistantEnabled())));
         }
         candidates.sort(Comparator.comparing(Candidate::uid));
@@ -195,14 +204,48 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     }
 
     private static List<Candidate> namedIn(String question, List<Candidate> candidates) {
-        var numbers = new HashSet<String>();
-        NUMBER.matcher(question).results().forEach(match -> numbers.add(match.group()));
+        var numbers = NUMBER.matcher(question).results().map(MatchResult::group).collect(Collectors.toSet());
         var nicknames = candidates.stream().map(Candidate::nickname).filter(name -> name != null && !name.isBlank())
-                .distinct().sorted(Comparator.comparingInt(String::length).reversed()).map(Pattern::quote)
-                .collect(Collectors.joining("|"));
-        var matched = new HashSet<String>();
-        if (!nicknames.isEmpty()) Pattern.compile(nicknames).matcher(question).results().forEach(match -> matched.add(match.group()));
-        return candidates.stream().filter(item -> numbers.contains(item.id()) || matched.contains(item.nickname())).toList();
+                .collect(Collectors.toSet());
+        Pattern fullNames = namePattern(nicknames);
+        var matched = fullNames.matcher(question).results().map(MatchResult::group).collect(Collectors.toSet());
+
+        var aliases = new HashMap<String, List<Candidate>>();
+        candidates.forEach(item -> addShortNames(item, aliases));
+        var namedByShortName = new HashSet<Candidate>();
+        if (!aliases.isEmpty()) {
+            Pattern shortNames = namePattern(aliases.keySet());
+            // 完整昵称优先，短名只匹配其余文字。
+            fullNames.splitAsStream(question).flatMap(part -> shortNames.matcher(part).results())
+                    .forEach(match -> namedByShortName.addAll(aliases.get(match.group())));
+        }
+        return candidates.stream().filter(item -> numbers.contains(item.id())
+                || (item.roomId() != null && numbers.contains(item.roomId().toString()))
+                || matched.contains(item.nickname()) || namedByShortName.contains(item)).toList();
+    }
+
+    private static Pattern namePattern(Collection<String> names) {
+        if (names.isEmpty()) return Pattern.compile("(?!)");
+        return Pattern.compile(names.stream().sorted(Comparator.comparingInt(String::length).reversed())
+                .map(Pattern::quote).collect(Collectors.joining("|")));
+    }
+
+    private static void addShortNames(Candidate item, Map<String, List<Candidate>> aliases) {
+        if (item.nickname() == null) return;
+        String stem = NON_HAN_EDGES.matcher(item.nickname()).replaceAll("");
+        int hanCount = 0;
+        for (int end = 0; end < stem.length(); ) {
+            int codePoint = stem.codePointAt(end);
+            end += Character.charCount(codePoint);
+            if (Character.UnicodeScript.of(codePoint) != Character.UnicodeScript.HAN) continue;
+            hanCount++;
+            if (hanCount < 2) continue;
+            String prefix = stem.substring(0, end);
+            // 例如「平均在」也是示例问法「平均在线」的一截。
+            if (!prefix.equals(item.nickname()) && QUERY_WORDS.stream().noneMatch(word -> word.startsWith(prefix))) {
+                aliases.computeIfAbsent(prefix, unused -> new ArrayList<>()).add(item);
+            }
+        }
     }
 
     private CommandReply choose(Asker asker, List<Candidate> options, String question) {
@@ -440,7 +483,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         }
     }
 
-    private record Candidate(Long uid, String nickname, boolean allowed) {
+    private record Candidate(Long uid, String nickname, Long roomId, boolean allowed) {
         String id() { return uid.toString(); }
     }
     private record Asker(String session, long sender) { }
