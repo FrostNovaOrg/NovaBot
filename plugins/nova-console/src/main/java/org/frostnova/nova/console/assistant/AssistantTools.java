@@ -27,12 +27,13 @@ final class AssistantTools {
                     JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
             new Tool(AssistantAggregateRequest.NAME,
                     "筛选已归档的记录并分组汇总。筛选条件同时满足。"
-                            + AssistantAggregateQuery.DAY_RULE + "。跨早上 6 点的场次，付费事件和场次流水可能归入不同统计日，"
-                            + "回答每天流水时说明采用的是事件发生日还是整场的开播日。"
+                            + AssistantAggregateQuery.DAY_RULE + "。区间流水合计或每日流水用 session 的 sum:amount，"
+                            + AssistantAggregateQuery.SESSION_REVENUE_RULE + "。逐日流水补齐无开播日，流水和场数为 0，最多 92 行。"
+                            + "拆礼物种类或观众时用付费事件。"
                             + AssistantAggregateQuery.MINUTE_RULE + "。"
                             + AssistantAggregateQuery.SESSION_COUNT_RULE + "。"
                             + AssistantAggregateQuery.ZERO_RULE + "。弹幕只按 day 分组时逐日出行，逐条明细按 minute 分组时逐直播时段出行，"
-                            + "其他分组无记录时省略。弹幕计文字与表情，醒目留言单列。"
+                            + "其余分组省略空组。弹幕计文字与表情，醒目留言单列。"
                             + AssistantAggregateQuery.HISTORY_RULE + "。回答新老观众问题时写明 historyFrom 留档起点。"
                             + "首次出现记录按主播从全部归档逐场建立。若提示还在建立，请转告进度并请用户稍后再问。金额单位元，"
                             + AssistantAggregateQuery.AMOUNT_BASIS + "。"
