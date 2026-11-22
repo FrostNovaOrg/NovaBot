@@ -27,7 +27,7 @@
 			"method":"GET",
 			"path":"/config/api/auth/agreement",
 			"query":"",
-			"sha256":"300ab8202797655d934411273cf8a0022712dad341bc8cd5ab28528ddbddc1aa",
+			"sha256":"555d7687515c0d5c6ccf7b3cb5f379daa333cd86c894b31e67389b60fc74dd4f",
 			"status":200
 		},
 		{

@@ -22,6 +22,7 @@ let listening = false;
 let docMode = false;
 let docText = '';
 let docLoading = false;
+let scrollBody = false;
 
 function ensure() {
   if (root) return root;
@@ -68,6 +69,7 @@ function tabbablesIn(box) {
     if (node.hidden || node.disabled) return;
     const tag = String(node.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'button' || tag === 'select' || tag === 'textarea'
+      || (node.getAttribute('tabindex') != null && node.tabIndex >= 0)
       || (tag === 'a' && node.getAttribute('href') != null)) out.push(node);
     for (const child of Array.from(node.children || [])) walk(child);
   };
@@ -101,6 +103,7 @@ function paint() {
   if (state.status !== 'open') {
     box.hidden = true;
     docMode = false;
+    scrollBody = false;
     return;
   }
   box.hidden = false;
@@ -108,6 +111,12 @@ function paint() {
   const note = box.querySelector('p');
   note.textContent = state.body;
   note.hidden = !state.body || docMode;
+  if (scrollBody) {
+    note.setAttribute('tabindex', '0');
+    note.scrollTop = 0;
+  } else if (note.getAttribute('tabindex') != null) {
+    note.removeAttribute('tabindex');
+  }
 
   const doc = box.querySelector('.ask-doc');
   if (doc) {
@@ -115,7 +124,10 @@ function paint() {
     doc.textContent = docMode ? (docLoading ? '正在加载…' : docText) : '';
   }
   const card = box.querySelector('.ask-card');
-  if (card) card.classList.toggle('ask-card-doc', docMode);
+  if (card) {
+    card.classList.toggle('ask-card-doc', docMode);
+    card.classList.toggle('ask-card-scroll', scrollBody);
+  }
 
   const yes = box.querySelector('[data-act="yes"]');
   yes.classList.toggle('ask-ok', !!state.danger && !docMode);
@@ -188,7 +200,7 @@ function finish(ok) {
 /**
  * 问一句。同一时刻只弹一层：上一层还开着时先按取消收掉。
  * 带 fields 时确认返回各栏 id→值，取消返回 null；不带则仍是 true／false。
- * @param spec {title: string, body: string, fields?: Array, danger?: boolean, confirmText?: string}
+ * @param spec {title: string, body: string, fields?: Array, danger?: boolean, confirmText?: string, scrollBody?: boolean}
  * @return {Promise<boolean|object|null>}
  */
 export function ask(spec) {
@@ -196,6 +208,7 @@ export function ask(spec) {
     if (state.status === 'open') finish(false);
     docMode = false;
     const wanted = spec || {};
+    scrollBody = !!wanted.scrollBody;
     state = open(state, {
       title: wanted.title,
       body: wanted.body,

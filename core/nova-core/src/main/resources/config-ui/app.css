@@ -966,6 +966,11 @@ details.adv .inner{padding:0 16px 16px}
   background:var(--ground);color:var(--text);font-family:inherit;font-size:var(--fs-md)}
 .ask-fld input:focus{outline:none;border-color:var(--accent)}
 .ask-act{display:flex;justify-content:flex-end;gap:8px}
+.ask-card-scroll{max-height:100%;display:flex;flex-direction:column;padding-block:min(20px,4dvh)}
+.ask-card-scroll h3,.ask-card-scroll .ask-act{flex:none}
+.ask-card-scroll .ask-fields[hidden]{display:none}
+.ask-card-scroll p{min-height:0;overflow-y:auto;overscroll-behavior:contain;white-space:pre-wrap;
+  overflow-wrap:anywhere;margin-bottom:min(18px,3dvh)}
 /* 确认框里危险那一问的「确认」：与别处的危险按钮同一副长相，红字淡红描边，悬停才满红，不整块填红 */
 .ask-ok{background:var(--surface);color:var(--err);border-color:color-mix(in srgb,var(--err) 40%,transparent);font-weight:400}
 .ask-ok:hover:not(:disabled){filter:none;border-color:currentColor;box-shadow:inset 0 0 0 1px currentColor}

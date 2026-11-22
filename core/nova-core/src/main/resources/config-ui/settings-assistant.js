@@ -23,7 +23,7 @@ export async function confirmAssistantEnable() {
   if (acknowledged(status)) return true;
   if (!status.acknowledgementText) throw new Error('无法获取配置者说明');
   if (!await ask({title: '启用智能助手', body: status.acknowledgementText,
-    confirmText: '我已了解，开启', danger: false})) return false;
+    confirmText: '我已了解，开启', danger: false, scrollBody: true})) return false;
   try {
     await assistantApi('/acknowledge', {method: 'POST'});
   } finally {
