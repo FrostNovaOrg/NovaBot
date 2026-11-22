@@ -741,12 +741,89 @@ class AssistantAskServiceTest {
 
     // 抓住工具名单混入发送、修改或文件读取等有副作用的函数。
     @Test void onlyReadOnlyToolsAreExposed() throws Exception {
-        ask();
+        try (var sqlite = mockStatic(AssistantSqlNative.class)) {
+            sqlite.when(AssistantSqlNative::available).thenReturn(true);
+            ask();
+        }
         var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
-        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "draw_chart"), names);
+        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "query_sql", "draw_chart"), names);
         assertEquals(0.3, sent.get(0).getDoubleValue("temperature"));
         assertEquals(properties.getAnswerLimit(), sent.get(0).getIntValue("max_tokens"));
+    }
+
+    @Test
+    @DisplayName("缺少可用的 SQLite 时，模型看不到只读查询，通用汇总和出图仍可用")
+    void unavailableSqliteHidesQueryFromModel() {
+        try (var sqlite = mockStatic(AssistantSqlNative.class)) {
+            sqlite.when(AssistantSqlNative::available).thenReturn(false);
+            assertTrue(ask().getBooleanValue("answered"));
+        }
+        var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
+                .map(t -> t.getJSONObject("function").getString("name")).toList();
+        assertFalse(names.contains("query_sql"), () -> "模型收到的工具：" + names);
+        assertTrue(names.containsAll(List.of("aggregate", "draw_chart", "revenue")));
+        assertFalse(modelSystem(0).contains("query_sql"));
+    }
+
+    @Test
+    @DisplayName("同一问里贡献榜和只读查询都查到同一位观众，控制台回答仍应显示昵称")
+    void sqlResultDoesNotHideNicknameLearnedFromRevenue() {
+        long viewer = 991234567L;
+        String person = alias(viewer);
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        when(queries.querySql(eq("bilibili"), eq(1L), any(), eq(AssistantQueryContext.CONSOLE), any(), any()))
+                .thenReturn(JSONObject.of("source", "只读查询（直播归档）", "columns", List.of("audience"),
+                        "rows", JSONArray.of(JSONArray.of(person))));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(call("query_sql", JSONObject.of("from", "2026-11-01", "to", "2026-11-30", "tables", List.of("events"),
+                "sql", "SELECT DISTINCT audience FROM events")));
+        replies.add(JSONObject.of("content", "贡献榜里的" + person + "也出现在查询结果中。"));
+
+        var result = ask();
+        assertTrue(result.getString("answer").contains("测试观众甲"), result::toJSONString);
+        assertFalse(result.getString("answer").contains(person));
+        assertTrue(result.getString("answerForHistory").contains(person));
+        assertTrue(sent.get(sent.size() - 1).toJSONString().contains(person));
+        assertFalse(sent.toString().contains("测试观众甲"));
+        assertFalse(sent.toString().contains(Long.toString(viewer)));
+    }
+
+    @Test
+    @DisplayName("一问最多执行三次只读查询，编号列能直接出图，第四次不打开库")
+    void sqlResultsAreNumberedChartableAndCappedAtThreeCalls() {
+        var hidden = new AssistantQueryContext(false, false);
+        String person = alias(9300090100L);
+        local.rememberNickname(person, "合成观众甲");
+        when(queries.querySql(eq("bilibili"), eq(1L), any(), eq(hidden), any(), any())).thenAnswer(call ->
+                JSONObject.of("source", "只读查询（直播归档）", "columns", List.of("audience", "times"),
+                        "rows", JSONArray.of(JSONArray.of(person, 31))));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("image"));
+        var args = JSONObject.of("from", "2026-11-01", "to", "2026-11-30", "tables", List.of("events"),
+                "sql", "SELECT audience, COUNT(DISTINCT session_start) AS times FROM events GROUP BY audience");
+        for (int i = 0; i < 4; i++) replies.add(call("query_sql", args));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 3, "type", "bar", "xColumn", "audience",
+                "yColumns", List.of("times"), "title", person + "的到场次数")));
+        replies.add(JSONObject.of("content", "按场次和观众去重。" + person + "出现了 31 次。"));
+
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "请为观众到场次数出图"), hidden);
+        verify(queries, times(3)).querySql(eq("bilibili"), eq(1L), any(), eq(hidden), any(), any());
+        var data = sent.get(sent.size() - 1).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(message -> "tool".equals(message.getString("role")))
+                .map(message -> JSON.parseObject(message.getString("content"))).toList();
+        assertEquals(List.of(1, 2, 3), data.subList(0, 3).stream().map(row -> row.getIntValue("resultNumber")).toList());
+        assertEquals(List.of("audience", "times"), data.get(2).getJSONArray("chartColumns"));
+        assertTrue(data.get(3).getString("reason").contains("最多调用 3 次"));
+        assertFalse(data.get(3).containsKey("resultNumber"));
+        var chart = org.mockito.ArgumentCaptor.forClass(AssistantChartRenderer.Chart.class);
+        verify(chartRenderer).render(chart.capture());
+        assertEquals(new BigDecimal("31"), chart.getValue().rows().get(0).values().get(0).number());
+        assertEquals("合成观众甲", chart.getValue().rows().get(0).category());
+        assertTrue(chart.getValue().title().contains("合成观众甲"));
+        assertTrue(result.getString("answer").contains("合成观众甲"));
+        assertFalse(sent.toString().contains("合成观众甲"));
+        assertTrue(result.getJSONArray("images").contains("image"));
+        assertFalse(result.getJSONArray("steps").getJSONObject(0).getJSONObject("arguments").containsKey("sql"));
     }
 
     // 抓住助手无法调用通用汇总，或只收到笼统错误而无法纠正记录种类。

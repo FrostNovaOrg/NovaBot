@@ -296,7 +296,7 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
         throw new Invalid(label + "需为 1–" + max + " 的整数");
     }
 
-    private static LocalDate date(Object raw) {
+    static LocalDate date(Object raw) {
         if (raw instanceof String text && DATE.matcher(text).matches()) {
             try { return LocalDate.parse(text); }
             catch (DateTimeParseException ignored) { }

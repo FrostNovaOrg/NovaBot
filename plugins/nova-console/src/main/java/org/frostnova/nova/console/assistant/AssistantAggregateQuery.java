@@ -139,7 +139,7 @@ final class AssistantAggregateQuery {
                 && (liveStart == null ? now.toEpochMilli() < to : liveStart < to);
         var historyKey = new AssistantAudienceHistory.Key(platform, uid, liveStart == null ? 0 : liveStart, sessionsFile);
         try (var historyResult = byAge ? historyCache.load(historyKey, archive, file, pauseHistory,
-                (session, changes) -> scanHistory(session, file, changes)) : null) {
+                historyReader(file)) : null) {
             if (historyResult != null) {
                 history = historyResult.view();
                 historyRecordsScanned = historyResult.scannedRecords();
@@ -171,7 +171,7 @@ final class AssistantAggregateQuery {
         }
     }
 
-    private static boolean archived(LiveSession session, Long liveStart) {
+    static boolean archived(LiveSession session, Long liveStart) {
         return session.startTime() > 0 && session.endTime() >= session.startTime()
                 && !Objects.equals(session.startTime(), liveStart);
     }
@@ -191,25 +191,30 @@ final class AssistantAggregateQuery {
         return result;
     }
 
-    private void scanHistory(LiveSession session, BiFunction<Long, String, Path> file, Changes changes) {
-        long start = session.startTime();
-        changes.observe(start);
-        Set<Long> roster = roster(session, changes::count);
-        scanHistoryFile(file.apply(start, EVENTS), false, roster, changes);
-        scanHistoryFile(file.apply(start, DANMU), true, roster, changes);
-        roster.forEach(person -> changes.observe(person, start));
+    static AssistantAudienceHistory.SessionReader historyReader(BiFunction<Long, String, Path> file) {
+        Detail detail = new Detail();
+        var context = JSONFactory.createReadContext();
+        return (session, changes) -> {
+            long start = session.startTime();
+            changes.observe(start);
+            Set<Long> roster = roster(session, changes::count);
+            scanHistoryFile(file.apply(start, EVENTS), false, roster, changes, detail, context);
+            scanHistoryFile(file.apply(start, DANMU), true, roster, changes, detail, context);
+            roster.forEach(person -> changes.observe(person, start));
+        };
     }
 
-    private void scanHistoryFile(Path path, boolean danmu, Set<Long> roster, Changes changes) {
+    private static void scanHistoryFile(Path path, boolean danmu, Set<Long> roster, Changes changes,
+                                        Detail detail, JSONReader.Context context) {
         scan(path, line -> {
             changes.count(1);
             try {
-                readDetail(line, HISTORY_FIELDS);
+                detail.read(line, HISTORY_FIELDS, context);
             } catch (RuntimeException error) {
                 changes.skipInvalidLine();
                 return;
             }
-            if (!timed(danmu)) return;
+            if (!detail.timed(danmu)) return;
             if (detail.audience != null && detail.audience > 0) {
                 roster.remove(detail.audience);
                 changes.observe(detail.audience, detail.at);
@@ -219,7 +224,7 @@ final class AssistantAggregateQuery {
         });
     }
 
-    private static Set<Long> roster(LiveSession session, LongConsumer count) {
+    static Set<Long> roster(LiveSession session, LongConsumer count) {
         var roster = new HashSet<Long>();
         for (var people : session.userSets().values()) {
             count.accept(people.size());
@@ -280,7 +285,7 @@ final class AssistantAggregateQuery {
         return (int) count;
     }
 
-    private static long minuteAt(long at) { return Math.floorDiv(at, SERIES_BUCKET_MILLIS) * SERIES_BUCKET_MILLIS; }
+    static long minuteAt(long at) { return Math.floorDiv(at, SERIES_BUCKET_MILLIS) * SERIES_BUCKET_MILLIS; }
 
     private long minuteGroup(long at, long start) {
         long first = minuteAt(start);
@@ -352,7 +357,7 @@ final class AssistantAggregateQuery {
         }
     }
 
-    private static boolean knownEmpty(Path path, Map<String, Double> metrics, List<Kind> kinds) {
+    static boolean knownEmpty(Path path, Map<String, Double> metrics, List<Kind> kinds) {
         // 逐条归档在第一条记录到来时创建。封存过的场次可以没有这份文件。
         boolean sealed = Files.isRegularFile(path.resolveSibling(DETAIL));
         for (Kind kind : kinds) {
@@ -377,7 +382,7 @@ final class AssistantAggregateQuery {
         return true;
     }
 
-    private static boolean scan(Path path, Consumer<String> visit) {
+    static boolean scan(Path path, Consumer<String> visit) {
         try (var stream = JsonlFiles.lines(path, MAX_EVENT_CHARS)) {
             var lines = stream.iterator();
             while (lines.hasNext()) {
@@ -402,7 +407,7 @@ final class AssistantAggregateQuery {
     }
 
     private boolean decode(String line, Set<String> keys) {
-        try { readDetail(line, keys); }
+        try { detail.read(line, keys, readerContext); }
         catch (RuntimeException ignored) {
             invalidLines++;
             return false;
@@ -410,27 +415,13 @@ final class AssistantAggregateQuery {
         return true;
     }
 
-    private boolean timed(boolean danmu) {
-        return (danmu ? detail.danmuType : detail.type) != null && detail.at != null && detail.at > 0;
-    }
-
     private static boolean isDanmu(Kind kind) { return kind == Kind.SUPER_CHAT || kind == Kind.DANMU; }
 
     private Row event(String line, long start, boolean danmu, Set<Long> roster) {
         if (!decode(line, eventFields)) return null;
-        String type = danmu ? detail.danmuType : detail.type;
-        Kind kind = type == null ? null : switch (type) {
-            case "gift" -> danmu ? null : Kind.GIFT;
-            case "box" -> danmu ? null : Kind.BOX;
-            case "guard" -> danmu ? null : Kind.GUARD;
-            case "follow" -> danmu ? null : Kind.FOLLOW;
-            case "pk_settle" -> danmu ? null : Kind.PK;
-            case "SUPER_CHAT" -> danmu ? Kind.SUPER_CHAT : null;
-            case "DANMU", "EMOJI" -> danmu ? Kind.DANMU : null;
-            default -> null;
-        };
+        Kind kind = detail.kind(danmu);
         if (audienceActivity) {
-            if (detail.audience != null && timed(danmu)) {
+            if (detail.audience != null && detail.timed(danmu)) {
                 roster.remove(detail.audience);
                 if (kind == null) kind = Kind.AUDIENCE_ACTIVITY;
             }
@@ -472,9 +463,10 @@ final class AssistantAggregateQuery {
     }
 
     /** 跳过无关字段和留言原文，只解码当前查询用到的列。 */
-    private void readDetail(String line, Set<String> keys) {
+    private static void readDetail(String line, Set<String> keys, JSONReader.Context context, Detail detail,
+                                   boolean textLengthOnly) {
         detail.clear();
-        try (JSONReader reader = JSONReader.of(line, readerContext)) {
+        try (JSONReader reader = JSONReader.of(line, context)) {
             if (!reader.nextIfObjectStart()) throw new IllegalArgumentException();
             while (!reader.nextIfObjectEnd()) {
                 String key = reader.readFieldName();
@@ -490,7 +482,13 @@ final class AssistantAggregateQuery {
                     case "uid" -> detail.audience = integer(readNumber(reader));
                     case "un" -> detail.name = readText(reader);
                     case "uname" -> detail.danmuName = readText(reader);
-                    case "text" -> detail.text = readText(reader);
+                    case "text" -> {
+                        if (textLengthOnly && reader.isString()) {
+                            String text = reader.readString();
+                            detail.characters = text == null ? null : text.codePointCount(0, text.length());
+                        } else if (textLengthOnly) reader.skipValue();
+                        else detail.text = readText(reader);
+                    }
                     case "gn" -> detail.giftName = readText(reader);
                     case "bn" -> detail.boxName = readText(reader);
                     case "ot" -> detail.guardOperation = label(readNumber(reader), 1, "open", "renew");
@@ -594,7 +592,7 @@ final class AssistantAggregateQuery {
     }
 
     /** 每次只处理一行，分组状态会取走需要保留的值。 */
-    private static final class Detail implements Row {
+    static final class Detail implements Row {
         Kind kind;
         long start;
         Long at;
@@ -604,6 +602,7 @@ final class AssistantAggregateQuery {
         String name;
         String danmuName;
         String text;
+        Integer characters;
         String giftName;
         String boxName;
         String guardOperation;
@@ -616,6 +615,32 @@ final class AssistantAggregateQuery {
         BigDecimal myVotes;
         BigDecimal opponentVotes;
 
+        void read(String line, Set<String> keys, JSONReader.Context context) {
+            read(line, keys, context, false);
+        }
+
+        void read(String line, Set<String> keys, JSONReader.Context context, boolean textLengthOnly) {
+            readDetail(line, keys, context, this, textLengthOnly);
+        }
+
+        boolean timed(boolean danmu) {
+            return (danmu ? danmuType : type) != null && at != null && at > 0;
+        }
+
+        Kind kind(boolean danmu) {
+            String tag = danmu ? danmuType : type;
+            return tag == null ? null : switch (tag) {
+                case "gift" -> danmu ? null : Kind.GIFT;
+                case "box" -> danmu ? null : Kind.BOX;
+                case "guard" -> danmu ? null : Kind.GUARD;
+                case "follow" -> danmu ? null : Kind.FOLLOW;
+                case "pk_settle" -> danmu ? null : Kind.PK;
+                case "SUPER_CHAT" -> danmu ? Kind.SUPER_CHAT : null;
+                case "DANMU", "EMOJI" -> danmu ? Kind.DANMU : null;
+                default -> null;
+            };
+        }
+
         void clear() {
             at = null;
             audience = null;
@@ -624,6 +649,7 @@ final class AssistantAggregateQuery {
             name = null;
             danmuName = null;
             text = null;
+            characters = null;
             giftName = null;
             boxName = null;
             guardOperation = null;
@@ -649,6 +675,10 @@ final class AssistantAggregateQuery {
         }
 
         @Override public BigDecimal paid() {
+            return paid(kind);
+        }
+
+        BigDecimal paid(Kind kind) {
             return switch (kind) {
                 case GIFT, GUARD -> paid;
                 case BOX -> paid == null ? boxPrice : paid;

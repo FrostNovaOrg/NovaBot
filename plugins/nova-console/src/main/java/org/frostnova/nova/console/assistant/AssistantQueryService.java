@@ -93,6 +93,25 @@ public class AssistantQueryService {
         }
     }
 
+    JSONObject querySql(String platform, Long uid, JSONObject args, AssistantQueryContext context,
+                        AssistantPrivacy privacy, IntPredicate pauseHistory) {
+        if (!validIdentity(platform, uid)) return AssistantSqlRequest.rejected("请提供有效主播");
+        try {
+            var request = AssistantSqlRequest.parse(args);
+            Long start = live.getLiveStatus(platform, uid).orElse(false)
+                    ? live.getLiveStartTime(platform, uid).orElse(null) : null;
+            var key = new AssistantAudienceHistory.Key(platform, uid, start == null ? 0 : start,
+                    dataDirectory().resolve("sessions.jsonl"));
+            var metrics = request.tables().contains(AssistantSqlRequest.Table.SESSIONS) ? rules(platform) : null;
+            return new AssistantSqlQuery(request, context, privacy).run(audienceHistory, key, archive, metrics,
+                    (at, name) -> file(platform, uid, at, name), start, pauseHistory);
+        } catch (AssistantSqlRequest.Invalid error) {
+            return AssistantSqlRequest.rejected(error.getMessage());
+        } catch (AssistantException error) {
+            return AssistantSqlRequest.rejected(error.getMessage());
+        }
+    }
+
     /** 最近 days 个统计日内开播的场次，包含已知开播时刻的当前场次。 */
     public JSONObject sessions(String platform, Long uid, int days, int limit) {
         if (!validIdentity(platform, uid) || days < 1 || days > 360) return missing(SESSION_SOURCE, "items", "请提供有效主播和 1–360 天的范围");

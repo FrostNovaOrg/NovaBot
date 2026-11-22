@@ -37,16 +37,22 @@ final class AssistantTools {
                             + "与控制台流水的观众范围一致。金额权限以调用方为准。"
                             + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED),
+            new Tool(AssistantSqlRequest.NAME, AssistantSqlRequest.description(true),
+                    AssistantSqlRequest.fields(true), AssistantSqlRequest.REQUIRED),
             new Tool(AssistantChartRequest.NAME, AssistantChartRequest.DESCRIPTION,
                     AssistantChartRequest.fields(), AssistantChartRequest.REQUIRED));
 
     static List<JSONObject> definitions(AssistantQueryContext context) {
         return TOOLS.stream().filter(tool -> context.amountVisible() || !"revenue".equals(tool.name()))
+                .filter(tool -> !AssistantSqlRequest.NAME.equals(tool.name()) || AssistantSqlNative.available())
                 .map(tool -> !context.audienceQuotesVisible() && "danmu".equals(tool.name())
                         ? new Tool(tool.name(), "本场时间窗弹幕条数与分类统计",
                             JSONObject.of("start", tool.fields().get("start"), "fromAt", tool.fields().get("fromAt"),
                                     "toAt", tool.fields().get("toAt")), tool.required())
                         : tool)
+                .map(tool -> !context.amountVisible() && AssistantSqlRequest.NAME.equals(tool.name())
+                        ? new Tool(tool.name(), AssistantSqlRequest.description(false),
+                            AssistantSqlRequest.fields(false), tool.required()) : tool)
                 .map(t -> JSONObject.of("type", "function", "function", JSONObject.of("name", t.name(),
                 "description", t.description(), "parameters", JSONObject.of("type", "object", "properties", t.fields(),
                         "required", t.required(), "additionalProperties", false)))).toList();
@@ -55,6 +61,7 @@ final class AssistantTools {
     /** 白名单外参数不进入执行、步骤和后续模型请求。 */
     static JSONObject arguments(String name, JSONObject raw) {
         if (AssistantAggregateRequest.NAME.equals(name)) return AssistantAggregateRequest.parse(raw).arguments();
+        if (AssistantSqlRequest.NAME.equals(name)) return AssistantSqlRequest.parse(raw).arguments();
         var tool = TOOLS.stream().filter(t -> t.name().equals(name)).findFirst().orElseThrow(IllegalArgumentException::new);
         JSONObject result = new JSONObject();
         for (Map.Entry<String, Object> field : tool.fields().entrySet()) {
@@ -78,6 +85,9 @@ final class AssistantTools {
                             AssistantQueryContext context, AssistantPrivacy privacy, IntPredicate pauseHistory) {
         if (AssistantAggregateRequest.NAME.equals(name)) {
             return queries.aggregate(platform, uid, args, context, privacy, pauseHistory);
+        }
+        if (AssistantSqlRequest.NAME.equals(name)) {
+            return queries.querySql(platform, uid, args, context, privacy, pauseHistory);
         }
         Set<String> nonMonetaryMetrics = context.amountVisible() ? Set.of() : queries.nonMonetaryMetrics(platform);
         if (!context.amountVisible() && ("revenue".equals(name) || "curve".equals(name)

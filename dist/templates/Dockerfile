@@ -29,8 +29,9 @@
 FROM eclipse-temurin:17-jre-noble
 
 # 程序自带中文字体（内置 NotoSansSC），系统中文字体补内置没有的字（如韩文）
+# 智能助手的只读查询使用系统 SQLite 的硬堆上限。
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk fontconfig \
+    && apt-get install -y --no-install-recommends fonts-noto-cjk fontconfig libsqlite3-0 \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
