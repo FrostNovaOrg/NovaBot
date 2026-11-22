@@ -2,6 +2,7 @@ package org.frostnova.nova.console.assistant;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
 
 import java.math.BigDecimal;
@@ -10,6 +11,8 @@ import java.util.*;
 import java.util.function.LongFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** 每问独立保存昵称映射，原始观众身份留在本机。 */
 final class AssistantPrivacy {
@@ -23,7 +26,6 @@ final class AssistantPrivacy {
     private static final Pattern IDENTIFIER = Pattern.compile("[0-9]{5,}");
     private final Map<String, String> names = new LinkedHashMap<>();
     private final Map<String, String> replacements = new LinkedHashMap<>();
-    private final Set<String> sqlAliases = new HashSet<>();
     private static final Pattern ALIAS = Pattern.compile("观众-[0-9a-fA-F]{6}");
     private static final Pattern ALIAS_OR_IDENTIFIER = Pattern.compile(ALIAS.pattern() + "|" + IDENTIFIER.pattern());
     private Pattern replacementPattern;
@@ -104,11 +106,7 @@ final class AssistantPrivacy {
             }
         }
         if (AssistantSqlRequest.NAME.equals(tool) && result.get("rows") instanceof JSONArray rows) {
-            rows.stream().map(JSONArray.class::cast).flatMap(Collection::stream)
-                    .filter(String.class::isInstance).map(String.class::cast)
-                    .flatMap(text -> ALIAS.matcher(text).results())
-                    .forEach(match -> sqlAliases.add(match.group().toLowerCase(Locale.ROOT)));
-            if (!sqlAliases.isEmpty()) dataTypes.add("观众代号");
+            if (learnSqlAudience(rows.stream().map(JSONArray.class::cast).flatMap(Collection::stream))) dataTypes.add("观众代号");
         }
         dataTypes.add("汇总数字");
         return result;
@@ -117,6 +115,42 @@ final class AssistantPrivacy {
     boolean canAttribute(Long uid) { return uid != null && uid > 0 && !excluded.contains(uid); }
 
     LongFunction<String> aliases() { return local.aliases(platform); }
+
+    /** 查询结果仍用代号，昵称只写入本机的显示映射。 */
+    boolean learnSqlAudience(Stream<?> cells) {
+        var aliases = cells.filter(String.class::isInstance).map(String.class::cast)
+                .flatMap(text -> ALIAS.matcher(text).results())
+                .map(match -> match.group().toLowerCase(Locale.ROOT)).collect(Collectors.toSet());
+        if (aliases.isEmpty()) return false;
+        aliases.removeIf(alias -> names.containsKey(alias) || "[已隐藏]".equals(replacements.get(alias)));
+        if (aliases.isEmpty()) return true;
+
+        Map<Long, Set<String>> identities;
+        try {
+            identities = loadAudience();
+        } catch (AssistantException unavailable) {
+            // 本地档案读不到时，沿用现有的未知昵称显示。
+            return true;
+        }
+        if (identities.isEmpty()) return true;
+        var encode = aliases();
+        for (var entry : identities.entrySet()) {
+            Long uid = entry.getKey();
+            if (!canAttribute(uid) || streamerUid.equals(uid) || entry.getValue().isEmpty()) continue;
+            String alias = encode.apply(uid);
+            if (!aliases.contains(alias)) continue;
+            entry.getValue().stream().filter(name -> !name.isBlank()).min(String::compareTo).ifPresent(name -> {
+                names.put(alias, name);
+                local.rememberNickname(alias, name);
+                entry.getValue().stream().filter(nickname -> !nickname.isBlank())
+                        .forEach(nickname -> replacements.putIfAbsent(nickname, alias));
+                aliases.remove(alias);
+            });
+            if (aliases.isEmpty()) break;
+        }
+        replacementPattern = null;
+        return true;
+    }
 
     private void learn(Object value) {
         if (value instanceof JSONObject row) {
@@ -203,7 +237,7 @@ final class AssistantPrivacy {
         if (replacementPattern == null) {
             String alternatives = replacements.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
                     .map(name -> name.matches("[0-9]+") ? "(?<![0-9])" + Pattern.quote(name) + "(?![0-9])" : Pattern.quote(name))
-                    .collect(java.util.stream.Collectors.joining("|"));
+                    .collect(Collectors.joining("|"));
             replacementPattern = Pattern.compile(alternatives.isEmpty() ? "(?!)" : alternatives);
         }
         StringBuilder result = new StringBuilder();
@@ -229,9 +263,7 @@ final class AssistantPrivacy {
     }
 
     String display(String text) {
-        for (var entry : names.entrySet()) {
-            if (!sqlAliases.contains(entry.getKey())) text = text.replace(entry.getKey(), entry.getValue());
-        }
+        for (var entry : names.entrySet()) text = text.replace(entry.getKey(), entry.getValue());
         return text;
     }
 

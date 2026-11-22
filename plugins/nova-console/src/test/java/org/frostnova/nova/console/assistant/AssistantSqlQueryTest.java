@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +58,7 @@ class AssistantSqlQueryTest {
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setup() {
+        assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
         var properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
         archive = new LiveSessionArchive(properties);

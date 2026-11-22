@@ -44,6 +44,7 @@ final class AssistantTools {
 
     static List<JSONObject> definitions(AssistantQueryContext context) {
         return TOOLS.stream().filter(tool -> context.amountVisible() || !"revenue".equals(tool.name()))
+                .filter(tool -> !AssistantSqlRequest.NAME.equals(tool.name()) || AssistantSqlNative.available())
                 .map(tool -> !context.audienceQuotesVisible() && "danmu".equals(tool.name())
                         ? new Tool(tool.name(), "本场时间窗弹幕条数与分类统计",
                             JSONObject.of("start", tool.fields().get("start"), "fromAt", tool.fields().get("fromAt"),

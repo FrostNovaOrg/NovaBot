@@ -120,9 +120,13 @@ final class AssistantChartResults {
         if (request.type() != Type.TABLE && count > limit) throw new Invalid(limitMessage);
 
         var rows = new ArrayList<Row>();
-        UnaryOperator<String> display = AssistantSqlRequest.NAME.equals(result.tool()) ? privacy::mask : privacy::displayChart;
+        var sourceRows = result.table().rows().subList(0, count);
+        if (AssistantSqlRequest.NAME.equals(result.tool())) {
+            privacy.learnSqlAudience(sourceRows.stream().flatMap(row -> selected.stream().map(row::get)));
+        }
+        UnaryOperator<String> display = privacy::displayChart;
         int points = 0;
-        for (var row : result.table().rows().subList(0, count)) {
+        for (var row : sourceRows) {
             Object x = row.get(request.xColumn());
             var values = new ArrayList<Value>();
             for (String column : request.yColumns()) {

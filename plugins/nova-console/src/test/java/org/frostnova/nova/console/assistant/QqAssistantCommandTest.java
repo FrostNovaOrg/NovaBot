@@ -71,6 +71,7 @@ import java.util.concurrent.TimeUnit;
 import static org.frostnova.nova.core.enums.PushTargetType.FRIEND;
 import static org.frostnova.nova.core.enums.PushTargetType.GROUP;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.anything;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -722,6 +723,44 @@ class QqAssistantCommandTest {
         group(ASKER, "问 1");
         assertReply(LABEL);
         assertEquals(question, userPayload(requests.get(1)).getString("question"));
+    }
+
+    @Test
+    @DisplayName("只读查询独有的观众在 QQ 回答和图上可认出，发给模型的仍是代号")
+    void sqlOnlyViewerDisplaysNicknameInQqAnswerAndChart() throws Exception {
+        assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        long viewer = 9300000021L;
+        String nickname = "合成观众甲";
+        String alias = local.alias(BILIBILI, viewer);
+        archive.append(new LiveSession(BILIBILI, FIRST, "测试主播甲", 1L, START, START + 10000, 10, Map.of(), Map.of()));
+        details.appendDanmu(BILIBILI, FIRST, START, new DanmuRecord(START + 1, viewer, nickname,
+                "合成弹幕原文", DanmuRecord.Type.DANMU));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("QUJD"));
+
+        modelReplies.add(call("query_sql", JSONObject.of("from", "2026-11-06", "to", "2026-11-07", "tables", List.of("danmu"),
+                "sql", "SELECT audience, COUNT(*) AS messages FROM danmu GROUP BY audience")));
+        modelReplies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "audience",
+                "yColumns", List.of("messages"), "title", alias + "的弹幕条数")));
+        modelReplies.add(text("按观众分组后，" + alias + "发了 1 条弹幕。"));
+
+        group(ASKER, "问 这次发弹幕的观众是谁，画个图");
+        String reply = assertReply(LABEL).getContent();
+        assertReply("{image_base64=QUJD}");
+        var data = toolResults(requests.get(1)).get("query_sql");
+        var rows = data.getJSONArray("rows");
+        assertEquals(1, rows.size());
+        assertEquals(alias, rows.getJSONArray(0).getString(0));
+        assertEquals(1, rows.getJSONArray(0).getLongValue(1));
+        for (String privateText : List.of(nickname, Long.toString(viewer), "合成弹幕原文"))
+            assertFalse(requests.toString().contains(privateText), privateText);
+        var chart = org.mockito.ArgumentCaptor.forClass(AssistantChartRenderer.Chart.class);
+        verify(chartRenderer).render(chart.capture());
+        assertAll(
+                () -> assertTrue(reply.contains(nickname), reply),
+                () -> assertFalse(reply.contains(alias), reply),
+                () -> assertEquals(nickname, chart.getValue().rows().get(0).category()),
+                () -> assertTrue(chart.getValue().title().contains(nickname), chart.getValue()::title));
     }
 
     @Test

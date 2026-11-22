@@ -11,9 +11,12 @@ import com.sun.jna.NativeLibrary;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.ref.Reference;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
@@ -29,6 +32,7 @@ import static org.frostnova.nova.console.assistant.AssistantSqlRequest.rejected;
 
 /** SQLite 读回内存快照，在预编译与执行期间启用原生权限、内存和时限检查。 */
 final class AssistantSqlNative {
+    private static final Logger log = LoggerFactory.getLogger(AssistantSqlNative.class);
     private static final int OK = 0, DENY = 1;
     private static final int INTERRUPT = 9, NOMEM = 7, FULL = 13, TOOBIG = 18, AUTH = 23, READONLY = 8;
     private static final int ERROR = 1, ROW = 100, DONE = 101;
@@ -65,21 +69,57 @@ final class AssistantSqlNative {
                 ? List.of("sqlite3", "/opt/homebrew/opt/sqlite/lib/libsqlite3.0.dylib",
                         "/usr/local/opt/sqlite/lib/libsqlite3.0.dylib")
                 : Platform.isWindows() ? List.of("sqlite3", "winsqlite3") : List.of("sqlite3");
+        var failures = new ArrayList<String>();
         for (String name : names) {
+            String candidate = name;
             try {
                 var library = NativeLibrary.getInstance(name);
+                var api = Native.load(name, Sqlite.class, Map.of(Library.OPTION_STRING_ENCODING, "UTF-8"));
+                candidate = libraryPath(library) + "（" + api.sqlite3_libversion() + "）";
+                if (api.sqlite3_libversion_number() < 3_036_000) {
+                    failures.add(candidate + " 低于 3.36");
+                    continue;
+                }
                 library.getFunction("sqlite3_deserialize");
                 library.getFunction("sqlite3_set_authorizer");
-                var api = Native.load(name, Sqlite.class, Map.of(Library.OPTION_STRING_ENCODING, "UTF-8"));
-                if (api.sqlite3_libversion_number() < 3_036_000 || api.sqlite3_compileoption_used("TEMP_STORE=0") != 0) continue;
+                if (api.sqlite3_compileoption_used("TEMP_STORE=0") != 0) {
+                    failures.add(candidate + " 不支持内存临时表");
+                    continue;
+                }
                 // 仅在首次初始化前可设置。若已初始化，仍可核对引擎是否已启用统计。
                 api.sqlite3_config(CONFIG_MEMSTATUS, 1);
-                if (hasHardHeapLimit(api)) return api;
-            } catch (LinkageError | RuntimeException ignored) {
-                // 下一个候选。只在能够确认护栏生效的引擎上执行模型 SQL。
+                if (hasHardHeapLimit(api)) {
+                    log.info("智能助手只读查询使用 SQLite {}", candidate);
+                    return api;
+                }
+                failures.add(candidate + " 无法启用硬堆上限");
+            } catch (LinkageError | RuntimeException error) {
+                String message = error.getMessage();
+                String summary = message == null ? error.getClass().getSimpleName()
+                        : message.lines().findFirst().orElse(error.getClass().getSimpleName()).strip();
+                failures.add(candidate + " 加载失败（" + summary + "）");
             }
         }
+        log.info("智能助手只读查询不可用，SQLite 探测结果 {}", String.join("，", failures));
         return null;
+    }
+
+    private static String libraryPath(NativeLibrary library) {
+        var file = library.getFile();
+        if (!file.isAbsolute() && (Platform.isLinux() || Platform.isMac())) {
+            // 按库名加载时，动态链接器可以提供实际的库文件路径。
+            try (var info = new Memory(4L * Native.POINTER_SIZE)) {
+                var loader = NativeLibrary.getInstance(Platform.isLinux() ? "dl" : Platform.C_LIBRARY_NAME);
+                var function = library.getFunction("sqlite3_libversion");
+                if (loader.getFunction("dladdr").invokeInt(new Object[]{function, info}) != 0) {
+                    Pointer path = info.getPointer(0);
+                    if (path != null) return path.getString(0);
+                }
+            } catch (LinkageError | RuntimeException ignored) {
+                // 动态链接器没有提供路径时，记录 JNA 使用的库名。
+            }
+        }
+        return file.getPath();
     }
 
     private static boolean hasHardHeapLimit(Sqlite api) {
@@ -272,6 +312,7 @@ final class AssistantSqlNative {
     }
 
     public interface Sqlite extends Library {
+        String sqlite3_libversion();
         int sqlite3_libversion_number();
         int sqlite3_compileoption_used(String name);
         int sqlite3_config(int option, Object... args);
