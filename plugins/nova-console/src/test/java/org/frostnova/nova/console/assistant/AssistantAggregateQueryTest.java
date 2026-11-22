@@ -148,6 +148,25 @@ class AssistantAggregateQueryTest {
                 incomplete.getJSONArray("missingAmountsByDayAndKind"));
     }
 
+    // 抓住每日流水图把有醒目留言但缺金额的直播日画成 0，并误报完整合计。
+    @Test void dailyRevenueLeavesGapForArchivedPaidMessagesWithNoAmount() {
+        long first = at("2026-11-03T18:00"), missing = at("2026-11-05T05:00"), last = at("2026-11-05T18:00");
+        summary(first, first + 60_000, 80, 0, 0);
+        archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, missing, missing + 60_000, 60,
+                Map.of("super_chat_count", 8d), Map.of()));
+        summary(last, last + 60_000, 20, 0, 0);
+
+        var result = query(request(List.of("session"), "2026-11-03", "2026-11-05", "sum:amount"),
+                "groupBy", List.of("day"));
+        table("醒目留言缺金额的每日流水", result, List.of("day", "sum:amount", "sessionCount"),
+                List.of(List.of("2026-11-03", 80, 1), Arrays.asList("2026-11-04", null, 1),
+                        List.of("2026-11-05", 20, 1)), Arrays.asList("合计", null, 3));
+        assertNumber(100, result.get("knownAmountSubtotal"));
+        assertEquals(8, result.getIntValue("missingAmountRows"));
+        assertEquals(List.of(JSONObject.of("day", "2026-11-04", "countsByKind", JSONObject.of("super_chat", 8))),
+                result.getJSONArray("missingAmountsByDayAndKind"));
+    }
+
     // 抓住近 90 天的流水图丢掉首日的 80 元，导致图上各天加起来少于合计。
     @Test void recentDailyRevenueKeepsEveryDayAndMatchesTheTotal() {
         LocalDate today = LocalDate.parse(TO);

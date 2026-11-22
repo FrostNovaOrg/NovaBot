@@ -548,10 +548,14 @@ final class AssistantAggregateQuery {
     private Row summary(LiveSession session, LiveMetricCatalog.Insights rules) {
         Map<String, Double> metrics = session.metrics();
         var values = new EnumMap<Field, BigDecimal>(Field.class);
+        Map<Kind, Integer> missing = Map.of();
         for (Field field : fields) {
             values.put(field, switch (field) {
-                case AMOUNT -> rules == null || rules.revenueKeys().isEmpty() || metrics == null || metrics.isEmpty()
-                        ? null : number(rules.revenue(metrics));
+                case AMOUNT -> {
+                    if (rules == null || rules.revenueKeys().isEmpty() || metrics == null || metrics.isEmpty()) yield null;
+                    if ("bilibili".equals(session.platform())) missing = missingSessionAmounts(metrics, rules);
+                    yield missing.isEmpty() ? number(rules.revenue(metrics)) : null;
+                }
                 case START -> BigDecimal.valueOf(session.startTime());
                 case END -> BigDecimal.valueOf(session.endTime());
                 case DURATION -> BigDecimal.valueOf(session.durationSeconds());
@@ -563,7 +567,37 @@ final class AssistantAggregateQuery {
                 default -> throw new IllegalStateException();
             });
         }
-        return new Summary(session.startTime(), values);
+        return new Summary(session.startTime(), values, missing);
+    }
+
+    private static Map<Kind, Integer> missingSessionAmounts(Map<String, Double> metrics, LiveMetricCatalog.Insights rules) {
+        var missing = new EnumMap<Kind, Integer>(Kind.class);
+        for (String key : rules.revenueKeys()) {
+            if (metrics.get(key) != null) continue;
+            switch (key) {
+                // 盲盒开出物计入礼物流水。
+                case "gift_value" -> missing.put(Kind.BOX, sumCounts(metrics, "box_count"));
+                case "super_chat_value" -> missing.put(Kind.SUPER_CHAT, sumCounts(metrics, "super_chat_count"));
+                case "guard_value" -> {
+                    // 新开、续费与舰种计数覆盖同一批上舰记录。
+                    int byLevel = sumCounts(metrics, "captain_count", "commander_count", "governor_count");
+                    int byOperation = sumCounts(metrics, "guard_open_count", "guard_renew_count");
+                    missing.put(Kind.GUARD, Math.max(byLevel, byOperation));
+                }
+                default -> { }
+            }
+        }
+        missing.values().removeIf(count -> count == 0);
+        return missing.isEmpty() ? Map.of() : missing;
+    }
+
+    private static int sumCounts(Map<String, Double> metrics, String... keys) {
+        int count = 0;
+        for (String key : keys) {
+            Double value = metrics.get(key);
+            if (value != null && Double.isFinite(value) && value > 0) count += value.intValue();
+        }
+        return count;
     }
 
     private static BigDecimal sessionAudience(LiveSession session, LiveMetricCatalog.Insights rules) {
@@ -583,7 +617,7 @@ final class AssistantAggregateQuery {
         default BigDecimal paid() { return BigDecimal.ZERO; }
     }
 
-    private record Summary(long start, Map<Field, BigDecimal> values) implements Row {
+    private record Summary(long start, Map<Field, BigDecimal> values, Map<Kind, Integer> missingAmounts) implements Row {
         @Override public Kind kind() { return Kind.SESSION; }
         @Override public long at() { return start; }
         @Override public Object value(Field field) { return values.get(field); }
@@ -800,16 +834,22 @@ final class AssistantAggregateQuery {
             var number = (BigDecimal) row.value(field);
             if (number == null) {
                 unknown |= !isSample(field);
-                if (i == missingAmountIndex) {
-                    missingAmounts.computeIfAbsent(clockGroups(row.at()).day(), day -> new EnumMap<>(Kind.class))
-                            .merge(row.kind(), 1, Integer::sum);
-                }
+                if (i == missingAmountIndex) recordMissingAmount(row);
             } else {
                 total.numbers[i].add(number);
                 if (bucket != null) bucket.numbers[i].add(number);
             }
         }
         if (unknown) unknownValues++;
+    }
+
+    private void recordMissingAmount(Row row) {
+        var counts = missingAmounts.computeIfAbsent(clockGroups(row.at()).day(), day -> new EnumMap<>(Kind.class));
+        if (row instanceof Summary summary && !summary.missingAmounts().isEmpty()) {
+            summary.missingAmounts().forEach((kind, count) -> counts.merge(kind, count, Integer::sum));
+        } else {
+            counts.merge(row.kind(), 1, Integer::sum);
+        }
     }
 
     private Bucket groupBucket(Row row) {
@@ -941,7 +981,8 @@ final class AssistantAggregateQuery {
         if (!missingAmounts.isEmpty()) {
             Numeric amount = total.numbers[missingAmountIndex];
             result.put("knownAmountSubtotal", amount.known == 0 ? null : amount.sum);
-            result.put("missingAmountRows", total.count - amount.known);
+            result.put("missingAmountRows", missingAmounts.values().stream()
+                    .flatMap(counts -> counts.values().stream()).mapToLong(Integer::longValue).sum());
             result.put("missingAmountsByDayAndKind", missingAmounts.entrySet().stream().map(entry -> {
                 var counts = new JSONObject();
                 entry.getValue().forEach((kind, count) -> counts.put(kind.key, count));
