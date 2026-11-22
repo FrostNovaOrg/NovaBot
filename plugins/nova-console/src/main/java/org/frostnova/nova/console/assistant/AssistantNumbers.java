@@ -102,11 +102,10 @@ final class AssistantNumbers {
     }
 
     private static boolean matchesPercent(BigDecimal number, BigDecimal value, boolean signed, int direction) {
-        if ((signed || direction == 0) && equal(number, value)) return true;
-        if (value.abs().compareTo(BigDecimal.ONE) > 0) return false;
-        if (signed) return equal(number, value.movePointRight(2));
-        return (direction == 0 || value.signum() == 0 || value.signum() == direction)
-                && equal(number, value.abs().movePointRight(2));
+        if (!signed && direction != 0 && value.signum() != 0 && value.signum() != direction) return false;
+        BigDecimal candidate = signed ? value : value.abs();
+        return equal(number, candidate)
+                || (value.abs().compareTo(BigDecimal.ONE) <= 0 && equal(number, candidate.movePointRight(2)));
     }
 
     private boolean matchesDuration(BigDecimal number, String text, int numberEnd) {

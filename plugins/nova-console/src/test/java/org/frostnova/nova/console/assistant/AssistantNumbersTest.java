@@ -93,6 +93,19 @@ class AssistantNumbersTest {
         assertEquals(unverified == null ? List.of() : List.of(unverified), numbers.unverified(answer));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "2.090909, 开播时长增长 2.1%,",
+            "-2.090909, 开播时长下降 2.1%,",
+            "2.090909, 开播时长下降 2.1%, 2.1%",
+            "2.090909, 占比 2.1%,"
+    })
+    void verifiesPercentageReturnedDirectly(BigDecimal percent, String answer, String unverified) {
+        var numbers = new AssistantNumbers();
+        numbers.include(Map.of("percent", percent));
+        assertEquals(unverified == null ? List.of() : List.of(unverified), numbers.unverified(answer));
+    }
+
     @Test
     void convertsNamedSecondsInNestedObjects() {
         var numbers = new AssistantNumbers();
