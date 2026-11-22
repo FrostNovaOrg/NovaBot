@@ -35,7 +35,7 @@ class SplitLayoutStartTest {
 
     private static final String TRIM = "-XX:TrimNativeHeapInterval=60000";
     private static final String TRIM_OFF = "-XX:TrimNativeHeapInterval=0";
-    private static final String GC_LOG = "-Xlog:gc*:file=logs/gc.log:time,uptime,level,tags:filecount=20,filesize=5m";
+    private static final String GC_LOG = "-Xlog:gc,gc+heap:file=logs/gc.log:time,uptime,level,tags:filecount=20,filesize=5m";
 
     /**
      * 扁平布局下假 java 收到的默认参数，用于对照两种布局的启动命令。
@@ -204,6 +204,19 @@ class SplitLayoutStartTest {
         }
         assertEquals(layout.install.toRealPath(), Path.of(run.cwd.trim()).toRealPath(), "工作目录应保持不变");
         assertEquals(expected, run.args.strip(), "其余参数与路径应一字不差");
+    }
+
+    @Test
+    @DisplayName("老配置只设了最小比例，升级后程序起不来")
+    void userMinimumHeapFreeRatioKeepsJvmMaximum(@TempDir Path dir) throws Exception {
+        Layout layout = layout(dir, false);
+        String userMinimum = "-XX:MinHeapFreeRatio=50";
+        Run run = run(layout, "Darwin", 0, userMinimum);
+        assertStarted(run);
+        List<String> heapFreeRatios = run.args.lines()
+                .filter(arg -> arg.startsWith("-XX:MinHeapFreeRatio=") || arg.startsWith("-XX:MaxHeapFreeRatio="))
+                .toList();
+        assertEquals(List.of(userMinimum), heapFreeRatios, "只应传入用户设置的堆空闲比例");
     }
 
     private static void assertStarted(Run run) {

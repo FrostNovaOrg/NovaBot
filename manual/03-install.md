@@ -120,7 +120,8 @@ docker run -d --name novabot --restart unless-stopped \
 ## 调整 JVM 启动参数
 
 手动运行 `start.sh`、systemd 服务和容器共用这份脚本的 JVM 默认值。`JAVA_OPTS` 排在默认值之后，
-可用于恢复 JDK 的默认堆空闲比例或关闭垃圾回收日志。各装法的配置方法见
+可用于恢复 JDK 的默认堆空闲比例或关闭垃圾回收日志。指定任一堆空闲比例时，脚本会省略两项默认比例。
+各装法的配置方法见
 [附录 A](appendix-a-measurements.md#内存偏高时怎么量、怎么调)。
 
 ## 装完之后

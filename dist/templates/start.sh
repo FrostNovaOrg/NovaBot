@@ -28,7 +28,10 @@ JVM_OPTS="$JVM_OPTS -XX:+UseSerialGC"
 # 降低空闲比例，让堆在回收后更容易缩小。试跑一天多，堆通常维持在 170–190 MB，
 # 完整回收停顿为 0.46–0.72 秒（改前约 2.33 秒）；同期也减少了常驻数据。
 # 用 JAVA_OPTS="-XX:MinHeapFreeRatio=40 -XX:MaxHeapFreeRatio=70" 恢复 JDK 默认值。
-JVM_OPTS="$JVM_OPTS -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40"
+# JAVA_OPTS 指定任一比例时就省略这两个默认值，另一项由 JVM 决定。
+if [[ ! ${JAVA_OPTS:-} =~ (^|[[:space:]])-XX:(MinHeapFreeRatio|MaxHeapFreeRatio)= ]]; then
+    JVM_OPTS="$JVM_OPTS -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40"
+fi
 # 线程栈 256K：NovaBot 的调用栈很浅，默认 1M 在几十个线程下白白占掉数十兆
 JVM_OPTS="$JVM_OPTS -Xss256k"
 JVM_OPTS="$JVM_OPTS -XX:MaxMetaspaceSize=192m"
@@ -58,7 +61,7 @@ prepare_gc_log() (
 # 用 JAVA_OPTS="-Xlog:disable" 关闭 JVM 统一日志。跳过默认日志选项，避免 JVM 仍打开并轮转文件。
 if [[ ! ${JAVA_OPTS:-} =~ (^|[[:space:]])-Xlog:disable($|[[:space:]]) ]]; then
     if prepare_gc_log 2>/dev/null; then
-        JVM_OPTS="$JVM_OPTS -Xlog:gc*:file=logs/gc.log:time,uptime,level,tags:filecount=20,filesize=5m"
+        JVM_OPTS="$JVM_OPTS -Xlog:gc,gc+heap:file=logs/gc.log:time,uptime,level,tags:filecount=20,filesize=5m"
     else
         printf '警告：无法写入 logs/gc.log，本次启动跳过垃圾回收日志。\n' >&2
     fi
@@ -85,7 +88,6 @@ trap forward_signal TERM INT
 # 不在程序内部自行派生子进程重启：那样父进程要一直驻留等子进程结束，白占一份内存，
 # systemd 下的进程树也不正确
 set +e
-set -f # JVM_OPTS 按空白拆分，gc* 原样传给 JVM。
 if [ "$(basename "$(dirname "$script_dir")")" = "releases" ]; then
     java $JVM_OPTS "-Dloader.path=$app_dir/lib,$app_dir/plugins,$app_dir/plugins-lib,$data_dir/plugins,$data_dir/plugins-lib" -jar "$app_dir/NovaBot.jar" "$@" &
 else

@@ -118,8 +118,9 @@ JAVA_OPTS="-Xmx256m" ./start.sh
 命令行上这样带的 `JAVA_OPTS` 只管手动运行；systemd 起的实例不吃命令行环境变量，
 要照下文把它放进覆盖设置。
 
-`start.sh` 默认把堆空闲比例设为 20% / 40%，让回收后的堆更容易缩小。要恢复 JDK 默认的
-40% / 70%，或者关闭 JVM 统一日志（含垃圾回收日志），可分别这样启动：
+`start.sh` 默认把堆空闲比例设为 20% / 40%，让回收后的堆更容易缩小。
+如果 `JAVA_OPTS` 指定任一堆空闲比例，脚本会省略两项默认比例，把未指定的值交给 JVM。
+要恢复 JDK 默认的 40% / 70%，或者关闭 JVM 统一日志（含垃圾回收日志），可分别这样启动：
 
 ```bash
 JAVA_OPTS="-XX:MinHeapFreeRatio=40 -XX:MaxHeapFreeRatio=70" ./start.sh
