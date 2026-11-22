@@ -1311,7 +1311,14 @@ public class ConfigUiController {
             result.put("changed", changed);
             result.put("restartRequired", restartRequired);
             result.put("restartPending", runtimeApplier.getPendingRestart());
-            result.put("message", saveMessage(changed, restart));
+            String message = saveMessage(changed, restart);
+            if (changedKeys.contains("novabot.assistant.model")
+                    && !changedKeys.contains("novabot.assistant.price-input-yuan-per-million")
+                    && !changedKeys.contains("novabot.assistant.price-cached-input-yuan-per-million")
+                    && !changedKeys.contains("novabot.assistant.price-output-yuan-per-million")) {
+                message += "。换了模型，请核对下面三项单价是否还对。";
+            }
+            result.put("message", message);
         } catch (IOException e) {
             log.error("保存配置文件失败", e);
             result.put("success", false);

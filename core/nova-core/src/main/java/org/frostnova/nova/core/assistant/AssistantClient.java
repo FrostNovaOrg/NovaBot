@@ -229,6 +229,7 @@ public final class AssistantClient {
             // 验证用短句，固定低强度并为思考和回复共留 256 token。
             String thinking = probe ? "low" : properties.getThinking();
             int allowance = probe ? 256 : switch (thinking) {
+                case "medium" -> 8000;
                 case "high" -> 16000;
                 case "max" -> 32000;
                 // 关闭时使用模型默认强度，留出与低档相同的空间。
@@ -269,8 +270,9 @@ public final class AssistantClient {
         if ("api.deepseek.com".equalsIgnoreCase(URI.create(baseUrl).getHost())) {
             body.put("thinking", JSONObject.of("type", "off".equals(thinking) ? "disabled" : "enabled"));
             if (!"off".equals(thinking)) {
-                body.put("reasoning_effort", thinking);
-                int allowance = switch (thinking) {
+                String effort = "medium".equals(thinking) ? "low" : thinking;
+                body.put("reasoning_effort", effort);
+                int allowance = switch (effort) {
                     case "low" -> 4000;
                     case "high" -> 16000;
                     case "max" -> 32000;

@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.assistant;
 
+import org.frostnova.nova.core.config.ui.ConfigurationMetadataService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -43,14 +44,17 @@ class AssistantPropertiesTest {
         assertEquals("思考强度", field.getAnnotation(ConfigLabel.class).value());
         assertEquals(ConfigLevel.Level.COMMON, field.getAnnotation(ConfigLevel.class).value());
         assertEquals(ConfigEffect.Effect.RESTART, field.getAnnotation(ConfigEffect.class).value());
-        assertArrayEquals(new String[]{"off", "low", "high", "max"}, field.getAnnotation(ConfigChoices.class).value());
-        assertArrayEquals(new String[]{"关闭", "低", "高", "最高"}, field.getAnnotation(ConfigChoices.class).labels());
-        String summary = field.getAnnotation(ConfigSummary.class).value();
-        assertTrue(summary.contains("4000／16000／32000 token"), summary);
-        assertTrue(summary.contains("/responses"), summary);
+        assertArrayEquals(new String[]{"off", "low", "medium", "high", "max"}, field.getAnnotation(ConfigChoices.class).value());
+        assertArrayEquals(new String[]{"关闭／模型默认", "低", "中", "高", "最高"}, field.getAnnotation(ConfigChoices.class).labels());
+        assertTrue(field.getAnnotation(ConfigSummary.class).details());
+        String help = new ConfigurationMetadataService().getFields().stream()
+                .filter(setting -> "novabot.assistant.thinking".equals(setting.name()))
+                .findFirst().orElseThrow().description();
+        assertTrue(help.contains("8000 token"), help);
+        assertTrue(help.contains("/responses"), help);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"off", "low", "high", "max"})
+    @ParameterizedTest @ValueSource(strings = {"off", "low", "medium", "high", "max"})
     void bindingAcceptsThinkingChoices(String thinking) {
         var binder = new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.thinking", thinking)));
         var bound = binder.bind("novabot.assistant", Bindable.of(AssistantProperties.class));
@@ -58,7 +62,7 @@ class AssistantPropertiesTest {
         assertEquals(thinking, new BeanWrapperImpl(bound.get()).getPropertyValue("thinking"));
     }
 
-    @ParameterizedTest @NullAndEmptySource @ValueSource(strings = {"medium", "HIGH", " low "})
+    @ParameterizedTest @NullAndEmptySource @ValueSource(strings = {"unknown", "HIGH", " low "})
     void setterRejectsUnknownThinkingChoices(String thinking) throws Exception {
         var setter = assertDoesNotThrow(() -> AssistantProperties.class.getMethod("setThinking", String.class));
         var error = assertThrows(java.lang.reflect.InvocationTargetException.class,
@@ -66,6 +70,7 @@ class AssistantPropertiesTest {
         assertInstanceOf(IllegalArgumentException.class, error);
         assertTrue(error.getMessage().contains("思考强度"));
         assertTrue(error.getMessage().contains("关闭"));
+        assertTrue(error.getMessage().contains("中（medium）"));
     }
 
     // 抓住配置绑定接受零或负数预算，导致金额上限无效。
