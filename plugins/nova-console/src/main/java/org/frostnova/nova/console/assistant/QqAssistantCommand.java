@@ -28,9 +28,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +44,6 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 @Slf4j
 @NovaComponent
@@ -68,11 +66,18 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private static final String CHOSEN_UID_PREFIX = "uid:";
     private static final Pattern NUMBER = Pattern.compile("[0-9]+");
     private static final Pattern NON_HAN_EDGES = Pattern.compile("^[^\\p{IsHan}]+|[^\\p{IsHan}]+\\z");
-    private static final List<String> QUERY_WORDS = List.of(
-            "最近", "今天", "昨天", "前天", "昨晚", "今晚", "上周", "本周", "这周", "上月", "本月", "上个月", "这个月",
-            "流水", "直播", "弹幕", "观众", "粉丝", "礼物", "在线", "开播", "下播", "场次", "个数", "合计",
-            "心动盲盒", "盲盒", "钟点", "各钟点平均在线", "平均在线", "送礼榜前十", "前十",
-            "主播备忘", "备忘", "第一项", "目标", "目前", "完成", "多少", "收了", "播了", "多久", "几点", "几场", "怎么样", "变化");
+    private static final Pattern QUESTION_PREFIX = Pattern.compile("^[\\p{IsWhite_Space}\\p{P}]+");
+    private static final Set<String> QUERY_WORDS = Set.of(
+            "最近", "近期", "上周", "本周", "这周", "上月", "本月", "这个", "今天", "昨天", "昨晚", "前天", "今晚",
+            "请问", "帮我", "看看", "查查", "我想",
+            "统计", "对比", "比较", "哪天", "哪场", "什么", "怎么", "多少", "每天", "每周", "过去",
+            "一周", "两周", "三周", "四周",
+            "流水", "收入", "直播", "弹幕", "观众", "粉丝", "礼物", "在线", "在線", "开播", "下播", "场次", "时间", "时长",
+            "数据", "情况", "变化", "趋势", "平均", "高峰", "人数", "排行", "排名",
+            "上个月", "这个月", "个数", "合计", "心动盲盒", "盲盒", "钟点", "各钟点平均在线", "平均在线", "送礼榜前十", "前十",
+            "主播备忘", "备忘", "第一项", "目标", "目前", "完成", "收了", "播了", "多久", "几点", "几场", "怎么样");
+    private static final Comparator<NameMatch> NAME_MATCH_PRIORITY = Comparator.comparingInt(NameMatch::length)
+            .thenComparing(NameMatch::exact).reversed();
 
     private final AssistantAskService assistant;
     private final AssistantClient client;
@@ -204,34 +209,46 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     }
 
     private static List<Candidate> namedIn(String question, List<Candidate> candidates) {
-        var numbers = NUMBER.matcher(question).results().map(MatchResult::group).collect(Collectors.toSet());
-        var nicknames = candidates.stream().map(Candidate::nickname).filter(name -> name != null && !name.isBlank())
-                .collect(Collectors.toSet());
-        Pattern fullNames = namePattern(nicknames);
-        var matched = fullNames.matcher(question).results().map(MatchResult::group).collect(Collectors.toSet());
-
-        var aliases = new HashMap<String, List<Candidate>>();
-        candidates.forEach(item -> addShortNames(item, aliases));
-        var namedByShortName = new HashSet<Candidate>();
-        if (!aliases.isEmpty()) {
-            Pattern shortNames = namePattern(aliases.keySet());
-            // 完整昵称优先，短名只匹配其余文字。
-            fullNames.splitAsStream(question).flatMap(part -> shortNames.matcher(part).results())
-                    .forEach(match -> namedByShortName.addAll(aliases.get(match.group())));
+        var prefix = QUESTION_PREFIX.matcher(question);
+        int questionStart = prefix.lookingAt() ? prefix.end() : 0;
+        var numbers = NUMBER.matcher(question).results().toList();
+        var matches = new ArrayList<NameMatch>();
+        for (Candidate item : candidates) {
+            if (item.nickname() != null && !item.nickname().isBlank()) {
+                addNameMatches(question, item.nickname(), item, true, matches);
+                addShortNameMatches(question, questionStart, item, matches);
+            }
+            String uid = item.id();
+            String roomId = item.roomId() == null ? null : item.roomId().toString();
+            for (MatchResult number : numbers) {
+                String digits = number.group();
+                if (digits.equals(uid) || digits.equals(roomId)) {
+                    matches.add(new NameMatch(number.start(), number.end(), digits.length(), true, item));
+                }
+            }
         }
-        return candidates.stream().filter(item -> numbers.contains(item.id())
-                || (item.roomId() != null && numbers.contains(item.roomId().toString()))
-                || matched.contains(item.nickname()) || namedByShortName.contains(item)).toList();
+
+        matches.sort(NAME_MATCH_PRIORITY);
+        // 每个位置记录已保留的最高优先级，同级命中可以并存。
+        var covered = new NameMatch[question.length()];
+        var named = new HashSet<Candidate>();
+        for (NameMatch match : matches) {
+            if (match.overlapsStrongerMatch(covered)) continue;
+            Arrays.fill(covered, match.start(), match.end(), match);
+            named.add(match.candidate());
+        }
+        return candidates.stream().filter(named::contains).toList();
     }
 
-    private static Pattern namePattern(Collection<String> names) {
-        if (names.isEmpty()) return Pattern.compile("(?!)");
-        return Pattern.compile(names.stream().sorted(Comparator.comparingInt(String::length).reversed())
-                .map(Pattern::quote).collect(Collectors.joining("|")));
+    private static void addNameMatches(String question, String name, Candidate item, boolean exact,
+                                       List<NameMatch> matches) {
+        int length = name.codePointCount(0, name.length());
+        for (int start = question.indexOf(name); start >= 0; start = question.indexOf(name, start + 1)) {
+            matches.add(new NameMatch(start, start + name.length(), length, exact, item));
+        }
     }
 
-    private static void addShortNames(Candidate item, Map<String, List<Candidate>> aliases) {
-        if (item.nickname() == null) return;
+    private static void addShortNameMatches(String question, int questionStart, Candidate item, List<NameMatch> matches) {
         String stem = NON_HAN_EDGES.matcher(item.nickname()).replaceAll("");
         int hanCount = 0;
         for (int end = 0; end < stem.length(); ) {
@@ -241,9 +258,14 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             hanCount++;
             if (hanCount < 2) continue;
             String prefix = stem.substring(0, end);
-            // 例如「平均在」也是示例问法「平均在线」的一截。
-            if (!prefix.equals(item.nickname()) && QUERY_WORDS.stream().noneMatch(word -> word.startsWith(prefix))) {
-                aliases.computeIfAbsent(prefix, unused -> new ArrayList<>()).add(item);
+            if (prefix.equals(item.nickname()) || (hanCount == 2 && QUERY_WORDS.contains(prefix))) continue;
+            if (hanCount == 2 && end < stem.length()) {
+                if (question.startsWith(prefix, questionStart)) {
+                    matches.add(new NameMatch(questionStart, questionStart + end,
+                            prefix.codePointCount(0, end), false, item));
+                }
+            } else {
+                addNameMatches(question, prefix, item, false, matches);
             }
         }
     }
@@ -485,6 +507,14 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
 
     private record Candidate(Long uid, String nickname, Long roomId, boolean allowed) {
         String id() { return uid.toString(); }
+    }
+    private record NameMatch(int start, int end, int length, boolean exact, Candidate candidate) {
+        boolean overlapsStrongerMatch(NameMatch[] covered) {
+            for (int i = start; i < end; i++) {
+                if (covered[i] != null && NAME_MATCH_PRIORITY.compare(covered[i], this) < 0) return true;
+            }
+            return false;
+        }
     }
     private record Asker(String session, long sender) { }
     private record Choice(List<String> uids, String question, Instant expires) { }
