@@ -35,23 +35,27 @@ class SplitLayoutStartTest {
 
     private static final String TRIM = "-XX:TrimNativeHeapInterval=60000";
     private static final String TRIM_OFF = "-XX:TrimNativeHeapInterval=0";
+    private static final String GC_LOG = "-Xlog:gc*:file=logs/gc.log:time,uptime,level,tags:filecount=20,filesize=5m";
 
     /**
-     * 扁平布局下假 java 收到的参数。这一串是脚本改布局之前的原样，用来守住没改的那一支。
+     * 扁平布局下假 java 收到的默认参数，用于对照两种布局的启动命令。
      */
     private static final String FLAT_ARGS = """
             -Xms64m
             -Xmx512m
             -XX:+UseSerialGC
+            -XX:MinHeapFreeRatio=20
+            -XX:MaxHeapFreeRatio=40
             -Xss256k
             -XX:MaxMetaspaceSize=192m
             -XX:+ExitOnOutOfMemoryError
             -Djava.awt.headless=true
             -Duser.timezone=Asia/Shanghai
             -Dfile.encoding=UTF-8
+            %s
             -Dloader.path=lib,plugins,plugins-lib
             -jar
-            NovaBot.jar""";
+            NovaBot.jar""".formatted(GC_LOG);
 
     @Test
     @DisplayName("程序在 releases/版本 下时，工作目录是安装目录，程序用版本目录的绝对路径")
@@ -132,7 +136,7 @@ class SplitLayoutStartTest {
         assertStarted(run);
         assertEquals(TRIM + "\n-version\n", run.probe, "应由同一个 java 试跑完整选项");
         assertEquals("probe\nlaunch\n", run.calls, "只试跑一次，并在试跑后启动");
-        assertTrue(run.args.contains("-Dfile.encoding=UTF-8\n" + TRIM + "\n-Xmx768m\n"),
+        assertTrue(run.args.contains("-Dfile.encoding=UTF-8\n" + TRIM + "\n" + GC_LOG + "\n-Xmx768m\n"),
                 "定时归还应排在默认参数之后、用户参数之前:\n" + run.args);
     }
 
@@ -168,7 +172,7 @@ class SplitLayoutStartTest {
         Run run = run(layout, "Linux", 0, TRIM_OFF);
         assertStarted(run);
         assertEquals(TRIM + "\n-version\n", run.probe, "试跑只用默认选项");
-        assertTrue(run.args.contains(TRIM + "\n" + TRIM_OFF + "\n"),
+        assertTrue(run.args.contains(TRIM + "\n" + GC_LOG + "\n" + TRIM_OFF + "\n"),
                 "用户关闭选项必须在默认值后面:\n" + run.args);
     }
 

@@ -117,6 +117,12 @@ docker run -d --name novabot --restart unless-stopped \
 容器里的目录也不分版本。换镜像会换掉卷上的程序；`plugins-lib/` 里镜像自带的依赖
 每次启动按构件名换新，自己放的留下——细节看[第 13 章　升级与备份](13-upgrade-and-backup.md)。
 
+## 调整 JVM 启动参数
+
+手动运行 `start.sh`、systemd 服务和容器共用这份脚本的 JVM 默认值。`JAVA_OPTS` 排在默认值之后，
+可用于恢复 JDK 的默认堆空闲比例或关闭垃圾回收日志。各装法的配置方法见
+[附录 A](appendix-a-measurements.md#内存偏高时怎么量、怎么调)。
+
 ## 装完之后
 
 无论哪种装法，程序启动后都会在日志里打出**控制台地址**，这就是下一章的起点：

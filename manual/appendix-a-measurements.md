@@ -61,7 +61,7 @@ novabot:
 
 第 2 章「备到 1 GB 以上」的依据在这里。两组实测，条件都写明：
 
-**空载基线**（macOS / JDK 17.0.20 / 默认启动参数 / 未配置主播、未登录，
+**空载基线**（macOS / JDK 17.0.20 / 当时的默认启动参数，堆空闲比例为 40% / 70% / 未配置主播、未登录，
 启动静置约 40 秒后每 4 秒采样一次）：
 
 | 指标 | 数值 |
@@ -117,6 +117,16 @@ JAVA_OPTS="-Xmx256m" ./start.sh
 `/opt/starbot/releases/<版本>/start.sh`（工作目录脚本自己会落回安装目录）。
 命令行上这样带的 `JAVA_OPTS` 只管手动运行；systemd 起的实例不吃命令行环境变量，
 要照下文把它放进覆盖设置。
+
+`start.sh` 默认把堆空闲比例设为 20% / 40%，让回收后的堆更容易缩小。要恢复 JDK 默认的
+40% / 70%，或者关闭 JVM 统一日志（含垃圾回收日志），可分别这样启动：
+
+```bash
+JAVA_OPTS="-XX:MinHeapFreeRatio=40 -XX:MaxHeapFreeRatio=70" ./start.sh
+JAVA_OPTS="-Xlog:disable" ./start.sh
+```
+
+默认的回收日志在工作目录的 `logs/gc.log`，文件轮转和排障方法见[第 11 章](11-where-to-see-what-happened.md#日志文件在哪、留多久)。
 
 `start.sh` 在 Linux 上还默认开启 `-XX:TrimNativeHeapInterval=60000`，每 60 秒
 把 glibc 的 malloc 池里已经不用的内存还给系统。Linux / 2 核 / 2 GB / OpenJDK 17.0.20
