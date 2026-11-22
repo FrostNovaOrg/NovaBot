@@ -67,6 +67,50 @@ class AssistantChartResultsTest {
     }
 
     @Test
+    @DisplayName("钟点平均与流水的模板图要缩短标注，同时避免把柱高和折线点的位置取整")
+    void chartAndTableUseShortNumbersForAveragesAndAmounts() {
+        var results = new AssistantChartResults(List.of());
+        results.add("aggregate", new JSONObject(), JSONObject.of("columns", List.of("hour", "avg:online", "sum:amount"),
+                "rows", JSONArray.of(
+                        JSONArray.of(8, new BigDecimal("189.16666666666670"), new BigDecimal("10463.10000000000004")),
+                        JSONArray.of(9, new BigDecimal("44.02503293807642"), new BigDecimal("149057.90000000002882")),
+                        JSONArray.of(10, 45, new BigDecimal("15113.70000000000014")),
+                        JSONArray.of(11, 31, new BigDecimal("156.12600000000004")))), Set::of);
+        var args = JSONObject.of("resultNumber", 1, "type", "line", "xColumn", "hour",
+                "yColumns", List.of("avg:online", "sum:amount"), "title", "分时直播数据");
+        var expected = List.of(List.of("189.2", "10463.1"), List.of("44", "149057.9"), List.of("45", "15113.7"), List.of("31", "156.13"));
+        var raw = List.of(List.of("189.1666666666667", "10463.10000000000004"),
+                List.of("44.02503293807642", "149057.90000000002882"),
+                List.of("45", "15113.70000000000014"), List.of("31", "156.12600000000004"));
+        for (String type : List.of("line", "bar", "table")) {
+            args.put("type", type);
+            var chart = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy());
+            assertEquals(expected, chart.rows().stream()
+                    .map(row -> row.values().stream().map(value -> value.text()).toList()).toList(), type);
+            if (!type.equals("table")) {
+                assertEquals(raw, chart.rows().stream()
+                        .map(row -> row.values().stream().map(value -> value.number().toPlainString()).toList()).toList(), type);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("新老观众柱状图会把分组字段和英文取值直接画在横轴上")
+    void chartLocalizesKnownCategoriesAndLeavesUnknownValuesReadable() {
+        var results = new AssistantChartResults(List.of());
+        results.add("aggregate", new JSONObject(), JSONObject.of("columns", List.of("audienceAge", "sum:amount"),
+                "rows", JSONArray.of(JSONArray.of("new", 12), JSONArray.of("returning", 34), JSONArray.of("other", 5))), Set::of);
+        var args = JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "audienceAge",
+                "yColumns", List.of("sum:amount"), "title", "本月新老观众贡献流水");
+        for (String explicit : List.of("", "audienceAge", "观察对象")) {
+            if (!explicit.isEmpty()) args.put("xLabel", explicit);
+            var chart = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy());
+            assertEquals(explicit.equals("观察对象") ? explicit : "观众", chart.xLabel());
+            assertEquals(List.of("新观众", "老观众", "other"), chart.rows().stream().map(Row::category).toList());
+        }
+    }
+
+    @Test
     @DisplayName("可见聊天能用只读查询算出的礼物数量占比出示意图，金额列和收紧权限后的结果不能用于手绘")
     void sketchesCanUseSqlSharesWithoutMakingMoneyColumnsAvailable() {
         var results = new AssistantChartResults(List.of());

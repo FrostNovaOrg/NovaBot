@@ -396,13 +396,19 @@ public final class AssistantClient {
     }
 
     private static AssistantException providerFailure(HttpStatusCodeException error, boolean responses, String secret) {
-        int status = error.getStatusCode().value();
-        AssistantException.ProviderError details = responses ? logProviderError(status, error.getResponseBodyAsString(), secret) : null;
+        var statusCode = error.getStatusCode();
+        int status = statusCode.value();
+        boolean rejected = statusCode.is4xxClientError();
+        AssistantException.ProviderError details = responses || rejected
+                ? logProviderError(status, error.getResponseBodyAsString(), secret) : null;
+        if (rejected && details == null) LOG.warn("大模型服务请求失败 status={}", status);
         return switch (status) {
             case 401, 403 -> new AssistantException("key_rejected", "模型密钥不正确或没有访问权限", details);
             case 402 -> new AssistantException("provider_balance", "模型服务余额不足，请检查服务商账户", details);
             case 429 -> new AssistantException("provider_busy", "模型服务额度不足或请求过多，请稍后再试", details);
-            default -> new AssistantException("provider_error", "大模型服务出错，请稍后再试", details);
+            default -> new AssistantException("provider_error", rejected
+                    ? "模型服务拒绝了这次请求。助手设置可能有误，例如模型名称或接口地址。请管理员查看日志。"
+                    : "大模型服务出错，请稍后再试", details);
         };
     }
 

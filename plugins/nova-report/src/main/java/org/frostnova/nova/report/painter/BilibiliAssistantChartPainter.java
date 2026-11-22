@@ -6,10 +6,13 @@ import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.Shape;
+import java.awt.geom.Path2D;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -17,10 +20,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
 /** 智能助手的定幅数据图，沿用数据查询图的报告画布与配色。 */
@@ -38,9 +41,11 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     private static final int CATEGORY_TOP = BOTTOM + 9;
     private static final int LABEL_SIZE = 16;
     private static final int MIN_LABEL_SIZE = 10;
+    private static final int LINE_LABEL_GAP = 6;
     private static final int ALL_BAR_LABELS = 12;
     private static final String NOTICE = "由人工智能生成";
     private static final List<Integer> STEPS = List.of(1, 2, 5, 10);
+    private static final Pattern AVERAGE_SERIES = Pattern.compile("平均|(?i:^(?:avg|average)(?:[:_].+)?$)");
     private static final MathContext POSITION_PRECISION = MathContext.DECIMAL64;
 
     private final NovaCommonPainterFactory factory;
@@ -84,36 +89,42 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         painter.drawRoundedRectangle(MARGIN, 128, CONTENT_WIDTH, 358, 18, palette.card());
 
         Scale scale = Scale.of(chart);
+        int decimalPlaces = chart.series().stream().allMatch(AVERAGE_SERIES.asPredicate()) ? 1 : 2;
+        boolean bar = chart.type() == Type.BAR;
+        var occupied = new ArrayList<Shape>();
+        int tickWidth = LEFT - MARGIN - 17;
         for (BigDecimal tick = scale.low(); tick.compareTo(scale.high()) <= 0; tick = tick.add(scale.step())) {
             int y = scale.y(tick);
             painter.drawRectangle(LEFT, y, RIGHT - LEFT + 1, 1, tick.signum() == 0 ? palette.curveGapEdge() : palette.calendarBorder());
-            text(painter, number(tick), MARGIN + 7, y - 12, LEFT - MARGIN - 17, 17, 10, muted(painter), Font.PLAIN, Align.RIGHT, false);
+            text(painter, tickLabel(tick), MARGIN + 7, y - 12, tickWidth, 17, 10,
+                    muted(painter), Font.PLAIN, Align.RIGHT, false);
+            if (!bar) occupied.add(new Rectangle(MARGIN + 7, y - 12, tickWidth, 22));
         }
         if (chart.yLabel() != null && chart.series().size() > 1) {
             text(painter, chart.yLabel(), LEFT, 132, (RIGHT - LEFT) / 2, 17, 16, muted(painter), Font.PLAIN, Align.LEFT, true);
         }
-        if (chart.referenceLine() != null) drawReference(painter, scale, chart.referenceLine());
+        if (chart.referenceLine() != null) drawReference(painter, scale, chart.referenceLine(), decimalPlaces);
         int count = chart.rows().size();
         var values = new ArrayList<PlotValue>();
         var required = new LinkedHashSet<PlotValue>();
         for (int series = 0; series < chart.series().size(); series++) {
-            var labels = columnLabels(painter, chart, series, CONTENT_WIDTH - 6, MIN_LABEL_SIZE);
             var points = new ArrayList<PlotValue>();
             if (chart.type() == Type.LINE) {
-                drawLine(painter, chart, series, colors.get(series), scale, labels, points);
+                drawLine(painter, chart, series, colors.get(series), scale, points, occupied);
                 keepExtrema(points, required);
+                if (!points.isEmpty()) required.add(points.get(points.size() - 1));
             } else {
-                drawBars(painter, chart, series, colors.get(series), scale, labels, points);
+                drawBars(painter, chart, series, colors.get(series), scale, points);
             }
             values.addAll(points);
         }
-        boolean bar = chart.type() == Type.BAR;
         if (bar) {
+            values.stream().map(PlotValue::bar).forEach(occupied::add);
             keepExtrema(values, required);
             values.stream().max(Comparator.comparingInt(PlotValue::row).thenComparingInt(PlotValue::x)).ifPresent(required::add);
         }
         boolean allBars = bar && values.size() <= ALL_BAR_LABELS;
-        drawValueLabels(painter, layoutValues(painter, chart, values, required, allBars));
+        drawValueLabels(painter, layoutValues(painter, chart, values, required, occupied, allBars));
         if (bar) {
             var requiredRows = required.stream().map(PlotValue::row).distinct().toList();
             drawBarCategories(painter, chart, requiredRows, allBars);
@@ -153,56 +164,70 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         }
     }
 
-    private void drawReference(CommonPainter painter, Scale scale, ReferenceLine reference) {
+    private void drawReference(CommonPainter painter, Scale scale, ReferenceLine reference, int decimalPlaces) {
         int y = scale.y(reference.value());
         var color = muted(painter);
         for (int x = LEFT; x < RIGHT; x += 15) painter.drawRectangle(x, y, Math.min(8, RIGHT - x), 2, color);
         int area = (RIGHT - LEFT) / 2;
-        String number = number(reference.value());
+        String number = number(reference.value(), decimalPlaces);
         int numberWidth = Math.min(area / 2, line(painter, number, 17, color, Font.BOLD).width());
         text(painter, reference.label(), RIGHT - area, 132, area - numberWidth - 6, 17, 15, color, Font.BOLD, Align.RIGHT, true);
         text(painter, number, RIGHT - numberWidth, 132, numberWidth, 17, 11, color, Font.BOLD, Align.RIGHT, false);
     }
 
     private void drawLine(CommonPainter painter, Chart chart, int series, Color color, Scale scale,
-                          List<String> labels, List<PlotValue> values) {
+                          List<PlotValue> values, List<Shape> occupied) {
         var segment = new ArrayList<Point>();
         int count = chart.rows().size();
         for (int row = 0; row < count; row++) {
-            BigDecimal value = chart.rows().get(row).values().get(series).number();
+            var cell = chart.rows().get(row).values().get(series);
+            BigDecimal value = cell.number();
             if (value == null) {
-                drawSegment(painter, color, segment, count);
+                drawSegment(painter, color, segment, count, occupied);
                 segment.clear();
                 continue;
             }
             int x = x(row, count, Type.LINE), y = scale.y(value);
             segment.add(new Point(x, y));
-            values.add(new PlotValue(row, x, y, value, labels.get(row), null));
+            values.add(new PlotValue(row, x, y, value, cell.text(), null));
         }
-        drawSegment(painter, color, segment, count);
+        drawSegment(painter, color, segment, count, occupied);
     }
 
-    private static void drawSegment(CommonPainter painter, Color color, List<Point> segment, int count) {
-        painter.drawPolyline(segment, color, count > 100 ? 2 : 3);
+    private static void drawSegment(CommonPainter painter, Color color, List<Point> segment, int count, List<Shape> occupied) {
+        if (segment.size() > 1) {
+            int width = count > 100 ? 2 : 3;
+            painter.drawPolyline(segment, color, width);
+            var path = new Path2D.Double();
+            path.moveTo(segment.get(0).x, segment.get(0).y);
+            segment.subList(1, segment.size()).forEach(point -> path.lineTo(point.x, point.y));
+            // 避开整条笔画，并给抗锯齿边缘留出空隙。
+            var stroke = new BasicStroke(width + 4, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            occupied.add(stroke.createStrokedShape(path));
+        }
         if (count <= 40 || segment.size() == 1) {
-            for (Point point : segment) painter.drawRoundedRectangle(point.x - 4, point.y - 4, 8, 8, 8, color);
+            for (Point point : segment) {
+                painter.drawRoundedRectangle(point.x - 4, point.y - 4, 8, 8, 8, color);
+                occupied.add(new Rectangle(point.x - 5, point.y - 5, 10, 10));
+            }
         }
     }
 
     private void drawBars(CommonPainter painter, Chart chart, int series, Color color, Scale scale,
-                          List<String> labels, List<PlotValue> values) {
+                          List<PlotValue> values) {
         int count = chart.rows().size();
         int seriesCount = chart.series().size();
         int width = Math.max(2, Math.min(40, (RIGHT - LEFT) * 4 / (5 * count * seriesCount)));
         int zero = scale.y(BigDecimal.ZERO);
         for (int row = 0; row < count; row++) {
-            BigDecimal value = chart.rows().get(row).values().get(series).number();
+            var cell = chart.rows().get(row).values().get(series);
+            BigDecimal value = cell.number();
             if (value == null) continue;
             int center = x(row, count, Type.BAR) - (seriesCount * (width + 1)) / 2 + series * (width + 1) + width / 2;
             int y = scale.y(value);
             var bar = new Rectangle(center - width / 2, Math.min(y, zero), width, Math.max(2, Math.abs(zero - y)));
             painter.drawRoundedRectangle(bar.x, bar.y, bar.width, bar.height, Math.min(7, width), color);
-            values.add(new PlotValue(row, center, y, value, labels.get(row), bar));
+            values.add(new PlotValue(row, center, y, value, cell.text(), bar));
         }
     }
 
@@ -213,9 +238,9 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     }
 
     private List<ValueLabel> layoutValues(CommonPainter painter, Chart chart, List<PlotValue> values,
-                                          Set<PlotValue> required, boolean allBars) {
+                                          Set<PlotValue> required, List<Shape> occupied, boolean allBars) {
         var labels = new ArrayList<ValueLabel>();
-        var occupied = new ArrayList<>(values.stream().map(PlotValue::bar).filter(Objects::nonNull).toList());
+        boolean bar = chart.type() == Type.BAR;
         int half = (RIGHT - LEFT) / 2;
         if (chart.yLabel() != null && chart.series().size() > 1) occupied.add(new Rectangle(LEFT, 132, half, 23));
         if (chart.referenceLine() != null) occupied.add(new Rectangle(RIGHT - half, 132, half, 23));
@@ -228,7 +253,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         }
         labels.clear();
         for (PlotValue value : required) {
-            if (fitValue(painter, value, labels, occupied) || shiftValue(painter, value, labels, occupied)) continue;
+            if (fitValue(painter, value, labels, occupied) || !bar || shiftValue(painter, value, labels, occupied)) continue;
             if (!fitValue(painter, value, labels, List.of())) shiftValue(painter, value, labels, List.of());
         }
         int count = chart.rows().size();
@@ -236,39 +261,60 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             if (required.contains(value)) continue;
             if (allBars) {
                 if (!fitValue(painter, value, labels, occupied)) shiftValue(painter, value, labels, occupied);
-            } else if (chart.type() == Type.BAR ? count * chart.series().size() <= 16
-                    : count <= 10 || chart.series().size() == 1 && count <= 45 && value.row() % Math.max(1, count / 5) == 0) {
+            } else if (bar ? count * chart.series().size() <= 16 : count <= 10) {
                 placeValue(painter, value, LABEL_SIZE, labels, occupied);
             }
         }
         return labels;
     }
 
-    private boolean fitValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Rectangle> occupied) {
+    private boolean fitValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Shape> occupied) {
         for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
             if (placeValue(painter, value, size, labels, occupied)) return true;
         }
         return false;
     }
 
-    private boolean placeValue(CommonPainter painter, PlotValue value, int size, List<ValueLabel> labels, List<Rectangle> occupied) {
+    private boolean placeValue(CommonPainter painter, PlotValue value, int size, List<ValueLabel> labels, List<Shape> occupied) {
         var text = line(painter, value.text(), size, painter.palette().text(), Font.PLAIN);
         int height = size + 7;
         int width = text.width() + 6;
         if (width > CONTENT_WIDTH) return false;
-        var bounds = new Rectangle(centeredLeft(value.x(), width), value.y() - height - 3, width, height);
-        if (!valueFits(value, bounds, labels, occupied)) return false;
+        boolean line = value.bar() == null;
+        int gap = line ? LINE_LABEL_GAP : 3;
+        var bounds = new Rectangle(centeredLeft(value.x(), width), value.y() - height - gap, width, height);
+        if (!valueFits(value, bounds, labels, occupied) && (!line || !moveLineLabel(value, bounds, labels, occupied))) return false;
         labels.add(new ValueLabel(bounds, text, value, false));
         return true;
     }
 
-    private boolean shiftValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Rectangle> occupied) {
+    private static boolean moveLineLabel(PlotValue value, Rectangle bounds, List<ValueLabel> labels, List<Shape> occupied) {
+        int above = bounds.y;
+        bounds.y = value.y() + LINE_LABEL_GAP;
+        if (bounds.y + bounds.height <= BOTTOM && valueFits(value, bounds, labels, occupied)) return true;
+        bounds.y = above;
+        // 在点的上方左右错开，仍让标注紧挨其对应的数据点。
+        int offset = bounds.width / 2;
+        for (int center : new int[]{value.x() - offset, value.x() + offset}) {
+            bounds.x = centeredLeft(center, bounds.width);
+            if (valueFits(value, bounds, labels, occupied)) return true;
+        }
+        bounds.y = value.y() - bounds.height / 2;
+        if (bounds.y + bounds.height > BOTTOM) return false;
+        for (int left : new int[]{value.x() - LINE_LABEL_GAP - bounds.width, value.x() + LINE_LABEL_GAP}) {
+            bounds.x = left;
+            if (left >= MARGIN && left + bounds.width <= WIDTH - MARGIN && valueFits(value, bounds, labels, occupied)) return true;
+        }
+        return false;
+    }
+
+    private boolean shiftValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Shape> occupied) {
         var text = line(painter, value.text(), MIN_LABEL_SIZE, painter.palette().text(), Font.PLAIN);
         int height = MIN_LABEL_SIZE + 7;
         int width = text.width() + 6;
         if (width > CONTENT_WIDTH) return false;
         int left = centeredLeft(value.x(), width);
-        // 先保留离柱顶或折线点最近的空位，移开后用细线指回原位。
+        // 先保留离柱顶最近的空位，移开后用细线指回原位。
         int top = value.y() - height - 3;
         for (int offset = 1; offset <= BOTTOM - TOP + 26; offset++) {
             for (int y : new int[]{top - offset, top + offset}) {
@@ -283,9 +329,9 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         return false;
     }
 
-    private static boolean valueFits(PlotValue value, Rectangle bounds, List<ValueLabel> labels, List<Rectangle> occupied) {
+    private static boolean valueFits(PlotValue value, Rectangle bounds, List<ValueLabel> labels, List<Shape> occupied) {
         return labels.stream().noneMatch(other -> bounds.intersects(other.bounds()))
-                && occupied.stream().noneMatch(area -> area != value.bar() && bounds.intersects(area));
+                && occupied.stream().noneMatch(area -> area != value.bar() && area.intersects(bounds));
     }
 
     private void drawBarCategories(CommonPainter painter, Chart chart, List<Integer> required, boolean allBars) {
@@ -415,20 +461,6 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         return LEFT + 12 + row * (RIGHT - LEFT - 24) / (count - 1);
     }
 
-    private List<String> columnLabels(CommonPainter painter, Chart chart, int series, int width, int size) {
-        var values = chart.rows().stream().map(row -> row.values().get(series).number()).toList();
-        int decimals = Math.max(0, values.stream().filter(Objects::nonNull).mapToInt(BigDecimal::scale).max().orElse(0));
-        var labels = values.stream().map(value -> value == null ? "" : value.setScale(decimals).toPlainString()).toList();
-        if (labels.stream().anyMatch(label -> line(painter, label, size, painter.palette().text(), Font.PLAIN).width() > width)) {
-            // 极端量级用科学记数法保留有效位，避免补零后超出可用宽度。
-            int precision = values.stream().filter(Objects::nonNull).map(BigDecimal::stripTrailingZeros)
-                    .mapToInt(BigDecimal::precision).max().orElseThrow();
-            String format = "%." + (precision - 1) + "e";
-            return values.stream().map(value -> value == null ? "" : String.format(Locale.ROOT, format, value)).toList();
-        }
-        return labels;
-    }
-
     private void drawTable(CommonPainter painter, Chart chart) {
         var palette = painter.palette();
         int start = 101;
@@ -436,7 +468,6 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         int columns = chart.series().size() + 1;
         int first = columns == 2 ? 365 : CONTENT_WIDTH / columns + 26;
         int other = (CONTENT_WIDTH - first) / (columns - 1);
-        var labels = IntStream.range(0, columns - 1).mapToObj(col -> columnLabels(painter, chart, col, other - 17, 11)).toList();
         int rowHeight = Math.min(61, (TABLE_HEIGHT - 167 - start + header) / chart.rows().size());
         painter.drawRoundedRectangle(MARGIN, start, CONTENT_WIDTH, header, 14, palette.tagBackground());
         text(painter, chart.xLabel(), MARGIN + 17, start + 7, first - 24, 22, 17, palette.text(), Font.BOLD, Align.LEFT, true);
@@ -452,11 +483,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             text(painter, row.category(), MARGIN + 17, textY, first - 24, 22, 17, palette.text(), Font.PLAIN, Align.LEFT, true);
             for (int col = 0; col < row.values().size(); col++) {
                 var value = row.values().get(col);
-                var number = value.number();
-                // 时间戳、整点等可能已有可读的文字格式。
-                String label = number != null && (value.text().equals(number.toPlainString()) || value.text().equals(number.toEngineeringString()))
-                        ? labels.get(col).get(i) : value.text();
-                text(painter, label, MARGIN + first + col * other, textY, other - 17, 22, 11,
+                text(painter, value.text(), MARGIN + first + col * other, textY, other - 17, 22, 11,
                         palette.text(), Font.PLAIN, Align.RIGHT, value.number() == null);
             }
             y += rowHeight;
@@ -548,9 +575,14 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
 
     private static Color muted(CommonPainter painter) { return painter.palette().tip().darker(); }
 
-    private static String number(BigDecimal value) {
+    private static String tickLabel(BigDecimal value) {
         var normalized = value.stripTrailingZeros();
         return normalized.scale() > 8 || normalized.scale() < -8 ? normalized.toEngineeringString() : normalized.toPlainString();
+    }
+
+    private static String number(BigDecimal value, int decimalPlaces) {
+        if (value.scale() > decimalPlaces) value = value.setScale(decimalPlaces, RoundingMode.HALF_UP);
+        return value.stripTrailingZeros().toPlainString();
     }
 
     private record Scale(BigDecimal low, BigDecimal high, BigDecimal step) {

@@ -235,26 +235,49 @@ class AssistantClientTest {
         server.verify();
     }
 
-    // 抓住 400 日志漏记拒绝原因、回显密钥或把一条告警拆成多行。
-    @Test void responsesLogsProviderReasonOnOneLineWithoutKey() {
-        useResponses();
+    // 请求被拒时，两种接口都曾可能提示稍后再试，且日志可能漏记原因或暴露密钥。
+    @ParameterizedTest
+    @CsvSource({"true,400", "false,400", "true,404", "false,422"})
+    void rejectedRequestDirectsUserToAdminAndLogsMaskedReason(boolean responses, int status) {
+        properties.setBaseUrl("https://model.example/v1");
+        if (responses) useResponses();
+        String endpoint = "https://model.example/v1" + (responses ? "/responses" : "/chat/completions");
         String reason = "Invalid schema: uniqueItems is not supported";
         String message = reason + "\r\nTool parameters rejected for " + SECRET + "\u2028" + "x".repeat(300);
-        server.expect(requestTo("https://model.example/v1/responses")).andRespond(withBadRequest()
+        server.expect(requestTo(endpoint)).andRespond(withStatus(HttpStatus.valueOf(status))
                 .contentType(MediaType.APPLICATION_JSON).body(JSONObject.of("error", JSONObject.of(
                         "type", "invalid_request_error", "code", "invalid_json_schema",
                         "param", SECRET, "message", message)).toJSONString()));
         try (var logs = new AssistantLogCapture(); var question = client.beginQuestion("member")) {
             var error = assertThrows(AssistantException.class, () -> question.complete(request()));
             assertEquals("provider_error", error.reason());
-            assertTrue(error.getMessage().contains("请稍后再试"));
-            assertFalse(error.getMessage().contains("uniqueItems"));
-            String warning = logs.assertContains("status=400", "type=invalid_request_error",
-                    "code=invalid_json_schema", "param=[已遮掩]");
-            assertTrue(warning.contains("message=" + reason + " Tool parameters rejected for [已遮掩] x"), warning);
-            assertFalse(warning.matches("(?s).*\\R.*"), warning);
-            assertTrue(warning.substring(warning.indexOf("message=") + "message=".length()).length() <= 300, warning);
-            logs.assertNoSecret(SECRET);
+            assertAll(
+                    () -> assertTrue(error.getMessage().contains("拒绝了这次请求"), error::getMessage),
+                    () -> assertTrue(error.getMessage().contains("管理员查看日志"), error::getMessage),
+                    () -> assertFalse(error.getMessage().contains("稍后再试"), error::getMessage),
+                    () -> assertFalse(error.getMessage().contains("uniqueItems"), error::getMessage),
+                    () -> {
+                        String warning = logs.assertContains("status=" + status, "type=invalid_request_error",
+                                "code=invalid_json_schema", "param=[已遮掩]");
+                        assertTrue(warning.contains("message=" + reason + " Tool parameters rejected for [已遮掩] x"), warning);
+                        assertFalse(warning.matches("(?s).*\\R.*"), warning);
+                        assertTrue(warning.substring(warning.indexOf("message=") + "message=".length()).length() <= 300, warning);
+                        logs.assertNoSecret(SECRET);
+                    });
+        }
+        server.verify();
+    }
+
+    // 临时服务故障以及密钥、余额和限流问题仍须告诉用户当下能做什么。
+    @ParameterizedTest
+    @CsvSource({"401,密钥", "402,余额不足", "403,没有访问权限", "429,请求过多", "500,请稍后再试"})
+    void knownFailuresKeepTheirExistingGuidance(int status, String guidance) {
+        properties.setBaseUrl("https://model.example/v1");
+        server.expect(requestTo("https://model.example/v1/chat/completions"))
+                .andRespond(withStatus(HttpStatus.valueOf(status)));
+        try (var question = client.beginQuestion("member")) {
+            var error = assertThrows(AssistantException.class, () -> question.complete(request()));
+            assertTrue(error.getMessage().contains(guidance), error::getMessage);
         }
         server.verify();
     }
