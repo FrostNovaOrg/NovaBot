@@ -49,8 +49,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *     <li><b>只在已配置推送的会话开口</b>——机器人常同时在多个群，在无关群应答等同于打扰。
  *         这一条是硬规矩，命令<b>不能</b>把它放宽：未配置的会话连菜单都不回。</li>
- *     <li><b>认不出的命令回菜单</b>——已经 @ 了机器人（或在私聊里），说明这话就是对它说的，
- *         此时装作没听见比回一份菜单更让人困惑。</li>
+ *     <li><b>认不出的命令</b>——已经 @ 了机器人（或在私聊里），先问有无追问在等应答，
+ *         再找能接手的 {@link CommandFallback}，最后才回菜单。</li>
  *     <li><b>被本会话关掉的命令回一句</b>——沉默会让人以为机器人坏了，反复重试。</li>
  *     <li><b>同会话冷却</b>——防止刷屏。回菜单、回「已关闭」、回「没权限」与执行命令
  *         共用同一份冷却；分开算的话，连发无效消息就能绕过它。
@@ -81,7 +81,7 @@ public class CommandDispatcher {
     private final ObjectProvider<NovaCommand> commands;
 
     /**
-     * 追问应答的认领方。没有任何实现时，认不出的消息照旧回菜单
+     * 优先于兜底命令的追问应答认领方
      */
     private final ObjectProvider<CommandFollowUp> followUps;
 
@@ -174,7 +174,8 @@ public class CommandDispatcher {
 
         // 私聊里撞上仅限群聊的命令：按认不出处理，回菜单。
         // 菜单此时已按会话过滤，不会把这条用不了的命令再推荐一遍
-        if (command != null && command.groupOnly() && !group) {
+        boolean unknown = command == null;
+        if (!unknown && command.groupOnly() && !group) {
             command = null;
         }
 
@@ -195,6 +196,14 @@ public class CommandDispatcher {
         } else if (bare) {
             // 群里没 @ 又没人认领：照旧一声不出——不回菜单、不吃冷却、不记时间线
             return;
+        } else if (unknown && !name.isEmpty()) {
+            var fallbackArgs = new ArrayList<>(parts);
+            fallbackArgs.add(0, name);
+            command = fallback(event, type, List.copyOf(fallbackArgs));
+            if (command != null) {
+                typedName = command.name();
+                parts = fallbackArgs;
+            }
         }
 
         CommandContext probe = new CommandContext(event.getPlatform(), type, event.getNum(),
@@ -211,7 +220,7 @@ public class CommandDispatcher {
         }
 
         // 常规命令共用这一份冷却。被认领的应答不再计一次。
-        if (claimed == null && !acquireCooldown(event, type, name)) {
+        if (claimed == null && !acquireCooldown(event, type, typedName)) {
             return;
         }
 
@@ -263,6 +272,22 @@ public class CommandDispatcher {
         List<String> keys = command.usageKeys(context);
         return keys.stream().allMatch(key -> settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), key))
                 ? keys : List.of();
+    }
+
+    private NovaCommand fallback(NovaRemoteMessageEvent event, PushTargetType type, List<String> args) {
+        for (NovaCommand command : commands) {
+            if (!(command instanceof CommandFallback fallback) || (command.groupOnly() && type != PushTargetType.GROUP)) {
+                continue;
+            }
+            try {
+                var context = new CommandContext(event.getPlatform(), type, event.getNum(),
+                        event.getSenderUid(), command.name(), args, event.getText());
+                if (fallback.acceptsFallback(context)) return command;
+            } catch (Exception e) {
+                log.error("检查命令 {} 能否接手消息时发生异常", command.name(), e);
+            }
+        }
+        return null;
     }
 
     /**
