@@ -8,12 +8,19 @@ import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
 
 import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.Shape;
+import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
@@ -24,8 +31,7 @@ import java.util.Properties;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
@@ -47,31 +53,118 @@ class BilibiliAssistantChartPainterTest {
     }
 
     @Test
-    @DisplayName("近十场流水的柱状图标出最高值和全部场次，金额统一保留小数位")
+    @DisplayName("近十场流水的柱状图会给整数金额补零，最高值和全部场次仍应有标注")
     void tenBarsShowEveryValueAndCategoryIncludingThePeak() {
         var amounts = List.of("800", "1040.51", "1044.18", "980.28", "989.36", "1180.52", "1199.99",
                 "512.34", "680.52", "930.71");
         var rows = IntStream.range(0, amounts.size()).mapToObj(i -> new Row("11-" + (10 + i) + " 20:00",
                 List.of(new Value(amounts.get(i), new BigDecimal(amounts.get(i)))))).toList();
-        var canvas = spy(factory.create(760, 560));
-        var drawn = new ArrayList<String>();
-        doAnswer(call -> {
-            List<TextWithStyle> runs = call.getArgument(0);
-            drawn.add(String.join("", runs.stream().map(TextWithStyle::getText).toList()));
-            return call.callRealMethod();
-        }).when(canvas).drawTextWithStyle(anyList(), any(Point.class));
-        var recordingFactory = spy(factory);
-        doReturn(canvas).when(recordingFactory).create(760, 560);
-
         var chart = new Chart(Type.BAR, "近十场直播流水", "场次", "金额（元）", List.of("流水"), rows, null, "合成归档", rows.size());
-        assertTrue(new BilibiliAssistantChartPainter(recordingFactory, fonts).render(chart).isPresent());
-
+        var drawn = record(chart).text().stream().map(DrawnText::text).toList();
         var categoriesDrawn = drawn.stream().filter(label -> label.startsWith("11-")).toList();
         assertAll(
                 () -> assertTrue(drawn.contains("1199.99"), "最高一根应标出 1199.99"),
                 () -> assertEquals(10, categoriesDrawn.size(), () -> "画出的场次：" + categoriesDrawn),
-                () -> assertTrue(drawn.contains("800.00"), "整数金额应补足两位小数"),
+                () -> assertTrue(drawn.contains("800") && !drawn.contains("800.00"), drawn::toString),
                 () -> assertTrue(drawn.containsAll(amounts.subList(1, amounts.size())), "每根柱都应有数值标注"));
+    }
+
+    @Test
+    @DisplayName("出图时折线的平均值和金额会重现浮点尾巴，整数被补上小数位")
+    void pngChartsWriteEachShortNumericLabel() {
+        assertAll(
+                () -> assertDrawnNumbers("平均在线", List.of(new Value("189.2", new BigDecimal("189.16666666666670")),
+                        new Value("44", new BigDecimal("44.02503293807642")), new Value("45", new BigDecimal("45.0")))),
+                () -> assertDrawnNumbers("金额（元）", List.of(new Value("10463.1", new BigDecimal("10463.10000000000004")),
+                        new Value("120000", new BigDecimal("120000.00")), new Value("15113.7", new BigDecimal("15113.70000000000014")))));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("lineSamples")
+    @DisplayName("每日和钟点折线的标注框会遮住其他点的圆心或盖住折线")
+    void lineLabelBoxesClearAllMarkersAndStrokes(String title, String series, List<Row> rows) {
+        var drawing = record(new Chart(Type.LINE, title, "时间", series, List.of(series), rows, null, "合成归档", rows.size()));
+        assertEquals(rows.size(), drawing.markers().size(), "每个数据点应画出标记");
+        assertFalse(drawing.labels().isEmpty(), "折线仍应有数值标注");
+        assertEquals(1, drawing.strokes().size(), "完整数据应画成一条连续的线");
+        var covered = IntStream.range(0, drawing.markers().size())
+                .filter(i -> drawing.labels().stream().anyMatch(box -> box.contains(drawing.markers().get(i))))
+                .boxed().toList();
+        var coveredStrokes = drawing.labels().stream()
+                .filter(box -> drawing.strokes().stream().anyMatch(stroke -> stroke.intersects(box))).toList();
+        assertAll(
+                () -> assertTrue(covered.isEmpty(), () -> "被标注框遮住圆心的数据点：" + covered),
+                () -> assertTrue(coveredStrokes.isEmpty(), () -> "盖住折线的标注框：" + coveredStrokes),
+                () -> {
+                    for (int i = 0; i < drawing.labels().size(); i++) {
+                        for (var other : drawing.labels().subList(0, i)) {
+                            assertFalse(other.intersects(drawing.labels().get(i)), "数值标注框互相重叠");
+                        }
+                    }
+                });
+    }
+
+    private static List<Arguments> lineSamples() {
+        int[] daily = {120000, 117000, 119000, 126000, 128000, 120000, 110000, 120000, 124000, 128000,
+                149058, 120000, 110000, 120000, 116000, 114000, 119000, 120000, 110000, 120000,
+                118000, 112000, 114000, 120000, 110000, 120000, 118000, 110000, 10463, 115000};
+        int[] hourly = {72, 69, 68, 67, 66, 58, 52, 44, 98, 101, 98, 100, 108, 120, 148, 189, 130, 118, 108, 98, 91, 81, 79, 78};
+        return List.of(Arguments.of("每日流水", "流水（元）", sampleRows(daily)),
+                Arguments.of("钟点平均", "平均在线", sampleRows(hourly)));
+    }
+
+    private static List<Row> sampleRows(int[] values) {
+        return IntStream.range(0, values.length).mapToObj(i -> row("时段 " + (i + 1), values[i])).toList();
+    }
+
+    private static void assertDrawnNumbers(String series, List<Value> values) {
+        var rows = IntStream.range(0, values.size()).mapToObj(i -> new Row("时段 " + (i + 1), List.of(values.get(i)))).toList();
+        var labels = values.stream().map(Value::text).sorted().toList();
+        for (var type : Type.values()) {
+            var drawing = record(new Chart(type, "直播数据", "时间", series, List.of(series), rows, null, "合成归档", rows.size()));
+            assertEquals(labels, drawing.text().stream().filter(entry -> type == Type.TABLE || drawing.labels().stream()
+                            .anyMatch(box -> box.y == entry.position().y && box.contains(entry.position()))).map(DrawnText::text)
+                    .filter(text -> text.matches("\\d+(?:\\.\\d+)?")).sorted().toList(), type::name);
+        }
+    }
+
+    private record DrawnText(String text, Point position) { }
+    private record Drawing(List<DrawnText> text, List<Point> markers, List<Shape> strokes, List<Rectangle> labels) { }
+
+    private static Drawing record(Chart chart) {
+        int height = chart.type() == Type.TABLE ? 816 : 560;
+        var canvas = spy(factory.create(760, height));
+        var palette = canvas.palette();
+        var drawing = new Drawing(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+        doAnswer(call -> {
+            List<TextWithStyle> runs = call.getArgument(0);
+            Point position = call.getArgument(1);
+            drawing.text().add(new DrawnText(String.join("", runs.stream().map(TextWithStyle::getText).toList()), new Point(position)));
+            return call.callRealMethod();
+        }).when(canvas).drawTextWithStyle(anyList(), any(Point.class));
+        doAnswer(call -> {
+            int x = call.getArgument(0), y = call.getArgument(1), width = call.getArgument(2), heightDrawn = call.getArgument(3);
+            int radius = call.getArgument(4);
+            Color color = call.getArgument(5);
+            if (width == 8 && heightDrawn == 8 && radius == 8) drawing.markers().add(new Point(x + 4, y + 4));
+            if (radius == 5 && color.equals(palette.card())) drawing.labels().add(new Rectangle(x, y, width, heightDrawn));
+            return call.callRealMethod();
+        }).when(canvas).drawRoundedRectangle(anyInt(), anyInt(), anyInt(), anyInt(), anyInt(), any(Color.class));
+        doAnswer(call -> {
+            List<Point> points = call.getArgument(0);
+            if (points.size() >= 2) {
+                var path = new Path2D.Double();
+                path.moveTo(points.get(0).x, points.get(0).y);
+                points.subList(1, points.size()).forEach(point -> path.lineTo(point.x, point.y));
+                int width = call.getArgument(2);
+                drawing.strokes().add(new BasicStroke(width, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND).createStrokedShape(path));
+            }
+            return call.callRealMethod();
+        }).when(canvas).drawPolyline(anyList(), eq(palette.curveOnline()), anyInt());
+        var recordingFactory = spy(factory);
+        doReturn(canvas).when(recordingFactory).create(760, height);
+        assertTrue(new BilibiliAssistantChartPainter(recordingFactory, fonts).render(chart).isPresent());
+        return drawing;
     }
 
     @Test

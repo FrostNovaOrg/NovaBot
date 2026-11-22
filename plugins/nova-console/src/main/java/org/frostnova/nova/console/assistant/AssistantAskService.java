@@ -65,21 +65,21 @@ public class AssistantAskService {
     private static final String MEMO_NOTICE = "这位主播的助手备忘读不出来，这次没参考";
     private static final Pattern FOLLOW_UP_TAIL = Pattern.compile("(?m)^1\\. (\\S.*)(?:\\R2\\. (\\S.*))?\\s*\\z");
     private static final Pattern NUMBERED_LINE = Pattern.compile("(?m)^\\h*(?:[-*+]\\h+)?[0-9０-９]+\\h*[.．、)）:：].*\\R\\z");
-    private static final String AMOUNT_NUMBER = "(?:[+−-]?\\d[\\d,.]*|[零〇一二两三四五六七八九十百千万亿点壹贰叁肆伍陆柒捌玖拾佰仟]+)";
+    private static final String AMOUNT_NUMBER = "(?:[+−-]?\\d[\\d,.]*|[零〇一二两兩三四五六七八九十百千万萬亿億点點壹贰貳叁參肆伍陆陸柒捌玖拾佰仟]+)";
     private static final String AMOUNT_TOPIC = "(?:金额|流水|单价|营收|收入|收益|盈亏|支出|花费|实扣|消耗|礼物价值)";
     private static final String AMOUNT_CONTEXT = AMOUNT_TOPIC + "\\s*(?:(?:约为|大约|合计|共计|合共|共|为|是|有|达|约|:|=)\\s*+)*+";
     private static final String AMOUNT_VERB = "(?:赚|收|付|花|挣)了\\s*";
     private static final String AMOUNT_END = "(?=\\s*(?:$|[。！？!?，,、；;）)\\n]))";
-    private static final String BLOCK_AMOUNT_UNIT = "块(?=\\h*(?:$|\\R|\\p{P}|左右|上下|出头|以内|以上|以下|人民币|的|吧|了|而已))";
+    private static final String BLOCK_AMOUNT_UNIT = "[块塊](?!灯牌|燈牌|屏幕|螢幕)";
     private static final Pattern AMOUNT_IN_ANSWER = Pattern.compile(
             "(?:[¥$€£]|人民币|CNY|RMB|USD)\\s*" + AMOUNT_NUMBER
-                    + "|" + AMOUNT_NUMBER + "\\s*[万亿]?\\s*(?:元|圆|块钱|角钱|分钱|美元|港币|人民币|CNY|RMB|USD|" + BLOCK_AMOUNT_UNIT + ")"
+                    + "|" + AMOUNT_NUMBER + "\\s*[万萬亿億]?\\s*(?:元|圆|角钱|分钱|美元|港币|人民币|CNY|RMB|USD|" + BLOCK_AMOUNT_UNIT + ")"
                     + "|(?:" + AMOUNT_CONTEXT + "|" + AMOUNT_VERB + ")" + AMOUNT_NUMBER + AMOUNT_END,
             Pattern.CASE_INSENSITIVE);
     private static final String APPROXIMATE_AMOUNT = AMOUNT_NUMBER + "\\h*(?:[多来余几](?:\\h*" + AMOUNT_NUMBER + ")?|出头)";
     private static final Pattern COLLOQUIAL_AMOUNT_IN_ANSWER = Pattern.compile(
             "(?:" + APPROXIMATE_AMOUNT + "|几(?:\\h*" + AMOUNT_NUMBER + ")?|(?:多于?|来|余|超过)\\h*" + AMOUNT_NUMBER + ")"
-                    + "\\h*(?:元(?![件素])|块钱|" + BLOCK_AMOUNT_UNIT + ")"
+                    + "\\h*(?:元(?![件素])|" + BLOCK_AMOUNT_UNIT + ")"
                     + "|(?:" + AMOUNT_CONTEXT + "|" + AMOUNT_VERB + ")" + APPROXIMATE_AMOUNT + "(?=\\h*(?:$|\\R|\\p{P}))");
     private static final Pattern BARE_AMOUNT_APPROXIMATION = Pattern.compile(
             "\\s*(?:(?:大约|约)\\h*)?" + AMOUNT_NUMBER + "\\h*出头[\\h。.!]*\\s*");

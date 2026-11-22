@@ -67,7 +67,7 @@ class AssistantChartResultsTest {
     }
 
     @Test
-    @DisplayName("钟点平均与流水的模板图会把很长的浮点尾巴写到折线标注和表格格子里")
+    @DisplayName("钟点平均与流水的模板图要缩短标注，同时避免把柱高和折线点的位置取整")
     void chartAndTableUseShortNumbersForAveragesAndAmounts() {
         var results = new AssistantChartResults(List.of());
         results.add("aggregate", new JSONObject(), JSONObject.of("columns", List.of("hour", "avg:online", "sum:amount"),
@@ -79,16 +79,19 @@ class AssistantChartResultsTest {
         var args = JSONObject.of("resultNumber", 1, "type", "line", "xColumn", "hour",
                 "yColumns", List.of("avg:online", "sum:amount"), "title", "分时直播数据");
         var expected = List.of(List.of("189.2", "10463.1"), List.of("44", "149057.9"), List.of("45", "15113.7"), List.of("31", "156.13"));
-        for (String type : List.of("line", "table")) {
+        var raw = List.of(List.of("189.1666666666667", "10463.10000000000004"),
+                List.of("44.02503293807642", "149057.90000000002882"),
+                List.of("45", "15113.70000000000014"), List.of("31", "156.12600000000004"));
+        for (String type : List.of("line", "bar", "table")) {
             args.put("type", type);
             var chart = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy());
             assertEquals(expected, chart.rows().stream()
                     .map(row -> row.values().stream().map(value -> value.text()).toList()).toList(), type);
+            if (!type.equals("table")) {
+                assertEquals(raw, chart.rows().stream()
+                        .map(row -> row.values().stream().map(value -> value.number().toPlainString()).toList()).toList(), type);
+            }
         }
-        args.put("type", "line");
-        var plot = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy());
-        assertEquals(expected, plot.rows().stream()
-                .map(row -> row.values().stream().map(value -> value.number().toPlainString()).toList()).toList());
     }
 
     @Test

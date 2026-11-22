@@ -150,16 +150,17 @@ final class AssistantChartResults {
         int points = 0;
         for (var row : sourceRows) {
             Object x = row.get(request.xColumn());
-            if (table && x instanceof Number) x = chartNumber(result, request.xColumn(), number(x));
+            if (table && x instanceof Number) x = displayNumber(result, request.xColumn(), number(x));
             var values = new ArrayList<Value>();
             for (String column : request.yColumns()) {
                 Object cell = row.get(column);
-                BigDecimal numeric = chartNumber(result, column, number(cell));
+                BigDecimal numeric = number(cell);
                 if (!table && cell != null) {
                     if (numeric == null) throw new Invalid("折线和柱状的纵轴列需要数值");
                     if (++points > limit) throw new Invalid(limitMessage);
                 }
-                String text = cellText(column, cell instanceof Number ? numeric : cell, display);
+                BigDecimal shown = displayNumber(result, column, numeric);
+                String text = table ? cellText(column, cell instanceof Number ? shown : cell, display) : numberText(shown);
                 values.add(new Value(text, table ? null : numeric));
             }
             rows.add(new Row(cellText(request.xColumn(), x, display), List.copyOf(values)));
@@ -252,7 +253,7 @@ final class AssistantChartResults {
                 || AssistantAskService.containsColloquialAmount(text);
     }
 
-    private static BigDecimal chartNumber(Result result, String column, BigDecimal number) {
+    private static BigDecimal displayNumber(Result result, String column, BigDecimal number) {
         if (number == null || number.scale() <= 0) return number;
         if (AVERAGE_COLUMN.matcher(column).matches() || column.contains("平均")) {
             return number.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros();
@@ -275,11 +276,15 @@ final class AssistantChartResults {
             BigDecimal number = number(n);
             if ("hour".equals(column) && number != null && number.scale() <= 0 && number.signum() >= 0 && number.compareTo(BigDecimal.valueOf(24)) < 0)
                 return String.format(Locale.ROOT, "%02d:00", number.intValueExact());
-            return number == null ? "—" : number.scale() > 16 || number.scale() < -16
-                    ? number.toEngineeringString() : number.toPlainString();
+            return numberText(number);
         }
         String text = cell.toString();
         return clean(display.apply(CATEGORY_LABELS.getOrDefault(column, Map.of()).getOrDefault(text, text)), 36);
+    }
+
+    private static String numberText(BigDecimal number) {
+        if (number == null) return "—";
+        return number.scale() > 16 || number.scale() < -16 ? number.toEngineeringString() : number.toPlainString();
     }
 
     private static boolean safeColumn(String tool, String column, String curveMetric, Set<String> nonMonetaryMetrics) {

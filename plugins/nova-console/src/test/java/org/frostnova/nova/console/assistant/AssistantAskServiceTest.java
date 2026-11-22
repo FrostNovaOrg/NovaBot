@@ -630,22 +630,63 @@ class AssistantAskServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"三百块", "两千块", "300 块"})
-    @DisplayName("金额不可见的聊天里，单写金额单位块会从回答、模板图和手绘漏出")
-    void hidesBareBlockAmountsInAnswersAndChartLabels(String amount) {
+    @ValueSource(strings = {"三百块", "两千块", "三百块起售", "三百塊", "兩千塊", "300 块", "３００　块", "三百多块起售"})
+    @DisplayName("金额不可见的聊天里，回答会漏出三百块起售或繁体金额")
+    void hidesBlockAmountsInAnswers(String amount) {
+        seedBlockChartResults();
+        replies.add(JSONObject.of("content", "一共 " + amount + "。"));
+        var result = askWithHiddenAmounts();
+        assertTrue(result.getString("answer").contains("不显示金额"), result::toJSONString);
+        assertFalse(result.getString("answerForHistory").contains(amount), result::toJSONString);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"三百块", "三百块起售", "三百塊", "300 块", "３００　块", "三百多块起售"})
+    @DisplayName("金额不可见时，回答即使没有金额，模板图的标题和轴标签也会漏出金额")
+    void hidesBlockAmountsInTemplateTitlesAndLabels(String amount) {
+        seedBlockChartResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        var chart = blockTemplate(amount);
+        replies.add(call("draw_chart", chart));
+        chart.put("title", "场次数据");
+        chart.put("xLabel", amount);
+        replies.add(call("draw_chart", chart));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+        assertHiddenChartText(askWithHiddenAmounts());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"三百块", "三百块起售", "三百塊", "300 块", "３００　块", "三百多块起售"})
+    @DisplayName("金额不可见时，回答即使没有金额，手绘的标题和标注也会漏出金额")
+    void hidesBlockAmountsInSketchTitlesAndLabels(String amount) {
+        seedBlockChartResults();
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>" + amount + "</text>"))));
+        var sketch = sketchArguments(sketchSvg("<text x='42' y='80'>示意</text>"));
+        sketch.put("title", amount);
+        replies.add(call("draw_sketch", sketch));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+        assertHiddenChartText(askWithHiddenAmounts());
+    }
+
+    private void seedBlockChartResults() {
         when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
                 JSONArray.of(JSONObject.of("startTime", 1794000000000L, "messages", 300, "peakOnline", 3))));
         replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
-        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
-                "yColumns", List.of("messages"), "title", amount)));
-        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>" + amount + "</text>"))));
-        replies.add(JSONObject.of("content", "一共 " + amount + "。"));
+    }
 
-        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "这场表现怎样"), new AssistantQueryContext(false));
+    private static JSONObject blockTemplate(String title) {
+        return JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime", "yColumns", List.of("messages"), "title", title);
+    }
+
+    private JSONObject askWithHiddenAmounts() {
+        return service.ask("bilibili", 1L, "member", JSONObject.of("question", "这场表现怎样"), new AssistantQueryContext(false));
+    }
+
+    private void assertHiddenChartText(JSONObject result) {
         var toolReplies = toolDataAtLastRequest();
         assertAll(
-                () -> assertTrue(result.getString("answer").contains("不显示金额"), result::toJSONString),
-                () -> assertFalse(result.getString("answerForHistory").contains(amount), result::toJSONString),
+                () -> assertFalse(result.containsKey("images"), result::toJSONString),
                 () -> assertTrue(Objects.toString(toolReplies.get(1).getString("reason"), "").contains("不能包含金额"), toolReplies::toString),
                 () -> assertTrue(Objects.toString(toolReplies.get(2).getString("reason"), "").contains("不能包含金额"), toolReplies::toString),
                 () -> verifyNoInteractions(chartRenderer));
@@ -654,9 +695,29 @@ class AssistantAskServiceTest {
     @Test
     @DisplayName("金额不可见的聊天里，灯牌数量不能被当成金额挡掉")
     void keepsBlockAsAClassifierForCounts() {
+        seedBlockChartResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        var chart = blockTemplate("3 块灯牌");
+        chart.put("xLabel", "3 块灯牌");
+        replies.add(call("draw_chart", chart));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>3 块灯牌</text>"))));
         replies.add(JSONObject.of("content", "送了 3 块灯牌。"));
-        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "有多少灯牌"), new AssistantQueryContext(false));
+        var result = askWithHiddenAmounts();
         assertTrue(result.getString("answer").contains("3 块灯牌"), result::toJSONString);
+        assertEquals(List.of("template-png", "sketch-png"), result.get("images"));
+    }
+
+    @Test
+    @DisplayName("金额可见时，回答和模板图仍能写三百块")
+    void keepsBlockAmountsInVisibleAnswersAndTemplates() {
+        seedBlockChartResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        replies.add(call("draw_chart", blockTemplate("三百块")));
+        replies.add(JSONObject.of("content", "一共三百块。"));
+        var result = ask();
+        assertTrue(result.getString("answer").contains("三百块"), result::toJSONString);
+        assertEquals(List.of("template-png"), result.get("images"));
     }
 
     @Test
