@@ -33,6 +33,8 @@ import java.util.regex.Pattern;
 @Slf4j
 public class AssistantAskService {
     static final int QUESTION_TIMEOUT_SECONDS = 55;
+    static final int HISTORY_LIMIT = 10;
+    private static final int HISTORY_ANSWER_LIMIT = 1000;
     static final String SYSTEM = """
             你是 NovaBot 的智能助手，在 QQ 和控制台只读回答一位 B 站主播的直播数据问题，不能改设置或执行命令。
             订阅或取消推送、开关功能、改设置、问用法或超出直播数据范围时，指引用户去操作。
@@ -219,7 +221,10 @@ public class AssistantAskService {
         var history = new JSONArray();
         if (request.get("history") instanceof List<?> entries) for (Object item : entries) {
             var entry = (Map<?, ?>) item;
-            history.add(JSONObject.of("question", entry.get("question"), "answerForHistory", entry.get("answerForHistory")));
+            String previousAnswer = (String) entry.get("answerForHistory");
+            if (previousAnswer.codePointCount(0, previousAnswer.length()) > HISTORY_ANSWER_LIMIT)
+                previousAnswer = previousAnswer.substring(0, previousAnswer.offsetByCodePoints(0, HISTORY_ANSWER_LIMIT));
+            history.add(JSONObject.of("question", entry.get("question"), "answerForHistory", previousAnswer));
         }
         var userMessage = JSONObject.of("question", request.getString("question"), "history", history);
         if (!previousResults.isEmpty()) userMessage.put("previousResults", previousResults.stream()
@@ -253,12 +258,19 @@ public class AssistantAskService {
             }
             int calls = 0;
             int sqlCalls = 0;
-            long tokens = 0;
+            BigDecimal uncachedPrice = properties.getPriceInputYuanPerMillion();
+            boolean canDiscount = uncachedPrice != null && uncachedPrice.signum() > 0;
+            BigDecimal uncachedWeight = canDiscount ? uncachedPrice : BigDecimal.ONE;
+            BigDecimal cachedWeight = canDiscount ? properties.getPriceCachedInputYuanPerMillion() : BigDecimal.ONE;
+            // 上限和用量都乘以未命中单价，比较时不用除法或取整。
+            BigDecimal remainingInput = uncachedWeight.multiply(BigDecimal.valueOf(properties.getQuestionInputLimit()));
             while (!budget.remaining(QUESTION_TIMEOUT_SECONDS).isZero()) {
-                boolean finish = calls >= properties.getMaxToolCalls() || tokens >= properties.getQuestionInputLimit()
+                boolean finish = calls >= properties.getMaxToolCalls() || remainingInput.signum() <= 0
                         || budget.remaining(35).isZero();
                 AssistantClient.Response response = complete(question, messages, privacy, context, finish, budget);
-                tokens = Math.addExact(tokens, Math.addExact(response.usage().cachedInputTokens(), response.usage().uncachedInputTokens()));
+                var usage = response.usage();
+                remainingInput = remainingInput.subtract(uncachedWeight.multiply(BigDecimal.valueOf(usage.uncachedInputTokens())))
+                        .subtract(cachedWeight.multiply(BigDecimal.valueOf(usage.cachedInputTokens())));
                 if (finish || response.toolCalls().isEmpty()) {
                     if (response.content() != null && !response.content().isBlank()) {
                         answer = response.content();
@@ -289,7 +301,7 @@ public class AssistantAskService {
                     JSONObject data;
                     try {
                         if (!drawing && !sqlLimit) args = AssistantTools.arguments(name, JSON.parseObject(function.getString("arguments")));
-                        if (calls >= properties.getMaxToolCalls() || tokens >= properties.getQuestionInputLimit() || budget.remaining(35).isZero()) {
+                        if (calls >= properties.getMaxToolCalls() || remainingInput.signum() <= 0 || budget.remaining(35).isZero()) {
                             data = JSONObject.of("source", "查数限制", "reason", "已到查数上限，请用已有数据直接作答");
                             if (drawing) chartFailure = data.getString("reason");
                         } else {
@@ -670,7 +682,8 @@ public class AssistantAskService {
                 || question.codePointCount(0, question.length()) > 300) throw new AssistantException("问题请填写 1–300 字");
         Object history = body.get("history");
         if (history == null) return;
-        if (!(history instanceof List<?> list) || list.size() > 3) throw new AssistantException("追问历史最多 3 轮");
+        if (!(history instanceof List<?> list) || list.size() > HISTORY_LIMIT)
+            throw new AssistantException("追问历史最多 " + HISTORY_LIMIT + " 轮");
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> entry) || !(entry.get("question") instanceof String previous)
                     || previous.isBlank() || previous.codePointCount(0, previous.length()) > 300

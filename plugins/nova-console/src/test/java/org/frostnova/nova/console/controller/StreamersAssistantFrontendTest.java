@@ -42,8 +42,8 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
-    @DisplayName("追问只带最近三条成功回答，关闭与切范围不丢对话")
-    void historyContainsOnlyThreeSuccessfulTurns() throws Exception {
+    @DisplayName("追问只带最近十条成功回答，关闭与切范围不丢对话")
+    void historyContainsOnlyTenSuccessfulTurns() throws Exception {
         run("history");
     }
 

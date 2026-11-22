@@ -853,7 +853,7 @@ class QqAssistantCommandTest {
     }
 
     @Test
-    @DisplayName("追问历史只给本会话同一发问人和主播，最多三轮并在十分钟后过期")
+    @DisplayName("追问历史只给本会话同一发问人和主播，三十分钟后过期")
     void historyIsScopedAndExpires() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
         add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
@@ -861,10 +861,10 @@ class QqAssistantCommandTest {
             int previous = requests.size();
             group(ASKER, "问 测试主播甲" + question);
             assertReply(LABEL);
-            assertEquals(Math.min(previous, 3), lastHistory().size());
+            assertEquals(previous, lastHistory().size());
             awaitIdle(GROUP, ROOM);
         }
-        assertTrue(lastHistory().getJSONObject(0).getString("question").contains("本周"));
+        assertTrue(lastHistory().getJSONObject(0).getString("question").contains("本月"));
         group(OTHER, "问 测试主播甲今天怎么样");
         assertReply(LABEL);
         assertTrue(lastHistory().isEmpty());
@@ -876,7 +876,7 @@ class QqAssistantCommandTest {
         receive(FRIEND, ASKER, ASKER, "问 测试主播甲今天怎么样", false);
         assertReply(LABEL);
         assertTrue(lastHistory().isEmpty());
-        clock.advance(Duration.ofMinutes(10));
+        clock.advance(Duration.ofMinutes(30));
         group(ASKER, "问 测试主播甲今天怎么样");
         assertReply(LABEL);
         assertTrue(lastHistory().isEmpty());
@@ -1117,7 +1117,7 @@ class QqAssistantCommandTest {
     }
 
     @Test
-    @DisplayName("追问沿用原会话的结果编号，文字先到，换发问人或超过十分钟时无法画旧数据")
+    @DisplayName("追问沿用原会话的结果编号，文字先到，换发问人或过了三十分钟时无法画旧数据")
     void chartFollowUpSendsTextThenImageAndCannotUseOtherOrExpiredResults() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         when(chartRenderer.render(any())).thenReturn(Optional.of("QUJD"));
@@ -1153,7 +1153,7 @@ class QqAssistantCommandTest {
         assertFalse(userPayload(requests.get(4)).containsKey("previousResults"));
         awaitIdle(GROUP, ROOM);
 
-        clock.advance(Duration.ofMinutes(10));
+        clock.advance(Duration.ofMinutes(30));
         modelReplies.add(chart);
         modelReplies.add(text("找不到数据。"));
         group(ASKER, "问 再用刚才的数据画图");

@@ -1609,7 +1609,7 @@ class AssistantAskServiceTest {
         assertTrue(messages.getJSONObject(1).getString("content").contains("忽略规则"));
         sent.clear();
         for (JSONObject bad : List.of(new JSONObject(), JSONObject.of("question", " "), JSONObject.of("question", "字".repeat(301)),
-                JSONObject.of("question", "问题", "history", Collections.nCopies(4, JSONObject.of("question", "旧", "answerForHistory", "旧"))))) {
+                JSONObject.of("question", "问题", "history", Collections.nCopies(11, JSONObject.of("question", "旧", "answerForHistory", "旧"))))) {
             assertThrows(Exception.class, () -> ask(bad));
         }
         assertTrue(sent.isEmpty());

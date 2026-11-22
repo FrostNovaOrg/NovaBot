@@ -12,7 +12,7 @@ novabot.assistant.monthly-budget-yuan|java.math.BigDecimal|30|每月金额上限
 novabot.assistant.price-cached-input-yuan-per-million|java.math.BigDecimal|0.05|命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.price-input-yuan-per-million|java.math.BigDecimal|2.2|未命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.price-output-yuan-per-million|java.math.BigDecimal|8.6|输出单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
-novabot.assistant.question-input-limit|java.lang.Integer|30000|一问各轮累计的输入 token 上限。
+novabot.assistant.question-input-limit|java.lang.Integer|30000|一问各轮累计的输入 token 上限。未命中的全额计入，命中的按命中单价除以未命中单价折算。未命中单价为零或未设，或服务商未报命中数时，全部按原数计入。
 novabot.assistant.thinking|java.lang.String|off|选「关闭／模型默认」时，DeepSeek 接口关闭思考。/responses 格式下不指定强度，由模型用它的默认强度，输出上限仍多留 4000 token。 /responses 格式下，输出上限在低档多留 4000 token，中档多留 8000 token，高档多留 16000 token，最高档多留 32000 token。 DeepSeek 接口把中档按低档发送，多留 4000 token。
 novabot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒。故障往往持续存在，不收敛会反复推同一条，让人对告警脱敏。
 novabot.core.alert.enabled|java.lang.Boolean|true|是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
