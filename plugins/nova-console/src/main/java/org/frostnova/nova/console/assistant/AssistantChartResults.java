@@ -27,6 +27,8 @@ final class AssistantChartResults {
             "fans.change", "fans.fromAt", "fans.toAt", "fans.fromValue", "fans.toValue");
     private static final Pattern MONEY_LABEL = Pattern.compile("金额|流水|单价|营收|收入|收益|盈亏|支出|花费|实扣|消耗|礼物价值"
             + "|[¥￥$€£]|人民币|(?i:\\b(?:CNY|RMB|USD)\\b)");
+    private static final Pattern SQL_MONEY_COLUMN = Pattern.compile("amount|revenue|price|income|money|yuan|earnings|cost",
+            Pattern.CASE_INSENSITIVE);
     private static final Set<String> TIMESTAMPS = Set.of("at", "startTime", "endTime", "start", "end", "from", "to",
             "session", "minute", "firstRecordedAt", "fans.fromAt", "fans.toAt", "start_at", "end_at", "session_start");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(StatisticsDay.ZONE);
@@ -151,6 +153,48 @@ final class AssistantChartResults {
         if (target != null) target = new ReferenceLine(target.value(), label(target.label(), MAX_LABEL, context, display));
         return new Chart(request.type(), title, xLabel, yLabel, series, List.copyOf(rows), target,
                 result.source() == null ? "" : clean(result.source(), 48), available);
+    }
+
+    Sketch selectSketch(AssistantSketchRequest request, AssistantQueryContext context, AssistantPrivacy privacy) {
+        Result result = byNumber.get(request.resultNumber());
+        if (result == null) throw new Invalid("没有这个结果编号，结果可能已过期，请先查数");
+        if (result.table().rows().isEmpty()) throw new Invalid("这个查数结果没有可绘制的行");
+        Collection<String> columns = result.safeColumns();
+        if (context.amountVisible() && AssistantSqlRequest.NAME.equals(result.tool())) {
+            columns = result.table().columns().stream()
+                    .filter(column -> !MONEY_LABEL.matcher(column).find() && !SQL_MONEY_COLUMN.matcher(column).find()).toList();
+        }
+        if ("revenue".equals(result.tool()) || columns.isEmpty())
+            throw new Invalid("手绘须引用可确认不涉及金额的数据，请用模板绘制这份结果");
+
+        var numbers = new AssistantSketchNumbers();
+        for (var row : result.table().rows()) {
+            for (String column : columns) {
+                Object cell = row.get(column);
+                BigDecimal value = number(cell);
+                if (value != null) {
+                    numbers.include(value);
+                    if (TIMESTAMPS.contains(column) || "hour".equals(column))
+                        numbers.includeText(cellText(column, cell, privacy::mask));
+                } else if (cell instanceof String text) {
+                    numbers.includeText(privacy.mask(text));
+                }
+            }
+        }
+        UnaryOperator<String> checkedLabel = text -> {
+            String masked = privacy.mask(text);
+            String shown = privacy.displayChart(masked);
+            if (MONEY_LABEL.matcher(shown).find() || AssistantAskService.containsAmount(shown)) {
+                if (!context.amountVisible()) throw new Invalid(AssistantAggregateRequest.HIDDEN_AMOUNT + "，图表文字不能包含金额");
+                throw new Invalid("收入等金额数据须使用模板图");
+            }
+            numbers.verify(masked);
+            return shown;
+        };
+        String title = checkedLabel.apply(request.title());
+        if (title.codePointCount(0, title.length()) > MAX_TITLE) throw new Invalid("手绘标题展开后过长，请缩短标题");
+        title = clean(title, MAX_TITLE);
+        return new Sketch(title, AssistantSketchSvg.prepare(request.svg(), checkedLabel));
     }
 
     private static String columnLabel(Result result, String column) {

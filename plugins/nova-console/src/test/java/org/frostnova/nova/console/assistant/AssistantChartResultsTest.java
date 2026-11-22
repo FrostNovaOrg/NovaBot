@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.List;
@@ -61,6 +62,20 @@ class AssistantChartResultsTest {
         args.put("resultNumber", 2);
         var chart = results.select(AssistantChartRequest.parse(args), restriction, privacy);
         assertEquals(59, chart.rows().get(0).values().get(0).number().intValueExact());
+    }
+
+    @Test
+    @DisplayName("可见聊天能用只读查询算出的礼物数量占比出示意图，金额列和收紧权限后的结果不能用于手绘")
+    void sketchesCanUseSqlSharesWithoutMakingMoneyColumnsAvailable() {
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), JSONObject.of("source", "只读查询",
+                "columns", List.of("gift_share", "amount_yuan"),
+                "rows", JSONArray.of(JSONArray.of(new BigDecimal("0.5037"), 182.32))), AssistantQueryContext.CONSOLE);
+        var share = new AssistantSketchRequest(1, "礼物数量占比", "<svg><text>50.4%</text></svg>");
+        var amount = new AssistantSketchRequest(1, "礼物数量占比", "<svg><text>182.32</text></svg>");
+        assertTrue(results.selectSketch(share, AssistantQueryContext.CONSOLE, privacy()).svg().contains("50.4%"));
+        assertRejected("182.32", () -> results.selectSketch(amount, AssistantQueryContext.CONSOLE, privacy()));
+        assertRejected("模板", () -> results.selectSketch(share, new AssistantQueryContext(false), privacy()));
     }
 
     @Test

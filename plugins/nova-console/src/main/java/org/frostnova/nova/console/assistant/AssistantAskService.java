@@ -42,6 +42,7 @@ public class AssistantAskService {
             7. 用简体中文，口径之后先给结论，再给依据。正文和所有引导合计不超过 300 字，QQ 只有 300 字，请省着用。
             8. 问到数量、合计、排行、按天或时段的分布时，先用 aggregate 通用汇总工具。
             9. 问到趋势、每天、每小时、对比、排行或明确要求出图时，用 draw_chart 画图。用查数返回的 resultNumber 和 chartColumns 原文选择数据；若有 previousResults，也可引用里面的结果编号。趋势用折线，对比用柱状，排行可用表格。
+               只有折线、柱状、表格都无法表达的示意才用 draw_sketch。手绘只画十几个点以内，标题和标注的数字必须来自同一份查数结果。任务进度的具体数字、收入等要对数的图必须用模板。每问两种图合计最多两张。
             10. 图由本机直接填入数据。不要在参数里提供数据点，也不要在回答里重抄一长串数字。图已生成就给简短结论，工具拒绝时按原因调整或给文字回答。
             11. 问得含糊时按最常见的口径先查数作答，第一行写「按：…」，例如「按：本月、礼物、个数合计」。只有两种理解会让答案差很多时才反问一次，先写要确认什么，再在末尾给两个编号选项，例如「收入是否包含上舰？」后接「1. 含上舰的收入是多少？」和「2. 不含上舰的收入是多少？」。
             12. 有合适的下一问时，从刚查到的数据出发给最多两条，例如周六在线更高时可问「周六那场的弹幕有多少？」。没有合适的就省略，别泛问「还想了解什么」。
@@ -178,6 +179,7 @@ public class AssistantAskService {
         var chartResults = new AssistantChartResults(previousResults);
         var images = new ArrayList<String>();
         String chartFailure = null;
+        boolean usedSketch = false;
         var toolNames = new ArrayList<String>();
         var messages = new ArrayList<JSONObject>();
         var system = JSONObject.of("role", "system", "content", SYSTEM
@@ -251,7 +253,9 @@ public class AssistantAskService {
                 for (JSONObject call : response.toolCalls().subList(0, includedCalls)) {
                     JSONObject function = call.getJSONObject("function");
                     String name = function == null ? "unknown" : function.getString("name");
-                    boolean drawing = AssistantChartRequest.NAME.equals(name);
+                    boolean sketch = AssistantSketchRequest.NAME.equals(name);
+                    usedSketch |= sketch;
+                    boolean drawing = sketch || AssistantChartRequest.NAME.equals(name);
                     boolean sql = AssistantSqlRequest.NAME.equals(name);
                     boolean sqlLimit = sql && ++sqlCalls > AssistantSqlRequest.CALL_LIMIT;
                     JSONObject args = new JSONObject();
@@ -268,10 +272,20 @@ public class AssistantAskService {
                                     data = chartRejected("每问最多两张图");
                                 } else {
                                     var raw = JSON.parseObject(function.getString("arguments"));
-                                    var requestChart = AssistantChartRequest.parse(raw);
-                                    args = (JSONObject) privacy.maskValues(raw);
-                                    var chart = chartResults.select(requestChart, context, privacy);
-                                    String image = Optional.ofNullable(chartRenderer.get()).flatMap(painter -> painter.render(chart))
+                                    Optional<String> rendered;
+                                    if (sketch) {
+                                        var requestSketch = AssistantSketchRequest.parse(raw);
+                                        args = (JSONObject) privacy.maskValues(JSONObject.of(
+                                                "resultNumber", requestSketch.resultNumber(), "title", requestSketch.title()));
+                                        var chart = chartResults.selectSketch(requestSketch, context, privacy);
+                                        rendered = Optional.ofNullable(chartRenderer.get()).flatMap(painter -> painter.renderSketch(chart));
+                                    } else {
+                                        var requestChart = AssistantChartRequest.parse(raw);
+                                        args = (JSONObject) privacy.maskValues(raw);
+                                        var chart = chartResults.select(requestChart, context, privacy);
+                                        rendered = Optional.ofNullable(chartRenderer.get()).flatMap(painter -> painter.render(chart));
+                                    }
+                                    String image = rendered
                                             .filter(value -> !value.isBlank()).orElseThrow(() -> new AssistantChartRequest.Invalid(NO_CHART));
                                     images.add(image);
                                     chartFailure = null;
@@ -291,7 +305,7 @@ public class AssistantAskService {
                                 else chartResults.add(name, args, data, () -> queries.nonMonetaryMetrics(platform));
                             }
                         }
-                    } catch (AssistantChartRequest.Invalid error) {
+                    } catch (AssistantChartRequest.Invalid | AssistantChartRenderer.SketchRejected error) {
                         chartFailure = error.getMessage();
                         data = chartRejected(chartFailure);
                     } catch (AssistantAggregateRequest.Invalid error) {
@@ -399,7 +413,8 @@ public class AssistantAskService {
                 String note = "图没出来（" + chartFailure + "）。";
                 displayed += "\n" + note;
                 result.put("chartFailure", note);
-            } else if (!images.isEmpty()) {
+            }
+            if (!images.isEmpty() && (chartFailure == null || usedSketch)) {
                 result.put("images", images);
             }
             if (memoUnreadable) {

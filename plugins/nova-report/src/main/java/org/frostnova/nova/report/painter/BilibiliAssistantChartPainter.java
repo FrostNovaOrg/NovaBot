@@ -26,8 +26,7 @@ import java.util.stream.IntStream;
 /** 智能助手的定幅数据图，沿用数据查询图的报告画布与配色。 */
 @NovaComponent
 public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
-    private static final int WIDTH = 760;
-    private static final int PLOT_HEIGHT = 560;
+    private static final int WIDTH = PLOT_WIDTH;
     private static final int TABLE_HEIGHT = 816;
     private static final int MARGIN = 35;
     private static final int CONTENT_WIDTH = WIDTH - MARGIN * 2;
@@ -72,6 +71,11 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     }
 
     Font chineseFont() { return chinese; }
+
+    @Override
+    public Optional<String> renderSketch(Sketch sketch) {
+        return AssistantSketchPainter.render(sketch, fonts);
+    }
 
     private void drawPlot(CommonPainter painter, Chart chart) {
         var palette = painter.palette();
