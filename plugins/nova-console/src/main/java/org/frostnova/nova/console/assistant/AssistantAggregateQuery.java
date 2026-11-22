@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -46,7 +47,9 @@ final class AssistantAggregateQuery {
     static final String MINUTE_RULE = "在线和看过人数每 60 秒一格取最大，按格起点归组。平均和极值各自跳过缺采分钟，全缺时返回 null。"
             + "缺采数按筛选读数前的直播分钟计算";
     static final String SESSION_COUNT_RULE = "按 hour 或 weekday 分组时，sessionCount 是有数据的不同直播场数。"
-            + "同时汇总在线和看过人数时，用 onlineSessionCount、watchedSessionCount 分别计各自有读数的场数";
+            + "同时汇总在线和看过人数时，用 onlineSessionCount、watchedSessionCount 分别计各自有读数的场数。"
+            + "常播钟点或星期分组的场数至少达到同类最多场数的一半，向上取整。"
+            + "durationSeconds、effectiveSeconds 的单位是秒。合计和平均另给 durationHours、effectiveHours（小时，保留一位小数），回答时优先用小时列";
     static final String KNOWN_AMOUNT_RULE = "knownAmountSubtotal 仅合计已知金额，完整合计仍未知。"
             + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按发生统计日列各类缺失条数";
     static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
@@ -54,6 +57,8 @@ final class AssistantAggregateQuery {
     static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
     private static final String DETAIL = "detail.json";
     private static final int TABLE_ROWS = 60;
+    private static final int DAY_ROWS = 92;
+    private static final BigDecimal SECONDS_PER_HOUR = BigDecimal.valueOf(3600);
     private static final int MAX_EVENT_CHARS = 16_384;
     private static final int MAX_GROUPS = 50_000;
     private static final int MAX_GROUP_TEXT_CHARS = 2_000_000;
@@ -893,11 +898,14 @@ final class AssistantAggregateQuery {
     }
 
     private JSONObject table(boolean liveUnarchived, Long liveStart, AssistantQueryContext context) {
-        int limit = request.limit() == null ? TABLE_ROWS - 1 : request.limit();
+        int defaultLimit = request.groups().equals(List.of(Group.DAY)) ? DAY_ROWS : TABLE_ROWS - 1;
+        int limit = request.limit() == null ? defaultLimit : request.limit();
         var columns = new JSONArray();
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));
         columns.addAll(sessionCountColumns);
+        request.measures().stream().filter(AssistantAggregateQuery::hasDurationHours)
+                .forEach(m -> columns.add(m.key().replace("Seconds", "Hours")));
         boolean allMissing = !series && missingDetailsCount > 0 && !hasAvailableDetails;
         var totals = new JSONArray();
         if (!request.groups().isEmpty()) totals.add("合计");
@@ -971,8 +979,21 @@ final class AssistantAggregateQuery {
     }
 
     private void appendMeasures(JSONArray row, Bucket bucket, boolean unknown) {
-        for (Measure measure : request.measures()) row.add(unknown ? null : value(bucket, measure));
+        int measureOffset = row.size();
+        var measures = request.measures();
+        for (Measure measure : measures) row.add(unknown ? null : value(bucket, measure));
         for (LongSet sessions : bucket.sessions) row.add(unknown ? null : sessions.size());
+        for (int i = 0; i < measures.size(); i++) {
+            if (hasDurationHours(measures.get(i))) {
+                BigDecimal seconds = row.getBigDecimal(measureOffset + i);
+                row.add(seconds == null ? null : seconds.divide(SECONDS_PER_HOUR, 1, RoundingMode.HALF_UP));
+            }
+        }
+    }
+
+    private static boolean hasDurationHours(Measure measure) {
+        return (measure.operation() == Operation.SUM || measure.operation() == Operation.AVG)
+                && (measure.field() == Field.DURATION || measure.field() == Field.EFFECTIVE);
     }
 
     private Object value(Bucket bucket, Measure measure) {

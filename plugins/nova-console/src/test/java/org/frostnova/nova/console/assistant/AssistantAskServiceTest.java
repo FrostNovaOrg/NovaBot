@@ -429,6 +429,29 @@ class AssistantAskServiceTest {
         verifyNoInteractions(chartRenderer);
     }
 
+    // 抓住隐藏金额的用户按天画直播时长时，小时列被误当成金额列拒绝。
+    @Test void hiddenAmountsStillAllowDailyDurationHoursChart() {
+        var hidden = new AssistantQueryContext(false);
+        when(queries.aggregate(eq("bilibili"), eq(1L), any(), eq(hidden), any(), any()))
+                .thenReturn(JSONObject.of("source", "场次归档",
+                        "columns", List.of("day", "sum:durationSeconds", "sum:durationHours"),
+                        "rows", JSONArray.of(JSONArray.of("2026-11-01", 9000, new BigDecimal("2.5")),
+                                JSONArray.of("2026-11-02", 12600, new BigDecimal("3.5")))));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("duration-png"));
+        replies.add(call("aggregate", JSONObject.of("kinds", List.of("session"),
+                "from", "2026-11-01", "to", "2026-11-02", "groupBy", List.of("day"),
+                "metrics", List.of("sum:durationSeconds"))));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "line", "xColumn", "day",
+                "yColumns", List.of("sum:durationHours"), "title", "每日开播时长", "yLabel", "小时")));
+        replies.add(JSONObject.of("content", "开播时长有所增加。"));
+
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "按天画开播时长（小时）"), hidden);
+
+        assertEquals(List.of("duration-png"), result.getJSONArray("images"), result::toJSONString);
+        verify(chartRenderer).render(argThat(chart -> chart.rows().stream()
+                .map(row -> row.values().get(0).number()).toList().equals(List.of(new BigDecimal("2.5"), new BigDecimal("3.5")))));
+    }
+
     // 抓住报告模块画不出图时丢掉文字回答、返回坏图，或漏写图没出来的说明。
     @Test void renderingFailureReturnsTextWithNotice() {
         when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
@@ -1319,10 +1342,53 @@ class AssistantAskServiceTest {
         replies.add(JSONObject.of("content", "流水9999，前3名，贡献32.1%"));
         replies.add(JSONObject.of("content", "流水8888，前3名，贡献32.1%"));
         var result = ask();
-        assertEquals(List.of("8888"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        assertTrue(result.getString("answer").contains("9999"));
+        assertEquals(List.of("9999"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
         assertEquals(3, sent.size());
         assertTrue(sent.get(2).toJSONString().contains("9999"));
         assertEquals("none", sent.get(2).getString("tool_choice"));
+    }
+
+    // 抓住重写时丢掉已核对的合计或占比，并核对两者保留且数字改对时采用重写稿。
+    @ParameterizedTest @ValueSource(strings = {"本次未重新查数，无法重报数字。", "已知部分合计 1000 元（场次归档）。"})
+    void rewriteMustPreserveVerifiedNumbers(String incompleteRewrite) {
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        String original = "已知部分合计 1000 元，首位贡献 32.1%（场次归档）。次位贡献 99.9%，缺额未知。";
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", original));
+        replies.add(JSONObject.of("content", incompleteRewrite));
+        var kept = ask(JSONObject.of("question", "流水合计和缺额是什么？"));
+        assertEquals(List.of("99.9%"), kept.getJSONArray("unverifiedNumbers").toJavaList(String.class));
+        assertTrue(kept.getString("answer").contains("1000 元"));
+        assertTrue(kept.getString("answer").contains("32.1%"));
+
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", original));
+        replies.add(JSONObject.of("content", "合计 1,000 元，首位贡献 32.1％，次位贡献 21.0%（场次归档）。缺额未知。"));
+        var corrected = ask(JSONObject.of("question", "流水合计和缺额是什么？"));
+        assertTrue(corrected.getJSONArray("unverifiedNumbers").isEmpty());
+        assertTrue(corrected.getString("answer").contains("1,000 元"));
+        assertTrue(corrected.getString("answer").contains("32.1％"));
+        assertTrue(corrected.getString("answer").contains("21.0%"));
+        assertTrue(corrected.getString("answer").contains("缺额未知"));
+    }
+
+    // 抓住数字改对后，只因把「13 点」写成「13 点钟」就退回原答案。
+    @Test void rewriteKeepsVerifiedNumbersWrittenAsClockTimes() {
+        when(queries.aggregate(eq("bilibili"), eq(1L), any(), any(), any(), any()))
+                .thenReturn(JSONObject.of("source", "分时在线归档", "columns", List.of("hour", "avg:online"),
+                        "rows", JSONArray.of(JSONArray.of(13, 120), JSONArray.of(14, 105))));
+        replies.add(call("aggregate", JSONObject.of("kinds", List.of("minute"),
+                "from", "2026-11-01", "to", "2026-11-22", "groupBy", List.of("hour"), "metrics", List.of("avg:online"))));
+        replies.add(JSONObject.of("content", "13 点平均在线 120 人，14 点平均在线 9876 人。"));
+        replies.add(JSONObject.of("content", "13 点钟平均在线 120 人，14 点平均在线 105 人。"));
+
+        var result = ask(JSONObject.of("question", "哪个钟点的平均在线人数最多？"));
+
+        assertTrue(result.getString("answer").contains("13 点钟平均在线 120 人"), result::toJSONString);
+        assertTrue(result.getString("answer").contains("105 人"), result::toJSONString);
+        assertTrue(result.getJSONArray("unverifiedNumbers").isEmpty(), result::toJSONString);
+        assertEquals(3, sent.size());
     }
 
     @Test void rewriteNetworkFailurePreservesOriginalAnswerAndCost() {
@@ -1601,6 +1667,42 @@ class AssistantAskServiceTest {
         var numbers = new AssistantNumbers();
         numbers.include(JSONObject.of("value", 32.145, "other", 8888));
         assertEquals(List.of("32.2%", "9999"), numbers.unverified("32.1% 32.2% 9999"));
+    }
+
+    // 抓住把金额或热度里的数字当作时刻跳过，以及明确的日期和时刻仍被标为待核对。
+    @ParameterizedTest
+    @CsvSource({
+            "流水为 18 点 5 元。, 18",
+            "互动热度提高了 18 点。, 18",
+            "21 点人最多。, 21",
+            "18：24 至 21：50。,",
+            "昨晚 18 点 24 开播，21 点 50 下播。,",
+            "11 月已下播的场次。,",
+            "11 月 1 日至 11 月 22 日（11-22、2026-11-22、11 月 22 号），周六 18:24，星期六 18 点 24 分。,",
+            "晚上 9 点，下午 3 点，凌晨 1 点，昨晚 18 点，晚上 22 点钟。,",
+            "8 点到 20 点，18 点至 21 点，23 点钟。,",
+            "11 月已下播的场次流水 9876 元。, 9876"
+    })
+    void dateAndTimeNumbersAreIgnoredButUnsupportedAmountsAreReported(String answer, String flagged) {
+        replies.add(JSONObject.of("content", answer));
+        replies.add(JSONObject.of("content", answer));
+        var result = ask();
+        var unverified = result.getJSONArray("unverifiedNumbers").toJavaList(String.class);
+        assertEquals(flagged == null ? List.of() : List.of(flagged), unverified);
+        assertEquals(flagged == null ? 1 : 2, sent.size());
+        assertEquals(answer, result.getString("answer"));
+    }
+
+    // 抓住把明确的开播时刻误报为待核对数字。
+    @Test void morningStartTimeDoesNotRequireNumberVerification() {
+        replies.add(JSONObject.of("content", "早晨 11 点开播。"));
+        replies.add(JSONObject.of("content", "早晨 11 点开播。"));
+
+        var result = ask(JSONObject.of("question", "什么时候开播？"));
+
+        assertTrue(result.getJSONArray("unverifiedNumbers").isEmpty(), result::toJSONString);
+        assertTrue(result.getString("answer").contains("早晨 11 点开播"));
+        assertEquals(1, sent.size());
     }
 
     static java.util.stream.Stream<Arguments> numberCases() {
