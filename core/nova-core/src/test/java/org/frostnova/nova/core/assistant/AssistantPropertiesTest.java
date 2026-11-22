@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.assistant;
 
+import org.frostnova.nova.core.config.ui.ConfigurationMetadataService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -45,9 +46,12 @@ class AssistantPropertiesTest {
         assertEquals(ConfigEffect.Effect.RESTART, field.getAnnotation(ConfigEffect.class).value());
         assertArrayEquals(new String[]{"off", "low", "medium", "high", "max"}, field.getAnnotation(ConfigChoices.class).value());
         assertArrayEquals(new String[]{"关闭／模型默认", "低", "中", "高", "最高"}, field.getAnnotation(ConfigChoices.class).labels());
-        String summary = field.getAnnotation(ConfigSummary.class).value();
-        assertTrue(summary.contains("8000 token"), summary);
-        assertTrue(summary.contains("/responses"), summary);
+        assertTrue(field.getAnnotation(ConfigSummary.class).details());
+        String help = new ConfigurationMetadataService().getFields().stream()
+                .filter(setting -> "novabot.assistant.thinking".equals(setting.name()))
+                .findFirst().orElseThrow().description();
+        assertTrue(help.contains("8000 token"), help);
+        assertTrue(help.contains("/responses"), help);
     }
 
     @ParameterizedTest @ValueSource(strings = {"off", "low", "medium", "high", "max"})

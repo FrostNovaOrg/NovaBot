@@ -39,9 +39,13 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"chat", "responses"}, labels = {"/chat/completions", "/responses"})
     private String apiFormat = "chat";
-    /** 模型回答前的思考强度。低／中／高／最高在 /responses 格式下分别多留 4000／8000／16000／32000 token。DeepSeek 接口把中档按低档发送。默认选关闭／模型默认，此时 DeepSeek 接口关闭思考，/responses 使用模型默认强度并多留 4000 token。强度越高，通常耗时和花费越多，也更容易超时。 */
+    /**
+     * 选「关闭／模型默认」时，DeepSeek 接口关闭思考。/responses 格式下不指定强度，由模型用它的默认强度，输出上限仍多留 4000 token。
+     * /responses 格式下，输出上限在低档多留 4000 token，中档多留 8000 token，高档多留 16000 token，最高档多留 32000 token。
+     * DeepSeek 接口把中档按低档发送，多留 4000 token。
+     */
     @ConfigLabel("思考强度")
-    @ConfigSummary("选「关闭／模型默认」时，DeepSeek 接口下关闭思考；/responses 格式下不指定强度，由模型用它的默认强度。选「中」时，DeepSeek 接口按低档发送，多留 4000 token，/responses 多留 8000 token。")
+    @ConfigSummary("设置模型回答前的思考强度，默认「关闭／模型默认」。强度越高，通常耗时越长、花费越多，也更容易超时。")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"off", "low", "medium", "high", "max"}, labels = {"关闭／模型默认", "低", "中", "高", "最高"})
