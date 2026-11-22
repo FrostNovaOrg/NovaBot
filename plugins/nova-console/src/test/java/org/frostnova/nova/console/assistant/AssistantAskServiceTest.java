@@ -32,6 +32,8 @@ import java.time.*;
 import java.util.*;
 import java.util.function.IntPredicate;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.frostnova.nova.core.enums.PushTargetType.GROUP;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.anything;
@@ -330,6 +332,80 @@ class AssistantAskServiceTest {
         for (String fragment : List.of("第一行", "最多两条", "1. ", "2. ", "这个录不到。能答的相近问题：", "300 字")) {
             assertTrue(system.contains(fragment), fragment);
         }
+    }
+
+    // 控制台和 QQ 里露出 Markdown 符号。
+    // 直播标题里的 #话题 被吃掉井号。
+    @Test void answersAndHistoryUsePlainTextAndKeepNumberedFollowUps() throws Exception {
+        String draft = """
+                **流水**合计 1,000 元
+                ## 小结
+                - 第一条
+                * 第二条
+                + 第三条
+                | 日期 | 流水 |
+                | :--- | ---: |
+                | 周六 | `较高` |
+                | 周日 | __较低__ |
+                | 甲\\|乙 | 同一名称 |
+                [场次归档](https://example.test/archive)
+                #周年庆 是直播标题。
+                话题 #周年庆# 很热
+                下降 -12.5%，区间 10-24 至 11-22
+                -12.5% 是降幅
+                1. 正文编号保留
+                ## 小结 ##
+                这是本期小结。
+
+                1. **上周呢？**
+                2. `本月呢？`""";
+        String body = """
+                流水合计 1,000 元
+                小结
+                ・第一条
+                ・第二条
+                ・第三条
+                日期，流水
+                周六，较高
+                周日，较低
+                甲|乙，同一名称
+                场次归档
+                #周年庆 是直播标题。
+                话题 #周年庆# 很热
+                下降 -12.5%，区间 10-24 至 11-22
+                -12.5% 是降幅
+                1. 正文编号保留
+                小结
+                这是本期小结。""";
+        String history = body + "\n\n1. 上周呢？\n2. 本月呢？";
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(JSONObject.of("source", "场次归档",
+                "totalAmount", 1000, "changePercent", -12.5));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", draft));
+        var console = mvc().perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                        .requestAttr(ConfigUiAccess.ACCOUNT, member())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"question\":\"流水怎么样\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        var result = JSON.parseObject(console.getContentAsString(UTF_8));
+
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", draft));
+        var source = local.qqSource("QQ", "qq-test", GROUP, 123, 456);
+        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of());
+
+        assertAll(
+                () -> assertEquals(body, result.getString("answer"), "控制台正文"),
+                () -> assertEquals(history, result.getString("answerForHistory"), "控制台历史"),
+                () -> assertEquals(JSONArray.of(JSONObject.of("label", "上周呢？", "question", "上周呢？"),
+                        JSONObject.of("label", "本月呢？", "question", "本月呢？")), result.getJSONArray("followUps")),
+                () -> assertEquals(body, qq.response().getString("answer"), "QQ 正文"),
+                () -> assertEquals(history, qq.response().getString("answerForHistory"), "QQ 历史"),
+                () -> assertEquals(List.of("上周呢？", "本月呢？"), qq.followUps().stream()
+                        .map(AssistantAskService.FollowUp::question).toList()));
+        String system = modelSystem(0);
+        assertTrue(system.contains("纯文字"));
+        assertTrue(system.contains("Markdown"));
+        assertTrue(system.contains("・"));
     }
 
     private JSONObject call(String name, JSONObject args) {
@@ -1347,6 +1423,35 @@ class AssistantAskServiceTest {
         assertEquals(3, sent.size());
         assertTrue(sent.get(2).toJSONString().contains("9999"));
         assertEquals("none", sent.get(2).getString("tool_choice"));
+    }
+
+    // 回答里冒出「按你的要求」这类回应内部指令的话。
+    @ParameterizedTest @CsvSource({"chat/completions, messages, system", "responses, input, developer"})
+    void numberRewriteInstructionIsNotAUserMessage(String endpoint, String field, String role) {
+        if ("responses".equals(endpoint)) {
+            useResponses();
+            responsesReplies.add(responsesReply(responsesText("总流水9999")));
+            responsesReplies.add(responsesReply(responsesText("没有这份数据")));
+        } else {
+            replies.add(JSONObject.of("content", "总流水9999"));
+            replies.add(JSONObject.of("content", "没有这份数据"));
+        }
+
+        var result = ask(JSONObject.of("question", "流水怎么样"));
+
+        assertEquals("没有这份数据", result.getString("answer"));
+        assertEquals(List.of("https://model.example/v1/" + endpoint, "https://model.example/v1/" + endpoint), sentTo);
+        var messages = sent.get(1).getJSONArray(field);
+        var instruction = messages.getJSONObject(messages.size() - 1);
+        assertEquals(role, instruction.getString("role"));
+        String text = instruction.getString("content");
+        for (String phrase : List.of("9999", "不要提到", "重写", "删除", "工具数据", "除非提问人问到")) {
+            assertTrue(text.contains(phrase), phrase);
+        }
+        String system = messages.getJSONObject(0).getString("content");
+        for (String phrase : List.of("规则", "内部要求", "核对过程", "按你的要求", "提问人原话")) {
+            assertTrue(system.contains(phrase), phrase);
+        }
     }
 
     // 抓住重写时丢掉已核对的合计或占比，并核对两者保留且数字改对时采用重写稿。
