@@ -96,7 +96,7 @@ java -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar
 ```
 
 `-Dloader.path` **不能省**，少了它启动会报 `NoClassDefFoundError: SpringApplication`。
-（用附带的 `./start.sh` 则不用管，它已经带上了。）
+用附带的 `./start.sh` 会自动加上这个参数，以及[默认的内存参数和回收日志](performance.md#堆空闲比例与回收日志)。
 
 日志里这四行说明一切正常：
 
