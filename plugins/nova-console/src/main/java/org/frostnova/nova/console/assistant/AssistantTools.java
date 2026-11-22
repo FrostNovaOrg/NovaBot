@@ -40,7 +40,9 @@ final class AssistantTools {
             new Tool(AssistantSqlRequest.NAME, AssistantSqlRequest.description(true),
                     AssistantSqlRequest.fields(true), AssistantSqlRequest.REQUIRED),
             new Tool(AssistantChartRequest.NAME, AssistantChartRequest.DESCRIPTION,
-                    AssistantChartRequest.fields(), AssistantChartRequest.REQUIRED));
+                    AssistantChartRequest.fields(), AssistantChartRequest.REQUIRED),
+            new Tool(AssistantSketchRequest.NAME, AssistantSketchRequest.DESCRIPTION,
+                    AssistantSketchRequest.fields(), AssistantSketchRequest.REQUIRED));
 
     static List<JSONObject> definitions(AssistantQueryContext context) {
         return TOOLS.stream().filter(tool -> context.amountVisible() || !"revenue".equals(tool.name()))

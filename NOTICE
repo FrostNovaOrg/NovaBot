@@ -144,3 +144,8 @@ AGPL-3.0 授予的是代码上的权利。「NovaBot」名称与本项目标识�
     仅供智能助手调用系统 SQLite 的原生权限与内存限制接口。驱动 jar 原样分发，
     授权说明见该 jar 的 META-INF/LICENSE。本项目依 Apache-2.0 使用，许可全文
     随 SQLite JDBC 的 LICENSE 文件分发。
+
+  JSVG 2.2.0（Jannis Weis，MIT）
+    https://github.com/weisJ/jsvg
+    仅供智能助手的手绘示意转成 PNG。jar 在 plugins-lib 中原样分发，
+    版权声明与许可全文见该 jar 的 META-INF/LICENSE。

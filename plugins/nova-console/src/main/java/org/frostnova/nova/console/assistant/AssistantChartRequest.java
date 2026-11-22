@@ -100,11 +100,11 @@ record AssistantChartRequest(int resultNumber, Type type, String xColumn, List<S
 
     private static int length(String text) { return text.codePointCount(0, text.length()); }
 
-    private static JSONObject string(int max, String description) {
+    static JSONObject string(int max, String description) {
         return JSONObject.of("type", "string", "minLength", 1, "maxLength", max, "description", description);
     }
 
-    private static String requiredText(Object value, int max, String label) {
+    static String requiredText(Object value, int max, String label) {
         if (!(value instanceof String text) || text.isBlank() || length(text) > max) {
             throw new Invalid(label + "须填写 1–" + max + " 字");
         }
@@ -117,7 +117,7 @@ record AssistantChartRequest(int resultNumber, Type type, String xColumn, List<S
         return raw.containsKey(key) ? requiredText(raw.get(key), MAX_LABEL, label) : null;
     }
 
-    private static int integer(Object input, int max, String message) {
+    static int integer(Object input, int max, String message) {
         BigDecimal number = number(input);
         try {
             int value = number == null ? 0 : number.intValueExact();

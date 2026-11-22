@@ -14,6 +14,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -441,6 +442,240 @@ class AssistantAskServiceTest {
         assertFalse(result.containsKey("images"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "<script>document.title='unexpected'</script>",
+            "<rect width='40' height='40' onload='unexpected()'/>",
+            "<foreignObject width='40' height='40'><div>文字</div></foreignObject>",
+            "<image href='https://example.invalid/picture.png'/>",
+            "<image href='file:///tmp/fixture-image.png'/>",
+            "<image href='data:image/png;base64,AAAA'/>",
+            "<style>@import 'https://example.invalid/style.css';</style>",
+            "<text font-family='url(file:///tmp/example.ttf)'>礼物</text>",
+            "<rect width='40' height='40' fill='url(https://example.invalid/palette.svg)'/>"
+    })
+    @DisplayName("手绘里的脚本、事件、外来对象和资源链接在转图前被拦下")
+    void unsafeSketchNeverReachesRenderer(String content) {
+        askForSketch(sketchSvg(content));
+        assertTrue(lastToolData().getString("reason").contains("不允许"), lastToolData()::toJSONString);
+        verifyNoInteractions(chartRenderer);
+    }
+
+    @Test
+    @DisplayName("手绘不解析文档类型和实体，避免把本机文件读进图片")
+    void sketchRejectsExternalXmlEntityBeforeRendering() {
+        String svg = "<!DOCTYPE svg [<!ENTITY fixture SYSTEM 'file:///tmp/example-label.txt'>]>"
+                + sketchSvg("<text x='40' y='50'>&fixture;</text>");
+        assertFalse(askForSketch(svg).containsKey("images"));
+        assertTrue(lastToolData().getString("reason").contains("实体"));
+        verifyNoInteractions(chartRenderer);
+    }
+
+    @Test
+    @DisplayName("手绘不能借另一份结果或漏过小整数，把引用结果里没有的数字画出来")
+    void sketchRejectsNumberFromDifferentResult() {
+        seedSketchResults();
+        when(queries.sessions("bilibili", 1L, 30, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("startTime", 1794000000000L, "messages", 8))));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("sessions", JSONObject.of("days", 30, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='40' y='50'>&#56;</text>"))));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertFalse(ask().containsKey("images"));
+        assertTrue(lastToolData().getString("reason").contains("数字 8"), lastToolData()::toJSONString);
+        assertTrue(lastToolData().getString("reason").contains("结果"), lastToolData()::toJSONString);
+        verifyNoInteractions(chartRenderer);
+    }
+
+    @Test
+    @DisplayName("手绘允许按查数精度四舍五入，也检查标题，失败的手绘不会吞掉已画的模板")
+    void sketchChecksTitleAndKeepsTheSuccessfulTemplate() {
+        seedSketchResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次数据")));
+        var sketch = sketchArguments(sketchSvg("<text x='42' y='80'>示意 7.4</text>"));
+        sketch.put("title", "场次 89");
+        replies.add(call("draw_sketch", sketch));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertEquals(List.of("template-png"), ask().getJSONArray("images").toJavaList(String.class));
+        assertTrue(lastToolData().getString("reason").contains("89"));
+        verify(chartRenderer, never()).renderSketch(any());
+
+        askForSketch(sketchSvg("<text x='42' y='80'>示意 7.4</text>"));
+        verify(chartRenderer).renderSketch(argThat(chart -> chart.svg().contains("7.4")));
+        assertTrue(lastToolData().getString("status").contains("已生成"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"三种礼物占比示意", "一场直播的时间轴", "百分比"})
+    @DisplayName("手绘标题和标注里的中文用语不因缺少对应数值被拒")
+    void sketchAcceptsChineseWordingWithoutMatchingNumbers(String wording) {
+        seedSketchResults();
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        var sketch = sketchArguments(sketchSvg("<text>" + wording + "</text>"));
+        sketch.put("title", wording);
+        replies.add(call("draw_sketch", sketch));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        var result = ask();
+        assertNotNull(result.getJSONArray("images"), lastToolData()::toJSONString);
+        verify(chartRenderer).renderSketch(argThat(chart -> chart.title().equals(wording) && chart.svg().contains(wording)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"37/50", "8:20", "60%", "６０％", "1,532"})
+    @DisplayName("手绘能用结果里的分子分母、时分、百分数和千位分组写法")
+    void sketchAcceptsEquivalentNumbersAndClockTimes(String text) {
+        seedSketchNumberFormats(50);
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text>" + text + "</text>"))));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        var result = ask();
+        assertNotNull(result.getJSONArray("images"), lastToolData()::toJSONString);
+        verify(chartRenderer).renderSketch(argThat(chart -> chart.svg().contains(text)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"37/50, 50", "121, 121", "8:21, 8:21"})
+    @DisplayName("手绘拒绝结果没有的分母、整数或时分组合，并指出对不上的值")
+    void sketchIdentifiesNumbersMissingFromTheResult(String text, String missing) {
+        seedSketchNumberFormats(51);
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text>" + text + "</text>"))));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertFalse(ask().containsKey("images"));
+        assertTrue(lastToolData().getString("reason").contains("数字 " + missing + " "), lastToolData()::toJSONString);
+        verifyNoInteractions(chartRenderer);
+    }
+
+    private void seedSketchNumberFormats(int peakOnline) {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("startTime", Instant.parse("2026-11-07T00:20:00Z").toEpochMilli(),
+                        "endTime", Instant.parse("2026-11-07T01:21:00Z").toEpochMilli(), "messages", 37,
+                        "peakOnline", peakOnline, "audience", 1532, "follows", new BigDecimal("0.6")))));
+    }
+
+    @Test
+    @DisplayName("一次回答里模板和手绘共享两张上限，第三张不会调用绘图器")
+    void sketchAndTemplateShareTheTwoImageLimit() {
+        seedSketchResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        var chart = JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次数据");
+        replies.add(call("draw_chart", chart));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>示意</text>"))));
+        replies.add(call("draw_chart", chart));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertEquals(List.of("template-png", "sketch-png"), ask().getJSONArray("images").toJavaList(String.class));
+        assertTrue(lastToolData().getString("reason").contains("最多两张"));
+        verify(chartRenderer).render(any());
+        verify(chartRenderer).renderSketch(any());
+    }
+
+    @Test
+    @DisplayName("前两张已经生成时，第三张即使是手绘也不会调用绘图器")
+    void thirdImageCannotBeASketch() {
+        seedSketchResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次数据")));
+        var sketch = sketchArguments(sketchSvg("<text x='42' y='80'>示意</text>"));
+        replies.add(call("draw_sketch", sketch));
+        replies.add(call("draw_sketch", sketch));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertEquals(List.of("template-png", "sketch-png"), ask().getJSONArray("images").toJavaList(String.class));
+        assertTrue(lastToolData().getString("reason").contains("最多两张"));
+        verify(chartRenderer).render(any());
+        verify(chartRenderer).renderSketch(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"7.4 元", "三百元", "五百多块"})
+    @DisplayName("金额隐藏时，手绘不会把阿拉伯数字或中文写法的金额画出来")
+    void sketchCannotPutAnAmountInHiddenChat(String amount) {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("messages", new BigDecimal("7.36"), "peakOnline", 500))));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>" + amount + "</text>"))));
+        var title = sketchArguments(sketchSvg("<text x='42' y='80'>示意</text>"));
+        title.put("title", amount);
+        replies.add(call("draw_sketch", title));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "画场次示意"), new AssistantQueryContext(false));
+        assertFalse(result.containsKey("images"));
+        var data = toolDataAtLastRequest();
+        assertTrue(data.get(1).getString("reason").contains("不能包含金额"), data::toString);
+        assertTrue(data.get(2).getString("reason").contains("不能包含金额"), data::toString);
+        verifyNoInteractions(chartRenderer);
+    }
+
+    @Test
+    @DisplayName("超长、深嵌套或超幅面的手绘在绘图前就被拒，助手仍能返回文字")
+    void excessiveSketchIsRejectedBeforeRendering() {
+        seedSketchResults();
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<!--" + "测".repeat(4200) + "-->"))));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<g>".repeat(100) + "</g>".repeat(100)))));
+        replies.add(call("draw_sketch", sketchArguments("<svg width='100000' height='100000'/>")));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertTrue(ask().getBooleanValue("answered"));
+        var results = toolDataAtLastRequest();
+        assertTrue(results.get(1).getString("reason").contains("12 KiB"), results::toString);
+        assertTrue(results.get(2).getString("reason").contains("嵌套"), results::toString);
+        assertTrue(results.get(3).getString("reason").contains("画布"), results::toString);
+        verifyNoInteractions(chartRenderer);
+    }
+
+    private JSONObject askForSketch(String svg) {
+        seedSketchResults();
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(svg)));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+        return ask();
+    }
+
+    private void seedSketchResults() {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("startTime", 1794000000000L, "messages", new BigDecimal("7.36")))));
+    }
+
+    private static String sketchSvg(String content) {
+        return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 690 416'>" + content + "</svg>";
+    }
+
+    private static JSONObject sketchArguments(String svg) {
+        return JSONObject.of("resultNumber", 1, "title", "直播示意", "svg", svg);
+    }
+
+    private JSONObject lastToolData() {
+        var data = toolDataAtLastRequest();
+        return data.get(data.size() - 1);
+    }
+
+    private List<JSONObject> toolDataAtLastRequest() {
+        return sent.get(sent.size() - 1).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(item -> "tool".equals(item.getString("role")))
+                .map(item -> JSON.parseObject(item.getString("content"))).toList();
+    }
+
     private void useResponses() {
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.api-format", "responses")))
                 .bind("novabot.assistant", Bindable.ofInstance(properties));
@@ -747,7 +982,8 @@ class AssistantAskServiceTest {
         }
         var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
-        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "query_sql", "draw_chart"), names);
+        assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "query_sql",
+                "draw_chart", "draw_sketch"), names);
         assertEquals(0.3, sent.get(0).getDoubleValue("temperature"));
         assertEquals(properties.getAnswerLimit(), sent.get(0).getIntValue("max_tokens"));
     }

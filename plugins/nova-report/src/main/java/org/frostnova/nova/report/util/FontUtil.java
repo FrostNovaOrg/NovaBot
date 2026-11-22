@@ -178,6 +178,11 @@ public class FontUtil {
         return Optional.empty();
     }
 
+    /** 返回随包中文字体的已核对文件，供独立绘图进程直接读取。 */
+    public Path bundledChineseFontFile() throws IOException {
+        return extractBundledFont(BUNDLED_FONTS.get("内置"));
+    }
+
     /**
      * 获取当前已加载的字体名称列表
      *
