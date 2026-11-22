@@ -107,12 +107,13 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         int count = chart.rows().size();
         var values = new ArrayList<PlotValue>();
         var required = new LinkedHashSet<PlotValue>();
+        var lineExtrema = new LinkedHashSet<PlotValue>();
         for (int series = 0; series < chart.series().size(); series++) {
             var points = new ArrayList<PlotValue>();
             if (chart.type() == Type.LINE) {
                 drawLine(painter, chart, series, colors.get(series), scale, points, occupied);
-                keepExtrema(points, required);
                 if (!points.isEmpty()) required.add(points.get(points.size() - 1));
+                keepExtrema(points, lineExtrema);
             } else {
                 drawBars(painter, chart, series, colors.get(series), scale, points);
             }
@@ -122,6 +123,8 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             values.stream().map(PlotValue::bar).forEach(occupied::add);
             keepExtrema(values, required);
             values.stream().max(Comparator.comparingInt(PlotValue::row).thenComparingInt(PlotValue::x)).ifPresent(required::add);
+        } else {
+            required.addAll(lineExtrema);
         }
         boolean allBars = bar && values.size() <= ALL_BAR_LABELS;
         drawValueLabels(painter, layoutValues(painter, chart, values, required, occupied, allBars));

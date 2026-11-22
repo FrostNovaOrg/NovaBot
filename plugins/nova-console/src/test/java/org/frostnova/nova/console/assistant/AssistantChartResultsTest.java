@@ -95,6 +95,32 @@ class AssistantChartResultsTest {
     }
 
     @Test
+    @DisplayName("钟点柱状图和表格把场数显示成英文字段名")
+    void chartAndTableLocalizeSessionCounts() {
+        var results = new AssistantChartResults(List.of());
+        results.add("aggregate", new JSONObject(), JSONObject.of("columns", List.of("hour", "avg:online", "sessionCount"),
+                "rows", JSONArray.of(JSONArray.of(13, 65, 3), JSONArray.of(21, 189, 1))), Set::of);
+        results.add("aggregate", new JSONObject(), JSONObject.of("columns",
+                List.of("hour", "avg:online", "avg:watched", "onlineSessionCount", "watchedSessionCount"),
+                "rows", JSONArray.of(JSONArray.of(13, 65, 110, 3, 2))), Set::of);
+        var privacy = privacy();
+        var args = JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "hour",
+                "yColumns", List.of("sessionCount"), "yLabel", "sessionCount", "title", "各钟点直播场数");
+        var bar = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy);
+        args.put("type", "table");
+        args.remove("yLabel");
+        var table = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy);
+        args.put("resultNumber", 2);
+        args.put("yColumns", List.of("onlineSessionCount", "watchedSessionCount"));
+        var multiple = results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy);
+        assertAll(
+                () -> assertEquals(List.of("场数"), bar.series()),
+                () -> assertEquals("场数", bar.yLabel()),
+                () -> assertEquals(List.of("场数"), table.series()),
+                () -> assertEquals(List.of("平均在线场数", "平均看过人数场数"), multiple.series()));
+    }
+
+    @Test
     @DisplayName("新老观众柱状图会把分组字段和英文取值直接画在横轴上")
     void chartLocalizesKnownCategoriesAndLeavesUnknownValuesReadable() {
         var results = new AssistantChartResults(List.of());

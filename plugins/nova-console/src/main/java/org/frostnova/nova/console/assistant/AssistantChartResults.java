@@ -35,11 +35,13 @@ final class AssistantChartResults {
             "super_chat_value", "box_value", "box_profit");
     private static final Set<String> TIMESTAMPS = Set.of("at", "startTime", "endTime", "start", "end", "from", "to",
             "session", "minute", "firstRecordedAt", "fans.fromAt", "fans.toAt", "start_at", "end_at", "session_start");
+    private static final String SESSION_COUNT_SUFFIX = "SessionCount";
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(StatisticsDay.ZONE);
     private static final Map<String, String> LABELS = Map.ofEntries(
             Map.entry("day", "统计日"), Map.entry("week", "统计周"), Map.entry("month", "统计月"), Map.entry("hour", "北京时间"),
             Map.entry("weekday", "星期"), Map.entry("minute", "时间"), Map.entry("kind", "记录种类"),
             Map.entry("at", "时间"), Map.entry("startTime", "开播时间"), Map.entry("session", "场次"), Map.entry("period", "时段"),
+            Map.entry("sessionCount", "场数"),
             Map.entry("alias", "观众"), Map.entry("name", "名称"), Map.entry("share", "贡献占比"), Map.entry("type", "分类"),
             Map.entry("audienceAge", "观众"), Map.entry("openedGiftName", "开出礼物"), Map.entry("guardOperation", "上舰方式"),
             Map.entry("guardLevel", "上舰等级"), Map.entry("pkResult", "PK 结果"),
@@ -226,6 +228,11 @@ final class AssistantChartResults {
         if ("value".equals(column) && "fans".equals(result.tool())) return "粉丝数";
         String translated = LABELS.get(column);
         if (translated != null) return translated;
+        if (column.endsWith(SESSION_COUNT_SUFFIX)) {
+            String field = column.substring(0, column.length() - SESSION_COUNT_SUFFIX.length());
+            String label = LABELS.getOrDefault("avg:" + field, LABELS.get(field));
+            if (label != null) return label + LABELS.get("sessionCount");
+        }
         int separator = column.indexOf(':');
         if (separator > 0) {
             String operation = OPERATIONS.get(column.substring(0, separator));
