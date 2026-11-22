@@ -43,6 +43,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
@@ -273,6 +274,83 @@ class QqAssistantCommandTest {
         assertReply(LABEL);
         verify(queries).sessions(BILIBILI, FIRST, 7, 1);
         verify(queries, never()).sessions(eq(BILIBILI), eq(SECOND), anyInt(), anyInt());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @DisplayName("用主播的常用短名提问，却被要求再选一次主播")
+    @CsvSource({
+            "莜娜最近四周的流水有什么变化, 莜娜Yuna, 白夭夭-Yy, , 1",
+            "白夭夭上周播了几场, 莜娜Yuna, 白夭夭-Yy, , 2",
+            "最近四周流水怎么样, 莜娜Yuna, 白夭夭-Yy, , 0",
+            "莜娜最近怎么样, 莜娜Yuna, 莜娜酱, 另一位, 0",
+            "云山如画昨晚几点下播, HJ云山如画, 另一位, , 1",
+            "最近四周流水, 最近也好, 另一位, , 0",
+            "云山昨晚几点下播, HJ云山如画, 另一位, , 1",
+            "小白菜上周播了几场, '✨42小白菜吖ii🌱', 另一位, , 1",
+            "上周送礼榜前十, 送礼榜主, 另一位, , 1",
+            "最近 30 天各钟点平均在线, 平均在线酱, 另一位, , 1",
+            "问候结果, Welcome, 另一位, , 0",
+            "云昨晚几点下播, HJ云, 另一位, , 0",
+            "Welcome 昨晚几点下播, Welcome, 另一位, , 1",
+            "莜娜Yuna最近怎么样, 莜娜Yuna, 莜娜酱, , 1",
+            "云山如画昨晚几点下播, HJ云山如画, 云山小主播, , 1",
+            "云山和白夭夭上周各播了几场, HJ云山如画, 白夭夭-Yy, 另一位, 0",
+            "看云山如画昨晚几点下播, HJ云山如画, 看云海, , 1",
+            "云山如画昨晚几点下播, HJ云山如画, 云山, , 1",
+            "云山昨晚几点下播, HJ云山如画, 云山, , 2",
+            "最近四周流水怎么样, 四周有光, 莜娜Yuna, , 0",
+            "上周开播时间是什么, 时间旅人, 莜娜Yuna, , 0",
+            "上周收入多少, 收入猫, 莜娜Yuna, , 0",
+            "昨晚在線如何, 在線等, 莜娜Yuna, , 0",
+            "蓉妹最近流水怎么样, xh-蓉妹学院, 莜娜Yuna, , 1",
+            "最近蓉妹流水怎么样, xh-蓉妹学院, 莜娜Yuna, , 0",
+            "如画昨晚几点下播, HJ云山如画, 莜娜Yuna, , 0",
+            "「 蓉妹」最近流水怎么样, xh-蓉妹学院, 莜娜Yuna, , 1",
+            "「收入」怎么样, 收入猫, 莜娜Yuna, , 0",
+            "上周收入多少, 收入Yuna, 莜娜Yuna, , 0",
+            "上周收入多少, 收入, 莜娜Yuna, , 1",
+            "昨晚蓉妹学几点下播, xh-蓉妹学院, 莜娜Yuna, , 1",
+            "问问莜娜最近流水, xh-蓉妹学院, 莜娜Yuna, , 2",
+            "云山如画昨晚几点下播, xh-云山如, xh-山如画, 另一位, 0"
+    })
+    void resolvesStreamerShortNames(String question, String firstName, String secondName, String otherName,
+                                    int selected) throws Exception {
+        var firstTarget = channel(GROUP, ROOM, true, null);
+        var secondTarget = channel(GROUP, ROOM, true, null);
+        add(FIRST, firstName, firstTarget);
+        add(SECOND, secondName, secondTarget);
+        if (otherName != null) add(10003L, otherName, channel(GROUP, ROOM, true, null));
+
+        if (selected == 0) {
+            group(ASKER, "问 " + question);
+            String menu = assertReply("回序号", "1. " + firstName, "2. " + secondName).getContent();
+            assertFalse(menu.contains("\n3."), menu);
+            assertTrue(requests.isEmpty());
+        } else {
+            modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+            modelReplies.add(text("查到了场次数据。"));
+            group(ASKER, "问 " + question);
+            assertSame(selected == 1 ? firstTarget : secondTarget, assertReply("查到了场次数据", LABEL).getChannel());
+            verify(queries).sessions(BILIBILI, selected == 1 ? FIRST : SECOND, 7, 1);
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @DisplayName("问题里的完整房间号或 UID 可以选中主播")
+    @CsvSource({"80022, true", "180022, false", "8002, false", "10002, true", "100020, false"})
+    void matchesWholeRoomIdAndUid(String number, boolean selected) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        var secondTarget = channel(GROUP, ROOM, true, null);
+        add(SECOND, "测试主播乙", secondTarget);
+        secondTarget.getUser().setRoomId(80022L);
+        group(ASKER, "问 房间 " + number + " 昨晚几点下播？");
+
+        if (selected) {
+            assertSame(secondTarget, assertReply(LABEL).getChannel());
+        } else {
+            assertReply("回序号", "1. 测试主播甲", "2. 测试主播乙");
+            assertTrue(requests.isEmpty());
+        }
     }
 
     @Test
