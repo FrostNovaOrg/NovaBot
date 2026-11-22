@@ -44,6 +44,7 @@ final class AssistantAggregateQuery {
     static final String AUDIENCE_SOURCE = "已归档的观众名单、事件和弹幕明细";
     static final String DAY_RULE = "北京时间 06:00 换统计日，起止日期均含当天。事件按发生时刻，场次按开播时刻整场归入";
     static final String AMOUNT_BASIS = "到手价值，与控制台流水同口径。盲盒计开出物价值，背包礼物计入流水";
+    static final String SESSION_REVENUE_RULE = "按场次开播日计。场次未记流水时，汇总该场付费记录";
     static final String MINUTE_RULE = "在线和看过人数每 60 秒一格取最大，按格起点归组。平均和极值各自跳过缺采分钟，全缺时返回 null。"
             + "缺采数按筛选读数前的直播分钟计算";
     static final String SESSION_COUNT_RULE = "按 hour 或 weekday 分组时，sessionCount 是有数据的不同直播场数。"
@@ -51,7 +52,7 @@ final class AssistantAggregateQuery {
             + "常播钟点或星期分组的场数至少达到同类最多场数的一半，向上取整。"
             + "durationSeconds、effectiveSeconds 的单位是秒。合计和平均另给 durationHours、effectiveHours（小时，保留一位小数），回答时优先用小时列";
     static final String KNOWN_AMOUNT_RULE = "knownAmountSubtotal 仅合计已知金额，完整合计仍未知。"
-            + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按发生统计日列各类缺失条数";
+            + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按汇总口径的统计日列各类缺失条数";
     static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
             + "窗口内首次留档为新观众，窗口前首次留档为老观众。留档起点之前来过的人可能计作新观众";
     static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
@@ -65,6 +66,9 @@ final class AssistantAggregateQuery {
     private static final Set<String> HISTORY_FIELDS = Set.of("at", "uid", "t", "type");
     private static final List<Kind> AUDIENCE_EVENTS = List.of(Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.FOLLOW);
     private static final List<Kind> AUDIENCE_DANMU = List.of(Kind.DANMU, Kind.SUPER_CHAT);
+    private static final List<String> SESSION_REVENUE_KEYS = List.of("gift_value", "guard_value", "super_chat_value");
+    private static final Set<Kind> PAYMENT_KINDS = Set.of(Kind.GIFT, Kind.BOX, Kind.GUARD, Kind.SUPER_CHAT);
+    private static final Set<String> PAYMENT_FIELDS = Set.of("at", "t", "type", "val");
 
     private final AssistantAggregateRequest request;
     private final AssistantPrivacy privacy;
@@ -79,6 +83,9 @@ final class AssistantAggregateQuery {
     private final boolean byAudience;
     private final boolean byMinute;
     private final boolean danmuByDay;
+    private final boolean sessionRevenue;
+    private final boolean dailySessionRevenue;
+    private final boolean addDailySessionCount;
     private final boolean usesSessionAudience;
     private final List<Filter> startFilters;
     private final long from;
@@ -95,6 +102,7 @@ final class AssistantAggregateQuery {
     private final Map<Key, Bucket> groups = new HashMap<>();
     private final Map<String, EnumMap<Kind, Integer>> missingAmounts = new TreeMap<>();
     private final Bucket total;
+    private BigDecimal partialSessionAmount;
     private final JSONArray missingDetails = new JSONArray();
     private int missingDetailsCount;
     private boolean hasAvailableDetails;
@@ -127,6 +135,11 @@ final class AssistantAggregateQuery {
         byAudience = request.groups().contains(Group.AUDIENCE);
         byMinute = request.groups().contains(Group.MINUTE);
         danmuByDay = request.kinds().contains(Kind.DANMU) && request.groups().equals(List.of(Group.DAY));
+        boolean sumsAmount = request.measures().stream()
+                .anyMatch(m -> m.field() == Field.AMOUNT && m.operation() == Operation.SUM);
+        sessionRevenue = sessions && sumsAmount;
+        dailySessionRevenue = sessionRevenue && request.groups().equals(List.of(Group.DAY));
+        addDailySessionCount = dailySessionRevenue && request.measures().stream().noneMatch(m -> m.operation() == Operation.COUNT);
         groupMillis = SERIES_BUCKET_MILLIS * (request.bucketMinutes() == null ? 1 : request.bucketMinutes());
         from = StatisticsDay.startOf(request.from()).toEpochMilli();
         to = StatisticsDay.startOf(request.to().plusDays(1)).toEpochMilli();
@@ -137,9 +150,7 @@ final class AssistantAggregateQuery {
         if (!byClock) sessionCountColumns = List.of();
         else if (sessionSampleFields.size() < 2) sessionCountColumns = List.of("sessionCount");
         else sessionCountColumns = sessionSampleFields.stream().map(f -> f.key + "SessionCount").toList();
-        boolean sumsEventAmount = !sessions && request.measures().stream()
-                .anyMatch(m -> m.field() == Field.AMOUNT && m.operation() == Operation.SUM);
-        missingAmountIndex = sumsEventAmount ? numericFields.indexOf(Field.AMOUNT) : -1;
+        missingAmountIndex = sumsAmount ? numericFields.indexOf(Field.AMOUNT) : -1;
         fields = EnumSet.noneOf(Field.class);
         fields.addAll(numericFields);
         request.filters().forEach(filter -> fields.add(filter.field()));
@@ -166,15 +177,13 @@ final class AssistantAggregateQuery {
                 historyRecordsScanned = historyResult.scannedRecords();
                 if (history == null) return historyInProgress(historyResult);
             }
+            if (danmuByDay || dailySessionRevenue) {
+                for (var day = request.from(); !day.isAfter(request.to()); day = day.plusDays(1)) {
+                    groups.computeIfAbsent(new Key(day.toString(), null), this::bucket);
+                }
+            }
             if (sessions) {
-                Map<Long, Row> summaries = new HashMap<>();
-                archive.forEachOverlapping(platform, uid, from, to, usesSessionAudience, MAX_SESSION_CHARS, session -> {
-                    if (archived(session, liveStart) && session.startTime() >= from) {
-                        summaries.put(session.startTime(), summary(session, rules));
-                        if (summaries.size() > MAX_GROUPS) throw stateLimit();
-                    }
-                });
-                summaries.values().forEach(this::collect);
+                scanSessions(platform, uid, archive, rules, file, liveStart);
             } else if (series) {
                 scanMinutes(platform, uid, archive, file, liveStart);
             } else {
@@ -343,11 +352,6 @@ final class AssistantAggregateQuery {
                             BiFunction<Long, String, Path> file, Long liveStart) throws IOException {
         List<Kind> danmu = audienceActivity ? AUDIENCE_DANMU : request.kinds().stream().filter(AssistantAggregateQuery::isDanmu).toList();
         List<Kind> events = audienceActivity ? AUDIENCE_EVENTS : request.kinds().stream().filter(k -> !isDanmu(k)).toList();
-        if (danmuByDay) {
-            for (var day = request.from(); !day.isAfter(request.to()); day = day.plusDays(1)) {
-                groups.computeIfAbsent(new Key(day.toString(), null), this::bucket);
-            }
-        }
         var visited = new HashSet<Long>();
         archive.forEachOverlapping(platform, uid, from, to, audienceActivity, MAX_SESSION_CHARS, session -> {
             long start = session.startTime();
@@ -438,6 +442,12 @@ final class AssistantAggregateQuery {
 
     private static boolean isDanmu(Kind kind) { return kind == Kind.SUPER_CHAT || kind == Kind.DANMU; }
 
+    private boolean validEventTime() {
+        if (detail.at != null && detail.at > 0) return true;
+        invalidLines++;
+        return false;
+    }
+
     private Row event(String line, long start, boolean danmu, Set<Long> roster) {
         if (!decode(line, eventFields)) return null;
         Kind kind = detail.kind(danmu);
@@ -448,11 +458,7 @@ final class AssistantAggregateQuery {
             }
             if (kind == null || kind == Kind.PK && detail.audience == null) return null;
         } else if (kind == null || !request.kinds().contains(kind)) return null;
-        if (detail.at == null || detail.at <= 0) {
-            invalidLines++;
-            return null;
-        }
-        if (detail.at < from || detail.at >= to) return null;
+        if (!validEventTime() || detail.at < from || detail.at >= to) return null;
         detail.kind = kind;
         detail.start = start;
         return detail;
@@ -543,13 +549,53 @@ final class AssistantAggregateQuery {
         return null;
     }
 
-    private Row summary(LiveSession session, LiveMetricCatalog.Insights rules) {
+    private void scanSessions(String platform, long uid, LiveSessionArchive archive, LiveMetricCatalog.Insights rules,
+                              BiFunction<Long, String, Path> file, Long liveStart) throws IOException {
+        boolean useSessionRevenue = sessionRevenue && "bilibili".equals(platform);
+        Map<Long, Summary> summaries = new HashMap<>();
+        archive.forEachOverlapping(platform, uid, from, to, usesSessionAudience, MAX_SESSION_CHARS, session -> {
+            if (archived(session, liveStart) && session.startTime() >= from) {
+                summaries.put(session.startTime(), summary(session, rules, useSessionRevenue));
+                if (summaries.size() > MAX_GROUPS) throw stateLimit();
+            }
+        });
+        for (Summary summary : summaries.values()) {
+            if (!selectedStart(summary.start())) continue;
+            if (summary.needsRevenueFallback()) {
+                var payments = new SessionPayments();
+                scanSessionPayments(file.apply(summary.start(), EVENTS), false, payments);
+                scanSessionPayments(file.apply(summary.start(), DANMU), true, payments);
+                summary.values().put(Field.AMOUNT, payments.completeAmount());
+                collect(summary, payments);
+            } else {
+                collect(summary);
+            }
+        }
+    }
+
+    private void scanSessionPayments(Path path, boolean danmu, SessionPayments payments) {
+        scan(path, line -> {
+            charge(1);
+            linesScanned++;
+            if (!decode(line, PAYMENT_FIELDS)) return;
+            Kind kind = detail.kind(danmu);
+            if (kind != null && PAYMENT_KINDS.contains(kind) && validEventTime()) {
+                payments.add(kind, detail.amount);
+            }
+        });
+    }
+
+    private Summary summary(LiveSession session, LiveMetricCatalog.Insights rules, boolean useSessionRevenue) {
         Map<String, Double> metrics = session.metrics();
+        boolean needsRevenueFallback = useSessionRevenue && (metrics == null || SESSION_REVENUE_KEYS.stream().noneMatch(metrics::containsKey));
         var values = new EnumMap<Field, BigDecimal>(Field.class);
         for (Field field : fields) {
             values.put(field, switch (field) {
-                case AMOUNT -> rules == null || rules.revenueKeys().isEmpty() || metrics == null || metrics.isEmpty()
-                        ? null : number(rules.revenue(metrics));
+                case AMOUNT -> {
+                    if (useSessionRevenue) yield needsRevenueFallback ? null : archivedRevenue(metrics);
+                    yield rules == null || rules.revenueKeys().isEmpty() || metrics == null || metrics.isEmpty()
+                            ? null : number(rules.revenue(metrics));
+                }
                 case START -> BigDecimal.valueOf(session.startTime());
                 case END -> BigDecimal.valueOf(session.endTime());
                 case DURATION -> BigDecimal.valueOf(session.durationSeconds());
@@ -561,7 +607,18 @@ final class AssistantAggregateQuery {
                 default -> throw new IllegalStateException();
             });
         }
-        return new Summary(session.startTime(), values);
+        return new Summary(session.startTime(), values, needsRevenueFallback);
+    }
+
+    private static BigDecimal archivedRevenue(Map<String, Double> metrics) {
+        BigDecimal amount = BigDecimal.ZERO;
+        for (String key : SESSION_REVENUE_KEYS) {
+            if (!metrics.containsKey(key)) continue;
+            BigDecimal value = number(metrics.get(key));
+            if (value == null) return null;
+            amount = amount.add(value);
+        }
+        return amount;
     }
 
     private static BigDecimal sessionAudience(LiveSession session, LiveMetricCatalog.Insights rules) {
@@ -581,7 +638,7 @@ final class AssistantAggregateQuery {
         default BigDecimal paid() { return BigDecimal.ZERO; }
     }
 
-    private record Summary(long start, Map<Field, BigDecimal> values) implements Row {
+    private record Summary(long start, Map<Field, BigDecimal> values, boolean needsRevenueFallback) implements Row {
         @Override public Kind kind() { return Kind.SESSION; }
         @Override public long at() { return start; }
         @Override public Object value(Field field) { return values.get(field); }
@@ -786,6 +843,10 @@ final class AssistantAggregateQuery {
     }
 
     private void collect(Row row) {
+        collect(row, null);
+    }
+
+    private void collect(Row row, SessionPayments payments) {
         Long audience = privacy.canAttribute(row.audience()) ? row.audience() : null;
         if ((byAudience || byAge) && audience == null || !matches(row, audience)) return;
         BigDecimal paid = needsPaying && audience != null ? row.paid() : BigDecimal.ZERO;
@@ -798,16 +859,25 @@ final class AssistantAggregateQuery {
             var number = (BigDecimal) row.value(field);
             if (number == null) {
                 unknown |= !isSample(field);
-                if (i == missingAmountIndex) {
-                    missingAmounts.computeIfAbsent(clockGroups(row.at()).day(), day -> new EnumMap<>(Kind.class))
-                            .merge(row.kind(), 1, Integer::sum);
-                }
+                if (i == missingAmountIndex && (!sessions || payments != null)) recordMissingAmount(row, payments);
             } else {
                 total.numbers[i].add(number);
                 if (bucket != null) bucket.numbers[i].add(number);
             }
         }
         if (unknown) unknownValues++;
+    }
+
+    private void recordMissingAmount(Row row, SessionPayments payments) {
+        var counts = missingAmounts.computeIfAbsent(clockGroups(row.at()).day(), day -> new EnumMap<>(Kind.class));
+        if (payments == null) {
+            counts.merge(row.kind(), 1, Integer::sum);
+        } else {
+            payments.missingAmounts.forEach((kind, count) -> counts.merge(kind, count, Integer::sum));
+            if (payments.knownAmount != null) {
+                partialSessionAmount = partialSessionAmount == null ? payments.knownAmount : partialSessionAmount.add(payments.knownAmount);
+            }
+        }
     }
 
     private Bucket groupBucket(Row row) {
@@ -904,6 +974,7 @@ final class AssistantAggregateQuery {
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));
         columns.addAll(sessionCountColumns);
+        if (addDailySessionCount) columns.add("sessionCount");
         request.measures().stream().filter(AssistantAggregateQuery::hasDurationHours)
                 .forEach(m -> columns.add(m.key().replace("Seconds", "Hours")));
         boolean allMissing = !series && missingDetailsCount > 0 && !hasAvailableDetails;
@@ -938,8 +1009,11 @@ final class AssistantAggregateQuery {
         }
         if (!missingAmounts.isEmpty()) {
             Numeric amount = total.numbers[missingAmountIndex];
-            result.put("knownAmountSubtotal", amount.known == 0 ? null : amount.sum);
-            result.put("missingAmountRows", total.count - amount.known);
+            BigDecimal knownSubtotal = amount.known == 0 ? null : amount.sum;
+            if (partialSessionAmount != null) knownSubtotal = amount.sum.add(partialSessionAmount);
+            result.put("knownAmountSubtotal", knownSubtotal);
+            result.put("missingAmountRows", missingAmounts.values().stream()
+                    .flatMap(counts -> counts.values().stream()).mapToLong(Integer::longValue).sum());
             result.put("missingAmountsByDayAndKind", missingAmounts.entrySet().stream().map(entry -> {
                 var counts = new JSONObject();
                 entry.getValue().forEach((kind, count) -> counts.put(kind.key, count));
@@ -971,6 +1045,7 @@ final class AssistantAggregateQuery {
             result.put("amountUnit", "元");
             result.put("amountBasis", AMOUNT_BASIS);
         }
+        if (sessionRevenue) result.put("revenueNote", SESSION_REVENUE_RULE);
         return result;
     }
 
@@ -983,6 +1058,7 @@ final class AssistantAggregateQuery {
         var measures = request.measures();
         for (Measure measure : measures) row.add(unknown ? null : value(bucket, measure));
         for (LongSet sessions : bucket.sessions) row.add(unknown ? null : sessions.size());
+        if (addDailySessionCount) row.add(bucket.count);
         for (int i = 0; i < measures.size(); i++) {
             if (hasDurationHours(measures.get(i))) {
                 BigDecimal seconds = row.getBigDecimal(measureOffset + i);
@@ -1121,6 +1197,21 @@ final class AssistantAggregateQuery {
             size++;
         }
 
+    }
+
+    private static final class SessionPayments {
+        private BigDecimal knownAmount;
+        private final Map<Kind, Integer> missingAmounts = new EnumMap<>(Kind.class);
+
+        void add(Kind kind, BigDecimal amount) {
+            if (amount == null) missingAmounts.merge(kind, 1, Integer::sum);
+            else knownAmount = knownAmount == null ? amount : knownAmount.add(amount);
+        }
+
+        BigDecimal completeAmount() {
+            if (!missingAmounts.isEmpty()) return null;
+            return knownAmount == null ? BigDecimal.ZERO : knownAmount;
+        }
     }
 
     private static final class Numeric {

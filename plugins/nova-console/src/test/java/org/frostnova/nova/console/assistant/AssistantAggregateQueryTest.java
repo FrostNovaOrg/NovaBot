@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntPredicate;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -83,9 +84,10 @@ class AssistantAggregateQueryTest {
         fixture();
         var daily = query(request(List.of("session"), "2026-10-24", TO, "sum:amount"),
                 "groupBy", List.of("day"));
-        table("每天流水", daily, List.of("day", "sum:amount"), List.of(
-                List.of("2026-10-31", 120), List.of(FROM, 249), List.of("2026-11-12", 349),
-                List.of("2026-11-14", 0), List.of("2026-11-16", 21)), List.of("合计", 739));
+        var revenue = Map.of("2026-10-31", 120, FROM, 249, "2026-11-12", 349, "2026-11-14", 0, "2026-11-16", 21);
+        var days = LocalDate.parse("2026-10-24").datesUntil(LocalDate.parse(TO).plusDays(1)).map(LocalDate::toString)
+                .map(day -> List.of(day, revenue.getOrDefault(day, 0), revenue.containsKey(day) ? 1 : 0)).toList();
+        table("每天流水", daily, List.of("day", "sum:amount", "sessionCount"), days, List.of("合计", 739, 5));
         assertEquals(at("2026-10-24T06:00"), daily.getLongValue("fromAt"));
         assertEquals(at("2026-11-23T06:00"), daily.getLongValue("toAtExclusive"));
         assertTrue(daily.getString("statisticsDay").contains("06:00"));
@@ -485,6 +487,109 @@ class AssistantAggregateQueryTest {
         assertTrue(allMissing.containsKey("knownAmountSubtotal"));
         assertNull(allMissing.get("knownAmountSubtotal"));
         assertNull(allMissing.getJSONArray("totals").get(0));
+    }
+
+    // 抓住旧醒目留言未记金额时已有场次流水却仍被报成缺额。
+    @Test void revenueAnswersUseArchivedAmountsDespiteOldSuperChats() {
+        summary(FIRST, FIRST + 10_000, Map.of("gift_value", 12.5, "super_chat_value", 80d));
+        gift(FIRST, FIRST + 1, 0, "合成礼物", 1, 12, 12);
+        danmu(FIRST, FIRST + 2, 0, "合成留言", DanmuRecord.Type.SUPER_CHAT, null);
+
+        var result = revenueToolResult("这段时间每天流水多少？", FROM, FROM, true);
+        show("醒目留言缺金额时的每日流水", result);
+        assertNumber(92.5, result.getJSONArray("totals").get(1));
+        assertFalse(result.containsKey("missingAmountRows"));
+        assertEquals(0, result.getIntValue("scannedLines"));
+        assertTrue(result.getString("revenueNote").contains("按场次开播日计"));
+    }
+
+    // 抓住场次没记流水时漏加可用的付费记录，或把过了换日时刻的记录排除在整场之外。
+    @Test void missingArchivedRevenueUsesTheEntireSessionsPaidRecords() {
+        long end = at("2026-11-02T07:00");
+        summary(FIRST, end, Map.of("danmu_count", 1d));
+        gift(FIRST, FIRST + 1, 0, "合成礼物", 1, 12, 12);
+        box(FIRST, FIRST + 2, 0, "合成盲盒", "合成开出物", 1, 8, 2);
+        event(FIRST, FIRST + 3, "guard", Map.of("val", 20));
+        danmu(FIRST, end - 1, 0, "合成留言", DanmuRecord.Type.SUPER_CHAT, 30d);
+
+        var result = query(request(List.of("session"), FROM, FROM, "sum:amount"));
+        table("没有场次流水时的已归档付费记录", result, List.of("sum:amount"),
+                List.of(List.of(70)), List.of(70));
+        assertFalse(result.containsKey("missingAmountRows"));
+    }
+
+    // 抓住场次没记流水、付费记录部分缺金额时，把已知小计当成完整合计或漏报缺的日期和种类。
+    @Test void fallbackWithUnknownAmountsReportsKnownSubtotalAndMissingKinds() {
+        long end = at("2026-11-02T07:00");
+        summary(FIRST, end, Map.of());
+        gift(FIRST, FIRST + 1, 0, "合成礼物", 1, 12, 12);
+        danmu(FIRST, end - 1, 0, "合成留言", DanmuRecord.Type.SUPER_CHAT, null);
+        long next = at("2026-11-02T20:00");
+        summary(next, next + 10_000, Map.of("guard_value", 20d));
+
+        var result = query(request(List.of("session"), FROM, "2026-11-02", "sum:amount"), "groupBy", List.of("day"));
+        show("场次流水退回付费记录后仍缺金额", result);
+        assertNull(result.getJSONArray("totals").get(1));
+        assertNumber(32, result.get("knownAmountSubtotal"));
+        assertEquals(1, result.getIntValue("missingAmountRows"));
+        assertEquals(List.of(JSONObject.of("day", FROM, "countsByKind", JSONObject.of("super_chat", 1))),
+                result.getJSONArray("missingAmountsByDayAndKind"));
+        table("场次流水退回付费记录后仍缺金额", result, List.of("day", "sum:amount", "sessionCount"),
+                List.of(Arrays.asList(FROM, null, 1), List.of("2026-11-02", 20, 1)), Arrays.asList("合计", null, 2));
+    }
+
+    // 抓住每日流水跳过没开播的日期，导致当日的零流水和零场无法看到。
+    @Test void dailyRevenueIncludesDaysWithoutSessions() {
+        summary(FIRST, FIRST + 10_000, Map.of("gift_value", 12d));
+        var result = query(request(List.of("session"), FROM, "2026-11-03", "sum:amount"), "groupBy", List.of("day"));
+        show("没有开播日的每日流水", result);
+        assertEquals(3, result.getJSONArray("rows").size());
+        table("逐日流水与场数", result, List.of("day", "sum:amount", "sessionCount"),
+                List.of(List.of(FROM, 12, 1), List.of("2026-11-02", 0, 0), List.of("2026-11-03", 0, 0)),
+                List.of("合计", 12, 1));
+    }
+
+    // 抓住弹幕超过扫描上限时，明明有场次流水却答不出区间合计。
+    @Test void thirtyDayRevenueAnswersDoNotScanLargeDanmuFiles() throws IOException {
+        summary(FIRST, FIRST + 10_000, Map.of("super_chat_value", 90d));
+        writeRepeated(file(FIRST, "danmu.jsonl"), "{\"type\":\"DANMU\"}", 2_000_000);
+
+        var result = revenueToolResult("最近 30 天流水合计多少？", "2026-10-24", TO, false);
+        show("大量弹幕主播的流水合计", result);
+        assertFalse(result.containsKey("reason"), result::toJSONString);
+        assertNumber(90, result.getJSONArray("totals").get(0));
+        assertEquals(0, result.getIntValue("scannedLines"));
+    }
+
+    private JSONObject revenueToolResult(String questionText, String from, String to, boolean daily) {
+        var client = mock(AssistantClient.class);
+        var question = mock(AssistantClient.Question.class);
+        when(client.beginQuestion("member")).thenReturn(question);
+        when(client.status()).thenReturn(mock(AssistantClient.Status.class));
+        when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
+        var usage = new AssistantClient.Usage(0, 100, 10);
+        var toolResult = new AtomicReference<JSONObject>();
+        when(question.complete(any(), any())).thenAnswer(call -> {
+            AssistantClient.Request sent = call.getArgument(0);
+            var tool = sent.messages().stream().filter(m -> "tool".equals(m.getString("role"))).findFirst();
+            if (tool.isPresent()) {
+                toolResult.set(JSON.parseObject(tool.orElseThrow().getString("content")));
+                return new AssistantClient.Response("已查询归档流水。", null, List.of(), usage, BigDecimal.ZERO);
+            }
+            String system = sent.messages().get(0).getString("content");
+            boolean useSessions = system.contains("区间流水合计或每日流水用 session 的 sum:amount");
+            var kinds = useSessions ? List.of("session") : List.of("gift", "box", "guard", "super_chat");
+            var request = request(kinds, from, to, "sum:amount");
+            if (daily) request.put("groupBy", List.of("day"));
+            var toolCall = JSONObject.of("id", "revenue-summary", "type", "function",
+                    "function", JSONObject.of("name", "aggregate", "arguments", request.toJSONString()));
+            return new AssistantClient.Response(null, null, List.of(toolCall), usage, BigDecimal.ZERO);
+        });
+        var ask = new AssistantAskService(service, client, new AssistantProperties(), local, clock);
+        try {
+            assertTrue(ask.ask(PLATFORM, ROOM, "member", JSONObject.of("question", questionText)).getBooleanValue("answered"));
+            return assertInstanceOf(JSONObject.class, toolResult.get());
+        } finally { ask.close(); }
     }
 
     // 抓住复合分组超过原有行数限制，或裁掉的行漏出合计。
@@ -1006,8 +1111,12 @@ class AssistantAggregateQueryTest {
     }
 
     private void summary(long start, long end, double gift, double guard, double chat) {
+        summary(start, end, Map.of("gift_value", gift, "guard_value", guard, "super_chat_value", chat));
+    }
+
+    private void summary(long start, long end, Map<String, Double> metrics) {
         archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, start, end, (end - start) / 1000,
-                Map.of("gift_value", gift, "guard_value", guard, "super_chat_value", chat), Map.of()));
+                metrics, Map.of()));
     }
 
     private void seal(long start, Map<String, Double> metrics) {
