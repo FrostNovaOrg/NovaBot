@@ -40,6 +40,25 @@ const STYLE = `
 .sa-examples{width:100%}
 .sa-follow-ups{margin-top:10px}
 .sa-clear{justify-self:end}
+.sa-memos{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.sa-memos [hidden]{display:none}
+.sa-memos>summary{cursor:pointer;padding:12px 14px;font-weight:600}
+.sa-memos>summary .hint{margin-left:8px;font-weight:400}
+.sa-memo-body{padding:0 14px 14px}
+.sa-memo-list{list-style:none;margin:10px 0;padding:0}
+.sa-memo-row{display:flex;align-items:center;justify-content:space-between;gap:8px 14px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line)}
+.sa-memo-copy{flex:1 1 200px;min-width:0}
+.sa-memo-text{white-space:pre-wrap}
+.sa-memo-row .sa-memo-copy p{margin:0}
+.sa-memo-actions,.sa-memo-fields{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sa-memo-fields{justify-content:space-between}
+.sa-memo-form label{font-size:var(--fs-sm)}
+.sa-memo-form textarea,.sa-memo-form input{box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--ground);color:var(--text);font:inherit}
+.sa-memo-form textarea{display:block;width:100%;resize:vertical;margin:4px 0}
+.sa-memo-form input{max-width:100%}
+.sa-memo-date{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sa-memo-form>.sa-memo-actions{margin-top:8px}
+.sa-memo-feedback{min-height:1.5em}
 .sa-charts{display:grid;gap:10px;margin-top:10px}
 .sa-chart{display:block;width:min(100%,480px);padding:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:white;cursor:zoom-in}
 .sa-chart:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -101,6 +120,125 @@ function line(host, text, className = '') {
   node.textContent = text;
   host.appendChild(node);
   return node;
+}
+
+function mountMemos(panel, path, updateExample) {
+  const summary = el('summary'), count = el('span', 'hint');
+  summary.append('备忘', count);
+  const body = el('div', 'sa-memo-body');
+  line(body, '记下任务、目标或偏好。有效备忘会随每次提问发给模型服务。', 'hint');
+  const list = el('ul', 'sa-memo-list'); body.appendChild(list);
+  const empty = line(body, '', 'hint');
+  const form = el('form', 'sa-memo-form'), textLabel = el('label'), editLabel = el('span');
+  const input = el('textarea'); input.rows = 2; input.maxLength = 120; input.required = true;
+  textLabel.append(editLabel, input);
+  const fields = el('div', 'sa-memo-fields'), dateLabel = el('label', 'sa-memo-date');
+  const deadline = el('input'); deadline.type = 'date'; deadline.max = '9999-12-31';
+  dateLabel.append('截止日（可选）', deadline);
+  const characters = el('span', 'hint'); characters.setAttribute('aria-live', 'polite');
+  fields.append(dateLabel, characters);
+  const actions = el('div', 'sa-memo-actions');
+  const save = el('button', 'nv-btn'); save.type = 'submit'; save.textContent = '保存';
+  const cancel = el('button', 'nv-btn2'); cancel.type = 'button'; cancel.textContent = '取消编辑';
+  actions.append(save, cancel);
+  form.append(textLabel, fields, actions);
+  body.appendChild(form);
+  const feedback = line(body, '', 'hint sa-memo-feedback'); feedback.setAttribute('role', 'status');
+  const retry = el('button', 'nv-btn2'); retry.type = 'button'; retry.textContent = '重试';
+  body.appendChild(retry);
+  panel.append(summary, body);
+
+  let items = null, today = '', busy = false, editing = null;
+  const active = memo => !memo.expiresOn || memo.expiresOn >= today;
+  const updateForm = () => {
+    count.textContent = items ? `${items.length} / 10 条` : '';
+    form.hidden = !items || (items.length >= 10 && !editing);
+    input.disabled = deadline.disabled = busy;
+    editLabel.textContent = editing ? '编辑备忘' : '新增备忘';
+    characters.textContent = `${[...input.value].length} / 60 字`;
+    save.disabled = busy || !input.value.trim();
+    cancel.hidden = !editing;
+    cancel.disabled = busy;
+    retry.hidden = busy || Boolean(items);
+    for (const button of list.querySelectorAll('button')) button.disabled = busy;
+  };
+  const setEdit = memo => {
+    editing = memo?.id ?? null;
+    input.value = memo?.text ?? '';
+    deadline.value = memo?.expiresOn ?? '';
+    updateForm();
+  };
+  const renderList = () => {
+    list.replaceChildren();
+    empty.textContent = items.length ? '' : '还没有备忘。';
+    for (const memo of items) {
+      const row = el('li', 'sa-memo-row'), copy = el('div', 'sa-memo-copy');
+      line(copy, memo.text, 'sa-memo-text');
+      line(copy, '记录于 ' + memo.createdOn + (memo.expiresOn ? ' · 截止 ' + memo.expiresOn : ' · 无截止日')
+        + (active(memo) ? '' : ' · 已过期'), 'hint');
+      const controls = el('div', 'sa-memo-actions');
+      const edit = el('button', 'nv-btn2'); edit.type = 'button'; edit.textContent = '编辑';
+      edit.addEventListener('click', () => {
+        setEdit(memo);
+        feedback.textContent = '';
+        input.focus();
+      });
+      const remove = el('button', 'nv-btn2'); remove.type = 'button'; remove.textContent = '删除';
+      const keep = el('button', 'nv-btn2'); keep.type = 'button'; keep.textContent = '取消删除';
+      const erase = el('button', 'danger'); erase.type = 'button'; erase.textContent = '确认删除';
+      keep.hidden = erase.hidden = true;
+      remove.addEventListener('click', () => {
+        edit.hidden = remove.hidden = true;
+        keep.hidden = erase.hidden = false;
+        keep.focus();
+      });
+      keep.addEventListener('click', () => {
+        edit.hidden = remove.hidden = false;
+        keep.hidden = erase.hidden = true;
+        remove.focus();
+      });
+      erase.addEventListener('click', () => requestMemos('DELETE', memo.id));
+      controls.append(edit, remove, keep, erase);
+      row.append(copy, controls);
+      list.appendChild(row);
+    }
+    updateExample(items.find(active));
+  };
+  const requestMemos = async (method, id, data) => {
+    if (busy) return;
+    busy = true;
+    feedback.textContent = method === 'GET' ? '正在读取备忘…' : method === 'DELETE' ? '正在删除备忘…' : '正在保存备忘…';
+    updateForm();
+    try {
+      const url = path + '/memos' + (id ? '/' + encodeURIComponent(id) : '');
+      const options = data ? {method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)} : {method};
+      const result = await api(url, options);
+      if (result.success !== true || !Array.isArray(result.items)) throw new Error(result.message || '无法读取备忘');
+      items = result.items;
+      today = result.today;
+      if (method === 'POST' || method === 'PUT' || (method === 'DELETE' && id === editing)) setEdit(null);
+      renderList();
+      feedback.textContent = method === 'GET' ? '' : method === 'DELETE' ? '备忘已删除。' : '备忘已保存。';
+    } catch (error) {
+      feedback.textContent = error.message;
+    } finally {
+      busy = false;
+      updateForm();
+    }
+  };
+  input.addEventListener('input', () => {
+    const characters = [...input.value];
+    if (characters.length > 60) input.value = characters.slice(0, 60).join('');
+    updateForm();
+  });
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (save.disabled) return;
+    return requestMemos(editing ? 'PUT' : 'POST', editing, {text: input.value.trim(), expiresOn: deadline.value || null});
+  });
+  cancel.addEventListener('click', () => { setEdit(null); summary.focus(); });
+  retry.addEventListener('click', () => requestMemos('GET'));
+  return requestMemos('GET');
 }
 
 /** 页头订阅状态，成员只在成功读到总开关开启后显示入口。 */
@@ -239,20 +377,27 @@ export function mountAssistant(host, identity) {
   const remaining = el('span', 'hint');
   const examples = el('div', 'sa-guidance sa-examples');
   examples.setAttribute('role', 'group'); examples.setAttribute('aria-label', '提问示例');
-  for (const question of questionExamples) {
-    const example = el('button', 'nv-btn2'); example.type = 'button'; example.textContent = question;
-    example.addEventListener('click', () => {
-      input.value = question;
-      updateDraft();
-      input.focus();
+  const renderExamples = memo => {
+    examples.replaceChildren();
+    questionExamples.forEach((question, index) => {
+      const fromMemo = index === 0 && memo;
+      const example = el('button', 'nv-btn2'); example.type = 'button';
+      example.textContent = fromMemo ? `「${memo.text}」这项任务目前完成多少了？` : question;
+      example.addEventListener('click', () => {
+        input.value = fromMemo ? '主播备忘里第一项目标目前完成多少了？' : question;
+        updateDraft();
+        input.focus();
+      });
+      examples.appendChild(example);
     });
-    examples.appendChild(example);
-  }
+  };
+  renderExamples();
   controls.append(input, examples);
   line(controls, '回答由人工智能生成，可能出错；数字以报告为准。', 'hint sa-disclaimer');
   controls.append(submit, remaining);
   form.appendChild(controls);
-  root.append(status, turns, form, chartView); host.replaceChildren(style, root);
+  const memoPanel = el('details', 'sa-memos');
+  root.append(status, turns, form, memoPanel, chartView); host.replaceChildren(style, root);
 
   const canAsk = () => !context.pending && context.state?.available === true;
   const updateControls = () => {
@@ -325,7 +470,7 @@ export function mountAssistant(host, identity) {
     return askQuestion(input.value);
   });
   context.listeners.add(update);
-  const ready = readState(context);
+  const ready = Promise.all([readState(context), mountMemos(memoPanel, context.path, renderExamples)]);
   update();
   return {ready, destroy() { if (chartView.open) chartView.close(); context.listeners.delete(update); }};
 }

@@ -358,8 +358,8 @@ bash /opt/starbot/tools/data-backup.sh <数据目录> user@备份机:/var/backup
 数据目录就是装着 `sessions.jsonl` 与 `details/` 的那个目录，也就是设置里
 「直播数据 · 文件路径」所在的目录：一键安装默认在安装目录根上（装在 `/opt/starbot`
 的话就是 `/opt/starbot`，程序在它下面的 `releases/` 里），手动安装就是程序目录，
-容器是 `/app`。同步只增不删——目标上已有的文件不会被去掉；`reports/`、`releases/`
-与 `*.tmp` 不同步，`releases/` 里是各版本的程序，不算直播数据。
+容器是 `/app`。同步只增不删——目标上已有的文件不会被去掉。`reports/`、`releases/`、
+`assistant-memos/` 与 `*.tmp` 不同步。`releases/` 里是各版本的程序，主播备忘保存在本机的 `assistant-memos/` 目录。
 
 **B 站动态文本归档**也在这个数据目录下的 `dynamics/bilibili-<uid>.jsonl`，每位主播一个文件，
 每行一条动态，只追加、永久保留。只记录已启用动态推送的主播在现有轮询中抓到的内容，

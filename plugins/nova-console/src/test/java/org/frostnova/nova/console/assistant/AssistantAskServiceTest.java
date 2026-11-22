@@ -36,6 +36,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -102,6 +103,136 @@ class AssistantAskServiceTest {
 
     private JSONObject ask() { return ask(JSONObject.of("question", "这场表现怎样")); }
     private JSONObject ask(JSONObject request) { return service.ask("bilibili", 1L, "member", request); }
+
+    static void seedMemos(Path directory, long uid, String createdOn, String expiresOn, String... texts) throws Exception {
+        Path folder = Files.createDirectories(directory.resolve("assistant-memos"));
+        var items = Arrays.stream(texts).map(text -> JSONObject.of("id", UUID.randomUUID().toString(),
+                "text", text, "createdOn", createdOn, "expiresOn", expiresOn)).toList();
+        Files.writeString(folder.resolve("bilibili-" + uid + ".json"), JSON.toJSONString(items));
+    }
+
+    private String modelSystem(int index) {
+        return sent.get(index).getJSONArray("messages").getJSONObject(0).getString("content");
+    }
+
+    @Test
+    @DisplayName("截止日当天仍使用备忘，北京时间次日的提问不再把过期任务发给模型")
+    void expiredMemoStopsReachingTheModelAfterItsDeadline() throws Exception {
+        seedMemos(directory, 1L, "2026-10-20", "2026-10-24", "试播目标是收满心动盲盒");
+        clock.now = Instant.parse("2026-10-24T15:59:59Z");
+        assertTrue(ask().getBooleanValue("answered"));
+        assertTrue(modelSystem(0).contains("试播目标是收满心动盲盒"), "截止日当天的任务应随提问发送");
+        clock.now = Instant.parse("2026-10-24T16:00:00Z");
+        assertTrue(ask().getBooleanValue("answered"));
+        assertFalse(modelSystem(1).contains("试播目标是收满心动盲盒"));
+    }
+
+    @Test
+    @DisplayName("两位主播轮流问时，模型每次只收到当前主播的任务")
+    void streamerMemoCannotReachAnotherStreamersQuestion() throws Exception {
+        seedMemos(directory, 1L, "2026-10-24", null, "甲的盲盒任务");
+        seedMemos(directory, 2L, "2026-10-24", null, "乙的开播任务");
+        ask();
+        service.ask("bilibili", 2L, "member", JSONObject.of("question", "任务完成多少了"));
+        assertTrue(modelSystem(0).contains("甲的盲盒任务"));
+        assertFalse(modelSystem(0).contains("乙的开播任务"));
+        assertTrue(modelSystem(1).contains("乙的开播任务"));
+        assertFalse(modelSystem(1).contains("甲的盲盒任务"));
+    }
+
+    @Test
+    @DisplayName("第一次提问也会用本地档案把备忘里的观众昵称换成代号")
+    void memoMasksViewerNicknamesBeforeTheFirstModelRequest() throws Exception {
+        long viewer = 991234567L;
+        seedMemos(directory, 1L, "2026-10-24", null, "核对测试观众甲送的盲盒");
+        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(viewer, Set.of("测试观众甲")));
+        assertTrue(ask().getBooleanValue("answered"));
+        assertTrue(modelSystem(0).contains("核对" + alias(viewer) + "送的盲盒"));
+        assertFalse(sent.toString().contains("测试观众甲"));
+    }
+
+    @Test
+    @DisplayName("成员不能查看或增删改未分配给自己的主播备忘，也不能用别人的条目编号跨主播修改")
+    void memberCannotChangeAnUnassignedStreamersMemo() throws Exception {
+        var mvc = mvc();
+        var admin = ConfigUiAccount.local(Instant.EPOCH);
+        String own = "/config/api/streamers/bilibili/1/assistant/memos";
+        String other = "/config/api/streamers/bilibili/2/assistant/memos";
+        String initial = "{\"text\":\"另一位主播的任务\"}";
+        String replacement = "{\"text\":\"改掉别人的任务\"}";
+        var created = mvc.perform(post(other).requestAttr(ConfigUiAccess.ACCOUNT, admin)
+                        .contentType("application/json").content(initial))
+                .andExpect(status().isOk()).andReturn();
+        String id = JSON.parseObject(created.getResponse().getContentAsString())
+                .getJSONArray("items").getJSONObject(0).getString("id");
+        mvc.perform(get(other).requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isNotFound());
+        mvc.perform(post(other).requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json").content(replacement))
+                .andExpect(status().isNotFound());
+        mvc.perform(put(other + "/" + id).requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json").content(replacement))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete(other + "/" + id).requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isNotFound());
+        mvc.perform(put(own + "/" + id).requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json").content(replacement))
+                .andExpect(status().isNotFound());
+        mvc.perform(get(other).requestAttr(ConfigUiAccess.ACCOUNT, admin))
+                .andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].text").value("另一位主播的任务"));
+        mvc.perform(post(own).requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json").content(initial))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("编辑保留记录日期，重新读盘后仍有备忘，删除最后一条会移除本地文件")
+    void memoEditsKeepTheRecordedDateAndDeletionRemovesTheFile() throws Exception {
+        var mvc = mvc();
+        String url = "/config/api/streamers/bilibili/1/assistant/memos";
+        String original = "盲盒试播目标";
+        var created = mvc.perform(post(url).requestAttr(ConfigUiAccess.ACCOUNT, member())
+                        .contentType("application/json").content(JSONObject.of("text", original,
+                                "createdOn", "2000-01-01", "expiresOn", "2026-10-24").toJSONString()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].createdOn").value("2026-10-24"))
+                .andExpect(jsonPath("$.items[0].expiresOn").value("2026-10-24")).andReturn();
+        String id = JSON.parseObject(created.getResponse().getContentAsString())
+                .getJSONArray("items").getJSONObject(0).getString("id");
+        assertEquals(original, new AssistantLocalStore(directory, clock).memos().list("bilibili", 1L).get(0).text());
+        clock.now = clock.now.plus(Duration.ofDays(1));
+        mvc.perform(put(url + "/" + id).requestAttr(ConfigUiAccess.ACCOUNT, member())
+                        .contentType("application/json").content("{\"text\":\"开播偏好\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].createdOn").value("2026-10-24"))
+                .andExpect(jsonPath("$.items[0].expiresOn").doesNotExist());
+        mvc.perform(get(url).requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.items[0].text").value("开播偏好"));
+        Path folder = directory.resolve("assistant-memos");
+        try (var files = Files.list(folder)) {
+            assertEquals(List.of(folder.resolve("bilibili-1.json")), files.toList());
+        }
+        mvc.perform(delete(url + "/" + id).requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items").isEmpty());
+        try (var files = Files.list(folder)) {
+            assertEquals(0, files.count());
+        }
+        assertTrue(sent.isEmpty());
+    }
+
+    @Test
+    @DisplayName("直接提交控制台请求也不能绕过 10 条、60 字与有效日期的限制")
+    void memoLimitsApplyEvenWhenBypassingTheEditor() throws Exception {
+        var mvc = mvc();
+        String url = "/config/api/streamers/bilibili/1/assistant/memos";
+        for (var body : List.of(JSONObject.of("text", " "), JSONObject.of("text", "🎁".repeat(61)),
+                JSONObject.of("text", "试播", "expiresOn", "2026-02-30"))) {
+            mvc.perform(post(url).requestAttr(ConfigUiAccess.ACCOUNT, member())
+                    .contentType("application/json").content(body.toJSONString())).andExpect(status().isBadRequest());
+        }
+        for (int i = 0; i < 10; i++) {
+            mvc.perform(post(url).requestAttr(ConfigUiAccess.ACCOUNT, member())
+                    .contentType("application/json").content(JSONObject.of("text", "🎁".repeat(60)).toJSONString()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(i + 1));
+        }
+        mvc.perform(post(url).requestAttr(ConfigUiAccess.ACCOUNT, member())
+                .contentType("application/json").content("{\"text\":\"第十一条\"}")).andExpect(status().isBadRequest());
+        mvc.perform(get(url).requestAttr(ConfigUiAccess.ACCOUNT, member()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(10));
+    }
 
     @Test
     @DisplayName("编号格式变了、编号超出范围或选项只有乱字时，整段仍能当作普通回答展示")
@@ -490,7 +621,7 @@ class AssistantAskServiceTest {
 
     // 抓住成员查询未分配主播时仍调用模型、泄露其他主播的数据。
     @Test void memberCannotAskAboutOtherStreamer() throws Exception {
-        var controller = new AssistantAskController(service);
+        var controller = new AssistantAskController(service, local);
         var registry = mock(DataSourceServiceRegistry.class);
         when(registry.platforms()).thenReturn(List.of("bilibili"));
         var mvc = MockMvcBuilders.standaloneSetup(controller).addInterceptors(
@@ -1206,7 +1337,7 @@ class AssistantAskServiceTest {
     private org.springframework.test.web.servlet.MockMvc mvc() {
         var registry = mock(DataSourceServiceRegistry.class);
         when(registry.platforms()).thenReturn(List.of("bilibili"));
-        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service)).addInterceptors(
+        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service, local)).addInterceptors(
                 new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry)).build();
     }
 

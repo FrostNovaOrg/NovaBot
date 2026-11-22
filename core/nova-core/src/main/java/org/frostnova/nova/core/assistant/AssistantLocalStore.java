@@ -23,6 +23,7 @@ public final class AssistantLocalStore {
     private final Path aliasKey;
     private final Path transmissions;
     private final Clock clock;
+    private final AssistantMemoStore memos;
     // 仅在本机内存保留近期昵称，追问无需再查数即可还原；不写入发送记录。
     private final java.util.Map<String, String> nicknames = new java.util.LinkedHashMap<>(64, 0.75f, true);
 
@@ -30,7 +31,10 @@ public final class AssistantLocalStore {
         aliasKey = directory.resolve("assistant-alias.key");
         transmissions = directory.resolve("assistant-transmissions.jsonl");
         this.clock = clock;
+        memos = new AssistantMemoStore(directory, clock);
     }
+
+    public AssistantMemoStore memos() { return memos; }
 
     public synchronized String alias(String platform, Long uid) {
         return encodeAlias(aliasMac(), platform + ":" + uid);

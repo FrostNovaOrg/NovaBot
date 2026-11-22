@@ -54,9 +54,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
     private static final String LABEL = "\n（由人工智能生成）";
     private static final String NO_FOLLOW_UP = "没有可接着问的这个编号，请用「问 〈问题〉」提问";
     private static final String USAGE = "请用「问 〈问题〉」发送 1–300 字的问题";
-    private static final String EXAMPLES = USAGE + """
-
-            问 这个月心动盲盒收了多少个
+    private static final String MORE_EXAMPLES = """
             问 最近 30 天各钟点平均在线
             问 上周送礼榜前十""";
     private static final int ANSWER_LIMIT = 300;
@@ -133,7 +131,7 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
         if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
 
         String question = String.join(" ", context.getArgs());
-        if (question.isBlank()) return CommandReply.of(EXAMPLES);
+        if (question.isBlank()) return CommandReply.of(examples(allowed));
         if (question.equals("1") || question.equals("2"))
             return resumeFollowUp(context, asker, question.charAt(0) - '1');
 
@@ -157,6 +155,19 @@ public class QqAssistantCommand implements NovaCommand, CommandFollowUp {
             return choose(asker, options, question);
         }
         return start(context, asker, options.get(0).uid(), question, null);
+    }
+
+    private String examples(List<Candidate> allowed) {
+        String first = "这个月心动盲盒收了多少个";
+        if (allowed.size() == 1) {
+            try {
+                if (!local.memos().active(LIVE_PLATFORM, allowed.get(0).uid()).isEmpty())
+                    first = "主播备忘里第一项目标目前完成多少了";
+            } catch (AssistantException ignored) {
+                // 无法读取备忘时，仍可给出通用问法。
+            }
+        }
+        return USAGE + "\n问 " + first + "\n" + MORE_EXAMPLES;
     }
 
     private CommandReply resumeFollowUp(CommandContext context, Asker asker, int index) {

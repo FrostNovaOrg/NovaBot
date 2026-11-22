@@ -25,21 +25,22 @@ trap 'rm -rf "$WORK"' EXIT
 
 SRC="$WORK/src"
 DST="$WORK/dst"
-mkdir -p "$SRC/details/a/b/c" "$SRC/reports" "$DST"
+mkdir -p "$SRC/details/a/b/c" "$SRC/reports" "$SRC/assistant-memos" "$DST"
 printf 'session-line-1\n' > "$SRC/sessions.jsonl"
 printf '{"ok":true}\n' > "$SRC/details/a/b/c/detail.json"
 printf 'PNG\n' > "$SRC/reports/x.png"
+printf '[{"text":"本月试播目标"}]\n' > "$SRC/assistant-memos/bilibili-1.json"
 
-# ① 同步后正文逐字同，reports/ 不在目标
+# ① 同步后正文逐字同，报告和主播备忘不在目标
 out1=""
 if out1="$(backup "$SRC" "$DST" 2>&1)"; then
     same=1
     cmp -s "$SRC/sessions.jsonl" "$DST/sessions.jsonl" || same=0
     cmp -s "$SRC/details/a/b/c/detail.json" "$DST/details/a/b/c/detail.json" || same=0
-    if [ "$same" -eq 1 ] && [ ! -e "$DST/reports" ]; then
-        echo "① 绿：sessions.jsonl 与 detail.json 逐字同，reports/ 未同步"
+    if [ "$same" -eq 1 ] && [ ! -e "$DST/reports" ] && [ ! -e "$DST/assistant-memos" ]; then
+        echo "① 绿：sessions.jsonl 与 detail.json 逐字同，报告和主播备忘未同步"
     else
-        echo "① 红：内容对不上或 reports/ 出现在目标"
+        echo "① 红：内容对不上，或报告、主播备忘出现在目标"
         echo "$out1" | sed 's/^/    /'
         RED=$((RED + 1))
     fi

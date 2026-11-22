@@ -15,6 +15,7 @@ cookies.key
 /assistant-key.enc.tmp
 /assistant-master.key.tmp
 /assistant-usage.json.tmp
+/assistant-memos/
 # 明文凭据迁移为加密存储时留下的备份
 cookies.json.plain.bak
 # 仓库根的运行期配置。程序第一次保存设置时写在工作目录。

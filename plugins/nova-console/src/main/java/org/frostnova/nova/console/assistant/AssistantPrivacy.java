@@ -19,7 +19,7 @@ final class AssistantPrivacy {
     private final Long streamerUid;
     private final java.util.function.Supplier<Map<Long, Set<String>>> audience;
     private final Set<String> knownUids = new HashSet<>();
-    private boolean audienceLoaded;
+    private Map<Long, Set<String>> audienceIdentities;
     private static final Pattern IDENTIFIER = Pattern.compile("[0-9]{5,}");
     private final Map<String, String> names = new LinkedHashMap<>();
     private final Map<String, String> replacements = new LinkedHashMap<>();
@@ -158,19 +158,40 @@ final class AssistantPrivacy {
         return value instanceof String text ? mask(text) : value;
     }
 
-    String mask(String text) {
-        if (text == null) return null;
-        if (!audienceLoaded && (!excluded.isEmpty() || IDENTIFIER.matcher(ALIAS.matcher(text).replaceAll("")).find())) {
-            Map<Long, Set<String>> identities = audience.get();
-            identities.forEach((uid, nicknames) -> {
+    void prepareMemos(List<String> texts) {
+        // 首轮查数之前，也要从本机档案识别备忘里仅出现昵称的观众。
+        loadAudience().forEach((uid, nicknames) -> {
+            if (streamerUid.equals(uid) || excluded.contains(uid)) return;
+            var mentioned = nicknames.stream().filter(name -> !name.isEmpty()
+                    && texts.stream().anyMatch(text -> text.contains(name))).toList();
+            if (mentioned.isEmpty()) return;
+            String alias = local.alias(platform, uid);
+            for (String name : mentioned) {
+                if (replacements.putIfAbsent(name, alias) == null) names.putIfAbsent(alias, name);
+            }
+        });
+        replacementPattern = null;
+        dataTypes.add("主播备忘");
+    }
+
+    private Map<Long, Set<String>> loadAudience() {
+        if (audienceIdentities == null) {
+            audienceIdentities = audience.get();
+            audienceIdentities.forEach((uid, nicknames) -> {
                 if (!streamerUid.equals(uid)) knownUids.add(uid.toString());
                 if (excluded.contains(uid)) nicknames.forEach(name -> {
                     if (!name.isEmpty()) replacements.put(name, "[已隐藏]");
                 });
             });
-            audienceLoaded = true;
             replacementPattern = null;
         }
+        return audienceIdentities;
+    }
+
+    String mask(String text) {
+        if (text == null) return null;
+        if (audienceIdentities == null && (!excluded.isEmpty() || IDENTIFIER.matcher(ALIAS.matcher(text).replaceAll("")).find()))
+            loadAudience();
         if (replacementPattern == null) {
             String alternatives = replacements.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
                     .map(name -> name.matches("[0-9]+") ? "(?<![0-9])" + Pattern.quote(name) + "(?![0-9])" : Pattern.quote(name))
