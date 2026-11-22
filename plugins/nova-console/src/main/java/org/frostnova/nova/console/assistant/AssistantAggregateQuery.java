@@ -141,7 +141,7 @@ final class AssistantAggregateQuery {
         if (!byClock) sessionCountColumns = List.of();
         else if (sessionSampleFields.size() < 2) sessionCountColumns = List.of("sessionCount");
         else sessionCountColumns = sessionSampleFields.stream().map(f -> f.key + "SessionCount").toList();
-        missingAmountIndex = sumsAmount && (!sessions || dailySessionRevenue) ? numericFields.indexOf(Field.AMOUNT) : -1;
+        missingAmountIndex = sumsAmount ? numericFields.indexOf(Field.AMOUNT) : -1;
         fields = EnumSet.noneOf(Field.class);
         fields.addAll(numericFields);
         request.filters().forEach(filter -> fields.add(filter.field()));
