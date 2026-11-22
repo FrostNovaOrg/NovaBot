@@ -1,7 +1,7 @@
 {
 	"accountId":"local-admin",
 	"agreementRequired":false,
-	"agreementVersion":2,
+	"agreementVersion":3,
 	"authenticated":true,
 	"displayName":"本地管理员",
 	"enabled":false,

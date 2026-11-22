@@ -57,7 +57,7 @@ shutil.copyfile(demo / 'demo.js', dest / 'console-demo/demo.js')
 injection = '<script src="/console-demo/recording.js"></script>\n<script src="/console-demo/demo.js"></script>\n'
 # The backend splices these scripts and the shared stylesheet into the login page in place of the marker lines.
 splices = {'//@@password-reveal@@': 'password-reveal.js', '//@@login-model@@': 'login-model.js',
-           '/*@@product-ui@@*/': 'product-ui.css'}
+           '/*@@product-ui@@*/': 'product-ui.css', '/*@@loading-ui@@*/': 'loading-ui.css'}
 def render(source):
     text = source.read_text()
     for marker, script in splices.items():

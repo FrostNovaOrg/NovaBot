@@ -42,7 +42,7 @@ novabot:
       update:
         enabled: false       # 演示期间不检查新版（那次请求要出网）
       agreement:
-        accepted-version: 2
+        accepted-version: 3
         accepted-at: "__ACCEPTED_AT__"
         accepted-by: operator-token   # 演示实例凭起动令牌进控制台，同意记录按同一通道写
 

@@ -41,6 +41,13 @@ const WIDTHS = [
   {name: '1440', width: 1440, height: 900, mobile: false, scale: 1},
   {name: '390', width: 390, height: 844, mobile: true, scale: 2},
 ];
+const ASSISTANT_SCREEN = ['settings-assistant', '/config/#/settings'];
+const ASSISTANT_SIZES = [
+  {name: '360x568', width: 360, height: 568, mobile: true, scale: 1},
+  {name: '844x390', width: 844, height: 390, mobile: true, scale: 1},
+  {name: '1280x760', width: 1280, height: 760, mobile: false, scale: 1},
+];
+const ASSISTANT_CONFIRM_CHECK = '手机上确认按钮点不到就无法开启智能助手';
 const COLORS = ['light', 'dark'];
 // 配色：默认的粉蓝各页都看；经典、暖阳只看首页与主播详情。配色只换颜色、不改排布，
 // 各页三套都看一遍是三倍的轮数，而多出来的那些轮抓的是同一类毛病
@@ -311,6 +318,42 @@ function shortUrl(url) {
   return url.length > 160 ? url.slice(0, 157) + '...' : url;
 }
 
+// 录制早于智能助手设置。只在这几轮补本地回包，正文仍取自生产源文件。
+function assistantSettingsFixture(acknowledgementText, acknowledgementVersion) {
+  const request = window.fetch;
+  let acknowledgement = null;
+  const status = () => Response.json({success: true, acknowledgement, acknowledgementText, acknowledgementVersion,
+    spentYuan: 0, monthlyBudgetYuan: 30});
+  window.fetch = async (url, options) => {
+    if (url === '/config/api/assistant/status') return status();
+    if (url === '/config/api/assistant/acknowledge' && options?.method === 'POST') {
+      acknowledgement = {version: acknowledgementVersion, actor: '管理员', at: new Date().toISOString()};
+      return status();
+    }
+    const response = await request(url, options);
+    if (url !== '/config/api/schema' || !response.ok) return response;
+    const schema = await response.json();
+    if (!schema.groups.some(group => group.group === 'assistant')) {
+      schema.groups.push({group: 'assistant', title: '智能助手', fields: [
+        {name: 'novabot.assistant.enabled', label: '启用智能助手', widget: 'boolean', defaultValue: false,
+          level: 'COMMON', effect: 'RESTART'},
+      ]});
+    }
+    return Response.json(schema);
+  };
+}
+
+function assistantFixtureScript() {
+  const source = fs.readFileSync(new URL(
+    '../../core/nova-core/src/main/java/org/frostnova/nova/core/assistant/AssistantClient.java', import.meta.url), 'utf8');
+  const text = source.match(/ACKNOWLEDGEMENT_TEXT = """\r?\n(.*?)""";/s)?.[1];
+  const version = source.match(/ACKNOWLEDGEMENT_VERSION = "([^"]+)";/)?.[1];
+  if (!text || !version) throw new CannotRun('读不到智能助手的配置者说明或版本');
+  const body = text.split(/\r?\n/).map(line => line.trimStart()).join('\n')
+    .replace('{接口地址}', 'https://model.example/v1');
+  return `\n;(${assistantSettingsFixture.toString()})(${JSON.stringify(body)}, ${JSON.stringify(version)});`;
+}
+
 /** 应答一个被拦住的请求 */
 async function answer(cdp, sessionId, demo, round, params) {
   const {requestId, request} = params;
@@ -339,7 +382,11 @@ async function answer(cdp, sessionId, demo, round, params) {
       body: Buffer.from('Not Found').toString('base64')});
   }
   const type = TYPES[path.extname(found.file).toLowerCase()] || 'application/octet-stream';
-  const body = method === 'HEAD' ? '' : fs.readFileSync(found.file).toString('base64');
+  let content = method === 'HEAD' ? Buffer.alloc(0) : fs.readFileSync(found.file);
+  if (method === 'GET' && round.assistantFixture && url.pathname === '/console-demo/demo.js') {
+    content = Buffer.concat([content, Buffer.from(round.assistantFixture)]);
+  }
+  const body = content.toString('base64');
   return send('Fetch.fulfillRequest', {responseCode: 200, body, responseHeaders: [
     {name: 'Content-Type', value: type}, {name: 'Cache-Control', value: 'no-store'}]});
 }
@@ -621,6 +668,78 @@ async function checkCollapse(s, round, expression, name) {
   }
 }
 
+const ASSISTANT_DIALOG_CONTROLS = `
+  const row = () => document.querySelector('[data-name="novabot.assistant.enabled"]');
+  const toggle = () => row()?.querySelector('input[type="checkbox"]');
+  const dialog = () => document.querySelector('.ask:not([hidden]) .ask-card');
+`;
+
+async function checkPhoneCanConfirmToEnableAssistant(s, round, screenshot) {
+  const evaluate = async source => {
+    const response = await s('Runtime.evaluate', {expression: `(async () => {
+      ${VIEW_HELPERS}
+      ${ASSISTANT_DIALOG_CONTROLS}
+      ${source}
+    })()`, returnByValue: true, awaitPromise: true});
+    if (response.exceptionDetails) throw new Error(exceptionText(response.exceptionDetails));
+    return response.result.value;
+  };
+  const open = () => evaluate(`
+    await wait(() => toggle() && !toggle().disabled);
+    const label = row().querySelector('label.switch');
+    if (!visible(label)) row().closest('.setgrp').querySelector('.grp-head').click();
+    label.scrollIntoView({block: 'center'});
+    label.click();
+    await wait(() => dialog()?.querySelector('[data-act="yes"]').textContent.includes('开启'));
+  `);
+  const buttons = () => evaluate(`
+    return ['no', 'yes'].map(action => {
+      const button = dialog().querySelector('[data-act="' + action + '"]');
+      const {top, bottom, left, right} = button.getBoundingClientRect();
+      const x = (left + right) / 2, y = (top + bottom) / 2;
+      return {label: button.textContent, x, y, top, bottom, reachable:
+        top >= 0 && bottom <= innerHeight && left >= 0 && right <= innerWidth
+          && button.contains(document.elementFromPoint(x, y))};
+    });
+  `);
+  const click = async ({x, y}) => {
+    await s('Input.dispatchMouseEvent', {type: 'mousePressed', x, y, button: 'left', clickCount: 1});
+    await s('Input.dispatchMouseEvent', {type: 'mouseReleased', x, y, button: 'left', clickCount: 1});
+  };
+
+  try {
+    await evaluate(`
+      document.querySelector('#console-demo-banner')?.remove();
+      document.querySelector('#console-demo-notice')?.remove();
+    `);
+    await open();
+    await screenshot?.();
+    const before = await buttons();
+    const scroll = await evaluate(`
+      const body = dialog().querySelector('p');
+      const overflow = body.scrollHeight - body.clientHeight;
+      body.scrollTop = body.scrollHeight;
+      await frame();
+      return {height: body.clientHeight, overflow, offset: body.scrollTop};
+    `);
+    const after = await buttons();
+    round.assistant = {before, after, scroll};
+    if ([...before, ...after].some(button => !button.reachable) || !scroll.height
+      || Math.abs(scroll.overflow - scroll.offset) > 1
+      || before.some((button, i) => Math.abs(button.top - after[i].top) > 1)) {
+      throw new Error(JSON.stringify(round.assistant));
+    }
+    await click(after[0]);
+    await evaluate(`await wait(() => !dialog() && !toggle().checked && !toggle().disabled);`);
+    await open();
+    await click((await buttons())[1]);
+    await evaluate(`await wait(() => !dialog() && toggle().checked && !toggle().disabled && row().dataset.changed === '1');`);
+  } catch (error) {
+    if (error instanceof NameTaken) throw error;
+    round.failures.push(ASSISTANT_CONFIRM_CHECK + '：' + error.message);
+  }
+}
+
 // PNG 的校验与压缩只用 node 自带模块。Chromium 输出的 8 位 RGB/RGBA 可直接拼接。
 const CRC_TABLE = Array.from({length: 256}, (_, n) => {
   for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
@@ -736,6 +855,7 @@ async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
     exceptions: [],
     notes: {unrecorded: new Set(), consoleErrors: new Set(), blocked: new Set(), landed: new Set()},
   };
+  if (page === ASSISTANT_SCREEN[0]) round.assistantFixture = assistantFixtureScript();
   // macOS 上只能单进程起浏览器，这时在新建的浏览器上下文里开标签页会让它崩掉；
   // 所以都开在默认上下文里，每轮换一个新标签页，并在打开页面前清空这个来源的存储。
   const {targetId} = await cdp.send('Target.createTarget', {url: 'about:blank'});
@@ -850,7 +970,18 @@ async function runRound(cdp, demo, out, shots, screen, size, palette, color) {
       round.notes.landed.add(`打开后停在 ${facts.url}`);
     }
 
-    if (shots) {
+    if (page === ASSISTANT_SCREEN[0]) {
+      await checkPhoneCanConfirmToEnableAssistant(s, round, shots ? async () => {
+        try {
+          const shot = await cdp.send('Page.captureScreenshot', {format: 'png'}, sessionId, SHOT_LIMIT_MS);
+          writeNew(path.join(out, `${page}-${size.name}.png`), Buffer.from(shot.data, 'base64'));
+          round.shots = {tiles: 0, joined: true};
+        } catch (error) {
+          if (error instanceof NameTaken) throw error;
+          round.shotError = error.message;
+        }
+      } : null);
+    } else if (shots) {
       try {
         round.shots = await capture(cdp, sessionId, out, page, size, palette, color);
       } catch (e) {
@@ -885,6 +1016,7 @@ function summarize(rounds, version, shotProblem) {
   }
   for (const r of rounds) if (r.collapse) lines.push('页面收起：' + JSON.stringify(r.collapse));
   for (const r of rounds) if (r.drawerPagination) lines.push('抽屉翻页：' + JSON.stringify(r.drawerPagination));
+  for (const r of rounds) if (r.assistant) lines.push(`配置者说明 ${r.width}：` + JSON.stringify(r.assistant));
 
   // 各套配色在首页上取到的几样颜色，只列出：三套该各是各的，一眼看得出有没有哪套没生效
   lines.push('', '配色读数（首页 1440 宽，页底／强调色／次要字）：');
@@ -902,7 +1034,7 @@ function summarize(rounds, version, shotProblem) {
   ];
   lines.push('', '只列出、不判失败（按页归并，括号里是出现的轮数）：');
   let any = false;
-  for (const [page] of SCREENS) {
+  for (const [page] of [...SCREENS, ASSISTANT_SCREEN]) {
     const mine = rounds.filter(r => r.page === page);
     const section = [];
     for (const [kind, label] of kinds) {
@@ -938,7 +1070,7 @@ async function runAll({demo, chrome, out, profile, log, logFile}) {
   let shotProblem = null;
   const rounds = [];
   try {
-    const plan = [];
+    const plan = ASSISTANT_SIZES.map(size => [ASSISTANT_SCREEN, size, PALETTES[0], 'light']);
     for (const screen of SCREENS) {
       for (const size of WIDTHS) {
         for (const palette of PALETTES) {

@@ -18,7 +18,7 @@
 			"method":"GET",
 			"path":"/config/api/auth/state",
 			"query":"",
-			"sha256":"ef57c0b8df813e1840b751773bbd8c7dbccdf14ae98ca6a1c8a8127fe3c9ddba",
+			"sha256":"43f507d77ede26b75bcb9a4ba66ad395e9e4e4e13af352d509237de3d232f180",
 			"status":200
 		},
 		{
@@ -27,7 +27,7 @@
 			"method":"GET",
 			"path":"/config/api/auth/agreement",
 			"query":"",
-			"sha256":"8e4a9960c24eeb301e6d7df306672d93e3090971a67ebab4f3ef1a4c19a48472",
+			"sha256":"555d7687515c0d5c6ccf7b3cb5f379daa333cd86c894b31e67389b60fc74dd4f",
 			"status":200
 		},
 		{
@@ -126,7 +126,7 @@
 			"method":"GET",
 			"path":"/config/api/values",
 			"query":"",
-			"sha256":"70f716ea1b731aaa38e4990da8c70cac1b1537b23b66bf19531a8d56b12f51af",
+			"sha256":"df584e714bd8d05257142a836b74bb0f2fef589e7e75803f83b290eca9907255",
 			"status":200
 		},
 		{

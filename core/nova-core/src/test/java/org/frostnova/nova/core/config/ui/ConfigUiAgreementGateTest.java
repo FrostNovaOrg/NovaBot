@@ -73,14 +73,9 @@ class ConfigUiAgreementGateTest {
     /** 这一组量的是协议那道闸，口令只是进门的台面，哈希只迭代 1 次，见 {@link LowIterationPasswordHash} */
     private static final String PASSWORD_HASH = LowIterationPasswordHash.of(PASSWORD);
 
-    /**
-     * 协议文案的 SHA-256
-     * <p>
-     * 钉住的是「发出去的那一份文案」本身。改文案就要连着把 {@link ConfigUiAgreement#VERSION} 加一，
-     * 否则已经点过同意的人再也不会看到新的那一份——而那正是这条判据要拦住的事：
-     * 悄悄改掉文字，功能上什么都看不出来。
-     */
-    private static final String TEXT_SHA256 = "ac71603926aa2954258ec808c4ae7fdc5e597dca74f65135313a15dedd4bc40b";
+    /** 改版时新增版本和正文指纹的对应项。 */
+    private static final Map<Integer, String> AGREEMENT_TEXT_SHA256 = Map.of(
+            3, "02c214992dc0a7d6327c1f8addbcd0de048dcbdf5fb00e0bbed6dd2b30f81eaf");
 
     private static final String ACCEPTED_VERSION_KEY = "novabot.core.config-ui.agreement.accepted-version";
 
@@ -737,15 +732,16 @@ class ConfigUiAgreementGateTest {
     }
 
     @Test
-    @DisplayName("协议全文原样发出，一个字都不许漂")
-    void theAgreementTextIsServedVerbatim() throws Exception {
+    @DisplayName("协议改了却没升版本，已同意的人不会被要求重新确认，也看不到新条款")
+    void revisedAgreementNeedsANewVersionSoExistingUsersSeeTheNewTerms() throws Exception {
         JSONObject body = controller.agreement();
 
         assertTrue(body.getBooleanValue("success"), "文案读不出来，协议面板就只剩一个空框和一个同意按钮");
-        assertEquals(ConfigUiAgreement.VERSION, body.getIntValue("version"), "文案与版本号要一同发出，二者是一回事");
-        assertEquals(TEXT_SHA256, sha256(body.getString("text")),
-                "文案指纹对不上。改文案就要连着把 ConfigUiAgreement.VERSION 加一，"
-                        + "否则已经点过同意的人再也看不到新的那一份");
+        int version = body.getIntValue("version");
+        assertEquals(ConfigUiAgreement.VERSION, version, "接口版本应与要求重新确认的版本一致");
+        assertEquals(AGREEMENT_TEXT_SHA256.get(version), sha256(body.getString("text")),
+                "第 " + version + " 版与已登记的协议指纹不符。改正文时请升版本并登记新指纹，"
+                        + "已同意的人才能重新确认并看到新条款");
     }
 
     @Test
