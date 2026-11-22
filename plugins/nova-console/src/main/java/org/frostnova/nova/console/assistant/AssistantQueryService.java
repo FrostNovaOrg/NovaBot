@@ -335,8 +335,9 @@ public class AssistantQueryService {
             result.put("reason", "没有足够的粉丝快照记录");
             return result;
         }
-        data.put("windowFromAt", range.from().toEpochMilli());
-        data.put("windowToAtExclusive", range.to().toEpochMilli());
+        long windowStart = range.from().toEpochMilli(), windowEnd = range.to().toEpochMilli();
+        data.put("windowFromAt", windowStart);
+        data.put("windowToAtExclusive", windowEnd);
         data.put("total", size);
         data.put("truncated", size > LIST_LIMIT);
         if (size > 0) {
@@ -350,13 +351,36 @@ public class AssistantQueryService {
                     ? last.getBigDecimal("value").subtract(first.getBigDecimal("value")) : null);
         }
         if (size > LIST_LIMIT) {
-            var sampled = new JSONArray();
-            for (int i = 0; i < LIST_LIMIT; i++) {
-                sampled.add(points.get(sampleIndex(i, LIST_LIMIT, size)));
-            }
-            data.put("points", sampled);
+            data.put("points", sampleFans(points, windowStart, windowEnd));
         }
         return result;
+    }
+
+    private static JSONArray sampleFans(JSONArray points, long from, long to) {
+        var sampled = new JSONArray();
+        int last = points.size() - 1;
+        sampled.add(points.get(0));
+        int segments = LIST_LIMIT - 2;
+        long span = to - from;
+        int index = 0;
+        for (int segment = 0; segment < segments && index <= last; segment++) {
+            // 放大时间偏移以保留分段边界及中点的精度。
+            long end = (segment + 1L) * span, midpointTwice = (2L * segment + 1) * span;
+            int nearest = -1;
+            long bestDistance = Long.MAX_VALUE;
+            for (; index <= last; index++) {
+                long offset = (points.getJSONObject(index).getLongValue("at") - from) * segments;
+                if (offset >= end) break;
+                long distance = Math.abs(2 * offset - midpointTwice);
+                if (distance < bestDistance) {
+                    nearest = index;
+                    bestDistance = distance;
+                }
+            }
+            if (nearest > 0 && nearest < last) sampled.add(points.get(nearest));
+        }
+        sampled.add(points.get(last));
+        return sampled;
     }
 
     private static int sampleIndex(int index, int count, int size) {

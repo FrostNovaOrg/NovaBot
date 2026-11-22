@@ -81,9 +81,17 @@ class AssistantAggregateQueryTest {
         fixture();
         var daily = query(request(List.of("session"), "2026-10-24", TO, "sum:amount"),
                 "groupBy", List.of("day"));
-        table("每天流水", daily, List.of("day", "sum:amount"), List.of(
-                List.of("2026-10-31", 120), List.of(FROM, 249), List.of("2026-11-12", 349),
-                List.of("2026-11-14", 0), List.of("2026-11-16", 21)), List.of("合计", 739));
+        show("每天流水", daily);
+        assertEquals(List.of("day", "sum:amount", "sessionCount"), daily.getJSONArray("columns"));
+        var rows = daily.getJSONArray("rows");
+        assertEquals(30, rows.size());
+        assertRow(List.of("2026-10-31", 120, 1), rows.getJSONArray(7));
+        assertRow(List.of(FROM, 249, 1), rows.getJSONArray(8));
+        assertRow(List.of("2026-11-12", 349, 1), rows.getJSONArray(19));
+        assertRow(List.of("2026-11-14", 0, 1), rows.getJSONArray(21));
+        assertRow(List.of("2026-11-16", 21, 1), rows.getJSONArray(23));
+        assertRow(List.of(TO, 0, 0), rows.getJSONArray(29));
+        assertRow(List.of("合计", 739, 5), daily.getJSONArray("totals"));
         assertEquals(at("2026-10-24T06:00"), daily.getLongValue("fromAt"));
         assertEquals(at("2026-11-23T06:00"), daily.getLongValue("toAtExclusive"));
         assertTrue(daily.getString("statisticsDay").contains("06:00"));
@@ -98,6 +106,73 @@ class AssistantAggregateQueryTest {
                 "groupBy", List.of("hour")), List.of("hour", "avg:amount", "sessionCount"),
                 List.of(List.of(18, 0, 1), List.of(20, 299, 2), List.of(21, 21, 1)),
                 List.of("合计", new BigDecimal("154.75"), 4));
+    }
+
+    // 抓住指定 30 天的流水图只连起两天，以及把金额未知的直播日画成 0。
+    @Test void explicitDailyRevenueDistinguishesEmptyAndUnknownDays() {
+        long first = at("2026-10-23T06:00"), last = at("2026-11-21T19:00");
+        summary(first, first + 60000, 80, 0, 0);
+        summary(last, last + 60000, 20, 0, 0);
+        var request = request(List.of("session"), "2026-10-23", "2026-11-21", "sum:amount");
+        request.put("groupBy", List.of("day"));
+
+        var complete = query(request);
+        show("指定日期完整流水", complete);
+        var rows = complete.getJSONArray("rows");
+        assertEquals(30, rows.size());
+        assertEquals(List.of("day", "sum:amount", "sessionCount"), complete.getJSONArray("columns"));
+        for (int i = 0; i < rows.size(); i++) {
+            int amount = i == 0 ? 80 : i == 29 ? 20 : 0;
+            assertRow(List.of(LocalDate.parse("2026-10-23").plusDays(i).toString(), amount, amount == 0 ? 0 : 1),
+                    rows.getJSONArray(i));
+        }
+        assertRow(List.of("合计", 100, 2), complete.getJSONArray("totals"));
+
+        long missing = at("2026-11-05T18:00");
+        archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, missing, missing + 60000, 60,
+                Map.of(), Map.of()));
+        long zero = at("2026-11-07T18:00");
+        archive.append(new LiveSession(PLATFORM, ROOM, "合成主播", 1L, zero, zero + 60000, 60,
+                Map.of("danmu_count", 5d), Map.of()));
+        var incomplete = query(request);
+        show("指定日期缺额流水", incomplete);
+        rows = incomplete.getJSONArray("rows");
+        assertEquals(30, rows.size());
+        assertRow(Arrays.asList("2026-11-05", null, 1), rows.getJSONArray(13));
+        assertRow(List.of("2026-11-06", 0, 0), rows.getJSONArray(14));
+        assertRow(List.of("2026-11-07", 0, 1), rows.getJSONArray(15));
+        assertRow(Arrays.asList("合计", null, 4), incomplete.getJSONArray("totals"));
+        assertNumber(100, incomplete.get("knownAmountSubtotal"));
+        assertEquals(1, incomplete.getIntValue("missingAmountRows"));
+        assertEquals(List.of(JSONObject.of("day", "2026-11-05", "countsByKind", JSONObject.of("session", 1))),
+                incomplete.getJSONArray("missingAmountsByDayAndKind"));
+    }
+
+    // 抓住近 90 天的流水图丢掉首日的 80 元，导致图上各天加起来少于合计。
+    @Test void recentDailyRevenueKeepsEveryDayAndMatchesTheTotal() {
+        LocalDate today = LocalDate.parse(TO);
+        for (int i = 89; i >= 0; i--) {
+            long start = StatisticsDay.startOf(today.minusDays(i)).toEpochMilli();
+            summary(start, start + 60000, i == 89 ? 80 : 10 + i % 9, 0, 0);
+        }
+        for (int days : List.of(90, 30, 7)) {
+            LocalDate from = today.minusDays(days - 1);
+            var result = query(request(List.of("session"), from.toString(), TO, "sum:amount", "count"),
+                    "groupBy", List.of("day"));
+            show("近" + days + "天逐日流水", result);
+            var rows = result.getJSONArray("rows");
+            assertEquals(days, rows.size());
+            assertFalse(result.getBooleanValue("truncated"));
+            assertEquals(List.of("day", "sum:amount", "count"), result.getJSONArray("columns"));
+            BigDecimal sum = BigDecimal.ZERO;
+            for (int i = 0; i < days; i++) {
+                var row = rows.getJSONArray(i);
+                int amount = days == 90 && i == 0 ? 80 : 10 + (days - i - 1) % 9;
+                assertRow(List.of(from.plusDays(i).toString(), amount, 1), row);
+                sum = sum.add(row.getBigDecimal(1));
+            }
+            assertRow(List.of("合计", sum, days), result.getJSONArray("totals"));
+        }
     }
 
     // 抓住盒名和开出礼物名混淆、事件随场次归日，或事件正好落在六点被漏计。
@@ -422,8 +497,9 @@ class AssistantAggregateQueryTest {
         assertNull(allMissing.getJSONArray("totals").get(0));
         var archived = query(request(List.of("session"), "2026-10-24", TO, "sum:amount"),
                 "groupBy", List.of("day"));
-        table("同段时间的场次流水", archived, List.of("day", "sum:amount"),
-                List.of(List.of("2026-10-24", 180)), List.of("合计", 180));
+        show("同段时间的场次流水", archived);
+        assertRow(List.of("2026-10-24", 180, 1), archived.getJSONArray("rows").getJSONArray(0));
+        assertRow(List.of("合计", 180, 1), archived.getJSONArray("totals"));
     }
 
     // 抓住分组回包超过行数限制，或裁掉的行漏出合计。

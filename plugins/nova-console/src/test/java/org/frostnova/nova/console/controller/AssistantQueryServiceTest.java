@@ -153,7 +153,7 @@ class AssistantQueryServiceTest {
         var fans = query.fans(platform, uid, 30).getJSONObject("fans");
         if (Boolean.getBoolean("assistant.aggregate.printFixtures")) System.out.println("粉丝趋势 " + fans);
         var points = fans.getJSONArray("points");
-        assertEquals(120, points.size());
+        assertEquals(101, points.size());
         assertEquals(count, fans.getIntValue("total"));
         assertTrue(fans.getBooleanValue("truncated"));
         var first = points.getJSONObject(0);
@@ -172,6 +172,42 @@ class AssistantQueryServiceTest {
         assertEquals(1299d, fans.getDouble("toValue"));
         assertEquals(299d, fans.getDouble("pointChange"));
         assertEquals(399d, fans.getDouble("change"));
+    }
+
+    // 抓住按快照行号抽点时，密集的后半段挤占大多数点，让匀速涨粉看起来变慢。
+    @Test void fanCurveSamplesUnevenSnapshotsByTime() {
+        append(start, 3600, 10);
+        long windowStart = StatisticsDay.startOf(LocalDate.of(2026, 9, 25)).toEpochMilli();
+        long width = now - windowStart;
+        long middle = windowStart + width / 2;
+        var recorded = new TreeMap<Long, Double>();
+        for (int i = 0; i < 61; i++) recorded.put(windowStart + i * (width / 2) / 61, 0d);
+        for (int i = 0; i < 346; i++) recorded.put(middle + i * (width / 2) / 346, 0d);
+        recorded.replaceAll((at, unused) -> 1000d + (at - windowStart) / 3600000d);
+        recorded.forEach((at, value) -> snapshots.append(new StreamerSnapshot(platform, uid, "合成主播", at,
+                Map.of("fans", value))));
+
+        var fans = query.fans(platform, uid, 30).getJSONObject("fans");
+        if (Boolean.getBoolean("assistant.aggregate.printFixtures")) System.out.println("疏密不均粉丝趋势 " + fans);
+        var points = fans.getJSONArray("points");
+        var sampled = points.stream().map(JSONObject.class::cast).map(p -> p.getLongValue("at")).toList();
+        assertEquals(407, fans.getIntValue("total"));
+        assertTrue(sampled.size() <= 120);
+        assertEquals(recorded.firstKey(), sampled.get(0));
+        assertEquals(recorded.lastKey(), sampled.get(sampled.size() - 1));
+        assertEquals(60, sampled.stream().filter(at -> at < middle).count());
+        assertEquals(60, sampled.stream().filter(at -> at >= middle).count());
+        var expected = new TreeSet<>(List.of(recorded.firstKey(), recorded.lastKey()));
+        double segment = width / 118d;
+        for (int i = 0; i < 118; i++) {
+            double lower = i * segment, upper = (i + 1) * segment, center = (lower + upper) / 2;
+            recorded.keySet().stream().filter(at -> at - windowStart >= lower && at - windowStart < upper)
+                    .min(Comparator.comparingDouble(at -> Math.abs(at - windowStart - center))).ifPresent(expected::add);
+        }
+        assertEquals(List.copyOf(expected), sampled);
+        for (int i = 0; i < points.size(); i++) {
+            assertEquals(recorded.get(sampled.get(i)), points.getJSONObject(i).getDouble("value"));
+        }
     }
 
     // 抓抽稀导致五分钟掉人时段的端点或数值被说错。
@@ -376,7 +412,7 @@ class AssistantQueryServiceTest {
         assertTrue(day.getBooleanValue("startsTruncated"));
         var fans = query.fans(platform, uid, 7).getJSONObject("fans");
         assertEquals(130, fans.getIntValue("total"));
-        assertEquals(120, fans.getJSONArray("points").size());
+        assertEquals(2, fans.getJSONArray("points").size());
         assertTrue(fans.getBooleanValue("truncated"));
         var ranking = new ArrayList<UserScore>();
         for (int i = 0; i < 12; i++) ranking.add(new UserScore(9300000021L + i, "合成观众" + i, 10));

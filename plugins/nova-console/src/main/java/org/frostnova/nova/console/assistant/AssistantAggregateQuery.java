@@ -47,8 +47,10 @@ final class AssistantAggregateQuery {
             + "缺采数按筛选读数前的直播分钟计算";
     static final String SESSION_COUNT_RULE = "按 hour 或 weekday 分组时，sessionCount 是有数据的不同直播场数。"
             + "同时汇总在线和看过人数时，用 onlineSessionCount、watchedSessionCount 分别计各自有读数的场数";
+    static final String DAILY_REVENUE_RULE = "session 按 day 汇总 sum:amount，省略筛选、排序和限行，逐日返回并给出同范围合计。"
+            + "sessionCount（或所选的 count）为 0 表示当天无归档开播，流水为 0。有场次缺金额则当天和完整合计为 null";
     static final String KNOWN_AMOUNT_RULE = "knownAmountSubtotal 仅合计已知金额，完整合计仍未知。"
-            + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按发生统计日列各类缺失条数";
+            + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按统计日列各类缺失条数，session 表示缺流水的场次";
     static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
             + "窗口内首次留档为新观众，窗口前首次留档为老观众。留档起点之前来过的人可能计作新观众";
     static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
@@ -74,6 +76,8 @@ final class AssistantAggregateQuery {
     private final boolean byAudience;
     private final boolean byMinute;
     private final boolean danmuByDay;
+    private final boolean dailySessionRevenue;
+    private final boolean addDailySessionCount;
     private final boolean usesSessionAudience;
     private final List<Filter> startFilters;
     private final long from;
@@ -82,7 +86,7 @@ final class AssistantAggregateQuery {
     private final List<Field> numericFields;
     private final List<Field> sessionSampleFields;
     private final List<String> sessionCountColumns;
-    private final int eventAmountIndex;
+    private final int missingAmountIndex;
     private final Set<Field> fields;
     private final Set<String> eventFields;
     private final JSONReader.Context readerContext = JSONFactory.createReadContext();
@@ -122,6 +126,11 @@ final class AssistantAggregateQuery {
         byAudience = request.groups().contains(Group.AUDIENCE);
         byMinute = request.groups().contains(Group.MINUTE);
         danmuByDay = request.kinds().contains(Kind.DANMU) && request.groups().equals(List.of(Group.DAY));
+        boolean sumsAmount = request.measures().stream()
+                .anyMatch(m -> m.field() == Field.AMOUNT && m.operation() == Operation.SUM);
+        dailySessionRevenue = sessions && sumsAmount && request.groups().equals(List.of(Group.DAY))
+                && request.filters().isEmpty() && request.sort() == null && request.limit() == null;
+        addDailySessionCount = dailySessionRevenue && request.measures().stream().noneMatch(m -> m.operation() == Operation.COUNT);
         groupMillis = SERIES_BUCKET_MILLIS * (request.bucketMinutes() == null ? 1 : request.bucketMinutes());
         from = StatisticsDay.startOf(request.from()).toEpochMilli();
         to = StatisticsDay.startOf(request.to().plusDays(1)).toEpochMilli();
@@ -132,9 +141,7 @@ final class AssistantAggregateQuery {
         if (!byClock) sessionCountColumns = List.of();
         else if (sessionSampleFields.size() < 2) sessionCountColumns = List.of("sessionCount");
         else sessionCountColumns = sessionSampleFields.stream().map(f -> f.key + "SessionCount").toList();
-        boolean sumEventAmount = !sessions && request.measures().stream()
-                .anyMatch(m -> m.field() == Field.AMOUNT && m.operation() == Operation.SUM);
-        eventAmountIndex = sumEventAmount ? numericFields.indexOf(Field.AMOUNT) : -1;
+        missingAmountIndex = sumsAmount && (!sessions || dailySessionRevenue) ? numericFields.indexOf(Field.AMOUNT) : -1;
         fields = EnumSet.noneOf(Field.class);
         fields.addAll(numericFields);
         request.filters().forEach(filter -> fields.add(filter.field()));
@@ -160,6 +167,11 @@ final class AssistantAggregateQuery {
                 history = historyResult.view();
                 historyRecordsScanned = historyResult.scannedRecords();
                 if (history == null) return historyInProgress(historyResult);
+            }
+            if (danmuByDay || dailySessionRevenue) {
+                for (var day = request.from(); !day.isAfter(request.to()); day = day.plusDays(1)) {
+                    groups.computeIfAbsent(new Key(day.toString(), null), this::bucket);
+                }
             }
             if (sessions) {
                 Map<Long, Row> summaries = new HashMap<>();
@@ -338,11 +350,6 @@ final class AssistantAggregateQuery {
                             BiFunction<Long, String, Path> file, Long liveStart) throws IOException {
         List<Kind> danmu = audienceActivity ? AUDIENCE_DANMU : request.kinds().stream().filter(AssistantAggregateQuery::isDanmu).toList();
         List<Kind> events = audienceActivity ? AUDIENCE_EVENTS : request.kinds().stream().filter(k -> !isDanmu(k)).toList();
-        if (danmuByDay) {
-            for (var day = request.from(); !day.isAfter(request.to()); day = day.plusDays(1)) {
-                groups.computeIfAbsent(new Key(day.toString(), null), this::bucket);
-            }
-        }
         var visited = new HashSet<Long>();
         archive.forEachOverlapping(platform, uid, from, to, audienceActivity, MAX_SESSION_CHARS, session -> {
             long start = session.startTime();
@@ -793,7 +800,7 @@ final class AssistantAggregateQuery {
             var number = (BigDecimal) row.value(field);
             if (number == null) {
                 unknown |= !isSample(field);
-                if (i == eventAmountIndex) {
+                if (i == missingAmountIndex) {
                     missingAmounts.computeIfAbsent(clockGroups(row.at()).day(), day -> new EnumMap<>(Kind.class))
                             .merge(row.kind(), 1, Integer::sum);
                 }
@@ -893,11 +900,13 @@ final class AssistantAggregateQuery {
     }
 
     private JSONObject table(boolean liveUnarchived, Long liveStart, AssistantQueryContext context) {
-        int limit = request.limit() == null ? TABLE_ROWS - 1 : request.limit();
+        int defaultLimit = dailySessionRevenue ? groups.size() : TABLE_ROWS - 1;
+        int limit = request.limit() == null ? defaultLimit : request.limit();
         var columns = new JSONArray();
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));
         columns.addAll(sessionCountColumns);
+        if (addDailySessionCount) columns.add("sessionCount");
         boolean allMissing = !series && missingDetailsCount > 0 && !hasAvailableDetails;
         var totals = new JSONArray();
         if (!request.groups().isEmpty()) totals.add("合计");
@@ -928,8 +937,9 @@ final class AssistantAggregateQuery {
         if (numericFields.contains(Field.QUANTITY)) {
             result.put("quantityUnit", request.kinds().contains(Kind.GUARD) ? "个月" : "个");
         }
+        if (dailySessionRevenue) result.put("dailyRevenueNote", DAILY_REVENUE_RULE);
         if (!missingAmounts.isEmpty()) {
-            Numeric amount = total.numbers[eventAmountIndex];
+            Numeric amount = total.numbers[missingAmountIndex];
             result.put("knownAmountSubtotal", amount.known == 0 ? null : amount.sum);
             result.put("missingAmountRows", total.count - amount.known);
             result.put("missingAmountsByDayAndKind", missingAmounts.entrySet().stream().map(entry -> {
@@ -973,6 +983,7 @@ final class AssistantAggregateQuery {
     private void appendMeasures(JSONArray row, Bucket bucket, boolean unknown) {
         for (Measure measure : request.measures()) row.add(unknown ? null : value(bucket, measure));
         for (LongSet sessions : bucket.sessions) row.add(unknown ? null : sessions.size());
+        if (addDailySessionCount) row.add(bucket.count);
     }
 
     private Object value(Bucket bucket, Measure measure) {
