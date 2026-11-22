@@ -92,6 +92,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         int decimalPlaces = chart.series().stream().allMatch(AVERAGE_SERIES.asPredicate()) ? 1 : 2;
         boolean bar = chart.type() == Type.BAR;
         var occupied = new ArrayList<Shape>();
+        var strokes = new ArrayList<Shape>();
         int tickWidth = LEFT - MARGIN - 17;
         for (BigDecimal tick = scale.low(); tick.compareTo(scale.high()) <= 0; tick = tick.add(scale.step())) {
             int y = scale.y(tick);
@@ -111,7 +112,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         for (int series = 0; series < chart.series().size(); series++) {
             var points = new ArrayList<PlotValue>();
             if (chart.type() == Type.LINE) {
-                drawLine(painter, chart, series, colors.get(series), scale, points, occupied);
+                drawLine(painter, chart, series, colors.get(series), scale, points, occupied, strokes);
                 if (!points.isEmpty()) required.add(points.get(points.size() - 1));
                 keepExtrema(points, lineExtrema);
             } else {
@@ -127,7 +128,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             required.addAll(lineExtrema);
         }
         boolean allBars = bar && values.size() <= ALL_BAR_LABELS;
-        drawValueLabels(painter, layoutValues(painter, chart, values, required, occupied, allBars));
+        drawValueLabels(painter, layoutValues(painter, chart, values, required, occupied, strokes, allBars));
         if (bar) {
             var requiredRows = required.stream().map(PlotValue::row).distinct().toList();
             drawBarCategories(painter, chart, requiredRows, allBars);
@@ -179,14 +180,14 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     }
 
     private void drawLine(CommonPainter painter, Chart chart, int series, Color color, Scale scale,
-                          List<PlotValue> values, List<Shape> occupied) {
+                          List<PlotValue> values, List<Shape> occupied, List<Shape> strokes) {
         var segment = new ArrayList<Point>();
         int count = chart.rows().size();
         for (int row = 0; row < count; row++) {
             var cell = chart.rows().get(row).values().get(series);
             BigDecimal value = cell.number();
             if (value == null) {
-                drawSegment(painter, color, segment, count, occupied);
+                drawSegment(painter, color, segment, count, occupied, strokes);
                 segment.clear();
                 continue;
             }
@@ -194,10 +195,11 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             segment.add(new Point(x, y));
             values.add(new PlotValue(row, x, y, value, cell.text(), null));
         }
-        drawSegment(painter, color, segment, count, occupied);
+        drawSegment(painter, color, segment, count, occupied, strokes);
     }
 
-    private static void drawSegment(CommonPainter painter, Color color, List<Point> segment, int count, List<Shape> occupied) {
+    private static void drawSegment(CommonPainter painter, Color color, List<Point> segment, int count,
+                                    List<Shape> occupied, List<Shape> strokes) {
         if (segment.size() > 1) {
             int width = count > 100 ? 2 : 3;
             painter.drawPolyline(segment, color, width);
@@ -206,7 +208,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             segment.subList(1, segment.size()).forEach(point -> path.lineTo(point.x, point.y));
             // 避开整条笔画，并给抗锯齿边缘留出空隙。
             var stroke = new BasicStroke(width + 4, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-            occupied.add(stroke.createStrokedShape(path));
+            strokes.add(stroke.createStrokedShape(path));
         }
         if (count <= 40 || segment.size() == 1) {
             for (Point point : segment) {
@@ -241,7 +243,8 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     }
 
     private List<ValueLabel> layoutValues(CommonPainter painter, Chart chart, List<PlotValue> values,
-                                          Set<PlotValue> required, List<Shape> occupied, boolean allBars) {
+                                          Set<PlotValue> required, List<Shape> occupied, List<Shape> strokes,
+                                          boolean allBars) {
         var labels = new ArrayList<ValueLabel>();
         boolean bar = chart.type() == Type.BAR;
         int half = (RIGHT - LEFT) / 2;
@@ -255,9 +258,16 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             }
         }
         labels.clear();
+        var blocked = new ArrayList<>(occupied);
+        blocked.addAll(strokes);
+        PlotValue lineEnd = !bar && chart.series().size() == 1 && !values.isEmpty() ? values.get(values.size() - 1) : null;
         for (PlotValue value : required) {
-            if (fitValue(painter, value, labels, occupied) || !bar || shiftValue(painter, value, labels, occupied)) continue;
-            if (!fitValue(painter, value, labels, List.of())) shiftValue(painter, value, labels, List.of());
+            if (fitValue(painter, value, labels, blocked)) continue;
+            if (value == lineEnd) {
+                placeLineEnd(painter, value, values, labels, occupied, blocked);
+            } else if (bar && !shiftValue(painter, value, labels, occupied)) {
+                if (!fitValue(painter, value, labels, List.of())) shiftValue(painter, value, labels, List.of());
+            }
         }
         int count = chart.rows().size();
         for (PlotValue value : values) {
@@ -265,7 +275,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             if (allBars) {
                 if (!fitValue(painter, value, labels, occupied)) shiftValue(painter, value, labels, occupied);
             } else if (bar ? count * chart.series().size() <= 16 : count <= 10) {
-                placeValue(painter, value, LABEL_SIZE, labels, occupied);
+                placeValue(painter, value, LABEL_SIZE, labels, blocked);
             }
         }
         return labels;
@@ -309,6 +319,62 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
             if (left >= MARGIN && left + bounds.width <= WIDTH - MARGIN && valueFits(value, bounds, labels, occupied)) return true;
         }
         return false;
+    }
+
+    private void placeLineEnd(CommonPainter painter, PlotValue value, List<PlotValue> points, List<ValueLabel> labels,
+                              List<Shape> occupied, List<Shape> blocked) {
+        for (int size = LABEL_SIZE; size >= MIN_LABEL_SIZE; size--) {
+            var text = line(painter, value.text(), size, painter.palette().text(), Font.PLAIN);
+            int width = text.width() + 6;
+            int height = size + 7;
+            int left = value.x() - LINE_LABEL_GAP - width;
+            if (left < MARGIN) continue;
+            for (int y : new int[]{value.y() - height / 2, value.y() - height - LINE_LABEL_GAP, value.y() + LINE_LABEL_GAP}) {
+                if (y < TOP - 26 || y + height > BOTTOM) continue;
+                var bounds = new Rectangle(left, y, width, height);
+                if (valueFits(value, bounds, labels, blocked)) {
+                    labels.add(new ValueLabel(bounds, text, value, false));
+                    return;
+                }
+            }
+        }
+
+        // 末点的标注可以跨过线段。点太密而未画圆点时，也给数据点留出空隙。
+        var clearOfPoints = new ArrayList<>(occupied);
+        points.stream().map(point -> new Rectangle(point.x() - 5, point.y() - 5, 10, 10)).forEach(clearOfPoints::add);
+        // 数值过宽时缩小字号，保留完整的标注文字。
+        for (int size = MIN_LABEL_SIZE; size > 0; size--) {
+            var text = line(painter, value.text(), size, painter.palette().text(), Font.PLAIN);
+            int width = text.width() + 6;
+            if (width > CONTENT_WIDTH) continue;
+            var bounds = nearestLineEndBounds(value, width, size + 7, labels, clearOfPoints);
+            if (bounds != null) {
+                labels.add(new ValueLabel(bounds, text, value, false));
+                return;
+            }
+        }
+    }
+
+    private static Rectangle nearestLineEndBounds(PlotValue value, int width, int height,
+                                                   List<ValueLabel> labels, List<Shape> occupied) {
+        var candidate = new Rectangle(0, 0, width, height);
+        Rectangle nearest = null;
+        int bestDistance = Integer.MAX_VALUE;
+        // 比较标注框中心到末点的距离，坐标乘二以保留半像素的中心位置。
+        for (int y = TOP - 26; y + height <= BOTTOM; y++) {
+            int dy = 2 * (y - value.y()) + height;
+            if (dy * dy >= bestDistance) continue;
+            for (int x = MARGIN; x + width <= WIDTH - MARGIN; x++) {
+                int dx = 2 * (x - value.x()) + width;
+                int distance = dx * dx + dy * dy;
+                if (distance >= bestDistance) continue;
+                candidate.setLocation(x, y);
+                if (!valueFits(value, candidate, labels, occupied)) continue;
+                nearest = new Rectangle(candidate);
+                bestDistance = distance;
+            }
+        }
+        return nearest;
     }
 
     private boolean shiftValue(CommonPainter painter, PlotValue value, List<ValueLabel> labels, List<Shape> occupied) {

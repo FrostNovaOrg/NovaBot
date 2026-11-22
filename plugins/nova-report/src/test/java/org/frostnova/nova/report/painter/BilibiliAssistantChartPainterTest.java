@@ -96,6 +96,24 @@ class BilibiliAssistantChartPainterTest {
                 () -> assertEquals(1, valueLabels(atPeak, "21760"), "最新值也是最高值时只画一次"));
     }
 
+    @Test
+    @DisplayName("30 天粉丝折线贴近右下角时，最新值标注会被省略")
+    void singleLineLabelsTheLatestValueAtTheBottomRight() {
+        var rows = IntStream.rangeClosed(1, 30)
+                .mapToObj(day -> row("11-%02d".formatted(day), day == 1 ? 21900 : day == 30 ? 21701 : 21707)).toList();
+        var chart = new Chart(Type.LINE, "近 30 天粉丝数", "日期", "粉丝数", List.of("粉丝数"),
+                rows, null, "合成归档", rows.size());
+
+        var drawing = record(chart);
+        assertEquals(1, valueLabels(drawing, "21701"), "折线应标出最新粉丝数");
+        var labels = drawing.labels();
+        for (int i = 0; i < labels.size(); i++) {
+            var bounds = labels.get(i);
+            assertTrue(drawing.markers().stream().noneMatch(bounds::contains), "数值标注应避开数据点");
+            assertTrue(labels.subList(0, i).stream().noneMatch(bounds::intersects), "数值标注框互相重叠");
+        }
+    }
+
     private static long valueLabels(Drawing drawing, String value) {
         return drawing.text().stream().filter(entry -> value.equals(entry.text()))
                 .filter(entry -> drawing.labels().stream().anyMatch(box -> box.y == entry.position().y && box.contains(entry.position())))
