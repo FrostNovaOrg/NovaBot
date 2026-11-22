@@ -23,6 +23,7 @@ final class AssistantPrivacy {
     private static final Pattern IDENTIFIER = Pattern.compile("[0-9]{5,}");
     private final Map<String, String> names = new LinkedHashMap<>();
     private final Map<String, String> replacements = new LinkedHashMap<>();
+    private final Set<String> sqlAliases = new HashSet<>();
     private static final Pattern ALIAS = Pattern.compile("观众-[0-9a-fA-F]{6}");
     private static final Pattern ALIAS_OR_IDENTIFIER = Pattern.compile(ALIAS.pattern() + "|" + IDENTIFIER.pattern());
     private Pattern replacementPattern;
@@ -101,6 +102,13 @@ final class AssistantPrivacy {
                 }
                 if (!rows.isEmpty()) dataTypes.add("观众代号 " + rows.size() + " 行");
             }
+        }
+        if (AssistantSqlRequest.NAME.equals(tool) && result.get("rows") instanceof JSONArray rows) {
+            rows.stream().map(JSONArray.class::cast).flatMap(Collection::stream)
+                    .filter(String.class::isInstance).map(String.class::cast)
+                    .flatMap(text -> ALIAS.matcher(text).results())
+                    .forEach(match -> sqlAliases.add(match.group().toLowerCase(Locale.ROOT)));
+            if (!sqlAliases.isEmpty()) dataTypes.add("观众代号");
         }
         dataTypes.add("汇总数字");
         return result;
@@ -221,7 +229,9 @@ final class AssistantPrivacy {
     }
 
     String display(String text) {
-        for (var entry : names.entrySet()) text = text.replace(entry.getKey(), entry.getValue());
+        for (var entry : names.entrySet()) {
+            if (!sqlAliases.contains(entry.getKey())) text = text.replace(entry.getKey(), entry.getValue());
+        }
         return text;
     }
 

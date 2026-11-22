@@ -24,6 +24,16 @@
             <groupId>org.frostnova.nova</groupId>
             <artifactId>novacore</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.54.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.19.1</version>
+        </dependency>
 
         <!--
             只在测试里用：测试另起 NovaBot 子进程时经 novacore 测试域里的 ParentBoundMain 启动，

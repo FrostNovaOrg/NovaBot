@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.function.UnaryOperator;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -27,7 +28,7 @@ final class AssistantChartResults {
     private static final Pattern MONEY_LABEL = Pattern.compile("金额|流水|单价|营收|收入|收益|盈亏|支出|花费|实扣|消耗|礼物价值"
             + "|[¥￥$€£]|人民币|(?i:\\b(?:CNY|RMB|USD)\\b)");
     private static final Set<String> TIMESTAMPS = Set.of("at", "startTime", "endTime", "start", "end", "from", "to",
-            "session", "minute", "firstRecordedAt", "fans.fromAt", "fans.toAt");
+            "session", "minute", "firstRecordedAt", "fans.fromAt", "fans.toAt", "start_at", "end_at", "session_start");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(StatisticsDay.ZONE);
     private static final Map<String, String> LABELS = Map.ofEntries(
             Map.entry("day", "统计日"), Map.entry("week", "统计周"), Map.entry("month", "统计月"), Map.entry("hour", "北京时间"),
@@ -81,7 +82,18 @@ final class AssistantChartResults {
         for (String column : table.columns()) {
             if (safeColumn(tool, column, curveMetric, knownMetrics)) safe.add(column);
         }
-        var result = new Result(++lastNumber, tool, arguments, data.getString("source"), table, Set.copyOf(safe));
+        register(tool, arguments, data, table, Set.copyOf(safe));
+    }
+
+    void addSql(JSONObject arguments, JSONObject data, AssistantQueryContext context) {
+        if (data.containsKey("reason")) return;
+        Table table = aggregate(data);
+        register(AssistantSqlRequest.NAME, arguments, data, table,
+                context.amountVisible() ? Set.of() : Set.copyOf(table.columns()));
+    }
+
+    private void register(String tool, JSONObject arguments, JSONObject data, Table table, Set<String> safe) {
+        var result = new Result(++lastNumber, tool, arguments, data.getString("source"), table, safe);
         data.put("resultNumber", result.number());
         data.put("chartColumns", table.columns());
         byNumber.put(result.number(), result);
@@ -108,6 +120,7 @@ final class AssistantChartResults {
         if (request.type() != Type.TABLE && count > limit) throw new Invalid(limitMessage);
 
         var rows = new ArrayList<Row>();
+        UnaryOperator<String> display = AssistantSqlRequest.NAME.equals(result.tool()) ? privacy::mask : privacy::displayChart;
         int points = 0;
         for (var row : result.table().rows().subList(0, count)) {
             Object x = row.get(request.xColumn());
@@ -119,38 +132,39 @@ final class AssistantChartResults {
                     if (numeric == null) throw new Invalid("折线和柱状的纵轴列需要数值");
                     if (++points > limit) throw new Invalid(limitMessage);
                 }
-                values.add(new Value(cellText(column, cell, privacy), numeric));
+                values.add(new Value(cellText(column, cell, display), numeric));
             }
-            rows.add(new Row(cellText(request.xColumn(), x, privacy), List.copyOf(values)));
+            rows.add(new Row(cellText(request.xColumn(), x, display), List.copyOf(values)));
         }
         if (request.type() != Type.TABLE && points == 0) throw new Invalid("所选纵轴没有已知数值");
 
         var series = request.yColumns().stream().map(column -> columnLabel(result, column)).toList();
         var target = request.referenceLine();
-        String title = label(request.title(), MAX_TITLE, context, privacy);
+        String title = label(request.title(), MAX_TITLE, context, display);
         String xLabel = request.xLabel() == null ? columnLabel(result, request.xColumn())
-                : label(request.xLabel(), MAX_LABEL, context, privacy);
-        String yLabel = label(request.yLabel(), MAX_LABEL, context, privacy);
-        if (target != null) target = new ReferenceLine(target.value(), label(target.label(), MAX_LABEL, context, privacy));
+                : label(request.xLabel(), MAX_LABEL, context, display);
+        String yLabel = label(request.yLabel(), MAX_LABEL, context, display);
+        if (target != null) target = new ReferenceLine(target.value(), label(target.label(), MAX_LABEL, context, display));
         return new Chart(request.type(), title, xLabel, yLabel, series, List.copyOf(rows), target,
                 result.source() == null ? "" : clean(result.source(), 48), available);
     }
 
     private static String columnLabel(Result result, String column) {
-        if ("audience".equals(column)) return "aggregate".equals(result.tool()) ? "观众" : "观众人数";
+        if ("audience".equals(column))
+            return "aggregate".equals(result.tool()) || AssistantSqlRequest.NAME.equals(result.tool()) ? "观众" : "观众人数";
         if ("value".equals(column) && "fans".equals(result.tool())) return "粉丝数";
         return clean(LABELS.getOrDefault(column, column), MAX_LABEL);
     }
 
-    private static String label(String text, int max, AssistantQueryContext context, AssistantPrivacy privacy) {
+    private static String label(String text, int max, AssistantQueryContext context, UnaryOperator<String> renderer) {
         if (text == null) return null;
-        String display = privacy.displayChart(text);
+        String display = renderer.apply(text);
         if (!context.amountVisible() && (MONEY_LABEL.matcher(display).find() || AssistantAskService.containsAmount(display)))
             throw new Invalid(AssistantAggregateRequest.HIDDEN_AMOUNT + "，图表文字不能包含金额");
         return clean(display, max);
     }
 
-    private static String cellText(String column, Object cell, AssistantPrivacy privacy) {
+    private static String cellText(String column, Object cell, UnaryOperator<String> display) {
         if (cell == null) return "—";
         if (cell instanceof Number n) {
             if (TIMESTAMPS.contains(column) && n.longValue() >= 100_000_000_000L && n.longValue() < 10_000_000_000_000L)
@@ -161,7 +175,7 @@ final class AssistantChartResults {
             return number == null ? "—" : number.scale() > 16 || number.scale() < -16
                     ? number.toEngineeringString() : number.toPlainString();
         }
-        return clean(privacy.displayChart(cell.toString()), 36);
+        return clean(display.apply(cell.toString()), 36);
     }
 
     private static boolean safeColumn(String tool, String column, String curveMetric, Set<String> nonMonetaryMetrics) {
