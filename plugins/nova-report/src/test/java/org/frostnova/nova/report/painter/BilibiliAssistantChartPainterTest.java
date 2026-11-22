@@ -79,6 +79,17 @@ class BilibiliAssistantChartPainterTest {
                         new Value("120000", new BigDecimal("120000.00")), new Value("15113.7", new BigDecimal("15113.70000000000014")))));
     }
 
+    @Test
+    @DisplayName("每日流水图的参考线会显示一长串浮点小数")
+    void referenceLineUsesShortAmountLabel() {
+        var rows = List.of(row("11-01", 9000), row("11-02", 11600));
+        var target = new ReferenceLine(new BigDecimal("10463.10000000000004"), "流水目标");
+        var chart = new Chart(Type.LINE, "每日流水", "日期", "流水（元）", List.of("流水（元）"),
+                rows, target, "合成归档", rows.size());
+        var drawn = record(chart).text().stream().map(DrawnText::text).toList();
+        assertTrue(drawn.contains("10463.1"), drawn::toString);
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("lineSamples")
     @DisplayName("每日和钟点折线的标注框会遮住其他点的圆心或盖住折线")

@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
 /** 智能助手的定幅数据图，沿用数据查询图的报告画布与配色。 */
@@ -44,6 +45,7 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
     private static final int ALL_BAR_LABELS = 12;
     private static final String NOTICE = "由人工智能生成";
     private static final List<Integer> STEPS = List.of(1, 2, 5, 10);
+    private static final Pattern AVERAGE_SERIES = Pattern.compile("平均|(?i:^(?:avg|average)(?:[:_].+)?$)");
     private static final MathContext POSITION_PRECISION = MathContext.DECIMAL64;
 
     private final NovaCommonPainterFactory factory;
@@ -87,19 +89,21 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         painter.drawRoundedRectangle(MARGIN, 128, CONTENT_WIDTH, 358, 18, palette.card());
 
         Scale scale = Scale.of(chart);
+        int decimalPlaces = chart.series().stream().allMatch(AVERAGE_SERIES.asPredicate()) ? 1 : 2;
         boolean bar = chart.type() == Type.BAR;
         var occupied = new ArrayList<Shape>();
         int tickWidth = LEFT - MARGIN - 17;
         for (BigDecimal tick = scale.low(); tick.compareTo(scale.high()) <= 0; tick = tick.add(scale.step())) {
             int y = scale.y(tick);
             painter.drawRectangle(LEFT, y, RIGHT - LEFT + 1, 1, tick.signum() == 0 ? palette.curveGapEdge() : palette.calendarBorder());
-            text(painter, number(tick), MARGIN + 7, y - 12, tickWidth, 17, 10, muted(painter), Font.PLAIN, Align.RIGHT, false);
+            text(painter, number(tick, decimalPlaces), MARGIN + 7, y - 12, tickWidth, 17, 10,
+                    muted(painter), Font.PLAIN, Align.RIGHT, false);
             if (!bar) occupied.add(new Rectangle(MARGIN + 7, y - 12, tickWidth, 22));
         }
         if (chart.yLabel() != null && chart.series().size() > 1) {
             text(painter, chart.yLabel(), LEFT, 132, (RIGHT - LEFT) / 2, 17, 16, muted(painter), Font.PLAIN, Align.LEFT, true);
         }
-        if (chart.referenceLine() != null) drawReference(painter, scale, chart.referenceLine());
+        if (chart.referenceLine() != null) drawReference(painter, scale, chart.referenceLine(), decimalPlaces);
         int count = chart.rows().size();
         var values = new ArrayList<PlotValue>();
         var required = new LinkedHashSet<PlotValue>();
@@ -160,12 +164,12 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
         }
     }
 
-    private void drawReference(CommonPainter painter, Scale scale, ReferenceLine reference) {
+    private void drawReference(CommonPainter painter, Scale scale, ReferenceLine reference, int decimalPlaces) {
         int y = scale.y(reference.value());
         var color = muted(painter);
         for (int x = LEFT; x < RIGHT; x += 15) painter.drawRectangle(x, y, Math.min(8, RIGHT - x), 2, color);
         int area = (RIGHT - LEFT) / 2;
-        String number = number(reference.value());
+        String number = number(reference.value(), decimalPlaces);
         int numberWidth = Math.min(area / 2, line(painter, number, 17, color, Font.BOLD).width());
         text(painter, reference.label(), RIGHT - area, 132, area - numberWidth - 6, 17, 15, color, Font.BOLD, Align.RIGHT, true);
         text(painter, number, RIGHT - numberWidth, 132, numberWidth, 17, 11, color, Font.BOLD, Align.RIGHT, false);
@@ -571,9 +575,9 @@ public class BilibiliAssistantChartPainter implements AssistantChartRenderer {
 
     private static Color muted(CommonPainter painter) { return painter.palette().tip().darker(); }
 
-    private static String number(BigDecimal value) {
-        var normalized = value.stripTrailingZeros();
-        return normalized.scale() > 8 || normalized.scale() < -8 ? normalized.toEngineeringString() : normalized.toPlainString();
+    private static String number(BigDecimal value, int decimalPlaces) {
+        if (value.scale() > decimalPlaces) value = value.setScale(decimalPlaces, RoundingMode.HALF_UP);
+        return value.stripTrailingZeros().toPlainString();
     }
 
     private record Scale(BigDecimal low, BigDecimal high, BigDecimal step) {
