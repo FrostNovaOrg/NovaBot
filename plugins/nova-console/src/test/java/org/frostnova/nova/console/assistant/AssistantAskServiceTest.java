@@ -458,6 +458,9 @@ class AssistantAskServiceTest {
         replies.add(call("sessions", JSONObject.of("days", 30, "limit", 2)));
         var chart = JSONObject.of("resultNumber", 2, "type", "bar", "xColumn", "startTime",
                 "yColumns", List.of("audience", "messages"), "title", "场次\n对比");
+        chart.put("yLabel", "foo_bar");
+        replies.add(call("draw_chart", chart));
+        chart.remove("yLabel");
         replies.add(call("draw_chart", chart));
         chart.put("resultNumber", 1);
         replies.add(call("draw_chart", chart));
@@ -474,7 +477,9 @@ class AssistantAskServiceTest {
                         .map(AssistantChartRenderer.Value::number).toList()).toList());
         assertEquals(List.of("image-one", "image-two"), result.getJSONArray("images").toJavaList(String.class));
         assertFalse(sent.toString().contains("image-one"));
-        assertTrue(sent.get(5).toJSONString().contains("每问最多两张图"));
+        var toolReplies = toolDataAtLastRequest();
+        assertTrue(toolReplies.get(2).getString("reason").contains("名称要用中文：foo_bar"));
+        assertTrue(toolReplies.get(5).getString("reason").contains("每问最多两张图"));
 
         reset(chartRenderer);
         chart.put("points", List.of(999));
@@ -631,7 +636,7 @@ class AssistantAskServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"37/50", "8:20", "60%", "６０％", "1,532"})
+    @ValueSource(strings = {"37/50", "8:20", "60%", "６０％", "1,532", "3.7e1"})
     @DisplayName("手绘能用结果里的分子分母、时分、百分数和千位分组写法")
     void sketchAcceptsEquivalentNumbersAndClockTimes(String text) {
         seedSketchNumberFormats(50);
@@ -1271,14 +1276,14 @@ class AssistantAskServiceTest {
         String person = alias(9300090100L);
         local.rememberNickname(person, "合成观众甲");
         when(queries.querySql(eq("bilibili"), eq(1L), any(), eq(hidden), any(), any())).thenAnswer(call ->
-                JSONObject.of("source", "只读查询（直播归档）", "columns", List.of("audience", "times"),
+                JSONObject.of("source", "只读查询（直播归档）", "columns", List.of("audience", "到场次数"),
                         "rows", JSONArray.of(JSONArray.of(person, 31))));
         when(chartRenderer.render(any())).thenReturn(Optional.of("image"));
         var args = JSONObject.of("from", "2026-11-01", "to", "2026-11-30", "tables", List.of("events"),
-                "sql", "SELECT audience, COUNT(DISTINCT session_start) AS times FROM events GROUP BY audience");
+                "sql", "SELECT audience, COUNT(DISTINCT session_start) AS 到场次数 FROM events GROUP BY audience");
         for (int i = 0; i < 4; i++) replies.add(call("query_sql", args));
         replies.add(call("draw_chart", JSONObject.of("resultNumber", 3, "type", "bar", "xColumn", "audience",
-                "yColumns", List.of("times"), "title", person + "的到场次数")));
+                "yColumns", List.of("到场次数"), "title", person + "的到场次数")));
         replies.add(JSONObject.of("content", "按场次和观众去重。" + person + "出现了 31 次。"));
 
         var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "请为观众到场次数出图"), hidden);
@@ -1287,11 +1292,12 @@ class AssistantAskServiceTest {
                 .filter(message -> "tool".equals(message.getString("role")))
                 .map(message -> JSON.parseObject(message.getString("content"))).toList();
         assertEquals(List.of(1, 2, 3), data.subList(0, 3).stream().map(row -> row.getIntValue("resultNumber")).toList());
-        assertEquals(List.of("audience", "times"), data.get(2).getJSONArray("chartColumns"));
+        assertEquals(List.of("audience", "到场次数"), data.get(2).getJSONArray("chartColumns"));
         assertTrue(data.get(3).getString("reason").contains("最多调用 3 次"));
         assertFalse(data.get(3).containsKey("resultNumber"));
         var chart = org.mockito.ArgumentCaptor.forClass(AssistantChartRenderer.Chart.class);
         verify(chartRenderer).render(chart.capture());
+        assertEquals(List.of("到场次数"), chart.getValue().series());
         assertEquals(new BigDecimal("31"), chart.getValue().rows().get(0).values().get(0).number());
         assertEquals("合成观众甲", chart.getValue().rows().get(0).category());
         assertTrue(chart.getValue().title().contains("合成观众甲"));

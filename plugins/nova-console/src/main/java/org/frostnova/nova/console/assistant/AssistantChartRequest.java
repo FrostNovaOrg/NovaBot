@@ -14,7 +14,7 @@ record AssistantChartRequest(int resultNumber, Type type, String xColumn, List<S
                              String xLabel, String yLabel, ReferenceLine referenceLine, Integer tableRows) {
     static final String NAME = "draw_chart";
     static final String DESCRIPTION = "把查数结果画成折线、柱状或表格。只引用 resultNumber 和 chartColumns 中的列名，"
-            + "数据由本机填入。折线总计最多 400 个点，柱状总计最多 60 根，表格最多 20 行；每问最多两张。";
+            + "数据由本机填入。标题、图例、轴名和表头用中文。折线总计最多 400 个点，柱状总计最多 60 根，表格最多 20 行；每问最多两张。";
     static final List<String> REQUIRED = List.of("resultNumber", "type", "xColumn", "yColumns", "title");
     private static final Set<String> FIELDS = Set.of("resultNumber", "type", "xColumn", "yColumns", "title",
             "xLabel", "yLabel", "referenceLine", "tableRows");

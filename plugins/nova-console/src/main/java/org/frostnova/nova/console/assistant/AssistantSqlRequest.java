@@ -96,7 +96,7 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
                 : "当前聊天不显示金额，表中没有任何金额列。")
                 + "首次出现沿用现有归档索引，回答新老观众时写明 historyFrom 留档起点。"
                 + "每问最多调用 3 次，每次最多装入 50 万行，SQL 限时 5 秒，SQLite 内存上限 64 MiB。"
-                + "结果最多 32 列、200 行、64 KiB，可用 resultNumber 和 chartColumns 出图。回答用一两句说明怎么算的。";
+                + "列别名用中文。结果最多 32 列、200 行、64 KiB，可用 resultNumber 和 chartColumns 出图。回答用一两句说明怎么算的。";
     }
 
     static String dialect(String version) {
