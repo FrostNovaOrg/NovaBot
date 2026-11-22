@@ -108,7 +108,12 @@ Linux 一键安装的机器上，NovaBot 的输出在 journal（`journalctl -u n
 ### 机器人那头的日志不在这里
 
 QQ 机器人程序（比如 NapCat）自己的日志不在 NovaBot 的工程日志里，
-要到它自己的界面看。工程日志页上有「打开 NapCat 界面 ↗」的链接。
+要到它自己的界面看。
+
+配了 NapCat 的代登录 Token，工程日志页和连接页就会显示「打开 NapCat 界面」。
+NapCat 开了二次验证的，还要在 NovaBot 里填对应的密钥，代登录才能成功。
+要从入口打开界面，网页服务器还得按[附录 C](appendix-c-security-and-resources.md#让控制台打开-NapCat-界面)
+把 `/config/napcat/` 转给 NapCat。
 
 ### 日志文件在哪、留多久
 

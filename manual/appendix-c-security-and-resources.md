@@ -149,6 +149,113 @@ location /config/admin/ {
 若配置了 `server.servlet.context-path`，上述对外路径、检查地址与 `auth_request` 地址均加上该前缀。
 检查请求同样沿用来源 IP 白名单与会话活跃时间刷新约定。后端仍需执行自身的登录与角色检查。
 
+### 让控制台打开 NapCat 界面
+
+下面是 nginx 的完整 HTTPS 站点示例。它把 `/config` 转给本机的 NovaBot，
+把 `/config/napcat/` 转给本机的 NapCat。需要 nginx 带有 `http_auth_request` 和 `http_sub` 模块。
+把示例放到 `http` 块里（也可以放在由 `http` 块引入的站点文件中），换成自己的域名和证书路径。
+示例用控制台默认的 `7827` 和 NapCat WebUI 默认的 `6099`，改过端口的按实际填写。
+若已经有控制台站点，把 `map` 放在 `http` 块里，再把 NapCat 相关的 `location` 合进原站点的 `server` 块。
+
+```nginx
+# 浏览器打开网页时通常声明接收 text/html，没登录时可以把这类请求送回控制台。
+map $http_accept $napcat_wants_html {
+    default       0;
+    "~*text/html" 1;
+}
+
+server {
+    # 用同一个 HTTPS 站点提供控制台和 NapCat 界面，控制台的会话才能给代理用。
+    listen 443 ssl;
+    server_name example.com;
+    ssl_certificate     /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    # 控制台照原路径转发，登录与来源检查需要原样的 Host 和代理写入的来源头。
+    location /config {
+        proxy_pass http://127.0.0.1:7827;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # NapCat 以 root 运行，在 nginx 就挡住网页终端、调试、文件管理、插件安装和在线更新。
+    # NapCat 的路由不分大小写，用 ~* 拦下大小写不同的写法。
+    location = /config/napcat/api/ws/terminal { return 403; }
+    location ^~ /config/napcat/api/Debug/ { return 403; }
+    location ~* ^/config/napcat/api/(debug|ws/terminal|log/terminal) { return 403; }
+    location ~* ^/config/napcat/api/(file|plugin|updatenapcat) { return 403; }
+
+    # 每个交给 NapCat 的请求先用 auth_request 问控制台，只有登录的管理员才能通过。
+    # 检查地址只供 nginx 内部使用，子请求带上会话 Cookie 和与 /config 相同的来源头，不带请求体。
+    # 检查时去掉 NapCat 的 Authorization 头，避免只用访问令牌的控制台把它当成控制台令牌，拒绝有效的会话 Cookie。
+    location = /config/_admin-check {
+        internal;
+        proxy_pass http://127.0.0.1:7827/config/api/admin-session-check;
+        proxy_method GET;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $http_host;
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Authorization "";
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # 直接访问不带尾斜杠的入口时，转到 WebUI 首页。
+    location = /config/napcat { return 308 /config/napcat/webui/; }
+
+    location /config/napcat/ {
+        # NapCat 把调试以外的 WebSocket 升级都交给终端，这个路径下一律拒绝升级请求。
+        if ($http_upgrade) { return 403; }
+
+        auth_request /config/_admin-check;
+        error_page 401 = @napcat_unauthorized;
+
+        # proxy_pass 末尾的 / 会去掉对外的路径前缀，NapCat 收到的是 /webui/ 和 /api/。
+        # NapCat 发出的重定向要带回这个前缀，控制台的会话 Cookie 则不用交给 NapCat。
+        proxy_pass http://127.0.0.1:6099/;
+        proxy_http_version 1.1;
+        proxy_redirect http://127.0.0.1:6099/ /config/napcat/;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Cookie "";
+
+        # 关掉响应缓冲并给长连接留出时间，让实时日志及时显示。
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+
+        # 清掉 Accept-Encoding，让 NapCat 回未压缩的内容。
+        # sub_filter 才能把 HTML 和 JavaScript 里写死的根路径改到 /config/napcat/ 下。
+        proxy_set_header Accept-Encoding "";
+        sub_filter_types text/javascript;
+        sub_filter_once off;
+        sub_filter '"/webui/' '"/config/napcat/webui/';
+        sub_filter '"/api'    '"/config/napcat/api';
+
+        # 覆盖 NapCat 的缓存设置，浏览器和中间层都不保存这些响应。
+        proxy_cache off;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "private, no-store" always;
+    }
+
+    # 未登录时，网页请求跳回 /config 让用户登录，其他请求直接收到 401。
+    location @napcat_unauthorized {
+        add_header Cache-Control "private, no-store" always;
+        if ($napcat_wants_html) { return 302 /config; }
+        return 401;
+    }
+
+    # 其余路径不对外提供服务。
+    location / { return 404; }
+}
+```
+
+换好域名、证书和端口后，用 `nginx -t` 检查配置，再重载 nginx。
+
 ### 挂在路径前缀下
 
 要把控制台挂在某个路径前缀下（例如 `https://example.com/novabot/config`），
@@ -162,7 +269,8 @@ server:
 
 - 反代**原样转发路径**，不剥前缀：`/novabot/` 下的请求照原路径转给 NovaBot。
   页面、接口、登录 Cookie 都按这个前缀写，地址对不上时登录后会又回到登录页。
-- NapCat WebUI 那条反代规则跟着带前缀，写成 `/novabot/config/napcat/`（即「前缀 + `/config/napcat/`」）。
+- NapCat 示例里 nginx 接收与生成的 `/config` 路径，以及控制台的会话检查地址，都加上前缀。
+  例如 NapCat 的对外路径改成 `/novabot/config/napcat/`，转给 NapCat 的地址仍保留尾斜杠。
 - 反代剥掉前缀再转发、靠 `X-Forwarded-Prefix` 告诉 NovaBot 前缀的那种部署**不支持**：
   NovaBot 只认自己配置里的前缀，不认请求头里的。
 
