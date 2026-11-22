@@ -65,6 +65,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private static final int HISTORY_LIMIT = 3;
     private static final String CHOSEN_UID_PREFIX = "uid:";
     private static final Pattern NUMBER = Pattern.compile("[0-9]+");
+    private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
+    private static final Pattern RAW_ORDINAL = Pattern.compile("\\p{IsWhite_Space}*" + ORDINAL.pattern() + "\\p{IsWhite_Space}*");
     private static final Pattern NON_HAN_EDGES = Pattern.compile("^[^\\p{IsHan}]+|[^\\p{IsHan}]+\\z");
     private static final Pattern QUESTION_PREFIX = Pattern.compile("^[\\p{IsWhite_Space}\\p{P}]+");
     private static final Set<String> QUERY_WORDS = Set.of(
@@ -153,10 +155,10 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
 
         String question = String.join(" ", context.getArgs());
         if (question.isBlank()) return CommandReply.of(examples(allowed));
-        if (NUMBER.matcher(question).matches()) {
+        if (ORDINAL.matcher(question).matches()) {
             return switch (question) {
-                case "1" -> resumeFollowUp(context, asker, 0);
-                case "2" -> resumeFollowUp(context, asker, 1);
+                case "1", "１" -> resumeFollowUp(context, asker, 0);
+                case "2", "２" -> resumeFollowUp(context, asker, 1);
                 default -> CommandReply.of(NO_FOLLOW_UP);
             };
         }
@@ -182,7 +184,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
         }
         Candidate streamer = options.get(0);
         String rawText = context.getRawText();
-        String chosenName = fromChoice && rawText != null && NUMBER.matcher(rawText.trim()).matches()
+        String chosenName = fromChoice && rawText != null && RAW_ORDINAL.matcher(rawText.trim()).matches()
                 ? streamer.displayName() : null;
         return start(context, asker, streamer.uid(), question, null, chosenName);
     }
@@ -305,7 +307,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     public Claimed claim(CommandContext context) {
         String word = context.getCommand();
         if (context.getSenderUid() == null || !context.getArgs().isEmpty()
-                || word.length() > 9 || !NUMBER.matcher(word).matches()) return null;
+                || word.length() > 9 || !ORDINAL.matcher(word).matches()) return null;
         var key = new Asker(session(context), context.getSenderUid());
         Choice choice = choices.get(key);
         if (choice == null) return null;

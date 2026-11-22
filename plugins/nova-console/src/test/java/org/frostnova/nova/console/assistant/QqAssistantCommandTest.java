@@ -220,6 +220,32 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("菜单后面多打了个全角空格，就不回菜单了")
+    void menuWithTrailingFullWidthSpace() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+
+        group(ASKER, "菜单\u3000");
+
+        assertReply("可用命令");
+        assertEquals(List.of(TimelineEventType.COMMAND_EXECUTED), timeline.stream().map(TimelineEvent::type).toList());
+        assertTrue(requests.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\u3000", "\u00a0"})
+    @DisplayName("问和问题之间的 Unicode 空格应分开命令与正文")
+    void explicitQuestionWithUnicodeSpace(String space) throws Exception {
+        add(FIRST, "莜娜", channel(GROUP, ROOM, true, false));
+        String question = "莜娜最近怎么样";
+        modelReplies.add(text("最近有开播。"));
+
+        group(ASKER, "问" + space + question);
+
+        assertReply("最近有开播", LABEL);
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
+    }
+
+    @Test
     @DisplayName("空问应直接给三条例子，不能选择主播、请求模型或扣次数")
     void emptyCommandsGiveExamplesWithoutUsingQuota() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
@@ -883,6 +909,34 @@ class QqAssistantCommandTest {
         group(ASKER, "问 1");
         assertReply("没有可接着问");
         assertEquals(4, requests.size());
+    }
+
+    @Test
+    @DisplayName("用全角数字回编号，被当成新问题白花一次")
+    void fullWidthNumberWithoutFollowUpUsesNoModelOrQuota() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+
+        group(ASKER, "４");
+
+        assertReply("没有可接着问");
+        assertTrue(requests.isEmpty());
+        assertTrue(qqCounts().isEmpty());
+    }
+
+    @Test
+    @DisplayName("用全角数字可以接着问第二条建议")
+    void fullWidthNumberResumesSecondFollowUp() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        String question = "周六那场的开播时间是什么？";
+        modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？\n2. " + question));
+        group(ASKER, "问 最近在线怎么样");
+        assertReply("2. " + question, LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "２");
+
+        assertReply(LABEL);
+        assertEquals(question, userPayload(requests.get(1)).getString("question"));
     }
 
     @Test

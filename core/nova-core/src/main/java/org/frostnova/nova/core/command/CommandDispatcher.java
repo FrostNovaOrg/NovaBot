@@ -11,7 +11,6 @@ import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
-import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,11 +21,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /**
  * 命令分发器
@@ -67,6 +66,8 @@ public class CommandDispatcher {
      * 两处各写一个字面量的话，改名时只会有一处跟着改，而另一处安静地再也找不到菜单。
      */
     public static final String MENU_COMMAND_NAME = "菜单";
+
+    private static final Pattern COMMAND_WORD = Pattern.compile("\\P{IsWhite_Space}+");
 
     /**
      * 同一会话的命令冷却时间
@@ -152,8 +153,12 @@ public class CommandDispatcher {
         boolean group = "group".equals(event.getMessageType());
         PushTargetType type = group ? PushTargetType.GROUP : PushTargetType.FRIEND;
 
-        List<String> parts = new ArrayList<>(Arrays.asList(
-                StringUtil.isBlank(event.getText()) ? new String[0] : event.getText().trim().split("\\s+")));
+        String text = event.getText();
+        var words = COMMAND_WORD.matcher(text == null ? "" : text.trim());
+        List<String> parts = new ArrayList<>();
+        while (words.find()) {
+            parts.add(words.group());
+        }
         String name = parts.isEmpty() ? "" : parts.remove(0);
         NovaCommand command = name.isEmpty() ? null : find(name);
 
