@@ -18,6 +18,7 @@ final class AssistantNumbers {
             "([。.,，；;！？!?\\r\\n])"
                     + "|(下降|降低|降幅|减少|下滑|回落|下跌|少了|缩水|跌|降)"
                     + "|增长|增加|增幅|上升|提升|上涨|涨幅|多了|涨");
+    private static final Pattern DURATION_UNIT = Pattern.compile("\\h*(?:(个?(?:小时|钟头))|分钟)");
     private static final BigDecimal SECONDS_PER_HOUR = BigDecimal.valueOf(3600);
     private static final BigDecimal SECONDS_PER_MINUTE = BigDecimal.valueOf(60);
     private final List<BigDecimal> known = new ArrayList<>();
@@ -86,7 +87,7 @@ final class AssistantNumbers {
             boolean found = percent
                     ? known.stream().anyMatch(value -> matchesPercent(number, value, signed, expectedDirection))
                     : known.stream().anyMatch(value -> equal(number, value))
-                            || knownSeconds.stream().anyMatch(seconds -> matchesDuration(number, seconds));
+                            || matchesDuration(number, text, matcher.end());
             if (!found) result.add(token);
         }
         return List.copyOf(result);
@@ -104,14 +105,17 @@ final class AssistantNumbers {
         if ((signed || direction == 0) && equal(number, value)) return true;
         if (value.abs().compareTo(BigDecimal.ONE) > 0) return false;
         if (signed) return equal(number, value.movePointRight(2));
-        return (direction == 0 || value.signum() == direction)
+        return (direction == 0 || value.signum() == 0 || value.signum() == direction)
                 && equal(number, value.abs().movePointRight(2));
     }
 
-    private static boolean matchesDuration(BigDecimal number, BigDecimal seconds) {
+    private boolean matchesDuration(BigDecimal number, String text, int numberEnd) {
+        var unit = DURATION_UNIT.matcher(text).region(numberEnd, text.length());
+        if (!unit.lookingAt()) return false;
+        BigDecimal divisor = unit.group(1) != null ? SECONDS_PER_HOUR : SECONDS_PER_MINUTE;
         int scale = Math.max(0, number.scale());
-        return number.compareTo(seconds.divide(SECONDS_PER_HOUR, scale, RoundingMode.HALF_UP)) == 0
-                || number.compareTo(seconds.divide(SECONDS_PER_MINUTE, scale, RoundingMode.HALF_UP)) == 0;
+        return knownSeconds.stream().anyMatch(seconds ->
+                number.compareTo(seconds.divide(divisor, scale, RoundingMode.HALF_UP)) == 0);
     }
 
     private static boolean equal(BigDecimal a, BigDecimal b) {

@@ -34,6 +34,41 @@ class AssistantNumbersTest {
     }
 
     @ParameterizedTest
+    @CsvSource({"弹幕增幅为 0.0%", "弹幕下降 0%"})
+    void verifiesZeroPercentageWithDirection(String answer) {
+        var numbers = new AssistantNumbers();
+        numbers.include(Map.of("changeRatio", new BigDecimal("0.0")));
+
+        assertEquals(List.of(), numbers.unverified(answer));
+    }
+
+    @Test
+    void rejectsMinuteConversionAsSessionCount() {
+        var numbers = new AssistantNumbers();
+        numbers.include(Map.of("durationSeconds", 44460, "sessionCount", 2));
+
+        assertEquals(List.of("741"), numbers.unverified("共 741 场"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "741 小时, 741",
+            "12.4 分钟, 12.4",
+            "开播 12.4 个小时,",
+            "开播 12.4钟头,",
+            "开播 12.4  个钟头,",
+            "开播 741分钟,",
+            "开播时长为 12.4, 12.4",
+            "开播时长为 44460 秒,"
+    })
+    void checksDurationConversionAgainstFollowingUnit(String answer, String unverified) {
+        var numbers = new AssistantNumbers();
+        numbers.include(Map.of("durationSeconds", 44460));
+
+        assertEquals(unverified == null ? List.of() : List.of(unverified), numbers.unverified(answer));
+    }
+
+    @ParameterizedTest
     @CsvSource({
             "0.234, 流水上涨 23.4％,",
             "-0.234, 流水跌了 23.4％,",
