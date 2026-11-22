@@ -24,6 +24,12 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
+    @DisplayName("备忘支持增删改，过期和其他主播的备忘不进入空输入示例")
+    void memoPanelEditsEntriesAndUsesTheCurrentStreamerInExamples() throws Exception {
+        run("memos");
+    }
+
+    @Test
     @DisplayName("点击下一问按钮应带上同一主播的对话并直接提交选中的问题")
     void followUpButtonsSubmitTheSelectedQuestion() throws Exception {
         run("followUps");

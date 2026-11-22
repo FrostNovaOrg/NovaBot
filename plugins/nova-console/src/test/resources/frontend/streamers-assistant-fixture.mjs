@@ -78,6 +78,7 @@ let reply = {answered: true, label: '由人工智能生成', answer: '样例回�
 const initialReply = reply;
 let askError = null, httpStatus = 200;
 const requests = [];
+const memoFixtures = new Map(), memoWrites = [];
 globalThis.fetch = async (url, options) => {
   const response = body => ({status: httpStatus, ok: httpStatus < 400, json: async () => body});
   if (url.endsWith('/assistant/state')) {
@@ -91,6 +92,20 @@ globalThis.fetch = async (url, options) => {
     if (askGate) await askGate;
     if (askError) throw askError;
     return response(reply);
+  }
+  const match = /\/streamers\/sample\/(\d+)\/assistant\/memos(?:\/([^/]+))?$/.exec(url);
+  if (match) {
+    const [, uid, id] = match, method = options.method || 'GET';
+    const date = '2026-11-22', items = memoFixtures.get(uid) || [];
+    if (method !== 'GET') {
+      const body = options.body && JSON.parse(options.body);
+      memoWrites.push({uid, method, id, body, csrf: options.headers['X-CSRF-Token']});
+      if (method === 'POST') items.push({id: 'next', createdOn: date, ...body});
+      if (method === 'PUT') Object.assign(items.find(memo => memo.id === id), body);
+      if (method === 'DELETE') items.splice(items.findIndex(memo => memo.id === id), 1);
+      memoFixtures.set(uid, items);
+    }
+    return response({success: true, today: date, items: structuredClone(items)});
   }
   if (url.endsWith('/status')) return response({});
   if (/\/streamers\/sample\/\d+$/.test(url)) return response({success: true, platform: 'sample', uid: 1, uname: '样例主播', configured: true, living: false, overview: {}});
@@ -125,6 +140,64 @@ async function until(predicate, message) {
   }
 }
 const checks = {
+  async memos() {
+    const identity = {platform: 'sample', uid: 81};
+    const text = '本月试播三场<img>';
+    memoFixtures.set('81', [
+      {id: 'old', text: '上月试播目标', createdOn: '2026-10-01', expiresOn: '2026-10-31'},
+      {id: 'current', text, createdOn: '2026-11-20', expiresOn: '2026-11-30'},
+    ]);
+    const mounted = await mount(identity);
+    const panel = byClass(mounted.node, 'sa-memos')[0];
+    assert.match(panel.textContent, /上月试播目标.*已过期/);
+    assert.match(panel.textContent, /记录于 2026-11-20.*截止 2026-11-30/);
+    assert.equal(panel.querySelector('img'), null);
+    const examples = byClass(mounted.node, 'sa-examples')[0];
+    const first = buttons(examples)[0];
+    assert.ok(first.textContent.includes(text));
+    assert.ok(!examples.textContent.includes('上月试播目标'));
+    const before = requests.length;
+    await first.fire('click');
+    assert.match(mounted.node.querySelector('textarea').value, /备忘里第一项目标/);
+    assert.equal(requests.length, before);
+
+    const editor = panel.querySelector('form'), memo = editor.querySelector('textarea'), date = editor.querySelector('input');
+    const row = byClass(panel, 'sa-memo-row')[1];
+    await button(row, '编辑').fire('click');
+    assert.equal(memo.value, text);
+    assert.equal(date.value, '2026-11-30');
+    memo.value = '下周试播目标';
+    date.value = '';
+    await memo.fire('input');
+    await editor.fire('submit');
+    assert.deepEqual(memoWrites.at(-1), {uid: '81', id: 'current', method: 'PUT',
+      body: {text: '下周试播目标', expiresOn: null}, csrf: 'sample-token'});
+    assert.match(panel.textContent, /下周试播目标.*无截止日/);
+
+    memo.value = '🎁'.repeat(61);
+    await memo.fire('input');
+    assert.equal([...memo.value].length, 60);
+    date.value = '2026-12-01';
+    await editor.fire('submit');
+    assert.equal(memoWrites.at(-1).method, 'POST');
+    assert.match(panel.textContent, /3 \/ 10 条/);
+    const updated = byClass(panel, 'sa-memo-row')[1];
+    const count = memoWrites.length;
+    await button(updated, '删除').fire('click');
+    assert.equal(button(updated, '确认删除').hidden, false);
+    await button(updated, '取消删除').fire('click');
+    assert.equal(memoWrites.length, count);
+    assert.equal(button(updated, '确认删除').hidden, true);
+    await button(updated, '删除').fire('click');
+    await button(updated, '确认删除').fire('click');
+    assert.equal(memoWrites.at(-1).method, 'DELETE');
+    assert.equal(memoWrites.at(-1).id, 'current');
+    assert.ok(!panel.textContent.includes('下周试播目标'));
+    assert.ok(buttons(examples)[0].textContent.includes('🎁'));
+    const other = await mount({platform: 'sample', uid: 82});
+    assert.match(other.node.textContent, /还没有备忘/);
+    assert.ok(!other.node.textContent.includes('🎁'));
+  },
   async examples() {
     const mounted = await mount();
     const input = mounted.node.querySelector('textarea');
