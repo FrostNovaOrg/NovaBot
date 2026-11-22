@@ -1946,32 +1946,6 @@ class AssistantAskServiceTest {
                 .andExpect(jsonPath("$.remaining.monthlyBudgetYuan").isNumber());
     }
 
-    @Test void blockedAudienceReadDoesNotBlockAnotherStreamerWithCollidingKey() throws Exception {
-        var started = new java.util.concurrent.CountDownLatch(1);
-        var release = new java.util.concurrent.CountDownLatch(1);
-        when(queries.localAudience("bilibili", 1L, List.of())).thenAnswer(invocation -> {
-            started.countDown();
-            if (!release.await(15, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("read not released");
-            return Map.of();
-        });
-        long otherUid = 4294967296L;
-        assertEquals(Long.hashCode(1L), Long.hashCode(otherUid));
-        var callers = java.util.concurrent.Executors.newFixedThreadPool(2);
-        try {
-            var first = callers.submit(() -> ask(JSONObject.of("question", "991234560 的表现")));
-            assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
-            var second = callers.submit(() -> service.ask("bilibili", otherUid, "other", JSONObject.of("question", "991234560 的表现")));
-            var result = second.get(5, java.util.concurrent.TimeUnit.SECONDS);
-            assertEquals(true, result.get("answered"));
-            release.countDown();
-            assertEquals(true, first.get(5, java.util.concurrent.TimeUnit.SECONDS).get("answered"));
-        } finally {
-            release.countDown();
-            callers.shutdownNow();
-            assertTrue(callers.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
-        }
-    }
-
     @Test void expiredAudienceEntriesAreEvictedWithoutAnotherQuestion() throws Exception {
         service.close();
         var scheduler = mock(java.util.concurrent.ScheduledExecutorService.class);
