@@ -58,6 +58,7 @@ public final class AssistantClient {
     private record Attempt(Response response, boolean outputLimitReached) { }
     private static final Logger LOG = LoggerFactory.getLogger(AssistantClient.class);
     private static final String OUTPUT_LIMIT = "max_output_tokens";
+    private static final String ERROR_MASK = "[已遮掩]";
 
     private final AssistantProperties properties;
     private final AssistantKeyStore keys;
@@ -298,6 +299,7 @@ public final class AssistantClient {
         if (request.tools() != null) for (JSONObject tool : request.tools()) {
             var definition = JSONObject.of("type", "function");
             definition.putAll(tool.getJSONObject("function"));
+            definition.put("strict", false);
             tools.add(definition);
         }
         Object choice = request.toolChoice() == null ? "auto" : request.toolChoice();
@@ -394,9 +396,7 @@ public final class AssistantClient {
 
     private static AssistantException providerFailure(HttpStatusCodeException error, boolean responses, String secret) {
         int status = error.getStatusCode().value();
-        AssistantException.ProviderError details = responses ? providerError(error.getResponseBodyAsString(), secret) : null;
-        if (details != null) LOG.warn("大模型服务请求失败 status={} type={} code={} param={}",
-                status, details.type(), details.code(), details.param());
+        AssistantException.ProviderError details = responses ? logProviderError(status, error.getResponseBodyAsString(), secret) : null;
         return switch (status) {
             case 401, 403 -> new AssistantException("key_rejected", "模型密钥不正确或没有访问权限", details);
             case 402 -> new AssistantException("provider_balance", "模型服务余额不足，请检查服务商账户", details);
@@ -405,20 +405,43 @@ public final class AssistantClient {
         };
     }
 
-    private static AssistantException.ProviderError providerError(String body, String secret) {
+    private static AssistantException.ProviderError logProviderError(int status, String body, String secret) {
         try {
             JSONObject error = JSON.parseObject(body).getJSONObject("error");
-            if (error != null) return new AssistantException.ProviderError(safeErrorField(error.getString("type"), secret),
+            if (error == null) return null;
+            var details = new AssistantException.ProviderError(safeErrorField(error.getString("type"), secret),
                     safeErrorField(error.getString("code"), secret), safeErrorField(error.getString("param"), secret));
+            LOG.warn("大模型服务请求失败 status={} type={} code={} param={} message={}",
+                    status, details.type(), details.code(), details.param(), safeErrorMessage(error.get("message"), secret));
+            return details;
         } catch (RuntimeException ignored) {
             // 错误正文解析失败时保留固定提示。
+            return null;
         }
-        return null;
     }
 
     private static String safeErrorField(String field, String secret) {
         if (field == null) return null;
-        return !field.contains(secret) && field.matches("[A-Za-z0-9_./\\[\\]-]{1,128}") ? field : "[已遮掩]";
+        return !field.contains(secret) && field.matches("[A-Za-z0-9_./\\[\\]-]{1,128}") ? field : ERROR_MASK;
+    }
+
+    private static String safeErrorMessage(Object field, String secret) {
+        if (!(field instanceof String message)) return null;
+        int end = errorMessageEnd(message);
+        // 从原文查找密钥，避免日志截断在密钥中间时露出前半段。
+        var masked = new StringBuilder(end);
+        int start = 0;
+        for (int key = message.indexOf(secret); key >= 0 && key < end; key = message.indexOf(secret, start)) {
+            masked.append(message, start, key).append(ERROR_MASK);
+            start = key + secret.length();
+        }
+        if (start < end) masked.append(message, start, end);
+        String singleLine = masked.toString().replaceAll("\\R", " ");
+        return singleLine.substring(0, errorMessageEnd(singleLine));
+    }
+
+    private static int errorMessageEnd(String text) {
+        return text.offsetByCodePoints(0, Math.min(300, text.codePointCount(0, text.length())));
     }
 
     private static void redact(Object value, String secret) {

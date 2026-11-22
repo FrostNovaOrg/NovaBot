@@ -155,7 +155,7 @@ class AssistantClientTest {
                     assertEquals(List.of(JSONObject.of("role", "developer", "content", "规则"), messages.get(1), messages.get(2)),
                             body.getJSONArray("input"));
                     assertEquals(List.of(JSONObject.of("type", "function", "name", "lookup", "description", "查数",
-                            "parameters", JSONObject.of("type", "object"))), body.getJSONArray("tools"));
+                            "parameters", JSONObject.of("type", "object"), "strict", false)), body.getJSONArray("tools"));
                     assertEquals(JSONObject.of("type", "function", "name", "lookup"), body.getJSONObject("tool_choice"));
                     assertEquals(false, body.getBoolean("store"));
                     assertEquals(List.of("reasoning.encrypted_content"), body.getJSONArray("include"));
@@ -234,19 +234,26 @@ class AssistantClientTest {
         server.verify();
     }
 
-    // 抓住服务商错误原文或回显的凭据进入诊断日志。
-    @Test void responsesLogsOnlySafeErrorFields() {
+    // 抓住 400 日志漏记拒绝原因、回显密钥或把一条告警拆成多行。
+    @Test void responsesLogsProviderReasonOnOneLineWithoutKey() {
         useResponses();
+        String reason = "Invalid schema: uniqueItems is not supported";
+        String message = reason + "\r\nTool parameters rejected for " + SECRET + "\u2028" + "x".repeat(300);
         server.expect(requestTo("https://model.example/v1/responses")).andRespond(withBadRequest()
                 .contentType(MediaType.APPLICATION_JSON).body(JSONObject.of("error", JSONObject.of(
-                        "type", "invalid_request_error", "code", "unsupported_parameter",
-                        "param", SECRET, "message", "private provider message " + SECRET)).toJSONString()));
+                        "type", "invalid_request_error", "code", "invalid_json_schema",
+                        "param", SECRET, "message", message)).toJSONString()));
         try (var logs = new AssistantLogCapture(); var question = client.beginQuestion("member")) {
             var error = assertThrows(AssistantException.class, () -> question.complete(request()));
             assertEquals("provider_error", error.reason());
-            logs.assertContains("type=invalid_request_error", "code=unsupported_parameter", "param=[已遮掩]");
+            assertTrue(error.getMessage().contains("请稍后再试"));
+            assertFalse(error.getMessage().contains("uniqueItems"));
+            String warning = logs.assertContains("status=400", "type=invalid_request_error",
+                    "code=invalid_json_schema", "param=[已遮掩]");
+            assertTrue(warning.contains("message=" + reason + " Tool parameters rejected for [已遮掩] x"), warning);
+            assertFalse(warning.matches("(?s).*\\R.*"), warning);
+            assertTrue(warning.substring(warning.indexOf("message=") + "message=".length()).length() <= 300, warning);
             logs.assertNoSecret(SECRET);
-            logs.assertNoSecret("private provider message");
         }
         server.verify();
     }
