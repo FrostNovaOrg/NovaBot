@@ -506,9 +506,13 @@ class QqAssistantCommandTest {
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
         group(ASKER, "4");
-        assertReply("没有可接着问");
+        assertReply("回序号", "2. 测试主播乙");
         assertEquals(1, requests.size());
-        assertTrue(replies.isEmpty());
+        receive(GROUP, ROOM, ASKER, "2", false);
+        assertReply("收到，查测试主播乙");
+        assertReply(LABEL);
+        assertEquals(2, requests.size());
+        assertEquals("4", userPayload(requests.get(1)).getString("question"));
     }
 
     @Test
@@ -879,6 +883,30 @@ class QqAssistantCommandTest {
     }
 
     @Test
+    @DisplayName("回答助手的反问（比如年份）却被当成编号拒绝")
+    void numericAnswerToClarificationKeepsHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        String question = "那一年的直播情况怎么样";
+        String clarification = "你想查哪一年？";
+        modelReplies.add(text(clarification));
+        group(ASKER, "问 " + question);
+        assertReply(clarification, LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        modelReplies.add(text("那年的开播比较频繁。"));
+        group(ASKER, "问 2025");
+
+        assertReply("开播比较频繁", LABEL);
+        assertEquals(2, requests.size());
+        var payload = userPayload(requests.get(1));
+        assertEquals("2025", payload.getString("question"));
+        var history = payload.getJSONArray("history");
+        assertEquals(1, history.size());
+        assertEquals(question, history.getJSONObject(0).getString("question"));
+        assertTrue(history.getJSONObject(0).getString("answerForHistory").contains(clarification));
+    }
+
+    @Test
     @DisplayName("编号续问不能借用同群其他人的选项或把选项带去另一个聊天或主播")
     void numberedFollowUpsStayWithTheirAskerChatAndStreamer() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false), channel(FRIEND, ASKER, true, false));
@@ -911,16 +939,20 @@ class QqAssistantCommandTest {
         assertEquals(4, requests.size());
     }
 
-    @Test
-    @DisplayName("用全角数字回编号，被当成新问题白花一次")
-    void fullWidthNumberWithoutFollowUpUsesNoModelOrQuota() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"4", "４"})
+    @DisplayName("上一个问题答完后，@ 机器人发 4 或 ４ 应当作问题")
+    void fourIsAskedAsLiteralQuestion(String question) throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        group(ASKER, "问 最近在线怎么样");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
 
-        group(ASKER, "４");
+        group(ASKER, question);
 
-        assertReply("没有可接着问");
-        assertTrue(requests.isEmpty());
-        assertTrue(qqCounts().isEmpty());
+        assertReply(LABEL);
+        assertEquals(2, requests.size());
+        assertEquals(question, userPayload(requests.get(1)).getString("question"));
     }
 
     @Test

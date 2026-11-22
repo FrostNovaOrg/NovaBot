@@ -155,13 +155,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
 
         String question = String.join(" ", context.getArgs());
         if (question.isBlank()) return CommandReply.of(examples(allowed));
-        if (ORDINAL.matcher(question).matches()) {
-            return switch (question) {
-                case "1", "１" -> resumeFollowUp(context, asker, 0);
-                case "2", "２" -> resumeFollowUp(context, asker, 1);
-                default -> CommandReply.of(NO_FOLLOW_UP);
-            };
-        }
+        if (question.equals("1") || question.equals("１")) return resumeFollowUp(context, asker, 0);
+        if (question.equals("2") || question.equals("２")) return resumeFollowUp(context, asker, 1);
 
         choices.remove(asker);
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
