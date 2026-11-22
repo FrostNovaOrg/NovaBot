@@ -189,6 +189,7 @@ server {
 
     # 每个交给 NapCat 的请求先用 auth_request 问控制台，只有登录的管理员才能通过。
     # 检查地址只供 nginx 内部使用，子请求带上会话 Cookie 和与 /config 相同的来源头，不带请求体。
+    # 检查时去掉 NapCat 的 Authorization 头，避免只用访问令牌的控制台把它当成控制台令牌，拒绝有效的会话 Cookie。
     location = /config/_admin-check {
         internal;
         proxy_pass http://127.0.0.1:7827/config/api/admin-session-check;
@@ -197,6 +198,7 @@ server {
         proxy_set_header Content-Length "";
         proxy_set_header Host $http_host;
         proxy_set_header Cookie $http_cookie;
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
