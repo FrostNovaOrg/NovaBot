@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.frostnova.nova.console.assistant.AssistantSqlDatabase.HEAP_BYTES;
 import static org.frostnova.nova.console.assistant.AssistantSqlDatabase.MAX_COLUMNS;
@@ -58,13 +59,15 @@ final class AssistantSqlNative {
 
     private AssistantSqlNative() {}
 
-    private static final class Engine {
-        private static final Sqlite API = findEngine();
+    private record Engine(Sqlite api, String version) {
+        private static final Engine INSTANCE = findEngine();
     }
 
-    static boolean available() { return Engine.API != null; }
+    static boolean available() { return Engine.INSTANCE != null; }
 
-    private static Sqlite findEngine() {
+    static String version() { return Engine.INSTANCE == null ? null : Engine.INSTANCE.version(); }
+
+    private static Engine findEngine() {
         List<String> names = Platform.isMac()
                 ? List.of("sqlite3", "/opt/homebrew/opt/sqlite/lib/libsqlite3.0.dylib",
                         "/usr/local/opt/sqlite/lib/libsqlite3.0.dylib")
@@ -75,24 +78,14 @@ final class AssistantSqlNative {
             try {
                 var library = NativeLibrary.getInstance(name);
                 var api = Native.load(name, Sqlite.class, Map.of(Library.OPTION_STRING_ENCODING, "UTF-8"));
-                candidate = libraryPath(library) + "（" + api.sqlite3_libversion() + "）";
-                if (api.sqlite3_libversion_number() < 3_036_000) {
-                    failures.add(candidate + " 低于 3.36");
-                    continue;
-                }
-                library.getFunction("sqlite3_deserialize");
-                library.getFunction("sqlite3_set_authorizer");
-                if (api.sqlite3_compileoption_used("TEMP_STORE=0") != 0) {
-                    failures.add(candidate + " 不支持内存临时表");
-                    continue;
-                }
-                // 仅在首次初始化前可设置。若已初始化，仍可核对引擎是否已启用统计。
-                api.sqlite3_config(CONFIG_MEMSTATUS, 1);
-                if (hasHardHeapLimit(api)) {
+                String version = api.sqlite3_libversion();
+                candidate = libraryPath(library) + "（" + version + "）";
+                String missing = missingCapability(api, library::getFunction);
+                if (missing == null) {
                     log.info("智能助手只读查询使用 SQLite {}", candidate);
-                    return api;
+                    return new Engine(api, version);
                 }
-                failures.add(candidate + " 无法启用硬堆上限");
+                failures.add(candidate + " " + missing);
             } catch (LinkageError | RuntimeException error) {
                 String message = error.getMessage();
                 String summary = message == null ? error.getClass().getSimpleName()
@@ -102,6 +95,23 @@ final class AssistantSqlNative {
         }
         log.info("智能助手只读查询不可用，SQLite 探测结果 {}", String.join("，", failures));
         return null;
+    }
+
+    static String missingCapability(Sqlite api, Consumer<String> resolveSymbol) {
+        if (api.sqlite3_libversion_number() < 3_031_000) return "低于引入硬堆上限的 3.31";
+        // 以调用接口的实际导出为准，包括反序列化和授权、超时回调。
+        for (var method : Sqlite.class.getDeclaredMethods()) {
+            String symbol = method.getName();
+            try {
+                resolveSymbol.accept(symbol);
+            } catch (UnsatisfiedLinkError missing) {
+                return "缺少函数 " + symbol;
+            }
+        }
+        if (api.sqlite3_compileoption_used("TEMP_STORE=0") != 0) return "不支持内存临时表";
+        // 仅在首次初始化前可设置。若已初始化，仍可核对引擎是否已启用统计。
+        api.sqlite3_config(CONFIG_MEMSTATUS, 1);
+        return hardHeapLimitFailure(api);
     }
 
     private static String libraryPath(NativeLibrary library) {
@@ -122,16 +132,16 @@ final class AssistantSqlNative {
         return file.getPath();
     }
 
-    private static boolean hasHardHeapLimit(Sqlite api) {
+    private static String hardHeapLimitFailure(Sqlite api) {
         long previous = api.sqlite3_hard_heap_limit64(-1);
         try {
             long limit = lowerLimit(previous);
             api.sqlite3_hard_heap_limit64(limit);
-            if (api.sqlite3_hard_heap_limit64(-1) != limit) return false;
+            if (api.sqlite3_hard_heap_limit64(-1) != limit) return "硬堆上限读回不一致";
             long before = api.sqlite3_memory_used();
             Pointer allocation = api.sqlite3_malloc64(1024);
-            if (allocation == null) return false;
-            try { return api.sqlite3_memory_used() >= before + 1024; }
+            if (allocation == null) return "无法分配内存来核对硬堆上限";
+            try { return api.sqlite3_memory_used() >= before + 1024 ? null : "未启用硬堆上限所需的内存用量统计"; }
             finally { api.sqlite3_free(allocation); }
         } finally {
             api.sqlite3_hard_heap_limit64(previous);
@@ -141,8 +151,9 @@ final class AssistantSqlNative {
     private static long lowerLimit(long previous) { return previous > 0 ? Math.min(previous, HEAP_BYTES) : HEAP_BYTES; }
 
     static JSONObject select(byte[] snapshot, Set<String> tables, String sql) {
-        Sqlite api = Engine.API;
-        if (api == null) return unavailable();
+        Engine engine = Engine.INSTANCE;
+        if (engine == null) return unavailable();
+        Sqlite api = engine.api();
         long previous = api.sqlite3_hard_heap_limit64(-1);
         try {
             long limit = lowerLimit(previous);
@@ -174,7 +185,7 @@ final class AssistantSqlNative {
     }
 
     static JSONObject unavailable() {
-        return rejected("此机器缺少可启用 64 MiB 硬堆上限的 SQLite 3.36 或更新版本");
+        return rejected("此机器缺少支持只读查询的 SQLite 3.31 或更新版本，请查看日志中的探测结果");
     }
 
     private static void restore(Sqlite api, Pointer db, byte[] snapshot) {

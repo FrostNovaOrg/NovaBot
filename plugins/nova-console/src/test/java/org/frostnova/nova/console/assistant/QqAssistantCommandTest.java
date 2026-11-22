@@ -825,6 +825,37 @@ class QqAssistantCommandTest {
                 () -> assertTrue(chart.getValue().title().contains(nickname), chart.getValue()::title));
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("观众改名后，只读查询回答会因旧昵称的字典序或缓存而显示旧名")
+    void sqlAnswerDisplaysMostRecentViewerNickname(boolean cachedOldName) throws Exception {
+        assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        long viewer = 9300000021L;
+        String oldName = "A档案旧名";
+        String newName = "Z档案新名";
+        String alias = local.alias(BILIBILI, viewer);
+        if (cachedOldName) local.rememberNickname(alias, oldName);
+        archive.append(new LiveSession(BILIBILI, FIRST, "测试主播甲", 1L, START, START + 10000, 10, Map.of(), Map.of()));
+        details.appendDanmu(BILIBILI, FIRST, START,
+                new DanmuRecord(START + 3, viewer, newName, "新消息", DanmuRecord.Type.DANMU));
+        details.appendDanmu(BILIBILI, FIRST, START,
+                new DanmuRecord(START + 1, viewer, oldName, "迟到的旧消息", DanmuRecord.Type.DANMU));
+        details.appendEvent(BILIBILI, FIRST, START, START + 2, "follow", Map.of("uid", viewer, "uname", oldName));
+        modelReplies.add(call("query_sql", JSONObject.of("from", "2026-11-06", "to", "2026-11-07",
+                "tables", List.of("danmu"), "sql", "SELECT DISTINCT audience FROM danmu")));
+        modelReplies.add(text("查到发过弹幕的观众是" + alias + "。"));
+
+        group(ASKER, "问 这次发弹幕的观众是谁");
+        String reply = assertReply(LABEL).getContent();
+        assertEquals(alias, toolResults(requests.get(1)).get("query_sql").getJSONArray("rows").getJSONArray(0).getString(0));
+        assertTrue(reply.contains(newName), reply);
+        assertFalse(reply.contains(oldName), reply);
+        for (String privateText : List.of(oldName, newName, Long.toString(viewer))) {
+            assertFalse(requests.toString().contains(privateText), privateText);
+        }
+    }
+
     @Test
     @DisplayName("追问沿用原会话的结果编号，文字先到，换发问人或超过十分钟时无法画旧数据")
     void chartFollowUpSendsTextThenImageAndCannotUseOtherOrExpiredResults() throws Exception {

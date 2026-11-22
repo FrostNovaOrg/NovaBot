@@ -7,6 +7,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.console.assistant.AssistantQueryService.AudienceIdentity;
 import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.assistant.*;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -89,7 +90,7 @@ public class AssistantAskService {
     private final Clock clock;
     private final Supplier<AssistantChartRenderer> chartRenderer;
     private record AudienceKey(String platform, Long uid) { }
-    private record AudienceEntry(Set<Long> excluded, Instant loadedAt, Map<Long, Set<String>> identities) { }
+    private record AudienceEntry(Set<Long> excluded, Instant loadedAt, Map<Long, AudienceIdentity> identities) { }
     private final ConcurrentMap<AudienceKey, AudienceEntry> audienceCache = new ConcurrentHashMap<>();
     private static final Duration AUDIENCE_TTL = Duration.ofMinutes(10);
     private final ConcurrentMap<AudienceKey, CompletableFuture<AudienceEntry>> audienceLoads = new ConcurrentHashMap<>();
@@ -503,7 +504,7 @@ public class AssistantAskService {
         return age.isNegative() || age.compareTo(AUDIENCE_TTL) >= 0;
     }
 
-    private Map<Long, Set<String>> localAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
+    private Map<Long, AudienceIdentity> localAudience(String platform, Long uid, List<Long> excluded, Budget budget) {
         AudienceKey key = new AudienceKey(platform, uid);
         Set<Long> exclusions = Set.copyOf(excluded);
         while (true) {
@@ -519,10 +520,8 @@ public class AssistantAskService {
                     try {
                         AudienceEntry entry = audienceCache.get(key);
                         if (entry == null || !entry.excluded().equals(exclusions) || expired(entry, clock.instant())) {
-                            var identities = new HashMap<Long, Set<String>>();
-                            queries.localAudience(platform, uid, excluded).forEach(
-                                    (person, names) -> identities.put(person, Set.copyOf(names)));
-                            entry = new AudienceEntry(exclusions, clock.instant(), Map.copyOf(identities));
+                            var identities = Map.copyOf(queries.localAudience(platform, uid, excluded));
+                            entry = new AudienceEntry(exclusions, clock.instant(), identities);
                         }
                         if (!audienceExecutor.isShutdown()) audienceCache.put(key, entry);
                         audienceLoads.remove(key, candidate);

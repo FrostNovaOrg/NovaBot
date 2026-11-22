@@ -370,11 +370,12 @@ class AssistantQueryServiceTest {
         details.appendDanmu(platform, 9300000099L, start, new DanmuRecord(start, 9300000089L,
                 "合成拒绝昵称", "原话", DanmuRecord.Type.DANMU));
         var identities = query.localAudience(platform, uid, List.of(9300000089L));
-        assertEquals(Set.of("合成拒绝昵称"), identities.get(9300000089L));
+        assertEquals(Set.of("合成拒绝昵称"), identities.get(9300000089L).nicknames());
         assertTrue(identities.containsKey(9300000021L));
-        assertEquals(Set.of("合成旧昵称", "合成新昵称"), identities.get(9300000022L));
-        assertEquals(Set.of("合成榜单观众"), identities.get(9300000023L));
-        assertEquals(Set.of("合成当前观众"), identities.get(9300000024L));
+        assertEquals(Set.of("合成旧昵称", "合成新昵称"), identities.get(9300000022L).nicknames());
+        assertEquals("合成新昵称", identities.get(9300000022L).latestNickname());
+        assertEquals(Set.of("合成榜单观众"), identities.get(9300000023L).nicknames());
+        assertEquals(Set.of("合成当前观众"), identities.get(9300000024L).nicknames());
         assertFalse(identities.containsKey(9300000088L));
         assertFalse(identities.containsKey(uid));
     }

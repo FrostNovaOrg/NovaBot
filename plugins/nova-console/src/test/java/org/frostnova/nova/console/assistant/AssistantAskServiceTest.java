@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
+import org.frostnova.nova.console.assistant.AssistantQueryService.AudienceIdentity;
 import org.frostnova.nova.core.assistant.*;
 import org.frostnova.nova.core.config.ui.*;
 import org.frostnova.nova.core.config.ui.auth.*;
@@ -43,6 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.hamcrest.Matchers.containsString;
 
 class AssistantAskServiceTest {
+    private static final AudienceIdentity UNNAMED_AUDIENCE = new AudienceIdentity(Set.of(), null);
     @TempDir Path directory;
     private final MutableClock clock = new MutableClock();
     private AssistantProperties properties;
@@ -164,7 +166,8 @@ class AssistantAskServiceTest {
     void memoMasksViewerNicknamesBeforeTheFirstModelRequest() throws Exception {
         long viewer = 991234567L;
         seedMemos(directory, 1L, "2026-10-24", null, "核对测试观众甲送的盲盒");
-        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(viewer, Set.of("测试观众甲")));
+        when(queries.localAudience("bilibili", 1L, List.of()))
+                .thenReturn(Map.of(viewer, new AudienceIdentity(Set.of("测试观众甲"), "测试观众甲")));
         assertTrue(ask().getBooleanValue("answered"));
         assertTrue(modelSystem(0).contains("核对" + alias(viewer) + "送的盲盒"));
         assertFalse(sent.toString().contains("测试观众甲"));
@@ -978,12 +981,17 @@ class AssistantAskServiceTest {
     @Test void onlyReadOnlyToolsAreExposed() throws Exception {
         try (var sqlite = mockStatic(AssistantSqlNative.class)) {
             sqlite.when(AssistantSqlNative::available).thenReturn(true);
+            sqlite.when(AssistantSqlNative::version).thenReturn("3.34.1");
             ask();
         }
         var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "query_sql",
                 "draw_chart", "draw_sketch"), names);
+        var description = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
+                .map(tool -> tool.getJSONObject("function")).filter(tool -> "query_sql".equals(tool.getString("name")))
+                .findFirst().orElseThrow().getString("description");
+        assertTrue(description.contains("SQLite 3.34.1"), description);
         assertEquals(0.3, sent.get(0).getDoubleValue("temperature"));
         assertEquals(properties.getAnswerLimit(), sent.get(0).getIntValue("max_tokens"));
     }
@@ -1391,7 +1399,8 @@ class AssistantAskServiceTest {
     @Test void freeTextHidesKnownIdentifiersAndExcludedNames() {
         properties.setExcludedUids(List.of(998765432L));
         when(queries.localAudience("bilibili", 1L, List.of(998765432L))).thenReturn(Map.of(
-                991234560L, Set.of("未入选观众"), 998765432L, Set.of("拒绝旧昵称", "拒绝新昵称", "拒绝666666观众")));
+                991234560L, new AudienceIdentity(Set.of("未入选观众"), "未入选观众"),
+                998765432L, new AudienceIdentity(Set.of("拒绝旧昵称", "拒绝新昵称", "拒绝666666观众"), "拒绝新昵称")));
         String text = "991234560 998765432 拒绝旧昵称 拒绝新昵称 拒绝666666观众 未入选观众 666666 100000";
         when(queries.danmu("bilibili", 1L, 123L, 123L, 456L, 30)).thenReturn(JSONObject.of("source", "弹幕归档",
                 "items", JSONArray.of(JSONObject.of("uid", 991234567L, "uname", "测试观众甲", "text", text))));
@@ -1522,7 +1531,7 @@ class AssistantAskServiceTest {
 
     // 抓住同一主播重复提问时重读身份文件，或缓存失效后仍使用旧身份。
     @Test void localAudienceIsCachedForTenMinutes() {
-        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
+        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(991234560L, UNNAMED_AUDIENCE));
         JSONObject request = JSONObject.of("question", "991234560 的表现");
         ask(request);
         clock.now = clock.now.plusSeconds(599);
@@ -1539,7 +1548,8 @@ class AssistantAskServiceTest {
         when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of());
         ask(JSONObject.of("question", "991234560 的表现"));
         properties.setExcludedUids(List.of(998765432L));
-        when(queries.localAudience("bilibili", 1L, List.of(998765432L))).thenReturn(Map.of(998765432L, Set.of("拒绝旧昵称")));
+        when(queries.localAudience("bilibili", 1L, List.of(998765432L)))
+                .thenReturn(Map.of(998765432L, new AudienceIdentity(Set.of("拒绝旧昵称"), "拒绝旧昵称")));
         sent.clear();
         ask(JSONObject.of("question", "拒绝旧昵称的表现"));
         ask(JSONObject.of("question", "拒绝旧昵称的表现"));
@@ -1550,9 +1560,9 @@ class AssistantAskServiceTest {
 
     // 抓住不同平台或主播共用身份缓存，导致已知编号漏出。
     @Test void localAudienceCacheIsScopedToPlatformAndStreamer() {
-        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
-        when(queries.localAudience("bilibili", 2L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
-        when(queries.localAudience("other", 1L, List.of())).thenReturn(Map.of(991234560L, Set.of()));
+        when(queries.localAudience("bilibili", 1L, List.of())).thenReturn(Map.of(991234560L, UNNAMED_AUDIENCE));
+        when(queries.localAudience("bilibili", 2L, List.of())).thenReturn(Map.of(991234560L, UNNAMED_AUDIENCE));
+        when(queries.localAudience("other", 1L, List.of())).thenReturn(Map.of(991234560L, UNNAMED_AUDIENCE));
         JSONObject request = JSONObject.of("question", "991234560 的表现");
         ask(request);
         service.ask("bilibili", 2L, "member", request);

@@ -2,6 +2,7 @@ package org.frostnova.nova.console.assistant;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.console.assistant.AssistantQueryService.AudienceIdentity;
 import org.frostnova.nova.core.assistant.AssistantChartRenderer.Chart;
 import org.frostnova.nova.core.assistant.AssistantChartRenderer.Row;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
@@ -35,7 +36,8 @@ class AssistantChartResultsTest {
                 "rows", JSONArray.of(JSONArray.of(known, 31), JSONArray.of(hidden, 27), JSONArray.of(unknown, 15))), Set::of);
 
         var followUp = new AssistantChartResults(initial.fresh());
-        var privacy = new AssistantPrivacy(local, "bilibili", 1L, List.of(denied), () -> Map.of(denied, Set.of("合成观众乙")));
+        var privacy = new AssistantPrivacy(local, "bilibili", 1L, List.of(denied),
+                () -> Map.of(denied, new AudienceIdentity(Set.of("合成观众乙"), "合成观众乙")));
         var args = JSONObject.of("resultNumber", 1, "type", "table", "xColumn", "audience", "yColumns", List.of("sum:quantity"),
                 "title", hidden + "与其他观众");
         Chart chart = followUp.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy);
