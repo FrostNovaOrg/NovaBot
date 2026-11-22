@@ -22,6 +22,101 @@ import static org.junit.jupiter.api.Assertions.*;
 class AssistantChartResultsTest {
     @TempDir Path directory;
 
+    // 图上露出英文字段名：本期上期对比的互动人数字段出现在图例中。
+    @Test void insightsChartLabelsInteractionAudienceInChinese() {
+        var results = new AssistantChartResults(List.of());
+        results.add("insights", new JSONObject(), JSONObject.of("insights", JSONObject.of(
+                "interactionAudience", 31, "previous", JSONObject.of("interactionAudience", 27))), Set::of);
+        var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "period",
+                "yColumns", List.of("interactionAudience"), "title", "本期上期互动人数"));
+
+        var chart = results.select(request, AssistantQueryContext.CONSOLE, privacy());
+        assertEquals(List.of("互动人数"), chart.series());
+    }
+
+    // 图上露出英文字段名：只读查询的小写互动人数别名出现在图例中。
+    @Test void sqlChartLabelsLowercaseInteractionAudienceInChinese() {
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), JSONObject.of("columns", List.of("day", "interactionaudience"),
+                "rows", JSONArray.of(JSONArray.of("2026-11-01", 31))), AssistantQueryContext.CONSOLE);
+        var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "day",
+                "yColumns", List.of("interactionaudience"), "title", "interaction.audience", "yLabel", "INTERACTION_AUDIENCE"));
+
+        var chart = results.select(request, AssistantQueryContext.CONSOLE, privacy());
+        assertAll(
+                () -> assertEquals(List.of("互动人数"), chart.series()),
+                () -> assertEquals("互动人数", chart.title()),
+                () -> assertEquals("互动人数", chart.yLabel()));
+    }
+
+    // 图上露出英文字段名：只读查询的礼物金额字段出现在表头中。
+    @Test void sqlTableLabelsGiftAmountInChinese() {
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), JSONObject.of("columns", List.of("day", "gift_amount"),
+                "rows", JSONArray.of(JSONArray.of("2026-11-01", 31))), AssistantQueryContext.CONSOLE);
+        var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "table", "xColumn", "day",
+                "yColumns", List.of("gift_amount"), "title", "礼物金额明细"));
+
+        var chart = results.select(request, AssistantQueryContext.CONSOLE, privacy());
+        assertEquals(List.of("礼物金额（元）"), chart.series());
+    }
+
+    // 图上露出英文字段名：查不到中文名的轴名仍被画出来。
+    @Test void rejectsUnknownEnglishAxisLabel() {
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), JSONObject.of("columns", List.of("day", "count"),
+                "rows", JSONArray.of(JSONArray.of("2026-11-01", 31))), AssistantQueryContext.CONSOLE);
+        var args = JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "day",
+                "yColumns", List.of("count"), "title", "互动人数趋势", "yLabel", "foo_bar");
+        var request = AssistantChartRequest.parse(args);
+
+        var error = assertThrows(AssistantChartRequest.Invalid.class,
+                () -> results.select(request, AssistantQueryContext.CONSOLE, privacy()));
+        assertTrue(error.getMessage().startsWith("图上的名称要用中文："));
+        assertTrue(error.getMessage().endsWith("foo_bar"));
+
+        args.put("yLabel", "互动人数");
+        assertEquals("互动人数", results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy()).yLabel());
+    }
+
+    @Test void rejectsUnknownEnglishChartTitleAndSqlHeader() {
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), JSONObject.of("columns", List.of("day", "count", "custom_metric"),
+                "rows", JSONArray.of(JSONArray.of("2026-11-01", 31, 42))), AssistantQueryContext.CONSOLE);
+        var args = JSONObject.of("resultNumber", 1, "type", "table", "xColumn", "day",
+                "yColumns", List.of("count"), "title", "metrics.x");
+        assertRejected("metrics.x", () -> results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy()));
+        args.put("title", "查询结果");
+        args.put("yColumns", List.of("custom_metric"));
+        assertRejected("custom_metric", () -> results.select(AssistantChartRequest.parse(args), AssistantQueryContext.CONSOLE, privacy()));
+    }
+
+    @Test void sqlTableLocalizesAttendanceAndMixedPkResults() {
+        var results = new AssistantChartResults(List.of());
+        results.addSql(new JSONObject(), JSONObject.of("columns", List.of("kind", "pk_result"),
+                "rows", JSONArray.of(JSONArray.of("attendance", "mixed"))), AssistantQueryContext.CONSOLE);
+        var request = AssistantChartRequest.parse(JSONObject.of("resultNumber", 1, "type", "table", "xColumn", "kind",
+                "yColumns", List.of("pk_result"), "title", "记录明细"));
+
+        var chart = results.select(request, AssistantQueryContext.CONSOLE, privacy());
+        assertEquals(List.of("PK 结果"), chart.series());
+        assertEquals("名单到场", chart.rows().get(0).category());
+        assertEquals("多种结果", chart.rows().get(0).values().get(0).text());
+    }
+
+    @Test void sketchesLocalizeKnownLabelsAndRejectUnknownFieldNames() {
+        var results = new AssistantChartResults(List.of());
+        results.add("sessions", new JSONObject(), JSONObject.of("items", JSONArray.of(JSONObject.of("interactionAudience", 31))), Set::of);
+        var privacy = privacy();
+        var sketch = results.selectSketch(new AssistantSketchRequest(1, "interactionaudience",
+                "<svg><text>Interaction_Audience</text><text>31</text></svg>"), AssistantQueryContext.CONSOLE, privacy);
+        assertEquals("互动人数", sketch.title());
+        assertTrue(sketch.svg().contains("互动人数"));
+        assertTrue(sketch.svg().contains(">31<"));
+        var unknown = new AssistantSketchRequest(1, "场次示意", "<svg><text>field_12</text></svg>");
+        assertRejected("图上的名称要用中文：field_12", () -> results.selectSketch(unknown, AssistantQueryContext.CONSOLE, privacy));
+    }
+
     @Test
     @DisplayName("出图换回允许显示的观众昵称，并隐藏追问前新加入拒绝名单的观众")
     void restoresNicknamesAndHidesNewExclusionsInSavedResults() {
@@ -63,6 +158,7 @@ class AssistantChartResultsTest {
                 () -> results.select(AssistantChartRequest.parse(args), restriction, privacy)).getMessage().contains("金额"));
         args.put("resultNumber", 2);
         var chart = results.select(AssistantChartRequest.parse(args), restriction, privacy);
+        assertEquals(List.of("在线人数"), chart.series());
         assertEquals(59, chart.rows().get(0).values().get(0).number().intValueExact());
     }
 

@@ -49,6 +49,10 @@ final class AssistantSketchNumbers {
         }
     }
 
+    static boolean isNumberOrTime(String text) {
+        return TOKEN.matcher(text.strip()).matches();
+    }
+
     void verify(String text) {
         var tokens = tokens(text);
         while (tokens.find()) {

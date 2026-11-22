@@ -13,7 +13,8 @@ record AssistantSketchRequest(int resultNumber, String title, String svg) {
     static final String DESCRIPTION = "先用 draw_chart 的折线、柱状或表格，只有模板画不了的示意图才手绘。"
             + "只画十几个点以内的示意。任务进度的具体数值、收入等需要准确量读，必须用模板。"
             + "只用不涉及金额的数据，礼物占比只画数量占比。"
-            + "手绘标题和每个文字标注里的阿拉伯数字必须能在引用结果里找到。图上统一标注手绘、仅示意。两种出图每问合计最多两张。";
+            + "手绘标题和名称标注用中文。手绘标题和每个文字标注里的阿拉伯数字必须能在引用结果里找到。"
+            + "图上统一标注手绘、仅示意。两种出图每问合计最多两张。";
     static final List<String> REQUIRED = List.of("resultNumber", "title", "svg");
     private static final Set<String> FIELDS = Set.copyOf(REQUIRED);
     private static final int MAX_BYTES = 12 * 1024;
