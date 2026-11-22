@@ -92,10 +92,11 @@ public class AssistantAskService {
     private final Supplier<AssistantChartRenderer> chartRenderer;
     private record AudienceKey(String platform, Long uid) { }
     private record AudienceEntry(Set<Long> excluded, Instant loadedAt, Map<Long, AudienceIdentity> identities) { }
-    private final ConcurrentMap<AudienceKey, AudienceEntry> audienceCache = new ConcurrentHashMap<>();
+    private static final int MAX_AUDIENCE_CACHE_ENTRIES = 2;
     private static final Duration AUDIENCE_TTL = Duration.ofMinutes(10);
+    private final Map<AudienceKey, AudienceEntry> audienceCache = Collections.synchronizedMap(new LinkedHashMap<>());
     private final ConcurrentMap<AudienceKey, CompletableFuture<AudienceEntry>> audienceLoads = new ConcurrentHashMap<>();
-    private final ExecutorService audienceExecutor = Executors.newCachedThreadPool(runnable -> {
+    private final ExecutorService audienceExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "assistant-audience");
         thread.setDaemon(true);
         return thread;
@@ -496,8 +497,24 @@ public class AssistantAskService {
     }
 
     void evictExpiredAudience() {
-        Instant now = clock.instant();
-        audienceCache.entrySet().removeIf(entry -> expired(entry.getValue(), now));
+        synchronized (audienceCache) {
+            Instant now = clock.instant();
+            audienceCache.entrySet().removeIf(entry -> expired(entry.getValue(), now));
+        }
+    }
+
+    private void cacheAudience(AudienceKey key, AudienceEntry entry) {
+        synchronized (audienceCache) {
+            if (audienceExecutor.isShutdown()) return;
+            // 拒绝名单变化后重建的表也按这次建成的顺序入缓存。
+            audienceCache.remove(key);
+            if (audienceCache.size() >= MAX_AUDIENCE_CACHE_ENTRIES) {
+                var oldest = audienceCache.keySet().iterator();
+                oldest.next();
+                oldest.remove();
+            }
+            audienceCache.put(key, entry);
+        }
     }
 
     private boolean expired(AudienceEntry entry, Instant now) {
@@ -512,7 +529,7 @@ public class AssistantAskService {
             AudienceEntry cached = audienceCache.get(key);
             if (cached != null && cached.excluded().equals(exclusions) && !expired(cached, clock.instant()))
                 return cached.identities();
-            // 只在映射中登记任务，文件读取在独立线程中进行，哈希冲突也不会让主播互相等待。
+            // 同一主播共用任务，不同主播的文件读取在同一线程中排队。
             var candidate = new CompletableFuture<AudienceEntry>();
             CompletableFuture<AudienceEntry> loading = audienceLoads.putIfAbsent(key, candidate);
             if (loading == null) {
@@ -523,8 +540,8 @@ public class AssistantAskService {
                         if (entry == null || !entry.excluded().equals(exclusions) || expired(entry, clock.instant())) {
                             var identities = Map.copyOf(queries.localAudience(platform, uid, excluded));
                             entry = new AudienceEntry(exclusions, clock.instant(), identities);
+                            cacheAudience(key, entry);
                         }
-                        if (!audienceExecutor.isShutdown()) audienceCache.put(key, entry);
                         audienceLoads.remove(key, candidate);
                         candidate.complete(entry);
                     } catch (RuntimeException error) {
