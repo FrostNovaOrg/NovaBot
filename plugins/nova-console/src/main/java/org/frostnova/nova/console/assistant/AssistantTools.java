@@ -52,9 +52,10 @@ final class AssistantTools {
                             JSONObject.of("start", tool.fields().get("start"), "fromAt", tool.fields().get("fromAt"),
                                     "toAt", tool.fields().get("toAt")), tool.required())
                         : tool)
-                .map(tool -> !context.amountVisible() && AssistantSqlRequest.NAME.equals(tool.name())
-                        ? new Tool(tool.name(), AssistantSqlRequest.description(false),
-                            AssistantSqlRequest.fields(false), tool.required()) : tool)
+                .map(tool -> AssistantSqlRequest.NAME.equals(tool.name())
+                        ? new Tool(tool.name(), (context.amountVisible() ? tool.description() : AssistantSqlRequest.description(false))
+                            + AssistantSqlRequest.dialect(AssistantSqlNative.version()),
+                            context.amountVisible() ? tool.fields() : AssistantSqlRequest.fields(false), tool.required()) : tool)
                 .map(t -> JSONObject.of("type", "function", "function", JSONObject.of("name", t.name(),
                 "description", t.description(), "parameters", JSONObject.of("type", "object", "properties", t.fields(),
                         "required", t.required(), "additionalProperties", false)))).toList();

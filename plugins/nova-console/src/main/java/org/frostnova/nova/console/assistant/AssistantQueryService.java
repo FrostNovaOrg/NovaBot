@@ -351,25 +351,52 @@ public class AssistantQueryService {
         return result;
     }
 
-    /** 仅供本机文字去身份使用，不向模型公开。 */
-    public Map<Long, Set<String>> localAudience(String platform, Long uid, List<Long> excluded) {
+    public record AudienceIdentity(Set<String> nicknames, String latestNickname) {
+        public AudienceIdentity {
+            nicknames = Set.copyOf(nicknames);
+        }
+    }
+
+    private static final class AudienceNames {
+        final Set<String> nicknames = new HashSet<>();
+        String latestNickname;
+        long latestAt = Long.MIN_VALUE;
+
+        void observe(String name, long at) {
+            if (name == null || name.isBlank()) return;
+            nicknames.add(name);
+            if (at >= latestAt) {
+                latestNickname = name;
+                latestAt = at;
+            }
+        }
+    }
+
+    private interface AudienceObserver {
+        void observe(Long person, String name, long at);
+    }
+
+    /** 仅供本机文字去身份和还原昵称使用，不向模型公开。 */
+    public Map<Long, AudienceIdentity> localAudience(String platform, Long uid, List<Long> excluded) {
         if (!validIdentity(platform, uid)) throw new AssistantException("主播标识无效");
-        Map<Long, Set<String>> result = new HashMap<>();
+        var observed = new HashMap<Long, AudienceNames>();
         var sessions = new ArrayList<>(archive.find(0, Long.MAX_VALUE).stream()
                 .filter(s -> platform.equals(s.platform()) && !uid.equals(s.uid()) && !excluded.isEmpty()).toList());
         sessions.addAll(sessionsOf(platform, uid));
         for (var session : sessions) {
             if (Thread.currentThread().isInterrupted()) throw new AssistantException("智能助手提问已中止");
             boolean ownRoom = uid.equals(session.uid());
-            java.util.function.BiConsumer<Long, String> add = (person, name) -> {
+            AudienceObserver add = (person, name, at) -> {
                 if (person == null || uid.equals(person) || !ownRoom && !excluded.contains(person)) return;
-                var names = result.computeIfAbsent(person, ignored -> new HashSet<>());
-                if (name != null && !name.isBlank()) names.add(name);
+                observed.computeIfAbsent(person, ignored -> new AudienceNames()).observe(name, at);
             };
-            if (session.userSets() != null) session.userSets().values().forEach(people -> people.forEach(person -> add.accept(person, null)));
+            long start = session.startTime();
+            if (session.userSets() != null) session.userSets().values().forEach(people ->
+                    people.forEach(person -> add.observe(person, null, start)));
+            // 榜单里的昵称没有逐条时间，同场有时间的记录优先。
             details.read(platform, session.uid(), session.startTime()).ifPresent(detail -> {
                 if (detail.rankings() != null) detail.rankings().values().forEach(ranking ->
-                        ranking.forEach(person -> add.accept(person.userUid(), person.userName())));
+                        ranking.forEach(person -> add.observe(person.userUid(), person.userName(), start)));
             });
             for (String name : List.of("danmu.jsonl", "events.jsonl")) {
                 try (var lines = JsonlFiles.lines(file(platform, session.uid(), session.startTime(), name))) {
@@ -377,7 +404,10 @@ public class AssistantQueryService {
                     while (rows.hasNext()) {
                         if (Thread.currentThread().isInterrupted()) throw new AssistantException("智能助手提问已中止");
                         var row = parse(rows.next());
-                        if (row != null && row.get("uid") instanceof Number) add.accept(row.getLong("uid"), row.getString("uname"));
+                        if (row != null && row.get("uid") instanceof Number) {
+                            long at = row.get("at") instanceof Number time ? time.longValue() : start;
+                            add.observe(row.getLong("uid"), row.getString("uname"), at);
+                        }
                     }
                 } catch (NoSuchFileException ignored) {
                     // 未保存原文的场次仍可从名单和明细读取身份。
@@ -387,15 +417,18 @@ public class AssistantQueryService {
             }
         }
         var current = live.getLiveMetricUserSets(platform, uid);
+        long liveStart = live.getLiveStartTime(platform, uid).orElse(Long.MIN_VALUE);
         current.forEach((metric, people) -> {
-            people.stream().filter(person -> !uid.equals(person)).forEach(person -> result.computeIfAbsent(person, ignored -> new HashSet<>()));
+            people.stream().filter(person -> !uid.equals(person)).forEach(person ->
+                    observed.computeIfAbsent(person, ignored -> new AudienceNames()));
             live.getLiveUserRanking(platform, uid, metric, Integer.MAX_VALUE).forEach(person -> {
                 if (person.userUid() != null && !uid.equals(person.userUid())) {
-                    var names = result.computeIfAbsent(person.userUid(), ignored -> new HashSet<>());
-                    if (person.userName() != null && !person.userName().isBlank()) names.add(person.userName());
+                    observed.computeIfAbsent(person.userUid(), ignored -> new AudienceNames()).observe(person.userName(), liveStart);
                 }
             });
         });
+        var result = new HashMap<Long, AudienceIdentity>();
+        observed.forEach((person, names) -> result.put(person, new AudienceIdentity(names.nicknames, names.latestNickname)));
         return result;
     }
 

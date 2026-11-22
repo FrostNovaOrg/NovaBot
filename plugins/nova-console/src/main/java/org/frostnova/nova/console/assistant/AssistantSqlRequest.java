@@ -99,6 +99,11 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
                 + "结果最多 32 列、200 行、64 KiB，可用 resultNumber 和 chartColumns 出图。回答用一两句说明怎么算的。";
     }
 
+    static String dialect(String version) {
+        return "本机执行查询使用 SQLite " + version + "。只使用此版本支持的写法和函数。"
+                + "->> 和 unixepoch() 从 3.38 起支持，concat() 和 string_agg() 从 3.44 起支持。";
+    }
+
     static AssistantSqlRequest parse(JSONObject raw) {
         if (raw == null || !raw.keySet().equals(FIELDS)) {
             throw new Invalid("只读查询需要且只接受起止统计日、表名和 SQL");

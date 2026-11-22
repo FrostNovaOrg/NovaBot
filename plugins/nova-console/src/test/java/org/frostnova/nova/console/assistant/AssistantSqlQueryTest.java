@@ -69,14 +69,15 @@ class AssistantSqlQueryTest {
         service = new AssistantQueryService(null, archive, details, live, properties, catalogs);
         local = new AssistantLocalStore(directory, Clock.systemUTC());
         privacy = new AssistantPrivacy(local, PLATFORM, STREAMER, List.of(DENIED),
-                () -> Map.of(VIEWER, Set.of("合成观众甲"), DENIED, Set.of("合成观众乙")));
+                () -> service.localAudience(PLATFORM, STREAMER, List.of(DENIED)));
     }
 
     @Test
     @DisplayName("模型不能借 CTE 改数据、串接指令、打开文件或加载扩展")
     void enforcesReadOnlyAndFileGuardsInSQLite() throws Exception {
         session(STREAMER, START, START + 600_000);
-        assertReason(visible(List.of("sessions"), "WITH x(n) AS (SELECT 1) DELETE FROM sessions RETURNING start_at"), "只读查询禁止写入");
+        assertReason(visible(List.of("sessions"), "WITH x(n) AS (SELECT 1) DELETE FROM sessions WHERE start_at IN (SELECT n FROM x)"),
+                "只读查询禁止写入");
         assertReason(visible(List.of("sessions"), "SELECT 1; SELECT 2"), "一条");
         assertReason(visible(List.of("sessions"), "SELECT COUNT( FROM sessions"), "语法错误");
         Path file = directory.resolve("outside.db");
@@ -132,6 +133,20 @@ class AssistantSqlQueryTest {
         var tool = AssistantTools.definitions(restricted).stream().map(item -> item.getJSONObject("function"))
                 .filter(function -> "query_sql".equals(function.getString("name"))).findFirst().orElseThrow();
         assertFalse(tool.toJSONString().contains("paid_amount"));
+    }
+
+    @Test
+    @DisplayName("模型没看到本机 SQLite 版本时会生成旧库不认识的查询")
+    void toolDescribesNativeSqliteDialect() {
+        for (var context : List.of(AssistantQueryContext.CONSOLE, new AssistantQueryContext(false, false))) {
+            var tool = AssistantTools.definitions(context).stream().map(item -> item.getJSONObject("function"))
+                    .filter(function -> "query_sql".equals(function.getString("name"))).findFirst().orElseThrow();
+            String description = tool.getString("description");
+            assertTrue(description.matches("(?s).*SQLite [0-9]+\\.[0-9]+\\.[0-9]+.*"), description);
+            for (String feature : List.of("->>", "unixepoch()", "concat()", "string_agg()")) {
+                assertTrue(description.contains(feature), feature);
+            }
+        }
     }
 
     @Test
@@ -272,9 +287,8 @@ class AssistantSqlQueryTest {
     @DisplayName("大中间表碰到 SQLite 内存上限时能返回原因")
     void rejectsOversizedIntermediateTable() {
         assertTimeoutPreemptively(Duration.ofSeconds(12), () -> assertReason(visible(List.of("sessions"), """
-                WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 5000),
-                data AS MATERIALIZED (SELECT randomblob(32000) AS payload FROM seq)
-                SELECT SUM(length(payload)) FROM data
+                WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM seq WHERE n < 5000)
+                SELECT COUNT(DISTINCT randomblob(32000)) FROM seq
                 """), "内存上限"));
         assertEquals(1, rows(visible(List.of("sessions"), "SELECT 1 AS ok")).getJSONArray(0).getIntValue(0));
     }

@@ -2,6 +2,7 @@ package org.frostnova.nova.console.assistant;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.console.assistant.AssistantQueryService.AudienceIdentity;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
 
@@ -9,6 +10,7 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.*;
 import java.util.function.LongFunction;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -20,9 +22,9 @@ final class AssistantPrivacy {
     private final String platform;
     private final Set<Long> excluded;
     private final Long streamerUid;
-    private final java.util.function.Supplier<Map<Long, Set<String>>> audience;
+    private final Supplier<Map<Long, AudienceIdentity>> audience;
     private final Set<String> knownUids = new HashSet<>();
-    private Map<Long, Set<String>> audienceIdentities;
+    private Map<Long, AudienceIdentity> audienceIdentities;
     private static final Pattern IDENTIFIER = Pattern.compile("[0-9]{5,}");
     private final Map<String, String> names = new LinkedHashMap<>();
     private final Map<String, String> replacements = new LinkedHashMap<>();
@@ -33,7 +35,7 @@ final class AssistantPrivacy {
     private static final Set<String> IDENTITIES = Set.of("uid", "uname", "platform", "roomId", "userUid", "userName", "userSets");
 
     AssistantPrivacy(AssistantLocalStore local, String platform, Long streamerUid, List<Long> excluded,
-                     java.util.function.Supplier<Map<Long, Set<String>>> audience) {
+                     Supplier<Map<Long, AudienceIdentity>> audience) {
         this.local = local;
         this.platform = platform;
         this.excluded = Set.copyOf(excluded);
@@ -122,30 +124,28 @@ final class AssistantPrivacy {
                 .flatMap(text -> ALIAS.matcher(text).results())
                 .map(match -> match.group().toLowerCase(Locale.ROOT)).collect(Collectors.toSet());
         if (aliases.isEmpty()) return false;
-        aliases.removeIf(alias -> names.containsKey(alias) || "[已隐藏]".equals(replacements.get(alias)));
+        aliases.removeIf(alias -> "[已隐藏]".equals(replacements.get(alias)));
         if (aliases.isEmpty()) return true;
 
-        Map<Long, Set<String>> identities;
+        Map<Long, AudienceIdentity> identities;
         try {
             identities = loadAudience();
         } catch (AssistantException unavailable) {
-            // 本地档案读不到时，沿用现有的未知昵称显示。
+            // 本地档案读不到时，沿用已有的昵称映射。
             return true;
         }
         if (identities.isEmpty()) return true;
         var encode = aliases();
         for (var entry : identities.entrySet()) {
             Long uid = entry.getKey();
-            if (!canAttribute(uid) || streamerUid.equals(uid) || entry.getValue().isEmpty()) continue;
+            var identity = entry.getValue();
+            if (!canAttribute(uid) || streamerUid.equals(uid) || identity.latestNickname() == null) continue;
             String alias = encode.apply(uid);
             if (!aliases.contains(alias)) continue;
-            entry.getValue().stream().filter(name -> !name.isBlank()).min(String::compareTo).ifPresent(name -> {
-                names.put(alias, name);
-                local.rememberNickname(alias, name);
-                entry.getValue().stream().filter(nickname -> !nickname.isBlank())
-                        .forEach(nickname -> replacements.putIfAbsent(nickname, alias));
-                aliases.remove(alias);
-            });
+            names.put(alias, identity.latestNickname());
+            local.rememberNickname(alias, identity.latestNickname());
+            identity.nicknames().forEach(nickname -> replacements.putIfAbsent(nickname, alias));
+            aliases.remove(alias);
             if (aliases.isEmpty()) break;
         }
         replacementPattern = null;
@@ -202,9 +202,9 @@ final class AssistantPrivacy {
 
     void prepareMemos(List<String> texts) {
         // 首轮查数之前，也要从本机档案识别备忘里仅出现昵称的观众。
-        loadAudience().forEach((uid, nicknames) -> {
+        loadAudience().forEach((uid, identity) -> {
             if (streamerUid.equals(uid) || excluded.contains(uid)) return;
-            var mentioned = nicknames.stream().filter(name -> !name.isEmpty()
+            var mentioned = identity.nicknames().stream().filter(name -> !name.isEmpty()
                     && texts.stream().anyMatch(text -> text.contains(name))).toList();
             if (mentioned.isEmpty()) return;
             String alias = local.alias(platform, uid);
@@ -216,12 +216,12 @@ final class AssistantPrivacy {
         dataTypes.add("主播备忘");
     }
 
-    private Map<Long, Set<String>> loadAudience() {
+    private Map<Long, AudienceIdentity> loadAudience() {
         if (audienceIdentities == null) {
             audienceIdentities = audience.get();
-            audienceIdentities.forEach((uid, nicknames) -> {
+            audienceIdentities.forEach((uid, identity) -> {
                 if (!streamerUid.equals(uid)) knownUids.add(uid.toString());
-                if (excluded.contains(uid)) nicknames.forEach(name -> {
+                if (excluded.contains(uid)) identity.nicknames().forEach(name -> {
                     if (!name.isEmpty()) replacements.put(name, "[已隐藏]");
                 });
             });
