@@ -115,7 +115,7 @@ class NapCatBootstrapFailMessageTest {
     }
 
     @Test
-    @DisplayName("引导页区分断网、反向代理错误和凭据无效")
+    @DisplayName("引导页区分断网、登录失效、反向代理错误和凭据无效")
     void bootstrapDistinguishesFailureCauses() throws Exception {
         Path root = repositoryRoot();
         Path fixture = root.resolve("plugins/nova-onebot-adapter/src/test/resources/frontend/napcat-bootstrap-fixture.mjs");
@@ -125,7 +125,7 @@ class NapCatBootstrapFailMessageTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
         System.out.println("NapCat 引导页检查：" + output);
         assertEquals(0, process.exitValue(), output);
-        assertTrue(output.contains("跑了 9 格"), "没有完成引导页检查：" + output);
+        assertTrue(output.contains("跑了 14 格"), "没有完成引导页检查：" + output);
     }
 
     @Test

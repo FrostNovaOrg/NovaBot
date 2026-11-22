@@ -118,14 +118,15 @@
       const res = await fetch(CONSOLE + '/napcat/api/auth/check', {
         method: 'POST', headers: {'Authorization': 'Bearer ' + credential}
       });
+      if (res.status === 401) return 'session-expired';
       const data = await res.json();
       // NovaBot 的错误用 success 表示；NapCat 的回复带数字 code。
-      if (!data || data.success === false || !Number.isInteger(data.code)) return null;
+      if (!data || data.success === false || !Number.isInteger(data.code)) return 'unexpected-response';
       // NapCat 鉴权失败也回 HTTP 200，错误只在响应体里。只看状态码会一律读成成功
-      return data.code === 0;
+      return data.code === 0 ? 'accepted' : 'rejected';
     } catch (e) {
       if (e instanceof TypeError) throw e;
-      return null;
+      return 'unexpected-response';
     }
   }
 
@@ -174,23 +175,27 @@
     localStorage.setItem(KEY, JSON.stringify(issued.credential));
 
     step('② 验证凭据');
-    let acceptedByNapCat = await checkCredential(issued.credential);
-    if (acceptedByNapCat === false) {
-      // 🔴 只重换一次，不循环。换不出来的原因几乎总是配置不对，
-      //    而那类原因重试多少次都是同一个结果，只会把 NapCat 的登录限流打满
-      step('③ 凭据无效，重新获取（仅重试一次）');
+    const firstCheck = await checkCredential(issued.credential);
+    let check = firstCheck;
+    if (firstCheck !== 'accepted' && firstCheck !== 'session-expired') {
+      // 短暂的代理错误也可能在重试时恢复。只换领一次，以免触发 NapCat 登录限流。
+      step('③ 重新获取凭据（仅重试一次）');
       issued = await mint(csrf, true);
       if (!issued.success) { fail(issued.message || '获取凭据失败。'); return; }
 
       localStorage.setItem(KEY, JSON.stringify(issued.credential));
-      acceptedByNapCat = await checkCredential(issued.credential);
+      check = await checkCredential(issued.credential);
     }
-    if (acceptedByNapCat !== true) {
+    if (check !== 'accepted') {
       localStorage.removeItem(KEY);
-      fail(acceptedByNapCat === null
-        ? '打不开 NapCat 界面：/config/napcat/ 没有转到 NapCat，多半是网页服务器的反向代理还没配好。配法见手册附录 C。'
-        : '两次获取的凭据均未被 NapCat 接受。通常是 NovaBot 中配置的 NapCat Token 或二次验证密钥'
+      if (check === 'session-expired') {
+        fail('控制台登录已失效，请刷新页面重新登录后再打开 NapCat 界面。');
+      } else if (firstCheck === 'unexpected-response' && check === 'unexpected-response') {
+        fail('打不开 NapCat 界面：/config/napcat/ 没有转到 NapCat，多半是网页服务器的反向代理还没配好。配法见手册附录 C。');
+      } else {
+        fail('两次获取的凭据均未被 NapCat 接受。通常是 NovaBot 中配置的 NapCat Token 或二次验证密钥'
           + '与 NapCat 当前的设置不一致，多发生在只修改了其中一侧之后。');
+      }
       return;
     }
 

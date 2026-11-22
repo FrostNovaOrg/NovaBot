@@ -31,9 +31,13 @@ async function bootstrap({offline, invalid = 0, checkResponse} = {}) {
       requests.push({path, options});
       if (path === offline) throw new TypeError('Failed to fetch');
       if (path === '/api/auth/state') return {json: async () => ({csrfToken: 'sample-csrf'})};
-      if (path.startsWith('/api/napcat/credential')) return {json: async () => ({success: true, credential: 'sample-credential'})};
+      if (path.startsWith('/api/napcat/credential')) {
+        const credential = path.endsWith('?renew=true') ? 'renewed-credential' : 'sample-credential';
+        return {json: async () => ({success: true, credential})};
+      }
       if (path === '/napcat/api/auth/check') {
-        return checkResponse ? checkResponse() : {json: async () => ({code: ++checks <= invalid ? 1 : 0})};
+        checks++;
+        return checkResponse ? checkResponse(checks) : {json: async () => ({code: checks <= invalid ? 1 : 0})};
       }
       throw new Error('意外请求：' + path);
     },
@@ -91,6 +95,7 @@ await check('凭据确实无效时仍只换取一次', async () => {
   assert.equal(result.requests.length, 5);
   assert.equal(result.requests[3].path, '/api/napcat/credential?renew=true');
 });
+// 抓的用户故障：NapCat 两次拒绝凭据，引导页却没有提示核对 Token 和二次验证密钥。
 await check('两次凭据无效仍清除凭据并说明原因', async () => {
   const result = await bootstrap({invalid: 2});
   assert.ok(result.msg.includes('两次获取的凭据均未被 NapCat 接受'));
@@ -98,6 +103,21 @@ await check('两次凭据无效仍清除凭据并说明原因', async () => {
   assert.equal(result.stored.has('token'), false);
   assert.equal(result.mounted, false);
   assert.equal(result.requests.length, 5);
+});
+
+// 抓的用户故障：NapCat 短暂返回 502，引导页没重试就放弃打开界面。
+await check('第一次返回 502，换取凭据后打开 NapCat', async () => {
+  const result = await bootstrap({
+    checkResponse: attempt => attempt === 1
+      ? new Response('<!doctype html><title>502 Bad Gateway</title>', {status: 502})
+      : Response.json({code: 0}),
+  });
+  assert.equal(result.mounted, true, '暂时的 502 恢复后没打开 NapCat');
+  assert.deepEqual(result.requests.slice(2).map(({path}) => path), [
+    '/napcat/api/auth/check', '/api/napcat/credential?renew=true', '/napcat/api/auth/check',
+  ]);
+  assert.equal(result.requests[4].options.headers.Authorization, 'Bearer renewed-credential');
+  assert.equal(result.stored.get('token'), JSON.stringify('renewed-credential'));
 });
 
 // 抓的用户故障：反向代理没配，引导页却叫用户去查 Token。
@@ -110,8 +130,40 @@ for (const [name, status, body] of [
     assert.ok(result.msg.includes('/config/napcat/') && result.msg.includes('反向代理')
       && result.msg.includes('附录 C'), '没有反向代理提示；提示=' + JSON.stringify(result.msg));
     assert.ok(!result.msg.includes('Token'), '提示误指向 Token');
-    assert.equal(result.requests.length, 3, '代理配置有误时无需换取凭据');
+    assert.equal(result.requests.length, 5, '两次验证都没有 NapCat 回复后才提示检查代理');
+    assert.equal(result.requests[3].path, '/api/napcat/credential?renew=true');
+    assert.equal(result.requests[4].path, '/napcat/api/auth/check');
     assert.equal(result.stored.has('token'), false);
+    assert.equal(result.mounted, false);
+  });
+}
+
+// 抓的用户故障：验证时控制台登录已过期，引导页却叫用户去查反向代理。
+for (const expiredAttempt of [1, 2]) {
+  await check('第 ' + expiredAttempt + ' 次验证返回 401 时提示重新登录', async () => {
+    const result = await bootstrap({
+      checkResponse: attempt => attempt === expiredAttempt
+        ? new Response(null, {status: 401})
+        : Response.json({code: 1}),
+    });
+    assert.ok(result.msg.includes('控制台登录已失效') && result.msg.includes('刷新页面重新登录'),
+      '没有登录失效提示；提示=' + JSON.stringify(result.msg));
+    assert.equal(result.requests.length, expiredAttempt === 1 ? 3 : 5, '401 后不再换取凭据');
+    assert.equal(result.stored.has('token'), false);
+    assert.equal(result.mounted, false);
+  });
+}
+
+// 抓的用户故障：已有一次明确的 NapCat 拒绝，引导页却叫用户去配反向代理。
+for (const rejectedAttempt of [1, 2]) {
+  await check('第 ' + rejectedAttempt + ' 次是 NapCat 拒绝时提示核对凭据', async () => {
+    const result = await bootstrap({
+      checkResponse: attempt => attempt === rejectedAttempt
+        ? Response.json({code: 1})
+        : new Response('<!doctype html><title>502 Bad Gateway</title>', {status: 502}),
+    });
+    assert.ok(result.msg.includes('NapCat Token') && result.msg.includes('二次验证密钥'));
+    assert.equal(result.requests.length, 5);
     assert.equal(result.mounted, false);
   });
 }
