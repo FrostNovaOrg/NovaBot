@@ -511,6 +511,59 @@ class AssistantAskServiceTest {
         assertTrue(lastToolData().getString("status").contains("已生成"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"三种礼物占比示意", "一场直播的时间轴", "百分比"})
+    @DisplayName("手绘标题和标注里的中文用语不因缺少对应数值被拒")
+    void sketchAcceptsChineseWordingWithoutMatchingNumbers(String wording) {
+        seedSketchResults();
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        var sketch = sketchArguments(sketchSvg("<text>" + wording + "</text>"));
+        sketch.put("title", wording);
+        replies.add(call("draw_sketch", sketch));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        var result = ask();
+        assertNotNull(result.getJSONArray("images"), lastToolData()::toJSONString);
+        verify(chartRenderer).renderSketch(argThat(chart -> chart.title().equals(wording) && chart.svg().contains(wording)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"37/50", "8:20", "60%", "６０％", "1,532"})
+    @DisplayName("手绘能用结果里的分子分母、时分、百分数和千位分组写法")
+    void sketchAcceptsEquivalentNumbersAndClockTimes(String text) {
+        seedSketchNumberFormats(50);
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text>" + text + "</text>"))));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        var result = ask();
+        assertNotNull(result.getJSONArray("images"), lastToolData()::toJSONString);
+        verify(chartRenderer).renderSketch(argThat(chart -> chart.svg().contains(text)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"37/50, 50", "121, 121", "8:21, 8:21"})
+    @DisplayName("手绘拒绝结果没有的分母、整数或时分组合，并指出对不上的值")
+    void sketchIdentifiesNumbersMissingFromTheResult(String text, String missing) {
+        seedSketchNumberFormats(51);
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text>" + text + "</text>"))));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertFalse(ask().containsKey("images"));
+        assertTrue(lastToolData().getString("reason").contains("数字 " + missing + " "), lastToolData()::toJSONString);
+        verifyNoInteractions(chartRenderer);
+    }
+
+    private void seedSketchNumberFormats(int peakOnline) {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("startTime", Instant.parse("2026-11-07T00:20:00Z").toEpochMilli(),
+                        "endTime", Instant.parse("2026-11-07T01:21:00Z").toEpochMilli(), "messages", 37,
+                        "peakOnline", peakOnline, "audience", 1532, "follows", new BigDecimal("0.6")))));
+    }
+
     @Test
     @DisplayName("一次回答里模板和手绘共享两张上限，第三张不会调用绘图器")
     void sketchAndTemplateShareTheTwoImageLimit() {
@@ -532,16 +585,44 @@ class AssistantAskServiceTest {
     }
 
     @Test
-    @DisplayName("金额隐藏时，手绘不能用知晓的数字给图写上金额")
-    void sketchCannotPutAnAmountInHiddenChat() {
+    @DisplayName("前两张已经生成时，第三张即使是手绘也不会调用绘图器")
+    void thirdImageCannotBeASketch() {
         seedSketchResults();
+        when(chartRenderer.render(any())).thenReturn(Optional.of("template-png"));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
         replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
-        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>7.4 元</text>"))));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次数据")));
+        var sketch = sketchArguments(sketchSvg("<text x='42' y='80'>示意</text>"));
+        replies.add(call("draw_sketch", sketch));
+        replies.add(call("draw_sketch", sketch));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        assertEquals(List.of("template-png", "sketch-png"), ask().getJSONArray("images").toJavaList(String.class));
+        assertTrue(lastToolData().getString("reason").contains("最多两张"));
+        verify(chartRenderer).render(any());
+        verify(chartRenderer).renderSketch(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"7.4 元", "三百元", "五百多块"})
+    @DisplayName("金额隐藏时，手绘不会把阿拉伯数字或中文写法的金额画出来")
+    void sketchCannotPutAnAmountInHiddenChat(String amount) {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("messages", new BigDecimal("7.36"), "peakOnline", 500))));
+        when(chartRenderer.renderSketch(any())).thenReturn(Optional.of("sketch-png"));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>" + amount + "</text>"))));
+        var title = sketchArguments(sketchSvg("<text x='42' y='80'>示意</text>"));
+        title.put("title", amount);
+        replies.add(call("draw_sketch", title));
         replies.add(JSONObject.of("content", "查到了场次数据。"));
 
         var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "画场次示意"), new AssistantQueryContext(false));
         assertFalse(result.containsKey("images"));
-        assertTrue(lastToolData().getString("reason").contains("不能包含金额"));
+        var data = toolDataAtLastRequest();
+        assertTrue(data.get(1).getString("reason").contains("不能包含金额"), data::toString);
+        assertTrue(data.get(2).getString("reason").contains("不能包含金额"), data::toString);
         verifyNoInteractions(chartRenderer);
     }
 

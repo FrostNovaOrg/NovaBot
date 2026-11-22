@@ -21,8 +21,9 @@ import java.nio.file.Path;
 import static org.frostnova.nova.core.assistant.AssistantChartRenderer.PLOT_HEIGHT;
 import static org.frostnova.nova.core.assistant.AssistantChartRenderer.PLOT_WIDTH;
 
-/** 手绘转图子进程的入口。输入和 PNG 通过管道传输。 */
+/** 手绘转图子进程的入口。字体就绪后通知父进程，再通过管道收 SVG、发 PNG。 */
 public final class AssistantSketchRaster {
+    static final int READY = 1;
     static final int BLANK = 2;
     static final int MISSING_GLYPH = 3;
     static final int INVALID = 4;
@@ -36,10 +37,12 @@ public final class AssistantSketchRaster {
     private AssistantSketchRaster() { }
 
     public static void main(String[] args) throws Exception {
+        Font font = Font.createFont(Font.TRUETYPE_FONT, Path.of(args[0]).toFile());
+        System.out.write(READY);
+        System.out.flush();
         var input = new DataInputStream(System.in);
         String title = input.readUTF();
         String svg = input.readUTF();
-        Font font = Font.createFont(Font.TRUETYPE_FONT, Path.of(args[0]).toFile());
         int status = writePng(title, svg, font);
         if (status != 0) System.exit(status);
     }

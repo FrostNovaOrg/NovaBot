@@ -18,8 +18,13 @@ import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 class AssistantSketchPainterTest {
     private static final FontUtil FONTS = new FontUtil(new DefaultResourceLoader(), new NovaCoreProperties());
@@ -89,9 +94,71 @@ class AssistantSketchPainterTest {
         }
     }
 
+    @Test
+    @DisplayName("启动等字体超过三秒，普通手绘仍能转出图片")
+    void slowStartupDoesNotUseTheRenderBudget() throws Exception {
+        var starting = new CountDownLatch(1);
+        var allowStart = new CountDownLatch(1);
+        var fonts = pauseBeforeStarting(starting, allowStart);
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            var image = executor.submit(() -> render("<circle cx='100' cy='100' r='40'/>", fonts));
+            assertTrue(starting.await(5, SECONDS), "手绘未开始准备字体");
+            assertThrows(TimeoutException.class, () -> image.get(4, SECONDS), "字体就绪前不应完成转图");
+            allowStart.countDown();
+            assertEquals(760, image.get(10, SECONDS).getWidth());
+        } finally {
+            allowStart.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, SECONDS));
+        }
+    }
+
+    @Test
+    @DisplayName("两张手绘同时到来时，第二张等第一张完成后也能出图")
+    void secondSketchWaitsForTheFirstToFinish() throws Exception {
+        var firstStarting = new CountDownLatch(1);
+        var allowFirst = new CountDownLatch(1);
+        var secondRequested = new CountDownLatch(1);
+        var fonts = pauseBeforeStarting(firstStarting, allowFirst);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> render("<circle cx='100' cy='100' r='40'/>", fonts));
+            assertTrue(firstStarting.await(5, SECONDS), "第一张手绘未开始准备字体");
+            var second = executor.submit(() -> {
+                secondRequested.countDown();
+                return render("<rect x='150' y='50' width='100' height='80'/>");
+            });
+            assertTrue(secondRequested.await(5, SECONDS), "第二张手绘未发送");
+            assertThrows(TimeoutException.class, () -> second.get(2, SECONDS), "第一张未完成时第二张应当等待");
+            allowFirst.countDown();
+            assertEquals(0xff000000, first.get(10, SECONDS).getRGB(135, 180));
+            assertEquals(0xff000000, second.get(10, SECONDS).getRGB(215, 160));
+        } finally {
+            allowFirst.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, SECONDS));
+        }
+    }
+
+    private static FontUtil pauseBeforeStarting(CountDownLatch starting, CountDownLatch allowStart) throws Exception {
+        Path font = FONTS.bundledChineseFontFile();
+        FontUtil paused = mock(FontUtil.class);
+        when(paused.bundledChineseFontFile()).thenAnswer(invocation -> {
+            starting.countDown();
+            assertTrue(allowStart.await(15, SECONDS), "未放行字体准备");
+            return font;
+        });
+        return paused;
+    }
+
     private static BufferedImage render(String body) throws Exception {
+        return render(body, FONTS);
+    }
+
+    private static BufferedImage render(String body, FontUtil fonts) throws Exception {
         String svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 690 416'>" + body + "</svg>";
-        byte[] png = Base64.getDecoder().decode(AssistantSketchPainter.render(new Sketch("直播示意", svg), FONTS).orElseThrow());
+        byte[] png = Base64.getDecoder().decode(AssistantSketchPainter.render(new Sketch("直播示意", svg), fonts).orElseThrow());
         return ImageIO.read(new ByteArrayInputStream(png));
     }
 

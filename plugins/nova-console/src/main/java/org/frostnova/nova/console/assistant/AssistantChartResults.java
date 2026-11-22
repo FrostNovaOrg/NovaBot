@@ -184,7 +184,8 @@ final class AssistantChartResults {
         UnaryOperator<String> checkedLabel = text -> {
             String masked = privacy.mask(text);
             String shown = privacy.displayChart(masked);
-            if (MONEY_LABEL.matcher(shown).find() || AssistantAskService.containsAmount(shown)) {
+            if (MONEY_LABEL.matcher(shown).find() || AssistantAskService.containsAmount(shown)
+                    || AssistantAskService.containsColloquialAmount(shown)) {
                 if (!context.amountVisible()) throw new Invalid(AssistantAggregateRequest.HIDDEN_AMOUNT + "，图表文字不能包含金额");
                 throw new Invalid("收入等金额数据须使用模板图");
             }
