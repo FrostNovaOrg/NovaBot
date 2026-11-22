@@ -45,6 +45,10 @@ final class AssistantAggregateQuery {
     static final String AMOUNT_BASIS = "到手价值，与控制台流水同口径。盲盒计开出物价值，背包礼物计入流水";
     static final String MINUTE_RULE = "在线和看过人数每 60 秒一格取最大，按格起点归组。平均和极值各自跳过缺采分钟，全缺时返回 null。"
             + "缺采数按筛选读数前的直播分钟计算";
+    static final String SESSION_COUNT_RULE = "按 hour 或 weekday 分组时，sessionCount 是有数据的不同直播场数。"
+            + "同时汇总在线和看过人数时，用 onlineSessionCount、watchedSessionCount 分别计各自有读数的场数";
+    static final String KNOWN_AMOUNT_RULE = "knownAmountSubtotal 仅合计已知金额，完整合计仍未知。"
+            + "missingAmountRows 是缺金额的记录数，missingAmountsByDayAndKind 按发生统计日列各类缺失条数";
     static final String HISTORY_RULE = "以可读取的进房等名单、事件或弹幕判断首次留档。同场有逐条记录时用其最早时刻，仅在名单上时按开播时刻估算。"
             + "窗口内首次留档为新观众，窗口前首次留档为老观众。留档起点之前来过的人可能计作新观众";
     static final String ZERO_RULE = "无记录的弹幕、礼物时段按 0 计数，缺少明细的时段显示未知";
@@ -76,11 +80,15 @@ final class AssistantAggregateQuery {
     private final long to;
     private final long groupMillis;
     private final List<Field> numericFields;
+    private final List<Field> sessionSampleFields;
+    private final List<String> sessionCountColumns;
+    private final int missingAmountIndex;
     private final Set<Field> fields;
     private final Set<String> eventFields;
     private final JSONReader.Context readerContext = JSONFactory.createReadContext();
     private final Detail detail = new Detail();
     private final Map<Key, Bucket> groups = new HashMap<>();
+    private final Map<String, EnumMap<Kind, Integer>> missingAmounts = new TreeMap<>();
     private final Bucket total;
     private final JSONArray missingDetails = new JSONArray();
     private int missingDetailsCount;
@@ -119,13 +127,21 @@ final class AssistantAggregateQuery {
         to = StatisticsDay.startOf(request.to().plusDays(1)).toEpochMilli();
         startFilters = request.filters().stream().filter(f -> f.field() == Field.START).toList();
         numericFields = request.measures().stream().map(Measure::field).filter(Objects::nonNull).distinct().toList();
+        boolean byClock = request.groups().contains(Group.HOUR) || request.groups().contains(Group.WEEKDAY);
+        sessionSampleFields = byClock ? numericFields.stream().filter(this::isSample).toList() : List.of();
+        if (!byClock) sessionCountColumns = List.of();
+        else if (sessionSampleFields.size() < 2) sessionCountColumns = List.of("sessionCount");
+        else sessionCountColumns = sessionSampleFields.stream().map(f -> f.key + "SessionCount").toList();
+        boolean sumsEventAmount = !sessions && request.measures().stream()
+                .anyMatch(m -> m.field() == Field.AMOUNT && m.operation() == Operation.SUM);
+        missingAmountIndex = sumsEventAmount ? numericFields.indexOf(Field.AMOUNT) : -1;
         fields = EnumSet.noneOf(Field.class);
         fields.addAll(numericFields);
         request.filters().forEach(filter -> fields.add(filter.field()));
         request.groups().stream().map(group -> group.field).filter(Objects::nonNull).forEach(fields::add);
         usesSessionAudience = fields.contains(Field.SESSION_AUDIENCE);
         eventFields = sessions || series ? Set.of() : eventFields();
-        total = new Bucket(needsDistinct, needsPaying, numericFields.size());
+        total = new Bucket(needsDistinct, needsPaying, numericFields.size(), sessionCountColumns.size());
     }
 
     JSONObject run(String platform, long uid, LiveSessionArchive archive, LiveMetricCatalog.Insights rules,
@@ -768,15 +784,20 @@ final class AssistantAggregateQuery {
         Long audience = privacy.canAttribute(row.audience()) ? row.audience() : null;
         if ((byAudience || byAge) && audience == null || !matches(row, audience)) return;
         BigDecimal paid = needsPaying && audience != null ? row.paid() : BigDecimal.ZERO;
-        addCount(total, audience, paid);
+        addCount(total, row, audience, paid);
         Bucket bucket = request.groups().isEmpty() ? null : groupBucket(row);
-        if (bucket != null) addCount(bucket, audience, paid);
+        if (bucket != null) addCount(bucket, row, audience, paid);
         boolean unknown = paid == null || paid.signum() < 0;
         for (int i = 0; i < numericFields.size(); i++) {
             Field field = numericFields.get(i);
             var number = (BigDecimal) row.value(field);
-            if (number == null) unknown |= !isSample(field);
-            else {
+            if (number == null) {
+                unknown |= !isSample(field);
+                if (i == missingAmountIndex) {
+                    missingAmounts.computeIfAbsent(clockGroups(row.at()).day(), day -> new EnumMap<>(Kind.class))
+                            .merge(row.kind(), 1, Integer::sum);
+                }
+            } else {
                 total.numbers[i].add(number);
                 if (bucket != null) bucket.numbers[i].add(number);
             }
@@ -844,15 +865,25 @@ final class AssistantAggregateQuery {
         if (key.first() instanceof String text) groupTextChars += text.length();
         if (key.second() instanceof String text) groupTextChars += text.length();
         checkTextBudget();
-        return new Bucket(needsDistinct && !byAudience, needsPaying, numericFields.size());
+        return new Bucket(needsDistinct && !byAudience, needsPaying, numericFields.size(), sessionCountColumns.size());
     }
 
     private void checkTextBudget() {
         if (groupTextChars > MAX_GROUP_TEXT_CHARS) throw stateLimit();
     }
 
-    private static void addCount(Bucket bucket, Long audience, BigDecimal paid) {
+    private void addCount(Bucket bucket, Row row, Long audience, BigDecimal paid) {
         bucket.count++;
+        if (bucket.sessions.length > 0) {
+            if (sessionSampleFields.isEmpty()) {
+                if (!(row instanceof Minute minute) || minute.online() != null || minute.watched() != null)
+                    bucket.sessions[0].add(row.start());
+            } else {
+                for (int i = 0; i < sessionSampleFields.size(); i++) {
+                    if (row.value(sessionSampleFields.get(i)) != null) bucket.sessions[i].add(row.start());
+                }
+            }
+        }
         if (audience == null) return;
         if (bucket.audience != null) bucket.audience.add(audience);
         if (bucket.paying != null) {
@@ -866,6 +897,7 @@ final class AssistantAggregateQuery {
         var columns = new JSONArray();
         request.groups().forEach(g -> columns.add(g.key));
         request.measures().forEach(m -> columns.add(m.key()));
+        columns.addAll(sessionCountColumns);
         boolean allMissing = !series && missingDetailsCount > 0 && !hasAvailableDetails;
         var totals = new JSONArray();
         if (!request.groups().isEmpty()) totals.add("合计");
@@ -893,6 +925,19 @@ final class AssistantAggregateQuery {
         if (missingDetailsCount > missingDetails.size()) result.put("missingDetailsTruncated", true);
         if (missingDetailsCount > 0 || invalidLines > 0 || unknownFilters > 0 || unknownValues > 0)
             result.put("coverageNote", "缺失明细和无法读取的记录未计入。null 表示缺少完整数值");
+        if (numericFields.contains(Field.QUANTITY)) {
+            result.put("quantityUnit", request.kinds().contains(Kind.GUARD) ? "个月" : "个");
+        }
+        if (!missingAmounts.isEmpty()) {
+            Numeric amount = total.numbers[missingAmountIndex];
+            result.put("knownAmountSubtotal", amount.known == 0 ? null : amount.sum);
+            result.put("missingAmountRows", total.count - amount.known);
+            result.put("missingAmountsByDayAndKind", missingAmounts.entrySet().stream().map(entry -> {
+                var counts = new JSONObject();
+                entry.getValue().forEach((kind, count) -> counts.put(kind.key, count));
+                return JSONObject.of("day", entry.getKey(), "countsByKind", counts);
+            }).toList());
+        }
         if (series) {
             result.put("expectedMinutes", expectedMinutes);
             result.put("missingMinutes", JSONObject.of("online", missingOnline, "watched", missingWatched));
@@ -927,6 +972,7 @@ final class AssistantAggregateQuery {
 
     private void appendMeasures(JSONArray row, Bucket bucket, boolean unknown) {
         for (Measure measure : request.measures()) row.add(unknown ? null : value(bucket, measure));
+        for (LongSet sessions : bucket.sessions) row.add(unknown ? null : sessions.size());
     }
 
     private Object value(Bucket bucket, Measure measure) {
@@ -1012,42 +1058,45 @@ final class AssistantAggregateQuery {
 
     private static final class Bucket {
         long count;
-        final AudienceSet audience;
-        final AudienceSet paying;
+        final LongSet audience;
+        final LongSet paying;
         final Numeric[] numbers;
+        final LongSet[] sessions;
         boolean incomplete;
         boolean unknownPaying;
         String name;
         long namedAt;
 
-        Bucket(boolean distinct, boolean needsPaying, int fields) {
-            audience = distinct ? new AudienceSet() : null;
-            paying = needsPaying ? new AudienceSet() : null;
+        Bucket(boolean distinct, boolean needsPaying, int fields, int sessionCounts) {
+            audience = distinct ? new LongSet() : null;
+            paying = needsPaying ? new LongSet() : null;
             numbers = new Numeric[fields];
             Arrays.setAll(numbers, i -> new Numeric());
+            sessions = new LongSet[sessionCounts];
+            Arrays.setAll(sessions, i -> new LongSet());
         }
     }
 
-    /** 每行至多给本组和合计各添一个正整数编号，数组避免为每个编号另留对象。 */
-    private static final class AudienceSet {
+    /** 正整数去重集合，数组避免为每个值另留对象。 */
+    private static final class LongSet {
         private long[] keys;
         private int size;
 
         int size() { return size; }
 
-        void add(long uid) {
+        void add(long value) {
             if (keys == null) keys = new long[4];
-            int index = AssistantAudienceHistory.slot(keys, uid);
-            if (keys[index] == uid) return;
+            int index = AssistantAudienceHistory.slot(keys, value);
+            if (keys[index] == value) return;
             if (size == keys.length / 2) {
                 var larger = new long[keys.length * 2];
                 for (long key : keys) {
                     if (key != 0) larger[AssistantAudienceHistory.slot(larger, key)] = key;
                 }
                 keys = larger;
-                index = AssistantAudienceHistory.slot(keys, uid);
+                index = AssistantAudienceHistory.slot(keys, value);
             }
-            keys[index] = uid;
+            keys[index] = value;
             size++;
         }
 

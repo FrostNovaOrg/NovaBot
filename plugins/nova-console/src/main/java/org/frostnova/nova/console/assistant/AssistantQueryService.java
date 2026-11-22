@@ -183,8 +183,7 @@ public class AssistantQueryService {
         int count = Math.min(points.size(), Math.max(2, Math.min(maxPoints, LIST_LIMIT)));
         var sampled = new JSONArray();
         for (int i = 0; i < count; i++) {
-            int index = count == 1 ? 0 : (int) ((long) i * (points.size() - 1) / (count - 1));
-            var point = points.get(index);
+            var point = points.get(sampleIndex(i, count, points.size()));
             sampled.add(JSONObject.of("at", point.getKey(), "value", point.getValue()));
         }
         result.put("curve", list(sampled, points.size()));
@@ -322,19 +321,70 @@ public class AssistantQueryService {
         return result;
     }
 
-    /** 与主播页同参数的粉丝快照和变化；至多返回最近一百二十个点。 */
+    /** 粉丝变化沿用主播页口径，曲线在窗口内抽稀并保留首尾。 */
     public JSONObject fans(String platform, Long uid, int days) {
+        var range = StreamerInsights.recent(days, clock);
         var result = periodResult(platform, uid, days, "fans", "粉丝快照归档，与主播页同一算法",
                 () -> statistics.fans(platform, uid, Integer.toString(days)));
         var data = result.getJSONObject("fans");
-        if (data != null) {
-            cap(data, "points", LIST_LIMIT, true);
-            if (data.getJSONArray("points").isEmpty() && data.get("change") == null) {
-                result.put("fans", null);
-                result.put("reason", "没有足够的粉丝快照记录");
-            }
+        if (data == null) return result;
+        var points = data.getJSONArray("points");
+        int size = points.size();
+        if (size == 0 && data.get("change") == null) {
+            result.put("fans", null);
+            result.put("reason", "没有足够的粉丝快照记录");
+            return result;
+        }
+        long windowStart = range.from().toEpochMilli(), windowEnd = range.to().toEpochMilli();
+        data.put("windowFromAt", windowStart);
+        data.put("windowToAtExclusive", windowEnd);
+        data.put("total", size);
+        data.put("truncated", size > LIST_LIMIT);
+        if (size > 0) {
+            var first = points.getJSONObject(0);
+            var last = points.getJSONObject(size - 1);
+            data.put("fromAt", first.get("at"));
+            data.put("fromValue", first.get("value"));
+            data.put("toAt", last.get("at"));
+            data.put("toValue", last.get("value"));
+            data.put("pointChange", first.getLongValue("at") < last.getLongValue("at")
+                    ? last.getBigDecimal("value").subtract(first.getBigDecimal("value")) : null);
+        }
+        if (size > LIST_LIMIT) {
+            data.put("points", sampleFans(points, windowStart, windowEnd));
         }
         return result;
+    }
+
+    private static JSONArray sampleFans(JSONArray points, long from, long to) {
+        var sampled = new JSONArray();
+        int last = points.size() - 1;
+        sampled.add(points.get(0));
+        int segments = LIST_LIMIT - 2;
+        long span = to - from;
+        int index = 0;
+        for (int segment = 0; segment < segments && index <= last; segment++) {
+            // 放大时间偏移以保留分段边界及中点的精度。
+            long end = (segment + 1L) * span, midpointTwice = (2L * segment + 1) * span;
+            int nearest = -1;
+            long bestDistance = Long.MAX_VALUE;
+            for (; index <= last; index++) {
+                long offset = (points.getJSONObject(index).getLongValue("at") - from) * segments;
+                if (offset >= end) break;
+                long distance = Math.abs(2 * offset - midpointTwice);
+                if (distance < bestDistance) {
+                    nearest = index;
+                    bestDistance = distance;
+                }
+            }
+            if (nearest > 0 && nearest < last) sampled.add(points.get(nearest));
+        }
+        sampled.add(points.get(last));
+        return sampled;
+    }
+
+    private static int sampleIndex(int index, int count, int size) {
+        return count == 1 ? 0 : (int) ((long) index * (size - 1) / (count - 1));
     }
 
     private JSONObject periodResult(String platform, Long uid, int days, String key, String origin,

@@ -22,12 +22,15 @@ final class AssistantTools {
             new Tool("revenue", "本场流水合计与构成、贡献者代号及占比", JSONObject.of("start", integer("开播时刻，毫秒")), List.of("start")),
             new Tool("insights", "本期、上期与比较，含样本及监听覆盖", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
             new Tool("trend", "按天、周、月分桶的场次趋势", JSONObject.of("period", text("day、week、month"), "days", integer("7、30、90、180、360 天")), List.of("period", "days")),
-            new Tool("fans", "粉丝快照与变化", JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
+            new Tool("fans", "粉丝快照与变化。windowFromAt 至 windowToAtExclusive 为查询窗口，fromAt、fromValue、toAt、toValue 是图上首尾点的时刻和值。pointChange 是两点间变化。"
+                    + "主播页口径 change 可用窗口前快照作基准",
+                    JSONObject.of("days", integer("7、30、90、180、360 天")), List.of("days")),
             new Tool(AssistantAggregateRequest.NAME,
                     "筛选已归档的记录并分组汇总。筛选条件同时满足。"
                             + AssistantAggregateQuery.DAY_RULE + "。跨早上 6 点的场次，付费事件和场次流水可能归入不同统计日，"
                             + "回答每天流水时说明采用的是事件发生日还是整场的开播日。"
                             + AssistantAggregateQuery.MINUTE_RULE + "。"
+                            + AssistantAggregateQuery.SESSION_COUNT_RULE + "。"
                             + AssistantAggregateQuery.ZERO_RULE + "。弹幕只按 day 分组时逐日出行，逐条明细按 minute 分组时逐直播时段出行，"
                             + "其他分组无记录时省略。弹幕计文字与表情，醒目留言单列。"
                             + AssistantAggregateQuery.HISTORY_RULE + "。回答新老观众问题时写明 historyFrom 留档起点。"
@@ -35,7 +38,8 @@ final class AssistantTools {
                             + AssistantAggregateQuery.AMOUNT_BASIS + "。"
                             + "观众或新老分组、代号筛选、去重观众人数及付费人数排除拒绝名单。其余金额合计包含拒绝名单上的观众，"
                             + "与控制台流水的观众范围一致。金额权限以调用方为准。"
-                            + "合计覆盖截断前的所有匹配记录，null 表示未知。数字以工具结果为准，不要自己加总明细。",
+                            + "合计覆盖截断前的所有匹配记录，null 表示未知。"
+                            + AssistantAggregateQuery.KNOWN_AMOUNT_RULE + "。数字以工具结果为准，不要自己加总明细。",
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED),
             new Tool(AssistantSqlRequest.NAME, AssistantSqlRequest.description(true),
                     AssistantSqlRequest.fields(true), AssistantSqlRequest.REQUIRED),
