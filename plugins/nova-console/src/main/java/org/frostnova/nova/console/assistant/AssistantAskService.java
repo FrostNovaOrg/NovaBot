@@ -70,15 +70,16 @@ public class AssistantAskService {
     private static final String AMOUNT_CONTEXT = AMOUNT_TOPIC + "\\s*(?:(?:约为|大约|合计|共计|合共|共|为|是|有|达|约|:|=)\\s*+)*+";
     private static final String AMOUNT_VERB = "(?:赚|收|付|花|挣)了\\s*";
     private static final String AMOUNT_END = "(?=\\s*(?:$|[。！？!?，,、；;）)\\n]))";
+    private static final String BLOCK_AMOUNT_UNIT = "块(?=\\h*(?:$|\\R|\\p{P}|左右|上下|出头|以内|以上|以下|人民币|的|吧|了|而已))";
     private static final Pattern AMOUNT_IN_ANSWER = Pattern.compile(
             "(?:[¥$€£]|人民币|CNY|RMB|USD)\\s*" + AMOUNT_NUMBER
-                    + "|" + AMOUNT_NUMBER + "\\s*[万亿]?\\s*(?:元|圆|块钱|角钱|分钱|美元|港币|人民币|CNY|RMB|USD)"
+                    + "|" + AMOUNT_NUMBER + "\\s*[万亿]?\\s*(?:元|圆|块钱|角钱|分钱|美元|港币|人民币|CNY|RMB|USD|" + BLOCK_AMOUNT_UNIT + ")"
                     + "|(?:" + AMOUNT_CONTEXT + "|" + AMOUNT_VERB + ")" + AMOUNT_NUMBER + AMOUNT_END,
             Pattern.CASE_INSENSITIVE);
     private static final String APPROXIMATE_AMOUNT = AMOUNT_NUMBER + "\\h*(?:[多来余几](?:\\h*" + AMOUNT_NUMBER + ")?|出头)";
     private static final Pattern COLLOQUIAL_AMOUNT_IN_ANSWER = Pattern.compile(
             "(?:" + APPROXIMATE_AMOUNT + "|几(?:\\h*" + AMOUNT_NUMBER + ")?|(?:多于?|来|余|超过)\\h*" + AMOUNT_NUMBER + ")"
-                    + "\\h*(?:元(?![件素])|块钱|块(?=\\h*(?:$|\\R|\\p{P}|左右|上下|出头|以内|以上|以下|人民币|的|吧|了|而已)))"
+                    + "\\h*(?:元(?![件素])|块钱|" + BLOCK_AMOUNT_UNIT + ")"
                     + "|(?:" + AMOUNT_CONTEXT + "|" + AMOUNT_VERB + ")" + APPROXIMATE_AMOUNT + "(?=\\h*(?:$|\\R|\\p{P}))");
     private static final Pattern BARE_AMOUNT_APPROXIMATION = Pattern.compile(
             "\\s*(?:(?:大约|约)\\h*)?" + AMOUNT_NUMBER + "\\h*出头[\\h。.!]*\\s*");

@@ -6,6 +6,7 @@ import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.assistant.AssistantChartRenderer.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -29,17 +30,35 @@ final class AssistantChartResults {
             + "|[¥￥$€£]|人民币|(?i:\\b(?:CNY|RMB|USD)\\b)");
     private static final Pattern SQL_MONEY_COLUMN = Pattern.compile("amount|revenue|price|income|money|yuan|earnings|cost",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern AVERAGE_COLUMN = Pattern.compile("(?:avg|average)(?:[:_].+)?", Pattern.CASE_INSENSITIVE);
+    private static final Set<String> MONEY_COLUMNS = Set.of("giftPaid", "guardValue", "gift_value", "gift_paid", "guard_value",
+            "super_chat_value", "box_value", "box_profit");
     private static final Set<String> TIMESTAMPS = Set.of("at", "startTime", "endTime", "start", "end", "from", "to",
             "session", "minute", "firstRecordedAt", "fans.fromAt", "fans.toAt", "start_at", "end_at", "session_start");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(StatisticsDay.ZONE);
     private static final Map<String, String> LABELS = Map.ofEntries(
             Map.entry("day", "统计日"), Map.entry("week", "统计周"), Map.entry("month", "统计月"), Map.entry("hour", "北京时间"),
+            Map.entry("weekday", "星期"), Map.entry("minute", "时间"), Map.entry("kind", "记录种类"),
             Map.entry("at", "时间"), Map.entry("startTime", "开播时间"), Map.entry("session", "场次"), Map.entry("period", "时段"),
             Map.entry("alias", "观众"), Map.entry("name", "名称"), Map.entry("share", "贡献占比"), Map.entry("type", "分类"),
+            Map.entry("audienceAge", "观众"), Map.entry("openedGiftName", "开出礼物"), Map.entry("guardOperation", "上舰方式"),
+            Map.entry("guardLevel", "上舰等级"), Map.entry("pkResult", "PK 结果"),
             Map.entry("messages", "弹幕数"), Map.entry("peakOnline", "在线峰值"), Map.entry("durationSeconds", "开播时长（秒）"),
             Map.entry("count", "条数"), Map.entry("distinctAudience", "观众人数"), Map.entry("distinctPayingAudience", "付费人数"),
             Map.entry("avg:online", "平均在线"), Map.entry("avg:watched", "平均看过人数"), Map.entry("sum:quantity", "个数合计"),
+            Map.entry("online", "在线人数"), Map.entry("watched", "看过人数"), Map.entry("sessionAudience", "名单人数"),
+            Map.entry("quantity", "个数"), Map.entry("amount", "金额（元）"), Map.entry("effectiveSeconds", "有效时长（秒）"),
+            Map.entry("pkMyVotes", "本方票数"), Map.entry("pkOpponentVotes", "对手票数"), Map.entry("endTime", "下播时间"),
             Map.entry("revenue", "流水（元）"), Map.entry("sum:amount", "金额合计（元）"));
+    private static final Map<String, String> OPERATIONS = Map.of("sum", "合计", "avg", "平均", "min", "最小", "max", "最大");
+    private static final Map<String, Map<String, String>> CATEGORY_LABELS = Map.of(
+            "audienceAge", Map.of("new", "新观众", "returning", "老观众"),
+            "guardOperation", Map.of("open", "新开", "renew", "续费"),
+            "guardLevel", Map.of("captain", "舰长", "commander", "提督", "governor", "总督"),
+            "pkResult", Map.of("win", "胜", "loss", "负", "draw", "平"),
+            "kind", Map.of("gift", "礼物", "box", "盲盒", "guard", "上舰", "super_chat", "醒目留言", "follow", "关注",
+                    "pk_settle", "PK 结算", "session", "场次", "minute", "逐分钟记录", "danmu", "弹幕", "audience_activity", "观众活动"),
+            "type", Map.of("DANMU", "弹幕", "EMOJI", "表情弹幕", "SUPER_CHAT", "醒目留言"));
     private static final Set<String> AGGREGATE_GROUPS = Arrays.stream(AssistantAggregateRequest.Group.values())
             .map(group -> group.key).collect(java.util.stream.Collectors.toUnmodifiableSet());
     private static final Set<String> AGGREGATE_COUNTS = Set.of("count", "distinctAudience", "distinctPayingAudience");
@@ -127,29 +146,32 @@ final class AssistantChartResults {
             privacy.learnSqlAudience(sourceRows.stream().flatMap(row -> selected.stream().map(row::get)));
         }
         UnaryOperator<String> display = privacy::displayChart;
+        boolean table = request.type() == Type.TABLE;
         int points = 0;
         for (var row : sourceRows) {
             Object x = row.get(request.xColumn());
+            if (table && x instanceof Number) x = chartNumber(result, request.xColumn(), number(x));
             var values = new ArrayList<Value>();
             for (String column : request.yColumns()) {
                 Object cell = row.get(column);
-                BigDecimal numeric = number(cell);
-                if (request.type() != Type.TABLE && cell != null) {
+                BigDecimal numeric = chartNumber(result, column, number(cell));
+                if (!table && cell != null) {
                     if (numeric == null) throw new Invalid("折线和柱状的纵轴列需要数值");
                     if (++points > limit) throw new Invalid(limitMessage);
                 }
-                values.add(new Value(cellText(column, cell, display), numeric));
+                String text = cellText(column, cell instanceof Number ? numeric : cell, display);
+                values.add(new Value(text, table ? null : numeric));
             }
             rows.add(new Row(cellText(request.xColumn(), x, display), List.copyOf(values)));
         }
-        if (request.type() != Type.TABLE && points == 0) throw new Invalid("所选纵轴没有已知数值");
+        if (!table && points == 0) throw new Invalid("所选纵轴没有已知数值");
 
         var series = request.yColumns().stream().map(column -> columnLabel(result, column)).toList();
         var target = request.referenceLine();
         String title = label(request.title(), MAX_TITLE, context, display);
         String xLabel = request.xLabel() == null ? columnLabel(result, request.xColumn())
-                : label(request.xLabel(), MAX_LABEL, context, display);
-        String yLabel = label(request.yLabel(), MAX_LABEL, context, display);
+                : axisLabel(result, request.xLabel(), context, display);
+        String yLabel = axisLabel(result, request.yLabel(), context, display);
         if (target != null) target = new ReferenceLine(target.value(), label(target.label(), MAX_LABEL, context, display));
         return new Chart(request.type(), title, xLabel, yLabel, series, List.copyOf(rows), target,
                 result.source() == null ? "" : clean(result.source(), 48), available);
@@ -184,8 +206,7 @@ final class AssistantChartResults {
         UnaryOperator<String> checkedLabel = text -> {
             String masked = privacy.mask(text);
             String shown = privacy.displayChart(masked);
-            if (MONEY_LABEL.matcher(shown).find() || AssistantAskService.containsAmount(shown)
-                    || AssistantAskService.containsColloquialAmount(shown)) {
+            if (containsAmount(shown)) {
                 if (!context.amountVisible()) throw new Invalid(AssistantAggregateRequest.HIDDEN_AMOUNT + "，图表文字不能包含金额");
                 throw new Invalid("收入等金额数据须使用模板图");
             }
@@ -202,15 +223,48 @@ final class AssistantChartResults {
         if ("audience".equals(column))
             return "aggregate".equals(result.tool()) || AssistantSqlRequest.NAME.equals(result.tool()) ? "观众" : "观众人数";
         if ("value".equals(column) && "fans".equals(result.tool())) return "粉丝数";
-        return clean(LABELS.getOrDefault(column, column), MAX_LABEL);
+        String translated = LABELS.get(column);
+        if (translated != null) return translated;
+        int separator = column.indexOf(':');
+        if (separator > 0) {
+            String operation = OPERATIONS.get(column.substring(0, separator));
+            String field = LABELS.get(column.substring(separator + 1));
+            if (operation != null && field != null) return operation + field;
+        }
+        return clean(column, MAX_LABEL);
+    }
+
+    private static String axisLabel(Result result, String text, AssistantQueryContext context, UnaryOperator<String> renderer) {
+        if (text != null && result.table().columns().contains(text)) text = columnLabel(result, text);
+        return label(text, MAX_LABEL, context, renderer);
     }
 
     private static String label(String text, int max, AssistantQueryContext context, UnaryOperator<String> renderer) {
         if (text == null) return null;
         String display = renderer.apply(text);
-        if (!context.amountVisible() && (MONEY_LABEL.matcher(display).find() || AssistantAskService.containsAmount(display)))
+        if (!context.amountVisible() && containsAmount(display))
             throw new Invalid(AssistantAggregateRequest.HIDDEN_AMOUNT + "，图表文字不能包含金额");
         return clean(display, max);
+    }
+
+    private static boolean containsAmount(String text) {
+        return MONEY_LABEL.matcher(text).find() || AssistantAskService.containsAmount(text)
+                || AssistantAskService.containsColloquialAmount(text);
+    }
+
+    private static BigDecimal chartNumber(Result result, String column, BigDecimal number) {
+        if (number == null || number.scale() <= 0) return number;
+        if (AVERAGE_COLUMN.matcher(column).matches() || column.contains("平均")) {
+            return number.setScale(1, RoundingMode.HALF_UP).stripTrailingZeros();
+        }
+        String field = "value".equals(column) && "curve".equals(result.tool())
+                ? result.arguments().getString("metric") : column;
+        if (field != null && metricColumn(field)) field = field.split("\\.", 3)[1];
+        if (field != null && (MONEY_COLUMNS.contains(field) || SQL_MONEY_COLUMN.matcher(field).find()
+                || MONEY_LABEL.matcher(field).find())) {
+            return number.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros();
+        }
+        return number;
     }
 
     private static String cellText(String column, Object cell, UnaryOperator<String> display) {
@@ -224,7 +278,8 @@ final class AssistantChartResults {
             return number == null ? "—" : number.scale() > 16 || number.scale() < -16
                     ? number.toEngineeringString() : number.toPlainString();
         }
-        return clean(display.apply(cell.toString()), 36);
+        String text = cell.toString();
+        return clean(display.apply(CATEGORY_LABELS.getOrDefault(column, Map.of()).getOrDefault(text, text)), 36);
     }
 
     private static boolean safeColumn(String tool, String column, String curveMetric, Set<String> nonMonetaryMetrics) {

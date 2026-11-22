@@ -629,6 +629,36 @@ class AssistantAskServiceTest {
         verifyNoInteractions(chartRenderer);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"三百块", "两千块", "300 块"})
+    @DisplayName("金额不可见的聊天里，单写金额单位块会从回答、模板图和手绘漏出")
+    void hidesBareBlockAmountsInAnswersAndChartLabels(String amount) {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("startTime", 1794000000000L, "messages", 300, "peakOnline", 3))));
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", amount)));
+        replies.add(call("draw_sketch", sketchArguments(sketchSvg("<text x='42' y='80'>" + amount + "</text>"))));
+        replies.add(JSONObject.of("content", "一共 " + amount + "。"));
+
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "这场表现怎样"), new AssistantQueryContext(false));
+        var toolReplies = toolDataAtLastRequest();
+        assertAll(
+                () -> assertTrue(result.getString("answer").contains("不显示金额"), result::toJSONString),
+                () -> assertFalse(result.getString("answerForHistory").contains(amount), result::toJSONString),
+                () -> assertTrue(Objects.toString(toolReplies.get(1).getString("reason"), "").contains("不能包含金额"), toolReplies::toString),
+                () -> assertTrue(Objects.toString(toolReplies.get(2).getString("reason"), "").contains("不能包含金额"), toolReplies::toString),
+                () -> verifyNoInteractions(chartRenderer));
+    }
+
+    @Test
+    @DisplayName("金额不可见的聊天里，灯牌数量不能被当成金额挡掉")
+    void keepsBlockAsAClassifierForCounts() {
+        replies.add(JSONObject.of("content", "送了 3 块灯牌。"));
+        var result = service.ask("bilibili", 1L, "member", JSONObject.of("question", "有多少灯牌"), new AssistantQueryContext(false));
+        assertTrue(result.getString("answer").contains("3 块灯牌"), result::toJSONString);
+    }
+
     @Test
     @DisplayName("超长、深嵌套或超幅面的手绘在绘图前就被拒，助手仍能返回文字")
     void excessiveSketchIsRejectedBeforeRendering() {
