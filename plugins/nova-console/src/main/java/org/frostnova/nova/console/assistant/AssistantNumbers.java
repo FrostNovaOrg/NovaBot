@@ -3,6 +3,8 @@ package org.frostnova.nova.console.assistant;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** 只核对本问已发送的工具数据；代号中的十六进制数字不属于事实陈述。 */
@@ -24,7 +26,7 @@ final class AssistantNumbers {
 
     List<String> unverified(String answer) {
         var result = new LinkedHashSet<String>();
-        var matcher = NUMBER.matcher(DATE_TIME.matcher(ALIAS.matcher(answer).replaceAll("")).replaceAll(" "));
+        var matcher = tokens(answer, true);
         while (matcher.find()) {
             String token = matcher.group();
             boolean percent = !matcher.group(1).isEmpty();
@@ -35,6 +37,15 @@ final class AssistantNumbers {
             if (!found) result.add(token);
         }
         return List.copyOf(result);
+    }
+
+    static List<String> allTokens(String answer) {
+        return tokens(answer, false).results().map(MatchResult::group).toList();
+    }
+
+    private static Matcher tokens(String answer, boolean skipDatesAndTimes) {
+        String text = ALIAS.matcher(answer).replaceAll("");
+        return NUMBER.matcher(skipDatesAndTimes ? DATE_TIME.matcher(text).replaceAll(" ") : text);
     }
 
     private static boolean equal(BigDecimal a, BigDecimal b) {

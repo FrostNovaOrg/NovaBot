@@ -34,7 +34,7 @@ public class AssistantAskService {
     static final int QUESTION_TIMEOUT_SECONDS = 55;
     static final String SYSTEM = """
             你是 NovaBot 的智能助手，回答关于一位 B 站主播直播数据的问题。
-            1. 数字须来自查数工具，不要估算。时长字段单位是秒，优先用工具的小时列，否则换算成小时，保留一位小数，需要时括注分钟。
+            1. 数字须来自查数工具，不要估算。时长字段单位是秒，优先用工具的小时列，否则换算成小时，保留一位小数。
             2. 每个数字后面用括号注明出处，写工具返回里的 source。
             3. 说原因时，只说时间上对得上的事，并说明这只是同时发生，不一定是原因。
             4. NovaBot 听不到声音、看不到画面，也不知道观众是从哪里来的。问到这些，按数据录不到的规则回答。
@@ -67,14 +67,14 @@ public class AssistantAskService {
     private static final Pattern NUMBERED_LINE = Pattern.compile("(?m)^\\h*(?:[-*+]\\h+)?[0-9０-９]+\\h*[.．、)）:：].*\\R\\z");
     private static final String CLOCK_HOUR = "(?:[01]?[0-9]|2[0-3])";
     private static final String CLOCK_POINT = CLOCK_HOUR + "\\h*点";
-    private static final String CLOCK_END = "\\h*(?:钟|[0-5]?[0-9]\\h*(?:分(?![钟钱])|(?=开播|下播)))";
+    private static final String CLOCK_END = "\\h*(?:钟|[0-5]?[0-9]\\h*(?:分(?![钟钱])|(?=开播|下播))|(?=开播|下播))";
     private static final String CLOCK_RANGE = "\\h*[到至]\\h*" + CLOCK_POINT + "(?:" + CLOCK_END + "|(?!\\h*[0-9]))";
     private static final Pattern CHINESE_DATE_TIME = Pattern.compile(
             "(?<![0-9])(?<![0-9][.,])(?:[0-9]{4}\\h*年(?:\\h*[0-9]{1,2}\\h*月(?:\\h*[0-9]{1,2}\\h*[日号])?)?"
                     + "|(?:0?[1-9]|1[0-2])\\h*月(?:\\h*[0-9]{1,2}\\h*[日号])?"
                     + "|" + CLOCK_HOUR + "[:：][0-5][0-9](?:[:：][0-5][0-9])?(?![0-9])"
                     + "|" + CLOCK_POINT + "(?:" + CLOCK_END + "|" + CLOCK_RANGE + ")"
-                    + "|(?:清晨|早上|上午|中午|下午|傍晚|晚上|深夜|午夜|半夜|凌晨|昨晚|今晚|明晚)\\h*"
+                    + "|(?:清晨|早晨|早上|上午|中午|下午|傍晚|晚上|深夜|午夜|半夜|凌晨|夜里|夜间|今早|昨早|明早|昨晚|今晚|明晚)\\h*"
                     + CLOCK_POINT + "(?:" + CLOCK_END + "|" + CLOCK_RANGE + "|(?!\\h*[0-9])))");
     private static final String AMOUNT_NUMBER = "(?:[+−-]?\\d[\\d,.]*|[零〇一二两兩三四五六七八九十百千万萬亿億点點壹贰貳叁參肆伍陆陸柒捌玖拾佰仟]+)";
     private static final String AMOUNT_TOPIC = "(?:金额|流水|单价|营收|收入|收益|盈亏|支出|花费|实扣|消耗|礼物价值)";
@@ -376,7 +376,7 @@ public class AssistantAskService {
                         String rewrittenNumberText = CHINESE_DATE_TIME.matcher(rewrittenAnswer).replaceAll(" ");
                         List<String> rewrittenUnverified = numbers.unverified(rewrittenNumberText);
                         if (rewrittenUnverified.size() < unverified.size()
-                                && verifiedNumbers(rewrittenNumberText, rewrittenUnverified)
+                                && numberValues(AssistantNumbers.allTokens(rewrittenAnswer))
                                         .containsAll(verifiedNumbers(numberText, unverified))) {
                             answer = rewrittenAnswer;
                             unverified = rewrittenUnverified;
@@ -460,6 +460,10 @@ public class AssistantAskService {
         // 没有工具数据时，待核对清单包含所有参与核对的数字。
         var tokens = new HashSet<>(new AssistantNumbers().unverified(text));
         tokens.removeAll(unverified);
+        return numberValues(tokens);
+    }
+
+    private static Set<String> numberValues(Collection<String> tokens) {
         var values = new HashSet<String>();
         for (String token : tokens) {
             boolean percent = token.endsWith("%") || token.endsWith("％");

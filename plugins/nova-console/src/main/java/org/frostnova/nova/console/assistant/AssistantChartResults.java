@@ -62,6 +62,8 @@ final class AssistantChartResults {
     private static final Set<String> AGGREGATE_GROUPS = Arrays.stream(AssistantAggregateRequest.Group.values())
             .map(group -> group.key).collect(java.util.stream.Collectors.toUnmodifiableSet());
     private static final Set<String> AGGREGATE_COUNTS = Set.of("count", "distinctAudience", "distinctPayingAudience");
+    private static final Set<String> AGGREGATE_DURATION_HOURS = Set.of(
+            "sum:durationHours", "avg:durationHours", "sum:effectiveHours", "avg:effectiveHours");
     private static final Set<String> AGGREGATE_NUMBERS = Arrays.stream(AssistantAggregateRequest.Field.values())
             .filter(field -> field.numeric && field != AssistantAggregateRequest.Field.AMOUNT)
             .map(field -> field.key).collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -289,6 +291,7 @@ final class AssistantChartResults {
 
     private static boolean safeColumn(String tool, String column, String curveMetric, Set<String> nonMonetaryMetrics) {
         if ("aggregate".equals(tool)) {
+            if (AGGREGATE_DURATION_HOURS.contains(column)) return true;
             int separator = column.indexOf(':');
             return separator < 0 ? AGGREGATE_GROUPS.contains(column) || AGGREGATE_COUNTS.contains(column)
                     : AGGREGATE_NUMBERS.contains(column.substring(separator + 1));
