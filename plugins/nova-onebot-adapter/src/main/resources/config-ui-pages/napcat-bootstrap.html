@@ -113,17 +113,19 @@
   // 拿这把凭据去问一句 NapCat「我算登录了吗」。
   // 🔴 必须问，不能写完就跳：凭据只活一小时，缓存里那把可能刚好过期，
   //    而过期的表现是跳过去之后被弹回它自己的登录页——那时候使用者只会以为配置错了
-  async function accepted(credential) {
+  async function checkCredential(credential) {
     try {
       const res = await fetch(CONSOLE + '/napcat/api/auth/check', {
         method: 'POST', headers: {'Authorization': 'Bearer ' + credential}
       });
       const data = await res.json();
+      // NovaBot 的错误用 success 表示；NapCat 的回复带数字 code。
+      if (!data || data.success === false || !Number.isInteger(data.code)) return null;
       // NapCat 鉴权失败也回 HTTP 200，错误只在响应体里。只看状态码会一律读成成功
-      return data && data.code === 0;
+      return data.code === 0;
     } catch (e) {
       if (e instanceof TypeError) throw e;
-      return false;
+      return null;
     }
   }
 
@@ -172,7 +174,8 @@
     localStorage.setItem(KEY, JSON.stringify(issued.credential));
 
     step('② 验证凭据');
-    if (!await accepted(issued.credential)) {
+    let acceptedByNapCat = await checkCredential(issued.credential);
+    if (acceptedByNapCat === false) {
       // 🔴 只重换一次，不循环。换不出来的原因几乎总是配置不对，
       //    而那类原因重试多少次都是同一个结果，只会把 NapCat 的登录限流打满
       step('③ 凭据无效，重新获取（仅重试一次）');
@@ -180,12 +183,15 @@
       if (!issued.success) { fail(issued.message || '获取凭据失败。'); return; }
 
       localStorage.setItem(KEY, JSON.stringify(issued.credential));
-      if (!await accepted(issued.credential)) {
-        localStorage.removeItem(KEY);
-        fail('两次获取的凭据均未被 NapCat 接受。通常是 NovaBot 中配置的 NapCat Token 或二次验证密钥'
+      acceptedByNapCat = await checkCredential(issued.credential);
+    }
+    if (acceptedByNapCat !== true) {
+      localStorage.removeItem(KEY);
+      fail(acceptedByNapCat === null
+        ? '打不开 NapCat 界面：/config/napcat/ 没有转到 NapCat，多半是网页服务器的反向代理还没配好。配法见手册附录 C。'
+        : '两次获取的凭据均未被 NapCat 接受。通常是 NovaBot 中配置的 NapCat Token 或二次验证密钥'
           + '与 NapCat 当前的设置不一致，多发生在只修改了其中一侧之后。');
-        return;
-      }
+      return;
     }
 
     step('④ 打开 NapCat');

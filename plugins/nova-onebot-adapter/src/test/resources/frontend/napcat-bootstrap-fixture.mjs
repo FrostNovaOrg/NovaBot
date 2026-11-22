@@ -1,4 +1,4 @@
-// 运行引导页脚本，检查断网提示、凭据重试与正常打开页面的结果。
+// 运行引导页脚本，检查断网与代理错误提示、凭据重试与正常打开页面的结果。
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {strict as assert} from 'node:assert';
@@ -8,7 +8,7 @@ const html = readFileSync(new URL('../../../main/resources/config-ui-pages/napca
 const script = html.slice(html.indexOf('</head>')).match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
 if (!script) throw new Error('没有找到 NapCat 引导页脚本');
 
-async function bootstrap({offline, invalid = 0} = {}) {
+async function bootstrap({offline, invalid = 0, checkResponse} = {}) {
   const nodes = new Map();
   const element = () => ({textContent: '', className: '', href: '', appendChild() {},
     addEventListener() {}, classList: {add() {}, remove() {}}});
@@ -32,7 +32,9 @@ async function bootstrap({offline, invalid = 0} = {}) {
       if (path === offline) throw new TypeError('Failed to fetch');
       if (path === '/api/auth/state') return {json: async () => ({csrfToken: 'sample-csrf'})};
       if (path.startsWith('/api/napcat/credential')) return {json: async () => ({success: true, credential: 'sample-credential'})};
-      if (path === '/napcat/api/auth/check') return {json: async () => ({code: ++checks <= invalid ? 1 : 0})};
+      if (path === '/napcat/api/auth/check') {
+        return checkResponse ? checkResponse() : {json: async () => ({code: ++checks <= invalid ? 1 : 0})};
+      }
       throw new Error('意外请求：' + path);
     },
   };
@@ -92,10 +94,27 @@ await check('凭据确实无效时仍只换取一次', async () => {
 await check('两次凭据无效仍清除凭据并说明原因', async () => {
   const result = await bootstrap({invalid: 2});
   assert.ok(result.msg.includes('两次获取的凭据均未被 NapCat 接受'));
+  assert.ok(result.msg.includes('NapCat Token') && result.msg.includes('二次验证密钥'));
   assert.equal(result.stored.has('token'), false);
   assert.equal(result.mounted, false);
   assert.equal(result.requests.length, 5);
 });
+
+// 抓的用户故障：反向代理没配，引导页却叫用户去查 Token。
+for (const [name, status, body] of [
+  ['NovaBot 返回 403 JSON', 403, '{"success":false,"message":"请求校验失败，请刷新页面后重试"}'],
+  ['网页服务器返回 404 HTML', 404, '<!doctype html><title>404 Not Found</title>'],
+]) {
+  await check(name + ' 时提示检查反向代理', async () => {
+    const result = await bootstrap({checkResponse: () => new Response(body, {status})});
+    assert.ok(result.msg.includes('/config/napcat/') && result.msg.includes('反向代理')
+      && result.msg.includes('附录 C'), '没有反向代理提示；提示=' + JSON.stringify(result.msg));
+    assert.ok(!result.msg.includes('Token'), '提示误指向 Token');
+    assert.equal(result.requests.length, 3, '代理配置有误时无需换取凭据');
+    assert.equal(result.stored.has('token'), false);
+    assert.equal(result.mounted, false);
+  });
+}
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

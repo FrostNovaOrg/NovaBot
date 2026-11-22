@@ -115,17 +115,17 @@ class NapCatBootstrapFailMessageTest {
     }
 
     @Test
-    @DisplayName("取凭据断网不再卡在第一步，验证断网不当成凭据无效")
-    void offlineBootstrapExplainsConnectionFailure() throws Exception {
+    @DisplayName("引导页区分断网、反向代理错误和凭据无效")
+    void bootstrapDistinguishesFailureCauses() throws Exception {
         Path root = repositoryRoot();
         Path fixture = root.resolve("plugins/nova-onebot-adapter/src/test/resources/frontend/napcat-bootstrap-fixture.mjs");
         Process process = new ProcessBuilder("node", fixture.toString())
                 .directory(root.toFile()).redirectErrorStream(true).start();
         assertTrue(process.waitFor(60, TimeUnit.SECONDS), "NapCat 引导页检查超时");
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
-        System.out.println("NapCat 引导页连接失败检查：" + output);
+        System.out.println("NapCat 引导页检查：" + output);
         assertEquals(0, process.exitValue(), output);
-        assertTrue(output.contains("跑了 7 格"), "没有完成引导页检查：" + output);
+        assertTrue(output.contains("跑了 9 格"), "没有完成引导页检查：" + output);
     }
 
     @Test
