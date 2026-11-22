@@ -174,6 +174,27 @@ class AssistantClientTest {
         server.verify();
     }
 
+    // 抓住选了中档却无法发出请求，或请求发错强度、没有留足思考空间。
+    @ParameterizedTest
+    @CsvSource({"responses, reasoning.effort, medium, max_output_tokens, 8800",
+            "chat, reasoning_effort, low, max_tokens, 4800"})
+    void mediumThinkingSendsSupportedEffortAndAllowance(String format, String effortField, String effort,
+                                                        String limitField, int limit) {
+        boolean responses = "responses".equals(format);
+        if (responses) useResponses();
+        properties.setThinking("medium");
+        server.expect(requestTo(responses ? "https://model.example/v1/responses" : "https://api.deepseek.com/chat/completions"))
+                .andExpect(jsonPath("$." + effortField).value(effort))
+                .andExpect(jsonPath("$." + limitField).value(limit))
+                .andRespond(withSuccess(responses ? RESPONSES_ANSWER
+                        : "{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}",
+                        MediaType.APPLICATION_JSON));
+        try (var question = client.beginQuestion("member")) {
+            assertEquals(responses ? "第一段第二段第三段" : "好", question.complete(request()).content());
+        }
+        server.verify();
+    }
+
     // 抓住思考 token 重复计价，导致月度限额过早用尽。
     @Test void responsesBillsReasoningOnceAndLeavesMonthlyAllowance() {
         useResponses();

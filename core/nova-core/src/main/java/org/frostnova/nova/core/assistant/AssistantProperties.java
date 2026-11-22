@@ -39,12 +39,12 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"chat", "responses"}, labels = {"/chat/completions", "/responses"})
     private String apiFormat = "chat";
-    /** 模型回答前先想一想的程度。适用于 DeepSeek 接口和 /responses 格式。低／高／最高分别多留 4000／16000／32000 token。设为关闭时，/responses 使用模型默认强度，仍多留 4000 token。强度越高，回答前想得越久、花费越多，也更容易超时。 */
+    /** 模型回答前的思考强度。低／中／高／最高在 /responses 格式下分别多留 4000／8000／16000／32000 token。DeepSeek 接口把中档按低档发送。默认选关闭／模型默认，此时 DeepSeek 接口关闭思考，/responses 使用模型默认强度并多留 4000 token。强度越高，通常耗时和花费越多，也更容易超时。 */
     @ConfigLabel("思考强度")
-    @ConfigSummary("适用于 DeepSeek 和 /responses。低／高／最高分别多留 4000／16000／32000 token。默认关闭，/responses 此时用模型默认强度。")
+    @ConfigSummary("选「关闭／模型默认」时，DeepSeek 接口下关闭思考；/responses 格式下不指定强度，由模型用它的默认强度。选「中」时，DeepSeek 接口按低档发送，多留 4000 token，/responses 多留 8000 token。")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    @ConfigChoices(value = {"off", "low", "high", "max"}, labels = {"关闭", "低", "高", "最高"})
+    @ConfigChoices(value = {"off", "low", "medium", "high", "max"}, labels = {"关闭／模型默认", "低", "中", "高", "最高"})
     private String thinking = "off";
     /** 每月金额上限，单位：元，必须大于 0，按东八区自然月计算。 */
     @ConfigLabel("每月金额上限")
@@ -134,8 +134,8 @@ public class AssistantProperties {
     }
 
     public void setThinking(String value) {
-        if (value == null || !List.of("off", "low", "high", "max").contains(value))
-            throw new IllegalArgumentException("智能助手思考强度请选择关闭（off）、低（low）、高（high）或最高（max）");
+        if (value == null || !List.of("off", "low", "medium", "high", "max").contains(value))
+            throw new IllegalArgumentException("智能助手思考强度请选择关闭／模型默认（off）、低（low）、中（medium）、高（high）或最高（max）");
         thinking = value;
     }
 
