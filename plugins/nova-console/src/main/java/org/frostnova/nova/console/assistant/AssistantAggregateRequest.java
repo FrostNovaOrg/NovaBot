@@ -132,7 +132,8 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
     static JSONObject fields() {
         return JSONObject.of(
                 "kinds", array(choice(keys(Kind.values(), k -> k.key),
-                        "gift 礼物、box 盲盒、guard 上舰、super_chat 醒目留言、follow 关注、pk_settle PK 结算、session 场次。"
+                        "gift 礼物、box 盲盒、guard 上舰、super_chat 醒目留言、follow 关注、pk_settle PK 结算、session 直播场次。"
+                                + "PK 一局一条结算记录，问 PK 几场用 count，不按直播场次分组。"
                                 + "minute 逐分钟在线与看过人数，danmu 文字与表情弹幕，audience_activity 观众活动（含进房等名单及逐条记录）。"
                                 + "只允许合选礼物、盲盒、上舰、醒目留言，合选时可用 count、sum:amount、distinctAudience、distinctPayingAudience。"), 1, 4),
                 "from", string("开始统计日 YYYY-MM-DD，含当天"),
@@ -140,7 +141,7 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
                 "filters", array(object(JSONObject.of(
                         "field", choice(keys(Field.values(), f -> f.key),
                                 "name 是礼物名或盒名，openedGiftName 是开出的礼物名，audience 是观众代号，text 是弹幕文字或表情名。"
-                                        + "amount 元、quantity 个数、pkMyVotes 本方票数、pkOpponentVotes 各对手票数之和。"
+                                        + "amount 元、quantity 为礼物和盲盒的个数、上舰的开通月数。pkMyVotes 本方票数、pkOpponentVotes 各对手票数之和。"
                                         + "startTime 是场次开播毫秒，可用等于选定一场。endTime 为毫秒，durationSeconds、effectiveSeconds 为秒。"
                                         + "场次有 messages 弹幕条数、peakOnline 在线峰值、watched 看过人数、sessionAudience 名单去重人数。"
                                         + "minute 行有 online 在线人数和 watched 看过人数。"),
@@ -158,7 +159,9 @@ record AssistantAggregateRequest(List<Kind> kinds, LocalDate from, LocalDate to,
                 "bucketMinutes", JSONObject.of("type", "integer", "minimum", 1, "maximum", MAX_BUCKET_MINUTES,
                         "description", "按 minute 分组时每组分钟数，默认 1"),
                 "metrics", array(choice(List.copyOf(METRICS.keySet()),
-                        "count 条数，distinctAudience 不同观众人数，sum:quantity 个数合计，sum:amount 金额合计，"
+                        "count 条数，问几个舰或几次上舰用 count，可按 guardOperation 分新开和续费。"
+                                + "sum:quantity 合计礼物或盲盒个数、上舰月数。查上舰次数时一并查月数，两者不同时都报。"
+                                + "sum:amount 金额合计，distinctAudience 不同观众人数，"
                                 + "distinctPayingAudience 有实扣记录的不同付费观众人数。"
                                 + "max:字段、min:字段、avg:字段为最大、最小、平均。场次时长、有效时长、弹幕条数也可 sum:字段。"), 1, MAX_MEASURES),
                 "sort", object(JSONObject.of("by", string("使用一个已选择的分组键或汇总列，例如 sum:amount"),

@@ -3,6 +3,7 @@ package org.frostnova.nova.console.controller;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.console.assistant.AssistantQueryService;
+import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -119,9 +120,10 @@ class AssistantQueryServiceTest {
             assertEquals(normal(controller.insights(platform, uid, "" + days).getBody().get("insights")),
                     normal(query.insights(platform, uid, days).get("insights")));
             var expectedFans = normal(controller.fans(platform, uid, "" + days).getBody().get("fans"));
-            var actualFans = new JSONObject(query.fans(platform, uid, days).getJSONObject("fans"));
-            actualFans.remove("total"); actualFans.remove("truncated");
-            assertEquals(expectedFans, normal(actualFans));
+            var actualFans = normal(query.fans(platform, uid, days).get("fans"));
+            assertEquals(expectedFans.get("points"), actualFans.get("points"));
+            assertEquals(expectedFans.get("change"), actualFans.get("change"));
+            assertEquals(expectedFans.get("partial"), actualFans.get("partial"));
             for (String period : List.of("day", "week", "month")) {
                 var expected = normal(controller.rangeTrend(platform, uid, period, "" + days).getBody().get("trend"));
                 var actual = query.trend(platform, uid, period, days).getJSONObject("trend");
@@ -129,8 +131,47 @@ class AssistantQueryServiceTest {
                 assertEquals(buckets.subList(Math.max(0, buckets.size() - 60), buckets.size()), normal(actual).getJSONArray("buckets"));
                 assertEquals(buckets.size(), actual.getIntValue("total"));
                 assertEquals(buckets.size() > 60, actual.getBooleanValue("truncated"));
+                if ("day".equals(period) && days == 30) {
+                    assertEquals(days, actual.getIntValue("total"));
+                    assertEquals(238d, actual.getJSONArray("buckets").getJSONObject(days - 2).getDoubleValue("revenue"));
+                }
             }
         }
+    }
+
+    // 抓住粉丝折线只剩窗口末尾、起点值没报或净增与曲线首尾对不上。
+    @Test void fanCurveSamplesAcrossTheWindowAndReportsBothEndpoints() {
+        append(start, 3600, 10);
+        long windowStart = StatisticsDay.startOf(LocalDate.of(2026, 9, 25)).toEpochMilli();
+        snapshots.append(new StreamerSnapshot(platform, uid, "合成主播", windowStart - 60_000, Map.of("fans", 900d)));
+        int count = 300;
+        long step = Duration.ofHours(2).toMillis();
+        for (int i = 0; i < count; i++) {
+            snapshots.append(new StreamerSnapshot(platform, uid, "合成主播",
+                    windowStart + (i + 1) * step, Map.of("fans", 1000d + i)));
+        }
+        var fans = query.fans(platform, uid, 30).getJSONObject("fans");
+        if (Boolean.getBoolean("assistant.aggregate.printFixtures")) System.out.println("粉丝趋势 " + fans);
+        var points = fans.getJSONArray("points");
+        assertEquals(120, points.size());
+        assertEquals(count, fans.getIntValue("total"));
+        assertTrue(fans.getBooleanValue("truncated"));
+        var first = points.getJSONObject(0);
+        var last = points.getJSONObject(points.size() - 1);
+        assertEquals(windowStart + step, first.getLongValue("at"));
+        assertEquals(windowStart + count * step, last.getLongValue("at"));
+        for (int i = 1; i < points.size(); i++) {
+            long gap = points.getJSONObject(i).getLongValue("at") - points.getJSONObject(i - 1).getLongValue("at");
+            assertTrue(gap >= 2 * step && gap <= 3 * step);
+        }
+        assertEquals(windowStart, fans.getLongValue("windowFromAt"));
+        assertEquals(now, fans.getLongValue("windowToAtExclusive"));
+        assertEquals(first.getLong("at"), fans.getLong("fromAt"));
+        assertEquals(last.getLong("at"), fans.getLong("toAt"));
+        assertEquals(1000d, fans.getDouble("fromValue"));
+        assertEquals(1299d, fans.getDouble("toValue"));
+        assertEquals(299d, fans.getDouble("pointChange"));
+        assertEquals(399d, fans.getDouble("change"));
     }
 
     // 抓抽稀导致五分钟掉人时段的端点或数值被说错。

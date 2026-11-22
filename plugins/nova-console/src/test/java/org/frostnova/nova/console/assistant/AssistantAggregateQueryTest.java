@@ -95,8 +95,9 @@ class AssistantAggregateQueryTest {
                 "groupBy", List.of("month")), List.of("month", "sum:amount"),
                 List.of(List.of("2026-10", 120), List.of("2026-11", 619)), List.of("合计", 739));
         table("场均流水", query(request(List.of("session"), FROM, TO, "avg:amount"),
-                "groupBy", List.of("hour")), List.of("hour", "avg:amount"),
-                List.of(List.of(18, 0), List.of(20, 299), List.of(21, 21)), List.of("合计", new BigDecimal("154.75")));
+                "groupBy", List.of("hour")), List.of("hour", "avg:amount", "sessionCount"),
+                List.of(List.of(18, 0, 1), List.of(20, 299, 2), List.of(21, 21, 1)),
+                List.of("合计", new BigDecimal("154.75"), 4));
     }
 
     // 抓住盒名和开出礼物名混淆、事件随场次归日，或事件正好落在六点被漏计。
@@ -151,9 +152,9 @@ class AssistantAggregateQueryTest {
         gift(start, at("2026-11-09T06:00"), 0, "合成礼物", 1, 1, 1);
         var result = query(request(List.of("gift"), "2026-11-08", "2026-11-09", "count"),
                 "groupBy", List.of("week", "weekday"));
-        table("跨周凌晨礼物", result, List.of("week", "weekday", "count"),
-                List.of(List.of("2026-11-02", 7, 1), List.of("2026-11-09", 1, 1)),
-                Arrays.asList("合计", null, 2));
+        table("跨周凌晨礼物", result, List.of("week", "weekday", "count", "sessionCount"),
+                List.of(List.of("2026-11-02", 7, 1, 1), List.of("2026-11-09", 1, 1, 1)),
+                Arrays.asList("合计", null, 2, 1));
     }
 
     // 抓住礼物按消息条数排序，或截断前五时也把合计裁掉。
@@ -202,6 +203,19 @@ class AssistantAggregateQueryTest {
                 List.of("guardOperation", "guardLevel", "count", "sum:amount"),
                 List.of(List.of("open", "captain", 1, 100), List.of("renew", "commander", 1, 80)),
                 Arrays.asList("合计", null, 2, 180));
+    }
+
+    // 抓住问「上了几个舰」时把开通月数报成次数。
+    @Test void guardCountsSeparatePurchasesFromMonths() {
+        summary(FIRST, FIRST + 60_000, 0, 0, 0);
+        for (int i = 0; i < 45; i++) {
+            event(FIRST, FIRST + i, "guard", Map.of("ot", i < 17 ? 1 : 2, "n", i == 44 ? 3 : 1));
+        }
+        var result = query(request(List.of("guard"), FROM, TO, "count", "sum:quantity"),
+                "groupBy", List.of("guardOperation"));
+        table("本月上舰次数和月数", result, List.of("guardOperation", "count", "sum:quantity"),
+                List.of(List.of("open", 17, 17), List.of("renew", 28, 30)), List.of("合计", 45, 47));
+        assertEquals("个月", result.getString("quantityUnit"));
     }
 
     // 抓住四种付费来源少算、同一个人分成几行，或拒绝名单上的观众出现在送礼榜和合计里。
@@ -305,9 +319,9 @@ class AssistantAggregateQueryTest {
         request.put("groupBy", List.of("week", "weekday"));
         table("场次其他字段", query(request), List.of("week", "weekday", "min:startTime", "max:endTime",
                         "sum:durationSeconds", "sum:effectiveSeconds", "sum:messages", "max:peakOnline",
-                        "max:watched", "max:sessionAudience"),
-                List.of(List.of("2026-11-02", 7, start, end, 3600, 3420, 25, 33, 90, 3)),
-                Arrays.asList("合计", null, start, end, 3600, 3420, 25, 33, 90, 3));
+                        "max:watched", "max:sessionAudience", "sessionCount"),
+                List.of(List.of("2026-11-02", 7, start, end, 3600, 3420, 25, 33, 90, 3, 1)),
+                Arrays.asList("合计", null, start, end, 3600, 3420, 25, 33, 90, 3, 1));
     }
 
     // 抓住金额隐藏时仍能通过求和、极值、平均或金额门槛取到金额相关数据。
@@ -379,6 +393,39 @@ class AssistantAggregateQueryTest {
                 .getJSONArray("totals").get(0));
     }
 
+    // 抓住旧醒目留言缺金额时，回答只说流水未知，没给已知小计和缺失日期。
+    @Test void eventRevenueReportsKnownSubtotalAndMissingAmountsByDateAndKind() {
+        long start = at("2026-10-24T23:00");
+        long beforeSix = at("2026-10-25T05:59");
+        long afterSix = at("2026-10-25T06:00");
+        summary(start, at("2026-10-25T07:00"), 100, 0, 80);
+        gift(start, beforeSix, 1, "合成礼物", 1, 100, 100);
+        for (int i = 0; i < 8; i++) {
+            danmu(start, afterSix + i, i, "合成留言", DanmuRecord.Type.SUPER_CHAT, null);
+        }
+        var request = request(List.of("gift", "super_chat"), "2026-10-24", TO, "sum:amount");
+        var result = query(request, "groupBy", List.of("day"));
+        table("逐日事件流水缺金额", result, List.of("day", "sum:amount"),
+                List.of(List.of("2026-10-24", 100), Arrays.asList("2026-10-25", null)),
+                Arrays.asList("合计", null));
+        assertNumber(100, result.get("knownAmountSubtotal"));
+        assertEquals(8, result.getIntValue("missingAmountRows"));
+        assertEquals(List.of(JSONObject.of("day", "2026-10-25", "countsByKind", JSONObject.of("super_chat", 8))),
+                result.getJSONArray("missingAmountsByDayAndKind"));
+        var withoutGrouping = query(request);
+        assertNull(withoutGrouping.getJSONArray("totals").get(0));
+        assertEquals(result.get("missingAmountsByDayAndKind"), withoutGrouping.get("missingAmountsByDayAndKind"));
+        assertNumber(100, withoutGrouping.get("knownAmountSubtotal"));
+        var allMissing = query(request(List.of("super_chat"), "2026-10-24", TO, "sum:amount"));
+        assertTrue(allMissing.containsKey("knownAmountSubtotal"));
+        assertNull(allMissing.get("knownAmountSubtotal"));
+        assertNull(allMissing.getJSONArray("totals").get(0));
+        var archived = query(request(List.of("session"), "2026-10-24", TO, "sum:amount"),
+                "groupBy", List.of("day"));
+        table("同段时间的场次流水", archived, List.of("day", "sum:amount"),
+                List.of(List.of("2026-10-24", 180)), List.of("合计", 180));
+    }
+
     // 抓住分组回包超过行数限制，或裁掉的行漏出合计。
     @Test void responseKeepsAtMostSixtyTableRowsIncludingTotal() throws IOException {
         long start = at("2026-09-01T06:00");
@@ -416,11 +463,32 @@ class AssistantAggregateQueryTest {
         minuteFixture();
         var result = query(request(List.of("minute"), "2026-10-24", TO, "avg:online", "avg:watched"),
                 "groupBy", List.of("hour"));
-        table("最近 30 天各钟点平均在线", result, List.of("hour", "avg:online", "avg:watched"), List.of(
-                Arrays.asList(19, 12, null), List.of(20, 25, 110), Arrays.asList(21, null, 120)),
-                List.of("合计", new BigDecimal("20.66666666666667"), 115));
+        table("最近 30 天各钟点平均在线", result,
+                List.of("hour", "avg:online", "avg:watched", "onlineSessionCount", "watchedSessionCount"), List.of(
+                        Arrays.asList(19, 12, null, 1, 0), List.of(20, 25, 110, 1, 1), Arrays.asList(21, null, 120, 0, 1)),
+                List.of("合计", new BigDecimal("20.66666666666667"), 115, 1, 2));
         assertEquals(22, result.getIntValue("expectedMinutes"));
         assertEquals(JSONObject.of("online", 19, "watched", 20), result.getJSONObject("missingMinutes"));
+    }
+
+    // 抓住高平均只有一场直播支撑，还把缺采场次或同一场里的多个分钟算成不同场次。
+    @Test void clockGroupsCountDistinctSessionsWithReadings() {
+        for (int day = 1; day <= 3; day++) {
+            long start = at("2026-11-0" + day + "T13:00");
+            series(start, start + 120_000, Map.of(start, 60d, start + 60_000, 70d), Map.of());
+        }
+        long high = at("2026-11-03T21:00");
+        series(high, high + 120_000, Map.of(high, 188d, high + 60_000, 190d), Map.of());
+        long missing = at("2026-11-04T21:00");
+        series(missing, missing + 120_000, Map.of(), Map.of(missing, 250d));
+        var request = request(List.of("minute"), "2026-10-24", TO, "avg:online");
+        table("钟点平均在线与场数", query(request, "groupBy", List.of("hour")),
+                List.of("hour", "avg:online", "sessionCount"),
+                List.of(List.of(13, 65, 3), List.of(21, 189, 1)), List.of("合计", 96, 4));
+        table("星期平均在线与场数", query(request, "groupBy", List.of("weekday")),
+                List.of("weekday", "avg:online", "sessionCount"), List.of(
+                        List.of(1, 65, 1), List.of(2, 127, 2), Arrays.asList(3, null, 0), List.of(7, 65, 1)),
+                List.of("合计", 96, 4));
     }
 
     // 抓住十分钟分组未从选中场次起算，或上一场混进这一场的峰值。
