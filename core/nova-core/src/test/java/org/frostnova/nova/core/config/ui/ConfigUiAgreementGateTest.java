@@ -80,7 +80,7 @@ class ConfigUiAgreementGateTest {
      * 否则已经点过同意的人再也不会看到新的那一份——而那正是这条判据要拦住的事：
      * 悄悄改掉文字，功能上什么都看不出来。
      */
-    private static final String TEXT_SHA256 = "ac71603926aa2954258ec808c4ae7fdc5e597dca74f65135313a15dedd4bc40b";
+    private static final String TEXT_SHA256 = "d3a411624abd68232fc28b20514d2b4acfa791301140ba6dbd44ced6bf9c27f4";
 
     private static final String ACCEPTED_VERSION_KEY = "novabot.core.config-ui.agreement.accepted-version";
 
