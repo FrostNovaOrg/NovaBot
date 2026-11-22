@@ -80,6 +80,47 @@ class BilibiliAssistantChartPainterTest {
     }
 
     @Test
+    @DisplayName("粉丝数折线的最高点挤掉了相邻的最新值标注")
+    void lineLabelsKeepTheLatestValueIncludingWhenItIsThePeak() {
+        var rows = new ArrayList<>(IntStream.range(0, 38)
+                .mapToObj(i -> row("记录 " + (i + 1), 21400 + i * 2)).toList());
+        rows.add(row("记录 39", 21759));
+        rows.add(row("记录 40", 21758));
+        var nearPeak = record(new Chart(Type.LINE, "最近粉丝数", "记录", "粉丝数", List.of("粉丝数"),
+                rows, null, "合成归档", rows.size()));
+        rows.set(rows.size() - 1, row("记录 40", 21760));
+        var atPeak = record(new Chart(Type.LINE, "最近粉丝数", "记录", "粉丝数", List.of("粉丝数"),
+                rows, null, "合成归档", rows.size()));
+        assertAll(
+                () -> assertEquals(1, valueLabels(nearPeak, "21758"), "最新值应出现在折线标注中"),
+                () -> assertEquals(1, valueLabels(atPeak, "21760"), "最新值也是最高值时只画一次"));
+    }
+
+    @Test
+    @DisplayName("30 天粉丝折线贴近右下角时，最新值标注会被省略")
+    void singleLineLabelsTheLatestValueAtTheBottomRight() {
+        var rows = IntStream.rangeClosed(1, 30)
+                .mapToObj(day -> row("11-%02d".formatted(day), day == 1 ? 21900 : day == 30 ? 21701 : 21707)).toList();
+        var chart = new Chart(Type.LINE, "近 30 天粉丝数", "日期", "粉丝数", List.of("粉丝数"),
+                rows, null, "合成归档", rows.size());
+
+        var drawing = record(chart);
+        assertEquals(1, valueLabels(drawing, "21701"), "折线应标出最新粉丝数");
+        var labels = drawing.labels();
+        for (int i = 0; i < labels.size(); i++) {
+            var bounds = labels.get(i);
+            assertTrue(drawing.markers().stream().noneMatch(bounds::contains), "数值标注应避开数据点");
+            assertTrue(labels.subList(0, i).stream().noneMatch(bounds::intersects), "数值标注框互相重叠");
+        }
+    }
+
+    private static long valueLabels(Drawing drawing, String value) {
+        return drawing.text().stream().filter(entry -> value.equals(entry.text()))
+                .filter(entry -> drawing.labels().stream().anyMatch(box -> box.y == entry.position().y && box.contains(entry.position())))
+                .count();
+    }
+
+    @Test
     @DisplayName("每日流水图的参考线会显示一长串浮点小数")
     void referenceLineUsesShortAmountLabel() {
         var rows = List.of(row("11-01", 9000), row("11-02", 11600));
