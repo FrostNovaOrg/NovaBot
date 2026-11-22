@@ -1628,20 +1628,28 @@ class AssistantAskServiceTest {
         assertEquals(List.of("32.2%", "9999"), numbers.unverified("32.1% 32.2% 9999"));
     }
 
-    // 抓住日常写法的日期和时刻被标成待核对数字，同时确保没有来源的金额仍被标出。
-    @Test void dateAndTimeNumbersAreIgnoredButUnsupportedAmountsAreReported() {
-        String datesAndTimes = "11 月 1 日至 11 月 22 日（11-22、2026-11-22），周六 18:24（18 点 24 分）至 21 点。";
-        String answer = datesAndTimes + "流水 9876 元。";
+    // 抓住把金额或热度里的数字当作时刻跳过，以及明确的日期和时刻仍被标为待核对。
+    @ParameterizedTest
+    @CsvSource({
+            "流水为 18 点 5 元。, 18",
+            "互动热度提高了 18 点。, 18",
+            "21 点人最多。, 21",
+            "18：24 至 21：50。,",
+            "昨晚 18 点 24 开播，21 点 50 下播。,",
+            "11 月已下播的场次。,",
+            "11 月 1 日至 11 月 22 日（11-22、2026-11-22、11 月 22 号），周六 18:24，星期六 18 点 24 分。,",
+            "晚上 9 点，下午 3 点，凌晨 1 点，昨晚 18 点，晚上 22 点钟。,",
+            "8 点到 20 点，18 点至 21 点，23 点钟。,",
+            "11 月已下播的场次流水 9876 元。, 9876"
+    })
+    void dateAndTimeNumbersAreIgnoredButUnsupportedAmountsAreReported(String answer, String flagged) {
         replies.add(JSONObject.of("content", answer));
         replies.add(JSONObject.of("content", answer));
         var result = ask();
-        assertEquals(List.of("9876"), result.getJSONArray("unverifiedNumbers").toJavaList(String.class));
-        assertTrue(result.getString("answer").contains("9876 元"));
-
-        sent.clear();
-        replies.add(JSONObject.of("content", datesAndTimes));
-        assertTrue(ask().getJSONArray("unverifiedNumbers").isEmpty());
-        assertEquals(1, sent.size());
+        var unverified = result.getJSONArray("unverifiedNumbers").toJavaList(String.class);
+        assertEquals(flagged == null ? List.of() : List.of(flagged), unverified);
+        assertEquals(flagged == null ? 1 : 2, sent.size());
+        assertEquals(answer, result.getString("answer"));
     }
 
     static java.util.stream.Stream<Arguments> numberCases() {

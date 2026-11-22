@@ -330,6 +330,46 @@ class AssistantAggregateQueryTest {
         } finally { ask.close(); }
     }
 
+    // 抓住汇总只返回秒数，导致回答里正确的 147.3 小时被标为待核对。
+    @Test void durationAggregateSuppliesHoursForAnswerVerification() {
+        long second = at("2026-11-08T20:00");
+        summary(FIRST, FIRST + 200_000_000, 0, 0, 0);
+        summary(second, second + 330_432_000, 0, 0, 0);
+        var request = request(List.of("session"), FROM, TO, "sum:durationSeconds", "avg:effectiveSeconds",
+                "avg:durationSeconds", "sum:effectiveSeconds");
+        request.put("groupBy", List.of("day"));
+        var client = mock(AssistantClient.class);
+        var question = mock(AssistantClient.Question.class);
+        var status = mock(AssistantClient.Status.class);
+        when(client.beginQuestion("member")).thenReturn(question);
+        when(client.status()).thenReturn(status);
+        when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
+        var toolCall = JSONObject.of("id", "duration-summary", "type", "function",
+                "function", JSONObject.of("name", "aggregate", "arguments", request.toJSONString()));
+        var usage = new AssistantClient.Usage(0, 100, 10);
+        String answer = "这个月一共播了 147.3 小时（已归档的场次汇总）。";
+        when(question.complete(any(), any())).thenReturn(
+                new AssistantClient.Response(null, null, List.of(toolCall), usage, BigDecimal.ZERO),
+                new AssistantClient.Response(answer, null, List.of(), usage, BigDecimal.ZERO));
+
+        var ask = new AssistantAskService(service, client, new AssistantProperties(), local, clock);
+        try {
+            var result = ask.ask(PLATFORM, ROOM, "member", JSONObject.of("question", "这个月一共播了多少小时？"));
+            show("时长回答", result);
+            var table = query(request);
+            assertAll(
+                    () -> table("时长汇总", table, List.of("day", "sum:durationSeconds", "avg:effectiveSeconds",
+                                    "avg:durationSeconds", "sum:effectiveSeconds", "sum:durationHours", "avg:effectiveHours",
+                                    "avg:durationHours", "sum:effectiveHours"),
+                            List.of(List.of(FROM, 200_000, 200_000, 200_000, 200_000, 55.6, 55.6, 55.6, 55.6),
+                                    List.of("2026-11-08", 330_432, 330_432, 330_432, 330_432, 91.8, 91.8, 91.8, 91.8)),
+                            List.of("合计", 530_432, 265_216, 265_216, 530_432, 147.3, 73.7, 73.7, 147.3)),
+                    () -> assertEquals(List.of(), result.getJSONArray("unverifiedNumbers")),
+                    () -> assertEquals(answer, result.getString("answer")),
+                    () -> verify(question, times(2)).complete(any(), any()));
+        } finally { ask.close(); }
+    }
+
     // 抓住场次其他字段取错、缺少名单被当成零、或统计周使用了午夜边界。
     @Test void sessionFieldsAndWeekUseArchivedValues() {
         long start = at("2026-11-09T05:30");
@@ -344,9 +384,9 @@ class AssistantAggregateQueryTest {
         request.put("groupBy", List.of("week", "weekday"));
         table("场次其他字段", query(request), List.of("week", "weekday", "min:startTime", "max:endTime",
                         "sum:durationSeconds", "sum:effectiveSeconds", "sum:messages", "max:peakOnline",
-                        "max:watched", "max:sessionAudience", "sessionCount"),
-                List.of(List.of("2026-11-02", 7, start, end, 3600, 3420, 25, 33, 90, 3, 1)),
-                Arrays.asList("合计", null, start, end, 3600, 3420, 25, 33, 90, 3, 1));
+                        "max:watched", "max:sessionAudience", "sessionCount", "sum:durationHours", "sum:effectiveHours"),
+                List.of(List.of("2026-11-02", 7, start, end, 3600, 3420, 25, 33, 90, 3, 1, 1.0, 1.0)),
+                Arrays.asList("合计", null, start, end, 3600, 3420, 25, 33, 90, 3, 1, 1.0, 1.0));
     }
 
     // 抓住金额隐藏时仍能通过求和、极值、平均或金额门槛取到金额相关数据。
