@@ -1,5 +1,8 @@
 package org.frostnova.nova.console.assistant;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -46,6 +49,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -934,7 +938,7 @@ class QqAssistantCommandTest {
         assertEquals(1, requests.size());
     }
 
-    // QQ 里难题要等一两分钟，却没有任何提示。
+    // QQ 里难题需要让提问人知道预计等待时间。
     @Test void difficultQuestionSendsItsOwnNoticeWhileWaitingForAnswer() throws Exception {
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
                 .bind("novabot.assistant", Bindable.ofInstance(properties));
@@ -950,17 +954,30 @@ class QqAssistantCommandTest {
         modelWait = () -> {
             if (requests.size() == 2) holdAnswer.run();
         };
+        var logger = (Logger) LoggerFactory.getLogger(QqAssistantCommand.class);
+        var events = new ListAppender<ILoggingEvent>();
+        events.start();
+        logger.addAppender(events);
         try {
-            group(ASKER, "问 为什么近期场次表现不一样");
-            assertReply("要多想一会儿", "一两分钟");
-            assertTrue(answering.await(10, TimeUnit.SECONDS), "模型还没有开始回答");
-            assertFalse(requests.get(1).containsKey("reasoning_effort"));
-            assertNull(replies.poll(11, TimeUnit.SECONDS), "难题又收到了查数提示");
+            try {
+                group(ASKER, "问 为什么近期场次表现不一样");
+                assertReply("要多想一会儿", "大约半分钟到一分钟");
+                assertTrue(answering.await(10, TimeUnit.SECONDS), "模型还没有开始回答");
+                assertFalse(requests.get(1).containsKey("reasoning_effort"));
+                assertNull(replies.poll(11, TimeUnit.SECONDS), "难题又收到了查数提示");
+            } finally {
+                release.countDown();
+            }
+            assertReply("场次表现有波动", "提示：这位主播今天的助手额度用完", LABEL);
+            awaitIdle(GROUP, ROOM);
         } finally {
-            release.countDown();
+            logger.detachAppender(events);
+            events.stop();
         }
-        assertReply("场次表现有波动", "提示：这位主播今天的助手额度用完", LABEL);
-        awaitIdle(GROUP, ROOM);
+        var lines = events.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertTrue(lines.stream().anyMatch(line -> line.startsWith("QQ 问者-")
+                && line.contains("查数 0 次") && line.endsWith("，判为分析，调模型 2 次")), lines::toString);
+        assertFalse(lines.stream().anyMatch(line -> line.contains(Long.toString(ASKER))), lines::toString);
         assertEquals(0, new BigDecimal("0.000612").compareTo(client.status().spentYuan().subtract(initialTotal)));
         assertStreamerSpend(FIRST, "0.000612");
         group(ASKER, "问 本月有开播吗");

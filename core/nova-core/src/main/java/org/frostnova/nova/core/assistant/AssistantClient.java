@@ -156,6 +156,7 @@ public final class AssistantClient {
         private boolean closed;
         private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
+        private int modelCalls;
 
         private Question(Streamer streamer) {
             this.streamer = streamer;
@@ -198,6 +199,8 @@ public final class AssistantClient {
         public boolean hasSent() { return sentEndpoint() != null; }
 
         public String sentEndpoint() { synchronized (AssistantClient.this) { return sentEndpoint; } }
+
+        public int modelCalls() { synchronized (AssistantClient.this) { return modelCalls; } }
 
         public BigDecimal totalCostYuan() { synchronized (AssistantClient.this) { return total; } }
 
@@ -377,7 +380,10 @@ public final class AssistantClient {
             String serialized = responses ? body.toJSONString(JSONWriter.Feature.WriteNulls) : body.toJSONString();
             URI uri = responses ? URI.create(endpoint) : template.getUriTemplateHandler().expand(endpoint);
             if (question != null) {
-                synchronized (this) { question.sentEndpoint = uri.toString(); }
+                synchronized (this) {
+                    question.sentEndpoint = uri.toString();
+                    question.modelCalls++;
+                }
             }
             // 用字节发送，避免 HTTP 客户端诊断日志输出包含思考内容的请求正文。
             var received = template.exchange(uri, HttpMethod.POST,

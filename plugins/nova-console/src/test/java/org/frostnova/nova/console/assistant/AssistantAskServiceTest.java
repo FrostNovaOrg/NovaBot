@@ -1,5 +1,8 @@
 package org.frostnova.nova.console.assistant;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -16,6 +19,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -890,6 +894,86 @@ class AssistantAskServiceTest {
                 List.of(JSONObject.of("type", "output_text", "text", text)));
     }
 
+    // 打开分难度后，看不出每问判成了什么，没法核对它有没有起作用
+    @Test void analysisQuestionRecordsDifficultyAndModelCalls() throws Exception {
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        replies.add(JSONObject.of("content", "分析"));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", "场次表现有变化。"));
+
+        var logger = (Logger) LoggerFactory.getLogger(AssistantAskController.class);
+        var events = new ListAppender<ILoggingEvent>();
+        events.start();
+        logger.addAppender(events);
+        try {
+            mvc().perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                    .requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType("application/json")
+                    .content("{\"question\":\"付费观众有没有流失？\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true))
+                    .andExpect(jsonPath("$.steps.length()").value(2))
+                    .andExpect(jsonPath("$.difficulty").value("analysis"))
+                    .andExpect(jsonPath("$.modelCalls").value(4));
+        } finally {
+            logger.detachAppender(events);
+            events.stop();
+        }
+
+        assertEquals(4, sent.size());
+        var lines = events.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        var record = JSON.parseObject(Files.readString(directory.resolve("assistant-transmissions.jsonl")));
+        assertAll(
+                () -> assertTrue(lines.stream().anyMatch(line -> line.contains("查数 2 次")
+                        && line.endsWith("，判为分析，调模型 4 次")), lines::toString),
+                () -> assertEquals("analysis", record.getString("difficulty")),
+                () -> assertEquals(4, record.getInteger("modelCalls")),
+                () -> assertTrue(modelSystem(0).contains("流失、留存、回流")),
+                () -> assertTrue(modelSystem(0).contains("人群前后变化")),
+                () -> assertTrue(modelSystem(1).contains("写明分组标准")),
+                () -> assertTrue(modelSystem(1).contains("3 小时以上算长场")));
+    }
+
+    // 要深入分析的难题，查到一半就碰上查数上限，图画不出来
+    @ParameterizedTest @CsvSource({"分析, 9", "简单, 6"})
+    void difficultySetsToolAndInputLimits(String difficulty, int toolLimit) {
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        var sessionArgs = JSONObject.of("days", 7, "limit", 1);
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items",
+                JSONArray.of(JSONObject.of("startTime", 1794000000000L, "messages", 7))));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("chart-image"));
+        replies.add(JSONObject.of("content", difficulty));
+        for (int i = 1; i < toolLimit; i++) replies.add(call("sessions", sessionArgs));
+        replies.add(call("draw_chart", JSONObject.of("resultNumber", 1, "type", "bar", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次对比")));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+
+        var result = ask();
+        assertEquals(toolLimit - 1, result.getJSONArray("steps").size());
+        assertEquals(JSONArray.of("chart-image"), result.getJSONArray("images"));
+        assertEquals("none", sent.get(sent.size() - 1).getString("tool_choice"));
+
+        sent.clear();
+        replies.clear();
+        onSend = () -> inputTokens = switch (sent.size() - toolLimit) {
+            case 0 -> 9999;
+            case 1 -> 1;
+            default -> 5000;
+        };
+        replies.add(JSONObject.of("content", difficulty));
+        for (int i = 0; i < toolLimit; i++) replies.add(call("sessions", sessionArgs));
+        replies.add(JSONObject.of("content", "查到了场次数据。"));
+        result = ask();
+        assertEquals("分析".equals(difficulty) ? "analysis" : "simple", result.getString("difficulty"));
+        assertTrue(result.getBooleanValue("answered"));
+        assertEquals(toolLimit - 1, result.getJSONArray("steps").size());
+        assertTrue(lastToolData().getString("reason").contains("已到查数上限"));
+        assertEquals("none", sent.get(sent.size() - 1).getString("tool_choice"));
+        assertEquals(toolLimit + 2, sent.size());
+    }
+
     // 要深入分析的难题，只用低强度草草回答，或者半路超时。
     @Test void analysisUsesHigherEffortAndKeepsTimeForQueriesAndTheAnswer() throws Exception {
         useResponses();
@@ -971,6 +1055,8 @@ class AssistantAskServiceTest {
         var result = ask();
         assertTrue(result.getBooleanValue("answered"), result::toJSONString);
         assertTrue(result.getString("answer").contains("场次数据已查到"));
+        assertEquals("simple", result.getString("difficulty"));
+        assertEquals(2, result.getIntValue("modelCalls"));
         assertEquals(2, sent.size());
         assertEquals(sent.get(1).getString("model"), sent.get(0).getString("model"));
         assertEquals(256, sent.get(0).getIntValue("max_tokens"));
@@ -1247,10 +1333,12 @@ class AssistantAskServiceTest {
         assertEquals(0, new java.math.BigDecimal("0.000612").compareTo(result.getBigDecimal("costYuan")));
         assertEquals(0, result.getBigDecimal("costYuan").compareTo(client.status().streamerUsage().get(0).todaySpentYuan()));
         assertTrue(timeouts.get(1).compareTo(timeouts.get(0)) < 0);
+        var log = JSON.parseObject(Files.readString(directory.resolve("assistant-transmissions.jsonl")));
+        assertEquals(2, log.getInteger("modelCalls"));
+        assertFalse(log.containsKey("difficulty"));
         if (exhaustedAgain) {
             assertEquals("max_output_tokens", result.getString("reason"));
             assertTrue(result.getString("answerForHistory").contains("输出上限"));
-            var log = JSON.parseObject(Files.readString(directory.resolve("assistant-transmissions.jsonl")));
             assertEquals("max_output_tokens", log.getString("reason"));
         } else assertEquals("有数据", result.getString("answer"));
     }
@@ -2365,7 +2453,9 @@ class AssistantAskServiceTest {
                 .andExpect(jsonPath("$.budgetNotice").value(containsString("今天的助手额度还剩 23%")))
                 .andExpect(jsonPath("$.answerForHistory").value("没有这份数据"))
                 .andExpect(jsonPath("$.remaining").doesNotExist())
-                .andExpect(jsonPath("$.costYuan").doesNotExist());
+                .andExpect(jsonPath("$.costYuan").doesNotExist())
+                .andExpect(jsonPath("$.difficulty").doesNotExist())
+                .andExpect(jsonPath("$.modelCalls").doesNotExist());
         mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask")
                 .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
                 .contentType("application/json").content("{\"question\":\"表现怎样\"}"))

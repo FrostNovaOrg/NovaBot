@@ -365,6 +365,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults,
                     () -> active.accepted(chosenName), active::difficultyResolved);
             JSONObject result = answer.response();
+            if (result.containsKey("difficulty"))
+                AssistantAskService.logQuestion(log, source.entry() + " " + source.account(), LIVE_PLATFORM, uid, result);
             PushTarget current = allowedChannel(context, uid);
             if (current == null || Thread.currentThread().isInterrupted()) return null;
             boolean answered = result.getBooleanValue("answered");
@@ -534,7 +536,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
                     ack.cancel(false);
                     ack = null;
                 }
-                send(QqAnswer.text("这个问题要多想一会儿，大约一两分钟"));
+                send(QqAnswer.text("这个问题要多想一会儿，大约半分钟到一分钟"));
             } else if (progressDeferred) {
                 progress();
             }

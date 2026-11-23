@@ -56,8 +56,7 @@ public class AssistantAskController {
         } catch (AssistantException error) { throw error; }
         catch (Exception error) { throw new AssistantException("提问格式不正确"); }
         JSONObject result = service.ask(platform, uid, account.id(), body);
-        log.info("{} 使用主播 {}:{} 的智能助手，查数 {} 次，花费 {} 元", ConfigUiAccess.actor(), platform, uid,
-                result.getJSONArray("steps").size(), result.getBigDecimal("costYuan"));
+        AssistantAskService.logQuestion(log, ConfigUiAccess.actor(), platform, uid, result);
         if (account.role() != ConfigUiAccount.Role.ADMIN) {
             result.remove("costYuan");
             result.remove("remaining");

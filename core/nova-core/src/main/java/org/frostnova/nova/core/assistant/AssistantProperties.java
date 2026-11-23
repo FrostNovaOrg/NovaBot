@@ -61,7 +61,7 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"medium", "high", "max"}, labels = {"中", "高", "最高"})
     private String hardThinking = "high";
-    /** 留空时用回答的模型。填写后仍使用同一个接口地址和密钥。 */
+    /** 留空时用回答的模型。填写后仍使用同一个接口地址和密钥。判断难度这一小问按回答模型的单价记账。 */
     @ConfigLabel("判断难度用的模型名称")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
