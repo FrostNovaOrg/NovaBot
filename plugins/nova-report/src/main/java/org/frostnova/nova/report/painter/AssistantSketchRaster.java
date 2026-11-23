@@ -1,5 +1,6 @@
 package org.frostnova.nova.report.painter;
 
+import com.github.weisj.jsvg.SVGDocument;
 import com.github.weisj.jsvg.parser.DocumentLimits;
 import com.github.weisj.jsvg.parser.DomElement;
 import com.github.weisj.jsvg.parser.LoaderContext;
@@ -15,6 +16,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.ImageObserver;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
@@ -38,6 +40,7 @@ public final class AssistantSketchRaster {
 
     public static void main(String[] args) throws Exception {
         Font font = Font.createFont(Font.TRUETYPE_FONT, Path.of(args[0]).toFile());
+        warmUpTextRendering(font);
         System.out.write(READY);
         System.out.flush();
         var input = new DataInputStream(System.in);
@@ -47,15 +50,38 @@ public final class AssistantSketchRaster {
         if (status != 0) System.exit(status);
     }
 
-    private static int writePng(String title, String svg, Font font) throws Exception {
-        if (font.canDisplayUpTo(title) >= 0) return MISSING_GLYPH;
-        var coverage = new FontCoverage(font);
+    private static void warmUpTextRendering(Font font) throws IOException {
+        // JSVG 首次绘字会枚举系统字体，把这一步放在发出就绪信号前。
+        String svg = """
+                <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>
+                  <text x='1' y='13' font-size='12'>中</text>
+                </svg>
+                """;
+        var document = loadSvg(svg, new FontCoverage(font));
+        if (document == null) throw new IOException("Could not load sketch warm-up SVG");
+        var graphics = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB).createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            document.renderWithPlatform(new BundledFont(font), graphics, new ViewBox(16, 16));
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    private static SVGDocument loadSvg(String svg, FontCoverage coverage) {
         var loader = LoaderContext.builder()
                 .externalResourcePolicy(ResourcePolicy.DENY_ALL)
                 .documentLimits(new DocumentLimits(12, 0, 128))
                 .preProcessor(coverage::apply)
                 .build();
-        var document = new SVGLoader().load(new ByteArrayInputStream(svg.getBytes(StandardCharsets.UTF_8)), null, loader);
+        return new SVGLoader().load(new ByteArrayInputStream(svg.getBytes(StandardCharsets.UTF_8)), null, loader);
+    }
+
+    private static int writePng(String title, String svg, Font font) throws Exception {
+        if (font.canDisplayUpTo(title) >= 0) return MISSING_GLYPH;
+        var coverage = new FontCoverage(font);
+        var document = loadSvg(svg, coverage);
         if (coverage.missing) return MISSING_GLYPH;
         if (document == null) return INVALID;
 
