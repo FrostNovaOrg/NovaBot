@@ -26,6 +26,9 @@ class WeeklyReportComparisonTest {
         assertEquals(direct.comparisonNote(), d.comparisonNote());
         for (int i = 0; i < 5; i++) assertEquals("较上周 +50%", WeeklyReport.cards(d).get(i).note());
         assertTrue(WeeklyReport.summary(d).contains("比前一周：时长 +50%，流水 +50%，弹幕 +50%"));
+        String withoutAmounts = WeeklyReport.summaryWithoutAmounts(d);
+        assertTrue(withoutAmounts.contains("比前一周：时长 +50%，弹幕 +50%"), withoutAmounts);
+        assertFalse(withoutAmounts.contains("流水"), withoutAmounts);
         assertTrue(WeeklyReport.text(d).contains("（较上周 +50%）"));
     }
 

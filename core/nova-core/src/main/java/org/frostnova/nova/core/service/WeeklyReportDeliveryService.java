@@ -226,9 +226,10 @@ public class WeeklyReportDeliveryService {
         var listener = reportDeliveryListener;
         if (scheduled && listener != null) {
             String summary = report.summary();
+            String summaryWithoutAmounts = visible ? WeeklyReport.summaryWithoutAmounts(report.data()) : summary;
             message.addOnSuccessCallback(() -> listener.reportDelivered(new ReportDeliveryListener.Report(
                     message.getPlatform(), message.getType(), message.getNum(), platform, uid,
-                    ReportDeliveryListener.Kind.WEEKLY, clock.instant(), visible, summary)));
+                    ReportDeliveryListener.Kind.WEEKLY, clock.instant(), visible, summary, summaryWithoutAmounts)));
         }
         return message;
     }
