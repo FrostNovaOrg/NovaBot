@@ -343,11 +343,17 @@ public class LiveSessionArchive {
      * @return 最近一场的昵称；没有归档场次，或那一场没记下昵称时为空
      */
     public Optional<String> latestUname(String platform, Long uid) {
-        String uname = latestNames().get(nameKey(platform, uid));
+        String uname = latestNames().get(new StreamerId(platform, uid));
         return uname == null || uname.isBlank() ? Optional.empty() : Optional.of(uname);
     }
 
-    private Map<String, String> latestNames() {
+    /** 有场次归档的主播，包含最近一场没有记下昵称的主播。 */
+    public List<Long> streamerUids(String platform) {
+        return latestNames().keySet().stream().filter(id -> platform.equals(id.platform()))
+                .map(StreamerId::uid).toList();
+    }
+
+    private Map<StreamerId, String> latestNames() {
         Path path = path();
         BasicFileAttributes attributes;
         try {
@@ -376,16 +382,12 @@ public class LiveSessionArchive {
             return Map.of();
         }
 
-        Map<String, String> names = new HashMap<>();
+        Map<StreamerId, String> names = new HashMap<>();
         for (LiveSession session : sessions) {
-            names.put(nameKey(session.platform(), session.uid()), session.uname());
+            names.put(new StreamerId(session.platform(), session.uid()), session.uname());
         }
         latestNames = new LatestNames(path, attributes.lastModifiedTime(), attributes.size(), names);
         return names;
-    }
-
-    private static String nameKey(String platform, Long uid) {
-        return platform + ":" + uid;
     }
 
     /**
@@ -572,7 +574,9 @@ public class LiveSessionArchive {
     public record Summary(long count, long earliestStart, long latestStart) {
     }
 
-    private record LatestNames(Path path, FileTime modified, long size, Map<String, String> names) {
+    private record StreamerId(String platform, Long uid) { }
+
+    private record LatestNames(Path path, FileTime modified, long size, Map<StreamerId, String> names) {
         boolean matches(Path current, BasicFileAttributes attributes) {
             return path.equals(current)
                     && modified.equals(attributes.lastModifiedTime())

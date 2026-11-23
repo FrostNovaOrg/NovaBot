@@ -13,12 +13,15 @@ import org.frostnova.nova.core.assistant.*;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.*;
 import org.frostnova.nova.core.config.ui.auth.*;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.StreamerDirectory;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +39,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
@@ -74,6 +79,10 @@ class AssistantAskServiceTest {
     private AssistantAskService service;
     private AssistantLocalStore local;
     private AssistantChartRenderer chartRenderer;
+    private final AbstractDataSource consoleData = mock(AbstractDataSource.class);
+    private final StreamerDirectory consoleDirectory = mock(StreamerDirectory.class);
+    private StreamerNames consoleNames = mock(StreamerNames.class);
+    private LiveSessionArchive consoleArchive = mock(LiveSessionArchive.class);
     private final List<JSONObject> sent = new ArrayList<>();
     private final List<String> sentTo = new ArrayList<>();
     private final Deque<JSONObject> replies = new ArrayDeque<>();
@@ -137,6 +146,130 @@ class AssistantAskServiceTest {
 
     private String modelSystem(int index) {
         return sent.get(index).getJSONArray("messages").getJSONObject(0).getString("content");
+    }
+
+    // 在控制台问两位主播的对比，助手只能查当前这一位。
+    @Test void consoleComparesThePageStreamerWithTheNamedStreamer() throws Exception {
+        consoleArchive = new LiveSessionArchive(archiveProperties());
+        consoleArchive.append(comparisonSession(SECOND_STREAMER, "合成主播乙", 380.25));
+        consoleNames = new StreamerNames(consoleArchive);
+        when(queries.streamerName("bilibili", FIRST_STREAMER)).thenReturn("合成主播甲");
+        when(queries.streamerName("bilibili", SECOND_STREAMER)).thenReturn("合成主播乙");
+        when(queries.revenue(eq("bilibili"), anyLong(), eq(SHARED_START))).thenReturn(toolData());
+        replies.add(call("revenue", JSONObject.of("start", SHARED_START, "streamer", FIRST_STREAMER)));
+        replies.add(call("revenue", JSONObject.of("start", SHARED_START, "streamer", SECOND_STREAMER)));
+        replies.add(JSONObject.of("content", "已对比两位主播的流水。"));
+
+        var result = askConsole(mvc(), consoleAccount(ConfigUiAccount.Role.ADMIN),
+                JSONObject.of("question", "和合成主播乙比一下这周流水"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true));
+
+        assertTrue(modelSystem(0).contains("本问可查的主播：合成主播甲（" + FIRST_STREAMER
+                + "）、合成主播乙（" + SECOND_STREAMER + "）"));
+        verify(queries).revenue("bilibili", FIRST_STREAMER, SHARED_START);
+        verify(queries).revenue("bilibili", SECOND_STREAMER, SHARED_START);
+        result.andExpect(jsonPath("$.streamers[0]").value(Long.toString(FIRST_STREAMER)))
+                .andExpect(jsonPath("$.streamers[1]").value(Long.toString(SECOND_STREAMER)))
+                .andExpect(jsonPath("$.costYuan").isNumber()).andExpect(jsonPath("$.remaining").exists());
+    }
+
+    // 成员在控制台点名别的主播，查到了自己没权限看的主播数据。
+    @Test void consoleIgnoresNamesOutsideMemberScope() throws Exception {
+        assertConsoleAsksOnlyThePageStreamer(JSONObject.of("question", "和合成主播乙比一下"));
+    }
+
+    // 改请求带上别的主播编号，就能越权查到那位主播。
+    @Test void consoleRechecksStreamersInTheCarriedGroup() throws Exception {
+        assertConsoleAsksOnlyThePageStreamer(JSONObject.of("question", "那上个月呢",
+                "streamers", List.of(Long.toString(FIRST_STREAMER), Long.toString(SECOND_STREAMER))));
+    }
+
+    @Test void consoleMemberCanCompareAssignedStreamersAndContinueTheComparison() throws Exception {
+        prepareConsoleComparison();
+        var mvc = mvc();
+        var member = consoleAccount(ConfigUiAccount.Role.MEMBER, FIRST_STREAMER, SECOND_STREAMER);
+        var answer = askConsole(mvc, member, JSONObject.of("question", "和合成主播乙比一下"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true))
+                .andExpect(jsonPath("$.costYuan").doesNotExist()).andExpect(jsonPath("$.remaining").doesNotExist())
+                .andReturn().getResponse().getContentAsByteArray();
+        var group = JSON.parseObject(answer).getJSONArray("streamers");
+        assertEquals(List.of(Long.toString(FIRST_STREAMER), Long.toString(SECOND_STREAMER)), group);
+        assertFalse(modelSystem(0).contains("本会话隐藏金额"));
+
+        askConsole(mvc, member, JSONObject.of("question", "那上个月呢", "streamers", group))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true))
+                .andExpect(jsonPath("$.streamers[1]").value(Long.toString(SECOND_STREAMER)));
+        assertTrue(modelSystem(1).contains("本问可查的主播：合成主播甲（" + FIRST_STREAMER
+                + "）、合成主播乙（" + SECOND_STREAMER + "）"));
+    }
+
+    @Test void consoleKeepsMentionOrderAndRejectsMoreThanFiveDistinctStreamers() throws Exception {
+        var others = List.of(SECOND_STREAMER, SECOND_STREAMER + 1, SECOND_STREAMER + 2, SECOND_STREAMER + 3, SECOND_STREAMER + 4);
+        when(consoleArchive.streamerUids("bilibili")).thenReturn(others);
+        var mvc = mvc();
+        var admin = consoleAccount(ConfigUiAccount.Role.ADMIN);
+        var group = List.of(others.get(3), others.get(1), others.get(0), others.get(2));
+        var result = askConsole(mvc, admin,
+                JSONObject.of("question", "比较 " + group + " 和 " + group.get(0) + "、" + FIRST_STREAMER,
+                        "streamers", List.of(FIRST_STREAMER, others.get(4))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.streamers.length()").value(5))
+                .andExpect(jsonPath("$.streamers[0]").value(Long.toString(FIRST_STREAMER)));
+        for (int i = 0; i < group.size(); i++)
+            result.andExpect(jsonPath("$.streamers[" + (i + 1) + "]").value(Long.toString(group.get(i))));
+
+        askConsole(mvc, admin, JSONObject.of("question", "比较 " + others))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("一次最多比 5 位主播")));
+        assertEquals(1, sent.size());
+    }
+
+    @Test void consoleAmbiguitySkipsTheComparisonEvenWithACarriedGroup() throws Exception {
+        prepareConsoleComparison();
+        when(consoleArchive.streamerUids("bilibili")).thenReturn(List.of(SECOND_STREAMER + 1));
+        when(consoleNames.uname("bilibili", SECOND_STREAMER + 1, null)).thenReturn("合成主播乙");
+
+        askConsole(mvc(), consoleAccount(ConfigUiAccount.Role.ADMIN), JSONObject.of("question", "和合成主播乙比一下",
+                        "streamers", List.of(FIRST_STREAMER, SECOND_STREAMER)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.streamers.length()").value(1))
+                .andExpect(jsonPath("$.streamers[0]").value(Long.toString(FIRST_STREAMER)));
+        assertTrue(modelSystem(0).contains("只能查当前主播"));
+    }
+
+    private void prepareConsoleComparison() {
+        when(consoleDirectory.entries()).thenReturn(List.of(new StreamerDirectory.Entry("bilibili", SECOND_STREAMER, false, false)));
+        when(consoleNames.uname("bilibili", SECOND_STREAMER, null)).thenReturn("合成主播乙");
+        when(queries.streamerName("bilibili", FIRST_STREAMER)).thenReturn("合成主播甲");
+        when(queries.streamerName("bilibili", SECOND_STREAMER)).thenReturn("合成主播乙");
+        when(queries.revenue(eq("bilibili"), anyLong(), eq(SHARED_START))).thenReturn(toolData());
+    }
+
+    private void assertConsoleAsksOnlyThePageStreamer(JSONObject body) throws Exception {
+        prepareConsoleComparison();
+        var member = consoleAccount(ConfigUiAccount.Role.MEMBER, FIRST_STREAMER);
+        replies.add(call("revenue", JSONObject.of("start", SHARED_START, "streamer", SECOND_STREAMER)));
+        replies.add(JSONObject.of("content", "这里只能查当前主播。"));
+
+        var result = askConsole(mvc(), member, body)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true));
+
+        assertAll(
+                () -> verify(queries, never()).revenue("bilibili", SECOND_STREAMER, SHARED_START),
+                () -> verify(queries, never()).streamerName("bilibili", SECOND_STREAMER),
+                () -> verify(consoleNames, never()).uname("bilibili", SECOND_STREAMER, null),
+                () -> assertFalse(modelSystem(0).contains("合成主播乙")),
+                () -> assertTrue(modelSystem(0).contains("只能查当前主播")),
+                () -> result.andExpect(jsonPath("$.streamers.length()").value(1))
+                        .andExpect(jsonPath("$.streamers[0]").value(Long.toString(FIRST_STREAMER))));
+    }
+
+    private static ConfigUiAccount consoleAccount(ConfigUiAccount.Role role, Long... assigned) {
+        return new ConfigUiAccount("member", role, ConfigUiAccount.Status.ENABLED, "Sample", null, null, null,
+                Arrays.stream(assigned).map(uid -> "bilibili:" + uid).toList(), Instant.EPOCH, null, true);
+    }
+
+    private static ResultActions askConsole(MockMvc mvc, ConfigUiAccount account, JSONObject body) throws Exception {
+        return mvc.perform(post("/config/api/streamers/bilibili/{uid}/assistant/ask", FIRST_STREAMER)
+                .requestAttr(ConfigUiAccess.ACCOUNT, account).contentType(MediaType.APPLICATION_JSON).content(body.toJSONString()));
     }
 
     // 问两位主播谁的流水高，助手只能查到其中一位。
@@ -442,8 +575,7 @@ class AssistantAskServiceTest {
 
     @SuppressWarnings("unchecked")
     private void useComparisonArchives() {
-        var core = new NovaCoreProperties();
-        core.getLive().setLiveDataPath(directory.resolve("live.json").toString());
+        var core = archiveProperties();
         var archive = new LiveSessionArchive(core);
         archive.append(comparisonSession(FIRST_STREAMER, "合成主播甲", 125.5));
         archive.append(comparisonSession(SECOND_STREAMER, "合成主播乙", 380.25));
@@ -452,6 +584,12 @@ class AssistantAskServiceTest {
         service.close();
         queries = new AssistantQueryService(null, archive, new LiveDetailArchive(core), mock(LiveDataService.class), core, catalogs, clock);
         service = new AssistantAskService(queries, client, properties, local, clock);
+    }
+
+    private NovaCoreProperties archiveProperties() {
+        var core = new NovaCoreProperties();
+        core.getLive().setLiveDataPath(directory.resolve("live.json").toString());
+        return core;
     }
 
     private static LiveSession comparisonSession(long uid, String name, double revenue) {
@@ -1802,14 +1940,9 @@ class AssistantAskServiceTest {
 
     // 抓住成员查询未分配主播时仍调用模型、泄露其他主播的数据。
     @Test void memberCannotAskAboutOtherStreamer() throws Exception {
-        var controller = new AssistantAskController(service, local);
-        var registry = mock(DataSourceServiceRegistry.class);
-        when(registry.platforms()).thenReturn(List.of("bilibili"));
-        var mvc = MockMvcBuilders.standaloneSetup(controller).addInterceptors(
-                new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry)).build();
         var member = new ConfigUiAccount("member", ConfigUiAccount.Role.MEMBER, ConfigUiAccount.Status.ENABLED,
                 "Member", null, null, null, List.of("bilibili:1"), Instant.EPOCH, null, true);
-        mvc.perform(post("/config/api/streamers/bilibili/2/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member)
+        mvc().perform(post("/config/api/streamers/bilibili/2/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member)
                 .contentType("application/json").content("{\"question\":\"表现怎样\"}"))
                 .andExpect(status().isNotFound());
         assertTrue(sent.isEmpty());
@@ -2721,10 +2854,11 @@ class AssistantAskServiceTest {
         assertFalse(result.containsKey("label"));
     }
 
-    private org.springframework.test.web.servlet.MockMvc mvc() {
+    private MockMvc mvc() {
         var registry = mock(DataSourceServiceRegistry.class);
         when(registry.platforms()).thenReturn(List.of("bilibili"));
-        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service, local)).addInterceptors(
+        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service, local,
+                consoleData, consoleDirectory, consoleNames, consoleArchive)).addInterceptors(
                 new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry)).build();
     }
 
