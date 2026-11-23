@@ -624,7 +624,7 @@ class QqAssistantCommandTest {
         doReturn(JSONObject.of("source", "快照", "fans", JSONObject.of("change", 32)))
                 .when(queries).fans(BILIBILI, FIRST, 7);
         doReturn(JSONObject.of("source", "弹幕", "total", 32))
-                .when(queries).danmu(BILIBILI, FIRST, START, START, START + 60000, 30);
+                .when(queries).danmu(BILIBILI, FIRST, START, START, START + 60000);
 
         modelReplies.add(JSONObject.of("tool_calls", List.of(
                 function("sessions", JSONObject.of("days", 7, "limit", 1)),
@@ -707,9 +707,10 @@ class QqAssistantCommandTest {
         String quote = "这一条是测试弹幕原话";
         long viewer = 9300000021L;
         String handle = "测试观众甲";
-        doReturn(JSONObject.of("source", "测试弹幕归档", "total", 2, "items", JSONArray.of(
-                JSONObject.of("uid", viewer, "uname", handle, "text", quote))))
-                .when(queries).danmu(BILIBILI, FIRST, START, START, START + 60000, 30);
+        details.appendDanmu(BILIBILI, FIRST, START,
+                new DanmuRecord(START, viewer, handle, quote, DanmuRecord.Type.DANMU));
+        details.appendDanmu(BILIBILI, FIRST, START,
+                new DanmuRecord(START + 1, viewer, handle, "合成醒目留言", DanmuRecord.Type.SUPER_CHAT));
         local.rememberNickname(local.alias(BILIBILI, viewer), handle);
         modelReplies.add(call("danmu", JSONObject.of("start", START, "fromAt", START, "toAt", START + 60000)));
         modelReplies.add(text("弹幕有 2 条。 " + local.alias(BILIBILI, viewer) + " 是此前提到的观众。"));
@@ -717,9 +718,12 @@ class QqAssistantCommandTest {
         String answer = assertReply("弹幕有 2 条", handle, LABEL).getContent();
         assertFalse(answer.contains(quote));
         assertFalse(requests.toString().contains(quote));
+        assertFalse(requests.toString().contains("合成醒目留言"));
         JSONObject tool = toolResults(requests.get(1)).get("danmu");
         assertFalse(tool.containsKey("audienceQuotes"));
         assertEquals(2, tool.getIntValue("total"));
+        assertEquals(1, tool.getIntValue("speakers"));
+        assertEquals(JSONObject.of("DANMU", 1, "EMOJI", 0, "SUPER_CHAT", 1), tool.getJSONObject("byType"));
     }
 
     @Test

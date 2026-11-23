@@ -683,6 +683,10 @@ class AssistantAggregateQueryTest {
                 "filters", List.of(filter("text", "contains", "生日")));
         table("含生日的弹幕", result, List.of("count", "distinctAudience"), List.of(List.of(2, 1)), List.of(2, 1));
         assertFalse(result.toJSONString().contains("合成生日快乐"));
+        var birthday = query(request(List.of("danmu"), FROM, TO, "count"),
+                "filters", List.of(filter("text", "contains", "生日快乐")));
+        table("含生日快乐的弹幕", birthday, List.of("count"), List.of(List.of(1)), List.of(1));
+        assertFalse(birthday.toJSONString().contains("合成生日快乐"));
     }
 
     // 抓住只在查询日期内找首次出现，漏掉更早的进房名单、弹幕或送礼明细。
