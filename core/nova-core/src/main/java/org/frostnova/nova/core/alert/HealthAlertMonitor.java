@@ -75,18 +75,19 @@ public class HealthAlertMonitor {
      * 评估单个探针，必要时告警
      */
     private void evaluate(HealthProbe probe) {
-        String key = probe.name();
         if (!probe.active()) {
-            ProbeState state = lastStates.remove(key);
-            if (state != null) {
-                state.stopped = true;
-                clearFailureConvergence(key);
-                alertService.resolve(key + ":恢复");
-                alertService.discardProbeAlerts(state, memberKey(key, ""));
-            }
+            lastStates.forEach((key, state) -> {
+                if (state.probe == probe && lastStates.remove(key, state)) {
+                    state.stopped = true;
+                    clearFailureConvergence(key);
+                    alertService.resolve(key + ":恢复");
+                    alertService.discardProbeAlerts(state, memberKey(key, ""));
+                }
+            });
             return;
         }
 
+        String key = probe.name();
         HealthStatus status = probe.check();
         ProbeState state = lastStates.computeIfAbsent(key, ignored -> new ProbeState(probe));
         HealthStatus.Level previous = state.level;

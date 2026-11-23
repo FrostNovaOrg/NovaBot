@@ -27,8 +27,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,7 +49,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 首页要用的那几项运行状态
@@ -542,6 +548,27 @@ class HomeStatusFieldsTest {
         assertEquals(List.of("直播间连接"), health.stream()
                 .map(item -> ((JSONObject) item).getString("name")).toList());
         assertEquals(0, inactive.checks);
+    }
+
+    @Test
+    @DisplayName("停用的探针无法读取范围时，首页仍能加载状态")
+    void statusSkipsInactiveProbeBeforeReadingMetadata() throws Exception {
+        HealthProbe inactive = mock(HealthProbe.class);
+        when(inactive.active()).thenReturn(false);
+        when(inactive.scope()).thenThrow(new IllegalStateException("探针未启用"));
+        probes = List.of(inactive, probe("直播间连接", HealthProbe.Scope.PLATFORM, false));
+
+        var response = MockMvcBuilders.standaloneSetup(controller()).build()
+                .perform(get(ConfigUiController.BASE_PATH + "/api/status"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse();
+        JSONArray health = JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8))
+                .getJSONArray("health");
+
+        assertEquals(List.of("直播间连接"), health.stream()
+                .map(item -> ((JSONObject) item).getString("name")).toList());
+        verify(inactive).active();
+        verifyNoMoreInteractions(inactive);
     }
 
     @Test

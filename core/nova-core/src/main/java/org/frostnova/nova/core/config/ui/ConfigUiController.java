@@ -2574,10 +2574,21 @@ public class ConfigUiController {
      */
     private JSONArray health() {
         JSONArray items = new JSONArray();
+        record ProbeActivation(HealthProbe probe, Exception failure) {}
 
         healthProbes.orderedStream()
-                .sorted(Comparator.comparingInt(HealthProbe::order))
-                .forEach(probe -> {
+                .<ProbeActivation>mapMulti((probe, remaining) -> {
+                    Exception failure = null;
+                    try {
+                        if (!probe.active()) return;
+                    } catch (Exception e) {
+                        failure = e;
+                    }
+                    remaining.accept(new ProbeActivation(probe, failure));
+                })
+                .sorted(Comparator.comparingInt(activation -> activation.probe().order()))
+                .forEach(activation -> {
+                    HealthProbe probe = activation.probe();
                     JSONObject item = new JSONObject();
                     item.put("name", probe.name());
                     // 界面据此把探针分派到「机器人」「哔哩哔哩」页签，由探针自己声明，界面不做名称匹配
@@ -2588,7 +2599,7 @@ public class ConfigUiController {
                     item.put("loginState", probe.loginState());
 
                     try {
-                        if (!probe.active()) return;
+                        if (activation.failure() != null) throw activation.failure();
                         HealthStatus status = probe.check();
                         item.put("level", status.level().name());
                         item.put("summary", status.summary());

@@ -105,6 +105,9 @@ class HealthAlertMonitorTest {
 
         @Override
         public String name() {
+            if (!enabled) {
+                throw new IllegalStateException("探针未启用");
+            }
             return "测试探针";
         }
 
