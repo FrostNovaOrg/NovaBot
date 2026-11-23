@@ -235,7 +235,7 @@ public class BilibiliApiUtil {
         registerNestedKnownKeys(table, ROOM_STATUS_API, "ROOM_STATUS_API",
                 "live_status", "live_time", "title", "cover_from_user");
         registerKnownKeys(table, DANMU_INFO_API, "DANMU_INFO_API", "host_list", "token");
-        registerKnownKeys(table, DANMU_HISTORY_API, "DANMU_HISTORY_API", "room");
+        registerKnownKeys(table, DANMU_HISTORY_API, "DANMU_HISTORY_API", "room", "admin");
         registerKnownKeys(table, GIFT_CONFIG_API, "GIFT_CONFIG_API",
                 "global_config", "list", "guard_resources");
         registerKnownKeys(table, DYNAMIC_FEED_API, "DYNAMIC_FEED_API", "items");
