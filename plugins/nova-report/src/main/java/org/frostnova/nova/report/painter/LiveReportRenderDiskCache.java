@@ -37,8 +37,8 @@ final class LiveReportRenderDiskCache {
     }
 
     Path file(LiveReportRenderCache.Key key) {
-        String appearance = hash(JSON.toJSONString(new Object[]{key.options(), key.palette()}));
-        return directory.resolve(streamerPrefix(key) + key.start() + "-" + appearance + ".png");
+        String renderHash = hash(JSON.toJSONString(new Object[]{key.end(), key.options(), key.palette()}));
+        return directory.resolve(streamerPrefix(key) + key.start() + "-" + renderHash + ".png");
     }
 
     Optional<String> read(LiveReportRenderCache.Key key) {

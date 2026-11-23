@@ -168,13 +168,13 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
 
     public Optional<String> channelContent(LiveDetail detail, PushTarget channel, BilibiliLiveReportOptions options) {
         var palette = palettes.forChannel(channel).palette();
-        var cached = rendered.get(detail.platform(), detail.uid(), detail.startTime(), options, palette);
+        var cached = rendered.get(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette);
         if (cached.isPresent()) return cached.map(image -> "{image_base64=" + image + "}");
         var painter = replay(detail);
         var image = painter.render(options, palette);
         if (image.isPresent()) {
             String base64 = Base64.getEncoder().encodeToString(image.get());
-            rendered.put(detail.platform(), detail.uid(), detail.startTime(), options, palette, base64);
+            rendered.put(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette, base64);
             return Optional.of("{image_base64=" + base64 + "}");
         }
         var streamer = new LiveStreamerInfo(detail.uid(), detail.uname(), detail.roomId());

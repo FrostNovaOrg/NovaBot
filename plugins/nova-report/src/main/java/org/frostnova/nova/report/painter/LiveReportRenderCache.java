@@ -14,10 +14,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import java.time.Duration;
 import java.util.Optional;
 
-/** 最近画过的成品图；场次、解析后的版式、金额与实际配色全部相同才复用。 */
+/** 最近画过的成品图；场次的起止时刻、解析后的版式、金额与实际配色全部相同才复用。 */
 @NovaComponent
 public class LiveReportRenderCache implements SmartLifecycle {
-    record Key(String platform, Long uid, long start, String options, ReportPalette palette) { }
+    record Key(String platform, Long uid, long start, long end, String options, ReportPalette palette) { }
     private final LiveReportRenderDiskCache disk;
     private volatile boolean running;
     private final Cache<Key, String> images = Caffeine.newBuilder()
@@ -36,9 +36,9 @@ public class LiveReportRenderCache implements SmartLifecycle {
         disk = new LiveReportRenderDiskCache(LiveReportRenderDiskCache.directoryFor(properties.getLive().getLiveDataPath()));
     }
 
-    public Optional<String> get(String platform, Long uid, long start,
+    public Optional<String> get(String platform, Long uid, long start, long end,
             BilibiliLiveReportOptions options, ReportPalette palette) {
-        Key key = new Key(platform, uid, start, JSON.toJSONString(options), palette);
+        Key key = new Key(platform, uid, start, end, JSON.toJSONString(options), palette);
         String image = images.getIfPresent(key);
         if (image != null) return Optional.of(image);
         return disk.read(key).map(original -> {
@@ -48,17 +48,17 @@ public class LiveReportRenderCache implements SmartLifecycle {
     }
 
     /** 重画较晚完成时，保留已缓存的推送原图。 */
-    public void put(String platform, Long uid, long start, BilibiliLiveReportOptions options,
+    public void put(String platform, Long uid, long start, long end, BilibiliLiveReportOptions options,
             ReportPalette palette, String image) {
         if (start > 0 && image != null && !image.isBlank())
-            images.asMap().putIfAbsent(new Key(platform, uid, start, JSON.toJSONString(options), palette), image);
+            images.asMap().putIfAbsent(new Key(platform, uid, start, end, JSON.toJSONString(options), palette), image);
     }
 
     /** 只有正常推送的成品图落盘；从明细重画仍只放内存。 */
-    public void putOriginal(String platform, Long uid, long start, BilibiliLiveReportOptions options,
+    public void putOriginal(String platform, Long uid, long start, long end, BilibiliLiveReportOptions options,
             ReportPalette palette, String image) {
         if (start > 0 && image != null && !image.isBlank()) {
-            Key key = new Key(platform, uid, start, JSON.toJSONString(options), palette);
+            Key key = new Key(platform, uid, start, end, JSON.toJSONString(options), palette);
             images.put(key, image);
             disk.store(key, image);
         }

@@ -10,7 +10,10 @@ import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.event.live.common.LiveOnEvent;
 import org.frostnova.nova.core.handler.NovaEventHandlerPushMessageInitializer;
+import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
+import org.frostnova.nova.core.listener.NovaDefaultLiveOnEventListener;
 import org.frostnova.nova.core.model.*;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.*;
@@ -22,13 +25,16 @@ import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.time.Instant;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -120,6 +126,73 @@ class LiveReportOriginalImageTest {
         verifyNoInteractions(replay);
     }
 
+    @Test void groupCommandAndConsoleResendUseTheFullReportAfterReconnect() {
+        var properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
+        properties.getLive().setSaveLiveData(false);
+        properties.getLive().setReconnectInterval(300);
+        var data = new DefaultLiveDataService(properties);
+        var details = new LiveDetailArchive(properties);
+        var sessions = new LiveSessionArchive(properties);
+        var roomHistory = new LiveRoomInfoHistory(new NovaStateStore(properties));
+        var archiver = new LiveSessionDetailArchiver(data, roomHistory, details);
+        var on = new NovaDefaultLiveOnEventListener(properties, data,
+                new LiveSessionRecovery(data, sessions, roomHistory, archiver));
+        var off = new NovaDefaultLiveOffEventListener(data, sessions, new LiveInterventionTracker(), roomHistory, archiver);
+
+        channel.setMessages(List.of());
+        var user = new PushUser();
+        user.setUid(1L);
+        user.setPlatform("bilibili");
+        user.setUname("主播示例");
+        user.setTargets(List.of(channel));
+        var source = mock(AbstractDataSource.class);
+        when(source.getUsers("bilibili")).thenReturn(List.of(user));
+        when(source.getAllUsers()).thenReturn(List.of(user));
+        var redrawer = spy(redrawer(newCache()));
+        var beans = new StaticListableBeanFactory(Map.of("reportRedrawer", redrawer));
+        var reports = new LiveReportDeliveryService(details, source, beans.getBeanProvider(LiveReportRedrawer.class), sender);
+        var command = new BilibiliLiveReportCommand(source, new BilibiliStreamerChoice(data, sessions), data,
+                mock(BilibiliLiveReportPainter.class), reports, archiver, redrawer);
+        var context = new CommandContext("qq-onebot", PushTargetType.GROUP, 1001L, 1002L,
+                "直播报告", List.of(), "直播报告");
+
+        // 用存档的时长区分画手返回的图片。
+        doAnswer(call -> {
+            LiveDetail archived = call.getArgument(0);
+            byte[] duration = Long.toString(archived.durationSeconds()).getBytes(StandardCharsets.US_ASCII);
+            var painter = mock(BilibiliLiveReportReplayPainter.class);
+            when(painter.render(any(), any())).thenReturn(Optional.of(duration));
+            return painter;
+        }).when(redrawer).replay(any());
+
+        var streamer = new LiveStreamerInfo(1L, "主播示例", 9L);
+        var start = Instant.parse("2025-01-01T12:00:00Z");
+        on.onLiveOnEventSetLiveData(new LiveOnEvent("bilibili", streamer, start));
+        var disconnected = start.plusSeconds(3600);
+        off.onLiveOffEvent(new BilibiliLiveOffEvent(streamer, disconnected));
+        String halfReport = command.execute(context).content();
+        assertEquals("{image_base64=MzYwMA==}", halfReport, "第一次下播的报告应画出 3600 秒");
+        assertEquals(halfReport, command.execute(context).content());
+        verify(redrawer).replay(any());
+
+        var resumed = new LiveOnEvent("bilibili", streamer, disconnected.plusSeconds(60));
+        on.onLiveOnEventCheckReconnect(resumed);
+        assertTrue(resumed.isReconnect());
+        on.onLiveOnEventSetLiveData(resumed);
+        off.onLiveOffEvent(new BilibiliLiveOffEvent(streamer, start.plusSeconds(7200)));
+        LiveDetail finished = reports.latest("bilibili", 1L).orElseThrow();
+        assertEquals(start.toEpochMilli(), finished.startTime());
+        assertEquals(7200, finished.durationSeconds());
+
+        String fullReport = command.execute(context).content();
+        assertEquals("{image_base64=NzIwMA==}", fullReport, "续播结束后应回复 7200 秒的整场报告");
+        reports.sendLatest("bilibili", 1L, channel, start.toEpochMilli());
+        var sent = ArgumentCaptor.forClass(Message.class);
+        verify(sender).sendNow(sent.capture());
+        assertEquals(fullReport, sent.getValue().getContent());
+    }
+
     @Test void aReplayFinishingAfterThePushKeepsTheOriginalAvailable() {
         var cache = newCache();
         ReflectionTestUtils.setField(handler, "rendered", cache);
@@ -160,7 +233,9 @@ class LiveReportOriginalImageTest {
         assertEquals(1, storedFiles().size(), "重画的图不落盘");
     }
 
-    private void push() { handler.handle(new BilibiliLiveOffEvent(new LiveStreamerInfo(1L, "主播示例", 9L)), message); }
+    private void push() {
+        handler.handle(new BilibiliLiveOffEvent(new LiveStreamerInfo(1L, "主播示例", 9L), Instant.ofEpochMilli(300)), message);
+    }
 
     private List<Path> storedFiles() throws Exception {
         try (var paths = Files.walk(directory)) {

@@ -32,7 +32,7 @@ class LiveReportRenderDiskCacheTest {
         var buffer = new ByteArrayOutputStream();
         ImageIO.write(new BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "png", buffer);
         image = Base64.getEncoder().encodeToString(buffer.toByteArray());
-        key = key("bilibili", 1L, 100, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT);
+        key = key("bilibili", 1L, 100, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT);
     }
 
     // 抓住写盘异常让正常下播报告也发不出去的故障。
@@ -57,11 +57,12 @@ class LiveReportRenderDiskCacheTest {
         disk.store(key, image);
         var hidden = BilibiliLiveReportOptions.of(new JSONObject(), false);
         for (var other : List.of(
-                key("other", 1L, 100, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
-                key("bilibili", 2L, 100, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
-                key("bilibili", 1L, 101, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
-                key("bilibili", 1L, 100, hidden, ReportPalette.DEFAULT),
-                key("bilibili", 1L, 100, new BilibiliLiveReportOptions(),
+                key("other", 1L, 100, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
+                key("bilibili", 2L, 100, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
+                key("bilibili", 1L, 101, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
+                key("bilibili", 1L, 100, 301, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT),
+                key("bilibili", 1L, 100, 300, hidden, ReportPalette.DEFAULT),
+                key("bilibili", 1L, 100, 300, new BilibiliLiveReportOptions(),
                         ReportPalette.DEFAULT.toBuilder().background(new Color(255, 255, 255, 128)).build()))) {
             assertNotEquals(disk.file(key), disk.file(other));
             assertTrue(disk.read(other).isEmpty());
@@ -119,15 +120,15 @@ class LiveReportRenderDiskCacheTest {
         }
         disk.store(key, image);
         Files.setLastModifiedTime(disk.file(key), FileTime.from(Instant.now().minus(Duration.ofDays(31))));
-        disk.store(key("bilibili", 1L, 200, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT), image);
+        disk.store(key("bilibili", 1L, 200, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT), image);
         disk.sweep();
         assertTrue(Files.exists(disk.file(key)));
     }
 
     // 抓住延迟完成的旧场次把新场次原图删掉的故障；不同主播各自保留。
     @Test void lateOldSessionCannotReplaceNewestAndOtherStreamerIsKept() {
-        var other = key("bilibili", 2L, 100, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT);
-        var newer = key("bilibili", 1L, 200, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT);
+        var other = key("bilibili", 2L, 100, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT);
+        var newer = key("bilibili", 1L, 200, 300, new BilibiliLiveReportOptions(), ReportPalette.DEFAULT);
         disk.store(other, image);
         disk.store(newer, image);
         disk.store(key, image);
@@ -142,15 +143,15 @@ class LiveReportRenderDiskCacheTest {
         properties.getLive().setLiveDataPath(temp.resolve("data.json").toString());
         var cache = new LiveReportRenderCache(properties);
         var options = new BilibiliLiveReportOptions();
-        cache.put("bilibili", 1L, 100, options, ReportPalette.DEFAULT, "QUJD");
+        cache.put("bilibili", 1L, 100, 300, options, ReportPalette.DEFAULT, "QUJD");
         assertFalse(Files.exists(disk.file(key)));
         disk.store(key, image);
         Files.writeString(disk.file(key), "broken png");
-        assertEquals("QUJD", cache.get("bilibili", 1L, 100, options, ReportPalette.DEFAULT).orElseThrow());
+        assertEquals("QUJD", cache.get("bilibili", 1L, 100, 300, options, ReportPalette.DEFAULT).orElseThrow());
     }
 
-    private LiveReportRenderCache.Key key(String platform, Long uid, long start,
+    private LiveReportRenderCache.Key key(String platform, Long uid, long start, long end,
             BilibiliLiveReportOptions options, ReportPalette palette) {
-        return new LiveReportRenderCache.Key(platform, uid, start, JSON.toJSONString(options), palette);
+        return new LiveReportRenderCache.Key(platform, uid, start, end, JSON.toJSONString(options), palette);
     }
 }
