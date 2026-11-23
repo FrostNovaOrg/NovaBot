@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
+import org.frostnova.nova.core.config.ui.PushTargetDirectory;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,7 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @NovaComponent
-public class OneBotTargetDirectory {
+public class OneBotTargetDirectory implements PushTargetDirectory {
     /**
      * 名单的有效期
      * <p>
@@ -78,41 +79,10 @@ public class OneBotTargetDirectory {
         this.clock = clock;
     }
 
-    /**
-     * 一个群
-     *
-     * @param num 群号
-     * @param name 群名
-     * @param memberCount 群成员数，OneBot 实现未上报时为 null
-     * @param admin 机器人在群里是不是群主或管理员，<b>查不出时为 null</b>——
-     *              查不出与「不是管理员」是两件事，混成 false 会让界面报出一个没查过的结论
-     */
-    public record Group(long num, String name, Integer memberCount, Boolean admin) {}
-
-    /**
-     * 一个好友
-     *
-     * @param num 账号
-     * @param nickname 昵称
-     * @param remark 备注，没设置时为空串
-     */
-    public record Friend(long num, String nickname, String remark) {}
-
-    /**
-     * 某个推送平台的一份名单
-     *
-     * @param sender 推送平台名
-     * @param groups 群
-     * @param friends 好友
-     * @param fetchedAt <b>表里这些条目是什么时候取回来的</b>，一次都没取成过时为 null。
-     *                  它跟着数据走，不跟着尝试走：拉取失败时保留的是上一次成功的时刻
-     * @param attemptedAt 最近一次尝试拉取的时刻，有效期按它算——
-     *                    否则连不上时每来一个请求都要再撞一次超时
-     * @param stale 表里的内容是不是已经取不到最新的了
-     * @param message 取不到时的原因，一切正常时为 null
-     */
-    public record Snapshot(String sender, List<Group> groups, List<Friend> friends,
-                           Instant fetchedAt, Instant attemptedAt, boolean stale, String message) {}
+    @Override
+    public String id() {
+        return "onebot";
+    }
 
     /**
      * 取各推送平台的名单
@@ -122,6 +92,7 @@ public class OneBotTargetDirectory {
      * @param force 是否强制重新拉取，忽略有效期
      * @return 各推送平台的名单，按配置顺序
      */
+    @Override
     public List<Snapshot> snapshots(boolean force) {
         List<Snapshot> result = new ArrayList<>();
 
