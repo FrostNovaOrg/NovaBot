@@ -7,14 +7,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.ApplicationListener;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.SimpleCommandLinePropertySource;
@@ -27,6 +28,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,8 +70,9 @@ class RetiredConfigurationKeyCheckTest {
     }
 
     @Test
+    @ExtendWith(OutputCaptureExtension.class)
     @DisplayName("保留旧 Redis 设置时可正常启动，且没有 Redis 客户端或告警")
-    void startsWithRetiredRedisSettings(@TempDir Path dir) throws IOException {
+    void startsWithRetiredRedisSettings(@TempDir Path dir, CapturedOutput output) throws IOException {
         Path config = dir.resolve("application.yml");
         Files.writeString(config, """
                 spring:
@@ -83,14 +86,19 @@ class RetiredConfigurationKeyCheckTest {
         SpringApplication application = new SpringApplication(StartupConfiguration.class);
         application.setWebApplicationType(WebApplicationType.NONE);
         application.setRegisterShutdownHook(false);
-        application.addListeners((ApplicationListener<ApplicationStartedEvent>) event -> logger.addAppender(appender));
         try (var context = application.run("--spring.config.location=" + config.toUri(),
-                "--spring.main.banner-mode=off")) {
+                "--spring.main.banner-mode=off", "--spring.output.ansi.enabled=never")) {
             assertTrue(context.isActive());
             assertEquals("127.0.0.1", context.getEnvironment().getProperty("spring.data.redis.host"));
             assertFalse(context.containsBean("redisConnectionFactory"), "旧配置不应启用 Redis 连接工厂");
         }
-        assertTrue(warnings().isEmpty(), warnings().toString());
+        Pattern logEntryStart = Pattern.compile("(?m)(?=^\\S+ \\S+ +(?:TRACE|DEBUG|INFO|WARN|ERROR) .* --- \\[)");
+        List<String> redisDiagnostics = logEntryStart.splitAsStream(output.getAll())
+                .filter(entry -> entry.matches("(?s)\\S+ \\S+ +(?:WARN|ERROR) .*"))
+                .filter(entry -> entry.contains("spring.data.redis"))
+                .map(String::stripTrailing)
+                .toList();
+        assertEquals(List.of(), redisDiagnostics, "启动时旧 Redis 设置应被静默忽略");
     }
 
     @Test
