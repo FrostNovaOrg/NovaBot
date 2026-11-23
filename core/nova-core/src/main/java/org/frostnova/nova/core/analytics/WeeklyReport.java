@@ -155,8 +155,11 @@ public final class WeeklyReport {
     }
 
     public static List<Card> cards(Data d) {
+        return cards(d, d.chartMetric().equals("revenue"));
+    }
+
+    private static List<Card> cards(Data d, boolean revenue) {
         var m = d.metrics();
-        boolean revenue = d.chartMetric().equals("revenue");
         String partial = d.fans() == null ? "" : d.fans().partial() ? "从 " + Instant.ofEpochMilli(d.fans().fromAt())
                 .atZone(StatisticsDay.ZONE).format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")) + " 起算" : "按区间边界有效快照计算";
         return List.of(comparedCard(d, "durationSeconds", "直播时长", duration(m.get("durationSeconds").longValue())),
@@ -200,12 +203,20 @@ public final class WeeklyReport {
     }
 
     public static String summary(Data d) {
+        return summary(d, d.chartMetric().equals("revenue"));
+    }
+
+    public static String summaryWithoutAmounts(Data d) {
+        return summary(d, false);
+    }
+
+    private static String summary(Data d, boolean revenue) {
         String lead = d.streamerName() + " 上周（" + period(d) + "）";
         if (d.metrics().get("sessions").intValue() == 0) return lead + "没有记录到开播。";
-        var c = cards(d);
+        var c = cards(d, revenue);
         String activity = lead + "共直播 " + number(d.metrics().get("sessions"), " 场", false) + "、" + c.get(0).value();
         String totals = activity + (d.chartMetric().equals("durationSeconds") ? "。" : ""
-                + (d.chartMetric().equals("revenue") ? "，流水 " + c.get(1).value() : "")
+                + (revenue ? "，流水 " + c.get(1).value() : "")
                 + "，弹幕 " + c.get(2).value() + "，观众 " + c.get(3).value() + "。");
         var changes = new ArrayList<String>();
         for (var card : c) if (card.changeRatio() != null)

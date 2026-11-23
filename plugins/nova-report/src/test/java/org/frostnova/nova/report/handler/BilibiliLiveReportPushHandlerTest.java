@@ -137,6 +137,29 @@ class BilibiliLiveReportPushHandlerTest {
     }
 
     @Test
+    void visibleReportAlsoRecordsAnAmountFreeSummaryForComparisons() {
+        var summaries = new ArrayList<ReportDeliveryListener.Report>();
+        ReflectionTestUtils.setField(handler, "reportDeliveryListener", (ReportDeliveryListener) summaries::add);
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.historySummary(anyString(), any(), any())).thenAnswer(invocation -> {
+            BilibiliLiveReportOptions options = invocation.getArgument(2);
+            return options.isShowRevenue() ? "弹幕 106 条\n流水 ¥576.42" : "弹幕 106 条";
+        });
+        var target = pushMessage();
+        target.getTarget().setRevenueVisible(true);
+
+        handler.handle(event(), target);
+        var message = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(message.capture());
+        message.getValue().markDelivered("sample-message").forEach(Runnable::run);
+
+        assertEquals(1, summaries.size());
+        var report = summaries.get(0);
+        assertTrue(report.summary().contains("576.42"));
+        assertEquals("弹幕 106 条", report.summaryWithoutAmounts());
+    }
+
+    @Test
     @DisplayName("绘制失败时应改发文字版，而不是什么都不发")
     void fallsBackToTextWhenPaintFails() {
         // 此前这里断言的是「整条跳过」：占位符被替换成空串、消息成空白、发送环节跳过。

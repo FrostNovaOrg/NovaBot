@@ -132,9 +132,11 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 var source = event.getSource();
                 var uid = source.getUid();
                 var summary = painter.historySummary(platform, source, options);
+                var summaryWithoutAmounts = showRevenue
+                        ? painter.historySummary(platform, source, BilibiliLiveReportOptions.of(params, false)) : summary;
                 onSuccess = sent -> listener.reportDelivered(new ReportDeliveryListener.Report(
                         sent.getPlatform(), sent.getType(), sent.getNum(), platform, uid,
-                        ReportDeliveryListener.Kind.LIVE, Instant.now(), showRevenue, summary));
+                        ReportDeliveryListener.Kind.LIVE, Instant.now(), showRevenue, summary, summaryWithoutAmounts));
             } catch (RuntimeException error) {
                 log.warn("无法生成下播报告的问答摘要", error);
             }

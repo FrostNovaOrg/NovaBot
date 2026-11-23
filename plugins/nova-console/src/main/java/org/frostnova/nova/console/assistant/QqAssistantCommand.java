@@ -31,9 +31,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,11 +57,13 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private static final String UNAVAILABLE = "智能助手暂时无法回答，请稍后再试";
     private static final String LABEL = "\n（由人工智能生成）";
     private static final String NO_FOLLOW_UP = "没有可接着问的这个编号，请用「问 〈问题〉」提问";
+    private static final String ANALYSIS_NOTICE = "这个问题要多想一会儿，大约半分钟到一分钟";
     private static final String USAGE = "请用「问 〈问题〉」发送 1–300 字的问题";
     private static final String MORE_EXAMPLES = """
             问 最近 30 天各钟点平均在线
             问 上周送礼榜前十""";
     private static final int ANSWER_LIMIT = 300;
+    private static final int COMPARISON_LIMIT = 5;
     private static final int ACK_SECONDS = 8;
     private static final Duration CHOICE_TTL = Duration.ofMinutes(2);
     private static final Duration FOLLOW_UP_TTL = Duration.ofMinutes(10);
@@ -158,43 +159,49 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         var asker = new Asker(session, context.getSenderUid());
         var all = candidates(context);
         var allowed = all.stream().filter(Candidate::allowed).toList();
-        if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
 
         String question = String.join(" ", context.getArgs());
-        if (question.isBlank()) return CommandReply.of(examples(allowed));
-        if (question.equals("1") || question.equals("１")) return resumeFollowUp(context, asker, 0);
-        if (question.equals("2") || question.equals("２")) return resumeFollowUp(context, asker, 1);
+        if (question.isBlank()) return CommandReply.of(allowed.isEmpty() ? CHANNEL_OFF : examples(allowed));
+        int followUp = switch (question) {
+            case "1", "１" -> 0;
+            case "2", "２" -> 1;
+            default -> -1;
+        };
+        if (followUp >= 0) return allowed.isEmpty() ? CommandReply.of(CHANNEL_OFF) : resumeFollowUp(context, asker, followUp);
 
         choices.remove(asker);
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
         String first = context.arg(0);
         boolean fromChoice = first != null && first.startsWith(CHOSEN_UID_PREFIX);
-        String leadingUid = fromChoice ? first.substring(CHOSEN_UID_PREFIX.length()) : first;
-        Candidate leading = all.stream().filter(item -> item.id().equals(leadingUid)).findFirst().orElse(null);
-        if (fromChoice && leading == null) return CommandReply.of("这里没有为所选主播开启智能助手问答");
-        List<Candidate> named = leading == null ? namedIn(question, all) : List.of(leading);
-        if (leading != null) question = String.join(" ", context.getArgs().subList(1, context.getArgs().size()));
-        if (question.isBlank() || question.codePointCount(0, question.length()) > 300)
+        String chosenUid = fromChoice ? first.substring(CHOSEN_UID_PREFIX.length()) : null;
+        var chosen = fromChoice ? all.stream().filter(item -> item.id().equals(chosenUid)).findFirst().orElse(null) : null;
+        if (fromChoice && chosen == null) return CommandReply.of("这里没有为所选主播开启智能助手问答");
+        if (fromChoice) question = String.join(" ", context.getArgs().subList(1, context.getArgs().size()));
+        var mentions = fromChoice ? new Mentions(List.of(chosen), false) : namedIn(question, all);
+        var named = mentions.streamers();
+        if (question.isBlank() || question.codePointCount(0, question.length()) > 300
+                || (named.size() == 1 && question.equals(named.get(0).id())))
             return CommandReply.of(USAGE);
         if (named.stream().anyMatch(item -> !item.allowed()))
             return CommandReply.of("这里没有为所点名的主播开启智能助手问答");
+        if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
+        if (mentions.ambiguous()) return choose(asker, named, question);
+        if (named.size() > COMPARISON_LIMIT) return CommandReply.of("一次最多比 5 位主播，请少点几位。");
 
-        if (named.isEmpty() && allowed.size() > 1) {
-            Long recentUid = lastAnsweredStreamer(context, session);
-            if (allowed.stream().anyMatch(item -> item.uid().equals(recentUid)))
-                return start(context, asker, recentUid, question, null, null);
+        if (named.isEmpty()) {
+            if (allowed.size() == 1) return start(context, asker, allowed, question, null, null);
+            var recent = lastAnsweredStreamers(context, session);
+            var byUid = new LinkedHashMap<Long, Candidate>();
+            allowed.forEach(item -> byUid.put(item.uid(), item));
+            if (!recent.isEmpty() && byUid.keySet().containsAll(recent))
+                return start(context, asker, recent.stream().map(byUid::get).toList(), question, null, null);
+            return choose(asker, allowed, question);
         }
 
-        var options = named.isEmpty() ? allowed : named;
-        if (options.size() > 1) {
-            pendingFollowUps.remove(asker);
-            return choose(asker, options, question);
-        }
-        Candidate streamer = options.get(0);
         String rawText = context.getRawText();
         String chosenName = fromChoice && rawText != null && RAW_ORDINAL.matcher(rawText.trim()).matches()
-                ? streamer.displayName() : null;
-        return start(context, asker, streamer.uid(), question, null, chosenName);
+                ? chosen.displayName() : null;
+        return start(context, asker, named, question, null, chosenName);
     }
 
     private String examples(List<Candidate> allowed) {
@@ -213,13 +220,14 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private CommandReply resumeFollowUp(CommandContext context, Asker asker, int index) {
         var pending = pendingFollowUps.get(asker);
         if (pending == null) return CommandReply.of(NO_FOLLOW_UP);
-        var target = allowedChannel(context, pending.uid());
-        if (!clock.instant().isBefore(pending.expires()) || target == null || visibility.isVisible(target) != pending.amountVisible()) {
+        var access = groupAccess(context, pending.streamers());
+        if (!clock.instant().isBefore(pending.expires()) || access.closed() != null
+                || access.amountVisible() != pending.amountVisible()) {
             pendingFollowUps.remove(asker, pending);
             return CommandReply.of(NO_FOLLOW_UP);
         }
         if (index >= pending.questions().size()) return CommandReply.of(NO_FOLLOW_UP);
-        return start(context, asker, pending.uid(), pending.questions().get(index), pending, null);
+        return start(context, asker, pending.streamers(), pending.questions().get(index), pending, null);
     }
 
     private List<Candidate> candidates(CommandContext context) {
@@ -227,14 +235,14 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         for (PushUser user : dataSource.getUsers(LIVE_PLATFORM)) {
             if (!activeStreamer(user)) continue;
             PushTarget target = channel(context, user);
-            if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user), user.getRoomId(),
+            if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user), user.getRoomId(), target,
                     Boolean.TRUE.equals(target.getAssistantEnabled())));
         }
         candidates.sort(Comparator.comparing(Candidate::uid));
         return candidates;
     }
 
-    private static List<Candidate> namedIn(String question, List<Candidate> candidates) {
+    private static Mentions namedIn(String question, List<Candidate> candidates) {
         var prefix = QUESTION_PREFIX.matcher(question);
         int questionStart = prefix.lookingAt() ? prefix.end() : 0;
         var numbers = NUMBER.matcher(question).results().toList();
@@ -255,15 +263,23 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         }
 
         matches.sort(NAME_MATCH_PRIORITY);
-        // 每个位置记录已保留的最高优先级，同级命中可以并存。
+        // 先留下最高优先级的命中；同级命中在同一处指向不同主播时，需要使用者选择。
         var covered = new NameMatch[question.length()];
-        var named = new HashSet<Candidate>();
+        var retained = new ArrayList<NameMatch>();
+        boolean ambiguous = false;
         for (NameMatch match : matches) {
             if (match.overlapsStrongerMatch(covered)) continue;
-            Arrays.fill(covered, match.start(), match.end(), match);
-            named.add(match.candidate());
+            for (int i = match.start(); i < match.end(); i++) {
+                var previous = covered[i];
+                if (previous != null && !previous.candidate().uid().equals(match.candidate().uid())) ambiguous = true;
+                covered[i] = match;
+            }
+            retained.add(match);
         }
-        return candidates.stream().filter(named::contains).toList();
+        var named = new LinkedHashMap<Long, Candidate>();
+        retained.sort(Comparator.comparingInt(NameMatch::start));
+        retained.forEach(match -> named.putIfAbsent(match.candidate().uid(), match.candidate()));
+        return new Mentions(List.copyOf(named.values()), ambiguous);
     }
 
     private static void addNameMatches(String question, String name, Candidate item, boolean exact,
@@ -297,6 +313,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     }
 
     private CommandReply choose(Asker asker, List<Candidate> options, String question) {
+        pendingFollowUps.remove(asker);
+        options = options.stream().sorted(Comparator.comparing(Candidate::uid)).toList();
         Instant now = clock.instant();
         choices.values().removeIf(choice -> !now.isBefore(choice.expires()));
         choices.put(asker, new Choice(options.stream().map(Candidate::id).toList(), question, now.plus(CHOICE_TTL)));
@@ -329,8 +347,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index), choice.question()));
     }
 
-    private CommandReply start(CommandContext context, Asker asker, Long uid, String question, PendingFollowUps selected,
-                               String chosenName) {
+    private CommandReply start(CommandContext context, Asker asker, List<Candidate> streamers, String question,
+                               PendingFollowUps selected, String chosenName) {
         String session = asker.session();
         if (!inFlight.add(session)) return CommandReply.of(BUSY);
         if (selected == null) pendingFollowUps.remove(asker);
@@ -338,9 +356,9 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             inFlight.remove(session);
             return CommandReply.of(NO_FOLLOW_UP);
         }
-        var active = new ActiveQuestion(context, asker, uid);
+        var active = new ActiveQuestion(context, asker, streamers);
         var work = new FutureTask<Void>(() -> {
-            active.finish(answer(context, session, uid, question, selected, chosenName, active));
+            active.finish(answer(context, session, streamers, question, selected, chosenName, active));
             return null;
         });
         try {
@@ -358,32 +376,34 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         return CommandReply.none();
     }
 
-    private QqAnswer answer(CommandContext context, String session, Long uid, String question, PendingFollowUps selected,
-                            String chosenName, ActiveQuestion active) {
+    private QqAnswer answer(CommandContext context, String session, List<Candidate> streamers, String question,
+                            PendingFollowUps selected, String chosenName, ActiveQuestion active) {
         try {
-            PushTarget target = allowedChannel(context, uid);
-            if (target == null) return null;
-            boolean amountVisible = visibility.isVisible(target);
+            var access = groupAccess(context, streamers);
+            if (access.closed() != null) return closedAnswer(access.closed());
+            boolean amountVisible = access.amountVisible();
             if (selected != null && (selected.amountVisible() != amountVisible || !clock.instant().isBefore(selected.expires())))
                 return QqAnswer.text(NO_FOLLOW_UP);
             var source = qqSource(context);
-            var key = new HistoryKey(session, source.account(), uid);
+            var uids = streamers.stream().map(Candidate::uid).toList();
+            var key = new HistoryKey(session, source.account(), Set.copyOf(uids));
             var history = recentHistory(key, amountVisible);
             var texts = history.stream().filter(turn -> turn.content() != null).toList();
             var request = JSONObject.of("question", question, "history",
-                    requestHistory(new ReportHistoryKey(session, LIVE_PLATFORM, uid), amountVisible, texts));
+                    requestHistory(session, uids, amountVisible, texts));
             String previousQuestion = texts.isEmpty() ? null : texts.get(texts.size() - 1).content().getString("question");
             var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
             var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
-            var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults,
+            var answer = assistant.askFromQq(LIVE_PLATFORM, uids, source, request, amountVisible, previousResults,
                     previousQuestion, () -> active.accepted(chosenName), active::difficultyResolved);
             JSONObject result = answer.response();
             if (result.containsKey("difficulty"))
-                AssistantAskService.logQuestion(log, source.entry() + " " + source.account(), LIVE_PLATFORM, uid, result);
-            PushTarget current = allowedChannel(context, uid);
-            if (current == null || Thread.currentThread().isInterrupted()) return null;
+                AssistantAskService.logQuestion(log, source.entry() + " " + source.account(), LIVE_PLATFORM, uids.get(0), result);
+            if (Thread.currentThread().isInterrupted()) return null;
+            var current = groupAccess(context, streamers);
+            if (current.closed() != null) return closedAnswer(current.closed());
             boolean answered = result.getBooleanValue("answered");
-            if (amountVisible && !visibility.isVisible(current))
+            if (amountVisible && !current.amountVisible())
                 return QqAnswer.text(answered ? AssistantAggregateRequest.HIDDEN_AMOUNT : result.getString("answer"));
 
             if (answered || !answer.results().isEmpty()) {
@@ -392,7 +412,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                 turns.removeIf(turn -> !current(turn.at(), now));
                 var content = answered ? JSONObject.of("question", question, "answerForHistory",
                         clip(result.getString("answerForHistory"), ANSWER_LIMIT)) : null;
-                turns.add(new Turn(now, amountVisible, content, answer.results()));
+                turns.add(new Turn(now, uids, amountVisible, content, answer.results()));
                 histories.put(key, List.copyOf(turns));
             }
             if (!answered) return QqAnswer.text(result.getString("answer"));
@@ -440,28 +460,28 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         return local.qqSource("QQ", context.getType(), context.getNum(), context.getSenderUid());
     }
 
-    private Long lastAnsweredStreamer(CommandContext context, String session) {
-        if (histories.isEmpty()) return null;
+    private List<Long> lastAnsweredStreamers(CommandContext context, String session) {
+        if (histories.isEmpty()) return List.of();
         String account;
         try {
             account = qqSource(context).account();
         } catch (AssistantException ignored) {
-            return null;
+            return List.of();
         }
         Instant now = clock.instant();
         Instant latest = null;
-        Long uid = null;
+        List<Long> streamers = List.of();
         for (var history : histories.entrySet()) {
             HistoryKey key = history.getKey();
             if (!session.equals(key.session()) || !account.equals(key.account())) continue;
             for (Turn turn : history.getValue()) {
                 if (turn.content() != null && current(turn.at(), now) && (latest == null || turn.at().isAfter(latest))) {
                     latest = turn.at();
-                    uid = key.uid();
+                    streamers = turn.streamers();
                 }
             }
         }
-        return uid;
+        return streamers;
     }
 
     private List<Turn> recentHistory(HistoryKey key, boolean amountVisible) {
@@ -486,10 +506,14 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         });
     }
 
-    private List<JSONObject> requestHistory(ReportHistoryKey key, boolean amountVisible, List<Turn> texts) {
+    private List<JSONObject> requestHistory(String session, List<Long> streamers, boolean amountVisible, List<Turn> texts) {
         Instant now = clock.instant();
-        var reports = reportHistories.getOrDefault(key, List.of()).stream()
-                .filter(report -> report.amountVisible() == amountVisible && current(report.deliveredAt(), now)).toList();
+        boolean comparison = streamers.size() > 1;
+        var reports = streamers.stream()
+                .flatMap(uid -> reportHistories.getOrDefault(new ReportHistoryKey(session, LIVE_PLATFORM, uid), List.of()).stream())
+                .filter(report -> current(report.deliveredAt(), now))
+                .filter(report -> comparison ? amountVisible || report.summaryWithoutAmounts() != null
+                        : report.amountVisible() == amountVisible).toList();
         int first = Math.max(0, texts.size() + reports.size() - AssistantAskService.HISTORY_LIMIT);
         var history = new ArrayList<HistoryEntry>();
         for (Turn turn : texts.subList(first, texts.size())) {
@@ -501,8 +525,9 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                 case WEEKLY -> "运营周报";
             };
             String question = "（机器人在 " + REPORT_TIME.format(report.deliveredAt()) + " 推送了" + label + "）";
+            String summary = amountVisible ? report.summary() : report.summaryWithoutAmounts();
             history.add(new HistoryEntry(report.deliveredAt(),
-                    JSONObject.of("question", question, "answerForHistory", report.summary())));
+                    JSONObject.of("question", question, "answerForHistory", summary)));
         }
         history.sort(Comparator.comparing(HistoryEntry::at));
         return history.stream().map(HistoryEntry::content).toList();
@@ -525,6 +550,22 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
     private static boolean current(Instant at, Instant now) {
         return !now.isBefore(at) && now.isBefore(at.plus(HISTORY_TTL));
+    }
+
+    private GroupAccess groupAccess(CommandContext context, List<Candidate> streamers) {
+        PushTarget primary = null;
+        boolean amountVisible = true;
+        for (Candidate streamer : streamers) {
+            PushTarget target = allowedChannel(context, streamer.uid());
+            if (target == null) return new GroupAccess(primary, streamer, false);
+            if (primary == null) primary = target;
+            amountVisible &= visibility.isVisible(target);
+        }
+        return new GroupAccess(primary, null, amountVisible);
+    }
+
+    private static QqAnswer closedAnswer(Candidate streamer) {
+        return QqAnswer.text(streamer.displayName() + "在这里的问答刚被关掉了，这次没有问。");
     }
 
     private PushTarget allowedChannel(CommandContext context, Long uid) {
@@ -576,7 +617,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private final class ActiveQuestion {
         private final CommandContext context;
         private final Asker asker;
-        private final Long uid;
+        private final List<Candidate> streamers;
         private boolean finished;
         private boolean waitingForDifficulty;
         private boolean progressDeferred;
@@ -585,10 +626,10 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         private ScheduledFuture<?> deadline;
         private long deadlineAt;
 
-        private ActiveQuestion(CommandContext context, Asker asker, Long uid) {
+        private ActiveQuestion(CommandContext context, Asker asker, List<Candidate> streamers) {
             this.context = context;
             this.asker = asker;
-            this.uid = uid;
+            this.streamers = streamers;
         }
 
         synchronized void start(Future<?> work) {
@@ -598,30 +639,34 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
         synchronized void accepted(String chosenName) {
             if (finished) return;
+            if (streamers.size() > 1) {
+                progressReply(ANALYSIS_NOTICE);
+                return;
+            }
             waitingForDifficulty = assistant.adaptiveThinkingEnabled();
             if (chosenName == null) {
                 ack = reminders.schedule(this::progress, ACK_SECONDS, TimeUnit.SECONDS);
             } else {
-                send(QqAnswer.text("收到，查" + chosenName));
+                progressReply("收到，查" + chosenName);
             }
         }
 
         private synchronized void progress() {
             if (finished || ack == null) return;
             if (waitingForDifficulty) progressDeferred = true;
-            else send(QqAnswer.text("收到，正在查"));
+            else progressReply("收到，正在查");
         }
 
         synchronized void difficultyResolved(AssistantAskService.QuestionTiming timing) {
             if (finished) return;
             waitingForDifficulty = false;
             scheduleDeadline(timing.remaining());
-            if (timing.analysis()) {
+            if (timing.analysis() && streamers.size() == 1) {
                 if (ack != null) {
                     ack.cancel(false);
                     ack = null;
                 }
-                send(QqAnswer.text("这个问题要多想一会儿，大约半分钟到一分钟"));
+                progressReply(ANALYSIS_NOTICE);
             } else if (progressDeferred) {
                 progress();
             }
@@ -645,14 +690,24 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             finished = true;
             if (ack != null) ack.cancel(false);
             if (deadline != null) deadline.cancel(false);
-            if (answer != null) send(answer);
+            if (answer != null) {
+                var access = groupAccess(context, streamers);
+                if (access.closed() != null) {
+                    var target = access.primary() == null ? streamers.get(0).target() : access.primary();
+                    send(closedAnswer(access.closed()), target, false);
+                } else {
+                    send(answer, access.primary(), access.amountVisible());
+                }
+            }
             return true;
         }
 
-        private void send(QqAnswer answer) {
-            PushTarget target = allowedChannel(context, uid);
-            if (target == null) return;
-            boolean amountVisible = visibility.isVisible(target);
+        private void progressReply(String text) {
+            var access = groupAccess(context, streamers);
+            if (access.closed() == null) send(QqAnswer.text(text), access.primary(), access.amountVisible());
+        }
+
+        private void send(QqAnswer answer, PushTarget target, boolean amountVisible) {
             boolean hidden = answer.amountVisible() && !amountVisible;
             String text = hidden ? AssistantAggregateRequest.HIDDEN_AMOUNT : answer.text();
             String content = MessagePlaceholders.escapeExternalText(text);
@@ -665,14 +720,16 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                         sender.send(message);
                     });
             if (amountVisible == answer.amountVisible() && !answer.followUps().isEmpty())
-                pendingFollowUps.put(asker, new PendingFollowUps(uid, amountVisible, clock.instant().plus(FOLLOW_UP_TTL), answer.followUps()));
+                pendingFollowUps.put(asker, new PendingFollowUps(streamers, amountVisible,
+                        clock.instant().plus(FOLLOW_UP_TTL), answer.followUps()));
         }
     }
 
-    private record Candidate(Long uid, String nickname, Long roomId, boolean allowed) {
+    private record Candidate(Long uid, String nickname, Long roomId, PushTarget target, boolean allowed) {
         String id() { return uid.toString(); }
         String displayName() { return nickname == null || nickname.isBlank() ? id() : nickname; }
     }
+    private record Mentions(List<Candidate> streamers, boolean ambiguous) { }
     private record NameMatch(int start, int end, int length, boolean exact, Candidate candidate) {
         boolean overlapsStrongerMatch(NameMatch[] covered) {
             for (int i = start; i < end; i++) {
@@ -683,9 +740,11 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     }
     private record Asker(String session, long sender) { }
     private record Choice(List<String> uids, String question, Instant expires) { }
-    private record PendingFollowUps(Long uid, boolean amountVisible, Instant expires, List<String> questions) { }
-    private record HistoryKey(String session, String account, Long uid) { }
-    private record Turn(Instant at, boolean amountVisible, JSONObject content, List<AssistantChartResults.Result> results) { }
+    private record GroupAccess(PushTarget primary, Candidate closed, boolean amountVisible) { }
+    private record PendingFollowUps(List<Candidate> streamers, boolean amountVisible, Instant expires, List<String> questions) { }
+    private record HistoryKey(String session, String account, Set<Long> streamers) { }
+    private record Turn(Instant at, List<Long> streamers, boolean amountVisible, JSONObject content,
+                        List<AssistantChartResults.Result> results) { }
     private record ReportHistoryKey(String session, String platform, Long uid) { }
     private record HistoryEntry(Instant at, JSONObject content) { }
     private record QqAnswer(String text, List<String> images, boolean amountVisible, List<String> followUps) {

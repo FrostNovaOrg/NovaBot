@@ -69,11 +69,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -116,6 +117,7 @@ class QqAssistantCommandTest {
     private AssistantAskService service;
     private AssistantChartRenderer chartRenderer;
     private AssistantQueryService queries;
+    private AbstractDataSource data;
     private LiveSessionArchive archive;
     private LiveDetailArchive details;
     private QqAssistantCommand command;
@@ -128,7 +130,7 @@ class QqAssistantCommandTest {
         var core = new NovaCoreProperties();
         core.getLive().setLiveDataPath(directory.resolve("live.json").toString());
         settings = new CommandSettingsService(new NovaStateStore(core));
-        var data = mock(AbstractDataSource.class);
+        data = mock(AbstractDataSource.class);
         when(data.getAllUsers()).thenReturn(users);
         when(data.getUsers(BILIBILI)).thenReturn(users);
         when(data.getUser(eq(BILIBILI), anyLong())).thenAnswer(invocation -> users.stream()
@@ -435,6 +437,200 @@ class QqAssistantCommandTest {
         verify(queries, never()).sessions(eq(BILIBILI), eq(SECOND), anyInt(), anyInt());
     }
 
+    // 问两位主播谁高，机器人却让我选一位。
+    @Test void comparesTwoNamedStreamersInMentionOrder() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        var primary = channel(GROUP, ROOM, true, null);
+        add(SECOND, "测试主播乙", primary);
+        doReturn("测试主播甲").when(queries).streamerName(BILIBILI, FIRST);
+        doReturn("测试主播乙").when(queries).streamerName(BILIBILI, SECOND);
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        modelReplies.add(text("分析"));
+        modelReplies.add(text("测试主播乙的流水更高。"));
+
+        group(ASKER, "问 测试主播乙和测试主播甲这周谁流水高");
+
+        assertReply("这个问题要多想一会儿");
+        assertSame(primary, assertReply("测试主播乙的流水更高", LABEL).getChannel());
+        String system = requests.get(1).getJSONArray("messages").getJSONObject(0).getString("content");
+        assertTrue(system.contains("测试主播乙（" + SECOND + "）、测试主播甲（" + FIRST + "）"), system);
+    }
+
+    // 对比里有一位主播不让显示金额，回答里还是带了金额。
+    @Test void comparisonHidesAmountsWhenAnyStreamerHidesThem() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        modelReplies.add(call("revenue", JSONObject.of("start", START, "streamer", FIRST)));
+        modelReplies.add(text("本场流水为 576.42 元。"));
+        modelReplies.add(text("本场流水为 576.42 元。"));
+
+        group(ASKER, "问 " + FIRST + " 和测试主播乙谁流水高");
+
+        String answer = comparisonResult(LABEL).getContent();
+        assertFalse(answer.contains("576.42"), answer);
+        assertTrue(answer.contains("不显示金额"), answer);
+        verify(queries, never()).revenue(anyString(), anyLong(), anyLong());
+    }
+
+    // 对比完说『那上个月呢』，机器人忘了是在比哪几位。
+    @Test void unnamedComparisonFollowUpKeepsBothStreamersAndHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        doReturn("测试主播甲").when(queries).streamerName(BILIBILI, FIRST);
+        doReturn("测试主播乙").when(queries).streamerName(BILIBILI, SECOND);
+        String question = FIRST + " 和测试主播乙最近谁播得多";
+        modelReplies.add(text("测试主播乙开播更多。"));
+        group(ASKER, "问 " + question);
+        comparisonResult("测试主播乙开播更多", LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        clock.advance(Duration.ofMinutes(10));
+        modelReplies.add(text("上个月测试主播甲开播更多。"));
+        group(ASKER, "那上个月呢");
+
+        comparisonResult("上个月测试主播甲开播更多", LABEL);
+        var request = requests.get(1);
+        String system = request.getJSONArray("messages").getJSONObject(0).getString("content");
+        assertTrue(system.contains("测试主播甲（" + FIRST + "）、测试主播乙（" + SECOND + "）"),
+                "续问没有沿用原来的两位主播");
+        assertEquals("那上个月呢", userPayload(request).getString("question"));
+        assertEquals(1, lastHistory().size());
+        var previous = lastHistory().getJSONObject(0);
+        assertEquals(question, previous.getString("question"));
+        assertTrue(previous.getString("answerForHistory").contains("测试主播乙开播更多"));
+    }
+
+    @Test void comparisonRejectsAClosedStreamerAndLimitsGroupSize() throws Exception {
+        var names = List.of("测试主播甲", "测试主播乙", "测试主播丙", "测试主播丁", "测试主播戊", "测试主播己");
+        var second = channel(GROUP, ROOM, false, null);
+        for (int i = 0; i < names.size(); i++)
+            add(FIRST + i, names.get(i), i == 1 ? second : channel(GROUP, ROOM, true, null));
+
+        group(ASKER, "问 测试主播甲和测试主播乙谁流水高");
+        assertReply("这里没有为所点名的主播开启智能助手问答");
+
+        second.setAssistantEnabled(true);
+        group(ASKER, "问 " + String.join("、", names) + "谁流水高");
+        assertReply("一次最多比 5 位主播", "请少点几位");
+        assertTrue(requests.isEmpty());
+    }
+
+    @Test void unnamedComparisonFallsBackToTheMenuWhenOneStreamerCloses() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        var second = channel(GROUP, ROOM, true, false);
+        add(SECOND, "测试主播乙", second);
+        add(10003L, "测试主播丙", channel(GROUP, ROOM, true, false));
+        group(ASKER, "问 测试主播甲和测试主播乙谁播得多");
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        second.setAssistantEnabled(false);
+        group(ASKER, "那上个月呢");
+
+        var menu = assertReply("回序号", "1. 测试主播甲", "2. 测试主播丙");
+        assertFalse(menu.getContent().contains("测试主播乙"));
+        assertEquals(1, requests.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void repliesWhenAStreamerClosesAfterRouting(boolean comparison) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        var second = channel(GROUP, ROOM, true, false);
+        add(SECOND, "测试主播乙", second);
+        doAnswer(invocation -> {
+            second.setAssistantEnabled(false);
+            return Optional.of(second.getUser());
+        }).when(data).getUser(BILIBILI, SECOND);
+
+        group(ASKER, comparison ? "问 测试主播甲和测试主播乙谁播得多" : "问 测试主播乙上周开播了吗");
+
+        assertReply("测试主播乙在这里的问答刚被关掉了", "这次没有问");
+        assertTrue(requests.isEmpty());
+    }
+
+    @Test void comparisonRechecksTheAmountSettingOfTheSecondStreamerBeforeReplying() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        var second = channel(GROUP, ROOM, true, true);
+        add(SECOND, "测试主播乙", second);
+        modelWait = () -> second.setRevenueVisible(false);
+        modelReplies.add(text("本场流水为 576.42 元。"));
+        modelReplies.add(text("本场流水为 576.42 元。"));
+
+        group(ASKER, "问 测试主播甲和测试主播乙谁流水高");
+
+        assertReply("这个问题要多想一会儿");
+        assertFalse(assertReply("不显示金额").getContent().contains("576.42"));
+    }
+
+    @Test void numberedFollowUpAndReversedNamesKeepComparisonHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        String firstQuestion = "测试主播甲和测试主播乙最近在线怎么样";
+        String followUp = "周六两位主播的开播时间是什么？";
+        modelReplies.add(text("测试主播乙在线更高。\n1. 周六哪位主播的弹幕更多？\n2. " + followUp));
+        group(ASKER, "问 " + firstQuestion);
+        assertReply("这个问题要多想一会儿");
+        assertReply("2. " + followUp, LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "２");
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+        assertEquals(followUp, userPayload(requests.get(1)).getString("question"));
+        assertEquals(firstQuestion, lastHistory().getJSONObject(0).getString("question"));
+        awaitIdle(GROUP, ROOM);
+
+        group(ASKER, "问 测试主播乙和测试主播甲这个月在线怎么样");
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+        assertEquals(2, lastHistory().size());
+    }
+
+    @Test void comparisonPreservesStreamerUidAndMasksViewerUidInQuestion() throws Exception {
+        long streamer = 3546626599684797L;
+        long viewer = 991234560L;
+        add(streamer, null, channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        doReturn(Map.of(viewer, new AssistantQueryService.AudienceIdentity(Set.of("测试观众"), "测试观众")))
+                .when(queries).localAudience(BILIBILI, FIRST, List.of());
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        modelReplies.add(text("分析"));
+
+        group(ASKER, "问 " + streamer + " 和测试主播甲比一下，观众 " + viewer + " 的互动如何");
+
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+        assertEquals(2, requests.size());
+        for (var request : requests) {
+            String question = userPayload(request).getString("question");
+            assertTrue(question.contains(streamer + " 和测试主播甲"), question);
+            assertTrue(question.contains("观众 [编号已隐藏]"), question);
+            assertFalse(question.contains(Long.toString(viewer)), question);
+        }
+    }
+
+    @Test void comparisonSqlKeepsFallbackStreamerName() throws Exception {
+        assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
+        long streamer = 3546626599684797L;
+        add(streamer, null, channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        doReturn("测试主播甲").when(queries).streamerName(BILIBILI, FIRST);
+        modelReplies.add(call("query_sql", JSONObject.of("from", "2026-11-09", "to", "2026-11-15",
+                "tables", List.of("streamers"), "sql", "SELECT name AS label FROM streamers ORDER BY streamer_uid")));
+
+        group(ASKER, "问 " + streamer + " 和测试主播甲比一下");
+
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+        var result = toolResults(requests.get(1)).get("query_sql");
+        assertFalse(result.containsKey("reason"), result::toJSONString);
+        assertEquals(JSONArray.of(JSONArray.of("测试主播甲"), JSONArray.of(Long.toString(streamer))), result.getJSONArray("rows"));
+    }
+
     @ParameterizedTest(name = "{0}")
     @DisplayName("用主播的常用短名提问，却被要求再选一次主播")
     @CsvSource({
@@ -453,7 +649,7 @@ class QqAssistantCommandTest {
             "Welcome 昨晚几点下播, Welcome, 另一位, , 1",
             "莜娜Yuna最近怎么样, 莜娜Yuna, 莜娜酱, , 1",
             "云山如画昨晚几点下播, HJ云山如画, 云山小主播, , 1",
-            "云山和白夭夭上周各播了几场, HJ云山如画, 白夭夭-Yy, 另一位, 0",
+            "云山和白夭夭上周各播了几场, HJ云山如画, 白夭夭-Yy, 另一位, 3",
             "看云山如画昨晚几点下播, HJ云山如画, 看云海, , 1",
             "云山如画昨晚几点下播, HJ云山如画, 云山, , 1",
             "云山昨晚几点下播, HJ云山如画, 云山, , 2",
@@ -485,6 +681,12 @@ class QqAssistantCommandTest {
             String menu = assertReply("回序号", "1. " + firstName, "2. " + secondName).getContent();
             assertFalse(menu.contains("\n3."), menu);
             assertTrue(requests.isEmpty());
+        } else if (selected == 3) {
+            modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1, "streamer", SECOND)));
+            group(ASKER, "问 " + question);
+            assertReply("这个问题要多想一会儿");
+            assertSame(firstTarget, assertReply(LABEL).getChannel());
+            verify(queries).sessions(BILIBILI, SECOND, 7, 1);
         } else {
             modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
             modelReplies.add(text("查到了场次数据。"));
@@ -1150,6 +1352,37 @@ class QqAssistantCommandTest {
         assertTrue(history.getJSONObject(0).getString("question").contains("昨天"));
     }
 
+    @Test void comparisonKeepsRecentReportsFromBothStreamersWithinHistoryLimit() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        String first = "测试主播甲和测试主播乙前天开播了吗";
+        for (String question : List.of(first, "昨天呢", "今天呢", "上周呢", "本周呢", "上月呢", "本月呢", "去年呢", "今年呢", "昨晚呢")) {
+            group(ASKER, "问 " + question);
+            assertReply("这个问题要多想一会儿");
+            assertReply(LABEL);
+            awaitIdle(GROUP, ROOM);
+        }
+        command.reportDelivered(new ReportDeliveryListener.Report(QQ, GROUP, ROOM, BILIBILI, SECOND,
+                ReportDeliveryListener.Kind.LIVE, clock.instant().minus(Duration.ofMinutes(30)), false, "已过期报告"));
+        command.reportDelivered(new ReportDeliveryListener.Report(QQ, GROUP, ROOM, BILIBILI, FIRST,
+                ReportDeliveryListener.Kind.LIVE, clock.instant(), true, REPORT_SUMMARY + "\n流水 ¥576.42", REPORT_SUMMARY));
+        clock.advance(Duration.ofSeconds(1));
+        String weeklySummary = "测试主播乙 上周共直播 3 场。";
+        command.reportDelivered(new ReportDeliveryListener.Report(QQ, GROUP, ROOM, BILIBILI, SECOND,
+                ReportDeliveryListener.Kind.WEEKLY, clock.instant(), false, weeklySummary));
+
+        group(ASKER, "问 刚才的报告有哪些");
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+
+        var history = lastHistory();
+        assertEquals(10, history.size());
+        assertEquals("今天呢", history.getJSONObject(0).getString("question"));
+        assertEquals(REPORT_SUMMARY, history.getJSONObject(8).getString("answerForHistory"));
+        assertEquals(weeklySummary, history.getJSONObject(9).getString("answerForHistory"));
+        assertFalse(history.toJSONString().contains("576.42"));
+    }
+
     private void recordLiveReport() {
         command.reportDelivered(new ReportDeliveryListener.Report(
                 QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, clock.instant(),
@@ -1564,7 +1797,16 @@ class QqAssistantCommandTest {
     }
 
     private Message assertReply(String... words) throws InterruptedException {
+        return assertReply(replies.poll(18, TimeUnit.SECONDS), words);
+    }
+
+    private Message comparisonResult(String... words) throws InterruptedException {
         Message message = replies.poll(18, TimeUnit.SECONDS);
+        if (message != null && message.getContent().startsWith("这个问题要多想一会儿")) return assertReply(words);
+        return assertReply(message, words);
+    }
+
+    private Message assertReply(Message message, String... words) {
         assertNotNull(message, "会话没有收到回复");
         assertEquals(QQ, message.getPlatform());
         assertTrue(message.isReply());

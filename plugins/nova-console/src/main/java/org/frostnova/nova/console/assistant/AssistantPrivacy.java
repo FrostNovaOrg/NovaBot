@@ -22,6 +22,7 @@ final class AssistantPrivacy {
     private final String platform;
     private final Set<Long> excluded;
     private final Set<Long> streamerUids;
+    private final Set<String> streamerIds;
     private final Supplier<Map<Long, AudienceIdentity>> audience;
     private final Set<String> knownUids = new HashSet<>();
     private Map<Long, AudienceIdentity> audienceIdentities;
@@ -45,8 +46,9 @@ final class AssistantPrivacy {
         this.platform = platform;
         this.excluded = Set.copyOf(excluded);
         this.streamerUids = streamerUids;
+        this.streamerIds = streamerUids.stream().map(Object::toString).collect(Collectors.toUnmodifiableSet());
         this.audience = audience;
-        streamerUids.forEach(uid -> knownUids.add(uid.toString()));
+        knownUids.addAll(streamerIds);
         excluded.forEach(uid -> knownUids.add(uid.toString()));
         names.putAll(local.nicknames());
         names.forEach((alias, name) -> replacements.put(name, alias));
@@ -95,6 +97,7 @@ final class AssistantPrivacy {
             }
         }
         if (AssistantSqlRequest.NAME.equals(tool) && result.get("rows") instanceof JSONArray rows) {
+            preserveSqlStreamerNames(raw, result);
             if (learnSqlAudience(rows.stream().map(JSONArray.class::cast).flatMap(Collection::stream))) dataTypes.add("观众代号");
         }
         dataTypes.add("汇总数字");
@@ -190,6 +193,20 @@ final class AssistantPrivacy {
         return value instanceof String text ? mask(text) : value;
     }
 
+    void preserveSqlStreamerNames(JSONObject original, JSONObject masked) {
+        if (streamerIds.size() < 2 || !(original.get("rows") instanceof JSONArray rows)) return;
+        // 缺昵称时，主播表的昵称列用完整 UID。只保留属于本问的整格编号。
+        var safe = masked.getJSONArray("rows");
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+            var row = rows.getJSONArray(rowIndex);
+            var safeRow = safe.getJSONArray(rowIndex);
+            for (int column = 0; column < row.size(); column++) {
+                if (row.get(column) instanceof String text && streamerIds.contains(text))
+                    safeRow.set(column, text);
+            }
+        }
+    }
+
     void prepareMemos(List<String> texts) {
         // 首轮查数之前，也要从本机档案识别备忘里仅出现昵称的观众。
         loadAudience().forEach((uid, identity) -> {
@@ -221,6 +238,14 @@ final class AssistantPrivacy {
     }
 
     String mask(String text) {
+        return mask(text, false);
+    }
+
+    String maskQuestion(String text, boolean fromQq) {
+        return mask(text, fromQq);
+    }
+
+    private String mask(String text, boolean preserveStreamerIds) {
         if (text == null) return null;
         if (audienceIdentities == null && (!excluded.isEmpty() || IDENTIFIER.matcher(ALIAS.matcher(text).replaceAll("")).find()))
             loadAudience();
@@ -234,22 +259,21 @@ final class AssistantPrivacy {
         Matcher aliases = ALIAS.matcher(text);
         int position = 0;
         while (aliases.find()) {
-            result.append(maskPlain(text.substring(position, aliases.start())));
+            result.append(maskPlain(text.substring(position, aliases.start()), preserveStreamerIds));
             result.append(replacements.getOrDefault(aliases.group(), aliases.group()));
             position = aliases.end();
         }
-        return result.append(maskPlain(text.substring(position))).toString();
+        return result.append(maskPlain(text.substring(position), preserveStreamerIds)).toString();
     }
 
-    private String maskPlain(String text) {
+    private String maskPlain(String text, boolean preserveStreamerIds) {
         // 先匹配完整昵称，再判断连续数字；新生成的代号不参与编号替换。
-        return ALIAS_OR_IDENTIFIER.matcher(maskNames(text)).replaceAll(match ->
-                Matcher.quoteReplacement(knownUids.contains(match.group()) ? "[编号已隐藏]" : match.group()));
-    }
-
-    private String maskNames(String text) {
         // 一次匹配只替换原文字，生成的代号不再参与下一次昵称匹配。
-        return replacementPattern.matcher(text).replaceAll(match -> Matcher.quoteReplacement(replacements.get(match.group())));
+        String maskedNames = replacementPattern.matcher(text).replaceAll(match -> Matcher.quoteReplacement(
+                preserveStreamerIds && streamerIds.contains(match.group()) ? match.group() : replacements.get(match.group())));
+        return ALIAS_OR_IDENTIFIER.matcher(maskedNames).replaceAll(match -> Matcher.quoteReplacement(
+                knownUids.contains(match.group()) && !(preserveStreamerIds && streamerIds.contains(match.group()))
+                        ? "[编号已隐藏]" : match.group()));
     }
 
     String display(String text) {

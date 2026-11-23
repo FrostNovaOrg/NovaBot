@@ -334,7 +334,7 @@ public class AssistantAskService {
             }
             if (adaptiveThinkingEnabled()) {
                 String previous = qq == null ? previousQuestion(request) : previousQqQuestion;
-                if (requiresAnalysis(question, request.getString("question"), previous, privacy)) budget.useAnalysis();
+                if (requiresAnalysis(question, request.getString("question"), previous, privacy, qq != null)) budget.useAnalysis();
                 difficulty = budget.analysis ? "analysis" : "simple";
                 difficultyResolved.accept(new QuestionTiming(budget.analysis, budget.remaining()));
             }
@@ -352,7 +352,7 @@ public class AssistantAskService {
             while (!budget.remaining().isZero()) {
                 boolean finish = calls >= toolLimit || remainingInput.signum() <= 0
                         || budget.remainingQueries().isZero();
-                AssistantClient.Response response = complete(question, messages, privacy, tools, finish, budget);
+                AssistantClient.Response response = complete(question, messages, privacy, tools, finish, budget, qq != null);
                 var usage = response.usage();
                 remainingInput = remainingInput.subtract(uncachedWeight.multiply(BigDecimal.valueOf(usage.uncachedInputTokens())))
                         .subtract(cachedWeight.multiply(BigDecimal.valueOf(usage.cachedInputTokens())));
@@ -485,7 +485,7 @@ public class AssistantAskService {
                                 + "。请重写一次，保留已核对的数字，把核对不上的数字删除或改成工具数据中有的数。"
                                 + "除非提问人问到，否则不要额外解释口径或缺少的数据。不再查数。"));
                 try {
-                    AssistantClient.Response rewritten = complete(question, messages, privacy, tools, true, budget);
+                    AssistantClient.Response rewritten = complete(question, messages, privacy, tools, true, budget, qq != null);
                     if (rewritten.content() != null && !rewritten.content().isBlank()) {
                         String rewrittenAnswer = privacy.mask(rewritten.content());
                         String rewrittenNumberText = CHINESE_DATE_TIME.matcher(rewrittenAnswer).replaceAll(" ");
@@ -687,10 +687,10 @@ public class AssistantAskService {
     }
 
     private static boolean requiresAnalysis(AssistantClient.Question question, String text, String previousQuestion,
-                                             AssistantPrivacy privacy) {
+                                             AssistantPrivacy privacy, boolean fromQq) {
         try {
-            var input = JSONObject.of("question", privacy.mask(text));
-            if (previousQuestion != null) input.put("previousQuestion", privacy.mask(previousQuestion));
+            var input = JSONObject.of("question", privacy.maskQuestion(text, fromQq));
+            if (previousQuestion != null) input.put("previousQuestion", privacy.maskQuestion(previousQuestion, fromQq));
             var messages = List.of(JSONObject.of("role", "system", "content", DIFFICULTY_PROMPT),
                     JSONObject.of("role", "user", "content", input.toJSONString()));
             var result = question.classifyDifficulty(new AssistantClient.Request(messages, List.of(), "none", 0));
@@ -701,7 +701,8 @@ public class AssistantAskService {
     }
 
     private AssistantClient.Response complete(AssistantClient.Question question, List<JSONObject> messages,
-                                               AssistantPrivacy privacy, List<JSONObject> tools, boolean finish, Budget budget) {
+                                               AssistantPrivacy privacy, List<JSONObject> tools, boolean finish,
+                                               Budget budget, boolean fromQq) {
         // 重新清理全部消息，避免文字中的昵称或编号进入后续轮次。
         var outgoing = new ArrayList<JSONObject>();
         for (JSONObject message : messages) {
@@ -711,10 +712,11 @@ public class AssistantAskService {
                 continue;
             }
             JSONObject copy = JSON.parseObject(message.toJSONString());
-            if (!"system".equals(copy.getString("role")) && copy.get("content") instanceof String content) {
-                boolean structured = "tool".equals(copy.getString("role"))
-                        || "user".equals(copy.getString("role")) && content.startsWith("{");
-                copy.put("content", structured ? maskMessage(content, privacy)
+            String role = copy.getString("role");
+            if (!"system".equals(role) && copy.get("content") instanceof String content) {
+                boolean user = "user".equals(role);
+                boolean structured = "tool".equals(role) || user && content.startsWith("{");
+                copy.put("content", structured ? maskMessage(content, privacy, fromQq && user)
                         : privacy.mask(content));
             }
             outgoing.add(copy);
@@ -724,13 +726,23 @@ public class AssistantAskService {
         return budget.analysis ? question.completeAnalysis(request, remaining) : question.complete(request, remaining);
     }
 
-    private static String maskMessage(String content, AssistantPrivacy privacy) {
+    private static String maskMessage(String content, AssistantPrivacy privacy, boolean qqQuestion) {
         var original = JSON.parseObject(content);
         var masked = (JSONObject) privacy.maskValues(original);
         // 列名是本机字段标识。观众昵称与列名重合时，模型仍需拿到可引用的列名。
         if (original.containsKey("chartColumns")) masked.put("chartColumns", original.get("chartColumns"));
-        if (AssistantSqlRequest.SOURCE.equals(original.getString("source")) && original.containsKey("columns"))
+        if (AssistantSqlRequest.SOURCE.equals(original.getString("source")) && original.containsKey("columns")) {
             masked.put("columns", original.get("columns"));
+            privacy.preserveSqlStreamerNames(original, masked);
+        }
+        if (qqQuestion && original.containsKey("question")) {
+            masked.put("question", privacy.maskQuestion(original.getString("question"), true));
+            var history = original.getJSONArray("history");
+            var safe = masked.getJSONArray("history");
+            for (int i = 0; i < history.size(); i++) {
+                safe.getJSONObject(i).put("question", privacy.maskQuestion(history.getJSONObject(i).getString("question"), true));
+            }
+        }
         if (original.get("previousResults") instanceof JSONArray previous) {
             var safe = masked.getJSONArray("previousResults");
             for (int i = 0; i < previous.size(); i++) {
