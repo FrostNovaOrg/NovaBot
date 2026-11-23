@@ -20,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -53,6 +54,28 @@ final class AssistantSqlQuery {
     private final long from;
     private final long to;
 
+    record Source(AssistantAudienceHistory.Key key, BiFunction<Long, String, Path> file, Long liveStart, String name) { }
+
+    private record Snapshot(Source source, AssistantAudienceIndex.View history) { }
+
+    private static final class Snapshots implements AutoCloseable {
+        final List<Snapshot> items = new ArrayList<>();
+
+        @Override public void close() throws IOException {
+            IOException failure = null;
+            for (var snapshot : items) {
+                if (snapshot.history() == null) continue;
+                try {
+                    snapshot.history().close();
+                } catch (IOException error) {
+                    if (failure == null) failure = error;
+                    else failure.addSuppressed(error);
+                }
+            }
+            if (failure != null) throw failure;
+        }
+    }
+
     AssistantSqlQuery(AssistantSqlRequest request, AssistantQueryContext context, AssistantPrivacy privacy) {
         this.request = request;
         this.privacy = privacy;
@@ -61,19 +84,24 @@ final class AssistantSqlQuery {
         to = request.toAt();
     }
 
-    JSONObject run(AssistantAudienceHistory historyCache, AssistantAudienceHistory.Key key, LiveSessionArchive archive, LiveMetricCatalog.Insights rules,
-                   BiFunction<Long, String, Path> file, Long liveStart, IntPredicate pauseHistory) {
-        if (!"bilibili".equals(key.platform()) && request.tables().stream().anyMatch(table -> table != Table.SESSIONS))
+    JSONObject run(AssistantAudienceHistory historyCache, List<Source> sources, LiveSessionArchive archive,
+                   LiveMetricCatalog.Insights rules, IntPredicate pauseHistory) {
+        if (!"bilibili".equals(sources.get(0).key().platform())
+                && request.tables().stream().anyMatch(table -> table != Table.SESSIONS && table != Table.STREAMERS))
             return rejected("此平台只提供场次汇总");
         if (!AssistantSqlNative.available()) return AssistantSqlNative.unavailable();
-        try (var progress = has(Table.AUDIENCE)
-                ? historyCache.load(key, archive, file, pauseHistory, historyReader(file)) : null) {
-            if (progress != null && progress.view() == null) {
-                return rejected("观众首次出现记录还在建立，已完成 "
-                        + progress.completedSessions() + "/" + progress.totalSessions() + " 场，请稍后再问");
+        try (var snapshots = new Snapshots()) {
+            for (var source : sources) {
+                var file = source.file();
+                var progress = has(Table.AUDIENCE)
+                        ? historyCache.load(source.key(), archive, file, pauseHistory, historyReader(file)) : null;
+                if (progress != null && progress.view() == null) {
+                    return rejected("观众首次出现记录还在建立，已完成 "
+                            + progress.completedSessions() + "/" + progress.totalSessions() + " 场，请稍后再问");
+                }
+                snapshots.items.add(new Snapshot(source, progress == null ? null : progress.view()));
             }
-            var history = progress == null ? null : progress.view();
-            return runWithSnapshot(key, archive, rules, file, liveStart, history);
+            return runWithSnapshots(snapshots.items, archive, rules);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             return rejected("只读查询已中止");
@@ -90,22 +118,23 @@ final class AssistantSqlQuery {
         }
     }
 
-    private JSONObject runWithSnapshot(AssistantAudienceHistory.Key key, LiveSessionArchive archive,
-                                       LiveMetricCatalog.Insights rules, BiFunction<Long, String, Path> file,
-                                       Long liveStart, AssistantAudienceIndex.View history)
+    private JSONObject runWithSnapshots(List<Snapshot> sources, LiveSessionArchive archive, LiveMetricCatalog.Insights rules)
             throws InterruptedException, SQLException, IOException {
         // 同时只让一份库占用内存，装库连接关闭后再打开只读快照。
         DATABASE_LOCK.lockInterruptibly();
         try {
-            var loader = new Loader(file, rules, history);
-            byte[] snapshot;
+            var loader = new Loader(rules);
+            byte[] databaseSnapshot;
             try (var db = AssistantSqlDatabase.open()) {
-                loader.load(db, key, archive, liveStart);
-                snapshot = db.getDatabase().serialize("main");
+                loader.load(db, sources, archive);
+                databaseSnapshot = db.getDatabase().serialize("main");
             }
-            if (history != null) AssistantAudienceHistory.checkUnchanged(key, file, history);
+            for (var snapshot : sources) {
+                if (snapshot.history() != null)
+                    AssistantAudienceHistory.checkUnchanged(snapshot.source().key(), snapshot.source().file(), snapshot.history());
+            }
             Set<String> tables = request.tables().stream().map(Table::key).collect(java.util.stream.Collectors.toUnmodifiableSet());
-            JSONObject result = AssistantSqlNative.select(snapshot, tables, request.sql());
+            JSONObject result = AssistantSqlNative.select(databaseSnapshot, tables, request.sql());
             if (!result.containsKey("reason")) loader.coverage(result);
             return result;
         } finally {
@@ -120,9 +149,7 @@ final class AssistantSqlQuery {
     private static String day(long at) { return StatisticsDay.dateOf(Instant.ofEpochMilli(at)).toString(); }
 
     private final class Loader {
-        private final BiFunction<Long, String, Path> file;
         private final LiveMetricCatalog.Insights rules;
-        private final AssistantAudienceIndex.View history;
         private final EnumMap<Table, PreparedStatement> inserts = new EnumMap<>(Table.class);
         private final Set<Long> visited = new HashSet<>();
         private final Set<Long> seenAudience = new HashSet<>();
@@ -130,32 +157,32 @@ final class AssistantSqlQuery {
         private final Set<String> danmuFields = fields(true);
         private final Detail detail = new Detail();
         private final JSONReader.Context reader = JSONFactory.createReadContext();
+        private Snapshot snapshot;
         private LongFunction<String> aliases;
         private int rows;
+        private int earliestDay = NO_DAY;
         private int invalidLines;
         private int missingEvents;
         private int missingDanmu;
         private int missingMinutes;
 
-        Loader(BiFunction<Long, String, Path> file, LiveMetricCatalog.Insights rules, AssistantAudienceIndex.View history) {
-            this.file = file;
+        Loader(LiveMetricCatalog.Insights rules) {
             this.rules = rules;
-            this.history = history;
         }
 
-        void load(SQLiteConnection db, AssistantAudienceHistory.Key key, LiveSessionArchive archive, Long liveStart)
+        void load(SQLiteConnection db, List<Snapshot> sources, LiveSessionArchive archive)
                 throws SQLException, IOException {
             db.setAutoCommit(false);
             try (var statement = db.createStatement()) {
                 for (Table table : request.tables()) {
                     String columns = table.columns(amountVisible);
-                    statement.executeUpdate("CREATE TABLE " + table.key() + "(" + columns + ")");
+                    statement.executeUpdate("CREATE TABLE " + table.key() + "(" + columns + table.tableConstraints() + ")");
                     int count = columns.split(",").length;
-                    inserts.put(table, db.prepareStatement("INSERT INTO " + table.key()
+                    String target = table == Table.STREAMERS ? "streamers (name, streamer_uid)" : table.key();
+                    inserts.put(table, db.prepareStatement("INSERT INTO " + target
                             + " VALUES (" + String.join(",", Collections.nCopies(count, "?")) + ")"));
                 }
-                archive.forEachOverlapping(key.platform(), key.uid(), from, to, has(Table.EVENTS) || has(Table.AUDIENCE),
-                        MAX_SESSION_CHARS, session -> loadSession(session, liveStart, "bilibili".equals(key.platform())));
+                for (var source : sources) loadStreamer(source, archive);
                 db.setAutoCommit(true);
             } catch (SqlFailure error) {
                 throw error.cause;
@@ -163,6 +190,19 @@ final class AssistantSqlQuery {
                 // 连接负责在任一装库步骤失败时清理剩余的语句和事务。
                 for (var insert : inserts.values()) insert.close();
             }
+        }
+
+        private void loadStreamer(Snapshot current, LiveSessionArchive archive) throws IOException {
+            snapshot = current;
+            visited.clear();
+            seenAudience.clear();
+            Source source = current.source();
+            if (has(Table.STREAMERS)) insert(Table.STREAMERS, source.name());
+            if (current.history() != null) earliestDay = Math.min(earliestDay, current.history().progress.earliestDay());
+            if (request.tables().equals(Set.of(Table.STREAMERS))) return;
+            var key = source.key();
+            archive.forEachOverlapping(key.platform(), key.uid(), from, to, has(Table.EVENTS) || has(Table.AUDIENCE),
+                    MAX_SESSION_CHARS, session -> loadSession(session, source.liveStart(), "bilibili".equals(key.platform())));
         }
 
         private Set<String> fields(boolean danmu) {
@@ -181,9 +221,10 @@ final class AssistantSqlQuery {
             if (!archived(session, liveStart) || !visited.add(start)) return;
             boolean openingInWindow = inWindow(start);
             boolean summary = has(Table.SESSIONS) && openingInWindow;
-            boolean readEvents = bilibili && (summary || has(Table.EVENTS) || history != null);
-            boolean readDanmu = has(Table.DANMU) || has(Table.EVENTS) || history != null;
-            Set<Long> roster = openingInWindow && (has(Table.EVENTS) || history != null)
+            boolean audience = snapshot.history() != null;
+            boolean readEvents = bilibili && (summary || has(Table.EVENTS) || audience);
+            boolean readDanmu = has(Table.DANMU) || has(Table.EVENTS) || audience;
+            Set<Long> roster = openingInWindow && (has(Table.EVENTS) || audience)
                     ? roster(session, count -> checkInterrupted()) : Collections.emptySet();
             var pk = new Pk();
             if (readEvents) loadDetails(session, false, roster, summary ? pk : null);
@@ -201,7 +242,7 @@ final class AssistantSqlQuery {
 
         private void loadDetails(LiveSession session, boolean danmu, Set<Long> roster, Pk pk) {
             long start = session.startTime();
-            Path path = file.apply(start, danmu ? DANMU : EVENTS);
+            Path path = snapshot.source().file().apply(start, danmu ? DANMU : EVENTS);
             boolean present = scan(path, line -> {
                 try {
                     detail.read(line, danmu ? danmuFields : eventFields, reader, true);
@@ -216,7 +257,7 @@ final class AssistantSqlQuery {
                 if (!inWindow(at)) return;
                 boolean putEvent = has(Table.EVENTS) && kind != null && kind != Kind.DANMU;
                 boolean putDanmu = has(Table.DANMU) && kind == Kind.DANMU;
-                if (!putEvent && !putDanmu && history == null) return;
+                if (!putEvent && !putDanmu && snapshot.history() == null) return;
                 String alias = alias(detail.audience);
                 if (alias != null) addAudience(detail.audience, alias);
                 if (putEvent) {
@@ -280,7 +321,7 @@ final class AssistantSqlQuery {
             checkRows(count);
             AssistantMinuteSeries samples;
             try {
-                samples = AssistantMinuteSeries.read(file.apply(start, DETAIL), first, (int) count);
+                samples = AssistantMinuteSeries.read(snapshot.source().file().apply(start, DETAIL), first, (int) count);
             } catch (NoSuchFileException error) {
                 samples = null;
             } catch (IOException error) {
@@ -301,6 +342,7 @@ final class AssistantSqlQuery {
         }
 
         private void addAudience(long uid, String alias) {
+            var history = snapshot.history();
             if (history == null || !seenAudience.add(uid)) return;
             try {
                 int first = history.firstDay(uid);
@@ -316,6 +358,7 @@ final class AssistantSqlQuery {
             var statement = inserts.get(table);
             try {
                 for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);
+                statement.setLong(values.length + 1, snapshot.source().key().uid());
                 statement.executeUpdate();
                 rows++;
             } catch (SQLException error) {
@@ -325,9 +368,8 @@ final class AssistantSqlQuery {
 
         void coverage(JSONObject result) {
             result.put("loadedRows", rows);
-            if (history != null) {
-                int earliest = history.progress.earliestDay();
-                result.put("historyFrom", earliest == NO_DAY ? null : LocalDate.ofEpochDay(earliest).toString());
+            if (has(Table.AUDIENCE)) {
+                result.put("historyFrom", earliestDay == NO_DAY ? null : LocalDate.ofEpochDay(earliestDay).toString());
             }
             if (missingEvents > 0 || missingDanmu > 0 || missingMinutes > 0 || invalidLines > 0) {
                 result.put("coverageNote", "部分场次缺少明细或含坏行，缺少记录不能视为零");

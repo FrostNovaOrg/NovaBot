@@ -21,7 +21,7 @@ final class AssistantPrivacy {
     private final AssistantLocalStore local;
     private final String platform;
     private final Set<Long> excluded;
-    private final Long streamerUid;
+    private final Set<Long> streamerUids;
     private final Supplier<Map<Long, AudienceIdentity>> audience;
     private final Set<String> knownUids = new HashSet<>();
     private Map<Long, AudienceIdentity> audienceIdentities;
@@ -36,12 +36,17 @@ final class AssistantPrivacy {
 
     AssistantPrivacy(AssistantLocalStore local, String platform, Long streamerUid, List<Long> excluded,
                      Supplier<Map<Long, AudienceIdentity>> audience) {
+        this(local, platform, Set.of(streamerUid), excluded, audience);
+    }
+
+    AssistantPrivacy(AssistantLocalStore local, String platform, Set<Long> streamerUids, List<Long> excluded,
+                     Supplier<Map<Long, AudienceIdentity>> audience) {
         this.local = local;
         this.platform = platform;
         this.excluded = Set.copyOf(excluded);
-        this.streamerUid = streamerUid;
+        this.streamerUids = streamerUids;
         this.audience = audience;
-        knownUids.add(streamerUid.toString());
+        streamerUids.forEach(uid -> knownUids.add(uid.toString()));
         excluded.forEach(uid -> knownUids.add(uid.toString()));
         names.putAll(local.nicknames());
         names.forEach((alias, name) -> replacements.put(name, alias));
@@ -54,7 +59,11 @@ final class AssistantPrivacy {
     }
 
     JSONObject prepare(String tool, JSONObject raw, AssistantQueryContext context) {
-        learn(raw);
+        return prepare(tool, raw, context, streamerUids.iterator().next());
+    }
+
+    JSONObject prepare(String tool, JSONObject raw, AssistantQueryContext context, long streamerUid) {
+        learn(raw, streamerUid);
         replacementPattern = null;
         JSONObject result = (JSONObject) copy(raw);
         if ("revenue".equals(tool) && context.amountVisible()) {
@@ -117,7 +126,7 @@ final class AssistantPrivacy {
         for (var entry : identities.entrySet()) {
             Long uid = entry.getKey();
             var identity = entry.getValue();
-            if (!canAttribute(uid) || streamerUid.equals(uid) || identity.latestNickname() == null) continue;
+            if (!canAttribute(uid) || isOnlyStreamer(uid) || identity.latestNickname() == null) continue;
             String alias = encode.apply(uid);
             if (!aliases.contains(alias)) continue;
             names.put(alias, identity.latestNickname());
@@ -130,9 +139,12 @@ final class AssistantPrivacy {
         return true;
     }
 
-    private void learn(Object value) {
+    private boolean isOnlyStreamer(Long uid) { return streamerUids.size() == 1 && streamerUids.contains(uid); }
+
+    private void learn(Object value, long streamerUid) {
         if (value instanceof JSONObject row) {
-            if (row.get("uid") instanceof Number && row.get("uname") instanceof String name && !name.isEmpty() && !streamerUid.equals(row.getLong("uid"))) {
+            if (row.get("uid") instanceof Number && row.get("uname") instanceof String name && !name.isEmpty()
+                    && row.getLongValue("uid") != streamerUid) {
                 Long uid = row.getLong("uid");
                 String alias = excluded.contains(uid) ? "[已隐藏]" : local.alias(platform, uid);
                 if (!excluded.contains(uid)) {
@@ -142,8 +154,8 @@ final class AssistantPrivacy {
                 replacements.put(name, alias);
                 knownUids.add(uid.toString());
             }
-            row.values().forEach(this::learn);
-        } else if (value instanceof Collection<?> values) values.forEach(this::learn);
+            row.values().forEach(child -> learn(child, streamerUid));
+        } else if (value instanceof Collection<?> values) values.forEach(child -> learn(child, streamerUid));
     }
 
     private Object copy(Object value) {
@@ -181,7 +193,7 @@ final class AssistantPrivacy {
     void prepareMemos(List<String> texts) {
         // 首轮查数之前，也要从本机档案识别备忘里仅出现昵称的观众。
         loadAudience().forEach((uid, identity) -> {
-            if (streamerUid.equals(uid) || excluded.contains(uid)) return;
+            if (isOnlyStreamer(uid) || excluded.contains(uid)) return;
             var mentioned = identity.nicknames().stream().filter(name -> !name.isEmpty()
                     && texts.stream().anyMatch(text -> text.contains(name))).toList();
             if (mentioned.isEmpty()) return;
@@ -198,7 +210,7 @@ final class AssistantPrivacy {
         if (audienceIdentities == null) {
             audienceIdentities = audience.get();
             audienceIdentities.forEach((uid, identity) -> {
-                if (!streamerUid.equals(uid)) knownUids.add(uid.toString());
+                knownUids.add(uid.toString());
                 if (excluded.contains(uid)) identity.nicknames().forEach(name -> {
                     if (!name.isEmpty()) replacements.put(name, "[已隐藏]");
                 });

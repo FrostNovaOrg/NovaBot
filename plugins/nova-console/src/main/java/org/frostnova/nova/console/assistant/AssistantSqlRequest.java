@@ -6,13 +6,14 @@ import org.frostnova.nova.core.analytics.StatisticsDay;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, String sql) {
+record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, String sql, List<Long> streamers) {
     static final String NAME = "query_sql";
     static final String SOURCE = "只读查询（直播归档）";
     static final int CALL_LIMIT = 3;
@@ -23,7 +24,7 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
 
     enum Table {
         SESSIONS(
-                "start_at INTEGER PRIMARY KEY, day TEXT, end_at INTEGER, duration_seconds INTEGER, effective_seconds INTEGER, "
+                "start_at INTEGER, day TEXT, end_at INTEGER, duration_seconds INTEGER, effective_seconds INTEGER, "
                         + "messages REAL, online_peak REAL, watched REAL, pk_result TEXT, pk_wins INTEGER, pk_losses INTEGER, pk_draws INTEGER",
                 "start_at 开播时刻，day 开播统计日，end_at 下播时刻，duration_seconds 时长秒数，"
                         + "effective_seconds 有效采集秒数，messages 弹幕条数，online_peak 最高在线，watched 看过人数，"
@@ -44,7 +45,8 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
         DANMU("at INTEGER, day TEXT, session_start INTEGER, audience TEXT, characters INTEGER",
                 "at 发送时刻，day 发送统计日，session_start 该场开播时刻，audience 观众代号，characters 弹幕字数（Unicode 字符）", "", ""),
         AUDIENCE("audience TEXT, first_day TEXT",
-                "audience 查询时间内有留档的观众代号，first_day 首次留档的统计日（可能早于查询范围）", "", "");
+                "audience 查询时间内有留档的观众代号，first_day 首次留档的统计日（可能早于查询范围）", "", ""),
+        STREAMERS("name TEXT", "name 主播昵称", "", "");
 
         private final String columns;
         private final String meanings;
@@ -61,38 +63,51 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
         String key() { return name().toLowerCase(Locale.ROOT); }
 
         String columns(boolean amountVisible) {
-            return amountVisible && !amountColumns.isEmpty() ? columns + ", " + amountColumns : columns;
+            if (this == STREAMERS) return "streamer_uid INTEGER PRIMARY KEY, " + columns;
+            return columns + (amountVisible && !amountColumns.isEmpty() ? ", " + amountColumns : "") + ", streamer_uid INTEGER NOT NULL";
         }
+
+        String tableConstraints() { return this == SESSIONS ? ", PRIMARY KEY (streamer_uid, start_at)" : ""; }
 
         String description(boolean amountVisible) {
             return key() + "：" + meanings + (amountVisible && !amountMeanings.isEmpty() ? "，" + amountMeanings : "") + "。";
         }
     }
 
-    static JSONObject fields(boolean amountVisible) {
-        return JSONObject.of(
+    static JSONObject fields(boolean amountVisible, boolean comparison) {
+        var tables = tables(comparison);
+        var fields = JSONObject.of(
                 "from", JSONObject.of("type", "string", "description", "起始统计日 YYYY-MM-DD，含当天"),
                 "to", JSONObject.of("type", "string", "description", "结束统计日 YYYY-MM-DD，含当天，合计最多 366 天"),
-                "tables", JSONObject.of("type", "array", "minItems", 1, "maxItems", Table.values().length, "uniqueItems", true,
-                        "items", JSONObject.of("type", "string", "enum", tableKeys()),
+                "tables", JSONObject.of("type", "array", "minItems", 1, "maxItems", tables.size(), "uniqueItems", true,
+                        "items", JSONObject.of("type", "string", "enum", tables.stream().map(Table::key).toList()),
                         "description", "只选择查询所需的表及下列列名。\n"
-                                + String.join("\n", Arrays.stream(Table.values()).map(table -> table.description(amountVisible)).toList())),
+                                + String.join("\n", tables.stream().map(table -> table.description(amountVisible)).toList())),
                 "sql", JSONObject.of("type", "string", "maxLength", SQL_BYTES,
                         "description", SINGLE_QUERY + "，UTF-8 最多 16 KiB。计算列用 AS 起简短且不同的列名"));
+        if (comparison) fields.put("streamers", JSONObject.of("type", "array", "minItems", 1, "maxItems", 5,
+                "uniqueItems", true, "items", JSONObject.of("type", "integer"),
+                "description", "可选，只填写本问所列主播的 UID；不填则装入本问的全部主播"));
+        return fields;
     }
 
-    static String description(boolean amountVisible) {
-        return """
-                只读查询。先用现有工具和通用汇总，答不了涉及多表、多步的统计再用本工具。只查询绑定主播的已结束归档。
-                """ + AssistantAggregateQuery.DAY_RULE + "。分钟按格起点归日，跨日场次的明细可能没有对应的 sessions 行。"
+    static String description(boolean amountVisible, boolean comparison) {
+        String scope = comparison
+                ? "只查询本问主播的已结束归档。关联场次与明细时，同时匹配主播 UID 和开播时刻。"
+                    + "audience 的 first_day 按主播统计，可用 streamers 表按 streamer_uid 关联主播昵称。"
+                : "只查询绑定主播的已结束归档。";
+        String attendanceKey = comparison ? "(streamer_uid, session_start, audience)" : "(session_start, audience)";
+        return "只读查询。先用现有工具和通用汇总，答不了涉及多表、多步的统计再用本工具。" + scope + "\n"
+                + AssistantAggregateQuery.DAY_RULE + "。分钟按格起点归日，跨日场次的明细可能没有对应的 sessions 行。"
+                + "各表均有 streamer_uid 列，表示主播 UID。"
                 + "所有时刻为 Unix 毫秒，统计日为 YYYY-MM-DD，未知值为 NULL。只使用 tables 参数说明里的表和列。"
                 + """
 
                 attendance 是来自场次名单的到场记录，时刻按开播估算。数连续到场的观众时，把 events 和 danmu 的
-                (session_start, audience) 去重后使用，只计非 NULL 代号；数礼物等事件时按 kind 筛选。
-                danmu 含文字和表情弹幕，醒目留言归入 events。库中没有昵称、用户编号或留言原文。
+                %s 去重后使用，只计非 NULL 代号；数礼物等事件时按 kind 筛选。
+                danmu 含文字和表情弹幕，醒目留言归入 events。库中没有观众昵称、观众 UID 或留言原文。
                 拒绝名单及匿名观众的代号为 NULL，不计入观众名单、分人或人数统计；其余合计仍包含这些记录。
-                """ + (amountVisible ? "金额单位元，" + AssistantAggregateQuery.AMOUNT_BASIS + "。"
+                """.formatted(attendanceKey) + (amountVisible ? "金额单位元，" + AssistantAggregateQuery.AMOUNT_BASIS + "。"
                 : "当前聊天不显示金额，表中没有任何金额列。")
                 + "首次出现沿用现有归档索引，回答新老观众时写明 historyFrom 留档起点。"
                 + "每问最多调用 3 次，每次最多装入 50 万行，SQL 限时 5 秒，SQLite 内存上限 64 MiB。"
@@ -104,8 +119,9 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
                 + "->> 和 unixepoch() 从 3.38 起支持，concat() 和 string_agg() 从 3.44 起支持。";
     }
 
-    static AssistantSqlRequest parse(JSONObject raw) {
-        if (raw == null || !raw.keySet().equals(FIELDS)) {
+    static AssistantSqlRequest parse(JSONObject raw, boolean comparison) {
+        boolean hasStreamers = comparison && raw != null && raw.containsKey("streamers");
+        if (raw == null || !raw.keySet().containsAll(FIELDS) || raw.size() != FIELDS.size() + (hasStreamers ? 1 : 0)) {
             throw new Invalid("只读查询需要且只接受起止统计日、表名和 SQL");
         }
         LocalDate from;
@@ -118,12 +134,13 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
         }
         long days = ChronoUnit.DAYS.between(from, to);
         if (days < 0 || days >= 366) throw new Invalid("起止统计日需按顺序，范围最多 366 天");
-        if (!(raw.get("tables") instanceof List<?> names) || names.isEmpty() || names.size() > Table.values().length) {
-            throw new Invalid("请选择 1–5 张表");
+        var available = tables(comparison);
+        if (!(raw.get("tables") instanceof List<?> names) || names.isEmpty() || names.size() > available.size()) {
+            throw new Invalid("请选择 1–" + available.size() + " 张表");
         }
         var tables = EnumSet.noneOf(Table.class);
         for (Object name : names) {
-            var table = Arrays.stream(Table.values()).filter(candidate -> candidate.key().equals(name)).findFirst()
+            var table = available.stream().filter(candidate -> candidate.key().equals(name)).findFirst()
                     .orElseThrow(() -> new Invalid("表名须使用工具说明中的表"));
             if (!tables.add(table)) throw new Invalid("表名不可重复");
         }
@@ -132,7 +149,24 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
             throw new Invalid("SQL 超过 16 KiB");
         }
         checkStatement(sql);
-        return new AssistantSqlRequest(from, to, tables, sql);
+        return new AssistantSqlRequest(from, to, tables, sql, hasStreamers ? streamerUids(raw.get("streamers")) : List.of());
+    }
+
+    private static List<Long> streamerUids(Object value) {
+        if (!(value instanceof List<?> items) || items.isEmpty() || items.size() > 5)
+            throw new Invalid("请选择 1–5 位主播的 UID");
+        var streamers = new ArrayList<Long>();
+        for (Object item : items) {
+            long uid;
+            try {
+                uid = AssistantTools.integerValue(item);
+            } catch (IllegalArgumentException | ArithmeticException error) {
+                throw new Invalid("主播 UID 须为整数");
+            }
+            if (streamers.contains(uid)) throw new Invalid("主播 UID 不可重复");
+            streamers.add(uid);
+        }
+        return streamers;
     }
 
     long fromAt() { return StatisticsDay.startOf(from).toEpochMilli(); }
@@ -140,15 +174,21 @@ record AssistantSqlRequest(LocalDate from, LocalDate to, EnumSet<Table> tables, 
     long toAt() { return StatisticsDay.startOf(to.plusDays(1)).toEpochMilli(); }
 
     JSONObject arguments() {
-        return JSONObject.of("from", from.toString(), "to", to.toString(),
+        var args = JSONObject.of("from", from.toString(), "to", to.toString(),
                 "tables", tables.stream().map(Table::key).toList(), "sql", sql);
+        if (!streamers.isEmpty()) args.put("streamers", streamers);
+        return args;
     }
 
     static JSONObject scope(JSONObject arguments) {
-        return JSONObject.of("from", arguments.get("from"), "to", arguments.get("to"), "tables", arguments.get("tables"));
+        var scope = JSONObject.of("from", arguments.get("from"), "to", arguments.get("to"), "tables", arguments.get("tables"));
+        if (arguments.containsKey("streamers")) scope.put("streamers", arguments.get("streamers"));
+        return scope;
     }
 
-    private static List<String> tableKeys() { return Arrays.stream(Table.values()).map(Table::key).toList(); }
+    private static List<Table> tables(boolean comparison) {
+        return Arrays.stream(Table.values()).filter(table -> comparison || table != Table.STREAMERS).toList();
+    }
 
     // SQLite 预编译时另行检查语句余部，且在原生授权回调中检查操作权限。
     private static void checkStatement(String sql) {

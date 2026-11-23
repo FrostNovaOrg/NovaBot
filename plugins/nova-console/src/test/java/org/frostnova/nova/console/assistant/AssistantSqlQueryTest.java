@@ -362,6 +362,46 @@ class AssistantSqlQueryTest {
         assertReason(service.querySql(PLATFORM, STREAMER, args, AssistantQueryContext.CONSOLE, privacy, n -> false), "366 天");
     }
 
+    @Test void bothStreamersShareTheSqlLoadRowLimit() {
+        long second = STREAMER + 10;
+        long from = StatisticsDay.startOf(LocalDate.parse("2025-01-01")).toEpochMilli();
+        long end = from + Duration.ofMinutes(260_000).toMillis();
+        session(STREAMER, from, end);
+        session(second, from, end);
+        var args = arguments(List.of("minutes"), "SELECT COUNT(*) FROM minutes");
+        args.put("from", "2025-01-01");
+        args.put("to", "2025-12-31");
+
+        var result = service.querySql(PLATFORM, Map.of(STREAMER, "合成主播甲", second, "合成主播乙"), args,
+                AssistantQueryContext.CONSOLE, privacy, n -> false);
+
+        assertReason(result, "50 万行");
+    }
+
+    @Test void audienceAndDetailRowsAreAttributedToTheirStreamers() {
+        long second = STREAMER + 10;
+        for (long uid : List.of(STREAMER, second)) {
+            session(uid, START, START + 600_000);
+            event(uid, START, START, "gift", VIEWER);
+            details.appendDanmu(PLATFORM, uid, START, new DanmuRecord(START, VIEWER, "合成观众甲", "合成弹幕", DanmuRecord.Type.DANMU));
+        }
+        var args = arguments(ALL_TABLES, """
+                SELECT s.streamer_uid, a.audience, a.first_day
+                FROM sessions s JOIN audience a USING (streamer_uid)
+                WHERE EXISTS (SELECT 1 FROM events e WHERE e.streamer_uid = s.streamer_uid AND e.audience = a.audience AND e.kind = 'gift')
+                  AND EXISTS (SELECT 1 FROM danmu d WHERE d.streamer_uid = s.streamer_uid AND d.audience = a.audience)
+                  AND EXISTS (SELECT 1 FROM minutes m WHERE m.streamer_uid = s.streamer_uid)
+                ORDER BY s.streamer_uid
+                """);
+
+        var result = service.querySql(PLATFORM, Map.of(STREAMER, "合成主播甲", second, "合成主播乙"), args,
+                AssistantQueryContext.CONSOLE, privacy, n -> false);
+
+        String alias = local.alias(PLATFORM, VIEWER);
+        assertEquals(JSONArray.of(JSONArray.of(STREAMER, alias, "2026-11-01"),
+                JSONArray.of(second, alias, "2026-11-01")), rows(result));
+    }
+
     private void session(long uid, long start, long end) {
         archive.append(new LiveSession(PLATFORM, uid, "合成主播", 9300090000L, start, end, (end - start) / 1000,
                 Map.of("gift_value", 81.75, "guard_value", 26.5, "watched_count", 96.0, "danmu_count", 1.0),
