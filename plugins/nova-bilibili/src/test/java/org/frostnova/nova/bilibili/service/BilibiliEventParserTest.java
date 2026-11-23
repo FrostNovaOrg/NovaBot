@@ -283,7 +283,10 @@ class BilibiliEventParserTest {
                     // 2026-10-10 取表：两台 10-03～10-10 连接日志里出现过的新名
                     "ENTRY_EFFECT_MUST_RECEIVE",
                     // 2026-10-18 取表
-                    "ROOM_NEWS_UPDATE");
+                    "ROOM_NEWS_UPDATE",
+                    // 2026-11-23 取表
+                    "TEAM_PK_NOTIFY",
+                    "WEALTH_NOTIFY");
 
             try {
                 for (String cmd : seen) {
