@@ -334,7 +334,8 @@ class AssistantAskServiceTest {
                 .andExpect(jsonPath("$.followUps[0].question").value(first))
                 .andExpect(jsonPath("$.followUps[1].question").value(second));
         String system = sent.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
-        for (String fragment : List.of("第一行", "最多两条", "1. ", "2. ", "这个录不到。能答的相近问题：", "300 字")) {
+        for (String fragment : List.of("第一行", "最多两条", "1. ", "2. ", "这个录不到。能答的相近问题：", "300 字",
+                "用追问建议", "不在正文里问", "要不要……", "需要我……吗")) {
             assertTrue(system.contains(fragment), fragment);
         }
     }

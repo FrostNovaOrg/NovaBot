@@ -179,6 +179,12 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         if (named.stream().anyMatch(item -> !item.allowed()))
             return CommandReply.of("这里没有为所点名的主播开启智能助手问答");
 
+        if (named.isEmpty() && allowed.size() > 1) {
+            Long recentUid = lastAnsweredStreamer(context, session);
+            if (allowed.stream().anyMatch(item -> item.uid().equals(recentUid)))
+                return start(context, asker, recentUid, question, null, null);
+        }
+
         var options = named.isEmpty() ? allowed : named;
         if (options.size() > 1) {
             pendingFollowUps.remove(asker);
@@ -360,7 +366,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             boolean amountVisible = visibility.isVisible(target);
             if (selected != null && (selected.amountVisible() != amountVisible || !clock.instant().isBefore(selected.expires())))
                 return QqAnswer.text(NO_FOLLOW_UP);
-            var source = local.qqSource("QQ", context.getType(), context.getNum(), context.getSenderUid());
+            var source = qqSource(context);
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
             var texts = history.stream().filter(turn -> turn.content() != null).toList();
@@ -428,6 +434,34 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         String first = "\n1. " + options.get(0).label();
         if (options.size() == 1) return "\n回「问 1」接着问" + first;
         return "\n回「问 1」或「问 2」接着问" + first + "\n2. " + options.get(1).label();
+    }
+
+    private AssistantLocalStore.QqSource qqSource(CommandContext context) {
+        return local.qqSource("QQ", context.getType(), context.getNum(), context.getSenderUid());
+    }
+
+    private Long lastAnsweredStreamer(CommandContext context, String session) {
+        if (histories.isEmpty()) return null;
+        String account;
+        try {
+            account = qqSource(context).account();
+        } catch (AssistantException ignored) {
+            return null;
+        }
+        Instant now = clock.instant();
+        Instant latest = null;
+        Long uid = null;
+        for (var history : histories.entrySet()) {
+            HistoryKey key = history.getKey();
+            if (!session.equals(key.session()) || !account.equals(key.account())) continue;
+            for (Turn turn : history.getValue()) {
+                if (turn.content() != null && current(turn.at(), now) && (latest == null || turn.at().isAfter(latest))) {
+                    latest = turn.at();
+                    uid = key.uid();
+                }
+            }
+        }
+        return uid;
     }
 
     private List<Turn> recentHistory(HistoryKey key, boolean amountVisible) {

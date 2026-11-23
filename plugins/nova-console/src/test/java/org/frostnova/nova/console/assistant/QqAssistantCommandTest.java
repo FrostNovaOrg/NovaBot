@@ -536,6 +536,7 @@ class QqAssistantCommandTest {
         assertEquals("最近播了几场", userPayload(requests.get(0)).getString("question"));
         awaitIdle(GROUP, ROOM);
 
+        clock.advance(Duration.ofMinutes(31));
         group(ASKER, "问 还有几场");
         assertReply("回序号");
         users.get(1).getTargets().remove(second);
@@ -592,10 +593,10 @@ class QqAssistantCommandTest {
         }
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
-        group(ASKER, "4");
+        group(OTHER, "4");
         assertReply("回序号", "2. 测试主播乙");
         assertEquals(1, requests.size());
-        receive(GROUP, ROOM, ASKER, "2", false);
+        receive(GROUP, ROOM, OTHER, "2", false);
         assertReply("收到，查测试主播乙");
         assertReply(LABEL);
         assertEquals(2, requests.size());
@@ -1019,6 +1020,76 @@ class QqAssistantCommandTest {
         group(ASKER, "问 测试主播甲今天怎么样");
         assertReply(LABEL);
         assertTrue(lastHistory().isEmpty());
+    }
+
+    // 接着上一个问题说『继续』，却让我重新选主播。
+    @Test
+    void unnamedFollowUpKeepsRecentStreamerAndHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        String question = "测试主播乙最近播了几场";
+        modelReplies.add(text("最近有开播。"));
+        group(ASKER, "问 " + question);
+        assertReply("最近有开播", LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        clock.advance(Duration.ofMinutes(10));
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        modelReplies.add(text("这周也有开播。"));
+        group(ASKER, "继续");
+
+        assertReply("这周也有开播", LABEL);
+        verify(queries).sessions(BILIBILI, SECOND, 7, 1);
+        assertEquals("继续", userPayload(requests.get(1)).getString("question"));
+        var history = lastHistory();
+        assertEquals(1, history.size());
+        assertEquals(question, history.getJSONObject(0).getString("question"));
+        assertTrue(history.getJSONObject(0).getString("answerForHistory").contains("最近有开播"));
+        String system = requests.get(1).getJSONArray("messages").getJSONObject(0).getString("content");
+        for (String fragment : List.of("用追问建议", "不在正文里问", "要不要……", "需要我……吗")) {
+            assertTrue(system.contains(fragment), fragment);
+        }
+    }
+
+    // 同一个群里别人刚问过的主播，被套到我的问题上。
+    @Test
+    void unnamedFollowUpOnlyUsesHistoryOfTheAsker() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        group(ASKER, "问 测试主播乙最近播了几场");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        group(OTHER, "继续");
+        assertReply("回序号", "1. 测试主播甲", "2. 测试主播乙");
+        assertEquals(1, requests.size());
+
+        group(ASKER, "继续");
+        assertReply(LABEL);
+        assertEquals(2, requests.size());
+        assertEquals(1, lastHistory().size());
+    }
+
+    // 刚问过的主播关了问数，再问时应该让我重新选。
+    @Test
+    void unnamedQuestionShowsMenuWhenLatestStreamerIsDisabled() throws Exception {
+        var second = channel(GROUP, ROOM, true, false);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", second);
+        add(10003L, "测试主播丙", channel(GROUP, ROOM, true, false));
+        group(ASKER, "问 测试主播甲最近播了几场");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 测试主播乙最近播了几场");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        second.setAssistantEnabled(false);
+        group(ASKER, "继续");
+
+        var menu = assertReply("回序号", "1. 测试主播甲", "2. 测试主播丙");
+        assertFalse(menu.getContent().contains("测试主播乙"));
+        assertEquals(2, requests.size());
     }
 
     // 群里刚推完下播报告，有人追问，助手不知道指的是哪份报告。
