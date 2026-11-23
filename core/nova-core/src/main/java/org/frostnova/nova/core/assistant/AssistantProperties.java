@@ -91,7 +91,7 @@ public class AssistantProperties {
     @ConfigLabel("每问查数次数上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int maxToolCalls = 6;
-    /** 一问各轮累计的输入 token 上限。 */
+    /** 一问各轮累计的输入 token 上限。未命中的全额计入，命中的按命中单价除以未命中单价折算。未命中单价为零或服务商未报命中数时，全部按原数计入。 */
     @ConfigLabel("每问累计输入上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int questionInputLimit = 30000;

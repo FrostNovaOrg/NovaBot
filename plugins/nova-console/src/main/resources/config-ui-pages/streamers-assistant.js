@@ -466,9 +466,14 @@ export function mountAssistant(host, identity) {
     if (!canAsk()) return;
     const question = [...text].slice(0, 300).join('');
     if (!question.trim()) return;
-    const history = context.turns.filter(turn => turn.result?.answered === true
-      && typeof turn.result.answerForHistory === 'string' && turn.result.answerForHistory.length <= 16000)
-      .slice(-3).map(turn => ({question: turn.question, answerForHistory: turn.result.answerForHistory}));
+    const history = [];
+    for (let i = context.turns.length - 1; i >= 0 && history.length < 10; i--) {
+      const {question: previousQuestion, result} = context.turns[i];
+      if (result?.answered !== true || typeof result.answerForHistory !== 'string') continue;
+      const answer = result.answerForHistory.trim();
+      if (!answer) continue;
+      history.unshift({question: previousQuestion, answerForHistory: [...answer].slice(0, 1000).join('')});
+    }
     const turn = {question, label, pending: true};
     context.turns.push(turn); context.pending = true; context.draft = ''; input.value = '';
     notify(context);

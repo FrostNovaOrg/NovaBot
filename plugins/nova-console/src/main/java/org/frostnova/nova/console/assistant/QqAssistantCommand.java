@@ -61,8 +61,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private static final int ANSWER_LIMIT = 300;
     private static final int ACK_SECONDS = 8;
     private static final Duration CHOICE_TTL = Duration.ofMinutes(2);
-    private static final Duration HISTORY_TTL = Duration.ofMinutes(10);
-    private static final int HISTORY_LIMIT = 3;
+    private static final Duration FOLLOW_UP_TTL = Duration.ofMinutes(10);
+    private static final Duration HISTORY_TTL = Duration.ofMinutes(30);
     private static final String CHOSEN_UID_PREFIX = "uid:";
     private static final Pattern NUMBER = Pattern.compile("[0-9]+");
     private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
@@ -363,8 +363,10 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
             var texts = history.stream().filter(turn -> turn.content() != null).map(Turn::content).toList();
-            var request = JSONObject.of("question", question, "history", texts.subList(Math.max(0, texts.size() - HISTORY_LIMIT), texts.size()));
-            var previousResults = history.stream().flatMap(turn -> turn.results().stream()).toList();
+            var recentTexts = texts.subList(Math.max(0, texts.size() - AssistantAskService.HISTORY_LIMIT), texts.size());
+            var request = JSONObject.of("question", question, "history", recentTexts);
+            var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
+            var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
             var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults);
             JSONObject result = answer.response();
             PushTarget current = allowedChannel(context, uid);
@@ -374,10 +376,12 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
                 return QqAnswer.text(answered ? AssistantAggregateRequest.HIDDEN_AMOUNT : result.getString("answer"));
 
             if (answered || !answer.results().isEmpty()) {
+                Instant now = clock.instant();
                 var turns = new ArrayList<>(history);
+                turns.removeIf(turn -> !current(turn, now));
                 var content = answered ? JSONObject.of("question", question, "answerForHistory",
                         clip(result.getString("answerForHistory"), ANSWER_LIMIT)) : null;
-                turns.add(new Turn(clock.instant(), amountVisible, content, answer.results()));
+                turns.add(new Turn(now, amountVisible, content, answer.results()));
                 histories.put(key, List.copyOf(turns));
             }
             if (!answered) return QqAnswer.text(result.getString("answer"));
@@ -527,7 +531,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
                         sender.send(message);
                     });
             if (amountVisible == answer.amountVisible() && !answer.followUps().isEmpty())
-                pendingFollowUps.put(asker, new PendingFollowUps(uid, amountVisible, clock.instant().plus(HISTORY_TTL), answer.followUps()));
+                pendingFollowUps.put(asker, new PendingFollowUps(uid, amountVisible, clock.instant().plus(FOLLOW_UP_TTL), answer.followUps()));
         }
     }
 

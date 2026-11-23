@@ -308,16 +308,16 @@ const checks = {
       assert.match(unavailable.node.textContent, /回答由人工智能生成，可能出错；数字以报告为准。/);
     }
   },
-  // 第四条历史或失败记录进请求，会使追问被后台拒绝。
+  // 历史带上失败记录，或超过条数和长度限制，会使追问被后台拒绝。
   async history() {
     let mounted = await mount();
     const successful = [];
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= 14; i++) {
       const question = '问题' + i;
       reply = i === 2 ? {answered: false, reason: 'timeout', answer: '暂未回答', answerForHistory: '失败历史'}
         : {answered: true, answer: '屏幕回答' + i, answerForHistory: '专用历史' + i};
       await ask(mounted, question);
-      assert.deepEqual(requests.at(-1).body.history, successful.slice(-3));
+      assert.deepEqual(requests.at(-1).body.history, successful.slice(-10));
       if (i !== 2) successful.push({question, answerForHistory: reply.answerForHistory});
     }
     httpStatus = 400; reply = {success: false, message: '问题不符合要求'}; await ask(mounted, '被拒绝的问题');
@@ -325,7 +325,8 @@ const checks = {
     reply = {answered: true, answer: '超长历史也正常显示', answerForHistory: '😀'.repeat(8001)};
     await ask(mounted, '超长');
     await ask(mounted, '再追问');
-    assert.deepEqual(requests.at(-1).body.history, successful.slice(-3), '长度超过 16000 的历史跳过');
+    assert.deepEqual(requests.at(-1).body.history, [...successful.slice(-9),
+      {question: '超长', answerForHistory: '😀'.repeat(1000)}], '长回答应按字符截断后带上');
     assert.match(mounted.node.textContent, /超长历史也正常显示/);
     reply = {answered: true, answer: '边界历史', answerForHistory: 'h'.repeat(16000)};
     await ask(mounted, '边界');
@@ -334,7 +335,7 @@ const checks = {
     reply = {answered: true, answer: '关闭后回来的回答', answerForHistory: '关闭历史', remaining: {questionsToday: 6}};
     const pending = ask(mounted, '关闭之前');
     await until(() => requests.at(-1)?.body.question === '关闭之前', '提问应发出');
-    assert.equal(requests.at(-1).body.history.at(-1).answerForHistory.length, 16000);
+    assert.equal(requests.at(-1).body.history.at(-1).answerForHistory.length, 1000);
     assert.ok(mounted.node.querySelector('textarea').disabled);
     assert.match(mounted.node.textContent, /正在查数并回答/);
     const count = requests.length; await ask(mounted, '重复提交'); assert.equal(requests.length, count);
@@ -354,6 +355,18 @@ const checks = {
     await button(mounted.node, '清空对话').fire('click');
     assert.equal(byClass(mounted.node, 'sa-turn').length, 0);
     assert.equal(button(mounted.node, '清空对话'), undefined);
+  },
+  // 一条带大段空白的回答让下一次追问报错。
+  async historyWhitespace() {
+    const mounted = await mount();
+    const answer = '查到了这些场次。';
+    reply = {...initialReply, answer, answerForHistory: ' \n'.repeat(500) + answer + '\t '};
+    await ask(mounted, '最近有哪些场次');
+    reply = initialReply;
+    await ask(mounted, '再看看上周');
+    const history = requests.at(-1).body.history;
+    assert.equal(history.length, 1);
+    assert.ok(history[0].answerForHistory.includes(answer), '送给服务端的历史回答应保留正文');
   },
   // 弹幕原话可能像网页标签，问题、回答、来源和报错都不能进入网页解析器。
   async text() {
