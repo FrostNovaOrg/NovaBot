@@ -362,16 +362,15 @@ function buildCtx(state) {
     session, target: TARGET,
     commands: state.commands,
     subscriptions: state.subscriptions,
-    totalDataAvailable: state.totalDataAvailable,
     quietGlobal: state.quietGlobal,
     summary: {
       revenue: model.revenueSummary(session),
       quiet: model.quietSummary(session, state.quietGlobal),
-      command: model.commandSummary(state.commands, session, state.totalDataAvailable),
+      command: model.commandSummary(state.commands, session),
       subscription: model.subscriptionSummary(state.subscriptions, session),
       atAll: model.atAllStatus(quota, session, TARGET, {}),
     },
-    groups: model.commandGroups(state.commands, session, state.totalDataAvailable),
+    groups: model.commandGroups(state.commands, session),
   };
 }
 

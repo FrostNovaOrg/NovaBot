@@ -2131,11 +2131,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 流水排行。有分人流水表按它排；没有的旧场次（回放、补出报告）按礼物＋醒目留言的
      * 分人数据排，并写明这一场少算了上舰——上舰那一截旧数据里没有，硬编一个数进来才是出错。
-     * 合成那份在 {@link RevenueRankings}，与排行榜命令共用
-     * <p>
-     * 有分人流水表的场次不写口径说明（{@link BilibiliLiveMetric#REVENUE_RANKING_NOTE}）：
-     * 报告里不解释数是怎么算的，那句只留给群里的排行榜命令。回落那句不是解释口径，
-     * 是告诉人这一场的数不全，所以留着
+     * 旧场次的榜单由 {@link RevenueRankings} 合成。
      */
     private void drawRevenueRanking(CommonPainter painter, String platform, Long uid, int limit) {
         if (limit <= 0) {

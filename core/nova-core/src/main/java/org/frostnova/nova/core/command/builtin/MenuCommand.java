@@ -5,7 +5,6 @@ import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.command.NovaCommand;
-import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.lang.StringUtil;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -87,13 +86,9 @@ public class MenuCommand implements NovaCommand {
             if (!command.availableIn(context)) {
                 continue;
             }
-            // 按用法名记的账要按用法名读，而且只数本机用得上的格。
-            // 本机没开的那一格不在禁用表里，问它也只有一句「没开」——把它算进「全都关了」，
-            // 只关了还能用的那一格，菜单仍会列出这一行，照着发却只收到拒绝。
-            // 能用的格一个都没有时不当关掉看：空集上「全都关了」恒真，而恒真与真关了长得一样
             if (command.disableable()) {
-                List<String> usable = usableKeys(command, context);
-                if (!usable.isEmpty() && usable.stream().allMatch(key ->
+                List<String> keys = command.usageKeys(context);
+                if (!keys.isEmpty() && keys.stream().allMatch(key ->
                         disabledForAll(command, context, key))) {
                     continue;
                 }
@@ -128,41 +123,6 @@ public class MenuCommand implements NovaCommand {
         if (selection == null) return settings.isDisabled(context.getPlatform(), context.getType(), context.getNum(), key);
         return selection.users().stream().allMatch(user -> settings.isDisabled(
                 org.frostnova.nova.core.model.ChannelSettings.target(user, context.getPlatform(), context.getType(), context.getNum()), key));
-    }
-
-    /**
-     * 这一行里本机用得上的那些格
-     * <p>
-     * 与控制台主开关同一问：某一格在这台机器上开没开，按这一格自己的拼写去问，
-     * 不按整条命令问。本机没开累计数据时，累计那一格就不参与「是不是全关了」。
-     * @param command 这一行的命令
-     * @param session 发菜单的那个会话，账按它读
-     * @return 用得上的用法名，可能为空
-     */
-    private static List<String> usableKeys(NovaCommand command, CommandContext session) {
-        List<String> usable = new ArrayList<>();
-        for (String key : command.usageKeys(session)) {
-            if (command.availableFor(cellOf(key))) {
-                usable.add(key);
-            }
-        }
-        return usable;
-    }
-
-    /**
-     * 按某一格的拼写造一句，只用来问「这一格在这台机器上开没开」
-     * <p>
-     * 会话留空：这一问与谁在哪个群发的无关。带空格的拼写把后半当参数，
-     * 与认「直播间数据 总」是不是累计用的是同一套拆法。
-     */
-    private static CommandContext cellOf(String key) {
-        String trimmed = key.trim();
-        String[] parts = trimmed.split("\\s+");
-        List<String> args = new ArrayList<>();
-        for (int i = 1; i < parts.length; i++) {
-            args.add(parts[i]);
-        }
-        return new CommandContext(null, PushTargetType.GROUP, null, null, parts[0], args, trimmed);
     }
 
     /**

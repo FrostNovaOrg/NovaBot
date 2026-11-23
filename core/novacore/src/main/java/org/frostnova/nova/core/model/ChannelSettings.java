@@ -8,9 +8,17 @@ import java.util.Set;
 /** 一位主播在一个群或好友上的设置。 */
 public final class ChannelSettings {
     public static final Set<String> COMMAND_KEYS = Set.of("开播@我", "取消开播@我", "动态@我", "取消动态@我",
-            "开播@名单", "动态@名单", "直播报告", "直播间数据", "直播间总数据", "数据排行榜", "总数据排行榜");
+            "开播@名单", "动态@名单", "直播报告");
+
+    private static final Set<String> RETIRED_COMMAND_KEYS =
+            Set.of("直播间数据", "直播间总数据", "数据排行榜", "总数据排行榜");
 
     private ChannelSettings() { }
+
+    /** 允许旧配置保留已退役的通道开关键。 */
+    public static boolean isKnownCommandKey(String key) {
+        return COMMAND_KEYS.contains(key) || RETIRED_COMMAND_KEYS.contains(key);
+    }
 
     public static PushTarget target(PushUser user, String platform, PushTargetType type, Long num) {
         if (user == null || user.getTargets() == null) return null;

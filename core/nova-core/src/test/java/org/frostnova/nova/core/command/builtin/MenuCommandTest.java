@@ -36,13 +36,13 @@ public class MenuCommandTest {
     private static final Long GROUP = 30003L;
 
     /**
-     * 不限群聊的六条：私聊菜单只该列这些
+     * 不限群聊的命令：私聊菜单只该列这些
      * <p>
      * 控制台会话卡片的 {@code menuHidden} 与菜单正文共用这一份，改一处漏一处会让
      * 私聊菜单和通道页置灰对不上。
      */
     public static final List<String> PRIVATE_OK = List.of(
-            "菜单", "直播报告", "数据排行榜", "总数据排行榜", "直播间数据", "直播间总数据");
+            "菜单", "直播报告");
 
     /**
      * 仅限群聊的八条：私聊菜单不该出现
@@ -60,9 +60,9 @@ public class MenuCommandTest {
     void setUp() {
         CommandDispatcher dispatcher = mock(CommandDispatcher.class);
         when(dispatcher.all()).thenReturn(List.of(
-                stub("直播间数据", "数据查询", true),
-                stub("数据排行榜", "数据查询", true),
-                stub("直播间总数据", "数据查询", false),
+                stub("直播报告", "数据查询", true),
+                stub("统计", "数据查询", true),
+                stub("问数", "数据查询", false),
                 stub("开播@我", "提醒订阅", true)));
 
         @SuppressWarnings("unchecked")
@@ -91,7 +91,7 @@ public class MenuCommandTest {
         assertEquals(1, count(text, "【数据查询】"));
         assertEquals(1, count(text, "【提醒订阅】"));
         // 分类标题应排在自己那组命令之前
-        assertTrue(text.indexOf("【数据查询】") < text.indexOf("直播间数据"));
+        assertTrue(text.indexOf("【数据查询】") < text.indexOf("直播报告"));
         assertTrue(text.indexOf("【提醒订阅】") < text.indexOf("开播@我"));
     }
 
@@ -113,21 +113,21 @@ public class MenuCommandTest {
         // 列出来的下场一样——照着发一遍，收到一句拒绝
         String text = menu.execute(context()).content();
 
-        assertFalse(text.contains("直播间总数据"), text);
-        assertTrue(text.contains("直播间数据"), text);
+        assertFalse(text.contains("问数"), text);
+        assertTrue(text.contains("直播报告"), text);
     }
 
     @Test
-    @DisplayName("私聊菜单只列能在私聊用的六条，群聊十四条照旧")
+    @DisplayName("私聊菜单只列能在私聊用的命令")
     void privateMenuOmitsGroupOnlyCommands() {
         MenuCommand full = menuOfFourteen();
         List<String> groupNames = listedNames(full.execute(context(PushTargetType.GROUP)).content());
         String friendText = full.execute(context(PushTargetType.FRIEND)).content();
         List<String> friendNames = listedNames(friendText);
 
-        assertEquals(14, groupNames.size(), "群聊菜单：" + groupNames);
+        assertEquals(PRIVATE_OK.size() + GROUP_ONLY_NAMES.size(), groupNames.size(), "群聊菜单：" + groupNames);
         assertEquals(Set.copyOf(allFourteenNames()), Set.copyOf(groupNames));
-        assertEquals(6, friendNames.size(), "私聊菜单：" + friendText);
+        assertEquals(PRIVATE_OK.size(), friendNames.size(), "私聊菜单：" + friendText);
         assertEquals(Set.copyOf(PRIVATE_OK), Set.copyOf(friendNames));
         for (String name : GROUP_ONLY_NAMES) {
             assertFalse(friendNames.contains(name), name + " 不该出现在私聊菜单：" + friendText);

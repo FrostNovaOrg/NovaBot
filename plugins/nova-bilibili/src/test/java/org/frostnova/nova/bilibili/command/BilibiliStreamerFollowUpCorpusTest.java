@@ -132,26 +132,26 @@ class BilibiliStreamerFollowUpCorpusTest {
     private static Stream<Corpus> corpus() {
         return Stream.of(
                 corpus("问完回一个序号 —— 照着办，用的是选中的那位",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         at("2", "已出图：主播乙")),
 
                 corpus("回「全部」—— 展开完整清单，序号照旧管用",
-                        at("直播间数据", "还有 3 位，回「全部」展开"),
+                        at("直播报告", "还有 3 位，回「全部」展开"),
                         at("全部", "8. 主播辛（10008）", "!还有 3 位"),
                         at("8", "已出图：主播辛")),
 
                 corpus("序号超出范围 —— 不当序号看，那次追问也不该被它用掉",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         at("99", "!已出图"),
                         at("2", "已出图：主播乙")),
 
                 corpus("回过序号之后再省掉参数 —— 还是问一遍，不替人记上次那位",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         at("2", "已出图：主播乙"),
-                        atAfter(Duration.ofSeconds(5), "直播间数据", "回序号选一位", "!已出图")),
+                        atAfter(Duration.ofSeconds(5), "直播报告", "回序号选一位", "!已出图")),
 
                 corpus("同一次追问只认一个答案 —— 选过之后再回一个序号不再照办",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         at("2", "已出图：主播乙"),
                         at("3", "!已出图：主播丙")),
 
@@ -159,16 +159,16 @@ class BilibiliStreamerFollowUpCorpusTest {
                         at("2", "用法：", "!已出图")),
 
                 corpus("答的是别人那份追问 —— 不算数，问的那个人自己回才算",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         atBy(OTHER, "2", "!已出图"),
                         at("2", "已出图：主播乙")),
 
                 corpus("差一点满两分钟 —— 还算数",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         atAfter(Duration.ofSeconds(119), "2", "已出图：主播乙")),
 
                 corpus("过了两分钟 —— 作废，不照着办",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         atAfter(Duration.ofSeconds(121), "2", "!已出图", "用法：")),
 
                 // 上一行只说了「作废」，而作废之后<b>还问不问得出来</b>是另一件事：
@@ -176,32 +176,32 @@ class BilibiliStreamerFollowUpCorpusTest {
                 // 这一行要走完 121 秒＋命令冷却两道时间，靠真等没人会跑第二遍——
                 // 分发器与追问因此共用同一把推着走的时钟
                 corpus("过期之后重新问 —— 清单照样问得出来",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         atAfter(Duration.ofSeconds(121), "2", "!已出图"),
-                        atAfter(Duration.ofSeconds(5), "直播间数据", "回序号选一位")),
+                        atAfter(Duration.ofSeconds(5), "直播报告", "回序号选一位")),
 
                 // 以下几行钉「问完之后不 @ 也答得上」：机器人刚在群里问过「是哪一位」，
                 // 这句话就是对它说的，不该还要求使用者先 @ 一遍
                 corpus("问完没 @ 回一个序号 —— 照常执行，用的是选中的那位",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         plain("2", "已出图：主播乙")),
 
                 corpus("问完没 @ 回「全部」—— 展开完整清单",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         plain("全部", "8. 主播辛（10008）", "!还有 3 位")),
 
                 corpus("别人没 @ 回同一个序号 —— 不出声，追问还在，问的人自己回才算",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         // 隔 5 秒再说下一句：挤在冷却窗里的沉默分不出是「没接话」还是「被冷却挡了」
                         plainByAfter(OTHER, Duration.ofSeconds(5), "2", "!已出图", "!用法："),
                         plainAfter(Duration.ofSeconds(5), "2", "已出图：主播乙")),
 
                 corpus("没 @ 的普通单词 —— 不出声、不回菜单、不吃冷却，紧接着的命令照常问得出来",
                         plain("今天天气不错", "!已出图", "!用法："),
-                        at("直播间数据", "回序号选一位")),
+                        at("直播报告", "回序号选一位")),
 
                 corpus("没 @ 的多词消息（首词是数字）—— 不出声、不回菜单，也不吃掉那次追问",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         plainAfter(Duration.ofSeconds(5), "2 3", "!已出图", "!用法："),
                         plainAfter(Duration.ofSeconds(5), "2", "已出图：主播乙")),
 
@@ -211,7 +211,7 @@ class BilibiliStreamerFollowUpCorpusTest {
                 // 单词才走「不 @ 也认」这一条：@ 之后的原路径一个字不动，
                 // 多词仍按第一个词认领
                 corpus("已 @ 的原路径照旧 —— @ 后多词仍按第一个词认领",
-                        at("直播间数据", "回序号选一位"),
+                        at("直播报告", "回序号选一位"),
                         at("2 你猜", "已出图：主播乙")));
     }
 
@@ -239,8 +239,8 @@ class BilibiliStreamerFollowUpCorpusTest {
     @DisplayName("重跑时把选中那位接在原参数末尾 —— 原有参数一字不动")
     void rerunCarriesTheChoiceAsTheLastArgument() {
         // 上面那张表走的都是不带参数的命令，量不到这一条：选择既然不再存在任何地方，
-        // 它只能跟着这一次重跑走，而带参数的命令（「数据排行榜 礼物 2」）里，
-        // 放错位置就会把榜单名挤走——现象是回一句「请指明要看哪张榜」，与追问丢了长得一样
+        // 它只能跟着这一次重跑走，而带参数的命令（「@名单 开播 2」）里，
+        // 放错位置会把「开播」挤出首参，影响用法键的选择。
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
@@ -256,15 +256,13 @@ class BilibiliStreamerFollowUpCorpusTest {
             candidates.add(streamer(index));
         }
         choice.ask(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
-                "数据排行榜", List.of("礼物", "2"), "数据排行榜 礼物 2"), choice.rank(candidates));
+                "@名单", List.of("开播", "2"), "@名单 开播 2"), choice.rank(candidates));
 
         CommandFollowUp.Claimed claimed = choice.claim(new CommandContext(PLATFORM, PushTargetType.GROUP,
                 GROUP, ASKER, "3", List.of(), "3"));
 
-        assertEquals("数据排行榜", claimed.command());
-        // 「数据排行榜」认参数时丢掉三位以内的数字（原来是页码）、把更长的当 uid，
-        // 因此接在末尾的这一串走的与他自己打 uid 那一次是同一条路（见该命令自己的那把尺）
-        assertEquals(List.of("礼物", "2", "10003"), claimed.args());
+        assertEquals("@名单", claimed.command());
+        assertEquals(List.of("开播", "2", "10003"), claimed.args());
     }
 
     /**
@@ -392,7 +390,7 @@ class BilibiliStreamerFollowUpCorpusTest {
 
         @Override
         public String name() {
-            return "直播间数据";
+            return "直播报告";
         }
 
         @Override

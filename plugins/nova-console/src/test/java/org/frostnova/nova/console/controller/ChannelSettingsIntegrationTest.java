@@ -2,7 +2,6 @@ package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.*;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
-import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -44,7 +43,6 @@ class ChannelSettingsIntegrationTest {
     LiveDataService live;
     BilibiliLiveReportPainter painter;
     BilibiliLiveReportCommand report;
-    BilibiliRankingCommand ranking;
     MenuCommand menu;
     DisableCommand disable;
     EnableCommand enable;
@@ -81,7 +79,6 @@ class ChannelSettingsIntegrationTest {
         when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         var choice = mock(BilibiliStreamerChoice.class);
         report = new BilibiliLiveReportCommand(source, choice, live, painter, revenue);
-        ranking = new BilibiliRankingCommand(source, choice, live, mock(BilibiliDataQueryPainter.class), revenue, new NovaBilibiliProperties());
         sender = mock(NovaMessageSender.class);
         replies = new ArrayList<>();
         doAnswer(i -> { Message message = i.getArgument(0); if (gate.allowedFor(message)) replies.add(message); return null; }).when(sender).send(any());
@@ -94,7 +91,7 @@ class ChannelSettingsIntegrationTest {
             public String description() { return "查询天气"; }
             public CommandReply execute(CommandContext context) { return CommandReply.of("晴天"); }
         };
-        var commands = List.<NovaCommand>of(report, ranking, menu, disable, enable, plugin);
+        var commands = List.<NovaCommand>of(report, menu, disable, enable, plugin);
         ObjectProvider<NovaCommand> commandProvider = mock(ObjectProvider.class);
         when(commandProvider.iterator()).thenAnswer(i -> commands.iterator());
         when(commandProvider.orderedStream()).thenAnswer(i -> commands.stream());
@@ -417,6 +414,38 @@ class ChannelSettingsIntegrationTest {
         }
     }
 
+    @Test @DisplayName("旧通道的退役命令开关不影响推送页读写直播报告开关")
+    void channelWithRetiredCommandSwitchesStaysEditable() throws Exception {
+        var retired = List.of("直播间数据", "直播间总数据", "数据排行榜", "总数据排行榜");
+        var raw = JSONArray.parseArray(Files.readString(file));
+        var channel = raw.getJSONObject(0).getJSONArray("targets").getJSONObject(0);
+        var disabled = new ArrayList<>(retired);
+        disabled.add("直播报告");
+        channel.put("disabledCommands", disabled);
+        Files.writeString(file, raw.toJSONString());
+        refresh();
+
+        var controller = runtime();
+        var commands = controller.state().getJSONArray("commands").toJSONString();
+        for (String name : retired) assertFalse(commands.contains(name), commands);
+        assertTrue(commands.contains("直播报告"), commands);
+        assertTrue(settings.isDisabled(target(0), "直播报告"));
+
+        var toggle = JSONObject.of("platform", "qq", "type", 1, "num", 100,
+                "streamerPlatform", "bilibili", "streamerUid", 10001, "command", "直播报告", "disabled", false);
+        var enabled = controller.toggleCommand(toggle).getBody();
+        assertTrue(enabled.getBooleanValue("success"), enabled.toJSONString());
+        assertFalse(settings.isDisabled(target(0), "直播报告"));
+        assertEquals(retired, target(0).getDisabledCommands());
+        assertNull(target(1).getDisabledCommands());
+
+        toggle.put("disabled", true);
+        var turnedOff = controller.toggleCommand(toggle).getBody();
+        assertTrue(turnedOff.getBooleanValue("success"), turnedOff.toJSONString());
+        assertEquals(disabled, target(0).getDisabledCommands());
+        assertNull(target(1).getDisabledCommands());
+    }
+
     @Test @DisplayName("旧金额静音和主播命令记录不再占残留会话，插件命令与订阅仍可管理")
     void orphanRowsOnlyIncludeEffectiveState() {
         revenue.set("qq", PushTargetType.GROUP, 999L, true);
@@ -496,7 +525,7 @@ class ChannelSettingsIntegrationTest {
         assertFalse(list.execute(context("@名单", "甲")).content().contains("开播"));
     }
 
-    @Test @DisplayName("同群两位主播金额互不影响，下播与直播报告及金额榜使用各自设置")
+    @Test @DisplayName("同群两位主播的下播与直播报告使用各自的金额设置")
     void revenueIsScopedToStreamer() {
         target(0).setRevenueVisible(false);
         target(1).setRevenueVisible(true);
@@ -510,10 +539,6 @@ class ChannelSettingsIntegrationTest {
         var options = org.mockito.ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
         verify(painter, times(4)).paint(anyString(), any(), options.capture(), any());
         assertEquals(List.of(false, false, true, true), options.getAllValues().stream().map(BilibiliLiveReportOptions::isShowRevenue).toList());
-        assertTrue(ranking.execute(context("数据排行榜", "礼物", "甲")).content().contains("不展示「甲」的金额相关榜单"));
-        var visibleReply = ranking.execute(context("数据排行榜", "礼物", "乙")).content();
-        assertFalse(visibleReply.contains("不展示"));
-        assertFalse(visibleReply.contains("金额相关榜单"));
     }
 
     @Test @DisplayName("甲静音不会阻止乙推送或菜单，两位都静音才停菜单，全局关闭仍拦一切")

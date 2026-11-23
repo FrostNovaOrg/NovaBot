@@ -8,7 +8,6 @@ import org.frostnova.nova.bilibili.model.Room;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.NovaStateStore;
@@ -132,27 +131,6 @@ class BoxProfitLossBarColorTest {
                 new NovaBilibiliProperties(), new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties())));
         String base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(boxOnly(), true))
                 .orElseThrow(() -> new AssertionError("报告没画出来"));
-
-        assertBarColors(decode(base64));
-    }
-
-    @Test
-    @DisplayName("群里查榜「盲盒盈亏」：亏了的行条子是绿色（含第 3 名），赚了的行是名次色")
-    void queryRankingPaintsLossBarsGreen() throws Exception {
-        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
-        when(api.getBilibiliImage(anyString())).thenReturn(Optional.empty());
-        when(api.fetchBilibiliImage(anyString())).thenReturn(Optional.empty());
-
-        List<UserScore> rows = new ArrayList<>();
-        for (int i = 0; i < SCORES.length; i++) {
-            rows.add(new UserScore(i + 1L, "观众" + (i + 1), SCORES[i]));
-        }
-
-        BilibiliDataQueryPainter painter = new BilibiliDataQueryPainter(recordingFactory(), api);
-        String base64 = painter.paintRanking(
-                        new BilibiliDataQueryPainter.Header("盲盒盈亏排行榜", "本场数据 · 测试主播的直播间", null),
-                        rows, 1, score -> (score >= 0 ? "+¥" : "-¥") + Math.abs(score), null)
-                .orElseThrow(() -> new AssertionError("查榜图没画出来"));
 
         assertBarColors(decode(base64));
     }

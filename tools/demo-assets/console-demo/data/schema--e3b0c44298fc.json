@@ -1064,36 +1064,6 @@
 					"sensitive":false,
 					"summary":"填写图片路径；留空不显示。",
 					"widget":"string"
-				},
-				{
-					"defaultValue":50,
-					"description":"排行榜一张图最多列多少名，单位：名；榜上人多时图末写「其余 N 名未列出」，高度不够时还会再少列。保存后立刻生效。",
-					"effect":"IMMEDIATE",
-					"group":"report",
-					"help":"排行榜一张图最多列多少名，单位：名；榜上人多时图末写「其余 N 名未列出」，高度不够时还会再少列。保存后立刻生效。",
-					"label":"排行榜 · 最多列出名次",
-					"level":"COMMON",
-					"name":"novabot.bilibili.ranking.top-n",
-					"order":7,
-					"sensitive":false,
-					"summary":"实际名次数还受图片高度限制。",
-					"unit":"名",
-					"widget":"integer"
-				},
-				{
-					"defaultValue":10000,
-					"description":"排行榜整图的高度上限，单位：像素；装不下的名次不画、计进末尾的「其余 N 名未列出」。手机上嫌长或截得多时调这里。",
-					"effect":"IMMEDIATE",
-					"group":"report",
-					"help":"排行榜整图的高度上限，单位：像素；装不下的名次不画、计进末尾的「其余 N 名未列出」。手机上嫌长或截得多时调这里。",
-					"label":"排行榜 · 整图高度上限",
-					"level":"COMMON",
-					"name":"novabot.bilibili.ranking.height-limit",
-					"order":8,
-					"sensitive":false,
-					"summary":"超出高度的名次不绘制，计入「其余 N 名未列出」。",
-					"unit":"像素",
-					"widget":"integer"
 				}
 			],
 			"group":"report",
