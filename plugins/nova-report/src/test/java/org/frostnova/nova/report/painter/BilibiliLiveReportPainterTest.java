@@ -771,6 +771,34 @@ class BilibiliLiveReportPainterTest {
         };
     }
 
+    // 报告里的观众昵称跟着进了助手。
+    @Test
+    void historySummaryOmitsGuardRoster() {
+        long uid = STREAMER.getUid();
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, uid, start);
+        liveDataService.setLiveEndTime(PLATFORM, uid, start + 7_200_000L);
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.DANMU_COUNT, 106);
+        liveDataService.recordLiveMetricUser(PLATFORM, uid, BilibiliLiveMetric.DANMU_USERS, 90000001L);
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.GUARD_OPEN_COUNT, 1);
+        liveDataService.incrementLiveMetric(PLATFORM, uid, BilibiliLiveMetric.GUARD_VALUE, 52.0);
+        liveDataService.recordLiveMetricUser(PLATFORM, uid, BilibiliLiveMetric.GUARD_USERS, 90000001L);
+        var hooked = painterWithGuards(Optional.of(List.of(new GuardMember(90000001L, "测试舰长甲", 3, 100))));
+        var options = BilibiliLiveReportOptions.of(null, false);
+        assertTrue(hooked.textReport(PLATFORM, STREAMER, options).contains("测试舰长甲"));
+
+        String summary = hooked.historySummary(PLATFORM, STREAMER, options);
+        assertFalse(summary.contains("测试舰长甲"), summary);
+        assertFalse(summary.contains("90000001"), summary);
+        assertFalse(summary.contains("大航海名单"), summary);
+        assertFalse(summary.contains("绘制失败"), summary);
+        assertFalse(summary.contains("¥"), summary);
+        assertTrue(summary.contains("付费互动 1 人"), summary);
+        assertTrue(summary.contains("弹幕 106 条"), summary);
+        assertTrue(summary.contains("大航海 1 次"), summary);
+    }
+
     @Test
     @DisplayName("没有缺口时不该多出一句话")
     void saysNothingWithoutGap() {

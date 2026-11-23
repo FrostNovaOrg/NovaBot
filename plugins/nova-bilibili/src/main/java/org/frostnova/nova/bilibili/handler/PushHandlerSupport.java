@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * 推送处理器公共逻辑
@@ -145,6 +146,12 @@ public final class PushHandlerSupport {
      */
     public static void send(NovaMessageSender sender, PushTarget target, String content,
                      Runnable onImageDegraded, String atAllFallback) {
+        send(sender, target, content, onImageDegraded, atAllFallback, null);
+    }
+
+    /** 每个消息段确认送达后运行成功回调。 */
+    public static void send(NovaMessageSender sender, PushTarget target, String content,
+                     Runnable onImageDegraded, String atAllFallback, Consumer<Message> onSuccess) {
         if (StringUtil.isBlank(content)) {
             return;
         }
@@ -154,6 +161,9 @@ public final class PushHandlerSupport {
             message.setChannel(target);
             if (onImageDegraded != null) {
                 message.addOnImageDegradedCallback(onImageDegraded);
+            }
+            if (onSuccess != null) {
+                message.addOnSuccessCallback(() -> onSuccess.accept(message));
             }
             // 挂在每一条上而不是只挂含占位符的那一条：谁含占位符是 {next} 切出来的结果，
             // 在这里再判一遍等于把切分规则抄第二份，而抄错的那一次没有任何现象

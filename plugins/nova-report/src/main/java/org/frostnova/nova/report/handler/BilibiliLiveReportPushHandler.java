@@ -16,19 +16,23 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.HandlerOption;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.HandlerPackageNames;
+import org.frostnova.nova.core.service.ReportDeliveryListener;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * 下播报告推送处理器
@@ -56,6 +60,9 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
     @Autowired(required = false)
     private LiveReportRenderCache rendered = new LiveReportRenderCache();
+
+    @Autowired(required = false)
+    private ReportDeliveryListener reportDeliveryListener;
 
     private final PaintOnce drawn = new PaintOnce();
 
@@ -116,7 +123,23 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                     return MessagePlaceholders.escapeExternalText(painter.textReport(event.getPlatform(), event.getSource(), options));
                 });
 
-        PushHandlerSupport.send(sender, target, report);
+        Consumer<Message> onSuccess = null;
+        var listener = reportDeliveryListener;
+        if (listener != null) {
+            try {
+                // 发送可能排队，趁本场统计仍在时取下摘要。
+                var platform = event.getPlatform();
+                var source = event.getSource();
+                var uid = source.getUid();
+                var summary = painter.historySummary(platform, source, options);
+                onSuccess = sent -> listener.reportDelivered(new ReportDeliveryListener.Report(
+                        sent.getPlatform(), sent.getType(), sent.getNum(), platform, uid,
+                        ReportDeliveryListener.Kind.LIVE, Instant.now(), showRevenue, summary));
+            } catch (RuntimeException error) {
+                log.warn("无法生成下播报告的问答摘要", error);
+            }
+        }
+        PushHandlerSupport.send(sender, target, report, null, null, onSuccess);
     }
 
     @Override

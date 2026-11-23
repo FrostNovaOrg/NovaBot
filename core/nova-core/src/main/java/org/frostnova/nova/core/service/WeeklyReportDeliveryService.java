@@ -42,6 +42,9 @@ public class WeeklyReportDeliveryService {
     private final WeeklyReportDeliveryStore store;
     private final Clock clock;
     private final ReportPaletteSettings palettes;
+    @Autowired(required = false)
+    private ReportDeliveryListener reportDeliveryListener;
+
     private ThreadPoolTaskScheduler scheduler;
     private boolean started;
     private boolean startupPending;
@@ -177,7 +180,7 @@ public class WeeklyReportDeliveryService {
         Message message;
         try {
             // 用本期到点的时刻固定统计周，周一六点后顺延也不会跳到下一统计周。
-            message = message(record.subscription(), target, Instant.ofEpochMilli(record.dueAt()), drawn);
+            message = message(record.subscription(), target, Instant.ofEpochMilli(record.dueAt()), drawn, true);
         } catch (RuntimeException e) {
             store.update(record, Status.FAILED, "周报生成失败：" + e.getMessage(), now);
             return;
@@ -200,16 +203,18 @@ public class WeeklyReportDeliveryService {
         store.update(sending, status, reason, clock.instant());
     }
     private Message message(String subscription, PushTarget target, Instant period,
-                            Map<String, WeeklyReport.Preview> drawn) {
+                            Map<String, WeeklyReport.Preview> drawn, boolean scheduled) {
         var parts = subscription.split(":");
+        String platform = parts[0];
+        Long uid = Long.valueOf(parts[1]);
         boolean visible = revenue.isVisible(target);
         // 按解析之后的那一套认同一张图：存了不认识的 id 的通道与默认模板那一套画出来一样
-        String palette = content.resolvePalette(parts[0], palettes.idFor(target));
+        String palette = content.resolvePalette(platform, palettes.idFor(target));
         var layout = WeeklyReportLayout.of(WeeklyReportLayout.savedParams(target));
         String key = parts[0] + ":" + parts[1] + ":" + period.toEpochMilli() + ":" + visible + ":" + palette + ":" + layout;
         var report = drawn.get(key);
         if (report == null) {
-            report = content.preview(parts[0], Long.valueOf(parts[1]), period, visible, palette, layout)
+            report = content.preview(platform, uid, period, visible, palette, layout)
                     .orElseThrow(() -> new IllegalArgumentException("没有这位主播的记录"));
             drawn.put(key, report);
         }
@@ -218,6 +223,13 @@ public class WeeklyReportDeliveryService {
                 + Base64.getEncoder().encodeToString(report.image()) + "}\n" + text;
         Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(), body).get(0);
         message.setChannel(target);
+        var listener = reportDeliveryListener;
+        if (scheduled && listener != null) {
+            String summary = report.summary();
+            message.addOnSuccessCallback(() -> listener.reportDelivered(new ReportDeliveryListener.Report(
+                    message.getPlatform(), message.getType(), message.getNum(), platform, uid,
+                    ReportDeliveryListener.Kind.WEEKLY, clock.instant(), visible, summary)));
+        }
         return message;
     }
 
@@ -248,7 +260,7 @@ public class WeeklyReportDeliveryService {
     }
     public JSONObject trial(String platform, Long uid, PushTarget target) {
         PushTarget channel = savedChannel(platform, uid, target);
-        return sender.sendNow(message(key(platform, uid, channel), channel, clock.instant(), new HashMap<>()));
+        return sender.sendNow(message(key(platform, uid, channel), channel, clock.instant(), new HashMap<>(), false));
     }
     public String status(String subscription) {
         String warning = store.warning();

@@ -18,6 +18,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.scheduling.support.SimpleTriggerContext;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.datasource.DataSourceService;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -330,6 +331,25 @@ class WeeklyReportDeliveryServiceTest {
         assertEquals(List.of(1001L, 1002L), sent.stream().map(Message::getNum).toList());
         assertTrue(store.records().stream().allMatch(r -> r.status() == Status.SENT));
     }
+
+    @Test
+    void confirmedDeliveryRecordsWeeklySummary() {
+        var summaries = new ArrayList<ReportDeliveryListener.Report>();
+        ReflectionTestUtils.setField(service, "reportDeliveryListener", (ReportDeliveryListener) summaries::add);
+        doAnswer(i -> { sent.add(i.getArgument(0)); return null; }).when(sender).sendWeeklyReport(any());
+        var report = content.preview("sample", 1L, clock.instant(), false).orElseThrow();
+
+        service.check(false);
+        assertTrue(summaries.isEmpty());
+        clock.at("2026-10-12T10:05:00");
+        sent.get(0).markDelivered("sample-message").forEach(Runnable::run);
+
+        assertEquals(Status.SENT, status());
+        assertEquals(List.of(new ReportDeliveryListener.Report(
+                "qq-onebot", PushTargetType.GROUP, 1001L, "sample", 1L, ReportDeliveryListener.Kind.WEEKLY,
+                clock.instant(), false, report.summary())), summaries);
+    }
+
     @Test @DisplayName("八至十二点静音时周报待发，十二点五分发出") void quietDeferral() throws Exception {
         props.getPush().setQuietStart("08:00"); props.getPush().setQuietEnd("12:00"); quiet = true;
         service.check(false);

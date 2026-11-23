@@ -396,7 +396,7 @@ class AssistantAskServiceTest {
         replies.add(call("revenue", JSONObject.of("start", 123)));
         replies.add(JSONObject.of("content", draft));
         var source = local.qqSource("QQ", GROUP, 123, 456);
-        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), () -> { }, ignored -> { });
+        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), null, () -> { }, ignored -> { });
 
         assertAll(
                 () -> assertEquals(body, result.getString("answer"), "控制台正文"),
