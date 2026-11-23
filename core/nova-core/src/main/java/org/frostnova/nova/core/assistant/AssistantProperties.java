@@ -50,12 +50,12 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"off", "low", "medium", "high", "max"}, labels = {"关闭／模型默认", "低", "中", "高", "最高"})
     private String thinking = "off";
-    /** 开启后，每次提问先判断难度，难题使用单独的思考强度和限时。判断也计入每月金额。 */
+    /** 开启后，每次提问先判断难度，为难题调整思考强度和限时。判断也计入每月金额。 */
     @ConfigLabel("按难度调思考强度")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean adaptiveThinking = false;
-    /** 需要深入分析的问题使用这一档，默认高。 */
+    /** 默认高。难题取这一档和「思考强度」中较高的一档。 */
     @ConfigLabel("难题的思考强度")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigEffect(ConfigEffect.Effect.RESTART)

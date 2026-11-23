@@ -90,7 +90,7 @@ class AssistantAskServiceTest {
             if (!responsesReplies.isEmpty()) return withSuccess(responsesReplies.removeFirst()
                     .toJSONString(JSONWriter.Feature.WriteNulls), MediaType.APPLICATION_JSON).createResponse(request);
             JSONObject message = replies.isEmpty() ? JSONObject.of("content", "没有这份数据") : replies.removeFirst();
-            return withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message", message)),
+            return withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message", message, "finish_reason", "stop")),
                     "usage", JSONObject.of("prompt_tokens", inputTokens, "completion_tokens", 10)).toJSONString(),
                     MediaType.APPLICATION_JSON).createResponse(request);
         });
@@ -923,7 +923,7 @@ class AssistantAskServiceTest {
         var classification = sent.get(0);
         assertEquals("test-classifier", classification.getString("model"));
         assertEquals("low", classification.getJSONObject("reasoning").getString("effort"));
-        assertEquals(256, classification.getIntValue("max_output_tokens"));
+        assertEquals(1024, classification.getIntValue("max_output_tokens"));
         assertTrue(classification.getJSONArray("tools").isEmpty());
         assertEquals(Duration.ofSeconds(5), timeouts.get(0));
         String input = classification.getJSONArray("input").toJSONString();
@@ -973,11 +973,111 @@ class AssistantAskServiceTest {
         assertEquals(2, sent.size());
         assertEquals(sent.get(1).getString("model"), sent.get(0).getString("model"));
         assertEquals(256, sent.get(0).getIntValue("max_tokens"));
-        assertEquals("low", sent.get(0).getString("reasoning_effort"));
+        assertFalse(sent.get(0).containsKey("reasoning_effort"));
         assertFalse(sent.get(1).containsKey("reasoning_effort"));
         assertEquals(Duration.ofSeconds(5), timeouts.get(0));
         assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(50)) > 0, timeouts::toString);
         assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(55)) <= 0, timeouts::toString);
+    }
+
+    // 平时设了高强度，难题反而想得更少。
+    @ParameterizedTest
+    @CsvSource({"high, medium, 16800", "max, high, 32800"})
+    void hardQuestionUsesAtLeastTheOrdinaryThinkingEffort(String thinking, String hardThinking, int maxOutput) {
+        useResponses();
+        properties.setAdaptiveThinking(true);
+        properties.setThinking(thinking);
+        properties.setHardThinking(hardThinking);
+        responsesReplies.add(responsesReply(responsesText("分析")));
+        responsesReplies.add(responsesReply(responsesText("近期的场次表现有变化。")));
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        assertEquals(2, sent.size());
+        var answer = sent.get(1);
+        assertEquals(thinking, answer.getJSONObject("reasoning").getString("effort"));
+        assertEquals(maxOutput, answer.getIntValue("max_output_tokens"));
+    }
+
+    // 自建的兼容接口不认强度参数，一打开分难度就报错。
+    @Test void customChatEndpointAcceptsBothRequestsForAHardQuestion() {
+        properties.setAdaptiveThinking(true);
+        properties.setThinking("high");
+        replies.add(JSONObject.of("content", "分析"));
+        replies.add(JSONObject.of("content", "近期的场次表现有变化。"));
+        onSend = () -> {
+            var body = sent.get(sent.size() - 1);
+            providerStatus = body.containsKey("reasoning_effort") || body.containsKey("thinking") ? 400 : 200;
+        };
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        assertEquals(2, sent.size());
+        for (var request : sent) {
+            assertFalse(request.containsKey("reasoning_effort"), "兼容接口拒绝了强度参数");
+            assertFalse(request.containsKey("thinking"));
+        }
+        assertTrue(result.getString("answer").contains("场次表现有变化"));
+        assertEquals(256, sent.get(0).getIntValue("max_tokens"));
+        assertEquals(properties.getAnswerLimit(), sent.get(1).getIntValue("max_tokens"));
+        assertEquals(Duration.ofSeconds(5), timeouts.get(0));
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(175)) > 0, timeouts::toString);
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(180)) <= 0, timeouts::toString);
+    }
+
+    @Test void builtInChatClassifiesWithThinkingOffAndUsesTheMediumEffortMappingForAHardQuestion() {
+        properties.setBaseUrl(new AssistantProperties().getBaseUrl());
+        properties.setAdaptiveThinking(true);
+        properties.setThinking("low");
+        properties.setHardThinking("medium");
+        replies.add(JSONObject.of("content", "分析"));
+        replies.add(JSONObject.of("content", "近期的场次表现有变化。"));
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        assertEquals(2, sent.size());
+        var classification = sent.get(0);
+        assertEquals("disabled", classification.getJSONObject("thinking").getString("type"));
+        assertFalse(classification.containsKey("reasoning_effort"));
+        assertEquals(256, classification.getIntValue("max_tokens"));
+        assertEquals(Duration.ofSeconds(5), timeouts.get(0));
+        var answer = sent.get(1);
+        assertEquals("enabled", answer.getJSONObject("thinking").getString("type"));
+        assertEquals("low", answer.getString("reasoning_effort"));
+        assertEquals(4800, answer.getIntValue("max_tokens"));
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(175)) > 0, timeouts::toString);
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(180)) <= 0, timeouts::toString);
+    }
+
+    // 判断那一步被截断了，半截回答被当成难题。
+    @ParameterizedTest
+    @CsvSource({"responses, max_output_tokens", "responses, content_filter", "chat, length", "chat, content_filter"})
+    void unfinishedClassificationGetsAnOrdinaryAnswer(String format, String reason) {
+        properties.setAdaptiveThinking(true);
+        properties.setThinking("low");
+        properties.setApiFormat(format);
+        var spentBefore = client.status().spentYuan();
+        if ("responses".equals(format)) {
+            var partial = responsesReply(responsesText("分析"));
+            partial.put("status", "incomplete");
+            partial.put("incomplete_details", JSONObject.of("reason", reason));
+            responsesReplies.add(partial);
+            responsesReplies.add(responsesReply(responsesText("场次数据已查到。")));
+        } else {
+            var partial = JSONObject.of("finish_reason", reason, "message", JSONObject.of("content", "分析"));
+            onSend = () -> providerBody = sent.size() == 1 ? JSONObject.of("choices", List.of(partial),
+                    "usage", JSONObject.of("prompt_tokens", 100, "completion_tokens", 10)).toJSONString() : null;
+            replies.add(JSONObject.of("content", "场次数据已查到。"));
+        }
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        assertTrue(result.getString("answer").contains("场次数据已查到"));
+        assertEquals(2, sent.size());
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(50)) > 0, timeouts::toString);
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(55)) <= 0, timeouts::toString);
+        if ("responses".equals(format)) assertEquals("low", sent.get(1).getJSONObject("reasoning").getString("effort"));
+        assertEquals(0, new BigDecimal("0.000612").compareTo(client.status().spentYuan().subtract(spentBefore)));
     }
 
     // /responses 未关闭严格模式时，通用汇总的 uniqueItems 会让每问都收到 400。

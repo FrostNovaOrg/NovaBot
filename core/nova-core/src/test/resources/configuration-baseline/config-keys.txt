@@ -1,4 +1,4 @@
-novabot.assistant.adaptive-thinking|java.lang.Boolean|false|开启后，每次提问先判断难度，难题使用单独的思考强度和限时。判断也计入每月金额。
+novabot.assistant.adaptive-thinking|java.lang.Boolean|false|开启后，每次提问先判断难度，为难题调整思考强度和限时。判断也计入每月金额。
 novabot.assistant.answer-limit|java.lang.Integer|800|一次模型回答的输出 token 上限。
 novabot.assistant.api-format|java.lang.String|chat|模型接口收发请求的格式。默认 /chat/completions，模型只在 /responses 上支持调工具时选 /responses。
 novabot.assistant.base-url|java.lang.String|https://api.deepseek.com|模型接口的基础地址，NovaBot 会按接口格式补上请求路径。
@@ -8,7 +8,7 @@ novabot.assistant.daily-questions-per-qq-user|java.lang.Integer|10|聊天中每�
 novabot.assistant.difficulty-model|java.lang.String||留空时用回答的模型。填写后仍使用同一个接口地址和密钥。
 novabot.assistant.enabled|java.lang.Boolean|false|是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。
 novabot.assistant.excluded-uids|java.util.List<java.lang.Long>|<null>|拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。
-novabot.assistant.hard-thinking|java.lang.String|high|需要深入分析的问题使用这一档，默认高。
+novabot.assistant.hard-thinking|java.lang.String|high|默认高。难题取这一档和「思考强度」中较高的一档。
 novabot.assistant.hard-timeout-seconds|java.lang.Integer|180|难题整问的限时，默认 180 秒。普通问题限时 55 秒。
 novabot.assistant.max-tool-calls|java.lang.Integer|6|一问最多执行的只读查数次数。
 novabot.assistant.model|java.lang.String|deepseek-flash|模型名称，默认 deepseek-flash。

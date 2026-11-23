@@ -61,6 +61,7 @@ public final class AssistantClient {
     private static final Logger LOG = LoggerFactory.getLogger(AssistantClient.class);
     private static final String OUTPUT_LIMIT = "max_output_tokens";
     private static final String ERROR_MASK = "[已遮掩]";
+    private static final List<String> THINKING_LEVELS = List.of("off", "low", "medium", "high", "max");
 
     private final AssistantProperties properties;
     private final AssistantKeyStore keys;
@@ -239,9 +240,8 @@ public final class AssistantClient {
             model = properties.getDifficultyModel();
         String thinking = switch (mode) {
             case ANSWER -> properties.getThinking();
-            case ANALYSIS -> properties.getHardThinking();
-            case CLASSIFY -> "low";
-            case PROBE -> responses ? "low" : "off";
+            case ANALYSIS -> thinkingForHardQuestion();
+            case CLASSIFY, PROBE -> responses ? "low" : "off";
         };
         int maxTokens = switch (mode) {
             case CLASSIFY -> 256;
@@ -251,21 +251,24 @@ public final class AssistantClient {
         String endpoint = baseUrl.replaceAll("/+$", "") + (responses ? "/responses" : "/chat/completions");
         try {
             if (!responses) {
-                JSONObject body = chatBody(request, maxTokens, baseUrl, model, thinking, mode);
-                return exchange(endpoint, body, false, candidate, question, timeout).response();
+                JSONObject body = chatBody(request, maxTokens, baseUrl, model, thinking);
+                return exchange(endpoint, body, false, candidate, question, timeout, mode).response();
             }
             int allowance = reasoningAllowance(thinking);
-            // 简短的判断和验证为思考和回复共留 256 token。
-            long maxOutput = shortRequest ? 256 : (long) maxTokens + allowance;
+            long maxOutput = switch (mode) {
+                case CLASSIFY -> 1024;
+                case PROBE -> 256;
+                default -> (long) maxTokens + allowance;
+            };
             JSONObject body = responsesBody(request, maxOutput, model, thinking);
-            Attempt first = exchange(endpoint, body, true, candidate, question, timeout);
+            Attempt first = exchange(endpoint, body, true, candidate, question, timeout, mode);
             if (shortRequest || !first.outputLimitReached()) return first.response();
 
             synchronized (this) { usage.checkBudget(properties); }
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
             if (remaining.compareTo(Duration.ofMillis(1)) < 0) throw outputLimitFailure();
             body.put(OUTPUT_LIMIT, maxOutput + allowance);
-            Attempt retry = exchange(endpoint, body, true, candidate, question, remaining);
+            Attempt retry = exchange(endpoint, body, true, candidate, question, remaining, mode);
             if (retry.outputLimitReached()) throw outputLimitFailure();
             Response response = retry.response();
             Usage initial = first.response().usage();
@@ -276,11 +279,21 @@ public final class AssistantClient {
             return new Response(response.content(), response.reasoningContent(), response.toolCalls(), combined,
                     first.response().costYuan().add(response.costYuan()), response.continuation());
         } catch (AssistantException error) { throw error; }
-        catch (RuntimeException error) { throw new AssistantException("大模型服务返回的数据不完整，请稍后再试"); }
+        catch (RuntimeException error) { throw incompleteResponse(); }
+    }
+
+    private static AssistantException incompleteResponse() {
+        return new AssistantException("大模型服务返回的数据不完整，请稍后再试");
     }
 
     private static AssistantException outputLimitFailure() {
         return new AssistantException(OUTPUT_LIMIT, "大模型服务达到输出上限，未能生成回答，请稍后再试");
+    }
+
+    private String thinkingForHardQuestion() {
+        String normal = properties.getThinking();
+        String hard = properties.getHardThinking();
+        return THINKING_LEVELS.indexOf(hard) > THINKING_LEVELS.indexOf(normal) ? hard : normal;
     }
 
     private static int reasoningAllowance(String thinking) {
@@ -293,21 +306,19 @@ public final class AssistantClient {
         };
     }
 
-    private JSONObject chatBody(Request request, int maxTokens, String baseUrl, String model, String thinking, CallMode mode) {
+    private JSONObject chatBody(Request request, int maxTokens, String baseUrl, String model, String thinking) {
         JSONObject body = JSONObject.of("model", model, "messages", request.messages(),
                 "tools", request.tools() == null ? List.of() : request.tools(),
                 "tool_choice", request.toolChoice() == null ? "auto" : request.toolChoice(),
                 "max_tokens", maxTokens, "temperature", request.temperature(), "stream", false);
-        String effort = null;
         if ("api.deepseek.com".equalsIgnoreCase(URI.create(baseUrl).getHost())) {
-            body.put("thinking", JSONObject.of("type", "off".equals(thinking) ? "disabled" : "enabled"));
-            if (!"off".equals(thinking)) effort = "medium".equals(thinking) ? "low" : thinking;
-        } else if (mode == CallMode.CLASSIFY || mode == CallMode.ANALYSIS) {
-            effort = thinking;
-        }
-        if (effort != null) {
-            body.put("reasoning_effort", effort);
-            if (mode != CallMode.CLASSIFY) body.put("max_tokens", (long) maxTokens + reasoningAllowance(effort));
+            boolean enabled = !"off".equals(thinking);
+            body.put("thinking", JSONObject.of("type", enabled ? "enabled" : "disabled"));
+            if (enabled) {
+                String effort = "medium".equals(thinking) ? "low" : thinking;
+                body.put("reasoning_effort", effort);
+                body.put("max_tokens", (long) maxTokens + reasoningAllowance(effort));
+            }
         }
         return body;
     }
@@ -345,7 +356,8 @@ public final class AssistantClient {
         return body;
     }
 
-    private Attempt exchange(String endpoint, JSONObject body, boolean responses, String candidate, Question question, Duration timeout) {
+    private Attempt exchange(String endpoint, JSONObject body, boolean responses, String candidate, Question question,
+                             Duration timeout, CallMode mode) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         if (candidate == null) keys.authorize(headers); else headers.setBearerAuth(candidate);
@@ -369,8 +381,8 @@ public final class AssistantClient {
                 synchronized (this) { question.total = question.total.add(cost); }
             }
             usage.addCost(cost);
-            if (responses) return parseResponses(json, secret, tokens, cost, question == null, received.getStatusCode().value());
-            return new Attempt(parseChat(json, secret, tokens, cost), false);
+            if (responses) return parseResponses(json, secret, tokens, cost, mode, received.getStatusCode().value());
+            return new Attempt(parseChat(json, secret, tokens, cost, mode), false);
         } catch (HttpStatusCodeException error) {
             throw providerFailure(error, responses, secret);
         } catch (ResourceAccessException error) {
@@ -380,8 +392,10 @@ public final class AssistantClient {
         } finally { headers.remove(HttpHeaders.AUTHORIZATION); }
     }
 
-    private static Response parseChat(JSONObject json, String secret, Usage tokens, BigDecimal cost) {
-        JSONObject message = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
+    private static Response parseChat(JSONObject json, String secret, Usage tokens, BigDecimal cost, CallMode mode) {
+        JSONObject choice = json.getJSONArray("choices").getJSONObject(0);
+        if (mode == CallMode.CLASSIFY && !"stop".equals(choice.getString("finish_reason"))) throw incompleteResponse();
+        JSONObject message = choice.getJSONObject("message");
         // 服务端即使回显鉴权内容，也不能从公开结果中带回密钥。
         redact(message, secret);
         JSONArray calls = message.getJSONArray("tool_calls");
@@ -390,7 +404,9 @@ public final class AssistantClient {
     }
 
     private static Attempt parseResponses(JSONObject json, String secret, Usage tokens, BigDecimal cost,
-                                          boolean probe, int statusCode) {
+                                          CallMode mode, int statusCode) {
+        String status = json.getString("status");
+        if (mode == CallMode.CLASSIFY && !"completed".equals(status)) throw incompleteResponse();
         JSONArray output = json.getJSONArray("output");
         redact(output, secret);
         var text = new StringBuilder();
@@ -414,11 +430,11 @@ public final class AssistantClient {
                 }
             }
         }
-        boolean incomplete = "incomplete".equals(json.getString("status"));
+        boolean incomplete = "incomplete".equals(status);
         JSONObject details = json.getJSONObject("incomplete_details");
         boolean outputLimitReached = incomplete && details != null && OUTPUT_LIMIT.equals(details.getString("reason"));
-        if (probe && incomplete && (statusCode != 200 || !outputLimitReached)) {
-            throw new AssistantException("大模型服务返回的数据不完整，请稍后再试");
+        if (mode == CallMode.PROBE && incomplete && (statusCode != 200 || !outputLimitReached)) {
+            throw incompleteResponse();
         }
         String content = text.toString();
         var response = new Response(content, null, List.copyOf(calls), tokens, cost, List.copyOf(continuation));

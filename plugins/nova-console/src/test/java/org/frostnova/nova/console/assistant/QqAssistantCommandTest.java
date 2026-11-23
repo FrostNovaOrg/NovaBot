@@ -137,7 +137,7 @@ class QqAssistantCommandTest {
             modelWait.run();
             JSONObject reply = modelReplies.poll();
             return withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message",
-                    reply == null ? text("没有这份数据") : reply)), "usage",
+                    reply == null ? text("没有这份数据") : reply, "finish_reason", "stop")), "usage",
                     JSONObject.of("prompt_tokens", 100, "completion_tokens", 10)).toJSONString(),
                     MediaType.APPLICATION_JSON).createResponse(request);
         });
@@ -875,7 +875,7 @@ class QqAssistantCommandTest {
             group(ASKER, "问 为什么近期场次表现不一样");
             assertReply("要多想一会儿", "一两分钟");
             assertTrue(answering.await(10, TimeUnit.SECONDS), "模型还没有开始回答");
-            assertEquals("high", requests.get(1).getString("reasoning_effort"));
+            assertFalse(requests.get(1).containsKey("reasoning_effort"));
             assertNull(replies.poll(11, TimeUnit.SECONDS), "难题又收到了查数提示");
         } finally {
             release.countDown();
