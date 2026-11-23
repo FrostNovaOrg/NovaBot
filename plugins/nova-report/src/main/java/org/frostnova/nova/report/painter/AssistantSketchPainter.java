@@ -100,7 +100,6 @@ final class AssistantSketchPainter {
     private static Process start(Path font) throws IOException, URISyntaxException {
         String java = File.separatorChar == '\\' ? "java.exe" : "java";
         var executable = Path.of(System.getProperty("java.home"), "bin", java);
-        // 报告插件放在 JSVG 前面，子进程才会使用内置字体优先的 FontResolver。
         String classpath = location(AssistantSketchRaster.class) + File.pathSeparator + location(SVGLoader.class);
         return new ProcessBuilder(executable.toString(), "-Djava.awt.headless=true",
                 "-Xmx64m", "-XX:MaxDirectMemorySize=8m", "-XX:+UseSerialGC", "-XX:+ExitOnOutOfMemoryError",

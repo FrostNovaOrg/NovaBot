@@ -149,4 +149,3 @@ AGPL-3.0 授予的是代码上的权利。「NovaBot」名称与本项目标识�
     https://github.com/weisJ/jsvg
     仅供智能助手的手绘示意转成 PNG。jar 在 plugins-lib 中原样分发，
     版权声明与许可全文见该 jar 的 META-INF/LICENSE。
-    报告插件中的 FontResolver 改编自同版本源码，版权声明与许可见插件的 META-INF/LICENSE-jsvg.txt。
