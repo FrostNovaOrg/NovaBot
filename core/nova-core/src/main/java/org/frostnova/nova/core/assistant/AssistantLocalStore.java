@@ -95,13 +95,7 @@ public final class AssistantLocalStore {
     /** 记录发送元数据与固定错误字段。 */
     public synchronized void record(String account, String platform, Long uid, java.util.List<String> tools,
                                     java.util.List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
-                                    AssistantException failure) {
-        record(account, platform, uid, tools, dataTypes, cost, endpoint, failure, null);
-    }
-
-    public synchronized void record(String account, String platform, Long uid, java.util.List<String> tools,
-                                    java.util.List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
-                                    AssistantException failure, QqSource qq) {
+                                    AssistantException failure, QqSource qq, String difficulty, int modelCalls) {
         try {
             Instant now = clock.instant();
             Instant cutoff = now.atZone(ZoneOffset.UTC).minusYears(3).toInstant();
@@ -116,7 +110,8 @@ public final class AssistantLocalStore {
                 }
             }
             JSONObject entry = JSONObject.of("at", now.toString(), "account", account, "platform", platform, "uid", uid,
-                    "tools", tools, "dataTypes", dataTypes, "costYuan", cost, "endpoint", endpoint);
+                    "tools", tools, "dataTypes", dataTypes, "costYuan", cost, "endpoint", endpoint, "modelCalls", modelCalls);
+            if (difficulty != null) entry.put("difficulty", difficulty);
             if (qq != null) {
                 entry.put("entry", qq.entry());
                 entry.put("sessionType", qq.sessionType());
