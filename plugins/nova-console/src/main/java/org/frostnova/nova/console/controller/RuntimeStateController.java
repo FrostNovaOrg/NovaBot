@@ -620,15 +620,7 @@ public class RuntimeStateController {
     }
 
     /**
-     * 一条命令底下分几种用法，各自的记账名与在这台机器上开没开
-     * <p>
-     * 记账名从拼写里认：命令正名与别名各问一遍，把认到的格并起来。
-     * 「@名单」问着两格、「开播@名单」只问一格，并起来正好是开播与动态两格；
-     * 「直播间数据」与「直播间总数据」各一格，并起来是本场与累计。
-     * <p>
-     * {@code available} 问的是「这一格在这台机器上开没开」而不是「这条命令有没有」：
-     * 没配累计数据时累计那一半要置灰、本场那一半照常。按拼写问而不是写死哪一格靠后置能力——
-     * 写死的话下一条带范围开关的命令进来又要改一遍这里的表。
+     * 合并命令正名与各别名对应的开关键，例如「开播@名单」和「动态@名单」。
      */
     private JSONArray usagesOf(NovaCommand command) {
         Set<String> keys = new LinkedHashSet<>();
@@ -641,7 +633,6 @@ public class RuntimeStateController {
         for (String key : keys) {
             JSONObject usage = new JSONObject();
             usage.put("key", key);
-            usage.put("available", command.availableFor(probeOf(key)));
             usages.add(usage);
         }
         return usages;
@@ -673,7 +664,7 @@ public class RuntimeStateController {
 
         List<CommandSettingsService.Disabled> disabled = settings.all().stream()
                 .map(item -> new CommandSettingsService.Disabled(item.platform(), item.type(), item.num(), item.commands().stream()
-                        .filter(key -> !ChannelSettings.COMMAND_KEYS.contains(key))
+                        .filter(key -> !ChannelSettings.isKnownCommandKey(key))
                         .filter(key -> !Set.of("菜单", "启用命令", "禁用命令").contains(key)).toList()))
                 .filter(item -> !item.commands().isEmpty()).toList();
         for (CommandSettingsService.Disabled item : disabled) {
@@ -815,13 +806,7 @@ public class RuntimeStateController {
     }
 
     /**
-     * 按拼写造一个「就这一句」的上下文
-     * <p>
-     * 首词是命令名或别名，剩下的当参数：「直播间数据 总」里那个「总」是范围开关、不是命令名的一部分，
-     * 拆开才认得出问的是哪一格。与群里那一面认「用的是哪一格」用的是同一套拆法。
-     * <p>
-     * 会话与发送者留空：问的是「这一句认到哪一格、那一格在这台机器上开没开」，
-     * 与谁在哪个群发的无关。
+     * 保留开关请求里的参数，以便「@名单 开播」这样的写法能选中指定类别。
      */
     private static CommandContext probeOf(String typed) {
         String trimmed = typed.trim();
@@ -834,11 +819,7 @@ public class RuntimeStateController {
     }
 
     /**
-     * 按名字或别名找命令
-     * <p>
-     * 认首词：点名里那个范围开关（「直播间数据 总」的「总」）不是名字的一部分，
-     * 整串拿去找会一无所获。旧表只认正名，别名一进来就报「未找到命令」——
-     * 而别名正是点名时最常见的写法。
+     * 用首词匹配命令名或别名。
      */
     private Optional<NovaCommand> find(String typed) {
         String head = typed.trim().split("\\s+")[0];
@@ -854,9 +835,7 @@ public class RuntimeStateController {
      * 只记正名的话群里那两种问法照通，控制台这扇门就成了摆设。
      * <p>
      * 「启用」与群里「启用命令」同一口径：名下各格一起开回来。一句对多格时
-     * （「@名单」），回话里写的就是那几格。只删打出来的这一名的话，两格仍关着，
-     * 回话却说已经启用。一句只对一格时（「直播间数据 总」与「直播间总数据」
-     * 是同一格的两种拼写），把打出来的这一名一并删掉，两种拼写都开得回来。
+     * （「@名单」），回话里写的就是那几格。只对应一个开关键时，也清除以原写法留下的记录。
      * 找不到命令时仍按打出来的这一名删：启用就是清掉一条记录，改过名留下的残留也要清得掉。
      */
     private List<String> ledgerKeys(String name, boolean disabled) {

@@ -16,11 +16,9 @@
 			"usage":"[开播|动态] [主播 uid 或昵称]",
 			"usages":[
 				{
-					"available":true,
 					"key":"开播@名单"
 				},
 				{
-					"available":true,
 					"key":"动态@名单"
 				}
 			]
@@ -40,11 +38,9 @@
 			"usage":"[主播 uid 或昵称]",
 			"usages":[
 				{
-					"available":true,
 					"key":"动态@我"
 				},
 				{
-					"available":true,
 					"key":"取消动态@我"
 				}
 			]
@@ -62,7 +58,6 @@
 			"usage":"<命令名>",
 			"usages":[
 				{
-					"available":true,
 					"key":"启用命令"
 				}
 			]
@@ -82,36 +77,10 @@
 			"usage":"[主播 uid 或昵称]",
 			"usages":[
 				{
-					"available":true,
 					"key":"开播@我"
 				},
 				{
-					"available":true,
 					"key":"取消开播@我"
-				}
-			]
-		},
-		{
-			"aliases":[
-				"总数据排行榜"
-			],
-			"available":true,
-			"category":"数据查询",
-			"channelScoped":true,
-			"description":"查各榜单排行，带「总」出历次累计",
-			"disableable":true,
-			"groupOnly":false,
-			"name":"数据排行榜",
-			"requiresAdmin":false,
-			"usage":"<榜单> [总] [主播 uid 或昵称]（三者顺序不限）",
-			"usages":[
-				{
-					"available":true,
-					"key":"数据排行榜"
-				},
-				{
-					"available":false,
-					"key":"总数据排行榜"
 				}
 			]
 		},
@@ -128,32 +97,7 @@
 			"usage":"[主播 uid 或昵称]",
 			"usages":[
 				{
-					"available":true,
 					"key":"直播报告"
-				}
-			]
-		},
-		{
-			"aliases":[
-				"直播间总数据"
-			],
-			"available":true,
-			"category":"数据查询",
-			"channelScoped":true,
-			"description":"查询直播间的整体数据，带「总」出历次累计",
-			"disableable":true,
-			"groupOnly":false,
-			"name":"直播间数据",
-			"requiresAdmin":false,
-			"usage":"[总] [主播 uid 或昵称]",
-			"usages":[
-				{
-					"available":true,
-					"key":"直播间数据"
-				},
-				{
-					"available":false,
-					"key":"直播间总数据"
 				}
 			]
 		},
@@ -170,7 +114,6 @@
 			"usage":"<命令名>",
 			"usages":[
 				{
-					"available":true,
 					"key":"禁用命令"
 				}
 			]
@@ -191,7 +134,6 @@
 			"usage":"",
 			"usages":[
 				{
-					"available":true,
 					"key":"菜单"
 				}
 			]
@@ -219,10 +161,7 @@
 			"configured":true,
 			"disabled":[],
 			"menuHidden":[],
-			"menuNotes":{
-				"数据排行榜":"带「总」查累计要先开累计数据",
-				"直播间数据":"带「总」查累计要先开累计数据"
-			},
+			"menuNotes":{},
 			"num":990000000301,
 			"platform":"qq-onebot",
 			"quietActive":true,
@@ -257,10 +196,7 @@
 			"configured":true,
 			"disabled":[],
 			"menuHidden":[],
-			"menuNotes":{
-				"数据排行榜":"带「总」查累计要先开累计数据",
-				"直播间数据":"带「总」查累计要先开累计数据"
-			},
+			"menuNotes":{},
 			"num":990000000302,
 			"platform":"qq-onebot",
 			"quietActive":true,
@@ -291,10 +227,7 @@
 			"configured":true,
 			"disabled":[],
 			"menuHidden":[],
-			"menuNotes":{
-				"数据排行榜":"带「总」查累计要先开累计数据",
-				"直播间数据":"带「总」查累计要先开累计数据"
-			},
+			"menuNotes":{},
 			"num":990000000303,
 			"platform":"qq-onebot",
 			"quietActive":true,
@@ -325,10 +258,7 @@
 				"开播@我",
 				"禁用命令"
 			],
-			"menuNotes":{
-				"数据排行榜":"带「总」查累计要先开累计数据",
-				"直播间数据":"带「总」查累计要先开累计数据"
-			},
+			"menuNotes":{},
 			"num":990000000502,
 			"platform":"qq-onebot",
 			"quietActive":true,

@@ -719,7 +719,7 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
-let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: [], totalDataAvailable: null};
+let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: []};
 
 /** 最近的推送记录，按通道筛出各自的 5 条 */
 let pushHistory = [];
@@ -1565,7 +1565,7 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, channelCommands());
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1623,7 +1623,7 @@ function channelRow(user, target) {
  * 这一页不是向导，各块不编号。
  */
 function renderChannelLevel(host, user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, channelCommands());
   const name = channelName(session, target, directory);
   const group = Number(target.type) === 1;
 
@@ -1705,10 +1705,11 @@ function channelCommands() {
  * 拨了规则、开了一种通知，这一行当场跟着变。
  */
 function channelSummary(box, user, target, blocks) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const commands = channelCommands();
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, commands);
   const on = noticeSwitches(user, target, store.handlerList).filter(item => item.on).length;
   const quiet = quietSummary(session, runtime.quietGlobal, savedQuiet(user, target));
-  const command = commandSummary(channelCommands(), session, runtime.totalDataAvailable);
+  const command = commandSummary(commands, session);
   const quietWord = quiet.mode === 'off' ? '不静音'
     : quiet.mode === 'custom' ? '自定义 ' + quiet.start + '–' + quiet.end : '跟随全局';
   const parts = [
@@ -2369,9 +2370,9 @@ function savedQuiet(user, target) {
 /** 通道规则、命令与只读状态：草稿一变，三块与页头那一行摘要一起重画 */
 function channelSettings(hosts, user, target, session, paintSummary) {
   const render = () => {
-    const current = channelSession(session, target, user);
-    const baseline = savedTarget(user, target);
     const commands = channelCommands();
+    const current = channelSession(session, target, user, commands);
+    const baseline = savedTarget(user, target);
     const assistantCommand = runtime.commands?.find(command => command.name === '问' && command.aliases?.includes('问数'));
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
     for (const box of Object.values(hosts)) box.innerHTML = '';
@@ -2380,14 +2381,14 @@ function channelSettings(hosts, user, target, session, paintSummary) {
       onPaletteChange: () => { render(); repaintPalettePreview(); },
       channel: true, hosts, repaint: render, session: current, target, commands, subscriptions,
       baseline, member: isMember(), assistantAvailable: assistantCommand?.available,
-      totalDataAvailable: runtime.totalDataAvailable, quietGlobal: runtime.quietGlobal,
+      quietGlobal: runtime.quietGlobal,
       summary: {
         revenue: revenueSummary(current), quiet: quietSummary(current, runtime.quietGlobal, savedQuiet(user, target)),
-        command: commandSummary(commands, current, runtime.totalDataAvailable),
+        command: commandSummary(commands, current),
         subscription: subscriptionSummary(subscriptions, current),
         atAll: atAllStatus(quota, current, target, directory),
       },
-      groups: commandGroups(commands, current, runtime.totalDataAvailable),
+      groups: commandGroups(commands, current),
     };
     changeChannelPalette = id => setReportPalette(ctx, id);
     sessionSettings(hosts.rules, ctx);

@@ -64,8 +64,7 @@ public abstract class ToggleCommand implements NovaCommand {
             return CommandReply.of("请指明命令名，例如：" + name() + " 直播报告");
         }
 
-        // 「这一句怎么打的」决定了它落到哪个用法上：「数据排行榜 总」与旧名「总数据排行榜」
-        // 是同一个用法，认的是带不带「总」，不是命令正名。开关、可用与否都问这一份上下文
+        // 保留目标命令的参数，用于指定提醒类别或主播。
         List<String> rest = context.getArgs().size() > 1
                 ? List.copyOf(context.getArgs().subList(1, context.getArgs().size()))
                 : List.of();
@@ -78,10 +77,7 @@ public abstract class ToggleCommand implements NovaCommand {
             // 说成同一句的话，前两种的人会一直在改自己的措辞，而他要动的根本不是措辞。
             // 报错里写打出来的那个名字，不写命令正名——「禁用命令 取消开播@我」若回「开播@我」，
             // 他会以为自己打错了名字
-            // 报的是**这一句落到的那一格**，不是打出来的头一个词：「禁用命令 直播间数据 总」
-            // 问的是累计那一半，回「直播间数据在本机没开」会把人指向还开着的那一半，
-            // 他会以为整条命令都没配好，而要配的是累计数据这一件事
-            NovaCommand unavailable = first(target, item -> !item.availableFor(probe));
+            NovaCommand unavailable = first(target, item -> !item.available());
             if (unavailable != null) {
                 return CommandReply.of(MessagePlaceholders.escapeExternalText(CommandContext.quoted(asked(unavailable, probe, target)))
                         + "在本机没开，不用开关它，"
@@ -143,9 +139,6 @@ public abstract class ToggleCommand implements NovaCommand {
 
     /**
      * 这一句落到哪几格，说不出时退回打出来的那个名字
-     * <p>
-     * 认的是「怎么打的」那一份上下文：「禁用命令 直播间数据 总」落到累计那一格，
-     * 报「直播间数据」会把人指向还开着的那一半。
      * @param command 目标命令
      * @param probe 按打出来的名字建的上下文
      * @param typed 打出来的那个名字
@@ -163,7 +156,6 @@ public abstract class ToggleCommand implements NovaCommand {
      * {@link NovaCommand#available}：两处口径分开的那一版里，本群的开播通知
      * 配成「@全体成员」时「开播@我」菜单里没有、却仍开关得动，
      * 于是状态文件里留下一条界面上看得见、群里怎么也验证不了的记录。
-     * 传进来的上下文按<b>打出来的那个名字</b>建：同一句里带不带「总」是两个用法。
      * <p>
      * 两种够不着的理由都不是使用者能靠改措辞解决的：能力配好、或本会话的配置改回来之后，
      * 那条命令自己就回菜单了，那才是他要做的那一件事。

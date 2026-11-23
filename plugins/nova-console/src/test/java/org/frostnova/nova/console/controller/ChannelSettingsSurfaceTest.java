@@ -66,11 +66,11 @@ class ChannelSettingsSurfaceTest {
     private static final String LOCKED = "菜单";
 
     /**
-     * 不限群聊的六条：与菜单命令测试那一份同字。
+     * 不限群聊的命令：与菜单命令测试那一份同字。
      * 控制台测不能引用核心测试类，因此在这里各留一份。
      */
     private static final List<String> PRIVATE_OK = List.of(
-            "菜单", "直播报告", "数据排行榜", "总数据排行榜", "直播间数据", "直播间总数据");
+            "菜单", "直播报告");
 
     /** 仅限群聊的八条：私聊菜单不该出现 */
     private static final List<String> GROUP_ONLY_NAMES = List.of(
@@ -125,7 +125,7 @@ class ChannelSettingsSurfaceTest {
     }
 
     @Test
-    @DisplayName("阳：好友会话藏掉全部仅限群聊的命令，群会话不藏；可见的六条与菜单同一份名单")
+    @DisplayName("阳：好友会话藏掉全部仅限群聊的命令，群会话不藏；可见命令与菜单一致")
     void friendSessionHidesGroupOnlyCommands() {
         JSONObject group = sessionOf(PushTargetType.GROUP, GROUP_NUM);
         JSONObject friend = sessionOf(PushTargetType.FRIEND, FRIEND_NUM);
@@ -205,8 +205,8 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("阳：成批启用照数改，并逐条落到命令开关服务上")
     void batchEnableChangesEveryNamedCommand() {
-        channels.disable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, List.of("直播报告", "数据排行榜"));
-        JSONObject result = controller.toggleCommands(body(List.of("直播报告", "数据排行榜"), false)).getBody();
+        channels.disable(PLATFORM, PushTargetType.GROUP, GROUP_NUM, List.of("直播报告", "动态@我"));
+        JSONObject result = controller.toggleCommands(body(List.of("直播报告", "动态@我"), false)).getBody();
 
         assertTrue(result.getBooleanValue("success"), result.toString());
         assertEquals(2, result.getIntValue("changed"), result.toString());

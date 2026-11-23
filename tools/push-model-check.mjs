@@ -2,10 +2,10 @@
  * QQ 推送页视图模型的逐档对照
  *
  * 这一页要在好几种情形下都说得对，而这些情形在真机上凑齐一次的代价极高：命令被群管理员关掉
- * 要先去群里发一条「禁用命令」；累计数据没开要去改线上存储配置；@全体成员 那一档要把
+ * 要先去群里发一条「禁用命令」；@全体成员 那一档要把
  * 三位主播的模板都改一遍；OneBot 掉线才看得到「群名取不到」。视图模型因此被切成纯函数
  * （push-model.js，不碰 DOM、不发请求），本文件喂它几份回包，逐档核对树、通道一览、
- * 模板默认/自定义、命令摘要 14 → 12、被点名的那几条与「一键恢复」的集合。
+ * 模板默认/自定义、命令摘要、被点名的那几条与「一键恢复」的集合。
  *
  * 用 node 直接跑：
  *   node tools/push-model-check.mjs
@@ -13,7 +13,7 @@
  */
 
 import {
-  atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
+  atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
   layoutState, menuKnown, noticeSwitches, previewRequestBody, previewRevenueCaption,
   pushTree, quietSummary, recentPushes, revenueSummary, savedRevenueVisible,
   sessionOf, strandedSessions, subscriptionSummary, templateState,
@@ -52,7 +52,7 @@ function command(name, category, extra) {
   }, extra || {});
 }
 
-/** 14 条。与真机上那一份同形：三组，其中两条带「总」字的能力由累计存储定 */
+/** 三组命令，供摘要与开关测试使用。 */
 const COMMANDS = [
   command('菜单', '命令管理', {disableable: false}),
   command('启用命令', '命令管理', {disableable: false, requiresAdmin: true}),
@@ -64,18 +64,7 @@ const COMMANDS = [
   command('取消动态@我', '提醒订阅'),
   command('动态@名单', '提醒订阅'),
   command('直播报告', '数据查询'),
-  command('直播间数据', '数据查询'),
-  command('数据排行榜', '数据查询'),
-  command('直播间总数据', '数据查询'),
-  command('总数据排行榜', '数据查询'),
 ];
-
-/** 累计存储没配：那两条「总」字命令整台机器都用不上，菜单里也就不列 */
-const TOTAL_OFF = COMMANDS.map(item =>
-  ['直播间总数据', '总数据排行榜'].includes(item.name)
-    ? Object.assign({}, item, {available: false}) : item);
-
-const TOTAL_OFF_HIDDEN = ['直播间总数据', '总数据排行榜'];
 
 /** 本群这类通知全配成 @全体成员 时，后端把这三条从菜单里撤下来 */
 const AT_ALL_HIDDEN = ['开播@我', '取消开播@我', '开播@名单'];
@@ -122,6 +111,20 @@ function record(target, summary, ok) {
 // 每档写明：改了哪几处回包（驱动字段），以及这一页该长成什么样（应）
 const CASES = [
   {
+    name: '升级后通道配置仍有已退役的命令开关',
+    run: () => {
+      const u = user();
+      const target = u.targets[0];
+      target.disabledCommands = ['直播间数据', '总数据排行榜', '直播报告'];
+      const commands = COMMANDS.filter(item => ['直播报告', '开播@我'].includes(item.name));
+      const current = channelSession(session(), target, u, commands);
+      const summary = commandSummary(commands, current);
+      return {count: current.disabledCount, off: summary.offNames, stray: summary.strayNames,
+        saved: target.disabledCommands};
+    },
+    expect: {count: 1, off: ['直播报告'], stray: [], saved: ['直播间数据', '总数据排行榜', '直播报告']},
+  },
+  {
     name: '报告预览按通道草稿配色，跟随默认保留 null 键',
     run: () => {
       const selected = previewRequestBody({}, {platform: 'qq', type: 1, num: 11, reportPalette: 'night'});
@@ -136,7 +139,7 @@ const CASES = [
       const u = user();
       const s = session();
       const tree = pushTree([u], [s], HANDLERS, DIRECTORY);
-      const sum = commandSummary(COMMANDS, s, true);
+      const sum = commandSummary(COMMANDS, s);
       return {
         '树': tree.length + ' 主播 / ' + tree[0].channels.length + ' 通道',
         '通道名': tree[0].channels[0].name,
@@ -144,34 +147,14 @@ const CASES = [
         '命令': sum.listed + ' 条 · 关 ' + sum.offNames.length,
       };
     },
-    expect: {'树': '1 主播 / 1 通道', '通道名': '公会运营群', '模板': '默认', '命令': '14 条 · 关 0'},
-  },
-  {
-    name: '累计数据没开',
-    run: () => {
-      const s = session({menuHidden: TOTAL_OFF_HIDDEN});
-      const sum = commandSummary(TOTAL_OFF, s, false);
-      const groups = commandGroups(TOTAL_OFF, s, false);
-      const query = groups.find(item => item.category === '数据查询');
-      return {
-        '总条数': sum.total,
-        '列出来的': sum.listed,
-        '摘要': sum.text,
-        '灰行': query.commands.filter(item => !item.listed).map(item => item.hiddenReason).join('｜'),
-      };
-    },
-    expect: {
-      '总条数': 14, '列出来的': 12,
-      '摘要': '12 条全部可用 · 2 条因累计数据未启用而隐藏',
-      '灰行': '累计数据未启用，菜单中不显示｜累计数据未启用，菜单中不显示',
-    },
+    expect: {'树': '1 主播 / 1 通道', '通道名': '公会运营群', '模板': '默认', '命令': '10 条 · 关 0'},
   },
   {
     name: '命令被群管理员关掉',
     run: () => {
-      const s = session({disabled: ['直播报告', '数据排行榜']});
-      const sum = commandSummary(COMMANDS, s, true);
-      const groups = commandGroups(COMMANDS, s, true);
+      const s = session({disabled: ['直播报告', '动态@我']});
+      const sum = commandSummary(COMMANDS, s);
+      const groups = commandGroups(COMMANDS, s);
       return {
         '摘要': sum.text,
         '点名': sum.offNames.join('、'),
@@ -181,9 +164,9 @@ const CASES = [
       };
     },
     expect: {
-      '摘要': '12 条可用 · 2 条已被群管理员禁用（直播报告、数据排行榜）',
-      '点名': '直播报告、数据排行榜',
-      '一键恢复': '直播报告、数据排行榜',
+      '摘要': '8 条可用 · 2 条已被群管理员禁用（直播报告、动态@我）',
+      '点名': '直播报告、动态@我',
+      '一键恢复': '直播报告、动态@我',
       '数据查询组': '半开',
       '命令管理组': '开',
     },
@@ -193,7 +176,7 @@ const CASES = [
     run: () => {
       // 「我的数据」那一族命令已停用，记录仍留在状态文件里
       const s = session({disabled: ['直播报告', '我的数据']});
-      const sum = commandSummary(COMMANDS, s, true);
+      const sum = commandSummary(COMMANDS, s);
       return {
         '点名': sum.offNames.join('、'),
         '残留': sum.strayNames.join('、'),
@@ -207,8 +190,8 @@ const CASES = [
     name: '本群通知配成 @全体成员',
     run: () => {
       const s = session({menuHidden: AT_ALL_HIDDEN, menuNotes: {'动态@我': '本群动态通知会先 @全体成员'}});
-      const sum = commandSummary(COMMANDS, s, true);
-      const groups = commandGroups(COMMANDS, s, true);
+      const sum = commandSummary(COMMANDS, s);
+      const groups = commandGroups(COMMANDS, s);
       const subs = groups.find(item => item.category === '提醒订阅');
       return {
         '摘要': sum.text,
@@ -219,7 +202,7 @@ const CASES = [
       };
     },
     expect: {
-      '摘要': '11 条全部可用 · 3 条在此会话中不列出',
+      '摘要': '7 条全部可用 · 3 条在此会话中不列出',
       '本会话不列': '开播@我、取消开播@我、开播@名单',
       '机器用不上': 0,
       '理由': '在此会话中不适用，菜单中不显示',
@@ -232,10 +215,10 @@ const CASES = [
       // 推送配置里已经没有这个会话，构不出上下文，后端答不了「菜单里列哪几条」。
       // 那一栏是缺的，而缺的那一栏与一个空表在 `|| []` 底下长得一样
       const s = session({configured: false, type: null, menuHidden: null});
-      const sum = commandSummary(COMMANDS, s, true);
+      const sum = commandSummary(COMMANDS, s);
       return {'答得上': menuKnown(s) ? '是' : '否', '摘要': sum.text};
     },
-    expect: {'答得上': '否', '摘要': '14 条全部可用 · 此会话不在推送配置中，无法获取菜单状态'},
+    expect: {'答得上': '否', '摘要': '10 条全部可用 · 此会话不在推送配置中，无法获取菜单状态'},
   },
   {
     name: '模板改过一处',

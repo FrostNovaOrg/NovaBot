@@ -24,7 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * 「直播报告」命令
  * <p>
  * 拉取正在直播主播的实时数据报告，不必等到下播。
- * 挑主播的规则与「直播间数据」相同：这里配了的主播即可，不要求这里还配过报告推送。
+ * 可以选择本会话已配置推送的主播，包含未启用报告推送的主播。
  * <p>
  * 刻意不伪造下播事件：那会把直播状态翻成已下播，随后备用轮询发现仍在播又会推一条假开播，
  * 还会把本场统计清零。本命令只读统计数据，完全不触碰状态机。
@@ -121,7 +121,7 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
 
     @Override
     public boolean groupOnly() {
-        // 与其余数据查询命令同一档：查的是主播的数据，已配推送的好友会话里一样该答得上来
+        // 已配置推送的好友会话也可以查询直播报告。
         return false;
     }
 

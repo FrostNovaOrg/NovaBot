@@ -37,8 +37,6 @@ public class NovaBilibiliProperties {
 
     private final Dynamic dynamic = new Dynamic();
 
-    private final Ranking ranking = new Ranking();
-
     /**
      * 线程相关
      */
@@ -506,40 +504,4 @@ public class NovaBilibiliProperties {
         private boolean pushLiveDynamic = false;
     }
 
-    /**
-     * 排行榜出图相关
-     */
-    @Getter
-    @Setter
-    public static class Ranking {
-        /**
-         * 「最多列出名次」的显示名，设置页与出错提示共用这一份
-         */
-        public static final String TOP_N_LABEL = "排行榜 · 最多列出名次";
-
-        /**
-         * 「整图高度上限」的显示名，设置页与出错提示共用这一份
-         */
-        public static final String HEIGHT_LIMIT_LABEL = "排行榜 · 整图高度上限";
-
-        /**
-         * 排行榜一张图最多列多少名，单位：名；榜上人多时图末写「其余 N 名未列出」，高度不够时还会再少列。保存后立刻生效。
-         */
-        // 不填也能用（默认 50）。
-        @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel(TOP_N_LABEL)
-        @ConfigSummary("实际名次数还受图片高度限制。")
-        private int topN = 50;
-
-        /**
-         * 排行榜整图的高度上限，单位：像素；装不下的名次不画、计进末尾的「其余 N 名未列出」。手机上嫌长或截得多时调这里。
-         */
-        // 头部、每一行、脚注与署名全算在内。不填也能用（默认 10000 像素）。
-        @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        @ConfigLabel(HEIGHT_LIMIT_LABEL)
-        @ConfigSummary("超出高度的名次不绘制，计入「其余 N 名未列出」。")
-        private int heightLimit = 10000;
-    }
 }

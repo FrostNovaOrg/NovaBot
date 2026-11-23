@@ -14,20 +14,9 @@ import java.util.Map;
  * 分人流水表是后来才有的，升级前就在播的那一场读不到它。能算的那部分——礼物与
  * 醒目留言的分人金额表——早就各自在记，按人相加就是那一场的流水；上舰的分人金额
  * 旧数据里没有，不含，口径说明 {@link BilibiliLiveMetric#REVENUE_RANKING_FALLBACK_NOTE} 说清。
- * <p>
- * 下播报告图与「数据排行榜」命令共用这一份合成：同一群人在两个入口看到的必须是
- * 同一张榜——各写一遍的话，迟早一边改了另一边没跟。
  */
 public final class RevenueRankings {
     private RevenueRankings() {
-    }
-
-    /**
-     * 全量合成（不截名次）：调用方要先知道回落榜一共几人时用这一支，
-     * 免得为了个数把同一份名单合成两遍
-     */
-    public static List<UserScore> legacyFallback(LiveDataService service, String platform, Long uid) {
-        return legacyFallback(service, platform, uid, Integer.MAX_VALUE);
     }
 
     /**

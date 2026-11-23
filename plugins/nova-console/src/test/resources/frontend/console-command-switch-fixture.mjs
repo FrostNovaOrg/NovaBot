@@ -220,7 +220,7 @@ globalThis.document = {
 globalThis.location = {hash: '', href: '', replace() {}, reload() {}};
 
 // —— 假接口 ——
-// 回包里带 usages：一条命令底下分哪几种用法、这台机器上每一格开没开，由服务端答
+// 回包里带 usages：一条命令底下分哪几种用法，由服务端答
 // （照 RuntimeStateController 那一份）。这里要量的是「给了这份之后页面画得对不对」。
 
 const mock = {
@@ -230,12 +230,7 @@ const mock = {
       {
         name: '@名单', description: '看谁订阅了开播与动态提醒', category: '提醒',
         requiresAdmin: false, disableable: true, available: true,
-        usages: [{key: '开播@名单', available: true}, {key: '动态@名单', available: true}],
-      },
-      {
-        name: '直播间数据', description: '查一位主播的直播数据', category: '数据',
-        requiresAdmin: false, disableable: true, available: true,
-        usages: [{key: '直播间数据', available: true}, {key: '直播间总数据', available: false}],
+        usages: [{key: '开播@名单'}, {key: '动态@名单'}],
       },
       {
         name: '直播报告', description: '下播后看一场的报告', category: '报告',
@@ -312,15 +307,14 @@ function buildCtx(state) {
     session, target: TARGET,
     commands: state.commands,
     subscriptions: state.subscriptions,
-    totalDataAvailable: state.totalDataAvailable,
     summary: {
       revenue: model.revenueSummary(session),
       quiet: model.quietSummary(session, state.quietGlobal),
-      command: model.commandSummary(state.commands, session, state.totalDataAvailable),
+      command: model.commandSummary(state.commands, session),
       subscription: model.subscriptionSummary(state.subscriptions, session),
       atAll: model.atAllStatus({bots: [], sessions: []}, session, TARGET, {}),
     },
-    groups: model.commandGroups(state.commands, session, state.totalDataAvailable),
+    groups: model.commandGroups(state.commands, session),
   };
 }
 
@@ -433,29 +427,6 @@ await ask('② 只关了其中一格，主开关也不该亮着（半开不是�
   }, '只关一格');
 });
 
-await ask('③ 本机没开累计数据，累计那一半置灰，没被连累的那一半照旧', async () => {
-  if (!sessions || !model) throw new Error('产品码没载入，无从量起');
-  paintWith([]);
-
-  const master = inputByLabel(host, '直播间数据');
-  const live = inputByLabel(host, '直播间数据');
-  const total = inputByLabel(host, '直播间总数据');
-
-  same({
-    '主开关亮着': !!(master && master.checked),
-    '本场那一格锁着': !!(live && live.disabled),
-    '累计那一格画出来了': !!total,
-    '累计那一格锁着': !!(total && total.disabled),
-    '累计那一格亮着': !!(total && total.checked),
-  }, {
-    '主开关亮着': true,
-    '本场那一格锁着': false,
-    '累计那一格画出来了': true,
-    '累计那一格锁着': true,
-    '累计那一格亮着': false,
-  }, '累计那一半置灰');
-});
-
 await ask('④ 只有一种用法的命令，开关还是它自己那一个（形状没被改掉）', async () => {
   if (!sessions || !model) throw new Error('产品码没载入，无从量起');
   paintWith([]);
@@ -503,7 +474,7 @@ await ask('⑦ 一组全都不可关闭：不画开关、开关位留空位，�
 await ask('⑤ 摘要把群里关掉的那两格算成「被群管理员关了」，不算残留记录', async () => {
   if (!sessions || !model) throw new Error('产品码没载入，无从量起');
   const state = clone(mock.state);
-  const summary = model.commandSummary(state.commands, sessionOf(state), state.totalDataAvailable);
+  const summary = model.commandSummary(state.commands, sessionOf(state));
 
   same({
     '被关的那几格': summary.offNames,
@@ -518,7 +489,7 @@ await ask('⑥ 状态文件里留着的旧命令正名，算残留记录（阴�
   if (!sessions || !model) throw new Error('产品码没载入，无从量起');
   const state = clone(mock.state);
   sessionOf(state).disabled = ['@名单'];
-  const summary = model.commandSummary(state.commands, sessionOf(state), state.totalDataAvailable);
+  const summary = model.commandSummary(state.commands, sessionOf(state));
 
   same({
     '被关的那几格': summary.offNames,

@@ -232,7 +232,7 @@ public class ConfigurationValidator {
         if (disabled != null) {
             if (!(disabled instanceof JSONArray list)) issues.add(at + "的 disabledCommands 必须为用法名数组或 null");
             else for (Object key : list) {
-                if (!(key instanceof String) || !org.frostnova.nova.core.model.ChannelSettings.COMMAND_KEYS.contains(key)) {
+                if (!(key instanceof String name) || !org.frostnova.nova.core.model.ChannelSettings.isKnownCommandKey(name)) {
                     issues.add(at + "的 disabledCommands 包含不可关闭的用法：" + key);
                     break;
                 }

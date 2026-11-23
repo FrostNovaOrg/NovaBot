@@ -14,7 +14,6 @@ import org.frostnova.nova.core.analytics.WeeklyReport;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.TextWithStyle;
-import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
@@ -224,15 +223,9 @@ class ReportPaletteTest {
     }
 
     @Test
-    void queryAndForwardedDynamicUseTheSuppliedPalette() throws Exception {
+    void forwardedDynamicUsesTheSuppliedPalette() throws Exception {
         var palette = singleInk(INK);
         var api = mock(BilibiliApiUtil.class);
-        var query = new BilibiliDataQueryPainter(factory, api);
-        var header = new BilibiliDataQueryPainter.Header("查询", "示例", null);
-        assertInk(png(query.paintCards(header, List.of(new BilibiliDataQueryPainter.DataCard("1", "弹幕")),
-                "说明", palette).orElseThrow()), INK);
-        assertInk(png(query.paintRanking(header, List.of(new UserScore(19604318752096L, "观众", null, -1)),
-                1, String::valueOf, "说明", palette).orElseThrow()), INK);
         var dynamic = new Dynamic();
         dynamic.setType("DYNAMIC_TYPE_FORWARD");
         dynamic.setModules(JSON.parseObject("{\"module_author\":{\"name\":\"示例\",\"pub_ts\":1700000000},"
