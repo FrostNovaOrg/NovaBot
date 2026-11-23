@@ -1,8 +1,7 @@
-package org.frostnova.nova.adapter.onebot.controller;
+package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import org.frostnova.nova.adapter.onebot.service.OneBotTargetDirectory;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushTarget;
@@ -32,41 +31,41 @@ import static org.mockito.Mockito.when;
 /**
  * 挑选推送目标那两支接口
  *
- * <h2>为什么「已配置」这一栏要有判据</h2>
+ * <h2>为什么需要校验「已配置」这一栏</h2>
  * 挑选界面靠它把已经配过的那几条标出来。标错的两个方向代价不同：漏标会让使用者重复配一遍
  * （数据源那一侧会拦），<b>误标则会让他以为配过了而其实没配</b>——那位主播开播时没有推送，
  * 而界面上一切正常。所以阳性与阴性两侧都要钉住。
  */
 @DisplayName("挑选推送目标")
-class OneBotTargetControllerTest {
-    private static final String SENDER = "qq-onebot";
+class ConfigUiPushTargetsControllerTest {
+    private static final String SENDER = "bot-a";
 
     private static final Instant FETCHED_AT = Instant.parse("2026-09-04T00:00:00Z");
 
-    private OneBotTargetDirectory directory;
+    private PushTargetDirectory directory;
 
     private AbstractDataSource dataSource;
 
-    private OneBotTargetController controller;
+    private ConfigUiPushTargetsController controller;
 
     @BeforeEach
     void setUp() {
-        directory = mock(OneBotTargetDirectory.class);
+        directory = mock(PushTargetDirectory.class);
         dataSource = mock(AbstractDataSource.class);
-        controller = new OneBotTargetController(directory, dataSource);
+        controller = new ConfigUiPushTargetsController(List.of(directory), List.of(), dataSource);
 
         when(dataSource.getAllUsers()).thenReturn(List.of());
         when(directory.snapshots(false)).thenReturn(List.of(snapshot(SENDER, FETCHED_AT, false)));
         when(directory.snapshots(true)).thenReturn(List.of(snapshot(SENDER, FETCHED_AT, false)));
     }
 
-    private static OneBotTargetDirectory.Snapshot snapshot(String sender, Instant fetchedAt, boolean stale) {
-        return new OneBotTargetDirectory.Snapshot(sender,
-                List.of(new OneBotTargetDirectory.Group(10000002L, "开播提醒", 42, Boolean.TRUE),
-                        new OneBotTargetDirectory.Group(10000003L, "测试群", 7, Boolean.FALSE)),
-                List.of(new OneBotTargetDirectory.Friend(10000004L, "甲", "运维"),
-                        new OneBotTargetDirectory.Friend(10000005L, "乙", "")),
-                fetchedAt, fetchedAt, stale, stale ? "连不上 OneBot" : null);
+    private static PushTargetDirectory.Snapshot snapshot(String sender, Instant fetchedAt, boolean stale) {
+        return new PushTargetDirectory.Snapshot(sender,
+                List.of(new PushTargetDirectory.Group(10000002L, "开播提醒", 42, Boolean.TRUE),
+                        new PushTargetDirectory.Group(10000003L, "测试群", 7, Boolean.FALSE)),
+                List.of(new PushTargetDirectory.Friend(10000004L, "甲", "运维"),
+                        new PushTargetDirectory.Friend(10000005L, "乙", "")),
+                fetchedAt, fetchedAt, stale, stale ? "连不上机器人" : null);
     }
 
     /**
@@ -145,7 +144,7 @@ class OneBotTargetControllerTest {
     @Test
     @DisplayName("⚠️ 号相同而推送平台不同的不算已配置")
     void configuredIsScopedToSender() {
-        datasourceHasGroup("another-onebot", 10000002L);
+        datasourceHasGroup("bot-b", 10000002L);
 
         assertEquals(Boolean.FALSE, items("group", null).getJSONObject(0).getBoolean("configured"));
     }
@@ -220,6 +219,7 @@ class OneBotTargetControllerTest {
             assertEquals(400, response.getStatusCode().value(), "type=" + type);
             assertEquals(Boolean.FALSE, response.getBody().getBoolean("success"));
             assertTrue(response.getBody().getString("message").contains("group"), "要说清能填什么");
+            assertEquals("type 只能是 group 或 friend", response.getBody().getString("message"));
         }
     }
 
@@ -249,21 +249,21 @@ class OneBotTargetControllerTest {
         Instant older = FETCHED_AT.minusSeconds(3600);
         when(directory.snapshots(false)).thenReturn(List.of(
                 snapshot(SENDER, FETCHED_AT, false),
-                snapshot("another-onebot", older, true)));
+                snapshot("bot-b", older, true)));
 
         JSONObject body = body("group", null);
 
         assertEquals(older.toString(), body.getString("fetchedAt"));
         assertTrue(body.getBoolean("stale"));
         assertEquals(2, body.getJSONArray("senders").size(), "是哪个平台过期的要看得出来");
-        assertEquals("连不上 OneBot", body.getJSONArray("senders").getJSONObject(1).getString("message"));
+        assertEquals("连不上机器人", body.getJSONArray("senders").getJSONObject(1).getString("message"));
     }
 
     @Test
     @DisplayName("一次都没取成过时取回时刻为空, 表算过期")
     void neverFetchedHasNoTimestamp() {
         when(directory.snapshots(false)).thenReturn(List.of(
-                new OneBotTargetDirectory.Snapshot(SENDER, List.of(), List.of(), null, FETCHED_AT, true, "连不上 OneBot")));
+                new PushTargetDirectory.Snapshot(SENDER, List.of(), List.of(), null, FETCHED_AT, true, "连不上机器人")));
 
         JSONObject body = body("group", null);
 
@@ -303,18 +303,18 @@ class OneBotTargetControllerTest {
     @Test
     @DisplayName("通用路 /api/bot/targets 与刷新路按常量挂上")
     void genericTargetsPathIsMapped() throws Exception {
-        assertEquals("/config/api/bot/targets", OneBotTargetController.TARGETS_PATH);
-        assertEquals("/config/api/bot/targets/refresh", OneBotTargetController.REFRESH_PATH);
+        assertEquals("/config/api/bot/targets", ConfigUiPushTargetsController.TARGETS_PATH);
+        assertEquals("/config/api/bot/targets/refresh", ConfigUiPushTargetsController.REFRESH_PATH);
 
-        GetMapping get = OneBotTargetController.class
+        GetMapping get = ConfigUiPushTargetsController.class
                 .getMethod("targets", String.class, String.class)
                 .getAnnotation(GetMapping.class);
-        PostMapping post = OneBotTargetController.class
+        PostMapping post = ConfigUiPushTargetsController.class
                 .getMethod("refresh")
                 .getAnnotation(PostMapping.class);
 
-        assertTrue(Set.of(get.value()).contains(OneBotTargetController.TARGETS_PATH));
-        assertTrue(Set.of(post.value()).contains(OneBotTargetController.REFRESH_PATH));
+        assertTrue(Set.of(get.value()).contains(ConfigUiPushTargetsController.TARGETS_PATH));
+        assertTrue(Set.of(post.value()).contains(ConfigUiPushTargetsController.REFRESH_PATH));
 
         JSONObject body = body("group", null);
         assertEquals(Boolean.TRUE, body.getBoolean("success"));
@@ -324,16 +324,16 @@ class OneBotTargetControllerTest {
     @Test
     @DisplayName("旧 GET／POST 已撤（无映射即 404），通用路仍 200")
     void legacyTargetsPathGone() throws Exception {
-        GetMapping get = OneBotTargetController.class
+        GetMapping get = ConfigUiPushTargetsController.class
                 .getMethod("targets", String.class, String.class)
                 .getAnnotation(GetMapping.class);
-        PostMapping post = OneBotTargetController.class
+        PostMapping post = ConfigUiPushTargetsController.class
                 .getMethod("refresh")
                 .getAnnotation(PostMapping.class);
 
-        assertEquals(List.of(OneBotTargetController.TARGETS_PATH), List.of(get.value()),
+        assertEquals(List.of(ConfigUiPushTargetsController.TARGETS_PATH), List.of(get.value()),
                 "GET 只挂通用路；多一条即旧路未撤");
-        assertEquals(List.of(OneBotTargetController.REFRESH_PATH), List.of(post.value()),
+        assertEquals(List.of(ConfigUiPushTargetsController.REFRESH_PATH), List.of(post.value()),
                 "POST 只挂通用路；多一条即旧路未撤");
         for (String v : get.value()) {
             assertFalse(v.contains("/onebot/"), "GET 不得再挂 /onebot/ 旧路: " + v);

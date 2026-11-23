@@ -3,7 +3,6 @@ package org.frostnova.nova.adapter.onebot.service;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.controller.OneBotController;
-import org.frostnova.nova.adapter.onebot.controller.OneBotTargetController;
 import org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
@@ -13,6 +12,7 @@ import org.frostnova.nova.adapter.onebot.security.PushApiTokenStore;
 import org.frostnova.nova.core.account.BotConnectionTester;
 import org.frostnova.nova.core.properties.LogProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.ui.ConfigUiPushTargetsController;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -216,7 +216,7 @@ class OneBotRuntimeConnectionTest {
                 "推送平台该已经注册进核心: " + senderService.getSenderNames());
 
         // 初始设置第 4 步真正问的就是这一支：挑推送目标那张表从它来
-        JSONObject listed = new OneBotTargetController(directory,
+        JSONObject listed = new ConfigUiPushTargetsController(List.of(directory), List.of(),
                 mock(org.frostnova.nova.core.datasource.AbstractDataSource.class)).targets("group", null).getBody();
         assertNotNull(listed, "取名单那一支该有回包");
         assertTrue(listed.getBooleanValue("success"), listed.toJSONString());

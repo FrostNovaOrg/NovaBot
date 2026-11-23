@@ -1,14 +1,12 @@
-package org.frostnova.nova.adapter.onebot.controller;
+package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import org.frostnova.nova.adapter.onebot.service.OneBotTargetDirectory;
-import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
-import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
@@ -19,51 +17,37 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/**
- * 「能推给谁」的清单
- * <p>
- * 配推送目标时不该再有手填号码的格子——填错一位数不会有任何报错，只是消息发去了别处，
- * 或者哪儿也没去。这两支接口把机器人自己知道的名单交给界面，由使用者从里面挑。
- *
- * <h2>路径为什么挂在控制台底下</h2>
- * 挂在 {@link ConfigUiController#BASE_PATH} 之下，控制台开着时落在那道门后面：
- * 来源 IP 白名单、令牌或口令、使用协议三道闸一道不少。它列的是群号与好友账号，
- * 属于他人的个人信息，不该另建一套自己的鉴权——另建一套的下场是两套规则迟早对不上，
- * 而对不上的那一侧通常是新写的这一套。
- *
- * <h2>为什么还要挂开关条件</h2>
- * 那道门只在控制台开着时在。开关一关，过滤器跟注册器一起不装配，控制器本身若不认开关，
- * 群号与好友名单就裸着。关时不登记，跟控制台一并不在。
- */
+/** 控制台可选的推送目标名单与精确查号。 */
 @Slf4j
 @RestController
-@NovaComponent
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
-public class OneBotTargetController {
+public class ConfigUiPushTargetsController {
     static final String TARGETS_PATH = ConfigUiController.BASE_PATH + "/api/bot/targets";
 
     static final String REFRESH_PATH = TARGETS_PATH + "/refresh";
+
+    static final String LOOKUP_PATH = TARGETS_PATH + "/lookup";
 
     private static final String TYPE_GROUP = "group";
 
     private static final String TYPE_FRIEND = "friend";
 
-    private final OneBotTargetDirectory directory;
+    private final List<PushTargetDirectory> directories;
 
-    /**
-     * 只读，用来标出哪些群／好友已经配过了
-     * <p>
-     * 挑选界面写不进数据源：这一支只回答「配没配过」，配与不配由推送页那一侧负责。
-     */
+    private final List<PushTargetLookup> lookups;
+
     private final AbstractDataSource dataSource;
 
-    public OneBotTargetController(OneBotTargetDirectory directory, AbstractDataSource dataSource) {
-        this.directory = directory;
+    public ConfigUiPushTargetsController(List<PushTargetDirectory> directories, List<PushTargetLookup> lookups,
+                                         AbstractDataSource dataSource) {
+        this.directories = directories;
+        this.lookups = lookups;
         this.dataSource = dataSource;
     }
 
@@ -84,14 +68,14 @@ public class OneBotTargetController {
             return ResponseEntity.badRequest().body(bad);
         }
 
-        List<OneBotTargetDirectory.Snapshot> snapshots = directory.snapshots(false);
+        List<PushTargetDirectory.Snapshot> snapshots = snapshots(false);
         Set<String> configured = configuredTargets();
         String keyword = q == null ? "" : q.strip().toLowerCase(Locale.ROOT);
 
         JSONArray items = new JSONArray();
-        for (OneBotTargetDirectory.Snapshot snapshot : snapshots) {
+        for (PushTargetDirectory.Snapshot snapshot : snapshots) {
             if (group) {
-                for (OneBotTargetDirectory.Group row : snapshot.groups()) {
+                for (PushTargetDirectory.Group row : snapshot.groups()) {
                     if (!matches(keyword, row.num(), row.name())) {
                         continue;
                     }
@@ -106,7 +90,7 @@ public class OneBotTargetController {
                     items.add(item);
                 }
             } else {
-                for (OneBotTargetDirectory.Friend row : snapshot.friends()) {
+                for (PushTargetDirectory.Friend row : snapshot.friends()) {
                     if (!matches(keyword, row.num(), row.nickname(), row.remark())) {
                         continue;
                     }
@@ -129,18 +113,55 @@ public class OneBotTargetController {
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * 重新去问一遍 OneBot
-     * <p>
-     * 用 POST 而不是给列表接口加一个 {@code refresh=1}：它会真的向 OneBot 发一整轮请求，
-     * 而 GET 会被浏览器、缓存与预取随手重放。
-     * @return 各推送平台的取回情况
-     */
+    /** 强制刷新各推送平台的名单。 */
     @PostMapping(value = REFRESH_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public JSONObject refresh() {
-        JSONObject result = summary(directory.snapshots(true));
+        JSONObject result = summary(snapshots(true));
         result.put("success", true);
         return result;
+    }
+
+    @GetMapping(LOOKUP_PATH)
+    public ResponseEntity<JSONObject> lookup(@RequestParam String platform, @RequestParam String type,
+                                             @RequestParam String num, @RequestParam(required = false) String q) {
+        Long number = ConfigUiStreamerId.positiveDecimal(num);
+        PushTargetType targetType = TYPE_GROUP.equals(type) ? PushTargetType.GROUP
+                : TYPE_FRIEND.equals(type) ? PushTargetType.FRIEND : null;
+        if (number == null || targetType == null || platform.isBlank() || q != null) {
+            return ResponseEntity.badRequest().body(JSONObject.of("success", false,
+                    "message", "请填写推送平台、group 或 friend 类型与完整号码，不支持关键字"));
+        }
+
+        PushTargetLookup.Result found = lookups.stream().filter(lookup -> lookup.supports(platform)).findFirst()
+                .map(lookup -> lookup.lookup(platform, targetType, number, ConfigUiAccess.memberAccount()))
+                .orElseGet(() -> new PushTargetLookup.Result(false, null, "推送平台不可用"));
+        JSONObject result = JSONObject.of("success", true, "found", found.found(),
+                "platform", platform, "type", type, "num", number);
+        if (found.found()) {
+            result.put(targetType == PushTargetType.GROUP ? "name" : "nickname", found.name());
+        }
+        if (found.message() != null) {
+            result.put("message", found.message());
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    private List<PushTargetDirectory.Snapshot> snapshots(boolean force) {
+        List<PushTargetDirectory.Snapshot> snapshots = new ArrayList<>();
+        for (PushTargetDirectory directory : directories) {
+            try {
+                snapshots.addAll(directory.snapshots(force));
+            } catch (RuntimeException e) {
+                String sender = directory.id();
+                String reason = e.getMessage();
+                if (reason == null || reason.isBlank()) {
+                    reason = e.getClass().getSimpleName();
+                }
+                log.warn("取 {} 的推送目标名单失败: {}", sender, reason);
+                snapshots.add(new PushTargetDirectory.Snapshot(sender, List.of(), List.of(), null, null, true, reason));
+            }
+        }
+        return snapshots;
     }
 
     /**
@@ -152,12 +173,12 @@ public class OneBotTargetController {
      * <p>
      * 同时逐平台列出来：只报一个「已过期」而不说是哪个平台过期，使用者无从下手。
      */
-    private JSONObject summary(List<OneBotTargetDirectory.Snapshot> snapshots) {
+    private JSONObject summary(List<PushTargetDirectory.Snapshot> snapshots) {
         JSONArray senders = new JSONArray();
         Instant oldest = null;
         boolean stale = false;
 
-        for (OneBotTargetDirectory.Snapshot snapshot : snapshots) {
+        for (PushTargetDirectory.Snapshot snapshot : snapshots) {
             JSONObject item = new JSONObject();
             item.put("sender", snapshot.sender());
             item.put("fetchedAt", snapshot.fetchedAt() == null ? null : snapshot.fetchedAt().toString());
