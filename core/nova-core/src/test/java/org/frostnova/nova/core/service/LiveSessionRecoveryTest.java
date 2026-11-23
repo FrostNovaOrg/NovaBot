@@ -34,10 +34,6 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * 停机与崩溃善后测试
@@ -253,7 +249,7 @@ class LiveSessionRecoveryTest {
             after.recordDowntime(laterFrom, laterFrom + 1_000, LiveGap.Reason.MAINTENANCE);
             assertEquals(segment, after.startupDowntime().orElseThrow(), "后来再记的停机不盖掉启动这一段");
 
-            assertEquals(segment, new CompositeLiveDataService(after, null).startupDowntime().orElseThrow(),
+            assertEquals(segment, after.startupDowntime().orElseThrow(),
                     "组合实现要把这一问交回本场那一份");
         }
 
@@ -556,28 +552,17 @@ class LiveSessionRecoveryTest {
         }
 
         @Test
-        @DisplayName("续场中途崩溃、下次开播补档：场次仍只一条，累计只算一次（故障：断过又崩的那一场统计里出现两遍、前半场累计算两遍）")
-        void unclosedResumedSessionIsArchivedAndMergedOnce() {
+        @DisplayName("续场中途崩溃、下次开播补档：整场数据归在同一场次")
+        void unclosedResumedSessionIsArchivedOnce() {
             long start = System.currentTimeMillis() - 5 * 3600_000L;
             long offAt = start + 3600_000L;
-            double[] merged = new double[1];
-            RedisTotalDataStore store = mock(RedisTotalDataStore.class);
-            doAnswer(invocation -> {
-                RedisTotalDataStore.LiveSnapshot snapshot = invocation.getArgument(2);
-                merged[0] += snapshot.metrics().getOrDefault("danmu_count", 0.0);
-                return true;
-            }).when(store).merge(any(), any(), any());
-            TotalDataStorage total = mock(TotalDataStorage.class);
-            when(total.active()).thenReturn(store);
-
             DefaultLiveDataService before = boot();
-            CompositeLiveDataService beforeComposite = new CompositeLiveDataService(before, total);
             LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
             LiveSessionDetailArchiver detailArchiver =
-                    new LiveSessionDetailArchiver(beforeComposite, history, new LiveDetailArchive(properties));
-            NovaDefaultLiveOnEventListener onListener = new NovaDefaultLiveOnEventListener(properties, beforeComposite,
-                    new LiveSessionRecovery(beforeComposite, archive, history, detailArchiver));
-            NovaDefaultLiveOffEventListener offListener = new NovaDefaultLiveOffEventListener(beforeComposite,
+                    new LiveSessionDetailArchiver(before, history, new LiveDetailArchive(properties));
+            NovaDefaultLiveOnEventListener onListener = new NovaDefaultLiveOnEventListener(properties, before,
+                    new LiveSessionRecovery(before, archive, history, detailArchiver));
+            NovaDefaultLiveOffEventListener offListener = new NovaDefaultLiveOffEventListener(before,
                     archive, new LiveInterventionTracker(), history, detailArchiver);
 
             liveOn(onListener, start);
@@ -589,10 +574,9 @@ class LiveSessionRecoveryTest {
             before.saveNow(false);
 
             DefaultLiveDataService after = boot();
-            CompositeLiveDataService afterComposite = new CompositeLiveDataService(after, total);
-            LiveSessionRecovery recovery = new LiveSessionRecovery(afterComposite, archive, history,
-                    new LiveSessionDetailArchiver(afterComposite, history, new LiveDetailArchive(properties)));
-            LiveOnEvent next = liveOn(new NovaDefaultLiveOnEventListener(properties, afterComposite, recovery),
+            LiveSessionRecovery recovery = new LiveSessionRecovery(after, archive, history,
+                    new LiveSessionDetailArchiver(after, history, new LiveDetailArchive(properties)));
+            LiveOnEvent next = liveOn(new NovaDefaultLiveOnEventListener(properties, after, recovery),
                     System.currentTimeMillis());
 
             List<LiveSession> sessions = archived();
@@ -600,7 +584,6 @@ class LiveSessionRecoveryTest {
             assertEquals(1, sessions.size(), "同一开播时刻只该有一条，实际: " + sessions.size());
             assertEquals(LiveEndReason.UNCLOSED, sessions.get(0).endReason());
             assertEquals(15.0, sessions.get(0).metric("danmu_count"));
-            assertEquals(15.0, merged[0], "整场 15 条；前半场重复并入时是 25");
         }
 
         private LiveOnEvent liveOn(NovaDefaultLiveOnEventListener listener, long at) {

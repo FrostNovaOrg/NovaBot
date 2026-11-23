@@ -48,7 +48,7 @@ class StandbyAfterGateTest {
 
     private static final String CHANGED = "候命期间配置改过：";
 
-    private static final String PROBE = "未配置累计数据存储";
+    private static final String LIVE_DATA_READY = "直播数据加载完成";
 
     private static final String HEARTBEAT = "事件输出心跳已排上";
 
@@ -100,8 +100,8 @@ class StandbyAfterGateTest {
                                 "等锁期间报告图缓存半成品不该被删"),
                         () -> assertTrue(Files.readString(fixtures.yml).contains("/127.0.0.1"),
                                 "等锁期间 application.yml 不该被回写"),
-                        () -> assertFalse(app.out().contains(PROBE),
-                                "等锁期间刷新不该已经跑起来。\n" + dump(app)),
+                        () -> assertFalse(app.out().contains(LIVE_DATA_READY),
+                                "等锁期间不应加载直播数据。\n" + dump(app)),
                         () -> assertFalse(app.out().contains(HEARTBEAT),
                                 "等锁期间心跳不该已经排上。\n" + dump(app)),
                         () -> assertFalse(app.out().contains(ROOM),
@@ -185,7 +185,7 @@ class StandbyAfterGateTest {
     }
 
     @Test
-    @DisplayName("开关关着：同一次启动里五处写盘和刷新、心跳都做了")
+    @DisplayName("开关关着：同一次启动里五处写盘、直播数据加载和心跳都完成")
     void switchOffStillRuns(@TempDir Path root) throws Exception {
         Path dir = root.resolve("work");
         Files.createDirectories(dir);
@@ -203,7 +203,7 @@ class StandbyAfterGateTest {
                     () -> assertFalse(Files.exists(fixtures.legacyLog), "改名前的旧日志应删掉"),
                     () -> assertFalse(Files.exists(fixtures.image), "报告图缓存半成品应删掉"),
                     () -> assertFalse(yml.contains("/127.0.0.1"), "斜杠形态的监听地址应写回裸地址"),
-                    () -> assertTrue(app.out().contains(PROBE), "刷新应在这次启动里跑过。\n" + dump(app)),
+                    () -> assertTrue(app.out().contains(LIVE_DATA_READY), "应已加载直播数据。\n" + dump(app)),
                     () -> assertTrue(app.out().contains(HEARTBEAT), "心跳应在这次启动里排上。\n" + dump(app)),
                     () -> assertTrue(app.out().contains(ROOM), "房间统计应在这次启动里排上。\n" + dump(app))
             );

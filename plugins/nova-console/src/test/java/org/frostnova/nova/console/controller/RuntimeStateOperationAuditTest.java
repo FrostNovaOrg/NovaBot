@@ -36,7 +36,7 @@ class RuntimeStateOperationAuditTest {
         when(source.getAllUsers()).thenReturn(List.of());
         var quiet = new SessionQuietHoursService(state);
         var controller = new RuntimeStateController(mock(CommandDispatcher.class), new CommandSettingsService(state),
-                subscriptions, state, source, new RevenueVisibilityService(state), mock(LiveDataService.class),
+                subscriptions, state, source, new RevenueVisibilityService(state),
                 new StreamerNames(new LiveSessionArchive(properties)), quiet, new PushGate(properties, quiet));
         var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ConfigUiOperationAdvice())
                 .addFilters(new ConfigUiOperationFilter(new ConfigUiOperationStore(properties))).build();

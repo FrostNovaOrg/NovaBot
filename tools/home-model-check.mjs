@@ -28,7 +28,6 @@ const OK_PROBES = () => [
   probe('直播间连接', 'PLATFORM', 'OK', '3/3 已连接'),
   probe('推送活动', 'SYSTEM', 'OK', '成功 128 次，失败 2 次'),
   probe('风控与静默降级', 'PLATFORM', 'OK', '7 天内 412 0 次'),
-  probe('数据存储', 'SYSTEM', 'OK', '本场数据 + 累计数据'),
 ];
 
 /** 一份「一切正常」的 /api/status，各档在它上面改动几处 */
@@ -45,7 +44,6 @@ function status(patch) {
     restartPending: [],
     senders: ['默认'],
     locked: true,
-    totalDataAvailable: true,
     quiet: {active: false, start: '', end: ''},
     live: [{uid: 3493, uname: '柚子', roomId: 1234, platform: 'bilibili', since: 1757000000000}],
     today: {sent: 14, failed: 1},
@@ -90,7 +88,7 @@ const CASES = [
     name: '首次安装',
     // 没有配置文件或配置里没有机器人：一个推送平台都没注册出来，也没有主播
     status: status({
-      senders: [], users: [], live: [], locked: false, totalDataAvailable: false,
+      senders: [], users: [], live: [], locked: false,
       today: {sent: 0, failed: 0},
       health: [
         probe('哔哩哔哩登录', 'PLATFORM', 'DEGRADED', '未登录', '请到「连接」页扫码登录', true),
@@ -98,7 +96,6 @@ const CASES = [
         probe('直播间连接', 'PLATFORM', 'OK', '暂无需要连接的直播间'),
         probe('推送活动', 'SYSTEM', 'OK', '启动后尚无推送'),
         probe('风控与静默降级', 'PLATFORM', 'OK', '7 天内 412 0 次'),
-        probe('数据存储', 'SYSTEM', 'OK', '仅本场数据'),
       ],
     }),
     login: login({accounts: [{platform: 'bilibili', displayName: '哔哩哔哩', loggedIn: false, accountId: null}]}),
@@ -328,7 +325,7 @@ same((webhookTodo || {}).action, '前往配置', '待办按钮');
 
 // 首次安装只出初始设置，不叠 Webhook 待办
 const freshStatus = status({
-  senders: [], users: [], live: [], locked: false, totalDataAvailable: false,
+  senders: [], users: [], live: [], locked: false,
   alerts: {qq: false, webhook: false, mail: false},
   today: {sent: 0, failed: 0},
   health: [
@@ -337,7 +334,6 @@ const freshStatus = status({
     probe('直播间连接', 'PLATFORM', 'OK', '暂无需要连接的直播间'),
     probe('推送活动', 'SYSTEM', 'OK', '启动后尚无推送'),
     probe('风控与静默降级', 'PLATFORM', 'OK', '7 天内 412 0 次'),
-    probe('数据存储', 'SYSTEM', 'OK', '仅本场数据'),
   ],
 });
 same(homeModel(freshStatus, login(), timeline()).todos.map(item => item.key), ['setup'],

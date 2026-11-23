@@ -13,10 +13,6 @@ import java.util.Map;
  * 配置界面原则上只展示 {@code novabot.} 命名空间下的配置项，框架自身成千上万的配置
  * 不该淹没使用者。<b>但有几项例外：NovaBot 的功能实实在在依赖它们。</b>
  * <p>
- * 不展示的后果很具体：健康自检提示「累计查询需配置 spring.data.redis.host」，
- * 而使用者到设置页去搜，什么也搜不到——一条指向界面上不存在之物的提示。
- * 邮件告警同理，说明里让人填 SMTP，界面上却没有可填的地方。
- * <p>
  * 说明由此处自行撰写而非取自框架元数据：框架的说明是英文的，且讲的是它自己的用途，
  * 不会告诉使用者「配了这个，NovaBot 会多出什么能力」——而后者才是他们要判断的事。
  */
@@ -30,21 +26,6 @@ public final class ExternalConfigurationFields {
             new LinkedHashMap<>();
 
     static {
-        // ---- 累计数据存储 ----
-        // 这四项即时生效：认这几个值的是 TotalDataStorage，它按新参数就地换一个后端。
-        // 带「总」的数据随时间无限增长，放在文件里迟早撑不住；Redis 中途挂了会自动
-        // 降级为只有本场数据，连回来自己恢复
-        put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                "累计数据 Redis · 地址",
-                "累计数据存储使用的 Redis 地址。填写后才有跨场次数据，留空时带「总」的查询不可用；只需本机可访问，请勿暴露到公网。修改后即时生效。");
-        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                6379, "累计数据 Redis · 端口", "Redis 端口，默认 6379。");
-        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                "累计数据 Redis · 密码",
-                "Redis 密码，未设密码时留空。");
-        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
-                0, "累计数据 Redis · 数据库编号", "Redis 数据库编号，默认 0；与其他程序共用同一实例时，可改用其他编号以避免键冲突。修改后即时生效，无需重启。");
-
         // ---- 邮件告警的发件服务 ----
         // 收件人是 novabot.core.mail.default-to，在界面上找得到；
         // 但没有下面这几项，那一项配了也发不出去
@@ -163,9 +144,6 @@ public final class ExternalConfigurationFields {
 
     /**
      * 这些配置项的生效时机
-     * <p>
-     * 累计存储那四项即时生效：认它们的 {@code TotalDataStorage} 会按新参数就地换一个后端。
-     * 其余仍要重启——邮件发件服务与服务端口都是启动时装配一次的 bean，改了配置对象也换不掉它们。
      */
     static Map<String, ConfigEffect.Effect> effects() {
         Map<String, ConfigEffect.Effect> result = new LinkedHashMap<>();

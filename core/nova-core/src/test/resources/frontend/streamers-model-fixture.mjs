@@ -2,12 +2,11 @@
  * 主播页那几组纯函数的夹具
  *
  * 量的是控制台插件里 streamers-model.js 的这几件事：地址栏解析与回拼、状态四档的措辞与
- * 闭集覆盖、七天折线的取值与几何、两种缺口分开列、累计数据那条小横条的条件、
+ * 闭集覆盖、七天折线的取值与几何、两种缺口分开列、
  * 快照裸键按回包给的目录换人话、分页与报告图三态。它们全不碰 DOM，因此可以在 node 上直接喂值跑。
  *
  * 其中两组是本页判据的重头：
  *   · 两种缺口分开列——服务端特意分两个字段给出来，界面上一相加就是重复计数；
- *   · 累计数据那条横条的条件——写成取反的话，接口还没回来的那一瞬间会先闪一条假话。
  *
  * 由 StreamersModelTest 拉起，退码 0 ＝ 全绿；非 0 ＝ 有格子红了，红的那几条会逐条印出来。
  * 引用路径是相对的，量的是源码树里的那一份，不是构建产物里的副本。
@@ -16,7 +15,6 @@
  */
 
 import {register} from 'node:module';
-import {totalDataOff} from '../../../main/resources/config-ui/home-model.js';
 
 register(new URL('../../../../../../tools/alias-core-modules.mjs', import.meta.url));
 
@@ -26,7 +24,7 @@ const {
   slotCell, slotTopText, slotLabel, slotRangeDays, slotTotal,
   gapCells, insightsComparison, comparisonExplanation, pageBar, parseStreamersHash, reportPath, reportView, rowSubtitle,
   dailyFanChanges, trendCoverageBadge, seriesValues, sessionHash, sessionTitle, snapshotRows, sparkline,
-  statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
+  statusChip, summaryTotals, uncoveredStatuses,
 } = await import('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/streamers-model.js');
 
 const failures = [];
@@ -195,17 +193,6 @@ eq(GAPS.title, '其中 22 分 10 秒因程序停机未能采集；其中 44 秒�
 eq(gapCells({maintenanceGapSeconds: 0, roomOutageSeconds: 0}), {maintenance: 0, outage: 0,
   any: false, title: ''}, '没有缺口时不标');
 eq(gapCells({maintenanceGapSeconds: 0, roomOutageSeconds: 44}).any, true, '只有断线缺口也要标');
-
-// ---------- 八、累计数据那条横条 ----------
-// 🔴 三态里只有明确的 false 才算没开。写成取反的话，接口还没回来那一瞬间会先闪一条假话
-eq(totalDataBanner({totalDataAvailable: false}), '本机未启用累计数据：群内只能查询本场数据。', '没开时说这一句');
-eq(totalDataBanner({totalDataAvailable: true}), '', '开着时不说');
-eq(totalDataBanner({}), '', '旧版服务端没给这一栏时不说——不知道不许读成没开');
-eq(totalDataBanner(null), '', '整份状态都没有时不说');
-// 与首页那条软待办同一份判定：各判各的那天，首页说没开而这一页说开着
-eq(totalDataBanner({totalDataAvailable: false}) !== '', totalDataOff({totalDataAvailable: false}),
-  '这条横条与首页软待办读的是同一个判定');
-eq(totalDataBanner({}) !== '', totalDataOff({}), '不知道那一档两处也一致');
 
 // ---------- 九、快照裸键换人话 ----------
 // 人话名由回包里的 snapshotMetrics 给（插件自报），界面这边不留任何一张指标表。

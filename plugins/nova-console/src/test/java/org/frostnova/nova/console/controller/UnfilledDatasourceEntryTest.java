@@ -12,7 +12,6 @@ import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.datasource.DataSourceService;
 import org.frostnova.nova.core.datasource.DataSourceServiceConfig;
-import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.StreamerNames;
@@ -110,7 +109,6 @@ class UnfilledDatasourceEntryTest {
         // 深拷一份再摘：摘的是会话里那两栏，直接在 state 上动的话，下面那句读到的就不是接口原样了
         JSONObject rest = JSONObject.parseObject(state.toJSONString());
         rest.remove("incomplete");
-        rest.remove("totalDataAvailable");
         rest.remove("quietGlobal");
 
         // 会话里后添的两栏（本会话的菜单里不列哪几条、以及各自的说明）同样只摘名
@@ -196,7 +194,6 @@ class UnfilledDatasourceEntryTest {
                 store,
                 dataSource,
                 new RevenueVisibilityService(store),
-                mock(LiveDataService.class),
                 new StreamerNames(new LiveSessionArchive(properties)),
                 new SessionQuietHoursService(store),
                 new PushGate(properties, new SessionQuietHoursService(store)));

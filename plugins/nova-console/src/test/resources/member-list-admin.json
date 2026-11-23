@@ -35,7 +35,6 @@
     "restartPending": [],
     "senders": [],
     "locked": false,
-    "totalDataAvailable": false,
     "quiet": {
       "active": false,
       "start": "",
@@ -312,7 +311,6 @@
     ],
     "subscriptions": [],
     "incomplete": [],
-    "totalDataAvailable": false,
     "quietGlobal": {
       "start": "",
       "end": ""

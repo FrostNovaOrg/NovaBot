@@ -344,7 +344,6 @@ mock.state = {
   quietGlobal: {start: '23:00', end: '08:00'},
   subscriptions: [],
   incomplete: [],
-  totalDataAvailable: true,
 };
 
 function buildCtx(state) {

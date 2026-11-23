@@ -256,7 +256,7 @@ class DynamicBlockWordsTest {
 
         // 设置页保存走的就是这条通道：先落盘，再把新值写回运行中的配置
         RuntimeConfigurationApplier applier = new RuntimeConfigurationApplier(
-                new NovaCoreProperties(), null, provider(applierContributors(properties)), timeline::add);
+                new NovaCoreProperties(), provider(applierContributors(properties)), timeline::add);
         List<String> waitingForRestart = applier.applyAndTrack(Map.of(KEY, WORD));
         assertTrue(waitingForRestart.isEmpty(),
                 "改了名单要重启才生效：保存后这项还欠重启，说明新名单压根没写回运行中的配置");
@@ -381,7 +381,7 @@ class DynamicBlockWordsTest {
     void emptyListChangesNothing() {
         NovaBilibiliProperties properties = new NovaBilibiliProperties();
         BilibiliDynamicPushHandler handler = handlerUsing(properties);
-        new RuntimeConfigurationApplier(new NovaCoreProperties(), null,
+        new RuntimeConfigurationApplier(new NovaCoreProperties(),
                 provider(applierContributors(properties)), timeline::add).applyAndTrack(Map.of(KEY, "\n  \n"));
 
         handler.handle(event(dynamicWithText("今晚八点开播")), messageTo(GROUP));

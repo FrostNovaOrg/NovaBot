@@ -165,21 +165,12 @@ class ConfigurationTemplateTest {
     }
 
     @Test
-    @DisplayName("② 注释掉的只许是「写成空值就起不来」的那几项，而且名字得留在文件里")
-    void onlyKeysThatBreakStartupAreCommentedOut() throws IOException {
+    @DisplayName("② 核心默认配置键均可直接读取")
+    void coreKeysAreReadable() throws IOException {
         Path config = generate();
 
         Set<String> expected = baselineKeys();
-        Set<String> commented = commentedKeys(config, expected);
-
-        assertFalse(commented.isEmpty(),
-                "一项也没注释掉 —— 那么下面这条「注释掉的都在免检表里」量的是空集，恒真");
-
-        List<String> unexplained = new ArrayList<>(commented);
-        unexplained.removeAll(ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
-        assertTrue(unexplained.isEmpty(),
-                "以下配置项被注释掉了，而它们不在「写成空值会让程序起不来」那张表里。"
-                        + "注释掉一项就是从文件上把它抹掉，得有理由:\n  " + String.join("\n  ", unexplained));
+        assertEquals(expected, load(config).keySet());
     }
 
     @Test
@@ -352,7 +343,7 @@ class ConfigurationTemplateTest {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("name", "demo");
         item.put("one-bot-http-token", "");
-        String yaml = renderSender(item, ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
+        String yaml = renderSender(item, Set.of());
         assertTrue(yaml.contains("one-bot-http-token"), "去掉适配器申报后空令牌应出现在文件里:\n" + yaml);
     }
 
@@ -367,7 +358,7 @@ class ConfigurationTemplateTest {
         assertFalse(with.contains("\nsecret:\n") || with.contains("secret: \n"), with);
 
         String without = ConfigurationTemplate.render(List.of(field), Map.of(),
-                ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
+                Set.of());
         assertTrue(without.contains("secret:"), "去掉申报后空值应写进文件:\n" + without);
     }
 
@@ -383,30 +374,16 @@ class ConfigurationTemplateTest {
                 "name 不在键集里，恒返 true 会把普通字段也抹掉");
         assertFalse(ConfigurationFileService.isBlankMeansAbsentField("api", TOKEN_KEYS));
         assertFalse(ConfigurationFileService.isBlankMeansAbsentField(
-                "one-bot-http-token", ConfigurationFileService.CORE_BLANK_MEANS_ABSENT),
-                "核心自有表不含令牌键");
+                "one-bot-http-token", Set.of()),
+                "没有声明时不识别令牌键");
     }
 
     @Test
     @DisplayName("键集内空值不出现、键集外空值照写")
     void blankMeansAbsentCutsBothWays() throws IOException {
         Path config = generate();
-        Set<String> expected = baselineKeys();
-        Set<String> live = load(config).keySet();
-
-        List<String> leaked = new ArrayList<>();
-        for (String key : ConfigurationFileService.CORE_BLANK_MEANS_ABSENT) {
-            if (expected.contains(key) && live.contains(key)) {
-                leaked.add(key);
-            }
-        }
-        assertTrue(leaked.isEmpty(),
-                "键集内的项写成了空值而不是注释掉。加进键集却照写空值，等于只松不紧:\n  "
-                        + String.join("\n  ", leaked));
-
-        assertTrue(live.contains("novabot.core.push.quiet-start"),
+        assertTrue(load(config).containsKey("novabot.core.push.quiet-start"),
                 "静音时段留空是有效取值，键集外的空值必须照写");
-        assertFalse(ConfigurationFileService.CORE_BLANK_MEANS_ABSENT.contains("novabot.core.push.quiet-start"));
 
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("name", "demo");

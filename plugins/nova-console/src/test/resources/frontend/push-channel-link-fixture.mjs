@@ -267,7 +267,7 @@ globalThis.fetch = (path, opt) => {
   if (method === 'GET') {
     if (url.includes('/datasource')) return ok(datasourceRead(url, datasourceBody()));
     if (url.endsWith('/state')) return ok({
-      commands: [], sessions: sessionsList(), subscriptions: [], incomplete: [], totalDataAvailable: true,
+      commands: [], sessions: sessionsList(), subscriptions: [], incomplete: [],
     });
     if (url.includes('/push-history')) return ok({records: []});
     if (url.includes('/at-all/quota')) return ok({bots: [], sessions: []});

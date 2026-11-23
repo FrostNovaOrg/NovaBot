@@ -144,10 +144,10 @@ class SensitiveBlankAndClearTest {
     @Test
     @DisplayName("清一个本来就没值的机密项是无操作，不写一行空值出来")
     void clearingAnAbsentKeyChangesNothing() throws IOException {
-        start(SAVED);
+        start(SAVED.replace("    password: mail-secret-value\n", ""));
         String before = Files.readString(config, StandardCharsets.UTF_8);
 
-        controller.save(Map.of("spring.data.redis.password", CLEAR));
+        controller.save(Map.of("spring.mail.password", CLEAR));
 
         assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
                 "盘上本没有这一项, 清除不该往文件里添一行空值");

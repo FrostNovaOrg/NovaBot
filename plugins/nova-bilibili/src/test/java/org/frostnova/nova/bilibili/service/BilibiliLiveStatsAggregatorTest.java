@@ -27,15 +27,12 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.event.live.common.LiveOffEvent;
 import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
 import org.frostnova.nova.core.model.LiveSession;
-import org.frostnova.nova.core.service.CompositeLiveDataService;
-import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveInterventionTracker;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.LiveSessionRecovery;
 import org.frostnova.nova.core.service.NovaStateStore;
-import org.frostnova.nova.core.service.TotalDataStorage;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +57,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 /**
  * 本场直播数据聚合器测试
@@ -468,21 +468,20 @@ class BilibiliLiveStatsAggregatorTest {
         long start = 1_700_000_040_000L;
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
         liveDataService.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
-        LiveDataService composite = new CompositeLiveDataService(liveDataService, mock(TotalDataStorage.class));
-        aggregator = new BilibiliLiveStatsAggregator(composite, details);
+        aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
 
         aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 10, Instant.ofEpochMilli(start)));
         aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 25, Instant.ofEpochMilli(start + 20_000L)));
         aggregator.onLikeUpdate(new BilibiliLikeUpdateEvent(STREAMER, 30, Instant.ofEpochMilli(start + 60_000L)));
 
-        Map<Long, Double> recorded = composite.getLiveSeries(PLATFORM, STREAMER.getUid(),
+        Map<Long, Double> recorded = liveDataService.getLiveSeries(PLATFORM, STREAMER.getUid(),
                 BilibiliLiveMetric.LIKE_TOTAL);
 
         // 下播归档整场走一遍：LiveSessionDetailArchiver.allSeries 按 getLiveSeriesMetrics 逐条取全部时序
         LiveSessionArchive archive = new LiveSessionArchive(properties);
         LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
-        LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(composite, history, details);
-        new NovaDefaultLiveOffEventListener(composite, archive, new LiveInterventionTracker(), history, archiver)
+        LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(liveDataService, history, details);
+        new NovaDefaultLiveOffEventListener(liveDataService, archive, new LiveInterventionTracker(), history, archiver)
                 .onLiveOffEvent(new LiveOffEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(start + 3_600_000)));
 
         Map<Long, Double> read = details.read(PLATFORM, STREAMER.getUid(), start)
@@ -607,6 +606,8 @@ class BilibiliLiveStatsAggregatorTest {
     @Test
     @DisplayName("⚠️ 未登录连接上发送者 uid 被抹成 0：弹幕条数照记，但不算人数、不上榜、不记昵称头像")
     void maskedZeroUidIsNotCountedAsAViewer() {
+        liveDataService = spy(liveDataService);
+        aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
         List<String> red = new ArrayList<>();
         long start = 1_700_000_000_000L;
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
@@ -636,8 +637,8 @@ class BilibiliLiveStatsAggregatorTest {
             red.add("③ " + t.getMessage());
         }
         try {
-            assertEquals(Map.of(), liveDataService.liveUserNames(PLATFORM, STREAMER.getUid()), "④ 昵称表");
-            assertEquals(Map.of(), liveDataService.liveUserFaces(PLATFORM, STREAMER.getUid()), "④ 头像表");
+            verify(liveDataService, never()).recordLiveUserName(any(), any(), any(), any());
+            verify(liveDataService, never()).recordLiveUserFace(any(), any(), any(), any());
         } catch (Throwable t) {
             red.add("④ " + t.getMessage());
         }
@@ -659,8 +660,8 @@ class BilibiliLiveStatsAggregatorTest {
         try {
             aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "认得出", "认得出"));
             assertEquals(1, users(BilibiliLiveMetric.DANMU_USERS), "⑦ 认得出的观众照常计");
-            assertEquals(Map.of(1L, 1.0), liveDataService.liveUserMetrics(PLATFORM, STREAMER.getUid())
-                    .get(BilibiliLiveMetric.DANMU_USERS), "⑦ 计分表里只有认得出的那一位");
+            assertEquals(1.0, liveDataService.getLiveUserMetric(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.DANMU_USERS, 1L), "⑦ 认得出的观众记 1 分");
         } catch (Throwable t) {
             red.add("⑦ " + t.getMessage());
         }
@@ -680,6 +681,8 @@ class BilibiliLiveStatsAggregatorTest {
     @Test
     @DisplayName("⚠️ uid 为 0 的发送者走遍十路计分事件：条数金额照记，但十张表都不算人数、不上榜，昵称头像哪一路都不记")
     void maskedZeroUidIsNotScoredOnAnyUserTable() {
+        liveDataService = spy(liveDataService);
+        aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
         List<String> red = new ArrayList<>();
         // 有开播时刻，原文与事件留档那几段也一并走到
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
@@ -704,8 +707,8 @@ class BilibiliLiveStatsAggregatorTest {
         }
         try {
             // 十路都喂完再查：哪一路在守卫之前记下了昵称头像，都逃不过这一问
-            assertEquals(Map.of(), liveDataService.liveUserNames(PLATFORM, STREAMER.getUid()), "④ 昵称表");
-            assertEquals(Map.of(), liveDataService.liveUserFaces(PLATFORM, STREAMER.getUid()), "④ 头像表");
+            verify(liveDataService, never()).recordLiveUserName(any(), any(), any(), any());
+            verify(liveDataService, never()).recordLiveUserFace(any(), any(), any(), any());
         } catch (Throwable t) {
             red.add("④ " + t.getMessage());
         }
@@ -797,27 +800,25 @@ class BilibiliLiveStatsAggregatorTest {
         properties.getLive().setAutoSaveLiveDataInterval(3600);
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
         liveDataService.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
-        LiveDataService composite = new CompositeLiveDataService(liveDataService, mock(TotalDataStorage.class));
-        aggregator = new BilibiliLiveStatsAggregator(composite, details);
+        aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
         assertEquals(List.of(), feedEveryScoredEvent(key -> user(0L)));
         liveDataService.onContextClosedEvent();
 
         liveDataService = new DefaultLiveDataService(properties);
         liveDataService.onApplicationReadyEvent();
         try {
-            composite = new CompositeLiveDataService(liveDataService, mock(TotalDataStorage.class));
-            aggregator = new BilibiliLiveStatsAggregator(composite, details);
+            aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
             assertEquals(List.of(), feedEveryScoredEvent(key -> user(null)));
             assertEquals(List.of(), feedEveryScoredEvent(key -> user(-1L)));
             assertEquals(List.of(), feedEveryScoredEvent(key -> user(1L)));
             LiveSessionArchive archive = new LiveSessionArchive(properties);
             LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
-            LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(composite, history, details);
+            LiveSessionDetailArchiver archiver = new LiveSessionDetailArchiver(liveDataService, history, details);
             if (recover) {
-                assertTrue(new LiveSessionRecovery(composite, archive, history, archiver)
+                assertTrue(new LiveSessionRecovery(liveDataService, archive, history, archiver)
                         .archiveUnclosedIfAny(PLATFORM, STREAMER, start + 3_600_000));
             } else {
-                new NovaDefaultLiveOffEventListener(composite, archive, new LiveInterventionTracker(), history, archiver)
+                new NovaDefaultLiveOffEventListener(liveDataService, archive, new LiveInterventionTracker(), history, archiver)
                         .onLiveOffEvent(new LiveOffEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(start + 3_600_000)));
             }
             List<LiveSession> found = archive.find(0, Long.MAX_VALUE);
@@ -828,7 +829,7 @@ class BilibiliLiveStatsAggregatorTest {
             assertEquals(List.of(1L), found.get(0).userSet(BilibiliLiveMetric.DANMU_USERS));
             assertEquals(1, found.get(0).userCount(BilibiliLiveMetric.DANMU_USERS));
             assertEquals(8.0, found.get(0).metric(BilibiliLiveMetric.DANMU_COUNT));
-            composite.resetLiveData(PLATFORM, STREAMER.getUid());
+            liveDataService.resetLiveData(PLATFORM, STREAMER.getUid());
             liveDataService.onContextClosedEvent();
             assertTrue(savedAnonymousCounts() == null || savedAnonymousCounts().isEmpty(), "新场不得带入上一场缺项次数");
             liveDataService = new DefaultLiveDataService(properties);

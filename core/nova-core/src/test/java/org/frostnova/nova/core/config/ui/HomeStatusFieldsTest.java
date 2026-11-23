@@ -98,7 +98,6 @@ class HomeStatusFieldsTest {
         when(dataSource.getAllUsers()).thenReturn(List.of());
 
         liveDataService = mock(LiveDataService.class);
-        when(liveDataService.supportsTotalData()).thenReturn(true);
         when(liveDataService.getLiveStatus(any(), any())).thenReturn(Optional.of(false));
         when(liveDataService.getLiveStartTime(any(), any())).thenReturn(Optional.empty());
 
@@ -364,15 +363,13 @@ class HomeStatusFieldsTest {
     }
 
     @Test
-    @DisplayName("上没上锁与累计存储开没开各有一位")
-    void lockedAndTotalDataAreReported() {
+    @DisplayName("没有配置口令时报告未上锁")
+    void unlockedStatusIsReported() {
         when(authService.isEnabled()).thenReturn(false);
-        when(liveDataService.supportsTotalData()).thenReturn(false);
 
         JSONObject status = controller().status();
 
         assertFalse(status.getBooleanValue("locked"), "没配口令即没上锁，首页要为此常驻一条待办");
-        assertFalse(status.getBooleanValue("totalDataAvailable"));
     }
 
     @Test

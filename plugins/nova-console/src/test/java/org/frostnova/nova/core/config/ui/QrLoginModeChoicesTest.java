@@ -59,7 +59,7 @@ class QrLoginModeChoicesTest {
         try (var context = context()) {
             JSONObject schema = controller(context, new ConfigurationMetadataService()).schema();
             for (String name : List.of("novabot.core.config-ui.agreement.accepted-version",
-                    "spring.data.redis.port", "spring.data.redis.database", "spring.mail.port", "server.port",
+                    "spring.mail.port", "server.port",
                     "novabot.adapter.onebot.alert.num")) {
                 JSONObject item = field(schema, name);
                 assertNull(item.get("unit"), name);

@@ -138,7 +138,6 @@ class UpdateStatusFieldsTest {
         when(senders.getSenderNames()).thenReturn(Set.of("默认"));
 
         LiveDataService liveDataService = mock(LiveDataService.class);
-        when(liveDataService.supportsTotalData()).thenReturn(true);
         when(liveDataService.getLiveStatus(any(), any())).thenReturn(Optional.of(false));
 
         TimelineStore timeline = mock(TimelineStore.class);

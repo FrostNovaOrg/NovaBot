@@ -391,8 +391,7 @@ public interface LiveDataService {
     /**
      * 获取某个用户在本场排行中的名次
      * <p>
-     * 单列一个方法而不让调用方自己在排行榜里找：Redis 的 zset 求名次是 O(log n)，
-     * 拉一整张榜再遍历则是 O(n)，而「我排第几」恰恰是最常查的一项。
+     * 调用方可直接查名次，省去读取整张排行榜。
      * @param platform 直播平台
      * @param uid 主播 UID
      * @param metric 指标名
@@ -455,7 +454,7 @@ public interface LiveDataService {
 
     /**
      * 本场一次计分因认不出观众而跳过，与参与者名单使用相同的计分表名。
-     * 随本场数据存盘、重启后继续累加，下次开播时清零，不并入累计。
+     * 随本场数据存盘，重启后继续累加，下次开播时清零。
      */
     default void incrementLiveAnonymousCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
     }
@@ -471,7 +470,7 @@ public interface LiveDataService {
 
     // ================ 时间序列（互动曲线） ================
     // 与「本场指标」记总量、「按用户计分」记谁贡献了多少并列，这里记的是**什么时候发生的**。
-    // 只服务于本场报告里的曲线图，因此随本场数据一并清零，也不并入累计。
+    // 本场报告使用这些序列绘制曲线，序列随本场数据一并清零。
 
     /**
      * 时间序列的分桶长度
@@ -536,88 +535,6 @@ public interface LiveDataService {
      */
     default Set<String> getLiveSeriesMetrics(@NonNull String platform, @NonNull Long uid) {
         return Set.of();
-    }
-
-    // ================ 累计数据 ================
-    // 跨场次累计，数据量随时间无限增长，因此只有配置了外部存储（如 Redis）的实现才支持。
-    // 未配置时一律返回「不支持」，由调用方明确告知使用者，不可静默返回 0——
-    // 那会让人以为是数据丢了，而不是没开这个能力。
-
-    /**
-     * 当前实现是否支持累计数据
-     * @return 是否支持
-     */
-    default boolean supportsTotalData() {
-        return false;
-    }
-
-    /**
-     * 把本场数据并入累计，在下播时调用
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     */
-    default void mergeLiveDataIntoTotal(@NonNull String platform, @NonNull Long uid) {
-    }
-
-    /**
-     * 获取累计的统计指标
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @param metric 指标名
-     * @return 指标值，不支持或未记录时为 0
-     */
-    default double getTotalMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
-        return 0;
-    }
-
-    /**
-     * 获取某个用户的累计得分
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @param metric 指标名
-     * @param userUid 用户 UID
-     * @return 得分，不支持或未记录时为 0
-     */
-    default double getTotalUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
-                                      @NonNull Long userUid) {
-        return 0;
-    }
-
-    /**
-     * 获取累计的用户排行
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @param metric 指标名
-     * @param limit 取前多少名
-     * @return 按得分降序排列的用户，不支持时为空
-     */
-    default List<UserScore> getTotalUserRanking(
-            @NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
-        return List.of();
-    }
-
-    /**
-     * 获取某个用户在累计排行中的名次
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @param metric 指标名
-     * @param userUid 用户 UID
-     * @return 名次，从 1 开始；不支持或未上榜时为 0
-     */
-    default int getTotalUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
-                                 @NonNull Long userUid) {
-        return 0;
-    }
-
-    /**
-     * 获取累计参与某项互动的独立用户数
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @param metric 指标名
-     * @return 独立用户数，不支持或未记录时为 0
-     */
-    default int getTotalMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
-        return 0;
     }
 
     /**
