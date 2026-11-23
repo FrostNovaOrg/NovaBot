@@ -1,11 +1,15 @@
+novabot.assistant.adaptive-thinking=true
 novabot.assistant.answer-limit=500
 novabot.assistant.api-format=responses
 novabot.assistant.base-url=https://model.example/v1
 novabot.assistant.daily-questions-per-account=12
 novabot.assistant.daily-questions-per-qq-session=25
 novabot.assistant.daily-questions-per-qq-user=6
+novabot.assistant.difficulty-model=sample-classifier
 novabot.assistant.enabled=true
 novabot.assistant.excluded-uids[0]=900000001
+novabot.assistant.hard-thinking=max
+novabot.assistant.hard-timeout-seconds=240
 novabot.assistant.max-tool-calls=4
 novabot.assistant.model=sample-model
 novabot.assistant.monthly-budget-yuan=45.5

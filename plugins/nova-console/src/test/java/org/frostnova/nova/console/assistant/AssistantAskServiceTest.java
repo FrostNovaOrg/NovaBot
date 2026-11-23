@@ -24,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.file.*;
@@ -391,7 +392,7 @@ class AssistantAskServiceTest {
         replies.add(call("revenue", JSONObject.of("start", 123)));
         replies.add(JSONObject.of("content", draft));
         var source = local.qqSource("QQ", "qq-test", GROUP, 123, 456);
-        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of());
+        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), ignored -> { });
 
         assertAll(
                 () -> assertEquals(body, result.getString("answer"), "控制台正文"),
@@ -887,6 +888,96 @@ class AssistantAskServiceTest {
     private JSONObject responsesText(String text) {
         return JSONObject.of("type", "message", "role", "assistant", "content",
                 List.of(JSONObject.of("type", "output_text", "text", text)));
+    }
+
+    // 要深入分析的难题，只用低强度草草回答，或者半路超时。
+    @Test void analysisUsesHigherEffortAndKeepsTimeForQueriesAndTheAnswer() throws Exception {
+        useResponses();
+        properties.setThinking("low");
+        properties.setQuestionInputLimit(1000);
+        new Binder(new MapConfigurationPropertySource(Map.of(
+                "novabot.assistant.adaptive-thinking", true,
+                "novabot.assistant.difficulty-model", "test-classifier")))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        var before = client.status().spentYuan();
+        inputTokens = 2000;
+        responsesReplies.add(responsesReply(responsesText("分析")));
+        inputTokens = 100;
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        responsesReplies.add(responsesReply(JSONObject.of("type", "function_call", "call_id", "first",
+                "name", "revenue", "arguments", "{\"start\":123}")));
+        responsesReplies.add(responsesReply(JSONObject.of("type", "function_call", "call_id", "second",
+                "name", "revenue", "arguments", "{\"start\":456}")));
+        responsesReplies.add(responsesReply(responsesText("场次表现有变化，但不能说是因为流水9999。")));
+        responsesReplies.add(responsesReply(responsesText("场次表现有变化。")));
+        onSend = () -> {
+            if (sent.size() == 2) clock.now = clock.now.plusSeconds(60);
+            if (sent.size() == 3) clock.now = clock.now.plusSeconds(56);
+        };
+
+        var result = ask(JSONObject.of("question", "为什么这一场表现不一样？", "history", List.of(
+                JSONObject.of("question", "再之前播了多久？", "answerForHistory", "更早的回答"),
+                JSONObject.of("question", "上一场表现怎样？", "answerForHistory", "上一轮回答"))));
+        assertEquals("场次表现有变化。", result.getString("answer"));
+        assertEquals(5, sent.size());
+        var classification = sent.get(0);
+        assertEquals("test-classifier", classification.getString("model"));
+        assertEquals("low", classification.getJSONObject("reasoning").getString("effort"));
+        assertEquals(256, classification.getIntValue("max_output_tokens"));
+        assertTrue(classification.getJSONArray("tools").isEmpty());
+        assertEquals(Duration.ofSeconds(5), timeouts.get(0));
+        String input = classification.getJSONArray("input").toJSONString();
+        assertTrue(input.contains("为什么这一场表现不一样？"));
+        assertTrue(input.contains("上一场表现怎样？"));
+        assertFalse(input.contains("上一轮回答"));
+        assertFalse(input.contains("再之前播了多久？"));
+        for (var round : sent.subList(1, sent.size())) {
+            assertEquals("test-model", round.getString("model"));
+            assertEquals("high", round.getJSONObject("reasoning").getString("effort"));
+            assertEquals(16800, round.getIntValue("max_output_tokens"));
+        }
+        assertEquals("auto", sent.get(2).getString("tool_choice"));
+        assertEquals("none", sent.get(3).getString("tool_choice"));
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(175)) > 0, timeouts::toString);
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(180)) <= 0, timeouts::toString);
+        verify(queries).revenue("bilibili", 1L, 123L);
+        verify(queries, never()).revenue("bilibili", 1L, 456L);
+        assertEquals(1, client.status().questionsToday().get("member"));
+        var cost = new BigDecimal("0.00571");
+        assertEquals(0, cost.compareTo(client.status().spentYuan().subtract(before)));
+        var log = JSON.parseObject(Files.readString(directory.resolve("assistant-transmissions.jsonl")));
+        assertEquals(0, cost.compareTo(log.getBigDecimal("costYuan")));
+    }
+
+    // 判断难度那一步出错，整个提问跟着失败。
+    @ParameterizedTest @ValueSource(strings = {"error", "timeout", "unexpected", "simple"})
+    void unavailableDifficultyStillGetsAnOrdinaryAnswer(String classification) {
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        onSend = () -> {
+            providerStatus = 200;
+            if (sent.size() != 1) return;
+            switch (classification) {
+                case "error" -> providerStatus = 503;
+                case "timeout" -> throw new ResourceAccessException("read timed out");
+                default -> { }
+            }
+        };
+        if ("unexpected".equals(classification)) replies.add(JSONObject.of("content", "应该是分析"));
+        if ("simple".equals(classification)) replies.add(JSONObject.of("content", "简单"));
+        replies.add(JSONObject.of("content", "场次数据已查到。"));
+
+        var result = ask();
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        assertTrue(result.getString("answer").contains("场次数据已查到"));
+        assertEquals(2, sent.size());
+        assertEquals(sent.get(1).getString("model"), sent.get(0).getString("model"));
+        assertEquals(256, sent.get(0).getIntValue("max_tokens"));
+        assertEquals("low", sent.get(0).getString("reasoning_effort"));
+        assertFalse(sent.get(1).containsKey("reasoning_effort"));
+        assertEquals(Duration.ofSeconds(5), timeouts.get(0));
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(50)) > 0, timeouts::toString);
+        assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(55)) <= 0, timeouts::toString);
     }
 
     // /responses 未关闭严格模式时，通用汇总的 uniqueItems 会让每问都收到 400。

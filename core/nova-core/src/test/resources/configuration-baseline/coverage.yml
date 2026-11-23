@@ -9,6 +9,10 @@ novabot:
     model: sample-model
     api-format: responses
     thinking: high
+    adaptive-thinking: true
+    hard-thinking: max
+    difficulty-model: sample-classifier
+    hard-timeout-seconds: 240
     monthly-budget-yuan: 45.5
     daily-questions-per-account: 12
     daily-questions-per-qq-session: 25

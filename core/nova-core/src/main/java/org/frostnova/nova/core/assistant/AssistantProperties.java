@@ -50,6 +50,27 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"off", "low", "medium", "high", "max"}, labels = {"关闭／模型默认", "低", "中", "高", "最高"})
     private String thinking = "off";
+    /** 开启后，每次提问先判断难度，难题使用单独的思考强度和限时。判断也计入每月金额。 */
+    @ConfigLabel("按难度调思考强度")
+    @ConfigLevel(ConfigLevel.Level.ADVANCED)
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private boolean adaptiveThinking = false;
+    /** 需要深入分析的问题使用这一档，默认高。 */
+    @ConfigLabel("难题的思考强度")
+    @ConfigLevel(ConfigLevel.Level.ADVANCED)
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigChoices(value = {"medium", "high", "max"}, labels = {"中", "高", "最高"})
+    private String hardThinking = "high";
+    /** 留空时用回答的模型。填写后仍使用同一个接口地址和密钥。 */
+    @ConfigLabel("判断难度用的模型名称")
+    @ConfigLevel(ConfigLevel.Level.ADVANCED)
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private String difficultyModel = "";
+    /** 难题整问的限时，默认 180 秒。普通问题限时 55 秒。 */
+    @ConfigLabel("难题限时（秒）")
+    @ConfigLevel(ConfigLevel.Level.ADVANCED)
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int hardTimeoutSeconds = 180;
     /** 每月金额上限，单位：元，必须大于 0，按东八区自然月计算。 */
     @ConfigLabel("每月金额上限")
     @ConfigLevel(ConfigLevel.Level.COMMON)
@@ -141,6 +162,19 @@ public class AssistantProperties {
         if (value == null || !List.of("off", "low", "medium", "high", "max").contains(value))
             throw new IllegalArgumentException("智能助手思考强度请选择关闭／模型默认（off）、低（low）、中（medium）、高（high）或最高（max）");
         thinking = value;
+    }
+
+    public void setHardThinking(String value) {
+        if (value == null || !List.of("medium", "high", "max").contains(value))
+            throw new IllegalArgumentException("难题的思考强度请选择中（medium）、高（high）或最高（max）");
+        hardThinking = value;
+    }
+
+    public void setDifficultyModel(String value) { difficultyModel = value == null ? "" : value.strip(); }
+
+    public void setHardTimeoutSeconds(int value) {
+        if (value <= 0) throw new IllegalArgumentException("难题限时必须大于 0 秒");
+        hardTimeoutSeconds = value;
     }
 
     public void setDailyQuestionsPerAccount(int value) { dailyQuestionsPerAccount = positive(value); }

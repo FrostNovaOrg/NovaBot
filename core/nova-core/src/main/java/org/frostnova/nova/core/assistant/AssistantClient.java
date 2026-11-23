@@ -56,6 +56,7 @@ public final class AssistantClient {
 
     public record State(boolean enabled, boolean available, List<String> reasons, int questionsLeftToday) { }
 
+    private enum CallMode { ANSWER, ANALYSIS, CLASSIFY, PROBE }
     private record Attempt(Response response, boolean outputLimitReached) { }
     private static final Logger LOG = LoggerFactory.getLogger(AssistantClient.class);
     private static final String OUTPUT_LIMIT = "max_output_tokens";
@@ -152,6 +153,19 @@ public final class AssistantClient {
 
         /** 调用方把整问的剩余时间传入，网络等待不能越过整问截止时刻。 */
         public Response complete(Request request, Duration timeout) {
+            return complete(request, timeout, CallMode.ANSWER);
+        }
+
+        public Response completeAnalysis(Request request, Duration timeout) {
+            return complete(request, timeout, CallMode.ANALYSIS);
+        }
+
+        /** 难度判断与回答共用同一个提问次数和用量记录。 */
+        public Response classifyDifficulty(Request request) {
+            return complete(request, Duration.ofSeconds(5), CallMode.CLASSIFY);
+        }
+
+        private Response complete(Request request, Duration timeout, CallMode mode) {
             if (timeout == null || timeout.compareTo(Duration.ofMillis(1)) < 0)
                 throw new AssistantException("timeout", "智能助手本次提问已超时，请问得具体一点");
             synchronized (AssistantClient.this) {
@@ -164,7 +178,7 @@ public final class AssistantClient {
                 inFlight = true;
             }
             try {
-                return send(request, properties.getAnswerLimit(), null, this, timeout);
+                return send(request, null, this, timeout, mode);
             } finally {
                 synchronized (AssistantClient.this) { inFlight = false; }
             }
@@ -183,7 +197,7 @@ public final class AssistantClient {
         if (candidate == null && !keys.isSet()) throw new AssistantException("no_key", "尚未设置智能助手模型密钥");
         usage.requireReadable();
         send(new Request(List.of(JSONObject.of("role", "user", "content", "回复好")), List.of(), "none", 0),
-                Math.min(8, properties.getAnswerLimit()), candidate, null, Duration.ofSeconds(20));
+                candidate, null, Duration.ofSeconds(20), CallMode.PROBE);
     }
 
     private List<AssistantException> unavailable() {
@@ -215,30 +229,37 @@ public final class AssistantClient {
         }
     }
 
-    private Response send(Request request, int maxTokens, String candidate, Question question, Duration timeout) {
+    private Response send(Request request, String candidate, Question question, Duration timeout, CallMode mode) {
         long startedAt = System.nanoTime();
         String baseUrl = properties.getBaseUrl();
         boolean responses = "responses".equals(properties.getApiFormat());
-        boolean probe = question == null;
+        boolean shortRequest = mode == CallMode.PROBE || mode == CallMode.CLASSIFY;
+        String model = properties.getModel();
+        if (mode == CallMode.CLASSIFY && !properties.getDifficultyModel().isBlank())
+            model = properties.getDifficultyModel();
+        String thinking = switch (mode) {
+            case ANSWER -> properties.getThinking();
+            case ANALYSIS -> properties.getHardThinking();
+            case CLASSIFY -> "low";
+            case PROBE -> responses ? "low" : "off";
+        };
+        int maxTokens = switch (mode) {
+            case CLASSIFY -> 256;
+            case PROBE -> Math.min(8, properties.getAnswerLimit());
+            default -> properties.getAnswerLimit();
+        };
         String endpoint = baseUrl.replaceAll("/+$", "") + (responses ? "/responses" : "/chat/completions");
         try {
             if (!responses) {
-                JSONObject body = chatBody(request, maxTokens, baseUrl, probe ? "off" : properties.getThinking());
+                JSONObject body = chatBody(request, maxTokens, baseUrl, model, thinking, mode);
                 return exchange(endpoint, body, false, candidate, question, timeout).response();
             }
-            // 验证用短句，固定低强度并为思考和回复共留 256 token。
-            String thinking = probe ? "low" : properties.getThinking();
-            int allowance = probe ? 256 : switch (thinking) {
-                case "medium" -> 8000;
-                case "high" -> 16000;
-                case "max" -> 32000;
-                // 关闭时使用模型默认强度，留出与低档相同的空间。
-                default -> 4000;
-            };
-            long maxOutput = probe ? allowance : (long) maxTokens + allowance;
-            JSONObject body = responsesBody(request, maxOutput, thinking);
+            int allowance = reasoningAllowance(thinking);
+            // 简短的判断和验证为思考和回复共留 256 token。
+            long maxOutput = shortRequest ? 256 : (long) maxTokens + allowance;
+            JSONObject body = responsesBody(request, maxOutput, model, thinking);
             Attempt first = exchange(endpoint, body, true, candidate, question, timeout);
-            if (probe || !first.outputLimitReached()) return first.response();
+            if (shortRequest || !first.outputLimitReached()) return first.response();
 
             synchronized (this) { usage.checkBudget(properties); }
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
@@ -262,29 +283,36 @@ public final class AssistantClient {
         return new AssistantException(OUTPUT_LIMIT, "大模型服务达到输出上限，未能生成回答，请稍后再试");
     }
 
-    private JSONObject chatBody(Request request, int maxTokens, String baseUrl, String thinking) {
-        JSONObject body = JSONObject.of("model", properties.getModel(), "messages", request.messages(),
+    private static int reasoningAllowance(String thinking) {
+        return switch (thinking) {
+            case "medium" -> 8000;
+            case "high" -> 16000;
+            case "max" -> 32000;
+            // 使用模型默认强度时，留出与低档相同的空间。
+            default -> 4000;
+        };
+    }
+
+    private JSONObject chatBody(Request request, int maxTokens, String baseUrl, String model, String thinking, CallMode mode) {
+        JSONObject body = JSONObject.of("model", model, "messages", request.messages(),
                 "tools", request.tools() == null ? List.of() : request.tools(),
                 "tool_choice", request.toolChoice() == null ? "auto" : request.toolChoice(),
                 "max_tokens", maxTokens, "temperature", request.temperature(), "stream", false);
+        String effort = null;
         if ("api.deepseek.com".equalsIgnoreCase(URI.create(baseUrl).getHost())) {
             body.put("thinking", JSONObject.of("type", "off".equals(thinking) ? "disabled" : "enabled"));
-            if (!"off".equals(thinking)) {
-                String effort = "medium".equals(thinking) ? "low" : thinking;
-                body.put("reasoning_effort", effort);
-                int allowance = switch (effort) {
-                    case "low" -> 4000;
-                    case "high" -> 16000;
-                    case "max" -> 32000;
-                    default -> throw new IllegalArgumentException("智能助手思考强度无效");
-                };
-                body.put("max_tokens", (long) maxTokens + allowance);
-            }
+            if (!"off".equals(thinking)) effort = "medium".equals(thinking) ? "low" : thinking;
+        } else if (mode == CallMode.CLASSIFY || mode == CallMode.ANALYSIS) {
+            effort = thinking;
+        }
+        if (effort != null) {
+            body.put("reasoning_effort", effort);
+            if (mode != CallMode.CLASSIFY) body.put("max_tokens", (long) maxTokens + reasoningAllowance(effort));
         }
         return body;
     }
 
-    private JSONObject responsesBody(Request request, long maxOutput, String thinking) {
+    private JSONObject responsesBody(Request request, long maxOutput, String model, String thinking) {
         var input = new ArrayList<JSONObject>();
         for (JSONObject item : request.messages()) {
             if (item.containsKey("type")) {
@@ -310,7 +338,7 @@ public final class AssistantClient {
                 && named.get("function") instanceof Map<?, ?> function) {
             choice = JSONObject.of("type", "function", "name", function.get("name"));
         }
-        JSONObject body = JSONObject.of("model", properties.getModel(), "input", input, "tools", tools,
+        JSONObject body = JSONObject.of("model", model, "input", input, "tools", tools,
                 "tool_choice", choice, OUTPUT_LIMIT, maxOutput, "store", false,
                 "include", List.of("reasoning.encrypted_content"));
         if (!"off".equals(thinking)) body.put("reasoning", JSONObject.of("effort", thinking));
