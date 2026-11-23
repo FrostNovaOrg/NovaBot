@@ -141,6 +141,8 @@ public class BilibiliEventParser {
      */
     private static final int MAX_UNKNOWN_FIELD_NAMES = 512;
 
+    private final AtomicLong giftV2DisplaySwitchOffCount = new AtomicLong();
+
     /**
      * 红包记录的条目上限，防止长期运行后无限增长
      */
@@ -278,7 +280,8 @@ public class BilibiliEventParser {
      *      8     旧式勋章            2/2，布局同 V1 的 medal_info；V1 不取它，这里同样忽略
      *      9     盲盒子消息           6/29 样本 2026-09-07（只在盲盒条出现），子字段见下
      *     10     礼物块              2/2，子字段见下
-     *     11     是否首次            2/2，恒为 1，与 V1 的 is_first 对应，不取用
+     *     11     网页端的显示开关     网页端只处理为真的礼物。2026-11 japan 实测 35,045 条全为 1，
+     *                                连击后续笔也是 1，所以不是『是否首次』。为关时照常计入流水，并报警。
      *     13     财富等级 {1:等级}    2/2。⚠️ 礼物版 uinfo 里没有 wealth（2/2 无 15.4），
      *                                等级放在顶层而不是 uinfo.4，与 INTERACT_WORD_V2 相反
      *     15     观众完整信息 uinfo   2/2，uid 在 1、昵称头像在 2{1,2}（与 INTERACT_WORD_V2
@@ -339,6 +342,8 @@ public class BilibiliEventParser {
 
     private static final int GIFT_V2_INFO = 10;
 
+    private static final int GIFT_V2_DISPLAY_SWITCH = 11;
+
     private static final int GIFT_V2_BLIND_ORIGINAL_ID = 2;
 
     private static final int GIFT_V2_BLIND_ORIGINAL_NAME = 3;
@@ -390,16 +395,16 @@ public class BilibiliEventParser {
     /**
      * {@code SEND_GIFT_V2} 顶层<b>已知</b>的字段号
      * <p>
-     * 口径同 {@link #INTERACT_V2_KNOWN_FIELDS}：3（观众头像，取值走 uinfo）、8（旧式勋章）、
-     * 11（是否首次）都在字段表里且都决定不取，它们是见过的字段。
+     * 口径同 {@link #INTERACT_V2_KNOWN_FIELDS}：3（观众头像，取值走 uinfo）与 8（旧式勋章）
+     * 都是见过但不取值的字段。11（网页端显示开关）用于检测开关为关的礼物。
      * 2026-09-16 真连接语料见过、取值不用：4、5。
      * <p>
      * ⚠️ 两张表<b>不通用</b>，与勋章子布局不通用是同一个理由（见上面的字段表）：
      * 拿这一张去量进房报文，13 与 15 会被判成未知、22 会被判成新增——两边都错。
      */
     private static final Set<Integer> GIFT_V2_KNOWN_FIELDS = Set.of(
-            GIFT_V2_UID, GIFT_V2_UNAME, GIFT_V2_BLIND, GIFT_V2_INFO, GIFT_V2_WEALTH, GIFT_V2_UINFO,
-            3, 4, 5, 8, 11);
+            GIFT_V2_UID, GIFT_V2_UNAME, GIFT_V2_BLIND, GIFT_V2_INFO, GIFT_V2_DISPLAY_SWITCH,
+            GIFT_V2_WEALTH, GIFT_V2_UINFO, 3, 4, 5, 8);
 
     private final NovaBilibiliProperties properties;
 
@@ -1449,6 +1454,20 @@ public class BilibiliEventParser {
             noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "SEND_GIFT_V2:gift");
             log.debug("直播间 {} 的 SEND_GIFT_V2 消息取不到礼物块, 已忽略", source.getRoomId());
             return List.of();
+        }
+
+        Long displaySwitch = message.number(GIFT_V2_DISPLAY_SWITCH);
+        if (displaySwitch == null || displaySwitch == 0) {
+            long count = giftV2DisplaySwitchOffCount.incrementAndGet();
+            boolean sample = isMagnitude(count);
+            if (riskMetrics != null) {
+                riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD,
+                        sample ? "SEND_GIFT_V2:11=off count=" + count : null);
+            }
+            if (sample) {
+                log.warn("直播间 {} 的 SEND_GIFT_V2 消息出现开关位为关的礼物（11 号缺省或为 0），已出现 {} 次，照常计入流水",
+                        source.getRoomId(), count);
+            }
         }
 
         BilibiliProtobufReader uinfo = message.message(GIFT_V2_UINFO);
