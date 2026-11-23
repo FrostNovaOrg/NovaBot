@@ -36,6 +36,9 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
 class AssistantClientTest {
+    private static final String PLATFORM = "bilibili";
+    private static final long UID = 1L;
+    private static final AssistantUsageStore.Streamer STREAMER = new AssistantUsageStore.Streamer(PLATFORM, UID);
     @TempDir Path directory;
     private static final String SECRET = "test-secret-1234567890";
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-24T08:00:00Z"), ZoneOffset.UTC);
@@ -58,6 +61,42 @@ class AssistantClientTest {
         client.acknowledge("admin");
     }
 
+    // 过了周一 0 点额度还没恢复，或者周日就提前恢复了。
+    @Test void totalBudgetResetsAtShanghaiMondayMidnight() {
+        var sunday = Clock.fixed(Instant.parse("2026-11-22T15:59:59Z"), ZoneOffset.UTC);
+        var monday = Clock.fixed(Instant.parse("2026-11-22T16:00:00Z"), ZoneOffset.UTC);
+        var sundayUsage = new AssistantUsageStore(directory, sunday);
+        sundayUsage.addCost(null, properties.getWeeklyBudgetYuan());
+        var beforeMidnight = new AssistantClient(properties, keys, sundayUsage, template);
+        var afterMidnight = new AssistantClient(properties, keys, new AssistantUsageStore(directory, monday), template);
+        assertEquals("weekly_budget", assertThrows(AssistantException.class,
+                () -> beforeMidnight.beginQuestion(PLATFORM, UID)).reason());
+        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+        try (var question = afterMidnight.beginQuestion(PLATFORM, UID)) {
+            assertEquals("好", question.complete(request()).content());
+        }
+        server.verify();
+    }
+
+    // 升级后旧的用量文件读不出来，助手整个用不了。
+    @Test void legacyUsageKeepsAcknowledgementAndStartsWithFreshAllowance() throws Exception {
+        var previous = client.status().acknowledgement();
+        Files.writeString(directory.resolve("assistant-usage.json"), JSONObject.of(
+                "version", 1, "month", "2026-10", "day", "2026-10-24", "spentYuan", 60,
+                "questions", JSONObject.of("member", 20), "qqQuestions", JSONObject.of(),
+                "acknowledgement", previous).toJSONString());
+        var upgraded = new AssistantClient(properties, keys, new AssistantUsageStore(directory, clock), template);
+        assertEquals(previous, upgraded.status().acknowledgement());
+        assertEquals(BigDecimal.ZERO, upgraded.status().spentYuan());
+        assertTrue(upgraded.status().streamerUsage().isEmpty());
+        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
+        try (var question = upgraded.beginQuestion(PLATFORM, UID)) {
+            assertEquals("好", question.complete(request()).content());
+        }
+        assertEquals(2, JSON.parseObject(Files.readString(directory.resolve("assistant-usage.json"))).getIntValue("version"));
+        server.verify();
+    }
+
     @Test void acknowledgementDescribesCurrentPayloadAndUsesConfiguredEndpoint() {
         properties.setBaseUrl("https://model.example/v1");
         var status = client.status();
@@ -75,9 +114,9 @@ class AssistantClientTest {
 
     @Test void currentAcknowledgementIsRequiredAndStateIsReadOnly() {
         var unconfirmed = new AssistantClient(properties, keys, new AssistantUsageStore(directory.resolve("new"), clock), template);
-        assertEquals(List.of("not_acknowledged"), unconfirmed.state("member").reasons());
+        assertEquals(List.of("not_acknowledged"), unconfirmed.state(PLATFORM, UID).reasons());
         assertEquals("not_acknowledged", assertThrows(AssistantException.class,
-                () -> unconfirmed.beginQuestion("member")).reason());
+                () -> unconfirmed.beginQuestion(PLATFORM, UID)).reason());
         assertFalse(Files.exists(directory.resolve("new/assistant-usage.json")));
         server.verify();
     }
@@ -85,25 +124,58 @@ class AssistantClientTest {
     @Test void unreadableUsageDoesNotReportUnknownAcknowledgement() throws Exception {
         Files.writeString(directory.resolve("assistant-usage.json"), "{}");
         var unreadable = new AssistantClient(properties, keys, new AssistantUsageStore(directory, clock), template);
-        var state = unreadable.state("member");
+        var state = unreadable.state(PLATFORM, UID);
         assertFalse(state.available());
         assertEquals(List.of("usage_unreadable"), state.reasons());
-        assertEquals(0, state.questionsLeftToday());
+        assertNull(state.streamerQuota());
         assertEquals("usage_unreadable", assertThrows(AssistantException.class,
-                () -> unreadable.beginQuestion("member")).reason());
+                () -> unreadable.beginQuestion(PLATFORM, UID)).reason());
         assertEquals("{}", Files.readString(directory.resolve("assistant-usage.json")));
         server.verify();
     }
 
-    @Test void dailyLimitPrecedesMonthlyBudgetWhenBothAreExhausted() {
-        properties.setDailyQuestionsPerAccount(1);
-        usage.startQuestion("member", properties);
-        usage.addCost(properties.getMonthlyBudgetYuan());
-        assertEquals("daily_limit", assertThrows(AssistantException.class, () -> client.beginQuestion("member")).reason());
-        assertEquals(List.of("daily_limit", "monthly_budget"), client.state("member").reasons());
-        assertEquals(0, client.state("member").questionsLeftToday());
-        assertEquals(1, client.state("other").questionsLeftToday());
+    @Test void simultaneousExhaustionReportsTotalThenStreamerWeekThenStreamerDay() {
+        usage.addCost(STREAMER, BigDecimal.TEN);
+        assertExhaustion("weekly_budget", "本周的助手总额度");
+        properties.setWeeklyBudgetYuan(new BigDecimal("20"));
+        assertExhaustion("streamer_weekly_budget", "这位主播本周");
+        properties.setStreamerWeeklyBudgetYuan(new BigDecimal("15"));
+        assertExhaustion("streamer_daily_budget", "这位主播今天");
+        assertEquals(0, client.state(PLATFORM, UID).streamerQuota().dailyPercent());
+        assertTrue(client.state(PLATFORM, 2L).available());
         server.verify();
+    }
+
+    private void assertExhaustion(String reason, String messagePart) {
+        var error = assertThrows(AssistantException.class, () -> client.beginQuestion(PLATFORM, UID));
+        assertEquals(reason, error.reason());
+        assertTrue(error.getMessage().contains(messagePart), error::getMessage);
+        assertEquals(List.of(reason), client.state(PLATFORM, UID).reasons());
+    }
+
+    // 额度刚好剩四分之一、少于百分之一或同时见底时，仍要选对文案和那一道额度。
+    @ParameterizedTest
+    @CsvSource({
+            "0.749, 1, 5, 10, ''",
+            "0.750, 1, 5, 10, 今天的助手额度还剩 25%",
+            "0.991, 1, 5, 10, 今天的助手额度还剩不到 1%",
+            "0.800, 1, 1, 10, 本周的助手额度还剩 20%",
+            "0.800, 1, 1, 1, 本周的助手总额度还剩 20%",
+            "0.800, 1, 0.9, 1, 本周的助手额度还剩 11%",
+            "0.800, 1, 5, 0.8, 本周的助手总额度用完",
+            "0.800, 0, 0, 10, ''"
+    })
+    void lowBudgetNoticeUsesExactRemainingRatio(String spent, String daily, String weekly, String total, String words) {
+        properties.setStreamerDailyBudgetYuan(new BigDecimal(daily));
+        properties.setStreamerWeeklyBudgetYuan(new BigDecimal(weekly));
+        properties.setWeeklyBudgetYuan(new BigDecimal(total));
+        usage.addCost(STREAMER, new BigDecimal(spent));
+        String notice = client.budgetStatus(PLATFORM, UID).notice();
+        if (words.isEmpty()) assertNull(notice);
+        else {
+            assertTrue(notice.startsWith("提示："), notice);
+            assertTrue(notice.contains(words), notice);
+        }
     }
 
     private AssistantClient.Request request() {
@@ -166,7 +238,7 @@ class AssistantClientTest {
                     else assertEquals(JSONObject.of("effort", thinking), body.getJSONObject("reasoning"));
                     return withSuccess(RESPONSES_ANSWER, MediaType.APPLICATION_JSON).createResponse(outgoing);
                 });
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             var request = new AssistantClient.Request(messages, tools,
                     Map.of("type", "function", "function", Map.of("name", "lookup")), 0.3);
             assertEquals("第一段第二段第三段", question.complete(request).content());
@@ -189,25 +261,26 @@ class AssistantClientTest {
                 .andRespond(withSuccess(responses ? RESPONSES_ANSWER
                         : "{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}",
                         MediaType.APPLICATION_JSON));
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             assertEquals(responses ? "第一段第二段第三段" : "好", question.complete(request()).content());
         }
         server.verify();
     }
 
-    // 抓住思考 token 重复计价，导致月度限额过早用尽。
-    @Test void responsesBillsReasoningOnceAndLeavesMonthlyAllowance() {
+    // 抓住思考 token 重复计价，导致每周总额度过早用尽。
+    @Test void responsesBillsReasoningOnceAndLeavesWeeklyAllowance() {
         useResponses();
-        properties.setMonthlyBudgetYuan(new BigDecimal("2.50"));
+        properties.setWeeklyBudgetYuan(new BigDecimal("2.50"));
+        properties.setStreamerDailyBudgetYuan(BigDecimal.ZERO);
         server.expect(requestTo("https://model.example/v1/responses"))
                 .andRespond(withSuccess(RESPONSES_ANSWER, MediaType.APPLICATION_JSON));
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             var result = question.complete(request());
             assertEquals(new AssistantClient.Usage(400000, 600000, 100000), result.usage());
             assertEquals(0, new BigDecimal("2.20").compareTo(question.totalCostYuan()));
         }
-        assertEquals(0, new BigDecimal("2.20").compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
-        assertTrue(client.state("member").available());
+        assertEquals(0, new BigDecimal("2.20").compareTo(new AssistantUsageStore(directory, clock).snapshot().spentYuan()));
+        assertTrue(client.state(PLATFORM, UID).available());
         server.verify();
     }
 
@@ -229,7 +302,7 @@ class AssistantClientTest {
         }
         client.validateAndSaveKey("admin", "replacement-test-secret");
         client.testSettings("admin");
-        assertTrue(client.status().questionsToday().isEmpty());
+        assertTrue(client.status().streamerUsage().isEmpty());
         server.verify();
     }
 
@@ -269,7 +342,7 @@ class AssistantClientTest {
                 .contentType(MediaType.APPLICATION_JSON).body(JSONObject.of("error", JSONObject.of(
                         "type", "invalid_request_error", "code", "invalid_json_schema",
                         "param", SECRET, "message", message)).toJSONString()));
-        try (var logs = new AssistantLogCapture(); var question = client.beginQuestion("member")) {
+        try (var logs = new AssistantLogCapture(); var question = client.beginQuestion(PLATFORM, UID)) {
             var error = assertThrows(AssistantException.class, () -> question.complete(request()));
             assertEquals("provider_error", error.reason());
             assertAll(
@@ -296,7 +369,7 @@ class AssistantClientTest {
         properties.setBaseUrl("https://model.example/v1");
         server.expect(requestTo("https://model.example/v1/chat/completions"))
                 .andRespond(withStatus(HttpStatus.valueOf(status)));
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             var error = assertThrows(AssistantException.class, () -> question.complete(request()));
             assertTrue(error.getMessage().contains(guidance), error::getMessage);
         }
@@ -314,7 +387,7 @@ class AssistantClientTest {
                         JSON.parseObject(((MockClientHttpRequest) outgoing).getBodyAsString())))
                 .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}",
                         MediaType.APPLICATION_JSON));
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             assertEquals("好", question.complete(new AssistantClient.Request(messages, tools, null, 0.2)).content());
         }
         server.verify();
@@ -362,7 +435,7 @@ class AssistantClientTest {
             case "save" -> client.validateAndSaveKey("admin", SECRET);
             case "test" -> client.testSettings("admin");
             case "question" -> {
-                try (var question = client.beginQuestion("member")) {
+                try (var question = client.beginQuestion(PLATFORM, UID)) {
                     question.complete(request());
                     question.complete(request());
                 }
@@ -379,7 +452,7 @@ class AssistantClientTest {
                                 JSONObject.of("content", "好", "reasoning_content", reasoning))),
                         "usage", JSONObject.of("prompt_tokens", 10, "completion_tokens", 1)).toJSONString(), MediaType.APPLICATION_JSON));
         reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
-        try (var logs = new AssistantLogCapture(); var question = client.beginQuestion("member")) {
+        try (var logs = new AssistantLogCapture(); var question = client.beginQuestion(PLATFORM, UID)) {
             var response = question.complete(request());
             assertEquals("private provider reasoning [已遮掩]", response.reasoningContent());
             question.complete(new AssistantClient.Request(List.of(JSONObject.of("role", "assistant", "content", response.content(),
@@ -398,7 +471,7 @@ class AssistantClientTest {
         properties.setBaseUrl("https://model.example/v1");
         server.expect(requestTo("https://model.example/v1/chat/completions"))
                 .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"好\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             assertFalse(question.hasSent());
             assertThrows(AssistantException.class, () -> question.complete(request(), java.time.Duration.ZERO));
             assertFalse(question.hasSent());
@@ -410,30 +483,32 @@ class AssistantClientTest {
 
     // 抓住剩余时间不足一毫秒被网络工厂取整为无限等待，或超时后仍发送请求。
     @Test void subMillisecondDeadlineStopsBeforeSending() {
-        try (var question = client.beginQuestion("first")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             assertThrows(AssistantException.class, () -> question.complete(request(), java.time.Duration.ofNanos(1)));
         }
-        assertEquals(0, usage.questionsToday().getOrDefault("first", 0));
+        assertEquals(BigDecimal.ZERO, usage.snapshot().spentYuan());
         server.verify();
     }
 
-    // 抓住月金额达到上限后仍向模型发请求的花费失控。
-    @Test void monthlyBudgetStopsBeforeNetwork() {
-        usage.addCost(new BigDecimal("30"));
-        assertEquals("本月智能助手额度已用完", assertThrows(AssistantException.class,
-                () -> client.beginQuestion("first")).getMessage());
+    // 抓住每周金额达到上限后仍向模型发请求的花费失控。
+    @Test void weeklyBudgetStopsBeforeNetwork() {
+        usage.addCost(null, properties.getWeeklyBudgetYuan());
+        assertExhaustion("weekly_budget", "下周一 0 点恢复");
         server.verify();
     }
 
-    // 抓住单账号刷过每日上限或错误地封住其他账号。
-    @Test void dailyLimitIsPerAccount() {
-        properties.setDailyQuestionsPerAccount(1);
+    // 主播额度填 0 之后，花过默认金额仍能继续问，也不会收到主播额度提示。
+    @Test void unlimitedStreamerBudgetsDoNotBlockOrWarn() {
+        properties.setStreamerDailyBudgetYuan(BigDecimal.ZERO);
+        properties.setStreamerWeeklyBudgetYuan(BigDecimal.ZERO);
+        usage.addCost(STREAMER, new BigDecimal("5.10"));
+        assertNull(client.state(PLATFORM, UID).streamerQuota().dailyPercent());
+        assertNull(client.state(PLATFORM, UID).streamerQuota().weeklyPercent());
+        assertNull(client.budgetStatus(PLATFORM, UID).notice());
         reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
-        reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
-        try (var question = client.beginQuestion("first")) { question.complete(request()); }
-        assertEquals("今天的提问次数用完了", assertThrows(AssistantException.class,
-                () -> client.beginQuestion("first")).getMessage());
-        try (var question = client.beginQuestion("second")) { assertEquals("好", question.complete(request()).content()); }
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
+            assertEquals("好", question.complete(request()).content());
+        }
         server.verify();
     }
 
@@ -479,24 +554,24 @@ class AssistantClientTest {
         assertThrows(AssistantException.class, () -> client.validateAndSaveKey("admin", SECRET));
         assertFalse(keys.isSet());
         assertFalse(client.status().available());
-        assertTrue(usage.questionsToday().isEmpty());
+        assertTrue(usage.snapshot().streamers().isEmpty());
         server.verify();
     }
 
     // 抓住总开关、密钥或当前版本确认缺失时仍把数据发出去。
     @Test void readinessRequiresEnabledKeyAndCurrentAcknowledgement() {
         keys.clear();
-        assertTrue(assertThrows(AssistantException.class, () -> client.beginQuestion("first")).getMessage().contains("密钥"));
+        assertTrue(assertThrows(AssistantException.class, () -> client.beginQuestion(PLATFORM, UID)).getMessage().contains("密钥"));
         keys.save(SECRET);
         var emptyUsage = new AssistantUsageStore(directory.resolve("other"), clock);
         var unconfirmed = new AssistantClient(properties, keys, emptyUsage, template);
-        assertTrue(assertThrows(AssistantException.class, () -> unconfirmed.beginQuestion("first")).getMessage().contains("确认"));
+        assertTrue(assertThrows(AssistantException.class, () -> unconfirmed.beginQuestion(PLATFORM, UID)).getMessage().contains("确认"));
         assertTrue(assertThrows(AssistantException.class, () -> unconfirmed.testSettings("admin")).getMessage().contains("确认"));
         usage.acknowledge("admin", "previous-version");
-        assertTrue(assertThrows(AssistantException.class, () -> client.beginQuestion("first")).getMessage().contains("确认"));
+        assertTrue(assertThrows(AssistantException.class, () -> client.beginQuestion(PLATFORM, UID)).getMessage().contains("确认"));
         client.acknowledge("admin");
         properties.setEnabled(false);
-        assertTrue(assertThrows(AssistantException.class, () -> client.beginQuestion("first")).getMessage().contains("关闭"));
+        assertTrue(assertThrows(AssistantException.class, () -> client.beginQuestion(PLATFORM, UID)).getMessage().contains("关闭"));
         assertTrue(assertThrows(AssistantException.class, () -> client.testSettings("admin")).getMessage().contains("关闭"));
         server.verify();
     }
@@ -509,22 +584,22 @@ class AssistantClientTest {
                         + "\",\"tool_calls\":[{\"function\":{\"arguments\":\"" + SECRET
                         + "\"}}]}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
         var restarted = new AssistantClient(properties, new AssistantKeyStore(directory), new AssistantUsageStore(directory, clock), template);
-        try (var question = restarted.beginQuestion("first")) {
+        try (var question = restarted.beginQuestion(PLATFORM, UID)) {
             assertFalse(JSON.toJSONString(question.complete(request())).contains(SECRET));
         }
         server.verify();
     }
 
-    // 抓住达到月上限后，同一问的后续工具轮次仍继续产生花费。
-    @Test void subsequentRoundRechecksBudgetAndCountsQuestionOnce() {
-        properties.setMonthlyBudgetYuan(new BigDecimal("0.000001"));
+    // 抓住主播额度用完后，同一问的后续工具轮次仍继续产生花费。
+    @Test void subsequentRoundRechecksStreamerBudget() {
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000001"));
         reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
-        try (var question = client.beginQuestion("first")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             question.complete(request());
-            assertEquals("本月智能助手额度已用完", assertThrows(AssistantException.class,
-                    () -> question.complete(request())).getMessage());
+            assertEquals("streamer_daily_budget", assertThrows(AssistantException.class,
+                    () -> question.complete(request())).reason());
+            assertEquals(0, question.totalCostYuan().compareTo(usage.snapshot().streamers().get(STREAMER).todaySpentYuan()));
         }
-        assertEquals(1, usage.questionsToday().get("first"));
         server.verify();
     }
 
@@ -569,7 +644,7 @@ class AssistantClientTest {
         var executor = Executors.newFixedThreadPool(2);
         try {
             var response = executor.submit(() -> {
-                try (var question = client.beginQuestion("first")) { return question.complete(request()); }
+                try (var question = client.beginQuestion(PLATFORM, UID)) { return question.complete(request()); }
             });
             assertTrue(entered.await(10, TimeUnit.SECONDS));
             var settings = executor.submit(() -> {
@@ -582,7 +657,7 @@ class AssistantClientTest {
             assertEquals("second-admin", usage.acknowledgement().actor());
             release.countDown();
             assertEquals("好", response.get(10, TimeUnit.SECONDS).content());
-            assertTrue(usage.spentYuan().signum() > 0);
+            assertTrue(usage.snapshot().spentYuan().signum() > 0);
         } finally {
             release.countDown();
             executor.shutdown();
@@ -591,18 +666,17 @@ class AssistantClientTest {
         server.verify();
     }
 
-    // 抓住试调被提问额度拦住或占用管理员每日次数，同时确保试调花费仍记账。
-    @Test void diagnosticsBypassQuestionLimitsButRecordCosts() {
-        properties.setDailyQuestionsPerAccount(1);
-        usage.startQuestion("admin", properties);
-        usage.addCost(new BigDecimal("30"));
+    // 抓住试调被主播或总额度拦住、漏记试调花费，或把试调算给主播。
+    @Test void diagnosticsBypassBudgetsAndChargeOnlyWeeklyTotal() {
+        usage.addCost(STREAMER, BigDecimal.TEN);
         reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
         reply("{\"prompt_tokens\":10,\"completion_tokens\":1}");
         client.validateAndSaveKey("admin", SECRET);
         client.testSettings("admin");
-        assertEquals(java.util.Map.of("admin", 1), usage.questionsToday());
-        assertEquals(0, new BigDecimal("30.0000612").compareTo(usage.spentYuan()));
-        assertEquals(0, usage.spentYuan().compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
+        var reopened = new AssistantUsageStore(directory, clock).snapshot();
+        assertEquals(0, BigDecimal.TEN.compareTo(reopened.streamers().get(STREAMER).weekSpentYuan()));
+        assertEquals(1, reopened.streamers().size());
+        assertEquals(0, new BigDecimal("10.0000612").compareTo(reopened.spentYuan()));
         server.verify();
     }
 
@@ -636,7 +710,7 @@ class AssistantClientTest {
         assertFalse(damaged.status().available());
         assertTrue(String.join("；", damaged.status().missing()).contains("用量文件无法读取"));
         assertNull(damaged.status().spentYuan());
-        assertTrue(assertThrows(AssistantException.class, () -> damaged.beginQuestion("first"))
+        assertTrue(assertThrows(AssistantException.class, () -> damaged.beginQuestion(PLATFORM, UID))
                 .getMessage().contains("用量文件无法读取"));
         assertThrows(AssistantException.class, () -> damaged.testSettings("admin"));
         assertThrows(AssistantException.class, () -> damaged.validateAndSaveKey("admin", SECRET));
@@ -651,7 +725,7 @@ class AssistantClientTest {
     // 抓住缓存命中、未命中或输出计价错误导致金额上限失准。
     @Test void cacheUsageHasExactYuanCost() {
         reply("{\"prompt_tokens\":1000000,\"prompt_cache_hit_tokens\":400000,\"prompt_cache_miss_tokens\":600000,\"completion_tokens\":100000}");
-        try (var question = client.beginQuestion("first")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             assertEquals(0, new BigDecimal("2.20").compareTo(question.complete(request()).costYuan()));
             assertEquals(0, new BigDecimal("2.20").compareTo(question.totalCostYuan()));
         }
@@ -664,26 +738,27 @@ class AssistantClientTest {
     void reasoningTokensAreBilledOnce(long completion, long reasoning, long expectedOutput, String expectedCost) {
         reply(JSONObject.of("prompt_tokens", 0, "completion_tokens", completion,
                 "completion_tokens_details", JSONObject.of("reasoning_tokens", reasoning)).toJSONString());
-        try (var question = client.beginQuestion("member")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             var response = question.complete(request());
             assertEquals(expectedOutput, response.usage().outputTokens());
             assertEquals(0, new BigDecimal(expectedCost).compareTo(response.costYuan()));
             assertEquals(0, response.costYuan().compareTo(question.totalCostYuan()));
         }
-        assertEquals(0, new BigDecimal(expectedCost).compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
+        assertEquals(0, new BigDecimal(expectedCost).compareTo(new AssistantUsageStore(directory, clock).snapshot().spentYuan()));
         server.verify();
     }
 
     // 抓住另一种缓存字段和无缓存字段时使用了错误单价。
     @Test void nestedCacheAndUncachedUsage() {
+        properties.setStreamerDailyBudgetYuan(BigDecimal.ZERO);
         reply("{\"prompt_tokens\":1000000,\"prompt_tokens_details\":{\"cached_tokens\":400000},\"completion_tokens\":100000}");
         reply("{\"prompt_tokens\":1000000,\"completion_tokens\":100000}");
-        try (var question = client.beginQuestion("first")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             assertEquals(0, new BigDecimal("2.20").compareTo(question.complete(request()).costYuan()));
             assertEquals(0, new BigDecimal("3.06").compareTo(question.complete(request()).costYuan()));
         }
-        assertEquals(1, client.status().questionsToday().get("first"));
-        assertEquals(0, new BigDecimal("5.26").compareTo(new AssistantUsageStore(directory, clock).spentYuan()));
+        assertEquals(0, new BigDecimal("5.26").compareTo(client.status().streamerUsage().get(0).todaySpentYuan()));
+        assertEquals(0, new BigDecimal("5.26").compareTo(new AssistantUsageStore(directory, clock).snapshot().spentYuan()));
         server.verify();
     }
 
@@ -695,7 +770,7 @@ class AssistantClientTest {
                 .andExpect(jsonPath("$.tools[0].function.name").value("lookup"))
                 .andExpect(jsonPath("$.tool_choice").value("auto"))
                 .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":null,\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1}}", MediaType.APPLICATION_JSON));
-        try (var question = client.beginQuestion("first")) {
+        try (var question = client.beginQuestion(PLATFORM, UID)) {
             var result = question.complete(new AssistantClient.Request(request().messages(),
                     List.of(JSONObject.of("type", "function", "function", JSONObject.of("name", "lookup"))), "auto", 0.2));
             assertEquals("lookup", result.toolCalls().get(0).getJSONObject("function").getString("name"));
@@ -703,16 +778,18 @@ class AssistantClientTest {
         server.verify();
     }
 
-    // 抓住自然月、自然日没有按东八区重置或确认记录随重启丢失。
-    @Test void usageResetsAtShanghaiBoundariesAndAcknowledgementPersists() {
-        usage.startQuestion("first", properties);
-        usage.addCost(BigDecimal.ONE);
+    // 抓住东八区跨日连同周额度一起清空，或配置者确认随重启丢失。
+    @Test void dailyRolloverKeepsWeeklySpendingAndAcknowledgement() {
+        usage.addCost(STREAMER, BigDecimal.ONE);
         var nextDay = new AssistantUsageStore(directory, Clock.fixed(Instant.parse("2026-10-24T16:00:00Z"), ZoneOffset.UTC));
-        assertTrue(nextDay.questionsToday().isEmpty());
-        assertEquals(0, BigDecimal.ONE.compareTo(nextDay.spentYuan()));
-        var nextMonth = new AssistantUsageStore(directory, Clock.fixed(Instant.parse("2026-10-31T16:00:00Z"), ZoneOffset.UTC));
-        assertEquals(0, BigDecimal.ZERO.compareTo(nextMonth.spentYuan()));
-        assertEquals(AssistantClient.ACKNOWLEDGEMENT_VERSION, nextMonth.acknowledgement().version());
-        assertEquals("admin", nextMonth.acknowledgement().actor());
+        var snapshot = nextDay.snapshot();
+        assertEquals(BigDecimal.ZERO, snapshot.streamers().get(STREAMER).todaySpentYuan());
+        assertEquals(0, BigDecimal.ONE.compareTo(snapshot.streamers().get(STREAMER).weekSpentYuan()));
+        assertEquals(0, BigDecimal.ONE.compareTo(snapshot.spentYuan()));
+        var nextWeek = new AssistantUsageStore(directory, Clock.fixed(Instant.parse("2026-10-25T16:00:00Z"), ZoneOffset.UTC));
+        assertTrue(nextWeek.snapshot().streamers().isEmpty());
+        assertEquals(BigDecimal.ZERO, nextWeek.snapshot().spentYuan());
+        assertEquals(AssistantClient.ACKNOWLEDGEMENT_VERSION, nextWeek.acknowledgement().version());
+        assertEquals("admin", nextWeek.acknowledgement().actor());
     }
 }

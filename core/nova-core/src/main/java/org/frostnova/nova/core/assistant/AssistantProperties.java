@@ -50,7 +50,7 @@ public class AssistantProperties {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigChoices(value = {"off", "low", "medium", "high", "max"}, labels = {"关闭／模型默认", "低", "中", "高", "最高"})
     private String thinking = "off";
-    /** 开启后，每次提问先判断难度，为难题调整思考强度和限时。判断也计入每月金额。 */
+    /** 开启后，每次提问先判断难度，为难题调整思考强度和限时。判断的花费同时计入该主播额度和每周总额。 */
     @ConfigLabel("按难度调思考强度")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -71,26 +71,21 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int hardTimeoutSeconds = 180;
-    /** 每月金额上限，单位：元，必须大于 0，按东八区自然月计算。 */
-    @ConfigLabel("每月金额上限")
+    /** 全实例共用的金额上限，单位为元，必须大于 0。东八区每周一 0 点恢复。 */
+    @ConfigLabel("每周金额上限")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private BigDecimal monthlyBudgetYuan = new BigDecimal("30");
-    /** 每个账号每天最多提问次数，按东八区自然日计算。 */
-    @ConfigLabel("每个账号每日提问次数")
+    private BigDecimal weeklyBudgetYuan = BigDecimal.TEN;
+    /** 每位主播每天在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每天 0 点恢复。 */
+    @ConfigLabel("每位主播每日金额上限")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private int dailyQuestionsPerAccount = 20;
-    /** 聊天中每位发问者每天最多提问次数，按东八区自然日计算。 */
-    @ConfigLabel("QQ 每位发问者每日提问次数")
+    private BigDecimal streamerDailyBudgetYuan = BigDecimal.ONE;
+    /** 每位主播每周在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每周一 0 点恢复。 */
+    @ConfigLabel("每位主播每周金额上限")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private int dailyQuestionsPerQqUser = 10;
-    /** 每个聊天会话每天最多提问次数，按东八区自然日计算。 */
-    @ConfigLabel("QQ 每个聊天每日提问次数")
-    @ConfigLevel(ConfigLevel.Level.COMMON)
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private int dailyQuestionsPerQqSession = 50;
+    private BigDecimal streamerWeeklyBudgetYuan = new BigDecimal("5");
     /** 一次模型回答的输出 token 上限。 */
     @ConfigLabel("回答输出上限")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -129,9 +124,19 @@ public class AssistantProperties {
         excludedUids = List.copyOf(value);
     }
 
-    public void setMonthlyBudgetYuan(BigDecimal value) {
-        if (value == null || value.signum() <= 0) throw new IllegalArgumentException("智能助手每月金额上限必须大于 0");
-        monthlyBudgetYuan = value;
+    public void setWeeklyBudgetYuan(BigDecimal value) {
+        if (value == null || value.signum() <= 0) throw new IllegalArgumentException("智能助手每周金额上限必须大于 0");
+        weeklyBudgetYuan = value;
+    }
+
+    public void setStreamerDailyBudgetYuan(BigDecimal value) {
+        if (value == null || value.signum() < 0) throw new IllegalArgumentException("每位主播每日金额上限不能小于 0");
+        streamerDailyBudgetYuan = value;
+    }
+
+    public void setStreamerWeeklyBudgetYuan(BigDecimal value) {
+        if (value == null || value.signum() < 0) throw new IllegalArgumentException("每位主播每周金额上限不能小于 0");
+        streamerWeeklyBudgetYuan = value;
     }
 
     public void setBaseUrl(String value) {
@@ -177,9 +182,6 @@ public class AssistantProperties {
         hardTimeoutSeconds = value;
     }
 
-    public void setDailyQuestionsPerAccount(int value) { dailyQuestionsPerAccount = positive(value); }
-    public void setDailyQuestionsPerQqUser(int value) { dailyQuestionsPerQqUser = positive(value); }
-    public void setDailyQuestionsPerQqSession(int value) { dailyQuestionsPerQqSession = positive(value); }
     public void setAnswerLimit(int value) { answerLimit = positive(value); }
     public void setPriceInputYuanPerMillion(BigDecimal value) { priceInputYuanPerMillion = price(value); }
     public void setPriceCachedInputYuanPerMillion(BigDecimal value) { priceCachedInputYuanPerMillion = price(value); }

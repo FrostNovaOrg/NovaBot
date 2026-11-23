@@ -64,7 +64,7 @@ public final class ConfigurationGroups {
             "控制台的访问方式与登录安全。", false);
 
     public static final Group ASSISTANT = new Group("assistant", "智能助手",
-            "智能助手的模型连接、提问次数与金额上限。", false);
+            "智能助手的模型连接、主播额度与每周总额。", false);
 
     /**
      * 高级两组，整组默认收起

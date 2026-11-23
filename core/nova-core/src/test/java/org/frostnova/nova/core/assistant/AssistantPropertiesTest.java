@@ -16,6 +16,7 @@ import org.springframework.boot.context.properties.bind.BindException;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -76,9 +77,34 @@ class AssistantPropertiesTest {
     // 抓住配置绑定接受零或负数预算，导致金额上限无效。
     @ParameterizedTest
     @ValueSource(strings = {"0", "-1", "-0.01"})
-    void bindingRejectsNonPositiveBudget(String budget) {
-        var binder = new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.monthly-budget-yuan", budget)));
+    void bindingRejectsNonPositiveWeeklyBudget(String budget) {
+        var binder = new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.weekly-budget-yuan", budget)));
         assertThrows(org.springframework.boot.context.properties.bind.BindException.class,
                 () -> binder.bind("novabot.assistant", Bindable.of(AssistantProperties.class)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"streamer-daily-budget-yuan", "streamer-weekly-budget-yuan"})
+    void streamerBudgetBindingAcceptsZeroButRejectsNegativeValues(String key) {
+        String property = "novabot.assistant." + key;
+        var unlimited = new Binder(new MapConfigurationPropertySource(Map.of(property, "0")));
+        assertTrue(unlimited.bind("novabot.assistant", Bindable.of(AssistantProperties.class)).isBound());
+        var negative = new Binder(new MapConfigurationPropertySource(Map.of(property, "-0.01")));
+        assertThrows(org.springframework.boot.context.properties.bind.BindException.class,
+                () -> negative.bind("novabot.assistant", Bindable.of(AssistantProperties.class)));
+    }
+
+    @Test
+    void settingsValidationUsesTheSameBudgetRangesAsStartup() {
+        var validators = new AssistantConfiguration().assistantBudgetValidation().valueValidators();
+        var total = validators.get("novabot.assistant.weekly-budget-yuan");
+        assertTrue(total.apply("0").contains("大于 0"));
+        assertTrue(total.apply("abc").contains("填写数字"));
+        assertNull(total.apply("10.5"));
+        for (String key : List.of("streamer-daily-budget-yuan", "streamer-weekly-budget-yuan")) {
+            var validate = validators.get("novabot.assistant." + key);
+            assertTrue(validate.apply("-0.01").contains("不能小于 0"));
+            assertNull(validate.apply("0"));
+        }
     }
 }

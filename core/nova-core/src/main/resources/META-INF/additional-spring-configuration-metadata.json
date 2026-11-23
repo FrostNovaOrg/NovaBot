@@ -1,6 +1,8 @@
 {
   "properties": [
-    { "name": "novabot.assistant.monthly-budget-yuan", "defaultValue": 30 },
+    { "name": "novabot.assistant.weekly-budget-yuan", "defaultValue": 10 },
+    { "name": "novabot.assistant.streamer-daily-budget-yuan", "defaultValue": 1 },
+    { "name": "novabot.assistant.streamer-weekly-budget-yuan", "defaultValue": 5 },
     { "name": "novabot.assistant.price-input-yuan-per-million", "defaultValue": 2.2 },
     { "name": "novabot.assistant.price-cached-input-yuan-per-million", "defaultValue": 0.05 },
     { "name": "novabot.assistant.price-output-yuan-per-million", "defaultValue": 8.6 }

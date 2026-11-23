@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -44,10 +46,9 @@ class AssistantAudienceCacheTest {
         var clock = Clock.fixed(Instant.parse("2026-11-22T00:00:00Z"), ZoneOffset.UTC);
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
-        var status = mock(AssistantClient.Status.class);
-        when(client.beginQuestion(ACCOUNT)).thenReturn(question);
-        when(client.status()).thenReturn(status);
-        when(status.questionsToday()).thenReturn(Map.of());
+        when(client.beginQuestion(eq(PLATFORM), anyLong())).thenReturn(question);
+        when(client.budgetStatus(eq(PLATFORM), anyLong()))
+                .thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         when(question.complete(any(), any())).thenReturn(new AssistantClient.Response(
                 "没有这份数据", null, List.of(), new AssistantClient.Usage(0, 0, 0), BigDecimal.ZERO));

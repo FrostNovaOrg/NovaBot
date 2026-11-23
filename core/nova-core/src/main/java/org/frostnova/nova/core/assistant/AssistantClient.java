@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
+import org.frostnova.nova.core.assistant.AssistantUsageStore.Streamer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
@@ -23,11 +24,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
  * 非流式模型客户端。调用方用 try-with-resources 为一问建立一个 Question，
- * 多轮工具调用复用它；每日次数只占一次，totalCostYuan 给出这一问的累计花费。
+ * 多轮工具调用复用它，totalCostYuan 给出这一问的累计花费。
  * 每轮返回的用量立即落盘，包括后续消息解析失败的情况，避免中途退出漏记。
  */
 public final class AssistantClient {
@@ -49,12 +51,15 @@ public final class AssistantClient {
         }
     }
     public record Status(boolean enabled, boolean available, List<String> missing, boolean keySet, String maskedKey,
-                         String baseUrl, String model, BigDecimal spentYuan, BigDecimal monthlyBudgetYuan,
-                         int dailyQuestionsPerAccount, Map<String, Integer> questionsToday,
+                         String baseUrl, String model, BigDecimal spentYuan, BigDecimal weeklyBudgetYuan,
+                         List<StreamerUsage> streamerUsage,
                          AssistantUsageStore.Acknowledgement acknowledgement,
                          String acknowledgementVersion, String acknowledgementText) { }
 
-    public record State(boolean enabled, boolean available, List<String> reasons, int questionsLeftToday) { }
+    public record StreamerUsage(String platform, String uid, String nickname, BigDecimal todaySpentYuan, BigDecimal weekSpentYuan) { }
+    public record StreamerQuota(Integer dailyPercent, Integer weeklyPercent) { }
+    public record State(boolean enabled, boolean available, List<String> reasons, StreamerQuota streamerQuota) { }
+    public record BudgetStatus(State state, BigDecimal spentYuan, BigDecimal weeklyBudgetYuan, String notice) { }
 
     private enum CallMode { ANSWER, ANALYSIS, CLASSIFY, PROBE }
     private record Attempt(Response response, boolean outputLimitReached) { }
@@ -80,24 +85,40 @@ public final class AssistantClient {
         this.templates = templates;
     }
 
-    public synchronized Status status() {
+    public Status status() {
+        return status((platform, uid) -> null);
+    }
+
+    public Status status(BiFunction<String, Long, String> nickname) {
         List<String> missing = unavailable().stream().map(AssistantException::getMessage).toList();
+        var snapshot = usage.snapshot();
+        var byStreamer = snapshot.streamers().entrySet().stream().map(entry -> {
+            Streamer streamer = entry.getKey();
+            var used = entry.getValue();
+            String name = nickname.apply(streamer.platform(), streamer.uid());
+            return new StreamerUsage(streamer.platform(), Long.toString(streamer.uid()), name == null || name.isBlank() ? null : name,
+                    used.todaySpentYuan(), used.weekSpentYuan());
+        }).toList();
         return new Status(properties.isEnabled(), missing.isEmpty(), missing, keys.isSet(), keys.masked(),
-                properties.getBaseUrl(), properties.getModel(), usage.spentYuan(), properties.getMonthlyBudgetYuan(),
-                properties.getDailyQuestionsPerAccount(), usage.questionsToday(), usage.acknowledgement(),
+                properties.getBaseUrl(), properties.getModel(), snapshot.spentYuan(), properties.getWeeklyBudgetYuan(),
+                byStreamer, snapshot.acknowledgement(),
                 ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT.replace("{接口地址}", properties.getBaseUrl()));
     }
 
-    /** 只读的账号可用状态，不发送请求，也不占用提问次数。 */
-    public synchronized State state(String account) {
+    /** 主播的可用状态和剩余额度，不发送模型请求。 */
+    public synchronized BudgetStatus budgetStatus(String platform, long uid) {
         var reasons = new ArrayList<>(unavailable().stream().map(AssistantException::reason).toList());
-        int left = usage.problem() == null
-                ? Math.max(0, properties.getDailyQuestionsPerAccount() - usage.questionsToday().getOrDefault(account, 0)) : 0;
-        if (usage.problem() == null) {
-            if (left == 0) reasons.add("daily_limit");
-            if (usage.spentYuan().compareTo(properties.getMonthlyBudgetYuan()) >= 0) reasons.add("monthly_budget");
-        }
-        return new State(properties.isEnabled(), reasons.isEmpty(), List.copyOf(reasons), left);
+        var quota = usage.quota(new Streamer(platform, uid), properties);
+        var exhausted = quota == null ? null : quota.exhausted();
+        if (exhausted != null) reasons.add(exhausted.reason);
+        var streamerQuota = quota == null ? null : new StreamerQuota(quota.daily().percent(), quota.weekly().percent());
+        var state = new State(properties.isEnabled(), reasons.isEmpty(), List.copyOf(reasons), streamerQuota);
+        return new BudgetStatus(state, quota == null ? null : quota.spentYuan(),
+                properties.getWeeklyBudgetYuan(), quota == null ? null : quota.notice());
+    }
+
+    public State state(String platform, long uid) {
+        return budgetStatus(platform, uid).state();
     }
 
     public synchronized void acknowledge(String actor) { usage.acknowledge(actor, ACKNOWLEDGEMENT_VERSION); }
@@ -107,7 +128,7 @@ public final class AssistantClient {
     /** 菜单与命令接收只看总开关和密钥，额度与配置者确认由提问时检查。 */
     public boolean isConfigured() { return properties.isEnabled() && keys.isSet(); }
 
-    /** 管理员的连接诊断只发送固定短句，不占提问次数，不受提问额度限制，花费照常记账。 */
+    /** 管理员的连接诊断只发送固定短句，不查额度，花费计入每周总额。 */
     public void validateAndSaveKey(String account, String candidate) {
         AssistantKeyStore.validate(candidate);
         usage.requireReadable();
@@ -116,38 +137,28 @@ public final class AssistantClient {
         keys.save(candidate);
     }
 
-    /** 使用当前设置做连接诊断，同样要求开启、设置密钥和确认；只记花费，不占提问次数。 */
+    /** 使用当前设置做连接诊断，同样要求开启、设置密钥和确认。 */
     public void testSettings(String account) {
         requireAvailable();
         probe(null);
     }
 
-    public synchronized Question beginQuestion(String account) {
-        return beginQuestion(account, null);
-    }
-
-    public synchronized Question beginQqQuestion(AssistantLocalStore.QqSource qq) {
-        return beginQuestion(qq.account(), qq);
-    }
-
-    private Question beginQuestion(String account, AssistantLocalStore.QqSource qq) {
+    public synchronized Question beginQuestion(String platform, long uid) {
         requireAvailable();
-        usage.checkQuestion(account, qq, properties);
-        return new Question(account, qq);
+        var streamer = new Streamer(platform, uid);
+        usage.checkBudget(streamer, properties);
+        return new Question(streamer);
     }
 
     public final class Question implements AutoCloseable {
-        private final String account;
-        private final AssistantLocalStore.QqSource qq;
-        private boolean started;
+        private final Streamer streamer;
         private String sentEndpoint;
         private boolean closed;
         private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
 
-        private Question(String account, AssistantLocalStore.QqSource qq) {
-            this.account = account;
-            this.qq = qq;
+        private Question(Streamer streamer) {
+            this.streamer = streamer;
         }
 
         public Response complete(Request request) { return complete(request, Duration.ofSeconds(90)); }
@@ -161,7 +172,7 @@ public final class AssistantClient {
             return complete(request, timeout, CallMode.ANALYSIS);
         }
 
-        /** 难度判断与回答共用同一个提问次数和用量记录。 */
+        /** 难度判断与回答共用一问的用量记录。 */
         public Response classifyDifficulty(Request request) {
             return complete(request, Duration.ofSeconds(5), CallMode.CLASSIFY);
         }
@@ -174,8 +185,7 @@ public final class AssistantClient {
                 if (inFlight) throw new AssistantException("这一问正在请求大模型服务，请等待返回");
                 requireAvailable();
                 validate(request);
-                usage.checkBudget(properties);
-                if (!started) { usage.startQuestion(account, qq, properties); started = true; }
+                usage.checkBudget(streamer, properties);
                 inFlight = true;
             }
             try {
@@ -264,7 +274,7 @@ public final class AssistantClient {
             Attempt first = exchange(endpoint, body, true, candidate, question, timeout, mode);
             if (shortRequest || !first.outputLimitReached()) return first.response();
 
-            synchronized (this) { usage.checkBudget(properties); }
+            usage.checkBudget(question.streamer, properties);
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
             if (remaining.compareTo(Duration.ofMillis(1)) < 0) throw outputLimitFailure();
             body.put(OUTPUT_LIMIT, maxOutput + allowance);
@@ -380,7 +390,7 @@ public final class AssistantClient {
             if (question != null) {
                 synchronized (this) { question.total = question.total.add(cost); }
             }
-            usage.addCost(cost);
+            usage.addCost(question == null ? null : question.streamer, cost);
             if (responses) return parseResponses(json, secret, tokens, cost, mode, received.getStatusCode().value());
             return new Attempt(parseChat(json, secret, tokens, cost, mode), false);
         } catch (HttpStatusCodeException error) {

@@ -3666,7 +3666,7 @@ class ConfigUiFrontendTest {
     /**
      * 一行里抽双引号字面量，命中平台词则记 文件:行
      * <p>
-     * 允许邮件 SMTP 示例、完整的 {@code starbot.[a-z0-9.-]+} 配置键和两个 QQ 限额的字段标签。
+     * 允许邮件 SMTP 示例和完整的 {@code starbot.[a-z0-9.-]+} 配置键。
      */
     private List<String> platformWordsInLines(List<String> lines, String fileName) {
         List<String> words = List.of("QQ", "NapCat", "OneBot");
@@ -3681,11 +3681,6 @@ class ConfigUiFrontendTest {
                 String content = m.group().substring(1, m.group().length() - 1);
                 if (MAIL_SMTP_EXAMPLE.equals(content)
                         || STARBOT_KEY_LITERAL.matcher(content).matches()) {
-                    continue;
-                }
-                if (fileName.equals("AssistantProperties.java")
-                        && (raw.strip().equals("@ConfigLabel(\"QQ 每位发问者每日提问次数\")")
-                        || raw.strip().equals("@ConfigLabel(\"QQ 每个聊天每日提问次数\")"))) {
                     continue;
                 }
                 for (String word : words) {

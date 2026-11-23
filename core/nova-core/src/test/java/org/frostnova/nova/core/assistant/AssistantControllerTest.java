@@ -7,6 +7,9 @@ import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.util.IpMatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,8 +55,10 @@ class AssistantControllerTest {
     private ConfigUiSession session;
     private MockRestServiceServer server;
     private AssistantKeyStore keys;
+    private AssistantUsageStore usage;
     private AssistantClient client;
     private AssistantProperties properties;
+    private AbstractDataSource dataSource;
 
     @BeforeEach void setup() {
         properties = new AssistantProperties();
@@ -61,7 +66,9 @@ class AssistantControllerTest {
         keys = new AssistantKeyStore(directory);
         var template = new RestTemplate();
         server = MockRestServiceServer.bindTo(template).build();
-        client = new AssistantClient(properties, keys, new AssistantUsageStore(directory, Clock.systemUTC()), template);
+        usage = new AssistantUsageStore(directory, Clock.systemUTC());
+        client = new AssistantClient(properties, keys, usage, template);
+        dataSource = mock(AbstractDataSource.class);
         auth = mock(ConfigUiAuthService.class);
         session = mock(ConfigUiSession.class);
         when(session.getCsrfToken()).thenReturn("test-csrf-token");
@@ -74,7 +81,26 @@ class AssistantControllerTest {
         agreement.setAcceptedBy("password");
         var filter = new ConfigUiSecurityFilter("unused-token", new IpMatcher(List.of("127.0.0.1")), auth,
                 new NovaCoreProperties.ConfigUi.Auth(), agreement);
-        mvc = MockMvcBuilders.standaloneSetup(new AssistantController(client)).addFilters(filter).build();
+        mvc = MockMvcBuilders.standaloneSetup(new AssistantController(client, dataSource, StreamerNames.none()))
+                .addFilters(filter).build();
+    }
+
+    @Test void usageStatusShowsEachStreamerWithNicknameWhenAvailable() throws Exception {
+        var named = new PushUser();
+        named.setUname("测试主播甲");
+        when(dataSource.getUser("bilibili", 1L)).thenReturn(Optional.of(named));
+        usage.addCost(new AssistantUsageStore.Streamer("bilibili", 1L), new BigDecimal("0.6"));
+        usage.addCost(new AssistantUsageStore.Streamer("bilibili", 9007199254740993L), new BigDecimal("0.5"));
+        usage.addCost(null, new BigDecimal("0.1"));
+        mvc.perform(get("/config/api/assistant/status")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.weeklyBudgetYuan").value(10))
+                .andExpect(jsonPath("$.spentYuan").value(1.2))
+                .andExpect(jsonPath("$.streamerUsage.length()").value(2))
+                .andExpect(jsonPath("$.streamerUsage[0].nickname").value("测试主播甲"))
+                .andExpect(jsonPath("$.streamerUsage[0].todaySpentYuan").value(0.6))
+                .andExpect(jsonPath("$.streamerUsage[0].weekSpentYuan").value(0.6))
+                .andExpect(jsonPath("$.streamerUsage[1].nickname").doesNotExist())
+                .andExpect(jsonPath("$.streamerUsage[1].uid").value("9007199254740993"));
     }
 
     private MockHttpServletRequestBuilder authorized(MockHttpServletRequestBuilder request) {

@@ -4,6 +4,9 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,13 +19,20 @@ import java.util.Arrays;
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class AssistantController {
     private final AssistantClient client;
+    private final AbstractDataSource dataSource;
+    private final StreamerNames streamerNames;
 
-    public AssistantController(AssistantClient client) { this.client = client; }
+    public AssistantController(AssistantClient client, AbstractDataSource dataSource, StreamerNames streamerNames) {
+        this.client = client;
+        this.dataSource = dataSource;
+        this.streamerNames = streamerNames;
+    }
 
     @GetMapping("/status")
     public AssistantClient.Status status(HttpServletRequest request) {
         ConfigUiAccess.admin(request);
-        return client.status();
+        return client.status((platform, uid) -> streamerNames.uname(platform, uid,
+                dataSource.getUser(platform, uid).map(PushUser::getUname).orElse(null)));
     }
 
     @PostMapping("/key")

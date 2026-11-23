@@ -1,16 +1,27 @@
 package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.alert.AlertService;
+import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.RetiredConfigurationKeyCheck;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -105,16 +116,18 @@ class ConfigurationKeyAliasesTest {
      * 构造器只做赋值，读配置这条路只用得到配置文件服务，其余依赖全部给桩——
      * 与本目录下其他控制台用例的做法一致。别名贡献者注入虚构键，核心表为空时仍能量读侧三条语义。
      */
-    @SuppressWarnings("unchecked")
     private void start(String yaml) throws IOException {
+        ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
+        when(metadata.getKnownTypes()).thenReturn(Map.of(CURRENT_KEY, "java.lang.Boolean"));
+        start(yaml, metadata);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void start(String yaml, ConfigurationMetadataService metadata) throws IOException {
         Files.writeString(config, yaml, StandardCharsets.UTF_8);
 
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-
-        // 通用保存只收元数据登记过的键，这里把保存要用的那把现行键登记进去
-        ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
-        when(metadata.getKnownTypes()).thenReturn(Map.of(CURRENT_KEY, "java.lang.Boolean"));
 
         controller = new ConfigUiController(
                 metadata,
@@ -151,6 +164,43 @@ class ConfigurationKeyAliasesTest {
                 providerOf(DEMO_ALIASES),
                 mock(AlertService.class),
                 emptyProvider());
+    }
+
+    // 配置文件里留着旧的次数设置，设置页存不了。
+    @Test void retiredAssistantKeysWarnAndStillAllowSavingSettings() throws IOException {
+        start("""
+                novabot:
+                  assistant:
+                    monthly-budget-yuan: 80
+                    daily-questions-per-account: 9
+                    daily-questions-per-qq-user: 7
+                    daily-questions-per-qq-session: 13
+                """, new ConfigurationMetadataService());
+        var environment = new MockEnvironment();
+        new YamlPropertySourceLoader().load("application.yml", new FileSystemResource(config))
+                .forEach(environment.getPropertySources()::addLast);
+        Binder.get(environment).bind("novabot.assistant", AssistantProperties.class);
+
+        var logger = (Logger) LoggerFactory.getLogger(RetiredConfigurationKeyCheck.class);
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            new RetiredConfigurationKeyCheck(environment).check();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+        String key = "novabot.assistant.weekly-budget-yuan";
+        JSONObject saved = controller.save(Map.of(key, "12")).getBody();
+        assertTrue(saved.getBooleanValue("success"), saved.getString("message"));
+        assertEquals("12", read().getJSONObject("values").getString(key));
+        for (String retired : List.of("monthly-budget-yuan", "daily-questions-per-account",
+                "daily-questions-per-qq-user", "daily-questions-per-qq-session")) {
+            assertEquals(1, appender.list.stream().filter(event -> event.getLevel() == Level.WARN
+                    && event.getFormattedMessage().contains("novabot.assistant." + retired)).count(), retired);
+            assertTrue(Files.readString(config).contains(retired + ":"));
+        }
     }
 
     private static <T> ObjectProvider<T> emptyProvider() {

@@ -287,13 +287,8 @@ class AssistantAggregateQueryTest {
         properties.setExcludedUids(List.of(EXCLUDED));
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
-        var status = mock(AssistantClient.Status.class);
-        when(client.beginQuestion("member")).thenReturn(question);
-        when(client.status()).thenReturn(status);
-        when(status.dailyQuestionsPerAccount()).thenReturn(20);
-        when(status.questionsToday()).thenReturn(Map.of("member", 1));
-        when(status.spentYuan()).thenReturn(BigDecimal.ZERO);
-        when(status.monthlyBudgetYuan()).thenReturn(BigDecimal.TEN);
+        when(client.beginQuestion(PLATFORM, ROOM)).thenReturn(question);
+        when(client.budgetStatus(PLATFORM, ROOM)).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         var request = request(List.of("gift", "box", "guard", "super_chat"), FROM, TO, "sum:amount");
         request.put("groupBy", List.of("audience"));
@@ -342,9 +337,8 @@ class AssistantAggregateQueryTest {
         request.put("groupBy", List.of("day"));
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
-        var status = mock(AssistantClient.Status.class);
-        when(client.beginQuestion("member")).thenReturn(question);
-        when(client.status()).thenReturn(status);
+        when(client.beginQuestion(PLATFORM, ROOM)).thenReturn(question);
+        when(client.budgetStatus(PLATFORM, ROOM)).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         var toolCall = JSONObject.of("id", "duration-summary", "type", "function",
                 "function", JSONObject.of("name", "aggregate", "arguments", request.toJSONString()));
@@ -564,8 +558,8 @@ class AssistantAggregateQueryTest {
     private JSONObject revenueToolResult(String questionText, String from, String to, boolean daily) {
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
-        when(client.beginQuestion("member")).thenReturn(question);
-        when(client.status()).thenReturn(mock(AssistantClient.Status.class));
+        when(client.beginQuestion(PLATFORM, ROOM)).thenReturn(question);
+        when(client.budgetStatus(PLATFORM, ROOM)).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         var usage = new AssistantClient.Usage(0, 100, 10);
         var toolResult = new AtomicReference<JSONObject>();

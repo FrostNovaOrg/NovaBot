@@ -56,6 +56,7 @@ import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -169,6 +170,82 @@ class QqAssistantCommandTest {
         if (service != null) service.close();
     }
 
+    // 控制台和 QQ 各算各的，问同一位主播，加起来超了每天上限还能接着问。
+    @Test void consoleAndQqSpendFromTheSameStreamerBudget() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        properties.setPriceInputYuanPerMillion(new BigDecimal("6000"));
+        var request = JSONObject.of("question", "最近播过吗");
+        var first = service.ask(BILIBILI, FIRST, "operator", request);
+        assertTrue(first.getBooleanValue("answered"));
+        assertEquals(0, new BigDecimal("0.6").compareTo(first.getBigDecimal("costYuan")));
+        properties.setPriceInputYuanPerMillion(new BigDecimal("5000"));
+        group(ASKER, "问 最近播过吗");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        var denied = service.ask(BILIBILI, FIRST, "operator", request);
+        assertFalse(denied.getBooleanValue("answered"));
+        assertTrue(denied.getString("answer").contains("今天的助手额度用完"));
+        group(OTHER, "问 昨天播了吗");
+        assertReply("今天的助手额度用完", "明天 0 点");
+        assertEquals(2, requests.size());
+    }
+
+    // 一位主播用完额度，别的主播也跟着问不了。
+    @Test void aSpentStreamerDoesNotBlockAnotherStreamer() {
+        properties.setPriceInputYuanPerMillion(new BigDecimal("10000"));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        var request = JSONObject.of("question", "最近播过吗");
+        assertTrue(service.ask(BILIBILI, FIRST, "operator", request).getBooleanValue("answered"));
+        assertFalse(service.ask(BILIBILI, FIRST, "operator", request).getBooleanValue("answered"));
+        assertTrue(service.ask(BILIBILI, SECOND, "operator", request).getBooleanValue("answered"));
+        assertEquals(2, requests.size());
+    }
+
+    // 额度快用完时没有任何提示，突然就问不了了。
+    @Test void lowBudgetNoticeReachesBothSurfacesAndStaysOutOfHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        properties.setPriceInputYuanPerMillion(new BigDecimal("8000"));
+        var questionCost = new BigDecimal("0.8");
+        properties.setStreamerWeeklyBudgetYuan(new BigDecimal("2"));
+        properties.setWeeklyBudgetYuan(client.status().spentYuan().add(questionCost).multiply(new BigDecimal("5")));
+        String notice = "这位主播今天的助手额度还剩 20%";
+        var result = service.ask(BILIBILI, FIRST, "operator", JSONObject.of("question", "最近播过吗"));
+        assertTrue(result.getBooleanValue("answered"));
+        assertFalse(result.getString("answerForHistory").contains("助手额度"));
+
+        properties.setPriceInputYuanPerMillion(BigDecimal.ZERO);
+        modelReplies.add(text("这份数据暂未归档。".repeat(200)));
+        group(ASKER, "问 最近播过吗");
+        assertReply("提示：" + notice, LABEL);
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 那昨天呢");
+        assertReply(LABEL);
+        assertFalse(lastHistory().isEmpty());
+        assertFalse(lastHistory().toJSONString().contains("助手额度"));
+        assertNotNull(result.getString("budgetNotice"));
+        assertTrue(result.getString("budgetNotice").contains(notice));
+    }
+
+    // 额度已经用完，QQ 还先回一句『收到』，然后才说用完。
+    @Test void exhaustedStreamerIsRejectedBeforeNumberedSelectionAcknowledgement() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        properties.setPriceInputYuanPerMillion(new BigDecimal("10000"));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        assertTrue(service.ask(BILIBILI, SECOND, "operator", JSONObject.of("question", "最近播过吗"))
+                .getBooleanValue("answered"));
+        group(ASKER, "问 最近播了几场");
+        assertReply("回序号");
+        receive(GROUP, ROOM, ASKER, "2", false);
+        assertReply("今天的助手额度用完", "明天 0 点");
+        awaitIdle(GROUP, ROOM);
+        assertTrue(replies.isEmpty());
+        assertEquals(1, requests.size());
+    }
+
     @Test
     @DisplayName("旧群通道未开问答，@ 机器人也不能触发模型")
     void groupChannelDefaultsOff() throws Exception {
@@ -249,7 +326,7 @@ class QqAssistantCommandTest {
     }
 
     @Test
-    @DisplayName("空问应直接给三条例子，不能选择主播、请求模型或扣次数")
+    @DisplayName("空问应直接给三条例子，不能选择主播、请求模型或产生花费")
     void emptyCommandsGiveExamplesWithoutUsingQuota() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
@@ -258,7 +335,7 @@ class QqAssistantCommandTest {
             assertReply("1–300 字", "问 这个月心动盲盒收了多少个", "问 最近 30 天各钟点平均在线", "问 上周送礼榜前十");
         }
         assertTrue(requests.isEmpty());
-        assertTrue(qqCounts().isEmpty());
+        assertTrue(client.status().streamerUsage().isEmpty());
     }
 
     @Test
@@ -275,7 +352,7 @@ class QqAssistantCommandTest {
         group(ASKER, "问数");
         assertReply("这个月心动盲盒收了多少个", "最近 30 天");
         assertTrue(requests.isEmpty());
-        assertTrue(qqCounts().isEmpty());
+        assertTrue(client.status().streamerUsage().isEmpty());
     }
 
     @Test
@@ -696,36 +773,34 @@ class QqAssistantCommandTest {
     }
 
     @Test
-    @DisplayName("QQ 个人次数跨会话累计，重启后也保留，控制台仍可提问")
-    void userLimitPersistsAcrossSessionsAndLeavesConsoleQuotaAlone() throws Exception {
-        properties.setDailyQuestionsPerQqUser(1);
-        properties.setDailyQuestionsPerAccount(1);
+    @DisplayName("同一主播的额度跨群和私聊累计，重启后仍可阻止超额提问")
+    void streamerDailyBudgetPersistsAcrossChatsAndRestarts() throws Exception {
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
         group(ASKER, "问 本月开播几场");
-        assertReply(LABEL);
+        assertReply(LABEL, "提示：这位主播今天的助手额度用完");
         receive(FRIEND, ASKER, ASKER, "问 本周呢", false);
-        assertReply("你的聊天账号", "提问次数用完");
+        assertReply("今天的助手额度用完");
         assertEquals(1, requests.size());
-        assertTrue(client.status().questionsToday().isEmpty());
-        var source = local.qqSource("QQ", QQ, FRIEND, ASKER, ASKER);
         var error = assertThrows(org.frostnova.nova.core.assistant.AssistantException.class,
-                () -> newClient().beginQqQuestion(source));
-        assertEquals("qq_user_limit", error.reason());
-
-        assertTrue(service.ask(BILIBILI, FIRST, "operator", JSONObject.of("question", "本场呢")).getBooleanValue("answered"));
-        assertEquals(1, client.status().questionsToday().get("operator"));
+                () -> newClient().beginQuestion(BILIBILI, FIRST));
+        assertEquals("streamer_daily_budget", error.reason());
+        try (var otherPlatform = newClient().beginQuestion("another-platform", FIRST)) {
+            assertFalse(otherPlatform.hasSent());
+        }
     }
 
     @Test
-    @DisplayName("会话次数用完会提示另一位发问者，隔日可再问，月度额度与控制台共用")
-    void enforcesSessionLimitAndSharedMonthlyBudget() throws Exception {
-        properties.setDailyQuestionsPerQqSession(1);
+    @DisplayName("主播当日额度次日恢复，本周花费仍累计，实例总额度优先")
+    void enforcesStreamerWeekAndSharedTotalBudget() throws Exception {
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
+        properties.setStreamerWeeklyBudgetYuan(new BigDecimal("0.000612"));
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
         group(ASKER, "问 本场开播了吗");
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
         group(OTHER, "问 本周播过吗");
-        assertReply("这个会话", "提问次数用完");
+        assertReply("今天的助手额度用完");
         assertEquals(1, requests.size());
         awaitIdle(GROUP, ROOM);
 
@@ -734,16 +809,19 @@ class QqAssistantCommandTest {
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
         clock.advance(Duration.ofDays(1));
-        properties.setMonthlyBudgetYuan(client.status().spentYuan());
         group(OTHER, "问 今天播了吗");
-        assertReply("本月", "额度已用完");
-        assertEquals("monthly_budget", service.ask(BILIBILI, FIRST, "operator",
+        assertReply("本周的助手额度用完");
+        awaitIdle(GROUP, ROOM);
+        properties.setWeeklyBudgetYuan(client.status().spentYuan());
+        group(OTHER, "问 今天播了吗");
+        assertReply("本周的助手总额度用完");
+        assertEquals("weekly_budget", service.ask(BILIBILI, FIRST, "operator",
                 JSONObject.of("question", "本场呢")).getString("reason"));
         assertEquals(2, requests.size());
     }
 
     @Test
-    @DisplayName("群聊和好友的发送记录及次数文件都不能写入发问者的 QQ 号")
+    @DisplayName("群聊和好友的发送记录及用量文件都不能写入发问者的 QQ 号")
     void recordsQqSourceAndPseudonymWithoutRawAskerId() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
         group(ASKER, "问 本月播过吗");
@@ -766,7 +844,8 @@ class QqAssistantCommandTest {
         assertFalse(raw.contains(Long.toString(ASKER)));
         String usage = Files.readString(directory.resolve("assistant-usage.json"));
         assertFalse(usage.contains(Long.toString(ASKER)));
-        assertEquals(2, JSON.parseObject(usage).getJSONObject("qqQuestions").getIntValue(group.getString("account")));
+        assertFalse(usage.contains(group.getString("account")));
+        assertStreamerSpend(FIRST, "0.000612");
     }
 
     @Test
@@ -859,8 +938,8 @@ class QqAssistantCommandTest {
     @Test void difficultQuestionSendsItsOwnNoticeWhileWaitingForAnswer() throws Exception {
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
                 .bind("novabot.assistant", Bindable.ofInstance(properties));
-        properties.setDailyQuestionsPerQqUser(1);
-        properties.setDailyQuestionsPerQqSession(1);
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000612"));
+        var initialTotal = client.status().spentYuan();
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
         modelReplies.add(text("分析"));
         modelReplies.add(text("近期场次表现有波动。"));
@@ -880,13 +959,15 @@ class QqAssistantCommandTest {
         } finally {
             release.countDown();
         }
-        assertReply("场次表现有波动", LABEL);
+        assertReply("场次表现有波动", "提示：这位主播今天的助手额度用完", LABEL);
         awaitIdle(GROUP, ROOM);
+        assertEquals(0, new BigDecimal("0.000612").compareTo(client.status().spentYuan().subtract(initialTotal)));
+        assertStreamerSpend(FIRST, "0.000612");
         group(ASKER, "问 本月有开播吗");
-        assertReply("你的聊天账号", "提问次数用完");
+        assertReply("今天的助手额度用完");
         awaitIdle(GROUP, ROOM);
         group(OTHER, "问 本月有开播吗");
-        assertReply("这个会话", "提问次数用完");
+        assertReply("今天的助手额度用完");
         assertEquals(2, requests.size());
     }
 
@@ -1010,7 +1091,7 @@ class QqAssistantCommandTest {
     }
 
     @Test
-    @DisplayName("编号的送礼排行是正文，回复问 1 不会把榜首当问题提交或扣次数")
+    @DisplayName("编号的送礼排行是正文，回复问 1 不会把榜首当问题提交或产生花费")
     void numberedRankingIsNotAQuestionAndDoesNotConsumeAnotherTurn() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         modelReplies.add(text("送礼前两名\n1. 测试观众甲 10 个\n2. 测试观众乙 5 个"));
@@ -1022,12 +1103,11 @@ class QqAssistantCommandTest {
         group(ASKER, "问 1");
         assertReply("没有可接着问");
         assertEquals(1, requests.size());
-        var source = local.qqSource("QQ", QQ, GROUP, ROOM, ASKER);
-        assertEquals(Map.of(source.account(), 1, source.sessionKey(), 1), qqCounts());
+        assertStreamerSpend(FIRST, "0.000306");
     }
 
     @Test
-    @DisplayName("选项换了发问人或金额可见设置、改问其他主播或已满十分钟时都不能调用模型或扣次数")
+    @DisplayName("选项换了发问人或金额可见设置、改问其他主播或已满十分钟时都不能调用模型或产生花费")
     void invalidNumberedFollowUpsUseNoModelOrQuota() throws Exception {
         var target = channel(GROUP, ROOM, true, true);
         add(FIRST, "测试主播甲", target);
@@ -1065,8 +1145,8 @@ class QqAssistantCommandTest {
         group(ASKER, "问 1");
         assertReply("没有可接着问");
         assertEquals(4, requests.size());
-        var source = local.qqSource("QQ", QQ, GROUP, ROOM, ASKER);
-        assertEquals(Map.of(source.account(), 4, source.sessionKey(), 4), qqCounts());
+        assertStreamerSpend(FIRST, "0.000918");
+        assertStreamerSpend(SECOND, "0.000306");
     }
 
     @Test
@@ -1294,8 +1374,10 @@ class QqAssistantCommandTest {
 
     private JSONArray lastHistory() { return userPayload(requests.get(requests.size() - 1)).getJSONArray("history"); }
 
-    private JSONObject qqCounts() throws Exception {
-        return JSON.parseObject(Files.readString(directory.resolve("assistant-usage.json"))).getJSONObject("qqQuestions");
+    private void assertStreamerSpend(long uid, String expected) {
+        var used = client.status().streamerUsage().stream()
+                .filter(row -> row.uid().equals(Long.toString(uid))).findFirst().orElseThrow();
+        assertEquals(0, new BigDecimal(expected).compareTo(used.weekSpentYuan()));
     }
 
     private static JSONObject userPayload(JSONObject request) {

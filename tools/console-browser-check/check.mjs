@@ -323,7 +323,7 @@ function assistantSettingsFixture(acknowledgementText, acknowledgementVersion) {
   const request = window.fetch;
   let acknowledgement = null;
   const status = () => Response.json({success: true, acknowledgement, acknowledgementText, acknowledgementVersion,
-    spentYuan: 0, monthlyBudgetYuan: 30});
+    spentYuan: 0, weeklyBudgetYuan: 10, streamerUsage: []});
   window.fetch = async (url, options) => {
     if (url === '/config/api/assistant/status') return status();
     if (url === '/config/api/assistant/acknowledge' && options?.method === 'POST') {

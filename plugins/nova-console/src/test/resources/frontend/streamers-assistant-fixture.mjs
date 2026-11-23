@@ -70,11 +70,18 @@ for (const id of ['sv-list', 'sv-detail', 'sv-session', 'sd-back', 'sd-head', 's
 }
 const {store} = await import('../../../../../../core/nova-core/src/main/resources/config-ui/store.js');
 store.role = 'ADMIN'; store.csrfToken = 'sample-token';
-let state = {enabled: true, available: true, reasons: [], questionsLeftToday: 9};
+const initialState = {enabled: true, available: true, reasons: [], streamerQuota: {dailyPercent: 90, weeklyPercent: 98}};
+const budgetMessages = {
+  weekly_budget: '本周的助手总额度用完了，下周一 0 点恢复。',
+  streamer_weekly_budget: '这位主播本周的助手额度用完了，下周一 0 点恢复。',
+  streamer_daily_budget: '这位主播今天的助手额度用完了，明天 0 点恢复。',
+};
+let state = initialState;
 let stateError = null, stateReads = 0, stateGate = null, askGate = null;
 let reply = {answered: true, label: '由人工智能生成', answer: '样例回答\n下一行', answerForHistory: '原样历史',
   steps: [{function: 'trend', arguments: {}, source: '场次趋势，与主播页同一算法'}], unverifiedNumbers: ['12'],
-  costYuan: 0.01230001, remaining: {questionsToday: 8, spentYuan: 1.2300001, monthlyBudgetYuan: 2}};
+  costYuan: 0.01230001, remaining: {spentYuan: 1.2300001, weeklyBudgetYuan: 2},
+  state: {...initialState, streamerQuota: {dailyPercent: 80, weeklyPercent: 96}}};
 const initialReply = reply;
 let askError = null, httpStatus = 200;
 const requests = [];
@@ -263,19 +270,19 @@ const checks = {
   // 错误若带结论标识或复制按钮，使用者会把失败说明当作模型回答。
   async failures() {
     const mounted = await mount();
-    for (const reason of ['timeout', 'key_rejected', 'provider_balance', 'daily_limit', 'disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'monthly_budget']) {
+    for (const reason of ['timeout', 'key_rejected', 'provider_balance', 'streamer_daily_budget', 'streamer_weekly_budget', 'disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'weekly_budget']) {
       const before = stateReads;
-      reply = {answered: false, reason, answer: '这次没有回答：' + reason, remaining: {questionsToday: 0}};
-      if (reason === 'daily_limit') state = {...state, available: false, reasons: ['daily_limit']};
+      reply = {answered: false, reason, answer: budgetMessages[reason] ?? '这次没有回答：' + reason};
+      if (reason === 'streamer_daily_budget') state = {...state, available: false, reasons: ['streamer_daily_budget']};
       await ask(mounted);
       const turn = byClass(mounted.node, 'sa-turn').at(-1);
-      assert.match(turn.textContent, /这次没有回答/);
+      assert.ok(turn.textContent.includes(budgetMessages[reason] ?? '这次没有回答'));
       assert.ok(!turn.textContent.includes('由人工智能生成'), reason + ' 不应有结论标识');
       assert.equal(button(turn, '复制'), undefined, reason + ' 不应有复制按钮');
-      assert.equal(turn.querySelectorAll('a').length, ['key_rejected', 'provider_balance', 'disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'monthly_budget'].includes(reason) ? 1 : 0);
-      if (reason === 'daily_limit') {
-        await until(() => mounted.node.querySelector('textarea').disabled && stateReads > before, '次数耗尽后应重读状态');
-        assert.match(mounted.node.textContent, /今天的提问次数用完/);
+      assert.equal(turn.querySelectorAll('a').length, ['key_rejected', 'provider_balance', 'disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'weekly_budget'].includes(reason) ? 1 : 0);
+      if (reason === 'streamer_daily_budget') {
+        await until(() => mounted.node.querySelector('textarea').disabled && stateReads > before, '额度耗尽后应重读状态');
+        assert.match(mounted.node.textContent, /今天的助手额度用完/);
       }
       state = {...state, available: true, reasons: []};
       mounted.view.destroy();
@@ -298,13 +305,13 @@ const checks = {
     assert.match(mounted.node.textContent, /回答由人工智能生成，可能出错；数字以报告为准。/);
     for (const [reason, message] of Object.entries({disabled: '智能助手还没开启。', no_key: '还没填模型密钥。',
       not_acknowledged: '还没确认配置者说明。', usage_unreadable: '用量记录读不出来，请检查后再试。',
-      monthly_budget: '本月额度已用完。', daily_limit: '今天的提问次数用完了，明天再来。'})) {
+      ...budgetMessages})) {
       state = {...state, available: false, reasons: [reason]};
       const unavailable = await mount();
       assert.ok(unavailable.node.textContent.includes(message));
       assert.ok(unavailable.node.querySelector('textarea').disabled);
       assert.ok(button(unavailable.node, '提问').disabled);
-      assert.equal(unavailable.node.querySelectorAll('a').length, reason === 'daily_limit' ? 0 : 1);
+      assert.equal(unavailable.node.querySelectorAll('a').length, reason.startsWith('streamer_') ? 0 : 1);
       assert.match(unavailable.node.textContent, /回答由人工智能生成，可能出错；数字以报告为准。/);
     }
   },
@@ -332,7 +339,8 @@ const checks = {
     await ask(mounted, '边界');
     let resolveAsk;
     askGate = new Promise(resolve => { resolveAsk = resolve; });
-    reply = {answered: true, answer: '关闭后回来的回答', answerForHistory: '关闭历史', remaining: {questionsToday: 6}};
+    reply = {answered: true, answer: '关闭后回来的回答', answerForHistory: '关闭历史',
+      state: {...initialState, streamerQuota: {dailyPercent: 60, weeklyPercent: 92}}};
     const pending = ask(mounted, '关闭之前');
     await until(() => requests.at(-1)?.body.question === '关闭之前', '提问应发出');
     assert.equal(requests.at(-1).body.history.at(-1).answerForHistory.length, 1000);
@@ -345,7 +353,7 @@ const checks = {
     resolveAsk(); await pending; askGate = null;
     resolveState(); await reopenedView.ready; stateGate = null;
     mounted = {node: reopened, view: reopenedView, identity: mounted.identity};
-    assert.match(mounted.node.textContent, /今天还能问 6 次/, '较晚到达的状态不能盖掉提问回包中的剩余次数');
+    assert.match(mounted.node.textContent, /今天的助手额度还剩 60%，本周还剩 92%/, '较晚到达的状态不能盖掉提问回包中的剩余额度');
     assert.match(mounted.node.textContent, /关闭后回来的回答/);
     const other = await mount({platform: 'another', uid: mounted.identity.uid});
     assert.equal(byClass(other.node, 'sa-turn').length, 0, '平台不同不能串对话');
@@ -384,7 +392,7 @@ const checks = {
     assert.ok(fold.textContent.includes(payload));
     assert.match(turn.textContent, /这几个数字没能在查到的数据里核对上/);
     assert.match(turn.textContent, /由人工智能生成 · 仅供参考/);
-    assert.match(turn.textContent, /本问约 ¥0.0123 · 本月已用 ¥1.23，上限 ¥2/);
+    assert.match(turn.textContent, /本问约 ¥0.0123 · 本周已用 ¥1.23，每周上限 ¥2/);
     const css = readFileSync(moduleUrl, 'utf8');
     assert.match(css, /white-space:\s*pre-wrap/, '换行必须在浏览器里保留');
     reply = {answered: false, reason: 'timeout', answer: payload}; await ask(mounted, payload);
@@ -428,24 +436,41 @@ const checks = {
     assert.equal(byClass(mounted.node, 'sa-chart').length, 1);
     assert.ok(!JSON.stringify(requests.at(-1).body).includes(png));
   },
+  // 额度快用完时，两种身份都要能在回答下方看到提示，下一问只带回答。
+  async budgets() {
+    for (const role of ['ADMIN', 'MEMBER']) {
+      store.role = role;
+      const mounted = await mount();
+      assert.match(mounted.node.textContent, /今天的助手额度还剩 90%，本周还剩 98%/);
+      const budgetNotice = '提示：这位主播今天的助手额度还剩 20%。';
+      reply = {...initialReply, budgetNotice, state: {...initialState, streamerQuota: {dailyPercent: 20, weeklyPercent: null}}};
+      await ask(mounted, '最近播过吗');
+      const turn = byClass(mounted.node, 'sa-turn').at(-1);
+      const answer = byClass(turn, 'sa-answer')[0];
+      assert.equal(turn.children[turn.children.indexOf(answer) + 1].textContent, budgetNotice);
+      assert.match(mounted.node.textContent, /今天的助手额度还剩 20%，本周不限/);
+      await ask(mounted, '那昨天呢');
+      assert.deepEqual(requests.at(-1).body.history, [{question: '最近播过吗', answerForHistory: '原样历史'}]);
+    }
+  },
   // 后台即使回了费用字段，成员也不能看到金额或管理设置链接。
   async member() {
     store.role = 'MEMBER';
     const mounted = await mount(); await ask(mounted);
-    assert.doesNotMatch(mounted.node.textContent, /¥|本问约|本月已用|上限/);
+    assert.doesNotMatch(mounted.node.textContent, /¥|本问约|本周已用|上限/);
     assert.equal(mounted.node.querySelectorAll('a').length, 0);
-    for (const reason of ['disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'monthly_budget', 'key_rejected', 'provider_balance']) {
-      reply = {answered: false, reason, answer: '暂时不能回答'}; await ask(mounted);
+    for (const reason of ['disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'weekly_budget', 'key_rejected', 'provider_balance']) {
+      reply = {answered: false, reason, answer: budgetMessages[reason] ?? '暂时不能回答'}; await ask(mounted);
       const turn = byClass(mounted.node, 'sa-turn').at(-1);
       assert.match(turn.textContent, /请联系管理员/);
+      if (reason === 'weekly_budget') assert.match(turn.textContent, /下周一 0 点恢复。如需提前恢复，请联系管理员/);
       assert.equal(turn.querySelectorAll('a').length, 0);
     }
-    state = {...state, available: false, reasons: ['no_key', 'not_acknowledged', 'usage_unreadable', 'monthly_budget', 'daily_limit']};
+    state = {...state, available: false, reasons: ['no_key', 'not_acknowledged', 'usage_unreadable', 'weekly_budget']};
     mounted.view.destroy();
     const unavailable = await mount(mounted.identity);
     assert.equal((unavailable.node.textContent.match(/智能助手暂时不能用，请联系管理员。/g) || []).length, 1);
-    assert.match(unavailable.node.textContent, /本月额度已用完，请联系管理员/);
-    assert.match(unavailable.node.textContent, /今天的提问次数用完/);
+    assert.match(unavailable.node.textContent, /本周的助手总额度用完.*如需提前恢复，请联系管理员/);
     assert.equal(unavailable.node.querySelectorAll('a').length, 0);
     assert.ok(unavailable.node.querySelector('textarea').disabled);
     assert.ok(button(unavailable.node, '提问').disabled);
@@ -455,7 +480,7 @@ const checks = {
     assert.ok(ui, '问答抽屉模块应能加载');
     const page = await import('../../../main/resources/config-ui-pages/streamers.js');
     const entry = () => document.querySelector('#sd-head').querySelectorAll('a').find(node => node.textContent === '智能助手');
-    state = {enabled: false, available: false, reasons: ['disabled'], questionsLeftToday: 0};
+    state = {...initialState, enabled: false, available: false, reasons: ['disabled']};
     store.role = 'MEMBER'; await page.refresh();
     await until(() => stateReads > 0, '成员页头应读取状态');
     assert.equal(entry(), undefined);
@@ -495,7 +520,7 @@ const checks = {
     page.leave(); store.role = 'ADMIN'; location.hash += '?panel=assistant'; await page.refresh();
     assert.ok(entry(), '状态读取失败时管理员仍有入口');
     assert.match(document.body.querySelector('dialog').textContent, /无法连接到服务器/);
-    stateError = null; state = {enabled: true, available: true, reasons: [], questionsLeftToday: 9};
+    stateError = null; state = initialState;
     page.leave(); store.role = 'MEMBER';
     let resolveState; stateGate = new Promise(resolve => { resolveState = resolve; });
     location.hash = '#/streamers/sample/1'; const loading = page.refresh();
@@ -505,7 +530,7 @@ const checks = {
     await until(entry, '开启后成员入口应出现');
     location.hash = entry().href; await page.refresh();
     let mounted = {node: document.body.querySelector('dialog')}; await ask(mounted, '范围切换后仍保留');
-    assert.match(mounted.node.textContent, /今天还能问 8 次/);
+    assert.match(mounted.node.textContent, /今天的助手额度还剩 80%，本周还剩 96%/);
     const previousHash = location.hash;
     location.hash = location.hash.replace(/days=\d+/, 'days=7'); assert.notEqual(location.hash, previousHash);
     await page.refresh();
@@ -530,7 +555,7 @@ let count = 0, failures = 0;
 for (const [name, check] of Object.entries(checks)) {
   if (process.env.ASSISTANT_CASE && process.env.ASSISTANT_CASE !== name) continue;
   count++;
-  store.role = 'ADMIN'; state = {enabled: true, available: true, reasons: [], questionsLeftToday: 9};
+  store.role = 'ADMIN'; state = initialState;
   reply = initialReply; askError = null; stateError = null; httpStatus = 200;
   navigator.clipboard = {async writeText(text) { copiedText = text; }};
   try { await check(); process.stdout.write('绿 ' + name + '\n'); }

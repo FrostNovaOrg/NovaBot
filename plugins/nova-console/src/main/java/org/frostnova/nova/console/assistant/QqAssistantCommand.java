@@ -328,11 +328,11 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
         }
         var active = new ActiveQuestion(context, asker, uid);
         var work = new FutureTask<Void>(() -> {
-            active.finish(answer(context, session, uid, question, selected, active));
+            active.finish(answer(context, session, uid, question, selected, chosenName, active));
             return null;
         });
         try {
-            active.start(work, chosenName);
+            active.start(work);
             workers.execute(() -> {
                 try { work.run(); }
                 finally { inFlight.remove(session); }
@@ -347,14 +347,14 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     }
 
     private QqAnswer answer(CommandContext context, String session, Long uid, String question, PendingFollowUps selected,
-                            ActiveQuestion active) {
+                            String chosenName, ActiveQuestion active) {
         try {
             PushTarget target = allowedChannel(context, uid);
             if (target == null) return null;
             boolean amountVisible = visibility.isVisible(target);
             if (selected != null && (selected.amountVisible() != amountVisible || !clock.instant().isBefore(selected.expires())))
                 return QqAnswer.text(NO_FOLLOW_UP);
-            var source = local.qqSource("QQ", context.getPlatform(), context.getType(), context.getNum(), context.getSenderUid());
+            var source = local.qqSource("QQ", context.getType(), context.getNum(), context.getSenderUid());
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
             var texts = history.stream().filter(turn -> turn.content() != null).map(Turn::content).toList();
@@ -363,7 +363,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
             var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
             var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults,
-                    active::difficultyResolved);
+                    () -> active.accepted(chosenName), active::difficultyResolved);
             JSONObject result = answer.response();
             PushTarget current = allowedChannel(context, uid);
             if (current == null || Thread.currentThread().isInterrupted()) return null;
@@ -391,6 +391,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
                 text = text.substring(0, text.length() - chartFailure.length() - 1);
             }
             if (memoNotice != null) tail = "\n" + memoNotice + tail;
+            String budgetNotice = result.getString("budgetNotice");
+            if (budgetNotice != null) tail = "\n" + budgetNotice + tail;
             var images = result.getJSONArray("images");
             int limit = ANSWER_LIMIT - tail.codePointCount(0, tail.length());
             var followUps = answer.followUps();
@@ -502,15 +504,19 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             this.uid = uid;
         }
 
-        synchronized void start(Future<?> work, String chosenName) {
+        synchronized void start(Future<?> work) {
             this.work = work;
+            scheduleDeadline(Duration.ofSeconds(AssistantAskService.QUESTION_TIMEOUT_SECONDS));
+        }
+
+        synchronized void accepted(String chosenName) {
+            if (finished) return;
             waitingForDifficulty = assistant.adaptiveThinkingEnabled();
             if (chosenName == null) {
                 ack = reminders.schedule(this::progress, ACK_SECONDS, TimeUnit.SECONDS);
             } else {
                 send(QqAnswer.text("收到，查" + chosenName));
             }
-            scheduleDeadline(Duration.ofSeconds(AssistantAskService.QUESTION_TIMEOUT_SECONDS));
         }
 
         private synchronized void progress() {
