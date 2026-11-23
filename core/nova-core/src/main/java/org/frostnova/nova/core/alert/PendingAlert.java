@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.function.BooleanSupplier;
 
 /**
  * 一条等待重投的告警
@@ -17,15 +18,22 @@ import java.time.format.DateTimeFormatter;
  * @param content 内容
  * @param occurredAt 问题<b>首次</b>发生的时刻
  * @param attempts 已尝试投递的次数（含首次）
+ * @param active 这条告警是否仍有效
  */
-public record PendingAlert(String key, String subject, String content, Instant occurredAt, int attempts) {
+public record PendingAlert(String key, String subject, String content, Instant occurredAt, int attempts,
+                           BooleanSupplier active) {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    static final BooleanSupplier ALWAYS_ACTIVE = () -> true;
+
+    public PendingAlert(String key, String subject, String content, Instant occurredAt, int attempts) {
+        this(key, subject, content, occurredAt, attempts, ALWAYS_ACTIVE);
+    }
 
     /**
      * 再记一次失败
      */
     public PendingAlert retried() {
-        return new PendingAlert(key, subject, content, occurredAt, attempts + 1);
+        return new PendingAlert(key, subject, content, occurredAt, attempts + 1, active);
     }
 
     /**

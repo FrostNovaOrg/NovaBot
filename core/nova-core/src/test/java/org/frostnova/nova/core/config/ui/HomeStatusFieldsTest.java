@@ -27,8 +27,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -47,7 +49,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 首页要用的那几项运行状态
@@ -503,6 +509,63 @@ class HomeStatusFieldsTest {
         assertTrue(health.getJSONObject(0).getBooleanValue("loginState"),
                 "登录掉了要人去扫码，断流多半会自己恢复——首页按这一位把两者分开说");
         assertFalse(health.getJSONObject(1).getBooleanValue("loginState"));
+    }
+
+    @Test
+    @DisplayName("未启用的机器人探针不出现在状态接口中")
+    void healthOmitsInactiveProbe() {
+        var inactive = new HealthProbe() {
+            int checks;
+
+            @Override
+            public boolean active() {
+                return false;
+            }
+
+            @Override
+            public String name() {
+                return "未启用的机器人";
+            }
+
+            @Override
+            public HealthStatus check() {
+                checks++;
+                return HealthStatus.down("机器人未连接", "检查连接");
+            }
+
+            @Override
+            public Scope scope() {
+                return Scope.BOT;
+            }
+        };
+        probes = List.of(inactive, probe("直播间连接", HealthProbe.Scope.PLATFORM, false));
+
+        JSONArray health = controller().status().getJSONArray("health");
+
+        assertEquals(List.of("直播间连接"), health.stream()
+                .map(item -> ((JSONObject) item).getString("name")).toList());
+        assertEquals(0, inactive.checks);
+    }
+
+    @Test
+    @DisplayName("停用的探针无法读取范围时，首页仍能加载状态")
+    void statusSkipsInactiveProbeBeforeReadingMetadata() throws Exception {
+        HealthProbe inactive = mock(HealthProbe.class);
+        when(inactive.active()).thenReturn(false);
+        when(inactive.scope()).thenThrow(new IllegalStateException("探针未启用"));
+        probes = List.of(inactive, probe("直播间连接", HealthProbe.Scope.PLATFORM, false));
+
+        var response = MockMvcBuilders.standaloneSetup(controller()).build()
+                .perform(get(ConfigUiController.BASE_PATH + "/api/status"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse();
+        JSONArray health = JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8))
+                .getJSONArray("health");
+
+        assertEquals(List.of("直播间连接"), health.stream()
+                .map(item -> ((JSONObject) item).getString("name")).toList());
+        verify(inactive).active();
+        verifyNoMoreInteractions(inactive);
     }
 
     @Test
