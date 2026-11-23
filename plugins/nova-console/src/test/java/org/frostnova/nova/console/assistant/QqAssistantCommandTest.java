@@ -36,6 +36,7 @@ import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.ReportDeliveryListener;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
@@ -98,6 +99,8 @@ class QqAssistantCommandTest {
     private static final long SECOND = 10002L;
     private static final long START = 1794000000000L;
     private static final String LABEL = "（由人工智能生成）";
+    private static final String REPORT_QUESTION = "（机器人在 08:00 推送了下播报告）";
+    private static final String REPORT_SUMMARY = "测试主播甲 本场直播数据\n弹幕 106 条";
 
     @TempDir Path directory;
     private final List<PushUser> users = new ArrayList<>();
@@ -1016,6 +1019,120 @@ class QqAssistantCommandTest {
         group(ASKER, "问 测试主播甲今天怎么样");
         assertReply(LABEL);
         assertTrue(lastHistory().isEmpty());
+    }
+
+    // 群里刚推完下播报告，有人追问，助手不知道指的是哪份报告。
+    @Test
+    void recentLiveReportIsSharedByGroupMembers() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        recordLiveReport();
+        clock.advance(Duration.ofMinutes(10));
+
+        group(OTHER, "问 这场流水怎么比上场少");
+        assertReply(LABEL);
+        var history = lastHistory();
+        assertEquals(1, history.size(), "群成员追问时要带上下播报告");
+        assertEquals(REPORT_QUESTION, history.getJSONObject(0).getString("question"));
+        assertEquals(REPORT_SUMMARY, history.getJSONObject(0).getString("answerForHistory"));
+        String rules = requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
+        assertTrue(rules.contains("「刚才的报告」「这份周报」"));
+        assertTrue(rules.contains("以工具为准并说明差异"));
+    }
+
+    // 半小时前的报告还在影响回答。
+    @Test
+    void reportExpiresThirtyMinutesAfterDelivery() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        recordLiveReport();
+        clock.advance(Duration.ofMinutes(29));
+        group(ASKER, "问 刚才的报告有多少弹幕");
+        assertReply(LABEL);
+        assertTrue(lastHistory().toJSONString().contains(REPORT_QUESTION), "到期前还能追问这份报告");
+        awaitIdle(GROUP, ROOM);
+
+        clock.advance(Duration.ofMinutes(2));
+        group(OTHER, "问 刚才的报告有多少弹幕");
+        assertReply(LABEL);
+        assertTrue(lastHistory().isEmpty(), "送达超过半小时的报告不应再带入");
+    }
+
+    // 报告加上问答超过 10 条，提问直接报错。
+    @Test
+    void reportKeepsItsPlaceWithinTenHistoryEntries() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        for (String period : List.of("前天", "昨天", "今天", "上周", "本周", "上月", "本月", "去年", "今年", "昨晚")) {
+            group(ASKER, "问 " + period + "有直播吗");
+            assertReply(LABEL);
+            awaitIdle(GROUP, ROOM);
+        }
+        recordLiveReport();
+
+        group(ASKER, "问 刚才的报告有多少弹幕");
+        assertReply(LABEL);
+        var history = lastHistory();
+        assertEquals(10, history.size());
+        assertEquals(REPORT_QUESTION, history.getJSONObject(9).getString("question"));
+        assertTrue(history.getJSONObject(0).getString("question").contains("昨天"));
+    }
+
+    private void recordLiveReport() {
+        command.reportDelivered(new ReportDeliveryListener.Report(
+                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, clock.instant(),
+                false, REPORT_SUMMARY));
+    }
+
+    @Test
+    void reportHistoryFollowsSessionStreamerAndCurrentRevenueSetting() throws Exception {
+        var channel = channel(GROUP, ROOM, true, false);
+        add(FIRST, "测试主播甲", channel, channel(FRIEND, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        recordLiveReport();
+
+        group(ASKER, "问 测试主播乙这场怎么样");
+        assertReply(LABEL);
+        assertTrue(lastHistory().isEmpty());
+        awaitIdle(GROUP, ROOM);
+
+        receive(FRIEND, ROOM, ROOM, "问 刚才的报告有多少弹幕", false);
+        assertReply(LABEL);
+        assertTrue(lastHistory().isEmpty(), "同号好友会话不能读到群报告");
+
+        channel.setRevenueVisible(true);
+        group(OTHER, "问 测试主播甲这场流水多少");
+        assertReply(LABEL);
+        assertTrue(lastHistory().isEmpty(), "金额可见性变化后不带入旧报告");
+    }
+
+    @Test
+    void twoNewestReportsAreOrderedWithQuestionHistory() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        Instant oldest = clock.instant();
+        clock.advance(Duration.ofMinutes(1));
+        String weeklySummary = "测试主播甲 上周共直播 3 场、6 小时。";
+        command.reportDelivered(new ReportDeliveryListener.Report(
+                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.WEEKLY, clock.instant(), false, weeklySummary));
+        group(ASKER, "问 本月开播了吗");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        clock.advance(Duration.ofMinutes(1));
+        recordLiveReport();
+        command.reportDelivered(new ReportDeliveryListener.Report(
+                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, oldest, false, "弹幕 9 条"));
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        modelReplies.add(text("简单"));
+        int classifierRequest = requests.size();
+        group(ASKER, "问 这份周报统计了哪些场");
+        assertReply(LABEL);
+
+        var history = lastHistory();
+        assertEquals(3, history.size());
+        assertEquals("（机器人在 08:01 推送了运营周报）", history.getJSONObject(0).getString("question"));
+        assertEquals(weeklySummary, history.getJSONObject(0).getString("answerForHistory"));
+        assertEquals("本月开播了吗", history.getJSONObject(1).getString("question"));
+        assertEquals("（机器人在 08:02 推送了下播报告）", history.getJSONObject(2).getString("question"));
+        assertEquals("本月开播了吗", userPayload(requests.get(classifierRequest)).getString("previousQuestion"));
     }
 
     @Test

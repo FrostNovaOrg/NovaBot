@@ -3,6 +3,7 @@ package org.frostnova.nova.console.assistant;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.assistant.AssistantClient;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
@@ -19,6 +20,7 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.service.ReportDeliveryListener;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionKey;
 import org.frostnova.nova.core.service.StreamerNames;
@@ -27,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -48,7 +51,7 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @NovaComponent
-public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
+public class QqAssistantCommand implements CommandFallback, CommandFollowUp, ReportDeliveryListener {
     private static final String LIVE_PLATFORM = "bilibili";
     private static final String CHANNEL_OFF = "这里还没开智能助手问答，请管理员在控制台的推送页开启";
     private static final String BUSY = "上一个问题还在查，稍等";
@@ -64,6 +67,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private static final Duration CHOICE_TTL = Duration.ofMinutes(2);
     private static final Duration FOLLOW_UP_TTL = Duration.ofMinutes(10);
     private static final Duration HISTORY_TTL = Duration.ofMinutes(30);
+    private static final int REPORT_HISTORY_LIMIT = 2;
+    private static final DateTimeFormatter REPORT_TIME = DateTimeFormatter.ofPattern("HH:mm").withZone(StatisticsDay.ZONE);
     private static final String CHOSEN_UID_PREFIX = "uid:";
     private static final Pattern NUMBER = Pattern.compile("[0-9]+");
     private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
@@ -95,6 +100,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private final Map<Asker, Choice> choices = new ConcurrentHashMap<>();
     private final Map<Asker, PendingFollowUps> pendingFollowUps = new ConcurrentHashMap<>();
     private final Map<HistoryKey, List<Turn>> histories = new ConcurrentHashMap<>();
+    private final Map<ReportHistoryKey, List<Report>> reportHistories = new ConcurrentHashMap<>();
     private final ExecutorService workers = Executors.newCachedThreadPool(task -> daemon(task, "assistant-qq"));
     private final ScheduledThreadPoolExecutor reminders =
             new ScheduledThreadPoolExecutor(1, task -> daemon(task, "assistant-qq-reminder"));
@@ -357,13 +363,14 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             var source = local.qqSource("QQ", context.getType(), context.getNum(), context.getSenderUid());
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
-            var texts = history.stream().filter(turn -> turn.content() != null).map(Turn::content).toList();
-            var recentTexts = texts.subList(Math.max(0, texts.size() - AssistantAskService.HISTORY_LIMIT), texts.size());
-            var request = JSONObject.of("question", question, "history", recentTexts);
+            var texts = history.stream().filter(turn -> turn.content() != null).toList();
+            var request = JSONObject.of("question", question, "history",
+                    requestHistory(new ReportHistoryKey(session, LIVE_PLATFORM, uid), amountVisible, texts));
+            String previousQuestion = texts.isEmpty() ? null : texts.get(texts.size() - 1).content().getString("question");
             var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
             var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
             var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults,
-                    () -> active.accepted(chosenName), active::difficultyResolved);
+                    previousQuestion, () -> active.accepted(chosenName), active::difficultyResolved);
             JSONObject result = answer.response();
             if (result.containsKey("difficulty"))
                 AssistantAskService.logQuestion(log, source.entry() + " " + source.account(), LIVE_PLATFORM, uid, result);
@@ -376,7 +383,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             if (answered || !answer.results().isEmpty()) {
                 Instant now = clock.instant();
                 var turns = new ArrayList<>(history);
-                turns.removeIf(turn -> !current(turn, now));
+                turns.removeIf(turn -> !current(turn.at(), now));
                 var content = answered ? JSONObject.of("question", question, "answerForHistory",
                         clip(result.getString("answerForHistory"), ANSWER_LIMIT)) : null;
                 turns.add(new Turn(now, amountVisible, content, answer.results()));
@@ -426,21 +433,64 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private List<Turn> recentHistory(HistoryKey key, boolean amountVisible) {
         Instant now = clock.instant();
         var turns = histories.getOrDefault(key, List.of());
-        return turns.stream().filter(turn -> turn.amountVisible() == amountVisible && current(turn, now)).toList();
+        return turns.stream().filter(turn -> turn.amountVisible() == amountVisible && current(turn.at(), now)).toList();
+    }
+
+    @Override
+    public void reportDelivered(Report report) {
+        String session = SessionKey.of(report.platform(), report.type(), report.num());
+        if (session == null) return;
+        var key = new ReportHistoryKey(session, report.streamerPlatform(), report.uid());
+        reportHistories.compute(key, (ignored, previous) -> {
+            Instant now = clock.instant();
+            if (!current(report.deliveredAt(), now)) return previous;
+            var recent = new ArrayList<>(previous == null ? List.<Report>of() : previous);
+            recent.removeIf(entry -> !current(entry.deliveredAt(), now));
+            recent.add(report);
+            recent.sort(Comparator.comparing(Report::deliveredAt));
+            return List.copyOf(recent.subList(Math.max(0, recent.size() - REPORT_HISTORY_LIMIT), recent.size()));
+        });
+    }
+
+    private List<JSONObject> requestHistory(ReportHistoryKey key, boolean amountVisible, List<Turn> texts) {
+        Instant now = clock.instant();
+        var reports = reportHistories.getOrDefault(key, List.of()).stream()
+                .filter(report -> report.amountVisible() == amountVisible && current(report.deliveredAt(), now)).toList();
+        int first = Math.max(0, texts.size() + reports.size() - AssistantAskService.HISTORY_LIMIT);
+        var history = new ArrayList<HistoryEntry>();
+        for (Turn turn : texts.subList(first, texts.size())) {
+            history.add(new HistoryEntry(turn.at(), turn.content()));
+        }
+        for (Report report : reports) {
+            String label = switch (report.kind()) {
+                case LIVE -> "下播报告";
+                case WEEKLY -> "运营周报";
+            };
+            String question = "（机器人在 " + REPORT_TIME.format(report.deliveredAt()) + " 推送了" + label + "）";
+            history.add(new HistoryEntry(report.deliveredAt(),
+                    JSONObject.of("question", question, "answerForHistory", report.summary())));
+        }
+        history.sort(Comparator.comparing(HistoryEntry::at));
+        return history.stream().map(HistoryEntry::content).toList();
     }
 
     private void evictHistory() {
         Instant now = clock.instant();
         pendingFollowUps.values().removeIf(pending -> !now.isBefore(pending.expires()));
         histories.forEach((key, turns) -> {
-            var recent = turns.stream().filter(turn -> current(turn, now)).toList();
+            var recent = turns.stream().filter(turn -> current(turn.at(), now)).toList();
             if (recent.isEmpty()) histories.remove(key, turns);
             else if (recent.size() < turns.size()) histories.replace(key, turns, recent);
         });
+        reportHistories.forEach((key, reports) -> {
+            var recent = reports.stream().filter(report -> current(report.deliveredAt(), now)).toList();
+            if (recent.isEmpty()) reportHistories.remove(key, reports);
+            else if (recent.size() < reports.size()) reportHistories.replace(key, reports, recent);
+        });
     }
 
-    private static boolean current(Turn turn, Instant now) {
-        return !now.isBefore(turn.at()) && now.isBefore(turn.at().plus(HISTORY_TTL));
+    private static boolean current(Instant at, Instant now) {
+        return !now.isBefore(at) && now.isBefore(at.plus(HISTORY_TTL));
     }
 
     private PushTarget allowedChannel(CommandContext context, Long uid) {
@@ -485,6 +535,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
         reminders.shutdownNow();
         workers.shutdownNow();
         histories.clear();
+        reportHistories.clear();
         pendingFollowUps.clear();
     }
 
@@ -601,6 +652,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
     private record PendingFollowUps(Long uid, boolean amountVisible, Instant expires, List<String> questions) { }
     private record HistoryKey(String session, String account, Long uid) { }
     private record Turn(Instant at, boolean amountVisible, JSONObject content, List<AssistantChartResults.Result> results) { }
+    private record ReportHistoryKey(String session, String platform, Long uid) { }
+    private record HistoryEntry(Instant at, JSONObject content) { }
     private record QqAnswer(String text, List<String> images, boolean amountVisible, List<String> followUps) {
         static QqAnswer text(String text) { return text == null ? null : new QqAnswer(text, List.of(), false, List.of()); }
     }

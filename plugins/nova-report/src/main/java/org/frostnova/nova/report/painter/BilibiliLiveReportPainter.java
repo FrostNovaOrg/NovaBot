@@ -493,6 +493,16 @@ public class BilibiliLiveReportPainter {
      * @return 文字版报告
      */
     public String textReport(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+        return reportText(platform, source, options, true);
+    }
+
+    /** 用于会话追问的汇总数字。 */
+    public String historySummary(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+        return reportText(platform, source, options, false);
+    }
+
+    private String reportText(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options,
+                              boolean fallback) {
         Long uid = source.getUid();
         StringBuilder text = new StringBuilder();
 
@@ -550,7 +560,7 @@ public class BilibiliLiveReportPainter {
             text.append("\n盲盒 ").append(boxes).append(" 个");
         }
 
-        appendGuardRoster(text, platform, source, options);
+        if (fallback) appendGuardRoster(text, platform, source, options);
 
         long follow = count(platform, uid, BilibiliLiveMetric.FOLLOW_COUNT);
         int enterUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.ENTER_USERS);
@@ -558,7 +568,7 @@ public class BilibiliLiveReportPainter {
             text.append("\n新增关注 ").append(follow).append(" 人次 · 进房 ").append(enterUsers).append(" 人");
         }
 
-        text.append("\n\n（报告图片绘制失败，本条为文字版）");
+        if (fallback) text.append("\n\n（报告图片绘制失败，本条为文字版）");
         return text.toString();
     }
 

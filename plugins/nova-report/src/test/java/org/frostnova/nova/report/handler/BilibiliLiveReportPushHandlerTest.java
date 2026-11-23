@@ -11,6 +11,7 @@ import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
+import org.frostnova.nova.core.service.ReportDeliveryListener;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -21,8 +22,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -97,6 +101,39 @@ class BilibiliLiveReportPushHandlerTest {
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender).send(captor.capture());
         assertEquals("{image_base64=QUJD}", captor.getValue().getContent());
+    }
+
+    @Test
+    void recordsBoundedSummaryOnlyWhenReportIsDelivered() {
+        var summaries = new ArrayList<ReportDeliveryListener.Report>();
+        ReflectionTestUtils.setField(handler, "reportDeliveryListener", (ReportDeliveryListener) summaries::add);
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.historySummary(anyString(), any(), any())).thenReturn("弹幕 106 条\n" + "𠮷".repeat(800));
+
+        var target = pushMessage();
+        for (int i = 0; i < 3; i++) handler.handle(event(), target);
+        var captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender, times(3)).send(captor.capture());
+        var messages = captor.getAllValues();
+        assertTrue(summaries.isEmpty(), "排队中的报告还未送达");
+        messages.get(0).markFailed().forEach(Runnable::run);
+        messages.get(1).markUncertain().forEach(Runnable::run);
+        assertTrue(summaries.isEmpty(), "失败和送达不明的报告都不能带入问答");
+
+        Instant before = Instant.now();
+        messages.get(2).markDelivered("sample-message").forEach(Runnable::run);
+        assertEquals(1, summaries.size());
+        var report = summaries.get(0);
+        assertEquals("qq-onebot", report.platform());
+        assertEquals(PushTargetType.GROUP, report.type());
+        assertEquals(30003L, report.num());
+        assertEquals("bilibili", report.streamerPlatform());
+        assertEquals(10001L, report.uid());
+        assertEquals(ReportDeliveryListener.Kind.LIVE, report.kind());
+        assertFalse(report.deliveredAt().isBefore(before));
+        assertFalse(report.amountVisible());
+        assertTrue(report.summary().startsWith("弹幕 106 条"));
+        assertEquals(800, report.summary().codePointCount(0, report.summary().length()));
     }
 
     @Test
