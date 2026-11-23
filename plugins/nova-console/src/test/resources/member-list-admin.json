@@ -364,6 +364,10 @@
         "text": "屏蔽词挡下"
       },
       {
+        "name": "PUSH_QQ_OFFICIAL_BLOCKED",
+        "text": "按平台规则未推送"
+      },
+      {
         "name": "PUSH_SENT",
         "text": "推送成功"
       },
