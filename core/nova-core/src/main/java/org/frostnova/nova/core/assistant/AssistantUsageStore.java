@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,22 +95,26 @@ public final class AssistantUsageStore {
     }
 
     enum Scope {
-        TOTAL("weekly_budget", "本周的助手总额度", "本周的助手总额度用完了，下周一 0 点恢复。"),
-        STREAMER_WEEK("streamer_weekly_budget", "这位主播本周的助手额度", "这位主播本周的助手额度用完了，下周一 0 点恢复。"),
-        STREAMER_DAY("streamer_daily_budget", "这位主播今天的助手额度", "这位主播今天的助手额度用完了，明天 0 点恢复。");
+        TOTAL("weekly_budget", "本周的助手总额度", "下周一"),
+        STREAMER_WEEK("streamer_weekly_budget", "本周的助手额度", "下周一"),
+        STREAMER_DAY("streamer_daily_budget", "今天的助手额度", "明天");
 
         final String reason;
         final String label;
-        final String exhaustedMessage;
+        final String restoreDay;
 
-        Scope(String reason, String label, String exhaustedMessage) {
+        Scope(String reason, String label, String restoreDay) {
             this.reason = reason;
             this.label = label;
-            this.exhaustedMessage = exhaustedMessage;
+            this.restoreDay = restoreDay;
         }
+
+        String defaultLabel() { return this == TOTAL ? label : "这位主播" + label; }
+
+        String exhaustedMessage() { return defaultLabel() + "用完了，" + restoreDay + " 0 点恢复。"; }
     }
 
-    record Allowance(Scope scope, BigDecimal limit, BigDecimal remaining) {
+    record Allowance(Scope scope, Long streamerUid, BigDecimal limit, BigDecimal remaining) {
         boolean limited() { return limit.signum() > 0; }
 
         boolean exhausted() { return limited() && remaining.signum() <= 0; }
@@ -125,56 +130,84 @@ public final class AssistantUsageStore {
             return remaining.multiply(other.limit).compareTo(other.remaining.multiply(limit)) < 0;
         }
 
-        String notice() {
-            if (exhausted()) return "提示：" + scope.exhaustedMessage;
+        String noticeText() {
+            if (exhausted()) return scope.exhaustedMessage();
             int percent = percent();
-            return "提示：" + scope.label + (percent == 0 ? "还剩不到 1%。" : "还剩 " + percent + "%。");
+            return scope.defaultLabel() + (percent == 0 ? "还剩不到 1%。" : "还剩 " + percent + "%。");
         }
     }
 
-    record Quota(BigDecimal spentYuan, Allowance total, Allowance weekly, Allowance daily) {
-        Scope exhausted() {
-            for (Allowance allowance : List.of(total, weekly, daily))
-                if (allowance.exhausted()) return allowance.scope();
+    record Quota(BigDecimal spentYuan, List<Allowance> allowances) {
+        Allowance exhausted() {
+            for (Allowance allowance : allowances)
+                if (allowance.exhausted()) return allowance;
             return null;
         }
 
-        String notice() {
+        Allowance lowest() {
             Allowance lowest = null;
-            for (Allowance allowance : List.of(total, weekly, daily))
+            for (Allowance allowance : allowances)
                 if (allowance.low() && (lowest == null || allowance.lowerThan(lowest))) lowest = allowance;
-            return lowest == null ? null : lowest.notice();
+            return lowest;
+        }
+
+        Integer primaryPercent(Scope scope) {
+            for (Allowance allowance : allowances)
+                if (allowance.scope() == scope) return allowance.percent();
+            return null;
         }
     }
 
-    synchronized Quota quota(Streamer streamer, AssistantProperties properties) {
+    synchronized Quota quota(List<Streamer> group, AssistantProperties properties) {
         if (problem != null) return null;
         rollOver();
-        Spending used = streamers.getOrDefault(streamer, Spending.ZERO);
-        return new Quota(spent, allowance(Scope.TOTAL, properties.getWeeklyBudgetYuan(), spent),
-                allowance(Scope.STREAMER_WEEK, properties.getStreamerWeeklyBudgetYuan(), used.weekSpentYuan()),
-                allowance(Scope.STREAMER_DAY, properties.getStreamerDailyBudgetYuan(), used.todaySpentYuan()));
+        var allowances = new ArrayList<Allowance>();
+        var weeklyLimit = properties.getStreamerWeeklyBudgetYuan();
+        var dailyLimit = properties.getStreamerDailyBudgetYuan();
+        allowances.add(allowance(Scope.TOTAL, null, properties.getWeeklyBudgetYuan(), spent));
+        for (Streamer streamer : group) {
+            Spending used = streamers.getOrDefault(streamer, Spending.ZERO);
+            allowances.add(allowance(Scope.STREAMER_WEEK, streamer.uid(), weeklyLimit, used.weekSpentYuan()));
+            allowances.add(allowance(Scope.STREAMER_DAY, streamer.uid(), dailyLimit, used.todaySpentYuan()));
+        }
+        return new Quota(spent, allowances);
     }
 
-    private static Allowance allowance(Scope scope, BigDecimal limit, BigDecimal used) {
-        return new Allowance(scope, limit, limit.subtract(used));
+    private static Allowance allowance(Scope scope, Long streamerUid, BigDecimal limit, BigDecimal used) {
+        return new Allowance(scope, streamerUid, limit, limit.subtract(used));
     }
 
-    synchronized void checkBudget(Streamer streamer, AssistantProperties properties) {
+    synchronized void checkBudget(List<Streamer> group, AssistantProperties properties) {
         requireReadable();
-        Scope exhausted = quota(streamer, properties).exhausted();
-        if (exhausted != null) throw new AssistantException(exhausted.reason, exhausted.exhaustedMessage);
+        Allowance exhausted = quota(group, properties).exhausted();
+        if (exhausted != null) {
+            var scope = exhausted.scope();
+            Long streamerUid = group.size() > 1 ? exhausted.streamerUid() : null;
+            throw new AssistantException(scope.reason, scope.exhaustedMessage(), null, streamerUid);
+        }
     }
 
-    synchronized void addCost(Streamer streamer, BigDecimal cost) {
+    void addCost(Streamer streamer, BigDecimal cost) {
+        addQuestionCost(streamer == null ? List.of() : List.of(streamer), cost);
+    }
+
+    synchronized void addQuestionCost(List<Streamer> group, BigDecimal cost) {
         requireReadable();
         rollOver();
         BigDecimal updated = spent.add(nonNegative(cost));
         Map<Streamer, Spending> byStreamer = streamers;
-        if (streamer != null && cost.signum() > 0) {
+        if (!group.isEmpty() && cost.signum() > 0) {
             byStreamer = new LinkedHashMap<>(streamers);
-            Spending current = byStreamer.getOrDefault(streamer, Spending.ZERO);
-            byStreamer.put(streamer, new Spending(current.todaySpentYuan().add(cost), current.weekSpentYuan().add(cost)));
+            // 单价按百万 token 计，平摊保留至少百万分之一元的精度。
+            BigDecimal share = group.size() == 1 ? cost
+                    : cost.divide(BigDecimal.valueOf(group.size()), Math.max(6, cost.scale()), RoundingMode.DOWN);
+            BigDecimal primaryShare = cost.subtract(share.multiply(BigDecimal.valueOf(group.size() - 1L)));
+            for (int i = 0; i < group.size(); i++) {
+                Streamer streamer = group.get(i);
+                Spending current = byStreamer.getOrDefault(streamer, Spending.ZERO);
+                BigDecimal charge = i == 0 ? primaryShare : share;
+                byStreamer.put(streamer, new Spending(current.todaySpentYuan().add(charge), current.weekSpentYuan().add(charge)));
+            }
         }
         persist(updated, byStreamer, acknowledgement);
         spent = updated;

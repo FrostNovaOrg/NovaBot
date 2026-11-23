@@ -299,13 +299,12 @@ public class AssistantAskService {
         AssistantClient.Question question = null;
         String difficulty = null;
         int modelCalls = 0;
+        var streamerNames = new LinkedHashMap<Long, String>();
         try {
-            question = client.beginQuestion(platform, uid);
+            question = comparison ? client.beginQuestion(platform, streamers) : client.beginQuestion(platform, uid);
             onAccepted.run();
-            var streamerNames = new LinkedHashMap<Long, String>();
             for (Long streamer : streamers) {
-                String name = comparison ? queries.streamerName(platform, streamer) : null;
-                streamerNames.put(streamer, name == null ? streamer.toString() : name);
+                streamerNames.put(streamer, comparison ? streamerName(platform, streamer) : streamer.toString());
             }
             String scopeRule = comparison ? comparisonRule(streamerNames) : "";
             system.put("content", system.getString("content") + scopeRule + "\n" + MEMO_RULE);
@@ -500,7 +499,10 @@ public class AssistantAskService {
                     }
                 } catch (RuntimeException error) {
                     // 重写失败时保留已经脱敏的回答和待核对数字，花费仍由整问累计。
-                    if (error instanceof AssistantException assistant) failure = assistant;
+                    if (error instanceof AssistantException assistant) {
+                        if (comparison && (assistant.streamerUid() != null || "weekly_budget".equals(assistant.reason()))) throw assistant;
+                        failure = assistant;
+                    }
                 }
             }
         } catch (AssistantException error) {
@@ -521,7 +523,12 @@ public class AssistantAskService {
         }
         if (answered) answer = plainText(answer);
         if (answer.isBlank()) answer = FALLBACK;
-        String displayed = privacy.display(answer);
+        String displayed;
+        if (!answered && failure != null && failure.streamerUid() != null) {
+            String name = streamerNames.computeIfAbsent(failure.streamerUid(), streamer -> streamerName(platform, streamer));
+            answer = comparisonBudgetFailure(failure, name);
+            displayed = answer;
+        } else displayed = privacy.display(answer);
         List<FollowUp> followUps = List.of();
         if (answered && !context.amountVisible() && containsAnswerAmount(displayed, request.getString("question"))) {
             displayed = answer = AssistantAggregateRequest.HIDDEN_AMOUNT;
@@ -548,7 +555,8 @@ public class AssistantAskService {
         }
         if (answered) {
             result.put("label", "由人工智能生成");
-            if (status.notice() != null) result.put("budgetNotice", status.notice());
+            String budgetNotice = comparison ? comparisonBudgetNotice(platform, streamers, streamerNames) : status.notice();
+            if (budgetNotice != null) result.put("budgetNotice", budgetNotice);
             if (!followUps.isEmpty()) result.put("followUps", followUps);
             if (chartFailure != null) {
                 String note = "图没出来（" + chartFailure + "）。";
@@ -656,6 +664,26 @@ public class AssistantAskService {
         String names = streamers.entrySet().stream().map(entry -> entry.getValue() + "（" + entry.getKey() + "）")
                 .collect(Collectors.joining("、"));
         return "\n本问可查的主播：" + names + "，可以分别查，也可以放在一起比；查数时用 streamer 或 streamers 参数指明是哪位。";
+    }
+
+    private String streamerName(String platform, long uid) {
+        String name = queries.streamerName(platform, uid);
+        return name == null || name.isBlank() ? Long.toString(uid) : name;
+    }
+
+    private static String comparisonBudgetFailure(AssistantException error, String name) {
+        return switch (error.reason()) {
+            case "streamer_daily_budget" -> name + "今天的助手额度用完了，明天 0 点恢复，这次对比问不了。";
+            case "streamer_weekly_budget" -> name + "本周的助手额度用完了，下周一 0 点恢复，这次对比问不了。";
+            default -> error.getMessage();
+        };
+    }
+
+    private String comparisonBudgetNotice(String platform, List<Long> streamers, Map<Long, String> names) {
+        var notice = client.comparisonBudgetNotice(platform, streamers);
+        if (notice == null) return null;
+        String name = notice.streamerUid() == null ? "" : names.get(notice.streamerUid());
+        return "提示：" + name + notice.text();
     }
 
     private static boolean requiresAnalysis(AssistantClient.Question question, String text, String previousQuestion,

@@ -6,6 +6,7 @@ public final class AssistantException extends RuntimeException {
 
     private final String reason;
     private final ProviderError providerError;
+    private final Long streamerUid;
 
     public AssistantException(String message) { this("provider_error", message); }
 
@@ -14,12 +15,19 @@ public final class AssistantException extends RuntimeException {
     }
 
     AssistantException(String reason, String message, ProviderError providerError) {
+        this(reason, message, providerError, null);
+    }
+
+    AssistantException(String reason, String message, ProviderError providerError, Long streamerUid) {
         super(message);
         this.reason = reason;
         this.providerError = providerError;
+        this.streamerUid = streamerUid;
     }
 
     public String reason() { return reason; }
 
     public ProviderError providerError() { return providerError; }
+
+    public Long streamerUid() { return streamerUid; }
 }

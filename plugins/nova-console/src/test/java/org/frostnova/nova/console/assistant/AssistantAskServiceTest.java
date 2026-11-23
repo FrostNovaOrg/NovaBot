@@ -238,7 +238,7 @@ class AssistantAskServiceTest {
         assertEquals("这位主播不在这一问里", results.get(1).getString("reason"));
     }
 
-    @Test void comparisonKeepsBothMemosPrivateAndChargesOnlyThePrimaryStreamer() throws Exception {
+    @Test void comparisonKeepsBothMemosPrivateAndSplitsSpending() throws Exception {
         String firstName = "合成主播甲";
         String secondName = "合成主播乙";
         long viewer = 9300020199L;
@@ -280,8 +280,13 @@ class AssistantAskServiceTest {
         verify(queries).localAudience("bilibili", SECOND_STREAMER, List.of());
         verify(queries).revenue("bilibili", FIRST_STREAMER, SHARED_START);
         verify(queries, never()).revenue("bilibili", SECOND_STREAMER, SHARED_START);
-        assertEquals(List.of(Long.toString(FIRST_STREAMER)), client.status().streamerUsage().stream()
+        var usage = client.status().streamerUsage();
+        assertEquals(List.of(Long.toString(FIRST_STREAMER), Long.toString(SECOND_STREAMER)), usage.stream()
                 .map(AssistantClient.StreamerUsage::uid).toList());
+        assertEquals(3, sent.size());
+        for (var streamer : usage) {
+            assertEquals(0, new BigDecimal("0.000459").compareTo(streamer.todaySpentYuan()));
+        }
 
         Path transmissionLog = directory.resolve("assistant-transmissions.jsonl");
         JSONObject grouped = JSON.parseObject(Files.readString(transmissionLog));
@@ -291,6 +296,128 @@ class AssistantAskServiceTest {
         JSONObject single = JSON.parseObject(Files.readAllLines(transmissionLog).get(1));
         assertEquals(1L, single.getLongValue("uid"));
         assertFalse(single.containsKey("streamers"));
+    }
+
+    // 对比两位主播，花的钱全记在了第一位头上。
+    @Test void comparisonSplitsSpendingAndChargesTheWeeklyTotalOnce() {
+        properties.setPriceInputYuanPerMillion(new BigDecimal("3000"));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        BigDecimal before = client.status().spentYuan();
+
+        var result = askComparison("甲和乙这周表现怎样");
+
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        var usage = client.status();
+        var half = new BigDecimal("0.15");
+        assertEquals(0, new BigDecimal("0.30").compareTo(usage.spentYuan().subtract(before)));
+        assertEquals(List.of(Long.toString(FIRST_STREAMER), Long.toString(SECOND_STREAMER)), usage.streamerUsage().stream()
+                .map(AssistantClient.StreamerUsage::uid).toList(), usage.streamerUsage()::toString);
+        for (var streamer : usage.streamerUsage()) {
+            assertEquals(0, half.compareTo(streamer.todaySpentYuan()), streamer::toString);
+            assertEquals(0, half.compareTo(streamer.weekSpentYuan()), streamer::toString);
+        }
+    }
+
+    // 对比里有一位主播今天的额度已经用完，照样问了，照样花了钱。
+    @Test void comparisonRefusesBeforeSendingWhenTheOtherStreamerUsedTheirDailyBudget() {
+        when(queries.streamerName("bilibili", SECOND_STREAMER)).thenReturn("乙");
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
+        var request = JSONObject.of("question", "乙这周表现怎样");
+        assertTrue(service.ask("bilibili", SECOND_STREAMER, "member", request).getBooleanValue("answered"));
+        var before = client.status();
+        sent.clear();
+
+        var result = askComparison("甲和乙这周表现怎样");
+
+        assertAll(
+                () -> assertBudgetFailure(result, "streamer_daily_budget", "乙今天的助手额度用完了，明天 0 点恢复"),
+                () -> assertTrue(result.getString("answer").contains("这次对比问不了"), result::toJSONString),
+                () -> assertTrue(sent.isEmpty(), "拒绝时不应发送模型请求"),
+                () -> assertEquals(before.spentYuan(), client.status().spentYuan()),
+                () -> assertEquals(before.streamerUsage(), client.status().streamerUsage()));
+    }
+
+    @Test void comparisonAttributesTheRemainderToTheFirstStreamerOnly() {
+        properties.setPriceInputYuanPerMillion(new BigDecimal("1000"));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        BigDecimal before = client.status().spentYuan();
+        long third = 9300020103L;
+        var request = JSONObject.of("question", "甲、乙、丙这周表现怎样");
+
+        var result = service.ask("bilibili", List.of(SECOND_STREAMER, FIRST_STREAMER, third), "member", request);
+
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        var usage = client.status();
+        var charges = usage.streamerUsage();
+        assertEquals(List.of(Long.toString(SECOND_STREAMER), Long.toString(FIRST_STREAMER), Long.toString(third)),
+                charges.stream().map(AssistantClient.StreamerUsage::uid).toList());
+        assertEquals(0, new BigDecimal("0.10").compareTo(usage.spentYuan().subtract(before)));
+        assertEquals(0, new BigDecimal("0.03333334").compareTo(charges.get(0).todaySpentYuan()));
+        assertEquals(0, new BigDecimal("0.03333333").compareTo(charges.get(1).todaySpentYuan()));
+        assertEquals(0, charges.get(1).todaySpentYuan().compareTo(charges.get(2).todaySpentYuan()));
+        for (var charge : charges) {
+            assertEquals(0, charge.todaySpentYuan().compareTo(charge.weekSpentYuan()));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"tool", "retry", "rewrite"})
+    void comparisonRechecksTheOtherStreamersWeeklyBudgetBeforeSendingAgain(String nextRound) {
+        when(queries.streamerName("bilibili", SECOND_STREAMER)).thenReturn("乙");
+        properties.setStreamerWeeklyBudgetYuan(new BigDecimal("0.000459"));
+        var request = JSONObject.of("question", "乙这周表现怎样");
+        assertTrue(service.ask("bilibili", SECOND_STREAMER, "member", request).getBooleanValue("answered"));
+        sent.clear();
+        switch (nextRound) {
+            case "tool" -> {
+                when(queries.revenue("bilibili", FIRST_STREAMER, SHARED_START)).thenReturn(toolData());
+                replies.add(call("revenue", JSONObject.of("start", SHARED_START)));
+            }
+            case "retry" -> {
+                useResponses();
+                responsesReplies.add(exhaustedResponses());
+            }
+            case "rewrite" -> replies.add(JSONObject.of("content", "这周多了 321 条弹幕。"));
+            default -> fail("未知轮次");
+        }
+
+        var result = askComparison("甲和乙这周表现怎样");
+
+        assertBudgetFailure(result, "streamer_weekly_budget", "乙本周的助手额度用完了，下周一 0 点恢复");
+        assertTrue(result.getString("answer").contains("这次对比问不了"), result::toJSONString);
+        assertEquals(1, sent.size());
+        assertEquals(0, new BigDecimal("0.000306").compareTo(result.getBigDecimal("costYuan")));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1, 5, 10, 合成主播乙今天的助手额度还剩 20%",
+                "5, 1, 10, 合成主播乙本周的助手额度还剩 20%",
+                "1, 5, 1.334, 本周的助手总额度还剩 10%"})
+    void comparisonShowsTheTightestBudgetWhileKeepingThePrimaryStreamersPageQuota(
+            String daily, String weekly, String total, String notice) {
+        useComparisonArchives();
+        properties.setStreamerDailyBudgetYuan(new BigDecimal(daily));
+        properties.setStreamerWeeklyBudgetYuan(new BigDecimal(weekly));
+        properties.setWeeklyBudgetYuan(new BigDecimal(total));
+        properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
+        var request = JSONObject.of("question", "这周表现怎样");
+        inputTokens = 3000;
+        properties.setPriceInputYuanPerMillion(new BigDecimal("100"));
+        assertTrue(service.ask("bilibili", FIRST_STREAMER, "member", request).getBooleanValue("answered"));
+        inputTokens = 7000;
+        assertTrue(service.ask("bilibili", SECOND_STREAMER, "member", request).getBooleanValue("answered"));
+        inputTokens = 2000;
+
+        var result = askComparison("甲和乙这周表现怎样");
+
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        String budgetNotice = result.getString("budgetNotice");
+        assertNotNull(budgetNotice, result::toJSONString);
+        assertTrue(budgetNotice.startsWith("提示：" + notice), budgetNotice);
+        var state = assertInstanceOf(AssistantClient.State.class, result.get("state"));
+        assertEquals(new AssistantClient.StreamerQuota("1".equals(daily) ? 60 : 92, "1".equals(weekly) ? 60 : 92),
+                state.streamerQuota());
+        assertEquals(service.state("bilibili", FIRST_STREAMER).streamerQuota(), state.streamerQuota());
     }
 
     @Test void rejectsEmptyRepeatedOrOversizedStreamerGroupsBeforeAsking() {
