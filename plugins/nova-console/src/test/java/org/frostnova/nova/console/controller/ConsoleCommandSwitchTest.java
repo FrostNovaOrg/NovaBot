@@ -1,10 +1,8 @@
 package org.frostnova.nova.console.controller;
 
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.command.BilibiliAtListCommand;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
-import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandSettingsService;
@@ -27,9 +25,6 @@ import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.service.SessionQuietHoursService;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.timeline.TimelineWriter;
-import org.frostnova.nova.report.command.BilibiliRankingCommand;
-import org.frostnova.nova.report.command.BilibiliRoomDataCommand;
-import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,9 +56,6 @@ import static org.mockito.Mockito.when;
  * 两面要是各记各的账，就会出现「控制台明明关了、群里照样回话」，
  * 以及反过来看不出「群里已经关了」这两类谁也查不出来的怪事。
  * <p>
- * 合并后一条命令底下分几种用法（本场／累计、开播名单／动态名单），因此这一面要按<b>用法</b>记账，
- * 而不是按命令正名：只认正名的话，关掉的只是本场那一半，带「总」的照通。
- * <p>
  * 这里跑的是真命令与真分发器，只把出网与存储换成替身：要量的是「点下去之后群里那句话还回不回」，
  * 替身答不了这一问。命令按构造参数的类型现配，不写死构造参数表——
  * 命令要接的东西会跟着改形状，而这条要量的事与它接的是几样东西无关。
@@ -90,8 +82,6 @@ class ConsoleCommandSwitchTest {
     private RuntimeStateController controller;
     private ChannelSettingsFile channels;
 
-    private LiveDataService liveDataService;
-
     private List<NovaCommand> commands = new ArrayList<>();
 
     /** 命令开关落盘的 state.json 放这里，不落在工作目录 */
@@ -104,9 +94,6 @@ class ConsoleCommandSwitchTest {
         storeProperties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
         NovaStateStore store = new NovaStateStore(storeProperties);
         settings = new CommandSettingsService(store);
-
-        liveDataService = mock(LiveDataService.class);
-        when(liveDataService.supportsTotalData()).thenReturn(true);
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(streamer()));
@@ -126,7 +113,7 @@ class ConsoleCommandSwitchTest {
         parts.put(AtSubscriptionService.class, subscriptions);
         parts.put(CommandSettingsService.class, settings);
         parts.put(CommandDispatcher.class, dispatcher(sender));
-        parts.put(LiveDataService.class, liveDataService);
+        parts.put(LiveDataService.class, mock(LiveDataService.class));
         parts.put(NovaMessageSender.class, sender);
         parts.put(NovaStateStore.class, store);
         parts.put(RevenueVisibilityService.class, revenueVisibility);
@@ -135,15 +122,10 @@ class ConsoleCommandSwitchTest {
         parts.put(StreamerNames.class, new StreamerNames(new LiveSessionArchive(storeProperties)));
         parts.put(SessionMemberNames.class, mock(SessionMemberNames.class));
         parts.put(BilibiliStreamerChoice.class, mock(BilibiliStreamerChoice.class));
-        parts.put(BilibiliDataQueryPainter.class, mock(BilibiliDataQueryPainter.class));
         parts.put(TimelineWriter.class, TimelineWriter.NONE);
         parts.put(NovaCoreProperties.class, new NovaCoreProperties());
-        parts.put(NovaBilibiliProperties.class, new NovaBilibiliProperties());
 
-        commands = List.of(
-                build(BilibiliAtListCommand.class),
-                build(BilibiliRoomDataCommand.class),
-                build(BilibiliRankingCommand.class));
+        commands = List.of(build(BilibiliAtListCommand.class));
 
         controller = build(RuntimeStateController.class);
         channels = new ChannelSettingsFile(storeProperties, dataSource); channels.attach(controller);
@@ -163,45 +145,6 @@ class ConsoleCommandSwitchTest {
             assertTrue(reply.contains("已关闭"), spelling + " 没被控制台那一下挡住：" + reply);
             assertFalse(reply.contains(UNKNOWN_NAME), spelling + " 名单还是出来了：" + reply);
         }
-    }
-
-    @Test
-    @DisplayName("控制台关得掉累计那一半，群里带「总」的问法跟着停，本场那一半没被连累")
-    void consoleCanTurnOffTheCumulativeHalf() {
-        // 「直播间总数据」与「直播间数据 总」说的是同一种用法，两种问法都得关得掉
-        for (String spelling : List.of("直播间总数据", "直播间数据 总")) {
-            JSONObject off = controller.toggleCommand(toggle(spelling, true)).getBody();
-            assertTrue(off.getBooleanValue("success"), spelling + " 关不掉累计那一半：" + off.toJSONString());
-        }
-        for (String spelling : List.of("总数据排行榜", "数据排行榜 总")) {
-            JSONObject off = controller.toggleCommand(toggle(spelling, true)).getBody();
-            assertTrue(off.getBooleanValue("success"), spelling + " 关不掉累计那一半：" + off.toJSONString());
-        }
-
-        for (String spelling : List.of("直播间数据 总", "直播间总数据", "数据排行榜 弹幕 总", "总数据排行榜 弹幕")) {
-            String reply = feed(spelling);
-            assertTrue(reply.contains("已关闭"), spelling + " 还在回话：" + reply);
-        }
-
-        for (String spelling : List.of("直播间数据", "数据排行榜 弹幕")) {
-            String reply = feed(spelling);
-            assertFalse(reply.contains("已关闭"), spelling + " 本场那一半被连累了：" + reply);
-        }
-    }
-
-    @Test
-    @DisplayName("本机没开累计数据时，累计那一半在页面上置灰")
-    void cumulativeHalfGreysOutWithoutTotalData() {
-        when(liveDataService.supportsTotalData()).thenReturn(false);
-
-        JSONObject page = pageCommand("直播间数据");
-        JSONArray usages = page.getJSONArray("usages");
-        assertTrue(usages != null && !usages.isEmpty(),
-                "一条命令底下的几种用法都没报给页面，置灰也就无从谈起：" + page.toJSONString());
-
-        // 页面置灰的依据是「这一格在这台机器上开没开」，不是写死的「能用」
-        assertTrue(availableOf(usages, "直播间数据"), "本场那一半不该被一起置灰：" + usages.toJSONString());
-        assertFalse(availableOf(usages, "直播间总数据"), "累计那一半该置灰：" + usages.toJSONString());
     }
 
     @Test
@@ -236,27 +179,6 @@ class ConsoleCommandSwitchTest {
                 .fluentPut("num", GROUP)
                 .fluentPut("command", command)
                 .fluentPut("disabled", disabled);
-    }
-
-    private JSONObject pageCommand(String name) {
-        JSONArray commands = controller.state().getJSONArray("commands");
-        for (int i = 0; i < commands.size(); i++) {
-            JSONObject item = commands.getJSONObject(i);
-            if (name.equals(item.getString("name"))) {
-                return item;
-            }
-        }
-        throw new IllegalStateException("页面上没有「" + name + "」这一条：" + commands.toJSONString());
-    }
-
-    private static boolean availableOf(JSONArray usages, String key) {
-        for (int i = 0; i < usages.size(); i++) {
-            JSONObject usage = usages.getJSONObject(i);
-            if (key.equals(usage.getString("key"))) {
-                return usage.getBooleanValue("available");
-            }
-        }
-        throw new IllegalStateException("用法表里没有「" + key + "」这一格：" + usages.toJSONString());
     }
 
     /**

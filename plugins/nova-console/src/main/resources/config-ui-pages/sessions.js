@@ -689,7 +689,6 @@ function usageRow(ctx, command, usage) {
   label.innerHTML = '<input type="checkbox"' + (!off && usage.available ? ' checked' : '') + '>';
   const input = label.querySelector('input');
   input.setAttribute('aria-label', usage.key);
-  // 本机用不上那一格时锁着：拨了也不起作用
   input.disabled = !command.listed || !usage.available;
   input.addEventListener('change', () => {
     if (ctx.channel) setChannelCommands(ctx, [usage.key], !input.checked);
@@ -699,11 +698,8 @@ function usageRow(ctx, command, usage) {
   row.appendChild(label);
 
   const text = el('div', 'swtxt');
-  const marks = [];
-  if (usage.reason) marks.push(usage.reason);
-  if (off) marks.push('已被群管理员禁用');
   text.innerHTML = '<b>' + esc(usage.key) + '</b>'
-    + (marks.length ? '<span class="cmdmark">' + esc(marks.join(' · ')) + '</span>' : '');
+    + (off ? '<span class="cmdmark">已被群管理员禁用</span>' : '');
   row.appendChild(text);
   return row;
 }

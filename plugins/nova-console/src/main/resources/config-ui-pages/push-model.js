@@ -452,10 +452,9 @@ export function recentPushes(records, session, limit) {
  * 分组先后完全一致。界面自己排一套的话，控制台上的组与群里看到的对不上。
  * @param commands /api/state 的 commands
  * @param session 会话，取 disabled 与 menuHidden
- * @param totalDataAvailable 这台机器开没开累计数据
  * @return 每组一项
  */
-export function commandGroups(commands, session, totalDataAvailable) {
+export function commandGroups(commands, session) {
   const groups = [];
   const index = new Map();
   const off = new Set(((session || {}).disabled) || []);
@@ -469,7 +468,7 @@ export function commandGroups(commands, session, totalDataAvailable) {
       groups.push(index.get(category));
     }
 
-    const usages = usageRows(command, off, totalDataAvailable);
+    const usages = usageRows(command, off);
     index.get(category).commands.push({
       name: command.name,
       description: command.description || '',
@@ -479,7 +478,7 @@ export function commandGroups(commands, session, totalDataAvailable) {
       off: usages.some(item => item.available && item.off),
       usages,
       listed: !hidden.has(command.name),
-      hiddenReason: hiddenReason(command, hidden, totalDataAvailable),
+      hiddenReason: hiddenReason(command, hidden),
       note: notes[command.name] || '',
     });
   }
@@ -508,32 +507,20 @@ export function commandGroups(commands, session, totalDataAvailable) {
  * 命令没自报格（单用法的那些）就只有一格，格名与命令正名同名。
  * @param command 命令
  * @param off 本会话禁用清单
- * @param totalDataAvailable 这台机器开没开累计数据
  * @return 每格一项
  */
-function usageRows(command, off, totalDataAvailable) {
-  const declared = (Array.isArray(command.usages) && command.usages.length)
-    ? command.usages
-    : [{key: command.name, available: command.available !== false}];
-  return declared.map(item => ({
-    key: item.key,
-    available: item.available !== false,
-    off: off.has(item.key),
-    // 锁住的那一格总得说清为什么。整条命令不列进菜单的理由另有 hiddenReason
-    reason: item.available !== false ? '' : machineReason(totalDataAvailable),
+function usageRows(command, off) {
+  return usageKeys(command).map(key => ({
+    key,
+    available: command.available !== false,
+    off: off.has(key),
   }));
 }
 
-/**
- * 这台机器用不上这一格的理由
- *
- * 与 {@link hiddenReason} 的机器那一半同一句话：两边各写一份的话，改了一处忘了另一处，
- * 屏幕上就会同时出现两种说法。
- * @param totalDataAvailable 这台机器开没开累计数据
- * @return 理由
- */
-function machineReason(totalDataAvailable) {
-  return totalDataAvailable === false ? '累计数据未启用' : '当前环境暂不支持';
+function usageKeys(command) {
+  return Array.isArray(command.usages) && command.usages.length
+    ? command.usages.map(item => item.key)
+    : [command.name];
 }
 
 /**
@@ -562,17 +549,14 @@ function menuHiddenOf(session) {
  * 这条命令为什么不列进菜单
  *
  * 「列不列」由后端算（见 RuntimeStateController#menuOf），这里只把它翻成一句人话。
- * 整台机器都用不上的（available 为假）与只在这个会话里用不上的，要人做的事不一样：
- * 前者去配一个累计存储，后者是这个群自己的配置使然。
  * @param command 命令
  * @param hidden 本会话不列进菜单的那些
- * @param totalDataAvailable 这台机器开没开累计数据
  * @return {string} 理由，列着时为空串
  */
-function hiddenReason(command, hidden, totalDataAvailable) {
+function hiddenReason(command, hidden) {
   if (!hidden.has(command.name)) return '';
   if (command.available === false) {
-    return machineReason(totalDataAvailable) + '，菜单中不显示';
+    return '当前环境暂不支持，菜单中不显示';
   }
   return '在此会话中不适用，菜单中不显示';
 }
@@ -580,19 +564,15 @@ function hiddenReason(command, hidden, totalDataAvailable) {
 /**
  * 命令那一块的摘要
  *
- * 数目按<b>菜单里真列出来的条数</b>算，不按命令总数算：没开累计存储的机器上，
- * 带「总」字的两条在群里本来就不出现，摘要仍写 14 的话，屏幕上的数与群里数出来的对不上。
- * 「列不列」这件事本身由后端答（menuHidden），界面不按命令名去认——
- * 认名字的话，下一条「总」字命令进来就会被漏掉。
+ * 可用命令数从后端给出的菜单可见状态（menuHidden）算起。
  * <p>
  * 点名的那几条是<b>格名</b>（{@link commandGroups} 里 {@code usages} 的 {@code key}），
  * 与「N 条可用」的「条」不是一个量纲：前者是关掉的开关，后者是菜单里还答得出话的行。
  * @param commands /api/state 的 commands
  * @param session 会话
- * @param totalDataAvailable 这台机器开没开累计数据
  * @return 摘要
  */
-export function commandSummary(commands, session, totalDataAvailable) {
+export function commandSummary(commands, session) {
   const list = commands || [];
   const hidden = new Set(menuHiddenOf(session));
   const records = ((session || {}).disabled) || [];
@@ -600,12 +580,7 @@ export function commandSummary(commands, session, totalDataAvailable) {
 
   // 对账认的是<b>格名</b>：群里「禁用命令」写进状态文件的就是这一格。
   // 命令正名（「@名单」）不是账上的键，账上留着它只能是改过名、已删除的残迹
-  const known = new Set();
-  for (const command of list) {
-    for (const usage of usageRows(command, off, totalDataAvailable)) {
-      known.add(usage.key);
-    }
-  }
+  const known = new Set(list.flatMap(usageKeys));
 
   const listed = list.filter(item => !hidden.has(item.name));
   // 被群管理员关掉的：只算真有这一格的。状态文件里那些改过名、已删除的记录另算一摊，
@@ -616,7 +591,7 @@ export function commandSummary(commands, session, totalDataAvailable) {
   // 拿格数去减命令数的话，两个不同的量纲做减法，屏幕上就会多出或少掉几条
   let fullyOff = 0;
   for (const command of listed) {
-    const live = usageRows(command, off, totalDataAvailable).filter(item => item.available);
+    const live = usageRows(command, off).filter(item => item.available);
     if (live.length > 0 && live.every(item => item.off)) fullyOff++;
   }
   const hiddenByMachine = list.filter(item => item.available === false && hidden.has(item.name));
@@ -628,8 +603,7 @@ export function commandSummary(commands, session, totalDataAvailable) {
       + offNames.join('、') + '）'
     : listed.length + ' 条全部可用');
   if (hiddenByMachine.length) {
-    parts.push(hiddenByMachine.length + ' 条'
-      + (totalDataAvailable === false ? '因累计数据未启用而' : '因当前环境不支持而') + '隐藏');
+    parts.push(hiddenByMachine.length + ' 条因当前环境不支持而隐藏');
   }
   if (hiddenBySession.length) {
     parts.push(hiddenBySession.length + ' 条在此会话中不列出');
@@ -659,17 +633,19 @@ export function commandSummary(commands, session, totalDataAvailable) {
  * @param session 会话
  * @return 摘要
  */
-export function channelSession(session, target, user) {
+export function channelSession(session, target, user, commands) {
   const quiet = target.quietHours || {};
+  const keys = new Set(commands.flatMap(usageKeys));
+  const disabled = (target.disabledCommands || []).filter(key => keys.has(key));
   const channel = ((session || {}).channels || []).find(item => user
     && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
     revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
     revenueExplicit: typeof target.revenueVisible === 'boolean',
     assistantEnabled: target.assistantEnabled === true,
-    disabled: target.disabledCommands || [],
+    disabled,
     // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
-    disabledCount: new Set([...(target.disabledCommands || []), ...((session || {}).disabled || [])]).size,
+    disabledCount: new Set([...disabled, ...((session || {}).disabled || [])]).size,
     quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: !!channel?.quietActive};
 }
 

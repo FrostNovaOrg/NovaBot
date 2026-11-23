@@ -258,15 +258,14 @@ function ctxOf(target, session) {
     session, target,
     commands: COMMANDS,
     subscriptions: [],
-    totalDataAvailable: false,
     summary: {
       revenue: model.revenueSummary(session),
       quiet: model.quietSummary(session, {}),
-      command: model.commandSummary(COMMANDS, session, false),
+      command: model.commandSummary(COMMANDS, session),
       subscription: model.subscriptionSummary([], session),
       atAll: model.atAllStatus({bots: [], sessions: []}, session, target, {}),
     },
-    groups: model.commandGroups(COMMANDS, session, false),
+    groups: model.commandGroups(COMMANDS, session),
   };
 }
 

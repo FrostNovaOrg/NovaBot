@@ -123,7 +123,7 @@ class JsonDataSourceTest {
         assertEquals("07:00", channel.getQuietHours().getEnd());
         assertEquals(List.of("直播报告"), channel.getDisabledCommands());
         for (String changed : List.of(json.replace("revenueVisible\":true", "revenueVisible\":false"),
-                json.replace("23:00", "22:00"), json.replace("直播报告", "直播间数据"))) {
+                json.replace("23:00", "22:00"), json.replace("直播报告", "开播@我"))) {
             assertFalse(dataSource.parse(json).get(0).same(dataSource.parse(changed).get(0)));
         }
     }

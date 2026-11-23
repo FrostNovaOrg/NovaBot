@@ -200,7 +200,7 @@ class StreamerNameFallbackCommandTest {
 
         @Override
         public String name() {
-            return "直播间数据";
+            return "直播报告";
         }
 
         @Override
@@ -232,7 +232,7 @@ class StreamerNameFallbackCommandTest {
 
         @Override
         public String name() {
-            return "直播间数据";
+            return "直播报告";
         }
 
         @Override

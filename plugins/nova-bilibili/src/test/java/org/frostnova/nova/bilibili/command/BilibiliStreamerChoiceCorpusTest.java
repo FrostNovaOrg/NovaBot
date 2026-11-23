@@ -296,7 +296,7 @@ class BilibiliStreamerChoiceCorpusTest {
         new ProbeCommand(dataSource, new BilibiliStreamerChoice(liveDataService,
                 new LiveSessionArchive(properties)))
                 .execute(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
-                        "直播间数据", List.of("主播丙"), "直播间数据 主播丙"));
+                        "直播报告", List.of("主播丙"), "直播报告 主播丙"));
 
         // 阴性对照：这把尺看得见落在文件里的命名空间。少了它，「文件里没有」与
         // 「压根没写出文件」「这个读法根本看不见命名空间」在报告里长得一样
@@ -413,7 +413,7 @@ class BilibiliStreamerChoiceCorpusTest {
 
         @Override
         public String name() {
-            return "直播间数据";
+            return "直播报告";
         }
 
         @Override

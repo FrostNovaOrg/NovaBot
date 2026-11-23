@@ -51,6 +51,10 @@ public class RetiredConfigurationKeyCheck {
                 "B 站这一池是定时调度器，只按「核心线程数」（core-pool-size）那一项开线程。这一行从来没起过作用，可以删掉");
         RETIRED.put("novabot.bilibili.bilibili-thread.keep-alive-seconds",
                 "B 站这一池是定时调度器，只按「核心线程数」（core-pool-size）那一项开线程。这一行从来没起过作用，可以删掉");
+        RETIRED.put("novabot.bilibili.ranking.top-n",
+                "群内排行榜命令已取消。本场榜单可看「直播报告」，这一行可以删掉");
+        RETIRED.put("novabot.bilibili.ranking.height-limit",
+                "群内排行榜命令已取消。本场榜单可看「直播报告」，这一行可以删掉");
         RETIRED.put("novabot.assistant.monthly-budget-yuan",
                 "助手总额度按自然周计算，请用「每周金额上限」（novabot.assistant.weekly-budget-yuan）设置");
         RETIRED.put("novabot.assistant.daily-questions-per-account",
