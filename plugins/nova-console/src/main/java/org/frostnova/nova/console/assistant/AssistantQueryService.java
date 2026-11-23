@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.text.BreakIterator;
 import java.time.Clock;
 import java.util.*;
 import java.util.function.IntPredicate;
@@ -191,18 +190,15 @@ public class AssistantQueryService {
         return result;
     }
 
-    /** 弹幕窗口采用 [fromAt, toAt)，只保留计数、词频、发言者集合和至多三十条原话。 */
-    public JSONObject danmu(String platform, Long uid, long start, long fromAt, long toAt, int limit) {
+    /** 弹幕窗口采用 [fromAt, toAt)，按发言类型计数并对发言者去重。 */
+    public JSONObject danmu(String platform, Long uid, long start, long fromAt, long toAt) {
         String origin = "场次弹幕原文归档，按时间窗流式统计";
-        if (!validIdentity(platform, uid) || fromAt < start || toAt <= fromAt) return missing(origin, "items", "请提供本场内有效的弹幕时间范围");
+        if (!validIdentity(platform, uid) || fromAt < start || toAt <= fromAt) return missing(origin, "total", "请提供本场内有效的弹幕时间范围");
         Path file = file(platform, uid, start, "danmu.jsonl");
-        var items = new JSONArray();
         var people = new HashSet<Long>();
-        var words = new HashMap<String, Long>();
         var byType = JSONObject.of("DANMU", 0L, "EMOJI", 0L, "SUPER_CHAT", 0L);
         long total = 0, invalid = 0;
         boolean scanTruncated;
-        var tokenizer = BreakIterator.getWordInstance(Locale.CHINA);
         try (var lines = JsonlFiles.lines(file)) {
             var iterator = lines.iterator();
             int scanned = 0;
@@ -217,30 +213,23 @@ public class AssistantQueryService {
                 if (!byType.containsKey(type)) type = "DANMU";
                 total++;
                 byType.put(type, byType.getLongValue(type) + 1);
-                if (row.getLong("uid") != null) people.add(row.getLong("uid"));
-                String text = row.getString("text");
-                countWords(text, tokenizer, words);
-                if (items.size() < bound(limit, 30)) items.add(JSONObject.of("at", at, "uid", row.getLong("uid"),
-                        "uname", row.getString("uname"), "type", type, "text", clip(text, 60)));
+                Long person = row.getLong("uid");
+                if (person != null) people.add(person);
             }
             scanTruncated = iterator.hasNext();
         } catch (IOException | UncheckedIOException e) {
-            return missing(origin, "items", "没有这一场的弹幕文件，或文件无法读取");
+            return missing(origin, "total", "没有这一场的弹幕文件，或文件无法读取");
         }
-        var frequent = new JSONArray();
-        words.entrySet().stream().sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
-                .limit(10).forEach(e -> frequent.add(JSONObject.of("word", e.getKey(), "count", e.getValue())));
         var result = source(origin);
-        result.putAll(list(items, total));
+        result.put("total", total);
+        result.put("truncated", scanTruncated);
         result.put("fromAt", fromAt);
         result.put("toAt", toAt);
         result.put("speakers", people.size());
         result.put("byType", byType);
-        result.put("words", list(frequent, words.size()));
         result.put("partial", scanTruncated || invalid > 0);
         result.put("invalidLines", invalid);
         if (scanTruncated || invalid > 0) result.put("reason", "文件超出行数上限或含无法解析的行，计数只是已读有效记录的下界");
-        if (scanTruncated) result.put("truncated", true);
         return result;
     }
 
@@ -739,20 +728,6 @@ public class AssistantQueryService {
                 for (Object item : array) if (item instanceof JSONObject child) boundSupportingLists(child);
             }
         }
-    }
-
-    private static void countWords(String text, BreakIterator tokenizer, Map<String, Long> words) {
-        if (text == null) return;
-        tokenizer.setText(text);
-        int from = tokenizer.first();
-        for (int to = tokenizer.next(); to != BreakIterator.DONE; from = to, to = tokenizer.next()) {
-            String word = text.substring(from, to).toLowerCase(Locale.ROOT);
-            if (word.codePoints().anyMatch(Character::isLetterOrDigit)) words.merge(word, 1L, Long::sum);
-        }
-    }
-
-    private static String clip(String text, int max) {
-        return text == null || text.codePointCount(0, text.length()) <= max ? text : text.substring(0, text.offsetByCodePoints(0, max));
     }
 
     private static boolean validIdentity(String platform, Long uid) {

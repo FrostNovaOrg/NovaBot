@@ -118,7 +118,7 @@ class AssistantSqlQueryTest {
     void noMoneyColumnsExistInRestrictedChats() {
         session(STREAMER, START, START + 600_000);
         event(STREAMER, START, START, "box", VIEWER);
-        var restricted = new AssistantQueryContext(false, false);
+        var restricted = new AssistantQueryContext(false);
         var result = query(restricted, List.of("sessions", "events"), "SELECT * FROM sessions JOIN events");
         assertFalse(result.containsKey("reason"), result::toJSONString);
         for (String column : List.of("revenue", "amount", "paid_amount", "gift_amount", "guard_amount")) {
@@ -138,7 +138,7 @@ class AssistantSqlQueryTest {
     @Test
     @DisplayName("模型没看到本机 SQLite 版本时会生成旧库不认识的查询")
     void toolDescribesNativeSqliteDialect() {
-        for (var context : List.of(AssistantQueryContext.CONSOLE, new AssistantQueryContext(false, false))) {
+        for (var context : List.of(AssistantQueryContext.CONSOLE, new AssistantQueryContext(false))) {
             var tool = AssistantTools.definitions(context).stream().map(item -> item.getJSONObject("function"))
                     .filter(function -> "query_sql".equals(function.getString("name"))).findFirst().orElseThrow();
             String description = tool.getString("description");

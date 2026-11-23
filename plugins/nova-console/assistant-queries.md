@@ -82,25 +82,22 @@ JSONObject curve(String platform, Long uid, long start, String metric, int maxPo
 ## 时间窗弹幕
 
 ```java
-JSONObject danmu(String platform, Long uid, long start, long fromAt, long toAt, int limit)
+JSONObject danmu(String platform, Long uid, long start, long fromAt, long toAt)
 ```
 
-窗口为 `[fromAt, toAt)`，fromAt 不早于 start。limit 夹到 1–30。逐行读取本场 danmu.jsonl，最多扫描 500000 行，不调用收集全场原文的读取方法。原话按文件顺序取样，不保证是窗口内最新发言。
+窗口为 `[fromAt, toAt)`，fromAt 不早于 start。逐行读取本场 danmu.jsonl，最多扫描 500000 行。控制台和 QQ 都只返回窗口的统计数据。按指定词查条数时，用通用汇总工具 `aggregate` 在本机匹配。
 
 | 字段 | 含义 |
 | --- | --- |
 | fromAt / toAt | 本次查询的窗口边界。 |
-| total | 窗口内有效记录条数，包含三种发言类型。 |
+| total | 窗口内有效记录条数，包含三种发言类型。无法统计时为 null。 |
 | speakers | 窗口内已知 uid 的去重发言人数；匿名 uid 不编造成一位观众。 |
 | byType | DANMU、EMOJI、SUPER_CHAT 各有多少条。 |
-| items | 至多 limit 条原话；每条 at、uid、uname、type、text。 |
-| items[].text | 截到最多 60 个 Unicode 字符，表情字符不会被拆断。 |
-| truncated | 原话样本不全，或文件超过扫描上限。 |
-| words | 高频词列表封装，最多十项；每项 word、count。 |
+| truncated | 文件是否超过扫描上限。 |
 | partial / invalidLines | 是否含跳过坏行或超过扫描上限、跳过的坏行数。 |
 | reason | 文件缺失或统计只能给出下界时的说明。 |
 
-词频使用 Java 中文词边界切分，忽略纯标点和空白，拉丁字母转小写；按次数降序、词面升序并列排序。未知类型与既有归档读法一致，归入 DANMU。内存中保留计数、去重 uid、词频和受限样本，不保留全场原文。
+未知类型与既有归档读法一致，归入 DANMU。
 
 ## 收入构成与贡献者
 

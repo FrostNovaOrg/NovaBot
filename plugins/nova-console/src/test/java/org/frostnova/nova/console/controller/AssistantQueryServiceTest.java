@@ -229,27 +229,23 @@ class AssistantQueryServiceTest {
         assertEquals(start + 660000, curve.getJSONArray("items").getJSONObject(1).getLongValue("at"));
     }
 
-    // 抓窗口外弹幕混入、说话人数算错、原话超条数或超字数。
-    @Test void danmuWindowCountsAndBoundsSamples() {
+    // 抓窗口外弹幕混入、说话人数算错或完整统计被标为截断。
+    @Test void danmuWindowCountsMessagesAndDistinctSpeakers() {
         details.appendDanmu(platform, uid, start, new DanmuRecord(start - 1, 9300000099L, "合成窗外观众", "窗外", DanmuRecord.Type.DANMU));
         for (int i = 0; i < 40; i++) {
             details.appendDanmu(platform, uid, start, new DanmuRecord(start + i, 9300000021L + i % 3,
-                    "合成观众" + i % 3, "合成词语 ".repeat(30) + "😀", DanmuRecord.Type.values()[i % 3]));
+                    "合成观众" + i % 3, "合成词语", DanmuRecord.Type.values()[i % 3]));
         }
         details.appendDanmu(platform, uid, start, new DanmuRecord(start + 40, 9300000098L, "合成边界观众", "边界", DanmuRecord.Type.DANMU));
-        var value = query.danmu(platform, uid, start, start, start + 40, 100);
+        var value = query.danmu(platform, uid, start, start, start + 40);
         assertEquals(40, value.getIntValue("total"));
         assertEquals(3, value.getIntValue("speakers"));
         assertEquals(14, value.getJSONObject("byType").getIntValue("DANMU"));
         assertEquals(13, value.getJSONObject("byType").getIntValue("EMOJI"));
         assertEquals(13, value.getJSONObject("byType").getIntValue("SUPER_CHAT"));
-        assertEquals(30, value.getJSONArray("items").size());
-        assertTrue(value.getBooleanValue("truncated"));
-        value.getJSONArray("items").forEach(item -> {
-            var text = ((JSONObject) item).getString("text");
-            assertTrue(text.codePointCount(0, text.length()) <= 60);
-        });
-        assertTrue(value.getJSONObject("words").getJSONArray("items").size() <= 10);
+        assertFalse(value.getBooleanValue("truncated"));
+        assertFalse(value.containsKey("items"));
+        assertFalse(value.containsKey("words"));
     }
 
     // 抓正在直播时把未知下播时刻和时长写成零。
@@ -307,40 +303,38 @@ class AssistantQueryServiceTest {
 
     // 抓缺失文件被说成零，以及无效参数触发异常或路径越界。
     @Test void missingDataAndInvalidParametersHaveReasons() throws Exception {
-        for (JSONObject result : List.of(query.danmu(platform, uid, start, start, now, 30),
+        for (JSONObject result : List.of(query.danmu(platform, uid, start, start, now),
                 query.curve(platform, uid, start, null, 120), query.session(platform, uid, start),
                 query.revenue(platform, uid, start), query.insights(platform, uid, 7),
                 query.trend(platform, uid, "day", 7), query.fans(platform, uid, 7),
-                query.danmu("../other", uid, start, start, now, 30), query.sessions(platform, uid, 0, 20))) {
+                query.danmu("../other", uid, start, start, now), query.sessions(platform, uid, 0, 20))) {
             assertNotNull(result.getString("source"));
             assertNotNull(result.getString("reason"));
         }
         assertNull(query.curve(platform, uid, start, null, 120).get("curve"));
-        assertNull(query.danmu(platform, uid, start, start, now, 30).get("items"));
+        assertNull(query.danmu(platform, uid, start, start, now).get("total"));
         var path = dir.resolve("details").resolve(platform + "-" + uid + "-" + start).resolve("danmu.jsonl");
         Files.createDirectories(path.getParent());
         Files.writeString(path, "");
-        var empty = query.danmu(platform, uid, start, start, now, 30);
-        assertEquals(0, empty.getLongValue("total"));
-        assertEquals(0, empty.getJSONArray("items").size());
+        var empty = query.danmu(platform, uid, start, start, now);
+        assertEquals(0L, empty.getLong("total"));
         assertFalse(empty.getBooleanValue("partial"));
     }
 
-    // 抓结构合法但字段损坏的一行连累整场统计，以及四字节字符被截断。
-    @Test void malformedRowsAreSkippedAndUnicodeSamplesStayWhole() throws Exception {
+    // 抓结构合法但字段损坏的一行连累整场统计。
+    @Test void malformedRowsAreSkippedAndReported() throws Exception {
         details.appendDanmu(platform, uid, start, new DanmuRecord(start, 9300000021L, "合成观众甲",
-                "字".repeat(59) + "😀😀", DanmuRecord.Type.DANMU));
+                "合成词语", DanmuRecord.Type.DANMU));
         var path = dir.resolve("details").resolve(platform + "-" + uid + "-" + start).resolve("danmu.jsonl");
         Files.writeString(path, "{broken}\n{\"at\":\"broken\"}\n", java.nio.file.StandardOpenOption.APPEND);
-        var result = query.danmu(platform, uid, start, start, now, 30);
+        var result = query.danmu(platform, uid, start, start, now);
         assertEquals(1, result.getIntValue("total"));
         assertEquals(2, result.getIntValue("invalidLines"));
         assertTrue(result.getBooleanValue("partial"));
-        String text = result.getJSONArray("items").getJSONObject(0).getString("text");
-        assertEquals("字".repeat(59) + "😀", text);
+        assertFalse(result.getBooleanValue("truncated"));
     }
 
-    // 抓超过五十万行仍继续扫描、缓存整份原文或样本超限。
+    // 抓超过五十万行仍继续扫描，或漏报扫描截断。
     @Test void danmuScanStopsAtArchiveLineLimit() throws Exception {
         var path = dir.resolve("details").resolve(platform + "-" + uid + "-" + start).resolve("danmu.jsonl");
         Files.createDirectories(path.getParent());
@@ -348,10 +342,9 @@ class AssistantQueryServiceTest {
             String row = JSON.toJSONString(new DanmuRecord(start, 9300000021L, "合成观众甲", "", DanmuRecord.Type.DANMU)) + "\n";
             for (int i = 0; i < 500001; i++) writer.write(row);
         }
-        var result = query.danmu(platform, uid, start, start, now, 2);
+        var result = query.danmu(platform, uid, start, start, now);
         assertEquals(500000, result.getLongValue("total"));
         assertEquals(1, result.getIntValue("speakers"));
-        assertEquals(2, result.getJSONArray("items").size());
         assertTrue(result.getBooleanValue("partial"));
         assertTrue(result.getBooleanValue("truncated"));
     }
@@ -365,7 +358,7 @@ class AssistantQueryServiceTest {
         query.sessions(platform, uid, 30, 20);
         query.session(platform, uid, start);
         query.curve(platform, uid, start, null, 120);
-        query.danmu(platform, uid, start, start, now, 30);
+        query.danmu(platform, uid, start, start, now);
         var value = query.revenue(platform, uid, start);
         query.insights(platform, uid, 30);
         query.trend(platform, uid, "week", 30);
