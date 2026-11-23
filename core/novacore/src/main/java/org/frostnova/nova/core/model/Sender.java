@@ -34,7 +34,7 @@ public class Sender {
     /**
      * 消息发送间隔时间，单位：毫秒
      */
-    private int delay;
+    private volatile int delay;
 
     /**
      * 进程内投递入口，为空时走 {@link #url} 发 HTTP

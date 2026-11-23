@@ -509,6 +509,42 @@ class HomeStatusFieldsTest {
     }
 
     @Test
+    @DisplayName("未启用的机器人探针不出现在状态接口中")
+    void healthOmitsInactiveProbe() {
+        var inactive = new HealthProbe() {
+            int checks;
+
+            @Override
+            public boolean active() {
+                return false;
+            }
+
+            @Override
+            public String name() {
+                return "未启用的机器人";
+            }
+
+            @Override
+            public HealthStatus check() {
+                checks++;
+                return HealthStatus.down("机器人未连接", "检查连接");
+            }
+
+            @Override
+            public Scope scope() {
+                return Scope.BOT;
+            }
+        };
+        probes = List.of(inactive, probe("直播间连接", HealthProbe.Scope.PLATFORM, false));
+
+        JSONArray health = controller().status().getJSONArray("health");
+
+        assertEquals(List.of("直播间连接"), health.stream()
+                .map(item -> ((JSONObject) item).getString("name")).toList());
+        assertEquals(0, inactive.checks);
+    }
+
+    @Test
     @DisplayName("探针带着原因码，正常为空串")
     void healthCarriesReasonCode() {
         probes = List.of(

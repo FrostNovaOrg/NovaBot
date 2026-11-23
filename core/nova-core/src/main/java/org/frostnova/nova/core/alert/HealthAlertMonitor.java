@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 
 /**
  * 健康状况告警监控
@@ -46,13 +47,7 @@ public class HealthAlertMonitor {
      */
     private final TimelineWriter timeline;
 
-    /**
-     * 各探针上一次的状态级别
-     */
-    private final Map<String, HealthStatus.Level> lastLevels = new ConcurrentHashMap<>();
-
-    /** 各探针上一次检查中的异常成员标识。 */
-    private final Map<String, Set<String>> lastMembers = new ConcurrentHashMap<>();
+    private final Map<String, ProbeState> lastStates = new ConcurrentHashMap<>();
 
     @Autowired
     public HealthAlertMonitor(ObjectProvider<HealthProbe> probes, AlertService alertService,
@@ -80,22 +75,32 @@ public class HealthAlertMonitor {
      * 评估单个探针，必要时告警
      */
     private void evaluate(HealthProbe probe) {
-        HealthStatus status = probe.check();
         String key = probe.name();
-        HealthStatus.Level previous = lastLevels.put(key, status.level());
-        Set<String> previousMembers = lastMembers.put(key, status.members().keySet());
+        if (!probe.active()) {
+            ProbeState state = lastStates.remove(key);
+            if (state != null) {
+                state.stopped = true;
+                clearFailureConvergence(key);
+                alertService.resolve(key + ":恢复");
+                alertService.discardProbeAlerts(state, memberKey(key, ""));
+            }
+            return;
+        }
+
+        HealthStatus status = probe.check();
+        ProbeState state = lastStates.computeIfAbsent(key, ignored -> new ProbeState(probe));
+        HealthStatus.Level previous = state.level;
+        Set<String> previousMembers = state.members;
+        state.level = status.level();
+        state.members = status.members().keySet();
 
         if (status.level() == HealthStatus.Level.OK) {
-            lastMembers.remove(key);
+            state.members = Set.of();
             if (previous != null && previous != HealthStatus.Level.OK) {
                 // 收敛记录按级别各留一份，恢复时得全部清掉：漏掉哪一份，
                 // 恢复后再变回那个级别就会被旧记录压掉，错过第二次告警
-                for (HealthStatus.Level level : HealthStatus.Level.values()) {
-                    if (level != HealthStatus.Level.OK) {
-                        alertService.resolve(alertKey(key, level));
-                    }
-                }
-                alertService.alert(key + ":恢复", "NovaBot 状态恢复：" + key, status.summary());
+                clearFailureConvergence(key);
+                alertService.alert(key + ":恢复", "NovaBot 状态恢复：" + key, status.summary(), state);
                 record(probe, status, previous);
             }
             return;
@@ -105,7 +110,7 @@ public class HealthAlertMonitor {
         if (previous == status.level()) {
             Map<String, String> added = new LinkedHashMap<>();
             status.members().forEach((id, name) -> {
-                if (previousMembers == null || !previousMembers.contains(id)) {
+                if (!previousMembers.contains(id)) {
                     added.put(memberKey(key, id), name);
                 }
             });
@@ -114,7 +119,7 @@ public class HealthAlertMonitor {
                 alertService.alertMembers(added, subject,
                         names -> content(memberSummary(names)
                                 + (status.memberCondition().isBlank() ? "" : "\n" + status.memberCondition()),
-                                status.advice()));
+                                status.advice()), state);
                 String summary = memberSummary(added.values());
                 log.warn("{} - {}", subject, summary);
                 record(probe, new HealthStatus(status.level(), summary, status.advice()), previous);
@@ -130,13 +135,41 @@ public class HealthAlertMonitor {
         String subject = "NovaBot 异常告警：" + key;
         String content = content(status.summary(), status.advice());
 
-        alertService.alert(alertKey(key, status.level()), subject, content);
+        alertService.alert(alertKey(key, status.level()), subject, content, state);
         if (!status.members().isEmpty()) {
             alertService.rememberMembers(status.members().keySet().stream()
                     .map(id -> memberKey(key, id)).toList());
         }
         log.warn("{} - {}", subject, status.summary());
         record(probe, status, previous);
+    }
+
+    private void clearFailureConvergence(String key) {
+        for (HealthStatus.Level level : HealthStatus.Level.values()) {
+            if (level != HealthStatus.Level.OK) {
+                alertService.resolve(alertKey(key, level));
+            }
+        }
+    }
+
+    private static final class ProbeState implements BooleanSupplier {
+        private final HealthProbe probe;
+        private HealthStatus.Level level;
+        private Set<String> members = Set.of();
+        private volatile boolean stopped;
+
+        private ProbeState(HealthProbe probe) {
+            this.probe = probe;
+        }
+
+        @Override
+        public boolean getAsBoolean() {
+            try {
+                return !stopped && probe.active();
+            } catch (Exception e) {
+                return false;
+            }
+        }
     }
 
     private static String content(String summary, String advice) {

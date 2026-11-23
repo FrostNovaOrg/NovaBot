@@ -2588,6 +2588,7 @@ public class ConfigUiController {
                     item.put("loginState", probe.loginState());
 
                     try {
+                        if (!probe.active()) return;
                         HealthStatus status = probe.check();
                         item.put("level", status.level().name());
                         item.put("summary", status.summary());

@@ -23,6 +23,14 @@ public interface HealthProbe {
     HealthStatus check();
 
     /**
+     * 当前是否启用。停用时从状态页和告警检查中略过。
+     * @return 启用时返回 true
+     */
+    default boolean active() {
+        return true;
+    }
+
+    /**
      * 展示顺序，数值小的排在前面
      * @return 展示顺序
      */
@@ -34,7 +42,7 @@ public interface HealthProbe {
      * 所属范围，决定该探针出现在配置界面的哪个页签
      * <p>
      * 由探针自己声明而非界面按名称硬编码分类：否则插件新增探针后，界面要跟着改一版才认得它。
-     * 总览页始终展示全部探针，不受本项影响。
+     * 总览页展示各范围中已启用的探针。
      * @return 所属范围
      */
     default Scope scope() {

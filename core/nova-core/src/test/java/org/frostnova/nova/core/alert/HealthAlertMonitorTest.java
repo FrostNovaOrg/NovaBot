@@ -40,6 +40,10 @@ class HealthAlertMonitorTest {
 
     private HealthAlertMonitor monitor;
 
+    private AlertService alertService;
+
+    private boolean channelFails;
+
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
@@ -73,13 +77,16 @@ class HealthAlertMonitorTest {
 
             @Override
             public void send(String subject, String content) {
+                if (channelFails) {
+                    throw new IllegalStateException("告警通道暂时不可用");
+                }
                 received.add(subject + "\n" + content);
             }
         };
         ObjectProvider<AlertChannel> channels = mock(ObjectProvider.class);
         when(channels.orderedStream()).thenAnswer(invocation -> List.of(channel).stream());
 
-        AlertService alertService = new AlertService(properties, channels, TimelineWriter.NONE);
+        alertService = new AlertService(properties, channels, TimelineWriter.NONE);
         monitor = new HealthAlertMonitor(probes, alertService, events::add);
     }
 
@@ -88,6 +95,13 @@ class HealthAlertMonitorTest {
      */
     private static final class ScriptedProbe implements HealthProbe {
         private HealthStatus next = HealthStatus.ok("一切正常");
+        private boolean enabled = true;
+        private int checks;
+
+        @Override
+        public boolean active() {
+            return enabled;
+        }
 
         @Override
         public String name() {
@@ -96,6 +110,7 @@ class HealthAlertMonitorTest {
 
         @Override
         public HealthStatus check() {
+            checks++;
             return next;
         }
     }
@@ -105,6 +120,75 @@ class HealthAlertMonitorTest {
      */
     private long alertsContaining(String marker) {
         return received.stream().filter(text -> text.contains(marker)).count();
+    }
+
+    @Test
+    @DisplayName("停用的机器人探针不检查、不告警，也不写状态变化")
+    void inactiveProbeIsNotCheckedOrReported() {
+        probe.enabled = false;
+        probe.next = HealthStatus.down("机器人未连接", "检查连接");
+
+        monitor.check();
+
+        assertTrue(received.isEmpty(), "停用的探针不应告警");
+        assertEquals(0, probe.checks);
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    @DisplayName("探针停用不补发恢复，重新启用后异常重新告警")
+    void reactivatedProbeStartsWithFreshAlertState() {
+        HealthStatus down = HealthStatus.down("机器人未连接", "检查连接");
+        probe.next = down;
+        monitor.check();
+        assertEquals(1, alertsContaining("机器人未连接"));
+
+        probe.enabled = false;
+        probe.next = HealthStatus.ok("连接正常");
+        monitor.check();
+        assertEquals(1, received.size(), "停用期间不应发恢复通知");
+        assertEquals(1, probe.checks);
+        assertEquals(1, events.size());
+
+        probe.enabled = true;
+        probe.next = down;
+        monitor.check();
+        monitor.check();
+        assertEquals(2, alertsContaining("机器人未连接"));
+        assertEquals(2, received.size());
+        assertEquals(2, events.size());
+        assertEquals("未知", events.get(1).detail().get("from"));
+    }
+
+    @Test
+    @DisplayName("停用的探针不会重投旧告警，重新启用后只发新告警")
+    void inactiveProbeDoesNotRetryOldAlerts() {
+        probe.next = HealthStatus.down("机器人未连接", "检查连接");
+        channelFails = true;
+        monitor.check();
+        assertEquals(1, alertService.pendingCount());
+
+        probe.enabled = false;
+        channelFails = false;
+        alertService.retryPending();
+        assertTrue(received.isEmpty());
+
+        channelFails = true;
+        probe.enabled = true;
+        probe.next = HealthStatus.degraded("机器人部分可用", "检查连接");
+        monitor.check();
+        assertEquals(1, alertService.pendingCount());
+        probe.enabled = false;
+        monitor.check();
+        assertEquals(0, alertService.pendingCount());
+
+        channelFails = false;
+        probe.enabled = true;
+        monitor.check();
+        alertService.retryPending();
+        assertEquals(1, received.size());
+        assertEquals(1, alertsContaining("机器人部分可用"));
+        assertEquals(0, alertsContaining("补发"));
     }
 
     @Test
