@@ -188,23 +188,23 @@ public class AssistantAskService {
         queryExecutor.shutdownNow();
     }
 
-    public AssistantClient.State state(String account) { return client.state(account); }
+    public AssistantClient.State state(String platform, long uid) { return client.state(platform, uid); }
 
     public JSONObject ask(String platform, Long uid, String account, JSONObject request) {
         return ask(platform, uid, account, request, AssistantQueryContext.CONSOLE);
     }
 
     public JSONObject ask(String platform, Long uid, String account, JSONObject request, AssistantQueryContext context) {
-        return ask(platform, uid, account, request, context, null, List.of(), ignored -> { }).response();
+        return ask(platform, uid, account, request, context, null, List.of(), () -> { }, ignored -> { }).response();
     }
 
     boolean adaptiveThinkingEnabled() { return properties.isAdaptiveThinking(); }
 
     Answer askFromQq(String platform, Long uid, AssistantLocalStore.QqSource source, JSONObject request,
                      boolean amountVisible, List<AssistantChartResults.Result> previousResults,
-                     Consumer<QuestionTiming> difficultyResolved) {
+                     Runnable onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         return ask(platform, uid, source.account(), request, new AssistantQueryContext(amountVisible, false), source,
-                previousResults, difficultyResolved);
+                previousResults, onAccepted, difficultyResolved);
     }
 
     record QuestionTiming(boolean analysis, Duration remaining) { }
@@ -213,7 +213,7 @@ public class AssistantAskService {
 
     private Answer ask(String platform, Long uid, String account, JSONObject request, AssistantQueryContext context,
                        AssistantLocalStore.QqSource qq, List<AssistantChartResults.Result> previousResults,
-                       Consumer<QuestionTiming> difficultyResolved) {
+                       Runnable onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         evictExpiredAudience();
         validate(request);
         var budget = new Budget();
@@ -260,7 +260,8 @@ public class AssistantAskService {
         List<String> unverified = List.of();
         AssistantClient.Question question = null;
         try {
-            question = qq == null ? client.beginQuestion(account) : client.beginQqQuestion(qq);
+            question = client.beginQuestion(platform, uid);
+            onAccepted.run();
             List<AssistantMemoStore.Memo> memos = List.of();
             try {
                 memos = local.memos().active(platform, uid);
@@ -473,13 +474,13 @@ public class AssistantAskService {
                 }
             }
         }
-        var status = client.status();
+        var status = client.budgetStatus(platform, uid);
         var result = JSONObject.of("answered", answered, "answer", displayed, "answerForHistory", answer,
-                "steps", steps, "unverifiedNumbers", unverified, "costYuan", cost, "remaining", JSONObject.of(
-                        "questionsToday", Math.max(0, status.dailyQuestionsPerAccount() - status.questionsToday().getOrDefault(account, 0)),
-                        "spentYuan", status.spentYuan(), "monthlyBudgetYuan", status.monthlyBudgetYuan()));
+                "steps", steps, "unverifiedNumbers", unverified, "costYuan", cost, "state", status.state(),
+                "remaining", JSONObject.of("spentYuan", status.spentYuan(), "weeklyBudgetYuan", status.weeklyBudgetYuan()));
         if (answered) {
             result.put("label", "由人工智能生成");
+            if (status.notice() != null) result.put("budgetNotice", status.notice());
             if (!followUps.isEmpty()) result.put("followUps", followUps);
             if (chartFailure != null) {
                 String note = "图没出来（" + chartFailure + "）。";

@@ -82,7 +82,6 @@ class AssistantHistoryTest {
     @BeforeEach void setUp() {
         properties.setEnabled(true);
         properties.setBaseUrl("https://model.example/v1");
-        properties.setDailyQuestionsPerQqUser(20);
         var template = new RestTemplate();
         MockRestServiceServer.bindTo(template).build().expect(manyTimes(), anything()).andRespond(request -> {
             requests.add(JSON.parseObject(((MockClientHttpRequest) request).getBodyAsString()));

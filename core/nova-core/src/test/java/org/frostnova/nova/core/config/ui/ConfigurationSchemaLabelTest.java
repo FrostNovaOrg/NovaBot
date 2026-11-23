@@ -52,15 +52,15 @@ class ConfigurationSchemaLabelTest {
     }
 
     @Test
-    @DisplayName("QQ 问数限额在智能助手普通设置中紧跟账号限额，保存后重启生效")
-    void qqLimitsAppearWithAccountLimit() throws IOException {
+    @DisplayName("总额度与主播额度在智能助手普通设置中相邻，保存后重启生效")
+    void assistantBudgetsAppearTogether() throws IOException {
         var metadata = new ConfigurationMetadataService();
         String template = ConfigurationTemplate.render(metadata.getFields(), Map.of());
         try (var context = context();
-             var baseline = getClass().getResourceAsStream("/configuration-baseline/assistant-qq-schema.txt")) {
+             var baseline = getClass().getResourceAsStream("/configuration-baseline/assistant-budget-schema.txt")) {
             JSONObject schema = controller(context, metadata).schema();
             String prefix = "novabot.assistant.";
-            int order = field(schema, prefix + "daily-questions-per-account").getIntValue("order");
+            int order = field(schema, prefix + "weekly-budget-yuan").getIntValue("order") - 1;
             for (String line : new String(baseline.readAllBytes(), StandardCharsets.UTF_8).lines().toList()) {
                 String key = line.substring(0, line.indexOf('|'));
                 JSONObject item = field(schema, prefix + key);

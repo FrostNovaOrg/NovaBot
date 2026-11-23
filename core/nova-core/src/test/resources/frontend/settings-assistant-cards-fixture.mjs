@@ -35,8 +35,9 @@ const fields = [
   ['enabled', '启用智能助手', 'boolean', 'false'],
   ['base-url', '模型接口地址', 'text', 'https://api.deepseek.com'],
   ['model', '模型名称', 'text', 'deepseek-flash'],
-  ['monthly-budget-yuan', '每月金额上限', 'number', '30'],
-  ['daily-questions-per-account', '每个账号每日提问次数', 'integer', '20'],
+  ['weekly-budget-yuan', '每周金额上限', 'string', '10'],
+  ['streamer-daily-budget-yuan', '每位主播每日金额上限', 'string', '1'],
+  ['streamer-weekly-budget-yuan', '每位主播每周金额上限', 'string', '5'],
   ['answer-limit', '回答输出上限', 'integer', '800'],
   ['price-input-yuan-per-million', '未命中缓存的输入单价', 'number', '2.2'],
   ['price-cached-input-yuan-per-million', '命中缓存的输入单价', 'number', '0.05'],
@@ -59,7 +60,11 @@ const api = async (path, options) => {
   requests.push({path, options});
   if (path === '/assistant/acknowledge') accepted = true;
   if (path === '/assistant/status') return {
-    available: false, missing: [], keySet: false, spentYuan: '0', monthlyBudgetYuan: '30',
+    available: false, missing: [], keySet: false, spentYuan: 4.5, weeklyBudgetYuan: 10,
+    streamerUsage: [
+      {uid: '91', nickname: '样例主播甲', todaySpentYuan: 0.8, weekSpentYuan: 2},
+      {uid: '9007199254740993', nickname: null, todaySpentYuan: 0, weekSpentYuan: 2.4},
+    ],
     acknowledgementVersion: 'current', acknowledgementText: '配置者说明正文',
     acknowledgement: accepted ? {version: 'current', actor: 'local-admin', at: '2026-01-01'} : null,
   };
@@ -116,8 +121,8 @@ store.schema = ['alert', 'auth'].map(id => ({group: id, title: id, fields: [], a
 page.renderGeneral();
 eq(!!$('.alert-cards') && !!$('.auth-cards'), true, '没有普通行的告警和登录安全组仍挂卡');
 
-// 当前配置的五项常用字段：从未存过智能助手设置开始，确认开启、保存、重新进入。
-store.schema = [{...group, fields: fields.map((field, i) => ({...field, level: i < 5 ? 'COMMON' : 'ADVANCED'}))}];
+// 当前配置的六项常用字段：从未存过智能助手设置开始，确认开启、保存、重新进入。
+store.schema = [{...group, fields: fields.map((field, i) => ({...field, level: i < 6 ? 'COMMON' : 'ADVANCED'}))}];
 await load();
 const rowFor = name => $('#groups').querySelectorAll('.setitem').find(row => row.dataset.name === name);
 let enabledRow = rowFor('novabot.assistant.enabled');
@@ -138,6 +143,10 @@ enabledRow = rowFor('novabot.assistant.enabled');
 eq(enabledRow.querySelector('input').checked, true, '重新进入设置后开关保持开启');
 eq(enabledRow.querySelector('.chgdot').classList.contains('hide'), false, '保存后显示已修改');
 eq(enabledRow.querySelector('.defline').classList.contains('hide'), false, '保存后显示默认值与恢复默认');
+const usage = $('#assistant-cards').textContent;
+eq(usage.includes('本周已花 4.5 元／每周上限 10 元'), true, '显示每周总用量');
+eq(usage.includes('样例主播甲：今天已花 0.8 元，本周已花 2 元'), true, '主播行显示昵称及日周用量');
+eq(usage.includes('9007199254740993：今天已花 0 元，本周已花 2.4 元'), true, '没有昵称的主播行显示完整编号');
 for (const name of ['answer-limit', 'question-input-limit']) {
   const row = rowFor('novabot.assistant.' + name);
   eq(row.querySelector('input').type, 'number', name + ' 使用数字输入框');

@@ -18,7 +18,7 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
-    @DisplayName("输入框为空时点例子只能填入问题，不能直接扣一次提问")
+    @DisplayName("输入框为空时点例子只能填入问题，不能直接产生花费")
     void examplesFillTheDraftWithoutAsking() throws Exception {
         run("examples");
     }
@@ -75,6 +75,12 @@ class StreamersAssistantFrontendTest {
     @DisplayName("成员看不到花费和设置入口，不可用原因合并重复提示")
     void membersHaveNoCostsOrSettingsLinks() throws Exception {
         run("member");
+    }
+
+    @Test
+    @DisplayName("两种身份都显示主播日周余额和回答下方的额度提示")
+    void quotaAndNoticeRenderWithoutEnteringFollowUpHistory() throws Exception {
+        run("budgets");
     }
 
     @Test

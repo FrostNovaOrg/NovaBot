@@ -33,7 +33,7 @@ const api = async path => path === '/accounts' ? {accounts: []} : {
   available: true, keySet: true, maskedKey: 'sk-****abcd',
   acknowledgementVersion: 'current', acknowledgementText: '智能助手会向模型服务发送提问内容。',
   acknowledgement: {version: 'current', actor: 'admin', at: '2026-10-24 10:00'},
-  spentYuan: 1, monthlyBudgetYuan: 30, questionsToday: {},
+  spentYuan: 1, weeklyBudgetYuan: 10, streamerUsage: [],
 };
 const {assistantCards, filterAssistantCards} = new Function('$', 'api', 'el', 'ask', 'store',
   source + '\nreturn {assistantCards, filterAssistantCards};')(

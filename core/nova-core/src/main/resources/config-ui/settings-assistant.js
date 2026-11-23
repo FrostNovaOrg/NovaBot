@@ -125,14 +125,16 @@ export function assistantCards(onRendered) {
         : status.acknowledgement ? '说明已更新，需要重新确认' : '尚未确认';
       usage.replaceChildren();
       text(usage, 'p', status.spentYuan === null ? '用量文件无法读取'
-        : '本月已花 ' + status.spentYuan + ' 元／每月上限 ' + status.monthlyBudgetYuan + ' 元');
-      if (status.spentYuan === null) text(usage, 'p', '每月上限 ' + status.monthlyBudgetYuan + ' 元');
-      text(usage, 'p', '今天各账号的提问次数');
-      const counts = el('ul');
-      const entries = Object.entries(status.questionsToday || {});
-      for (const [id, count] of entries) text(counts, 'li', (names.get(id) || id) + '：' + count);
-      usage.appendChild(counts);
-      if (!entries.length) text(usage, 'p', '今天暂无提问记录', 'al-note');
+        : '本周已花 ' + status.spentYuan + ' 元／每周上限 ' + status.weeklyBudgetYuan + ' 元');
+      if (status.spentYuan === null) text(usage, 'p', '每周上限 ' + status.weeklyBudgetYuan + ' 元');
+      text(usage, 'p', '本周各主播已花');
+      const list = el('ul');
+      const entries = status.streamerUsage || [];
+      for (const {nickname, uid, todaySpentYuan, weekSpentYuan} of entries) {
+        text(list, 'li', (nickname || uid) + '：今天已花 ' + todaySpentYuan + ' 元，本周已花 ' + weekSpentYuan + ' 元');
+      }
+      if (entries.length) usage.appendChild(list);
+      else if (status.spentYuan !== null) text(usage, 'p', '本周暂无主播用量', 'al-note');
     } catch (error) {
       state.replaceChildren();
       text(state, 'p', error.message, 'al-r err');

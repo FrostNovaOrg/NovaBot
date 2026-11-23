@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.assistant.AssistantClient;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
 import org.frostnova.nova.core.assistant.AssistantMemoStore;
@@ -37,10 +38,10 @@ public class AssistantAskController {
     }
 
     @GetMapping("/state")
-    public org.frostnova.nova.core.assistant.AssistantClient.State state(HttpServletRequest request) {
-        if (!(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount account))
+    public AssistantClient.State state(@PathVariable String platform, @PathVariable Long uid, HttpServletRequest request) {
+        if (!(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount))
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "尚未登录");
-        return service.state(account.id());
+        return service.state(platform, uid);
     }
 
     @PostMapping("/ask")
@@ -55,12 +56,12 @@ public class AssistantAskController {
         } catch (AssistantException error) { throw error; }
         catch (Exception error) { throw new AssistantException("提问格式不正确"); }
         JSONObject result = service.ask(platform, uid, account.id(), body);
-        if (account.role() != ConfigUiAccount.Role.ADMIN) {
-            result.getJSONObject("remaining").remove("spentYuan");
-            result.getJSONObject("remaining").remove("monthlyBudgetYuan");
-        }
         log.info("{} 使用主播 {}:{} 的智能助手，查数 {} 次，花费 {} 元", ConfigUiAccess.actor(), platform, uid,
                 result.getJSONArray("steps").size(), result.getBigDecimal("costYuan"));
+        if (account.role() != ConfigUiAccount.Role.ADMIN) {
+            result.remove("costYuan");
+            result.remove("remaining");
+        }
         return result;
     }
 

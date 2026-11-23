@@ -391,8 +391,8 @@ class AssistantAskServiceTest {
 
         replies.add(call("revenue", JSONObject.of("start", 123)));
         replies.add(JSONObject.of("content", draft));
-        var source = local.qqSource("QQ", "qq-test", GROUP, 123, 456);
-        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), ignored -> { });
+        var source = local.qqSource("QQ", GROUP, 123, 456);
+        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), () -> { }, ignored -> { });
 
         assertAll(
                 () -> assertEquals(body, result.getString("answer"), "控制台正文"),
@@ -942,8 +942,9 @@ class AssistantAskServiceTest {
         assertTrue(timeouts.get(1).compareTo(Duration.ofSeconds(180)) <= 0, timeouts::toString);
         verify(queries).revenue("bilibili", 1L, 123L);
         verify(queries, never()).revenue("bilibili", 1L, 456L);
-        assertEquals(1, client.status().questionsToday().get("member"));
         var cost = new BigDecimal("0.00571");
+        assertEquals(0, cost.compareTo(client.status().streamerUsage().get(0).todaySpentYuan()));
+        assertEquals(0, cost.compareTo(client.status().streamerUsage().get(0).weekSpentYuan()));
         assertEquals(0, cost.compareTo(client.status().spentYuan().subtract(before)));
         var log = JSON.parseObject(Files.readString(directory.resolve("assistant-transmissions.jsonl")));
         assertEquals(0, cost.compareTo(log.getBigDecimal("costYuan")));
@@ -1220,6 +1221,17 @@ class AssistantAskServiceTest {
         return reply;
     }
 
+    // 响应因为输出上限截断时，首轮已经花完主播额度就不能再发请求。
+    @Test void outputLimitRetryRechecksStreamerBudget() {
+        useResponses();
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
+        responsesReplies.add(exhaustedResponses());
+        var result = ask();
+        assertBudgetFailure(result, "streamer_daily_budget", "这位主播今天的助手额度用完了");
+        assertEquals(1, sent.size());
+        assertEquals(0, new BigDecimal("0.000306").compareTo(client.status().streamerUsage().get(0).todaySpentYuan()));
+    }
+
     // 抓住空截断直接失败、重试未加倍、再次截断无限重试或漏记第一轮花费。
     @ParameterizedTest @CsvSource({"false", "true"})
     void responsesRetriesEmptyOutputLimitOnceAndAccountsForBothTries(boolean exhaustedAgain) throws Exception {
@@ -1233,7 +1245,7 @@ class AssistantAskServiceTest {
         assertEquals(8800, sent.get(1).getIntValue("max_output_tokens"));
         assertEquals(sent.get(0).getJSONArray("input"), sent.get(1).getJSONArray("input"));
         assertEquals(0, new java.math.BigDecimal("0.000612").compareTo(result.getBigDecimal("costYuan")));
-        assertEquals(1, client.status().questionsToday().get("member"));
+        assertEquals(0, result.getBigDecimal("costYuan").compareTo(client.status().streamerUsage().get(0).todaySpentYuan()));
         assertTrue(timeouts.get(1).compareTo(timeouts.get(0)) < 0);
         if (exhaustedAgain) {
             assertEquals("max_output_tokens", result.getString("reason"));
@@ -1368,7 +1380,6 @@ class AssistantAskServiceTest {
         assertEquals(true, result.get("answered"));
         assertFalse(result.containsKey("reason"));
         assertTrue(result.getBigDecimal("costYuan").signum() > 0);
-        assertEquals(19, result.getJSONObject("remaining").getIntValue("questionsToday"));
         assertEquals("revenue", result.getJSONArray("steps").getJSONObject(0).getString("function"));
         assertEquals("场次归档", result.getJSONArray("steps").getJSONObject(0).getString("source"));
         String body = sent.toString();
@@ -1736,21 +1747,23 @@ class AssistantAskServiceTest {
         assertEquals(0, expectedCost.compareTo(client.status().spentYuan().subtract(spentBefore)));
         assertEquals(3, sent.size());
         assertEquals("none", sent.get(2).getString("tool_choice"));
-        assertEquals(19, result.getJSONObject("remaining").getIntValue("questionsToday"));
+        assertEquals(0, expectedCost.compareTo(client.status().streamerUsage().get(0).weekSpentYuan()));
         var records = assertDoesNotThrow(() -> Files.readAllLines(directory.resolve("assistant-transmissions.jsonl")));
         assertEquals(1, records.size());
         assertEquals(0, expectedCost.compareTo(JSON.parseObject(records.get(0)).getBigDecimal("costYuan")));
     }
 
-    // 抓住每日次数或本月额度用尽之后还发模型请求。
-    @Test void exhaustedAllowancesReturnClientExplanationWithoutSending() throws Exception {
-        properties.setDailyQuestionsPerAccount(1);
-        ask(); sent.clear();
-        assertFailure(ask(), "daily_limit", "今天的提问次数用完了");
-        assertTrue(sent.isEmpty());
-        properties.setDailyQuestionsPerAccount(20);
-        properties.setMonthlyBudgetYuan(new java.math.BigDecimal("0.0000001"));
-        assertFailure(ask(), "monthly_budget", "本月智能助手额度已用完");
+    // 抓住主播或总额度用尽之后还发模型请求。
+    @Test void exhaustedAllowancesReturnClientExplanationWithoutSending() {
+        var spent = new BigDecimal("0.000306");
+        properties.setStreamerDailyBudgetYuan(spent);
+        ask();
+        sent.clear();
+        assertBudgetFailure(ask(), "streamer_daily_budget", "这位主播今天的助手额度用完了");
+        properties.setStreamerWeeklyBudgetYuan(spent);
+        assertBudgetFailure(ask(), "streamer_weekly_budget", "这位主播本周的助手额度用完了");
+        properties.setWeeklyBudgetYuan(spent);
+        assertBudgetFailure(ask(), "weekly_budget", "本周的助手总额度用完了");
         assertTrue(sent.isEmpty());
     }
 
@@ -2173,19 +2186,25 @@ class AssistantAskServiceTest {
         assertTrue(sent.isEmpty());
     }
 
-    // 抓住次数或额度耗尽的提问增加空发送记录。
+    // 抓住额度耗尽的提问增加空发送记录。
     @Test void exhaustedAllowancesDoNotAppendTransmissionRecords() throws Exception {
         Path log = directory.resolve("assistant-transmissions.jsonl");
-        properties.setDailyQuestionsPerAccount(1);
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
         ask();
         String before = Files.readString(log);
         ask();
         assertEquals(before, Files.readString(log));
-        properties.setMonthlyBudgetYuan(new java.math.BigDecimal("0.0000001"));
+        properties.setWeeklyBudgetYuan(new BigDecimal("0.0000001"));
         ask();
         assertEquals(before, Files.readString(log));
     }
 
+    private void assertBudgetFailure(JSONObject result, String reason, String words) {
+        assertFalse(result.getBooleanValue("answered"));
+        assertEquals(reason, result.getString("reason"));
+        assertFalse(result.containsKey("label"));
+        assertTrue(result.getString("answer").contains(words), result::toJSONString);
+    }
 
     private void assertFailure(JSONObject result, String reason, String answer) {
         assertEquals(false, result.get("answered"));
@@ -2294,7 +2313,7 @@ class AssistantAskServiceTest {
                 .andExpect(jsonPath("$.available").value(false))
                 .andExpect(jsonPath("$.reasons.length()").value(1))
                 .andExpect(jsonPath("$.reasons[0]").value("usage_unreadable"))
-                .andExpect(jsonPath("$.questionsLeftToday").value(0));
+                .andExpect(jsonPath("$.streamerQuota").doesNotExist());
         assertTrue(sent.isEmpty());
         assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
         assertEquals("{}", Files.readString(directory.resolve("assistant-usage.json")));
@@ -2306,48 +2325,53 @@ class AssistantAskServiceTest {
                 "Member", null, null, null, List.of("bilibili:1"), Instant.EPOCH, null, true);
     }
 
-    @Test void memberStateIsScopedAndDoesNotSendOrConsumeQuestions() throws Exception {
+    @Test void memberStateIsScopedAndDoesNotSendOrSpend() throws Exception {
         var mvc = mvc();
         for (int attempt = 0; attempt < 2; attempt++) mvc.perform(get("/config/api/streamers/bilibili/1/assistant/state")
                 .requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(true)).andExpect(jsonPath("$.available").value(true))
-                .andExpect(jsonPath("$.reasons").isEmpty()).andExpect(jsonPath("$.questionsLeftToday").value(20))
-                .andExpect(jsonPath("$.spentYuan").doesNotExist()).andExpect(jsonPath("$.monthlyBudgetYuan").doesNotExist());
+                .andExpect(jsonPath("$.reasons").isEmpty())
+                .andExpect(jsonPath("$.streamerQuota.dailyPercent").value(100))
+                .andExpect(jsonPath("$.streamerQuota.weeklyPercent").value(100))
+                .andExpect(jsonPath("$.spentYuan").doesNotExist()).andExpect(jsonPath("$.weeklyBudgetYuan").doesNotExist());
         mvc.perform(get("/config/api/streamers/bilibili/2/assistant/state")
                 .requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isNotFound());
         mvc.perform(get("/config/api/streamers/bilibili/1/assistant/state")).andExpect(status().isUnauthorized());
         assertTrue(sent.isEmpty());
-        assertTrue(client.status().questionsToday().isEmpty());
+        assertTrue(client.status().streamerUsage().isEmpty());
         assertFalse(Files.exists(directory.resolve("assistant-transmissions.jsonl")));
         verifyNoInteractions(queries);
     }
 
-    @Test void stateReportsAllReasonsAndOwnDailyAllowance() throws Exception {
-        properties.setDailyQuestionsPerAccount(1);
+    @Test void stateReportsReadinessAndHighestPriorityExhaustedBudget() throws Exception {
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
         ask();
         properties.setEnabled(false);
         client.deleteKey();
-        properties.setMonthlyBudgetYuan(new java.math.BigDecimal("0.0000001"));
+        properties.setWeeklyBudgetYuan(new BigDecimal("0.0000001"));
         mvc().perform(get("/config/api/streamers/bilibili/1/assistant/state")
                 .requestAttr(ConfigUiAccess.ACCOUNT, member())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.available").value(false))
-                .andExpect(jsonPath("$.reasons", org.hamcrest.Matchers.containsInAnyOrder("disabled", "no_key", "daily_limit", "monthly_budget")))
-                .andExpect(jsonPath("$.questionsLeftToday").value(0));
+                .andExpect(jsonPath("$.reasons", org.hamcrest.Matchers.containsInAnyOrder("disabled", "no_key", "weekly_budget")))
+                .andExpect(jsonPath("$.streamerQuota.dailyPercent").value(0));
     }
 
-    @Test void memberAnswerHidesInstanceSpendingWhileAdminKeepsIt() throws Exception {
+    @Test void memberAnswerShowsBudgetNoticeButOnlyAdminGetsAmounts() throws Exception {
         var mvc = mvc();
+        properties.setStreamerDailyBudgetYuan(new BigDecimal("0.0004"));
         mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask").requestAttr(ConfigUiAccess.ACCOUNT, member())
                 .contentType("application/json").content("{\"question\":\"表现怎样\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.remaining.questionsToday").value(19))
-                .andExpect(jsonPath("$.remaining.spentYuan").doesNotExist())
-                .andExpect(jsonPath("$.remaining.monthlyBudgetYuan").doesNotExist())
-                .andExpect(jsonPath("$.costYuan").isNumber());
+                .andExpect(status().isOk()).andExpect(jsonPath("$.state.streamerQuota.dailyPercent").value(23))
+                .andExpect(jsonPath("$.budgetNotice").value(containsString("今天的助手额度还剩 23%")))
+                .andExpect(jsonPath("$.answerForHistory").value("没有这份数据"))
+                .andExpect(jsonPath("$.remaining").doesNotExist())
+                .andExpect(jsonPath("$.costYuan").doesNotExist());
         mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask")
                 .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
                 .contentType("application/json").content("{\"question\":\"表现怎样\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.remaining.spentYuan").isNumber())
-                .andExpect(jsonPath("$.remaining.monthlyBudgetYuan").isNumber());
+                .andExpect(jsonPath("$.remaining.weeklyBudgetYuan").isNumber())
+                .andExpect(jsonPath("$.costYuan").isNumber());
     }
 
     @Test void expiredAudienceEntriesAreEvictedWithoutAnotherQuestion() throws Exception {

@@ -1,10 +1,7 @@
-novabot.assistant.adaptive-thinking|java.lang.Boolean|false|开启后，每次提问先判断难度，为难题调整思考强度和限时。判断也计入每月金额。
+novabot.assistant.adaptive-thinking|java.lang.Boolean|false|开启后，每次提问先判断难度，为难题调整思考强度和限时。判断的花费同时计入该主播额度和每周总额。
 novabot.assistant.answer-limit|java.lang.Integer|800|一次模型回答的输出 token 上限。
 novabot.assistant.api-format|java.lang.String|chat|模型接口收发请求的格式。默认 /chat/completions，模型只在 /responses 上支持调工具时选 /responses。
 novabot.assistant.base-url|java.lang.String|https://api.deepseek.com|模型接口的基础地址，NovaBot 会按接口格式补上请求路径。
-novabot.assistant.daily-questions-per-account|java.lang.Integer|20|每个账号每天最多提问次数，按东八区自然日计算。
-novabot.assistant.daily-questions-per-qq-session|java.lang.Integer|50|每个聊天会话每天最多提问次数，按东八区自然日计算。
-novabot.assistant.daily-questions-per-qq-user|java.lang.Integer|10|聊天中每位发问者每天最多提问次数，按东八区自然日计算。
 novabot.assistant.difficulty-model|java.lang.String||留空时用回答的模型。填写后仍使用同一个接口地址和密钥。
 novabot.assistant.enabled|java.lang.Boolean|false|是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。
 novabot.assistant.excluded-uids|java.util.List<java.lang.Long>|<null>|拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。
@@ -12,12 +9,14 @@ novabot.assistant.hard-thinking|java.lang.String|high|默认高。难题取这�
 novabot.assistant.hard-timeout-seconds|java.lang.Integer|180|难题整问的限时，默认 180 秒。普通问题限时 55 秒。
 novabot.assistant.max-tool-calls|java.lang.Integer|6|一问最多执行的只读查数次数。
 novabot.assistant.model|java.lang.String|deepseek-flash|模型名称，默认 deepseek-flash。
-novabot.assistant.monthly-budget-yuan|java.math.BigDecimal|30|每月金额上限，单位：元，必须大于 0，按东八区自然月计算。
 novabot.assistant.price-cached-input-yuan-per-million|java.math.BigDecimal|0.05|命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.price-input-yuan-per-million|java.math.BigDecimal|2.2|未命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.price-output-yuan-per-million|java.math.BigDecimal|8.6|输出单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。
 novabot.assistant.question-input-limit|java.lang.Integer|30000|一问各轮累计的输入 token 上限。未命中的全额计入，命中的按命中单价除以未命中单价折算。未命中单价为零或服务商未报命中数时，全部按原数计入。
+novabot.assistant.streamer-daily-budget-yuan|java.math.BigDecimal|1|每位主播每天在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每天 0 点恢复。
+novabot.assistant.streamer-weekly-budget-yuan|java.math.BigDecimal|5|每位主播每周在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每周一 0 点恢复。
 novabot.assistant.thinking|java.lang.String|off|选「关闭／模型默认」时，DeepSeek 接口关闭思考。/responses 格式下不指定强度，由模型用它的默认强度，输出上限仍多留 4000 token。 /responses 格式下，输出上限在低档多留 4000 token，中档多留 8000 token，高档多留 16000 token，最高档多留 32000 token。 DeepSeek 接口把中档按低档发送，多留 4000 token。
+novabot.assistant.weekly-budget-yuan|java.math.BigDecimal|10|全实例共用的金额上限，单位为元，必须大于 0。东八区每周一 0 点恢复。
 novabot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒。故障往往持续存在，不收敛会反复推同一条，让人对告警脱敏。
 novabot.core.alert.enabled|java.lang.Boolean|true|是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
 novabot.core.alert.retry-interval|java.lang.Integer|60|发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投。需要告警时往往正是发不出去的时候，所以失败后要自动重投。

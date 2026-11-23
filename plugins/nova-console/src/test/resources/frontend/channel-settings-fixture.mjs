@@ -239,7 +239,7 @@ await test('群通道未经运营群确认就启用了问数', async () => {
   const confirm = dialog.querySelector('[data-act="yes"]');
   assert.equal(cancel.textContent, '取消');
   assert.equal(confirm.textContent, '这是运营群，开启');
-  for (const phrase of ['问 〈问题〉', '人工智能生成', '模型服务', '金额可见', '每位发问者、每个聊天每天']) {
+  for (const phrase of ['问 〈问题〉', '人工智能生成', '模型服务', '金额可见', '每天、每周都有金额上限']) {
     assert.ok(dialog.querySelector('p').textContent.includes(phrase), phrase);
   }
   assert.notEqual(push.pushEntries()[0].targets[0].assistantEnabled, true, '确认之前不得进草稿');

@@ -2,24 +2,29 @@ import {store} from './store.js';
 import {api, el, say} from './core.js';
 
 const conversations = new Map();
-const settingsReasons = new Set(['disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'monthly_budget', 'key_rejected', 'provider_balance']);
-const stateReasons = new Set(['disabled', 'no_key', 'usage_unreadable', 'not_acknowledged', 'daily_limit', 'monthly_budget']);
+const settingsReasons = new Set(['disabled', 'no_key', 'not_acknowledged', 'usage_unreadable', 'weekly_budget', 'key_rejected', 'provider_balance']);
+const budgetReasons = {
+  weekly_budget: '本周的助手总额度用完了，下周一 0 点恢复。',
+  streamer_weekly_budget: '这位主播本周的助手额度用完了，下周一 0 点恢复。',
+  streamer_daily_budget: '这位主播今天的助手额度用完了，明天 0 点恢复。',
+};
+const stateReasons = new Set(['disabled', 'no_key', 'usage_unreadable', 'not_acknowledged', ...Object.keys(budgetReasons)]);
+const contactAdmin = '如需提前恢复，请联系管理员。';
 const questionExamples = ['这个月心动盲盒收了多少个', '最近 30 天各钟点平均在线', '上周送礼榜前十'];
 const adminReasons = {
   disabled: '智能助手还没开启。',
   no_key: '还没填模型密钥。',
   not_acknowledged: '还没确认配置者说明。',
   usage_unreadable: '用量记录读不出来，请检查后再试。',
-  monthly_budget: '本月额度已用完。',
-  daily_limit: '今天的提问次数用完了，明天再来。',
+  ...budgetReasons,
 };
 const memberReasons = {
   disabled: '管理员还没开启智能助手。',
   no_key: '智能助手暂时不能用，请联系管理员。',
   not_acknowledged: '智能助手暂时不能用，请联系管理员。',
   usage_unreadable: '智能助手暂时不能用，请联系管理员。',
-  monthly_budget: '本月额度已用完，请联系管理员。',
-  daily_limit: adminReasons.daily_limit,
+  ...budgetReasons,
+  weekly_budget: budgetReasons.weekly_budget + contactAdmin,
 };
 const STYLE = `
 .sa-assistant{display:grid;gap:14px;min-width:0}
@@ -76,7 +81,7 @@ function conversation({platform, uid}) {
   const key = JSON.stringify([platform, String(uid)]);
   if (!conversations.has(key)) conversations.set(key, {
     path: '/streamers/' + encodeURIComponent(platform) + '/' + encodeURIComponent(uid) + '/assistant',
-    state: null, stateError: '', stateRequest: null, questionsAfterRead: null,
+    state: null, stateError: '', stateRequest: null, stateAfterRead: null,
     turns: [], pending: false, draft: '', listeners: new Set(),
   });
   return conversations.get(key);
@@ -90,13 +95,12 @@ async function readState(context) {
   if (context.stateRequest) return context.stateRequest;
   context.state = null;
   context.stateError = '';
-  context.questionsAfterRead = null;
+  context.stateAfterRead = null;
   context.stateRequest = (async () => {
     try {
       const result = await api(context.path + '/state');
       if (result.success === false) throw new Error(result.message);
-      if (context.questionsAfterRead != null) result.questionsLeftToday = context.questionsAfterRead;
-      context.state = result;
+      context.state = context.stateAfterRead ?? result;
     } catch (error) {
       context.stateError = error.message;
     } finally {
@@ -316,12 +320,13 @@ function renderTurn(host, turn, openChart, askFollowUp) {
   if (!result || result.answered !== true) {
     const note = line(box, turn.error || result?.answer || '未能回答，请稍后再试。', 'hint');
     if (settingsReasons.has(result?.reason)) {
-      if (store.role === 'MEMBER') note.append('请联系管理员。');
+      if (store.role === 'MEMBER') note.append(result.reason === 'weekly_budget' ? contactAdmin : '请联系管理员。');
       else { note.append(' '); note.appendChild(settingLink()); }
     }
     return;
   }
   line(box, result.answer, 'sa-answer');
+  if (result.budgetNotice) line(box, result.budgetNotice, 'hint');
   line(box, '由人工智能生成 · 仅供参考', 'sa-label');
   if (Array.isArray(result.images)) {
     const charts = el('div', 'sa-charts');
@@ -352,7 +357,7 @@ function renderTurn(host, turn, openChart, askFollowUp) {
     ...options.map((option, index) => `${index + 1}. ${option.label}`)].join('\n')));
   box.appendChild(copy);
   if (store.role !== 'MEMBER') line(box, '本问约 ¥' + money(result.costYuan)
-    + ' · 本月已用 ¥' + money(result.remaining?.spentYuan) + '，上限 ¥' + money(result.remaining?.monthlyBudgetYuan), 'hint');
+    + ' · 本周已用 ¥' + money(result.remaining?.spentYuan) + '，每周上限 ¥' + money(result.remaining?.weeklyBudgetYuan), 'hint');
   if (options.length) {
     const guidance = el('div', askFollowUp ? 'sa-guidance sa-follow-ups' : 'sa-follow-ups');
     guidance.setAttribute('role', 'group'); guidance.setAttribute('aria-label', '下一问');
@@ -427,11 +432,14 @@ export function mountAssistant(host, identity) {
   root.append(status, turns, form, memoPanel, chartView); host.replaceChildren(style, root);
 
   const canAsk = () => !context.pending && context.state?.available === true;
+  const percent = value => value == null ? '不限' : '还剩 ' + value + '%';
   const updateControls = () => {
     input.disabled = !canAsk();
     submit.disabled = input.disabled || !context.draft.trim();
     examples.hidden = input.disabled || Boolean(context.draft.trim());
-    remaining.textContent = context.state?.available ? '今天还能问 ' + context.state.questionsLeftToday + ' 次' : '';
+    const quota = context.state?.streamerQuota;
+    remaining.textContent = quota
+      ? '这位主播今天的助手额度' + percent(quota.dailyPercent) + '，本周' + percent(quota.weeklyPercent) : '';
     clear.disabled = context.pending;
   };
   const updateDraft = () => {
@@ -484,9 +492,9 @@ export function mountAssistant(host, identity) {
       if (result.success === false) turn.error = result.message;
       else {
         turn.result = result;
-        if (result.remaining?.questionsToday != null) {
-          context.questionsAfterRead = result.remaining.questionsToday;
-          if (context.state) context.state.questionsLeftToday = result.remaining.questionsToday;
+        if (result.state) {
+          if (context.stateRequest) context.stateAfterRead = result.state;
+          context.state = result.state;
         }
         if (result.answered === false && stateReasons.has(result.reason)) await readState(context);
       }

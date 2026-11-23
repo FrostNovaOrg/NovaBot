@@ -13,10 +13,9 @@ novabot:
     hard-thinking: max
     difficulty-model: sample-classifier
     hard-timeout-seconds: 240
-    monthly-budget-yuan: 45.5
-    daily-questions-per-account: 12
-    daily-questions-per-qq-session: 25
-    daily-questions-per-qq-user: 6
+    weekly-budget-yuan: 12.5
+    streamer-daily-budget-yuan: 0.8
+    streamer-weekly-budget-yuan: 3.75
     answer-limit: 500
     max-tool-calls: 4
     question-input-limit: 24000

@@ -40,16 +40,16 @@ public final class AssistantLocalStore {
         return encodeAlias(aliasMac(), platform + ":" + uid);
     }
 
-    public record QqSource(String entry, String account, String sessionType, String sessionNum, String sessionKey) { }
+    public record QqSource(String entry, String account, String sessionType, String sessionNum) { }
 
-    public QqSource qqSource(String entry, String platform, PushTargetType type, long num, long asker) {
+    public QqSource qqSource(String entry, PushTargetType type, long num, long asker) {
         Mac mac = aliasMac();
         String account = encodeAlias(mac, "问者-", "qq-asker:" + asker, 12);
         boolean group = type == PushTargetType.GROUP;
         String sessionType = group ? "group" : "friend";
         // 好友会话号就是对方的账号，也用代号记录。
         String sessionNum = group ? Long.toString(num) : encodeAlias(mac, "好友-", "qq-friend:" + num, 12);
-        return new QqSource(entry, account, sessionType, sessionNum, platform + ":" + sessionType + ":" + sessionNum);
+        return new QqSource(entry, account, sessionType, sessionNum);
     }
 
     /** 为单次查询复用同一密钥；返回的编码器仅供该查询线程使用。 */
