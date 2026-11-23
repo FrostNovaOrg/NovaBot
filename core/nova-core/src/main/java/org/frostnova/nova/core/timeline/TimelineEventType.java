@@ -37,6 +37,11 @@ public enum TimelineEventType {
     PUSH_BLOCKED_WORD("屏蔽词挡下", TimelineCategory.PUSH),
 
     /**
+     * 动态含「抽」，跳过 QQ 官方机器人的推送目标
+     */
+    PUSH_QQ_OFFICIAL_BLOCKED("QQ 官方群未推送", TimelineCategory.PUSH),
+
+    /**
      * 推送成功
      */
     PUSH_SENT("推送成功", TimelineCategory.PUSH),
