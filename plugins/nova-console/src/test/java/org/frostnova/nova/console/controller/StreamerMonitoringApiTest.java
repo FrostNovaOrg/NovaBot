@@ -37,14 +37,13 @@ class StreamerMonitoringApiTest {
         properties.getLive().setSaveLiveData(true);
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
         storage = new DefaultLiveDataService(properties);
-        var live = new CompositeLiveDataService(storage, mock(TotalDataStorage.class));
         var data = mock(AbstractDataSource.class);
         var user = new PushUser(); user.setPlatform("sample"); user.setUid(1L); user.setEnabled(true);
         when(data.getAllUsers()).thenReturn(List.of(user));
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(i -> java.util.stream.Stream.empty());
         archive = new LiveSessionArchive(properties);
-        controller = new StreamerController(data, new StreamerDirectory(properties), live, archive,
+        controller = new StreamerController(data, new StreamerDirectory(properties), storage, archive,
                 new StreamerSnapshotArchive(properties), new LiveDetailArchive(properties), catalogs,
                 mock(ObjectProvider.class), Clock.fixed(now, ZoneOffset.UTC));
     }

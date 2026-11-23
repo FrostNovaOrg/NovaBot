@@ -59,15 +59,6 @@
 			"reason":"",
 			"scope":"PLATFORM",
 			"summary":"412 0 次/7 天，-352 0 次/时，-509 0 次/时，-401 0 次/日，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）"
-		},
-		{
-			"advice":"",
-			"level":"OK",
-			"loginState":false,
-			"name":"数据存储",
-			"reason":"",
-			"scope":"SYSTEM",
-			"summary":"只有本场数据；要跨场次的累计数据，在 设置 › 采集 › 累计数据 Redis · 地址 里填，填完即时生效，不用重启"
 		}
 	],
 	"live":[],
@@ -100,7 +91,6 @@
 		"failed":2,
 		"sent":6
 	},
-	"totalDataAvailable":false,
 	"users":[
 		{
 			"enabled":true,

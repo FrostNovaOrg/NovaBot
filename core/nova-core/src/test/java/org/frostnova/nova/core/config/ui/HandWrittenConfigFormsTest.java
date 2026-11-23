@@ -225,20 +225,6 @@ class HandWrittenConfigFormsTest {
             bad.add("② 跨行普通值显式清除: " + e.getMessage());
         }
 
-        try {
-            write("spring:\n  data:\n    redis:\n"
-                    + "      password: pw\n"
-                    + "      host: redis.internal\n"
-                    + "        .example\n"
-                    + "      port: 6379\n");
-            service.write(Map.of("spring.data.redis.host", ""));
-            assertEquals("pw", loaded("spring.data.redis.password"), "上一个键不该被续行并进去:\n" + content());
-            assertEquals(null, loaded("spring.data.redis.host"), "留空即删的键应已删掉:\n" + content());
-            assertEquals(6379, loaded("spring.data.redis.port"), "下一个键不该被动:\n" + content());
-        } catch (AssertionError | IOException | RuntimeException e) {
-            bad.add("③ 空值即删的跨行值: " + e.getMessage());
-        }
-
         assertTrue(bad.isEmpty(), () -> "清空续行 " + bad.size() + " 问未销: " + String.join("; ", bad));
     }
 

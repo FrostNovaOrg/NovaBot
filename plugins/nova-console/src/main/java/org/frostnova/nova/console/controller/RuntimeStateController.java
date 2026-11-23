@@ -18,7 +18,6 @@ import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.AtSubscriptionService;
-import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionQuietHoursService;
@@ -89,8 +88,6 @@ public class RuntimeStateController {
 
     private final RevenueVisibilityService revenueVisibility;
 
-    private final LiveDataService liveDataService;
-
     private final StreamerNames streamerNames;
 
     private final SessionQuietHoursService quietHours;
@@ -149,7 +146,7 @@ public class RuntimeStateController {
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions,
                                   NovaStateStore store, AbstractDataSource dataSource,
-                                  RevenueVisibilityService revenueVisibility, LiveDataService liveDataService,
+                                  RevenueVisibilityService revenueVisibility,
                                   StreamerNames streamerNames, SessionQuietHoursService quietHours,
                                   PushGate pushGate) {
         this.dispatcher = dispatcher;
@@ -158,7 +155,6 @@ public class RuntimeStateController {
         this.store = store;
         this.dataSource = dataSource;
         this.revenueVisibility = revenueVisibility;
-        this.liveDataService = liveDataService;
         this.streamerNames = streamerNames;
         this.quietHours = quietHours;
         this.pushGate = pushGate;
@@ -166,11 +162,7 @@ public class RuntimeStateController {
 
     /**
      * 运行状态全量
-     * <p>
-     * {@code totalDataAvailable} 是整台机器的一项能力，不是某个会话的设置：没配累计存储时，
-     * 依赖它的命令在群里已经不出现在菜单里，界面上也该把对应的行置灰、把条数改小。
-     * 由接口给出而不是让界面自己按命令名去认——认名字的话，下一条「总」字命令进来就会被漏掉。
-     * @return 命令清单、各会话的命令开关、订阅名单、未填完的推送配置与累计数据是否可用
+     * @return 命令清单、各会话的命令开关、订阅名单、未填完的推送配置与全局静音时段
      */
     @GetMapping
     public JSONObject state() {
@@ -180,7 +172,6 @@ public class RuntimeStateController {
         result.put("sessions", sessions());
         result.put("subscriptions", subscriptionList());
         result.put("incomplete", incompleteList());
-        result.put("totalDataAvailable", liveDataService.supportsTotalData());
         result.put("quietGlobal", quietGlobal());
         return result;
     }

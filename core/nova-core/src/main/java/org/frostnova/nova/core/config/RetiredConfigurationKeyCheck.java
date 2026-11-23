@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 启动时把「配置文件里还留着、但程序已经不再读」的配置项说出来
+ * 登记已撤销的配置项，按需在启动时提醒。
  *
  * <h2>为什么要专门说一声</h2>
  * 撤掉一个配置项之后，老配置文件里的那一行不会报错：Spring 默认忽略绑不上的键，
@@ -25,22 +25,25 @@ import java.util.Set;
  * 而它管的往往正是「机器人怎么才算被叫到」这类每天都在用的行为，
  * 等到发现时已经对着一个不生效的开关调了很久。
  * <p>
- * 所以撤项的同时在这里留一行：安静的失效改成响一次的。<b>只是提醒，不改任何值</b>，
+ * 可以在这里为撤项登记一条启动提醒。<b>只是提醒，不改任何值</b>，
  * 也不替使用者去动他的配置文件。
  *
  * <h2>加一项要写什么</h2>
- * 键名配一句话，说清「现在这件事由什么代替」。只写「已废弃」等于没说——
- * 看见的人还是得去翻更新日志才知道下一步该做什么。
+ * 需要提醒时写明替代方式。需要静默退役时将提示设为 null。
  */
 @Slf4j
 @Component
 public class RetiredConfigurationKeyCheck {
     /**
-     * 已撤销的配置项 → 该说的那一句
+     * 已撤销的配置项 → 启动提醒。值为 null 时静默忽略。
      */
     private static final Map<String, String> RETIRED = new LinkedHashMap<>();
 
     static {
+        RETIRED.put("spring.data.redis.host", null);
+        RETIRED.put("spring.data.redis.port", null);
+        RETIRED.put("spring.data.redis.password", null);
+        RETIRED.put("spring.data.redis.database", null);
         RETIRED.put("starbot.core.command.prefix",
                 "命令不再靠前缀触发：群里 @ 机器人后接命令名，私聊直接发命令名。这一行已不起作用，可以删掉");
         RETIRED.put("novabot.core.command.prefix",
@@ -94,7 +97,7 @@ public class RetiredConfigurationKeyCheck {
     public void check() {
         for (Map.Entry<String, String> entry : RETIRED.entrySet()) {
             // 留空的写法（形如「prefix:」）绑出来是空串而不是 null，同样算「这一行还在」
-            if (environment.getProperty(entry.getKey()) != null) {
+            if (entry.getValue() != null && environment.getProperty(entry.getKey()) != null) {
                 log.warn("配置项 {} 已撤销: {}", entry.getKey(), entry.getValue());
             }
         }

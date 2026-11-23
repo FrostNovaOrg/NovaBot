@@ -302,23 +302,6 @@ function banner(status, chain, fresh) {
 }
 
 /**
- * 这台机器没开累计数据
- *
- * 首页那条软待办与主播详情顶上那条小横条<b>问的是同一件事</b>，因此判定只留这一份。
- * 各写各的话，两处会在同一台机器上给出不同的答案——而最常见的分叉是有人把某一处写成
- * {@code !status.totalDataAvailable}：那样一来，接口还没回来（值为 undefined）的那一瞬间
- * 也会被算成「没开」，屏幕上先闪一条说这台机器不行的话，随后又自己消失。
- *
- * 三态里只有明确的 false 才算没开：true 是开着，缺这一栏（旧版服务端）是不知道，
- * 而「不知道」不许读成「没开」。
- * @param status /api/status 回包
- * @return {boolean} 确实没开时为 true
- */
-export function totalDataOff(status) {
-  return (status || {}).totalDataAvailable === false;
-}
-
-/**
  * Webhook 或邮件配好了没有
  * <p>
  * 首页那条「QQ 告警有死角」催的是掉线时还有一路能叫到人，QQ 那路本身会一起掉，
@@ -398,16 +381,6 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
       title: '控制台尚未设置密码',
       body: '未设置密码，也未登记通行密钥，任何能访问此端口的人都可以进入控制台。',
       action: '设置密码', href: '#/settings', soft: false,
-    });
-  }
-
-  if (totalDataOff(status)) {
-    list.push({
-      key: 'total',
-      title: '累计数据未启用',
-      body: '群内只能查询本场数据：菜单仍列出这两条命令，带「总」的查询需先启用累计数据。'
-        + '启用前需为 NovaBot 配置累计存储，请联系运维人员。',
-      action: '前往设置', href: '#/settings', soft: true,
     });
   }
 
@@ -527,8 +500,7 @@ export function healthText(text) {
     .replace(/1006 断线次数/g, '直播连接异常断开的次数')
     .replace(/1006 /g, '直播连接异常断开 ')
     .replace(/真实 HTTP 请求被拦截/g, '请求被拦截')
-    .replace(/业务码 /g, '').replace(/长连接 直播连接异常断开/g, '直播连接异常断开')
-    .replace(/spring\.data\.redis\.host/g, '设置 › 采集 › 累计数据 Redis · 地址');
+    .replace(/业务码 /g, '').replace(/长连接 直播连接异常断开/g, '直播连接异常断开');
 }
 
 /**

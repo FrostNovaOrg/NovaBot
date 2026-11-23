@@ -5,7 +5,6 @@ import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
-import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.UserBindingService;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +18,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,10 +28,7 @@ import static org.mockito.Mockito.when;
 /**
  * 运行状态接口的对外面
  * <p>
- * 这里只量两件在界面之外也说得清的事：<b>累计数据这台机器开没开</b>要能从接口读到——
- * 界面把两行置灰、把摘要从 14 改成 12，靠的都是它，前端自己按名字硬认那两条命令的话，
- * 下次多一条「总」字命令就会漏；以及<b>账号绑定已经停用</b>——状态里不再有那一栏、
- * 控制器手上不再有那个服务，解绑接口回 410 而不是装作没有过这条路。
+ * 验证状态字段、金额可见性和已停用的账号绑定接口。
  * <p>
  * 依赖按类型现填，不写死构造参数表：这把尺守的是接口面，不该因为控制器多接一个依赖就编不过。
  */
@@ -49,30 +44,13 @@ class RuntimeStateSurfaceTest {
     }
 
     @Test
-    @DisplayName("累计数据开没开要从状态里读得到")
-    void statePublishesTotalDataAvailability() {
-        LiveDataService liveData = dependency(LiveDataService.class);
-        assertNotNull(liveData, "控制器没接累计数据这一路，状态里也就无从答起");
-
-        for (boolean supported : new boolean[]{true, false}) {
-            when(liveData.supportsTotalData()).thenReturn(supported);
-
-            JSONObject state = controller.state();
-
-            assertTrue(state.containsKey("totalDataAvailable"), "状态里没有这一项: " + state.keySet());
-            assertEquals(supported, state.getBooleanValue("totalDataAvailable"));
-        }
-    }
-
-    @Test
     @DisplayName("状态接口的栏目是一份闭集，bindings 已不在其中")
     void stateKeysAreAClosedSet() {
         JSONObject state = controller.state();
 
         // 闭集而不是「至少有这几栏」：多一栏也要红。接口面多出一栏没人消费的记录，
         // 与少一栏同样是问题——bindings 正是这么留了一版的
-        assertEquals(List.of("commands", "incomplete", "quietGlobal", "sessions", "subscriptions", "success",
-                        "totalDataAvailable"),
+        assertEquals(List.of("commands", "incomplete", "quietGlobal", "sessions", "subscriptions", "success"),
                 state.keySet().stream().sorted().toList());
         assertFalse(state.containsKey("bindings"),
                 "账号绑定整族已停用、界面也早就不渲染它了，这一栏不该还在接口面上");

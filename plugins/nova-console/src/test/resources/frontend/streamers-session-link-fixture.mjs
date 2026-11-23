@@ -94,7 +94,7 @@ globalThis.clearInterval = id => intervals.delete(id);
 globalThis.document = {
   querySelector: sel => {
     const id = String(sel).replace(/^#/, '');
-    return id === 'sd-banner' ? null : (['sd-live', 'sd-insights-content', 'sd-trend-content', 'sd-archive-note', 'sd-recent', 'sd-audience', 'sd-toolbar', 'sd-scope', 'sd-trend', 'sd-insights', 'sd-calendar', 'sd-audience-summary'].includes(id) ? find(id) : node(id));
+    return ['sd-live', 'sd-insights-content', 'sd-trend-content', 'sd-archive-note', 'sd-recent', 'sd-audience', 'sd-toolbar', 'sd-scope', 'sd-trend', 'sd-insights', 'sd-calendar', 'sd-audience-summary'].includes(id) ? find(id) : node(id);
   },
   getElementById: id => byId[id] || null,
   createElement: fakeElement,

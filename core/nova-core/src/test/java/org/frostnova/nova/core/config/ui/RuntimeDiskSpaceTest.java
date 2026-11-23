@@ -69,7 +69,6 @@ class RuntimeDiskSpaceTest {
         when(dataSource.getAllUsers()).thenReturn(List.of());
 
         liveDataService = mock(LiveDataService.class);
-        when(liveDataService.supportsTotalData()).thenReturn(true);
 
         timeline = mock(TimelineStore.class);
         when(timeline.countsOn(any())).thenReturn(Map.of());

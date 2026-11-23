@@ -10,7 +10,6 @@ import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.AtSubscriptionService;
-import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
@@ -72,7 +71,6 @@ class RuntimeStateStreamerNameTest {
                 store,
                 dataSource,
                 new RevenueVisibilityService(store),
-                mock(LiveDataService.class),
                 new StreamerNames(new LiveSessionArchive(properties)),
                 new SessionQuietHoursService(store),
                 new PushGate(properties, new SessionQuietHoursService(store)));

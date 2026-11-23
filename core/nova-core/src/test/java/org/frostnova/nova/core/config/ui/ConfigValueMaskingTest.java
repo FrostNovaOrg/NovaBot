@@ -61,7 +61,7 @@ import static org.mockito.Mockito.when;
  * <h2>安全相邻：反方向必须同时钉住</h2>
  * 放宽遮蔽是安全动作，只钉「不该遮的别遮」等于给自己留了放宽的余地。
  * 因此每一条<b>真机密</b>逐条列在下面，与上面那两条开关同一次跑：
- * 口令、口令哈希、二次验证密钥、控制台令牌、邮箱与 Redis 口令。
+ * 口令、口令哈希、二次验证密钥、控制台令牌、邮箱口令。
  */
 @DisplayName("控制台读数的机密遮蔽")
 class ConfigValueMaskingTest {
@@ -74,9 +74,6 @@ class ConfigValueMaskingTest {
             spring:
               mail:
                 password: mail-secret-value
-              data:
-                redis:
-                  password: redis-secret-value
             novabot:
               adapter:
                 onebot:
@@ -125,7 +122,6 @@ class ConfigValueMaskingTest {
             "novabot.adapter.onebot.napcat.token-hash",
             "novabot.adapter.onebot.napcat.totp-secret",
             "spring.mail.password",
-            "spring.data.redis.password",
             "novabot.core.alert.webhook-url",
             "novabot.core.alert.webhook-headers.Authorization");
 

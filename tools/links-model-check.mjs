@@ -54,8 +54,7 @@ const BOT_PROBE = {
 function status(loginState, botState, patch) {
   return Object.assign({
     success: true,
-    health: [LOGIN_PROBE[loginState], BOT_PROBE[botState],
-      probe('数据存储', 'SYSTEM', 'OK', '本场数据 + 累计数据')],
+    health: [LOGIN_PROBE[loginState], BOT_PROBE[botState]],
     // 未配置那一档的判据是「一个推送平台都没注册出来」，与首页同一条
     senders: botState === 'none' ? [] : ['默认'],
     queue: {pending: botState === 'down' ? 7 : 0, dropped: 0},

@@ -45,7 +45,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * {@code LiveOffArchiveTest}（真依赖）量的是<b>归档内容</b>算得对不对；
  * 本台架把五个依赖全换成假的，量的是监听器这一层<b>主路的编排</b>：
- * 下播事实（状态、终点、并入累计）按什么顺序落、归档在什么条件下跳过。
+ * 下播状态、结束时间和跳过归档的条件。
  * 两把尺互补：真依赖那边换掉实现时这里不红，这里编排变动时那边也不红。
  */
 @DisplayName("下播监听：正常下播主路")
@@ -82,14 +82,13 @@ class NovaDefaultLiveOffEventListenerTest {
     }
 
     /**
-     * 阳：正常下播把三件事实与两份归档都落全
+     * 正常下播更新状态和结束时间，并保存两份归档。
      * <p>
-     * 状态翻掉、终点写下、本场并入累计，这三件是「下播发生了」的事实；
      * 场次归档与明细留档各留一份，起止时长同一套。归档里的字段逐项对值，
      * 换算错位（毫秒当秒、起止倒置）在这一步就会现形。
      */
     @Test
-    @DisplayName("阳：状态/终点/并入三件事实落全，场次与明细两份归档对值")
+    @DisplayName("正常下播更新状态和结束时间，保存场次和明细归档")
     void normalLiveOffRecordsFactsAndArchivesBothCopies() {
         when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
         when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
@@ -98,7 +97,6 @@ class NovaDefaultLiveOffEventListenerTest {
 
         verify(liveDataService).setLiveStatus(PLATFORM, UID, false);
         verify(liveDataService).setLiveEndTime(PLATFORM, UID, END);
-        verify(liveDataService).mergeLiveDataIntoTotal(PLATFORM, UID);
 
         ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
         verify(archive).append(sessions.capture());
@@ -127,11 +125,11 @@ class NovaDefaultLiveOffEventListenerTest {
      * 阴：没有开播时刻就不归档，但下播事实照落
      * <p>
      * 程序在直播中途才启动时算不出时长，归档只会污染统计——场次与明细两份都不写。
-     * 但「已经下播了」是独立的事实：状态照翻、终点照记、已采到的那点数据照并入，
+     * 下播仍需更新状态与结束时间，
      * 否则这一场的数据要等到下一次开播才会被清掉，期间报告读到的是僵尸在播状态。
      */
     @Test
-    @DisplayName("阴：无开播时刻不归档，状态/终点/并入照落")
+    @DisplayName("无开播时刻时更新状态和结束时间，跳过归档")
     void noStartTimeSkipsArchivesButStillRecordsTheLiveOff() {
         when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.empty());
 
@@ -142,7 +140,6 @@ class NovaDefaultLiveOffEventListenerTest {
 
         verify(liveDataService).setLiveStatus(PLATFORM, UID, false);
         verify(liveDataService).setLiveEndTime(PLATFORM, UID, END);
-        verify(liveDataService).mergeLiveDataIntoTotal(PLATFORM, UID);
     }
 
     /**

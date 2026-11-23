@@ -117,7 +117,7 @@ public class ConfigurationFileService implements SmartLifecycle {
     private final TimelineWriter timeline;
 
     /**
-     * 清空即视为「不配置」的配置项：核心自有 Redis 地址，加上各适配器申报的令牌键
+     * 清空即视为「不配置」的配置项：各适配器申报的令牌键
      */
     private final Set<String> blankMeansAbsent;
 
@@ -175,7 +175,7 @@ public class ConfigurationFileService implements SmartLifecycle {
     /**
      * 指定配置文件路径与连接列表申报，便于测试「留空即未配」走插件申报
      * @param configPath 配置文件路径
-     * @param contributors 连接列表申报，空则核心只认 Redis 地址
+     * @param contributors 连接列表申报
      */
     ConfigurationFileService(Path configPath, Collection<BotConnectionContributor> contributors) {
         this(configPath, coreTemplate(mergeBlankMeansAbsent(contributors)),
@@ -833,28 +833,9 @@ public class ConfigurationFileService implements SmartLifecycle {
         return true;
     }
 
-    /**
-     * 将修改写回配置文件
-     * <p>
-     * 写入前会先备份原文件。仅修改确实发生变化的行，其余内容逐字节保持不变。
-     * @param changes 待写入的键值，键为完整路径
-     * @return 实际发生变更的配置项数量
-     * @throws IOException 写入失败时抛出
-     */
-    /**
-     * 清空即视为「不配置」的配置项
-     * <p>
-     * 多数配置项留空是有意义的——静音时段留空表示不启用。但下面这几项写成空值
-     * 要么让程序<b>根本起不来</b>（Redis 地址），要么表示「这一项没配」
-     * （机器人连接的令牌：由适配器申报）。
-     * <p>
-     * 核心只留 Redis 地址。平台令牌键由 {@link BotConnectionContributor#blankMeansAbsentKeys()} 申报。
-     * 键集只此一份：标量写口按完整路径认，对象列表渲染与列表元素字段按最后一段认。
-     */
-    static final Set<String> CORE_BLANK_MEANS_ABSENT = Set.of("spring.data.redis.host");
-
+    /** 汇总适配器声明的留空即未配置的键。 */
     static Set<String> mergeBlankMeansAbsent(Collection<BotConnectionContributor> contributors) {
-        Set<String> keys = new LinkedHashSet<>(CORE_BLANK_MEANS_ABSENT);
+        Set<String> keys = new LinkedHashSet<>();
         if (contributors == null) {
             return Set.copyOf(keys);
         }

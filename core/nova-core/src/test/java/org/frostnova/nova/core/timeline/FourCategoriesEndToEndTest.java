@@ -120,7 +120,7 @@ class FourCategoriesEndToEndTest {
     /**
      * 设置类记事里不许出现被改的值
      * <p>
-     * 时间线是逐行落在磁盘上的 {@code timeline/*.jsonl}，而经这条路的键里就有 Redis 口令
+     * 时间线是逐行落在磁盘上的 {@code timeline/*.jsonl}，而经这条路的键里就有 邮件授权码
      * 与告警接收人。把取值抄进去，等于给配置文件里那几项做了一份不设防的副本——
      * 而日志页是登录后随手就能翻的一页。
      * <p>
@@ -137,7 +137,7 @@ class FourCategoriesEndToEndTest {
         Map<String, String> changes = new LinkedHashMap<>();
         changes.put("novabot.core.push.quiet-end", marker);
         changes.put("novabot.core.config-ui.auth.password", marker);
-        changes.put("spring.data.redis.password", marker);
+        changes.put("spring.mail.password", marker);
 
         applier().applyAndTrack(changes);
 
@@ -236,7 +236,7 @@ class FourCategoriesEndToEndTest {
         ObjectProvider<RuntimeConfigurationApplierContributor> contributors = mock(ObjectProvider.class);
         when(contributors.orderedStream())
                 .thenAnswer(invocation -> Stream.<RuntimeConfigurationApplierContributor>of());
-        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors, store);
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), contributors, store);
     }
 
     private AlertService alertService(AlertChannel channel) {

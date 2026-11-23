@@ -11,7 +11,6 @@ import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.SeriesPeak;
 import org.frostnova.nova.core.model.UserScore;
-import org.frostnova.nova.core.service.CompositeLiveDataService;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
@@ -21,8 +20,6 @@ import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.LiveSessionRecovery;
 import org.frostnova.nova.core.service.NovaStateStore;
-import org.frostnova.nova.core.service.RedisTotalDataStore;
-import org.frostnova.nova.core.service.TotalDataStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -45,8 +42,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Answers.CALLS_REAL_METHODS;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -267,10 +262,7 @@ class LiveOffArchiveTest {
 
     /**
      * 主播推流断了一下又续上：平台先发下播，reconnectInterval 内再发开播。
-     * 记录上这一场要和没断过一样——留档整场、场次一条、累计只算一次。
-     * <p>
-     * 数据服务、场次归档、明细留档、开播与下播两个监听器都是真的；
-     * 累计存储换成一个只把每次并入的弹幕数加起来的假货，量的是「并进去了多少」。
+     * 最终归档记录完整的一场。
      */
     @Nested
     @DisplayName("断线重连续场")
@@ -288,35 +280,16 @@ class LiveOffArchiveTest {
 
         private final long endAt = START + 90 * MINUTE;
 
-        private double mergedDanmu;
-
-        /**
-         * 每次并入里各观众的弹幕计分，按观众加总
-         */
-        private final Map<Long, Double> mergedUsers = new java.util.HashMap<>();
-
         private NovaDefaultLiveOnEventListener onListener;
 
         @BeforeEach
         void wire() {
-            RedisTotalDataStore store = mock(RedisTotalDataStore.class);
-            doAnswer(invocation -> {
-                RedisTotalDataStore.LiveSnapshot snapshot = invocation.getArgument(2);
-                mergedDanmu += snapshot.metrics().getOrDefault("danmu_count", 0.0);
-                snapshot.userMetrics().getOrDefault("danmu_users", Map.of())
-                        .forEach((user, score) -> mergedUsers.merge(user, score, Double::sum));
-                return true;
-            }).when(store).merge(any(), any(), any());
-            TotalDataStorage total = mock(TotalDataStorage.class);
-            when(total.active()).thenReturn(store);
-
-            CompositeLiveDataService composite = new CompositeLiveDataService(liveData, total);
             LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
-            LiveSessionDetailArchiver detailArchiver = new LiveSessionDetailArchiver(composite, history, details);
-            listener = new NovaDefaultLiveOffEventListener(composite, sessions,
+            LiveSessionDetailArchiver detailArchiver = new LiveSessionDetailArchiver(liveData, history, details);
+            listener = new NovaDefaultLiveOffEventListener(liveData, sessions,
                     new LiveInterventionTracker(), history, detailArchiver);
-            onListener = new NovaDefaultLiveOnEventListener(properties, composite,
-                    new LiveSessionRecovery(composite, sessions, history, detailArchiver));
+            onListener = new NovaDefaultLiveOnEventListener(properties, liveData,
+                    new LiveSessionRecovery(liveData, sessions, history, detailArchiver));
         }
 
         @Test
@@ -344,19 +317,9 @@ class LiveOffArchiveTest {
                     () -> assertEquals(1, archived.size(), "同一开播时刻只该有一条，实际: " + archived.size()),
                     () -> assertEquals(endAt, archived.get(archived.size() - 1).endTime()),
                     () -> assertEquals(90 * 60, archived.get(archived.size() - 1).durationSeconds()),
-                    () -> assertEquals(3.0, archived.get(archived.size() - 1).metric("danmu_count")));
-        }
-
-        @Test
-        @DisplayName("累计弹幕数等于整场条数（故障：断过一次的那场，前半场在累计里算了两遍）")
-        void resumedSessionIsMergedIntoTotalOnce() {
-            playResumedSession();
-
-            assertAll(
-                    () -> assertEquals(3.0, mergedDanmu, "整场 3 条；前半场重复并入时是 4"),
-                    () -> assertEquals(Map.of(FRONT_VIEWER, 1.0, BACK_VIEWER, 2.0, ZERO_VIEWER, 0.0), mergedUsers,
-                            "各观众按整场计分各并一次；前半场重复并入时前排观众是 2"),
-                    () -> assertEquals(3, mergedUsers.size(), "得 0 分的那位也要并进去，实际: " + mergedUsers));
+                    () -> assertEquals(3.0, archived.get(0).metric("danmu_count")),
+                    () -> assertEquals(List.of(FRONT_VIEWER, BACK_VIEWER, ZERO_VIEWER),
+                            archived.get(0).userSet("danmu_users").stream().sorted().toList()));
         }
 
         @Test

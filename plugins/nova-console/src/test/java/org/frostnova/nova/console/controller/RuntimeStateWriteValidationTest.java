@@ -10,7 +10,6 @@ import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.AtSubscriptionService;
-import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
@@ -92,7 +91,7 @@ class RuntimeStateWriteValidationTest {
         when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
         controller = new RuntimeStateController(dispatcher, settings, subscriptions, store,
-                dataSource, revenueVisibility, mock(LiveDataService.class),
+                dataSource, revenueVisibility,
                 new StreamerNames(new LiveSessionArchive(properties)), quietHours,
                 new PushGate(properties, quietHours));
         channels = new ChannelSettingsFile(properties, dataSource); channels.attach(controller);

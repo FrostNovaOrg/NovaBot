@@ -247,7 +247,7 @@ public class NovaBilibiliProperties {
          * 只连配了直播推送的房间。开启后「纯监听房间」（配了主播、不配推送的那种）不建长连接，弹幕礼物不采集，表现是加了主播却什么都没收到，跳过时会在日志里列出来；备用直播推送照常查它们开没开播。
          */
         // 默认关闭，即每个启用的主播都连。只在连接数受限、又确实只关心推送的场景下才开。
-        // 纯监听房间只把事件送进事件输出或累计数据，一条消息都不发。
+        // 纯监听房间仍采集本场数据和输出事件。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("仅连接已配置推送的直播间")

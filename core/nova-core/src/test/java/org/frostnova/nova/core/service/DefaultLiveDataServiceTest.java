@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -229,19 +230,6 @@ class DefaultLiveDataServiceTest {
         assertEquals(0, service.getLiveUserRanking(PLATFORM, UID, "gift_value", 10).size());
     }
 
-    @Test
-    @DisplayName("默认实现不支持累计数据，且累计查询一律返回 0")
-    void defaultImplementationHasNoTotalData() {
-        service.incrementLiveUserMetric(PLATFORM, UID, "gift_value", 1L, 5);
-        service.mergeLiveDataIntoTotal(PLATFORM, UID);
-
-        // 调用方据此提示「需配置 Redis」，而不是把 0 当成真实数据展示
-        assertFalse(service.supportsTotalData());
-        assertEquals(0.0, service.getTotalMetric(PLATFORM, UID, "gift_value"));
-        assertEquals(0.0, service.getTotalUserMetric(PLATFORM, UID, "gift_value", 1L));
-        assertEquals(0, service.getTotalUserRanking(PLATFORM, UID, "gift_value", 10).size());
-    }
-
     // ============ 时间序列（互动曲线） ============
 
     @Test
@@ -316,12 +304,12 @@ class DefaultLiveDataServiceTest {
     }
 
     @Test
-    @DisplayName("指标快照应含全部本场指标，供并入累计")
+    @DisplayName("指标快照应含全部本场指标")
     void snapshotsLiveMetrics() {
         service.incrementLiveMetric(PLATFORM, UID, "danmu_count", 144);
         service.incrementLiveMetric(PLATFORM, UID, "gift_value", 0.4);
 
-        java.util.Map<String, Double> snapshot = service.liveMetrics(PLATFORM, UID);
+        java.util.Map<String, Double> snapshot = service.getLiveMetrics(PLATFORM, UID);
 
         assertEquals(2, snapshot.size());
         assertEquals(144.0, snapshot.get("danmu_count"));
@@ -329,30 +317,21 @@ class DefaultLiveDataServiceTest {
     }
 
     @Test
-    @DisplayName("用户计分快照应按指标分组保留每个用户的得分")
-    void snapshotsLiveUserMetrics() {
-        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 1L, 3);
-        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 2L, 5);
-        service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 52.5);
-
-        java.util.Map<String, java.util.Map<Long, Double>> snapshot = service.liveUserMetrics(PLATFORM, UID);
-
-        assertEquals(2, snapshot.size());
-        assertEquals(3.0, snapshot.get("danmu_users").get(1L));
-        assertEquals(5.0, snapshot.get("danmu_users").get(2L));
-        assertEquals(52.5, snapshot.get("gift_users").get(1L));
-    }
-
-    @Test
     @DisplayName("头像应以压缩态存储，但排行榜里拿到的是可直接下载的完整地址")
-    void faceIsStoredCompactButReadBackWhole() {
+    void faceIsStoredCompactButReadBackWhole(@TempDir Path dir) throws Exception {
+        Path data = dir.resolve("data.json");
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(data.toString());
+        service = new DefaultLiveDataService(properties);
+
         String url = "https://i0.hdslb.com/bfs/face/00112233445566778899aabbccddeeff00112233.jpg";
         service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 5);
         service.recordLiveUserFace(PLATFORM, UID, 1L, url);
 
-        // 存进去的是压缩态，省的正是那段重复前缀
+        service.onContextClosedEvent();
+        JSONObject saved = JSONObject.parseObject(Files.readString(data));
         assertEquals("0:00112233445566778899aabbccddeeff00112233.jpg",
-                service.liveUserFaces(PLATFORM, UID).get(1L));
+                saved.getJSONObject("LiveUserFace:bilibili").getJSONObject("10001").getString("1"));
 
         // 但排行榜拿到的必须是能直接下载的完整地址
         assertEquals(url, service.getLiveUserRanking(PLATFORM, UID, "gift_users", 1).get(0).userFace());
@@ -376,23 +355,62 @@ class DefaultLiveDataServiceTest {
 
         service.resetLiveData(PLATFORM, UID);
 
-        assertTrue(service.liveUserFaces(PLATFORM, UID).isEmpty());
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 5);
+        assertNull(service.getLiveUserRanking(PLATFORM, UID, "gift_users", 1).get(0).userFace());
     }
 
     @Test
-    @DisplayName("昵称快照应可用于累计存储的展示")
-    void snapshotsLiveUserNames() {
+    @DisplayName("本场排行显示记录的昵称")
+    void liveRankingUsesRecordedName() {
         service.recordLiveUserName(PLATFORM, UID, 1L, "甲乙丙");
 
-        assertEquals("甲乙丙", service.liveUserNames(PLATFORM, UID).get(1L));
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 5);
+        assertEquals("甲乙丙", service.getLiveUserRanking(PLATFORM, UID, "gift_users", 1).get(0).userName());
     }
 
     @Test
     @DisplayName("无数据时快照应为空表而非报错")
     void snapshotsEmptyWhenNoData() {
-        assertTrue(service.liveMetrics(PLATFORM, UID).isEmpty());
-        assertTrue(service.liveUserMetrics(PLATFORM, UID).isEmpty());
-        assertTrue(service.liveUserNames(PLATFORM, UID).isEmpty());
+        assertTrue(service.getLiveMetrics(PLATFORM, UID).isEmpty());
+        assertTrue(service.getLiveMetricUserSets(PLATFORM, UID).isEmpty());
+    }
+
+    @Test
+    @DisplayName("带旧累计记录的直播数据可继续记入本场，旧记录无需再落盘")
+    void resumesLiveDataWithLegacyTotals(@TempDir Path dir) throws Exception {
+        Path data = dir.resolve("data.json");
+        Files.writeString(data, """
+                {
+                  "LiveStatus:bilibili": {"10001": true},
+                  "LiveStartTime:bilibili": {"10001": 1700000000000},
+                  "LiveMetric:bilibili": {"10001": {"danmu_count": 17}},
+                  "LiveMetricUser:bilibili": {"10001": {"danmu_users": {"1": 4}}},
+                  "LiveMergedTotal:bilibili": {
+                    "10001": {"metrics": {"danmu_count": 12}, "users": {"danmu_users": {"1": 3}}}
+                  }
+                }
+                """);
+
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(data.toString());
+        DefaultLiveDataService opened = new DefaultLiveDataService(properties);
+        opened.onApplicationReadyEvent();
+        try {
+            assertTrue(opened.getLiveStatus(PLATFORM, UID).orElseThrow());
+            assertEquals(1700000000000L, opened.getLiveStartTime(PLATFORM, UID).orElseThrow());
+            assertEquals(17.0, opened.getLiveMetric(PLATFORM, UID, "danmu_count"));
+            assertEquals(4.0, opened.getLiveUserMetric(PLATFORM, UID, "danmu_users", 1L));
+
+            opened.incrementLiveMetric(PLATFORM, UID, "danmu_count", 2);
+            opened.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 1L, 2);
+        } finally {
+            opened.onContextClosedEvent();
+        }
+        JSONObject saved = JSONObject.parseObject(Files.readString(data));
+        assertEquals(19, saved.getJSONObject("LiveMetric:bilibili").getJSONObject("10001").getIntValue("danmu_count"));
+        assertEquals(6, saved.getJSONObject("LiveMetricUser:bilibili").getJSONObject("10001")
+                .getJSONObject("danmu_users").getIntValue("1"));
+        assertFalse(saved.containsKey("LiveMergedTotal:bilibili"));
     }
 
     /**

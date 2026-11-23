@@ -499,7 +499,7 @@ class ChannelSettingsIntegrationTest {
 
     RuntimeStateController runtime() {
         var controller = new RuntimeStateController(dispatcher, settings, new AtSubscriptionService(state), state,
-                source, revenue, live, StreamerNames.none(), new SessionQuietHoursService(state), gate);
+                source, revenue, StreamerNames.none(), new SessionQuietHoursService(state), gate);
         ReflectionTestUtils.setField(controller, "channelStore", channels);
         return controller;
     }
@@ -605,7 +605,7 @@ class ChannelSettingsIntegrationTest {
     @Test @DisplayName("旧金额接口不点主播改全部通道，点了主播只改该通道，旧状态保留")
     void compatibilityEndpointsUpdateDatasource() {
         var controller = new RuntimeStateController(dispatcher, settings, mock(AtSubscriptionService.class), state,
-                source, revenue, live, StreamerNames.none(), new SessionQuietHoursService(state), gate);
+                source, revenue, StreamerNames.none(), new SessionQuietHoursService(state), gate);
         ReflectionTestUtils.setField(controller, "channelStore", channels);
         var body = JSONObject.of("platform", "qq", "type", 1, "num", 100L, "visible", true);
         assertTrue(controller.setRevenueVisibility(body).getBody().getBooleanValue("success"));
