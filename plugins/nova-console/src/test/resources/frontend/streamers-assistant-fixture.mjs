@@ -316,6 +316,28 @@ const checks = {
     }
   },
   // 历史带上失败记录，或超过条数和长度限制，会使追问被后台拒绝。
+  async comparison() {
+    const mounted = await mount({platform: 'sample', uid: 91});
+    const group = ['91', '9007199254740993'];
+    reply = {...initialReply, streamers: group};
+    await ask(mounted, '和合成主播乙比一下');
+    assert.equal(requests.at(-1).body.streamers, undefined);
+
+    reply = {answered: false, answer: '这次对比问不了', streamers: ['91', '93']};
+    await ask(mounted, '改和合成主播丙比');
+    assert.deepEqual(requests.at(-1).body.streamers, group);
+
+    reply = {...initialReply, streamers: ['91']};
+    await ask(mounted, '那上个月呢');
+    assert.deepEqual(requests.at(-1).body.streamers, group);
+    await ask(mounted, '那上周呢');
+    assert.deepEqual(requests.at(-1).body.streamers, ['91']);
+
+    await button(mounted.node, '清空对话').fire('click');
+    await ask(mounted, '那昨天呢');
+    assert.equal(requests.at(-1).body.streamers, undefined);
+    assert.deepEqual(requests.at(-1).body.history, []);
+  },
   async history() {
     let mounted = await mount();
     const successful = [];

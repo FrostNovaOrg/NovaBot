@@ -82,7 +82,7 @@ function conversation({platform, uid}) {
   if (!conversations.has(key)) conversations.set(key, {
     path: '/streamers/' + encodeURIComponent(platform) + '/' + encodeURIComponent(uid) + '/assistant',
     state: null, stateError: '', stateRequest: null, stateAfterRead: null,
-    turns: [], pending: false, draft: '', listeners: new Set(),
+    turns: [], streamers: undefined, pending: false, draft: '', listeners: new Set(),
   });
   return conversations.get(key);
 }
@@ -400,7 +400,12 @@ export function mountAssistant(host, identity) {
   const status = el('div'); status.setAttribute('role', 'status');
   const turns = el('div'); turns.setAttribute('aria-live', 'polite');
   const clear = el('button', 'nv-btn2 sa-clear'); clear.type = 'button'; clear.textContent = '清空对话';
-  clear.addEventListener('click', () => { if (!context.pending) { context.turns = []; notify(context); } });
+  clear.addEventListener('click', () => {
+    if (context.pending) return;
+    context.turns = [];
+    context.streamers = undefined;
+    notify(context);
+  });
   const form = el('form'), controls = el('div', 'sa-input');
   const input = el('textarea'); input.rows = 3; input.maxLength = 600;
   input.setAttribute('aria-label', '向智能助手提问，最多 300 字');
@@ -487,11 +492,13 @@ export function mountAssistant(host, identity) {
     notify(context);
     try {
       const result = await api(context.path + '/ask', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({question, history}),
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({question, history, streamers: context.streamers}),
       });
       if (result.success === false) turn.error = result.message;
       else {
         turn.result = result;
+        if (result.answered === true) context.streamers = result.streamers;
         if (result.state) {
           if (context.stateRequest) context.stateAfterRead = result.state;
           context.state = result.state;

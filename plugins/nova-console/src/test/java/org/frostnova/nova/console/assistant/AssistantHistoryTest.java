@@ -18,7 +18,9 @@ import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.StreamerDirectory;
 import org.frostnova.nova.core.service.StreamerNames;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +77,7 @@ class AssistantHistoryTest {
     private final AssistantProperties properties = new AssistantProperties();
     private final AssistantQueryService queries = mock(AssistantQueryService.class);
     private final AssistantChartRenderer renderer = mock(AssistantChartRenderer.class);
+    private final AbstractDataSource data = mock(AbstractDataSource.class);
     private AssistantLocalStore local;
     private AssistantAskService service;
     private QqAssistantCommand command;
@@ -110,7 +113,6 @@ class AssistantHistoryTest {
         user.setUname("测试主播");
         user.setEnabled(true);
         user.setTargets(List.of(target));
-        var data = mock(AbstractDataSource.class);
         when(data.getUsers(PLATFORM)).thenReturn(List.of(user));
         when(data.getUser(PLATFORM, STREAMER)).thenReturn(Optional.of(user));
         var sender = mock(NovaMessageSender.class);
@@ -287,7 +289,8 @@ class AssistantHistoryTest {
     }
 
     private ResultActions askConsole(List<JSONObject> history) throws Exception {
-        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service, local)).build()
+        return MockMvcBuilders.standaloneSetup(new AssistantAskController(service, local, data,
+                        mock(StreamerDirectory.class), StreamerNames.none(), mock(LiveSessionArchive.class))).build()
                 .perform(post("/config/api/streamers/{platform}/{uid}/assistant/ask", PLATFORM, STREAMER)
                         .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(clock.instant()))
                         .contentType(MediaType.APPLICATION_JSON)

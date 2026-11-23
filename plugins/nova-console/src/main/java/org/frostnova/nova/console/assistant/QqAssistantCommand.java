@@ -45,7 +45,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -71,22 +70,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private static final int REPORT_HISTORY_LIMIT = 2;
     private static final DateTimeFormatter REPORT_TIME = DateTimeFormatter.ofPattern("HH:mm").withZone(StatisticsDay.ZONE);
     private static final String CHOSEN_UID_PREFIX = "uid:";
-    private static final Pattern NUMBER = Pattern.compile("[0-9]+");
     private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
     private static final Pattern RAW_ORDINAL = Pattern.compile("\\p{IsWhite_Space}*" + ORDINAL.pattern() + "\\p{IsWhite_Space}*");
-    private static final Pattern NON_HAN_EDGES = Pattern.compile("^[^\\p{IsHan}]+|[^\\p{IsHan}]+\\z");
-    private static final Pattern QUESTION_PREFIX = Pattern.compile("^[\\p{IsWhite_Space}\\p{P}]+");
-    private static final Set<String> QUERY_WORDS = Set.of(
-            "最近", "近期", "上周", "本周", "这周", "上月", "本月", "这个", "今天", "昨天", "昨晚", "前天", "今晚",
-            "请问", "帮我", "看看", "查查", "我想",
-            "统计", "对比", "比较", "哪天", "哪场", "什么", "怎么", "多少", "每天", "每周", "过去",
-            "一周", "两周", "三周", "四周",
-            "流水", "收入", "直播", "弹幕", "观众", "粉丝", "礼物", "在线", "在線", "开播", "下播", "场次", "时间", "时长",
-            "数据", "情况", "变化", "趋势", "平均", "高峰", "人数", "排行", "排名",
-            "上个月", "这个月", "个数", "合计", "心动盲盒", "盲盒", "钟点", "各钟点平均在线", "平均在线", "送礼榜前十", "前十",
-            "主播备忘", "备忘", "第一项", "目标", "目前", "完成", "收了", "播了", "多久", "几点", "几场", "怎么样");
-    private static final Comparator<NameMatch> NAME_MATCH_PRIORITY = Comparator.comparingInt(NameMatch::length)
-            .thenComparing(NameMatch::exact).reversed();
 
     private final AssistantAskService assistant;
     private final AssistantClient client;
@@ -177,7 +162,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         var chosen = fromChoice ? all.stream().filter(item -> item.id().equals(chosenUid)).findFirst().orElse(null) : null;
         if (fromChoice && chosen == null) return CommandReply.of("这里没有为所选主播开启智能助手问答");
         if (fromChoice) question = String.join(" ", context.getArgs().subList(1, context.getArgs().size()));
-        var mentions = fromChoice ? new Mentions(List.of(chosen), false) : namedIn(question, all);
+        var mentions = fromChoice ? new AssistantStreamerMentions.Mentions<>(List.of(chosen), false)
+                : AssistantStreamerMentions.namedIn(question, all);
         var named = mentions.streamers();
         if (question.isBlank() || question.codePointCount(0, question.length()) > 300
                 || (named.size() == 1 && question.equals(named.get(0).id())))
@@ -240,76 +226,6 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         }
         candidates.sort(Comparator.comparing(Candidate::uid));
         return candidates;
-    }
-
-    private static Mentions namedIn(String question, List<Candidate> candidates) {
-        var prefix = QUESTION_PREFIX.matcher(question);
-        int questionStart = prefix.lookingAt() ? prefix.end() : 0;
-        var numbers = NUMBER.matcher(question).results().toList();
-        var matches = new ArrayList<NameMatch>();
-        for (Candidate item : candidates) {
-            if (item.nickname() != null && !item.nickname().isBlank()) {
-                addNameMatches(question, item.nickname(), item, true, matches);
-                addShortNameMatches(question, questionStart, item, matches);
-            }
-            String uid = item.id();
-            String roomId = item.roomId() == null ? null : item.roomId().toString();
-            for (MatchResult number : numbers) {
-                String digits = number.group();
-                if (digits.equals(uid) || digits.equals(roomId)) {
-                    matches.add(new NameMatch(number.start(), number.end(), digits.length(), true, item));
-                }
-            }
-        }
-
-        matches.sort(NAME_MATCH_PRIORITY);
-        // 先留下最高优先级的命中；同级命中在同一处指向不同主播时，需要使用者选择。
-        var covered = new NameMatch[question.length()];
-        var retained = new ArrayList<NameMatch>();
-        boolean ambiguous = false;
-        for (NameMatch match : matches) {
-            if (match.overlapsStrongerMatch(covered)) continue;
-            for (int i = match.start(); i < match.end(); i++) {
-                var previous = covered[i];
-                if (previous != null && !previous.candidate().uid().equals(match.candidate().uid())) ambiguous = true;
-                covered[i] = match;
-            }
-            retained.add(match);
-        }
-        var named = new LinkedHashMap<Long, Candidate>();
-        retained.sort(Comparator.comparingInt(NameMatch::start));
-        retained.forEach(match -> named.putIfAbsent(match.candidate().uid(), match.candidate()));
-        return new Mentions(List.copyOf(named.values()), ambiguous);
-    }
-
-    private static void addNameMatches(String question, String name, Candidate item, boolean exact,
-                                       List<NameMatch> matches) {
-        int length = name.codePointCount(0, name.length());
-        for (int start = question.indexOf(name); start >= 0; start = question.indexOf(name, start + 1)) {
-            matches.add(new NameMatch(start, start + name.length(), length, exact, item));
-        }
-    }
-
-    private static void addShortNameMatches(String question, int questionStart, Candidate item, List<NameMatch> matches) {
-        String stem = NON_HAN_EDGES.matcher(item.nickname()).replaceAll("");
-        int hanCount = 0;
-        for (int end = 0; end < stem.length(); ) {
-            int codePoint = stem.codePointAt(end);
-            end += Character.charCount(codePoint);
-            if (Character.UnicodeScript.of(codePoint) != Character.UnicodeScript.HAN) continue;
-            hanCount++;
-            if (hanCount < 2) continue;
-            String prefix = stem.substring(0, end);
-            if (prefix.equals(item.nickname()) || (hanCount == 2 && QUERY_WORDS.contains(prefix))) continue;
-            if (hanCount == 2 && end < stem.length()) {
-                if (question.startsWith(prefix, questionStart)) {
-                    matches.add(new NameMatch(questionStart, questionStart + end,
-                            prefix.codePointCount(0, end), false, item));
-                }
-            } else {
-                addNameMatches(question, prefix, item, false, matches);
-            }
-        }
     }
 
     private CommandReply choose(Asker asker, List<Candidate> options, String question) {
@@ -725,18 +641,10 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         }
     }
 
-    private record Candidate(Long uid, String nickname, Long roomId, PushTarget target, boolean allowed) {
+    private record Candidate(Long uid, String nickname, Long roomId, PushTarget target, boolean allowed)
+            implements AssistantStreamerMentions.Candidate {
         String id() { return uid.toString(); }
         String displayName() { return nickname == null || nickname.isBlank() ? id() : nickname; }
-    }
-    private record Mentions(List<Candidate> streamers, boolean ambiguous) { }
-    private record NameMatch(int start, int end, int length, boolean exact, Candidate candidate) {
-        boolean overlapsStrongerMatch(NameMatch[] covered) {
-            for (int i = start; i < end; i++) {
-                if (covered[i] != null && NAME_MATCH_PRIORITY.compare(covered[i], this) < 0) return true;
-            }
-            return false;
-        }
     }
     private record Asker(String session, long sender) { }
     private record Choice(List<String> uids, String question, Instant expires) { }

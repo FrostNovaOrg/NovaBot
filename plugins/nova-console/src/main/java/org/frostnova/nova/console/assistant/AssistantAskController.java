@@ -10,7 +10,13 @@ import org.frostnova.nova.core.assistant.AssistantLocalStore;
 import org.frostnova.nova.core.assistant.AssistantMemoStore;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.StreamerDirectory;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -20,7 +26,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 
 /** 主播页智能助手；主播范围与写请求检查由控制台权限层统一执行。 */
 @Slf4j
@@ -29,12 +37,22 @@ import java.util.List;
 @RequestMapping("/config/api/streamers/{platform}/{uid}/assistant")
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class AssistantAskController {
+    private static final int COMPARISON_LIMIT = 5;
     private final AssistantAskService service;
     private final AssistantMemoStore memos;
+    private final AbstractDataSource dataSource;
+    private final StreamerDirectory directory;
+    private final StreamerNames names;
+    private final LiveSessionArchive archive;
 
-    public AssistantAskController(AssistantAskService service, AssistantLocalStore local) {
+    public AssistantAskController(AssistantAskService service, AssistantLocalStore local, AbstractDataSource dataSource,
+                                  StreamerDirectory directory, StreamerNames names, LiveSessionArchive archive) {
         this.service = service;
         this.memos = local.memos();
+        this.dataSource = dataSource;
+        this.directory = directory;
+        this.names = names;
+        this.archive = archive;
     }
 
     @GetMapping("/state")
@@ -55,7 +73,9 @@ public class AssistantAskController {
             body = JSON.parseObject(bytes);
         } catch (AssistantException error) { throw error; }
         catch (Exception error) { throw new AssistantException("提问格式不正确"); }
-        JSONObject result = service.ask(platform, uid, account.id(), body);
+        List<Long> streamers = selectStreamers(platform, uid, account, body);
+        JSONObject result = service.ask(platform, streamers, account.id(), body);
+        result.put("streamers", streamers.stream().map(String::valueOf).toList());
         AssistantAskService.logQuestion(log, ConfigUiAccess.actor(), platform, uid, result);
         if (account.role() != ConfigUiAccount.Role.ADMIN) {
             result.remove("costYuan");
@@ -63,6 +83,45 @@ public class AssistantAskController {
         }
         return result;
     }
+
+    private List<Long> selectStreamers(String platform, Long uid, ConfigUiAccount account, JSONObject body) {
+        if (body == null || !(body.get("question") instanceof String question) || question.isBlank()
+                || question.codePointCount(0, question.length()) > 300) return List.of(uid);
+
+        var candidates = new LinkedHashSet<Long>();
+        candidates.add(uid);
+        directory.entries().stream().filter(entry -> platform.equals(entry.platform()))
+                .map(StreamerDirectory.Entry::uid).forEach(candidates::add);
+        dataSource.getUsers(platform).stream().map(PushUser::getUid).forEach(candidates::add);
+        if (account.role() == ConfigUiAccount.Role.ADMIN) candidates.addAll(archive.streamerUids(platform));
+        else account.streamers().stream().map(ConfigUiStreamerId::parse).filter(Objects::nonNull)
+                .filter(id -> platform.equals(id.platform())).map(ConfigUiStreamerId::uid).forEach(candidates::add);
+
+        var mentions = AssistantStreamerMentions.namedIn(question, candidates.stream()
+                .filter(candidate -> candidate != null && candidate > 0 && ConfigUiAccess.visible(platform, candidate))
+                .map(candidate -> candidateName(platform, candidate)).toList());
+        if (mentions.ambiguous()) return List.of(uid);
+
+        var selected = new LinkedHashSet<Long>();
+        selected.add(uid);
+        mentions.streamers().forEach(candidate -> selected.add(candidate.uid()));
+        if (selected.size() == 1 && body.get("streamers") instanceof List<?> previous) {
+            for (Object value : previous) {
+                Long previousUid = ConfigUiStreamerId.positiveDecimal(value);
+                if (previousUid != null && ConfigUiAccess.visible(platform, previousUid)) selected.add(previousUid);
+            }
+        }
+        if (selected.size() > COMPARISON_LIMIT) throw new AssistantException("一次最多比 5 位主播，请少点几位。");
+        return List.copyOf(selected);
+    }
+
+    private StreamerCandidate candidateName(String platform, Long uid) {
+        var loaded = dataSource.getUser(platform, uid).orElse(null);
+        return new StreamerCandidate(uid, names.uname(platform, uid, loaded == null ? null : loaded.getUname()),
+                loaded == null ? null : loaded.getRoomId());
+    }
+
+    private record StreamerCandidate(Long uid, String nickname, Long roomId) implements AssistantStreamerMentions.Candidate { }
 
     @GetMapping("/memos")
     public ResponseEntity<JSONObject> memos(@PathVariable String platform, @PathVariable Long uid) {

@@ -42,6 +42,12 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
+    @DisplayName("接着问时用最后一次答出来的主播组，清空对话后从当前主播开始")
+    void carriesTheLastAnsweredStreamerGroup() throws Exception {
+        run("comparison");
+    }
+
+    @Test
     @DisplayName("追问只带最近 10 轮有回答的对话")
     void historyContainsOnlyTenSuccessfulTurns() throws Exception {
         run("history");
