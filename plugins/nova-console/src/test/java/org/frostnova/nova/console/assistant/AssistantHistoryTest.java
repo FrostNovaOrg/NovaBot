@@ -203,6 +203,27 @@ class AssistantHistoryTest {
                         .map(turn -> turn.getString("question")).toList());
     }
 
+    // 几次没答出来的提问把之前的对话挤掉。
+    @Test void qqKeepsAnAnsweredTurnAfterTenUnansweredQueries() throws InterruptedException {
+        String first = "最近有哪些直播场次";
+        queueSessionQuery();
+        askQq(first);
+        for (int i = 1; i <= 10; i++) {
+            queueSessionQuery();
+            modelReplies.add(JSONObject.of("content", ""));
+            askQq("再查一次场次，第" + i + "问", "空响应");
+        }
+        verify(queries, times(11)).sessions(PLATFORM, STREAMER, 7, 1);
+
+        int next = requests.size();
+        askQq("你之前回答了什么");
+
+        var history = userPayload(next).getJSONArray("history");
+        assertEquals(1, history.size());
+        assertEquals(first, history.getJSONObject(0).getString("question"));
+        assertTrue(history.getJSONObject(0).getString("answerForHistory").contains("相关场次"));
+    }
+
     // 控制台追问到第四轮就报错。
     @Test void consoleRejectsElevenTurnsWithTheNewLimit() throws Exception {
         askConsole(Collections.nCopies(11, JSONObject.of("question", "旧问题", "answerForHistory", "旧回答")))
@@ -218,6 +239,18 @@ class AssistantHistoryTest {
         var history = userPayload(0).getJSONArray("history");
         assertEquals(10, history.size());
         for (JSONObject turn : history.toJavaList(JSONObject.class)) assertEquals(retained, turn.getString("answerForHistory"));
+    }
+
+    // 一条带大段空白的回答让下一次追问报错。
+    @Test void consoleKeepsTheAnswerAfterLeadingWhitespace() throws Exception {
+        String answer = "查到了这些场次。";
+        askConsole(List.of(JSONObject.of("question", "旧问题", "answerForHistory", " \n".repeat(500) + answer + "\t ")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.answered").value(true));
+
+        var history = userPayload(0).getJSONArray("history");
+        assertEquals(1, history.size());
+        assertTrue(history.getJSONObject(0).getString("answerForHistory").contains(answer),
+                "送给模型的历史回答应保留正文");
     }
 
     @Test void consoleStillRejectsAnswersOverTheExistingSizeLimit() throws Exception {
@@ -263,11 +296,15 @@ class AssistantHistoryTest {
     }
 
     private void askQq(String question) throws InterruptedException {
+        askQq(question, "相关场次");
+    }
+
+    private void askQq(String question, String expectedReply) throws InterruptedException {
         var context = new CommandContext("qq-test", GROUP, 30003L, 2000000002L, "问", List.of(question), "问 " + question);
         assertEquals(CommandReply.none(), command.execute(context));
         Message reply = qqReplies.poll(18, TimeUnit.SECONDS);
         assertNotNull(reply, "会话没有收到回复");
-        assertTrue(reply.getContent().contains("相关场次"), reply::getContent);
+        assertTrue(reply.getContent().contains(expectedReply), reply::getContent);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (command.beforeCooldown(context) != null) {
             assertTrue(System.nanoTime() < deadline, "问题结束后会话仍处于忙状态");

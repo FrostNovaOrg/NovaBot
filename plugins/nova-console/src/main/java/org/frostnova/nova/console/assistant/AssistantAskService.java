@@ -35,6 +35,10 @@ public class AssistantAskService {
     static final int QUESTION_TIMEOUT_SECONDS = 55;
     static final int HISTORY_LIMIT = 10;
     private static final int HISTORY_ANSWER_LIMIT = 1000;
+    // 与浏览器的 trim 一样处理首尾空白，包括不换行空格。
+    private static final String HISTORY_WHITESPACE = "[\\s\\p{Z}\\uFEFF]";
+    private static final Pattern HISTORY_EDGE_WHITESPACE = Pattern.compile(
+            "\\A" + HISTORY_WHITESPACE + "+|(?<!" + HISTORY_WHITESPACE + ")" + HISTORY_WHITESPACE + "+\\z");
     static final String SYSTEM = """
             你是 NovaBot 的智能助手，在 QQ 和控制台只读回答一位 B 站主播的直播数据问题，不能改设置或执行命令。
             订阅或取消推送、开关功能、改设置、问用法或超出直播数据范围时，指引用户去操作。
@@ -221,7 +225,8 @@ public class AssistantAskService {
         var history = new JSONArray();
         if (request.get("history") instanceof List<?> entries) for (Object item : entries) {
             var entry = (Map<?, ?>) item;
-            String previousAnswer = (String) entry.get("answerForHistory");
+            String previousAnswer = HISTORY_EDGE_WHITESPACE.matcher((String) entry.get("answerForHistory")).replaceAll("");
+            if (previousAnswer.isEmpty()) continue;
             if (previousAnswer.codePointCount(0, previousAnswer.length()) > HISTORY_ANSWER_LIMIT)
                 previousAnswer = previousAnswer.substring(0, previousAnswer.offsetByCodePoints(0, HISTORY_ANSWER_LIMIT));
             history.add(JSONObject.of("question", entry.get("question"), "answerForHistory", previousAnswer));
@@ -687,7 +692,7 @@ public class AssistantAskService {
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> entry) || !(entry.get("question") instanceof String previous)
                     || previous.isBlank() || previous.codePointCount(0, previous.length()) > 300
-                    || !(entry.get("answerForHistory") instanceof String answer) || answer.isBlank() || answer.length() > 16000)
+                    || !(entry.get("answerForHistory") instanceof String answer) || answer.length() > 16000)
                 throw new AssistantException("追问历史需要问题与代号版回答");
         }
     }

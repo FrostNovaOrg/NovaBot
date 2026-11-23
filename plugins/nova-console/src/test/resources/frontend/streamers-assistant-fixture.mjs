@@ -356,6 +356,18 @@ const checks = {
     assert.equal(byClass(mounted.node, 'sa-turn').length, 0);
     assert.equal(button(mounted.node, '清空对话'), undefined);
   },
+  // 一条带大段空白的回答让下一次追问报错。
+  async historyWhitespace() {
+    const mounted = await mount();
+    const answer = '查到了这些场次。';
+    reply = {...initialReply, answer, answerForHistory: ' \n'.repeat(500) + answer + '\t '};
+    await ask(mounted, '最近有哪些场次');
+    reply = initialReply;
+    await ask(mounted, '再看看上周');
+    const history = requests.at(-1).body.history;
+    assert.equal(history.length, 1);
+    assert.ok(history[0].answerForHistory.includes(answer), '送给服务端的历史回答应保留正文');
+  },
   // 弹幕原话可能像网页标签，问题、回答、来源和报错都不能进入网页解析器。
   async text() {
     const mounted = await mount();

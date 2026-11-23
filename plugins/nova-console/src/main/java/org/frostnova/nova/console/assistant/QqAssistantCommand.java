@@ -362,9 +362,10 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             var source = local.qqSource("QQ", context.getPlatform(), context.getType(), context.getNum(), context.getSenderUid());
             var key = new HistoryKey(session, source.account(), uid);
             var history = recentHistory(key, amountVisible);
+            var texts = history.stream().filter(turn -> turn.content() != null).map(Turn::content).toList();
+            var recentTexts = texts.subList(Math.max(0, texts.size() - AssistantAskService.HISTORY_LIMIT), texts.size());
+            var request = JSONObject.of("question", question, "history", recentTexts);
             var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
-            var texts = recent.stream().filter(turn -> turn.content() != null).map(Turn::content).toList();
-            var request = JSONObject.of("question", question, "history", texts);
             var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
             var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults);
             JSONObject result = answer.response();

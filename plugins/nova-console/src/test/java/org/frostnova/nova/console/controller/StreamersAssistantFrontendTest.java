@@ -48,6 +48,12 @@ class StreamersAssistantFrontendTest {
     }
 
     @Test
+    @DisplayName("一条带大段空白的回答让下一次追问报错")
+    void historyKeepsTheAnswerAfterLeadingWhitespace() throws Exception {
+        run("historyWhitespace");
+    }
+
+    @Test
     @DisplayName("弹幕中的网页片段按纯文本显示，不执行网页代码")
     void remoteTextCannotBecomeMarkup() throws Exception {
         run("text");
