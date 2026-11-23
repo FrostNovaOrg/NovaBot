@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
+import org.frostnova.nova.core.assistant.AssistantUsageStore.Scope;
 import org.frostnova.nova.core.assistant.AssistantUsageStore.Streamer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,6 +62,7 @@ public final class AssistantClient {
     public record StreamerQuota(Integer dailyPercent, Integer weeklyPercent) { }
     public record State(boolean enabled, boolean available, List<String> reasons, StreamerQuota streamerQuota) { }
     public record BudgetStatus(State state, BigDecimal spentYuan, BigDecimal weeklyBudgetYuan, String notice) { }
+    public record BudgetNotice(Long streamerUid, String text) { }
 
     private enum CallMode { ANSWER, ANALYSIS, CLASSIFY, PROBE }
     private record Attempt(Response response, boolean outputLimitReached) { }
@@ -108,13 +111,25 @@ public final class AssistantClient {
     /** 主播的可用状态和剩余额度，不发送模型请求。 */
     public synchronized BudgetStatus budgetStatus(String platform, long uid) {
         var reasons = new ArrayList<>(unavailable().stream().map(AssistantException::reason).toList());
-        var quota = usage.quota(new Streamer(platform, uid), properties);
+        var quota = usage.quota(List.of(new Streamer(platform, uid)), properties);
         var exhausted = quota == null ? null : quota.exhausted();
-        if (exhausted != null) reasons.add(exhausted.reason);
-        var streamerQuota = quota == null ? null : new StreamerQuota(quota.daily().percent(), quota.weekly().percent());
+        if (exhausted != null) reasons.add(exhausted.scope().reason);
+        var streamerQuota = quota == null ? null : new StreamerQuota(quota.primaryPercent(Scope.STREAMER_DAY),
+                quota.primaryPercent(Scope.STREAMER_WEEK));
         var state = new State(properties.isEnabled(), reasons.isEmpty(), List.copyOf(reasons), streamerQuota);
+        var lowest = quota == null ? null : quota.lowest();
         return new BudgetStatus(state, quota == null ? null : quota.spentYuan(),
-                properties.getWeeklyBudgetYuan(), quota == null ? null : quota.notice());
+                properties.getWeeklyBudgetYuan(), lowest == null ? null : "提示：" + lowest.noticeText());
+    }
+
+    /** 取最紧的一道额度。主播额度的提示由调用方补上对应昵称。 */
+    public synchronized BudgetNotice comparisonBudgetNotice(String platform, List<Long> uids) {
+        var streamers = questionStreamers(platform, uids);
+        var quota = usage.quota(streamers, properties);
+        var lowest = quota == null ? null : quota.lowest();
+        if (lowest == null) return null;
+        if (streamers.size() == 1 || lowest.streamerUid() == null) return new BudgetNotice(null, lowest.noticeText());
+        return new BudgetNotice(lowest.streamerUid(), lowest.scope().label + "还剩 " + lowest.percent() + "%。");
     }
 
     public State state(String platform, long uid) {
@@ -144,22 +159,43 @@ public final class AssistantClient {
     }
 
     public synchronized Question beginQuestion(String platform, long uid) {
+        return beginQuestion(List.of(new Streamer(platform, uid)));
+    }
+
+    /** 首位主播是主主播，分摊用量时由其承担余数。 */
+    public synchronized Question beginQuestion(String platform, List<Long> uids) {
+        return beginQuestion(questionStreamers(platform, uids));
+    }
+
+    private Question beginQuestion(List<Streamer> streamers) {
         requireAvailable();
-        var streamer = new Streamer(platform, uid);
-        usage.checkBudget(streamer, properties);
-        return new Question(streamer);
+        usage.checkBudget(streamers, properties);
+        return new Question(streamers);
+    }
+
+    private static List<Streamer> questionStreamers(String platform, List<Long> uids) {
+        if (uids == null || uids.isEmpty() || uids.size() > 5)
+            throw new AssistantException("invalid_argument", "每问需要选择 1–5 位主播");
+        var distinct = new HashSet<Long>();
+        var streamers = new ArrayList<Streamer>();
+        for (Long uid : uids) {
+            if (uid == null || uid <= 0) throw new AssistantException("invalid_argument", "请提供有效主播 UID");
+            if (!distinct.add(uid)) throw new AssistantException("invalid_argument", "同一问的主播不能重复");
+            streamers.add(new Streamer(platform, uid));
+        }
+        return List.copyOf(streamers);
     }
 
     public final class Question implements AutoCloseable {
-        private final Streamer streamer;
+        private final List<Streamer> streamers;
         private String sentEndpoint;
         private boolean closed;
         private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
         private int modelCalls;
 
-        private Question(Streamer streamer) {
-            this.streamer = streamer;
+        private Question(List<Streamer> streamers) {
+            this.streamers = streamers;
         }
 
         public Response complete(Request request) { return complete(request, Duration.ofSeconds(90)); }
@@ -186,7 +222,7 @@ public final class AssistantClient {
                 if (inFlight) throw new AssistantException("这一问正在请求大模型服务，请等待返回");
                 requireAvailable();
                 validate(request);
-                usage.checkBudget(streamer, properties);
+                usage.checkBudget(streamers, properties);
                 inFlight = true;
             }
             try {
@@ -277,7 +313,7 @@ public final class AssistantClient {
             Attempt first = exchange(endpoint, body, true, candidate, question, timeout, mode);
             if (shortRequest || !first.outputLimitReached()) return first.response();
 
-            usage.checkBudget(question.streamer, properties);
+            usage.checkBudget(question.streamers, properties);
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
             if (remaining.compareTo(Duration.ofMillis(1)) < 0) throw outputLimitFailure();
             body.put(OUTPUT_LIMIT, maxOutput + allowance);
@@ -396,7 +432,8 @@ public final class AssistantClient {
             if (question != null) {
                 synchronized (this) { question.total = question.total.add(cost); }
             }
-            usage.addCost(question == null ? null : question.streamer, cost);
+            if (question == null) usage.addCost(null, cost);
+            else usage.addQuestionCost(question.streamers, cost);
             if (responses) return parseResponses(json, secret, tokens, cost, mode, received.getStatusCode().value());
             return new Attempt(parseChat(json, secret, tokens, cost, mode), false);
         } catch (HttpStatusCodeException error) {
