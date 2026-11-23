@@ -1,5 +1,9 @@
 package org.frostnova.nova.bilibili.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -1811,10 +1816,12 @@ class BilibiliEventParserTest {
     @Nested
     @DisplayName("pb 未知字段")
     class UnknownPbFields {
+        private static final String GIFT_WITHOUT_DISPLAY_SWITCH = giftPb();
+
         /**
-         * 一份顶层字段全在 {@code SEND_GIFT_V2} 字段表里的礼物报文，用作阴性对照
+         * 一份顶层字段全在 {@code SEND_GIFT_V2} 字段表里且显示开关为 1 的礼物报文，用作阴性对照
          */
-        private static final String GIFT = giftPb();
+        private static final String GIFT = withExtraField(GIFT_WITHOUT_DISPLAY_SWITCH, 11, 1);
 
         private static String giftPb() {
             return new PbWriter()
@@ -1871,7 +1878,12 @@ class BilibiliEventParserTest {
         }
 
         private Optional<NovaBaseLiveEvent> parseGift(String pb) {
-            return parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
+            return parseGiftMessage(pb).event();
+        }
+
+        private BilibiliEventParser.ParsedMessage parseGiftMessage(String pb) {
+            return parser.parseMessage(JSONObject.of("cmd", "SEND_GIFT_V2",
+                    "data", JSONObject.of("dmscore", 3, "pb", pb)), SOURCE);
         }
 
         private long unknownFieldCount() {
@@ -1880,6 +1892,53 @@ class BilibiliEventParserTest {
 
         private String unknownFieldDetail() {
             return riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+        }
+
+        @Test
+        @DisplayName("礼物显示开关为关时照常入账，并按次数告警")
+        void disabledGiftDisplaySwitchIsReportedWithoutChangingRevenue() {
+            // B 站发来开关位为关的礼物，我们照样记进流水，却没有任何提示。
+            String explicitZero = withExtraField(GIFT_WITHOUT_DISPLAY_SWITCH, 11, 0);
+            Logger logger = (Logger) LoggerFactory.getLogger(BilibiliEventParser.class);
+            ListAppender<ILoggingEvent> logs = new ListAppender<>();
+            logs.start();
+            logger.addAppender(logs);
+            try {
+                BilibiliPaidGiftEvent enabled = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                        parseGift(GIFT).orElseThrow());
+                assertEquals(0, recordedAcrossAllKinds(), "开关为 1 时不记健康指标");
+                assertTrue(logs.list.stream().noneMatch(log -> log.getLevel() == Level.WARN),
+                        "开关为 1 时不打 WARN");
+
+                for (int count = 1; count <= 101; count++) {
+                    String pb = count % 2 == 1 ? GIFT_WITHOUT_DISPLAY_SWITCH : explicitZero;
+                    BilibiliEventParser.ParsedMessage parsed = parseGiftMessage(pb);
+                    assertFalse(parsed.degraded());
+                    assertEquals(1, parsed.events().size());
+                    BilibiliPaidGiftEvent disabled = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                            parsed.events().get(0));
+                    assertEquals(enabled.getCharged(), disabled.getCharged());
+                    assertEquals(enabled.getValue(), disabled.getValue());
+                    assertEquals(count, unknownFieldCount(), "每条开关为关的消息都应记一次健康指标");
+                }
+                assertTrue(unknownFieldDetail().contains("SEND_GIFT_V2:11=off"));
+
+                List<String> warnings = logs.list.stream()
+                        .filter(log -> log.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .toList();
+                assertEquals(3, warnings.size());
+                List<Integer> sampledCounts = List.of(1, 10, 100);
+                for (int i = 0; i < sampledCounts.size(); i++) {
+                    String warning = warnings.get(i);
+                    assertTrue(warning.contains("11 号缺省或为 0"), warning);
+                    assertTrue(warning.contains("已出现 " + sampledCounts.get(i) + " 次"), warning);
+                    assertTrue(warning.contains("照常计入流水"), warning);
+                }
+            } finally {
+                logger.detachAppender(logs);
+                logs.stop();
+            }
         }
 
         @Test
