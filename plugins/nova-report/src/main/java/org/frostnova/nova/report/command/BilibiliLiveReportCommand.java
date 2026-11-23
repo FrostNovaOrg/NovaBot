@@ -1,29 +1,28 @@
 package org.frostnova.nova.report.command;
 
-import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerCommand;
-import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
-import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
 import org.frostnova.nova.report.painter.ReportPalettes;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.PushMessage;
+import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
-import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.LiveReportDeliveryService;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 「直播报告」命令
  * <p>
- * 拉取正在直播主播的实时数据报告，不必等到下播。
+ * 在播时查看开播至今的数据，下播后查看上一场的整场报告。
  * 可以选择本会话已配置推送的主播，包含未启用报告推送的主播。
  * <p>
  * 刻意不伪造下播事件：那会把直播状态翻成已下播，随后备用轮询发现仍在播又会推一条假开播，
@@ -32,11 +31,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Slf4j
 @NovaComponent
 public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
+    private static final String PLATFORM = BilibiliPlatform.BILIBILI.id();
+    private static final String DRAWING_FAILED = "报告绘制失败, 请查看日志";
+
     private final LiveDataService liveDataService;
 
     private final BilibiliLiveReportPainter painter;
 
-    private final RevenueVisibilityService revenueVisibility;
+    private final LiveReportDeliveryService reports;
+
+    private final LiveSessionDetailArchiver archiver;
+
+    private final BilibiliLiveReportRedrawer redrawer;
 
     /**
      * 各通道的报告图配色。回的图按发问的这个会话所在的通道画
@@ -50,12 +56,15 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
 
     @Autowired
     public BilibiliLiveReportCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
-                                     LiveDataService liveDataService,
-                                     BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility) {
+                                     LiveDataService liveDataService, BilibiliLiveReportPainter painter,
+                                     LiveReportDeliveryService reports, LiveSessionDetailArchiver archiver,
+                                     BilibiliLiveReportRedrawer redrawer) {
         super(dataSource, choice);
         this.liveDataService = liveDataService;
         this.painter = painter;
-        this.revenueVisibility = revenueVisibility;
+        this.reports = reports;
+        this.archiver = archiver;
+        this.redrawer = redrawer;
     }
 
     @Override
@@ -65,7 +74,7 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
 
     @Override
     public String description() {
-        return "查看正在直播主播的实时数据报告";
+        return "看直播报告：直播中看到此刻，下播后看上一场";
     }
 
     @Override
@@ -81,42 +90,27 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
         }
 
         PushUser streamer = resolved.streamer();
-        if (!liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), streamer.getUid()).orElse(false)) {
-            return CommandReply.of(nameOf(streamer) + " 现在没在直播");
+        PushTarget channel = context.getChannel();
+        if (liveDataService.getLiveStatus(PLATFORM, streamer.getUid()).orElse(false)) {
+            log.info("会话 {} 请求 {} 的实时直播报告", context.getNum(), streamer.getUname());
+            var source = new LiveStreamerInfo(streamer.getUid(), unameOf(streamer), streamer.getRoomId(), streamer.getFace());
+            return withNotice(resolved, painter.paint(PLATFORM, source, redrawer.commandOptions(channel),
+                            palettes.forChannel(channel).palette())
+                    .map(CommandReply::image)
+                    .orElseGet(() -> CommandReply.of(DRAWING_FAILED)));
         }
 
-        log.info("会话 {} 请求 {} 的实时直播报告", context.getNum(), streamer.getUname());
-
-        boolean visible = revenueVisibility.isVisible(context.getChannel());
-        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(reportParams(context, streamer), visible);
-
-        return withNotice(resolved, painter.paint(BilibiliPlatform.BILIBILI.id(),
-                        new LiveStreamerInfo(streamer.getUid(), unameOf(streamer), streamer.getRoomId(), streamer.getFace()),
-                        options, palettes.forChannel(context.getChannel()).palette())
-                .map(CommandReply::image)
-                .orElseGet(() -> CommandReply.of("报告绘制失败, 请查看日志")));
-    }
-
-    /**
-     * 该主播推到本会话、且开着的报告推送参数；没有这条推送时为空，走默认版式
-     * <p>
-     * 没有推送就没有这个会话自己的版式可依，数据卡片各张的开关也就不看、十张按默认全开，顺序也一样按默认：
-     * 拿别的会话存的开关来画，等于把那个群挑卡的口味搬到了这里。
-     */
-    private JSONObject reportParams(CommandContext context, PushUser streamer) {
-        return streamer.getTargets().stream()
-                .filter(target -> !Boolean.FALSE.equals(target.getEnabled()))
-                .filter(target -> context.getPlatform().equals(target.getPlatform()))
-                .filter(target -> context.getType() == target.getType())
-                .filter(target -> context.getNum().equals(target.getNum()))
-                .flatMap(target -> target.getMessages().stream())
-                .filter(message -> !Boolean.FALSE.equals(message.getEnabled()))
-                // 比解析出来的类名而不是配置里那一串：老配置写的是本处理器搬包之前的全类名，
-                // 按字面比认不出来，于是这条命令悄悄改用默认版式，看起来像是推送里的版式没生效
-                .filter(message -> BilibiliLiveReportPushHandler.class.getName().equals(message.handlerClassName()))
-                .findFirst()
-                .map(PushMessage::getParamsJsonObject)
-                .orElse(null);
+        if (archiver.isArchivingLiveOff(PLATFORM, streamer.getUid())) {
+            return CommandReply.of(nameOf(streamer) + " 刚下播，直播报告还在生成，稍后再发");
+        }
+        var detail = reports.latest(PLATFORM, streamer.getUid());
+        if (detail.isEmpty()) {
+            return CommandReply.of(nameOf(streamer) + " 还没有已结束的直播，暂时没有直播报告");
+        }
+        return withNotice(resolved, redrawer.channelContent(detail.get(), channel, redrawer.commandOptions(channel))
+                .filter(content -> !content.isBlank())
+                .map(CommandReply::of)
+                .orElseGet(() -> CommandReply.of(DRAWING_FAILED)));
     }
 
     @Override

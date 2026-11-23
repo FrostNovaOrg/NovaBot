@@ -1,15 +1,20 @@
 package org.frostnova.nova.report.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.LiveDetail;
+import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.handler.NovaEventHandlerPushMessageInitializer;
 import org.frostnova.nova.core.model.*;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.*;
+import org.frostnova.nova.report.command.BilibiliLiveReportCommand;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
 import org.frostnova.nova.report.painter.*;
@@ -75,6 +80,60 @@ class LiveReportOriginalImageTest {
         assertEquals(sent.getValue().getContent(), content);
         assertArrayEquals(original, Base64.getDecoder().decode(content.substring(14, content.length() - 1)));
         verifyNoInteractions(replay);
+    }
+
+    @Test void groupCommandUsesTheOriginalPushAfterRestart() {
+        var properties = new NovaCoreProperties();
+        properties.getDatasource().setJsonPath(directory.resolve("datasource.json").toString());
+        properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
+        var templates = new PushTemplateDefaults(properties);
+        assertTrue(templates.save(handler, JSONObject.of("danmu_ranking", 10)).isEmpty());
+        channel.setReportPalette("night");
+        message.setParams("{\"cover\":true,\"fans_change\":true,\"card_follow\":false}");
+        var handlers = mock(NovaEventHandlerService.class);
+        when(handlers.getHandler(message.getHandler())).thenReturn(Optional.of(handler));
+        assertTrue(new NovaEventHandlerPushMessageInitializer(handlers, templates).initialize(message));
+        push();
+
+        var user = new PushUser();
+        user.setUid(1L);
+        user.setPlatform("bilibili");
+        user.setUname("主播示例");
+        user.setTargets(List.of(channel));
+        var source = mock(AbstractDataSource.class);
+        when(source.getUsers("bilibili")).thenReturn(List.of(user));
+        var details = new LiveDetailArchive(properties);
+        details.store(detail(100));
+        var reports = new LiveReportDeliveryService(details, source, null, null);
+        var redrawer = redrawer(newCache());
+        ReflectionTestUtils.setField(redrawer, "templates", new PushTemplateDefaults(properties));
+        var sessions = new LiveSessionArchive(properties);
+        var archiver = new LiveSessionDetailArchiver(liveData, mock(LiveRoomInfoHistory.class), details);
+        var command = new BilibiliLiveReportCommand(source, new BilibiliStreamerChoice(liveData, sessions), liveData,
+                mock(BilibiliLiveReportPainter.class), reports, archiver, redrawer);
+        var context = new CommandContext("qq-onebot", PushTargetType.GROUP, 1001L, 1002L,
+                "直播报告", List.of(), "直播报告");
+
+        var sent = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(sent.capture());
+        assertEquals(sent.getValue().getContent(), command.execute(context).content());
+        verifyNoInteractions(replay);
+    }
+
+    @Test void aReplayFinishingAfterThePushKeepsTheOriginalAvailable() {
+        var cache = newCache();
+        ReflectionTestUtils.setField(handler, "rendered", cache);
+        var redrawer = redrawer(cache);
+        when(replay.render(any(), any())).thenAnswer(call -> {
+            push();
+            return Optional.of(new byte[]{65, 66, 67});
+        });
+
+        redrawer.channelContent(detail(100), channel).orElseThrow();
+
+        var sent = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(sent.capture());
+        assertEquals(sent.getValue().getContent(), redrawer.channelContent(detail(100), channel).orElseThrow());
     }
 
     // 抓住每次开播都留一份旧图、越攒越多占满磁盘的故障。

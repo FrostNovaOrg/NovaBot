@@ -81,10 +81,7 @@ public abstract class AbstractDataSource {
         }
 
         for (PushUser user: pending) {
-            user.getTargets().removeIf(target -> !target.getEnabled());
-            for (PushTarget target: user.getTargets()) {
-                target.getMessages().removeIf(message -> !message.getEnabled());
-            }
+            filterPushMessages(user);
         }
 
         Map<String, List<PushUser>> platformMap = pending.stream().collect(Collectors.groupingBy(PushUser::getPlatform));
@@ -195,10 +192,7 @@ public abstract class AbstractDataSource {
 
         updates.removeIf(user -> !user.getEnabled());
         for (PushUser user: updates) {
-            user.getTargets().removeIf(target -> !target.getEnabled());
-            for (PushTarget target: user.getTargets()) {
-                target.getMessages().removeIf(message -> !message.getEnabled());
-            }
+            filterPushMessages(user);
         }
 
         Map<String, List<PushUser>> platformMap = updates.stream().collect(Collectors.groupingBy(PushUser::getPlatform));
@@ -250,6 +244,17 @@ public abstract class AbstractDataSource {
 
             NovaDataSourceUpdateEvent event = new NovaDataSourceUpdateEvent(oldUser, user, Instant.now());
             eventPublisher.publishEvent(event);
+        }
+    }
+
+    private void filterPushMessages(PushUser user) {
+        user.getTargets().removeIf(target -> !target.getEnabled());
+        for (PushTarget target : user.getTargets()) {
+            var disabled = target.getMessages().stream().filter(message -> !message.getEnabled()).toList();
+            if (!disabled.isEmpty()) {
+                target.getMessages().removeIf(message -> !message.getEnabled());
+                target.setDisabledMessages(disabled);
+            }
         }
     }
 

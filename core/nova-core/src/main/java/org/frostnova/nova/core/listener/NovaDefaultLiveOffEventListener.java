@@ -61,10 +61,14 @@ public class NovaDefaultLiveOffEventListener {
     public void onLiveOffEvent(LiveOffEvent event) {
         log.info("[{}] [下播] {}(UID: {}, 房间号: {})", event.getPlatform(), event.getSource().getUname(), event.getSource().getUid(), event.getSource().getRoomIdString());
 
-        liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), false);
-        liveDataService.setLiveEndTime(event.getPlatform(), event.getSource().getUid(), event.getTimestamp());
-
-        archiveSession(event);
+        detailArchiver.beginLiveOff(event);
+        try {
+            liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), false);
+            liveDataService.setLiveEndTime(event.getPlatform(), event.getSource().getUid(), event.getTimestamp());
+            archiveSession(event);
+        } finally {
+            detailArchiver.finishLiveOff(event);
+        }
 
         // 本场数据并入累计。选在下播而非开播清零前，是因为程序可能在两场之间重启，
         // 拖到开播才并入会整场丢失。本场数据本身保留到下次开播，报告仍读得到

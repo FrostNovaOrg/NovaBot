@@ -10,10 +10,14 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveReportDeliveryService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
+import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -93,6 +97,8 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("bilibiliApiUtil", mock(BilibiliApiUtil.class));
         beans.registerSingleton("liveRoomInfoHistory", mock(LiveRoomInfoHistory.class));
         beans.registerSingleton("liveDataService", mock(LiveDataService.class));
+        beans.registerSingleton("liveReportDeliveryService", mock(LiveReportDeliveryService.class));
+        beans.registerSingleton("liveSessionDetailArchiver", mock(LiveSessionDetailArchiver.class));
         beans.registerSingleton("reportImageDiskCache", new ReportImageDiskCache(coreProperties));
         beans.registerSingleton("novaMessageSender", mock(NovaMessageSender.class));
         beans.registerSingleton("revenueVisibilityService", mock(RevenueVisibilityService.class));
@@ -100,10 +106,12 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));
         beans.registerSingleton("streamerNames", StreamerNames.none());
         beans.registerSingleton("reportPalettes", ReportPalettes.factory());
+        beans.registerSingleton("pushTemplateDefaults", mock(PushTemplateDefaults.class));
 
         registerAsComponentScanDoes(BilibiliLiveReportPainter.class);
         registerAsComponentScanDoes(BilibiliLiveReportPreviewPainter.class);
         registerAsComponentScanDoes(BilibiliLiveReportPushHandler.class);
+        registerAsComponentScanDoes(BilibiliLiveReportRedrawer.class);
         registerAsComponentScanDoes(BilibiliLiveReportCommand.class);
         registerAsComponentScanDoes(BilibiliReportLayoutController.class);
     }

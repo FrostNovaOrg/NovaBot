@@ -1,51 +1,76 @@
 package org.frostnova.nova.report.command;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
+import org.frostnova.nova.report.painter.BilibiliLiveReportReplayPainter;
+import org.frostnova.nova.report.painter.ReportPalette;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.datasource.DataSourceService;
+import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
+import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveDetailArchive;
+import org.frostnova.nova.core.service.LiveInterventionTracker;
+import org.frostnova.nova.core.service.LiveReportDeliveryService;
+import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
+import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 「直播报告」命令：挑主播与版式
- * <p>
- * 这里配了的主播在播就出报告，
- * 不要求这里还配过报告推送。版式有推送才用推送的，没有就走默认。
+ * 「直播报告」命令的主播选择、直播中与下播后的答复及版式。
  */
 @DisplayName("直播报告命令")
 class BilibiliLiveReportCommandTest {
@@ -57,11 +82,8 @@ class BilibiliLiveReportCommandTest {
 
     private static final List<String> NAMES = List.of("主播甲", "主播乙");
 
-    /**
-     * 场次归档所在目录。本类不写归档，只是不让选择器读到别处那一份
-     */
     @TempDir
-    static Path dataDir;
+    Path dataDir;
 
     @Test
     @DisplayName("私聊没有报告推送、主播在播：出图，画手拿到默认版式")
@@ -81,14 +103,108 @@ class BilibiliLiveReportCommandTest {
     }
 
     @Test
-    @DisplayName("主播不在播时应明说「X 现在没在直播」")
-    void saysNotLiveWhenStreamerIsOff() {
+    @DisplayName("没有已结束的直播时说明没有报告")
+    void explainsWhenThereIsNoArchivedReport() {
         Fixture fixture = new Fixture(List.of(streamer(1, null)), Set.of());
 
         CommandReply reply = fixture.command.execute(context());
 
-        assertEquals("主播甲 现在没在直播", reply.content());
+        assertTrue(reply.content().contains("主播甲 还没有已结束的直播"), reply.content());
+        assertTrue(reply.content().contains("暂时没有直播报告"), reply.content());
         verify(fixture.painter, never()).paint(anyString(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("下播后回复最新的整场报告")
+    void repliesWithLatestFinishedReport() {
+        PushUser user = streamer(1, null);
+        PushTarget target = user.getTargets().get(0);
+        target.setType(PushTargetType.GROUP);
+        target.setReportPalette("night");
+        target.setRevenueVisible(false);
+        Fixture fixture = new Fixture(List.of(user), Set.of());
+        fixture.details.store(detail(100, 200));
+        fixture.details.store(detail(300, 600));
+
+        CommandReply reply = fixture.command.execute(new CommandContext(PLATFORM, PushTargetType.GROUP, FRIEND, SENDER,
+                "直播报告", List.of(), "直播报告"));
+
+        assertEquals("{image_base64=REVG}", reply.content());
+        assertEquals(300, fixture.replayedDetail.startTime());
+        verify(fixture.replay).render(argThat(options -> !options.isShowRevenue()), same(ReportPalette.NIGHT));
+        verify(fixture.painter, never()).paint(anyString(), any(), any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("直播中与下播后都使用默认模板和已保存的版式")
+    void usesDefaultTemplateAndDisabledReportLayout(boolean savedLayout) {
+        PushUser streamer = streamer(1, savedLayout ? JSONObject.of("cover", false) : null);
+        if (savedLayout) {
+            PushMessage report = streamer.getTargets().get(0).getMessages().get(0);
+            report.setHandler("org.frostnova.nova.bilibili.handler.BilibiliLiveReportPushHandler");
+            report.setParams(report.getParamsJsonObject().toJSONString());
+            report.setParamsJsonObject(null);
+            report.setEnabled(false);
+        }
+        Fixture fixture = new Fixture(List.of(streamer), Set.of(1));
+        assertTrue(fixture.templates.save(fixture.handler, JSONObject.of("danmu_ranking", 10)).isEmpty());
+
+        assertEquals("{image_base64=QUJD}", fixture.command.execute(context()).content());
+        BilibiliLiveReportOptions live = fixture.capturedOptions();
+        assertEquals(10, live.getDanmuRanking());
+        assertEquals(!savedLayout, live.isCover());
+
+        when(fixture.liveData.getLiveStatus("bilibili", 10001L)).thenReturn(Optional.of(false));
+        fixture.details.store(detail(300, 600));
+        assertEquals("{image_base64=REVG}", fixture.command.execute(context()).content());
+        var archivedOptions = ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
+        verify(fixture.replay).render(archivedOptions.capture(), any());
+        assertThat(archivedOptions.getValue()).usingRecursiveComparison().isEqualTo(live);
+    }
+
+    @Test
+    @DisplayName("整场报告画不出来时发文字版")
+    void repliesWithFinishedTextReportWhenImageFails() {
+        Fixture fixture = new Fixture(List.of(streamer(1, null)), Set.of());
+        fixture.details.store(detail(300, 600));
+        when(fixture.replay.render(any(), any())).thenReturn(Optional.empty());
+        when(fixture.replay.textReport(eq("bilibili"), any(), any())).thenReturn("主播甲的直播报告\n时长 1 小时");
+
+        String reply = fixture.command.execute(context()).content();
+
+        assertTrue(reply.contains("主播甲的直播报告"), reply);
+        assertTrue(reply.contains("时长 1 小时"), reply);
+    }
+
+    @Test
+    @DisplayName("刚下播而明细还没写好时，提醒稍后再查")
+    void doesNotSendAnOlderReportWhileClosingTheCurrentSession() {
+        Fixture fixture = new Fixture(List.of(streamer(1, null)), Set.of());
+        fixture.details.store(detail(100, 200));
+        when(fixture.liveData.getLiveStartTime("bilibili", 10001L)).thenReturn(Optional.of(300L));
+        var intervention = mock(LiveInterventionTracker.class);
+        when(intervention.endReason(anyString(), anyLong(), any())).thenReturn(LiveEndReason.NORMAL);
+        List<String> duringArchive = new ArrayList<>();
+        doAnswer(call -> {
+            duringArchive.add(fixture.command.execute(context()).content());
+            return call.callRealMethod();
+        }).when(fixture.archiver).allSeries("bilibili", 10001L);
+        var listener = new NovaDefaultLiveOffEventListener(fixture.liveData, fixture.sessions,
+                intervention, fixture.roomInfo, fixture.archiver);
+
+        listener.onLiveOffEvent(new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L, "主播甲", 9L),
+                Instant.ofEpochMilli(600)));
+
+        assertEquals(1, duringArchive.size());
+        assertTrue(duringArchive.get(0).contains("刚下播，直播报告还在生成"), duringArchive.get(0));
+        assertEquals("{image_base64=REVG}", fixture.command.execute(context()).content());
+        assertEquals(300, fixture.replayedDetail.startTime());
+    }
+
+    private static LiveDetail detail(long start, long end) {
+        return new LiveDetail(LiveDetail.VERSION, "bilibili", 10001L, "主播甲", 9L, start, end, (end - start) / 1000,
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of());
     }
 
     @Test
@@ -186,17 +302,28 @@ class BilibiliLiveReportCommandTest {
         } else {
             target.setMessages(new ArrayList<>());
         }
-        user.setTargets(List.of(target));
+        user.setTargets(new ArrayList<>(List.of(target)));
+        target.setUser(user);
         return user;
     }
 
     /**
      * 一次用例用的零件：主播名单与在播状态按用例不同，共用一份会把上一例的盘面带到下一例。
      */
-    private static class Fixture {
+    private class Fixture {
         private final BilibiliLiveReportPainter painter;
 
         private final BilibiliLiveReportCommand command;
+
+        private final LiveDataService liveData = mock(LiveDataService.class);
+        private final LiveRoomInfoHistory roomInfo = mock(LiveRoomInfoHistory.class);
+        private final LiveSessionArchive sessions;
+        private final LiveDetailArchive details;
+        private final LiveSessionDetailArchiver archiver;
+        private final PushTemplateDefaults templates;
+        private final BilibiliLiveReportPushHandler handler;
+        private final BilibiliLiveReportReplayPainter replay = mock(BilibiliLiveReportReplayPainter.class);
+        private LiveDetail replayedDetail;
 
         private final ArgumentCaptor<LiveStreamerInfo> source =
                 ArgumentCaptor.forClass(LiveStreamerInfo.class);
@@ -206,25 +333,40 @@ class BilibiliLiveReportCommandTest {
 
         private boolean captured;
 
-        Fixture(List<PushUser> users, Set<Integer> living) {
-            AbstractDataSource dataSource = mock(AbstractDataSource.class);
-            when(dataSource.getUsers("bilibili")).thenReturn(users);
-
-            LiveDataService liveDataService = mock(LiveDataService.class);
-            when(liveDataService.getLiveStatus(anyString(), anyLong())).thenAnswer(invocation ->
+        Fixture(List<PushUser> configuredUsers, Set<Integer> living) {
+            var registry = mock(DataSourceServiceRegistry.class);
+            when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(mock(DataSourceService.class)));
+            var dataSource = new AbstractDataSource(event -> { }, registry, null) {
+                @Override public void load() { add(configuredUsers); }
+            };
+            dataSource.load();
+            when(liveData.getLiveStatus(anyString(), anyLong())).thenAnswer(invocation ->
                     Optional.of(living.contains((int) ((Long) invocation.getArgument(1) - 10000L))));
 
             painter = mock(BilibiliLiveReportPainter.class);
             when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
 
-            RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-            when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
-
             NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
-            command = new BilibiliLiveReportCommand(dataSource,
-                    new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties)),
-                    liveDataService, painter, revenueVisibility);
+            properties.getDatasource().setJsonPath(dataDir.resolve("datasource.json").toString());
+            var revenue = new RevenueVisibilityService(new NovaStateStore(properties));
+            templates = new PushTemplateDefaults(properties);
+            handler = new BilibiliLiveReportPushHandler(mock(BilibiliApiUtil.class), mock(NovaMessageSender.class), painter, revenue);
+            sessions = new LiveSessionArchive(properties);
+            details = new LiveDetailArchive(properties);
+            archiver = spy(new LiveSessionDetailArchiver(liveData, roomInfo, details));
+            var redrawer = new BilibiliLiveReportRedrawer(null, null, null, new NovaBilibiliProperties(), roomInfo, null) {
+                @Override protected BilibiliLiveReportReplayPainter replay(LiveDetail detail) {
+                    replayedDetail = detail;
+                    return replay;
+                }
+            };
+            ReflectionTestUtils.setField(redrawer, "templates", templates);
+            ReflectionTestUtils.setField(redrawer, "handler", handler);
+            ReflectionTestUtils.setField(redrawer, "revenue", revenue);
+            when(replay.render(any(), any())).thenReturn(Optional.of(new byte[]{68, 69, 70}));
+            command = new BilibiliLiveReportCommand(dataSource, new BilibiliStreamerChoice(liveData, sessions),
+                    liveData, painter, new LiveReportDeliveryService(details, dataSource, null, null), archiver, redrawer);
         }
 
         private void capture() {

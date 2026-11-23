@@ -2,6 +2,7 @@ package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
+import org.frostnova.nova.core.event.live.common.LiveOffEvent;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 一场直播的明细与峰值归档，正常下播与未闭合补档共用的一套
@@ -39,12 +42,28 @@ public class LiveSessionDetailArchiver {
      */
     private final LiveDetailArchive details;
 
+    private final Set<LiveOffEvent> pendingLiveOffs = ConcurrentHashMap.newKeySet();
+
     @Autowired
     public LiveSessionDetailArchiver(LiveDataService liveDataService, LiveRoomInfoHistory roomInfoHistory,
                                      LiveDetailArchive details) {
         this.liveDataService = liveDataService;
         this.roomInfoHistory = roomInfoHistory;
         this.details = details;
+    }
+
+    public void beginLiveOff(LiveOffEvent event) {
+        pendingLiveOffs.add(event);
+    }
+
+    public void finishLiveOff(LiveOffEvent event) {
+        pendingLiveOffs.remove(event);
+    }
+
+    /** 从直播状态变更前到本场明细写完，查询仍须等待这一场。 */
+    public boolean isArchivingLiveOff(String platform, Long uid) {
+        return pendingLiveOffs.stream().anyMatch(event -> platform.equals(event.getPlatform())
+                && uid.equals(event.getSource().getUid()));
     }
 
     /**

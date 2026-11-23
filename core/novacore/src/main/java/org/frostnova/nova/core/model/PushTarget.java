@@ -48,6 +48,10 @@ public class PushTarget {
      */
     private List<PushMessage> messages = new ArrayList<>();
 
+    /** 已关闭的推送配置，供仍需读取其参数的功能使用。 */
+    @JSONField(serialize = false, deserialize = false)
+    private List<PushMessage> disabledMessages = List.of();
+
     /** 金额显示；null 使用群聊隐藏、好友显示的默认值。 */
     private Boolean revenueVisible;
 
@@ -105,7 +109,7 @@ public class PushTarget {
      * @return 是否完全相同
      */
     public boolean same(PushTarget other) {
-        return equals(other) && messages.equals(other.messages)
+        return equals(other) && messages.equals(other.messages) && disabledMessages.equals(other.disabledMessages)
                 && Objects.equals(revenueVisible, other.revenueVisible)
                 && Objects.equals(assistantEnabled, other.assistantEnabled)
                 && Objects.equals(quietHours, other.quietHours)

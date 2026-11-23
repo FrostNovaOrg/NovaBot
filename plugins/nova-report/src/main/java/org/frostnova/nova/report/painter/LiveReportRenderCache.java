@@ -42,23 +42,26 @@ public class LiveReportRenderCache implements SmartLifecycle {
         String image = images.getIfPresent(key);
         if (image != null) return Optional.of(image);
         return disk.read(key).map(original -> {
-            images.put(key, original);
-            return original;
+            String current = images.asMap().putIfAbsent(key, original);
+            return current == null ? original : current;
         });
     }
 
+    /** 重画较晚完成时，保留已缓存的推送原图。 */
     public void put(String platform, Long uid, long start, BilibiliLiveReportOptions options,
             ReportPalette palette, String image) {
         if (start > 0 && image != null && !image.isBlank())
-            images.put(new Key(platform, uid, start, JSON.toJSONString(options), palette), image);
+            images.asMap().putIfAbsent(new Key(platform, uid, start, JSON.toJSONString(options), palette), image);
     }
 
     /** 只有正常推送的成品图落盘；从明细重画仍只放内存。 */
     public void putOriginal(String platform, Long uid, long start, BilibiliLiveReportOptions options,
             ReportPalette palette, String image) {
-        put(platform, uid, start, options, palette, image);
-        if (start > 0 && image != null && !image.isBlank())
-            disk.store(new Key(platform, uid, start, JSON.toJSONString(options), palette), image);
+        if (start > 0 && image != null && !image.isBlank()) {
+            Key key = new Key(platform, uid, start, JSON.toJSONString(options), palette);
+            images.put(key, image);
+            disk.store(key, image);
+        }
     }
 
     @Override public void start() { disk.sweep(); running = true; }
