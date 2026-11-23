@@ -47,6 +47,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.ExpectedCount;
@@ -134,7 +137,7 @@ class QqAssistantCommandTest {
             modelWait.run();
             JSONObject reply = modelReplies.poll();
             return withSuccess(JSONObject.of("choices", List.of(JSONObject.of("message",
-                    reply == null ? text("没有这份数据") : reply)), "usage",
+                    reply == null ? text("没有这份数据") : reply, "finish_reason", "stop")), "usage",
                     JSONObject.of("prompt_tokens", 100, "completion_tokens", 10)).toJSONString(),
                     MediaType.APPLICATION_JSON).createResponse(request);
         });
@@ -850,6 +853,41 @@ class QqAssistantCommandTest {
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
         assertEquals(1, requests.size());
+    }
+
+    // QQ 里难题要等一两分钟，却没有任何提示。
+    @Test void difficultQuestionSendsItsOwnNoticeWhileWaitingForAnswer() throws Exception {
+        new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
+                .bind("novabot.assistant", Bindable.ofInstance(properties));
+        properties.setDailyQuestionsPerQqUser(1);
+        properties.setDailyQuestionsPerQqSession(1);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        modelReplies.add(text("分析"));
+        modelReplies.add(text("近期场次表现有波动。"));
+        var answering = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        holdModel(answering, release);
+        Runnable holdAnswer = modelWait;
+        modelWait = () -> {
+            if (requests.size() == 2) holdAnswer.run();
+        };
+        try {
+            group(ASKER, "问 为什么近期场次表现不一样");
+            assertReply("要多想一会儿", "一两分钟");
+            assertTrue(answering.await(10, TimeUnit.SECONDS), "模型还没有开始回答");
+            assertFalse(requests.get(1).containsKey("reasoning_effort"));
+            assertNull(replies.poll(11, TimeUnit.SECONDS), "难题又收到了查数提示");
+        } finally {
+            release.countDown();
+        }
+        assertReply("场次表现有波动", LABEL);
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 本月有开播吗");
+        assertReply("你的聊天账号", "提问次数用完");
+        awaitIdle(GROUP, ROOM);
+        group(OTHER, "问 本月有开播吗");
+        assertReply("这个会话", "提问次数用完");
+        assertEquals(2, requests.size());
     }
 
     @Test

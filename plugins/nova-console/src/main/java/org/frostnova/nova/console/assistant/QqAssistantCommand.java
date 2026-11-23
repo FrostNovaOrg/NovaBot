@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
@@ -327,18 +328,11 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
         }
         var active = new ActiveQuestion(context, asker, uid);
         var work = new FutureTask<Void>(() -> {
-            active.finish(answer(context, session, uid, question, selected));
+            active.finish(answer(context, session, uid, question, selected, active));
             return null;
         });
         try {
-            if (chosenName == null) {
-                active.ack = reminders.schedule(() -> active.acknowledge("收到，正在查"), ACK_SECONDS, TimeUnit.SECONDS);
-            } else {
-                active.acknowledge("收到，查" + chosenName);
-            }
-            active.deadline = reminders.schedule(() -> {
-                if (active.finish(QqAnswer.text("智能助手本次提问已超时，请问得具体一点"))) work.cancel(true);
-            }, AssistantAskService.QUESTION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            active.start(work, chosenName);
             workers.execute(() -> {
                 try { work.run(); }
                 finally { inFlight.remove(session); }
@@ -352,7 +346,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
         return CommandReply.none();
     }
 
-    private QqAnswer answer(CommandContext context, String session, Long uid, String question, PendingFollowUps selected) {
+    private QqAnswer answer(CommandContext context, String session, Long uid, String question, PendingFollowUps selected,
+                            ActiveQuestion active) {
         try {
             PushTarget target = allowedChannel(context, uid);
             if (target == null) return null;
@@ -367,7 +362,8 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             var request = JSONObject.of("question", question, "history", recentTexts);
             var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
             var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
-            var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults);
+            var answer = assistant.askFromQq(LIVE_PLATFORM, uid, source, request, amountVisible, previousResults,
+                    active::difficultyResolved);
             JSONObject result = answer.response();
             PushTarget current = allowedChannel(context, uid);
             if (current == null || Thread.currentThread().isInterrupted()) return null;
@@ -493,8 +489,12 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
         private final Asker asker;
         private final Long uid;
         private boolean finished;
+        private boolean waitingForDifficulty;
+        private boolean progressDeferred;
+        private Future<?> work;
         private ScheduledFuture<?> ack;
         private ScheduledFuture<?> deadline;
+        private long deadlineAt;
 
         private ActiveQuestion(CommandContext context, Asker asker, Long uid) {
             this.context = context;
@@ -502,8 +502,49 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp {
             this.uid = uid;
         }
 
-        synchronized void acknowledge(String text) {
-            if (!finished) send(QqAnswer.text(text));
+        synchronized void start(Future<?> work, String chosenName) {
+            this.work = work;
+            waitingForDifficulty = assistant.adaptiveThinkingEnabled();
+            if (chosenName == null) {
+                ack = reminders.schedule(this::progress, ACK_SECONDS, TimeUnit.SECONDS);
+            } else {
+                send(QqAnswer.text("收到，查" + chosenName));
+            }
+            scheduleDeadline(Duration.ofSeconds(AssistantAskService.QUESTION_TIMEOUT_SECONDS));
+        }
+
+        private synchronized void progress() {
+            if (finished || ack == null) return;
+            if (waitingForDifficulty) progressDeferred = true;
+            else send(QqAnswer.text("收到，正在查"));
+        }
+
+        synchronized void difficultyResolved(AssistantAskService.QuestionTiming timing) {
+            if (finished) return;
+            waitingForDifficulty = false;
+            scheduleDeadline(timing.remaining());
+            if (timing.analysis()) {
+                if (ack != null) {
+                    ack.cancel(false);
+                    ack = null;
+                }
+                send(QqAnswer.text("这个问题要多想一会儿，大约一两分钟"));
+            } else if (progressDeferred) {
+                progress();
+            }
+        }
+
+        private void scheduleDeadline(Duration remaining) {
+            if (deadline != null) deadline.cancel(false);
+            long delay = remaining.toNanos();
+            long scheduledAt = System.nanoTime() + delay;
+            deadlineAt = scheduledAt;
+            deadline = reminders.schedule(() -> expire(scheduledAt), delay, TimeUnit.NANOSECONDS);
+        }
+
+        private synchronized void expire(long scheduledAt) {
+            if (scheduledAt == deadlineAt && finish(QqAnswer.text("智能助手本次提问已超时，请问得具体一点")))
+                work.cancel(true);
         }
 
         synchronized boolean finish(QqAnswer answer) {

@@ -157,6 +157,8 @@ location /config/admin/ {
 示例用控制台默认的 `7827` 和 NapCat WebUI 默认的 `6099`，改过端口的按实际填写。
 若已经有控制台站点，把 `map` 放在 `http` 块里，再把 NapCat 相关的 `location` 合进原站点的 `server` 块。
 
+nginx 转发默认等 60 秒没收到响应数据就断开。开启智能助手「按难度调思考强度」后，控制台转发的 `proxy_read_timeout` 至少要与「难题限时（秒）」一样长，示例给默认的 180 秒多留了一点时间。
+
 ```nginx
 # 浏览器打开网页时通常声明接收 text/html，没登录时可以把这类请求送回控制台。
 map $http_accept $napcat_wants_html {
@@ -174,6 +176,7 @@ server {
     # 控制台照原路径转发，登录与来源检查需要原样的 Host 和代理写入的来源头。
     location /config {
         proxy_pass http://127.0.0.1:7827;
+        proxy_read_timeout 190s;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
