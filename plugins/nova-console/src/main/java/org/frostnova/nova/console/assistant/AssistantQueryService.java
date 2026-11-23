@@ -10,8 +10,10 @@ import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.model.LiveSession;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -48,10 +50,17 @@ public class AssistantQueryService {
     private final LiveDataService live;
     private final NovaCoreProperties properties;
     private final ObjectProvider<LiveMetricCatalog> catalogs;
+    private final AbstractDataSource dataSource;
     private final Clock clock;
     private final AssistantAudienceHistory audienceHistory = new AssistantAudienceHistory();
 
     @Autowired
+    public AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
+                                 LiveDataService live, NovaCoreProperties properties,
+                                 ObjectProvider<LiveMetricCatalog> catalogs, AbstractDataSource dataSource) {
+        this(statistics, archive, details, live, properties, catalogs, Clock.systemUTC(), dataSource);
+    }
+
     public AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
                                  LiveDataService live, NovaCoreProperties properties,
                                  ObjectProvider<LiveMetricCatalog> catalogs) {
@@ -61,6 +70,12 @@ public class AssistantQueryService {
     public AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
                                  LiveDataService live, NovaCoreProperties properties,
                                  ObjectProvider<LiveMetricCatalog> catalogs, Clock clock) {
+        this(statistics, archive, details, live, properties, catalogs, clock, null);
+    }
+
+    private AssistantQueryService(StreamerStatistics statistics, LiveSessionArchive archive, LiveDetailArchive details,
+                                  LiveDataService live, NovaCoreProperties properties,
+                                  ObjectProvider<LiveMetricCatalog> catalogs, Clock clock, AbstractDataSource dataSource) {
         this.statistics = statistics;
         this.archive = archive;
         this.details = details;
@@ -68,6 +83,13 @@ public class AssistantQueryService {
         this.properties = properties;
         this.catalogs = catalogs;
         this.clock = clock;
+        this.dataSource = dataSource;
+    }
+
+    String streamerName(String platform, Long uid) {
+        Optional<String> loaded = dataSource == null ? Optional.empty() : dataSource.getUser(platform, uid).map(PushUser::getUname);
+        return loaded.filter(name -> !name.isBlank()).or(() -> archive.latestUname(platform, uid))
+                .map(name -> name.replaceAll("\\R", " ").strip()).orElse(uid.toString());
     }
 
     JSONObject aggregate(String platform, Long uid, JSONObject args, AssistantQueryContext context, AssistantPrivacy privacy) {
@@ -95,15 +117,26 @@ public class AssistantQueryService {
     JSONObject querySql(String platform, Long uid, JSONObject args, AssistantQueryContext context,
                         AssistantPrivacy privacy, IntPredicate pauseHistory) {
         if (!validIdentity(platform, uid)) return AssistantSqlRequest.rejected("请提供有效主播");
+        return querySql(platform, Map.of(uid, ""), args, context, privacy, pauseHistory);
+    }
+
+    JSONObject querySql(String platform, Map<Long, String> streamers, JSONObject args, AssistantQueryContext context,
+                        AssistantPrivacy privacy, IntPredicate pauseHistory) {
         try {
-            var request = AssistantSqlRequest.parse(args);
-            Long start = live.getLiveStatus(platform, uid).orElse(false)
-                    ? live.getLiveStartTime(platform, uid).orElse(null) : null;
-            var key = new AssistantAudienceHistory.Key(platform, uid, start == null ? 0 : start,
-                    dataDirectory().resolve("sessions.jsonl"));
+            var request = AssistantSqlRequest.parse(args, streamers.size() > 1);
+            if (!streamers.keySet().containsAll(request.streamers())) return AssistantSqlRequest.rejected(AssistantTools.OUTSIDE_QUESTION);
+            Set<Long> selected = request.streamers().isEmpty() ? streamers.keySet() : Set.copyOf(request.streamers());
+            Path sessionsFile = dataDirectory().resolve("sessions.jsonl");
+            var sources = new ArrayList<AssistantSqlQuery.Source>();
+            streamers.forEach((uid, name) -> {
+                if (!selected.contains(uid)) return;
+                Long start = live.getLiveStatus(platform, uid).orElse(false)
+                        ? live.getLiveStartTime(platform, uid).orElse(null) : null;
+                var key = new AssistantAudienceHistory.Key(platform, uid, start == null ? 0 : start, sessionsFile);
+                sources.add(new AssistantSqlQuery.Source(key, (at, fileName) -> file(platform, uid, at, fileName), start, name));
+            });
             var metrics = request.tables().contains(AssistantSqlRequest.Table.SESSIONS) ? rules(platform) : null;
-            return new AssistantSqlQuery(request, context, privacy).run(audienceHistory, key, archive, metrics,
-                    (at, name) -> file(platform, uid, at, name), start, pauseHistory);
+            return new AssistantSqlQuery(request, context, privacy).run(audienceHistory, sources, archive, metrics, pauseHistory);
         } catch (AssistantSqlRequest.Invalid error) {
             return AssistantSqlRequest.rejected(error.getMessage());
         } catch (AssistantException error) {

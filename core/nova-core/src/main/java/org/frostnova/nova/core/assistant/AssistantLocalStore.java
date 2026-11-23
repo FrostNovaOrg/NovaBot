@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.function.LongFunction;
 
 /** 本机观众代号密钥及只含发送元数据的记录，与模型密钥使用同一目录。 */
@@ -93,8 +94,14 @@ public final class AssistantLocalStore {
     public synchronized java.util.Map<String, String> nicknames() { return java.util.Map.copyOf(nicknames); }
 
     /** 记录发送元数据与固定错误字段。 */
-    public synchronized void record(String account, String platform, Long uid, java.util.List<String> tools,
-                                    java.util.List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
+    public synchronized void record(String account, String platform, Long uid, List<String> tools,
+                                    List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
+                                    AssistantException failure, QqSource qq, String difficulty, int modelCalls) {
+        record(account, platform, uid, List.of(), tools, dataTypes, cost, endpoint, failure, qq, difficulty, modelCalls);
+    }
+
+    public synchronized void record(String account, String platform, Long uid, List<Long> streamers, List<String> tools,
+                                    List<String> dataTypes, java.math.BigDecimal cost, String endpoint,
                                     AssistantException failure, QqSource qq, String difficulty, int modelCalls) {
         try {
             Instant now = clock.instant();
@@ -111,6 +118,7 @@ public final class AssistantLocalStore {
             }
             JSONObject entry = JSONObject.of("at", now.toString(), "account", account, "platform", platform, "uid", uid,
                     "tools", tools, "dataTypes", dataTypes, "costYuan", cost, "endpoint", endpoint, "modelCalls", modelCalls);
+            if (streamers.size() > 1) entry.put("streamers", streamers);
             if (difficulty != null) entry.put("difficulty", difficulty);
             if (qq != null) {
                 entry.put("entry", qq.entry());

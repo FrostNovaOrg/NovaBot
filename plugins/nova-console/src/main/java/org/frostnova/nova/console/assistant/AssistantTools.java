@@ -3,14 +3,16 @@ package org.frostnova.nova.console.assistant;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.IntPredicate;
 
-/** 工具只读，主播身份由调用方绑定。 */
+/** 工具只读，查询范围由调用方绑定。 */
 final class AssistantTools {
+    static final String OUTSIDE_QUESTION = "这位主播不在这一问里";
     private record Tool(String name, String description, JSONObject fields, List<String> required) { }
     private static JSONObject integer(String description) { return JSONObject.of("type", "integer", "description", description); }
     private static JSONObject text(String description) { return JSONObject.of("type", "string", "description", description); }
@@ -44,29 +46,56 @@ final class AssistantTools {
                             + "合计覆盖截断前的所有匹配记录，null 表示未知。"
                             + AssistantAggregateQuery.KNOWN_AMOUNT_RULE + "。数字以工具结果为准，不要自己加总明细。",
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED),
-            new Tool(AssistantSqlRequest.NAME, AssistantSqlRequest.description(true),
-                    AssistantSqlRequest.fields(true), AssistantSqlRequest.REQUIRED),
+            new Tool(AssistantSqlRequest.NAME, AssistantSqlRequest.description(true, false),
+                    AssistantSqlRequest.fields(true, false), AssistantSqlRequest.REQUIRED),
             new Tool(AssistantChartRequest.NAME, AssistantChartRequest.DESCRIPTION,
                     AssistantChartRequest.fields(), AssistantChartRequest.REQUIRED),
             new Tool(AssistantSketchRequest.NAME, AssistantSketchRequest.DESCRIPTION,
                     AssistantSketchRequest.fields(), AssistantSketchRequest.REQUIRED));
 
     static List<JSONObject> definitions(AssistantQueryContext context) {
+        return definitions(context, false);
+    }
+
+    static List<JSONObject> definitions(AssistantQueryContext context, boolean comparison) {
         return TOOLS.stream().filter(tool -> context.amountVisible() || !"revenue".equals(tool.name()))
                 .filter(tool -> !AssistantSqlRequest.NAME.equals(tool.name()) || AssistantSqlNative.available())
-                .map(tool -> AssistantSqlRequest.NAME.equals(tool.name())
-                        ? new Tool(tool.name(), (context.amountVisible() ? tool.description() : AssistantSqlRequest.description(false))
-                            + AssistantSqlRequest.dialect(AssistantSqlNative.version()),
-                            context.amountVisible() ? tool.fields() : AssistantSqlRequest.fields(false), tool.required()) : tool)
+                .map(tool -> definition(tool, context, comparison))
                 .map(t -> JSONObject.of("type", "function", "function", JSONObject.of("name", t.name(),
                 "description", t.description(), "parameters", JSONObject.of("type", "object", "properties", t.fields(),
                         "required", t.required(), "additionalProperties", false)))).toList();
     }
 
+    private static Tool definition(Tool tool, AssistantQueryContext context, boolean comparison) {
+        if (AssistantSqlRequest.NAME.equals(tool.name())) {
+            return new Tool(tool.name(), AssistantSqlRequest.description(context.amountVisible(), comparison)
+                    + AssistantSqlRequest.dialect(AssistantSqlNative.version()),
+                    AssistantSqlRequest.fields(context.amountVisible(), comparison), tool.required());
+        }
+        if (!comparison || drawing(tool.name())) return tool;
+        var fields = new JSONObject(tool.fields());
+        fields.put("streamer", integer("可选，填写本问所列主播的 UID；不填则查询主主播"));
+        return new Tool(tool.name(), tool.description(), fields, tool.required());
+    }
+
+    private static boolean drawing(String name) {
+        return AssistantChartRequest.NAME.equals(name) || AssistantSketchRequest.NAME.equals(name);
+    }
+
     /** 白名单外参数不进入执行、步骤和后续模型请求。 */
     static JSONObject arguments(String name, JSONObject raw) {
-        if (AssistantAggregateRequest.NAME.equals(name)) return AssistantAggregateRequest.parse(raw).arguments();
-        if (AssistantSqlRequest.NAME.equals(name)) return AssistantSqlRequest.parse(raw).arguments();
+        return arguments(name, raw, false);
+    }
+
+    static JSONObject arguments(String name, JSONObject raw, boolean comparison) {
+        if (AssistantSqlRequest.NAME.equals(name)) return AssistantSqlRequest.parse(raw, comparison).arguments();
+        JSONObject result = AssistantAggregateRequest.NAME.equals(name)
+                ? AssistantAggregateRequest.parse(raw).arguments() : basicArguments(name, raw);
+        if (comparison && !drawing(name) && raw.containsKey("streamer")) result.put("streamer", integerValue(raw.get("streamer")));
+        return result;
+    }
+
+    private static JSONObject basicArguments(String name, JSONObject raw) {
         var tool = TOOLS.stream().filter(t -> t.name().equals(name)).findFirst().orElseThrow(IllegalArgumentException::new);
         JSONObject result = new JSONObject();
         for (Map.Entry<String, Object> field : tool.fields().entrySet()) {
@@ -76,8 +105,7 @@ final class AssistantTools {
             }
             Object value = raw.get(field.getKey());
             if ("integer".equals(((JSONObject) field.getValue()).getString("type"))) {
-                if (!(value instanceof Number)) throw new IllegalArgumentException();
-                result.put(field.getKey(), new java.math.BigDecimal(value.toString()).longValueExact());
+                result.put(field.getKey(), integerValue(value));
             } else {
                 if (!(value instanceof String text) || text.length() > 80) throw new IllegalArgumentException();
                 result.put(field.getKey(), value);
@@ -86,13 +114,22 @@ final class AssistantTools {
         return result;
     }
 
-    static JSONObject query(AssistantQueryService queries, String platform, Long uid, String name, JSONObject args,
+    static long integerValue(Object value) {
+        if (!(value instanceof Number)) throw new IllegalArgumentException();
+        return new BigDecimal(value.toString()).longValueExact();
+    }
+
+    static JSONObject query(AssistantQueryService queries, String platform, Map<Long, String> streamers, String name, JSONObject args,
                             AssistantQueryContext context, AssistantPrivacy privacy, IntPredicate pauseHistory) {
+        Long primary = streamers.keySet().iterator().next();
+        if (AssistantSqlRequest.NAME.equals(name)) {
+            return streamers.size() == 1 ? queries.querySql(platform, primary, args, context, privacy, pauseHistory)
+                    : queries.querySql(platform, streamers, args, context, privacy, pauseHistory);
+        }
+        Long uid = args.getLongValue("streamer", primary);
+        if (!streamers.containsKey(uid)) return JSONObject.of("source", "查数服务", "reason", OUTSIDE_QUESTION);
         if (AssistantAggregateRequest.NAME.equals(name)) {
             return queries.aggregate(platform, uid, args, context, privacy, pauseHistory);
-        }
-        if (AssistantSqlRequest.NAME.equals(name)) {
-            return queries.querySql(platform, uid, args, context, privacy, pauseHistory);
         }
         Set<String> nonMonetaryMetrics = context.amountVisible() ? Set.of() : queries.nonMonetaryMetrics(platform);
         if (!context.amountVisible() && ("revenue".equals(name) || "curve".equals(name)

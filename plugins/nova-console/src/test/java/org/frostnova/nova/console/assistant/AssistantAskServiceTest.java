@@ -8,15 +8,18 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import org.frostnova.nova.console.assistant.AssistantQueryService.AudienceIdentity;
+import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.assistant.*;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.*;
 import org.frostnova.nova.core.config.ui.auth.*;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.model.DanmuRecord;
+import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +28,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -41,10 +45,12 @@ import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import java.util.function.IntPredicate;
+import java.util.stream.Stream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.frostnova.nova.core.enums.PushTargetType.GROUP;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.anything;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -57,6 +63,9 @@ import static org.hamcrest.Matchers.containsString;
 
 class AssistantAskServiceTest {
     private static final AudienceIdentity UNNAMED_AUDIENCE = new AudienceIdentity(Set.of(), null);
+    private static final long FIRST_STREAMER = 9300020101L;
+    private static final long SECOND_STREAMER = 9300020102L;
+    private static final long SHARED_START = Instant.parse("2026-11-03T12:00:00Z").toEpochMilli();
     @TempDir Path directory;
     private final MutableClock clock = new MutableClock();
     private AssistantProperties properties;
@@ -128,6 +137,199 @@ class AssistantAskServiceTest {
 
     private String modelSystem(int index) {
         return sent.get(index).getJSONArray("messages").getJSONObject(0).getString("content");
+    }
+
+    // 问两位主播谁的流水高，助手只能查到其中一位。
+    @Test void comparesRevenueFromBothStreamersArchives() {
+        useComparisonArchives();
+        var first = JSONObject.of("kinds", List.of("session"), "from", "2026-11-02", "to", "2026-11-08",
+                "metrics", List.of("sum:amount"), "streamer", FIRST_STREAMER);
+        var second = new JSONObject(first);
+        second.put("streamer", SECOND_STREAMER);
+        replies.add(call("aggregate", first));
+        replies.add(call("aggregate", second));
+        replies.add(JSONObject.of("content", "合成主播乙的流水更高。"));
+
+        var answer = askComparison("合成主播甲和合成主播乙这周流水谁高");
+
+        assertTrue(answer.getBooleanValue("answered"));
+        var results = comparisonResults();
+        assertEquals(2, results.size());
+        assertEquals(125.5, results.get(0).getJSONArray("rows").getJSONArray(0).getDoubleValue(0));
+        assertEquals(380.25, results.get(1).getJSONArray("rows").getJSONArray(0).getDoubleValue(0));
+        assertEquals(List.of(FIRST_STREAMER, SECOND_STREAMER), answer.getJSONArray("steps").stream()
+                .map(JSONObject.class::cast).map(step -> step.getJSONObject("arguments").getLong("streamer")).toList());
+        assertTrue(modelSystem(0).contains("本问可查的主播：合成主播甲（" + FIRST_STREAMER + "）、合成主播乙（" + SECOND_STREAMER + "）"));
+        assertTrue(modelSystem(0).contains("这一问列出的几位 B 站主播"));
+        assertTrue(modelSystem(0).contains("只能查本问列出的主播"));
+        for (Object item : sent.get(0).getJSONArray("tools")) {
+            JSONObject function = ((JSONObject) item).getJSONObject("function");
+            String name = function.getString("name");
+            JSONObject parameters = function.getJSONObject("parameters");
+            JSONObject fields = parameters.getJSONObject("properties");
+            switch (name) {
+                case "draw_chart", "draw_sketch" -> assertFalse(fields.containsKey("streamer"));
+                case "query_sql" -> assertTrue(fields.containsKey("streamers"));
+                default -> assertTrue(fields.containsKey("streamer"), name);
+            }
+            assertFalse(parameters.getJSONArray("required").contains("streamer"));
+            assertFalse(parameters.getJSONArray("required").contains("streamers"));
+        }
+    }
+
+    // 对比题里，助手查到了这一问之外的主播。
+    @Test void rejectsToolCallsForAnUnlistedStreamer() {
+        long outside = 9300020103L;
+        when(queries.revenue("bilibili", FIRST_STREAMER, SHARED_START)).thenReturn(toolData());
+        when(queries.revenue("bilibili", outside, SHARED_START)).thenReturn(toolData());
+        replies.add(call("revenue", JSONObject.of("start", SHARED_START, "streamer", outside)));
+        replies.add(JSONObject.of("content", "这位主播不在这一问里。"));
+
+        assertTrue(askComparison("比较这几位主播的流水").getBooleanValue("answered"));
+
+        assertEquals("这位主播不在这一问里", comparisonResults().get(0).getString("reason"));
+        verify(queries, never()).revenue(anyString(), anyLong(), anyLong());
+    }
+
+    // 两位主播同一时刻开播，装进同一张表时互相覆盖。
+    @Test void keepsSimultaneousSessionsFromBothStreamersInSql() {
+        assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
+        useComparisonArchives();
+        replies.add(call("query_sql", JSONObject.of("from", "2026-11-03", "to", "2026-11-03", "tables", List.of("sessions"),
+                "sql", "SELECT streamer_uid, start_at, revenue FROM sessions ORDER BY streamer_uid")));
+        replies.add(JSONObject.of("content", "两场都在同一时刻开播。"));
+
+        assertTrue(askComparison("甲和乙有没有同时开播").getBooleanValue("answered"));
+
+        var result = comparisonResults().get(0);
+        assertFalse(result.containsKey("reason"), result::toJSONString);
+        var rows = result.getJSONArray("rows");
+        assertEquals(2, rows.size());
+        var first = rows.getJSONArray(0);
+        assertEquals(FIRST_STREAMER, first.getLongValue(0));
+        assertEquals(SHARED_START, first.getLongValue(1));
+        assertEquals(125.5, first.getDoubleValue(2));
+        var second = rows.getJSONArray(1);
+        assertEquals(SECOND_STREAMER, second.getLongValue(0));
+        assertEquals(SHARED_START, second.getLongValue(1));
+        assertEquals(380.25, second.getDoubleValue(2));
+    }
+
+    @Test void sqlUsesOnlyTheSelectedStreamersAndCanJoinTheirNames() {
+        assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
+        useComparisonArchives();
+        var args = JSONObject.of("from", "2026-11-03", "to", "2026-11-03", "tables", List.of("sessions", "streamers"),
+                "sql", "SELECT streamer_uid, name, revenue FROM sessions JOIN streamers USING (streamer_uid)",
+                "streamers", List.of(SECOND_STREAMER));
+        replies.add(call("query_sql", args));
+        args.put("streamers", List.of(9300020103L));
+        replies.add(call("query_sql", args));
+        replies.add(JSONObject.of("content", "已查合成主播乙的流水。"));
+
+        assertTrue(askComparison("只查乙的流水").getBooleanValue("answered"));
+
+        var results = comparisonResults();
+        var rows = results.get(0).getJSONArray("rows");
+        assertEquals(1, rows.size());
+        var row = rows.getJSONArray(0);
+        assertEquals(SECOND_STREAMER, row.getLongValue(0));
+        assertEquals("合成主播乙", row.getString(1));
+        assertEquals(380.25, row.getDoubleValue(2));
+        assertEquals("这位主播不在这一问里", results.get(1).getString("reason"));
+    }
+
+    @Test void comparisonKeepsBothMemosPrivateAndChargesOnlyThePrimaryStreamer() throws Exception {
+        String firstName = "合成主播甲";
+        String secondName = "合成主播乙";
+        long viewer = 9300020199L;
+        when(queries.streamerName("bilibili", FIRST_STREAMER)).thenReturn(firstName);
+        when(queries.streamerName("bilibili", SECOND_STREAMER)).thenReturn(secondName);
+        when(queries.localAudience("bilibili", FIRST_STREAMER, List.of()))
+                .thenReturn(Map.of(viewer, new AudienceIdentity(Set.of("合成观众旧名"), "合成观众旧名")));
+        when(queries.localAudience("bilibili", SECOND_STREAMER, List.of()))
+                .thenReturn(Map.of(viewer, new AudienceIdentity(Set.of("合成观众新名"), "合成观众新名"),
+                        FIRST_STREAMER, new AudienceIdentity(Set.of("合成观众曾用名"), "合成观众曾用名")));
+        seedMemos(directory, FIRST_STREAMER, "2026-11-01", null, "甲的备忘提到合成观众旧名");
+        seedMemos(directory, SECOND_STREAMER, "2026-11-01", null, "乙的备忘提到合成观众新名和合成观众曾用名");
+        properties.setAdaptiveThinking(true);
+        replies.add(JSONObject.of("content", "分析"));
+        replies.add(call("revenue", JSONObject.of("start", SHARED_START)));
+        replies.add(JSONObject.of("content", "已比较两位主播。"));
+
+        var qq = local.qqSource("QQ", GROUP, 123, 456);
+        var request = JSONObject.of("question", "甲和乙这周流水谁高");
+        var result = service.askFromQq("bilibili", List.of(FIRST_STREAMER, SECOND_STREAMER), qq, request,
+                true, List.of(), null, () -> { }, ignored -> { }).response();
+
+        assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+        assertEquals("analysis", result.getString("difficulty"));
+        assertTrue(modelSystem(0).contains("比较两位以上主播的，回复「分析」"));
+        String prompt = modelSystem(1);
+        JSONArray memos = JSON.parseArray(prompt.substring(prompt.lastIndexOf("\n[") + 1));
+        String alias = alias(viewer);
+        assertEquals(2, memos.size());
+        assertEquals(FIRST_STREAMER, memos.getJSONObject(0).getLongValue("streamer"));
+        assertEquals(firstName, memos.getJSONObject(0).getString("streamerName"));
+        assertEquals("甲的备忘提到" + alias, memos.getJSONObject(0).getString("text"));
+        assertEquals(SECOND_STREAMER, memos.getJSONObject(1).getLongValue("streamer"));
+        assertEquals(secondName, memos.getJSONObject(1).getString("streamerName"));
+        assertEquals("乙的备忘提到" + alias + "和" + alias(FIRST_STREAMER), memos.getJSONObject(1).getString("text"));
+        assertFalse(sent.toString().contains("合成观众"));
+        assertFalse(sent.toString().contains(Long.toString(viewer)));
+        verify(queries).localAudience("bilibili", FIRST_STREAMER, List.of());
+        verify(queries).localAudience("bilibili", SECOND_STREAMER, List.of());
+        verify(queries).revenue("bilibili", FIRST_STREAMER, SHARED_START);
+        verify(queries, never()).revenue("bilibili", SECOND_STREAMER, SHARED_START);
+        assertEquals(List.of(Long.toString(FIRST_STREAMER)), client.status().streamerUsage().stream()
+                .map(AssistantClient.StreamerUsage::uid).toList());
+
+        Path transmissionLog = directory.resolve("assistant-transmissions.jsonl");
+        JSONObject grouped = JSON.parseObject(Files.readString(transmissionLog));
+        assertEquals(FIRST_STREAMER, grouped.getLongValue("uid"));
+        assertEquals(JSONArray.of(FIRST_STREAMER, SECOND_STREAMER), grouped.getJSONArray("streamers"));
+        ask();
+        JSONObject single = JSON.parseObject(Files.readAllLines(transmissionLog).get(1));
+        assertEquals(1L, single.getLongValue("uid"));
+        assertFalse(single.containsKey("streamers"));
+    }
+
+    @Test void rejectsEmptyRepeatedOrOversizedStreamerGroupsBeforeAsking() {
+        var request = JSONObject.of("question", "这周流水怎么样");
+        for (List<Long> streamers : List.of(Collections.<Long>emptyList(), List.of(1L, 1L), List.of(1L, 2L, 3L, 4L, 5L, 6L))) {
+            var error = assertThrows(AssistantException.class, () -> service.ask("bilibili", streamers, "member", request));
+            assertEquals("invalid_argument", error.reason());
+        }
+        assertTrue(sent.isEmpty());
+        verifyNoInteractions(queries);
+    }
+
+    private JSONObject askComparison(String question) {
+        return service.ask("bilibili", List.of(FIRST_STREAMER, SECOND_STREAMER), "member", JSONObject.of("question", question));
+    }
+
+    private List<JSONObject> comparisonResults() {
+        return sent.get(sent.size() - 1).getJSONArray("messages").stream().map(JSONObject.class::cast)
+                .filter(message -> "tool".equals(message.getString("role")))
+                .map(message -> JSON.parseObject(message.getString("content"))).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void useComparisonArchives() {
+        var core = new NovaCoreProperties();
+        core.getLive().setLiveDataPath(directory.resolve("live.json").toString());
+        var archive = new LiveSessionArchive(core);
+        archive.append(comparisonSession(FIRST_STREAMER, "合成主播甲", 125.5));
+        archive.append(comparisonSession(SECOND_STREAMER, "合成主播乙", 380.25));
+        ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
+        when(catalogs.orderedStream()).thenAnswer(call -> Stream.of(new BilibiliLiveMetricCatalog()));
+        service.close();
+        queries = new AssistantQueryService(null, archive, new LiveDetailArchive(core), mock(LiveDataService.class), core, catalogs, clock);
+        service = new AssistantAskService(queries, client, properties, local, clock);
+    }
+
+    private static LiveSession comparisonSession(long uid, String name, double revenue) {
+        return new LiveSession("bilibili", uid, name, null, SHARED_START, SHARED_START + 600_000, 600,
+                Map.of("gift_value", revenue), Map.of(), null, List.of(), 0, Map.of(), 0);
     }
 
     // 控制台和 QQ 的弹幕工具定义不同，或系统提示仍允许引用观众原话。
