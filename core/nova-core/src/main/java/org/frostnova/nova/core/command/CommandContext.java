@@ -68,6 +68,10 @@ public class CommandContext {
     @lombok.Setter
     private org.frostnova.nova.core.model.PushTarget channel;
 
+    /** 触发本次命令的原消息编号，未提供时为空。 */
+    @lombok.Setter
+    private String messageId;
+
     /**
      * 取第 n 个参数
      * @param index 下标，从 0 开始

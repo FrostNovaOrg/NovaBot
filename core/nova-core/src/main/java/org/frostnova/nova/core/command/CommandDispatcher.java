@@ -213,6 +213,7 @@ public class CommandDispatcher {
 
         CommandContext probe = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), typedName, List.copyOf(parts), event.getText());
+        probe.setMessageId(event.getMessageId());
         if (command != null) {
             CommandReply early = command.beforeCooldown(probe);
             if (early != null) {
@@ -287,6 +288,7 @@ public class CommandDispatcher {
             try {
                 var context = new CommandContext(event.getPlatform(), type, event.getNum(),
                         event.getSenderUid(), command.name(), args, event.getText());
+                context.setMessageId(event.getMessageId());
                 if (fallback.acceptsFallback(context)) return command;
             } catch (Exception e) {
                 log.error("检查命令 {} 能否接手消息时发生异常", command.name(), e);
@@ -310,6 +312,7 @@ public class CommandDispatcher {
 
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), name, List.copyOf(args), event.getText());
+        context.setMessageId(event.getMessageId());
         for (CommandFollowUp followUp : followUps) {
             try {
                 CommandFollowUp.Claimed claimed = followUp.claim(context);
@@ -386,6 +389,7 @@ public class CommandDispatcher {
         // 或按名字认「带不带总」时，认的就是这一格
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), typedName, args, event.getText(), admin);
+        context.setMessageId(event.getMessageId());
 
         try {
             CommandReply commandReply = command.execute(context);
@@ -412,6 +416,7 @@ public class CommandDispatcher {
             message.setChannel(channel);
             // 标成回复而不是推送：这一条是有人先开口才有的，凡是「只对主动推送成立」的事都不该算上它
             message.setReply(true);
+            message.setReplyTo(event.getMessageId());
             sender.send(message);
         });
     }

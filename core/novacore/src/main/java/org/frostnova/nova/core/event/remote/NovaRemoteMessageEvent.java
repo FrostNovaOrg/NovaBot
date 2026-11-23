@@ -64,6 +64,9 @@ public class NovaRemoteMessageEvent extends NovaInternalBaseEvent {
      */
     private boolean mentionsBot;
 
+    /** 适配器收到的原消息编号，未提供时为空。 */
+    private String messageId;
+
     public NovaRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text) {
         this(platform, messageType, num, senderUid, text, (String) null);
     }

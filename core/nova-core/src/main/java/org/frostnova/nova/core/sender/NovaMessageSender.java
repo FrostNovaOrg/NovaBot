@@ -585,6 +585,10 @@ public class NovaMessageSender {
         params.put("content", message.getContent());
         params.put("sequence", message.getSequence());
         params.put("create_time", message.getCreateTime().toEpochMilli());
+        String replyTo = message.getReplyTo();
+        if (replyTo != null && !replyTo.isBlank()) {
+            params.put("reply_to", replyTo);
+        }
 
         for (Predicate<Message> interceptor : message.getOnBeforeSendInterceptors()) {
             if (!interceptor.test(message)) {
