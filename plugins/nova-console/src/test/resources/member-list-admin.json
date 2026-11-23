@@ -365,7 +365,7 @@
       },
       {
         "name": "PUSH_QQ_OFFICIAL_BLOCKED",
-        "text": "QQ 官方群未推送"
+        "text": "按平台规则未推送"
       },
       {
         "name": "PUSH_SENT",
