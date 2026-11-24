@@ -72,6 +72,7 @@ public final class SecretStore {
                 || value.chars().anyMatch(c -> c < 33 || c > 126)) {
             throw new IllegalArgumentException("密钥须为 1 至 8192 个可见 ASCII 字符");
         }
+        SecretLogMask.remember(logSlot(), value);
         byte[] plain = value.getBytes(StandardCharsets.UTF_8);
         try {
             synchronized (FILE_LOCK) {
@@ -115,10 +116,16 @@ public final class SecretStore {
                     Arrays.fill(plain, (byte) 0);
                 }
             }
+            // 解密出来的密钥要拿去连外面，客户端在别的线程上记日志时同样遮掉
+            SecretLogMask.remember(logSlot(), value);
             return action.apply(value);
         } catch (Exception e) {
             throw storageError();
         }
+    }
+
+    private String logSlot() {
+        return SecretStore.class.getName() + ":" + encryptedPath;
     }
 
     /** 清除已存的密文，主密钥可用于下次保存。 */
@@ -126,6 +133,7 @@ public final class SecretStore {
         synchronized (FILE_LOCK) {
             try {
                 Files.deleteIfExists(encryptedPath);
+                SecretLogMask.forget(logSlot());
             } catch (Exception e) {
                 throw storageError();
             }
