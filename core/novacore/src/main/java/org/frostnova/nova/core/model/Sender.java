@@ -94,6 +94,9 @@ public class Sender {
          */
         String DELIVERY_UNKNOWN = "delivery_unknown";
 
+        /** 投递结果为 {@code code: 0}，但部分图片未送达时为 {@code true}。 */
+        String IMAGE_DEGRADED = "image_degraded";
+
         /**
          * 投递一条消息
          * @param headers 若走 HTTP 会带上的请求头，进程内投递通常用不到，保留以便实现方按需鉴权

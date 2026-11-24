@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.annotation.PreDestroy;
 import lombok.With;
 import lombok.extern.slf4j.Slf4j;
@@ -175,6 +176,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return Optional.ofNullable(currentEntries().groups().get(number));
     }
 
+    synchronized Optional<GroupEntry> group(String appId, long number) {
+        requireReadable();
+        return Optional.ofNullable(entries(appId).groups().get(number));
+    }
+
     public synchronized Optional<String> groupOpenId(long number) {
         return group(number).map(GroupEntry::openid);
     }
@@ -216,7 +222,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         if (!title.isEmpty() && settings.snapshot().configured() && settings.useSecret(title::contains)) {
             throw new IllegalArgumentException("群名不能包含 AppSecret");
         }
-        updateGroup(number, group -> {
+        updateGroup(configuredApp(), number, group -> {
             if (!title.isEmpty()) {
                 String apiName = group.nameSource() == NameSource.GROUP_INFO_API ? group.name() : group.apiName();
                 return group.withApiName(apiName).withName(title).withNameSource(NameSource.MANUAL);
@@ -257,8 +263,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         Objects.requireNonNull(status);
         Objects.requireNonNull(source);
         Objects.requireNonNull(at);
-        updateGroup(number, group -> group.proactive().at() == null || !at.isBefore(group.proactive().at())
-                ? group.withProactive(new Proactive(status, source, at)) : group);
+        updateGroup(configuredApp(), number, group -> withProactive(group, new Proactive(status, source, at)));
     }
 
     public synchronized void recordFailure(long number, String reason, Instant at) {
@@ -266,11 +271,25 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("失败原因不能为空");
         }
-        updateGroup(number, group -> withFailure(group, new Failure(maskKnown(reason, currentEntries()), at)));
+        String appId = configuredApp();
+        updateGroup(appId, number, group -> withFailure(group, new Failure(maskKnown(reason, entries(appId)), at)));
     }
 
-    private void updateGroup(long number, Function<GroupEntry, GroupEntry> update) {
-        String appId = configuredApp();
+    synchronized void recordSendResult(String appId, long number, Proactive proactive, Failure failure) {
+        updateGroup(appId, number, group -> {
+            if (proactive != null) {
+                group = withProactive(group, proactive);
+            }
+            return failure == null ? group : withFailure(group, failure);
+        });
+    }
+
+    private static GroupEntry withProactive(GroupEntry group, Proactive observed) {
+        return group.proactive().at() == null || !observed.at().isBefore(group.proactive().at())
+                ? group.withProactive(observed) : group;
+    }
+
+    private void updateGroup(String appId, long number, Function<GroupEntry, GroupEntry> update) {
         BotEntries bot = entries(appId);
         GroupEntry previous = bot.groups().get(number);
         if (previous == null) {
@@ -367,11 +386,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
             Failure failure = null;
             boolean unavailable = false;
             try {
-                String segment = UriUtils.encodePathSegment(before.openid(), StandardCharsets.UTF_8);
-                if (segment.equals(".") || segment.equals("..")) {
-                    segment = segment.replace(".", "%2E");
-                }
-                String path = "/v2/groups/" + segment + "/" + key.endpoint().path;
+                String path = groupPath(before.openid()) + "/" + key.endpoint().path;
                 Object value = api.request("GET", path, null, key.appId());
                 if (value instanceof JSONObject json) {
                     response = json;
@@ -546,6 +561,18 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return response.get(key) instanceof String s ? s : "";
     }
 
+    static String groupPath(String openid) {
+        String segment = UriUtils.encodePathSegment(openid, StandardCharsets.UTF_8);
+        if (segment.equals(".") || segment.equals("..")) {
+            segment = segment.replace(".", "%2E");
+        }
+        return "/v2/groups/" + segment;
+    }
+
+    synchronized String maskKnown(String appId, String value) {
+        return maskKnown(value, entries(appId));
+    }
+
     private static String maskKnown(String value, BotEntries bot) {
         for (GroupEntry group : bot.groups().values()) {
             value = mask(value, group.openid());
@@ -560,8 +587,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         if (openid.isEmpty() || !value.contains(openid)) {
             return value;
         }
-        String masked = openid.length() <= 8 ? "…" : openid.substring(0, 4) + "…" + openid.substring(openid.length() - 4);
-        return value.replace(openid, masked);
+        return value.replace(openid, maskOpenId(openid));
+    }
+
+    static String maskOpenId(String openid) {
+        return openid.length() <= 8 ? "…" : openid.substring(0, 4) + "…" + openid.substring(openid.length() - 4);
     }
 
     private static <K, V> Map<K, V> replacing(Map<K, V> map, K key, V value) {
@@ -623,7 +653,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     public record Refresh(Instant attemptedAt, Instant retryAt) {}
     public enum NameSource { DEFAULT, GROUP_INFO_API, MANUAL }
     public enum ProactiveStatus { UNKNOWN, ENABLED, DISABLED }
-    public enum SwitchSource { GROUP_STATE_API, EVENT, MANUAL }
+    public enum SwitchSource {
+        GROUP_STATE_API, EVENT, MANUAL,
+        @JsonProperty("发送成功") SEND_SUCCESS,
+        @JsonProperty("发送报错") SEND_ERROR
+    }
     public enum BotRole { ADMIN, OWNER, MEMBER }
     private enum Membership { JOIN, REMOVE, SEEN }
 

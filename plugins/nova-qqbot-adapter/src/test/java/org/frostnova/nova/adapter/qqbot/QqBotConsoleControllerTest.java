@@ -150,19 +150,24 @@ class QqBotConsoleControllerTest {
         withConsole(rig -> {
             saveCredentials(rig.mvc);
             connect(rig);
+            var sender = rig.senders.getSender("qq-official").orElseThrow();
             rig.mvc.perform(read("state")).andExpect(jsonPath("$.connection.level").value("OK"));
             for (var invalid : List.of(500, 70000, 1000.5, "1000")) {
                 rig.mvc.perform(write("interval", JSONObject.of("millis", invalid))).andExpect(status().isBadRequest());
                 assertEquals(2000, new QqBotSettings(root).snapshot().intervalMillis());
+                assertEquals(2000, sender.getDelay());
             }
             rig.mvc.perform(write("interval", JSONObject.of("millis", 1000))).andExpect(status().isOk())
                     .andExpect(jsonPath("$.intervalMillis").value(1000))
                     .andExpect(jsonPath("$.warning").value(containsString("每分钟 60 条只对做过个人认证或企业认证")));
             assertEquals(1000, new QqBotSettings(root).snapshot().intervalMillis());
+            assertEquals(1000, sender.getDelay(), "在连接页保存的发送间隔应该立即生效");
             rig.mvc.perform(read("state")).andExpect(jsonPath("$.intervalMillis").value(1000));
             rig.mvc.perform(write("interval", JSONObject.of("millis", 60000))).andExpect(status().isOk())
                     .andExpect(jsonPath("$.warning").doesNotExist());
             assertEquals(60000, new QqBotSettings(root).snapshot().intervalMillis());
+            assertEquals(60000, sender.getDelay());
+            assertSame(sender, rig.senders.getSender("qq-official").orElseThrow());
             rig.scheduler.advance(0);
             rig.mvc.perform(read("state")).andExpect(jsonPath("$.connection.level").value("OK"));
             assertEquals(1, rig.gatewayRequests.size());
@@ -218,7 +223,8 @@ class QqBotConsoleControllerTest {
 
     @Test
     void pluginRegistersTheCardOnlyWhenTheConsoleIsEnabled() {
-        context().run(app -> {
+        var runner = context(new NovaSenderService(new NovaCoreProperties()));
+        runner.run(app -> {
             assertNull(app.getStartupFailure());
             var page = app.getBean(ConsolePageProvider.class);
             assertEquals("qqbot", page.id());
@@ -229,7 +235,7 @@ class QqBotConsoleControllerTest {
             assertEquals(page.id(), probe.card());
             assertFalse(probe.active());
         });
-        context().withPropertyValues("novabot.core.config-ui.enabled=false").run(app -> {
+        runner.withPropertyValues("novabot.core.config-ui.enabled=false").run(app -> {
             assertNull(app.getStartupFailure());
             assertTrue(app.getBeansWithAnnotation(RestController.class).isEmpty());
             assertTrue(app.getBeansOfType(ConsolePageProvider.class).isEmpty());
@@ -531,9 +537,10 @@ class QqBotConsoleControllerTest {
         when(rig.dataSource.getUsers("bilibili")).thenReturn(List.of(streamer));
     }
 
-    private ApplicationContextRunner context() {
+    private ApplicationContextRunner context(NovaSenderService senders) {
         return new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
-                .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(root));
+                .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(root))
+                .withBean(NovaSenderService.class, () -> senders);
     }
 
     private List<JSONObject> audit() throws Exception {
@@ -592,7 +599,7 @@ class QqBotConsoleControllerTest {
         when(pushGate.alertsAllowed()).thenReturn(true);
         var sender = new NovaMessageSender(null, registry, mock(PushActivityRecorder.class), pushGate,
                 timeline::add, null, null, null);
-        context().withBean(QqBotHttpTransport.class, () -> http, definition -> definition.setPrimary(true))
+        context(registry).withBean(QqBotHttpTransport.class, () -> http, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, () -> scheduler, definition -> definition.setPrimary(true))
                 .withBean(QqBotWebSocketTransport.class, () -> sockets, definition -> definition.setPrimary(true))
                 .withUserConfiguration(CommandDispatcher.class, BilibiliAtListCommand.class)
@@ -603,13 +610,11 @@ class QqBotConsoleControllerTest {
                 .withBean(CommandReplyHint.class, () -> mock(CommandReplyHint.class))
                 .withBean(BilibiliStreamerChoice.class, () -> mock(BilibiliStreamerChoice.class))
                 .withBean(AtSubscriptionService.class, () -> subscriptions)
-                .withBean(NovaSenderService.class, () -> registry)
                 .withBean(NovaMessageSender.class, () -> sender)
                 .withBean(TimelineWriter.class, () -> timeline::add)
                 .withBean(NovaCommand.class, () -> new ManagementCommand())
                 .run(app -> {
                     assertNull(app.getStartupFailure());
-                    app.getBean(QqBotPassiveReplies.class).registerSender();
                     var directory = app.getBean(QqBotDirectory.class);
                     var controllers = new ArrayList<>(app.getBeansWithAnnotation(RestController.class).values());
                     controllers.add(new ConfigUiPushTargetsController(List.of(directory), List.of(directory),
@@ -620,7 +625,7 @@ class QqBotConsoleControllerTest {
                                     List.copyOf(app.getBeansOfType(ConfigUiOperationProvider.class).values())))
                             .setControllerAdvice(new ConfigUiOperationAdvice()).build();
                     test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners, passiveReplies,
-                            timeline, dataSource, subscriptions, app.getBean(QqBotCredentials.class)));
+                            timeline, dataSource, subscriptions, app.getBean(QqBotCredentials.class), registry));
                 });
     }
 
@@ -670,7 +675,7 @@ class QqBotConsoleControllerTest {
                        List<JSONObject> tokenRequests, List<String> gatewayRequests,
                        List<QqBotWebSocketTransport.Listener> listeners, List<JSONObject> passiveReplies,
                        List<TimelineEvent> timeline, AbstractDataSource dataSource, AtSubscriptionService subscriptions,
-                       QqBotCredentials credentials) {
+                       QqBotCredentials credentials, NovaSenderService senders) {
         void claim(String id, String sender, String content) {
             message("GROUP_AT_MESSAGE_CREATE", id, GROUP, sender, content, "小明", "账号昵称");
         }

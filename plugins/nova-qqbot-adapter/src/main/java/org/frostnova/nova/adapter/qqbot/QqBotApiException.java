@@ -5,12 +5,18 @@ public final class QqBotApiException extends RuntimeException {
     private final int code;
     private final String traceId;
     private final int httpStatus;
+    private final boolean deliveryUnknown;
 
     QqBotApiException(int code, String message, String traceId, int httpStatus) {
+        this(code, message, traceId, httpStatus, false);
+    }
+
+    QqBotApiException(int code, String message, String traceId, int httpStatus, boolean deliveryUnknown) {
         super(message);
         this.code = code;
         this.traceId = traceId;
         this.httpStatus = httpStatus;
+        this.deliveryUnknown = deliveryUnknown;
     }
 
     public int code() {
@@ -24,5 +30,9 @@ public final class QqBotApiException extends RuntimeException {
     /** 没有收到 HTTP 回包时为 0。 */
     public int httpStatus() {
         return httpStatus;
+    }
+
+    boolean deliveryUnknown() {
+        return deliveryUnknown;
     }
 }

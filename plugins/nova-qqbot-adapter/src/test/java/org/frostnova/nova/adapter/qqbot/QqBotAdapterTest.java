@@ -4,10 +4,12 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReplyHint;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.secret.SecretStore;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,6 +49,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 class QqBotAdapterTest {
     private static final String APP_ID = "12345678";
@@ -62,6 +65,7 @@ class QqBotAdapterTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(QqBotPluginAutoConfiguration.class, CommandReplyHint.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .run(context -> {
                     var hints = context.getBean(CommandReplyHint.class);
                     var group = new CommandContext("qq-official", PushTargetType.GROUP, 1L, 2L, "", List.of(), "");
@@ -77,7 +81,8 @@ class QqBotAdapterTest {
     void pluginLoadsItsServicesAndChecksStoredCredentialsOnTheReadyEvent() throws IOException {
         Path directory = dataDirectory.resolve("qqbot");
         new SecretStore(directory, "app-secret").save(SECRET);
-        Files.writeString(directory.resolve("settings.json"), JSONObject.of("appId", APP_ID).toJSONString());
+        Files.writeString(directory.resolve("settings.json"),
+                JSONObject.of("appId", APP_ID, "intervalMillis", 4500).toJSONString());
         AtomicInteger exchanges = new AtomicInteger();
         QqBotHttpTransport transport = (method, uri, headers, body) -> {
             exchanges.incrementAndGet();
@@ -85,6 +90,7 @@ class QqBotAdapterTest {
         };
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
@@ -92,6 +98,8 @@ class QqBotAdapterTest {
                     assertNull(context.getStartupFailure());
                     assertNotNull(context.getBean(QqBotCredentials.class));
                     assertNotNull(context.getBean(QqBotApiClient.class));
+                    NovaSenderService senders = context.getBean(NovaSenderService.class);
+                    assertTrue(senders.getSender("qq-official").isEmpty());
                     QqBotHealthProbe probe = context.getBean(QqBotHealthProbe.class);
                     assertTrue(probe.active());
                     assertEquals(0, exchanges.get());
@@ -100,6 +108,7 @@ class QqBotAdapterTest {
                     assertEquals(1, exchanges.get());
                     assertEquals(HealthStatus.Level.DEGRADED, probe.check().level());
                     assertTrue(probe.check().summary().contains("正在连接"));
+                    assertEquals(4500, senders.getSender("qq-official").orElseThrow().getDelay());
                 });
     }
 
@@ -120,6 +129,7 @@ class QqBotAdapterTest {
 
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
@@ -510,7 +520,7 @@ class QqBotAdapterTest {
         QqBotApiClient api = new QqBotApiClient(transport, tokens);
         var gateway = new QqBotGateway(api, tokens, (uri, listener) -> fail("不应连接网关"),
                 new QqBotGatewayTest.ManualScheduler(), new DefaultListableBeanFactory().getBeanProvider(QqBotEventListener.class));
-        var credentials = new QqBotCredentials(tokens, gateway);
+        var credentials = new QqBotCredentials(tokens, gateway, mock(QqBotSender.class));
         return new Rig(clock, tokens, credentials, new QqBotHealthProbe(tokens, gateway), api);
     }
 

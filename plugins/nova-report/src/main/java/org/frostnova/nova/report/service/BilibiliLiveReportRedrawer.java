@@ -6,6 +6,7 @@ import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportReplayPainter;
 import org.frostnova.nova.report.painter.ReportImageDiskCache;
+import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.report.painter.LiveReportRenderCache;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
@@ -168,16 +169,40 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
 
     public Optional<String> channelContent(LiveDetail detail, PushTarget channel, BilibiliLiveReportOptions options) {
         var palette = palettes.forChannel(channel).palette();
-        var cached = rendered.get(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette);
+        var cached = cachedImage(detail, options, palette);
         if (cached.isPresent()) return cached.map(image -> "{image_base64=" + image + "}");
         var painter = replay(detail);
-        var image = painter.render(options, palette);
-        if (image.isPresent()) {
-            String base64 = Base64.getEncoder().encodeToString(image.get());
-            rendered.put(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette, base64);
-            return Optional.of("{image_base64=" + base64 + "}");
-        }
+        var image = renderImage(detail, painter, options, palette);
+        if (image.isPresent()) return image.map(base64 -> "{image_base64=" + base64 + "}");
         var streamer = new LiveStreamerInfo(detail.uid(), detail.uname(), detail.roomId());
         return Optional.of(MessagePlaceholders.escapeExternalText(painter.textReport(detail.platform(), streamer, options)));
+    }
+
+    @Override
+    public Optional<byte[]> channelImage(LiveDetail detail, PushTarget channel) {
+        if (detail == null || detail.uid() == null || channel == null) return Optional.empty();
+        try {
+            var options = commandOptions(channel);
+            var palette = palettes.forChannel(channel).palette();
+            return cachedImage(detail, options, palette)
+                    .or(() -> renderImage(detail, replay(detail), options, palette))
+                    .map(Base64.getDecoder()::decode);
+        } catch (RuntimeException e) {
+            log.warn("绘制 {} 的通道历史报告失败", detail.uname(), e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> cachedImage(LiveDetail detail, BilibiliLiveReportOptions options, ReportPalette palette) {
+        return rendered.get(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette);
+    }
+
+    private Optional<String> renderImage(LiveDetail detail, BilibiliLiveReportReplayPainter painter,
+                                         BilibiliLiveReportOptions options, ReportPalette palette) {
+        return painter.render(options, palette).map(image -> {
+            String base64 = Base64.getEncoder().encodeToString(image);
+            rendered.put(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette, base64);
+            return base64;
+        });
     }
 }

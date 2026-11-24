@@ -201,12 +201,9 @@ public class Message {
     /**
      * 图片降级回调列表，请勿调用阻塞操作
      * <p>
-     * 在「原内容含图、发送失败、剥掉图片段重发纯文字并送达」时触发，
-     * 也就是<b>文字到了、图没到</b>那一种结局。
+     * 消息已送达但图片有缺时触发，例如剥掉图片重发纯文字成功，或图文首条已送达、后续图片发送失败。
      * <p>
-     * 之所以单独出一个回调而不是复用成功/失败回调：这件事对使用者是
-     * <b>可感知的数据不完整</b>，而日志只有运维看得见。core 只管发信号，
-     * 谁关心谁自己记账——例如哔哩哔哩那侧据此在下播报告里注明本场有几条推送的图片没送到。
+     * 下播报告等调用方可以用这个回调统计有几条推送的图片未送达。
      */
     private List<Runnable> onImageDegradedCallbacks = new ArrayList<>();
 
@@ -427,7 +424,7 @@ public class Message {
 
     /**
      * 添加图片降级回调
-     * @param callback 图片降级回调，在「剥掉图片段重发纯文字并送达」时触发
+     * @param callback 图片降级回调，在消息已送达但图片有缺时触发
      */
     public void addOnImageDegradedCallback(Runnable callback) {
         this.onImageDegradedCallbacks.add(callback);

@@ -2,11 +2,13 @@ package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPushTargetsController;
 import org.frostnova.nova.core.config.ui.PushTargetDirectory;
 import org.frostnova.nova.core.config.ui.PushTargetLookup;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -75,6 +77,7 @@ class QqBotDirectoryTest {
         };
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
@@ -484,7 +487,7 @@ class QqBotDirectoryTest {
                 return response.apply(uri);
             };
             var tokens = new QqBotTokenService(settings, transport, clock);
-            credentials = new QqBotCredentials(tokens, mock(QqBotGateway.class));
+            credentials = new QqBotCredentials(tokens, mock(QqBotGateway.class), mock(QqBotSender.class));
             api = new QqBotApiClient(transport, tokens);
         }
 
