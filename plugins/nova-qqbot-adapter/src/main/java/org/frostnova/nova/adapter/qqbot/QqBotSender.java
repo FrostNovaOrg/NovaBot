@@ -219,7 +219,11 @@ class QqBotSender {
                 } catch (QqBotApiException e) {
                     JSONObject failed = apiFailure(target, message.text(), fileInfo, e, true);
                     // 首条已送达时，后续图片被拒也不能让核心剥图再发同一段文字。
-                    return firstId != null && !e.deliveryUnknown() ? success(firstId) : failed;
+                    if (firstId != null && !e.deliveryUnknown()) {
+                        return success(firstId).fluentPut(Sender.LocalDelivery.IMAGE_DEGRADED, true)
+                                .fluentPut("message", failed.getString("message"));
+                    }
+                    return failed;
                 }
                 if (id.isBlank()) {
                     return uncertain(target, BAD_RECEIPT);

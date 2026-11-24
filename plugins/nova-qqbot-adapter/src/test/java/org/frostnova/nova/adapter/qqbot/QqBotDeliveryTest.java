@@ -4,10 +4,17 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.model.Sender;
+import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.NovaSenderService;
+import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.timeline.TimelineEventType;
+import org.frostnova.nova.core.timeline.TimelineStore;
+import org.frostnova.nova.core.util.HttpUtil;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.awaitility.Awaitility.await;
@@ -335,9 +343,53 @@ class QqBotDeliveryTest {
             rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
                     : ++rig.sent == 1 ? json("id", "first") : json("code", 50055001);
             JSONObject result = rig.send("标题" + IMAGE + "{image_base64=" + JPEG + "}");
-            assertEquals(JSONObject.of("code", 0, "id", "first"), result);
+            assertEquals(0, result.getInteger("code"));
+            assertEquals("first", result.getString("id"));
             assertEquals(List.of("files", "files", "messages", "messages"), rig.endpoints());
             assertTrue(rig.group().lastFailure().reason().contains("QQ 侧发送出错"));
+        });
+    }
+
+    @Test
+    @DisplayName("第二张图被拒时，核心和日志能看出图片有缺，已发的正文只发一次")
+    @ExtendWith(OutputCaptureExtension.class)
+    void recordsMissingImageWithoutResendingDeliveredText(CapturedOutput output) {
+        withSender(rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
+                    : ++rig.sent == 1 ? json("id", "first") : json("code", 50055001);
+            NovaCoreProperties properties = new NovaCoreProperties();
+            properties.getLive().setLiveDataPath(dataDirectory.resolve("live.json").toString());
+            TimelineStore timeline = new TimelineStore(properties);
+            PushActivityRecorder activity = new PushActivityRecorder(timeline);
+            NovaMessageSender sender = new NovaMessageSender(mock(HttpUtil.class), rig.registry, activity,
+                    null, timeline, null, null, null);
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number,
+                    "标题" + IMAGE + "{image_base64=" + JPEG + "}").get(0);
+            AtomicInteger degraded = new AtomicInteger();
+            message.addOnImageDegradedCallback(degraded::incrementAndGet);
+
+            JSONObject result = sender.sendNow(message);
+
+            assertEquals(List.of("files", "files", "messages", "messages"), rig.endpoints());
+            assertEquals("标题", rig.body(2).getString("content"));
+            assertEquals(" ", rig.body(3).getString("content"));
+            assertEquals(0, result.getInteger("code"));
+            assertEquals("first", message.getId());
+            assertEquals(1, activity.getSuccessCount());
+            assertEquals(0, activity.getFailureCount());
+            var filter = new TimelineStore.Filter(null, false, null, null, null, null, null, 10);
+            var events = timeline.query(filter, null).events();
+            assertEquals(1, events.size());
+            TimelineEvent event = events.get(0);
+            assertEquals(TimelineEventType.PUSH_SENT, event.type());
+            assertTrue(event.text().contains("图片未送达"),
+                    () -> "回包 " + result + "，日志页显示「" + event.text() + "」");
+            assertEquals(TimelineEvent.Level.WARN, event.level());
+            assertTrue(event.detail().getOrDefault("reason", "").contains("QQ 侧发送出错"));
+            assertTrue(result.getBooleanValue(Sender.LocalDelivery.IMAGE_DEGRADED));
+            assertEquals(1, degraded.get());
+            assertTrue(output.getAll().lines().anyMatch(line -> line.contains("图片未送达")
+                    && line.contains("QQ 侧发送出错")));
         });
     }
 
