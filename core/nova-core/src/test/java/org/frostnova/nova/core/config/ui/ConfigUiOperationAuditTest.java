@@ -7,6 +7,10 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
+import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.SessionQuietHoursService;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -53,8 +57,10 @@ class ConfigUiOperationAuditTest {
     @AfterEach void close() { context.close(); }
 
     @Configuration @EnableWebMvc
-    @Import({ConfigUiOperationConfiguration.class, ConfigUiOperationAdvice.class, ConfigUiOperationStore.class})
+    @Import({ConfigUiOperationConfiguration.class, ConfigUiOperationAdvice.class, ConfigUiOperationStore.class,
+            ConfigUiSessionSettingsController.class})
     static class Setup {
+        @Bean NovaStateStore state(NovaCoreProperties properties) { return new NovaStateStore(properties); }
         @Bean org.frostnova.nova.core.config.ui.auth.oidc.OidcClient oidc() {
             return mock(org.frostnova.nova.core.config.ui.auth.oidc.OidcClient.class);
         }
@@ -86,6 +92,86 @@ class ConfigUiOperationAuditTest {
                 for (String line : Files.readAllLines(file)) rows.add(JSONObject.parseObject(line));
             return rows;
         }
+    }
+
+    @Test
+    void groupMigrationCopiesQuietHoursAndCommandsWithoutReplacingRevenue() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        String original = "qq:1:101";
+        String official = "qq-official:1:1000000000000001";
+        String next = "qq-official:1:1000000000000002";
+        var quiet = JSONObject.of("mode", "custom", "start", "23:00", "end", "07:00");
+        var commands = JSONObject.of("直播报告", 1);
+        state.write(RevenueVisibilityService.NAMESPACE, values -> {
+            values.put(original, false);
+            values.put(official, true);
+            values.put("qq:0:101", true);
+        });
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put(original, commands));
+        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put(original, quiet));
+
+        mvc.perform(post("/config/api/state/copy-to-official-group")
+                        .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(migrationBody(1000000000000001L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.skipped[0]").value("金额可见"));
+        var action = rows().get(0);
+        assertEquals("把推送目标换成官方机器人", action.getString("description"));
+        var channels = action.getJSONObject("target").getJSONArray("channels");
+        assertTrue(channels.contains(JSONObject.of("platform", "qq", "type", "1", "num", "101")));
+        assertTrue(channels.contains(JSONObject.of("platform", "qq-official", "type", "1", "num", "1000000000000001")));
+
+        mvc.perform(post("/config/api/state/copy-to-official-group")
+                        .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(migrationBody(1000000000000002L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.skipped").isEmpty());
+        var disk = JSONObject.parseObject(Files.readString(directory.resolve("state.json")));
+        var revenue = disk.getJSONObject(RevenueVisibilityService.NAMESPACE);
+        assertEquals(false, revenue.get(original));
+        assertEquals(false, revenue.get(next));
+        assertEquals(true, revenue.get(official));
+        assertEquals(quiet, disk.getJSONObject(SessionQuietHoursService.NAMESPACE).getJSONObject(official));
+        assertEquals(commands, disk.getJSONObject(CommandSettingsService.NAMESPACE).getJSONObject(official));
+        state.write(CommandSettingsService.NAMESPACE, values -> values.getJSONObject(original).clear());
+        assertTrue(state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official).containsKey("直播报告"));
+    }
+
+    @Test
+    void groupMigrationCannotReportSuccessOrLeaveCachedCopiesWhenStateCannotBeSaved() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        state.write(RevenueVisibilityService.NAMESPACE, values -> values.put("qq:1:101", false));
+        Files.createDirectory(directory.resolve("state.json"));
+        mvc.perform(post("/config/api/state/copy-to-official-group")
+                        .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(migrationBody(1000000000000001L)))
+                .andExpect(status().is5xxServerError())
+                .andExpect(jsonPath("$.success").value(false));
+        assertFalse(state.namespace(RevenueVisibilityService.NAMESPACE).containsKey("qq-official:1:1000000000000001"));
+        assertEquals(false, state.namespace(RevenueVisibilityService.NAMESPACE).get("qq:1:101"));
+    }
+
+    @Test
+    void groupMigrationAcceptsExistingCustomSenderNames() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        state.write(RevenueVisibilityService.NAMESPACE, values -> values.put("group.bot:1:101", false));
+        var body = JSONObject.parseObject(migrationBody(1000000000000001L)).fluentPut("platform", "group.bot");
+        mvc.perform(post("/config/api/state/copy-to-official-group")
+                        .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body.toJSONString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        assertEquals(false, state.namespace(RevenueVisibilityService.NAMESPACE).get("qq-official:1:1000000000000001"));
+    }
+
+    private static String migrationBody(long officialNum) {
+        return JSONObject.of("streamerPlatform", "bilibili", "streamerUid", 123, "platform", "qq",
+                "type", 1, "num", 101, "officialNum", officialNum).toJSONString();
     }
 
     @DisplayName("事后查不到是谁改了设置或推送通道：每类操作各写一行并保留身份与对象")

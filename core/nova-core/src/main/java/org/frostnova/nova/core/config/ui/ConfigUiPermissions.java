@@ -129,6 +129,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/commands");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/revenue");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/quiet");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/copy-to-official-group");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/state/binding");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/analytics/sessions");

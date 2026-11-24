@@ -125,6 +125,12 @@ public class ConfigUiOperationAdvice extends RequestBodyAdviceAdapter implements
             identify(target, Map.of("platform", platform, "uid", uid));
     }
 
+    static void session(String platform, int type, long num) {
+        var request = ConfigUiAccess.request();
+        if (request != null && request.getAttribute(ConfigUiOperationFilter.TARGET) instanceof JSONObject target)
+            identify(target, Map.of("platform", platform, "type", type, "num", num));
+    }
+
     /** 用变更前后对象补齐被移除的主播与通道，只提取发生变化的对象身份。 */
     public static void datasourceChanged(JSONArray before, JSONArray after) {
         var request = ConfigUiAccess.request();

@@ -17,9 +17,10 @@ import {ask, keepTabInside} from './confirm.js';
 import {$, api, clearLoading, CONSOLE, el, esc, loadingHtml, markDirty, phrase, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
-  atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
-  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
-  previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, restoredLayoutParams,
+  atAllStatus, buildDirectory, canMigrateGroup, channelIndex, channelName, channelSession, commandGroups, commandSummary,
+  defaultMessages, handlerNames, handlerOf, layoutState, messageOf, migrateGroupTarget, noticeSwitches,
+  officialGroupOptions, previewRequestBody, previewRevenueCaption, pushChannelOf, pushTree, quietSummary,
+  recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
@@ -129,6 +130,7 @@ const PAGE_STYLE = `
 .ch-sep{color:var(--dim)}
 .ch-nm{font-size:var(--fs-lg);font-weight:600}
 .ch-id{color:var(--dim);font-size:var(--fs-sm)}
+.ch-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px}
 .ch-sum{display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;margin-top:8px;color:var(--dim)}
 .ch-sum .lnkbtn{font-size:var(--fs-sm)}
 .ch-dot{color:var(--dim);font-size:var(--fs-sm)}
@@ -628,6 +630,7 @@ let pushSaved = '[]';
 const userVersions = new Map();
 const userLoads = new Map();
 const conflictedUsers = new Set();
+const migratingUsers = new Set();
 let datasourceGeneration = 0;
 const CONFLICT_TEXT = '这位主播的配置刚被别人改过，请重新载入';
 const userKey = user => user.platform + ':' + user.uid;
@@ -705,12 +708,14 @@ function paintConflict() {
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden || !pageLive) return;
   const user = pushData.find(item => String(item.uid) === String(picked.uid));
-  if (!user || !userVersions.has(userKey(user))) return;
-  const version = userVersions.get(userKey(user));
+  if (!user) return;
+  const key = userKey(user);
+  const version = userVersions.get(key);
+  if (!version || migratingUsers.has(key)) return;
   try {
     const res = await api(userPath(user) + '/version');
-    if (!pushData.includes(user) || version !== userVersions.get(userKey(user))) return;
-    if (!res.success || res.version !== version) conflictedUsers.add(userKey(user));
+    if (!pushData.includes(user) || version !== userVersions.get(key) || migratingUsers.has(key)) return;
+    if (!res.success || res.version !== version) conflictedUsers.add(key);
     paintConflict();
   } catch (e) {
     // 后台检查：下次切回本页时再查一次。屏幕上只说短话、不拼原话、不标红
@@ -1021,6 +1026,7 @@ function channelNode(streamer, channel) {
   const name = el('span', 'tn-nm');
   name.textContent = channel.name;
   body.appendChild(name);
+  if (!channel.enabled) body.appendChild(pill('已停用'));
   node.appendChild(body);
 
   node.addEventListener('click', () => {
@@ -1577,6 +1583,7 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
+  if (target.enabled === false) title.appendChild(pill('已停用'));
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
   }
@@ -1645,6 +1652,28 @@ function renderChannelLevel(host, user, target) {
   num.textContent = (group ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
   line.appendChild(num);
   head.appendChild(line);
+  const actions = el('div', 'ch-actions');
+  const enable = el('label', 'switch');
+  const toggle = el('input');
+  toggle.type = 'checkbox';
+  toggle.checked = target.enabled !== false;
+  enable.appendChild(toggle);
+  enable.appendChild(el('span')).textContent = '启用通道推送';
+  toggle.addEventListener('change', () => {
+    target.enabled = toggle.checked;
+    markDirty();
+    paintTree();
+  });
+  actions.appendChild(enable);
+  if (canMigrateGroup(target, store.role)) {
+    const migrate = el('button', 'ghost sm');
+    migrate.type = 'button';
+    migrate.textContent = '换成官方机器人';
+    migrate.disabled = migratingUsers.has(userKey(user));
+    migrate.addEventListener('click', () => pickOfficialGroup(user, target));
+    actions.appendChild(migrate);
+  }
+  head.appendChild(actions);
   const summary = el('div', 'ch-sum');
   head.appendChild(summary);
 
@@ -2472,8 +2501,8 @@ function pickTarget(opts) {
     const bar = el('div', 'dwbar');
     const search = el('input');
     search.type = 'search';
-    search.placeholder = '搜索群名、群号或好友昵称';
-    search.setAttribute('aria-label', '搜索可选的群与好友');
+    search.placeholder = opts.officialGroups ? '搜索群名或群号' : '搜索群名、群号或好友昵称';
+    search.setAttribute('aria-label', opts.officialGroups ? '搜索官方机器人的群' : '搜索可选的群与好友');
     bar.appendChild(search);
 
     const refresh = el('button', 'ghost sm');
@@ -2495,33 +2524,37 @@ function pickTarget(opts) {
 
     const list = el('div', 'dwlist');
     body.appendChild(list);
+    const available = () => opts.officialGroups ? officialGroupOptions(options, opts.user) : options;
+    const isTaken = item => opts.officialGroups ? item.configured : (opts.taken || []).includes(item.key);
 
     const paint = () => {
       const keyword = search.value.trim().toLowerCase();
       list.innerHTML = '';
+      const choices = available();
 
-      if (!options.length) {
-        list.appendChild(el('p', 'hint')).textContent =
-          '无法获取机器人的群与好友名单。机器人可能未连接，请到「连接」页检查。';
+      if (!choices.length) {
+        list.appendChild(el('p', 'hint')).textContent = opts.officialGroups
+          ? '还没有官方机器人的群：先把机器人拉进群，在群里 @它 一次，再回来'
+          : '无法获取机器人的群与好友名单。机器人可能未连接，请到「连接」页检查。';
         return;
       }
 
-      const rows = options.filter(item => !keyword
+      const rows = choices.filter(item => !keyword
         || String(item.num).includes(keyword)
         || (item.name || '').toLowerCase().includes(keyword));
       if (!rows.length) {
-        list.appendChild(el('p', 'hint')).textContent = '未找到匹配的群或好友。';
+        list.appendChild(el('p', 'hint')).textContent = opts.officialGroups ? '未找到匹配的群。' : '未找到匹配的群或好友。';
         return;
       }
 
       for (const [type, label] of [[1, '群'], [0, '好友']]) {
         const members = rows.filter(item => Number(item.type) === type)
-          .sort((a, b) => Number((opts.taken || []).includes(a.key)) - Number((opts.taken || []).includes(b.key)));
+          .sort((a, b) => Number(isTaken(a)) - Number(isTaken(b)));
         if (!members.length) continue;
         const group = el('section', 'dw-target-group');
         group.appendChild(el('h4')).textContent = label + ' ' + members.length + ' 个';
         for (const item of members) {
-          const taken = (opts.taken || []).includes(item.key);
+          const taken = isTaken(item);
           const otherStreamers = item.type === 1 ? pushData
             .filter(user => user !== opts.user && (user.targets || []).some(target =>
               target.platform === item.sender && Number(target.type) === 1
@@ -2543,17 +2576,20 @@ function pickTarget(opts) {
           const add = el('button', 'ghost sm');
           add.type = 'button';
           add.disabled = taken;
-          add.textContent = taken ? '已添加' : '添加';
-          add.setAttribute('aria-label', taken ? (item.name || item.num) + ' 已添加' : '添加' + label + ' ' + (item.name || item.num));
+          const takenLabel = opts.officialGroups ? '已配置' : '已添加';
+          const pickLabel = opts.officialGroups ? '选择' : '添加';
+          add.textContent = taken ? takenLabel : pickLabel;
+          add.setAttribute('aria-label', taken ? (item.name || item.num) + ' ' + takenLabel
+            : pickLabel + label + ' ' + (item.name || item.num));
           add.addEventListener('click', () => {
             if (taken) return;
-            const hit = resolveTarget(options, item.key);
+            const hit = resolveTarget(available(), item.key);
             if (!hit.ok) {
               say(hit.reason, 'err');
               return;
             }
             closeDrawer();
-            opts.onPick(hit);
+            opts.onPick(hit, item);
           });
           row.appendChild(add);
           group.appendChild(row);
@@ -2565,6 +2601,104 @@ function pickTarget(opts) {
     search.addEventListener('input', paint);
     paint();
   });
+}
+
+function migrationSnapshot(user) {
+  const key = userKey(user);
+  if (migratingUsers.has(key)) return null;
+  const saved = JSON.parse(pushSaved).find(item => userKey(item) === key);
+  if (!saved || !pushData.includes(user) || !userVersions.has(key) || conflictedUsers.has(key)) {
+    say('请重新载入这位主播的配置后再切换。', 'err');
+    return null;
+  }
+  if (JSON.stringify(user, dropDisplayOnly) !== JSON.stringify(saved)) {
+    say('请先保存这位主播的改动，再切换推送目标。', 'err');
+    return null;
+  }
+  return saved;
+}
+
+function pickOfficialGroup(user, target) {
+  if (!migrationSnapshot(user)) return;
+  pickTarget({
+    title: '换成官方机器人',
+    lead: '选择要接收推送的官方群。已配置给这位主播的群不可选。',
+    officialGroups: true,
+    user,
+    onPick: async (group, item) => {
+      if (!await ask({title: '换成官方机器人？',
+        body: '将新建一个发往官方群「' + (item.name || item.num)
+          + '」的推送目标，照抄现有的模板、@ 方式、配色、金额可见、命令开关、静音时段和问数设置；'
+          + phrase('bot.impl', name => '原来的 ' + name + ' 目标', '原来的目标')
+          + '改为停用，不删除，随时可以重新启用。'})) return;
+      await switchToOfficialGroup(user, target, group);
+    },
+  });
+}
+
+async function switchToOfficialGroup(user, target, group) {
+  const saved = migrationSnapshot(user);
+  if (!saved) return;
+  const source = saved.targets.find(item => channelTail(item) === channelTail(target));
+  if (!source || saved.targets.some(item => channelTail(item) === channelTail(group))) {
+    say('原通道或官方群配置已变更，请重新选择。', 'err');
+    return;
+  }
+  const key = userKey(user);
+  const initialVersion = userVersions.get(key);
+  let version = initialVersion;
+  let lastSaved;
+  const post = (path, body) => api(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+
+  migratingUsers.add(key);
+  say('正在切换推送目标…');
+  const result = await migrateGroupTarget(saved, source, group, {
+    saveUser: async next => {
+      const res = await post(userPath(user), {user: next, version});
+      if (!res.success || !res.version) {
+        if (res.conflict) conflictedUsers.add(key);
+        throw new Error((res.message || '保存推送配置失败') + (res.issues?.length ? '：' + res.issues.join('；') : ''));
+      }
+      lastSaved = next;
+      version = res.version;
+    },
+    copySettings: async (from, to) => {
+      const res = await post('/state/copy-to-official-group', {
+        streamerPlatform: user.platform, streamerUid: user.uid,
+        platform: from.platform, type: Number(from.type), num: from.num, officialNum: to.num,
+      });
+      if (!res.success) throw new Error(res.message || '复制会话设置失败');
+      return res.skipped || [];
+    },
+  });
+  migratingUsers.delete(key);
+  if (lastSaved && pushData.includes(user) && userVersions.get(key) === initialVersion) {
+    // 等回包期间的其他编辑仍留在草稿中。
+    const official = lastSaved.targets.at(-1);
+    if (!user.targets.some(item => channelTail(item) === channelTail(official))) {
+      user.targets.push(JSON.parse(JSON.stringify(official)));
+    }
+    if (result.stage === 'done' && target.enabled === source.enabled) target.enabled = false;
+    updateSavedUser(key, lastSaved);
+    userVersions.set(key, version);
+    setupVersions.get(key)?.set(key, version);
+    markDirty();
+  }
+  if (lastSaved && pageLive) {
+    try { await loadPushPage(); }
+    catch (error) { /* 结果由已确认的写入决定。 */ }
+  } else paintConflict();
+
+  const progress = {
+    create: '未能确认已建立新目标。未复制会话设置，原目标未停用。',
+    copy: '已建立停用的官方群目标。未能确认已复制会话设置，原目标未停用。',
+    activate: '已建立官方群目标并复制会话设置。未能确认已切换启停状态，请重新载入核对。',
+    done: '已启用官方群目标并复制会话设置，原目标已停用，可随时重新启用。',
+  };
+  const failure = result.error ? '切换失败：' + result.error.message + '。' : '';
+  const skipped = result.skipped.length ? ' 已保留官方群原有设置，跳过：' + result.skipped.join('、') + '。' : '';
+  say(failure + progress[result.stage] + skipped, result.error ? 'err' : result.skipped.length ? '' : 'ok');
 }
 
 function lookupTarget(platform, type, num) {

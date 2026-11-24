@@ -10,7 +10,7 @@
  * 凑齐一次的代价极高：要么得先去群里发命令把开关关掉，要么得去改线上配置。算成纯函数之后，
  * 喂几份回包跑一遍就能逐条对答案（tools/push-model-check.sh），渲染那一层只管把算好的摆上去。
  *
- * 🔴 <b>本文件里没有任何一个平台名、也没有任何一条通知的名字。</b>四种通知取自
+ * 四种通知取自
  * /api/handlers 现给的清单，命令分组取自各命令自报的 category，「这个会话里哪几条命令
  * 不列进菜单」取自 /api/state 里后端算好的那一份（见 RuntimeStateController#menuOf）——
  * 那条规则在后端只有一份实现，抄一份到这里的话，改了那一份的那天，控制台仍按旧规矩画。
@@ -20,6 +20,7 @@ import {AT_MODE_KEY} from './template-model.js';
 
 // 与 ChannelSettings 中允许旧配置保留的退役开关键一致。
 const RETIRED_COMMAND_KEYS = new Set(['直播间数据', '直播间总数据', '数据排行榜', '总数据排行榜']);
+const OFFICIAL = 'qq-official';
 
 /**
  * 认一个会话用的键
@@ -33,6 +34,36 @@ const RETIRED_COMMAND_KEYS = new Set(['直播间数据', '直播间总数据', '
  */
 export function sessionKey(platform, type, num) {
   return platform + ':' + Number(type) + ':' + num;
+}
+
+export function canMigrateGroup(target, role) {
+  return role === 'ADMIN' && Number(target.type) === 1 && !!target.platform && target.platform !== OFFICIAL;
+}
+
+/** 名单上的 configured 涵盖全部主播，这里只灰掉当前主播配过的群。 */
+export function officialGroupOptions(options, user) {
+  const taken = new Set((user.targets || []).map(target => sessionKey(target.platform, target.type, target.num)));
+  return options.filter(item => item.sender === OFFICIAL && item.type === 1)
+    .map(item => ({...item, configured: taken.has(sessionKey(item.sender, item.type, item.num))}));
+}
+
+/** 先保存停用的新目标。会话设置保存成功后，用同一次写入切换两个目标的启停。 */
+export async function migrateGroupTarget(user, source, group, {saveUser, copySettings}) {
+  let stage = 'create';
+  let skipped = [];
+  try {
+    const added = {...JSON.parse(JSON.stringify(source)), platform: group.platform, type: group.type,
+      num: group.num, enabled: false};
+    await saveUser({...user, targets: [...user.targets, added]});
+    stage = 'copy';
+    skipped = await copySettings(source, added);
+    stage = 'activate';
+    const targets = user.targets.map(target => target === source ? {...target, enabled: false} : target);
+    await saveUser({...user, targets: [...targets, {...added, enabled: true}]});
+    return {stage: 'done', skipped};
+  } catch (error) {
+    return {stage, skipped, error};
+  }
 }
 
 /**
