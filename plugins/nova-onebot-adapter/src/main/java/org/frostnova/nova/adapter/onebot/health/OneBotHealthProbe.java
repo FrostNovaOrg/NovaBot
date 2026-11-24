@@ -5,6 +5,8 @@ import org.frostnova.nova.core.config.RetiredConfigurationKeyCheck;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.service.NovaSenderService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 
@@ -30,13 +32,18 @@ public class OneBotHealthProbe implements HealthProbe {
     private final OneBotAdapterPluginProperties properties;
 
     private final Environment environment;
+    private final NovaSenderService senders;
+    private final ObjectProvider<HealthProbe> probes;
 
     @Autowired
     public OneBotHealthProbe(OneBotConnectionState state, OneBotAdapterPluginProperties properties,
-                             Environment environment) {
+                             Environment environment, NovaSenderService senders,
+                             ObjectProvider<HealthProbe> probes) {
         this.state = state;
         this.properties = properties;
         this.environment = environment;
+        this.senders = senders;
+        this.probes = probes;
     }
 
     @Override
@@ -52,6 +59,16 @@ public class OneBotHealthProbe implements HealthProbe {
     @Override
     public Scope scope() {
         return Scope.BOT;
+    }
+
+    @Override
+    public boolean active() {
+        if (!properties.getSenders().isEmpty() || !state.senders().isEmpty()) {
+            return true;
+        }
+        // 连接卡的探针可能比推送平台先启用，例如凭据已经保存但连接失败时。
+        return senders.getSenderNames().isEmpty() && probes.stream()
+                .noneMatch(probe -> probe.scope() == Scope.BOT && probe.card() != null && probe.active());
     }
 
     @Override

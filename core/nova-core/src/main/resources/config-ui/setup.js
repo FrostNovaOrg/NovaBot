@@ -21,11 +21,12 @@
 import {ask} from './confirm.js';
 import {botFieldsHtml} from './bot-fields.js';
 import {$, api, el, esc, loadingHtml, markDirty, phrase, say} from './core.js';
+import {botSetupStatus} from './home-model.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerBlockedReason, registerPasskey} from './passkeys.js';
 import {setAuthState} from './settings-auth.js';
 import {renderGeneral} from './settings.js';
-import {allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines, withPluginSteps}
+import {allDone, botSetupChoice, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines, withPluginSteps}
   from './setup-model.js';
 import {store} from './store.js';
 
@@ -59,6 +60,10 @@ let pluginPages = [];
 /** 已装上的插件步模块，装不上的键为 null */
 let pluginMods = {};
 
+let officialBotPage;
+let officialBotModule;
+let officialBotPoll = null;
+
 /** 正在做第几步 */
 let current = 0;
 
@@ -86,6 +91,8 @@ let poll = null;
 export function stopSetupPolling() {
   clearTimeout(poll);
   poll = null;
+  clearTimeout(officialBotPoll);
+  officialBotPoll = null;
 }
 
 /**
@@ -137,13 +144,20 @@ function syncBotDraft(draft, bot) {
 /**
  * 重进时：有未保存编辑则不得把已作废的测通翻回真；与盘上一致才采既成事实
  */
-function applyBotOkFromFacts(draft, facts) {
+function applyBotOkFromFacts(draft, adapterReady) {
   if (botDraftMatchesSaved(draft)) {
-    draft.botOk = draft.botOk || facts[1];
+    draft.botOk = draft.botOk || adapterReady;
   } else {
     draft.botOk = false;
   }
   return draft;
+}
+
+function syncBotStatus(status) {
+  const connection = botSetupStatus(status);
+  draft.adapterReady = connection.adapterReady;
+  draft.officialBotOk = connection.official?.lamp === 'ok';
+  return connection;
 }
 
 function factAt(key) {
@@ -218,9 +232,14 @@ export async function openSetup() {
     if (botDraftMatchesSaved(draft)) {
       syncBotDraft(draft, bot);
     }
-    pluginPages = (pagePack.pages || []).filter(meta => meta && meta.slot === 'setup_step');
+    const pages = pagePack.pages || [];
+    const choice = botSetupChoice(pages, status, bot);
+    officialBotPage = choice.page;
+    draft.botKind = choice.kind;
+    pluginPages = pages.filter(meta => meta && meta.slot === 'setup_step');
     steps = withPluginSteps(pluginPages, store.vocab);
-    pluginMods = await loadPluginModules(pluginPages);
+    pluginMods = await loadPluginModules(officialBotPage ? [...pluginPages, officialBotPage] : pluginPages);
+    officialBotModule = officialBotPage && pluginMods[officialBotPage.id];
     skips = steps.map((_, i) => skips[i] || '');
   } catch (e) {
     main.textContent = '';
@@ -234,7 +253,7 @@ export async function openSetup() {
   // 既成事实要盖进草稿：这台机器本来就上了锁、本来就连着机器人时，
   // 那两步不该因为「这一趟里没做过」而拦着人往下走
   draft.locked = facts[0];
-  applyBotOkFromFacts(draft, facts);
+  applyBotOkFromFacts(draft, syncBotStatus(seen.status).adapterReady);
   draft.accountsReady = facts[2];
   draft.sent = factAt('test');
 
@@ -253,14 +272,28 @@ export async function openSetup() {
  * 画进度条与正文
  */
 function render() {
-  const rail = $('#setup-steps');
   const main = $('#setup-main');
-  rail.innerHTML = '';
   main.innerHTML = '';
   if (seen.mark.rerunRequested && !finished) {
     main.appendChild(note('', '勾选表示已有配置或测试发送记录，并不代表本次已重新验证。可选择任一步骤进行检查或修改。'));
   }
 
+  renderRail();
+  if (finished) {
+    renderDone(main);
+    return;
+  }
+  const dispatch = {
+    lock: stepLock, bot: renderBotStep, account: stepAccount, test: stepTest,
+  };
+  const step = steps[current];
+  if (step && step.plugin) renderPlugin(main, step);
+  else if (step && dispatch[step.key]) dispatch[step.key](main);
+}
+
+function renderRail() {
+  const rail = $('#setup-steps');
+  rail.innerHTML = '';
   railMarks(facts, skips, finished ? -1 : current, steps, seen.mark.testSent).forEach((mark, i) => {
     const item = el('button', 'su-st');
     item.type = 'button';
@@ -287,17 +320,6 @@ function render() {
     item.addEventListener('click', () => goStep(i));
     rail.appendChild(item);
   });
-
-  if (finished) {
-    renderDone(main);
-    return;
-  }
-  const dispatch = {
-    lock: stepLock, bot: stepBot, account: stepAccount, test: stepTest,
-  };
-  const step = steps[current];
-  if (step && step.plugin) renderPlugin(main, step);
-  else if (step && dispatch[step.key]) dispatch[step.key](main);
 }
 
 /**
@@ -402,6 +424,7 @@ async function refreshFacts() {
     seen.login = login;
     facts = stepFacts(status, login, seen.mark.testSent || draft.sent,
       await collectPluginDone(), pluginPages);
+    syncBotStatus(status);
     draft.locked = facts[0];
     draft.accountsReady = facts[2];
   } catch (e) {
@@ -657,6 +680,99 @@ function invalidateBot(draft) {
   draft.botOk = false;
   draft.botEdits = (draft.botEdits || 0) + 1;
   return draft;
+}
+
+function renderBotStep(host) {
+  if (!officialBotPage) {
+    stepBot(host);
+    return;
+  }
+  const choice = el('fieldset', 'su-bot-choice');
+  const body = el('div');
+  const renderBody = () => {
+    body.innerHTML = '';
+    if (draft.botKind === 'official') stepOfficialBot(body);
+    else stepBot(body);
+  };
+  const legend = el('legend');
+  legend.textContent = '用哪种机器人？';
+  choice.appendChild(legend);
+  const adapterLabel = officialBotModule?.alternateSetupLabel || phrase('bot.impl',
+    v => phrase('bot.platform', p => v + '（用 ' + p + ' 号登录）', v), '机器人程序');
+  for (const [kind, label] of [['adapter', adapterLabel], ['official', officialBotPage.displayName]]) {
+    const option = el('label');
+    const input = el('input');
+    input.type = 'radio';
+    input.name = 'setup-bot-kind';
+    input.value = kind;
+    input.checked = draft.botKind === kind;
+    input.addEventListener('change', () => {
+      stopSetupPolling();
+      draft.botKind = kind;
+      renderBody();
+    });
+    option.append(input, label);
+    choice.appendChild(option);
+  }
+  host.append(choice, body);
+  renderBody();
+}
+
+function stepOfficialBot(host) {
+  const content = el('div');
+  const result = el('div', 'su-r');
+  result.setAttribute('role', 'status');
+  host.append(content, result);
+  const active = () => store.tab === 'setup' && content.isConnected;
+  let request = 0;
+
+  function paintStatus(official) {
+    result.className = 'su-r ' + (official?.lamp || '');
+    result.textContent = official ? [official.summary, official.advice].filter(Boolean).join('\n') : '';
+  }
+
+  async function readStatus() {
+    const attempt = ++request;
+    clearTimeout(officialBotPoll);
+    try {
+      const status = await api('/status', {cache: 'no-store'});
+      if (!active() || attempt !== request) return;
+      seen.status = status;
+      const connection = syncBotStatus(status);
+      paintStatus(connection.official);
+      if (facts[current] !== connection.done) {
+        facts[current] = connection.done;
+        renderRail();
+      }
+      syncFoot();
+      if (!connection.official) return;
+    } catch (e) {
+      if (!active() || attempt !== request) return;
+      result.className = 'su-r err';
+      result.textContent = '无法读取机器人连接状态，正在重试…';
+    }
+    officialBotPoll = setTimeout(readStatus, 2500);
+  }
+
+  if (typeof officialBotModule?.render === 'function') {
+    officialBotModule.render(content, {onConnectionChange: saving => {
+      if (!active()) return;
+      if (!saving) return readStatus();
+      request++;
+      clearTimeout(officialBotPoll);
+      draft.officialBotOk = false;
+      syncFoot();
+    }});
+  } else {
+    content.appendChild(note('warn', '官方机器人表单未能加载。请刷新页面后重试。'));
+  }
+  const {official} = botSetupStatus(seen.status);
+  paintStatus(official);
+  if (official) readStatus();
+  foot(host, null, '', async () => {
+    await Promise.all([loadOptions(), refreshFacts()]);
+    return active();
+  });
 }
 
 function stepBot(host) {

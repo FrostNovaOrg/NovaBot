@@ -409,11 +409,18 @@ const officialCases = [
   ['官方凭据错误，NapCat 在线', 'ok', [connected, rejected], 'err', rejected, 'ok', 'p-demo', ONE_CARD],
   ['官方未配置，NapCat 在线', 'ok', [], 'off', null, 'ok', 'p-demo', ONE_CARD],
   ['只有未配置的官方卡', 'none', [], 'off', null, 'off', '', []],
+  ['只配 QQ 官方机器人', 'none', [connected], 'ok', connected, 'off', 'p-demo', ONE_CARD],
+  ['官方凭据错误，NapCat 未配置', 'none', [rejected], 'err', rejected, 'off', 'p-demo', ONE_CARD, []],
 ];
 const officialReds = [];
-for (const [name, bot, claims, level, source, napLevel, platform, cards] of officialCases) {
+for (const [name, bot, claims, level, source, napLevel, platform, cards, onlyOfficialSenders = ['qq-official']] of officialCases) {
   const base = status('in', bot);
   const meta = claims.length ? {id: official.id, displayName: official.displayName} : official;
+  const onlyOfficial = bot === 'none' && claims.length > 0;
+  if (onlyOfficial) {
+    base.senders = onlyOfficialSenders;
+    base.health = base.health.filter(item => item.scope !== 'BOT');
+  }
   const model = linksModel({...base, health: base.health.concat(claims)}, login('in'),
     [meta, ...cards], TOKENS_ONE);
   const qq = model.cards.find(card => card.id === official.id);
@@ -423,7 +430,8 @@ for (const [name, bot, claims, level, source, napLevel, platform, cards] of offi
       || qq.advice !== (source?.advice || '')) {
     fails.push('官方卡实得 ' + JSON.stringify(qq));
   }
-  const napCaption = bot === 'none' ? '尚未连接机器人' : BOT_PROBE[bot].summary;
+  const napCaption = onlyOfficial ? '未使用（已在用 QQ 官方机器人）'
+    : bot === 'none' ? '尚未连接机器人' : BOT_PROBE[bot].summary;
   if (nap.level !== napLevel || !nap.caption.includes(napCaption)
       || (bot !== 'none' && nap.advice !== BOT_PROBE[bot].advice)) {
     fails.push('NapCat 卡实得 ' + JSON.stringify(nap));
@@ -439,4 +447,4 @@ if (officialReds.length) {
   process.exit(1);
 }
 
-console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过，官方机器人四档过');
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过，官方机器人六档过');

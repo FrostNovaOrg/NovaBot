@@ -7,11 +7,15 @@ import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.health.OneBotHealthProbe;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
+import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -152,7 +156,9 @@ class OneBotOfflineAwarenessTest {
         assertTrue(account().detail().contains("登录已失效"),
                 "通知里的原因要写进状态说明: " + account());
 
-        HealthStatus health = new OneBotHealthProbe(state, properties, new MockEnvironment()).check();
+        HealthStatus health = new OneBotHealthProbe(state, properties, new MockEnvironment(),
+                new NovaSenderService(new NovaCoreProperties()),
+                new StaticListableBeanFactory().getBeanProvider(HealthProbe.class)).check();
         assertEquals(HealthStatus.Level.DOWN, health.level(), health.summary());
         assertEquals("account", health.reason(), health.summary());
     }
