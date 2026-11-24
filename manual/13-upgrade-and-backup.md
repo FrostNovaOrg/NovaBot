@@ -15,8 +15,9 @@
 
 ## 升级前先留好这几样
 
-- 备份 `application.yml` 与 `datasource.json`，它们是你的全部配置
+- 备份 `application.yml` 与 `datasource.json`，它们存着主配置和推送配置
 - 备份 `cookies.json` 与 `cookies.key`，它们等同于哔哩哔哩账号的完整控制权
+- 接过 QQ 官方机器人时，备份工作目录里整个 `qqbot/`
 - 旁边若还有 `cookies.json.plain.bak`，那是明文迁成加密时留下的明文原件，程序不读它：
   不用备、升级后也不用拷回，确认能正常登录后就把它删掉
 
@@ -421,7 +422,7 @@ sudo systemctl enable --now novabot-backup.timer
 - 数据：`data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl`
   与 `details/`、`timeline/`、`dynamics/` 三个目录
 - 配置：`application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`
-- 恢复 QQ 官方机器人凭据时，将 `qqbot/` 整个拷回工作目录。密文和主密钥须来自同一份备份
+- 恢复 QQ 官方机器人时，将 `qqbot/` 整个拷回工作目录。AppSecret 是加密存的，密文 `qqbot/app-secret.enc` 和主密钥 `qqbot/app-secret-master.key` 要一起备份，从同一份备份一起恢复
 - 二次验证：主配置文件旁的 `<主配置文件名>.totp-state`，默认是 `application.yml.totp-state`，
   与主配置文件一起备份、恢复；主配置放在别处的，也一并备份那个目录里的此文件
 - 备份里若有明文迁成加密时留下的 `cookies.json.plain.bak`，不用拷回，程序不读它。它是明文凭据，
@@ -432,6 +433,10 @@ sudo systemctl enable --now novabot-backup.timer
 - 安装目录根上的 `plugins/` 与 `plugins-lib/`（手动安装则是 `plugins/` 里除了
   [手工升级](#手工升级)所列内置插件之外）是你自己装的第三方插件与依赖，
   恢复时要从备份里拷回；5.2 及更早的 `starbot-` 开头旧名插件确认不用就删掉，别拷回
+
+QQ 官方机器人的 `qqbot/settings.json` 存着 AppID 和发送间隔，`qqbot/directory.json` 是群和成员的对照表，`qqbot/members.json` 存着群成员资料和已认领的超级管理员名单。
+
+如果只丢了 `qqbot/directory.json`，原来的推送通道还在，但 NovaBot 找不到群，消息发不出。继续用原来的 AppID，在每个受影响的群里 @ 机器人说一句，群重新登记后就能往原来的通道发消息。要找回原来手填的群名，得从备份恢复对照表，或者重新起名。
 
 订阅名单、第三方插件的命令开关、绑定关系都存在 `state.json` 里，它与数据文件在同一目录，
 按上面备数据时会一起带上。换机器时少备了它，群里那些订阅就得重新订一遍。
