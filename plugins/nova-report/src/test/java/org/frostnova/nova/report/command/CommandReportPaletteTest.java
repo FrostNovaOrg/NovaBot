@@ -1,6 +1,7 @@
 package org.frostnova.nova.report.command;
 
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -9,13 +10,14 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
-import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.LiveReportDeliveryService;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.ReportPaletteSettings;
-import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
 import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.painter.ReportPalettes;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,12 +95,14 @@ class CommandReportPaletteTest {
     private ReportPalette reportPalette(String channelPalette) {
         AbstractDataSource source = mock(AbstractDataSource.class);
         when(source.getUsers("bilibili")).thenReturn(List.of(streamer(channelPalette)));
-        RevenueVisibilityService revenue = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
+        var redrawer = mock(BilibiliLiveReportRedrawer.class);
+        when(redrawer.commandOptions(any())).thenReturn(new BilibiliLiveReportOptions());
 
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         BilibiliLiveReportCommand liveReport = new BilibiliLiveReportCommand(source,
-                new BilibiliStreamerChoice(live, new LiveSessionArchive(properties)), live, report, revenue);
+                new BilibiliStreamerChoice(live, new LiveSessionArchive(properties)), live, report,
+                mock(LiveReportDeliveryService.class), mock(LiveSessionDetailArchiver.class), redrawer);
         liveReport.setPalettes(palettes);
         liveReport.execute(context("直播报告"));
 

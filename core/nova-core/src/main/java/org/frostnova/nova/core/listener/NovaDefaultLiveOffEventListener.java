@@ -61,10 +61,14 @@ public class NovaDefaultLiveOffEventListener {
     public void onLiveOffEvent(LiveOffEvent event) {
         log.info("[{}] [下播] {}(UID: {}, 房间号: {})", event.getPlatform(), event.getSource().getUname(), event.getSource().getUid(), event.getSource().getRoomIdString());
 
-        liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), false);
-        liveDataService.setLiveEndTime(event.getPlatform(), event.getSource().getUid(), event.getTimestamp());
-
-        archiveSession(event);
+        detailArchiver.beginLiveOff(event);
+        try {
+            liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), false);
+            liveDataService.setLiveEndTime(event.getPlatform(), event.getSource().getUid(), event.getTimestamp());
+            archiveSession(event);
+        } finally {
+            detailArchiver.finishLiveOff(event);
+        }
     }
 
     /**

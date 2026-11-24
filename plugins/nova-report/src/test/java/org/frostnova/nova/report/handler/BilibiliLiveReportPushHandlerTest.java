@@ -304,12 +304,13 @@ class BilibiliLiveReportPushHandlerTest {
         org.springframework.test.util.ReflectionTestUtils.setField(handler, "rendered", cache);
         when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         var message = pushMessage();
-        handler.handle(event(), message);
+        var ended = event();
+        handler.handle(ended, message);
         var options = BilibiliLiveReportOptions.of(message.getParamsJsonObject(), false);
         var palette = org.frostnova.nova.report.painter.ReportPalettes.factory().forChannel(message.getTarget()).palette();
-        assertEquals("QUJD", cache.get("bilibili", 10001L, 100, options, palette).orElseThrow());
-        assertTrue(cache.get("bilibili", 10001L, 101, options, palette).isEmpty());
-        assertTrue(cache.get("bilibili", 10001L, 100,
+        assertEquals("QUJD", cache.get("bilibili", 10001L, 100, ended.getTimestamp(), options, palette).orElseThrow());
+        assertTrue(cache.get("bilibili", 10001L, 101, ended.getTimestamp(), options, palette).isEmpty());
+        assertTrue(cache.get("bilibili", 10001L, 100, ended.getTimestamp(),
                 BilibiliLiveReportOptions.of(message.getParamsJsonObject(), true), palette).isEmpty());
     }
 

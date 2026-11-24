@@ -58,7 +58,7 @@ class BilibiliLiveReportRedrawerTest {
     }
 
     @Test void cacheHitSendsOriginalImageWithoutReplay() {
-        cache.put("bilibili", 1L, 100, BilibiliLiveReportOptions.of(params, false), night, "T1JJR0lOQUw=");
+        cache.put("bilibili", 1L, 100, 200, BilibiliLiveReportOptions.of(params, false), night, "T1JJR0lOQUw=");
         assertEquals("{image_base64=T1JJR0lOQUw=}", redrawer.channelContent(detail, channel).orElseThrow());
         verifyNoInteractions(painter);
     }
@@ -74,9 +74,9 @@ class BilibiliLiveReportRedrawerTest {
     }
 
     @Test void changedAppearanceCannotReuseOriginalImage() {
-        cache.put("bilibili", 1L, 100, BilibiliLiveReportOptions.of(params, false), ReportPalette.DEFAULT, "T0xE");
-        cache.put("bilibili", 1L, 100, BilibiliLiveReportOptions.of(params, true), night, "U0VDUkVU");
-        cache.put("bilibili", 1L, 100, new BilibiliLiveReportOptions(), night, "T0xE");
+        cache.put("bilibili", 1L, 100, 200, BilibiliLiveReportOptions.of(params, false), ReportPalette.DEFAULT, "T0xE");
+        cache.put("bilibili", 1L, 100, 200, BilibiliLiveReportOptions.of(params, true), night, "U0VDUkVU");
+        cache.put("bilibili", 1L, 100, 200, new BilibiliLiveReportOptions(), night, "T0xE");
         assertEquals("{image_base64=QUJD}", redrawer.channelContent(detail, channel).orElseThrow());
         verify(painter).render(any(), same(night));
     }

@@ -19,6 +19,7 @@ import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.report.command.*;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
 import org.frostnova.nova.report.painter.*;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
@@ -78,7 +79,12 @@ class ChannelSettingsIntegrationTest {
         painter = mock(BilibiliLiveReportPainter.class);
         when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
         var choice = mock(BilibiliStreamerChoice.class);
-        report = new BilibiliLiveReportCommand(source, choice, live, painter, revenue);
+        var redrawer = new BilibiliLiveReportRedrawer(null, null, null, null, null, null);
+        ReflectionTestUtils.setField(redrawer, "revenue", revenue);
+        ReflectionTestUtils.setField(redrawer, "templates", new PushTemplateDefaults(props));
+        ReflectionTestUtils.setField(redrawer, "handler", new BilibiliLiveReportPushHandler(null, null, painter, revenue));
+        report = new BilibiliLiveReportCommand(source, choice, live, painter,
+                mock(LiveReportDeliveryService.class), mock(LiveSessionDetailArchiver.class), redrawer);
         sender = mock(NovaMessageSender.class);
         replies = new ArrayList<>();
         doAnswer(i -> { Message message = i.getArgument(0); if (gate.allowedFor(message)) replies.add(message); return null; }).when(sender).send(any());

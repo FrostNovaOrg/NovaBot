@@ -24,11 +24,14 @@ import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveReportDeliveryService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.report.command.BilibiliLiveReportCommand;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
@@ -126,10 +129,10 @@ class StreamerNameFallbackReportTest {
 
     @Test
     @DisplayName("「直播报告」命令、主播不在播：回话写最近一场的昵称")
-    void reportCommandSaysNotLiveWithArchivedName() {
+    void reportCommandUsesArchivedNameWhenNoReportIsAvailable() {
         CommandReply reply = reportCommand(false, mock(BilibiliLiveReportPainter.class)).execute(context());
 
-        assertEquals("最近的昵称 现在没在直播", reply.content());
+        assertTrue(reply.content().startsWith("最近的昵称 还没有已结束的直播"), reply.content());
     }
 
     @Test
@@ -263,12 +266,13 @@ class StreamerNameFallbackReportTest {
         when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(living));
         when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
 
-        RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-        when(revenueVisibility.isVisible(any(org.frostnova.nova.core.model.PushTarget.class))).thenReturn(true);
+        var redrawer = mock(BilibiliLiveReportRedrawer.class);
+        when(redrawer.commandOptions(any())).thenReturn(new BilibiliLiveReportOptions());
 
         return new BilibiliLiveReportCommand(dataSource,
                 new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties)),
-                liveDataService, painter, revenueVisibility);
+                liveDataService, painter, mock(LiveReportDeliveryService.class),
+                mock(LiveSessionDetailArchiver.class), redrawer);
     }
 
     private static CommandContext context() {

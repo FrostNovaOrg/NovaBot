@@ -114,7 +114,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
         if (liveData != null) liveData.getLiveStartTime(event.getPlatform(), event.getSource().getUid())
                 .ifPresent(start -> image.ifPresent(base64 -> rendered.putOriginal(event.getPlatform(), event.getSource().getUid(),
-                        start, options, palette.palette(), base64)));
+                        start, event.getTimestamp(), options, palette.palette(), base64)));
 
         String report = image
                 .map(base64 -> "{image_base64=" + base64 + "}")

@@ -9,9 +9,11 @@ import org.frostnova.nova.report.painter.ReportImageDiskCache;
 import org.frostnova.nova.report.painter.ReportPalettes;
 import org.frostnova.nova.report.painter.LiveReportRenderCache;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
+import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.MessagePlaceholders;
+import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import com.alibaba.fastjson2.JSONObject;
@@ -25,6 +27,7 @@ import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -124,22 +127,54 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
 
     @Override
     public Optional<String> channelContent(LiveDetail detail, PushTarget channel) {
+        var overrides = reportMessage(channel.getMessages()).map(PushMessage::getParamsJsonObject).orElse(null);
+        return channelContent(detail, channel, channelOptions(channel, overrides));
+    }
+
+    /** 群命令也读取已关闭的报告推送所保存的版式。 */
+    public BilibiliLiveReportOptions commandOptions(PushTarget channel) {
+        var overrides = reportMessage(channel.getMessages()).or(() -> reportMessage(channel.getDisabledMessages()))
+                .map(this::savedParams).orElse(null);
+        return channelOptions(channel, overrides);
+    }
+
+    private Optional<PushMessage> reportMessage(List<PushMessage> messages) {
+        return messages.stream().filter(message -> {
+            String name = message.handlerClassName();
+            return HandlerPackageNames.sameHandler(handler.getClass().getName(), name)
+                    || handler.legacyClassNames().stream().anyMatch(legacy -> HandlerPackageNames.sameHandler(legacy, name));
+        }).findFirst();
+    }
+
+    private JSONObject savedParams(PushMessage message) {
+        if (message.getParamsJsonObject() != null) {
+            return message.getParamsJsonObject();
+        }
+        try {
+            return JSONObject.parseObject(message.getParams());
+        } catch (RuntimeException e) {
+            log.warn("无法读取直播报告的版式参数，本次使用默认模板", e);
+            return null;
+        }
+    }
+
+    private BilibiliLiveReportOptions channelOptions(PushTarget channel, JSONObject overrides) {
         JSONObject params = templates.paramsOf(handler);
-        channel.getMessages().stream()
-                .filter(message -> handler.getClass().getName().equals(message.handlerClassName())
-                        || handler.legacyClassNames().contains(message.handlerClassName()))
-                .findFirst().ifPresent(message -> {
-                    if (message.getParamsJsonObject() != null) params.putAll(message.getParamsJsonObject());
-                });
-        var options = BilibiliLiveReportOptions.of(params, revenue.isVisible(channel));
+        if (overrides != null) {
+            params.putAll(overrides);
+        }
+        return BilibiliLiveReportOptions.of(params, revenue.isVisible(channel));
+    }
+
+    public Optional<String> channelContent(LiveDetail detail, PushTarget channel, BilibiliLiveReportOptions options) {
         var palette = palettes.forChannel(channel).palette();
-        var cached = rendered.get(detail.platform(), detail.uid(), detail.startTime(), options, palette);
+        var cached = rendered.get(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette);
         if (cached.isPresent()) return cached.map(image -> "{image_base64=" + image + "}");
         var painter = replay(detail);
         var image = painter.render(options, palette);
         if (image.isPresent()) {
             String base64 = Base64.getEncoder().encodeToString(image.get());
-            rendered.put(detail.platform(), detail.uid(), detail.startTime(), options, palette, base64);
+            rendered.put(detail.platform(), detail.uid(), detail.startTime(), detail.endTime(), options, palette, base64);
             return Optional.of("{image_base64=" + base64 + "}");
         }
         var streamer = new LiveStreamerInfo(detail.uid(), detail.uname(), detail.roomId());

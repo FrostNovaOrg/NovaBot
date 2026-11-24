@@ -108,6 +108,26 @@ class AbstractDataSourceTest {
     }
 
     @Test
+    @DisplayName("只改已关闭推送的参数也会更新保存的配置")
+    void shouldRefreshDisabledMessageParamsWithoutAddingItToDelivery() {
+        PushUser initial = user(1L, true);
+        initial.getTargets().get(0).getMessages().add(message(HANDLER, false));
+        dataSource.add(initial);
+
+        PushUser updated = user(1L, true);
+        PushMessage disabled = message(HANDLER, false);
+        disabled.setParams("{\"cover\":false}");
+        updated.getTargets().get(0).getMessages().add(disabled);
+        dataSource.update(updated);
+
+        PushTarget loaded = dataSource.getUser(PLATFORM, 1L).orElseThrow().getTargets().get(0);
+        assertEquals(1, loaded.getMessages().size());
+        assertTrue(loaded.getMessages().get(0).getEnabled());
+        assertEquals(List.of(disabled), loaded.getDisabledMessages());
+        assertFalse(JSONObject.from(loaded).containsKey("disabledMessages"));
+    }
+
+    @Test
     @DisplayName("同一平台同一 UID 重复添加应被拒绝")
     void shouldRejectDuplicateUser() {
         dataSource.add(user(1L, true));
