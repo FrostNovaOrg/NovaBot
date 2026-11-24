@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.analytics.LiveDetail;
+import org.frostnova.nova.core.model.PushTarget;
 
 import java.util.Optional;
 
@@ -37,8 +38,13 @@ public interface LiveReportRedrawer {
      */
     Optional<byte[]> redraw(LiveDetail detail);
 
+    /** 按通道上的直播报告命令口径生成 PNG，画不出来时返回空。 */
+    default Optional<byte[]> channelImage(LiveDetail detail, PushTarget channel) {
+        return Optional.empty();
+    }
+
     /** 按已保存的通道设置生成消息正文；实现应在画图失败时提供文字版。 */
-    default Optional<String> channelContent(LiveDetail detail, org.frostnova.nova.core.model.PushTarget channel) {
+    default Optional<String> channelContent(LiveDetail detail, PushTarget channel) {
         return Optional.empty();
     }
 }

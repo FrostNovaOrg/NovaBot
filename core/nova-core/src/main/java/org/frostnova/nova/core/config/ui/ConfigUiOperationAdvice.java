@@ -30,7 +30,9 @@ public class ConfigUiOperationAdvice extends RequestBodyAdviceAdapter implements
             Map<?, ?> values = body instanceof Map<?, ?> map ? map
                     : body instanceof ConfigUiAccountController.StreamerChange change
                     ? Collections.singletonMap("streamers", change.streamers()) : Map.of();
-            String action = ConfigUiOperationCatalog.action(request).name();
+            var operation = ConfigUiOperationCatalog.action(request);
+            if (operation.actionOnly()) return body;
+            String action = operation.name();
             if (action.equals("SETTINGS_SAVE")) {
                 target.put("keys", values.keySet().stream().filter(String.class::isInstance)
                         .map(String.class::cast).map(ConfigUiAudit::safe).sorted().toList());

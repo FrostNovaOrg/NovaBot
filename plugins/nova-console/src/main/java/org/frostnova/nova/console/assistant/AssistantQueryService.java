@@ -8,6 +8,7 @@ import org.frostnova.nova.console.controller.StreamerStatistics;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
+import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.analytics.StreamerInsights;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -29,6 +30,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.function.IntPredicate;
 
@@ -158,6 +161,22 @@ public class AssistantQueryService {
         result.putAll(list(items, ordered.size()));
         result.put("days", days);
         return result;
+    }
+
+    List<LiveSession> reportSessions(String platform, Long uid, Long start, LocalDate day) {
+        if (!validIdentity(platform, uid)) return List.of();
+        return sessionsOf(platform, uid).stream()
+                .filter(session -> start == null || session.startTime() == start)
+                .filter(session -> day == null || day.equals(StatisticsDay.dateOf(Instant.ofEpochMilli(session.startTime()))))
+                .sorted(Comparator.comparingLong(LiveSession::startTime).reversed()).toList();
+    }
+
+    Optional<LiveDetail> reportDetail(LiveSession session) {
+        if (unfinished(session)) return Optional.empty();
+        return details.read(session.platform(), session.uid(), session.startTime())
+                .filter(detail -> detail.endTime() >= detail.startTime()
+                        && detail.startTime() == session.startTime()
+                        && session.uid().equals(detail.uid()) && session.platform().equals(detail.platform()));
     }
 
     /** 当前场、上一场，以及之前至多五场已结束场次的逐项中位数和比较。 */

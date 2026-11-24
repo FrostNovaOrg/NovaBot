@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.annotation.PreDestroy;
 import lombok.With;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -130,7 +132,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     private static GroupEntry joinedGroup(long number, String openid, Instant at, GroupEntry previous) {
         if (previous == null) {
             return new GroupEntry(number, openid, defaultName(at), NameSource.DEFAULT, at, at, false,
-                    UNKNOWN_SWITCH, null, null, null, null, null);
+                    UNKNOWN_SWITCH, null, null, null, null, null, null);
         }
         GroupEntry group = previous.withJoinedAt(at).withLastSeenAt(later(previous.lastSeenAt(), at))
                 .withRemoved(false).withProactive(UNKNOWN_SWITCH).withRole(null);
@@ -162,6 +164,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return Optional.ofNullable(currentEntries().groups().get(number));
     }
 
+    synchronized Optional<GroupEntry> group(String appId, long number) {
+        requireReadable();
+        return Optional.ofNullable(entries(appId).groups().get(number));
+    }
+
     public synchronized Optional<String> groupOpenId(long number) {
         return group(number).map(GroupEntry::openid);
     }
@@ -183,18 +190,55 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     }
 
     public synchronized void renameGroup(long number, String name) {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("群名不能为空");
+        String title = Objects.requireNonNull(name).strip();
+        if (title.codePointCount(0, title.length()) > 40) {
+            throw new IllegalArgumentException("群名最多 40 字");
         }
-        updateGroup(number, group -> group.withName(name.strip()).withNameSource(NameSource.MANUAL));
+        if (!title.isEmpty() && settings.snapshot().configured() && settings.useSecret(title::contains)) {
+            throw new IllegalArgumentException("群名不能包含 AppSecret");
+        }
+        updateGroup(configuredApp(), number, group -> {
+            if (!title.isEmpty()) {
+                String apiName = group.nameSource() == NameSource.GROUP_INFO_API ? group.name() : group.apiName();
+                return group.withApiName(apiName).withName(title).withNameSource(NameSource.MANUAL);
+            }
+            if (group.nameSource() != NameSource.MANUAL) return group;
+            return group.apiName() == null
+                    ? group.withName(defaultName(group.joinedAt())).withNameSource(NameSource.DEFAULT)
+                    : group.withName(group.apiName()).withNameSource(NameSource.GROUP_INFO_API);
+        });
+    }
+
+    synchronized List<GroupInfo> consoleGroups() {
+        BotEntries bot = currentEntries();
+        if (bot.groups().isEmpty()) return List.of();
+        if (settings.snapshot().configured()) {
+            try {
+                return settings.useSecret(secret -> groupInfo(bot,
+                        text -> text.contains(secret) ? "已隐藏" : maskKnown(text, bot)));
+            } catch (IllegalStateException e) {
+                return groupInfo(bot, text -> "已隐藏");
+            }
+        }
+        return groupInfo(bot, text -> maskKnown(text, bot));
+    }
+
+    private static List<GroupInfo> groupInfo(BotEntries bot, Function<String, String> display) {
+        return bot.groups().values().stream()
+                .sorted(Comparator.comparing(GroupEntry::removed).thenComparing(GroupEntry::joinedAt)
+                        .thenComparingLong(GroupEntry::number))
+                .map(group -> new GroupInfo(group.number(), display.apply(group.name()), group.nameSource(),
+                        group.memberCount(), group.role(), group.proactive().status(),
+                        group.lastFailure() == null ? null : display.apply(group.lastFailure().reason()),
+                        group.removed(), group.joinedAt().toString()))
+                .toList();
     }
 
     public synchronized void recordProactive(long number, ProactiveStatus status, SwitchSource source, Instant at) {
         Objects.requireNonNull(status);
         Objects.requireNonNull(source);
         Objects.requireNonNull(at);
-        updateGroup(number, group -> group.proactive().at() == null || !at.isBefore(group.proactive().at())
-                ? group.withProactive(new Proactive(status, source, at)) : group);
+        updateGroup(configuredApp(), number, group -> withProactive(group, new Proactive(status, source, at)));
     }
 
     public synchronized void recordFailure(long number, String reason, Instant at) {
@@ -202,11 +246,25 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("失败原因不能为空");
         }
-        updateGroup(number, group -> withFailure(group, new Failure(maskKnown(reason, currentEntries()), at)));
+        String appId = configuredApp();
+        updateGroup(appId, number, group -> withFailure(group, new Failure(maskKnown(reason, entries(appId)), at)));
     }
 
-    private void updateGroup(long number, Function<GroupEntry, GroupEntry> update) {
-        String appId = configuredApp();
+    synchronized void recordSendResult(String appId, long number, Proactive proactive, Failure failure) {
+        updateGroup(appId, number, group -> {
+            if (proactive != null) {
+                group = withProactive(group, proactive);
+            }
+            return failure == null ? group : withFailure(group, failure);
+        });
+    }
+
+    private static GroupEntry withProactive(GroupEntry group, Proactive observed) {
+        return group.proactive().at() == null || !observed.at().isBefore(group.proactive().at())
+                ? group.withProactive(observed) : group;
+    }
+
+    private void updateGroup(String appId, long number, Function<GroupEntry, GroupEntry> update) {
         BotEntries bot = entries(appId);
         GroupEntry previous = bot.groups().get(number);
         if (previous == null) {
@@ -303,11 +361,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
             Failure failure = null;
             boolean unavailable = false;
             try {
-                String segment = UriUtils.encodePathSegment(before.openid(), StandardCharsets.UTF_8);
-                if (segment.equals(".") || segment.equals("..")) {
-                    segment = segment.replace(".", "%2E");
-                }
-                String path = "/v2/groups/" + segment + "/" + key.endpoint().path;
+                String path = groupPath(before.openid()) + "/" + key.endpoint().path;
                 Object value = api.request("GET", path, null, key.appId());
                 if (value instanceof JSONObject json) {
                     response = json;
@@ -354,10 +408,12 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     }
 
     private static GroupEntry applyInfo(GroupEntry group, JSONObject response) {
-        if (group.nameSource() != NameSource.MANUAL
-                && response.get("group_name") instanceof String name && !name.isBlank()) {
+        if (response.get("group_name") instanceof String name && !name.isBlank()) {
             String title = mask(name.strip(), text(response, "union_group_openid"));
-            group = group.withName(title).withNameSource(NameSource.GROUP_INFO_API);
+            group = group.withApiName(title);
+            if (group.nameSource() != NameSource.MANUAL) {
+                group = group.withName(title).withNameSource(NameSource.GROUP_INFO_API);
+            }
         }
         if (response.get("group_member_num") instanceof Integer count && count >= 0) {
             group = group.withMemberCount(count);
@@ -480,6 +536,18 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return response.get(key) instanceof String s ? s : "";
     }
 
+    static String groupPath(String openid) {
+        String segment = UriUtils.encodePathSegment(openid, StandardCharsets.UTF_8);
+        if (segment.equals(".") || segment.equals("..")) {
+            segment = segment.replace(".", "%2E");
+        }
+        return "/v2/groups/" + segment;
+    }
+
+    synchronized String maskKnown(String appId, String value) {
+        return maskKnown(value, entries(appId));
+    }
+
     private static String maskKnown(String value, BotEntries bot) {
         for (GroupEntry group : bot.groups().values()) {
             value = mask(value, group.openid());
@@ -494,8 +562,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         if (openid.isEmpty() || !value.contains(openid)) {
             return value;
         }
-        String masked = openid.length() <= 8 ? "…" : openid.substring(0, 4) + "…" + openid.substring(openid.length() - 4);
-        return value.replace(openid, masked);
+        return value.replace(openid, maskOpenId(openid));
+    }
+
+    static String maskOpenId(String openid) {
+        return openid.length() <= 8 ? "…" : openid.substring(0, 4) + "…" + openid.substring(openid.length() - 4);
     }
 
     private static <K, V> Map<K, V> replacing(Map<K, V> map, K key, V value) {
@@ -511,7 +582,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     @With
     public record GroupEntry(long number, String openid, String name, NameSource nameSource,
                              Instant joinedAt, Instant lastSeenAt, boolean removed, Proactive proactive,
-                             BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure) {
+                             BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure,
+                             String apiName) {
         public GroupEntry {
             Objects.requireNonNull(openid);
             Objects.requireNonNull(name);
@@ -535,6 +607,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         }
     }
 
+    record GroupInfo(long num, String name, NameSource nameSource, Integer memberCount, BotRole role,
+                     ProactiveStatus proactive, String lastFailure, boolean removed, String joinedAt) {}
+
     record MemberEntry(long number, String openid, Instant firstSeenAt, Instant lastSeenAt) {
         MemberEntry {
             Objects.requireNonNull(openid);
@@ -553,7 +628,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     public record Refresh(Instant attemptedAt, Instant retryAt) {}
     public enum NameSource { DEFAULT, GROUP_INFO_API, MANUAL }
     public enum ProactiveStatus { UNKNOWN, ENABLED, DISABLED }
-    public enum SwitchSource { GROUP_STATE_API, EVENT, MANUAL }
+    public enum SwitchSource {
+        GROUP_STATE_API, EVENT, MANUAL,
+        @JsonProperty("发送成功") SEND_SUCCESS,
+        @JsonProperty("发送报错") SEND_ERROR
+    }
     public enum BotRole { ADMIN, OWNER, MEMBER }
     private enum Membership { JOIN, REMOVE, SEEN }
 

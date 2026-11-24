@@ -32,6 +32,10 @@ final class QqBotResponse {
         return status >= 200 && status < 300 && code() == 0 && !malformed;
     }
 
+    boolean unreadableSuccess() {
+        return status >= 200 && status < 300 && malformed;
+    }
+
     boolean hasCode(int value) {
         return code == value || errCode == value;
     }

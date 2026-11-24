@@ -626,9 +626,22 @@ public class NovaMessageSender {
             // 编号与「送达」在消息里一起定下来，这之后才登记的成功回调会当场执行
             chargedOn.set(null);
             List<Runnable> succeeded = message.markDelivered(result.getString("id"));
-            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis, message.getChannel());
-            log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            boolean imageDegraded = Boolean.TRUE.equals(result.get(Sender.LocalDelivery.IMAGE_DEGRADED));
+            if (imageDegraded) {
+                String reason = result.getString("message");
+                activityRecorder.recordImageDegraded(sender.getName(), describeTarget(message), message.getDisplay(),
+                        reason, elapsedMillis, message.getChannel());
+                log.warn("推送已送达（部分图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}，原因: {}",
+                        sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
+                        message.getDisplay(), reason);
+            } else {
+                activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis, message.getChannel());
+                log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            }
             runEach(succeeded, message, "发送成功");
+            if (imageDegraded) {
+                notifyImageDegraded(message);
+            }
         } else if (Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN))) {
             // 请求已经交出去、没等到回包：对端可能已经发进群。剥图重发纯文字会让群里多一条，
             // 带 @全体成员 的连 @ 一起再发一遍，所以不重发。也不当没发出去：额度不退（那次可能已经 @ 过），
@@ -753,13 +766,7 @@ public class NovaMessageSender {
 
             runEach(message.markDelivered(result.getString("id")), message, "发送成功");
 
-            for (Runnable callback : message.getOnImageDegradedCallbacks()) {
-                try {
-                    callback.run();
-                } catch (Exception e) {
-                    log.error("执行图片降级回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
-                }
-            }
+            notifyImageDegraded(message);
             return FallbackOutcome.DELIVERED;
         } else if (textUncertain) {
             // 与首次投递的送达不明同一处理：这条纯文字可能已经进群，重发就是两条；
@@ -779,6 +786,16 @@ public class NovaMessageSender {
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"), reason);
             return FallbackOutcome.FAILED;
+        }
+    }
+
+    private void notifyImageDegraded(Message message) {
+        for (Runnable callback : message.getOnImageDegradedCallbacks()) {
+            try {
+                callback.run();
+            } catch (Exception e) {
+                log.error("执行图片降级回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
+            }
         }
     }
 

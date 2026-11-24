@@ -19,6 +19,7 @@ import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
+import org.frostnova.nova.core.service.LiveReportRedrawer;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.StreamerDirectory;
 import org.frostnova.nova.core.service.StreamerNames;
@@ -79,6 +80,7 @@ class AssistantAskServiceTest {
     private AssistantAskService service;
     private AssistantLocalStore local;
     private AssistantChartRenderer chartRenderer;
+    private LiveReportRedrawer reportRedrawer;
     private final AbstractDataSource consoleData = mock(AbstractDataSource.class);
     private final StreamerDirectory consoleDirectory = mock(StreamerDirectory.class);
     private StreamerNames consoleNames = mock(StreamerNames.class);
@@ -129,7 +131,8 @@ class AssistantAskServiceTest {
         queries = mock(AssistantQueryService.class);
         local = new AssistantLocalStore(directory, clock);
         chartRenderer = mock(AssistantChartRenderer.class);
-        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer);
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer,
+                () -> Stream.ofNullable(reportRedrawer));
     }
 
     @AfterEach void close() { if (service != null) service.close(); }
@@ -260,6 +263,96 @@ class AssistantAskServiceTest {
                 () -> assertTrue(modelSystem(0).contains("只能查当前主播")),
                 () -> result.andExpect(jsonPath("$.streamers.length()").value(1))
                         .andExpect(jsonPath("$.streamers[0]").value(Long.toString(FIRST_STREAMER))));
+    }
+
+    @Test
+    @DisplayName("控制台成员从名下主播页要未分配主播的报告图时，工具拒绝")
+    void memberCannotDrawAnotherStreamersReport() throws Exception {
+        prepareConsoleComparison();
+        replies.add(call("draw_live_report", JSONObject.of("start", SHARED_START, "streamer", SECOND_STREAMER)));
+        replies.add(JSONObject.of("content", "这位主播的报告查不了。"));
+
+        askConsole(mvc(), consoleAccount(ConfigUiAccount.Role.MEMBER, FIRST_STREAMER),
+                JSONObject.of("question", "合成主播乙的直播报告图", "streamers", List.of(Long.toString(SECOND_STREAMER))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.images").doesNotExist())
+                .andExpect(jsonPath("$.streamers.length()").value(1));
+        assertEquals(AssistantTools.OUTSIDE_QUESTION, lastToolData().getString("reason"));
+        verify(queries, never()).reportSessions(anyString(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("控制台问上一场时跳过进行中和缺明细的场次，返回主播页回看口径的图片")
+    void consoleDrawsLatestCompletedReportWithDetails() throws Exception {
+        var core = archiveProperties();
+        var archive = new LiveSessionArchive(core);
+        var details = new LiveDetailArchive(core);
+        var live = mock(LiveDataService.class);
+        var detail = AssistantReportFixtures.detail(FIRST_STREAMER, SHARED_START);
+        details.store(detail);
+        for (long start : List.of(SHARED_START, SHARED_START + 180_000)) {
+            archive.append(new LiveSession("bilibili", FIRST_STREAMER, detail.uname(), detail.roomId(),
+                    start, start + 120_000, 120, detail.metrics(), detail.userCounts()));
+        }
+        when(live.getLiveStatus("bilibili", FIRST_STREAMER)).thenReturn(Optional.of(true));
+        when(live.getLiveStartTime("bilibili", FIRST_STREAMER)).thenReturn(Optional.of(SHARED_START + 360_000));
+        queries = new AssistantQueryService(null, archive, details, live, core, null, clock);
+        reportRedrawer = AssistantReportFixtures.redrawer(directory);
+        service.close();
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer,
+                () -> Stream.of(reportRedrawer));
+        replies.add(call("draw_live_report", new JSONObject()));
+        replies.add(JSONObject.of("content", "11月3日 20:00 至 20:02 的报告见图。"));
+
+        String expected = Base64.getEncoder().encodeToString(reportRedrawer.redraw(details.read("bilibili",
+                FIRST_STREAMER, SHARED_START).orElseThrow()).orElseThrow());
+        var response = askConsole(mvc(), consoleAccount(ConfigUiAccount.Role.MEMBER, FIRST_STREAMER),
+                JSONObject.of("question", "上一场的报告图"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.images.length()").value(1))
+                .andExpect(jsonPath("$.answer", containsString("20:00"))).andReturn().getResponse();
+        var image = JSON.parseObject(response.getContentAsString()).getJSONArray("images").getString(0);
+        assertTrue(image.startsWith("iVBORw0KGgo"));
+        assertEquals(expected, image);
+        var drawn = lastToolData().getJSONArray("drawn");
+        assertEquals(1, drawn.size());
+        assertEquals(SHARED_START, drawn.getJSONObject(0).getLongValue("startTime"));
+        assertFalse(sent.toString().contains(image));
+    }
+
+    @Test
+    @DisplayName("一张折线图和一场报告画失败后，已画好的折线图和报告仍随答复返回")
+    void failedImagesDoNotDiscardOtherImagesInMixedAnswer() {
+        when(queries.sessions("bilibili", 1L, 7, 1)).thenReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(
+                JSONObject.of("startTime", SHARED_START, "messages", 7))));
+        when(chartRenderer.render(any())).thenReturn(Optional.of("messages-png"), Optional.empty());
+        long start = Instant.parse("2026-11-07T12:00:00Z").toEpochMilli();
+        var first = AssistantReportFixtures.detail(1L, start);
+        var second = AssistantReportFixtures.detail(1L, start + 180_000);
+        var sessions = Stream.of(second, first).map(detail -> new LiveSession("bilibili", 1L, detail.uname(),
+                detail.roomId(), detail.startTime(), detail.endTime(), 120, detail.metrics(), detail.userCounts())).toList();
+        when(queries.reportSessions("bilibili", 1L, null, LocalDate.of(2026, 11, 7))).thenReturn(sessions);
+        when(queries.reportDetail(sessions.get(0))).thenReturn(Optional.of(second));
+        when(queries.reportDetail(sessions.get(1))).thenReturn(Optional.of(first));
+        reportRedrawer = mock(LiveReportRedrawer.class);
+        when(reportRedrawer.platform()).thenReturn("bilibili");
+        when(reportRedrawer.redraw(second)).thenReturn(Optional.of("report-png".getBytes(UTF_8)));
+        when(reportRedrawer.redraw(first)).thenThrow(new IllegalStateException());
+        var chart = JSONObject.of("resultNumber", 1, "type", "line", "xColumn", "startTime",
+                "yColumns", List.of("messages"), "title", "场次弹幕");
+        replies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        replies.add(call("draw_chart", chart));
+        replies.add(call("draw_live_report", JSONObject.of("day", "2026-11-07")));
+        replies.add(call("draw_chart", chart));
+        replies.add(JSONObject.of("content", "见已生成的图。"));
+
+        var result = ask(JSONObject.of("question", "画 11 月 7 日的场次弹幕曲线和报告图"));
+
+        assertNotNull(result.getJSONArray("images"), result::toJSONString);
+        assertEquals(List.of("messages-png", "cmVwb3J0LXBuZw=="), result.getJSONArray("images"));
+        var reportTool = toolDataAtLastRequest().get(2);
+        assertEquals(1, reportTool.getJSONArray("drawn").size());
+        assertEquals(1, reportTool.getJSONArray("skipped").size());
+        assertEquals(start, reportTool.getJSONArray("skipped").getJSONObject(0).getLongValue("startTime"));
+        assertFalse(sent.toString().contains("cmVwb3J0LXBuZw=="));
     }
 
     private static ConfigUiAccount consoleAccount(ConfigUiAccount.Role role, Long... assigned) {
@@ -1691,7 +1784,7 @@ class AssistantAskServiceTest {
         assertEquals(List.of("https://model.example/v1/responses", "https://model.example/v1/chat/completions"), sentTo);
         var responsesTools = sent.get(0).getJSONArray("tools").toJavaList(JSONObject.class);
         var chatTools = sent.get(1).getJSONArray("tools").toJavaList(JSONObject.class);
-        assertEquals(12, responsesTools.size());
+        assertEquals(13, responsesTools.size());
         assertEquals(responsesTools.size(), chatTools.size());
         for (int i = 0; i < responsesTools.size(); i++) {
             var responsesTool = responsesTools.get(i);
@@ -2001,7 +2094,7 @@ class AssistantAskServiceTest {
         var names = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(t -> t.getJSONObject("function").getString("name")).collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of("sessions", "session", "curve", "danmu", "revenue", "insights", "trend", "fans", "aggregate", "query_sql",
-                "draw_chart", "draw_sketch"), names);
+                "draw_chart", "draw_sketch", "draw_live_report"), names);
         var description = sent.get(0).getJSONArray("tools").stream().map(JSONObject.class::cast)
                 .map(tool -> tool.getJSONObject("function")).filter(tool -> "query_sql".equals(tool.getString("name")))
                 .findFirst().orElseThrow().getString("description");
@@ -2964,7 +3057,7 @@ class AssistantAskServiceTest {
     @Test void expiredAudienceEntriesAreEvictedWithoutAnotherQuestion() throws Exception {
         service.close();
         var scheduler = mock(java.util.concurrent.ScheduledExecutorService.class);
-        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer, scheduler);
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer, Stream::empty, scheduler);
         var cleanup = org.mockito.ArgumentCaptor.forClass(Runnable.class);
         verify(scheduler).scheduleWithFixedDelay(cleanup.capture(), eq(10L), eq(10L), eq(java.util.concurrent.TimeUnit.MINUTES));
         ask(JSONObject.of("question", "991234560 的表现"));

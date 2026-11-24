@@ -49,6 +49,11 @@ public interface HealthProbe {
         return Scope.SYSTEM;
     }
 
+    /** 返回由本探针驱动的连接卡页标识。 */
+    default String card() {
+        return null;
+    }
+
     /**
      * 本探针量的是不是「账号登录态」
      * <p>

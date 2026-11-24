@@ -6,8 +6,19 @@ import java.util.regex.Pattern;
 
 /** 固定动作名与路由对应；从不把原始 URL 或查询串当作说明写盘。 */
 final class ConfigUiOperationCatalog {
-    record Action(String name, String description, Map<String, String> variables) { }
-    private record Entry(String method, String route, Pattern pattern, List<String> variables, String name, String description) { }
+    static final String REGISTERED_ACTION = "nova.console.audit.registered-action";
+
+    record Action(String name, String description, Map<String, String> variables, boolean actionOnly) {
+        Action(String name, String description, Map<String, String> variables) {
+            this(name, description, variables, false);
+        }
+    }
+    record Entry(String method, String route, Pattern pattern, List<String> variables, String name,
+                 String description, boolean actionOnly) {
+        Action action(Map<String, String> values) {
+            return new Action(name, description, values, actionOnly);
+        }
+    }
     private static final List<Entry> ENTRIES = new ArrayList<>();
     static {
         add("POST", "values", "SETTINGS_SAVE", "保存控制台设置");
@@ -78,6 +89,15 @@ final class ConfigUiOperationCatalog {
     private ConfigUiOperationCatalog() { }
 
     private static void add(String method, String route, String name, String description) {
+        ENTRIES.add(entry(method, route, name, description, false));
+    }
+
+    static List<Entry> pluginEntries(List<ConfigUiOperationProvider> providers) {
+        return providers.stream().flatMap(provider -> provider.operations().stream())
+                .map(op -> entry(op.method(), op.route(), op.name(), op.description(), true)).toList();
+    }
+
+    private static Entry entry(String method, String route, String name, String description, boolean actionOnly) {
         List<String> variables = new ArrayList<>();
         StringBuilder regex = new StringBuilder("^/config/api");
         for (String part : route.split("/")) {
@@ -87,27 +107,36 @@ final class ConfigUiOperationCatalog {
                 regex.append("([^/]+)");
             } else regex.append(Pattern.quote(part));
         }
-        ENTRIES.add(new Entry(method, "/config/api/" + route, Pattern.compile(regex + "/?$"), variables, name, description));
+        return new Entry(method, "/config/api/" + route, Pattern.compile(regex + "/?$"), variables, name, description,
+                actionOnly);
     }
 
     static Action action(HttpServletRequest request) {
+        if (request.getAttribute(REGISTERED_ACTION) instanceof Action action) return action;
+        var builtIn = find(request, ENTRIES);
+        return builtIn != null ? builtIn : new Action("CONSOLE_OPERATION", "执行控制台操作", Map.of());
+    }
+
+    static Action find(HttpServletRequest request, List<Entry> entries) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        for (Entry entry : ENTRIES) {
+        for (Entry entry : entries) {
             if (!entry.method.equals(request.getMethod())) continue;
             if (entry.route.equals(ConfigUiPermissions.pattern(request))) {
+                if (entry.actionOnly) return entry.action(Map.of());
                 Map<String, String> variables = new LinkedHashMap<>();
                 Object bound = request.getAttribute(org.springframework.web.servlet.HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
                 if (bound instanceof Map<?, ?> values) for (String name : entry.variables)
                     if (values.get(name) instanceof String value) variables.put(name, value);
-                return new Action(entry.name, entry.description, variables);
+                return entry.action(variables);
             }
             var match = entry.pattern.matcher(path);
             if (!match.matches()) continue;
+            if (entry.actionOnly) return entry.action(Map.of());
             Map<String, String> variables = new LinkedHashMap<>();
             for (int i = 0; i < entry.variables.size(); i++) variables.put(entry.variables.get(i), match.group(i + 1));
-            return new Action(entry.name, entry.description, variables);
+            return entry.action(variables);
         }
-        return new Action("CONSOLE_OPERATION", "执行控制台操作", Map.of());
+        return null;
     }
 
     static boolean operation(HttpServletRequest request) {

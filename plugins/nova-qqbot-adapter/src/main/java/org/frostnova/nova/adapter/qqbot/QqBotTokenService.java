@@ -62,18 +62,26 @@ class QqBotTokenService {
         if (!currentSettings.configured()) {
             return UNCONFIGURED;
         }
-        Outcome outcome = latest;
-        if (outcome.token() != null && !clock.instant().isBefore(outcome.token().expiresAt())) {
-            return EXPIRED;
-        }
-        return outcome.health();
+        return latest.health();
     }
 
     synchronized void save(String appId, String secret) {
         settings.save(appId, secret);
+        reset();
+    }
+
+    synchronized void clear() {
+        settings.clear();
+        reset();
+    }
+
+    private void reset() {
         latest = new Outcome(null, null, UNCHECKED);
         attempt = null;
-        verifyConfigured();
+    }
+
+    void setIntervalMillis(long intervalMillis) {
+        settings.setIntervalMillis(intervalMillis);
     }
 
     void verifyConfigured() {
@@ -92,15 +100,15 @@ class QqBotTokenService {
             return await(observed);
         }
         synchronized (this) {
+            if (!settings().configured()) {
+                throw new QqBotApiException(0, UNCONFIGURED.summary(), "", 0);
+            }
             if (attempt != null && attempt != observed) {
                 return await(attempt);
             }
             Token cached = latest.token();
             if (cached != null && !clock.instant().isAfter(cached.expiresAt().minusSeconds(REFRESH_AHEAD_SECONDS))) {
                 return cached;
-            }
-            if (!settings().configured()) {
-                throw new QqBotApiException(0, UNCONFIGURED.summary(), "", 0);
             }
             return exchange();
         }
