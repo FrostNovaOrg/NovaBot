@@ -15,14 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryFlag;
-import java.nio.file.attribute.AclEntryPermission;
-import java.nio.file.attribute.AclEntryType;
-import java.nio.file.attribute.AclFileAttributeView;
-import java.nio.file.attribute.PosixFileAttributeView;
-import java.nio.file.attribute.PosixFilePermissions;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -59,6 +51,10 @@ final class QqBotSettings {
         return snapshot;
     }
 
+    Path directory() {
+        return directory;
+    }
+
     void save(String appId, String secret) {
         if (appId == null || !APP_ID.matcher(appId).matches()) {
             throw new IllegalArgumentException("AppID 须为 1 至 20 位数字");
@@ -73,15 +69,8 @@ final class QqBotSettings {
         long interval = snapshot.intervalMillis();
         byte[] original;
         try {
-            if (Files.notExists(directory, NO_LINKS)) {
-                try {
-                    Files.createDirectories(directory, PosixFilePermissions.asFileAttribute(
-                            PosixFilePermissions.fromString("rwx------")));
-                } catch (UnsupportedOperationException e) {
-                    Files.createDirectories(directory);
-                }
-            }
-            protectStorage();
+            QqBotStorage.prepareDirectory(directory);
+            protectFiles();
             original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
             writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
         } catch (IOException | SecurityException e) {
@@ -173,41 +162,15 @@ final class QqBotSettings {
     }
 
     private void protectStorage() throws IOException {
-        if (!Files.isDirectory(directory, NO_LINKS)) {
-            throw storageError();
-        }
-        restrict(directory, true);
+        QqBotStorage.protectDirectory(directory);
+        protectFiles();
+    }
+
+    private void protectFiles() throws IOException {
         for (Path path : paths) {
-            protectFile(path);
-            protectFile(DurableFiles.temporary(path));
+            QqBotStorage.protectFile(path);
+            QqBotStorage.protectFile(DurableFiles.temporary(path));
         }
-    }
-
-    private static void protectFile(Path path) throws IOException {
-        if (!Files.notExists(path, NO_LINKS)) {
-            if (!Files.isRegularFile(path, NO_LINKS)) {
-                throw storageError();
-            }
-            restrict(path, false);
-        }
-    }
-
-    private static void restrict(Path path, boolean directory) throws IOException {
-        var posix = Files.getFileAttributeView(path, PosixFileAttributeView.class, NO_LINKS);
-        if (posix != null) {
-            posix.setPermissions(directory ? PosixFilePermissions.fromString("rwx------") : DurableFiles.OWNER_ONLY);
-            return;
-        }
-        var acl = Files.getFileAttributeView(path, AclFileAttributeView.class, NO_LINKS);
-        if (acl == null) {
-            throw storageError();
-        }
-        var ownerAccess = AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(acl.getOwner())
-                .setPermissions(EnumSet.allOf(AclEntryPermission.class));
-        if (directory) {
-            ownerAccess.setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT);
-        }
-        acl.setAcl(List.of(ownerAccess.build()));
     }
 
     private static IllegalStateException storageError() {

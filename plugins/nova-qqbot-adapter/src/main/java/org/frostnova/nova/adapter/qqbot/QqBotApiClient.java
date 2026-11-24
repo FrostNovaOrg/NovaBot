@@ -22,8 +22,13 @@ public class QqBotApiClient {
 
     /** @return 解码后的 JSON 值，空回包返回 null */
     public Object request(String method, String path, JSONObject body) {
+        return request(method, path, body, null);
+    }
+
+    /** 请求中含有机器人专属标识时，重试也须使用同一 AppID。 */
+    Object request(String method, String path, JSONObject body, String appId) {
         URI uri = officialUri(path);
-        var token = tokens.token();
+        var token = tokenFor(appId);
         QqBotResponse response = send(method, uri, body, token);
         boolean rejected = rejectsToken(response);
         if (!rejected && !response.hasCode(11242)) {
@@ -33,12 +38,20 @@ public class QqBotApiClient {
         if (rejected) {
             tokens.invalidate(token);
         }
-        var retryToken = rejected ? tokens.token() : token;
+        var retryToken = rejected ? tokenFor(appId) : token;
         QqBotResponse retry = send(method, uri, body, retryToken);
         if (rejectsToken(retry)) {
             tokens.invalidate(retryToken);
         }
         return result(retry, new ResponseMask(token, retryToken));
+    }
+
+    private QqBotTokenService.Token tokenFor(String appId) {
+        var token = tokens.token();
+        if (appId != null && !appId.equals(token.appId())) {
+            throw new QqBotApiException(0, "QQ 官方机器人 AppID 已切换", "", 0);
+        }
+        return token;
     }
 
     private QqBotResponse send(String method, URI uri, JSONObject body, QqBotTokenService.Token token) {
