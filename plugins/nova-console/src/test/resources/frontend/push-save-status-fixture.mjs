@@ -100,8 +100,8 @@ try {
 const TARGET = {platform: 'q', type: 1, num: 12345};
 
 /** 回到「刚打开这一页」：推送配置干净、本群设置草稿清空、状态栏空着 */
-async function fresh() {
-  datasourceBody = JSON.stringify(datasource());
+async function fresh(users = datasource()) {
+  datasourceBody = JSON.stringify(users);
   datasourceReply = {success: true, message: '已保存'};
   stateReply = {success: true, message: '已保存'};
   requests.length = 0;
@@ -121,6 +121,24 @@ function pushPosts() {
 function statePosts() {
   return requests.filter(item => item.method === 'POST' && item.path.includes('/state/'));
 }
+
+await ask('改为隐藏金额时，问数仍开着会把冲突的通道设置送去保存', async () => {
+  const users = datasource();
+  Object.assign(users[0].targets[0], {revenueVisible: true, assistantEnabled: true});
+  await fresh(users);
+  await push.showPush('1', 'q|1|12345');
+  const right = node('#push-right');
+  const revenue = right.querySelector('[aria-label="直播收益等金额"]');
+  revenue.checked = false;
+  await revenue.dispatchEvent({type: 'change', target: revenue});
+
+  const assistant = right.querySelector('[aria-label="问数"]');
+  same([assistant.checked, assistant.disabled], [false, true], '金额隐藏时的问数开关');
+  await push.save();
+  const target = JSON.parse(pushPosts()[0].body).user.targets[0];
+  same([target.revenueVisible, target.assistantEnabled], [false, false], '保存的通道开关');
+  same(statusText().includes('金额改为隐藏，智能助手已一并关闭'), true, '保存提示');
+});
 
 // ---- 存推送配置成功：状态栏是服务端回的那句 ----
 

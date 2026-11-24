@@ -81,8 +81,8 @@ class MemberListScopeTest {
         config = create(ConfigUiController.class);
         runtime = create(RuntimeStateController.class);
         streamers = create(StreamerController.class);
+        dependencies.put(AtAllQuotaService.class, new AtAllQuotaService(props));
         quota = create(AtAllQuotaController.class);
-        when(((AtAllQuotaService)dependencies.get(AtAllQuotaService.class)).today()).thenReturn(LocalDate.now());
         push = create(PushController.class);
         for (var controller : List.of(runtime, quota)) {
             if (Arrays.stream(controller.getClass().getDeclaredFields()).anyMatch(field -> field.getName().equals("configured")))
@@ -486,7 +486,8 @@ class MemberListScopeTest {
         var users = JSONArray.parseArray(Files.readString(file));
         var targets = users.getJSONObject(0).getJSONArray("targets");
         targets.getJSONObject(0).put("assistantEnabled", true);
-        var group = JSONObject.of("platform", "qq", "num", OTHER, "type", 1, "messages", new JSONArray());
+        var group = JSONObject.of("platform", "qq", "num", OTHER, "type", 1, "revenueVisible", true,
+                "messages", new JSONArray());
         if (previouslyEnabled != null) group.put("assistantEnabled", previouslyEnabled);
         targets.add(group);
         Files.writeString(file, users.toJSONString());

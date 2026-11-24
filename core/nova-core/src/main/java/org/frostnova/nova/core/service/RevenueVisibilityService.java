@@ -42,8 +42,11 @@ public class RevenueVisibilityService {
 
     /** 按主播通道读取金额；不再继承旧会话设置。 */
     public boolean isVisible(org.frostnova.nova.core.model.PushTarget target) {
-        return target != null && target.getRevenueVisible() != null ? target.getRevenueVisible()
-                : defaultFor(target == null ? null : target.getType());
+        return target != null && isVisible(target.getType(), target.getRevenueVisible());
+    }
+
+    public static boolean isVisible(PushTargetType type, Boolean explicit) {
+        return explicit == null ? type == PushTargetType.FRIEND : explicit;
     }
 
     /**
@@ -117,7 +120,7 @@ public class RevenueVisibilityService {
      * 未显式设置时的默认值
      */
     public boolean defaultFor(PushTargetType type) {
-        return type == PushTargetType.FRIEND;
+        return isVisible(type, null);
     }
 
     /**

@@ -14,7 +14,7 @@
  * 平台叫什么由 /api/login 里那个显示名带进来。写死一个，没装它的人会看见一步他走不到的流程。
  */
 
-import {SETUP_STEPS, setupSteps} from './home-model.js';
+import {botSetupStatus, OFFICIAL_BOT_CARD, SETUP_STEPS, setupSteps} from './home-model.js';
 import * as home from './home-model.js';
 import {mailAlertConfigured} from './alert-model.js';
 
@@ -33,6 +33,12 @@ function say(terms, key, withTerm, without) {
 
 export function withPluginSteps(pages, terms) {
   return home.withPluginSteps(pages, terms);
+}
+
+export function botSetupChoice(pages, status, adapter) {
+  const page = pages.find(item => item?.id === OFFICIAL_BOT_CARD && item.slot === 'links');
+  const officialConfigured = !!botSetupStatus(status).official || (status.senders || []).includes('qq-official');
+  return {page, kind: page && !adapter.configured && officialConfigured ? 'official' : 'adapter'};
 }
 
 /**
@@ -100,6 +106,10 @@ export function canAdvance(index, draft, steps) {
       return it.locked ? pass()
         : stop('请先设置控制台密码。此步骤不可跳过：未设置密码时，任何能访问本机的人都可以进入控制台');
     case 'bot':
+      if (it.officialBotOk) return pass();
+      if (it.botKind === 'official') {
+        return it.adapterReady ? pass() : stop('请保存凭据，等待机器人连接成功后继续。');
+      }
       return it.botOk ? pass()
         : stop('请先点击「测试连接」，测试通过后才能继续。此步骤不可跳过：未连接机器人时，任何消息都无法发送');
     case 'account':

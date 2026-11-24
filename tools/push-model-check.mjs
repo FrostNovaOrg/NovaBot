@@ -112,7 +112,7 @@ function record(target, summary, ok) {
 // 每档写明：改了哪几处回包（驱动字段），以及这一页该长成什么样（应）
 const CASES = [
   {
-    name: '换成官方机器人保留通道设置并停用原目标',
+    name: '换成官方机器人保留通道设置并停用原目标，清理旧通道隐藏金额时的问数开关',
     run: async () => {
       const u = user({targets: [{
         platform: SENDER, type: 1, num: 12345, enabled: true,
@@ -137,8 +137,8 @@ const CASES = [
       });
       const [old, added] = persisted.targets;
       return {stage: result.stage, results: result.results, calls,
-        copied: isDeepStrictEqual(added, {...from, ...to, enabled: true}),
-        retained: isDeepStrictEqual(old, {...from, enabled: false}), original: from.enabled};
+        copied: isDeepStrictEqual(added, {...from, ...to, enabled: true, assistantEnabled: false}),
+        retained: isDeepStrictEqual(old, {...from, enabled: false, assistantEnabled: false}), original: from.enabled};
     },
     expect: {stage: 'done', results: ['金额可见：隐藏金额'],
       calls: ['true/false', '12345→1000000000000001', 'false/true'], copied: true, retained: true, original: true},

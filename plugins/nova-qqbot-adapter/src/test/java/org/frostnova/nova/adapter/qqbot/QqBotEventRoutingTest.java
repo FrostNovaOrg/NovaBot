@@ -7,6 +7,8 @@ import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -41,6 +43,39 @@ class QqBotEventRoutingTest {
 
     @TempDir
     Path dataDirectory;
+
+    private static final String WELCOME = "大家好，我是这个群的推送机器人。要在群里收到开播通知，请群主在手机 QQ 打开我的"
+            + "『机器人主动在群聊内发言』：群成员列表里点我 → 右上角设置 → 打开。管理员还要到控制台连接页给这个群起个名字。";
+
+    @Test
+    void joiningWelcomesTheGroupOnceWithTheOuterEventId() {
+        var rig = new Rig();
+        rig.run(listener -> {
+            var joined = rig.group(GROUP).fluentPut("id", "inner-id");
+            listener.onEvent("GROUP_ADD_ROBOT", joined, "GROUP_ADD_ROBOT:x", 1L);
+            listener.onEvent("GROUP_ADD_ROBOT", joined, "GROUP_ADD_ROBOT:x", 2L);
+            listener.onEvent("GROUP_ADD_ROBOT", joined, " ", 3L);
+            rig.drainFetches();
+            assertEquals(List.of(JSONObject.of("msg_type", 0, "content", WELCOME, "event_id", "GROUP_ADD_ROBOT:x")),
+                    rig.posts);
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"40034025,400", "40034026,400", "40034027,400", "40034026,429"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void rejectedWelcomeIsLoggedOnceWithoutSwitchingToProactive(int code, int status, CapturedOutput output) {
+        var rig = new Rig();
+        rig.welcomeResponse = JSONObject.of("code", code);
+        rig.welcomeStatus = status;
+        rig.run(listener -> {
+            listener.onEvent("GROUP_ADD_ROBOT", rig.group(GROUP), "GROUP_ADD_ROBOT:x", 1L);
+            rig.drainFetches();
+            assertEquals(1, rig.posts.size());
+            assertTrue(output.getAll().lines().anyMatch(l -> l.contains("INFO") && l.contains(String.valueOf(code))));
+            assertFalse(output.getAll().contains(GROUP));
+        });
+    }
 
     @Test
     void joinedGroupCanSendTheMenuCommand() {
@@ -251,10 +286,14 @@ class QqBotEventRoutingTest {
         final QqBotSettings settings = new QqBotSettings(dataDirectory);
         final QqBotGatewayTest.ManualScheduler scheduler = new QqBotGatewayTest.ManualScheduler();
         final Queue<Runnable> fetches = new ArrayDeque<>();
+        final List<JSONObject> posts = new ArrayList<>();
+        int welcomeStatus = 200;
+        JSONObject welcomeResponse = JSONObject.of("id", "welcome");
         final AtomicInteger nameRequests = new AtomicInteger();
         final List<NovaRemoteMessageEvent> events = new ArrayList<>();
         final QqBotDirectory directory;
         final QqBotHttpTransport transport;
+        final QqBotWelcome welcome;
         Consumer<NovaRemoteMessageEvent> afterPublish = event -> { };
 
         Rig() {
@@ -264,6 +303,10 @@ class QqBotEventRoutingTest {
                 JSONObject response;
                 if (path.equals("/app/getAppAccessToken")) {
                     response = JSONObject.of("access_token", "fixture-token", "expires_in", 7200);
+                } else if (path.endsWith("/messages")) {
+                    assertEquals("/v2/groups/" + GROUP + "/messages", path);
+                    posts.add(JSONObject.parseObject(body));
+                    return new QqBotHttpTransport.Response(welcomeStatus, welcomeResponse.toJSONString());
                 } else if (path.endsWith("/info")) {
                     nameRequests.incrementAndGet();
                     response = JSONObject.of("group_name", "开播提醒群");
@@ -275,6 +318,7 @@ class QqBotEventRoutingTest {
             };
             var clock = Clock.fixed(now, ZoneOffset.UTC);
             var api = new QqBotApiClient(transport, new QqBotTokenService(settings, transport, clock));
+            welcome = new QqBotWelcome(api, new QqBotSendWindow(clock, scheduler::nowMillis, scheduler::advance), fetches::add);
             directory = spy(new QqBotDirectory(settings, api, clock, fetches::add, QqBotDirectory::sha256));
         }
 
@@ -291,6 +335,7 @@ class QqBotEventRoutingTest {
                     .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                     .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                     .withBean(QqBotGatewayScheduler.class, () -> scheduler, definition -> definition.setPrimary(true))
+                    .withBean("qqBotWelcome", QqBotWelcome.class, () -> welcome)
                     .withBean("qqBotDirectory", QqBotDirectory.class, () -> directory)
                     .withInitializer(context -> context.addApplicationListener(recorder))
                     .run(context -> {

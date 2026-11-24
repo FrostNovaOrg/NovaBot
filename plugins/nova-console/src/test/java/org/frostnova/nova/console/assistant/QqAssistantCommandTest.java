@@ -18,6 +18,7 @@ import org.frostnova.nova.core.assistant.AssistantUsageStore;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandFollowUp;
+import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.command.CommandReplyHint;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.command.GroupMessageCapability;
@@ -55,6 +56,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -201,7 +203,7 @@ class QqAssistantCommandTest {
 
     // 控制台和 QQ 各算各的，问同一位主播，加起来超了每天上限还能接着问。
     @Test void consoleAndQqSpendFromTheSameStreamerBudget() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
         properties.setPriceInputYuanPerMillion(new BigDecimal("6000"));
         var request = JSONObject.of("question", "最近播过吗");
@@ -234,7 +236,7 @@ class QqAssistantCommandTest {
 
     // 额度快用完时没有任何提示，突然就问不了了。
     @Test void lowBudgetNoticeReachesBothSurfacesAndStaysOutOfHistory() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
         properties.setPriceInputYuanPerMillion(new BigDecimal("8000"));
         var questionCost = new BigDecimal("0.8");
@@ -260,8 +262,8 @@ class QqAssistantCommandTest {
 
     // 额度已经用完，QQ 还先回一句『收到』，然后才说用完。
     @Test void exhaustedStreamerIsRejectedBeforeNumberedSelectionAcknowledgement() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         properties.setPriceInputYuanPerMillion(new BigDecimal("10000"));
         properties.setPriceOutputYuanPerMillion(BigDecimal.ZERO);
         assertTrue(service.ask(BILIBILI, SECOND, "operator", JSONObject.of("question", "最近播过吗"))
@@ -287,7 +289,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("不带『问』字提问，机器人只回菜单（私聊）")
     void friendQuestionWithoutCommand() throws Exception {
-        add(FIRST, "测试主播甲", channel(FRIEND, ASKER, true, true));
+        add(FIRST, "测试主播甲", channel(FRIEND, ASKER, true, null));
         String question = "测试主播甲 最近四周的流水有什么变化";
         modelReplies.add(text("近期直播流水有波动"));
         receive(FRIEND, ASKER, ASKER, question, false);
@@ -318,6 +320,30 @@ class QqAssistantCommandTest {
         assertEquals(question, userPayload(requests.get(0)).getString("question"));
     }
 
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(booleans = false)
+    @DisplayName("旧通道还开着问数时，显式隐藏或默认隐藏金额的群也不能查询流水")
+    void legacyAssistantCannotAnswerInHiddenGroup(Boolean visible) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, visible));
+        modelReplies.add(text("近期直播流水有波动"));
+
+        group(ASKER, "最近四周的流水有什么变化");
+
+        assertReply("没开金额显示", "请管理员先把金额设为可见");
+        assertTrue(requests.isEmpty());
+    }
+
+    @Test
+    void legacyAssistantCannotAnswerWhenFriendRevenueIsExplicitlyHidden() throws Exception {
+        add(FIRST, "测试主播甲", channel(FRIEND, ASKER, true, false));
+
+        receive(FRIEND, ASKER, ASKER, "问 这场流水多少", false);
+
+        assertReply("好友通道没开金额显示", "请管理员先把金额设为可见");
+        assertTrue(requests.isEmpty());
+    }
+
     @Test
     @DisplayName("没开问答的群里，打错命令却收不到菜单")
     void unknownCommandKeepsMenuWhenAssistantIsOff() throws Exception {
@@ -331,7 +357,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("菜单后面多打了个全角空格，就不回菜单了")
     void menuWithTrailingFullWidthSpace() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
 
         group(ASKER, "菜单\u3000");
 
@@ -344,7 +370,7 @@ class QqAssistantCommandTest {
     @ValueSource(strings = {"\u3000", "\u00a0"})
     @DisplayName("问和问题之间的 Unicode 空格应分开命令与正文")
     void explicitQuestionWithUnicodeSpace(String space) throws Exception {
-        add(FIRST, "莜娜", channel(GROUP, ROOM, true, false));
+        add(FIRST, "莜娜", channel(GROUP, ROOM, true, true));
         String question = "莜娜最近怎么样";
         modelReplies.add(text("最近有开播。"));
 
@@ -357,8 +383,8 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("空问应直接给三条例子，不能选择主播、请求模型或产生花费")
     void emptyCommandsGiveExamplesWithoutUsingQuota() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         for (String commandName : List.of("问", "问数")) {
             group(ASKER, commandName);
             assertReply("1–300 字", "问 这个月心动盲盒收了多少个", "问 最近 30 天各钟点平均在线", "问 上周送礼榜前十");
@@ -370,7 +396,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("一个主播的 QQ 空问优先提示备忘任务，过期后恢复通用示例，也不直接公开备忘原文")
     void emptyQqQuestionUsesTheCurrentMemoWithoutPublishingItsText() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         String memo = "本月试播三场";
         AssistantAskServiceTest.seedMemos(directory, FIRST, "2026-11-16", "2026-11-16", memo);
         group(ASKER, "问");
@@ -387,7 +413,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("主播备忘文件损坏时，QQ 仍能提问并在限长回复末尾提示本次跳过备忘")
     void corruptMemoDoesNotPreventAQuestionInQq() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         var folder = Files.createDirectories(directory.resolve("assistant-memos"));
         Files.writeString(folder.resolve("bilibili-" + FIRST + ".json"), "[损坏的备忘");
         modelReplies.add(text("这是查数结果。" + "在线较高。".repeat(65) + "\n1. 哪场在线最高？"));
@@ -403,7 +429,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("QQ 发来的记备忘请求和模型自己提出的写入工具都不能保存备忘")
     void qqAndTheModelCannotWriteMemos() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         modelReplies.add(call("save_memo", JSONObject.of("text", "本月试播三场")));
         modelReplies.add(text("可以在控制台的助手备忘里记下任务目标"));
         group(ASKER, "问 帮我记下本月试播目标");
@@ -415,7 +441,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("群里的问数经过通用汇总查到真实夹具的盲盒个数，再发回原群")
     void answersMonthlyBoxCountFromArchivedEvents() throws Exception {
-        var target = channel(GROUP, ROOM, true, false);
+        var target = channel(GROUP, ROOM, true, true);
         add(FIRST, "测试主播甲", target);
         archive.append(new LiveSession(BILIBILI, FIRST, "测试主播甲", 1L, START, START + 10000, 10,
                 Map.of("box_count", 12d), Map.of()));
@@ -442,7 +468,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("点名同群未开问答的主播时，不能查到该主播或误用另一位")
     void rejectsDisabledStreamerByNameAndUid() throws Exception {
-        add(FIRST, "星星", channel(GROUP, ROOM, true, null));
+        add(FIRST, "星星", channel(GROUP, ROOM, true, true));
         add(SECOND, "小星星", channel(GROUP, ROOM, false, null));
         group(ASKER, "问 小星星昨天播了多久");
         assertReply("所点名的主播", "问答");
@@ -459,8 +485,8 @@ class QqAssistantCommandTest {
 
     // 问两位主播谁高，机器人却让我选一位。
     @Test void comparesTwoNamedStreamersInMentionOrder() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
-        var primary = channel(GROUP, ROOM, true, null);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        var primary = channel(GROUP, ROOM, true, true);
         add(SECOND, "测试主播乙", primary);
         doReturn("测试主播甲").when(queries).streamerName(BILIBILI, FIRST);
         doReturn("测试主播乙").when(queries).streamerName(BILIBILI, SECOND);
@@ -477,26 +503,20 @@ class QqAssistantCommandTest {
         assertTrue(system.contains("测试主播乙（" + SECOND + "）、测试主播甲（" + FIRST + "）"), system);
     }
 
-    // 对比里有一位主播不让显示金额，回答里还是带了金额。
-    @Test void comparisonHidesAmountsWhenAnyStreamerHidesThem() throws Exception {
+    @Test void comparisonRejectsAStreamerWithHiddenRevenue() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
-        modelReplies.add(call("revenue", JSONObject.of("start", START, "streamer", FIRST)));
-        modelReplies.add(text("本场流水为 576.42 元。"));
-        modelReplies.add(text("本场流水为 576.42 元。"));
 
         group(ASKER, "问 " + FIRST + " 和测试主播乙谁流水高");
 
-        String answer = comparisonResult(LABEL).getContent();
-        assertFalse(answer.contains("576.42"), answer);
-        assertTrue(answer.contains("不显示金额"), answer);
-        verify(queries, never()).revenue(anyString(), anyLong(), anyLong());
+        assertReply("所点名的主播", "没开金额显示");
+        assertTrue(requests.isEmpty());
     }
 
     // 对比完说『那上个月呢』，机器人忘了是在比哪几位。
     @Test void unnamedComparisonFollowUpKeepsBothStreamersAndHistory() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         doReturn("测试主播甲").when(queries).streamerName(BILIBILI, FIRST);
         doReturn("测试主播乙").when(queries).streamerName(BILIBILI, SECOND);
         String question = FIRST + " 和测试主播乙最近谁播得多";
@@ -523,9 +543,9 @@ class QqAssistantCommandTest {
 
     @Test void comparisonRejectsAClosedStreamerAndLimitsGroupSize() throws Exception {
         var names = List.of("测试主播甲", "测试主播乙", "测试主播丙", "测试主播丁", "测试主播戊", "测试主播己");
-        var second = channel(GROUP, ROOM, false, null);
+        var second = channel(GROUP, ROOM, false, true);
         for (int i = 0; i < names.size(); i++)
-            add(FIRST + i, names.get(i), i == 1 ? second : channel(GROUP, ROOM, true, null));
+            add(FIRST + i, names.get(i), i == 1 ? second : channel(GROUP, ROOM, true, true));
 
         group(ASKER, "问 测试主播甲和测试主播乙谁流水高");
         assertReply("这里没有为所点名的主播开启智能助手问答");
@@ -537,10 +557,10 @@ class QqAssistantCommandTest {
     }
 
     @Test void unnamedComparisonFallsBackToTheMenuWhenOneStreamerCloses() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        var second = channel(GROUP, ROOM, true, false);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        var second = channel(GROUP, ROOM, true, true);
         add(SECOND, "测试主播乙", second);
-        add(10003L, "测试主播丙", channel(GROUP, ROOM, true, false));
+        add(10003L, "测试主播丙", channel(GROUP, ROOM, true, true));
         group(ASKER, "问 测试主播甲和测试主播乙谁播得多");
         assertReply("这个问题要多想一会儿");
         assertReply(LABEL);
@@ -557,8 +577,8 @@ class QqAssistantCommandTest {
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void repliesWhenAStreamerClosesAfterRouting(boolean comparison) throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        var second = channel(GROUP, ROOM, true, false);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        var second = channel(GROUP, ROOM, true, true);
         add(SECOND, "测试主播乙", second);
         doAnswer(invocation -> {
             second.setAssistantEnabled(false);
@@ -582,12 +602,12 @@ class QqAssistantCommandTest {
         group(ASKER, "问 测试主播甲和测试主播乙谁流水高");
 
         assertReply("这个问题要多想一会儿");
-        assertFalse(assertReply("不显示金额").getContent().contains("576.42"));
+        assertFalse(assertReply("测试主播乙", "问答刚被关掉").getContent().contains("576.42"));
     }
 
     @Test void numberedFollowUpAndReversedNamesKeepComparisonHistory() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         String firstQuestion = "测试主播甲和测试主播乙最近在线怎么样";
         String followUp = "周六两位主播的开播时间是什么？";
         modelReplies.add(text("测试主播乙在线更高。\n1. 周六哪位主播的弹幕更多？\n2. " + followUp));
@@ -612,8 +632,8 @@ class QqAssistantCommandTest {
     @Test void comparisonPreservesStreamerUidAndMasksViewerUidInQuestion() throws Exception {
         long streamer = 3546626599684797L;
         long viewer = 991234560L;
-        add(streamer, null, channel(GROUP, ROOM, true, false));
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(streamer, null, channel(GROUP, ROOM, true, true));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         doReturn(Map.of(viewer, new AssistantQueryService.AudienceIdentity(Set.of("测试观众"), "测试观众")))
                 .when(queries).localAudience(BILIBILI, FIRST, List.of());
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
@@ -636,8 +656,8 @@ class QqAssistantCommandTest {
     @Test void comparisonSqlKeepsFallbackStreamerName() throws Exception {
         assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
         long streamer = 3546626599684797L;
-        add(streamer, null, channel(GROUP, ROOM, true, false));
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(streamer, null, channel(GROUP, ROOM, true, true));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         doReturn("测试主播甲").when(queries).streamerName(BILIBILI, FIRST);
         modelReplies.add(call("query_sql", JSONObject.of("from", "2026-11-09", "to", "2026-11-15",
                 "tables", List.of("streamers"), "sql", "SELECT name AS label FROM streamers ORDER BY streamer_uid")));
@@ -690,11 +710,11 @@ class QqAssistantCommandTest {
     })
     void resolvesStreamerShortNames(String question, String firstName, String secondName, String otherName,
                                     int selected) throws Exception {
-        var firstTarget = channel(GROUP, ROOM, true, null);
-        var secondTarget = channel(GROUP, ROOM, true, null);
+        var firstTarget = channel(GROUP, ROOM, true, true);
+        var secondTarget = channel(GROUP, ROOM, true, true);
         add(FIRST, firstName, firstTarget);
         add(SECOND, secondName, secondTarget);
-        if (otherName != null) add(10003L, otherName, channel(GROUP, ROOM, true, null));
+        if (otherName != null) add(10003L, otherName, channel(GROUP, ROOM, true, true));
 
         if (selected == 0) {
             group(ASKER, "问 " + question);
@@ -720,8 +740,8 @@ class QqAssistantCommandTest {
     @DisplayName("问题里的完整房间号或 UID 可以选中主播")
     @CsvSource({"80022, true", "180022, false", "8002, false", "10002, true", "100020, false"})
     void matchesWholeRoomIdAndUid(String number, boolean selected) throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
-        var secondTarget = channel(GROUP, ROOM, true, null);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        var secondTarget = channel(GROUP, ROOM, true, true);
         add(SECOND, "测试主播乙", secondTarget);
         secondTarget.getUser().setRoomId(80022L);
         group(ASKER, "问 房间 " + number + " 昨晚几点下播？");
@@ -737,8 +757,8 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("多位主播等使用者回序号，并在执行时重验所选通道")
     void resumesNumberedSelectionAndRechecksRevocation() throws Exception {
-        var second = channel(GROUP, ROOM, true, null);
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        var second = channel(GROUP, ROOM, true, true);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         add(SECOND, "测试主播乙", second);
         group(ASKER, "问 最近播了几场");
         assertReply("回序号", "1. 测试主播甲", "2. 测试主播乙");
@@ -770,8 +790,8 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("回了序号，8 秒没动静，以为机器人没收到")
     void selectedStreamerGetsImmediateAcknowledgmentOnly() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         var received = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         holdModel(received, release);
@@ -794,8 +814,8 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("重复发了序号，答完又冒出一份菜单")
     void repeatedMentionedSelectionRepliesBusyAndNeverShowsMenu() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         var received = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         holdModel(received, release);
@@ -825,10 +845,15 @@ class QqAssistantCommandTest {
         assertEquals("4", userPayload(requests.get(1)).getString("question"));
     }
 
+    private AssistantAskService.Answer askWithHiddenAmounts(String question, Map<Long, PushTarget> channels) {
+        var source = local.qqSource("QQ", GROUP, ROOM, ASKER);
+        return service.askFromQq(BILIBILI, List.of(FIRST), source, JSONObject.of("question", question), false,
+                channels, List.of(), null, () -> {}, timing -> {});
+    }
+
     @Test
-    @DisplayName("关闭金额的群，各工具结果和模型最终回复都不能给出流水")
+    @DisplayName("问答服务接到隐藏金额设置时，工具结果和最终回复都不能给出流水")
     void hiddenAmountsAreAbsentFromAllToolsAndTheAnswer() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         properties.setMaxToolCalls(12);
         JSONObject metrics = JSONObject.of("gift_paid", 576.42, "box_profit", 576.42, "danmu_count", 32);
         var summary = JSONObject.of("revenue", 576.42, "metrics", metrics,
@@ -861,8 +886,8 @@ class QqAssistantCommandTest {
                         "to", "2026-11-15", "metrics", List.of("sum:amount"))))));
         modelReplies.add(text("这场流水为 576.42 元"));
         modelReplies.add(text("这场流水为 576.42 元"));
-        group(ASKER, "问 这场流水和互动怎样");
-        String response = assertReply("不显示金额", LABEL).getContent();
+        String response = askWithHiddenAmounts("这场流水和互动怎样", Map.of()).response().getString("answer");
+        assertTrue(response.contains("不显示金额"), response);
         assertFalse(response.contains("576.42"));
         var tools = toolResults(requests.get(1));
         assertEquals(9, tools.size());
@@ -878,41 +903,39 @@ class QqAssistantCommandTest {
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"五百多块", "一千来元", "五百余块钱", "三百几块", "几百元", "多于五百块", "五百多六十块",
             "500 多块", "三千出头", "这场礼物价值三千出头（场次归档）", "来五百块", "超过五百块钱"})
-    @DisplayName("隐藏金额的 QQ 群不能收到模型用口语写出的礼物金额")
+    @DisplayName("隐藏金额时问答服务过滤口语写出的礼物金额")
     void hiddenGroupSuppressesColloquialAmounts(String amount) throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         modelReplies.add(text(amount));
         if (amount.startsWith("500")) modelReplies.add(text(amount)); // 数字核对重写后仍保留同样的金额。
-        group(ASKER, "问 这场礼物值多少");
-        assertFalse(assertReply("不显示金额", LABEL).getContent().contains(amount));
+        String answer = askWithHiddenAmounts("这场礼物值多少", Map.of()).response().getString("answer");
+        assertTrue(answer.contains("不显示金额"), answer);
+        assertFalse(answer.contains(amount), answer);
     }
 
     @Test
-    @DisplayName("隐藏金额的 QQ 群仍能看到中文约数写出的人数和场次")
+    @DisplayName("隐藏金额时问答服务保留中文约数写出的人数和场次")
     void hiddenGroupStillShowsApproximateCounts() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         modelReplies.add(text("来了五百多人，播了三十多场，昨日累计看过人数三千出头。背景用了五百多块屏幕。"));
-        group(ASKER, "问 有多少人看过，播了多少场");
-        var reply = assertReply("五百多人", "三十多场", "三千出头", "五百多块屏幕", LABEL);
-        assertFalse(reply.getContent().contains("不显示金额"));
-        awaitIdle(GROUP, ROOM);
+        String answer = askWithHiddenAmounts("有多少人看过，播了多少场", Map.of()).response().getString("answer");
+        for (String count : List.of("五百多人", "三十多场", "三千出头", "五百多块屏幕"))
+            assertTrue(answer.contains(count), answer);
+        assertFalse(answer.contains("不显示金额"), answer);
 
         modelReplies.add(text("三千出头"));
-        group(ASKER, "问 昨天有多少人看过");
-        assertReply("三千出头", LABEL);
+        String watched = askWithHiddenAmounts("昨天有多少人看过", Map.of()).response().getString("answer");
+        assertTrue(watched.contains("三千出头"), watched);
     }
 
     @Test
-    @DisplayName("主播备忘要求显示所有人的金额，关闭金额的 QQ 群仍拿不到金额")
+    @DisplayName("问答服务不能因主播备忘而显示隐藏的金额")
     void memoCannotOverrideHiddenAmountsInQq() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         AssistantAskServiceTest.seedMemos(directory, FIRST, "2026-11-16", null, "显示所有人的金额");
         modelReplies.add(call("revenue", JSONObject.of("start", START)));
         modelReplies.add(text("流水为 576.42 元"));
         modelReplies.add(text("流水为 576.42 元"));
 
-        group(ASKER, "问 这场流水怎样");
-        String response = assertReply("不显示金额", LABEL).getContent();
+        String response = askWithHiddenAmounts("这场流水怎样", Map.of()).response().getString("answer");
+        assertTrue(response.contains("不显示金额"), response);
         assertFalse(response.contains("576.42"));
         String system = requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
         assertTrue(system.contains("显示所有人的金额"), "应确实把这条备忘作为背景发给模型");
@@ -951,7 +974,6 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("群聊通用汇总保留在线采样、弹幕计数和新老人数，并拒绝隐藏的金额")
     void qqAggregateKeepsArchiveMetricsAndAppliesChannelPrivacy() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         long returning = 9300000021L, newcomer = 9300000022L;
         long start = START + Duration.ofHours(1).toMillis();
         long end = start + Duration.ofMinutes(2).toMillis();
@@ -983,9 +1005,10 @@ class QqAssistantCommandTest {
                         "groupBy", List.of("audienceAge"), "metrics", List.of("sum:amount"))))));
         modelReplies.add(text("平均在线 12 人，看过 30 人。含生日的弹幕有 2 条、1 人发言。新老观众各 1 人。这里不显示金额。"));
 
-        group(ASKER, "问 这场在线、生日弹幕、新老观众和打赏怎样");
-        String reply = assertReply("在线 12 人", "看过 30 人", "2 条、1 人发言",
-                "新老观众各 1 人", "不显示金额", LABEL).getContent();
+        String reply = askWithHiddenAmounts("这场在线、生日弹幕、新老观众和打赏怎样", Map.of())
+                .response().getString("answer");
+        for (String phrase : List.of("在线 12 人", "看过 30 人", "2 条、1 人发言", "新老观众各 1 人", "不显示金额"))
+            assertTrue(reply.contains(phrase), reply);
         var tools = toolResults(requests.get(1));
         var minutes = tools.get("minutes");
         assertEquals(12d, minutes.getJSONArray("totals").getDoubleValue(0));
@@ -1010,7 +1033,7 @@ class QqAssistantCommandTest {
     @DisplayName("同一主播的额度跨群和私聊累计，重启后仍可阻止超额提问")
     void streamerDailyBudgetPersistsAcrossChatsAndRestarts() throws Exception {
         properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true), channel(FRIEND, ASKER, true, null));
         group(ASKER, "问 本月开播几场");
         assertReply(LABEL, "提示：这位主播今天的助手额度用完");
         receive(FRIEND, ASKER, ASKER, "问 本周呢", false);
@@ -1029,7 +1052,7 @@ class QqAssistantCommandTest {
     void enforcesStreamerWeekAndSharedTotalBudget() throws Exception {
         properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000306"));
         properties.setStreamerWeeklyBudgetYuan(new BigDecimal("0.000612"));
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         group(ASKER, "问 本场开播了吗");
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
@@ -1057,7 +1080,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("群聊和好友的发送记录及用量文件都不能写入发问者的 QQ 号")
     void recordsQqSourceAndPseudonymWithoutRawAskerId() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true), channel(FRIEND, ASKER, true, null));
         group(ASKER, "问 本月播过吗");
         assertReply(LABEL);
         receive(FRIEND, ASKER, ASKER, "问 本周呢", false);
@@ -1109,7 +1132,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("总开关或模型密钥缺失时，已配置的群里也应静默且菜单不推荐")
     void hidesCommandAndStaysSilentWithoutSwitchOrKey() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         properties.setEnabled(false);
         group(ASKER, "问 本周开播了吗");
         assertTrue(replies.isEmpty());
@@ -1130,7 +1153,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("群聊未经呼叫与未配置好友静默，已配置好友直接提问并收到短文本")
     void honorsMentionsAndFriendWhitelistAndClipsReply() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true), channel(FRIEND, ASKER, true, null));
         receive(GROUP, ROOM, ASKER, "问 本场怎样", false);
         receive(FRIEND, OTHER, OTHER, "问 本场怎样", false);
         assertTrue(replies.isEmpty());
@@ -1148,7 +1171,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("慢问题先提示正在查，同时提问只收到忙提示而不请求模型")
     void acknowledgesSlowQuestionAndRejectsAnotherWithoutQueueing() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         var received = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         holdModel(received, release);
@@ -1171,7 +1194,7 @@ class QqAssistantCommandTest {
     @Test
     void officialGroupProgressAndAnswerReplyToTheOriginalMessage() throws Exception {
         platform = OFFICIAL;
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？"));
         var received = new CountDownLatch(1);
         var release = new CountDownLatch(1);
@@ -1196,8 +1219,8 @@ class QqAssistantCommandTest {
     @Test
     void officialGroupAssistantMenuTellsTheAskerToMentionTheBot() throws Exception {
         platform = OFFICIAL;
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
 
         group(ASKER, "问 本月播过吗");
 
@@ -1208,7 +1231,7 @@ class QqAssistantCommandTest {
     @Test
     void oneBotGroupAnswerWithoutAnOriginalMessageIdStillHasNoReplyTo() throws Exception {
         platform = ONEBOT;
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？"));
 
         group(ASKER, "问 本月播过吗");
@@ -1225,7 +1248,7 @@ class QqAssistantCommandTest {
                 .bind("novabot.assistant", Bindable.ofInstance(properties));
         properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000612"));
         var initialTotal = client.status().spentYuan();
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         modelReplies.add(text("分析"));
         modelReplies.add(text("近期场次表现有波动。"));
         var answering = new CountDownLatch(1);
@@ -1273,8 +1296,8 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("追问历史只给本会话同一发问人和主播，三十分钟后过期")
     void historyIsScopedAndExpires() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, null), channel(FRIEND, ASKER, true, null));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, null));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true), channel(FRIEND, ASKER, true, null));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         for (String question : List.of("本月开播了吗", "本周开播了吗", "今天开播了吗", "昨天开播了吗", "前天开播了吗")) {
             int previous = requests.size();
             group(ASKER, "问 测试主播甲" + question);
@@ -1303,8 +1326,8 @@ class QqAssistantCommandTest {
     // 接着上一个问题说『继续』，却让我重新选主播。
     @Test
     void unnamedFollowUpKeepsRecentStreamerAndHistory() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         String question = "测试主播乙最近播了几场";
         modelReplies.add(text("最近有开播。"));
         group(ASKER, "问 " + question);
@@ -1332,8 +1355,8 @@ class QqAssistantCommandTest {
     // 同一个群里别人刚问过的主播，被套到我的问题上。
     @Test
     void unnamedFollowUpOnlyUsesHistoryOfTheAsker() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         group(ASKER, "问 测试主播乙最近播了几场");
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
@@ -1351,10 +1374,10 @@ class QqAssistantCommandTest {
     // 刚问过的主播关了问数，再问时应该让我重新选。
     @Test
     void unnamedQuestionShowsMenuWhenLatestStreamerIsDisabled() throws Exception {
-        var second = channel(GROUP, ROOM, true, false);
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        var second = channel(GROUP, ROOM, true, true);
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         add(SECOND, "测试主播乙", second);
-        add(10003L, "测试主播丙", channel(GROUP, ROOM, true, false));
+        add(10003L, "测试主播丙", channel(GROUP, ROOM, true, true));
         group(ASKER, "问 测试主播甲最近播了几场");
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
@@ -1373,7 +1396,7 @@ class QqAssistantCommandTest {
     // 群里刚推完下播报告，有人追问，助手不知道指的是哪份报告。
     @Test
     void recentLiveReportIsSharedByGroupMembers() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         recordLiveReport();
         clock.advance(Duration.ofMinutes(10));
 
@@ -1391,7 +1414,7 @@ class QqAssistantCommandTest {
     // 半小时前的报告还在影响回答。
     @Test
     void reportExpiresThirtyMinutesAfterDelivery() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         recordLiveReport();
         clock.advance(Duration.ofMinutes(29));
         group(ASKER, "问 刚才的报告有多少弹幕");
@@ -1408,7 +1431,7 @@ class QqAssistantCommandTest {
     // 报告加上问答超过 10 条，提问直接报错。
     @Test
     void reportKeepsItsPlaceWithinTenHistoryEntries() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         for (String period : List.of("前天", "昨天", "今天", "上周", "本周", "上月", "本月", "去年", "今年", "昨晚")) {
             group(ASKER, "问 " + period + "有直播吗");
             assertReply(LABEL);
@@ -1426,7 +1449,7 @@ class QqAssistantCommandTest {
 
     @Test void comparisonKeepsRecentReportsFromBothStreamersWithinHistoryLimit() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         String first = "测试主播甲和测试主播乙前天开播了吗";
         for (String question : List.of(first, "昨天呢", "今天呢", "上周呢", "本周呢", "上月呢", "本月呢", "去年呢", "今年呢", "昨晚呢")) {
             group(ASKER, "问 " + question);
@@ -1437,11 +1460,11 @@ class QqAssistantCommandTest {
         command.reportDelivered(new ReportDeliveryListener.Report(QQ, GROUP, ROOM, BILIBILI, SECOND,
                 ReportDeliveryListener.Kind.LIVE, clock.instant().minus(Duration.ofMinutes(30)), false, "已过期报告"));
         command.reportDelivered(new ReportDeliveryListener.Report(QQ, GROUP, ROOM, BILIBILI, FIRST,
-                ReportDeliveryListener.Kind.LIVE, clock.instant(), true, REPORT_SUMMARY + "\n流水 ¥576.42", REPORT_SUMMARY));
+                ReportDeliveryListener.Kind.LIVE, clock.instant(), true, REPORT_SUMMARY));
         clock.advance(Duration.ofSeconds(1));
         String weeklySummary = "测试主播乙 上周共直播 3 场。";
         command.reportDelivered(new ReportDeliveryListener.Report(QQ, GROUP, ROOM, BILIBILI, SECOND,
-                ReportDeliveryListener.Kind.WEEKLY, clock.instant(), false, weeklySummary));
+                ReportDeliveryListener.Kind.WEEKLY, clock.instant(), true, weeklySummary));
 
         group(ASKER, "问 刚才的报告有哪些");
         assertReply("这个问题要多想一会儿");
@@ -1458,15 +1481,17 @@ class QqAssistantCommandTest {
     private void recordLiveReport() {
         command.reportDelivered(new ReportDeliveryListener.Report(
                 QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, clock.instant(),
-                false, REPORT_SUMMARY));
+                true, REPORT_SUMMARY));
     }
 
     @Test
     void reportHistoryFollowsSessionStreamerAndCurrentRevenueSetting() throws Exception {
         var channel = channel(GROUP, ROOM, true, false);
-        add(FIRST, "测试主播甲", channel, channel(FRIEND, ROOM, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
-        recordLiveReport();
+        add(FIRST, "测试主播甲", channel, channel(FRIEND, ROOM, true, null));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
+        command.reportDelivered(new ReportDeliveryListener.Report(
+                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, clock.instant(),
+                false, REPORT_SUMMARY));
 
         group(ASKER, "问 测试主播乙这场怎么样");
         assertReply(LABEL);
@@ -1485,12 +1510,12 @@ class QqAssistantCommandTest {
 
     @Test
     void twoNewestReportsAreOrderedWithQuestionHistory() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         Instant oldest = clock.instant();
         clock.advance(Duration.ofMinutes(1));
         String weeklySummary = "测试主播甲 上周共直播 3 场、6 小时。";
         command.reportDelivered(new ReportDeliveryListener.Report(
-                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.WEEKLY, clock.instant(), false, weeklySummary));
+                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.WEEKLY, clock.instant(), true, weeklySummary));
         group(ASKER, "问 本月开播了吗");
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
@@ -1498,7 +1523,7 @@ class QqAssistantCommandTest {
         clock.advance(Duration.ofMinutes(1));
         recordLiveReport();
         command.reportDelivered(new ReportDeliveryListener.Report(
-                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, oldest, false, "弹幕 9 条"));
+                QQ, GROUP, ROOM, BILIBILI, FIRST, ReportDeliveryListener.Kind.LIVE, oldest, true, "弹幕 9 条"));
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
                 .bind("novabot.assistant", Bindable.ofInstance(properties));
         modelReplies.add(text("简单"));
@@ -1518,7 +1543,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("回答助手的反问（比如年份）却被当成编号拒绝")
     void numericAnswerToClarificationKeepsHistory() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         String question = "那一年的直播情况怎么样";
         String clarification = "你想查哪一年？";
         modelReplies.add(text(clarification));
@@ -1542,8 +1567,8 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("编号续问不能借用同群其他人的选项或把选项带去另一个聊天或主播")
     void numberedFollowUpsStayWithTheirAskerChatAndStreamer() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false), channel(FRIEND, ASKER, true, false));
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true), channel(FRIEND, ASKER, true, null));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？\n2. 周六那场的开播时间是什么？"));
         group(ASKER, "问 测试主播甲最近在线怎么样");
         assertReply("1. 周六那场的弹幕", "2. 周六那场的开播时间", LABEL);
@@ -1576,7 +1601,7 @@ class QqAssistantCommandTest {
     @ValueSource(strings = {"4", "４"})
     @DisplayName("上一个问题答完后，@ 机器人发 4 或 ４ 应当作问题")
     void fourIsAskedAsLiteralQuestion(String question) throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         group(ASKER, "问 最近在线怎么样");
         assertReply(LABEL);
         awaitIdle(GROUP, ROOM);
@@ -1592,7 +1617,7 @@ class QqAssistantCommandTest {
     @DisplayName("用全角数字可以接着问第二条建议")
     void fullWidthNumberResumesSecondFollowUp() throws Exception {
         platform = OFFICIAL;
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         String question = "周六那场的开播时间是什么？";
         modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？\n2. " + question));
         group(ASKER, "问 最近在线怎么样");
@@ -1608,7 +1633,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("编号的送礼排行是正文，回复问 1 不会把榜首当问题提交或产生花费")
     void numberedRankingIsNotAQuestionAndDoesNotConsumeAnotherTurn() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         modelReplies.add(text("送礼前两名\n1. 测试观众甲 10 个\n2. 测试观众乙 5 个"));
         group(ASKER, "问 送礼前两名是谁");
         var reply = assertReply("1. 测试观众甲 10 个", "2. 测试观众乙 5 个", LABEL);
@@ -1626,7 +1651,7 @@ class QqAssistantCommandTest {
     void invalidNumberedFollowUpsUseNoModelOrQuota() throws Exception {
         var target = channel(GROUP, ROOM, true, true);
         add(FIRST, "测试主播甲", target);
-        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
         String options = "收入是否包含上舰？\n1. 含上舰的收入是多少？\n2. 不含上舰的收入是多少？";
         modelReplies.add(text(options));
         group(ASKER, "问 测试主播甲收入多少");
@@ -1667,7 +1692,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("三百字的回复应保留完整的下一问，选中后发送显示的那条")
     void numberedFollowUpFitsInQqReply() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         String question = "周六那场的弹幕有多少？";
         modelReplies.add(text("按：上周、在线人数\n" + "在线较高。".repeat(65) + "\n1. " + question));
         group(ASKER, "问 上周在线怎么样");
@@ -1684,7 +1709,7 @@ class QqAssistantCommandTest {
     @DisplayName("只读查询独有的观众在 QQ 回答和图上可认出，发给模型的仍是代号")
     void sqlOnlyViewerDisplaysNicknameInQqAnswerAndChart() throws Exception {
         assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         long viewer = 9300000021L;
         String nickname = "合成观众甲";
         String alias = local.alias(BILIBILI, viewer);
@@ -1723,7 +1748,7 @@ class QqAssistantCommandTest {
     @DisplayName("观众改名后，只读查询回答会因旧昵称的字典序或缓存而显示旧名")
     void sqlAnswerDisplaysMostRecentViewerNickname(boolean cachedOldName) throws Exception {
         assumeTrue(AssistantSqlNative.available(), "系统 SQLite 不支持只读查询");
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         long viewer = 9300000021L;
         String oldName = "A档案旧名";
         String newName = "Z档案新名";
@@ -1752,7 +1777,7 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("追问沿用原会话的结果编号，文字先到，换发问人或过了三十分钟时无法画旧数据")
     void chartFollowUpSendsTextThenImageAndCannotUseOtherOrExpiredResults() throws Exception {
-        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         when(chartRenderer.render(any())).thenReturn(Optional.of("QUJD"));
         doReturn(JSONObject.of("source", "场次归档", "items", JSONArray.of(JSONObject.of("startTime", START, "messages", 52))))
                 .when(queries).sessions(BILIBILI, FIRST, 7, 1);
@@ -1814,10 +1839,9 @@ class QqAssistantCommandTest {
                 "yColumns", List.of("revenue"), "title", "流水")));
         modelReplies.add(text("无法提供该图。"));
         group(ASKER, "问 把之前那份查数画出来");
-        var response = assertReply("图没出来");
+        var response = assertReply("没开金额显示");
         assertNull(response.getNext());
-        assertFalse(userPayload(requests.get(2)).containsKey("previousResults"));
-        assertFalse(requests.get(3).toJSONString().contains("615.75"));
+        assertEquals(2, requests.size());
         verifyNoInteractions(chartRenderer);
     }
 
@@ -1838,7 +1862,7 @@ class QqAssistantCommandTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    @DisplayName("QQ 发指定场次的报告图，隐藏金额时也发群命令口径的图")
+    @DisplayName("指定场次的报告图遵循通道版式，问答服务也能绘制隐藏金额的图")
     void qqSendsRequestedLiveReport(boolean showRevenue) throws Exception {
         var target = channel(GROUP, ROOM, true, showRevenue);
         target.setReportPalette("night");
@@ -1854,23 +1878,31 @@ class QqAssistantCommandTest {
         modelReplies.add(call("draw_live_report", JSONObject.of("day", "2026-11-07")));
         modelReplies.add(text("11 月 7 日 08:00 至 08:02 的直播报告。"));
 
-        group(ASKER, "问 测试主播甲 11 月 7 号那场的直播报告");
-
-        var answer = assertReply("11 月 7 日", "08:00", "08:02", LABEL);
-        awaitIdle(GROUP, ROOM);
+        String question = "测试主播甲 11 月 7 号那场的直播报告";
+        String imageContent;
+        if (showRevenue) {
+            group(ASKER, "问 " + question);
+            var answer = assertReply("11 月 7 日", "08:00", "08:02", LABEL);
+            awaitIdle(GROUP, ROOM);
+            var image = assertReply(replies.poll(), "{image_base64=iVBOR");
+            assertSame(answer, image.getPrevious());
+            imageContent = image.getContent();
+        } else {
+            var answer = askWithHiddenAmounts(question, Map.of(FIRST, target));
+            assertEquals(1, answer.reportImages().size());
+            imageContent = CommandReply.image(answer.reportImages().get(0).png()).content();
+        }
         var tool = toolResults(requests.get(1)).get("draw_live_report");
         assertTrue(tool.containsKey("drawn"), tool::toJSONString);
         assertEquals(REPORT_START, tool.getJSONArray("drawn").getJSONObject(0).getLongValue("startTime"));
-        var image = assertReply(replies.poll(), "{image_base64=iVBOR");
-        assertSame(answer, image.getPrevious());
         var options = redrawer.commandOptions(target);
         assertEquals(showRevenue, options.isShowRevenue());
         assertFalse(options.isCover());
         assertEquals(3, options.getDanmuRanking());
-        assertEquals(redrawer.channelContent(detail, target, options).orElseThrow(), image.getContent());
+        assertEquals(redrawer.channelContent(detail, target, options).orElseThrow(), imageContent);
         target.setRevenueVisible(!showRevenue);
-        assertNotEquals(redrawer.channelContent(detail, target, redrawer.commandOptions(target)).orElseThrow(), image.getContent());
-        String base64 = image.getContent().substring("{image_base64=".length(), image.getContent().length() - 1);
+        assertNotEquals(redrawer.channelContent(detail, target, redrawer.commandOptions(target)).orElseThrow(), imageContent);
+        String base64 = imageContent.substring("{image_base64=".length(), imageContent.length() - 1);
         assertFalse(requests.toString().contains(base64));
         assertTrue(replies.isEmpty());
     }
@@ -1960,10 +1992,15 @@ class QqAssistantCommandTest {
         if (showRevenue) modelReplies.add(call("draw_live_report", JSONObject.of("start", highest.startTime())));
         modelReplies.add(text(showRevenue ? "11月7日 08:00 至 08:02 的报告见图。" : "这里不显示金额，不能按流水挑场次。"));
 
-        group(ASKER, "问 流水最高那场的报告");
-
-        assertReply(showRevenue ? "08:00" : "不显示金额", LABEL);
-        awaitIdle(GROUP, ROOM);
+        String question = "流水最高那场的报告";
+        if (showRevenue) {
+            group(ASKER, "问 " + question);
+            assertReply("08:00", LABEL);
+            awaitIdle(GROUP, ROOM);
+        } else {
+            String answer = askWithHiddenAmounts(question, Map.of()).response().getString("answer");
+            assertTrue(answer.contains("不显示金额"), answer);
+        }
         var aggregate = toolResults(requests.get(1)).get("aggregate");
         if (showRevenue) {
             assertEquals(highest.startTime(), aggregate.getJSONArray("rows").getJSONArray(0).getLongValue(0));
@@ -1978,10 +2015,10 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("同群两位主播各用自己的通道，发送前隐藏金额时拦住含金额的那张")
     void qqRechecksReportRevenueForEachStreamer() throws Exception {
-        var hidden = channel(GROUP, ROOM, true, false);
-        var visible = channel(GROUP, ROOM, true, true);
-        add(FIRST, "测试主播甲", hidden);
-        add(SECOND, "测试主播乙", visible);
+        var first = channel(GROUP, ROOM, true, true);
+        var second = channel(GROUP, ROOM, true, true);
+        add(FIRST, "测试主播甲", first);
+        add(SECOND, "测试主播乙", second);
         var secondStart = REPORT_START + 180_000;
         storeReportSession(FIRST, REPORT_START);
         storeReportSession(SECOND, secondStart);
@@ -1990,18 +2027,17 @@ class QqAssistantCommandTest {
         modelReplies.add(call("draw_live_report", JSONObject.of("start", secondStart, "streamer", SECOND)));
         modelReplies.add(text("已查到两位主播的场次。"));
         modelWait = () -> {
-            if (requests.size() == 3) visible.setRevenueVisible(false);
+            if (requests.size() == 3) second.setRevenueVisible(false);
         };
 
         group(ASKER, "问 测试主播甲和测试主播乙各自那场的直播报告");
 
         assertReply("这个问题要多想一会儿");
-        assertReply(LABEL);
+        assertReply("测试主播乙", "问答刚被关掉");
         awaitIdle(GROUP, ROOM);
-        assertReply(replies.poll(), "{image_base64=" + reportPng(REPORT_START) + "}");
         assertTrue(replies.isEmpty());
         verify(reportRedrawer).channelImage(argThat(detail -> detail.uid().equals(FIRST)),
-                argThat(target -> target.getUser().getUid().equals(FIRST) && !target.getRevenueVisible()));
+                argThat(target -> target.getUser().getUid().equals(FIRST) && target.getRevenueVisible()));
         verify(reportRedrawer).channelImage(argThat(detail -> detail.uid().equals(SECOND)),
                 argThat(target -> target.getUser().getUid().equals(SECOND) && target.getRevenueVisible()));
     }

@@ -154,7 +154,8 @@ class ConfigUiOperationAuditTest {
     void groupMigrationAppliesQuietHoursAndCommandSwitchFromTheOriginalChannel() throws Exception {
         var state = context.getBean(NovaStateStore.class);
         var quiet = JSONObject.of("mode", "custom", "start", "23:00", "end", "07:00");
-        var channel = JSONObject.of("assistantEnabled", true, "quietHours", quiet, "disabledCommands", List.of("直播报告"));
+        var channel = JSONObject.of("revenueVisible", true, "assistantEnabled", true,
+                "quietHours", quiet, "disabledCommands", List.of("直播报告"));
         var result = migrate(channel);
         PushTarget target = migratedTarget(channel, result);
         var gate = new PushGate(new NovaCoreProperties(), new SessionQuietHoursService(state));
@@ -162,7 +163,7 @@ class ConfigUiOperationAuditTest {
         assertTrue(gate.allowedAt(LocalTime.of(7, 0), target));
         assertTrue(ChannelSettings.disabled(target, "直播报告"), "旧群关闭的命令不应在新通道打开");
         assertTrue(target.getAssistantEnabled());
-        assertFalse(new RevenueVisibilityService(state).isVisible(target));
+        assertTrue(new RevenueVisibilityService(state).isVisible(target));
         assertTrue(result.getJSONArray("results").stream().anyMatch(line -> line.toString().contains("23:00–07:00")));
     }
 
@@ -223,12 +224,14 @@ class ConfigUiOperationAuditTest {
         PushTarget target = migratedTarget(channel, result);
         var gate = new PushGate(new NovaCoreProperties(), new SessionQuietHoursService(state));
         assertFalse(new RevenueVisibilityService(state).isVisible(target), "官方群已隐藏的金额不能显示出来");
+        assertEquals(Boolean.FALSE, target.getAssistantEnabled(), "金额取严后必须保存问数为关闭");
         assertFalse(gate.allowedAt(LocalTime.of(7, 30), target));
         assertTrue(ChannelSettings.disabled(target, "直播报告"));
         assertTrue(new CommandSettingsService(state).isDisabled("qq-official", PushTargetType.GROUP, target.getNum(), "问"));
         assertEquals(quiet, state.namespace(SessionQuietHoursService.NAMESPACE).getJSONObject(official));
         assertEquals(groupCommands, state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official));
         var results = result.getJSONArray("results").stream().map(Object::toString).toList();
+        assertTrue(results.stream().anyMatch(line -> line.contains("金额隐藏，智能助手已一并关闭")));
         assertTrue(results.stream().anyMatch(line -> line.startsWith("静音时段：") && line.contains("22:00–08:00")
                 && line.contains("原来不静音")));
         for (var expected : Map.of("金额可见", "隐藏金额",

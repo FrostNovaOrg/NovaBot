@@ -1,13 +1,16 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.sender.AtAllPermissionResolver;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -51,9 +54,34 @@ public class AtAllQuotaService {
      */
     private final Map<QuotaKey, DailyCount> counts = new ConcurrentHashMap<>();
 
-    @Autowired
+    private final Iterable<AtAllPermissionResolver> resolvers;
+
     public AtAllQuotaService(NovaCoreProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    public AtAllQuotaService(NovaCoreProperties properties, ObjectProvider<AtAllPermissionResolver> resolvers) {
         this.properties = properties;
+        this.resolvers = resolvers == null ? List.of() : resolvers;
+    }
+
+    /** 配置和平台都有限额时取较小值。全局不限额时仍遵守平台上限。 */
+    public int sessionDailyLimit(String platform) {
+        return effectiveSessionLimit(platformSessionLimit(platform));
+    }
+
+    private Integer platformSessionLimit(String platform) {
+        for (AtAllPermissionResolver resolver : resolvers) {
+            if (resolver.supports(platform)) return resolver.sessionDailyLimit(platform);
+        }
+        return null;
+    }
+
+    private int effectiveSessionLimit(Integer platformLimit) {
+        int configured = properties.getPush().getAtAllSessionDailyLimit();
+        if (platformLimit == null || platformLimit <= 0) return configured;
+        return configured > 0 ? Math.min(configured, platformLimit) : platformLimit;
     }
 
     /**
@@ -80,7 +108,8 @@ public class AtAllQuotaService {
      */
     public synchronized LocalDate consume(@NonNull String platform, @NonNull Long num) {
         int botLimit = properties.getPush().getAtAllDailyLimit();
-        int sessionLimit = properties.getPush().getAtAllSessionDailyLimit();
+        Integer platformLimit = platformSessionLimit(platform);
+        int sessionLimit = effectiveSessionLimit(platformLimit);
         LocalDate today = LocalDate.now(ZONE);
 
         QuotaKey botKey = new QuotaKey(platform, null);
@@ -92,8 +121,9 @@ public class AtAllQuotaService {
             return null;
         }
         if (sessionLimit > 0 && used(sessionKey, today) >= sessionLimit) {
-            log.warn("会话 {} 今日的 @全体成员 已用满 {} 次，本条将退化为普通消息。" +
-                    "如需调整请改 novabot.core.push.at-all-session-daily-limit", num, sessionLimit);
+            String hint = platformLimit != null && platformLimit == sessionLimit ? "该上限由推送平台规定。"
+                    : "如需调整请改 novabot.core.push.at-all-session-daily-limit";
+            log.warn("会话 {} 今日的 @全体成员 已用满 {} 次，本条将退化为普通消息。{}", num, sessionLimit, hint);
             return null;
         }
 

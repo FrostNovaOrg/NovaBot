@@ -91,6 +91,7 @@ export function withPluginSteps(pages, terms, afterKey) {
  * 被显示成绿灯，比显示成灰的更危险。
  */
 const LAMP_OF = {OK: 'ok', DEGRADED: 'warn', DOWN: 'err'};
+export const OFFICIAL_BOT_CARD = 'qqbot';
 
 /**
  * 灯色由轻到重
@@ -141,6 +142,14 @@ export function probesIn(status, scope) {
       loginState: !!item.loginState,
       reason: item.reason || '',
     }));
+}
+
+export function botSetupStatus(status) {
+  const bots = probesIn(status, 'BOT');
+  const adapter = bots.filter(item => !item.card);
+  const official = bots.find(item => item.card === OFFICIAL_BOT_CARD);
+  const adapterReady = adapter.length > 0 && adapter.every(item => item.lamp === 'ok' || item.lamp === 'warn');
+  return {adapterReady, official, done: adapterReady || official?.lamp === 'ok'};
 }
 
 /**
@@ -196,8 +205,7 @@ export function setupSteps(status, login, sent, pages, pluginDone) {
   const accounts = (login && login.accounts) || [];
   // 上锁：设了控制台口令（通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门）
   const lock = !!status.locked;
-  // 连上机器人：这一档的探针没有报红
-  const bot = worstLamp(probesIn(status, 'BOT').map(item => item.lamp)) === 'ok';
+  const bot = botSetupStatus(status).done;
   // 登录直播平台：每个平台要么登录了，要么被配置明确关掉了（例如免登录模式）。
   // 一个平台插件都没装时这一步不是「没做完」，是没得做，因此算它已定
   const account = accounts.every(item => !!(item.loggedIn || item.disabledReason));
@@ -339,7 +347,7 @@ function botTodoTitle(terms, reason) {
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
  * 它们在探针那一栏里逐条列着，混进待办只会让这张单子长到没人看。
  */
-function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, botReason) {
+function todos(status, login, chain, fresh, pages, pluginDone, terms, botFailure) {
   // 「初始设置还没完成」只在刚装好那一档出现，而且此时它是唯一的一条：
   // 那五步里第 1 步就是上锁、第 2 步就是连机器人，再摆几条说同一件事的待办，
   // 使用者会以为是几件事。
@@ -368,11 +376,12 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
   const list = [];
 
   // 按探针原级判，不看链路段被暂停／静音改成的熄灯：掉线要人动手，藏进待办等于没说
-  if (botDown) {
+  if (botFailure) {
+    const official = botFailure.card === OFFICIAL_BOT_CARD;
     list.push({
       key: 'bot',
-      title: botTodoTitle(terms, botReason),
-      body: chain.bot.advice || chain.bot.caption,
+      title: official ? botFailure.name : botTodoTitle(terms, botFailure.reason),
+      body: official ? botFailure.summary : chain.bot.advice || chain.bot.caption,
       action: '前往连接页', href: '#/links', soft: false,
     });
   }
@@ -517,14 +526,12 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   const account = login || {};
   const words = terms || {};
 
-  // 刚装好、还没连上任何机器人的那一档。判据是「一个推送平台都没注册出来」——
-  // 配置文件里写了但 Token 空着的那种也算没有，因为它同样发不出消息。
-  // 不按探针那句「未配置任何机器人」认：那是给人读的一句话，改一个字判据就失效
-  const fresh = (state.senders || []).length === 0 && (state.users || []).length === 0;
-
   const platform = probesIn(state, 'PLATFORM');
   const self = probesIn(state, 'SYSTEM');
   const bot = probesIn(state, 'BOT');
+  // 官方连接探针在凭据保存后启用，推送平台尚未登记时也应显示连接状态。
+  const fresh = (state.senders || []).length === 0 && (state.users || []).length === 0
+    && !bot.some(item => item.card === OFFICIAL_BOT_CARD);
 
   const chain = {
     platform: Object.assign(
@@ -544,8 +551,7 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   chain.bot.advice = (bot.find(item => item.lamp === chain.bot.level) || {}).advice || '';
 
   // 待办看探针原级：暂停／静音会把这一段改成熄灯，真掉线时待办仍要出
-  const botDown = chain.bot.level === 'err';
-  const botReason = (bot.find(item => item.lamp === 'err') || {}).reason || '';
+  const botFailure = bot.find(item => item.lamp === 'err');
 
   if (fresh) {
     // 什么都还没配的时候，三段一律熄灯：此时报红是在说「坏了」，而它没坏，是还没开始
@@ -575,7 +581,7 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
       advice: item.advice || '',
     })),
     banner: banner(state, chain, fresh),
-    todos: todos(state, account, chain, fresh, pages, pluginDone, words, botDown, botReason),
+    todos: todos(state, account, chain, fresh, pages, pluginDone, words, botFailure),
     now: now(state, chain, fresh),
     events: shortStrip(timeline),
     // 空态那句话分两种：刚装好的机器与「今天真的没发生什么」不是一回事

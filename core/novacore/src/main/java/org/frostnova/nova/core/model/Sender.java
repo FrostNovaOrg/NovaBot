@@ -94,6 +94,9 @@ public class Sender {
          */
         String DELIVERY_UNKNOWN = "delivery_unknown";
 
+        /** 失败原因同样会阻止纯文字投递时置为 {@code true}。省略时，核心照常尝试去图补发。 */
+        String SKIP_IMAGE_FALLBACK = "skip_image_fallback";
+
         /** 投递结果为 {@code code: 0}，但部分图片未送达时为 {@code true}。 */
         String IMAGE_DEGRADED = "image_degraded";
 

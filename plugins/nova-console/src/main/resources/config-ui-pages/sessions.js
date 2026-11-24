@@ -22,6 +22,7 @@ import {notifyRevenueChange} from './session-draft.js';
 
 import {$, el, esc, markDirty} from './core.js';
 import {openDrawer} from './push.js';
+import {channelRevenueVisible, closeAssistantForHiddenRevenue} from './push-model.js';
 import {ask} from './confirm.js';
 import {
   commandDraft, isClearPending, isUserPendingRemove, quietDraft, revenueDraft, setCommandDraft,
@@ -293,10 +294,12 @@ function revenueRow(host, ctx) {
   input.addEventListener('change', () => {
     // 期望态与服务端那一份比：拨过去又拨回来的那几下自己会消失
     if (ctx.channel) {
-      const base = ctx.baseline || {};
-      const original = base.revenueVisible ?? (Number(ctx.target.type) === 0);
+      const original = channelRevenueVisible({type: ctx.target.type, ...ctx.baseline});
+      closeAssistantForHiddenRevenue(ctx.target);
       if (input.checked === original) restoreChannelField(ctx, 'revenueVisible');
       else ctx.target.revenueVisible = input.checked;
+      if (input.checked) delete ctx.target._assistantClosedForRevenue;
+      else if (closeAssistantForHiddenRevenue(ctx.target)) ctx.target._assistantClosedForRevenue = true;
       notifyRevenueChange();
     } else setRevenueDraft(ctx.target, input.checked, ctx.summary.revenue.visible);
     refresh();
@@ -314,24 +317,27 @@ function revenueRow(host, ctx) {
 
 function assistantRow(host, ctx) {
   const enabled = ctx.session.assistantEnabled;
-  const locked = ctx.member && !enabled;
-  const original = ctx.baseline?.assistantEnabled === true;
+  const hiddenRevenue = !ctx.summary.revenue.visible;
+  const locked = hiddenRevenue || ctx.member && !enabled;
+  const original = ctx.baseline?.assistantEnabled === true && channelRevenueVisible(ctx.baseline);
   const summary = (enabled ? '已开启' : '已关闭') + (enabled === original ? '' : ' · 未保存');
   const body = rule(host, '问数', summary, '默认关闭。开关只作用于这位主播在当前群或私聊中的问答。');
   const line = el('div', 'swrow rule-switch');
-  const label = el('label', locked ? 'switch assistant-locked' : 'switch');
+  const label = el('label', 'switch' + (locked ? ' assistant-locked' : ''));
   const input = el('input');
   input.type = 'checkbox';
   input.checked = enabled;
   input.disabled = ctx.editable === false || locked;
+  if (hiddenRevenue) input.className = 'assistant-revenue-hidden';
   input.setAttribute('aria-label', '问数');
   label.appendChild(input);
   line.appendChild(label);
 
   const text = el('div', 'swtxt');
   text.appendChild(el('b')).textContent = '允许使用「问」命令';
-  if (locked) text.appendChild(el('p')).textContent = '由管理员开启';
-  if (ctx.assistantAvailable === false) {
+  if (hiddenRevenue) text.appendChild(el('p')).textContent = '要先把这个通道的金额设为可见';
+  else if (locked) text.appendChild(el('p')).textContent = '由管理员开启';
+  if (!hiddenRevenue && ctx.assistantAvailable === false) {
     text.appendChild(el('p')).textContent = '智能助手未开启或未设置密钥，开了也不会回答';
   }
   line.appendChild(text);
@@ -341,17 +347,17 @@ function assistantRow(host, ctx) {
     const next = input.checked;
     if (next) {
       input.checked = false;
-      if (ctx.member) return;
+      if (input.disabled || !channelRevenueVisible(ctx.target)) return;
       if (!await ask({
         title: '开启问数？',
         body: '这个聊天里的人可以用「问 〈问题〉」让智能助手查这位主播的数据并回答。回答由人工智能生成。'
           + '问题和查到的数据会发给设置里配置的模型服务。'
-          + '金额按这条通道的「金额可见」设置处理。'
+          + '只有打开「金额可见」的通道才能使用问数。'
           + '提问花的钱记在这位主播的助手额度里，和控制台共用；每位主播每天、每周都有金额上限。',
         confirmText: Number(ctx.target.type) === 1 ? '这是运营群，开启' : '开启',
-      })) return;
+      }) || !channelRevenueVisible(ctx.target)) return;
     }
-    if (next === original) restoreChannelField(ctx, 'assistantEnabled');
+    if (next === (ctx.baseline?.assistantEnabled === true)) restoreChannelField(ctx, 'assistantEnabled');
     else ctx.target.assistantEnabled = next;
     refresh();
   });

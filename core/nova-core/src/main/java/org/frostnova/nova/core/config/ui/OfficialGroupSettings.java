@@ -66,16 +66,18 @@ final class OfficialGroupSettings {
                 + commandDescription(appliedGroupCommands) + difference(!appliedGroupCommands.equals(oldGroupCommands));
 
         boolean permitsAssistant = Boolean.TRUE.equals(source.getAssistantEnabled());
-        boolean oldAssistant = permitsAssistant && !oldGroupCommands.contains(ASSISTANT_COMMAND);
+        boolean oldAssistant = permitsAssistant && oldVisible && !oldGroupCommands.contains(ASSISTANT_COMMAND);
         boolean groupBlocksAssistant = appliedGroupCommands.contains(ASSISTANT_COMMAND);
-        if (permitsAssistant && !oldAssistant && !groupBlocksAssistant) {
+        boolean amountClosesAssistant = permitsAssistant && !visible;
+        if (amountClosesAssistant || permitsAssistant && !oldAssistant && !groupBlocksAssistant) {
             target.put("assistantEnabled", false);
             permitsAssistant = false;
         }
         boolean assistant = permitsAssistant && !groupBlocksAssistant;
         String assistantResult = "问数开关："
                 + (groupBlocksAssistant && officialSessionCommands != null ? "按官方群现有设置" : "")
-                + (assistant ? "开启" : "关闭") + difference(assistant != oldAssistant);
+                + (assistant ? "开启" : "关闭") + difference(assistant != oldAssistant)
+                + (amountClosesAssistant ? " 金额隐藏，智能助手已一并关闭。" : "");
 
         return JSONObject.of("targetSettings", target, "results",
                 List.of(amountResult, quietResult, commandResult, groupCommandResult, assistantResult));

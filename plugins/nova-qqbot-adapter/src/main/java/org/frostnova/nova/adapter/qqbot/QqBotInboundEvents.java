@@ -37,11 +37,13 @@ final class QqBotInboundEvents implements QqBotEventListener {
     private final ObjectProvider<TimelineWriter> timeline;
     private final ApplicationEventPublisher publisher;
     private final QqBotGatewayScheduler scheduler;
+    private final QqBotReplyWindows replies;
+    private final QqBotWelcome welcome;
     private final LinkedHashMap<EventKey, Long> recentEvents = new LinkedHashMap<>();
 
-    QqBotInboundEvents(QqBotDirectory directory, QqBotSettings settings, QqBotMembers members,
-                       QqBotSender sender, ObjectProvider<TimelineWriter> timeline,
-                       ApplicationEventPublisher publisher, QqBotGatewayScheduler scheduler) {
+    QqBotInboundEvents(QqBotDirectory directory, ApplicationEventPublisher publisher, QqBotGatewayScheduler scheduler,
+                       QqBotSettings settings, QqBotReplyWindows replies, QqBotWelcome welcome,
+                       QqBotMembers members, QqBotSender sender, ObjectProvider<TimelineWriter> timeline) {
         this.directory = directory;
         this.settings = settings;
         this.members = members;
@@ -49,6 +51,8 @@ final class QqBotInboundEvents implements QqBotEventListener {
         this.timeline = timeline;
         this.publisher = publisher;
         this.scheduler = scheduler;
+        this.replies = replies;
+        this.welcome = welcome;
     }
 
     @Override
@@ -64,7 +68,7 @@ final class QqBotInboundEvents implements QqBotEventListener {
             switch (name) {
                 case "GROUP_AT_MESSAGE_CREATE" -> publishGroupMessage(credentials, requireObject(data));
                 case "GROUP_ADD_ROBOT", "GROUP_DEL_ROBOT", "GROUP_MSG_RECEIVE", "GROUP_MSG_REJECT" ->
-                        updateDirectory(name, requireObject(data), eventId);
+                        updateDirectory(credentials, name, requireObject(data), eventId);
                 case "FRIEND_ADD", "FRIEND_DEL", "C2C_MESSAGE_CREATE", "C2C_MSG_REJECT", "C2C_MSG_RECEIVE" ->
                         log.debug("忽略 QQ 开放平台好友或单聊事件 {}", name);
                 default -> { }
@@ -85,7 +89,8 @@ final class QqBotInboundEvents implements QqBotEventListener {
             return;
         }
         Instant at = Instant.parse(requireText(message, "timestamp"));
-        if (at.isBefore(Instant.now().minus(MESSAGE_MAX_AGE))) {
+        Instant now = Instant.now();
+        if (at.isBefore(now.minus(MESSAGE_MAX_AGE))) {
             log.info("忽略超过 30 分钟的 QQ 官方机器人群消息");
             return;
         }
@@ -98,38 +103,39 @@ final class QqBotInboundEvents implements QqBotEventListener {
         members.observe(appId, group, member, nickname, at);
         if (settings.snapshot().credentials() != credentials) return;
 
+        var reply = replies.get(appId, id, at, now);
         String content = text(message.get("content"));
         String candidate = claimCandidate(content);
         if (members.invalidateMalformedClaim(credentials, content, candidate)) {
-            sender.submitClaimReply(credentials, group, id, MALFORMED_CLAIM);
+            sender.submitClaimReply(credentials, group, id, reply, MALFORMED_CLAIM);
             return;
         }
         if (candidate != null) {
-            replyToClaim(credentials, group, member, nickname, candidate, id);
+            replyToClaim(credentials, group, member, nickname, candidate, id, reply);
             return;
         }
         String safeContent = members.maskClaimCodes(content);
         var event = new NovaRemoteMessageEvent(QqBotPluginAutoConfiguration.PLATFORM, "group", group, member,
                 safeContent == null ? "" : safeContent.strip(), text(author.get("member_role")), true);
         event.setMessageId(id);
-        publisher.publishEvent(event);
+        if (settings.snapshot().credentials() == credentials) publisher.publishEvent(event);
     }
 
     private void replyToClaim(QqBotSettings.Credentials credentials, long group, long member,
-                              String nickname, String candidate, String messageId) {
+                              String nickname, String candidate, String messageId, QqBotReplyWindows.Window reply) {
         QqBotMembers.Claim claim;
         try {
             claim = members.redeem(credentials, group, member, nickname, candidate);
         } catch (IllegalStateException e) {
             log.warn("无法保存官方机器人的超级管理员认领");
-            sender.submitClaimReply(credentials, group, messageId, "暂时无法保存认领结果，请稍后重试");
+            sender.submitClaimReply(credentials, group, messageId, reply, "暂时无法保存认领结果，请稍后重试");
             return;
         }
         if (claim == null) {
-            sender.submitClaimReply(credentials, group, messageId, INVALID_CODE);
+            sender.submitClaimReply(credentials, group, messageId, reply, INVALID_CODE);
             return;
         }
-        sender.submitClaimReply(credentials, group, messageId, "已认领超级管理员：" + claim.nickname());
+        sender.submitClaimReply(credentials, group, messageId, reply, "已认领超级管理员：" + claim.nickname());
         String groupName = directory.groupDisplayName(credentials.appId(), group);
         timeline.ifAvailable(writer -> writer.record(TimelineEvent
                 .of(TimelineEventType.SUPER_ADMIN_CLAIMED, TimelineEvent.Level.INFO)
@@ -153,16 +159,21 @@ final class QqBotInboundEvents implements QqBotEventListener {
         return name.strip().replace(groupOpenId, "…").replace(memberOpenId, "…");
     }
 
-    private void updateDirectory(String name, JSONObject event, String eventId) {
+    private void updateDirectory(QqBotSettings.Credentials credentials, String name, JSONObject event, String eventId) {
         String groupOpenId = requireText(event, "group_openid");
         Instant at = groupEventTime(event.getString("timestamp"));
         EventKey key = eventId == null || eventId.isBlank()
                 ? new EventKey(name, groupOpenId, at) : new EventKey("dispatch", eventId, null);
-        if (!remember(key)) {
+        if (settings.snapshot().credentials() != credentials || !remember(key)) {
             return;
         }
         switch (name) {
-            case "GROUP_ADD_ROBOT" -> directory.groupJoined(groupOpenId, at);
+            case "GROUP_ADD_ROBOT" -> {
+                long group = directory.groupJoined(groupOpenId, at);
+                if (settings.snapshot().credentials() == credentials) {
+                    welcome.send(credentials.appId(), group, groupOpenId, eventId);
+                }
+            }
             case "GROUP_DEL_ROBOT" -> directory.groupRemoved(groupOpenId, at);
             case "GROUP_MSG_RECEIVE", "GROUP_MSG_REJECT" -> {
                 long group = directory.groupSeen(groupOpenId, at);

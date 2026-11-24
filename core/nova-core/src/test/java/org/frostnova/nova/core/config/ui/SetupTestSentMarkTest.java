@@ -12,13 +12,25 @@ import java.io.IOException;
  * 勾底下若写着「有试发记录」，屏幕就断言了一件谁也没记下过的事。
  * 夹具真跑 openSetup，按缺字段、false、true 三份回包读试发那一格。
  */
-@DisplayName("设置引导试发那一步的记号")
+@DisplayName("设置引导的试发记录与官方机器人")
 class SetupTestSentMarkTest {
     private static final String FIXTURE = FrontendFixture.fixture("setup-test-sent-mark-fixture.mjs");
 
     @Test
     @DisplayName("回包缺 testSent 时不写「已有测试发送记录」，false 不打勾，true 才写")
     void testStepClaimsARecordOnlyWhenOneExists() throws IOException, InterruptedException {
-        FrontendFixture.run(FIXTURE, "设置引导试发那一步的记号");
+        FrontendFixture.run(FIXTURE, "设置引导试发那一步的记号", "marks");
+    }
+
+    @Test
+    @DisplayName("只用官方机器人时，末步可试发给引导期间新登记的群并确认完成")
+    void sendsToAnOfficialGroupJoinedDuringSetup() throws IOException, InterruptedException {
+        FrontendFixture.run(FIXTURE, "官方群试发", "official-send");
+    }
+
+    @Test
+    @DisplayName("连接状态回 HTTP 500 后提示重试，恢复后无需重开引导")
+    void retriesTheStatusRequestAfterHttpFailure() throws IOException, InterruptedException {
+        FrontendFixture.run(FIXTURE, "连接状态重试", "status-retry");
     }
 }

@@ -17,6 +17,7 @@ import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.ChannelSettings;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.MessagePlaceholders;
+import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -134,7 +135,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     public boolean acceptsFallback(CommandContext context) {
         return available() && context.getSenderUid() != null && dataSource.getUsers(LIVE_PLATFORM).stream()
                 .filter(QqAssistantCommand::activeStreamer)
-                .anyMatch(user -> assistantEnabled(channel(context, user)));
+                .anyMatch(user -> assistantConfigured(channel(context, user)));
     }
 
     @Override
@@ -152,15 +153,17 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         var asker = new Asker(session, context.getSenderUid());
         var all = candidates(context);
         var allowed = all.stream().filter(Candidate::allowed).toList();
+        String unavailable = all.stream().anyMatch(item -> assistantHidden(item.target()))
+                ? hiddenRevenueReply(context) : CHANNEL_OFF;
 
         String question = String.join(" ", context.getArgs());
-        if (question.isBlank()) return CommandReply.of(allowed.isEmpty() ? CHANNEL_OFF : examples(allowed));
+        if (question.isBlank()) return CommandReply.of(allowed.isEmpty() ? unavailable : examples(allowed));
         int followUp = switch (question) {
             case "1", "１" -> 0;
             case "2", "２" -> 1;
             default -> -1;
         };
-        if (followUp >= 0) return allowed.isEmpty() ? CommandReply.of(CHANNEL_OFF) : resumeFollowUp(context, asker, followUp);
+        if (followUp >= 0) return allowed.isEmpty() ? CommandReply.of(unavailable) : resumeFollowUp(context, asker, followUp);
 
         choices.remove(asker);
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
@@ -176,9 +179,12 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         if (question.isBlank() || question.codePointCount(0, question.length()) > 300
                 || (named.size() == 1 && question.equals(named.get(0).id())))
             return CommandReply.of(USAGE);
+        if (named.stream().anyMatch(item -> assistantHidden(item.target())))
+            return CommandReply.of(allowed.isEmpty() ? unavailable
+                    : "所点名的主播有通道没开金额显示，智能助手用不了，请管理员先把金额设为可见");
         if (named.stream().anyMatch(item -> !item.allowed()))
             return CommandReply.of("这里没有为所点名的主播开启智能助手问答");
-        if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
+        if (allowed.isEmpty()) return CommandReply.of(unavailable);
         if (mentions.ambiguous()) return choose(context, asker, named, question);
         if (named.size() > COMPARISON_LIMIT) return CommandReply.of("一次最多比 5 位主播，请少点几位。");
 
@@ -230,7 +236,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             if (!activeStreamer(user)) continue;
             PushTarget target = channel(context, user);
             if (usable(target)) candidates.add(new Candidate(user.getUid(), names.uname(user), user.getRoomId(), target,
-                    Boolean.TRUE.equals(target.getAssistantEnabled())));
+                    assistantEnabled(target)));
         }
         candidates.sort(Comparator.comparing(Candidate::uid));
         return candidates;
@@ -507,15 +513,28 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             return null;
         return dataSource.getUser(LIVE_PLATFORM, uid)
                 .filter(QqAssistantCommand::activeStreamer)
-                .map(user -> channel(context, user)).filter(QqAssistantCommand::assistantEnabled).orElse(null);
+                .map(user -> channel(context, user)).filter(this::assistantEnabled).orElse(null);
     }
 
     private static boolean activeStreamer(PushUser user) {
         return user.getUid() != null && !Boolean.FALSE.equals(user.getEnabled());
     }
 
-    private static boolean assistantEnabled(PushTarget target) {
+    private boolean assistantEnabled(PushTarget target) {
+        return assistantConfigured(target) && visibility.isVisible(target);
+    }
+
+    private boolean assistantHidden(PushTarget target) {
+        return assistantConfigured(target) && !visibility.isVisible(target);
+    }
+
+    private static boolean assistantConfigured(PushTarget target) {
         return usable(target) && Boolean.TRUE.equals(target.getAssistantEnabled());
+    }
+
+    private static String hiddenRevenueReply(CommandContext context) {
+        String channel = context.getType() == PushTargetType.GROUP ? "这个群" : "这个好友通道";
+        return channel + "没开金额显示，智能助手用不了，请管理员先把金额设为可见";
     }
 
     private static boolean usable(PushTarget target) { return target != null && !Boolean.FALSE.equals(target.getEnabled()); }

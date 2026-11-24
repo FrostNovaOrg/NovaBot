@@ -12,7 +12,7 @@
  */
 
 import {
-  SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, summaryLines,
+  SETUP_STEPS, allDone, botSetupChoice, canAdvance, initialRows, railMarks, startAt, summaryLines,
   withPluginSteps,
 } from '../core/nova-core/src/main/resources/config-ui/setup-model.js';
 
@@ -47,6 +47,22 @@ eq(pass(2, {anonymousConfirmed: true}), true, '第三步 过了免登录那段�
 eq(pass(3, {}), false, '末步 没发过试试不许过');
 eq(pass(3, {sent: true}), true, '末步 发过了才放行');
 eq(pass(4, {locked: true, sent: true}), false, '没有第五步，一律不放行');
+
+const officialPage = {id: 'qqbot', slot: 'links', displayName: 'QQ 官方机器人', botLink: true};
+const officialProbe = {scope: 'BOT', card: 'qqbot', level: 'DOWN'};
+const noBot = {configured: false};
+const officialStatus = {health: [officialProbe]};
+eq(botSetupChoice([], {}, noBot), {page: undefined, kind: 'adapter'}, '未装官方插件时仍只显示旧表单');
+eq(botSetupChoice([officialPage], {}, noBot), {page: officialPage, kind: 'adapter'}, '都未配置时显示选择，默认 NapCat');
+eq(botSetupChoice([officialPage], {}, {configured: true}).kind, 'adapter', '只配 NapCat 时仍打开旧表单');
+eq(botSetupChoice([officialPage], officialStatus, noBot).kind, 'official', '只保存了官方凭据时打开官方表单');
+eq(botSetupChoice([officialPage], officialStatus, {configured: true}).kind, 'adapter', '两边都配置时默认 NapCat');
+eq(pass(1, {botOk: false}), false, 'NapCat 未测通时仍不放行');
+eq(pass(1, {botOk: true}), true, 'NapCat 测通后仍放行');
+eq(pass(1, {botKind: 'official'}), false, '尚未连接时官方表单不放行');
+eq(pass(1, {botKind: 'official', officialBotOk: true}), true, '官方探针变绿后放行');
+eq(pass(1, {botKind: 'adapter', officialBotOk: true}), true, '官方在线时切换表单仍可继续');
+eq(pass(1, {botKind: 'official', adapterReady: true}), true, 'NapCat 可用时切换表单仍可继续');
 
 const PLUGIN_PAGE = {id: 'danmu', displayName: '弹幕', order: 50, slot: 'setup_step'};
 const pluginSteps = withPluginSteps([PLUGIN_PAGE]);
