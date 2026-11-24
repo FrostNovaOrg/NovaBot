@@ -69,11 +69,6 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      */
     private static final String EXPAND = "全部";
 
-    /**
-     * 序号的最大位数。主播 uid 也是纯数字，但它有八位以上，落不进清单的范围
-     */
-    private static final int MAX_INDEX_DIGITS = 3;
-
     private final LiveDataService liveDataService;
 
     private final LiveSessionArchive archive;
@@ -204,10 +199,12 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
         Pending pending = new Pending(List.copyOf(uids), List.copyOf(lines), shown(ranked),
                 display(ranked.ordered().get(0)), context.getCommand(), List.copyOf(context.getArgs()),
-                clock.instant().plus(PENDING_TTL), new AtomicBoolean(), ConcurrentHashMap.newKeySet());
+                clock.instant().plus(PENDING_TTL), new AtomicBoolean(), new AtomicBoolean(),
+                ConcurrentHashMap.newKeySet());
 
         sweep();
-        pendings.put(key(context), pending);
+        String key = key(context);
+        context.openChoiceList(() -> pendings.put(key, pending));
         return render(context, pending, false);
     }
 
@@ -270,15 +267,14 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
             return Claimed.answer(CommandReply.of(render(context, pending, true)));
         }
 
-        if (StringUtil.isBlank(word) || !word.chars().allMatch(Character::isDigit)) {
+        int index = CommandFollowUp.parseChoiceNumber(word);
+        if (index < 0) {
             discardIfAnswered(key, pending);
             return null;
         }
 
-        int index = word.length() <= MAX_INDEX_DIGITS ? Integer.parseInt(word) : 0;
-        if (index < 1 || index > pending.uids().size()) {
-            // 越界的数字交回分发器照常处理，清单仍可继续选。
-            return null;
+        if (index == 0 || index > pending.uids().size()) {
+            return pending.warned().compareAndSet(false, true) ? Claimed.outOfRange(word, pending.uids().size()) : null;
         }
 
         Long chosen = pending.uids().get(index - 1);
@@ -297,6 +293,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
         if (pending != null) {
             discardIfAnswered(key, pending);
         }
+    }
+
+    @Override
+    public void discardChoiceList(CommandContext context) {
+        pendings.remove(key(context));
     }
 
     private void discardIfAnswered(String key, Pending pending) {
@@ -369,9 +370,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * @param args 那条命令原本的参数
      * @param expiresAt 失效时刻
      * @param expanded 是否已经展开过
+     * @param warned 是否已提示过序号越界
      * @param selected 已经选过的主播 UID
      */
     private record Pending(List<Long> uids, List<String> lines, int shown, String example, String command,
-                           List<String> args, Instant expiresAt, AtomicBoolean expanded, Set<Long> selected) {
+                           List<String> args, Instant expiresAt, AtomicBoolean expanded, AtomicBoolean warned,
+                           Set<Long> selected) {
     }
 }

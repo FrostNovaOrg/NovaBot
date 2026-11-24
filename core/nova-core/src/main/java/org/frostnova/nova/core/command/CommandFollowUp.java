@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.command;
 
+import org.frostnova.nova.core.lang.StringUtil;
+
 import java.util.List;
 
 /**
@@ -12,7 +14,8 @@ import java.util.List;
  * 再交给分发器照常执行。
  * <p>
  * 实现只需注册为 Bean（插件中用 {@code @NovaComponent}）即可被发现，核心不维护注册表；
- * 「追问了什么、序号对应谁」这些知识全部留在提问的那一方，核心只负责把话递过去。
+ * 「追问了什么、序号对应谁」由提问方保存。通过 {@link CommandContext#openChoiceList} 发出新清单时，
+ * 分发器会让同一会话中同一个人的旧清单作废。
  * <p>
  * <b>被认领的应答不受同会话冷却限制。</b> 冷却防的是「连发无效消息刷屏」，
  * 而这是机器人自己刚问出来的问题的答案：用冷却把它挡在门外等于问了又不听，
@@ -37,6 +40,21 @@ public interface CommandFollowUp {
     default void onNonFollowUpMessage(CommandContext context) {
     }
 
+    /** 同一会话中同一个人收到新清单时，清掉此人原有的待选清单。 */
+    default void discardChoiceList(CommandContext context) {
+    }
+
+    /**
+     * 读取待选清单的序号。只接受纯数字，最多三位可作序号。
+     * @return 正数为清单序号，0 表示零或超出位数，-1 表示输入不是纯数字
+     */
+    static int parseChoiceNumber(String word) {
+        if (StringUtil.isEmpty(word) || !word.chars().allMatch(Character::isDigit)) {
+            return -1;
+        }
+        return word.length() <= 3 ? Integer.parseInt(word) : 0;
+    }
+
     /**
      * 认领的结果：要么直接回一句，要么改写成一条命令交回分发器执行
      * <p>
@@ -55,6 +73,11 @@ public interface CommandFollowUp {
          */
         public static Claimed answer(CommandReply reply) {
             return new Claimed(reply, null, List.of());
+        }
+
+        public static Claimed outOfRange(String number, int size) {
+            String displayedNumber = StringUtil.getOmitString(number, 16);
+            return answer(CommandReply.of("清单里没有 " + displayedNumber + " 号，请回 1 到 " + size));
         }
 
         /**

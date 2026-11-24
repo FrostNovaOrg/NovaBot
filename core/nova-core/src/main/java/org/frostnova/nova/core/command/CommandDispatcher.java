@@ -86,6 +86,9 @@ public class CommandDispatcher {
      */
     private final ObjectProvider<CommandFollowUp> followUps;
 
+    /** 让清单入队、替换及认领按同一顺序进行。 */
+    private final Object followUpLock = new Object();
+
     private final Iterable<SuperAdministratorResolver> superAdministrators;
 
     private final CommandSettingsService settings;
@@ -319,9 +322,6 @@ public class CommandDispatcher {
 
     /**
      * 把原消息交给追问方尝试认领，或通知它们这条消息不参与认领
-     * <p>
-     * 认领方按 Bean 的顺序依次问过去，头一个认领的说了算——同一条消息被两处认领本就是个错误，
-     * 而在这里挑一个「更合适的」只会让那个错误更难被发现。
      * @return 认领结果，无人认领时为 null
      */
     private CommandFollowUp.Claimed handleFollowUp(NovaRemoteMessageEvent event, PushTargetType type,
@@ -329,19 +329,21 @@ public class CommandDispatcher {
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), name, List.copyOf(args), event.getText());
         context.setMessageId(event.getMessageId());
-        for (CommandFollowUp followUp : followUps) {
-            try {
-                if (!claimable) {
-                    followUp.onNonFollowUpMessage(context);
-                    continue;
+        synchronized (followUpLock) {
+            for (CommandFollowUp followUp : followUps) {
+                try {
+                    if (!claimable) {
+                        followUp.onNonFollowUpMessage(context);
+                        continue;
+                    }
+                    CommandFollowUp.Claimed claimed = followUp.claim(context);
+                    if (claimed != null) {
+                        return claimed;
+                    }
+                } catch (Exception e) {
+                    // 认领方出错不该让这条消息连菜单都收不到
+                    log.error("认领消息 {} 时发生异常", name, e);
                 }
-                CommandFollowUp.Claimed claimed = followUp.claim(context);
-                if (claimed != null) {
-                    return claimed;
-                }
-            } catch (Exception e) {
-                // 认领方出错不该让这条消息连菜单都收不到
-                log.error("认领消息 {} 时发生异常", name, e);
             }
         }
         return null;
@@ -410,17 +412,37 @@ public class CommandDispatcher {
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), typedName, args, event.getText(), admin);
         context.setMessageId(event.getMessageId());
+        context.deferChoiceListPublication();
 
         try {
             CommandReply commandReply = command.execute(context);
             if (commandReply != null && commandReply.hasContent()) {
-                reply(event, type, commandReply.content(), context.getChannel());
+                sendCommandReply(event, context, commandReply);
             }
             return true;
         } catch (Exception e) {
             // 一个命令出错不应影响其他命令，也不该把异常细节回给群里
             log.error("执行命令 {} 时发生异常", command.name(), e);
             return false;
+        }
+    }
+
+    private void sendCommandReply(NovaRemoteMessageEvent event, CommandContext context, CommandReply reply) {
+        Runnable publish = context.getChoiceListPublication();
+        if (publish == null) {
+            reply(event, context.getType(), reply.content(), context.getChannel());
+            return;
+        }
+        synchronized (followUpLock) {
+            reply(event, context.getType(), reply.content(), context.getChannel());
+            for (CommandFollowUp followUp : followUps) {
+                try {
+                    followUp.discardChoiceList(context);
+                } catch (Exception e) {
+                    log.error("作废旧清单时发生异常", e);
+                }
+            }
+            publish.run();
         }
     }
 

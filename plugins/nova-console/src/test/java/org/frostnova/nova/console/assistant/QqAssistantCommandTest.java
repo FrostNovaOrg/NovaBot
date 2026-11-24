@@ -795,6 +795,104 @@ class QqAssistantCommandTest {
         verify(queries, never()).sessions(eq(BILIBILI), eq(FIRST), anyInt(), anyInt());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("助手清单收到越界序号时只提示一次，选对后接着查原问题")
+    void selectionWarningKeepsTheOriginalQuestion(boolean mentionsBot) throws Exception {
+        for (int i = 0; i < 5; i++) {
+            add(FIRST + i, "测试主播" + (i + 1), channel(GROUP, ROOM, true, true));
+        }
+        String question = "最近播了几场";
+        group(ASKER, "问 " + question);
+        assertReply("回序号", "5. 测试主播5");
+
+        clock.advance(Duration.ofSeconds(4));
+        receive(GROUP, ROOM, ASKER, "6", mentionsBot);
+        assertReply(replies.poll(), "没有 6 号", "1 到 5");
+        receive(GROUP, ROOM, ASKER, "7", false);
+        assertTrue(replies.isEmpty());
+        assertTrue(requests.isEmpty());
+
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        receive(GROUP, ROOM, ASKER, "3", false);
+        assertReply("收到，查测试主播3");
+        assertReply(LABEL);
+        verify(queries).sessions(BILIBILI, FIRST + 2, 7, 1);
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("助手清单收到十位纯数字时提示一次，之后仍按原问题查第 3 位")
+    void longSelectionNumberKeepsTheOriginalQuestion(boolean mentionsBot) throws Exception {
+        for (int i = 0; i < 5; i++) {
+            add(FIRST + i, "测试主播" + (i + 1), channel(GROUP, ROOM, true, true));
+        }
+        String question = "最近播了几场";
+        group(ASKER, "问 " + question);
+        assertReply("回序号", "5. 测试主播5");
+
+        clock.advance(Duration.ofSeconds(4));
+        receive(GROUP, ROOM, ASKER, "1234567890", mentionsBot);
+        assertReply(replies.poll(), "没有 1234567890 号", "1 到 5");
+        receive(GROUP, ROOM, ASKER, "1234567890", false);
+        assertTrue(replies.isEmpty());
+        assertTrue(requests.isEmpty());
+
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        receive(GROUP, ROOM, ASKER, "3", false);
+        assertReply("收到，查测试主播3");
+        assertReply(LABEL);
+        verify(queries).sessions(BILIBILI, FIRST + 2, 7, 1);
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("直播报告与助手清单把同一个序号指向不同主播时，以后发的清单为准")
+    void newestSelectionListWins(boolean assistantLast) throws Exception {
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        when(live.getLiveStatus(eq(BILIBILI), anyLong())).thenReturn(Optional.of(true));
+        var choice = new BilibiliStreamerChoice(live, archive);
+        var painter = mock(BilibiliLiveReportPainter.class);
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
+        commands.add(new BilibiliLiveReportCommand(data, choice, live, painter, null, null,
+                mock(BilibiliLiveReportRedrawer.class)));
+        followUps.add(assistantLast ? 0 : 1, choice);
+
+        String question = "最近播了几场";
+        if (assistantLast) {
+            group(ASKER, "直播报告");
+            assertReply("2. 测试主播甲");
+            group(ASKER, "问 " + question);
+            assertReply("2. 测试主播乙");
+
+            modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+            receive(GROUP, ROOM, ASKER, "2", false);
+            assertReply("收到，查测试主播乙");
+            assertReply(LABEL);
+            verify(queries).sessions(BILIBILI, SECOND, 7, 1);
+            assertEquals(question, userPayload(requests.get(0)).getString("question"));
+            verifyNoInteractions(painter);
+            receive(GROUP, ROOM, ASKER, "1", false);
+            assertTrue(replies.isEmpty(), "用完助手清单后，旧的报告清单不能再认领");
+        } else {
+            group(ASKER, "问 " + question);
+            assertReply("2. 测试主播乙");
+            group(ASKER, "直播报告");
+            assertReply("2. 测试主播甲");
+
+            receive(GROUP, ROOM, ASKER, "2", false);
+            assertReply("{image_base64=");
+            verify(painter).paint(eq(BILIBILI), argThat(source -> source.getUid().equals(FIRST)), any(), any());
+            assertTrue(requests.isEmpty(), "旧的助手清单不能再提交查询");
+            receive(GROUP, ROOM, ASKER, "明天见", false);
+            receive(GROUP, ROOM, ASKER, "1", false);
+            assertTrue(replies.isEmpty(), "报告清单结束后，旧的助手清单不能再认领");
+        }
+    }
+
     @Test
     @DisplayName("回了序号，8 秒没动静，以为机器人没收到")
     void selectedStreamerGetsImmediateAcknowledgmentOnly() throws Exception {

@@ -48,6 +48,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -73,8 +74,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private static final int REPORT_HISTORY_LIMIT = 2;
     private static final DateTimeFormatter REPORT_TIME = DateTimeFormatter.ofPattern("HH:mm").withZone(StatisticsDay.ZONE);
     private static final String CHOSEN_UID_PREFIX = "uid:";
-    private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
-    private static final Pattern RAW_ORDINAL = Pattern.compile("\\p{IsWhite_Space}*" + ORDINAL.pattern() + "\\p{IsWhite_Space}*");
+    private static final Pattern SINGLE_WORD = Pattern.compile("\\p{IsWhite_Space}*(\\P{IsWhite_Space}+)\\p{IsWhite_Space}*");
 
     private final AssistantAskService assistant;
     private final AssistantClient client;
@@ -165,10 +165,12 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         };
         if (followUp >= 0) return allowed.isEmpty() ? CommandReply.of(unavailable) : resumeFollowUp(context, asker, followUp);
 
-        choices.remove(asker);
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
         String first = context.arg(0);
         boolean fromChoice = first != null && first.startsWith(CHOSEN_UID_PREFIX);
+        boolean ordinalReply = fromChoice && isOrdinalReply(context.getRawText());
+        // 序号已在认领时消耗清单，重跑期间发出的新清单仍然有效。
+        if (!ordinalReply) choices.remove(asker);
         String chosenUid = fromChoice ? first.substring(CHOSEN_UID_PREFIX.length()) : null;
         var chosen = fromChoice ? all.stream().filter(item -> item.id().equals(chosenUid)).findFirst().orElse(null) : null;
         if (fromChoice && chosen == null) return CommandReply.of("这里没有为所选主播开启智能助手问答");
@@ -198,9 +200,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             return choose(context, asker, allowed, question);
         }
 
-        String rawText = context.getRawText();
-        String chosenName = fromChoice && rawText != null && RAW_ORDINAL.matcher(rawText.trim()).matches()
-                ? chosen.displayName() : null;
+        String chosenName = ordinalReply ? chosen.displayName() : null;
         return start(context, asker, named, question, null, chosenName);
     }
 
@@ -247,7 +247,9 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         options = options.stream().sorted(Comparator.comparing(Candidate::uid)).toList();
         Instant now = clock.instant();
         choices.values().removeIf(choice -> !now.isBefore(choice.expires()));
-        choices.put(asker, new Choice(options.stream().map(Candidate::id).toList(), question, now.plus(CHOICE_TTL)));
+        var choice = new Choice(options.stream().map(Candidate::id).toList(), question,
+                now.plus(CHOICE_TTL), new AtomicBoolean());
+        context.openChoiceList(() -> choices.put(asker, choice));
         StringBuilder text = new StringBuilder(replyHint.replyVerb(context, "请") + "序号选一位主播（2 分钟内有效）");
         for (int i = 0; i < options.size(); i++) {
             Candidate item = options.get(i);
@@ -261,9 +263,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
     @Override
     public Claimed claim(CommandContext context) {
-        String word = context.getCommand();
-        if (context.getSenderUid() == null || !context.getArgs().isEmpty()
-                || word.length() > 9 || !ORDINAL.matcher(word).matches()) return null;
+        if (context.getSenderUid() == null || !context.getArgs().isEmpty()) return null;
         var key = new Asker(session(context), context.getSenderUid());
         Choice choice = choices.get(key);
         if (choice == null) return null;
@@ -271,10 +271,28 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             choices.remove(key, choice);
             return null;
         }
-        int index = Integer.parseInt(word) - 1;
-        if (index < 0 || index >= choice.uids().size() || !choices.remove(key, choice)) return null;
+        String word = context.getCommand();
+        int index = CommandFollowUp.parseChoiceNumber(word);
+        if (index < 0) return null;
+        if (index == 0 || index > choice.uids().size()) {
+            return choice.warned().compareAndSet(false, true) ? Claimed.outOfRange(word, choice.uids().size()) : null;
+        }
+        if (!choices.remove(key, choice)) return null;
         // 保留所选 uid，即便答序号前已撤掉该主播。重跑时找不到该 uid 就不查。
-        return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index), choice.question()));
+        return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index - 1), choice.question()));
+    }
+
+    private static boolean isOrdinalReply(String rawText) {
+        if (rawText == null) return false;
+        var word = SINGLE_WORD.matcher(rawText.trim());
+        return word.matches() && CommandFollowUp.parseChoiceNumber(word.group(1)) > 0;
+    }
+
+    @Override
+    public void discardChoiceList(CommandContext context) {
+        if (context.getSenderUid() != null) {
+            choices.remove(new Asker(session(context), context.getSenderUid()));
+        }
     }
 
     private CommandReply start(CommandContext context, Asker asker, List<Candidate> streamers, String question,
@@ -690,7 +708,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         String displayName() { return nickname == null || nickname.isBlank() ? id() : nickname; }
     }
     private record Asker(String session, long sender) { }
-    private record Choice(List<String> uids, String question, Instant expires) { }
+    private record Choice(List<String> uids, String question, Instant expires, AtomicBoolean warned) { }
     private record GroupAccess(PushTarget primary, Candidate closed, boolean amountVisible, Map<Long, PushTarget> channels) { }
     private record PendingFollowUps(List<Candidate> streamers, boolean amountVisible, Instant expires, List<String> questions) { }
     private record HistoryKey(String session, String account, Set<Long> streamers) { }

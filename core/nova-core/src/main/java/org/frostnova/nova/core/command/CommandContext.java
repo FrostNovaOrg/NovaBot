@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.command;
 
 import org.frostnova.nova.core.enums.PushTargetType;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -71,6 +72,25 @@ public class CommandContext {
     /** 触发本次命令的原消息编号，未提供时为空。 */
     @lombok.Setter
     private String messageId;
+
+    @Getter(AccessLevel.NONE)
+    private boolean deferChoiceList;
+
+    @Getter(AccessLevel.PACKAGE)
+    private Runnable choiceListPublication;
+
+    void deferChoiceListPublication() {
+        deferChoiceList = true;
+    }
+
+    /** 在本次回复发出时启用待选清单。直接调用命令时立即启用。 */
+    public void openChoiceList(Runnable publish) {
+        if (deferChoiceList) {
+            choiceListPublication = publish;
+        } else {
+            publish.run();
+        }
+    }
 
     /**
      * 取第 n 个参数
