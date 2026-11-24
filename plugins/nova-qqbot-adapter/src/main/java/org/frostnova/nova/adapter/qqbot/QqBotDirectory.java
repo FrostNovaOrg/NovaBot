@@ -195,7 +195,12 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     public synchronized Optional<String> memberOpenId(long number) {
-        return Optional.ofNullable(currentEntries().members().get(number)).map(MemberEntry::openid);
+        return memberOpenId(settings.snapshot().appId(), number);
+    }
+
+    synchronized Optional<String> memberOpenId(String appId, long number) {
+        requireReadable();
+        return Optional.ofNullable(entries(appId).members().get(number)).map(MemberEntry::openid);
     }
 
     public synchronized OptionalLong memberNumber(String openid) {

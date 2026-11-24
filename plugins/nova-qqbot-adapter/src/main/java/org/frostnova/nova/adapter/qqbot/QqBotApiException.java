@@ -36,6 +36,17 @@ public final class QqBotApiException extends RuntimeException {
         return code == 304019 || code == 40034142;
     }
 
+    boolean markdownPermissionDenied() {
+        return code == 304036 || code == 40034127;
+    }
+
+    boolean markdownFormatRejected() {
+        return switch (code) {
+            case 40034008, 40034009, 40034011, 40034124 -> true;
+            default -> false;
+        };
+    }
+
     boolean duplicateMessage() {
         return code == 40054005;
     }

@@ -95,6 +95,115 @@ class QqBotDeliveryTest {
         });
     }
 
+    @Test
+    void liveNoticeMentionsBothSubscribedMembers() {
+        withSender(rig -> {
+            String first = rig.memberMention("fixture-first");
+            String second = rig.memberMention("fixture-second");
+            var notice = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "主播开播了 " + first + second).get(0);
+            assertEquals(0, sendNow(rig, notice).getIntValue("code"));
+            assertEquals(List.of("messages"), rig.endpoints());
+            assertEquals(2, rig.body(0).getIntValue("msg_type"));
+            assertEquals("", rig.body(0).getString("content"));
+            assertEquals("主播开播了 <qqbot-at-user id=\"fixture-first\" /><qqbot-at-user id=\"fixture-second\" />",
+                    rig.body(0).getJSONObject("markdown").getString("content"));
+        });
+    }
+
+    @Test
+    void sendsMemberAndEveryoneMentionsBeforeTheCover() {
+        withSender(rig -> {
+            assertEquals(0, rig.send(IMAGE + rig.memberMention("fixture-member") + "{at=all}开播了").getIntValue("code"));
+            assertEquals(List.of("messages", "files", "messages"), rig.endpoints());
+            assertEquals(2, rig.body(0).getIntValue("msg_type"));
+            assertEquals("<qqbot-at-user id=\"fixture-member\" />" + AT_ALL_TAG + "开播了",
+                    rig.body(0).getJSONObject("markdown").getString("content"));
+            assertEquals(JSONObject.of("msg_type", 7, "content", " ", "media", media()), rig.body(2));
+        });
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void omitsUnknownMembersWithoutLoggingTheirNumbers(CapturedOutput output) {
+        withSender(rig -> {
+            assertEquals(0, rig.send("开播了 **提醒**{at=123456}").getIntValue("code"));
+            assertEquals(List.of("messages"), rig.endpoints());
+            assertEquals(JSONObject.of("msg_type", 0, "content", "开播了 **提醒**"), rig.body(0));
+            rig.send("{at=123456}");
+            assertEquals(List.of("messages", "messages"), rig.endpoints());
+            assertEquals(JSONObject.of("msg_type", 0, "content", ""), rig.body(1));
+            assertTrue(output.getAll().contains("省略"));
+            assertFalse(output.getAll().lines().anyMatch(line -> line.contains("省略") && line.contains("123456")));
+        });
+    }
+
+    @Test
+    void dynamicTextKeepsLiteralFormattingAndCannotAddMentions() {
+        withSender(rig -> {
+            String member = rig.memberMention("fixture-member");
+            String external = "**加粗** [链接](x) \\ `code` _ ~ | <x> <qqbot-at-user id=\"x\" />\n"
+                    + "#标题\n-一\n+二\n12. 三\n行中 # - + 12.\n";
+            assertEquals(0, rig.send(MessagePlaceholders.escapeExternalText(external) + member + "#").getIntValue("code"));
+            assertEquals(2, rig.body(0).getIntValue("msg_type"));
+            assertEquals("\\*\\*加粗\\*\\* \\[链接\\](x) \\\\ \\`code\\` \\_ \\~ \\| \\<x\\> ＜qqbot-at-user id=\"x\" /\\>\n"
+                            + "\\#标题\n\\-一\n\\+二\n12\\. 三\n行中 # - + 12.\n<qqbot-at-user id=\"fixture-member\" />#",
+                    rig.body(0).getJSONObject("markdown").getString("content"));
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"304036, 200", "40034127, 400", "40034127, 429"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void missingMarkdownPermissionStillDeliversTheOriginalPlainNotice(int code, int status, CapturedOutput output) {
+        withSender(rig -> {
+            String member = rig.memberMention("fixture-member");
+            rig.exchange = path -> rig.requests.size() == 1
+                    ? new QqBotHttpTransport.Response(status, json("code", code).body()) : json("id", "plain");
+            assertEquals(JSONObject.of("code", 0, "id", "plain"),
+                    rig.send("<qq" + member + "{at=all}bot-at-everyone />\n**开播了**"));
+            assertEquals(List.of("messages", "messages"), rig.endpoints());
+            assertEquals(2, rig.body(0).getIntValue("msg_type"));
+            assertEquals(JSONObject.of("msg_type", 0, "content", "＜qqbot-at-everyone />\n**开播了**"), rig.body(1));
+            assertTrue(output.getAll().contains("平台没给这只机器人发 markdown 的权限，这条改为不 @ 人"));
+            assertFalse(output.getAll().contains("fixture-member"));
+        });
+    }
+
+    @Test
+    void permissionErrorOnPlainRetryStopsAfterOneRetry() {
+        withSender(rig -> {
+            rig.exchange = path -> json("code", 304036);
+            var result = rig.send("开播了" + rig.memberMention("fixture-member"));
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals(List.of("messages", "messages"), rig.endpoints());
+            assertEquals(JSONObject.of("msg_type", 0, "content", "开播了"), rig.body(1));
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {40034008, 40034009, 40034011, 40034124})
+    void rejectedMarkdownExplainsTheFormatError(int code) {
+        withSender(rig -> {
+            rig.exchange = path -> json("code", code);
+            var result = rig.send("动态" + rig.memberMention("fixture-member"));
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("消息格式被平台拒绝（错误码 " + code + "）"));
+            assertEquals(List.of("messages"), rig.endpoints());
+        });
+    }
+
+    @Test
+    void everyoneQuotaRejectionKeepsTheMemberMention() {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() == 1 ? json("code", 304019) : json("id", "members");
+            assertEquals(0, rig.send("<qq{at=all}bot-at-everyone />" + rig.memberMention("fixture-member")).getIntValue("code"));
+            assertEquals(List.of("messages", "messages"), rig.endpoints());
+            assertEquals(2, rig.body(1).getIntValue("msg_type"));
+            assertEquals("＜qqbot-at-everyone /\\><qqbot-at-user id=\"fixture-member\" />",
+                    rig.body(1).getJSONObject("markdown").getString("content"));
+        });
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"admin", "owner"})
     void secondLiveNoticeKeepsOnlyTheText(String role) {
@@ -1106,6 +1215,10 @@ class QqBotDeliveryTest {
 
         JSONObject deliver(Map<String, Object> params) {
             return sender.getLocalDelivery().deliver(Map.of(), params);
+        }
+
+        String memberMention(String openid) {
+            return "{at=" + directory.memberSeen(openid, now) + "}";
         }
 
         JSONObject send(String content) {
