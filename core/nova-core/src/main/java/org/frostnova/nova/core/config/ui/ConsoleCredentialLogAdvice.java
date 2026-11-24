@@ -75,7 +75,7 @@ public class ConsoleCredentialLogAdvice extends RequestBodyAdviceAdapter {
                 Object rendered;
                 String type = types.get(ConfigUiAuthService.canonicalName(name));
                 if (field != null && !(field instanceof Boolean) && scope.isSensitive(name, type)) {
-                    scope.add(field);
+                    scope.addField(name, type, field);
                     rendered = SensitiveFields.MASK;
                 } else {
                     rendered = display(field, scope, Map.of());

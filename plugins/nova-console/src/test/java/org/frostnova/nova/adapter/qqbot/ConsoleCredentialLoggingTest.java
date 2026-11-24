@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -114,10 +115,30 @@ class ConsoleCredentialLoggingTest {
                     }
                 }
             }
+            // Controllers hand these to connections that log later on other threads; the submission keeps them masked.
+            try (var logs = new CapturedLogs(Level.TRACE)) {
+                var client = LoggerFactory.getLogger("org.springframework.web.socket.client.standard.StandardWebSocketClient");
+                CompletableFuture.runAsync(() -> {
+                    heldBeyondRequest().forEach(value -> client.trace("Handshake request headers: {X-Fixture=[{}]}", value));
+                    client.trace("Single-use code {} stays readable", "618453");
+                }).get();
+                logs.appender.list.stream().map(ConsoleCredentialLoggingTest::rendered)
+                        .filter(text -> heldBeyondRequest().stream().anyMatch(text::contains))
+                        .forEach(text -> leaks.add("later use on another thread: " + text));
+                assertTrue(logs.appender.list.stream().anyMatch(event -> rendered(event).contains("618453")),
+                        "single-use codes are masked on the request only");
+            }
             verify(credentials, times(2)).save(PUBLIC_APP_ID, OFFICIAL_SECRET);
             verify(assistant, times(2)).validateAndSaveKey(ConfigUiAccount.LOCAL_ID, MODEL_KEY);
             assertTrue(leaks.isEmpty(), () -> "Credentials reached logs for " + leaks);
         }
+    }
+
+    /** Submitted values that are credentials by name and are used after the request has finished. */
+    private static List<String> heldBeyondRequest() {
+        return List.of(OFFICIAL_SECRET, MODEL_KEY, "fixture-webui-token", "fixture-webui-seed", "fixture-mail-password",
+                "fixture-oidc-client-secret", "fixture-hook-auth", "fixture-future-api-key", "fixture-test-bot-token",
+                "fixture-bot-http-token", "fixture-bot-socket-token");
     }
 
     /** Keep all of the credential submissions exercised by this test in this list. */

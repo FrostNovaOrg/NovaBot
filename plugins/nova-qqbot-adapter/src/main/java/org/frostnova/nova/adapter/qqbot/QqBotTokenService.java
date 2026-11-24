@@ -3,6 +3,7 @@ package org.frostnova.nova.adapter.qqbot;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.secret.SecretLogMask;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
@@ -163,6 +164,8 @@ class QqBotTokenService {
                     || value.chars().anyMatch(c -> c < 33 || c > 126)) {
                 return tokenError(0, response.status());
             }
+            // 访问令牌之后放进请求头和长连接的鉴权消息，任何线程的日志里都遮掉
+            SecretLogMask.remember(QqBotTokenService.class.getName() + ":" + appId, value);
             return new Outcome(new Token(value, started.plusSeconds(seconds), new QqBotSecretFingerprint(secret), appId), null,
                     HealthStatus.ok("凭据有效"));
         } catch (IOException e) {

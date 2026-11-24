@@ -10,38 +10,60 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.servlet.http.HttpServletRequest;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.secret.SecretLogMask;
 import org.frostnova.nova.core.util.UrlMasker;
 import org.frostnova.nova.core.util.UrlRedactor;
 import org.frostnova.nova.core.web.ReadOnlyTokenController;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Marker;
 import org.slf4j.helpers.MessageFormatter;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.EnumerablePropertySource;
+import org.springframework.core.env.Environment;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UrlPathHelper;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Masks submitted credentials before log events reach any appender. */
+/**
+ * Masks credentials before log events reach any appender.
+ * <p>
+ * Values submitted on the current console request are masked on that request's thread; credentials
+ * registered in {@link SecretLogMask} (console submissions, configuration, stored secrets, exchanged
+ * tokens) are masked in every log event, on every thread, at every level.
+ */
 @Component
 public class ConsoleCredentialLogFilter extends TurboFilter {
     private static final String REQUEST_CREDENTIALS = ConsoleCredentialLogFilter.class.getName();
     private static final String PARSE_ERROR = "JSON parse error:";
     private static final String WIRE_INPUT = "org.apache.coyote.http11.Http11InputBuffer";
     private static final String FORM_INPUT = "org.apache.tomcat.util.http.Parameters";
+    private static final String CONFIG_SLOT = "config:";
     private final ThreadLocal<Boolean> replay = new ThreadLocal<>();
+    private final Environment environment;
+    private final ObjectProvider<ConfigurationMetadataService> metadata;
     private LoggerContext loggerContext;
+
+    public ConsoleCredentialLogFilter(Environment environment, ObjectProvider<ConfigurationMetadataService> metadata) {
+        this.environment = environment;
+        this.metadata = metadata;
+    }
 
     @PostConstruct
     void install() {
+        rememberConfiguredCredentials();
         if (LoggerFactory.getILoggerFactory() instanceof LoggerContext context) {
             loggerContext = context;
             setContext(context);
@@ -71,28 +93,35 @@ public class ConsoleCredentialLogFilter extends TurboFilter {
                 && !format.startsWith("Set encoding to ") && !format.startsWith("Set query string encoding to "))) {
             return FilterReply.DENY;
         }
-
-        var scope = currentRequest();
-        if (scope == null) {
+        // Disabled events are dropped by the level check after this filter; nothing to mask.
+        if (!level.isGreaterOrEqual(logger.getEffectiveLevel())) {
             return FilterReply.NEUTRAL;
         }
+
         var event = throwable == null ? MessageFormatter.arrayFormat(format, arguments)
                 : MessageFormatter.arrayFormat(format, arguments, throwable);
         String message = event.getMessage();
-        if (loggerName.endsWith("DispatcherServlet") && message.contains("parameters={")
-                && !message.contains("parameters={masked}")) {
-            scope.captureParameters(ConfigUiAccess.request());
-        }
         Throwable error = event.getThrowable();
         String safeMessage = message;
-        if (loggerName.startsWith("org.springframework.web.") && message.contains(PARSE_ERROR)
-                && (message.startsWith("Could not resolve parameter")
-                || message.contains(HttpMessageNotReadableException.class.getName()))) {
-            int detail = message.indexOf(PARSE_ERROR);
-            safeMessage = message.substring(0, detail + PARSE_ERROR.length()) + " " + SensitiveFields.MASK;
+        Throwable safeError = error;
+        var scope = currentRequest();
+        if (scope != null) {
+            if (loggerName.endsWith("DispatcherServlet") && message.contains("parameters={")
+                    && !message.contains("parameters={masked}")) {
+                scope.captureParameters(ConfigUiAccess.request());
+            }
+            if (loggerName.startsWith("org.springframework.web.") && message.contains(PARSE_ERROR)
+                    && (message.startsWith("Could not resolve parameter")
+                    || message.contains(HttpMessageNotReadableException.class.getName()))) {
+                int detail = message.indexOf(PARSE_ERROR);
+                safeMessage = message.substring(0, detail + PARSE_ERROR.length()) + " " + SensitiveFields.MASK;
+            }
+            safeMessage = UrlRedactor.maskLiterals(safeMessage, scope.values);
+            safeError = scope.maskThrowable(error);
         }
-        safeMessage = UrlRedactor.maskLiterals(safeMessage, scope.values);
-        Throwable safeError = scope.maskThrowable(error);
+        // Credentials handed to other threads (reconnects, scheduled checks, token refresh) are masked here.
+        safeMessage = SecretLogMask.mask(safeMessage);
+        safeError = SecretLogMask.mask(safeError);
         if (message.equals(safeMessage) && error == safeError) {
             return FilterReply.NEUTRAL;
         }
@@ -112,7 +141,59 @@ public class ConsoleCredentialLogFilter extends TurboFilter {
         var scope = credentials(request);
         if (scope != null) {
             scope.add(value);
+            SecretLogMask.remember(scope.path() + "#protected", value);
         }
+    }
+
+    /** Registers configured credentials so that connections opened from configuration are masked too. */
+    void rememberConfiguredCredentials() {
+        if (!(environment instanceof ConfigurableEnvironment configurable)) {
+            return;
+        }
+        var service = metadata.getIfAvailable();
+        Map<String, String> types = service == null ? Map.of() : service.getKnownTypes();
+        for (var source : configurable.getPropertySources()) {
+            if (!(source instanceof EnumerablePropertySource<?> names)) {
+                continue;
+            }
+            for (String name : names.getPropertyNames()) {
+                String type = types.get(name);
+                if (!isCredentialName(name, type) || (type != null && !isText(type))) {
+                    continue;
+                }
+                Object value = names.getProperty(name);
+                if (value instanceof CharSequence text && isCredentialValue(text.toString())) {
+                    SecretLogMask.remember(CONFIG_SLOT + source.getName() + ":" + name, text.toString());
+                }
+            }
+        }
+    }
+
+    private static boolean isText(String type) {
+        return type.equals("java.lang.String") || type.startsWith("java.util.List<java.lang.String")
+                || type.startsWith("java.util.Map<java.lang.String,java.lang.String");
+    }
+
+    /** Flags and plain numbers under credential-like names are settings such as limits, not credentials. */
+    private static boolean isCredentialValue(String value) {
+        String text = value.strip();
+        return !text.isEmpty() && !text.equalsIgnoreCase("true") && !text.equalsIgnoreCase("false")
+                && !text.chars().allMatch(Character::isDigit) && !text.startsWith("${");
+    }
+
+    /** Name-based rule shared by console fields and configuration keys, independent of the request path. */
+    static boolean isCredentialName(String name, String type) {
+        if (name == null || ConfigurationMetadataService.ConfigurationField.isBoolean(type)) {
+            return false;
+        }
+        String lower = name.toLowerCase(Locale.ROOT);
+        String leaf = lower.substring(lower.lastIndexOf('.') + 1);
+        String canonical = ConfigUiAuthService.canonicalName(lower);
+        return SensitiveFields.isSensitive(lower, type) || SensitiveFields.isSensitive(canonical, type)
+                || leaf.endsWith("_key") || name.endsWith("Key") || RequestCredentials.CREDENTIAL_NAMES.contains(leaf)
+                || canonical.equals("novabot.core.alert.webhookurl")
+                || canonical.equals(RequestCredentials.WEBHOOK_HEADERS)
+                || canonical.startsWith(RequestCredentials.WEBHOOK_HEADERS + ".");
     }
 
     static RequestCredentials currentRequest() {
@@ -158,15 +239,11 @@ public class ConsoleCredentialLogFilter extends TurboFilter {
             if (ConfigurationMetadataService.ConfigurationField.isBoolean(type)) {
                 return false;
             }
-            String lower = name.toLowerCase(Locale.ROOT);
-            String leaf = lower.substring(lower.lastIndexOf('.') + 1);
-            String canonical = ConfigUiAuthService.canonicalName(lower);
-            if (SensitiveFields.isSensitive(lower, type) || SensitiveFields.isSensitive(canonical, type)
-                    || leaf.endsWith("_key") || name.endsWith("Key") || CREDENTIAL_NAMES.contains(leaf)
-                    || canonical.equals("novabot.core.alert.webhookurl")
-                    || canonical.equals(WEBHOOK_HEADERS) || canonical.startsWith(WEBHOOK_HEADERS + ".")) {
+            if (isCredentialName(name, type)) {
                 return true;
             }
+            String lower = name.toLowerCase(Locale.ROOT);
+            String leaf = lower.substring(lower.lastIndexOf('.') + 1);
             return switch (leaf) {
                 case "current" -> path.startsWith(AUTH + "password/") || path.startsWith(AUTH + "totp/")
                         || path.equals(AUTH + "passkey/register/options");
@@ -222,6 +299,31 @@ public class ConsoleCredentialLogFilter extends TurboFilter {
                     Arrays.stream(entries).forEach(this::add);
                 }
             });
+        }
+
+        /**
+         * Adds a submitted body field. Fields that are credentials by name are kept beyond this request:
+         * controllers hand them to connections that log on other threads.
+         */
+        void addField(String name, String type, Object value) {
+            add(value);
+            if (isCredentialName(name, type)) {
+                List<String> texts = new ArrayList<>();
+                collect(value, texts);
+                for (int i = 0; i < texts.size(); i++) {
+                    SecretLogMask.remember(path + "#" + name + (i == 0 ? "" : "#" + i), texts.get(i));
+                }
+            }
+        }
+
+        private static void collect(Object value, List<String> texts) {
+            if (value instanceof Map<?, ?> fields) {
+                fields.values().forEach(field -> collect(field, texts));
+            } else if (value instanceof Iterable<?> fields) {
+                fields.forEach(field -> collect(field, texts));
+            } else if (value instanceof String || value instanceof Number) {
+                texts.add(value.toString());
+            }
         }
 
         void add(Object value) {

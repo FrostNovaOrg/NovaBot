@@ -2,6 +2,7 @@ package org.frostnova.nova.core.assistant;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.secret.SecretLogMask;
 import org.springframework.http.HttpHeaders;
 
 import javax.crypto.Cipher;
@@ -20,11 +21,14 @@ import java.util.Base64;
 public final class AssistantKeyStore {
     private final Path encryptedPath;
     private final Path masterPath;
+    /** 模型密钥拿去调接口时，任何线程的日志里都遮掉 */
+    private final String logSlot;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public AssistantKeyStore(Path directory) {
         encryptedPath = directory.resolve("assistant-key.enc");
         masterPath = directory.resolve("assistant-master.key");
+        logSlot = AssistantKeyStore.class.getName() + ":" + encryptedPath.toAbsolutePath();
     }
 
     public synchronized boolean isSet() { return Files.exists(encryptedPath) && Files.exists(masterPath); }
@@ -47,6 +51,7 @@ public final class AssistantKeyStore {
 
     synchronized void save(String value) {
         validate(value);
+        SecretLogMask.remember(logSlot, value);
         byte[] plain = value.getBytes(StandardCharsets.UTF_8);
         try {
             byte[] iv = new byte[12]; RANDOM.nextBytes(iv);
@@ -70,13 +75,15 @@ public final class AssistantKeyStore {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, master(false), new GCMParameterSpec(128, Base64.getDecoder().decode(json.getString("iv"))));
             plain = cipher.doFinal(Base64.getDecoder().decode(json.getString("payload")));
-            headers.setBearerAuth(new String(plain, StandardCharsets.UTF_8));
+            String key = new String(plain, StandardCharsets.UTF_8);
+            SecretLogMask.remember(logSlot, key);
+            headers.setBearerAuth(key);
         } catch (Exception error) { throw storageError(); }
         finally { if (plain != null) Arrays.fill(plain, (byte) 0); }
     }
 
     public synchronized void clear() {
-        try { Files.deleteIfExists(encryptedPath); }
+        try { Files.deleteIfExists(encryptedPath); SecretLogMask.forget(logSlot); }
         catch (Exception error) { throw storageError(); }
     }
 
