@@ -39,6 +39,7 @@
         <module>core/nova-core</module>
         <module>plugins/nova-onebot-adapter</module>
         <module>plugins/nova-onebot-adapter-napcat-extension</module>
+        <module>plugins/nova-qqbot-adapter</module>
         <module>plugins/nova-bilibili</module>
         <module>plugins/nova-console</module>
         <module>plugins/nova-report</module>

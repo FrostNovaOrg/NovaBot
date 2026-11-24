@@ -9,7 +9,7 @@ import org.springframework.core.Ordered;
 /**
  * 本插件对 Spring 的自报：「我在这里，扫我」
  * <p>
- * <b>五个插件模块各有一份同形的自报类，写在这里的理由对五份都成立</b>，其余四份只指回本文件，
+ * <b>六个插件模块各有一份同形的自报类，写在这里的理由对六份都成立</b>，其余五份只指回本文件，
  * 不各写一遍——同一条规矩写两份，改的时候只会改一份。
  * <p>
  * <b>为什么需要它</b>：应用的组件扫描基包是核心的 {@code org.frostnova.nova.core}，
@@ -22,7 +22,7 @@ import org.springframework.core.Ordered;
  * 🔴 <b>它要插件 jar 在应用类路径上才生效</b>：启动参数是
  * {@code -Dloader.path=lib,plugins,plugins-lib}，少了 {@code plugins} 那一段，
  * 上面那次 {@code getResources} 一份插件自报都收不到——实测：不带 {@code plugins}
- * 时可见的插件自报文件数为 0，带上时为 5。它坏掉的表现不是报错，
+ * 时可见的插件自报文件数为 0，带上时会收齐已安装插件的自报。它坏掉的表现不是报错，
  * 而是这些插件<b>安安静静地整个不见</b>。
  * <p>
  * <b>这是唯一的通道</b>：早先还有一台自己读插件 jar 的加载机，它已经退休，

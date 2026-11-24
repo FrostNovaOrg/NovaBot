@@ -273,7 +273,7 @@ mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} -DskipTests install \
 # dependency:properties（根 pom 的 test-dependency-paths），所以先调它一次。
 #
 # 分组按各模块测试耗时排，让最慢的一组尽量短：nova-core 单独一组（约三分钟，最长的一组）；
-# bilibili 与 report 一组（report 依赖 bilibili，两者合计约两分半）；其余四个一组（约一分半）。
+# bilibili 与 report 一组（report 依赖 bilibili，两者合计约两分半）；其余模块一组。
 # 组内各模块按 reactor 的依赖顺序先后跑。
 #
 # 每组用自己的 java.io.tmpdir：report 的字体测试数临时目录里解出的字体文件与 JDK 的
@@ -287,7 +287,7 @@ if [ "$TESTS" = "1" ]; then
     TEST_GROUPS=(
         "nova-core|core/nova-core"
         "bilibili-report|plugins/nova-bilibili,plugins/nova-report"
-        "others|core/novacore,plugins/nova-onebot-adapter,plugins/nova-onebot-adapter-napcat-extension,plugins/nova-console"
+        "others|core/novacore,plugins/nova-onebot-adapter,plugins/nova-onebot-adapter-napcat-extension,plugins/nova-qqbot-adapter,plugins/nova-console"
     )
     TEST_TMP_BASE="${TMPDIR:-/tmp}"
     # argLine 按空白切参数，临时目录的路径里不能带空白
@@ -411,7 +411,7 @@ mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage -DskipTests package
 
 echo "==> [5/9] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
-PLUGIN_MODULES=(plugins/nova-onebot-adapter plugins/nova-onebot-adapter-napcat-extension plugins/nova-bilibili plugins/nova-console plugins/nova-report)
+PLUGIN_MODULES=(plugins/nova-onebot-adapter plugins/nova-onebot-adapter-napcat-extension plugins/nova-qqbot-adapter plugins/nova-bilibili plugins/nova-console plugins/nova-report)
 
 rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"

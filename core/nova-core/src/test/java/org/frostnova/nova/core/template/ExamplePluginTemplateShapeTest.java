@@ -29,10 +29,11 @@ class ExamplePluginTemplateShapeTest {
     private static final String IMPORTS_RELATIVE =
             "src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports";
 
-    /** 五个内置插件模块 + 模板，六份 pom 的插件描述文件 includes 段都得有注释说明为什么只取两个文件 */
+    /** 内置插件和模板的 pom 均需说明为何只复制两个插件描述文件。 */
     private static final List<String> POMS_WITH_DESCRIPTOR_INCLUDES = List.of(
             "plugins/nova-onebot-adapter/pom.xml",
             "plugins/nova-onebot-adapter-napcat-extension/pom.xml",
+            "plugins/nova-qqbot-adapter/pom.xml",
             "plugins/nova-bilibili/pom.xml",
             "plugins/nova-console/pom.xml",
             "plugins/nova-report/pom.xml",
@@ -57,7 +58,7 @@ class ExamplePluginTemplateShapeTest {
         String source = read(classFile);
         assertTrue(source.contains("@AutoConfiguration"),
                 declared + " 没挂 @AutoConfiguration, 写进自报文件也不会被装进容器");
-        // 与仓内五份自报类同形：basePackages 圈定自己的包, excludeFilters 排除自身,
+        // 与内置插件的自报类同形：basePackages 圈定自己的包, excludeFilters 排除自身,
         // 不排除自身的话同一个配置类会经 .imports 与组件扫描进容器两次
         String simpleName = declared.substring(declared.lastIndexOf('.') + 1);
         assertTrue(source.contains("basePackages"),
@@ -106,8 +107,8 @@ class ExamplePluginTemplateShapeTest {
     }
 
     @Test
-    @DisplayName("⑤ 六份 pom 的 includes 段各有「只取描述文件」注释, 且首行逐字同")
-    void sixPomsCommentTheirIncludes() {
+    @DisplayName("⑤ 内置插件和模板的 pom 均说明为何只复制描述文件，且注释首行相同")
+    void pluginPomsCommentTheirIncludes() {
         List<String> withoutComment = new ArrayList<>();
         for (String relative : POMS_WITH_DESCRIPTOR_INCLUDES) {
             if (!hasCommentAboveDescriptorIncludes(read(repoRoot().resolve(relative)))) {
@@ -115,13 +116,12 @@ class ExamplePluginTemplateShapeTest {
             }
         }
         assertTrue(withoutComment.isEmpty(), "includes 段缺「只取描述文件」注释的 pom: " + withoutComment);
-        // 说法还得一致：六份的注释首行逐字同, 分叉了照抄的人不知道以哪份为准
         List<String> firstLines = new ArrayList<>();
         for (String relative : POMS_WITH_DESCRIPTOR_INCLUDES) {
             firstLines.add(descriptorIncludesCommentFirstLine(read(repoRoot().resolve(relative))));
         }
         List<String> distinct = firstLines.stream().distinct().toList();
-        assertEquals(1, distinct.size(), "六份 pom includes 段注释首行不一致: " + distinct);
+        assertEquals(1, distinct.size(), "插件和模板 pom 的 includes 段注释首行不一致: " + distinct);
     }
 
     private static Path repoRoot() {
@@ -170,7 +170,7 @@ class ExamplePluginTemplateShapeTest {
         return pom.substring(start, end);
     }
 
-    /** 六份同段的比对锚：注释块里 <!-- 之后第一个非空行, 拿它逐字比六份说法是否一致 */
+    /** 描述文件配置块上方注释的首个非空行。 */
     private static String descriptorIncludesCommentFirstLine(String pom) {
         int include = pom.indexOf("<include>plugin.json</include>");
         assertTrue(include >= 0, "pom 里没有 plugin.json 的 include");
