@@ -120,6 +120,20 @@ public class QqBotConsoleController {
         return response(HttpStatus.OK, result);
     }
 
+    @GetMapping("/welcome")
+    public ResponseEntity<JSONObject> welcome() {
+        return response(HttpStatus.OK, JSONObject.of("success", true, "enabled", settings.snapshot().welcomeEnabled()));
+    }
+
+    @PostMapping("/welcome")
+    public ResponseEntity<JSONObject> saveWelcome(@RequestBody JSONObject body) {
+        if (!(body.get("enabled") instanceof Boolean enabled)) {
+            throw new IllegalArgumentException("请选择是否发送进群欢迎语");
+        }
+        settings.setWelcomeEnabled(enabled);
+        return response(HttpStatus.OK, JSONObject.of("success", true, "enabled", enabled));
+    }
+
     @PostMapping("/groups/{num}/name")
     public ResponseEntity<JSONObject> groupName(@PathVariable("num") String num, @RequestBody JSONObject body) {
         Long number = ConfigUiStreamerId.positiveDecimal(num);

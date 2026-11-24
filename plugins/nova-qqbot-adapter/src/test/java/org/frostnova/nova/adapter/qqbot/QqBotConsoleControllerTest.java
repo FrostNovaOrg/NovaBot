@@ -204,6 +204,58 @@ class QqBotConsoleControllerTest {
     }
 
     @Test
+    void joinWelcomeDefaultsOnAndFollowsSavesWithoutReconnecting() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            rig.joinEvent(GROUP, "default-welcome", 2);
+            assertThat(rig.welcome("default-welcome"), containsString("机器人主动在群聊内发言"));
+
+            var saved = rig.mvc.perform(write("welcome", JSONObject.of("enabled", false)));
+            rig.joinEvent(REMOVED, "disabled-welcome", 3);
+            long group = rig.directory.groupNumber(REMOVED).orElseThrow();
+            var groups = state(rig).getJSONArray("groups").toJavaList(JSONObject.class);
+            assertTrue(groups.stream().anyMatch(row -> row.getLongValue("num") == group && !row.getBooleanValue("removed")));
+            // 认领回复排在同一发送队列里，收到它时前面的进群回复已经处理完。
+            rig.message("GROUP_AT_MESSAGE_CREATE", "claim-in-new-group", REMOVED, SENDER, "认领 ABCDEF23", "小明", "");
+            assertThat(rig.passiveReply("claim-in-new-group"), containsString("认领码"));
+            assertFalse(rig.groupMessages.stream().anyMatch(reply -> "disabled-welcome".equals(reply.getString("event_id"))),
+                    "关闭欢迎语后仍回复了进群事件");
+            saved.andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+
+            var push = JSONObject.of("platform", PLATFORM, "type", 1, "num", group, "content", "测试推送");
+            rig.mvc.perform(post("/config/api/test-message").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN)
+                            .contentType(MediaType.APPLICATION_JSON).content(push.toJSONString()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+            assertTrue(rig.groupMessages.stream().anyMatch(reply -> "测试推送".equals(reply.getString("content"))));
+
+            rig.mvc.perform(write("welcome", JSONObject.of("enabled", true)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
+            rig.joinEvent(GROUP, "enabled-welcome", 4);
+            assertThat(rig.welcome("enabled-welcome"), containsString("机器人主动在群聊内发言"));
+            assertEquals(1, rig.gatewayRequests.size());
+        });
+    }
+
+    @Test
+    void savedDisabledWelcomeSurvivesReload() {
+        withConsole(rig -> {
+            rig.mvc.perform(read("welcome")).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
+            rig.mvc.perform(write("welcome", JSONObject.of("enabled", false)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+        });
+        withConsole(rig -> {
+            rig.mvc.perform(read("welcome")).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+            saveCredentials(rig.mvc);
+            rig.mvc.perform(write("interval", JSONObject.of("millis", 3700))).andExpect(status().isOk());
+        });
+        withConsole(rig -> {
+            rig.mvc.perform(read("welcome")).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+            assertEquals(3700, state(rig).getLongValue("intervalMillis"));
+        });
+    }
+
+    @Test
     void renamedGroupAppearsInPushPickerAndResetRestoresTheNameFromQq() {
         withConsole(rig -> {
             saveCredentials(rig.mvc);
@@ -271,23 +323,27 @@ class QqBotConsoleControllerTest {
     void membersCannotReadOrWriteAndAuditRecordsOnlyTheActions() {
         withConsole(rig -> {
             rig.mvc.perform(read("state").requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
+            rig.mvc.perform(read("welcome").requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
             var credential = JSONObject.of("appId", APP_ID, "appSecret", SECRET);
             var interval = JSONObject.of("millis", 2000);
+            var welcome = JSONObject.of("enabled", false);
             var name = JSONObject.of("name", "主播一群");
             rig.mvc.perform(write("credentials", credential).requestAttr(ConfigUiAccess.ACCOUNT, MEMBER))
                     .andExpect(status().isForbidden());
             assertTrue(rig.tokenRequests.isEmpty());
             rig.mvc.perform(write("credentials", credential)).andExpect(status().isOk());
             String group = "groups/" + join(rig) + "/name";
-            for (var request : List.of(write("interval", interval), write(group, name))) {
+            for (var request : List.of(write("interval", interval), write("welcome", welcome), write(group, name))) {
                 rig.mvc.perform(request.requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
             }
             rig.mvc.perform(write("interval", interval)).andExpect(status().isOk());
+            rig.mvc.perform(write("welcome", welcome)).andExpect(status().isOk());
             rig.mvc.perform(write(group, JSONObject.of("name", "主播一群", "command", SECRET))
                     .param("platform", SECRET).param("uid", APP_ID)).andExpect(status().isOk());
             var audit = audit();
             var successful = audit.stream().filter(row -> "SUCCESS".equals(row.getString("result"))).toList();
-            assertEquals(List.of("保存 QQ 官方机器人凭据", "调整 QQ 官方机器人发送间隔", "修改 QQ 官方机器人的群名"),
+            assertEquals(List.of("保存 QQ 官方机器人凭据", "调整 QQ 官方机器人发送间隔",
+                            "调整 QQ 官方机器人进群欢迎语", "修改 QQ 官方机器人的群名"),
                     successful.stream().map(row -> row.getString("description")).toList());
             assertTrue(audit.stream().allMatch(row -> row.getJSONObject("target").isEmpty()));
             assertPrivate(audit.toString());
@@ -786,6 +842,18 @@ class QqBotConsoleControllerTest {
                        List<QqBotWebSocketTransport.Listener> listeners, List<JSONObject> groupMessages,
                        List<TimelineEvent> timeline, AbstractDataSource dataSource, AtSubscriptionService subscriptions,
                        Runnable ready, NovaSenderService senders, AtomicReference<String> nextReplyError) {
+        void joinEvent(String group, String id, int sequence) {
+            listeners.get(0).onText(JSONObject.of("op", 0, "t", "GROUP_ADD_ROBOT", "s", sequence, "id", id,
+                    "d", JSONObject.of("group_openid", group, "timestamp", JOINED.toString())).toJSONString());
+            scheduler.advance(0);
+        }
+
+        String welcome(String id) {
+            return await().atMost(Duration.ofSeconds(10)).until(() -> groupMessages.stream()
+                    .filter(reply -> id.equals(reply.getString("event_id"))).map(reply -> reply.getString("content"))
+                    .findFirst().orElse(null), java.util.Objects::nonNull);
+        }
+
         void claim(String id, String sender, String content) {
             message("GROUP_AT_MESSAGE_CREATE", id, GROUP, sender, content, "小明", "账号昵称");
         }

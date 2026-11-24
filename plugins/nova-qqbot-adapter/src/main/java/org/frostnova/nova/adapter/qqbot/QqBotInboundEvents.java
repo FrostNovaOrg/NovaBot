@@ -170,7 +170,8 @@ final class QqBotInboundEvents implements QqBotEventListener {
         switch (name) {
             case "GROUP_ADD_ROBOT" -> {
                 long group = directory.groupJoined(groupOpenId, at);
-                if (settings.snapshot().credentials() == credentials) {
+                var current = settings.snapshot();
+                if (current.credentials() == credentials && current.welcomeEnabled()) {
                     welcome.send(credentials.appId(), group, groupOpenId, eventId);
                 }
             }

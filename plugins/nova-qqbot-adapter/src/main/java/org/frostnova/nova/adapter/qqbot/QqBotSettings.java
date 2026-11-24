@@ -68,8 +68,8 @@ final class QqBotSettings {
         if (replaceSecret ? appId.equals(secret) : secrets.use(appId::equals)) {
             throw new IllegalArgumentException("AppSecret 和 AppID 一样，像是填错了栏，请到 QQ 开放平台复制 AppSecret");
         }
-        long interval = snapshot.intervalMillis();
-        byte[] original = storeSettings(appId, interval);
+        Snapshot current = snapshot;
+        byte[] original = storeSettings(appId, current);
 
         try {
             if (replaceSecret) {
@@ -81,21 +81,22 @@ final class QqBotSettings {
         }
         try {
             protectStorage();
-            snapshot = new Snapshot(appId, interval, true, maskedSecret(), false);
+            snapshot = new Snapshot(new Credentials(appId, true, maskedSecret(), false),
+                    current.intervalMillis(), current.savedWelcomeEnabled());
         } catch (IOException | RuntimeException e) {
             throw storageError();
         }
     }
 
     synchronized void clear() {
-        long interval = snapshot.intervalMillis();
+        Snapshot current = snapshot;
         byte[] original = null;
         try {
             if (!Files.notExists(directory, NO_LINKS)) {
                 protectStorage();
                 if (!Files.notExists(settingsPath)) {
                     original = Files.readAllBytes(settingsPath);
-                    writeSettings(JSONObject.of("intervalMillis", interval).toJSONString());
+                    writeSettings("", current.intervalMillis(), current.savedWelcomeEnabled());
                 }
             }
         } catch (IOException | SecurityException e) {
@@ -107,7 +108,8 @@ final class QqBotSettings {
             restoreSettings(original);
             throw e;
         }
-        snapshot = new Snapshot("", interval, false, "", false);
+        snapshot = new Snapshot(new Credentials("", false, "", false),
+                current.intervalMillis(), current.savedWelcomeEnabled());
     }
 
     synchronized void setIntervalMillis(long millis) {
@@ -115,18 +117,23 @@ final class QqBotSettings {
             throw new IllegalArgumentException("发送间隔须为 1000 至 60000 毫秒");
         }
         Snapshot current = snapshot;
-        if (current.unreadable()) {
+        savePreferences(new Snapshot(current.credentials(), millis, current.savedWelcomeEnabled()));
+    }
+
+    synchronized void setWelcomeEnabled(boolean enabled) {
+        Snapshot current = snapshot;
+        savePreferences(new Snapshot(current.credentials(), current.intervalMillis(), enabled));
+    }
+
+    private void savePreferences(Snapshot updated) {
+        if (updated.unreadable()) {
             throw storageError();
         }
         try {
             QqBotStorage.prepareDirectory(directory);
             protectFiles();
-            JSONObject json = JSONObject.of("intervalMillis", millis);
-            if (!current.appId().isEmpty()) {
-                json.put("appId", current.appId());
-            }
-            writeSettings(json.toJSONString());
-            snapshot = new Snapshot(current.credentials(), millis);
+            writeSettings(updated.appId(), updated.intervalMillis(), updated.savedWelcomeEnabled());
+            snapshot = updated;
         } catch (IOException | SecurityException e) {
             throw storageError();
         }
@@ -142,7 +149,7 @@ final class QqBotSettings {
                 protectStorage();
             }
             if (Files.notExists(settingsPath)) {
-                return new Snapshot("", DEFAULT_INTERVAL_MILLIS, false, maskedSecret(), false);
+                return new Snapshot(new Credentials("", false, maskedSecret(), false), DEFAULT_INTERVAL_MILLIS, null);
             }
         } catch (IOException | RuntimeException e) {
             throw storageError();
@@ -159,7 +166,9 @@ final class QqBotSettings {
             String appId = json.getString("appId");
             long interval = json.getLongValue("intervalMillis", DEFAULT_INTERVAL_MILLIS);
             boolean validId = appId != null && APP_ID.matcher(appId).matches();
-            return new Snapshot(validId ? appId : "", interval, validId && secrets.isSet(), maskedSecret(), false);
+            var credentials = new Credentials(validId ? appId : "", validId && secrets.isSet(), maskedSecret(), false);
+            Boolean welcomeEnabled = json.get("welcomeEnabled") instanceof Boolean enabled ? enabled : null;
+            return new Snapshot(credentials, interval, welcomeEnabled);
         } catch (IOException | RuntimeException e) {
             return unreadableSettings();
         }
@@ -167,7 +176,7 @@ final class QqBotSettings {
 
     private Snapshot unreadableSettings() {
         log.warn("无法读取 QQ 官方机器人设置文件 {}", settingsPath);
-        return new Snapshot("", DEFAULT_INTERVAL_MILLIS, false, "", true);
+        return new Snapshot(new Credentials("", false, "", true), DEFAULT_INTERVAL_MILLIS, null);
     }
 
     private String maskedSecret() {
@@ -184,12 +193,23 @@ final class QqBotSettings {
         DurableFiles.replace(settingsPath, json, DurableFiles.OWNER_ONLY);
     }
 
-    private byte[] storeSettings(String appId, long interval) {
+    private void writeSettings(String appId, long interval, Boolean welcomeEnabled) throws IOException {
+        JSONObject json = JSONObject.of("intervalMillis", interval);
+        if (!appId.isEmpty()) {
+            json.put("appId", appId);
+        }
+        if (welcomeEnabled != null) {
+            json.put("welcomeEnabled", welcomeEnabled);
+        }
+        writeSettings(json.toJSONString());
+    }
+
+    private byte[] storeSettings(String appId, Snapshot current) {
         try {
             QqBotStorage.prepareDirectory(directory);
             protectFiles();
             byte[] original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
-            writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
+            writeSettings(appId, current.intervalMillis(), current.savedWelcomeEnabled());
             return original;
         } catch (IOException | SecurityException e) {
             throw storageError();
@@ -231,9 +251,9 @@ final class QqBotSettings {
     record Credentials(String appId, boolean configured, String maskedSecret, boolean unreadable) {
     }
 
-    record Snapshot(Credentials credentials, long intervalMillis) {
-        Snapshot(String appId, long intervalMillis, boolean configured, String maskedSecret, boolean unreadable) {
-            this(new Credentials(appId, configured, maskedSecret, unreadable), intervalMillis);
+    record Snapshot(Credentials credentials, long intervalMillis, Boolean savedWelcomeEnabled) {
+        boolean welcomeEnabled() {
+            return !Boolean.FALSE.equals(savedWelcomeEnabled);
         }
 
         String appId() {

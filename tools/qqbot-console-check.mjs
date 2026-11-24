@@ -31,6 +31,7 @@ const {render, refresh} = await import(encodeModule(source
   .replace("'./links.js'", JSON.stringify(links))));
 
 const state = {success: true, configured: false, intervalMillis: 2000, groups: []};
+let welcomeEnabled = true;
 const prefix = '/test/config/api/qqbot/';
 let reached = '/';
 const posted = [];
@@ -41,6 +42,9 @@ globalThis.fetch = async (path, options) => {
   if (reached === 'state') {
     assert.equal(options.cache, 'no-store');
     response = state;
+  } else if (reached === 'welcome' && options.method !== 'POST') {
+    assert.equal(options.cache, 'no-store');
+    response = {success: true, enabled: welcomeEnabled};
   } else {
     assert.equal(options.method, 'POST');
     assert.equal(options.headers['X-CSRF-Token'], 'fixture-csrf');
@@ -56,6 +60,9 @@ globalThis.fetch = async (path, options) => {
     } else if (reached === 'interval') {
       state.intervalMillis = response.intervalMillis = body.millis;
       response.warning = warning;
+    } else if (reached === 'welcome') {
+      assert.equal(typeof body.enabled, 'boolean');
+      welcomeEnabled = response.enabled = body.enabled;
     } else if (reached === 'admin-claims/code') {
       state.claimCodeActive = true;
       state.claimCodeExpiresAt = expiry;
@@ -87,11 +94,19 @@ const password = new Node();
 const millis = new Node();
 const credentials = new Node([appId, password]);
 const interval = new Node([millis]);
+const welcomeToggle = new Node();
+welcomeToggle.checked = welcomeToggle.defaultChecked = false;
+welcomeToggle.disabled = true;
+const welcome = new Node([welcomeToggle]);
+const welcomeSave = new Node();
+welcomeSave.disabled = true;
+const welcomeResult = new Node();
 const groups = new Node();
 const reload = new Node();
 const result = new Node();
 const unconfigured = new Node();
 const elements = {'app-id': appId, secret: password, millis, credentials, interval, groups,
+  welcome, 'welcome-enabled': welcomeToggle, 'welcome-save': welcomeSave, 'welcome-result': welcomeResult,
   refresh: reload, result, unconfigured, load: new Node(),
   'claim-status': new Node(), issued: new Node(), 'claim-command': new Node(),
   'claimed-admins': new Node(), 'claim-result': new Node(), 'claim-generate': new Node()};
@@ -146,6 +161,23 @@ assert.equal(linkRefreshes, 2);
 assert.equal(password.value, '');
 console.log('官方机器人卡：空态、密码遮罩与清空、群名转义、间隔提醒、改名和状态刷新通过');
 
+assert.match(section.innerHTML, /机器人进群时发欢迎语/);
+assert.equal(welcomeToggle.checked, true);
+assert.equal(welcomeSave.disabled, false);
+welcomeToggle.checked = false;
+await refresh();
+assert.equal(welcomeToggle.checked, false);
+assert.equal(welcomeEnabled, true);
+await submit(welcome);
+assert.deepEqual(posted.at(-1), ['welcome', {enabled: false}]);
+assert.match(welcomeResult.textContent, /已保存/);
+assert.equal(welcomeToggle.defaultChecked, false);
+welcomeToggle.checked = true;
+await submit(welcome);
+assert.deepEqual(posted.at(-1), ['welcome', {enabled: true}]);
+assert.equal(welcomeToggle.defaultChecked, true);
+console.log('进群欢迎语：默认开启、刷新保留草稿、关闭和开启保存通过');
+
 assert.match(section.innerHTML, /官方机器人超级管理员/);
 assert.match(elements['claim-status'].textContent, /没有有效的认领码/);
 assert.match(elements['claimed-admins'].innerHTML, /还没有人认领/);
@@ -184,7 +216,7 @@ const setupSection = {querySelector: selector => setupElements[selector.slice('#
 const connectionChanges = [];
 render(setupSection, {onConnectionChange: saving => connectionChanges.push(saving)});
 assert.match(setupSection.innerHTML, /IP 白名单留空.*群主或管理员/);
-assert.doesNotMatch(setupSection.innerHTML, /发送间隔|已加入的群|超级管理员|认领码/);
+assert.doesNotMatch(setupSection.innerHTML, /发送间隔|进群时发欢迎语|已加入的群|超级管理员|认领码/);
 setupAppId.value = '87654321';
 setupSecret.value = secret;
 await submit(setupCredentials);
