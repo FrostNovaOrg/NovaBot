@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
@@ -48,7 +49,10 @@ import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
+import org.frostnova.nova.report.command.BilibiliLiveReportCommand;
 import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
+import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
+import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -119,6 +123,8 @@ class QqAssistantCommandTest {
 
     @TempDir Path directory;
     private final List<PushUser> users = new ArrayList<>();
+    private final List<NovaCommand> commands = new ArrayList<>();
+    private final List<CommandFollowUp> followUps = new ArrayList<>();
     private final MutableClock clock = new MutableClock();
     private final BlockingQueue<Message> replies = new LinkedBlockingQueue<>();
     private final List<TimelineEvent> timeline = new ArrayList<>();
@@ -189,9 +195,11 @@ class QqAssistantCommandTest {
         when(capability.receivesUnmentionedGroupMessages()).thenReturn(false);
         command.setReplyHint(new CommandReplyHint(List.of(capability)));
         var dispatcherProvider = mockDispatcherProvider();
-        dispatcher = new CommandDispatcher(provider(List.of(command, new MenuCommand(dispatcherProvider, settings),
-                new EnableCommand(dispatcherProvider, settings), new DisableCommand(dispatcherProvider, settings))),
-                provider(List.<CommandFollowUp>of(command)), settings, data, sender, core, timeline::add, clock);
+        commands.addAll(List.of(command, new MenuCommand(dispatcherProvider, settings),
+                new EnableCommand(dispatcherProvider, settings), new DisableCommand(dispatcherProvider, settings)));
+        followUps.add(command);
+        dispatcher = new CommandDispatcher(provider(commands), provider(followUps),
+                settings, data, sender, core, timeline::add, clock);
         when(dispatcherProvider.getIfAvailable()).thenReturn(dispatcher);
     }
 
@@ -1562,6 +1570,37 @@ class QqAssistantCommandTest {
         assertEquals(1, history.size());
         assertEquals(question, history.getJSONObject(0).getString("question"));
         assertTrue(history.getJSONObject(0).getString("answerForHistory").contains(clarification));
+    }
+
+    @Test
+    @DisplayName("选过主播再问数，回复追问编号接着问，群里不再出主播报告")
+    void askingAssistantDiscardsTheReportMenuAfterAChoice() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, true));
+        when(live.getLiveStatus(eq(BILIBILI), anyLong())).thenReturn(Optional.of(true));
+        var choice = new BilibiliStreamerChoice(live, archive);
+        var painter = mock(BilibiliLiveReportPainter.class);
+        when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
+        commands.add(new BilibiliLiveReportCommand(data, choice, live, painter, null, null,
+                mock(BilibiliLiveReportRedrawer.class)));
+        followUps.add(0, choice);
+
+        group(ASKER, "直播报告");
+        assertReply("1. 测试主播甲", "2. 测试主播乙");
+        group(ASKER, "2");
+        assertReply("{image_base64=");
+
+        String followUp = "周六那场的开播时间是什么？";
+        modelReplies.add(text("周六在线更高。\n1. " + followUp));
+        group(ASKER, "问 测试主播甲最近在线怎么样");
+        assertReply("1. " + followUp, LABEL);
+        awaitIdle(GROUP, ROOM);
+
+        modelReplies.add(text("周六那场是 20 点开播的。"));
+        group(ASKER, "1");
+        assertReply("20 点开播", LABEL);
+        assertEquals(followUp, userPayload(requests.get(1)).getString("question"));
+        verify(painter).paint(anyString(), any(), any(), any());
     }
 
     @Test
