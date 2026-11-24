@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.command.BilibiliAtListCommand;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
@@ -414,6 +415,26 @@ class QqBotConsoleControllerTest {
             rig.mvc.perform(revoke.requestAttr(ConfigUiAccess.ACCOUNT, ADMIN)).andExpect(status().isOk());
             rig.message("GROUP_AT_MESSAGE_CREATE", "revoked", REMOVED, SENDER, "管理命令", "", "账号昵称");
             assertTrue(rig.passiveReply("revoked").contains("仅群主、群管理员或超级管理员可用"));
+        });
+    }
+
+    @Test
+    void allMessagesModeHandlesMentionedClaimAndCommand() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            String code = generate(rig);
+            var mention = JSONObject.of("member_openid", "BOT12345678FIXTURE", "is_you", true, "scope", "single");
+            rig.message("GROUP_MESSAGE_CREATE", "claim-all-messages", GROUP, SENDER,
+                    " <@BOT12345678FIXTURE> 认领 " + code + " <@BOT12345678FIXTURE> ", "小明", "账号昵称", mention);
+            var claimed = state(rig).getJSONArray("claimedAdmins");
+            assertEquals(1, claimed.size(), "@机器人发送的认领应当生效");
+            assertThat(rig.passiveReply("claim-all-messages"), containsString("已认领超级管理员：小明"));
+
+            configurePush(rig, rig.directory.groupNumber(GROUP).orElseThrow());
+            rig.message("GROUP_MESSAGE_CREATE", "command-all-messages", GROUP, SENDER,
+                    " <@BOT12345678FIXTURE> 管理命令 ", "小明", "账号昵称", mention);
+            assertThat(rig.passiveReply("command-all-messages"), containsString("管理命令已执行"));
         });
     }
 
@@ -858,11 +879,14 @@ class QqBotConsoleControllerTest {
             message("GROUP_AT_MESSAGE_CREATE", id, GROUP, sender, content, "小明", "账号昵称");
         }
 
-        void message(String event, String id, String group, String sender, String content, String nickname, String username) {
-            listeners.get(0).onText(JSONObject.of("op", 0, "t", event, "d", JSONObject.of("id", id, "content", content,
+        void message(String event, String id, String group, String sender, String content, String nickname,
+                     String username, JSONObject... mentions) {
+            var data = JSONObject.of("id", id, "content", content,
                     "timestamp", Instant.now().toString(), "group_openid", group, "author",
                     JSONObject.of("member_openid", sender, "member_role", "member",
-                            "member_nickname", nickname, "username", username))).toJSONString());
+                            "member_nickname", nickname, "username", username));
+            if (mentions.length > 0) data.put("mentions", JSONArray.of(mentions));
+            listeners.get(0).onText(JSONObject.of("op", 0, "t", event, "d", data).toJSONString());
             scheduler.advance(0);
         }
 

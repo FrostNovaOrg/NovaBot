@@ -1,5 +1,6 @@
 package org.frostnova.nova.adapter.qqbot;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
@@ -66,7 +67,11 @@ final class QqBotInboundEvents implements QqBotEventListener {
         if (!credentials.configured() || !credentials.appId().equals(appId)) return;
         try {
             switch (name) {
-                case "GROUP_AT_MESSAGE_CREATE" -> publishGroupMessage(credentials, requireObject(data));
+                case "GROUP_AT_MESSAGE_CREATE" -> {
+                    JSONObject message = requireObject(data);
+                    publishGroupMessage(credentials, message, text(message.get("content")));
+                }
+                case "GROUP_MESSAGE_CREATE" -> publishMentionedGroupMessage(credentials, requireObject(data));
                 case "GROUP_ADD_ROBOT", "GROUP_DEL_ROBOT", "GROUP_MSG_RECEIVE", "GROUP_MSG_REJECT" ->
                         updateDirectory(credentials, name, requireObject(data), eventId);
                 case "FRIEND_ADD", "FRIEND_DEL", "C2C_MESSAGE_CREATE", "C2C_MSG_REJECT", "C2C_MSG_RECEIVE" ->
@@ -79,7 +84,22 @@ final class QqBotInboundEvents implements QqBotEventListener {
         }
     }
 
-    private void publishGroupMessage(QqBotSettings.Credentials credentials, JSONObject message) {
+    private void publishMentionedGroupMessage(QqBotSettings.Credentials credentials, JSONObject message) {
+        if (!(message.get("mentions") instanceof JSONArray mentions)) return;
+        for (Object item : mentions) {
+            if (item instanceof JSONObject mention && Boolean.TRUE.equals(mention.get("is_you"))) {
+                String content = text(message.get("content"));
+                String memberOpenId = text(mention.get("member_openid"));
+                if (content != null && memberOpenId != null && !memberOpenId.isBlank()) {
+                    content = content.replace("<@" + memberOpenId + ">", "");
+                }
+                publishGroupMessage(credentials, message, content == null ? null : content.strip());
+                return;
+            }
+        }
+    }
+
+    private void publishGroupMessage(QqBotSettings.Credentials credentials, JSONObject message, String content) {
         String id = requireText(message, "id");
         if (!remember(new EventKey("message", id, null))) {
             return;
@@ -104,7 +124,6 @@ final class QqBotInboundEvents implements QqBotEventListener {
         if (settings.snapshot().credentials() != credentials) return;
 
         var reply = replies.get(appId, id, at, now);
-        String content = text(message.get("content"));
         String candidate = claimCandidate(content);
         if (members.invalidateMalformedClaim(credentials, content, candidate)) {
             sender.submitClaimReply(credentials, group, id, reply, MALFORMED_CLAIM);
