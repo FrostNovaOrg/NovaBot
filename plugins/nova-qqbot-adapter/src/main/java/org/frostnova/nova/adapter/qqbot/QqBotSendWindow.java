@@ -37,21 +37,26 @@ final class QqBotSendWindow {
     }
 
     <T> T retryWhenLimited(Supplier<T> request) {
+        return retryWhenLimited(request, false);
+    }
+
+    <T> T retryWhenLimited(Supplier<T> request, boolean memberNotice) {
         try {
             return request.get();
         } catch (QqBotApiException e) {
-            if (!rateLimited(e)) throw e;
+            if (!rateLimited(e, memberNotice)) throw e;
         }
         pause(5000);
         try {
             return request.get();
         } catch (QqBotApiException e) {
-            if (!rateLimited(e)) throw e;
+            if (!rateLimited(e, memberNotice)) throw e;
             throw failure("发得太快被平台限流，等 5 秒重发仍未发出");
         }
     }
 
-    private static boolean rateLimited(QqBotApiException e) {
+    private static boolean rateLimited(QqBotApiException e, boolean memberNotice) {
+        if (memberNotice && (e.markdownPermissionDenied() || e.markdownFormatRejected() || e.messageTooLong())) return false;
         // 平台已经判重或明确拒绝事件回复时，即使附带 429 也不能再发。
         return !e.duplicateMessage() && !e.eventReplyRejected() && !e.atAllLimitReached()
                 && (e.httpStatus() == 429 || e.code() == 40034100);

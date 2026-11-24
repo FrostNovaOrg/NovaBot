@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 多主播时「问是哪一位」
@@ -87,7 +88,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     private final Clock clock;
 
     /**
-     * 尚未作答的追问，按「会话里的某个人」记
+     * 有效的主播清单，按「会话里的某个人」记
      * <p>
      * 只放在内存里：它活两分钟，而重启一次就得两分钟以上，落盘存的是一份必然已经过期的东西
      */
@@ -203,7 +204,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
         Pending pending = new Pending(List.copyOf(uids), List.copyOf(lines), shown(ranked),
                 display(ranked.ordered().get(0)), context.getCommand(), List.copyOf(context.getArgs()),
-                clock.instant().plus(PENDING_TTL), false);
+                clock.instant().plus(PENDING_TTL), new AtomicBoolean(), ConcurrentHashMap.newKeySet());
 
         sweep();
         pendings.put(key(context), pending);
@@ -228,7 +229,8 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
         int shown = expanded ? pending.lines().size() : pending.shown();
 
         StringBuilder text = new StringBuilder("本会话配了 " + pending.lines().size()
-                + " 位主播，" + replyHint.replyVerb(context) + "序号选一位（" + PENDING_TTL.toMinutes() + " 分钟内有效）：\n");
+                + " 位主播，" + replyHint.replyVerb(context) + "序号选一位，"
+                + PENDING_TTL.toMinutes() + " 分钟内还能接着选别的：\n");
         text.append(String.join("\n", pending.lines().subList(0, shown)));
 
         if (shown < pending.lines().size()) {
@@ -249,40 +251,64 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
         }
         if (!clock.instant().isBefore(pending.expiresAt())) {
             // 过期的追问就地清掉，免得它一直占着这个人的位置
-            pendings.remove(key);
+            pendings.remove(key, pending);
+            return null;
+        }
+
+        // 首次选择沿用首词匹配，继续选择时带有其他词的消息会结束清单。
+        if (!context.getArgs().isEmpty() && !pending.selected().isEmpty()) {
+            pendings.remove(key, pending);
             return null;
         }
 
         String word = context.getCommand();
         if (EXPAND.equals(word)) {
             // 展开只做一次：再做也无非是同一份清单，而每做一次就多绕过一次冷却
-            if (pending.expanded()) {
+            if (!pending.expanded().compareAndSet(false, true)) {
                 return null;
             }
-            pendings.put(key, pending.expand());
             return Claimed.answer(CommandReply.of(render(context, pending, true)));
         }
 
-        int index = number(word);
-        if (index < 1 || index > pending.uids().size()) {
-            // 不是序号就当没听见，交还给分发器照常处理。<b>尤其不能把它夹到范围里去</b>：
-            // 把「99」收成最后一位，回出去的是另一位主播的数据，而那张图看起来完全正常
+        if (StringUtil.isBlank(word) || !word.chars().allMatch(Character::isDigit)) {
+            discardIfAnswered(key, pending);
             return null;
         }
 
-        // 认领即消费：一个序号能重放的话，隔十分钟的一句「3」会突然换来另一位主播的数据
-        pendings.remove(key);
+        int index = word.length() <= MAX_INDEX_DIGITS ? Integer.parseInt(word) : 0;
+        if (index < 1 || index > pending.uids().size()) {
+            // 越界的数字交回分发器照常处理，清单仍可继续选。
+            return null;
+        }
+
         Long chosen = pending.uids().get(index - 1);
+        if (!pending.selected().add(chosen)) {
+            return Claimed.answer(CommandReply.of("这位主播刚才已经选过了"));
+        }
         log.info("会话 {} 中 {} 回了序号 {}, 按主播 {} 重跑命令 {}",
                 context.getNum(), context.getSenderUid(), index, chosen, pending.command());
         return Claimed.rerun(pending.command(), chosenArgs(pending, chosen));
     }
 
+    @Override
+    public void onNonFollowUpMessage(CommandContext context) {
+        String key = key(context);
+        Pending pending = pendings.get(key);
+        if (pending != null) {
+            discardIfAnswered(key, pending);
+        }
+    }
+
+    private void discardIfAnswered(String key, Pending pending) {
+        if (!pending.selected().isEmpty()) {
+            pendings.remove(key, pending);
+        }
+    }
+
     /**
      * 把选中的那位<b>接在原参数末尾</b>，重跑得到的与他自己打了名字那一次一模一样
      * <p>
-     * 选择不落在任何地方，就地跟着这一次重跑走：存起来的那一版里，这个序号会一直影响
-     * 他后面每一次省掉参数的命令，而他无从知道机器人正替他记着什么。
+     * 清单只记哪些主播已经选过。每一次选出的主播仅用于当次重跑。
      * <p>
      * 接在末尾而不是放到第一位：<b>第一位要留给类别词</b>。「{@code @名单 开播 〈主播〉}」
      * 的第一个参数认「开播／动态」（{@link BilibiliAtListCommand} 拿第一个参数认类别），
@@ -292,17 +318,6 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
         List<String> args = new ArrayList<>(pending.args());
         args.add(String.valueOf(chosen));
         return List.copyOf(args);
-    }
-
-    /**
-     * 把一个词读成序号，读不出来时为 0
-     */
-    private int number(String word) {
-        if (StringUtil.isBlank(word) || word.length() > MAX_INDEX_DIGITS
-                || !word.chars().allMatch(Character::isDigit)) {
-            return 0;
-        }
-        return Integer.parseInt(word);
     }
 
     /**
@@ -344,7 +359,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     }
 
     /**
-     * 一次尚未作答的追问
+     * 一份带序号的主播清单
      *
      * @param uids 清单里各序号对应的主播，<b>问出去的那一刻就定死</b>
      * @param lines 清单的各行，同样定死；重排会让同一个序号换人
@@ -354,11 +369,9 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * @param args 那条命令原本的参数
      * @param expiresAt 失效时刻
      * @param expanded 是否已经展开过
+     * @param selected 已经选过的主播 UID
      */
     private record Pending(List<Long> uids, List<String> lines, int shown, String example, String command,
-                           List<String> args, Instant expiresAt, boolean expanded) {
-        Pending expand() {
-            return new Pending(uids, lines, shown, example, command, args, expiresAt, true);
-        }
+                           List<String> args, Instant expiresAt, AtomicBoolean expanded, Set<Long> selected) {
     }
 }

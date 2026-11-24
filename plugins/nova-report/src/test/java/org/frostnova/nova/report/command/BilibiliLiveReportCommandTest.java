@@ -74,6 +74,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,7 +91,7 @@ class BilibiliLiveReportCommandTest {
 
     private static final Long SENDER = 40001L;
 
-    private static final List<String> NAMES = List.of("主播甲", "主播乙");
+    private static final List<String> NAMES = List.of("主播甲", "主播乙", "主播丙", "主播丁");
 
     @TempDir
     Path dataDir;
@@ -221,13 +222,7 @@ class BilibiliLiveReportCommandTest {
     @ValueSource(ints = {1, 2})
     @DisplayName("群里只有一位在播也列清单，按序号出所选主播的报告")
     void asksWhichReportToShowEvenWhenOnlyOneStreamerIsLive(int selection) {
-        List<PushUser> streamers = List.of(streamer(1, null), streamer(2, null));
-        for (PushUser streamer : streamers) {
-            PushTarget target = streamer.getTargets().get(0);
-            target.setType(PushTargetType.GROUP);
-            target.setNum(GROUP);
-        }
-        Fixture fixture = new Fixture(streamers, Set.of(2));
+        Fixture fixture = new Fixture(groupStreamers(1, 2), Set.of(2));
         fixture.details.store(detail(100, 200));
         fixture.details.store(detail(300, 600));
 
@@ -247,6 +242,32 @@ class BilibiliLiveReportCommandTest {
             assertEquals(600, fixture.replayedDetail.endTime());
             verify(fixture.painter, never()).paint(anyString(), any(), any(), any());
         }
+    }
+
+    @Test
+    @DisplayName("同一份清单先回 4 再回 2，各出一张所选主播的报告")
+    void reportsForTwoDifferentChoicesFromOneMenu() {
+        Fixture fixture = new Fixture(groupStreamers(1, 2, 3, 4), Set.of(1, 2, 3, 4));
+
+        assertThat(fixture.groupReply("直播报告", true)).contains("2. 主播乙", "4. 主播丁");
+        assertThat(fixture.groupReply("4", false)).contains("{image_base64=");
+        assertThat(fixture.groupReply("2", false)).contains("{image_base64=");
+
+        verify(fixture.painter, times(2)).paint(anyString(), fixture.source.capture(), any(), any());
+        assertThat(fixture.source.getAllValues()).extracting(LiveStreamerInfo::getUid).containsExactly(10004L, 10002L);
+    }
+
+    @Test
+    @DisplayName("连回已经选过的序号，只提示选过，每位主播只画一次")
+    void repeatedChoiceDoesNotPaintAnotherReport() {
+        Fixture fixture = new Fixture(groupStreamers(1, 2), Set.of(1, 2));
+
+        assertThat(fixture.groupReply("直播报告", true)).contains("回序号选一位");
+        assertThat(fixture.groupReply("2", false)).contains("{image_base64=");
+        assertThat(fixture.groupReply("2", false)).contains("已经选过").doesNotContain("{image_base64=");
+        assertThat(fixture.groupReply("02", false)).contains("已经选过").doesNotContain("{image_base64=");
+
+        assertEquals(10002L, fixture.capturedSource().getUid());
     }
 
     @Test
@@ -334,6 +355,18 @@ class BilibiliLiveReportCommandTest {
         user.setTargets(new ArrayList<>(List.of(target)));
         target.setUser(user);
         return user;
+    }
+
+    private static List<PushUser> groupStreamers(int... indexes) {
+        List<PushUser> streamers = new ArrayList<>();
+        for (int index : indexes) {
+            PushUser user = streamer(index, null);
+            PushTarget target = user.getTargets().get(0);
+            target.setType(PushTargetType.GROUP);
+            target.setNum(GROUP);
+            streamers.add(user);
+        }
+        return streamers;
     }
 
     /**
