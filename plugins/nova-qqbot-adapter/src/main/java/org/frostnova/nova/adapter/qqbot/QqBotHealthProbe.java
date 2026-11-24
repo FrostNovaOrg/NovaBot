@@ -7,9 +7,11 @@ import org.frostnova.nova.core.plugin.NovaComponent;
 @NovaComponent
 public class QqBotHealthProbe implements HealthProbe {
     private final QqBotTokenService tokens;
+    private final QqBotGateway gateway;
 
-    QqBotHealthProbe(QqBotTokenService tokens) {
+    QqBotHealthProbe(QqBotTokenService tokens, QqBotGateway gateway) {
         this.tokens = tokens;
+        this.gateway = gateway;
     }
 
     @Override
@@ -35,6 +37,6 @@ public class QqBotHealthProbe implements HealthProbe {
 
     @Override
     public HealthStatus check() {
-        return tokens.health();
+        return gateway.health();
     }
 }
