@@ -1,11 +1,13 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.HttpServletResponse;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +20,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.Map;
 
 @RestController
 @NovaComponent
@@ -29,25 +35,60 @@ public class QqBotConsoleController {
     private final QqBotSettings settings;
     private final QqBotHealthProbe probe;
     private final QqBotDirectory directory;
+    private final QqBotMembers members;
 
     QqBotConsoleController(QqBotCredentials credentials, QqBotSettings settings, QqBotHealthProbe probe,
-                           QqBotDirectory directory) {
+                           QqBotDirectory directory, QqBotMembers members) {
         this.credentials = credentials;
         this.settings = settings;
         this.probe = probe;
         this.directory = directory;
+        this.members = members;
     }
 
     @GetMapping("/state")
     public ResponseEntity<JSONObject> state() {
         var config = settings.snapshot();
         var connection = probe.connectionState();
+        var claims = members.claimState();
+        var claimed = claims.claims().entrySet().stream()
+                .sorted(Map.Entry.comparingByValue(Comparator.comparing(QqBotMembers.Claim::claimedAt).reversed()))
+                .map(entry -> {
+                    var claim = entry.getValue();
+                    return JSONObject.of("memberNum", Long.toString(entry.getKey()), "nickname", claim.nickname(),
+                            "groupName", directory.groupDisplayName(config.appId(), claim.groupNum()),
+                            "claimedAt", claim.claimedAt().toString());
+                }).toList();
         String level = probe.active() ? connection.health().level().name() : "OFF";
         return response(HttpStatus.OK, JSONObject.of("success", true, "configured", config.configured(),
                 "appId", config.appId(), "secretMasked", config.maskedSecret(), "intervalMillis", config.intervalMillis(),
                 "connection", JSONObject.of("level", level, "summary", connection.health().summary(),
                         "robotName", connection.robotName()),
-                "groups", directory.consoleGroups()));
+                "groups", directory.consoleGroups(),
+                "claimCodeActive", claims.expiresAt() != null,
+                "claimCodeExpiresAt", claims.expiresAt() == null ? null : claims.expiresAt().toString(),
+                "claimedAdmins", claimed));
+    }
+
+    @PostMapping("/admin-claims/code")
+    public void generateClaimCode(HttpServletResponse response) throws IOException {
+        var issued = members.generate();
+        response.setHeader(HttpHeaders.CACHE_CONTROL, CacheControl.noStore().getHeaderValue());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        // 直接写入响应，避免消息转换器在调试级别打印正文。
+        response.getWriter().write(JSONObject.of("success", true, "code", issued.code(),
+                "expiresAt", issued.expiresAt().toString()).toJSONString());
+    }
+
+    @PostMapping("/admin-claims/{memberNum}/revoke")
+    public ResponseEntity<JSONObject> revokeClaim(@PathVariable("memberNum") String memberNum) {
+        Long number = ConfigUiStreamerId.positiveDecimal(memberNum);
+        if (number == null) {
+            throw new IllegalArgumentException("成员编号无效");
+        }
+        members.revoke(number);
+        return response(HttpStatus.OK, JSONObject.of("success", true));
     }
 
     @PostMapping("/credentials")

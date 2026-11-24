@@ -70,7 +70,7 @@ class QqBotEventRoutingTest {
             listener.onEvent("GROUP_AT_MESSAGE_CREATE", menu, "before-reconnect", 1L);
             listener.onEvent("GROUP_AT_MESSAGE_CREATE", menu, "after-resume", 2L);
             assertEquals(List.of("same-message"), rig.events.stream().map(NovaRemoteMessageEvent::getMessageId).toList());
-            verify(rig.directory).memberSeen(MEMBER, rig.now);
+            verify(rig.directory).memberSeen("12345678", MEMBER, rig.now);
         });
     }
 

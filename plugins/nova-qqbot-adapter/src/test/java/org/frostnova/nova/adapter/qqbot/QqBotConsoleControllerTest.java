@@ -1,6 +1,18 @@
 package org.frostnova.nova.adapter.qqbot;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.command.BilibiliAtListCommand;
+import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandDispatcher;
+import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.command.CommandReplyHint;
+import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiApiInterceptor;
@@ -13,29 +25,48 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.health.PushActivityRecorder;
+import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.sender.PushGate;
+import org.frostnova.nova.core.service.AtSubscriptionService;
+import org.frostnova.nova.core.service.NovaSenderService;
+import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.HttpEntityMethodProcessor;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -46,6 +77,10 @@ class QqBotConsoleControllerTest {
     private static final String SECRET = "fixture-console-secret";
     private static final String GROUP = "GROUP12345678FIXTURE";
     private static final String REMOVED = "REMOVED12345678FIXTURE";
+    private static final String SENDER = "SENDER12345678FIXTURE";
+    private static final String STRANGER = "STRANGER12345678FIXTURE";
+    private static final String PLATFORM = "qq-official";
+    private static final String CLAIM_CODE = "admin-claims/code";
     private static final Instant JOINED = Instant.parse("2026-11-16T17:05:00Z");
     private static final ConfigUiAccount ADMIN = ConfigUiAccount.local(Instant.EPOCH);
     private static final ConfigUiAccount MEMBER = new ConfigUiAccount("member", ConfigUiAccount.Role.MEMBER,
@@ -201,6 +236,251 @@ class QqBotConsoleControllerTest {
         });
     }
 
+    @Test
+    void mentionSuppliesTheGroupNicknameInAtList() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            long group = join(rig);
+            long member = rig.directory.memberSeen(SENDER, JOINED);
+            long unseen = rig.directory.memberSeen(STRANGER, JOINED);
+            configurePush(rig, group);
+            when(rig.subscriptions.list(PLATFORM, group, 10001L, "live")).thenReturn(List.of(member, unseen));
+            rig.message("GROUP_AT_MESSAGE_CREATE", "at-list", GROUP, SENDER, "@名单 开播", "小明", "账号昵称");
+            String reply = rig.passiveReply("at-list");
+            assertTrue(reply.contains("· 小明"), reply);
+            assertTrue(reply.contains("· （昵称未知）"), reply);
+            assertFalse(reply.contains("账号昵称"), reply);
+            assertFalse(reply.contains(Long.toString(unseen)), reply);
+        });
+    }
+
+    @Test
+    void claimedOwnerCanRunManagementCommandsAndLosesAccessAfterRevocation() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            String code = generate(rig);
+            rig.claim("claim", SENDER, "　认领 \t" + code.toLowerCase(java.util.Locale.ROOT) + "　");
+            assertTrue(rig.passiveReply("claim").contains("已认领超级管理员：小明"));
+
+            long group = rig.directory.groupNumber(GROUP).orElseThrow();
+            long otherGroup = rig.directory.groupJoined(REMOVED, JOINED);
+            configurePush(rig, group, otherGroup);
+            rig.message("GROUP_AT_MESSAGE_CREATE", "admin", GROUP, SENDER, "管理命令", "", "账号昵称");
+            assertTrue(rig.passiveReply("admin").contains("管理命令已执行"));
+
+            String claimId = state(rig).getJSONArray("claimedAdmins").getJSONObject(0).getString("memberNum");
+            var revoke = write("admin-claims/" + claimId + "/revoke", new JSONObject());
+            rig.mvc.perform(revoke.requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
+            rig.mvc.perform(revoke.requestAttr(ConfigUiAccess.ACCOUNT, ADMIN)).andExpect(status().isOk());
+            rig.message("GROUP_AT_MESSAGE_CREATE", "revoked", REMOVED, SENDER, "管理命令", "", "账号昵称");
+            assertTrue(rig.passiveReply("revoked").contains("仅群主、群管理员或超级管理员可用"));
+        });
+    }
+
+    @Test
+    void usedCodeCannotBeReplayedByAStranger() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            String code = generate(rig);
+            rig.claim("first", SENDER, "认领 " + code);
+            assertTrue(rig.passiveReply("first").contains("已认领超级管理员"));
+            rig.claim("replay", STRANGER, "认领 " + code);
+            assertRejected(rig, "replay");
+            assertEquals(1, state(rig).getJSONArray("claimedAdmins").size());
+        });
+    }
+
+    @Test
+    void expiredCodeCannotGrantAccess() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            String code = generate(rig);
+            rig.scheduler.advance(Duration.ofMinutes(11).toMillis());
+            rig.claim("expired", STRANGER, "认领 " + code);
+            assertRejected(rig, "expired");
+            assertTrue(state(rig).getJSONArray("claimedAdmins").isEmpty());
+        });
+    }
+
+    @Test
+    void fifthWrongAttemptInvalidatesTheCode() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            String code = generate(rig);
+            for (int i = 1; i <= 5; i++) {
+                String id = "guess-" + i;
+                rig.claim(id, STRANGER, "认领 11111111");
+                assertRejected(rig, id);
+                assertEquals(i < 5, state(rig).getBooleanValue("claimCodeActive"));
+            }
+            rig.claim("after-guesses", SENDER, "认领 " + code);
+            assertRejected(rig, "after-guesses");
+            assertTrue(state(rig).getJSONArray("claimedAdmins").isEmpty());
+        });
+    }
+
+    @Test
+    void newCodeReplacesOldCodeAndDirectMessagesCannotClaim() {
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            String oldCode = generate(rig);
+            String newCode = generate(rig);
+            rig.claim("old", STRANGER, "认领 " + oldCode);
+            assertRejected(rig, "old");
+            rig.message("C2C_MESSAGE_CREATE", "direct", GROUP, STRANGER, "认领 " + newCode, "小明", "");
+            assertTrue(state(rig).getJSONArray("claimedAdmins").isEmpty());
+            rig.claim("new", SENDER, "认领 " + newCode);
+            assertTrue(rig.passiveReply("new").contains("已认领超级管理员"));
+            assertEquals(2, rig.passiveReplies.size());
+        });
+    }
+
+    @Test
+    void nicknameAndClaimPersistAcrossRestartWithoutBackingUpALiveCode() throws Exception {
+        List<String> codes = new ArrayList<>();
+        withConsole(rig -> {
+            saveCredentials(rig.mvc);
+            connect(rig);
+            codes.add(generate(rig));
+            rig.message("GROUP_AT_MESSAGE_CREATE", "claim", GROUP, SENDER, "认领 " + codes.get(0), " ", "账号昵称");
+            assertTrue(rig.passiveReply("claim").contains("已认领超级管理员：账号昵称"));
+            codes.add(generate(rig));
+        });
+
+        Path file = root.resolve("qqbot/members.json");
+        String members = Files.readString(file);
+        assertTrue(members.contains("seenAt"), "群昵称记录应带最后见到的时间");
+        assertTrue(members.contains("账号昵称"));
+        assertFalse(members.contains(SENDER));
+        assertFalse(members.contains(GROUP));
+        assertTrue(codes.stream().noneMatch(members::contains));
+        if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(file));
+        }
+
+        withConsole(rig -> {
+            assertFalse(state(rig).getBooleanValue("claimCodeActive"));
+            var admins = state(rig).getJSONArray("claimedAdmins");
+            assertEquals(1, admins.size());
+            assertEquals("账号昵称", admins.getJSONObject(0).getString("nickname"));
+            rig.credentials.onApplicationReady();
+            connect(rig);
+            long group = rig.directory.groupNumber(GROUP).orElseThrow();
+            configurePush(rig, group);
+            long member = rig.directory.memberNumber(SENDER).orElseThrow();
+            when(rig.subscriptions.list(PLATFORM, group, 10001L, "live")).thenReturn(List.of(member));
+            rig.message("GROUP_AT_MESSAGE_CREATE", "list-after-restart", GROUP, STRANGER, "@名单 开播", "陌生人", "");
+            assertTrue(rig.passiveReply("list-after-restart").contains("· 账号昵称"));
+        });
+    }
+
+    @Test
+    void claimCodeAndOpenIdsStayOutOfLogsTimelineAuditAndState() {
+        Logger gatewayLog = (Logger) LoggerFactory.getLogger(QqBotGateway.class);
+        Logger mvcLog = (Logger) LoggerFactory.getLogger(HttpEntityMethodProcessor.class);
+        Level originalGatewayLevel = gatewayLog.getLevel();
+        Level originalMvcLevel = mvcLog.getLevel();
+        boolean originalMvcAdditivity = mvcLog.isAdditive();
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start();
+        gatewayLog.addAppender(logs);
+        mvcLog.addAppender(logs);
+        gatewayLog.setLevel(Level.DEBUG);
+        mvcLog.setLevel(Level.TRACE);
+        mvcLog.setAdditive(false);
+        try {
+            withConsole(rig -> {
+                saveCredentials(rig.mvc);
+                connect(rig);
+                long group = join(rig);
+                configurePush(rig, group);
+                rig.mvc.perform(write(CLAIM_CODE, new JSONObject()).requestAttr(ConfigUiAccess.ACCOUNT, MEMBER))
+                        .andExpect(status().isForbidden());
+                String code = generate(rig);
+                JSONObject withCode = state(rig);
+                assertTrue(withCode.getBooleanValue("claimCodeActive"));
+                assertNotNull(withCode.getString("claimCodeExpiresAt"));
+                assertFalse(withCode.toString().contains(code));
+                rig.claim("claim", SENDER, "认领 " + code);
+                assertTrue(rig.passiveReply("claim").contains("已认领超级管理员"));
+                JSONObject claimed = state(rig);
+                assertFalse(claimed.getBooleanValue("claimCodeActive"));
+                var admin = claimed.getJSONArray("claimedAdmins").getJSONObject(0);
+                assertEquals("小明", admin.getString("nickname"));
+                assertEquals("接口群名", admin.getString("groupName"));
+                assertNotNull(admin.getString("claimedAt"));
+                rig.mvc.perform(write("admin-claims/" + admin.getString("memberNum") + "/revoke", new JSONObject())
+                        .param("uid", code).param("platform", SENDER)).andExpect(status().isOk());
+
+                List<JSONObject> audit = audit();
+                assertTrue(audit.stream().anyMatch(row -> "生成超管认领码".equals(row.getString("description"))));
+                assertTrue(audit.stream().anyMatch(row -> "撤销官方机器人超管".equals(row.getString("description"))));
+                assertTrue(audit.stream().allMatch(row -> row.getJSONObject("target").isEmpty()));
+                assertEquals(1, rig.timeline.size(), "认领只记一条专用时间线");
+                assertTrue(rig.timeline.get(0).text().contains("群『接口群名』的『小明』认领了超级管理员"));
+                for (var line : logs.list) {
+                    assertFalse(line.getFormattedMessage().contains(code),
+                            "认领码出现在 " + line.getLoggerName() + " 的日志");
+                }
+                for (String text : List.of(withCode.toString(), claimed.toString(), audit.toString(), rig.timeline.toString(),
+                        logs.list.stream().map(ILoggingEvent::getFormattedMessage).toList().toString())) {
+                    assertFalse(text.contains(code), "认领码外泄");
+                    assertFalse(text.contains(SENDER), "成员标识外泄");
+                    assertPrivate(text);
+                }
+            });
+        } finally {
+            gatewayLog.detachAppender(logs);
+            mvcLog.detachAppender(logs);
+            gatewayLog.setLevel(originalGatewayLevel);
+            mvcLog.setLevel(originalMvcLevel);
+            mvcLog.setAdditive(originalMvcAdditivity);
+            logs.stop();
+        }
+    }
+
+    private static String generate(Rig rig) throws Exception {
+        var response = rig.mvc.perform(write(CLAIM_CODE, new JSONObject())).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("no-store"))).andReturn().getResponse();
+        String code = JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8)).getString("code");
+        assertTrue(code.matches("[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}"), "认领码格式错误");
+        return code;
+    }
+
+    private static JSONObject state(Rig rig) throws Exception {
+        var response = rig.mvc.perform(read("state")).andExpect(status().isOk()).andReturn().getResponse();
+        return JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    private static void assertRejected(Rig rig, String id) {
+        assertTrue(rig.passiveReply(id).contains("认领码不对或已过期"));
+    }
+
+    private static void configurePush(Rig rig, long... groups) {
+        var streamer = new PushUser();
+        streamer.setUid(10001L);
+        streamer.setPlatform("bilibili");
+        streamer.setUname("测试主播");
+        List<PushTarget> targets = new ArrayList<>();
+        for (long group : groups) {
+            var target = new PushTarget();
+            target.setPlatform(PLATFORM);
+            target.setType(PushTargetType.GROUP);
+            target.setNum(group);
+            target.setMessages(List.of());
+            targets.add(target);
+        }
+        streamer.setTargets(targets);
+        when(rig.dataSource.getAllUsers()).thenReturn(List.of(streamer));
+        when(rig.dataSource.getUsers("bilibili")).thenReturn(List.of(streamer));
+    }
+
     private ApplicationContextRunner context() {
         return new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(root));
@@ -219,6 +499,7 @@ class QqBotConsoleControllerTest {
     private void withConsole(ConsoleCheck test) {
         var requests = new ArrayList<JSONObject>();
         var gateways = new ArrayList<String>();
+        List<JSONObject> passiveReplies = new CopyOnWriteArrayList<>();
         QqBotHttpTransport http = (method, uri, headers, body) -> {
             String path = uri.getPath();
             if (path.equals("/app/getAppAccessToken")) {
@@ -231,6 +512,13 @@ class QqBotConsoleControllerTest {
             }
             if (path.endsWith("/info")) {
                 return response(JSONObject.of("group_name", "接口群名", "group_member_num", 42));
+            }
+            if (path.equals("/v2/groups/" + GROUP + "/messages") || path.equals("/v2/groups/" + REMOVED + "/messages")) {
+                assertEquals("POST", method);
+                JSONObject reply = JSONObject.parseObject(body);
+                assertEquals(0, reply.getIntValue("msg_type"));
+                passiveReplies.add(reply);
+                return response(JSONObject.of("id", "fixture-reply"));
             }
             return response(JSONObject.of("member_role", "admin", "allow_proactive_msg", false));
         };
@@ -245,11 +533,33 @@ class QqBotConsoleControllerTest {
         var properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(root.resolve("live.json").toString());
         var store = new ConfigUiOperationStore(properties);
+        var dataSource = mock(AbstractDataSource.class);
+        var subscriptions = mock(AtSubscriptionService.class);
+        List<TimelineEvent> timeline = new ArrayList<>();
+        var registry = new NovaSenderService(properties);
+        var pushGate = mock(PushGate.class);
+        when(pushGate.allowedFor(any(Message.class))).thenReturn(true);
+        when(pushGate.alertsAllowed()).thenReturn(true);
+        var sender = new NovaMessageSender(null, registry, mock(PushActivityRecorder.class), pushGate,
+                timeline::add, null, null, null);
         context().withBean(QqBotHttpTransport.class, () -> http, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, () -> scheduler, definition -> definition.setPrimary(true))
                 .withBean(QqBotWebSocketTransport.class, () -> sockets, definition -> definition.setPrimary(true))
+                .withUserConfiguration(CommandDispatcher.class, BilibiliAtListCommand.class)
+                .withBean(Clock.class, scheduler::clock)
+                .withBean(NovaCoreProperties.class, () -> properties)
+                .withBean(AbstractDataSource.class, () -> dataSource)
+                .withBean(CommandSettingsService.class, () -> mock(CommandSettingsService.class))
+                .withBean(CommandReplyHint.class, () -> mock(CommandReplyHint.class))
+                .withBean(BilibiliStreamerChoice.class, () -> mock(BilibiliStreamerChoice.class))
+                .withBean(AtSubscriptionService.class, () -> subscriptions)
+                .withBean(NovaSenderService.class, () -> registry)
+                .withBean(NovaMessageSender.class, () -> sender)
+                .withBean(TimelineWriter.class, () -> timeline::add)
+                .withBean(NovaCommand.class, () -> new ManagementCommand())
                 .run(app -> {
                     assertNull(app.getStartupFailure());
+                    app.getBean(QqBotPassiveReplies.class).registerSender();
                     var directory = app.getBean(QqBotDirectory.class);
                     var controllers = new ArrayList<>(app.getBeansWithAnnotation(RestController.class).values());
                     controllers.add(new ConfigUiPushTargetsController(List.of(directory), List.of(directory),
@@ -259,7 +569,8 @@ class QqBotConsoleControllerTest {
                             .addFilters(new ConfigUiOperationFilter(store,
                                     List.copyOf(app.getBeansOfType(ConfigUiOperationProvider.class).values())))
                             .setControllerAdvice(new ConfigUiOperationAdvice()).build();
-                    test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners));
+                    test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners, passiveReplies,
+                            timeline, dataSource, subscriptions, app.getBean(QqBotCredentials.class)));
                 });
     }
 
@@ -277,7 +588,7 @@ class QqBotConsoleControllerTest {
     private static void connect(Rig rig) {
         rig.scheduler.advance(0);
         var listener = rig.listeners.get(0);
-        listener.onText(JSONObject.of("op", 10, "d", JSONObject.of("heartbeat_interval", 45000)).toJSONString());
+        listener.onText(JSONObject.of("op", 10, "d", JSONObject.of("heartbeat_interval", 720000)).toJSONString());
         rig.scheduler.advance(0);
         listener.onText(JSONObject.of("op", 0, "t", "READY", "s", 1,
                 "d", JSONObject.of("session_id", "fixture-console-session",
@@ -307,7 +618,44 @@ class QqBotConsoleControllerTest {
 
     private record Rig(MockMvc mvc, QqBotDirectory directory, QqBotGatewayTest.ManualScheduler scheduler,
                        List<JSONObject> tokenRequests, List<String> gatewayRequests,
-                       List<QqBotWebSocketTransport.Listener> listeners) {}
+                       List<QqBotWebSocketTransport.Listener> listeners, List<JSONObject> passiveReplies,
+                       List<TimelineEvent> timeline, AbstractDataSource dataSource, AtSubscriptionService subscriptions,
+                       QqBotCredentials credentials) {
+        void claim(String id, String sender, String content) {
+            message("GROUP_AT_MESSAGE_CREATE", id, GROUP, sender, content, "小明", "账号昵称");
+        }
+
+        void message(String event, String id, String group, String sender, String content, String nickname, String username) {
+            listeners.get(0).onText(JSONObject.of("op", 0, "t", event, "d", JSONObject.of("id", id, "content", content,
+                    "timestamp", Instant.now().toString(), "group_openid", group, "author",
+                    JSONObject.of("member_openid", sender, "member_role", "member",
+                            "member_nickname", nickname, "username", username))).toJSONString());
+            scheduler.advance(0);
+        }
+
+        String passiveReply(String id) {
+            return await().atMost(Duration.ofSeconds(8)).until(() -> passiveReplies.stream()
+                    .filter(reply -> id.equals(reply.getString("msg_id"))).map(reply -> reply.getString("content"))
+                    .findFirst().orElse(null), java.util.Objects::nonNull);
+        }
+    }
+
+    private static final class ManagementCommand implements NovaCommand {
+        @Override
+        public String name() { return "管理命令"; }
+
+        @Override
+        public String description() { return "测试管理命令"; }
+
+        @Override
+        public boolean requiresAdmin() { return true; }
+
+        @Override
+        public CommandReply execute(CommandContext context) {
+            assertTrue(context.isAdmin());
+            return CommandReply.of("管理命令已执行");
+        }
+    }
 
     private interface ConsoleCheck {
         void run(Rig rig) throws Exception;

@@ -95,13 +95,21 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return observeGroup(openid, at, Membership.SEEN);
     }
 
+    synchronized long groupSeen(String appId, String openid, Instant at) {
+        requireReadable();
+        return observeGroup(appId, openid, at, Membership.SEEN);
+    }
+
     public synchronized long groupRemoved(String openid, Instant at) {
         return observeGroup(openid, at, Membership.REMOVE);
     }
 
     private long observeGroup(String openid, Instant at, Membership change) {
+        return observeGroup(configuredApp(), openid, at, change);
+    }
+
+    private long observeGroup(String appId, String openid, Instant at, Membership change) {
         Objects.requireNonNull(at);
-        String appId = configuredApp();
         BotEntries bot = entries(appId);
         long number = number("group", openid);
         GroupEntry previous = bot.groups().get(number);
@@ -143,8 +151,12 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
 
     /** 仅用于在群里见到的成员。 */
     public synchronized long memberSeen(String openid, Instant at) {
+        return memberSeen(configuredApp(), openid, at);
+    }
+
+    synchronized long memberSeen(String appId, String openid, Instant at) {
+        requireReadable();
         Objects.requireNonNull(at);
-        String appId = configuredApp();
         BotEntries bot = entries(appId);
         long number = number("member", openid);
         MemberEntry previous = bot.members().get(number);
@@ -165,6 +177,19 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
 
     public synchronized Optional<String> groupOpenId(long number) {
         return group(number).map(GroupEntry::openid);
+    }
+
+    synchronized Optional<String> groupOpenId(String appId, long number) {
+        requireReadable();
+        return Optional.ofNullable(entries(appId).groups().get(number)).filter(group -> !group.removed())
+                .map(GroupEntry::openid);
+    }
+
+    synchronized String groupDisplayName(String appId, long number) {
+        requireReadable();
+        BotEntries bot = entries(appId);
+        GroupEntry group = bot.groups().get(number);
+        return group == null ? "群 " + number : maskKnown(group.name(), bot);
     }
 
     public synchronized OptionalLong groupNumber(String openid) {

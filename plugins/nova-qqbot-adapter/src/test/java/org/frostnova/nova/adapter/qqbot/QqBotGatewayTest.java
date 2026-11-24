@@ -393,6 +393,7 @@ class QqBotGatewayTest {
     @Test
     void dispatchKeepsOriginalDataAndLogsOnlyMaskedEventsEvenWhenAListenerThrows() {
         String openId = "ABCD9876543210WXYZ";
+        String claimCode = "H72PA8K3";
         QqBotEventListener failing = (name, data, id, sequence) -> {
             throw new IOException(TOKEN + " " + openId);
         };
@@ -409,6 +410,8 @@ class QqBotGatewayTest {
                         "content", "引用 " + openId);
                 connection.dispatch("GROUP_ADD_ROBOT", data, "fixture-event", 5);
                 connection.dispatch("C2C_MESSAGE_CREATE", JSONObject.of("content", TOKEN), null, 6);
+                connection.dispatch("GROUP_AT_MESSAGE_CREATE",
+                        JSONObject.of("content", "　认领 \t" + claimCode.toLowerCase(java.util.Locale.ROOT) + "　"), null, 7);
                 rig.scheduler.advance(0);
                 assertEquals(new Event("GROUP_ADD_ROBOT", data, "fixture-event", 5L), rig.events.get(0));
                 assertNull(rig.events.get(1).id());
@@ -426,6 +429,8 @@ class QqBotGatewayTest {
         for (var line : logs.list) {
             assertNull(line.getThrowableProxy());
             assertFalse(line.getFormattedMessage().contains(openId));
+            assertFalse(line.getFormattedMessage().toUpperCase(java.util.Locale.ROOT).contains(claimCode),
+                    "网关调试日志泄露了群消息里的认领码");
             assertFalse(line.getFormattedMessage().contains(TOKEN));
             assertFalse(line.getFormattedMessage().contains(SECRET));
         }

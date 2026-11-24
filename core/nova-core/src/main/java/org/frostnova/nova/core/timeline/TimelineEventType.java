@@ -102,6 +102,9 @@ public enum TimelineEventType {
      */
     COMMAND_COOLED_DOWN("冷却忽略", TimelineCategory.COMMAND),
 
+    /** 在官方群中认领超级管理员。 */
+    SUPER_ADMIN_CLAIMED("超级管理员认领", TimelineCategory.COMMAND),
+
     /**
      * 一路告警通道把消息发出去了
      */
