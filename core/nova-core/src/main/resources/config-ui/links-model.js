@@ -13,7 +13,7 @@
  * 掉登录之后代价是什么取自那个平台自己的探针。写死一个平台名，这一页就替一件可能没装的东西说了话。
  */
 
-import {probesIn, worstLamp} from './home-model.js';
+import {OFFICIAL_BOT_CARD, probesIn, worstLamp} from './home-model.js';
 
 /**
  * 机器人那张卡的固定标识
@@ -160,18 +160,27 @@ function day(at) {
  * @param title 卡片标题，由调用点传入（插件申报的人话词）
  * @return 卡片视图模型
  */
-function botCard(status, title) {
+function botCard(status, title, officialTitle) {
   const base = {key: BOT_KEY, kind: 'bot', title: title || '机器人',
     show: true, level: 'off', caption: '', note: '', advice: ''};
 
-  if (!(status.senders || []).length) {
+  const senders = status.senders || [];
+  const bots = probesIn(status, 'BOT');
+  const adapter = bots.filter(item => !item.card);
+  const official = bots.find(item => item.card === OFFICIAL_BOT_CARD);
+  const otherTitle = officialTitle || official?.name;
+  if (!adapter.length && otherTitle && (official || senders.includes('qq-official'))) {
+    return Object.assign(base, {caption: '未使用（已在用 ' + otherTitle + '）'});
+  }
+
+  if (!senders.length) {
     return Object.assign(base, {
       caption: '尚未连接机器人 · 请填写地址与端口，并点击「测试连接」',
       note: '',
     });
   }
 
-  const state = probeState(probesIn(status, 'BOT').filter(item => !item.card));
+  const state = probeState(adapter);
   return Object.assign(base, state, {note: queueText(status, state.level)});
 }
 
@@ -293,10 +302,11 @@ export function linksModel(status, login, cards, tokens, botTitle, stream) {
   const state = status || {};
   const accounts = ((login || {}).accounts) || [];
   const list = (cards || []).map(card => platformCard(card, state, accounts));
+  const officialTitle = list.find(card => card.id === OFFICIAL_BOT_CARD)?.title;
 
   // 平台卡在前：定稿的顺序是「先连上直播平台，再连上机器人，最后才谈把事件送到外面去」，
   // 这也正是使用者第一次配置时的先后
-  return {cards: list.concat([botCard(state, botTitle), panelCard(tokens || [], stream)])};
+  return {cards: list.concat([botCard(state, botTitle, officialTitle), panelCard(tokens || [], stream)])};
 }
 
 /**

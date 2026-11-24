@@ -376,6 +376,36 @@ same(setupSteps(status(), login(), null, [PLUGIN_PAGE], {}).at(-1), false,
 same(setupSteps(status(), login(), null, [PLUGIN_PAGE], {danmu: true}).at(-1), true,
   '插件步完成后末步才按「前面都成立」算');
 
+const botPage = {id: 'qqbot', displayName: 'QQ 官方机器人', slot: 'links', botLink: true};
+const napOk = OK_PROBES().find(p => p.scope === 'BOT');
+const napDown = probe(napOk.name, 'BOT', 'DOWN', '默认：账号已掉线', '', false, 'account');
+const officialOk = {...probe(botPage.displayName, 'BOT', 'OK', '已连接 · 小助手'), card: botPage.id};
+const officialDown = {...officialOk, level: 'DOWN', summary: 'AppID 或 AppSecret 不对'};
+const nonBotProbes = OK_PROBES().filter(p => p.scope !== 'BOT');
+const botCases = [
+  ['未装官方插件，两边未配置', [], [], [freshStatus.health.find(p => p.scope === 'BOT')], false, 'off'],
+  ['已装官方插件，两边未配置', [botPage], [], [freshStatus.health.find(p => p.scope === 'BOT')], false, 'off'],
+  ['只配 NapCat', [botPage], ['默认'], [napOk], true, 'ok'],
+  ['只配 QQ 官方机器人', [botPage], ['qq-official'], [officialOk], true, 'ok'],
+  ['官方在线，推送平台尚未登记', [botPage], [], [officialOk], true, 'ok'],
+  ['官方在线，NapCat 掉线', [botPage], ['默认', 'qq-official'], [napDown, officialOk], true, 'err'],
+  ['官方凭据错误，NapCat 未配置', [botPage], ['qq-official'], [officialDown], false, 'err'],
+  ['官方凭据错误，推送平台尚未登记', [botPage], [], [officialDown], false, 'err'],
+];
+for (const [name, pages, senders, bots, done, lamp] of botCases) {
+  const state = status({senders, users: [], health: [...nonBotProbes, ...bots]});
+  const model = homeModel(state, login(), timeline(), pages);
+  same(setupSteps(state, login(), null, pages)[1], done, name + '：连接步骤');
+  same(model.chain.bot.level, lamp, name + '：首页灯色');
+  same(model.chain.bot.caption, bots[0].summary, name + '：首页状态');
+}
+same(setupSteps(status({senders: [], health: nonBotProbes}), login())[1], false,
+  '没有任何机器人探针时连接步骤仍未完成');
+same(setupSteps(status({health: [napDown, officialDown]}), login())[1], false,
+  '两边都不可用时连接步骤未完成');
+same(setupSteps(status({health: [{...napOk, level: 'DEGRADED'}, officialDown]}), login())[1], true,
+  'NapCat 降级但没有报红时连接步骤仍算完成');
+
 if (tileFails.length) {
   console.error('\n待办／步骤表对不上 ' + tileFails.length + ' 处（共跑了 ' + tileChecks + ' 格）：');
   tileFails.forEach(line => console.error('  ' + line));

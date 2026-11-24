@@ -4,16 +4,23 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiApiInterceptor;
+import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.config.ui.ConfigUiOperationAdvice;
 import org.frostnova.nova.core.config.ui.ConfigUiOperationFilter;
 import org.frostnova.nova.core.config.ui.ConfigUiOperationProvider;
 import org.frostnova.nova.core.config.ui.ConfigUiOperationStore;
 import org.frostnova.nova.core.config.ui.ConfigUiPushTargetsController;
+import org.frostnova.nova.core.config.ui.ConfigUiSetupController;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.health.PushActivityRecorder;
+import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.NovaSenderService;
+import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -29,9 +36,12 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -158,6 +168,52 @@ class QqBotConsoleControllerTest {
     }
 
     @Test
+    @DisplayName("只配 QQ 官方机器人时，可向名单里的群试发，确认收到后引导记下完成")
+    void setupCanSendAndConfirmWithOnlyTheOfficialBot() {
+        withConsole(rig -> {
+            var state = get("/config/api/setup/state").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN);
+            var picker = get("/config/api/bot/targets").param("type", "group")
+                    .requestAttr(ConfigUiAccess.ACCOUNT, ADMIN);
+            assertTrue(rig.senders.getSenderNames().isEmpty());
+            rig.mvc.perform(picker).andExpect(jsonPath("$.items").isEmpty());
+            saveCredentials(rig.mvc);
+            connect(rig);
+            assertEquals(Set.of("qq-official"), rig.senders.getSenderNames());
+
+            var joinEventId = "fixture-joined";
+            rig.listeners.get(0).onText(JSONObject.of("op", 0, "t", "GROUP_ADD_ROBOT", "s", 2,
+                    "id", joinEventId, "d", JSONObject.of("group_openid", GROUP,
+                            "timestamp", JOINED.toString())).toJSONString());
+            rig.scheduler.advance(0);
+            await().atMost(java.time.Duration.ofSeconds(10)).until(() -> !rig.groupMessages.isEmpty());
+            var welcome = rig.groupMessages.get(0);
+            assertEquals(0, welcome.getInteger("msg_type"));
+            assertEquals(joinEventId, welcome.getString("event_id"));
+            assertThat(welcome.getString("content"), containsString("我是这个群的推送机器人"));
+
+            var targets = rig.mvc.perform(picker).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items[0].sender").value("qq-official")).andReturn().getResponse();
+            var group = JSONObject.parseObject(targets.getContentAsString(StandardCharsets.UTF_8))
+                    .getJSONArray("items").getJSONObject(0);
+            var text = "这是一条来自 NovaBot 的测试消息，收到即表示推送链路正常。";
+            var payload = JSONObject.of("platform", group.getString("sender"), "type", 1,
+                    "num", group.getLong("num"), "content", text);
+            rig.mvc.perform(post("/config/api/test-message").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN)
+                            .contentType(MediaType.APPLICATION_JSON).content(payload.toJSONString()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.raw.id").value("fixture-test-message"));
+            assertEquals(2, rig.groupMessages.size());
+            assertEquals(JSONObject.of("msg_type", 0, "content", text), rig.groupMessages.get(1));
+
+            rig.mvc.perform(state).andExpect(jsonPath("$.testSent").value(false));
+            rig.mvc.perform(post("/config/api/setup/test-sent").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+            rig.mvc.perform(state).andExpect(jsonPath("$.testSent").value(true));
+            assertTrue(Files.isRegularFile(root.resolve("state.json")));
+        });
+    }
+
+    @Test
     void membersCannotReadOrWriteAndAuditRecordsOnlyTheActions() {
         withConsole(rig -> {
             rig.mvc.perform(read("state").requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
@@ -226,6 +282,7 @@ class QqBotConsoleControllerTest {
     private void withConsole(ConsoleCheck test) {
         var requests = new ArrayList<JSONObject>();
         var gateways = new ArrayList<String>();
+        var groupMessages = new CopyOnWriteArrayList<JSONObject>();
         QqBotHttpTransport http = (method, uri, headers, body) -> {
             String path = uri.getPath();
             if (path.equals("/app/getAppAccessToken")) {
@@ -238,6 +295,10 @@ class QqBotConsoleControllerTest {
             }
             if (path.endsWith("/info")) {
                 return response(JSONObject.of("group_name", "接口群名", "group_member_num", 42));
+            }
+            if (method.equals("POST") && path.equals("/v2/groups/" + GROUP + "/messages")) {
+                groupMessages.add(JSONObject.parseObject(body));
+                return response(JSONObject.of("id", "fixture-test-message"));
             }
             return response(JSONObject.of("member_role", "admin", "allow_proactive_msg", false));
         };
@@ -258,16 +319,23 @@ class QqBotConsoleControllerTest {
                 .run(app -> {
                     assertNull(app.getStartupFailure());
                     var directory = app.getBean(QqBotDirectory.class);
+                    var senders = app.getBean(NovaSenderService.class);
+                    var sender = new NovaMessageSender(null, senders, new PushActivityRecorder(TimelineWriter.NONE),
+                            null, TimelineWriter.NONE, null, null, null);
+                    var dataSource = mock(AbstractDataSource.class);
+                    var auth = mock(ConfigUiAuthService.class);
                     var controllers = new ArrayList<>(app.getBeansWithAnnotation(RestController.class).values());
-                    controllers.add(new ConfigUiPushTargetsController(List.of(directory), List.of(directory),
-                            mock(AbstractDataSource.class)));
+                    controllers.add(new ConfigUiPushTargetsController(List.of(directory), List.of(directory), dataSource));
+                    controllers.add(new ConfigUiSetupController(new NovaStateStore(properties)));
+                    controllers.add(new ConfigUiController(null, null, properties, dataSource, null, null, senders,
+                            sender, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                            null, null, auth, null, null));
                     MockMvc mvc = MockMvcBuilders.standaloneSetup(controllers.toArray())
-                            .addInterceptors(new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class)))
+                            .addInterceptors(new ConfigUiApiInterceptor(auth))
                             .addFilters(new ConfigUiOperationFilter(store,
                                     List.copyOf(app.getBeansOfType(ConfigUiOperationProvider.class).values())))
                             .setControllerAdvice(new ConfigUiOperationAdvice()).build();
-                    test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners,
-                            app.getBean(NovaSenderService.class)));
+                    test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners, senders, groupMessages));
                 });
     }
 
@@ -315,7 +383,8 @@ class QqBotConsoleControllerTest {
 
     private record Rig(MockMvc mvc, QqBotDirectory directory, QqBotGatewayTest.ManualScheduler scheduler,
                        List<JSONObject> tokenRequests, List<String> gatewayRequests,
-                       List<QqBotWebSocketTransport.Listener> listeners, NovaSenderService senders) {}
+                       List<QqBotWebSocketTransport.Listener> listeners, NovaSenderService senders,
+                       List<JSONObject> groupMessages) {}
 
     private interface ConsoleCheck {
         void run(Rig rig) throws Exception;

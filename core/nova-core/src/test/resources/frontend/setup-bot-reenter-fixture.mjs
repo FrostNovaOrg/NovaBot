@@ -82,9 +82,9 @@ function loadFns(src) {
       pieces.join('\n')
       + '\nreturn {'
       + 'botSnapshot, botDraftMatchesSaved, rememberBotDraft, syncBotDraft, applyBotOkFromFacts,'
-      + 'reenter: function(draft, bot, facts) {'
+      + 'reenter: function(draft, bot, adapterReady) {'
       + '  if (botDraftMatchesSaved(draft)) syncBotDraft(draft, bot);'
-      + '  applyBotOkFromFacts(draft, facts);'
+      + '  applyBotOkFromFacts(draft, adapterReady);'
       + '  return draft;'
       + '}'
       + '};'
@@ -128,14 +128,14 @@ function mutateApply(src) {
   const body = bracedFrom(src, 'function applyBotOkFromFacts');
   if (!body) return src;
   const start = src.indexOf('function applyBotOkFromFacts');
-  const stub = 'function applyBotOkFromFacts(draft, facts) {\n'
-    + '  draft.botOk = draft.botOk || facts[1];\n'
+  const stub = 'function applyBotOkFromFacts(draft, adapterReady) {\n'
+    + '  draft.botOk = draft.botOk || adapterReady;\n'
     + '  return draft;\n'
     + '}';
   return src.slice(0, start) + stub + src.slice(start + body.length);
 }
 
-const factsOn = [true, true, true, true, true];
+const adapterReady = true;
 
 // ① 改参→离开→重进：botOk 仍 false，Token 格仍是编辑值
 let q1 = 'missing';
@@ -144,7 +144,7 @@ try {
   const draft = seed(fns);
   draft.bot.httpToken = 'edited-token';
   loadInvalidate(setupSrc)(draft);
-  fns.reenter(draft, savedBot(), factsOn);
+  fns.reenter(draft, savedBot(), adapterReady);
   q1 = {ok: draft.botOk, tok: draft.bot.httpToken};
 } catch (e) {
   q1 = 'error:' + e.message;
@@ -158,7 +158,7 @@ try {
   const fns = loadFns(setupSrc);
   const draft = seed(fns);
   draft.botOk = false;
-  fns.reenter(draft, savedBot(), factsOn);
+  fns.reenter(draft, savedBot(), adapterReady);
   q2 = draft.botOk;
 } catch (e) {
   q2 = 'error:' + e.message;
@@ -172,20 +172,19 @@ try {
   const draft = seed(mutated);
   draft.bot.httpToken = 'edited-token';
   loadInvalidate(setupSrc)(draft);
-  mutated.reenter(draft, savedBot(), factsOn);
+  mutated.reenter(draft, savedBot(), adapterReady);
   q3 = draft.botOk;
 } catch (e) {
   q3 = 'error:' + e.message;
 }
-eq(q3, true, '③ 无条件 || facts[1] 写回后 botOk 翻成 true');
+eq(q3, true, '③ 无条件写回连接状态后 botOk 翻成 true');
 
-// ④ 接线：openSetup 经 applyBotOkFromFacts，自身不再 || facts[1]
+// ④ 重进时按适配器探针回填测通状态。
 const open = bracedFrom(setupSrc, 'function openSetup');
 eq(
-  open.includes('applyBotOkFromFacts(draft, facts)')
-    && !open.includes('draft.botOk = draft.botOk || facts[1]'),
+  open.includes('applyBotOkFromFacts(draft, syncBotStatus(seen.status).adapterReady)'),
   true,
-  '④ openSetup 调用 applyBotOkFromFacts(draft, facts) 且自身不再 || facts[1]');
+  '④ openSetup 将适配器连接状态交给 applyBotOkFromFacts');
 
 // ⑤ 备份定时器注释安装目录
 const oldHits = (timerSrc.match(/\/opt\/novabot/g) || []).length;

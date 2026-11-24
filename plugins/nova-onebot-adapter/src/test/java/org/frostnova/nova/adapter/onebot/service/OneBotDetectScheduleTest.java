@@ -7,11 +7,15 @@ import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.health.OneBotHealthProbe;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
+import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -181,7 +185,9 @@ class OneBotDetectScheduleTest {
         // 等定时体检跑过一趟，它那支写下的才是被护的读数
         Thread.sleep(2500);
 
-        HealthStatus health = new OneBotHealthProbe(state, properties, new MockEnvironment()).check();
+        HealthStatus health = new OneBotHealthProbe(state, properties, new MockEnvironment(),
+                new NovaSenderService(new NovaCoreProperties()),
+                new StaticListableBeanFactory().getBeanProvider(HealthProbe.class)).check();
         assertTrue(health.summary().contains("HTTP Token 不正确"),
                 "Token 错时健康页该说 Token 不对: " + health.summary());
         assertTrue(!health.summary().contains("HTTP 连不上"),

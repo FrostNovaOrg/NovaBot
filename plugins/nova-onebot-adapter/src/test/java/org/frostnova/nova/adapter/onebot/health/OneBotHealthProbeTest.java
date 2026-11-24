@@ -1,11 +1,19 @@
 package org.frostnova.nova.adapter.onebot.health;
 
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
+import org.frostnova.nova.core.model.Sender;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.mock.env.MockEnvironment;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,7 +28,13 @@ class OneBotHealthProbeTest {
     private final OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
 
     private OneBotHealthProbe probe(OneBotConnectionState state) {
-        return new OneBotHealthProbe(state, properties, new MockEnvironment());
+        return probe(state, new MockEnvironment());
+    }
+
+    private OneBotHealthProbe probe(OneBotConnectionState state, MockEnvironment environment) {
+        return new OneBotHealthProbe(state, properties, environment,
+                new NovaSenderService(new NovaCoreProperties()),
+                new StaticListableBeanFactory().getBeanProvider(HealthProbe.class));
     }
 
     /**
@@ -45,12 +59,46 @@ class OneBotHealthProbeTest {
     }
 
     @Test
+    @DisplayName("只使用其它推送平台时停用未配置的连接探针")
+    void skipsUnconfiguredProbeWhenAnotherSenderIsRegistered() {
+        var state = new OneBotConnectionState();
+        var senders = new NovaSenderService(new NovaCoreProperties());
+        var otherConfigured = new AtomicBoolean();
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(OneBotConnectionState.class, () -> state);
+            context.registerBean(OneBotAdapterPluginProperties.class, () -> properties);
+            context.registerBean(NovaSenderService.class, () -> senders);
+            context.registerBean(HealthProbe.class, () -> new HealthProbe() {
+                @Override public String name() { return "其它机器人"; }
+                @Override public Scope scope() { return Scope.BOT; }
+                @Override public String card() { return "other-bot"; }
+                @Override public boolean active() { return otherConfigured.get(); }
+                @Override public HealthStatus check() { return HealthStatus.down("凭据无效", "核对凭据"); }
+            });
+            context.register(OneBotHealthProbe.class);
+            context.refresh();
+            var probe = context.getBean(OneBotHealthProbe.class);
+
+            assertTrue(probe.active());
+            otherConfigured.set(true);
+            assertFalse(probe.active(), "已配置的其它机器人会报告自己的凭据故障");
+            otherConfigured.set(false);
+            senders.addSender(new Sender("another-bot", "http://localhost"));
+            assertFalse(probe.active(), "停止报告未配置的机器人连接");
+
+            state.httpFailed("qq", OneBotConnectionState.Kind.UNREACHABLE, "连接被拒绝");
+            assertTrue(probe.active(), "已配置的机器人掉线时仍需报告");
+            assertEquals(HealthStatus.Level.DOWN, probe.check().level());
+        }
+    }
+
+    @Test
     @DisplayName("配置还写在旧根键 starbot: 下时，未配置那条的建议改说旧根键没被读、要手工改")
     void unconfiguredAdviceNamesLegacyRoot() {
         MockEnvironment environment = new MockEnvironment()
                 .withProperty("starbot.adapter.onebot.senders[0].name", "legacy-sender-value");
 
-        HealthStatus status = new OneBotHealthProbe(new OneBotConnectionState(), properties, environment).check();
+        HealthStatus status = probe(new OneBotConnectionState(), environment).check();
 
         assertEquals("未配置任何机器人", status.summary());
         assertEquals("unconfigured", status.reason());
@@ -67,7 +115,7 @@ class OneBotHealthProbeTest {
         OneBotConnectionState state = new OneBotConnectionState();
         state.httpFailed("qq", OneBotConnectionState.Kind.UNREACHABLE, "连接被拒绝");
 
-        HealthStatus status = new OneBotHealthProbe(state, properties, environment).check();
+        HealthStatus status = probe(state, environment).check();
 
         assertFalse(status.advice().contains("starbot:"), "已配置机器人时建议里不该出现旧根键那句: " + status.advice());
         assertTrue(status.advice().contains("one-bot-address"), "阳性对照: 连不上的机器人仍要说查地址与端口: " + status.advice());

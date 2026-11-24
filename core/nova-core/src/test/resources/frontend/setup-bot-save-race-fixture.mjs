@@ -158,7 +158,7 @@ const SAVED = {configured: true, address: '127.0.0.1', httpPort: 3000, websocket
 /** 照 openSetup 的顺序重进一次：与盘上一致才回填并清空 Token，再按事实定「已接上」 */
 function reenter(run) {
   if (run.botDraftMatchesSaved(run.draft)) run.syncBotDraft(run.draft, SAVED);
-  run.applyBotOkFromFacts(run.draft, [true, true, false, false]);
+  run.applyBotOkFromFacts(run.draft, true);
 }
 
 /** 填好两个 Token，点测试，等到保存请求发出去；包一层，免得 await 等到整个点击做完 */

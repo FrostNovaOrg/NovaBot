@@ -132,3 +132,28 @@ await reload.listeners.get('click')();
 assert.equal(linkRefreshes, 2);
 assert.equal(password.value, '');
 console.log('官方机器人卡：空态、密码遮罩与清空、群名转义、间隔提醒、改名和状态刷新通过');
+
+store.tab = 'setup';
+const setupAppId = new Node();
+const setupSecret = new Node();
+const setupCredentials = new Node([setupAppId, setupSecret]);
+const setupElements = {'app-id': setupAppId, secret: setupSecret, credentials: setupCredentials,
+  result: new Node(), unconfigured: new Node(), load: new Node()};
+const setupSection = {querySelector: selector => setupElements[selector.slice('#setup-qqbot-'.length)]};
+const connectionChanges = [];
+render(setupSection, {onConnectionChange: saving => connectionChanges.push(saving)});
+assert.match(setupSection.innerHTML, /IP 白名单留空.*群主或管理员/);
+assert.doesNotMatch(setupSection.innerHTML, /发送间隔|已加入的群/);
+setupAppId.value = '87654321';
+setupSecret.value = secret;
+await submit(setupCredentials);
+assert.deepEqual(posted.at(-1), ['credentials', {appId: '87654321', appSecret: secret}]);
+assert.equal(setupSecret.value, '');
+assert.deepEqual(connectionChanges, [true, false]);
+assert.equal(linkRefreshes, 2);
+
+store.tab = 'bot';
+await refresh();
+assert.equal(appId.value, '87654321');
+assert.equal(setupAppId.value, '87654321');
+console.log('引导官方机器人表单：复用凭据保存、通报连接状态变化，与连接页独立刷新');
