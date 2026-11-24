@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveMetricCatalog;
 import org.frostnova.nova.core.assistant.AssistantClient;
@@ -31,11 +32,13 @@ import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveDetailArchive;
+import org.frostnova.nova.core.service.LiveReportRedrawer;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.ReportDeliveryListener;
@@ -44,6 +47,7 @@ import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.report.analytics.BilibiliLiveMetricCatalog;
+import org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +76,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -83,7 +88,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.frostnova.nova.core.enums.PushTargetType.FRIEND;
 import static org.frostnova.nova.core.enums.PushTargetType.GROUP;
 import static org.junit.jupiter.api.Assertions.*;
@@ -103,6 +110,7 @@ class QqAssistantCommandTest {
     private static final long FIRST = 10001L;
     private static final long SECOND = 10002L;
     private static final long START = 1794000000000L;
+    private static final long REPORT_START = Instant.parse("2026-11-07T00:00:00Z").toEpochMilli();
     private static final String LABEL = "（由人工智能生成）";
     private static final String REPORT_QUESTION = "（机器人在 08:00 推送了直播报告）";
     private static final String REPORT_SUMMARY = "测试主播甲 本场直播数据\n弹幕 106 条";
@@ -121,10 +129,12 @@ class QqAssistantCommandTest {
     private AssistantLocalStore local;
     private AssistantAskService service;
     private AssistantChartRenderer chartRenderer;
+    private LiveReportRedrawer reportRedrawer;
     private AssistantQueryService queries;
     private AbstractDataSource data;
     private LiveSessionArchive archive;
     private LiveDetailArchive details;
+    private LiveDataService live;
     private QqAssistantCommand command;
     private CommandDispatcher dispatcher;
     private CommandSettingsService settings;
@@ -164,11 +174,12 @@ class QqAssistantCommandTest {
         var catalogs = provider(List.<LiveMetricCatalog>of(new BilibiliLiveMetricCatalog()));
         archive = new LiveSessionArchive(core);
         details = new LiveDetailArchive(core);
-        queries = spy(new AssistantQueryService(null, archive, details,
-                mock(LiveDataService.class), core, catalogs, clock));
+        live = mock(LiveDataService.class);
+        queries = spy(new AssistantQueryService(null, archive, details, live, core, catalogs, clock));
         local = new AssistantLocalStore(directory, clock);
         chartRenderer = mock(AssistantChartRenderer.class);
-        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer);
+        service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer,
+                () -> Stream.ofNullable(reportRedrawer));
         command = new QqAssistantCommand(service, client, local, data, StreamerNames.none(),
                 new RevenueVisibilityService(new NovaStateStore(core)), settings, sender, clock);
         var capability = mock(GroupMessageCapability.class);
@@ -1823,6 +1834,199 @@ class QqAssistantCommandTest {
         user.setTargets(new ArrayList<>(List.of(targets)));
         for (PushTarget target : targets) target.setUser(user);
         users.add(user);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("QQ 发指定场次的报告图，隐藏金额时也发群命令口径的图")
+    void qqSendsRequestedLiveReport(boolean showRevenue) throws Exception {
+        var target = channel(GROUP, ROOM, true, showRevenue);
+        target.setReportPalette("night");
+        var disabled = new PushMessage();
+        disabled.setHandler(BilibiliLiveReportPushHandler.class.getName());
+        disabled.setParamsJsonObject(JSONObject.of("cover", false, "danmu_ranking", 3));
+        target.setDisabledMessages(List.of(disabled));
+        add(FIRST, "测试主播甲", target);
+        var redrawer = AssistantReportFixtures.redrawer(directory);
+        reportRedrawer = redrawer;
+        var detail = storeReportSession(REPORT_START);
+        storeReportSession(REPORT_START + Duration.ofDays(1).toMillis());
+        modelReplies.add(call("draw_live_report", JSONObject.of("day", "2026-11-07")));
+        modelReplies.add(text("11 月 7 日 08:00 至 08:02 的直播报告。"));
+
+        group(ASKER, "问 测试主播甲 11 月 7 号那场的直播报告");
+
+        var answer = assertReply("11 月 7 日", "08:00", "08:02", LABEL);
+        awaitIdle(GROUP, ROOM);
+        var tool = toolResults(requests.get(1)).get("draw_live_report");
+        assertTrue(tool.containsKey("drawn"), tool::toJSONString);
+        assertEquals(REPORT_START, tool.getJSONArray("drawn").getJSONObject(0).getLongValue("startTime"));
+        var image = assertReply(replies.poll(), "{image_base64=iVBOR");
+        assertSame(answer, image.getPrevious());
+        var options = redrawer.commandOptions(target);
+        assertEquals(showRevenue, options.isShowRevenue());
+        assertFalse(options.isCover());
+        assertEquals(3, options.getDanmuRanking());
+        assertEquals(redrawer.channelContent(detail, target, options).orElseThrow(), image.getContent());
+        target.setRevenueVisible(!showRevenue);
+        assertNotEquals(redrawer.channelContent(detail, target, redrawer.commandOptions(target)).orElseThrow(), image.getContent());
+        String base64 = image.getContent().substring("{image_base64=".length(), image.getContent().length() - 1);
+        assertFalse(requests.toString().contains(base64));
+        assertTrue(replies.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {2, 6})
+    @DisplayName("同一统计日的报告一次发齐，超过四场列出较早的开播时刻")
+    void qqSendsBothReportsForOneStatisticsDay(int count) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        mockReportImages();
+        long late = REPORT_START + Duration.ofHours(22).toMillis() - 1_000;
+        var starts = new ArrayList<Long>();
+        for (int i = 0; i < count - 1; i++) starts.add(REPORT_START + i * 180_000);
+        starts.add(late);
+        starts.forEach(this::storeReportSession);
+        int expected = Math.min(count, 4);
+        modelReplies.add(call("draw_live_report", JSONObject.of("day", "2026-11-07")));
+        modelReplies.add(text("11 月 7 日的报告。"
+                + (count > expected ? "还有2场，可以按开播时刻再要。" : "")));
+
+        group(ASKER, "问 11 月 7 日的直播报告");
+
+        var answer = assertReply("11 月 7 日", "报告", LABEL);
+        if (count > expected) assertTrue(answer.getContent().contains("还有2场"));
+        awaitIdle(GROUP, ROOM);
+        var tool = toolResults(requests.get(1)).get("draw_live_report");
+        assertTrue(tool.containsKey("drawn"), tool::toJSONString);
+        var drawn = tool.getJSONArray("drawn");
+        assertEquals(expected, drawn.size());
+        for (int i = 0; i < expected; i++) {
+            long start = starts.get(count - 1 - i);
+            assertEquals(start, drawn.getJSONObject(i).getLongValue("startTime"));
+            assertReply(replies.poll(), "{image_base64=" + reportPng(start) + "}");
+        }
+        var omitted = tool.getJSONArray("omitted");
+        assertEquals(count - expected, omitted.size());
+        for (int i = 0; i < omitted.size(); i++) {
+            assertEquals(starts.get(count - 1 - expected - i), omitted.getJSONObject(i).getLong("startTime"));
+            assertTrue(omitted.getJSONObject(i).getString("startAt").startsWith("2026-11-07 08:"));
+        }
+        verify(reportRedrawer, times(expected)).channelImage(any(), any());
+        assertTrue(replies.isEmpty());
+    }
+
+    @Test
+    @DisplayName("同日场次缺明细或正在直播时，分别说明原因，返回其余场次的图")
+    void qqReportsMissingDetailsAndOngoingSession() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        mockReportImages();
+        long missing = REPORT_START + 180_000;
+        long ongoing = REPORT_START + 360_000;
+        storeReportSession(REPORT_START);
+        archive.append(new LiveSession(BILIBILI, FIRST, "测试主播甲", 1L, missing, missing + 120_000, 120, Map.of(), Map.of()));
+        when(live.getLiveStatus(BILIBILI, FIRST)).thenReturn(Optional.of(true));
+        when(live.getLiveStartTime(BILIBILI, FIRST)).thenReturn(Optional.of(ongoing));
+        modelReplies.add(call("draw_live_report", JSONObject.of("day", "2026-11-07")));
+        modelReplies.add(text("第一场见图。另一场没留明细，正在播的请用「直播报告」命令。"));
+
+        group(ASKER, "问 11 月 7 日的直播报告");
+
+        assertReply("没留明细", "「直播报告」", LABEL);
+        awaitIdle(GROUP, ROOM);
+        assertReply(replies.poll(), "{image_base64=" + reportPng(REPORT_START) + "}");
+        var skipped = toolResults(requests.get(1)).get("draw_live_report").getJSONArray("skipped");
+        assertEquals(2, skipped.size());
+        assertEquals(ongoing, skipped.getJSONObject(0).getLongValue("startTime"));
+        assertTrue(skipped.getJSONObject(0).getString("reason").contains("「直播报告」命令"));
+        assertEquals(missing, skipped.getJSONObject(1).getLongValue("startTime"));
+        assertTrue(skipped.getJSONObject(1).getString("reason").contains("明细"));
+        assertTrue(replies.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("按流水排序后按开播时刻画中选场次，隐藏金额时排序被拒绝")
+    void qqRanksSessionsByRevenueOnlyIfVisible(boolean showRevenue) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, showRevenue));
+        mockReportImages();
+        var highest = storeReportSession(REPORT_START);
+        long lower = REPORT_START + 180_000;
+        archive.append(new LiveSession(BILIBILI, FIRST, highest.uname(), highest.roomId(),
+                lower, lower + 120_000, 120, Map.of(BilibiliLiveMetric.GIFT_VALUE, 20d), Map.of()));
+        details.store(AssistantReportFixtures.detail(FIRST, lower));
+        modelReplies.add(call("aggregate", JSONObject.of("kinds", List.of("session"), "from", "2026-11-07", "to", "2026-11-07",
+                "groupBy", List.of("session"), "metrics", List.of("sum:amount"),
+                "sort", JSONObject.of("by", "sum:amount", "direction", "desc"), "limit", 1)));
+        if (showRevenue) modelReplies.add(call("draw_live_report", JSONObject.of("start", highest.startTime())));
+        modelReplies.add(text(showRevenue ? "11月7日 08:00 至 08:02 的报告见图。" : "这里不显示金额，不能按流水挑场次。"));
+
+        group(ASKER, "问 流水最高那场的报告");
+
+        assertReply(showRevenue ? "08:00" : "不显示金额", LABEL);
+        awaitIdle(GROUP, ROOM);
+        var aggregate = toolResults(requests.get(1)).get("aggregate");
+        if (showRevenue) {
+            assertEquals(highest.startTime(), aggregate.getJSONArray("rows").getJSONArray(0).getLongValue(0));
+            assertReply(replies.poll(), "{image_base64=" + reportPng(highest.startTime()) + "}");
+        } else {
+            assertTrue(aggregate.getString("reason").contains("不显示金额"));
+            verify(reportRedrawer, never()).channelImage(any(), any());
+        }
+        assertTrue(replies.isEmpty());
+    }
+
+    @Test
+    @DisplayName("同群两位主播各用自己的通道，发送前隐藏金额时拦住含金额的那张")
+    void qqRechecksReportRevenueForEachStreamer() throws Exception {
+        var hidden = channel(GROUP, ROOM, true, false);
+        var visible = channel(GROUP, ROOM, true, true);
+        add(FIRST, "测试主播甲", hidden);
+        add(SECOND, "测试主播乙", visible);
+        var secondStart = REPORT_START + 180_000;
+        storeReportSession(FIRST, REPORT_START);
+        storeReportSession(SECOND, secondStart);
+        mockReportImages();
+        modelReplies.add(call("draw_live_report", JSONObject.of("start", REPORT_START, "streamer", FIRST)));
+        modelReplies.add(call("draw_live_report", JSONObject.of("start", secondStart, "streamer", SECOND)));
+        modelReplies.add(text("已查到两位主播的场次。"));
+        modelWait = () -> {
+            if (requests.size() == 3) visible.setRevenueVisible(false);
+        };
+
+        group(ASKER, "问 测试主播甲和测试主播乙各自那场的直播报告");
+
+        assertReply("这个问题要多想一会儿");
+        assertReply(LABEL);
+        awaitIdle(GROUP, ROOM);
+        assertReply(replies.poll(), "{image_base64=" + reportPng(REPORT_START) + "}");
+        assertTrue(replies.isEmpty());
+        verify(reportRedrawer).channelImage(argThat(detail -> detail.uid().equals(FIRST)),
+                argThat(target -> target.getUser().getUid().equals(FIRST) && !target.getRevenueVisible()));
+        verify(reportRedrawer).channelImage(argThat(detail -> detail.uid().equals(SECOND)),
+                argThat(target -> target.getUser().getUid().equals(SECOND) && target.getRevenueVisible()));
+    }
+
+    private void mockReportImages() {
+        reportRedrawer = mock(LiveReportRedrawer.class);
+        when(reportRedrawer.platform()).thenReturn(BILIBILI);
+        when(reportRedrawer.channelImage(any(), any())).thenAnswer(call ->
+                Optional.of(Long.toString(call.<LiveDetail>getArgument(0).startTime()).getBytes(UTF_8)));
+    }
+
+    private static String reportPng(long start) {
+        return Base64.getEncoder().encodeToString(Long.toString(start).getBytes(UTF_8));
+    }
+
+    private LiveDetail storeReportSession(long start) {
+        return storeReportSession(FIRST, start);
+    }
+
+    private LiveDetail storeReportSession(long uid, long start) {
+        var detail = AssistantReportFixtures.detail(uid, start);
+        archive.append(new LiveSession(BILIBILI, uid, detail.uname(), detail.roomId(), start, detail.endTime(), 120,
+                detail.metrics(), detail.userCounts()));
+        details.store(detail);
+        return detail;
     }
 
     private PushTarget channel(PushTargetType type, long num, Boolean enabled, Boolean revenue) {

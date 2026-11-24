@@ -87,4 +87,23 @@ class BilibiliLiveReportRedrawerTest {
         assertEquals("报告｛at=all｝", redrawer.channelContent(detail, channel).orElseThrow());
         verify(painter).textReport(eq("bilibili"), any(), argThat(options -> !options.isShowRevenue()));
     }
+
+    @Test
+    @DisplayName("通道报告图使用已关闭的版式，仅复用金额和配色一致的推送图")
+    void channelImageReusesOriginalWithMatchingCommandOptions() {
+        channel.setDisabledMessages(channel.getMessages());
+        channel.setMessages(List.of());
+        cache.put("bilibili", 1L, 100, 200, BilibiliLiveReportOptions.of(params, true), night, "U0VDUkVU");
+        cache.put("bilibili", 1L, 100, 200, BilibiliLiveReportOptions.of(params, false), night, "T1JJR0lOQUw=");
+        assertArrayEquals(Base64.getDecoder().decode("T1JJR0lOQUw="), redrawer.channelImage(detail, channel).orElseThrow());
+        verifyNoInteractions(painter);
+    }
+
+    @Test
+    @DisplayName("通道报告图画失败时不会生成文字版")
+    void channelImageFailureReturnsEmpty() {
+        when(painter.render(any(), any())).thenReturn(Optional.empty());
+        assertTrue(redrawer.channelImage(detail, channel).isEmpty());
+        verify(painter, never()).textReport(anyString(), any(), any());
+    }
 }

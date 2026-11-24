@@ -330,7 +330,7 @@ function renderTurn(host, turn, openChart, askFollowUp) {
   line(box, '由人工智能生成 · 仅供参考', 'sa-label');
   if (Array.isArray(result.images)) {
     const charts = el('div', 'sa-charts');
-    for (const png of result.images.slice(0, 2)) {
+    for (const png of result.images.slice(0, 6)) {
       if (typeof png !== 'string' || !/^iVBORw0KGgo[A-Za-z0-9+/]*={0,2}$/.test(png)) continue;
       const src = 'data:image/png;base64,' + png;
       const preview = el('button', 'sa-chart'); preview.type = 'button';
