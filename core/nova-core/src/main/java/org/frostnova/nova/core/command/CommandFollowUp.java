@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.command;
 
+import org.frostnova.nova.core.lang.StringUtil;
+
 import java.util.List;
 
 /**
@@ -43,6 +45,17 @@ public interface CommandFollowUp {
     }
 
     /**
+     * 读取待选清单的序号。只接受纯数字，最多三位可作序号。
+     * @return 正数为清单序号，0 表示零或超出位数，-1 表示输入不是纯数字
+     */
+    static int parseChoiceNumber(String word) {
+        if (StringUtil.isEmpty(word) || !word.chars().allMatch(Character::isDigit)) {
+            return -1;
+        }
+        return word.length() <= 3 ? Integer.parseInt(word) : 0;
+    }
+
+    /**
      * 认领的结果：要么直接回一句，要么改写成一条命令交回分发器执行
      * <p>
      * 走「改写成命令」而不是自己执行，是为了让改写出来的这一条<b>照样过分发器的关</b>：
@@ -63,7 +76,8 @@ public interface CommandFollowUp {
         }
 
         public static Claimed outOfRange(String number, int size) {
-            return answer(CommandReply.of("清单里没有 " + number + " 号，请回 1 到 " + size));
+            String displayedNumber = StringUtil.getOmitString(number, 16);
+            return answer(CommandReply.of("清单里没有 " + displayedNumber + " 号，请回 1 到 " + size));
         }
 
         /**

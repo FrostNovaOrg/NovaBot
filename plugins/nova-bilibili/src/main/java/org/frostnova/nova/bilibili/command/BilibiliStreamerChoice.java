@@ -69,11 +69,6 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      */
     private static final String EXPAND = "全部";
 
-    /**
-     * 序号的最大位数。主播 uid 也是纯数字，但它有八位以上，落不进清单的范围
-     */
-    private static final int MAX_INDEX_DIGITS = 3;
-
     private final LiveDataService liveDataService;
 
     private final LiveSessionArchive archive;
@@ -272,13 +267,13 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
             return Claimed.answer(CommandReply.of(render(context, pending, true)));
         }
 
-        if (StringUtil.isBlank(word) || !word.chars().allMatch(Character::isDigit)) {
+        int index = CommandFollowUp.parseChoiceNumber(word);
+        if (index < 0) {
             discardIfAnswered(key, pending);
             return null;
         }
 
-        int index = word.length() <= MAX_INDEX_DIGITS ? Integer.parseInt(word) : 0;
-        if (index < 1 || index > pending.uids().size()) {
+        if (index == 0 || index > pending.uids().size()) {
             return pending.warned().compareAndSet(false, true) ? Claimed.outOfRange(word, pending.uids().size()) : null;
         }
 

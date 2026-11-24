@@ -74,8 +74,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private static final int REPORT_HISTORY_LIMIT = 2;
     private static final DateTimeFormatter REPORT_TIME = DateTimeFormatter.ofPattern("HH:mm").withZone(StatisticsDay.ZONE);
     private static final String CHOSEN_UID_PREFIX = "uid:";
-    private static final Pattern ORDINAL = Pattern.compile("[0-9０-９]+");
-    private static final Pattern RAW_ORDINAL = Pattern.compile("\\p{IsWhite_Space}*" + ORDINAL.pattern() + "\\p{IsWhite_Space}*");
+    private static final Pattern SINGLE_WORD = Pattern.compile("\\p{IsWhite_Space}*(\\P{IsWhite_Space}+)\\p{IsWhite_Space}*");
 
     private final AssistantAskService assistant;
     private final AssistantClient client;
@@ -169,8 +168,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         // 序号应答也走这条路，先用原清单上的 uid 定主播，再按当前通道重验。
         String first = context.arg(0);
         boolean fromChoice = first != null && first.startsWith(CHOSEN_UID_PREFIX);
-        String rawText = context.getRawText();
-        boolean ordinalReply = fromChoice && rawText != null && RAW_ORDINAL.matcher(rawText.trim()).matches();
+        boolean ordinalReply = fromChoice && isOrdinalReply(context.getRawText());
         // 序号已在认领时消耗清单，重跑期间发出的新清单仍然有效。
         if (!ordinalReply) choices.remove(asker);
         String chosenUid = fromChoice ? first.substring(CHOSEN_UID_PREFIX.length()) : null;
@@ -265,9 +263,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
     @Override
     public Claimed claim(CommandContext context) {
-        String word = context.getCommand();
-        if (context.getSenderUid() == null || !context.getArgs().isEmpty()
-                || word.length() > 9 || !ORDINAL.matcher(word).matches()) return null;
+        if (context.getSenderUid() == null || !context.getArgs().isEmpty()) return null;
         var key = new Asker(session(context), context.getSenderUid());
         Choice choice = choices.get(key);
         if (choice == null) return null;
@@ -275,13 +271,21 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             choices.remove(key, choice);
             return null;
         }
-        int index = Integer.parseInt(word) - 1;
-        if (index < 0 || index >= choice.uids().size()) {
+        String word = context.getCommand();
+        int index = CommandFollowUp.parseChoiceNumber(word);
+        if (index < 0) return null;
+        if (index == 0 || index > choice.uids().size()) {
             return choice.warned().compareAndSet(false, true) ? Claimed.outOfRange(word, choice.uids().size()) : null;
         }
         if (!choices.remove(key, choice)) return null;
         // 保留所选 uid，即便答序号前已撤掉该主播。重跑时找不到该 uid 就不查。
-        return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index), choice.question()));
+        return Claimed.rerun(name(), List.of(CHOSEN_UID_PREFIX + choice.uids().get(index - 1), choice.question()));
+    }
+
+    private static boolean isOrdinalReply(String rawText) {
+        if (rawText == null) return false;
+        var word = SINGLE_WORD.matcher(rawText.trim());
+        return word.matches() && CommandFollowUp.parseChoiceNumber(word.group(1)) > 0;
     }
 
     @Override

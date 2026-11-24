@@ -822,6 +822,32 @@ class QqAssistantCommandTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("助手清单收到十位纯数字时提示一次，之后仍按原问题查第 3 位")
+    void longSelectionNumberKeepsTheOriginalQuestion(boolean mentionsBot) throws Exception {
+        for (int i = 0; i < 5; i++) {
+            add(FIRST + i, "测试主播" + (i + 1), channel(GROUP, ROOM, true, true));
+        }
+        String question = "最近播了几场";
+        group(ASKER, "问 " + question);
+        assertReply("回序号", "5. 测试主播5");
+
+        clock.advance(Duration.ofSeconds(4));
+        receive(GROUP, ROOM, ASKER, "1234567890", mentionsBot);
+        assertReply(replies.poll(), "没有 1234567890 号", "1 到 5");
+        receive(GROUP, ROOM, ASKER, "1234567890", false);
+        assertTrue(replies.isEmpty());
+        assertTrue(requests.isEmpty());
+
+        modelReplies.add(call("sessions", JSONObject.of("days", 7, "limit", 1)));
+        receive(GROUP, ROOM, ASKER, "3", false);
+        assertReply("收到，查测试主播3");
+        assertReply(LABEL);
+        verify(queries).sessions(BILIBILI, FIRST + 2, 7, 1);
+        assertEquals(question, userPayload(requests.get(0)).getString("question"));
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {true, false})
     @DisplayName("直播报告与助手清单把同一个序号指向不同主播时，以后发的清单为准")
     void newestSelectionListWins(boolean assistantLast) throws Exception {
