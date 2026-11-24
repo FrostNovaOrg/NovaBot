@@ -52,7 +52,7 @@ const LAYOUT_OPTIONS = [
 /** /api/handlers 的一项：默认参数同样不含死键——服务端那一侧已把它滤掉 */
 const HANDLERS = [{
   className: MAIN,
-  displayName: '下播报告',
+  displayName: '直播报告',
   description: '下播时推送',
   platform: PLATFORM,
   aliases: [],

@@ -59,7 +59,7 @@ class BilibiliGuardRosterKeeperTest {
     Path temp;
 
     @Test
-    @DisplayName("没配下播报告：这场的名单仍然留下，而且明细落盘之后还能写")
+    @DisplayName("没配直播报告：这场的名单仍然留下，而且明细落盘之后还能写")
     void roomWithoutReportStillKeepsTheRoster() throws Exception {
         Order order = BilibiliGuardRosterKeeper.class
                 .getMethod("onLiveOff", BilibiliLiveOffEvent.class)
@@ -94,7 +94,7 @@ class BilibiliGuardRosterKeeperTest {
                 () -> assertNotNull(listener, "下播时进不来，没配报告的场次不会留名单"),
                 () -> assertNotNull(order, "取名单没有排到下播文字之后"),
                 () -> assertTrue(order != null && order.value() > 0, "取名单排在下播文字之前，文字推送会被拖住"),
-                () -> assertTrue(Files.isRegularFile(file), "没配下播报告的这场，名单什么都没留下"),
+                () -> assertTrue(Files.isRegularFile(file), "没配直播报告的这场，名单什么都没留下"),
                 () -> assertTrue(Files.readString(file).contains("星港"), "留下的名单里没有这个人"),
                 () -> assertTrue(Files.readString(file).contains("星云"), "粉丝牌没有留在名单里"),
                 () -> assertTrue(GuardRosterFile.parse(Files.readString(file))
@@ -130,7 +130,7 @@ class BilibiliGuardRosterKeeperTest {
     }
 
     @Test
-    @DisplayName("没配下播报告：别的下播监听不用等名单取完")
+    @DisplayName("没配直播报告：别的下播监听不用等名单取完")
     void otherListenersDoNotWaitForRoster() throws Exception {
         CountDownLatch fetchEntered = new CountDownLatch(1);
         CountDownLatch releaseFetch = new CountDownLatch(1);
@@ -177,7 +177,7 @@ class BilibiliGuardRosterKeeperTest {
     }
 
     @Test
-    @DisplayName("没配下播报告：名单没取全时，留下的人数仍是首页报的总数")
+    @DisplayName("没配直播报告：名单没取全时，留下的人数仍是首页报的总数")
     void shortListKeepsTheCountFromTheFirstPage() throws Exception {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getGuardList(ROOM, UID)).thenReturn(Optional.of(new GuardListFetch(

@@ -119,7 +119,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
             problems.add("24 小时内开播快照项缺失 " + cappedCountText(missing) + " 次");
             advices.add("粉丝数、粉丝团、大航海三项快照有接口取不到，"
                     + metrics.lastDetail(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING).map(d -> "最近一次：" + d + "。").orElse("")
-                    + "表现是下播报告里对应的卡片直接消失，数值不会变成 0。"
+                    + "表现是直播报告里对应的卡片直接消失，数值不会变成 0。"
                     + "常见原因是平台把这个取数接口关了。先更新到最新版本；还没恢复就去「日志」页看详情；"
                     + "问题一直在就到项目的 GitHub 问题区反馈");
         }

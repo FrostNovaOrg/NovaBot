@@ -2009,7 +2009,7 @@ class ConfigUiFrontendTest {
         if (!preview.contains("'" + REPORT_PREVIEW_PATH.substring("/api".length()) + "'")
                 || !preview.contains("'/weekly-report/'") || !preview.contains("'/preview'")
                 || !preview.contains("request(CONSOLE + '/api' + path")) {
-            bad.add(PUSH_VIEW + " 没有按通知类型调用下播报告与运营周报的预览接口，图片版式改动无法预览");
+            bad.add(PUSH_VIEW + " 没有按通知类型调用直播报告与运营周报的预览接口，图片版式改动无法预览");
         }
         String draft = pages.getOrDefault(PUSH_SESSION_DRAFT, "");
         if (draft.isBlank()) {

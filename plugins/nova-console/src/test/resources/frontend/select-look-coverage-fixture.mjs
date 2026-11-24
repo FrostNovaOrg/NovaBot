@@ -187,7 +187,7 @@ const pushPage = [
 try {
   const {store} = await import('./store.js');
   const push = await import(join(pages, 'push.js'));
-  store.handlerList = [{className: HANDLER, displayName: '下播报告', aliases: [], placeholders: ['{report}'],
+  store.handlerList = [{className: HANDLER, displayName: '直播报告', aliases: [], placeholders: ['{report}'],
     attachments: [], factoryParams: {}, defaultParams: {}, reportLayout: true, options: []}];
   store.role = 'ADMIN';
   store.platforms = [];

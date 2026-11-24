@@ -38,15 +38,15 @@ public class LiveReportPushController {
         target.setPlatform(pushPlatform);
         target.setType(PushTargetType.fromCode(type));
         target.setNum(num);
-        log.info("{} 向会话 {}:{}:{} 发送主播 {}:{} 的上一份下播报告，开播时刻 {}",
+        log.info("{} 向会话 {}:{}:{} 发送主播 {}:{} 的上一份直播报告，开播时刻 {}",
                 ConfigUiAccess.actor(), pushPlatform, type, num, platform, uid, start);
         try {
             var raw = reports.sendLatest(platform, uid, target, start);
             boolean ok = raw != null && Integer.valueOf(0).equals(raw.getInteger("code"));
-            return Map.of("success", ok, "message", ok ? "上一份下播报告已发送，请到对应会话中确认是否收到"
-                    : "发送上一份下播报告失败：" + (raw == null ? "消息未发出" : raw.getString("message")));
+            return Map.of("success", ok, "message", ok ? "上一份直播报告已发送，请到对应会话中确认是否收到"
+                    : "发送上一份直播报告失败：" + (raw == null ? "消息未发出" : raw.getString("message")));
         } catch (RuntimeException e) {
-            return Map.of("success", false, "message", "发送上一份下播报告失败：" + e.getMessage());
+            return Map.of("success", false, "message", "发送上一份直播报告失败：" + e.getMessage());
         }
     }
 }

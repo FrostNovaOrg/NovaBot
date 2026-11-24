@@ -24,7 +24,7 @@ class LiveReportApiTest {
         when(reports.latest("bilibili", 1L)).thenReturn(Optional.empty());
         mvc.perform(get("/config/api/live-report/bilibili/1/latest"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("还没有可发的下播报告"));
+                .andExpect(jsonPath("$.message").value("还没有可发的直播报告"));
         verify(reports).latest("bilibili", 1L);
         verifyNoMoreInteractions(reports);
     }

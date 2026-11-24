@@ -155,7 +155,7 @@ class ChannelReportPaletteTest {
 
     // 用户故障：通道里选了夜幕，推出来还是白底
     @Test
-    @DisplayName("通道选了夜幕：下播报告、动态、下播打赏播报推出去都是夜幕的底色")
+    @DisplayName("通道选了夜幕：直播报告、动态、下播打赏播报推出去都是夜幕的底色")
     void chosenPaletteReachesEveryPushedImage() throws Exception {
         for (Kind kind : Kind.values()) {
             Kind.Run run = kind.start(this);
@@ -279,7 +279,7 @@ class ChannelReportPaletteTest {
         withoutCards.getParamsJsonObject().put("cover", false);
         live.handle(compact, withoutCards);
         System.out.println("LAYOUT LIVE_REPORT painted=" + painted(Kind.LIVE_REPORT));
-        assertEquals(2, painted(Kind.LIVE_REPORT), "下播报告：两种版式各画一次");
+        assertEquals(2, painted(Kind.LIVE_REPORT), "直播报告：两种版式各画一次");
 
         Kind.Run digest = Kind.REWARD_DIGEST.start(this);
         digest.handle(channel(30001L, "night"));
@@ -373,7 +373,7 @@ class ChannelReportPaletteTest {
      * 三种推送图，各自装出处理器、事件与计数
      */
     private enum Kind {
-        LIVE_REPORT("下播报告"),
+        LIVE_REPORT("直播报告"),
         DYNAMIC("动态推送"),
         REWARD_DIGEST("下播打赏播报");
 

@@ -437,7 +437,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         }
         for (Report report : reports) {
             String label = switch (report.kind()) {
-                case LIVE -> "下播报告";
+                case LIVE -> "直播报告";
                 case WEEKLY -> "运营周报";
             };
             String question = "（机器人在 " + REPORT_TIME.format(report.deliveredAt()) + " 推送了" + label + "）";

@@ -13,18 +13,18 @@
 | `org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler` | 开播通知 | 开播 | `{uname}` `{title}` `{cover}` `{url}` `{at}` `{next}` `{at=all}` |
 | `org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler` | 下播通知 | 下播 | `{uname}` `{time}` `{url}` `{next}` `{at=all}` |
 | `org.frostnova.nova.report.handler.BilibiliDynamicPushHandler` | 动态通知 | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` `{at}` `{next}` `{at=all}` |
-| `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | 下播 | 只发图，旧文字模板不再生效；画图失败时发文字版报告 |
+| `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 直播报告 | 下播 | 只发图，旧文字模板不再生效；画图失败时发文字版报告 |
 | `org.frostnova.nova.report.handler.BilibiliOfflineRewardDigestPushHandler` | 下播打赏播报 | 不在播时有人上舰或送礼够格，攒完一阵（见[第 6 章](06-add-streamer-and-push.md#下播打赏播报)） | `{uname}` `{list}` `{url}` `{picture}` `{next}` `{at=all}` |
 
-推送页的「试发」已改为「发送上一周的报告」，下播报告新增「发送上一份下播报告」。两者都只发往当前通道，确认后真实发送，不影响后续定时周报或下播推送。
+推送页的运营周报可以「发送上一周的报告」，直播报告可以「发送上一份直播报告」。两者都只发往当前通道，确认后真实发送，不影响后续定时周报或下播推送。
 
-**前缀不止一种**：动态通知、下播报告与下播打赏播报住在报告插件里（`org.frostnova.nova.report.handler.`），
+**前缀不止一种**：动态通知、直播报告与下播打赏播报住在报告插件里（`org.frostnova.nova.report.handler.`），
 其余两个在哔哩哔哩插件里。`{next}` 的意思是「从这里分成两条消息」——在界面的模板
 编辑器里不用写它，多建一张卡就是多一条（见第 6 章）。
 
 > [!NOTE] 从 starbot 时代升上来的老配置不用急着改：旧全名（`com.starlwr.bot.`
 > 开头的）仍被认，日志里会提醒一句「这个处理器现在叫什么、建议改过来」。
-> 其中动态通知与下播报告原先住在哔哩哔哩插件包下，照上表改过来即可，
+> 其中动态通知与直播报告原先住在哔哩哔哩插件包下，照上表改过来即可，
 > 改之前推送照常。下播打赏播报没有 starbot 时代的名字，但它的旧全名
 > （`org.frostnova.nova.bilibili.handler.` 开头的那一份）同样仍被认。
 
@@ -53,11 +53,11 @@
 - 进场次数另按分钟记成时序，与其它曲线一起归档在每场的 `detail.json` 里
 - 一场最多留 50 万行流水，到了会在日志里说明一声，本场后面的不再收录
 
-同一数据目录下的 `image-cache/` 存着下播报告用过的礼物图标和大航海标志，程序重启后不用重新下载。三十天没再被读到的会自动删掉。整个目录删掉也行：正在出的报告会重新下载；回看以前的场次不联网，缺的那几张画成占位。
+同一数据目录下的 `image-cache/` 存着直播报告用过的礼物图标和大航海标志，程序重启后不用重新下载。三十天没再被读到的会自动删掉。整个目录删掉也行：正在出的报告会重新下载；回看以前的场次不联网，缺的那几张画成占位。
 
 `excluded-viewers.json` 也在同一数据目录，供 MCP 等外部只读查询标记智能助手「不分析」的观众：`excludedUids` 是去重后升序排列的观众 uid 数组，`updatedAt` 是本次名单写入时的 Unix 毫秒时间戳，`version` 是格式版本号（当前为 `1`）；启动时按当前设置生成，控制台保存名单后立即更新，相同名单不重写，清空后仍保留文件并写成空数组，不含昵称或其他设置。
 
-旁边的 `report-render-cache/` 存着下播报告推送时的成品原图，每张通常几百 KB 到数 MB，随报告内容和版式而变；每位主播只留最近一场的各套外观，三十天没再被读到会自动删掉。删掉目录后仍能「发送上一份下播报告」，但会从明细重画，封面和头像用占位图，也不画粉丝增减。
+旁边的 `report-render-cache/` 存着直播报告推送时的成品原图，每张通常几百 KB 到数 MB，随报告内容和版式而变；每位主播只留最近一场的各套外观，三十天没再被读到会自动删掉。删掉目录后仍能「发送上一份直播报告」，但会从明细重画，封面和头像用占位图，也不画粉丝增减。
 
 ## 让事件去触发一个脚本
 

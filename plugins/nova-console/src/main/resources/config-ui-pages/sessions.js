@@ -304,7 +304,7 @@ function revenueRow(host, ctx) {
   line.appendChild(label);
 
   const text = el('div', 'swtxt');
-  text.innerHTML = '<b>显示金额</b><p>关闭后，下播报告不显示收益，卡片改用人数与条数，'
+  text.innerHTML = '<b>显示金额</b><p>关闭后，直播报告不显示收益，卡片改用人数与条数，'
     + '礼物与醒目留言榜整榜不显示；数据查询命令同样不再返回金额。'
     + (ctx.summary.revenue.explicit ? '' : '（当前为默认值：'
       + (Number(ctx.target.type) === 0 ? '私聊显示' : '群聊隐藏、私聊显示') + '）') + '</p>';

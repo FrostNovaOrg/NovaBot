@@ -965,11 +965,11 @@
 				},
 				{
 					"defaultValue":"",
-					"description":"下播报告底部标识图片的路径，留空不画；要和动态图打同一个标就填同一个路径，图片按固定高度缩放。",
+					"description":"直播报告底部标识图片的路径，留空不画；要和动态图打同一个标就填同一个路径，图片按固定高度缩放。",
 					"effect":"RESTART",
 					"format":"PATH",
 					"group":"report",
-					"help":"下播报告底部标识图片的路径，留空不画；要和动态图打同一个标就填同一个路径，图片按固定高度缩放。",
+					"help":"直播报告底部标识图片的路径，留空不画；要和动态图打同一个标就填同一个路径，图片按固定高度缩放。",
 					"label":"报告自定义标识图片",
 					"level":"COMMON",
 					"name":"novabot.bilibili.live.report-logo-path",

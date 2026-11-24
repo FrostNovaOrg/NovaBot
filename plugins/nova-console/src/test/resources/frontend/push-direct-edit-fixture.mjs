@@ -105,7 +105,7 @@ const HANDLERS = [
     defaultParams: {message: '{uname} 开播了'},
   },
   {
-    className: REPORT, displayName: '下播报告', description: '下播时推送', platform: PLATFORM,
+    className: REPORT, displayName: '直播报告', description: '下播时推送', platform: PLATFORM,
     aliases: [], placeholders: [], reportLayout: true, options: [
       {key: 'showRevenue', label: '显示营收', type: 'BOOLEAN', defaultValue: true},
     ],
@@ -236,7 +236,7 @@ await ask('① 文字默认就能改：块按得动、@ 档换得动、正文可
 
 await ask('② 图片版式默认就能改：版式开关不带 disabled', async () => {
   const box = lay();
-  if (!box) throw new Error('「下播报告」那一行展不开');
+  if (!box) throw new Error('「直播报告」那一行展不开');
   const rows = all(box, item => item.tagName === 'label'
     && item.innerHTML.includes('type="checkbox"'));
   same(rows.length >= 1 && rows.every(item => !item.innerHTML.includes('disabled')),

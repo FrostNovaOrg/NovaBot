@@ -30,7 +30,7 @@ final class ConfigUiOperationCatalog {
         add("POST", "streamers/{platform}/{uid}/assistant/ask", "ASSISTANT_ASK", "使用主播智能助手");
         add("POST", "weekly-report/{platform}/{uid}/trial", "WEEKLY_REPORT_SEND", "发送运营周报");
         add("POST", "weekly-report/{platform}/{uid}/preview", "WEEKLY_REPORT_PREVIEW", "生成运营周报预览");
-        add("POST", "live-report/{platform}/{uid}/send-latest", "LIVE_REPORT_SEND", "发送下播报告");
+        add("POST", "live-report/{platform}/{uid}/send-latest", "LIVE_REPORT_SEND", "发送直播报告");
         add("POST", "napcat/credential", "NAPCAT_CREDENTIAL", "换取机器人管理凭据");
         add("POST", "report/palettes/default", "PALETTE_SAVE", "保存报告默认配色");
         add("POST", "report/preview", "REPORT_PREVIEW", "生成报告预览");

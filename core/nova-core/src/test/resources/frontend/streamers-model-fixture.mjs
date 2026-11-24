@@ -240,8 +240,8 @@ eq(reportView('ok'), {image: true, text: ''}, '拿到了就显示图');
 eq(reportView('loading'),
   {image: false, text: '正在获取该场报告图。报告图按该场数据实时绘制，请稍候。'},
   '正在取要说一句——不说的话，那几秒的空白与「这一场没有报告」长得一样');
-eq(reportView('missing', '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开下播报告'),
-  {image: false, text: '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开下播报告'},
+eq(reportView('missing', '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开直播报告'),
+  {image: false, text: '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开直播报告'},
   '没有图时照服务端那句人话说');
 eq(reportView('missing').text.length > 0, true, '服务端没给话时也得有一句，不留白');
 

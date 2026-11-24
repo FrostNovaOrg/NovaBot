@@ -243,7 +243,7 @@ class GuardRosterRetainTest {
     }
 
     @Test
-    @DisplayName("名单没取全时，重画的人数仍是下播报告上的人数")
+    @DisplayName("名单没取全时，重画的人数仍是直播报告上的人数")
     void shortRosterRedrawsTheCountShownOnTheReport() throws Exception {
         LiveDataService data = savedLiveData();
         data.setLiveStartTime(PLATFORM, UID, START);
@@ -263,9 +263,9 @@ class GuardRosterRetainTest {
 
         BilibiliLiveReportReplayPainter drawn = replay(mock(BilibiliApiUtil.class), streamer);
         assertAll(
-                () -> assertEquals(Optional.of(1280), onReport, "下播报告上的人数不是接口报的总数"),
+                () -> assertEquals(Optional.of(1280), onReport, "直播报告上的人数不是接口报的总数"),
                 () -> assertEquals(onReport, drawn.guardCount(ROOM, UID),
-                        "名单没取全时，重画出来的人数比下播报告上的少"),
+                        "名单没取全时，重画出来的人数比直播报告上的少"),
                 () -> verify(api, times(1)).getGuardCount(ROOM, UID));
     }
 
