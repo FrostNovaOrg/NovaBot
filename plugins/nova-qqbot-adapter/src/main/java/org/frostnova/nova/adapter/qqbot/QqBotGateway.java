@@ -36,11 +36,11 @@ final class QqBotGateway {
     private final QqBotGatewayScheduler scheduler;
     private final ObjectProvider<QqBotEventListener> listeners;
     private final AtomicReference<QqBotWebSocketTransport.Connection> socket = new AtomicReference<>();
-    private volatile Status status = new Status(null, CONNECTING, null);
+    private volatile Status status = new Status(null, CONNECTING, null, null);
     private volatile boolean closed;
 
     // 除关闭连接与探针读数外，网关状态由调度线程串行维护。
-    private QqBotSettings.Snapshot settings;
+    private QqBotSettings.Credentials settings;
     private Attempt attempt;
     private Future<?> retry;
     private int retryCount;
@@ -58,18 +58,18 @@ final class QqBotGateway {
     }
 
     void credentialsChanged() {
-        var snapshot = tokens.settings();
+        var snapshot = tokens.settings().credentials();
         schedule(() -> {
-            if (snapshot == tokens.settings()) {
+            if (snapshot == tokens.settings().credentials()) {
                 reset(snapshot);
             }
         }, 0);
     }
 
     void start() {
-        var snapshot = tokens.settings();
+        var snapshot = tokens.settings().credentials();
         schedule(() -> {
-            if (closed || snapshot != tokens.settings()) {
+            if (closed || snapshot != tokens.settings().credentials()) {
                 return;
             }
             reset(snapshot);
@@ -86,7 +86,16 @@ final class QqBotGateway {
 
     HealthStatus health() {
         Status current = status;
-        boolean sameSettings = current.settings() == tokens.settings();
+        return health(current, current.settings() == tokens.settings().credentials());
+    }
+
+    ConnectionState connectionState() {
+        Status current = status;
+        boolean sameSettings = current.settings() == tokens.settings().credentials();
+        return new ConnectionState(health(current, sameSettings), sameSettings ? current.robotName() : null);
+    }
+
+    private HealthStatus health(Status current, boolean sameSettings) {
         if (sameSettings && current.health().level() == HealthStatus.Level.DOWN) {
             return current.health();
         }
@@ -103,7 +112,7 @@ final class QqBotGateway {
         return current.health();
     }
 
-    private void reset(QqBotSettings.Snapshot snapshot) {
+    private void reset(QqBotSettings.Credentials snapshot) {
         if (snapshot != settings) {
             disconnect();
             cancel(retry);
@@ -111,12 +120,12 @@ final class QqBotGateway {
             retryCount = 0;
             forgetSession();
             settings = snapshot;
-            status = new Status(settings, CONNECTING, null);
+            status = new Status(settings, CONNECTING, null, null);
         }
     }
 
     private void connect() {
-        if (closed || settings != tokens.settings()) {
+        if (closed || settings != tokens.settings().credentials()) {
             return;
         }
         var next = new Attempt();
@@ -298,7 +307,7 @@ final class QqBotGateway {
         if (source.readyAt == null) {
             source.readyAt = scheduler.nowMillis();
         }
-        status = new Status(settings, HealthStatus.ok("已连接 · " + robotName), null);
+        status = new Status(settings, HealthStatus.ok("已连接 · " + robotName), null, robotName);
     }
 
     private void rememberSequence(Long receivedSequence) {
@@ -351,7 +360,7 @@ final class QqBotGateway {
     private void stop(String summary, String advice, String reason) {
         disconnect();
         forgetSession();
-        status = new Status(settings, HealthStatus.down(summary, advice, reason), null);
+        status = new Status(settings, HealthStatus.down(summary, advice, reason), null, null);
     }
 
     private void connectionFailed(Attempt source) {
@@ -378,7 +387,7 @@ final class QqBotGateway {
         Long disconnectedAt = status.disconnectedAt();
         status = new Status(settings, HealthStatus.degraded("连接断开，正在重连（第 " + retryCount + " 次）",
                 "请检查本机网络，连接会自动重试"),
-                disconnectedAt == null ? scheduler.nowMillis() : disconnectedAt.longValue());
+                disconnectedAt == null ? scheduler.nowMillis() : disconnectedAt.longValue(), robotName);
         scheduleConnect(Math.max(delay, minimumDelay));
     }
 
@@ -396,7 +405,7 @@ final class QqBotGateway {
     }
 
     private boolean isCurrent(Attempt source) {
-        return !closed && attempt == source && settings == tokens.settings();
+        return !closed && attempt == source && settings == tokens.settings().credentials();
     }
 
     private void disconnect() {
@@ -468,7 +477,10 @@ final class QqBotGateway {
     private record Endpoint(URI uri, long waitMillis) {
     }
 
-    private record Status(QqBotSettings.Snapshot settings, HealthStatus health, Long disconnectedAt) {
+    record ConnectionState(HealthStatus health, String robotName) {
+    }
+
+    private record Status(QqBotSettings.Credentials settings, HealthStatus health, Long disconnectedAt, String robotName) {
     }
 
     private final class Attempt implements QqBotWebSocketTransport.Listener {

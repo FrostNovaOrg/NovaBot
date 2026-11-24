@@ -25,6 +25,11 @@ public class QqBotHealthProbe implements HealthProbe {
     }
 
     @Override
+    public String card() {
+        return QqBotConsolePageProvider.ID;
+    }
+
+    @Override
     public int order() {
         return 21;
     }
@@ -38,5 +43,9 @@ public class QqBotHealthProbe implements HealthProbe {
     @Override
     public HealthStatus check() {
         return gateway.health();
+    }
+
+    QqBotGateway.ConnectionState connectionState() {
+        return gateway.connectionState();
     }
 }

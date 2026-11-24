@@ -123,14 +123,16 @@ export function worstLamp(levels) {
  * 「哪个级别算黄、认不出的级别算什么」这条规则有两份实现的话，改了其中一份的另一份不会跟着变，
  * 而两页说的是同一件事。
  * @param status /api/status 回包
- * @param scope 范围，BOT / PLATFORM / SYSTEM
+ * @param scope 范围，BOT / PLATFORM / SYSTEM，省略时取全部
  * @return 该范围内的探针
  */
 export function probesIn(status, scope) {
   return (status.health || [])
-    .filter(item => item.scope === scope)
+    .filter(item => scope == null || item.scope === scope)
     .map(item => ({
       name: item.name || '',
+      scope: item.scope,
+      card: item.card,
       lamp: LAMP_OF[item.level] || 'off',
       summary: item.summary || '',
       advice: item.advice || '',

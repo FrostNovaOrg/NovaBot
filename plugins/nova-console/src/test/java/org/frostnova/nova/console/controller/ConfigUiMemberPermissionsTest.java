@@ -161,6 +161,10 @@ class ConfigUiMemberPermissionsTest {
             POST napcat/credential
             GET bot/targets
             POST bot/targets/refresh
+            GET qqbot/state
+            POST qqbot/credentials
+            POST qqbot/interval
+            POST qqbot/groups/{num}/name
             GET exec/notice
             """);
     private static Set<String> routes(String text) {
@@ -202,8 +206,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(131, mappings.size());
-        assertEquals(23, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(68, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(135, mappings.size());
+        assertEquals(23, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(72, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));
@@ -337,7 +341,7 @@ class ConfigUiMemberPermissionsTest {
         String[] pair = route.split(" ", 2);
         String path = pair[1].replace("{platform}", "bilibili").replace("{uid}", uid)
                 .replace("{version}", "1792497600000").replace("{start}", "1").replace("{name}", "core.js").replace("{id}", "member")
-                .replace("{fingerprint}", "test");
+                .replace("{fingerprint}", "test").replace("{num}", "1001");
         var req = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(
                 org.springframework.http.HttpMethod.valueOf(pair[0]), path)
                 .requestAttr(ConfigUiAccess.ACCOUNT, account).contentType("application/json")

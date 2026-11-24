@@ -14,8 +14,16 @@ public class ConfigUiOperationFilter extends OncePerRequestFilter {
     static final String ACTION = "nova.console.audit.action";
     static final String REASON = "nova.console.audit.reason";
     private final ConfigUiOperationStore store;
+    private final List<ConfigUiOperationCatalog.Entry> pluginEntries;
 
-    public ConfigUiOperationFilter(ConfigUiOperationStore store) { this.store = store; }
+    public ConfigUiOperationFilter(ConfigUiOperationStore store) {
+        this(store, List.of());
+    }
+
+    public ConfigUiOperationFilter(ConfigUiOperationStore store, List<ConfigUiOperationProvider> operations) {
+        this.store = store;
+        this.pluginEntries = ConfigUiOperationCatalog.pluginEntries(operations);
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -23,11 +31,19 @@ public class ConfigUiOperationFilter extends OncePerRequestFilter {
         boolean api = request.getRequestURI().substring(request.getContextPath().length()).startsWith("/config/api/");
         var target = new JSONObject();
         request.setAttribute(TARGET, target);
+        if (api) {
+            var action = ConfigUiOperationCatalog.find(request, pluginEntries);
+            if (action != null) request.setAttribute(ConfigUiOperationCatalog.REGISTERED_ACTION, action);
+        }
         boolean failed = true;
         try {
             chain.doFilter(request, response);
             failed = false;
         } finally {
+            if (request.getAttribute(ConfigUiOperationCatalog.REGISTERED_ACTION) == null && api) {
+                var action = ConfigUiOperationCatalog.find(request, pluginEntries);
+                if (action != null) request.setAttribute(ConfigUiOperationCatalog.REGISTERED_ACTION, action);
+            }
             var selected = request.getAttribute(ACTION) instanceof ConfigUiOperationCatalog.Action explicit
                     ? explicit : ConfigUiOperationCatalog.action(request);
             boolean rejectedRequest = failed || response.getStatus() >= 400 || request.getAttribute(REASON) != null;
@@ -49,8 +65,12 @@ public class ConfigUiOperationFilter extends OncePerRequestFilter {
                                 "target", new JSONObject(), "result", "SUCCESS"));
                         action = ConfigUiOperationCatalog.action(request);
                     }
-                    ConfigUiOperationAdvice.identify(target, action.variables());
-                    ConfigUiOperationAdvice.query(request, target);
+                    if (action.actionOnly()) {
+                        target.clear();
+                    } else {
+                        ConfigUiOperationAdvice.identify(target, action.variables());
+                        ConfigUiOperationAdvice.query(request, target);
+                    }
                     boolean rejected = !action.name().equals("OPERATOR_LOGIN")
                             && (failed || response.getStatus() >= 400 || request.getAttribute(REASON) != null);
                     var row = JSONObject.of("actor", actor, "action", action.name(), "description", action.description(),

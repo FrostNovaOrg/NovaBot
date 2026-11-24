@@ -140,6 +140,10 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/napcat/credential");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/bot/targets");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/bot/targets/refresh");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/qqbot/state");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/credentials");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/interval");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/groups/{num}/name");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/bot/targets/lookup");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/exec/notice");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/assistant/status");
