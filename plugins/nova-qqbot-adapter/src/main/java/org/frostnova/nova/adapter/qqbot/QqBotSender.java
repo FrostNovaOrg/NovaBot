@@ -203,11 +203,10 @@ class QqBotSender {
         var text = message.text();
         boolean hasImages = !message.images().isEmpty();
         if (hasImages && !text.hasMentions()) {
-            return sendImages(target, path, message.images(), text.withoutMentions(), replyTo, reply);
+            return sendImages(target, path, message.images(), text.plain(false), replyTo, reply);
         }
 
-        String rendered = text.render(true);
-        JSONObject body = text.hasMembers() ? markdownBody(rendered) : textBody(rendered);
+        JSONObject body = text.hasMembers() ? markdownBody(text.markdown(true)) : textBody(text.plain(true));
         var notice = sendContent(target, path + "/messages", body, text, replyTo, reply, hasImages);
         if (!hasImages) return notice;
         if (notice.getIntValue("code") != 0) {
@@ -294,27 +293,33 @@ class QqBotSender {
             } catch (QqBotApiException e) {
                 if (markdown != null && e.markdownPermissionDenied()) {
                     log.warn("平台没给这只机器人发 markdown 的权限，这条改为不 @ 人");
-                    String plain = source.withoutMentions();
+                    String plain = source.plain(false);
                     if (plain.isBlank() && imagesFollow) return success(null);
                     parts.set(i, textBody(plain));
                     continue;
                 }
                 if (e.atAllLimitReached() && text.contains(AT_ALL_TAG)) {
                     rememberAtAllRejection(target);
+                    atAllRejected = true;
                     if (markdown != null) {
-                        markdown.put("content", source.render(false));
-                    } else {
-                        atAllRejected = true;
+                        markdown.put("content", source.markdown(false));
                     }
                     continue;
                 }
-                if (markdown == null && e.code() == 40054007 && parts.size() < 4) {
+                if (e.messageTooLong() && parts.size() < 4) {
+                    if (markdown != null) {
+                        log.warn("这条太长，改为不 @ 人分段发");
+                        text = source.plain(!atAllRejected);
+                        if (text.isBlank() && imagesFollow) return success(null);
+                        parts.set(i, textBody(text));
+                    }
                     int cut = splitAt(text);
                     if (cut > 0) {
-                        part.put("content", text.substring(0, cut));
+                        parts.get(i).put("content", text.substring(0, cut));
                         parts.add(i + 1, textBody(text.substring(cut)));
                         continue;
                     }
+                    if (markdown != null) continue;
                 }
                 boolean fallback = reply != null && !part.containsKey("msg_id");
                 JSONObject failed = apiFailure(target, text, fileInfo, e, part, fallback);

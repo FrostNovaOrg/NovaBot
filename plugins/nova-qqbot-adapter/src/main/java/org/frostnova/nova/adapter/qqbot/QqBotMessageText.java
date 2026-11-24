@@ -43,28 +43,32 @@ final class QqBotMessageText {
         return mentions.isEmpty() && literal.toString().isBlank();
     }
 
-    String withoutMentions() {
-        return escapeMentions(literal);
+    String plain(boolean includeEveryone) {
+        if (!includeEveryone || mentions.isEmpty()) return escapeMentions(literal);
+        return render(includeEveryone, false);
     }
 
-    String render(boolean includeEveryone) {
-        if (mentions.isEmpty()) return withoutMentions();
+    String markdown(boolean includeEveryone) {
+        return render(includeEveryone, true);
+    }
+
+    private String render(boolean includeEveryone, boolean markdown) {
         var output = new StringBuilder();
         int start = 0;
         for (Mention mention : mentions) {
-            if (!includeEveryone && AT_ALL_TAG.equals(mention.tag())) continue;
-            appendLiteral(output, start, mention.offset());
+            if (AT_ALL_TAG.equals(mention.tag()) ? !includeEveryone : !markdown) continue;
+            appendLiteral(output, start, mention.offset(), markdown);
             output.append(mention.tag());
             start = mention.offset();
         }
-        appendLiteral(output, start, literal.length());
+        appendLiteral(output, start, literal.length(), markdown);
         return output.toString();
     }
 
-    private void appendLiteral(StringBuilder output, int start, int end) {
+    private void appendLiteral(StringBuilder output, int start, int end, boolean markdown) {
         if (start == end) return;
         String text = escapeMentions(literal.substring(start, end));
-        if (hasMembers) {
+        if (markdown) {
             appendMarkdown(output, text);
         } else {
             output.append(text);

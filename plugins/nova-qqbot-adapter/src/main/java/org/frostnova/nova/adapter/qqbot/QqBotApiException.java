@@ -40,6 +40,10 @@ public final class QqBotApiException extends RuntimeException {
         return code == 304036 || code == 40034127;
     }
 
+    boolean messageTooLong() {
+        return code == 40054007;
+    }
+
     boolean markdownFormatRejected() {
         return switch (code) {
             case 40034008, 40034009, 40034011, 40034124 -> true;

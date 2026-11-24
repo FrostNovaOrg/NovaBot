@@ -356,6 +356,37 @@ class QqBotDeliveryTest {
         });
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @ExtendWith(OutputCaptureExtension.class)
+    void longLiveNoticeStillDeliversEveryLineAfterMemberMentionsAreRejected(boolean everyone, CapturedOutput logs) {
+        withSender(rig -> {
+            String member = rig.memberMention("fixture-subscriber");
+            String firstLine = "**开播了**" + "甲".repeat(1242) + "\n";
+            String secondLine = "乙".repeat(1250);
+            rig.exchange = path -> {
+                var body = rig.body(rig.requests.size() - 1);
+                var payload = body.containsKey("markdown") ? body.getJSONObject("markdown") : body;
+                return payload.getString("content").length() > 2000
+                        ? json("code", 40054007) : json("id", "part-" + ++rig.sent);
+            };
+
+            var result = rig.send((everyone ? "{at=all}" : "") + member + firstLine + secondLine);
+
+            assertEquals(0, result.getIntValue("code"), result.getString("message"));
+            assertEquals("part-1", result.getString("id"));
+            assertEquals(List.of("messages", "messages", "messages"), rig.endpoints());
+            assertEquals(2, rig.body(0).getIntValue("msg_type"));
+            assertTrue(rig.body(0).getJSONObject("markdown").getString("content")
+                    .contains("<qqbot-at-user id=\"fixture-subscriber\" />"));
+            assertEquals(JSONObject.of("msg_type", 0, "content", (everyone ? AT_ALL_TAG : "") + firstLine), rig.body(1));
+            assertEquals(JSONObject.of("msg_type", 0, "content", secondLine), rig.body(2));
+            assertTrue(logs.getAll().contains("这条太长，改为不 @ 人分段发"));
+            assertFalse(logs.getAll().contains("fixture-subscriber"));
+            assertFalse(logs.getAll().contains(member.substring(4, member.length() - 1)));
+        });
+    }
+
     @Test
     void aRejectedMentionIsRemovedFromTheRemainingTextParts() {
         withSender(rig -> {
