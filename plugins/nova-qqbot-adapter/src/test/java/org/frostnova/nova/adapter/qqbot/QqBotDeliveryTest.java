@@ -27,6 +27,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.support.GenericApplicationContext;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -50,6 +51,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -130,6 +132,48 @@ class QqBotDeliveryTest {
             assertEquals(List.of("机器人不是这个群的管理员（QQ 官方机器人要先被设为群管理员）"), rig.skippedReasons());
             assertEquals("开播了", rig.body(0).getString("content"));
             assertEquals(0, rig.quota.usedByBot(PLATFORM));
+        });
+    }
+
+    @Test
+    void promotedBotMentionsEveryoneOnTheNextLiveNoticeAfterTenMinutes() {
+        withSender("member", new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            rig.role = "admin";
+            rig.time.advance(599_999);
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals("开播了", rig.body(0).getString("content"));
+            assertEquals(1, rig.roleQueries.get());
+            rig.time.advance(1);
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(AT_ALL_TAG + "开播了", rig.body(1).getString("content"));
+            assertEquals(2, rig.roleQueries.get());
+            assertEquals(1, rig.quota.used(PLATFORM, rig.number));
+        });
+    }
+
+    @Test
+    void demotedBotSendsTheNoticeWithoutMentioningOrUsingQuota() {
+        withSender("admin", new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            rig.role = "member";
+            rig.time.advance(Duration.ofMinutes(10).toMillis());
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals("开播了", rig.body(0).getString("content"));
+            assertEquals(List.of("机器人不是这个群的管理员（QQ 官方机器人要先被设为群管理员）"), rig.skippedReasons());
+            assertEquals(0, rig.quota.used(PLATFORM, rig.number));
+            assertEquals(2, rig.roleQueries.get());
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"admin,50001,true", "member,40012010,false", ",50001,true"})
+    void failedRoleRefreshStillDeliversWithTheLastKnownPermission(String role, int code, boolean mentioned) {
+        withSender(role, new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            rig.roleFailure = json("code", code);
+            rig.time.advance(Duration.ofMinutes(10).toMillis());
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals((mentioned ? AT_ALL_TAG : "") + "开播了", rig.body(0).getString("content"));
+            assertEquals(mentioned ? 1 : 0, rig.quota.used(PLATFORM, rig.number));
+            assertEquals(2, rig.roleQueries.get());
         });
     }
 
@@ -901,6 +945,10 @@ class QqBotDeliveryTest {
         Rig rig = new Rig();
         rig.role = role;
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
+                .withInitializer(context -> ((GenericApplicationContext) context).registerBean(
+                        "qqBotDirectory", QqBotDirectory.class, () -> new QqBotDirectory(
+                                context.getBean(QqBotSettings.class), context.getBean(QqBotApiClient.class),
+                                rig.clock, Executors.newSingleThreadExecutor(), QqBotDirectory::sha256)))
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
                 .withBean(NovaCoreProperties.class)
                 .withBean(AtAllQuotaService.class)
@@ -909,8 +957,7 @@ class QqBotDeliveryTest {
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
                 .withBean("qqBotSendWindow", QqBotSendWindow.class, () -> new QqBotSendWindow(
-                        Clock.offset(rig.time.clock(), Duration.between(Instant.EPOCH, rig.now)),
-                        rig.time::nowMillis, rig.time::advance))
+                        rig.clock, rig.time::nowMillis, rig.time::advance))
                 .withBean(QqBotImageDownloader.class, () -> downloader, definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
@@ -1000,6 +1047,7 @@ class QqBotDeliveryTest {
         private final List<Request> requests = new ArrayList<>();
         private final QqBotGatewayTest.ManualScheduler time = new QqBotGatewayTest.ManualScheduler();
         private final Instant now = Instant.now();
+        private final Clock clock = Clock.offset(time.clock(), Duration.between(Instant.EPOCH, now));
         private QqBotInboundEvents listener;
         private Exchange exchange;
         private QqBotCredentials credentials;
@@ -1008,7 +1056,9 @@ class QqBotDeliveryTest {
         private QqBotDirectory directory;
         private long number;
         private int sent;
-        private String role;
+        private volatile String role;
+        private volatile QqBotHttpTransport.Response roleFailure;
+        private final AtomicInteger roleQueries = new AtomicInteger();
         private AtAllQuotaService quota;
         private ObjectProvider<AtAllPermissionResolver> resolvers;
         private final List<TimelineEvent> events = new ArrayList<>();
@@ -1039,7 +1089,12 @@ class QqBotDeliveryTest {
                 return json("access_token", TOKEN, "expires_in", 7200);
             }
             if (method.equals("GET")) {
-                return uri.getPath().endsWith("/bot_state") && role != null ? json("member_role", role) : json();
+                if (uri.getPath().endsWith("/bot_state")) {
+                    roleQueries.incrementAndGet();
+                    if (roleFailure != null) return roleFailure;
+                    return role == null ? json() : json("member_role", role);
+                }
+                return json();
             }
             assertEquals("POST", method);
             String path = uri.getPath();
