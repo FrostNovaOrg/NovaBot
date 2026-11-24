@@ -18,6 +18,8 @@ import java.util.Map;
 /** 向 QQ 开放平台发送带身份验证的 JSON 请求。 */
 @NovaComponent
 public class QqBotApiClient {
+    private enum ResultType { MASKED_JSON, UPLOAD_PLAN, FILE_INFO }
+
     private final QqBotHttpTransport transport;
     private final QqBotTokenService tokens;
 
@@ -33,20 +35,24 @@ public class QqBotApiClient {
 
     /** 请求中含有机器人专属标识时，重试也须使用同一 AppID。 */
     Object request(String method, String path, JSONObject body, String appId) {
-        return request(method, path, body, appId, false);
+        return request(method, path, body, appId, ResultType.MASKED_JSON);
+    }
+
+    Object prepareUpload(String path, JSONObject body, String appId) {
+        return request("POST", path, body, appId, ResultType.UPLOAD_PLAN);
     }
 
     String uploadFile(String path, JSONObject body, String appId) {
-        return (String) request("POST", path, body, appId, true);
+        return (String) request("POST", path, body, appId, ResultType.FILE_INFO);
     }
 
-    private Object request(String method, String path, JSONObject body, String appId, boolean fileInfoOnly) {
+    private Object request(String method, String path, JSONObject body, String appId, ResultType resultType) {
         URI uri = officialUri(path);
         var token = tokenFor(appId);
         QqBotResponse response = send(method, uri, body, token);
         boolean rejected = rejectsToken(response);
         if (!rejected && !response.hasCode(11242)) {
-            return result(response, new ResponseMask(token, token), fileInfoOnly);
+            return result(response, new ResponseMask(token, token), resultType);
         }
 
         if (rejected) {
@@ -57,7 +63,7 @@ public class QqBotApiClient {
         if (rejectsToken(retry)) {
             tokens.invalidate(retryToken);
         }
-        return result(retry, new ResponseMask(token, retryToken), fileInfoOnly);
+        return result(retry, new ResponseMask(token, retryToken), resultType);
     }
 
     private QqBotTokenService.Token tokenFor(String appId) {
@@ -94,10 +100,14 @@ public class QqBotApiClient {
         return response.status() == 401 || response.hasCode(11241) || response.hasCode(11243);
     }
 
-    private static Object result(QqBotResponse response, ResponseMask mask, boolean fileInfoOnly) {
+    private static Object result(QqBotResponse response, ResponseMask mask, ResultType resultType) {
         if (response.successful()) {
-            // 上传回包的文件信息只交给组消息接口，按原值传递。
-            return fileInfoOnly ? response.text("file_info") : mask.json(response.body());
+            // 签名地址、上传编号和文件信息只在投递过程中使用，须按原值传递。
+            return switch (resultType) {
+                case UPLOAD_PLAN -> response.body();
+                case FILE_INFO -> response.text("file_info");
+                case MASKED_JSON -> mask.json(response.body());
+            };
         }
         String message = response.text("message");
         throw new QqBotApiException(response.code(),

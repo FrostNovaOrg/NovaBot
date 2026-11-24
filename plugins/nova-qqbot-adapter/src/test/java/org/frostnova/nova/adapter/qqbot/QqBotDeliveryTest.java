@@ -41,6 +41,8 @@ import java.net.http.HttpTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -48,7 +50,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Random;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -79,6 +83,9 @@ class QqBotDeliveryTest {
     private static final String JPEG = "/9j/4A==";
     private static final String IMAGE = "{image_base64=" + PNG + "}";
     private static final String FILE_INFO = "opaque+/=file-info";
+
+    private static final int MIB = 1024 * 1024;
+    private static final String REPORT = "周报{image_url=https://images.example.invalid/@everyone/cover.png}";
 
     @TempDir
     Path dataDirectory;
@@ -933,6 +940,232 @@ class QqBotDeliveryTest {
     }
 
     @ParameterizedTest
+    @ValueSource(ints = {4, 5})
+    void keepsDirectUploadThroughFiveMiB(int sizeMiB) {
+        byte[] image = reportImage(sizeMiB * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            assertEquals(0, rig.send(REPORT).getIntValue("code"));
+            assertEquals(List.of("files", "messages"), rig.endpoints());
+            assertArrayEquals(image, Base64.getDecoder().decode(rig.body(0).getString("file_data")));
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void deliversWeeklyReportAfterEveryPartIsConfirmed(boolean retrySecondPart) {
+        byte[] image = reportImage(12 * MIB);
+        withSender(fakeDownloader(image, false, new AtomicBoolean()), rig -> {
+            int[] sizes = {5 * MIB, 4 * MIB, 3 * MIB};
+            var secondAttempts = new AtomicInteger();
+            rig.exchange = path -> switch (path) {
+                case "upload_prepare" -> prepare(300, 2, sizes);
+                case "put-1" -> {
+                    if (retrySecondPart && secondAttempts.incrementAndGet() == 1) throw new IOException();
+                    yield json();
+                }
+                case "files" -> json("file_info", FILE_INFO);
+                case "messages" -> json("id", "report");
+                case "put-0", "put-2" -> new QqBotHttpTransport.Response(200, "");
+                default -> json();
+            };
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, REPORT).get(0);
+            assertEquals(JSONObject.of("code", 0, "id", "report"), sendNow(rig, message));
+            var expected = new ArrayList<>(List.of("upload_prepare", "put-0", "upload_part_finish", "put-1",
+                    "upload_part_finish", "put-2", "upload_part_finish", "files", "messages"));
+            if (retrySecondPart) expected.add(4, "put-1");
+            assertEquals(expected, rig.endpoints());
+            assertEquals(JSONObject.of("file_type", 1, "file_name", "image.png",
+                    "file_size", Integer.toString(image.length), "md5", digest("MD5", image, 0, image.length),
+                    "sha1", digest("SHA-1", image, 0, image.length), "md5_10m", digest("MD5", image, 0, 10002432)),
+                    rig.body(0));
+            int offset = 0;
+            for (int part = 0; part < sizes.length; part++) {
+                String md5 = digest("MD5", image, offset, sizes[part]);
+                int put = expected.indexOf("put-" + part);
+                int lastPut = expected.lastIndexOf("put-" + part);
+                for (int attempt = put; attempt <= lastPut; attempt++) {
+                    assertEquals(JSONObject.of("length", sizes[part], "md5", md5, "timeout", 60000L), rig.body(attempt));
+                }
+                if (lastPut != put) assertEquals(2000, rig.requests.get(lastPut).millis() - rig.requests.get(put).millis());
+                assertEquals(JSONObject.of("upload_id", "report-upload", "part_index", part,
+                        "block_size", Integer.toString(sizes[part]), "md5", md5), rig.body(lastPut + 1));
+                offset += sizes[part];
+            }
+            assertEquals(JSONObject.of("file_type", 1, "upload_id", "report-upload", "file_name", "image.png",
+                    "srv_send_msg", false), rig.body(expected.indexOf("files")));
+            assertEquals(JSONObject.of("msg_type", 7, "content", "周报", "media", media()), rig.body(expected.indexOf("messages")));
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"300,5", "3,2"})
+    void stopsBeforeMergeWhenSecondPartKeepsFailing(int timeout, int attempts) {
+        byte[] image = reportImage(12 * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            rig.exchange = path -> switch (path) {
+                case "upload_prepare" -> prepare(timeout, 2, 5 * MIB, 4 * MIB, 3 * MIB);
+                case "put-1" -> new QqBotHttpTransport.Response(503, "{\"code\":987654}");
+                default -> json();
+            };
+            JSONObject result = rig.send(REPORT);
+            var expected = new ArrayList<>(List.of("upload_prepare", "put-0", "upload_part_finish"));
+            for (int i = 0; i < attempts; i++) expected.add("put-1");
+            assertEquals(expected, rig.endpoints());
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals("图片分片上传失败（错误码 987654）", result.getString("message"));
+            assertFalse(result.getBooleanValue(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK));
+            if (timeout == 3) assertEquals(1000, rig.body(expected.size() - 1).getIntValue("timeout"));
+        });
+    }
+
+    @Test
+    void preservesOpaqueUploadIdThroughFinishAndMerge() {
+        byte[] image = reportImage(8 * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            String id = "opaque/" + TOKEN + "+=";
+            JSONObject prepared = JSON.parseObject(prepare(300, 1, image.length).body());
+            prepared.put("upload_id", id);
+            rig.exchange = path -> switch (path) {
+                case "upload_prepare" -> new QqBotHttpTransport.Response(200, prepared.toJSONString());
+                case "files" -> json("file_info", FILE_INFO);
+                case "messages" -> json("id", "report");
+                default -> json();
+            };
+            assertEquals(0, rig.send(REPORT).getIntValue("code"));
+            assertEquals(id, rig.body(2).getString("upload_id"));
+            assertEquals(id, rig.body(3).getString("upload_id"));
+        });
+    }
+
+    @Test
+    void usesDefaultRetryDelayWhenPrepareOmitsConfig() {
+        byte[] image = reportImage(8 * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            var prepared = JSON.parseObject(prepare(300, 1, image.length).body());
+            prepared.remove("upload_config");
+            var attempts = new AtomicInteger();
+            rig.exchange = path -> switch (path) {
+                case "upload_prepare" -> new QqBotHttpTransport.Response(200, prepared.toJSONString());
+                case "put-0" -> attempts.incrementAndGet() == 1 ? new QqBotHttpTransport.Response(502, "") : json();
+                case "files" -> json("file_info", FILE_INFO);
+                case "messages" -> json("id", "report");
+                default -> json();
+            };
+            assertEquals(0, rig.send(REPORT).getIntValue("code"));
+            assertEquals(List.of("upload_prepare", "put-0", "put-0", "upload_part_finish", "files", "messages"),
+                    rig.endpoints());
+            assertEquals(1000, rig.requests.get(2).millis() - rig.requests.get(1).millis());
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {5 * MIB + 1, 8 * MIB, 20 * MIB})
+    void preparesEmbeddedImagesUsingTheAvailablePrefix(int length) {
+        byte[] image = reportImage(length);
+        String content = "{image_base64=" + Base64.getEncoder().encodeToString(image) + "}";
+        withSender(rig -> {
+            rig.exchange = path -> switch (path) {
+                case "upload_prepare" -> prepare(300, 1, length);
+                case "files" -> json("file_info", FILE_INFO);
+                case "messages" -> json("id", "report");
+                default -> json();
+            };
+            assertEquals(JSONObject.of("code", 0, "id", "report"), rig.send(content));
+            assertEquals(List.of("upload_prepare", "put-0", "upload_part_finish", "files", "messages"), rig.endpoints());
+            JSONObject request = rig.body(0);
+            assertEquals(String.valueOf(length), request.get("file_size"));
+            assertEquals(digest("MD5", image, 0, Math.min(10002432, length)), request.get("md5_10m"));
+            if (length < 10002432) assertEquals(request.get("md5"), request.get("md5_10m"));
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"upload_prepare,850019,图片格式不受支持", "upload_part_finish,789012,图片分片上传失败（错误码 789012）",
+            "files,40093002,今天发文件的额度用完了"})
+    void propagatesMultipartServiceErrors(String endpoint, int code, String message) {
+        byte[] image = reportImage(8 * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            rig.exchange = path -> {
+                if (path.equals(endpoint)) return json("code", code);
+                if (path.equals("upload_prepare")) return prepare(300, 1, image.length);
+                return json();
+            };
+            JSONObject result = rig.send(REPORT);
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals(message, result.getString("message"));
+            assertEquals(endpoint, rig.endpoints().get(rig.endpoints().size() - 1));
+            assertFalse(result.getBooleanValue(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK));
+        });
+    }
+
+    @Test
+    void rejectsIncompletePartListBeforeUploading() {
+        byte[] image = reportImage(8 * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            rig.exchange = path -> prepare(300, 1, 3 * MIB, 4 * MIB);
+            JSONObject result = rig.send(REPORT);
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("分片信息"));
+            assertEquals(List.of("upload_prepare"), rig.endpoints());
+        });
+    }
+
+    @Test
+    void retriesOnlyTextAfterReportMergeExhaustsQuota() {
+        byte[] image = reportImage(8 * MIB);
+        withSender(fakeDownloader(image, true, new AtomicBoolean()), rig -> {
+            rig.exchange = path -> switch (path) {
+                case "upload_prepare" -> prepare(300, 1, image.length);
+                case "files" -> json("code", 40093002);
+                case "messages" -> json("id", "text-only");
+                default -> json();
+            };
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, REPORT).get(0);
+            sendNow(rig, message);
+            assertEquals("text-only", message.getId());
+            assertEquals(List.of("upload_prepare", "put-0", "upload_part_finish", "files", "messages"), rig.endpoints());
+            assertEquals(JSONObject.of("msg_type", 0, "content", "周报"), rig.body(4));
+        });
+    }
+
+    @Test
+    void rejectsOversizedEmbeddedReportBeforeUpload() {
+        String content = "{image_base64=" + Base64.getEncoder().encodeToString(reportImage(25 * MIB)) + "}";
+        withSender(rig -> {
+            assertEquals(JSONObject.of("code", -1, "message", "图片超过 20 MB，没有发出"), rig.send(content));
+            assertTrue(rig.endpoints().isEmpty());
+        });
+    }
+
+    private static QqBotHttpTransport.Response prepare(int timeout, int delay, int... sizes) {
+        List<JSONObject> parts = new ArrayList<>();
+        for (int i = sizes.length - 1; i >= 0; i--) {
+            parts.add(JSONObject.of("index", i, "block_size", Integer.toString(sizes[i]),
+                    "presigned_url", "https://media.example.invalid/put-" + i + "?signature=fixture"));
+        }
+        return json("upload_id", "report-upload", "block_size", Integer.toString(sizes[0]), "parts", parts,
+                "upload_config", JSONObject.of("concurrency", 3, "retry_timeout", timeout, "retry_delay", delay));
+    }
+
+    private static byte[] reportImage(int length) {
+        byte[] image = new byte[length];
+        new Random(1234).nextBytes(image);
+        byte[] png = Base64.getDecoder().decode(PNG);
+        System.arraycopy(png, 0, image, 0, png.length);
+        return image;
+    }
+
+    private static String digest(String algorithm, byte[] bytes, int offset, int length) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance(algorithm);
+            digest.update(ByteBuffer.wrap(bytes, offset, length));
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void rejectsOversizedNetworkImagesBeforeUpload(boolean declaresSize) {
         byte[] bytes = new byte[QqBotImageDownloader.MAX_BYTES + 1];
@@ -942,7 +1175,7 @@ class QqBotDeliveryTest {
         withSender(fakeDownloader(bytes, declaresSize, cancelled), rig -> {
             JSONObject result = rig.send("{image_url=https://images.example.invalid/@everyone/cover.png}");
             assertEquals(-1, result.getIntValue("code"));
-            assertEquals("图片太大", result.getString("message"));
+            assertEquals("图片超过 20 MB，没有发出", result.getString("message"));
             assertTrue(rig.endpoints().isEmpty());
             assertTrue(cancelled.get());
         });
@@ -1093,7 +1326,7 @@ class QqBotDeliveryTest {
                 .withBean(NovaCoreProperties.class)
                 .withBean(AtAllQuotaService.class)
                 .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
-                .withBean(QqBotHttpTransport.class, () -> rig::respond, definition -> definition.setPrimary(true))
+                .withBean(QqBotHttpTransport.class, () -> rig, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
                 .withBean("qqBotSendWindow", QqBotSendWindow.class, () -> new QqBotSendWindow(
@@ -1183,7 +1416,7 @@ class QqBotDeliveryTest {
 
     private record Request(String endpoint, JSONObject body, long millis) {}
 
-    private static final class Rig {
+    private static final class Rig implements QqBotHttpTransport {
         private final List<Request> requests = new ArrayList<>();
         private final QqBotGatewayTest.ManualScheduler time = new QqBotGatewayTest.ManualScheduler();
         private final Instant now = Instant.now();
@@ -1223,7 +1456,29 @@ class QqBotDeliveryTest {
                     : json("id", "message-" + ++sent, "timestamp", "2026-11-24T15:20:00Z");
         }
 
-        QqBotHttpTransport.Response respond(String method, URI uri, Map<String, String> headers, String body)
+        @Override
+        public Response send(HttpRequest request) throws IOException {
+            assertEquals("PUT", request.method());
+            assertEquals("media.example.invalid", request.uri().getHost());
+            assertEquals("signature=fixture", request.uri().getQuery());
+            assertTrue(request.headers().allValues("Authorization").isEmpty());
+            var subscriber = HttpResponse.BodySubscribers.ofByteArray();
+            request.bodyPublisher().orElseThrow().subscribe(new Flow.Subscriber<ByteBuffer>() {
+                public void onSubscribe(Flow.Subscription subscription) { subscriber.onSubscribe(subscription); }
+                public void onNext(ByteBuffer item) { subscriber.onNext(List.of(item)); }
+                public void onError(Throwable error) { subscriber.onError(error); }
+                public void onComplete() { subscriber.onComplete(); }
+            });
+            byte[] bytes = subscriber.getBody().toCompletableFuture().join();
+            String endpoint = request.uri().getPath().substring(1);
+            requests.add(new Request(endpoint, JSONObject.of("length", bytes.length,
+                    "md5", digest("MD5", bytes, 0, bytes.length), "timeout", request.timeout().orElseThrow().toMillis()),
+                    time.nowMillis()));
+            return exchange.respond(endpoint);
+        }
+
+        @Override
+        public Response send(String method, URI uri, Map<String, String> headers, String body)
                 throws IOException {
             if (uri.getPath().equals("/app/getAppAccessToken")) {
                 return json("access_token", TOKEN, "expires_in", 7200);
@@ -1237,6 +1492,7 @@ class QqBotDeliveryTest {
                 return json();
             }
             assertEquals("POST", method);
+            assertEquals("QQBot " + TOKEN, headers.get("Authorization"));
             String path = uri.getPath();
             assertTrue(path.startsWith("/v2/groups/" + OPENID + "/") || path.startsWith("/v2/groups/fixture-other-group/"));
             String endpoint = path.substring(path.lastIndexOf('/') + 1);

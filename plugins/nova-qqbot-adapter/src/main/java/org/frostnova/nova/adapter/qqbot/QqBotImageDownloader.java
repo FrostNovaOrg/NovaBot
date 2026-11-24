@@ -18,7 +18,7 @@ import java.util.concurrent.TimeoutException;
 
 @NovaComponent
 class QqBotImageDownloader {
-    static final int MAX_BYTES = 5 * 1024 * 1024;
+    static final int MAX_BYTES = 20 * 1024 * 1024;
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
     private final HttpClient client;

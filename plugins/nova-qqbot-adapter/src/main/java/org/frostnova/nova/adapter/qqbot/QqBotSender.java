@@ -36,6 +36,7 @@ class QqBotSender {
             Pattern.CASE_INSENSITIVE);
     private static final byte[] PNG_HEADER = {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
     private static final byte[] JPEG_HEADER = {(byte) 0xff, (byte) 0xd8, (byte) 0xff};
+    private static final int DIRECT_UPLOAD_BYTES = 5 * 1024 * 1024;
     private static final int MAX_BASE64_LENGTH = 4 * ((QqBotImageDownloader.MAX_BYTES + 2) / 3);
     private static final Pattern LINE_BREAK = Pattern.compile("\\R");
     static final String SWITCH_PATH = "手机 QQ 进群 → 群成员里点机器人 → 右上角设置 → 打开";
@@ -46,6 +47,7 @@ class QqBotSender {
     private final QqBotDirectory directory;
     private final QqBotApiClient api;
     private final QqBotImageDownloader downloader;
+    private final QqBotMultipartUpload multipartUpload;
     private final NovaSenderService registry;
     private final QqBotSendWindow window;
     private final QqBotReplyWindows replies;
@@ -53,11 +55,12 @@ class QqBotSender {
 
     QqBotSender(QqBotSettings settings, QqBotDirectory directory, QqBotApiClient api,
                 QqBotImageDownloader downloader, NovaSenderService registry, QqBotSendWindow window,
-                QqBotReplyWindows replies) {
+                QqBotReplyWindows replies, QqBotMultipartUpload multipartUpload) {
         this.settings = settings;
         this.directory = directory;
         this.api = api;
         this.downloader = downloader;
+        this.multipartUpload = multipartUpload;
         this.registry = registry;
         this.window = window;
         this.replies = replies;
@@ -103,7 +106,7 @@ class QqBotSender {
             try {
                 message = parseContent(content == null ? "" : content, target);
             } catch (QqBotImageDownloader.TooLarge e) {
-                return fail(target, "图片太大", false);
+                return fail(target, "图片超过 20 MB，没有发出", false);
             } catch (InvalidImage e) {
                 return fail(target, e.getMessage(), false);
             } catch (IOException e) {
@@ -190,7 +193,7 @@ class QqBotSender {
         } else {
             throw new InvalidImage("图片格式不受支持");
         }
-        return new Image("image." + format, Base64.getEncoder().encodeToString(bytes));
+        return new Image("image." + format, bytes);
     }
 
     private static boolean startsWith(byte[] bytes, byte[] prefix) {
@@ -227,12 +230,19 @@ class QqBotSender {
         List<String> uploaded = new ArrayList<>();
         for (Image image : images) {
             String fileInfo;
+            boolean multipart = image.bytes().length > DIRECT_UPLOAD_BYTES;
+            String base64 = null;
             try {
-                var body = JSONObject.of("file_type", 1, "file_data", image.base64(), "file_name", image.name(),
-                        "srv_send_msg", false);
-                fileInfo = window.retryWhenLimited(() -> api.uploadFile(path + "/files", body, target.appId()));
+                if (multipart) {
+                    fileInfo = multipartUpload.upload(path, target.appId(), image.name(), image.bytes());
+                } else {
+                    base64 = Base64.getEncoder().encodeToString(image.bytes());
+                    var body = JSONObject.of("file_type", 1, "file_data", base64, "file_name", image.name(),
+                            "srv_send_msg", false);
+                    fileInfo = window.retryWhenLimited(() -> api.uploadFile(path + "/files", body, target.appId()));
+                }
             } catch (QqBotApiException e) {
-                return apiFailure(target, caption, image.base64(), e, null, false);
+                return apiFailure(target, caption, base64, e, null, false, multipart);
             }
             if (fileInfo.isBlank()) {
                 return fail(target, "QQ 的图片上传回包缺少文件信息", false);
@@ -322,7 +332,7 @@ class QqBotSender {
                     if (markdown != null) continue;
                 }
                 boolean fallback = reply != null && !part.containsKey("msg_id");
-                JSONObject failed = apiFailure(target, text, fileInfo, e, part, fallback);
+                JSONObject failed = apiFailure(target, text, fileInfo, e, part, fallback, false);
                 // 已确认的首段编号也让核心知道不能剥图重发整篇正文。
                 if (firstId != null) failed.put("id", firstId);
                 return failed;
@@ -396,7 +406,7 @@ class QqBotSender {
     }
 
     private JSONObject apiFailure(Target target, String text, String protectedValue, QqBotApiException error,
-                                  JSONObject messageBody, boolean replyFallback) {
+                                  JSONObject messageBody, boolean replyFallback, boolean multipart) {
         boolean sending = messageBody != null;
         if (sending && error.duplicateMessage()) {
             return uncertain(target, "QQ 判为重复消息，按已发出处理，未重发");
@@ -427,11 +437,18 @@ class QqBotSender {
             case 40093002 -> "今天发文件的额度用完了";
             case 40093001, 850027 -> "图片上传失败，请稍后再试";
             case 0 -> error.httpStatus() == 0 ? official : "QQ 返回错误 " + error.httpStatus() + "：" + official;
-            default -> sending && messageBody.containsKey("markdown") && error.markdownFormatRejected()
-                    ? "消息格式被平台拒绝（错误码 " + code + "）" : "QQ 返回错误 " + code + "：" + official;
+            default -> {
+                if (multipart) yield switch (code) {
+                    case 850026 -> "平台下载源文件失败，请稍后再试";
+                    case 10000 -> "平台不支持这项上传操作";
+                    default -> "图片分片上传失败（错误码 " + code + "）";
+                };
+                yield sending && messageBody.containsKey("markdown") && error.markdownFormatRejected()
+                        ? "消息格式被平台拒绝（错误码 " + code + "）" : "QQ 返回错误 " + code + "：" + official;
+            }
         };
         JSONObject result = fail(target, maskDiagnostic(target, reason, null), code == 40034105);
-        if (error.preventsTextDelivery()) result.put(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
+        if (!multipart && error.preventsTextDelivery()) result.put(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
         return result;
     }
 
@@ -509,7 +526,7 @@ class QqBotSender {
         }
     }
 
-    private record Image(String name, String base64) {}
+    private record Image(String name, byte[] bytes) {}
     private record Outgoing(QqBotMessageText text, List<Image> images, boolean omittedMember) {}
 
     private static final class InvalidImage extends RuntimeException {
