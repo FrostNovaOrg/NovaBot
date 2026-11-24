@@ -76,6 +76,16 @@ class QqBotTokenService {
         verifyConfigured();
     }
 
+    synchronized void clear() {
+        settings.clear();
+        latest = new Outcome(null, null, UNCONFIGURED);
+        attempt = null;
+    }
+
+    synchronized void setIntervalMillis(int intervalMillis) {
+        settings.setIntervalMillis(intervalMillis);
+    }
+
     void verifyConfigured() {
         if (settings().configured()) {
             try {
@@ -92,15 +102,15 @@ class QqBotTokenService {
             return await(observed);
         }
         synchronized (this) {
+            if (!settings().configured()) {
+                throw new QqBotApiException(0, UNCONFIGURED.summary(), "", 0);
+            }
             if (attempt != null && attempt != observed) {
                 return await(attempt);
             }
             Token cached = latest.token();
             if (cached != null && !clock.instant().isAfter(cached.expiresAt().minusSeconds(REFRESH_AHEAD_SECONDS))) {
                 return cached;
-            }
-            if (!settings().configured()) {
-                throw new QqBotApiException(0, UNCONFIGURED.summary(), "", 0);
             }
             return exchange();
         }

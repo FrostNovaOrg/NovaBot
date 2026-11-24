@@ -2,9 +2,11 @@ package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.secret.SecretStore;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,6 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 class QqBotAdapterTest {
     private static final String APP_ID = "12345678";
@@ -57,7 +60,8 @@ class QqBotAdapterTest {
     void pluginLoadsItsServicesAndChecksStoredCredentialsOnTheReadyEvent() throws IOException {
         Path directory = dataDirectory.resolve("qqbot");
         new SecretStore(directory, "app-secret").save(SECRET);
-        Files.writeString(directory.resolve("settings.json"), JSONObject.of("appId", APP_ID).toJSONString());
+        Files.writeString(directory.resolve("settings.json"),
+                JSONObject.of("appId", APP_ID, "intervalMillis", 4500).toJSONString());
         AtomicInteger exchanges = new AtomicInteger();
         QqBotHttpTransport transport = (method, uri, headers, body) -> {
             exchanges.incrementAndGet();
@@ -65,11 +69,14 @@ class QqBotAdapterTest {
         };
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     assertNotNull(context.getBean(QqBotCredentials.class));
                     assertNotNull(context.getBean(QqBotApiClient.class));
+                    NovaSenderService senders = context.getBean(NovaSenderService.class);
+                    assertTrue(senders.getSender("qq-official").isEmpty());
                     QqBotHealthProbe probe = context.getBean(QqBotHealthProbe.class);
                     assertTrue(probe.active());
                     assertEquals(0, exchanges.get());
@@ -77,6 +84,7 @@ class QqBotAdapterTest {
                             context.getSourceApplicationContext(), Duration.ZERO));
                     assertEquals(1, exchanges.get());
                     assertEquals(HealthStatus.Level.OK, probe.check().level());
+                    assertEquals(4500, senders.getSender("qq-official").orElseThrow().getDelay());
                 });
     }
 
@@ -97,6 +105,7 @@ class QqBotAdapterTest {
 
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
@@ -481,7 +490,7 @@ class QqBotAdapterTest {
     private Rig rig(QqBotHttpTransport transport) {
         TestClock clock = new TestClock();
         QqBotTokenService tokens = new QqBotTokenService(new QqBotSettings(dataDirectory), transport, clock);
-        QqBotCredentials credentials = new QqBotCredentials(tokens);
+        QqBotCredentials credentials = new QqBotCredentials(tokens, mock(QqBotSender.class));
         return new Rig(clock, tokens, credentials, new QqBotHealthProbe(tokens), new QqBotApiClient(transport, tokens));
     }
 

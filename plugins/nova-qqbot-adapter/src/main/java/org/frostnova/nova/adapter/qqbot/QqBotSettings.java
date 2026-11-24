@@ -67,15 +67,7 @@ final class QqBotSettings {
             throw new IllegalArgumentException("请填写 AppSecret");
         }
         long interval = snapshot.intervalMillis();
-        byte[] original;
-        try {
-            QqBotStorage.prepareDirectory(directory);
-            protectFiles();
-            original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
-            writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
-        } catch (IOException | SecurityException e) {
-            throw storageError();
-        }
+        byte[] original = storeSettings(appId, interval);
 
         try {
             if (replaceSecret) {
@@ -90,6 +82,32 @@ final class QqBotSettings {
             snapshot = new Snapshot(appId, interval, true, maskedSecret(), false);
         } catch (IOException | RuntimeException e) {
             throw storageError();
+        }
+    }
+
+    void clear() {
+        long interval = snapshot.intervalMillis();
+        byte[] original = storeSettings("", interval);
+        try {
+            secrets.clear();
+        } catch (RuntimeException e) {
+            restoreSettings(original);
+            throw e;
+        }
+        snapshot = new Snapshot("", interval, false, "", false);
+    }
+
+    void setIntervalMillis(int interval) {
+        if (interval < 0) {
+            throw new IllegalArgumentException("推送间隔不能小于 0 毫秒");
+        }
+        Snapshot current = snapshot;
+        if (current.unreadable()) {
+            throw storageError();
+        }
+        if (current.intervalMillis() != interval) {
+            storeSettings(current.appId(), interval);
+            snapshot = new Snapshot(current.appId(), interval, current.configured(), current.maskedSecret(), false);
         }
     }
 
@@ -143,6 +161,18 @@ final class QqBotSettings {
 
     private void writeSettings(String json) throws IOException {
         DurableFiles.replace(settingsPath, json, DurableFiles.OWNER_ONLY);
+    }
+
+    private byte[] storeSettings(String appId, long interval) {
+        try {
+            QqBotStorage.prepareDirectory(directory);
+            protectFiles();
+            byte[] original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
+            writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
+            return original;
+        } catch (IOException | SecurityException e) {
+            throw storageError();
+        }
     }
 
     private void restoreSettings(byte[] original) {
