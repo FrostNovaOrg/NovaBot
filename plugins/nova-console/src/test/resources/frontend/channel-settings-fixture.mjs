@@ -130,6 +130,25 @@ await test('群里关了插件命令时通道行显示计数，再关本通道�
   assert.equal(input('天气'), undefined, '通道命令开关仍只列主播命令');
   assert.equal(text(idNode('push-right')).includes('但这些命令已不存在'), false, '群插件命令不能当作失效的通道开关');
 });
+await test('报告插件未加载时，推送页仍能清除直播报告的禁用记录', async () => {
+  const retired = ['直播间数据', '直播间总数据', '数据排行榜', '总数据排行榜'];
+  disk = initial();
+  disk[0].targets[0].disabledCommands = [...retired, '直播报告'];
+  await push.reload();
+  const state = await (await fetch('/config/api/state')).json();
+  state.commands = state.commands.filter(command => command.name !== '直播报告');
+  push.setRuntimeState(state);
+  await open(1);
+  const clean = idNode('push-right').querySelectorAll('button').find(node => node.textContent === '清除记录');
+  assert.ok(clean, '报告插件未加载时仍应提供清除记录按钮');
+  const note = text(clean.parentNode);
+  assert.match(note, /保留也不会生效.*直播报告/);
+  for (const key of retired) assert.ok(!note.includes(key), key);
+  await clean.click();
+  assert.deepEqual(disk[0].targets[0].disabledCommands, [...retired, '直播报告']);
+  await push.save();
+  assert.deepEqual(disk[0].targets[0].disabledCommands, retired);
+});
 await test('通道明明在静音，主播页的通道行一眼看不出，以为推送坏了', async () => {
   const rowQuiet = () => {
     const rows = idNode('push-right').querySelectorAll('.rowcard');
@@ -311,5 +330,5 @@ await test('成员关掉问数时出现确认框，或关闭状态没有保存',
   assert.equal(input('问数').checked, false, '重新载入仍显示关闭');
 });
 await push.leave();
-console.log('跑了 14 格，红 ' + failures.length + ' 格');
+console.log('跑了 15 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;

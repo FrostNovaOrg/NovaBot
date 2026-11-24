@@ -117,7 +117,7 @@ const CASES = [
       const target = u.targets[0];
       target.disabledCommands = ['直播间数据', '总数据排行榜', '直播报告'];
       const commands = COMMANDS.filter(item => ['直播报告', '开播@我'].includes(item.name));
-      const current = channelSession(session(), target, u, commands);
+      const current = channelSession(session(), target, u);
       const summary = commandSummary(commands, current);
       return {count: current.disabledCount, off: summary.offNames, stray: summary.strayNames,
         saved: target.disabledCommands};

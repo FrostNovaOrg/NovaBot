@@ -18,6 +18,9 @@
 
 import {AT_MODE_KEY} from './template-model.js';
 
+// 与 ChannelSettings 中允许旧配置保留的退役开关键一致。
+const RETIRED_COMMAND_KEYS = new Set(['直播间数据', '直播间总数据', '数据排行榜', '总数据排行榜']);
+
 /**
  * 认一个会话用的键
  *
@@ -629,14 +632,11 @@ export function commandSummary(commands, session) {
 }
 
 /**
- * 通道规则：金额可见
- * @param session 会话
- * @return 摘要
+ * 合并会话状态与当前通道设置，供推送页显示。
  */
-export function channelSession(session, target, user, commands) {
+export function channelSession(session, target, user) {
   const quiet = target.quietHours || {};
-  const keys = new Set(commands.flatMap(usageKeys));
-  const disabled = (target.disabledCommands || []).filter(key => keys.has(key));
+  const disabled = (target.disabledCommands || []).filter(key => !RETIRED_COMMAND_KEYS.has(key));
   const channel = ((session || {}).channels || []).find(item => user
     && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),

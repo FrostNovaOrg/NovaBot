@@ -1565,7 +1565,7 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, channelCommands());
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1623,7 +1623,7 @@ function channelRow(user, target) {
  * 这一页不是向导，各块不编号。
  */
 function renderChannelLevel(host, user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, channelCommands());
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const name = channelName(session, target, directory);
   const group = Number(target.type) === 1;
 
@@ -1706,7 +1706,7 @@ function channelCommands() {
  */
 function channelSummary(box, user, target, blocks) {
   const commands = channelCommands();
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, commands);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
   const on = noticeSwitches(user, target, store.handlerList).filter(item => item.on).length;
   const quiet = quietSummary(session, runtime.quietGlobal, savedQuiet(user, target));
   const command = commandSummary(commands, session);
@@ -2371,7 +2371,7 @@ function savedQuiet(user, target) {
 function channelSettings(hosts, user, target, session, paintSummary) {
   const render = () => {
     const commands = channelCommands();
-    const current = channelSession(session, target, user, commands);
+    const current = channelSession(session, target, user);
     const baseline = savedTarget(user, target);
     const assistantCommand = runtime.commands?.find(command => command.name === '问' && command.aliases?.includes('问数'));
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));
