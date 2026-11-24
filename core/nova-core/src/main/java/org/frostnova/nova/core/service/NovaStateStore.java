@@ -18,6 +18,9 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
@@ -276,6 +279,40 @@ public class NovaStateStore {
             return copy;
         }
         return value;
+    }
+
+    /** 在同一份状态上读取切换结果并补入选定的值。copyValue 返回 null 时略过，成功写盘后才更新缓存。 */
+    public <T> T copyMissingKeyAndSave(String from, String to, Collection<String> namespaces,
+                                      Function<String, Object> copyValue, Function<List<String>, T> describe) {
+        synchronized (writeLock) {
+            synchronized (lock) {
+                if (diskSuspended) throw new IllegalStateException("运行状态文件目前无法读取，请检查后重启");
+                JSONObject updated = new JSONObject(cache);
+                List<String> skipped = new ArrayList<>();
+                boolean changed = false;
+                for (String namespace : namespaces) {
+                    if (isMalformed(namespace)) throw new IllegalStateException("运行状态中的会话设置格式不正确");
+                    JSONObject section = cache.getJSONObject(namespace);
+                    if (section == null || !section.containsKey(from)) continue;
+                    if (section.containsKey(to)) {
+                        skipped.add(namespace);
+                        continue;
+                    }
+                    Object value = copyValue.apply(namespace);
+                    if (value == null) continue;
+                    JSONObject copy = new JSONObject(section);
+                    copy.put(to, deepCopyValue(value));
+                    updated.put(namespace, copy);
+                    changed = true;
+                }
+                T result = describe.apply(List.copyOf(skipped));
+                if (changed) {
+                    if (!write(updated.toJSONString())) throw new IllegalStateException("运行状态文件写入失败");
+                    cache = updated;
+                }
+                return result;
+            }
+        }
     }
 
     /**
