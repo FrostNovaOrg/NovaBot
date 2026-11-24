@@ -73,9 +73,6 @@ let finished = false;
 /** 这一趟取到的几份回包 */
 let seen = {status: {}, login: {accounts: []}, mark: {}};
 
-/** 可选的推送目标，来自机器人自己给的名单。没有手填号码的格子 */
-let options = [];
-
 /**
  * 等扫码时的轮询。<b>用自己的一份而不是 store.accountTimer</b>：
  * 那一份归平台插件页管，两处各 clearTimeout 一次的结果是谁也说不清此刻还在不在轮询
@@ -220,7 +217,6 @@ async function collectPluginDone() {
 export async function openSetup() {
   const main = $('#setup-main');
   main.innerHTML = loadingHtml('正在加载…');
-  loadOptions();
 
   try {
     const [status, login, mark, bot, pagePack] = await Promise.all([
@@ -737,6 +733,7 @@ function stepOfficialBot(host) {
     try {
       const status = await api('/status', {cache: 'no-store'});
       if (!active() || attempt !== request) return;
+      if (status?.success !== true) throw new Error(status?.message);
       seen.status = status;
       const connection = syncBotStatus(status);
       paintStatus(connection.official);
@@ -770,7 +767,7 @@ function stepOfficialBot(host) {
   paintStatus(official);
   if (official) readStatus();
   foot(host, null, '', async () => {
-    await Promise.all([loadOptions(), refreshFacts()]);
+    await refreshFacts();
     return active();
   });
 }
@@ -991,7 +988,7 @@ export function notePlatformsArrived() {
 // ============ 推送目标名单 ============
 
 /**
- * 取一次群与好友名单
+ * 进入试发步骤时取群与好友名单，接上引导期间新登记的群。
  *
  * 末步「发一条试试」要在这份名单里挑收件人。插件步（例如「第一位主播，推到哪」）
  * 自己另取一份：它跑在自己的模块里，取不到本文件的局部变量。
@@ -1000,10 +997,10 @@ async function loadOptions() {
   try {
     const [groups, friends] = await Promise.all([
       api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
-    options = targetOptions(groups, friends);
+    return targetOptions(groups, friends);
   } catch (e) {
     // 取不到就空着。这一页不退回手填：那等于把「填错一位数不报错」那个失败形态请回来
-    options = [];
+    return [];
   }
 }
 
@@ -1031,12 +1028,11 @@ function stepTest(host) {
 
   // 刚刚选过推送目标的话就只在那几个里挑：这一步要验的正是那条路通不通，
   // 换个别的目标发通了，说明的是另一回事
-  const pickable = options.filter(item => !draft.targets.length || draft.targets.includes(item.key));
+  let pickable = [];
   const picker = el('select');
   picker.id = 'setup-send-target';
-  picker.innerHTML = pickable.length
-    ? pickable.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text) + '</option>').join('')
-    : '<option value="">暂时无法获取群组与好友列表</option>';
+  picker.innerHTML = '<option value="">正在加载…</option>';
+  picker.disabled = true;
   wrap.appendChild(picker);
   host.appendChild(wrap);
 
@@ -1044,11 +1040,12 @@ function stepTest(host) {
   send.type = 'button';
   send.id = 'setup-send';
   send.textContent = '发送测试消息';
-  send.disabled = !pickable.length;
+  send.disabled = true;
   send.addEventListener('click', async () => {
     // 只认名单里有的那几个，这一条判在 links-model 里：连接页那一块用的是同一份判法，
     // 两处各判一遍的话，其中一处放松了不会有任何东西红
-    const hit = resolveTarget(options, picker.value);
+    const key = picker.value;
+    const hit = resolveTarget(pickable, key);
     if (!hit.ok) {
       result.innerHTML = '';
       result.appendChild(note('err', hit.reason));
@@ -1065,7 +1062,7 @@ function stepTest(host) {
       });
       // 发给谁那一行取名单上的原文，不从 resolveTarget 的结果拼：那边只答「认不认得出」，
       // 它给的是号码，而屏幕上要显示的是群名
-      paintSent(result, res, (options.find(item => item.key === picker.value) || {}).text || '');
+      paintSent(result, res, pickable.find(item => item.key === key).text);
     } catch (e) {
       result.innerHTML = '';
       result.appendChild(note('err', '发送失败：' + e.message));
@@ -1077,6 +1074,14 @@ function stepTest(host) {
   host.appendChild(result);
   host.appendChild(defaultsBlock());
   foot(host, null, '', null);
+
+  loadOptions().then(options => {
+    pickable = options.filter(item => !draft.targets.length || draft.targets.includes(item.key));
+    picker.innerHTML = pickable.length
+      ? pickable.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text) + '</option>').join('')
+      : '<option value="">暂时无法获取群组与好友列表</option>';
+    picker.disabled = send.disabled = !pickable.length;
+  });
 }
 
 /**
