@@ -45,26 +45,21 @@ final class OfficialGroupSettings {
                 + difference(visible != oldVisible);
 
         var configuredQuiet = source.getQuietHours();
-        QuietHours channelQuiet = configuredQuiet == null ? QuietHours.FOLLOW
+        QuietHours oldQuiet = configuredQuiet == null ? QuietHours.FOLLOW
                 : QuietHours.of(Mode.of(configuredQuiet.getMode()), configuredQuiet.getStart(), configuredQuiet.getEnd());
-        QuietHours oldQuiet = configuredQuiet == null ? sessionQuiet(source.getPlatform(), source.getNum()) : channelQuiet;
         QuietHours officialQuiet = sessionQuiet(official, officialNum);
         boolean officialQuietSet = officialQuiet.mode() != Mode.FOLLOW || explicitFollow(official, officialNum);
         QuietHours appliedQuiet = officialQuietSet ? officialQuiet : oldQuiet;
-        if (!appliedQuiet.equals(channelQuiet)) target.put("quietHours", appliedQuiet.json());
+        boolean quietChanged = !appliedQuiet.equals(oldQuiet);
+        if (quietChanged) target.put("quietHours", appliedQuiet.json());
         String quietResult = "静音时段：" + (officialQuietSet ? "按官方群现有设置 " : "")
-                + appliedQuiet.description() + difference(!appliedQuiet.equals(oldQuiet));
+                + appliedQuiet.description() + (quietChanged ? "，原来" + oldQuiet.description() : "") + "。";
 
         JSONObject oldSessionCommands = sessionCommands(source.getPlatform(), source.getNum());
         JSONObject officialSessionCommands = sessionCommands(official, officialNum);
-        List<String> disabled = source.getDisabledCommands();
-        if (disabled == null) {
-            disabled = oldSessionCommands == null ? List.of() : oldSessionCommands.keySet().stream()
-                    .filter(ChannelSettings.COMMAND_KEYS::contains).sorted().toList();
-            if (!disabled.isEmpty()) target.put("disabledCommands", disabled);
-        }
-        String commandResult = "通道命令开关：" + commandDescription(disabled.stream()
-                .filter(ChannelSettings.COMMAND_KEYS::contains).distinct().sorted().toList()) + "。";
+        List<String> disabled = ChannelSettings.COMMAND_KEYS.stream()
+                .filter(key -> ChannelSettings.disabled(source, key)).sorted().toList();
+        String commandResult = "通道命令开关：" + commandDescription(disabled) + "。";
         List<String> oldGroupCommands = groupCommands(oldSessionCommands);
         List<String> appliedGroupCommands = officialSessionCommands == null ? oldGroupCommands : groupCommands(officialSessionCommands);
         String groupCommandResult = "群命令开关：" + (officialSessionCommands == null ? "" : "按官方群现有设置，")
@@ -86,6 +81,14 @@ final class OfficialGroupSettings {
                 List.of(amountResult, quietResult, commandResult, groupCommandResult, assistantResult));
     }
 
+    JSONObject groupCommandsToCopy(PushTarget source) {
+        JSONObject commands = sessionCommands(source.getPlatform(), source.getNum());
+        if (commands == null) return null;
+        JSONObject copy = new JSONObject(commands);
+        copy.keySet().removeIf(key -> !isGroupCommand(key));
+        return copy.isEmpty() ? null : copy;
+    }
+
     private JSONObject sessionCommands(String platform, long num) {
         String key = SessionKey.require(platform, GROUP, num);
         return state.read(CommandSettingsService.NAMESPACE, key, data -> data.getJSONObject(key)).orElse(null);
@@ -93,7 +96,11 @@ final class OfficialGroupSettings {
 
     private static List<String> groupCommands(JSONObject commands) {
         return commands == null ? List.of() : commands.keySet().stream()
-                .filter(key -> !ChannelSettings.isKnownCommandKey(key) && !ALWAYS_ENABLED.contains(key)).sorted().toList();
+                .filter(OfficialGroupSettings::isGroupCommand).sorted().toList();
+    }
+
+    private static boolean isGroupCommand(String key) {
+        return !ChannelSettings.isKnownCommandKey(key) && !ALWAYS_ENABLED.contains(key);
     }
 
     private QuietHours sessionQuiet(String platform, long num) {

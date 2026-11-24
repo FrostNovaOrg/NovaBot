@@ -281,9 +281,9 @@ public class NovaStateStore {
         return value;
     }
 
-    /** 在同一份状态上读取切换结果并复制尚未设置的键。整份成功写盘后才更新缓存。 */
+    /** 在同一份状态上读取切换结果并补入选定的值。copyValue 返回 null 时略过，成功写盘后才更新缓存。 */
     public <T> T copyMissingKeyAndSave(String from, String to, Collection<String> namespaces,
-                                      Function<List<String>, T> describe) {
+                                      Function<String, Object> copyValue, Function<List<String>, T> describe) {
         synchronized (writeLock) {
             synchronized (lock) {
                 if (diskSuspended) throw new IllegalStateException("运行状态文件目前无法读取，请检查后重启");
@@ -298,8 +298,10 @@ public class NovaStateStore {
                         skipped.add(namespace);
                         continue;
                     }
+                    Object value = copyValue.apply(namespace);
+                    if (value == null) continue;
                     JSONObject copy = new JSONObject(section);
-                    copy.put(to, deepCopyValue(section.get(from)));
+                    copy.put(to, deepCopyValue(value));
                     updated.put(namespace, copy);
                     changed = true;
                 }

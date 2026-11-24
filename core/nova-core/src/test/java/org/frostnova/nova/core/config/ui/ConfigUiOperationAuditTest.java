@@ -103,19 +103,19 @@ class ConfigUiOperationAuditTest {
     }
 
     @Test
-    void groupMigrationCopiesQuietHoursAndCommandsWithoutReplacingRevenue() throws Exception {
+    void groupMigrationCopiesGroupCommandsWithoutReplacingRevenue() throws Exception {
         var state = context.getBean(NovaStateStore.class);
         String original = "qq:1:101";
         String official = "qq-official:1:1000000000000001";
         String next = "qq-official:1:1000000000000002";
         var quiet = JSONObject.of("mode", "custom", "start", "23:00", "end", "07:00");
-        var commands = JSONObject.of("直播报告", 1);
+        var commands = JSONObject.of("问", 1);
         state.write(RevenueVisibilityService.NAMESPACE, values -> {
             values.put(original, false);
             values.put(official, true);
             values.put("qq:0:101", true);
         });
-        state.write(CommandSettingsService.NAMESPACE, values -> values.put(original, commands));
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put(original, JSONObject.of("直播报告", 1, "问", 1)));
         state.write(SessionQuietHoursService.NAMESPACE, values -> values.put(original, quiet));
 
         mvc.perform(post("/config/api/state/copy-to-official-group")
@@ -140,21 +140,21 @@ class ConfigUiOperationAuditTest {
         var disk = JSONObject.parseObject(Files.readString(directory.resolve("state.json")));
         var revenue = disk.getJSONObject(RevenueVisibilityService.NAMESPACE);
         assertEquals(false, revenue.get(original));
-        assertEquals(false, revenue.get(next));
+        assertFalse(revenue.containsKey(next));
         assertEquals(true, revenue.get(official));
-        assertEquals(quiet, disk.getJSONObject(SessionQuietHoursService.NAMESPACE).getJSONObject(official));
+        var quietHours = disk.getJSONObject(SessionQuietHoursService.NAMESPACE);
+        assertEquals(quiet, quietHours.getJSONObject(original));
+        assertFalse(quietHours.containsKey(official));
         assertEquals(commands, disk.getJSONObject(CommandSettingsService.NAMESPACE).getJSONObject(official));
         state.write(CommandSettingsService.NAMESPACE, values -> values.getJSONObject(original).clear());
-        assertTrue(state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official).containsKey("直播报告"));
+        assertEquals(commands, state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official));
     }
 
     @Test
-    void groupMigrationAppliesQuietHoursAndCommandSwitchStoredOnlyInTheOldSession() throws Exception {
+    void groupMigrationAppliesQuietHoursAndCommandSwitchFromTheOriginalChannel() throws Exception {
         var state = context.getBean(NovaStateStore.class);
         var quiet = JSONObject.of("mode", "custom", "start", "23:00", "end", "07:00");
-        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put("qq:1:101", quiet));
-        state.write(CommandSettingsService.NAMESPACE, values -> values.put("qq:1:101", JSONObject.of("直播报告", 1)));
-        var channel = JSONObject.of("assistantEnabled", true);
+        var channel = JSONObject.of("assistantEnabled", true, "quietHours", quiet, "disabledCommands", List.of("直播报告"));
         var result = migrate(channel);
         PushTarget target = migratedTarget(channel, result);
         var gate = new PushGate(new NovaCoreProperties(), new SessionQuietHoursService(state));
@@ -164,6 +164,48 @@ class ConfigUiOperationAuditTest {
         assertTrue(target.getAssistantEnabled());
         assertFalse(new RevenueVisibilityService(state).isVisible(target));
         assertTrue(result.getJSONArray("results").stream().anyMatch(line -> line.toString().contains("23:00–07:00")));
+    }
+
+    @Test
+    void groupMigrationKeepsGlobalQuietHoursAndOpenCommandsDespiteOldSessionRecords() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        String original = "qq:1:101";
+        String official = "qq-official:1:1000000000000001";
+        var quiet = JSONObject.of("mode", "custom", "start", "23:00", "end", "07:00");
+        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put(original, quiet));
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put(original, JSONObject.of("直播报告", 1)));
+        state.save();
+        var channel = JSONObject.of("assistantEnabled", true);
+        var gate = new PushGate(new NovaCoreProperties(), new SessionQuietHoursService(state));
+        var source = channel.toJavaObject(PushTarget.class);
+        source.setPlatform("qq");
+        source.setType(PushTargetType.GROUP);
+        source.setNum(101L);
+        var early = LocalTime.of(6, 0);
+        assertTrue(gate.allowedAt(early, source));
+        assertFalse(ChannelSettings.disabled(source, "直播报告"));
+
+        var result = migrate(channel);
+        var target = migratedTarget(channel, result);
+        assertTrue(gate.allowedAt(early, target), "原通道清晨可以推送，换群后也应遵循全局静音设置");
+        assertFalse(ChannelSettings.disabled(target, "直播报告"));
+        var disk = JSONObject.parseObject(Files.readString(directory.resolve("state.json")));
+        assertFalse(disk.getJSONObject(SessionQuietHoursService.NAMESPACE).containsKey(official));
+        assertFalse(disk.getJSONObject(CommandSettingsService.NAMESPACE).containsKey(official));
+        var results = result.getJSONArray("results").stream().map(Object::toString).toList();
+        assertTrue(results.stream().anyMatch(line -> line.startsWith("静音时段：") && line.contains("跟随全局")
+                && !line.contains("原来")));
+        assertTrue(results.stream().anyMatch(line -> line.startsWith("通道命令开关：") && line.contains("未关闭命令")));
+
+        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put(official, quiet));
+        var withOfficialHours = migrate(channel);
+        var withOfficialTarget = migratedTarget(channel, withOfficialHours);
+        assertFalse(gate.allowedAt(early, withOfficialTarget));
+        assertFalse(ChannelSettings.disabled(withOfficialTarget, "直播报告"));
+        assertEquals(quiet, state.namespace(SessionQuietHoursService.NAMESPACE).getJSONObject(official));
+        assertTrue(withOfficialHours.getJSONArray("results").stream().map(Object::toString)
+                .anyMatch(line -> line.startsWith("静音时段：") && line.contains("按官方群现有设置")
+                        && line.contains("23:00–07:00") && line.contains("原来跟随全局")));
     }
 
     @Test
@@ -186,9 +228,12 @@ class ConfigUiOperationAuditTest {
         assertTrue(new CommandSettingsService(state).isDisabled("qq-official", PushTargetType.GROUP, target.getNum(), "问"));
         assertEquals(quiet, state.namespace(SessionQuietHoursService.NAMESPACE).getJSONObject(official));
         assertEquals(groupCommands, state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official));
-        for (var expected : Map.of("金额可见", "隐藏金额", "静音时段", "22:00–08:00",
+        var results = result.getJSONArray("results").stream().map(Object::toString).toList();
+        assertTrue(results.stream().anyMatch(line -> line.startsWith("静音时段：") && line.contains("22:00–08:00")
+                && line.contains("原来不静音")));
+        for (var expected : Map.of("金额可见", "隐藏金额",
                 "群命令开关", "已关闭「问」", "问数开关", "关闭").entrySet()) {
-            assertTrue(result.getJSONArray("results").stream().map(Object::toString)
+            assertTrue(results.stream()
                     .anyMatch(line -> line.startsWith(expected.getKey() + "：")
                             && line.contains(expected.getValue()) && line.contains("和原来不同")), expected.getKey());
         }
@@ -233,6 +278,7 @@ class ConfigUiOperationAuditTest {
         var target = new JSONObject(channel);
         target.putAll(overrides);
         PushTarget parsed = target.toJavaObject(PushTarget.class);
+        parsed.setPlatform("qq-official");
         parsed.setType(PushTargetType.GROUP);
         parsed.setNum(1000000000000001L);
         return parsed;
@@ -241,7 +287,8 @@ class ConfigUiOperationAuditTest {
     @Test
     void groupMigrationCannotReportSuccessOrLeaveCachedCopiesWhenStateCannotBeSaved() throws Exception {
         var state = context.getBean(NovaStateStore.class);
-        state.write(RevenueVisibilityService.NAMESPACE, values -> values.put("qq:1:101", false));
+        var commands = JSONObject.of("问", 1);
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put("qq:1:101", commands));
         Files.createDirectory(directory.resolve("state.json"));
         mvc.perform(post("/config/api/state/copy-to-official-group")
                         .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
@@ -249,14 +296,15 @@ class ConfigUiOperationAuditTest {
                         .content(migrationBody(1000000000000001L)))
                 .andExpect(status().is5xxServerError())
                 .andExpect(jsonPath("$.success").value(false));
-        assertFalse(state.namespace(RevenueVisibilityService.NAMESPACE).containsKey("qq-official:1:1000000000000001"));
-        assertEquals(false, state.namespace(RevenueVisibilityService.NAMESPACE).get("qq:1:101"));
+        assertFalse(state.namespace(CommandSettingsService.NAMESPACE).containsKey("qq-official:1:1000000000000001"));
+        assertEquals(commands, state.namespace(CommandSettingsService.NAMESPACE).getJSONObject("qq:1:101"));
     }
 
     @Test
     void groupMigrationAcceptsExistingCustomSenderNames() throws Exception {
         var state = context.getBean(NovaStateStore.class);
-        state.write(RevenueVisibilityService.NAMESPACE, values -> values.put("group.bot:1:101", false));
+        var commands = JSONObject.of("问", 1);
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put("group.bot:1:101", commands));
         var body = JSONObject.parseObject(migrationBody(1000000000000001L)).fluentPut("platform", "group.bot");
         mvc.perform(post("/config/api/state/copy-to-official-group")
                         .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
@@ -264,7 +312,7 @@ class ConfigUiOperationAuditTest {
                         .content(body.toJSONString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
-        assertEquals(false, state.namespace(RevenueVisibilityService.NAMESPACE).get("qq-official:1:1000000000000001"));
+        assertEquals(commands, state.namespace(CommandSettingsService.NAMESPACE).getJSONObject("qq-official:1:1000000000000001"));
     }
 
     private static String migrationBody(long officialNum) {

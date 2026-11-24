@@ -56,8 +56,10 @@ public class ConfigUiSessionSettingsController {
             source.setPlatform(platform);
             source.setType(GROUP);
             source.setNum(num);
-            JSONObject result = state.copyMissingKeyAndSave(from, to, SETTINGS.keySet(), skipped ->
-                    settings.resolve(source, OFFICIAL, officialNum).fluentPut("success", true)
+            // 金额和静音使用通道设置，只有仍生效的群命令需要从旧会话写到新会话。
+            JSONObject result = state.copyMissingKeyAndSave(from, to, SETTINGS.keySet(),
+                    namespace -> CommandSettingsService.NAMESPACE.equals(namespace) ? settings.groupCommandsToCopy(source) : null,
+                    skipped -> settings.resolve(source, OFFICIAL, officialNum).fluentPut("success", true)
                             .fluentPut("skipped", skipped.stream().map(SETTINGS::get).sorted().toList()));
             return ResponseEntity.ok(result);
         } catch (IllegalStateException error) {
