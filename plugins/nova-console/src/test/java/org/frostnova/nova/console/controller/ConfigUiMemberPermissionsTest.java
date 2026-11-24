@@ -165,6 +165,8 @@ class ConfigUiMemberPermissionsTest {
             GET qqbot/state
             POST qqbot/credentials
             POST qqbot/interval
+            GET qqbot/welcome
+            POST qqbot/welcome
             POST qqbot/groups/{num}/name
             POST qqbot/admin-claims/code
             POST qqbot/admin-claims/{memberNum}/revoke
@@ -209,8 +211,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(138, mappings.size());
-        assertEquals(23, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(75, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(140, mappings.size());
+        assertEquals(23, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(77, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));

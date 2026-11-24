@@ -434,7 +434,7 @@ sudo systemctl enable --now novabot-backup.timer
   [手工升级](#手工升级)所列内置插件之外）是你自己装的第三方插件与依赖，
   恢复时要从备份里拷回；5.2 及更早的 `starbot-` 开头旧名插件确认不用就删掉，别拷回
 
-QQ 官方机器人的 `qqbot/settings.json` 存着 AppID 和发送间隔，`qqbot/directory.json` 是群和成员的对照表，`qqbot/members.json` 存着群成员资料和已认领的超级管理员名单。
+QQ 官方机器人的 `qqbot/settings.json` 存着 AppID、发送间隔和进群欢迎语开关，`qqbot/directory.json` 是群和成员的对照表，`qqbot/members.json` 存着群成员资料和已认领的超级管理员名单。
 
 如果只丢了 `qqbot/directory.json`，原来的推送通道还在，但 NovaBot 找不到群，消息发不出。继续用原来的 AppID，在每个受影响的群里 @ 机器人说一句，群重新登记后就能往原来的通道发消息。要找回原来手填的群名，得从备份恢复对照表，或者重新起名。
 

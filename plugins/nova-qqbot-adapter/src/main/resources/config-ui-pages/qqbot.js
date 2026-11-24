@@ -33,6 +33,8 @@ export function render(container, {onConnectionChange} = {}) {
 
   const find = id => container.querySelector('#' + prefix + id);
   const view = {appId: find('app-id'), secret: find('secret'), interval: find('millis'), groups: find('groups'),
+    welcome: find('welcome-enabled'), welcomeSave: find('welcome-save'), welcomeResult: find('welcome-result'),
+    welcomeLoaded: false,
     claimStatus: find('claim-status'), claimResult: find('claim-result'),
     issued: find('issued'), claimCommand: find('claim-command'),
     claimedAdmins: find('claimed-admins'), issuedExpiry: null,
@@ -66,6 +68,15 @@ export function render(container, {onConnectionChange} = {}) {
       setSavedValue(view.interval, String(result.intervalMillis), true);
     });
   });
+  find('welcome').addEventListener('submit', event => {
+    if (!view.welcomeLoaded) {
+      event.preventDefault();
+      return;
+    }
+    return save(view, event, 'welcome', {enabled: view.welcome.checked}, '进群欢迎语已保存', result => {
+      setSavedWelcome(view.welcome, result.enabled, true);
+    }, view.welcomeResult);
+  });
   find('claim-generate').addEventListener('submit', event => {
     if (!view.saving) clearIssuedCode(view);
     return save(view, event, 'admin-claims/code', {}, '认领码已生成', result => {
@@ -98,6 +109,15 @@ function linkSettingsHtml(loading) {
         <span class="dim">默认每 2 秒一条，即每分钟 30 条</span>
       </div>
       <button type="submit" class="ghost sm">保存间隔</button>
+    </form>
+    <form class="lc-sub" id="qqbot-welcome">
+      <label class="switch">
+        <input id="qqbot-welcome-enabled" type="checkbox" role="switch" aria-describedby="qqbot-welcome-help" disabled>
+        <span>机器人进群时发欢迎语</span>
+      </label>
+      <p class="hint" id="qqbot-welcome-help">关掉后，机器人进群时不会提醒群主打开主动发言，请自行告诉群主。</p>
+      <button type="submit" class="ghost sm" id="qqbot-welcome-save" disabled>保存欢迎语设置</button>
+      <p class="hint" id="qqbot-welcome-result" role="status" hidden></p>
     </form>
     <section class="lc-sub">
       <h3 class="lc-h">官方机器人超级管理员</h3>
@@ -133,6 +153,7 @@ export async function refresh() {
 
 async function refreshView(view) {
   const request = ++view.request;
+  const welcome = view.welcome ? refreshWelcome(view, request) : undefined;
   try {
     const state = await api(BASE + 'state', {cache: 'no-store'});
     if (request !== view.request) return;
@@ -151,6 +172,25 @@ async function refreshView(view) {
     view.load.textContent = '';
   } catch (error) {
     if (request === view.request) view.load.textContent = '加载失败：' + error.message;
+  } finally {
+    await welcome;
+  }
+}
+
+async function refreshWelcome(view, request) {
+  try {
+    const result = await api(BASE + 'welcome', {cache: 'no-store'});
+    if (request !== view.request) return;
+    if (!result.success || typeof result.enabled !== 'boolean') throw new Error(result.message || '无法读取设置');
+    setSavedWelcome(view.welcome, result.enabled);
+    if (!view.welcomeLoaded) {
+      showResult(view.welcomeResult, '');
+      view.welcomeLoaded = true;
+      view.welcome.disabled = false;
+      view.welcomeSave.disabled = false;
+    }
+  } catch (error) {
+    if (request === view.request) showResult(view.welcomeResult, '读取欢迎语设置失败：' + error.message, true);
   }
 }
 
@@ -223,6 +263,12 @@ function setSavedValue(input, value, replace = false) {
   const draft = !replace && input.value !== input.defaultValue ? input.value : value;
   input.defaultValue = value;
   input.value = draft;
+}
+
+function setSavedWelcome(input, checked, replace = false) {
+  const draft = !replace && input.checked !== input.defaultChecked ? input.checked : checked;
+  input.defaultChecked = checked;
+  input.checked = draft;
 }
 
 function renderGroups(container, groups) {
