@@ -54,7 +54,7 @@ import static org.mockito.Mockito.when;
  */
 final class ReportSampleFixtures {
     enum Kind {
-        LIVE("下播报告"),
+        LIVE("直播报告"),
         WEEKLY("运营周报"),
         DYNAMIC("动态推送");
 

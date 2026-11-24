@@ -751,7 +751,7 @@ class NovaMessageSenderTest {
         }
 
         @Test
-        @DisplayName("降级送达时应触发图片降级回调，供下播报告记录")
+        @DisplayName("降级送达时应触发图片降级回调，供直播报告记录")
         void notifiesImageDegradedCallback() {
             HttpUtil http = mock(HttpUtil.class);
             when(http.postJson(anyString(), any(), any()))

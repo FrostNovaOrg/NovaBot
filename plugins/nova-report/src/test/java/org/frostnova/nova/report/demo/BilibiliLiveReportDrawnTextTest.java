@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 数据用全量演示夹具：一张图把卡片、曲线、榜单、名单全画满，单造一场喂不全这些区块。
  * 词云例外——它走独立渲染口、不经过画字方法，其语料在输入侧另钉一道。
  */
-@DisplayName("下播报告画上去的字")
+@DisplayName("直播报告画上去的字")
 class BilibiliLiveReportDrawnTextTest {
     private static FontUtil fonts;
 

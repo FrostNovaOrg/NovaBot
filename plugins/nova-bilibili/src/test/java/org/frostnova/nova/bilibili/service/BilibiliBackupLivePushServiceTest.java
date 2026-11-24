@@ -167,7 +167,7 @@ class BilibiliBackupLivePushServiceTest {
     }
 
     @Test
-    @DisplayName("已在播的主播加入监听后下播: 下播报告照出")
+    @DisplayName("已在播的主播加入监听后下播: 直播报告照出")
     void shouldStillReportLiveOffAfterAdopting() {
         runRound(List.of(), Map.of());
         runRound(List.of(streamer()), Map.of(UID, livingRoom(LIVE_START_SECONDS)));

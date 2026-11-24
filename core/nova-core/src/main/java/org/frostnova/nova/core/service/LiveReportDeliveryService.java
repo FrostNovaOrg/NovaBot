@@ -15,7 +15,7 @@ import java.util.Optional;
 /** 使用者主动把最近一场已下播的报告发到当前通道。 */
 @Service
 public class LiveReportDeliveryService {
-    public static final String NO_REPORT = "还没有可发的下播报告";
+    public static final String NO_REPORT = "还没有可发的直播报告";
     private final LiveDetailArchive details;
     private final AbstractDataSource source;
     private final ObjectProvider<LiveReportRedrawer> redrawers;
@@ -44,7 +44,7 @@ public class LiveReportDeliveryService {
         String content = redrawers.orderedStream().filter(one -> platform.equals(one.platform())).findFirst()
                 .flatMap(one -> one.channelContent(detail, channel))
                 .filter(body -> !body.isBlank())
-                .orElseThrow(() -> new IllegalStateException("下播报告生成失败"));
+                .orElseThrow(() -> new IllegalStateException("直播报告生成失败"));
         var message = Message.create(channel.getPlatform(), channel.getType(), channel.getNum(), content).get(0);
         message.setChannel(channel);
         return sender.sendNow(message);

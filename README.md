@@ -4,7 +4,7 @@
 
 <h3>哔哩哔哩直播运营助手</h3>
 
-<p>看直播数据、出下播报告、推送开播、下播和动态通知；主播本人和公会运营可以各自登录，自己设置推送、查看数据。</p>
+<p>看直播数据、出直播报告、推送开播、下播和动态通知；主播本人和公会运营可以各自登录，自己设置推送、查看数据。</p>
 
 <p><sub>A Bilibili live-streaming operations assistant: stream data, post-stream reports, and go-live, stream-end and feed notifications; streamers and guild staff can each sign in to set up their own notifications and check their own data.</sub></p>
 
@@ -64,7 +64,7 @@
 **扩展**：直播间事件可以推给本机上的其他程序，也可以自己写插件去接弹幕、礼物和上舰。
 
 <p align="center">
-<a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="下播报告图：数据卡片、互动曲线、礼物与排行、弹幕词云（示例数据）" width="100%"></a>
+<a href="docs/assets/report-demo.png"><img src="docs/assets/report-showcase.png" alt="直播报告图：数据卡片、互动曲线、礼物与排行、弹幕词云（示例数据）" width="100%"></a>
 <br>
 <sub>一场直播结束后自动生成的报告图（示例数据，点开看原图）</sub>
 </p>
@@ -92,7 +92,7 @@ cd NovaBot && ./install.sh
 | 判断它适不适合我 | [第 1 章　NovaBot 能帮你做什么](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html) |
 | 准备机器、估内存 | [第 2 章　开始之前要准备什么](https://frostnovaorg.github.io/NovaBot/02-what-to-prepare.html) |
 | 加主播、推到群 | [第 6 章　加主播、推到群](https://frostnovaorg.github.io/NovaBot/06-add-streamer-and-push.html) |
-| 看下播报告与趋势 | [第 9 章　看播得怎么样](https://frostnovaorg.github.io/NovaBot/09-stream-reports.html) |
+| 看直播报告与趋势 | [第 9 章　看播得怎么样](https://frostnovaorg.github.io/NovaBot/09-stream-reports.html) |
 | 升级与备份 | [第 13 章　升级与备份](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html) |
 | 遇到问题 | [第 14 章　遇到问题怎么办](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html) |
 | 让主播和运营自己登录管理 | [第 15 章　成员：让主播和公会运营自己管理](https://frostnovaorg.github.io/NovaBot/15-members.html) |

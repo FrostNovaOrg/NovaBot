@@ -499,7 +499,7 @@ if (push && store) {
     {
       className: REPORT_HANDLER,
       aliases: [],
-      displayName: '下播报告',
+      displayName: '直播报告',
       description: '下播时把整场报告画成一张图',
       platform: 'bilibili',
       placeholders: [],

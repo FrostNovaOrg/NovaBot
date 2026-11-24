@@ -136,9 +136,9 @@ class LiveReportDeliveryServiceTest {
             verifyNoInteractions(gate, tip);
             when(gate.allowedFor(any(Message.class))).thenReturn(true);
             when(gate.alertsAllowed()).thenReturn(true);
-            actual.send(Message.create("qq-onebot", PushTargetType.GROUP, 1001L, "下一场下播报告").get(0));
+            actual.send(Message.create("qq-onebot", PushTargetType.GROUP, 1001L, "下一场直播报告").get(0));
             assertTrue(normalAndTip.await(10, java.util.concurrent.TimeUnit.SECONDS));
-            assertEquals(List.of("{image_base64=QUJD}", "下一场下播报告", "首推提示"), sent);
+            assertEquals(List.of("{image_base64=QUJD}", "下一场直播报告", "首推提示"), sent);
             verify(tip).claim("qq-onebot", PushTargetType.GROUP, 1001L);
         } finally { actual.shutdown(); }
     }

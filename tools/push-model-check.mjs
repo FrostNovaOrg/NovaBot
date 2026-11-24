@@ -40,7 +40,7 @@ const LAYOUT_OPTIONS = [
 const HANDLERS = [
   handler('LiveOn', '开播通知', ['{uname}', '{url}']),
   handler('LiveOff', '下播通知', ['{uname}', '{time}']),
-  {...handler('LiveReport', '下播报告', ['{uname}', '{report}'], LAYOUT_OPTIONS), reportLayout: true},
+  {...handler('LiveReport', '直播报告', ['{uname}', '{report}'], LAYOUT_OPTIONS), reportLayout: true},
   handler('Dynamic', '动态通知', ['{uname}', '{picture}']),
 ];
 
@@ -263,7 +263,7 @@ const CASES = [
     expect: {'出这一段': '出', '标': '自定义', '哪一类': 'LiveReport'},
   },
   {
-    name: '关掉下播报告',
+    name: '关掉直播报告',
     run: () => {
       const u = user({targets: [{
         platform: SENDER, type: 1, num: 12345, enabled: true,
@@ -276,7 +276,7 @@ const CASES = [
         '带版式的': switches.filter(item => item.hasLayout).map(item => item.displayName).join('、'),
       };
     },
-    expect: {'出这一段': '不出', '开关行数': 4, '带版式的': '下播报告'},
+    expect: {'出这一段': '不出', '开关行数': 4, '带版式的': '直播报告'},
   },
   {
     name: '群名取不到',
@@ -299,7 +299,7 @@ const CASES = [
       const records = [
         record('群 12345', '开播通知'),
         record('群 123', '开播通知'),
-        record('群 12345', '下播报告', false),
+        record('群 12345', '直播报告', false),
         record('好友 12345', '开播通知'),
         record('群 999', '开播通知'),
       ];
@@ -311,7 +311,7 @@ const CASES = [
         '误收': rows.some(item => item.target !== '群 12345') ? '有' : '无',
       };
     },
-    expect: {'条数': 2, '内容': '开播通知、下播报告', '误收': '无'},
+    expect: {'条数': 2, '内容': '开播通知、直播报告', '误收': '无'},
   },
   {
     name: '@全体成员 状态行',

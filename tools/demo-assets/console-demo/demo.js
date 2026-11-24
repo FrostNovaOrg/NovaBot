@@ -170,7 +170,7 @@
           const completed = batches.flat().filter(one => one.hasReport && one.endTime > one.startTime)
             .sort((a, b) => b.startTime - a.startTime);
           return json(completed.length ? {success: true, startTime: completed[0].startTime}
-            : {success: false, message: '还没有可发的下播报告'});
+            : {success: false, message: '还没有可发的直播报告'});
         }
         const row = responses.get(key(method, path, url.search));
         if (row) return read(row);

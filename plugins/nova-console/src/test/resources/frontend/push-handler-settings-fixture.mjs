@@ -266,7 +266,7 @@ globalThis.URL.revokeObjectURL = () => {};
 
 
 const handlers = JSON.parse(process.env.HANDLERS);
-const report = handlers.find(item => item.displayName === '下播报告');
+const report = handlers.find(item => item.displayName === '直播报告');
 const digest = handlers.find(item => item.displayName === '下播打赏播报');
 const plugin = handlers.find(item => item.displayName === '额外通知');
 const requests = [];
@@ -373,7 +373,7 @@ await ask('模型：恢复只删除本类配置键', async () => {
 // 抓两类都订时门槛项找不到，或默认不是处理器声明的 50。
 await ask('两类同时订阅：报告预览和门槛 50 同时可见', async () => {
   await paint([message(report), message(digest)]);
-  same(previewCount(section('下播报告版式')), 1, '报告预览区');
+  same(previewCount(section('直播报告版式')), 1, '报告预览区');
   same(threshold().value, '50', '门槛默认值');
   same(previewCount(section('下播打赏播报设置')), 0, '设置块没有预览区');
 });
@@ -440,20 +440,20 @@ for (const [input, expected] of [[12.4, 12], [12.5, 13]]) {
 // 抓共用数字框只修设置块，报告版式清空仍变成 0。
 await ask('清空报告弹幕排行仍保留 8', async () => {
   await paint([message(report, {danmu_ranking: 8})]);
-  change(control(section('下播报告版式'), '弹幕排行'), '');
+  change(control(section('直播报告版式'), '弹幕排行'), '');
   same(paramsOf(report), {danmu_ranking: 8}, '版式参数');
-  same(control(section('下播报告版式'), '弹幕排行').value, '8', '版式数字框');
+  same(control(section('直播报告版式'), '弹幕排行').value, '8', '版式数字框');
 });
 // 抓一次保存只写入其中一类。
 await ask('一次保存两类改动，重新打开都在', async () => {
   await paint([message(report), message(digest)]);
-  change(control(section('下播报告版式'), '直播间封面'), false);
+  change(control(section('直播报告版式'), '直播间封面'), false);
   change(threshold(), 200);
   await push.save();
   const stored = saved[0].targets[0].messages;
   same(stored.map(item => item.params), [{cover: false}, {reward_threshold_yuan: 200}], '两类保存内容');
   await paint(stored);
-  same(control(section('下播报告版式'), '直播间封面').checked, false, '报告读回');
+  same(control(section('直播报告版式'), '直播间封面').checked, false, '报告读回');
   same(threshold().value, '200', '门槛读回');
 });
 // 抓一块的自定义状态跟着另一块走，或恢复默认连另一块一并清掉。
@@ -474,7 +474,7 @@ await ask('设置独立显示状态、确认与恢复，报告版式保留', asy
   same(paramsOf(report), {cover: false}, '报告参数');
   same(threshold().value, '50', '恢复默认门槛');
   same(all(section('下播打赏播报设置')).some(item => item.innerHTML.includes('当前设置：<b>默认</b>')), true, '恢复后默认');
-  same(all(section('下播报告版式')).some(item => item.innerHTML.includes('当前版式：<b>自定义</b>')), true, '报告仍自定义');
+  same(all(section('直播报告版式')).some(item => item.innerHTML.includes('当前版式：<b>自定义</b>')), true, '报告仍自定义');
 });
 // 抓第三方插件未声明预览能力时被默认当成报告版式。
 await ask('未声明的插件按设置画且不请求报告预览', async () => {
@@ -493,7 +493,7 @@ await ask('通知行跟随推送类型顺序，规则、状态与危险操作在
   const titles = all(page()).filter(item => item.tagName === 'h3').map(item => item.textContent);
   same(titles, ['推送内容', '通道规则', '本群状态', '危险操作'], '各块顺序');
 });
-for (const [name, chosen] of [['只开下播报告', [report]], ['只开下播打赏播报', [digest]], ['两样都开', [report, digest]]]) {
+for (const [name, chosen] of [['只开直播报告', [report]], ['只开下播打赏播报', [digest]], ['两样都开', [report, digest]]]) {
   await paint(chosen.map(item => message(item)));
   console.log(name + '：' + all(page()).filter(item => hasClass(item, 'nrow') && !hasClass(item.parentNode, 'p-off-fold'))
     .map(item => all(item).find(child => child.tagName === 'b').textContent).join(' → '));

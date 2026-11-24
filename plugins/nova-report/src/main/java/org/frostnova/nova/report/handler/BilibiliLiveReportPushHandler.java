@@ -193,7 +193,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
     @Override
     public String displayName() {
-        return "下播报告";
+        return "直播报告";
     }
 
     @Override
@@ -203,7 +203,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
     @Override
     public String description() {
-        return "主播结束直播时推送本场直播数据统计图";
+        return "下播后自动推送本场直播报告";
     }
 
     @Override

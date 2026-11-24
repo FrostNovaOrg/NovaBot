@@ -42,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 已由 {@code ConfigUiPublicApiTest}、{@code OperatorTokenSwitchTest}、
  * {@code ConfigUiAgreementGateTest}、{@code PasskeyEndpointAccessTest} 钉着，这里不重钉。
  */
-@DisplayName("照文档关掉控制台后，下播报告版式接口也一并关闭")
+@DisplayName("照文档关掉控制台后，直播报告版式接口也一并关闭")
 class ConfigUiClosedHidesReportLayoutTest {
 
     private static final String SWITCH = "novabot.core.config-ui.enabled";
@@ -135,7 +135,7 @@ class ConfigUiClosedHidesReportLayoutTest {
     }
 
     @Test
-    @DisplayName("下播报告版式控制器挂着控制台开关条件，关时不登记")
+    @DisplayName("直播报告版式控制器挂着控制台开关条件，关时不登记")
     void bilibiliReportLayoutControllerHasSwitchGate() {
         ConditionalOnProperty gate =
                 BilibiliReportLayoutController.class.getAnnotation(ConditionalOnProperty.class);

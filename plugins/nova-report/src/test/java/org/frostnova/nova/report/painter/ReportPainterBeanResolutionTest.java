@@ -136,7 +136,7 @@ class ReportPainterBeanResolutionTest {
     }
 
     @Test
-    @DisplayName("🔴 下播报告推送拿到的是正式画手，不是预览画手")
+    @DisplayName("🔴 直播报告推送拿到的是正式画手，不是预览画手")
     void pushHandlerGetsTheRealPainter() {
         context.refresh();
 

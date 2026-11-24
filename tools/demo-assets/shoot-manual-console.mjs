@@ -159,7 +159,10 @@ export const SHOTS = [
     open: CHANNEL,
     steps: [sees('通道规则', 'h3'),
       act('展开群内命令', `(() => { const s = __shot.byPrefix('群内命令', 'summary'); if (!s) return false;
-        s.closest('details').open = true; return true; })()`)],
+        s.closest('details').open = true; return true; })()`),
+      act('展开数据查询命令', `(() => { const s = __shot.byPrefix('数据查询', '.cgroup summary b'); if (!s) return false;
+        s.closest('details').open = true; return true; })()`),
+      sees('直播报告', '.p-commands .cfine b')],
     frame: `__shot.union([${card('通道规则')}, __shot.byPrefix('群内命令', 'summary').closest('.nv-card'),
       ${card('本群状态')}], 9)`,
   },

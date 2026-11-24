@@ -89,7 +89,7 @@
 			"available":true,
 			"category":"数据查询",
 			"channelScoped":true,
-			"description":"查看正在直播主播的实时数据报告",
+			"description":"看直播报告：直播中看到此刻，下播后看上一场",
 			"disableable":true,
 			"groupOnly":false,
 			"name":"直播报告",

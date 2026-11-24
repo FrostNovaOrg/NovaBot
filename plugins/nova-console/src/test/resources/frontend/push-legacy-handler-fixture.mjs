@@ -121,9 +121,9 @@ const LAYOUT_OPTIONS = [
 /** /api/handlers 的一项：主名带 aliases，旧名不混进主表 */
 const HANDLERS = [
   {
-    className: MAIN, displayName: '下播报告', description: '下播时推送', platform: PLATFORM,
+    className: MAIN, displayName: '直播报告', description: '下播时推送', platform: PLATFORM,
     reportLayout: true, aliases: [LEGACY], placeholders: ['{uname}'], options: LAYOUT_OPTIONS,
-    defaultParams: {message: '出厂的下播报告', showRevenue: true},
+    defaultParams: {message: '出厂的直播报告', showRevenue: true},
   },
   {
     className: OTHER, displayName: '开播通知', description: '开播时推送', platform: PLATFORM,

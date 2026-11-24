@@ -100,7 +100,7 @@ class QqAssistantCommandTest {
     private static final long SECOND = 10002L;
     private static final long START = 1794000000000L;
     private static final String LABEL = "（由人工智能生成）";
-    private static final String REPORT_QUESTION = "（机器人在 08:00 推送了下播报告）";
+    private static final String REPORT_QUESTION = "（机器人在 08:00 推送了直播报告）";
     private static final String REPORT_SUMMARY = "测试主播甲 本场直播数据\n弹幕 106 条";
 
     @TempDir Path directory;
@@ -1308,7 +1308,7 @@ class QqAssistantCommandTest {
         group(OTHER, "问 这场流水怎么比上场少");
         assertReply(LABEL);
         var history = lastHistory();
-        assertEquals(1, history.size(), "群成员追问时要带上下播报告");
+        assertEquals(1, history.size(), "群成员追问时要带上直播报告");
         assertEquals(REPORT_QUESTION, history.getJSONObject(0).getString("question"));
         assertEquals(REPORT_SUMMARY, history.getJSONObject(0).getString("answerForHistory"));
         String rules = requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
@@ -1439,7 +1439,7 @@ class QqAssistantCommandTest {
         assertEquals("（机器人在 08:01 推送了运营周报）", history.getJSONObject(0).getString("question"));
         assertEquals(weeklySummary, history.getJSONObject(0).getString("answerForHistory"));
         assertEquals("本月开播了吗", history.getJSONObject(1).getString("question"));
-        assertEquals("（机器人在 08:02 推送了下播报告）", history.getJSONObject(2).getString("question"));
+        assertEquals("（机器人在 08:02 推送了直播报告）", history.getJSONObject(2).getString("question"));
         assertEquals("本月开播了吗", userPayload(requests.get(classifierRequest)).getString("previousQuestion"));
     }
 

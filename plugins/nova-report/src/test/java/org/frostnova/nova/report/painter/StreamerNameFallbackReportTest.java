@@ -81,7 +81,7 @@ import static org.mockito.Mockito.when;
  * 此时下播报告的页头与文字版写着「null」或「未知主播」，「直播报告」命令回一串数字；
  * 控制台却显示得出最近一场的昵称。
  */
-@DisplayName("直播报告、下播报告与动态推送：补全没查到昵称时退回最近一场")
+@DisplayName("群命令、直播报告推送与动态推送：补全没查到昵称时退回最近一场")
 class StreamerNameFallbackReportTest {
     private static final String PLATFORM = "bilibili";
 
@@ -150,7 +150,7 @@ class StreamerNameFallbackReportTest {
     }
 
     @Test
-    @DisplayName("下播报告文字版：首行写最近一场的昵称")
+    @DisplayName("直播报告文字版：首行写最近一场的昵称")
     void textReportStartsWithArchivedName() {
         String text = reportPainter(api).textReport(PLATFORM, source(null), new BilibiliLiveReportOptions());
 
@@ -158,7 +158,7 @@ class StreamerNameFallbackReportTest {
     }
 
     @Test
-    @DisplayName("下播报告的图：页头写最近一场的昵称")
+    @DisplayName("直播报告的图：页头写最近一场的昵称")
     void reportImageHeaderShowsArchivedName() {
         BufferedImage placeholder = new BufferedImage(64, 36, BufferedImage.TYPE_INT_ARGB);
         when(api.getBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
@@ -185,7 +185,7 @@ class StreamerNameFallbackReportTest {
     }
 
     @Test
-    @DisplayName("下播报告推送忽略旧昵称文字模板，只发图片")
+    @DisplayName("直播报告推送忽略旧昵称文字模板，只发图片")
     void reportPushIgnoresLegacyNameText() {
         BilibiliLiveReportPainter painter = mock(BilibiliLiveReportPainter.class);
         when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.of("QUJD"));
@@ -194,7 +194,7 @@ class StreamerNameFallbackReportTest {
                 new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility, names);
 
         JSONObject params = handler.getDefaultParams();
-        params.put("message", "{uname} 的下播报告");
+        params.put("message", "{uname} 的直播报告");
         handler.handle(new BilibiliLiveOffEvent(source("")), pushMessage(params));
 
         assertEquals("{image_base64=QUJD}", sentContent());

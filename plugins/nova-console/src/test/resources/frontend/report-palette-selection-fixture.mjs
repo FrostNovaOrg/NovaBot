@@ -40,7 +40,7 @@ let holdPreviews = false;
 const pendingPreviews = [];
 const WEEKLY = 'org.frostnova.nova.core.handler.WeeklyReportPushHandler';
 const HANDLER = 'x.Report';
-store.handlerList = [{className: HANDLER, displayName: '下播报告', aliases: [],
+store.handlerList = [{className: HANDLER, displayName: '直播报告', aliases: [],
   placeholders: [], attachments: [], factoryParams: {}, defaultParams: {},
   reportLayout: true, options: [{key: 'cover', label: '封面', type: 'BOOLEAN', defaultValue: true}]}];
 store.handlerList.push({...store.handlerList[0], className: WEEKLY, displayName: '周报'});

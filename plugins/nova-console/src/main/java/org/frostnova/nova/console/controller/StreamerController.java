@@ -529,7 +529,7 @@ public class StreamerController {
             JSONObject missing = new JSONObject();
             missing.put("success", false);
             missing.put("message", "该场没有报告图，也没有保留明细数据，无法重新绘制："
-                    + "可能未开启下播报告，也可能该场早于「每场留明细」功能");
+                    + "可能未开启直播报告推送，也可能该场早于「每场留明细」功能");
             return ResponseEntity.status(404).contentType(MediaType.APPLICATION_JSON).body(missing);
         }
 

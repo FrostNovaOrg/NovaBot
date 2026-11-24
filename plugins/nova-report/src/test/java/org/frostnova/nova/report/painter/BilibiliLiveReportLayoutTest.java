@@ -61,7 +61,7 @@ import static org.mockito.Mockito.when;
  * 概览行的溢出正是「加了一句『其中 N 秒因维护未采集』」造成的，
  * 而加的时候没有任何东西会告诉他这行放不下了。
  */
-@DisplayName("下播报告版式")
+@DisplayName("直播报告版式")
 class BilibiliLiveReportLayoutTest {
     private static final String PLATFORM = "bilibili";
 

@@ -49,7 +49,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 指标名写字面量的理由见 {@code BilibiliRevenueUsersMetricTest} 的类注释。
  */
-@DisplayName("下播报告流水曲线、名单与回落")
+@DisplayName("直播报告流水曲线、名单与回落")
 class BilibiliLiveReportRevenueLayoutTest {
     private static final String PLATFORM = "bilibili";
 
