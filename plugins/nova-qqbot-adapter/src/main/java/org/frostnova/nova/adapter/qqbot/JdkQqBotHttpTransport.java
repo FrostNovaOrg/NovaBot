@@ -34,22 +34,31 @@ class JdkQqBotHttpTransport implements QqBotHttpTransport, QqBotWebSocketTranspo
             throws IOException, InterruptedException {
         var publisher = body == null ? HttpRequest.BodyPublishers.noBody()
                 : HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8);
+        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT).method(method, publisher);
+        headers.forEach(request::header);
+        return send(request.build());
+    }
+
+    @Override
+    public Response send(HttpRequest request) throws IOException, InterruptedException {
+        Duration timeout = request.timeout().orElseThrow();
+        var publisher = request.bodyPublisher().orElse(HttpRequest.BodyPublishers.noBody());
         AtomicBoolean exchangeStarted = new AtomicBoolean();
         boolean hasBody = publisher.contentLength() > 0;
         var requestBody = hasBody ? HttpRequest.BodyPublishers.fromPublisher(subscriber -> {
             exchangeStarted.set(true);
             publisher.subscribe(subscriber);
         }, publisher.contentLength()) : publisher;
-        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(REQUEST_TIMEOUT).method(method, requestBody);
-        headers.forEach(request::header);
+        var wireRequest = hasBody ? HttpRequest.newBuilder(request, (name, value) -> true)
+                .method(request.method(), requestBody).build() : request;
 
         // 等到回包读完才算请求结束。
-        var exchange = client.sendAsync(request.build(), response -> {
+        var exchange = client.sendAsync(wireRequest, response -> {
             exchangeStarted.set(true);
             return HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
         });
         try {
-            var response = exchange.get(REQUEST_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+            var response = exchange.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
             return new Response(response.statusCode(), response.body());
         } catch (TimeoutException e) {
             exchange.cancel(true);
