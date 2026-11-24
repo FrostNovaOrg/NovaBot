@@ -245,7 +245,7 @@ class WordCloudBlockWordsTest {
      * 或者还有「求上舰」这类含它的词。直播中随时拉的实时报告走同一段，一并看。
      */
     @Test
-    @DisplayName("加进屏蔽表的词和含它的词，下播报告与直播中的实时报告的词云里都不再出现")
+    @DisplayName("加进屏蔽表的词和含它的词，下播后和直播中的报告词云里都不再出现")
     void reportDropsBlockedWordAndWordsContainingIt() {
         for (boolean live : new boolean[]{false, true}) {
             LiveDataService data = sessionData(live);
@@ -257,7 +257,7 @@ class WordCloudBlockWordsTest {
             painter.paint(PLATFORM, streamer(), cloudOnly());
 
             List<String> drawn = oneCloud(painter.drawn);
-            String which = live ? "直播中的实时报告" : "下播报告";
+            String which = live ? "直播中的实时报告" : "下播后的直播报告";
             assertAll(
                     () -> assertFalse(drawn.contains("上舰"), which + "里屏蔽词还在: " + drawn),
                     () -> assertFalse(drawn.contains("求上舰"), which + "里含屏蔽词的词还在: " + drawn),

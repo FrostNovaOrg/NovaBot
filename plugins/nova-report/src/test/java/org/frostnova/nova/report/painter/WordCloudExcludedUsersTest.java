@@ -113,7 +113,7 @@ class WordCloudExcludedUsersTest {
     }
 
     @Test
-    @DisplayName("名单里的机器人刷了欢迎和感谢，下播报告的词云里这些词不再是最大的")
+    @DisplayName("名单里的机器人刷了欢迎和感谢，直播报告的词云里这些词不再是最大的")
     void endReportDropsWordsFromListedUsers() throws Exception {
         LiveDataService data = sessionData();
         floodStored(data);

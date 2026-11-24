@@ -17,7 +17,9 @@ import org.frostnova.nova.core.assistant.AssistantUsageStore;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandFollowUp;
+import org.frostnova.nova.core.command.CommandReplyHint;
 import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.command.GroupMessageCapability;
 import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.command.builtin.DisableCommand;
 import org.frostnova.nova.core.command.builtin.EnableCommand;
@@ -92,6 +94,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class QqAssistantCommandTest {
     private static final String QQ = "qq-test";
+    private static final String OFFICIAL = "qq-official";
+    private static final String ONEBOT = "qq-onebot";
     private static final String BILIBILI = "bilibili";
     private static final long ROOM = 30003L;
     private static final long ASKER = 2000000002L;
@@ -100,7 +104,7 @@ class QqAssistantCommandTest {
     private static final long SECOND = 10002L;
     private static final long START = 1794000000000L;
     private static final String LABEL = "（由人工智能生成）";
-    private static final String REPORT_QUESTION = "（机器人在 08:00 推送了下播报告）";
+    private static final String REPORT_QUESTION = "（机器人在 08:00 推送了直播报告）";
     private static final String REPORT_SUMMARY = "测试主播甲 本场直播数据\n弹幕 106 条";
 
     @TempDir Path directory;
@@ -110,6 +114,7 @@ class QqAssistantCommandTest {
     private final List<TimelineEvent> timeline = new ArrayList<>();
     private final List<JSONObject> requests = new CopyOnWriteArrayList<>();
     private final ConcurrentLinkedQueue<JSONObject> modelReplies = new ConcurrentLinkedQueue<>();
+    private String platform = QQ;
     private Runnable modelWait = () -> { };
     private AssistantProperties properties;
     private AssistantClient client;
@@ -166,6 +171,10 @@ class QqAssistantCommandTest {
         service = new AssistantAskService(queries, client, properties, local, clock, () -> chartRenderer);
         command = new QqAssistantCommand(service, client, local, data, StreamerNames.none(),
                 new RevenueVisibilityService(new NovaStateStore(core)), settings, sender, clock);
+        var capability = mock(GroupMessageCapability.class);
+        when(capability.platform()).thenReturn(OFFICIAL);
+        when(capability.receivesUnmentionedGroupMessages()).thenReturn(false);
+        command.setReplyHint(new CommandReplyHint(List.of(capability)));
         var dispatcherProvider = mockDispatcherProvider();
         dispatcher = new CommandDispatcher(provider(List.of(command, new MenuCommand(dispatcherProvider, settings),
                 new EnableCommand(dispatcherProvider, settings), new DisableCommand(dispatcherProvider, settings))),
@@ -1148,8 +1157,59 @@ class QqAssistantCommandTest {
         assertEquals(1, requests.size());
     }
 
+    @Test
+    void officialGroupProgressAndAnswerReplyToTheOriginalMessage() throws Exception {
+        platform = OFFICIAL;
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？"));
+        var received = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        holdModel(received, release);
+
+        Message progress;
+        try {
+            group(ASKER, "问 本月播过吗", "m1");
+            assertTrue(received.await(10, TimeUnit.SECONDS));
+            progress = assertReply("收到，正在查");
+        } finally {
+            release.countDown();
+        }
+        Message answer = assertReply("周六在线更高", LABEL);
+
+        assertAll(
+                () -> assertEquals("m1", progress.getReplyTo(), "查数提示"),
+                () -> assertEquals("m1", answer.getReplyTo(), "答案"),
+                () -> assertTrue(answer.getContent().contains("@我 回「问 1」接着问"), answer::getContent));
+    }
+
+    @Test
+    void officialGroupAssistantMenuTellsTheAskerToMentionTheBot() throws Exception {
+        platform = OFFICIAL;
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        add(SECOND, "测试主播乙", channel(GROUP, ROOM, true, false));
+
+        group(ASKER, "问 本月播过吗");
+
+        Message menu = assertReply("回序号选一位主播", "1. 测试主播甲", "2. 测试主播乙");
+        assertTrue(menu.getContent().contains("请 @我 回序号选一位主播"), menu::getContent);
+    }
+
+    @Test
+    void oneBotGroupAnswerWithoutAnOriginalMessageIdStillHasNoReplyTo() throws Exception {
+        platform = ONEBOT;
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
+        modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？"));
+
+        group(ASKER, "问 本月播过吗");
+
+        Message answer = assertReply("回「问 1」接着问", LABEL);
+        assertFalse(answer.getContent().contains("@我"), answer::getContent);
+        assertNull(answer.getReplyTo());
+    }
+
     // QQ 里难题需要让提问人知道预计等待时间。
     @Test void difficultQuestionSendsItsOwnNoticeWhileWaitingForAnswer() throws Exception {
+        platform = OFFICIAL;
         new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.adaptive-thinking", true)))
                 .bind("novabot.assistant", Bindable.ofInstance(properties));
         properties.setStreamerDailyBudgetYuan(new BigDecimal("0.000612"));
@@ -1170,15 +1230,16 @@ class QqAssistantCommandTest {
         logger.addAppender(events);
         try {
             try {
-                group(ASKER, "问 为什么近期场次表现不一样");
-                assertReply("要多想一会儿", "大约半分钟到一分钟");
+                group(ASKER, "问 为什么近期场次表现不一样", "m1");
+                assertEquals("m1", assertReply("要多想一会儿", "大约半分钟到一分钟").getReplyTo());
                 assertTrue(answering.await(10, TimeUnit.SECONDS), "模型还没有开始回答");
                 assertFalse(requests.get(1).containsKey("reasoning_effort"));
                 assertNull(replies.poll(11, TimeUnit.SECONDS), "难题又收到了查数提示");
             } finally {
                 release.countDown();
             }
-            assertReply("场次表现有波动", "提示：这位主播今天的助手额度用完", LABEL);
+            Message answer = assertReply("场次表现有波动", "提示：这位主播今天的助手额度用完", LABEL);
+            assertEquals("m1", answer.getReplyTo());
             awaitIdle(GROUP, ROOM);
         } finally {
             logger.detachAppender(events);
@@ -1308,7 +1369,7 @@ class QqAssistantCommandTest {
         group(OTHER, "问 这场流水怎么比上场少");
         assertReply(LABEL);
         var history = lastHistory();
-        assertEquals(1, history.size(), "群成员追问时要带上下播报告");
+        assertEquals(1, history.size(), "群成员追问时要带上直播报告");
         assertEquals(REPORT_QUESTION, history.getJSONObject(0).getString("question"));
         assertEquals(REPORT_SUMMARY, history.getJSONObject(0).getString("answerForHistory"));
         String rules = requests.get(0).getJSONArray("messages").getJSONObject(0).getString("content");
@@ -1439,7 +1500,7 @@ class QqAssistantCommandTest {
         assertEquals("（机器人在 08:01 推送了运营周报）", history.getJSONObject(0).getString("question"));
         assertEquals(weeklySummary, history.getJSONObject(0).getString("answerForHistory"));
         assertEquals("本月开播了吗", history.getJSONObject(1).getString("question"));
-        assertEquals("（机器人在 08:02 推送了下播报告）", history.getJSONObject(2).getString("question"));
+        assertEquals("（机器人在 08:02 推送了直播报告）", history.getJSONObject(2).getString("question"));
         assertEquals("本月开播了吗", userPayload(requests.get(classifierRequest)).getString("previousQuestion"));
     }
 
@@ -1519,11 +1580,12 @@ class QqAssistantCommandTest {
     @Test
     @DisplayName("用全角数字可以接着问第二条建议")
     void fullWidthNumberResumesSecondFollowUp() throws Exception {
+        platform = OFFICIAL;
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, false));
         String question = "周六那场的开播时间是什么？";
         modelReplies.add(text("周六在线更高。\n1. 周六那场的弹幕有多少？\n2. " + question));
         group(ASKER, "问 最近在线怎么样");
-        assertReply("2. " + question, LABEL);
+        assertReply("@我 回「问 1」或「问 2」接着问", "2. " + question, LABEL);
         awaitIdle(GROUP, ROOM);
 
         group(ASKER, "２");
@@ -1763,9 +1825,9 @@ class QqAssistantCommandTest {
         users.add(user);
     }
 
-    private static PushTarget channel(PushTargetType type, long num, Boolean enabled, Boolean revenue) {
+    private PushTarget channel(PushTargetType type, long num, Boolean enabled, Boolean revenue) {
         var target = new PushTarget();
-        target.setPlatform(QQ);
+        target.setPlatform(platform);
         target.setType(type);
         target.setNum(num);
         target.setEnabled(true);
@@ -1775,13 +1837,23 @@ class QqAssistantCommandTest {
     }
 
     private void group(long actor, String text) {
+        group(actor, text, null);
+    }
+
+    private void group(long actor, String text, String messageId) {
         clock.advance(Duration.ofSeconds(4));
-        receive(GROUP, ROOM, actor, text, true);
+        receive(GROUP, ROOM, actor, text, true, messageId);
     }
 
     private void receive(PushTargetType type, long num, long actor, String text, boolean mention) {
-        dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(QQ, type == GROUP ? "group" : "private",
-                num, actor, text, "admin", mention));
+        receive(type, num, actor, text, mention, null);
+    }
+
+    private void receive(PushTargetType type, long num, long actor, String text, boolean mention, String messageId) {
+        var event = new NovaRemoteMessageEvent(platform, type == GROUP ? "group" : "private",
+                num, actor, text, "admin", mention);
+        event.setMessageId(messageId);
+        dispatcher.onRemoteMessage(event);
     }
 
     private void holdModel(CountDownLatch received, CountDownLatch release) {
@@ -1808,14 +1880,14 @@ class QqAssistantCommandTest {
 
     private Message assertReply(Message message, String... words) {
         assertNotNull(message, "会话没有收到回复");
-        assertEquals(QQ, message.getPlatform());
+        assertEquals(platform, message.getPlatform());
         assertTrue(message.isReply());
         for (String word : words) assertTrue(message.getContent().contains(word), message::getContent);
         return message;
     }
 
     private void awaitIdle(PushTargetType type, long num) throws InterruptedException {
-        var context = new CommandContext(QQ, type, num, ASKER, "问", List.of(), "");
+        var context = new CommandContext(platform, type, num, ASKER, "问", List.of(), "");
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (command.beforeCooldown(context) != null) {
             assertTrue(System.nanoTime() < deadline, "问题结束后会话仍处于忙状态");

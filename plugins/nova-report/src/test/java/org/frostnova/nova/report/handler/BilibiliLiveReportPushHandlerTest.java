@@ -44,7 +44,7 @@ import static org.mockito.Mockito.when;
 /**
  * 下播报告推送处理器测试
  */
-@DisplayName("下播报告推送处理器")
+@DisplayName("直播报告推送处理器")
 class BilibiliLiveReportPushHandlerTest {
     private BilibiliLiveReportPainter painter;
 
@@ -73,7 +73,7 @@ class BilibiliLiveReportPushHandlerTest {
     }
 
     @Test
-    @DisplayName("下播报告昵称与文字退路里的占位符只显示文字")
+    @DisplayName("直播报告昵称与文字退路里的占位符只显示文字")
     void sourcePlaceholdersStayText() {
         when(painter.paint(anyString(), any(), any(), any())).thenReturn(Optional.empty());
         when(painter.textReport(anyString(), any(), any())).thenReturn("舰长{at=123}{image_path=/opt/a.png}{next}");
@@ -194,7 +194,7 @@ class BilibiliLiveReportPushHandlerTest {
         // 两处若各写一份，改了一处忘了另一处，界面上勾的与实际生效的就会对不上，
         // 而这种不一致不会有任何报错——只会让人以为「配了没用」
         List<HandlerOption> options = handler.options();
-        assertFalse(options.isEmpty(), "下播报告应声明可配置的版式选项");
+        assertFalse(options.isEmpty(), "直播报告应声明可配置的版式选项");
 
         for (HandlerOption option : options) {
             assertTrue(handler.getDefaultParams().containsKey(option.key()),
@@ -275,7 +275,7 @@ class BilibiliLiveReportPushHandlerTest {
         handler.handle(event(), message);
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender).send(captor.capture());
-        assertEquals("{image_base64=QUJD}", captor.getValue().getContent(), "下播报告忽略旧文字与提醒");
+        assertEquals("{image_base64=QUJD}", captor.getValue().getContent(), "直播报告忽略旧文字与提醒");
         assertFalse(handler.placeholders().contains("{at=all}"));
         assertFalse(handler.placeholderLabels().containsKey("{at=all}"));
         assertEquals(mode, message.getParamsJsonObject().getString("at_mode"), "存值不变");

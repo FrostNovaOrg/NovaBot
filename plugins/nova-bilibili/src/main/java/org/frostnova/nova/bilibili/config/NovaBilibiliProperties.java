@@ -383,7 +383,7 @@ public class NovaBilibiliProperties {
         private int snapshotInterval = 6;
 
         /**
-         * 下播报告底部标识图片的路径，留空不画；要和动态图打同一个标就填同一个路径，图片按固定高度缩放。
+         * 直播报告底部标识图片的路径，留空不画；要和动态图打同一个标就填同一个路径，图片按固定高度缩放。
          */
         // 与动态图片的标识分开配置，因为两者未必想打同一个标（dynamic.logo-path）。
         @ConfigLevel(ConfigLevel.Level.COMMON)

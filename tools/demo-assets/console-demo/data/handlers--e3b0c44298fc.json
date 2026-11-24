@@ -111,8 +111,8 @@
 				"message":"{report}",
 				"super_chat_ranking":10
 			},
-			"description":"主播结束直播时推送本场直播数据统计图",
-			"displayName":"下播报告",
+			"description":"下播后自动推送本场直播报告",
+			"displayName":"直播报告",
 			"factoryParams":{
 				"at_all":false,
 				"box_ranking":0,

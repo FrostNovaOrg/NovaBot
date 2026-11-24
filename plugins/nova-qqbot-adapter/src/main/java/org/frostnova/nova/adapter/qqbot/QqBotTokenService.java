@@ -145,8 +145,9 @@ class QqBotTokenService {
 
     private Outcome exchangeUsingSecret(String secret) {
         Instant started = clock.instant();
+        String appId = settings().appId();
         try {
-            String body = JSONObject.of("appId", settings().appId(), "clientSecret", secret).toJSONString();
+            String body = JSONObject.of("appId", appId, "clientSecret", secret).toJSONString();
             QqBotResponse response = QqBotResponse.parse(transport.send("POST", TOKEN_URI, JSON_HEADERS, body));
             if (!response.successful()) {
                 return tokenError(response.code(), response.status());
@@ -158,7 +159,7 @@ class QqBotTokenService {
                     || value.chars().anyMatch(c -> c < 33 || c > 126)) {
                 return tokenError(0, response.status());
             }
-            return new Outcome(new Token(value, started.plusSeconds(seconds), new QqBotSecretFingerprint(secret)), null,
+            return new Outcome(new Token(value, started.plusSeconds(seconds), new QqBotSecretFingerprint(secret), appId), null,
                     HealthStatus.ok("凭据有效"));
         } catch (IOException e) {
             return failure(0, 0, UNREACHABLE);
@@ -202,7 +203,7 @@ class QqBotTokenService {
         return new Outcome(null, new QqBotApiException(code, health.summary(), "", httpStatus), health);
     }
 
-    record Token(String value, Instant expiresAt, QqBotSecretFingerprint secret) {
+    record Token(String value, Instant expiresAt, QqBotSecretFingerprint secret, String appId) {
         boolean echoedIn(String text) {
             return text.contains(value)
                     || ((value.indexOf('"') >= 0 || value.indexOf('\\') >= 0)

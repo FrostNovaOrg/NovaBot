@@ -299,7 +299,7 @@ const notice = (className, displayName, extra = {}) => ({
 // 开播与动态带两种 @ 占位符，与内置那两类一样：编辑器据此画「@ 谁」那一行
 const AT_PLACEHOLDERS = ['{uname}', '{at}', '{at=all}'];
 const LIVE_ON = notice('x.LiveOn', '开播通知', {placeholders: AT_PLACEHOLDERS});
-const REPORT = notice('org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler', '下播报告', {placeholders: [], reportLayout: true, options: [
+const REPORT = notice('org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler', '直播报告', {placeholders: [], reportLayout: true, options: [
   {key: 'cover', label: '直播间封面', description: '', type: 'BOOLEAN', defaultValue: true}]});
 const DIGEST = notice('x.Digest', '下播打赏播报', {options: [
   {key: 'reward_threshold_yuan', label: '播报门槛（元）', description: '', type: 'INTEGER',
@@ -570,12 +570,12 @@ await ask('⑨ 好友通道缺运行数据时，命令提示不说群', async ()
 await ask('报告操作与图片编辑', async () => {
   await paint(GROUP, [message(REPORT), message(WEEKLY)]);
   same(all(rowOf(WEEKLY)).some(node => node.textContent === '发送上一周的报告'), true, '周报发送按钮');
-  same(all(rowOf(REPORT)).some(node => node.textContent === '发送上一份下播报告'), true, '下播发送按钮');
+  same(all(rowOf(REPORT)).some(node => node.textContent === '发送上一份直播报告'), true, '下播发送按钮');
   edit(REPORT);
-  same(all(rowOf(REPORT)).some(node => node.textContent === '文字' || hasClass(node, 'tpl-wrap')), false, '下播报告没有文字编辑');
+  same(all(rowOf(REPORT)).some(node => node.textContent === '文字' || hasClass(node, 'tpl-wrap')), false, '直播报告没有文字编辑');
 });
 
-await ask('旧报告文字保留，默认模板不提供下播报告文字编辑', async () => {
+await ask('旧报告文字保留，默认模板不提供直播报告文字编辑', async () => {
   const legacy = '保留的旧文字{uname}{report}{at=all}';
   await paint(GROUP, [message(REPORT, {message: legacy}), message(LIVE_ON)]);
   if (!all(rowOf(REPORT)).some(node => hasClass(node, 'nrow-body'))) edit(REPORT);
@@ -584,7 +584,7 @@ await ask('旧报告文字保留，默认模板不提供下播报告文字编辑
   same(saved[0].targets[0].messages.find(item => item.handler === REPORT.className).params.message,
     legacy, '保存版式后保留旧文字');
   await push.showPush('default');
-  same(all(page()).some(node => node.tagName === 'button' && node.textContent === '下播报告'), false, '默认模板的通知清单');
+  same(all(page()).some(node => node.tagName === 'button' && node.textContent === '直播报告'), false, '默认模板的通知清单');
 });
 
 async function waitFor(test, label) {

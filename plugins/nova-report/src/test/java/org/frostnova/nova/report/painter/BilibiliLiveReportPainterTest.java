@@ -53,7 +53,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 与动态图片绘制测试同一套桩：内置字体、占位头像，不依赖网络与本机字体。
  */
-@DisplayName("下播报告绘制")
+@DisplayName("直播报告绘制")
 class BilibiliLiveReportPainterTest {
     private static final String PLATFORM = "bilibili";
 

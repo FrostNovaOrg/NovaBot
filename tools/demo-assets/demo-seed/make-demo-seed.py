@@ -252,7 +252,7 @@ def extra_files(now, sessions):
     # the real sender and the OneBot transport, with a clock for each send.
     files['push-replay.json'] = pretty([dict(at=ms(now - timedelta(minutes=offset)),
         num=IDENTITIES['groups'][age % 2], summary=f'演示推送·{name}', fail=age == 1)
-        for age, offset, name in ((3, 50, '开播通知'), (2, 47, '下播报告'),
+        for age, offset, name in ((3, 50, '开播通知'), (2, 47, '直播报告'),
                                   (0, 45, '运营周报'), (1, 40, '动态发送失败'))])
     return files
 
@@ -266,7 +266,7 @@ def timeline_lines(now):
     sent_minutes = (50, 47, 45)
     failed_minute = 40
     muted_minute = 5
-    summaries = ("开播通知（演示主播小星）", "下播报告（演示主播小星）", "动态推送（演示主播小星）")
+    summaries = ("开播通知（演示主播小星）", "直播报告（演示主播小星）", "动态推送（演示主播小星）")
 
     def event(minutes_ago, type_name, type_text, category, category_text, level,
               channel, text, detail):
@@ -293,7 +293,7 @@ def timeline_lines(now):
     # 落盘顺序按时刻排：时间线与日志都是按行读的，倒着摆出来列表里的时刻会来回跳
     lines.append(event(failed_minute, "PUSH_FAILED", "推送失败", "PUSH", "推送", "error",
                        CHANNEL, "推送失败：连接超时",
-                       {"platform": PUSH_PLATFORM, "summary": "下播报告（演示主播小星）",
+                       {"platform": PUSH_PLATFORM, "summary": "直播报告（演示主播小星）",
                         "elapsed_ms": "10024"}))
     lines.append(event(muted_minute, "PUSH_MUTED", "静音丢弃", "PUSH", "推送", "warn",
                        CHANNEL, "处于静音时段，丢弃了发往" + CHANNEL + "的一条消息",

@@ -108,7 +108,7 @@ class BoxProfitLossBarColorTest {
     }
 
     @Test
-    @DisplayName("下播报告：亏了的行条子是绿色（含第 3 名），赚了的行是名次色")
+    @DisplayName("直播报告：亏了的行条子是绿色（含第 3 名），赚了的行是名次色")
     void liveReportPaintsLossBarsGreen() throws Exception {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getBilibiliImage(anyString())).thenReturn(Optional.empty());

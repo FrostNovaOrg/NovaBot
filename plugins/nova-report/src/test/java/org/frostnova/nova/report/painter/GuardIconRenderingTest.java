@@ -106,12 +106,12 @@ class GuardIconRenderingTest {
         }
     }
 
-    @ParameterizedTest(name = "{0}px 下播报告丢弃旧画法成品")
+    @ParameterizedTest(name = "{0}px 直播报告丢弃旧画法成品")
     @ValueSource(ints = {32, 96})
     void liveIgnoresOldFinishedImage(int size) {
         disk.store(MEDAL_URL + "@" + size + "w.webp", solid(Color.RED));
         BufferedImage result = live.guardIcon(MEDAL_URL, size);
-        assertEquals(Color.GREEN.getRGB(), result.getRGB(size / 2, size / 2), "下播报告必须重新取图重画");
+        assertEquals(Color.GREEN.getRGB(), result.getRGB(size / 2, size / 2), "直播报告必须重新取图重画");
         verify(api).getBilibiliImage(MEDAL_URL);
         assertEquals(size, painter().guardIcon(MEDAL_URL, size).getWidth(), "重启后使用新成品");
         verifyNoMoreInteractions(api);

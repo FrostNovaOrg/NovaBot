@@ -89,7 +89,7 @@ class PushHandlerOrderTest {
                 mock(BilibiliLiveOffPushHandler.class, CALLS_REAL_METHODS),
                 mock(BilibiliLiveOnPushHandler.class, CALLS_REAL_METHODS));
 
-        assertEquals(List.of("开播通知", "下播通知", "下播报告", "下播打赏播报", "动态通知", "运营周报"),
+        assertEquals(List.of("开播通知", "下播通知", "直播报告", "下播打赏播报", "动态通知", "运营周报"),
                 names(items), "通知的先后不合一场直播的顺序");
     }
 

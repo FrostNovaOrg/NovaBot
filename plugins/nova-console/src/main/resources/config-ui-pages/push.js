@@ -719,7 +719,7 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
-let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: []};
+let runtime = {sessions: [], subscriptions: [], incomplete: []};
 
 /** 最近的推送记录，按通道筛出各自的 5 条 */
 let pushHistory = [];
@@ -1565,7 +1565,8 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, channelCommands());
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type),
+    target, user, channelCommands());
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1623,7 +1624,8 @@ function channelRow(user, target) {
  * 这一页不是向导，各块不编号。
  */
 function renderChannelLevel(host, user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, channelCommands());
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type),
+    target, user, channelCommands());
   const name = channelName(session, target, directory);
   const group = Number(target.type) === 1;
 
@@ -1693,9 +1695,10 @@ function block(host, title, desc) {
   return box;
 }
 
-/** 通道页用得上的命令：关得掉、又按通道各存一份的那些 */
+/** 通道页用得上的命令。未取到清单时返回 undefined，避免误判残留。 */
 function channelCommands() {
-  return (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
+  if (runtime.success === false || !Array.isArray(runtime.commands)) return undefined;
+  return runtime.commands.filter(command => command.disableable !== false && command.channelScoped !== false);
 }
 
 /**
@@ -1866,6 +1869,7 @@ const LIVE_REPORT = 'org.frostnova.nova.report.handler.BilibiliLiveReportPushHan
 /** 开着那一行的现状：文字跟不跟默认、图片版式、设置项的值，各一小段 */
 function noticeMeta(item, handler, target) {
   const parts = [];
+  if (item.className === LIVE_REPORT && item.description) parts.push(item.description);
   if (item.hasTemplate) parts.push('文字：' + (templateState(target, [handler]).custom ? '自定义' : '跟随默认'));
   if (item.hasLayout) {
     parts.push('图片版式：' + (layoutState(target, [handler]).custom ? '自定义' : '默认'));
@@ -1892,7 +1896,7 @@ function noticeEditor(item, handler, user, target, session, syncMeta, repaint) {
   const key = channelFoldKey(user, target);
   const state = openNotices.get(key);
   const body = el('div', 'nrow-body');
-  if (item.description) body.appendChild(el('p', 'hint')).textContent = item.description;
+  if (item.className !== LIVE_REPORT && item.description) body.appendChild(el('p', 'hint')).textContent = item.description;
 
   const views = item.hasTemplate && item.hasOptions
     ? [['text', '文字'], ['options', item.hasLayout ? '图片版式' : '设置']] : [];
@@ -2197,7 +2201,7 @@ function liveReportActions(host, user, target, session) {
   const actions = el('div', 'weekly-report-actions');
   const send = el('button', 'ghost sm');
   send.type = 'button';
-  send.textContent = '发送上一份下播报告';
+  send.textContent = '发送上一份直播报告';
   send.addEventListener('click', async () => {
     send.disabled = true;
     try {
@@ -2207,12 +2211,12 @@ function liveReportActions(host, user, target, session) {
         timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: false,
       });
-      if (!await ask({title: '发送上一份下播报告？', danger: false,
-        body: '将把' + when + '（东八区）开播的那一场下播报告发送到' + reportDestination(target, session)
+      if (!await ask({title: '发送上一份直播报告？', danger: false,
+        body: '将把' + when + '（东八区）开播的那场直播报告发送到' + reportDestination(target, session)
           + '。这会真实发送消息，按此通道已保存的版式、金额可见和配色生成，不影响下一场下播的正常推送。'})) return;
       const res = await api(path + '/send-latest' + query + '&start=' + latest.startTime, {method: 'POST'});
       say(res.message, res.success ? 'ok' : 'err');
-    } catch (err) { say('发送上一份下播报告失败：' + err.message, 'err'); }
+    } catch (err) { say('发送上一份直播报告失败：' + err.message, 'err'); }
     finally { send.disabled = false; }
   });
   actions.appendChild(send);

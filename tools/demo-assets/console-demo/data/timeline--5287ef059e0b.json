@@ -65,7 +65,7 @@
 			"detail":{
 				"elapsed_ms":"10024",
 				"platform":"qq-onebot",
-				"summary":"下播报告（演示主播小星）"
+				"summary":"直播报告（演示主播小星）"
 			},
 			"level":"error",
 			"streamer":"演示主播小星",
@@ -99,7 +99,7 @@
 			},
 			"level":"info",
 			"streamer":"演示主播小星",
-			"text":"已推送：下播报告（演示主播小星）",
+			"text":"已推送：直播报告（演示主播小星）",
 			"type":"PUSH_SENT",
 			"typeText":"推送成功"
 		},

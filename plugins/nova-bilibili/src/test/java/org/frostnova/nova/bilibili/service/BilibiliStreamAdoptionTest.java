@@ -171,9 +171,9 @@ class BilibiliStreamAdoptionTest {
         assertEquals(1d, saved.get(0).metrics().get("danmu_count"));
         assertEquals(2d, saved.get(1).metrics().get("danmu_count"));
         assertEquals(3600, saved.get(1).durationSeconds());
-        assertEquals(Optional.of(CURRENT), data.getLiveStartTime(PLATFORM, UID), "下播报告仍需本场起点");
+        assertEquals(Optional.of(CURRENT), data.getLiveStartTime(PLATFORM, UID), "直播报告仍需本场起点");
         assertEquals(Optional.of(CURRENT + 3600000), data.getLiveEndTime(PLATFORM, UID));
-        assertEquals(2d, data.getLiveMetric(PLATFORM, UID, "danmu_count"), "下播报告仍需本场统计");
+        assertEquals(2d, data.getLiveMetric(PLATFORM, UID, "danmu_count"), "直播报告仍需本场统计");
         assertEquals(List.of("previous"), details.readDanmu(PLATFORM, UID, OLD).stream().map(r -> r.text()).toList());
         assertEquals(List.of("current", "recovered"), details.readDanmu(PLATFORM, UID, CURRENT).stream().map(r -> r.text()).toList());
     }

@@ -124,13 +124,13 @@ class BilibiliOfflineRewardDigestPainterTest {
     }
 
     @Test
-    @DisplayName("画得出一张与下播报告同宽的播报图")
+    @DisplayName("画得出一张与直播报告同宽的播报图")
     void paintsImageAtReportWidth() throws Exception {
         // 抓的用户故障：群里收到的是一张图、不是文字感谢——图得先画得出来
         Optional<String> base64 = painter.paint(sampleEvent(), true);
         assertTrue(base64.isPresent(), "合成事件画图不该失败");
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(Base64.getDecoder().decode(base64.get())));
-        assertEquals(900, image.getWidth(), "与下播报告同一套模板，同宽");
+        assertEquals(900, image.getWidth(), "与直播报告同一套模板，同宽");
         assertTrue(image.getHeight() > 200, "页头加三个人，高度不该贴地: " + image.getHeight());
     }
 
@@ -147,7 +147,7 @@ class BilibiliOfflineRewardDigestPainterTest {
         assertTrue(base64.isPresent(), "样图不该画失败: " + file);
         Files.write(file, Base64.getDecoder().decode(base64.get()));
         BufferedImage image = ImageIO.read(file.toFile());
-        assertEquals(900, image.getWidth(), file + " 该与下播报告同宽");
+        assertEquals(900, image.getWidth(), file + " 该与直播报告同宽");
         assertTrue(image.getHeight() > 200, file + " 高度不该贴地");
     }
 

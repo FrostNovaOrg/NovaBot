@@ -505,7 +505,7 @@ UTF-8 编码，每次操作一行 JSON，只追加。设置、主播与推送通
 | `ASSISTANT_ASK` | 使用主播智能助手 |
 | `WEEKLY_REPORT_SEND` | 发送运营周报 |
 | `WEEKLY_REPORT_PREVIEW` | 生成运营周报预览 |
-| `LIVE_REPORT_SEND` | 发送下播报告 |
+| `LIVE_REPORT_SEND` | 发送直播报告 |
 | `NAPCAT_CREDENTIAL` | 换取机器人管理凭据 |
 | `PALETTE_SAVE` | 保存报告默认配色 |
 | `REPORT_PREVIEW` | 生成报告预览 |

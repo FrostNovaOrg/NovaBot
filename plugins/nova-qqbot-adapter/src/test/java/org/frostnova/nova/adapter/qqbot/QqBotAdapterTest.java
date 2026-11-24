@@ -2,6 +2,9 @@ package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandReplyHint;
+import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.secret.SecretStore;
@@ -53,6 +56,22 @@ class QqBotAdapterTest {
 
     @TempDir
     Path dataDirectory;
+
+    @Test
+    void replyHintsRequireAMentionOnlyInOfficialGroups() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(QqBotPluginAutoConfiguration.class, CommandReplyHint.class)
+                .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .run(context -> {
+                    var hints = context.getBean(CommandReplyHint.class);
+                    var group = new CommandContext("qq-official", PushTargetType.GROUP, 1L, 2L, "", List.of(), "");
+                    var friend = new CommandContext("qq-official", PushTargetType.FRIEND, 2L, 2L, "", List.of(), "");
+                    var oneBot = new CommandContext("qq-onebot", PushTargetType.GROUP, 1L, 2L, "", List.of(), "");
+                    assertEquals("@我 回", hints.replyVerb(group));
+                    assertEquals("回", hints.replyVerb(friend));
+                    assertEquals("回", hints.replyVerb(oneBot));
+                });
+    }
 
     @Test
     void pluginLoadsItsServicesAndChecksStoredCredentialsOnTheReadyEvent() throws IOException {
