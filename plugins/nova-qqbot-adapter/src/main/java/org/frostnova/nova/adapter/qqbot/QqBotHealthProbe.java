@@ -53,6 +53,7 @@ public class QqBotHealthProbe implements HealthProbe {
     @Override
     public HealthStatus check() {
         HealthStatus connection = gateway.health();
+        directory.recheckProactiveAfterJoin();
         if (connection.level() == HealthStatus.Level.DOWN || dataSource.isEmpty()) return connection;
         var groups = new LinkedHashSet<Long>();
         for (var user : dataSource.get().getAllUsers()) {

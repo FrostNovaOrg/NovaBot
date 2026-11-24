@@ -8,6 +8,9 @@ import org.frostnova.nova.core.config.ui.PushTargetDirectory;
 import org.frostnova.nova.core.config.ui.PushTargetLookup;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.health.HealthStatus;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +25,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFileAttributeView;
@@ -33,6 +37,8 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -47,6 +53,7 @@ import static org.frostnova.nova.adapter.qqbot.QqBotDirectory.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -328,6 +335,180 @@ class QqBotDirectoryTest {
                 group(rig.directory(), number).proactive());
     }
 
+    @Test
+    void manualConsoleRefreshFindsAnOpenedSwitchBeforeTheRoleCacheExpires() throws Exception {
+        var allowed = new AtomicBoolean();
+        var role = new AtomicReference<>("member");
+        var rig = new Rig(uri -> isInfo(uri) ? json("group_name", "开播群")
+                : json("member_role", role.get(), "allow_proactive_msg", allowed.get()));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        var probe = rig.probe(directory, number);
+        var members = mock(QqBotMembers.class);
+        when(members.claimState()).thenReturn(new QqBotMembers.ClaimState(null, Map.of()));
+        var console = MockMvcBuilders.standaloneSetup(new QqBotConsoleController(
+                rig.credentials, rig.settings, probe, directory, members)).build();
+        var state = get("/config/api/qqbot/state");
+        console.perform(state).andExpect(jsonPath("$.groups[0].proactive").value("DISABLED"));
+
+        allowed.set(true);
+        role.set("admin");
+        rig.clock.advance(Duration.ofMinutes(1).minusSeconds(1));
+        console.perform(get("/config/api/qqbot/state").param("refresh", "true"));
+        rig.drain();
+        assertEquals(1, rig.botStateCalls());
+
+        rig.clock.advance(Duration.ofSeconds(1));
+        console.perform(state);
+        assertTrue(rig.tasks.isEmpty());
+        var refresh = get("/config/api/qqbot/state").param("refresh", "true");
+        console.perform(refresh).andExpect(status().isOk()).andExpect(jsonPath("$.refreshing").value(true));
+        console.perform(refresh).andExpect(jsonPath("$.refreshing").value(true));
+        assertEquals(1, rig.tasks.size());
+        rig.drain();
+        console.perform(get("/config/api/qqbot/state").param("refresh", "false"))
+                .andExpect(jsonPath("$.refreshing").value(false))
+                .andExpect(jsonPath("$.groups[0].proactive").value("ENABLED"))
+                .andExpect(jsonPath("$.groups[0].role").value("MEMBER"));
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+
+        rig.clock.advance(Duration.ofMinutes(9).minusSeconds(1));
+        directory.recordProactive(number, ProactiveStatus.DISABLED, SwitchSource.EVENT, rig.clock.instant());
+        console.perform(refresh).andExpect(jsonPath("$.refreshing").value(true));
+        rig.drain();
+        assertEquals(BotRole.MEMBER, group(directory, number).role());
+
+        rig.clock.advance(Duration.ofSeconds(1));
+        console.perform(refresh).andExpect(status().isOk()).andExpect(jsonPath("$.refreshing").value(false));
+        assertTrue(rig.tasks.isEmpty(), "已开启的群在十分钟内不应手动重查");
+        var callers = Executors.newSingleThreadExecutor();
+        try {
+            var mention = callers.submit(() -> directory.canAtAll(PLATFORM, number));
+            var fetch = rig.tasks.poll(8, TimeUnit.SECONDS);
+            assertNotNull(fetch, "管理员角色应在原来的十分钟到期时查询");
+            fetch.run();
+            assertTrue(mention.get(8, TimeUnit.SECONDS));
+        } finally {
+            callers.shutdownNow();
+        }
+        assertEquals(4, rig.botStateCalls());
+    }
+
+    @Test
+    void joinWarningWaitsForASecondDisabledReadingAfterTenMinutes() throws Exception {
+        var allowed = new AtomicBoolean();
+        var rig = new Rig(uri -> isInfo(uri) ? json("group_name", "开播群")
+                : json("allow_proactive_msg", allowed.get()));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        assertEquals(ProactiveStatus.DISABLED, group(directory, number).proactive().status());
+        var probe = rig.probe(directory, number);
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+
+        rig.clock.advance(Duration.ofMinutes(10).minusSeconds(1));
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+        rig.drain();
+        assertEquals(1, rig.botStateCalls());
+
+        rig.clock.advance(Duration.ofSeconds(1));
+        assertEquals(HealthStatus.Level.OK, probe.check().level(), "等到重查有读数再告警");
+        rig.drain();
+        var warning = probe.check();
+        assertEquals(HealthStatus.Level.DEGRADED, warning.level());
+        assertTrue(warning.summary().contains("群主还没打开主动发言"));
+        assertTrue(warning.summary().contains("开播群"));
+        rig.drain();
+        assertEquals(2, rig.botStateCalls());
+
+        allowed.set(true);
+        rig.clock.advance(Duration.ofMinutes(1));
+        directory.consoleGroups(true);
+        rig.drain();
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+        assertEquals(3, rig.botStateCalls());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedProactiveRecheckDoesNotDelayTheTenMinuteRoleQuery(boolean afterJoin) {
+        var botState = new AtomicReference<>(json("member_role", "member", "allow_proactive_msg", false));
+        var rig = new Rig(uri -> isInfo(uri) ? json() : botState.get());
+        var directory = new QqBotDirectory(rig.settings, rig.api, rig.clock, Runnable::run, rig.hash);
+        long number = directory.groupJoined(GROUP_A, JOINED);
+
+        botState.set(json("code", 50001));
+        if (afterJoin) {
+            rig.clock.advance(Duration.ofMinutes(10));
+            rig.probe(directory, number).check();
+        } else {
+            rig.clock.advance(Duration.ofMinutes(1));
+            directory.consoleGroups(true);
+            rig.clock.advance(Duration.ofMinutes(9));
+        }
+        assertEquals(2, rig.botStateCalls());
+        assertEquals(ProactiveStatus.DISABLED, group(directory, number).proactive().status());
+
+        botState.set(json("member_role", "admin"));
+        var restarted = new QqBotDirectory(rig.settings, rig.api, rig.clock, Runnable::run, rig.hash);
+        boolean permitted = restarted.canAtAll(PLATFORM, number);
+        boolean roleQuery = rig.botStateCalls() == 3;
+        assertEquals("permitted=true roleQuery=true", "permitted=" + permitted + " roleQuery=" + roleQuery);
+
+        restarted.consoleGroups(true);
+        assertEquals(3, rig.botStateCalls(), "手动刷新应继续遵守主动发言状态的失败冷却");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 50001, 11253, 40012010})
+    void manualRefreshChecksUnknownEarlyAndKeepsTheLastReadingDuringCooldown(int errorCode) {
+        var allowed = new AtomicReference<Boolean>();
+        var unavailable = new AtomicBoolean();
+        var rig = new Rig(uri -> {
+            if (isInfo(uri)) return json();
+            if (!unavailable.get()) {
+                return allowed.get() == null ? json() : json("allow_proactive_msg", allowed.get());
+            }
+            if (errorCode == 0) throw new HttpTimeoutException("群状态查询超时");
+            return json("code", errorCode);
+        });
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        assertEquals(ProactiveStatus.UNKNOWN, group(directory, number).proactive().status());
+
+        rig.clock.advance(Duration.ofMinutes(1));
+        allowed.set(false);
+        directory.consoleGroups(true);
+        rig.drain();
+        assertEquals(ProactiveStatus.DISABLED, group(directory, number).proactive().status());
+
+        rig.clock.advance(Duration.ofMinutes(9));
+        unavailable.set(true);
+        var probe = rig.probe(directory, number);
+        probe.check();
+        rig.drain();
+        assertEquals(3, rig.botStateCalls());
+        assertEquals(ProactiveStatus.DISABLED, group(directory, number).proactive().status());
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+
+        unavailable.set(false);
+        allowed.set(true);
+        Duration cooldown = Duration.ofHours(errorCode == 11253 || errorCode == 40012010 ? 24 : 1);
+        rig.clock.advance(cooldown.minusSeconds(1));
+        assertFalse(directory.consoleGroups(true).refreshing());
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+        rig.drain();
+        assertEquals(3, rig.botStateCalls());
+
+        rig.clock.advance(Duration.ofSeconds(1));
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+        rig.drain();
+        assertEquals(4, rig.botStateCalls());
+        assertEquals(ProactiveStatus.ENABLED, group(directory, number).proactive().status());
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void consoleRefreshSchedulesOneRoleUpdateAfterRestart(boolean connectionsPage) {
@@ -340,14 +521,14 @@ class QqBotDirectoryTest {
         var restarted = rig.directory();
         for (int i = 0; i < 2; i++) {
             if (connectionsPage) {
-                assertEquals(BotRole.MEMBER, restarted.consoleGroups().get(0).role());
+                assertEquals(BotRole.MEMBER, restarted.consoleGroups(null).groups().get(0).role());
             } else {
                 assertFalse(restarted.snapshots(true).get(0).groups().get(0).admin());
             }
         }
         assertEquals(1, rig.tasks.size());
         rig.drain();
-        assertEquals(BotRole.ADMIN, restarted.consoleGroups().get(0).role());
+        assertEquals(BotRole.ADMIN, restarted.consoleGroups(null).groups().get(0).role());
         assertTrue(restarted.snapshots(true).get(0).groups().get(0).admin());
         assertTrue(restarted.canAtAll(PLATFORM, number));
         assertTrue(rig.tasks.isEmpty());
@@ -545,11 +726,11 @@ class QqBotDirectoryTest {
         final QqBotCredentials credentials;
         final QqBotApiClient api;
 
-        Rig(Function<URI, QqBotHttpTransport.Response> response) {
+        Rig(GroupResponse response) {
             this(response, QqBotDirectory::sha256);
         }
 
-        Rig(Function<URI, QqBotHttpTransport.Response> response, Function<byte[], byte[]> hash) {
+        Rig(GroupResponse response, Function<byte[], byte[]> hash) {
             this.hash = hash;
             settings.save(APP_ID, "fixture-secret");
             QqBotHttpTransport transport = (method, uri, headers, body) -> {
@@ -560,7 +741,7 @@ class QqBotDirectoryTest {
                 assertEquals("GET", method);
                 assertTrue(uri.getPath().startsWith("/v2/groups/"));
                 calls.add(uri);
-                return response.apply(uri);
+                return response.get(uri);
             };
             var tokens = new QqBotTokenService(settings, transport, clock);
             credentials = new QqBotCredentials(tokens, mock(QqBotGateway.class), mock(QqBotSender.class));
@@ -569,6 +750,24 @@ class QqBotDirectoryTest {
 
         QqBotDirectory directory() {
             return new QqBotDirectory(settings, api, clock, tasks::add, hash);
+        }
+
+        QqBotHealthProbe probe(QqBotDirectory directory, long groupNumber) {
+            var gateway = mock(QqBotGateway.class);
+            var health = HealthStatus.ok("已连接");
+            when(gateway.health()).thenReturn(health);
+            when(gateway.connectionState()).thenReturn(new QqBotGateway.ConnectionState(health, null));
+            var tokens = mock(QqBotTokenService.class);
+            when(tokens.settings()).thenReturn(settings.snapshot());
+            var target = new PushTarget();
+            target.setPlatform(PLATFORM);
+            target.setType(PushTargetType.GROUP);
+            target.setNum(groupNumber);
+            var streamer = new PushUser();
+            streamer.setTargets(List.of(target));
+            var source = mock(AbstractDataSource.class);
+            when(source.getAllUsers()).thenReturn(List.of(streamer));
+            return new QqBotHealthProbe(tokens, gateway, directory, Optional.of(source));
         }
 
         void drain() {
@@ -580,6 +779,15 @@ class QqBotDirectoryTest {
         long infoCalls() {
             return calls.stream().filter(QqBotDirectoryTest::isInfo).count();
         }
+
+        long botStateCalls() {
+            return calls.size() - infoCalls();
+        }
+    }
+
+    @FunctionalInterface
+    private interface GroupResponse {
+        QqBotHttpTransport.Response get(URI uri) throws IOException;
     }
 
     private static final class TestClock extends Clock {

@@ -91,7 +91,16 @@ export function render(container, {onConnectionChange} = {}) {
     return save(view, event, 'admin-claims/' + encodeURIComponent(member) + '/revoke', {}, '已撤销超级管理员',
       undefined, view.claimResult);
   });
-  find('refresh').addEventListener('click', () => Promise.all([refresh(), refreshLinks()]));
+  const refreshButton = find('refresh');
+  refreshButton.addEventListener('click', async () => {
+    refreshButton.disabled = true;
+    try {
+      await refresh(true);
+      if (card === view && store.tab === 'bot') await refreshLinks();
+    } finally {
+      refreshButton.disabled = false;
+    }
+  });
   view.groups.addEventListener('submit', event => {
     const form = event.target;
     const input = form.querySelector('input');
@@ -144,20 +153,30 @@ function linkSettingsHtml(loading) {
     </section>`;
 }
 
-export async function refresh() {
+export async function refresh(refreshGroups = false) {
   if (!card || store.tab !== 'bot') return;
   clearIssuedCode(card);
   showResult(card.claimResult, '');
-  await refreshView(card);
+  await refreshView(card, refreshGroups);
 }
 
-async function refreshView(view) {
+async function refreshView(view, refreshGroups = false) {
   const request = ++view.request;
   const welcome = view.welcome ? refreshWelcome(view, request) : undefined;
-  try {
-    const state = await api(BASE + 'state', {cache: 'no-store'});
-    if (request !== view.request) return;
+  const readState = async (query = '') => {
+    const state = await api(BASE + 'state' + query, {cache: 'no-store'});
     if (!state.success) throw new Error(state.message || '无法读取机器人状态');
+    return state;
+  };
+  try {
+    if (refreshGroups) view.load.textContent = '正在刷新群状态…';
+    let state = await readState(refreshGroups ? '?refresh=true' : '');
+    while (refreshGroups && state.refreshing && request === view.request && store.tab === 'bot') {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (request !== view.request || store.tab !== 'bot') break;
+      state = await readState('?refresh=false');
+    }
+    if (request !== view.request) return;
     setSavedValue(view.appId, state.appId || '');
     view.secret.placeholder = state.secretMasked ? '已保存：' + state.secretMasked : '';
     view.unconfigured.hidden = state.configured;

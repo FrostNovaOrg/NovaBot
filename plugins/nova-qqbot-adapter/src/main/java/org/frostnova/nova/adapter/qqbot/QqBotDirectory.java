@@ -53,6 +53,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
             .withZone(ZoneOffset.ofHours(8));
     private static final Duration ROLE_TTL = Duration.ofMinutes(10);
     private static final Duration ROLE_WAIT = Duration.ofSeconds(3);
+    private static final Duration PROACTIVE_REFRESH_TTL = Duration.ofMinutes(1);
+    private static final Duration PROACTIVE_JOIN_GRACE = Duration.ofMinutes(10);
     private static final Duration FAILURE_COOLDOWN = Duration.ofHours(1);
     private static final Duration UNAVAILABLE_COOLDOWN = Duration.ofHours(24);
     private static final Proactive UNKNOWN_SWITCH = new Proactive(ProactiveStatus.UNKNOWN, null, null);
@@ -148,6 +150,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
             if (current.botState() == null || current.botState().retryAt() != null) {
                 schedule(appId, current, Endpoint.BOT_STATE);
             }
+            if (current.proactiveState() != null && current.proactiveState().retryAt() != null) {
+                schedule(appId, current, Endpoint.PROACTIVE_STATE);
+            }
         }
         return number;
     }
@@ -155,12 +160,15 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     private static GroupEntry joinedGroup(long number, String openid, Instant at, GroupEntry previous) {
         if (previous == null) {
             return new GroupEntry(number, openid, defaultName(at), NameSource.DEFAULT, at, at, false,
-                    UNKNOWN_SWITCH, null, null, null, null, null, null, null);
+                    UNKNOWN_SWITCH, null, null, null, null, null, null, null, null);
         }
         GroupEntry group = previous.withJoinedAt(at).withLastSeenAt(later(previous.lastSeenAt(), at))
                 .withRemoved(false).withProactive(UNKNOWN_SWITCH).withRole(null);
         if (group.botState() != null && group.botState().retryAt() == null) {
             group = group.withBotState(null);
+        }
+        if (group.proactiveState() != null && group.proactiveState().retryAt() == null) {
+            group = group.withProactiveState(null);
         }
         return group.nameSource() == NameSource.DEFAULT ? group.withName(defaultName(at)) : group;
     }
@@ -253,11 +261,39 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         BotEntries bot = currentEntries();
         return targets.stream().map(bot.groups()::get).filter(Objects::nonNull)
                 .filter(group -> group.proactive().status() == ProactiveStatus.DISABLED)
+                .filter(group -> !awaitingProactiveConfirmation(group))
                 .map(group -> maskKnown(group.name(), bot)).toList();
     }
 
-    synchronized List<GroupInfo> consoleGroups() {
-        BotEntries bot = groupsForRefresh(true);
+    synchronized void recheckProactiveAfterJoin() {
+        if (bots == null) return;
+        var config = settings.snapshot();
+        if (config.configured()) scheduleGroupStates(config.appId(), FetchReason.AFTER_JOIN);
+    }
+
+    private static boolean awaitingProactiveConfirmation(GroupEntry group) {
+        Proactive proactive = group.proactive();
+        return proactive.status() == ProactiveStatus.DISABLED && proactive.source() == SwitchSource.GROUP_STATE_API
+                && proactive.at().isBefore(proactiveGraceEnds(group));
+    }
+
+    private static Instant proactiveGraceEnds(GroupEntry group) {
+        return group.joinedAt().plus(PROACTIVE_JOIN_GRACE);
+    }
+
+    synchronized ConsoleGroups consoleGroups(Boolean refresh) {
+        requireReadable();
+        String appId = settings.snapshot().appId();
+        // 普通页面读取沿用原来的查询节奏。轮询只读取当前结果。
+        if (refresh == null) scheduleGroupStates(appId, FetchReason.REGULAR);
+        else if (refresh) scheduleGroupStates(appId, FetchReason.CONSOLE_REFRESH);
+        BotEntries bot = entries(appId);
+        boolean refreshing = pending.keySet().stream()
+                .anyMatch(key -> key.appId().equals(appId) && key.endpoint() != Endpoint.INFO);
+        return new ConsoleGroups(consoleGroupInfo(bot), refreshing);
+    }
+
+    private List<GroupInfo> consoleGroupInfo(BotEntries bot) {
         if (bot.groups().isEmpty()) return List.of();
         if (settings.snapshot().configured()) {
             try {
@@ -330,7 +366,10 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     @Override
     public synchronized List<Snapshot> snapshots(boolean force) {
-        BotEntries bot = groupsForRefresh(force);
+        requireReadable();
+        String appId = settings.snapshot().appId();
+        if (force) scheduleGroupStates(appId, FetchReason.REGULAR);
+        BotEntries bot = entries(appId);
         Instant now = clock.instant();
         List<Group> groups = bot.groups().values().stream()
                 .filter(group -> !group.removed())
@@ -340,16 +379,13 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return List.of(new Snapshot(id(), groups, List.of(), now, now, false, null));
     }
 
-    private BotEntries groupsForRefresh(boolean refresh) {
-        requireReadable();
-        String appId = settings.snapshot().appId();
-        BotEntries bot = entries(appId);
-        if (refresh) {
-            for (GroupEntry group : bot.groups().values()) {
-                if (!group.removed()) schedule(appId, group, Endpoint.BOT_STATE);
-            }
+    private void scheduleGroupStates(String appId, FetchReason reason) {
+        for (GroupEntry group : entries(appId).groups().values()) {
+            if (group.removed()) continue;
+            boolean proactiveOnly = reason == FetchReason.AFTER_JOIN
+                    || (reason == FetchReason.CONSOLE_REFRESH && group.proactive().status() != ProactiveStatus.ENABLED);
+            schedule(appId, group, proactiveOnly ? Endpoint.PROACTIVE_STATE : Endpoint.BOT_STATE, reason);
         }
-        return bot;
     }
 
     @Override
@@ -424,14 +460,22 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     private CountDownLatch schedule(String appId, GroupEntry group, Endpoint endpoint) {
+        return schedule(appId, group, endpoint, FetchReason.REGULAR);
+    }
+
+    private CountDownLatch schedule(String appId, GroupEntry group, Endpoint endpoint, FetchReason reason) {
         FetchKey key = new FetchKey(appId, group.number(), endpoint);
         CountDownLatch existing = pending.get(key);
         if (existing != null) return existing;
-        if (!canFetch(entries(appId), group, endpoint)) return null;
+        if (endpoint == Endpoint.PROACTIVE_STATE) {
+            existing = pending.get(new FetchKey(appId, group.number(), Endpoint.BOT_STATE));
+            if (existing != null) return existing;
+        }
+        if (!canFetch(entries(appId), group, endpoint, reason)) return null;
         CountDownLatch ticket = new CountDownLatch(1);
         pending.put(key, ticket);
         try {
-            executor.execute(() -> fetch(key, ticket));
+            executor.execute(() -> fetch(key, ticket, reason));
         } catch (RejectedExecutionException e) {
             pending.remove(key, ticket);
             return null;
@@ -439,24 +483,56 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return ticket;
     }
 
-    private boolean canFetch(BotEntries bot, GroupEntry group, Endpoint endpoint) {
+    private boolean canFetch(BotEntries bot, GroupEntry group, Endpoint endpoint, FetchReason reason) {
         Instant now = clock.instant();
-        Instant unavailable = bot.unavailableUntil().get(endpoint);
+        if (endpoint == Endpoint.PROACTIVE_STATE || reason == FetchReason.CONSOLE_REFRESH) {
+            if (!canFetchProactive(bot, group, reason, now)) return false;
+            if (endpoint == Endpoint.PROACTIVE_STATE) return true;
+        }
         Refresh previous = group.refresh(endpoint);
-        if (unavailable != null && now.isBefore(unavailable)) return false;
+        if (coolingDown(bot.unavailableUntil().get(endpoint), now)) return false;
         if (previous == null) return true;
-        if (previous.retryAt() != null) return !now.isBefore(previous.retryAt());
+        if (previous.retryAt() != null) return !coolingDown(previous.retryAt(), now);
         return endpoint == Endpoint.BOT_STATE && !now.isBefore(previous.attemptedAt().plus(ROLE_TTL));
     }
 
-    private void fetch(FetchKey key, CountDownLatch ticket) {
+    private static boolean canFetchProactive(BotEntries bot, GroupEntry group, FetchReason reason, Instant now) {
+        if (reason == FetchReason.AFTER_JOIN
+                && (!awaitingProactiveConfirmation(group) || now.isBefore(proactiveGraceEnds(group)))) {
+            return false;
+        }
+        // 普通群状态查询也查主动发言，其失败同样限制主动发言复查。
+        if (coolingDown(bot.unavailableUntil().get(Endpoint.BOT_STATE), now)
+                || coolingDown(bot.unavailableUntil().get(Endpoint.PROACTIVE_STATE), now)) return false;
+        Refresh role = group.botState();
+        Refresh proactive = group.proactiveState();
+        if ((role != null && coolingDown(role.retryAt(), now))
+                || (proactive != null && coolingDown(proactive.retryAt(), now))) return false;
+
+        Instant attemptedAt = role == null ? null : role.attemptedAt();
+        if (proactive != null) {
+            attemptedAt = attemptedAt == null ? proactive.attemptedAt() : later(attemptedAt, proactive.attemptedAt());
+        }
+        if (attemptedAt == null) return true;
+        if (reason == FetchReason.AFTER_JOIN) {
+            return attemptedAt.isBefore(proactiveGraceEnds(group)) || !now.isBefore(attemptedAt.plus(ROLE_TTL));
+        }
+        Duration ttl = group.proactive().status() == ProactiveStatus.ENABLED ? ROLE_TTL : PROACTIVE_REFRESH_TTL;
+        return !now.isBefore(attemptedAt.plus(ttl));
+    }
+
+    private static boolean coolingDown(Instant retryAt, Instant now) {
+        return retryAt != null && now.isBefore(retryAt);
+    }
+
+    private void fetch(FetchKey key, CountDownLatch ticket, FetchReason fetchReason) {
         try {
             GroupEntry before;
             synchronized (this) {
                 BotEntries bot = entries(key.appId());
                 before = bot.groups().get(key.number());
                 if (pending.get(key) != ticket || !key.appId().equals(settings.snapshot().appId())
-                        || before == null || before.removed() || !canFetch(bot, before, key.endpoint())) {
+                        || before == null || before.removed() || !canFetch(bot, before, key.endpoint(), fetchReason)) {
                     return;
                 }
             }
@@ -497,9 +573,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         BotEntries bot = entries(key.appId());
         GroupEntry group = bot.groups().get(key.number());
         Instant now = clock.instant();
+        boolean checkRole = key.endpoint() == Endpoint.BOT_STATE;
         Instant retryAt = null;
         if (failure == null) {
-            group = key.endpoint() == Endpoint.INFO ? applyInfo(group, response) : applyBotState(group, before, response, now);
+            group = key.endpoint() == Endpoint.INFO ? applyInfo(group, response)
+                    : applyBotState(group, before, response, now, checkRole);
         } else {
             group = withFailure(group, failure);
             retryAt = now.plus(unavailable ? UNAVAILABLE_COOLDOWN : FAILURE_COOLDOWN);
@@ -525,15 +603,16 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return group;
     }
 
-    private static GroupEntry applyBotState(GroupEntry group, GroupEntry before, JSONObject response, Instant now) {
-        BotRole role = switch (text(response, "member_role")) {
-            case "admin" -> BotRole.ADMIN;
-            case "owner" -> BotRole.OWNER;
-            case "member" -> BotRole.MEMBER;
-            default -> null;
-        };
-        if (role != null) {
-            group = group.withRole(role);
+    private static GroupEntry applyBotState(GroupEntry group, GroupEntry before, JSONObject response, Instant now,
+                                           boolean checkRole) {
+        if (checkRole) {
+            BotRole role = switch (text(response, "member_role")) {
+                case "admin" -> BotRole.ADMIN;
+                case "owner" -> BotRole.OWNER;
+                case "member" -> BotRole.MEMBER;
+                default -> null;
+            };
+            if (role != null) group = group.withRole(role);
         }
         if (group.proactive() == before.proactive() && response.get("allow_proactive_msg") instanceof Boolean allowed) {
             var status = allowed ? ProactiveStatus.ENABLED : ProactiveStatus.DISABLED;
@@ -687,7 +766,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     public record GroupEntry(long number, String openid, String name, NameSource nameSource,
                              Instant joinedAt, Instant lastSeenAt, boolean removed, Proactive proactive,
                              BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure,
-                             String apiName, LocalDate atAllRejectedOn) {
+                             String apiName, LocalDate atAllRejectedOn, Refresh proactiveState) {
         public GroupEntry {
             Objects.requireNonNull(openid);
             Objects.requireNonNull(name);
@@ -695,14 +774,28 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
             Objects.requireNonNull(joinedAt);
             Objects.requireNonNull(lastSeenAt);
             Objects.requireNonNull(proactive);
+            // 旧目录把提前复查和上次角色查询存在同一条记录里。
+            if (botState != null && botState.roleCheckedAt() != null
+                    && !botState.roleCheckedAt().equals(botState.attemptedAt())) {
+                proactiveState = new Refresh(botState.attemptedAt(), botState.retryAt());
+                botState = new Refresh(botState.roleCheckedAt(), null);
+            }
         }
 
         Refresh refresh(Endpoint endpoint) {
-            return endpoint == Endpoint.INFO ? info : botState;
+            return switch (endpoint) {
+                case INFO -> info;
+                case BOT_STATE -> botState;
+                case PROACTIVE_STATE -> proactiveState;
+            };
         }
 
         GroupEntry withRefresh(Endpoint endpoint, Refresh result) {
-            return endpoint == Endpoint.INFO ? withInfo(result) : withBotState(result);
+            return switch (endpoint) {
+                case INFO -> withInfo(result);
+                case BOT_STATE -> withBotState(result);
+                case PROACTIVE_STATE -> withProactiveState(result);
+            };
         }
 
         @Override
@@ -713,6 +806,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     record GroupInfo(long num, String name, NameSource nameSource, Integer memberCount, BotRole role,
                      ProactiveStatus proactive, String lastFailure, boolean removed, String joinedAt) {}
+
+    record ConsoleGroups(List<GroupInfo> groups, boolean refreshing) {}
 
     record MemberEntry(long number, String openid, Instant firstSeenAt, Instant lastSeenAt) {
         MemberEntry {
@@ -729,7 +824,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     public record Proactive(ProactiveStatus status, SwitchSource source, Instant at) {}
     public record Failure(String reason, Instant at) {}
-    public record Refresh(Instant attemptedAt, Instant retryAt) {}
+    public record Refresh(Instant attemptedAt, Instant retryAt, Instant roleCheckedAt) {
+        public Refresh(Instant attemptedAt, Instant retryAt) {
+            this(attemptedAt, retryAt, null);
+        }
+    }
     public enum NameSource { DEFAULT, GROUP_INFO_API, MANUAL }
     public enum ProactiveStatus { UNKNOWN, ENABLED, DISABLED }
     public enum SwitchSource {
@@ -739,10 +838,12 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
     public enum BotRole { ADMIN, OWNER, MEMBER }
     private enum Membership { JOIN, REMOVE, SEEN }
+    private enum FetchReason { REGULAR, CONSOLE_REFRESH, AFTER_JOIN }
 
     enum Endpoint {
         INFO("info"),
-        BOT_STATE("bot_state");
+        BOT_STATE("bot_state"),
+        PROACTIVE_STATE("bot_state");
 
         private final String path;
 
