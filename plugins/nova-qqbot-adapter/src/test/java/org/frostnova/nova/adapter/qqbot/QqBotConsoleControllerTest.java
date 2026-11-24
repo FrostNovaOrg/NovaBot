@@ -38,8 +38,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -178,10 +180,17 @@ class QqBotConsoleControllerTest {
             connect(rig);
             assertEquals(Set.of("qq-official"), rig.senders.getSenderNames());
 
+            var joinEventId = "fixture-joined";
             rig.listeners.get(0).onText(JSONObject.of("op", 0, "t", "GROUP_ADD_ROBOT", "s", 2,
-                    "id", "fixture-joined", "d", JSONObject.of("group_openid", GROUP,
+                    "id", joinEventId, "d", JSONObject.of("group_openid", GROUP,
                             "timestamp", JOINED.toString())).toJSONString());
             rig.scheduler.advance(0);
+            await().atMost(java.time.Duration.ofSeconds(10)).until(() -> !rig.groupMessages.isEmpty());
+            var welcome = rig.groupMessages.get(0);
+            assertEquals(0, welcome.getInteger("msg_type"));
+            assertEquals(joinEventId, welcome.getString("event_id"));
+            assertThat(welcome.getString("content"), containsString("我是这个群的推送机器人"));
+
             var targets = rig.mvc.perform(picker).andExpect(status().isOk())
                     .andExpect(jsonPath("$.items[0].sender").value("qq-official")).andReturn().getResponse();
             var group = JSONObject.parseObject(targets.getContentAsString(StandardCharsets.UTF_8))
@@ -193,7 +202,8 @@ class QqBotConsoleControllerTest {
                             .contentType(MediaType.APPLICATION_JSON).content(payload.toJSONString()))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.raw.id").value("fixture-test-message"));
-            assertEquals(List.of(JSONObject.of("msg_type", 0, "content", text)), rig.groupMessages);
+            assertEquals(2, rig.groupMessages.size());
+            assertEquals(JSONObject.of("msg_type", 0, "content", text), rig.groupMessages.get(1));
 
             rig.mvc.perform(state).andExpect(jsonPath("$.testSent").value(false));
             rig.mvc.perform(post("/config/api/setup/test-sent").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN))
@@ -272,7 +282,7 @@ class QqBotConsoleControllerTest {
     private void withConsole(ConsoleCheck test) {
         var requests = new ArrayList<JSONObject>();
         var gateways = new ArrayList<String>();
-        var groupMessages = new ArrayList<JSONObject>();
+        var groupMessages = new CopyOnWriteArrayList<JSONObject>();
         QqBotHttpTransport http = (method, uri, headers, body) -> {
             String path = uri.getPath();
             if (path.equals("/app/getAppAccessToken")) {
