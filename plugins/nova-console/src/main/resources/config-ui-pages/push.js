@@ -17,7 +17,8 @@ import {ask, keepTabInside} from './confirm.js';
 import {$, api, clearLoading, CONSOLE, el, esc, loadingHtml, markDirty, phrase, request, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
-  atAllStatus, buildDirectory, canMigrateGroup, channelIndex, channelName, channelSession, commandGroups, commandSummary,
+  atAllStatus, buildDirectory, canMigrateGroup, channelIndex, channelName, channelRevenueVisible, channelSession,
+  closeAssistantForHiddenRevenue, commandGroups, commandSummary,
   defaultMessages, handlerNames, handlerOf, layoutState, messageOf, migrateGroupTarget, noticeSwitches,
   officialGroupOptions, previewRequestBody, previewRevenueCaption, pushChannelOf, pushTree, quietSummary,
   recentPushes, restoredLayoutParams,
@@ -180,6 +181,7 @@ const PAGE_STYLE = `
 .swtxt .dim{color:var(--dim);font-weight:400;font-size:var(--fs-xs)}
 .swtxt p{margin:2px 0 0;color:var(--dim);font-size:var(--fs-xs)}
 .rule-switch .assistant-locked,.rule-switch .assistant-locked input{cursor:default}
+.rule-switch .assistant-revenue-hidden{opacity:.6}
 .weekly-report-tools{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px}
 .weekly-report-tools>.hint{margin:0;font-size:var(--fs-xs)}
 .weekly-report-actions{display:inline-flex;align-items:center;flex-wrap:wrap;gap:12px}
@@ -2105,7 +2107,7 @@ function noticeOptions(host, item, handler, user, target, session, syncMeta) {
 
   // 金额可见按「会话存的＋草稿」现算：草稿里拨了（还没保存），灰不灰、预览图与
   // 图下说明都当场跟着变——不然开关旁说按草稿画、图上还是存的设定，两头各说各话
-  const draftVisible = () => target.revenueVisible ?? (Number(target.type) === 0);
+  const draftVisible = () => channelRevenueVisible(target);
 
   const revenueScope = preview ? el('p', 'p-revenue-scope') : null;
   const syncRevenueScope = () => {
@@ -2712,6 +2714,11 @@ async function switchToOfficialGroup(user, target, group) {
   migratingUsers.delete(key);
   if (lastSaved && pushData.includes(user) && userVersions.get(key) === initialVersion) {
     // 等回包期间的其他编辑仍留在草稿中。
+    const persistedTargets = new Map(lastSaved.targets.map(item => [channelTail(item), item]));
+    for (const draft of user.targets) {
+      const persisted = persistedTargets.get(channelTail(draft));
+      if (persisted?.assistantEnabled === false && !channelRevenueVisible(persisted)) closeAssistantForHiddenRevenue(draft);
+    }
     const official = lastSaved.targets.at(-1);
     if (!user.targets.some(item => channelTail(item) === channelTail(official))) {
       user.targets.push(JSON.parse(JSON.stringify(official)));
@@ -3185,10 +3192,16 @@ export async function save() {
   let skipped = 0;
   let pushTried = false;
   let pushMsg = '';
+  let assistantClosed = false;
   const stateMsgs = [];
   let stateWrote = 0;
 
   // 固定这一趟要发的内容；等待回包时的新修改继续留在草稿里。
+  const drafts = new Map(pushData.map(user => [userKey(user), user]));
+  for (const user of drafts.values()) {
+    if (user._summary) continue;
+    for (const target of user.targets || []) closeAssistantForHiddenRevenue(target);
+  }
   const saved = new Map(JSON.parse(pushSaved).map(user => [userKey(user), user]));
   const current = new Map(JSON.parse(serializePush()).map(user => [userKey(user), user]));
   const writes = [];
@@ -3196,9 +3209,10 @@ export async function save() {
     const before = saved.get(key);
     const user = current.get(key);
     if (JSON.stringify(before) === JSON.stringify(user)) continue;
-    writes.push({key, user, before, version: userVersions.get(key)});
+    const closed = (drafts.get(key)?.targets || []).filter(target => target._assistantClosedForRevenue);
+    writes.push({key, user, before, closed, version: userVersions.get(key)});
   }
-  for (const {key, user, before, version} of writes) {
+  for (const {key, user, before, closed, version} of writes) {
     pushTried = true;
     const identity = user || before;
     const display = pushData.find(item => userKey(item) === key) || before;
@@ -3212,6 +3226,8 @@ export async function save() {
       });
       if (res.success) {
         updateSavedUser(key, user);
+        if (closed.length) assistantClosed = true;
+        for (const target of closed) delete target._assistantClosedForRevenue;
         if (user) {
           userVersions.set(key, res.version);
           setupVersions.get(key)?.set(key, res.version);
@@ -3275,6 +3291,7 @@ export async function save() {
   }
 
   const statePhrase = stateWrote > 0 ? stateMsgs.join('；') : '';
+  const assistantPhrase = assistantClosed ? ' · 金额改为隐藏，智能助手已一并关闭' : '';
 
   if (pushOk && stateOk) {
     const parts = [];
@@ -3283,20 +3300,20 @@ export async function save() {
     if (!parts.length) parts.push('已保存');
     let text = parts.join(' · ');
     if (skipped) text += ' · ' + skipped + ' 项删除未确认，未写入';
-    say(text, 'ok');
+    say(text + assistantPhrase, 'ok');
   } else if (pushOk && !stateOk) {
     const parts = [];
     if (pushTried && pushMsg) parts.push(pushMsg);
     parts.push('提醒订阅保存失败' + (notes.length ? '：' + notes.join('；') : ''));
-    say(parts.join(' · '), 'err');
+    say(parts.join(' · ') + assistantPhrase, 'err');
   } else if (!pushOk && stateOk) {
     // 成的那段与败的那句并列：塞进括号里跟着失败那句走的话，存上的东西会被读成没存上。
     // 通道设置一处没动时（stateWrote 为 0）不提它——那一段根本没发过请求
     const parts = ['推送配置保存失败' + (notes.length ? '：' + notes.join('；') : '')];
     if (stateWrote > 0) parts.push('提醒订阅已保存' + (statePhrase ? '（' + statePhrase + '）' : ''));
-    say(parts.join(' · '), 'err');
+    say(parts.join(' · ') + assistantPhrase, 'err');
   } else {
-    say('推送配置与提醒订阅均保存失败：' + notes.join('；'), 'err');
+    say('推送配置与提醒订阅均保存失败：' + notes.join('；') + assistantPhrase, 'err');
   }
   markDirty();
   try {

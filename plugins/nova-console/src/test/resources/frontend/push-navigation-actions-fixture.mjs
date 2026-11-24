@@ -36,10 +36,11 @@ let failSave = false;
 let officialGroups;
 let migratedUser;
 const migrationUser = {uid: 3, platform: 'bilibili', targets: [{platform: 'qq', type: 1, num: 31, enabled: true,
-  revenueVisible: true, messages: []}]};
-const migrationResult = {success: true, targetSettings: {revenueVisible: false,
+  revenueVisible: true, assistantEnabled: true, messages: []}]};
+const migrationResult = {success: true, targetSettings: {revenueVisible: false, assistantEnabled: false,
   quietHours: {mode: 'custom', start: '23:00', end: '07:00'}}, results: [
   '金额可见：按官方群现有设置隐藏金额，和原来不同。',
+  '问数开关：关闭，和原来不同。 金额隐藏，智能助手已一并关闭。',
   '静音时段：按官方群现有设置 23:00–07:00，和原来不同。',
 ]};
 const handler = (className, displayName) => ({className, displayName, aliases: [],
@@ -250,12 +251,15 @@ await check('切换保存并显示实际金额与静音时段', async () => {
   await waitFor(() => idNode('status-text').textContent.includes('已启用官方群目标'));
   const [old, added] = migratedUser.targets;
   assert.equal(old.enabled, false);
+  assert.equal(old.assistantEnabled, true);
   assert.equal(added.enabled, true);
   assert.equal(added.revenueVisible, false);
+  assert.equal(added.assistantEnabled, false);
   assert.deepEqual(added.quietHours, migrationResult.targetSettings.quietHours);
   assert.equal(idNode('push-drawer').hidden, false);
   const completion = body.querySelectorAll('li').map(item => item.textContent).join('\n');
   assert.match(completion, /金额可见.+隐藏金额.+和原来不同/);
+  assert.match(completion, /金额隐藏，智能助手已一并关闭/);
   assert.match(completion, /静音时段.+23:00–07:00.+和原来不同/);
 });
 

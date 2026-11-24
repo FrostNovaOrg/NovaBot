@@ -106,6 +106,7 @@ class AssistantHistoryTest {
         target.setType(GROUP);
         target.setNum(30003L);
         target.setEnabled(true);
+        target.setRevenueVisible(true);
         target.setAssistantEnabled(true);
         var user = new PushUser();
         user.setPlatform(PLATFORM);
@@ -118,7 +119,7 @@ class AssistantHistoryTest {
         var sender = mock(NovaMessageSender.class);
         doAnswer(invocation -> qqReplies.add(invocation.getArgument(0))).when(sender).send(any());
         command = new QqAssistantCommand(service, client, local, data, StreamerNames.none(),
-                mock(RevenueVisibilityService.class), mock(CommandSettingsService.class), sender, clock);
+                new RevenueVisibilityService(null), mock(CommandSettingsService.class), sender, clock);
     }
 
     @AfterEach void close() {

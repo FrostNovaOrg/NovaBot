@@ -503,6 +503,72 @@ class ChannelSettingsIntegrationTest {
         assertTrue(revenue.isVisible(target(0)));
     }
 
+    @Test @DisplayName("直接保存隐藏金额且开启问数的通道会被拒绝，原设置不变")
+    void datasourceCannotSaveAssistantWithHiddenRevenue() throws Exception {
+        String before = Files.readString(file);
+        var loaded = config.datasourceUser("bilibili", "10001");
+        var user = loaded.getJSONObject("user");
+        var target = user.getJSONArray("targets").getJSONObject(0);
+        target.put("revenueVisible", false);
+        target.put("assistantEnabled", true);
+
+        var response = config.saveDatasourceUser("bilibili", "10001", JSONObject.of("user", user,
+                "version", loaded.getString("version")));
+
+        assertEquals(400, response.getStatusCode().value());
+        assertTrue(response.getBody().getJSONArray("issues").toString().contains("先把这个通道的金额设为可见"));
+        assertEquals(before, Files.readString(file));
+
+        var wholeFile = JSONArray.parseArray(before);
+        wholeFile.set(0, user);
+        var full = config.saveDatasource(JSONObject.of("content", wholeFile.toJSONString()));
+        assertEquals(400, full.getStatusCode().value());
+        assertTrue(full.getBody().getJSONArray("issues").toString().contains("先把这个通道的金额设为可见"));
+        assertEquals(before, Files.readString(file));
+    }
+
+    @Test @DisplayName("直接保存默认显示的好友问数成功，显式隐藏后拒绝保持开启")
+    void datasourceUsesEffectiveFriendRevenue() throws Exception {
+        var loaded = config.datasourceUser("bilibili", "10001");
+        var user = loaded.getJSONObject("user");
+        var target = user.getJSONArray("targets").getJSONObject(0);
+        target.put("type", PushTargetType.FRIEND.getCode());
+        target.put("assistantEnabled", true);
+        var body = JSONObject.of("user", user, "version", loaded.getString("version"));
+        var saved = config.saveDatasourceUser("bilibili", "10001", body);
+        assertTrue(saved.getBody().getBooleanValue("success"));
+        assertTrue(revenue.isVisible(target(0)));
+        assertTrue(target(0).getAssistantEnabled());
+
+        String before = Files.readString(file);
+        target.put("revenueVisible", false);
+        body.put("version", saved.getBody().getString("version"));
+        assertEquals(400, config.saveDatasourceUser("bilibili", "10001", body).getStatusCode().value());
+        assertEquals(before, Files.readString(file));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @DisplayName("旧金额接口恢复群默认值时关闭问数，重新显示金额也不会开启旧问数")
+    void compatibilityRevenueSaveClosesAssistant(boolean showRevenue) throws Exception {
+        var users = JSONArray.parseArray(Files.readString(file));
+        var target = users.getJSONObject(0).getJSONArray("targets").getJSONObject(0);
+        target.put("revenueVisible", !showRevenue);
+        target.put("assistantEnabled", true);
+        Files.writeString(file, users.toJSONString());
+        refresh();
+
+        var request = JSONObject.of("platform", "qq", "type", 1, "num", 100L,
+                "streamerPlatform", "bilibili", "streamerUid", 10001L);
+        if (showRevenue) request.put("visible", true);
+        var saved = runtime().setRevenueVisibility(request);
+
+        assertTrue(saved.getBody().getBooleanValue("success"));
+        assertTrue(saved.getBody().getString("message").contains(showRevenue ? "智能助手已关闭" : "智能助手已一并关闭"));
+        assertEquals(showRevenue ? Boolean.TRUE : null, target(0).getRevenueVisible());
+        assertEquals(Boolean.FALSE, target(0).getAssistantEnabled());
+    }
+
     RuntimeStateController runtime() {
         var controller = new RuntimeStateController(dispatcher, settings, new AtSubscriptionService(state), state,
                 source, revenue, StreamerNames.none(), new SessionQuietHoursService(state), gate);
@@ -641,6 +707,7 @@ class ChannelSettingsIntegrationTest {
             var target = new PushTarget(); target.setUser(user); target.setPlatform(t.getString("platform"));
             target.setType(PushTargetType.of(t.getIntValue("type"))); target.setNum(t.getLong("num")); target.setEnabled(true);
             target.setRevenueVisible(t.getBoolean("revenueVisible")); target.setQuietHours(t.getObject("quietHours", PushTarget.QuietHours.class));
+            if (t.get("assistantEnabled") instanceof Boolean enabled) target.setAssistantEnabled(enabled);
             target.setDisabledCommands(t.getList("disabledCommands", String.class));
             user.setTargets(List.of(target)); users.add(user);
         }
