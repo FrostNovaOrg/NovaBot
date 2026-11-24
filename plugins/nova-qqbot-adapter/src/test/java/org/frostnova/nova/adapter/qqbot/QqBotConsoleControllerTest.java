@@ -13,6 +13,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -114,19 +115,24 @@ class QqBotConsoleControllerTest {
         withConsole(rig -> {
             saveCredentials(rig.mvc);
             connect(rig);
+            var sender = rig.senders.getSender("qq-official").orElseThrow();
             rig.mvc.perform(read("state")).andExpect(jsonPath("$.connection.level").value("OK"));
             for (var invalid : List.of(500, 70000, 1000.5, "1000")) {
                 rig.mvc.perform(write("interval", JSONObject.of("millis", invalid))).andExpect(status().isBadRequest());
                 assertEquals(2000, new QqBotSettings(root).snapshot().intervalMillis());
+                assertEquals(2000, sender.getDelay());
             }
             rig.mvc.perform(write("interval", JSONObject.of("millis", 1000))).andExpect(status().isOk())
                     .andExpect(jsonPath("$.intervalMillis").value(1000))
                     .andExpect(jsonPath("$.warning").value(containsString("每分钟 60 条只对做过个人认证或企业认证")));
             assertEquals(1000, new QqBotSettings(root).snapshot().intervalMillis());
+            assertEquals(1000, sender.getDelay(), "在连接页保存的发送间隔应该立即生效");
             rig.mvc.perform(read("state")).andExpect(jsonPath("$.intervalMillis").value(1000));
             rig.mvc.perform(write("interval", JSONObject.of("millis", 60000))).andExpect(status().isOk())
                     .andExpect(jsonPath("$.warning").doesNotExist());
             assertEquals(60000, new QqBotSettings(root).snapshot().intervalMillis());
+            assertEquals(60000, sender.getDelay());
+            assertSame(sender, rig.senders.getSender("qq-official").orElseThrow());
             rig.scheduler.advance(0);
             rig.mvc.perform(read("state")).andExpect(jsonPath("$.connection.level").value("OK"));
             assertEquals(1, rig.gatewayRequests.size());
@@ -203,7 +209,8 @@ class QqBotConsoleControllerTest {
 
     private ApplicationContextRunner context() {
         return new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
-                .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(root));
+                .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(root))
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()));
     }
 
     private List<JSONObject> audit() throws Exception {
@@ -259,7 +266,8 @@ class QqBotConsoleControllerTest {
                             .addFilters(new ConfigUiOperationFilter(store,
                                     List.copyOf(app.getBeansOfType(ConfigUiOperationProvider.class).values())))
                             .setControllerAdvice(new ConfigUiOperationAdvice()).build();
-                    test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners));
+                    test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners,
+                            app.getBean(NovaSenderService.class)));
                 });
     }
 
@@ -307,7 +315,7 @@ class QqBotConsoleControllerTest {
 
     private record Rig(MockMvc mvc, QqBotDirectory directory, QqBotGatewayTest.ManualScheduler scheduler,
                        List<JSONObject> tokenRequests, List<String> gatewayRequests,
-                       List<QqBotWebSocketTransport.Listener> listeners) {}
+                       List<QqBotWebSocketTransport.Listener> listeners, NovaSenderService senders) {}
 
     private interface ConsoleCheck {
         void run(Rig rig) throws Exception;

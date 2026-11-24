@@ -71,7 +71,7 @@ public class QqBotConsoleController {
         } catch (ArithmeticException | NumberFormatException e) {
             throw new IllegalArgumentException("请填写整数毫秒数");
         }
-        settings.setIntervalMillis(millis);
+        credentials.setIntervalMillis(millis);
         JSONObject result = JSONObject.of("success", true, "intervalMillis", millis);
         if (millis < QqBotSettings.DEFAULT_INTERVAL_MILLIS) {
             result.put("warning", "每分钟 60 条只对做过个人认证或企业认证的机器人有效，没认证的超频会被拒");

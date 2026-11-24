@@ -69,15 +69,7 @@ final class QqBotSettings {
             throw new IllegalArgumentException("AppSecret 和 AppID 一样，像是填错了栏，请到 QQ 开放平台复制 AppSecret");
         }
         long interval = snapshot.intervalMillis();
-        byte[] original;
-        try {
-            QqBotStorage.prepareDirectory(directory);
-            protectFiles();
-            original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
-            writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
-        } catch (IOException | SecurityException e) {
-            throw storageError();
-        }
+        byte[] original = storeSettings(appId, interval);
 
         try {
             if (replaceSecret) {
@@ -190,6 +182,18 @@ final class QqBotSettings {
 
     private void writeSettings(String json) throws IOException {
         DurableFiles.replace(settingsPath, json, DurableFiles.OWNER_ONLY);
+    }
+
+    private byte[] storeSettings(String appId, long interval) {
+        try {
+            QqBotStorage.prepareDirectory(directory);
+            protectFiles();
+            byte[] original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
+            writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
+            return original;
+        } catch (IOException | SecurityException e) {
+            throw storageError();
+        }
     }
 
     private void restoreSettings(byte[] original) {
