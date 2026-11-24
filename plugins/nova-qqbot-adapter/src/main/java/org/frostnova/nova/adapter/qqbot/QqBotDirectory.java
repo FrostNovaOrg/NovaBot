@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -207,6 +208,14 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
                     ? group.withName(defaultName(group.joinedAt())).withNameSource(NameSource.DEFAULT)
                     : group.withName(group.apiName()).withNameSource(NameSource.GROUP_INFO_API);
         });
+    }
+
+    synchronized List<String> disabledPushGroups(Set<Long> targets) {
+        if (bots == null) return List.of();
+        BotEntries bot = currentEntries();
+        return targets.stream().map(bot.groups()::get).filter(Objects::nonNull)
+                .filter(group -> group.proactive().status() == ProactiveStatus.DISABLED)
+                .map(group -> maskKnown(group.name(), bot)).toList();
     }
 
     synchronized List<GroupInfo> consoleGroups() {

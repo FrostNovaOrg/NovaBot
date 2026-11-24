@@ -12,13 +12,14 @@
  * 退码 0 即各档全对；任一档对不上打印差异并以 1 退出。
  */
 
+import {isDeepStrictEqual} from 'node:util';
+import {targetOptions} from '../core/nova-core/src/main/resources/config-ui/links-model.js';
 import {
-  atAllStatus, buildDirectory, channelIndex, channelName, channelSession, commandGroups, commandSummary,
-  layoutState, menuKnown, noticeSwitches, previewRequestBody, previewRevenueCaption,
-  pushTree, quietSummary, recentPushes, revenueSummary, savedRevenueVisible,
+  atAllStatus, buildDirectory, canMigrateGroup, channelIndex, channelName, channelSession, commandGroups, commandSummary,
+  layoutState, menuKnown, migrateGroupTarget, noticeSwitches, officialGroupOptions, previewRequestBody,
+  previewRevenueCaption, pushTree, quietSummary, recentPushes, revenueSummary, savedRevenueVisible,
   sessionOf, strandedSessions, subscriptionSummary, templateState,
 } from '../plugins/nova-console/src/main/resources/config-ui-pages/push-model.js';
-import {targetOptions} from '../core/nova-core/src/main/resources/config-ui/links-model.js';
 
 const PLATFORM = 'bilibili';
 const SENDER = 'qq';
@@ -110,6 +111,93 @@ function record(target, summary, ok) {
 // ── 各档 ─────────────────────────────────────────────────────────────────
 // 每档写明：改了哪几处回包（驱动字段），以及这一页该长成什么样（应）
 const CASES = [
+  {
+    name: '换成官方机器人保留通道设置并停用原目标，清理旧通道隐藏金额时的问数开关',
+    run: async () => {
+      const u = user({targets: [{
+        platform: SENDER, type: 1, num: 12345, enabled: true,
+        messages: messages({LiveOn: {params: {message: '开播了', at_mode: 'all'}},
+          LiveReport: {params: {layout: {danmuTop: 3}}}, Dynamic: {enabled: false}}),
+        reportPalette: 'night', revenueVisible: false, assistantEnabled: true,
+        quietHours: {mode: 'custom', start: '23:00', end: '07:00'}, disabledCommands: ['直播报告'],
+      }]});
+      const from = u.targets[0];
+      const to = {platform: 'qq-official', type: 1, num: 1000000000000001};
+      let persisted = u;
+      const calls = [];
+      const result = await migrateGroupTarget(u, from, to, {
+        saveUser: next => {
+          calls.push(next.targets.map(target => target.enabled).join('/'));
+          persisted = structuredClone(next);
+        },
+        copySettings: (source, destination) => {
+          calls.push(source.num + '→' + destination.num);
+          return {targetSettings: {revenueVisible: false}, results: ['金额可见：隐藏金额']};
+        },
+      });
+      const [old, added] = persisted.targets;
+      return {stage: result.stage, results: result.results, calls,
+        copied: isDeepStrictEqual(added, {...from, ...to, enabled: true, assistantEnabled: false}),
+        retained: isDeepStrictEqual(old, {...from, enabled: false, assistantEnabled: false}), original: from.enabled};
+    },
+    expect: {stage: 'done', results: ['金额可见：隐藏金额'],
+      calls: ['true/false', '12345→1000000000000001', 'false/true'], copied: true, retained: true, original: true},
+  },
+  {
+    name: '启用官方目标时应用服务端确认的实际通道设置',
+    run: async () => {
+      const u = user({targets: [{platform: SENDER, type: 1, num: 12345, revenueVisible: true}]});
+      const official = {platform: 'qq-official', type: 1, num: 10001};
+      const settings = {revenueVisible: false, quietHours: {mode: 'custom', start: '23:00', end: '07:00'},
+        disabledCommands: ['直播报告'], assistantEnabled: false};
+      const writes = [];
+      await migrateGroupTarget(u, u.targets[0], official, {
+        saveUser: next => writes.push(structuredClone(next.targets)),
+        copySettings: () => ({targetSettings: settings, results: ['金额可见：隐藏金额，和原来不同']}),
+      });
+      const [staged, switched] = writes;
+      const added = switched[1];
+      return {staged: staged[1].enabled, oldEnabled: switched[0].enabled, oldRevenue: switched[0].revenueVisible,
+        official: added.platform + ':' + added.type + ':' + added.num, enabled: added.enabled,
+        revenue: added.revenueVisible, quiet: added.quietHours && [added.quietHours.mode, added.quietHours.start, added.quietHours.end],
+        disabled: added.disabledCommands, assistant: added.assistantEnabled};
+    },
+    expect: {staged: false, oldEnabled: false, oldRevenue: true, official: 'qq-official:1:10001',
+      enabled: true, revenue: false, quiet: ['custom', '23:00', '07:00'], disabled: ['直播报告'], assistant: false},
+  },
+  {
+    name: '复制会话设置失败时原群继续推送',
+    run: async () => {
+      const u = user();
+      let persisted = u;
+      let writes = 0;
+      const result = await migrateGroupTarget(u, u.targets[0], {platform: 'qq-official', type: 1, num: 10001}, {
+        saveUser: next => { writes++; persisted = structuredClone(next); },
+        copySettings: () => { throw new Error('运行状态写入失败'); },
+      });
+      return {writes, stage: result.stage, error: result.error.message,
+        original: persisted.targets[0].enabled, added: persisted.targets[1].enabled};
+    },
+    expect: {writes: 1, stage: 'copy', error: '运行状态写入失败', original: true, added: false},
+  },
+  {
+    name: '仅管理员可把群换到官方机器人，已配置按主播判断',
+    run: () => {
+      const official = {sender: 'qq-official', type: 1, num: 12345, configured: true};
+      const options = [official, {...official, num: 11001, configured: false},
+        {...official, sender: SENDER}, {...official, type: 0}];
+      const u = user();
+      const source = u.targets[0];
+      u.targets.push({platform: 'qq-official', type: 1, num: '11001', enabled: false});
+      return {
+        allowed: [canMigrateGroup(source, 'ADMIN'), canMigrateGroup(source, 'MEMBER'),
+          canMigrateGroup({...source, type: 0}, 'ADMIN'), canMigrateGroup(u.targets[1], 'ADMIN')],
+        groups: officialGroupOptions(options, u).map(row => row.num + ':' + row.configured),
+        empty: officialGroupOptions(options.slice(2), u).length,
+      };
+    },
+    expect: {allowed: [true, false, false, false], groups: ['12345:false', '11001:true'], empty: 0},
+  },
   {
     name: '升级后通道配置仍有已退役的命令开关',
     run: () => {
@@ -509,7 +597,7 @@ for (const item of CASES) {
   // 剩下十几档是「查过了」还是「没轮到」分不出来——而故意破坏这一页时最先出现的正是异常
   let got;
   try {
-    got = item.run();
+    got = await item.run();
   } catch (error) {
     bad.push(item.name + '：抛了 ' + error);
     rows.push([item.name, Object.keys(item.expect).length + ' 项', '红（抛异常）'].join('\t'));

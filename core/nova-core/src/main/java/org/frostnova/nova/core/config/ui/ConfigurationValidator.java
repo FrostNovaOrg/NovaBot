@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
+import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -123,6 +124,33 @@ public class ConfigurationValidator {
     }
 
     private static String userKey(JSONObject user) { return user.getString("platform") + ":" + user.getString("uid"); }
+
+    /** 检查提交保存的通道，允许其他主播的旧配置留待各自保存时处理。 */
+    static List<String> validateAssistantRevenue(JSONArray users, Set<String> submitted) {
+        List<String> issues = new ArrayList<>();
+        for (Object entry : users) {
+            if (!(entry instanceof JSONObject user) || submitted != null && !submitted.contains(userKey(user))
+                    || !(user.get("targets") instanceof JSONArray targets)) continue;
+            for (Object item : targets) {
+                if (!(item instanceof JSONObject target) || !Boolean.TRUE.equals(target.get("assistantEnabled"))) continue;
+                if (!assistantEnabled(target)) {
+                    issues.add("会话 " + target.getString("num") + "：请先把这个通道的金额设为可见，再开启智能助手");
+                    if (issues.size() == MAX_ISSUES) return issues;
+                }
+            }
+        }
+        return issues;
+    }
+
+    static boolean assistantEnabled(JSONObject target) {
+        if (target == null || !Boolean.TRUE.equals(target.get("assistantEnabled"))) return false;
+        try {
+            PushTargetType type = PushTargetType.of(target.getIntValue("type", -1));
+            return RevenueVisibilityService.isVisible(type, target.getBoolean("revenueVisible"));
+        } catch (RuntimeException malformed) {
+            return false;
+        }
+    }
 
     private void checkUserLists(JSONObject user, String where, List<String> issues) {
         for (String field : List.of("dynamicBlockWords", "wordCloudBlockWords", "wordCloudExcludeUids")) {

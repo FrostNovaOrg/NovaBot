@@ -8,7 +8,7 @@ import {datasourceRead} from './datasource-read.mjs';
  * 任何异常，改动会在下一次载入时安静地没掉。core.js 那处注释防的正是这件事。
  *
  * 因此这把尺按「本页有哪几类写口」逐类喂一处改动，读 changeCount()：
- *   算进去的八类各报 1；只给人看的那三栏（下划线开头）报 0，是阴性对照——
+ *   可保存的改动各报 1；只给人看的那三栏（下划线开头）报 0，是阴性对照——
  *   少了它，把 changeCount 改成「恒回 1」这一格照样全绿。
  *
  * 末一格是分母闸：push.js 里 markDirty() 的调用点数一变就红。新开一条改草稿的路时，
@@ -125,6 +125,12 @@ const CASES = [
     },
   },
   {
+    name: '通道·启用开关（target.enabled）',
+    at: 'push.js 的通道详情启用开关',
+    want: 1,
+    change: users => { users[0].targets[0].enabled = false; },
+  },
+  {
     name: '通道·移除（user.targets.splice）',
     at: 'push.js 的「移除通道」',
     want: 1,
@@ -220,7 +226,8 @@ await ask('② 同一位主播下改两处仍算一处：N 是主播数不是字
  * 在读数上是同一个样子。
  */
 // Reloading one streamer updates the saved snapshot; the conflict fixture checks that path.
-const MARK_DIRTY_CALLS = 13;
+// Changing bots also updates the saved snapshot after the server confirms the write.
+const MARK_DIRTY_CALLS = 15;
 
 await ask('③ 分母闸：push.js 的 markDirty() 调用点数没变', () => {
   const text = readFileSync(join(pages, 'push.js'), 'utf8');

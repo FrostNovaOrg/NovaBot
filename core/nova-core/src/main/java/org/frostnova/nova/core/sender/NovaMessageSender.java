@@ -697,15 +697,8 @@ public class NovaMessageSender {
      * 图片占位符可以来自处理器的 {@code {cover}}／{@code {picture}}，
      * <b>也可以是使用者在模板里手写的</b>，只有汇合点拦得全——而「任何模板写法下都成立」正是要求本身。
      * <p>
-     * <b>触发三条件缺一不可</b>：发送失败 + 含图片段 + 剥掉之后还剩东西。
-     * 少了第二条，纯文字消息失败也会白重发一次，等于把所有失败的重试次数翻倍；
-     * 少了第三条，图片独占的那一条（开播模板第二条就是）会发出一条空消息。
-     * <p>
-     * ⚠️ <b>刻意不判断「失败是不是图片引起的」。</b> 最容易想到的做法是解析错误文案
-     * （{@code 下载文件失败: Not Found}）来确认，但那是 NapCat 的措辞，
-     * <b>版本一改判据就静默失效，而失效方向是「再也不降级」</b>——与「守卫写下了但没在跑」同族。
-     * 这个形态本来就不需要知道原因：非图片故障（被禁言、被踢、群号错、Token 错、出网故障）
-     * 下纯文字重发<b>同样会失败</b>，所以双发不成立。
+     * 适配器可以用 {@link Sender.LocalDelivery#SKIP_IMAGE_FALLBACK} 表明纯文字同样发不出去。
+     * 缺省时，只要含图消息发送失败且剥图后还有正文，就尝试补发。核心无需解析平台的错误文案。
      * <p>
      * ⚠️ <b>唯一可能双发的是「接口谎报失败」</b>：回了错误码但消息其实送到了。
      * 已收成一个有定义的条件——<b>只在响应没带消息 id 时才重发</b>。
@@ -721,7 +714,8 @@ public class NovaMessageSender {
      */
     private FallbackOutcome fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
                                                   Message message, JSONObject failure) {
-        if (!MessagePlaceholders.containsImage(message.getContent())) {
+        if (Boolean.TRUE.equals(failure.get(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK))
+                || !MessagePlaceholders.containsImage(message.getContent())) {
             return FallbackOutcome.FAILED;
         }
 

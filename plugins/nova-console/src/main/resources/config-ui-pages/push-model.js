@@ -10,7 +10,7 @@
  * 凑齐一次的代价极高：要么得先去群里发命令把开关关掉，要么得去改线上配置。算成纯函数之后，
  * 喂几份回包跑一遍就能逐条对答案（tools/push-model-check.sh），渲染那一层只管把算好的摆上去。
  *
- * 🔴 <b>本文件里没有任何一个平台名、也没有任何一条通知的名字。</b>四种通知取自
+ * 四种通知取自
  * /api/handlers 现给的清单，命令分组取自各命令自报的 category，「这个会话里哪几条命令
  * 不列进菜单」取自 /api/state 里后端算好的那一份（见 RuntimeStateController#menuOf）——
  * 那条规则在后端只有一份实现，抄一份到这里的话，改了那一份的那天，控制台仍按旧规矩画。
@@ -20,6 +20,7 @@ import {AT_MODE_KEY} from './template-model.js';
 
 // 与 ChannelSettings 中允许旧配置保留的退役开关键一致。
 const RETIRED_COMMAND_KEYS = new Set(['直播间数据', '直播间总数据', '数据排行榜', '总数据排行榜']);
+const OFFICIAL = 'qq-official';
 
 /**
  * 认一个会话用的键
@@ -33,6 +34,43 @@ const RETIRED_COMMAND_KEYS = new Set(['直播间数据', '直播间总数据', '
  */
 export function sessionKey(platform, type, num) {
   return platform + ':' + Number(type) + ':' + num;
+}
+
+export function canMigrateGroup(target, role) {
+  return role === 'ADMIN' && Number(target.type) === 1 && !!target.platform && target.platform !== OFFICIAL;
+}
+
+/** 名单上的 configured 涵盖全部主播，这里只灰掉当前主播配过的群。 */
+export function officialGroupOptions(options, user) {
+  const taken = new Set((user.targets || []).map(target => sessionKey(target.platform, target.type, target.num)));
+  return options.filter(item => item.sender === OFFICIAL && item.type === 1)
+    .map(item => ({...item, configured: taken.has(sessionKey(item.sender, item.type, item.num))}));
+}
+
+/** 先保存停用的新目标。会话设置保存成功后，用同一次写入切换两个目标的启停。 */
+export async function migrateGroupTarget(user, source, group, {saveUser, copySettings}) {
+  let stage = 'create';
+  try {
+    const targets = user.targets.map(target => {
+      const next = {...target};
+      closeAssistantForHiddenRevenue(next);
+      return next;
+    });
+    const added = {...JSON.parse(JSON.stringify(source)), platform: group.platform, type: group.type,
+      num: group.num, enabled: false};
+    closeAssistantForHiddenRevenue(added);
+    await saveUser({...user, targets: [...targets, added]});
+    stage = 'copy';
+    const {targetSettings, results} = await copySettings(source, added);
+    stage = 'activate';
+    const official = {...added, ...targetSettings, enabled: true};
+    closeAssistantForHiddenRevenue(official);
+    const switched = targets.map((target, i) => user.targets[i] === source ? {...target, enabled: false} : target);
+    await saveUser({...user, targets: [...switched, official]});
+    return {stage: 'done', results};
+  } catch (error) {
+    return {stage, error};
+  }
 }
 
 /**
@@ -641,14 +679,25 @@ export function channelSession(session, target, user, commands) {
   const known = new Set(commands?.flatMap(usageKeys));
   const channel = ((session || {}).channels || []).find(item => user
     && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
+  const revenueVisible = channelRevenueVisible(target);
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
-    revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
+    revenueVisible,
     revenueExplicit: typeof target.revenueVisible === 'boolean',
-    assistantEnabled: target.assistantEnabled === true,
+    assistantEnabled: revenueVisible && target.assistantEnabled === true,
     disabled,
     // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
     disabledCount: new Set([...disabled.filter(key => known.has(key)), ...((session || {}).disabled || [])]).size,
     quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: !!channel?.quietActive};
+}
+
+export function channelRevenueVisible(target) {
+  return target.revenueVisible ?? (target.type != null && Number(target.type) === 0);
+}
+
+export function closeAssistantForHiddenRevenue(target) {
+  if (target.assistantEnabled !== true || channelRevenueVisible(target)) return false;
+  target.assistantEnabled = false;
+  return true;
 }
 
 export function revenueSummary(session) {

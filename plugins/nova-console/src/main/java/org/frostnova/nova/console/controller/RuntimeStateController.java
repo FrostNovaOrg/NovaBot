@@ -332,7 +332,14 @@ public class RuntimeStateController {
         }
 
         Boolean visible = body.getBoolean("visible");
+        boolean nextVisible = RevenueVisibilityService.isVisible(type, visible);
+        boolean[] assistantClosed = {false};
         int count = changeChannels(body, platform, type, num, target -> {
+            if (Boolean.TRUE.equals(target.get("assistantEnabled"))
+                    && (!nextVisible || !RevenueVisibilityService.isVisible(type, target.getBoolean("revenueVisible")))) {
+                target.put("assistantEnabled", false);
+                assistantClosed[0] = true;
+            }
             if (visible == null) target.remove("revenueVisible");
             else target.put("revenueVisible", visible);
         });
@@ -340,8 +347,10 @@ public class RuntimeStateController {
         log.info("{} 将会话 {}:{}:{} 的金额可见性设为 {}", ConfigUiAccess.actor(), platform, type.getCode(), num, visible == null ? "默认" : visible);
 
         result.put("success", true);
-        result.put("message", describe(type, num) + " 的金额"
-                + (visible == null ? "已恢复默认" : visible ? "已设为可见" : "已隐藏"));
+        String message = describe(type, num) + " 的金额" + (visible == null ? "已恢复默认" : visible ? "已设为可见" : "已隐藏");
+        if (assistantClosed[0]) message += nextVisible ? "。旧设置中的智能助手已关闭，可重新开启"
+                : "。金额改为隐藏，智能助手已一并关闭";
+        result.put("message", message);
         return ok(result);
     }
 

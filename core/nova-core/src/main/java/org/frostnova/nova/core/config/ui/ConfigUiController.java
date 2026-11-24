@@ -1927,14 +1927,20 @@ public class ConfigUiController {
             log.warn("旧推送配置无法读取，将以新配置记录本次操作", malformed);
             previous = new JSONArray();
         }
-        if (submitted == null) {
-            try {
-                submitted = ConfigurationValidator.changedUsers(previous, JSONArray.parseArray(content));
-            } catch (RuntimeException malformed) {
-                // 格式错误仍由校验器给出可读说明。
-            }
+        JSONArray requested = null;
+        try {
+            requested = JSONArray.parseArray(content);
+        } catch (RuntimeException malformed) {
+            // 格式错误仍由校验器给出可读说明。
         }
-        List<String> issues = validator.validateDatasource(content, senderService.getSenderNames(), submitted);
+        Set<String> changed = submitted;
+        if (changed == null && requested != null) {
+            changed = ConfigurationValidator.changedUsers(previous, requested);
+        }
+        List<String> issues = validator.validateDatasource(content, senderService.getSenderNames(), changed);
+        if (issues.isEmpty() && requested != null) {
+            issues = ConfigurationValidator.validateAssistantRevenue(requested, submitted);
+        }
         if (!issues.isEmpty()) {
             result.put("success", false);
             result.put("message", "推送配置有误，已拒绝保存");
@@ -2119,8 +2125,7 @@ public class ConfigUiController {
                     Objects.equals(old.getString("platform"), target.getString("platform"))
                     && Objects.equals(old.getInteger("type"), target.getInteger("type"))
                     && Objects.equals(old.getLong("num"), target.getLong("num"))).findFirst().orElse(null);
-            if (Boolean.TRUE.equals(target.get("assistantEnabled"))
-                    && (previous == null || !Boolean.TRUE.equals(previous.get("assistantEnabled")))) {
+            if (ConfigurationValidator.assistantEnabled(target) && !ConfigurationValidator.assistantEnabled(previous)) {
                 return "问数开关只有管理员能打开";
             }
             if (previous != null) continue;

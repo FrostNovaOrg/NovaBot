@@ -257,12 +257,13 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   };
   const pushFns = [
     'function refresh(', 'function leave(', 'function routeFromHash(',
-    'async function loadPushPage(', 'async function reload(', 'function serializePush',
+    'function loadGroupList(', 'async function loadPushPage(', 'async function reload(', 'function serializePush',
     'function dropDisplayOnly', 'async function decoratePushData',
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const push = new Function('api', 'store', 'location', 'showPush', 'paintTree', 'renderStreamers',
     'clearSessionDrafts', 'closeDrawer', 'say', 'targetOptions', 'buildDirectory',
     'let datasourceGeneration = 0; const userVersions = new Map(), userLoads = new Map(), conflictedUsers = new Set(); const userKey = user => user.platform + ":" + user.uid; const picked = {}; let nameLookups = new Set(); let pageLive = false, pushData = [], pushSaved = "[]", runtime = {}, pushHistory = [], quota, options, directory;\n'
+    + 'const isMember = () => false; let groupList, groupListLoad, repaintOfficialPicker;\n'
     + pushFns + '\nreturn {refresh, reload, leave, entries: () => pushData};')(
     api, store, location, () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
     () => { names = pushTree(push.entries(), [], [], {}).map(u => u.name); },
