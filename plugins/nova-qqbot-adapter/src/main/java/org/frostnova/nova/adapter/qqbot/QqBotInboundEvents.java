@@ -25,12 +25,19 @@ final class QqBotInboundEvents implements QqBotEventListener {
     private final QqBotDirectory directory;
     private final ApplicationEventPublisher publisher;
     private final QqBotGatewayScheduler scheduler;
+    private final QqBotSettings settings;
+    private final QqBotReplyWindows replies;
+    private final QqBotWelcome welcome;
     private final LinkedHashMap<EventKey, Long> recentEvents = new LinkedHashMap<>();
 
-    QqBotInboundEvents(QqBotDirectory directory, ApplicationEventPublisher publisher, QqBotGatewayScheduler scheduler) {
+    QqBotInboundEvents(QqBotDirectory directory, ApplicationEventPublisher publisher, QqBotGatewayScheduler scheduler,
+                       QqBotSettings settings, QqBotReplyWindows replies, QqBotWelcome welcome) {
         this.directory = directory;
         this.publisher = publisher;
         this.scheduler = scheduler;
+        this.settings = settings;
+        this.replies = replies;
+        this.welcome = welcome;
     }
 
     @Override
@@ -60,18 +67,21 @@ final class QqBotInboundEvents implements QqBotEventListener {
             return;
         }
         Instant at = Instant.parse(requireText(message, "timestamp"));
-        if (at.isBefore(Instant.now().minus(MESSAGE_MAX_AGE))) {
+        Instant now = Instant.now();
+        if (at.isBefore(now.minus(MESSAGE_MAX_AGE))) {
             log.info("忽略超过 30 分钟的 QQ 官方机器人群消息");
             return;
         }
         String groupOpenId = requireText(message, "group_openid");
         String memberOpenId = requireText(author, "member_openid");
+        String appId = settings.snapshot().appId();
         long group = directory.groupSeen(groupOpenId, at);
         long member = directory.memberSeen(memberOpenId, at);
         String content = text(message.get("content"));
         var event = new NovaRemoteMessageEvent(QqBotPluginAutoConfiguration.PLATFORM, "group", group, member,
                 content == null ? "" : content.strip(), text(author.get("member_role")), true);
         event.setMessageId(id);
+        replies.get(appId, id, at, now);
         publisher.publishEvent(event);
     }
 
@@ -84,7 +94,11 @@ final class QqBotInboundEvents implements QqBotEventListener {
             return;
         }
         switch (name) {
-            case "GROUP_ADD_ROBOT" -> directory.groupJoined(groupOpenId, at);
+            case "GROUP_ADD_ROBOT" -> {
+                String appId = settings.snapshot().appId();
+                long group = directory.groupJoined(groupOpenId, at);
+                welcome.send(appId, group, groupOpenId, eventId);
+            }
             case "GROUP_DEL_ROBOT" -> directory.groupRemoved(groupOpenId, at);
             case "GROUP_MSG_RECEIVE", "GROUP_MSG_REJECT" -> {
                 long group = directory.groupSeen(groupOpenId, at);
