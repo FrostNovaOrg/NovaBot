@@ -1,5 +1,6 @@
 package org.frostnova.nova.adapter.qqbot;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
@@ -108,6 +109,47 @@ class QqBotEventRoutingTest {
             listener.onEvent("GROUP_AT_MESSAGE_CREATE", menu, "after-resume", 2L);
             assertEquals(List.of("same-message"), rig.events.stream().map(NovaRemoteMessageEvent::getMessageId).toList());
             verify(rig.directory).memberSeen("12345678", MEMBER, rig.now);
+        });
+    }
+
+    @Test
+    void allMessagesModeIgnoresChatWithoutASelfMention() {
+        var rig = new Rig();
+        rig.run(listener -> {
+            var other = JSONObject.of("member_openid", "fixture-other-bot", "bot", true,
+                    "is_you", false, "scope", "single");
+            var everyone = JSONObject.of("scope", "all", "is_you", false);
+            listener.onEvent("GROUP_MESSAGE_CREATE", rig.message("chat", "菜单"), null, 1L);
+            listener.onEvent("GROUP_MESSAGE_CREATE", rig.message("other", "<@fixture-other-bot> 菜单")
+                    .fluentPut("mentions", JSONArray.of(other)), null, 2L);
+            listener.onEvent("GROUP_MESSAGE_CREATE", rig.message("everyone", "<@all> 菜单")
+                    .fluentPut("mentions", JSONArray.of(everyone)), null, 3L);
+            assertTrue(rig.events.isEmpty());
+            assertTrue(rig.directory.groupNumber(GROUP).isEmpty());
+            assertTrue(rig.directory.memberNumber(MEMBER).isEmpty());
+            assertTrue(rig.posts.isEmpty());
+        });
+    }
+
+    @Test
+    void allMessagesModeKeepsOtherMentionsAndDeduplicatesAcrossEventTypes() {
+        var rig = new Rig();
+        rig.run(listener -> {
+            var mentions = JSONArray.of(
+                    JSONObject.of("member_openid", "fixture-other-member", "is_you", false, "scope", "single"),
+                    JSONObject.of("member_openid", "fixture-bot", "is_you", true, "scope", "single"));
+            String command = "菜单 <@fixture-other-member>";
+            String content = " \t<@fixture-bot> " + command + " <@fixture-bot> \n";
+            listener.onEvent("GROUP_MESSAGE_CREATE", rig.message("all-first", content)
+                    .fluentPut("mentions", mentions), "dispatch-all-1", 1L);
+            assertEquals(List.of(command), rig.events.stream().map(NovaRemoteMessageEvent::getText).toList());
+            assertTrue(rig.events.get(0).isMentionsBot());
+            listener.onEvent("GROUP_AT_MESSAGE_CREATE", rig.message("all-first", command), "dispatch-at-1", 2L);
+            listener.onEvent("GROUP_AT_MESSAGE_CREATE", rig.message("at-first", command), "dispatch-at-2", 3L);
+            listener.onEvent("GROUP_MESSAGE_CREATE", rig.message("at-first", content)
+                    .fluentPut("mentions", mentions), "dispatch-all-2", 4L);
+            assertEquals(List.of("all-first", "at-first"),
+                    rig.events.stream().map(NovaRemoteMessageEvent::getMessageId).toList());
         });
     }
 
