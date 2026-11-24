@@ -110,6 +110,8 @@ public class DefaultLiveDataService implements LiveDataService {
                 if (parsed == null) {
                     throw new IllegalStateException("直播数据不是对象");
                 }
+                // 旧版本写入的累计记录已退役，保留同一文件中的本场数据。
+                parsed.keySet().removeIf(key -> key.startsWith("LiveMergedTotal:"));
                 cache = parsed;
             } catch (NoSuchFileException e) {
                 log.warn("直播数据文件 {} 不存在, 建立新文件", liveDataPath);
@@ -940,83 +942,22 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
-    /**
-     * 获取本场直播某项指标的用户排行
-     *
-     * @param platform 直播平台
-     * @param uid      主播 UID
-     * @param metric   指标名
-     * @param limit    取前多少名
-     * @return 按得分降序排列的用户
-     */
-    /**
-     * 取得本场全部指标的快照，供并入累计存储
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @return 指标名到取值的映射
-     */
-    public java.util.Map<String, Double> liveMetrics(@NonNull String platform, @NonNull Long uid) {
+    @Override
+    public Map<String, Double> getLiveMetrics(@NonNull String platform, @NonNull Long uid) {
         synchronized (metricLock) {
             JSONObject metrics = Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
                     .map(data -> data.getJSONObject(String.valueOf(uid)))
                     .orElse(null);
             if (metrics == null) {
-                return java.util.Map.of();
+                return Map.of();
             }
 
-            java.util.Map<String, Double> result = new java.util.HashMap<>();
+            Map<String, Double> result = new HashMap<>();
             for (String metric : metrics.keySet()) {
                 result.put(metric, metrics.getDoubleValue(metric));
             }
             return result;
         }
-    }
-
-    /**
-     * 取得本场全部用户计分表的快照，供并入累计存储
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @return 指标名到「用户 UID → 得分」的映射
-     */
-    public java.util.Map<String, java.util.Map<Long, Double>> liveUserMetrics(@NonNull String platform, @NonNull Long uid) {
-        synchronized (metricLock) {
-            JSONObject byMetric = Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
-                    .map(data -> data.getJSONObject(String.valueOf(uid)))
-                    .orElse(null);
-            if (byMetric == null) {
-                return java.util.Map.of();
-            }
-
-            java.util.Map<String, java.util.Map<Long, Double>> result = new java.util.HashMap<>();
-            for (String metric : byMetric.keySet()) {
-                JSONObject users = byMetric.getJSONObject(metric);
-                if (users == null) {
-                    continue;
-                }
-                java.util.Map<Long, Double> scores = new java.util.HashMap<>();
-                for (String userKey : users.keySet()) {
-                    try {
-                        scores.put(Long.parseLong(userKey), users.getDoubleValue(userKey));
-                    } catch (NumberFormatException ignored) {
-                        // 非法用户键跳过即可，不必让整次并入失败
-                    }
-                }
-                result.put(metric, scores);
-            }
-            return result;
-        }
-    }
-
-    /**
-     * 获取本场直播的全部统计指标
-     *
-     * @param platform 直播平台
-     * @param uid      主播 UID
-     * @return 指标名到取值的映射
-     */
-    @Override
-    public Map<String, Double> getLiveMetrics(@NonNull String platform, @NonNull Long uid) {
-        return liveMetrics(platform, uid);
     }
 
     /**
@@ -1115,64 +1056,6 @@ public class DefaultLiveDataService implements LiveDataService {
                     }
                 }
                 result.put(metric, uids);
-            }
-            return result;
-        }
-    }
-
-    /**
-     * 取得本场记录到的用户昵称快照，供并入累计存储
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @return 用户 UID 到昵称的映射
-     */
-    public java.util.Map<Long, String> liveUserNames(@NonNull String platform, @NonNull Long uid) {
-        synchronized (metricLock) {
-            JSONObject names = Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
-                    .map(data -> data.getJSONObject(String.valueOf(uid)))
-                    .orElse(null);
-            if (names == null) {
-                return java.util.Map.of();
-            }
-
-            java.util.Map<Long, String> result = new java.util.HashMap<>();
-            for (String userKey : names.keySet()) {
-                try {
-                    result.put(Long.parseLong(userKey), names.getString(userKey));
-                } catch (NumberFormatException ignored) {
-                    // 同上
-                }
-            }
-            return result;
-        }
-    }
-
-    /**
-     * 取得本场记录到的用户头像快照，供并入累计存储
-     * <p>
-     * <b>返回的是存储态（压缩形态），不是可直接下载的地址。</b>它只用于原样搬运到
-     * 累计存储，两边保持同一种形态，读取时统一由 {@link FaceUrlCodec#expand} 还原。
-     * 若要拿去下载图片，必须先自行还原。
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @return 用户 UID 到头像存储态的映射
-     */
-    public java.util.Map<Long, String> liveUserFaces(@NonNull String platform, @NonNull Long uid) {
-        synchronized (metricLock) {
-            JSONObject faces = Optional.ofNullable(cache.getJSONObject("LiveUserFace:" + platform))
-                    .map(data -> data.getJSONObject(String.valueOf(uid)))
-                    .orElse(null);
-            if (faces == null) {
-                return java.util.Map.of();
-            }
-
-            java.util.Map<Long, String> result = new java.util.HashMap<>();
-            for (String userKey : faces.keySet()) {
-                try {
-                    result.put(Long.parseLong(userKey), faces.getString(userKey));
-                } catch (NumberFormatException ignored) {
-                    // 同上
-                }
             }
             return result;
         }
@@ -1280,7 +1163,7 @@ public class DefaultLiveDataService implements LiveDataService {
                 return List.of();
             }
 
-            // JSON 结构不像 Redis 的 zset 那样自带排序，只能取出后在内存里排。
+            // 计分表按用户存放，读取时在内存中排序。
             // 单直播间的用户数有上限，这个开销可以接受，且排行榜只在下播与查询时才取
             JSONObject names = Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
                     .map(data -> data.getJSONObject(String.valueOf(uid)))
@@ -1602,97 +1485,6 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
-    // ================ 本场已并入累计的量 ================
-
-    /**
-     * 本场已经并进累计的那一份，与本场数据同一份文件落盘、同一次开播清零
-     * <p>
-     * 断线重连续上的一场会下播两次，第二次只该并第一次之后新增的那部分。
-     * 记在这里而不是内存里：两次下播之间程序可能重启，丢了这份记录就会把前半场再并一遍。
-     */
-    private static final String KEY_MERGED = "LiveMergedTotal:";
-
-    /**
-     * 本场已并入累计的各项指标，没并过时为空表
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @return 指标名到已并入量的映射
-     */
-    public Map<String, Double> mergedMetrics(@NonNull String platform, @NonNull Long uid) {
-        synchronized (metricLock) {
-            JSONObject metrics = merged(platform, uid).map(data -> data.getJSONObject("metrics")).orElse(null);
-            if (metrics == null) {
-                return Map.of();
-            }
-            Map<String, Double> result = new HashMap<>();
-            for (String metric : metrics.keySet()) {
-                result.put(metric, metrics.getDoubleValue(metric));
-            }
-            return result;
-        }
-    }
-
-    /**
-     * 本场已并入累计的各计分表，没并过时为空表
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @return 指标名到「用户 UID → 已并入得分」的映射
-     */
-    public Map<String, Map<Long, Double>> mergedUserMetrics(@NonNull String platform, @NonNull Long uid) {
-        synchronized (metricLock) {
-            JSONObject byMetric = merged(platform, uid).map(data -> data.getJSONObject("users")).orElse(null);
-            if (byMetric == null) {
-                return Map.of();
-            }
-            Map<String, Map<Long, Double>> result = new HashMap<>();
-            for (String metric : byMetric.keySet()) {
-                JSONObject users = byMetric.getJSONObject(metric);
-                if (users == null) {
-                    continue;
-                }
-                Map<Long, Double> scores = new HashMap<>();
-                for (String userKey : users.keySet()) {
-                    try {
-                        scores.put(Long.parseLong(userKey), users.getDoubleValue(userKey));
-                    } catch (NumberFormatException ignored) {
-                        // 同 liveUserMetrics
-                    }
-                }
-                result.put(metric, scores);
-            }
-            return result;
-        }
-    }
-
-    /**
-     * 记下本场到此为止已并入累计的量（整份覆盖上一次记的）
-     * @param platform 直播平台
-     * @param uid 主播 UID
-     * @param metrics 本场各项指标，即这次并入时读到的那一份
-     * @param userMetrics 本场各计分表，即这次并入时读到的那一份
-     */
-    public void recordMerged(@NonNull String platform, @NonNull Long uid, @NonNull Map<String, Double> metrics,
-                             @NonNull Map<String, Map<Long, Double>> userMetrics) {
-        JSONObject users = new JSONObject();
-        userMetrics.forEach((metric, scores) -> {
-            JSONObject one = new JSONObject();
-            scores.forEach((userUid, score) -> one.put(String.valueOf(userUid), score));
-            users.put(metric, one);
-        });
-        JSONObject record = new JSONObject();
-        record.put("metrics", new JSONObject(metrics));
-        record.put("users", users);
-        synchronized (metricLock) {
-            cache.putIfAbsent(KEY_MERGED + platform, new JSONObject());
-            cache.getJSONObject(KEY_MERGED + platform).put(String.valueOf(uid), record);
-        }
-    }
-
-    private Optional<JSONObject> merged(String platform, Long uid) {
-        return Optional.ofNullable(cache.getJSONObject(KEY_MERGED + platform))
-                .map(data -> data.getJSONObject(String.valueOf(uid)));
-    }
-
     // ================ 其他操作 ================
 
     /**
@@ -1722,8 +1514,6 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveUserFace:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveSeries:" + platform))
-                    .ifPresent(data -> data.remove(String.valueOf(uid)));
-            Optional.ofNullable(cache.getJSONObject(KEY_MERGED + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
         }
     }

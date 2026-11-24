@@ -32,6 +32,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -48,6 +50,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -256,7 +259,7 @@ class DynamicBlockWordsTest {
 
         // 设置页保存走的就是这条通道：先落盘，再把新值写回运行中的配置
         RuntimeConfigurationApplier applier = new RuntimeConfigurationApplier(
-                new NovaCoreProperties(), null, provider(applierContributors(properties)), timeline::add);
+                new NovaCoreProperties(), provider(applierContributors(properties)), timeline::add);
         List<String> waitingForRestart = applier.applyAndTrack(Map.of(KEY, WORD));
         assertTrue(waitingForRestart.isEmpty(),
                 "改了名单要重启才生效：保存后这项还欠重启，说明新名单压根没写回运行中的配置");
@@ -283,6 +286,100 @@ class DynamicBlockWordsTest {
         assertEquals("主播甲", recorded.streamer(), "记下是哪位主播的动态");
         assertEquals(WORD, recorded.detail().get("word"), "记下命中的词");
         assertEquals(dynamic.getUrl(), recorded.detail().get("url"), "记下动态链接");
+    }
+
+    @Test
+    @DisplayName("含抽奖的动态只发给 NapCat 群")
+    void lotteryDynamicOnlyGoesToNapCat() {
+        BilibiliDynamicPushHandler handler = handlerUsing(new NovaBilibiliProperties());
+        BilibiliDynamicUpdateEvent update = event(dynamicWithText("转发抽三位送周边"));
+
+        handler.handle(update, messageTo("qq-official", GROUP));
+        handler.handle(update, messageTo(OTHER_GROUP));
+
+        List<Message> sent = sentMessages();
+        assertEquals(0, sent.stream().filter(message -> "qq-official".equals(message.getPlatform())).count(),
+                "含抽奖的动态发到了 QQ 官方机器人群，可能导致机器人被封号");
+        assertEquals(1, sent.size(), "含抽奖的动态仍应发给 NapCat 群");
+        assertEquals("qq-onebot", sent.get(0).getPlatform());
+        assertEquals(OTHER_GROUP, sent.get(0).getNum());
+        assertTrue(sent.get(0).getContent().contains(update.getUrl()));
+    }
+
+    @Test
+    @DisplayName("同一条动态被三个官方群挡下时只记一条时间线")
+    void recordsOneTimelineEntryForOfficialGroups() {
+        BilibiliDynamicPushHandler handler = handlerUsing(new NovaBilibiliProperties());
+        Dynamic dynamic = dynamicWithText("转发抽三位送周边");
+
+        handler.handle(event(dynamic), messageTo("qq-official", GROUP));
+        handler.handle(event(dynamic), messageTo("qq-official", OTHER_GROUP));
+        handler.handle(event(dynamic), messageTo("qq-official", OTHER_GROUP + 1));
+
+        assertEquals(1, timeline.size(), "同一条动态在日志页应只出现一条 QQ 官方群未推送的记录");
+        assertTrue(sentMessages().isEmpty(), "含抽奖的动态仍发到了官方群");
+        TimelineEvent recorded = timeline.get(0);
+        assertEquals("主播甲", recorded.streamer());
+        assertEquals("抽", recorded.detail().get("word"));
+        assertEquals(dynamic.getUrl(), recorded.detail().get("url"));
+        assertEquals("bilibili", recorded.detail().get("streamerPlatform"));
+        assertEquals(Long.toString(UID), recorded.detail().get("streamerUid"));
+        assertTrue(recorded.text().contains("主播甲的这条动态含「抽」"));
+        assertTrue(recorded.text().contains("没有推到 QQ 官方机器人的群（其余群照常）"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("officialBlockedDynamics")
+    @DisplayName("官方群规则检查全部动态文字并按单字挡下")
+    void officialRuleChecksAllDynamicTexts(Dynamic dynamic) {
+        BilibiliDynamicPushHandler handler = handlerUsing(new NovaBilibiliProperties());
+
+        handler.handle(event(dynamic), messageTo("qq-official", GROUP));
+
+        assertTrue(sentMessages().isEmpty(), "动态文字中含「抽」仍发到了官方群");
+    }
+
+    private static Stream<Dynamic> officialBlockedDynamics() {
+        return Stream.of(dynamicWithTitle("抽卡实况"), forwardOf(dynamicWithText("转发抽三位送周边")),
+                opusDynamic("今晚八点见", "关注抽周边", null), dynamicWithText("抽象画"));
+    }
+
+    @Test
+    void officialGroupReceivesDynamicWithoutBlockedCharacter() {
+        BilibiliDynamicPushHandler handler = handlerUsing(new NovaBilibiliProperties());
+
+        handler.handle(event(dynamicWithText("今晚八点开播")), messageTo("qq-official", GROUP));
+
+        assertEquals(1, sentMessages().size(), "没有「抽」字的动态应照常发到官方群");
+        assertTrue(timeline.isEmpty());
+    }
+
+    @Test
+    @DisplayName("主播屏蔽词优先，两个拦截原因各自去重")
+    void streamerBlockWordsTakePrecedenceAndDeduplicateSeparately() {
+        BilibiliDynamicPushHandler handler = handlerUsing(new NovaBilibiliProperties());
+        BilibiliDynamicUpdateEvent update = event(dynamicWithText(WORD + "，转发抽三位送周边"));
+        PushUser streamer = new PushUser();
+        streamer.setDynamicBlockWords(List.of(WORD));
+        PushMessage official = messageTo("qq-official", GROUP);
+        official.getTarget().setUser(streamer);
+        PushMessage napCat = messageTo(OTHER_GROUP);
+        napCat.getTarget().setUser(streamer);
+
+        handler.handle(update, official);
+        handler.handle(update, napCat);
+
+        assertTrue(sentMessages().isEmpty(), "主播自己的屏蔽词应对两个平台都生效");
+        assertEquals(1, timeline.size(), "命中主播屏蔽词时只应记录屏蔽词");
+        assertEquals("这位主播自己的", timeline.get(0).detail().get("scope"));
+        assertEquals(WORD, timeline.get(0).detail().get("word"));
+
+        handler.handle(update, messageTo("qq-official", OTHER_GROUP + 1));
+
+        assertTrue(sentMessages().isEmpty(), "仅命中「抽」的官方群也应挡下");
+        assertEquals(2, timeline.size(), "普通屏蔽词记录吞掉了官方群的拦截记录");
+        assertEquals("抽", timeline.get(1).detail().get("word"));
+        assertNotEquals(timeline.get(0).type(), timeline.get(1).type());
     }
 
     @Test
@@ -381,7 +478,7 @@ class DynamicBlockWordsTest {
     void emptyListChangesNothing() {
         NovaBilibiliProperties properties = new NovaBilibiliProperties();
         BilibiliDynamicPushHandler handler = handlerUsing(properties);
-        new RuntimeConfigurationApplier(new NovaCoreProperties(), null,
+        new RuntimeConfigurationApplier(new NovaCoreProperties(),
                 provider(applierContributors(properties)), timeline::add).applyAndTrack(Map.of(KEY, "\n  \n"));
 
         handler.handle(event(dynamicWithText("今晚八点开播")), messageTo(GROUP));
@@ -580,8 +677,12 @@ class DynamicBlockWordsTest {
     }
 
     private static PushMessage messageTo(long group) {
+        return messageTo("qq-onebot", group);
+    }
+
+    private static PushMessage messageTo(String platform, long group) {
         PushTarget target = new PushTarget();
-        target.setPlatform("qq-onebot");
+        target.setPlatform(platform);
         target.setType(PushTargetType.GROUP);
         target.setNum(group);
 

@@ -467,7 +467,7 @@ class TimelineHookTest {
         ObjectProvider<RuntimeConfigurationApplierContributor> contributors = mock(ObjectProvider.class);
         when(contributors.orderedStream())
                 .thenAnswer(invocation -> java.util.stream.Stream.<RuntimeConfigurationApplierContributor>of());
-        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors, timeline);
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), contributors, timeline);
     }
 
     /**

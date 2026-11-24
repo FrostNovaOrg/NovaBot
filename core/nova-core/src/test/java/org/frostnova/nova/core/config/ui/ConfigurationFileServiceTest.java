@@ -3,7 +3,6 @@ package org.frostnova.nova.core.config.ui;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import org.frostnova.nova.core.service.TotalDataStorage;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.junit.jupiter.api.BeforeEach;
@@ -1001,75 +1000,6 @@ class ConfigurationFileServiceTest {
         }
 
         assertTrue(bad.isEmpty(), () -> "带空白空表 " + bad.size() + " 问未销: " + String.join("; ", bad));
-    }
-
-    // ============ 清空即移除（否则程序起不来） ============
-
-    /**
-     * 从写回后的文件里读一个键，走框架自己那套 YAML 加载，不自己按行猜
-     * @param name 完整路径
-     * @return 值，键不在时为 null（与空串不是一回事）
-     */
-    private String property(String name) throws IOException {
-        List<PropertySource<?>> sources =
-                new YamlPropertySourceLoader().load("application", new FileSystemResource(config));
-        for (PropertySource<?> source : sources) {
-            Object value = source.getProperty(name);
-            if (value != null) {
-                return String.valueOf(value);
-            }
-        }
-        return null;
-    }
-
-    @Test
-    @DisplayName("清空 Redis 地址应删掉整行，而不是留下一个空值")
-    void clearingRedisHostRemovesTheLine() throws Exception {
-        // 旧码（把「空值即删行」那张表掏空后现跑）写出的实值是「      host: 」
-        // （冒号后一个空格、后面什么都没有），不是带引号的 host: ""。
-        // 两种都会让框架绑定到空串，下次启动抛 'host' must not be empty。
-        service.write(Map.of("spring.data.redis.host", "127.0.0.1"));
-        assertTrue(Files.readString(config).contains("host: 127.0.0.1"));
-        assertEquals("7827", service.read().get("server.port"), "阴性：别的键一个字不动");
-
-        service.write(Map.of("spring.data.redis.host", ""));
-
-        String content = Files.readString(config);
-        assertFalse(content.contains("spring.data.redis.host"), content);
-        assertFalse(content.contains("host: \"\""), content);
-        for (String line : content.lines().toList()) {
-            String stripped = line.strip();
-            if (stripped.startsWith("host:") && !line.contains("SMTP")) {
-                fail("不应残留空的 Redis host 行: " + line);
-            }
-        }
-        assertEquals("7827", service.read().get("server.port"));
-        assertEquals("127.0.0.1", service.read().get("server.address"));
-        assertNull(property("spring.data.redis.host"), "键删掉之后框架读出来必须是「没有」，不是空串");
-        assertFalse(new TotalDataStorage.Settings(property("spring.data.redis.host"), 6379, null, 0).configured(),
-                "删键后运行期判定应是未配置");
-    }
-
-    @Test
-    @DisplayName("全空白与空串一样，清空 Redis 地址也是删行")
-    void clearingHostWhitespaceRemovesTheLine() throws Exception {
-        service.write(Map.of("spring.data.redis.host", "127.0.0.1"));
-        service.write(Map.of("spring.data.redis.host", " \t "));
-
-        assertNull(property("spring.data.redis.host"));
-        assertFalse(new TotalDataStorage.Settings(property("spring.data.redis.host"), 6379, null, 0).configured());
-        assertEquals("7827", service.read().get("server.port"));
-    }
-
-    @Test
-    @DisplayName("本就没配过 Redis 时清空应什么都不做，不要凭空插入一个空值")
-    void clearingAbsentRedisHostInsertsNothing() throws Exception {
-        String before = Files.readString(config);
-
-        List<String> changed = service.write(Map.of("spring.data.redis.host", ""));
-
-        assertEquals(List.of(), changed);
-        assertEquals(before, Files.readString(config));
     }
 
     @Test

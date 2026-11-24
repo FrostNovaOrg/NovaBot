@@ -108,7 +108,7 @@
 			"method":"GET",
 			"path":"/config/api/schema",
 			"query":"",
-			"sha256":"791a07e1e058cbb2b096d3dfa113ab630709899913ff33c110b440dd7892494e",
+			"sha256":"c74392cc8885032e63ad7f5475832ee4176cb5bf6f5c1141f1d5baa2f3560194",
 			"status":200
 		},
 		{
@@ -117,7 +117,7 @@
 			"method":"GET",
 			"path":"/config/api/status",
 			"query":"",
-			"sha256":"e6b118caa49f74f9771e49e17501ccbfd74eea7d680b738eb0299e4943922b3c",
+			"sha256":"78c617909ac03779d6071790d2c24f0719e6669ba831196063dd964c2e0d2ab3",
 			"status":200
 		},
 		{
@@ -198,7 +198,7 @@
 			"method":"GET",
 			"path":"/config/api/state",
 			"query":"",
-			"sha256":"a82e9b618af8b6aa3007befb1ad15f0a63a59f985f77e5c1493f28db43ddcf03",
+			"sha256":"58356fa8d0880602f0a7e5a5fbd45f24a319fb2ed3676cdc50ba9e1ba06e63a7",
 			"status":200
 		},
 		{

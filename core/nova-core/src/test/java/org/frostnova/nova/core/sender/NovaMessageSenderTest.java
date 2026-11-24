@@ -20,6 +20,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,6 +37,32 @@ import static org.mockito.Mockito.*;
 @DisplayName("消息发送器")
 class NovaMessageSenderTest {
     private static final String PLATFORM = "qq-onebot";
+
+    @Test
+    @DisplayName("运行中的平台线程每条消息后使用当前间隔，负数按零处理")
+    void platformThreadUsesCurrentDelayAfterEachMessage() throws InterruptedException {
+        Sender target = new Sender(PLATFORM, "http://127.0.0.1:7827/onebot/send", 2000);
+        target.setLocalDelivery((headers, params) -> JSONObject.of("code", 0));
+        BlockingQueue<Long> delays = new LinkedBlockingQueue<>();
+        NovaMessageSender sender = spy(localSender(mock(HttpUtil.class), target));
+        doAnswer(invocation -> {
+            delays.add(invocation.getArgument(0));
+            return null;
+        }).when(sender).waitForNextMessage(anyLong());
+
+        try {
+            sender.send(message());
+            assertEquals(Long.valueOf(2000), delays.poll(10, TimeUnit.SECONDS));
+            target.setDelay(1000);
+            sender.send(message());
+            assertEquals(Long.valueOf(1000), delays.poll(10, TimeUnit.SECONDS));
+            target.setDelay(-1);
+            sender.send(message());
+            assertEquals(Long.valueOf(0), delays.poll(10, TimeUnit.SECONDS));
+        } finally {
+            sender.shutdown();
+        }
+    }
 
     @Test
     @DisplayName("请求失败应重试, 成功后不再继续")
@@ -536,7 +565,10 @@ class NovaMessageSenderTest {
         target.setUrl("http://127.0.0.1:7827/onebot/send");
         target.setDelay(0);
         target.setLocalDelivery(delivery);
+        return localSender(http, target);
+    }
 
+    private NovaMessageSender localSender(HttpUtil http, Sender target) {
         NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 

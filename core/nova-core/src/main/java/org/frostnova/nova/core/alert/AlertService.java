@@ -21,6 +21,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.concurrent.ConcurrentHashMap;
@@ -192,7 +193,11 @@ public class AlertService {
      * @param content 内容
      */
     public void alert(String key, String subject, String content) {
-        if (!properties.getAlert().isEnabled()) {
+        alert(key, subject, content, PendingAlert.ALWAYS_ACTIVE);
+    }
+
+    void alert(String key, String subject, String content, BooleanSupplier active) {
+        if (!properties.getAlert().isEnabled() || !active.getAsBoolean()) {
             return;
         }
 
@@ -201,13 +206,13 @@ public class AlertService {
             return;
         }
 
-        send(key, subject, content);
+        send(key, subject, content, active);
     }
 
     /** 同一条通知中的成员分别收敛，正文只列仍需提醒的成员。 */
     void alertMembers(Map<String, String> members, String subject,
-                      Function<Collection<String>, String> content) {
-        if (!properties.getAlert().isEnabled()) {
+                      Function<Collection<String>, String> content, BooleanSupplier active) {
+        if (!properties.getAlert().isEnabled() || !active.getAsBoolean()) {
             return;
         }
         Map<String, String> eligible = new LinkedHashMap<>();
@@ -217,7 +222,7 @@ public class AlertService {
             }
         });
         if (!eligible.isEmpty()) {
-            send(String.join(",", eligible.keySet()), subject, content.apply(eligible.values()));
+            send(String.join(",", eligible.keySet()), subject, content.apply(eligible.values()), active);
         }
     }
 
@@ -228,9 +233,9 @@ public class AlertService {
         }
     }
 
-    private void send(String key, String subject, String content) {
+    private void send(String key, String subject, String content, BooleanSupplier active) {
         Instant now = Instant.now();
-        Delivery delivery = deliver(new PendingAlert(key, subject, content, now, 0), content);
+        Delivery delivery = deliver(new PendingAlert(key, subject, content, now, 0, active), content);
 
         if (!delivery.attempted()) {
             log.warn("未配置任何可用的告警通道, 以下问题仅记录在日志中: {} - {}", subject, content);
@@ -394,6 +399,14 @@ public class AlertService {
         lastAlertAt.remove(key);
     }
 
+    /** 停用探针时作废待重投告警，清掉该探针的成员收敛记录。 */
+    void discardProbeAlerts(BooleanSupplier active, String memberKeyPrefix) {
+        lastAlertAt.keySet().removeIf(key -> key.startsWith(memberKeyPrefix));
+        synchronized (pending) {
+            pending.removeIf(alert -> alert.active() == active);
+        }
+    }
+
     /**
      * 待重投的告警条数，供健康探针与测试观察
      * @return 队列长度
@@ -433,7 +446,9 @@ public class AlertService {
 
         Instant now = Instant.now();
         for (PendingAlert alert : batch) {
-            deliver(alert, alert.contentForRedelivery(now));
+            if (alert.active().getAsBoolean()) {
+                deliver(alert, alert.contentForRedelivery(now));
+            }
         }
     }
 
@@ -649,6 +664,9 @@ public class AlertService {
         int size;
 
         synchronized (pending) {
+            if (!alert.active().getAsBoolean()) {
+                return;
+            }
             while (pending.size() >= Math.max(1, properties.getAlert().getRetryQueueSize())) {
                 dropped = pending.pollFirst();
             }

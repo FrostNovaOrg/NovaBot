@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
  * <b>根本起不来</b>，那张表原本管的是「界面上清空它＝删掉这一行」——
  * 这里管的是同一件事的另一头：「它本来就没值＝这一行别写成空的」。<b>两处共用一张表</b>，
  * 各写一份的下场是有人往表里加了一项，而生成出来的文件照旧写它一个空值。
- * 核心自有表见 {@link ConfigurationFileService#CORE_BLANK_MEANS_ABSENT}，平台键由插件申报。
+ * 留空即未配的键由插件申报。
  */
 final class ConfigurationTemplate {
     /**
@@ -81,7 +81,7 @@ final class ConfigurationTemplate {
      * @return 文件全文，以换行结尾
      */
     static String render(List<ConfigurationMetadataService.ConfigurationField> fields, Map<String, Object> values) {
-        return render(fields, values, ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
+        return render(fields, values, Set.of());
     }
 
     /**

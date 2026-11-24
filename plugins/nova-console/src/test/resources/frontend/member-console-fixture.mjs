@@ -129,7 +129,7 @@ const ownDetail = {success: true, ...own, configured: true, living: mode === 'si
   face: '/config/api/streamers/bilibili/71001/avatar', since: Date.now() - 60000, overview: {}};
 let liveRevenue = 12;
 const intervals = new Map();
-const memberStatus = {success: true, version: '1.2.3', users: [own], live: [{...own, roomId: 81001}], today: {sent: 2, failed: 1}, locked: false, pushEnabled: false, totalDataAvailable: false, quiet: {}};
+const memberStatus = {success: true, version: '1.2.3', users: [own], live: [{...own, roomId: 81001}], today: {sent: 2, failed: 1}, locked: false, pushEnabled: false, quiet: {}};
 const adminStatus = {...memberStatus, version: '1.2.3', runtime: {heapUsedMb: 12, heapMaxMb: 64, threads: 8}, health: [], senders: [], alerts: {}};
 const requests = [], errors = [];
 const auth = {authenticated: true, enabled: true, accountId: 'member-a', role, email: 'member@example.com'};
@@ -414,13 +414,11 @@ if (mode === 'identity') await check('设置页读取共享身份', () => {
   store.role = undefined; assert.ok(members.memberGroup());
   store.role = 'OTHER'; assert.ok(members.memberGroup());
 });
-// 主播详情不应向成员提示修改全实例的累计数据配置。
 if (mode === 'streamers' || mode === 'requests') {
   await go('#/home'); await overview.refreshHome();
   await go('#/streamers'); await go('#/streamers/bilibili/71001');
-  if (mode === 'streamers') await check('成员主播横幅无实例设置', () => {
+  if (mode === 'streamers') await check('成员主播详情正常载入', () => {
     assert.ok(requests.some(([,path]) => path.includes('/streamers/bilibili/71001')), '主播详情必须已请求');
-    assert.ok($('#sd-banner') === null, '成员不显示累计数据的实例横幅');
     assert.doesNotMatch($('#sd-body').textContent, /undefined/);
     assert.doesNotMatch($('#status-text').textContent, /页面发生错误|页面加载失败/);
   });

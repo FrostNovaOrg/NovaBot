@@ -68,7 +68,7 @@ const live = users.map((user, i) => ({
 }));
 let current = {
   success: true, users, live, health: [], locked: true, pushEnabled: true,
-  senders: [{id: 'qq'}], totalDataAvailable: true, alerts: {webhook: true, mail: true},
+  senders: [{id: 'qq'}], alerts: {webhook: true, mail: true},
 };
 globalThis.fetch = async url => {
   const path = String(url);

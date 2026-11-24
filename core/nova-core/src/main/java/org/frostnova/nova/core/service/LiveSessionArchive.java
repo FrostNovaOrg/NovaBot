@@ -40,13 +40,9 @@ import java.util.stream.Stream;
 /**
  * 直播场次归档
  * <p>
- * 每场直播结束时追加一条记录。<b>这是运营分析唯一的数据来源</b>——
- * 本场数据在下次开播时会被清空，而累计数据没有时间维度，两者都答不出
- * 「上周播了几场」「这个月比上个月如何」。
- * <p>
- * 存成**每行一条 JSON**的追加式文件而不是放进 Redis，理由有三：
+ * 每场直播结束时追加一条 JSON 记录，供运营分析查询各时段的场次与数据。
  * <ul>
- *     <li>不依赖外部服务，没配 Redis 的部署一样有历史数据</li>
+ *     <li>归档文件保存在本地</li>
  *     <li>追加写没有读改写周期，不会因为程序崩在中途而毁掉既有记录</li>
  *     <li>体量很小——每条约 500 字节，5 个主播每天 3 场跑一年也不过几 MB，
  *         而且人能直接看、直接导出</li>
@@ -343,11 +339,17 @@ public class LiveSessionArchive {
      * @return 最近一场的昵称；没有归档场次，或那一场没记下昵称时为空
      */
     public Optional<String> latestUname(String platform, Long uid) {
-        String uname = latestNames().get(nameKey(platform, uid));
+        String uname = latestNames().get(new StreamerId(platform, uid));
         return uname == null || uname.isBlank() ? Optional.empty() : Optional.of(uname);
     }
 
-    private Map<String, String> latestNames() {
+    /** 有场次归档的主播，包含最近一场没有记下昵称的主播。 */
+    public List<Long> streamerUids(String platform) {
+        return latestNames().keySet().stream().filter(id -> platform.equals(id.platform()))
+                .map(StreamerId::uid).toList();
+    }
+
+    private Map<StreamerId, String> latestNames() {
         Path path = path();
         BasicFileAttributes attributes;
         try {
@@ -376,16 +378,12 @@ public class LiveSessionArchive {
             return Map.of();
         }
 
-        Map<String, String> names = new HashMap<>();
+        Map<StreamerId, String> names = new HashMap<>();
         for (LiveSession session : sessions) {
-            names.put(nameKey(session.platform(), session.uid()), session.uname());
+            names.put(new StreamerId(session.platform(), session.uid()), session.uname());
         }
         latestNames = new LatestNames(path, attributes.lastModifiedTime(), attributes.size(), names);
         return names;
-    }
-
-    private static String nameKey(String platform, Long uid) {
-        return platform + ":" + uid;
     }
 
     /**
@@ -572,7 +570,9 @@ public class LiveSessionArchive {
     public record Summary(long count, long earliestStart, long latestStart) {
     }
 
-    private record LatestNames(Path path, FileTime modified, long size, Map<String, String> names) {
+    private record StreamerId(String platform, Long uid) { }
+
+    private record LatestNames(Path path, FileTime modified, long size, Map<StreamerId, String> names) {
         boolean matches(Path current, BasicFileAttributes attributes) {
             return path.equals(current)
                     && modified.equals(attributes.lastModifiedTime())

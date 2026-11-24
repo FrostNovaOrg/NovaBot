@@ -44,6 +44,11 @@ import java.util.Optional;
 @Slf4j
 @NovaComponent
 public class BilibiliDynamicPushHandler implements NovaEventHandler {
+    private static final String QQ_OFFICIAL_PLATFORM = "qq-official";
+
+    // QQ 官方机器人禁发抽奖信息，违规封号后暂不支持解封，因此按「抽」单字拦截。
+    private static final String QQ_OFFICIAL_BLOCKED_WORD = "抽";
+
     private final BilibiliApiUtil api;
 
     private final BilibiliDynamicPainter painter;
@@ -59,7 +64,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     private final TimelineWriter timeline;
 
     /**
-     * 已经为它们记过「屏蔽词挡下」的动态
+     * 已经记过的动态拦截原因
      * <p>
      * 一条动态会展开成每个推送会话一次的调用，而时间线记的是「那条动态没推」——
      * 按动态说的事，不该按会话刷几行。窗口记最近若干条动态，装不下就把最老的忘掉：
@@ -112,7 +117,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         JSONObject params = pushMessage.getParamsJsonObject();
         PushTarget target = pushMessage.getTarget();
 
-        if (!shouldPush(event, params, target.getUser())) {
+        if (!shouldPush(event, params, target)) {
             return;
         }
 
@@ -152,17 +157,14 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     }
 
     /**
-     * 依据黑白名单、转发过滤与屏蔽词判断是否需要推送
-     * <p>
-     * 屏蔽词放在最后。类型名单或「只推转发自己动态的转发」已经跳过的动态，
-     * 本来就不会推，不再记成屏蔽词挡下。挡下时在这里顺手记一行日志与一条时间线：
-     * 判定与记录同处，「为什么没推」的答案才不会散到别处去。
-     * 只有屏蔽词真把一条本来要推的动态挡住，才记这一行。
+     * 依次按类型名单、转发条件、屏蔽词和目标平台的规则判断是否需要推送。
+     * 时间线记录实际挡下推送的原因。
      * @param event 动态更新事件
      * @param params 推送参数
+     * @param target 推送目标
      * @return 是否需要推送
      */
-    private boolean shouldPush(BilibiliDynamicUpdateEvent event, JSONObject params, PushUser user) {
+    private boolean shouldPush(BilibiliDynamicUpdateEvent event, JSONObject params, PushTarget target) {
         String type = event.getDynamic().getType();
 
         JSONArray whiteList = params.getJSONArray("white_list");
@@ -195,6 +197,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         // 前面几道已经跳过的动态，各会话名单不同，记不记这一行也就不同——
         // 要的就是这样：只有这个词真把推送挡住了，才记「屏蔽词挡下」。
         String blocked = hitBlockedWord(event.getDynamic(), properties.getDynamic().getBlockWords());
+        PushUser user = target.getUser();
         String scope = "全实例";
         if (blocked == null && user != null) {
             blocked = hitBlockedWord(event.getDynamic(), user.getDynamicBlockWords());
@@ -202,7 +205,13 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         }
         if (blocked != null) {
             log.info("{} 的动态命中屏蔽词 {}（{}）, 跳过推送", event.getSource().getUname(), blocked, scope);
-            recordBlockedWord(event, blocked, scope);
+            recordBlockedPush(event, TimelineEventType.PUSH_BLOCKED_WORD, blocked, scope);
+            return false;
+        }
+
+        if (QQ_OFFICIAL_PLATFORM.equals(target.getPlatform())
+                && hitBlockedWord(event.getDynamic(), List.of(QQ_OFFICIAL_BLOCKED_WORD)) != null) {
+            recordBlockedPush(event, TimelineEventType.PUSH_QQ_OFFICIAL_BLOCKED, QQ_OFFICIAL_BLOCKED_WORD, null);
             return false;
         }
 
@@ -246,19 +255,20 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     }
 
     /**
-     * 时间线上记一条「屏蔽词挡下」：主播、命中的词、动态链接
+     * 按动态和拦截原因在时间线上记一条，附上主播、命中的词和动态链接。
      * <p>
-     * 同一条动态推给几个会话也只记一条——有没有推出去是按动态说的，
-     * 按会话记的话一次没推能在时间线上刷出十几行。
+     * 同一条动态在多个会话因同一个规则被挡下时，只记录一次。
      * @param event 动态更新事件
+     * @param type 拦截原因
      * @param word 命中的词
+     * @param scope 屏蔽词配置范围，平台规则留空
      */
-    private void recordBlockedWord(BilibiliDynamicUpdateEvent event, String word, String scope) {
+    private void recordBlockedPush(BilibiliDynamicUpdateEvent event, TimelineEventType type, String word, String scope) {
         Dynamic dynamic = event.getDynamic();
         String id = dynamic.getId();
         synchronized (blockedRecorded) {
             if (id != null) {
-                String key = event.getPlatform() + ":" + event.getSource().getUid() + ":" + id;
+                String key = type.name() + ":" + event.getPlatform() + ":" + event.getSource().getUid() + ":" + id;
                 if (blockedRecorded.contains(key)) {
                     return;
                 }
@@ -269,12 +279,15 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         String uname = names.uname(event.getPlatform(), event.getSource().getUid(), event.getSource().getUname());
         String streamer = uname == null || uname.isBlank() ? String.valueOf(event.getSource().getUid()) : uname;
         String url = event.getUrl() == null || event.getUrl().isBlank() ? dynamic.getUrl() : event.getUrl();
+        String text = type == TimelineEventType.PUSH_QQ_OFFICIAL_BLOCKED
+                ? streamer + "的这条动态含「" + word + "」，没有推到 QQ 官方机器人的群（其余群照常）"
+                : "命中" + scope + "屏蔽词「" + word + "」，没有推送" + streamer + "的这条动态";
 
-        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_BLOCKED_WORD, TimelineEvent.Level.WARN)
+        timeline.record(TimelineEvent.of(type, TimelineEvent.Level.WARN)
                 .streamer(streamer)
                 .detail("streamerPlatform", event.getPlatform())
                 .detail("streamerUid", String.valueOf(event.getSource().getUid()))
-                .text("命中" + scope + "屏蔽词「" + word + "」，没有推送" + streamer + "的这条动态")
+                .text(text)
                 .detail("word", word)
                 .detail("scope", scope)
                 .detail("url", url)

@@ -48,7 +48,6 @@ class SensitiveFieldsTest {
         assertTrue(SensitiveFields.isSensitive("novabot.core.config-ui.auth.password", STRING));
         assertTrue(SensitiveFields.isSensitive("novabot.core.config-ui.auth.totp-secret", STRING));
         assertTrue(SensitiveFields.isSensitive("spring.mail.password", STRING));
-        assertTrue(SensitiveFields.isSensitive("spring.data.redis.password", STRING));
         assertTrue(SensitiveFields.isSensitive("novabot.adapter.onebot.senders.one-bot-http-token", STRING));
         assertTrue(SensitiveFields.isSensitive("novabot.adapter.onebot.senders.one-bot-websocket-token", STRING));
         assertTrue(SensitiveFields.isSensitive("novabot.adapter.onebot.security.api-token", STRING));

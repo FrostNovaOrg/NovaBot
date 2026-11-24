@@ -250,7 +250,6 @@ const mock = {
       users: [1001, 1002],
     }],
     incomplete: [],
-    totalDataAvailable: true,
   },
 };
 

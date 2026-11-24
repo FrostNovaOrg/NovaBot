@@ -10,7 +10,6 @@
  * 拿到手的数字在屏幕上摆成什么样、以及取不到的东西该说哪一句。
  */
 
-import {totalDataOff} from './home-model.js';
 
 /**
  * 这一页的三块子视图，闭集
@@ -332,18 +331,6 @@ export function gapCells(item) {
     maintenance, outage, any: maintenance > 0 || outage > 0,
     title: parts.length ? parts.join('；') + '。本行各项计数仅为下界' : '',
   };
-}
-
-/**
- * 概况顶上那条小横条
- *
- * 判定与首页那条软待办<b>同一份</b>（见 home-model 的 totalDataOff）：两处各写一遍的话，
- * 同一台机器上首页说没开、这一页说开着，而两边的代码看起来都对。
- * @param status /api/status 回包
- * @return {string} 要说的那句话，没话说时为空串
- */
-export function totalDataBanner(status) {
-  return totalDataOff(status) ? '本机未启用累计数据：群内只能查询本场数据。' : '';
 }
 
 /**

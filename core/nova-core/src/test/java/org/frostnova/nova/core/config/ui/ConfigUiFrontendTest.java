@@ -2121,14 +2121,14 @@ class ConfigUiFrontendTest {
      * 少接一条，那一块就变成一片说不出为什么空着的地方。这些端点别处也在用，
      * 因此只在 {@code streamers.js} 里找：拿全部脚本找的话，这一页把某条丢了也照样绿。
      */
-    private static final List<String> STREAMERS_ENDPOINTS = List.of("/streamers", "/status");
+    private static final List<String> STREAMERS_ENDPOINTS = List.of("/streamers");
 
     /**
      * 渲染那一层必须问过判法的那几件事，闭集
      */
     private static final List<String> STREAMERS_MODEL_CALLS = List.of(
             "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(",
-            "gapCells(", "totalDataBanner(", "snapshotRows(", "detailHash(", "sessionHash(",
+            "gapCells(", "snapshotRows(", "detailHash(", "sessionHash(",
             "reportPath(", "reportView(", "pageBar(");
 
     /**
@@ -2136,7 +2136,7 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> STREAMERS_MODEL_FUNCTIONS = List.of(
             "function parseStreamersHash", "function statusChip", "function sparkline",
-            "function gapCells", "function totalDataBanner",
+            "function gapCells",
             "function snapshotRows");
 
     /**
@@ -2145,16 +2145,7 @@ class ConfigUiFrontendTest {
      * 与设置页、连接页、日志页、推送页那几条同理：元素与接线缺哪一半都不会报错——元素没了，
      * 脚本按 id 取到 null；脚本没接上，那一块就静静地空着。
      * <p>
-     * 🔴 后半截奔着两类具体的退步去：
-     * <ul>
-     *   <li><b>把地址解析、状态标、折线那几条判法抄一份到渲染代码里。</b>它们由
-     *   {@code streamers-model.js} 现算，那一份有 node 夹具逐格在量；抄进渲染代码之后，
-     *   夹具照样全绿——它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。</li>
-     *   <li><b>自己判「这台机器开没开累计数据」。</b>那一条与首页那条软待办问的是同一件事，
-     *   判定只许有 {@code home-model.js} 的 {@code totalDataOff} 一份：各判各的那天，
-     *   首页说没开而这一页说开着，两边的代码看起来都对。</li>
-     * </ul>
-     * 两种改动<b>都不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     * 地址解析、状态标与折线规则由 streamers-model.js 提供，主播页调用这些规则。
      */
     @Test
     @DisplayName("主播页列表、详情、场次三块各有落点，状态标与折线的判法只有 streamers-model 一份")
@@ -2199,15 +2190,6 @@ class ConfigUiFrontendTest {
                 bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 " + STREAMERS_MODEL
                         + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
             }
-        }
-
-        // 「这台机器开没开累计数据」的判定只许有一份，且必须是首页那一份
-        if (view.contains("totalDataAvailable")) {
-            bad.add(STREAMERS_VIEW + " 自己读了 totalDataAvailable。这一条与首页那条软待办"
-                    + "问的是同一件事，判定经 home-model.js 的 totalDataOff 一处消费");
-        }
-        if (!model.contains("totalDataOff")) {
-            bad.add(STREAMERS_MODEL + " 没有用 totalDataOff，上面那条「渲染代码里没有」因此不作数");
         }
 
         if (!view.contains("detailHash(where.platform, where.uid, 'sessions')")) {

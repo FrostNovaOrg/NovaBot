@@ -441,7 +441,6 @@ public class NovaMessageSender {
         platformTasks.computeIfAbsent(sender.getName(), p -> executor.submit(() -> {
             Thread.currentThread().setName("sender-" + sender.getName());
             log.info("{} 平台消息发送线程已启动", sender.getName());
-            long delay = sender.getDelay();
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     Message message = queue.take();
@@ -457,7 +456,7 @@ public class NovaMessageSender {
                         message.setFailureReason("发送异常: " + e.getMessage());
                         runEach(message.markFailed(), message, "发送失败");
                     }
-                    Thread.sleep(delay);
+                    waitForNextMessage(Math.max(0, sender.getDelay()));
                 } catch (InterruptedException e) {
                     // 中断即视为停机：恢复标志后由循环条件退出，此处不必记为错误
                     Thread.currentThread().interrupt();
@@ -468,6 +467,10 @@ public class NovaMessageSender {
             }
             return null;
         }));
+    }
+
+    void waitForNextMessage(long delay) throws InterruptedException {
+        Thread.sleep(delay);
     }
 
     private void discardQueuedMessage(Message message) {
@@ -585,6 +588,10 @@ public class NovaMessageSender {
         params.put("content", message.getContent());
         params.put("sequence", message.getSequence());
         params.put("create_time", message.getCreateTime().toEpochMilli());
+        String replyTo = message.getReplyTo();
+        if (replyTo != null && !replyTo.isBlank()) {
+            params.put("reply_to", replyTo);
+        }
 
         for (Predicate<Message> interceptor : message.getOnBeforeSendInterceptors()) {
             if (!interceptor.test(message)) {

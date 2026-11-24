@@ -282,7 +282,6 @@ globalThis.fetch = (path, opt) => {
     }])));
     if (url.endsWith('/state')) return ok({
       commands: [], sessions: [SESSION], subscriptions: [], incomplete: [],
-      totalDataAvailable: false,
     });
     if (url.includes('/push-history')) return ok({records: RECORDS});
     if (url.includes('/at-all/quota')) return ok({bots: [], sessions: []});

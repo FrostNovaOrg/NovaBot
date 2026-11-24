@@ -65,21 +65,6 @@ class LiveOffDispatchTest {
     }
 
     @Test
-    void totalFailureMustStillPushAndRecordOff() throws Exception {
-        var timeline = mock(TimelineWriter.class);
-        var notification = mock(NovaEventHandler.class);
-        var report = mock(NovaEventHandler.class);
-        try (var context = open(timeline, notification, report, "totals")) {
-            assertDoesNotThrow(() -> context.publishEvent(off()), "total failure must allow live-off dispatch");
-            verify(notification, times(1)).handle(any(BilibiliLiveOffEvent.class), any());
-            verify(report, times(1)).handle(any(BilibiliLiveOffEvent.class), any());
-            var events = org.mockito.ArgumentCaptor.forClass(org.frostnova.nova.core.timeline.TimelineEvent.class);
-            verify(timeline, atLeastOnce()).record(events.capture());
-            assertEquals(1, events.getAllValues().stream().filter(e -> e.type() == TimelineEventType.LIVE_OFF).count());
-        }
-    }
-
-    @Test
     void archiveWriteFailureMustStillPushAndRecordOff() throws Exception {
         var timeline = mock(TimelineWriter.class);
         var notification = mock(NovaEventHandler.class);
@@ -120,8 +105,6 @@ class LiveOffDispatchTest {
             doThrow(new IllegalStateException("state unavailable"))
                     .doThrow(new IllegalStateException("state unavailable")).doCallRealMethod()
                     .when(data).setLiveStatus(PLATFORM, UID, false);
-        } else if (failure.equals("totals")) {
-            doThrow(new IllegalStateException("totals unavailable")).when(data).mergeLiveDataIntoTotal(PLATFORM, UID);
         } else if (failure.equals("disk")) {
             Files.createDirectory(dir.resolve("sessions.jsonl"));
         }

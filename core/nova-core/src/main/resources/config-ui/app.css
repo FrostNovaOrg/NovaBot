@@ -745,7 +745,7 @@ details.adv .inner{padding:0 16px 16px}
 .todo:last-child{border-bottom:none}
 .todo .tb{width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);
   display:inline-flex;align-items:center;justify-content:center;font-size:var(--fs-sm);flex:none;margin-top:1px}
-/* 软待办（例如「累计数据没开」）不是故障，用暗色而不是强调色：
+/* 软待办（例如「发现新版本」）不是故障，用暗色而不是强调色：
    把「可以这样也可以不这样」标成和「不修就一直坏着」一个颜色，两种都会被一起忽略 */
 .todo .tb.soft{background:var(--dim)}
 .todo .tt{flex:1 1 auto;min-width:0}

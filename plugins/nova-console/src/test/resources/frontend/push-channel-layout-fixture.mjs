@@ -345,7 +345,7 @@ globalThis.fetch = async (path, opt = {}) => {
   }
   if (url.endsWith('/state')) {
     return {status: 200, json: async () => ({commands: COMMANDS, sessions: SESSIONS, subscriptions: [],
-      incomplete: [], totalDataAvailable: true, quietGlobal: {start: '23:00', end: '08:00'}})};
+      incomplete: [], quietGlobal: {start: '23:00', end: '08:00'}})};
   }
   return {status: 200, json: async () => ({success: true, records: [], handlers: HANDLERS})};
 };

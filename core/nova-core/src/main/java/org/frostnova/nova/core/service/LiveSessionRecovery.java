@@ -191,16 +191,13 @@ public class LiveSessionRecovery {
         log.warn("{} 上一场直播未闭合（程序在直播中途停过），已按未闭合归档: 时长下界 {} 秒, 其中 {} 秒未采集",
                 source.getUname(), duration, gap);
 
-        // 累计数据同样只在下播时并入，这一场也得补上，否则它在累计里也不存在
-        liveDataService.mergeLiveDataIntoTotal(platform, source.getUid());
         return true;
     }
 
     /**
      * 断线重连续上了上一场：下播那一刻落下的明细不算封存，后半场接着收进同一场
      * <p>
-     * 场次归档与累计不在这里处理：真下播时场次那条取代中途那条，
-     * 累计只并中途下播以来新增的那一份，两件都在下播与补档的路上做。
+     * 真下播时，整场的归档会取代中途下播时的归档。
      * @param platform 直播平台
      * @param source 主播信息
      */

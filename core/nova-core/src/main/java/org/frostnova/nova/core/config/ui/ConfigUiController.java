@@ -262,7 +262,7 @@ public class ConfigUiController {
     private final PushGate pushGate;
 
     /**
-     * 直播数据。首页「现在」那一栏要问「谁在播」，累计存储开没开也在它身上
+     * 首页读取正在直播的主播及开播时间。
      */
     private final LiveDataService liveDataService;
 
@@ -1020,7 +1020,7 @@ public class ConfigUiController {
         }
 
         // 组内按「哪一段的 → 代码里怎么写的」排，不按配置键的字母序：
-        // 字母序会把「静音时段 · 结束」排到「开始」前面、把 Redis 的「数据库」排到「地址」前面，
+        // 字母序会把「静音时段 · 结束」排到「开始」前面，
         // 也会把推送组的开关挤到第四——人找一项看的是它管什么，不是键名怎么拼
         Map<String, Integer> orders = labelResolver.getOrders();
         Map<ConfigurationGroups.Group, JSONArray> ordered = new LinkedHashMap<>();
@@ -2360,8 +2360,6 @@ public class ConfigUiController {
         // 这台控制台上没上锁。取自签发会话的那一处，界面不另按配置项自己判一遍——
         // 「有没有口令」与「口令登录启不启用」在配置面上不是同一件事，各判各的迟早会说两种话
         result.put("locked", authService.isEnabled());
-        // 累计存储开没开。首页待办与主播页那条小横条都要问，判据只有 LiveDataService 那一份
-        result.put("totalDataAvailable", liveDataService.supportsTotalData());
         result.put("quiet", quiet());
         result.put("live", liveNow());
         result.put("today", todayPushCounts());
@@ -2384,7 +2382,7 @@ public class ConfigUiController {
                             .filter(target -> !Boolean.FALSE.equals(target.getEnabled())).count()));
         }
         return JSONObject.of("success", true, "version", buildVersion(), "users", users, "locked", authService.isEnabled(),
-                "pushEnabled", properties.getPush().isEnabled(), "totalDataAvailable", liveDataService.supportsTotalData(),
+                "pushEnabled", properties.getPush().isEnabled(),
                 "senders", senderService.getSenderNames().stream().sorted().toList(),
                 "quiet", quiet(), "live", liveNow(), "today", todayPushCounts());
     }
@@ -2574,10 +2572,21 @@ public class ConfigUiController {
      */
     private JSONArray health() {
         JSONArray items = new JSONArray();
+        record ProbeActivation(HealthProbe probe, Exception failure) {}
 
         healthProbes.orderedStream()
-                .sorted(Comparator.comparingInt(HealthProbe::order))
-                .forEach(probe -> {
+                .<ProbeActivation>mapMulti((probe, remaining) -> {
+                    Exception failure = null;
+                    try {
+                        if (!probe.active()) return;
+                    } catch (Exception e) {
+                        failure = e;
+                    }
+                    remaining.accept(new ProbeActivation(probe, failure));
+                })
+                .sorted(Comparator.comparingInt(activation -> activation.probe().order()))
+                .forEach(activation -> {
+                    HealthProbe probe = activation.probe();
                     JSONObject item = new JSONObject();
                     item.put("name", probe.name());
                     // 界面据此把探针分派到「机器人」「哔哩哔哩」页签，由探针自己声明，界面不做名称匹配
@@ -2588,6 +2597,7 @@ public class ConfigUiController {
                     item.put("loginState", probe.loginState());
 
                     try {
+                        if (activation.failure() != null) throw activation.failure();
                         HealthStatus status = probe.check();
                         item.put("level", status.level().name());
                         item.put("summary", status.summary());

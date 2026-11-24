@@ -104,6 +104,9 @@ public class Message {
      */
     private boolean reply;
 
+    /** 这条回复所对应的原消息编号，可空。 */
+    private String replyTo;
+
     /**
      * 这一条是否为告警
      * <p>

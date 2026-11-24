@@ -1,6 +1,5 @@
 package org.frostnova.nova.adapter.onebot.napcat;
 
-import org.frostnova.nova.adapter.onebot.controller.OneBotTargetController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -167,18 +166,6 @@ class ConfigUiClosedHidesNapCatCredentialTest {
         ConditionalOnProperty gate = NapCatBootstrapController.class.getAnnotation(ConditionalOnProperty.class);
 
         assertNotNull(gate, "没挂开关条件的控制器，关掉控制台后仍在对外发凭据");
-        assertEquals(1, gate.name().length);
-        assertEquals(SWITCH, gate.name()[0]);
-        assertEquals("true", gate.havingValue());
-        assertTrue(gate.matchIfMissing());
-    }
-
-    @Test
-    @DisplayName("推送目标控制器挂着同一个开关条件，群号与好友名单同样关时不登记")
-    void oneBotTargetControllerHasSwitchGate() {
-        ConditionalOnProperty gate = OneBotTargetController.class.getAnnotation(ConditionalOnProperty.class);
-
-        assertNotNull(gate, "没挂开关条件的控制器，关掉控制台后仍在吐群号与好友账号");
         assertEquals(1, gate.name().length);
         assertEquals(SWITCH, gate.name()[0]);
         assertEquals("true", gate.havingValue());

@@ -199,7 +199,7 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 |---|---|---|---|
 | `state.json` | `NovaStateStore` | 控制台的账号（含统一登录身份与成员的指定主播）、通行密钥、`@我` 订阅名单、第三方插件命令的按群开关等；旧版本留下的账号绑定记录还在文件里，但已不再写入、也没人读 | 成员账号与通行密钥丢失，只剩本地管理员；群里的订阅与插件命令开关回到默认 |
 | `sessions.jsonl` | `LiveSessionArchive` | 每场直播的时长与全部指标 | **运营分析的历史永久消失，补不回来** |
-| `data.json` | `DefaultLiveDataService` | 本场与累计的直播数据 | 累计数据归零 |
+| `data.json` | `DefaultLiveDataService` | 本场直播数据与采集状态 | 重启后无法接续这一场的采集数据 |
 
 三者的写入时机与取舍：
 
@@ -208,11 +208,9 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
   退出前再写一次。控制台上的开关改动会当场 `save()` 落盘；
   聊天里开关主播命令时，开关记在这位主播的推送通道上，由 `DatasourceChannelStore` 当场写进推送配置文件；
   第三方插件命令的按群开关与 `@我` 订阅只进内存，最多晚一个保存周期才落盘
-- **`sessions.jsonl` 只追加，不改写**。选每行一条 JSON 而非放进 Redis，是因为
-  追加写没有读改写周期，程序崩在中途也毁不掉既有记录；而且体量很小、人能直接看
+- **`sessions.jsonl` 只追加，不改写**。每行一条 JSON，文件可直接查看和导出。追加写能在写入中断时保留已有记录。
 - **归档必须发生在下播那一刻**。本场数据会在**下次开播时清零**，
-  拖到别处做就晚了。同一个原因，累计合并也放在下播而不是开播前——
-  程序可能在两场之间重启
+  因此每场结束时就保存归档。
 - **还有第二个归档时机：开播。** 程序在一场直播进行中崩溃时那一场没有下播事件，
   于是从未被归档，而下一次开播的清零会把它连同全部统计一起抹掉。
   所以 `LiveSessionRecovery` 在**清零之前**先检查「状态还挂在在播、开播时间不是这一次的」，
@@ -236,15 +234,8 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 这是跳过计分的次数，不是人数；匿名事件仍不进名单。
 旧归档缺少这一项时读为 `null`，表示当时未记录、无法得知，不能解释成 0，也不能与新记录的空表混同。
 
-`LiveDataService` 只注册一个实现 `CompositeLiveDataService`：本场数据委托
-`DefaultLiveDataService` 写 `data.json`，累计数据交给 `TotalDataStorage`。
-**累计数据要外部存储才有**——那类数据随时间无限增长，放在单个 JSON 文件里迟早撑不住。
-
-累计能力的判定是**运行期**的，不在启动那一刻定死：`TotalDataStorage` 分两问回答
-「此刻有没有累计数据」——配没配（`spring.data.redis.host` 有没有值）与连不连得上（探活，
-结果缓存数秒）。因此地址填好即可用、Redis 挂了自动降级成只有本场数据、连回来自己恢复，
-全程不必重启。菜单、`/api/status` 的 `totalDataAvailable`、健康自检读的都是这同一个判定。
-没配或连不上时「总数据」类查询会明说不可用，而不是回一堆 0 让人误以为数据丢了。
+`LiveDataService` 由 `DefaultLiveDataService` 实现。本场数据写入 `data.json`，
+主播页的场次、时长等历史统计从 `sessions.jsonl` 读取。
 
 ## 5. 群内命令
 

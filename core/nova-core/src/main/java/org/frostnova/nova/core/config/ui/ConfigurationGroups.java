@@ -151,8 +151,6 @@ public final class ConfigurationGroups {
 
         // ---- 采集 ----
         map(map, NovaBotPrefixes.CORE + ".live", COLLECT);
-        // 累计存储答的是「跨场次的数据存到哪」，与「本场数据怎么采」是同一件事的两头
-        map(map, "spring.data.redis", COLLECT);
 
         // ---- 报告外观 ----
         map(map, NovaBotPrefixes.CORE + ".paint", REPORT);

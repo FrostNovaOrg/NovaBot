@@ -3,7 +3,6 @@ package org.frostnova.nova.core.config.ui;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.StandbyBoundConfig;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
-import org.frostnova.nova.core.service.TotalDataStorage;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -85,22 +84,6 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
-     * 得经累计数据存储那一侧才落得下的配置项
-     * <p>
-     * 这几项同样不在配置对象上：{@code spring.data.redis.*} 是框架的键，
-     * 写回 {@link NovaCoreProperties} 无处可写。真正认这几个值的是
-     * {@link TotalDataStorage}——它按新参数就地换一个后端，因此地址填好即可用，
-     * 不必为此重启一次（重启会把正在采集的场次打断）。
-     * <p>
-     * 单列一张表，理由同下面那张：上面那张的签名只拿得到配置对象。
-     */
-    private static final Map<String, BiConsumer<TotalDataStorage, String>> REDIS_APPLIERS = Map.of(
-            "spring.data.redis.host", TotalDataStorage::applyHost,
-            "spring.data.redis.port", (storage, value) -> storage.applyPort(Integer.parseInt(value.trim())),
-            "spring.data.redis.password", TotalDataStorage::applyPassword,
-            "spring.data.redis.database", (storage, value) -> storage.applyDatabase(Integer.parseInt(value.trim())));
-
-    /**
      * 即时生效、但落地动作不在本类的配置项
      * <p>
      * 有几项<b>根本不经过设置页那条保存通道</b>：它们是列表，而设置页按设计不展示列表元素，
@@ -150,11 +133,6 @@ public class RuntimeConfigurationApplier {
     private final NovaCoreProperties properties;
 
     /**
-     * 累计数据存储，判据台架里可能没有
-     */
-    private final TotalDataStorage totalDataStorage;
-
-    /**
      * 插件申报的即时生效项。核心自有表不在这里。
      */
     private final Map<String, Consumer<String>> contributedAppliers;
@@ -173,38 +151,37 @@ public class RuntimeConfigurationApplier {
      * 事件时间线
      * <p>
      * 🔴 <b>只记改了哪一组，不记改成了什么。</b>时间线是逐行落在磁盘上的
-     * {@code timeline/*.jsonl}，而经这里过的键里就有 Redis 口令与告警接收人；
+     * {@code timeline/*.jsonl}，这里处理的值可能包含告警收件地址。
      * 把取值抄进去，等于给配置文件里那几项做了一份不设防的副本。
      * 「昨天谁动了推送那一组」这个问题，光靠组名就答得了。
      */
     private final TimelineWriter timeline;
 
     @Autowired
-    public RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
+    public RuntimeConfigurationApplier(NovaCoreProperties properties,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
                                        ConfigurationFileService fileService, TimelineWriter timeline,
                                        ObjectProvider<StandbyBoundConfig> bound) {
-        this(properties, totalDataStorage, contributors.orderedStream().toList(), fileService, timeline,
+        this(properties, contributors.orderedStream().toList(), fileService, timeline,
                 bound.getIfAvailable());
     }
 
     /**
      * 没拍启动快照的构造口：待重启的账只有键名可比，改回原样销不了账
      */
-    public RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
+    public RuntimeConfigurationApplier(NovaCoreProperties properties,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
                                        TimelineWriter timeline) {
-        this(properties, totalDataStorage, contributors.orderedStream().toList(),
-                (ConfigurationFileService) null, timeline, null);
+        this(properties, contributors.orderedStream().toList(), null, timeline, null);
     }
 
-    RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
+    RuntimeConfigurationApplier(NovaCoreProperties properties,
                                 Collection<RuntimeConfigurationApplierContributor> contributors,
                                 ConfigurationFileService fileService, TimelineWriter timeline) {
-        this(properties, totalDataStorage, contributors, fileService, timeline, null);
+        this(properties, contributors, fileService, timeline, null);
     }
 
-    RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
+    RuntimeConfigurationApplier(NovaCoreProperties properties,
                                 Collection<RuntimeConfigurationApplierContributor> contributors,
                                 ConfigurationFileService fileService, TimelineWriter timeline,
                                 StandbyBoundConfig bound) {
@@ -214,7 +191,6 @@ public class RuntimeConfigurationApplier {
         this.startupValues = snapshot != null
                 ? Map.copyOf(snapshot)
                 : loaded(fileService, "启动时没能读下配置文件，改回原样的那笔待重启账销不掉");
-        this.totalDataStorage = totalDataStorage;
         Contributed contributed = mergeContributions(contributors);
         this.contributedAppliers = contributed.appliers();
         this.contributedAppliedElsewhere = contributed.elsewhere();
@@ -338,7 +314,6 @@ public class RuntimeConfigurationApplier {
                                         Map<String, String> elsewhere) {
         if (APPLIERS.containsKey(key)
                 || APPLIED_ELSEWHERE.containsKey(key)
-                || REDIS_APPLIERS.containsKey(key)
                 || appliers.containsKey(key)
                 || elsewhere.containsKey(key)) {
             throw new IllegalStateException("即时生效配置项 " + key + " 被写了两次");
@@ -348,8 +323,6 @@ public class RuntimeConfigurationApplier {
     /**
      * 判据台架的构造口：要哪几个侧件按需给（包内可见：台架都在同包）
      * <p>
-     * 台架里带不带累计数据存储，是<b>每条判据各取所需</b>的事；
-     * 缺省就是「都没有」：与真实的「也没配累计存储」那一形一致。
      * @param properties 配置对象
      * @return 构造器
      */
@@ -362,23 +335,12 @@ public class RuntimeConfigurationApplier {
      */
     static final class Bench {
         private final NovaCoreProperties properties;
-        private TotalDataStorage totalDataStorage;
         private Collection<RuntimeConfigurationApplierContributor> contributors = List.of();
         private ConfigurationFileService fileService;
         private TimelineWriter timeline = TimelineWriter.NONE;
 
         private Bench(NovaCoreProperties properties) {
             this.properties = properties;
-        }
-
-        /**
-         * 带上累计数据存储
-         * @param totalDataStorage 累计数据存储
-         * @return 本构造器
-         */
-        Bench totalDataStorage(TotalDataStorage totalDataStorage) {
-            this.totalDataStorage = totalDataStorage;
-            return this;
         }
 
         /**
@@ -418,7 +380,7 @@ public class RuntimeConfigurationApplier {
          * @return 按给出的侧件装配好的实例
          */
         RuntimeConfigurationApplier build() {
-            return new RuntimeConfigurationApplier(properties, totalDataStorage, contributors, fileService,
+            return new RuntimeConfigurationApplier(properties, contributors, fileService,
                     timeline);
         }
     }
@@ -432,8 +394,8 @@ public class RuntimeConfigurationApplier {
      */
     public static Set<String> supportedKeys(Collection<RuntimeConfigurationApplierContributor> contributors) {
         // 这一支只把几张表的键名并起来，一个字也不往运行中的程序上落，因此没有可记的
-        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors,
-                (ConfigurationFileService) null, TimelineWriter.NONE).supportedKeys();
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), contributors, null, TimelineWriter.NONE)
+                .supportedKeys();
     }
 
     /**
@@ -443,7 +405,6 @@ public class RuntimeConfigurationApplier {
     public Set<String> supportedKeys() {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
         keys.addAll(APPLIED_ELSEWHERE.keySet());
-        keys.addAll(REDIS_APPLIERS.keySet());
         keys.addAll(contributedAppliers.keySet());
         keys.addAll(contributedAppliedElsewhere.keySet());
         return Collections.unmodifiableSet(keys);
@@ -532,8 +493,7 @@ public class RuntimeConfigurationApplier {
      * 把一批键记成一条时间线，<b>只写组名与条数</b>
      * <p>
      * 🔴 取值一个字都不进来，理由见 {@link #timeline}。连完整键名也不写：
-     * {@code spring.data.redis.password} 这样的键名本身就把「这台机器的 Redis 有口令」
-     * 说了出去，而日志页是登录后随手就能翻的一页。
+     * 组名已经足以定位改动。
      * @param type 记成哪一类
      * @param what 一句人话里的动词部分
      * @param keys 本次的配置项名，空表时不记
@@ -584,11 +544,6 @@ public class RuntimeConfigurationApplier {
         BiConsumer<NovaCoreProperties, String> applier = APPLIERS.get(name);
         if (applier != null) {
             return () -> applier.accept(properties, value);
-        }
-
-        BiConsumer<TotalDataStorage, String> redis = REDIS_APPLIERS.get(name);
-        if (redis != null) {
-            return totalDataStorage == null ? null : () -> redis.accept(totalDataStorage, value);
         }
 
         Consumer<String> contributed = contributedAppliers.get(name);

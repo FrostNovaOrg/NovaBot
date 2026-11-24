@@ -53,7 +53,6 @@ if (mode === 'home') {
   const quiet = '412 0 次/7 天，-352 0 次/时，-509 0 次/时，-401 0 次/日，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）';
   check(() => assert.equal(healthText(quiet), '近 7 天没有被风控'));
   check(() => assert.equal(healthText(quiet.replace('-352 0', '-352 2')), '近 1 小时被限流 2 次'));
-  check(() => assert.match(healthText('填 spring.data.redis.host'), /设置 › 采集 › 累计数据 Redis · 地址/));
   for (const interrupted of [false, true]) {
     let captured;
     const source = read('overview.js');

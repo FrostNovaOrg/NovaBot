@@ -100,7 +100,6 @@ const statusBody = {
   users: [{uid: 1, uname: '甲', platform: 'bilibili', enabled: true, targets: 1}],
   health: [],
   locked: true,
-  totalDataAvailable: true,
   alerts: {webhook: true, mail: true},
   pushEnabled: true,
   live: [],

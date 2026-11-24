@@ -25,7 +25,7 @@ import {
   gapCells, insightsComparison, comparisonExplanation, insightsTime, trendValue, isStreamersHash, pageBar, parseStreamersHash, reportPath,
   reportView, rowSubtitle, seriesValues, sessionHash, sessionTitle,
   slotCell, slotLabel, slotRangeDays, slotTopText,
-  snapshotRows, sparkline, statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
+  snapshotRows, sparkline, statusChip, summaryTotals, uncoveredStatuses,
 } from './streamers-model.js';
 
 export {detailHash};
@@ -158,7 +158,6 @@ details.sd-scope{margin:0;padding:0;border:0}.sd-scope p{margin:10px 0 0;font-si
 :is(#sd-body,.sc-drawer) a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
 #sd-head .sh-nm{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #sd-head .sh-nm>.pill{flex-shrink:0}
-#sd-banner{padding:9px 13px;border:0;border-left:3px solid var(--accent);background:var(--soft);border-radius:var(--r-ctl);font-size:var(--fs-sm);color:var(--dim);margin:0 0 16px}
 #sd-trend .sc-chart-readout{font-size:var(--fs-xs)}
 .sd-detail-link{padding:4px 0}
 .sc-section-head>.sd-detail-link{flex-shrink:0;text-align:right}
@@ -373,14 +372,6 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
-/**
- * 这台机器的运行状态，只取「开没开累计数据」那一位
- *
- * 与详情各取各的：它那一趟晚一点回来时，横条会自己补上。合成一趟的话，
- * /api/status 慢一拍就把整张详情页一起拖住，而那一页的主体与这一位无关。
- */
-let runtime = {};
-
 /** 图片资源的临时地址。换一场或离开本页时要撤销，否则这一页会一直占着那几张图 */
 let reportUrl = '';
 
@@ -455,15 +446,6 @@ export function loadStreamers() {
 
   syncStreamersView();
   releaseReport();
-
-  // 「开没开累计数据」只有详情页的概况用得上，别的两块不问——每翻一页都顺带问一次运行状态，
-  // 在一台配了几十位主播的机器上是白花的一趟
-  if (where.view === 'detail') {
-    api('/status').then(state => {
-      runtime = state || {};
-      renderBanner();
-    }).catch(() => {});
-  }
 
   if (where.view === 'list') return loadList();
   if (where.view === 'detail') return loadDetail();
@@ -1548,7 +1530,7 @@ function renderDashboard() {
   const cumulative = el('details', 'sd-cumulative');
   const title = el('summary'); title.textContent = '累计数据'; cumulative.appendChild(title);
   renderOverview(cumulative); host.appendChild(cumulative);
-  insightsData = null; renderToolbar(); renderScope(); renderBanner();
+  insightsData = null; renderToolbar(); renderScope();
 }
 
 function renderArchiveLink(data, error) {
@@ -1889,27 +1871,6 @@ async function loadTrendDrawer(current) {
   } catch (error) {
     if (generation === drawerGeneration && liveActive) content.textContent = '读取失败：' + error.message;
   }
-}
-
-/**
- * 概况顶上那条小横条
- *
- * 单独一个口子，是因为运行状态与详情各走各的一趟：先回来的那一趟画完之后，
- * 另一趟回来时补上这一条。合在渲染里的话，运行状态晚回来的那几次这条横条就不出现了。
- */
-function renderBanner() {
-  const host = $('#sd-body');
-  const old = $('#sd-banner');
-  if (old) old.remove();
-
-  if (store.role === 'MEMBER') return;
-  const text = totalDataBanner(runtime);
-  if (!text || where.view !== 'detail') return;
-
-  const banner = el('div', 'banner b-dim');
-  banner.id = 'sd-banner';
-  banner.textContent = text;
-  host.insertBefore(banner, host.firstChild);
 }
 
 function renderOverview(host) {

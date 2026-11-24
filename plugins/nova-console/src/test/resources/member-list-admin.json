@@ -35,7 +35,6 @@
     "restartPending": [],
     "senders": [],
     "locked": false,
-    "totalDataAvailable": false,
     "quiet": {
       "active": false,
       "start": "",
@@ -312,7 +311,6 @@
     ],
     "subscriptions": [],
     "incomplete": [],
-    "totalDataAvailable": false,
     "quietGlobal": {
       "start": "",
       "end": ""
@@ -362,6 +360,10 @@
       {
         "name": "PUSH_BLOCKED_WORD",
         "text": "屏蔽词挡下"
+      },
+      {
+        "name": "PUSH_QQ_OFFICIAL_BLOCKED",
+        "text": "按平台规则未推送"
       },
       {
         "name": "PUSH_SENT",
