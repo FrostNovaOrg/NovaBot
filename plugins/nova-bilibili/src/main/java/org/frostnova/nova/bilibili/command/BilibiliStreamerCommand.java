@@ -41,8 +41,8 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
      * 解析出本命令要操作的主播
      * <p>
      * 规则只有三条：点了名（uid 或昵称）按现名一次到位，现名没查回来那几位再按最近一场
-     * 归档里的昵称认——归档昵称可能已换给别人，认中了得说清是谁；没点名而本会话<b>恰好一位</b>能定下来
-     * ——只配了一位时径直办、不加说明；多位里只有一位在播时径直办，并在回复前说明用的是谁；
+     * 归档里的昵称认——归档昵称可能已换给别人，认中了得说清是谁；没点名且只有一位主播可用时径直办、
+     * 不加说明；多位里只有一位在播且命令允许自动选时径直办，并在回复前说明用的是谁。
      * 其余一律回一份带序号的清单让他自己挑。
      * <p>
      * <b>不记他上次选的是谁。</b>记着的那一位与他这一次想看的那一位不是同一位时，
@@ -86,13 +86,18 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
         }
 
         BilibiliStreamerChoice.Ranked ranked = choice.rank(candidates);
-        if (ranked.living() == 1) {
+        if (ranked.living() == 1 && autoSelectSoleLiveStreamer(context)) {
             PushUser only = ranked.ordered().get(0);
             context.setChannel(ChannelSettings.target(only, context.getPlatform(), context.getType(), context.getNum()));
             return Resolved.of(only, "本次用的是：" + nameOf(only) + "（只有 TA 在播）");
         }
 
         return Resolved.failed(choice.ask(context, ranked));
+    }
+
+    /** 未点名且有多个候选时，是否自动选唯一在播的主播。 */
+    protected boolean autoSelectSoleLiveStreamer(CommandContext context) {
+        return true;
     }
 
     @Override
