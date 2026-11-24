@@ -8,15 +8,18 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.net.http.WebSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @NovaComponent
-class JdkQqBotHttpTransport implements QqBotHttpTransport {
+class JdkQqBotHttpTransport implements QqBotHttpTransport, QqBotWebSocketTransport {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
 
     private final HttpClient client = HttpClient.newBuilder()
@@ -45,6 +48,72 @@ class JdkQqBotHttpTransport implements QqBotHttpTransport {
             throw e;
         } catch (ExecutionException e) {
             throw new IOException("QQ 开放平台请求失败");
+        }
+    }
+
+    @Override
+    public Connection connect(URI uri, Listener listener) throws IOException, InterruptedException {
+        var opening = client.newWebSocketBuilder().connectTimeout(REQUEST_TIMEOUT)
+                .buildAsync(uri, new WebSocketListener(listener));
+        try {
+            return new WebSocketConnection(opening.get());
+        } catch (ExecutionException e) {
+            throw new IOException("QQ 开放平台长连接握手失败");
+        } catch (InterruptedException e) {
+            opening.thenAccept(WebSocket::abort);
+            throw e;
+        }
+    }
+
+    private static final class WebSocketConnection implements Connection {
+        private final WebSocket socket;
+        private CompletableFuture<?> sent = CompletableFuture.completedFuture(null);
+
+        private WebSocketConnection(WebSocket socket) {
+            this.socket = socket;
+        }
+
+        @Override
+        public CompletionStage<?> send(String text) {
+            // 同时只能有一条文本发送在途。
+            sent = sent.thenCompose(ignored -> socket.sendText(text, true));
+            return sent;
+        }
+
+        @Override
+        public void close() {
+            socket.abort();
+        }
+    }
+
+    private static final class WebSocketListener implements WebSocket.Listener {
+        private final Listener listener;
+        private final StringBuilder text = new StringBuilder();
+
+        private WebSocketListener(Listener listener) {
+            this.listener = listener;
+        }
+
+        @Override
+        public CompletionStage<?> onText(WebSocket socket, CharSequence data, boolean last) {
+            text.append(data);
+            if (last) {
+                listener.onText(text.toString());
+                text.setLength(0);
+            }
+            socket.request(1);
+            return null;
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
+            listener.onClose(statusCode);
+            return null;
+        }
+
+        @Override
+        public void onError(WebSocket socket, Throwable error) {
+            listener.onFailure();
         }
     }
 }

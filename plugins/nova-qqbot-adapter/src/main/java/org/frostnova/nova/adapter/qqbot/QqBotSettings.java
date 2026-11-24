@@ -104,6 +104,29 @@ final class QqBotSettings {
         }
     }
 
+    void clear() {
+        long interval = snapshot.intervalMillis();
+        byte[] original = null;
+        try {
+            if (!Files.notExists(directory, NO_LINKS)) {
+                protectStorage();
+                if (!Files.notExists(settingsPath)) {
+                    original = Files.readAllBytes(settingsPath);
+                    writeSettings(JSONObject.of("intervalMillis", interval).toJSONString());
+                }
+            }
+        } catch (IOException | SecurityException e) {
+            throw storageError();
+        }
+        try {
+            secrets.clear();
+        } catch (RuntimeException e) {
+            restoreSettings(original);
+            throw e;
+        }
+        snapshot = new Snapshot("", interval, false, "", false);
+    }
+
     <T> T useSecret(Function<String, T> action) {
         return secrets.use(action);
     }

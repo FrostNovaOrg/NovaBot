@@ -8,13 +8,22 @@ import org.springframework.context.event.EventListener;
 @NovaComponent
 public class QqBotCredentials {
     private final QqBotTokenService tokens;
+    private final QqBotGateway gateway;
 
-    QqBotCredentials(QqBotTokenService tokens) {
+    QqBotCredentials(QqBotTokenService tokens, QqBotGateway gateway) {
         this.tokens = tokens;
+        this.gateway = gateway;
     }
 
-    public void save(String appId, String secret) {
+    public synchronized void save(String appId, String secret) {
         tokens.save(appId, secret);
+        gateway.credentialsChanged();
+        verifyAndStart();
+    }
+
+    public synchronized void clear() {
+        tokens.clear();
+        gateway.credentialsChanged();
     }
 
     public Status status() {
@@ -27,8 +36,13 @@ public class QqBotCredentials {
     }
 
     @EventListener(ApplicationReadyEvent.class)
-    void onApplicationReady() {
+    synchronized void onApplicationReady() {
+        verifyAndStart();
+    }
+
+    private void verifyAndStart() {
         tokens.verifyConfigured();
+        gateway.start();
     }
 
     public record Status(boolean configured, String appId, String maskedSecret) {

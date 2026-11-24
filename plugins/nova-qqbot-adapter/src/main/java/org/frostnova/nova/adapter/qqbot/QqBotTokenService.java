@@ -71,9 +71,17 @@ class QqBotTokenService {
 
     synchronized void save(String appId, String secret) {
         settings.save(appId, secret);
+        reset();
+    }
+
+    synchronized void clear() {
+        settings.clear();
+        reset();
+    }
+
+    private void reset() {
         latest = new Outcome(null, null, UNCHECKED);
         attempt = null;
-        verifyConfigured();
     }
 
     void verifyConfigured() {

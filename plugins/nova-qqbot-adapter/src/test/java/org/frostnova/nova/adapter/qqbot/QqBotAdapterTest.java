@@ -12,6 +12,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -66,6 +67,8 @@ class QqBotAdapterTest {
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
+                .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
+                        definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     assertNotNull(context.getBean(QqBotCredentials.class));
@@ -76,7 +79,8 @@ class QqBotAdapterTest {
                     context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0],
                             context.getSourceApplicationContext(), Duration.ZERO));
                     assertEquals(1, exchanges.get());
-                    assertEquals(HealthStatus.Level.OK, probe.check().level());
+                    assertEquals(HealthStatus.Level.DEGRADED, probe.check().level());
+                    assertTrue(probe.check().summary().contains("正在连接"));
                 });
     }
 
@@ -98,6 +102,8 @@ class QqBotAdapterTest {
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
+                .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
+                        definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0],
@@ -124,7 +130,8 @@ class QqBotAdapterTest {
                     credentials.save(APP_ID, SECRET);
                     assertEquals(1, exchanges.get());
                     assertTrue(credentials.status().configured());
-                    assertEquals(HealthStatus.Level.OK, probe.check().level());
+                    assertEquals(HealthStatus.Level.DEGRADED, probe.check().level());
+                    assertTrue(probe.check().summary().contains("正在连接"));
                     assertEquals(APP_ID, JSON.parseObject(Files.readString(settings)).getString("appId"));
                 });
     }
@@ -173,7 +180,7 @@ class QqBotAdapterTest {
         assertEquals(JSONObject.of("appId", APP_ID, "intervalMillis", 2000), JSON.parseObject(Files.readString(settings)));
         assertEquals(1, requests.get());
         assertTrue(first.probe.active());
-        assertEquals("凭据有效", first.probe.check().summary());
+        assertEquals("凭据有效", first.tokens.health().summary());
 
         Files.writeString(settings, JSONObject.of("appId", APP_ID, "intervalMillis", 4500).toJSONString());
         Rig restarted = rig(transport);
@@ -184,7 +191,7 @@ class QqBotAdapterTest {
         assertEquals(1, requests.get());
         restarted.credentials.onApplicationReady();
         assertEquals(2, requests.get());
-        assertEquals(HealthStatus.Level.OK, restarted.probe.check().level());
+        assertEquals(HealthStatus.Level.OK, restarted.tokens.health().level());
         restarted.credentials.save(APP_ID, "");
         assertEquals(3, requests.get());
         assertEquals(4500, JSON.parseObject(Files.readString(settings)).getIntValue("intervalMillis"));
@@ -350,7 +357,7 @@ class QqBotAdapterTest {
         assertEquals(code, error.code());
         assertEquals(tokenRequests, exchanges.get());
         assertTrue(authorization.equals(List.of("QQBot " + TOKEN + "1", "QQBot " + TOKEN + tokenRequests)));
-        assertEquals(tokenRequests == 2 ? HealthStatus.Level.DOWN : HealthStatus.Level.OK, rig.probe.check().level());
+        assertEquals(tokenRequests == 2 ? HealthStatus.Level.DOWN : HealthStatus.Level.OK, rig.tokens.health().level());
     }
 
     @Test
@@ -463,7 +470,7 @@ class QqBotAdapterTest {
             assertTrue(ready.await(10, TimeUnit.SECONDS));
             start.countDown();
             assertTrue(refreshing.await(10, TimeUnit.SECONDS));
-            assertEquals(HealthStatus.Level.OK, rig.probe.check().level());
+            assertEquals(HealthStatus.Level.OK, rig.tokens.health().level());
             allowReply.countDown();
             var token = results.get(0).get(10, TimeUnit.SECONDS);
             for (var result : results) {
@@ -481,8 +488,11 @@ class QqBotAdapterTest {
     private Rig rig(QqBotHttpTransport transport) {
         TestClock clock = new TestClock();
         QqBotTokenService tokens = new QqBotTokenService(new QqBotSettings(dataDirectory), transport, clock);
-        QqBotCredentials credentials = new QqBotCredentials(tokens);
-        return new Rig(clock, tokens, credentials, new QqBotHealthProbe(tokens), new QqBotApiClient(transport, tokens));
+        QqBotApiClient api = new QqBotApiClient(transport, tokens);
+        var gateway = new QqBotGateway(api, tokens, (uri, listener) -> fail("不应连接网关"),
+                new QqBotGatewayTest.ManualScheduler(), new DefaultListableBeanFactory().getBeanProvider(QqBotEventListener.class));
+        var credentials = new QqBotCredentials(tokens, gateway);
+        return new Rig(clock, tokens, credentials, new QqBotHealthProbe(tokens, gateway), api);
     }
 
     private static QqBotHttpTransport.Response token(String token, Object expiresIn) {
