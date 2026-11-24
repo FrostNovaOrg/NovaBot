@@ -81,8 +81,8 @@ class MemberListScopeTest {
         config = create(ConfigUiController.class);
         runtime = create(RuntimeStateController.class);
         streamers = create(StreamerController.class);
+        dependencies.put(AtAllQuotaService.class, new AtAllQuotaService(props));
         quota = create(AtAllQuotaController.class);
-        when(((AtAllQuotaService)dependencies.get(AtAllQuotaService.class)).today()).thenReturn(LocalDate.now());
         push = create(PushController.class);
         for (var controller : List.of(runtime, quota)) {
             if (Arrays.stream(controller.getClass().getDeclaredFields()).anyMatch(field -> field.getName().equals("configured")))

@@ -32,6 +32,10 @@ public final class QqBotApiException extends RuntimeException {
         return httpStatus;
     }
 
+    boolean atAllLimitReached() {
+        return code == 304019 || code == 40034142;
+    }
+
     boolean duplicateMessage() {
         return code == 40054005;
     }

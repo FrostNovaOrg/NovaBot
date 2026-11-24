@@ -10,6 +10,7 @@ import org.frostnova.nova.core.config.ui.PushTargetLookup;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.sender.AtAllPermissionResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.util.UriUtils;
 
@@ -21,6 +22,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -42,7 +44,7 @@ import java.util.function.Function;
 /** QQ 官方机器人群和群成员的本地编号与群资料。 */
 @Slf4j
 @NovaComponent
-public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
+public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, AtAllPermissionResolver {
     private static final long NUMBER_BASE = 1_000_000_000_000_000L;
     private static final BigInteger NUMBER_RANGE = BigInteger.valueOf((1L << 53) - NUMBER_BASE);
     private static final DateTimeFormatter JOIN_TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm", Locale.ROOT)
@@ -133,7 +135,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     private static GroupEntry joinedGroup(long number, String openid, Instant at, GroupEntry previous) {
         if (previous == null) {
             return new GroupEntry(number, openid, defaultName(at), NameSource.DEFAULT, at, at, false,
-                    UNKNOWN_SWITCH, null, null, null, null, null, null);
+                    UNKNOWN_SWITCH, null, null, null, null, null, null, null);
         }
         GroupEntry group = previous.withJoinedAt(at).withLastSeenAt(later(previous.lastSeenAt(), at))
                 .withRemoved(false).withProactive(UNKNOWN_SWITCH).withRole(null);
@@ -306,6 +308,33 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     @Override
     public boolean supports(String platform) {
         return id().equals(platform);
+    }
+
+    @Override
+    public Integer sessionDailyLimit(String platform) {
+        return 1;
+    }
+
+    @Override
+    public boolean canAtAll(String platform, Long num) {
+        return denyReason(platform, num) == null;
+    }
+
+    @Override
+    public synchronized String denyReason(String platform, Long num) {
+        if (bots == null || !supports(platform)) return null;
+        GroupEntry group = currentEntries().groups().get(num);
+        if (group == null) return null;
+        if (today().equals(group.atAllRejectedOn())) return "本群今天已经 @全体 过一次";
+        return group.role() == BotRole.MEMBER ? "机器人不是这个群的管理员（QQ 官方机器人要先被设为群管理员）" : null;
+    }
+
+    synchronized void recordAtAllRejection(String appId, long number) {
+        updateGroup(appId, number, group -> group.withAtAllRejectedOn(today()));
+    }
+
+    private LocalDate today() {
+        return LocalDate.ofInstant(clock.instant(), ZoneOffset.ofHours(8));
     }
 
     @Override
@@ -592,7 +621,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     public record GroupEntry(long number, String openid, String name, NameSource nameSource,
                              Instant joinedAt, Instant lastSeenAt, boolean removed, Proactive proactive,
                              BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure,
-                             String apiName) {
+                             String apiName, LocalDate atAllRejectedOn) {
         public GroupEntry {
             Objects.requireNonNull(openid);
             Objects.requireNonNull(name);

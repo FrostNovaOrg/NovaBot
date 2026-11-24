@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 
 import static org.frostnova.nova.adapter.qqbot.QqBotPluginAutoConfiguration.DISPLAY_NAME;
 import static org.frostnova.nova.adapter.qqbot.QqBotPluginAutoConfiguration.PLATFORM;
+import static org.frostnova.nova.core.model.MessagePlaceholders.AT_ALL;
 import static org.frostnova.nova.core.model.MessagePlaceholders.IMAGE_BASE64_PREFIX;
 import static org.frostnova.nova.core.model.MessagePlaceholders.IMAGE_URL_PREFIX;
 
@@ -27,6 +28,7 @@ import static org.frostnova.nova.core.model.MessagePlaceholders.IMAGE_URL_PREFIX
 class QqBotSender {
     private static final Pattern PLACEHOLDER = Pattern.compile("(" + Pattern.quote(IMAGE_BASE64_PREFIX) + "|"
             + Pattern.quote(IMAGE_URL_PREFIX) + "|\\{at=|\\{face=)(.*?)}", Pattern.DOTALL);
+    private static final String AT_ALL_TAG = "<qqbot-at-everyone />";
     private static final Pattern MENTION = Pattern.compile("<(?=qqbot-|@)|@(?=everyone)", Pattern.CASE_INSENSITIVE);
     private static final Pattern LINK = Pattern.compile("https?://[^\\s<>＜＞\"'，。！？；、（）【】「」《》()]+",
             Pattern.CASE_INSENSITIVE);
@@ -128,25 +130,37 @@ class QqBotSender {
     private Outgoing parseContent(String content, Target target) throws IOException, InterruptedException {
         List<Image> images = new ArrayList<>();
         StringBuilder text = new StringBuilder();
+        StringBuilder literal = new StringBuilder();
         var placeholders = PLACEHOLDER.matcher(content);
         int start = 0;
         boolean skipped = false;
         while (placeholders.find()) {
-            text.append(content, start, placeholders.start());
+            literal.append(content, start, placeholders.start());
             start = placeholders.end();
             switch (placeholders.group(1)) {
                 case IMAGE_BASE64_PREFIX -> images.add(image(decode(placeholders.group(2))));
                 case IMAGE_URL_PREFIX -> images.add(image(downloader.download(placeholders.group(2))));
-                default -> skipped = true;
+                default -> {
+                    if (AT_ALL.equals(placeholders.group())) {
+                        text.append(escapeMentions(literal)).append(AT_ALL_TAG);
+                        literal.setLength(0);
+                    } else {
+                        skipped = true;
+                    }
+                }
             }
         }
-        text.append(content, start, content.length());
+        literal.append(content, start, content.length());
+        text.append(escapeMentions(literal));
         if (skipped) {
             log.info("QQ 官方机器人已省略群 {} 的提及或表情", target.maskedOpenId());
         }
-        // 占位符两边的文字也可能拼出提及标签，因此在正文拼接完成后转义。
-        String escaped = MENTION.matcher(text).replaceAll(match -> "<".equals(match.group()) ? "＜" : "＠");
-        return new Outgoing(escaped, images);
+        return new Outgoing(text.toString(), images);
+    }
+
+    // 摘除图片、表情或提及后，两侧文字可能拼成新的标签。
+    private static String escapeMentions(CharSequence text) {
+        return MENTION.matcher(text).replaceAll(match -> "<".equals(match.group()) ? "＜" : "＠");
     }
 
     private static byte[] decode(String base64) throws QqBotImageDownloader.TooLarge {
@@ -179,9 +193,32 @@ class QqBotSender {
         return bytes.length >= prefix.length && Arrays.equals(bytes, 0, prefix.length, prefix, 0, prefix.length);
     }
 
-    /** 上传全部图片后，首图与正文合发，其余图片各发一条。 */
+    /** 全体提及只随文本发送，普通图文仍将正文放在首图。 */
     private JSONObject sendGroupMessages(Target target, Outgoing message, String replyTo, QqBotReplyWindows.Window reply) {
         String path = QqBotDirectory.groupPath(target.group().openid());
+        if (message.images().isEmpty()) {
+            return sendContent(target, path + "/messages", textBody(message.text()), null, replyTo, reply, false);
+        }
+        if (!message.text().contains(AT_ALL_TAG)) {
+            return sendImages(target, path, message, replyTo, reply);
+        }
+
+        var notice = sendContent(target, path + "/messages", textBody(message.text()), null, replyTo, reply, true);
+        if (notice.getIntValue("code") != 0) {
+            return notice.fluentPut(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
+        }
+        String noticeId = notice.getString("id");
+        var images = sendImages(target, path, new Outgoing("", message.images()), replyTo, reply);
+        if (images.getIntValue("code") != 0) {
+            // 正文已单独投递过，图片失败时无需让核心剥图再发一次。
+            return imageFailure(noticeId, images.fluentPut(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true));
+        }
+        if (noticeId != null) images.put("id", noticeId);
+        return images;
+    }
+
+    private JSONObject sendImages(Target target, String path, Outgoing message, String replyTo,
+                                  QqBotReplyWindows.Window reply) {
         List<String> uploaded = new ArrayList<>();
         for (Image image : message.images()) {
             String fileInfo;
@@ -200,19 +237,14 @@ class QqBotSender {
 
         String firstId = null;
         try {
-            for (int i = 0; i < Math.max(1, uploaded.size()); i++) {
-                String fileInfo = uploaded.isEmpty() ? null : uploaded.get(i);
+            for (int i = 0; i < uploaded.size(); i++) {
+                String fileInfo = uploaded.get(i);
                 String text = i == 0 ? message.text() : "";
-                JSONObject body = fileInfo == null ? textBody(text)
-                        : JSONObject.of("msg_type", 7, "content", text.isBlank() ? " " : text,
-                                "media", JSONObject.of("file_info", fileInfo));
-                JSONObject result = sendContent(target, path + "/messages", body, fileInfo, replyTo, reply);
+                JSONObject body = JSONObject.of("msg_type", 7, "content", text.isBlank() ? " " : text,
+                        "media", JSONObject.of("file_info", fileInfo));
+                JSONObject result = sendContent(target, path + "/messages", body, fileInfo, replyTo, reply, false);
                 if (result.getIntValue("code") != 0) {
-                    if (firstId != null && !result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN)) {
-                        return success(firstId).fluentPut(Sender.LocalDelivery.IMAGE_DEGRADED, true)
-                                .fluentPut("message", result.getString("message"));
-                    }
-                    return result;
+                    return imageFailure(firstId, result);
                 }
                 if (firstId == null) firstId = result.getString("id");
             }
@@ -222,19 +254,39 @@ class QqBotSender {
         }
     }
 
+    private static JSONObject imageFailure(String firstId, JSONObject failure) {
+        if (firstId == null || failure.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN)) return failure;
+        return success(firstId).fluentPut(Sender.LocalDelivery.IMAGE_DEGRADED, true)
+                .fluentPut("message", failure.getString("message"));
+    }
+
     private JSONObject sendContent(Target target, String path, JSONObject body, String fileInfo, String replyTo,
-                                   QqBotReplyWindows.Window reply) {
+                                   QqBotReplyWindows.Window reply, boolean imagesFollow) {
         List<JSONObject> parts = new ArrayList<>(List.of(body));
         String firstId = null;
+        boolean atAllRejected = false;
         for (int i = 0; i < parts.size();) {
             JSONObject part = parts.get(i);
             String text = part.getString("content");
+            if (atAllRejected && text.contains(AT_ALL_TAG)) {
+                text = escapeMentions(text.replace(AT_ALL_TAG, ""));
+                if (text.isBlank() && (imagesFollow || firstId != null || i + 1 < parts.size())) {
+                    i++;
+                    continue;
+                }
+                part.put("content", text);
+            }
             try {
                 String id = window.retryWhenLimited(() -> sendPart(target, path, part, replyTo, reply));
                 if (id.isBlank()) return uncertain(target, BAD_RECEIPT);
                 if (firstId == null) firstId = id;
                 i++;
             } catch (QqBotApiException e) {
+                if (e.atAllLimitReached() && text.contains(AT_ALL_TAG)) {
+                    rememberAtAllRejection(target);
+                    atAllRejected = true;
+                    continue;
+                }
                 if (e.code() == 40054007 && parts.size() < 4) {
                     int cut = splitAt(text);
                     if (cut > 0) {
@@ -248,6 +300,8 @@ class QqBotSender {
                 // 已确认的首段编号也让核心知道不能剥图重发整篇正文。
                 if (firstId != null) failed.put("id", firstId);
                 return failed;
+            } catch (RuntimeException e) {
+                return uncertain(target, BAD_RECEIPT);
             }
         }
         if (parts.size() > 1) log.info("这条太长被拒，已拆成 {} 段重发", parts.size());
@@ -267,7 +321,13 @@ class QqBotSender {
         }
         if (cut > 0) return cut;
         // 单行也能拆开，保留完整的 Unicode 码点。
-        return text.offsetByCodePoints(0, text.codePointCount(0, text.length()) / 2);
+        cut = text.offsetByCodePoints(0, text.codePointCount(0, text.length()) / 2);
+        int tag = text.lastIndexOf(AT_ALL_TAG, cut);
+        if (tag >= 0 && cut > tag && cut < tag + AT_ALL_TAG.length()) {
+            if (tag > 0) return tag;
+            return AT_ALL_TAG.length() < text.length() ? AT_ALL_TAG.length() : -1;
+        }
+        return cut;
     }
 
     private String sendPart(Target target, String path, JSONObject body, String replyTo, QqBotReplyWindows.Window reply) {
@@ -367,6 +427,15 @@ class QqBotSender {
         remember(target, proactiveDisabled ? QqBotDirectory.ProactiveStatus.DISABLED : null,
                 proactiveDisabled ? QqBotDirectory.SwitchSource.SEND_ERROR : null, reason);
         return failure(reason);
+    }
+
+    private void rememberAtAllRejection(Target target) {
+        log.warn("本群今天已经 @全体 过一次，这条改为不 @");
+        try {
+            directory.recordAtAllRejection(target.appId(), target.group().number());
+        } catch (RuntimeException e) {
+            log.warn("无法记录 QQ 官方机器人群 {} 的 @全体 用量", target.maskedOpenId());
+        }
     }
 
     private void remember(Target target, QqBotDirectory.ProactiveStatus status, QqBotDirectory.SwitchSource source,

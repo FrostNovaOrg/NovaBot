@@ -300,8 +300,9 @@ public class NovaMessageSender {
         // 若先扣配额，等于让一个注定被摘掉的 @ 吃掉账号那份全局额度。
         // 两支分开写而不是合成一个或运算，是因为退回时要说得出是哪一件——
         // 「机器人不是管理员」要人去改群权限，「额度用完了」明天自己就好了
-        if (!canAtAll(message)) {
-            return stripAtAll(message, "机器人不是群主或管理员");
+        String reason = atAllDenyReason(message);
+        if (reason != null) {
+            return stripAtAll(message, reason);
         }
         LocalDate chargedOn = atAllQuota.consume(message.getPlatform(), message.getNum());
         if (chargedOn == null) {
@@ -315,13 +316,15 @@ public class NovaMessageSender {
      * <p>
      * 没有任何适配器认领该平台时放行，保持没有这层判定之前的行为。
      */
-    private boolean canAtAll(Message message) {
+    private String atAllDenyReason(Message message) {
         for (AtAllPermissionResolver resolver : atAllPermissionResolvers) {
             if (resolver.supports(message.getPlatform())) {
-                return resolver.canAtAll(message.getPlatform(), message.getNum());
+                if (resolver.canAtAll(message.getPlatform(), message.getNum())) return null;
+                String reason = resolver.denyReason(message.getPlatform(), message.getNum());
+                return reason == null ? "机器人不是群主或管理员" : reason;
             }
         }
-        return true;
+        return null;
     }
 
     /**

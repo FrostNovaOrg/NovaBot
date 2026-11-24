@@ -76,7 +76,6 @@ public class AtAllQuotaController {
         result.put("date", quota.today().toString());
 
         int botLimit = properties.getPush().getAtAllDailyLimit();
-        int sessionLimit = properties.getPush().getAtAllSessionDailyLimit();
 
         JSONArray bots = new JSONArray();
         JSONArray sessions = new JSONArray();
@@ -85,7 +84,7 @@ public class AtAllQuotaController {
         }
         for (PushTarget target : groups()) {
             sessions.add(usage(target.getPlatform(), target.getNum(),
-                    quota.used(target.getPlatform(), target.getNum()), sessionLimit));
+                    quota.used(target.getPlatform(), target.getNum()), quota.sessionDailyLimit(target.getPlatform())));
         }
 
         if (org.frostnova.nova.core.config.ui.ConfigUiAccess.memberAccount() == null) result.put("bots", bots);

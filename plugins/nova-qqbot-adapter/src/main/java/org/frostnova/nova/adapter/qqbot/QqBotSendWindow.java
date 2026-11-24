@@ -53,7 +53,8 @@ final class QqBotSendWindow {
 
     private static boolean rateLimited(QqBotApiException e) {
         // 平台已经判重或明确拒绝事件回复时，即使附带 429 也不能再发。
-        return !e.duplicateMessage() && !e.eventReplyRejected() && (e.httpStatus() == 429 || e.code() == 40034100);
+        return !e.duplicateMessage() && !e.eventReplyRejected() && !e.atAllLimitReached()
+                && (e.httpStatus() == 429 || e.code() == 40034100);
     }
 
     void acquire(String appId, long number) {

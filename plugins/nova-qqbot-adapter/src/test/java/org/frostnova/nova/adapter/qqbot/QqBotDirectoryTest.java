@@ -287,6 +287,25 @@ class QqBotDirectoryTest {
     }
 
     @Test
+    void atAllRejectionSurvivesRestartUntilMidnightInChina() {
+        var rig = new Rig(uri -> json());
+        var directory = rig.directory();
+        long first = directory.groupJoined(GROUP_A, JOINED);
+        long second = directory.groupJoined(GROUP_B, JOINED);
+        Instant midnight = Instant.parse("2026-11-17T16:00:00Z");
+        rig.clock.advance(Duration.between(JOINED, midnight.minusSeconds(1)));
+        directory.recordAtAllRejection(APP_ID, first);
+
+        var restarted = rig.directory();
+        assertFalse(restarted.canAtAll(PLATFORM, first));
+        assertTrue(restarted.canAtAll(PLATFORM, second));
+        assertFalse(restarted.supports("qq-onebot"));
+        rig.clock.advance(Duration.ofSeconds(1));
+        assertTrue(restarted.canAtAll(PLATFORM, first));
+        assertNull(restarted.denyReason(PLATFORM, first));
+    }
+
+    @Test
     void botStateRecordsAdminAndAnExplicitlyDisabledProactiveSwitch() {
         var rig = new Rig(uri -> isInfo(uri)
                 ? json("group_name", "通知群", "group_member_num", 28)
