@@ -719,7 +719,7 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
-let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: []};
+let runtime = {sessions: [], subscriptions: [], incomplete: []};
 
 /** 最近的推送记录，按通道筛出各自的 5 条 */
 let pushHistory = [];
@@ -1565,7 +1565,8 @@ function renderStreamerLevel(host, user) {
 }
 
 function channelRow(user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type),
+    target, user, channelCommands());
   const switches = noticeSwitches(user, target, store.handlerList);
   const row = el('div', 'rowcard');
 
@@ -1623,7 +1624,8 @@ function channelRow(user, target) {
  * 这一页不是向导，各块不编号。
  */
 function renderChannelLevel(host, user, target) {
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type),
+    target, user, channelCommands());
   const name = channelName(session, target, directory);
   const group = Number(target.type) === 1;
 
@@ -1693,9 +1695,10 @@ function block(host, title, desc) {
   return box;
 }
 
-/** 通道页用得上的命令：关得掉、又按通道各存一份的那些 */
+/** 通道页用得上的命令。未取到清单时返回 undefined，避免误判残留。 */
 function channelCommands() {
-  return (runtime.commands || []).filter(command => command.disableable !== false && command.channelScoped !== false);
+  if (runtime.success === false || !Array.isArray(runtime.commands)) return undefined;
+  return runtime.commands.filter(command => command.disableable !== false && command.channelScoped !== false);
 }
 
 /**
@@ -1706,7 +1709,7 @@ function channelCommands() {
  */
 function channelSummary(box, user, target, blocks) {
   const commands = channelCommands();
-  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user);
+  const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type), target, user, commands);
   const on = noticeSwitches(user, target, store.handlerList).filter(item => item.on).length;
   const quiet = quietSummary(session, runtime.quietGlobal, savedQuiet(user, target));
   const command = commandSummary(commands, session);
@@ -2371,7 +2374,7 @@ function savedQuiet(user, target) {
 function channelSettings(hosts, user, target, session, paintSummary) {
   const render = () => {
     const commands = channelCommands();
-    const current = channelSession(session, target, user);
+    const current = channelSession(session, target, user, commands);
     const baseline = savedTarget(user, target);
     const assistantCommand = runtime.commands?.find(command => command.name === '问' && command.aliases?.includes('问数'));
     const subscriptions = (runtime.subscriptions || []).filter(sub => String(sub.streamerUid) === String(user.uid));

@@ -633,10 +633,12 @@ export function commandSummary(commands, session) {
 
 /**
  * 合并会话状态与当前通道设置，供推送页显示。
+ * @param commands 已载入的通道命令清单，未取到时为 undefined
  */
-export function channelSession(session, target, user) {
+export function channelSession(session, target, user, commands) {
   const quiet = target.quietHours || {};
-  const disabled = (target.disabledCommands || []).filter(key => !RETIRED_COMMAND_KEYS.has(key));
+  const disabled = commands ? (target.disabledCommands || []).filter(key => !RETIRED_COMMAND_KEYS.has(key)) : [];
+  const known = new Set(commands?.flatMap(usageKeys));
   const channel = ((session || {}).channels || []).find(item => user
     && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
@@ -645,7 +647,7 @@ export function channelSession(session, target, user) {
     assistantEnabled: target.assistantEnabled === true,
     disabled,
     // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
-    disabledCount: new Set([...disabled, ...((session || {}).disabled || [])]).size,
+    disabledCount: new Set([...disabled.filter(key => known.has(key)), ...((session || {}).disabled || [])]).size,
     quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: !!channel?.quietActive};
 }
 
