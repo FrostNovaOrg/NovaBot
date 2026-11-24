@@ -62,11 +62,7 @@ class QqBotTokenService {
         if (!currentSettings.configured()) {
             return UNCONFIGURED;
         }
-        Outcome outcome = latest;
-        if (outcome.token() != null && !clock.instant().isBefore(outcome.token().expiresAt())) {
-            return EXPIRED;
-        }
-        return outcome.health();
+        return latest.health();
     }
 
     synchronized void save(String appId, String secret) {

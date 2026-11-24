@@ -78,6 +78,39 @@ class QqBotGatewayTest {
     }
 
     @Test
+    void liveConnectionStaysHealthyAfterCachedTokenExpiresUntilRefreshFails() {
+        withRig(rig -> {
+            var connection = rig.connect();
+            for (int elapsedSeconds = 0; elapsedSeconds <= 7_200; elapsedSeconds += 45) {
+                connection.receive(11, null);
+                rig.scheduler.advance(45_000);
+            }
+
+            var message = new Event("GROUP_AT_MESSAGE_CREATE", JSONObject.of("content", "ping"), "late-event", 5L);
+            connection.dispatch(message.name(), message.data(), message.id(), message.sequence());
+            rig.scheduler.advance(0);
+            assertEquals(List.of(message), rig.events);
+            assertEquals(1, rig.gateway.connections.size());
+            assertFalse(connection.closed);
+
+            var connected = rig.probe.check();
+            assertEquals(HealthStatus.Level.OK, connected.level(), connected::summary);
+            assertTrue(connected.summary().startsWith("已连接 · "));
+            assertTrue(connected.summary().contains("网关测试机器人"));
+            assertEquals(1, rig.http.tokenRequests);
+
+            rig.http.tokenError = response(200, JSONObject.of("code", 100016));
+            var error = assertThrows(QqBotApiException.class, () -> rig.api.request("GET", "/gateway/bot", null));
+            assertEquals(100016, error.code());
+            assertEquals(2, rig.http.tokenRequests);
+            assertFalse(connection.closed);
+            var rejected = rig.probe.check();
+            assertEquals(HealthStatus.Level.DOWN, rejected.level());
+            assertTrue(rejected.summary().contains("AppID 或 AppSecret 不对"));
+        });
+    }
+
+    @Test
     void expiredConnectionResumesWithLastSequenceAndDeliversCommandsAgain() {
         withRig(rig -> {
             var first = rig.connect();
@@ -436,7 +469,8 @@ class QqBotGatewayTest {
                 .withBean("firstListener", QqBotEventListener.class, () -> firstListener)
                 .withBean("recordingListener", QqBotEventListener.class, () -> listener)
                 .run(context -> test.accept(new Rig(context.getBean(QqBotCredentials.class),
-                        context.getBean(QqBotHealthProbe.class), scheduler, gateway, http, events,
+                        context.getBean(QqBotHealthProbe.class), context.getBean(QqBotApiClient.class),
+                        scheduler, gateway, http, events,
                         () -> context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0],
                                 context.getSourceApplicationContext(), Duration.ZERO)))));
         assertTrue(scheduler.stopped);
@@ -450,8 +484,9 @@ class QqBotGatewayTest {
     private record Event(String name, Object data, String id, Long sequence) {
     }
 
-    private record Rig(QqBotCredentials credentials, QqBotHealthProbe probe, ManualScheduler scheduler,
-                       FakeGateway gateway, FakeHttp http, List<Event> events, Runnable readyEvent) {
+    private record Rig(QqBotCredentials credentials, QqBotHealthProbe probe, QqBotApiClient api,
+                       ManualScheduler scheduler, FakeGateway gateway, FakeHttp http, List<Event> events,
+                       Runnable readyEvent) {
         FakeConnection connect() {
             credentials.save(APP_ID, SECRET);
             scheduler.advance(0);
@@ -537,6 +572,7 @@ class QqBotGatewayTest {
         private final List<String> gatewayRequests = new ArrayList<>();
         private int tokenRequests;
         private int expiresIn = 7_200;
+        private Response tokenError;
         private Response shardedEndpoint = response(200, JSONObject.of("url", GATEWAY_URL.toString()));
 
         @Override
@@ -545,6 +581,9 @@ class QqBotGatewayTest {
                 case "/app/getAppAccessToken":
                     assertEquals("POST", method);
                     tokenRequests++;
+                    if (tokenError != null) {
+                        return tokenError;
+                    }
                     return response(200, JSONObject.of("access_token", tokenValue(), "expires_in", expiresIn));
                 case "/gateway/bot", "/gateway":
                     assertEquals("GET", method);
