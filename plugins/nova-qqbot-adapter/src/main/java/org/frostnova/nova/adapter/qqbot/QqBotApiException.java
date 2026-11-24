@@ -32,6 +32,21 @@ public final class QqBotApiException extends RuntimeException {
         return httpStatus;
     }
 
+    boolean duplicateMessage() {
+        return code == 40054005;
+    }
+
+    boolean eventReplyRejected() {
+        return code == 40034025 || code == 40034026 || code == 40034027;
+    }
+
+    boolean messageReplyRejected() {
+        return switch (code) {
+            case 40034128, 304103, 40034005, 40034024 -> true;
+            default -> false;
+        };
+    }
+
     boolean deliveryUnknown() {
         return deliveryUnknown;
     }

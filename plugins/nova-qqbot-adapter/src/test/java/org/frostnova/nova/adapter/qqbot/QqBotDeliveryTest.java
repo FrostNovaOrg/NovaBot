@@ -37,15 +37,19 @@ import java.net.http.HttpTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import static org.awaitility.Awaitility.await;
@@ -111,6 +115,252 @@ class QqBotDeliveryTest {
             assertEquals(JSONObject.of("msg_type", 0, "content", "第二条", "msg_id", "m1", "msg_seq", 2),
                     rig.body(1));
             assertEquals(QqBotDirectory.ProactiveStatus.UNKNOWN, rig.group().proactive().status());
+        });
+    }
+
+    @Test
+    void liveNoticeWaitsForEarlierGroupTrafficToLeaveTheMinuteWindow() {
+        withSender(rig -> {
+            for (int i = 0; i < 20; i++) {
+                assertEquals(0, rig.reply("礼物播报", "gift-" + i).getIntValue("code"));
+            }
+            long other = rig.directory.groupSeen("fixture-other-group", Instant.now());
+            rig.time.advance(15_000);
+            assertEquals(0, rig.deliver(Map.of("type", 1, "num", other, "content", "另一群开播")).getIntValue("code"));
+            assertEquals(0, rig.send("开播通知").getIntValue("code"));
+            assertEquals(15_000, rig.requests.get(20).millis());
+            assertEquals(60_000, rig.requests.get(21).millis());
+        });
+    }
+
+    @Test
+    void welcomeAndRegularMessagesShareTheSameMinuteAllowance() {
+        withSender(rig -> {
+            for (int i = 0; i < 20; i++) assertEquals(0, rig.send("开播").getIntValue("code"));
+            var welcomeAt = new CompletableFuture<Long>();
+            rig.exchange = path -> {
+                welcomeAt.complete(rig.time.nowMillis());
+                return json("id", "welcome");
+            };
+            rig.listener.onEvent("GROUP_ADD_ROBOT", JSONObject.of("group_openid", OPENID,
+                    "timestamp", rig.now.toString()), "GROUP_ADD_ROBOT:x", 1L);
+            assertEquals(60_000L, assertDoesNotThrow(() -> welcomeAt.get(10, TimeUnit.SECONDS)));
+            assertEquals("GROUP_ADD_ROBOT:x", rig.body(20).getString("event_id"));
+        });
+    }
+
+    @Test
+    void aClockTickDuringTheQuotaCheckDoesNotDropTheWaitingMessage() {
+        var millis = new AtomicLong();
+        var running = new AtomicBoolean();
+        var window = new QqBotSendWindow(Clock.systemUTC(),
+                () -> running.get() ? millis.getAndIncrement() : millis.get(), millis::addAndGet);
+        for (int i = 0; i < 20; i++) window.acquire(APP_ID, 1);
+        running.set(true);
+        assertDoesNotThrow(() -> window.acquire(APP_ID, 1));
+        assertTrue(millis.get() >= 60_000);
+    }
+
+    @Test
+    void givesUpWhenConcurrentTrafficTakesTheNextMinuteOfSlots() {
+        withSender(rig -> {
+            for (int i = 0; i < 20; i++) assertEquals(0, rig.send("礼物").getIntValue("code"));
+            rig.time.schedule(() -> {
+                for (int i = 0; i < 20; i++) assertEquals(0, rig.send("群通知").getIntValue("code"));
+            }, 60_000);
+            var result = rig.send("开播通知");
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("一分钟内发了太多条"));
+            assertEquals(60_000, rig.time.nowMillis());
+            assertEquals(40, rig.requests.size());
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void retriesAfterFiveSecondsForEitherRateLimitResponse(boolean httpLimit) {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() > 1 ? json("id", "retried")
+                    : httpLimit ? new QqBotHttpTransport.Response(429, "") : json("code", 40034100);
+            assertEquals(0, rig.reply("提醒", "source").getIntValue("code"));
+            assertEquals(List.of(0L, 5000L), rig.requests.stream().map(Request::millis).toList());
+            assertEquals(rig.body(0), rig.body(1));
+        });
+    }
+
+    @Test
+    void proactiveFallbackSharesTheRateRetryWithTheOriginalAttempt() {
+        withSender(rig -> {
+            rig.exchange = path -> switch (rig.requests.size()) {
+                case 1, 3 -> json("code", 40034100);
+                case 2 -> json("code", 40034128);
+                default -> json("id", "unexpected");
+            };
+            var result = rig.reply("答复", "question");
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("限流"));
+            assertEquals(List.of(0L, 5000L, 5000L), rig.requests.stream().map(Request::millis).toList());
+            assertFalse(rig.body(2).containsKey("msg_id"));
+        });
+    }
+
+    @Test
+    void rateLimitedUploadRetriesTheFileBeforePostingTheMessage() {
+        withSender(rig -> {
+            rig.exchange = path -> {
+                if (rig.requests.size() == 1) return new QqBotHttpTransport.Response(429, "");
+                return path.equals("files") ? json("file_info", FILE_INFO) : json("id", "cover");
+            };
+            assertEquals(0, rig.send("开播封面" + IMAGE).getIntValue("code"));
+            assertEquals(List.of("files", "files", "messages"), rig.endpoints());
+            assertEquals(List.of(0L, 5000L, 5000L), rig.requests.stream().map(Request::millis).toList());
+        });
+    }
+
+    @Test
+    void reportsPersistentRateLimitAfterOneRetry() {
+        withSender(rig -> {
+            rig.exchange = path -> json("code", 40034100);
+            var result = rig.send("开播通知");
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("等 5 秒重发仍未发出"));
+            assertEquals(List.of(0L, 5000L), rig.requests.stream().map(Request::millis).toList());
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {2, 4})
+    @ExtendWith(OutputCaptureExtension.class)
+    void longReplyKeepsEveryLineAndUsesOneSequencePerDeliveredPart(int parts, CapturedOutput logs) {
+        withSender(rig -> {
+            String original = "甲乙\r\n丙丁\n戊己\n庚辛";
+            List<JSONObject> delivered = new ArrayList<>();
+            rig.exchange = path -> {
+                var body = rig.body(rig.requests.size() - 1);
+                if (body.getString("content").length() > (parts == 2 ? 7 : 4)) {
+                    return json("code", 40054007);
+                }
+                delivered.add(body);
+                return json("id", "part-" + delivered.size());
+            };
+            assertEquals(0, rig.reply(original, "lines").getIntValue("code"));
+            assertEquals(parts, delivered.size());
+            assertEquals(original, String.join("", delivered.stream().map(b -> b.getString("content")).toList()));
+            for (int i = 0; i < parts; i++) {
+                assertEquals(i + 1, delivered.get(i).getIntValue("msg_seq"));
+                assertEquals("lines", delivered.get(i).getString("msg_id"));
+                if (i + 1 < parts) assertTrue(delivered.get(i).getString("content").endsWith("\n"));
+            }
+            assertTrue(logs.getAll().contains("已拆成 " + parts + " 段重发"));
+        });
+    }
+
+    @Test
+    void partialTextDeliveryFailsWithoutSendingTheFirstPartOrImageAgain() {
+        withSender(rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO) : switch (++rig.sent) {
+                case 1 -> json("code", 40054007);
+                case 2 -> json("id", "first");
+                default -> json("code", 40054002);
+            };
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "第一段\n第二段" + IMAGE).get(0);
+            var result = sendNow(rig, message);
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals("first", result.getString("id"));
+            assertTrue(result.getString("message").contains("禁言"));
+            assertEquals(List.of("files", "messages", "messages", "messages"), rig.endpoints());
+            assertEquals(media(), rig.body(2).getJSONObject("media"));
+            assertFalse(rig.body(3).containsKey("media"));
+        });
+    }
+
+    @Test
+    void singleLineSplitsKeepSupplementaryCharactersAndStopAtFourParts() {
+        withSender(rig -> {
+            String original = "🌟".repeat(16);
+            List<String> accepted = new ArrayList<>();
+            rig.exchange = path -> {
+                String part = rig.body(rig.requests.size() - 1).getString("content");
+                assertEquals("🌟".repeat(part.codePointCount(0, part.length())), part);
+                if (part.length() > 4) return json("code", 40054007);
+                accepted.add(part);
+                return json("id", "part-" + accepted.size());
+            };
+            var result = rig.send(original);
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("太长"));
+            assertEquals(2, accepted.size());
+            assertEquals(6, rig.requests.size());
+        });
+    }
+
+    @Test
+    void sixthReplyUsesProactiveSending() {
+        withSender(rig -> {
+            for (int i = 0; i < 6; i++) {
+                assertEquals(0, rig.reply("答复", "question").getIntValue("code"));
+            }
+            assertEquals(5, rig.body(4).getIntValue("msg_seq"));
+            assertFalse(rig.body(5).containsKey("msg_id"));
+            assertFalse(rig.body(5).containsKey("msg_seq"));
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {40034128, 304103, 40034005, 40034024})
+    void remainingAnswersAreSentProactivelyWhenTheReplyIsRejected(int code) {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() == 1 ? json("code", code) : json("id", "answer");
+            assertEquals(0, rig.reply("答复", "question").getIntValue("code"));
+            assertEquals(0, rig.reply("下一条", "question").getIntValue("code"));
+            assertEquals(3, rig.requests.size());
+            assertEquals("question", rig.body(0).getString("msg_id"));
+            for (int i = 1; i < 3; i++) {
+                assertFalse(rig.body(i).containsKey("msg_id"));
+                assertFalse(rig.body(i).containsKey("msg_seq"));
+            }
+        });
+    }
+
+    @Test
+    void rejectedProactiveFallbackExplainsTheSwitchAndWhyItWasNeeded() {
+        withSender(rig -> {
+            rig.exchange = path -> json("code", rig.requests.size() == 1 ? 40034128 : 40034105);
+            var result = rig.reply("答复", "question");
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("回复次数用完"));
+            assertTrue(result.getString("message").contains("群成员里点机器人 → 右上角设置 → 打开"));
+            assertEquals(2, rig.requests.size());
+            assertEquals(QqBotDirectory.ProactiveStatus.DISABLED, rig.group().proactive().status());
+        });
+    }
+
+    @Test
+    void delayedFirstReplyUsesTheOriginalMessageTimestamp() {
+        withSender(rig -> {
+            Instant original = rig.now.minus(Duration.ofMinutes(20));
+            rig.listener.onEvent("GROUP_AT_MESSAGE_CREATE", JSONObject.of("id", "question", "group_openid", OPENID,
+                    "content", "问一下", "timestamp", original.toString(),
+                    "author", JSONObject.of("member_openid", "fixture-member")), null, 1L);
+            rig.time.advance(Duration.ofMinutes(36).toMillis());
+            assertEquals(0, rig.reply("答复", "question").getIntValue("code"));
+            assertFalse(rig.body(0).containsKey("msg_id"));
+            assertFalse(rig.body(0).containsKey("msg_seq"));
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {200, 429})
+    void duplicateResponseDoesNotTriggerAnotherAttempt(int status) {
+        withSender(rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
+                    : new QqBotHttpTransport.Response(status, json("code", 40054005).body());
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "答复" + IMAGE).get(0);
+            message.setReplyTo("question");
+            var result = sendNow(rig, message);
+            assertTrue(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
+            assertTrue(result.getString("message").contains("QQ 判为重复消息"));
+            assertEquals(List.of("files", "messages"), rig.endpoints());
         });
     }
 
@@ -419,6 +669,19 @@ class QqBotDeliveryTest {
         });
     }
 
+    private JSONObject sendNow(Rig rig, Message message) {
+        var properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(dataDirectory.resolve("live.json").toString());
+        var timeline = new TimelineStore(properties);
+        var sender = new NovaMessageSender(mock(HttpUtil.class), rig.registry, new PushActivityRecorder(timeline),
+                null, timeline, null, null, null);
+        try {
+            return sender.sendNow(message);
+        } finally {
+            sender.shutdown();
+        }
+    }
+
     private void withSender(Consumer<Rig> test) {
         withSender(new QqBotImageDownloader(mock(HttpClient.class)), test);
     }
@@ -431,9 +694,13 @@ class QqBotDeliveryTest {
                 .withBean(QqBotHttpTransport.class, () -> rig::respond, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
+                .withBean("qqBotSendWindow", QqBotSendWindow.class, () -> new QqBotSendWindow(
+                        Clock.offset(rig.time.clock(), Duration.between(Instant.EPOCH, rig.now)),
+                        rig.time::nowMillis, rig.time::advance))
                 .withBean(QqBotImageDownloader.class, () -> downloader, definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
+                    rig.listener = context.getBean(QqBotInboundEvents.class);
                     rig.registry = context.getBean(NovaSenderService.class);
                     assertTrue(rig.registry.getSender(PLATFORM).isEmpty());
                     rig.credentials = context.getBean(QqBotCredentials.class);
@@ -511,10 +778,13 @@ class QqBotDeliveryTest {
         QqBotHttpTransport.Response respond(String endpoint) throws IOException;
     }
 
-    private record Request(String endpoint, JSONObject body) {}
+    private record Request(String endpoint, JSONObject body, long millis) {}
 
     private static final class Rig {
         private final List<Request> requests = new ArrayList<>();
+        private final QqBotGatewayTest.ManualScheduler time = new QqBotGatewayTest.ManualScheduler();
+        private final Instant now = Instant.now();
+        private QqBotInboundEvents listener;
         private Exchange exchange;
         private QqBotCredentials credentials;
         private NovaSenderService registry;
@@ -538,9 +808,9 @@ class QqBotDeliveryTest {
             }
             assertEquals("POST", method);
             String path = uri.getPath();
-            assertTrue(path.startsWith("/v2/groups/" + OPENID + "/"));
+            assertTrue(path.startsWith("/v2/groups/" + OPENID + "/") || path.startsWith("/v2/groups/fixture-other-group/"));
             String endpoint = path.substring(path.lastIndexOf('/') + 1);
-            requests.add(new Request(endpoint, JSON.parseObject(body)));
+            requests.add(new Request(endpoint, JSON.parseObject(body), time.nowMillis()));
             return exchange.respond(endpoint);
         }
 

@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -521,7 +522,8 @@ class QqBotAdapterTest {
         var gateway = new QqBotGateway(api, tokens, (uri, listener) -> fail("不应连接网关"),
                 new QqBotGatewayTest.ManualScheduler(), new DefaultListableBeanFactory().getBeanProvider(QqBotEventListener.class));
         var credentials = new QqBotCredentials(tokens, gateway, mock(QqBotSender.class));
-        return new Rig(clock, tokens, credentials, new QqBotHealthProbe(tokens, gateway), api);
+        var probe = new QqBotHealthProbe(tokens, gateway, mock(QqBotDirectory.class), Optional.empty());
+        return new Rig(clock, tokens, credentials, probe, api);
     }
 
     private static QqBotHttpTransport.Response token(String token, Object expiresIn) {
