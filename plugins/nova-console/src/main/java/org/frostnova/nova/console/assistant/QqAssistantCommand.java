@@ -25,6 +25,7 @@ import org.frostnova.nova.core.service.ReportDeliveryListener;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionKey;
 import org.frostnova.nova.core.service.StreamerNames;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Clock;
@@ -317,7 +318,14 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             String previousQuestion = texts.isEmpty() ? null : texts.get(texts.size() - 1).content().getString("question");
             var recent = history.subList(Math.max(0, history.size() - AssistantAskService.HISTORY_LIMIT), history.size());
             var previousResults = recent.stream().flatMap(turn -> turn.results().stream()).toList();
-            var answer = assistant.askFromQq(LIVE_PLATFORM, uids, source, request, amountVisible, previousResults,
+            var reportChannels = new LinkedHashMap<Long, PushTarget>();
+            access.channels().forEach((uid, target) -> {
+                var snapshot = new PushTarget();
+                BeanUtils.copyProperties(target, snapshot);
+                snapshot.setRevenueVisible(visibility.isVisible(snapshot));
+                reportChannels.put(uid, snapshot);
+            });
+            var answer = assistant.askFromQq(LIVE_PLATFORM, uids, source, request, amountVisible, reportChannels, previousResults,
                     previousQuestion, () -> active.accepted(chosenName), active::difficultyResolved);
             JSONObject result = answer.response();
             if (result.containsKey("difficulty"))
@@ -362,7 +370,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                 followUps = List.of();
             }
             return new QqAnswer(clip(text, limit - guidanceLength) + guidance + tail,
-                    images == null ? List.of() : images.toJavaList(String.class), amountVisible,
+                    images == null ? List.of() : images.toJavaList(String.class), answer.reportImages(), amountVisible,
                     followUps.stream().map(AssistantAskService.FollowUp::question).toList());
         } catch (AssistantException error) {
             return QqAnswer.text(error.getMessage());
@@ -478,14 +486,16 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
     private GroupAccess groupAccess(CommandContext context, List<Candidate> streamers) {
         PushTarget primary = null;
+        var channels = new LinkedHashMap<Long, PushTarget>();
         boolean amountVisible = true;
         for (Candidate streamer : streamers) {
             PushTarget target = allowedChannel(context, streamer.uid());
-            if (target == null) return new GroupAccess(primary, streamer, false);
+            if (target == null) return new GroupAccess(primary, streamer, false, Map.of());
             if (primary == null) primary = target;
+            channels.put(streamer.uid(), target);
             amountVisible &= visibility.isVisible(target);
         }
-        return new GroupAccess(primary, null, amountVisible);
+        return new GroupAccess(primary, null, amountVisible, channels);
     }
 
     private static QqAnswer closedAnswer(Candidate streamer) {
@@ -618,9 +628,9 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                 var access = groupAccess(context, streamers);
                 if (access.closed() != null) {
                     var target = access.primary() == null ? streamers.get(0).target() : access.primary();
-                    send(closedAnswer(access.closed()), target, false);
+                    send(closedAnswer(access.closed()), target, false, Map.of());
                 } else {
-                    send(answer, access.primary(), access.amountVisible());
+                    send(answer, access.primary(), access.amountVisible(), access.channels());
                 }
             }
             return true;
@@ -628,15 +638,20 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
         private void progressReply(String text) {
             var access = groupAccess(context, streamers);
-            if (access.closed() == null) send(QqAnswer.text(text), access.primary(), access.amountVisible());
+            if (access.closed() == null) send(QqAnswer.text(text), access.primary(), access.amountVisible(), access.channels());
         }
 
-        private void send(QqAnswer answer, PushTarget target, boolean amountVisible) {
+        private void send(QqAnswer answer, PushTarget target, boolean amountVisible, Map<Long, PushTarget> channels) {
             boolean hidden = answer.amountVisible() && !amountVisible;
             String text = hidden ? AssistantAggregateRequest.HIDDEN_AMOUNT : answer.text();
             String content = MessagePlaceholders.escapeExternalText(text);
             if (!hidden) {
                 for (String image : answer.images()) content += "{next}" + CommandReply.image(image).content();
+            }
+            for (var image : answer.reportImages()) {
+                PushTarget channel = channels.get(image.uid());
+                if (channel != null && (!image.amountVisible() || visibility.isVisible(channel)))
+                    content += "{next}" + CommandReply.image(image.png()).content();
             }
             Message.create(context.getPlatform(), context.getType(), context.getNum(), content).forEach(message -> {
                         message.setChannel(target);
@@ -657,14 +672,15 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     }
     private record Asker(String session, long sender) { }
     private record Choice(List<String> uids, String question, Instant expires) { }
-    private record GroupAccess(PushTarget primary, Candidate closed, boolean amountVisible) { }
+    private record GroupAccess(PushTarget primary, Candidate closed, boolean amountVisible, Map<Long, PushTarget> channels) { }
     private record PendingFollowUps(List<Candidate> streamers, boolean amountVisible, Instant expires, List<String> questions) { }
     private record HistoryKey(String session, String account, Set<Long> streamers) { }
     private record Turn(Instant at, List<Long> streamers, boolean amountVisible, JSONObject content,
                         List<AssistantChartResults.Result> results) { }
     private record ReportHistoryKey(String session, String platform, Long uid) { }
     private record HistoryEntry(Instant at, JSONObject content) { }
-    private record QqAnswer(String text, List<String> images, boolean amountVisible, List<String> followUps) {
-        static QqAnswer text(String text) { return text == null ? null : new QqAnswer(text, List.of(), false, List.of()); }
+    private record QqAnswer(String text, List<String> images, List<AssistantLiveReports.Image> reportImages,
+                            boolean amountVisible, List<String> followUps) {
+        static QqAnswer text(String text) { return text == null ? null : new QqAnswer(text, List.of(), List.of(), false, List.of()); }
     }
 }

@@ -48,6 +48,10 @@ final class AssistantTools {
                     AssistantAggregateRequest.fields(), AssistantAggregateRequest.REQUIRED),
             new Tool(AssistantSqlRequest.NAME, AssistantSqlRequest.description(true, false),
                     AssistantSqlRequest.fields(true, false), AssistantSqlRequest.REQUIRED),
+            new Tool(AssistantLiveReports.NAME, "生成指定场次的直播报告图。start 和 day 二选一。"
+                    + "都不填则取最近一场已结束且留有明细的直播。指定统计日时一次处理当天全部场次，每问最多四张。",
+                    JSONObject.of("start", integer("开播时刻，毫秒"),
+                            "day", text("统计日，YYYY-MM-DD，北京时间 06:00 换日，按开播时刻归日")), List.of()),
             new Tool(AssistantChartRequest.NAME, AssistantChartRequest.DESCRIPTION,
                     AssistantChartRequest.fields(), AssistantChartRequest.REQUIRED),
             new Tool(AssistantSketchRequest.NAME, AssistantSketchRequest.DESCRIPTION,
@@ -91,7 +95,8 @@ final class AssistantTools {
         if (AssistantSqlRequest.NAME.equals(name)) return AssistantSqlRequest.parse(raw, comparison).arguments();
         JSONObject result = AssistantAggregateRequest.NAME.equals(name)
                 ? AssistantAggregateRequest.parse(raw).arguments() : basicArguments(name, raw);
-        if (comparison && !drawing(name) && raw.containsKey("streamer")) result.put("streamer", integerValue(raw.get("streamer")));
+        if ((comparison && !drawing(name) || AssistantLiveReports.NAME.equals(name)) && raw.containsKey("streamer"))
+            result.put("streamer", integerValue(raw.get("streamer")));
         return result;
     }
 
