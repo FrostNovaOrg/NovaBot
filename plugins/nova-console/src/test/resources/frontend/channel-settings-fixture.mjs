@@ -10,6 +10,7 @@ let disk = initial();
 const version = user => JSON.stringify(user);
 const requests = [];
 let sessionDisabled = [];
+let stateUnavailable = false;
 let assistantAvailable = false;
 const quietByUid = {1: true, 2: false};
 let quietGlobal;
@@ -29,7 +30,8 @@ globalThis.fetch = async (path, options = {}) => {
     }
     return response({success: true, user, version: version(user)});
   }
-  if (url === '/state') return response({sessions: [{platform: 'q', typeCode: 1, num: 100,
+  if (url === '/state' && stateUnavailable) return new Response('Bad Gateway', {status: 502});
+  if (url === '/state') return response({success: true, sessions: [{platform: 'q', typeCode: 1, num: 100,
     revenueVisible: true, disabled: sessionDisabled, menuHidden: [], quietActive: true,
     channels: [{streamerPlatform: 'p', streamerUid: 1, quietActive: quietByUid[1]},
       {streamerPlatform: 'p', streamerUid: 2, quietActive: quietByUid[2]}]}], commands: [
@@ -58,12 +60,45 @@ function input(label) {
 function text(node) {
   return node.textContent + (node.innerHTML || '').replace(/<[^>]*>/g, '') + (node.children || []).map(text).join('');
 }
+function clearCommandRecord() {
+  return idNode('push-right').querySelectorAll('button').find(node => node.textContent === '清除记录');
+}
 const failures = [];
 async function test(problem, run) {
   console.log('检查用户问题：' + problem);
   try { await run(); console.log('PASS ' + problem); }
   catch (error) { failures.push(problem); console.log('FAIL ' + problem + ': ' + error.stack); }
 }
+await test('首次打开推送页遇到运行状态加载失败，保存时保留有效的命令禁用设置', async () => {
+  disk[0].targets[0].disabledCommands = ['直播报告'];
+  stateUnavailable = true;
+  location.hash = '#/push/1/q|1|100';
+  try {
+    await push.reload();
+    await push.refresh();
+    await open(1);
+    assert.match(idNode('status-text').textContent, /运行状态加载失败.*502/);
+
+    const clean = clearCommandRecord();
+    if (clean) await clean.click();
+    const revenue = input('直播收益等金额');
+    revenue.checked = true; await revenue.dispatchEvent({type: 'change'});
+    await push.save();
+    assert.deepEqual(disk[0].targets[0].disabledCommands, ['直播报告'], '保存时应保留直播报告的禁用记录');
+    assert.equal(disk[0].targets[0].revenueVisible, true);
+    assert.equal(clean, undefined, '命令清单未加载时不应有清除记录按钮');
+    assert.doesNotMatch(text(idNode('push-right')), /这些命令已不存在/);
+
+    stateUnavailable = false;
+    await push.loadPushPage();
+    assert.equal(input('直播报告')?.checked, false, '命令清单加载成功后仍显示为禁用');
+  } finally {
+    stateUnavailable = false;
+    location.hash = '';
+    await push.leave();
+    disk = initial();
+  }
+});
 await test('甲通道金额保存在甲的配置，乙仍是默认，页面不调用旧状态写口', async () => {
   await push.reload();
   push.setRuntimeState(await (await fetch('/config/api/state')).json());
@@ -129,6 +164,40 @@ await test('群里关了插件命令时通道行显示计数，再关本通道�
   await open(2);
   assert.equal(input('天气'), undefined, '通道命令开关仍只列主播命令');
   assert.equal(text(idNode('push-right')).includes('但这些命令已不存在'), false, '群插件命令不能当作失效的通道开关');
+});
+await test('报告插件未加载时，推送页仍能清除直播报告的禁用记录', async () => {
+  const retired = ['直播间数据', '直播间总数据', '数据排行榜', '总数据排行榜'];
+  disk = initial();
+  disk[0].targets[0].disabledCommands = [...retired, '直播报告'];
+  await push.reload();
+  const state = await (await fetch('/config/api/state')).json();
+  state.commands = state.commands.filter(command => command.name !== '直播报告');
+  push.setRuntimeState(state);
+  await open(1);
+  const clean = clearCommandRecord();
+  assert.ok(clean, '报告插件未加载时仍应提供清除记录按钮');
+  const note = text(clean.parentNode);
+  assert.match(note, /保留也不会生效.*直播报告/);
+  for (const key of retired) assert.ok(!note.includes(key), key);
+  await clean.click();
+  assert.deepEqual(disk[0].targets[0].disabledCommands, [...retired, '直播报告']);
+  await push.save();
+  assert.deepEqual(disk[0].targets[0].disabledCommands, retired);
+});
+await test('只有未注册的通道命令开关时，主播页通道行不显示禁用计数', async () => {
+  disk = initial(); sessionDisabled = [];
+  disk[0].targets[0].disabledCommands = ['直播报告', '旧命令甲', '旧命令乙'];
+  await push.reload();
+  const state = await (await fetch('/config/api/state')).json();
+  state.commands = state.commands.filter(command => command.name !== '直播报告');
+  push.setRuntimeState(state);
+  await push.showPush('1');
+  const rows = idNode('push-right').querySelectorAll('.rowcard');
+  assert.equal(rows.length, 1, '主播页应列出这位主播的通道');
+  assert.doesNotMatch(text(rows[0]), /已禁用 \d+ 条命令/);
+  push.setRuntimeState({...state, commands: []});
+  await open(1);
+  assert.ok(clearCommandRecord(), '成功取到空的命令清单后仍能清除残留');
 });
 await test('通道明明在静音，主播页的通道行一眼看不出，以为推送坏了', async () => {
   const rowQuiet = () => {
@@ -311,5 +380,5 @@ await test('成员关掉问数时出现确认框，或关闭状态没有保存',
   assert.equal(input('问数').checked, false, '重新载入仍显示关闭');
 });
 await push.leave();
-console.log('跑了 14 格，红 ' + failures.length + ' 格');
+console.log('跑了 17 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;

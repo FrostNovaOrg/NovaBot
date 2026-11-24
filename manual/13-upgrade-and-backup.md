@@ -273,13 +273,14 @@ sudo systemctl enable novabot@<上一版>
 程序、配置与数据都在同一个目录里，照这个顺序做：
 
 1. 停止服务
-2. 备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`
+2. 备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key` 和已存在的 `qqbot/`
 3. 用新版本的产物整个换掉 `NovaBot.jar` 与 `lib/`
 4. `plugins-lib/` 里新包自带的 jar 按名字删旧放新，自己放的留下
-5. `plugins/` **不要整个替换**，只按名字换这五个内置插件并删旧版
+5. `plugins/` **不要整个替换**，只按名字换下列内置插件并删旧版
    （`<版本>` 处换成新版本号）：
    - `nova-onebot-adapter-<版本>.jar`
    - `nova-onebot-adapter-napcat-extension-<版本>.jar`
+   - `nova-qqbot-adapter-<版本>.jar`
    - `nova-bilibili-<版本>.jar`
    - `nova-console-<版本>.jar`
    - `nova-report-<版本>.jar`
@@ -401,7 +402,7 @@ bash /opt/starbot/tools/data-backup.sh <数据目录> user@备份机:/var/backup
 | 转发原动态 | 在原动态上按同样的规则提取，单独放在 `origin.links` 与 `origin.objects` |
 
 > [!WARNING] 同步是按目录走的。数据目录若与配置、凭据在同一个目录（三种装法默认都是），
-> `cookies.json`、`cookies.key`、`application.yml` 会一并被备出去。备份目的地要按
+> `cookies.json`、`cookies.key`、`application.yml` 和已存在的 `qqbot/` 会一并被备出去。备份目的地要按
 > 存放凭据的标准保管；只想备数据的话，先把数据文件挪进一个子目录、在设置里把
 > 「直播数据 · 文件路径」指过去，再备那个子目录。
 
@@ -420,6 +421,7 @@ sudo systemctl enable --now novabot-backup.timer
 - 数据：`data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl`
   与 `details/`、`timeline/`、`dynamics/` 三个目录
 - 配置：`application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`
+- 恢复 QQ 官方机器人凭据时，将 `qqbot/` 整个拷回工作目录。密文和主密钥须来自同一份备份
 - 二次验证：主配置文件旁的 `<主配置文件名>.totp-state`，默认是 `application.yml.totp-state`，
   与主配置文件一起备份、恢复；主配置放在别处的，也一并备份那个目录里的此文件
 - 备份里若有明文迁成加密时留下的 `cookies.json.plain.bak`，不用拷回，程序不读它。它是明文凭据，
@@ -428,7 +430,7 @@ sudo systemctl enable --now novabot-backup.timer
   手动安装与容器的备份里会带着备份那天的 `NovaBot.jar`、`lib/`、`plugins/`、
   `plugins-lib/`，整份拷回会把旧 jar 混进新版
 - 安装目录根上的 `plugins/` 与 `plugins-lib/`（手动安装则是 `plugins/` 里除了
-  [手工升级](#手工升级)列的五个内置插件之外）是你自己装的第三方插件与依赖，
+  [手工升级](#手工升级)所列内置插件之外）是你自己装的第三方插件与依赖，
   恢复时要从备份里拷回；5.2 及更早的 `starbot-` 开头旧名插件确认不用就删掉，别拷回
 
 订阅名单、第三方插件的命令开关、绑定关系都存在 `state.json` 里，它与数据文件在同一目录，

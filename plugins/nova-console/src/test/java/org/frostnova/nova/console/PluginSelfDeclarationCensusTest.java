@@ -39,15 +39,15 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 真正决定运行期行为的是 {@code target/classes} 下的那一份，所以量的是它。
  *
  * <h2>为什么住在这个模块</h2>
- * 它要同时看见五个插件模块的 {@code target/classes}，因此只能跑在构建次序排在所有插件之后的那个模块里。
- * 现在是 nova-console：它以 test 档依赖着其余四个插件模块，reactor 因而把它排在最后。
+ * 它要同时看见所有插件模块的 {@code target/classes}。nova-console 以 test 作用域依赖其他插件模块，
+ * reactor 因而把它排在最后。
  * 本类要换住处，得换到同样排在所有插件之后的模块，不然一到干净构建就红在「产物不见了」。
  * 单独跑本类（而不是整盘跑）时若别的模块还没构建过，同样红在「产物不见了」，
  * 那是它该有的样子——没有产物就等于没有读数。
  *
  * <h2>分母不手写</h2>
  * 「哪些模块是插件模块」现算自 {@code build.sh} 里的 {@code PLUGIN_MODULES}——决定哪些 jar
- * 进 {@code plugins/} 的正是它。手写一份名单的话，日后新挂的第六个插件不在名单里，
+ * 进 {@code plugins/} 的正是它。手写一份名单的话，日后新挂的插件可能漏在名单外，
  * 而「不在名单里」和「查过了」在读数上长得一模一样。
  */
 @DisplayName("插件自报清点")
@@ -102,7 +102,7 @@ class PluginSelfDeclarationCensusTest {
 
         try {
             assertEquals(new TreeSet<>(declared.values()), candidatesFromArtifacts(modules),
-                    "ImportCandidates 从五个模块的产物里现算出来的候选, 与逐个文件读到的那一份对不上"
+                    "ImportCandidates 从各模块的产物里读到的候选与逐个文件读到的类名对不上"
                             + "；逐文件读到：" + declared);
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
@@ -189,7 +189,7 @@ class PluginSelfDeclarationCensusTest {
      * 一个自动配置类的实际次序值
      * <p>
      * 没写 {@code @AutoConfigureOrder} 不等于「最低」, 而是 {@code DEFAULT_ORDER}——
-     * 把「没写」读成最低的话, 本格对五个都没加注解的树也会绿。
+     * 把「没写」读成最低的话，漏掉注解也能通过测试。
      */
     private static int orderOf(Class<?> type) {
         AutoConfigureOrder annotation = type.getAnnotation(AutoConfigureOrder.class);
@@ -197,7 +197,7 @@ class PluginSelfDeclarationCensusTest {
     }
 
     /**
-     * 只摆五个模块产物、父加载器为本测试自己的加载器
+     * 只摆插件模块产物，父加载器为本测试自己的加载器
      * <p>
      * 与下面那支候选清点用的加载器不同, 这支要的是「把类真加载起来、读它身上的注解」,
      * 所以 Spring 那几个注解类必须解析得到, 父加载器不能给 {@code null}。
@@ -212,7 +212,7 @@ class PluginSelfDeclarationCensusTest {
     }
 
     /**
-     * 让 Spring 自己那套加载器在只摆着五个模块产物的类路径上跑一遍
+     * 让 Spring 的加载器在只含插件模块产物的类路径上运行
      * <p>
      * 父加载器给 {@code null}（引导加载器）而不是本测试的加载器：不这样的话，
      * Spring Boot 自己那十几份同名自报文件也会一起被收进来，量到的就不是「插件有几个」了。
