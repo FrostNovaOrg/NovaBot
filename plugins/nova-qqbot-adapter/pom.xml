@@ -24,6 +24,12 @@
             <groupId>org.frostnova.nova</groupId>
             <artifactId>novacore</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-bilibili</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

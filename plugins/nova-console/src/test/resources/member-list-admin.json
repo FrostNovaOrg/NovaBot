@@ -410,6 +410,10 @@
         "text": "冷却忽略"
       },
       {
+        "name": "SUPER_ADMIN_CLAIMED",
+        "text": "超级管理员认领"
+      },
+      {
         "name": "ALERT_SENT",
         "text": "告警发出"
       },

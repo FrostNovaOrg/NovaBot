@@ -478,6 +478,34 @@ class QqBotDeliveryTest {
     }
 
     @Test
+    void claimReplySharesTheOriginalMessageSequenceAndTheGroupLimit() {
+        withSender(rig -> {
+            for (int i = 0; i < 19; i++) assertEquals(0, rig.send("开播").getIntValue("code"));
+            String messageId = "claim-message";
+            assertEquals(0, rig.reply("已收到", messageId).getIntValue("code"));
+            assertEquals(1, rig.body(19).getIntValue("msg_seq"));
+
+            var gatewayThread = Thread.currentThread();
+            var sendingThread = new CompletableFuture<Thread>();
+            rig.exchange = path -> {
+                sendingThread.complete(Thread.currentThread());
+                return json("id", "claim-reply");
+            };
+            String code = rig.members.generate().code();
+            rig.listener.onEvent("GROUP_AT_MESSAGE_CREATE", JSONObject.of("id", messageId, "group_openid", OPENID,
+                    "timestamp", rig.now.toString(), "content", "认领 " + code, "author",
+                    JSONObject.of("member_openid", "fixture-member", "member_nickname", "小明")), null, 1L);
+
+            assertNotSame(gatewayThread, assertDoesNotThrow(() -> sendingThread.get(10, TimeUnit.SECONDS)));
+            assertEquals(60_000L, rig.requests.get(20).millis());
+            JSONObject reply = rig.body(20);
+            assertEquals(messageId, reply.getString("msg_id"));
+            assertEquals(2, reply.getIntValue("msg_seq"));
+            assertEquals("已认领超级管理员：小明", reply.getString("content"));
+        });
+    }
+
+    @Test
     void aClockTickDuringTheQuotaCheckDoesNotDropTheWaitingMessage() {
         var millis = new AtomicLong();
         var running = new AtomicBoolean();
@@ -1102,6 +1130,7 @@ class QqBotDeliveryTest {
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     rig.listener = context.getBean(QqBotInboundEvents.class);
+                    rig.members = context.getBean(QqBotMembers.class);
                     rig.registry = context.getBean(NovaSenderService.class);
                     assertTrue(rig.registry.getSender(PLATFORM).isEmpty());
                     rig.credentials = context.getBean(QqBotCredentials.class);
@@ -1189,6 +1218,7 @@ class QqBotDeliveryTest {
         private final Instant now = Instant.now();
         private final Clock clock = Clock.offset(time.clock(), Duration.between(Instant.EPOCH, now));
         private QqBotInboundEvents listener;
+        private QqBotMembers members;
         private Exchange exchange;
         private QqBotCredentials credentials;
         private NovaSenderService registry;

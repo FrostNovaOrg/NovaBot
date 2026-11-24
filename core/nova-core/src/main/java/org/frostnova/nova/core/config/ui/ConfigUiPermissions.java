@@ -145,6 +145,8 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/credentials");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/interval");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/groups/{num}/name");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/admin-claims/code");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/admin-claims/{memberNum}/revoke");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/bot/targets/lookup");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/exec/notice");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/assistant/status");

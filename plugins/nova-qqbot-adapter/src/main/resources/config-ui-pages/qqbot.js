@@ -33,6 +33,9 @@ export function render(container, {onConnectionChange} = {}) {
 
   const find = id => container.querySelector('#' + prefix + id);
   const view = {appId: find('app-id'), secret: find('secret'), interval: find('millis'), groups: find('groups'),
+    claimStatus: find('claim-status'), claimResult: find('claim-result'),
+    issued: find('issued'), claimCommand: find('claim-command'),
+    claimedAdmins: find('claimed-admins'), issuedExpiry: null,
     unconfigured: find('unconfigured'), load: find('load'), result: find('result'), request: 0, saving: false};
 
   find('credentials').addEventListener('submit', async event => {
@@ -45,7 +48,10 @@ export function render(container, {onConnectionChange} = {}) {
     await save(view, event, 'credentials', {appId, appSecret: view.secret.value}, '凭据已保存', () => {
       view.secret.value = '';
       setSavedValue(view.appId, appId, true);
-      if (!inSetup) return refreshLinks();
+      if (!inSetup) {
+        clearIssuedCode(view);
+        return refreshLinks();
+      }
     });
     await onConnectionChange?.(false);
   });
@@ -59,6 +65,20 @@ export function render(container, {onConnectionChange} = {}) {
     return save(view, event, 'interval', {millis: view.interval.valueAsNumber}, '发送间隔已保存', result => {
       setSavedValue(view.interval, String(result.intervalMillis), true);
     });
+  });
+  find('claim-generate').addEventListener('submit', event => {
+    if (!view.saving) clearIssuedCode(view);
+    return save(view, event, 'admin-claims/code', {}, '认领码已生成', result => {
+      view.issuedExpiry = result.expiresAt;
+      view.claimCommand.textContent = '认领 ' + result.code;
+      view.issued.hidden = false;
+      showClaimStatus(view, result.expiresAt);
+    }, view.claimResult);
+  });
+  view.claimedAdmins.addEventListener('submit', event => {
+    const member = event.target.dataset.memberNum;
+    return save(view, event, 'admin-claims/' + encodeURIComponent(member) + '/revoke', {}, '已撤销超级管理员',
+      undefined, view.claimResult);
   });
   find('refresh').addEventListener('click', () => Promise.all([refresh(), refreshLinks()]));
   view.groups.addEventListener('submit', event => {
@@ -80,6 +100,21 @@ function linkSettingsHtml(loading) {
       <button type="submit" class="ghost sm">保存间隔</button>
     </form>
     <section class="lc-sub">
+      <h3 class="lc-h">官方机器人超级管理员</h3>
+      <form class="fbox" id="qqbot-claim-generate">
+        <button type="submit" class="ghost sm">生成超管认领码</button>
+      </form>
+      <p class="hint" id="qqbot-claim-status" role="status"></p>
+      <div class="issued" id="qqbot-issued" role="status" hidden>
+        <b>请本人在官方群里 @机器人，发送下面这条命令。</b>
+        <p><code id="qqbot-claim-command"></code></p>
+        <p>认领码只显示这一次，请勿转发。</p>
+      </div>
+      <h4 class="lc-h">已认领的超级管理员</h4>
+      <div id="qqbot-claimed-admins"></div>
+      <p class="hint" id="qqbot-claim-result" role="status" hidden></p>
+    </section>
+    <section class="lc-sub">
       <h3 class="lc-h">已加入的群</h3>
       <p class="hint">把机器人拉进群（个人主体要求你是群主或管理员），请群主打开主动发言。然后就可以在推送页选择这个群。</p>
       <p class="hint">群名留空并保存，可恢复接口群名或默认名。</p>
@@ -91,6 +126,8 @@ function linkSettingsHtml(loading) {
 
 export async function refresh() {
   if (!card || store.tab !== 'bot') return;
+  clearIssuedCode(card);
+  showResult(card.claimResult, '');
   await refreshView(card);
 }
 
@@ -105,6 +142,10 @@ async function refreshView(view) {
     view.unconfigured.hidden = state.configured;
     if (view.groups) {
       setSavedValue(view.interval, String(state.intervalMillis));
+      const expiresAt = state.claimCodeActive ? state.claimCodeExpiresAt : null;
+      if (expiresAt !== view.issuedExpiry) clearIssuedCode(view);
+      showClaimStatus(view, expiresAt);
+      renderClaimedAdmins(view.claimedAdmins, state.claimedAdmins || []);
       renderGroups(view.groups, state.groups || []);
     }
     view.load.textContent = '';
@@ -113,7 +154,7 @@ async function refreshView(view) {
   }
 }
 
-async function save(view, event, path, body, message, onSaved) {
+async function save(view, event, path, body, message, onSaved, resultBox = view.result) {
   event.preventDefault();
   if (view.saving) return;
   const button = event.submitter || event.target.querySelector('button[type="submit"]');
@@ -121,16 +162,16 @@ async function save(view, event, path, body, message, onSaved) {
   view.saving = true;
   button.disabled = true;
   inputs.forEach(input => { input.disabled = true; });
-  showResult(view, '正在保存…');
+  showResult(resultBox, '正在保存…');
   try {
     const result = await api(BASE + path, {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)});
     if (!result.success) throw new Error(result.message || '保存失败');
-    const followUp = onSaved(result);
-    showResult(view, result.warning || message, !!result.warning);
-    await Promise.all([view.groups ? refresh() : refreshView(view), followUp]);
+    const followUp = onSaved?.(result);
+    showResult(resultBox, result.warning || message, !!result.warning);
+    await Promise.all([refreshView(view), followUp]);
   } catch (error) {
-    showResult(view, error.message, true);
+    showResult(resultBox, error.message, true);
   } finally {
     view.saving = false;
     button.disabled = false;
@@ -138,10 +179,44 @@ async function save(view, event, path, body, message, onSaved) {
   }
 }
 
-function showResult(view, message, notice = false) {
-  view.result.hidden = !message;
-  view.result.className = notice ? 'notice' : 'hint';
-  view.result.textContent = message;
+function clearIssuedCode(view) {
+  view.issued.hidden = true;
+  view.claimCommand.textContent = '';
+  view.issuedExpiry = null;
+}
+
+function showClaimStatus(view, expiresAt) {
+  view.claimStatus.textContent = expiresAt
+    ? '认领码有效，过期时间：' + displayTime(expiresAt)
+    : '当前没有有效的认领码。';
+}
+
+function displayTime(value) {
+  return new Date(value).toLocaleString('zh-CN', {hour12: false});
+}
+
+function renderClaimedAdmins(container, admins) {
+  if (!admins.length) {
+    container.innerHTML = '<p class="hint">还没有人认领超级管理员。</p>';
+    return;
+  }
+  container.innerHTML = `<div role="list" aria-label="已认领的超级管理员">
+    ${admins.map(admin => `<div class="todo" role="listitem">
+      <div class="tt">
+        <b>${esc(admin.nickname)}</b>
+        <p>认领群：${esc(admin.groupName)}</p>
+        <p>认领时间：<time datetime="${esc(admin.claimedAt)}">${esc(displayTime(admin.claimedAt))}</time></p>
+      </div>
+      <form data-member-num="${esc(admin.memberNum)}">
+        <button type="submit" class="ghost sm danger">撤销</button>
+      </form>
+    </div>`).join('')}</div>`;
+}
+
+function showResult(element, message, notice = false) {
+  element.hidden = !message;
+  element.className = notice ? 'notice' : 'hint';
+  element.textContent = message;
 }
 
 function setSavedValue(input, value, replace = false) {

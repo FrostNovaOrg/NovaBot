@@ -86,6 +86,8 @@ public class CommandDispatcher {
      */
     private final ObjectProvider<CommandFollowUp> followUps;
 
+    private final Iterable<SuperAdministratorResolver> superAdministrators;
+
     private final CommandSettingsService settings;
 
     private final AbstractDataSource dataSource;
@@ -117,7 +119,6 @@ public class CommandDispatcher {
      */
     private final TimelineWriter timeline;
 
-    @Autowired
     public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
                              NovaMessageSender sender, NovaCoreProperties properties,
@@ -134,8 +135,26 @@ public class CommandDispatcher {
                              CommandSettingsService settings, AbstractDataSource dataSource,
                              NovaMessageSender sender, NovaCoreProperties properties,
                              TimelineWriter timeline, Clock clock) {
+        this(commands, followUps, settings, dataSource, sender, properties, timeline, clock, List.of());
+    }
+
+    @Autowired
+    public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
+                             CommandSettingsService settings, AbstractDataSource dataSource,
+                             NovaMessageSender sender, NovaCoreProperties properties,
+                             ObjectProvider<SuperAdministratorResolver> superAdministrators, TimelineWriter timeline) {
+        this(commands, followUps, settings, dataSource, sender, properties, timeline,
+                Clock.systemDefaultZone(), superAdministrators);
+    }
+
+    private CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
+                              CommandSettingsService settings, AbstractDataSource dataSource,
+                              NovaMessageSender sender, NovaCoreProperties properties,
+                              TimelineWriter timeline, Clock clock,
+                              Iterable<SuperAdministratorResolver> superAdministrators) {
         this.commands = commands;
         this.followUps = followUps;
+        this.superAdministrators = superAdministrators;
         this.settings = settings;
         this.dataSource = dataSource;
         this.sender = sender;
@@ -425,11 +444,7 @@ public class CommandDispatcher {
     /**
      * 判断消息发送者是否为管理员
      * <p>
-     * 两条来源：会话中的角色（群主、群管理员），以及配置里的超级管理员名单。
-     * 后者不依赖群角色——机器人的主人未必是每个群的管理员。
-     * <p>
-     * <b>私聊一律不算管理员</b>：私聊没有群角色，若在此放行，任何人私聊机器人
-     * 都能改动群里的命令开关。
+     * 依次检查配置名单、群发言人在适配器中的超级管理员身份、会话角色。
      */
     private boolean isAdmin(NovaRemoteMessageEvent event) {
         Long senderUid = event.getSenderUid();
@@ -442,6 +457,17 @@ public class CommandDispatcher {
             return true;
         }
 
+        if ("group".equals(event.getMessageType())) {
+            for (SuperAdministratorResolver resolver : superAdministrators) {
+                try {
+                    if (resolver.supports(event.getPlatform()) && resolver.isSuperAdministrator(senderUid)) {
+                        return true;
+                    }
+                } catch (RuntimeException e) {
+                    log.warn("无法查询适配器中的超级管理员身份");
+                }
+            }
+        }
         String role = event.getSenderRole();
         return "owner".equalsIgnoreCase(role) || "admin".equalsIgnoreCase(role);
     }

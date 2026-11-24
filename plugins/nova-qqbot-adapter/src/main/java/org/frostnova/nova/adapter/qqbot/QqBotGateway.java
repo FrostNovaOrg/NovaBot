@@ -261,7 +261,9 @@ final class QqBotGateway {
         Object data = frame.get("d");
         Long receivedSequence = number(frame.get("s"));
         if (log.isDebugEnabled()) {
-            log.debug("收到 QQ 开放平台事件 {}", QqBotGatewayEventLog.mask(frame, source.token));
+            // 消息事件可能携带认领码等用户输入，仅记录事件名。
+            log.debug("收到 QQ 开放平台事件 {}",
+                    event.endsWith("MESSAGE_CREATE") ? event : QqBotGatewayEventLog.mask(frame, source.token));
         }
         switch (event) {
             case "READY" -> {
@@ -287,7 +289,7 @@ final class QqBotGateway {
                     String eventId = text(frame.get("id"));
                     listeners.orderedStream().forEach(listener -> {
                         try {
-                            listener.onEvent(event, data, eventId, receivedSequence);
+                            listener.onEventForApp(source.token.appId(), event, data, eventId, receivedSequence);
                         } catch (Exception e) {
                             log.warn("QQ 开放平台事件监听处理失败");
                         }

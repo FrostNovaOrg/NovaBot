@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Sender;
@@ -16,6 +17,9 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 
 import static org.frostnova.nova.adapter.qqbot.QqBotMessageText.AT_ALL_TAG;
@@ -41,6 +45,7 @@ class QqBotSender {
     static final String SWITCH_PATH = "手机 QQ 进群 → 群成员里点机器人 → 右上角设置 → 打开";
     private static final String NO_REPLY = "已发出但没等到 QQ 的回包，未重发";
     private static final String BAD_RECEIPT = "QQ 的发送回包无法确认送达，未重发";
+    private static final String CLAIM_REPLY_FAILED = "官方机器人认领回复发送失败";
 
     private final QqBotSettings settings;
     private final QqBotDirectory directory;
@@ -49,6 +54,11 @@ class QqBotSender {
     private final NovaSenderService registry;
     private final QqBotSendWindow window;
     private final QqBotReplyWindows replies;
+    private final ExecutorService eventReplies = Executors.newSingleThreadExecutor(task -> {
+        Thread worker = new Thread(task, "qqbot-event-reply");
+        worker.setDaemon(true);
+        return worker;
+    });
     private Sender registered;
 
     QqBotSender(QqBotSettings settings, QqBotDirectory directory, QqBotApiClient api,
@@ -75,6 +85,41 @@ class QqBotSender {
         }
     }
 
+    /** 进群和认领回复可能等待发送额度，交给网关之外的同一个工作线程。 */
+    void submitEventReply(Runnable task) {
+        try {
+            eventReplies.execute(task);
+        } catch (RejectedExecutionException e) {
+            log.warn("QQ 官方机器人事件回复队列不可用");
+        }
+    }
+
+    void submitClaimReply(QqBotSettings.Credentials credentials, long groupNum, String messageId,
+                          QqBotReplyWindows.Window reply, String content) {
+        submitEventReply(() -> {
+            try {
+                if (settings.snapshot().credentials() != credentials) return;
+                var group = directory.group(credentials.appId(), groupNum).orElse(null);
+                if (group == null || group.removed()) return;
+                var target = new Target(credentials.appId(), group, credentials);
+                // 昵称按纯文字发送，避免把群成员填写的内容当成消息占位符。
+                var text = new QqBotMessageText();
+                text.append(content, 0, content.length());
+                var message = new Outgoing(text, List.of(), false);
+                if (sendReply(target, message, messageId, reply).getIntValue("code") != 0) {
+                    log.warn(CLAIM_REPLY_FAILED);
+                }
+            } catch (RuntimeException e) {
+                log.warn(CLAIM_REPLY_FAILED);
+            }
+        });
+    }
+
+    @PreDestroy
+    void stopEventReplies() {
+        eventReplies.shutdownNow();
+    }
+
     private JSONObject deliver(Map<String, String> headers, Map<String, Object> params) {
         try {
             JSONObject input = new JSONObject(params);
@@ -96,7 +141,7 @@ class QqBotSender {
             if (group.removed()) {
                 return targetFailure("机器人已被移出这个群");
             }
-            Target target = new Target(current.appId(), group);
+            Target target = new Target(current.appId(), group, null);
             String content = input.getString("content");
             String replyTo = input.getString("reply_to");
             Outgoing message;
@@ -119,13 +164,17 @@ class QqBotSender {
             Instant now = window.now();
             Long created = input.getLong("create_time");
             var reply = replies.get(target.appId(), replyTo, created == null ? now : Instant.ofEpochMilli(created), now);
-            // 同一原消息的多个投递共用 msg_seq，直到本次送达情况明确才让出序号。
-            synchronized (reply) {
-                return sendGroupMessages(target, message, replyTo, reply);
-            }
+            return sendReply(target, message, replyTo, reply);
         } catch (RuntimeException e) {
             log.warn("QQ 官方机器人投递失败");
             return failure("QQ 官方机器人投递失败，请查看日志");
+        }
+    }
+
+    private JSONObject sendReply(Target target, Outgoing message, String replyTo, QqBotReplyWindows.Window reply) {
+        // 同一原消息的多个投递共用 msg_seq，直到本次送达情况明确才让出序号。
+        synchronized (reply) {
+            return sendGroupMessages(target, message, replyTo, reply);
         }
     }
 
@@ -372,6 +421,9 @@ class QqBotSender {
 
     private String post(Target target, String path, JSONObject body, String replyTo, QqBotReplyWindows.Window reply) {
         window.acquire(target.appId(), target.group().number());
+        if (target.claimCredentials() != null && settings.snapshot().credentials() != target.claimCredentials()) {
+            throw new QqBotApiException(0, CLAIM_REPLY_FAILED, "", 0);
+        }
         int sequence = reply == null ? 0 : reply.nextSequence(window.now());
         if (sequence > 0) {
             body.put("msg_id", replyTo);
@@ -403,6 +455,10 @@ class QqBotSender {
         }
         if (sending && error.deliveryUnknown()) {
             return uncertain(target, error.httpStatus() == 0 ? NO_REPLY : BAD_RECEIPT);
+        }
+        if (target.claimCredentials() != null) {
+            // 平台报错可能引用原群消息，认领回复只记录通用原因。
+            return fail(target, CLAIM_REPLY_FAILED, error.code() == 40034105);
         }
         String official = maskDiagnostic(target, error.getMessage(), protectedValue);
         String trace = maskDiagnostic(target, error.traceId(), protectedValue);
@@ -478,12 +534,16 @@ class QqBotSender {
             var failure = reason == null ? null : new QqBotDirectory.Failure(reason, now);
             directory.recordSendResult(target.appId(), target.group().number(), proactive, failure);
         } catch (RuntimeException e) {
-            log.warn("无法记录 QQ 官方机器人群 {} 的投递结果", target.maskedOpenId());
+            if (target.claimCredentials() == null) {
+                log.warn("无法记录 QQ 官方机器人群 {} 的投递结果", target.maskedOpenId());
+            }
         }
     }
 
     private static JSONObject uncertain(Target target, String reason) {
-        log.warn("QQ 官方机器人群 {} 送达不明，{}", target.maskedOpenId(), reason);
+        if (target.claimCredentials() == null) {
+            log.warn("QQ 官方机器人群 {} 送达不明，{}", target.maskedOpenId(), reason);
+        }
         return failure(reason).fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
     }
 
@@ -503,7 +563,7 @@ class QqBotSender {
         return failure(reason).fluentPut(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
     }
 
-    private record Target(String appId, QqBotDirectory.GroupEntry group) {
+    private record Target(String appId, QqBotDirectory.GroupEntry group, QqBotSettings.Credentials claimCredentials) {
         String maskedOpenId() {
             return QqBotDirectory.maskOpenId(group.openid());
         }

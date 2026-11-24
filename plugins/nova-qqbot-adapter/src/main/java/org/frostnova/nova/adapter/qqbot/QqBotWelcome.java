@@ -1,14 +1,11 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
-import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** 在网关心跳线程之外回复进群事件。 */
 @Slf4j
@@ -22,12 +19,8 @@ final class QqBotWelcome {
     private final Executor executor;
 
     @Autowired
-    QqBotWelcome(QqBotApiClient api, QqBotSendWindow window) {
-        this(api, window, Executors.newSingleThreadExecutor(task -> {
-            Thread worker = new Thread(task, "qqbot-welcome");
-            worker.setDaemon(true);
-            return worker;
-        }));
+    QqBotWelcome(QqBotApiClient api, QqBotSendWindow window, QqBotSender sender) {
+        this(api, window, sender::submitEventReply);
     }
 
     QqBotWelcome(QqBotApiClient api, QqBotSendWindow window, Executor executor) {
@@ -53,10 +46,5 @@ final class QqBotWelcome {
                 }
             }
         });
-    }
-
-    @PreDestroy
-    void stop() {
-        if (executor instanceof ExecutorService service) service.shutdownNow();
     }
 }
