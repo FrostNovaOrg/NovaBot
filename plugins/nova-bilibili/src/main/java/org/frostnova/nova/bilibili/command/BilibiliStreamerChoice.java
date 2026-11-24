@@ -255,6 +255,12 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
             return null;
         }
 
+        // 首次选择沿用首词匹配，继续选择时带有其他词的消息会结束清单。
+        if (!context.getArgs().isEmpty() && !pending.selected().isEmpty()) {
+            pendings.remove(key, pending);
+            return null;
+        }
+
         String word = context.getCommand();
         if (EXPAND.equals(word)) {
             // 展开只做一次：再做也无非是同一份清单，而每做一次就多绕过一次冷却

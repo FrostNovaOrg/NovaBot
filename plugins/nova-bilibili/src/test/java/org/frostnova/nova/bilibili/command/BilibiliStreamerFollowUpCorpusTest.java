@@ -17,6 +17,7 @@ import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
@@ -233,9 +234,8 @@ class BilibiliStreamerFollowUpCorpusTest {
                 corpus("没 @ 回数字但没人问过 —— 不出声、不回菜单",
                         plain("2", "!已出图", "!用法：")),
 
-                // 单词才走「不 @ 也认」这一条：@ 之后的原路径一个字不动，
-                // 多词仍按第一个词认领
-                corpus("已 @ 的原路径照旧 —— @ 后多词仍按第一个词认领",
+                // 首次选择时，@ 后的多词消息仍按第一个词认领。
+                corpus("已 @ 的首次选择 —— 多词仍按第一个词认领",
                         at("直播报告", "回序号选一位"),
                         at("2 你猜", "已出图：主播乙")));
     }
@@ -324,6 +324,23 @@ class BilibiliStreamerFollowUpCorpusTest {
         assertTrue(selected.contains("已出图：主播乙"), () -> selected);
     }
 
+    @Test
+    void numericPrefixQuestionAfterAChoiceDoesNotSubscribeToAnotherStreamer() {
+        var fixture = new Fixture();
+
+        String menu = fixture.feed(ASKER, Duration.ZERO, "开播@我", true);
+        assertTrue(menu.contains("回序号选一位"), () -> menu);
+        fixture.feed(ASKER, Duration.ZERO, "1", true);
+        assertEquals(List.of(ASKER), fixture.subscriptions.list(PLATFORM, GROUP, 10001L, "live"));
+
+        String question = fixture.feed(ASKER, Duration.ofSeconds(5), "2 小时前主播甲开播了吗", true);
+        assertEquals(List.of(), fixture.subscriptions.list(PLATFORM, GROUP, 10002L, "live"), () -> question);
+        assertTrue(question.contains("用法："), () -> question);
+
+        assertEquals("", fixture.feed(ASKER, Duration.ZERO, "2", false));
+        assertEquals(List.of(), fixture.subscriptions.list(PLATFORM, GROUP, 10002L, "live"));
+    }
+
     /**
      * 一次回放用的整套零件
      * <p>
@@ -333,6 +350,8 @@ class BilibiliStreamerFollowUpCorpusTest {
         private final List<String> replies = new ArrayList<>();
 
         private final CommandDispatcher dispatcher;
+
+        private final AtSubscriptionService subscriptions;
 
         private final Ticking clock = new Ticking();
         private final String platform;
@@ -365,7 +384,9 @@ class BilibiliStreamerFollowUpCorpusTest {
             NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
-            CommandSettingsService settings = new CommandSettingsService(new NovaStateStore(properties));
+            NovaStateStore state = new NovaStateStore(properties);
+            CommandSettingsService settings = new CommandSettingsService(state);
+            subscriptions = new AtSubscriptionService(state);
             BilibiliStreamerChoice choice =
                     new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties), clock);
             var capability = mock(GroupMessageCapability.class);
@@ -394,6 +415,7 @@ class BilibiliStreamerFollowUpCorpusTest {
 
             commands.add(new MenuCommand(self, settings));
             commands.add(new ProbeCommand(dataSource, choice));
+            commands.add(new BilibiliLiveAtMeCommand(dataSource, choice, subscriptions, settings));
         }
 
         /**

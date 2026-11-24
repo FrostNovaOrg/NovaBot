@@ -322,7 +322,7 @@ public class CommandDispatcher {
                 }
             } catch (Exception e) {
                 // 认领方出错不该让这条消息连菜单都收不到
-                log.error("处理消息 {} 的追问时发生异常", name, e);
+                log.error("认领消息 {} 时发生异常", name, e);
             }
         }
         return null;
