@@ -33,19 +33,19 @@ final class QqBotInboundEvents implements QqBotEventListener {
     private final QqBotDirectory directory;
     private final QqBotSettings settings;
     private final QqBotMembers members;
-    private final QqBotPassiveReplies replies;
+    private final QqBotSender sender;
     private final ObjectProvider<TimelineWriter> timeline;
     private final ApplicationEventPublisher publisher;
     private final QqBotGatewayScheduler scheduler;
     private final LinkedHashMap<EventKey, Long> recentEvents = new LinkedHashMap<>();
 
     QqBotInboundEvents(QqBotDirectory directory, QqBotSettings settings, QqBotMembers members,
-                       QqBotPassiveReplies replies, ObjectProvider<TimelineWriter> timeline,
+                       QqBotSender sender, ObjectProvider<TimelineWriter> timeline,
                        ApplicationEventPublisher publisher, QqBotGatewayScheduler scheduler) {
         this.directory = directory;
         this.settings = settings;
         this.members = members;
-        this.replies = replies;
+        this.sender = sender;
         this.timeline = timeline;
         this.publisher = publisher;
         this.scheduler = scheduler;
@@ -101,11 +101,11 @@ final class QqBotInboundEvents implements QqBotEventListener {
         String content = text(message.get("content"));
         String candidate = claimCandidate(content);
         if (members.invalidateMalformedClaim(credentials, content, candidate)) {
-            replies.submit(appId, groupOpenId, id, MALFORMED_CLAIM);
+            sender.submitClaimReply(credentials, group, id, MALFORMED_CLAIM);
             return;
         }
         if (candidate != null) {
-            replyToClaim(credentials, group, groupOpenId, member, nickname, candidate, id);
+            replyToClaim(credentials, group, member, nickname, candidate, id);
             return;
         }
         String safeContent = members.maskClaimCodes(content);
@@ -115,23 +115,22 @@ final class QqBotInboundEvents implements QqBotEventListener {
         publisher.publishEvent(event);
     }
 
-    private void replyToClaim(QqBotSettings.Credentials credentials, long group, String groupOpenId, long member,
+    private void replyToClaim(QqBotSettings.Credentials credentials, long group, long member,
                               String nickname, String candidate, String messageId) {
-        String appId = credentials.appId();
         QqBotMembers.Claim claim;
         try {
             claim = members.redeem(credentials, group, member, nickname, candidate);
         } catch (IllegalStateException e) {
             log.warn("无法保存官方机器人的超级管理员认领");
-            replies.submit(appId, groupOpenId, messageId, "暂时无法保存认领结果，请稍后重试");
+            sender.submitClaimReply(credentials, group, messageId, "暂时无法保存认领结果，请稍后重试");
             return;
         }
         if (claim == null) {
-            replies.submit(appId, groupOpenId, messageId, INVALID_CODE);
+            sender.submitClaimReply(credentials, group, messageId, INVALID_CODE);
             return;
         }
-        replies.submit(appId, groupOpenId, messageId, "已认领超级管理员：" + claim.nickname());
-        String groupName = directory.groupDisplayName(appId, group);
+        sender.submitClaimReply(credentials, group, messageId, "已认领超级管理员：" + claim.nickname());
+        String groupName = directory.groupDisplayName(credentials.appId(), group);
         timeline.ifAvailable(writer -> writer.record(TimelineEvent
                 .of(TimelineEventType.SUPER_ADMIN_CLAIMED, TimelineEvent.Level.INFO)
                 .at(claim.claimedAt())

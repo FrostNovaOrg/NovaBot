@@ -185,12 +185,6 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return group(number).map(GroupEntry::openid);
     }
 
-    synchronized Optional<String> groupOpenId(String appId, long number) {
-        requireReadable();
-        return Optional.ofNullable(entries(appId).groups().get(number)).filter(group -> !group.removed())
-                .map(GroupEntry::openid);
-    }
-
     synchronized String groupDisplayName(String appId, long number) {
         requireReadable();
         BotEntries bot = entries(appId);

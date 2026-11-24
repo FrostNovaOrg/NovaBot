@@ -39,6 +39,8 @@ import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -59,6 +61,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.containsString;
@@ -89,6 +92,26 @@ class QqBotConsoleControllerTest {
 
     @TempDir
     Path root;
+
+    @Test
+    void firstCredentialSaveAfterStartupRegistersTheSenderAndConnects() {
+        withConsole(rig -> {
+            rig.ready.run();
+            assertFalse(state(rig).getBooleanValue("configured"));
+
+            var response = rig.mvc.perform(write("credentials", JSONObject.of("appId", APP_ID, "appSecret", SECRET)))
+                    .andReturn().getResponse();
+            String body = response.getContentAsString(StandardCharsets.UTF_8);
+            assertEquals(200, response.getStatus(), body);
+            assertTrue(JSONObject.parseObject(body).getBooleanValue("success"));
+            assertEquals(List.of(PLATFORM), rig.senders.getSenderNames().stream().sorted().toList());
+
+            connect(rig);
+            var connected = state(rig);
+            assertTrue(connected.getBooleanValue("configured"));
+            assertEquals("OK", connected.getJSONObject("connection").getString("level"));
+        });
+    }
 
     @Test
     void readsOnlyMaskedCredentialsAndPublicGroupFields() {
@@ -376,7 +399,7 @@ class QqBotConsoleControllerTest {
             var admins = state(rig).getJSONArray("claimedAdmins");
             assertEquals(1, admins.size());
             assertEquals("账号昵称", admins.getJSONObject(0).getString("nickname"));
-            rig.credentials.onApplicationReady();
+            rig.ready.run();
             connect(rig);
             long group = rig.directory.groupNumber(GROUP).orElseThrow();
             configurePush(rig, group);
@@ -391,16 +414,21 @@ class QqBotConsoleControllerTest {
     void claimCodeAndOpenIdsStayOutOfLogsTimelineAuditAndState() {
         Logger gatewayLog = (Logger) LoggerFactory.getLogger(QqBotGateway.class);
         Logger mvcLog = (Logger) LoggerFactory.getLogger(HttpEntityMethodProcessor.class);
+        Logger senderLog = (Logger) LoggerFactory.getLogger(QqBotSender.class);
         Level originalGatewayLevel = gatewayLog.getLevel();
         Level originalMvcLevel = mvcLog.getLevel();
         boolean originalMvcAdditivity = mvcLog.isAdditive();
+        boolean originalSenderAdditivity = senderLog.isAdditive();
         var logs = new ListAppender<ILoggingEvent>();
+        logs.list = new CopyOnWriteArrayList<>();
         logs.start();
         gatewayLog.addAppender(logs);
         mvcLog.addAppender(logs);
+        senderLog.addAppender(logs);
         gatewayLog.setLevel(Level.DEBUG);
         mvcLog.setLevel(Level.TRACE);
         mvcLog.setAdditive(false);
+        senderLog.setAdditive(false);
         try {
             withConsole(rig -> {
                 saveCredentials(rig.mvc);
@@ -414,6 +442,17 @@ class QqBotConsoleControllerTest {
                 assertTrue(withCode.getBooleanValue("claimCodeActive"));
                 assertNotNull(withCode.getString("claimCodeExpiresAt"));
                 assertFalse(withCode.toString().contains(code));
+
+                rig.nextReplyError.set("发送失败 " + code + " " + GROUP + " " + SENDER);
+                rig.claim("reply-error", SENDER, "认领 11111111");
+                await().atMost(Duration.ofSeconds(8)).until(() -> logs.list.stream().anyMatch(line ->
+                        line.getLoggerName().equals(senderLog.getName()) && line.getLevel() == Level.WARN));
+                assertTrue(logs.list.stream().noneMatch(line -> line.getFormattedMessage().contains(code)),
+                        "认领回复失败时日志外泄认领码");
+                JSONObject afterReplyError = state(rig);
+                assertTrue(afterReplyError.getBooleanValue("claimCodeActive"));
+                assertFalse(afterReplyError.toJSONString().contains(code), "认领回复失败时状态回包外泄认领码");
+
                 rig.claim("claim", SENDER, "认领 " + code);
                 assertTrue(rig.passiveReply("claim").contains("已认领超级管理员"));
                 JSONObject claimed = state(rig);
@@ -445,9 +484,11 @@ class QqBotConsoleControllerTest {
         } finally {
             gatewayLog.detachAppender(logs);
             mvcLog.detachAppender(logs);
+            senderLog.detachAppender(logs);
             gatewayLog.setLevel(originalGatewayLevel);
             mvcLog.setLevel(originalMvcLevel);
             mvcLog.setAdditive(originalMvcAdditivity);
+            senderLog.setAdditive(originalSenderAdditivity);
             logs.stop();
         }
     }
@@ -557,6 +598,7 @@ class QqBotConsoleControllerTest {
         var requests = new ArrayList<JSONObject>();
         var gateways = new ArrayList<String>();
         List<JSONObject> passiveReplies = new CopyOnWriteArrayList<>();
+        var nextReplyError = new AtomicReference<String>();
         QqBotHttpTransport http = (method, uri, headers, body) -> {
             String path = uri.getPath();
             if (path.equals("/app/getAppAccessToken")) {
@@ -574,7 +616,13 @@ class QqBotConsoleControllerTest {
                 assertEquals("POST", method);
                 JSONObject reply = JSONObject.parseObject(body);
                 assertEquals(0, reply.getIntValue("msg_type"));
+                assertTrue(reply.getIntValue("msg_seq") > 0);
                 passiveReplies.add(reply);
+                String error = nextReplyError.getAndSet(null);
+                if (error != null) {
+                    return new QqBotHttpTransport.Response(400,
+                            JSONObject.of("code", 40059999, "message", error).toJSONString());
+                }
                 return response(JSONObject.of("id", "fixture-reply"));
             }
             return response(JSONObject.of("member_role", "admin", "allow_proactive_msg", false));
@@ -624,8 +672,10 @@ class QqBotConsoleControllerTest {
                             .addFilters(new ConfigUiOperationFilter(store,
                                     List.copyOf(app.getBeansOfType(ConfigUiOperationProvider.class).values())))
                             .setControllerAdvice(new ConfigUiOperationAdvice()).build();
+                    Runnable ready = () -> app.publishEvent(new ApplicationReadyEvent(new SpringApplication(),
+                            new String[0], app.getSourceApplicationContext(), Duration.ZERO));
                     test.run(new Rig(mvc, directory, scheduler, requests, gateways, listeners, passiveReplies,
-                            timeline, dataSource, subscriptions, app.getBean(QqBotCredentials.class), registry));
+                            timeline, dataSource, subscriptions, ready, registry, nextReplyError));
                 });
     }
 
@@ -675,7 +725,7 @@ class QqBotConsoleControllerTest {
                        List<JSONObject> tokenRequests, List<String> gatewayRequests,
                        List<QqBotWebSocketTransport.Listener> listeners, List<JSONObject> passiveReplies,
                        List<TimelineEvent> timeline, AbstractDataSource dataSource, AtSubscriptionService subscriptions,
-                       QqBotCredentials credentials, NovaSenderService senders) {
+                       Runnable ready, NovaSenderService senders, AtomicReference<String> nextReplyError) {
         void claim(String id, String sender, String content) {
             message("GROUP_AT_MESSAGE_CREATE", id, GROUP, sender, content, "小明", "账号昵称");
         }

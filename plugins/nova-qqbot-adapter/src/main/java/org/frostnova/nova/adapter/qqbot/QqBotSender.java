@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Sender;
@@ -19,6 +20,10 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import static org.frostnova.nova.adapter.qqbot.QqBotPluginAutoConfiguration.DISPLAY_NAME;
@@ -40,6 +45,7 @@ class QqBotSender {
     private static final Duration REPLY_TTL = Duration.ofMinutes(60);
     private static final String NO_REPLY = "已发出但没等到 QQ 的回包，未重发";
     private static final String BAD_RECEIPT = "QQ 的发送回包无法确认送达，未重发";
+    private static final String CLAIM_REPLY_FAILED = "官方机器人认领回复发送失败";
 
     private final QqBotSettings settings;
     private final QqBotDirectory directory;
@@ -49,6 +55,12 @@ class QqBotSender {
     private final Clock clock;
 
     private final Map<ReplyKey, ReplySequence> replySequences = new LinkedHashMap<>();
+    private final ThreadPoolExecutor claimReplies = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(100), task -> {
+        Thread thread = new Thread(task, "qqbot-claim-reply");
+        thread.setDaemon(true);
+        return thread;
+    });
     private Sender registered;
 
     @Autowired
@@ -77,6 +89,33 @@ class QqBotSender {
             registry.addSender(sender, DISPLAY_NAME);
             registered = sender;
         }
+    }
+
+    /** 认领回复由网关事件触发，网络等待放到发送线程。 */
+    void submitClaimReply(QqBotSettings.Credentials credentials, long groupNum, String messageId, String content) {
+        try {
+            claimReplies.execute(() -> {
+                try {
+                    if (settings.snapshot().credentials() != credentials) return;
+                    var group = directory.group(credentials.appId(), groupNum).orElse(null);
+                    if (group == null || group.removed()) return;
+                    // 昵称按纯文字发送，避免把群成员填写的内容当成消息占位符。
+                    String id = sendGroupMessage(new Target(credentials.appId(), group),
+                            escapeMentions(content), null, messageId);
+                    if (id.isBlank()) log.warn(CLAIM_REPLY_FAILED);
+                } catch (RuntimeException e) {
+                    // 平台报错可能引用原消息，认领回复失败时只记通用提示。
+                    log.warn(CLAIM_REPLY_FAILED);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("官方机器人认领回复发送队列不可用");
+        }
+    }
+
+    @PreDestroy
+    void shutdownClaimReplies() {
+        claimReplies.shutdownNow();
     }
 
     private JSONObject deliver(Map<String, String> headers, Map<String, Object> params) {
@@ -146,8 +185,11 @@ class QqBotSender {
             log.info("QQ 官方机器人已省略群 {} 的提及或表情", target.maskedOpenId());
         }
         // 占位符两边的文字也可能拼出提及标签，因此在正文拼接完成后转义。
-        String escaped = MENTION.matcher(text).replaceAll(match -> "<".equals(match.group()) ? "＜" : "＠");
-        return new Outgoing(escaped, images);
+        return new Outgoing(escapeMentions(text), images);
+    }
+
+    private static String escapeMentions(CharSequence text) {
+        return MENTION.matcher(text).replaceAll(match -> "<".equals(match.group()) ? "＜" : "＠");
     }
 
     private static byte[] decode(String base64) throws QqBotImageDownloader.TooLarge {
@@ -205,17 +247,9 @@ class QqBotSender {
             for (int i = 0; i < Math.max(1, uploaded.size()); i++) {
                 String fileInfo = uploaded.isEmpty() ? null : uploaded.get(i);
                 String text = i == 0 ? message.text() : "";
-                // 此处的正文已转义，可以在此之后拼入机器人自己生成的标签。
-                JSONObject body = fileInfo == null ? JSONObject.of("msg_type", 0, "content", text)
-                        : JSONObject.of("msg_type", 7, "content", text.isBlank() ? " " : text,
-                                "media", JSONObject.of("file_info", fileInfo));
-                if (passive) {
-                    body.put("msg_id", replyTo);
-                    body.put("msg_seq", nextReplySequence(target.appId(), replyTo));
-                }
                 String id;
                 try {
-                    id = responseText(api.request("POST", path + "/messages", body, target.appId()), "id");
+                    id = sendGroupMessage(target, text, fileInfo, replyTo);
                 } catch (QqBotApiException e) {
                     JSONObject failed = apiFailure(target, message.text(), fileInfo, e, true);
                     // 首条已送达时，后续图片被拒也不能让核心剥图再发同一段文字。
@@ -240,6 +274,19 @@ class QqBotSender {
         } catch (RuntimeException e) {
             return uncertain(target, BAD_RECEIPT);
         }
+    }
+
+    private String sendGroupMessage(Target target, String text, String fileInfo, String replyTo) {
+        // 此处的正文已转义，可以在此之后拼入机器人自己生成的标签。
+        JSONObject body = fileInfo == null ? JSONObject.of("msg_type", 0, "content", text)
+                : JSONObject.of("msg_type", 7, "content", text.isBlank() ? " " : text,
+                        "media", JSONObject.of("file_info", fileInfo));
+        if (replyTo != null && !replyTo.isBlank()) {
+            body.put("msg_id", replyTo);
+            body.put("msg_seq", nextReplySequence(target.appId(), replyTo));
+        }
+        String path = QqBotDirectory.groupPath(target.group().openid());
+        return responseText(api.request("POST", path + "/messages", body, target.appId()), "id");
     }
 
     private synchronized int nextReplySequence(String appId, String replyTo) {
