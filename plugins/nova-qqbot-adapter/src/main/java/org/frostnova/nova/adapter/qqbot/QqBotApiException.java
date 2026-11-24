@@ -50,4 +50,17 @@ public final class QqBotApiException extends RuntimeException {
     boolean deliveryUnknown() {
         return deliveryUnknown;
     }
+
+    /** 已知会同时阻止图文和纯文字的故障。其余错误保留去图补发的机会。 */
+    boolean preventsTextDelivery() {
+        // 限流等待结束、本地凭据错误或建连失败都可以在没有 HTTP 回包时确定失败。
+        if (httpStatus == 0) return !deliveryUnknown;
+        if (httpStatus == 401 || messageReplyRejected()) return true;
+        return switch (code) {
+            case 40034105, 40054002, 850018, 40034101, 40054003, 40054016 -> true;
+            case 40054007, 40054010 -> true;
+            case 11241, 11243, 100016, 100007, 10004, 100001 -> true;
+            default -> false;
+        };
+    }
 }

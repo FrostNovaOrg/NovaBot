@@ -76,21 +76,21 @@ class QqBotSender {
             JSONObject input = new JSONObject(params);
             int type = input.getIntValue("type", PushTargetType.UNKNOWN.getCode());
             if (type == PushTargetType.FRIEND.getCode()) {
-                return failure("QQ 官方机器人暂不支持私聊推送");
+                return targetFailure("QQ 官方机器人暂不支持私聊推送");
             }
             if (type != PushTargetType.GROUP.getCode()) {
-                return failure("不支持的推送目标类型");
+                return targetFailure("不支持的推送目标类型");
             }
             var current = settings.snapshot();
             if (!current.configured()) {
-                return failure("尚未配置 QQ 官方机器人凭据");
+                return targetFailure("尚未配置 QQ 官方机器人凭据");
             }
             var group = directory.group(current.appId(), input.getLongValue("num")).orElse(null);
             if (group == null) {
-                return failure("这个群还没对上号，在群里 @机器人 说一句即可");
+                return targetFailure("这个群还没对上号，在群里 @机器人 说一句即可");
             }
             if (group.removed()) {
-                return failure("机器人已被移出这个群");
+                return targetFailure("机器人已被移出这个群");
             }
             Target target = new Target(current.appId(), group);
             String content = input.getString("content");
@@ -338,7 +338,9 @@ class QqBotSender {
             case 0 -> error.httpStatus() == 0 ? official : "QQ 返回错误 " + error.httpStatus() + "：" + official;
             default -> "QQ 返回错误 " + code + "：" + official;
         };
-        return fail(target, maskDiagnostic(target, reason, null), code == 40034105);
+        JSONObject result = fail(target, maskDiagnostic(target, reason, null), code == 40034105);
+        if (error.preventsTextDelivery()) result.put(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
+        return result;
     }
 
     private String maskDiagnostic(Target target, String value, String protectedValue) {
@@ -394,6 +396,10 @@ class QqBotSender {
 
     private static JSONObject failure(String reason) {
         return JSONObject.of("code", -1, "message", reason);
+    }
+
+    private static JSONObject targetFailure(String reason) {
+        return failure(reason).fluentPut(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
     }
 
     private record Target(String appId, QqBotDirectory.GroupEntry group) {

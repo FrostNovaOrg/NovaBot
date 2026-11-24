@@ -229,6 +229,26 @@ class QqBotDeliveryTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void liveNoticeWithCoverStopsAfterTheRateLimitRetry(boolean httpLimit) {
+        withSender(rig -> {
+            var limited = httpLimit ? new QqBotHttpTransport.Response(429, "") : json("code", 40034100);
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO) : limited;
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "开播通知" + IMAGE).get(0);
+
+            var result = sendNow(rig, message);
+
+            assertEquals(-1, result.getIntValue("code"));
+            assertFalse(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
+            assertTrue(message.getFailureReason().contains("等 5 秒重发仍未发出"));
+            var posts = rig.messageRequests();
+            assertEquals(List.of(0L, 5000L), posts.stream().map(Request::millis).toList());
+            assertEquals(media(), posts.get(0).body().getJSONObject("media"));
+            assertEquals(posts.get(0).body(), posts.get(1).body());
+        });
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {2, 4})
     @ExtendWith(OutputCaptureExtension.class)
     void longReplyKeepsEveryLineAndUsesOneSequencePerDeliveredPart(int parts, CapturedOutput logs) {
@@ -332,6 +352,30 @@ class QqBotDeliveryTest {
             assertTrue(result.getString("message").contains("群成员里点机器人 → 右上角设置 → 打开"));
             assertEquals(2, rig.requests.size());
             assertEquals(QqBotDirectory.ProactiveStatus.DISABLED, rig.group().proactive().status());
+        });
+    }
+
+    @Test
+    void replyWithImageStopsWhenTheProactiveAttemptIsRejected() {
+        withSender(rig -> {
+            rig.exchange = path -> {
+                if (path.equals("files")) return json("file_info", FILE_INFO);
+                return json("code", rig.body(rig.requests.size() - 1).containsKey("msg_id") ? 40034128 : 40034105);
+            };
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "答复" + IMAGE).get(0);
+            message.setReplyTo("question");
+
+            var result = sendNow(rig, message);
+
+            assertEquals(-1, result.getIntValue("code"));
+            assertFalse(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
+            assertTrue(message.getFailureReason().contains("回复次数用完"));
+            assertTrue(message.getFailureReason().contains("手机 QQ 进群 → 群成员里点机器人 → 右上角设置 → 打开"));
+            var posts = rig.messageRequests();
+            assertEquals(List.of(true, false), posts.stream().map(r -> r.body().containsKey("msg_id")).toList());
+            assertEquals("question", posts.get(0).body().getString("msg_id"));
+            assertFalse(posts.get(1).body().containsKey("msg_seq"));
+            assertEquals(media(), posts.get(1).body().getJSONObject("media"));
         });
     }
 
@@ -488,6 +532,25 @@ class QqBotDeliveryTest {
             for (String privateValue : List.of(PNG, OPENID, TOKEN, SECRET)) {
                 assertFalse(logs.contains(privateValue));
             }
+        });
+    }
+
+    @Test
+    void rejectedCoverStillDeliversTheLiveNoticeAsText() {
+        withSender(rig -> {
+            rig.exchange = path -> {
+                if (path.equals("files")) return json("file_info", FILE_INFO);
+                return rig.body(rig.requests.size() - 1).containsKey("media")
+                        ? json("code", 850019) : json("id", "text-only");
+            };
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "开播通知" + IMAGE).get(0);
+
+            sendNow(rig, message);
+
+            assertEquals("text-only", message.getId());
+            assertEquals(List.of("files", "messages", "messages"), rig.endpoints());
+            assertEquals(media(), rig.body(1).getJSONObject("media"));
+            assertEquals(JSONObject.of("msg_type", 0, "content", "开播通知"), rig.body(2));
         });
     }
 
@@ -828,6 +891,10 @@ class QqBotDeliveryTest {
 
         List<String> endpoints() {
             return requests.stream().map(Request::endpoint).toList();
+        }
+
+        List<Request> messageRequests() {
+            return requests.stream().filter(r -> r.endpoint().equals("messages")).toList();
         }
 
         JSONObject body(int index) {
