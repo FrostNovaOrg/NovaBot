@@ -281,8 +281,9 @@ public class NovaStateStore {
         return value;
     }
 
-    /** 复制尚未设置的键。整份成功写盘后才更新缓存，并返回已有目标键的命名空间。 */
-    public List<String> copyMissingKeyAndSave(String from, String to, Collection<String> namespaces) {
+    /** 在同一份状态上读取切换结果并复制尚未设置的键。整份成功写盘后才更新缓存。 */
+    public <T> T copyMissingKeyAndSave(String from, String to, Collection<String> namespaces,
+                                      Function<List<String>, T> describe) {
         synchronized (writeLock) {
             synchronized (lock) {
                 if (diskSuspended) throw new IllegalStateException("运行状态文件目前无法读取，请检查后重启");
@@ -302,11 +303,12 @@ public class NovaStateStore {
                     updated.put(namespace, copy);
                     changed = true;
                 }
+                T result = describe.apply(List.copyOf(skipped));
                 if (changed) {
                     if (!write(updated.toJSONString())) throw new IllegalStateException("运行状态文件写入失败");
                     cache = updated;
                 }
-                return skipped;
+                return result;
             }
         }
     }

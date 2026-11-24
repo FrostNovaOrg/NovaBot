@@ -132,16 +132,38 @@ const CASES = [
         },
         copySettings: (source, destination) => {
           calls.push(source.num + '→' + destination.num);
-          return ['金额可见'];
+          return {targetSettings: {revenueVisible: false}, results: ['金额可见：隐藏金额']};
         },
       });
       const [old, added] = persisted.targets;
-      return {stage: result.stage, skipped: result.skipped, calls,
+      return {stage: result.stage, results: result.results, calls,
         copied: isDeepStrictEqual(added, {...from, ...to, enabled: true}),
         retained: isDeepStrictEqual(old, {...from, enabled: false}), original: from.enabled};
     },
-    expect: {stage: 'done', skipped: ['金额可见'],
+    expect: {stage: 'done', results: ['金额可见：隐藏金额'],
       calls: ['true/false', '12345→1000000000000001', 'false/true'], copied: true, retained: true, original: true},
+  },
+  {
+    name: '启用官方目标时应用服务端确认的实际通道设置',
+    run: async () => {
+      const u = user({targets: [{platform: SENDER, type: 1, num: 12345, revenueVisible: true}]});
+      const official = {platform: 'qq-official', type: 1, num: 10001};
+      const settings = {revenueVisible: false, quietHours: {mode: 'custom', start: '23:00', end: '07:00'},
+        disabledCommands: ['直播报告'], assistantEnabled: false};
+      const writes = [];
+      await migrateGroupTarget(u, u.targets[0], official, {
+        saveUser: next => writes.push(structuredClone(next.targets)),
+        copySettings: () => ({targetSettings: settings, results: ['金额可见：隐藏金额，和原来不同']}),
+      });
+      const [staged, switched] = writes;
+      const added = switched[1];
+      return {staged: staged[1].enabled, oldEnabled: switched[0].enabled, oldRevenue: switched[0].revenueVisible,
+        official: added.platform + ':' + added.type + ':' + added.num, enabled: added.enabled,
+        revenue: added.revenueVisible, quiet: added.quietHours && [added.quietHours.mode, added.quietHours.start, added.quietHours.end],
+        disabled: added.disabledCommands, assistant: added.assistantEnabled};
+    },
+    expect: {staged: false, oldEnabled: false, oldRevenue: true, official: 'qq-official:1:10001',
+      enabled: true, revenue: false, quiet: ['custom', '23:00', '07:00'], disabled: ['直播报告'], assistant: false},
   },
   {
     name: '复制会话设置失败时原群继续推送',

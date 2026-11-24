@@ -33,6 +33,15 @@ const byText = text => right().find(node => node.textContent === text);
 const byClass = name => right().find(node => node.className.split(/\s+/).includes(name));
 const posts = [];
 let failSave = false;
+let officialGroups;
+let migratedUser;
+const migrationUser = {uid: 3, platform: 'bilibili', targets: [{platform: 'qq', type: 1, num: 31, enabled: true,
+  revenueVisible: true, messages: []}]};
+const migrationResult = {success: true, targetSettings: {revenueVisible: false,
+  quietHours: {mode: 'custom', start: '23:00', end: '07:00'}}, results: [
+  '金额可见：按官方群现有设置隐藏金额，和原来不同。',
+  '静音时段：按官方群现有设置 23:00–07:00，和原来不同。',
+]};
 const handler = (className, displayName) => ({className, displayName, aliases: [],
   placeholders: ['{uname}'], attachments: [], factoryParams: {message: 'factory'},
   defaultParams: {message: 'saved'}, options: []});
@@ -54,6 +63,11 @@ globalThis.fetch = async (url, opts = {}) => {
     }
   } else if (url.endsWith('/handlers')) result = {handlers: store.handlerList};
   else if (url.endsWith('/datasource/users')) result = {success: true, users};
+  else if (url.endsWith('/datasource/users/bilibili/3')) {
+    if (opts.method === 'POST') migratedUser = JSON.parse(opts.body).user;
+    result = {success: true, version: 'version', user: migrationUser};
+  } else if (url.endsWith('/state/copy-to-official-group')) result = migrationResult;
+  else if (url.includes('/bot/targets?type=group') && officialGroups) result = await officialGroups;
   else if (url.includes('/bot/targets?type=group')) result = {items: [
     {sender: 'qq', num: 11, name: '相同群'}, {sender: 'qq', num: 12, name: '新群'}]};
   else if (url.includes('/bot/targets?type=friend')) result = {items: [
@@ -198,6 +212,51 @@ await check('900px 以上保留左树，手机选择器写明主播且能切换'
   assert.equal(location.hash, '#/push/2');
   await group.querySelector('.tchan').click();
   assert.equal(location.hash, '#/push/2/qq|1|11');
+});
+
+// 故障：读取名单时误报无官方群，返回后抽屉一直是空的。
+await check('官方群名单到达后原地更新切换面板', async () => {
+  push.acceptAddedPushUser(migrationUser, 'version');
+  await push.showPush('3', 'qq|1|31');
+  let release;
+  officialGroups = new Promise(resolve => { release = resolve; });
+  const loading = push.loadPushPage();
+  const body = idNode('push-drawer-body');
+  try {
+    await byText('换成官方机器人').click();
+    assert.ok(all(body).some(node => node.textContent.includes('正在读取群列表')));
+    assert.ok(!all(body).some(node => node.textContent.includes('还没有官方机器人的群')));
+    assert.ok(!all(body).some(node => node.textContent === '选择'));
+  } finally {
+    release({items: [{sender: 'qq-official', num: 81, name: '官方群'}]});
+    await loading;
+  }
+  assert.ok(all(body).some(node => node.innerHTML.includes('官方群')));
+  const choose = all(body).find(node => node.textContent === '选择');
+  assert.ok(choose && !choose.disabled);
+});
+
+// 故障：完成提示漏报生效差异，或新通道的保存内容仍采用另一份设置。
+await check('切换保存并显示实际金额与静音时段', async () => {
+  location.hash = '#/push/3/qq|1|31';
+  await push.refresh({sub: '3', tail: 'qq|1|31'});
+  await byText('换成官方机器人').click();
+  const body = idNode('push-drawer-body');
+  const choose = all(body).find(node => node.textContent === '选择');
+  assert.ok(choose);
+  await choose.click();
+  const dialog = document.body.querySelector('.ask');
+  await dialog.dispatchEvent({type: 'click', target: dialog.querySelector('[data-act="yes"]')});
+  await waitFor(() => idNode('status-text').textContent.includes('已启用官方群目标'));
+  const [old, added] = migratedUser.targets;
+  assert.equal(old.enabled, false);
+  assert.equal(added.enabled, true);
+  assert.equal(added.revenueVisible, false);
+  assert.deepEqual(added.quietHours, migrationResult.targetSettings.quietHours);
+  assert.equal(idNode('push-drawer').hidden, false);
+  const completion = body.querySelectorAll('li').map(item => item.textContent).join('\n');
+  assert.match(completion, /金额可见.+隐藏金额.+和原来不同/);
+  assert.match(completion, /静音时段.+23:00–07:00.+和原来不同/);
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

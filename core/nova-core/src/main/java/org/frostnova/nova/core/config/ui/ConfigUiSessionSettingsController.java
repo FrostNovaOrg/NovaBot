@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionKey;
@@ -27,9 +28,12 @@ public class ConfigUiSessionSettingsController {
             SessionQuietHoursService.NAMESPACE, "静音时段");
 
     private final NovaStateStore state;
+    private final OfficialGroupSettings settings;
 
-    public ConfigUiSessionSettingsController(NovaStateStore state) {
+    public ConfigUiSessionSettingsController(NovaStateStore state, RevenueVisibilityService revenue,
+                                             SessionQuietHoursService quiet) {
         this.state = state;
+        this.settings = new OfficialGroupSettings(state, revenue, quiet);
     }
 
     @PostMapping(ConfigUiController.BASE_PATH + "/api/state/copy-to-official-group")
@@ -47,9 +51,15 @@ public class ConfigUiSessionSettingsController {
         String from = SessionKey.require(platform, GROUP, num);
         String to = SessionKey.require(OFFICIAL, GROUP, officialNum);
         try {
-            var skipped = state.copyMissingKeyAndSave(from, to, SETTINGS.keySet())
-                    .stream().map(SETTINGS::get).sorted().toList();
-            return ResponseEntity.ok(JSONObject.of("success", true, "skipped", skipped));
+            JSONObject channel = body.getJSONObject("channel");
+            PushTarget source = channel == null ? new PushTarget() : channel.toJavaObject(PushTarget.class);
+            source.setPlatform(platform);
+            source.setType(GROUP);
+            source.setNum(num);
+            JSONObject result = state.copyMissingKeyAndSave(from, to, SETTINGS.keySet(), skipped ->
+                    settings.resolve(source, OFFICIAL, officialNum).fluentPut("success", true)
+                            .fluentPut("skipped", skipped.stream().map(SETTINGS::get).sorted().toList()));
+            return ResponseEntity.ok(result);
         } catch (IllegalStateException error) {
             return ResponseEntity.internalServerError().body(JSONObject.of("success", false,
                     "message", error.getMessage()));

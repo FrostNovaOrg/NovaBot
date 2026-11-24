@@ -50,19 +50,18 @@ export function officialGroupOptions(options, user) {
 /** 先保存停用的新目标。会话设置保存成功后，用同一次写入切换两个目标的启停。 */
 export async function migrateGroupTarget(user, source, group, {saveUser, copySettings}) {
   let stage = 'create';
-  let skipped = [];
   try {
     const added = {...JSON.parse(JSON.stringify(source)), platform: group.platform, type: group.type,
       num: group.num, enabled: false};
     await saveUser({...user, targets: [...user.targets, added]});
     stage = 'copy';
-    skipped = await copySettings(source, added);
+    const {targetSettings, results} = await copySettings(source, added);
     stage = 'activate';
     const targets = user.targets.map(target => target === source ? {...target, enabled: false} : target);
-    await saveUser({...user, targets: [...targets, {...added, enabled: true}]});
-    return {stage: 'done', skipped};
+    await saveUser({...user, targets: [...targets, {...added, ...targetSettings, enabled: true}]});
+    return {stage: 'done', results};
   } catch (error) {
-    return {stage, skipped, error};
+    return {stage, error};
   }
 }
 

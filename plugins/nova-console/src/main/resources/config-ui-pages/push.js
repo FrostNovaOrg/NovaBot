@@ -305,6 +305,7 @@ const PAGE_STYLE = `
   font-family:inherit}
 .dwbar .ghost{flex:none}
 .dwlist{display:grid;gap:4px}
+.migration-results{display:grid;gap:8px;padding-inline-start:1.4em;overflow-wrap:anywhere}
 .dwrow{display:grid;gap:1px;text-align:left;background:none;border:1px solid transparent;
   border-radius:var(--r-ctl);padding:8px 10px;cursor:pointer;font-family:inherit}
 .dwrow:hover:not(.taken){background:var(--soft);border-color:var(--softline)}
@@ -737,6 +738,9 @@ let directory = {};
 
 /** 挑选目标时那份原样的可选项，认目标要用它 */
 let options = [];
+let groupList;
+let groupListLoad;
+let repaintOfficialPicker;
 
 let reportPalettes = null;
 let changeChannelPalette = () => {};
@@ -846,6 +850,21 @@ export function renderStreamers() {
   paintRight();
 }
 
+function loadGroupList() {
+  if (groupListLoad) return groupListLoad;
+  groupList = null;
+  groupListLoad = api('/bot/targets?type=group')
+    .catch(() => ({success: false}))
+    .then(result => {
+      groupList = result?.success !== false && Array.isArray(result?.items) ? result : {success: false};
+      groupListLoad = null;
+      repaintOfficialPicker?.();
+      return groupList;
+    });
+  repaintOfficialPicker?.();
+  return groupListLoad;
+}
+
 /**
  * 取这一页要用的几份数据
  *
@@ -856,6 +875,7 @@ export function renderStreamers() {
  * 也照样改得动——整趟判失败的话，屏幕上会只剩一句「载入失败」，配好的东西一个也看不见。
  */
 export async function loadPushPage() {
+  const loadingGroups = isMember() ? null : loadGroupList();
   try {
     const listed = await api('/report/palettes');
     reportPalettes = listed.success && listed.presets?.length ? listed : null;
@@ -897,7 +917,7 @@ export async function loadPushPage() {
       }
     } else {
       const [groups, friends] = await Promise.all([
-        api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
+        loadingGroups, api('/bot/targets?type=friend')]);
       options = targetOptions(groups, friends);
       directory = buildDirectory(options);
     }
@@ -2461,6 +2481,7 @@ function firstUsable(body) {
  * @param build 往面板正文里建内容
  */
 export function openDrawer(title, lead, build) {
+  repaintOfficialPicker = null;
   const drawer = $('#push-drawer');
   if (drawer.hidden) drawerOpener = document.activeElement;
   $('#push-drawer-title').textContent = title;
@@ -2479,6 +2500,7 @@ export function openDrawer(title, lead, build) {
  * 那个控件已随重画不在页上了就不管
  */
 export function closeDrawer() {
+  repaintOfficialPicker = null;
   const drawer = $('#push-drawer');
   const wasOpen = !drawer.hidden;
   drawer.hidden = true;
@@ -2497,6 +2519,7 @@ export function closeDrawer() {
  * @param opts 标题、说明、已经是通道的那些（灰掉）、挑中之后做什么
  */
 function pickTarget(opts) {
+  if (opts.officialGroups && groupList === undefined) loadGroupList();
   openDrawer(opts.title, opts.lead, body => {
     const bar = el('div', 'dwbar');
     const search = el('input');
@@ -2513,7 +2536,7 @@ function pickTarget(opts) {
       try {
         await api('/bot/targets/refresh', {method: 'POST'});
         await loadPushPage();
-        pickTarget(opts);
+        if (!opts.officialGroups) pickTarget(opts);
       } catch (e) {
         say('名单刷新失败：' + e.message, 'err');
       }
@@ -2524,12 +2547,20 @@ function pickTarget(opts) {
 
     const list = el('div', 'dwlist');
     body.appendChild(list);
-    const available = () => opts.officialGroups ? officialGroupOptions(options, opts.user) : options;
+    const available = () => opts.officialGroups
+      ? officialGroupOptions(targetOptions(groupList), opts.user) : options;
     const isTaken = item => opts.officialGroups ? item.configured : (opts.taken || []).includes(item.key);
 
     const paint = () => {
       const keyword = search.value.trim().toLowerCase();
       list.innerHTML = '';
+      if (opts.officialGroups && (!groupList || groupList.success === false)) {
+        const hint = el('p', 'hint');
+        hint.setAttribute('role', 'status');
+        hint.textContent = groupList ? '无法读取官方群列表，请刷新重试。' : '正在读取群列表…';
+        list.appendChild(hint);
+        return;
+      }
       const choices = available();
 
       if (!choices.length) {
@@ -2599,6 +2630,7 @@ function pickTarget(opts) {
     };
 
     search.addEventListener('input', paint);
+    if (opts.officialGroups) repaintOfficialPicker = paint;
     paint();
   });
 }
@@ -2628,7 +2660,8 @@ function pickOfficialGroup(user, target) {
     onPick: async (group, item) => {
       if (!await ask({title: '换成官方机器人？',
         body: '将新建一个发往官方群「' + (item.name || item.num)
-          + '」的推送目标，照抄现有的模板、@ 方式、配色、金额可见、命令开关、静音时段和问数设置；'
+          + '」的推送目标，沿用模板、@ 方式、配色、通道命令开关和问数设置。官方群已有的群级设置会保留，'
+          + '没有设置静音时段时沿用原通道的设置。原通道已经隐藏金额，或官方群设为隐藏金额时，新通道仍会隐藏金额。'
           + phrase('bot.impl', name => '原来的 ' + name + ' 目标', '原来的目标')
           + '改为停用，不删除，随时可以重新启用。'})) return;
       await switchToOfficialGroup(user, target, group);
@@ -2667,9 +2700,13 @@ async function switchToOfficialGroup(user, target, group) {
       const res = await post('/state/copy-to-official-group', {
         streamerPlatform: user.platform, streamerUid: user.uid,
         platform: from.platform, type: Number(from.type), num: from.num, officialNum: to.num,
+        channel: {revenueVisible: from.revenueVisible, quietHours: from.quietHours,
+          disabledCommands: from.disabledCommands, assistantEnabled: from.assistantEnabled},
       });
-      if (!res.success) throw new Error(res.message || '复制会话设置失败');
-      return res.skipped || [];
+      if (!res.success || !res.targetSettings || !Array.isArray(res.results)) {
+        throw new Error(res.message || '未能读取新通道的设置');
+      }
+      return res;
     },
   });
   migratingUsers.delete(key);
@@ -2690,15 +2727,28 @@ async function switchToOfficialGroup(user, target, group) {
     catch (error) { /* 结果由已确认的写入决定。 */ }
   } else paintConflict();
 
+  if (result.stage === 'done') {
+    const message = '已启用官方群目标，原目标已停用，可随时重新启用。';
+    const details = ['模板：沿用原通道。', '@ 方式：沿用原通道。', '配色：沿用原通道。', ...result.results];
+    if (pageLive && $('#push-drawer').hidden) {
+      openDrawer('切换结果', message, body => {
+        const list = el('ul', 'migration-results');
+        for (const detail of details) list.appendChild(el('li')).textContent = detail;
+        body.appendChild(list);
+      });
+      say(message, 'ok');
+    } else {
+      say(message + ' ' + details.join(' '));
+    }
+    return;
+  }
+
   const progress = {
     create: '未能确认已建立新目标。未复制会话设置，原目标未停用。',
     copy: '已建立停用的官方群目标。未能确认已复制会话设置，原目标未停用。',
     activate: '已建立官方群目标并复制会话设置。未能确认已切换启停状态，请重新载入核对。',
-    done: '已启用官方群目标并复制会话设置，原目标已停用，可随时重新启用。',
   };
-  const failure = result.error ? '切换失败：' + result.error.message + '。' : '';
-  const skipped = result.skipped.length ? ' 已保留官方群原有设置，跳过：' + result.skipped.join('、') + '。' : '';
-  say(failure + progress[result.stage] + skipped, result.error ? 'err' : result.skipped.length ? '' : 'ok');
+  say('切换失败：' + result.error.message + '。' + progress[result.stage], 'err');
 }
 
 function lookupTarget(platform, type, num) {

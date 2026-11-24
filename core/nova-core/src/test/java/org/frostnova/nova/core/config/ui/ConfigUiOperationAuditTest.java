@@ -8,6 +8,10 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.model.ChannelSettings;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionQuietHoursService;
@@ -25,7 +29,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -61,6 +67,8 @@ class ConfigUiOperationAuditTest {
             ConfigUiSessionSettingsController.class})
     static class Setup {
         @Bean NovaStateStore state(NovaCoreProperties properties) { return new NovaStateStore(properties); }
+        @Bean RevenueVisibilityService revenue(NovaStateStore state) { return new RevenueVisibilityService(state); }
+        @Bean SessionQuietHoursService quiet(NovaStateStore state) { return new SessionQuietHoursService(state); }
         @Bean org.frostnova.nova.core.config.ui.auth.oidc.OidcClient oidc() {
             return mock(org.frostnova.nova.core.config.ui.auth.oidc.OidcClient.class);
         }
@@ -138,6 +146,96 @@ class ConfigUiOperationAuditTest {
         assertEquals(commands, disk.getJSONObject(CommandSettingsService.NAMESPACE).getJSONObject(official));
         state.write(CommandSettingsService.NAMESPACE, values -> values.getJSONObject(original).clear());
         assertTrue(state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official).containsKey("直播报告"));
+    }
+
+    @Test
+    void groupMigrationAppliesQuietHoursAndCommandSwitchStoredOnlyInTheOldSession() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        var quiet = JSONObject.of("mode", "custom", "start", "23:00", "end", "07:00");
+        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put("qq:1:101", quiet));
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put("qq:1:101", JSONObject.of("直播报告", 1)));
+        var channel = JSONObject.of("assistantEnabled", true);
+        var result = migrate(channel);
+        PushTarget target = migratedTarget(channel, result);
+        var gate = new PushGate(new NovaCoreProperties(), new SessionQuietHoursService(state));
+        assertFalse(gate.allowedAt(LocalTime.of(6, 0), target), "夜间的推送仍应静音");
+        assertTrue(gate.allowedAt(LocalTime.of(7, 0), target));
+        assertTrue(ChannelSettings.disabled(target, "直播报告"), "旧群关闭的命令不应在新通道打开");
+        assertTrue(target.getAssistantEnabled());
+        assertFalse(new RevenueVisibilityService(state).isVisible(target));
+        assertTrue(result.getJSONArray("results").stream().anyMatch(line -> line.toString().contains("23:00–07:00")));
+    }
+
+    @Test
+    void groupMigrationTellsWhichOfficialSettingsChangeTheActualChannelBehavior() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        var quiet = JSONObject.of("mode", "custom", "start", "22:00", "end", "08:00");
+        String official = "qq-official:1:1000000000000001";
+        var groupCommands = JSONObject.of("问", 1);
+        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put(official, quiet));
+        state.write(RevenueVisibilityService.NAMESPACE, values -> values.put(official, false));
+        state.write(CommandSettingsService.NAMESPACE, values -> values.put(official, groupCommands));
+        var channel = JSONObject.of("revenueVisible", true, "assistantEnabled", true,
+                "quietHours", JSONObject.of("mode", "off"), "disabledCommands", List.of("直播报告"));
+        var result = migrate(channel);
+        PushTarget target = migratedTarget(channel, result);
+        var gate = new PushGate(new NovaCoreProperties(), new SessionQuietHoursService(state));
+        assertFalse(new RevenueVisibilityService(state).isVisible(target), "官方群已隐藏的金额不能显示出来");
+        assertFalse(gate.allowedAt(LocalTime.of(7, 30), target));
+        assertTrue(ChannelSettings.disabled(target, "直播报告"));
+        assertTrue(new CommandSettingsService(state).isDisabled("qq-official", PushTargetType.GROUP, target.getNum(), "问"));
+        assertEquals(quiet, state.namespace(SessionQuietHoursService.NAMESPACE).getJSONObject(official));
+        assertEquals(groupCommands, state.namespace(CommandSettingsService.NAMESPACE).getJSONObject(official));
+        for (var expected : Map.of("金额可见", "隐藏金额", "静音时段", "22:00–08:00",
+                "群命令开关", "已关闭「问」", "问数开关", "关闭").entrySet()) {
+            assertTrue(result.getJSONArray("results").stream().map(Object::toString)
+                    .anyMatch(line -> line.startsWith(expected.getKey() + "：")
+                            && line.contains(expected.getValue()) && line.contains("和原来不同")), expected.getKey());
+        }
+    }
+
+    @Test
+    void groupMigrationKeepsHiddenAmountsAndExplicitFollowGlobal() throws Exception {
+        var state = context.getBean(NovaStateStore.class);
+        state.write(RevenueVisibilityService.NAMESPACE, values -> values.put("qq-official:1:1000000000000001", true));
+        state.write(SessionQuietHoursService.NAMESPACE, values -> values.put("qq:1:101", JSONObject.of("mode", "off")));
+        state.write(CommandSettingsService.NAMESPACE, values -> {
+            values.put("qq:1:101", JSONObject.of("直播报告", 1, "问", 1));
+            values.put("qq-official:1:1000000000000001", JSONObject.of("插件命令", 1));
+        });
+        var channel = JSONObject.of("assistantEnabled", true, "quietHours", JSONObject.of("mode", "follow"),
+                "disabledCommands", List.of());
+        var result = migrate(channel);
+        PushTarget target = migratedTarget(channel, result);
+        assertFalse(new RevenueVisibilityService(state).isVisible(target), "原群隐藏的金额不能被新群的显示设置打开");
+        assertEquals("follow", target.getQuietHours().getMode(), "继续跟随全局，不能套用旧会话的免静音设置");
+        assertFalse(ChannelSettings.disabled(target, "直播报告"), "显式开启的通道命令不能被旧会话关闭");
+        assertFalse(target.getAssistantEnabled(), "旧群关闭问数，换群后也应保持关闭");
+        var results = result.getJSONArray("results").stream().map(Object::toString).toList();
+        assertTrue(results.stream()
+                .anyMatch(line -> line.startsWith("金额可见：") && line.contains("隐藏金额") && !line.contains("和原来不同")));
+        assertTrue(results.stream()
+                .anyMatch(line -> line.startsWith("静音时段：") && line.contains("跟随全局") && !line.contains("和原来不同")));
+    }
+
+    private JSONObject migrate(JSONObject channel) throws Exception {
+        return JSONObject.parseObject(mvc.perform(post("/config/api/state/copy-to-official-group")
+                        .requestAttr(ConfigUiAccess.ACCOUNT, ConfigUiAccount.local(Instant.EPOCH))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JSONObject.parseObject(migrationBody(1000000000000001L))
+                                .fluentPut("channel", channel).toJSONString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    private static PushTarget migratedTarget(JSONObject channel, JSONObject result) {
+        var overrides = result.getJSONObject("targetSettings");
+        assertNotNull(overrides, "返回新通道实际要保存的设置");
+        var target = new JSONObject(channel);
+        target.putAll(overrides);
+        PushTarget parsed = target.toJavaObject(PushTarget.class);
+        parsed.setType(PushTargetType.GROUP);
+        parsed.setNum(1000000000000001L);
+        return parsed;
     }
 
     @Test
