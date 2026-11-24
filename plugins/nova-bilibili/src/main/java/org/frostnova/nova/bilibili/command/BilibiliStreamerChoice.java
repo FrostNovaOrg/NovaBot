@@ -6,6 +6,7 @@ import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.command.CommandReplyHint;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -79,6 +80,8 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
     private final StreamerNames names;
 
+    private CommandReplyHint replyHint = CommandReplyHint.DEFAULT;
+
     /**
      * 时钟。追问那两分钟的窗口只有靠它才量得到——真等两分钟的测试没人会跑第二遍
      */
@@ -101,6 +104,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
         this.archive = archive;
         this.names = new StreamerNames(archive);
         this.clock = clock;
+    }
+
+    @Autowired
+    void setReplyHint(CommandReplyHint replyHint) {
+        this.replyHint = replyHint;
     }
 
     /**
@@ -200,7 +208,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
         sweep();
         pendings.put(key(context), pending);
-        return render(pending, false);
+        return render(context, pending, false);
     }
 
     /**
@@ -217,11 +225,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * 排出问句
      * @param expanded 是否展开全部
      */
-    private String render(Pending pending, boolean expanded) {
+    private String render(CommandContext context, Pending pending, boolean expanded) {
         int shown = expanded ? pending.lines().size() : pending.shown();
 
         StringBuilder text = new StringBuilder("本会话配了 " + pending.lines().size()
-                + " 位主播，回序号选一位（" + PENDING_TTL.toMinutes() + " 分钟内有效）：\n");
+                + " 位主播，" + replyHint.replyVerb(context) + "序号选一位（" + PENDING_TTL.toMinutes() + " 分钟内有效）：\n");
         text.append(String.join("\n", pending.lines().subList(0, shown)));
 
         if (shown < pending.lines().size()) {
@@ -253,7 +261,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
                 return null;
             }
             pendings.put(key, pending.expand());
-            return Claimed.answer(CommandReply.of(render(pending, true)));
+            return Claimed.answer(CommandReply.of(render(context, pending, true)));
         }
 
         int index = number(word);
