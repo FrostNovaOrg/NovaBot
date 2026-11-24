@@ -7,6 +7,7 @@ import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.Sender;
 import org.frostnova.nova.core.service.NovaSenderService;
+import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -283,7 +284,9 @@ class NovaMessageSenderTest {
         // 实测过：无权限的账号经 OneBot 接口发 at:all 竟能真的 @ 到全体，
         // 那是 QQ 的漏洞。钻这个空子有风控风险，因此自己先拦下
         HttpUtil http = okHttp();
-        NovaMessageSender sender = sender(http, new NovaCoreProperties(), false);
+        List<TimelineEvent> events = new java.util.ArrayList<>();
+        NovaMessageSender sender = sender(http, new NovaCoreProperties(), false,
+                new PushActivityRecorder(TimelineWriter.NONE), events::add);
 
         sender.sendNow(inlineAtAll());
 
@@ -291,6 +294,7 @@ class NovaMessageSenderTest {
         verify(http).postJson(anyString(), any(), captor.capture());
         assertFalse(String.valueOf(captor.getValue().get("content")).contains("{at=all}"));
         assertTrue(String.valueOf(captor.getValue().get("content")).contains("开播啦"), "正文必须保留");
+        assertEquals("机器人不是群主或管理员", events.get(0).detail().get("reason"));
     }
 
     @Test
@@ -382,6 +386,11 @@ class NovaMessageSenderTest {
 
     private NovaMessageSender sender(HttpUtil http, NovaCoreProperties properties, Boolean canAtAll,
                                      PushActivityRecorder recorder) {
+        return sender(http, properties, canAtAll, recorder, TimelineWriter.NONE);
+    }
+
+    private NovaMessageSender sender(HttpUtil http, NovaCoreProperties properties, Boolean canAtAll,
+                                     PushActivityRecorder recorder, TimelineWriter timeline) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
@@ -406,7 +415,7 @@ class NovaMessageSenderTest {
         when(resolvers.iterator()).thenAnswer(invocation -> list.iterator());
 
         return new NovaMessageSender(http, senderService, recorder, new PushGate(properties),
-                TimelineWriter.NONE, new org.frostnova.nova.core.service.AtAllQuotaService(properties), resolvers,
+                timeline, new org.frostnova.nova.core.service.AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new org.frostnova.nova.core.service.NovaStateStore(properties)));
     }
 

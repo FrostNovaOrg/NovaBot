@@ -1,8 +1,10 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.sender.AtAllPermissionResolver;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,6 +30,32 @@ class AtAllQuotaServiceTest {
         properties.getPush().setAtAllDailyLimit(botLimit);
         properties.getPush().setAtAllSessionDailyLimit(sessionLimit);
         return new AtAllQuotaService(properties);
+    }
+
+    @Test
+    void enforcesTheLowerPositiveSessionLimitForEachPlatform() {
+        var properties = new NovaCoreProperties();
+        properties.getPush().setAtAllSessionDailyLimit(2);
+        var resolver = new AtAllPermissionResolver() {
+            @Override
+            public boolean supports(String platform) { return "limited".equals(platform); }
+            @Override
+            public boolean canAtAll(String platform, Long num) { return true; }
+            @Override
+            public Integer sessionDailyLimit(String platform) { return 3; }
+        };
+        new ApplicationContextRunner().withBean(NovaCoreProperties.class, () -> properties)
+                .withBean(AtAllPermissionResolver.class, () -> resolver)
+                .withBean(AtAllQuotaService.class).run(context -> {
+                    var quota = context.getBean(AtAllQuotaService.class);
+                    assertTrue(quota.tryConsume("limited", GROUP));
+                    assertTrue(quota.tryConsume("limited", GROUP));
+                    assertFalse(quota.tryConsume("limited", GROUP));
+                    properties.getPush().setAtAllSessionDailyLimit(0);
+                    assertTrue(quota.tryConsume("limited", GROUP));
+                    assertFalse(quota.tryConsume("limited", GROUP));
+                    for (int i = 0; i < 4; i++) assertTrue(quota.tryConsume(PLATFORM, GROUP));
+                });
     }
 
     @Test

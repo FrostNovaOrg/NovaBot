@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -30,11 +31,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -287,6 +289,25 @@ class QqBotDirectoryTest {
     }
 
     @Test
+    void atAllRejectionSurvivesRestartUntilMidnightInChina() {
+        var rig = new Rig(uri -> json());
+        var directory = rig.directory();
+        long first = directory.groupJoined(GROUP_A, JOINED);
+        long second = directory.groupJoined(GROUP_B, JOINED);
+        Instant midnight = Instant.parse("2026-11-17T16:00:00Z");
+        rig.clock.advance(Duration.between(JOINED, midnight.minusSeconds(1)));
+        directory.recordAtAllRejection(APP_ID, first);
+
+        var restarted = rig.directory();
+        assertFalse(restarted.canAtAll(PLATFORM, first));
+        assertTrue(restarted.canAtAll(PLATFORM, second));
+        assertFalse(restarted.supports("qq-onebot"));
+        rig.clock.advance(Duration.ofSeconds(1));
+        assertTrue(restarted.canAtAll(PLATFORM, first));
+        assertNull(restarted.denyReason(PLATFORM, first));
+    }
+
+    @Test
     void botStateRecordsAdminAndAnExplicitlyDisabledProactiveSwitch() {
         var rig = new Rig(uri -> isInfo(uri)
                 ? json("group_name", "通知群", "group_member_num", 28)
@@ -305,6 +326,61 @@ class QqBotDirectoryTest {
         restarted.recordProactive(number, ProactiveStatus.DISABLED, SwitchSource.EVENT, JOINED.plusSeconds(4));
         assertEquals(new Proactive(ProactiveStatus.ENABLED, SwitchSource.EVENT, JOINED.plusSeconds(5)),
                 group(rig.directory(), number).proactive());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void consoleRefreshSchedulesOneRoleUpdateAfterRestart(boolean connectionsPage) {
+        var role = new AtomicReference<>("member");
+        var rig = new Rig(uri -> isInfo(uri) ? json("group_name", "开播提醒") : json("member_role", role.get()));
+        long number = rig.directory().groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        role.set("admin");
+        rig.clock.advance(Duration.ofMinutes(10));
+        var restarted = rig.directory();
+        for (int i = 0; i < 2; i++) {
+            if (connectionsPage) {
+                assertEquals(BotRole.MEMBER, restarted.consoleGroups().get(0).role());
+            } else {
+                assertFalse(restarted.snapshots(true).get(0).groups().get(0).admin());
+            }
+        }
+        assertEquals(1, rig.tasks.size());
+        rig.drain();
+        assertEquals(BotRole.ADMIN, restarted.consoleGroups().get(0).role());
+        assertTrue(restarted.snapshots(true).get(0).groups().get(0).admin());
+        assertTrue(restarted.canAtAll(PLATFORM, number));
+        assertTrue(rig.tasks.isEmpty());
+        assertEquals(1, rig.infoCalls());
+    }
+
+    @Test
+    void concurrentMentionsShareAPendingRefreshAndCanUseTheCachedRoleOnTimeout() throws Exception {
+        var role = new AtomicReference<>("member");
+        var rig = new Rig(uri -> isInfo(uri) ? json() : json("member_role", role.get()));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        rig.clock.advance(Duration.ofMinutes(10));
+        role.set("owner");
+
+        var callers = Executors.newFixedThreadPool(2);
+        try {
+            var first = callers.submit(() -> directory.canAtAll(PLATFORM, number));
+            var refresh = rig.tasks.poll(8, TimeUnit.SECONDS);
+            assertNotNull(refresh);
+            assertFalse(first.get(8, TimeUnit.SECONDS));
+            var second = callers.submit(() -> directory.canAtAll(PLATFORM, number));
+            var third = callers.submit(() -> directory.canAtAll(PLATFORM, number));
+            directory.snapshots(true);
+            refresh.run();
+            assertTrue(second.get(8, TimeUnit.SECONDS));
+            assertTrue(third.get(8, TimeUnit.SECONDS));
+            assertTrue(rig.tasks.isEmpty());
+            assertEquals(2, rig.calls.stream().filter(uri -> !isInfo(uri)).count());
+        } finally {
+            callers.shutdownNow();
+        }
     }
 
     @Test
@@ -463,7 +539,7 @@ class QqBotDirectoryTest {
     private final class Rig {
         final TestClock clock = new TestClock();
         final QqBotSettings settings = new QqBotSettings(dataDirectory);
-        final Queue<Runnable> tasks = new ArrayDeque<>();
+        final BlockingQueue<Runnable> tasks = new LinkedBlockingQueue<>();
         final List<URI> calls = new ArrayList<>();
         final Function<byte[], byte[]> hash;
         final QqBotCredentials credentials;

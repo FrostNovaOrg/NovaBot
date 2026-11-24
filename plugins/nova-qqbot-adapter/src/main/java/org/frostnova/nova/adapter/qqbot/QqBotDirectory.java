@@ -10,6 +10,7 @@ import org.frostnova.nova.core.config.ui.PushTargetLookup;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.sender.AtAllPermissionResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.util.UriUtils;
 
@@ -21,6 +22,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -33,20 +35,24 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 /** QQ 官方机器人群和群成员的本地编号与群资料。 */
 @Slf4j
 @NovaComponent
-public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
+public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, AtAllPermissionResolver {
     private static final long NUMBER_BASE = 1_000_000_000_000_000L;
     private static final BigInteger NUMBER_RANGE = BigInteger.valueOf((1L << 53) - NUMBER_BASE);
     private static final DateTimeFormatter JOIN_TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm", Locale.ROOT)
             .withZone(ZoneOffset.ofHours(8));
+    private static final Duration ROLE_TTL = Duration.ofMinutes(10);
+    private static final Duration ROLE_WAIT = Duration.ofSeconds(3);
     private static final Duration FAILURE_COOLDOWN = Duration.ofHours(1);
     private static final Duration UNAVAILABLE_COOLDOWN = Duration.ofHours(24);
     private static final Proactive UNKNOWN_SWITCH = new Proactive(ProactiveStatus.UNKNOWN, null, null);
@@ -59,7 +65,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     private final Function<byte[], byte[]> hash;
     private final QqBotDirectoryFile file;
     private final Map<String, BotEntries> bots;
-    private final Map<FetchKey, Object> pending = new HashMap<>();
+    private final Map<FetchKey, CountDownLatch> pending = new HashMap<>();
 
     @Autowired
     QqBotDirectory(QqBotSettings settings, QqBotApiClient api) {
@@ -82,7 +88,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     }
 
     @PreDestroy
-    void stop() {
+    synchronized void stop() {
+        pending.values().forEach(CountDownLatch::countDown);
+        pending.clear();
         if (executor instanceof ExecutorService service) {
             service.shutdownNow();
         }
@@ -123,9 +131,15 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
             save(appId, bot.withGroups(replacing(bot.groups(), number, current)));
         }
         if (current.removed()) {
-            pending.keySet().removeIf(key -> key.appId().equals(appId) && key.number() == number);
+            for (Endpoint endpoint : Endpoint.values()) {
+                var request = pending.remove(new FetchKey(appId, number, endpoint));
+                if (request != null) request.countDown();
+            }
         } else {
-            schedule(appId, current);
+            schedule(appId, current, Endpoint.INFO);
+            if (current.botState() == null || current.botState().retryAt() != null) {
+                schedule(appId, current, Endpoint.BOT_STATE);
+            }
         }
         return number;
     }
@@ -133,7 +147,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     private static GroupEntry joinedGroup(long number, String openid, Instant at, GroupEntry previous) {
         if (previous == null) {
             return new GroupEntry(number, openid, defaultName(at), NameSource.DEFAULT, at, at, false,
-                    UNKNOWN_SWITCH, null, null, null, null, null, null);
+                    UNKNOWN_SWITCH, null, null, null, null, null, null, null);
         }
         GroupEntry group = previous.withJoinedAt(at).withLastSeenAt(later(previous.lastSeenAt(), at))
                 .withRemoved(false).withProactive(UNKNOWN_SWITCH).withRole(null);
@@ -219,7 +233,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     }
 
     synchronized List<GroupInfo> consoleGroups() {
-        BotEntries bot = currentEntries();
+        BotEntries bot = groupsForRefresh(true);
         if (bot.groups().isEmpty()) return List.of();
         if (settings.snapshot().configured()) {
             try {
@@ -292,8 +306,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
 
     @Override
     public synchronized List<Snapshot> snapshots(boolean force) {
-        requireReadable();
-        BotEntries bot = currentEntries();
+        BotEntries bot = groupsForRefresh(force);
         Instant now = clock.instant();
         List<Group> groups = bot.groups().values().stream()
                 .filter(group -> !group.removed())
@@ -303,9 +316,65 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return List.of(new Snapshot(id(), groups, List.of(), now, now, false, null));
     }
 
+    private BotEntries groupsForRefresh(boolean refresh) {
+        requireReadable();
+        String appId = settings.snapshot().appId();
+        BotEntries bot = entries(appId);
+        if (refresh) {
+            for (GroupEntry group : bot.groups().values()) {
+                if (!group.removed()) schedule(appId, group, Endpoint.BOT_STATE);
+            }
+        }
+        return bot;
+    }
+
     @Override
     public boolean supports(String platform) {
         return id().equals(platform);
+    }
+
+    @Override
+    public Integer sessionDailyLimit(String platform) {
+        return 1;
+    }
+
+    @Override
+    public boolean canAtAll(String platform, Long num) {
+        CountDownLatch request;
+        synchronized (this) {
+            if (bots == null || !supports(platform)) return true;
+            String appId = settings.snapshot().appId();
+            GroupEntry group = entries(appId).groups().get(num);
+            if (group == null) return true;
+            if (today().equals(group.atAllRejectedOn())) return false;
+            request = group.removed() ? null : schedule(appId, group, Endpoint.BOT_STATE);
+        }
+        if (request != null) {
+            try {
+                // 超时就用已知角色。进行中的查询仍可供同群的后续通知使用。
+                request.await(ROLE_WAIT.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        return denyReason(platform, num) == null;
+    }
+
+    @Override
+    public synchronized String denyReason(String platform, Long num) {
+        if (bots == null || !supports(platform)) return null;
+        GroupEntry group = currentEntries().groups().get(num);
+        if (group == null) return null;
+        if (today().equals(group.atAllRejectedOn())) return "本群今天已经 @全体 过一次";
+        return group.role() == BotRole.MEMBER ? "机器人不是这个群的管理员（QQ 官方机器人要先被设为群管理员）" : null;
+    }
+
+    synchronized void recordAtAllRejection(String appId, long number) {
+        updateGroup(appId, number, group -> group.withAtAllRejectedOn(today()));
+    }
+
+    private LocalDate today() {
+        return LocalDate.ofInstant(clock.instant(), ZoneOffset.ofHours(8));
     }
 
     @Override
@@ -330,32 +399,33 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         return new Result(true, maskKnown(group.name(), bot), null);
     }
 
-    private void schedule(String appId, GroupEntry group) {
-        BotEntries bot = entries(appId);
-        for (Endpoint endpoint : Endpoint.values()) {
-            FetchKey key = new FetchKey(appId, group.number(), endpoint);
-            if (!canFetch(bot, group, endpoint) || pending.containsKey(key)) {
-                continue;
-            }
-            Object ticket = new Object();
-            pending.put(key, ticket);
-            try {
-                executor.execute(() -> fetch(key, ticket));
-            } catch (RejectedExecutionException e) {
-                pending.remove(key, ticket);
-            }
+    private CountDownLatch schedule(String appId, GroupEntry group, Endpoint endpoint) {
+        FetchKey key = new FetchKey(appId, group.number(), endpoint);
+        CountDownLatch existing = pending.get(key);
+        if (existing != null) return existing;
+        if (!canFetch(entries(appId), group, endpoint)) return null;
+        CountDownLatch ticket = new CountDownLatch(1);
+        pending.put(key, ticket);
+        try {
+            executor.execute(() -> fetch(key, ticket));
+        } catch (RejectedExecutionException e) {
+            pending.remove(key, ticket);
+            return null;
         }
+        return ticket;
     }
 
     private boolean canFetch(BotEntries bot, GroupEntry group, Endpoint endpoint) {
         Instant now = clock.instant();
         Instant unavailable = bot.unavailableUntil().get(endpoint);
         Refresh previous = group.refresh(endpoint);
-        return (unavailable == null || !now.isBefore(unavailable))
-                && (previous == null || (previous.retryAt() != null && !now.isBefore(previous.retryAt())));
+        if (unavailable != null && now.isBefore(unavailable)) return false;
+        if (previous == null) return true;
+        if (previous.retryAt() != null) return !now.isBefore(previous.retryAt());
+        return endpoint == Endpoint.BOT_STATE && !now.isBefore(previous.attemptedAt().plus(ROLE_TTL));
     }
 
-    private void fetch(FetchKey key, Object ticket) {
+    private void fetch(FetchKey key, CountDownLatch ticket) {
         try {
             GroupEntry before;
             synchronized (this) {
@@ -394,6 +464,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
         } finally {
             synchronized (this) {
                 pending.remove(key, ticket);
+                ticket.countDown();
             }
         }
     }
@@ -592,7 +663,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     public record GroupEntry(long number, String openid, String name, NameSource nameSource,
                              Instant joinedAt, Instant lastSeenAt, boolean removed, Proactive proactive,
                              BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure,
-                             String apiName) {
+                             String apiName, LocalDate atAllRejectedOn) {
         public GroupEntry {
             Objects.requireNonNull(openid);
             Objects.requireNonNull(name);

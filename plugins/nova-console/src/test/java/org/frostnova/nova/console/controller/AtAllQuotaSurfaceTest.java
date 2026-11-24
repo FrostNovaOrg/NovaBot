@@ -2,6 +2,7 @@ package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.adapter.qqbot.QqBotDirectory;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -12,12 +13,16 @@ import org.frostnova.nova.core.service.AtAllQuotaService;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -46,6 +51,38 @@ class AtAllQuotaSurfaceTest {
      * 没配过推送、却真花过额度的群：只有它才说得出「各群那一列圈的是谁」
      */
     private static final long UNCONFIGURED_GROUP = 39999L;
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 0})
+    void groupRowsUseTheirOwnPlatformsDailyLimit(int globalLimit) {
+        var properties = new NovaCoreProperties();
+        properties.getPush().setAtAllSessionDailyLimit(globalLimit);
+        new ApplicationContextRunner()
+                .withBean(QqBotDirectory.class, () -> mock(QqBotDirectory.class, CALLS_REAL_METHODS))
+                .withBean(NovaCoreProperties.class, () -> properties)
+                .withBean(AtAllQuotaService.class)
+                .run(context -> {
+                    var quota = context.getBean(AtAllQuotaService.class);
+                    var official = target(PushTargetType.GROUP, GROUP);
+                    official.setPlatform("qq-official");
+                    var napcat = target(PushTargetType.GROUP, GROUP);
+                    assertTrue(quota.tryConsume("qq-official", GROUP));
+                    assertTrue(quota.tryConsume(PLATFORM, GROUP));
+                    assertTrue(quota.tryConsume(PLATFORM, GROUP));
+                    var state = controller(quota, properties, new NovaSenderService(properties), List.of(official, napcat)).quota();
+                    var sessions = state.getJSONArray("sessions");
+                    assertEquals("qq-official", sessions.getJSONObject(0).getString("platform"));
+                    assertEquals(1, sessions.getJSONObject(0).getIntValue("limit"));
+                    assertTrue(sessions.getJSONObject(0).getBooleanValue("limited"));
+                    assertEquals(PLATFORM, sessions.getJSONObject(1).getString("platform"));
+                    assertEquals(globalLimit, sessions.getJSONObject(1).getIntValue("limit"));
+                    assertEquals(globalLimit > 0, sessions.getJSONObject(1).getBooleanValue("limited"));
+                    assertEquals(2, sessions.getJSONObject(1).getIntValue("used"));
+                    for (Object bot : state.getJSONArray("bots")) {
+                        assertEquals(properties.getPush().getAtAllDailyLimit(), ((JSONObject) bot).getIntValue("limit"));
+                    }
+                });
+    }
 
     @Test
     @DisplayName("账号维度：全部群共享的那份额度，用了几次就报几次")
@@ -160,11 +197,16 @@ class AtAllQuotaSurfaceTest {
 
     private AtAllQuotaController controller(AtAllQuotaService quota, NovaCoreProperties properties,
                                             NovaSenderService senders) {
+        return controller(quota, properties, senders, List.of(target(PushTargetType.GROUP, GROUP),
+                target(PushTargetType.GROUP, ANOTHER_GROUP), target(PushTargetType.FRIEND, FRIEND)));
+    }
+
+    private AtAllQuotaController controller(AtAllQuotaService quota, NovaCoreProperties properties,
+                                            NovaSenderService senders, List<PushTarget> targets) {
         PushUser user = new PushUser();
         user.setUid(10001L);
         user.setPlatform("bilibili");
-        user.setTargets(List.of(target(PushTargetType.GROUP, GROUP), target(PushTargetType.GROUP, ANOTHER_GROUP),
-                target(PushTargetType.FRIEND, FRIEND)));
+        user.setTargets(targets);
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(user));

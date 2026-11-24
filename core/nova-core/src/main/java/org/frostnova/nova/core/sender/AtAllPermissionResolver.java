@@ -29,4 +29,14 @@ public interface AtAllPermissionResolver {
      * @return 是否允许
      */
     boolean canAtAll(@NonNull String platform, @NonNull Long num);
+
+    /** 平台的会话每日上限，未提供时使用全局配置。 */
+    default Integer sessionDailyLimit(String platform) {
+        return null;
+    }
+
+    /** 拒绝时展示的原因，未提供时使用通用的群权限说明。 */
+    default String denyReason(String platform, Long num) {
+        return null;
+    }
 }

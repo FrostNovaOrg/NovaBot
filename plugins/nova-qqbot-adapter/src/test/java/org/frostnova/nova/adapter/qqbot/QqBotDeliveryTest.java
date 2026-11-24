@@ -8,7 +8,9 @@ import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.model.Sender;
+import org.frostnova.nova.core.sender.AtAllPermissionResolver;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.service.AtAllQuotaService;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -21,9 +23,11 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.support.GenericApplicationContext;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -40,25 +44,32 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 class QqBotDeliveryTest {
+    private static final String AT_ALL_TAG = "<qqbot-at-everyone />";
     private static final String PLATFORM = "qq-official";
     private static final String APP_ID = "12345678";
     private static final String OPENID = "abcd-fixture-group-wxyz";
@@ -81,6 +92,183 @@ class QqBotDeliveryTest {
             assertEquals(JSONObject.of("msg_type", 0, "content", "开播了"), rig.body(0));
             assertEquals(QqBotDirectory.ProactiveStatus.ENABLED, rig.group().proactive().status());
             assertEquals(QqBotDirectory.SwitchSource.SEND_SUCCESS, rig.group().proactive().source());
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"admin", "owner"})
+    void secondLiveNoticeKeepsOnlyTheText(String role) {
+        withSender(role, new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(List.of("今日的 @全体成员 额度已用完"), rig.skippedReasons());
+            assertEquals(JSONObject.of("msg_type", 0, "content", AT_ALL_TAG + "开播了"), rig.body(0));
+            assertEquals(JSONObject.of("msg_type", 0, "content", "开播了"), rig.body(1));
+            assertEquals(1, rig.quota.used(PLATFORM, rig.number));
+        });
+    }
+
+    @Test
+    void adminCanMentionAgainAtMidnightInChina() {
+        withSender("admin", new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            var now = new AtomicReference<>(Instant.parse("2026-11-24T15:59:59Z"));
+            try (var dates = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
+                dates.when(() -> LocalDate.now(any(ZoneId.class)))
+                        .thenAnswer(call -> LocalDate.ofInstant(now.get(), call.getArgument(0)));
+                assertEquals(0, rig.liveNotice().getIntValue("code"));
+                assertEquals(0, rig.liveNotice().getIntValue("code"));
+                now.set(now.get().plusSeconds(1));
+                assertEquals(0, rig.liveNotice().getIntValue("code"));
+                assertEquals(List.of(AT_ALL_TAG + "开播了", "开播了", AT_ALL_TAG + "开播了"),
+                        rig.messageRequests().stream().map(request -> request.body().getString("content")).toList());
+            }
+        });
+    }
+
+    @Test
+    void memberRoleExplainsHowToEnableMentions() {
+        withSender("member", new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(List.of("机器人不是这个群的管理员（QQ 官方机器人要先被设为群管理员）"), rig.skippedReasons());
+            assertEquals("开播了", rig.body(0).getString("content"));
+            assertEquals(0, rig.quota.usedByBot(PLATFORM));
+        });
+    }
+
+    @Test
+    void promotedBotMentionsEveryoneOnTheNextLiveNoticeAfterTenMinutes() {
+        withSender("member", new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            rig.role = "admin";
+            rig.time.advance(599_999);
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals("开播了", rig.body(0).getString("content"));
+            assertEquals(1, rig.roleQueries.get());
+            rig.time.advance(1);
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(AT_ALL_TAG + "开播了", rig.body(1).getString("content"));
+            assertEquals(2, rig.roleQueries.get());
+            assertEquals(1, rig.quota.used(PLATFORM, rig.number));
+        });
+    }
+
+    @Test
+    void demotedBotSendsTheNoticeWithoutMentioningOrUsingQuota() {
+        withSender("admin", new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            rig.role = "member";
+            rig.time.advance(Duration.ofMinutes(10).toMillis());
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals("开播了", rig.body(0).getString("content"));
+            assertEquals(List.of("机器人不是这个群的管理员（QQ 官方机器人要先被设为群管理员）"), rig.skippedReasons());
+            assertEquals(0, rig.quota.used(PLATFORM, rig.number));
+            assertEquals(2, rig.roleQueries.get());
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource({"admin,50001,true", "member,40012010,false", ",50001,true"})
+    void failedRoleRefreshStillDeliversWithTheLastKnownPermission(String role, int code, boolean mentioned) {
+        withSender(role, new QqBotImageDownloader(mock(HttpClient.class)), rig -> {
+            rig.roleFailure = json("code", code);
+            rig.time.advance(Duration.ofMinutes(10).toMillis());
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals((mentioned ? AT_ALL_TAG : "") + "开播了", rig.body(0).getString("content"));
+            assertEquals(mentioned ? 1 : 0, rig.quota.used(PLATFORM, rig.number));
+            assertEquals(2, rig.roleQueries.get());
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {40034142, 304019})
+    @ExtendWith(OutputCaptureExtension.class)
+    void rejectedMentionStillDeliversTheNoticeAndExplainsLaterSkips(int code, CapturedOutput output) {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() == 1 ? json("code", code) : json("id", "notice");
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(0, rig.liveNotice().getIntValue("code"));
+            assertEquals(List.of(AT_ALL_TAG + "开播了", "开播了", "开播了"), rig.messageRequests().stream()
+                    .map(request -> request.body().getString("content")).toList());
+            assertEquals(List.of("本群今天已经 @全体 过一次"), rig.skippedReasons());
+            assertTrue(output.getAll().contains("本群今天已经 @全体 过一次，这条改为不 @"));
+        });
+    }
+
+    @Test
+    void sendsMentionAsTextBeforeTheCover() {
+        withSender(rig -> {
+            assertEquals(0, rig.send("{at=all}开播了" + IMAGE).getIntValue("code"));
+            assertEquals(List.of("messages", "files", "messages"), rig.endpoints());
+            var posts = rig.messageRequests();
+            assertEquals(List.of(0, 7), posts.stream().map(request -> request.body().getIntValue("msg_type")).toList());
+            assertEquals(AT_ALL_TAG + "开播了", posts.get(0).body().getString("content"));
+            assertEquals(" ", posts.get(1).body().getString("content"));
+            assertEquals(media(), posts.get(1).body().getJSONObject("media"));
+        });
+    }
+
+    @Test
+    void removingARejectedMentionCannotJoinTextIntoAnotherMention() {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() == 1 ? json("code", 304019) : json("id", "notice");
+            assertEquals(0, rig.send("<qq{at=all}bot-at-everyone />").getIntValue("code"));
+            assertEquals("＜qqbot-at-everyone />", rig.body(1).getString("content"));
+        });
+    }
+
+    @Test
+    void deniedMentionWithOnlyACoverStillSendsTheCover() {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() == 1
+                    ? new QqBotHttpTransport.Response(429, json("code", 304019).body())
+                    : path.equals("files") ? json("file_info", FILE_INFO) : json("id", "cover");
+            assertEquals("cover", rig.send("{at=all}" + IMAGE).getString("id"));
+            assertEquals(List.of("messages", "files", "messages"), rig.endpoints());
+            assertEquals(" ", rig.body(2).getString("content"));
+            assertEquals(media(), rig.body(2).getJSONObject("media"));
+        });
+    }
+
+    @Test
+    void quotaErrorOnPlainRetryStopsAfterOneRetry() {
+        withSender(rig -> {
+            rig.exchange = path -> json("code", 40034142);
+            assertEquals(-1, rig.send("{at=all}开播了").getIntValue("code"));
+            assertEquals(List.of("messages", "messages"), rig.endpoints());
+            assertEquals("开播了", rig.body(1).getString("content"));
+        });
+    }
+
+    @Test
+    void splitLongTextKeepsTheMentionInOnePiece() {
+        withSender(rig -> {
+            rig.exchange = path -> rig.requests.size() == 1 ? json("code", 40054007) : json("id", "part");
+            assertEquals(0, rig.send("{at=all}开播了").getIntValue("code"));
+            assertEquals(AT_ALL_TAG, rig.body(1).getString("content"));
+            assertEquals("开播了", rig.body(2).getString("content"));
+        });
+    }
+
+    @Test
+    void aRejectedMentionIsRemovedFromTheRemainingTextParts() {
+        withSender(rig -> {
+            rig.exchange = path -> switch (rig.requests.size()) {
+                case 1 -> json("code", 40054007);
+                case 2 -> json("code", 304019);
+                default -> json("id", "part");
+            };
+            assertEquals(0, rig.send("{at=all}开播了\n{at=all}直播间").getIntValue("code"));
+            assertEquals(List.of("开播了\n", "直播间"), rig.messageRequests().stream().skip(2)
+                    .map(request -> request.body().getString("content")).toList());
+        });
+    }
+
+    @Test
+    void failedCoverUploadDoesNotResendTextOrMention() {
+        withSender(rig -> {
+            rig.exchange = path -> path.equals("files") ? json("code", 850019) : json("id", "notice");
+            var result = rig.send("{at=all}开播了" + IMAGE);
+            assertEquals("notice", result.getString("id"));
+            assertTrue(result.getBooleanValue(Sender.LocalDelivery.IMAGE_DEGRADED));
+            assertEquals(List.of("messages", "files"), rig.endpoints());
         });
     }
 
@@ -411,9 +599,9 @@ class QqBotDeliveryTest {
     @Test
     void externalTextCannotMentionTheGroupOrItsMembers() {
         withSender(rig -> {
-            String text = "<qqbot-at-everyone /> <QQbot-AT-Everyone /> <@abc> @everyone @EvErYoNe <@everyone>";
+            String text = "<qqbot-at-everyone /> <QQbot-AT-Everyone /> <@abc> @everyone @EvErYoNe <@everyone> {at=all}";
             assertEquals(0, rig.send(MessagePlaceholders.escapeExternalText(text)).getIntValue("code"));
-            assertEquals("＜qqbot-at-everyone /> ＜QQbot-AT-Everyone /> ＜@abc> ＠everyone ＠EvErYoNe ＜＠everyone>",
+            assertEquals("＜qqbot-at-everyone /> ＜QQbot-AT-Everyone /> ＜@abc> ＠everyone ＠EvErYoNe ＜＠everyone> ｛at=all｝",
                     rig.body(0).getString("content"));
         });
     }
@@ -436,7 +624,7 @@ class QqBotDeliveryTest {
     @Test
     void removingPlaceholdersCannotCreateAnActiveMentionInAMediaMessage() {
         withSender(rig -> {
-            JSONObject result = rig.send("<qq{at=all}bot-at-everyone /> @{face=1}Everyone" + IMAGE
+            JSONObject result = rig.send("<qq{at=123}bot-at-everyone /> @{face=1}Everyone" + IMAGE
                     + "{image_base64=" + JPEG + "}");
             assertEquals("message-1", result.getString("id"));
             assertEquals(List.of("files", "files", "messages", "messages"), rig.endpoints());
@@ -750,16 +938,26 @@ class QqBotDeliveryTest {
     }
 
     private void withSender(QqBotImageDownloader downloader, Consumer<Rig> test) {
+        withSender(null, downloader, test);
+    }
+
+    private void withSender(String role, QqBotImageDownloader downloader, Consumer<Rig> test) {
         Rig rig = new Rig();
+        rig.role = role;
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
+                .withInitializer(context -> ((GenericApplicationContext) context).registerBean(
+                        "qqBotDirectory", QqBotDirectory.class, () -> new QqBotDirectory(
+                                context.getBean(QqBotSettings.class), context.getBean(QqBotApiClient.class),
+                                rig.clock, Executors.newSingleThreadExecutor(), QqBotDirectory::sha256)))
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(NovaCoreProperties.class)
+                .withBean(AtAllQuotaService.class)
                 .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> rig::respond, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
                         definition -> definition.setPrimary(true))
                 .withBean("qqBotSendWindow", QqBotSendWindow.class, () -> new QqBotSendWindow(
-                        Clock.offset(rig.time.clock(), Duration.between(Instant.EPOCH, rig.now)),
-                        rig.time::nowMillis, rig.time::advance))
+                        rig.clock, rig.time::nowMillis, rig.time::advance))
                 .withBean(QqBotImageDownloader.class, () -> downloader, definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
@@ -779,6 +977,8 @@ class QqBotDeliveryTest {
                         var group = rig.group();
                         return group.info() != null && group.botState() != null;
                     });
+                    rig.resolvers = context.getBeanProvider(AtAllPermissionResolver.class);
+                    rig.quota = context.getBean(AtAllQuotaService.class);
                     test.accept(rig);
                 });
     }
@@ -847,6 +1047,7 @@ class QqBotDeliveryTest {
         private final List<Request> requests = new ArrayList<>();
         private final QqBotGatewayTest.ManualScheduler time = new QqBotGatewayTest.ManualScheduler();
         private final Instant now = Instant.now();
+        private final Clock clock = Clock.offset(time.clock(), Duration.between(Instant.EPOCH, now));
         private QqBotInboundEvents listener;
         private Exchange exchange;
         private QqBotCredentials credentials;
@@ -855,6 +1056,27 @@ class QqBotDeliveryTest {
         private QqBotDirectory directory;
         private long number;
         private int sent;
+        private volatile String role;
+        private volatile QqBotHttpTransport.Response roleFailure;
+        private final AtomicInteger roleQueries = new AtomicInteger();
+        private AtAllQuotaService quota;
+        private ObjectProvider<AtAllPermissionResolver> resolvers;
+        private final List<TimelineEvent> events = new ArrayList<>();
+
+        JSONObject liveNotice() {
+            var core = new NovaMessageSender(mock(HttpUtil.class), registry, new PushActivityRecorder(events::add),
+                    null, events::add, quota, resolvers, null);
+            try {
+                return core.sendNow(Message.create(PLATFORM, PushTargetType.GROUP, number, "{at=all}开播了").get(0));
+            } finally {
+                core.shutdown();
+            }
+        }
+
+        List<String> skippedReasons() {
+            return events.stream().filter(event -> event.type() == TimelineEventType.AT_ALL_SKIPPED)
+                    .map(event -> event.detail().get("reason")).toList();
+        }
 
         Rig() {
             exchange = endpoint -> endpoint.equals("files") ? json("file_info", FILE_INFO)
@@ -867,6 +1089,11 @@ class QqBotDeliveryTest {
                 return json("access_token", TOKEN, "expires_in", 7200);
             }
             if (method.equals("GET")) {
+                if (uri.getPath().endsWith("/bot_state")) {
+                    roleQueries.incrementAndGet();
+                    if (roleFailure != null) return roleFailure;
+                    return role == null ? json() : json("member_role", role);
+                }
                 return json();
             }
             assertEquals("POST", method);
