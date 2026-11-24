@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -47,7 +48,7 @@ public class QqBotConsoleController {
     }
 
     @GetMapping("/state")
-    public ResponseEntity<JSONObject> state() {
+    public ResponseEntity<JSONObject> state(@RequestParam(name = "refresh", required = false) Boolean refresh) {
         var config = settings.snapshot();
         var connection = probe.connectionState();
         var claims = members.claimState();
@@ -60,11 +61,12 @@ public class QqBotConsoleController {
                             "claimedAt", claim.claimedAt().toString());
                 }).toList();
         String level = probe.active() ? connection.health().level().name() : "OFF";
+        var groups = directory.consoleGroups(refresh);
         return response(HttpStatus.OK, JSONObject.of("success", true, "configured", config.configured(),
                 "appId", config.appId(), "secretMasked", config.maskedSecret(), "intervalMillis", config.intervalMillis(),
                 "connection", JSONObject.of("level", level, "summary", connection.health().summary(),
                         "robotName", connection.robotName()),
-                "groups", directory.consoleGroups(),
+                "groups", groups.groups(), "refreshing", groups.refreshing(),
                 "claimCodeActive", claims.expiresAt() != null,
                 "claimCodeExpiresAt", claims.expiresAt() == null ? null : claims.expiresAt().toString(),
                 "claimedAdmins", claimed));
