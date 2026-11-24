@@ -23,6 +23,8 @@ class QqBotTokenService {
 
     private static final HealthStatus UNCONFIGURED = HealthStatus.down("尚未配置 QQ 官方机器人凭据",
             "请填写 AppID 和 AppSecret", "unconfigured");
+    private static final HealthStatus UNREADABLE_SETTINGS = HealthStatus.down("QQ 官方机器人设置文件无法读取",
+            "请到连接页重新填写 AppID 和 AppSecret");
     private static final HealthStatus UNCHECKED = HealthStatus.down("QQ 官方机器人凭据尚待验证",
             "请稍后查看凭据验证结果");
     private static final HealthStatus EXPIRED = HealthStatus.down("QQ 官方机器人访问令牌已失效",
@@ -53,7 +55,11 @@ class QqBotTokenService {
     }
 
     HealthStatus health() {
-        if (!settings().configured()) {
+        var currentSettings = settings();
+        if (currentSettings.unreadable()) {
+            return UNREADABLE_SETTINGS;
+        }
+        if (!currentSettings.configured()) {
             return UNCONFIGURED;
         }
         Outcome outcome = latest;

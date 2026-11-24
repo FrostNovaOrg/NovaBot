@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -39,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -76,6 +78,63 @@ class QqBotAdapterTest {
                     assertEquals(1, exchanges.get());
                     assertEquals(HealthStatus.Level.OK, probe.check().level());
                 });
+    }
+
+    @ParameterizedTest
+    @MethodSource("brokenSettingsFiles")
+    @ExtendWith(OutputCaptureExtension.class)
+    void brokenSettingsLeaveApplicationReadyAndShowHowToRecover(byte[] original, CapturedOutput output)
+            throws IOException {
+        Path directory = dataDirectory.resolve("qqbot");
+        new SecretStore(directory, "app-secret").save(SECRET);
+        Path settings = directory.resolve("settings.json");
+        Files.write(settings, original);
+        AtomicInteger exchanges = new AtomicInteger();
+        QqBotHttpTransport transport = (method, uri, headers, body) -> {
+            exchanges.incrementAndGet();
+            return token(TOKEN, 7200);
+        };
+
+        new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
+                .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
+                .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
+                .run(context -> {
+                    assertNull(context.getStartupFailure());
+                    context.publishEvent(new ApplicationReadyEvent(new SpringApplication(), new String[0],
+                            context.getSourceApplicationContext(), Duration.ZERO));
+                    QqBotCredentials credentials = context.getBean(QqBotCredentials.class);
+                    assertFalse(credentials.status().configured());
+                    assertTrue(credentials.status().appId().isEmpty());
+                    QqBotHealthProbe probe = context.getBean(QqBotHealthProbe.class);
+                    assertTrue(probe.active(), "首页应显示无法读取设置的探针");
+                    HealthStatus health = probe.check();
+                    assertEquals(HealthStatus.Level.DOWN, health.level());
+                    assertTrue(health.summary().contains("设置文件无法读取"));
+                    assertTrue(health.advice().contains("连接页重新填写"));
+                    assertEquals(0, exchanges.get());
+                    assertArrayEquals(original, Files.readAllBytes(settings));
+                    assertEquals(1, output.getAll().lines()
+                            .filter(line -> line.contains("WARN") && line.contains(settings.toString())).count());
+                    assertFalse(output.getAll().contains(APP_ID));
+                    assertNoCredentials(output.getAll());
+
+                    assertThrows(IllegalArgumentException.class, () -> credentials.save(APP_ID, "invalid secret"));
+                    assertArrayEquals(original, Files.readAllBytes(settings));
+                    assertEquals(0, exchanges.get());
+                    credentials.save(APP_ID, SECRET);
+                    assertEquals(1, exchanges.get());
+                    assertTrue(credentials.status().configured());
+                    assertEquals(HealthStatus.Level.OK, probe.check().level());
+                    assertEquals(APP_ID, JSON.parseObject(Files.readString(settings)).getString("appId"));
+                });
+    }
+
+    private static Stream<byte[]> brokenSettingsFiles() {
+        String complete = JSONObject.of("appId", APP_ID, "unused", SECRET + " " + TOKEN).toJSONString();
+        return Stream.of(new byte[0],
+                complete.substring(0, complete.length() - 1).getBytes(StandardCharsets.UTF_8),
+                ("{'appId':'" + APP_ID + "'}").getBytes(StandardCharsets.UTF_8),
+                new byte[] {(byte) 0xc3});
     }
 
     @Test
@@ -151,6 +210,35 @@ class QqBotAdapterTest {
         assertEquals(1, requests.get());
         rig.credentials.save(APP_ID, null);
         assertEquals(2, requests.get());
+    }
+
+    @Test
+    void pastingAppIdIntoSecretFieldLeavesAllCredentialFilesUntouched() throws IOException {
+        AtomicInteger requests = new AtomicInteger();
+        Rig rig = rig((method, uri, headers, body) -> {
+            requests.incrementAndGet();
+            return token(TOKEN, 7200);
+        });
+        rig.credentials.save(APP_ID, SECRET);
+        Path directory = dataDirectory.resolve("qqbot");
+        Path settings = directory.resolve("settings.json");
+        Path encrypted = directory.resolve("app-secret.enc");
+        Path masterKey = directory.resolve("app-secret-master.key");
+        byte[] originalSettings = Files.readAllBytes(settings);
+        byte[] originalEncrypted = Files.readAllBytes(encrypted);
+        byte[] originalMasterKey = Files.readAllBytes(masterKey);
+        var originalStatus = rig.credentials.status();
+
+        String pastedAppId = "12345678901234567890";
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> rig.credentials.save(pastedAppId, pastedAppId));
+        assertTrue(error.getMessage().contains("AppSecret 和 AppID 一样"));
+        assertTrue(error.getMessage().contains("到 QQ 开放平台复制 AppSecret"));
+        assertArrayEquals(originalSettings, Files.readAllBytes(settings));
+        assertArrayEquals(originalEncrypted, Files.readAllBytes(encrypted));
+        assertArrayEquals(originalMasterKey, Files.readAllBytes(masterKey));
+        assertEquals(originalStatus, rig.credentials.status());
+        assertEquals(1, requests.get());
     }
 
     @ParameterizedTest

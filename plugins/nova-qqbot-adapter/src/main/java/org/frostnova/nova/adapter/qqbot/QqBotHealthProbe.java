@@ -29,7 +29,8 @@ public class QqBotHealthProbe implements HealthProbe {
 
     @Override
     public boolean active() {
-        return tokens.settings().configured();
+        var settings = tokens.settings();
+        return settings.configured() || settings.unreadable();
     }
 
     @Override

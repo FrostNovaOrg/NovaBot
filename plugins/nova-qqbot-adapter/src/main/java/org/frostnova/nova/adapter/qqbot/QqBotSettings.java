@@ -1,12 +1,17 @@
 package org.frostnova.nova.adapter.qqbot;
 
-import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.secret.SecretStore;
 import org.frostnova.nova.core.util.DurableFiles;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -22,11 +27,15 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
+@Slf4j
 @NovaComponent
 final class QqBotSettings {
     private static final Pattern APP_ID = Pattern.compile("[0-9]{1,20}");
     private static final long DEFAULT_INTERVAL_MILLIS = 2000;
     private static final LinkOption NO_LINKS = LinkOption.NOFOLLOW_LINKS;
+    private static final JsonMapper SETTINGS_JSON = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS, DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+            .build();
 
     private final Path directory;
     private final Path settingsPath;
@@ -54,12 +63,15 @@ final class QqBotSettings {
         if (appId == null || !APP_ID.matcher(appId).matches()) {
             throw new IllegalArgumentException("AppID 须为 1 至 20 位数字");
         }
+        if (appId.equals(secret)) {
+            throw new IllegalArgumentException("AppSecret 和 AppID 一样，像是填错了栏，请到 QQ 开放平台复制 AppSecret");
+        }
         boolean replaceSecret = secret != null && !secret.isEmpty();
         if (!replaceSecret && !secrets.isSet()) {
             throw new IllegalArgumentException("请填写 AppSecret");
         }
         long interval = snapshot.intervalMillis();
-        String original;
+        byte[] original;
         try {
             if (Files.notExists(directory, NO_LINKS)) {
                 try {
@@ -70,7 +82,7 @@ final class QqBotSettings {
                 }
             }
             protectStorage();
-            original = Files.notExists(settingsPath) ? null : Files.readString(settingsPath);
+            original = Files.notExists(settingsPath) ? null : Files.readAllBytes(settingsPath);
             writeSettings(JSONObject.of("appId", appId, "intervalMillis", interval).toJSONString());
         } catch (IOException | SecurityException e) {
             throw storageError();
@@ -86,7 +98,7 @@ final class QqBotSettings {
         }
         try {
             protectStorage();
-            snapshot = new Snapshot(appId, interval, true, maskedSecret());
+            snapshot = new Snapshot(appId, interval, true, maskedSecret(), false);
         } catch (IOException | RuntimeException e) {
             throw storageError();
         }
@@ -102,19 +114,32 @@ final class QqBotSettings {
                 protectStorage();
             }
             if (Files.notExists(settingsPath)) {
-                return new Snapshot("", DEFAULT_INTERVAL_MILLIS, false, maskedSecret());
+                return new Snapshot("", DEFAULT_INTERVAL_MILLIS, false, maskedSecret(), false);
             }
-            JSONObject json = JSON.parseObject(Files.readString(settingsPath));
+        } catch (IOException | RuntimeException e) {
+            throw storageError();
+        }
+        return readSettingsFile();
+    }
+
+    private Snapshot readSettingsFile() {
+        try {
+            JSONObject json = SETTINGS_JSON.readValue(Files.readString(settingsPath), JSONObject.class);
             if (json == null) {
-                throw storageError();
+                return unreadableSettings();
             }
             String appId = json.getString("appId");
             long interval = json.getLongValue("intervalMillis", DEFAULT_INTERVAL_MILLIS);
             boolean validId = appId != null && APP_ID.matcher(appId).matches();
-            return new Snapshot(validId ? appId : "", interval, validId && secrets.isSet(), maskedSecret());
+            return new Snapshot(validId ? appId : "", interval, validId && secrets.isSet(), maskedSecret(), false);
         } catch (IOException | RuntimeException e) {
-            throw storageError();
+            return unreadableSettings();
         }
+    }
+
+    private Snapshot unreadableSettings() {
+        log.warn("无法读取 QQ 官方机器人设置文件 {}", settingsPath);
+        return new Snapshot("", DEFAULT_INTERVAL_MILLIS, false, "", true);
     }
 
     private String maskedSecret() {
@@ -131,12 +156,16 @@ final class QqBotSettings {
         DurableFiles.replace(settingsPath, json, DurableFiles.OWNER_ONLY);
     }
 
-    private void restoreSettings(String original) {
+    private void restoreSettings(byte[] original) {
         try {
             if (original == null) {
                 Files.deleteIfExists(settingsPath);
             } else {
-                writeSettings(original);
+                try {
+                    writeSettings(StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(original)).toString());
+                } catch (CharacterCodingException e) {
+                    Files.write(settingsPath, original);
+                }
             }
         } catch (IOException | RuntimeException e) {
             throw storageError();
@@ -185,6 +214,6 @@ final class QqBotSettings {
         return new IllegalStateException("QQ 官方机器人设置文件无法读写，请检查工作目录权限或重新填写凭据");
     }
 
-    record Snapshot(String appId, long intervalMillis, boolean configured, String maskedSecret) {
+    record Snapshot(String appId, long intervalMillis, boolean configured, String maskedSecret, boolean unreadable) {
     }
 }
