@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
+import org.frostnova.nova.core.config.ui.ConsoleCredentialLogFilter;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.StreamerNames;
@@ -38,7 +39,9 @@ public class AssistantController {
     @PostMapping("/key")
     public JSONObject key(HttpServletRequest request) {
         var account = ConfigUiAccess.admin(request);
-        client.validateAndSaveKey(account.id(), readKey(request));
+        String key = readKey(request);
+        ConsoleCredentialLogFilter.protect(request, key);
+        client.validateAndSaveKey(account.id(), key);
         return success();
     }
 
