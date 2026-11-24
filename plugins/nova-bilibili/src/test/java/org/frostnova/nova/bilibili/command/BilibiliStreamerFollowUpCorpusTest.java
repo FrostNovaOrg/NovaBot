@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.nio.file.Path;
@@ -144,9 +145,9 @@ class BilibiliStreamerFollowUpCorpusTest {
                         at("全部", "8. 主播辛（10008）", "!还有 3 位"),
                         at("8", "已出图：主播辛")),
 
-                corpus("序号超出范围 —— 不当序号看，那次追问也不该被它用掉",
-                        at("直播报告", "回序号选一位"),
-                        at("99", "!已出图"),
+                corpus("序号超出范围 —— 提示的上限包括折叠的主播，清单还可继续选",
+                        at("直播报告", "还有 3 位，回「全部」展开"),
+                        at("99", "没有 99 号", "1 到 8", "!已出图"),
                         at("2", "已出图：主播乙")),
 
                 corpus("回过序号之后再省掉参数 —— 还是问一遍，不替人记上次那位",
@@ -158,7 +159,7 @@ class BilibiliStreamerFollowUpCorpusTest {
                 corpus("换个序号还能接着选 —— 超出范围的数字也不结束清单",
                         at("直播报告", "2 分钟内还能接着选别的"),
                         plain("4", "已出图：主播丁"),
-                        plain("9999", "!已出图"),
+                        plain("9999", "没有 9999 号", "1 到 8", "!已出图"),
                         plainAfter(Duration.ofSeconds(13), "2", "已出图：主播乙")),
 
                 corpus("选完再回「全部」—— 展开时保留已选过的主播",
@@ -258,6 +259,29 @@ class BilibiliStreamerFollowUpCorpusTest {
                 }
             }
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("六位主播的清单收到 9 时只提示一次，之后仍能选第 3 位")
+    void warnsOnceAndKeepsTheStreamerList(boolean mentionsBot) {
+        Fixture fixture = new Fixture(PLATFORM, PushTargetType.GROUP, 6);
+        String list = fixture.feed(ASKER, Duration.ZERO, "直播报告", true);
+        assertTrue(list.contains("6. 主播己"), () -> list);
+
+        String warning = fixture.feed(ASKER, Duration.ZERO, "9", mentionsBot);
+        assertTrue(warning.contains("没有 9 号") && warning.contains("1 到 6"),
+                () -> "越界时应提示序号范围，实际说了「" + warning + "」");
+        assertEquals("", fixture.feed(ASKER, Duration.ZERO, "8", false));
+        String fallback = fixture.feed(ASKER, Duration.ofSeconds(4), "7", true);
+        assertTrue(fallback.contains("用法："), () -> fallback);
+        assertFalse(fallback.contains("清单里没有"), () -> fallback);
+        String report = fixture.feed(ASKER, Duration.ZERO, "3", false);
+        assertTrue(report.contains("已出图：主播丙"), () -> report);
+
+        fixture.feed(ASKER, Duration.ofSeconds(4), "直播报告", true);
+        String newWarning = fixture.feed(ASKER, Duration.ZERO, "9", mentionsBot);
+        assertTrue(newWarning.contains("没有 9 号"), () -> newWarning);
     }
 
     @Test
@@ -362,10 +386,14 @@ class BilibiliStreamerFollowUpCorpusTest {
         }
 
         Fixture(String platform, PushTargetType type) {
+            this(platform, type, NAMES.size());
+        }
+
+        Fixture(String platform, PushTargetType type, int streamerCount) {
             this.platform = platform;
             this.type = type;
             List<PushUser> users = new ArrayList<>();
-            for (int index = 1; index <= NAMES.size(); index++) {
+            for (int index = 1; index <= streamerCount; index++) {
                 users.add(streamer(index, platform, type));
             }
 

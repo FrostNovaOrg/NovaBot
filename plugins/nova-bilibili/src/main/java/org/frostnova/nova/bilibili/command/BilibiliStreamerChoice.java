@@ -204,10 +204,12 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
         Pending pending = new Pending(List.copyOf(uids), List.copyOf(lines), shown(ranked),
                 display(ranked.ordered().get(0)), context.getCommand(), List.copyOf(context.getArgs()),
-                clock.instant().plus(PENDING_TTL), new AtomicBoolean(), ConcurrentHashMap.newKeySet());
+                clock.instant().plus(PENDING_TTL), new AtomicBoolean(), new AtomicBoolean(),
+                ConcurrentHashMap.newKeySet());
 
         sweep();
-        pendings.put(key(context), pending);
+        String key = key(context);
+        context.openChoiceList(() -> pendings.put(key, pending));
         return render(context, pending, false);
     }
 
@@ -277,8 +279,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
         int index = word.length() <= MAX_INDEX_DIGITS ? Integer.parseInt(word) : 0;
         if (index < 1 || index > pending.uids().size()) {
-            // 越界的数字交回分发器照常处理，清单仍可继续选。
-            return null;
+            return pending.warned().compareAndSet(false, true) ? Claimed.outOfRange(word, pending.uids().size()) : null;
         }
 
         Long chosen = pending.uids().get(index - 1);
@@ -297,6 +298,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
         if (pending != null) {
             discardIfAnswered(key, pending);
         }
+    }
+
+    @Override
+    public void discardChoiceList(CommandContext context) {
+        pendings.remove(key(context));
     }
 
     private void discardIfAnswered(String key, Pending pending) {
@@ -369,9 +375,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * @param args 那条命令原本的参数
      * @param expiresAt 失效时刻
      * @param expanded 是否已经展开过
+     * @param warned 是否已提示过序号越界
      * @param selected 已经选过的主播 UID
      */
     private record Pending(List<Long> uids, List<String> lines, int shown, String example, String command,
-                           List<String> args, Instant expiresAt, AtomicBoolean expanded, Set<Long> selected) {
+                           List<String> args, Instant expiresAt, AtomicBoolean expanded, AtomicBoolean warned,
+                           Set<Long> selected) {
     }
 }
