@@ -16,6 +16,7 @@
 ├── plugins/nova-bilibili/                           采集侧
 ├── plugins/nova-onebot-adapter/                     投递侧
 ├── plugins/nova-onebot-adapter-napcat-extension/    依赖 onebot-adapter
+├── plugins/nova-qqbot-adapter/                      QQ 官方机器人凭据与接口
 ├── plugins/nova-report/                             下播报告 / 动态图 / 数据查询图（依赖 nova-bilibili）
 ├── plugins/nova-console/                    控制台产品页（主播 / 推送 / 向导）
 └── templates/                                          第三方插件模板
@@ -33,6 +34,7 @@ flowchart TB
   nova_core["core/nova-core"]
   onebot_adapter["plugins/nova-onebot-adapter"]
   napcat_extension["plugins/nova-onebot-adapter-napcat-extension"]
+  qqbot_adapter["plugins/nova-qqbot-adapter"]
   nova_bilibili["plugins/nova-bilibili"]
   nova_console["plugins/nova-console"]
   nova_report["plugins/nova-report"]
@@ -42,6 +44,8 @@ flowchart TB
   napcat_extension --> nova_core
   napcat_extension --> novacore
   napcat_extension --> onebot_adapter
+  qqbot_adapter --> nova_core
+  qqbot_adapter --> novacore
   nova_bilibili --> nova_core
   nova_console --> nova_core
   nova_console --> novacore
