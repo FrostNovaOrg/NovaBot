@@ -11,6 +11,7 @@ import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandFallback;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.command.CommandReplyHint;
 import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.ChannelSettings;
@@ -82,6 +83,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private final CommandSettingsService settings;
     private final NovaMessageSender sender;
     private final Clock clock;
+    private CommandReplyHint replyHint = CommandReplyHint.DEFAULT;
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final Map<Asker, Choice> choices = new ConcurrentHashMap<>();
     private final Map<Asker, PendingFollowUps> pendingFollowUps = new ConcurrentHashMap<>();
@@ -112,6 +114,11 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         this.clock = clock;
         reminders.setRemoveOnCancelPolicy(true);
         reminders.scheduleWithFixedDelay(this::evictHistory, 1, 1, TimeUnit.MINUTES);
+    }
+
+    @Autowired
+    void setReplyHint(CommandReplyHint replyHint) {
+        this.replyHint = replyHint;
     }
 
     @Override public String name() { return "问"; }
@@ -171,7 +178,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         if (named.stream().anyMatch(item -> !item.allowed()))
             return CommandReply.of("这里没有为所点名的主播开启智能助手问答");
         if (allowed.isEmpty()) return CommandReply.of(CHANNEL_OFF);
-        if (mentions.ambiguous()) return choose(asker, named, question);
+        if (mentions.ambiguous()) return choose(context, asker, named, question);
         if (named.size() > COMPARISON_LIMIT) return CommandReply.of("一次最多比 5 位主播，请少点几位。");
 
         if (named.isEmpty()) {
@@ -181,7 +188,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             allowed.forEach(item -> byUid.put(item.uid(), item));
             if (!recent.isEmpty() && byUid.keySet().containsAll(recent))
                 return start(context, asker, recent.stream().map(byUid::get).toList(), question, null, null);
-            return choose(asker, allowed, question);
+            return choose(context, asker, allowed, question);
         }
 
         String rawText = context.getRawText();
@@ -228,13 +235,13 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         return candidates;
     }
 
-    private CommandReply choose(Asker asker, List<Candidate> options, String question) {
+    private CommandReply choose(CommandContext context, Asker asker, List<Candidate> options, String question) {
         pendingFollowUps.remove(asker);
         options = options.stream().sorted(Comparator.comparing(Candidate::uid)).toList();
         Instant now = clock.instant();
         choices.values().removeIf(choice -> !now.isBefore(choice.expires()));
         choices.put(asker, new Choice(options.stream().map(Candidate::id).toList(), question, now.plus(CHOICE_TTL)));
-        StringBuilder text = new StringBuilder("请回序号选一位主播（2 分钟内有效）");
+        StringBuilder text = new StringBuilder(replyHint.replyVerb(context, "请") + "序号选一位主播（2 分钟内有效）");
         for (int i = 0; i < options.size(); i++) {
             Candidate item = options.get(i);
             text.append('\n').append(i + 1).append(". ");
@@ -347,7 +354,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             var images = result.getJSONArray("images");
             int limit = ANSWER_LIMIT - tail.codePointCount(0, tail.length());
             var followUps = answer.followUps();
-            String guidance = numberedGuidance(followUps);
+            String guidance = numberedGuidance(context, followUps);
             int guidanceLength = guidance.codePointCount(0, guidance.length());
             if (guidanceLength >= limit) {
                 guidance = "";
@@ -365,11 +372,12 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         }
     }
 
-    private static String numberedGuidance(List<AssistantAskService.FollowUp> options) {
+    private String numberedGuidance(CommandContext context, List<AssistantAskService.FollowUp> options) {
         if (options.isEmpty()) return "";
+        String replyVerb = replyHint.replyVerb(context);
         String first = "\n1. " + options.get(0).label();
-        if (options.size() == 1) return "\n回「问 1」接着问" + first;
-        return "\n回「问 1」或「问 2」接着问" + first + "\n2. " + options.get(1).label();
+        if (options.size() == 1) return "\n" + replyVerb + "「问 1」接着问" + first;
+        return "\n" + replyVerb + "「问 1」或「问 2」接着问" + first + "\n2. " + options.get(1).label();
     }
 
     private AssistantLocalStore.QqSource qqSource(CommandContext context) {
@@ -633,6 +641,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             Message.create(context.getPlatform(), context.getType(), context.getNum(), content).forEach(message -> {
                         message.setChannel(target);
                         message.setReply(true);
+                        message.setReplyTo(context.getMessageId());
                         sender.send(message);
                     });
             if (amountVisible == answer.amountVisible() && !answer.followUps().isEmpty())

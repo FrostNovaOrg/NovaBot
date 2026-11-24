@@ -4,7 +4,9 @@ import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.command.CommandReplyHint;
 import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.command.GroupMessageCapability;
 import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.command.builtin.MenuCommand;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -69,6 +71,7 @@ import static org.mockito.Mockito.when;
 @DisplayName("回序号选主播语料")
 class BilibiliStreamerFollowUpCorpusTest {
     private static final String PLATFORM = "qq-onebot";
+    private static final String OFFICIAL = "qq-official";
 
     private static final long GROUP = 30003L;
 
@@ -253,7 +256,7 @@ class BilibiliStreamerFollowUpCorpusTest {
 
         List<PushUser> candidates = new ArrayList<>();
         for (int index = 1; index <= NAMES.size(); index++) {
-            candidates.add(streamer(index));
+            candidates.add(streamer(index, PLATFORM, PushTargetType.GROUP));
         }
         choice.ask(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
                 "@名单", List.of("开播", "2"), "@名单 开播 2"), choice.rank(candidates));
@@ -263,6 +266,41 @@ class BilibiliStreamerFollowUpCorpusTest {
 
         assertEquals("@名单", claimed.command());
         assertEquals(List.of("开播", "2", "10003"), claimed.args());
+    }
+
+    @Test
+    void officialGroupMenuTellsTheAskerToMentionTheBotAndAcceptsTheNumber() {
+        var fixture = new Fixture(OFFICIAL, PushTargetType.GROUP);
+
+        String menu = fixture.feed(ASKER, Duration.ZERO, "直播报告", true);
+        String selected = fixture.feed(ASKER, Duration.ZERO, "2", true);
+
+        assertTrue(menu.contains("@我 回序号选一位"), () -> menu);
+        assertTrue(selected.contains("已出图：主播乙"), () -> selected);
+    }
+
+    @Test
+    void oneBotGroupMenuStillAcceptsAnUnmentionedNumber() {
+        var fixture = new Fixture();
+
+        String menu = fixture.feed(ASKER, Duration.ZERO, "直播报告", true);
+        String selected = fixture.feed(ASKER, Duration.ZERO, "2", false);
+
+        assertTrue(menu.contains("位主播，回序号选一位"), () -> menu);
+        assertFalse(menu.contains("@我"), () -> menu);
+        assertTrue(selected.contains("已出图：主播乙"), () -> selected);
+    }
+
+    @Test
+    void officialPrivateMenuStillAcceptsAnUnmentionedNumber() {
+        var fixture = new Fixture(OFFICIAL, PushTargetType.FRIEND);
+
+        String menu = fixture.feed(ASKER, Duration.ZERO, "直播报告", false);
+        String selected = fixture.feed(ASKER, Duration.ZERO, "2", false);
+
+        assertTrue(menu.contains("位主播，回序号选一位"), () -> menu);
+        assertFalse(menu.contains("@我"), () -> menu);
+        assertTrue(selected.contains("已出图：主播乙"), () -> selected);
     }
 
     /**
@@ -276,11 +314,19 @@ class BilibiliStreamerFollowUpCorpusTest {
         private final CommandDispatcher dispatcher;
 
         private final Ticking clock = new Ticking();
+        private final String platform;
+        private final PushTargetType type;
 
         Fixture() {
+            this(PLATFORM, PushTargetType.GROUP);
+        }
+
+        Fixture(String platform, PushTargetType type) {
+            this.platform = platform;
+            this.type = type;
             List<PushUser> users = new ArrayList<>();
             for (int index = 1; index <= NAMES.size(); index++) {
-                users.add(streamer(index));
+                users.add(streamer(index, platform, type));
             }
 
             AbstractDataSource dataSource = mock(AbstractDataSource.class);
@@ -301,6 +347,10 @@ class BilibiliStreamerFollowUpCorpusTest {
             CommandSettingsService settings = new CommandSettingsService(new NovaStateStore(properties));
             BilibiliStreamerChoice choice =
                     new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties), clock);
+            var capability = mock(GroupMessageCapability.class);
+            when(capability.platform()).thenReturn(OFFICIAL);
+            when(capability.receivesUnmentionedGroupMessages()).thenReturn(false);
+            choice.setReplyHint(new CommandReplyHint(List.of(capability)));
 
             List<NovaCommand> commands = new ArrayList<>();
             @SuppressWarnings("unchecked")
@@ -331,22 +381,22 @@ class BilibiliStreamerFollowUpCorpusTest {
         String feed(long sender, Duration after, String text, boolean mentionsBot) {
             clock.advance(after);
             replies.clear();
-            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, "group", GROUP, sender,
-                    text, "member", mentionsBot));
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(platform,
+                    type == PushTargetType.GROUP ? "group" : "private", GROUP, sender, text, "member", mentionsBot));
             return String.join("\n", replies);
         }
 
     }
 
-    private static PushUser streamer(int index) {
+    private static PushUser streamer(int index, String platform, PushTargetType type) {
         PushUser user = new PushUser();
         user.setUid(10000L + index);
         user.setUname(NAMES.get(index - 1));
         user.setPlatform("bilibili");
 
         PushTarget target = new PushTarget();
-        target.setPlatform(PLATFORM);
-        target.setType(PushTargetType.GROUP);
+        target.setPlatform(platform);
+        target.setType(type);
         target.setNum(GROUP);
         target.setMessages(new ArrayList<>());
         user.setTargets(List.of(target));
@@ -396,6 +446,11 @@ class BilibiliStreamerFollowUpCorpusTest {
         @Override
         public String description() {
             return "供语料回放使用";
+        }
+
+        @Override
+        public boolean groupOnly() {
+            return false;
         }
 
         @Override
