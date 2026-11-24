@@ -431,6 +431,36 @@ class QqBotDirectoryTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedProactiveRecheckDoesNotDelayTheTenMinuteRoleQuery(boolean afterJoin) {
+        var botState = new AtomicReference<>(json("member_role", "member", "allow_proactive_msg", false));
+        var rig = new Rig(uri -> isInfo(uri) ? json() : botState.get());
+        var directory = new QqBotDirectory(rig.settings, rig.api, rig.clock, Runnable::run, rig.hash);
+        long number = directory.groupJoined(GROUP_A, JOINED);
+
+        botState.set(json("code", 50001));
+        if (afterJoin) {
+            rig.clock.advance(Duration.ofMinutes(10));
+            rig.probe(directory, number).check();
+        } else {
+            rig.clock.advance(Duration.ofMinutes(1));
+            directory.consoleGroups(true);
+            rig.clock.advance(Duration.ofMinutes(9));
+        }
+        assertEquals(2, rig.botStateCalls());
+        assertEquals(ProactiveStatus.DISABLED, group(directory, number).proactive().status());
+
+        botState.set(json("member_role", "admin"));
+        var restarted = new QqBotDirectory(rig.settings, rig.api, rig.clock, Runnable::run, rig.hash);
+        boolean permitted = restarted.canAtAll(PLATFORM, number);
+        boolean roleQuery = rig.botStateCalls() == 3;
+        assertEquals("permitted=true roleQuery=true", "permitted=" + permitted + " roleQuery=" + roleQuery);
+
+        restarted.consoleGroups(true);
+        assertEquals(3, rig.botStateCalls(), "手动刷新应继续遵守主动发言状态的失败冷却");
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {0, 50001, 11253, 40012010})
     void manualRefreshChecksUnknownEarlyAndKeepsTheLastReadingDuringCooldown(int errorCode) {
         var allowed = new AtomicReference<Boolean>();
