@@ -110,15 +110,32 @@ public class PushActivityRecorder {
     }
 
     public void recordSuccess(String platform, String target, String summary, long elapsedMillis, PushTarget channel) {
+        recordDelivered(platform, target, summary, elapsedMillis, channel, null);
+    }
+
+    /** 记录已送达的推送，部分图片未送达时在日志页标为警告。 */
+    public void recordImageDegraded(String platform, String target, String summary, String reason,
+                                    long elapsedMillis, PushTarget channel) {
+        recordDelivered(platform, target, summary, elapsedMillis, channel,
+                reason == null || reason.isBlank() ? "未给出原因" : reason);
+    }
+
+    private void recordDelivered(String platform, String target, String summary, long elapsedMillis,
+                                 PushTarget channel, String imageFailure) {
         PushUser user = streamer(channel);
         lastSuccessAt = Instant.now();
         successCount.incrementAndGet();
         append(record(lastSuccessAt, platform, target, summary, true, null, false, user));
 
-        timeline.record(withStreamer(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO), user)
+        var event = TimelineEvent.of(TimelineEventType.PUSH_SENT,
+                imageFailure == null ? TimelineEvent.Level.INFO : TimelineEvent.Level.WARN);
+        if (imageFailure != null) {
+            event.detail("reason", imageFailure);
+        }
+        timeline.record(withStreamer(event, user)
                 .at(lastSuccessAt)
                 .channel(target)
-                .text("已推送：" + summary)
+                .text((imageFailure == null ? "已推送：" : "已推送（部分图片未送达）：") + summary)
                 .detail("platform", platform)
                 .detail("elapsed_ms", String.valueOf(elapsedMillis))
                 .build());

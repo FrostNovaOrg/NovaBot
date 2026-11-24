@@ -6,7 +6,9 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.health.HealthStatus;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -463,6 +465,7 @@ class QqBotGatewayTest {
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> settings)
                 .withBean("qqBotTokenService", QqBotTokenService.class, () -> tokens)
+                .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> http, definition -> definition.setPrimary(true))
                 .withBean(QqBotWebSocketTransport.class, () -> gateway, definition -> definition.setPrimary(true))
                 .withBean(QqBotGatewayScheduler.class, () -> scheduler, definition -> definition.setPrimary(true))

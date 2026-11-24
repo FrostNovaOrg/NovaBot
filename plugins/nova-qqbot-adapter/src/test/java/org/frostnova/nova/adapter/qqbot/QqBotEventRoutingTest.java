@@ -1,7 +1,9 @@
 package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
+import org.frostnova.nova.core.service.NovaSenderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -286,6 +288,7 @@ class QqBotEventRoutingTest {
             };
             new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                     .withBean("qqBotSettings", QqBotSettings.class, () -> settings)
+                    .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                     .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
                     .withBean(QqBotGatewayScheduler.class, () -> scheduler, definition -> definition.setPrimary(true))
                     .withBean("qqBotDirectory", QqBotDirectory.class, () -> directory)
