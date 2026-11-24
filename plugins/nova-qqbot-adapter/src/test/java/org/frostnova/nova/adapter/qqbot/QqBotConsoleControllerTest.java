@@ -56,6 +56,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -441,6 +442,55 @@ class QqBotConsoleControllerTest {
             gatewayLog.setLevel(originalGatewayLevel);
             mvcLog.setLevel(originalMvcLevel);
             mvcLog.setAdditive(originalMvcAdditivity);
+            logs.stop();
+        }
+    }
+
+    @Test
+    void malformedMentionCannotLeakARedeemableCode() {
+        Logger dispatcherLog = (Logger) LoggerFactory.getLogger(CommandDispatcher.class);
+        Level originalLevel = dispatcherLog.getLevel();
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start();
+        dispatcherLog.addAppender(logs);
+        dispatcherLog.setLevel(Level.DEBUG);
+        try {
+            withConsole(rig -> {
+                saveCredentials(rig.mvc);
+                connect(rig);
+                configurePush(rig, join(rig));
+
+                String code = generate(rig);
+                String typo = "认领" + code.toLowerCase(Locale.ROOT);
+                rig.claim("missing-space", SENDER, typo);
+                rig.claim("repeat-typo", SENDER, typo);
+                JSONObject afterTypo = state(rig);
+                rig.claim("copied-code", STRANGER, "认领 " + code);
+                String copiedReply = rig.passiveReply("copied-code");
+                assertAll(
+                        () -> assertFalse(afterTypo.getBooleanValue("claimCodeActive"), "漏空格后认领码仍有效"),
+                        () -> assertTrue(copiedReply.contains("认领码不对或已过期"), "别人还能用这个码认领"),
+                        () -> assertTrue(state(rig).getJSONArray("claimedAdmins").isEmpty(), "陌生人成了超级管理员"),
+                        () -> assertFalse(rig.timeline.toString().toUpperCase(Locale.ROOT).contains(code), "时间线外泄认领码"),
+                        () -> assertTrue(logs.list.stream().noneMatch(line ->
+                                line.getFormattedMessage().toUpperCase(Locale.ROOT).contains(code)), "日志外泄认领码"),
+                        () -> assertFalse(afterTypo.toString().contains(code), "状态回包外泄认领码"),
+                        () -> assertFalse(audit().toString().contains(code), "审计外泄认领码"),
+                        () -> assertTrue(rig.passiveReplies.stream().noneMatch(reply ->
+                                reply.toJSONString().toUpperCase(Locale.ROOT).contains(code)), "群回复外泄认领码"));
+                String typoReply = rig.passiveReply("missing-space");
+                assertTrue(typoReply.contains("格式不对") && typoReply.contains("已作废") && typoReply.contains("重新生成"));
+
+                String nextCode = generate(rig);
+                rig.claim("missing-verb", SENDER, nextCode);
+                assertTrue(rig.passiveReply("missing-verb").contains("已作废"));
+                rig.claim("copied-bare-code", STRANGER, "认领 " + nextCode);
+                assertRejected(rig, "copied-bare-code");
+                assertTrue(state(rig).getJSONArray("claimedAdmins").isEmpty());
+            });
+        } finally {
+            dispatcherLog.detachAppender(logs);
+            dispatcherLog.setLevel(originalLevel);
             logs.stop();
         }
     }

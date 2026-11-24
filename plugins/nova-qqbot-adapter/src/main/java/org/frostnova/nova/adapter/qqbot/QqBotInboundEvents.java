@@ -28,6 +28,7 @@ final class QqBotInboundEvents implements QqBotEventListener {
     private static final int MAX_RECENT_EVENTS = 5000;
     private static final Pattern WORD = Pattern.compile("\\P{IsWhite_Space}+");
     private static final String INVALID_CODE = "认领码不对或已过期";
+    private static final String MALFORMED_CLAIM = "这个认领码格式不对，已作废，请到控制台重新生成";
 
     private final QqBotDirectory directory;
     private final QqBotSettings settings;
@@ -99,12 +100,17 @@ final class QqBotInboundEvents implements QqBotEventListener {
 
         String content = text(message.get("content"));
         String candidate = claimCandidate(content);
+        if (members.invalidateMalformedClaim(credentials, content, candidate)) {
+            replies.submit(appId, groupOpenId, id, MALFORMED_CLAIM);
+            return;
+        }
         if (candidate != null) {
             replyToClaim(credentials, group, groupOpenId, member, nickname, candidate, id);
             return;
         }
+        String safeContent = members.maskClaimCodes(content);
         var event = new NovaRemoteMessageEvent(QqBotPluginAutoConfiguration.PLATFORM, "group", group, member,
-                content == null ? "" : content.strip(), text(author.get("member_role")), true);
+                safeContent == null ? "" : safeContent.strip(), text(author.get("member_role")), true);
         event.setMessageId(id);
         publisher.publishEvent(event);
     }

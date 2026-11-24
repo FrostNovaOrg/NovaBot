@@ -10,14 +10,18 @@ import org.springframework.beans.factory.ObjectProvider;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -25,6 +29,8 @@ import java.util.regex.Pattern;
 final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolver {
     private static final String CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
     private static final int CODE_LENGTH = 8;
+    private static final Pattern CODE_WINDOW = Pattern.compile(
+            "(?=([" + CODE_ALPHABET + "]{" + CODE_LENGTH + "}))", Pattern.CASE_INSENSITIVE);
     private static final int MAX_WRONG_ATTEMPTS = 5;
     private static final Duration CODE_LIFETIME = Duration.ofMinutes(10);
     private static final BotMembers EMPTY = new BotMembers(Map.of(), Map.of());
@@ -34,6 +40,10 @@ final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolv
     private final Clock clock;
     private final QqBotMembersFile file;
     private final SecureRandom random = new SecureRandom();
+    // 只保留旧码的带盐摘要，重发错写的旧码时也能在分发前遮盖。
+    private final Set<String> issuedCodeFingerprints = new HashSet<>();
+    private final MessageDigest codeDigest = sha256();
+    private final byte[] codeSalt = new byte[16];
 
     // 名字与权限按 AppID 分开。认领码和失败次数只留在内存中。
     private Map<String, BotMembers> bots;
@@ -42,6 +52,7 @@ final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolv
 
     QqBotMembers(QqBotSettings settings, ObjectProvider<Clock> clocks) {
         this.settings = settings;
+        random.nextBytes(codeSalt);
         clock = clocks.getIfAvailable(Clock::systemUTC);
         file = new QqBotMembersFile(settings.directory());
         try {
@@ -91,7 +102,7 @@ final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolv
         if (nickname == null && previous != null) {
             nickname = previous.nickname();
         }
-        var next = new SeenMember(maskActiveCode(nickname), seenAt);
+        var next = new SeenMember(maskClaimCodes(nickname), seenAt);
         if (!next.equals(previous)) {
             try {
                 save(appId, new BotMembers(with(current.groups(), group, with(groupMembers, member, next)), current.claims()));
@@ -115,8 +126,25 @@ final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolv
         } while (pending != null && MessageDigest.isEqual(pending.value(), code));
         Instant expiresAt = clock.instant().plus(CODE_LIFETIME);
         pending = new PendingCode(code, expiresAt, credentials);
+        issuedCodeFingerprints.add(codeFingerprint(code));
         wrongAttempts = 0;
         return new IssuedCode(new String(code, StandardCharsets.US_ASCII), expiresAt);
+    }
+
+    synchronized boolean invalidateMalformedClaim(QqBotSettings.Credentials credentials, String content, String candidate) {
+        // 正文恰好是「认领」加一个等长词时，交给正常兑换流程。
+        if (content == null || (candidate != null && candidate.length() == CODE_LENGTH)) return false;
+        PendingCode active = activeCode(clock.instant());
+        if (active == null || active.credentials() != credentials) return false;
+
+        var codes = CODE_WINDOW.matcher(content);
+        while (codes.find()) {
+            if (MessageDigest.isEqual(active.value(), normalizedCode(codes.group(1)))) {
+                pending = null;
+                return true;
+            }
+        }
+        return false;
     }
 
     synchronized Claim redeem(QqBotSettings.Credentials credentials, long group, long member,
@@ -135,7 +163,7 @@ final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolv
         BotMembers current = forApp(appId);
         SeenMember seen = current.groups().getOrDefault(group, Map.of()).get(member);
         String displayName = nickname != null ? nickname : seen == null ? null : seen.nickname();
-        Claim claim = new Claim(group, displayName == null ? UNKNOWN_NICKNAME : maskActiveCode(displayName), now);
+        Claim claim = new Claim(group, displayName == null ? UNKNOWN_NICKNAME : maskClaimCodes(displayName), now);
         save(appId, new BotMembers(current.groups(), with(current.claims(), member, claim)));
         pending = null;
         return claim;
@@ -165,10 +193,31 @@ final class QqBotMembers implements SessionMemberNames, SuperAdministratorResolv
         return pending;
     }
 
-    private String maskActiveCode(String text) {
-        if (text == null || pending == null) return text;
-        String code = new String(pending.value(), StandardCharsets.US_ASCII);
-        return Pattern.compile(code, Pattern.LITERAL | Pattern.CASE_INSENSITIVE).matcher(text).replaceAll("…");
+    synchronized String maskClaimCodes(String text) {
+        if (text == null || issuedCodeFingerprints.isEmpty()) return text;
+        var codes = CODE_WINDOW.matcher(text);
+        var masked = new StringBuilder();
+        int end = 0;
+        while (codes.find()) {
+            if (!issuedCodeFingerprints.contains(codeFingerprint(normalizedCode(codes.group(1))))) continue;
+            int start = codes.start();
+            if (start >= end) masked.append(text, end, start).append('…');
+            end = start + CODE_LENGTH;
+        }
+        return end == 0 ? text : masked.append(text, end, text.length()).toString();
+    }
+
+    private String codeFingerprint(byte[] code) {
+        codeDigest.update(codeSalt);
+        return HexFormat.of().formatHex(codeDigest.digest(code));
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("当前 JRE 不支持 SHA-256", e);
+        }
     }
 
     private static byte[] normalizedCode(String candidate) {

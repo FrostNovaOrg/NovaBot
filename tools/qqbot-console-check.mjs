@@ -81,7 +81,9 @@ const reload = new Node();
 const result = new Node();
 const unconfigured = new Node();
 const elements = {'app-id': appId, secret: password, millis, credentials, interval, groups,
-  refresh: reload, result, unconfigured, load: new Node()};
+  refresh: reload, result, unconfigured, load: new Node(),
+  'claim-status': new Node(), issued: new Node(), 'claim-command': new Node(),
+  'claimed-admins': new Node(), 'claim-result': new Node(), 'claim-generate': new Node()};
 const section = {querySelector: selector => elements[selector.slice('#qqbot-'.length)]};
 render(section);
 await refresh();
