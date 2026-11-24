@@ -13,7 +13,11 @@ import org.frostnova.nova.report.painter.BilibiliLiveReportReplayPainter;
 import org.frostnova.nova.report.painter.ReportPalette;
 import org.frostnova.nova.report.service.BilibiliLiveReportRedrawer;
 import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandDispatcher;
+import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandReply;
+import org.frostnova.nova.core.command.CommandSettingsService;
+import org.frostnova.nova.core.command.NovaCommand;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -21,8 +25,10 @@ import org.frostnova.nova.core.datasource.DataSourceService;
 import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
 import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
@@ -36,12 +42,14 @@ import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
@@ -77,6 +85,8 @@ class BilibiliLiveReportCommandTest {
     private static final String PLATFORM = "qq-onebot";
 
     private static final Long FRIEND = 20001L;
+
+    private static final Long GROUP = 30001L;
 
     private static final Long SENDER = 40001L;
 
@@ -207,17 +217,36 @@ class BilibiliLiveReportCommandTest {
                 Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(), List.of(), List.of(), Map.of(), List.of());
     }
 
-    @Test
-    @DisplayName("多位只一位在播、不带名：content 以「本次用的是：」起、以图收")
-    void picksTheOnlyLivingStreamerWithoutPrefixingTheImage() {
-        Fixture fixture = new Fixture(List.of(streamer(1, null), streamer(2, null)), Set.of(2));
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2})
+    @DisplayName("群里只有一位在播也列清单，按序号出所选主播的报告")
+    void asksWhichReportToShowEvenWhenOnlyOneStreamerIsLive(int selection) {
+        List<PushUser> streamers = List.of(streamer(1, null), streamer(2, null));
+        for (PushUser streamer : streamers) {
+            PushTarget target = streamer.getTargets().get(0);
+            target.setType(PushTargetType.GROUP);
+            target.setNum(GROUP);
+        }
+        Fixture fixture = new Fixture(streamers, Set.of(2));
+        fixture.details.store(detail(100, 200));
+        fixture.details.store(detail(300, 600));
 
-        CommandReply reply = fixture.command.execute(context());
+        assertThat(fixture.groupReply("直播报告", true))
+                .contains("回序号选一位", "\n2. 主播甲")
+                .containsPattern("(?m)^1\\. 主播乙[^\\n]*· 直播中$")
+                .doesNotContain("本次用的是", "{image_base64=");
 
-        assertTrue(reply.content().startsWith("本次用的是："), reply.content());
-        assertTrue(reply.content().endsWith("{image_base64=QUJD}"), reply.content());
-        assertTrue(reply.content().contains("\n"), reply.content());
-        assertEquals(10002L, fixture.capturedSource().getUid());
+        String report = fixture.groupReply(String.valueOf(selection), false);
+        if (selection == 1) {
+            assertEquals("{image_base64=QUJD}", report);
+            assertEquals(10002L, fixture.capturedSource().getUid());
+        } else {
+            assertEquals("{image_base64=REVG}", report);
+            assertEquals(10001L, fixture.replayedDetail.uid());
+            assertEquals(300, fixture.replayedDetail.startTime());
+            assertEquals(600, fixture.replayedDetail.endTime());
+            verify(fixture.painter, never()).paint(anyString(), any(), any(), any());
+        }
     }
 
     @Test
@@ -315,6 +344,9 @@ class BilibiliLiveReportCommandTest {
 
         private final BilibiliLiveReportCommand command;
 
+        private final CommandDispatcher dispatcher;
+        private final List<String> replies = new ArrayList<>();
+
         private final LiveDataService liveData = mock(LiveDataService.class);
         private final LiveRoomInfoHistory roomInfo = mock(LiveRoomInfoHistory.class);
         private final LiveSessionArchive sessions;
@@ -365,8 +397,25 @@ class BilibiliLiveReportCommandTest {
             ReflectionTestUtils.setField(redrawer, "handler", handler);
             ReflectionTestUtils.setField(redrawer, "revenue", revenue);
             when(replay.render(any(), any())).thenReturn(Optional.of(new byte[]{68, 69, 70}));
-            command = new BilibiliLiveReportCommand(dataSource, new BilibiliStreamerChoice(liveData, sessions),
+            var choice = new BilibiliStreamerChoice(liveData, sessions);
+            command = new BilibiliLiveReportCommand(dataSource, choice,
                     liveData, painter, new LiveReportDeliveryService(details, dataSource, null, null), archiver, redrawer);
+            var beans = new StaticListableBeanFactory(Map.of("command", command, "followUp", choice));
+            var sender = mock(NovaMessageSender.class);
+            doAnswer(call -> {
+                replies.add(call.<Message>getArgument(0).getContent());
+                return null;
+            }).when(sender).send(any());
+            dispatcher = new CommandDispatcher(beans.getBeanProvider(NovaCommand.class),
+                    beans.getBeanProvider(CommandFollowUp.class), new CommandSettingsService(new NovaStateStore(properties)),
+                    dataSource, sender, properties, TimelineWriter.NONE);
+        }
+
+        String groupReply(String text, boolean mentionsBot) {
+            replies.clear();
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, "group", GROUP, SENDER, text, "member", mentionsBot));
+            assertThat(replies).hasSize(1);
+            return replies.get(0);
         }
 
         private void capture() {

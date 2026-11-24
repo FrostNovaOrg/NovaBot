@@ -434,12 +434,12 @@ const checks = {
   async charts() {
     const mounted = await mount();
     const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jVuoAAAAASUVORK5CYII=';
-    reply = {...initialReply, images: [png, 'https://example.com/image.png']};
+    reply = {...initialReply, images: Array(7).fill(png)};
     await ask(mounted);
     const turn = byClass(mounted.node, 'sa-turn').at(-1);
     const charts = byClass(turn, 'sa-charts')[0];
     assert.ok(turn.children.indexOf(charts) > turn.children.indexOf(byClass(turn, 'sa-answer')[0]));
-    assert.equal(charts.querySelectorAll('img').length, 1);
+    assert.equal(charts.querySelectorAll('img').length, 6);
     const preview = charts.querySelector('button');
     assert.equal(preview.querySelector('img').src, 'data:image/png;base64,' + png);
     await preview.fire('click');
@@ -452,10 +452,10 @@ const checks = {
     assert.equal(dialog.querySelector('.sa-chart-scroll').dataset.zoom, 'false');
     await button(dialog, '关闭大图').fire('click');
     assert.equal(dialog.open, false);
-    reply = {...initialReply, answer: '查到了资料。\n图没出来。'};
+    reply = {...initialReply, answer: '查到了资料。\n图没出来。', images: ['https://example.com/image.png']};
     await ask(mounted, '画另一张');
     assert.match(byClass(mounted.node, 'sa-turn').at(-1).textContent, /图没出来/);
-    assert.equal(byClass(mounted.node, 'sa-chart').length, 1);
+    assert.equal(byClass(mounted.node, 'sa-chart').length, 6);
     assert.ok(!JSON.stringify(requests.at(-1).body).includes(png));
   },
   // 额度快用完时，两种身份都要能在回答下方看到提示，下一问只带回答。

@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -131,7 +132,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     private static GroupEntry joinedGroup(long number, String openid, Instant at, GroupEntry previous) {
         if (previous == null) {
             return new GroupEntry(number, openid, defaultName(at), NameSource.DEFAULT, at, at, false,
-                    UNKNOWN_SWITCH, null, null, null, null, null);
+                    UNKNOWN_SWITCH, null, null, null, null, null, null);
         }
         GroupEntry group = previous.withJoinedAt(at).withLastSeenAt(later(previous.lastSeenAt(), at))
                 .withRemoved(false).withProactive(UNKNOWN_SWITCH).withRole(null);
@@ -189,10 +190,48 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     }
 
     public synchronized void renameGroup(long number, String name) {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("群名不能为空");
+        String title = Objects.requireNonNull(name).strip();
+        if (title.codePointCount(0, title.length()) > 40) {
+            throw new IllegalArgumentException("群名最多 40 字");
         }
-        updateGroup(configuredApp(), number, group -> group.withName(name.strip()).withNameSource(NameSource.MANUAL));
+        if (!title.isEmpty() && settings.snapshot().configured() && settings.useSecret(title::contains)) {
+            throw new IllegalArgumentException("群名不能包含 AppSecret");
+        }
+        updateGroup(configuredApp(), number, group -> {
+            if (!title.isEmpty()) {
+                String apiName = group.nameSource() == NameSource.GROUP_INFO_API ? group.name() : group.apiName();
+                return group.withApiName(apiName).withName(title).withNameSource(NameSource.MANUAL);
+            }
+            if (group.nameSource() != NameSource.MANUAL) return group;
+            return group.apiName() == null
+                    ? group.withName(defaultName(group.joinedAt())).withNameSource(NameSource.DEFAULT)
+                    : group.withName(group.apiName()).withNameSource(NameSource.GROUP_INFO_API);
+        });
+    }
+
+    synchronized List<GroupInfo> consoleGroups() {
+        BotEntries bot = currentEntries();
+        if (bot.groups().isEmpty()) return List.of();
+        if (settings.snapshot().configured()) {
+            try {
+                return settings.useSecret(secret -> groupInfo(bot,
+                        text -> text.contains(secret) ? "已隐藏" : maskKnown(text, bot)));
+            } catch (IllegalStateException e) {
+                return groupInfo(bot, text -> "已隐藏");
+            }
+        }
+        return groupInfo(bot, text -> maskKnown(text, bot));
+    }
+
+    private static List<GroupInfo> groupInfo(BotEntries bot, Function<String, String> display) {
+        return bot.groups().values().stream()
+                .sorted(Comparator.comparing(GroupEntry::removed).thenComparing(GroupEntry::joinedAt)
+                        .thenComparingLong(GroupEntry::number))
+                .map(group -> new GroupInfo(group.number(), display.apply(group.name()), group.nameSource(),
+                        group.memberCount(), group.role(), group.proactive().status(),
+                        group.lastFailure() == null ? null : display.apply(group.lastFailure().reason()),
+                        group.removed(), group.joinedAt().toString()))
+                .toList();
     }
 
     public synchronized void recordProactive(long number, ProactiveStatus status, SwitchSource source, Instant at) {
@@ -369,10 +408,12 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     }
 
     private static GroupEntry applyInfo(GroupEntry group, JSONObject response) {
-        if (group.nameSource() != NameSource.MANUAL
-                && response.get("group_name") instanceof String name && !name.isBlank()) {
+        if (response.get("group_name") instanceof String name && !name.isBlank()) {
             String title = mask(name.strip(), text(response, "union_group_openid"));
-            group = group.withName(title).withNameSource(NameSource.GROUP_INFO_API);
+            group = group.withApiName(title);
+            if (group.nameSource() != NameSource.MANUAL) {
+                group = group.withName(title).withNameSource(NameSource.GROUP_INFO_API);
+            }
         }
         if (response.get("group_member_num") instanceof Integer count && count >= 0) {
             group = group.withMemberCount(count);
@@ -541,7 +582,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
     @With
     public record GroupEntry(long number, String openid, String name, NameSource nameSource,
                              Instant joinedAt, Instant lastSeenAt, boolean removed, Proactive proactive,
-                             BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure) {
+                             BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure,
+                             String apiName) {
         public GroupEntry {
             Objects.requireNonNull(openid);
             Objects.requireNonNull(name);
@@ -564,6 +606,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup {
             return "QQ 官方机器人群 " + number;
         }
     }
+
+    record GroupInfo(long num, String name, NameSource nameSource, Integer memberCount, BotRole role,
+                     ProactiveStatus proactive, String lastFailure, boolean removed, String joinedAt) {}
 
     record MemberEntry(long number, String openid, Instant firstSeenAt, Instant lastSeenAt) {
         MemberEntry {

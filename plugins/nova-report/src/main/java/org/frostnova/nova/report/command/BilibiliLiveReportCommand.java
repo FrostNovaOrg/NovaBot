@@ -83,6 +83,11 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
     }
 
     @Override
+    protected boolean autoSelectSoleLiveStreamer(CommandContext context) {
+        return !context.isGroup();
+    }
+
+    @Override
     public CommandReply execute(CommandContext context) {
         Resolved resolved = resolve(context, context.arg(0));
         if (resolved.failed()) {

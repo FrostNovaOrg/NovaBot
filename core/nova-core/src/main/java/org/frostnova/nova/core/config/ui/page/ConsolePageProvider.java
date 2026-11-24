@@ -101,4 +101,9 @@ public interface ConsolePageProvider {
     default ConsolePageSlot slot() {
         return ConsolePageSlot.SETTINGS;
     }
+
+    /** 机器人连接卡在探针停用时仍属于机器人连接。 */
+    default boolean botLink() {
+        return false;
+    }
 }

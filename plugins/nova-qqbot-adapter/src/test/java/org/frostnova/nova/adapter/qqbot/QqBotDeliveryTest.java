@@ -429,6 +429,8 @@ class QqBotDeliveryTest {
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
                 .withBean(NovaSenderService.class, () -> new NovaSenderService(new NovaCoreProperties()))
                 .withBean(QqBotHttpTransport.class, () -> rig::respond, definition -> definition.setPrimary(true))
+                .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
+                        definition -> definition.setPrimary(true))
                 .withBean(QqBotImageDownloader.class, () -> downloader, definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());

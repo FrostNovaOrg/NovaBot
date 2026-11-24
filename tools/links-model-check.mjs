@@ -400,4 +400,43 @@ if (streamReds.length) {
   process.exit(1);
 }
 
-console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过');
+const official = {id: 'qqbot', displayName: 'QQ 官方机器人', botLink: true};
+const connected = {...probe('官方机器人连接', 'BOT', 'OK', '已连接 · 小助手'), card: official.id};
+const rejected = {...probe('官方机器人凭据', 'BOT', 'DOWN', 'AppID 或 AppSecret 不对，请到连接页重填',
+  '核对 QQ 开放平台上的凭据'), card: official.id};
+const officialCases = [
+  ['官方在线，NapCat 掉线', 'down', [connected], 'ok', connected, 'err', 'p-demo', ONE_CARD],
+  ['官方凭据错误，NapCat 在线', 'ok', [connected, rejected], 'err', rejected, 'ok', 'p-demo', ONE_CARD],
+  ['官方未配置，NapCat 在线', 'ok', [], 'off', null, 'ok', 'p-demo', ONE_CARD],
+  ['只有未配置的官方卡', 'none', [], 'off', null, 'off', '', []],
+];
+const officialReds = [];
+for (const [name, bot, claims, level, source, napLevel, platform, cards] of officialCases) {
+  const base = status('in', bot);
+  const meta = claims.length ? {id: official.id, displayName: official.displayName} : official;
+  const model = linksModel({...base, health: base.health.concat(claims)}, login('in'),
+    [meta, ...cards], TOKENS_ONE);
+  const qq = model.cards.find(card => card.id === official.id);
+  const nap = model.cards.find(card => card.key === 'bot');
+  const fails = [];
+  if (qq.kind !== 'bot-plugin' || qq.level !== level || qq.caption !== (source?.summary || '')
+      || qq.advice !== (source?.advice || '')) {
+    fails.push('官方卡实得 ' + JSON.stringify(qq));
+  }
+  const napCaption = bot === 'none' ? '尚未连接机器人' : BOT_PROBE[bot].summary;
+  if (nap.level !== napLevel || !nap.caption.includes(napCaption)
+      || (bot !== 'none' && nap.advice !== BOT_PROBE[bot].advice)) {
+    fails.push('NapCat 卡实得 ' + JSON.stringify(nap));
+  }
+  if (cardAnchor(model, 'platform') !== platform || cardAnchor(model, 'bot') !== 'bot') {
+    fails.push('落点实得 ' + cardAnchor(model, 'platform') + ' / ' + cardAnchor(model, 'bot'));
+  }
+  console.log([name, qq.level + '/' + nap.level, fails.length ? '红' : '绿'].join('\t'));
+  if (fails.length) officialReds.push(name + '：' + fails.join('；'));
+}
+if (officialReds.length) {
+  officialReds.forEach(line => console.error(line));
+  process.exit(1);
+}
+
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过，官方机器人四档过');

@@ -62,27 +62,25 @@ class QqBotTokenService {
         if (!currentSettings.configured()) {
             return UNCONFIGURED;
         }
-        Outcome outcome = latest;
-        if (outcome.token() != null && !clock.instant().isBefore(outcome.token().expiresAt())) {
-            return EXPIRED;
-        }
-        return outcome.health();
+        return latest.health();
     }
 
     synchronized void save(String appId, String secret) {
         settings.save(appId, secret);
-        latest = new Outcome(null, null, UNCHECKED);
-        attempt = null;
-        verifyConfigured();
+        reset();
     }
 
     synchronized void clear() {
         settings.clear();
-        latest = new Outcome(null, null, UNCONFIGURED);
+        reset();
+    }
+
+    private void reset() {
+        latest = new Outcome(null, null, UNCHECKED);
         attempt = null;
     }
 
-    synchronized void setIntervalMillis(int intervalMillis) {
+    void setIntervalMillis(long intervalMillis) {
         settings.setIntervalMillis(intervalMillis);
     }
 

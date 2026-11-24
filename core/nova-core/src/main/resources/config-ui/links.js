@@ -45,7 +45,7 @@ let wanted = '';
  * @return {HTMLElement} 插件往里渲染的容器
  */
 export function mountLinkCard(meta) {
-  linkCards.push({id: meta.id, displayName: meta.displayName});
+  linkCards.push({id: meta.id, displayName: meta.displayName, botLink: meta.botLink});
 
   const card = el('div', 'nv-card lcard');
   card.id = 'card-p-' + meta.id;

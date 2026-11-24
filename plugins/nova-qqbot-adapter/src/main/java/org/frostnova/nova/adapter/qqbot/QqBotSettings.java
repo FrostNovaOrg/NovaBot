@@ -23,7 +23,9 @@ import java.util.regex.Pattern;
 @NovaComponent
 final class QqBotSettings {
     private static final Pattern APP_ID = Pattern.compile("[0-9]{1,20}");
-    private static final long DEFAULT_INTERVAL_MILLIS = 2000;
+    static final long DEFAULT_INTERVAL_MILLIS = 2000;
+    private static final long MIN_INTERVAL_MILLIS = 1000;
+    private static final long MAX_INTERVAL_MILLIS = 60000;
     private static final LinkOption NO_LINKS = LinkOption.NOFOLLOW_LINKS;
     private static final JsonMapper SETTINGS_JSON = JsonMapper.builder()
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS, DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
@@ -55,16 +57,16 @@ final class QqBotSettings {
         return directory;
     }
 
-    void save(String appId, String secret) {
+    synchronized void save(String appId, String secret) {
         if (appId == null || !APP_ID.matcher(appId).matches()) {
             throw new IllegalArgumentException("AppID 须为 1 至 20 位数字");
-        }
-        if (appId.equals(secret)) {
-            throw new IllegalArgumentException("AppSecret 和 AppID 一样，像是填错了栏，请到 QQ 开放平台复制 AppSecret");
         }
         boolean replaceSecret = secret != null && !secret.isEmpty();
         if (!replaceSecret && !secrets.isSet()) {
             throw new IllegalArgumentException("请填写 AppSecret");
+        }
+        if (replaceSecret ? appId.equals(secret) : secrets.use(appId::equals)) {
+            throw new IllegalArgumentException("AppSecret 和 AppID 一样，像是填错了栏，请到 QQ 开放平台复制 AppSecret");
         }
         long interval = snapshot.intervalMillis();
         byte[] original = storeSettings(appId, interval);
@@ -85,9 +87,20 @@ final class QqBotSettings {
         }
     }
 
-    void clear() {
+    synchronized void clear() {
         long interval = snapshot.intervalMillis();
-        byte[] original = storeSettings("", interval);
+        byte[] original = null;
+        try {
+            if (!Files.notExists(directory, NO_LINKS)) {
+                protectStorage();
+                if (!Files.notExists(settingsPath)) {
+                    original = Files.readAllBytes(settingsPath);
+                    writeSettings(JSONObject.of("intervalMillis", interval).toJSONString());
+                }
+            }
+        } catch (IOException | SecurityException e) {
+            throw storageError();
+        }
         try {
             secrets.clear();
         } catch (RuntimeException e) {
@@ -97,17 +110,25 @@ final class QqBotSettings {
         snapshot = new Snapshot("", interval, false, "", false);
     }
 
-    void setIntervalMillis(int interval) {
-        if (interval < 0) {
-            throw new IllegalArgumentException("推送间隔不能小于 0 毫秒");
+    synchronized void setIntervalMillis(long millis) {
+        if (millis < MIN_INTERVAL_MILLIS || millis > MAX_INTERVAL_MILLIS) {
+            throw new IllegalArgumentException("发送间隔须为 1000 至 60000 毫秒");
         }
         Snapshot current = snapshot;
         if (current.unreadable()) {
             throw storageError();
         }
-        if (current.intervalMillis() != interval) {
-            storeSettings(current.appId(), interval);
-            snapshot = new Snapshot(current.appId(), interval, current.configured(), current.maskedSecret(), false);
+        try {
+            QqBotStorage.prepareDirectory(directory);
+            protectFiles();
+            JSONObject json = JSONObject.of("intervalMillis", millis);
+            if (!current.appId().isEmpty()) {
+                json.put("appId", current.appId());
+            }
+            writeSettings(json.toJSONString());
+            snapshot = new Snapshot(current.credentials(), millis);
+        } catch (IOException | SecurityException e) {
+            throw storageError();
         }
     }
 
@@ -207,6 +228,28 @@ final class QqBotSettings {
         return new IllegalStateException("QQ 官方机器人设置文件无法读写，请检查工作目录权限或重新填写凭据");
     }
 
-    record Snapshot(String appId, long intervalMillis, boolean configured, String maskedSecret, boolean unreadable) {
+    record Credentials(String appId, boolean configured, String maskedSecret, boolean unreadable) {
+    }
+
+    record Snapshot(Credentials credentials, long intervalMillis) {
+        Snapshot(String appId, long intervalMillis, boolean configured, String maskedSecret, boolean unreadable) {
+            this(new Credentials(appId, configured, maskedSecret, unreadable), intervalMillis);
+        }
+
+        String appId() {
+            return credentials.appId();
+        }
+
+        boolean configured() {
+            return credentials.configured();
+        }
+
+        String maskedSecret() {
+            return credentials.maskedSecret();
+        }
+
+        boolean unreadable() {
+            return credentials.unreadable();
+        }
     }
 }

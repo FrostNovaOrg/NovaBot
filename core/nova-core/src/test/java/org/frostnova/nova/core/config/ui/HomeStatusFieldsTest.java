@@ -548,6 +548,26 @@ class HomeStatusFieldsTest {
     }
 
     @Test
+    void healthCarriesTheConnectionCardClaim() throws Exception {
+        HealthProbe claimed = mock(HealthProbe.class);
+        when(claimed.active()).thenReturn(true);
+        when(claimed.name()).thenReturn("卡片探针");
+        when(claimed.scope()).thenReturn(HealthProbe.Scope.BOT);
+        when(claimed.card()).thenReturn("demo");
+        when(claimed.check()).thenReturn(HealthStatus.ok("已连接"));
+        probes = List.of(claimed, probe("通用机器人探针", HealthProbe.Scope.BOT, false));
+
+        var response = MockMvcBuilders.standaloneSetup(controller()).build()
+                .perform(get(ConfigUiController.BASE_PATH + "/api/status"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        JSONArray health = JSONObject.parseObject(response.getContentAsString(StandardCharsets.UTF_8))
+                .getJSONArray("health");
+        assertEquals("demo", health.getJSONObject(0).getString("card"));
+        assertTrue(health.getJSONObject(1).containsKey("card"));
+        assertNull(health.getJSONObject(1).get("card"));
+    }
+
+    @Test
     @DisplayName("停用的探针无法读取范围时，首页仍能加载状态")
     void statusSkipsInactiveProbeBeforeReadingMetadata() throws Exception {
         HealthProbe inactive = mock(HealthProbe.class);

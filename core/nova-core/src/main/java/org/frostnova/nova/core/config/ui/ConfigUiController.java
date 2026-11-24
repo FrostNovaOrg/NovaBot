@@ -884,6 +884,7 @@ public class ConfigUiController {
             // 枚举名一律小写，与界面上各落点一一对应；直接吐枚举名会把 Java 的书写习惯
             // 泄进接口，换个实现语言就得跟着改
             item.put("slot", page.slot().name().toLowerCase(Locale.ROOT));
+            if (page.botLink()) item.put("botLink", true);
             pages.add(item);
         }
 
@@ -2591,6 +2592,7 @@ public class ConfigUiController {
                     item.put("name", probe.name());
                     // 界面据此把探针分派到「机器人」「哔哩哔哩」页签，由探针自己声明，界面不做名称匹配
                     item.put("scope", probe.scope().name());
+                    item.put("card", probe.card());
                     // 量的是不是登录态。首页要把「登录掉了」与「连不上」分开说：前者非得有人去扫码不可，
                     // 后者多半会自己恢复。同样由探针自己声明——按名字认的判据在探针改个显示名的那天
                     // 静默失效，失效方向还是「从此再也认不出登录失效」
