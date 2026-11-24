@@ -51,14 +51,22 @@ export function officialGroupOptions(options, user) {
 export async function migrateGroupTarget(user, source, group, {saveUser, copySettings}) {
   let stage = 'create';
   try {
+    const targets = user.targets.map(target => {
+      const next = {...target};
+      closeAssistantForHiddenRevenue(next);
+      return next;
+    });
     const added = {...JSON.parse(JSON.stringify(source)), platform: group.platform, type: group.type,
       num: group.num, enabled: false};
-    await saveUser({...user, targets: [...user.targets, added]});
+    closeAssistantForHiddenRevenue(added);
+    await saveUser({...user, targets: [...targets, added]});
     stage = 'copy';
     const {targetSettings, results} = await copySettings(source, added);
     stage = 'activate';
-    const targets = user.targets.map(target => target === source ? {...target, enabled: false} : target);
-    await saveUser({...user, targets: [...targets, {...added, ...targetSettings, enabled: true}]});
+    const official = {...added, ...targetSettings, enabled: true};
+    closeAssistantForHiddenRevenue(official);
+    const switched = targets.map((target, i) => user.targets[i] === source ? {...target, enabled: false} : target);
+    await saveUser({...user, targets: [...switched, official]});
     return {stage: 'done', results};
   } catch (error) {
     return {stage, error};
@@ -671,14 +679,25 @@ export function channelSession(session, target, user, commands) {
   const known = new Set(commands?.flatMap(usageKeys));
   const channel = ((session || {}).channels || []).find(item => user
     && item.streamerPlatform === user.platform && String(item.streamerUid) === String(user.uid));
+  const revenueVisible = channelRevenueVisible(target);
   return {...(session || {}), platform: target.platform, num: target.num, typeCode: Number(target.type),
-    revenueVisible: target.revenueVisible ?? (Number(target.type) === 0),
+    revenueVisible,
     revenueExplicit: typeof target.revenueVisible === 'boolean',
-    assistantEnabled: target.assistantEnabled === true,
+    assistantEnabled: revenueVisible && target.assistantEnabled === true,
     disabled,
     // 通道行合计群插件命令，命令编辑仍只读通道自己的开关。
     disabledCount: new Set([...disabled.filter(key => known.has(key)), ...((session || {}).disabled || [])]).size,
     quietMode: quiet.mode || 'follow', quietStart: quiet.start, quietEnd: quiet.end, quietActive: !!channel?.quietActive};
+}
+
+export function channelRevenueVisible(target) {
+  return target.revenueVisible ?? (target.type != null && Number(target.type) === 0);
+}
+
+export function closeAssistantForHiddenRevenue(target) {
+  if (target.assistantEnabled !== true || channelRevenueVisible(target)) return false;
+  target.assistantEnabled = false;
+  return true;
 }
 
 export function revenueSummary(session) {

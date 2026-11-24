@@ -278,6 +278,7 @@ await test('管理员照问号说明与禁用提示，以为点名问一位关�
 });
 await test('老通道没有问数字段时开关误显示为开', async () => {
   disk = initial();
+  for (const user of disk) user.targets[0].revenueVisible = true;
   disk[1].targets[0].assistantEnabled = 'true';
   await push.reload();
   push.setRuntimeState(await (await fetch('/config/api/state')).json());
@@ -293,6 +294,7 @@ await test('老通道没有问数字段时开关误显示为开', async () => {
 });
 await test('群通道未经运营群确认就启用了问数', async () => {
   disk = initial();
+  disk[0].targets[0].revenueVisible = true;
   await push.reload();
   await open(1);
   const beginEnable = () => {
@@ -335,14 +337,14 @@ await test('群通道未经运营群确认就启用了问数', async () => {
 });
 await test('保存同一通道的其他设置后问数开关丢失', async () => {
   disk = initial();
-  disk[0].targets[0].assistantEnabled = true;
+  Object.assign(disk[0].targets[0], {revenueVisible: true, assistantEnabled: true});
   await push.reload();
   await open(1);
-  const revenue = input('直播收益等金额');
-  revenue.checked = true;
-  await revenue.dispatchEvent({type: 'change'});
+  const report = input('直播报告');
+  report.checked = false;
+  await report.dispatchEvent({type: 'change'});
   await push.save();
-  assert.equal(disk[0].targets[0].revenueVisible, true, '金额确实保存了');
+  assert.deepEqual(disk[0].targets[0].disabledCommands, ['直播报告'], '命令设置确实保存了');
   assert.equal(disk[0].targets[0].assistantEnabled, true, '已开启的问数仍应按布尔值保存');
   await push.reload();
   await open(1);
@@ -351,6 +353,7 @@ await test('保存同一通道的其他设置后问数开关丢失', async () =>
 await test('成员页面能把关着的问数开关拨开', async () => {
   store.role = 'MEMBER';
   disk = initial();
+  disk[0].targets[0].revenueVisible = true;
   await push.reload();
   await open(1);
   const toggle = input('问数');
@@ -361,7 +364,7 @@ await test('成员页面能把关着的问数开关拨开', async () => {
 await test('成员关掉问数时出现确认框，或关闭状态没有保存', async () => {
   store.role = 'MEMBER';
   disk = initial();
-  disk[0].targets[0].assistantEnabled = true;
+  Object.assign(disk[0].targets[0], {revenueVisible: true, assistantEnabled: true});
   await push.reload();
   await open(1);
   const toggle = input('问数');
@@ -379,6 +382,21 @@ await test('成员关掉问数时出现确认框，或关闭状态没有保存',
   await open(1);
   assert.equal(input('问数').checked, false, '重新载入仍显示关闭');
 });
+await test('旧群金额默认隐藏时，问数应关闭、禁用，保存后写入关闭', async () => {
+  store.role = 'ADMIN';
+  disk = initial();
+  disk[0].targets[0].assistantEnabled = true;
+  await push.reload();
+  await open(1);
+  assert.equal(input('问数').checked, false);
+  assert.equal(input('问数').disabled, true);
+  assert.match(text(idNode('push-right')), /先把这个通道的金额设为可见/);
+  const report = input('直播报告');
+  report.checked = false;
+  await report.dispatchEvent({type: 'change'});
+  await push.save();
+  assert.equal(disk[0].targets[0].assistantEnabled, false);
+});
 await push.leave();
-console.log('跑了 17 格，红 ' + failures.length + ' 格');
+console.log('跑了 18 格，红 ' + failures.length + ' 格');
 process.exitCode = failures.length ? 1 : 0;
