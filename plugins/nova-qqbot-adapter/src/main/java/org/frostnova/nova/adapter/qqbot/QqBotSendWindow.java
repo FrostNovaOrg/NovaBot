@@ -94,7 +94,11 @@ final class QqBotSendWindow {
         return 0;
     }
 
-    private void pause(long millis) {
+    long elapsedMillis() {
+        return elapsedMillis.getAsLong();
+    }
+
+    void pause(long millis) {
         try {
             sleeper.sleep(millis);
         } catch (InterruptedException e) {
