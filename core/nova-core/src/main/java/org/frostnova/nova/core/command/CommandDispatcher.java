@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  * <h2>什么算一条命令</h2>
  * <ul>
  *     <li><b>群聊只认 @</b>：消息里 @ 了机器人本身才当命令看，@ 之后的正文就是命令与参数。
- *         没 @ 的消息一概不理——群里正常聊天时随口说到某个命令名，不该被机器人接话。
+ *         没 @ 的普通群聊消息保持静默。
  *         <b>唯一的例外是答追问那一个词</b>：机器人刚在群里问完「是哪一位」，回一个「2」
  *         不该还得 @ 它。整条只有一个词、且不是认得出的命令名时才拿去问一圈认领方；
  *         没人认领照旧一声不出，不回菜单、不吃冷却。</li>
@@ -162,12 +162,13 @@ public class CommandDispatcher {
         String name = parts.isEmpty() ? "" : parts.remove(0);
         NovaCommand command = name.isEmpty() ? null : find(name);
 
-        // 群聊里没 @ 机器人的消息照旧一个字都不理，唯一的例外是「答追问」那一个词：
+        // 群聊里没 @ 机器人的消息照旧不回复，唯一的例外是「答追问」那一个词：
         // 机器人刚在群里问完「是哪一位」，回一个「2」不该还得 @ 它。
         // 整条只有一个词、且这个词不是认得出的命令名，才拿去问一圈认领方——
-        // 多词消息、直呼命令名照旧不理（群里随口说到命令名，不该被接话）
+        // 多词消息、直呼命令名只通知追问方，群里照旧不出声。
         boolean bare = group && !event.isMentionsBot();
         if (bare && (name.isEmpty() || !parts.isEmpty() || command != null)) {
+            handleFollowUp(event, type, name, parts, false);
             return;
         }
 
@@ -186,7 +187,7 @@ public class CommandDispatcher {
 
         // 认不出的消息先问一句「有谁在等这个答案吗」。这一步必须排在冷却之前：
         // 机器人刚问完「是哪一位」，答案却撞在它自己的冷却上，现象是「回了个数字，没反应」
-        CommandFollowUp.Claimed claimed = command == null ? claim(event, type, name, parts) : null;
+        CommandFollowUp.Claimed claimed = handleFollowUp(event, type, name, parts, command == null && !name.isEmpty());
         if (claimed != null && claimed.reply() != null) {
             reply(event, type, claimed.reply().content());
             return;
@@ -298,30 +299,30 @@ public class CommandDispatcher {
     }
 
     /**
-     * 问一圈有没有人认领这条认不出的消息
+     * 把原消息交给追问方尝试认领，或通知它们这条消息不参与认领
      * <p>
      * 认领方按 Bean 的顺序依次问过去，头一个认领的说了算——同一条消息被两处认领本就是个错误，
      * 而在这里挑一个「更合适的」只会让那个错误更难被发现。
      * @return 认领结果，无人认领时为 null
      */
-    private CommandFollowUp.Claimed claim(NovaRemoteMessageEvent event, PushTargetType type,
-                                          String name, List<String> args) {
-        if (name.isEmpty()) {
-            return null;
-        }
-
+    private CommandFollowUp.Claimed handleFollowUp(NovaRemoteMessageEvent event, PushTargetType type,
+                                                   String name, List<String> args, boolean claimable) {
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), name, List.copyOf(args), event.getText());
         context.setMessageId(event.getMessageId());
         for (CommandFollowUp followUp : followUps) {
             try {
+                if (!claimable) {
+                    followUp.onNonFollowUpMessage(context);
+                    continue;
+                }
                 CommandFollowUp.Claimed claimed = followUp.claim(context);
                 if (claimed != null) {
                     return claimed;
                 }
             } catch (Exception e) {
                 // 认领方出错不该让这条消息连菜单都收不到
-                log.error("认领消息 {} 时发生异常", name, e);
+                log.error("处理消息 {} 的追问时发生异常", name, e);
             }
         }
         return null;

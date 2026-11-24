@@ -151,12 +151,33 @@ class BilibiliStreamerFollowUpCorpusTest {
                 corpus("回过序号之后再省掉参数 —— 还是问一遍，不替人记上次那位",
                         at("直播报告", "回序号选一位"),
                         at("2", "已出图：主播乙"),
-                        atAfter(Duration.ofSeconds(5), "直播报告", "回序号选一位", "!已出图")),
+                        atAfter(Duration.ofSeconds(5), "直播报告", "回序号选一位", "!已出图"),
+                        plain("2", "已出图：主播乙")),
 
-                corpus("同一次追问只认一个答案 —— 选过之后再回一个序号不再照办",
+                corpus("换个序号还能接着选 —— 超出范围的数字也不结束清单",
+                        at("直播报告", "2 分钟内还能接着选别的"),
+                        plain("4", "已出图：主播丁"),
+                        plain("9999", "!已出图"),
+                        plainAfter(Duration.ofSeconds(13), "2", "已出图：主播乙")),
+
+                corpus("选完再回「全部」—— 展开时保留已选过的主播",
+                        at("直播报告", "还有 3 位，回「全部」展开"),
+                        plain("2", "已出图：主播乙"),
+                        plain("全部", "8. 主播辛", "!还有 3 位"),
+                        plain("2", "已经选过", "!已出图"),
+                        plain("8", "已出图：主播辛")),
+
+                corpus("选过主播后发普通聊天 —— 聊天和之后的序号都不接话",
+                        at("直播报告", "回序号选一位"),
+                        plain("2", "已出图：主播乙"),
+                        plain("明天 几点开播", "!已出图", "!用法："),
+                        plain("3", "!已出图", "!用法：")),
+
+                corpus("选过主播后发普通单词 —— 回复照旧，随后不能再选主播",
                         at("直播报告", "回序号选一位"),
                         at("2", "已出图：主播乙"),
-                        at("3", "!已出图：主播丙")),
+                        atAfter(Duration.ofSeconds(5), "你好", "用法："),
+                        plain("3", "!已出图", "!用法：")),
 
                 corpus("没问过就回数字 —— 当成认不出的消息，回菜单",
                         at("2", "用法：", "!已出图")),
@@ -166,9 +187,10 @@ class BilibiliStreamerFollowUpCorpusTest {
                         atBy(OTHER, "2", "!已出图"),
                         at("2", "已出图：主播乙")),
 
-                corpus("差一点满两分钟 —— 还算数",
+                corpus("差一点满两分钟还能选 —— 选完也不延长有效期",
                         at("直播报告", "回序号选一位"),
-                        atAfter(Duration.ofSeconds(119), "2", "已出图：主播乙")),
+                        atAfter(Duration.ofSeconds(119), "2", "已出图：主播乙"),
+                        plainAfter(Duration.ofSeconds(1), "3", "!已出图")),
 
                 corpus("过了两分钟 —— 作废，不照着办",
                         at("直播报告", "回序号选一位"),
@@ -241,8 +263,7 @@ class BilibiliStreamerFollowUpCorpusTest {
     @Test
     @DisplayName("重跑时把选中那位接在原参数末尾 —— 原有参数一字不动")
     void rerunCarriesTheChoiceAsTheLastArgument() {
-        // 上面那张表走的都是不带参数的命令，量不到这一条：选择既然不再存在任何地方，
-        // 它只能跟着这一次重跑走，而带参数的命令（「@名单 开播 2」）里，
+        // 带参数的命令（「@名单 开播 2」）重跑时要保留原参数的顺序。
         // 放错位置会把「开播」挤出首参，影响用法键的选择。
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
