@@ -52,15 +52,20 @@ const PLATFORM_PREFIX = 'p-';
  *
  * 掉登录时那句「代价是什么」取自平台自己的登录态探针，不在这里写死——
  * 「动态推送停了」这种话只有那个平台说得对，而核心连它叫什么都不该知道。
- * @param card 插件登记的连接卡，{id, displayName}
+ * @param card 插件登记的连接卡，{id, displayName, botLink}
  * @param status /api/status 回包
  * @param accounts /api/login 回包里的 accounts
  * @return 卡片视图模型
  */
 function platformCard(card, status, accounts) {
   const account = accounts.find(item => item.platform === card.id) || null;
-  const base = {key: PLATFORM_PREFIX + card.id, kind: 'platform', id: card.id,
+  const base = {key: PLATFORM_PREFIX + card.id, kind: card.botLink ? 'bot-plugin' : 'platform', id: card.id,
     title: card.displayName || card.id, show: true, level: 'off', caption: '', note: '', advice: ''};
+  const claims = probesIn(status).filter(item => item.card === card.id);
+  if (claims.length) {
+    base.kind = claims.every(item => item.scope === 'BOT') ? 'bot-plugin' : 'platform';
+    return Object.assign(base, probeState(claims));
+  }
 
   if (!account) {
     // 登记了连接卡却没有登录能力：这一页仍然要出现（插件自有它要显示的东西），
@@ -166,16 +171,15 @@ function botCard(status, title) {
     });
   }
 
-  const probes = probesIn(status, 'BOT');
+  const state = probeState(probesIn(status, 'BOT').filter(item => !item.card));
+  return Object.assign(base, state, {note: queueText(status, state.level)});
+}
+
+function probeState(probes) {
   const level = worstLamp(probes.map(item => item.lamp));
   const source = probes.find(item => item.lamp === level) || {};
 
-  return Object.assign(base, {
-    level,
-    caption: source.summary || '',
-    advice: source.advice || '',
-    note: queueText(status, level),
-  });
+  return {level, caption: source.summary || '', advice: source.advice || ''};
 }
 
 /**
@@ -279,7 +283,7 @@ function tokenCard(tokens) {
  * 算出连接页此刻该显示什么
  * @param status /api/status 回包
  * @param login /api/login 回包
- * @param cards 插件登记的连接卡，[{id, displayName}]
+ * @param cards 插件登记的连接卡，[{id, displayName, botLink}]
  * @param tokens 只读口令清单，来自 /api/event-tokens
  * @param botTitle 机器人卡标题，由调用点传入
  * @param stream 事件输出此刻的运行情况，来自 /api/event-tokens 的 stream

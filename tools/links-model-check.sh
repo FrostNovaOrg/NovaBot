@@ -52,6 +52,12 @@ fi
 REG_BILI_MOD=$(printf '%s\n' "$REG_OUT" | awk -F'\t' '$2=="bilibili.js"{print $1; exit}')
 PAGES="$REG_BILI_MOD/src/main/resources/config-ui-pages"
 echo "登记 绿 bilibili.js←$REG_BILI_MOD"
+QQBOT_MOD=$(printf '%s\n' "$REG_OUT" | awk -F'\t' '$2=="qqbot.js"{print $1; exit}')
+if [ -z "$QQBOT_MOD" ]; then
+    echo "登记 红 qqbot.js 未登记" >&2
+    exit 1
+fi
+echo "登记 绿 qqbot.js←$QQBOT_MOD"
 RED=0
 SYNTAX_RED=0
 
@@ -64,22 +70,33 @@ else
     echo "阴性对照 绿（必错的模块确实被判红）"
 fi
 
-# —— 语法 ——
-# 逐个跑而不是一次传多个文件：一次传一串时后面那些是「查过了」还是「没轮到」分不出来
-for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js "$UI"/bot-fields.js \
-         "$PAGES"/bilibili.js; do
-    if node --input-type=module --check < "$f"; then
-        echo "语法 绿 $f"
+check_syntax() {
+    if node --input-type=module --check < "$1"; then
+        echo "语法 绿 $1"
     else
-        echo "语法 红 $f"
+        echo "语法 红 $1"
         RED=1
         SYNTAX_RED=1
     fi
+}
+
+# —— 语法 ——
+for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js "$UI"/bot-fields.js \
+         "$PAGES"/bilibili.js; do
+    check_syntax "$f"
+done
+PAGES="$QQBOT_MOD/src/main/resources/config-ui-pages"
+for f in "$PAGES"/qqbot.js; do
+    check_syntax "$f"
 done
 
 # —— 十二档 ——
 # 退码单独读：写成管道时 $? 读到的是管道末端那个命令的退码，与被测无关
 node tools/links-model-check.mjs
+if [ $? -ne 0 ]; then
+    RED=1
+fi
+node tools/qqbot-console-check.mjs "$PAGES/qqbot.js"
 if [ $? -ne 0 ]; then
     RED=1
 fi
