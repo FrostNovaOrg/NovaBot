@@ -76,6 +76,8 @@ class QqBotDirectoryTest {
         new ApplicationContextRunner().withUserConfiguration(QqBotPluginAutoConfiguration.class)
                 .withBean("qqBotSettings", QqBotSettings.class, () -> new QqBotSettings(dataDirectory))
                 .withBean(QqBotHttpTransport.class, () -> transport, definition -> definition.setPrimary(true))
+                .withBean(QqBotGatewayScheduler.class, QqBotGatewayTest.ManualScheduler::new,
+                        definition -> definition.setPrimary(true))
                 .run(context -> {
                     assertNull(context.getStartupFailure());
                     var directories = List.copyOf(context.getBeansOfType(PushTargetDirectory.class).values());
@@ -168,7 +170,7 @@ class QqBotDirectoryTest {
         assertTrue(directory.memberNumber(GROUP_A).isEmpty());
         assertArrayEquals(original, Files.readAllBytes(directoryFile()));
 
-        new QqBotCredentials(rig.tokens).save("87654321", "fixture-secret-2");
+        rig.credentials.save("87654321", "fixture-secret-2");
         assertThrows(IllegalStateException.class, () -> directory.groupJoined(GROUP_B, JOINED));
         assertArrayEquals(original, Files.readAllBytes(directoryFile()));
         assertEquals(3, output.getAll().lines().filter(line -> line.contains("ERROR")
@@ -399,15 +401,14 @@ class QqBotDirectoryTest {
         var dir = rig.directory();
         long previous = dir.groupJoined(GROUP_A, JOINED);
         dir.renameGroup(previous, "原机器人的群");
-        var credentials = new QqBotCredentials(rig.tokens);
-        credentials.save("87654321", "fixture-secret-2");
+        rig.credentials.save("87654321", "fixture-secret-2");
         assertTrue(dir.snapshots(false).get(0).groups().isEmpty());
         assertTrue(dir.groupOpenId(previous).isEmpty());
         long current = dir.groupJoined(GROUP_B, JOINED);
         rig.drain();
         assertEquals(2, rig.calls.size());
         assertTrue(rig.calls.stream().allMatch(uri -> uri.getPath().contains(GROUP_B)));
-        credentials.save(APP_ID, "fixture-secret");
+        rig.credentials.save(APP_ID, "fixture-secret");
         var restored = rig.directory();
         assertEquals("原机器人的群", group(restored, previous).name());
         assertTrue(restored.groupOpenId(current).isEmpty());
@@ -420,7 +421,7 @@ class QqBotDirectoryTest {
             credentials.get().save("87654321", "fixture-secret-2");
             return new QqBotHttpTransport.Response(401, null);
         });
-        credentials.set(new QqBotCredentials(rig.tokens));
+        credentials.set(rig.credentials);
         var directory = rig.directory();
         directory.groupSeen(GROUP_A, JOINED);
         rig.drain();
@@ -462,7 +463,7 @@ class QqBotDirectoryTest {
         final Queue<Runnable> tasks = new ArrayDeque<>();
         final List<URI> calls = new ArrayList<>();
         final Function<byte[], byte[]> hash;
-        final QqBotTokenService tokens;
+        final QqBotCredentials credentials;
         final QqBotApiClient api;
 
         Rig(Function<URI, QqBotHttpTransport.Response> response) {
@@ -482,7 +483,8 @@ class QqBotDirectoryTest {
                 calls.add(uri);
                 return response.apply(uri);
             };
-            tokens = new QqBotTokenService(settings, transport, clock);
+            var tokens = new QqBotTokenService(settings, transport, clock);
+            credentials = new QqBotCredentials(tokens, mock(QqBotGateway.class));
             api = new QqBotApiClient(transport, tokens);
         }
 
