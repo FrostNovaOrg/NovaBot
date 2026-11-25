@@ -178,8 +178,35 @@ should(){ [ "$(idx_of "$1")" -ge "$FROM_I" ]; }
 ci_status(){ bash "$SCRIPT_DIR/ci-status.sh" "$@"; }
 
 probe_cmd() {
-  local APP="$1"
-  printf '%s\n' 'cd '"${APP}"'/logs/$(TZ=Asia/Shanghai date +%Y-%m) || exit 9; cat $(ls -t novabot-*.log starbot-*.log 2>/dev/null | head -2 | sort) | grep -oE "(LIVE|PREPARING): [0-9]+" | awk '"'"'{last[$2]=$1} END{l=""; for(r in last) if(last[r]=="LIVE:") l=l r" "; if(l=="") print "ALLIDLE"; else print "LIVE " l}'"'"
+  printf "bash -s -- '%s' '%s' '%s' <<'PROBE_SCRIPT'\n" "$1" "$2" "$3"
+  cat <<'PROBE_SCRIPT'
+unknown(){ printf 'UNKNOWN %s，判不了在不在播，继续等\n' "$1"; exit 0; }
+unit="$1"; release_dir="$2"; archive="$3"
+work_dir=$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null) ||
+  unknown "读不到服务工作目录"
+if [ -z "$work_dir" ]; then
+  # 旧服务可能没有声明 WorkingDirectory，读正在运行的进程所在目录。
+  pid=$(systemctl show "$unit" -p MainPID --value 2>/dev/null)
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || unknown "读不到服务工作目录"
+  work_dir="/proc/$pid/cwd"
+fi
+cd -P -- "$work_dir" 2>/dev/null || unknown "进不了服务工作目录"
+
+# 首升要等空闲后才安装，从已上传的包临时取出探针和运行库。
+if [ ! -f "$release_dir/NovaBot.jar" ]; then
+  release_dir=$(mktemp -d 2>/dev/null) || unknown "建不了直播数据探针的临时目录"
+  trap 'rm -rf -- "$release_dir"' EXIT
+  tar -xzf "$archive" -C "$release_dir" ./NovaBot.jar ./lib 2>/dev/null ||
+    unknown "从发行包取不出直播数据探针"
+fi
+# 探针只输出判定，避免加载服务的日志配置。
+java -Dfile.encoding=UTF-8 -Dslf4j.provider=org.slf4j.helpers.NOP_FallbackServiceProvider \
+  -Dloader.home="$release_dir" -Dloader.path=lib \
+  -Dloader.main=org.frostnova.nova.core.release.LiveWindowProbe \
+  -jar "$release_dir/NovaBot.jar" 2>/dev/null ||
+  unknown "直播数据探针运行失败"
+PROBE_SCRIPT
+  printf '%s\n' PROBE_SCRIPT
 }
 buildinfo_ok() {
   local commit="$1" tree="$2" tag="$3" repo="${4:-.}"
@@ -736,26 +763,28 @@ if should install; then
 fi
 if [ "$ROUTE" = after ] && { should wait || should deploy; }; then plan_route; fi
 
-# 月目录按远端的 Asia/Shanghai 时钟计算；空回不能当成无人直播。
-PROBE=$(probe_cmd "$APP")
 if should wait; then
   if [ "$ROUTE" = after ] && [ "$PLAN" = hot ]; then say "── wait 跳过（热交接不等窗）"
   elif [ "$NOWAIT" = 1 ]; then say "── wait 跳过（--no-wait-window）"
   elif [ "$SANDBOX" = 1 ]; then say "〔沙盘〕等窗：探针模拟 ALLIDLE"
   else
+    probe_unit="$UNIT"
+    [ "$ROUTE" != after ] || probe_unit="novabot@${CUR}.service"
+    PROBE=$(probe_cmd "$probe_unit" "${APP}/releases/${VER}" "/root/NovaBot-${VER}.tar.gz")
     say "── wait（每 3 分探一次，上限 ${WAIT_MAX} 分）"
     t0=$(date +%s); okw=0
     while :; do
-      out=$(ssh_m "$PROBE" 2>/dev/null); prc=$?
-      r=$(printf '%s\n' "$out" | grep -E '^(ALLIDLE|LIVE)' | head -1)
-      if [ "$prc" = 9 ]; then say "探针退 9（日志月目录不在）"
-      else
-        case "$r" in ALLIDLE) okw=1; say "全员空闲，可部署"; break;; LIVE*) say "在播：${r#LIVE }（继续等）";; *) say "探针无回（ssh 抖）";; esac
-      fi
+      out=$(ssh_m "$PROBE" 2>/dev/null) || out=""
+      case "$out" in
+        *$'\n'*) say "直播数据探针返回异常，判不了在不在播，继续等";;
+        ALLIDLE\ ?*) okw=1; say "${out#* }"; break;;
+        LIVE\ ?*|UNKNOWN\ ?*) say "${out#* }";;
+        *) say "直播数据探针无回，判不了在不在播，继续等";;
+      esac
       [ $(( ($(date +%s) - t0) / 60 )) -lt "$WAIT_MAX" ] || break
       sleep 180
     done
-    [ "$okw" = 1 ] || stop wait "超 ${WAIT_MAX} 分仍有人在播；包、安装脚本与部署脚本已在 ${HOST}，稍后 \`tools/release/release.sh ${VER} --host ${HOST} --app-dir ${APP} --service ${UNIT} --owner ${OWNER}$( [ "$NEED_ROOM" = 1 ] && echo ' --require-room')$( [ "$TRIAL" = 1 ] && echo ' --trial') --from wait\`"
+    [ "$okw" = 1 ] || stop wait "超 ${WAIT_MAX} 分仍未确认全员空闲；包、安装脚本与部署脚本已在 ${HOST}，稍后 \`tools/release/release.sh ${VER} --host ${HOST} --app-dir ${APP} --service ${UNIT} --owner ${OWNER}$( [ "$NEED_ROOM" = 1 ] && echo ' --require-room')$( [ "$TRIAL" = 1 ] && echo ' --trial') --from wait\`"
   fi
 fi
 if should deploy; then
