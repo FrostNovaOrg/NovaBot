@@ -182,15 +182,16 @@ probe_cmd() {
   cat <<'PROBE_SCRIPT'
 unknown(){ printf 'UNKNOWN %s，判不了在不在播，继续等\n' "$1"; exit 0; }
 unit="$1"; release_dir="$2"; archive="$3"
-work_dir=$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null) ||
-  unknown "读不到服务工作目录"
-if [ -z "$work_dir" ]; then
-  # 旧服务可能没有声明 WorkingDirectory，读正在运行的进程所在目录。
-  pid=$(systemctl show "$unit" -p MainPID --value 2>/dev/null)
-  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || unknown "读不到服务工作目录"
-  work_dir="/proc/$pid/cwd"
+pid=$(systemctl show "$unit" -p MainPID --value 2>/dev/null) ||
+  unknown "读不到正在运行的服务进程"
+[[ "$pid" =~ ^[1-9][0-9]*$ ]] || unknown "读不到正在运行的服务进程"
+proc_dir="/proc/$pid"
+# start.sh 可能在启动 Java 前切换目录，优先取实际工作目录。
+if ! cd -P -- "$proc_dir/cwd" 2>/dev/null; then
+  work_dir=$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null) ||
+    unknown "读不到服务工作目录"
+  [ -n "$work_dir" ] && cd -P -- "$work_dir" 2>/dev/null || unknown "进不了服务工作目录"
 fi
-cd -P -- "$work_dir" 2>/dev/null || unknown "进不了服务工作目录"
 
 # 首升要等空闲后才安装，从已上传的包临时取出探针和运行库。
 if [ ! -f "$release_dir/NovaBot.jar" ]; then
@@ -200,11 +201,17 @@ if [ ! -f "$release_dir/NovaBot.jar" ]; then
     unknown "从发行包取不出直播数据探针"
 fi
 # 探针只输出判定，避免加载服务的日志配置。
-java -Dfile.encoding=UTF-8 -Dslf4j.provider=org.slf4j.helpers.NOP_FallbackServiceProvider \
+unset JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
+result=$(java -Xmx64m -Dfile.encoding=UTF-8 -Dslf4j.provider=org.slf4j.helpers.NOP_FallbackServiceProvider \
   -Dloader.home="$release_dir" -Dloader.path=lib \
   -Dloader.main=org.frostnova.nova.core.release.LiveWindowProbe \
-  -jar "$release_dir/NovaBot.jar" 2>/dev/null ||
+  -jar "$release_dir/NovaBot.jar" "$proc_dir" 2>/dev/null) ||
   unknown "直播数据探针运行失败"
+# 从 wait 续跑时，旧包里的探针可能忽略进程参数。
+case "$result" in
+  PROCESS\ *) printf '%s\n' "${result#PROCESS }";;
+  *) unknown "发行包里的直播数据探针过旧";;
+esac
 PROBE_SCRIPT
   printf '%s\n' PROBE_SCRIPT
 }
