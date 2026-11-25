@@ -173,7 +173,9 @@ class NovaMessageSenderTest {
     @DisplayName("告警送达后不跟首推用法提示——提示教的是推送怎么用，跟在出事的通报后面是另一件事")
     void alertDoesNotCarryFirstPushTip() {
         HttpUtil http = okHttp();
-        NovaMessageSender sender = sender(http, new NovaCoreProperties());
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getPush().setFirstPushTip(true);
+        NovaMessageSender sender = sender(http, properties);
 
         sender.sendAlert(message());
 
@@ -416,7 +418,7 @@ class NovaMessageSenderTest {
 
         return new NovaMessageSender(http, senderService, recorder, new PushGate(properties),
                 timeline, new org.frostnova.nova.core.service.AtAllQuotaService(properties), resolvers,
-                new FirstPushTipService(new org.frostnova.nova.core.service.NovaStateStore(properties)));
+                new FirstPushTipService(new org.frostnova.nova.core.service.NovaStateStore(properties), properties));
     }
 
     // 推送消息发送时必须从通道记下主播；成功、失败、送达不明都能按主播筛到。

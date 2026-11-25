@@ -120,7 +120,8 @@ class LiveReportDeliveryServiceTest {
         when(gate.allowedFor(any(Message.class))).thenReturn(false);
         var properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("sender.json").toString());
-        var tip = spy(new org.frostnova.nova.core.sender.FirstPushTipService(new NovaStateStore(properties)));
+        properties.getPush().setFirstPushTip(true);
+        var tip = spy(new org.frostnova.nova.core.sender.FirstPushTipService(new NovaStateStore(properties), properties, null));
         doReturn("首推提示").when(tip).text(any());
         @SuppressWarnings("unchecked") var resolvers = (ObjectProvider<org.frostnova.nova.core.sender.AtAllPermissionResolver>) mock(ObjectProvider.class);
         var actual = new NovaMessageSender(http, targets,

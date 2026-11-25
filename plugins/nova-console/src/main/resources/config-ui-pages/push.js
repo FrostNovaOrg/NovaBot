@@ -350,10 +350,10 @@ const PAGE_STYLE = `
 .tpl-tab.on{border-color:var(--softline);background:var(--soft);color:var(--accent)}
 .tpl-note{margin:0 0 8px}
 .tpl-note[hidden]{display:none}
-.default-savebar{position:sticky;bottom:16px;z-index:4;display:flex;justify-content:flex-end;
+.default-savebar{position:sticky;bottom:calc(16px + var(--changebar-height,0px));z-index:4;
+  display:flex;justify-content:flex-end;overflow-wrap:anywhere;
   padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-ctl);box-shadow:var(--shadow)}
 .default-savebar[hidden]{display:none}
-html:not(.nobar):not(.chromeless) .default-savebar{bottom:90px}
 .default-reset{margin:16px 0;text-align:right}
 .template-adoption{width:100%;font-size:var(--fs-sm)}
 .template-adoption th,.template-adoption td{white-space:normal;overflow-wrap:anywhere;vertical-align:top}
