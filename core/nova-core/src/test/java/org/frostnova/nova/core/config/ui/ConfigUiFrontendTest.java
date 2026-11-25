@@ -858,6 +858,8 @@ class ConfigUiFrontendTest {
                             assertTrue(source.contains("var(--side-h,0)"));
                             assertTrue(Files.readString(frontendDir().resolve("settings.js"))
                                     .contains("setProperty('--side-h', side.offsetHeight + 'px')"));
+                        } else if (name.equals("--changebar-height")) {
+                            assertTrue(source.contains("var(--changebar-height,0px)"));
                         } else if (name.equals("--stat-value-width")
                                 && file.getFileName().toString().equals("streamers.js")) {
                             // 数值格的宽度系数由内容长度计算，不属于共享配色。
@@ -2835,15 +2837,13 @@ class ConfigUiFrontendTest {
      * 少接 {@code say} 那一路，一句话说出来时条不出现，状态栏就成了个看不见的东西；
      * 少接 {@code markDirty} 那一路，改了东西条不出现，保存这条路直接没了。
      * <p>
-     * 后半截查那截留白：{@code .bar} 是固定在底的，页底得空出它那么高才不会盖住最后一行。
-     * 藏了条却还空着一截的话，屏幕最下面留着一条无缘无故的空白——因此两处必须同一个开关。
-     * 这里比的是「藏起来时那截留白确实更小」而不是钉住某个像素值：钉值会让日后调条高的人
-     * 为一个数字回来改判据。
+     * 后半截查留白的接线：{@code .bar} 固定在底部，正文的下内边距要跟随保存栏实测高度。
      */
     @Test
     @DisplayName("底部改动条的显隐只由一处决定，页底留白跟着切")
     void changeBarVisibilityHasSingleDecisionPoint() throws IOException {
-        String source = coreSources().getOrDefault("core.js", "");
+        Map<String, String> sources = coreSources();
+        String source = sources.getOrDefault("core.js", "");
         assertFalse(source.isBlank(), "core.js 没读到，下面几条量的是空的");
         String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
 
@@ -2887,14 +2887,9 @@ class ConfigUiFrontendTest {
             bad.add(".bar 已经不是固定在底的了，「藏起来省出一截」这件事无从谈起: " + bar.strip());
         }
 
-        int roomy = paddingBottomOf(cssBlock(css, "#main"));
-        int tight = paddingBottomOf(cssBlock(css, "html.nobar #main"));
-        if (roomy <= 0) {
-            bad.add("#main 读不出页底留白，下面那条比不了");
-        } else if (tight < 0) {
-            bad.add("app.css 没有 html.nobar #main：条藏了，页底却还空着条那么高的一截");
-        } else if (tight >= roomy) {
-            bad.add("藏起来时页底留白 " + tight + "px，不比出条时的 " + roomy + "px 小");
+        if (!cssBlock(css, "#main").contains("var(--changebar-height,")
+                || !sources.getOrDefault("main.js", "").contains("setProperty('--changebar-height',")) {
+            bad.add("#main 的页底留白未接入保存栏实测高度");
         }
 
         assertTrue(bad.isEmpty(), "底部改动条的显隐接线有问题:\n  " + String.join("\n  ", bad));
@@ -2954,35 +2949,6 @@ class ConfigUiFrontendTest {
             at = text.indexOf(piece, at + piece.length());
         }
         return count;
-    }
-
-    /**
-     * 一份声明块的下内边距，单位 px。读不出来时为 -1
-     * <p>
-     * {@code padding-bottom} 与 {@code padding} 简写都认：只认前者的话，
-     * 写成简写的那一份读出来是「没有」，而屏幕上它明明留着一截。
-     */
-    private int paddingBottomOf(String block) {
-        if (block == null || block.isBlank()) {
-            return -1;
-        }
-        Matcher own = Pattern.compile("padding-bottom\\s*:\\s*(\\d+)px").matcher(block);
-        if (own.find()) {
-            return Integer.parseInt(own.group(1));
-        }
-        Matcher shorthand = Pattern.compile("(?<![\\w-])padding\\s*:\\s*([^;}]+)").matcher(block);
-        if (!shorthand.find()) {
-            return -1;
-        }
-        String[] parts = shorthand.group(1).strip().split("\\s+");
-        // 一值四边同、两值上下与左右、三值上／左右／下、四值上右下左
-        String bottom = switch (parts.length) {
-            case 1, 2 -> parts[0];
-            case 3, 4 -> parts[2];
-            default -> "";
-        };
-        Matcher px = Pattern.compile("^(\\d+)px$").matcher(bottom);
-        return px.matches() ? Integer.parseInt(px.group(1)) : -1;
     }
 
     /**

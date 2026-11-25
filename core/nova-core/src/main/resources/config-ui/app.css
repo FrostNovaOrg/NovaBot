@@ -46,7 +46,8 @@ body{margin:0;background:var(--ground);color:var(--text);
 #app{display:flex;max-width:1320px;margin:0 auto;align-items:flex-start}
 #side{position:sticky;top:0;flex:0 0 216px;width:216px;align-self:flex-start;
   padding:20px 14px 20px 20px;min-height:100vh}
-#main{flex:1 1 auto;min-width:0;max-width:1104px;padding:20px 24px 90px}
+#main{flex:1 1 auto;min-width:0;max-width:1104px;padding:20px 24px;
+  padding-bottom:calc(20px + var(--changebar-height,0px))}
 .brand{display:flex;align-items:center;gap:9px;padding:2px 8px 16px}
 .brand-mark{width:26px;height:26px;border-radius:var(--r-ctl);overflow:hidden;flex:none}
 .brand-mark img{width:100%;height:100%;display:block}
@@ -179,7 +180,7 @@ body{margin:0;background:var(--ground);color:var(--text);
   .side-link{padding:4px 8px}
   .verline{display:none}
   #auth-actions{margin-top:0;flex-direction:column;gap:6px}
-  #main{padding:16px 14px 100px;max-width:none}
+  #main{padding-top:16px;padding-inline:14px;max-width:none}
 }
 /* 一次只显示一页 */
 .page{display:none}
@@ -192,12 +193,8 @@ body{margin:0;background:var(--ground);color:var(--text);
    还没上锁的机器走的就是这条路，此时「退出登录」无从谈起 */
 html.chromeless #side,html.chromeless #changebar{display:none}
 html.chromeless #main{max-width:760px;margin:0 auto;padding-top:60px}
-/* 底部那条没话说的时候整条不出现：一处没改、没有等重启的项、状态栏也空着。
-   页底那截留白跟着一起收——#main 的下内边距本来是空给条的高度，
-   藏了条还留着它，屏幕最下面就是一段无缘无故的空白。两件事同一个类，
-   分成两处切的话它们迟早各切各的（挂类那一手在 core.js 的 paintBar） */
+/* 底部那条没话说时隐藏，实测高度归零，正文页底随之恢复 20px 留白。 */
 html.nobar .bar{display:none}
-html.nobar #main{padding-bottom:20px}
 #setup-shell{padding:20px 22px}
 #setup-shell h2{margin:0 0 6px;font-size:var(--fs-lg)}
 .su-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
@@ -490,8 +487,10 @@ details.al-fold>.al-f{padding:0 14px 14px}
 .switch input:checked::after{transform:translateX(16px)}
 .switch span{font-size:var(--fs-md);color:var(--dim)}
 .bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
-  padding:12px 24px;display:flex;align-items:center;gap:12px;justify-content:flex-end}
-.bar .status{margin-right:auto;font-size:var(--fs-md)}
+  padding:12px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:flex-end;
+  overflow-wrap:anywhere}
+/* 很长的状态消息在栏内滚动，给正文和保存按钮留出空间。 */
+.bar .status{margin-right:auto;font-size:var(--fs-md);max-height:min(6lh,25dvh);overflow-y:auto}
 .bar .status.ok{color:var(--ok)}
 .bar .status.err{color:var(--err)}
 /* 数字用等宽字形：改动条上的 N 每变一次都会让整行左右抽动，读起来像界面在闪 */
