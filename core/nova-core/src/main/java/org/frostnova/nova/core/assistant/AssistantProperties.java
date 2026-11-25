@@ -158,14 +158,19 @@ public class AssistantProperties {
     }
 
     public synchronized void setBaseUrl(String value) {
+        int port;
         try {
             URI uri = URI.create(value);
             if (!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))
                     || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
                 throw new IllegalArgumentException();
             }
+            port = uri.getPort();
         } catch (RuntimeException error) {
             throw new IllegalArgumentException("智能助手接口地址请填写完整的 http 或 https 地址，不带账号、查询串或片段");
+        }
+        if (port != -1 && (port < 1 || port > 65535)) {
+            throw new IllegalArgumentException("智能助手接口地址的端口必须在 1–65535 之间");
         }
         baseUrl = value;
     }

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -154,6 +155,28 @@ class AssistantSettingsSaveTest {
         assertEquals(before, Files.readString(config));
         assertEquals(initialAddress, client.status().baseUrl());
         assertEquals("fixture-old-model", client.status().model());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 65536})
+    @DisplayName("拒绝越界的接口端口，防止保存显示已生效、之后每一问都连不上")
+    void checkPortOutsideTcpRangeRejectsWholeSave(int port) throws Exception {
+        String initialAddress = "http://127.0.0.1:1/old";
+        start(initialAddress);
+        String before = Files.readString(config);
+
+        var result = postJson("/config/api/values", JSONObject.of(
+                PREFIX + "base-url", "http://127.0.0.1:" + port + "/v1",
+                PREFIX + "model", "fixture-new-model"));
+        String message = result.body().getString("message");
+
+        assertAll(
+                () -> assertEquals(400, result.status(), result.body()::toJSONString),
+                () -> assertFalse(result.body().getBooleanValue("success")),
+                () -> assertTrue(message.contains("接口地址") && message.contains("端口"), result.body()::toJSONString),
+                () -> assertEquals(before, Files.readString(config)),
+                () -> assertEquals(initialAddress, client.status().baseUrl()),
+                () -> assertEquals("fixture-old-model", client.status().model()));
     }
 
     @ParameterizedTest
