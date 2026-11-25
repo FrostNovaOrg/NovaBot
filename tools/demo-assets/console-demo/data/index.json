@@ -117,7 +117,7 @@
 			"method":"GET",
 			"path":"/config/api/status",
 			"query":"",
-			"sha256":"ddb3bd2d1e020f7e21471577b03b40a6920dcaac8e541d5e39a775c3f5ad89a3",
+			"sha256":"d62a36f2dcc3f1393e77b8db2ec16b5399cce83b8ddab608a2e50aac119277ee",
 			"status":200
 		},
 		{
