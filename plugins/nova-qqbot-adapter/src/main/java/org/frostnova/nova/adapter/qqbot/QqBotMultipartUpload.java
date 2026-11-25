@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.qqbot;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.plugin.NovaComponent;
 
 import java.io.IOException;
@@ -13,6 +14,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @NovaComponent
 final class QqBotMultipartUpload {
     private static final int PREFIX_BYTES = 10002432;
@@ -35,28 +37,32 @@ final class QqBotMultipartUpload {
                 "md5", md5, "sha1", digest("SHA-1", bytes, 0, bytes.length),
                 "md5_10m", bytes.length <= PREFIX_BYTES ? md5 : digest("MD5", bytes, 0, PREFIX_BYTES));
         Object response = window.retryWhenLimited(() -> api.prepareUpload(groupPath + "/upload_prepare", prepare, appId));
-        Plan plan = Plan.parse(response, bytes.length);
-        int offset = 0;
+        Plan plan;
+        try {
+            plan = Plan.parse(response, bytes.length);
+        } catch (QqBotApiException e) {
+            log.warn("QQ 图片预上传分片计划无效 {}", describePlan(response, bytes.length));
+            throw e;
+        }
         for (int index = 0; index < plan.parts().length; index++) {
             Part part = plan.parts()[index];
-            uploadPart(part, bytes, offset, plan);
+            uploadPart(part, bytes, plan);
             var finish = JSONObject.of("upload_id", plan.id(), "part_index", index,
-                    "block_size", Integer.toString(part.size()), "md5", digest("MD5", bytes, offset, part.size()));
+                    "block_size", Integer.toString(part.size()), "md5", digest("MD5", bytes, part.offset(), part.size()));
             window.retryWhenLimited(() -> api.request("POST", groupPath + "/upload_part_finish", finish, appId));
-            offset += part.size();
         }
         var merge = JSONObject.of("file_type", 1, "upload_id", plan.id(), "file_name", fileName, "srv_send_msg", false);
         return window.retryWhenLimited(() -> api.uploadFile(groupPath + "/files", merge, appId));
     }
 
-    private void uploadPart(Part part, byte[] bytes, int offset, Plan plan) {
+    private void uploadPart(Part part, byte[] bytes, Plan plan) {
         long deadline = window.elapsedMillis() + plan.retryTimeoutMillis();
         long remaining = plan.retryTimeoutMillis();
         for (int attempt = 1; ; attempt++) {
             long timeout = remaining == 0 ? PUT_TIMEOUT_MILLIS : Math.min(remaining, PUT_TIMEOUT_MILLIS);
             // 预签名地址已包含本片的授权，只发送原始字节。
             HttpRequest request = HttpRequest.newBuilder(part.url()).timeout(Duration.ofMillis(timeout))
-                    .PUT(HttpRequest.BodyPublishers.ofByteArray(bytes, offset, part.size())).build();
+                    .PUT(HttpRequest.BodyPublishers.ofByteArray(bytes, part.offset(), part.size())).build();
             try {
                 put(request);
                 return;
@@ -99,27 +105,77 @@ final class QqBotMultipartUpload {
         }
     }
 
-    private record Part(URI url, int size) {}
+    private static String describePlan(Object response, int fileSize) {
+        JSONObject json = response instanceof JSONObject fields ? fields : new JSONObject();
+        Object parts = json.get("parts");
+        Object partCount = parts == null ? "missing" : "invalid";
+        var details = new JSONArray();
+        if (parts instanceof JSONArray items) {
+            partCount = items.size();
+            for (Object item : items) {
+                details.add(item instanceof JSONObject fields ? JSONObject.of(
+                        "index", diagnosticNumber(fields.get("index")),
+                        "block_size", diagnosticNumber(fields.get("block_size")),
+                        "presigned_url_present", fields.containsKey("presigned_url")) : "invalid");
+            }
+        }
+        Object config = json.get("upload_config");
+        Object settings = config instanceof JSONObject fields ? JSONObject.of(
+                "concurrency", diagnosticNumber(fields.get("concurrency")),
+                "retry_timeout", diagnosticNumber(fields.get("retry_timeout")),
+                "retry_delay", diagnosticNumber(fields.get("retry_delay"))) : config == null ? "missing" : "invalid";
+        return JSONObject.of("keys", json.keySet(), "file_size", fileSize,
+                "block_size", diagnosticNumber(json.get("block_size")), "upload_config", settings,
+                "upload_id_present", json.containsKey("upload_id"), "parts_count", partCount, "parts", details).toJSONString();
+    }
+
+    private static Object diagnosticNumber(Object value) {
+        if (value instanceof Number || value instanceof String text && text.matches("[+-]?[0-9]+")) return value;
+        return value == null ? "missing" : "invalid";
+    }
+
+    private record Block(URI url, int size) {}
+
+    private record Part(URI url, int offset, int size) {}
 
     private record Plan(String id, Part[] parts, long retryTimeoutMillis, long retryDelayMillis) {
         static Plan parse(Object response, int fileSize) {
             if (!(response instanceof JSONObject json) || !(json.get("upload_id") instanceof String id) || id.isBlank()
                     || !(json.get("parts") instanceof JSONArray items) || items.isEmpty()) throw invalidPlan();
-            Part[] parts = new Part[items.size()];
-            int remaining = fileSize;
+            Block[] blocks = new Block[items.size()];
+            long totalSize = 0;
+            boolean allSizesExplicit = true;
             for (Object item : items) {
                 if (!(item instanceof JSONObject fields)) throw invalidPlan();
                 int index = number(fields.get("index"));
-                int size = number(fields.get("block_size"));
-                if (index >= parts.length || parts[index] != null || size == 0 || size > remaining) throw invalidPlan();
-                parts[index] = new Part(url(fields.get("presigned_url")), size);
-                remaining -= size;
+                Object sizeField = fields.get("block_size");
+                int size = number(sizeField == null ? json.get("block_size") : sizeField);
+                if (index >= blocks.length || blocks[index] != null || size == 0) throw invalidPlan();
+                blocks[index] = new Block(url(fields.get("presigned_url")), size);
+                totalSize += size;
+                allSizesExplicit &= sizeField != null;
             }
-            if (remaining != 0) throw invalidPlan();
+            // 兼容逐片给出实际长度、各片合计正好等于文件大小的回包。
+            Part[] parts = slice(blocks, fileSize, allSizesExplicit && totalSize == fileSize);
             Object config = json.get("upload_config");
             if (config != null && !(config instanceof JSONObject)) throw invalidPlan();
             JSONObject settings = (JSONObject) config;
             return new Plan(id, parts, millis(settings, "retry_timeout", 300), millis(settings, "retry_delay", 1));
+        }
+
+        private static Part[] slice(Block[] blocks, int fileSize, boolean exactSizes) {
+            Part[] parts = new Part[blocks.length];
+            int covered = 0;
+            for (int index = 0; index < blocks.length; index++) {
+                Block block = blocks[index];
+                long offset = exactSizes ? covered : (long) index * block.size();
+                if (offset != covered || covered >= fileSize) throw invalidPlan();
+                int size = Math.min(block.size(), fileSize - covered);
+                parts[index] = new Part(block.url(), covered, size);
+                covered += size;
+            }
+            if (covered != fileSize) throw invalidPlan();
+            return parts;
         }
 
         private static URI url(Object value) {
