@@ -3,7 +3,6 @@ package org.frostnova.nova.core.assistant;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
-import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor;
 import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.springframework.context.SmartLifecycle;
@@ -14,15 +13,11 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 /** 供外部只读查询使用的当前观众拒绝名单，不包含模型连接或凭据。 */
 @Slf4j
-public final class ExcludedViewersStore implements RuntimeConfigurationApplierContributor, SmartLifecycle {
-    private static final String KEY = "novabot.assistant.excluded-uids";
+public final class ExcludedViewersStore implements SmartLifecycle {
     private static final int VERSION = 1;
     private static final Set<String> FIELDS = Set.of("version", "updatedAt", "excludedUids");
     private final AssistantProperties properties;
@@ -72,29 +67,7 @@ public final class ExcludedViewersStore implements RuntimeConfigurationApplierCo
         }
     }
 
-    @Override
-    public Map<String, Consumer<String>> appliers() {
-        return Map.of(KEY, this::apply);
-    }
-
-    private synchronized void apply(String value) {
-        properties.setExcludedUids(parse(value));
-        refresh();
-    }
-
-    @Override
-    public Map<String, Function<String, String>> valueValidators() {
-        return Map.of(KEY, value -> {
-            try {
-                parse(value);
-                return null;
-            } catch (IllegalArgumentException invalid) {
-                return invalid.getMessage();
-            }
-        });
-    }
-
-    private static List<Long> parse(String value) {
+    static List<Long> parse(String value) {
         List<String> lines = value.lines().toList();
         List<Long> result = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {

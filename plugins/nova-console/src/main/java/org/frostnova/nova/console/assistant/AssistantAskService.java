@@ -230,10 +230,8 @@ public class AssistantAskService {
     }
 
     public JSONObject ask(String platform, List<Long> streamers, String account, JSONObject request, AssistantQueryContext context) {
-        return ask(platform, streamers, account, request, context, null, Map.of(), List.of(), null, () -> { }, ignored -> { }).response();
+        return ask(platform, streamers, account, request, context, null, Map.of(), List.of(), null, ignored -> { }, ignored -> { }).response();
     }
-
-    boolean adaptiveThinkingEnabled() { return properties.isAdaptiveThinking(); }
 
     static void logQuestion(Logger logger, String account, String platform, long uid, JSONObject result) {
         String difficulty = result.getString("difficulty");
@@ -245,21 +243,21 @@ public class AssistantAskService {
 
     Answer askFromQq(String platform, Long uid, AssistantLocalStore.QqSource source, JSONObject request,
                      boolean amountVisible, List<AssistantChartResults.Result> previousResults,
-                     String previousQqQuestion, Runnable onAccepted, Consumer<QuestionTiming> difficultyResolved) {
+                     String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         return askFromQq(platform, Collections.singletonList(uid), source, request, amountVisible,
                 previousResults, previousQqQuestion, onAccepted, difficultyResolved);
     }
 
     Answer askFromQq(String platform, List<Long> streamers, AssistantLocalStore.QqSource source, JSONObject request,
                      boolean amountVisible, List<AssistantChartResults.Result> previousResults,
-                     String previousQqQuestion, Runnable onAccepted, Consumer<QuestionTiming> difficultyResolved) {
+                     String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         return askFromQq(platform, streamers, source, request, amountVisible, Map.of(),
                 previousResults, previousQqQuestion, onAccepted, difficultyResolved);
     }
 
     Answer askFromQq(String platform, List<Long> streamers, AssistantLocalStore.QqSource source, JSONObject request,
                      boolean amountVisible, Map<Long, PushTarget> channels, List<AssistantChartResults.Result> previousResults,
-                     String previousQqQuestion, Runnable onAccepted, Consumer<QuestionTiming> difficultyResolved) {
+                     String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         return ask(platform, streamers, source.account(), request, new AssistantQueryContext(amountVisible), source, channels,
                 previousResults, previousQqQuestion, onAccepted, difficultyResolved);
     }
@@ -271,14 +269,22 @@ public class AssistantAskService {
 
     private Answer ask(String platform, List<Long> requestedStreamers, String account, JSONObject request, AssistantQueryContext context,
                        AssistantLocalStore.QqSource qq, Map<Long, PushTarget> channels, List<AssistantChartResults.Result> previousResults,
-                       String previousQqQuestion, Runnable onAccepted, Consumer<QuestionTiming> difficultyResolved) {
+                       String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         var streamers = validateStreamers(requestedStreamers);
         Long uid = streamers.get(0);
         boolean comparison = streamers.size() > 1;
         evictExpiredAudience();
         validate(request);
         var budget = new Budget();
-        var excluded = List.copyOf(properties.getExcludedUids());
+        AssistantClient.Question question = null;
+        AssistantException admissionFailure = null;
+        try {
+            question = comparison ? client.beginQuestion(platform, streamers) : client.beginQuestion(platform, uid);
+        } catch (AssistantException error) {
+            admissionFailure = error;
+        }
+        var settings = question == null ? properties.snapshot() : question.settings();
+        var excluded = settings.excludedUids();
         var privacy = new AssistantPrivacy(local, platform, Set.copyOf(streamers), excluded,
                 () -> questionAudience(platform, streamers, excluded, budget));
         var numbers = new AssistantNumbers();
@@ -321,13 +327,12 @@ public class AssistantAskService {
         AssistantException failure = null;
         BigDecimal cost = BigDecimal.ZERO;
         List<String> unverified = List.of();
-        AssistantClient.Question question = null;
         String difficulty = null;
         int modelCalls = 0;
         var streamerNames = new LinkedHashMap<Long, String>();
         try {
-            question = comparison ? client.beginQuestion(platform, streamers) : client.beginQuestion(platform, uid);
-            onAccepted.run();
+            if (admissionFailure != null) throw admissionFailure;
+            onAccepted.accept(settings.adaptiveThinking());
             for (Long streamer : streamers) {
                 streamerNames.put(streamer, comparison ? streamerName(platform, streamer) : streamer.toString());
             }
@@ -357,21 +362,22 @@ public class AssistantAskService {
                 }));
                 system.put("content", system.getString("content") + JSON.toJSONString(masked));
             }
-            if (adaptiveThinkingEnabled()) {
+            if (settings.adaptiveThinking()) {
                 String previous = qq == null ? previousQuestion(request) : previousQqQuestion;
-                if (requiresAnalysis(question, request.getString("question"), previous, privacy, qq != null)) budget.useAnalysis();
+                if (requiresAnalysis(question, request.getString("question"), previous, privacy, qq != null))
+                    budget.useAnalysis(settings.hardTimeoutSeconds());
                 difficulty = budget.analysis ? "analysis" : "simple";
                 difficultyResolved.accept(new QuestionTiming(budget.analysis, budget.remaining()));
             }
-            long toolLimit = (long) properties.getMaxToolCalls() + (budget.analysis ? 3 : 0);
+            long toolLimit = (long) settings.maxToolCalls() + (budget.analysis ? 3 : 0);
             long calls = 0;
             int sqlCalls = 0;
-            BigDecimal uncachedPrice = properties.getPriceInputYuanPerMillion();
+            BigDecimal uncachedPrice = settings.priceInputYuanPerMillion();
             boolean canDiscount = uncachedPrice != null && uncachedPrice.signum() > 0;
             BigDecimal uncachedWeight = canDiscount ? uncachedPrice : BigDecimal.ONE;
-            BigDecimal cachedWeight = canDiscount ? properties.getPriceCachedInputYuanPerMillion() : BigDecimal.ONE;
+            BigDecimal cachedWeight = canDiscount ? settings.priceCachedInputYuanPerMillion() : BigDecimal.ONE;
             // 上限和用量都乘以未命中单价，比较时不用除法或取整。
-            BigDecimal remainingInput = uncachedWeight.multiply(BigDecimal.valueOf(properties.getQuestionInputLimit()));
+            BigDecimal remainingInput = uncachedWeight.multiply(BigDecimal.valueOf(settings.questionInputLimit()));
             if (budget.analysis) remainingInput = remainingInput.multiply(new BigDecimal("1.5"));
             var tools = AssistantTools.definitions(context, comparison);
             while (!budget.remaining().isZero()) {
@@ -576,7 +582,7 @@ public class AssistantAskService {
                 }
             }
         }
-        var status = client.budgetStatus(platform, uid);
+        var status = question == null ? client.budgetStatus(platform, uid) : question.budgetStatus();
         var result = JSONObject.of("answered", answered, "answer", displayed, "answerForHistory", answer,
                 "steps", steps, "unverifiedNumbers", unverified, "costYuan", cost, "state", status.state(),
                 "remaining", JSONObject.of("spentYuan", status.spentYuan(), "weeklyBudgetYuan", status.weeklyBudgetYuan()));
@@ -586,7 +592,7 @@ public class AssistantAskService {
         }
         if (answered) {
             result.put("label", "由人工智能生成");
-            String budgetNotice = comparison ? comparisonBudgetNotice(platform, streamers, streamerNames) : status.notice();
+            String budgetNotice = comparison ? comparisonBudgetNotice(question.comparisonBudgetNotice(), streamerNames) : status.notice();
             if (budgetNotice != null) result.put("budgetNotice", budgetNotice);
             if (!followUps.isEmpty()) result.put("followUps", followUps);
             if (chartFailure != null) {
@@ -710,8 +716,7 @@ public class AssistantAskService {
         };
     }
 
-    private String comparisonBudgetNotice(String platform, List<Long> streamers, Map<Long, String> names) {
-        var notice = client.comparisonBudgetNotice(platform, streamers);
+    private static String comparisonBudgetNotice(AssistantClient.BudgetNotice notice, Map<Long, String> names) {
         if (notice == null) return null;
         String name = notice.streamerUid() == null ? "" : names.get(notice.streamerUid());
         return "提示：" + name + notice.text();
@@ -917,9 +922,9 @@ public class AssistantAskService {
         private Duration queryLimit = Duration.ofSeconds(QUERY_TIMEOUT_SECONDS);
         private boolean analysis;
 
-        void useAnalysis() {
+        void useAnalysis(int hardTimeoutSeconds) {
             analysis = true;
-            questionLimit = Duration.ofSeconds(properties.getHardTimeoutSeconds());
+            questionLimit = Duration.ofSeconds(hardTimeoutSeconds);
             queryLimit = questionLimit.multipliedBy(QUERY_TIMEOUT_SECONDS).dividedBy(QUESTION_TIMEOUT_SECONDS);
         }
 

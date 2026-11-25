@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -22,6 +23,19 @@ public interface RuntimeConfigurationApplierContributor {
      * @return 键到落地动作，登记顺序
      */
     Map<String, Consumer<String>> appliers();
+
+    /**
+     * 需要作为一批发布的即时生效项。动作每次收到本次保存中属于这批的改动，null 表示删除配置项。
+     */
+    default BatchApplier batchApplier() {
+        return null;
+    }
+
+    record BatchApplier(Set<String> keys, Consumer<Map<String, String>> apply) {
+        public BatchApplier {
+            keys = Set.copyOf(keys);
+        }
+    }
 
     /**
      * 即时生效、但落地动作不在通用保存通道上的配置项

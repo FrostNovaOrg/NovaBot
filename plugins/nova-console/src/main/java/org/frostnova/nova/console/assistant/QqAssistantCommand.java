@@ -350,7 +350,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                 reportChannels.put(uid, snapshot);
             });
             var answer = assistant.askFromQq(LIVE_PLATFORM, uids, source, request, amountVisible, reportChannels, previousResults,
-                    previousQuestion, () -> active.accepted(chosenName), active::difficultyResolved);
+                    previousQuestion, adaptiveThinking -> active.accepted(chosenName, adaptiveThinking), active::difficultyResolved);
             JSONObject result = answer.response();
             if (result.containsKey("difficulty"))
                 AssistantAskService.logQuestion(log, source.entry() + " " + source.account(), LIVE_PLATFORM, uids.get(0), result);
@@ -608,13 +608,13 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             scheduleDeadline(Duration.ofSeconds(AssistantAskService.QUESTION_TIMEOUT_SECONDS));
         }
 
-        synchronized void accepted(String chosenName) {
+        synchronized void accepted(String chosenName, boolean adaptiveThinking) {
             if (finished) return;
             if (streamers.size() > 1) {
                 progressReply(ANALYSIS_NOTICE);
                 return;
             }
-            waitingForDifficulty = assistant.adaptiveThinkingEnabled();
+            waitingForDifficulty = adaptiveThinking;
             if (chosenName == null) {
                 ack = reminders.schedule(this::progress, ACK_SECONDS, TimeUnit.SECONDS);
             } else {

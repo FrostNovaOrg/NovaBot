@@ -954,7 +954,7 @@ class QqAssistantCommandTest {
     private AssistantAskService.Answer askWithHiddenAmounts(String question, Map<Long, PushTarget> channels) {
         var source = local.qqSource("QQ", GROUP, ROOM, ASKER);
         return service.askFromQq(BILIBILI, List.of(FIRST), source, JSONObject.of("question", question), false,
-                channels, List.of(), null, () -> {}, timing -> {});
+                channels, List.of(), null, ignored -> {}, timing -> {});
     }
 
     @Test

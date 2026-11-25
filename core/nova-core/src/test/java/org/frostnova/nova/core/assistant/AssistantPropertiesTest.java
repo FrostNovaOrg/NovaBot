@@ -18,6 +18,8 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Path;
+import java.time.Clock;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,7 +29,7 @@ class AssistantPropertiesTest {
         assertEquals("chat", new BeanWrapperImpl(new AssistantProperties()).getPropertyValue("apiFormat"));
         assertEquals("接口格式", field.getAnnotation(ConfigLabel.class).value());
         assertEquals(ConfigLevel.Level.ADVANCED, field.getAnnotation(ConfigLevel.class).value());
-        assertEquals(ConfigEffect.Effect.RESTART, field.getAnnotation(ConfigEffect.class).value());
+        assertEquals(ConfigEffect.Effect.IMMEDIATE, field.getAnnotation(ConfigEffect.class).value());
         assertArrayEquals(new String[]{"chat", "responses"}, field.getAnnotation(ConfigChoices.class).value());
     }
 
@@ -44,7 +46,7 @@ class AssistantPropertiesTest {
         assertEquals("off", new BeanWrapperImpl(new AssistantProperties()).getPropertyValue("thinking"));
         assertEquals("思考强度", field.getAnnotation(ConfigLabel.class).value());
         assertEquals(ConfigLevel.Level.COMMON, field.getAnnotation(ConfigLevel.class).value());
-        assertEquals(ConfigEffect.Effect.RESTART, field.getAnnotation(ConfigEffect.class).value());
+        assertEquals(ConfigEffect.Effect.IMMEDIATE, field.getAnnotation(ConfigEffect.class).value());
         assertArrayEquals(new String[]{"off", "low", "medium", "high", "max"}, field.getAnnotation(ConfigChoices.class).value());
         assertArrayEquals(new String[]{"关闭／模型默认", "低", "中", "高", "最高"}, field.getAnnotation(ConfigChoices.class).labels());
         assertTrue(field.getAnnotation(ConfigSummary.class).details());
@@ -96,7 +98,9 @@ class AssistantPropertiesTest {
 
     @Test
     void settingsValidationUsesTheSameBudgetRangesAsStartup() {
-        var validators = new AssistantConfiguration().assistantBudgetValidation().valueValidators();
+        var properties = new AssistantProperties();
+        var excluded = new ExcludedViewersStore(properties, Path.of("."), Clock.systemUTC());
+        var validators = new AssistantRuntimeConfiguration(properties, excluded).valueValidators();
         var total = validators.get("novabot.assistant.weekly-budget-yuan");
         assertTrue(total.apply("0").contains("大于 0"));
         assertTrue(total.apply("abc").contains("填写数字"));

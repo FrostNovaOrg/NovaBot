@@ -1,3 +1,3 @@
-weekly-budget-yuan|每周金额上限|COMMON|RESTART|string|全实例共用的金额上限，单位为元，必须大于 0。东八区每周一 0 点恢复。
-streamer-daily-budget-yuan|每位主播每日金额上限|COMMON|RESTART|string|每位主播每天在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每天 0 点恢复。
-streamer-weekly-budget-yuan|每位主播每周金额上限|COMMON|RESTART|string|每位主播每周在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每周一 0 点恢复。
+weekly-budget-yuan|每周金额上限|COMMON|IMMEDIATE|string|全实例共用的金额上限，单位为元，必须大于 0。东八区每周一 0 点恢复。
+streamer-daily-budget-yuan|每位主播每日金额上限|COMMON|IMMEDIATE|string|每位主播每天在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每天 0 点恢复。
+streamer-weekly-budget-yuan|每位主播每周金额上限|COMMON|IMMEDIATE|string|每位主播每周在控制台和聊天中的合计金额上限，单位为元。填 0 表示不限，东八区每周一 0 点恢复。

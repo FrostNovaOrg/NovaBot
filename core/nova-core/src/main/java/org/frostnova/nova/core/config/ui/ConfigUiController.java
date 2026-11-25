@@ -1311,9 +1311,8 @@ public class ConfigUiController {
             }
 
             // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用。
-            // 删掉的那几项对运行时按「没有值」落地（空串）——写口里的 null 是删键，两处含义不同
             Map<String, String> applied = new LinkedHashMap<>();
-            changedKeys.forEach(key -> applied.put(key, normalized.get(key) == null ? "" : normalized.get(key)));
+            changedKeys.forEach(key -> applied.put(key, normalized.get(key)));
             List<String> restartRequired = runtimeApplier.applyAndTrack(applied);
 
             log.info("{} 存了控制台设置，改动项 {}", ConfigUiAccess.actor(), changedKeys);
