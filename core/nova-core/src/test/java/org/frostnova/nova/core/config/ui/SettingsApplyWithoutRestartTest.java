@@ -241,17 +241,32 @@ class SettingsApplyWithoutRestartTest {
             assertNull(properties.getLog().getConsole());
         }
 
+        /**
+         * 抓的用户故障：设置页上改了级别，套用器按名字去找的那几路输出在正式配置里叫别的名字，
+         * 找不到就改不动，级别照旧是启动时那个
+         * <p>
+         * 名字取自套用器自己认的那两张表，不在这里另抄一份。正式配置从模块源码目录读：
+         * 带 {@code install} 那档构建时 {@code logback.xml} 不进类路径。
+         */
         @Test
-        @DisplayName("按名字找的那几路输出，真配置里确实叫这个名字、门槛确实跟着这两项")
+        @DisplayName("套用器认的输出名，正式配置里确实叫这个名字、门槛确实跟着这两项")
         void appenderNamesMatchTheRealConfiguration() throws Exception {
-            String xml;
-            try (var in = getClass().getClassLoader().getResourceAsStream("logback.xml")) {
-                xml = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            }
-            for (String name : List.of("Console", "ConsoleQrCode")) {
+            Path config = Path.of("src/main/resources/logback.xml");
+            assertTrue(Files.isRegularFile(config), "找不到正式的日志配置: " + config.toAbsolutePath());
+            String xml = Files.readString(config);
+            @SuppressWarnings("unchecked")
+            java.util.Set<String> console = (java.util.Set<String>) org.springframework.test.util.ReflectionTestUtils
+                    .getField(LogLevelApplier.class, "CONSOLE_APPENDERS");
+            @SuppressWarnings("unchecked")
+            java.util.Set<String> file = (java.util.Set<String>) org.springframework.test.util.ReflectionTestUtils
+                    .getField(LogLevelApplier.class, "FILE_APPENDERS");
+            assertFalse(console.isEmpty() || file.isEmpty(), "套用器的名字表是空的，下面量的是空集");
+            for (String name : console) {
                 assertTrue(appenderBlock(xml, name).contains("${consoleLogLevel}"), name);
             }
-            assertTrue(appenderBlock(xml, "RollingFile").contains("${fileLogLevel}"), "RollingFile");
+            for (String name : file) {
+                assertTrue(appenderBlock(xml, name).contains("${fileLogLevel}"), name);
+            }
         }
 
         /**
