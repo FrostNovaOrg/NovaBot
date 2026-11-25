@@ -50,6 +50,30 @@ public class IpMatcher {
     }
 
     /**
+     * 一条规则写得对不对
+     * <p>
+     * 与构造时解析规则是同一段代码：这里说能收的，构造时一定收得下。
+     * 保存名单时先逐条问一遍，写错的那条当场指出来，而不是像启动时那样记一笔日志就跳过。
+     * @param pattern 规则字符串
+     * @return 写错时说明错在哪，写对了为 null
+     */
+    public static String problemOf(String pattern) {
+        if (pattern == null || pattern.isBlank()) {
+            return "空的规则";
+        }
+        try {
+            parse(pattern.trim());
+            return null;
+        } catch (NumberFormatException e) {
+            return "斜杠后面应是网段前缀长度，如 /24";
+        } catch (IllegalArgumentException e) {
+            return e.getMessage() == null ? "写法不对" : e.getMessage();
+        } catch (Exception e) {
+            return "只能是 IP 地址或 CIDR 网段，如 192.168.1.10 或 192.168.1.0/24";
+        }
+    }
+
+    /**
      * 判断规则列表是否为空
      * @return 规则列表是否为空
      */
@@ -89,7 +113,7 @@ public class IpMatcher {
      * @return 解析结果
      * @throws UnknownHostException IP 部分非法时抛出
      */
-    private Rule parse(String pattern) throws UnknownHostException {
+    private static Rule parse(String pattern) throws UnknownHostException {
         int slash = pattern.indexOf('/');
         if (slash < 0) {
             byte[] address = parseLiteral(pattern);

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
 
 import java.time.Duration;
+import java.util.function.Supplier;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.Map;
@@ -34,13 +35,23 @@ public class ConfigUiSessionStore {
     private static final int MAX_SESSIONS = 32;
     private static final int MAX_GLOBAL_SESSIONS = 1024;
 
-    private final Duration ttl;
+    /**
+     * 会话有效期与闲置时长，每次判断现取
+     * <p>
+     * 设置页上改了这两项，已登录的会话从下一个请求起就按新时长判：缩短后已经超时的，
+     * 下一个请求当场被拒。会话自己只记签发与最近使用的时刻，到期时刻按此刻的时长现算。
+     */
+    private final Supplier<Duration> ttl;
 
-    private final Duration idleTimeout;
+    private final Supplier<Duration> idleTimeout;
 
     private final Map<String, ConfigUiSession> sessions = new ConcurrentHashMap<>();
 
     public ConfigUiSessionStore(Duration ttl, Duration idleTimeout) {
+        this(() -> ttl, () -> idleTimeout);
+    }
+
+    public ConfigUiSessionStore(Supplier<Duration> ttl, Supplier<Duration> idleTimeout) {
         this.ttl = ttl;
         this.idleTimeout = idleTimeout;
     }
@@ -222,9 +233,9 @@ public class ConfigUiSessionStore {
         if (channel == ConfigUiSession.Channel.OIDC && (login == null || login.tokens() == null
                 || login.tokens().refreshToken() == null || login.tokens().refreshToken().isBlank())) {
             Long seconds = login == null || login.tokens() == null ? null : login.tokens().expiresIn();
-            return now.plusSeconds(Math.min(ttl.getSeconds(), seconds == null ? 3600 : Math.max(0, seconds)));
+            return now.plusSeconds(Math.min(ttl.get().getSeconds(), seconds == null ? 3600 : Math.max(0, seconds)));
         }
-        return now.plus(ttl);
+        return now.plus(ttl.get());
     }
 
     /** A snapshot of live OIDC sessions; inspecting it never extends idle time. */
@@ -254,9 +265,31 @@ public class ConfigUiSessionStore {
         return before - sessions.size();
     }
 
+    /**
+     * 到没到期：从签发起按此刻的有效期算、从最近使用起按此刻的闲置时长算
+     * <p>
+     * 签发时记下的到期时刻只在一种情形下还作数：统一登录没给续期凭据时，它按身份令牌的寿命截短过，
+     * 有效期改长也不能让它越过身份令牌。
+     */
     private boolean expired(ConfigUiSession session, Instant now) {
-        return !now.isBefore(session.getExpiresAt())
-                || !now.isBefore(session.getLastSeenAt().plus(idleTimeout));
+        Instant deadline = session.getIssuedAt().plus(ttl.get());
+        if (tokenCapped(session) && session.getExpiresAt().isBefore(deadline)) {
+            deadline = session.getExpiresAt();
+        }
+        return !now.isBefore(deadline)
+                || !now.isBefore(session.getLastSeenAt().plus(idleTimeout.get()));
+    }
+
+    /**
+     * 签发时到期时刻按身份令牌的寿命截短过的那种：统一登录、没有续期凭据
+     */
+    private static boolean tokenCapped(ConfigUiSession session) {
+        if (session.getChannel() != ConfigUiSession.Channel.OIDC) {
+            return false;
+        }
+        OidcClient.Login login = session.oidcLogin();
+        return login == null || login.tokens() == null
+                || login.tokens().refreshToken() == null || login.tokens().refreshToken().isBlank();
     }
 
     /**

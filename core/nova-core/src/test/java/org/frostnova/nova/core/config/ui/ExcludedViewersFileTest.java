@@ -258,7 +258,10 @@ class ExcludedViewersFileTest {
     static ConfigUiController controller(AnnotationConfigApplicationContext context, Path config) {
         var properties = context.getBean(NovaCoreProperties.class);
         var applier = RuntimeConfigurationApplier.bench(properties)
-                .contributors(context.getBeansOfType(RuntimeConfigurationApplierContributor.class).values()).build();
+                .contributors(context.getBeansOfType(RuntimeConfigurationApplierContributor.class).values())
+                .listeners(context.getBeansOfType(org.frostnova.nova.core.config.SettingsAppliedListener.class)
+                        .values().toArray(org.frostnova.nova.core.config.SettingsAppliedListener[]::new))
+                .build();
         return new ConfigUiController(new ConfigurationMetadataService(), new ConfigurationFileService(config), properties,
                 mock(org.frostnova.nova.core.datasource.AbstractDataSource.class), mock(ObjectProvider.class),
                 mock(ConfigurationValidator.class), mock(org.frostnova.nova.core.service.NovaSenderService.class),

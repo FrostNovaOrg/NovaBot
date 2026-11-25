@@ -386,11 +386,11 @@ public class NovaCoreProperties {
          */
         // 出网劣化、机器人掉登录、Webhook 服务抖动都会让告警本身失败，而失败之后
         // 此前没有下文——「没收到告警」于是被读成「没出事」。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("失败重发 · 间隔")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("0 表示失败后不重发。")
-        private int retryInterval = 60;
+        private volatile int retryInterval = 60;
 
         /**
          * 待重投队列的容量上限，单位：条。满了丢最旧的并在日志里说明，不静默截断。
@@ -478,11 +478,12 @@ public class NovaCoreProperties {
          * 允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。
          */
         // 配置界面可修改推送目标并读取运行状态，权限高于推送接口。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        // 安全过滤器每个请求现读。保存时写错一条整份不收；会把正在保存的人挡在外面的也不收
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("允许访问的来源 IP")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("支持 IP 与 CIDR 网段；默认仅允许本机。")
-        private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
+        private volatile List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
          * 配置文件备份保留份数，单位：份，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
@@ -740,39 +741,39 @@ public class NovaCoreProperties {
              * 登录会话的有效期，单位：小时，从登录起算、到点必须重新登录，不随使用顺延。
              */
             // 它约束的是「会话 Cookie 一旦泄漏还能被用多久」。
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("会话有效期")
             @ConfigLevel(ConfigLevel.Level.COMMON)
             @ConfigSummary(value = "从登录时间起算，到期需重新登录。", details = false)
-            private int sessionHours = 168;
+            private volatile int sessionHours = 168;
 
             /**
              * 登录会话的闲置超时，单位：小时，多久没操作自动退出。
              */
             // 管的是在别人的设备上登录后忘记退出这类情形。
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("闲置自动退出时长")
             @ConfigLevel(ConfigLevel.Level.COMMON)
             @ConfigSummary(value = "", details = false)
-            private int idleHours = 12;
+            private volatile int idleHours = 12;
 
             /**
              * 连续登录失败多少次后锁定该来源 IP，单位：次。
              */
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("连续登录失败锁定次数")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
             @ConfigSummary(value = "", details = false)
-            private int maxFailures = 5;
+            private volatile int maxFailures = 5;
 
             /**
              * 首次锁定的时长，单位：分钟，反复触发逐次翻倍。
              */
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("首次锁定时长")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
             @ConfigSummary(value = "反复触发锁定时，时长逐次翻倍。", details = false)
-            private int lockoutMinutes = 15;
+            private volatile int lockoutMinutes = 15;
         }
     }
 
@@ -785,11 +786,11 @@ public class NovaCoreProperties {
         /**
          * 绘图字体列表，每行一个：系统里的字体名，或以 .ttf 结尾的字体文件路径；靠前的优先。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("图片字体")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary("每行一个字体名称或 .ttf 文件路径，排在前面的优先使用。")
-        private List<String> fonts = new ArrayList<>();
+        private volatile List<String> fonts = new ArrayList<>();
 
         /**
          * 画布不够用时一次扩展的高度，单位：像素；设得过大占内存，设得过小会频繁扩展拖慢速度。
@@ -819,7 +820,21 @@ public class NovaCoreProperties {
          */
         @Getter(AccessLevel.NONE)
         @Setter(AccessLevel.NONE)
-        private List<String> fontChain;
+        private volatile List<String> fontChain;
+
+        /**
+         * 设置页上换了一张字体表：配置项与挑字用的那张一起换
+         * <p>
+         * 挑字的表按启动时那一路重排（{@link NovaCoreProperties#fontChain}），旧版默认表照旧按未设处理、
+         * 本系统默认表照旧接在后面——新表里有装不上的，画图那一侧照旧跳过它，由后面的接着补。
+         * 两张都换成新的对象，画图那一侧比一比对象就知道该重新装字体了。
+         * @param fonts 使用者的字体表
+         */
+        public void replaceFonts(List<String> fonts) {
+            List<String> configured = fonts == null ? new ArrayList<>() : new ArrayList<>(fonts);
+            this.fontChain = List.copyOf(NovaCoreProperties.fontChain(configured, System.getProperty("os.name")));
+            this.fonts = configured;
+        }
 
         /**
          * 挑字用的字体表，顺序即优先级
@@ -841,8 +856,7 @@ public class NovaCoreProperties {
         /**
          * 默认收件邮箱，改完立即生效，不必重启。
          */
-        // 发件服务那几项（spring.mail.*）不是：它们撑着一个启动时装配好的 bean，
-        // 改了配置对象也换不掉它
+        // 发件服务那几项（spring.mail.*）不在本对象里：保存时由 NovaMailService 按新值重建发件器
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("邮件告警 · 收件邮箱")
         @ConfigLevel(ConfigLevel.Level.COMMON)

@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.SettingsAppliedListener;
 import org.frostnova.nova.core.lang.StringUtil;
 import jakarta.mail.Address;
 import jakarta.mail.AuthenticationFailedException;
@@ -15,7 +16,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.mail.autoconfigure.MailProperties;
+import org.springframework.core.env.Environment;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +28,8 @@ import java.net.ConnectException;
 import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,7 +50,7 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Service
-public class NovaMailService {
+public class NovaMailService implements SettingsAppliedListener {
     /**
      * 回话里带的服务器原话最多留这么多字，再长就截掉后面
      * <p>
@@ -56,6 +63,14 @@ public class NovaMailService {
     private static final Pattern REPLY_LINE =
             Pattern.compile("(\\d{3})[ -](?:(\\d\\.\\d{1,3}\\.\\d{1,3})(?:\\s+|$))?(.*)");
 
+    /**
+     * 设置页上能改的那四项发件设置
+     */
+    static final String HOST = "spring.mail.host";
+    static final String PORT = "spring.mail.port";
+    static final String USERNAME = "spring.mail.username";
+    static final String PASSWORD = "spring.mail.password";
+
     @Value("${spring.mail.username:}")
     private String from;
 
@@ -63,10 +78,167 @@ public class NovaMailService {
 
     private final NovaCoreProperties properties;
 
-    @Autowired
+    /**
+     * 启动时的环境：启动时没配服务器（容器里没有发信器）、后来在设置页填上的，
+     * 端口、加密这些照启动时那一路从这里读
+     */
+    private final Environment environment;
+
+    /**
+     * 设置页上改过发件设置之后按新值建的发信器，没改过时为 null，照旧用容器里启动时建好的那一个
+     * <p>
+     * 整个换掉而不是在原来那个上改字段：发信线程拿到的要么是旧的一整套、要么是新的一整套，
+     * 不会是新服务器配旧口令。
+     */
+    private volatile Rebuilt rebuilt;
+
+    /**
+     * 按新值建好的一套
+     * @param sender 发信器，服务器留空时为 null（即不用邮件告警）
+     * @param from 发件人
+     * @param host 服务器
+     * @param settings 建它用的全部设置，下一次只改一项时以此为底
+     */
+    private record Rebuilt(JavaMailSenderImpl sender, String from, String host, Smtp settings) {
+    }
+
+    /**
+     * 建一个发信器要的全部设置
+     * <p>
+     * 覆写了 {@code toString}：记录类自带的那个会把口令原样印出来，这里只印服务器与端口。
+     */
+    private record Smtp(String host, Integer port, String username, String password, String protocol,
+                        String encoding, Properties javaMail) {
+        @Override
+        public String toString() {
+            return "Smtp[host=" + host + ", port=" + port + "]";
+        }
+    }
+
     public NovaMailService(ObjectProvider<JavaMailSender> mailSenderProvider, NovaCoreProperties properties) {
+        this(mailSenderProvider, properties, null);
+    }
+
+    @Autowired
+    public NovaMailService(ObjectProvider<JavaMailSender> mailSenderProvider, NovaCoreProperties properties,
+                           Environment environment) {
         this.mailSenderProvider = mailSenderProvider;
         this.properties = properties;
+        this.environment = environment;
+    }
+
+    @Override
+    public Set<String> keys() {
+        return Set.of(HOST, PORT, USERNAME, PASSWORD);
+    }
+
+    /**
+     * 设置页上改了发件设置：按新值建一个发信器换上，下一封信就用它
+     * <p>
+     * 没改的那几项沿用此刻在用的；启动时没配服务器、容器里没有发信器的，按启动时的环境补齐端口与加密。
+     * 服务器留空等于不用邮件告警，发信时照「没配发信服务」说。
+     * <b>口令不进日志</b>：这里只记服务器与端口。
+     * @param changes 本次改了的发件设置，null 表示删掉了那一项
+     */
+    @Override
+    public synchronized void applied(Map<String, String> changes) {
+        Rebuilt last = rebuilt;
+        Smtp base = last != null ? last.settings() : startupSettings();
+        Smtp next = new Smtp(
+                changes.containsKey(HOST) ? blankToNull(changes.get(HOST)) : base.host(),
+                changes.containsKey(PORT) ? portOf(changes.get(PORT)) : base.port(),
+                changes.containsKey(USERNAME) ? blankToNull(changes.get(USERNAME)) : base.username(),
+                changes.containsKey(PASSWORD) ? changes.get(PASSWORD) : base.password(),
+                base.protocol(), base.encoding(), base.javaMail());
+        JavaMailSenderImpl sender = next.host() == null ? null : build(next);
+        rebuilt = new Rebuilt(sender, next.username() == null ? "" : next.username(), next.host(), next);
+        if (sender == null) {
+            log.info("邮件发件服务器已清空, 邮件告警停用");
+        } else {
+            log.info("邮件发件服务已按新设置重建: 服务器 {}, 端口 {}", next.host(),
+                    next.port() == null ? "默认" : next.port());
+        }
+    }
+
+    /**
+     * 此刻在用的服务器：设置页上改过的话是改过之后的，没改过为 null（由调用方用启动时那一份）
+     * @return 服务器，没改过为 null；改成留空时为空串
+     */
+    public String currentHost() {
+        Rebuilt last = rebuilt;
+        if (last == null) {
+            return null;
+        }
+        return last.host() == null ? "" : last.host();
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static Integer portOf(String value) {
+        return value == null || value.isBlank() ? null : Integer.valueOf(value.strip());
+    }
+
+    /**
+     * 此刻在用的那一套的全部设置：容器里启动时建好的发信器，或启动时的环境
+     */
+    private Smtp startupSettings() {
+        if (mailSenderProvider.getIfUnique() instanceof JavaMailSenderImpl started) {
+            Properties javaMail = new Properties();
+            javaMail.putAll(started.getJavaMailProperties());
+            return new Smtp(started.getHost(), started.getPort() < 0 ? null : started.getPort(),
+                    started.getUsername(), started.getPassword(), started.getProtocol(),
+                    started.getDefaultEncoding(), javaMail);
+        }
+        MailProperties bound = environment == null ? new MailProperties()
+                : Binder.get(environment).bind("spring.mail", MailProperties.class).orElseGet(MailProperties::new);
+        Properties javaMail = new Properties();
+        javaMail.putAll(bound.getProperties());
+        String protocol = bound.getProtocol() == null ? "smtp" : bound.getProtocol();
+        if (bound.getSsl().isEnabled()) {
+            // 与框架启动时建发信器的那一路同一个写法
+            javaMail.setProperty("mail." + protocol + ".ssl.enable", "true");
+        }
+        return new Smtp(bound.getHost(), bound.getPort(), bound.getUsername(), bound.getPassword(), protocol,
+                bound.getDefaultEncoding() == null ? null : bound.getDefaultEncoding().name(), javaMail);
+    }
+
+    private static JavaMailSenderImpl build(Smtp smtp) {
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost(smtp.host());
+        if (smtp.port() != null) {
+            sender.setPort(smtp.port());
+        }
+        sender.setUsername(smtp.username());
+        sender.setPassword(smtp.password());
+        if (smtp.protocol() != null) {
+            sender.setProtocol(smtp.protocol());
+        }
+        if (smtp.encoding() != null) {
+            sender.setDefaultEncoding(smtp.encoding());
+        }
+        Properties javaMail = new Properties();
+        javaMail.putAll(smtp.javaMail());
+        sender.setJavaMailProperties(javaMail);
+        return sender;
+    }
+
+    /**
+     * 此刻该用的发信器：设置页上改过就用改过之后建的那一个
+     * @return 发信器；没配，或容器里装了不止一个时为 null
+     */
+    private JavaMailSender currentSender() {
+        Rebuilt last = rebuilt;
+        return last != null ? last.sender() : mailSenderProvider.getIfUnique();
+    }
+
+    /**
+     * 此刻的发件人
+     */
+    private String sender() {
+        Rebuilt last = rebuilt;
+        return last != null ? last.from() : from;
     }
 
     /**
@@ -92,7 +264,7 @@ public class NovaMailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(from);
+            message.setFrom(sender());
             message.setTo(receiver);
             message.setSubject(subject);
             message.setText(content);
@@ -128,7 +300,7 @@ public class NovaMailService {
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true);
-            helper.setFrom(from);
+            helper.setFrom(sender());
             helper.setTo(receiver);
             helper.setSubject(subject);
             // 正文按 HTML 发：告警正文本来就带标记，当成纯文本发出去，收信的人看到的是一串尖括号
@@ -158,17 +330,17 @@ public class NovaMailService {
             throw new IllegalStateException("没有收件邮箱，这封信不知道该发给谁");
         }
 
-        JavaMailSender mailSender = mailSenderProvider.getIfUnique();
+        JavaMailSender mailSender = currentSender();
         if (mailSender == null) {
             // 没配发信服务与装了多个发信服务在这里都取不出唯一那一个，两句分开说，
             // 使用者照着回话就知道往哪一栏去查
-            throw new IllegalStateException(mailSenderProvider.stream().findAny().isEmpty()
+            throw new IllegalStateException(rebuilt != null || mailSenderProvider.stream().findAny().isEmpty()
                     ? "发信服务没有配置好"
                     : "装了多个发信服务，认不出该用哪一个");
         }
 
         SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(from);
+        message.setFrom(sender());
         message.setTo(receiver);
         message.setSubject(subject);
         message.setText(content);
@@ -412,7 +584,7 @@ public class NovaMailService {
         }
 
         // 容器里装了两个发信器时这里也答 null：认不出该用哪一个，与没配同等对待
-        JavaMailSender sender = mailSenderProvider.getIfUnique();
+        JavaMailSender sender = currentSender();
         if (sender == null) {
             log.warn("未配置邮件发送服务, 无法向 {} 发送邮件, 主题: {}, 内容: {}", receiver, subject, content);
         }

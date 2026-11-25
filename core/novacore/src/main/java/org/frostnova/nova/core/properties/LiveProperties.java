@@ -40,11 +40,11 @@ public class LiveProperties {
     /**
      * 自动保存直播数据的间隔，单位：秒，须大于 0；订阅等运行状态也按这个间隔存盘。
      */
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     @ConfigLabel("直播数据 · 保存间隔")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigSummary(value = "须大于 0；订阅等运行状态也按此间隔保存。", details = false)
-    private int autoSaveLiveDataInterval = 300;
+    private volatile int autoSaveLiveDataInterval = 300;
 
     /**
      * 多长时间内的下播又开播算同一场直播，单位：秒；这样的重连不会重置直播数据。

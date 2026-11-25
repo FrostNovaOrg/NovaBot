@@ -22,18 +22,18 @@ public class LogProperties {
     /**
      * 控制台日志级别。
      */
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     @ConfigLabel("控制台日志级别")
     @ConfigSummary(value = "", details = false)
-    private Level console;
+    private volatile Level console;
 
     /**
      * 文件日志级别。
      */
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     @ConfigLabel("日志文件级别")
     @ConfigSummary(value = "", details = false)
-    private Level file;
+    private volatile Level file;
 
     /**
      * 是否记录事件日志。

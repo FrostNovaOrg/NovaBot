@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 import java.util.Locale;
+import java.util.function.Supplier;
 
 /**
  * 配置界面安全过滤器
@@ -116,7 +117,12 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
 
     private final String token;
 
-    private final IpMatcher ipMatcher;
+    /**
+     * 来源 IP 名单此刻的匹配器
+     * <p>
+     * 每个请求现取：设置页上改了名单，从下一个请求起就按新的放行，不等重启。
+     */
+    private final Supplier<IpMatcher> ipMatcher;
 
     private final ConfigUiAuthService authService;
 
@@ -143,10 +149,16 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
                                   NovaCoreProperties.ConfigUi.Auth auth,
                                   NovaCoreProperties.ConfigUi.Agreement agreement) {
-        this(token, ipMatcher, authService, auth, agreement, () -> {});
+        this(token, () -> ipMatcher, authService, auth, agreement, () -> {});
     }
 
     ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
+                           NovaCoreProperties.ConfigUi.Auth auth,
+                           NovaCoreProperties.ConfigUi.Agreement agreement, Runnable sessionCheckUsed) {
+        this(token, () -> ipMatcher, authService, auth, agreement, sessionCheckUsed);
+    }
+
+    ConfigUiSecurityFilter(String token, Supplier<IpMatcher> ipMatcher, ConfigUiAuthService authService,
                            NovaCoreProperties.ConfigUi.Auth auth,
                            NovaCoreProperties.ConfigUi.Agreement agreement, Runnable sessionCheckUsed) {
         this.token = token;
@@ -160,7 +172,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain)
             throws ServletException, IOException {
-        String clientIp = request.getRemoteAddr();
+        String clientIp = clientAddress(request);
 
         String rawPath = request.getRequestURI().toLowerCase(Locale.ROOT);
         if (rawPath.contains(";") || rawPath.contains("\\") || rawPath.contains("%2f")
@@ -170,7 +182,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (!ipMatcher.matches(clientIp)) {
+        if (!admits(ipMatcher.get(), request)) {
             log.warn("配置界面拒绝了来自 {} 的访问: 来源 IP 不在白名单内", clientIp);
             reject(request, response, HttpStatus.FORBIDDEN, "来源 IP 不在白名单内");
             return;
@@ -197,6 +209,29 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         } else {
             filterWithToken(request, response, chain, clientIp);
         }
+    }
+
+    /**
+     * 这个请求按哪个来源地址判名单
+     * <p>
+     * 保存名单时「会不会把自己挡在外面」那一问用的也是这里：两边必须是同一段代码。
+     * 开了 {@code server.forward-headers-strategy} 时，框架在本过滤器之前已按代理头改写了它，
+     * 两边看到的是同一个改写后的地址。
+     * @param request 请求
+     * @return 来源地址
+     */
+    static String clientAddress(HttpServletRequest request) {
+        return request.getRemoteAddr();
+    }
+
+    /**
+     * 名单放不放这个请求进来
+     * @param matcher 名单
+     * @param request 请求
+     * @return 放行时为 true
+     */
+    static boolean admits(IpMatcher matcher, HttpServletRequest request) {
+        return matcher.matches(clientAddress(request));
     }
 
     /**

@@ -1,18 +1,24 @@
 package org.frostnova.nova.core.config.ui;
 
+import ch.qos.logback.classic.Level;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.SettingsAppliedListener;
 import org.frostnova.nova.core.config.StandbyBoundConfig;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor.BatchApplier;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.converter.LogLevelConverter;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.util.IpMatcher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -24,6 +30,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * 把保存下来的配置改动落到运行中的程序上
@@ -154,7 +161,7 @@ public class RuntimeConfigurationApplier {
                 defaults.getConfigUi().getUpdate().isEnabled(), RuntimeConfigurationApplier::bool,
                 (p, v) -> p.getConfigUi().getUpdate().setEnabled(v));
         checked("novabot.core.config-ui.update.source", "检查新版本 · 来源地址",
-                defaults.getConfigUi().getUpdate().getSource(), value -> value,
+                defaults.getConfigUi().getUpdate().getSource(), RuntimeConfigurationApplier::webAddress,
                 (p, v) -> p.getConfigUi().getUpdate().setSource(v));
 
         // ---- 网络日志：HttpUtil 每个请求现读，读的就是本配置对象里的那一节（coreLogProperties） ----
@@ -177,6 +184,56 @@ public class RuntimeConfigurationApplier {
         checked("novabot.core.exec.timeout", "外部程序触发 · 超时",
                 defaults.getExec().getTimeout(), RuntimeConfigurationApplier::integer,
                 (p, v) -> p.getExec().setTimeout(v));
+
+        // ---- 日志级别：写回后由 LogLevelApplier 当场改两路输出的门槛 ----
+        // 删键回到未设（null），两路都按 INFO，与 logback.xml 里的缺省同一个
+        checked("novabot.core.log.console", "控制台日志级别",
+                null, RuntimeConfigurationApplier::logLevel, (p, v) -> p.getLog().setConsole(v));
+        checked("novabot.core.log.file", "日志文件级别",
+                null, RuntimeConfigurationApplier::logLevel, (p, v) -> p.getLog().setFile(v));
+
+        // ---- 发件服务：不在配置对象里，写回后由 NovaMailService 按新值重建发件器 ----
+        checked("spring.mail.host", "邮件告警 · SMTP 服务器",
+                "", RuntimeConfigurationApplier::host, (p, v) -> { });
+        checked("spring.mail.port", "邮件告警 · SMTP 端口",
+                null, RuntimeConfigurationApplier::port, (p, v) -> { });
+        checked("spring.mail.username", "邮件告警 · SMTP 账号",
+                "", String::strip, (p, v) -> { });
+        // 口令不去首尾空白：授权码里的空白也是口令的一部分，改了就登不上
+        checked("spring.mail.password", "邮件告警 · SMTP 密码／授权码",
+                "", value -> value, (p, v) -> { });
+
+        // ---- 控制台来源 IP：安全过滤器每个请求现读，名单换了就换一个匹配器 ----
+        checked("novabot.core.config-ui.allow-ips", "允许访问的来源 IP",
+                defaults.getConfigUi().getAllowIps(), RuntimeConfigurationApplier::allowIps,
+                (p, v) -> p.getConfigUi().setAllowIps(v));
+
+        // ---- 登录：会话库与限流每次判断现读 ----
+        checked("novabot.core.config-ui.auth.session-hours", "会话有效期",
+                defaults.getConfigUi().getAuth().getSessionHours(), RuntimeConfigurationApplier::positive,
+                (p, v) -> p.getConfigUi().getAuth().setSessionHours(v));
+        checked("novabot.core.config-ui.auth.idle-hours", "闲置自动退出时长",
+                defaults.getConfigUi().getAuth().getIdleHours(), RuntimeConfigurationApplier::positive,
+                (p, v) -> p.getConfigUi().getAuth().setIdleHours(v));
+        checked("novabot.core.config-ui.auth.max-failures", "连续登录失败锁定次数",
+                defaults.getConfigUi().getAuth().getMaxFailures(), RuntimeConfigurationApplier::positive,
+                (p, v) -> p.getConfigUi().getAuth().setMaxFailures(v));
+        checked("novabot.core.config-ui.auth.lockout-minutes", "首次锁定时长",
+                defaults.getConfigUi().getAuth().getLockoutMinutes(), RuntimeConfigurationApplier::positive,
+                (p, v) -> p.getConfigUi().getAuth().setLockoutMinutes(v));
+
+        // ---- 图片字体：换表时连挑字用的那张一起重排，报告图下一张就按新表挑 ----
+        checked("novabot.core.paint.fonts", "图片字体",
+                List.<String>of(), RuntimeConfigurationApplier::lines,
+                (p, v) -> p.getPaint().replaceFonts(v));
+
+        // ---- 定时任务的间隔：写回后由排它的那一方按新间隔重排 ----
+        checked("novabot.core.live.auto-save-live-data-interval", "直播数据 · 保存间隔",
+                defaults.getLive().getAutoSaveLiveDataInterval(), RuntimeConfigurationApplier::positive,
+                (p, v) -> p.getLive().setAutoSaveLiveDataInterval(v));
+        checked("novabot.core.alert.retry-interval", "失败重发 · 间隔",
+                defaults.getAlert().getRetryInterval(), RuntimeConfigurationApplier::nonNegative,
+                (p, v) -> p.getAlert().setRetryInterval(v));
     }
 
     /**
@@ -196,6 +253,36 @@ public class RuntimeConfigurationApplier {
                                   BiConsumer<NovaCoreProperties, Object> write) {
         Object read(String value) {
             return value == null ? fallback : parse.apply(value);
+        }
+
+        /**
+         * 写进配置文件的那一份字面：与写回内存的是同一个值
+         * <p>
+         * 内存里用的是去掉首尾空白的值，文件里却留着空白的话，重启按文件读，读到的就不是保存时生效的那个——
+         * Webhook 请求方式填「 get 」，当场按 GET 发，重启后认不出、退回 POST。
+         * 字符串取读懂后的那个；名单逐行去空白、去空行；级别写成标准写法；数字与开关去首尾空白。
+         * 读不懂的原样返回，由校验那一步去拒。
+         */
+        String text(String value) {
+            if (value == null) {
+                return null;
+            }
+            Object parsed;
+            try {
+                parsed = parse.apply(value);
+            } catch (IllegalArgumentException e) {
+                return value;
+            }
+            if (parsed instanceof String text) {
+                return text;
+            }
+            if (parsed instanceof List<?> list) {
+                return String.join("\n", list.stream().map(String::valueOf).toList());
+            }
+            if (parsed instanceof Level level) {
+                return level.levelStr;
+            }
+            return value.strip();
         }
     }
 
@@ -232,8 +319,107 @@ public class RuntimeConfigurationApplier {
         return parsed;
     }
 
+    private static Integer nonNegative(String value) {
+        int parsed = integer(value);
+        if (parsed < 0) {
+            throw new IllegalArgumentException("请填写 0 或正整数");
+        }
+        return parsed;
+    }
+
     private static Boolean bool(String value) {
         return converted(value, Boolean.class);
+    }
+
+    /**
+     * 日志级别。留空不收：配置文件里留空时日志框架拿到的是空串，它解析不了就退回 DEBUG，
+     * 于是一个「没填」会让日志忽然多出一大截，而界面上看着与 INFO 无异
+     */
+    private static Level logLevel(String value) {
+        if (value.isBlank()) {
+            throw new IllegalArgumentException("请填写一个级别（如 INFO）；要用默认的 INFO，请点「恢复默认」");
+        }
+        try {
+            Level level = new LogLevelConverter().convert(value);
+            if (level != null) {
+                return level;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // 下面统一说可选值
+        }
+        throw new IllegalArgumentException("只能是 TRACE、DEBUG、INFO、WARN、ERROR、OFF 之一");
+    }
+
+    /**
+     * SMTP 服务器：留空表示不用邮件告警；不收带空白的地址，那样的主机名连不上，也认不出是哪一台
+     */
+    private static String host(String value) {
+        String host = value.strip();
+        if (host.codePoints().anyMatch(Character::isWhitespace)) {
+            throw new IllegalArgumentException("服务器地址里不能有空格");
+        }
+        return host;
+    }
+
+    private static Integer port(String value) {
+        Integer port;
+        try {
+            port = converted(value, Integer.class);
+        } catch (IllegalArgumentException e) {
+            port = null;
+        }
+        if (port == null || port < 1 || port > 65535) {
+            throw new IllegalArgumentException("请填写 1 到 65535 之间的端口号，如 465 或 587");
+        }
+        return port;
+    }
+
+    /**
+     * 每行一项，空行跳过，各行去掉首尾空白
+     */
+    private static List<String> lines(String value) {
+        return value.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
+    }
+
+    /**
+     * 来源 IP 名单：每行一条精确 IP 或 CIDR 网段，写错一条整份不收，并指出是哪一条
+     * <p>
+     * 启动时匹配器遇到写错的那条只是记一笔日志、跳过它；保存时若也这么放过去，
+     * 管理员以为放行了的地址其实进不来，而他看不到那一笔日志。
+     */
+    private static List<String> allowIps(String value) {
+        List<String> entries = lines(value);
+        if (entries.isEmpty()) {
+            throw new IllegalArgumentException("名单不能为空，空名单会把所有人挡在控制台外面");
+        }
+        for (String entry : entries) {
+            String problem = IpMatcher.problemOf(entry);
+            if (problem != null) {
+                throw new IllegalArgumentException("「" + entry + "」不是有效的 IP 或网段（" + problem + "）");
+            }
+        }
+        return entries;
+    }
+
+    /**
+     * 只收 http(s) 绝对地址：别的写法取不到东西，查新版就一直静默落空
+     */
+    private static String webAddress(String value) {
+        String address = value.strip();
+        if (address.isEmpty()) {
+            throw new IllegalArgumentException("不能留空；要用默认来源，请点「恢复默认」");
+        }
+        try {
+            URI uri = new URI(address);
+            String scheme = uri.getScheme();
+            if (uri.isAbsolute() && uri.getHost() != null
+                    && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                return address;
+            }
+        } catch (URISyntaxException ignored) {
+            // 与协议不对同样对待
+        }
+        throw new IllegalArgumentException("请填写以 http:// 或 https:// 开头的完整地址");
     }
 
     private static String webhookMethod(String value) {
@@ -348,13 +534,22 @@ public class RuntimeConfigurationApplier {
      */
     private final TimelineWriter timeline;
 
+    /**
+     * 写回之后要按新值重排、重建的那几方，见 {@link SettingsAppliedListener}
+     * <p>
+     * 用到时才取：它们里头有的自己就依赖保存这条路上的东西，构造时取会绕成一个圈。
+     */
+    private Supplier<List<SettingsAppliedListener>> listeners = List::of;
+
     @Autowired
     public RuntimeConfigurationApplier(NovaCoreProperties properties,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
                                        ConfigurationFileService fileService, TimelineWriter timeline,
-                                       ObjectProvider<StandbyBoundConfig> bound) {
+                                       ObjectProvider<StandbyBoundConfig> bound,
+                                       ObjectProvider<SettingsAppliedListener> listeners) {
         this(properties, contributors.orderedStream().toList(), fileService, timeline,
                 bound.getIfAvailable());
+        this.listeners = () -> listeners.orderedStream().toList();
     }
 
     /**
@@ -547,9 +742,20 @@ public class RuntimeConfigurationApplier {
         private Collection<RuntimeConfigurationApplierContributor> contributors = List.of();
         private ConfigurationFileService fileService;
         private TimelineWriter timeline = TimelineWriter.NONE;
+        private List<SettingsAppliedListener> listeners = List.of();
 
         private Bench(NovaCoreProperties properties) {
             this.properties = properties;
+        }
+
+        /**
+         * 带上写回之后要按新值重排、重建的那几方
+         * @param listeners 组件
+         * @return 本构造器
+         */
+        Bench listeners(SettingsAppliedListener... listeners) {
+            this.listeners = List.of(listeners);
+            return this;
         }
 
         /**
@@ -589,8 +795,11 @@ public class RuntimeConfigurationApplier {
          * @return 按给出的侧件装配好的实例
          */
         RuntimeConfigurationApplier build() {
-            return new RuntimeConfigurationApplier(properties, contributors, fileService,
+            RuntimeConfigurationApplier applier = new RuntimeConfigurationApplier(properties, contributors, fileService,
                     timeline);
+            List<SettingsAppliedListener> given = listeners;
+            applier.listeners = () -> given;
+            return applier;
         }
     }
 
@@ -640,7 +849,10 @@ public class RuntimeConfigurationApplier {
                 continue;
             }
             try {
-                setting.read(change.getValue());
+                Object parsed = setting.read(change.getValue());
+                if (ALLOW_IPS.equals(change.getKey())) {
+                    rejectSelfLockout(parsed);
+                }
             } catch (IllegalArgumentException e) {
                 problems.add(change.getKey() + "（" + setting.label() + "）：" + e.getMessage());
             }
@@ -659,6 +871,50 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
+     * 控制台来源 IP 名单的配置项名
+     */
+    static final String ALLOW_IPS = "novabot.core.config-ui.allow-ips";
+
+    /**
+     * 新名单会不会把正在保存的这个人挡在门外
+     * <p>
+     * 名单从下一个请求起就按新的放行，挡住了自己的话，只能去服务器上改文件再重启。
+     * 判法与安全过滤器是同一段代码（{@link ConfigUiSecurityFilter#admits}）：来源地址取自同一个请求、
+     * 同一个方法，开了反向代理那一套（{@code server.forward-headers-strategy}）时两边看到的都是改写之后的那个。
+     * 不经网页保存的调用方（没有请求）不在此列。
+     * @param parsed 读懂之后的名单
+     */
+    private static void rejectSelfLockout(Object parsed) {
+        jakarta.servlet.http.HttpServletRequest request = ConfigUiAccess.request();
+        if (request == null) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        IpMatcher matcher = new IpMatcher((List<String>) parsed);
+        if (!ConfigUiSecurityFilter.admits(matcher, request)) {
+            throw new IllegalArgumentException("这样保存后你会被挡在控制台外面：你此刻的来源地址 "
+                    + ConfigUiSecurityFilter.clientAddress(request) + " 不在新名单里，名单未改");
+        }
+    }
+
+    /**
+     * 写进配置文件的那一份：带校验的项换成与写回内存同一个值的字面
+     * <p>
+     * 不这样做的话，内存里是去掉首尾空白的值、文件里还留着空白，重启后按文件读到的不是保存时生效的那个。
+     * 读不懂的、删键（{@code null}）的、不在带校验名单里的，原样留着。
+     * @param changes 待写入的配置项名到取值
+     * @return 新的一份，顺序不变
+     */
+    public static Map<String, String> forFile(Map<String, String> changes) {
+        Map<String, String> result = new LinkedHashMap<>(changes);
+        result.replaceAll((key, value) -> {
+            CheckedSetting setting = CHECKED.get(key);
+            return setting == null ? value : setting.text(value);
+        });
+        return result;
+    }
+
+    /**
      * 把一批已写入配置文件的改动尽量落到运行中的程序上
      * <p>
      * 落不下的（不在名单里，或值的形式不对）一律计入待重启记在本实例上，改对了的键当场划掉，
@@ -671,7 +927,7 @@ public class RuntimeConfigurationApplier {
         List<String> applied = new ArrayList<>();
         Map<String, Object> savedValues = null;
         Set<String> failedBatchKeys = applyBatches(changes);
-        Set<String> failedCheckedKeys = applyChecked(changes);
+        Set<String> failedCheckedKeys = notifyListeners(changes, applyChecked(changes));
 
         for (Map.Entry<String, String> change : changes.entrySet()) {
             String key = change.getKey();
@@ -706,9 +962,11 @@ public class RuntimeConfigurationApplier {
                 applier.run();
                 recordApplied(key, applied);
             } catch (RuntimeException e) {
-                // 值的形式不对时不当作已生效：界面写「已生效」而实际没变，比多重启一次糟得多
-                log.warn("配置项 {} 的取值 {} 无法即时生效, 已按需重启处理: {}",
-                        change.getKey(), change.getValue(), e.toString());
+                // 值的形式不对时不当作已生效：界面写「已生效」而实际没变，比多重启一次糟得多。
+                // 机密项不写取值：这一行进日志文件，口令写进去就等于多了一份明文
+                log.warn("配置项 {} 的取值 {} 无法即时生效, 已按需重启处理: {}", change.getKey(),
+                        SensitiveFields.isSensitive(change.getKey(), null) ? SensitiveFields.MASK : change.getValue(),
+                        e.toString());
                 restartRequired.add(change.getKey());
             }
         }
@@ -775,6 +1033,39 @@ public class RuntimeConfigurationApplier {
             parsed.forEach((setting, value) -> setting.write().accept(properties, value));
         }
         return Set.of();
+    }
+
+    /**
+     * 叫写回之后要按新值重排、重建的那几方
+     * <p>
+     * 只叫写回成功了的项：没写回的已经记成待重启，再叫一遍只会让运行中的东西与配置对象对不上。
+     * 一方失败只把它那几项记成待重启，不连累别的；日志只写键名，不写取值——发件密码就在其中。
+     * @param changes 已写入的配置项名到取值
+     * @param failed 写回时就没成的那些键
+     * @return 写回或叫醒时没成的那些键
+     */
+    private Set<String> notifyListeners(Map<String, String> changes, Set<String> failed) {
+        Set<String> result = new LinkedHashSet<>(failed);
+        for (SettingsAppliedListener listener : listeners.get()) {
+            Map<String, String> mine = new LinkedHashMap<>();
+            for (String key : listener.keys()) {
+                CheckedSetting setting = CHECKED.get(key);
+                if (setting != null && changes.containsKey(key) && !failed.contains(key)) {
+                    mine.put(key, setting.text(changes.get(key)));
+                }
+            }
+            if (mine.isEmpty()) {
+                continue;
+            }
+            try {
+                listener.applied(Collections.unmodifiableMap(mine));
+            } catch (RuntimeException e) {
+                result.addAll(mine.keySet());
+                log.warn("配置项 {} 已写回配置，但没能落到运行中的程序上，按需重启处理: {}",
+                        mine.keySet(), e.getClass().getName());
+            }
+        }
+        return result;
     }
 
     private void recordApplied(String key, List<String> applied) {

@@ -1298,12 +1298,15 @@ public class ConfigUiController {
             return ResponseEntity.badRequest().body(result);
         }
 
+        // 文件里写的与写回内存的是同一个值：内存里去掉了首尾空白、文件里却留着的话，
+        // 重启后按文件读到的就不是保存时生效的那个
+        Map<String, String> toWrite = RuntimeConfigurationApplier.forFile(normalized);
         try {
-            List<String> changedKeys = fileService.write(normalized);
+            List<String> changedKeys = fileService.write(toWrite);
             ConfigUiOperationAdvice.changedKeys(changedKeys);
             if (!changedKeys.isEmpty() && ConfigUiAccess.request() != null) {
                 botChannel().filter(channel -> changedKeys.contains(channel.key())).ifPresent(channel -> {
-                    String value = normalized.get(channel.key());
+                    String value = toWrite.get(channel.key());
                     String action = value == null || Boolean.parseBoolean(value) ? "启用" : "停用";
                     ConfigUiAccess.request().setAttribute(ConfigUiOperationFilter.ACTION,
                             new ConfigUiOperationCatalog.Action("BOT_CHANNEL_TOGGLE", action + " " + channel.name() + " 通道", Map.of()));
@@ -1312,7 +1315,7 @@ public class ConfigUiController {
 
             // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用。
             Map<String, String> applied = new LinkedHashMap<>();
-            changedKeys.forEach(key -> applied.put(key, normalized.get(key)));
+            changedKeys.forEach(key -> applied.put(key, toWrite.get(key)));
             List<String> restartRequired = runtimeApplier.applyAndTrack(applied);
 
             log.info("{} 存了控制台设置，改动项 {}", ConfigUiAccess.actor(), changedKeys);
@@ -2471,7 +2474,8 @@ public class ConfigUiController {
      * <p>
      * 邮件不能看配置文件：真的发信认的 SMTP 主机是 Spring 启动时从环境里取的
      * （{@code spring.mail.host} 可被环境变量越过文件改掉），文件里填着不等于此刻发得出去。
-     * 通道的 {@code isAvailable()} 用的正是启动时那一份，与发信同源。
+     * 通道的 {@code isAvailable()} 用的是此刻发信认的那一份：设置页上没改过时是启动时的，
+     * 改过之后是保存时按新值重建发信器用的那个，与发信同源。
      */
     private JSONObject alerts() {
         JSONObject json = new JSONObject();

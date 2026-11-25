@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.SettingsAppliedListener;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.util.HttpUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +21,11 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -44,7 +48,10 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
-public class UpdateCheckService {
+public class UpdateCheckService implements SettingsAppliedListener {
+    static final String ENABLED_KEY = "novabot.core.config-ui.update.enabled";
+    static final String SOURCE_KEY = "novabot.core.config-ui.update.source";
+
     /**
      * 「先不提醒」记在运行状态的哪个命名空间与键下
      */
@@ -126,6 +133,34 @@ public class UpdateCheckService {
     @EventListener(ContextClosedEvent.class)
     public void onContextClosedEvent() {
         scheduler.shutdownNow();
+    }
+
+    @Override
+    public Set<String> keys() {
+        return Set.of(ENABLED_KEY, SOURCE_KEY);
+    }
+
+    /**
+     * 设置页上打开了检查、或换了来源：在后台立刻查一次，不等下一次每日检查
+     * <p>
+     * 放进检查自己的那条线程里跑，保存那一步不等它：来源慢或连不上时，保存照样当场返回。
+     * 关掉不用在这里做什么，提醒当场收起靠 {@link #pendingUpdate()} 现读开关。
+     * @param changes 本次改了的那一两项
+     */
+    @Override
+    public void applied(Map<String, String> changes) {
+        if (!properties.getConfigUi().getUpdate().isEnabled() || scheduler.isShutdown()) {
+            return;
+        }
+        try {
+            scheduler.execute(() -> {
+                Thread.currentThread().setName("update-check");
+                checkNow();
+            });
+        } catch (RejectedExecutionException e) {
+            // 正在退出：这一次不查了
+            log.debug("正在退出, 不再检查新版");
+        }
     }
 
     /**
