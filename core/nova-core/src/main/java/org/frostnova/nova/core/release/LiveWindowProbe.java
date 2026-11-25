@@ -23,8 +23,10 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 供发版等窗从服务的工作目录读取直播数据，不启动 NovaBot。 */
 public final class LiveWindowProbe {
@@ -182,8 +184,9 @@ public final class LiveWindowProbe {
         }
 
         long lastSaveTime = 0;
-        int liveCount = 0;
-        boolean hasPlatform = false;
+        int markedCount = 0;
+        Map<String, Set<String>> markedLive = new HashMap<>();
+        Map<String, Set<String>> liveNow = null;
         while (json.nextToken() == JsonToken.PROPERTY_NAME) {
             String key = json.currentName();
             JsonToken value = json.nextToken();
@@ -195,11 +198,14 @@ public final class LiveWindowProbe {
                 if (value != JsonToken.START_OBJECT || key.length() == LIVE_STATUS_PREFIX.length()) {
                     return unknown("直播数据文件的直播状态格式不对");
                 }
-                hasPlatform = true;
+                Set<String> marked = new HashSet<>();
+                markedLive.put(key.substring(LIVE_STATUS_PREFIX.length()), marked);
                 while (json.nextToken() == JsonToken.PROPERTY_NAME) {
+                    String uid = json.currentName();
                     JsonToken status = json.nextToken();
                     if (status == JsonToken.VALUE_TRUE) {
-                        liveCount++;
+                        marked.add(uid);
+                        markedCount++;
                     } else if (status != JsonToken.VALUE_FALSE) {
                         return unknown("直播数据文件的直播状态格式不对");
                     }
@@ -207,13 +213,21 @@ public final class LiveWindowProbe {
                 if (json.currentToken() != JsonToken.END_OBJECT) {
                     return unknown("直播数据文件的直播状态格式不对");
                 }
+            } else if ("LiveNow".equals(key)) {
+                if (value == JsonToken.VALUE_NULL) {
+                    return unknown("直播数据文件的 LiveNow 名单尚未就绪");
+                }
+                liveNow = readLiveNow(json);
+                if (liveNow == null) {
+                    return unknown("直播数据文件的 LiveNow 名单格式不对");
+                }
             }
             json.skipChildren();
         }
         if (json.currentToken() != JsonToken.END_OBJECT || json.nextToken() != null) {
             return unknown("直播数据文件不是有效的 JSON");
         }
-        if (!hasPlatform) {
+        if (markedLive.isEmpty()) {
             return unknown("直播数据文件没有 LiveStatus:* 键");
         }
         long now = System.currentTimeMillis();
@@ -227,10 +241,48 @@ public final class LiveWindowProbe {
         if (age > MAX_AGE_MILLIS) {
             return unknown("直播数据文件至少 %d 分钟没更新".formatted(Duration.ofMillis(age).toMinutes()));
         }
-        if (liveCount > 0) {
-            return "LIVE %d 位主播在播，继续等".formatted(liveCount);
+        if (liveNow == null) {
+            return known(markedCount, "旧版数据，按全部在播标记算");
         }
-        return "ALLIDLE 直播数据在 10 分钟内更新，全员空闲，可部署";
+
+        int liveCount = 0;
+        for (var entry : liveNow.entrySet()) {
+            Set<String> listed = entry.getValue();
+            if (!markedLive.getOrDefault(entry.getKey(), Set.of()).containsAll(listed)) {
+                return unknown("直播数据文件的 LiveNow 名单与直播状态不一致");
+            }
+            liveCount += listed.size();
+        }
+        return known(liveCount, "有 %d 条在播标记未计入".formatted(markedCount - liveCount));
+    }
+
+    private static Map<String, Set<String>> readLiveNow(JsonParser json) {
+        if (json.currentToken() != JsonToken.START_OBJECT) {
+            return null;
+        }
+        Map<String, Set<String>> liveNow = new HashMap<>();
+        while (json.nextToken() == JsonToken.PROPERTY_NAME) {
+            String platform = json.currentName();
+            if (platform.isBlank() || json.nextToken() != JsonToken.START_ARRAY) {
+                return null;
+            }
+            Set<String> uids = new HashSet<>();
+            while (json.nextToken() != JsonToken.END_ARRAY) {
+                if (json.currentToken() != JsonToken.VALUE_NUMBER_INT
+                        || !uids.add(Long.toString(json.getLongValue()))) {
+                    return null;
+                }
+            }
+            liveNow.put(platform, uids);
+        }
+        return json.currentToken() == JsonToken.END_OBJECT ? liveNow : null;
+    }
+
+    private static String known(int liveCount, String reason) {
+        if (liveCount > 0) {
+            return "LIVE %d 位主播在播，%s，继续等".formatted(liveCount, reason);
+        }
+        return "ALLIDLE 直播数据在 10 分钟内更新，全员空闲，%s，可部署".formatted(reason);
     }
 
     private static String unknown(String reason) {
