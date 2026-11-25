@@ -98,9 +98,10 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
-    @DisplayName("首次推送提示开关：关掉之后当场不再附那句用法提示")
+    @DisplayName("首次推送提示开关：打开和关闭都立即生效")
     void appliesFirstPushTipSwitch() {
-        assertTrue(properties.getPush().isFirstPushTip(), "默认应开着");
+        assertEquals(List.of(), applier.applyAndTrack(Map.of("novabot.core.push.first-push-tip", "true")));
+        assertTrue(properties.getPush().isFirstPushTip(), "打开应当场生效");
 
         List<String> restart = applier.applyAndTrack(Map.of("novabot.core.push.first-push-tip", "false"));
 
