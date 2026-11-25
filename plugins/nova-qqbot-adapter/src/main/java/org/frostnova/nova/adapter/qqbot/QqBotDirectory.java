@@ -599,9 +599,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
             boolean unavailable = false;
             try {
                 String path = groupPath(before.openid()) + "/" + key.endpoint().path;
-                Object value = api.queryGroup(path, key.appId(), () -> {
+                Object value = api.queryGroup(path, key.appId(), outcome -> {
                     synchronized (this) {
-                        attempt.result = new FetchResult(RefreshStatus.QUERIED, null);
+                        attempt.result = outcome == QqBotApiClient.GroupQueryOutcome.REPLIED
+                                ? new FetchResult(RefreshStatus.QUERIED, null)
+                                : new FetchResult(RefreshStatus.NO_REPLY, null, outcome.reason());
                     }
                 });
                 if (value instanceof JSONObject json) {
@@ -904,9 +906,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     record GroupRefreshFeedback(long num, FetchFeedback state, FetchFeedback info) {}
 
-    record FetchFeedback(RefreshStatus status, String retryAt, Long retryAfterSeconds) {}
+    record FetchFeedback(RefreshStatus status, String retryAt, Long retryAfterSeconds, String reason) {}
 
-    enum RefreshStatus { QUEUED, QUERIED, RECENT, COOLDOWN, IN_PROGRESS, UNAVAILABLE }
+    enum RefreshStatus { QUEUED, QUERIED, RECENT, COOLDOWN, IN_PROGRESS, UNAVAILABLE, NO_REPLY }
 
     private record ConsoleRefresh(String appId, List<GroupRefresh> groups) {}
 
@@ -916,12 +918,16 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         }
     }
 
-    private record FetchResult(RefreshStatus status, Instant retryAt) {
+    private record FetchResult(RefreshStatus status, Instant retryAt, String reason) {
+        FetchResult(RefreshStatus status, Instant retryAt) {
+            this(status, retryAt, null);
+        }
+
         FetchFeedback feedback(Instant now) {
-            if (retryAt == null) return new FetchFeedback(status, null, null);
+            if (retryAt == null) return new FetchFeedback(status, null, null, reason);
             Duration remaining = Duration.between(now, retryAt);
             long seconds = Math.max(0, remaining.getSeconds() + (remaining.getNano() == 0 ? 0 : 1));
-            return new FetchFeedback(status, retryAt.toString(), seconds);
+            return new FetchFeedback(status, retryAt.toString(), seconds, reason);
         }
     }
 

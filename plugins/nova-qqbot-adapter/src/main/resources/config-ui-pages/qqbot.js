@@ -380,13 +380,27 @@ function refreshSummary(results) {
   if (!results.length) return '没有可刷新的群。';
   const count = (key, status) => results.filter(group => group[key]?.status === status).length;
   const parts = [`主动发言问了 ${count('state', 'QUERIED')} 个群`];
-  for (const [status, label] of [['RECENT', '刚查过'], ['COOLDOWN', '接口冷却中'],
-    ['IN_PROGRESS', '已经在查'], ['UNAVAILABLE', '未能查询']]) {
-    const total = count('state', status);
-    if (total) parts.push(`${total} 个${label}`);
+  const cooldown = count('state', 'COOLDOWN');
+  const cooled = results.filter(({state}) => state?.status === 'COOLDOWN' && state.retryAfterSeconds === 0).length;
+  for (const [total, label] of [[count('state', 'RECENT'), '个刚查过'],
+    [cooldown - cooled, '个群本次因接口冷却跳过'], [cooled, '个群本次因接口冷却跳过，现在已可再查'],
+    [count('state', 'IN_PROGRESS'), '个已经在查'], [count('state', 'UNAVAILABLE'), '个未能查询']]) {
+    if (total) parts.push(`${total} ${label}`);
   }
+  parts.push(...summarizeNoReply(results, 'state'));
   const info = count('info', 'QUERIED');
-  return parts.join('，') + '。' + (info ? `群资料问了 ${info} 个群。` : '');
+  const infoFailures = summarizeNoReply(results, 'info');
+  if (!info && !infoFailures.length) return parts.join('，') + '。';
+  return parts.join('，') + '。' + [`群资料问了 ${info} 个群`, ...infoFailures].join('，') + '。';
+}
+
+function summarizeNoReply(results, key) {
+  const counts = new Map();
+  for (const group of results) {
+    const result = group[key];
+    if (result?.status === 'NO_REPLY') counts.set(result.reason, (counts.get(result.reason) || 0) + 1);
+  }
+  return Array.from(counts, ([reason, total]) => `${total} 个群没问成：${reason}`);
 }
 
 function groupTime(value) {
@@ -399,6 +413,7 @@ function refreshNote(result, label) {
   let detail;
   switch (result?.status) {
     case 'QUERIED': detail = '问了 QQ'; break;
+    case 'NO_REPLY': detail = `没问成（${result.reason}）`; break;
     case 'RECENT': detail = result.retryAfterSeconds > 0
       ? `刚查过，约 ${result.retryAfterSeconds} 秒后可再查` : '刚查过，现在可再查'; break;
     case 'COOLDOWN': detail = result.retryAfterSeconds === 0 ? 'QQ 接口冷却已结束，可以再查'

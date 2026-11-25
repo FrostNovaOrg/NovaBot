@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpTimeoutException;
 import java.nio.file.Files;
@@ -586,6 +587,42 @@ class QqBotDirectoryTest {
                 .andExpect(jsonPath("$.refreshResults[1].state.retryAt")
                         .value(rig.clock.instant().plus(Duration.ofDays(1)).toString()));
         assertEquals(3, rig.botStateCalls());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, 连不上 QQ 接口", "true, 等待 QQ 接口回包超时"})
+    void consoleRefreshDoesNotCountGroupRequestsWithoutAReply(boolean timeout, String reason) throws Exception {
+        var networkFailed = new AtomicBoolean();
+        var rig = new Rig(uri -> {
+            if (!networkFailed.get()) return isInfo(uri) ? json() : json("allow_proactive_msg", false);
+            if (timeout) throw new HttpTimeoutException("fixture read timeout");
+            throw new ConnectException("fixture refused connection");
+        });
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        var console = rig.console(directory, number);
+        rig.clock.advance(Duration.ofMinutes(10));
+        networkFailed.set(true);
+
+        var queued = console.perform(get("/config/api/qqbot/state").param("refresh", "true"))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("QUEUED"))
+                .andExpect(jsonPath("$.refreshResults[0].info.status").value("QUEUED"))
+                .andReturn().getResponse().getContentAsString();
+        String refreshId = JSON.parseObject(queued).getString("refreshId");
+        rig.drain();
+        assertEquals(2, rig.botStateCalls());
+        assertEquals(2, rig.infoCalls());
+
+        var completed = console.perform(get("/config/api/qqbot/state").param("refresh", "false")
+                        .param("refreshId", refreshId))
+                .andExpect(jsonPath("$.refreshing").value(false))
+                .andExpect(jsonPath("$.refreshResults[0].num").value(number));
+        for (String endpoint : List.of("state", "info")) {
+            String result = "$.refreshResults[0]." + endpoint;
+            completed.andExpect(jsonPath(result + ".status").value("NO_REPLY"))
+                    .andExpect(jsonPath(result + ".reason").value(reason));
+        }
     }
 
     @Test
